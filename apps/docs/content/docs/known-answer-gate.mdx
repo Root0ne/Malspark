@@ -98,13 +98,6 @@ it is `mixed`. `gate` prints both
 arms' counts and names every item both arms credit whose tag changed. `--json`
 carries each item's tag, each run's tag and the entries with their classes.
 
-On the stored runs, haiku4 reads 38 own analysis, 2 own analysis + lookup,
-0 lookup only and 11 no cited entry of its 51 credited items. An earlier
-stored all-tools run on a hosted model, kept for replay, reads 36, 1, 1 and 18
-of 56. In both, the family item is credited by a sandbox signature and the
-reputation report together. In the earlier run the IcedID link rests on the
-reputation report's labels alone.
-
 ## The intel-off arm
 
 The intel-off arm runs a profile with every lookup server withheld, which
@@ -138,15 +131,15 @@ whether the base profile's lookup-only items were among them.
 ## Running it
 
 ```bash
-python scripts/benchmark/run.py score runs/haiku4/score.md
+python scripts/benchmark/run.py score <run dir>/score.md
 python scripts/benchmark/run.py gate --baseline runs/a1/score.md runs/a2/score.md runs/a3/score.md \
                                      --candidate runs/b1/score.md runs/b2/score.md runs/b3/score.md
-python scripts/benchmark/run.py gate --baseline blind:run7 --candidate blind:haiku4 \
+python scripts/benchmark/run.py gate --baseline blind:<arm A> --candidate blind:<arm B> \
                                      --sheet blind-1/scorer/scores.csv --map blind-1/sealed-map.json
 ```
 
-`score` prints each run's totals (for example `35 found / 15 partly (body) /
-1 partly (dump) / 6 missed / 0 wrong; credited 51 of 57`) and its beyond-human
+`score` prints each run's totals (for example `46 found / 9 partly (body) /
+1 partly (dump) / 1 missed / 0 wrong; credited 56 of 57`) and its beyond-human
 count. Given several runs, it also prints them as one arm. `gate` prints the
 decision, both arms' totals, and every dropped, improved and not-gated item with
 both verdicts and their counts. It exits with status 0 when nothing dropped, 1

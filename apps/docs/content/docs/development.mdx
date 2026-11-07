@@ -144,7 +144,7 @@ build context) are read from `docker/`, the first file's directory. The
   `scripts/blind/` hides which run is which while scoring ([Blind A/B
   scoring](/docs/blind-scoring/)); `scripts/calibration/` scores stored runs
   against a calibration set ([Calibration set](/docs/calibration/)). The
-  latest scored run is on [Benchmark](/docs/benchmark/).
+  benchmark run is on [Benchmark](/docs/benchmark/).
 
 ### Heavy local runs in a capped scope
 
@@ -155,7 +155,7 @@ the systemd user manager, run such a command through
 `scripts/dev/run_capped.py`; nothing runs this way unless asked:
 
 ```bash
-python scripts/dev/run_capped.py -- python scripts/replay/run.py runs/haiku7 runs/haiku8
+python scripts/dev/run_capped.py -- python scripts/replay/run.py <run dir A> <run dir B>
 python scripts/dev/run_capped.py --memory 8G --floor 4G -- uv run pytest tests/unit -q
 ```
 

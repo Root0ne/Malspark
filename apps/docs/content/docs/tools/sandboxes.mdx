@@ -50,8 +50,7 @@ own is kept under its own name. A CAPE, Cuckoo or mock report keeps its own
 arrangement: its document is the report itself, key for key and in order, with
 the four blocks CAPE names otherwise under the document's words in the same
 place (`CAPE` is `extracted`, `procdump` is `procdumps`, `procmemory` is
-`memory`, `suricata` is `ids`). A document laid out before those words were
-declared is still read under its own. A Triage report keeps its target's other
+`memory`, `suricata` is `ids`). A stored document that holds these blocks under CAPE's words is read under them: a block missing under the document's word is read under CAPE's. A Triage report keeps its target's other
 digests, each process's guest pid and parent and the sample mark, each
 signature's tags and label, what Triage extracted (overview and task reports),
 the overview's analysis, task and target blocks, each flow's and request's
@@ -167,7 +166,7 @@ reader is read again by an iterative one, and every container nested more than
 160 levels down is read as the marked text `[nested deeper than 160 levels: not
 kept]`. No consumer ever holds a deeper value, and everything that writes a
 report or a part of it out (the analysts' slices, the tool answers, the pack,
-the stored ledger) writes the same bytes as before for anything shallower.
+the stored ledger) writes the whole value for anything shallower.
 The deepest stored report nests 112 levels.
 
 ### A report no format recognises
@@ -448,7 +447,7 @@ value, a warning is logged, and the report does not count `network.dns` as
 filled.
 
 A reader built from the JSONPath mapping (`generic`) has no structural form: its
-DNS path names rows, and each row is one name with its own answers, as before.
+DNS path names rows, and each row is one name with its own answers.
 A sandbox whose report asks several names in one DNS message reads each name's
 answers only where the report writes them on that name's row; a code reader
 (above) is the way to express a multi-name request.
@@ -473,8 +472,7 @@ no format declares (the `generic` mapping's)
 otherwise the scale the report's registered reader declares. The
 worker records it on the run summary as `sandbox_signature_scale` (`null` where
 none is declared), and the console's Dynamic tab colours and names each
-signature's number by it. A run recorded before scales were has no such key and
-is drawn as it always was, from the sandbox provider in its settings snapshot.
+signature's number by it. A run recorded without scales has no such key and is drawn from the sandbox provider in its settings snapshot.
 
 ## Any REST sandbox
 

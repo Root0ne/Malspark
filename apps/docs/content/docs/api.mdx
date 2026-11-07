@@ -68,7 +68,7 @@ declaration said about the answer (`facts`), the reputation record
 `structured` is the server's own structured answer (`structured_from_server`,
 present only when true), and the calling agent's declared role and console
 tab (`agent_role`, `agent_tab`). Each of these seven is left out where the
-entry carried none, and on every entry stored before they were kept: absent,
+entry carried none, and on a stored entry that does not carry them: absent,
 never false or empty. `stage`, `agent` and `tool` narrow it — the three grains the
 console groups by — and `page` and `page_size` (up to 200) page it. Ordering is
 by the sequence the ids were issued in across the whole run, so paging walks
@@ -89,7 +89,7 @@ byte budget or the structure eviction took) — each with `key`, `bytes` and
 (`upload_failed (<class>)`, `upload_failed (store unreachable)`,
 `upload_failed (store busy)`, `upload_failed (not finished)`, or
 `exceeds upload_max_bytes (<n> bytes)`). It is absent where nothing was taken
-and on entries stored before it was kept.
+and on stored entries that do not carry it.
 `GET /jobs/{job_id}/evidence/{entry_id}/objects/{part}` streams the part's
 bytes (`text/plain` for a text, `application/json` for a structure), with the
 recorded SHA-256 in `X-Content-SHA256` and the recorded length in
@@ -101,7 +101,7 @@ reference records, and a 502 when the store cannot hand it back.
 
 Each entry of a sealed run also carries `digest`, the SHA-256 of every column
 its row persists in canonical form, and `chain`, the job's keyed chain value
-after it in `seq` order; both are absent on entries stored before sealing.
+after it in `seq` order; both are absent on entries stored unsealed.
 `GET /jobs/{job_id}/evidence/verify` recomputes the chain from the rows and
 checks it against the seal, under the same ownership rule, and writes nothing.
 It reads only that job's rows and its own audit rows, so its cost follows the
@@ -147,8 +147,7 @@ not calls; `tokens`, the run summary's own block (`input_tokens`,
 reported it, and `per_agent`); and `spend`, the sum of what the job's spend
 meter charged each call and failed attempt when it was settled, as each record
 carries it (`priced_usd`, `price_source`, `estimated_usd` for a charge by stated
-estimate), so a price changed later does not change it. A record written before
-records carried their charge is priced again by the meter's code at the current
+estimate), so a price changed later does not change it. A record that carries no charge is priced again by the meter's code at the current
 `llm.model_prices` over the vendored table and counted in `repriced_calls`
 (`repriced_usd`). `spend` also gives `spent_usd`, `prices_from`,
 `estimated_calls`, `estimated_usd`, `unreported_calls`, `unpriced_models`,
@@ -171,8 +170,8 @@ judge role's provider and model). No endpoint is taken from the snapshot: each
 model is served where its provider is served now (the current reporter entry's
 own address for that provider, else the provider's configured one), with the
 current credential, and the current entry's ceilings are kept. A model the run
-called at another place than its provider is served now, whose provider is no
-longer registered, that the snapshot hides, or that no longer builds settings
+called at another place than its provider is served now, whose provider is not
+registered, that the snapshot hides, or that does not build settings
 is not asked; the current report model is, and `model_source` says why. A job
 that ran as a mock is answered as one: it had no report model, so the answer
 is `not_determinable`. It is built as the report stage builds it, with the
@@ -270,7 +269,7 @@ report is counted under `jobs_by_status.failed` and not by its verdict.
 bundle beside it, as `{"bundle": …, "labels": {…}}`: the bundle as the pipeline
 read it and the map from each id the judge wrote to the id it was published
 under. It is the bundle every export decline row says an object "is unchanged
-in". A report stored before it was kept answers `{"kept": false, "reason": …}`
+in". A stored report that does not keep it answers `{"kept": false, "reason": …}`
 — the report exists and has none — and only a report that does not exist, or
 is not the caller's, answers 404. A kept record carries `"kept": true`, and a
 label the judge gave two objects maps to the list of ids it named.
@@ -353,8 +352,7 @@ is every ATT&CK mapping and every indicator.
 A `stated_by` names who stated a value only where the record shows it. A
 confidence is the judge's when the verdict reading is `stated`. A family's is
 its `family_source`. A severity is the judge's only on a report that carries
-`verdict_reading`: a report stored before that carries a rating the builder
-computed, and its severity row has no `stated_by` at all. Who stated the
+`verdict_reading`: a stored report without it carries a rating the builder computed, and its severity row has no `stated_by` at all. Who stated the
 confidence and the severity follows from the verdict reading, which the
 Verdict row compares, so on those two rows `stated_by` is shown and not
 compared: a run pair that differs only in it counts that difference once, on
@@ -364,7 +362,7 @@ the Verdict row, and the confidence and severity rows say so in a note.
 | :-- | :-- |
 | `verdict` | the field: verdict (with `verdict_reading`), confidence, severity, family (with `family_source` and its evidence ids), category |
 | `attack` | `ttp_mappings.technique_id`; the confidence source comes from the capability matrix |
-| `indicators` | `consolidated_iocs` kind and value. A row stored without a kind (a report stored before the column existed, whose network values may be defanged) is keyed by its type and value as stored and pairs only with rows of that shape; against the other shape both runs' rows are listed by run, with a note. A report without the table is read from its network block, which records no publish decision, and says so |
+| `indicators` | `consolidated_iocs` kind and value. A row stored without a kind (a stored report without the column, whose network values may be defanged) is keyed by its type and value as stored and pairs only with rows of that shape; against the other shape both runs' rows are listed by run, with a note. A report without the table is read from its network block, which records no publish decision, and says so |
 | `key_findings` | exact text only |
 | `analysts` | `agent_findings.agent_name` |
 | `persistence` | kind and target |

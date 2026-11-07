@@ -7,7 +7,7 @@ forces agents to cite concrete evidence for every claim they make.
 Literature basis:
   - MalEval (arXiv:2509.14335): LLMs fail when passing raw code slices between agents.
   - CONSENSAGENT (arXiv): Structured formats reduce sycophancy.
-  - Multi-Agent Malware Analysis Framework Research (internal report).
+  - Multi-agent malware analysis research (internal report).
 """
 
 from __future__ import annotations

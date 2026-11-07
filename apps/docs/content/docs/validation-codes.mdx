@@ -43,7 +43,7 @@ constants it belongs to, marked as such. A code counts as tested when a Python
 test names it, in a string other than a docstring or by its constant; that does
 not prove the test makes the platform raise it. The tests are not listed here:
 `uv run python scripts/validation_codes/run.py --tests` prints them. A code bound under a `LEGACY_` name is
-one nothing raises any more and stored runs still carry; the comment on that
+one nothing raises and stored runs carry; the comment on that
 name says what reads it.
 
 **127 codes in 12 families:** [agreement](#agreement) 18 · [attck](#attck) 6 · [attribution](#attribution) 1 · [composer](#composer) 4 · [isr](#isr) 15 · [narrative](#narrative) 5 · [question](#question) 9 · [report](#report) 19 · [stix](#stix) 32 · [tool](#tool) 1 · [validation](#validation) 1 · [verdict](#verdict) 16. 14 code positions the register could not resolve are [listed at the end](#unresolved-code-positions).
@@ -267,7 +267,7 @@ A command table whose numbered ids leave out a value the code it was shown compa
 
 ### `composer.cut_at_output_cap`
 
-A report section answer the output cap ended. Its JSON is cut before it closes, so the schema check could only say "not JSON at all" — and a model told that writes the same long answer again, into the same cap. Both answers of a benchmark report's host-identifier section ran to exactly 8,192 tokens.
+A report section answer the output cap ended. Its JSON is cut before it closes, so the schema check could only say "not JSON at all" — and a model told that writes the same long answer again, into the same cap.
 
 - **Raised at** `malspark.pipeline.validation:section_cut_violation`
 - **Constant** `malspark.pipeline.validation:SECTION_CUT_CODE`
@@ -893,7 +893,7 @@ A judge credit naming an agent that did not name the technique, which the judge 
 
 ### `stix.unpublishable_domain`
 
-No comment of its own names its meaning; the comment over the group of constants it belongs to, on `malspark.reporting.renderers.stix_renderer:LEGACY_UNPUBLISHABLE_CODES`, reads: "What a run stored before `stix.unpublishable_endpoint` replaced them carries for the same decision. Nothing is migrated: a stored row is what that run recorded. The console reads these as the same decision, and `apps/web/src/lib/validationRows.ts` holds the list it reads them from."
+No comment of its own names its meaning; the comment over the group of constants it belongs to, on `malspark.reporting.renderers.stix_renderer:LEGACY_UNPUBLISHABLE_CODES`, reads: "What a stored run may carry for the decision `stix.unpublishable_endpoint` names. Nothing is migrated: a stored row is what that run recorded. The console reads these as the same decision, and `apps/web/src/lib/validationRows.ts` holds the list it reads them from."
 
 - **Raised at** nothing: kept for stored runs, as `malspark.reporting.renderers.stix_renderer:LEGACY_UNPUBLISHABLE_CODES` says
 - **Listed in** `malspark.reporting.renderers.stix_renderer:LEGACY_UNPUBLISHABLE_CODES`
@@ -901,7 +901,7 @@ No comment of its own names its meaning; the comment over the group of constants
 
 ### `stix.unpublishable_endpoint`
 
-One endpoint question, one code. A URL, a name and an address that fail the same host question are one class of decline, and a reader filtering on the code used to find that class under two names — with the second of them covering addresses too, which is not what it is called. The kind is in the sentence, where it says something.
+One endpoint question, one code. A URL, a name and an address that fail the same host question are one class of decline, so a reader filtering on the code finds that class under one name. The kind is in the sentence, where it says something.
 
 - **Raised at** `malspark.reporting.renderers.stix_renderer:ExtendedSTIXRenderer._render`, `malspark.reporting.renderers.stix_renderer:_judge_indicator_problem`
 - **Constant** `malspark.reporting.renderers.stix_renderer:UNPUBLISHABLE_ENDPOINT_CODE`
@@ -933,7 +933,7 @@ A `created_by_ref` naming an identity the bundle does not hold, which the export
 
 ### `stix.unpublishable_url`
 
-No comment of its own names its meaning; the comment over the group of constants it belongs to, on `malspark.reporting.renderers.stix_renderer:LEGACY_UNPUBLISHABLE_CODES`, reads: "What a run stored before `stix.unpublishable_endpoint` replaced them carries for the same decision. Nothing is migrated: a stored row is what that run recorded. The console reads these as the same decision, and `apps/web/src/lib/validationRows.ts` holds the list it reads them from."
+No comment of its own names its meaning; the comment over the group of constants it belongs to, on `malspark.reporting.renderers.stix_renderer:LEGACY_UNPUBLISHABLE_CODES`, reads: "What a stored run may carry for the decision `stix.unpublishable_endpoint` names. Nothing is migrated: a stored row is what that run recorded. The console reads these as the same decision, and `apps/web/src/lib/validationRows.ts` holds the list it reads them from."
 
 - **Raised at** nothing: kept for stored runs, as `malspark.reporting.renderers.stix_renderer:LEGACY_UNPUBLISHABLE_CODES` says
 - **Listed in** `malspark.reporting.renderers.stix_renderer:LEGACY_UNPUBLISHABLE_CODES`
@@ -1012,7 +1012,7 @@ A leaf of the judge's assessment that cannot be read in the type it takes. Left 
 
 ### `verdict.cut_at_output_cap`
 
-The correction for an answer the output cap cut off. The benchmark's large model wrote a bundle of about 25,000 characters on one sample, twice: both answers stopped at exactly the 8,192 tokens `judge_max_tokens` allows, before the bundle closed, and the only correction it was given said the answer "was not a JSON STIX bundle" — so it wrote the same bundle again.
+The correction for an answer the output cap cut off. A bundle that stops at the tokens `judge_max_tokens` allows, before it closes, is not told only that it "was not a JSON STIX bundle": with that alone a model writes the same bundle again, into the same cap.
 
 - **Raised at** `malspark.agents.judge_agent:verdict_cut_violation`
 - **Constant** `malspark.agents.judge_agent:VERDICT_CUT_CODE`

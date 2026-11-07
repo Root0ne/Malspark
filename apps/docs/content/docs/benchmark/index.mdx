@@ -1,10 +1,9 @@
 ---
 title: "Benchmark"
-description: "The latest scored run: one real sample, a key of 57 facts from public human reports, and the facts Malspark found that those reports do not hold."
+description: "The benchmark run: one real sample, a key of 57 facts from public human reports, and the facts Malspark found that those reports do not hold."
 ---
 
 export const run = {
-  name: 'haiku13',
   date: '2026-11-06',
   model: 'Claude Haiku 5.5',
   effort: 'high for the analysts and the judge; medium for the mediator, the summariser and the reporter',
@@ -13,7 +12,7 @@ export const run = {
   sampleKind: 'x86-64 Windows DLL, 60,928 bytes',
   sha256: '6091f2589fef42e0ab3d7975806cd8a0da012b519637c03b73f702f7586b21ef',
   sandbox: 'Hatching Triage',
-  memory: 'an empty long-term memory, with earlier runs ignored',
+  memory: 'an empty long-term memory, with other runs ignored',
   items: 57,
   found: 46,
   partlyBody: 9,
@@ -77,8 +76,8 @@ export const run = {
 export const partly = run.partlyBody + run.partlyDump;
 export const recovered = run.found + partly;
 
-This page reports one run: the latest scored analysis of a real malware sample
-by the <code>{run.team}</code> team. It compares the report with what public human
+This page reports the benchmark run of {run.date}: one scored analysis of a
+real malware sample by the <code>{run.team}</code> team. It compares the report with what public human
 analyses say about the same sample, and counts the facts the report adds.
 
 <Callout title="The run at a glance">
@@ -156,7 +155,7 @@ listed separately and left out of the total.
 ### Keeping the run honest
 
 - **The run is blind to the key.** The human reports are not given to the
-  agents, and the run starts on {run.memory}, so nothing learnt from an earlier
+  agents, and the run starts on {run.memory}, so nothing learnt from another
   run of the same sample reaches it.
 - **Nothing is tuned for the sample.** The team and its prompts are the
   importable [all-tools team](/examples/profiles/all-tools.json), unchanged;
@@ -306,7 +305,7 @@ team](/docs/configuration/#an-all-tools-team) describes.
 
 <Step>
 
-Upload the sample and submit a job that ignores earlier runs, on a stack
+Upload the sample and submit a job that ignores other runs, on a stack
 whose long-term memory is empty:
 
 ```json
