@@ -26,7 +26,7 @@ from malspark.pipeline.nodes import brief_agent
 from malspark.pipeline.run_state import RUN_STATE_BEGIN, RUN_STATE_END, render_run_state
 from malspark.pipeline.triage_pack import PIPELINE
 from malspark.schemas.evidence import build_entry, format_entry_id
-from tests.linear_cost import TIME_RATIO_LIMIT, calls, cpu_seconds
+from tests.linear_cost import TIME_RATIO_LIMIT, assert_ratio, calls
 
 REPORT = "CLAIM: it decodes\nEVIDENCE: ev_0004\nCONFIDENCE: 0.6\nTECHNIQUE: T1140\n"
 
@@ -192,8 +192,8 @@ class TestLinearTime:
             return lambda: current_run_state(agent)
 
         small, large = reader(2_000), reader(8_000)
-        # CPU time, best of five, over inputs that take milliseconds: a
-        # millisecond wall-clock sample was swamped by one cyclic-GC pass over
-        # the heap a long suite builds, and by a busy machine.
-        assert cpu_seconds(large) < cpu_seconds(small) * TIME_RATIO_LIMIT
+        # CPU time over inputs that take milliseconds, the sizes timed in turn
+        # with the collector off: a wall-clock sample is swamped by one
+        # cyclic-GC pass over the heap a long suite builds, and by a busy machine.
+        assert_ratio(small, large, TIME_RATIO_LIMIT, what="8,000 rows against 2,000")
         assert calls(large) < calls(small) * 5

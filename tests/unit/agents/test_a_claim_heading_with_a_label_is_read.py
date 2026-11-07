@@ -13,7 +13,7 @@ repeat reader follows the same rule, and a plain heading reads as before.
 
 from __future__ import annotations
 
-import time
+from typing import Any
 
 import pytest
 
@@ -27,6 +27,7 @@ from malspark.agents.claim_headings import (
 from malspark.agents.repeat_watch import ClaimRepeatReader
 from malspark.pipeline.retry_merge import _first_blocks
 from tests.claim_block_counts import begun_and_distinct
+from tests.linear_cost import assert_ratio
 
 LABELLED = """[REVERSER ANALYST — round 2]
 
@@ -150,14 +151,13 @@ class TestLinearTime:
         ],
     )
     def test_ten_times_the_line_costs_at_most_ten_times_the_time(self, line: str) -> None:
-        def cost(text: str) -> float:
-            start = time.thread_time()
-            for _ in range(20):
-                CLAIM_HEAD_RE.match(text)
-                reader = ClaimRepeatReader(None)
-                reader.feed(text)
-            return time.thread_time() - start
+        def cost(text: str) -> Any:
+            def read() -> None:
+                for _ in range(20):
+                    CLAIM_HEAD_RE.match(text)
+                    reader = ClaimRepeatReader(None)
+                    reader.feed(text)
 
-        small = cost(line)
-        large = cost(line * 10)
-        assert large <= max(small, 1e-3) * 30
+            return read
+
+        assert_ratio(cost(line), cost(line * 10), 30, what="ten times the line", floor=1e-3)

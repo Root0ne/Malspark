@@ -16,7 +16,6 @@ Every value is synthetic.
 from __future__ import annotations
 
 import asyncio
-import time
 from typing import Any
 from unittest.mock import MagicMock
 
@@ -35,6 +34,7 @@ from malspark.pipeline.debate_facts import read_marks
 from malspark.pipeline.state import AgentArgument
 from malspark.pipeline.triage_pack import PACK_HEADING
 from malspark.schemas.stix_models import Bundle
+from tests.linear_cost import assert_ratio
 
 BLOCKING = "[analysts: STATIC ANALYST] Claim 4 says the key is 16 bytes; ev_0011 shows 32."
 NOT_BLOCKING = "[analysts: NETWORK ANALYST] Wording of claim 2. [not blocking: same value]"
@@ -150,7 +150,7 @@ class TestTheHistoryShowsEachLineOnce:
         assert text.count("ev_0001 states 3 hits.") == 1
 
     def test_reading_the_lines_takes_time_linear_in_the_tail(self) -> None:
-        def took(n: int) -> float:
+        def took(n: int) -> Any:
             line = "; ".join(["a"] * n)
             argument = AgentArgument(
                 agent_name="Mediator",
@@ -158,15 +158,15 @@ class TestTheHistoryShowsEachLineOnce:
                 confidence_score=0.5,
                 contradictions=[line],
             )
-            started = time.thread_time()
-            for _ in range(5):
-                assert _listed_in_order(argument) is not None
-            return time.thread_time() - started
 
-        took(2_000)
-        small, large = took(20_000), took(80_000)
-        # Four times the tail: linear is about 4x; the quadratic reading was ~16x.
-        assert large < small * 8
+            def read() -> None:
+                for _ in range(5):
+                    assert _listed_in_order(argument) is not None
+
+            return read
+
+        # Four times the tail: linear is about 4x; a quadratic reading is ~16x.
+        assert_ratio(took(20_000), took(80_000), 8, what="an 80,000-line tail against 20,000")
 
     def test_a_mediation_with_no_lines_says_none(self) -> None:
         argument = AgentArgument(

@@ -7,8 +7,9 @@ rules stay as they were.
 
 from __future__ import annotations
 
-import time
 from typing import Any
+
+from tests.linear_cost import assert_ratio
 
 from malspark.analysis.corroboration import corroboration_row
 from malspark.analysis.evidence_roots import (
@@ -274,13 +275,13 @@ class TestLinear:
                 _entry("ev_0002", "strings", {"strings": rows}),
             ]
 
-        timings = []
-        for n in (2_000, 16_000):
+        def read(n: int) -> Any:
             led = ledger(n)
-            start = time.thread_time()
-            run_roots(led).of_statement('the string "s5"', ["ev_0002"])
-            timings.append(time.thread_time() - start)
-        assert timings[1] < timings[0] * 8 * 4 + 0.5
+            return lambda: run_roots(led).of_statement('the string "s5"', ["ev_0002"])
+
+        assert_ratio(
+            read(2_000), read(16_000), 8 * 4, what="16,000 rows against 2,000", floor=0.5 / (8 * 4)
+        )
 
 
 def _claim(text: str, ref: str, tid: str = "T1059.003") -> ClaimEvidence:
@@ -642,24 +643,31 @@ class TestAStatedRangeIsCheckedAgainstTheImage:
         assert layout.function_at(0x1450) == 0x2000
 
     def test_lookups_do_not_depend_on_how_many_or_how_long_the_ranges_are(self) -> None:
-        def timed(n: int) -> float:
+        def timed(n: int) -> Any:
             # Nested and overlapping: every range holds the place looked up.
             ranges = [(0x1000 + i % 0x100, 0x5000 - i % 0x100, 0x1000 + i) for i in range(n)]
-            start = time.thread_time()
-            layout = self._with(*ranges)
-            for rva in range(0x1000, 0x5000, 0x10):
-                layout.function_at(rva)
-            return time.thread_time() - start
 
-        small, large = timed(10_000), timed(100_000)
-        assert large < small * 10 * 3 + 0.5
+            def run() -> None:
+                layout = self._with(*ranges)
+                for rva in range(0x1000, 0x5000, 0x10):
+                    layout.function_at(rva)
+
+            return run
+
+        assert_ratio(
+            timed(10_000),
+            timed(100_000),
+            10 * 3,
+            what="100,000 ranges against 10,000",
+            floor=0.5 / (10 * 3),
+        )
 
 
 class TestHostileScaling:
     """Every per-statement path is dict and set lookups built once per entry."""
 
     def test_one_entry_of_many_rows_and_many_statements_writing_many_values(self) -> None:
-        def timed(rows: int, statements: int) -> float:
+        def timed(rows: int, statements: int) -> Any:
             led = [
                 _entry("ev_0001", "pe_info", {"sections": SECTIONS}),
                 _entry(
@@ -673,18 +681,25 @@ class TestHostileScaling:
                 ),
             ]
             said = " ".join(f'"s{k}" 0x{0x1000 + k:x} Name{k}' for k in range(100))
-            start = time.thread_time()
-            roots = run_roots(led)
-            counted = RootCount()
-            for _ in range(statements):
-                counted.add(*roots.of_statement(said, ["ev_0002"]))
-            return time.thread_time() - start
 
-        small, large = timed(10_000, 100), timed(100_000, 1_000)
-        assert large < small * 10 * 3 + 0.5
+            def run() -> None:
+                roots = run_roots(led)
+                counted = RootCount()
+                for _ in range(statements):
+                    counted.add(*roots.of_statement(said, ["ev_0002"]))
+
+            return run
+
+        assert_ratio(
+            timed(10_000, 100),
+            timed(100_000, 1_000),
+            10 * 3,
+            what="ten times the rows and the statements",
+            floor=0.5 / (10 * 3),
+        )
 
     def test_a_ledger_of_many_entries(self) -> None:
-        def timed(n: int) -> float:
+        def timed(n: int) -> Any:
             led = [_entry("ev_0001", "pe_info", {"sections": SECTIONS})] + [
                 _entry(
                     f"ev_{i + 2:05d}",
@@ -693,14 +708,21 @@ class TestHostileScaling:
                 )
                 for i in range(n)
             ]
-            start = time.thread_time()
-            roots = run_roots(led)
-            for i in range(0, n, 7):
-                roots.of_statement("the function", [f"ev_{i + 2:05d}"])
-            return time.thread_time() - start
 
-        small, large = timed(1_000), timed(10_000)
-        assert large < small * 10 * 3 + 0.5
+            def run() -> None:
+                roots = run_roots(led)
+                for i in range(0, n, 7):
+                    roots.of_statement("the function", [f"ev_{i + 2:05d}"])
+
+            return run
+
+        assert_ratio(
+            timed(1_000),
+            timed(10_000),
+            10 * 3,
+            what="10,000 entries against 1,000",
+            floor=0.5 / (10 * 3),
+        )
 
 
 SAMPLE_PE = {
@@ -936,7 +958,7 @@ class TestTheServedFunctionIndexGivesRoots:
 
 class TestManyImageBases:
     def test_reading_scales_linearly_in_the_bases(self) -> None:
-        def timed(n: int) -> float:
+        def timed(n: int) -> Any:
             led = [
                 _entry(
                     f"ev_{k:05d}",
@@ -950,14 +972,21 @@ class TestManyImageBases:
                 )
                 for k in range(n)
             ]
-            start = time.thread_time()
-            roots = run_roots(led)
-            for k in range(0, n, 10):
-                roots.of_statement(f"at {hex(0x10000 * (k + 1) + 0x1000 + k)}", [f"ev_{k:05d}"])
-            return time.thread_time() - start
 
-        small, large = timed(2_000), timed(16_000)
-        assert large < small * 8 * 4 + 0.5
+            def run() -> None:
+                roots = run_roots(led)
+                for k in range(0, n, 10):
+                    roots.of_statement(f"at {hex(0x10000 * (k + 1) + 0x1000 + k)}", [f"ev_{k:05d}"])
+
+            return run
+
+        assert_ratio(
+            timed(2_000),
+            timed(16_000),
+            8 * 4,
+            what="16,000 bases against 2,000",
+            floor=0.5 / (8 * 4),
+        )
 
     def test_an_address_reads_against_the_nearest_base_below_it(self) -> None:
         from malspark.analysis.evidence_roots import Layout

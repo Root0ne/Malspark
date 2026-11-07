@@ -43,7 +43,7 @@ from malspark.pipeline.mediation_models import MediatorVerdict
 from malspark.pipeline.state import AgentArgument
 from malspark.schemas.isr_models import AgentISR, ClaimEvidence
 from tests.credential_shapes import lowercase_body
-from tests.linear_cost import TIME_RATIO_LIMIT, calls, cpu_seconds
+from tests.linear_cost import TIME_RATIO_LIMIT, assert_ratio, calls
 
 BLOCKING = [
     "[analysts: DYNAMIC ANALYST, STATIC ANALYST] DYNAMIC claim 24 says the name does not reach "
@@ -291,9 +291,8 @@ class TestLinearTime:
         # CPU time, not wall-clock: four times the lines must take under eight
         # times as long, and a quadratic read takes sixteen times. The calls
         # made are held to the same ratio, which a load cannot move.
-        read(50)()
         small, large = read(3_000), read(12_000)
-        assert cpu_seconds(large) < cpu_seconds(small) * TIME_RATIO_LIMIT
+        assert_ratio(small, large, TIME_RATIO_LIMIT, what="12,000 lines against 3,000")
         assert calls(large) <= calls(small) * 4 * 1.2 + 100
 
     @pytest.mark.parametrize(
@@ -310,9 +309,9 @@ class TestLinearTime:
             text = f"CONTRADICTIONS:\n- a\n\n{line(size)}\n\n{AGREEMENT}"
             return lambda: read_contradictions_block(text)
 
-        read(50)()
-        small, large = read(100_000), read(400_000)
-        assert cpu_seconds(large) < cpu_seconds(small) * TIME_RATIO_LIMIT
+        assert_ratio(
+            read(100_000), read(400_000), TIME_RATIO_LIMIT, what="a 400,000 line against 100,000"
+        )
 
 
 class _Model:

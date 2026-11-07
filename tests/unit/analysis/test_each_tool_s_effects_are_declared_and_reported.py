@@ -715,21 +715,16 @@ def test_repeats_and_questions_to_the_team_are_not_calls() -> None:
 
 
 def test_ten_times_the_entries_cost_at_most_ten_times() -> None:
-    import time
+    from tests.linear_cost import assert_ratio
 
-    def _timed(count: int) -> float:
+    def _read(count: int) -> Any:
         entries = [
             _entry(f"mcp:s{i % 50}", f"t{i % 200}", {"v": 1, "effects": {"network": True}})
             for i in range(count)
         ]
-        start = time.thread_time()
-        effects_part(entries)
-        return time.thread_time() - start
+        return lambda: effects_part(entries)
 
-    _timed(2_000)
-    small = min(_timed(2_000) for _ in range(3))
-    large = min(_timed(20_000) for _ in range(3))
-    assert large < small * 10 * 3
+    assert_ratio(_read(2_000), _read(20_000), 10 * 3, what="20,000 entries against 2,000")
 
 
 # ---------------------------------------------------------------------------

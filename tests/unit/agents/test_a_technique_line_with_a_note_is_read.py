@@ -23,13 +23,14 @@ technique only written with its capital.
 
 from __future__ import annotations
 
-import time
+from typing import Any
 
 import pytest
 
 from malspark.agents.base_agent import read_claim_blocks, read_technique_line
 from malspark.pipeline.validation import TECHNIQUE_LINE_UNREAD_CODE, parse_violations
 from malspark.schemas.isr_models import AgentISR
+from tests.linear_cost import assert_ratio
 
 
 @pytest.mark.parametrize(
@@ -219,13 +220,9 @@ def test_a_read_note_leaves_no_question() -> None:
 
 
 def test_a_line_of_notes_is_read_in_linear_time() -> None:
-    def cost(repeats: int) -> float:
+    def cost(repeats: int) -> Any:
         line = "; ".join(["T1071.001 (configured channel as listed)"] * repeats)
-        start = time.thread_time()
-        read_technique_line(line)
-        return time.thread_time() - start
+        return lambda: read_technique_line(line)
 
-    cost(50)
-    small = cost(280)
-    large = cost(2800)  # about 112 KB of notes
-    assert large <= max(small, 1e-3) * 30
+    # 2,800 notes are about 112 KB.
+    assert_ratio(cost(280), cost(2800), 30, what="2,800 notes against 280", floor=1e-3)

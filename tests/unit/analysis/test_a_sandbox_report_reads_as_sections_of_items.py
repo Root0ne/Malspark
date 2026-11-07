@@ -14,6 +14,7 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+from tests.linear_cost import assert_ratio
 
 from malspark.analysis import sandbox_sections as ss
 from malspark.analysis.evidence_roots import NO_CITATION, run_roots
@@ -473,24 +474,6 @@ class TestBounds:
             "network": {"tcp": [{"dst": "192.0.2.1", "dport": i, "pid": i} for i in range(n)]},
         }
 
-    @staticmethod
-    def _seconds(call: Any) -> float:
-        """The best of two timed runs, the collector held so no sweep is timed."""
-        import gc
-        import time
-
-        best = float("inf")
-        for _ in range(2):
-            gc.collect()
-            gc.disable()
-            try:
-                started = time.thread_time()
-                call()
-                best = min(best, time.thread_time() - started)
-            finally:
-                gc.enable()
-        return best
-
     def test_reading_and_querying_grow_linearly(self) -> None:
         small, large = self._report(10_000), self._report(100_000)
 
@@ -504,7 +487,13 @@ class TestBounds:
 
             return run
 
-        assert self._seconds(_work(large)) <= 10 * self._seconds(_work(small)) * 1.5 + 0.05
+        assert_ratio(
+            _work(small),
+            _work(large),
+            10 * 1.5,
+            what="ten times the report",
+            floor=0.05 / (10 * 1.5),
+        )
 
     def test_a_million_asked_ids_are_read_only_to_the_section_s_size(self) -> None:
         import tracemalloc

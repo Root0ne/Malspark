@@ -22,6 +22,7 @@ from langchain_core.tools import StructuredTool
 from pydantic import BaseModel
 
 from malspark.core.config import Settings
+from tests.linear_cost import assert_ratio
 
 ACME = "acmescan"
 WORKFLOW = (
@@ -191,8 +192,6 @@ class TestItsRuleHits:
         assert dict(facts.hits) == {"signature_rules": 2, "capability_rules": 1}
 
     def test_the_count_is_linear_in_the_ledger(self) -> None:
-        import time
-
         from malspark.pipeline.conditions import rule_match_hits
 
         def rows(n: int) -> list[dict[str, Any]]:
@@ -207,17 +206,17 @@ class TestItsRuleHits:
                 for i in range(n)
             ]
 
-        def best(n: int) -> float:
+        def count(n: int) -> Any:
             held = rows(n)
-            times = []
-            for _ in range(3):
-                start = time.thread_time()
-                rule_match_hits(held)
-                times.append(time.thread_time() - start)
-            return min(times)
+            return lambda: rule_match_hits(held)
 
-        small, large = best(400), best(4000)
-        assert large <= small * 10 * 2.5 + 0.05
+        assert_ratio(
+            count(400),
+            count(4000),
+            10 * 2.5,
+            what="4,000 rows against 400",
+            floor=0.05 / (10 * 2.5),
+        )
 
 
 class TestItsSampleLookup:

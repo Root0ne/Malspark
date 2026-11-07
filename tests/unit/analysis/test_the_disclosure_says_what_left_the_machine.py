@@ -11,11 +11,11 @@ then says what that rests on; any path it cannot place is said, with why.
 from __future__ import annotations
 
 import json
-import time
 from typing import Any
 
 import pytest
 from tests.credential_shapes import password
+from tests.linear_cost import assert_ratio
 
 from malspark.analysis.disclosure import (
     FOOTNOTE_SENTENCE,
@@ -971,13 +971,12 @@ def test_the_record_stays_linear_on_a_hostile_ledger() -> None:
         "mcp.servers.far.url": "https://x.example",
     }
 
-    def took(count: int) -> float:
+    def took(count: int) -> Any:
         entries = [_lookup("mcp:far", sha256=str(n)) for n in range(count)]
-        started = time.thread_time()
-        record = disclosure_record(snapshot, entries=entries)
-        assert record["lookups"][0]["calls"] == count
-        return time.thread_time() - started
 
-    small = took(2_000)
-    large = took(20_000)
-    assert large < max(small, 1e-3) * 30
+        def record() -> None:
+            assert disclosure_record(snapshot, entries=entries)["lookups"][0]["calls"] == count
+
+        return record
+
+    assert_ratio(took(2_000), took(20_000), 30, what="20,000 lookups against 2,000", floor=1e-3)

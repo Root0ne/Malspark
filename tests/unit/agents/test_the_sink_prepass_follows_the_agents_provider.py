@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import json
 import logging
+from collections.abc import Callable
 from typing import Any
 
 import pytest
@@ -25,6 +26,7 @@ from malspark.agents.configurable_analyst import ConfigurableAnalyst
 from malspark.agents.prompt_fragments import PROVIDER_FAMILY, stamp_source
 from malspark.agents.static_analyst import StaticAnalyst
 from malspark.core.config import GHIDRA_SAMPLE_OPEN
+from tests.linear_cost import assert_ratio
 
 
 class _Resp:
@@ -356,20 +358,19 @@ class TestAJoinedHeadChunk:
 
 
 def test_the_head_is_read_in_one_pass_over_its_first_value() -> None:
-    import time
-
     from malspark.loaders.binary_chunker import head_object
 
-    def _timed(n: int) -> float:
+    def _read(n: int) -> Callable[[], None]:
         tail = json.dumps({"rows": ["x" * 40] * n})
         joined = HEAD_CHUNK + "\n\n" + tail
-        start = time.thread_time()
-        for _ in range(20):
-            assert head_object(joined) == json.loads(HEAD_CHUNK)
-        return time.thread_time() - start
 
-    small, large = _timed(2_000), _timed(20_000)
+        def read() -> None:
+            for _ in range(20):
+                assert head_object(joined) == json.loads(HEAD_CHUNK)
+
+        return read
+
     # The joined tail is never decoded: ten times the tail costs about the same.
-    assert large < max(small * 5, 0.05)
+    assert_ratio(_read(2_000), _read(20_000), 5, what="ten times the tail", floor=0.05 / 5)
     assert head_object("[1, 2]") is None
     assert head_object("{" * 100_000) is None

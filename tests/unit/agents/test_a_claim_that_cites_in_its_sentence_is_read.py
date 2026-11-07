@@ -30,7 +30,7 @@ from malspark.agents.base_agent import (
 from malspark.agents.claim_headings import claims_headed, count_claims_begun
 from malspark.pipeline.validation import UNGROUNDED_TECHNIQUE_CODE, validate_isr
 from malspark.schemas.isr_models import AgentISR
-from tests.linear_cost import TIME_RATIO_LIMIT, calls, cpu_seconds
+from tests.linear_cost import TIME_RATIO_LIMIT, assert_ratio, calls
 
 # The shape of the paid run's round-4 answer, cut to three of its claims.
 CITED_IN_THE_SENTENCE = """Visible ledger: ev_0001 to ev_0028. No tools were run in this round.
@@ -272,5 +272,5 @@ def test_the_read_costs_time_linear_in_the_answer(answer) -> None:  # type: igno
     def large() -> object:
         return read_claim_blocks(large_text, require_evidence=True)
 
-    assert cpu_seconds(large) < cpu_seconds(small) * TIME_RATIO_LIMIT
+    assert_ratio(small, large, TIME_RATIO_LIMIT, what="four times the answer")
     assert calls(large) <= calls(small) * 4 * 1.2 + 100

@@ -19,7 +19,6 @@ claim, and no number is made up for a heading without one.
 
 from __future__ import annotations
 
-import time
 import tracemalloc
 from collections.abc import Callable
 from typing import Any
@@ -36,6 +35,7 @@ from malspark.agents.claim_headings import (
 )
 from malspark.agents.repeat_watch import ClaimRepeatReader
 from tests.claim_block_counts import begun_and_distinct
+from tests.linear_cost import assert_ratio
 
 # An answer shaped like the reverser's revision: numbered claims, each with a
 # square-bracketed note before the colon, the fields on their own lines.
@@ -274,15 +274,6 @@ def _repeat_reader(text: str) -> Any:
 _READERS["repeat_reader"] = _repeat_reader
 
 
-def _seconds(call: Callable[[], Any]) -> float:
-    best = float("inf")
-    for _ in range(2):
-        started = time.thread_time()
-        call()
-        best = min(best, time.thread_time() - started)
-    return best
-
-
 def _peak(call: Callable[[], Any]) -> int:
     tracemalloc.start()
     try:
@@ -312,7 +303,13 @@ class TestAnUnclosedNoteCostsALinearRead:
         read = _READERS[name]
         small, large = _sizes(name)
 
-        assert _seconds(lambda: read(large)) <= 10 * _seconds(lambda: read(small)) * 1.5 + 0.1
+        assert_ratio(
+            lambda: read(small),
+            lambda: read(large),
+            10 * 1.5,
+            what="ten times the line",
+            floor=0.1 / (10 * 1.5),
+        )
 
     @pytest.mark.parametrize("name", sorted(_READERS))
     def test_ten_times_the_line_holds_at_most_ten_times_the_memory(self, name: str) -> None:

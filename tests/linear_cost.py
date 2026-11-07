@@ -226,17 +226,20 @@ def assert_under(
     repeats: int = 3,
     whole_process: bool = False,
     clock: Callable[[], float] | None = None,
+    self_timed: bool = False,
 ) -> float:
     """Assert one run of ``call`` takes under ``seconds``, running it again only when it does not.
 
     A run over the bound is run again, up to ``repeats`` runs, and the
     assertion reads the best of them; a call that is over the bound on
-    every run fails with every time it took. Returns the best time.
+    every run fails with every time it took. With ``self_timed`` the call
+    returns the seconds it measured itself, as in :func:`assert_ratio`.
+    Returns the best time.
     """
-    measure = _clock_of(clock, whole_process)
+    clocked = _clock_of(clock, whole_process)
     took: list[float] = []
     for _ in range(repeats):
-        took.append(_timed_once(call, measure))
+        took.append(float(call()) if self_timed else _timed_once(call, clocked))
         if took[-1] < seconds:
             return took[-1]
     assert min(took) < seconds, (

@@ -16,7 +16,6 @@ from __future__ import annotations
 import contextlib
 import json
 import logging
-import time
 from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
@@ -44,6 +43,7 @@ from malspark.agents.evidence_recorder import EvidenceRecorder
 from malspark.core.exceptions import AnalystError
 from malspark.llm import context_window as cw
 from malspark.pipeline.events import TOOL_ANSWERS_CLEARED
+from tests.linear_cost import assert_ratio
 
 from .no_tool_call_scenario import requests as no_tool_call_requests
 
@@ -255,19 +255,19 @@ class TestAfterAClear:
 
 class TestLinear:
     def test_ten_times_the_messages_takes_about_ten_times_as_long(self) -> None:
-        def timed(turns: int) -> float:
+        def timed(turns: int) -> Any:
             messages = _conversation(turns, 300)
-            clearing = tac.ToolAnswerClearing(window_chars=_size(messages) // 3)
-            began = time.thread_time()
-            _fit(clearing, messages)
-            _fit(clearing, messages)
-            return time.thread_time() - began
+            window = _size(messages) // 3
 
-        timed(200)
-        small = min(timed(200) for _ in range(3))
-        large = min(timed(2_000) for _ in range(3))
+            def fit() -> None:
+                clearing = tac.ToolAnswerClearing(window_chars=window)
+                _fit(clearing, messages)
+                _fit(clearing, messages)
+
+            return fit
+
         # Ten times the messages in at most about ten times the time (twenty, for noise).
-        assert large < small * 20
+        assert_ratio(timed(200), timed(2_000), 20, what="2,000 turns against 200")
 
     def test_ten_times_the_ids_in_one_answer_takes_about_ten_times_as_long(self) -> None:
         def hostile(ids: int) -> list[Any]:
@@ -276,17 +276,16 @@ class TestLinear:
             messages[3] = ToolMessage(content="[ev_0001]\n" + body, tool_call_id="c0_0")
             return messages
 
-        def timed(ids: int) -> float:
+        def timed(ids: int) -> Any:
             messages = hostile(ids)
-            began = time.thread_time()
-            for _ in range(5):
-                _fit(tac.ToolAnswerClearing(window_chars=1), messages)
-            return time.thread_time() - began
 
-        timed(2_000)
-        small = min(timed(2_000) for _ in range(3))
-        large = min(timed(20_000) for _ in range(3))
-        assert large < small * 20
+            def fit() -> None:
+                for _ in range(5):
+                    _fit(tac.ToolAnswerClearing(window_chars=1), messages)
+
+            return fit
+
+        assert_ratio(timed(2_000), timed(20_000), 20, what="20,000 ids against 2,000")
         reference = str(
             _fit(tac.ToolAnswerClearing(window_chars=1), hostile(500)).messages[3].content
         )
