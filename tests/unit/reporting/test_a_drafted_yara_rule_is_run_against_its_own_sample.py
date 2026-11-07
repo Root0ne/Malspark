@@ -21,8 +21,8 @@ import os
 import random
 import re
 import textwrap
-import time
 import tracemalloc
+from collections.abc import Callable
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
@@ -56,6 +56,7 @@ from malspark.reporting.models import (
     SampleIdentity,
 )
 from malspark.reporting.renderers.markdown import MarkdownRenderer
+from tests.linear_cost import assert_ratio, assert_under
 
 needs_engine = pytest.mark.skipif(not drafts._YARA_AVAILABLE, reason="yara-python is not installed")
 
@@ -500,10 +501,12 @@ class TestAHostileSampleCostsOneMatchPerString:
             return _Counting(), error
 
         monkeypatch.setattr(drafts, "_compile_yara", counting)
+
+        def draft() -> DetectionRule:
+            return _yara(_report(names=names), OwnSample(path=str(path), budget_seconds=BUDGET))
+
         tracemalloc.start()
-        start = time.thread_time()
-        rule = _yara(_report(names=names), OwnSample(path=str(path), budget_seconds=BUDGET))
-        took = time.thread_time() - start
+        rule = draft()
         _current, peak = tracemalloc.get_traced_memory()
         tracemalloc.stop()
 
@@ -512,24 +515,20 @@ class TestAHostileSampleCostsOneMatchPerString:
         assert max(per_string.values()) == 1, per_string
         assert rule.matched_by == ["strings"]
         assert [s.offset for s in rule.sample_strings or []] == [0] * len(names)
-        assert took < 10, took
+        assert_under(draft, 10, what="the probe scan")
         # A scan that listed every match would build millions of match objects.
         assert peak < 32 * 2**20, peak
 
     def test_ten_times_the_sample_costs_at_most_ten_times(self, tmp_path: Path) -> None:
-        def took(repeats: int) -> tuple[float, DetectionRule]:
+        def drafting(repeats: int) -> Callable[[], DetectionRule]:
             path = _sample(
                 tmp_path, (FIRST + " ").encode() * repeats + SECOND.encode(), f"{repeats}.bin"
             )
-            start = time.thread_time()
-            rule = _yara(_report(), OwnSample(path=str(path), budget_seconds=BUDGET))
-            return time.thread_time() - start, rule
+            return lambda: _yara(_report(), OwnSample(path=str(path), budget_seconds=BUDGET))
 
-        took(500)
-        small, _rule = took(5_000)
-        large, rule = took(50_000)
-
-        assert large <= max(small, 1e-3) * 30, (small, large)
+        large = drafting(50_000)
+        assert_ratio(drafting(5_000), large, 30, floor=1e-3, what="ten times the sample")
+        rule = large()
         assert {s.identifier: s.offset for s in rule.sample_strings or []} == {
             _slot(rule, FIRST): 0,
             _slot(rule, SECOND): (len(FIRST) + 1) * 50_000,

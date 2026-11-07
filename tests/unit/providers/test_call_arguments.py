@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
-import time
+from collections.abc import Callable
 
 from malspark.providers.call_arguments import argument_table, pick_argument
+from tests.linear_cost import assert_ratio
 
 NAMES = ("FullName", "SubKey", "Registry")
 
@@ -53,21 +54,10 @@ def test_a_caller_decides_which_values_count() -> None:
     assert pick_argument(arguments, NAMES, accept=lambda v: isinstance(v, str)) == "text"
 
 
-def _best_time(arguments: list[dict[str, str]], names: tuple[str, ...]) -> float:
-    best = float("inf")
-    for _ in range(3):
-        began = time.thread_time()
-        pick_argument(arguments, names)
-        best = min(best, time.thread_time() - began)
-    return best
-
-
 def test_ten_times_the_arguments_and_names_costs_about_ten_times_as_long() -> None:
-    def hostile(n: int) -> tuple[list[dict[str, str]], tuple[str, ...]]:
+    def hostile(n: int) -> Callable[[], object]:
         arguments = [{"name": f"arg{i}", "value": "x" * 64} for i in range(n)]
         names = tuple(f"missing{i}" for i in range(n))
-        return arguments, names
+        return lambda: pick_argument(arguments, names)
 
-    small = _best_time(*hostile(5_000))
-    large = _best_time(*hostile(50_000))
-    assert large < small * 40 + 0.05
+    assert_ratio(hostile(5_000), hostile(50_000), 40, floor=0.05 / 40, what="50,000 arguments")

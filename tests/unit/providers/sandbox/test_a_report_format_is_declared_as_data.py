@@ -11,7 +11,6 @@ read stays linear on a hostile payload.
 from __future__ import annotations
 
 import json
-import time
 from pathlib import Path
 from typing import Any
 
@@ -31,6 +30,7 @@ from malspark.core.report_formats import (
 from malspark.providers.errors import ProviderError
 from malspark.providers.sandbox.formats import sniff_format
 from malspark.providers.sandbox.upload import UploadSandboxProvider
+from tests.linear_cost import assert_ratio
 from tests.unit.providers._cape_fixture import FIXTURE_PATH, first_cape_report
 
 ROOT = Path(__file__).resolve().parents[4]
@@ -410,15 +410,6 @@ def _read_all(payload: dict[str, Any], formats: tuple[ReportFormat, ...]) -> Non
         fmt.target_sha256(payload)
 
 
-def _seconds(payload: dict[str, Any], formats: tuple[ReportFormat, ...]) -> float:
-    best = float("inf")
-    for _ in range(3):
-        start = time.thread_time()
-        _read_all(payload, formats)
-        best = min(best, time.thread_time() - start)
-    return best
-
-
 def test_every_read_is_linear_on_a_hostile_payload() -> None:
     wide_format = ReportFormat.model_validate(
         {
@@ -431,8 +422,13 @@ def test_every_read_is_linear_on_a_hostile_payload() -> None:
     formats = effective_formats([wide_format])
     small, large = _hostile(2_000), _hostile(20_000)
     assert sniff(large, formats) is None
-    ratio = _seconds(large, formats) / max(_seconds(small, formats), 1e-6)
-    assert ratio < 30, f"ten times the payload took {ratio:.1f} times as long"
+    assert_ratio(
+        lambda: _read_all(small, formats),
+        lambda: _read_all(large, formats),
+        30,
+        floor=1e-6,
+        what="ten times the payload",
+    )
 
 
 def test_a_signature_scale_reports_its_own_size() -> None:

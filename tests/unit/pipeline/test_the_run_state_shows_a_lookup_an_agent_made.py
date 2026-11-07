@@ -11,11 +11,13 @@ never with its answer text, and never in place of the pack's own line.
 from __future__ import annotations
 
 import json
+from collections.abc import Callable
 from typing import Any
 
 from malspark.pipeline.run_state import render_run_state
 from malspark.pipeline.triage_pack import NOT_RUN_PREFIX, PIPELINE
 from malspark.schemas.evidence import build_entry, format_entry_id
+from tests.linear_cost import assert_ratio
 
 SHA = "ab" * 32
 NOT_ASKED = f"{NOT_RUN_PREFIX} no server declares a reputation lookup; no lookup was made"
@@ -122,20 +124,19 @@ def test_a_declared_lookup_of_an_address_is_not_the_sample_s() -> None:
 
 
 def test_many_rows_are_read_in_one_pass() -> None:
-    import time
-
-    def _timed(n: int) -> float:
+    def rendering(n: int) -> Callable[[], None]:
         rows = [
             _not_asked(1),
             *(_agent_call(i, args={"query": f"q{i}"}) for i in range(2, n)),
             _agent_call(n),
         ]
-        start = time.thread_time()
-        assert f"[{format_entry_id(n)}]" in _block(rows)
-        return time.thread_time() - start
 
-    small, large = _timed(200), _timed(2_000)
-    assert large < max(small * 30, 1.0)
+        def render() -> None:
+            assert f"[{format_entry_id(n)}]" in _block(rows)
+
+        return render
+
+    assert_ratio(rendering(200), rendering(2_000), 30, floor=1.0 / 30, what="2,000 rows")
 
 
 def test_a_failed_tool_s_names_are_written_on_one_line() -> None:

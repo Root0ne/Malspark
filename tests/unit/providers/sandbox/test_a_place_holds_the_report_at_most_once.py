@@ -13,9 +13,7 @@ never reads a report both recognise.
 
 from __future__ import annotations
 
-import gc
 import json
-import time
 from collections.abc import Callable
 from typing import Any
 
@@ -30,6 +28,7 @@ from malspark.providers.sandbox.rest_mapping import (
     subtree_sizes,
 )
 from malspark.schemas.sandbox_document import sandbox_document
+from tests.linear_cost import assert_ratio
 
 
 def _tree(depth: int) -> dict[str, Any]:
@@ -76,27 +75,12 @@ class TestAPlaceHoldsTheReportAtMostOnce:
         assert subtree_sizes(loop)[id(loop)] >= 2
 
 
-def _seconds(run: Callable[[], Any]) -> float:
-    best = float("inf")
-    for _ in range(2):
-        gc.collect()
-        gc.disable()
-        try:
-            started = time.thread_time()
-            run()
-            best = min(best, time.thread_time() - started)
-        finally:
-            gc.enable()
-    return best
-
-
 def test_the_bound_costs_time_linear_in_the_report() -> None:
     def run(n: int) -> Callable[[], Any]:
         payload = {"rows": [{"children": [{"v": i}]} for i in range(n)]}
         return lambda: _mapped(payload, {"memory": "$..children[*]"})
 
-    once, tenfold = _seconds(run(2_000)), _seconds(run(20_000))
-    assert tenfold <= 10 * once * 1.5 + 0.05, (once, tenfold)
+    assert_ratio(run(2_000), run(20_000), 10 * 1.5, floor=0.05 / (10 * 1.5), what="20,000 rows")
 
 
 class TestACostlyPathIsNamed:
@@ -158,9 +142,9 @@ class TestACostlyPathIsNamed:
             compiled = compile_mapping(RestMappingConfig(target_sha256="", processes=path))
             return lambda: apply_mapping(compiled, payload, provider="rest", task_id="t")
 
-        once, fourfold = _seconds(run(300)), _seconds(run(1_200))
-        # Four times the rows: sixteen times the work where it is quadratic.
-        assert fourfold > 6 * once, (once, fourfold)
+        # Four times the rows: sixteen times the work where it is quadratic. The
+        # ratio is read the other way round, so the small run is under a sixth.
+        assert_ratio(run(1_200), run(300), 1 / 6, what="a quarter of the rows")
 
 
 def test_the_settings_save_warns_beside_a_costly_path_and_saves_it(monkeypatch: Any) -> None:

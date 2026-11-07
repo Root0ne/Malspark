@@ -14,7 +14,7 @@ Every value is synthetic.
 from __future__ import annotations
 
 import asyncio
-import time
+from collections.abc import Callable
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 
@@ -27,6 +27,7 @@ from malspark.pipeline.sycophancy_detector import (
     convergence_sentence,
 )
 from malspark.schemas.isr_models import AgentISR, ClaimEvidence
+from tests.linear_cost import assert_ratio
 
 ROW = (
     "the pack row lists seven decoded command lines for host discovery, a scheduled task "
@@ -103,16 +104,14 @@ class TestTheFlag:
         assert convergence_sentence([]) == ""
 
     def test_many_peers_are_read_in_linear_time(self) -> None:
-        timings = []
-        for n in (20, 200):
+        def flagging(n: int) -> Callable[[], Any]:
             before = {f"p{i}": _isr(f"p{i}", f"{PEER} {i}") for i in range(n)}
             before["a"] = _isr("a", OWN)
             after = dict(before)
             after["a"] = _isr("a", PEER)
-            start = time.thread_time()
-            convergence_flags(before, after, ["a"], {}, TEXTS)
-            timings.append(time.thread_time() - start)
-        assert timings[1] < timings[0] * 10 * 4 + 0.5
+            return lambda: convergence_flags(before, after, ["a"], {}, TEXTS)
+
+        assert_ratio(flagging(20), flagging(200), 10 * 4, floor=0.5 / (10 * 4), what="200 peers")
 
 
 def _negotiate(record: dict[str, Any]) -> tuple[dict[str, Any], Any]:

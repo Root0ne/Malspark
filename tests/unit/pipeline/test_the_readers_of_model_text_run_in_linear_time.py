@@ -4,8 +4,9 @@ A model answer is untrusted and can be arbitrarily long. Each reader below is
 given a line of words with no comma, semicolon or full stop and many
 technique-id tokens, sized so that it costs at least 10 ms of CPU time (from
 20 KB up), and four times as much of the same; the long one may cost less than
-``TIME_RATIO_LIMIT`` times the short one, each the best CPU time of five runs
-(``tests.linear_cost.cpu_seconds``), so a loaded machine does not move it.
+``TIME_RATIO_LIMIT`` times the short one, the two timed in turn on their best
+CPU times (``tests.linear_cost.assert_ratio``), so a loaded machine does not
+move it.
 Nothing is cut to make it pass.
 """
 
@@ -59,7 +60,7 @@ from malspark.reporting.section_agreement import (
     whole_code_absences,
 )
 from malspark.schemas.evidence import build_entry
-from tests.linear_cost import TIME_RATIO_LIMIT, cpu_seconds
+from tests.linear_cost import TIME_RATIO_LIMIT, assert_ratio, cpu_seconds
 
 UNIT = "T1234 Native words T1106 more is not read 0x1400 which that 12 hits Web Protocols "
 # The short line's least size and CPU time, and the largest size it grows to.
@@ -76,17 +77,21 @@ def _hostile(size: int) -> str:
 
 
 def _scales_linearly(read: Callable[[str], object]) -> None:
-    def cost(size: int) -> float:
+    def reading(size: int) -> Callable[[], object]:
         text = _hostile(size)
-        return cpu_seconds(lambda: read(text), repeats=5)
+        return lambda: read(text)
 
+    # The short size is the least that costs LEAST_SECONDS; only the ratio is asserted.
     size = SMALLEST
-    small = cost(size)
-    while small < LEAST_SECONDS and size < LARGEST:
+    while cpu_seconds(reading(size), repeats=5) < LEAST_SECONDS and size < LARGEST:
         size *= 2
-        small = cost(size)
-    large = cost(size * 4)
-    assert large < max(small, LEAST_SECONDS) * TIME_RATIO_LIMIT, (size, small, large)
+    assert_ratio(
+        reading(size),
+        reading(size * 4),
+        TIME_RATIO_LIMIT,
+        floor=LEAST_SECONDS,
+        what=f"{size * 4} characters",
+    )
 
 
 ENTRIES = EntryTexts.from_ledger(

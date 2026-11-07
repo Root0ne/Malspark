@@ -22,7 +22,7 @@ Every value is synthetic.
 
 from __future__ import annotations
 
-import time
+from collections.abc import Callable
 from types import SimpleNamespace
 from typing import Any
 
@@ -53,6 +53,7 @@ from malspark.pipeline.routing import LEDGER_STATED, NO_CONSENSUS, REWORDED, deb
 from malspark.pipeline.state import AgentArgument
 from malspark.schemas.evidence import build_entry
 from malspark.schemas.isr_models import AgentISR, ClaimEvidence
+from tests.linear_cost import assert_ratio
 
 AGENTS = ["alpha", "beta", "gamma"]
 SCAN = {"id": "ev_0007", "tool": "rule_scan", "structured": {"matches": [], "rule_count": 31}}
@@ -538,7 +539,7 @@ class TestOnlyAToolThatAnswersTheSameIsSeeded:
 
 class TestLinearTime:
     def test_ten_times_the_lines_and_the_ledger_cost_at_most_ten_times(self) -> None:
-        def cost(scale: int) -> float:
+        def stating(scale: int) -> Callable[[], Any]:
             ledger = [
                 {"id": f"ev_{n:04d}", "tool": "t", "structured": {"matches": [], "total": n}}
                 for n in range(1, scale + 1)
@@ -549,14 +550,9 @@ class TestLinearTime:
                 for n in range(1, scale + 1)
             ]
             told = ledger_count_facts(lines, {}, ledger, AGENTS)
-            start = time.thread_time()
-            ledger_stated(lines, {}, ledger, AGENTS, told)
-            return time.thread_time() - start
+            return lambda: ledger_stated(lines, {}, ledger, AGENTS, told)
 
-        cost(10)
-        small = cost(100)
-        large = cost(1_000)
-        assert large <= max(small, 1e-3) * 30
+        assert_ratio(stating(100), stating(1_000), 30, floor=1e-3, what="1,000 lines")
 
 
 class _Address(BaseModel):

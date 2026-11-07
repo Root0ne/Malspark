@@ -11,7 +11,7 @@ A value no entry is known to hold is left out, never given a guessed entry.
 from __future__ import annotations
 
 import json
-import time
+from collections.abc import Callable
 from typing import Any
 
 from malspark.reporting.evidence_bundles import bundle_for, value_entries
@@ -26,6 +26,7 @@ from malspark.reporting.models import (
     NetworkURL,
     SampleIdentity,
 )
+from tests.linear_cost import assert_ratio
 
 URL = "http://beacon.example.test/gate"
 HOST = "beacon.example.test"
@@ -120,18 +121,16 @@ def test_no_network_block_holds_nothing() -> None:
 
 
 def test_reading_the_holders_stays_linear() -> None:
-    def took(size: int) -> float:
+    def reading(size: int) -> Callable[[], Any]:
         texts = [_output("strings", n, f"{URL} filler{n} " * 20) for n in range(size)]
         report = _report(
             evidence_index=[_row(f"ev_{n + 1:04d}", "strings") for n in range(size)],
             technical_evidence={"static": texts},
         )
-        start = time.thread_time()
-        value_entries(report, [URL, HOST, *(f"h{n}.test" for n in range(size))])
-        return time.thread_time() - start
+        values = [URL, HOST, *(f"h{n}.test" for n in range(size))]
+        return lambda: value_entries(report, values)
 
-    small, large = took(200), took(2_000)
-    assert large < small * 30, (small, large)
+    assert_ratio(reading(200), reading(2_000), 30, what="2,000 entries")
 
 
 def _big_answer(distinct: int) -> MalwareReport:

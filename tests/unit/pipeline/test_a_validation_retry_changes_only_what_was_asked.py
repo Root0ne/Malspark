@@ -14,7 +14,6 @@ Every address, name and sentence here is made up for the test.
 
 from __future__ import annotations
 
-import time
 import tracemalloc
 from collections.abc import Callable
 from typing import Any
@@ -28,7 +27,7 @@ from malspark.pipeline.retry_merge import (
 )
 from malspark.pipeline.validation import Violation, retry_drop_row, retry_drop_sentences
 from malspark.schemas.isr_models import AgentISR, ClaimEvidence, Finding
-from tests.linear_cost import TIME_RATIO_LIMIT, calls, cpu_seconds
+from tests.linear_cost import TIME_RATIO_LIMIT, assert_ratio, calls
 
 _FIELDS: dict[str, Any] = {
     "claim": "Built by hand.",
@@ -598,13 +597,9 @@ def _answers(count: int) -> tuple[AgentISR, AgentISR, str]:
     return _isr(first), _isr(retry), retry
 
 
-def _seconds(call: Callable[[], Any]) -> float:
-    best = float("inf")
-    for _ in range(3):
-        started = time.thread_time()
-        call()
-        best = min(best, time.thread_time() - started)
-    return best
+def _ten_times(small: Callable[[], Any], large: Callable[[], Any]) -> None:
+    """Ten times the input within ten times the time and half again, 0.1 s of it noise."""
+    assert_ratio(small, large, 10 * 1.5, floor=0.1 / (10 * 1.5), what="ten times the input")
 
 
 def _peak(call: Callable[[], Any]) -> int:
@@ -631,7 +626,7 @@ class TestAHostileRetryCostsALinearMerge:
         assert len(merge.merged.claims) == 10_000 and merge.unplaced == ()
 
     def test_ten_times_the_claims_cost_at_most_ten_times_the_time(self) -> None:
-        assert _seconds(_run(_answers(10_000))) <= 10 * _seconds(_run(_answers(1_000))) * 1.5 + 0.1
+        _ten_times(_run(_answers(1_000)), _run(_answers(10_000)))
 
     def test_ten_times_the_claims_hold_at_most_ten_times_the_memory(self) -> None:
         assert _peak(_run(_answers(3_000))) <= 10 * _peak(_run(_answers(300))) * 1.5 + 65_536
@@ -643,7 +638,7 @@ class TestAHostileRetryCostsALinearMerge:
             withdrawn = _isr(answer)
             return lambda: merge_retry(first, withdrawn, answer, asked=range(count))
 
-        assert _seconds(run(10_000)) <= 10 * _seconds(run(1_000)) * 1.5 + 0.1
+        _ten_times(run(1_000), run(10_000))
 
     def test_reasonless_withdraw_lines_cost_a_linear_read_in_time_and_memory(self) -> None:
         def run(count: int) -> Callable[[], Any]:
@@ -658,7 +653,7 @@ class TestAHostileRetryCostsALinearMerge:
         # CPU time, not wall-clock: four times the lines must take under eight
         # times as long, and a quadratic read takes sixteen times. The calls
         # made are held to the same ratio too, which a load cannot move.
-        assert cpu_seconds(large) < cpu_seconds(small) * TIME_RATIO_LIMIT
+        assert_ratio(small, large, TIME_RATIO_LIMIT, what="20,000 lines")
         assert calls(large) <= calls(small) * 4 * 1.2 + 1_000
         assert _peak(large) <= 4 * _peak(small) * 1.5 + 65_536
 
@@ -667,7 +662,7 @@ class TestAHostileRetryCostsALinearMerge:
             text = "withdraw " * size
             return lambda: read_withdrawals(text)
 
-        assert _seconds(run(100_000)) <= 10 * _seconds(run(10_000)) * 1.5 + 0.1
+        _ten_times(run(10_000), run(100_000))
 
     def test_long_lines_that_do_not_open_with_the_word_cost_a_linear_read(self) -> None:
         for line in (
@@ -686,7 +681,7 @@ class TestAHostileRetryCostsALinearMerge:
 
             small, large = run(10_000), run(100_000)
 
-            assert _seconds(large) <= 10 * _seconds(small) * 1.5 + 0.1
+            _ten_times(small, large)
             assert _peak(large) <= 10 * _peak(small) * 1.5 + 65_536
 
     def test_ten_thousand_unplaced_claims_cost_a_linear_search(self) -> None:
@@ -696,4 +691,4 @@ class TestAHostileRetryCostsALinearMerge:
             withdrawn = _isr(answer)
             return lambda: merge_retry(first, withdrawn, answer, asked=range(count))
 
-        assert _seconds(run(10_000)) <= 10 * _seconds(run(1_000)) * 1.5 + 0.1
+        _ten_times(run(1_000), run(10_000))

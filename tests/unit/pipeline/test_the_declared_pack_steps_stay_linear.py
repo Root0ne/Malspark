@@ -8,33 +8,18 @@ about ten times as long: a quadratic step would take a hundred.
 
 from __future__ import annotations
 
-import gc
-import time
 from collections.abc import Callable
 from typing import Any
 
 from malspark.core.pack_steps import effective_steps
 from malspark.pipeline.triage_pack import PIPELINE, index_inputs, render_pack
 from malspark.schemas.evidence import LedgerEntry
-
-
-def _seconds(work: Callable[[], Any]) -> float:
-    gc.collect()
-    gc.disable()
-    try:
-        began = time.thread_time()
-        work()
-        return time.thread_time() - began
-    finally:
-        gc.enable()
+from tests.linear_cost import assert_scales
 
 
 def _ratio(make: Callable[[int], Callable[[], Any]], small: int) -> tuple[float, float]:
-    """The seconds at ``small`` and at ten times it, each the least of two runs after a warm-up."""
-    _seconds(make(small))
-    low = min(_seconds(make(small)) for _ in range(2))
-    high = min(_seconds(make(small * 10)) for _ in range(2))
-    return low, high
+    """The best seconds at ``small`` and at ten times it, held under twenty times apart."""
+    return assert_scales(make, small, factor=10, limit=20)
 
 
 def _declared_steps(n: int) -> list[dict[str, Any]]:
@@ -95,14 +80,12 @@ class TestTenTimesTheInput:
     def test_the_declared_steps(self) -> None:
         low, high = _ratio(_declared, 2_000)
         print("declared steps:", round(low, 4), round(high, 4))
-        assert high < low * 20
         ids = [step.id for step in effective_steps(_declared_steps(2_000))]
         assert ids.index("strings") == ids.index("step_1999") + 1
 
     def test_the_function_starts_and_rules_an_answer_lists(self) -> None:
         low, high = _ratio(_joined, 5_000)
         print("starts and rules:", round(low, 4), round(high, 4))
-        assert high < low * 20
         joined = index_inputs([_matcher(5_000)])
         assert len(joined.function_starts[0][2]) == 5_000
         assert len(joined.rule_hits[0][2]) == 5_000
@@ -110,7 +93,6 @@ class TestTenTimesTheInput:
     def test_the_rows_a_generic_line_counts(self) -> None:
         low, high = _ratio(_listed, 5_000)
         print("generic line rows:", round(low, 4), round(high, 4))
-        assert high < low * 20
         assert render_pack(
             [_matcher(3, "rule_table").model_copy(update={"pack_step": {"v": 1, "id": "m"}})], 0
         ) == (
@@ -121,7 +103,6 @@ class TestTenTimesTheInput:
     def test_the_rules_a_declared_rule_line_shows(self) -> None:
         low, high = _ratio(_ruled, 5_000)
         print("declared rule line:", round(low, 4), round(high, 4))
-        assert high < low * 20
         assert render_pack(
             [_matcher(3).model_copy(update={"pack_step": {"v": 1, "id": "m"}})], 0
         ) == (
