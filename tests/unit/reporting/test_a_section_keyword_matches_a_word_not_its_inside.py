@@ -15,7 +15,7 @@ import time
 
 import pytest
 
-from maljan.reporting.evidence_bundles import _SECTION_CLAIM_KEYWORDS, _filter_claims, mentions
+from malspark.reporting.evidence_bundles import _SECTION_CLAIM_KEYWORDS, _filter_claims, mentions
 
 
 def _claim(text: str) -> dict[str, str]:
@@ -131,10 +131,10 @@ def test_the_filter_keeps_the_claims_it_matches_in_order() -> None:
 def test_matching_stays_linear_on_a_hostile_text() -> None:
     def took(size: int) -> float:
         text = "aB" * size + " rehearsal" * size
-        start = time.perf_counter()
+        start = time.thread_time()
         for _ in range(5):
             mentions(text, ENCRYPTION + C2)
-        return time.perf_counter() - start
+        return time.thread_time() - start
 
     small, large = took(2_000), took(20_000)
     assert large < small * 30, (small, large)

@@ -13,7 +13,7 @@ import json
 import time
 from typing import Any
 
-from maljan.schemas.sandbox_document import (
+from malspark.schemas.sandbox_document import (
     CONTAINERS,
     OPEN_PLACES,
     PLACES,
@@ -23,7 +23,7 @@ from maljan.schemas.sandbox_document import (
     renamed,
     sandbox_document,
 )
-from maljan.schemas.sandbox_report import (
+from malspark.schemas.sandbox_report import (
     CAPE_RENAMES,
     REPORT_LIST_FIELDS,
     SandboxReport,
@@ -144,11 +144,11 @@ class TestLinearTime:
             gc.collect()
             gc.disable()
             try:
-                started = time.perf_counter()
+                started = time.thread_time()
                 sandbox_document(
                     cape_report_to_sandbox_report(source, provider="x", source_format="cape2")
                 )
-                best = min(best, time.perf_counter() - started)
+                best = min(best, time.thread_time() - started)
             finally:
                 gc.enable()
         return best

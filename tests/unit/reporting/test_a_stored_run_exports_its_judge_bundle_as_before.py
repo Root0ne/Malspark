@@ -17,7 +17,7 @@ import re
 
 import pytest
 
-from maljan.reporting.models import MalwareReport
+from malspark.reporting.models import MalwareReport
 from tests.unit.reporting.test_an_entry_without_a_source_is_read_as_before import _benchmark
 
 # Normalised STIX over the judge's bundle, as dev 5cd25b75 renders it.
@@ -27,12 +27,18 @@ from tests.unit.reporting.test_an_entry_without_a_source_is_read_as_before impor
 # a command line, the sample's indicator adds its SHA-1 and MD5, its imphash
 # is an anomalous-activity indicator of its own, and an indicator's reason is
 # read from the rebuilt table.
+# Re-pinned when a process the sample's lineage rule leaves out of its tree
+# came to say so (T-511): each desktop process carries
+# ``x_malspark_sample_process_tree: false``, and nothing else changed.
+# Re-pinned when the product took its new name (T-576): the producer's name and
+# the ``x_malspark_*`` properties; with the previous name each is the digest
+# pinned before.
 STORED_EXPORTS = {
-    "run7": "eff64a6fcc7d2c98",
-    "run5": "618c6bdf28561f05",
-    "run4": "9a3a7b4040b09b57",
-    "local8": "23b5d33c962e03b7",
-    "haiku4": "860e9bb2afe060ca",
+    "run7": "9f3586c36e867b3e",
+    "run5": "3abdff0c8db7948c",
+    "run4": "4cf5568e843e294e",
+    "local8": "d5d7b39ea49f8f5c",
+    "haiku4": "ac8035fc45db4cdf",
 }
 # ``(markdown, html with the nonce "fixed", normalised STIX)`` for haiku4. The
 # Markdown and HTML were re-pinned when a sample's, a tool's or a finding's text
@@ -48,7 +54,24 @@ STORED_EXPORTS = {
 # change.
 # The Markdown and HTML re-pinned when the host identifier table came to mark
 # each row the IOC table publishes (T-386); the STIX did not change.
-HAIKU4_RENDERS = ("75b9157b1a863aca", "b47768bbf80581cb", "98ec03129873afd3")
+# Re-pinned when no table cell of the body came to be cut (T-399) and every
+# indicator to indicate the malware object (T-402): the only Markdown and HTML
+# changes are body cells that ended in … printed whole, the methodology's
+# sentence about cut values and the HTML print stylesheet's fixed table layout;
+# each STIX export, here and in ``STORED_EXPORTS``, gains one platform
+# ``indicates`` edge per indicator related to no malware object (the similarity
+# digests and benign-typed ones aside), each named by the report object, and
+# nothing else (run4's export over the judge's bundle gains none).
+# Re-pinned when the commands table came to list only what descends from a
+# process running the sample (T-494): explorer.exe under sihost.exe leaves the
+# table, which has no row left and is not printed; the STIX export did not change.
+# The STIX re-pinned when the desktop processes outside the sample's tree came
+# to say so (T-511: five carry ``x_malspark_sample_process_tree: false``); the
+# Markdown and HTML did not change.
+# The HTML and the STIX re-pinned when the product took its new name (T-576):
+# the generator line, the producer's name and the ``x_malspark_*`` properties;
+# with the previous name each is the digest pinned before.
+HAIKU4_RENDERS = ("06a395f0432b80a2", "a56231bf54979dba", "7796b8f69c8a6a3b")
 
 _UUID = re.compile(r"--[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}")
 _STAMP = re.compile(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})")
@@ -72,8 +95,8 @@ def _report(run: str) -> MalwareReport:
 
 @pytest.mark.parametrize("run", sorted(STORED_EXPORTS))
 def test_the_export_over_the_judge_s_bundle_keeps_its_bytes(run: str) -> None:
-    from maljan.reporting.renderers.stix_renderer import ExtendedSTIXRenderer
-    from maljan.schemas.stix_models import Bundle
+    from malspark.reporting.renderers.stix_renderer import ExtendedSTIXRenderer
+    from malspark.schemas.stix_models import Bundle
 
     report = _report(run)
     root = _benchmark()
@@ -87,8 +110,8 @@ def test_the_export_over_the_judge_s_bundle_keeps_its_bytes(run: str) -> None:
 
 
 def test_haiku4_renders_as_dev_rendered_it() -> None:
-    from maljan.reporting.renderers import HtmlRenderer, MarkdownRenderer
-    from maljan.reporting.renderers.stix_renderer import ExtendedSTIXRenderer
+    from malspark.reporting.renderers import HtmlRenderer, MarkdownRenderer
+    from malspark.reporting.renderers.stix_renderer import ExtendedSTIXRenderer
 
     report = _report("haiku4")
     markdown = MarkdownRenderer().render(report)

@@ -22,8 +22,8 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from maljan.reporting.models import MalwareReport
-from maljan.reporting.renderers import MarkdownRenderer
+from malspark.reporting.models import MalwareReport
+from malspark.reporting.renderers import MarkdownRenderer
 from tests.stages import paper_profile
 
 # Two techniques the judge named, one of which the sample's own domain rules
@@ -110,7 +110,7 @@ def _state() -> dict[str, Any]:
 
 def _published_and_marked(report: MalwareReport) -> MalwareReport:
     """The report as the checks leave it: one technique published, one marked."""
-    from maljan.reporting.models import CapabilityCell, TTPMapping
+    from malspark.reporting.models import CapabilityCell, TTPMapping
 
     report.ttp_mappings = [
         TTPMapping(technique_id=PUBLISHED, technique_name=PUBLISHED, tactic="TA0005")
@@ -134,8 +134,8 @@ async def _run(
 
     ``corroborated`` has a second source name the published technique.
     """
-    from maljan.pipeline.nodes import make_report_node
-    from maljan.reporting.builder import MalwareReportBuilder
+    from malspark.pipeline.nodes import make_report_node
+    from malspark.reporting.builder import MalwareReportBuilder
 
     deterministic = MalwareReportBuilder.build_deterministic
 
@@ -245,13 +245,32 @@ class TestWhatIsServedFromIt:
 
         assert result["malware_report_markdown"] == self._served(result)
 
+    @pytest.mark.parametrize("one_file", [False, True])
+    async def test_the_node_keeps_the_single_file_report_whatever_layout_is_served(
+        self, container: Any, one_file: bool
+    ) -> None:
+        """The node's copy is the single-file report: what reads it looks for its appendices.
+
+        The served layout is rendered on request from the stored report; the
+        copy the node keeps (the command line's fallback file, the rehearsal's
+        record, which reads Appendix A) is the whole report whatever is served.
+        """
+        from malspark.reporting.renderers.layout import ANALYST, FULL
+
+        container.config.reporting.full_report_in_one_file = one_file
+        result, _column = await _run(container)
+        report = MalwareReport.model_validate(result["malware_report"])
+
+        assert result["malware_report_markdown"] == MarkdownRenderer(layout=FULL).render(report)
+        assert result["malware_report_markdown"] != MarkdownRenderer(layout=ANALYST).render(report)
+
 
 @pytest.mark.asyncio
 class TestTheRunTotalIncludesTheReportStage:
     async def test_a_reporter_call_made_after_the_verdict_is_in_the_total(
         self, container: Any
     ) -> None:
-        from maljan.core.token_ledger import TokenLedger
+        from malspark.core.token_ledger import TokenLedger
 
         ledger = TokenLedger()
         ledger.add({"input_tokens": 100, "output_tokens": 10}, agent="judge", model="m")
@@ -287,7 +306,7 @@ class TestOneCountOfEachThing:
         assert stored["judge_stix_object_count"] == 0
 
     async def test_the_memory_case_stores_the_published_techniques(self, container: Any) -> None:
-        from maljan.memory.long_term_memory import StoredCase
+        from malspark.memory.long_term_memory import StoredCase
 
         container.pending_memory_case = StoredCase(
             sample_id="e" * 64,
@@ -306,7 +325,7 @@ class TestOneCountOfEachThing:
         self, container: Any, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         """The thin-evidence gate reads the published set: one uncorroborated technique."""
-        from maljan.memory.long_term_memory import StoredCase
+        from malspark.memory.long_term_memory import StoredCase
 
         container.pending_memory_case = StoredCase(
             sample_id="e" * 64,
@@ -321,7 +340,7 @@ class TestOneCountOfEachThing:
         assert container.pending_memory_case is None
 
     async def test_a_corroborated_published_case_is_kept(self, container: Any) -> None:
-        from maljan.memory.long_term_memory import StoredCase
+        from malspark.memory.long_term_memory import StoredCase
 
         container.pending_memory_case = StoredCase(
             sample_id="e" * 64,
@@ -350,7 +369,7 @@ class TestTheReportCarriesWhatNoNodeDrained:
     async def test_an_undrained_entry_is_on_the_ledger_and_in_the_report(
         self, container: Any
     ) -> None:
-        from maljan.schemas.evidence import build_entry
+        from malspark.schemas.evidence import build_entry
 
         late = build_entry(
             entry_id="ev_0001",

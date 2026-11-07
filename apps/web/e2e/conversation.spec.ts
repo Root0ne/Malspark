@@ -183,7 +183,7 @@ test.describe("Conversation", () => {
     sessionPage: page,
   }) => {
     await mockRun(page);
-    await page.goto(`/analysis/${JOB_ID}/conversation`);
+    await page.goto(`/analysis/${JOB_ID}/evidence/conversation`);
 
     const feed = stream(page);
     await expect(feed).toContainText("1 evidence-backed claim from the static layer.");
@@ -264,7 +264,7 @@ test.describe("Conversation", () => {
         ],
       },
     });
-    await page.goto(`/analysis/${JOB_ID}/conversation`);
+    await page.goto(`/analysis/${JOB_ID}/evidence/conversation`);
 
     const table = page.getByRole("table");
     await expect(table).toContainText("Ahmet");
@@ -284,7 +284,7 @@ test.describe("Conversation", () => {
       roster: null,
       events: FEED.filter((e) => e.type !== "roster"),
     });
-    await page.goto(`/analysis/${JOB_ID}/conversation`);
+    await page.goto(`/analysis/${JOB_ID}/evidence/conversation`);
 
     // The fixture's findings are keyed `static` and `dynamic`, and with no
     // roster those keys are all the table has.
@@ -294,27 +294,31 @@ test.describe("Conversation", () => {
     await expect(table).toContainText("stage analysis");
   });
 
-  test("draws a tool call as one line that opens the ledger row", async ({
+  test("folds tool calls into a strip that opens to each call and its ledger row", async ({
     sessionPage: page,
   }) => {
     await mockRun(page);
-    await page.goto(`/analysis/${JOB_ID}/conversation`);
+    await page.goto(`/analysis/${JOB_ID}/evidence/conversation`);
 
     const feed = stream(page);
+    const strip = feed.getByRole("button", { name: /1 tool · 812 ms/ });
+    await expect(feed).not.toContainText("radare2.afl");
+    await strip.click();
+    await expect(strip).toHaveAttribute("aria-expanded", "true");
     await expect(feed).toContainText("radare2.afl");
     await expect(feed).toContainText("41 functions, 3 imports of interest");
 
     const chip = feed.getByRole("link", { name: "ev_0007" });
     await expect(chip).toBeVisible();
     await chip.click();
-    await page.waitForURL(`**/analysis/${JOB_ID}/evidence?evidence=ev_0007`);
+    await page.waitForURL(`**/analysis/${JOB_ID}/evidence/records?evidence=ev_0007`);
   });
 
   test("draws a correction, a question and a delegated pair as themselves", async ({
     sessionPage: page,
   }) => {
     await mockRun(page);
-    await page.goto(`/analysis/${JOB_ID}/conversation`);
+    await page.goto(`/analysis/${JOB_ID}/evidence/conversation`);
 
     const feed = stream(page);
     /* The rule key is still on the notice, as its title: what a log line is
@@ -332,7 +336,7 @@ test.describe("Conversation", () => {
     sessionPage: page,
   }) => {
     await mockRun(page);
-    await page.goto(`/analysis/${JOB_ID}/conversation`);
+    await page.goto(`/analysis/${JOB_ID}/evidence/conversation`);
 
     const feed = stream(page);
     await expect(feed).not.toContainText("KERNEL32.dll!VirtualAllocEx");
@@ -349,7 +353,7 @@ test.describe("Conversation", () => {
 
   test("narrows to one agent and to one kind of line", async ({ sessionPage: page }) => {
     await mockRun(page);
-    await page.goto(`/analysis/${JOB_ID}/conversation`);
+    await page.goto(`/analysis/${JOB_ID}/evidence/conversation`);
 
     const feed = stream(page);
     await page.getByRole("button", { name: /Ahmet/ }).click();
@@ -367,14 +371,14 @@ test.describe("Conversation", () => {
   test("survives leaving the analysis and coming back", async ({ sessionPage: page }) => {
     let reads = 0;
     await mockRun(page, { onEventsRequest: () => (reads += 1) });
-    await page.goto(`/analysis/${JOB_ID}/conversation`);
+    await page.goto(`/analysis/${JOB_ID}/evidence/conversation`);
     await expect(stream(page)).toContainText("Final verdict: Malicious.");
     expect(reads).toBe(1);
 
     await page.getByRole("link", { name: "Dashboard" }).click();
     await page.waitForURL("**/dashboard");
     await page.goBack();
-    await page.waitForURL(`**/analysis/${JOB_ID}/conversation`);
+    await page.waitForURL(`**/analysis/${JOB_ID}/evidence/conversation`);
 
     await expect(stream(page)).toContainText("Final verdict: Malicious.");
     expect(reads).toBe(1);
@@ -389,9 +393,11 @@ test.describe("Conversation", () => {
     });
     await mockRun(page, { status: "running", report: null });
 
-    await page.goto(`/analysis/${JOB_ID}/conversation`);
+    await page.goto(`/analysis/${JOB_ID}/evidence/conversation`);
     await expect(stream(page)).toContainText("Final verdict: Malicious.");
-    await page.getByRole("link", { name: "EVIDENCE" }).click();
+    // Watching live, the stages stay in view above the discussion.
+    await expect(page.getByTestId("pipeline-strip")).toBeVisible();
+    await page.getByRole("link", { name: "Records" }).click();
     await page.waitForURL(`**/analysis/${JOB_ID}/evidence`);
 
     expect(sockets).toBe(1);
@@ -401,7 +407,7 @@ test.describe("Conversation", () => {
     sessionPage: page,
   }) => {
     await mockRun(page, { events: [] });
-    await page.goto(`/analysis/${JOB_ID}/conversation`);
+    await page.goto(`/analysis/${JOB_ID}/evidence/conversation`);
 
     const feed = stream(page);
     // The stored conversation, including the intervention that exists nowhere
@@ -414,25 +420,30 @@ test.describe("Conversation", () => {
 
   test("says what a run with nothing recorded has", async ({ sessionPage: page }) => {
     await mockRun(page, { events: [], report: { ...REPORT, transcript: [] } });
-    await page.goto(`/analysis/${JOB_ID}/conversation`);
+    await page.goto(`/analysis/${JOB_ID}/evidence/conversation`);
 
     await expect(stream(page)).toContainText("passed the retention window");
   });
 
   test("the retired routes land on the conversation", async ({ sessionPage: page }) => {
     await mockRun(page);
-    for (const retired of ["live", "process", "agents", "pipeline", "timeline"]) {
+    for (const retired of ["conversation", "live", "process", "agents", "pipeline", "timeline"]) {
       await page.goto(`/analysis/${JOB_ID}/${retired}`);
-      await page.waitForURL(`**/analysis/${JOB_ID}/conversation`);
+      await page.waitForURL(`**/analysis/${JOB_ID}/evidence/conversation`);
     }
     await expect(stream(page)).toContainText("Final verdict: Malicious.");
   });
 
-  test("the run's shape is on the header, and only there", async ({
+  test("the run's shape is in run quality, and only there", async ({
     sessionPage: page,
   }) => {
     await mockRun(page);
-    await page.goto(`/analysis/${JOB_ID}/conversation`);
+    await page.goto(`/analysis/${JOB_ID}/evidence/conversation`);
+    await expect(stream(page)).toContainText("Final verdict: Malicious.");
+    await expect(page.getByTestId("pipeline-strip")).toHaveCount(0);
+    // Run quality heads the Evidence tab's first view, the bundle.
+    await page.getByRole("link", { name: "Evidence bundle" }).click();
+    await page.getByRole("button", { name: /Run quality/ }).click();
 
     const strip = page.getByTestId("pipeline-strip");
     // The roster's label for the stage, and the label of the agent that ran

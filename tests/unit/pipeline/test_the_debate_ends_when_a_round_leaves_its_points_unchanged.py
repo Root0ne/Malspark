@@ -18,16 +18,16 @@ from __future__ import annotations
 import time
 from typing import Any
 
-from maljan.analysis.run_summary import RunSummaryBuilder
-from maljan.pipeline.debate_facts import point_key, same_points
-from maljan.pipeline.routing import (
+from malspark.analysis.run_summary import RunSummaryBuilder
+from malspark.pipeline.debate_facts import point_key, same_points
+from malspark.pipeline.routing import (
     NO_CONSENSUS,
     NOT_REVISED,
     POINTS_UNCHANGED,
     debate_route,
     points_unchanged,
 )
-from maljan.pipeline.state import AgentArgument
+from malspark.pipeline.state import AgentArgument
 
 COUNTS = (
     "[analysts: TRIAGE ANALYST, STATIC] TRIAGE claim 6 says 57 strings and STATIC claim 4 "
@@ -116,9 +116,9 @@ class TestAPointIsWhatItIsAbout:
         timings = []
         for n in (2000, 20000):
             line = "[analysts: a] " + " ".join(f"{i} 0x{i:x} ev_{i:04d}" for i in range(n))
-            start = time.perf_counter()
+            start = time.thread_time()
             point_key(line)
-            timings.append(time.perf_counter() - start)
+            timings.append(time.thread_time() - start)
         assert timings[1] < timings[0] * 10 * 4 + 0.5
 
 

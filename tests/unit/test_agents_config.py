@@ -10,7 +10,7 @@ from __future__ import annotations
 import pytest
 from pydantic import ValidationError
 
-from maljan.core.config import (
+from malspark.core.config import (
     AGENT_KEY_PATTERN,
     BUILTIN_AGENTS,
     BUILTIN_PROFILES,
@@ -133,6 +133,7 @@ DEFAULT_AGENTS = {
     "definitions": {
         "static": {
             "role": "static",
+            "category": "code_reader",
             "label": "Static analyst",
             "prompt": None,
             "tools": [_mcp("analysis"), _mcp("knowledge"), _REPUTATION],
@@ -147,6 +148,7 @@ DEFAULT_AGENTS = {
         },
         "dynamic": {
             "role": "dynamic",
+            "category": "dynamic",
             "label": "Dynamic analyst",
             "prompt": None,
             "tools": [{"kind": "sandbox", "server": None, "name": None}, _mcp("knowledge")],
@@ -161,6 +163,7 @@ DEFAULT_AGENTS = {
         },
         "network": {
             "role": "network",
+            "category": "network",
             "label": "Network analyst",
             "prompt": None,
             "tools": [_mcp("network"), _mcp("knowledge"), _REPUTATION],
@@ -175,9 +178,18 @@ DEFAULT_AGENTS = {
         },
         "judge": {
             "role": "judge",
+            "category": "other",
             "label": "Judge",
             "prompt": None,
-            "tools": [_mcp("knowledge"), _REPUTATION],
+            # The mediator may read the sandbox report and ask the reverser
+            # and the static analyst when a dispute turns on code (T-415d).
+            "tools": [
+                _mcp("knowledge"),
+                _REPUTATION,
+                {"kind": "sandbox", "server": None, "name": None},
+                {"kind": "agent", "server": None, "name": None, "agent": "reverser"},
+                {"kind": "agent", "server": None, "name": None, "agent": "static"},
+            ],
             "static_provider": None,
             "enabled": True,
             "data_sources": [],
@@ -192,6 +204,7 @@ DEFAULT_AGENTS = {
         # the report is built from what the run already produced.
         "reporter": {
             "role": "report",
+            "category": "other",
             "label": "Reporter",
             "prompt": None,
             "tools": [],
@@ -570,7 +583,7 @@ def test_a_server_bound_to_a_definition_that_does_not_exist_is_refused():
 
 def test_the_deprecated_agent_role_alias_is_still_a_type():
     """Sub-project B imports ``AgentRole``; it must keep importing."""
-    from maljan.core.config import AgentRole
+    from malspark.core.config import AgentRole
 
     assert AgentRole is str
 
@@ -579,7 +592,7 @@ def test_the_deprecated_agent_role_alias_is_still_a_type():
 
 
 def test_every_new_leaf_is_annotated_and_grouped():
-    from maljan.core.settings_annotations import ANNOTATIONS, GROUP_ORDER
+    from malspark.core.settings_annotations import ANNOTATIONS, GROUP_ORDER
 
     for key in ("agents.profile", "agents.profiles", "agents.definitions"):
         assert key in ANNOTATIONS, key
@@ -750,17 +763,21 @@ def test_an_agent_may_not_reference_itself():
         _led(boss={"role": "lead", "prompt": "lead", "tools": [_agent("boss")]})
 
 
-def test_the_judge_and_the_reporter_can_neither_ask_nor_be_asked():
-    from maljan.core.config import AgentDefinition, agent_reference_problems
+def test_the_judge_may_ask_and_neither_it_nor_the_reporter_can_be_asked():
+    from malspark.core.config import AgentDefinition, agent_reference_problems
 
     with pytest.raises(ValidationError, match="'judge' has role 'judge' and cannot be asked"):
         _led(boss={"role": "lead", "prompt": "lead", "tools": [_agent("judge")]})
+    with pytest.raises(ValidationError, match="'reporter' has role 'report' and cannot be asked"):
+        _led(boss={"role": "lead", "prompt": "lead", "tools": [_agent("reporter")]})
     # The built-in identity check refuses an edited judge before this rule is
     # reached through ``Settings``; the rule itself is what the API shares.
     definitions = Settings(_env_file=None).agents.definitions
     judge = AgentDefinition(role="judge", tools=[ToolRef(kind="agent", agent="static")])
-    assert agent_reference_problems("judge", judge, definitions) == [
-        "a judge definition cannot ask other agents"
+    assert agent_reference_problems("judge", judge, definitions) == []
+    reporter = AgentDefinition(role="report", tools=[ToolRef(kind="agent", agent="static")])
+    assert agent_reference_problems("reporter", reporter, definitions) == [
+        "a report definition cannot ask other agents"
     ]
 
 
@@ -819,7 +836,7 @@ def test_the_team_lead_profile_is_seeded_and_the_default_is_unchanged():
 
 
 def test_the_delegation_depth_is_a_setting_with_a_floor_and_an_annotation():
-    from maljan.core.settings_annotations import ANNOTATIONS
+    from malspark.core.settings_annotations import ANNOTATIONS
 
     assert Settings(_env_file=None).agents.delegation_depth == 2
     assert _settings(delegation_depth=3).agents.delegation_depth == 3

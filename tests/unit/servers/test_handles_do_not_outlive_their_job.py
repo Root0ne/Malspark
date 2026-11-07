@@ -25,13 +25,15 @@ from typing import Any
 
 import pytest
 
+from tests.unit._process_table import running
+
 LIVE_BUDGET_S = 90.0
 
 _INTERPRETER_MISSING = not sys.executable or not shutil.which(sys.executable)
 
 
 def _live_pids() -> set[int]:
-    from maljan.providers.servers import _own_child_pids
+    from malspark.providers.servers import _own_child_pids
 
     return _own_child_pids()
 
@@ -41,26 +43,26 @@ def _still_running(pid: int) -> bool:
 
     The child of a handle dies with the loop whether or not the handle was
     closed, so "no longer our child" on its own says nothing; this asks the
-    procfs entry, and reads a zombie as gone.
+    process table, and reads a zombie as gone.
     """
-    try:
-        with open(f"/proc/{pid}/stat", encoding="utf-8") as fh:
-            fields = fh.read().rsplit(") ", 1)
-    except OSError:
-        return False
-    return bool(fields[1:]) and fields[1].split(" ", 1)[0] != "Z"
+    return running(pid)
 
 
 @pytest.mark.skipif(
     _INTERPRETER_MISSING, reason="no python interpreter available to launch the sidecar"
+)
+@pytest.mark.skipif(
+    not Path("/proc/self/task").is_dir(),
+    reason="a handle names its child from the process table at /proc/self/task; a host "
+    "without one is told so (test_a_host_without_a_process_table_is_told_so_once)",
 )
 class TestAFinishedJobHoldsNoSidecar:
     """Production first: the teardown the worker runs, against real children."""
 
     @staticmethod
     def _container(job_id: str, tmp_path: Path) -> Any:
-        from maljan.core.container import ServiceContainer
-        from maljan.core.settings_overrides import build_settings
+        from malspark.core.container import ServiceContainer
+        from malspark.core.settings_overrides import build_settings
 
         return ServiceContainer(
             build_settings({}), mock=True, samples_dir=str(tmp_path), job_id=job_id
@@ -74,7 +76,7 @@ class TestAFinishedJobHoldsNoSidecar:
         and one is a task another task cancels while it is awaiting. All three
         reach ``container.aclose()`` the way the worker's ``finally`` does.
         """
-        from maljan.providers import servers
+        from malspark.providers import servers
 
         container = self._container(job_id, tmp_path)
         spawned: set[int] = set()
@@ -114,7 +116,7 @@ class TestAFinishedJobHoldsNoSidecar:
 
     @pytest.mark.parametrize("outcome", ["success", "failure", "cancel"])
     def test_nothing_of_the_job_is_left_attached(self, tmp_path: Path, outcome: str) -> None:
-        from maljan.providers import servers
+        from malspark.providers import servers
 
         job_id = f"lifecycle-{outcome}"
 
@@ -136,17 +138,45 @@ class TestAFinishedJobHoldsNoSidecar:
         self._run(job_id, tmp_path, "success")
         gc.collect()
 
-        from maljan.providers import servers
+        from malspark.providers import servers
 
         assert [handle for handle in servers._LIVE_HANDLES if handle._job_id == job_id] == []
+
+
+def test_a_host_without_a_process_table_is_told_so_once(
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    """No children read is not "no children": the worker says what it cannot do."""
+    import logging
+    import os
+
+    from malspark.providers import servers
+
+    real_listdir = os.listdir
+
+    def no_proc(path: Any = ".") -> list[str]:
+        if str(path).startswith("/proc"):
+            raise FileNotFoundError(2, "No such file or directory", str(path))
+        return real_listdir(path)
+
+    monkeypatch.setattr(os, "listdir", no_proc)
+    monkeypatch.setattr(servers, "_NO_PROCESS_TABLE_SAID", type(servers._NO_PROCESS_TABLE_SAID)())
+
+    with caplog.at_level(logging.WARNING, logger="malspark"):
+        assert servers._own_child_pids() == set()
+        assert servers._own_child_pids() == set()
+
+    said = [r.getMessage() for r in caplog.records if r.levelno == logging.WARNING]
+    assert said == [f"{servers.NO_PROCESS_TABLE}."]
+    assert "is not reaped" in said[0] and "isolation is not measured" in said[0]
 
 
 class _Handle:
     """A handle with children, without a transport to spawn them."""
 
     def __init__(self, name: str, pids: tuple[int, ...], loop: Any) -> None:
-        from maljan.core.config import MCPServerConfig
-        from maljan.providers.servers import ServerHandle
+        from malspark.core.config import MCPServerConfig
+        from malspark.providers.servers import ServerHandle
 
         self.inner = ServerHandle(name, MCPServerConfig(transport="stdio", command="/bin/true"))
         self.inner._owner_loop = loop
@@ -171,7 +201,7 @@ class TestTheReapPaysOneGraceForTheWholeSet:
         # imports is the one to watch.
         import time as time_module
 
-        from maljan.providers import servers
+        from malspark.providers import servers
 
         slept: list[float] = []
         monkeypatch.setattr(time_module, "sleep", slept.append)
@@ -180,7 +210,7 @@ class TestTheReapPaysOneGraceForTheWholeSet:
         return slept
 
     def test_one_sleep_for_many_handles(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        from maljan.providers import servers
+        from malspark.providers import servers
 
         loop = asyncio.new_event_loop()
         try:
@@ -218,7 +248,7 @@ class TestTheReapPaysOneGraceForTheWholeSet:
         try:
             [_Handle(f"r{index}", (9100 + index,), loop) for index in range(8)]
 
-            with caplog.at_level(logging.ERROR, logger="maljan"):
+            with caplog.at_level(logging.ERROR, logger="malspark"):
                 self._retire([], loop, monkeypatch)
 
             abandoned = [rec for rec in caplog.records if "retired" in rec.getMessage()]
@@ -246,7 +276,7 @@ class TestTheReapPaysOneGraceForTheWholeSet:
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         """The watchdog stands down once pytest has closed its streams."""
-        from maljan.providers import servers
+        from malspark.providers import servers
 
         loop = asyncio.new_event_loop()
         try:

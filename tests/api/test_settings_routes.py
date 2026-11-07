@@ -15,7 +15,7 @@ from app.services.settings_service import (  # noqa: E402
     SettingsValidationError,
     ValueInfo,
 )
-from maljan.core.config import ALWAYS_ENABLED_AGENTS  # noqa: E402
+from malspark.core.config import ALWAYS_ENABLED_AGENTS  # noqa: E402
 
 
 @pytest.fixture
@@ -102,6 +102,41 @@ def test_patch_returns_applies_summary(client):
         "applies": {"next_job": 1},
         "warnings": {},
     }
+
+
+def test_patch_warns_of_a_capability_no_server_serves_while_one_is_unlisted(client):
+    """Not refused while a built-in server is unlisted, so said on the save instead."""
+    from malspark.core import served_declarations
+
+    stored = {
+        "core.agents.definitions": {
+            "mine": {
+                "role": "generic",
+                "prompt": "p",
+                "tools": [{"kind": "capability", "capability": "nosuchkind"}],
+            }
+        }
+    }
+    served_declarations._UNSAVED.clear()
+    served_declarations.forget_served()
+    with (
+        patch(
+            "app.api.v1.settings.SettingsService.save",
+            AsyncMock(return_value=SaveResult(["core.agents.definitions"], {})),
+        ),
+        patch("app.api.v1.settings.SettingsService.load_overrides", AsyncMock(return_value=stored)),
+        patch(
+            "app.services.settings_service.SettingsService.load_overrides",
+            AsyncMock(return_value=stored),
+        ),
+    ):
+        r = client.patch(
+            "/api/v1/settings",
+            json={"changes": {"core.agents.definitions": stored["core.agents.definitions"]}},
+        )
+    assert r.status_code == 200
+    warned = r.json()["warnings"]["core.agents.definitions"]
+    assert "'mine'" in warned and "nosuchkind" in warned and "analysis" in warned
 
 
 def test_patch_validation_error_is_422_with_field_map(client):

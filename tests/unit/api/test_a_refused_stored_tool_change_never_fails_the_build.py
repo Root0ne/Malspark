@@ -20,11 +20,15 @@ import pytest
 
 from app.services import settings_service as svc
 from app.services.server_map import validate_server_map
-from maljan.core import builtin_declarations, tool_declarations
-from maljan.core import settings_overrides as so
-from maljan.core.tool_declarations import stored_changes, with_mark, without_mark
+from malspark.core import builtin_declarations, tool_declarations
+from malspark.core import settings_overrides as so
+from malspark.core.tool_declarations import stored_changes, with_mark, without_mark
 
-SERVER = "analysis"
+# The mechanism is read against a block that ships a table of its tools.
+pytestmark = pytest.mark.usefixtures("a_built_in_server_ships_a_tool_table")
+
+
+SERVER = "virustotal"
 BLOCK = f"mcp.servers.{SERVER}"
 
 
@@ -35,7 +39,7 @@ def _fresh_warnings() -> None:
 
 @pytest.fixture
 def release() -> Iterator[dict[str, Any]]:
-    """What the analysis server ships, changed in place as a later release would."""
+    """What the VirusTotal block ships, changed in place as a later release would."""
     blocks = builtin_declarations._SERVER_BLOCKS[SERVER]["tool_facts"]
     saved = {name: dict(entry) for name, entry in blocks.items()}
     so._shipped_dump.cache_clear()
@@ -88,7 +92,7 @@ def test_a_partial_change_of_a_tool_the_release_stops_shipping_never_fails_the_b
     # A later release no longer ships the tool: the partial change alone is
     # now the tool's whole declaration, and it does not validate.
     _ship(release, "scan", None)
-    with caplog.at_level(logging.WARNING, logger="maljan"):
+    with caplog.at_level(logging.WARNING, logger="malspark"):
         built = so.build_settings({"mcp.servers": stored})
     assert "scan" not in built.mcp.servers[SERVER].tool_facts
     assert set(built.mcp.servers[SERVER].tool_facts) == set(so.shipped_tool_facts(BLOCK))
@@ -121,21 +125,23 @@ def test_no_stored_change_of_an_invented_block_fails_the_build(stored: dict[str,
             "tool_facts": stored,
         }
     }
-    built = so.build_settings({"mcp.servers": servers, "static.ghidra.tool_facts": stored})
+    built = so.build_settings({"mcp.servers": servers, "sandbox.cape2.mcp.tool_facts": stored})
     assert built.mcp.servers["invented"].tool_facts == {}
-    shipped = so.shipped_tool_facts("static.ghidra")
-    assert set(built.static.ghidra.tool_facts) == (set(shipped) if "" in stored else set())
-    refused = so.refused_tool_changes({"mcp.servers": servers, "static.ghidra.tool_facts": stored})
+    shipped = so.shipped_tool_facts("sandbox.cape2.mcp")
+    assert set(built.sandbox.cape2.mcp.tool_facts) == (set(shipped) if "" in stored else set())
+    refused = so.refused_tool_changes(
+        {"mcp.servers": servers, "sandbox.cape2.mcp.tool_facts": stored}
+    )
     named = [tool for tool in stored if tool != ""]
-    assert refused == {"mcp.servers.invented": named, "static.ghidra": named}
+    assert refused == {"mcp.servers.invented": named, "sandbox.cape2.mcp": named}
 
 
 def test_the_warning_is_sanitised(caplog: pytest.LogCaptureFixture) -> None:
     forged = "gone\nWARNING forged line\x1b[31m"
-    with caplog.at_level(logging.WARNING, logger="maljan"):
+    with caplog.at_level(logging.WARNING, logger="malspark"):
         so.build_settings(
             {
-                "static.ghidra.tool_facts": {
+                "sandbox.cape2.mcp.tool_facts": {
                     "": "changes",
                     forged: {"kind": "strings", "source": "x"},
                 }
@@ -190,14 +196,14 @@ def test_an_edit_of_a_conflicting_change_is_still_held_to_the_strict_rules(
 
 
 def test_a_provider_leaf_keeps_a_conflicting_change_through_an_unrelated_edit() -> None:
-    leaf = "core.static.ghidra.tool_facts"
-    shipped = so.shipped_tool_facts("static.ghidra")
+    leaf = "core.sandbox.cape2.mcp.tool_facts"
+    shipped = so.shipped_tool_facts("sandbox.cape2.mcp")
     first, second, *_ = list(shipped)
     # A stored change of a tool this release no longer ships, which conflicts.
     held = with_mark({"gone_tool": {"kind": "strings", "places": {"offset": "/o"}}})
     current = {leaf: held}
-    assert so.refused_tool_changes({"static.ghidra.tool_facts": held}) == {
-        "static.ghidra": ["gone_tool"]
+    assert so.refused_tool_changes({"sandbox.cape2.mcp.tool_facts": held}) == {
+        "sandbox.cape2.mcp": ["gone_tool"]
     }
     served = svc.served_tool_facts(held, shipped)
     staged = with_mark({**without_mark(served), first: {"display_name": "Mine"}})

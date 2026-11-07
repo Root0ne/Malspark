@@ -17,9 +17,9 @@ from typing import Any
 import pytest
 import yaml
 
-from maljan.reporting.builder import build_consolidated_iocs
-from maljan.reporting.detection_signatures import build_detection_rules
-from maljan.reporting.models import (
+from malspark.reporting.builder import build_consolidated_iocs
+from malspark.reporting.detection_signatures import build_detection_rules
+from malspark.reporting.models import (
     FileHashes,
     MalwareReport,
     NetworkDomain,
@@ -30,8 +30,8 @@ from maljan.reporting.models import (
     StaticAnalysis,
     StringIOC,
 )
-from maljan.reporting.renderers.markdown import MarkdownRenderer
-from maljan.tools.strings import iter_string_iocs
+from malspark.reporting.renderers.markdown import MarkdownRenderer
+from malspark.tools.strings import iter_string_iocs
 
 OBSERVED = "gate9.example.org"
 SWEPT = "crl.example-authority.org"
@@ -85,7 +85,7 @@ class TestAMalwareVerdict:
         assert "185.99.133.7" not in body
 
     def test_a_judge_value_the_rule_publishes_is_drafted(self) -> None:
-        from maljan.reporting.models import DynamicBehavior, JudgeIndicator
+        from malspark.reporting.models import DynamicBehavior, JudgeIndicator
 
         report = _report(
             judge_indicators=[JudgeIndicator(kind="path", value="C:\\ProgramData\\relay4.dat")],
@@ -101,7 +101,7 @@ class TestAMalwareVerdict:
         assert "relay4.dat" in _rule(report, "yara").body
 
     def test_a_judge_value_the_rule_refuses_is_not_drafted(self) -> None:
-        from maljan.reporting.models import JudgeIndicator
+        from malspark.reporting.models import JudgeIndicator
 
         report = _report(judge_indicators=[JudgeIndicator(kind="domain", value=JUDGED)])
 
@@ -123,6 +123,206 @@ class TestAMalwareVerdict:
         assert OBSERVED in body
 
 
+AGENT = "Mozilla/4.0 (compatible; MSIE 7.0; Windows NT 5.1; Tob 1.1)"
+
+
+def _with_agent(report: MalwareReport, value: str = AGENT, *, published: bool = True) -> Any:
+    from malspark.reporting.models import ConsolidatedIOC
+
+    report.consolidated_iocs = [
+        *report.consolidated_iocs,
+        ConsolidatedIOC(
+            type="User agent",
+            kind="user_agent",
+            value=value,
+            source="call_argument",
+            published=(
+                "yes: the code passes it to InternetOpenW as argument 1"
+                if published
+                else "no: no call is shown to send it"
+            ),
+        ),
+    ]
+    return report
+
+
+def _rule_lines(body: str) -> list[str]:
+    return [line for line in body.splitlines() if line.startswith("alert")]
+
+
+class TestAPublishedUserAgent:
+    def test_gets_a_rule_on_the_request_header_after_the_other_rules(self) -> None:
+        rule = _rule(_with_agent(_report()), "suricata")
+
+        assert rule.compile_error is None
+        *others, agent = _rule_lines(rule.body)
+        assert others and all("http.user_agent" not in line for line in others)
+        assert "flow:established,to_server; http.user_agent; content:" in agent
+        # The header's parentheses, semicolons and commas are hex bytes, so
+        # none of them ends the content or the rule.
+        assert (
+            'content:"Mozilla/4.0 |28|compatible|3B| MSIE 7.0|3B| Windows NT 5.1|3B| Tob 1.1|29|"'
+            in agent
+        )
+        sids = [int(line.split("sid:")[1].split(";")[0]) for line in _rule_lines(rule.body)]
+        assert sids == list(range(sids[0], sids[0] + len(sids)))
+        assert f"user_agent:{AGENT}" in rule.source_evidence
+        comment = rule.body.splitlines()[rule.body.splitlines().index(agent) - 1]
+        assert comment == (
+            f"# {AGENT}: published because the code passes it to InternetOpenW as argument 1"
+        )
+
+    def test_the_other_rules_keep_their_sids(self) -> None:
+        before = _rule(_report(), "suricata").body
+        after = _rule(_with_agent(_report()), "suricata").body
+
+        assert _rule_lines(after)[: len(_rule_lines(before))] == _rule_lines(before)
+
+    def test_alone_it_still_makes_a_draft(self) -> None:
+        report = _report()
+        report.network = NetworkIOCs()
+        report.consolidated_iocs = build_consolidated_iocs(report)
+
+        rule = _rule(_with_agent(report), "suricata")
+
+        assert rule is not None and rule.compile_error is None
+        assert len(_rule_lines(rule.body)) == 1 and "http.user_agent" in rule.body
+
+    def test_an_unpublished_agent_gets_none(self) -> None:
+        body = _rule(_with_agent(_report(), published=False), "suricata").body
+
+        assert "http.user_agent" not in body
+
+    def test_a_quote_or_a_line_break_cannot_end_the_rule(self) -> None:
+        hostile = 'x"; sid:1; rev:1;)\nalert ip any any -> any any (msg:"y"\\'
+        rule = _rule(_with_agent(_report(), hostile), "suricata")
+
+        assert rule.compile_error is None
+        (line,) = [line for line in _rule_lines(rule.body) if "http.user_agent" in line]
+        # Two quoted strings, the message and the content, and one end.
+        assert line.count('"') == 4 and line.count(";)") == 1
+        content = line.split('content:"')[1].split('"')[0]
+        assert not set(content) & set('";()\\\n')
+        assert not [line for line in _rule_lines(rule.body) if 'msg:"y"' in line]
+
+    def test_a_long_list_is_capped_and_says_so(self) -> None:
+        from malspark.reporting.detection_signatures import _MAX_SURICATA_RULES, LEFT_OUT_COMMENT
+
+        report = _report()
+        for i in range(_MAX_SURICATA_RULES + 2):
+            report = _with_agent(report, f"agent-{i}/1.0")
+
+        body = _rule(report, "suricata").body
+
+        assert body.count("http.user_agent") == _MAX_SURICATA_RULES
+        assert "# " + LEFT_OUT_COMMENT.format(rest=2, what="user agents") in body
+
+    def test_a_short_published_agent_is_matched_whole(self) -> None:
+        """A published ``Mozilla/5.0`` matched anywhere in the header would
+        alert on every browser; the rule matches the header that is exactly it."""
+        rule = _rule(_with_agent(_report(), "Mozilla/5.0"), "suricata")
+
+        (line,) = [line for line in _rule_lines(rule.body) if "http.user_agent" in line]
+        assert 'http.user_agent; content:"Mozilla/5.0"; startswith; endswith; ' in line
+        assert rule.compile_error is None
+
+    def test_an_agent_is_drafted_trimmed_and_once(self) -> None:
+        """A sensor's ``http.user_agent`` buffer is the header trimmed: an
+        anchored content with a space at an edge matched no request."""
+        report = _with_agent(_with_agent(_report(), " curl/7.81.0 "), "curl/7.81.0")
+
+        rule = _rule(report, "suricata")
+
+        (line,) = [line for line in _rule_lines(rule.body) if "http.user_agent" in line]
+        assert 'http.user_agent; content:"curl/7.81.0"; startswith; endswith; ' in line
+        assert rule.source_evidence[-1] == "user_agent:curl/7.81.0"
+        assert rule.body.splitlines()[rule.body.splitlines().index(line) - 1].startswith(
+            "#  curl/7.81.0 : published because"
+        )
+        assert rule.compile_error is None
+
+    @pytest.mark.parametrize("value", ["   ", "\t\r\n", "A", "Mozilla", " Mozilla "])
+    def test_a_blank_or_too_short_agent_gets_none(self, value: str) -> None:
+        body = _rule(_with_agent(_report(), value), "suricata").body
+
+        assert "http.user_agent" not in body
+
+    @pytest.mark.parametrize(
+        ("value", "bytes_written"),
+        [
+            ("Agent café/1.0", "Agent caf|C3||A9|/1.0"),
+            ("Agent/1.0 \U0001f600", "Agent/1.0 |F0||9F||98||80|"),
+            ("Agent\u2028tail/1.0", "Agent|E2||80||A8|tail/1.0"),
+        ],
+    )
+    def test_a_character_beyond_ascii_is_written_as_its_utf8_bytes(
+        self, value: str, bytes_written: str
+    ) -> None:
+        """A sensor compares bytes: the code point written as hex matched
+        nothing, and one above U+00FF was not a byte a sensor reads."""
+        rule = _rule(_with_agent(_report(), value), "suricata")
+
+        (line,) = [line for line in _rule_lines(rule.body) if "http.user_agent" in line]
+        assert f'content:"{bytes_written}"; startswith; endswith;' in line
+        assert rule.compile_error is None
+
+    def test_one_agent_longer_than_the_draft_is_left_out_whole_and_counted(self) -> None:
+        rule = _rule(_with_agent(_report(), "Agent/" + "x" * 20_000), "suricata")
+
+        assert "http.user_agent" not in rule.body
+        assert "xxxx" not in rule.body
+        assert rule.body.splitlines()[-1] == (
+            "# (cut at the draft's size: 1 more indicators are not included; "
+            "the report's IOC table carries every indicator)"
+        )
+        assert rule.compile_error is None
+
+
+class TestTheSuricataSyntaxCheck:
+    @pytest.mark.parametrize(
+        "content",
+        ["|E9 1|", "|2028|", "|1F600|", "open|41", "|GG|", "||"],
+    )
+    def test_a_content_group_that_is_not_hex_byte_pairs_is_refused(self, content: str) -> None:
+        from malspark.reporting.detection_signatures import _validate_suricata
+
+        line = (
+            f'alert http any any -> any any (msg:"m"; http.user_agent; content:"{content}"; '
+            "sid:1; rev:1;)"
+        )
+
+        assert _validate_suricata(line) is not None
+
+    @pytest.mark.parametrize("content", ["plain", "a|41|b", "|C3 A9|", "|0D||0A|"])
+    def test_hex_byte_pairs_pass(self, content: str) -> None:
+        from malspark.reporting.detection_signatures import _validate_suricata
+
+        line = (
+            f'alert http any any -> any any (msg:"m"; http.user_agent; content:"{content}"; '
+            "sid:1; rev:1;)"
+        )
+
+        assert _validate_suricata(line) is None
+
+    def test_a_backslash_in_the_family_cannot_reach_a_message(self) -> None:
+        from malspark.reporting.detection_signatures import (
+            _suricata_dns_rule,
+            _suricata_user_agent_rule,
+            _validate_suricata,
+        )
+        from malspark.reporting.models import NetworkDomain
+
+        family = 'Fam\\ily"; sid:2;\\'
+        for line in (
+            _suricata_dns_rule(NetworkDomain(fqdn="gate9.example.org"), 1, "c" * 64, family),
+            _suricata_user_agent_rule(AGENT, 2, "c" * 64, family),
+        ):
+            assert line is not None
+            msg = line.split('msg:"')[1].split('"')[0]
+            assert "\\" not in msg and ";" not in msg
+            assert _validate_suricata(line) is None
+
+
 class TestSigma:
     """A Sigma selection is held to the same rule: published, or watched by a sandbox."""
 
@@ -136,8 +336,8 @@ class TestSigma:
         # Sigma rules over its events recorded (``persistence_from_ledger``),
         # never an analyst's table; the one rule publishes such a key, and the
         # table prints it so.
-        from maljan.reporting.builder import build_consolidated_iocs
-        from maljan.reporting.models import PersistenceMechanism
+        from malspark.reporting.builder import build_consolidated_iocs
+        from malspark.reporting.models import PersistenceMechanism
 
         mech = PersistenceMechanism(
             kind="registry_run", target=self.RUN_KEY, payload="C:\\Users\\Public\\example.exe"
@@ -151,7 +351,7 @@ class TestSigma:
         assert rule is not None and "CurrentVersion" in rule.body
 
     def test_an_analyst_listed_key_the_table_does_not_publish_makes_no_draft(self) -> None:
-        from maljan.reporting.models import ConsolidatedIOC
+        from malspark.reporting.models import ConsolidatedIOC
 
         report = _report()
         report.consolidated_iocs = [
@@ -167,7 +367,7 @@ class TestSigma:
         assert _rule(report, "sigma") is None
 
     def test_a_key_the_sandbox_watched_is_selected(self) -> None:
-        from maljan.reporting.models import DynamicBehavior, RegistryMod
+        from malspark.reporting.models import DynamicBehavior, RegistryMod
 
         dynamic = DynamicBehavior(
             registry_mods=[
@@ -185,7 +385,7 @@ class TestSigma:
         assert rule is not None and "CurrentVersion" in rule.body
 
     def test_a_key_the_sandbox_wrote_without_its_hive_in_the_key_is_selected(self) -> None:
-        from maljan.reporting.models import DynamicBehavior, RegistryMod
+        from malspark.reporting.models import DynamicBehavior, RegistryMod
 
         dynamic = DynamicBehavior(
             registry_mods=[
@@ -207,7 +407,7 @@ class TestSigma:
         )
 
     def test_every_admitted_key_is_selected(self) -> None:
-        from maljan.reporting.models import DynamicBehavior, RegistryMod
+        from malspark.reporting.models import DynamicBehavior, RegistryMod
 
         keys = [f"Software\\ExampleVendor\\Setting{i}" for i in range(30)]
         dynamic = DynamicBehavior(
@@ -221,7 +421,7 @@ class TestSigma:
         assert selected["TargetObject|contains"] == [f"\\{key}" for key in keys]
 
     def test_an_analyst_s_long_hive_name_reads_as_the_sandbox_s_short_one(self) -> None:
-        from maljan.reporting.models import DynamicBehavior, PersistenceMechanism, RegistryMod
+        from malspark.reporting.models import DynamicBehavior, PersistenceMechanism, RegistryMod
 
         dynamic = DynamicBehavior(
             registry_mods=[
@@ -251,7 +451,7 @@ class TestSigma:
         ],
     )
     def test_every_spelling_of_a_key_reads_as_one(self, written: str) -> None:
-        from maljan.reporting.detection_signatures import _registry_form
+        from malspark.reporting.detection_signatures import _registry_form
 
         assert _registry_form(written) == "software\\examplevendor\\run"
 
@@ -268,7 +468,7 @@ class TestSigma:
     def test_a_key_the_sandbox_wrote_in_any_hive_form_is_selected_without_it(
         self, hive: str, key: str
     ) -> None:
-        from maljan.reporting.models import DynamicBehavior, RegistryMod
+        from malspark.reporting.models import DynamicBehavior, RegistryMod
 
         dynamic = DynamicBehavior(
             registry_mods=[RegistryMod(hive=hive, key=key, value_name="x", operation="create")]
@@ -283,7 +483,7 @@ class TestSigma:
         assert selected.lower() == "\\software\\examplevendor\\run"
 
     def test_a_sandbox_signature_is_selected(self) -> None:
-        from maljan.reporting.models import DynamicBehavior, SandboxSignature
+        from malspark.reporting.models import DynamicBehavior, SandboxSignature
 
         dynamic = DynamicBehavior(
             sandbox_signatures=[SandboxSignature(name="AutoRun", description="Installs autorun")]

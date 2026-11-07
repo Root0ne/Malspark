@@ -4,9 +4,10 @@ One tool around ``diec --json`` (Detect It Easy's console program), in an
 image of its own (``Dockerfile``); see ``README.md``. The answer's rows are
 Detect It Easy's detections, one per detected item, each with the file type it
 was found in, its type (Compiler, Linker, Packer, Protector, Library …), its
-name and version as Detect It Easy wrote them: the platform's declaration
-(``core.builtin_declarations``) reads ``name``, ``type``, ``version`` and
-``file_type`` from each, and a pack step may run on one of them.
+name and version as Detect It Easy wrote them: the tool's own declaration
+(``_DECLARED``) says the platform reads ``name``, ``type``, ``version``,
+``file_type`` and the ``runtime`` a name is (``RUNTIMES``) from each, and a
+pack step may run on one of them: a runtime-specific tool's on its runtime.
 """
 
 from __future__ import annotations
@@ -37,14 +38,55 @@ PROGRAM = sidecar.Program(
 SCAN_TOOL = "die_scan"
 TOOLS = (SCAN_TOOL,)
 
+# The code runtimes a detection names, in the words a runtime-specific tool
+# declares it reads (``ToolFacts.runtimes``), by the name Detect It Easy's own
+# signatures give each: the library of a managed .NET assembly, and the Go
+# compiler it tells by the Go build id or the symbol table Go writes. A
+# detection of any other name names no runtime.
+RUNTIMES: dict[str, str] = {
+    ".NET Framework": "dotnet",
+    ".NET Core": "dotnet",
+    "Go": "go",
+}
+
 mcp = FastMCP("DetectItEasyMCP", stateless_http=True)
+
+# What each tool declares of itself (``cli_sidecar.reading_tool``).
+_DECLARED: dict[str, dict[str, Any]] = {
+    SCAN_TOOL: sidecar.reading_tool(
+        "Detect It Easy scan",
+        {
+            "kind": "identification",
+            "rows": "/detections/*",
+            "values": {
+                "name": "/name",
+                "type": "/type",
+                "version": "/version",
+                "file_type": "/file_type",
+                "runtime": "/runtime",
+            },
+            "arguments": {"path": "path"},
+            "display_name": "Detect It Easy",
+            "shows": (
+                "the packers, compilers, linkers, protectors, installers and libraries Detect It "
+                "Easy's signatures name in the file, with the format each was found in"
+            ),
+            "does_not_show": (
+                "what the code does, or a packer or compiler no signature describes; a name is a "
+                "signature match, not a proof"
+            ),
+        },
+    ),
+    "capabilities": sidecar.reading_tool("Tool availability", sidecar.CAPABILITIES_FACTS),
+}
 
 
 def detections(document: Any) -> tuple[list[str], list[dict[str, Any]]]:
     """The file types and the detection rows of a ``diec --json`` document, in its order.
 
     Each row is one detected item as Detect It Easy wrote it, with the file
-    type and the part of the file it was found in beside it; every key
+    type and the part of the file it was found in beside it, and the
+    ``runtime`` its name is (:data:`RUNTIMES`) where it names one; every key
     Detect It Easy wrote is kept.
     """
     if not isinstance(document, dict):
@@ -60,11 +102,15 @@ def detections(document: Any) -> tuple[list[str], list[dict[str, Any]]]:
         part = str(detect.get("parentfilepart") or "")
         for value in detect.get("values") or ():
             if isinstance(value, dict):
-                rows.append({"file_type": file_type, "part": part, **value})
+                row = {"file_type": file_type, "part": part, **value}
+                runtime = RUNTIMES.get(str(value.get("name") or ""))
+                if runtime:
+                    row["runtime"] = runtime
+                rows.append(row)
     return file_types, rows
 
 
-@mcp.tool()
+@mcp.tool(**_DECLARED["die_scan"])
 async def die_scan(
     path: str,
     deep_scan: bool = True,
@@ -110,7 +156,7 @@ async def die_scan(
     return await sidecar.answering(SCAN_TOOL, work)
 
 
-@mcp.tool()
+@mcp.tool(**_DECLARED["capabilities"])
 def capabilities() -> dict[str, Any]:
     """Which of this server's tools this host can run, and how to install what is missing."""
     return sidecar.capabilities(SERVER, PROGRAM, TOOLS, version=DIE_VERSION)

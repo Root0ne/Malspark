@@ -21,9 +21,9 @@ from unittest.mock import MagicMock, patch
 
 from langchain_core.messages import AIMessage
 
-from maljan.agents.base_agent import BaseAnalyst
-from maljan.agents.tool_fence import fenced
-from maljan.pipeline.validation import (
+from malspark.agents.base_agent import BaseAnalyst
+from malspark.agents.tool_fence import fenced
+from malspark.pipeline.validation import (
     RETRY_DROP_KEPT,
     RETRY_DROP_NOT_ANSWERED,
     RETRY_DROP_WITHDRAWN,
@@ -33,7 +33,7 @@ from maljan.pipeline.validation import (
     retry_drops,
     validation_metrics,
 )
-from maljan.schemas.isr_models import AgentISR, Finding
+from malspark.schemas.isr_models import AgentISR, Finding
 
 
 def _block(n: int, technique: str) -> str:
@@ -79,7 +79,7 @@ class _Analyst(BaseAnalyst):
 def _check(analyst: _Analyst, first: str) -> AgentISR:
     isr = analyst._text_to_isr(first, 0)
     with (
-        patch("maljan.agents.base_agent.validity_check_available", return_value=True),
+        patch("malspark.agents.base_agent.validity_check_available", return_value=True),
         patch.object(BaseAnalyst, "_fits_the_window", return_value=True),
     ):
         return analyst._validate_isr(isr, "evidence")
@@ -200,8 +200,8 @@ class TestTheParts:
 
 
 def test_section_13_lists_each_item_with_its_state() -> None:
-    from maljan.reporting.models import FileHashes, MalwareReport, SampleIdentity
-    from maljan.reporting.renderers.markdown import MarkdownRenderer
+    from malspark.reporting.models import FileHashes, MalwareReport, SampleIdentity
+    from malspark.reporting.renderers.markdown import MarkdownRenderer
 
     analyst = _Analyst("all_tools_static_r2", [RETRY, TestTheStaticReplay.REPLY])
     _check(analyst, FIRST)
@@ -270,8 +270,8 @@ def test_the_question_and_its_outcome_are_events() -> None:
 
 class TestNothingUnmaskedInTheRecord:
     def _secrets(self, monkeypatch: Any) -> tuple[str, str]:
-        from maljan.pipeline import events
-        from maljan.pipeline.events import remember_secret_values
+        from malspark.pipeline import events
+        from malspark.pipeline.events import remember_secret_values
         from tests.credential_shapes import lowercase_body, password
 
         monkeypatch.setattr(events, "_SECRET_SCOPES", {})
@@ -287,8 +287,8 @@ class TestNothingUnmaskedInTheRecord:
     ) -> None:
         import logging
 
-        from maljan.reporting.models import FileHashes, MalwareReport, SampleIdentity
-        from maljan.reporting.renderers.markdown import MarkdownRenderer
+        from malspark.reporting.models import FileHashes, MalwareReport, SampleIdentity
+        from malspark.reporting.renderers.markdown import MarkdownRenderer
 
         key, secret = self._secrets(monkeypatch)
         url = f"http://admin:{secret}@evil.example.org/gate"
@@ -309,7 +309,7 @@ class TestNothingUnmaskedInTheRecord:
             verdict="Malware",
             run_summary={"validation": metrics},
         )
-        from maljan.analysis.run_summary import RunSummaryBuilder
+        from malspark.analysis.run_summary import RunSummaryBuilder
 
         summary = RunSummaryBuilder(start_time=0.0).set_validation(metrics).build()
         surfaces = {
@@ -327,7 +327,7 @@ class TestNothingUnmaskedInTheRecord:
 
 
 def test_a_url_is_masked_then_defanged_whole() -> None:
-    from maljan.pipeline.validation import retry_drop_row
+    from malspark.pipeline.validation import retry_drop_row
 
     text = 'The sample beacons to "https://relay.example.net/live/" every 60 s.'
     row = retry_drop_row(
@@ -414,10 +414,10 @@ class TestSeveralDecisionsOnALine:
             ("KEEP C1" + " " * 100_000) * 3 + "x",
             "KEEP C1" + " and" * 100_000 + " x",
         ]
-        started = time.perf_counter()
+        started = time.thread_time()
         for line in lines:
             read_retry_drop_answers(line, self.LABELS)
-        assert time.perf_counter() - started < 2.0
+        assert time.thread_time() - started < 2.0
 
 
 class TestMoreClauseStarts:
@@ -504,11 +504,11 @@ class TestMoreClauseStarts:
             "1. " * repeats,
             "KEEP C1: a" + ". KEEP C1 C2 C3 x" * repeats,
         ]
-        started = time.perf_counter()
+        started = time.thread_time()
         for line in lines:
             read_retry_drop_answers(line, self.LABELS)
         # Linear: about a second here; quadratic would take hours.
-        assert time.perf_counter() - started < 20.0
+        assert time.thread_time() - started < 20.0
 
 
 class TestTheQuestionShowsWhatTheItemsCite:
@@ -549,7 +549,7 @@ class TestTheQuestionShowsWhatTheItemsCite:
     ) -> Any:
         from langchain_core.messages import HumanMessage
 
-        from maljan.schemas.evidence import LedgerEntry
+        from malspark.schemas.evidence import LedgerEntry
 
         name = "all_tools_reverser_ghidra"
         analyst = _Analyst(name, [reply])
@@ -578,7 +578,7 @@ class TestTheQuestionShowsWhatTheItemsCite:
         return analyst, result
 
     def test_each_item_is_asked_whole_with_the_entries_it_cites(self) -> None:
-        from maljan.pipeline.validation import RETRY_DROP_ENTRIES_HEAD
+        from malspark.pipeline.validation import RETRY_DROP_ENTRIES_HEAD
 
         analyst, _result = self._settle(
             "KEEP C1: the decompile shows it\nKEEP C2: yes",
@@ -597,7 +597,7 @@ class TestTheQuestionShowsWhatTheItemsCite:
         assert "part 1" not in question
 
     def test_a_pack_entry_seen_as_its_summary_line_is_named_as_that_line(self) -> None:
-        from maljan.agents.base_agent import PACK_SUMMARY_NOTE
+        from malspark.agents.base_agent import PACK_SUMMARY_NOTE
 
         analyst, _result = self._settle(
             "KEEP C1: yes\nKEEP C2: yes", "[ev_0001] identity: pe windows, dll\nmore pack"
@@ -633,8 +633,8 @@ class TestTheQuestionShowsWhatTheItemsCite:
         )
 
     def test_a_pack_entry_read_again_cut_is_shown_whole_and_marked_partial(self) -> None:
-        from maljan.agents.judge_agent import PARTIAL_ENTRY_MARK
-        from maljan.schemas.evidence import LedgerEntry
+        from malspark.agents.judge_agent import PARTIAL_ENTRY_MARK
+        from malspark.schemas.evidence import LedgerEntry
 
         name = "all_tools_reverser_ghidra"
         cut_read = LedgerEntry(
@@ -662,7 +662,7 @@ class TestTheQuestionShowsWhatTheItemsCite:
         assert f"[ev_0002] floss ({PARTIAL_ENTRY_MARK}):\n{shown}" in question
 
     def test_a_chain_of_repeats_is_followed_to_the_entry_that_holds_the_answer(self) -> None:
-        from maljan.schemas.evidence import LedgerEntry
+        from malspark.schemas.evidence import LedgerEntry
 
         peer = LedgerEntry(
             id="ev_0102", agent="static", tool="read_evidence", repeated_of="ev_0001"
@@ -706,7 +706,7 @@ class TestTheQuestionShowsWhatTheItemsCite:
 
 
 def _budget(tokens: int) -> Any:
-    from maljan.llm.context_window import ContextBudget, WindowFact
+    from malspark.llm.context_window import ContextBudget, WindowFact
 
     return ContextBudget(WindowFact(tokens, "probed", "test"))
 
@@ -733,8 +733,8 @@ class TestTheQuestionIsAskedInPartsThatFit:
         )
 
     def _analyst(self, replies: list[Any], window: Any) -> _Analyst:
-        from maljan.llm.context_window import ContextBudget
-        from maljan.schemas.evidence import LedgerEntry
+        from malspark.llm.context_window import ContextBudget
+        from malspark.schemas.evidence import LedgerEntry
 
         analyst = _Analyst("all_tools_reverser_ghidra", replies)
         analyst._evidence_entries = [
@@ -758,7 +758,7 @@ class TestTheQuestionIsAskedInPartsThatFit:
 
     @staticmethod
     def _window(prompt_chars: int, source: str = "probed") -> Any:
-        from maljan.llm.context_window import WindowFact
+        from malspark.llm.context_window import WindowFact
 
         # Room for ``prompt_chars`` beside the analyst's 16,384-token cap, at 3 chars a token.
         return WindowFact(16_384 + prompt_chars // 3, source, "test")
@@ -790,9 +790,9 @@ class TestTheQuestionIsAskedInPartsThatFit:
         """
         from langchain_core.messages import AIMessage, HumanMessage
 
-        from maljan.agents.base_agent import current_run_state, frame_messages
-        from maljan.pipeline.validation import RETRY_DROP_ENTRIES_UNFIT
-        from maljan.schemas.evidence import LedgerEntry
+        from malspark.agents.base_agent import current_run_state, frame_messages
+        from malspark.pipeline.validation import RETRY_DROP_ENTRIES_UNFIT
+        from malspark.schemas.evidence import LedgerEntry
 
         retry = TestTheQuestionShowsWhatTheItemsCite.RETRY
         analyst = _Analyst("all_tools_reverser_ghidra", ["KEEP C1: yes", "KEEP C1: yes"])
@@ -836,7 +836,7 @@ class TestTheQuestionIsAskedInPartsThatFit:
         assert self.BODY_A in question and self.BODY_B in question
 
     def test_an_entry_too_large_even_alone_is_named_by_id(self) -> None:
-        from maljan.pipeline.validation import RETRY_DROP_ENTRIES_UNFIT
+        from malspark.pipeline.validation import RETRY_DROP_ENTRIES_UNFIT
 
         analyst = self._analyst(
             ["KEEP C1: yes", "KEEP C1: yes", "KEEP C1: yes"], self._window(45_000)
@@ -850,7 +850,7 @@ class TestTheQuestionIsAskedInPartsThatFit:
         assert self.BODY_A in third
 
     def test_with_no_learned_window_the_model_s_declared_window_is_used(self) -> None:
-        from maljan.llm.context_window import record_built_window
+        from malspark.llm.context_window import record_built_window
 
         analyst = self._analyst(["KEEP C1: yes", "KEEP C1: yes"], None)
         record_built_window(analyst.llm, self._window(45_000, source="declared"))
@@ -865,3 +865,52 @@ class TestTheQuestionIsAskedInPartsThatFit:
         self._settle(analyst)
 
         assert len(analyst.questions) == 1
+
+
+class TestAKeptClaimTheRetryWroteAgain:
+    """A claim answered KEEP takes the place of the one retry block that wrote it again."""
+
+    POLLING = (
+        "Routine 0x1030 polls the child. It calls slot 0x10d80 on the handle, tests 0x103, "
+        "sleeps through 0xc934 and ends with slot 0x10d90."
+    )
+    POLLING_AGAIN = (
+        "Routine 0x1030 runs its child until it exits: slot 0x10d80 on the process handle, a "
+        "test of 0x103, a sleep through 0xc934."
+    )
+    BEACON = "The beacon thread 0x5750 waits 180 s before its first request."
+
+    @staticmethod
+    def _text(*sentences: str) -> str:
+        return "".join(
+            f"CLAIM: {sentence}\nEVIDENCE: [ev_0001] listing\nCONFIDENCE: 0.8\n---\n"
+            for sentence in sentences
+        )
+
+    def test_keep_replaces_the_block_and_the_answer_states_the_claim_once(self) -> None:
+        analyst = _Analyst("static", ["KEEP C1: the end call is in the listing"])
+        first = analyst._text_to_isr(self._text(self.POLLING, self.BEACON), 0)
+        retry_text = self._text(self.BEACON, self.POLLING_AGAIN)
+        retried = analyst._text_to_isr(retry_text, 0)
+
+        result = analyst._settle_retry_drops(first, retried, retry_text, [], [], None)
+
+        (question,) = analyst.questions
+        assert "C1. CLAIM: Routine 0x1030 polls the child." in question
+        assert [c.claim for c in result.claims] == [self.BEACON, self.POLLING]
+        assert [row["state"] for row in _drop_rows(analyst)] == [RETRY_DROP_KEPT]
+
+    def test_an_unanswered_item_is_put_back_beside_the_retry_s_version(self) -> None:
+        analyst = _Analyst("static", ["I have nothing to add."])
+        first = analyst._text_to_isr(self._text(self.POLLING, self.BEACON), 0)
+        retry_text = self._text(self.BEACON, self.POLLING_AGAIN)
+        retried = analyst._text_to_isr(retry_text, 0)
+
+        result = analyst._settle_retry_drops(first, retried, retry_text, [], [], None)
+
+        assert [c.claim for c in result.claims] == [
+            self.BEACON,
+            self.POLLING_AGAIN,
+            self.POLLING,
+        ]
+        assert [row["state"] for row in _drop_rows(analyst)] == [RETRY_DROP_NOT_ANSWERED]

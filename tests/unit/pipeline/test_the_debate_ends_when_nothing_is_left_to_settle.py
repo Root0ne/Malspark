@@ -30,14 +30,14 @@ from unittest.mock import patch
 from langchain_core.messages import AIMessage
 from langchain_core.runnables import RunnableLambda
 
-from maljan.agents.judge_agent import JudgeAgent
-from maljan.analysis.run_summary import RunSummaryBuilder
-from maljan.core.config import Settings
-from maljan.pipeline.debate_facts import LEDGER_FACTS_HEAD
-from maljan.pipeline.mediation_models import MediatorVerdict
-from maljan.pipeline.routing import ConsensusRouter, debate_route
-from maljan.pipeline.state import AgentArgument
-from maljan.schemas.isr_models import AgentISR, ClaimEvidence
+from malspark.agents.judge_agent import JudgeAgent
+from malspark.analysis.run_summary import RunSummaryBuilder
+from malspark.core.config import Settings
+from malspark.pipeline.debate_facts import LEDGER_FACTS_HEAD
+from malspark.pipeline.mediation_models import MediatorVerdict
+from malspark.pipeline.routing import ConsensusRouter, debate_route
+from malspark.pipeline.state import AgentArgument
+from malspark.schemas.isr_models import AgentISR, ClaimEvidence
 
 
 def _mediator(contradictions: list[str] | None = None, confidence: float = 0.9) -> AgentArgument:
@@ -167,7 +167,7 @@ class TestTheHardLimit:
             sycophancy_detected=True,
             discussion_history=[_mediator([])],
         )
-        with caplog.at_level(logging.INFO, logger="maljan"):
+        with caplog.at_level(logging.INFO, logger="malspark"):
             debate_route(state, max_rounds=5)
 
         said = " ".join(r.getMessage() for r in caplog.records)
@@ -374,6 +374,22 @@ class TestTheMediatorDecides:
 
     def test_a_mark_that_was_not_read_blocks_and_is_kept_on_the_argument(self) -> None:
         line = f"{COUNT_LINE} [blocking: r] [not blocking: r2]"
+        argument, is_consensus = _mediate(_Model(_block(line)))
+
+        assert is_consensus is False
+        assert argument.contradictions == [line]
+        assert argument.unread_marks == [line]
+
+    def test_a_line_marked_not_blocking_right_after_its_field_leaves_consensus(self) -> None:
+        line = "[analysts: GAMMA ANALYST] [not blocking: a tally] Claim 2 counts 41 [ev_0007]"
+        argument, is_consensus = _mediate(_Model(_block(line)))
+
+        assert is_consensus is True
+        assert argument.not_blocking == [line]
+        assert argument.unread_marks == []
+
+    def test_a_mark_after_the_field_against_one_ending_the_line_is_not_read(self) -> None:
+        line = "[analysts: GAMMA ANALYST] [not blocking: a tally] Claim 2 counts 41 [blocking: r]"
         argument, is_consensus = _mediate(_Model(_block(line)))
 
         assert is_consensus is False

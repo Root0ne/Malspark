@@ -1,0 +1,151 @@
+name: macOS Tests
+
+on:
+  push:
+    branches: ["main", "dev"]
+  pull_request:
+    branches: ["main", "dev", "feat/**"]
+
+# The workflow reads the repository and nothing else; it references no secrets.
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # The unit and API suites on Apple Silicon, where the host has no /proc, no
+  # prlimit, Mach-O system binaries and a C library whose UTF-8 locales share
+  # one case table. Not a required check: it shows where a test or the code
+  # assumes Linux. Neither suite needs a running service: a test that reads
+  # Postgres, Redis or Qdrant skips itself without its URL, as on the Linux
+  # job, and the compose tests skip where no docker CLI is installed, as on
+  # this runner.
+  #
+  # The suites run in shards (scripts/ci/shard_map.py and the development
+  # guide); the job named "Test Suite (macOS arm64)" at the end passes only
+  # when every shard passed and the shards were shown to cover both suites.
+  test-macos-shard:
+    name: Tests (macOS arm64, shard ${{ matrix.shard }}/4)
+    runs-on: macos-15
+    # The suites' own run took about 50 minutes on this runner, a shard's
+    # share is 12-15; a bound near that would stop a shard that is only slow.
+    # A test that hangs is named well before it: see faulthandler_timeout below.
+    timeout-minutes: 45
+    env:
+      # brew would update itself before every install; the job wants one formula.
+      HOMEBREW_NO_AUTO_UPDATE: "1"
+
+    strategy:
+      fail-fast: false
+      matrix:
+        # 1..SUITES["macos"].shards in scripts/ci/shard_map.py.
+        shard: [1, 2, 3, 4]
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.13"
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+        with:
+          enable-cache: true
+
+      # The report renderer loads Pango through cffi at import time; the Linux
+      # runner image carries it, this one does not.
+      - name: Install Pango
+        run: brew install pango
+
+      - name: Install dependencies
+        run: uv sync --frozen --all-packages
+
+      # A test still running after ten minutes has every thread's stack
+      # written to the log, so a hang names its test however the job ends.
+      # WeasyPrint loads Pango and GLib with dlopen, which does not look in
+      # Homebrew's /opt/homebrew/lib on its own; the variable is set on the
+      # command itself, because macOS drops DYLD_* variables on the way through
+      # the system's own shell. macOS ships bash 3.2, which has no mapfile.
+      - name: Run unit and API test shard
+        env:
+          SHARD: ${{ matrix.shard }}
+        run: |
+          uv run python scripts/ci/shard_map.py --suite macos --shard "$SHARD" > "$RUNNER_TEMP/shard-paths"
+          # pytest given no path would run its whole test path.
+          test -s "$RUNNER_TEMP/shard-paths"
+          paths=()
+          while IFS= read -r path; do paths+=("$path"); done < "$RUNNER_TEMP/shard-paths"
+          DYLD_FALLBACK_LIBRARY_PATH="$(brew --prefix)/lib" \
+            uv run pytest "${paths[@]}" -q --tb=short -o faulthandler_timeout=600 \
+            --junitxml="$RUNNER_TEMP/junit-macos-$SHARD.xml"
+
+      - name: Upload test durations
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: junit-macos-${{ matrix.shard }}
+          path: ${{ runner.temp }}/junit-macos-${{ matrix.shard }}.xml
+          retention-days: 14
+
+  # The shards together must collect exactly what `pytest tests/unit tests/api`
+  # collects on this runner, whose collection differs from Linux's.
+  test-macos-shard-map:
+    name: Test shard map (macOS arm64)
+    runs-on: macos-15
+    timeout-minutes: 30
+    env:
+      HOMEBREW_NO_AUTO_UPDATE: "1"
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.13"
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+        with:
+          enable-cache: true
+
+      # Collecting imports the report renderer as running it does.
+      - name: Install Pango
+        run: brew install pango
+
+      - name: Install dependencies
+        run: uv sync --frozen --all-packages
+
+      - name: Every test is in exactly one shard
+        run: |
+          uv run python scripts/ci/shard_map.py --suite macos --list
+          DYLD_FALLBACK_LIBRARY_PATH="$(brew --prefix)/lib" \
+            uv run python scripts/ci/shard_map.py --suite macos --check
+
+  test-macos:
+    name: Test Suite (macOS arm64)
+    runs-on: ubuntu-latest
+    needs: [test-macos-shard, test-macos-shard-map]
+    # Runs whatever the shards' outcome, so a failed, cancelled or skipped
+    # shard fails this check instead of leaving it skipped.
+    if: always()
+
+    steps:
+      - name: Every shard passed and the map is complete
+        env:
+          SHARDS: ${{ needs.test-macos-shard.result }}
+          SHARD_MAP: ${{ needs.test-macos-shard-map.result }}
+        run: |
+          echo "shards: $SHARDS, shard map: $SHARD_MAP"
+          test "$SHARDS" = success
+          test "$SHARD_MAP" = success

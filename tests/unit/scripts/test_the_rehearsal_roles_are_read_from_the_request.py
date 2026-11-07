@@ -31,17 +31,18 @@ from scripts.rehearsal.roles import (
     role_of,
 )
 
-from maljan.agents.base_agent import _REVISION_ISR_FRAMING
-from maljan.agents.judge_agent import (
+from malspark.agents.base_agent import _REVISION_ISR_FRAMING
+from malspark.agents.judge_agent import (
     JUDGE_VERDICT_SYSTEM,
     MEDIATION_EXTRACTION_SYSTEM,
     MEDIATOR_SYSTEM_HEAD,
     TECHNIQUE_QUESTION_SYSTEM,
 )
-from maljan.agents.prompt_fragments import no_tool_call_question
-from maljan.agents.static_analyst import _extract_load_hint
-from maljan.pipeline.validation import FEEDBACK_PREAMBLE, RetryDrops, retry_drop_question
-from maljan.reporting import composer, narrative_agent
+from malspark.agents.prompt_fragments import no_tool_call_question
+from malspark.agents.static_analyst import _extract_load_hint
+from malspark.agents.tool_answer_clearing import READ_EVIDENCE_TOOL
+from malspark.pipeline.validation import FEEDBACK_PREAMBLE, RetryDrops, retry_drop_question
+from malspark.reporting import composer, narrative_agent
 
 SAMPLE = "/w/sample_1.exe"
 PACK = (
@@ -322,7 +323,7 @@ class TestTheJudgeAndTheReport:
         user = PACK + "Expert Reports:\nTECHNIQUE: T1055\nTECHNIQUE: T1071.001\n"
         reply = Brain().answer(_request(JUDGE_VERDICT_SYSTEM, user))[1]
         bundle = json.loads(reply.text)
-        assert bundle["x_maljan_assessment"]["verdict"] == "Malware"
+        assert bundle["x_malspark_assessment"]["verdict"] == "Malware"
         carried = [
             o["external_references"][0]["external_id"]
             for o in bundle["objects"]
@@ -376,3 +377,17 @@ class TestTheJudgeAndTheReport:
             ("NarrativeOutput", {"executive_summary": "s"})
         ]
         assert _as_schema_call(_request("x", "y"), '{"a": 1}').text == '{"a": 1}'
+
+    def test_the_read_offered_beside_a_schema_is_never_taken_for_it(self) -> None:
+        tool = {"name": "NarrativeOutput", "description": "", "schema": {"properties": {}}}
+        read = {"name": READ_EVIDENCE_TOOL, "description": "", "schema": {"properties": {}}}
+        reply = _as_schema_call(
+            _request("x", "y", tools=[tool, read]), '{"executive_summary": "s"}'
+        )
+        assert [c.name for c in reply.tool_calls] == ["NarrativeOutput"]
+        alone = _as_schema_call(_request("x", "y", tools=[read]), '{"a": 1}')
+        assert alone.text == '{"a": 1}' and not alone.tool_calls
+
+    def test_a_call_offering_only_the_read_is_no_analyst(self) -> None:
+        read = {"name": READ_EVIDENCE_TOOL, "description": "", "schema": {"properties": {}}}
+        assert role_of(_request("A prompt nobody wrote.", "hello", tools=[read])) == "other"

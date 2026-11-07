@@ -7,7 +7,7 @@ Two built-in tool servers open what a file carries inside it: unblob carves
 and extracts every file a container or firmware image holds, and JADX
 decompiles an Android package's or dex file's bytecode to Java. Each wraps one
 program in an image of its own under `services/`, over the same plumbing as
-the [identification servers](/tools/identification/); each ships **switched
+the [identification servers](/docs/tools/identification/); each ships **switched
 off**, and each is used at full strength once it is on: agents are offered
 every tool it advertises, and its triage pack step runs.
 
@@ -47,7 +47,7 @@ a regular file is hashed or handed on. What unblob refused is listed under
 `problems`, by the report's name and the member's path.
 
 A file reaches another server only through the job's
-[artefact store](/integrations/mcp-servers/#files-a-server-wrote): the shipped
+[artefact store](/docs/integrations/mcp-servers/#files-a-server-wrote): the shipped
 step declares `outputs` `/files/*/path`, and the store reads each file back
 over the server's `get_artefact` tool, which opens it beneath the carve root
 component by component with no link followed and refuses anything but a
@@ -106,15 +106,18 @@ instead (`http://localhost:8096/mcp` and so on).
 </Steps>
 
 `unblob` is offered to the `static` and `reverser` agents, `jadx` to the
-`android_static` and `reverser` agents. A server that is switched off, not
-configured, or does not offer its step's tool leaves the step off: no call, no
-entry, and the reason in the worker's log and on the pack's result. A
-deployment without these servers runs the pack exactly as before.
+`android_static` and `reverser` agents. Each pack step is taken by its tool's
+declared kind (see [Configuration](/docs/configuration/#the-packs-steps));
+`container_extract` declares where its answer names the files it wrote
+(`outputs`), so its step takes each into the job's artefact store. A server
+that is switched off or does not offer its step's tool leaves the step off: no
+call, no entry, and the reason in the worker's log and on the pack's result;
+one that is not configured gives no step. A deployment without these servers runs the pack without these steps.
 
 ## What each container is held to
 
 Each is held as the identification servers are (see
-[Identification servers](/tools/identification/#what-each-container-is-held-to)):
+[Identification servers](/docs/tools/identification/#what-each-container-is-held-to)):
 the worker's unprivileged ids, no Linux capability, a pids limit, a read-only
 root whose only writable place is a tmpfs sized below the memory ceiling
 (`UNBLOB_TMPFS_SIZE`, `JADX_TMPFS_SIZE`, 1536m each; unblob's carve root is in
@@ -162,7 +165,7 @@ and its extractors for the server's Python (`pip install --require-hashes -r
 services/unblob-mcp/requirements.txt`, then `unblob
 --show-external-dependencies`), or JADX's `jadx` command on `PATH`. Point the
 block's `transport` at `stdio` and its `command` and `args` at the script, clear
-its `sample_mount`, and add `MALJAN_SAMPLE_ROOTS` (and `UNBLOB_CARVE_ROOT`,
+its `sample_mount`, and add `MALSPARK_SAMPLE_ROOTS` (and `UNBLOB_CARVE_ROOT`,
 `UPLOAD_MAX_BYTES`, `CARVED_KEEP_SECONDS`) to its `env_allow`. Run that way,
 unblob's files are on the host, under `UNBLOB_CARVE_ROOT` (a directory under
 the system's temporary directory unless set).

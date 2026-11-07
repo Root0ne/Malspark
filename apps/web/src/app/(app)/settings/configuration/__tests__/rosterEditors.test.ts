@@ -103,7 +103,11 @@ describe("the server detail's agent boxes", () => {
 describe("the agent detail's input data and sandbox row", () => {
   const vocabulary = served("agent_definitions").data_source_choices as string[];
 
-  function agentHtml(key: string, definition: AgentDefinitionEntry): string {
+  function agentHtml(
+    key: string,
+    definition: AgentDefinitionEntry,
+    builtinAgentKeys?: readonly string[],
+  ): string {
     return renderToStaticMarkup(
       createElement(AgentDetail, {
         agentKey: key,
@@ -117,6 +121,7 @@ describe("the agent detail's input data and sandbox row", () => {
         resolve,
         sections: ["identity", "tools"],
         dataSourceChoices: vocabulary,
+        builtinAgentKeys,
       }),
     );
   }
@@ -131,6 +136,32 @@ describe("the agent detail's input data and sandbox row", () => {
     max_steps: null,
     timeout_seconds: null,
   };
+
+  it("tells an agent whose role has no tab where its sections go, beside the tab it may pick", () => {
+    const hint = "Sections its tools&#x27; kinds do not place go to EVIDENCE unless you pick a tab";
+    for (const role of ["generic", "lead"] as const) {
+      for (const tab of [null, "static"]) {
+        const html = agentHtml("checker", { ...base, role, tab });
+        expect(html, `${role} ${tab}`).toContain(hint);
+        expect(html, `${role} ${tab}`).toContain('id="checker-tab-hint"');
+        expect(html.match(/<select[^>]*aria-label="checker tab"[^>]*>/)?.[0], `${role} ${tab}`).toContain(
+          'aria-describedby="checker-tab-hint"',
+        );
+      }
+    }
+    for (const role of ["static", "dynamic", "network"] as const) {
+      const html = agentHtml("checker", { ...base, role });
+      expect(html, role).not.toContain(hint);
+      expect(html, role).not.toContain("aria-describedby=\"checker-tab-hint\"");
+    }
+    // A built-in's tab select is locked: no hint about a tab it cannot pick.
+    for (const role of ["generic", "lead"] as const) {
+      const html = agentHtml("checker", { ...base, role }, ["checker"]);
+      expect(html.match(/<select[^>]*aria-label="checker tab"[^>]*>/)?.[0], role).toContain("disabled");
+      expect(html, role).not.toContain(hint);
+      expect(html, role).not.toContain('aria-describedby="checker-tab-hint"');
+    }
+  });
 
   it("draws a box per served input slice, ticking the stored ones", () => {
     const html = agentHtml("checker", { ...base, data_sources: ["sandbox.behavior"] });

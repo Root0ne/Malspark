@@ -18,8 +18,8 @@ import time
 from collections.abc import Callable
 from typing import Any
 
-from maljan.tools import artefact_index
-from maljan.tools.pe_image import Image, Section
+from malspark.tools import artefact_index
+from malspark.tools.pe_image import Image, Section
 
 BASE = 0x140000000
 TEXT_RVA = 0x1000
@@ -153,9 +153,9 @@ def _timed(make: Callable[[int], tuple[Image, dict[str, Any]]], n: int) -> tuple
     gc.collect()
     gc.disable()
     try:
-        began = time.perf_counter()
+        began = time.thread_time()
         answer = artefact_index.index_image(image, **joined)
-        return time.perf_counter() - began, answer
+        return time.thread_time() - began, answer
     finally:
         gc.enable()
 

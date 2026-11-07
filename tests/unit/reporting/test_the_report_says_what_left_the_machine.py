@@ -17,7 +17,7 @@ from datetime import UTC, datetime
 
 import pytest
 
-from maljan.analysis.disclosure import (
+from malspark.analysis.disclosure import (
     FOOTNOTE_SENTENCE,
     INTRO_SENTENCE,
     NOT_BUILT_REPORTING_OFF,
@@ -29,8 +29,8 @@ from maljan.analysis.disclosure import (
     with_enrichment,
     with_enrichment_asked,
 )
-from maljan.reporting.models import FileHashes, MalwareReport, SampleIdentity
-from maljan.reporting.renderers.markdown import MarkdownRenderer
+from malspark.reporting.models import FileHashes, MalwareReport, SampleIdentity
+from malspark.reporting.renderers.markdown import MarkdownRenderer
 
 SNAPSHOT = {
     "llm.provider": "openai",
@@ -104,7 +104,7 @@ def test_what_prints_as_configured_is_read_from_the_record_never_the_process_set
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """A later render of a stored run prints the hosts its own run addressed, and only those."""
-    from maljan.core import config
+    from malspark.core import config
 
     record = _record()
     before = _rendered(record)
@@ -118,7 +118,7 @@ def test_what_prints_as_configured_is_read_from_the_record_never_the_process_set
 
 
 def test_the_html_report_carries_the_block() -> None:
-    from maljan.reporting.renderers.html import HtmlRenderer
+    from malspark.reporting.renderers.html import HtmlRenderer
 
     html = HtmlRenderer().render(
         _report({"final_decision": "Malware", "disclosure": _record()}), nonce="fixed"
@@ -244,18 +244,31 @@ def test_the_enrichment_queued_after_the_report_is_named_then_what_it_asked() ->
 # Re-pinned when the report model's host identifier table came to mark each
 # row the IOC table publishes and its footer to say the table publishes
 # nothing itself (T-386): only that table's marked rows and footer changed.
+# Re-pinned when no table cell of the body came to be cut (T-399): the only
+# changes are body cells that ended in … printed whole, the methodology's
+# sentence about cut values, and the HTML print stylesheet's fixed table layout.
+# Re-pinned when a decoded text the pack spells with a closing ``\x5c`` came to
+# print as the text (T-493): run4, run5 and run7 print ``\Registry\Machine\``
+# where they printed ``\Registry\Machine\x5c``, and nothing else changed.
+# haiku4 and local8 re-pinned when the commands table came to list only what
+# descends from a process running the sample (T-494): explorer.exe under
+# sihost.exe leaves the table, which has no row left and is not printed; nothing else
+# changed.
+# Re-pinned when the product took its new name (T-576): the HTML's generator
+# line names Malspark; with the previous name each HTML digest is the one
+# pinned before, and the Markdown did not change.
 STORED_RENDERS = {
-    "run7": ("cdd9515862d5af1d", "dea1f998fc174103"),
-    "run5": ("83588faa188377b2", "b771abbf5ef82b73"),
-    "run4": ("db8c93d83f3b8f4e", "8f930558dc551ae8"),
-    "local8": ("0de08c4dc87e22cd", "4cb8cd5f0fb12432"),
-    "haiku4": ("75b9157b1a863aca", "b47768bbf80581cb"),
+    "run7": ("87ad1594f3cbc6ea", "f8c2570b24983f04"),
+    "run5": ("4fbb0b856aea7f8e", "827d5f7ebdee3768"),
+    "run4": ("581eb11ec3924a68", "0d81125d321278da"),
+    "local8": ("058e0d21f925bb0e", "6016e1c49686fbb1"),
+    "haiku4": ("06a395f0432b80a2", "a56231bf54979dba"),
 }
 
 
 @pytest.mark.parametrize("run", sorted(STORED_RENDERS))
 def test_a_stored_run_renders_as_it_did_before_the_block(run: str) -> None:
-    from maljan.reporting.renderers import HtmlRenderer
+    from malspark.reporting.renderers import HtmlRenderer
     from tests.unit.reporting.test_an_entry_without_a_source_is_read_as_before import (
         _benchmark,
     )

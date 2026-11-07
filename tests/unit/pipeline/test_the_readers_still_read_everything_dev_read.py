@@ -11,13 +11,13 @@ from __future__ import annotations
 
 import pytest
 
-from maljan.pipeline.validation import (
+from malspark.pipeline.validation import (
     _unstated_values,
     network_values_in,
     recommendation_indicator_violations,
 )
-from maljan.reporting.renderers.markdown import _defanged_text
-from maljan.tools.strings import iocs_from_text
+from malspark.reporting.renderers.markdown import _defanged_text
+from malspark.tools.strings import iocs_from_text
 
 # (input, sweep, host reader, values the publish check names, recommendation
 # questions, defanged text): dev's output for each.
@@ -148,6 +148,6 @@ def test_the_publish_checks_read_a_long_text_in_linear_time() -> None:
     hosts = " ".join(f"h{i}.example{i % 97}.com" for i in range(10_000))
     objects = " ".join(f"Global\\h{i}.example.com" for i in range(12_500))
     for text in (hosts, objects):
-        started = time.perf_counter()
+        started = time.thread_time()
         _unstated_values(text, _no_row)
-        assert time.perf_counter() - started < 10, len(text)
+        assert time.thread_time() - started < 10, len(text)

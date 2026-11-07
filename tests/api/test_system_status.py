@@ -38,7 +38,7 @@ def client() -> TestClient:
 class TestSystemStatus:
     def test_reports_mock_mode_and_key_presence(self, client: TestClient) -> None:
         fake_settings = MagicMock()
-        fake_settings.app_name = "Maljan"
+        fake_settings.app_name = "Malspark"
         fake_settings.app_version = "0.1.0"
 
         with (
@@ -50,6 +50,7 @@ class TestSystemStatus:
                         "enrichment_enabled": True,
                         "mock_mode_allowed": True,
                         "enrichment_sources": {},
+                        "enrichment_reputation_servers": False,
                         # One process: the enrichment is queued beside the
                         # analyses, so there is no second worker to report on.
                         "enrichment_dedicated_worker": False,
@@ -71,7 +72,7 @@ class TestSystemStatus:
         assert resp.status_code == 200
         body = resp.json()
         assert body == {
-            "app_name": "Maljan",
+            "app_name": "Malspark",
             "app_version": "0.1.0",
             "mock_mode_allowed": True,
             "enrichment_enabled": True,
@@ -84,10 +85,11 @@ class TestSystemStatus:
         # not merely null — they are absent from the payload entirely.
         assert "throttle" not in body
         assert "audit_write_failures" not in body
+        assert "served_declarations_unread" not in body
 
     def test_admin_caller_sees_throttle_and_audit_fields(self, client: TestClient) -> None:
         fake_settings = MagicMock()
-        fake_settings.app_name = "Maljan"
+        fake_settings.app_name = "Malspark"
         fake_settings.app_version = "0.1.0"
         client.app.dependency_overrides[optional_current_user] = lambda: MagicMock(role="admin")
         try:
@@ -100,6 +102,7 @@ class TestSystemStatus:
                             "enrichment_enabled": True,
                             "mock_mode_allowed": True,
                             "enrichment_sources": {},
+                            "enrichment_reputation_servers": False,
                         }[n]
                     ),
                 ),
@@ -125,12 +128,94 @@ class TestSystemStatus:
             "last_error": None,
         }
         assert body["audit_write_failures"] == 0
+        # The last read of the kept declarations succeeded: nothing to say.
+        assert "served_declarations_unread" not in body
+
+    @pytest.mark.parametrize("role", ["admin", None])
+    def test_a_failed_read_of_the_kept_declarations_is_on_the_admin_s_status(
+        self, client: TestClient, role: str | None
+    ) -> None:
+        """The failure in force is surfaced, not only logged once (T-437)."""
+        fake_settings = MagicMock()
+        fake_settings.app_name = "Malspark"
+        fake_settings.app_version = "0.1.0"
+        user = None if role is None else MagicMock(role=role)
+        client.app.dependency_overrides[optional_current_user] = lambda: user
+        values = {
+            "enrichment_enabled": False,
+            "mock_mode_allowed": False,
+            "enrichment_sources": {},
+            "enrichment_reputation_servers": False,
+        }
+        try:
+            with (
+                patch("app.api.v1.system.settings", fake_settings),
+                patch(
+                    "app.api.v1.system.runtime_config.get",
+                    AsyncMock(side_effect=lambda n: values[n]),
+                ),
+                patch(
+                    "app.api.v1.system.runtime_config.get_secret",
+                    AsyncMock(return_value=""),
+                ),
+                patch(
+                    "app.api.v1.system.refresh_failure",
+                    return_value="the stored settings (ValueError)",
+                ),
+            ):
+                resp = client.get("/api/v1/system/status")
+        finally:
+            del client.app.dependency_overrides[optional_current_user]
+
+        assert resp.status_code == 200
+        body = resp.json()
+        if role == "admin":
+            assert body["served_declarations_unread"] == "the stored settings (ValueError)"
+        else:
+            assert "served_declarations_unread" not in body
+
+    def test_the_failure_the_refresh_left_reaches_the_admin_s_status(
+        self, client: TestClient, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """What the store's refresh holds is what the status says, through its getter (T-437)."""
+        from app.services import served_declarations_store as store
+
+        fake_settings = MagicMock()
+        fake_settings.app_name = "Malspark"
+        fake_settings.app_version = "0.1.0"
+        client.app.dependency_overrides[optional_current_user] = lambda: MagicMock(role="admin")
+        values = {
+            "enrichment_enabled": False,
+            "mock_mode_allowed": False,
+            "enrichment_sources": {},
+            "enrichment_reputation_servers": False,
+        }
+        failure = "the servers' kept declarations (OperationalError)"
+        monkeypatch.setattr(store, "_REFRESH_FAILURE", [failure])
+        try:
+            with (
+                patch("app.api.v1.system.settings", fake_settings),
+                patch(
+                    "app.api.v1.system.runtime_config.get",
+                    AsyncMock(side_effect=lambda n: values[n]),
+                ),
+                patch(
+                    "app.api.v1.system.runtime_config.get_secret",
+                    AsyncMock(return_value=""),
+                ),
+            ):
+                resp = client.get("/api/v1/system/status")
+        finally:
+            del client.app.dependency_overrides[optional_current_user]
+
+        assert resp.status_code == 200
+        assert resp.json()["served_declarations_unread"] == failure
 
     def test_never_returns_raw_secret_values(self, client: TestClient) -> None:
         # Belt-and-braces: even with both keys configured, response payload
         # must not contain the literal key text.
         fake_settings = MagicMock()
-        fake_settings.app_name = "Maljan"
+        fake_settings.app_name = "Malspark"
         fake_settings.app_version = "0.1.0"
 
         with (
@@ -142,6 +227,7 @@ class TestSystemStatus:
                         "enrichment_enabled": True,
                         "mock_mode_allowed": False,
                         "enrichment_sources": {},
+                        "enrichment_reputation_servers": False,
                     }[n]
                 ),
             ),
@@ -165,7 +251,7 @@ class TestSystemStatus:
     def test_lists_a_source_declared_only_as_data(self, client: TestClient) -> None:
         """A source no code names is listed beside the shipped ones, with its own key."""
         fake_settings = MagicMock()
-        fake_settings.app_name = "Maljan"
+        fake_settings.app_name = "Malspark"
         fake_settings.app_version = "0.1.0"
         own_key = "-".join(["k", "own"])
         declared = {"domainrep": _invented_source(api_key=own_key), "abuseipdb": {"enabled": False}}
@@ -179,6 +265,7 @@ class TestSystemStatus:
                         "enrichment_enabled": True,
                         "mock_mode_allowed": False,
                         "enrichment_sources": declared,
+                        "enrichment_reputation_servers": False,
                     }[n]
                 ),
             ),
@@ -207,10 +294,10 @@ class TestSystemStatus:
     def test_a_server_source_is_configured_only_while_its_server_is_on(
         self, client: TestClient
     ) -> None:
-        from maljan.core.settings_overrides import build_settings
+        from malspark.core.settings_overrides import build_settings
 
         fake_settings = MagicMock()
-        fake_settings.app_name = "Maljan"
+        fake_settings.app_name = "Malspark"
         fake_settings.app_version = "0.1.0"
         declared = {
             "intel": {
@@ -234,6 +321,7 @@ class TestSystemStatus:
                                 "enrichment_enabled": True,
                                 "mock_mode_allowed": False,
                                 "enrichment_sources": declared,
+                                "enrichment_reputation_servers": False,
                             }[n]
                         ),
                     ),
@@ -250,7 +338,7 @@ class TestSystemStatus:
 
     def test_a_status_whose_sources_cannot_be_read_still_answers(self, client: TestClient) -> None:
         fake_settings = MagicMock()
-        fake_settings.app_name = "Maljan"
+        fake_settings.app_name = "Malspark"
         fake_settings.app_version = "0.1.0"
         declared = {
             "intel": {
@@ -269,6 +357,7 @@ class TestSystemStatus:
                         "enrichment_enabled": True,
                         "mock_mode_allowed": False,
                         "enrichment_sources": declared,
+                        "enrichment_reputation_servers": False,
                     }[n]
                 ),
             ),
@@ -305,8 +394,8 @@ def _invented_source(**extra: object) -> dict[str, object]:
 
 class TestLTMPurge:
     def test_dry_run_counts_without_deleting(self, client: TestClient) -> None:
-        from maljan.memory.in_memory_store import InMemoryStore
-        from maljan.memory.long_term_memory import StoredCase
+        from malspark.memory.in_memory_store import InMemoryStore
+        from malspark.memory.long_term_memory import StoredCase
 
         store = InMemoryStore()
         store.store(
@@ -340,8 +429,8 @@ class TestLTMPurge:
         assert store.count() == 2
 
     def test_apply_removes_low_quality_entries(self, client: TestClient) -> None:
-        from maljan.memory.in_memory_store import InMemoryStore
-        from maljan.memory.long_term_memory import StoredCase
+        from malspark.memory.in_memory_store import InMemoryStore
+        from malspark.memory.long_term_memory import StoredCase
 
         store = InMemoryStore()
         store.store(

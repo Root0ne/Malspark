@@ -6,6 +6,8 @@ from pathlib import Path
 import pytest
 import yaml
 
+from tests.unit._docker_cli import docker_env
+
 ROOT = Path(__file__).resolve().parents[2]
 
 
@@ -17,7 +19,7 @@ ROOT = Path(__file__).resolve().parents[2]
 # services (Ghidra, Qdrant) are not among them: see OPTIONAL_ENV.
 REQUIRED_ENV = {
     "REDIS_PASSWORD": "p" * 32,
-    "MINIO_ROOT_USER": "maljan",
+    "MINIO_ROOT_USER": "malspark",
     "MINIO_ROOT_PASSWORD": "m" * 32,
     "JWT_SECRET_KEY": "j" * 32,
     "SETTINGS_ENCRYPTION_KEY": "s" * 32,
@@ -89,7 +91,7 @@ ALL_PROFILES = ("ghidra", "qdrant", *ONE_PROGRAM, *READERS)
 
 @pytest.mark.skipif(shutil.which("docker") is None, reason="docker not installed")
 def test_compose_binds_loopback_and_requires_the_secrets(tmp_path):
-    env = {**REQUIRED_ENV, "PATH": "/usr/bin:/bin"}
+    env = docker_env(REQUIRED_ENV)
     # Render a copy of the compose file, not the real one: docker compose
     # config reads docker/.env from disk for interpolation regardless of the
     # subprocess env passed below, so rendering the real file would fold the
@@ -109,7 +111,7 @@ def test_compose_binds_loopback_and_requires_the_secrets(tmp_path):
         text=True,
         check=True,
     ).stdout
-    assert "maljan_ghidra_secret_2026" not in out
+    assert "malspark_ghidra_secret_2026" not in out
     config = yaml.safe_load(out)
     found_a_published_port = False
     for service in config["services"].values():
@@ -135,7 +137,7 @@ def test_compose_binds_loopback_and_requires_the_secrets(tmp_path):
 
     missing = subprocess.run(
         ["docker", "compose", "--env-file", str(empty_env), "-f", str(copy), "config"],
-        env={"PATH": "/usr/bin:/bin"},
+        env=docker_env({}),
         capture_output=True,
         text=True,
     )
@@ -150,10 +152,9 @@ def test_compose_binds_loopback_and_requires_the_secrets(tmp_path):
     # that variable's own message is the one reported.
     for var in REQUIRED_ENV:
         partial_env = {k: v for k, v in REQUIRED_ENV.items() if k != var}
-        partial_env["PATH"] = "/usr/bin:/bin"
         result = subprocess.run(
             ["docker", "compose", "--env-file", str(empty_env), "-f", str(copy), "config"],
-            env=partial_env,
+            env=docker_env(partial_env),
             capture_output=True,
             text=True,
         )
@@ -175,7 +176,7 @@ def test_migrations_run_once_before_the_api_and_the_worker(tmp_path):
 
     out = subprocess.run(
         ["docker", "compose", "--env-file", str(empty_env), "-f", str(copy), "config"],
-        env={**REQUIRED_ENV, "PATH": "/usr/bin:/bin"},
+        env=docker_env(REQUIRED_ENV),
         capture_output=True,
         text=True,
         check=True,
@@ -201,7 +202,7 @@ def test_migrations_run_once_before_the_api_and_the_worker(tmp_path):
     # One image for the three services that run this codebase, not one built
     # and stored per service (re-review M2).
     images = {config["services"][s]["image"] for s in ("migrate", "backend-api", "backend-worker")}
-    assert images == {"maljan-backend"}
+    assert images == {"malspark-backend"}
 
 
 def test_every_pulled_image_names_a_version() -> None:
@@ -214,7 +215,7 @@ def test_every_pulled_image_names_a_version() -> None:
         for name, service in config["services"].items()
         if "image" in service and "build" not in service
     }
-    assert "minio" in pulled
+    assert "postgres" in pulled
     for name, image in pulled.items():
         reference = image.rsplit("/", 1)[-1]
         assert ":" in reference, f"{name}: {image} names no tag"
@@ -222,6 +223,8 @@ def test_every_pulled_image_names_a_version() -> None:
 
 
 DIGEST = re.compile(r"@sha256:[0-9a-f]{64}$")
+# A FROM line up to its image, past a `--platform=` flag.
+FROM = r"^FROM (?:--platform=\S+ )?"
 
 
 def test_every_pulled_and_base_image_is_pinned_by_digest() -> None:
@@ -233,13 +236,134 @@ def test_every_pulled_and_base_image_is_pinned_by_digest() -> None:
         if "image" in service and "build" not in service:
             assert DIGEST.search(service["image"]), f"{name}: {service['image']}"
     for dockerfile in sorted((ROOT / "docker").glob("Dockerfile.*")):
+        if dockerfile.suffix == ".dockerignore":
+            continue
         text = dockerfile.read_text(encoding="utf-8")
-        stages = set(re.findall(r"^FROM \S+ AS (\S+)$", text, re.MULTILINE))
-        for base in re.findall(r"^FROM (\S+)", text, re.MULTILINE):
+        stages = set(re.findall(rf"{FROM}\S+ AS (\S+)$", text, re.MULTILINE))
+        for base in re.findall(rf"{FROM}(\S+)", text, re.MULTILINE):
+            # A stage picked by TARGETARCH starts from one of this file's own,
+            # and only when a stage exists for amd64 and for arm64 (T-573).
+            if "${TARGETARCH}" in base:
+                picked = {base.replace("${TARGETARCH}", arch) for arch in ("amd64", "arm64")}
+                assert picked <= stages, f"{dockerfile.name}: FROM {base}"
+                continue
             assert DIGEST.search(base), f"{dockerfile.name}: FROM {base}"
         for source in re.findall(r"COPY --from=(\S+)", text):
             if source not in stages:
                 assert DIGEST.search(source), f"{dockerfile.name}: COPY --from={source}"
+
+
+def test_minio_is_built_from_the_release_its_tag_names() -> None:
+    # The pulled MinIO image is gone from its registry (T-572): compose builds
+    # the server from the pinned upstream tag, checked against its commit, and
+    # tags the image with that release. The command, the volume, the ports
+    # and the credentials stay as the API's client and the audit anchor's
+    # object lock read them.
+    config = yaml.safe_load((ROOT / "docker" / "docker-compose.yml").read_text())
+    minio = config["services"]["minio"]
+    assert minio["build"] == {"context": ".", "dockerfile": "Dockerfile.minio"}
+    text = (ROOT / "docker" / "Dockerfile.minio").read_text(encoding="utf-8")
+    release = set(re.findall(r"^ARG MINIO_RELEASE=(RELEASE\.\S+)$", text, re.MULTILINE))
+    commit = set(re.findall(r"^ARG MINIO_COMMIT=([0-9a-f]{40})$", text, re.MULTILINE))
+    assert len(release) == 1 and len(commit) == 1, (release, commit)
+    assert minio["image"] == f"malspark-minio:{release.pop()}"
+    assert '"${commit}" != "${MINIO_COMMIT}"' in text
+    assert 'GOARCH="${TARGETARCH:-' in text
+    assert minio["command"] == 'server /data --console-address ":9001"'
+    assert minio["volumes"] == ["minio_data:/data"]
+    assert minio["container_name"] == "malspark-minio"
+    assert set(minio["environment"]) == {"MINIO_ROOT_USER", "MINIO_ROOT_PASSWORD"}
+    assert "/minio/health/live" in " ".join(minio["healthcheck"]["test"])
+    # No capability and no way to gain one (T-575); root, for the volume's owner.
+    assert minio["cap_drop"] == ["ALL"] and not minio.get("cap_add")
+    assert minio["security_opt"] == ["no-new-privileges:true"]
+    # The build copies nothing from docker/, where docker/.env lives, and is
+    # sent none of it.
+    assert not re.search(r"^(COPY|ADD) (?!--from=)", text, re.MULTILINE)
+    ignore = (ROOT / "docker" / "Dockerfile.minio.dockerignore").read_text(encoding="utf-8")
+    assert [line for line in ignore.splitlines() if line.strip() and not line.startswith("#")] == [
+        "*"
+    ]
+
+
+# The services whose image carries an x86-64-only program (T-581), and the
+# release asset each Dockerfile names for it. Ghidra's is built from
+# external/ghidra-mcp, outside this repository.
+X86_ONLY = {
+    "ghidra-mcp": None,
+    "die-mcp": "_amd64.deb",
+}
+# The sidecars built natively for amd64 and arm64 (T-573), and the two
+# release assets, one per architecture, each Dockerfile picks between.
+NATIVE_SIDECARS = {
+    "yarax-mcp": (
+        "-${triple}.tar.gz",
+        "triple=x86_64-unknown-linux-gnu",
+        "triple=aarch64-unknown-linux-gnu",
+    ),
+    "jadx-mcp": ("OpenJDK21U-jre_${jre_arch}_linux_hotspot_", "jre_arch=x64", "jre_arch=aarch64"),
+    "webcrack-mcp": ("-linux-${node_arch}.tar.xz", "node_arch=x64", "node_arch=arm64"),
+    "unblob-mcp": ("sasquatch_1.0_${deb_arch}.deb", "deb_arch=amd64", "deb_arch=arm64"),
+    # GoReSym's release has no arm64 build: that stage compiles the tag's source.
+    "goresym-mcp": ("GoReSym-linux.zip", "GOARCH=arm64 go build", "FROM goresym-${TARGETARCH}"),
+}
+# The services built or pulled for the host's own architecture.
+MULTI_ARCH = (
+    "backend-api",
+    "backend-worker",
+    "enrichment-worker",
+    "frontend",
+    "minio",
+    "postgres",
+    "redis",
+    "qdrant",
+    *NATIVE_SIDECARS,
+)
+
+
+def test_only_the_x86_only_services_ask_for_amd64() -> None:
+    # On Apple Silicon a service whose image runs an x86-64 binary starts
+    # emulated rather than not at all; on an amd64 host the line changes
+    # nothing. A multi-arch service keeps the host's architecture.
+    config = yaml.safe_load((ROOT / "docker" / "docker-compose.yml").read_text())
+    services = config["services"]
+    declared = {name for name, service in services.items() if "platform" in service}
+    assert declared == set(X86_ONLY)
+    for name, asset in X86_ONLY.items():
+        assert services[name]["platform"] == "linux/amd64", name
+        if asset is not None:
+            dockerfile = ROOT / "services" / services[name]["build"]["dockerfile"]
+            assert asset in dockerfile.read_text(encoding="utf-8"), name
+    for name in MULTI_ARCH:
+        assert "platform" not in services[name], name
+
+
+def test_a_native_sidecar_pins_a_build_for_each_architecture() -> None:
+    # The image picks the build for the architecture BuildKit builds for, each
+    # under a sha256 of its own, and stops on any other: a case on TARGETARCH
+    # whose fallback fails, or a stage per architecture and none for the rest.
+    services = yaml.safe_load((ROOT / "docker" / "docker-compose.yml").read_text())["services"]
+    for name, needles in NATIVE_SIDECARS.items():
+        dockerfile = ROOT / "services" / services[name]["build"]["dockerfile"]
+        text = dockerfile.read_text(encoding="utf-8")
+        assert re.search(r"^ARG TARGETARCH$", text, re.MULTILINE), name
+        for needle in needles:
+            assert needle in text, (name, needle)
+        for arch in ("AMD64", "ARM64"):
+            assert re.search(rf"^ARG \w+_{arch}_\w*SHA256=[0-9a-f]{{64}}$", text, re.MULTILINE), (
+                name,
+                arch,
+            )
+        stage = re.search(r"^FROM (\S+)-\$\{TARGETARCH\} AS \S+$", text, re.MULTILINE)
+        if stage:
+            named = re.findall(r"^FROM .* AS (\S+)$", text, re.MULTILINE)
+            assert sorted(n for n in named if n.startswith(f"{stage[1]}-")) == [
+                f"{stage[1]}-amd64",
+                f"{stage[1]}-arm64",
+            ], name
+        else:
+            assert 'case "${TARGETARCH:-$(dpkg --print-architecture)}" in' in text, name
+            assert re.search(r"^\s+\*\) echo .*>&2; exit 1 ;; \\$", text, re.MULTILINE), name
 
 
 def _workflow_service_images() -> dict[str, str]:
@@ -277,6 +401,17 @@ def test_every_action_is_pinned_by_commit_with_its_version() -> None:
             assert re.match(r"\s+# v\d", rest), f"{workflow.name}: {line.strip()}"
 
 
+def test_ghidra_is_built_against_the_release_its_patched_tree_names() -> None:
+    """The compose build arguments and the patched Dockerfile's defaults name one release."""
+    compose = yaml.safe_load((ROOT / "docker" / "docker-compose.yml").read_text(encoding="utf-8"))
+    args = compose["services"]["ghidra-mcp"]["build"]["args"]
+    (patch,) = (ROOT / "scripts" / "dev" / "patches").glob("ghidra-mcp-*.patch")
+    defaults = dict(
+        re.findall(r"^\+ARG (GHIDRA_[A-Z]+)=(\S+)$", patch.read_text(encoding="utf-8"), re.M)
+    )
+    assert args == defaults == {"GHIDRA_VERSION": "12.0.4", "GHIDRA_DATE": "20260303"}
+
+
 def _render_ghidra(tmp_path: Path, **extra: str) -> dict:
     compose_dir = tmp_path / "docker"
     compose_dir.mkdir(exist_ok=True)
@@ -296,7 +431,7 @@ def _render_ghidra(tmp_path: Path, **extra: str) -> dict:
             "ghidra",
             "config",
         ],
-        env={**REQUIRED_ENV, **OPTIONAL_ENV, **extra, "PATH": "/usr/bin:/bin"},
+        env=docker_env({**REQUIRED_ENV, **OPTIONAL_ENV, **extra}),
         capture_output=True,
         text=True,
         check=True,
@@ -342,7 +477,7 @@ def _render(tmp_path: Path, *profiles: str, env: dict[str, str] | None = None) -
     flags = [arg for profile in profiles for arg in ("--profile", profile)]
     out = subprocess.run(
         ["docker", "compose", "--env-file", str(empty_env), "-f", str(copy), *flags, "config"],
-        env={**(REQUIRED_ENV if env is None else env), "PATH": "/usr/bin:/bin"},
+        env=docker_env(REQUIRED_ENV if env is None else env),
         capture_output=True,
         text=True,
         check=True,
@@ -430,7 +565,7 @@ def test_the_shipped_env_file_runs_ghidra_and_qdrant_as_before(tmp_path):
             str(copy),
             "config",
         ],
-        env={**REQUIRED_ENV, **OPTIONAL_ENV, "PATH": "/usr/bin:/bin"},
+        env=docker_env({**REQUIRED_ENV, **OPTIONAL_ENV}),
         capture_output=True,
         text=True,
         check=True,
@@ -450,7 +585,7 @@ def test_the_migration_sees_the_retired_attck_variable() -> None:
     # in compose is the migrate service's.
     config = yaml.safe_load((ROOT / "docker" / "docker-compose.yml").read_text())
     environment = config["services"]["migrate"]["environment"]
-    assert environment["MALJAN_ATTCK_MAX_AGE_DAYS"] == "${MALJAN_ATTCK_MAX_AGE_DAYS:-}"
+    assert environment["MALSPARK_ATTCK_MAX_AGE_DAYS"] == "${MALSPARK_ATTCK_MAX_AGE_DAYS:-}"
 
 
 # ---------------------------------------------------------------------------
@@ -461,7 +596,7 @@ def test_the_migration_sees_the_retired_attck_variable() -> None:
 # hold the platform's credentials by design. Every other container that
 # mounts the sample directory opens the sample, and is found from its mounts,
 # not by its name.
-BACKEND_IMAGE = "maljan-backend"
+BACKEND_IMAGE = "malspark-backend"
 # The project network every service is on unless it names others.
 DEFAULT_NETWORK = "default"
 
@@ -491,7 +626,7 @@ def _render_with(
             *[arg for profile in profiles for arg in ("--profile", profile)],
             "config",
         ],
-        env={**REQUIRED_ENV, **OPTIONAL_ENV, **(env or {}), "PATH": "/usr/bin:/bin"},
+        env=docker_env({**REQUIRED_ENV, **OPTIONAL_ENV, **(env or {})}),
         capture_output=True,
         text=True,
         check=True,
@@ -544,7 +679,7 @@ STACKS = [
 def test_every_container_that_opens_the_sample_is_kept_from_the_platform(
     tmp_path: Path, files: tuple[str, ...]
 ) -> None:
-    from maljan.core.platform_secrets import is_platform_secret
+    from malspark.core.platform_secrets import is_platform_secret
 
     # A value no service could hold by chance, so finding one is finding the secret.
     secrets = {var: f"x2-{var.lower()}-value" for var in REQUIRED_ENV}
@@ -691,7 +826,7 @@ def test_ghidra_starts_as_its_user_only_after_its_projects_changed_hands(tmp_pat
 def test_each_one_program_sidecar_is_held_as_ghidra_is(
     tmp_path: Path, files: tuple[str, ...], profile: str
 ) -> None:
-    from maljan.core.config import Settings
+    from malspark.core.config import Settings
 
     sidecar_name, relay_name, port = ONE_PROGRAM[profile]
     config = _render_with(tmp_path, *files, profiles=(profile,))
@@ -808,12 +943,12 @@ def test_each_sample_reader_is_held_as_the_sidecars_are(
         "MCP_AUTH_TOKEN",
         "MCP_BIND_ADDRESS",
         "MCP_PORT",
-        "MALJAN_SAMPLE_ROOTS",
+        "MALSPARK_SAMPLE_ROOTS",
         "HOME",
     }
     assert environment["MCP_AUTH_TOKEN"] == OPTIONAL_ENV[f"{profile.upper()}_MCP_AUTH_TOKEN"]
     assert str(environment["MCP_PORT"]) == str(port)
-    assert environment["MALJAN_SAMPLE_ROOTS"] == "/data/samples"
+    assert environment["MALSPARK_SAMPLE_ROOTS"] == "/data/samples"
     # Everything it mounts is read-only: the worker's source and data, and the
     # samples at /data/samples, the mount its block is pointed at.
     volumes = server["volumes"]

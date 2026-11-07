@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import time
+from collections.abc import Callable
 from types import SimpleNamespace
 from typing import Any
 from unittest.mock import patch
@@ -11,7 +12,7 @@ import httpx
 import pytest
 from pydantic import ValidationError
 
-from maljan.enrichment.declared import (
+from malspark.enrichment.declared import (
     EnrichmentSource,
     ReadySource,
     SourceAsker,
@@ -20,7 +21,8 @@ from maljan.enrichment.declared import (
     read_record,
     validate_sources,
 )
-from maljan.enrichment.orchestrator import enrich_malware_report
+from malspark.enrichment.orchestrator import enrich_malware_report
+from tests.linear_cost import assert_scales
 
 
 def _key(*parts: str) -> str:
@@ -89,7 +91,7 @@ def _ready(key: str, credential: str, stored: dict[str, Any] | None = None) -> R
 
 async def _ask(ready: ReadySource, kind: str, value: str, wire: _Wire) -> dict[str, Any] | None:
     async with wire.client() as http:
-        with patch("maljan.enrichment.declared.asyncio.sleep") as slept:
+        with patch("malspark.enrichment.declared.asyncio.sleep") as slept:
             record = await SourceAsker(http).ask(ready, kind, value)
     _ask.slept = [c.args[0] for c in slept.call_args_list]  # type: ignore[attr-defined]
     return record
@@ -201,7 +203,7 @@ async def test_the_shipped_tests_make_the_same_calls() -> None:
         return real(transport=httpx.MockTransport(handler), **kwargs)
 
     credential = _key("t", "k")
-    with patch("maljan.enrichment.declared.httpx.AsyncClient", client):
+    with patch("malspark.enrichment.declared.httpx.AsyncClient", client):
         vt = await probe_source(effective_sources({})["virustotal"], credential)
         abuse = await probe_source(effective_sources({})["abuseipdb"], credential)
     assert vt.ok and abuse.ok
@@ -389,7 +391,7 @@ async def test_a_failing_source_is_named_by_its_key_in_the_log(
 
 
 def test_every_placeholder_is_filled_in_one_pass() -> None:
-    from maljan.enrichment.declared import _filled
+    from malspark.enrichment.declared import _filled
 
     assert _filled("{value}|{credential}", "{credential}", "S") == "{credential}|S"
     assert _filled({"a": ["{value}"]}, "{value}", "S") == {"a": ["{value}"]}
@@ -399,7 +401,7 @@ def test_a_probe_error_masks_the_credential_in_every_encoding() -> None:
     import base64
     from urllib.parse import quote, quote_plus
 
-    from maljan.enrichment.declared import masked
+    from malspark.enrichment.declared import masked
 
     secret = _key("a+b/c=d", "e f")
     for form in (
@@ -446,8 +448,8 @@ async def test_an_invented_source_is_asked_and_its_record_reaches_the_report_and
     assert domain["is_suspicious"] is True
 
     # The Markdown renderer reads the record as it reads VirusTotal's.
-    from maljan.reporting.models import NetworkDomain
-    from maljan.reporting.renderers.markdown import _reputations
+    from malspark.reporting.models import NetworkDomain
+    from malspark.reporting.renderers.markdown import _reputations
 
     rendered = _reputations(
         SimpleNamespace(network=SimpleNamespace(domains=[NetworkDomain(**domain)], ips=[]))  # type: ignore[arg-type]
@@ -476,7 +478,7 @@ async def test_a_server_source_asks_the_tool_with_the_argument_its_declaration_n
     sources = [ReadySource(key="intel", source=effective_sources(stored)["intel"])]
     report = {"network": {"domains": [], "ips": [{"address": "8.8.4.4", "source": "sandbox"}]}}
     async with _Wire({}).client() as http:
-        with patch("maljan.enrichment.orchestrator.WhoisClient") as whois:
+        with patch("malspark.enrichment.orchestrator.WhoisClient") as whois:
             whois.return_value.asn_lookup = _none
             whois.return_value.geoip = lambda _a: None
             await enrich_malware_report(
@@ -559,11 +561,8 @@ def test_reading_an_answer_is_linear_in_its_size() -> None:
     def answer(n: int) -> dict[str, Any]:
         return {"result": {"rows": [{"label": "x" * 8, "more": [{"k": i}]} for i in range(n)]}}
 
-    def timed(n: int) -> float:
+    def read(n: int) -> Callable[[], Any]:
         doc = answer(n)
-        t0 = time.perf_counter()
-        read_record("domainrep", source, doc)
-        return time.perf_counter() - t0
+        return lambda: read_record("domainrep", source, doc)
 
-    small, large = timed(2_000), timed(20_000)
-    assert large < max(small, 0.001) * 40
+    assert_scales(read, 2_000, factor=10)

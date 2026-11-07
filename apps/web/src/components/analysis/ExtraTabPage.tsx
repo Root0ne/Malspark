@@ -2,7 +2,7 @@
 
 import { useParams } from "next/navigation";
 
-import { useReport } from "@/app/(app)/analysis/[id]/layout";
+import { useReport } from "@/components/analysis/AnalysisContext";
 import AnalystFindings from "./AnalystFindings";
 import { ArtifactSections } from "./ArtifactTable";
 import ReportAbsent from "./ReportAbsent";
@@ -47,7 +47,7 @@ export default function ExtraTabPage({ kind }: { kind: ExtraTabKind }) {
   return (
     <div className="space-y-4">
       {tab.claims && <AnalystFindings findings={[tab.claims]} />}
-      <ArtifactSections sections={tab.sections} />
+      <ArtifactSections sections={tab.sections} showKey />
     </div>
   );
 }

@@ -1,6 +1,7 @@
 "use client";
 
 import type { EvidenceSection } from "@/types/malware-report";
+import { scrollRegion, SCROLL_REGION_FOCUS } from "@/components/ui/scrollRegion";
 import { humaniseKey } from "@/lib/humanise";
 import EvidenceChips, { CitedText } from "./EvidenceChips";
 import { saysSomething } from "./reportSections";
@@ -19,7 +20,16 @@ import { headedTable, withoutConstantColumns } from "./tableColumns";
  * table of facts and a table of assertions: every row above them came out of
  * the calls they name, and each chip opens that call.
  */
-export default function ArtifactTable({ section }: { section: EvidenceSection }) {
+export default function ArtifactTable({
+  section,
+  showKey = false,
+}: {
+  section: EvidenceSection;
+  /** Print the section's key beside its title. Only the Evidence tab, where a
+   *  reader checks the work, says which key a section was built under; the
+   *  findings tabs give it its title alone. */
+  showKey?: boolean;
+}) {
   const rows = rowsOf(section);
   /* A section whose every row said nothing is not drawn at all: a heading over
    * an empty table is the "No X yet" placeholder in another shape.
@@ -32,15 +42,11 @@ export default function ArtifactTable({ section }: { section: EvidenceSection })
   return (
     <div className="bg-bg-surface border border-border rounded">
       <div className="px-4 py-3 border-b border-border flex flex-wrap items-center gap-2">
-        <h2 className="text-xs font-medium text-text-primary uppercase tracking-wider">
-          {sectionTitle(section)}
-        </h2>
-        <span className="text-[10px] font-mono text-text-muted">{section.key}</span>
+        <h2 className="text-sm font-semibold text-text-primary">{sectionTitle(section)}</h2>
+        {showKey && <span className="text-[10px] font-mono text-text-muted">{section.key}</span>}
         <span className="ml-auto flex items-center gap-2">
           {section.evidence_ids.length === 0 && section.source && (
-            <span className="text-[10px] uppercase tracking-wider text-text-muted">
-              {section.source}
-            </span>
+            <span className="text-[11px] text-text-muted">{section.source}</span>
           )}
           <EvidenceChips ids={section.evidence_ids} />
         </span>
@@ -129,8 +135,11 @@ function SectionBody({ section, rows }: { section: EvidenceSection; rows: string
         </ul>
       )}
       {hasText && (
+        /* A tool server's text, not the report model's Markdown: shown as it
+           was written, every backslash, asterisk and underscore literal. No
+           section declares a Markdown body, so none is parsed as one. */
         <p
-          className={`p-4 text-xs text-text-secondary leading-relaxed whitespace-pre-wrap break-words ${
+          className={`max-w-[80ch] whitespace-pre-wrap break-words p-4 text-xs leading-relaxed text-text-secondary ${
             drawsTable || items.length > 0 ? "border-t border-border-light" : ""
           }`}
         >
@@ -164,15 +173,22 @@ function SectionTable({ section, rows }: { section: EvidenceSection; rows: strin
     <>
       {(narrowed.constants.length > 0 || narrowed.empty.length > 0) && (
         <p className="px-4 pt-3 text-[11px] text-text-muted">
-          {narrowed.constants.map((c) => `${c.column}: ${c.value}`).join(" · ")}
-          {narrowed.constants.length > 0 && narrowed.empty.length > 0 ? " · " : ""}
-          {narrowed.empty.length > 0
-            ? `${narrowed.empty.join(", ")}: nothing on any row`
-            : ""}
-          {" — the same on every row below."}
+          {/* A constant column can be the evidence one (`Evidence: ev_0006`):
+              cited as every other id is, never printed bare. */}
+          <CitedText
+            text={
+              narrowed.constants.map((c) => `${c.column}: ${c.value}`).join(" · ") +
+              (narrowed.constants.length > 0 && narrowed.empty.length > 0 ? " · " : "") +
+              (narrowed.empty.length > 0 ? `${narrowed.empty.join(", ")}: nothing on any row` : "") +
+              " — the same on every row below."
+            }
+          />
         </p>
       )}
-      <div className="overflow-x-auto">
+      <div
+        {...scrollRegion(sectionTitle(section))}
+        className={`overflow-x-auto ${SCROLL_REGION_FOCUS}`}
+      >
         <table className="w-full">
           <thead>
             <tr className="border-b border-border">
@@ -180,7 +196,7 @@ function SectionTable({ section, rows }: { section: EvidenceSection; rows: strin
                 <th
                   key={i}
                   scope="col"
-                  className="px-4 py-2 text-left text-[10px] font-medium uppercase tracking-wider text-text-muted"
+                  className="px-4 py-2 text-left text-xs font-medium text-text-muted"
                 >
                   {column}
                 </th>
@@ -201,7 +217,9 @@ function SectionTable({ section, rows }: { section: EvidenceSection; rows: strin
                       cell.includes("\n") ? "whitespace-pre-wrap" : ""
                     }`}
                   >
-                    {cell || "-"}
+                    {/* A cell naming records (`ev_0019, ev_0024`) cites
+                        them: drawn the way every citation is. */}
+                    {cell ? /\bev_\d+\b/.test(cell) ? <CitedText text={cell} /> : cell : "-"}
                   </td>
                 ))}
               </tr>
@@ -214,12 +232,18 @@ function SectionTable({ section, rows }: { section: EvidenceSection; rows: strin
 }
 
 /** Every section one tab claims, or nothing at all when it claims none. */
-export function ArtifactSections({ sections }: { sections: EvidenceSection[] }) {
+export function ArtifactSections({
+  sections,
+  showKey = false,
+}: {
+  sections: EvidenceSection[];
+  showKey?: boolean;
+}) {
   if (sections.length === 0) return null;
   return (
     <>
       {sections.map((section) => (
-        <ArtifactTable key={section.key} section={section} />
+        <ArtifactTable key={section.key} section={section} showKey={showKey} />
       ))}
     </>
   );

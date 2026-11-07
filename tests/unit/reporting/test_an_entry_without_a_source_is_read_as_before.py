@@ -17,19 +17,19 @@ from typing import Any
 
 import pytest
 
-from maljan.core.builtin_declarations import BUILDER_OF_KIND
-from maljan.reporting import legacy_tool_names as legacy
-from maljan.reporting import tool_kinds
-from maljan.reporting.ledger_report import build_sections
-from maljan.reporting.models import NetworkIP, RecoveredValue
-from maljan.reporting.renderers.stix_renderer import (
+from malspark.core.builtin_declarations import BUILDER_OF_KIND
+from malspark.reporting import legacy_tool_names as legacy
+from malspark.reporting import tool_kinds
+from malspark.reporting.ledger_report import SHAPE_RULE_SECTION, build_sections
+from malspark.reporting.models import NetworkIP, RecoveredValue
+from malspark.reporting.renderers.stix_renderer import (
     FILE_ONLY_PROCESS,
     MARKED_ONLY_PROCESS,
     disputed_flow_reason,
     emulation_from_ledger,
     recovered_by_words,
 )
-from maljan.schemas.evidence import build_entry
+from malspark.schemas.evidence import build_entry
 
 # The tables as ``ledger_report``, ``evidence_bundles``, ``figures``,
 # ``renderers.markdown`` and ``renderers.stix_renderer`` wrote them.
@@ -151,12 +151,14 @@ def test_each_prefix_table_is_kept_as_it_was(consumer: str) -> None:
 
 
 def test_the_builders_and_the_analysis_order_are_kept_as_they_were() -> None:
+    """Each tool is drawn by the builder it was, or by the reader of its kind that replaced it."""
     assert legacy.BUILDERS == BEFORE_BUILDERS
     assert legacy.ANALYSIS_TOOLS == BEFORE_ANALYSIS_ORDER
     for name, builder in BEFORE_BUILDERS.items():
-        assert tool_kinds.builder_of({"tool": name}) == builder
+        drawn = legacy.RENAMED_BUILDERS.get(builder, builder)
+        assert tool_kinds.builder_of({"tool": name}) == drawn
         facts = legacy.builtin_facts(name)
-        assert facts is not None and BUILDER_OF_KIND.get(facts.kind) == builder
+        assert facts is not None and BUILDER_OF_KIND.get(facts.kind) == drawn
 
 
 def test_no_two_built_in_sources_declare_one_name_two_ways() -> None:
@@ -168,9 +170,9 @@ def test_no_two_built_in_sources_declare_one_name_two_ways() -> None:
     become the legacy reading of a name another source declares a kind for,
     which takes the first source in its order (``shipped_by_name``).
     """
-    from maljan.core.config import Settings
-    from maljan.core.declared_reading import shipped_by_name
-    from maljan.core.tool_declarations import ToolDeclarations
+    from malspark.core.config import Settings
+    from malspark.core.declared_reading import shipped_by_name
+    from malspark.core.tool_declarations import ToolDeclarations
 
     seen: dict[str, tuple[str, str]] = {}
     unread: set[str] = set()
@@ -233,7 +235,7 @@ def test_a_record_built_from_entries_with_no_source_is_written_as_before() -> No
 
 def test_a_stored_record_reads_its_tool_by_name() -> None:
     stored = RecoveredValue(tool="floss", entry="ev_0002", scheme="stack", functions=["0x9"])
-    from maljan.reporting.models import EmulatedStrings
+    from malspark.reporting.models import EmulatedStrings
 
     record = EmulatedStrings(values={C2: "ev_0002"}, recovered_by={C2: [stored]})
     assert (
@@ -251,7 +253,7 @@ def test_a_stored_disputed_row_names_the_only_sandbox_that_marked_one() -> None:
 
 
 def test_a_stored_flow_marked_orig_is_read_as_marked() -> None:
-    from maljan.reporting.ledger_projection import network_from_ledger
+    from malspark.reporting.ledger_projection import network_from_ledger
 
     answer = {
         "tcp": [
@@ -285,12 +287,42 @@ BENCHMARK = Path(".superpowers") / "sdd" / "mandate-2026-09-17" / "benchmark" / 
 # one "Functions examined" item that named the tool twice (``list_functions (list_functions)``)
 # and the decompiled functions it cut at 400 characters, now whole (T-389: run5's 56 and run4's
 # 83 batch functions; nothing else changed): the section count and the digest of the sections'
-# JSON (sorted keys).
+# JSON (sorted keys). Beside them each run now draws the rules its undeclared tool's answers
+# name as matched, read by their shape, in a table of its own (T-509): every other section is
+# the one dev drew.
 STORED_REBUILDS = {
     "run7": (89, "5622126326362a4b"),
     "run5": (102, "26962def958da05d"),
     "run4": (92, "a1b9e99cea2318db"),
     "local8": (40, "38eef84aca43089b"),
+}
+# Each run's table of the rules its undeclared tool's answers name as matched: each row's
+# rule and tool (the Tool cell also names the entry's own server), and the entries it cites.
+_MUTEX = ("win_mutex", "analyze_file")
+_CRC = ("CRC32_poly_Constant", "analyze_file")
+_RICH = ("HasRichSignature", "detect_packer")
+SHAPED_TABLES: dict[str, tuple[list[tuple[str, str]], list[str]]] = {
+    "run7": ([_MUTEX, _CRC, _RICH], ["ev_0057", "ev_0062", "ev_0327", "ev_0328"]),
+    "run5": (
+        [_MUTEX, _CRC, _RICH],
+        [
+            "ev_0068",
+            "ev_0071",
+            "ev_0203",
+            "ev_0204",
+            "ev_0244",
+            "ev_0245",
+            "ev_0295",
+            "ev_0298",
+            "ev_0325",
+            "ev_0329",
+        ],
+    ),
+    "run4": (
+        [_MUTEX, _CRC, _RICH],
+        ["ev_0138", "ev_0139", "ev_0144", "ev_0145", "ev_0251", "ev_0252"],
+    ),
+    "local8": ([_MUTEX, _CRC], ["ev_0042"]),
 }
 
 
@@ -315,7 +347,7 @@ def _benchmark() -> Path | None:
 
 @pytest.mark.parametrize("run", sorted(STORED_REBUILDS))
 def test_a_stored_run_s_ledger_rebuilds_the_sections_dev_drew(run: str) -> None:
-    from maljan.schemas.evidence import LedgerEntry
+    from malspark.schemas.evidence import LedgerEntry
 
     root = _benchmark()
     if root is None or not (root / run / "evidence.json").is_file():
@@ -329,5 +361,11 @@ def test_a_stored_run_s_ledger_rebuilds_the_sections_dev_drew(run: str) -> None:
         for item in items
     ]
     sections = build_sections(ledger)
-    text = json.dumps(_dumped(sections), sort_keys=True)
-    assert (len(sections), hashlib.sha256(text.encode()).hexdigest()[:16]) == STORED_REBUILDS[run]
+    (shaped,) = [s for s in sections if s.key == SHAPE_RULE_SECTION]
+    rows, ids = SHAPED_TABLES[run]
+    server = {entry.tool: entry.server for entry in ledger if entry.id in ids}
+    assert shaped.rows == [[rule, f"{tool} ({server[tool]})"] for rule, tool in rows]
+    assert shaped.evidence_ids == ids
+    rest = [s for s in sections if s.key != SHAPE_RULE_SECTION]
+    text = json.dumps(_dumped(rest), sort_keys=True)
+    assert (len(rest), hashlib.sha256(text.encode()).hexdigest()[:16]) == STORED_REBUILDS[run]

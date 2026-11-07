@@ -27,9 +27,9 @@ import time
 
 import pytest
 
-from maljan.agents.base_agent import read_claim_blocks, read_technique_line
-from maljan.pipeline.validation import TECHNIQUE_LINE_UNREAD_CODE, parse_violations
-from maljan.schemas.isr_models import AgentISR
+from malspark.agents.base_agent import read_claim_blocks, read_technique_line
+from malspark.pipeline.validation import TECHNIQUE_LINE_UNREAD_CODE, parse_violations
+from malspark.schemas.isr_models import AgentISR
 
 
 @pytest.mark.parametrize(
@@ -221,9 +221,9 @@ def test_a_read_note_leaves_no_question() -> None:
 def test_a_line_of_notes_is_read_in_linear_time() -> None:
     def cost(repeats: int) -> float:
         line = "; ".join(["T1071.001 (configured channel as listed)"] * repeats)
-        start = time.perf_counter()
+        start = time.thread_time()
         read_technique_line(line)
-        return time.perf_counter() - start
+        return time.thread_time() - start
 
     cost(50)
     small = cost(280)

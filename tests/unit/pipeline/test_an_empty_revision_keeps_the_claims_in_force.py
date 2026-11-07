@@ -24,12 +24,12 @@ from unittest.mock import MagicMock, patch
 
 from langchain_core.messages import AIMessage
 
-from maljan.agents.base_agent import (
+from malspark.agents.base_agent import (
     NO_STRUCTURED_REPORT_STATUS,
     WRITTEN_BESIDES_CLAIMS,
     BaseAnalyst,
 )
-from maljan.pipeline.nodes import (
+from malspark.pipeline.nodes import (
     RevisionInput,
     answer_with_retry_additions,
     make_revision_node,
@@ -37,8 +37,8 @@ from maljan.pipeline.nodes import (
     retry_additions_text,
     revision_decided_nothing,
 )
-from maljan.pipeline.state import AgentArgument
-from maljan.schemas.isr_models import AgentISR, ClaimEvidence, Finding
+from malspark.pipeline.state import AgentArgument
+from malspark.schemas.isr_models import AgentISR, ClaimEvidence, Finding
 from tests.stages import paper_profile
 
 NAMES = ["reverser", "dynamic"]
@@ -114,7 +114,7 @@ def _revise(outcomes: dict[str, Any], in_force: dict[str, AgentISR]) -> dict[str
     }
     container = _container(outcomes)
     with patch(
-        "maljan.pipeline.nodes._revision_input",
+        "malspark.pipeline.nodes._revision_input",
         lambda _state, _container, _name: RevisionInput(text="data"),
     ):
         return asyncio.run(make_revision_node(container)(state))
@@ -187,16 +187,22 @@ class TestTheRevisionNode:
         )
         assert revision_decided_nothing(_empty_revision_retried("x", TIMING)) is True
 
-    def test_a_revision_that_wrote_claims_still_replaces_the_answer(self) -> None:
+    def test_a_revision_that_wrote_claims_is_merged_into_the_answer(self) -> None:
         in_force = {"reverser": _in_force("reverser")}
         revision = AgentISR(agent_id="reverser", domain="reverser", claims=[RETRY_NEW])
 
         update = _revise({"reverser": ("CLAIM: ...", revision)}, in_force)
 
-        assert update["isr_reports"]["reverser"] is revision
-        assert update["revision_replacements"] == [
-            "The reverser analyst's round-2 revision replaced 3 claim(s) with 1."
-        ]
+        # Its claim stands; the claims in force it does not restate stand
+        # carried forward, none of them dropped in silence.
+        stands = update["isr_reports"]["reverser"].claims
+        assert [c.claim for c in stands if c.carried_since_round is None] == [RETRY_NEW.claim]
+        carried = [c for c in stands if c.carried_since_round == 2]
+        assert {c.claim for c in carried} == {c.claim for c in in_force["reverser"].claims}
+        [said] = update["revision_replacements"]
+        assert said.startswith(
+            "The reverser analyst's round-2 revision wrote 1 claim(s) against 3 in force"
+        )
 
     def test_with_nothing_in_force_the_retry_claims_carry_their_provenance(self) -> None:
         empty_in_force = {"reverser": AgentISR(agent_id="reverser", domain="reverser")}
@@ -243,7 +249,7 @@ class TestTheAdditions:
         )
         # The same sentence citing another entry is another claim.
         other_entry = _claim(TIMING.claim, "[ev_0120]")
-        with caplog.at_level(logging.INFO, logger="maljan"):
+        with caplog.at_level(logging.INFO, logger="malspark"):
             combined = answer_with_retry_additions(
                 _in_force("reverser"), _empty_revision_retried("reverser", reworded, other_entry), 2
             )
@@ -287,7 +293,7 @@ class TestTheRevisionPathRecordsIt:
     def _revise(self, revision: str, answers: list[str]) -> AgentISR:
         analyst = _Reviser(llm=_Answers(answers), name="reverser")  # type: ignore[arg-type]
         analyst.revision_text = revision
-        with patch("maljan.agents.base_agent.validity_check_available", return_value=True):
+        with patch("malspark.agents.base_agent.validity_check_available", return_value=True):
             _text, isr = analyst.safe_revise_isr("the evidence", "own report", {}, "feedback", 2)
         return isr
 
@@ -325,10 +331,16 @@ class TestTheRevisionPathRecordsIt:
 
             update = _revise({"reverser": (revision, isr)}, {"reverser": _in_force("reverser")})
 
-            assert update["isr_reports"]["reverser"] is isr
-            assert update["revision_replacements"] == [
-                "The reverser analyst's round-2 revision replaced 3 claim(s) with 2."
-            ]
+            # Its claims are the revision's own, merged into the answer in
+            # force, never added beside it as a tool-less retry's.
+            stands = update["isr_reports"]["reverser"].claims
+            own = [c for c in stands if c.carried_since_round is None]
+            assert [c.claim for c in own] == [c.claim for c in isr.claims]
+            assert all(c.added_by_retry_in_round is None for c in stands)
+            [said] = update["revision_replacements"]
+            assert said.startswith(
+                "The reverser analyst's round-2 revision wrote 2 claim(s) against 3 in force"
+            )
             assert "retry_added" not in update["revision_rounds"][0]
 
     def test_a_revision_with_claims_is_not_recorded(self) -> None:
@@ -353,10 +365,10 @@ class TestTheAdditionsReport:
             prior, _empty_revision_retried("reverser", RETRY_NEW), 2
         )
 
-        report = retry_additions_report(summary + tail, prior, combined, 1, 2)
+        report = retry_additions_report(summary + tail, prior, combined, 2)
 
         assert report == (
-            f"{combined.to_text_summary()}\n{retry_additions_text(combined, 1, 2)}{tail}"
+            f"{combined.to_text_summary()}\n{retry_additions_text(combined, 2)}{tail}"
         )
         assert report.count(RETRY_NEW.claim) == 1 and report.count(DISPATCH.claim) == 1
 
@@ -370,11 +382,11 @@ class TestTheAdditionsReport:
             prior, _empty_revision_retried("reverser", RETRY_NEW), 2
         )
 
-        report = retry_additions_report(written, prior, combined, 1, 2)
+        report = retry_additions_report(written, prior, combined, 2)
 
         assert report.startswith(combined.to_text_summary())
         assert "  Findings:\n    - Install path: read in round 0" in report
-        assert retry_additions_text(combined, 1, 2) in report
+        assert retry_additions_text(combined, 2) in report
         assert report.endswith(
             f"{WRITTEN_BESIDES_CLAIMS}\nDISPUTES:\n- Dynamic claim 2 reads the sleep as "
             "fixed; ev_0063 shows a range."
@@ -382,7 +394,13 @@ class TestTheAdditionsReport:
         assert report.count(DISPATCH.claim) == 1
 
     def test_the_line_names_the_added_claims_by_their_numbers(self) -> None:
-        combined = AgentISR(agent_id="x", domain="x", claims=[DISPATCH, TIMING, INSTALL])
+        def added(claim: ClaimEvidence) -> ClaimEvidence:
+            marked = claim.model_copy()
+            marked.added_by_retry_in_round = 3
+            return marked
 
-        assert retry_additions_text(combined, 1, 3).startswith("Claim 3 above was")
-        assert retry_additions_text(combined, 2, 3).startswith("Claims 2 to 3 above were")
+        one = AgentISR(agent_id="x", domain="x", claims=[DISPATCH, TIMING, added(INSTALL)])
+        two = AgentISR(agent_id="x", domain="x", claims=[DISPATCH, added(TIMING), added(INSTALL)])
+
+        assert retry_additions_text(one, 3).startswith("Claim 3 above was")
+        assert retry_additions_text(two, 3).startswith("Claims 2 to 3 above were")

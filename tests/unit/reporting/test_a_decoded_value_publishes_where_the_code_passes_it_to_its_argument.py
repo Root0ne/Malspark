@@ -23,8 +23,8 @@ from typing import Any
 import pytest
 
 from app.services.report_service import ioc_feed_rows
-from maljan.reporting.builder import build_consolidated_iocs
-from maljan.reporting.call_bindings import (
+from malspark.reporting.builder import build_consolidated_iocs
+from malspark.reporting.call_bindings import (
     BOUND_SOURCE,
     BROWSER_LIKE,
     argument_roles,
@@ -32,17 +32,17 @@ from maljan.reporting.call_bindings import (
     bound_values_from_ledger,
     reads_as_a_browser_user_agent,
 )
-from maljan.reporting.misp import build_misp_attributes
-from maljan.reporting.models import FileHashes, JudgeIndicator, MalwareReport, SampleIdentity
-from maljan.reporting.renderers.markdown import MarkdownRenderer
-from maljan.reporting.renderers.stix_renderer import (
+from malspark.reporting.misp import build_misp_attributes
+from malspark.reporting.models import FileHashes, JudgeIndicator, MalwareReport, SampleIdentity
+from malspark.reporting.renderers.markdown import MarkdownRenderer
+from malspark.reporting.renderers.stix_renderer import (
     NOT_BOUND,
     ExtendedSTIXRenderer,
     indicator_pattern,
     pattern_values,
     publish_answer,
 )
-from maljan.schemas.evidence import LedgerEntry
+from malspark.schemas.evidence import LedgerEntry
 
 ROOT = Path(__file__).resolve().parents[3]
 MUTEX = "Global\\relay-lock-7"
@@ -502,7 +502,7 @@ class TestEverySurface:
                 }
             ]
         }
-        from maljan.schemas.stix_models import Bundle
+        from malspark.schemas.stix_models import Bundle
 
         rows = [r for r in build_consolidated_iocs(report) if r.value == MUTEX]
         exported = ExtendedSTIXRenderer().render(report, Bundle.model_validate(bundle))
@@ -560,7 +560,10 @@ class TestTheVerdict:
 
 
 class TestABrowserUserAgent:
-    BROWSER = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) unit"
+    BROWSER = (
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) "
+        "Chrome/120.0.0.0 Safari/537.36"
+    )
 
     def test_its_row_keeps_the_chain_and_is_refused_with_why(self) -> None:
         report = _bound_report(MUTEX, self.BROWSER)
@@ -588,6 +591,48 @@ class TestABrowserUserAgent:
         assert fed[self.BROWSER]["published"] is False
         assert fed[self.BROWSER]["publish_answer"].endswith(BROWSER_LIKE)
         assert fed[MUTEX]["published"] is True and attributes[MUTEX]["to_ids"] is True
+
+
+class TestABrowserShapedUserAgentWithATokenOfItsOwn:
+    # Browser-shaped, with a comment token no browser sends.
+    AGENT = "Mozilla/4.0 (compatible; MSIE 7.0; Windows NT 5.1; Quill 2.4)"
+
+    def test_its_row_is_published_naming_the_token(self) -> None:
+        report = _bound_report(MUTEX, self.AGENT)
+        (row,) = [r for r in build_consolidated_iocs(report) if r.value == self.AGENT]
+        (bound,) = [b for b in report.bound_values if b.value == self.AGENT]
+
+        assert row.source == BOUND_SOURCE
+        assert row.published == (
+            f"yes: {binding_words(bound)}; it begins as the common browsers' user agents do, "
+            "but carries 'Quill 2.4', a token their own user agents do not send"
+        )
+
+    def test_every_surface_publishes_it(self) -> None:
+        report = _bound_report(MUTEX, self.AGENT)
+        bundle = ExtendedSTIXRenderer().render(report).model_dump(mode="json")
+        attributes = {
+            a["value"]: a
+            for a in build_misp_attributes(report, build_consolidated_iocs(report), owner="unit")
+        }
+        fed = {row["value"]: row for row in ioc_feed_rows(report.model_dump(mode="json"))}
+
+        assert [
+            obj
+            for obj in bundle["objects"]
+            if obj.get("type") == "indicator"
+            and ("user_agent", self.AGENT)
+            in [(v.kind, v.value) for v in pattern_values(obj["pattern"])]
+        ]
+        assert attributes[self.AGENT]["to_ids"] is True
+        assert fed[self.AGENT]["published"] is True
+        assert "'Quill 2.4'" in fed[self.AGENT]["publish_answer"]
+
+    def test_under_a_benign_verdict_it_is_still_refused(self) -> None:
+        report = _bound_report(MUTEX, self.AGENT, verdict="Benign")
+        (row,) = [r for r in build_consolidated_iocs(report) if r.value == self.AGENT]
+
+        assert row.published is not None and row.published.startswith("no: ")
 
 
 def test_a_quote_and_a_backslash_reach_stix_and_misp_whole() -> None:

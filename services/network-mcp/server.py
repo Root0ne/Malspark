@@ -4,7 +4,7 @@ Started by the worker it serves over stdio; with ``--http``, over streamable
 HTTP behind its own token, from a container of its own (``MCP_BIND_ADDRESS``,
 ``MCP_PORT``, ``MCP_AUTH_TOKEN``, the shared sidecar plumbing's), where
 ``run_reader`` runs the triage pack's own reading of the capture
-(``maljan.tools.readers``), which the worker then does not run itself.
+(``malspark.tools.readers``), which the worker then does not run itself.
 """
 
 import copy
@@ -18,18 +18,22 @@ from typing import Any
 
 from mcp.server.fastmcp import FastMCP
 
-from maljan.core.stdio_safe import route_logging_to_stderr
+from malspark.core.stdio_safe import route_logging_to_stderr
 
 # Only when run as the stdio server: a test or tool that imports this module
 # in-process keeps its own logging.
 if __name__ == "__main__":
     route_logging_to_stderr()
+    from malspark.core.previous_name import warn_previous_environment
 
-from maljan.analysis.capture_reader import Packet
-from maljan.analysis.pcap_summary import each_packet
-from maljan.tools import readers, sidecar_needs, staging
-from maljan.tools.capabilities import CAPABILITIES_TOOL, ToolNeeds, manifest
-from maljan.tools.errors import (
+    warn_previous_environment()
+
+from malspark.analysis.capture_reader import Packet
+from malspark.analysis.pcap_summary import each_packet
+from malspark.tools import readers, sidecar_needs, staging
+from malspark.tools.capabilities import CAPABILITIES_TOOL, ToolNeeds, manifest
+from malspark.tools.declared_facts import NO_EFFECT, tool_declaration
+from malspark.tools.errors import (
     CAPTURES_REMEDIATION,
     NO_CAPTURE_REMEDIATION,
     NO_SUCH_FILE,
@@ -38,8 +42,8 @@ from maljan.tools.errors import (
     normalise_error,
     tool_error,
 )
-from maljan.tools.roots import PathOutsideRoots, resolve_under_roots
-from maljan.utils.written_forms import pack_escaped
+from malspark.tools.roots import PathOutsideRoots, resolve_under_roots
+from malspark.utils.written_forms import pack_escaped
 
 # Every name, request line and header read out of a capture is the sender's
 # text. It is written the way the triage pack writes a sample's own strings
@@ -50,6 +54,59 @@ from maljan.utils.written_forms import pack_escaped
 # longer than any backtick run inside it.
 
 mcp = FastMCP("NetworkMCP", stateless_http=True)
+
+# What each tool declares of itself (``malspark.tools.declared_facts``). Every
+# capture reader takes the capture's path as its ``pcap_path``; only the
+# manifest is read-only, the capture readers being left to answer again.
+_PCAP_WORDS = ["capture", "packet", "packets", "pcap"]
+_DECLARED: dict[str, dict[str, Any]] = {
+    CAPABILITIES_TOOL: tool_declaration(
+        "Tool availability", {"kind": "capabilities", "effects": NO_EFFECT}, read_only=True
+    ),
+    "read_pcap_summary": tool_declaration(
+        "Capture packets",
+        {
+            "kind": "packet_overview",
+            "arguments": {"path": "pcap_path"},
+            "reader": "packet_lines",
+            "words": _PCAP_WORDS,
+            "effects": NO_EFFECT,
+        },
+    ),
+    "extract_dns": tool_declaration(
+        "DNS queries in a capture",
+        {
+            "kind": "dns",
+            "arguments": {"path": "pcap_path"},
+            "reader": "dns_query_lines",
+            "effects": NO_EFFECT,
+        },
+    ),
+    "extract_http": tool_declaration(
+        "HTTP requests in a capture",
+        {"kind": "http", "arguments": {"path": "pcap_path"}, "effects": NO_EFFECT},
+    ),
+    "pcap_summary": tool_declaration(
+        "Capture flows",
+        {
+            "kind": "pcap",
+            "arguments": {"path": "pcap_path"},
+            "reader": "flow_table",
+            "words": _PCAP_WORDS,
+            "effects": NO_EFFECT,
+        },
+    ),
+    # The triage pack's own readings of a capture, run here when this server
+    # is a container of its own (``tools.readers``): a delivery primitive.
+    "run_reader": tool_declaration(
+        "Run a platform reader", {"kind": "reader_delivery", "effects": NO_EFFECT}
+    ),
+    "release_job": tool_declaration(
+        "Release a job's staging",
+        {"kind": "staging_release", "effects": NO_EFFECT},
+        destructive=True,
+    ),
+}
 
 # Every tool here reads the whole capture, one packet at a time
 # (``analysis.pcap_summary.each_packet``, over ``analysis.capture_reader``,
@@ -104,7 +161,7 @@ def _staging_root() -> Path:
     """The delivery directory a capture may have been staged into.
 
     The same directory the analysis sidecar writes this job's uploads to: the
-    base ``MALJAN_STAGING_DIR`` names plus the job leaf the spawn composed, so
+    base ``MALSPARK_STAGING_DIR`` names plus the job leaf the spawn composed, so
     on a host where both sidecars run a capture delivered for this job is a
     capture this server may read — and one delivered for another job is not.
     Nothing here writes to it.
@@ -134,7 +191,7 @@ def _capture(pcap_path: str) -> Path:
     read whatever its author wrote there. A relative name is read inside this
     job's own directory — the form a refusal lists the captures in — and a bare
     file name inside its captures. Raises ``PathOutsideRoots`` for anything
-    that resolves elsewhere; see ``maljan.tools.roots``.
+    that resolves elsewhere; see ``malspark.tools.roots``.
     """
     asked = str(pcap_path or "").strip().strip("'\"")
     candidate = Path(asked)
@@ -163,7 +220,7 @@ def _opened(tool: str, pcap_path: str) -> Path | str:
     return capture
 
 
-@mcp.tool(name=CAPABILITIES_TOOL)
+@mcp.tool(name=CAPABILITIES_TOOL, **_DECLARED["capabilities"])
 def capabilities() -> dict[str, Any]:
     """What this server can do on this host.
 
@@ -174,7 +231,7 @@ def capabilities() -> dict[str, Any]:
     return copy.deepcopy(CAPABILITIES)
 
 
-@mcp.tool()
+@mcp.tool(**_DECLARED["read_pcap_summary"])
 def read_pcap_summary(pcap_path: str, packet_limit: int | None = None, offset: int = 0) -> str:
     """Summarise a PCAP file, or list its IP packets one line each.
 
@@ -187,7 +244,7 @@ def read_pcap_summary(pcap_path: str, packet_limit: int | None = None, offset: i
     if isinstance(capture, str):
         return capture
     try:
-        from maljan.analysis.pcap_summary import asked_limit, capture_facts, summary_text
+        from malspark.analysis.pcap_summary import asked_limit, capture_facts, summary_text
 
         page = asked_limit(packet_limit)
         if page is None:
@@ -229,7 +286,7 @@ def read_pcap_summary(pcap_path: str, packet_limit: int | None = None, offset: i
         return _text_error(code_for_exception(e), f"{type(e).__name__}: {e}", "read_pcap_summary")
 
 
-@mcp.tool()
+@mcp.tool(**_DECLARED["extract_dns"])
 def extract_dns(pcap_path: str, packet_limit: int | None = None) -> str:
     """Extract every DNS query name in a PCAP file; ``packet_limit`` reads fewer packets."""
     capture = _opened("extract_dns", pcap_path)
@@ -290,7 +347,7 @@ def http_request_of(data: bytes) -> tuple[bytes, bytes] | None:
     return lines[0], b""
 
 
-@mcp.tool()
+@mcp.tool(**_DECLARED["extract_http"])
 def extract_http(pcap_path: str, packet_limit: int | None = None) -> str:
     """Extract every HTTP request line and Host header; ``packet_limit`` reads fewer packets."""
     capture = _opened("extract_http", pcap_path)
@@ -336,7 +393,7 @@ def extract_http(pcap_path: str, packet_limit: int | None = None) -> str:
         return _text_error(code_for_exception(e), f"{type(e).__name__}: {e}", "extract_http")
 
 
-@mcp.tool()
+@mcp.tool(**_DECLARED["pcap_summary"])
 def pcap_summary(pcap_path: str, packet_limit: int | None = None) -> dict[str, Any]:
     """Summarise a capture: conversations, TLS SNI destinations and beaconing.
 
@@ -344,7 +401,7 @@ def pcap_summary(pcap_path: str, packet_limit: int | None = None) -> dict[str, A
     agent that reads this first knows which conversation to go and read
     individual packets from, instead of walking the capture to find out.
     """
-    from maljan.tools.pcap import pcap_summary as summarize
+    from malspark.tools.pcap import pcap_summary as summarize
 
     capture = _opened("pcap_summary", pcap_path)
     if isinstance(capture, str):
@@ -370,7 +427,7 @@ def _reader_path(value: str, job: str) -> str:
     return str(staging.confined_to_this_job(inside, environ))
 
 
-@mcp.tool()
+@mcp.tool(**_DECLARED["run_reader"])
 def run_reader(
     reader: str, arguments: dict[str, Any] | None = None, job: str = ""
 ) -> dict[str, Any]:
@@ -379,21 +436,21 @@ def run_reader(
     A delivery primitive, never offered to a model: the worker's triage pack
     calls it when this server runs in a container of its own, so the capture
     is parsed here and the worker reads only the answer
-    (``maljan.tools.readers``). Only a reading standing in for a tool this
+    (``malspark.tools.readers``). Only a reading standing in for a tool this
     server offers is run, its file arguments held to the sample roots and
     ``job``'s staging directory.
     """
     return readers.serve_reader(reader, arguments, job, offered=_OFFERED, confine=_reader_path)
 
 
-@mcp.tool()
+@mcp.tool(**_DECLARED["release_job"])
 def release_job(job: str) -> dict[str, Any]:
     """Remove what was staged here for one job's readings, at that job's end.
 
     A delivery primitive, never offered to a model: the worker calls it when
     a job whose readings ran here ends, so ``job``'s staging directory goes
     then rather than at the staging TTL. Only that job's directory, never a
-    path the id could name (``maljan.tools.readers.serve_release``).
+    path the id could name (``malspark.tools.readers.serve_release``).
     """
     return readers.serve_release(job)
 
@@ -412,7 +469,7 @@ if __name__ == "__main__":
     # Before the server starts its threads: C code in this process folds case
     # as ASCII does (``core.ctype_locale``). The one line goes to standard
     # error: standard output is this server's protocol.
-    from maljan.core.ctype_locale import pin_character_classification, say_on_stderr
+    from malspark.core.ctype_locale import pin_character_classification, say_on_stderr
 
     pin_character_classification(say=say_on_stderr)
     if "--http" in sys.argv[1:]:

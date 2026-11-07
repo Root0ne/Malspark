@@ -10,7 +10,14 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 
 import { FollowUpList } from "../FollowUpQuestions";
-import { canAskFollowUp, followUpRows, modelLine, questionToSend } from "../followUps";
+import {
+  canAskFollowUp,
+  composerKey,
+  followUpRows,
+  modelLine,
+  questionToSend,
+  suggestedQuestions,
+} from "../followUps";
 import type { FollowUp } from "@/types/malware-report";
 
 const HOSTILE = '<img src=x onerror="alert(1)"><script>alert(2)</script>';
@@ -66,6 +73,32 @@ describe("a follow-up question", () => {
     expect(followUpRows(null)).toEqual([]);
   });
 
+  it("is sent with Enter, and Shift+Enter or a composing input method starts no send", () => {
+    expect(composerKey({ key: "Enter", shiftKey: false })).toBe("send");
+    expect(composerKey({ key: "Enter", shiftKey: true })).toBe("newline");
+    expect(composerKey({ key: "Enter", shiftKey: false, ctrlKey: true })).toBe("newline");
+    expect(composerKey({ key: "Enter", shiftKey: false, isComposing: true })).toBeNull();
+    expect(composerKey({ key: "a", shiftKey: false })).toBeNull();
+  });
+
+  it("is suggested from the open questions the analysis left, written as questions and not yet asked", () => {
+    const mr = {
+      question_answers: [
+        {
+          ...row().answer,
+          open_questions: ["Which mutex does it create?", "the launcher is not identified", "Does it persist?"],
+        },
+      ],
+    };
+    const asked = row({
+      question: "Does it persist?",
+      answer: { ...row().answer, open_questions: ["Who launched rundll32?", "Which mutex does it create?"] },
+    });
+    // Newest follow-up first, then the submission's; once each; a statement is not offered.
+    expect(suggestedQuestions(mr, [asked])).toEqual(["Who launched rundll32?", "Which mutex does it create?"]);
+    expect(suggestedQuestions(null, null)).toEqual([]);
+  });
+
   it("says where its model came from", () => {
     expect(modelLine(row())).toBe(
       "openai gpt-test (the reporter's model this run's settings snapshot recorded)"
@@ -81,15 +114,24 @@ describe("the follow-ups drawn", () => {
 
   it("draw the outcome, the answer, the evidence and the report it was answered from", () => {
     const markup = render([row()]);
-    expect(markup).toContain("F1. Which address does it beacon to?");
+    expect(markup).toContain("You asked: </span>Which address does it beacon to?");
     expect(markup).toContain("established");
-    expect(markup).toContain("It beacons to the address in [ev_0007].");
-    expect(markup).toContain("/analysis/j1/evidence?evidence=ev_0007");
+    // The answer's bracketed citation is a mark, not printed ids.
+    expect(markup).toContain("It beacons to the address in");
+    expect(markup).not.toContain("[ev_0007]");
+    // The record the answer cites in its text is marked there once, not listed again.
+    expect(markup.match(/data-citation/g)).toHaveLength(1);
+    expect(markup).toContain('title="ev_0007"');
+    expect(markup).not.toContain("evidence=ev_0007");
+    // A record the answer rests on but does not cite in its text is still listed.
+    expect(render([row({ answer: { ...row().answer, evidence_ids: ["ev_0007", "ev_0009"] } })])).toContain(
+      "/analysis/j1/evidence/records?evidence=ev_0009",
+    );
     expect(markup).toContain("aaaaaaaaaaaa");
     expect(markup).toContain("recorded on the audit chain");
   });
 
-  it("say a refused word and the platform's check beside the outcome", () => {
+  it("say a refused word and the automatic check beside the outcome", () => {
     const markup = render([
       row({
         outcome: "not_determinable",
@@ -104,10 +146,10 @@ describe("the follow-ups drawn", () => {
       }),
     ]);
     expect(markup).toContain(
-      "not determinable from this run (the report model answered established; " +
-        "the platform&#x27;s check refused it)"
+      "not determinable from this run (the AI answer said established; " +
+        "an automatic check did not accept it)"
     );
-    expect(markup).toContain("Platform check: refused: answered established");
+    expect(markup).toContain("Check: refused: answered established");
     expect(markup).toContain("Note: this follow-up is not on the audit chain: no key");
     expect(markup).not.toContain("recorded on the audit chain");
   });

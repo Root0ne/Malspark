@@ -41,6 +41,7 @@ _GOOD: dict[str, Any] = {
     "read_only": True,
     "arguments": {"path": "file_path"},
     "routed_formats": ["pe"],
+    "runtimes": ["dotnet"],
     "effects": {"executes": "emulation", "network": False},
     "aggregate_of": ["t"],
     "shows": "what it shows",
@@ -57,6 +58,7 @@ _GOOD: dict[str, Any] = {
     "reputation": {"service": "svc"},
     "reader": "flow_table",
     "report_sections": ["sec"],
+    "outputs": "/files/*/path",
 }
 # Values that read differently as written and as a model reads them, or not at
 # all. JSON numbers are whole, so the console parses them as the API does.
@@ -84,7 +86,7 @@ _BESIDE: tuple[dict[str, Any], ...] = ({}, {"display_name": "X"})
 
 
 def _declarations() -> list[dict[str, Any]]:
-    from maljan.core.tool_declarations import (
+    from malspark.core.tool_declarations import (
         KIND_DEPENDENT_FIELDS,
         KIND_FREE_FIELDS,
         ToolFacts,
@@ -121,7 +123,7 @@ def _declarations() -> list[dict[str, Any]]:
 
 def answers(declaration: dict[str, Any]) -> list[Any]:
     """The API's answer for one declaration: accepted, names no kind, the fields set."""
-    from maljan.core.tool_declarations import (
+    from malspark.core.tool_declarations import (
         ToolFacts,
         is_set,
         reads_no_kind,

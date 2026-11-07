@@ -11,13 +11,13 @@ reader.
 
 from __future__ import annotations
 
-from maljan.pipeline.claim_drops import defanged
-from maljan.pipeline.validation import (
+from malspark.pipeline.claim_drops import defanged
+from malspark.pipeline.validation import (
     NO_TABLE_ROW,
     network_values_in,
     unpublished_value_violations,
 )
-from maljan.reporting.renderers.markdown import _defanged_text, _names_a_network_value
+from malspark.reporting.renderers.markdown import _defanged_text, _names_a_network_value
 
 V6 = "2001:db8::17"
 ONION = "relay-panel.onion"
@@ -142,7 +142,7 @@ class TestAnOnionNameEndsAtItsTld:
             assert network_values_in(f"Block {host} at the proxy.") == [("domain", host)], host
 
     def test_a_published_host_raises_nothing(self) -> None:
-        from maljan.pipeline.validation import (
+        from malspark.pipeline.validation import (
             _unstated_values,
             recommendation_indicator_violations,
         )
@@ -170,29 +170,29 @@ class TestAnOnionNameEndsAtItsTld:
             return "".join(alphabet[(index >> (5 * k)) % 32] for k in range(16))
 
         text = " ".join(f"{name(i * 7919 + 1)}.onion" for i in range(400_000 // 23))
-        started = time.perf_counter()
+        started = time.thread_time()
         network_values_in(text)
         _defanged_text(text)
-        assert time.perf_counter() - started < 20
+        assert time.thread_time() - started < 20
 
     def test_one_long_onion_name_of_many_labels_is_read_in_linear_time_and_memory(self) -> None:
         import time
         import tracemalloc
 
-        from maljan.pipeline.validation import _unstated_values
+        from malspark.pipeline.validation import _unstated_values
 
         text = "a." * (200_000 // 2) + "onion"
         tracemalloc.start()
         try:
-            started = time.perf_counter()
+            started = time.thread_time()
             network_values_in(text)
             _unstated_values(text, lambda kind, value: "")
-            took = time.perf_counter() - started
+            took = time.thread_time() - started
             peak = tracemalloc.get_traced_memory()[1]
         finally:
             tracemalloc.stop()
         assert peak < 50_000_000, peak
         assert took < 20, took
-        started = time.perf_counter()
+        started = time.thread_time()
         _defanged_text(text)
-        assert time.perf_counter() - started < 20
+        assert time.thread_time() - started < 20

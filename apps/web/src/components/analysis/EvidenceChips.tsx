@@ -3,17 +3,22 @@
 import Link from "next/link";
 import { useParams } from "next/navigation";
 
-import { citationParts, isEvidenceId } from "./citations";
+import { useReport } from "./AnalysisContext";
+import { CiteMark } from "./CitedProse";
+import { FileSearch } from "lucide-react";
+import { citationParts, citedRecords, isEvidenceId } from "./citations";
+import { evidenceRecordHref } from "./overview";
 
 /**
- * The ledger entries a section or a finding was built from, as links.
+ * The evidence records a section or a finding was built from, as links.
  *
  * A citation is only worth printing if a reader can follow it, so an id is
- * never rendered as bare text here: each chip is a link to the evidence panel
- * with the entry's own deep link, which opens the row and scrolls to it. The
- * job id comes from the route rather than a prop because every caller is
- * already inside `analysis/[id]`, and threading it through four levels of
- * report rendering bought nothing.
+ * never rendered as bare text here. Inside an analysis page the ids are not
+ * printed at all: the bare ids become one superscript mark and each id inside
+ * a citation sentence its own, every mark opening the evidence drawer, which
+ * links on to the records. Outside one (the run diff) each id is a chip that
+ * links straight to its record. The job id comes from the route rather than a
+ * prop because every other caller is already inside `analysis/[id]`.
  */
 export default function EvidenceChips({
   ids,
@@ -32,12 +37,41 @@ export default function EvidenceChips({
   className?: string;
 }) {
   const params = useParams();
+  const { showEvidence } = useReport();
   const jobId = jobIdProp ?? (typeof params?.id === "string" ? params.id : "");
   const entries = (ids ?? []).filter(
     (id) => typeof id === "string" && id.trim().length > 0,
   );
 
   if (entries.length === 0 && !source) return null;
+
+  const sourceChip = entries.length === 0 && source && (
+    <span
+      className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-bg-active text-text-muted"
+      title="No evidence record; this is the finding the section came from"
+    >
+      {source}
+    </span>
+  );
+
+  if (showEvidence) {
+    const bare = entries.filter(isEvidenceId).map((id) => id.trim());
+    const prose = entries.filter((id) => !isEvidenceId(id));
+    return (
+      <span className={`inline ${className}`}>
+        <CiteMark ids={bare} />
+        {prose.map((text, i) => (
+          <span key={i} className="inline text-[11px] text-text-muted">
+            {" "}
+            {citationParts(text).map((part, j) =>
+              part.kind === "id" ? <CiteMark key={j} ids={[part.id]} /> : <span key={j}>{part.text}</span>,
+            )}
+          </span>
+        ))}
+        {sourceChip}
+      </span>
+    );
+  }
 
   return (
     <span className={`inline-flex flex-wrap items-center gap-1 ${className}`}>
@@ -52,25 +86,18 @@ export default function EvidenceChips({
           <CitationProse key={i} text={entry} jobId={jobId} />
         ),
       )}
-      {entries.length === 0 && source && (
-        <span
-          className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-bg-active text-text-muted"
-          title="No ledger entry; this is the finding the section came from"
-        >
-          {source}
-        </span>
-      )}
+      {sourceChip}
     </span>
   );
 }
 
-/** One ledger id, as the link that opens its row in the evidence panel. */
+/** One evidence id, as the link that opens its row in the evidence panel. */
 function EvidenceChip({ id, jobId }: { id: string; jobId: string }) {
   return (
     <Link
-      href={`/analysis/${jobId}/evidence?evidence=${encodeURIComponent(id)}`}
+      href={evidenceRecordHref(jobId, id)}
       className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-accent/15 text-accent-strong hover:bg-accent/25"
-      title="Open this call in the evidence ledger"
+      title="Open this record in the evidence"
     >
       {id}
     </Link>
@@ -94,23 +121,78 @@ function CitationProse({ text, jobId }: { text: string; jobId: string }) {
 }
 
 /**
- * A run of prose with the ledger ids in it as links: a section's note ("18
+ * A run of prose with the evidence ids in it as links: a section's note ("18
  * more rows not shown here; the evidence endpoint carries every one under
- * ev_0005") names the entry to open, and the name is only worth printing if
- * it opens. Everything that is not an id is printed exactly as written.
+ * ev_0005") names the record to open, and the name is only worth printing if
+ * it opens. Inside an analysis page each id is a superscript mark that opens
+ * the evidence drawer. Everything that is not an id is printed exactly as
+ * written.
  */
+/**
+ * A citation sentence as the records it names (`citedRecords`): each record
+ * one quiet chip, the evidence icon and what the citation says of it, that
+ * opens the evidence drawer on it, or links to it outside an analysis page.
+ * No bracket or separator of the source is printed; the id and the full
+ * words are the chip's name and its tooltip.
+ */
+export function CitedRecords({ text, jobId: jobIdProp }: { text: string; jobId?: string }) {
+  const params = useParams();
+  const { showEvidence } = useReport();
+  const jobId = jobIdProp ?? (typeof params?.id === "string" ? params.id : "");
+  const { lead, records } = citedRecords(text);
+  const chip =
+    "inline-flex max-w-full items-center gap-1 rounded border border-border-light bg-bg-elevated px-1.5 py-px text-[11px] leading-4 text-text-secondary hover:border-text-muted hover:text-text-primary";
+  return (
+    <span className="inline-flex min-w-0 flex-wrap items-center gap-1">
+      {lead && <span>{lead}</span>}
+      {records.map((r, i) => {
+        const name = r.label ? `Evidence ${r.id}: ${r.label}` : `Evidence ${r.id}`;
+        const body = (
+          <>
+            <FileSearch aria-hidden="true" className="h-3 w-3 shrink-0 text-accent-strong" />
+            <span className={`truncate ${r.label ? "max-w-[18rem]" : "font-mono"}`}>{r.label || r.id}</span>
+          </>
+        );
+        return showEvidence ? (
+          <button
+            key={`${r.id}-${i}`}
+            type="button"
+            data-citation=""
+            title={name}
+            aria-label={name}
+            onClick={(e) =>
+              showEvidence({ title: "Evidence for this claim", details: [], techniques: [], evidenceIds: [r.id] }, e.currentTarget)
+            }
+            className={chip}
+          >
+            {body}
+          </button>
+        ) : (
+          <Link key={`${r.id}-${i}`} href={evidenceRecordHref(jobId, r.id)} title={name} aria-label={name} className={chip}>
+            {body}
+          </Link>
+        );
+      })}
+    </span>
+  );
+}
+
 export function CitedText({ text, jobId: jobIdProp }: { text: string; jobId?: string }) {
   const params = useParams();
+  const { showEvidence } = useReport();
   const jobId = jobIdProp ?? (typeof params?.id === "string" ? params.id : "");
+  const marks = Boolean(showEvidence);
   return (
     <>
       {citationParts(text).map((part, i) =>
-        part.kind === "id" ? (
+        part.kind === "id" && marks ? (
+          <CiteMark key={i} ids={[part.id]} named />
+        ) : part.kind === "id" ? (
           <Link
             key={i}
-            href={`/analysis/${jobId}/evidence?evidence=${encodeURIComponent(part.id)}`}
-            className="font-mono text-accent-strong hover:underline"
-            title="Open this call in the evidence ledger"
+            href={evidenceRecordHref(jobId, part.id)}
+            className="font-mono text-accent-strong underline hover:no-underline"
+            title="Open this record in the evidence"
           >
             {part.id}
           </Link>

@@ -19,16 +19,16 @@
 from __future__ import annotations
 
 import logging
-import time
 from typing import Any
 
 import pytest
 from pydantic import ValidationError
+from tests.linear_cost import assert_scales
 
-from maljan.core import settings_overrides
-from maljan.core.config import Settings
-from maljan.core.pack_steps import effective_steps, lenient_steps, shipped_step
-from maljan.core.settings_overrides import (
+from malspark.core import settings_overrides
+from malspark.core.config import Settings
+from malspark.core.pack_steps import effective_steps, lenient_steps, shipped_step
+from malspark.core.settings_overrides import (
     build_settings,
     left_out_pack_steps,
     pack_step_refusals,
@@ -134,16 +134,13 @@ class TestAStoredStepThatCannotRunIsLeftOut:
         def problem(step: Any) -> str:
             return "gone" if step.server == "nowhere" else ""
 
-        def took(n: int) -> float:
-            value = chain(n)
-            started = time.perf_counter()
+        def left_out(value: list[dict[str, Any]]) -> None:
             kept, left = lenient_steps(value, problem)
-            assert kept == [] and len(left) == n + 1
-            return time.perf_counter() - started
+            assert kept == [] and len(left) == len(value)
 
-        took(50)
-        small, large = took(300), took(3000)
-        assert large < max(small, 0.01) * 40, (small, large)
+        left_out(chain(50))
+        assert_scales(chain, 300, left_out, factor=10, repeats=5)
+        assert_scales(chain, 600, left_out, factor=5, repeats=5)
 
 
 class TestEachLeftOutStepSaysWhy:

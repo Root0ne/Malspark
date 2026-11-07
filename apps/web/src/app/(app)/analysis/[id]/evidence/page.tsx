@@ -1,59 +1,45 @@
 "use client";
 
-import { Suspense } from "react";
-import { useParams } from "next/navigation";
-import { useReport } from "../layout";
-import EvidencePanel from "@/components/analysis/EvidencePanel";
-import { ArtifactSections } from "@/components/analysis/ArtifactTable";
-import { unroutedSections } from "@/components/analysis/extraTabs";
+import { Suspense, useEffect } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
+import { useReport } from "@/components/analysis/AnalysisContext";
+import EvidenceBundleView from "@/components/analysis/EvidenceBundleView";
+import RunQuality from "@/components/analysis/RunQuality";
+import { recordsForwardHref } from "@/components/analysis/overview";
+import EvidenceRecords from "@/components/analysis/tabs/EvidenceRecords";
 
 /**
- * The EVIDENCE tab: the ledger the whole report is standing on.
+ * The Evidence tab's first view: the run's own quality, folded, above the
+ * evidence bundle once the run has a report, and above the records while it
+ * has none (they fill as the run works).
  *
- * The panel reads `?evidence=` to open one entry, so it is a client component
- * behind a Suspense boundary — a page that calls `useSearchParams` outside one
- * is client-rendered up to the nearest boundary, and there is no reason for
- * that boundary to be the whole analysis shell.
+ * A record link written before the bundle led the tab (`?evidence=ev_0007`)
+ * still lands on its record: it is passed on to Records, where the call's
+ * output opens.
  */
 export default function EvidencePage() {
-  const params = useParams();
-  const { report, job } = useReport();
-  const id = typeof params?.id === "string" ? params.id : "";
-  // A section from a tool server nobody wrote this console against belongs to
-  // no tab, and dropping it would undo the whole point of an open report. It
-  // lands here, next to the calls it was built from — and so does a section
-  // routed to a tab that does not draw sections, which is the failure this net
-  // exists to catch rather than a case anyone will remember to check for.
-  // What an agent's or a server's own tab draws is no longer unclaimed.
-  const unclaimed = unroutedSections(
-    report?.malware_report?.sections,
-    report?.section_tabs,
-    report?.agent_findings,
-    job?.roster,
-  );
-
   return (
-    <div className="p-4 space-y-4">
-      <p className="text-xs text-text-secondary mb-3">
-        Every tool call this run made, in the order the calls were issued. The report cites these
-        ids, so a claim in it can be followed back to the call it came out of.
-      </p>
-      <Suspense
-        fallback={<p className="text-sm text-text-secondary">Reading the ledger&hellip;</p>}
-      >
-        <EvidencePanel jobId={id} />
+    <div className="space-y-4">
+      <RunQuality />
+      <Suspense fallback={<p className="text-sm text-text-secondary">Reading the evidence&hellip;</p>}>
+        <EvidenceFirstView />
       </Suspense>
-      {unclaimed.length > 0 && (
-        <div className="space-y-4">
-          <h2 className="text-xs font-medium text-text-primary uppercase tracking-wider">
-            Sections no tab draws
-          </h2>
-          <p className="text-[11px] text-text-muted">
-            Built from this ledger by tools the typed tabs were not written against.
-          </p>
-          <ArtifactSections sections={unclaimed} />
-        </div>
-      )}
     </div>
   );
+}
+
+function EvidenceFirstView() {
+  const { jobId, report, loading } = useReport();
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const query = searchParams?.toString() ?? "";
+  const forward = Boolean(report && searchParams?.get("evidence"));
+
+  useEffect(() => {
+    if (forward) router.replace(recordsForwardHref(jobId, query, window.location.hash));
+  }, [forward, jobId, query, router]);
+
+  if (loading || forward) return <p className="text-sm text-text-secondary">Reading the evidence&hellip;</p>;
+  if (!report) return <EvidenceRecords />;
+  return <EvidenceBundleView jobId={jobId} reportId={report.id} />;
 }

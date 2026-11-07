@@ -1,6 +1,6 @@
 """One rehearsal run inside this process: the stub model, the real pipeline, no Docker.
 
-The pipeline is ``MaljanApp`` with the profile its settings name (the default
+The pipeline is ``MalsparkApp`` with the profile its settings name (the default
 one unless ``Rehearsal.extra`` names a team of its own), the mock sandbox, the
 repository's own tool sidecars (started as the worker starts them, over
 stdio), and every model call going to the stub on a loopback port through the
@@ -19,7 +19,8 @@ in gate mode is the gate):
 * no API, no queue, no worker: the job bookkeeping, the probe gate a job is
   submitted through, the stored report and the worker's job timeout
   (``core.job_timeout``) are exercised only against the stack; the deadline
-  here is ``asyncio.wait_for``;
+  here is ``asyncio.wait_for``, and ``deadline_hit``'s counts from the run's
+  first model call, so a slow start on a loaded machine cannot fire it;
 * the static provider is ``none`` (no Ghidra or radare2) and long-term
   memory is in memory (no Qdrant);
 * the rehearsal's own settings, not the operator's: effort ``high`` (judge
@@ -35,6 +36,7 @@ and capability facts.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import os
 import sys
 import time
@@ -58,8 +60,12 @@ MODELS = {
     "openai": {"expert": "deepseek-v4-flash", "judge": "deepseek-v4-pro"},
 }
 JUDGE_EFFORT = {"anthropic": "medium", "openai": "max"}
-# The deadline ``deadline_hit`` is held to, short enough that it fires.
+# The deadline ``deadline_hit`` is held to, short enough that it fires. It
+# counts from the run's first model call: the sidecars and tools before it
+# take most of it on an idle machine, and all of it on a loaded one.
 DEADLINE_HIT_S = 12.0
+# How long a ``deadline_hit`` run may take to make its first model call.
+FIRST_CALL_WAIT_S = 120.0
 # How long a run stopped at its deadline is given for its in-flight work to see the stop.
 STRAGGLER_WAIT_S = 5.0
 # The transcript roles whose claims are an analyst's answer: its own answer
@@ -117,7 +123,7 @@ class Rehearsal:
     # held to a sample of another hash; empty keeps the one sample.
     sample_overlay: bytes = b""
     # Write the run's long-term-memory case once it completed, as the worker
-    # does after recording the job completed (``MaljanApp.remember_the_run``).
+    # does after recording the job completed (``MalsparkApp.remember_the_run``).
     remember: bool = False
 
     @property
@@ -238,9 +244,9 @@ def empty_evidence_sections(
     mark; this is the product's own reading of the stored report, so a section
     it lists was never the model's to write.
     """
-    from maljan.reporting.evidence_bundles import bundle_for, is_empty
-    from maljan.reporting.models import MalwareReport
-    from maljan.schemas.isr_models import AgentISR, ClaimEvidence
+    from malspark.reporting.evidence_bundles import bundle_for, is_empty
+    from malspark.reporting.models import MalwareReport
+    from malspark.schemas.isr_models import AgentISR, ClaimEvidence
 
     report = MalwareReport.model_validate(malware_report)
     isr = {
@@ -285,9 +291,9 @@ class _ProcessState:
     """The process-wide state a run changes, kept and put back."""
 
     def __init__(self) -> None:
-        from maljan.core import config
-        from maljan.core.plugins import allow_list
-        from maljan.tools.roots import SAMPLE_ROOTS_ENV
+        from malspark.core import config
+        from malspark.core.plugins import allow_list
+        from malspark.tools.roots import SAMPLE_ROOTS_ENV
 
         self._config = config
         self._allowed = allow_list()
@@ -296,8 +302,8 @@ class _ProcessState:
         self._roots = os.environ.get(SAMPLE_ROOTS_ENV)
 
     def restore(self) -> None:
-        from maljan.core.plugins import install_allow_list
-        from maljan.llm import context_window, model_capabilities, model_output_limits
+        from malspark.core.plugins import install_allow_list
+        from malspark.llm import context_window, model_capabilities, model_output_limits
 
         self._config._settings_instance = self._settings
         install_allow_list(sorted(self._allowed))
@@ -328,13 +334,49 @@ async def _probe(overrides: dict[str, Any]) -> tuple[bool, str]:
     return bool(result.ok), str(result.detail)
 
 
+class NoModelCall(Exception):
+    """The run made no model call within ``FIRST_CALL_WAIT_S``."""
+
+
+async def _held_from_first_call(run: Any, state: StubState, deadline_s: float | None) -> Any:
+    """Await ``run`` held to ``deadline_s`` from its first model call, not from its start.
+
+    The stub's log is emptied after the connection test, so its first entry,
+    held or answered, is the run's first call. A run that ends before it
+    answers as it ends; one that makes none within ``FIRST_CALL_WAIT_S`` is
+    stopped and raises ``NoModelCall``.
+    """
+    task = asyncio.ensure_future(run)
+    ends = time.monotonic() + FIRST_CALL_WAIT_S
+    try:
+        while not state.calls() and not task.done():
+            if time.monotonic() >= ends:
+                task.cancel()
+                with contextlib.suppress(asyncio.CancelledError, Exception):
+                    await task
+                raise NoModelCall(
+                    f"no model call reached the stub within {FIRST_CALL_WAIT_S:.0f}s "
+                    "of the run's start"
+                )
+            await asyncio.sleep(0.05)
+    except asyncio.CancelledError:
+        # Cancelled from outside while waiting: the run goes with it, as
+        # ``wait_for`` would take it, and has wound down before the app is
+        # closed under it. The bare ``raise`` re-raises the caught cancellation.
+        task.cancel()
+        with contextlib.suppress(BaseException):
+            await task
+        raise
+    return await asyncio.wait_for(task, timeout=deadline_s)
+
+
 async def rehearse(rehearsal: Rehearsal) -> RunRecord:
     """Run the pipeline once against a fresh stub; answer the run's record."""
     from scripts.rehearsal import wire
 
-    from maljan.app import MaljanApp
-    from maljan.core.config import install_settings
-    from maljan.core.settings_overrides import build_settings
+    from malspark.app import MalsparkApp
+    from malspark.core.config import install_settings
+    from malspark.core.settings_overrides import build_settings
 
     kept = _ProcessState()
     wire.set_chars_per_token(rehearsal.chars_per_token)
@@ -370,7 +412,7 @@ async def rehearse(rehearsal: Rehearsal) -> RunRecord:
             settings = build_settings(overrides)
             install_settings(settings)
             started = time.monotonic()
-            app = MaljanApp(
+            app = MalsparkApp(
                 config=settings,
                 job_id=f"rehearsal-{rehearsal.scenario}",
                 event_sink=lambda kind, payload: events.append({"type": kind, **payload}),
@@ -385,7 +427,10 @@ async def rehearse(rehearsal: Rehearsal) -> RunRecord:
                     sample_path=str(sample_path),
                     **static_paths,
                 )
-                result = await asyncio.wait_for(run, timeout=rehearsal.deadline_s)
+                if rehearsal.scenario == "deadline_hit":
+                    result = await _held_from_first_call(run, state, rehearsal.deadline_s)
+                else:
+                    result = await asyncio.wait_for(run, timeout=rehearsal.deadline_s)
                 status = "completed" if app.failed_step is None else "failed"
                 if rehearsal.remember and status == "completed":
                     await asyncio.to_thread(app.remember_the_run)
@@ -453,6 +498,11 @@ async def rehearse(rehearsal: Rehearsal) -> RunRecord:
             "slow_seconds": brain.slow_seconds,
             "job_timeout_s": rehearsal.deadline_s,
             "deadline_in": brain.deadline_in,
+            **(
+                {"deadline_from": "first_model_call"}
+                if rehearsal.scenario == "deadline_hit"
+                else {}
+            ),
             "slow_roles": sorted(brain.slow_roles),
             "mode": "in_process",
             "served_windows": {m: state.facts(m).window for m in served},
@@ -495,7 +545,7 @@ def _static_paths(rehearsal: Rehearsal, settings: Any, sample_path: Path) -> dic
 
 def _required_stages(settings: Any) -> dict[str, list[str]]:
     """The stages of the profile the run's settings name, each with the agents it names."""
-    from maljan.agents.composition import active_profile
+    from malspark.agents.composition import active_profile
 
     profile = active_profile(settings)
     return {str(stage.key): [str(a) for a in stage.agents] for stage in profile.stages}
@@ -513,9 +563,9 @@ def agent_models(settings: Any) -> dict[str, list[str]]:
     expert's for every other agent. An agent whose models cannot be read is
     left out, so the checks that need them fail for that agent.
     """
-    from maljan.agents.composition import analyst_keys
-    from maljan.core.config import JUDGE_AGENT_KEY, REPORTER_AGENT_KEY, ROLE_ENTRY_KEYS
-    from maljan.core.model_assignments import assignment_chain_for
+    from malspark.agents.composition import analyst_keys
+    from malspark.core.config import JUDGE_AGENT_KEY, REPORTER_AGENT_KEY, ROLE_ENTRY_KEYS
+    from malspark.core.model_assignments import assignment_chain_for
 
     roster = [
         *(str(key) for key in settings.agents.definitions),
@@ -579,9 +629,9 @@ def window_models(settings: Any) -> list[str]:
     entries would otherwise leave out. Empty when the settings cannot
     answer, so the window check fails.
     """
-    from maljan.agents.composition import active_profile
-    from maljan.core.config import JUDGE_AGENT_KEY, MEDIATOR_AGENT_KEY, SUMMARIZER_AGENT_KEY
-    from maljan.core.model_assignments import assignment_chain_for, assignments_for
+    from malspark.agents.composition import active_profile
+    from malspark.core.config import JUDGE_AGENT_KEY, MEDIATOR_AGENT_KEY, SUMMARIZER_AGENT_KEY
+    from malspark.core.model_assignments import assignment_chain_for, assignments_for
 
     try:
         profile = active_profile(settings)

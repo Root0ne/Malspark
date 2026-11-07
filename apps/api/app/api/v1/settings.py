@@ -11,18 +11,18 @@ from typing import Any
 
 from fastapi import APIRouter, Body, Depends, HTTPException, Query, Request, Response, status
 from fastapi.responses import JSONResponse
-from maljan.core.model_assignments import endpoint_label
-from maljan.core.plugins import ALLOW_LIST_KEY
-from maljan.core.settings_annotations import (
+from malspark.core.model_assignments import endpoint_label
+from malspark.core.plugins import ALLOW_LIST_KEY
+from malspark.core.previous_name import under_current_name
+from malspark.core.settings_annotations import (
     GROUP_DESCRIPTIONS,
     GROUP_ORDER,
-    RENAMED_SETTING_VALUES,
-    RENAMED_SETTINGS,
     RETIRED_SETTINGS,
+    read_as_current,
 )
-from maljan.core.settings_masking import mask_left_in
-from maljan.core.settings_overrides import redact_url
-from maljan.pipeline.conditions import validate_condition
+from malspark.core.settings_masking import mask_left_in
+from malspark.core.settings_overrides import redact_url
+from malspark.pipeline.conditions import validate_condition
 from pydantic import BaseModel, ValidationError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -65,6 +65,7 @@ from app.schemas.settings import (
     ValuesResponse,
 )
 from app.services import attck_cache, credential_bootstrap
+from app.services.agent_map import AGENT_DEFINITIONS_KEY, with_imported_categories
 from app.services.audit import record as audit_record
 from app.services.mapping_preview import PREVIEW_MAX_BYTES, preview_mapping
 from app.services.plugins import (
@@ -105,10 +106,24 @@ from app.services.settings_service import (
 # block's tool declarations are its changes over what the block ships, one
 # tool at a time, as they are stored; an import also reads ``/1``, written
 # before that, where a block's tool declarations are its whole map (a map
-# marked as changes, which only ``/2`` writes, reads as it does there).
-EXPORT_FORMAT = "maljan-settings/2"
-WHOLE_MAP_FORMAT = "maljan-settings/1"
-IMPORT_FORMATS = (EXPORT_FORMAT, WHOLE_MAP_FORMAT)
+# marked as changes, which only ``/2`` and later write, reads as it does there).
+# ``/3`` is written since a server's call budget left the static blocks
+# (``CALL_BUDGET_KEY``); a document in an earlier format gave every server that
+# declares none the floor its two static timeouts set (:func:`_imported_keys`).
+EXPORT_FORMAT = "malspark-settings/3"
+CHANGES_FORMAT = "malspark-settings/2"
+WHOLE_MAP_FORMAT = "malspark-settings/1"
+IMPORT_FORMATS = (EXPORT_FORMAT, CHANGES_FORMAT, WHOLE_MAP_FORMAT)
+# The formats written before ``CALL_BUDGET_KEY`` existed.
+FORMER_FLOOR_FORMATS = (CHANGES_FORMAT, WHOLE_MAP_FORMAT)
+
+
+def current_format(fmt: str) -> str:
+    """``fmt`` under the current name: an export written before the rename
+    (``malspark.core.previous_name``) reads as the same version, so an
+    operator's earlier exports still import."""
+    return str(under_current_name(fmt))
+
 
 logger = get_logger("api.settings")
 
@@ -125,7 +140,7 @@ async def _effective_servers(db: AsyncSession) -> list[str]:
     servers = stored.get("core.mcp.servers")
     if isinstance(servers, dict) and servers:
         return list(servers)
-    from maljan.core.settings_overrides import build_settings
+    from malspark.core.settings_overrides import build_settings
 
     return list(build_settings({}).mcp.servers)
 
@@ -142,7 +157,7 @@ async def _effective_agents(db: AsyncSession) -> tuple[list[str], list[str]]:
 async def get_schema(
     _: User = Depends(require_admin), db: AsyncSession = Depends(get_db)
 ) -> SchemaResponse:
-    from maljan.core.settings_overrides import (
+    from malspark.core.settings_overrides import (
         build_settings,
         pack_steps_left_out,
         refused_tool_changes,
@@ -230,12 +245,12 @@ def served_schema(
         for g, t in GROUP_ORDER
         if g in by_group
     ]
-    from maljan.core.tool_declarations import declaration_fields
+    from malspark.core.tool_declarations import declaration_fields
 
     from app.services.provider_facts import probe_labels
 
     if server_configs is None:
-        from maljan.core.settings_overrides import build_settings
+        from malspark.core.settings_overrides import build_settings
 
         server_configs = build_settings({}).mcp.servers
     return SchemaResponse(
@@ -252,7 +267,7 @@ def served_schema(
 
 def default_served_schema() -> SchemaResponse:
     """The schema a deployment with nothing stored is served."""
-    from maljan.core.settings_overrides import build_settings
+    from malspark.core.settings_overrides import build_settings
 
     from app.services.agent_map import effective_definitions, effective_profiles
 
@@ -402,7 +417,7 @@ async def get_effort_options(
     editor draws its effort field from this answer rather than from a list
     of its own.
     """
-    from maljan.llm.effort import effort_options
+    from malspark.llm.effort import effort_options
 
     stored = await SettingsService(db).load_overrides()
     settings = candidate_settings({}, stored)
@@ -422,7 +437,7 @@ async def _agent_warnings(db: AsyncSession) -> dict[str, str]:
     this runs, so a failure here must cost the operator an advisory note, not
     turn a saved change into a 500 that says it was not saved.
     """
-    from maljan.core.settings_overrides import build_settings
+    from malspark.core.settings_overrides import build_settings, unresolved_capability_warnings
 
     from app.services.agent_map import (
         effective_definitions,
@@ -441,7 +456,12 @@ async def _agent_warnings(db: AsyncSession) -> dict[str, str]:
         )
         # An agent's own prompt that names a tool it no longer holds: the
         # same advisory shape, never a refusal.
-        found.update(prompt_tool_warnings(build_settings(await load_core_overrides(db))))
+        built = build_settings(await load_core_overrides(db))
+        found.update(prompt_tool_warnings(built))
+        # A capability reference no server serves yet, which a save does not
+        # refuse while a built-in server is unlisted: said, never refused.
+        for key, text in unresolved_capability_warnings(built).items():
+            found[key] = f"{found[key]}; {text}" if key in found else text
         return found
     except Exception as exc:  # noqa: BLE001 — advisory, and the write is done
         logger.debug("Could not compute settings warnings (%s); continuing.", log_safe(str(exc)))
@@ -483,14 +503,14 @@ async def _mapping_warnings(
     and then every format's detect is judged), so an unrelated save never
     repeats it. Never raises, as :func:`_agent_warnings` never does.
     """
-    from maljan.core.report_formats import (
+    from malspark.core.report_formats import (
         BUILTIN_REPORT_FORMATS,
         builtin_overlapping,
         effective_formats,
         overlapping_paths,
     )
-    from maljan.core.report_mapping import costly_paths
-    from maljan.providers.sandbox.readers import format_reads_mapping
+    from malspark.core.report_mapping import costly_paths
+    from malspark.providers.sandbox.readers import format_reads_mapping
 
     if not any(str(key).startswith("core.sandbox.") for key in changes):
         return {}
@@ -895,7 +915,7 @@ async def export_values(
             continue
         values[key] = sanitized
         secrets_omitted.extend(omitted_paths)
-    response.headers["Content-Disposition"] = "attachment; filename=maljan-settings.json"
+    response.headers["Content-Disposition"] = "attachment; filename=malspark-settings.json"
     return ExportResponse(
         format=EXPORT_FORMAT,
         exported_at=datetime.now(UTC),
@@ -913,10 +933,35 @@ def _current_keys(values: dict[str, Any]) -> dict[str, Any]:
     form changed with the move), and a file carrying both keeps the new one's
     value.
     """
-    out = {key: value for key, value in values.items() if key not in RENAMED_SETTINGS}
-    for old, new in RENAMED_SETTINGS.items():
-        if old in values and new not in out:
-            out[new] = RENAMED_SETTING_VALUES.get(old, lambda value: value)(values[old])
+    return read_as_current(values)
+
+
+# The setting that took over the per-call floor two static timeouts set.
+CALL_BUDGET_KEY = "core.mcp.breaker.default_call_timeout_seconds"
+
+
+def _imported_keys(values: dict[str, Any], fmt: str) -> dict[str, Any]:
+    """An imported document's values as this release holds them (:func:`_current_keys`).
+
+    A document in a format written before ``CALL_BUDGET_KEY`` existed
+    (``FORMER_FLOOR_FORMATS``) gave every server that declares no budget the
+    floor its two static timeouts set; where it carries either and not the
+    key, the key is given that floor as the
+    store's revision gives it (``core.legacy_tool_tables.former_call_floor``),
+    read before the YARA timeout moves to the check budget, and only where it
+    differs from the key's default. A document this release wrote carries
+    the key where it is set, and its static timeouts are their own.
+    """
+    from malspark.core.config import MCPBreakerConfig
+    from malspark.core.legacy_tool_tables import FORMER_CALL_FLOOR_SOURCES, former_call_floor
+
+    out = _current_keys(values)
+    if fmt not in FORMER_FLOOR_FORMATS or CALL_BUDGET_KEY in values:
+        return out
+    if any(key in values for key in FORMER_CALL_FLOOR_SOURCES):
+        floor = former_call_floor(values)
+        if floor != MCPBreakerConfig().default_call_timeout_seconds:
+            out[CALL_BUDGET_KEY] = int(floor) if floor.is_integer() else floor
     return out
 
 
@@ -927,7 +972,8 @@ async def import_values(
     user: User = Depends(require_admin_session),
     db: AsyncSession = Depends(get_db),
 ) -> PatchResponse | JSONResponse:
-    if body.format not in IMPORT_FORMATS:
+    fmt = current_format(body.format)
+    if fmt not in IMPORT_FORMATS:
         return JSONResponse(
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             content={"errors": {"format": "unsupported format"}},
@@ -936,7 +982,7 @@ async def import_values(
     # unless the document drops it from the allow-list. A block key sent back
     # as stored, as an export writes it, is no write and loads nothing, so an
     # unedited or list-edited export imports without loading a plugin.
-    values, stored = await _plugin_block_writes(db, _current_keys(body.values))
+    values, stored = await _plugin_block_writes(db, _imported_keys(body.values, fmt))
     stored_allowed = stored.get(ALLOW_LIST_KEY) if stored is not None else None
     leaves = values[ALLOW_LIST_KEY] if ALLOW_LIST_KEY in values else stored_allowed
     index = catalog_index()
@@ -966,6 +1012,14 @@ async def import_values(
     # formats are read alike: a map marked as changes is its changes, one
     # without the mark its whole map.
     values, left_out = lenient_imported_declarations(values)
+    # An export written before definitions carried a category still imports:
+    # each new definition is given the one its role and tools fit, and told so.
+    categorised: dict[str, str] = {}
+    if AGENT_DEFINITIONS_KEY in values:
+        held = (await SettingsService(db).load_overrides()).get(AGENT_DEFINITIONS_KEY)
+        values, categorised = with_imported_categories(
+            values, held if isinstance(held, dict) else ()
+        )
     refused = await _sign_in_policy_confirmed(values, body.current_password, user, request)
     if refused is not None:
         return refused
@@ -991,7 +1045,7 @@ async def import_values(
     return PatchResponse(
         applied=res.applied,
         applies=res.applies,
-        warnings={**left_out, **await _agent_warnings(db)},
+        warnings={**left_out, **categorised, **await _agent_warnings(db)},
     )
 
 
@@ -1099,6 +1153,10 @@ async def test_mcp_server(
     # it. Nothing below needs the transaction that read them, and a probe is
     # the longest await this API makes.
     await end_read_transaction(db)
+    from malspark.core.served_declarations import snapshot_served
+
+    # What this process held for the server before the test lists it.
+    before = snapshot_served(f"mcp:{server}")
     response = await _probe_response(
         run_mcp_probe(server, body.values, stored, confirmed_calls=body.confirmed_calls)
     )
@@ -1111,6 +1169,13 @@ async def test_mcp_server(
         server=server,
         confirmed_calls=sorted(body.confirmed_calls),
     )
+    # What the server declared of its tools as it listed them is kept, as a
+    # run's attach keeps it, where the entry tested is the saved block's
+    # server; a staged or unsaved entry's listing is put back
+    # (``app.services.served_declarations_store``).
+    from app.services import served_declarations_store
+
+    await served_declarations_store.keep_probe_listing(db, server, stored, body.values, before)
     return response
 
 
@@ -1132,7 +1197,7 @@ async def obtain_server_credential(
     own sentence in it, because the fix is on its side or in the operator's
     network, not in the stored settings.
     """
-    from maljan.core.settings_overrides import build_settings
+    from malspark.core.settings_overrides import build_settings
 
     from app.services.settings_service import load_core_overrides
 
@@ -1207,7 +1272,7 @@ async def _write_down_what_was_reached(db: AsyncSession, pairs: list[dict[str, A
     sentence; a store that could not be written is a reason to log, not a
     reason to give them an error instead of their answer.
     """
-    from maljan.core.model_assignments import filed_model
+    from malspark.core.model_assignments import filed_model
 
     from app.services.model_probes import record_probe
 
@@ -1254,7 +1319,7 @@ async def test_agent(
     # The allowed model, static and sandbox plugins this agent runs on run
     # their own code here: those alone, loaded off the event loop, waited for
     # at most a connection test's budget.
-    from maljan.core.settings_overrides import split_key
+    from malspark.core.settings_overrides import split_key
 
     from app.services.plugins import load_in_background, selected_plugins
     from app.services.settings_probes import TIMEOUT

@@ -17,14 +17,15 @@ import pytest
 from langchain_core.tools import StructuredTool
 from pydantic import BaseModel
 
-from maljan.agents.evidence_recorder import (
+from malspark.agents.evidence_recorder import (
     EvidenceRecorder,
     RepeatGuard,
     record_tools,
     seeded_repeat_guard,
 )
-from maljan.pipeline.validation import decompiled_functions, listed_function
-from maljan.schemas.evidence import EvidenceCounter, LedgerEntry
+from malspark.pipeline.validation import decompiled_functions, listed_function
+from malspark.schemas.evidence import EvidenceCounter, LedgerEntry
+from tests.linear_cost import assert_scales
 
 # A function as a decompiler prints it: a comment line, then the signature
 # with the generic name that carries its start.
@@ -188,7 +189,7 @@ class TestACitedRepeatReadsAsItsHolder:
         ]
 
     def test_the_citation_checker_reads_the_holder_s_text(self) -> None:
-        from maljan.pipeline.validation import EntryTexts
+        from malspark.pipeline.validation import EntryTexts
 
         texts = EntryTexts.from_ledger(self._ledger())
 
@@ -197,7 +198,7 @@ class TestACitedRepeatReadsAsItsHolder:
         assert "note" not in texts.texts["ev_0003"]
 
     def test_the_judge_is_shown_the_holder_s_text(self) -> None:
-        from maljan.agents.judge_agent import question_evidence
+        from malspark.agents.judge_agent import question_evidence
 
         shown = question_evidence(self._ledger())
 
@@ -205,7 +206,7 @@ class TestACitedRepeatReadsAsItsHolder:
         assert shown["ev_0003"].text == "int y = 2;"
 
     def test_a_repeat_whose_holder_is_absent_reads_as_nothing(self) -> None:
-        from maljan.pipeline.validation import EntryTexts
+        from malspark.pipeline.validation import EntryTexts
 
         orphan = [LedgerEntry(id="ev_0009", tool="strings", output="a note", repeated_of="ev_0004")]
 
@@ -223,8 +224,8 @@ class TestALoopingOrOrphanRepeatHoldsNothing:
         ids=["two-entry-loop", "names-itself", "orphan"],
     )
     def test_the_judge_and_the_citation_check_both_read_nothing(self, rows: Any) -> None:
-        from maljan.agents.judge_agent import question_evidence
-        from maljan.pipeline.validation import EntryTexts
+        from malspark.agents.judge_agent import question_evidence
+        from malspark.pipeline.validation import EntryTexts
 
         ledger = [
             LedgerEntry(id=entry_id, tool="strings", output="a note", repeated_of=first)
@@ -241,20 +242,23 @@ class TestALoopingOrOrphanRepeatHoldsNothing:
 
 class TestFilingRepeatsIsLinear:
     def test_eight_thousand_repeats_after_eight_thousand_entries(self) -> None:
-        import time
 
-        recorder = EvidenceRecorder("static_r2", counter=EvidenceCounter())
-        for n in range(8000):
-            recorder.record(tool="strings", args={"n": n}, server=None, output="x")
-        started = time.monotonic()
-        for n in range(8000):
-            recorder.record_repeat(
-                tool="strings", args={"n": n}, server=None, first=f"ev_{n + 1:04d}", said="note"
-            )
-        elapsed = time.monotonic() - started
+        def repeated(count: int) -> EvidenceRecorder:
+            recorder = EvidenceRecorder("static_r2", counter=EvidenceCounter())
+            for n in range(count):
+                recorder.record(tool="strings", args={"n": n}, server=None, output="x")
+            for n in range(count):
+                recorder.record_repeat(
+                    tool="strings",
+                    args={"n": n},
+                    server=None,
+                    first=f"ev_{n + 1:04d}",
+                    said="note",
+                )
+            return recorder
 
-        assert elapsed < 3.0, elapsed
-        assert recorder.entries[-1].repeated_of == "ev_8000"
+        assert repeated(8000).entries[-1].repeated_of == "ev_8000"
+        assert_scales(lambda count: lambda: repeated(count), 1000)
 
 
 class TestTheSampleCannotForgeARepeat:

@@ -19,7 +19,7 @@ import httpx
 import pytest
 
 from app.worker.analysis_worker import _report_inputs, enrichment_plan
-from maljan.analysis.disclosure import (
+from malspark.analysis.disclosure import (
     ENRICHMENT_SOURCES_UNREAD,
     NOT_BUILT_NO_SUMMARY,
     NOT_BUILT_REPORTING_OFF,
@@ -28,9 +28,9 @@ from maljan.analysis.disclosure import (
     disclosure_record,
     rdap_row,
 )
-from maljan.core.config import Settings
-from maljan.reporting.models import MalwareReport
-from maljan.reporting.renderers import MarkdownRenderer
+from malspark.core.config import Settings
+from malspark.reporting.models import MalwareReport
+from malspark.reporting.renderers import MarkdownRenderer
 
 
 def _key(*parts: str) -> str:
@@ -155,7 +155,11 @@ async def test_the_plan_is_none_while_enrichment_is_off() -> None:
 @pytest.mark.asyncio
 async def test_the_plan_names_rdap_and_every_configured_source() -> None:
     stored = {"abuseipdb": {"enabled": False}}
-    values = {"enrichment_enabled": True, "enrichment_sources": stored}
+    values = {
+        "enrichment_enabled": True,
+        "enrichment_sources": stored,
+        "enrichment_reputation_servers": False,
+    }
 
     with (
         patch(
@@ -254,9 +258,14 @@ async def test_the_enrichment_job_adds_what_it_asked_to_the_stored_record() -> N
     session = AsyncMock()
     session.__aenter__.return_value = db
     session.__aexit__.return_value = None
-    values = {"enrichment_enabled": True, "enrichment_max_lookups": 25, "enrichment_sources": {}}
+    values = {
+        "enrichment_enabled": True,
+        "enrichment_max_lookups": 25,
+        "enrichment_sources": {},
+        "enrichment_reputation_servers": False,
+    }
     with (
-        patch("maljan.enrichment.enrich_malware_report", new=AsyncMock(side_effect=_lookups)),
+        patch("malspark.enrichment.enrich_malware_report", new=AsyncMock(side_effect=_lookups)),
         patch(
             "app.worker.enrich_worker.runtime_config.get",
             AsyncMock(side_effect=lambda name: values[name]),
@@ -331,9 +340,14 @@ async def _enrich_on_demand(row: Any, lookups: Any) -> dict[str, Any]:
     session = AsyncMock()
     session.__aenter__.return_value = db
     session.__aexit__.return_value = None
-    values = {"enrichment_enabled": True, "enrichment_max_lookups": 25, "enrichment_sources": {}}
+    values = {
+        "enrichment_enabled": True,
+        "enrichment_max_lookups": 25,
+        "enrichment_sources": {},
+        "enrichment_reputation_servers": False,
+    }
     with (
-        patch("maljan.enrichment.enrich_malware_report", new=AsyncMock(side_effect=lookups)),
+        patch("malspark.enrichment.enrich_malware_report", new=AsyncMock(side_effect=lookups)),
         patch(
             "app.worker.enrich_worker.runtime_config.get",
             AsyncMock(side_effect=lambda name: values[name]),
@@ -487,7 +501,12 @@ async def test_two_enrichments_of_one_report_at_once_lose_no_row() -> None:
         return _lookups
 
     row.malware_report["network"]["ips"] = [{"address": "1.2.3.4"}, {"address": "5.6.7.8"}]
-    values = {"enrichment_enabled": True, "enrichment_max_lookups": 25, "enrichment_sources": {}}
+    values = {
+        "enrichment_enabled": True,
+        "enrichment_max_lookups": 25,
+        "enrichment_sources": {},
+        "enrichment_reputation_servers": False,
+    }
     runs = iter(
         [
             _lookups_for("rdap", "rdap.arin.net", "1.2.3.4"),
@@ -504,7 +523,7 @@ async def test_two_enrichments_of_one_report_at_once_lose_no_row() -> None:
 
     ctx = {"redis": AsyncMock(), "db_session": _Session}
     with (
-        patch("maljan.enrichment.enrich_malware_report", new=AsyncMock(side_effect=_either)),
+        patch("malspark.enrichment.enrich_malware_report", new=AsyncMock(side_effect=_either)),
         patch(
             "app.worker.enrich_worker.runtime_config.get",
             AsyncMock(side_effect=lambda name: values[name]),
@@ -530,7 +549,7 @@ async def test_two_enrichments_of_one_report_at_once_lose_no_row() -> None:
 @pytest.mark.asyncio
 async def test_a_disclosure_entry_written_during_the_lookups_survives_the_write() -> None:
     """The job's snapshot is taken before its lookups; the write merges into the row as locked."""
-    from maljan.analysis.disclosure import with_enrichment_asked
+    from malspark.analysis.disclosure import with_enrichment_asked
 
     row = _row_built_with_enrichment_off()
     other = {"source": "misp", "host": "misp.example.org", "kinds": {"domain": 1}, "why": ""}
@@ -563,8 +582,8 @@ async def test_a_disclosure_entry_written_during_the_lookups_survives_the_write(
 async def test_a_sandbox_context_shell_takes_the_live_record_as_dev_stores_it() -> None:
     """An older report's reputation holds sandbox context and no source; the live record wins."""
     from app.worker.enrich_worker import enrichment_laid_over
-    from maljan.enrichment.declared import ReadySource, effective_sources
-    from maljan.enrichment.orchestrator import enrich_malware_report
+    from malspark.enrichment.declared import ReadySource, effective_sources
+    from malspark.enrichment.orchestrator import enrich_malware_report
 
     shell = {"hostname": "c2.example.com", "contacted_ports": [443]}
     before = {"network": {"domains": [], "ips": [{"address": "1.2.3.4", "reputation": shell}]}}
@@ -576,7 +595,7 @@ async def test_a_sandbox_context_shell_takes_the_live_record_as_dev_stores_it() 
         return httpx.Response(200, json={"data": {"attributes": {"last_analysis_stats": stats}}})
 
     async with httpx.AsyncClient(transport=httpx.MockTransport(_answer)) as http:
-        with patch("maljan.enrichment.orchestrator.WhoisClient") as whois:
+        with patch("malspark.enrichment.orchestrator.WhoisClient") as whois:
             whois.return_value.asn_lookup = AsyncMock(return_value=None)
             whois.return_value.geoip = MagicMock(return_value=None)
             enriched = await enrich_malware_report(

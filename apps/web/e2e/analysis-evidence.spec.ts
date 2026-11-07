@@ -3,14 +3,15 @@ import { COMPLETED_JOB, JOB_ID, REPORT } from "./report-fixture";
 import { assertNoUnmockedCalls } from "./mocks";
 
 /**
- * The evidence tab, which is the surface that makes the rest of the console
+ * The Evidence tab, which is the surface that makes the rest of the console
  * checkable.
  *
- * Every other tab now cites ledger ids, and a citation is only a citation if a
- * reader can follow it. What is exercised here is exactly that: the rows come
- * from the endpoint rather than from the report, the filters narrow on the
- * server, a row opens to show what the tool actually returned, and the deep
- * link a citation chip produces lands on the entry it names.
+ * Every other tab cites evidence records, and a citation is only a citation
+ * if a reader can follow it. What is exercised here is exactly that: the rows
+ * come from the endpoint rather than from the report, the filters narrow on
+ * the server, a row opens to show what the tool actually returned, and a
+ * citation mark on another tab opens the drawer whose link lands on the
+ * record it names.
  */
 test.beforeEach(async ({ authenticatedPage: page }) => {
   await page.route("**/api/v1/jobs/*", (route) =>
@@ -29,9 +30,9 @@ test.beforeEach(async ({ authenticatedPage: page }) => {
   );
 });
 
-test("the ledger lists one row per tool call", async ({ authenticatedPage: page }) => {
-  await page.goto(`/analysis/${JOB_ID}/evidence`);
-  await expect(page.getByRole("heading", { name: /Evidence Ledger/i })).toBeVisible();
+test("the evidence lists one row per tool call", async ({ authenticatedPage: page }) => {
+  await page.goto(`/analysis/${JOB_ID}/evidence/records`);
+  await expect(page.getByRole("heading", { name: /Evidence records/i })).toBeVisible();
   for (const id of ["ev_0001", "ev_0002", "ev_0003", "ev_0004"]) {
     await expect(page.getByRole("button", { name: `Toggle ${id}` })).toBeVisible();
   }
@@ -40,13 +41,13 @@ test("the ledger lists one row per tool call", async ({ authenticatedPage: page 
 });
 
 test("a failed call is marked as one", async ({ authenticatedPage: page }) => {
-  await page.goto(`/analysis/${JOB_ID}/evidence`);
+  await page.goto(`/analysis/${JOB_ID}/evidence/records`);
   const row = page.locator("tr", { has: page.getByRole("button", { name: "Toggle ev_0003" }) });
   await expect(row.getByText("error", { exact: true })).toBeVisible();
 });
 
-test("filtering by agent narrows the ledger", async ({ authenticatedPage: page }) => {
-  await page.goto(`/analysis/${JOB_ID}/evidence`);
+test("filtering by agent narrows the evidence", async ({ authenticatedPage: page }) => {
+  await page.goto(`/analysis/${JOB_ID}/evidence/records`);
   await expect(page.getByRole("button", { name: "Toggle ev_0002" })).toBeVisible();
 
   await page.getByLabel("Filter by agent").selectOption("static");
@@ -58,8 +59,8 @@ test("filtering by agent narrows the ledger", async ({ authenticatedPage: page }
   await expect(page.getByRole("button", { name: "Toggle ev_0002" })).toBeVisible();
 });
 
-test("filtering by stage narrows the ledger", async ({ authenticatedPage: page }) => {
-  await page.goto(`/analysis/${JOB_ID}/evidence`);
+test("filtering by stage narrows the evidence", async ({ authenticatedPage: page }) => {
+  await page.goto(`/analysis/${JOB_ID}/evidence/records`);
   await page.getByLabel("Filter by stage").selectOption("verdict");
   await expect(page.getByRole("button", { name: "Toggle ev_0003" })).toBeVisible();
   await expect(page.getByRole("button", { name: "Toggle ev_0001" })).toHaveCount(0);
@@ -68,7 +69,7 @@ test("filtering by stage narrows the ledger", async ({ authenticatedPage: page }
 test("a row opens to the arguments, the output and the parsed result", async ({
   authenticatedPage: page,
 }) => {
-  await page.goto(`/analysis/${JOB_ID}/evidence`);
+  await page.goto(`/analysis/${JOB_ID}/evidence/records`);
   await page.getByRole("button", { name: "Toggle ev_0001" }).click();
   await expect(page.getByRole("heading", { name: "Output" })).toBeVisible();
   await expect(page.getByRole("heading", { name: "Structured" })).toBeVisible();
@@ -77,16 +78,41 @@ test("a row opens to the arguments, the output and the parsed result", async ({
   await expect(page.getByRole("button", { name: /Show more \(\d+ more characters\)/ })).toBeVisible();
 });
 
+test("an open row lays out its arguments and parsed result as fields, with the raw JSON one toggle away", async ({
+  authenticatedPage: page,
+}) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto(`/analysis/${JOB_ID}/evidence/records`);
+  await page.getByRole("button", { name: "Toggle ev_0001" }).click();
+  const args = page.getByRole("button", { name: "View raw of Arguments of ev_0001" });
+  await expect(args).toBeVisible();
+  // Fields, not a JSON dump: the key is a term, the value beside it.
+  const row = page.locator("tr", { has: args });
+  await expect(row.locator("dt", { hasText: "Path" }).first()).toBeVisible();
+  await expect(row.locator("dd", { hasText: "/samples/evil.exe" }).first()).toBeVisible();
+  await expect(row).not.toContainText('"path"');
+  await args.click();
+  // The toggle renames itself, so the raw block is found on the page.
+  await expect(page.getByRole("region", { name: "Arguments of ev_0001 raw JSON table, scrolls sideways" })).toContainText(
+    '"path": "/samples/evil.exe"',
+  );
+  // An open row widens nothing: the page never scrolls sideways.
+  const wide = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
+  expect(wide).toBe(0);
+});
+
 test("an entry that lost its output to the byte budget says so", async ({
   authenticatedPage: page,
 }) => {
-  await page.goto(`/analysis/${JOB_ID}/evidence`);
+  await page.goto(`/analysis/${JOB_ID}/evidence/records`);
   await page.getByRole("button", { name: "Toggle ev_0004" }).click();
   await expect(page.getByText(/dropped to keep this agent inside its byte budget/i)).toBeVisible();
 });
 
 test("the deep link opens the entry it names", async ({ authenticatedPage: page }) => {
   await page.goto(`/analysis/${JOB_ID}/evidence?evidence=ev_0003`);
+  // A link written before the bundle led the tab is passed on to Records.
+  await expect(page).toHaveURL(/\/evidence\/records\?evidence=ev_0003$/);
   await expect(page.getByRole("button", { name: "Toggle ev_0003" })).toHaveAttribute(
     "aria-expanded",
     "true"
@@ -94,38 +120,44 @@ test("the deep link opens the entry it names", async ({ authenticatedPage: page 
   await expect(page.getByText("upstream refused the lookup")).toBeVisible();
 });
 
-test("a citation chip on a report section links to its entry", async ({
+test("a citation mark on a report section leads to its record", async ({
   authenticatedPage: page,
 }) => {
   await page.goto(`/analysis/${JOB_ID}/static`);
-  const chip = page.getByRole("link", { name: "ev_0001" }).first();
-  await expect(chip).toBeVisible();
-  await chip.click();
-  await expect(page).toHaveURL(/\/evidence\?evidence=ev_0001$/);
+  // Outside Evidence the id is never printed: the mark opens the drawer.
+  await expect(page.getByTestId("analysis-content")).not.toContainText("ev_0001");
+  const mark = page.getByRole("button", { name: /^Evidence for this statement/ }).first();
+  await expect(mark).toBeVisible();
+  await mark.click();
+  const drawer = page.getByRole("dialog");
+  await drawer.getByRole("link", { name: /ev_0001/ }).click();
+  await expect(page).toHaveURL(/\/evidence\/records\?evidence=ev_0001$/);
   await expect(page.getByRole("button", { name: "Toggle ev_0001" })).toHaveAttribute(
     "aria-expanded",
     "true"
   );
 });
 
-test("a section no tab draws is shown beside the ledger", async ({
+test("a section no tab draws is shown beside the records", async ({
   authenticatedPage: page,
 }) => {
-  await page.goto(`/analysis/${JOB_ID}/evidence`);
+  await page.goto(`/analysis/${JOB_ID}/evidence/records`);
   await expect(page.getByRole("heading", { name: /Sections no tab draws/i })).toBeVisible();
   await expect(page.getByRole("heading", { name: /R2 analysis/i })).toBeVisible();
   await expect(page.getByText("fcn.00401000")).toBeVisible();
 });
 
-test("the identity tab draws the sections routed to it", async ({
+test("file identity draws the sections routed to it", async ({
   authenticatedPage: page,
 }) => {
-  await page.goto(`/analysis/${JOB_ID}/identity`);
+  await page.goto(`/analysis/${JOB_ID}/static`);
   await expect(page.getByRole("heading", { name: /PE header/i })).toBeVisible();
   await expect(page.getByText("0x14c")).toBeVisible();
   // The typed identity block stands down where a header section covers it,
   // and the hashes stay, because no section carries them.
-  await expect(page.getByRole("heading", { name: /Sample Identification/i })).toHaveCount(0);
+  await expect(page.getByRole("heading", { name: /Identity and metadata/i })).toHaveCount(0);
+  // The section is titled, never labelled with the key it was built under.
+  await expect(page.getByTestId("analysis-content").getByText("pe_header", { exact: true })).toHaveCount(0);
   await expect(page.getByRole("heading", { name: /File Hashes/i })).toBeVisible();
 });
 
@@ -133,16 +165,23 @@ test("a section covering a typed panel replaces it rather than repeating it", as
   authenticatedPage: page,
 }) => {
   await page.goto(`/analysis/${JOB_ID}/static`);
-  // The section is drawn...
+  await page.getByRole("tab", { name: /^Imports/ }).click();
+  // The section is drawn in the Imports sub-tab...
   await expect(page.getByRole("heading", { name: /PE imports/i })).toBeVisible();
-  // ...and the extractor's own Imports table is not, because it would be the
+  await expect(page.getByText("WriteProcessMemory")).toBeVisible();
+  // ...and the extractor's own imports table is not, because it would be the
   // same import list a second time.
-  await expect(page.getByRole("heading", { name: /^Imports \(/ })).toHaveCount(0);
+  await expect(page.getByText("VirtualAllocEx")).toHaveCount(0);
 });
 
-test("the analysis header draws the run as its stages", async ({ authenticatedPage: page }) => {
-  // On the header, so the shape of the run is the same fact on every tab.
-  await page.goto(`/analysis/${JOB_ID}/conversation`);
+test("run quality draws the run as its stages", async ({ authenticatedPage: page }) => {
+  // A fact about the run, not the sample: in the collapsed run quality
+  // section under Evidence, and nowhere on the findings.
+  await page.goto(`/analysis/${JOB_ID}`);
+  await expect(page.getByRole("heading", { name: /Behaviour and techniques/ })).toBeVisible();
+  await expect(page.getByTestId("pipeline-strip")).toHaveCount(0);
+  await page.goto(`/analysis/${JOB_ID}/evidence`);
+  await page.getByRole("button", { name: /Run quality/ }).click();
   const strip = page.getByTestId("pipeline-strip");
   await expect(strip).toContainText("analysis");
   // The stage that declined names the condition it failed, rather than being

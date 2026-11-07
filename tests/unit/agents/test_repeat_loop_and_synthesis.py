@@ -3,8 +3,10 @@
 Two live runs. A static analyst spent 16 of its 19 steps calling ``pe_info``
 with identical arguments and being told each time that the answer sits in
 ev_0002; another spent 11 on one ``strings`` regex. Being told where the answer
-is does not stop a model that has decided to ask again, so the third served
-repeat ends the loop and hands what was gathered to forced synthesis.
+is does not stop a model that has decided to ask again, so ``RepeatGuard.ENDS_AT``
+refused identical calls end the loop and hand what was gathered to forced
+synthesis. A served repeat, and a call that differs in any argument or page,
+never counts toward that end.
 
 The salvage then has to keep what it is asked to synthesise. A fixed
 16,000-character budget cut 21 of 41 messages on one of those runs and dropped
@@ -16,14 +18,16 @@ from __future__ import annotations
 
 from typing import Any
 
-from maljan.agents.base_agent import (
+from malspark.agents.base_agent import (
     _SYNTHESIS_MIN_CHARS,
     _trim_for_synthesis,
     ledger_ids_in,
+    synthesis_budget,
     synthesis_budget_chars,
 )
-from maljan.agents.evidence_recorder import RepeatGuard
-from maljan.core.config import Settings
+from malspark.agents.evidence_recorder import RepeatGuard
+from malspark.core.config import Settings
+from malspark.llm.context_window import CHARS_PER_TOKEN, DECLARED, ContextBudget, WindowFact
 
 
 def _ai(content: str = "", tool: str = "") -> Any:
@@ -81,8 +85,8 @@ class TestTheGuardEndsTheLoop:
         )
 
     def _wrapped(self, guard: RepeatGuard, calls: list[str], *names: str) -> list[Any]:
-        from maljan.agents.evidence_recorder import EvidenceRecorder, record_tools
-        from maljan.schemas.evidence import EvidenceCounter
+        from malspark.agents.evidence_recorder import EvidenceRecorder, record_tools
+        from malspark.schemas.evidence import EvidenceCounter
 
         recorder = EvidenceRecorder("static", counter=EvidenceCounter())
         return record_tools(
@@ -100,32 +104,99 @@ class TestTheGuardEndsTheLoop:
         assert len(calls) == 2, "the tool itself ran twice; the rest were refused"
         assert "[ev_0001]" in answers[0]
 
-    def test_the_loop_ends_on_the_third_repeated_call(self) -> None:
+    def test_the_loop_ends_at_the_stated_count_of_refusals_and_not_before(self) -> None:
         guard = RepeatGuard()
         tool = self._wrapped(guard, [])[0]
         args = {"path": "/tmp/s.bin"}
 
         tool.invoke(args)
-        assert guard.served_repeats == 0
         tool.invoke(args)
-        assert (guard.served_repeats, guard.ending_the_loop()) == (1, False)
-        tool.invoke(args)
-        assert (guard.served_repeats, guard.ending_the_loop()) == (2, False)
+        assert (guard.refused_repeats, guard.ending_the_loop()) == (0, False), "one is served"
+        for refused in range(1, RepeatGuard.ENDS_AT):
+            tool.invoke(args)
+            assert (guard.refused_repeats, guard.ending_the_loop()) == (refused, False)
         tool.invoke(args)
 
-        assert (guard.served_repeats, guard.ending_the_loop()) == (3, True)
+        assert (guard.refused_repeats, guard.ending_the_loop()) == (RepeatGuard.ENDS_AT, True)
 
-    def test_three_tools_asked_twice_each_end_it_too(self) -> None:
-        """The count is the loop's, not one call's."""
+    def test_the_stated_count_is_more_than_the_three_repeats_it_was(self) -> None:
+        assert RepeatGuard.ENDS_AT == 8
+        assert RepeatGuard.WARNS_AT == RepeatGuard.ENDS_AT - 1
+
+    def test_served_repeats_of_many_tools_never_end_it(self) -> None:
+        """Each tool asked twice is served twice: nothing was refused, so nothing stalled."""
         guard = RepeatGuard()
-        tools = self._wrapped(guard, [], "pe_info", "strings", "hashes")
+        names = [f"tool_{index}" for index in range(RepeatGuard.ENDS_AT + 2)]
+        tools = self._wrapped(guard, [], *names)
 
-        for tool in tools:
-            tool.invoke({"path": "/tmp/s.bin"})
-        for tool in tools:
-            tool.invoke({"path": "/tmp/s.bin"})
+        for _ in range(2):
+            for tool in tools:
+                tool.invoke({"path": "/tmp/s.bin"})
 
-        assert guard.ending_the_loop() is True
+        assert guard.served_repeats == len(names)
+        assert (guard.refused_repeats, guard.ending_the_loop()) == (0, False)
+
+    def test_distinct_pages_and_arguments_never_count(self) -> None:
+        from langchain_core.tools import StructuredTool
+        from pydantic import BaseModel
+
+        from malspark.agents.evidence_recorder import EvidenceRecorder, record_tools
+        from malspark.schemas.evidence import EvidenceCounter
+
+        class _Args(BaseModel):
+            path: str = ""
+            offset: int = 0
+            limit: int = 0
+
+        def _run(**kwargs: Any) -> str:
+            return f"page at {kwargs.get('offset')}"
+
+        paged = StructuredTool.from_function(
+            func=_run, name="strings", description="strings", args_schema=_Args, infer_schema=False
+        )
+        guard = RepeatGuard()
+        tool = record_tools([paged], EvidenceRecorder("static", counter=EvidenceCounter()), guard)[
+            0
+        ]
+
+        for page in range(RepeatGuard.ENDS_AT * 3):
+            tool.invoke({"path": "/tmp/s.bin", "offset": page * 100, "limit": 100})
+        for page in range(RepeatGuard.ENDS_AT * 3):
+            tool.invoke({"path": f"/tmp/s{page}.bin", "offset": 0, "limit": 100})
+        for limit in range(1, RepeatGuard.ENDS_AT * 3):
+            tool.invoke({"path": "/tmp/s.bin", "offset": 0, "limit": limit})
+
+        assert (guard.served_repeats, guard.refused_repeats) == (0, 0)
+        assert guard.ending_the_loop() is False
+
+    def test_only_calls_identical_after_normalisation_count(self) -> None:
+        """The key sorts the arguments; any value that differs is another call."""
+        guard = RepeatGuard()
+        first = {"path": "/tmp/s.bin", "offset": 0, "limit": 100}
+
+        guard.note("strings", first, "ev_0001")
+        guard.note("strings", dict(reversed(list(first.items()))), "ev_0002")
+
+        assert guard.answered_by("strings", {"limit": 100, "offset": 0, "path": "/tmp/s.bin"}) == (
+            "ev_0001"
+        )
+        assert guard.answered_by("strings", {**first, "offset": 100}) is None
+        assert guard.answered_by("strings", {**first, "limit": 50}) is None
+        assert guard.answered_by("pe_info", first) is None
+
+    def test_a_refusal_names_the_ledger_id_and_how_to_page(self) -> None:
+        guard = RepeatGuard()
+        tool = self._wrapped(guard, [])[0]
+        args = {"path": "/tmp/s.bin"}
+
+        tool.invoke(args)
+        tool.invoke(args)
+        refused = tool.invoke(args)
+
+        assert "the result is in [ev_0001]" in refused
+        assert "The ledger keeps it under ev_0001" in refused
+        assert "call read_evidence with evidence_id ev_0001" in refused
+        assert "pass offset and limit to page" in refused
 
     def test_a_loop_that_asks_different_things_is_left_alone(self) -> None:
         guard = RepeatGuard()
@@ -144,12 +215,16 @@ class TestTheGuardEndsTheLoop:
 
         first = tool.invoke(args)
         served = tool.invoke(args)
-        refused = tool.invoke(args)
+        refusals = [tool.invoke(args) for _ in range(RepeatGuard.WARNS_AT)]
 
         assert "ends this analysis" not in first
         assert "A third will not be run" in served
         assert "ends this analysis" not in served, "one repeat is not the last one"
-        assert "ends this analysis" in refused
+        assert not any("ends this analysis" in said for said in refusals[:-1])
+        assert "ends this analysis" in refusals[-1]
+        assert guard.ending_the_loop() is False
+        tool.invoke(args)
+        assert guard.ending_the_loop() is True
 
     def test_a_repeated_call_that_raises_counts_the_same(self) -> None:
         """An unreachable server or a path the sidecar will never read throws
@@ -157,8 +232,8 @@ class TestTheGuardEndsTheLoop:
         from langchain_core.tools import StructuredTool
         from pydantic import BaseModel
 
-        from maljan.agents.evidence_recorder import EvidenceRecorder, record_tools
-        from maljan.schemas.evidence import EvidenceCounter
+        from malspark.agents.evidence_recorder import EvidenceRecorder, record_tools
+        from malspark.schemas.evidence import EvidenceCounter
 
         class _Args(BaseModel):
             path: str = ""
@@ -175,20 +250,21 @@ class TestTheGuardEndsTheLoop:
         ]
         args = {"path": "/tmp/s.bin"}
 
-        answers = [tool.invoke(args) for _ in range(4)]
+        answers = [tool.invoke(args) for _ in range(RepeatGuard.ENDS_AT + 2)]
 
         assert "tool call failed" in answers[0]
         assert "A third will not be run" in answers[1]
         assert "failed the same way before, in [ev_0001]" in answers[1]
         assert "the answer above" not in answers[1], "what is above is a failure"
-        assert (guard.served_repeats, guard.ending_the_loop()) == (3, True)
+        assert "it failed, in [ev_0001]" in answers[2]
+        assert (guard.refused_repeats, guard.ending_the_loop()) == (RepeatGuard.ENDS_AT, True)
 
     def test_the_analyst_loop_ends_and_synthesises_on_it(self) -> None:
         """The wiring: the stream is broken and the salvage is the same one a
         spent step budget takes."""
         import inspect
 
-        from maljan.agents import base_agent
+        from malspark.agents import base_agent
 
         source = inspect.getsource(base_agent.BaseAnalyst._run_tool_loop)
 
@@ -207,15 +283,111 @@ class TestTheSynthesisBudget:
 
         assert synthesis_budget_chars(settings, "static") == _SYNTHESIS_MIN_CHARS
 
-    def test_a_known_context_gives_two_fifths_of_it_in_characters(self) -> None:
+    def test_a_known_context_gives_the_loop_s_room_less_an_eighth(self) -> None:
+        # The room the loop's own answers come out of — the window less the
+        # reply reserve, at the characters a token the context budget counts
+        # in — less an eighth of the window for the tool answers the server
+        # never counted after its last count.
+        settings = Settings(_env_file=None, llm={"openai": {"context_size": 131072}})
+        loop_room = ContextBudget(WindowFact(131072, DECLARED, "test")).tool_budget_chars()
+
+        chars, how = synthesis_budget(settings, "static")
+
+        assert chars == (131072 - 32768 - 16384) * CHARS_PER_TOKEN
+        assert chars == loop_room - 16384 * CHARS_PER_TOKEN
+        assert how == (
+            f"{chars} characters — the 131072-token window less 32768 tokens of reply room "
+            "and 16384 for the measure's error, the server having accepted it, "
+            f"at {CHARS_PER_TOKEN} characters a token"
+        )
+
+    def test_after_a_window_refusal_a_further_quarter_is_kept(self) -> None:
+        # The server has shown the conversation tokenises denser than its
+        # characters say; the salvage keeps a quarter of the window for that.
         settings = Settings(_env_file=None, llm={"openai": {"context_size": 131072}})
 
-        assert synthesis_budget_chars(settings, "static") == int(131072 * 4 * 0.4)
+        chars, how = synthesis_budget(settings, "static", refused=True)
 
-    def test_a_small_context_does_not_drop_below_the_floor(self) -> None:
+        assert chars == (131072 - 2 * 32768) * CHARS_PER_TOKEN
+        assert how == (
+            f"{chars} characters — the 131072-token window less 32768 tokens of reply room "
+            "and 32768 for the measure's error, the server having refused the conversation "
+            f"as over the window, at {CHARS_PER_TOKEN} characters a token"
+        )
+
+    def test_without_a_refusal_it_is_never_below_what_was_sent_before(self) -> None:
+        # Two fifths of the window at four characters a token was the budget
+        # before; a salvage a step, time or repeat cap ended keeps at least
+        # that from 8,192 tokens up. Below, the floor of 16,000 characters did
+        # not fit the window at all, and it is held to the window's room.
+        for window in (4096, 8192, 32768, 65536, 131072, 1_000_000, 1_048_576):
+            for cap in (0, 8192, 32768):
+                settings = Settings(
+                    _env_file=None,
+                    llm={"openai": {"context_size": window}, "expert_max_tokens": cap},
+                )
+                before = max(_SYNTHESIS_MIN_CHARS, int(window * 4 * 0.4))
+                now = synthesis_budget_chars(settings, "static")
+                if window >= 8192:
+                    assert now >= before, (window, cap)
+                else:
+                    assert now == (window - window // 4) * CHARS_PER_TOKEN < before
+
+    def test_a_configured_generation_cap_never_enlarges_it(self) -> None:
+        settings = Settings(
+            _env_file=None,
+            llm={"openai": {"context_size": 131072}, "expert_max_tokens": 8192},
+        )
+
+        chars, how = synthesis_budget(settings, "static", refused=True)
+
+        # A smaller generation cap shortens the answer; it never enlarges the
+        # salvage past what the uncapped quarter leaves.
+        assert chars == (131072 - 2 * 32768) * CHARS_PER_TOKEN
+        assert how == (
+            f"{chars} characters — the 131072-token window less 32768 tokens of reply room "
+            "(the 8192-token generation cap does not shrink it) and 32768 for the measure's "
+            "error, the server having refused the conversation as over the window, "
+            f"at {CHARS_PER_TOKEN} characters a token"
+        )
+        assert synthesis_budget_chars(settings, "static") == (131072 - 32768 - 16384) * 3
+
+    def test_the_floor_says_it_is_the_floor(self) -> None:
+        settings = Settings(_env_file=None, llm={"openai": {"context_size": 8192}})
+
+        chars, how = synthesis_budget(settings, "static", refused=True)
+
+        assert chars == _SYNTHESIS_MIN_CHARS
+        assert how.startswith(f"{_SYNTHESIS_MIN_CHARS} characters — the floor, above the ")
+
+    def test_a_window_too_small_for_the_floor_holds_it_to_its_room(self) -> None:
+        # 16,000 characters do not fit a 4,096-token window at three a token;
+        # the floor is held to the window's room before the reply, and says so.
         settings = Settings(_env_file=None, llm={"openai": {"context_size": 4096}})
 
-        assert synthesis_budget_chars(settings, "static") == _SYNTHESIS_MIN_CHARS
+        chars, how = synthesis_budget(settings, "static", refused=True)
+
+        assert chars == (4096 - 1024) * CHARS_PER_TOKEN
+        assert how.startswith(
+            f"{chars} characters — the floor, held to the window's room before the reply, "
+            f"above the {(4096 - 2048) * CHARS_PER_TOKEN} of the 4096-token window"
+        )
+        # Without a refusal the floor is held to the same room.
+        assert synthesis_budget(settings, "static") == (
+            chars,
+            f"{chars} characters — the floor, held to the window's room before the reply, "
+            f"above the {(4096 - 1024 - 512) * CHARS_PER_TOKEN} of the 4096-token window less "
+            "1024 tokens of reply room and 512 for the measure's error, the server having "
+            f"accepted it, at {CHARS_PER_TOKEN} characters a token",
+        )
+        assert synthesis_budget(Settings(_env_file=None), "static")[1].endswith(
+            "no window was declared or learned"
+        )
+
+    def test_a_small_context_does_not_drop_below_the_floor(self) -> None:
+        settings = Settings(_env_file=None, llm={"openai": {"context_size": 8192}})
+
+        assert synthesis_budget_chars(settings, "static", refused=True) == _SYNTHESIS_MIN_CHARS
 
     def test_an_ollama_agent_reads_its_own_window(self) -> None:
         settings = Settings(
@@ -223,7 +395,7 @@ class TestTheSynthesisBudget:
             llm={"provider": "ollama", "ollama": {"num_ctx": 65536}},
         )
 
-        assert synthesis_budget_chars(settings, "static") == int(65536 * 4 * 0.4)
+        assert synthesis_budget_chars(settings, "static") == (65536 - 16384 - 8192) * 3
 
     def test_settings_that_cannot_be_read_hold_the_floor(self) -> None:
         assert synthesis_budget_chars(object(), "static") == _SYNTHESIS_MIN_CHARS
@@ -313,12 +485,13 @@ class TestWhatTheModelIsToldItCanCite:
     def test_the_directive_carries_the_list(self) -> None:
         import inspect
 
-        from maljan.agents import base_agent
+        from malspark.agents import base_agent
 
         source = inspect.getsource(base_agent.BaseAnalyst._force_final_synthesis)
 
         assert "visible = ledger_ids_in(trimmed)" in source
-        assert "Cite only these ids." in source
+        assert "_citable_sentence(visible)" in source
+        assert "Cite only these ids." in inspect.getsource(base_agent._citable_sentence)
 
 
 class TestTheLoopStopsMidStream:
@@ -331,7 +504,7 @@ class TestTheLoopStopsMidStream:
     """
 
     def _agent(self, llm: Any) -> Any:
-        from maljan.agents.base_agent import BaseAnalyst
+        from malspark.agents.base_agent import BaseAnalyst
 
         class _ToolAgent(BaseAnalyst):
             def analyze(self, data: str) -> str:  # pragma: no cover - not exercised
@@ -358,7 +531,7 @@ class TestTheLoopStopsMidStream:
 
             async def astream(self, inputs: Any, config: Any, stream_mode: str = "values") -> Any:
                 messages = list(inputs["messages"])
-                for step in range(8):
+                for step in range(RepeatGuard.ENDS_AT + 6):
                     self.steps += 1
                     answer = agent_tools[0].invoke({"path": "/tmp/s.bin"})
                     messages = [
@@ -409,7 +582,7 @@ class TestTheLoopStopsMidStream:
             executor = self._executor(tools)
             return executor
 
-        with patch("maljan.agents.base_agent.get_settings") as settings:
+        with patch("malspark.agents.base_agent.get_settings") as settings:
             cfg = settings.return_value
             cfg.react_agent_timeout = 180
             cfg.react_agent_timeout_overrides = {}
@@ -423,7 +596,7 @@ class TestTheLoopStopsMidStream:
                 answer = agent.execute_tool_loop([("system", "s"), ("human", "h")])
 
         assert executor is not None
-        assert executor.steps == 4, "the fourth repeated call ends the loop"
+        assert executor.steps == RepeatGuard.ENDS_AT + 2, "the last refused call ends the loop"
         assert len(ran) == 2, "the tool itself ran twice; the rest were refused"
         assert "PE32" in answer, "the salvage answered from what was gathered"
         llm.invoke.assert_called_once()
@@ -441,7 +614,7 @@ class TestTheLoopStopsMidStream:
 
         agent = self._agent(MagicMock())
         agent.tools = [MagicMock()]
-        with patch("maljan.agents.base_agent.get_settings") as settings:
+        with patch("malspark.agents.base_agent.get_settings") as settings:
             cfg = settings.return_value
             cfg.react_agent_timeout = 180
             cfg.react_agent_timeout_overrides = {}
@@ -474,7 +647,7 @@ class TestTheLoopStopsMidStream:
         agent = self._agent(MagicMock())
         agent.tools = [MagicMock()]
         agent.logger = MagicMock()
-        with patch("maljan.agents.base_agent.get_settings") as settings:
+        with patch("malspark.agents.base_agent.get_settings") as settings:
             cfg = settings.return_value
             cfg.react_agent_timeout = 180
             cfg.react_agent_timeout_overrides = {}
@@ -504,14 +677,14 @@ class TestAnEarlierChunksCallIsNotRunAgain:
         return TestTheGuardEndsTheLoop()._tool(calls, "decompile_function")
 
     def _wrapped(self, guard: RepeatGuard, calls: list[str]) -> Any:
-        from maljan.agents.evidence_recorder import EvidenceRecorder, record_tools
-        from maljan.schemas.evidence import EvidenceCounter
+        from malspark.agents.evidence_recorder import EvidenceRecorder, record_tools
+        from malspark.schemas.evidence import EvidenceCounter
 
         recorder = EvidenceRecorder("static", counter=EvidenceCounter())
         return record_tools([self._tool(calls)], recorder, guard)[0]
 
     def test_a_seeded_call_is_answered_with_the_entry_that_holds_it(self) -> None:
-        from maljan.agents.evidence_recorder import repeat_notice
+        from malspark.agents.evidence_recorder import repeat_notice
 
         guard = RepeatGuard()
         guard.seed("decompile_function", {"path": "0x3c7c"}, "ev_0003")

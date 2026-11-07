@@ -14,8 +14,8 @@ import json
 import time
 from typing import Any
 
-from maljan.reporting.evidence_bundles import bundle_for, value_entries
-from maljan.reporting.models import (
+from malspark.reporting.evidence_bundles import bundle_for, value_entries
+from malspark.reporting.models import (
     EvidenceIndexRow,
     EvidenceSection,
     FileHashes,
@@ -126,9 +126,9 @@ def test_reading_the_holders_stays_linear() -> None:
             evidence_index=[_row(f"ev_{n + 1:04d}", "strings") for n in range(size)],
             technical_evidence={"static": texts},
         )
-        start = time.perf_counter()
+        start = time.thread_time()
         value_entries(report, [URL, HOST, *(f"h{n}.test" for n in range(size))])
-        return time.perf_counter() - start
+        return time.thread_time() - start
 
     small, large = took(200), took(2_000)
     assert large < small * 30, (small, large)
@@ -167,7 +167,7 @@ def test_a_huge_answer_keeps_only_the_wanted_values_in_memory() -> None:
 def test_the_sections_of_one_report_read_its_answers_once() -> None:
     from unittest import mock
 
-    from maljan.reporting import evidence_bundles
+    from malspark.reporting import evidence_bundles
 
     report = _big_answer(10)
     wraps = evidence_bundles._value_holders

@@ -18,12 +18,14 @@ import struct
 import time
 import tracemalloc
 import zlib
+from collections.abc import Callable
 from pathlib import Path
 
 import pefile
 import pytest
 
-from maljan.tools import binary, staging, upx
+from malspark.tools import binary, staging, upx
+from tests.linear_cost import assert_scales
 from tests.unit.tools import synthetic_upx as su
 from tests.unit.tools.synthetic_pe import SyntheticPE
 
@@ -406,33 +408,41 @@ def test_back_references_are_held_to_the_output_and_its_start() -> None:
 
 
 def test_an_endless_length_prefix_stops_at_the_room_left() -> None:
-    bits = su._Bits(4)
-    bits.bit(1)
-    bits.byte(0x41)
-    bits.bit(0)
-    su._gamma(bits, 3)
-    bits.byte(0)  # offset 1
-    bits.bit(0)
-    bits.bit(0)
-    for _ in range(200_000):
+    def endless(pairs: int) -> bytes:
+        bits = su._Bits(4)
         bits.bit(1)
+        bits.byte(0x41)
         bits.bit(0)
-    stream = bits.finish()
-    began = time.monotonic()
-    with pytest.raises(
-        upx.Damaged, match="a length at output byte 1 runs past the 4096 unpacked bytes"
-    ):
-        upx._nrv("2b", 4, stream, 4096)
-    assert time.monotonic() - began < 1.0
+        su._gamma(bits, 3)
+        bits.byte(0)  # offset 1
+        bits.bit(0)
+        bits.bit(0)
+        for _ in range(pairs):
+            bits.bit(1)
+            bits.bit(0)
+        return bits.finish()
+
+    def unpack(pairs: int) -> Callable[[], None]:
+        stream = endless(pairs)
+
+        def call() -> None:
+            with pytest.raises(
+                upx.Damaged, match="a length at output byte 1 runs past the 4096 unpacked bytes"
+            ):
+                upx._nrv("2b", 4, stream, 4096)
+
+        return call
+
+    assert_scales(unpack, 25_000)
 
 
 def test_random_bytes_as_a_stream_fail_in_linear_time() -> None:
     noise = os.urandom(200_000)
     for kind in ("2b", "2d", "2e"):
-        began = time.monotonic()
+        began = time.thread_time()
         with pytest.raises(upx.Damaged):
             upx._nrv(kind, 4, noise, 2_000_000)
-        assert time.monotonic() - began < 10.0
+        assert time.thread_time() - began < 10.0
 
 
 def test_a_truncated_lzma_stream_is_an_error() -> None:
@@ -512,11 +522,11 @@ def _reloc_image(count: int, table_at: int, step: int = 4) -> tuple[upx._Image, 
 def test_three_million_relocations_cost_a_few_bytes_each() -> None:
     count = 3_000_000
     image, _buf = _reloc_image(count, 0)
-    began = time.monotonic()
+    began = time.thread_time()
     said, peak = _peak(lambda: upx._rebuild_relocations(image))
     assert said == f"from UPX's relocation records: {count} relocations"
     assert peak < 4 * 4 * count
-    assert time.monotonic() - began < 60
+    assert time.thread_time() - began < 60
 
 
 def test_a_relocation_table_that_cannot_fit_is_refused_before_it_is_built() -> None:
@@ -574,9 +584,9 @@ def _long_forms(count: int) -> bytes:
 def _decode(stream: bytes) -> tuple[list[int], float]:
     image = 1 << 30
     buf = bytearray(stream)
-    began = time.monotonic()
+    began = time.thread_time()
     out = upx._reloc_positions(buf, 0, image, 4)
-    return out.tolist(), time.monotonic() - began
+    return out.tolist(), time.thread_time() - began
 
 
 def test_relocation_records_read_as_one_by_one_whatever_their_mix() -> None:

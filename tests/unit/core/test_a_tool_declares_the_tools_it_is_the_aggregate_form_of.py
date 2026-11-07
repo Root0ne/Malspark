@@ -5,9 +5,10 @@ tool of the same server, refused on save where it is not one and read without
 it, with a warning, where a stored block names one. The model is shown the
 fact after the tool's description, written once the names a request offers
 are settled, so it can choose one call over many; a tool that declares none
-is shown and called exactly as before. Ghidra's block declares its batch and
-whole-program tools, and the static workflows leave the number of functions
-to decompile to the model.
+is shown and called exactly as before. Ghidra's batch and whole-program tools
+are read as the aggregate forms they are from what Ghidra lists
+(``core.program_reading``), and the static workflows leave the number of
+functions to decompile to the model.
 """
 
 from __future__ import annotations
@@ -20,9 +21,9 @@ import pytest
 from langchain_core.tools import StructuredTool
 from pydantic import ValidationError
 
-from maljan.core.builtin_declarations import GHIDRA_WORKFLOW, R2_WORKFLOW
-from maljan.core.config import MCPServerConfig, Settings
-from maljan.core.tool_declarations import (
+from malspark.core.builtin_declarations import GHIDRA_WORKFLOW, R2_WORKFLOW
+from malspark.core.config import MCPServerConfig, Settings
+from malspark.core.tool_declarations import (
     KIND_FREE_FIELDS,
     ToolDeclarations,
     ToolFacts,
@@ -31,7 +32,7 @@ from maljan.core.tool_declarations import (
     declaration_digest,
     strict_declarations,
 )
-from maljan.core.undeclared_tools import aggregate_note, aggregates_of, with_aggregate_notes
+from malspark.core.undeclared_tools import aggregate_note, aggregates_of, with_aggregate_notes
 
 
 def _tool(name: str, description: str = "") -> StructuredTool:
@@ -42,7 +43,10 @@ def _tool(name: str, description: str = "") -> StructuredTool:
 
 @pytest.fixture(scope="module")
 def ghidra() -> dict[str, ToolFacts]:
-    return dict(Settings().static.ghidra.tool_facts)
+    # As the platform reads them: from what Ghidra lists, under its block.
+    held = ToolDeclarations.from_settings(Settings()).source("provider:ghidra")
+    assert held is not None
+    return dict(held.tools)
 
 
 class TestTheField:
@@ -167,7 +171,8 @@ class TestGhidraDeclaresItsAggregates:
     ) -> None:
         # Its definition does not say references to or from each address.
         assert ghidra["get_bulk_xrefs"].aggregate_of == ()
-        assert aggregates_of(dict(Settings().static.r2.tool_facts)) == {}
+        r2 = ToolDeclarations.from_settings(Settings()).source("provider:r2")
+        assert r2 is not None and aggregates_of(dict(r2.tools)) == {}
 
 
 class TestTheModelIsShownIt:
@@ -197,7 +202,7 @@ class TestTheModelIsShownIt:
         assert noted[0].description == aggregate_note(("one",))
 
     def test_the_registry_names_a_renamed_aggregated_tool_as_offered(self) -> None:
-        from maljan.providers.servers import ServerRegistry
+        from malspark.providers.servers import ServerRegistry
 
         registry = ServerRegistry(Settings(_env_file=None))
         tools: list[Any] = []
@@ -211,7 +216,7 @@ class TestTheModelIsShownIt:
         assert tools[0].description == "[TOOL] one."
 
     def test_the_registry_leaves_a_tool_the_reference_did_not_pick_out(self) -> None:
-        from maljan.providers.servers import ServerRegistry
+        from malspark.providers.servers import ServerRegistry
 
         registry = ServerRegistry(Settings(_env_file=None))
         tools: list[Any] = []
@@ -221,7 +226,7 @@ class TestTheModelIsShownIt:
     def test_ghidra_s_attach_notes_its_offered_aggregates(
         self, ghidra: dict[str, ToolFacts]
     ) -> None:
-        from maljan.providers.static.ghidra.provider import GhidraStaticProvider
+        from malspark.providers.static.ghidra.provider import GhidraStaticProvider
 
         provider = object.__new__(GhidraStaticProvider)
         provider._cfg = SimpleNamespace(tool_facts=ghidra)
@@ -231,7 +236,7 @@ class TestTheModelIsShownIt:
         assert noted[1] is tools[1] and noted[2] is tools[2]
 
     def test_a_generic_server_s_quoted_words_never_carry_the_note(self) -> None:
-        from maljan.providers.static.generic_mcp import GenericMCPStaticProvider
+        from malspark.providers.static.generic_mcp import GenericMCPStaticProvider
 
         tools = [_tool("many", "[BATCH] Its own words."), _tool("one")]
         handle = SimpleNamespace(
@@ -259,7 +264,7 @@ class TestTheWorkflowsSetNoNumber:
         assert "Large binaries may have 1000+ functions." in GHIDRA_WORKFLOW
 
     def test_a_generic_server_s_generated_workflow_sets_none(self) -> None:
-        from maljan.providers.static.generic_mcp import GenericMCPStaticProvider
+        from malspark.providers.static.generic_mcp import GenericMCPStaticProvider
 
         handle = SimpleNamespace(
             name="custom", tools=lambda: [_tool("t")], server_instructions="", config=None
@@ -288,5 +293,14 @@ class TestTheDigests:
         # The knowledge server declares no aggregate; its digest as dev records it.
         # (The analysis server's moved when two of its tools declared what their
         # answers show and do not show.)
-        digests = ToolDeclarations.from_settings(Settings(_env_file=None)).digests()
-        assert digests["mcp:knowledge"] == "2fbd76f41eddabe6"
+        # Its trust in its server's own declaration (T-418) moved its digest,
+        # and so did its tool table's removal: the server declares its tools
+        # itself (T-418 PR1b), so its block is its trust, roles and launch alone.
+        # It moved once more when the environment names it requires took the
+        # product's new name (T-576); with the previous names it is still
+        # b261c17f07e13ef9.
+        settings = Settings(_env_file=None)
+        assert settings.mcp.servers["knowledge"].trusts_served_declaration is True
+        object.__setattr__(settings.mcp.servers["knowledge"], "trusts_served_declaration", False)
+        digests = ToolDeclarations.from_settings(settings).digests()
+        assert digests["mcp:knowledge"] == "30ce9bdcc7185ff8"

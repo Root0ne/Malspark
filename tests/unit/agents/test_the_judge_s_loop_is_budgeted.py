@@ -31,11 +31,11 @@ from langchain_core.outputs import ChatGeneration, ChatResult
 from langchain_core.tools import StructuredTool
 from pydantic import BaseModel
 
-from maljan.agents.base_agent import _message_chars
-from maljan.agents.judge_agent import JudgeAgent
-from maljan.agents.mcp_client import MCPLangChainToolkit
-from maljan.agents.tool_answer_clearing import ToolAnswerClearing
-from maljan.llm import context_window as cw
+from malspark.agents.base_agent import _message_chars
+from malspark.agents.judge_agent import JudgeAgent
+from malspark.agents.mcp_client import MCPLangChainToolkit
+from malspark.agents.tool_answer_clearing import ToolAnswerClearing
+from malspark.llm import context_window as cw
 
 WINDOW = 32_768
 REPLY = 8_192
@@ -95,7 +95,9 @@ class _Server(BaseChatModel):
 
 
 def _told_to_stop(sent: list[BaseMessage]) -> bool:
-    return isinstance(sent[-1], HumanMessage) and "Do NOT call any more tools" in str(
+    from malspark.agents.judge_agent import MEDIATION_SALVAGE_QUESTION
+
+    return isinstance(sent[-1], HumanMessage) and MEDIATION_SALVAGE_QUESTION in str(
         sent[-1].content
     )
 
@@ -159,8 +161,8 @@ def _judge(budget: Any, model: _Server) -> JudgeAgent:
 @contextlib.contextmanager
 def _settings(declared: int = 0) -> Iterator[None]:
     with (
-        patch("maljan.agents.judge_agent.get_settings") as settings,
-        patch("maljan.agents.base_agent.get_settings", settings),
+        patch("malspark.agents.judge_agent.get_settings") as settings,
+        patch("malspark.agents.base_agent.get_settings", settings),
     ):
         cfg = settings.return_value
         cfg.react_agent_timeout = 600
@@ -168,6 +170,8 @@ def _settings(declared: int = 0) -> Iterator[None]:
         cfg.llm.provider = "openai"
         cfg.llm.agents = {}
         cfg.llm.openai.context_size = declared
+        cfg.llm.expert_max_tokens = REPLY
+        cfg.llm.judge_max_tokens = REPLY
         yield
 
 
@@ -255,6 +259,16 @@ class TestAGenuineOverflowAfterGathering:
         assert model.refused >= 1, "the server did refuse"
         records = judge.drain_budget_records()
         assert records[-1]["cap"] == "no_room"
+        # The salvage is on the loop's record: what it was sized to and how.
+        salvage = records[-1]["salvage"]
+        assert salvage["outcome"] == "answered"
+        from malspark.agents.judge_agent import MEDIATION_SALVAGE_QUESTION
+
+        assert salvage["budget_chars"] == (
+            (WINDOW - REPLY - WINDOW // 4) * cw.CHARS_PER_TOKEN - len(MEDIATION_SALVAGE_QUESTION)
+        )
+        assert f"the {WINDOW}-token window less {REPLY} tokens" in salvage["window_budget"]
+        assert salvage["sent_chars"] <= salvage["budget_chars"]
         ended = [d for kind, d in judge._container.events if kind == "stage_ended_at_cap"]
         assert "reported its context window full" in ended[-1]["detail"]
         assert extracted == [REASONING], "the verdict was read from the salvaged reasoning"

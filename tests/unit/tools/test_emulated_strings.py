@@ -1,4 +1,4 @@
-"""``maljan.tools.emulated_strings`` reads FLOSS's result document row by row.
+"""``malspark.tools.emulated_strings`` reads FLOSS's result document row by row.
 
 FLOSS itself is not run here: the runner is replaced by one that answers with
 a result document in FLOSS's own shape, so what these tests pin is the reading
@@ -9,7 +9,10 @@ the tool's words for every way the child can fail.
 
 from __future__ import annotations
 
+import errno
 import json
+import os
+import resource
 import subprocess
 from collections.abc import Sequence
 from pathlib import Path
@@ -17,9 +20,11 @@ from typing import Any
 
 import pytest
 
-from maljan.tools import emulated_strings as tool
+from malspark.tools import emulated_strings as tool
 
 IMAGEBASE = 0x180000000
+# A fake build that answers --version as the pinned release does.
+ANSWERS = b'#!/bin/sh\necho "floss 3.1.1"\n'
 
 
 def _document() -> dict[str, Any]:
@@ -86,6 +91,13 @@ class _Runner:
 @pytest.fixture(autouse=True)
 def _nothing_remembered() -> None:
     tool.forget_documents()
+
+
+@pytest.fixture(autouse=True)
+def _the_standalone_build_is_pinned(monkeypatch: pytest.MonkeyPatch) -> None:
+    # The fake builds below stand in for the standalone build, whose digest is
+    # the one pinned on every machine but arm64; an arm64 host runs them so too.
+    monkeypatch.setattr(tool, "_LAUNCHER_MACHINES", frozenset())
 
 
 def _pe(tmp_path: Path, name: str = "s.dll") -> str:
@@ -216,7 +228,7 @@ class TestFailuresAreAnswers:
         assert runner.calls == []
 
     def test_an_overrun_is_a_timeout_the_error_codes_recognise(self, tmp_path: Path) -> None:
-        from maljan.tools.errors import TIMEOUT, error_parts
+        from malspark.tools.errors import TIMEOUT, error_parts
 
         def runner(argv: Sequence[str], timeout: float) -> subprocess.CompletedProcess[str]:
             raise subprocess.TimeoutExpired(list(argv), timeout)
@@ -255,9 +267,9 @@ class TestFailuresAreAnswers:
     def test_without_the_executable_the_answer_says_how_to_install_it(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        from maljan.tools.errors import MISSING_DEPENDENCY, error_parts
+        from malspark.tools.errors import MISSING_DEPENDENCY, error_parts
 
-        monkeypatch.setenv("MALJAN_FLOSS_PATH", str(tmp_path / "absent"))
+        monkeypatch.setenv("MALSPARK_FLOSS_PATH", str(tmp_path / "absent"))
 
         answer = tool.floss(_pe(tmp_path))
 
@@ -284,7 +296,7 @@ class TestFailuresAreAnswers:
     def test_the_memory_limit_is_reported_as_the_budget(
         self, tmp_path: Path, returncode: int, stderr: str
     ) -> None:
-        from maljan.tools.errors import TIMEOUT, error_parts
+        from malspark.tools.errors import TIMEOUT, error_parts
 
         answer = tool.floss(_pe(tmp_path), runner=_Runner("", returncode=returncode, stderr=stderr))
 
@@ -295,6 +307,12 @@ class TestFailuresAreAnswers:
 
 
 class TestTheExecutable:
+    @pytest.fixture(autouse=True)
+    def _staging(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        # The probe runs the build once, in a run directory under staging.
+        monkeypatch.setenv("MALSPARK_STAGING_DIR", str(tmp_path / "staging"))
+        monkeypatch.delenv("MALSPARK_STAGING_JOB", raising=False)
+
     def _executable(self, tmp_path: Path, body: bytes) -> Path:
         target = tmp_path / "floss"
         target.write_bytes(body)
@@ -305,7 +323,7 @@ class TestTheExecutable:
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         target = self._executable(tmp_path, b"#!/bin/sh\necho not floss\n")
-        monkeypatch.setenv("MALJAN_FLOSS_PATH", str(target))
+        monkeypatch.setenv("MALSPARK_FLOSS_PATH", str(target))
 
         found, reason = tool.find_floss()
 
@@ -318,9 +336,9 @@ class TestTheExecutable:
     ) -> None:
         import hashlib
 
-        body = b"#!/bin/sh\n"
+        body = ANSWERS
         target = self._executable(tmp_path, body)
-        monkeypatch.setenv("MALJAN_FLOSS_PATH", str(target))
+        monkeypatch.setenv("MALSPARK_FLOSS_PATH", str(target))
         monkeypatch.setattr(tool, "FLOSS_BINARY_SHA256", hashlib.sha256(body).hexdigest())
 
         assert tool.find_floss() == (target, "")
@@ -331,10 +349,10 @@ class TestTheExecutable:
     ) -> None:
         import hashlib
 
-        monkeypatch.delenv("MALJAN_FLOSS_PATH", raising=False)
+        monkeypatch.delenv("MALSPARK_FLOSS_PATH", raising=False)
         monkeypatch.setenv("HOME", str(tmp_path))
         monkeypatch.setenv("PATH", str(tmp_path / "empty"))
-        body = b"#!/bin/sh\n"
+        body = ANSWERS
         installed = tool.default_install_path()
         installed.parent.mkdir(parents=True)
         installed.write_bytes(body)
@@ -344,8 +362,48 @@ class TestTheExecutable:
         assert tool.find_floss() == (installed, "")
         assert (
             installed
-            == tmp_path / ".local" / "share" / "maljan" / "tools" / "floss-3.1.1" / "floss"
+            == tmp_path / ".local" / "share" / "malspark" / "tools" / "floss-3.1.1" / "floss"
         )
+
+    def test_a_build_installed_under_the_previous_name_is_found(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Installed by a release before the rename (T-579), and held to the pinned digest."""
+        import hashlib
+
+        from malspark.core.previous_name import PREVIOUS_NAME
+
+        monkeypatch.delenv("MALSPARK_FLOSS_PATH", raising=False)
+        monkeypatch.setenv("HOME", str(tmp_path))
+        monkeypatch.setenv("PATH", str(tmp_path / "empty"))
+        body = ANSWERS
+        installed = tool.previous_install_path()
+        assert installed == (
+            tmp_path / ".local" / "share" / PREVIOUS_NAME / "tools" / "floss-3.1.1" / "floss"
+        )
+        installed.parent.mkdir(parents=True)
+        installed.write_bytes(body)
+        installed.chmod(0o755)
+
+        monkeypatch.setattr(tool, "FLOSS_BINARY_SHA256", hashlib.sha256(body).hexdigest())
+        assert tool.find_floss() == (installed, "")
+
+    def test_a_build_under_the_previous_name_with_another_digest_is_refused(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.delenv("MALSPARK_FLOSS_PATH", raising=False)
+        monkeypatch.setenv("HOME", str(tmp_path))
+        monkeypatch.setenv("PATH", str(tmp_path / "empty"))
+        installed = tool.previous_install_path()
+        installed.parent.mkdir(parents=True)
+        installed.write_bytes(b"#!/bin/sh\necho not floss\n")
+        installed.chmod(0o755)
+
+        found, reason = tool.find_floss()
+
+        assert found is None
+        assert "sha256 mismatch" in reason
+        assert str(tmp_path) not in reason
 
     def test_an_environment_handed_in_is_read_instead_of_this_process_s(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
@@ -353,13 +411,13 @@ class TestTheExecutable:
         """The triage pack looks with the analysis server's environment."""
         import hashlib
 
-        body = b"#!/bin/sh\n"
+        body = ANSWERS
         target = self._executable(tmp_path, body)
         monkeypatch.setattr(tool, "FLOSS_BINARY_SHA256", hashlib.sha256(body).hexdigest())
-        monkeypatch.setenv("MALJAN_FLOSS_PATH", str(tmp_path / "absent"))
+        monkeypatch.setenv("MALSPARK_FLOSS_PATH", str(tmp_path / "absent"))
 
-        assert tool.find_floss({"MALJAN_FLOSS_PATH": str(target)}) == (target, "")
-        assert tool.floss_unavailable({"MALJAN_FLOSS_PATH": str(target)}) is None
+        assert tool.find_floss({"MALSPARK_FLOSS_PATH": str(target)}) == (target, "")
+        assert tool.floss_unavailable({"MALSPARK_FLOSS_PATH": str(target)}) is None
         assert tool.floss_unavailable() is not None
 
     def test_the_search_path_handed_in_is_the_one_searched(
@@ -368,7 +426,7 @@ class TestTheExecutable:
         import hashlib
 
         monkeypatch.setenv("HOME", str(tmp_path / "home"))
-        body = b"#!/bin/sh\n"
+        body = ANSWERS
         bin_dir = tmp_path / "bin"
         bin_dir.mkdir()
         target = bin_dir / "floss"
@@ -380,11 +438,225 @@ class TestTheExecutable:
         assert tool.find_floss({"PATH": str(tmp_path / "empty")})[0] is None
 
 
+class TestTheBuildMustRunHere:
+    """The pinned digest is not enough: the probe asks the build its version once."""
+
+    @pytest.fixture(autouse=True)
+    def _staging(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("MALSPARK_STAGING_DIR", str(tmp_path / "staging"))
+        monkeypatch.delenv("MALSPARK_STAGING_JOB", raising=False)
+
+    def _pinned(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, body: bytes) -> Path:
+        import hashlib
+
+        target = tmp_path / "bin" / "floss"
+        target.parent.mkdir()
+        target.write_bytes(body)
+        target.chmod(0o755)
+        monkeypatch.setattr(tool, "FLOSS_BINARY_SHA256", hashlib.sha256(body).hexdigest())
+        monkeypatch.setenv("MALSPARK_FLOSS_PATH", str(target))
+        return target
+
+    def test_a_build_that_answers_its_version_is_available(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        body = b'#!/bin/sh\n[ "$1" = --version ] && echo "3.1.1" && exit 0\nexit 2\n'
+        self._pinned(tmp_path, monkeypatch, body)
+
+        assert tool.floss_unavailable() is None
+
+    @pytest.mark.parametrize("answer", ["", "floss 3.1.0", "floss 3.1.10", "3.1.1.1"])
+    def test_a_build_that_does_not_report_the_pinned_release_is_not_installed(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, answer: str
+    ) -> None:
+        self._pinned(tmp_path, monkeypatch, f'#!/bin/sh\necho "{answer}"\n'.encode())
+
+        assert tool.floss_unavailable() == (
+            "floss is not installed: floss --version did not report 3.1.1"
+        )
+
+    @pytest.mark.parametrize("answer", ["floss 3.1.1", "floss v3.1.1-0-g3cd3ee6"])
+    def test_either_build_s_answer_reports_the_pinned_release(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, answer: str
+    ) -> None:
+        self._pinned(tmp_path, monkeypatch, f'#!/bin/sh\necho "{answer}"\n'.encode())
+
+        assert tool.floss_unavailable() is None
+
+    def test_a_build_whose_loader_is_missing_is_unavailable_with_its_words(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """The shape of an executable for another machine run through a missing loader."""
+        body = b'#!/bin/sh\necho "$0: cannot execute: required file not found" >&2\nexit 127\n'
+        self._pinned(tmp_path, monkeypatch, body)
+
+        reason = tool.floss_unavailable()
+
+        assert reason is not None
+        assert reason.startswith("floss cannot be executed on this host: --version exited with 127")
+        assert "required file not found" in reason
+        assert str(tmp_path) not in reason
+
+    def test_bytes_the_kernel_cannot_execute_are_unavailable(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """An image in a format this kernel does not load: the exec itself fails."""
+        self._pinned(tmp_path, monkeypatch, b"\x00\x01\x02 no format this kernel knows\n")
+
+        reason = tool.floss_unavailable()
+
+        assert reason is not None
+        assert reason.startswith("floss cannot be executed on this host: ")
+        assert str(tmp_path) not in reason
+
+    def test_a_build_that_does_not_answer_in_time_is_unavailable(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        self._pinned(tmp_path, monkeypatch, b"#!/bin/sh\nexec sleep 30\n")
+        monkeypatch.setattr(tool, "_PROBE_TIMEOUT_S", 1)
+
+        reason = tool.floss_unavailable()
+
+        assert reason == (
+            "floss cannot be executed on this host: it did not answer --version within 1 s"
+        )
+
+    def test_the_answer_is_asked_once_per_file_and_again_when_it_changes(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        import hashlib
+
+        count = tmp_path / "asked"
+        body = f'#!/bin/sh\necho x >> "{count}"\necho "floss 3.1.1"\n'.encode()
+        target = self._pinned(tmp_path, monkeypatch, body)
+
+        assert tool.floss_unavailable() is None
+        assert tool.floss_unavailable() is None
+        assert count.read_text().count("x") == 1
+
+        changed = body + b"exit 3\n"
+        target.write_bytes(changed)
+        monkeypatch.setattr(tool, "FLOSS_BINARY_SHA256", hashlib.sha256(changed).hexdigest())
+
+        assert "exited with 3" in (tool.floss_unavailable() or "")
+        assert count.read_text().count("x") == 2
+
+    def test_a_staging_directory_refused_is_a_reason_and_never_an_exception(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """The manifest asks while the server starts, so the probe must answer."""
+        self._pinned(tmp_path, monkeypatch, ANSWERS)
+        real = tmp_path / "real-base"
+        real.mkdir()
+        link = tmp_path / "linked-base"
+        link.symlink_to(real)
+        monkeypatch.setenv("MALSPARK_STAGING_DIR", str(link))
+
+        reason = tool.floss_unavailable()
+
+        assert reason == "floss cannot be executed on this host: RuntimeError"
+        # Not remembered: once staging is usable, the next probe asks again.
+        monkeypatch.setenv("MALSPARK_STAGING_DIR", str(tmp_path / "staging"))
+        assert tool.floss_unavailable() is None
+
+    def test_a_timeout_is_not_remembered(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        slow = tmp_path / "slow"
+        slow.touch()
+        self._pinned(
+            tmp_path,
+            monkeypatch,
+            f'#!/bin/sh\n[ -e "{slow}" ] && exec sleep 30\necho "floss 3.1.1"\n'.encode(),
+        )
+        monkeypatch.setattr(tool, "_PROBE_TIMEOUT_S", 1)
+
+        assert "did not answer --version" in (tool.floss_unavailable() or "")
+        slow.unlink()
+        assert tool.floss_unavailable() is None
+
+    @pytest.mark.parametrize(
+        ("number", "remembered"),
+        [
+            (errno.ENOEXEC, True),
+            (errno.ENOENT, True),
+            (errno.EACCES, True),
+            (errno.EAGAIN, False),
+            (errno.ENOSPC, False),
+        ],
+    )
+    def test_only_an_exec_error_of_the_file_itself_is_remembered(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, number: int, remembered: bool
+    ) -> None:
+        self._pinned(tmp_path, monkeypatch, b"#!/bin/sh\n")
+        calls: list[int] = []
+
+        def refused(*_args: Any, **_kwargs: Any) -> subprocess.CompletedProcess[str]:
+            calls.append(1)
+            raise tool.ExecRefused(number, os.strerror(number))
+
+        monkeypatch.setattr(tool, "_run", refused)
+
+        first = tool.floss_unavailable()
+        second = tool.floss_unavailable()
+
+        assert first == second == f"floss cannot be executed on this host: {os.strerror(number)}"
+        assert len(calls) == (1 if remembered else 2)
+
+    def test_the_same_errno_from_setting_up_the_run_is_not_remembered(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """ENOENT from the run's directory says nothing lasting about the build."""
+        self._pinned(tmp_path, monkeypatch, b"#!/bin/sh\n")
+        calls: list[int] = []
+
+        def no_directory(*_args: Any, **_kwargs: Any) -> Path:
+            calls.append(1)
+            raise FileNotFoundError(errno.ENOENT, os.strerror(errno.ENOENT), str(tmp_path))
+
+        monkeypatch.setattr(tool, "_scratch", no_directory)
+
+        first = tool.floss_unavailable()
+        assert first == f"floss cannot be executed on this host: {os.strerror(errno.ENOENT)}"
+        assert str(tmp_path) not in first
+        assert tool.floss_unavailable() == first
+        assert len(calls) == 2
+
+    def test_an_exec_the_kernel_refuses_is_marked_as_the_exec_s(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        self._pinned(tmp_path, monkeypatch, b"\x00\x01\x02 no format this kernel knows\n")
+        seen: list[BaseException] = []
+        real = tool._run
+
+        def watched(*args: Any, **kwargs: Any) -> subprocess.CompletedProcess[str]:
+            try:
+                return real(*args, **kwargs)
+            except BaseException as exc:
+                seen.append(exc)
+                raise
+
+        monkeypatch.setattr(tool, "_run", watched)
+
+        assert tool.floss_unavailable() is not None
+        assert tool.floss_unavailable() is not None
+        assert len(seen) == 1
+        assert isinstance(seen[0], tool.ExecRefused)
+
+    def test_the_run_leaves_nothing_in_staging(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        self._pinned(tmp_path, monkeypatch, ANSWERS)
+
+        assert tool.floss_unavailable() is None
+        assert list((tmp_path / "staging" / "floss").iterdir()) == []
+
+
 class TestTheChild:
     @pytest.fixture(autouse=True)
     def _staging(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-        monkeypatch.setenv("MALJAN_STAGING_DIR", str(tmp_path / "staging"))
-        monkeypatch.delenv("MALJAN_STAGING_JOB", raising=False)
+        monkeypatch.setenv("MALSPARK_STAGING_DIR", str(tmp_path / "staging"))
+        monkeypatch.delenv("MALSPARK_STAGING_JOB", raising=False)
 
     def test_the_child_gets_the_limit_and_a_home_inside_staging_and_nothing_else(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
@@ -403,7 +675,11 @@ class TestTheChild:
 
         seen = json.loads(finished.stdout)
         scratch = tmp_path / "staging" / "floss"
-        assert seen["limit"] == tool.FLOSS_ADDRESS_SPACE_BYTES
+        if hasattr(resource, "prlimit"):
+            assert seen["limit"] == tool.FLOSS_ADDRESS_SPACE_BYTES
+        else:
+            # The cap is set with resource.prlimit; without it the run says so.
+            assert getattr(finished, "memory_cap_applied", True) is False
         assert seen["home"] == seen["tmp"] == seen["cwd"]
         assert Path(seen["home"]).parent == scratch
         assert Path(seen["home"]).name.startswith("run-")
@@ -487,8 +763,8 @@ class TestOneEmulationPerSample:
 class TestWhatRunsIsWhatWasVerified:
     @pytest.fixture(autouse=True)
     def _staging(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-        monkeypatch.setenv("MALJAN_STAGING_DIR", str(tmp_path / "staging"))
-        monkeypatch.delenv("MALJAN_STAGING_JOB", raising=False)
+        monkeypatch.setenv("MALSPARK_STAGING_DIR", str(tmp_path / "staging"))
+        monkeypatch.delenv("MALSPARK_STAGING_JOB", raising=False)
 
     def _script(self, tmp_path: Path, text: str) -> tuple[Path, str]:
         import hashlib

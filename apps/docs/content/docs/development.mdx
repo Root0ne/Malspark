@@ -9,42 +9,57 @@ expected to follow.
 ## Repository layout
 
 ```
-Maljan/
+Malspark/
 ├── apps/
-│   ├── api/           FastAPI app, arq worker, Alembic migrations ("maljan-api")
-│   ├── docs/          this documentation site: pages under content/docs/,
-│   │                  images under public/assets/
+│   ├── api/           FastAPI app, arq worker, Alembic migrations ("malspark-api")
+│   ├── docs/          these documentation pages: content/docs/, images under
+│   │                  public/assets/, and the content check (npm run check)
 │   └── web/           Next.js console, Playwright specs under e2e/
-├── src/maljan/        the core package: agents, pipeline, analysis layers,
+├── src/malspark/        the core package: agents, pipeline, analysis layers,
 │                      providers, memory, reporting, core (config, container)
-├── services/          stdio MCP sidecars, one server.py each
+├── services/          the tool servers, one directory each: the analysis,
+│                      knowledge, network and threat-intel servers, and the
+│                      sidecars that wrap one program (cli-sidecar is their
+│                      shared runner)
 ├── scripts/
+│   ├── audit/         the surfaces check: what each report surface says
+│   ├── benchmark/     the known-answer gate over scored runs
+│   ├── blind/         blind A/B scoring
+│   ├── calibration/   the calibration set and its scorer
+│   ├── changelog/     folds changelog.d/ fragments into CHANGELOG.md
 │   ├── ci/            the uv.lock dependency-graph submission the workflow runs
-│   ├── dev/           fetch_external.sh and the Ghidra image manager
+│   │                  and shard_map.py, the test jobs' shard map
+│   ├── dev/           fetch_external.sh, the Ghidra image manager and
+│   │                  run_capped.py, the capped scope for heavy local runs
 │   ├── goldens/       capture scripts that write tests/fixtures/golden/, plus
 │   │                  render_team_graphs.py, which draws the team-*.svg diagrams
-│   └── knowledge/     builders for the data/ assets
+│   ├── knowledge/     builders for the data/ assets
+│   ├── ledger/        verifies a stored run's sealed ledger
+│   ├── package/       builds and verifies a job package
+│   ├── rehearsal/     the rehearsal before a paid run
+│   ├── replay/        replays a stored run's rules with no model call
+│   └── validation_codes/  generates the validation-code register page
 ├── tests/             unit/ api/ integration/ fixtures/
 ├── data/              tracked knowledge assets, loaded lazily, each with a fallback
 ├── docker/            Dockerfiles, the compose stack and its dev overlay
-├── docs/              examples/: the importable all-tools team document
+├── docs/              examples/: the importable all-tools team and a tool
+│                      declaration, served under /examples/
 ├── Makefile           every gate and every generator
-└── pyproject.toml uv.lock   one uv workspace: maljan plus apps/api
+└── pyproject.toml uv.lock   one uv workspace: malspark plus apps/api
 ```
 
 The repository is one uv workspace with one lockfile. `uv sync --all-extras
---all-packages` installs both Python packages, so `import maljan` and
+--all-packages` installs both Python packages, so `import malspark` and
 `import app` work from any directory without `PYTHONPATH`, in the venv, in the
 backend image and in CI alike.
 
 Route-local React components stay in their route folder; a component two routes
-use moves to `apps/web/src/components/`. `tests/unit/` mirrors `src/maljan`,
+use moves to `apps/web/src/components/`. `tests/unit/` mirrors `src/malspark`,
 one subdirectory per subpackage, and is where a new test starts.
 
 Host-specific helpers (a launcher for a local llama-server, a memory guard, a
 restart wrapper for long evaluations) live outside the repository. For the
-record, the local model server the measurements in this repository were taken
-with ran `ik_llama.cpp` as
+record, the project's local model server runs `ik_llama.cpp` as
 `llama-server -m Qwen3.6-35B-A3B-IQ3_K_R4.gguf -c 131072 -t 16 -fa on -ctk q8_0 -ctv q8_0 -ngl 999 -ot 'blk\.([1-3][0-9])\.ffn_(up|gate|down)_exps=CPU' --context-shift on --jinja`
 on loopback port 8080.
 
@@ -59,10 +74,32 @@ on loopback port 8080.
 | `make check` | lint, format check, typecheck, tests — the local mirror of CI. |
 | `make semgrep` | the four rulesets CI runs, at the pinned version, over the same targets. |
 | `make migrate` | `alembic upgrade head` against `DATABASE_URL`. |
-| `make dev-up` / `dev-down` / `dev-logs` | the compose stack with the development overlay. |
+| `make dev-up` / `dev-down` / `dev-logs` | the compose stack with the development overlay, plus the files `COMPOSE_FILE_EXTRA` names. |
+| `make create-admin EMAIL=...` | `malspark create-admin` in the running stack's API container: the first admin account. |
 | `make fe-rebuild` / `worker-restart` | make a source edit real on the production stack. |
 | `make external` | refetch the third-party trees at their pinned refs. |
 | `make ghidra-status` / `-sync` / `-build` / `-watch` | the Ghidra MCP manager. |
+
+### Your own compose overrides
+
+`make dev-up` passes two files to Compose, `docker/docker-compose.yml` and the
+development overlay `docker/docker-compose.dev.yml`. Compose reads a
+`docker-compose.override.yml` on its own only when it is given no `-f`, so on
+the dev targets an override file is not read unless you name it.
+`COMPOSE_FILE_EXTRA` names it: each file in it, space-separated, is appended as
+one more `-f`, after the two shipped files, so it wins over both.
+
+```bash
+COMPOSE_FILE_EXTRA=docker/local.yml make dev-up
+make dev-logs COMPOSE_FILE_EXTRA="docker/local.yml docker/gpu.yml"
+```
+
+Give `dev-down` and `dev-logs` the same value. The value is split on spaces,
+so a path with a space in it is not supported. A path in `COMPOSE_FILE_EXTRA`
+is read from the repository root; relative paths inside the file (a volume, a
+build context) are read from `docker/`, the first file's directory. The
+`docker-up` family passes no `-f`, and so does read
+`docker/docker-compose.override.yml` when it is there.
 
 ## Tests
 
@@ -79,7 +116,7 @@ on loopback port 8080.
   (`tests/fixtures/sandbox/cape2_synthetic.json`) whose registry calls and
   network rows CI compares. A case whose source is absent is skipped, and the
   session ends with the number of such skips (on GitHub Actions also a warning
-  annotation and a line in the job summary). `MALJAN_TEST_NO_CAPE_REPORTS=1`
+  annotation and a line in the job summary). `MALSPARK_TEST_NO_CAPE_REPORTS=1`
   takes that path on a machine that has the reports. A golden whose text
   passes 5 MB is written as `<name>.json.gz` and read back decompressed. The
   same script writes the two prompt fixtures under `tests/fixtures/prompts/`,
@@ -100,10 +137,62 @@ on loopback port 8080.
   platform's deterministic rules over a stored run with no model call, and
   `--compare REF_A REF_B` names every difference a rule change makes between
   two refs. Run it before and after a change to a check, the report builder or
-  a publish rule; see [Replaying a stored run](/replay/).
+  a publish rule; see [Replaying a stored run](/docs/replay/).
 
-The evaluation harness behind the published measurements is no longer part of
-this tree; see [paper.md](/paper/).
+- **Evaluation** — `scripts/benchmark/` reads scored runs back and holds a
+  change to them ([Known-answer gate](/docs/known-answer-gate/));
+  `scripts/blind/` hides which run is which while scoring ([Blind A/B
+  scoring](/docs/blind-scoring/)); `scripts/calibration/` scores stored runs
+  against a calibration set ([Calibration set](/docs/calibration/)). The
+  benchmark run is on [Benchmark](/docs/benchmark/).
+
+### Heavy local runs in a capped scope
+
+A benchmark or observation run against the local model, a replay over many
+stored runs or a large test suite can fill the host's memory, and when it runs
+out the whole desktop session goes with it, not only the run. On a host with
+the systemd user manager, run such a command through
+`scripts/dev/run_capped.py`; nothing runs this way unless asked:
+
+```bash
+python scripts/dev/run_capped.py -- python scripts/replay/run.py <run dir A> <run dir B>
+python scripts/dev/run_capped.py --memory 8G --floor 4G -- uv run pytest tests/unit -q
+```
+
+It starts the command with `systemd-run --user --scope` in a transient scope
+whose unit name it prints, under a hard memory cap (`--memory`, default
+`12G`, refused at or above the host's memory), no swap (`MemorySwapMax=0`), a
+task ceiling (`--tasks`, default 4096) and a CPU quota (`--cpu`, a percentage,
+default three quarters of the host's CPUs). `--unit` names the scope (default
+`malspark-capped-<pid>-<time>`); it must not name a unit that is already loaded,
+and such a name is refused rather than shared.
+
+A watcher polls the scope, and acts only once it has seen the command's own
+process in it. On that first poll it reads the caps back from the scope's
+control group (`memory.max`, `memory.swap.max`, `pids.max`, `cpu.max`) and,
+when one was accepted but not enforced, kills the scope and exits 2. On every
+poll it keeps the scope's memory events and stops the scope when the host's
+`MemAvailable` falls below `--floor` (default `3G`; a floor at or above what is
+available at start is refused), which holds the host against everything that
+runs beside the command, a local model server included; `--no-watch` turns the
+floor off. A watcher that fails says so. SIGTERM or SIGHUP to the wrapper
+stops the scope too. When the command ends the wrapper prints its exit status,
+systemd's result for a scope that failed (`oom-kill`, for one), whether the
+watcher stopped it, and the memory events at the watcher's last poll (`high`,
+`max`, `oom`, `oom_kill`). `--dry-run` prints the `systemd-run` line and starts
+nothing.
+
+The wrapper follows the command's main process. When that process exits but
+leaves children running in the background, the scope stays alive after the
+wrapper has returned: still under its caps, but with no floor and no report.
+Stop it with `systemctl --user stop <unit>.scope` (the name is printed at start).
+
+Where the caps cannot be enforced (no `systemd-run`, no user manager, a
+`memory`, `pids` or `cpu` controller not delegated to it, or no swap
+accounting, where systemd would accept the cap and enforce nothing) the
+wrapper exits 2 and says why, without running the command. Only
+`--allow-uncapped` skips that requirement: it runs the command anyway, with a
+line on standard error that it runs uncapped.
 
 ### Native runs pin `LC_CTYPE`
 
@@ -114,7 +203,7 @@ differs. Each of the platform's own processes therefore sets `LC_CTYPE`, and
 nothing else, to `C.UTF-8` (or `C.utf8`) when it starts, before any thread or
 the YARA engine loads, and keeps it only when the C library then folds `I` to
 `i` (`core.ctype_locale.pin_character_classification`). This covers the analysis
-worker, the `maljan` CLI, `scripts/validation/run.py`, `scripts/rehearsal/run.py`
+worker, the `malspark` CLI, `scripts/validation/run.py`, `scripts/rehearsal/run.py`
 and the analysis and network sidecars, whose line goes to standard error
 because standard output is their protocol. The test session pins the same way
 in `tests/conftest.py`, and a test that changes the locale itself runs in a
@@ -126,17 +215,54 @@ keeps the environment it was started with, and so the operator's locale: a
 YARA engine inside one can still mishandle I and i on such a host. The
 backend image already runs under `LANG=C.UTF-8`.
 
+### Native runs on macOS
+
+The PDF export uses WeasyPrint, which loads Pango and GLib when it prints. On a
+Mac, install them from Homebrew:
+
+```bash
+brew install pango   # brings glib with it
+```
+
+On Apple Silicon, Homebrew installs into `/opt/homebrew/lib`, where the dynamic
+loader does not look, so WeasyPrint does not find `libgobject-2.0` and the PDF
+export fails. Point the loader's fallback path there in the shell that runs the
+tests, the API or the worker:
+
+```bash
+export DYLD_FALLBACK_LIBRARY_PATH=/opt/homebrew/lib
+uv run pytest tests/ -q
+```
+
+macOS removes `DYLD_` variables from the environment of its own protected
+programs (`/bin/sh`, `/usr/bin/make`, `/usr/bin/env`) and of everything they
+start, so a `make` target does not pass it on: run the `uv run` command
+directly. An Intel Mac's Homebrew installs into `/usr/local/lib`, which the
+loader already searches.
+
 ## Documentation site
 
-The pages are MDX files under `apps/docs/content/docs/`, built into a static
-site with Fumadocs on Next.js, and published to GitHub Pages from `main` by
-[`.github/workflows/docs.yml`](https://github.com/Root0ne/Maljan/blob/dev/.github/workflows/docs.yml).
-The sidebar's order and groups are `content/docs/meta.json`. Preview it locally
-from `apps/docs` with `npm ci` and `npm run dev`; `npm run build` writes the
-static site to `apps/docs/out/` and fails if any address the site has served
-before no longer leads to a page (`scripts/old-urls.mjs`).
+The pages are MDX files under `apps/docs/content/docs/`, their images are in
+`apps/docs/public/assets/`, and the files served under `/examples/` are in
+`docs/examples/`. The website at [malspark.com](https://malspark.com) is built and published
+separately on Cloudflare Pages: production reads these three directories from
+`main`, previews from `dev`, so they stay where they are. Pages link to each
+other as `/docs/<page>/`. The sidebar's order and groups are
+`content/docs/meta.json`.
 
-[Validation codes](/validation-codes/) is generated, not written. Run
+[`.github/workflows/docs.yml`](https://github.com/Root0ne/Malspark/blob/dev/.github/workflows/docs.yml)
+checks the content on every pull request that touches it; run the same check
+from `apps/docs` with `npm ci` and `npm run check`. It fails if a page does not
+compile as MDX, its frontmatter has no title or a field of the wrong type, or it
+uses a component it neither imports nor gets from the site (the list in
+`scripts/check.mjs` must match the site's component map); if a `meta.json` does
+not parse or lists a page that is not there; if a link to `/docs/...`,
+`/assets/...` or `/examples/...`, anchor included, leads nowhere, or a link is
+relative, outside those three, or points at the old GitHub Pages address; and
+if an address the old site served (`scripts/old-addresses.mjs`) no longer
+leads to a page.
+
+[Validation codes](/docs/validation-codes/) is generated, not written. Run
 `uv run python scripts/validation_codes/run.py` and commit the page after any of
 these edits:
 
@@ -158,7 +284,7 @@ nothing raises a code, and when no test names one.
 
 ## Continuous integration
 
-[`.github/workflows/ci.yml`](https://github.com/Root0ne/Maljan/blob/dev/.github/workflows/ci.yml)
+[`.github/workflows/ci.yml`](https://github.com/Root0ne/Malspark/blob/dev/.github/workflows/ci.yml)
 runs on pushes to
 `main` and `dev` and on pull requests into `main`, `dev` or `feat/**`:
 
@@ -166,12 +292,47 @@ runs on pushes to
 | :-- | :-- |
 | `quality` | Ruff lint, ruff format check, mypy. Every other job needs it. |
 | `semgrep` | `p/python`, `p/security-audit`, `p/typescript` and `p/react` at the pinned version, over `src/ apps/api/ services/ scripts/ apps/web/src/`. `.semgrepignore` keeps out what is not source: build output, the Playwright suite (`e2e/*.spec.ts`) and the vitest specs (`__tests__/*.test.ts`). |
-| `test` | `pytest tests/ -q --tb=short` on Python 3.13. |
+| `test-shard` | `pytest tests/ -q --tb=short` on Python 3.13, split over six parallel runners (see *Test shards* below). |
+| `test-shard-map` | Fails unless the shards together collect exactly what `pytest tests/` collects. |
+| `test` | The required check *Test Suite (Python 3.13)*: passes only when every shard and the map check passed. |
 | `test-qdrant` | `tests/unit/test_qdrant_store.py` against a live Qdrant service container. |
 | `frontend` | `tsc --noEmit`, eslint, vitest and a production `next build`. |
+| `npm-audit` | `npm audit` over the console's shipped packages; high or critical fails. Not a required check, so an advisory published overnight does not block an unrelated merge. |
 | `e2e` | Playwright, through the same `npm run test:e2e` entry point developers use. |
 
-Three more workflows run beside CI. **CodeQL** analyses Python, TypeScript and
+### Test shards
+
+The Python suite runs in shards so that its wall time is that of the longest
+shard rather than the sum. `scripts/ci/shard_map.py` holds the map: a shard's
+unit is a directory directly below `tests/` or `tests/unit/`, or the test files
+lying directly in one of the two, and every test file falls in exactly one
+unit. The units are placed longest first, each on the shard with the least
+time so far, from the seconds in the script's `WEIGHTS` table, so the map
+depends only on the tree and the table. A test added later lands in a shard
+without an edit: a new file joins the unit of its directory or of the loose
+files beside it, and a new directory is a unit of its own. A unit the table
+does not name (a new directory, or the first loose file directly in `tests/`)
+is placed at `UNMEASURED` seconds until the table is rebalanced.
+`python scripts/ci/shard_map.py --suite linux --list` prints the map and
+`--shard N` the paths one shard runs.
+
+The `test-shard-map` job collects the suite whole and shard by shard and fails
+on a test that is in no shard or in two. The *Test Suite (Python 3.13)* job
+needs every shard and the map job and fails unless all of them succeeded,
+so the required check keeps its name and its meaning. The macOS workflow
+splits `tests/unit` and `tests/api` the same way (`--suite macos`), with its
+own map job on a macOS runner and *Test Suite (macOS arm64)* as the job that
+gathers them.
+
+To rebalance, download the `junit-linux-*` artifacts of a recent run, print
+a fresh table with `python scripts/ci/shard_map.py --weigh junit-linux-*.xml`
+and replace `WEIGHTS` with it. To change the number of shards, change the
+suite's `shards` in `SUITES` and the workflow's `shard` matrix together;
+`tests/unit/scripts/test_the_ci_shards_cover_every_test_once.py` fails while
+the two differ. A shard runs its tests without the ones that ran before them
+in the serial run, so a test must not rely on another test's leftovers.
+
+More workflows run beside CI. **Docs** checks these pages on every pull request that touches them (see *Documentation site* above). **CodeQL** analyses Python, TypeScript and
 the workflow files themselves on every push and pull request to `main` and
 `dev`, with the `security-extended` query suite, and weekly. **Dependency
 review** blocks a pull request that introduces a dependency with a known high
@@ -186,7 +347,7 @@ current. A **dependency submission** workflow posts the packages resolved in
 Python alerts follow the lockfile the way the console's follow
 `package-lock.json`. Secret scanning with push protection is on for the repository, and
 vulnerabilities are reported through private vulnerability reporting (see
-[SECURITY.md](https://github.com/Root0ne/Maljan/blob/dev/SECURITY.md)).
+[SECURITY.md](https://github.com/Root0ne/Malspark/blob/dev/SECURITY.md)).
 
 ## Conventions
 
@@ -198,7 +359,7 @@ vulnerabilities are reported through private vulnerability reporting (see
 - A comment explains why the code is the way it is. Process tags — dated audit
   identifiers, ticket numbers, "new in phase B" — do not belong in the tree;
   the reasoning stays, the bookkeeping goes.
-- New settings need an entry in `src/maljan/core/settings_annotations.py`, or
+- New settings need an entry in `src/malspark/core/settings_annotations.py`, or
   they appear in the console under their dotted path with no description.
 - A removal is not done until `grep` shows zero remaining references across
   `src apps tests scripts docs` and the affected tests are updated.

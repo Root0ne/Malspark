@@ -1,12 +1,13 @@
 """The built-in agents reach reputation by capability, and a stored settings row still loads.
 
-``ToolRef(kind="capability", capability="reputation")`` stands for the built-in
-servers whose seed declares a reputation lookup and is bound by the definitions,
-referenced as a reference by key was; it never reaches more than that. With the
-shipped servers that is VirusTotal's own server alone, which the definitions
-named by key before, so the default profile resolves to the same servers it
-always did. A built-in row stored with that earlier list
-is its seed of an earlier release and loads as the seed.
+``ToolRef(kind="capability", capability="reputation")`` stands for every
+built-in server that says it serves reputation (its block's roles, or a tool it
+declares), referenced as a reference by key is, whether or not its own
+``agents`` list binds it to someone. With the shipped servers that is the
+threat-intel sidecar and VirusTotal's own server, so the default profile
+resolves to the servers the definitions named by key before, and the sidecar
+beside them. A built-in row stored with that earlier list is its seed of an
+earlier release and loads as the seed.
 """
 
 from __future__ import annotations
@@ -16,8 +17,8 @@ from typing import Any
 import pytest
 from pydantic import ValidationError
 
-from maljan.agents.composition import capability_servers, mcp_refs_for
-from maljan.core.config import FORMER_SEED_TOOLS, Settings, ToolRef, _builtin_definitions
+from malspark.agents.composition import capability_servers, mcp_refs_for
+from malspark.core.config import FORMER_SEED_TOOLS, Settings, ToolRef, _builtin_definitions
 
 LOOKING_UP = ("static", "network", "judge", "triage", "android_static", "reverser")
 
@@ -32,25 +33,27 @@ def _former(key: str) -> list[dict[str, Any]]:
     ]
 
 
-def test_the_default_profile_resolves_to_the_servers_it_always_did() -> None:
+def test_the_default_profile_resolves_to_the_servers_it_always_did_and_the_sidecar() -> None:
     settings = Settings(_env_file=None)
     for key in LOOKING_UP:
         resolved = [ref.model_dump() for ref in mcp_refs_for(settings, key)]
-        assert resolved == [r for r in _former(key) if r["kind"] == "mcp"], key
+        former = [r for r in _former(key) if r["kind"] == "mcp"]
+        assert [r for r in resolved if r["server"] != "threatintel"] == former, key
+        assert {"kind": "mcp", "server": "threatintel", "name": None} in resolved, key
 
 
-def test_the_capability_skips_a_built_in_its_seed_binds_by_its_own_agents_list() -> None:
+def test_the_capability_counts_a_built_in_its_seed_binds_by_its_own_agents_list() -> None:
     settings = Settings(_env_file=None)
     # The threat-intel sidecar declares a lookup and its seed binds it to the judge.
     assert settings.mcp.servers["threatintel"].agents == ["judge"]
-    assert capability_servers(settings, "reputation") == ["virustotal"]
+    assert capability_servers(settings, "reputation") == ["threatintel", "virustotal"]
     assert capability_servers(settings, "no_such_kind") == []
 
 
 def test_a_server_row_stored_with_a_lookup_s_former_kind_is_still_reached() -> None:
     """A row saved while the lookups declared ``file_reputation`` keeps its lookup."""
-    from maljan.core.declared_reading import declarations
-    from maljan.core.reputation import pack_lookups
+    from malspark.core.declared_reading import declarations
+    from malspark.core.reputation import pack_lookups
 
     settings = Settings.model_validate(
         {
@@ -143,12 +146,13 @@ def test_a_server_named_by_key_and_by_capability_is_attached_once() -> None:
         }
     )
     settings.agents.definitions["mine"] = definition
-    assert [str(r.server) for r in mcp_refs_for(settings, "mine")] == ["virustotal"]
+    assert [str(r.server) for r in mcp_refs_for(settings, "mine")] == ["virustotal", "threatintel"]
 
 
 # The stored server rows the capability must resolve as dev 2c2522b2 resolved
-# them, and dev's answer: every definition's servers (``servers_bound_to``) and
-# server references (``mcp_refs_for``), written on that tree.
+# them, with the threat-intel sidecar beside them wherever a definition
+# references the capability: every definition's servers (``servers_bound_to``)
+# and server references (``mcp_refs_for``).
 _STORED_ROWS: dict[str, dict[str, Any]] = {
     "default": {},
     "vt_enabled": {"mcp": {"servers": {"virustotal": {"enabled": True}}}},
@@ -170,12 +174,13 @@ def test_every_agent_under_every_team_resolves_as_dev_resolved_it(case: str) -> 
     """The servers and server references of every definition under every seeded team.
 
     The golden was written on dev 2c2522b2, where the built-ins named VirusTotal
-    by key; a capability reference reaches exactly what that did, never more.
+    by key; a capability reference reaches what that did, and the threat-intel
+    sidecar its seed binds to the judge.
     """
     import json
     from pathlib import Path
 
-    from maljan.agents.composition import servers_bound_to
+    from malspark.agents.composition import servers_bound_to
 
     golden = Path(__file__).resolve().parents[2] / "fixtures" / "golden" / "agents"
     dev = json.loads((golden / "servers_bound_to_stored_reputation_rows.json").read_text())
@@ -197,7 +202,7 @@ def test_the_capability_path_honours_the_server_s_tick_list(monkeypatch: Any) ->
     """A capability reference attaches the server's ticked tools, as a reference by key did."""
     from langchain_core.tools import StructuredTool
 
-    from maljan.providers.servers import ServerRegistry
+    from malspark.providers.servers import ServerRegistry
 
     settings = Settings.model_validate(
         {"mcp": {"servers": {"virustotal": {"enabled": True, "tools": ["get_file_report"]}}}}
@@ -218,8 +223,8 @@ def test_the_capability_path_honours_the_server_s_tick_list(monkeypatch: Any) ->
 
 def test_a_stored_lookup_with_no_rank_keeps_the_shipped_order() -> None:
     """An edited VirusTotal row written before ranks keeps VirusTotal ahead of the sidecar."""
-    from maljan.core.declared_reading import declarations
-    from maljan.core.reputation import pack_lookups
+    from malspark.core.declared_reading import declarations
+    from malspark.core.reputation import pack_lookups
 
     settings = Settings.model_validate(
         {
@@ -247,8 +252,8 @@ def test_a_stored_lookup_with_no_rank_keeps_the_shipped_order() -> None:
 
 
 def test_an_operator_lookup_with_no_rank_takes_the_default() -> None:
-    from maljan.core.declared_reading import declarations
-    from maljan.core.reputation import DEFAULT_RANK, pack_lookups
+    from malspark.core.declared_reading import declarations
+    from malspark.core.reputation import DEFAULT_RANK, pack_lookups
 
     settings = Settings.model_validate(
         {

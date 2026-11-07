@@ -30,9 +30,10 @@ from scripts.replay.stored import FILES
 
 from app.services import job_package, ledger_chain, run_export
 from app.worker.analysis_worker import _evidence_row
-from maljan.core.delivery_limits import SAMPLE_UPLOAD_MAX_BYTES
-from maljan.reporting.models import DynamicBehavior, FileHashes, MalwareReport, SampleIdentity
-from maljan.schemas.evidence import LedgerEntry
+from malspark.core.delivery_limits import SAMPLE_UPLOAD_MAX_BYTES
+from malspark.core.previous_name import PREVIOUS_NAME
+from malspark.reporting.models import DynamicBehavior, FileHashes, MalwareReport, SampleIdentity
+from malspark.schemas.evidence import LedgerEntry
 
 CHAIN = ledger_chain.derive_key("package-test-material")
 SIGNER = ledger_chain.derive_key("package-test-material", job_package.SIGNATURE_LABEL)
@@ -432,7 +433,11 @@ async def test_the_route_is_owner_only_and_streams_the_package(tmp_path: Path, m
 
     called: list[Any] = []
 
-    async def _build_for_job(db: Any, job_id: Any, out: Any) -> dict[str, Any]:
+    async def _build_for_job(
+        db: Any, job_id: Any, out: Any, *, layout: str | None = None
+    ) -> dict[str, Any]:
+        # The package's Markdown is in the layout the report route serves.
+        assert layout in ("analyst", "full")
         called.append(job_id)
         out.write(b"package bytes")
         return {"seal": {"status": "verified"}, "signature": {"key_id": SIGNER.key_id}}
@@ -448,7 +453,7 @@ async def test_the_route_is_owner_only_and_streams_the_package(tmp_path: Path, m
     body = b"".join([chunk async for chunk in served.body_iterator])  # type: ignore[misc]
     assert body == b"package bytes"
     assert served.headers["content-disposition"] == (
-        f'attachment; filename="maljan-job-{job_id}.tar.gz"'
+        f'attachment; filename="malspark-job-{job_id}.tar.gz"'
     )
     assert served.headers["x-package-seal-status"] == "verified"
     assert served.headers["x-package-signed"] == "true"
@@ -1163,6 +1168,79 @@ async def test_the_rows_and_the_seal_are_read_once_in_one_snapshot(
     assert _verify(tmp_path / "api.tar.gz")["status"] == "verified"
 
 
+@pytest.mark.asyncio
+async def test_a_package_reads_no_part_from_a_bucket_anyone_can_read(
+    tmp_path: Path, monkeypatch: Any
+):
+    """The package's own fetch goes through the store's primitive, which refuses (T-575)."""
+    from unittest.mock import MagicMock
+
+    from minio.error import S3Error
+
+    from app.services import ledger_verify, object_store
+
+    def _answer(code: str) -> S3Error:
+        return S3Error(MagicMock(), code, "", "", "", "")
+
+    class _Open:
+        def bucket_exists(self, bucket: str) -> bool:
+            raise _answer("AccessDenied")
+
+        def stat_object(self, bucket: str, key: str) -> Any:
+            raise _answer("NoSuchKey")
+
+    class _Store:
+        read: list[str] = []
+
+        def bucket_exists(self, bucket: str) -> bool:
+            return True
+
+        def get_bucket_policy(self, bucket: str) -> str:
+            raise _answer("NoSuchBucketPolicy")
+
+        def get_object(self, bucket: str, key: str) -> Any:
+            self.read.append(key)
+            raise AssertionError("an open store is never read")
+
+    run = _run(tmp_path / "run")
+    evidence = json.loads((run / "evidence.json").read_text())["items"]
+    byjob = json.loads((run / "report-byjob.json").read_text())
+    job = json.loads((run / "job.json").read_text())
+    report = {**byjob, "malware_report": json.loads((run / "report.json").read_text())}
+    rows = run_export.JobRows(job=job, report=report, evidence=evidence)
+
+    async def _read(conn: Any, job_id: Any) -> Any:
+        return rows
+
+    async def _verify_job(conn: Any, job_id: Any, *, preloaded: Any = None) -> dict[str, Any]:
+        return verify_run(run)
+
+    async def _bound() -> int:
+        return MAX
+
+    fetched: dict[str, Any] = {}
+
+    def _build_package(*args: Any, fetch: Any, **kwargs: Any) -> dict[str, Any]:
+        fetched["fetch"] = fetch
+        return {}
+
+    store = _Store()
+    monkeypatch.setattr(run_export, "read_job_rows", _read)
+    monkeypatch.setattr(ledger_verify, "verify_job", _verify_job)
+    monkeypatch.setattr(object_store, "evidence_bound", _bound)
+    monkeypatch.setattr(job_package, "signature_key", lambda: (SIGNER, None))
+    monkeypatch.setattr(job_package, "build_package", _build_package)
+    monkeypatch.setattr(object_store, "client", lambda: store)
+    monkeypatch.setattr(object_store, "anonymous_client", lambda *_args: _Open())
+    with (tmp_path / "api.tar.gz").open("wb") as out:
+        await job_package.build_for_job(_Engine(), job["id"], out)
+
+    key = object_store.evidence_key(job["id"], "a" * 64)
+    with pytest.raises(object_store.StoreNotPrivate):
+        list(fetched["fetch"](key))
+    assert store.read == []
+
+
 def test_a_build_never_touches_another_build_s_partial_file(tmp_path: Path, monkeypatch: Any):
     monkeypatch.setattr(job_package, "signature_key", lambda: (SIGNER, None))
     run = _run(tmp_path / "run")
@@ -1295,3 +1373,83 @@ def test_a_small_file_cannot_be_declared_left_out(tmp_path: Path):
     verdict = _verify(tmp_path / "q.tar.gz", keys={})
     assert (verdict["status"], verdict["file"]) == ("broken", "manifest.json"), verdict
     assert "above the package bound" in verdict["reason"]
+
+
+# ---- packages written before the rename (T-576) ------------------------
+
+PREVIOUS_SIGNER = ledger_chain.derive_key(
+    "package-test-material", job_package.PREVIOUS_SIGNATURE_LABEL
+)
+
+
+def test_a_new_package_carries_the_current_key_label(tmp_path: Path):
+    manifest = _build(_run(tmp_path / "run"), tmp_path / "n.tar.gz")
+    record = json.loads(_members(tmp_path / "n.tar.gz")["manifest.sig"])
+    assert manifest["signature"]["key_label"] == "malspark-job-package-v1"
+    assert record["key_label"] == "malspark-job-package-v1"
+    assert job_package.PREVIOUS_SIGNATURE_LABEL != job_package.SIGNATURE_LABEL
+    assert PREVIOUS_SIGNER.key_id != SIGNER.key_id
+
+
+def test_a_package_signed_under_the_previous_key_label_still_verifies(
+    tmp_path: Path, monkeypatch: Any
+):
+    """Built as a release before the rename built it: its key label, its key, its format."""
+    run = _run(tmp_path / "run")
+    previous_format = f"{PREVIOUS_NAME}-job-package/2"
+    with monkeypatch.context() as before:
+        before.setattr(job_package, "SIGNATURE_LABEL", job_package.PREVIOUS_SIGNATURE_LABEL)
+        before.setattr(job_package, "FORMAT", previous_format)
+        manifest = _build(run, tmp_path / "p.tar.gz", key=PREVIOUS_SIGNER)
+    assert manifest["format"] == previous_format
+    assert manifest["signature"]["key_label"] == job_package.PREVIOUS_SIGNATURE_LABEL.decode()
+    keys = {SIGNER.key_id: SIGNER, PREVIOUS_SIGNER.key_id: PREVIOUS_SIGNER}
+    verdict = _verify(tmp_path / "p.tar.gz", keys)
+    assert (verdict["status"], verdict["signature"]) == ("verified", "valid"), verdict
+    assert verdict["seal"]["status"] == "verified"
+
+
+def test_both_key_labels_are_derived_for_a_verification(monkeypatch: Any):
+    monkeypatch.setattr(job_package, "signature_key", lambda: (SIGNER, None))
+    monkeypatch.setattr(
+        ledger_chain,
+        "platform_key_status",
+        lambda label=ledger_chain.KEY_LABEL: (
+            ledger_chain.derive_key("package-test-material", label),
+            None,
+        ),
+    )
+    assert job_package.signature_keys() == {
+        SIGNER.key_id: SIGNER,
+        PREVIOUS_SIGNER.key_id: PREVIOUS_SIGNER,
+    }
+
+
+def test_a_record_relabelled_against_its_manifest_reads_invalid(tmp_path: Path):
+    _build(_run(tmp_path / "run"), tmp_path / "r.tar.gz")
+    members = _members(tmp_path / "r.tar.gz")
+    body = members["manifest.json"]
+    record = json.loads(members["manifest.sig"])
+    relabelled = json.dumps(
+        record | {"key_label": job_package.PREVIOUS_SIGNATURE_LABEL.decode()},
+        indent=1,
+        sort_keys=True,
+    ).encode()
+    state, _reason, _ = job_package._check_signature(
+        json.loads(body), body, relabelled, {SIGNER.key_id: SIGNER}
+    )
+    assert state == "invalid"
+
+
+def test_a_label_no_release_derives_reads_invalid(tmp_path: Path):
+    _build(_run(tmp_path / "run"), tmp_path / "x.tar.gz")
+    members = _members(tmp_path / "x.tar.gz")
+    body = members["manifest.json"]
+    record = json.loads(members["manifest.sig"]) | {"key_label": "someone-else-v1"}
+    state, reason, _ = job_package._check_signature(
+        json.loads(body),
+        body,
+        json.dumps(record, indent=1, sort_keys=True).encode(),
+        {SIGNER.key_id: SIGNER},
+    )
+    assert (state, reason) == ("invalid", "The signature names a key label no release derives.")

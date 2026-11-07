@@ -21,7 +21,7 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from app.api.v1 import sandbox_reports as module
-from maljan.core.config import SandboxConfig
+from malspark.core.config import SandboxConfig
 
 SHA = "a" * 64
 FIXTURES = pathlib.Path(__file__).resolve().parents[1] / "fixtures" / "sandbox"
@@ -188,6 +188,25 @@ def test_a_declaration_that_does_not_recognise_the_upload_saves_nothing(monkeypa
     assert state["rows"][0].format == "unread"
 
 
+def test_a_declaration_naming_the_mock_reader_saves_nothing(monkeypatch) -> None:
+    # The mock's reader reads only the platform's own fixtures and earns their
+    # marks: an accepted format read by it would read a sandbox's report as a
+    # recorded fixture (T-512).
+    api, sample, state = _client(monkeypatch, ["unread"])
+    saved = AsyncMock()
+    monkeypatch.setattr("app.services.settings_service.SettingsService.save", saved)
+    body = _upload(api, sample, _blob("unread_flat_report.json")).json()
+    declaration = body["proposal"]["declaration"]
+    declaration["reader"] = "mock"
+    declaration.pop("mapping", None)
+    r = _accept(api, sample, state["rows"][0], declaration)
+    assert r.status_code == 422
+    assert "'mock'" in r.json()["detail"]
+    assert "Nothing was saved" in r.json()["detail"]
+    saved.assert_not_awaited()
+    assert state["rows"][0].format == "unread"
+
+
 def test_a_declaration_that_does_not_validate_saves_nothing(monkeypatch) -> None:
     api, sample, state = _client(monkeypatch, ["unread"])
     saved = AsyncMock()
@@ -245,8 +264,8 @@ _BEHAVIOR_NETWORK = {
 
 
 def _sniffed(formats: list[Any]) -> str:
-    from maljan.core.report_formats import ReportFormat, sniff
-    from maljan.providers.sandbox.readers import sandbox_formats
+    from malspark.core.report_formats import ReportFormat, sniff
+    from malspark.providers.sandbox.readers import sandbox_formats
 
     cape = json.loads(_blob("cape2_synthetic.json"))
     found = sniff(cape, sandbox_formats([ReportFormat.model_validate(f) for f in formats]))

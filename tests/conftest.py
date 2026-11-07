@@ -1,4 +1,6 @@
+import gc
 from collections.abc import Iterator
+from functools import cache
 from unittest.mock import MagicMock
 
 import pytest
@@ -7,8 +9,8 @@ from sqlalchemy.ext.compiler import compiles
 
 from app import observability
 from app.auth import throttle
-from maljan.app import MaljanApp
-from maljan.core.ctype_locale import pin_character_classification
+from malspark.app import MalsparkApp
+from malspark.core.ctype_locale import pin_character_classification
 from tests.golden_fixtures import report_absent_fixture_skips
 
 
@@ -28,21 +30,29 @@ def pytest_configure(config: pytest.Config) -> None:
     changes the locale itself does so in a subprocess.
     """
     pin_character_classification()
+    config.addinivalue_line(
+        "markers",
+        "no_kept_reputation_service: the test starts where a fresh deployment is, nothing "
+        "read yet of the built-in reputation service's listing",
+    )
 
 
 @pytest.fixture(autouse=True)
 def no_configured_secret_outlives_its_test() -> Iterator[None]:
-    """The values the scrub masks by value are registered per test and forgotten after it.
+    """What the scrub and shown text mask by value is registered per test and forgotten after it.
 
     The registry is module state, filled by whatever built a worker, an app or
     a job's settings; left behind, one test's defaults masked words in every
     later test's text.
     """
-    from maljan.pipeline import events
+    from malspark.core import settings_masking
+    from malspark.pipeline import events
 
     events.forget_secret_values()
+    settings_masking.forget_values()
     yield
     events.forget_secret_values()
+    settings_masking.forget_values()
 
 
 @pytest.fixture(autouse=True)
@@ -62,6 +72,183 @@ def reset_observability_state() -> None:
     throttle._last_failure_at = None
 
 
+@cache
+def _own_servers_kept() -> tuple[tuple[str, str, dict], ...]:
+    """What each of the platform's own servers declares of its tools, as the store keeps it.
+
+    The frozen capture the parity gate holds every server's own listing to
+    (``tests/unit/servers/test_each_own_server_declares_its_tools.py``), under
+    the launch identity of the block it ships with.
+    """
+    import json
+    from pathlib import Path
+
+    from malspark.core.config import _builtin_servers
+    from malspark.core.tool_declarations import launch_identity
+
+    captured = json.loads(
+        (Path(__file__).parent / "fixtures" / "own_server_tool_facts.json").read_text()
+    )
+    blocks = _builtin_servers()
+    own = tuple(
+        (f"mcp:{key}", launch_identity(blocks[key]), tools) for key, tools in captured.items()
+    )
+    return (*own, _reputation_service_kept(blocks), *_reversers_kept())
+
+
+def _reversers_kept() -> tuple[tuple[str, str, dict], ...]:
+    """What the platform read of Ghidra's and radare2's listings, as the store keeps it.
+
+    Neither server declares its tools, and the platform ships no table of
+    them: what each is, is read from its listing (``core.program_reading``),
+    here the vendored ones: Ghidra's ``/mcp/schema`` as its HTTP transport
+    reads it (``tests/fixtures/tools/ghidra_mcp_schema.json``) and r2mcp's
+    listing (``tests/fixtures/tools/r2mcp_tool_definitions.json``).
+    """
+    from malspark.core.config import ghidra_block, r2_block
+    from malspark.core.tool_declarations import launch_identity
+
+    return (
+        reverser_row("provider:ghidra", launch_identity(ghidra_block()), ghidra_listing()),
+        reverser_row("provider:r2", launch_identity(r2_block()), r2_listing()),
+    )
+
+
+def ghidra_listing() -> list[dict]:
+    """Ghidra's vendored ``/mcp/schema``, as the HTTP client lists its tools."""
+    import json
+    from pathlib import Path
+
+    from malspark.providers.static.ghidra.http_client import GhidraHTTPClient
+
+    schema = json.loads(
+        (Path(__file__).parent / "fixtures" / "tools" / "ghidra_mcp_schema.json").read_text()
+    )
+    client = GhidraHTTPClient(base_url="http://ghidra.invalid")
+    client._schema = list(schema["tools"])
+    return client.tool_definitions()
+
+
+def r2_listing() -> list[dict]:
+    """r2mcp's vendored listing, as MCP tool definitions, with ``run_command``.
+
+    r2mcp offers ``run_command`` when started with ``-r`` (``providers.static.r2``);
+    its definition takes the command to run.
+    """
+    import json
+    from pathlib import Path
+
+    held = json.loads(
+        (Path(__file__).parent / "fixtures" / "tools" / "r2mcp_tool_definitions.json").read_text()
+    )
+    return [
+        *(
+            {"name": t["name"], "description": t["description"], "inputSchema": t["input_schema"]}
+            for t in held
+        ),
+        R2_RUN_COMMAND,
+    ]
+
+
+# r2mcp's ``run_command``, as an r2mcp started with ``-r`` lists it.
+R2_RUN_COMMAND: dict = {
+    "name": "run_command",
+    "description": "Run a radare2 command and get the output",
+    "inputSchema": {
+        "type": "object",
+        "properties": {"command": {"type": "string", "description": "Command to execute"}},
+        "required": ["command"],
+    },
+}
+
+
+def reverser_row(source: str, launch: str, listing: list[dict]) -> tuple[str, str, dict]:
+    """A listing's readings as the store keeps them (``served_declarations.stored_form``)."""
+    from malspark.core.derived_declarations import derived_readings, program_readings_of
+    from malspark.core.served_declarations import stored_form
+
+    read, closed = derived_readings(listing)
+    return (source, launch, stored_form({}, read, closed, program_readings_of(listing)))
+
+
+def _reputation_service_kept(blocks: dict) -> tuple[str, str, dict]:
+    """What the platform read of the built-in reputation service's listing, as the store keeps it.
+
+    The server is not the platform's own and declares none of its tools: what
+    each is, is read from its listing (``core.derived_declarations``), here the
+    vendored one (``tests/fixtures/virustotal_listing.json``).
+    """
+    import json
+    from pathlib import Path
+
+    from malspark.core.derived_declarations import derived_tool_facts
+    from malspark.core.served_declarations import stored_form
+    from malspark.core.tool_declarations import launch_identity
+
+    listing = json.loads(
+        (Path(__file__).parent / "fixtures" / "virustotal_listing.json").read_text()
+    )
+    read = derived_tool_facts(listing["tools"])
+    return ("mcp:virustotal", launch_identity(blocks["virustotal"]), stored_form({}, read))
+
+
+@pytest.fixture(autouse=True)
+def the_own_servers_have_declared_their_tools(request: pytest.FixtureRequest) -> Iterator[None]:
+    """Each test starts where a deployment is once its own servers were first listed.
+
+    The platform's own sidecars ship no table of their tools: what the
+    platform reads of them is what each declared when it was last listed,
+    kept past the process (``core.served_declarations``). Every test starts
+    with that kept declaration, and with nothing this process listed or
+    forgot since; a test of a fresh install, before any listing, forgets it
+    (``forget_served``). A test marked ``no_kept_reputation_service`` starts
+    with nothing read of the built-in reputation service's listing, as a fresh
+    deployment does before its first job lists it.
+    """
+    from malspark.core import served_declarations
+
+    kept = _own_servers_kept()
+    if request.node.get_closest_marker("no_kept_reputation_service") is not None:
+        kept = tuple(row for row in kept if row[0] != "mcp:virustotal")
+    served_declarations._UNSAVED.clear()
+    served_declarations.install_persisted(kept)
+    yield
+    # And between tests, where a module's or a session's fixture is built.
+    served_declarations._UNSAVED.clear()
+    served_declarations.install_persisted(_own_servers_kept())
+
+
+@pytest.fixture(autouse=True, scope="session")
+def the_own_servers_declared_their_tools_before_the_first_test() -> None:
+    """As above, before any fixture of a wider scope than a test is built."""
+    from malspark.core import served_declarations
+
+    served_declarations.install_persisted(_own_servers_kept())
+
+
+@pytest.fixture(autouse=True)
+def no_server_is_listed_or_reread_unless_a_test_asks(monkeypatch: pytest.MonkeyPatch) -> None:
+    """No test lists a server before its run, nor rereads the kept declarations per request.
+
+    A job's start lists each trusted server nothing is kept for
+    (``providers.served_listing``), and the API rereads what is kept every few
+    seconds (``served_declarations_store.refresh``): left on, a test's worker
+    would start the real sidecars and a test's request would read an empty
+    test database over the kept declarations, depending on the clock. A test
+    of either asks for it itself.
+    """
+    from app.services import served_declarations_store
+    from malspark.providers import served_listing
+
+    monkeypatch.setattr(served_listing, "unlisted", lambda settings: [])
+    # Read last at the end of time: never due again.
+    monkeypatch.setattr(served_declarations_store, "_READ_AT", [float("inf")])
+    # And no failure a test's read left is in force in the next test.
+    monkeypatch.setattr(served_declarations_store, "_REFRESH_FAILURE", [None])
+    monkeypatch.setattr(served_declarations_store, "_LOAD_FAILURE", [None])
+    monkeypatch.setattr(served_declarations_store, "_SAID_UNREAD", [False])
+
+
 @pytest.fixture(autouse=True)
 def no_floss_unless_a_test_names_one(monkeypatch: pytest.MonkeyPatch) -> None:
     """The triage pack runs FLOSS on every PE, and a test's pack runs none.
@@ -69,12 +256,12 @@ def no_floss_unless_a_test_names_one(monkeypatch: pytest.MonkeyPatch) -> None:
     The build lives outside the environment, so whether a test found one was a
     fact about the machine: on a box with it installed every pack over a
     synthetic PE spent seconds emulating it and recorded an entry a runner
-    without it never had. ``MALJAN_FLOSS_PATH`` naming no file is the one
+    without it never had. ``MALSPARK_FLOSS_PATH`` naming no file is the one
     answer both give. A test about FLOSS sets or clears the variable itself,
     and a sidecar a test starts never sees it — ``child_env`` passes no such
     variable.
     """
-    monkeypatch.setenv("MALJAN_FLOSS_PATH", "/nonexistent/maljan-tests/floss")
+    monkeypatch.setenv("MALSPARK_FLOSS_PATH", "/nonexistent/malspark-tests/floss")
 
 
 @pytest.fixture(autouse=True)
@@ -93,7 +280,7 @@ def close_the_sidecars_a_test_opened() -> Iterator[None]:
     Only what this test left is closed: the set is read before it runs and the
     difference afterwards is what it opened.
     """
-    from maljan.providers import servers
+    from malspark.providers import servers
 
     before = set(servers._ATTACHED_HANDLES)
     yield
@@ -128,7 +315,7 @@ def remove_the_staging_a_test_left() -> Iterator[None]:
     what this test composed is removed: the record is read before it runs and
     the difference afterwards is what it made.
     """
-    from maljan.tools import staging
+    from malspark.tools import staging
 
     before = {job: set(paths) for job, paths in staging._COMPOSED.items()}
     yield
@@ -140,9 +327,9 @@ def remove_the_staging_a_test_left() -> Iterator[None]:
 
 
 @pytest.fixture
-def mock_maljan_app() -> MaljanApp:
-    """MaljanApp in mock mode for fast facade-level tests."""
-    return MaljanApp(mock=True)
+def mock_malspark_app() -> MalsparkApp:
+    """MalsparkApp in mock mode for fast facade-level tests."""
+    return MalsparkApp(mock=True)
 
 
 @pytest.fixture
@@ -217,6 +404,45 @@ def sample_network_data() -> list[dict]:
     ]
 
 
+def pytest_collection_finish(session: pytest.Session) -> None:
+    # Everything imported and built while collecting lives for the whole
+    # session. Freezing it keeps a full collection from walking it again
+    # inside a test: on a loaded runner such a walk took ~2 s and fell
+    # inside the timed span of a linear-time check (T-427).
+    gc.collect()
+    gc.freeze()
+
+
 def pytest_terminal_summary(terminalreporter: pytest.TerminalReporter) -> None:
     """The session ends with how many golden cases compared nothing for want of a source."""
     report_absent_fixture_skips(terminalreporter)
+
+
+@pytest.fixture(autouse=True)
+def no_anonymous_request_reaches_a_real_store(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
+    """The object store's privacy check sends no request unless a test hands it a client.
+
+    Every sample and sandbox-report path asks the bucket, anonymously, whether
+    it is private (``object_store.privacy``); left on, a test with a client
+    double would send those requests to whatever answers at the configured
+    endpoint. Here the check cannot reach a store, which leaves the verdict
+    open and the path served, the start asks nothing, and no verdict outlives
+    its test. A test that hands the check an open store overrides both.
+    """
+    try:
+        from app.services import object_store
+    except ImportError:
+        yield
+        return
+
+    def _unreachable(*_args: object, **_kwargs: object) -> object:
+        raise ConnectionError("no object store in tests")
+
+    monkeypatch.setattr(object_store, "anonymous_client", _unreachable)
+    # An app's start asks too (``check_privacy_at_start``), through a real client.
+    monkeypatch.setattr(object_store, "check_privacy_at_start", lambda: None)
+    object_store._PRIVACY.clear()
+    object_store._POLICY_UNREAD.clear()
+    yield
+    object_store._PRIVACY.clear()
+    object_store._POLICY_UNREAD.clear()

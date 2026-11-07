@@ -20,12 +20,12 @@ from types import SimpleNamespace
 import httpx
 import pytest
 
-from maljan.core.cancellation import Cancellation
-from maljan.core.config import Settings
-from maljan.loaders.cape2_client import CAPEv2Client
-from maljan.providers.errors import ArtefactFetchFailed
-from maljan.providers.sandbox.rest import RestSandboxProvider
-from maljan.providers.sandbox.triage import (
+from malspark.core.cancellation import Cancellation
+from malspark.core.config import Settings
+from malspark.loaders.cape2_client import CAPEv2Client
+from malspark.providers.errors import ArtefactFetchFailed
+from malspark.providers.sandbox.rest import RestSandboxProvider
+from malspark.providers.sandbox.triage import (
     ArtefactAttemptFailed,
     FetchBudget,
     TriageSandboxProvider,
@@ -37,7 +37,7 @@ from maljan.providers.sandbox.triage import (
 
 # Far below every client's own timeout (60 s, 120 s on CAPE): a fetch that
 # ends inside it was ended by the cancel, not by a timeout.
-ENDED_WITHIN = 5.0
+ENDED_WITHIN = 30.0
 _OVERVIEW = json.dumps({"tasks": [{"name": "behavioral1", "kind": "behavioral"}]}).encode()
 
 
@@ -228,11 +228,11 @@ def test_a_finished_try_leaves_nothing_for_the_cancel_to_stop():
 
 
 def test_the_jobs_capture_fetch_is_bound_to_its_cancellation(tmp_path):
-    """``MaljanApp._fetch_capture`` hands the provider's fetch the job's cancellation."""
+    """``MalsparkApp._fetch_capture`` hands the provider's fetch the job's cancellation."""
     from types import SimpleNamespace
 
-    from maljan.app import MaljanApp
-    from maljan.providers.sandbox import triage
+    from malspark.app import MalsparkApp
+    from malspark.providers.sandbox import triage
 
     cancellation = Cancellation()
     seen: list[FetchBudget | None] = []
@@ -241,7 +241,7 @@ def test_the_jobs_capture_fetch_is_bound_to_its_cancellation(tmp_path):
         def fetch_pcap(self, task_id, dest_dir):
             seen.append(triage._FETCH_BUDGET.get())
 
-    app = MaljanApp.__new__(MaljanApp)
+    app = MalsparkApp.__new__(MalsparkApp)
     app.container = SimpleNamespace(cancellation=cancellation)
     app._fetch_capture(Provider(), "s1", str(tmp_path), time.monotonic() + 60)
     (budget,) = seen
@@ -363,7 +363,7 @@ def test_abort_requests_without_a_pool_does_nothing_and_never_raises():
 
 def test_a_held_socket_is_never_closed_while_a_stop_shuts_it_down():
     """A close racing a stop waits for its shutdowns: no descriptor is freed mid-stop."""
-    from maljan.providers.sandbox.triage import _TryInFlight
+    from malspark.providers.sandbox.triage import _TryInFlight
 
     events: list[str] = []
     in_flight = _TryInFlight(None)

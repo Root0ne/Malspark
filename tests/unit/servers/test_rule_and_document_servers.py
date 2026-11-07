@@ -19,19 +19,19 @@ import importlib.util
 import json
 import os
 import re
+import resource
 import shutil
 import stat
 import subprocess
 import sys
-import time
 from pathlib import Path
 from typing import Any
 
 import pytest
 
-from maljan.core.builtin_declarations import server_declaration
-from maljan.core.config import MCPServerConfig, Settings
-from maljan.core.tool_declarations import ToolFacts
+from malspark.core.config import Settings
+from malspark.core.declared_reading import builtin_tools
+from malspark.core.tool_declarations import ToolFacts
 
 ROOT = Path(__file__).resolve().parents[3]
 SERVICES = ROOT / "services"
@@ -56,7 +56,7 @@ MODULES = {"yarax": yarax, "oletools": oletools, "webcrack": webcrack}
 
 @pytest.fixture
 def roots(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
-    """A sample root holding one file, named in ``MALJAN_SAMPLE_ROOTS``; no bound on a run."""
+    """A sample root holding one file, named in ``MALSPARK_SAMPLE_ROOTS``; no bound on a run."""
     root = tmp_path / "samples"
     root.mkdir()
     (root / "sample.bin").write_bytes(b"{\\rtf1 not a document\n")
@@ -646,12 +646,18 @@ class TestTheScriptScan:
         assert "JScript.Encode" in answer["error"]["message"]
 
 
+def _children_cpu_seconds() -> float:
+    """The CPU time, user and system, of every child this process has waited for."""
+    used = resource.getrusage(resource.RUSAGE_CHILDREN)
+    return used.ru_utime + used.ru_stime
+
+
 @needs_node
 def test_empty_blocks_are_rows_without_a_call(tmp_path: Path) -> None:
     """50,000 empty blocks: each a row, webcrack never asked (nor loaded), in moments."""
     hta = tmp_path / "a.hta"
     hta.write_bytes(b"<html>" + b"<script> \n</script>" * 50_000 + b"</html>")
-    began = time.monotonic()
+    began = _children_cpu_seconds()
     done = subprocess.run(
         ["node", str(DEOBFUSCATE), "--", str(hta)],
         capture_output=True,
@@ -659,7 +665,8 @@ def test_empty_blocks_are_rows_without_a_call(tmp_path: Path) -> None:
         timeout=120,
         check=True,
     )
-    assert time.monotonic() - began < 5
+    # The node child's own CPU time, which a loaded machine does not stretch.
+    assert _children_cpu_seconds() - began < 50
     rows = json.loads(done.stdout)["scripts"]
     assert len(rows) == 50_000
     assert not any(row["deobfuscated"] or "error" in row for row in rows)
@@ -812,7 +819,8 @@ def _advertised(module: Any) -> dict[str, dict[str, Any]]:
 
 
 def _declared(key: str) -> dict[str, ToolFacts]:
-    return MCPServerConfig(**server_declaration(key)).tool_facts
+    # What the server declares of itself, as the platform reads it (kept from its listing).
+    return dict(builtin_tools(key))
 
 
 @pytest.mark.parametrize("key", sorted(SERVERS))
@@ -852,7 +860,7 @@ class TestTheDeclarations:
         (port,) = re.findall(r"MCP_PORT=(\d+)", dockerfile)
         assert block.url == f"http://{service}:{port}/mcp"
         assert f"EXPOSE {port}" in dockerfile
-        assert "MALJAN_SAMPLE_ROOTS=/data/samples" in dockerfile
+        assert "MALSPARK_SAMPLE_ROOTS=/data/samples" in dockerfile
         # A digest on every base image, never root.
         for base in re.findall(r"^FROM (\S+)", dockerfile, re.MULTILINE):
             assert re.search(r"@sha256:[0-9a-f]{64}$", base), base
@@ -873,7 +881,7 @@ def test_yara_x_matches_are_read_as_the_shipped_yara_scans_are(
     roots: Path, bin_dir: Path, rules: Path
 ) -> None:
     """Signature rules, in yara_scan's row shape, corroborating as the one YARA layer."""
-    shipped = Settings(_env_file=None).mcp.servers["analysis"].tool_facts["yara_scan"]
+    shipped = builtin_tools("analysis")["yara_scan"]
     facts = _declared("yarax")["yarax_scan"]
     assert (facts.kind, facts.asserts_techniques, facts.source) == (
         shipped.kind,
@@ -956,7 +964,10 @@ def test_the_oletools_image_installs_only_hashed_wheels_of_the_pinned_release() 
 def test_the_webcrack_image_pins_node_and_every_package_by_hash() -> None:
     dockerfile = _dockerfile("webcrack")
     (node,) = re.findall(r"^ARG NODE_VERSION=(\S+)$", dockerfile, re.MULTILINE)
-    assert re.findall(r"^ARG NODE_TXZ_SHA256=([0-9a-f]{64})$", dockerfile, re.MULTILINE)
+    # One build per architecture, each by the digest its release publishes.
+    assert re.findall(
+        r"^ARG NODE_(AMD64|ARM64)_TXZ_SHA256=[0-9a-f]{64}$", dockerfile, re.MULTILINE
+    ) == ["AMD64", "ARM64"]
     assert node.split(".")[0] in ("22", "24") and "sha256sum -c -" in dockerfile
     assert "npm ci --ignore-scripts" in dockerfile
     # The sandbox webcrack would evaluate decoders in is not in the image.

@@ -15,8 +15,8 @@ import time
 
 import pytest
 
-from maljan.core.config import ChunkingConfig
-from maljan.loaders.binary_chunker import (
+from malspark.core.config import ChunkingConfig
+from malspark.loaders.binary_chunker import (
     CHUNK_CHARS,
     SIZED_BY,
     SIZED_BY_ROOM,
@@ -79,9 +79,9 @@ class TestJoining:
     def test_ten_times_the_sources_take_about_ten_times_as_long(self) -> None:
         def timed(count: int) -> float:
             chunks = [_chunk("s" * 50) for _ in range(count)]
-            began = time.perf_counter()
+            began = time.thread_time()
             joined_when_it_fits(chunks, ChunkingConfig(), lambda text: len(text) // 7 + 60)
-            return time.perf_counter() - began
+            return time.thread_time() - began
 
         timed(2_000)
         small = min(timed(2_000) for _ in range(3))

@@ -22,14 +22,14 @@ from types import SimpleNamespace
 from typing import Any
 from unittest.mock import patch
 
-from maljan.pipeline.validation import (
+from malspark.pipeline.validation import (
     KEPT_WITH_A_FINDING,
     STATED_VALUE_UNHELD_CODE,
     EntryTexts,
     stated_value_violations,
 )
-from maljan.reporting.composer import ReportComposer, _ConfigOut, _HostIdentifiersOut
-from maljan.reporting.models import (
+from malspark.reporting.composer import ReportComposer, _ConfigOut, _HostIdentifiersOut
+from malspark.reporting.models import (
     ConfigItem,
     FileHashes,
     HostIdentifier,
@@ -37,8 +37,8 @@ from maljan.reporting.models import (
     SampleIdentity,
     TechnicalAnalysis,
 )
-from maljan.reporting.renderers.markdown import MarkdownRenderer
-from maljan.schemas.evidence import LedgerEntry
+from malspark.reporting.renderers.markdown import MarkdownRenderer
+from malspark.schemas.evidence import LedgerEntry
 
 KEY = "Software\\ExampleVendor\\Updater"
 JOINED = KEY + "\\ExampleExport"
@@ -97,6 +97,35 @@ class TestTheWholeValue:
     def test_a_value_held_by_another_entry_is_left_to_the_citation_question(self) -> None:
         # ``wrong_entry_citations`` already asks this one, with the entry offered.
         assert stated_value_violations(_identifiers(KEY, "ev_0006"), _texts()) == []
+
+    def test_a_listed_value_is_held_where_its_cited_entries_hold_each_item(self) -> None:
+        exports = json.dumps({"exports": ["alpha", "bravo", "charlie"]})
+        texts = EntryTexts.from_ledger([_entry("ev_0006", "list_exports", exports)])
+        # Each item held: the list the row writes as one value is no finding (T-555).
+        assert (
+            stated_value_violations(_identifiers("alpha, bravo, charlie", "ev_0006"), texts) == []
+        )
+        # One item no cited entry holds: the row is asked about as before.
+        (found,) = stated_value_violations(_identifiers("alpha, bravo, delta", "ev_0006"), texts)
+        assert found.code == STATED_VALUE_UNHELD_CODE
+        # An item too short to be read on its own holds nothing.
+        assert stated_value_violations(_identifiers("alpha, xy", "ev_0006"), texts)
+
+    def test_a_listed_value_is_held_by_one_entry_holding_every_item(self) -> None:
+        texts = EntryTexts.from_ledger(
+            [
+                _entry("ev_0006", "list_exports", json.dumps({"exports": ["alpha", "bravo"]})),
+                _entry("ev_0007", "strings", json.dumps({"strings": ["charlie"]})),
+            ]
+        )
+        # Each item held, but by different entries: no one entry holds the list.
+        (found,) = stated_value_violations(
+            _identifiers("alpha, bravo, charlie", "ev_0006", "ev_0007"), texts
+        )
+        assert found.code == STATED_VALUE_UNHELD_CODE
+        assert (
+            stated_value_violations(_identifiers("alpha, bravo", "ev_0006", "ev_0007"), texts) == []
+        )
 
     def test_a_partial_cited_entry_is_not_said_to_lack_it(self) -> None:
         assert stated_value_violations(_items("7000", "ev_0022"), _texts(partial=True)) == []
@@ -214,7 +243,9 @@ def _compose_section(section: str, schema: type, *answers: str) -> tuple[Any, _R
     comp._citable = ["ev_0005", "ev_0006", "ev_0020", "ev_0022"]
     comp._report = _report()
     validators = [lambda p: stated_value_violations(p, comp._entries)]
-    with patch("maljan.reporting.composer.structured_output_supported_for_llm", return_value=False):
+    with patch(
+        "malspark.reporting.composer.structured_output_supported_for_llm", return_value=False
+    ):
         result = asyncio.run(
             comp._invoke(
                 [HumanMessage(content="write it")], schema, section=section, validators=validators
@@ -361,9 +392,9 @@ class TestOddAndLargeInput:
             ]
         }
 
-        started = time.monotonic()
+        started = time.thread_time()
         found = stated_value_violations(payload, texts)
-        elapsed = time.monotonic() - started
+        elapsed = time.thread_time() - started
 
         (asked,) = found
         assert asked.message.startswith("identifiers 1, 2, 3, ")

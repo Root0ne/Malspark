@@ -1,4 +1,4 @@
-"""``maljan.tools.rules`` reports every rule that fired, on its own terms.
+"""``malspark.tools.rules`` reports every rule that fired, on its own terms.
 
 What the pipeline's layers add — the platform pre-filter, the confidence floor,
 the ISR conversion — is exactly what these tests check is *absent*. A Windows
@@ -17,7 +17,7 @@ from typing import Any
 
 import pytest
 
-from maljan.tools import rules as tool
+from malspark.tools import rules as tool
 
 RULESET_YAML = """
 rules:
@@ -237,7 +237,7 @@ class TestCapa:
         (rules_dir / "r.yml").write_text("rule:\n  meta:\n    name: r\n", encoding="utf-8")
 
         monkeypatch.setattr(
-            "maljan.providers.static.capa_yara.run_capa_document",
+            "malspark.providers.static.capa_yara.run_capa_document",
             lambda **kwargs: CAPA_DOCUMENT,
         )
 
@@ -269,7 +269,7 @@ class TestCapa:
         (rules_dir / "r.yml").write_text("rule:\n", encoding="utf-8")
 
         monkeypatch.setattr(
-            "maljan.providers.static.capa_yara.run_capa_document", lambda **kwargs: None
+            "malspark.providers.static.capa_yara.run_capa_document", lambda **kwargs: None
         )
 
         result = tool.capa(str(sample), rules_dir=str(rules_dir))
@@ -285,7 +285,8 @@ class TestCapa:
         result = tool.capa(str(sample), rules_dir=str(empty))
 
         assert result["tool"] == "capa"
-        assert "missing or empty" in result["error"]
+        assert result["error"]["code"] == "missing_dependency"
+        assert "missing or holds none" in result["error"]["message"]
 
     def test_a_missing_sample_is_an_error_and_not_an_exception(self) -> None:
         assert tool.capa("/nonexistent/s.exe")["tool"] == "capa"

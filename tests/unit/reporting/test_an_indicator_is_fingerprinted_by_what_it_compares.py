@@ -15,8 +15,8 @@ import time
 
 import pytest
 
-from maljan.reporting.dedupe import pattern_fingerprint
-from maljan.schemas.stix_pattern import canonical_pattern, read_comparisons
+from malspark.reporting.dedupe import pattern_fingerprint
+from malspark.schemas.stix_pattern import canonical_pattern, read_comparisons
 
 
 def _same(a: str, b: str, pattern_type: str = "stix") -> bool:
@@ -168,10 +168,10 @@ def test_a_hostile_pattern_is_read_and_fingerprinted_in_linear_time(unit: str, t
     # noise on a loaded machine; the best of five runs each).
     def took(size: int) -> float:
         text = unit * size + tail
-        start = time.perf_counter()
+        start = time.thread_time()
         read_comparisons(text)
         pattern_fingerprint("stix", text)
-        return time.perf_counter() - start
+        return time.thread_time() - start
 
     small = min(took(5_000) for _ in range(5))
     large = min(took(50_000) for _ in range(5))

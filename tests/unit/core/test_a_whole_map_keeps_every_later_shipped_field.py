@@ -14,9 +14,9 @@ from typing import Any
 
 import pytest
 
-from maljan.core import builtin_declarations as shipped
-from maljan.core.settings_overrides import shipped_tool_facts
-from maljan.core.tool_declarations import (
+from malspark.core import builtin_declarations as shipped
+from malspark.core.settings_overrides import shipped_tool_facts
+from malspark.core.tool_declarations import (
     FIELDS_AFTER_WHOLE_MAPS,
     WHOLE_MAP_FIELDS,
     ToolFacts,
@@ -58,8 +58,9 @@ def test_a_tool_held_as_shipped_changes_nothing(where: str, tools: dict[str, Any
 
 
 def test_an_operator_s_value_of_a_later_field_wins() -> None:
-    tools = shipped_tool_facts("mcp.servers.analysis")
-    tool = next(name for name, facts in tools.items() if facts.get("read_only"))
+    # A block that still ships a table of its tools.
+    tools = shipped_tool_facts("sandbox.cape2.mcp")
+    tool = next(name for name, facts in tools.items() if not facts.get("read_only"))
     whole = _as_a_whole_map(tools)
-    whole[tool] = {**whole[tool], "read_only": False}
-    assert whole_as_changes(whole, tools) == {tool: {"read_only": False}}
+    whole[tool] = {**whole[tool], "read_only": True}
+    assert whole_as_changes(whole, tools) == {tool: {"read_only": True}}

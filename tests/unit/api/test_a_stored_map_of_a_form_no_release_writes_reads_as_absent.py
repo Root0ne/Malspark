@@ -26,10 +26,10 @@ from fastapi.testclient import TestClient
 from app.models import RuntimeSetting
 from app.services import settings_service as svc
 from app.services.server_map import validate_server_map
-from maljan.core import settings_overrides as so
-from maljan.core import tool_declarations
-from maljan.core.settings_overrides import build_settings, refused_tool_changes
-from maljan.core.tool_declarations import CHANGES_FORM, CHANGES_MARK, with_mark
+from malspark.core import settings_overrides as so
+from malspark.core import tool_declarations
+from malspark.core.settings_overrides import build_settings, refused_tool_changes
+from malspark.core.tool_declarations import CHANGES_FORM, CHANGES_MARK, with_mark
 
 LEAF = "core.static.ghidra.tool_facts"
 BLOCK = "static.ghidra"
@@ -229,11 +229,11 @@ def test_reading_a_hostile_unreadable_map_is_linear() -> None:
 
     def timed(n: int) -> float:
         stored = {CHANGES_MARK: "Changes", **{f"t{i}": DECLARED for i in range(n)}}
-        start = time.perf_counter()
+        start = time.thread_time()
         svc.served_tool_facts(stored, {})
         tool_declarations.stored_in_force({}, stored, "x")
         tool_declarations.kept_stored_changes(stored, stored, {})
-        return time.perf_counter() - start
+        return time.thread_time() - start
 
     small, large = timed(2_000), timed(20_000)
     assert large < max(small, 0.001) * 40

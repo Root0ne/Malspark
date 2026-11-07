@@ -16,6 +16,7 @@ import {
   builtinAgentKeys as builtinKeySet,
   cloneDefinition,
   displayedDefinitions,
+  FALLBACK_AGENT_CATEGORIES,
   stagedDefinitions,
   type StagedDefinitionMap,
 } from "./agentStaging";
@@ -34,12 +35,15 @@ import {
   capabilityRef,
   holdsServer,
   offeredCapabilities,
+  offeredProviders,
+  providerRef,
   sameToolRef,
   withoutServer,
   type CapabilityServers,
 } from "./capabilityRefs";
 import { SANDBOX_REF, choiceRows, toggleChoice } from "./choiceRows";
 import type {
+  AgentCategory,
   AgentDefinitionEntry,
   AgentProbeDetails,
   CatalogEntry,
@@ -51,6 +55,40 @@ import type {
 
 /** The console tabs an agent may declare (`core.config.AGENT_TABS`). */
 const AGENT_TABS = ["identity", "static", "dynamic", "network", "persistence"] as const;
+/** The tab each role's sections are drawn on when the definition names none
+ *  (`core.config.ROLE_TABS`). A role missing here has no tab of its own. */
+const ROLE_TABS: Readonly<Record<string, (typeof AGENT_TABS)[number]>> = {
+  static: "static",
+  dynamic: "dynamic",
+  network: "network",
+  judge: "identity",
+};
+
+/** How each category is named to an operator. A value the API serves that is
+ *  missing here is shown as it is. */
+export const CATEGORY_LABELS: Readonly<Record<string, string>> = {
+  code_reader: "Reverser (code reader)",
+  static: "Static",
+  dynamic: "Dynamic / sandbox",
+  network: "Network",
+  intel: "Intel / reputation",
+  other: "Other",
+};
+
+/** What the category select says under it: the owner-approved text, word for
+ *  word, with the two category names it cites in italics. */
+export function CategoryHelp({ id }: { id: string }) {
+  return (
+    <span id={id} className="block text-[11px] text-text-muted mt-0.5">
+      Choose the category that matches what this agent actually does. Malspark sets this
+      agent&apos;s platform steps by its category: for example, an agent in <em>Reverser</em>{" "}
+      is shown the functions on the main path it has not read before it gives its final
+      answer. A wrong category gives the agent steps that do not fit its work and leaves out
+      steps that would help it. If none fits, choose <em>Other</em>; the platform then works
+      out what it can from the agent&apos;s tools and results.
+    </span>
+  );
+}
 
 const input =
   "w-full bg-bg-deep border border-border rounded px-2 py-1.5 text-sm text-text-primary focus:outline-none focus:border-accent";
@@ -87,9 +125,12 @@ const ROLE_CHOICES: AgentDefinitionEntry["role"][] = [
  *  reporter are not analysts and the settings model refuses a reference to
  *  either. */
 const ASKABLE_ROLES = new Set(["static", "dynamic", "network", "generic", "lead"]);
+/** The roles that may ask: every askable one, and the judge, whose mediation
+ *  may ask the agents that read the code. The reporter asks no one. */
+const ASKING_ROLES = new Set(["static", "dynamic", "network", "generic", "lead", "judge"]);
 
 /**
- * One entry of `llm.agents`, mirroring `maljan.core.config.AgentLLMConfig`.
+ * One entry of `llm.agents`, mirroring `malspark.core.config.AgentLLMConfig`.
  * Absent from the map means "inherit `llm.provider`/the provider's own
  * `expert_model`/`judge_model`" — there is no per-definition storage for
  * this, `llm.agents` is a single JSON leaf of its own (`core.llm.agents`),
@@ -330,6 +371,7 @@ export function AgentDetail({
   keyErrorMessage,
   capabilityServers = {},
   dataSourceChoices = [],
+  categoryChoices,
   builtinAgentKeys,
   alwaysEnabledAgentKeys,
 }: {
@@ -362,6 +404,10 @@ export function AgentDetail({
   /** The input slices a definition may name, as the API serves them
    *  (`CatalogEntry.data_source_choices`). */
   dataSourceChoices?: readonly string[];
+  /** The categories a definition may declare, as the API serves them
+   *  (`CatalogEntry.agent_category_choices`). Absent from an older API: the
+   *  console's own list. */
+  categoryChoices?: readonly string[] | null;
   /** Every seeded definition key, as the API serves them
    *  (`CatalogEntry.builtin_agent_keys`). Absent from an older API: the five
    *  class built-ins are then the ones known. */
@@ -377,6 +423,14 @@ export function AgentDetail({
   // any of them but its `enabled` switch, so none is offered. The served list
   // names all of them; an API older than it leaves the five class built-ins.
   const locked = builtinKeySet(builtinAgentKeys).has(agentKey);
+  // A role an operator may pick that has no tab of its own: the tab field
+  // then says where the sections it leaves unplaced are drawn. A built-in's
+  // tab cannot be picked, so it is told nothing it could act on.
+  const tabHint =
+    !locked &&
+    agent !== undefined &&
+    ROLE_CHOICES.includes(agent.role) &&
+    !Object.hasOwn(ROLE_TABS, agent.role);
 
   const put = (key: string, next: Partial<AgentDefinitionEntry>) => {
     resolve.noteEdit(key, next);
@@ -419,9 +473,9 @@ export function AgentDetail({
   /** The agents this one may be given as tools: every other analyst-role
    *  definition, whether or not it is enabled — a disabled one is refused at
    *  run time by name rather than silently missing from the list. Empty for a
-   *  judge or a reporter, whose references the API always refuses, so the
-   *  group is not offered where ticking a row is a guaranteed save error. */
-  const askable = ASKABLE_ROLES.has(definitions[agentKey]?.role)
+   *  reporter, whose references the API always refuses, so the group is not
+   *  offered where ticking a row is a guaranteed save error. */
+  const askable = ASKING_ROLES.has(definitions[agentKey]?.role)
     ? Object.entries(definitions)
         .filter(([key, d]) => key !== agentKey && ASKABLE_ROLES.has(d.role))
         .map(([key]) => key)
@@ -608,6 +662,38 @@ export function AgentDetail({
                 <FieldError message={fieldError("role")} />
               </label>
             )}
+            {/* What the agent does, which decides the platform steps it is
+                offered and never the tools it may call. Required: a new
+                agent starts with none chosen and the API refuses it so. */}
+            <label className="block sm:col-span-2">
+              <span className="text-text-muted">Category (required)</span>
+              <select
+                className={input}
+                aria-label={`${agentKey} category`}
+                aria-describedby={`${agentKey}-category-help`}
+                aria-required="true"
+                required
+                disabled={locked}
+                value={agent.category ?? ""}
+                onChange={(e) =>
+                  put(agentKey, { category: (e.target.value || null) as AgentCategory | null })
+                }
+              >
+                <option value="" disabled>
+                  Choose a category
+                </option>
+                {(categoryChoices && categoryChoices.length > 0
+                  ? categoryChoices
+                  : FALLBACK_AGENT_CATEGORIES
+                ).map((c) => (
+                  <option key={c} value={c}>
+                    {CATEGORY_LABELS[c] ?? c}
+                  </option>
+                ))}
+              </select>
+              <CategoryHelp id={`${agentKey}-category-help`} />
+              <FieldError message={fieldError("category")} />
+            </label>
             {PROVIDER_ROLES.has(agent.role) && (
               <label className="block">
                 <span className="text-text-muted">Static provider</span>
@@ -672,6 +758,7 @@ export function AgentDetail({
               <select
                 className={input}
                 aria-label={`${agentKey} tab`}
+                aria-describedby={tabHint ? `${agentKey}-tab-hint` : undefined}
                 disabled={locked}
                 value={agent.tab ?? ""}
                 onChange={(e) => put(agentKey, { tab: e.target.value || null })}
@@ -681,6 +768,13 @@ export function AgentDetail({
                   <option key={tab} value={tab}>{tab}</option>
                 ))}
               </select>
+              {/* A role with no tab of its own (`ROLE_TABS`) leaves such a
+                  section to the EVIDENCE footer unless the agent names one. */}
+              {tabHint && (
+                <span id={`${agentKey}-tab-hint`} className="block text-[11px] text-text-muted mt-0.5">
+                  Sections its tools&apos; kinds do not place go to EVIDENCE unless you pick a tab
+                </span>
+              )}
               <FieldError message={fieldError("tab")} />
             </label>
             {/* Whether the agent is asked for a technique id on each claim.
@@ -812,33 +906,54 @@ export function AgentDetail({
                 locked, as every other reference of a built-in is. */}
             {PROVIDER_ROLES.has(agent.role) &&
               agent.role !== "static" &&
-              (!locked || hasRef(agentKey, { kind: "provider", server: null, name: null })) && (
-              <li
-                role="treeitem"
-                aria-selected={hasRef(agentKey, {
-                  kind: "provider",
-                  server: null,
-                  name: null,
-                })}
-              >
+              (!locked || hasRef(agentKey, providerRef(null))) && (
+              <li role="treeitem" aria-selected={hasRef(agentKey, providerRef(null))}>
                 <label className="text-xs text-text-secondary flex items-center gap-1">
                   <input
                     type="checkbox"
                     aria-label={`${agentKey} provider tools`}
                     disabled={locked}
-                    checked={hasRef(agentKey, { kind: "provider", server: null, name: null })}
-                    onChange={(e) =>
-                      toggleRef(
-                        agentKey,
-                        { kind: "provider", server: null, name: null },
-                        e.target.checked
-                      )
-                    }
+                    checked={hasRef(agentKey, providerRef(null))}
+                    onChange={(e) => toggleRef(agentKey, providerRef(null), e.target.checked)}
                   />
                   its static provider&rsquo;s tools
                 </label>
               </li>
             )}
+            {/* A provider named by id, beside the agent's own: one row per
+                provider the deployment offers, so one agent can hold the
+                tools of several. A later provider's tool whose name an
+                earlier one holds reaches the model as `<provider>__<tool>`. */}
+            {PROVIDER_ROLES.has(agent.role) &&
+              agent.role !== "static" &&
+              offeredProviders(agent.tools, staticProviders)
+                .filter((p) => !locked || hasRef(agentKey, providerRef(p)))
+                .map((p) => (
+                  <li key={`provider:${p}`} role="treeitem" aria-selected={hasRef(agentKey, providerRef(p))}>
+                    <label className="text-xs text-text-secondary flex items-center gap-1">
+                      <input
+                        type="checkbox"
+                        aria-label={`${agentKey} provider ${p} tools`}
+                        disabled={locked}
+                        checked={hasRef(agentKey, providerRef(p))}
+                        onChange={(e) => toggleRef(agentKey, providerRef(p), e.target.checked)}
+                      />
+                      <span>
+                        the <span className="font-mono">{p}</span> static provider&rsquo;s tools
+                      </span>
+                    </label>
+                  </li>
+                ))}
+            {/* The served choices do not say which providers offer tools, so
+                the rows say it of themselves rather than guessing. */}
+            {PROVIDER_ROLES.has(agent.role) &&
+              agent.role !== "static" &&
+              !locked &&
+              offeredProviders(agent.tools, staticProviders).length > 0 && (
+                <li role="none" className="text-xs text-text-muted ml-5">
+                  A provider that offers no tools adds none.
+                </li>
+              )}
             {/* The job's sandbox report, read through in-process tools. Any
                 role may hold it, a judge cross-checking a claim as much as a
                 dynamic analyst. */}
@@ -1292,6 +1407,7 @@ export default function AgentDefinitionsEditor({
           builtinAgentKeys={entry.builtin_agent_keys}
           alwaysEnabledAgentKeys={entry.always_enabled_agent_keys}
           dataSourceChoices={entry.data_source_choices ?? []}
+          categoryChoices={entry.agent_category_choices}
         />
       )}
     </div>

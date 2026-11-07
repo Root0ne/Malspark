@@ -105,6 +105,14 @@ COMPOSER_CHECKS: tuple[str, ...] = (
     "configuration_citation_violations",
     "identifier_citation_violations",
     "stated_value_violations",
+    "style_violations",
+    "channel_binding_violations",
+    "summary_shape_violations",
+    "conclusion_shape_violations",
+    "limitations_shape_violations",
+    "procedure_violations",
+    "summary_value_violations",
+    "procedure_value_violations",
 )
 COMPOSER_NOT_REPLAYED: dict[str, str] = {
     "section_cut_violation": _CUT_NOT_STORED,
@@ -113,6 +121,28 @@ COMPOSER_NOT_REPLAYED: dict[str, str] = {
         "was shown, and which code that was, within the share of the window each output had, "
         "is not in the stored record"
     ),
+}
+# The agreement question asked once the body is written
+# (``reporting.section_agreement``): the stored report holds the passages as
+# its rewrites left them, and each sentence it rewrote or listed only as a
+# finding row (``agreement.rewritten``, ``agreement.listed``); the record keeps
+# not the answer whose rows its checks read, so none of them can be re-run.
+_AGREEMENT_ANSWER_NOT_STORED = (
+    "the agreement question's answer is not in the stored record: the stored report holds the "
+    "passages as its rewrites left them, and each rewritten or listed sentence only as a finding "
+    "row"
+)
+AGREEMENT_NOT_REPLAYED: dict[str, str] = {
+    name: _AGREEMENT_ANSWER_NOT_STORED
+    for name in (
+        "schema_violations",
+        "agreement_violations",
+        "rewrites_violations",
+        "citation_violations",
+        "wrong_entry_citations",
+        "misstated_entry_contents",
+        "ledger_absence_contradictions",
+    )
 }
 TOOL_CHECKS: tuple[str, ...] = ("self_named_arguments",)
 
@@ -130,9 +160,13 @@ COMPOSER_PLACES: dict[str, tuple[str, str | None]] = {
     "cli_flags": ("technical_analysis.cli_flags", "flags"),
     "ransom_note": ("technical_analysis.ransom_note", None),
     "communications": ("c2_channels", "channels"),
+    "summary": ("technical_analysis.capability_summary", "bullets"),
+    "conclusion": ("technical_analysis.analyst_conclusion", None),
+    "limitations": ("technical_analysis.analyst_limitations", None),
+    "attack_procedures": ("technical_analysis.technique_procedures", "procedures"),
 }
 
-_LOG = logging.getLogger("maljan.replay")
+_LOG = logging.getLogger("malspark.replay")
 
 # The causes a difference from the stored report is tied to: each is a row the
 # record names under ``not_replayed``, word for word.
@@ -201,6 +235,9 @@ class _Run:
     # How the report's degradation was decided: counts only.
     degradation: dict[str, int] = field(default_factory=dict)
     not_replayed: list[dict[str, Any]] = field(default_factory=list)
+    # The analysts already asked about the unread callees of what they
+    # described: the platform asks once per analyst and job.
+    callees_asked: set[str] = field(default_factory=set)
     _named: set[tuple[str, str]] = field(default_factory=set)
 
     def name(self, part: str, why: str, *, error: bool = False) -> None:
@@ -240,18 +277,11 @@ def _timestamp(value: Any) -> datetime | None:
 
 
 def _read_ledger(run: _Run) -> None:
-    from maljan.schemas.evidence import LedgerEntry
+    # The follow-up's reader: a database export's null column reads as absent.
+    from malspark.reporting.follow_up import stored_ledger
 
-    fields = set(LedgerEntry.model_fields)
-    unread = 0
-    for item in run.stored.evidence:
-        row = {k: v for k, v in item.items() if k in fields}
-        row["id"] = item.get("entry_id") or item.get("id")
-        try:
-            run.ledger.append(LedgerEntry.model_validate(row))
-        except Exception:  # noqa: BLE001 — counted and named below
-            unread += 1
-    run.ledger.sort(key=lambda entry: entry.seq)
+    ledger, unread = stored_ledger(run.stored.evidence)
+    run.ledger.extend(ledger)
     for entry in run.ledger:
         run.by_agent.setdefault(str(entry.agent or ""), []).append(entry)
     if unread:
@@ -270,7 +300,7 @@ def _read_ledger(run: _Run) -> None:
         if any(entry.structured for entry in run.ledger):
             run.name("ledger", _NO_KEY_ORDER)
     try:
-        from maljan.pipeline.triage_pack import pack_entries
+        from malspark.pipeline.triage_pack import pack_entries
 
         run.pack = pack_entries(run.ledger)
     except Exception as exc:  # noqa: BLE001
@@ -323,7 +353,7 @@ def _setting(key: str) -> Any:
     default. Never a default the replay writes down, so a default the
     platform changes shows in ``--compare``.
     """
-    from maljan.core.config import get_settings
+    from malspark.core.config import get_settings
 
     value: Any = get_settings()
     for part in key.split("."):
@@ -341,7 +371,7 @@ def _agent_setting(run: _Run, agent: str, name: str) -> Any:
     key = f"agents.definitions.{agent}.{name}"
     if key in run.stored.settings:
         return run.stored.settings[key]
-    from maljan.core.config import AgentDefinition
+    from malspark.core.config import AgentDefinition
 
     return AgentDefinition.model_fields[name].default
 
@@ -353,8 +383,8 @@ def _agent_setting(run: _Run, agent: str, name: str) -> Any:
 
 def _blocks_read(claims: Sequence[Any]) -> dict[int, tuple[list[str], str]]:
     """Per claim block, the entry ids its claims cite and its sentence: one pass over the claims."""
-    from maljan.pipeline.validation import claim_block_indexes
-    from maljan.schemas.evidence import entry_ids_in
+    from malspark.pipeline.validation import claim_block_indexes
+    from malspark.schemas.evidence import entry_ids_in
 
     ids: dict[int, set[str]] = {}
     sentence: dict[int, str] = {}
@@ -389,12 +419,12 @@ def _flag(
     cited. A subject that is not an id is its kind and a digest of its value,
     in the path that writes it too; its words are added only with the text.
     """
-    from maljan.schemas.evidence import entry_ids_in
+    from malspark.schemas.evidence import entry_ids_in
 
     row: dict[str, Any] = {"code": str(getattr(violation, "code", "") or "")}
     path = str(getattr(violation, "path", "") or "")
     subject = str(getattr(violation, "subject", "") or "")
-    from maljan.analysis.sandbox_sections import is_item_id
+    from malspark.analysis.sandbox_sections import is_item_id
 
     shown = value_free_subject(subject, is_item_id)
     if path:
@@ -459,8 +489,8 @@ class _Own:
 
 def _own(run: _Run, agent: str, before: datetime | None) -> _Own:
     """The analyst's own entries up to ``before`` (all of them when ``None``), and the pack's."""
-    from maljan.analysis.sandbox_sections import item_index_of
-    from maljan.pipeline.validation import (
+    from malspark.analysis.sandbox_sections import item_index_of
+    from malspark.pipeline.validation import (
         analyst_ledger_ids,
         decompiled_functions,
         image_bases_in,
@@ -482,7 +512,7 @@ def _own(run: _Run, agent: str, before: datetime | None) -> _Own:
     listed: list[Any] = []
     facts: Any = None
     failed = ""
-    from maljan.pipeline.function_claims import facts_unread, function_facts, listed_functions
+    from malspark.pipeline.function_claims import facts_unread, function_facts, listed_functions
 
     listed = listed_functions(own)
     if listed:
@@ -492,8 +522,8 @@ def _own(run: _Run, agent: str, before: datetime | None) -> _Own:
             "bound the run cut the pack at is not recorded, so the pack is read whole",
         )
         try:
-            from maljan.agents.function_map import function_artefacts
-            from maljan.pipeline.triage_pack import pack_block
+            from malspark.agents.function_map import function_artefacts
+            from malspark.pipeline.triage_pack import pack_block
 
             facts = function_facts(
                 own,
@@ -518,7 +548,7 @@ def _own(run: _Run, agent: str, before: datetime | None) -> _Own:
 
 def _parse_answer(run: _Run, agent: str, domain: str, text: str, revision_round: int) -> Any:
     """``text`` read the way the analyst's own parser reads an answer."""
-    from maljan.agents.base_agent import BaseAnalyst
+    from malspark.agents.base_agent import BaseAnalyst
 
     class _ReplayAnalyst(BaseAnalyst):
         """The parser's host: an analyst with no model, no tools and no loop."""
@@ -542,15 +572,23 @@ def _parse_answer(run: _Run, agent: str, domain: str, text: str, revision_round:
     return analyst._drain_findings(isr)
 
 
-def _analyst_checks(run: _Run, isr: Any, own: _Own, techniques: bool, *, whole: bool) -> list[Any]:
+def _analyst_checks(
+    run: _Run, isr: Any, own: _Own, techniques: bool, *, whole: bool, agent: str = ""
+) -> list[Any]:
     """The analyst validation turn's checks over one answer, composed by the platform's function.
 
     ``whole`` asks the questions about the answer as a whole (its repeats; its
     cuts are not stored) and the parse's; the claims in force are asked
-    neither, as a turn asks them of no claim it did not parse.
+    neither, as a turn asks them of no claim it did not parse. The unread
+    functions around the routines an analyst read are asked of ``agent``'s
+    first answer that has any, as the turn asks them once; the claims in force
+    are not asked them, since a turn's own retry never raises them again.
+    Whether the analyst's turn could carry its tools is not stored: the replay
+    reads it as able to.
     """
-    from maljan.pipeline import validation as v
-    from maljan.tools import knowledge
+    from malspark.agents.callees_question import callees_to_read
+    from malspark.pipeline import validation as v
+    from malspark.tools import knowledge
 
     whole_answer: list[Any] = []
     unread: list[Any] = []
@@ -569,7 +607,7 @@ def _analyst_checks(run: _Run, isr: Any, own: _Own, techniques: bool, *, whole: 
         unread = v.parse_violations(isr, techniques=techniques)
     functions: list[Any] = []
     if own.listed:
-        from maljan.pipeline.function_claims import FunctionClaimCheck, check_function_claims
+        from malspark.pipeline.function_claims import FunctionClaimCheck, check_function_claims
 
         check = (
             FunctionClaimCheck(not_checked=[own.facts_failed])
@@ -593,14 +631,28 @@ def _analyst_checks(run: _Run, isr: Any, own: _Own, techniques: bool, *, whole: 
         alignment_threshold=float(_setting("validation.alignment_threshold")),
         alignment_margin=float(_setting("validation.alignment_margin")),
     )
-    return v.analyst_answer_checks(
+    callees = None
+    if whole and agent and agent not in run.callees_asked:
+        listed = callees_to_read(getattr(isr, "claims", None) or (), own.entries, run.pack)
+        callees = listed if listed.ranked else None
+    found = v.analyst_answer_checks(
         isr,
         inputs,
         whole_answer=whole_answer,
         unread=unread,
         functions=functions,
         weak_alignment_challenges=False,
+        callees=callees,
     )
+    if callees is not None:
+        run.callees_asked.add(agent)
+        run.name(
+            f"analyst {agent}",
+            "what the analyst read after the question about the unread functions around "
+            "the routines it read is a model turn the replay does not make; the question is "
+            "shown on its first replayed answer that has any",
+        )
+    return found
 
 
 def _answer_record(
@@ -624,7 +676,7 @@ def _answer_record(
             isr.findings = list(run.stored_findings.get(agent) or [])
             isr.artifacts = list(run.stored_artifacts.get(agent) or [])
     own = _own(run, agent, before)
-    found = _analyst_checks(run, isr, own, techniques, whole=True)
+    found = _analyst_checks(run, isr, own, techniques, whole=True, agent=agent)
     flags = _claim_flags(found, isr, show_text=run.show_text)
     record: dict[str, Any] = {
         "answer": f"round {revision_round}",
@@ -718,9 +770,9 @@ def _stored_findings(run: _Run) -> dict[str, list[Any]]:
     finding's detail and artifacts are not in it, and a row two analysts reached
     is read as one finding of each.
     """
-    from maljan.reporting.ledger_report import NOT_PUBLISHED_MARKER
-    from maljan.schemas.evidence import entry_ids_in
-    from maljan.schemas.isr_models import Finding
+    from malspark.reporting.ledger_report import NOT_PUBLISHED_MARKER
+    from malspark.schemas.evidence import entry_ids_in
+    from malspark.schemas.isr_models import Finding
 
     marker = f" ({NOT_PUBLISHED_MARKER})"
     out: dict[str, list[Any]] = {}
@@ -762,14 +814,14 @@ def _stored_artifacts(run: _Run) -> dict[str, list[Any]]:
     """
     from types import SimpleNamespace
 
-    from maljan.reporting.ledger_report import (
+    from malspark.reporting.ledger_report import (
         EVIDENCE_COLUMN,
         LISTED_BY_COLUMN,
         artifact_sections,
         listed_rows,
     )
-    from maljan.schemas.evidence import entry_ids_in
-    from maljan.schemas.isr_models import Artifact
+    from malspark.schemas.evidence import entry_ids_in
+    from malspark.schemas.isr_models import Artifact
 
     sections = [
         SimpleNamespace(**section)
@@ -810,7 +862,7 @@ def _unshown_rows(run: _Run) -> dict[str, list[Any]]:
     """
     if run.unshown is not None:
         return run.unshown
-    from maljan.pipeline.validation import Violation
+    from malspark.pipeline.validation import Violation
 
     validation = run.stored.run_summary.get("validation")
     rows = validation.get("unresolved") if isinstance(validation, dict) else None
@@ -837,7 +889,7 @@ def _shown_to(run: _Run, producer: str, found: Sequence[Any]) -> list[Any]:
     the code and the subject, and for a finding without a subject its words),
     was not shown; every other one is counted as shown. One pass over each.
     """
-    from maljan.pipeline.validation import not_asked
+    from malspark.pipeline.validation import not_asked
 
     unshown = _unshown_rows(run).get(producer)
     if not unshown:
@@ -861,8 +913,8 @@ def _in_force(run: _Run, agent: str, row: Mapping[str, Any]) -> dict[str, Any]:
     or not the analyst was shown the finding, and an absence claim is noted
     only when it was (the stored ``asked: false`` rows say which it was not).
     """
-    from maljan.pipeline.validation import settle_validation_marks
-    from maljan.schemas.isr_models import AgentISR, ClaimEvidence
+    from malspark.pipeline.validation import settle_validation_marks
+    from malspark.schemas.isr_models import AgentISR, ClaimEvidence
 
     claims: list[Any] = []
     unread = 0
@@ -1033,7 +1085,7 @@ def _what_the_run_saw(run: _Run) -> tuple[list[str], Any]:
     """
     from types import SimpleNamespace
 
-    from maljan.pipeline.nodes import _what_the_run_saw as what_the_node_saw
+    from malspark.pipeline.nodes import _what_the_run_saw as what_the_node_saw
 
     searched, state = what_the_node_saw(
         SimpleNamespace(get_evidence_corpus=lambda: _run_corpus(run)), run.ledger
@@ -1063,7 +1115,7 @@ def _shown_to_the_judge(run: _Run, found: Sequence[Any]) -> list[Any]:
 
 
 def _judge(run: _Run, judged: _Judged) -> dict[str, Any]:
-    from maljan.agents.judge_agent import (
+    from malspark.agents.judge_agent import (
         _RESOLVED_BY_THE_PARSE,
         _SETTLED_CODES,
         VERDICT_FALLBACK_CODE,
@@ -1073,10 +1125,10 @@ def _judge(run: _Run, judged: _Judged) -> dict[str, Any]:
         _unasked_unreadable_leaves,
         verdict_bundle_checks,
     )
-    from maljan.agents.judge_postprocess import PROPERTY_NOT_CARRIED_CODE
-    from maljan.pipeline import validation as v
-    from maljan.schemas.stix_models import Bundle
-    from maljan.tools import knowledge
+    from malspark.agents.judge_postprocess import PROPERTY_NOT_CARRIED_CODE
+    from malspark.pipeline import validation as v
+    from malspark.schemas.stix_models import Bundle
+    from malspark.tools import knowledge
 
     record = run.stored.judge
     if not record or not isinstance(record.get("bundle"), dict):
@@ -1107,7 +1159,7 @@ def _judge(run: _Run, judged: _Judged) -> dict[str, Any]:
         )
         bundle = Bundle.model_validate(record["bundle"])
     out: dict[str, Any] = {"replayed": True, "objects": len(bundle.objects)}
-    fallback = bundle.x_maljan_fallback_verdict is not None
+    fallback = bundle.x_malspark_fallback_verdict is not None
     if fallback:
         out["parsed"] = False
         run.name(
@@ -1116,9 +1168,9 @@ def _judge(run: _Run, judged: _Judged) -> dict[str, Any]:
             "questions about the fallback bundle's indicators are not replayed",
         )
 
-    from maljan.agents.judge_postprocess import build_evidence_corpus
-    from maljan.pipeline.evidence_summary import collect as collect_technique_sources
-    from maljan.pipeline.nodes import _tools_that_were_shortened, judge_sandbox_facts
+    from malspark.agents.judge_postprocess import build_evidence_corpus
+    from malspark.pipeline.evidence_summary import collect as collect_technique_sources
+    from malspark.pipeline.nodes import _tools_that_were_shortened, judge_sandbox_facts
 
     run.name(
         "judge evidence",
@@ -1212,12 +1264,12 @@ def _stored_review(run: _Run) -> Any:
     left out; the stored record keeps only what the matrix wrote of it: which
     techniques it dropped, kept or left unconfirmed, and its reasons.
     """
-    from maljan.schemas.isr_models import (
+    from malspark.schemas.isr_models import (
         JUDGE_UNCONFIRMED_TECHNIQUE_MARKER,
         judge_dropped_reason,
         judge_kept_note,
     )
-    from maljan.schemas.stix_models import TechniqueDecision, TechniqueReview
+    from malspark.schemas.stix_models import TechniqueDecision, TechniqueReview
 
     dropped, kept = judge_dropped_reason(""), judge_kept_note("")
     asked: list[str] = []
@@ -1268,14 +1320,14 @@ def _verdict_fallback(bundle: Any, decision: str, codes: set[str]) -> dict[str, 
     report node's own reading of it is the platform's
     (``the_judge_stated_the_verdict``).
     """
-    from maljan.agents.judge_agent import VERDICT_FALLBACK_CODE, VERDICT_TIMEOUT_CODE
-    from maljan.pipeline.outcome import normalise_verdict
+    from malspark.agents.judge_agent import VERDICT_FALLBACK_CODE, VERDICT_TIMEOUT_CODE
+    from malspark.pipeline.outcome import normalise_verdict
 
-    stated = getattr(bundle, "x_maljan_fallback_verdict", None) if bundle is not None else None
+    stated = getattr(bundle, "x_malspark_fallback_verdict", None) if bundle is not None else None
     recorded = bool(codes & {VERDICT_FALLBACK_CODE, VERDICT_TIMEOUT_CODE})
     if stated is None and not recorded:
         return None
-    assessment = getattr(bundle, "x_maljan_assessment", None) if bundle is not None else None
+    assessment = getattr(bundle, "x_malspark_assessment", None) if bundle is not None else None
     return {
         "decision": decision,
         "failure": VERDICT_TIMEOUT_CODE if VERDICT_TIMEOUT_CODE in codes else VERDICT_FALLBACK_CODE,
@@ -1296,15 +1348,15 @@ def _decided_by_the_verdict() -> Callable[[str], bool]:
     """
     from types import SimpleNamespace
 
-    from maljan.agents.judge_agent import VERDICT_FALLBACK_REASON
-    from maljan.pipeline.outcome import INCONCLUSIVE_REASONS, unrecognised_verdict_reason
+    from malspark.agents.judge_agent import VERDICT_FALLBACK_REASON
+    from malspark.pipeline.outcome import INCONCLUSIVE_REASONS, unrecognised_verdict_reason
 
     fixed = {VERDICT_FALLBACK_REASON, *INCONCLUSIVE_REASONS}
     word = "replay sentinel verdict"
     opening = ""
     try:
         said = unrecognised_verdict_reason(
-            SimpleNamespace(x_maljan_assessment=SimpleNamespace(verdict=word))
+            SimpleNamespace(x_malspark_assessment=SimpleNamespace(verdict=word))
         )
         at = said.find(word)
         opening = said[:at].rstrip("'\"") if at > 0 else ""
@@ -1319,8 +1371,8 @@ def _decided_by_the_corpus() -> Callable[[str], bool]:
     Told by its opening, read off the platform's own function
     (``partial_grounding_reason``) for a corpus that kept nothing.
     """
-    from maljan.agents.run_evidence_corpus import CorpusState
-    from maljan.pipeline.validation import partial_grounding_reason
+    from malspark.agents.run_evidence_corpus import CorpusState
+    from malspark.pipeline.validation import partial_grounding_reason
 
     try:
         said = partial_grounding_reason(CorpusState(complete=False, missing_answers=1, why="x"))
@@ -1346,10 +1398,10 @@ def _degradation(
     A stored reason that is the operator's choice (``pipeline.operator_choice``)
     is moved to the choices, as the judge node now lists it, and named.
     """
-    from maljan.pipeline.nodes import informational_reasons_in_force
-    from maljan.pipeline.operator_choice import SampleFacts, split_operator_choices
-    from maljan.pipeline.outcome import corrected_reasons
-    from maljan.pipeline.triage_pack import run_is_degraded
+    from malspark.pipeline.nodes import informational_reasons_in_force
+    from malspark.pipeline.operator_choice import SampleFacts, split_operator_choices
+    from malspark.pipeline.outcome import corrected_reasons
+    from malspark.pipeline.triage_pack import run_is_degraded
 
     stored_reasons, moved = split_operator_choices(stored.get("degradation_reasons") or [])
     choices = list(dict.fromkeys([*(str(r) for r in stored.get("operator_choices") or []), *moved]))
@@ -1411,12 +1463,12 @@ def _replayed_validation(run: _Run) -> dict[str, Any]:
     counted where its round counts it. Retries and what each producer was told
     and fixed are model turns, which the replay does not make.
     """
-    from maljan.pipeline.validation import (
+    from malspark.pipeline.validation import (
         VALIDITY_CODE,
         validation_metrics,
         validity_check_available,
     )
-    from maljan.tools import knowledge
+    from malspark.tools import knowledge
 
     unresolved = [
         (agent, finding) for agent, found in run.in_force_found.items() for finding in found
@@ -1439,28 +1491,28 @@ def _replayed_validation(run: _Run) -> dict[str, Any]:
 
 
 def _build(run: _Run, judged: _Judged, built: _Built) -> dict[str, Any]:
-    from maljan.agents.judge_agent import VERDICT_FALLBACK_CODE, VERDICT_FALLBACK_REASON
-    from maljan.pipeline.nodes import (
+    from malspark.agents.judge_agent import VERDICT_FALLBACK_CODE, VERDICT_FALLBACK_REASON
+    from malspark.pipeline.nodes import (
         _overall_confidence,
         evidence_summary,
         the_judge_stated_the_verdict,
         with_verdict_fallback,
     )
-    from maljan.pipeline.outcome import (
+    from malspark.pipeline.outcome import (
         decide_from_bundle,
         unrecognised_verdict_reason,
         verdict_for_run,
     )
-    from maljan.pipeline.validation import corroboration
-    from maljan.reporting.builder import MalwareReportBuilder
-    from maljan.reporting.ledger_report import section_is_grounded
+    from malspark.pipeline.validation import corroboration
+    from malspark.reporting.builder import MalwareReportBuilder
+    from malspark.reporting.ledger_report import section_is_grounded
 
     bundle = judged.bundle
-    if bundle is not None and getattr(bundle, "x_maljan_technique_review", None) is None:
+    if bundle is not None and getattr(bundle, "x_malspark_technique_review", None) is None:
         # Set on every bundle the judge node hands on, as the node sets it.
-        bundle.x_maljan_technique_review = _stored_review(run)
+        bundle.x_malspark_technique_review = _stored_review(run)
     stix_output = bundle.model_dump() if bundle is not None else {}
-    assessment = getattr(bundle, "x_maljan_assessment", None) if bundle is not None else None
+    assessment = getattr(bundle, "x_malspark_assessment", None) if bundle is not None else None
     decision = decide_from_bundle(bundle) if bundle is not None else "Suspicious"
     unreadable = unrecognised_verdict_reason(bundle) if bundle is not None else ""
     decision, inconclusive = verdict_for_run(
@@ -1481,7 +1533,7 @@ def _build(run: _Run, judged: _Judged, built: _Built) -> dict[str, Any]:
         )
         if reason
     ]
-    from maljan.pipeline.validation import partial_grounding_reason
+    from malspark.pipeline.validation import partial_grounding_reason
 
     corpus_state = run.corpus_state or _what_the_run_saw(run)[1]
     # As the judge node: only where there was something to ground against.
@@ -1495,7 +1547,7 @@ def _build(run: _Run, judged: _Judged, built: _Built) -> dict[str, Any]:
     summary["corroboration"] = corroboration(run.isrs, run.ledger)
     # The rebuilt bundle's size, as the judge node counts it (``set_verdict``);
     # the export's own replaces the first once it is built (``_report_values``).
-    from maljan.schemas.stix_models import Bundle
+    from malspark.schemas.stix_models import Bundle
 
     counted = len(bundle.objects) if isinstance(bundle, Bundle) else 0
     summary["stix_object_count"] = summary["judge_stix_object_count"] = counted
@@ -1543,14 +1595,14 @@ def _build(run: _Run, judged: _Judged, built: _Built) -> dict[str, Any]:
 
 def _report_inputs(run: _Run, built: _Built) -> None:
     """The run's sandbox items and each entry's text, as the report rounds read them."""
-    from maljan.analysis.sandbox_sections import ItemCitations, item_index_of
-    from maljan.pipeline.validation import EntryTexts
+    from malspark.analysis.sandbox_sections import ItemCitations, item_index_of
+    from malspark.pipeline.validation import EntryTexts
 
     index = item_index_of(run.pack)
     built.items = ItemCitations(index, None) if index is not None else None
     entries = EntryTexts.from_ledger(list(run.ledger), None)
     if built.items is not None:
-        from maljan.pipeline.nodes import with_item_texts
+        from malspark.pipeline.nodes import with_item_texts
 
         entries = with_item_texts(entries, built.items)
     built.entries = entries
@@ -1566,8 +1618,8 @@ def _run_corpus(run: _Run) -> Any:
     """
     if run.corpus is not None:
         return run.corpus
-    from maljan.agents.run_evidence_corpus import RunEvidenceCorpus
-    from maljan.core.config import get_settings
+    from malspark.agents.run_evidence_corpus import RunEvidenceCorpus
+    from malspark.core.config import get_settings
 
     ceiling = int(getattr(get_settings().reporting, "evidence_corpus_bytes", 0) or 0)
     corpus = RunEvidenceCorpus(ceiling)
@@ -1597,14 +1649,14 @@ def _run_corpus(run: _Run) -> Any:
 
 def _report_values(run: _Run, built: _Built, judged: _Judged) -> dict[str, Any]:
     """The values the export and the IOC table decide, read off the rebuilt report."""
-    from maljan.core.config import get_settings
-    from maljan.core.truncation_ledger import TruncationLedger
-    from maljan.pipeline.evidence_summary import collect as collect_technique_sources
-    from maljan.pipeline.evidence_summary import technique_evidence
-    from maljan.reporting.builder import build_consolidated_iocs
-    from maljan.reporting.misp import build_misp_attributes, misp_owner
-    from maljan.reporting.renderers.stix_renderer import ExtendedSTIXRenderer
-    from maljan.schemas.stix_models import Bundle
+    from malspark.core.config import get_settings
+    from malspark.core.truncation_ledger import TruncationLedger
+    from malspark.pipeline.evidence_summary import collect as collect_technique_sources
+    from malspark.pipeline.evidence_summary import technique_evidence
+    from malspark.reporting.builder import build_consolidated_iocs
+    from malspark.reporting.misp import build_misp_attributes, misp_owner
+    from malspark.reporting.renderers.stix_renderer import ExtendedSTIXRenderer
+    from malspark.schemas.stix_models import Bundle
 
     report = built.report
     reporting = get_settings().reporting
@@ -1645,7 +1697,7 @@ def _report_values(run: _Run, built: _Built, judged: _Judged) -> dict[str, Any]:
             "the IOC table is the build's own",
         )
 
-    from maljan.schemas.isr_models import judge_dropped_reason
+    from malspark.schemas.isr_models import judge_dropped_reason
 
     # A technique the judge dropped carries the judge's own reason; it is the
     # judge's text, added only with the text.
@@ -2110,7 +2162,7 @@ class _Row:
 
 def _claims_not_discussed(run: _Run, built: _Built) -> dict[str, list[int]]:
     """Per analyst, the numbers of the claims in force the composed body leaves undiscussed."""
-    from maljan.reporting.claim_coverage import claims_not_discussed
+    from malspark.reporting.claim_coverage import claims_not_discussed
 
     rows = claims_not_discussed(built.report, run.isrs)
     built.report.claims_not_discussed = rows
@@ -2123,7 +2175,7 @@ def _claims_not_discussed(run: _Run, built: _Built) -> dict[str, list[int]]:
 def _drafts(run: _Run, report: Any) -> dict[str, Any]:
     """The detection rules drafted from what the export published, by format."""
     try:
-        from maljan.reporting.builder import MalwareReportBuilder
+        from malspark.reporting.builder import MalwareReportBuilder
 
         rules = MalwareReportBuilder.attach_detection_signatures(report).detection_signatures
     except Exception as exc:  # noqa: BLE001 — named as an error, the report values stand
@@ -2139,7 +2191,7 @@ def _drafts(run: _Run, report: Any) -> dict[str, Any]:
 def _apply_composed(run: _Run, built: _Built) -> None:
     """The composed sections the stored report holds, put on the rebuilt report as the composer
     puts its answers: what the export, the claim coverage and the linter then read."""
-    from maljan.reporting.models import C2Channel, TechnicalAnalysis
+    from malspark.reporting.models import C2Channel, TechnicalAnalysis
 
     stored = run.stored.report or {}
     report = built.report
@@ -2156,7 +2208,7 @@ def _apply_composed(run: _Run, built: _Built) -> None:
 
 def _fp_linter(run: _Run, built: _Built) -> dict[str, Any]:
     """The report linter's warnings over the finished report, by rule and field."""
-    from maljan.qa.fp_linter import lint_report
+    from malspark.qa.fp_linter import lint_report
 
     flags: list[dict[str, Any]] = []
     for warning in lint_report(built.report, run.identity.get("platform") or "unknown"):
@@ -2170,9 +2222,9 @@ def _fp_linter(run: _Run, built: _Built) -> dict[str, Any]:
 
 
 def _narrative(run: _Run, built: _Built) -> dict[str, Any]:
-    from maljan.pipeline import validation as v
-    from maljan.reporting.builder import MalwareReportBuilder
-    from maljan.reporting.narrative_agent import (
+    from malspark.pipeline import validation as v
+    from malspark.reporting.builder import MalwareReportBuilder
+    from malspark.reporting.narrative_agent import (
         NARRATIVE_PROSE,
         NarrativeOutput,
         published_answers,
@@ -2219,7 +2271,7 @@ def _narrative(run: _Run, built: _Built) -> dict[str, Any]:
     # or cites a stray id is kept with the finding recorded; a broken one is
     # none, and the report says why where the summary would have been. The
     # composer writes over the report this leaves.
-    from maljan.pipeline.validation import KEPT_WITH_A_FINDING
+    from malspark.pipeline.validation import KEPT_WITH_A_FINDING
 
     broken = [f for f in found if f.code not in KEPT_WITH_A_FINDING]
     if broken:
@@ -2238,15 +2290,16 @@ def _stored_at(report: Mapping[str, Any], place: str) -> Any:
 
 
 def _composer(run: _Run, built: _Built) -> dict[str, Any]:
-    from maljan.pipeline import validation as v
-    from maljan.reporting import composer as c
-    from maljan.reporting.evidence_bundles import (
+    from malspark.pipeline import validation as v
+    from malspark.reporting import composer as c
+    from malspark.reporting import composer_pro as pro
+    from malspark.reporting.evidence_bundles import (
         sample_flow_fact,
         sandbox_entry_ids,
         sandbox_item_observation,
         sandbox_saw_no_persistence,
     )
-    from maljan.reporting.models import EncryptionScheme, RansomNote
+    from malspark.reporting.models import EncryptionScheme, RansomNote
 
     report = built.report
     stored = run.stored.report or {}
@@ -2261,6 +2314,7 @@ def _composer(run: _Run, built: _Built) -> dict[str, Any]:
         "ransom_note": RansomNote,
         "communications": c._C2Out,
         **dict.fromkeys(c._PROSE_SECTIONS, c._ProseOut),
+        **pro.ANALYST_SECTIONS,
     }
     items = built.items
     entries = built.entries
@@ -2273,7 +2327,24 @@ def _composer(run: _Run, built: _Built) -> dict[str, Any]:
     entry_tools = {row.id: str(row.tool or "") for row in report.evidence_index}
     flow_fact = sample_flow_fact(report)
     saw_no_persistence = sandbox_saw_no_persistence(report)
+    published_ids = list(pro.published_techniques(report))
+    names = pro.agent_names(report)
+    findings_text = "\n".join([report.executive_summary, *(f.text for f in report.key_findings)])
+    held = pro.held_text(report)
+    firsts = pro.first_claim_sentences(report)
+    reader = pro.ValueReader.of(report)
     extras: dict[str, list[Callable[[Any], list[Any]]]] = {
+        "communications": [lambda p: pro.channel_binding_violations(p, entries)],
+        "summary": [
+            lambda p: pro.summary_shape_violations(p),
+            lambda p: pro.summary_value_violations(p, findings_text, held, reader),
+        ],
+        "conclusion": [lambda p: pro.conclusion_shape_violations(p)],
+        "limitations": [lambda p: pro.limitations_shape_violations(p)],
+        "attack_procedures": [
+            lambda p: pro.procedure_violations(p, published_ids),
+            lambda p: pro.procedure_value_violations(p, firsts, reader),
+        ],
         "execution_flow": [
             lambda p: v.flow_voice_violations(
                 p,
@@ -2302,6 +2373,12 @@ def _composer(run: _Run, built: _Built) -> dict[str, Any]:
     }
     sections: dict[str, Any] = {}
     not_written: list[str] = []
+    run.name(
+        "composer style_violations",
+        "the tool outputs and code each section was shown are not in the stored record: a "
+        "phrasing they held, which the round reads as the evidence's own term, is asked about "
+        "here",
+    )
     for section in c.COMPOSED_SECTIONS:
         schema = schemas.get(section)
         if schema is None:
@@ -2315,7 +2392,7 @@ def _composer(run: _Run, built: _Built) -> dict[str, Any]:
         if not value:
             not_written.append(section)
             continue
-        if section in c._PROSE_SECTIONS:
+        if section in c._PROSE_SECTIONS or schema in (pro.ConclusionOut, pro.LimitationsOut):
             payload: Any = {
                 "body": str(value.get("body") or ""),
                 "evidence_refs": list(value.get("evidence_refs") or []),
@@ -2340,6 +2417,7 @@ def _composer(run: _Run, built: _Built) -> dict[str, Any]:
         ]
         for extra in extras.get(section, []):
             found.extend(extra(payload))
+        found.extend(pro.style_violations(payload, names))
         flags = [_flag(f, show_text=run.show_text) for f in found]
         sections[section] = {"codes": _tally(flags), "flags": flags}
     codes: Counter[str] = Counter()
@@ -2359,7 +2437,7 @@ def _composer(run: _Run, built: _Built) -> dict[str, Any]:
 
 
 def _tools(run: _Run) -> dict[str, Any]:
-    from maljan.agents.evidence_recorder import SELF_NAMED_ARGUMENT_CODE, self_named_arguments
+    from malspark.agents.evidence_recorder import SELF_NAMED_ARGUMENT_CODE, self_named_arguments
 
     flags: list[dict[str, Any]] = []
     for entry in run.ledger:
@@ -2380,8 +2458,8 @@ def _tools(run: _Run) -> dict[str, Any]:
 
 
 def _corroboration(run: _Run, built: _Built) -> dict[str, Any]:
-    from maljan.analysis.corroboration import corroborated
-    from maljan.pipeline.validation import corroboration
+    from malspark.analysis.corroboration import corroborated
+    from malspark.pipeline.validation import corroboration
 
     rows = corroboration(run.isrs, run.ledger)
     published = {
@@ -2412,9 +2490,9 @@ def _corroboration(run: _Run, built: _Built) -> dict[str, Any]:
 
 def rules_source() -> dict[str, str]:
     """Where the rules this process runs were imported from."""
-    import maljan
+    import malspark
 
-    root = Path(maljan.__file__).resolve().parents[2]
+    root = Path(malspark.__file__).resolve().parents[2]
     return {"tree": str(root)}
 
 
@@ -2437,6 +2515,7 @@ def _settings_notes(run: _Run) -> None:
         ("analysts", ANALYST_NOT_REPLAYED),
         ("judge", JUDGE_NOT_REPLAYED),
         ("composer", COMPOSER_NOT_REPLAYED),
+        ("agreement", AGREEMENT_NOT_REPLAYED),
     ):
         for check, why in missing.items():
             run.name(part, f"{check} is not replayed: {why}")
@@ -2481,7 +2560,7 @@ def replay_run(stored: StoredRun, *, show_text: bool = False) -> dict[str, Any]:
         out["analysts"] = _analysts(run)
         judged = _Judged()
         try:
-            from maljan.pipeline.validation import mark_claims_citing_only_failed_calls
+            from malspark.pipeline.validation import mark_claims_citing_only_failed_calls
 
             mark_claims_citing_only_failed_calls(run.isrs, run.ledger)
         except Exception as exc:  # noqa: BLE001

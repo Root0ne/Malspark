@@ -47,8 +47,7 @@ updates:
         update-types: ["version-update:semver-major"]
     open-pull-requests-limit: 5
 
-  # The documentation site; same Node line and the same TypeScript hold as
-  # the console.
+  # The docs content check (MDX compiler and its plugins).
   - package-ecosystem: "npm"
     directory: "/apps/docs"
     schedule:
@@ -59,11 +58,6 @@ updates:
     groups:
       docs-minor-and-patch:
         update-types: ["minor", "patch"]
-    ignore:
-      - dependency-name: "@types/node"
-        update-types: ["version-update:semver-major"]
-      - dependency-name: "typescript"
-        update-types: ["version-update:semver-major"]
     open-pull-requests-limit: 5
 
   # The sidecars of one analysis program each pin their own packages by hash:
@@ -109,10 +103,22 @@ updates:
     groups:
       unblob-minor-and-patch:
         update-types: ["minor", "patch"]
+    # A hashed file is bumped entry by entry, without the bounds the packages
+    # that need an entry put on it: jefferson and ubi-reader take lzallright
+    # below 0.3.0, unblob takes plotext below 6.0. A bump past either leaves
+    # the image build no resolution.
     ignore:
       - dependency-name: "mcp"
         update-types: ["version-update:semver-major"]
+      - dependency-name: "lzallright"
+        versions: [">=0.3.0"]
+      - dependency-name: "plotext"
+        versions: [">=6.0"]
     open-pull-requests-limit: 5
+
+  # scripts/floss/requirements.txt, the backend image's FLOSS environment on
+  # arm64, has no entry: it is moved by hand, with the re-pin recipe that file
+  # gives.
 
   - package-ecosystem: "npm"
     directory: "/services/webcrack-mcp"
@@ -156,8 +162,13 @@ updates:
         update-types: ["version-update:semver-major"]
       - dependency-name: "node"
         update-types: ["version-update:semver-major"]
+      # Dockerfile.minio compiles the pinned MinIO release with a supported
+      # Go; a Go 2 would be a migration of its own. Minor, patch and digest
+      # bumps still come.
+      - dependency-name: "golang"
+        update-types: ["version-update:semver-major"]
 
-  # The images compose pulls (postgres, redis, qdrant, minio), each pinned by
+  # The images compose pulls (postgres, redis, qdrant), each pinned by
   # tag and digest; the entry above reads the Dockerfiles only. A digest bump
   # here keeps its tag, and a tag bump moves both.
   - package-ecosystem: "docker-compose"

@@ -16,7 +16,7 @@ import time
 
 import pytest
 
-from maljan.reporting.models import (
+from malspark.reporting.models import (
     FileHashes,
     MalwareReport,
     NetworkDomain,
@@ -27,8 +27,8 @@ from maljan.reporting.models import (
     TechnicalAnalysis,
     TechnicalSubsection,
 )
-from maljan.reporting.renderers.html import HtmlRenderer
-from maljan.reporting.renderers.markdown import MarkdownRenderer, _defanged_text
+from malspark.reporting.renderers.html import HtmlRenderer
+from malspark.reporting.renderers.markdown import MarkdownRenderer, _defanged_text
 
 HOST = "evil.example.com"
 SHA = "a" * 64
@@ -114,10 +114,10 @@ def test_no_payload_is_live_after_the_defanger(payload: str) -> None:
     ],
 )
 def test_text_nested_deep_renders_quickly_as_text(nested: str) -> None:
-    started = time.monotonic()
+    started = time.thread_time()
     markdown = MarkdownRenderer().render(_report(nested))
     html = HtmlRenderer().render(_report(nested))
-    elapsed = time.monotonic() - started
+    elapsed = time.thread_time() - started
 
     assert elapsed < 30
     assert "x" in markdown and "x" in html
@@ -141,7 +141,7 @@ def test_a_reverse_dns_host_in_the_evidence_is_read_and_defanged() -> None:
 
 
 def test_a_package_name_with_no_network_evidence_is_no_host() -> None:
-    from maljan.pipeline.validation import network_values_in, recommendation_indicator_violations
+    from malspark.pipeline.validation import network_values_in, recommendation_indicator_violations
 
     assert network_values_in("It loads com.facebook.react.bridge.app.") == []
     payload = {

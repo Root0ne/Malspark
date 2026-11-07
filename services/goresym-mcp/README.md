@@ -2,9 +2,11 @@
 
 GoReSym over MCP: a Go binary's functions, build facts, types and strings,
 read from the Go runtime's own tables (pclntab, moduledata, build info) in PE,
-ELF and Mach-O files, stripped or not. Tools around GoReSym 3.4.1 (MIT), the
-release's static Linux build, checked against the release's sha256 and the
-binary's own, in an image of its own. The shared plumbing is `../cli-sidecar`.
+ELF and Mach-O files, stripped or not. Tools around GoReSym 3.4.1 (MIT) in an
+image of its own: on amd64 the release's static Linux build, checked against
+the release's sha256 and the binary's own; on arm64, for which the release has
+no build, the tag's commit compiled with a pinned Go toolchain and checked
+against the sha256 that build gives. The shared plumbing is `../cli-sidecar`.
 
 Shipped as the built-in server block `goresym`, switched off, reached at
 `http://goresym-mcp:8092/mcp` under the compose profile `goresym`.
@@ -23,6 +25,7 @@ Every tool takes `path`, and `go_version` to override the detected Go version
 
 A file with no Go table GoReSym can read is answered `unsupported_format`.
 The platform declares `go_symbols` of kind `function_list`, `go_types` of kind
-`type_list` and `go_strings` of kind `embedded_strings`. The triage pack's
-`go_symbols` step runs on a PE, ELF or Mach-O sample whose Detect It Easy
-answer names the Go compiler.
+`type_list` and `go_strings` of kind `embedded_strings`, each reading the `go`
+runtime (`runtimes`). The triage pack takes `go_symbols` and `go_types` as
+steps by their kinds, on a PE, ELF or Mach-O sample whose identification
+answer names the `go` runtime.

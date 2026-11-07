@@ -10,11 +10,12 @@ import secrets
 import uuid
 from typing import Any, Literal
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
 from fastapi.responses import HTMLResponse, PlainTextResponse
-from maljan.core.logger import logger
-from maljan.core.settings_overrides import redact_url
-from maljan.reporting.section_servers import with_source_servers
+from malspark.core.logger import logger
+from malspark.core.settings_overrides import redact_url
+from malspark.reporting.section_servers import with_source_servers
+from malspark.schemas.stix_models import with_current_property_names
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
@@ -84,7 +85,7 @@ def _section_tabs(malware_report: Any) -> dict[str, str]:
     """
     if not isinstance(malware_report, dict):
         return {}
-    from maljan.reporting.section_tabs import section_tabs
+    from malspark.reporting.section_tabs import section_tabs
 
     try:
         return section_tabs(malware_report)
@@ -206,10 +207,10 @@ async def get_stix_bundle(
     The judge's bundle is labelled ``"published": false`` with a notice: it is
     an unpublished draft that did not pass the publish rule. A run that made no
     export stores that bundle as the report's bundle, and the stored bundle
-    then carries ``x_maljan_published: false`` and the same notice, and the
+    then carries ``x_malspark_published: false`` and the same notice, and the
     default source answers it in the same envelope: ``published: false``, the
     notice and the bundle under ``bundle``. ``published`` is the envelope's
-    name for the flag, ``x_maljan_published`` only the stored bundle's.
+    name for the flag, ``x_malspark_published`` only the stored bundle's.
     """
     if source == "judge":
         report = await svc.get_report(report_id, user)
@@ -226,13 +227,13 @@ async def get_stix_bundle(
                 "bundle": None,
                 "labels": {},
             }
-        from maljan.schemas.stix_models import UNPUBLISHED_NOTICE
+        from malspark.schemas.stix_models import UNPUBLISHED_NOTICE
 
         # Served as the run's record and labelled: it is a draft that did not
         # pass the publish rule, never the export.
         return {
             "kept": True,
-            **report.judge_stix_bundle,
+            **with_current_property_names(report.judge_stix_bundle),
             "published": False,
             "notice": UNPUBLISHED_NOTICE,
         }
@@ -242,8 +243,13 @@ async def get_stix_bundle(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Report not found or STIX bundle not available",
         )
-    if isinstance(bundle, dict) and bundle.get("x_maljan_published") is False:
-        from maljan.schemas.stix_models import UNPUBLISHED_NOTICE
+    # A bundle stored before the rename names its custom properties under the
+    # previous product name; served under the current ones, its
+    # ``x_malspark_published: false`` keeps it a draft.
+    current: dict[Any, Any] = with_current_property_names(bundle)
+    bundle = current
+    if bundle.get("x_malspark_published") is False:
+        from malspark.schemas.stix_models import UNPUBLISHED_NOTICE
 
         return {"published": False, "notice": UNPUBLISHED_NOTICE, "bundle": bundle}
     return bundle
@@ -266,7 +272,7 @@ async def get_attack_navigator_layer(
     no published technique answers 200 with an empty layer; only an unknown or
     unauthorized report, or one with no stored report document, is 404.
     """
-    from maljan.reporting.navigator_layer import build_layer
+    from malspark.reporting.navigator_layer import build_layer
 
     mr = await svc.get_malware_report(report_id, user)
     if mr is None:
@@ -277,7 +283,7 @@ async def get_attack_navigator_layer(
     # The bundle-free build runs off the event loop all the same: it walks the
     # stored mappings and the vendored tables.
     return await asyncio.to_thread(
-        build_layer, mr, name=f"Maljan report {report_id}", domain=domain
+        build_layer, mr, name=f"Malspark report {report_id}", domain=domain
     )
 
 
@@ -400,6 +406,7 @@ async def get_full_malware_report_html(
 )
 async def get_full_malware_report_pdf(
     report_id: uuid.UUID,
+    request: Request,
     user: User = Depends(get_current_user),
     svc: ReportService = Depends(_get_service),
 ) -> Response:
@@ -410,10 +417,17 @@ async def get_full_malware_report_pdf(
     503 (not 500) when the PDF toolchain is unavailable on the host — the report
     is fine, only this one export cannot be produced.
     """
-    from maljan.reporting.renderers import PdfUnavailableError
+    from malspark.reporting.renderers import PdfUnavailableError
 
+    # The analyst report's PDF names where the API serves the bundle, as a path in
+    # text: no setting names the public address, and the request's Host is not one.
+    bundle_location = str(
+        request.app.url_path_for("get_evidence_bundle_html", report_id=str(report_id))
+    )
     try:
-        rendered = await svc.get_malware_report_pdf(report_id, user)
+        rendered = await svc.get_malware_report_pdf(
+            report_id, user, bundle_location=bundle_location
+        )
     except PdfUnavailableError as exc:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)
@@ -426,6 +440,67 @@ async def get_full_malware_report_pdf(
     return Response(
         content=rendered.content,
         media_type="application/pdf",
+        headers=_disposition(rendered.filename, attachment=True),
+    )
+
+
+# The evidence bundle is served at the names the analyst report links to, under
+# the report's own route, so a relative link from ``/html`` resolves here as it
+# does beside a downloaded report.
+@router.get("/{report_id}/evidence-bundle.html", response_class=HTMLResponse)
+async def get_evidence_bundle_html(
+    report_id: uuid.UUID,
+    download: bool = Query(
+        default=False,
+        description="Serve as a file download instead of rendering in the browser.",
+    ),
+    user: User = Depends(get_current_user),
+    svc: ReportService = Depends(_get_service),
+) -> Response:
+    """Render the evidence bundle behind the analyst report as a standalone HTML document.
+
+    Every section the single-file report prints, the analyst report's citation
+    notes, and an anchor for each evidence id, note and section the analyst
+    report links to. Self-contained, as ``/html`` is, and served under the
+    same policy.
+    """
+    nonce = base64.b64encode(secrets.token_bytes(16)).decode()
+    rendered = await svc.get_evidence_bundle_html(report_id, user, nonce=nonce)
+    if rendered is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Report not found or the evidence bundle could not be rendered",
+        )
+    headers = _disposition(rendered.filename, attachment=download)
+    headers["Content-Security-Policy"] = (
+        "default-src 'none'; img-src data:; "
+        f"style-src 'nonce-{nonce}'; style-src-attr 'unsafe-inline'; "
+        "script-src 'none'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'"
+    )
+    return Response(
+        content=rendered.content,
+        media_type="text/html; charset=utf-8",
+        headers=headers,
+    )
+
+
+@router.get("/{report_id}/evidence-bundle.json")
+async def get_evidence_bundle_json(
+    report_id: uuid.UUID,
+    user: User = Depends(get_current_user),
+    svc: ReportService = Depends(_get_service),
+) -> Response:
+    """The evidence bundle as JSON: the analyst report's notes, the evidence index and
+    every section of the bundle as Markdown under its anchor."""
+    rendered = await svc.get_evidence_bundle_json(report_id, user)
+    if rendered is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Report not found or the evidence bundle could not be rendered",
+        )
+    return Response(
+        content=rendered.content,
+        media_type="application/json",
         headers=_disposition(rendered.filename, attachment=True),
     )
 

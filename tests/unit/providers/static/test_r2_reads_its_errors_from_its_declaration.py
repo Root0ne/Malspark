@@ -15,7 +15,7 @@ import time
 
 import pytest
 
-from maljan.providers.static import r2
+from malspark.providers.static import r2
 
 _ENVELOPE = re.compile(r"<log>(?P<body>.*)</log>", re.DOTALL)
 _LOG_LINE = re.compile(r"\[(?P<level>[A-Z]+)\]\s*\S.*")
@@ -111,9 +111,9 @@ def test_two_hundred_thousand_random_replies_are_decided_as_before() -> None:
 def test_a_hostile_envelope_is_read_in_linear_time() -> None:
     def timed(n: int) -> float:
         reply = "<log>" + "[INFO] [ERROR] x\n" * n + "not a line"
-        started = time.perf_counter()
+        started = time.thread_time()
         assert r2._r2_logged_error(reply) is None
-        return time.perf_counter() - started
+        return time.thread_time() - started
 
     timed(1_000)
     small, large = timed(5_000), timed(50_000)

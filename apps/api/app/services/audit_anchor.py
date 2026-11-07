@@ -17,7 +17,11 @@ settings store, so a database writer cannot switch it off:
 - ``object_store``: one object per head in the platform's bucket
   (``OBJECT_PREFIX``), written under the bucket's object lock when it has one,
   under a legal hold when the lock has no default retention, and plainly when
-  the bucket has no lock.
+  the bucket has no lock. It reads and writes through its own client, not the
+  object store's primitives, so a bucket that lets an anonymous caller in
+  (``object_store.require_private``) does not stop it: a head is a hash of the
+  chain, not a sample, and the chain must keep being anchored while the
+  operator fixes the store.
 - ``none`` (or nothing configured): today's behaviour, and every verification
   says so (:data:`NOT_CONFIGURED`); nothing claims more than the database head.
 
@@ -443,10 +447,10 @@ class ObjectStoreAnchor(ChainAnchor):
     def _bucket_lock(self) -> BucketLock:
         if self._lock is not None:
             return self._lock
-        from app.config import settings
+        from app.services import object_store
 
         try:
-            config = self._client().get_object_lock_config(settings.minio_bucket)
+            config = self._client().get_object_lock_config(object_store.bucket(self._client()))
         except Exception as exc:  # noqa: BLE001 — sorted below: no lock, or the store is down
             code = getattr(exc, "code", "")
             if code in ("ObjectLockConfigurationNotFoundError", "InvalidRequest"):
@@ -462,10 +466,10 @@ class ObjectStoreAnchor(ChainAnchor):
         return self._lock
 
     def _read(self, name: str, version_id: str | None = None) -> AnchoredHead:
-        from app.config import settings
+        from app.services import object_store
 
         kwargs = {"version_id": version_id} if version_id else {}
-        response = self._client().get_object(settings.minio_bucket, name, **kwargs)
+        response = self._client().get_object(object_store.bucket(self._client()), name, **kwargs)
         try:
             body = bytes(response.read())
         finally:
@@ -475,7 +479,7 @@ class ObjectStoreAnchor(ChainAnchor):
 
     def _listing(self, *, prefix: str = OBJECT_PREFIX, start_after: str | None = None) -> dict:
         """Every head object under ``prefix`` after ``start_after``, by name, with its versions."""
-        from app.config import settings
+        from app.services import object_store
 
         kwargs: dict[str, Any] = {"prefix": prefix, "recursive": True}
         if self._bucket_lock().enabled:
@@ -483,7 +487,7 @@ class ObjectStoreAnchor(ChainAnchor):
         if start_after:
             kwargs["start_after"] = start_after
         found: dict[str, list[Any]] = {}
-        for item in self._client().list_objects(settings.minio_bucket, **kwargs):
+        for item in self._client().list_objects(object_store.bucket(self._client()), **kwargs):
             name = str(item.object_name)
             if name.startswith(OBJECT_PREFIX) and name.endswith(".json"):
                 found.setdefault(name, []).append(item)
@@ -535,7 +539,6 @@ class ObjectStoreAnchor(ChainAnchor):
         return self._read(name, self._first(versions))
 
     def _put(self, head: AnchoredHead) -> None:
-        from app.config import settings
         from app.services import object_store
 
         store = self._client()
@@ -550,7 +553,7 @@ class ObjectStoreAnchor(ChainAnchor):
         record = dict(head.record(), anchored_at=datetime.now(UTC).isoformat())
         blob = json.dumps(record, sort_keys=True, separators=(",", ":")).encode("utf-8")
         store.put_object(
-            settings.minio_bucket,
+            object_store.bucket(store),
             name,
             io.BytesIO(blob),
             length=len(blob),

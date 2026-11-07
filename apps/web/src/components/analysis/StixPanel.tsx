@@ -3,16 +3,13 @@
 import { useState, useEffect } from "react";
 
 import { api } from "@/lib/api";
-import { copyToClipboard, downloadBlob } from "@/lib/report-utils";
+import CopyButton from "@/components/ui/CopyButton";
 import { getErrorMessage } from "@/lib/errors";
-import { useReport } from "@/app/(app)/analysis/[id]/layout";
-import JsonNode from "@/components/analysis/JsonTree";
+import { useReport } from "@/components/analysis/AnalysisContext";
+import { RawJson } from "@/components/analysis/StructuredValue";
 import StixGraphView from "@/components/analysis/StixGraph";
 import {
   GRAPH_FIRST_LIMIT,
-  NAVIGATOR_LAYER_FILE,
-  STIX_DRAFT_FILE,
-  STIX_EXPORT_FILE,
   bundleObjects,
   graphViewHint,
   readStixAnswer,
@@ -30,11 +27,9 @@ const VIEWS: { key: View; label: string }[] = [
 export default function StixPanel() {
   const { report, job, loading } = useReport();
   const [stixData, setStixData] = useState<Record<string, unknown> | null>(null);
-  const [copied, setCopied] = useState(false);
-  // The fetch and the copy
-  // button both used to fail silently.
+  // The fetch used to fail silently; a refused copy says so beside its
+  // button (`CopyButton`).
   const [fetchError, setFetchError] = useState<string | null>(null);
-  const [actionError, setActionError] = useState<string | null>(null);
   // Nothing chosen yet means the view the bundle's size opens on, read on
   // every render so a bundle that arrives after the stored copy decides it.
   const [chosen, setChosen] = useState<View | null>(null);
@@ -76,7 +71,8 @@ export default function StixPanel() {
       {/* The heading used to be repeated here, directly under
           the parent DETECTION tab's "STIX 2.1 bundle (export)" heading. */}
       <div className="flex flex-wrap items-center gap-2 px-4 py-3 border-b border-border">
-        <div role="group" aria-label="How the bundle is shown" className="flex gap-1">
+        {/* One segmented control: the three views are one choice. */}
+        <div role="group" aria-label="How the bundle is shown" className="inline-flex overflow-hidden rounded border border-border">
           {VIEWS.map((v) => (
             <button
               key={v.key}
@@ -84,10 +80,10 @@ export default function StixPanel() {
               aria-pressed={view === v.key}
               title={v.key === "graph" ? (graphViewHint(objectCount) ?? undefined) : undefined}
               onClick={() => setChosen(v.key)}
-              className={`rounded border px-2.5 py-1 text-xs ${
+              className={`min-h-6 border-l border-border px-2.5 py-1 text-xs first:border-l-0 ${
                 view === v.key
-                  ? "border-accent text-accent"
-                  : "border-border text-text-secondary hover:text-text-primary"
+                  ? "bg-bg-active font-medium text-text-primary"
+                  : "text-text-secondary hover:bg-bg-hover hover:text-text-primary"
               }`}
             >
               {v.label}
@@ -98,68 +94,33 @@ export default function StixPanel() {
           <span className="text-[11px] text-text-muted">{graphViewHint(objectCount)}</span>
         )}
         <span className="flex-1" />
-        <button
-          onClick={async () => {
-            if (await copyToClipboard(raw)) {
-              setActionError(null);
-              setCopied(true);
-              setTimeout(() => setCopied(false), 1500);
-            } else {
-              setActionError("Could not copy to the clipboard — copy the JSON below manually.");
-            }
-          }}
-          className="px-3 py-1 text-xs text-text-secondary border border-border rounded hover:text-text-primary hover:border-text-muted"
-        >
-          {copied ? "copied" : "Copy JSON"}
-        </button>
-        <button
-          onClick={() =>
-            downloadBlob(raw, draft ? STIX_DRAFT_FILE : STIX_EXPORT_FILE, "application/json")
-          }
-          className="px-3 py-1 text-xs text-text-secondary border border-border rounded hover:text-text-primary hover:border-text-muted"
-        >
-          Download
-        </button>
-        <button
-          onClick={async () => {
-            if (!report?.id) return;
-            try {
-              const layer = await api.getReportAttackLayer(report.id);
-              setActionError(null);
-              downloadBlob(
-                JSON.stringify(layer, null, 2),
-                NAVIGATOR_LAYER_FILE,
-                "application/json",
-              );
-            } catch (err: unknown) {
-              setActionError(`Could not fetch the ATT&CK Navigator layer: ${getErrorMessage(err)}`);
-            }
-          }}
-          title="ATT&CK Navigator layer of the techniques this report publishes"
-          className="px-3 py-1 text-xs text-text-secondary border border-border rounded hover:text-text-primary hover:border-text-muted"
-        >
-          Navigator layer
-        </button>
+        <CopyButton value={raw} what="the STIX bundle as JSON" label="Copy JSON" />
       </div>
+      {/* The bundle and the ATT&CK Navigator layer download from the page's
+          one Export menu; a second pair of buttons here exported the same
+          two files again. */}
+      <p className="px-4 pt-3 text-[11px] text-text-muted">
+        To download the bundle or the ATT&amp;CK Navigator layer, use Export at the top of the page.
+      </p>
       {draft && (
         <div
           role="status"
           className="mx-4 mt-3 text-xs text-status-orange bg-status-orange/10 border border-status-orange/20 rounded px-2 py-1.5"
         >
-          {notice ?? "This is the judge's unpublished draft, not the export."}
+          {notice ?? "This is the analysis's unpublished draft, not the export."}
         </div>
       )}
-      {(fetchError || actionError) && (
+      {fetchError !== null && (
         <div
           role="alert"
           className="mx-4 mt-3 text-xs text-status-red bg-status-red/10 border border-status-red/20 rounded px-2 py-1.5"
         >
-          {actionError ?? (fetchError !== null ? stixFetchNotice(fetchError, Boolean(report?.stix_bundle)) : null)}
+          {stixFetchNotice(fetchError, Boolean(report?.stix_bundle))}
         </div>
       )}
       {view === "json" ? (
-        <div className="p-4 font-mono text-xs leading-relaxed overflow-x-auto">
-          <JsonNode data={bundle} />
+        <div className="p-4">
+          <RawJson value={bundle} name="STIX bundle" />
         </div>
       ) : (
         <div className="p-4 space-y-3">

@@ -1,4 +1,4 @@
-.PHONY: test lint typecheck format setup migrate check ci-check pre-commit-run prepare-attck prepare-api-db docker-build docker-up docker-down docker-logs dev-up dev-down dev-logs fe-rebuild worker-restart rebuild-ghidra external semgrep
+.PHONY: test lint typecheck format setup migrate check ci-check pre-commit-run prepare-attck prepare-api-db docker-build docker-up docker-down docker-logs dev-up dev-down dev-logs create-admin fe-rebuild worker-restart rebuild-ghidra external semgrep
 
 test:
 	uv run pytest tests/ -q
@@ -87,23 +87,31 @@ prepare-api-db:
 
 # ── Docker Orchestration ───────────────────────────────────────────
 
-# The backend containers run as MALJAN_UID:MALJAN_GID. A target that starts
+# The backend containers run as MALSPARK_UID:MALSPARK_GID. A target that starts
 # the stack sets both, unless the environment or docker/.env already does, to
 # the invoking user's ids (the user behind sudo, not root), so data/samples and
 # data/uploads stay that user's and volume-init does not refuse them as someone
 # else's. A value in docker/.env is read without its quotes, spaces or inline
 # comment; an id that still comes out 0 falls back to the image's 10001.
 COMPOSE_IDS = \
-	env_uid=$$(sed -n 's/^[[:space:]]*MALJAN_UID[[:space:]]*=//p' docker/.env 2>/dev/null | tail -n 1 | cut -d '\#' -f 1 | tr -dc 0-9); \
-	env_gid=$$(sed -n 's/^[[:space:]]*MALJAN_GID[[:space:]]*=//p' docker/.env 2>/dev/null | tail -n 1 | cut -d '\#' -f 1 | tr -dc 0-9); \
+	env_uid=$$(sed -n 's/^[[:space:]]*MALSPARK_UID[[:space:]]*=//p' docker/.env 2>/dev/null | tail -n 1 | cut -d '\#' -f 1 | tr -dc 0-9); \
+	env_gid=$$(sed -n 's/^[[:space:]]*MALSPARK_GID[[:space:]]*=//p' docker/.env 2>/dev/null | tail -n 1 | cut -d '\#' -f 1 | tr -dc 0-9); \
 	own_uid=$${SUDO_UID:-$$(id -u)}; [ "$$own_uid" != 0 ] || own_uid=10001; \
 	own_gid=$${SUDO_GID:-$$(id -g)}; [ "$$own_gid" != 0 ] || own_gid=10001; \
-	export MALJAN_UID=$${MALJAN_UID:-$${env_uid:-$$own_uid}} MALJAN_GID=$${MALJAN_GID:-$${env_gid:-$$own_gid}};
+	export MALSPARK_UID=$${MALSPARK_UID:-$${env_uid:-$$own_uid}} MALSPARK_GID=$${MALSPARK_GID:-$${env_gid:-$$own_gid}};
 
 docker-build:
 	cd docker && POSTGRES_PORT=$${POSTGRES_PORT:-5433} docker compose build
 
+# The shipped compose file bind-mounts ./data over the image's /app/data, so the
+# stack reads this checkout's rule corpora, not the ones the image fetched: the
+# fetched ones (data/sigma_rules, data/capa-rules, data/capa-signatures) are in
+# place only after `make external` (or `make setup`). Each one missing is named
+# here, and a run without it is degraded.
 docker-up:
+	@for d in data/sigma_rules data/capa-rules data/capa-signatures; do \
+		[ -d "$$d" ] || echo "warning: $$d is missing; the stack mounts ./data over the image's copy, so run make external first" >&2; \
+	done
 	$(COMPOSE_IDS) cd docker && POSTGRES_PORT=$${POSTGRES_PORT:-5433} docker compose up -d
 
 # `--profile '*'` so a down also stops the optional services (ghidra, qdrant)
@@ -128,24 +136,66 @@ docker-logs:
 # from docker/.env for compose variable substitution; bootstrap.env (repo
 # root, gitignored) is sourced here too so the same file also covers `make
 # migrate` and any bare host process you run outside Docker.
+#
+# COMPOSE_FILE_EXTRA adds compose files of your own after the shipped file and
+# the overlay, each as one more `-f`, so it wins over both: a port moved, a
+# volume added, a service turned off on this host. Several are space-separated:
+#
+#   COMPOSE_FILE_EXTRA=docker/local.yml make dev-up
+#   make dev-up COMPOSE_FILE_EXTRA="docker/local.yml docker/gpu.yml"
+#
+# Give the same value to dev-down and dev-logs. A path with a space in it is
+# not supported: the value is split on spaces. A path on the command line is
+# read from the repository root; paths inside the file are read from docker/,
+# the first file's directory. Compose reads docker-compose.override.yml on its
+# own only when it is given no -f, and these targets give it two, so an
+# override file is read here only when it is named in COMPOSE_FILE_EXTRA. The
+# docker-* targets pass no -f, so they do read docker/docker-compose.override.yml.
+DEV_COMPOSE = docker compose -f docker/docker-compose.yml -f docker/docker-compose.dev.yml \
+	$(foreach file,$(COMPOSE_FILE_EXTRA),-f $(file))
+
 dev-up:
 	set -a; [ -f bootstrap.env ] && . ./bootstrap.env; set +a; $(COMPOSE_IDS) \
-	docker compose -f docker/docker-compose.yml -f docker/docker-compose.dev.yml up -d
+	$(DEV_COMPOSE) up -d
 
 dev-down:
 	set -a; [ -f bootstrap.env ] && . ./bootstrap.env; set +a; \
-	docker compose -f docker/docker-compose.yml -f docker/docker-compose.dev.yml --profile '*' down
+	$(DEV_COMPOSE) --profile '*' down
 
 dev-logs:
 	set -a; [ -f bootstrap.env ] && . ./bootstrap.env; set +a; \
-	docker compose -f docker/docker-compose.yml -f docker/docker-compose.dev.yml logs -f
+	$(DEV_COMPOSE) logs -f
+
+# The first admin account, or an existing account promoted, in the running
+# stack's API container (`malspark create-admin`, which reads the API's own
+# DATABASE_URL there). The password is asked for on the terminal, never taken
+# from the command line. Either stack: exec reaches the service by the compose
+# project's name, whichever files started it.
+#
+# EMAIL is taken as written: `$(value ...)` keeps make from expanding a `$(...)`
+# in it, the single quotes (each one inside written as '\'') keep the shell from
+# reading it, and `--` keeps an address that starts with `-` an argument. It is
+# unexported, since make expands an exported variable to put it in a recipe's
+# environment. It is read from the make command line only: an EMAIL exported in
+# the shell (git and Debian's tools read one) is someone's own address, not the
+# account meant here.
+unexport EMAIL
+QUOTED_EMAIL = '$(subst ','\'',$(value EMAIL))'
+
+create-admin:
+ifneq ($(origin EMAIL),command line)
+	@echo "usage: make create-admin EMAIL=you@example.com (on the make command line; an EMAIL in the environment is not read)" >&2; exit 2
+else
+	@[ -n $(QUOTED_EMAIL) ] || { echo "usage: make create-admin EMAIL=you@example.com" >&2; exit 2; }
+	cd docker && docker compose exec backend-api malspark create-admin -- $(QUOTED_EMAIL)
+endif
 
 # On the production stack, these are the two commands that make an edit real.
 fe-rebuild:
 	$(COMPOSE_IDS) cd docker && docker compose build frontend && docker compose up -d --no-deps frontend
 
 worker-restart:
-	docker restart maljan-worker
+	docker restart malspark-worker
 
 # ── Ghidra MCP Manager ─────────────────────────────────────────────
 

@@ -48,9 +48,9 @@ def test_export_omits_secrets_and_lists_their_names(client):
         r = client.get("/api/v1/settings/export")
     assert r.status_code == 200
     assert r.headers["content-type"].startswith("application/json")
-    assert r.headers["content-disposition"] == "attachment; filename=maljan-settings.json"
+    assert r.headers["content-disposition"] == "attachment; filename=malspark-settings.json"
     body = r.json()
-    assert body["format"] == "maljan-settings/2"
+    assert body["format"] == "malspark-settings/3"
     assert body["values"] == {"core.llm.provider": "openai"}
     assert body["secrets_omitted"] == ["core.llm.openai.api_key"]
     exported_at = datetime.fromisoformat(body["exported_at"])
@@ -228,7 +228,7 @@ def test_import_rejects_unknown_and_read_only_keys_before_applying(client):
         r = client.post(
             "/api/v1/settings/import",
             json={
-                "format": "maljan-settings/1",
+                "format": "malspark-settings/1",
                 "values": {
                     "core.no.such.key": "x",
                     "api.debug": True,
@@ -250,7 +250,7 @@ def test_import_names_a_retired_key_as_the_one_to_delete(client):
         r = client.post(
             "/api/v1/settings/import",
             json={
-                "format": "maljan-settings/1",
+                "format": "malspark-settings/1",
                 "values": {
                     "core.preprocessing.summarizer_provider": "openai",
                     "core.preprocessing.summarizer_model": "gpt-x",
@@ -283,7 +283,7 @@ def test_import_round_trip_saves_through_settings_service_and_audits(client):
     ):
         r = client.post(
             "/api/v1/settings/import",
-            json={"format": "maljan-settings/1", "values": {"core.llm.provider": "openai"}},
+            json={"format": "malspark-settings/1", "values": {"core.llm.provider": "openai"}},
         )
     assert r.status_code == 200
     assert r.json() == {
@@ -306,7 +306,7 @@ def test_import_validation_error_from_save_is_422_field_map(client):
     ):
         r = client.post(
             "/api/v1/settings/import",
-            json={"format": "maljan-settings/1", "values": {"core.llm.provider": "nope"}},
+            json={"format": "malspark-settings/1", "values": {"core.llm.provider": "nope"}},
         )
     assert r.status_code == 422
     assert r.json()["errors"] == {"core.llm.provider": "bad value"}
@@ -323,7 +323,7 @@ def test_import_never_echoes_a_secret_value(client):
         r = client.post(
             "/api/v1/settings/import",
             json={
-                "format": "maljan-settings/1",
+                "format": "malspark-settings/1",
                 "values": {"core.llm.openai.api_key": "sk-super-secret"},
             },
         )
@@ -344,7 +344,7 @@ def test_import_audits_nothing_when_no_key_was_applied(client):
     ):
         r = client.post(
             "/api/v1/settings/import",
-            json={"format": "maljan-settings/1", "values": {}},
+            json={"format": "malspark-settings/1", "values": {}},
         )
     assert r.status_code == 200
     assert r.json() == {"applied": [], "applies": {}, "warnings": {}}
@@ -386,7 +386,7 @@ def test_export_then_import_round_trips_unchanged(client):
 
 def test_import_is_admin_only():
     r = TestClient(_app(UserRole.ANALYST)).post(
-        "/api/v1/settings/import", json={"format": "maljan-settings/1", "values": {}}
+        "/api/v1/settings/import", json={"format": "malspark-settings/1", "values": {}}
     )
     assert r.status_code == 403
 
@@ -396,3 +396,103 @@ def test_schema_response_no_longer_carries_secrets_available(client):
         r = client.get("/api/v1/settings/schema")
     assert r.status_code == 200
     assert "secrets_available" not in r.json()
+
+
+# ---- an export written before definitions carried a category -----------
+
+_LEGACY_DEFINITIONS = {
+    "my_sandbox": {"role": "generic", "prompt": "read the run", "tools": [{"kind": "sandbox"}]},
+    "my_checker": {"role": "generic", "prompt": "check", "tools": []},
+    "kept": {"role": "generic", "prompt": "mine", "tools": []},
+    "chosen": {"role": "generic", "prompt": "c", "category": "intel"},
+}
+
+
+def _import_legacy(client, stored: dict) -> tuple:
+    with (
+        patch(
+            "app.api.v1.settings.SettingsService.load_overrides",
+            AsyncMock(return_value=stored),
+        ),
+        patch(
+            "app.api.v1.settings.SettingsService.save",
+            AsyncMock(return_value=SaveResult(["core.agents.definitions"], {"next_job": 1})),
+        ) as save,
+        patch("app.api.v1.settings.audit_record", AsyncMock()),
+        patch("app.api.v1.settings._agent_warnings", AsyncMock(return_value={})),
+    ):
+        r = client.post(
+            "/api/v1/settings/import",
+            json={
+                "format": "malspark-settings/1",
+                "values": {"core.agents.definitions": _LEGACY_DEFINITIONS},
+            },
+        )
+    return r, save
+
+
+def test_an_export_without_categories_imports_with_the_fitted_ones_and_says_so(client):
+    from app.services.agent_map import validate_agent_map
+
+    stored = {"core.agents.definitions": {"kept": {"role": "generic", "prompt": "mine"}}}
+    r, save = _import_legacy(client, stored)
+
+    assert r.status_code == 200
+    sent = save.call_args.args[0]["core.agents.definitions"]
+    assert sent["my_sandbox"]["category"] == "dynamic"
+    assert sent["my_checker"]["category"] == "other"
+    # A stored definition reads the one it fits as before; a named one is kept.
+    assert "category" not in sent["kept"]
+    assert sent["chosen"]["category"] == "intel"
+    warnings = r.json()["warnings"]
+    assert warnings["core.agents.definitions.my_sandbox.category"] == (
+        "set to dynamic from its role and tools; pick the one that fits in Settings"
+    )
+    assert "tell no category" in warnings["core.agents.definitions.my_checker.category"]
+    assert "core.agents.definitions.kept.category" not in warnings
+    assert "core.agents.definitions.chosen.category" not in warnings
+    # What the import saves passes the edit's own strict check.
+    validate_agent_map({"core.agents.definitions": sent}, stored)
+
+
+def test_an_edit_without_a_category_is_still_refused():
+    from app.services.agent_map import AgentMapError, validate_agent_map
+
+    with pytest.raises(AgentMapError) as exc:
+        validate_agent_map({"core.agents.definitions": _LEGACY_DEFINITIONS}, {})
+    assert "core.agents.definitions.my_sandbox.category" in exc.value.errors
+
+
+@pytest.mark.parametrize("version", ["1", "2", "3"])
+def test_an_export_written_before_the_rename_imports_as_the_same_version(client, version):
+    """An operator's export from before T-576 names its format under the previous name."""
+    from app.api.v1.settings import IMPORT_FORMATS, current_format
+    from malspark.core.previous_name import PREVIOUS_NAME
+
+    previous = f"{PREVIOUS_NAME}-settings/{version}"
+    assert current_format(previous) == f"malspark-settings/{version}"
+    assert current_format(previous) in IMPORT_FORMATS
+    with (
+        patch(
+            "app.api.v1.settings.SettingsService.save",
+            AsyncMock(return_value=SaveResult(["core.llm.provider"], {"next_job": 1})),
+        ) as save,
+        patch("app.api.v1.settings.audit_record", AsyncMock()),
+    ):
+        r = client.post(
+            "/api/v1/settings/import",
+            json={"format": previous, "values": {"core.llm.provider": "openai"}},
+        )
+    assert r.status_code == 200, r.text
+    assert save.call_args.args[0] == {"core.llm.provider": "openai"}
+
+
+def test_an_unknown_format_under_the_previous_name_is_still_refused(client):
+    from malspark.core.previous_name import PREVIOUS_NAME
+
+    r = client.post(
+        "/api/v1/settings/import",
+        json={"format": f"{PREVIOUS_NAME}-settings/9", "values": {}},
+    )
+    assert r.status_code == 422
+    assert r.json() == {"errors": {"format": "unsupported format"}}

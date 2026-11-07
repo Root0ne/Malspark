@@ -19,10 +19,9 @@ from typing import Any
 
 from tests.unit.tools.synthetic_pe import TEXT_RVA, SyntheticPE
 
-from maljan.analysis.anti_analysis import GS_OFF_BOUNDARY, gs_reads
-from maljan.pipeline import triage_pack
-from maljan.providers.static.ghidra.passes import read_findings
-from maljan.tools import pe_image
+from malspark.analysis.anti_analysis import GS_OFF_BOUNDARY, gs_reads, read_findings
+from malspark.pipeline import triage_pack
+from malspark.tools import pe_image
 
 GS_PEB = b"\x65\x48\x8b\x04\x25\x60\x00\x00\x00"
 
@@ -143,9 +142,9 @@ class TestTheCostIsLinear:
 
         best = float("inf")
         for _ in range(2):
-            started = time.perf_counter()
+            started = time.thread_time()
             call()
-            best = min(best, time.perf_counter() - started)
+            best = min(best, time.thread_time() - started)
         return best
 
     @staticmethod

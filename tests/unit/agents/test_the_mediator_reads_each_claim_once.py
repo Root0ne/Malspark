@@ -11,8 +11,8 @@ from __future__ import annotations
 
 import time
 
-from maljan.agents.judge_agent import mediation_reports_text
-from maljan.schemas.isr_models import AgentISR, ClaimEvidence
+from malspark.agents.judge_agent import mediation_reports_text
+from malspark.schemas.isr_models import AgentISR, ClaimEvidence
 
 ISR_HEADING = "=== STRUCTURED CLAIMS (ISR) ==="
 
@@ -81,9 +81,9 @@ def test_the_assembly_is_linear_in_the_number_of_analysts() -> None:
     def build(n: int) -> float:
         isrs = {f"a{i}": _isr(f"a{i}", *(f"claim {j} of {i}" for j in range(20))) for i in range(n)}
         reports = {name: isr.to_text_summary() for name, isr in isrs.items()}
-        started = time.perf_counter()
+        started = time.thread_time()
         mediation_reports_text(reports, isrs)
-        return time.perf_counter() - started
+        return time.thread_time() - started
 
     small, large = build(50), build(500)
     assert large < small * 40

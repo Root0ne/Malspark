@@ -30,7 +30,7 @@ from app.models.follow_up import JobFollowUp
 from app.models.job_event import JobEvent
 from app.models.report import AnalysisReport
 from app.services import audit_chain, follow_up, ledger_chain
-from maljan.reporting.models import QuestionAnswer
+from malspark.reporting.models import QuestionAnswer
 
 KEY = ledger_chain.derive_key("follow-up-test-material")
 # The chained append itself, kept before a test replaces it to capture its calls.
@@ -367,8 +367,8 @@ class TestThePreparation:
 
         from app import runtime_config as rc
         from app.services import settings_service
-        from maljan.core.model_assignments import model_label_for
-        from maljan.reporting.follow_up import RUN_MODEL
+        from malspark.core.model_assignments import model_label_for
+        from malspark.reporting.follow_up import RUN_MODEL
 
         async def _overrides(db: Any) -> dict[str, Any]:
             return {"llm.provider": "openai"}
@@ -396,6 +396,88 @@ class TestThePreparation:
         assert prepared.mock is False
 
     @pytest.mark.asyncio
+    async def test_every_ledger_row_the_database_returns_reaches_the_model(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        import json
+
+        from tests.unit.reporting.test_a_follow_up_is_answered_from_the_stored_run import (
+            _findings,
+            _payload,
+        )
+
+        from app.models.evidence import EvidenceEntry
+        from app.services import settings_service
+        from malspark.core.container import ServiceContainer
+        from malspark.reporting.narrative_agent import NarrativeAgent
+
+        async def _overrides(db: Any) -> dict[str, Any]:
+            return {}
+
+        # Each row as the database returns it: every column of the table, and
+        # NULL in each one that admits it.
+        filled = {"entry_id": "", "stage": "analysis", "agent": "static", "tool": "strings",
+                  "ok": True, "output": "beacons to example.test", "seq": 0, "duration_ms": 0,
+                  "waited_ms": 0, "args_repaired": False, "truncated": False,
+                  "chars_dropped": 0}  # fmt: skip
+        columns = EvidenceEntry.__table__.columns
+        rows = [
+            {
+                **{c.name: None for c in columns if c.nullable},
+                **filled,
+                "id": str(uuid.uuid4()),
+                "entry_id": f"ev_000{seq}",
+                "seq": seq,
+            }
+            for seq in (1, 2, 3)
+        ]
+        required = {c.name for c in columns if not c.nullable}
+        assert required <= {*filled, "id", "job_id", "created_at", "updated_at"}
+        answer = {
+            "answers": [
+                {"question": 1, "outcome": "established", "answer": "Yes [ev_0003].",
+                 "evidence_ids": ["ev_0003"]}
+            ]
+        }  # fmt: skip
+        built: list[NarrativeAgent] = []
+        packed: list[list[str]] = []
+
+        def _reporter(self: ServiceContainer) -> NarrativeAgent:
+            agent = NarrativeAgent(
+                llm=_Reply(json.dumps(answer)),  # type: ignore[arg-type]
+                token_ledger=self._token_ledger,
+                model_label="openai gpt-test",
+            )
+            built.append(agent)
+            return agent
+
+        async def _close(self: ServiceContainer) -> None:
+            return None
+
+        def _pack(state: Any, *args: Any, **kwargs: Any) -> str:
+            packed.append([str(e.id) for e in state["evidence_ledger"]])
+            return "PACK"
+
+        monkeypatch.setattr(settings_service, "load_core_overrides", _overrides)
+        monkeypatch.setattr(ServiceContainer, "get_narrative_agent", _reporter)
+        monkeypatch.setattr(ServiceContainer, "aclose", _close)
+        monkeypatch.setattr(follow_up, "_learn_reporter_windows", lambda settings: None)
+        monkeypatch.setattr("malspark.pipeline.nodes.pack_text", _pack)
+        job = type("Job", (), {"id": uuid.uuid4(), "status": "completed", "config": {}})()
+        report = _sealed_report()
+        report.malware_report = ledger_chain.with_seal(_payload(), report.ledger_seal)
+
+        prepared = await follow_up.prepare(_Session(None, report, rows, _findings()), job)
+        done = await follow_up.answer(prepared, "Does it beacon?")
+
+        ids = ["ev_0001", "ev_0002", "ev_0003"]
+        assert [e.id for e in prepared.run.ledger] == ids
+        assert packed == [ids]
+        assert len(built[0].ledger_reads) == len(ids)
+        assert done.answer.outcome == "established"
+        assert not any("ledger row" in note for note in done.notes)
+
+    @pytest.mark.asyncio
     async def test_a_refused_stored_setting_is_a_422_that_names_no_key(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
@@ -406,7 +488,7 @@ class TestThePreparation:
         )
 
         from app.services import settings_service
-        from maljan.core import settings_overrides
+        from malspark.core import settings_overrides
 
         async def _overrides(db: Any) -> dict[str, Any]:
             return {"llm.openai.api_key": "a-value"}
@@ -450,8 +532,8 @@ class TestTheAnswer:
             _rows,
         )
 
-        from maljan.core.settings_overrides import build_settings
-        from maljan.reporting.follow_up import stored_run
+        from malspark.core.settings_overrides import build_settings
+        from malspark.reporting.follow_up import stored_run
 
         return follow_up.Prepared(
             job_id=uuid.uuid4(),
@@ -481,8 +563,8 @@ class TestTheAnswer:
     ) -> None:
         import json
 
-        from maljan.core.container import ServiceContainer
-        from maljan.reporting.narrative_agent import NarrativeAgent
+        from malspark.core.container import ServiceContainer
+        from malspark.reporting.narrative_agent import NarrativeAgent
 
         answer = {
             "answers": [
@@ -509,7 +591,7 @@ class TestTheAnswer:
         monkeypatch.setattr(ServiceContainer, "get_narrative_agent", _reporter)
         monkeypatch.setattr(ServiceContainer, "aclose", _close)
         monkeypatch.setattr(follow_up, "_learn_reporter_windows", lambda settings: None)
-        monkeypatch.setattr("maljan.pipeline.nodes.pack_text", lambda *a, **k: "PACK")
+        monkeypatch.setattr("malspark.pipeline.nodes.pack_text", lambda *a, **k: "PACK")
 
         done = await follow_up.answer(self._prepared(mock=False), "Does it beacon?")
 
@@ -725,9 +807,9 @@ class TestTheModelChosen:
     async def test_a_recorded_model_that_will_not_build_falls_back_to_the_current_and_says_why(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        from maljan.core.model_assignments import model_label_for
-        from maljan.reporting import follow_up as core
-        from maljan.reporting.follow_up import UNBUILT_MODEL
+        from malspark.core.model_assignments import model_label_for
+        from malspark.reporting import follow_up as core
+        from malspark.reporting.follow_up import UNBUILT_MODEL
 
         def _half_blank(overrides: Any, snapshot: Any, current: Any = None) -> Any:
             return {**overrides, "llm.agents": {"reporter": {"provider": "openai"}}}, "run"
@@ -879,7 +961,7 @@ class TestTheVerification:
         from app.models.evidence import EvidenceEntry
         from app.services import ledger_verify
         from app.worker.analysis_worker import _evidence_row
-        from maljan.schemas.evidence import LedgerEntry
+        from malspark.schemas.evidence import LedgerEntry
 
         monkeypatch.setattr(ledger_chain, "platform_key_status", lambda: (VERIFY_KEY, None))
         job_id = uuid.uuid4()

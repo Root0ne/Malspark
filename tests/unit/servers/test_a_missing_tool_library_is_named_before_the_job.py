@@ -16,16 +16,17 @@ from unittest.mock import MagicMock
 import pytest
 
 from app.services.tool_availability import as_rows, unavailable_tools
-from maljan.core.config import Settings
-from maljan.tools import emulated_strings, sidecar_needs
-from maljan.tools.capabilities import Requirement, ToolNeeds, binary, env, manifest, module
+from malspark.core.config import Settings
+from malspark.tools import capabilities, emulated_strings, sidecar_needs
+from malspark.tools.capabilities import Requirement, ToolNeeds, binary, env, manifest, module
 
 
 def _without(monkeypatch: pytest.MonkeyPatch, *missing: str) -> list[str]:
-    """A host holding every declared library and the pinned FLOSS but ``missing``.
+    """A host holding every declared library and data path and the pinned FLOSS but ``missing``.
 
-    Whatever the test host has installed: the import path finds every module
-    but the ones named, and FLOSS is found. Answers the names looked up.
+    Whatever the test host has installed or fetched: the import path finds
+    every module but the ones named, every declared data path holds data, and
+    FLOSS is found. Answers the names looked up.
     """
     asked: list[str] = []
 
@@ -35,15 +36,16 @@ def _without(monkeypatch: pytest.MonkeyPatch, *missing: str) -> list[str]:
 
     monkeypatch.setattr(importlib.util, "find_spec", find_spec)
     monkeypatch.setattr(emulated_strings, "find_floss", lambda environ=None: ("floss", ""))
+    monkeypatch.setattr(capabilities, "data_held", lambda path, pattern="*": True)
     return asked
 
 
 class TestTheCheckBeforeAJob:
     def test_a_missing_module_is_named_in_the_imports_own_words(self) -> None:
-        said = module("maljan_t329_no_such_library").installed()
+        said = module("malspark_t329_no_such_library").installed()
         assert said == (
-            "maljan_t329_no_such_library is not installed "
-            "(No module named 'maljan_t329_no_such_library')"
+            "malspark_t329_no_such_library is not installed "
+            "(No module named 'malspark_t329_no_such_library')"
         )
 
     def test_an_installed_module_is_not_named_and_is_not_imported(self) -> None:
@@ -52,7 +54,7 @@ class TestTheCheckBeforeAJob:
         assert "colorsys" not in sys.modules
 
     def test_the_words_are_the_servers_own(self) -> None:
-        req = module("maljan_t329_no_such_library")
+        req = module("malspark_t329_no_such_library")
         assert req.installed() == req.probe()
 
     def test_an_executable_is_looked_for_in_the_servers_environment(self) -> None:
@@ -66,12 +68,12 @@ class TestTheCheckBeforeAJob:
             binary("floss", locate).installed({"PATH": "/x"}) == "floss is not installed: nowhere"
         )
         assert seen == [{"PATH": "/x"}]
-        assert binary("maljan-t329-no-such-program").installed({"PATH": ""}) == (
-            "maljan-t329-no-such-program is not on PATH"
+        assert binary("malspark-t329-no-such-program").installed({"PATH": ""}) == (
+            "malspark-t329-no-such-program is not on PATH"
         )
 
     def test_a_setting_is_no_install(self) -> None:
-        assert env("MALJAN_T329_NO_SUCH_KEY").installed({}) is None
+        assert env("MALSPARK_T329_NO_SUCH_KEY").installed({}) is None
 
 
 class TestTheSidecarsDeclareTheirNeedsOnce:
@@ -82,7 +84,12 @@ class TestTheSidecarsDeclareTheirNeedsOnce:
         assert cells["yara_scan"]["timeout_s"] == sidecar_needs.YARA_TIMEOUT_S
 
     def test_capa_and_yara_name_their_own_extra(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        monkeypatch.setattr(Requirement, "probe", lambda self: f"{self.name} is not installed")
+        # Every library missing; a data path is never probed by the server.
+        monkeypatch.setattr(
+            Requirement,
+            "probe",
+            lambda self: None if self.kind == "data" else f"{self.name} is not installed",
+        )
         cells = {c["name"]: c for c in manifest("analysis", sidecar_needs.ANALYSIS)["tools"]}
         assert cells["capa"]["remediation"].endswith("uv sync --extra capa")
         assert cells["yara_scan"]["remediation"].endswith("uv sync --extra yara")
@@ -145,17 +152,24 @@ class TestReadinessNamesWhatTheJobWouldCall:
     ) -> None:
         asked = _without(monkeypatch, "sigma")
         found = unavailable_tools(Settings())
-        assert [u.tool for u in found] == ["sigma_match", "sigma_match_sandbox"]
-        assert asked.count("sigma") == 1
+        assert [(u.server, u.tool) for u in found] == [
+            ("analysis", "sigma_match"),
+            ("analysis", "sigma_match_sandbox"),
+            ("pipeline", "sigma_match_sandbox"),
+        ]
+        # Once for the server and once for the worker, where the pack's Sigma
+        # pass runs: two tools needing it in one place ask once.
+        assert asked.count("sigma") == 2
 
     def test_a_tool_the_servers_block_does_not_offer_is_not_named(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        # sigma_match is an agent's tool and no pack reading stands in for it.
+        # sigma_match is an agent's tool and no pack reading stands in for it;
+        # the pack's own Sigma pass runs in the worker whatever the block offers.
         _without(monkeypatch, "sigma")
         settings = Settings()
         settings.mcp.servers["analysis"].tools = ["hashes", "pe_info", "capa"]
-        assert unavailable_tools(settings) == []
+        assert [u.tool for u in unavailable_tools(settings)] == ["sigma_match_sandbox"]
 
     def test_a_pack_reading_is_named_whatever_tools_the_block_offers(
         self, monkeypatch: pytest.MonkeyPatch
@@ -182,7 +196,8 @@ class TestReadinessNamesWhatTheJobWouldCall:
         _without(monkeypatch, "sigma")
         settings = Settings()
         settings.mcp.servers["analysis"].enabled = False
-        assert unavailable_tools(settings) == []
+        # Only the pack's own Sigma pass, which runs in the worker.
+        assert [u.tool for u in unavailable_tools(settings)] == ["sigma_match_sandbox"]
 
     def test_a_server_on_another_interpreter_is_left_to_its_own_manifest(
         self, monkeypatch: pytest.MonkeyPatch
@@ -191,17 +206,26 @@ class TestReadinessNamesWhatTheJobWouldCall:
         settings = Settings()
         settings.mcp.servers["analysis"].command = "/opt/elsewhere/bin/python"
         # Its agent tools are its own manifest's to say; the pack's reading of
-        # capa still runs in the worker.
-        assert [u.tool for u in unavailable_tools(settings)] == ["capa"]
+        # capa and its Sigma pass still run in the worker.
+        assert [u.tool for u in unavailable_tools(settings)] == ["capa", "sigma_match_sandbox"]
 
     def test_a_reading_runs_on_its_server_when_that_is_reached_at_an_address(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
+        from malspark.core.declared_reading import builtin_tools
+        from malspark.core.served_declarations import register_served
+        from malspark.core.tool_declarations import launch_identity
+
         _without(monkeypatch, "capa")
         settings = Settings()
         analysis = settings.mcp.servers["analysis"]
+        declared = dict(builtin_tools("analysis"))
         analysis.transport = "streamable-http"
         analysis.url = "http://analysis-mcp:8080/mcp"
+        # Pointed at its own container, the block trusts what the server
+        # declares, and the server, listed there, declares its tools as anywhere.
+        analysis.trusts_served_declaration = True
+        register_served("mcp:analysis", declared, launch_identity(analysis))
         assert unavailable_tools(settings) == []
         analysis.enabled = False
         assert [u.tool for u in unavailable_tools(settings)] == ["capa"]
@@ -219,8 +243,9 @@ class TestReadinessNamesWhatTheJobWouldCall:
         _without(monkeypatch, "sigma", "capa")
         settings = Settings()
         settings.mcp.servers["analysis"].env = {"PYTHONPATH": "/opt/libs"}
-        # The worker's own reading of capa is on the worker's import path.
-        assert [u.tool for u in unavailable_tools(settings)] == ["capa"]
+        # The worker's own reading of capa and its Sigma pass are on the
+        # worker's import path.
+        assert [u.tool for u in unavailable_tools(settings)] == ["capa", "sigma_match_sandbox"]
 
     def test_what_is_found_is_logged_at_the_level_asked(
         self, monkeypatch: pytest.MonkeyPatch
@@ -245,7 +270,7 @@ class TestReadinessNamesWhatTheJobWouldCall:
         _without(monkeypatch)
         floss = next(n for n in sidecar_needs.ANALYSIS if n.name == "floss")
         bare: dict[str, str] = {}
-        configured = {"MALJAN_FLOSS_PATH": "/opt/floss"}
+        configured = {"MALSPARK_FLOSS_PATH": "/opt/floss"}
         monkeypatch.setattr(
             tool_availability,
             "_in_process_readings",
@@ -265,7 +290,7 @@ class TestReadinessNamesWhatTheJobWouldCall:
     ) -> None:
         import logging
 
-        from maljan.core import pack_servers
+        from malspark.core import pack_servers
 
         _without(monkeypatch)
         said = MagicMock()
@@ -293,8 +318,8 @@ class TestReadinessNamesWhatTheJobWouldCall:
         """The decoder, capa and carve choices the job's servers are read with (T-354)."""
         import logging
 
-        from maljan.agents.composition import servers_a_job_calls
-        from maljan.core import pack_servers
+        from malspark.agents.composition import servers_a_job_calls
+        from malspark.core import pack_servers
 
         _without(monkeypatch)
         said = MagicMock()

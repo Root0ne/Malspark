@@ -7,11 +7,14 @@ its domain, else a window), and a definition that names none dumps as before.
 
 from __future__ import annotations
 
+from collections.abc import Callable
+from typing import Any
+
 import pytest
 from pydantic import ValidationError
 
-from maljan.core.config import AgentDefinition, ChunkingConfig
-from maljan.loaders.binary_chunker import (
+from malspark.core.config import AgentDefinition, ChunkingConfig
+from malspark.loaders.binary_chunker import (
     BOUNDARY,
     CHUNK_CHARS,
     SIZED_BY,
@@ -20,6 +23,7 @@ from maljan.loaders.binary_chunker import (
     ChunkStrategy,
     within_the_room,
 )
+from tests.linear_cost import assert_scales
 
 UNIT = "@@ unit {n} @@\n" + "body line of the unit\n" * 4
 
@@ -111,8 +115,8 @@ class TestTheDeclarationIsChecked:
 
 class TestTheContainerHandsTheDeclarationToTheChunker:
     def _chunks(self, **definition: object) -> list:
-        from maljan.core.config import Settings
-        from maljan.core.container import ServiceContainer
+        from malspark.core.config import Settings
+        from malspark.core.container import ServiceContainer
 
         base = {"role": "generic", "prompt": "Read the log.", "data_sources": ["sandbox.target"]}
         settings = Settings(
@@ -148,13 +152,12 @@ class TestThePatternRunsUnderRE2:
         assert "".join(chunk.content for chunk in chunks).count("sub_") == 20
 
     def test_a_catastrophic_pattern_runs_in_linear_time(self) -> None:
-        import time
+        def run(lines: int) -> Callable[[], Any]:
+            text = ("a" * 60 + "!\n") * lines
+            return lambda: _chunker().chunk("custom", text, boundary=r"^(a+)+$")
 
-        text = ("a" * 60 + "!\n") * 200
-        began = time.monotonic()
-        _chunker().chunk("custom", text, boundary=r"^(a+)+$")
-
-        assert time.monotonic() - began < 5
+        run(200)()
+        assert_scales(run, 25)
 
     def test_a_lookaround_is_refused_when_the_definition_is_saved(self) -> None:
         with pytest.raises(ValidationError, match="linear time"):

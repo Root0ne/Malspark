@@ -8,12 +8,12 @@ import sys
 import pytest
 from pydantic import SecretStr
 
-from maljan.core.config import (
-    BUILTIN_SERVER_KEYS,
-    RESERVED_SERVER_KEYS,
+from malspark.core.config import (
     SERVER_KEY_PATTERN,
     MCPServerConfig,
     Settings,
+    reserved_server_keys,
+    shipped_server_keys,
 )
 
 
@@ -26,7 +26,7 @@ def test_the_two_sidecars_are_seeded_with_todays_launch_parameters():
     assert network.cwd == "services/network-mcp"
     # The two that say which directories a capture may be read from, and
     # nothing else: no credential of any kind reaches this sidecar.
-    assert network.env_allow == ["MALJAN_STAGING_DIR", "MALJAN_SAMPLE_ROOTS"]
+    assert network.env_allow == ["MALSPARK_STAGING_DIR", "MALSPARK_SAMPLE_ROOTS"]
     assert network.agents == ["network"]
     assert network.tools is None, "None means every tool, which is today's behaviour"
 
@@ -41,18 +41,10 @@ def test_the_two_sidecars_are_seeded_with_todays_launch_parameters():
 
 
 def test_builtin_keys_are_reserved_and_the_key_pattern_is_a_slug():
-    assert set(BUILTIN_SERVER_KEYS) <= set(RESERVED_SERVER_KEYS)
-    assert set(RESERVED_SERVER_KEYS) == {
-        "analysis",
-        "knowledge",
-        "network",
-        "threatintel",
-        "virustotal",
-        "ghidra",
-        "cape",
-        "pipeline",
-        "sandbox",
-    }
+    shipped = set(shipped_server_keys())
+    assert shipped == set(Settings(_env_file=None).mcp.servers)
+    assert shipped <= set(reserved_server_keys())
+    assert set(reserved_server_keys()) - shipped == {"ghidra", "cape", "pipeline", "sandbox"}
     pattern = re.compile(SERVER_KEY_PATTERN)
     assert pattern.match("r2custom") and pattern.match("a")
     assert not pattern.match("R2") and not pattern.match("1a") and not pattern.match("a" * 33)
@@ -75,7 +67,7 @@ def test_static_generic_is_a_reference_to_a_server_key():
 
 
 def test_the_sandbox_gains_rest_with_a_full_default_tree():
-    from maljan.providers.registry import sandbox_provider_ids
+    from malspark.providers.registry import sandbox_provider_ids
 
     assert "rest" in sandbox_provider_ids()
     rest = Settings(_env_file=None).sandbox.rest

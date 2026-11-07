@@ -15,12 +15,14 @@ session, recorded by the session probe the other storage tests use.
 from __future__ import annotations
 
 import time
+from collections.abc import Callable
 from types import SimpleNamespace
 from typing import Any
 from unittest.mock import MagicMock, patch
 
 import pytest
 from tests.integration._session_probe import SessionFactory, fake_job, fake_sample, rows_for
+from tests.linear_cost import assert_scales
 
 from app.worker.analysis_worker import (
     _report_inputs,
@@ -28,12 +30,12 @@ from app.worker.analysis_worker import (
     keep_the_built_report,
     keep_the_stopped_run,
 )
-from maljan.agents.delegation import _hand_over_the_record
-from maljan.core.config import Settings
-from maljan.core.container import ServiceContainer
-from maljan.pipeline.state import with_undrained_evidence
-from maljan.pipeline.stopped_run import partial_report
-from maljan.schemas.evidence import LedgerEntry, build_entry
+from malspark.agents.delegation import _hand_over_the_record
+from malspark.core.config import Settings
+from malspark.core.container import ServiceContainer
+from malspark.pipeline.state import with_undrained_evidence
+from malspark.pipeline.stopped_run import partial_report
+from malspark.schemas.evidence import LedgerEntry, build_entry
 
 NOTE = "Stopped by the operator 61 s into the run, node verdict."
 
@@ -321,12 +323,15 @@ class TestEachHolderAlone:
     def test_a_thousand_holders_are_collected_in_one_pass(
         self, container: ServiceContainer
     ) -> None:
-        for entry in _issue(container, "static", 1000):
-            container.register_evidence_holder(lambda entry=entry: [entry])
-        started = time.perf_counter()
-        collected = container.collect_undrained_evidence(f"ev_{n:04d}" for n in range(1, 501))
-        assert len(collected) == 500
-        assert time.perf_counter() - started < 2.0
+        def holders(count: int) -> Callable[[], list[Any]]:
+            held = ServiceContainer(Settings(_env_file=None), mock=True)
+            for entry in _issue(held, "static", count):
+                held.register_evidence_holder(lambda entry=entry: [entry])
+            known = [f"ev_{n:04d}" for n in range(1, count // 2 + 1)]
+            return lambda: held.collect_undrained_evidence(known)
+
+        assert len(holders(1000)()) == 500
+        assert_scales(holders, 250)
 
 
 class TestOneRowPerIdAndSeq:

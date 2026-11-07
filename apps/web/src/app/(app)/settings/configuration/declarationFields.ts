@@ -1,7 +1,7 @@
 /**
  * The server editor's Declaration section: reading what an operator typed.
  *
- * A server's declaration (`maljan.core.tool_declarations`) is the facts the
+ * A server's declaration (`malspark.core.tool_declarations`) is the facts the
  * platform reads about the server and its tools instead of a table of tool
  * names. The API validates every field and answers with one message per bad
  * field, which the editor shows on the server; these readers only turn the
@@ -16,6 +16,7 @@ import type {
   CredentialBootstrapEntry,
   ErrorPatternEntry,
   PrepassToolsEntry,
+  ReputationServiceEntry,
   ToolDeclarationFields,
   ToolFactsEntry,
 } from "@/types/settings";
@@ -236,11 +237,19 @@ export function readsNoKind(facts: Record<string, unknown>, fields: ToolDeclarat
  *  no kind sets at least one field and no kind-dependent one, a field
  *  counting as set only when it differs from its default (`isSet`). Without
  *  a split it can read (none, or one missing either half) the box checks the
- *  shape alone and the API answers the rest on save. */
+ *  shape alone and the API answers the rest on save.
+ *
+ *  `held` is what the box holds in force before this edit: a tool whose
+ *  declaration is typed exactly as held there is not this edit's and is not
+ *  checked against the field rules again, as the API keeps a stored change
+ *  sent back unchanged (a change stored with no kind of its own, laid over
+ *  the kind the server's listing declares). Every tool the edit adds or
+ *  changes is checked in full. */
 export function readToolFacts(
   text: string,
   serverKey = "",
-  served: ToolDeclarationFields | null = null
+  served: ToolDeclarationFields | null = null,
+  held: Record<string, unknown> = {}
 ): Read<Record<string, ToolFactsEntry>> {
   const fields = usableFields(served);
   const parsed = parseJson(text);
@@ -255,6 +264,7 @@ export function readToolFacts(
       return bad(`${tool}: spelled as this server's renamed tool; use the tool's own name`);
     }
     if (!isObject(facts)) return bad(`${tool}: expected an object of the tool's facts`);
+    if (Object.prototype.hasOwnProperty.call(held, tool) && sameJson(facts, held[tool])) continue;
     const kind = fields !== null && readsNoKind(facts, fields) ? "" : facts.kind;
     const noKind = kind === undefined || kind === "";
     if (!noKind && (typeof kind !== "string" || !WORD.test(kind))) {
@@ -273,11 +283,36 @@ export function readToolFacts(
         );
       }
       if (needing.length) {
-        return bad(`${tool}: ${needing.join(", ")} are read only through a kind; declare the kind`);
+        // A server's lookups read from its listing are ranked and named by the
+        // server, never by a kindless change of one of them.
+        return bad(
+          `${tool}: ${needing.join(", ")} are read only through a kind; declare the kind ` +
+            "(to rank or name a reputation server's lookups, set the server's " +
+            "reputation_service instead)",
+        );
       }
     }
   }
   return ok(parsed.value as Record<string, ToolFactsEntry>);
+}
+
+/** The tools of `held` (a box's declarations in force) that the field rules
+ *  refuse in an edit: changes the API keeps as stored, such as one that names
+ *  no kind of its own and is laid over the kind the server's listing
+ *  declares. The box keeps them as they are (`readToolFacts`) and says so. */
+export function keptAsStored(
+  held: Record<string, unknown>,
+  serverKey: string,
+  served: ToolDeclarationFields | null
+): string[] {
+  if (usableFields(served) === null) return [];
+  return Object.entries(held)
+    .filter(([tool, facts]) => {
+      const one: Record<string, unknown> = Object.create(null) as Record<string, unknown>;
+      one[tool] = facts;
+      return readToolFacts(JSON.stringify(one), serverKey, served).error !== null;
+    })
+    .map(([tool]) => tool);
 }
 
 /** How the server's credential is obtained: a JSON object with an https `url`
@@ -296,6 +331,45 @@ export function readCredentialBootstrap(text: string): Read<CredentialBootstrapE
     return bad("token_json_path is the path of the token in the answer, starting with '/'");
   }
   return ok(parsed.value as unknown as CredentialBootstrapEntry);
+}
+
+/** The counts a server-level threshold may read. */
+const THRESHOLD_FIELDS = new Set(["malicious", "suspicious", "total", "engines"]);
+
+/** A server's `reputation_service` as typed: an object of `name`, `rank`,
+ *  `rate_limit_seconds` and `malicious_when`, or empty for none
+ *  (`core.tool_declarations.ReputationService`). */
+export function readReputationService(text: string): Read<ReputationServiceEntry | null> {
+  const parsed = parseJson(text);
+  if (parsed.error !== null) return bad(parsed.error);
+  if (parsed.value === undefined) return ok(null);
+  if (!isObject(parsed.value)) return bad("expected an object with name and rank");
+  const { name, rank } = parsed.value;
+  if (name !== undefined && typeof name !== "string") {
+    return bad("name is the service its lookups' answers are attributed to");
+  }
+  if (rank !== undefined && rank !== null && !(Number.isInteger(rank) && (rank as number) >= 0)) {
+    return bad("rank is a whole number of 0 or more: lower ranks are asked first");
+  }
+  const { rate_limit_seconds: pace, malicious_when: thresholds } = parsed.value;
+  if (pace !== undefined && pace !== null && !(typeof pace === "number" && pace >= 0)) {
+    return bad("rate_limit_seconds is the pause after each question, 0 or more seconds");
+  }
+  if (thresholds !== undefined) {
+    const each = Array.isArray(thresholds) ? thresholds : [null];
+    for (const threshold of each) {
+      if (
+        !isObject(threshold) ||
+        !THRESHOLD_FIELDS.has(String(threshold.field)) ||
+        typeof threshold.at_least !== "number"
+      ) {
+        return bad(
+          "malicious_when is a list of {field, at_least}, field one of malicious, suspicious, total, engines",
+        );
+      }
+    }
+  }
+  return ok(parsed.value as ReputationServiceEntry);
 }
 
 /** A JSON value as the box shows it: pretty, or empty for nothing declared. */

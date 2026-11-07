@@ -23,11 +23,11 @@ from unittest.mock import MagicMock, patch
 
 from langchain_core.messages import AIMessage
 
-from maljan.agents.base_agent import BaseAnalyst
-from maljan.analysis.run_summary import RunSummaryBuilder
-from maljan.pipeline.nodes import make_revision_node, revision_replacement_sentence
-from maljan.pipeline.validation import CLAIM_WITHOUT_CONFIDENCE_CODE
-from maljan.schemas.isr_models import AgentISR, ClaimEvidence
+from malspark.agents.base_agent import BaseAnalyst
+from malspark.analysis.run_summary import RunSummaryBuilder
+from malspark.pipeline.nodes import make_revision_node, revision_replacement_sentence
+from malspark.pipeline.validation import CLAIM_WITHOUT_CONFIDENCE_CODE
+from malspark.schemas.isr_models import AgentISR, ClaimEvidence
 
 REVISION = (
     Path(__file__).resolve().parents[2]
@@ -83,7 +83,7 @@ def _reviser(revision: str, answers: list[str]) -> tuple[_Reviser, _Answers]:
 
 
 def _revise(analyst: _Reviser) -> tuple[str, AgentISR]:
-    with patch("maljan.agents.base_agent.validity_check_available", return_value=True):
+    with patch("malspark.agents.base_agent.validity_check_available", return_value=True):
         return analyst.safe_revise_isr("the evidence", "own report", {}, "feedback", 1)
 
 
@@ -116,7 +116,7 @@ class TestTheValidationTurnAsksARevision:
         # The first answer's loop ended long ago; the revision made no loop.
         analyst._last_loop_deadline = time.monotonic() - 3_600.0
 
-        with patch("maljan.agents.base_agent.loop_limits", return_value=(3_600.0, None)):
+        with patch("malspark.agents.base_agent.loop_limits", return_value=(3_600.0, None)):
             _text, isr = _revise(analyst)
 
         assert len(llm.sent) == 1
@@ -180,11 +180,19 @@ class TestARevisionWithFewerClaimsStandsAndIsSaid:
 
         out = _node_run(in_force, revision)
 
-        # The model's revision is the answer in force.
-        assert len(out["isr_reports"]["reverser"].claims) == 18
-        assert out["revision_replacements"] == [
-            "The reverser analyst's round-1 revision replaced 38 claim(s) with 18."
-        ]
+        # Every claim the revision wrote stands; each claim in force it
+        # neither restated nor withdrew stands carried forward, and is said.
+        stands = out["isr_reports"]["reverser"].claims
+        written = [c.claim for c in revision.claims]
+        assert sorted(c.claim for c in stands if c.carried_since_round is None) == sorted(written)
+        carried = [c for c in stands if c.carried_since_round == 1]
+        assert carried and len(stands) == 18 + len(carried)
+        assert {c.claim for c in carried} <= {c.claim for c in in_force.claims}
+        [said] = out["revision_replacements"]
+        assert said.startswith(
+            "The reverser analyst's round-1 revision wrote 18 claim(s) against 38 in force"
+        )
+        assert f"the other {len(carried)} stand carried forward unchanged" in said
 
     def test_a_revision_that_keeps_or_adds_claims_is_not_a_replacement_to_state(self) -> None:
         in_force = AgentISR(agent_id="reverser", domain="static", claims=_claims(3))

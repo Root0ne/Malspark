@@ -5,7 +5,7 @@ already runs its own sandbox brings the report it has. Validation is layered so
 nothing is stored before it is known to be a sandbox report: stream to a size
 cap, inflate a gzip under the same cap, parse the JSON, sniff the format, and
 only then put the object. The format, its task id and its target hash are read
-from the registry's formats (``maljan.providers.sandbox.readers.sandbox_formats``:
+from the registry's formats (``malspark.providers.sandbox.readers.sandbox_formats``:
 the declared report formats, built-ins plus ``sandbox.report_formats``, and the
 registered readers no declaration names), never from a format's name in this
 route. A
@@ -20,7 +20,7 @@ Where the operator allows it (``"unread"`` in ``sandbox.upload.allowed_formats``
 a report no format recognises is accepted unread instead of refused: it is
 stored, a run reads it as raw blocks alone, and the upload answers with a
 proposed format declaration read from its shape
-(``maljan.core.report_proposals``). An admin accepts the proposal, as written
+(``malspark.core.report_proposals``). An admin accepts the proposal, as written
 or edited (``POST /sandbox-report-formats/accept``): the declaration is saved
 with its name allowed, and the upload is read as it from then on. Until then
 the report stays unread. Without the opt-in, an unrecognised report is refused
@@ -40,14 +40,19 @@ from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
 
 from fastapi import APIRouter, Depends, HTTPException, Request, UploadFile, status
-from maljan.core.report_formats import (
+from malspark.core.report_formats import (
     BUILTIN_REPORT_FORMATS,
     UNREAD_FORMAT,
     ReportFormat,
     sniff,
 )
-from maljan.core.safe_json import loads
-from maljan.providers.sandbox.readers import mapping_refusal, report_reader, sandbox_formats
+from malspark.core.safe_json import loads
+from malspark.providers.sandbox.readers import (
+    mapping_refusal,
+    named_reader_refusal,
+    report_reader,
+    sandbox_formats,
+)
 from pydantic import ValidationError
 from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -78,7 +83,7 @@ from app.services.report_formats_lock import (
 from app.services.settings_service import effective_core_settings
 
 if TYPE_CHECKING:
-    from maljan.core.config import SandboxConfig
+    from malspark.core.config import SandboxConfig
 
 logger = get_logger("api.sandbox_reports")
 
@@ -132,8 +137,8 @@ def _minio_client() -> Any:
 
 
 def _put_object_blocking(path: str, blob: bytes, *, content_type: str = "application/json") -> None:
-    # The bucket is created the one way every path creates it, with the
-    # anonymous-deny policy (``object_store.ensure_bucket``).
+    # The bucket is created the one way every path creates it, private
+    # (``object_store.ensure_bucket``), and written only while it stays so.
     object_store.put_bytes(_minio_client(), path, blob, content_type=content_type)
 
 
@@ -262,7 +267,7 @@ UNREAD_WARNING = (
 
 def _proposal(payload: dict[str, Any]) -> dict[str, Any] | None:
     """The proposed declaration for an unread report, or ``None`` where none could be read."""
-    from maljan.core.report_proposals import propose_format
+    from malspark.core.report_proposals import propose_format
 
     try:
         return propose_format(payload)
@@ -357,6 +362,8 @@ async def upload_sandbox_report(
         )
     elif mapping_refusal(fmt):
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, mapping_refusal(fmt))
+    elif named_reader_refusal(fmt.reader):
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, named_reader_refusal(fmt.reader))
     else:
         row_format = fmt.name
     report_id = uuid.uuid4()
@@ -654,8 +661,8 @@ def _trial_read(payload: dict[str, Any], declaration: ReportFormat, fallback: An
     miss would pass on it while reading only what the unread read gave. Any
     other reader must read the report without failing.
     """
-    from maljan.providers.sandbox.readers import format_mapping
-    from maljan.providers.sandbox.rest_mapping import (
+    from malspark.providers.sandbox.readers import format_mapping
+    from malspark.providers.sandbox.rest_mapping import (
         CHANNELS,
         apply_mapping,
         compile_mapping,
@@ -755,8 +762,10 @@ async def accept_report_format(
                 if fmt is not None
                 else "The declaration does not recognise this report; nothing was saved.",
             )
-        refusal = mapping_refusal(declaration) or await asyncio.to_thread(
-            _trial_read, payload, declaration, sandbox.rest.mapping
+        refusal = (
+            named_reader_refusal(declaration.reader)
+            or mapping_refusal(declaration)
+            or await asyncio.to_thread(_trial_read, payload, declaration, sandbox.rest.mapping)
         )
         if refusal:
             raise HTTPException(

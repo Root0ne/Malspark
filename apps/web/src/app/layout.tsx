@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { JetBrains_Mono } from "next/font/google";
 import localFont from "next/font/local";
+import { THEME_BOOT_SCRIPT } from "@/components/analysis/themeScript";
 import "./globals.css";
 
 // Self-hosted full-feature InterVariable. The Google Fonts build of Inter
@@ -23,7 +24,7 @@ const jetbrainsMono = JetBrains_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Maljan - Multi-Agent Malware Analysis",
+  title: "Malspark - Multi-Agent Malware Analysis",
   description:
     "Professional multi-agent malware analysis platform with AI-powered threat intelligence.",
   icons: {
@@ -39,7 +40,17 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en" suppressHydrationWarning className={`${inter.variable} ${jetbrainsMono.variable}`}>
-      <body>{children}</body>
+      <head>
+        {/* Runs while the document is parsed, before the first paint. A script
+            tag in a client component is refused by React; here, in the server
+            layout's own head, it is plain HTML. The CSP allows inline scripts
+            (lib/securityHeaders.ts), so it needs no nonce. It acts on the
+            analysis pages only (`themeScript.ts`). */}
+        <script dangerouslySetInnerHTML={{ __html: THEME_BOOT_SCRIPT }} />
+      </head>
+      <body>
+        {children}
+      </body>
     </html>
   );
 }

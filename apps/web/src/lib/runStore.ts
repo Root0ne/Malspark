@@ -23,7 +23,7 @@ import type { StageEvent, StageTimelineRow } from "@/components/analysis/stageTi
 import type { StageRow } from "@/components/analysis/pipelineSteps";
 import { api } from "@/lib/api";
 import { ApiError, getErrorMessage, isNetworkFailure } from "@/lib/errors";
-import { pollDelay, pollFailure } from "@/app/(app)/analysis/[id]/polling";
+import { pollDelay, pollFailure } from "@/components/analysis/polling";
 import { API_BASE } from "@/lib/apiBase";
 import { knownKind } from "@/lib/conversation";
 import type { TranscriptRow } from "@/lib/conversation";
@@ -224,7 +224,7 @@ const browserTransport: RunTransport = {
     const token =
       typeof window !== "undefined" ? localStorage.getItem("access_token") : null;
     const url = `${defaultWsBase()}/ws/analysis/${jobId}?since=${since}`;
-    const protocols = token ? ["maljan.v1", `maljan.v1.${token}`] : ["maljan.v1"];
+    const protocols = token ? ["malspark.v1", `malspark.v1.${token}`] : ["malspark.v1"];
     const ws = new WebSocket(url, protocols);
 
     ws.onopen = () => handlers.onOpen();

@@ -37,22 +37,26 @@ import httpx
 import idna
 from mcp.server.fastmcp import FastMCP
 
-from maljan.core.stdio_safe import route_logging_to_stderr
+from malspark.core.stdio_safe import route_logging_to_stderr
 
 # Only when run as the stdio server: a test or tool that imports this module
 # in-process keeps its own logging.
 if __name__ == "__main__":
     route_logging_to_stderr()
+    from malspark.core.previous_name import warn_previous_environment
 
-from maljan.tools.arguments import says_unquoted, unquoted, with_read_as
-from maljan.tools.capabilities import (
+    warn_previous_environment()
+
+from malspark.tools.arguments import says_unquoted, unquoted, with_read_as
+from malspark.tools.capabilities import (
     CAPABILITIES_TOOL,
     Requirement,
     ToolNeeds,
     env,
     manifest,
 )
-from maljan.tools.errors import (
+from malspark.tools.declared_facts import NO_EFFECT, tool_declaration
+from malspark.tools.errors import (
     BAD_ARGUMENT,
     NOT_CONFIGURED,
     TIMEOUT,
@@ -129,8 +133,83 @@ TOOL_NEEDS: list[ToolNeeds] = [
 ]
 CAPABILITIES = manifest("threatintel", TOOL_NEEDS)
 
+# What each tool declares of itself (``malspark.tools.declared_facts``). Every
+# lookup asks an outside service whose answer moves, so none is read-only. The
+# hash lookup answers JSON: the engine counts under ``last_analysis_stats``,
+# this server's own sentence under ``summary``, and the service's text about
+# the file (a submitted name, which the sample's author chooses) under
+# ``file``, where no count is read. The one text pattern reads an answer this
+# server wrote in prose before it answered JSON, and only that answer's fixed
+# head and tail, anchored to both ends of the text: a name inside such an
+# answer is always followed by the tail, so it is never where a count is read.
+# Without a key the server answers nothing in the service's place. Its rank
+# puts it after a reputation server ranked before it, which the triage pack
+# asks first when both are enabled.
+_ASKS_ABOUT_AN_INDICATOR = {**NO_EFFECT, "network": True}
+_ASKS_ABOUT_THE_SAMPLE = {**_ASKS_ABOUT_AN_INDICATOR, "third_party": "hash"}
+_DECLARED: dict[str, dict[str, Any]] = {
+    CAPABILITIES_TOOL: tool_declaration(
+        "Tool availability", {"kind": "capabilities", "effects": NO_EFFECT}
+    ),
+    "check_ip_reputation": tool_declaration(
+        "Address reputation",
+        {
+            "kind": "indicator_reputation",
+            "arguments": {"ip": "ip_address"},
+            "shows": "what VirusTotal and AbuseIPDB report of the address",
+            "does_not_show": (
+                "whether the sample contacts the address, or what it would send there"
+            ),
+            "effects": _ASKS_ABOUT_AN_INDICATOR,
+        },
+    ),
+    "check_domain_reputation": tool_declaration(
+        "Domain reputation",
+        {
+            "kind": "indicator_reputation",
+            "arguments": {"domain": "domain"},
+            "shows": "what VirusTotal reports of the domain: its engine counts and categories",
+            "does_not_show": (
+                "whether the sample contacts the domain, or what it would send there"
+            ),
+            "effects": _ASKS_ABOUT_AN_INDICATOR,
+        },
+    ),
+    "check_hash": tool_declaration(
+        "File hash reputation",
+        {
+            "kind": "reputation",
+            "arguments": {"hash": "file_hash"},
+            "display_name": "Threat intelligence",
+            "shows": (
+                "what VirusTotal reports of the hash: its engine counts and details of the file"
+            ),
+            "does_not_show": (
+                "this run's own analysis of the sample; an unknown hash or no detections is no "
+                "evidence that the file is clean"
+            ),
+            "reputation": {
+                "stats": "/last_analysis_stats",
+                "malicious": "/last_analysis_stats/malicious",
+                "suspicious": "/last_analysis_stats/suspicious",
+                "summary": "/summary",
+                "text_patterns": [
+                    r"(?s)\AHash [0-9A-Fa-f]+ \(.*\): (?:clean|suspicious|malicious) — "
+                    r"(?P<malicious>\d+)/(?P<total>\d+) malicious, (?P<suspicious>\d+)/\d+ "
+                    r"suspicious\.\s*\z",
+                ],
+                "rank": 20,
+            },
+            "effects": _ASKS_ABOUT_THE_SAMPLE,
+        },
+    ),
+    "get_threatintel_status": tool_declaration(
+        "Lookup service status", {"kind": "status", "effects": NO_EFFECT}
+    ),
+}
 
-@mcp.tool(name=CAPABILITIES_TOOL)
+
+@mcp.tool(name=CAPABILITIES_TOOL, **_DECLARED["capabilities"])
 def capabilities() -> dict[str, Any]:
     """What this server can do on this host.
 
@@ -671,7 +750,7 @@ def _every_part_answered(text: str, parts: list[str]) -> bool:
     return all(error_parts(part) is None for part in parts) and error_parts(text) is None
 
 
-@mcp.tool()
+@mcp.tool(**_DECLARED["check_ip_reputation"])
 @says_unquoted("ip_address")
 def check_ip_reputation(ip_address: str) -> str:
     """Check the reputation of a public IP address.
@@ -712,7 +791,7 @@ def check_ip_reputation(ip_address: str) -> str:
     return _with_read_as(result, "ip_address", given, asked)
 
 
-@mcp.tool()
+@mcp.tool(**_DECLARED["check_domain_reputation"])
 @says_unquoted("domain")
 def check_domain_reputation(domain: str) -> str:
     """Check the reputation of a domain.
@@ -740,7 +819,7 @@ def check_domain_reputation(domain: str) -> str:
     return _with_read_as(result, "domain", given, asked)
 
 
-@mcp.tool()
+@mcp.tool(**_DECLARED["check_hash"])
 @says_unquoted("file_hash")
 def check_hash(file_hash: str) -> str:
     """Check the reputation of a file hash (MD5, SHA1, or SHA256).
@@ -769,7 +848,7 @@ def check_hash(file_hash: str) -> str:
     return _with_read_as(result, "file_hash", given, asked)
 
 
-@mcp.tool()
+@mcp.tool(**_DECLARED["get_threatintel_status"])
 def get_threatintel_status() -> str:
     """Return the current status of ThreatIntel MCP integrations."""
     services = []

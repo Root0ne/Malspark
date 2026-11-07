@@ -18,8 +18,8 @@ from typing import Any
 
 import pytest
 
-from maljan.agents.mcp_client import StructuredAnswer
-from maljan.core.declaration_proposals import ProbeCall, propose, propose_tool
+from malspark.agents.mcp_client import StructuredAnswer
+from malspark.core.declaration_proposals import ProbeCall, propose, propose_tool
 
 ROOT = Path(__file__).resolve().parents[3]
 REP_STUB = ROOT / "tests" / "fixtures" / "validation" / "rep_stub.py"
@@ -158,9 +158,9 @@ def test_a_large_wrapped_answer_is_read_in_linear_time() -> None:
 
     def _timed(n: int) -> float:
         answer = {"result": json.dumps({**RECORD, "rows": [{"name": "x"}] * n})}
-        start = time.perf_counter()
+        start = time.thread_time()
         propose_tool(_definition(_wrapper()), answer=answer)
-        return time.perf_counter() - start
+        return time.thread_time() - start
 
     small, large = _timed(2_000), _timed(20_000)
     assert large < max(small * 30, 0.5)

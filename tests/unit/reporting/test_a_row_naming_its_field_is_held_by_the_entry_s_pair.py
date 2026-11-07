@@ -21,7 +21,7 @@ from typing import Any
 
 import pytest
 
-from maljan.pipeline.validation import (
+from malspark.pipeline.validation import (
     CITATION_WRONG_ENTRY_CODE,
     STATED_VALUE_UNHELD_CODE,
     EntryTexts,
@@ -30,7 +30,7 @@ from maljan.pipeline.validation import (
     stated_value_violations,
     wrong_entry_citations,
 )
-from maljan.schemas.evidence import LedgerEntry
+from malspark.schemas.evidence import LedgerEntry
 
 DECODER = {
     "tool": "example_decoder",
@@ -204,9 +204,9 @@ def _timed(scale: int) -> float:
         "seed" + " " * scale + "=" + "x" * scale,
     )
     gc.collect()
-    began = time.perf_counter()
+    began = time.thread_time()
     found = stated_value_violations(payload, texts)
-    seconds = time.perf_counter() - began
+    seconds = time.thread_time() - began
     assert [v.code for v in found] == [STATED_VALUE_UNHELD_CODE]
     return seconds
 

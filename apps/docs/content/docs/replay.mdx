@@ -16,7 +16,7 @@ model writes still needs a paired run.
 ## Running it
 
 ```bash
-python scripts/replay/run.py runs/haiku4
+python scripts/replay/run.py <run dir>
 ```
 
 A stored run is a directory in the benchmark's layout: `evidence.json` (the
@@ -28,6 +28,9 @@ written), `events.json` and `job.json`. Several runs may be named at once.
 `--work` or `--job-dir`) is refused. The exit status is 0 when every part
 replayed or was named as not replayable, and 2 when a part raised: a crash is
 not a decision, and the part that raised is printed first, marked `[raised]`.
+A replay over many runs can be held to a memory cap with
+`python scripts/dev/run_capped.py -- python scripts/replay/run.py …` (see
+[Development](/docs/development/#heavy-local-runs-in-a-capped-scope)).
 
 `--job ID` reads a job from the database instead (`--database-url`, else
 `DATABASE_URL`, else the API's bootstrap setting), in one transaction set
@@ -102,7 +105,7 @@ suite, over the tiny run and over scenarios that take the branches the tiny run
 does not: a judge answer that is not a bundle (the fallback verdict), a capture
 the sandbox attributes no flow of the sample to, a blanked answer (absences
 advisory), the export and the detection drafts switched off, and a technique
-the judge's review dropped. `MALJAN_REPLAY_RUN` adds a stored run, compared on
+the judge's review dropped. `MALSPARK_REPLAY_RUN` adds a stored run, compared on
 everything but its degradation.
 
 The oracle does not cover:
@@ -111,8 +114,7 @@ The oracle does not cover:
   node itself (its loop, its retries, its nudge) is not run;
 - **the reading of the transcript:** which stored answer is told apart as cut,
   as a summary of claims, or as the one in force;
-- **the stand-in that hosts the analyst's parser** (`_ReplayAnalyst`): a parse
-  method that came to read an attribute of a real analyst would get the class
+- **the stand-in that hosts the analyst's parser** (`_ReplayAnalyst`): a parse method that reads an attribute of a real analyst would get the class
   default here;
 - **the stored-run and database readers** (`stored.py`, `database.py`);
 - **the shared projection:** the state both sides are fed (the claims in force
@@ -143,8 +145,7 @@ skipped in silence:
   shown;
 - the degradation reasons the judge node decides from inputs the record does
   not hold (the sandbox report, model failures, prompt notices, the pack): they
-  are kept as stored and counted, and a rule change that would no longer give
-  one cannot remove it;
+  are kept as stored and counted, and a rule change that would not give one cannot remove it;
 - the entries as the checks read them: the run saved them after the byte
   budget, so an output the budget blanked and a structure its last pass
   dropped are read as saved; and the ledger's structured answers come back
@@ -168,7 +169,7 @@ table.
 ## Comparing two refs
 
 ```bash
-python scripts/replay/run.py runs/run7 runs/haiku4 --compare origin/dev HEAD
+python scripts/replay/run.py <run dir A> <run dir B> --compare origin/dev HEAD
 ```
 
 Each ref is replayed by its own harness over its own rules. The ref's
@@ -188,8 +189,7 @@ schema up to its own.
   replay with. It cannot be compared: the command says so and ends with status
   2 before replaying anything. Compare two refs that both carry the tool.
 - **Parts only one side defines.** On every comparison, every part only one
-  record defines (a report value, a note on the claims in force, a composer
-  section one tree no longer composes) is listed as "not compared: defined
+  record defines (a report value, a note on the claims in force, a composer section one tree does not compose) is listed as "not compared: defined
   only under A" (or B). Every record carries the version of its schema
   (`schema`); when the two trees write different versions the comparison says
   so, and a part both write in forms the two schemas do not share is listed

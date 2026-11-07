@@ -23,10 +23,14 @@ from unittest.mock import patch
 import pytest
 from langchain_core.messages import HumanMessage, SystemMessage
 
-from maljan.core.config import Settings
-from maljan.llm import anthropic_history
-from maljan.llm.anthropic_provider import AnthropicProvider
-from maljan.reporting.composer import COMPOSED_SECTIONS, ReportComposer
+from malspark.core.config import Settings
+from malspark.llm import anthropic_history
+from malspark.llm.anthropic_provider import AnthropicProvider
+from malspark.reporting.composer import (
+    COMPOSED_SECTIONS,
+    ReportComposer,
+    _published_techniques,
+)
 from tests.unit.reporting.test_the_composer_writes_its_sections_at_once import (
     _answer,
     _isr,
@@ -79,7 +83,9 @@ def _model() -> Any:
 
 def _compose(model: Any) -> None:
     composer = ReportComposer(llm=model, per_section_timeout=60)
-    with patch("maljan.reporting.composer.structured_output_supported_for_llm", return_value=False):
+    with patch(
+        "malspark.reporting.composer.structured_output_supported_for_llm", return_value=False
+    ):
         asyncio.run(composer.compose(_report(), _isr(), facts_block=FACTS, concurrent=True))
 
 
@@ -109,7 +115,7 @@ class TestOnTheStructuredPath:
         # What an ``anthropic`` provider's settings answer (``registry``).
         composer = ReportComposer(llm=_model(), per_section_timeout=60)
         with patch(
-            "maljan.reporting.composer.structured_output_supported_for_llm", return_value=True
+            "malspark.reporting.composer.structured_output_supported_for_llm", return_value=True
         ):
             asyncio.run(composer.compose(_report(), _isr(), facts_block=FACTS, concurrent=True))
         # A section whose structured answer does not parse is asked again by
@@ -157,7 +163,7 @@ class TestTheManualPathAfterAStructuredAttempt:
         install(monkeypatch, found)
         composer = ReportComposer(llm=_model(), per_section_timeout=60)
         with patch(
-            "maljan.reporting.composer.structured_output_supported_for_llm", return_value=True
+            "malspark.reporting.composer.structured_output_supported_for_llm", return_value=True
         ):
             asyncio.run(composer.compose(_report(), _isr(), facts_block=FACTS, concurrent=True))
         return found.bodies
@@ -182,6 +188,43 @@ class TestTheManualPathAfterAStructuredAttempt:
         assert len({_prefix(tooled[name]) for name in PROSE}) == 1
 
 
+class TestWithReadEvidenceBesideTheSchema:
+    """As the report node sends them: ``read_evidence`` offered, on a model that thinks by default.
+
+    Such a model writes a schema offered beside the read as text
+    (``registry.schema_tool_worth_offering``), so no section sends its schema
+    as a tool: every section sends the same tools, system prompt and head,
+    one group whose lead is sent first and whose others follow once its answer
+    has begun. In haiku8 each section's own schema tool came first in its
+    tools, so 15 of 22 first requests shared about 11 characters.
+    """
+
+    def test_every_section_shares_one_prefix_and_waits_for_one_lead(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from malspark.agents.ledger_reads import LedgerReads
+        from malspark.agents.tool_answer_clearing import READ_EVIDENCE_TOOL
+
+        from .test_a_structured_answer_in_text_is_kept import _in_text
+        from .test_the_report_calls_may_read_the_ledger import LEDGER
+
+        wire = Wire(_in_text)
+        install(monkeypatch, wire)
+        composer = ReportComposer(llm=_model(), per_section_timeout=60)
+        composer.ledger_reads = LedgerReads(LEDGER)
+        with patch(
+            "malspark.reporting.composer.structured_output_supported_for_llm", return_value=True
+        ):
+            asyncio.run(composer.compose(_report(), _isr(), facts_block=FACTS, concurrent=True))
+        firsts = [b for b in wire.bodies if len(b["messages"]) == 1]
+        assert {_section(b) for b in firsts} == set(COMPOSED_SECTIONS)
+        assert {tuple(t["name"] for t in b["tools"]) for b in firsts} == {(READ_EVIDENCE_TOOL,)}
+        prefixes = {_prefix(b) for b in firsts}
+        assert len(prefixes) == 1 and "" not in prefixes, "one byte-identical prefix"
+        assert _section(firsts[0]) == "introduction"
+        assert [_section(b) for b in firsts].count("introduction") == 1
+
+
 class TestTheHeadIsCachedOnce:
     def test_every_section_sends_the_head_as_one_cached_block(self, wire: Wire) -> None:
         _compose(_model())
@@ -193,7 +236,9 @@ class TestTheHeadIsCachedOnce:
             assert head["cache_control"]["type"] == "ephemeral"
             assert "cache_control" not in rest
             heads.add(head["text"])
-        assert heads == {FACTS + "\n\n"}, "one prefix, the same on every section"
+        assert heads == {f"{FACTS}\n\n{_published_techniques(_report())}\n\n"}, (
+            "one prefix, the same on every section"
+        )
         assert len({json.dumps(b.get("system"), sort_keys=True) for b in wire.bodies}) == 1
 
     def test_on_the_manual_path_the_lead_section_is_sent_before_the_others(

@@ -24,6 +24,7 @@ import gc
 import json
 import os
 import socket
+import stat
 import threading
 from collections.abc import Callable, Coroutine, Iterator
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -32,7 +33,7 @@ from typing import Any
 import pytest
 from pydantic import BaseModel
 
-from maljan.core.config import Settings
+from malspark.core.config import Settings
 
 from .anthropic_wire import message, streamed
 
@@ -202,7 +203,7 @@ def endpoint_pools_of_this_test(monkeypatch: pytest.MonkeyPatch) -> None:
     entry in the pool a later test's stub would find on that port, and its
     cookie in the jar that pool's requests are built with.
     """
-    from maljan.llm import loop_clients
+    from malspark.llm import loop_clients
 
     monkeypatch.setattr(loop_clients, "_SHARED", {})
 
@@ -252,10 +253,11 @@ def _on_both(agent_loop: _LoopThread, call: Callable[[], Coroutine[Any, Any, Any
 
 
 def _socket_count() -> int:
+    """The sockets among this process's open descriptors (``/dev/fd`` lists them)."""
     count = 0
-    for name in os.listdir("/proc/self/fd"):
+    for name in os.listdir("/dev/fd"):
         try:
-            if os.readlink(f"/proc/self/fd/{name}").startswith("socket:"):
+            if stat.S_ISSOCK(os.fstat(int(name)).st_mode):
                 count += 1
         except OSError:
             continue
@@ -283,7 +285,7 @@ class _Section(BaseModel):
 
 
 def _anthropic(httpd: ThreadingHTTPServer) -> Any:
-    from maljan.llm.anthropic_provider import AnthropicProvider
+    from malspark.llm.anthropic_provider import AnthropicProvider
 
     settings = Settings(_env_file=None, llm={"anthropic": {"api_key": "test-value"}})
     return AnthropicProvider(settings).build_model(
@@ -292,7 +294,7 @@ def _anthropic(httpd: ThreadingHTTPServer) -> Any:
 
 
 def _openai(httpd: ThreadingHTTPServer) -> Any:
-    from maljan.llm.openai_provider import OpenAIProvider
+    from malspark.llm.openai_provider import OpenAIProvider
 
     settings = Settings(
         _env_file=None,
@@ -478,7 +480,7 @@ class TestTheOpenAIModel:
 
 
 def _ollama(base_url: str) -> Any:
-    from maljan.llm.ollama_provider import OllamaProvider
+    from malspark.llm.ollama_provider import OllamaProvider
 
     settings = Settings(_env_file=None, llm={"ollama": {"base_url": base_url}})
     return OllamaProvider(settings).build_model("m", 0.0)
@@ -518,7 +520,7 @@ class TestTheGeminiModel:
     def test_one_model_answers_on_two_running_loops(
         self, server: ThreadingHTTPServer, agent_loop: _LoopThread
     ) -> None:
-        from maljan.llm.gemini_provider import GeminiProvider
+        from malspark.llm.gemini_provider import GeminiProvider
 
         settings = Settings(_env_file=None, llm={"gemini": {"api_key": "test-value"}})
         model = GeminiProvider(settings).build_model("gemini-test", 0.0, base_url=_url(server))
@@ -534,7 +536,7 @@ class TestTheGeminiModel:
 def test_the_loop_bound_client_refuses_an_attribute_write(server: ThreadingHTTPServer) -> None:
     import httpx2
 
-    from maljan.llm.loop_clients import loop_bound_async_client
+    from malspark.llm.loop_clients import loop_bound_async_client
 
     client = loop_bound_async_client(lambda: httpx2.AsyncClient(base_url=_url(server)))
     with pytest.raises(AttributeError, match="read-only"):
@@ -551,7 +553,7 @@ def test_a_gemini_client_laid_out_otherwise_is_named_in_one_warning(
 ) -> None:
     from types import SimpleNamespace
 
-    from maljan.llm import gemini_provider, loop_clients
+    from malspark.llm import gemini_provider, loop_clients
 
     monkeypatch.setattr(loop_clients, "_UNRECOGNISED", set())
     moved = SimpleNamespace(client=SimpleNamespace(_api_client=SimpleNamespace()))

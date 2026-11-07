@@ -1,7 +1,7 @@
 """Connection tests for settings the UI is about to save. Nothing is persisted.
 
 Every provider answers for itself: the model probe asks the selected LLM
-provider's adapter (``maljan.llm.provider_base``) where its models are listed,
+provider's adapter (``malspark.llm.provider_base``) where its models are listed,
 which request one short turn is and how its answer is read; a static or
 sandbox provider is built from the candidate settings and its own ``probe()``
 is asked; a memory backend's ``readiness()``; a reputation source's
@@ -19,18 +19,18 @@ from dataclasses import dataclass
 from typing import Any
 
 import httpx
-from maljan.core.config import BUILTIN_SERVER_KEYS, MCPServerConfig, builtin_env_allow
-from maljan.core.logger import logger
-from maljan.core.model_assignments import endpoint_for, endpoint_label
-from maljan.core.plugins import ALLOW_LIST_KEY, PLUGIN_GROUPS
-from maljan.core.settings_overrides import build_settings, redact_url, split_key
-from maljan.core.tool_declarations import SANDBOX_ROLE
-from maljan.llm.provider_base import COMPLETION_MAX_TOKENS as _COMPLETION_MAX_TOKENS
-from maljan.llm.provider_base import COMPLETION_PROMPT as _COMPLETION_PROMPT
-from maljan.llm.provider_base import facts_of
-from maljan.providers import server_probe
-from maljan.providers.errors import ProviderConfigurationError
-from maljan.providers.servers import ServerHandle
+from malspark.core.config import MCPServerConfig, builtin_env_allow
+from malspark.core.logger import logger
+from malspark.core.model_assignments import endpoint_for, endpoint_label
+from malspark.core.plugins import ALLOW_LIST_KEY, PLUGIN_GROUPS
+from malspark.core.settings_overrides import build_settings, redact_url, split_key
+from malspark.core.tool_declarations import SANDBOX_ROLE
+from malspark.llm.provider_base import COMPLETION_MAX_TOKENS as _COMPLETION_MAX_TOKENS
+from malspark.llm.provider_base import COMPLETION_PROMPT as _COMPLETION_PROMPT
+from malspark.llm.provider_base import facts_of
+from malspark.providers import server_probe
+from malspark.providers.errors import ProviderConfigurationError
+from malspark.providers.servers import ServerHandle
 from pydantic import ValidationError
 from redis.asyncio import Redis
 
@@ -232,7 +232,7 @@ def _listing_failed(endpoint: str, detail: str) -> str:
 async def probe_llm(settings: Any) -> ProbeResult:
     """List the selected provider's models, then ask each model a run would call one turn.
 
-    Every step is the provider's own (``maljan.llm.provider_base``): where its
+    Every step is the provider's own (``malspark.llm.provider_base``): where its
     models are listed and how a name is read, which model is asked first, the
     request and how its answer is read. A provider that lists nothing is asked
     without a listing.
@@ -240,7 +240,7 @@ async def probe_llm(settings: Any) -> ProbeResult:
     t0 = time.perf_counter()
     deadline = probe_deadline()
     provider = str(settings.llm.provider)
-    from maljan.llm.provider_base import provider_names
+    from malspark.llm.provider_base import provider_names
 
     if provider not in provider_names():
         # Named by its setting, never by what was typed into it.
@@ -374,7 +374,7 @@ async def _complete_each_pair(
     the provider's global effort, and its completion names its own so the row
     is filed under it.
     """
-    from maljan.llm.effort import effort_in_force
+    from malspark.llm.effort import effort_in_force
 
     reached: list[dict[str, Any]] = []
     broken: list[str] = []
@@ -446,7 +446,7 @@ async def context_window_facts(settings: Any) -> dict[str, Any]:
     """The window these settings' models serve, and what it gives one answer.
 
     Free of charge and asked of the operator's own endpoints: the same metadata
-    requests the worker makes (``maljan.llm.context_window``), never a
+    requests the worker makes (``malspark.llm.context_window``), never a
     generation call. An endpoint that says nothing falls to the vendored table
     and then to the stated fallback, so this always answers and never raises.
 
@@ -458,8 +458,8 @@ async def context_window_facts(settings: Any) -> dict[str, Any]:
     ``setting`` is what ``core.preprocessing.max_tool_output_chars`` holds, so
     the console can say whether the window decides at all.
     """
-    from maljan.agents.composition import window_assignments
-    from maljan.llm.context_window import (
+    from malspark.agents.composition import window_assignments
+    from malspark.llm.context_window import (
         ANSWER_SHARE,
         ContextBudget,
         awindow_for_settings,
@@ -473,7 +473,7 @@ async def context_window_facts(settings: Any) -> dict[str, Any]:
         window = await awindow_for_settings(settings, assignments, probe=configured <= 0)
     except Exception as exc:  # noqa: BLE001 — a window is never worth a failed page
         logger.warning("the context window could not be learned: %s", type(exc).__name__)
-        from maljan.llm.context_window import unknown_window
+        from malspark.llm.context_window import unknown_window
 
         window = unknown_window(f"the probe could not be made ({type(exc).__name__})")
     budget = ContextBudget(window, reply_tokens=generation_reserve(settings))
@@ -601,16 +601,48 @@ def _probe_config(entry: dict[str, Any], name: str) -> MCPServerConfig:
     what the server ships, as the console stages them; without the mark,
     whole, as an earlier release read it.
     """
-    from maljan.core.settings_overrides import SERVER_MAP_PATH, shipped_tool_facts
-    from maljan.core.tool_declarations import sent_in_force
+    from malspark.core.config import _builtin_servers
+    from malspark.core.settings_overrides import SERVER_MAP_PATH, shipped_tool_facts
+    from malspark.core.tool_declarations import (
+        DECLARATION_FIELDS,
+        fill_declaration,
+        sent_in_force,
+        settled_trust,
+        strip_declaration_defaults,
+    )
 
     facts = entry.get("tool_facts")
     if isinstance(facts, dict):
         shipped = shipped_tool_facts(f"{SERVER_MAP_PATH}.{name}")
         entry = {**entry, "tool_facts": sent_in_force(shipped, facts)}
+    seed = _builtin_servers().get(name)
+    builtin = seed if seed is not None and seed.shipped else None
+    # The trust in the server's own declaration as a save records it
+    # (``tool_declarations.settled_trust``): an operator's tick holds for the
+    # server the entry points at; a trust carried through a repoint does not.
+    sent = MCPServerConfig.model_validate(entry)
+    if builtin is not None:
+        fill_declaration(sent, builtin)
+    entry = {**entry, **settled_trust(f"mcp:{name}", sent, entry.get("trust_granted_for"))}
+    if builtin is not None:
+        # As a save reads it (``server_map.validate_server_map``): a declaration
+        # field equal to the built-in's is the built-in's, not the operator's,
+        # so the editor posting it back sets nothing (a shipped trust in the
+        # server's own declaration among them, ``tool_declarations.trusts_served``).
+        model = fill_declaration(MCPServerConfig.model_validate(entry), builtin)
+        kept = strip_declaration_defaults(model.model_dump(mode="json"), builtin)
+        entry = {
+            key: value
+            for key, value in entry.items()
+            if key not in DECLARATION_FIELDS or key in kept or key == "tool_facts"
+        }
     config = MCPServerConfig.model_validate(entry)
+    if builtin is not None:
+        fill_declaration(config, builtin)
+        # Probed as a run starts it: with the seed's marks, as a load re-seeds it.
+        config.mark_as_seed_of(builtin)
     update: dict[str, Any] = {"enabled": True, "tools": None}
-    if name in BUILTIN_SERVER_KEYS:
+    if builtin is not None:
         update["env_allow"] = builtin_env_allow(name, config.env_allow)
     return config.model_copy(update=update)
 
@@ -622,7 +654,7 @@ def _declared_tools(config: MCPServerConfig, name: str) -> frozenset[str]:
     shipped ones with its changes over them, so a shipped tool it removed is
     undeclared); one that sets none has what the server ships.
     """
-    from maljan.core.settings_overrides import SERVER_MAP_PATH, shipped_tool_facts
+    from malspark.core.settings_overrides import SERVER_MAP_PATH, shipped_tool_facts
 
     if "tool_facts" in config.model_fields_set:
         return frozenset(config.tool_facts)
@@ -645,6 +677,7 @@ def _proposals(
     withheld: list[str] | None,
     sandbox_source: bool = False,
     remote: bool = False,
+    trusted: bool = False,
 ) -> dict[str, Any] | None:
     """The declaration proposals for the tools ``found`` lists and nothing declares.
 
@@ -656,10 +689,11 @@ def _proposals(
     declaration needs its credential and it is sent. ``sandbox_source`` says
     the server's declaration names it a sandbox source (its ``roles``), the
     only server whose tools may be proposed sandbox kinds. ``remote`` says it is
-    reached at an address other jobs share (:func:`maljan.core.declaration_proposals.propose`).
+    reached at an address other jobs share (:func:`malspark.core.declaration_proposals.propose`).
+    ``trusted`` says its block trusts what the server declares of its own tools.
     """
-    from maljan.core.declaration_proposals import propose
-    from maljan.tools.capabilities import CAPABILITIES_TOOL
+    from malspark.core.declaration_proposals import propose
+    from malspark.tools.capabilities import CAPABILITIES_TOOL
 
     if not found.definitions:
         return None
@@ -671,6 +705,7 @@ def _proposals(
             skip=declared | {CAPABILITIES_TOOL},
             sandbox_source=sandbox_source,
             remote=remote,
+            trusted=trusted,
         )
     except Exception as exc:  # noqa: BLE001 — a proposal is never worth the probe
         logger.warning("declaration proposals could not be built (%s).", type(exc).__name__)
@@ -759,7 +794,7 @@ async def _confirmed_calls(
     like any other. The probe's own cancellation is not, and propagates:
     it is told apart by this task's pending cancellation requests.
     """
-    from maljan.tools.errors import error_parts
+    from malspark.tools.errors import error_parts
 
     attached = _without_credentials(config)
     missing = ", ".join(withheld or [])
@@ -845,8 +880,8 @@ async def probe_mcp(v: dict[str, Any]) -> ProbeResult:
         return ProbeResult(False, _ms(t0), f"{type(exc).__name__}: {exc}")
     withheld = _withheld(config)
     if confirmed:
-        from maljan.core.declaration_proposals import plan_calls
-        from maljan.tools.capabilities import CAPABILITIES_TOOL
+        from malspark.core.declaration_proposals import plan_calls
+        from malspark.tools.capabilities import CAPABILITIES_TOOL
 
         def plan(definitions: list[Any]) -> list[Any]:
             planned = plan_calls(definitions, skip=declared | {CAPABILITIES_TOOL})
@@ -872,7 +907,8 @@ async def probe_mcp(v: dict[str, Any]) -> ProbeResult:
         if unavailable:
             detail += f"; {len(unavailable)} unavailable on this host"
         details = {"capabilities": capabilities}
-    from maljan.providers.sample_open import is_shared_address
+    from malspark.core.tool_declarations import trusts_served
+    from malspark.providers.sample_open import is_shared_address
 
     proposals = _proposals(
         found,
@@ -880,6 +916,7 @@ async def probe_mcp(v: dict[str, Any]) -> ProbeResult:
         withheld=withheld,
         sandbox_source=SANDBOX_ROLE in config.roles,
         remote=is_shared_address(config),
+        trusted=trusts_served(f"mcp:{name}", config),
     )
     if proposals is not None:
         details = {**(details or {}), "proposals": proposals}
@@ -967,7 +1004,7 @@ async def _ask_each_model(
     by an agent definition's probe and a role's (``mediator``, ``summarizer``),
     whose entry is read the same way.
     """
-    from maljan.core.config import model_entry
+    from malspark.core.config import model_entry
 
     # An entry holding only its ceilings is asked as no entry: it chooses no model.
     agent_llm = model_entry(settings.llm.agents, name)
@@ -991,7 +1028,7 @@ async def _ask_each_model(
     async def _ask(
         provider: str, where: str, model: str, own_effort: str | None = None
     ) -> tuple[bool | None, str]:
-        from maljan.llm.effort import effort_in_force
+        from malspark.llm.effort import effort_in_force
 
         # The model's own effort (``llm.agents.<key>.effort``), else the
         # provider's global one, as the run sends it; the request body is the
@@ -1071,7 +1108,7 @@ async def probe_agent(v: dict[str, Any]) -> ProbeResult:
     except ValidationError as exc:
         fields = _validation_detail(exc)
         return ProbeResult(False, _ms(t0), f"invalid agent settings: {fields}")
-    from maljan.core.config import ROLE_ENTRY_KEYS
+    from malspark.core.config import ROLE_ENTRY_KEYS
 
     if name in ROLE_ENTRY_KEYS:
         # A role with no definition (the mediator, the function summariser)
@@ -1093,9 +1130,9 @@ async def probe_agent(v: dict[str, Any]) -> ProbeResult:
         available = ", ".join(sorted([*settings.agents.definitions, *ROLE_ENTRY_KEYS]))
         return ProbeResult(False, _ms(t0), f"unknown agent: {name!r}. Available: {available}")
 
-    from maljan.agents.composition import aresolve_agent, mcp_refs_for, servers_bound_to
-    from maljan.core.config import ToolRef
-    from maljan.core.container import ServiceContainer
+    from malspark.agents.composition import aresolve_agent, mcp_refs_for, servers_bound_to
+    from malspark.core.config import ToolRef
+    from malspark.core.container import ServiceContainer
 
     bound = [
         key
@@ -1251,7 +1288,7 @@ OWN_PROBES = ("llm", "mcp", "agent", "redis")
 
 def _probed_sources(stored: dict[str, Any] | None) -> dict[str, Any]:
     """The enrichment sources in force that declare a connection test, by key."""
-    from maljan.enrichment.declared import effective_sources
+    from malspark.enrichment.declared import effective_sources
 
     from app.services.enrichment_sources import ENRICHMENT_SOURCES_KEY, stored_map
 
@@ -1265,9 +1302,9 @@ def _provider_probe_kinds(stored: dict[str, Any] | None = None) -> dict[str, str
     An enrichment source is tested under its key; ``stored`` adds the ones an
     operator declared to the ones the platform ships.
     """
-    from maljan.core.plugins import accepted_names, loaded_names
-    from maljan.memory.store_factory import memory_backends
-    from maljan.providers.registry import sandbox_provider_ids, static_provider_ids
+    from malspark.core.plugins import accepted_names, loaded_names
+    from malspark.memory.store_factory import memory_backends
+    from malspark.providers.registry import sandbox_provider_ids, static_provider_ids
 
     kinds: dict[str, str] = {}
     for source in _probed_sources(stored):
@@ -1321,7 +1358,7 @@ async def _probe_registered_provider(kind: str, name: str, core: Any) -> ProbeRe
     The test and the job read one object built one way, so they cannot
     disagree about which address, credential or mapping is in force.
     """
-    from maljan.providers.registry import _SANDBOX_REGISTRY, _STATIC_REGISTRY, discover_providers
+    from malspark.providers.registry import _SANDBOX_REGISTRY, _STATIC_REGISTRY, discover_providers
 
     t0 = time.perf_counter()
     discover_providers()
@@ -1329,7 +1366,7 @@ async def _probe_registered_provider(kind: str, name: str, core: Any) -> ProbeRe
     if name not in registry:
         # An allowed plugin this process has not loaded: why, or that it is
         # still loading, never a bare failure.
-        from maljan.core.plugins import unavailable_reason
+        from malspark.core.plugins import unavailable_reason
 
         why = unavailable_reason(kind, name) or "it is an allowed plugin still loading in the API"
         return ProbeResult(False, _ms(t0), f"{kind} provider {name!r} is not loaded: {why}")
@@ -1344,8 +1381,8 @@ async def _probe_registered_provider(kind: str, name: str, core: Any) -> ProbeRe
 
 async def _probe_memory_backend(name: str, core: Any) -> ProbeResult:
     """Build memory backend ``name`` from the candidate settings and ask its ``readiness()``."""
-    from maljan.core.exceptions import MemoryStoreError
-    from maljan.memory.store_factory import build_memory_store
+    from malspark.core.exceptions import MemoryStoreError
+    from malspark.memory.store_factory import build_memory_store
 
     t0 = time.perf_counter()
     memory = core.memory.model_copy(update={"backend": name})
@@ -1388,7 +1425,7 @@ async def _probe_reputation_source(
     The declaration is the staged one where the map is staged, laid over the
     stored one; a staged own key that is the mask means the stored key.
     """
-    from maljan.enrichment.declared import effective_sources, probe_source
+    from malspark.enrichment.declared import effective_sources, probe_source
 
     from app.services.enrichment_sources import credential_settings, staged_over_stored
 

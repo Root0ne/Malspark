@@ -35,13 +35,13 @@ from typing import Any
 
 import pytest
 
-from maljan.agents.tool_pinning import DELIVERY_TOOLS
-from maljan.core.builtin_declarations import server_declaration
-from maljan.core.config import MCPServerConfig, Settings
-from maljan.core.delivery_limits import SAMPLE_UPLOAD_MAX_BYTES
-from maljan.core.tool_declarations import ToolFacts
-from maljan.pipeline.artefacts import ArtefactStore
-from maljan.tools import staging
+from malspark.agents.tool_pinning import DELIVERY_TOOLS
+from malspark.core.config import Settings
+from malspark.core.declared_reading import builtin_tools
+from malspark.core.delivery_limits import SAMPLE_UPLOAD_MAX_BYTES
+from malspark.core.tool_declarations import ToolFacts
+from malspark.pipeline.artefacts import ArtefactStore
+from malspark.tools import staging
 
 ROOT = Path(__file__).resolve().parents[3]
 SERVICES = ROOT / "services"
@@ -61,6 +61,16 @@ sidecar = _load("cli_sidecar", SERVICES / "cli-sidecar" / "cli_sidecar.py")
 unblob = _load("unblob_mcp_server", SERVICES / "unblob-mcp" / "server.py")
 jadx = _load("jadx_mcp_server", SERVICES / "jadx-mcp" / "server.py")
 MODULES = {"unblob": unblob, "jadx": jadx}
+
+# unblob's extraction and scan run under prlimit (util-linux), which sets a
+# run's resource limits through a Linux system call. A host without it refuses
+# a limited run as a missing dependency rather than run it uncapped
+# (test_a_limited_run_without_prlimit_is_a_missing_dependency), so the tests
+# that run one are skipped there.
+needs_prlimit = pytest.mark.skipif(
+    shutil.which("prlimit", path=f"/usr/bin{os.pathsep}/bin") is None,
+    reason="no prlimit: unblob's runs are refused as a missing dependency on this host",
+)
 
 APK_BYTES = b"PK\x03\x04" + b"\x00" * 60
 DEX_BYTES = b"dex\n035\x00" + b"\x00" * 60
@@ -292,6 +302,7 @@ EXTRACT_REPORT = [
 
 
 class TestTheScan:
+    @needs_prlimit
     def test_each_chunk_of_the_sample_is_a_row_and_nothing_is_kept(
         self, roots: Path, bin_dir: Path, carve: Path
     ) -> None:
@@ -328,6 +339,7 @@ class TestTheScan:
 
 
 class TestTheExtraction:
+    @needs_prlimit
     def test_files_links_and_special_files_are_listed_and_no_link_is_followed(
         self, roots: Path, bin_dir: Path, carve: Path, tmp_path: Path
     ) -> None:
@@ -381,6 +393,7 @@ class TestTheExtraction:
         assert args[args.index("--extract-dir") + 1] == str(carve / run_id)
         assert args[args.index("--depth") + 1] == "10" and "--skip-extraction" not in args
 
+    @needs_prlimit
     def test_an_extraction_past_the_upload_bound_is_stopped_and_says_so(
         self, roots: Path, bin_dir: Path, carve: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
@@ -405,6 +418,7 @@ class TestTheExtraction:
         assert {row["reason"] for row in answer["not_handed_on"]} == {unblob.PAST_THE_BOUND}
         assert answer["chunks"] == [] and answer["problems"] == []
 
+    @needs_prlimit
     def test_a_run_of_too_many_entries_is_stopped_and_says_so(
         self, roots: Path, bin_dir: Path, carve: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
@@ -413,6 +427,7 @@ class TestTheExtraction:
         answer = _call(unblob.container_extract(str(roots / "s.bin")))
         assert "it made more than 5 entries (UNBLOB_MAX_ENTRIES)" in answer["stopped"]
 
+    @needs_prlimit
     def test_no_one_file_may_pass_the_bound_and_one_cut_there_is_not_handed_on(
         self, roots: Path, bin_dir: Path, carve: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
@@ -457,6 +472,7 @@ class TestTheExtraction:
         monkeypatch.setenv(unblob.UPLOAD_BOUND_ENV, "")
         assert unblob.upload_bound() == SAMPLE_UPLOAD_MAX_BYTES
 
+    @needs_prlimit
     def test_an_extraction_with_no_file_keeps_no_directory(
         self, roots: Path, bin_dir: Path, carve: Path
     ) -> None:
@@ -509,6 +525,7 @@ class TestTheExtraction:
         unblob.sweep(now=now, room_for=10**12)
         assert top.is_dir()
 
+    @needs_prlimit
     def test_a_run_being_read_is_the_last_to_go(
         self, roots: Path, bin_dir: Path, carve: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
@@ -524,6 +541,7 @@ class TestTheExtraction:
         unblob.sweep(room_for=1)
         assert top.is_dir()
 
+    @needs_prlimit
     def test_a_finished_run_is_kept_from_when_its_writing_ended(
         self, roots: Path, bin_dir: Path, carve: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
@@ -541,6 +559,7 @@ class TestTheExtraction:
         assert top.stat().st_mtime > time.time() - 60
         assert not unblob._writing
 
+    @needs_prlimit
     def test_no_report_is_a_failure_in_unblobs_words(
         self, roots: Path, bin_dir: Path, carve: Path
     ) -> None:
@@ -669,6 +688,7 @@ class TestReadingAWrittenFileBack:
         )
         return _call(unblob.container_extract(str(roots / "s.bin")))
 
+    @needs_prlimit
     def test_a_file_is_read_in_chunks_with_its_digest(
         self, roots: Path, bin_dir: Path, carve: Path, tmp_path: Path
     ) -> None:
@@ -681,6 +701,7 @@ class TestReadingAWrittenFileBack:
         data = base64.b64decode(first["content_b64"]) + base64.b64decode(rest["content_b64"])
         assert data == b"A" * 10_000
 
+    @needs_prlimit
     def test_the_artefact_store_takes_each_listed_file_in_over_get_artefact(
         self, roots: Path, bin_dir: Path, carve: Path, tmp_path: Path, monkeypatch: Any
     ) -> None:
@@ -728,6 +749,7 @@ class TestReadingAWrittenFileBack:
             "payload.bin\0",
         ],
     )
+    @needs_prlimit
     def test_nothing_but_a_regular_file_beneath_the_carve_root_is_read(
         self, roots: Path, bin_dir: Path, carve: Path, tmp_path: Path, name: str
     ) -> None:
@@ -743,6 +765,7 @@ class TestReadingAWrittenFileBack:
         ), name
         assert "content_b64" not in refused
 
+    @needs_prlimit
     def test_a_file_of_several_names_inside_is_one_row_and_read(
         self, roots: Path, bin_dir: Path, carve: Path, tmp_path: Path
     ) -> None:
@@ -758,6 +781,7 @@ class TestReadingAWrittenFileBack:
         unblob._names.clear()
         assert "content_b64" in _call(unblob.get_artefact(pair["path"]))
 
+    @needs_prlimit
     def test_a_file_with_a_name_outside_the_extraction_is_not_handed_on(
         self, roots: Path, bin_dir: Path, carve: Path, tmp_path: Path
     ) -> None:
@@ -781,6 +805,7 @@ class TestReadingAWrittenFileBack:
         assert refused["error"]["code"] == "path_outside_roots"
         assert "only 1 of them" in refused["error"]["message"]
 
+    @needs_prlimit
     def test_a_name_that_is_not_utf8_is_shown_escaped_and_read_by_its_bytes(
         self, roots: Path, bin_dir: Path, carve: Path
     ) -> None:
@@ -805,6 +830,7 @@ class TestReadingAWrittenFileBack:
         read = _call(unblob.get_artefact(row["path"]))
         assert base64.b64decode(read["content_b64"]) == b"raw"
 
+    @needs_prlimit
     def test_a_chunk_is_at_most_the_platforms_chunk(
         self, roots: Path, bin_dir: Path, carve: Path, tmp_path: Path, monkeypatch: Any
     ) -> None:
@@ -1018,7 +1044,8 @@ def _advertised(module: Any) -> dict[str, dict[str, Any]]:
 
 
 def _declared(key: str) -> dict[str, ToolFacts]:
-    return MCPServerConfig(**server_declaration(key)).tool_facts
+    # What the server declares of itself, as the platform reads it (kept from its listing).
+    return dict(builtin_tools(key))
 
 
 @pytest.mark.parametrize("key", sorted(SERVERS))
@@ -1061,7 +1088,7 @@ class TestTheDeclarations:
         (port,) = re.findall(r"MCP_PORT=(\d+)", dockerfile)
         assert block.url == f"http://{service}:{port}/mcp"
         assert f"EXPOSE {port}" in dockerfile
-        assert "MALJAN_SAMPLE_ROOTS=/data/samples" in dockerfile
+        assert "MALSPARK_SAMPLE_ROOTS=/data/samples" in dockerfile
         for base in re.findall(r"^FROM (\S+)", dockerfile, re.MULTILINE):
             assert re.search(r"@sha256:[0-9a-f]{64}$", base), base
         (user,) = re.findall(r"^USER (\S+)$", dockerfile, re.MULTILINE)
@@ -1077,10 +1104,11 @@ def test_jadx_leaves_the_manifest_to_apk_info() -> None:
     facts = _declared("jadx")
     assert "apk_info" in facts["android_classes"].does_not_show
     assert set(facts["android_classes"].routed_formats) == {"apk", "dex"}
-    shipped = Settings(_env_file=None).mcp.servers["analysis"].tool_facts
+    shipped = builtin_tools("analysis")
     assert "apk_info" in shipped and "android_classes" not in shipped
 
 
+@needs_prlimit
 def test_the_declared_rows_read_what_the_servers_answer(
     roots: Path, bin_dir: Path, carve: Path
 ) -> None:
@@ -1116,8 +1144,11 @@ def test_the_unblob_image_installs_only_hashed_wheels_of_the_pinned_release() ->
     dockerfile = _dockerfile("unblob")
     assert "--require-hashes --only-binary=:all:" in dockerfile
     assert "UNBLOB_CARVE_ROOT=/tmp/carved" in dockerfile
-    # sasquatch, the one extractor not from Debian, by the release's checksum.
-    assert re.findall(r"^ARG SASQUATCH_DEB_SHA256=([0-9a-f]{64})$", dockerfile, re.MULTILINE)
+    # sasquatch, the one extractor not from Debian, by the release's checksum,
+    # one package per architecture.
+    assert re.findall(
+        r"^ARG SASQUATCH_(AMD64|ARM64)_DEB_SHA256=[0-9a-f]{64}$", dockerfile, re.MULTILINE
+    ) == ["AMD64", "ARM64"]
     assert "sha256sum -c -" in dockerfile
     pinned = (SERVICES / "unblob-mcp" / "requirements.txt").read_text(encoding="utf-8")
     assert f"unblob=={unblob.UNBLOB_VERSION} \\" in pinned
@@ -1138,8 +1169,13 @@ def test_the_jadx_image_pins_the_runtime_and_the_release_its_install_hint_names(
     assert pinned == jadx.JADX_VERSION and pinned in jadx.PROGRAM.install
     (runtime,) = re.findall(r"^ARG JRE_VERSION=(\S+)$", dockerfile, re.MULTILINE)
     assert runtime.split(".")[0] == "21"
-    # The runtime's archive and JADX's, each checked before its contents are kept.
-    assert len(re.findall(r"^ARG \w+_SHA256=[0-9a-f]{64}$", dockerfile, re.MULTILINE)) == 2
+    # The runtime's archive, one per architecture, and JADX's, each checked
+    # before its contents are kept.
+    assert len(re.findall(r"^ARG \w+_SHA256=[0-9a-f]{64}$", dockerfile, re.MULTILINE)) == 3
+    assert re.findall(r"^ARG JRE_(AMD64|ARM64)_TGZ_SHA256=", dockerfile, re.MULTILINE) == [
+        "AMD64",
+        "ARM64",
+    ]
     assert len(re.findall(r"sha256sum -c -", dockerfile)) == 2
     assert "JADX_JAR=/opt/jadx/jadx.jar" in dockerfile and "--require-hashes" in dockerfile
 

@@ -24,21 +24,21 @@ import ast
 import pathlib
 from typing import Any
 
-from maljan.pipeline.events import safe_finding_value
-from maljan.pipeline.validation import (
+from malspark.pipeline.events import safe_finding_value
+from malspark.pipeline.validation import (
     Violation,
     schema_violations,
     validate_isr,
     validate_verdict_bundle,
 )
-from maljan.schemas.isr_models import AgentISR, ClaimEvidence
-from maljan.schemas.stix_models import Bundle
+from malspark.schemas.isr_models import AgentISR, ClaimEvidence
+from malspark.schemas.stix_models import Bundle
 from tests.credential_shapes import prefixed_key
 from tests.unit.pipeline._source_names import called_name, names_reaching
 from tests.unit.pipeline.test_live_event_schema import _every_key_shape
 from tests.unit.pipeline.test_validation import _Attck
 
-SRC = pathlib.Path(__file__).resolve().parents[3] / "src" / "maljan"
+SRC = pathlib.Path(__file__).resolve().parents[3] / "src" / "malspark"
 
 # How long a row may be. ``safe_finding_value`` bounds the value it wraps at
 # 200 characters; a message is that plus the sentence around it, and the rows
@@ -76,7 +76,7 @@ class TestTheRowsThatQuoteAJudge:
             ]
         }
         if assessment:
-            payload["x_maljan_assessment"] = assessment
+            payload["x_malspark_assessment"] = assessment
         return Bundle.model_validate(payload)
 
     def test_an_ungrounded_indicator_does_not_quote_the_credential(self) -> None:
@@ -142,7 +142,7 @@ class TestARowKeepsWordsAndMasksKeys:
         """A row that reaches the event feed is scrubbed again, and half a digest is a key there."""
         import hashlib
 
-        from maljan.pipeline.events import FINDING_VALUE_LIMIT, scrub
+        from malspark.pipeline.events import FINDING_VALUE_LIMIT, scrub
 
         digest = hashlib.sha256(b"a sample").hexdigest()
         text = "word " * ((FINDING_VALUE_LIMIT - 20) // 5) + digest + " and the rest of it"
@@ -156,7 +156,7 @@ class TestARowKeepsWordsAndMasksKeys:
     def test_the_word_runs_of_a_report_are_kept_in_a_row(self) -> None:
         for words in (
             "anti-debugging/environment",
-            "x_maljan_contributing_agents",
+            "x_malspark_contributing_agents",
             "all_tools_reverser_ghidra",
         ):
             assert safe_finding_value(f"for {words} detection") == f"for {words} detection"
@@ -215,6 +215,59 @@ class TestTheRowsThatQuoteAnAnalyst:
         assert len(violations[0].message) < MESSAGE_LIMIT
 
 
+class TestTheRowsAboutUnreadFunctions:
+    """The unread-functions question (T-558) and why it was not put.
+
+    Its rows carry the platform's own addresses and counts, held to the helper
+    item by item all the same; the one place a tool's own text reaches it is
+    the not-run sentence, which names the undeclared tools an analyst called.
+    """
+
+    def test_the_question_s_fields_go_through_the_helper(self) -> None:
+        from malspark.agents.callees_question import (
+            CalleesFound,
+            CalleeToRead,
+            unread_callees_violation,
+        )
+
+        secret, url = credentialled_url()
+        one = CalleeToRead(
+            address=0x401000, callers=(0x400000,), depth=1, start=0x400000, called_from=1, calls=0
+        )
+        found = CalleesFound(ranked=(one,), starts=f"{url} {'H' * 3000}")
+
+        row = unread_callees_violation(found)
+
+        assert row is not None and secret not in row.message
+        assert len(row.message) < 2 * MESSAGE_LIMIT
+
+    def test_an_undeclared_tool_s_name_is_scrubbed_where_the_note_names_it(self) -> None:
+        from unittest.mock import MagicMock
+
+        from malspark.agents.base_agent import BaseAnalyst
+        from malspark.agents.callees_question import callees_to_read
+        from malspark.schemas.evidence import LedgerEntry
+
+        secret, url = credentialled_url()
+        entry = LedgerEntry(id="ev_0001", tool=f"{url}{'J' * 3000}", args={}, output="{}")
+        entry.source = "mcp:unknown"
+
+        found = callees_to_read([], [entry])
+
+        assert found.says_why() and secret not in found.not_run
+        assert len(found.not_run) < MESSAGE_LIMIT
+
+        said: list[tuple[str, dict[str, Any]]] = []
+        analyst = MagicMock(name="analyst")
+        analyst.name = "any_reader"
+        analyst._budget_records = []
+        analyst._container.event_sink = lambda kind, data: said.append((kind, data))
+        BaseAnalyst._state_callees_not_run(analyst, found.not_run, "job")
+
+        ((kind, data),) = said
+        assert kind == "agent_message" and secret not in data["text"]
+
+
 # ---------------------------------------------------------------------------
 # The class, rather than the instances
 # ---------------------------------------------------------------------------
@@ -225,10 +278,13 @@ WALKED: tuple[str, ...] = (
     "pipeline/validation.py",
     "pipeline/function_claims.py",
     "pipeline/nodes.py",
+    "agents/callees_question.py",
     "agents/delegation.py",
     "agents/judge_agent.py",
     "agents/judge_postprocess.py",
     "reporting/question_round.py",
+    "reporting/section_agreement.py",
+    "reporting/composer_pro.py",
 )
 
 # The values this codebase owns, per place. A bare spelling vouched for a name
@@ -245,6 +301,13 @@ WALKED: tuple[str, ...] = (
 # module's top level is owned without being listed: it is this repository's own
 # source text.
 CODE_OWNED: dict[tuple[str, str], frozenset[str]] = {
+    # The unread-functions question: its list is a join of items each wrapped
+    # in the helper where it is built, and its bound sentence is counts and a
+    # module constant; the answered row's count of those left is a count.
+    ("agents/callees_question.py", "unread_callees_violation"): frozenset({"listed", "bound"}),
+    ("agents/callees_question.py", "callees_asked_record"): frozenset({"left_unread"}),
+    # A bullet's place in the summary, counted from one.
+    ("reporting/composer_pro.py", "summary_shape_violations"): frozenset({"number"}),
     # The ATT&CK catalogue's own answers about a technique, and the router's
     # own answer about the sample. Neither quotes the producer.
     ("pipeline/validation.py", "platform_mismatch_message"): frozenset(
@@ -948,7 +1011,7 @@ class TestEveryRowIsHeldToTheSameRule:
     def test_it_catches_one_built_under_an_alias(self) -> None:
         """A renaming import used to take the whole module out of the scan."""
         source = (
-            "from maljan.pipeline.validation import Violation as V\n"
+            "from malspark.pipeline.validation import Violation as V\n"
             "def leak(model_text):\n"
             "    return V('x', f'said {model_text}')\n"
         )
@@ -958,7 +1021,7 @@ class TestEveryRowIsHeldToTheSameRule:
 
     def test_it_catches_one_built_through_a_module_alias(self) -> None:
         source = (
-            "from maljan.pipeline import validation as val\n"
+            "from malspark.pipeline import validation as val\n"
             "def leak(model_text):\n"
             "    return val.Violation('x', f'said {model_text}')\n"
         )
@@ -990,7 +1053,7 @@ class TestEveryRowIsHeldToTheSameRule:
     def test_it_reads_a_row_built_through_a_subclass(self) -> None:
         """A subclass is a second constructor and the scan saw only the base."""
         source = (
-            "from maljan.pipeline.validation import Violation\n"
+            "from malspark.pipeline.validation import Violation\n"
             "class Finding(Violation):\n"
             "    pass\n"
             "def leak(model_text):\n"
@@ -1247,13 +1310,18 @@ WRITES_THE_LIST: dict[tuple[str, str], str] = {
     ("agents/base_agent.py", "drain_validation_findings"): "the drain empties it",
     # The one place anything is added to it: the output of ``validate_isr``,
     # which is walked source.
-    ("agents/base_agent.py", "_validate_isr"): "what the walked validator returned",
+    ("agents/base_agent.py", "_validation_turn"): "what the walked validator returned",
     # The same validator's output for a turn that gave no answer, each row with
     # the platform's sentence saying why appended (``_not_asked``).
     ("agents/base_agent.py", "_settle_an_unanswered_turn"): "the walked validator's rows",
     # A callee's own drained rows, each rebuilt as a Violation naming the
     # callee. Walked source too, and vouched for by name in ``OWNED_IN``.
     ("agents/delegation.py", "_hand_over_the_record"): "a callee's rows, rebuilt",
+    # The judge holds the same list for the agents its mediation asks
+    # (T-415d): created empty and emptied by its drain, filled only by
+    # ``_hand_over_the_record`` above.
+    ("agents/judge_agent.py", "__init__"): "the list is created here",
+    ("agents/judge_agent.py", "drain_validation_findings"): "the drain empties it",
 }
 
 

@@ -13,7 +13,8 @@ declared mapping table in ``surface_map.json`` (finding kind x surface, each
 row with the code it was read from): the job detail, the report
 row, the full report JSON, the Markdown and the HTML, the STIX export and the
 judge's bundle, ``/mitre``, ``/iocs`` with and without ``include=all``, the
-evidence ledger, the event log, the run summary, the usage, the follow-ups,
+evidence ledger and its call map, the event log, the run summary, the usage, the
+follow-ups,
 the ATT&CK layer, the rule downloads and the job package, and the web
 console's tabs by the field map in ``web_fields.json``.
 
@@ -31,8 +32,10 @@ whole, and a cut of it is a defect.
 ``report-byjob.json``, ``report.json``, ``report.md``, ``report.html``,
 ``stix-bundle.json``, ``stix-judge.json``, ``mitre.json``, ``iocs.json``
 (``include=all``), ``evidence.json``, ``events.json``, ``run-summary.json``,
-``usage.json``, and ``follow-ups.json``, ``iocs-default.json``,
-``attack-layer.json`` where present). A surface whose file is absent is listed
+``usage.json``, and ``follow-ups.json``, ``call-map.json``, ``iocs-default.json``,
+``attack-layer.json`` where present, and ``evidence-bundle.json`` and
+``evidence-bundle.html`` beside an analyst-layout ``report.md``, read with it as
+one Markdown and one HTML surface). A surface whose file is absent is listed
 under ``not_checked`` with the reason. ``--api`` reads the same surfaces from a
 running API with the bearer token in the environment variable ``--token-env``
 names (never printed), plus the job package.
@@ -56,6 +59,7 @@ import os
 import re
 import sys
 import tarfile
+import urllib.error
 import urllib.request
 from collections import Counter, deque
 from collections.abc import Iterable, Iterator
@@ -130,7 +134,38 @@ def load_run(directory: Path) -> dict[str, Any]:
     package = directory / SURFACES["package"]["file"]
     if package.is_file():
         out["package"] = _read_package(package.read_bytes())
-    return out
+    bundle_json, bundle_html = directory / BUNDLE_JSON, directory / BUNDLE_HTML
+    return with_bundle(
+        out,
+        _read_json(bundle_json) if bundle_json.is_file() else None,
+        bundle_html.read_text(encoding="utf-8") if bundle_html.is_file() else None,
+    )
+
+
+# The evidence bundle the analyst report prints its record in, beside it.
+BUNDLE_JSON, BUNDLE_HTML = "evidence-bundle.json", "evidence-bundle.html"
+
+
+def with_bundle(surfaces: dict[str, Any], bundle: Any, bundle_html: str | None) -> dict[str, Any]:
+    """The Markdown and HTML surfaces as a reader holds them: the report and its bundle.
+
+    A report in the analyst layout prints its findings and leaves the record
+    behind them to the evidence bundle beside it, so a finding is looked for in
+    the two together: the bundle's sections (its JSON's Markdown) after the
+    report's Markdown, its HTML after the report's HTML. A report in the
+    single-file layout, served without a bundle, is read as it is. The served
+    Markdown alone stays under ``markdown_served``, which the job package's
+    ``report.md`` is compared with.
+    """
+    if isinstance(surfaces.get("markdown"), str):
+        surfaces["markdown_served"] = surfaces["markdown"]
+        sections = _list(_dict(bundle).get("sections"))
+        parts = [str(_dict(part).get("markdown") or "") for part in sections]
+        if parts:
+            surfaces["markdown"] = "\n\n".join([surfaces["markdown"], *parts])
+    if isinstance(surfaces.get("html"), str) and bundle_html:
+        surfaces["html"] = surfaces["html"] + bundle_html
+    return surfaces
 
 
 def _read_package(blob: bytes) -> dict[str, Any]:
@@ -185,11 +220,22 @@ def load_live(api: str, job_id: str, token: str | None) -> dict[str, Any]:
         "attack_layer": f"/reports/{rid}/attack-layer",
         "usage": f"/jobs/{job_id}/usage",
         "follow_ups": f"/jobs/{job_id}/follow-ups",
+        "call_map": f"/jobs/{job_id}/evidence/call-map",
     }
     for name, path in simple.items():
         out[name] = get(path)
     out["markdown"] = get(f"/reports/{rid}/markdown", raw=True).decode("utf-8")
     out["html"] = get(f"/reports/{rid}/html", raw=True).decode("utf-8")
+    # The evidence bundle the analyst report links to; an API that predates it
+    # serves none, and the report is read as it is.
+    try:
+        bundle = get(f"/reports/{rid}/{BUNDLE_JSON}")
+        bundle_html = get(f"/reports/{rid}/{BUNDLE_HTML}", raw=True).decode("utf-8")
+    except urllib.error.HTTPError as exc:
+        if exc.code != 404:
+            raise
+        bundle, bundle_html = None, None
+    with_bundle(out, bundle, bundle_html)
     entries: list[Any] = []
     page = 1
     while True:
@@ -367,7 +413,7 @@ class _TreeRow:
 
 def _distinct_tree(rows: list[Any]) -> list[_TreeRow]:
     """Every process of the tree as the exporter folds it, one per identity, depth first."""
-    from maljan.reporting.dedupe import distinct_processes, process_identity
+    from malspark.reporting.dedupe import distinct_processes, process_identity
 
     found: dict[tuple[int, int, str, str], _TreeRow] = {}
     pending = list(reversed(distinct_processes([_TreeRow(r) for r in rows if isinstance(r, dict)])))
@@ -1126,7 +1172,7 @@ def _section_blocks(blocks: list[_Block], title: str) -> list[_Block]:
 def check_sections(
     found: Findings, surfaces: dict[str, Any], texts: dict[str, str], out: Report
 ) -> None:
-    from maljan.reporting.renderers.markdown import declares_code, holds_code
+    from malspark.reporting.renderers.markdown import declares_code, holds_code
 
     # The calls behind the report, with the kind each declared: a section
     # citing one that declares code holds code (markdown.py ``declares_code``).
@@ -1378,7 +1424,7 @@ def check_citations(found: Findings, surfaces: dict[str, Any], out: Report) -> N
     known = ledger if ledger is not None else index
     if "stix" in surfaces and known:
         for obj in _list(_bundle(surfaces["stix"]).get("objects")):
-            for ev in _list(_dict(obj).get("x_maljan_evidence_refs")):
+            for ev in _list(_dict(obj).get("x_malspark_evidence_refs")):
                 out.checked["citation"] += 1
                 if _text(ev) not in known:
                     out.defect(
@@ -1667,9 +1713,10 @@ def _check_package(package: dict[str, Any], surfaces: dict[str, Any], out: Repor
                 "the package's STIX bundle and the served one carry different techniques or values",
             )
     md = package.get("report/report.md")
-    if isinstance(md, str) and isinstance(surfaces.get("markdown"), str):
+    markdown_served = surfaces.get("markdown_served", surfaces.get("markdown"))
+    if isinstance(md, str) and isinstance(markdown_served, str):
         out.checked["identity"] += 1
-        if md != surfaces["markdown"]:
+        if md != markdown_served:
             out.defect(
                 "differs",
                 "identity",
@@ -1734,6 +1781,7 @@ def web_view(surfaces: dict[str, Any], spec: dict[str, Any], out: Report) -> str
         "evidence": {"entries": _list(_dict(surfaces.get("evidence")).get("items"))},
         "events": {"events": _events(surfaces.get("events"))},
         "follow_ups": surfaces.get("follow_ups"),
+        "call_map": surfaces.get("call_map"),
     }
     sections = [s for s in _list(mr.get("sections")) if isinstance(s, dict)]
     with_content = {
@@ -1780,7 +1828,8 @@ def web_view(surfaces: dict[str, Any], spec: dict[str, Any], out: Report) -> str
                     "section",
                     "web",
                     key,
-                    "placed on DETECTION, which draws only the first "
+                    "placed on the detection block (Indicators & detection), "
+                    "which draws only the first "
                     f"{'/'.join(detection['keys'])} with rows "
                     f"({detection['ref']})",
                 )
@@ -1905,8 +1954,10 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--job", help="with --api: the job id")
     parser.add_argument(
         "--token-env",
-        default="MALJAN_TOKEN",
-        help="with --api: the environment variable holding the bearer token (default MALJAN_TOKEN)",
+        default="MALSPARK_TOKEN",
+        help=(
+            "with --api: the environment variable holding the bearer token (default MALSPARK_TOKEN)"
+        ),
     )
     parser.add_argument(
         "--web-fields", type=Path, default=WEB_FIELDS, help="the web console's field map"

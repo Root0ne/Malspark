@@ -56,8 +56,8 @@ def _store_sample_bytes_blocking(storage_path: str, source: str, content_type: s
 async def store_sample_bytes(*, storage_path: str, source: Any, content_type: str) -> None:
     """Put one sample's bytes in the object store, off the event loop.
 
-    Everything the store needs doing for an upload — the bucket check, the
-    deny-anonymous policy a fresh bucket gets, and the transfer itself — is
+    Everything the store needs doing for an upload — the privacy check, the
+    bucket check and the transfer itself — is
     synchronous, and a sample may be a hundred megabytes. On the loop that is
     a hundred megabytes during which this process answers no request, sends no
     WebSocket frame and fails its own health check; in a thread it is one
@@ -292,7 +292,7 @@ async def upload_sample(
     upload_tmp_root = Path(settings.upload_temp_dir).resolve()
     upload_tmp_root.mkdir(parents=True, exist_ok=True)
     with tempfile.NamedTemporaryFile(
-        prefix="maljan-upload-",
+        prefix="malspark-upload-",
         delete=False,
         dir=str(upload_tmp_root),
     ) as tmp:
@@ -393,6 +393,8 @@ async def upload_sample(
                 source=tmp_path,
                 content_type=detected_mime or "application/octet-stream",
             )
+        except object_store.StoreNotPrivate:
+            raise
         except Exception as exc:
             # Best-effort cleanup: remove the half-inserted DB row so the
             # caller can retry instead of getting a phantom 409.
@@ -400,7 +402,7 @@ async def upload_sample(
             logger.exception(
                 "MinIO upload failed: endpoint=%s bucket=%s path=%s tmp=%s",
                 settings.minio_endpoint,
-                settings.minio_bucket,
+                object_store.bucket(),
                 storage_path,
                 tmp_path,
             )
@@ -606,7 +608,7 @@ async def delete_sample(
                 extra={"user_id": str(user.id), "component": "minio"},
             )
 
-        from maljan.providers.registry import mirror_work_dirs
+        from malspark.providers.registry import mirror_work_dirs
 
         from app.worker import sample_files
 

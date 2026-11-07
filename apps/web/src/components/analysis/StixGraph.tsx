@@ -1,9 +1,11 @@
 "use client";
 
+import { scrollRegion, SCROLL_REGION_FOCUS } from "@/components/ui/scrollRegion";
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
 
 import EvidenceChips from "@/components/analysis/EvidenceChips";
-import JsonNode from "@/components/analysis/JsonTree";
+import StructuredValue from "@/components/analysis/StructuredValue";
+import { isPlainObject } from "@/components/analysis/structuredValue";
 import { downloadBlob, downloadObject } from "@/lib/report-utils";
 import {
   colourForType,
@@ -219,14 +221,17 @@ function EvidenceLine({ ids }: { ids: string[] }) {
       <EvidenceChips ids={ids} />
     </div>
   ) : (
-    <p className="text-xs text-text-muted">This object carries no evidence-ledger ids.</p>
+    <p className="text-xs text-text-muted">This object cites no evidence records.</p>
   );
 }
 
+/* The selected object's own fields, laid out for reading; "View raw" prints
+ * it as the bundle holds it. */
 function ObjectJson({ object }: { object: unknown }) {
+  const id = isPlainObject(object) && typeof object.id === "string" ? object.id : "Selected object";
   return (
-    <div className="p-3 rounded border border-border bg-bg-deep font-mono text-[11px] leading-relaxed break-all overflow-x-auto">
-      <JsonNode data={object} />
+    <div className="rounded border border-border bg-bg-deep p-3">
+      <StructuredValue value={object} name={`STIX ${id}`} />
     </div>
   );
 }
@@ -249,13 +254,15 @@ function GraphTable({
     degree.set(e.source, (degree.get(e.source) ?? 0) + 1);
     if (e.target !== e.source) degree.set(e.target, (degree.get(e.target) ?? 0) + 1);
   }
-  const th = "px-2 py-1.5 text-left font-medium text-text-secondary";
-  const td = "px-2 py-1 align-top";
+  /* The same table every structured block on the page draws: a quiet head
+   * on the deep surface, a hairline between rows, inside a bordered region. */
+  const th = "bg-bg-deep px-2 py-1.5 text-left font-medium text-text-muted";
+  const td = "border-t border-border-light px-2 py-1.5 align-top";
   return (
     <div className="space-y-5 text-xs">
-      <div className="overflow-x-auto">
+      <div {...scrollRegion("STIX objects")} className={`overflow-x-auto rounded border border-border-light ${SCROLL_REGION_FOCUS}`}>
         <table className="w-full border-collapse">
-          <caption className="text-left text-xs font-semibold text-text-primary pb-1.5">
+          <caption className="px-2 py-2 text-left text-sm font-semibold text-text-primary">
             Objects ({graph.nodes.length})
           </caption>
           <thead>
@@ -299,9 +306,9 @@ function GraphTable({
         </table>
       </div>
 
-      <div className="overflow-x-auto">
+      <div {...scrollRegion("STIX relationships")} className={`overflow-x-auto rounded border border-border-light ${SCROLL_REGION_FOCUS}`}>
         <table className="w-full border-collapse">
-          <caption className="text-left text-xs font-semibold text-text-primary pb-1.5">
+          <caption className="px-2 py-2 text-left text-sm font-semibold text-text-primary">
             Relationships ({graph.edges.length})
           </caption>
           <thead>
@@ -357,9 +364,9 @@ function GraphTable({
       </div>
 
       {graph.notDrawn.length > 0 && (
-        <div className="overflow-x-auto">
+        <div {...scrollRegion("STIX objects not drawn")} className={`overflow-x-auto rounded border border-border-light ${SCROLL_REGION_FOCUS}`}>
           <table className="w-full border-collapse">
-            <caption className="text-left text-xs font-semibold text-text-primary pb-1.5">
+            <caption className="px-2 py-2 text-left text-sm font-semibold text-text-primary">
               In the bundle, not drawn ({graph.notDrawn.length})
             </caption>
             <thead>
@@ -504,7 +511,7 @@ function GraphCanvas({
   const types = graph.nodes.map((n) => n.type);
   const saveSvg = () => {
     if (!svgRef.current) return;
-    downloadBlob(exportMarkup(svgRef.current, layout, types), "maljan-stix-graph.svg", "image/svg+xml");
+    downloadBlob(exportMarkup(svgRef.current, layout, types), "malspark-stix-graph.svg", "image/svg+xml");
   };
 
   const savePng = () => {
@@ -530,7 +537,7 @@ function GraphCanvas({
       canvas.toBlob((blob) => {
         if (blob) {
           setExportError(null);
-          downloadObject(blob, "maljan-stix-graph.png");
+          downloadObject(blob, "malspark-stix-graph.png");
         } else {
           setExportError("The PNG could not be drawn; the SVG export still works.");
         }

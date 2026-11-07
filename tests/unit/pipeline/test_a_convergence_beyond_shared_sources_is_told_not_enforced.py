@@ -20,13 +20,13 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from maljan.pipeline.nodes import make_negotiation_node
-from maljan.pipeline.state import AgentArgument
-from maljan.pipeline.sycophancy_detector import (
+from malspark.pipeline.nodes import make_negotiation_node
+from malspark.pipeline.state import AgentArgument
+from malspark.pipeline.sycophancy_detector import (
     convergence_flags,
     convergence_sentence,
 )
-from maljan.schemas.isr_models import AgentISR, ClaimEvidence
+from malspark.schemas.isr_models import AgentISR, ClaimEvidence
 
 ROW = (
     "the pack row lists seven decoded command lines for host discovery, a scheduled task "
@@ -109,9 +109,9 @@ class TestTheFlag:
             before["a"] = _isr("a", OWN)
             after = dict(before)
             after["a"] = _isr("a", PEER)
-            start = time.perf_counter()
+            start = time.thread_time()
             convergence_flags(before, after, ["a"], {}, TEXTS)
-            timings.append(time.perf_counter() - start)
+            timings.append(time.thread_time() - start)
         assert timings[1] < timings[0] * 10 * 4 + 0.5
 
 
@@ -137,8 +137,8 @@ def _negotiate(record: dict[str, Any]) -> tuple[dict[str, Any], Any]:
         "confidence_history": [0.5],
     }
     with pytest.MonkeyPatch.context() as mp:
-        mp.setattr("maljan.pipeline.nodes.pack_text", lambda *a: "PACK")
-        mp.setattr("maljan.pipeline.nodes.render_run_state", lambda *a: "")
+        mp.setattr("malspark.pipeline.nodes.pack_text", lambda *a: "PACK")
+        mp.setattr("malspark.pipeline.nodes.render_run_state", lambda *a: "")
         update = asyncio.run(make_negotiation_node(container)(state))
     return update, judge
 

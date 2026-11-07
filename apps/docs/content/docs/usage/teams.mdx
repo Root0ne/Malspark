@@ -1,25 +1,117 @@
 ---
-title: "Teams and profiles"
-description: "The teams that ship, stages and conditions, the measurement baseline, writing a team of your own."
+title: "Agents and teams"
+description: "What an agent is, how a team arranges agents into stages, the teams that ship, and how to write your own."
 ---
 
-A **team** — stored as a profile under `core.agents.profiles.<key>` and edited
-under **Settings → Agents and pipeline → Teams** — is an ordered list of
-**stages**. Each stage runs the agents it names over the tools they are given,
-and carries a condition, so a team applies to a sample rather than being
-written for one. A stage that declines is a row that says why, never an absent
-row.
+An **agent** is a model with a prompt, a role and a set of tools. A **team** is
+an ordered list of **stages**, and each stage runs the agents it names. Both
+are configuration: you write them in the console, export them as JSON and
+import them elsewhere. No code change is needed.
 
-Teams are configuration, not code. This page is the operator's overview; the
-complete field reference is [Teams and stages](/configuration/#teams-and-stages)
-in Configuration, and the runtime view is [Agents and
-teams](/architecture/#agents-and-teams) in Architecture.
+## Agents
+
+Nine agent definitions ship built in:
+
+| Agent | Role | What it does |
+| :-- | :-- | :-- |
+| `triage` | `generic` | Reads the pack's facts first and decides what the rest of the team should look at. |
+| `static` | `static` | Reads the file through the static provider and the analysis tools. |
+| `reverser` | `generic` | Takes each static finding into the decompiler and confirms or refutes it at function level. |
+| `android_static` | `generic` | Reads an APK or DEX file. |
+| `dynamic` | `dynamic` | Reads the sandbox report: processes, files, registry, signatures. |
+| `network` | `network` | Reads the capture and the sandbox's network record. |
+| `lead` | `lead` | Plans the analysis and asks the other agents through `ask_<agent>` tools. |
+| `judge` | `judge` | Mediates the debate and states the verdict. See [Debate and judge](/docs/concepts/debate-and-judge/). |
+| `reporter` | `reporter` | Writes the report. See [Report](/docs/concepts/report/). |
+
+`static`, `dynamic`, `network`, `judge` and `reporter` have a class behind
+them. The other four are a prompt and a tool list, nothing else. A definition
+of your own is the same: a prompt, a role, a model if it should differ from
+the global one, and its tools.
+
+An agent's tools are references:
+
+| Reference | Gives the agent |
+| :-- | :-- |
+| `{"kind": "mcp", "server": "<key>"}` | Every exposed tool of that MCP server. |
+| `{"kind": "provider"}` | The tools of the static provider the agent opens. Only on a `generic` or `lead` agent. |
+| `{"kind": "sandbox"}` | Tools over the job's sandbox report. |
+| `{"kind": "agent", "agent": "<key>"}` | An `ask_<key>` tool that hands a task to another agent. |
+| `{"kind": "capability", "capability": "reputation"}` | Every built-in server that serves that kind of tool. |
+
+The agent decides which tools to call, in what order and when to stop. Every
+call goes to the [evidence ledger](/docs/concepts/ledger/).
+
+## A team, written out
+
+This is an abridged excerpt of the importable [all-tools team](/examples/profiles/all-tools.json)
+(the `all_tools_qu1cksc0pe` definition and the reverser's full prompt are left out),
+which the [benchmark](/docs/benchmark/) runs. It adds a radare2 analyst and a
+Ghidra reverser to the built-in agents:
+
+```json
+{
+  "format": "malspark-settings/1",
+  "values": {
+    "core.agents.definitions": {
+      "all_tools_static_r2": {
+        "role": "static",
+        "label": "Static analyst (radare2)",
+        "category": "code_reader",
+        "static_provider": "r2",
+        "tools": [{"kind": "mcp", "server": "analysis"}, {"kind": "mcp", "server": "knowledge"}]
+      },
+      "all_tools_reverser_ghidra": {
+        "role": "generic",
+        "label": "Reverser (Ghidra)",
+        "category": "code_reader",
+        "prompt": "You are the reversing step of a malware-analysis team. ...",
+        "static_provider": "ghidra",
+        "tools": [{"kind": "provider"}, {"kind": "mcp", "server": "knowledge"}, {"kind": "mcp", "server": "virustotal"}]
+      }
+    },
+    "core.agents.profiles": {
+      "all_tools": {
+        "label": "All tools",
+        "stages": [
+          {"key": "triage_pack", "label": "Triage pack", "kind": "triage", "inject_upstream": "none"},
+          {"key": "triage", "label": "Triage", "kind": "analysis", "agents": ["triage"], "inject_upstream": "none"},
+          {"key": "static", "label": "Static", "kind": "analysis",
+           "agents": ["static", "all_tools_static_r2", "all_tools_qu1cksc0pe"],
+           "depends_on": ["triage"], "inject_upstream": "findings"},
+          {"key": "reversing", "label": "Reversing", "kind": "analysis",
+           "agents": ["all_tools_reverser_ghidra"], "depends_on": ["static"], "inject_upstream": "findings"},
+          {"key": "dynamic", "label": "Detonation", "kind": "analysis", "agents": ["dynamic"],
+           "depends_on": ["static", "reversing"], "when": "has_sandbox_report", "inject_upstream": "findings"},
+          {"key": "network", "label": "Network", "kind": "analysis", "agents": ["network"],
+           "depends_on": ["static", "reversing", "dynamic"], "when": "has_pcap or has_sandbox_report",
+           "inject_upstream": "findings"},
+          {"key": "debate", "label": "Debate", "kind": "debate", "depends_on": ["network"]},
+          {"key": "verdict", "label": "Verdict", "kind": "verdict", "agents": ["judge"], "depends_on": ["debate"]},
+          {"key": "report", "label": "Report", "kind": "report", "agents": ["reporter"], "depends_on": ["verdict"]}
+        ]
+      }
+    }
+  }
+}
+```
+
+Read it top to bottom: the pack, then triage, then three static analysts at
+once, then the reverser with their findings, then detonation if there is a
+sandbox report, then the network pass, the debate, the verdict and the
+report. How to import it, and the servers it needs, is in [An all-tools
+team](/docs/configuration/#an-all-tools-team).
+
+A team is stored under `core.agents.profiles.<key>` and edited under
+**Settings → Configuration → Agents and pipeline → Teams**. The complete field
+reference is [Teams and stages](/docs/configuration/#teams-and-stages); the
+runtime view is [Agents and teams](/docs/architecture/#agents-and-teams).
 
 ## The teams that ship
 
 | Team | Stages | For |
 | :-- | :-- | :-- |
-| `default` | `triage_pack` → `analysis` (static, dynamic, network) → `debate` → `verdict` → `report` | The general case, and the architecture this project measured itself on. |
+| `default` | `triage_pack` → `analysis` (static, dynamic, network) → `debate` → `verdict` → `report` | The general case: three analysts, with the pack in front of them. |
 | `measurement` | The same four model stages, without the pack and with every tool server withheld | What the ensemble contributes on its own, with nothing to call. |
 | `mobile` | `triage_pack` → `triage` → `android_static` → `dynamic` → `debate` → `verdict` → `report` | An APK or a DEX. The Android stage declines on anything else and says so. |
 | `deep_static` | `triage_pack` → `triage` → `static` → `reversing` → `network` → `debate` → `verdict` → `report` | Reading the code: the reversing stage takes each static finding into the decompiler. |
@@ -65,7 +157,7 @@ stop matching the teams.
 
 <Tab value="For the deployment">
 
-Make it the active team under **Settings → Agents and pipeline → Teams**
+Make it the active team under **Settings → Configuration → Agents and pipeline → Teams**
 (`core.agents.profile`).
 
 </Tab>
@@ -98,7 +190,7 @@ curl -X POST http://localhost:8000/api/v1/jobs \
 | `builtin_tools` | `false` withholds every built-in tool server from this stage's agents. |
 
 The full table, with labels and debate options, is in
-[Teams and stages](/configuration/#teams-and-stages).
+[Teams and stages](/docs/configuration/#teams-and-stages).
 
 ## Conditions
 
@@ -117,7 +209,7 @@ triage.hits["signature_rules"] > 0
 A condition that does not parse is refused when the team is saved, and the
 console checks each condition box as it loses focus. One that fails at run time
 skips its stage with the reason recorded rather than failing the job. Every
-name the language knows is listed in [Conditions](/configuration/#conditions).
+name the language knows is listed in [Conditions](/docs/configuration/#conditions).
 
 ## The measurement baseline
 
@@ -132,7 +224,7 @@ much was the model. Compare its verdict, its techniques and its
 
 A fixed list of the built-in server keys would still hand the baseline any
 server an operator added afterwards. See [Tools, and the measurement
-baseline](/configuration/#tools-and-the-measurement-baseline).
+baseline](/docs/configuration/#tools-and-the-measurement-baseline).
 
 </Callout>
 
@@ -145,7 +237,7 @@ the team, which the console does in one click.
 - **Generic agents.** `triage`, `android_static` and `reverser` are seeded
   generic definitions: a prompt and a tool list, no class. Clone one as the
   starting point for an agent of your own.
-- **A prompt that names a tool the agent no longer has.** When an agent's own
+- **A prompt that names a tool the agent does not have.** When an agent's own
   prompt spells, exactly as declared, the name of a tool the platform knows
   (any configured server's, or a shipped declaration's) that the agent's tool
   set lacks, the settings answer carries a warning under
@@ -157,13 +249,13 @@ the team, which the console does in one click.
 - **Checked as you type.** The team editor sends the staged teams to
   `POST /api/v1/settings/lint-teams` and draws each team's stage graph with
   its findings beside it. See [Checking a team before it is
-  saved](/configuration/#checking-a-team-before-it-is-saved).
+  saved](/docs/configuration/#checking-a-team-before-it-is-saved).
 - **Delegation.** An agent can ask another agent for work the way it calls a
   tool: `ToolRef(kind="agent", agent="static")` puts `ask_static` in its
-  toolbox. See [Delegation](/configuration/#delegation).
+  toolbox. See [Delegation](/docs/configuration/#delegation).
 - **An all-tools team to import.** `docs/examples/profiles/all-tools.json` runs
   three static analysts on three tools, a Ghidra reverser, and the dynamic and
-  network stages. See [An all-tools team](/configuration/#an-all-tools-team)
+  network stages. See [An all-tools team](/docs/configuration/#an-all-tools-team)
   for the import and what it needs.
 
 ## How the analysts of a stage run
@@ -174,4 +266,4 @@ API runs the analysts in parallel, while Ollama or a local server with one slot
 runs them one after another, because concurrent analysts on a single-slot
 server clobber each other's state. A stage whose own `mode` is set keeps it.
 The rule in full is in [How an analysis stage runs its
-agents](/configuration/#how-an-analysis-stage-runs-its-agents).
+agents](/docs/configuration/#how-an-analysis-stage-runs-its-agents).

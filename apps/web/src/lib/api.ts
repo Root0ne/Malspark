@@ -1,6 +1,6 @@
 import type { TranscriptRow } from "@/lib/conversation";
 import type { JobRoster } from "@/types/events";
-import type { EvidenceListResponse, EvidenceQuery } from "@/types/evidence";
+import type { CallMapResponse, EvidenceListResponse, EvidenceQuery } from "@/types/evidence";
 import type { RunDiff } from "@/types/runDiff";
 import type {
   EnrichTriggerResponse,
@@ -915,7 +915,7 @@ class ApiClient {
 
   /**
    * Fetches the configuration export and triggers a browser download of it
-   * as `maljan-settings.json` — no server round trip beyond the fetch
+   * as `malspark-settings.json` — no server round trip beyond the fetch
    * already made, and the viewer never sees a bare `data:` link. The
    * document is downloaded byte-for-byte as the API sent it (`format`,
    * `exported_at`, `values`, `secrets_omitted`, `unreadable` in that order) rather than
@@ -930,7 +930,7 @@ class ApiClient {
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = "maljan-settings.json";
+    a.download = "malspark-settings.json";
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
@@ -1133,6 +1133,12 @@ class ApiClient {
     );
   }
 
+  /** The functions the run's code reading touched, what each calls and what
+   *  calls it, derived from the job's stored ledger. */
+  getJobCallMap(jobId: string) {
+    return this.request<CallMapResponse>(`/api/v1/jobs/${encodeURIComponent(jobId)}/evidence/call-map`);
+  }
+
   /* ── Reports ───────────────────────────────────────────
    * ``getReport``, ``getReportFull``, ``getReportIOCs`` and ``ltmPurge`` had
    * zero call sites and were removed. The pages reach a report through its
@@ -1209,6 +1215,22 @@ class ApiClient {
   /** Standalone HTML report — inline CSS and SVG figures, no external requests. */
   getReportHtml(reportId: string) {
     return this.textRequest(`/api/v1/reports/${encodeURIComponent(reportId)}/html`);
+  }
+
+  /** The evidence bundle behind the analyst report, as one standalone HTML
+   *  document: every section, table and tool output the report links to. */
+  getReportEvidenceBundleHtml(reportId: string) {
+    return this.textRequest(
+      `/api/v1/reports/${encodeURIComponent(reportId)}/evidence-bundle.html`
+    );
+  }
+
+  /** The same evidence bundle as JSON: the report's notes, the evidence index
+   *  and every section's Markdown under its anchor. */
+  getReportEvidenceBundleJson(reportId: string) {
+    return this.textRequest(
+      `/api/v1/reports/${encodeURIComponent(reportId)}/evidence-bundle.json`
+    );
   }
 
   /** Print-ready PDF of the same document. 503 when the host lacks WeasyPrint. */

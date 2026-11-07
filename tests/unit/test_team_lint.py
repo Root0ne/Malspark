@@ -15,7 +15,7 @@ from typing import Any
 import pytest
 from pydantic import ValidationError
 
-from maljan.core.config import (
+from malspark.core.config import (
     TEAM_RULE_CODES,
     AgentDefinition,
     AgentsConfig,
@@ -23,8 +23,8 @@ from maljan.core.config import (
     StageDefinition,
     _builtin_definitions,
 )
-from maljan.core.team_layout import layout_team
-from maljan.core.team_lint import lint_team, lint_teams, team_stages
+from malspark.core.team_layout import layout_team
+from malspark.core.team_lint import lint_team, lint_teams, team_stages
 
 TEAM = "mine"
 
@@ -488,11 +488,11 @@ def _fan(n: int) -> dict[str, Any]:
 
 
 def _timed(team: dict[str, Any]) -> tuple[list[Any], float]:
-    started = time.perf_counter()
+    started = time.thread_time()
     findings = lint_team(TEAM, team, definitions=_definitions())
     stages, _ = team_stages(TEAM, team)
     layout_team(stages)
-    return findings, time.perf_counter() - started
+    return findings, time.thread_time() - started
 
 
 class TestALargeTeam:

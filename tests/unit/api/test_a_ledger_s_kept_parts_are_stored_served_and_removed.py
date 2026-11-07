@@ -28,8 +28,8 @@ from app.schemas.evidence import EvidenceEntryResponse
 from app.services import object_store
 from app.worker import analysis_worker
 from app.worker.analysis_worker import _evidence_row
-from maljan.schemas.evidence import fit_structures_to_budget
-from maljan.schemas.evidence_spill import settle_refs, spill_part
+from malspark.schemas.evidence import fit_structures_to_budget
+from malspark.schemas.evidence_spill import settle_refs, spill_part
 
 _REV = (
     Path(__file__).resolve().parents[3]
@@ -56,9 +56,6 @@ class _Store:
 
     def make_bucket(self, bucket: str) -> None:
         self.exists = True
-
-    def set_bucket_policy(self, bucket: str, policy: str) -> None:
-        return None
 
     def put_object(self, bucket: str, path: str, data: Any, length: int, content_type: str) -> None:
         if self.refuses:
@@ -421,7 +418,7 @@ class _Talkative(_Store):
 
     def put_object(self, bucket: str, path: str, data: Any, length: int, content_type: str) -> None:
         raise OSError(
-            "S3 operation failed; host: minio.internal:9000, bucket: maljan-samples, "
+            "S3 operation failed; host: minio.internal:9000, bucket: malspark-samples, "
             "access key: operator-key"
         )
 
@@ -434,7 +431,7 @@ class TestWhatIsServed:
         row.id = uuid.uuid4()
         served = EvidenceEntryResponse.model_validate(row).model_dump_json()
         assert ref["error"] == "upload_failed (OSError)"
-        for leaked in ("minio.internal", "9000", "maljan-samples", "operator-key", "host"):
+        for leaked in ("minio.internal", "9000", "malspark-samples", "operator-key", "host"):
             assert leaked not in served, leaked
         assert "minio.internal:9000" in caplog.text, "the whole failure is logged server-side"
 
@@ -452,7 +449,7 @@ class TestTheBound:
         assert at["key"] in store.objects and len(store.objects) == 1
 
     def test_a_part_surely_over_the_bound_is_never_encoded(self) -> None:
-        from maljan.schemas import evidence_spill
+        from malspark.schemas import evidence_spill
 
         encoded: list[str] = []
         real = evidence_spill.part_bytes
@@ -613,9 +610,11 @@ class TestTheDownload:
         from app.api.v1 import jobs
         from app.database import get_db
         from app.deps import get_current_user
+        from app.main import store_not_private_response
 
         app = FastAPI()
         app.include_router(jobs.router, prefix="/api/v1")
+        app.add_exception_handler(object_store.StoreNotPrivate, store_not_private_response)
         self.svc = _Svc(owned)
         self.user = SimpleNamespace(id=uuid.uuid4())
         app.dependency_overrides[get_db] = lambda: _Db(row)
@@ -646,6 +645,40 @@ class TestTheDownload:
         store.response.release_conn.assert_called_once()
         assert 'filename="ev_0007-answer.txt"' in r.headers["content-disposition"]
         assert self.svc.asked == [(job, self.user)], "ownership checked as the evidence page does"
+
+    def test_a_bucket_anyone_can_read_answers_503_and_is_not_read(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from unittest.mock import MagicMock
+
+        from minio.error import S3Error
+
+        def _answer(code: str) -> S3Error:
+            return S3Error(MagicMock(), code, "", "", "", "")
+
+        class _Open:
+            def bucket_exists(self, bucket: str) -> bool:
+                raise _answer("AccessDenied")
+
+            def stat_object(self, bucket: str, key: str) -> Any:
+                raise _answer("NoSuchKey")
+
+        class _NoPolicy(_Readable):
+            def get_bucket_policy(self, bucket: str) -> str:
+                raise _answer("NoSuchBucketPolicy")
+
+        job, store = uuid.uuid4(), _NoPolicy()
+        client = self._client(owned=True, row=self._kept(job, store))
+        # The part was kept while the store could not be asked; now it is asked, and open.
+        object_store._PRIVACY.clear()
+        monkeypatch.setattr(object_store, "anonymous_client", lambda *_args: _Open())
+
+        with patch.object(object_store, "client", lambda: store):
+            r = client.get(f"/api/v1/jobs/{job}/evidence/ev_0007/objects/answer")
+
+        assert r.status_code == 503
+        assert r.json() == {"detail": "object store is not private; see the API log"}
+        assert not hasattr(store, "response"), "the object is never read"
 
     def test_another_user_s_job_is_not_found(self) -> None:
         job, store = uuid.uuid4(), _Readable()

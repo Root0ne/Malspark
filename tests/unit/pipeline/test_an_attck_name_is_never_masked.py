@@ -25,8 +25,8 @@ from pathlib import Path
 
 import pytest
 
-from maljan.pipeline import events as ev
-from maljan.pipeline.events import safe_finding_value, scrub, scrub_keeping_layout
+from malspark.pipeline import events as ev
+from malspark.pipeline.events import safe_finding_value, scrub, scrub_keeping_layout
 from tests.credential_shapes import password
 from tests.unit.pipeline.test_live_event_schema import _every_key_shape
 
@@ -194,9 +194,9 @@ def test_a_hostile_line_of_names_and_labels_is_read_in_linear_time() -> None:
 
     def took(copies: int) -> float:
         text = piece * copies
-        started = time.perf_counter()
+        started = time.thread_time()
         scrub(text)
-        return time.perf_counter() - started
+        return time.thread_time() - started
 
     small, large = took(500), took(5000)
     assert large < 20, large

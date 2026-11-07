@@ -16,21 +16,49 @@ from types import SimpleNamespace
 
 import pytest
 
-from maljan.agents.base_agent import (
+from malspark.agents.base_agent import (
     _EVIDENCE_ENDS_INLINE_RE,
     _PARTIAL_ID_AT_END_RE,
     read_technique_line,
 )
-from maljan.agents.claim_headings import CLAIM_HEAD_RE, claim_blocks
-from maljan.agents.repeat_watch import ClaimRepeatReader
-from maljan.pipeline.claim_drops import claim_substance
-from maljan.pipeline.debate_facts import fact_atoms, ledger_count_facts, ledger_stated
-from maljan.pipeline.validation import (
+from malspark.agents.claim_headings import CLAIM_HEAD_RE, claim_blocks
+from malspark.agents.repeat_watch import ClaimRepeatReader
+from malspark.pipeline.claim_drops import claim_substance
+from malspark.pipeline.debate_facts import (
+    claim_references_of,
+    fact_atoms,
+    ledger_count_facts,
+    ledger_stated,
+    read_claim_references,
+    read_marks,
+)
+from malspark.pipeline.limit_rulings import REASON_LIMIT, clean_quote, read_rulings
+from malspark.pipeline.validation import (
     EntryTexts,
     absence_holders_note,
     ledger_absence_contradictions,
 )
-from maljan.schemas.evidence import build_entry
+from malspark.reporting.absence_answers import (
+    FailureCounts,
+    count_disagrees,
+    denied_subject,
+    denies_an_observation,
+    failure_counts,
+    kept_absence,
+    negated_clauses,
+    quote_stands,
+    reading_denied_in,
+)
+from malspark.reporting.section_agreement import (
+    _candidates,
+    _reports_a_claim,
+    _said_unread,
+    _unread_addresses,
+    closing_negations,
+    unread_listed_sentences,
+    whole_code_absences,
+)
+from malspark.schemas.evidence import build_entry
 from tests.linear_cost import TIME_RATIO_LIMIT, cpu_seconds
 
 UNIT = "T1234 Native words T1106 more is not read 0x1400 which that 12 hits Web Protocols "
@@ -38,6 +66,9 @@ UNIT = "T1234 Native words T1106 more is not read 0x1400 which that 12 hits Web 
 SMALLEST = 20_000
 LEAST_SECONDS = 0.01
 LARGEST = 1_280_000
+
+
+_COUNTS = FailureCounts(failed=2, redone=1, by_name={"decompil": (1, 1)})
 
 
 def _hostile(size: int) -> str:
@@ -72,6 +103,8 @@ ENTRIES = EntryTexts.from_ledger(
     ]
 )
 LEDGER = [{"id": "ev_0001", "tool": "t", "structured": {"matches": [], "total": 12}}]
+# A fact about a routine an entry lists, as the agreement round reads it.
+LISTED = [SimpleNamespace(addresses=frozenset({0x1400}), id="listed.1")]
 
 
 @pytest.mark.parametrize(
@@ -196,6 +229,122 @@ LEDGER = [{"id": "ev_0001", "tool": "t", "structured": {"matches": [], "total": 
             lambda t: ledger_count_facts(["T1106" + " " * len(t) + "1"], {}, LEDGER, ["a"]),
             id="claim numbers between an id and a number",
         ),
+        pytest.param(
+            lambda t: read_marks(
+                ["[analysts: a]" + " [new]" * (len(t) // 6) + " [not blocking: x"]
+            ),
+            id="many marks after the field and one left open",
+        ),
+        pytest.param(
+            lambda t: read_marks(["[analysts: a] [not blocking: " + "[x] " * (len(t) // 4)]),
+            id="a mark after the field whose reason never closes",
+        ),
+        pytest.param(
+            lambda t: claim_references_of(
+                "[analysts: a] " + "its claim 3 own " * (len(t) // 16), ["a", "b"], ["a"]
+            ),
+            id="its claims on a one-analyst line",
+        ),
+        pytest.param(
+            lambda t: read_claim_references(
+                ["[analysts: a] " + "its claim 3 own " * (len(t) // 16) + "[blocking: x]"],
+                ["a", "b"],
+            ),
+            id="the merge's reading of its claims",
+        ),
+        pytest.param(
+            lambda t: read_claim_references(
+                ["[analysts: a, b] " + "claim 3 " * (len(t) // 8) + "[blocking: x]"], ["a", "b"]
+            ),
+            id="claim numbers read for no analyst",
+        ),
+        pytest.param(
+            lambda t: unread_listed_sentences(t, LISTED),  # type: ignore[arg-type]
+            id="sentences calling listed code unread",
+        ),
+        pytest.param(lambda t: _unread_addresses(t, t), id="addresses said unread"),
+        pytest.param(lambda t: _said_unread([SimpleNamespace(text=t)]), id="said unread"),  # type: ignore[list-item]
+        pytest.param(whole_code_absences, id="whole-code absences"),
+        pytest.param(closing_negations, id="closing negations"),
+        pytest.param(_reports_a_claim, id="a reported claim"),
+        pytest.param(
+            lambda t: whole_code_absences(t, unsettled=True), id="unsettled section 5 absences"
+        ),
+        pytest.param(negated_clauses, id="negated clauses"),
+        pytest.param(
+            lambda t: denied_subject("and, " * (len(t) // 5) + " not known"),
+            id="the items of what a sentence denies",
+        ),
+        pytest.param(
+            lambda t: reading_denied_in("no " * (len(t) // 3) + "0x1400 was not read."),
+            id="the clause denying a reading",
+        ),
+        pytest.param(
+            lambda t: denies_an_observation("not " + "that word " * (len(t) // 10)),
+            id="a denied observation",
+        ),
+        pytest.param(
+            lambda t: denied_subject("that set " * (len(t) // 9) + "was not known"),
+            id="nouns a demonstrative points back with",
+        ),
+        pytest.param(lambda t: kept_absence(negated_clauses(t), t), id="an absence kept"),
+        pytest.param(
+            lambda t: kept_absence(
+                ["the mutex name is not passed in that call"], "name is not, " * (len(t) // 13)
+            ),
+            id="an absence kept among many clauses",
+        ),
+        pytest.param(
+            lambda t: kept_absence(
+                negated_clauses(
+                    "; ".join(f"wordx{i} alphax{i} is not known" for i in range(len(t) // 30))
+                ),
+                "; ".join(f"betay{i} gammay{i} is not shown" for i in range(len(t) // 30)),
+            ),
+            id="an absence kept among distinct clauses on both sides",
+        ),
+        pytest.param(
+            lambda t: kept_absence(
+                negated_clauses(
+                    "; ".join(f"name{i} mutex is not known" for i in range(len(t) // 26))
+                ),
+                "; ".join(f"name mutex{i} is not shown" for i in range(len(t) // 26)),
+            ),
+            id="an absence kept among clauses sharing its words",
+        ),
+        pytest.param(lambda t: quote_stands(t[: len(t) // 2], [t]), id="a kept sentence's quote"),
+        pytest.param(
+            lambda t: _candidates(
+                "The more words of 0x1400 are not read.",
+                {
+                    "s": SimpleNamespace(
+                        id="s",
+                        kind="section 5",
+                        text=t,
+                        cites=frozenset(),
+                        addresses=frozenset(),
+                        write=print,
+                        lists_code=False,
+                        label="5",
+                    )
+                },  # type: ignore[dict-item]
+            ),
+            id="a refused keep's candidate sources",
+        ),
+        pytest.param(
+            lambda t: failure_counts("4 of 158 calls " * (len(t) // 15) + "failed"),
+            id="failure counts",
+        ),
+        pytest.param(
+            lambda t: count_disagrees("3 tool calls failed and " * (len(t) // 24), _COUNTS),
+            id="a failure count held to the ledger",
+        ),
+        pytest.param(lambda t: read_rulings("L1: UPHELD: " + t, 1), id="limit ruling"),
+        pytest.param(
+            lambda t: read_rulings("L1 " + " " * len(t) + " UPHELD", 1), id="limit ruling spaces"
+        ),
+        pytest.param(lambda t: read_rulings("- **L1 " + t, 1), id="limit ruling with no word"),
+        pytest.param(lambda t: clean_quote(t, REASON_LIMIT), id="limit ruling reason"),
     ],
 )
 def test_four_times_the_hostile_line_stays_under_the_ratio(read: Callable[[str], object]) -> None:

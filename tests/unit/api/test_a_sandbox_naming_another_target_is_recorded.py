@@ -28,21 +28,21 @@ from tests.integration._session_probe import SessionFactory, fake_job, fake_samp
 from app.worker import analysis_worker
 from app.worker.analysis_worker import _report_inputs, keep_the_stopped_run
 from app.worker.sample_integrity import sandbox_target_of
-from maljan.analysis.disclosure import disclosure_record
-from maljan.analysis.sample_integrity import (
+from malspark.analysis.disclosure import disclosure_record
+from malspark.analysis.sample_integrity import (
     SANDBOX_KEY,
     sandbox_target_lines,
     sandbox_target_record,
 )
-from maljan.app import SANDBOX_FAILURE_CHARS
-from maljan.core.config import Settings
-from maljan.core.container import ServiceContainer
-from maljan.providers.base import SandboxCapabilities
-from maljan.providers.sandbox.readers import required_reader
-from maljan.reporting.models import MalwareReport
-from maljan.reporting.renderers import MarkdownRenderer
-from maljan.schemas.sandbox_report import SandboxRun
-from maljan.utils.marked_cut import CUT_MARK
+from malspark.app import SANDBOX_FAILURE_CHARS
+from malspark.core.config import Settings
+from malspark.core.container import ServiceContainer
+from malspark.providers.base import SandboxCapabilities
+from malspark.providers.sandbox.readers import required_reader
+from malspark.reporting.models import MalwareReport
+from malspark.reporting.renderers import MarkdownRenderer
+from malspark.schemas.sandbox_report import SandboxRun
+from malspark.utils.marked_cut import CUT_MARK
 
 BYTES = b"MZ synthetic sample bytes, never run\x00" * 64
 INTAKE = hashlib.sha256(BYTES).hexdigest()
@@ -181,11 +181,11 @@ class _Uploaded(_Provider):
 
 
 def _container_after(provider: Any, tmp_path: Path, *, used: bool = True) -> Any:
-    from maljan.app import MaljanApp
+    from malspark.app import MalsparkApp
 
     sample = tmp_path / "s.exe"
     sample.write_bytes(BYTES)
-    app = MaljanApp(mock=True)
+    app = MalsparkApp(mock=True)
     app.container.mock = False
     app.container._sandbox_provider_cache = provider
     report = asyncio.run(app._submit_to_sandbox(str(sample)))
@@ -241,9 +241,20 @@ class TestEachProviderShape:
         assert container.sandbox_target_claim is None
         assert sandbox_target_of(container) is None
 
-    def test_an_attached_report_keeps_no_claim(self, tmp_path: Path) -> None:
+    def test_an_attached_report_is_recorded_as_a_live_one_is(self, tmp_path: Path) -> None:
         container = _container_after(_Uploaded("upload", "cape2", _cape(OTHER)), tmp_path)
         assert container.sandbox_target_claim is None
+        record = sandbox_target_of(container)
+        assert record is not None
+        assert record["sandbox_sha256"] == OTHER
+        assert record["expected_sha256"] == INTAKE
+        assert record["provider"] == "upload"
+
+    @pytest.mark.parametrize("target", [INTAKE, INTAKE.upper(), ""])
+    def test_an_attached_report_naming_the_sample_or_none_is_no_record(
+        self, tmp_path: Path, target: str
+    ) -> None:
+        container = _container_after(_Uploaded("upload", "cape2", _cape(target)), tmp_path)
         assert sandbox_target_of(container) is None
 
     def test_a_job_without_a_sandbox_keeps_no_claim(self) -> None:
@@ -325,6 +336,30 @@ class TestTheStoredRun:
         markdown = _markdown(state)
         assert f"names its target SHA-256 as `{OTHER}`, not the sample's intake" in markdown
         assert "The report of the sandbox `cape2` (task `7`)" in markdown
+
+    def test_an_attached_report_is_the_same_run_fact_beside_the_upload_s_reason(
+        self, tmp_path: Path
+    ) -> None:
+        container = _container_after(_Uploaded("upload", "cape2", _cape(OTHER)), tmp_path)
+        record = sandbox_target_of(container)
+        assert record is not None
+        reason = "uploaded sandbox report's target hash differs from the sample"
+        state = _state()
+        _, summary = _report_inputs(
+            state,
+            core_settings=Settings(_env_file=None),
+            override_keys=(),
+            hash_mismatch_reason=reason,
+            sandbox_target=record,
+        )
+
+        assert summary[SANDBOX_KEY] == record
+        assert summary["disclosure"]["isolation"][SANDBOX_KEY] == record
+        assert reason in summary["degradation_reasons"]
+        markdown = _markdown(state)
+        assert f"names its target SHA-256 as `{OTHER}`, not the sample's intake" in markdown
+        assert f"`{INTAKE}`" in markdown
+        assert "The report of the sandbox `upload`" in markdown
 
     @pytest.mark.parametrize("claimed", [INTAKE, INTAKE.upper(), ""])
     def test_the_samples_hash_or_none_stores_and_renders_as_before(self, claimed: str) -> None:

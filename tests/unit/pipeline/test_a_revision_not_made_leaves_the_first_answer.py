@@ -18,14 +18,14 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from maljan.agents.base_agent import NO_STRUCTURED_REPORT_STATUS
-from maljan.core.exceptions import AnalystError
-from maljan.core.spend import SpendCeilingStop
-from maljan.pipeline import events as ev
-from maljan.pipeline.evidence_summary import summarise
-from maljan.pipeline.nodes import RevisionInput, make_revision_node
-from maljan.pipeline.state import _merge_dicts
-from maljan.schemas.isr_models import AgentISR, ClaimEvidence
+from malspark.agents.base_agent import NO_STRUCTURED_REPORT_STATUS
+from malspark.core.exceptions import AnalystError
+from malspark.core.spend import SpendCeilingStop
+from malspark.pipeline import events as ev
+from malspark.pipeline.evidence_summary import summarise
+from malspark.pipeline.nodes import RevisionInput, make_revision_node
+from malspark.pipeline.state import _merge_dicts
+from malspark.schemas.isr_models import AgentISR, ClaimEvidence
 from tests.stages import paper_profile
 
 LONG_KEY = "all_tools_reverser_ghidra"
@@ -106,8 +106,8 @@ def _run(
         labels = {}
     state = _state()
     with pytest.MonkeyPatch.context() as mp:
-        mp.setattr("maljan.pipeline.nodes._revision_input", lambda *a: RevisionInput(text="data"))
-        mp.setattr("maljan.pipeline.nodes.label_of", lambda _c, key: labels.get(key, key))
+        mp.setattr("malspark.pipeline.nodes._revision_input", lambda *a: RevisionInput(text="data"))
+        mp.setattr("malspark.pipeline.nodes.label_of", lambda _c, key: labels.get(key, key))
         update = asyncio.run(make_revision_node(container)(state))
     merged = _merge_dicts(state["isr_reports"], update["isr_reports"])
     return update, merged, recorder
@@ -180,7 +180,7 @@ class TestTwoUnlabelledLongKeysInOneStage:
     def test_are_never_named_alike(self) -> None:
         from types import SimpleNamespace
 
-        from maljan.pipeline.nodes import spoken_name
+        from malspark.pipeline.nodes import spoken_name
 
         first, second = "all_tools_reverser_ghidra", "all_tools_reverser_binja_"
         container = MagicMock()
@@ -194,8 +194,8 @@ class TestTwoUnlabelledLongKeysInOneStage:
     def test_the_debate_line_says_the_stage_as_a_place(self) -> None:
         from types import SimpleNamespace
 
-        from maljan.pipeline.events import summarize_claims
-        from maljan.pipeline.nodes import claims_source
+        from malspark.pipeline.events import summarize_claims
+        from malspark.pipeline.nodes import claims_source
 
         key = "all_tools_reverser_ghidra"
         container = MagicMock()
@@ -211,11 +211,14 @@ class TestTwoUnlabelledLongKeysInOneStage:
 
 
 class TestARevisionThatWasMade:
-    def test_replaces_the_first_answer_even_with_fewer_claims(self) -> None:
+    def test_with_fewer_claims_replaces_what_it_restates_and_carries_the_rest(self) -> None:
         made = ("CLAIM: revised\n", _first("static", "T1106", 2))
         empty_composed = ("", AgentISR(agent_id=LONG_KEY, domain="static", claims=[]))
         _update, merged, _recorder = _run(
             {"static": made, LONG_KEY: empty_composed, "triage": made}
         )
-        assert len(merged["static"].claims) == 2
-        assert merged["static"].claims[0].technique_id == "T1106"
+        claims = merged["static"].claims
+        # Its two claims replace the two they restate; the seven it left
+        # unmentioned stand, carried forward from the round.
+        assert [c.technique_id for c in claims[:2]] == ["T1106", None]
+        assert [c.carried_since_round for c in claims] == [None, None] + [1] * 7

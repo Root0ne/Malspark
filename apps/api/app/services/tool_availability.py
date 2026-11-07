@@ -8,21 +8,27 @@ afterwards. This reads the same declarations without starting anything.
 Two places a job runs a tool on this host are checked, each against the
 declared needs of the repository's sidecar the tool belongs to
 (``tools.sidecar_needs``), with ``Requirement.installed``: a module looked up
-on the import path, an executable looked for where it would be looked for.
-Nothing is imported, started or run on a sample, so the check is cheap enough
-for every submit and every status read, and linear in the tools declared.
+on the import path, an executable looked for where it would be looked for, a
+declared data path (a rule corpus) looked at where the tool reads it. Nothing
+is imported, started or run on a sample, so the check is cheap enough for
+every submit and every status read, and linear in the tools declared.
 
 * **The servers the job calls** (``composition.servers_a_job_calls``: its
   team's, the triage pack's, the static provider's) that are switched on and
   are one of those sidecars launched over stdio on this interpreter. A tool
-  the server's block does not offer is not named.
+  the server's block does not offer is not named. A data path is looked at
+  where the server reads it, with what its launch hands it
+  (``tools.sidecar_needs.handed_env``).
 * **The triage pack's own readings** (``tools.readers``): every enabled
   in-process step whose reading stands in for a sidecar's tool runs in the
   worker's own process unless the server declaring that tool is switched on
   and reached at an address (``pipeline.nodes._reader_servers``). Those are
   checked whatever the declaring server's block says (switched off, another
   command, a narrowed tool list), because none of it changes where the
-  reading runs. A tool already named for its server is not named twice.
+  reading runs. An enabled in-process step with no reading whose tool a
+  sidecar declares (the Sigma pass over the sandbox report) always runs in
+  the worker, and is checked the same way. A tool already named for its
+  server is not named twice.
 
 A server reached at an address, or launched on another interpreter, is not
 checked here: its own manifest, read when a run attaches it and by the
@@ -41,13 +47,18 @@ import logging
 import os
 import sys
 from collections.abc import Iterable, Mapping
-from pathlib import Path
 from typing import Any
 
-from maljan.core.logger import logger
-from maljan.tools.capabilities import ToolNeeds, Unavailable
+from malspark.core.logger import logger
+from malspark.tools.capabilities import ToolNeeds, Unavailable
 
 from app.logsafe import log_safe
+
+# The server the pack's own in-process entries are recorded under
+# (``triage_pack.PIPELINE``), which names a step the worker runs itself. Kept
+# here rather than imported, so a status read does not load the pack; a test
+# holds the two together.
+WORKER = "pipeline"
 
 
 def _same_interpreter(command: str) -> bool:
@@ -61,16 +72,9 @@ def _same_interpreter(command: str) -> bool:
 
 def _sidecar_directory(config: Any) -> str | None:
     """The ``services/<dir>`` whose ``server.py`` ``config`` launches, or ``None``."""
-    from maljan.core.paths import get_project_root, resolve_mcp_args
+    from malspark.tools.sidecar_needs import sidecar_of
 
-    args = resolve_mcp_args([str(a) for a in getattr(config, "args", None) or []])
-    if not args:
-        return None
-    script = Path(args[0])
-    services = Path(get_project_root()) / "services"
-    if script.name != "server.py" or script.parent.parent != services:
-        return None
-    return script.parent.name
+    return sidecar_of(config)
 
 
 def _sidecar_needs(config: Any) -> list[ToolNeeds] | None:
@@ -79,7 +83,7 @@ def _sidecar_needs(config: Any) -> list[ToolNeeds] | None:
     ``None`` for anything this host cannot check without starting it: a
     server reached at an address, another interpreter, another program.
     """
-    from maljan.tools.sidecar_needs import BY_DIRECTORY
+    from malspark.tools.sidecar_needs import BY_DIRECTORY
 
     if str(getattr(config, "transport", "")) != "stdio":
         return None
@@ -89,15 +93,23 @@ def _sidecar_needs(config: Any) -> list[ToolNeeds] | None:
     return BY_DIRECTORY.get(directory) if directory else None
 
 
-def _environ(key: str, config: Any) -> dict[str, str]:
-    """The environment the server is started with, which is where it looks for an executable."""
-    from maljan.agents.subprocess_env import child_env
+def _environ(key: str, config: Any, settings: Any = None) -> dict[str, str]:
+    """The environment the server is started with, which is where it looks for an executable.
 
-    return child_env(
+    With ``settings``, what its launch hands it of a tool's declared data as
+    well (``tools.sidecar_needs.handed_env``), as ``ServerHandle`` does.
+    """
+    from malspark.agents.subprocess_env import child_env
+    from malspark.tools.sidecar_needs import handed_env
+
+    environ = child_env(
         dict(getattr(config, "env", None) or {}),
         allow=tuple(getattr(config, "env_allow", None) or ()),
         server=key,
     )
+    if settings is not None:
+        environ.update(handed_env(config, settings))
+    return environ
 
 
 def _reading_needs(config: Any, tool: str) -> tuple[str, ToolNeeds] | None:
@@ -106,7 +118,7 @@ def _reading_needs(config: Any, tool: str) -> tuple[str, ToolNeeds] | None:
     The declaring server's own sidecar when its launch names one, else the
     sidecar that declares the tool: the reading runs the same code either way.
     """
-    from maljan.tools.sidecar_needs import BY_DIRECTORY
+    from malspark.tools.sidecar_needs import BY_DIRECTORY
 
     directory = _sidecar_directory(config) if config is not None else None
     candidates = [directory] if directory in BY_DIRECTORY else list(BY_DIRECTORY)
@@ -124,30 +136,35 @@ def _in_process_readings(
 
     The readings of every enabled in-process step, each but the ones whose
     declaring server is switched on and reached at an address, where the
-    reading runs instead (``pipeline.nodes._reader_servers``). ``server`` is
+    reading runs instead (``pipeline.nodes._reader_servers``), and every
+    enabled in-process step no reading stands in for whose tool a sidecar
+    declares, which always runs here and is named under :data:`WORKER`. ``server`` is
     the declaring server's key, else the sidecar's name; the environment is
     the declaring server's, which the pack lends its in-process steps, else
     ``None`` (this process's own); one mapping per server, so a reading's
     answer can be kept per environment. ``level`` is what the choice of a
     switched-off or one of several declaring servers is logged at.
     """
-    from maljan.agents.sample_staging import REMOTE_TRANSPORTS
-    from maljan.core.pack_servers import _declaring_server_key
-    from maljan.core.pack_steps import effective_steps, steps_on_servers
-    from maljan.providers.servers import READER_DELIVERY_KIND
-    from maljan.tools.readers import READERS
+    from malspark.agents.sample_staging import REMOTE_TRANSPORTS
+    from malspark.core.pack_servers import _declaring_server_key
+    from malspark.core.pack_steps import effective_steps, steps_on_servers
+    from malspark.providers.servers import READER_DELIVERY_KIND
+    from malspark.tools.readers import READERS
 
     servers = settings.mcp.servers
     steps, _off = steps_on_servers(
         effective_steps(getattr(settings.triage, "steps", None) or ()), servers
     )
+    from malspark.core.declared_reading import tools_in_force
+
     run = {step.called for step in steps if step.enabled and step.builtin}
+    # Each block's declarations with what its server declares of itself under them.
     runners = {
         key: server
         for key, server in servers.items()
         if any(
             getattr(facts, "kind", None) == READER_DELIVERY_KIND
-            for facts in (getattr(server, "tool_facts", None) or {}).values()
+            for facts in tools_in_force(f"mcp:{key}", server).values()
         )
     }
     lent: dict[str, Mapping[str, str]] = {}
@@ -167,6 +184,16 @@ def _in_process_readings(
         if config is not None and key not in lent:
             lent[key] = _environ(key, config)
         yield label, need, lent.get(key) if config is not None else None
+    # A step of the platform's own that no reading stands in for calls the
+    # implementation the sidecar serves in this process, whatever any server's
+    # block says (``triage_pack._sigma_match_sandbox``): what that sidecar
+    # declares of the tool is checked here, in this process's environment,
+    # and named under the server its entries are recorded under.
+    read = {spec.stands_for for spec in READERS.values()}
+    for tool in sorted(run - read):
+        held = _reading_needs(None, tool)
+        if held is not None:
+            yield WORKER, held[1], None
 
 
 def _missing(
@@ -174,34 +201,47 @@ def _missing(
     environ: Mapping[str, str] | None,
     answered: dict[Any, str | None],
     *,
-    modules: bool = True,
+    settings: Any = None,
+    unchecked: frozenset[str] = frozenset(),
+    handed: frozenset[str] | None = None,
 ) -> Unavailable | None:
     """``need`` as unavailable when one of its requirements is absent, else ``None``.
 
     ``answered`` keeps each requirement's answer for ``environ``: an
-    executable is looked for in it, so another environment is asked again.
+    executable or a data path's override is looked for in it, so another
+    environment is asked again. ``settings`` is given where the caller hands
+    the tool a data path's setting (``Requirement.installed``): to every data
+    path, or with ``handed`` to those whose override names one of it (a
+    server's launch hands those, ``tools.sidecar_needs.handed_env``). The
+    requirements of a kind in ``unchecked`` are left to the server.
     """
     reasons = []
+    absent = []
     for req in need.requires:
-        if req.kind == "module" and not modules:
+        if req.kind in unchecked:
             continue
         held = (req, id(environ))
         if held not in answered:
-            answered[held] = req.installed(environ)
+            given = settings if handed is None or req.override in handed else None
+            answered[held] = req.installed(environ, given)
         if answered[held]:
             reasons.append(str(answered[held]))
+            absent.append(req)
     if not reasons:
         return None
-    from maljan.tools.errors import MISSING_DEPENDENCY
+    from malspark.tools.capabilities import remedy_for
+    from malspark.tools.errors import MISSING_DEPENDENCY
 
     return Unavailable(
         server="",
         tool=need.name,
         reason="; ".join(reasons),
-        remediation=need.remediation or _general_remedy(),
-        without=need.without,
-        # Only a module or an executable is checked here: a setting is the
-        # server's own to read (``Requirement.installed``).
+        remediation=remedy_for(need, absent),
+        # A tool without its data answers nothing: what it does without a
+        # library is no answer without the rules it reads.
+        without="" if any(req.kind == "data" for req in absent) else need.without,
+        # Only a module, an executable or data is checked here: a setting is
+        # the server's own to read (``Requirement.installed``).
         code=MISSING_DEPENDENCY,
     )
 
@@ -221,7 +261,8 @@ def unavailable_tools(
     What is found is logged at ``level``: a warning for a job being accepted,
     a debug line for a status read.
     """
-    from maljan.agents.composition import servers_a_job_calls
+    from malspark.agents.composition import servers_a_job_calls
+    from malspark.tools.sidecar_needs import handed_env
 
     if profile and profile != str(settings.agents.profile):
         agents = settings.agents.model_copy(update={"profile": profile})
@@ -242,23 +283,31 @@ def unavailable_tools(
         if needs is None:
             continue
         offered = None if config.tools is None else set(config.tools)
-        modules = "PYTHONPATH" not in (config.env or {})
-        if not modules:
+        # A server with an import path of its own may import what this process
+        # cannot, and run from a tree whose data this process does not see.
+        own_path = "PYTHONPATH" in (config.env or {})
+        unchecked = frozenset({"module", "data"}) if own_path else frozenset()
+        if unchecked:
             logger.debug(
-                "tool availability: %s sets PYTHONPATH; its modules are not checked here",
+                "tool availability: %s sets PYTHONPATH; its modules and data are not checked here",
                 log_safe(key),
             )
-        environ = _environ(key, config)
+        environ = _environ(key, config, settings)
+        handed = frozenset(handed_env(config, settings))
         # One answer per requirement: two tools needing one module ask once.
         answered: dict[Any, str | None] = {}
         for need in needs:
             if offered is not None and need.name not in offered:
                 continue
-            missing = _missing(need, environ, answered, modules=modules)
+            # The setting only where the launch hands it: otherwise the
+            # server's tool reads its own default or the block's override.
+            missing = _missing(
+                need, environ, answered, settings=settings, unchecked=unchecked, handed=handed
+            )
             if missing is not None:
                 missing.server = key
                 found.append(missing)
-    named = {(u.server, u.tool) for u in found}
+    named = {(u.server, u.tool): u for u in found}
     try:
         readings = list(_in_process_readings(settings, level=chosen_at))
     except Exception as exc:  # noqa: BLE001 — the pack's steps unread: the servers' answer stands
@@ -266,13 +315,22 @@ def unavailable_tools(
         readings = []
     answered = {}
     for server, need, lent in readings:
-        if (server, need.name) in named:
+        missing = _missing(need, lent, answered, settings=settings)
+        if missing is None:
             continue
-        missing = _missing(need, lent, answered)
-        if missing is not None:
-            missing.server = server
-            named.add((server, need.name))
+        missing.server = server
+        held = named.get((server, need.name))
+        if held is None:
+            named[(server, need.name)] = missing
             found.append(missing)
+            continue
+        # One row per tool: what the reading lacks beyond the server's answer
+        # (a setting's path where the server reads its default) joins it.
+        for part in missing.reason.split("; "):
+            if part not in held.reason.split("; "):
+                held.reason += f"; {part}"
+        if missing.remediation and missing.remediation not in (held.remediation or ""):
+            held.remediation = "; ".join(filter(None, (held.remediation, missing.remediation)))
     if found:
         logger.log(
             level,
@@ -282,16 +340,24 @@ def unavailable_tools(
     return found
 
 
-def _general_remedy() -> str:
-    from maljan.tools.errors import MISSING_DEPENDENCY, REMEDIATIONS
-
-    return REMEDIATIONS[MISSING_DEPENDENCY]
-
-
 def as_rows(found: list[Unavailable]) -> list[dict[str, Any]]:
-    """The API's rows: server, tool, reason, remedy, what it still answers, and the run's words."""
-    return [
-        {
+    """The API's rows: server, tool, reason, remedy, what it still answers, and the run's words.
+
+    One tool missing the same thing with the same remedy in two places (the
+    analysis server's tool and the worker's own pass) is one row naming both
+    places, ``"analysis, pipeline"``, with each place's words for the run; a
+    tool that lacks something different in each keeps a row per place.
+    """
+    rows: list[dict[str, Any]] = []
+    held: dict[tuple[str, str, str, str, str], dict[str, Any]] = {}
+    for u in found:
+        same = (u.tool, u.reason, u.remediation or "", u.without, u.code or "")
+        row = held.get(same)
+        if row is not None:
+            row["server"] += f", {u.server}"
+            row["degradation_reason"] += f"; {u.degradation_reason}"
+            continue
+        row = {
             "server": u.server,
             "tool": u.tool,
             "reason": u.reason,
@@ -300,5 +366,6 @@ def as_rows(found: list[Unavailable]) -> list[dict[str, Any]]:
             "degradation_reason": u.degradation_reason,
             "manifest_code": u.code or "",
         }
-        for u in found
-    ]
+        held[same] = row
+        rows.append(row)
+    return rows

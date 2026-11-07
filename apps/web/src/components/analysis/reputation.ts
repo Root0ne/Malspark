@@ -4,7 +4,7 @@
  * Any server whose tool declares `kind: reputation` is a reputation source.
  * Its answer is read once, through the paths its declaration gives, when the
  * entry is written, and the report carries every such record in `reputation`
- * (`maljan.core.reputation`): the service's declared name, the engine counts,
+ * (`malspark.core.reputation`): the service's declared name, the engine counts,
  * the labels, the dates, the link and the service's own words. This module
  * reads only that record — no tool name, no service's answer shape — so a
  * reputation server an operator adds draws the same section as the built-ins.
@@ -151,4 +151,16 @@ export function detectionsFigure(
 ): { count: string; known: boolean } {
   if (reputation.malicious === null) return { count: "not counted", known: false };
   return { count: String(reputation.malicious), known: true };
+}
+
+/**
+ * What an enrichment record says, as words a tooltip can carry: one line per
+ * field that holds a plain value, its name with the underscores read as
+ * spaces. A nested value is left to the evidence record it came from.
+ */
+export function reputationTooltip(rep: Record<string, unknown>): string {
+  return Object.entries(rep)
+    .filter(([, v]) => typeof v === "string" || typeof v === "number" || typeof v === "boolean")
+    .map(([k, v]) => `${k.replace(/_/g, " ")}: ${typeof v === "boolean" ? (v ? "yes" : "no") : String(v)}`)
+    .join("\n");
 }

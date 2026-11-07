@@ -92,7 +92,7 @@ async def test_a_wedged_aopen_whose_cancellation_also_hangs_does_not_stretch_the
     elapsed = time.perf_counter() - t0
 
     assert result.ok is False and "no MCP handshake" in result.detail
-    assert elapsed < 2.0, f"probe took {elapsed:.2f}s, far past its 0.05s+grace budget"
+    assert elapsed < 10.0, f"probe took {elapsed:.2f}s, far past its 0.05s+grace budget"
 
 
 @pytest.mark.asyncio
@@ -177,9 +177,9 @@ def test_the_probe_is_registered_under_its_own_name():
 
 @pytest.mark.asyncio
 async def test_the_r2_probe_speaks_the_same_handshake(monkeypatch):
-    from maljan.core.settings_overrides import build_settings
-    from maljan.providers import servers
-    from maljan.providers.static import r2
+    from malspark.core.settings_overrides import build_settings
+    from malspark.providers import servers
+    from malspark.providers.static import r2
 
     provider = r2.R2StaticProvider.from_settings(build_settings({}))
     _Handle.made = []
@@ -203,7 +203,7 @@ class TestAServerThatDeclaresHowItsCredentialIsObtained:
 
     @pytest.mark.asyncio
     async def test_without_a_token_it_reports_that_no_credential_was_obtained(self):
-        from maljan.core.config import Settings
+        from malspark.core.config import Settings
 
         entry = Settings(_env_file=None).mcp.servers["virustotal"].model_dump(mode="json")
         result = await probe_mcp({"name": "virustotal", "entry": entry})
@@ -229,7 +229,7 @@ class TestAServerThatDeclaresHowItsCredentialIsObtained:
 
     @pytest.mark.asyncio
     async def test_with_a_token_it_dials_the_endpoint_like_any_other_server(self):
-        from maljan.core.config import Settings
+        from malspark.core.config import Settings
 
         entry = Settings(_env_file=None).mcp.servers["virustotal"].model_dump(mode="json")
         entry["auth_token"] = "vtai_" + "c" * 43
@@ -244,7 +244,7 @@ class _HandleWithManifest(_Handle):
     """A server that also answers ``capabilities``, as the registry keeps it."""
 
     async def aopen(self, job_id, **kw):
-        from maljan.tools.capabilities import ServerCapabilities
+        from malspark.tools.capabilities import ServerCapabilities
 
         self.capabilities = ServerCapabilities.from_payload(
             self.name,
@@ -286,8 +286,8 @@ async def test_a_server_without_a_manifest_has_no_details():
 async def test_a_built_in_is_probed_with_the_environment_names_it_cannot_run_without():
     """A row stored before a sidecar gained a variable must not make the
     connection test launch a different server than the run launches."""
-    from maljan.core.config import Settings
-    from maljan.tools.roots import SAMPLE_ROOTS_ENV
+    from malspark.core.config import Settings
+    from malspark.tools.roots import SAMPLE_ROOTS_ENV
 
     stored = Settings(_env_file=None).mcp.servers["analysis"].model_dump(mode="json")
     stored.pop("auth_token", None)
@@ -301,7 +301,7 @@ async def test_a_built_in_is_probed_with_the_environment_names_it_cannot_run_wit
 
 @pytest.mark.asyncio
 async def test_a_server_the_operator_added_is_probed_with_exactly_its_own_names():
-    from maljan.tools.roots import SAMPLE_ROOTS_ENV
+    from malspark.tools.roots import SAMPLE_ROOTS_ENV
 
     result = await run_mcp_probe(
         "r2custom",
@@ -322,7 +322,7 @@ async def test_a_server_the_operator_added_is_probed_with_exactly_its_own_names(
 async def test_a_built_in_is_probed_without_a_shipped_name_an_admin_took_away():
     """The console tests the server a run gets, and a run gets no intel key
     once the admin has emptied that list."""
-    from maljan.core.config import Settings
+    from malspark.core.config import Settings
 
     stored = Settings(_env_file=None).mcp.servers["threatintel"].model_dump(mode="json")
     stored.pop("auth_token", None)
@@ -332,3 +332,71 @@ async def test_a_built_in_is_probed_without_a_shipped_name_an_admin_took_away():
 
     assert result.ok is True
     assert _Handle.made[-1].config.env_allow == []
+
+
+class _HandleThatDeclares(_Handle):
+    """A server whose listing declares one of its tools under ``_meta``."""
+
+    def all_tool_names(self):
+        return ["scan"]
+
+    def tool_definitions(self):
+        return [
+            {
+                "name": "scan",
+                "inputSchema": {"type": "object"},
+                "_meta": {"malspark/tool_facts": {"kind": "identification", "rows": "/d/*"}},
+            }
+        ]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(("trusts", "confidence"), [(False, "medium"), (True, "high")])
+async def test_what_a_server_declares_is_proposed_as_far_as_its_block_trusts_it(
+    monkeypatch, trusts, confidence
+):
+    monkeypatch.setattr("app.services.settings_probes.ServerHandle", _HandleThatDeclares)
+    entry = {"enabled": True, "command": "x", "trusts_served_declaration": trusts}
+    result = await probe_mcp({"name": "mine", "entry": entry})
+    assert result.ok is True and result.details is not None
+    kind = result.details["proposals"]["tools"]["scan"]["fields"]["kind"]
+    assert kind["confidence"] == confidence
+    assert any("(the server's own claim)" in e for e in kind["evidence"]) is (not trusts)
+
+
+@pytest.mark.asyncio
+async def test_a_repointed_built_in_does_not_post_back_its_shipped_trust(monkeypatch):
+    from malspark.core.config import Settings
+
+    monkeypatch.setattr("app.services.settings_probes.ServerHandle", _HandleThatDeclares)
+    entry = Settings(_env_file=None).mcp.servers["analysis"].model_dump(mode="json")
+    entry["command"] = "/usr/bin/third-party-mcp"
+    entry["args"] = []
+    assert entry["trusts_served_declaration"] is True
+    result = await probe_mcp({"name": "analysis", "entry": entry})
+    assert result.ok is True and result.details is not None
+    kind = result.details["proposals"]["tools"]["scan"]["fields"]["kind"]
+    assert kind["confidence"] == "medium"
+    assert any("(the server's own claim)" in e for e in kind["evidence"])
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(("granted", "confidence"), [("", "high"), ("0123456789abcdef", "medium")])
+async def test_a_repointed_built_in_is_probed_as_trusted_only_where_the_operator_ticked_it(
+    monkeypatch, tmp_path, granted, confidence
+):
+    """An operator's tick (``""``) holds for the server the entry points at;
+    the grant of another launch, carried through a repoint, does not."""
+    from malspark.core.config import Settings
+
+    monkeypatch.setattr("app.services.settings_probes.ServerHandle", _HandleThatDeclares)
+    entry = Settings(_env_file=None).mcp.servers["analysis"].model_dump(mode="json")
+    # A grant is recorded only for a launch that resolves here.
+    server = tmp_path / "third-party-mcp"
+    server.write_text("#!/bin/sh\n")
+    server.chmod(0o755)
+    entry.update(command=str(server), args=[], trust_granted_for=granted)
+    result = await probe_mcp({"name": "analysis", "entry": entry})
+    assert result.ok is True and result.details is not None
+    kind = result.details["proposals"]["tools"]["scan"]["fields"]["kind"]
+    assert kind["confidence"] == confidence

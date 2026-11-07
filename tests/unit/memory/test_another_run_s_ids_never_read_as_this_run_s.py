@@ -17,21 +17,21 @@ from types import SimpleNamespace
 
 import pytest
 
-from maljan.agents.judge_agent import JudgeAgent, closed_memory_cut, verdict_report_parts
-from maljan.agents.tool_fence import quoted_value
-from maljan.analysis.sandbox_sections import item_ids_in
-from maljan.extractors.attribution import populate_similar_samples
-from maljan.memory.long_term_memory import (
+from malspark.agents.judge_agent import JudgeAgent, closed_memory_cut, verdict_report_parts
+from malspark.agents.tool_fence import quoted_value
+from malspark.analysis.sandbox_sections import item_ids_in
+from malspark.extractors.attribution import populate_similar_samples
+from malspark.memory.long_term_memory import (
     FOREIGN_ENTRY_ID,
     FOREIGN_ITEM_ID,
     StoredCase,
     foreign_ids_written_out,
     foreign_quoted_value,
 )
-from maljan.pipeline.validation import _EVIDENCE_ID_RE
-from maljan.schemas.evidence import ENTRY_ID_JOIN_RE, ENTRY_ID_RE, entry_ids_in
-from maljan.schemas.isr_models import AgentISR, ClaimEvidence
-from maljan.utils.marked_cut import marked_cut
+from malspark.pipeline.validation import _EVIDENCE_ID_RE
+from malspark.schemas.evidence import ENTRY_ID_JOIN_RE, ENTRY_ID_RE, entry_ids_in
+from malspark.schemas.isr_models import AgentISR, ClaimEvidence
+from malspark.utils.marked_cut import marked_cut
 
 
 def _no_id_of_this_run_s_shape(text: str) -> None:
@@ -79,9 +79,9 @@ class TestTheRenaming:
     def test_linear_in_the_text(self) -> None:
         def timed(n: int) -> float:
             text = "ev_0007net:4 ev_" * n + "e" * n + "net:" * n
-            started = time.perf_counter()
+            started = time.thread_time()
             foreign_ids_written_out(text)
-            return time.perf_counter() - started
+            return time.thread_time() - started
 
         timed(1_000)
         small, large = timed(20_000), timed(200_000)

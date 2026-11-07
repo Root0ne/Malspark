@@ -31,8 +31,8 @@ from mcp import StdioServerParameters, types
 from mcp.shared.message import SessionMessage
 from pydantic import ValidationError
 
-from maljan.agents import mcp_client
-from maljan.agents.mcp_client import MCPLangChainToolkit, _ProtocolLinesOnly
+from malspark.agents import mcp_client
+from malspark.agents.mcp_client import MCPLangChainToolkit, _ProtocolLinesOnly
 
 MESSAGE = '{"jsonrpc":"2.0","id":7,"result":{}}'
 
@@ -178,9 +178,9 @@ class TestTheReadStream:
 
         def took(size: int) -> float:
             line = ("{x\r" * size) + "{" * size
-            started = time.perf_counter()
+            started = time.thread_time()
             asyncio.run(_read_all([_refused(line)]))
-            return time.perf_counter() - started
+            return time.thread_time() - started
 
         small, large = took(20_000), took(200_000)
         assert large < 20, large

@@ -2,9 +2,9 @@ from __future__ import annotations
 
 import pytest
 
-from maljan.core.config import Settings
-from maljan.core.container import ServiceContainer
-from maljan.providers.base import SandboxProvider
+from malspark.core.config import Settings
+from malspark.core.container import ServiceContainer
+from malspark.providers.base import SandboxProvider
 
 
 def test_cape2_settings_select_the_cape2_provider():
@@ -37,8 +37,8 @@ def test_the_default_profile_is_ghidra_plus_the_cape_equivalent():
 
 
 def test_the_registry_is_built_once_per_container():
-    from maljan.core.config import Settings
-    from maljan.core.container import ServiceContainer
+    from malspark.core.config import Settings
+    from malspark.core.container import ServiceContainer
 
     container = ServiceContainer(config=Settings(_env_file=None), mock=True)
     assert container.get_server_registry() is container.get_server_registry()
@@ -49,8 +49,8 @@ def test_the_registry_is_built_once_per_container():
 async def test_aclose_closes_the_registry_only_when_one_was_built():
     from unittest.mock import MagicMock
 
-    from maljan.core.config import Settings
-    from maljan.core.container import ServiceContainer
+    from malspark.core.config import Settings
+    from malspark.core.container import ServiceContainer
 
     def _container() -> ServiceContainer:
         return ServiceContainer(config=Settings(_env_file=None), mock=True)
@@ -68,6 +68,20 @@ async def test_aclose_closes_the_registry_only_when_one_was_built():
 # The threat-intel lookups, each withheld by its host without its service's key.
 LOOKUPS = ("check_domain_reputation", "check_hash", "check_ip_reputation")
 INTEL_KEYS = ("VIRUSTOTAL_API_KEY", "ABUSEIPDB_API_KEY")
+# The sandbox report's views, in the order the in-process tools are built.
+SANDBOX_VIEWS = (
+    "report_section",
+    "processes",
+    "network",
+    "signatures",
+    "dropped_files",
+    "registry_ops",
+    "api_calls",
+    "mutexes",
+    "services_and_tasks",
+    "channels",
+    "items",
+)
 
 
 @pytest.mark.asyncio
@@ -96,8 +110,8 @@ async def test_the_judge_agent_the_container_hands_out_can_reach_the_registry(mo
     import sys
     from pathlib import Path
 
-    from maljan.core.config import Settings
-    from maljan.core.container import ServiceContainer
+    from malspark.core.config import Settings
+    from malspark.core.container import ServiceContainer
 
     if not sys.executable or not shutil.which(sys.executable):
         pytest.skip("no python interpreter available to launch the sidecar")
@@ -143,7 +157,16 @@ async def test_the_judge_agent_the_container_hands_out_can_reach_the_registry(mo
                 if (key, name) in withheld:
                     continue
                 expected.append(f"{key}__{name}" if name in expected else name)
-        assert sorted(t.name for t in judge.tools) == sorted(expected)
+        # Ahead of the servers' tools, the in-process half of the judge's seed
+        # (T-415d): the job's sandbox report tools and one ask per agent it
+        # names. Nothing else: no server's tool arrives a second time this way.
+        in_process = [
+            *(f"sandbox_{name}" for name in SANDBOX_VIEWS),
+            "ask_reverser",
+            "ask_static",
+        ]
+        assert [t.name for t in judge.tools][: len(in_process)] == in_process
+        assert sorted(t.name for t in judge.tools[len(in_process) :]) == sorted(expected)
         if keys:
             assert withheld == set(), reasons
         else:

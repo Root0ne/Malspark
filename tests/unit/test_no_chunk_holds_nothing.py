@@ -16,8 +16,8 @@ import time
 
 import pytest
 
-from maljan.core.config import ChunkingConfig
-from maljan.loaders.binary_chunker import BinaryChunker, head_room, header_chars
+from malspark.core.config import ChunkingConfig
+from malspark.loaders.binary_chunker import BinaryChunker, head_room, header_chars
 from tests.unit._chunking_doubles import _container, _room
 
 
@@ -83,9 +83,9 @@ class TestNoChunkHoldsNothing:
 
         def timed(size: int) -> float:
             text = "w" * size + " " * size
-            began = time.perf_counter()
+            began = time.thread_time()
             chunker.chunk("triage", text, room=_room(1_000))
-            return time.perf_counter() - began
+            return time.thread_time() - began
 
         timed(200_000)
         small = min(timed(200_000) for _ in range(3))
@@ -95,7 +95,7 @@ class TestNoChunkHoldsNothing:
 
 def test_a_source_of_nothing_left_out_is_said(caplog: pytest.LogCaptureFixture) -> None:
     container = _container(network="  \n", sources=["sandbox.network", "sandbox.full"])
-    with caplog.at_level(logging.DEBUG, logger="maljan"):
+    with caplog.at_level(logging.DEBUG, logger="malspark"):
         container.load_data_for_agent(
             "agent", file_hash="abc", sandbox_report={"rows": [1]}, room=_room(100_000)
         )

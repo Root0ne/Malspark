@@ -228,7 +228,7 @@ const SERVER_FIELDS = [
   "label",
   "agents",
   "call_timeout_seconds",
-  // The server's declaration (`maljan.core.tool_declarations`).
+  // The server's declaration (`malspark.core.tool_declarations`).
   "sample_open",
   "sample_mount",
   "work_dir",
@@ -239,12 +239,17 @@ const SERVER_FIELDS = [
   "variable_names",
   "reads_staged_sample",
   "platform_owned",
+  "trusts_served_declaration",
   "auto_name_prefixes",
   "reference_urls",
   "tool_facts",
   "credential_bootstrap",
   "launcher_depth",
   "prepass_tools",
+  "reputation_service",
+  "data_label_prefixes",
+  "default_effects",
+  "analyse_effects",
 ] as const;
 
 function hasToken(v: unknown): boolean {
@@ -361,6 +366,7 @@ export const DEFINITION_FIELDS: [keyof AgentDefinitionEntry, string][] = [
   ["static_provider", "static provider"],
   ["label", "label"],
   ["role", "role"],
+  ["category", "category"],
   ["max_steps", "steps per loop"],
   ["timeout_seconds", "seconds per loop"],
   ["tab", "console tab"],

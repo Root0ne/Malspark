@@ -23,22 +23,23 @@ import json
 import re
 from typing import Any
 
-from maljan.core.config import (
-    BUILTIN_SERVER_KEYS,
-    RESERVED_SERVER_KEYS,
+from malspark.core.config import (
     SERVER_KEY_PATTERN,
     MCPServerConfig,
     _builtin_definitions,
     _builtin_servers,
     builtin_env_allow,
+    reserved_server_keys,
+    shipped_server_keys,
 )
-from maljan.core.settings_overrides import (
+from malspark.core.previous_name import CURRENT_NAME, PREVIOUS_NAME
+from malspark.core.settings_overrides import (
     SERVER_MAP_PATH,
     server_entry_in_force,
     shipped_tool_facts,
     shipped_tools,
 )
-from maljan.core.tool_declarations import (
+from malspark.core.tool_declarations import (
     changed_declaration_errors,
     check_own_prefix,
     fill_declaration,
@@ -46,6 +47,8 @@ from maljan.core.tool_declarations import (
     kept_stored_changes,
     merge_tool_facts,
     sent_names_refusal,
+    settled_trust,
+    shown_trust,
     stored_changes,
     strip_declaration_defaults,
     with_mark,
@@ -128,6 +131,26 @@ def split_server_env(servers: Any) -> tuple[Any, dict[str, str | None]]:
     return out, envs
 
 
+def env_under_current_names(env: dict[str, Any]) -> dict[str, Any]:
+    """``env`` with every name under the product's previous prefix under the current one.
+
+    A server's encrypted ``env`` row written before the rename (T-576) may
+    name a variable by its previous name, which no sidecar reads any more;
+    migration ``20261107000000`` renames only the clear map, never a secret
+    row, so the row is renamed here, as it is read. A name the map already
+    sets under the current prefix wins. Values are never logged.
+    """
+    previous = f"{PREVIOUS_NAME.upper()}_"
+    if not any(str(k).startswith(previous) for k in env):
+        return env
+    current = f"{CURRENT_NAME.upper()}_"
+    out = {k: v for k, v in env.items() if not str(k).startswith(previous)}
+    for key, value in env.items():
+        if str(key).startswith(previous):
+            out.setdefault(current + str(key)[len(previous) :], value)
+    return out
+
+
 def env_of_row(row_value: Any) -> dict[str, Any] | None:
     """A server's env map from its decrypted row, or ``None`` when it is not one."""
     try:
@@ -135,6 +158,49 @@ def env_of_row(row_value: Any) -> dict[str, Any] | None:
     except ValueError:
         return None
     return env if isinstance(env, dict) else None
+
+
+# The fields of a stored entry its trust in its server's own declaration is read from.
+_TRUST_FIELDS = (
+    "transport",
+    "command",
+    "args",
+    "cwd",
+    "url",
+    "env",
+    "env_allow",
+    "trusts_served_declaration",
+    "trust_granted_for",
+)
+
+
+def shown_trust_of(key: str, entry: Any) -> dict[str, Any]:
+    """A stored entry's trust in its server's own declaration as the console shows it.
+
+    In force (``tool_declarations.shown_trust``): a built-in pointed at
+    another server shows no trust its shipped value no longer gives it, and a
+    trusted entry carries the launch its trust holds for, which a save of the
+    entry unchanged sends back (``tool_declarations.settled_trust``). An entry
+    that trusts nothing and never set the flag is shown without it, so a save
+    of it unchanged stores no flag and the block keeps following what ships.
+    Empty for an entry that does not read as a block (shown as stored).
+    """
+    if not isinstance(entry, dict):
+        return {}
+    held = {name: entry[name] for name in _TRUST_FIELDS if name in entry}
+    try:
+        cfg = MCPServerConfig.model_validate(held)
+    except ValidationError:
+        return {}
+    builtin = _builtin_servers().get(key)
+    if builtin is not None:
+        fill_declaration(cfg, builtin)
+    shown = shown_trust(f"mcp:{key}", cfg)
+    if shown["trust_granted_for"] is None:
+        shown.pop("trust_granted_for")
+    if not shown["trusts_served_declaration"] and "trusts_served_declaration" not in entry:
+        shown.pop("trusts_served_declaration")
+    return shown
 
 
 class ServerMapError(Exception):
@@ -156,6 +222,8 @@ def validate_server_map(
 
     out: dict[str, Any] = {}
     builtins = _builtin_servers()
+    shipped_keys = set(shipped_server_keys(builtins))
+    reserved = set(reserved_server_keys())
     for key, entry in value.items():
         if not _KEY_RE.match(str(key)):
             errors[str(key)] = (
@@ -163,8 +231,8 @@ def validate_server_map(
                 "characters of letters, digits, '-' or '_'"
             )
             continue
-        known = set(stored or {}) | set(BUILTIN_SERVER_KEYS)
-        if key in RESERVED_SERVER_KEYS and key not in BUILTIN_SERVER_KEYS and key not in known:
+        known = set(stored or {}) | shipped_keys
+        if key in reserved and key not in known:
             errors[key] = f"{key!r} is reserved for a provider-owned server"
             continue
         if not isinstance(entry, dict):
@@ -263,8 +331,16 @@ def validate_server_map(
             fill_declaration(model, builtin)
         dumped = model.model_dump(mode="json")
         dumped.pop("auth_token", None)
+        # The trust in the server's own declaration is the operator's only where
+        # they gave it, and only for the server the block points at
+        # (``tool_declarations.settled_trust``): a shipped trust posted back by a
+        # block pointed elsewhere, or a granted one carried through a repoint,
+        # is never stored as a grant.
+        dumped.update(settled_trust(f"mcp:{key}", model, entry.get("trust_granted_for")))
         if builtin is not None:
             dumped = strip_declaration_defaults(dumped, builtin)
+        if not dumped.get("trust_granted_for"):
+            dumped.pop("trust_granted_for", None)
         if isinstance(facts_in, dict):
             if facts_in == stored_facts and holds_changes(stored_facts):
                 # Sent back as stored: stored as it was, a change this release
@@ -278,7 +354,7 @@ def validate_server_map(
                 changes.update(kept)
                 if changes:
                     dumped["tool_facts"] = with_mark(changes)
-        if key in BUILTIN_SERVER_KEYS:
+        if key in shipped_keys:
             # The row an operator saves is the one every later load starts
             # from, so the names the sidecar cannot run without are written
             # into it rather than left for the settings model to repair on each
@@ -299,6 +375,7 @@ def validate_server_map(
         if key not in out:
             entry = default.model_dump(mode="json")
             entry.pop("auth_token", None)
+            entry.pop("trust_granted_for", None)
             out[key] = strip_declaration_defaults(entry, default)
     return out
 
@@ -351,7 +428,11 @@ def _keep_masked_env(value: Any, stored: dict[str, Any] | None) -> Any:
             continue
         stored_entry = (stored or {}).get(name)
         stored_env = stored_entry.get("env") if isinstance(stored_entry, dict) else {}
-        stored_env = stored_env if isinstance(stored_env, dict) else {}
+        # A row stored before the rename names its variables by the previous
+        # prefix; the editor showed (and sends back) the current names.
+        stored_env = env_under_current_names(stored_env) if isinstance(stored_env, dict) else {}
+        # An export written before the rename sends the previous names back.
+        env = env_under_current_names(env)
         kept = {
             var: (stored_env.get(var) if item == TOKEN_MASK else item)
             for var, item in env.items()
@@ -396,5 +477,8 @@ def merge_server_secrets(overrides: dict[str, Any]) -> dict[str, Any]:
             # The encrypted row is the server's env; a map written before the
             # rows existed may still carry one in clear, and the row wins.
             merged[name]["env"] = env
+    for entry in merged.values():
+        if isinstance(entry.get("env"), dict):
+            entry["env"] = env_under_current_names(entry["env"])
     out[SERVER_MAP_KEY] = merged
     return out

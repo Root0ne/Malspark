@@ -11,8 +11,11 @@ rule of the report alone.
 
 from __future__ import annotations
 
-from maljan.core.paths import resolve_data
-from maljan.tools.strings import _KNOWN_TLDS, iocs_from_text, read_tld_list
+from collections.abc import Callable
+
+from malspark.core.paths import resolve_data
+from malspark.tools.strings import _KNOWN_TLDS, iocs_from_text, read_tld_list
+from tests.linear_cost import assert_scales
 
 
 def test_the_data_file_parses_with_its_version_line() -> None:
@@ -75,7 +78,7 @@ def test_the_sweep_extracts_everything_it_extracted_with_the_shorter_list() -> N
 def test_the_mailbox_reader_finds_what_the_mailbox_regex_finds() -> None:
     import random
 
-    from maljan.tools.strings import _EMAIL_RE, emails_in
+    from malspark.tools.strings import _EMAIL_RE, emails_in
 
     rng = random.Random(7)
     alphabet = b"ab.@-+_%c1 x"
@@ -87,11 +90,15 @@ def test_the_mailbox_reader_finds_what_the_mailbox_regex_finds() -> None:
 
 
 def test_the_mailbox_reader_is_linear_on_a_long_run_with_no_at() -> None:
-    import time
+    from malspark.tools.strings import emails_in
 
-    from maljan.tools.strings import emails_in
+    def read(count: int) -> Callable[[], None]:
+        dotted, ats = b"a." * count + b"x", b"a@" * count
 
-    started = time.perf_counter()
-    emails_in(b"a." * 200_000 + b"x")
-    emails_in(b"a@" * 200_000)
-    assert time.perf_counter() - started < 2
+        def call() -> None:
+            emails_in(dotted)
+            emails_in(ats)
+
+        return call
+
+    assert_scales(read, 25_000)

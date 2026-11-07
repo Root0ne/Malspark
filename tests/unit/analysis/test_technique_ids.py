@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from maljan.analysis.technique_ids import (
+from malspark.analysis.technique_ids import (
     ID_BODY,
     SIGMA_TAG_RE,
     TECHNIQUE_ID_EXACT_RE,
@@ -60,7 +60,7 @@ class TestOneStrictReader:
             assert ID_BODY in pattern.pattern
 
     def test_the_claim_line_readers_are_built_from_it_and_unchanged(self) -> None:
-        from maljan.agents import base_agent
+        from malspark.agents import base_agent
 
         # The claim grammar keeps its own boundaries; only the id is shared.
         assert base_agent._ONE_TECHNIQUE_RE.pattern == r"T\d{4}(?:\.\d{3})?"
@@ -71,21 +71,21 @@ class TestOneStrictReader:
         # Ten times the text takes at most about ten times as long (twenty, for noise).
         def took(size: int) -> float:
             text = ("T1055." * size) + ("T" + "1" * 9) * size + "\n"
-            start = time.perf_counter()
+            start = time.thread_time()
             technique_ids_in(text)
             TECHNIQUE_WORD_RE.findall(text)
             is_technique_id(text)
             sigma_technique_ids({"tags": [f"attack.{text}"]})
-            return time.perf_counter() - start
+            return time.thread_time() - start
 
         small = min(took(20_000) for _ in range(3))
         large = took(200_000)
         assert large < 20 * small + 0.05
 
     def test_no_reader_outside_this_module_writes_the_id_again(self) -> None:
-        import maljan
+        import malspark
 
-        root = Path(maljan.__file__).parent
+        root = Path(malspark.__file__).parent
         holders = {
             str(path.relative_to(root))
             for path in root.rglob("*.py")

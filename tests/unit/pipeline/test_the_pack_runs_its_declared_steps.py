@@ -29,14 +29,14 @@ from typing import Any
 import pytest
 from pydantic import ValidationError
 
-from maljan.agents.evidence_recorder import EvidenceRecorder
-from maljan.core import config as config_module
-from maljan.core.config import MCPServerConfig, Settings, TriageConfig
-from maljan.core.container import ServiceContainer
-from maljan.core.pack_steps import PACK_RENDERERS, default_steps, effective_steps
-from maljan.pipeline import triage_pack
-from maljan.pipeline.nodes import _server_step_call
-from maljan.pipeline.triage_pack import (
+from malspark.agents.evidence_recorder import EvidenceRecorder
+from malspark.core import config as config_module
+from malspark.core.config import MCPServerConfig, Settings, TriageConfig
+from malspark.core.container import ServiceContainer
+from malspark.core.pack_steps import PACK_RENDERERS, default_steps, effective_steps
+from malspark.pipeline import triage_pack
+from malspark.pipeline.nodes import _server_step_call
+from malspark.pipeline.triage_pack import (
     PIPELINE,
     CapaSettings,
     PackInputs,
@@ -45,9 +45,9 @@ from maljan.pipeline.triage_pack import (
     pack_entries,
     run_pack,
 )
-from maljan.providers.static import capa_yara
-from maljan.schemas.evidence import EvidenceCounter, LedgerEntry
-from maljan.tools import crypto_constants, emulated_strings, rules
+from malspark.providers.static import capa_yara
+from malspark.schemas.evidence import EvidenceCounter, LedgerEntry
+from malspark.tools import crypto_constants, emulated_strings, rules
 
 from ..tools.synthetic_pe import TEXT_RVA, SyntheticPE
 
@@ -94,22 +94,6 @@ SHIPPED_IDS = [
     "find_directed_text",
     "behaviour_code_links",
 ]
-# The shipped steps of a server's tool, beside the format readers, and YARA-X's
-# right after the shipped YARA scan: each is off while its server is not
-# switched on (``pack_steps.steps_on_servers``).
-SHIPPED_SERVER_STEPS = [
-    "die_scan",
-    "dotnet_types",
-    "go_symbols",
-    "ole_vba",
-    "office_dde",
-    "rtf_objects",
-    "js_deobfuscate",
-    "container_extract",
-    "android_classes",
-]
-_AFTER_THE_READERS = SHIPPED_IDS.index("archive_list") + 1
-_AFTER_YARA = SHIPPED_IDS.index("yara_scan") + 1
 
 INVENTORY = {
     "command": "invented-inventory",
@@ -239,13 +223,9 @@ def _only(result: Any, tool: str) -> LedgerEntry:
 
 class TestTheShippedList:
     def test_it_is_today_s_pack_in_today_s_order(self) -> None:
-        assert [step.id for step in default_steps()] == (
-            SHIPPED_IDS[:_AFTER_THE_READERS]
-            + SHIPPED_SERVER_STEPS
-            + SHIPPED_IDS[_AFTER_THE_READERS:_AFTER_YARA]
-            + ["yarax_scan"]
-            + SHIPPED_IDS[_AFTER_YARA:]
-        )
+        # The platform's own steps alone: a server's tool is a step by its
+        # declaration, read from the run's servers (``pack_steps.server_steps``).
+        assert [step.id for step in default_steps()] == SHIPPED_IDS
         assert effective_steps() == default_steps()
 
     def test_every_shipped_step_has_its_own_implementation(self) -> None:
@@ -318,8 +298,7 @@ class TestTheOperatorsDeclarations:
             ([{"id": "x", "tool": "t"}], "names no server"),
             ([{"id": "strings", "arguments": {"limit": 5}}], "computes its own arguments"),
             ([{"id": "strings", "budget_seconds": 5}], "no wall clock of its own"),
-            ([{"id": "x", "server": "s", "tool": "t", "after": "nowhere"}], "which no step is"),
-            ([{"id": "x", "server": "s", "tool": "t", "beside": ["nowhere"]}], "which no step is"),
+            ([{"id": "x", "server": "s", "tool": "t", "after": "x"}], "which no step is"),
             (
                 [{"id": "x", "server": "s", "tool": "t", "renderer": "pretty"}],
                 "not one of the pack's renderers",
@@ -334,6 +313,24 @@ class TestTheOperatorsDeclarations:
     ) -> None:
         with pytest.raises(ValidationError, match=said):
             TriageConfig(steps=steps)
+
+    @pytest.mark.parametrize(
+        "named",
+        [
+            {"after": "nowhere"},
+            {"starts_after": "nowhere"},
+            {"when": [{"step": "nowhere", "value": "name", "equals": ["x"]}]},
+        ],
+    )
+    def test_a_step_naming_no_step_and_no_servers_step_is_refused_with_the_servers(
+        self, named: dict[str, Any]
+    ) -> None:
+        # Alone the list cannot know a server's step, so the name is kept for
+        # the run; with the configured servers it is refused.
+        step = {"id": "x", "server": "analysis", "tool": "strings", **named}
+        assert TriageConfig(steps=[step]).steps
+        with pytest.raises(ValidationError, match="which no step is"):
+            Settings(_env_file=None, triage={"steps": [step]})
 
 
 @pytest.mark.usefixtures("settings")
@@ -430,7 +427,7 @@ class TestAnInventedToolAsAStep:
     def test_its_tool_s_declared_peak_sizes_it_against_the_floor(
         self, settings: Settings, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        from maljan.core import declared_reading
+        from malspark.core import declared_reading
 
         facts = {**INVENTORY["tool_facts"]["count_sections"], "memory_peak_mb": 2048}
         declared = {**INVENTORY, "tool_facts": {"count_sections": facts}}
@@ -632,7 +629,7 @@ class TestTheServerStepCall:
     def test_the_node_runs_the_operators_steps(
         self, settings: Settings, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        from maljan.pipeline.nodes import make_triage_node
+        from malspark.pipeline.nodes import make_triage_node
         from tests.unit.pipeline.test_stage_events import _state
 
         settings.triage.steps = TriageConfig(steps=[TestAnInventedToolAsAStep.STEP]).steps
@@ -679,9 +676,9 @@ class TestAStepNamedAsAKeyOfThePackState:
     def test_it_runs_and_its_schedule_never_replaces_a_key(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, name: str
     ) -> None:
-        from maljan.analysis.run_summary import RunSummaryBuilder
-        from maljan.pipeline.conditions import HELD_SCHEDULES
-        from maljan.pipeline.triage_pack import PackResult
+        from malspark.analysis.run_summary import RunSummaryBuilder
+        from malspark.pipeline.conditions import HELD_SCHEDULES
+        from malspark.pipeline.triage_pack import PackResult
 
         result = self._run(tmp_path, monkeypatch, self._step(name, starts_after="signing_info"))
         entry = result.entries[-1]
@@ -708,7 +705,7 @@ class TestAStepNamedAsAKeyOfThePackState:
     def test_without_starts_after_it_writes_no_schedule_at_all(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        from maljan.pipeline.conditions import HELD_SCHEDULES
+        from malspark.pipeline.conditions import HELD_SCHEDULES
 
         result = self._run(tmp_path, monkeypatch, self._step("entries"))
         state = result.to_state()

@@ -20,7 +20,7 @@ from app.services.agent_map import (  # noqa: E402
     effective_profiles,
     validate_agent_map,
 )
-from maljan.core.config import (
+from malspark.core.config import (
     ALWAYS_ENABLED_AGENTS,
     BUILTIN_AGENTS,
     BUILTIN_PROFILES,
@@ -41,7 +41,22 @@ BUILTIN_STATIC = {
 
 
 def _defs(**extra):
-    return {AGENT_DEFINITIONS_KEY: {**extra}}
+    """A save of ``extra``, each new definition given a category.
+
+    A new definition must name its category; these tests are about the other
+    fields, so one that names none is given ``other``. The rule itself is
+    tested on its own below.
+    """
+    return {
+        AGENT_DEFINITIONS_KEY: {
+            key: (
+                {"category": "other", **entry}
+                if key not in BUILTIN_AGENTS and key not in seeded_generic_agents()
+                else entry
+            )
+            for key, entry in extra.items()
+        }
+    }
 
 
 def test_a_valid_definition_round_trips_with_the_built_ins_reseeded():
@@ -165,6 +180,65 @@ def test_a_provider_tool_reference_on_a_built_in_role_is_refused():
     )
 
 
+def test_an_unknown_provider_named_on_a_provider_reference_is_reported_on_its_tools():
+    with pytest.raises(AgentMapError) as exc:
+        validate_agent_map(
+            _defs(
+                strings={
+                    "role": "generic",
+                    "prompt": "p",
+                    "tools": [{"kind": "provider", "provider": "idapro"}],
+                }
+            ),
+            stored={},
+        )
+    message = exc.value.errors[f"{AGENT_DEFINITIONS_KEY}.strings.tools"]
+    assert "unknown static provider 'idapro' on a provider tool reference" in message
+
+
+def test_two_named_provider_references_round_trip_and_an_unnamed_one_stays_bare():
+    tools = [
+        {"kind": "provider"},
+        {"kind": "provider", "provider": "ghidra"},
+        {"kind": "provider", "provider": "r2"},
+    ]
+    out = validate_agent_map(
+        _defs(both={"role": "generic", "prompt": "p", "tools": tools}), stored={}
+    )
+    stored = out[AGENT_DEFINITIONS_KEY]["both"]["tools"]
+    assert stored == [
+        {"kind": "provider", "server": None, "name": None},
+        {"kind": "provider", "server": None, "name": None, "provider": "ghidra"},
+        {"kind": "provider", "server": None, "name": None, "provider": "r2"},
+    ]
+    # What the API stores loads into the settings and dumps back unchanged.
+    cfg = Settings(_env_file=None, agents={"definitions": out[AGENT_DEFINITIONS_KEY]})
+    assert [r.model_dump(mode="json") for r in cfg.agents.definitions["both"].tools] == stored
+
+
+def test_a_named_provider_reference_does_not_read_the_configured_provider():
+    """The warning about a deployment on ``none`` is for a reference reading the configured one."""
+    from app.services.agent_map import profile_warnings
+
+    warnings = profile_warnings(
+        {
+            "team": {
+                "label": "Team",
+                "stages": [{"key": "reversing", "kind": "analysis", "agents": ["reverser"]}],
+            }
+        },
+        definitions={
+            "reverser": {
+                "role": "generic",
+                "prompt": "reverse",
+                "tools": [{"kind": "provider", "provider": "r2"}],
+            }
+        },
+        overrides={"core.static.provider": "none"},
+    )
+    assert warnings == {}
+
+
 def test_a_disabled_built_in_profile_member_is_allowed_while_another_profile_is_active():
     """The exemption ``AgentsConfig`` gives a built-in profile: disabling a
 
@@ -230,7 +304,9 @@ def test_the_active_profile_must_exist_in_the_map_being_saved():
 def test_a_profile_and_the_definition_it_uses_may_be_saved_in_one_patch():
     out = validate_agent_map(
         {
-            AGENT_DEFINITIONS_KEY: {"strings": {"role": "generic", "prompt": "p"}},
+            AGENT_DEFINITIONS_KEY: {
+                "strings": {"role": "generic", "category": "other", "prompt": "p"}
+            },
             AGENT_PROFILES_KEY: {"wide": {"analysts": ["static", "strings"]}},
             AGENT_PROFILE_KEY: "wide",
         },
@@ -630,7 +706,7 @@ def test_the_api_clears_the_derived_marker_when_the_stages_were_edited():
 
 
 def test_the_api_keeps_the_marker_on_a_team_nobody_has_touched():
-    from maljan.core.config import stages_from_analysts
+    from malspark.core.config import stages_from_analysts
 
     out = validate_agent_map(
         _flagged([s.model_dump(mode="json") for s in stages_from_analysts(["static"])]),
@@ -862,7 +938,7 @@ def test_a_lead_without_a_prompt_is_reported_on_its_prompt_field():
 
 @pytest.mark.parametrize("key", ALWAYS_ENABLED_AGENTS)
 def test_an_always_enabled_built_in_turned_off_is_refused(key):
-    from maljan.core.config import _builtin_definitions
+    from malspark.core.config import _builtin_definitions
 
     seed = _builtin_definitions()[key].model_dump(mode="json")
     with pytest.raises(AgentMapError) as exc:
@@ -896,7 +972,7 @@ def test_the_technique_line_turned_off_on_a_built_in_role_is_reported_on_its_fie
 
 
 def test_the_technique_line_turned_off_on_a_built_in_prompt_agent_says_to_clone_it():
-    from maljan.core.config import PROMPT_ROLES, _builtin_definitions
+    from malspark.core.config import PROMPT_ROLES, _builtin_definitions
 
     key = next(k for k, d in _builtin_definitions().items() if d.role in PROMPT_ROLES)
     seed = _builtin_definitions()[key].model_dump(mode="json")
@@ -906,3 +982,74 @@ def test_the_technique_line_turned_off_on_a_built_in_prompt_agent_says_to_clone_
         exc.value.errors[f"{AGENT_DEFINITIONS_KEY}.{key}"]
         == f"{key!r} is built in; clone it to change it"
     )
+
+
+class TestANewDefinitionNamesItsCategory:
+    """A new definition must name its category; a stored one reads the one it fits."""
+
+    MESSAGE_KEY = f"{AGENT_DEFINITIONS_KEY}.strings.category"
+
+    def test_a_new_definition_without_one_is_refused_under_the_field(self):
+        with pytest.raises(AgentMapError) as exc:
+            validate_agent_map(
+                {AGENT_DEFINITIONS_KEY: {"strings": {"role": "generic", "prompt": "p"}}},
+                stored={},
+            )
+        assert "choose the category" in exc.value.errors[self.MESSAGE_KEY]
+
+    def test_a_null_one_is_none(self):
+        with pytest.raises(AgentMapError) as exc:
+            validate_agent_map(
+                {
+                    AGENT_DEFINITIONS_KEY: {
+                        "strings": {"role": "generic", "prompt": "p", "category": None}
+                    }
+                },
+                stored={},
+            )
+        assert self.MESSAGE_KEY in exc.value.errors
+
+    def test_one_that_is_not_a_category_is_refused_under_the_field(self):
+        with pytest.raises(AgentMapError) as exc:
+            validate_agent_map(
+                _defs(strings={"role": "generic", "prompt": "p", "category": "reverser"}),
+                stored={},
+            )
+        assert self.MESSAGE_KEY in exc.value.errors
+
+    def test_the_one_named_is_stored(self):
+        out = validate_agent_map(
+            _defs(strings={"role": "generic", "prompt": "p", "category": "code_reader"}),
+            stored={},
+        )
+        assert out[AGENT_DEFINITIONS_KEY]["strings"]["category"] == "code_reader"
+
+    def test_a_stored_definition_without_one_is_saved_with_the_one_it_fits(self):
+        """A store not yet migrated: the console sends the row back as it read it."""
+        legacy = {"strings": {"role": "generic", "prompt": "p", "tools": [{"kind": "sandbox"}]}}
+        out = validate_agent_map(
+            {AGENT_DEFINITIONS_KEY: legacy}, stored={AGENT_DEFINITIONS_KEY: legacy}
+        )
+        assert out[AGENT_DEFINITIONS_KEY]["strings"]["category"] == "dynamic"
+
+    def test_a_save_that_does_not_touch_the_definitions_is_not_held_to_it(self):
+        stored = {AGENT_DEFINITIONS_KEY: {"strings": {"role": "generic", "prompt": "p"}}}
+        out = validate_agent_map(
+            {AGENT_PROFILES_KEY: {"wide": {"analysts": ["strings"]}}}, stored=stored
+        )
+        assert out[AGENT_PROFILES_KEY]["wide"]["analysts"] == ["strings"]
+
+    def test_a_built_in_needs_none(self):
+        out = validate_agent_map(
+            {AGENT_DEFINITIONS_KEY: {"network": {"role": "network", "enabled": False}}},
+            stored={},
+        )
+        assert out[AGENT_DEFINITIONS_KEY]["network"]["category"] == "network"
+
+    def test_the_catalog_serves_the_choices(self):
+        from app.services.settings_catalog_api import resolved_catalog
+        from malspark.core.agent_category import AGENT_CATEGORIES
+
+        entries = {e.key: e for e in resolved_catalog(["analysis"])}
+        assert entries[AGENT_DEFINITIONS_KEY].agent_category_choices == list(AGENT_CATEGORIES)
+        assert entries["core.mcp.servers"].agent_category_choices is None

@@ -15,7 +15,8 @@
  * came before it underneath as its history.
  */
 
-import { Info, ShieldAlert, ShieldCheck, ShieldX } from "lucide-react";
+import { useState } from "react";
+import { Info, MessageSquareReply, ShieldAlert, ShieldCheck, ShieldX } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 
 import type { ConversationItem, FeedbackEntry, ValidationState } from "@/lib/conversation";
@@ -38,9 +39,19 @@ const STATE: Record<ValidationState, { word: string; icon: LucideIcon; tone: str
     icon: ShieldX,
     tone: "border-status-red/30 bg-status-red/10 text-status-red",
   },
+  /* A question the agent answers as it chooses (which unread callees to
+   * read): neither fixed nor failed, so it is drawn apart from both. */
+  answered: {
+    word: "answered by the agent",
+    icon: MessageSquareReply,
+    tone: "border-status-blue/30 bg-status-blue/10 text-status-blue",
+  },
 };
 
 const PLAIN_NOTICE = "border-border bg-bg-surface text-text-muted";
+
+/** Past this many characters a note opens clamped to three lines. */
+const LONG_NOTE_CHARS = 240;
 
 /** What one earlier state of a violation reads as, under the line it belongs
  *  to. The message rides along only where it says something the latest one
@@ -52,6 +63,7 @@ function historyLine(entry: FeedbackEntry, latest: string): string {
 }
 
 export default function NoticeRow({ item }: { item: ConversationItem }) {
+  const [open, setOpen] = useState(false);
   const correction = item.kind === "validation_feedback";
   const states = item.feedback ?? [];
   /* A correction the builder folded always states where it ended; one from a
@@ -61,6 +73,10 @@ export default function NoticeRow({ item }: { item: ConversationItem }) {
   const style = STATE[latest];
   const Icon: LucideIcon = correction ? style.icon : Info;
   const earlier = states.slice(0, -1);
+  /* A note is read in passing, between messages; a long one is held to three
+   * lines until the reader asks for the rest, so the room's notes never
+   * outweigh what the agents said. */
+  const long = item.text.length > LONG_NOTE_CHARS;
   return (
     <div className="flex justify-center">
       <div
@@ -69,19 +85,31 @@ export default function NoticeRow({ item }: { item: ConversationItem }) {
            already writes out. They stay on the row as its title, which is
            where the other machine identifiers on this page live. */
         title={correction ? [item.code, item.path].filter(Boolean).join(" · ") : undefined}
-        className={`max-w-[46rem] rounded border px-2.5 py-1 text-[11px] ${
+        className={`max-w-[min(46rem,100%)] rounded-lg border px-2.5 py-1 text-[11px] ${
           correction ? style.tone : PLAIN_NOTICE
         }`}
       >
-        <div className="flex items-baseline gap-2">
-          <Icon size={12} aria-hidden="true" className="self-center" />
-          {correction && <span className="uppercase tracking-wider">{style.word}</span>}
+        <div className="flex flex-wrap items-center gap-x-2">
+          <Icon size={12} aria-hidden="true" />
+          {correction && <span className="font-medium">{style.word}</span>}
           {correction && item.retryIndex ? <span>retry {item.retryIndex}</span> : null}
           {/* A notice still comes from somewhere, and which validator or which
             * watcher raised it is the first thing a reader wants. */}
           {item.displayName && <span className="text-text-primary">{item.displayName}</span>}
-          <span className="text-text-secondary">{item.text}</span>
         </div>
+        <p className={`whitespace-pre-wrap break-words text-text-secondary ${long && !open ? "line-clamp-3" : ""}`}>
+          {item.text}
+        </p>
+        {long && (
+          <button
+            type="button"
+            aria-expanded={open}
+            onClick={() => setOpen((value) => !value)}
+            className="text-accent-strong hover:underline"
+          >
+            {open ? "Show less" : "Show all"}
+          </button>
+        )}
         {earlier.length > 0 && (
           <ul className="mt-1 space-y-0.5 pl-5 text-text-muted">
             {earlier.map((entry, index) => (

@@ -18,6 +18,7 @@ from app.logging_config import get_logger
 from app.logsafe import log_safe
 from app.models.user import User
 from app.schemas.evidence import (
+    CallMapResponse,
     EvidenceEntryResponse,
     EvidenceListResponse,
     LedgerVerificationResponse,
@@ -103,7 +104,7 @@ async def _unprobed_models_for(db: AsyncSession, config: dict[str, Any]) -> list
         # An unknown profile is refused a few lines further on, with the list
         # of the ones that exist; saying it twice, differently, helps nobody.
         return []
-    from maljan.agents.composition import called_assignments
+    from malspark.agents.composition import called_assignments
 
     # Every model the job calls, each on the role its builder reads it on:
     # the analysts and every agent they can ask, the mediator of a debate,
@@ -120,7 +121,7 @@ async def _undecryptable_secrets(
     Keyed by setting key. A secret the job never uses (a server its team does not
     bind, an evaluation arm's key) is not named: it is no reason to refuse.
     """
-    from maljan.core.settings_overrides import StoredValueRefused
+    from malspark.core.settings_overrides import StoredValueRefused
 
     from app.services.settings_service import (
         load_core_overrides,
@@ -196,6 +197,8 @@ _AUDITED_CONFIG_KEYS = (
     "sandbox_provider",
     "sandbox_report_id",
     "mock_mode",
+    "ignore_earlier_runs",
+    "isolated_memory",
 )
 
 
@@ -439,7 +442,7 @@ def _profile_the_job_ran(job: Any) -> str:
 
 def _delegation_depth(overrides: dict[str, Any]) -> int:
     """How far the roster follows an ``ask_<key>`` chain: what the asks get."""
-    from maljan.core.config import AgentsConfig
+    from malspark.core.config import AgentsConfig
 
     default = int(AgentsConfig.model_fields["delegation_depth"].default)
     try:
@@ -450,8 +453,8 @@ def _delegation_depth(overrides: dict[str, Any]) -> int:
 
 def _server_labels(overrides: dict[str, Any]) -> dict[str, str]:
     """Each tool server's display name in force: the built-ins', then the stored map's."""
-    from maljan.core.settings_overrides import build_settings
-    from maljan.pipeline.events import server_labels
+    from malspark.core.settings_overrides import build_settings
+    from malspark.pipeline.events import server_labels
 
     labels = {key: cfg.label for key, cfg in build_settings({}).mcp.servers.items()}
     stored = overrides.get("core.mcp.servers")
@@ -473,8 +476,8 @@ async def _roster_for_job(db: AsyncSession, job: Any) -> dict[str, Any]:
     500s because a stored profile will not validate would take the run's
     status down with the label.
     """
-    from maljan.core.config import ProfileDefinition
-    from maljan.pipeline.events import roster_payload
+    from malspark.core.config import ProfileDefinition
+    from malspark.pipeline.events import roster_payload
 
     from app.services.agent_map import effective_definitions, effective_profiles
 
@@ -603,8 +606,8 @@ async def get_job_usage(
     The job's owner only, checked the way the events endpoint checks it: another
     account's job is not found, to an admin as to anyone else.
     """
-    from maljan.analysis.run_summary import usage_totals
-    from maljan.core.spend import SpendMeter, hour_cache_models
+    from malspark.analysis.run_summary import usage_totals
+    from malspark.core.spend import SpendMeter, hour_cache_models
 
     from app.services.job_events import read_usage
     from app.services.settings_service import effective_core_settings
@@ -695,6 +698,56 @@ async def get_job_evidence(
     )
 
 
+@router.get("/{job_id}/evidence/call-map", response_model=CallMapResponse)
+async def get_job_call_map(
+    job_id: uuid.UUID,
+    user: User = Depends(get_current_user),
+    svc: AnalysisService = Depends(_get_service),
+    db: AsyncSession = Depends(get_db),
+) -> Any:
+    """The functions the run's code reading touched, what each calls and what calls it.
+
+    Derived from the job's stored ledger when asked for
+    (``malspark.reporting.call_map``), so a run stored before the map existed
+    has one too; nothing is written, and it is derived again on each request
+    (about 20 ms over a stored run of a hundred entries in a warm process). Ownership is the
+    job's, checked exactly the way the evidence page checks it. Each row is
+    read as the evidence page serves it, its absent columns left out, so the
+    map is the one the served pages draw; a row that does not read as a ledger
+    entry is left out.
+    """
+    import asyncio
+
+    from malspark.reporting.call_map import call_map
+    from malspark.reporting.follow_up import stored_ledger
+    from sqlalchemy import select as sa_select
+
+    from app.models.evidence import EvidenceEntry
+
+    job = await svc.get_job(job_id, user)
+    if not job:
+        logger.warning(
+            f"Call map requested for unknown job: {log_safe(job_id)}",
+            extra={"job_id": log_safe(job_id), "user_id": log_safe(user.id)},
+        )
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Job not found")
+    found = await db.execute(
+        sa_select(EvidenceEntry).where(EvidenceEntry.job_id == job_id).order_by(EvidenceEntry.seq)
+    )
+    orm_rows = list(found.scalars().all())
+
+    def _derive() -> dict[str, Any]:
+        rows = [
+            EvidenceEntryResponse.model_validate(row).model_dump(mode="json", exclude_none=True)
+            for row in orm_rows
+        ]
+        ledger, _unread = stored_ledger(rows)
+        return call_map(ledger)
+
+    # The rows are read, the ledger rebuilt and the listings parsed off the event loop.
+    return CallMapResponse(job_id=job_id, **await asyncio.to_thread(_derive))
+
+
 @router.get("/{job_id}/evidence/verify", response_model=LedgerVerificationResponse)
 async def verify_job_evidence(
     job_id: uuid.UUID,
@@ -755,13 +808,16 @@ async def get_job_package(
     import tempfile
 
     from app.services import job_package
+    from app.services.report_service import ReportService
 
     job = await svc.get_job(job_id, user)
     if not job:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Job not found")
+    # The Markdown it holds is the one the report route serves.
+    layout = await ReportService(db).report_layout()
     spool = tempfile.TemporaryFile()  # noqa: SIM115 — closed by the stream it feeds
     try:
-        manifest = await job_package.build_for_job(db.bind, job_id, spool)
+        manifest = await job_package.build_for_job(db.bind, job_id, spool, layout=layout)
     except job_package.PackageError as exc:
         spool.close()
         raise HTTPException(
@@ -781,7 +837,7 @@ async def get_job_package(
             extra={"job_id": log_safe(job_id), "user_id": log_safe(user.id)},
         )
     headers = {
-        "Content-Disposition": f'attachment; filename="maljan-job-{job_id}.tar.gz"',
+        "Content-Disposition": f'attachment; filename="malspark-job-{job_id}.tar.gz"',
         "X-Package-Seal-Status": seal_status,
         "X-Package-Signed": "true" if "key_id" in (manifest.get("signature") or {}) else "false",
     }
@@ -802,7 +858,7 @@ async def get_job_evidence_object(
     """One part of a ledger entry's answer the entry does not keep whole, as it was kept.
 
     The entry's ``spilled`` reference names the part, its object key, byte
-    length and SHA-256 (``maljan.schemas.evidence_spill``). Ownership is the
+    length and SHA-256 (``malspark.schemas.evidence_spill``). Ownership is the
     job's, checked exactly the way the evidence page checks it. 404 when the
     job, the entry or the reference is not there, or the part was never kept
     (its reference states why); 502 when the store cannot hand the object
@@ -813,7 +869,7 @@ async def get_job_evidence_object(
     """
     import asyncio
 
-    from maljan.schemas.evidence_spill import CONTENT_TYPES, JSON
+    from malspark.schemas.evidence_spill import CONTENT_TYPES, JSON
     from sqlalchemy import select as sa_select
 
     from app.models.evidence import EvidenceEntry
@@ -852,6 +908,8 @@ async def get_job_evidence_object(
         )
     try:
         response = await asyncio.to_thread(object_store.open_object, object_store.client(), key)
+    except object_store.StoreNotPrivate:
+        raise
     except Exception as exc:  # noqa: BLE001 — the store's failure is logged, not served
         logger.warning(
             f"Evidence object {log_safe(key)} could not be read: {log_safe(type(exc).__name__)}",

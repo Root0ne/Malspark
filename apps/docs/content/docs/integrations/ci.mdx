@@ -1,13 +1,13 @@
 ---
 title: "CI"
-description: "Driving Maljan from a pipeline with an API key."
+description: "Driving Malspark from a pipeline with an API key."
 ---
 
-A pipeline can submit a sample to a running Maljan deployment, wait for the
-analysis and act on what it publishes, through the [REST API](/api/) and
-an API key. This page is a recipe built from those endpoints; Maljan ships no
+A pipeline can submit a sample to a running Malspark deployment, wait for the
+analysis and act on what it publishes, through the [REST API](/docs/api/) and
+an API key. This page is a recipe built from those endpoints; Malspark ships no
 CI plug-in of its own. The checks this repository runs on itself are described
-in [Development](/development/#continuous-integration).
+in [Development](/docs/development/#continuous-integration).
 
 <Callout type="warn" title="Keep samples off shared runners">
 
@@ -23,7 +23,7 @@ A key acts as the account that minted it, so mint it signed in as the account
 the pipeline should act as:
 
 ```bash
-curl -s -X POST http://maljan.internal:8000/api/v1/audit/api-keys \
+curl -s -X POST http://malspark.internal:8000/api/v1/audit/api-keys \
   -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
   -d '{"name": "ci", "expires_in_days": 90}'
 ```
@@ -31,7 +31,7 @@ curl -s -X POST http://maljan.internal:8000/api/v1/audit/api-keys \
 The answer's `raw_key` is shown once; store it as a CI secret. Keys are stored
 only as a SHA-256 hash, can carry an expiry, and an unknown, revoked or expired
 key is refused with the same 401. `last_used_at` is stamped on every accepted
-call. See [Security](/security/#authentication).
+call. See [Security](/docs/security/#authentication).
 
 ## Submit, wait, act
 
@@ -42,8 +42,8 @@ call. See [Security](/security/#authentication).
 **Upload the sample.**
 
  ```bash
- SAMPLE=$(curl -s -X POST "$MALJAN/api/v1/samples/upload" \
-   -H "X-API-Key: $MALJAN_API_KEY" -F "file=@$SAMPLE_PATH" | jq -r .id)
+ SAMPLE=$(curl -s -X POST "$MALSPARK/api/v1/samples/upload" \
+   -H "X-API-Key: $MALSPARK_API_KEY" -F "file=@$SAMPLE_PATH" | jq -r .id)
  ```
 
 </Step>
@@ -53,8 +53,8 @@ call. See [Security](/security/#authentication).
 **Start the job**, naming the team if it is not the deployment's active one.
 
  ```bash
- JOB=$(curl -s -X POST "$MALJAN/api/v1/jobs" \
-   -H "X-API-Key: $MALJAN_API_KEY" -H 'Content-Type: application/json' \
+ JOB=$(curl -s -X POST "$MALSPARK/api/v1/jobs" \
+   -H "X-API-Key: $MALSPARK_API_KEY" -H 'Content-Type: application/json' \
    -d "{\"sample_id\":\"$SAMPLE\",\"config\":{\"profile\":\"default\"}}" | jq -r .id)
  ```
 
@@ -70,7 +70,7 @@ call. See [Security](/security/#authentication).
 
  ```bash
  while :; do
-   STATUS=$(curl -s "$MALJAN/api/v1/jobs/$JOB" -H "X-API-Key: $MALJAN_API_KEY" | jq -r .status)
+   STATUS=$(curl -s "$MALSPARK/api/v1/jobs/$JOB" -H "X-API-Key: $MALSPARK_API_KEY" | jq -r .status)
    case "$STATUS" in completed|failed|cancelled) break ;; esac
    sleep 30
  done
@@ -83,12 +83,12 @@ call. See [Security](/security/#authentication).
 **Read the verdict and fetch what to act on.**
 
  ```bash
- REPORT=$(curl -s "$MALJAN/api/v1/reports/job/$JOB" -H "X-API-Key: $MALJAN_API_KEY")
+ REPORT=$(curl -s "$MALSPARK/api/v1/reports/job/$JOB" -H "X-API-Key: $MALSPARK_API_KEY")
  echo "$REPORT" | jq '{verdict, verdict_reading, overall_confidence}'
  REPORT_ID=$(echo "$REPORT" | jq -r .id)
 
- curl -s "$MALJAN/api/v1/reports/$REPORT_ID/iocs" -H "X-API-Key: $MALJAN_API_KEY" > iocs.json
- curl -s "$MALJAN/api/v1/reports/$REPORT_ID/stix" -H "X-API-Key: $MALJAN_API_KEY" > bundle.json
+ curl -s "$MALSPARK/api/v1/reports/$REPORT_ID/iocs" -H "X-API-Key: $MALSPARK_API_KEY" > iocs.json
+ curl -s "$MALSPARK/api/v1/reports/$REPORT_ID/stix" -H "X-API-Key: $MALSPARK_API_KEY" > bundle.json
  ```
 
 </Step>
@@ -104,10 +104,10 @@ call. See [Security](/security/#authentication).
   read, so the inconclusive `Suspicious` was published.
 - **The IOC feed's default** is only what the publish rule publishes, each row
   with `publish_answer` saying why. That is the set to push to a blocklist; see
-  [The IOC feed](/usage/reports-and-exports/#the-ioc-feed).
+  [The IOC feed](/docs/usage/reports-and-exports/#the-ioc-feed).
 - **A failed job can still have a report**, with `incomplete_reason` saying
   where the run failed. Treat it as incomplete rather than as a verdict.
 
 Runs take minutes to hours depending on the model and the team, so give the
 waiting step a timeout that suits the deployment. Requests are rate-limited per
-client address and path; see [Operations](/operations/#rate-limits-and-login-protection).
+client address and path; see [Operations](/docs/operations/#rate-limits-and-login-protection).

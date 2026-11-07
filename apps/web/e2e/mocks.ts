@@ -167,6 +167,70 @@ export const MOCK_JOB_DETAIL = {
 };
 
 /**
+ * The evidence bundle behind the report (`malspark-evidence-bundle/1`), over
+ * the same four calls as the ledger below. Its sections hold what the bundle
+ * reader has to draw: a table with an escaped pipe, a listing, a subsection
+ * title used twice (numbered on its second use), links into the index, a
+ * web link, a refused `javascript:` link and markup written as text, which
+ * must stay text.
+ */
+export const MOCK_EVIDENCE_BUNDLE = {
+  format: "malspark-evidence-bundle/1",
+  report: {
+    title: "Loader analysis",
+    sha256: "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08",
+    report_id: null,
+    generated_at: "2026-10-30T10:00:00+00:00",
+  },
+  notes: [
+    { number: 1, anchor: "cite-1", section: "Executive summary", evidence_ids: ["ev_0001", "ev_0004"] },
+    { number: 2, anchor: "cite-2", section: "Detection", evidence_ids: ["ev_0003", "ev_0099"] },
+  ],
+  evidence_index: [
+    { id: "ev_0001", agent: "static", server: "analysis", tool: "pe_info", ok: true, duration_ms: 42, truncated: false, repeated_of: null },
+    { id: "ev_0002", agent: "network", server: null, tool: "sandbox_network", ok: true, duration_ms: 7, truncated: false, repeated_of: null },
+    { id: "ev_0003", agent: "judge", server: "threatintel", tool: "virustotal_lookup", ok: false, duration_ms: 900, truncated: false, repeated_of: null },
+    { id: "ev_0004", agent: "static", server: "analysis", tool: "strings_extract", ok: true, duration_ms: 12, truncated: true, repeated_of: null },
+  ],
+  sections: [
+    {
+      anchor: "title",
+      title: "Title",
+      markdown:
+        "# Evidence bundle: Loader analysis\n\n_The record behind the analyst report of the same name._\n\n" +
+        "**Verdict:** Malware (high confidence) · **Severity:** High · **Family:** none attributed [ev_0001]",
+    },
+    {
+      anchor: "sec-technical-analysis",
+      title: "Technical analysis",
+      markdown:
+        "## 5. Technical analysis · _Source per subsection_\n\n" +
+        "### 5.1 Packing, obfuscation and anti-analysis · _Source per row_\n\n" +
+        "Routine 0xae78 decodes each string [ev_0004]. See [the technique](https://attack.mitre.org/techniques/T1140/) " +
+        "and [a trap](javascript:alert(1)).\n\n" +
+        "<script>window.__bundleXss = 1</script> <img src=x onerror=\"window.__bundleXss = 2\">\n\n" +
+        "| Offset | Value |\n|---|---|\n| 0xf000 | `a\\|b` |\n| 0xf010 | counter=%d&type=%d |\n\n" +
+        "### Process tree\n\n```\npid=85 ppid=56 rundll32.exe\n```",
+    },
+    {
+      anchor: "sec-observed-behaviour",
+      title: "Observed behaviour",
+      markdown: "## 6. Observed behaviour · _Observed in sandbox_\n\n### Process tree\n\n- rundll32.exe loads the sample [ev_0002]\n  - no child process",
+    },
+    {
+      anchor: "sec-evidence-index",
+      title: "Evidence index",
+      markdown: "## Appendix A. Evidence index\n\n| ID | Tool |\n|---|---|\n| ev_0001 | pe_info |",
+    },
+    {
+      anchor: "sec-notes-cited-by-the-analyst-report",
+      title: "Notes cited by the analyst report",
+      markdown: "## Appendix E. Notes cited by the analyst report · _Measured_",
+    },
+  ],
+};
+
+/**
  * One evidence ledger, big enough to page and varied enough to filter.
  *
  * `ev_0001` carries a long output so the "show more" disclosure has something
@@ -238,6 +302,41 @@ export const MOCK_EVIDENCE = [
   },
 ];
 
+/**
+ * The call map the API derives from the ledger above: two roots, a call back
+ * up the tree (0x10001200 calls the function that called it), a function a
+ * call names that nobody read, and one listed under a given name.
+ */
+const callFn = (
+  address: string,
+  calls: string[],
+  calledBy: string[],
+  listedIn: string[],
+  names: string[] = [],
+) => ({
+  address,
+  offset: `0x${(parseInt(address, 16) - 0x10000000).toString(16)}`,
+  names,
+  read: listedIn.length > 0,
+  listed_in: listedIn,
+  read_by: listedIn.length > 0 ? ["static"] : [],
+  calls,
+  called_by: calledBy,
+});
+export const MOCK_CALL_MAP = {
+  job_id: "",
+  image_base: "0x10000000",
+  functions: [
+    callFn("0x10001000", ["0x10001200", "0x10001400"], ["0x10001200"], ["ev_0002"], ["entry"]),
+    callFn("0x10001200", ["0x10001000", "0x10001800"], ["0x10001000"], ["ev_0002"]),
+    callFn("0x10001400", [], ["0x10001000", "0x10003000"], []),
+    callFn("0x10001800", ["0x10002000"], ["0x10001200"], ["ev_0001", "ev_0002"], ["decrypt_config"]),
+    callFn("0x10002000", [], ["0x10001800"], []),
+    callFn("0x10003000", ["0x10001400"], [], ["ev_0002"], ["run"]),
+  ],
+  roots: ["0x10003000", "0x10001000"],
+};
+
 export const MOCK_DASHBOARD_STATS = {
   total_jobs: 42,
   total_samples: 15,
@@ -272,7 +371,7 @@ export const MOCK_TOOL_USAGE = {
 
 /** Matches `_SYSTEM_STATUS_SCHEMA`. */
 export const MOCK_SYSTEM_STATUS = {
-  app_name: "Maljan",
+  app_name: "Malspark",
   app_version: "0.1.0",
   mock_mode_allowed: false,
   enrichment_enabled: true,
@@ -683,15 +782,15 @@ export const MOCK_SETTINGS_SCHEMA = withServedDeclarations({
           type: "json", default: {}, nullable: false, choices: null,
           minimum: null, maximum: null, secret: false, group: "mcp",
           title: "Tool servers",
-          description: "Every MCP server Maljan can attach, keyed by a short name.",
+          description: "Every MCP server Malspark can attach, keyed by a short name.",
           applies: "next_job", editable: true, reason: null, probe: null,
           applies_when: null, order: -1, choices_from: null, editor: "server_map", subgroup: null, advanced: false,
           // Resolved by the API from `REQUIRED_ENV_ALLOW`: the names each
           // built-in sidecar is started with whatever the stored registry
           // says. The editor draws them above the box rather than in it.
           required_env: {
-            analysis: ["MALJAN_STAGING_DIR", "MALJAN_STAGING_TTL_HOURS", "MALJAN_SAMPLE_ROOTS"],
-            network: ["MALJAN_STAGING_DIR", "MALJAN_SAMPLE_ROOTS"],
+            analysis: ["MALSPARK_STAGING_DIR", "MALSPARK_STAGING_TTL_HOURS", "MALSPARK_SAMPLE_ROOTS"],
+            network: ["MALSPARK_STAGING_DIR", "MALSPARK_SAMPLE_ROOTS"],
           },
         },
         {
@@ -728,9 +827,10 @@ export const MOCK_SETTINGS_SCHEMA = withServedDeclarations({
           type: "json", default: {}, nullable: false, choices: null,
           minimum: null, maximum: null, secret: false, group: "agents",
           title: "Agent definitions",
-          description: "Every analyst Maljan can run, keyed by a short name.",
+          description: "Every analyst Malspark can run, keyed by a short name.",
           applies: "next_job", editable: true, reason: null, probe: null,
           applies_when: null, order: -1, choices_from: null, editor: "agent_definitions", subgroup: null, advanced: false,
+          agent_category_choices: ["code_reader", "static", "dynamic", "network", "intel", "other"],
           required_env: null,
         },
         {
@@ -912,7 +1012,7 @@ export const MOCK_SETTINGS_VALUES = {
           // describes a response the API cannot produce.
           enabled: true, transport: "stdio", command: "python",
           args: ["services/network-mcp/server.py"], env: {}, cwd: "services/network-mcp",
-          env_allow: ["MALJAN_STAGING_DIR", "MALJAN_SAMPLE_ROOTS"],
+          env_allow: ["MALSPARK_STAGING_DIR", "MALSPARK_SAMPLE_ROOTS"],
           url: "", auth_token: "", auth_token_source: "default",
           tools: null, agents: ["network"], label: "Network MCP",
         },
@@ -966,19 +1066,19 @@ export const MOCK_SETTINGS_VALUES = {
       value: {
         static: {
           role: "static", label: "Static analyst", prompt: null, tools: [],
-          static_provider: null, enabled: true,
+          static_provider: null, enabled: true, category: "code_reader",
         },
         dynamic: {
           role: "dynamic", label: "Dynamic analyst", prompt: null, tools: [],
-          static_provider: null, enabled: true,
+          static_provider: null, enabled: true, category: "dynamic",
         },
         network: {
           role: "network", label: "Network analyst", prompt: null, tools: [],
-          static_provider: null, enabled: true,
+          static_provider: null, enabled: true, category: "network",
         },
         judge: {
           role: "judge", label: "Judge", prompt: null, tools: [],
-          static_provider: null, enabled: true,
+          static_provider: null, enabled: true, category: "other",
         },
       },
       is_set: null,
@@ -1288,15 +1388,15 @@ export const MOCK_SETTINGS_SCHEMA_FULL: SettingsSchema = withServedDeclarations(
           type: "json", default: {}, nullable: false, choices: null,
           minimum: null, maximum: null, secret: false, group: "mcp",
           title: "Tool servers",
-          description: "Every MCP server Maljan can attach, keyed by a short name.",
+          description: "Every MCP server Malspark can attach, keyed by a short name.",
           applies: "next_job", editable: true, reason: null, probe: null,
           applies_when: null, order: -1, choices_from: null, editor: "server_map", subgroup: null, advanced: false,
           // Resolved by the API from `REQUIRED_ENV_ALLOW`: the names each
           // built-in sidecar is started with whatever the stored registry
           // says. The editor draws them above the box rather than in it.
           required_env: {
-            analysis: ["MALJAN_STAGING_DIR", "MALJAN_STAGING_TTL_HOURS", "MALJAN_SAMPLE_ROOTS"],
-            network: ["MALJAN_STAGING_DIR", "MALJAN_SAMPLE_ROOTS"],
+            analysis: ["MALSPARK_STAGING_DIR", "MALSPARK_STAGING_TTL_HOURS", "MALSPARK_SAMPLE_ROOTS"],
+            network: ["MALSPARK_STAGING_DIR", "MALSPARK_SAMPLE_ROOTS"],
           },
         },
       ],
@@ -1321,9 +1421,10 @@ export const MOCK_SETTINGS_SCHEMA_FULL: SettingsSchema = withServedDeclarations(
           type: "json", default: {}, nullable: false, choices: null,
           minimum: null, maximum: null, secret: false, group: "agents",
           title: "Agent definitions",
-          description: "Every analyst Maljan can run, keyed by a short name.",
+          description: "Every analyst Malspark can run, keyed by a short name.",
           applies: "next_job", editable: true, reason: null, probe: null,
           applies_when: null, order: -1, choices_from: null, editor: "agent_definitions", subgroup: null, advanced: false,
+          agent_category_choices: ["code_reader", "static", "dynamic", "network", "intel", "other"],
           required_env: null,
         },
         {
@@ -1374,7 +1475,7 @@ export const MOCK_SETTINGS_SCHEMA_FULL: SettingsSchema = withServedDeclarations(
         },
         {
           key: "core.memory.qdrant.collection", namespace: "core", path: "memory.qdrant.collection",
-          type: "str", default: "maljan_findings", nullable: false, choices: null,
+          type: "str", default: "malspark_findings", nullable: false, choices: null,
           minimum: null, maximum: null, secret: false, group: "memory",
           title: "Qdrant collection", description: "Collection findings are written to and read from.",
           applies: "next_job", editable: true, reason: null, probe: null,
@@ -1384,7 +1485,7 @@ export const MOCK_SETTINGS_SCHEMA_FULL: SettingsSchema = withServedDeclarations(
         {
           key: "core.memory.qdrant.function_hash_collection", namespace: "core",
           path: "memory.qdrant.function_hash_collection",
-          type: "str", default: "maljan_function_hashes", nullable: false, choices: null,
+          type: "str", default: "malspark_function_hashes", nullable: false, choices: null,
           minimum: null, maximum: null, secret: false, group: "memory",
           title: "Qdrant function-hash collection", description: "Collection function hashes are written to and read from.",
           applies: "next_job", editable: true, reason: null, probe: null,
@@ -1493,7 +1594,7 @@ export const MOCK_SETTINGS_VALUES_FULL: SettingsValues = {
         network: {
           enabled: true, transport: "stdio", command: "python",
           args: ["services/network-mcp/server.py"], env: {}, cwd: "services/network-mcp",
-          env_allow: ["MALJAN_STAGING_DIR", "MALJAN_SAMPLE_ROOTS"],
+          env_allow: ["MALSPARK_STAGING_DIR", "MALSPARK_SAMPLE_ROOTS"],
           url: "", auth_token: "", auth_token_source: "default",
           tools: null, agents: ["network"], label: "Network MCP",
         },
@@ -1503,11 +1604,11 @@ export const MOCK_SETTINGS_VALUES_FULL: SettingsValues = {
     "core.agents.profile": { value: "default", ...unset() },
     "core.agents.definitions": {
       value: {
-        static: { role: "static", label: "Static analyst", prompt: null, tools: [], static_provider: null, enabled: true },
-        dynamic: { role: "dynamic", label: "Dynamic analyst", prompt: null, tools: [], static_provider: null, enabled: true },
-        network: { role: "network", label: "Network analyst", prompt: null, tools: [], static_provider: null, enabled: true },
-        judge: { role: "judge", label: "Judge", prompt: null, tools: [], static_provider: null, enabled: true },
-        reporter: { role: "report", label: "Reporter", prompt: null, tools: [], static_provider: null, enabled: true },
+        static: { role: "static", label: "Static analyst", prompt: null, tools: [], static_provider: null, enabled: true, category: "code_reader" },
+        dynamic: { role: "dynamic", label: "Dynamic analyst", prompt: null, tools: [], static_provider: null, enabled: true, category: "dynamic" },
+        network: { role: "network", label: "Network analyst", prompt: null, tools: [], static_provider: null, enabled: true, category: "network" },
+        judge: { role: "judge", label: "Judge", prompt: null, tools: [], static_provider: null, enabled: true, category: "other" },
+        reporter: { role: "report", label: "Reporter", prompt: null, tools: [], static_provider: null, enabled: true, category: "other" },
       },
       ...unset(),
     },
@@ -1522,8 +1623,8 @@ export const MOCK_SETTINGS_VALUES_FULL: SettingsValues = {
     "core.memory.backend": { value: "memory", ...unset() },
     "core.memory.qdrant.url": { value: "", ...unset() },
     "core.memory.qdrant.api_key": { value: null, is_set: false, hint: null, source: "default", updated_at: null, updated_by: null },
-    "core.memory.qdrant.collection": { value: "maljan_findings", ...unset() },
-    "core.memory.qdrant.function_hash_collection": { value: "maljan_function_hashes", ...unset() },
+    "core.memory.qdrant.collection": { value: "malspark_findings", ...unset() },
+    "core.memory.qdrant.function_hash_collection": { value: "malspark_function_hashes", ...unset() },
     "core.memory.top_k": { value: 5, ...unset() },
     "api.enrichment_enabled": { value: false, ...unset() },
     "api.enrichment_max_lookups": { value: 10, ...unset() },
@@ -1647,6 +1748,11 @@ export async function installApiMocks(
       page_size: pageSize,
     });
   });
+  // The call map: registered after the ledger, whose `evidence**` would match
+  // it too, so this one answers (the later route wins).
+  await page.route("**/api/v1/jobs/*/evidence/call-map", (route) =>
+    json(route, { ...MOCK_CALL_MAP, job_id: MOCK_JOB_DETAIL.id })
+  );
   await page.route("**/api/v1/jobs/*", (route) => {
     const id = new URL(route.request().url()).pathname.split("/").pop() ?? "";
     return json(route, { ...MOCK_JOB_DETAIL, id });
@@ -1689,11 +1795,22 @@ export async function installApiMocks(
   await page.route("**/api/v1/reports/*/iocs**", (route) =>
     json(route, { items: [], total: 0 })
   );
+  // The evidence bundle behind the analyst report, downloaded from Export.
+  await page.route("**/api/v1/reports/*/evidence-bundle.html", (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: "text/html",
+      body: "<!DOCTYPE html><html><body><h1>Evidence bundle: mock</h1></body></html>",
+    })
+  );
+  await page.route("**/api/v1/reports/*/evidence-bundle.json", (route) =>
+    json(route, MOCK_EVIDENCE_BUNDLE)
+  );
   await page.route("**/api/v1/reports/*/signatures/*", (route) =>
     route.fulfill({
       status: 200,
       contentType: "text/plain",
-      body: "rule Maljan_Mock { condition: false }",
+      body: "rule Malspark_Mock { condition: false }",
     })
   );
   await page.route("**/api/v1/reports/*/enrich", (route) =>
@@ -1799,9 +1916,9 @@ export async function installApiMocks(
     route.fulfill({
       status: 200,
       contentType: "application/json",
-      headers: { "content-disposition": "attachment; filename=maljan-settings.json" },
+      headers: { "content-disposition": "attachment; filename=malspark-settings.json" },
       body: JSON.stringify({
-        format: "maljan-settings/1",
+        format: "malspark-settings/1",
         exported_at: "2026-08-01T00:00:00Z",
         values: { "core.negotiation.retry_delay": 10 },
         secrets_omitted: ["core.llm.openai.api_key"],

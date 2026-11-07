@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from maljan.analysis.sink_reachability import (
+from malspark.analysis.sink_reachability import (
     FOLLOW_UP,
     CallGraph,
     _normalize_api,
@@ -11,7 +11,7 @@ from maljan.analysis.sink_reachability import (
     priority_hint,
     rank_suspicious_functions,
 )
-from maljan.providers.static.ghidra.call_graph import (
+from malspark.providers.static.ghidra.call_graph import (
     PRIORITY_FOLLOW_UP,
     call_graph_from_text,
 )
@@ -157,9 +157,9 @@ def test_a_hostile_graph_ten_times_larger_is_ranked_in_linear_time() -> None:
         for _ in range(3):
             gc.disable()
             try:
-                started = time.perf_counter()
+                started = time.thread_time()
                 rank_suspicious_functions(held, max_funcs=3)
-                times.append(time.perf_counter() - started)
+                times.append(time.thread_time() - started)
             finally:
                 gc.enable()
         return min(times)

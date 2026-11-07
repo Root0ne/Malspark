@@ -18,10 +18,10 @@ from __future__ import annotations
 from typing import Any
 from unittest.mock import MagicMock
 
-from maljan.agents.judge_agent import JudgeAgent
-from maljan.core.config import Settings, ToolRef
-from maljan.core.virustotal import SERVER_KEY
-from maljan.schemas.isr_models import AgentISR, ClaimEvidence
+from malspark.agents.judge_agent import JudgeAgent
+from malspark.core.config import Settings, ToolRef
+from malspark.core.virustotal import SERVER_KEY
+from malspark.schemas.isr_models import AgentISR, ClaimEvidence
 
 
 def _isr(claim: str = "the binary is packed", dissent: bool = False) -> AgentISR:
@@ -44,14 +44,14 @@ class TestEveryAnalystThatReadsTheFileCarriesTheReference:
             assert _REPUTATION in definitions[key].tools, key
             assert ToolRef(kind="mcp", server=SERVER_KEY) not in definitions[key].tools, key
 
-    def test_the_capability_resolves_to_the_server_the_seeds_named_before(self) -> None:
-        from maljan.agents.composition import mcp_refs_for
+    def test_the_capability_resolves_to_every_reputation_server(self) -> None:
+        from malspark.agents.composition import mcp_refs_for
 
         settings = Settings(_env_file=None)
         for key in ("static", "network", "judge", "triage", "android_static", "reverser"):
             refs = mcp_refs_for(settings, key)
             assert ToolRef(kind="mcp", server=SERVER_KEY) in refs, key
-            assert ToolRef(kind="mcp", server="threatintel") not in refs, key
+            assert ToolRef(kind="mcp", server="threatintel") in refs, key
 
     def test_the_dynamic_analyst_does_not(self) -> None:
         """Its evidence is a detonation report, and the hash was already asked
@@ -61,7 +61,7 @@ class TestEveryAnalystThatReadsTheFileCarriesTheReference:
         assert _REPUTATION not in definitions["dynamic"].tools
 
     def test_the_static_prompt_says_how_to_use_what_comes_back(self) -> None:
-        from maljan.agents.static_analyst import _ISR_TAIL
+        from malspark.agents.static_analyst import _ISR_TAIL
 
         assert "reputation tool" in _ISR_TAIL
         assert "not the verdict" in _ISR_TAIL
@@ -118,7 +118,9 @@ class TestTheJudgeAsksTheIdentityQuestion:
         are what the judge holds."""
         judge = self._judge([])
         judge.tools = [
-            type("_T", (), {"name": "get_file_report", "metadata": {"maljan_server": SERVER_KEY}})()
+            type(
+                "_T", (), {"name": "get_file_report", "metadata": {"malspark_server": SERVER_KEY}}
+            )()
         ]
 
         assert judge._can_ask_an_identity_question(False) is True
@@ -126,7 +128,7 @@ class TestTheJudgeAsksTheIdentityQuestion:
     def test_an_attached_tool_of_the_server_that_is_no_lookup_does_not_count(self) -> None:
         judge = self._judge([])
         judge.tools = [
-            type("_T", (), {"name": "get_ip_report", "metadata": {"maljan_server": SERVER_KEY}})()
+            type("_T", (), {"name": "get_ip_report", "metadata": {"malspark_server": SERVER_KEY}})()
         ]
 
         assert judge._can_ask_an_identity_question(False) is False
@@ -184,10 +186,16 @@ class TestTheMediatorTrigger:
 
         assert self._run_mediate(judge, {"static": _isr()}, False) == ["tools"]
 
-    def test_the_fast_path_is_kept_once_one_was_called(self) -> None:
+    def test_the_loop_runs_once_one_was_called_too(self) -> None:
+        # No fast path is left: whether to call anything is the mediator's.
         judge = self._mediator([ToolRef(kind="mcp", server=SERVER_KEY)], "")
 
-        assert self._run_mediate(judge, {"static": _isr()}, True) == ["fast"]
+        assert self._run_mediate(judge, {"static": _isr()}, True) == ["tools"]
+
+    def test_a_round_with_no_dissent_and_nothing_to_look_up_runs_the_loop(self) -> None:
+        judge = self._mediator([], "")
+
+        assert self._run_mediate(judge, {"static": _isr()}, True) == ["tools"]
 
     def test_prose_about_a_family_does_not_close_it(self) -> None:
         judge = self._mediator([ToolRef(kind="mcp", server=SERVER_KEY)], "")
@@ -203,7 +211,7 @@ class TestTheMediatorTrigger:
 
 class TestWhatTheDebateStageHandsOver:
     def test_the_ledger_rows_are_read_for_a_reputation_lookup_by_kind(self) -> None:
-        from maljan.pipeline.nodes import _reputation_asked
+        from malspark.pipeline.nodes import _reputation_asked
 
         state = {
             "evidence_ledger": [
@@ -218,7 +226,7 @@ class TestWhatTheDebateStageHandsOver:
         assert _reputation_asked(state) is False
 
     def test_another_tool_of_a_reputation_server_is_not_a_lookup(self) -> None:
-        from maljan.pipeline.nodes import _reputation_asked
+        from malspark.pipeline.nodes import _reputation_asked
 
         row = {
             "id": "ev_0001",
@@ -232,14 +240,14 @@ class TestWhatTheDebateStageHandsOver:
 
     def test_a_row_that_is_not_a_mapping_costs_no_answer(self) -> None:
         """One malformed row must not decide whether the question is asked."""
-        from maljan.pipeline.nodes import _reputation_asked
+        from malspark.pipeline.nodes import _reputation_asked
 
         row = {"id": "ev_0001", "server": "threatintel", "tool": "check_hash"}
 
         assert _reputation_asked({"evidence_ledger": ["nonsense", row]}) is True
 
     def test_a_run_with_no_ledger_yet_asked_nothing(self) -> None:
-        from maljan.pipeline.nodes import _reputation_asked
+        from malspark.pipeline.nodes import _reputation_asked
 
         assert _reputation_asked({}) is False
 
@@ -247,7 +255,7 @@ class TestWhatTheDebateStageHandsOver:
         """The trigger is only as good as the call site that feeds it."""
         import inspect
 
-        from maljan.pipeline import nodes
+        from malspark.pipeline import nodes
 
         source = inspect.getsource(nodes)
 

@@ -8,14 +8,14 @@ from what the run gathered: the evidence ledger, the analysts' claims and the
 judge's verdict. Every rendering below is made on request from that one stored
 report, so there is a single source of truth and no second copy to fall behind
 it. How the report is built is described in
-[Reporting](/architecture/#reporting).
+[Reporting](/docs/architecture/#reporting).
 
 ## Reading a report
 
 Read it from the evidence up rather than from the verdict down. Every section
 carries the ledger ids it was built from, rendered as chips in the console; a
-chip opens that call on the **EVIDENCE** tab with its arguments, its result and
-how long it took. The **Evidence** card on the summary tab counts what the
+chip opens that call under **Evidence → Records** with its arguments, its result and
+how long it took. The **Run quality** section under Evidence counts what the
 whole report stands on: how many calls were made, how many failed, and how many
 sections can name nothing at all.
 
@@ -39,7 +39,7 @@ One report is reachable by its own id or by the job that produced it
 | `stix` | The exported STIX 2.1 bundle. `stix?source=judge` serves the judge's own bundle beside it, with the map from each id the judge wrote to the id it was published under. |
 | `mitre` | The ATT&CK view of the report. |
 | `iocs` | The indicator feed, with a publish decision on every row (below). |
-| `signatures/{kind}` | The detection drafts of one kind as plain text: `yara`, `sigma`, `suricata` or `snort`. |
+| `signatures/{kind}` | The detection drafts of one kind as plain text: `yara`, `sigma` or `suricata`. The route also accepts `snort`, for which no draft is generated, so it answers an empty body. |
 | `timeline` | The run's timeline. |
 
 <Tabs items={["Markdown", "STIX 2.1", "IOC feed", "YARA drafts"]}>
@@ -101,7 +101,7 @@ Every row carries its `kind`, its `value`, a `source` (`sandbox`, `analyst`,
 `publish_answer`: `yes:` and why the row is published, or `no:` and why not. A
 value the sample hid carries `recovered_by`, naming the tool that recovered it
 and its ledger entry. The full rule — which kinds exist, when a sandbox address
-counts as the sample's — is in [Reports](/api/#reports) in the REST API
+counts as the sample's — is in [Reports](/docs/api/#reports) in the REST API
 reference.
 
 ## Detection drafts
@@ -268,7 +268,7 @@ never from a tool's name:
 **The verdict.** The block says every reader was kept from the worker only
 when at least one reader exists and every one was measured and passed. A run
 that recorded no read of the sample says so, and claims nothing. A version-1
-record has no isolation part and renders as before.
+record has no isolation part and renders without it.
 
 **Whether the copies stayed the sample.** The worker hashes every copy of the
 sample it hands out (its download, which the sample path names, and each
@@ -300,8 +300,7 @@ isolation part, and the line is printed, only when the run's disclosure record
 has an isolation part (its `rows` present, even empty); otherwise the record is kept at
 `sample_integrity` in the run summary alone and nothing is printed. A copy a
 server holds at an address (a staged upload) or a sandbox's own copy is not
-read by the worker and is not in the record. A run stored without the record
-renders as before.
+read by the worker and is not in the record. A run stored without the record renders without it.
 
 **Whether the sandbox ran the sample.** A sandbox that detonated the sample
 during the run names the target it ran in its own report. Whichever sandbox
@@ -320,7 +319,7 @@ names the sample's hash in any case, or no target hash, adds nothing; so does
 a task that did not end with a report, a stand-in report written when no
 sandbox ran, and a mock sandbox's recorded fixture, which was not detonated
 during the run. An attached sandbox report is compared once, when it is
-uploaded, and a mismatch there marks the run degraded as before.
+uploaded, and a mismatch there marks the run degraded.
 
 ### What each tool did beyond answering
 
@@ -372,13 +371,11 @@ started and whether it was kept from the worker, at a local server, outside
 this machine). A tool through a local tool server that declares that it
 reaches the network cannot be placed in the disclosure,
 and a tool of no kind that declares it reaches no network is placed by its
-server. A stopped run's part says it may be incomplete. A record of an
-earlier version has no effects part and renders as before.
+server. A stopped run's part says it may be incomplete. A record without an effects part renders without it.
 
 A run whose block was not built stores why (`{"not_built": …}`: reporting
-off, no run summary as in a mock run, or a build that failed), so it is told
-apart from a report stored before the block existed, which shows none. The
-console's summary tab does not draw the block yet; the record is in the stored
+off, no run summary as in a mock run, or a build that failed), so it is told apart from a stored report without the block, which shows none. The
+console's Overview tab does not draw the block yet; the record is in the stored
 run summary.
 
 ## What the run spent its input on
@@ -450,8 +447,7 @@ nothing a model reads changes.
   name what changed. A secret enters only as set or unset. A tool's own version
   is not reported over MCP and is not in the fingerprint.
 
-A run stopped part-way stores the counts as of the stop and says so. A report
-stored before the block existed shows none.
+A run stopped part-way stores the counts as of the stop and says so. A stored report without the block shows none.
 
 ## What looked, and what the run could not establish
 
@@ -548,9 +544,7 @@ by value. If none of its arguments holds a known input, its input is recorded
 as undeclared.
 
 Each capability subsection's "Nothing recorded" line then points to these
-blocks. A run stopped part-way stores the record as of the stop and says so. A
-report stored before the record existed shows none of this and renders as
-before.
+blocks. A run stopped part-way stores the record as of the stop and says so. A stored report without the record shows none of this.
 
 ## Observed behaviour linked to code
 
@@ -577,8 +571,7 @@ hive` (an observed registry key whose path after `HKCU`, `HKEY_CURRENT_USER`
 or another spelling of its hive is held with no hive). The text above the table names each static answer
 compared and how much of it (the strings head is a page and says so). Every
 value and place is written as a code span. The analysts read the same links
-as the pack's `behaviour to code` line. A report stored before the step
-existed shows no such table.
+as the pack's `behaviour to code` line. A stored report without the step shows no such table.
 
 ## Comparing two runs
 
@@ -588,12 +581,12 @@ verdict, ATT&CK, indicators, key findings, persistence, configuration, C2,
 detection, STIX, the run's own facts — with the evidence ids each run cites. It
 does not say which run is right and writes into neither. The console's
 comparison view draws the same answer; see [Comparing two
-runs](/console/#comparing-two-runs), and [What changed between two
-runs](/api/#what-changed-between-two-runs) for the format.
+runs](/docs/console/#comparing-two-runs), and [What changed between two
+runs](/docs/api/#what-changed-between-two-runs) for the format.
 
 ## Enrichment
 
 `POST /api/v1/reports/{report_id}/enrich` queues threat-intelligence lookups
 for the indicators the report names and answers 202. The lookups run as their
 own job so they never delay a verdict. See [Where the enrichment
-runs](/configuration/#where-the-enrichment-runs).
+runs](/docs/configuration/#where-the-enrichment-runs).

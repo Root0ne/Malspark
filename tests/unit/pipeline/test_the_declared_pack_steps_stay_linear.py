@@ -13,18 +13,18 @@ import time
 from collections.abc import Callable
 from typing import Any
 
-from maljan.core.pack_steps import effective_steps
-from maljan.pipeline.triage_pack import PIPELINE, index_inputs, render_pack
-from maljan.schemas.evidence import LedgerEntry
+from malspark.core.pack_steps import effective_steps
+from malspark.pipeline.triage_pack import PIPELINE, index_inputs, render_pack
+from malspark.schemas.evidence import LedgerEntry
 
 
 def _seconds(work: Callable[[], Any]) -> float:
     gc.collect()
     gc.disable()
     try:
-        began = time.perf_counter()
+        began = time.thread_time()
         work()
-        return time.perf_counter() - began
+        return time.thread_time() - began
     finally:
         gc.enable()
 

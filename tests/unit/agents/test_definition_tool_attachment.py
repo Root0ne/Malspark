@@ -23,7 +23,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from maljan.core.config import Settings
+from malspark.core.config import Settings
 from tests.unit.agents.tool_attachment_stubs import (
     FakeRegistry,
     StubProvider,
@@ -37,7 +37,7 @@ KNOWLEDGE_TOOL = "attck_lookup"
 
 
 def _container(profile: str = "default", registry: FakeRegistry | None = None) -> Any:
-    from maljan.core.container import ServiceContainer
+    from malspark.core.container import ServiceContainer
 
     cfg = Settings(_env_file=None)
     cfg.agents.profile = profile
@@ -89,7 +89,11 @@ class TestTheDefaultProfileDeliversTheReferencedServers:
 
         agent._try_initialize_mcp()
 
-        assert sorted(t.name for t in agent.tools) == ["attck_lookup", "pe_info"]
+        assert sorted(t.name for t in agent.tools) == [
+            "attck_lookup",
+            "check_ip_reputation",
+            "pe_info",
+        ]
 
     def test_the_network_analyst_gets_the_role_bound_half_as_well(
         self, monkeypatch: pytest.MonkeyPatch
@@ -103,7 +107,12 @@ class TestTheDefaultProfileDeliversTheReferencedServers:
         agent._try_initialize_mcp()
 
         names = [t.name for t in agent.tools]
-        assert sorted(names) == ["attck_lookup", "extract_dns", "sandbox_items"]
+        assert sorted(names) == [
+            "attck_lookup",
+            "check_ip_reputation",
+            "extract_dns",
+            "sandbox_items",
+        ]
         assert len(names) == len(set(names)), "a server bound and referenced yields one copy"
 
     def test_a_reference_the_registry_cannot_serve_is_a_degradation(
@@ -233,7 +242,7 @@ class TestTheNetworkAnalystsSandboxItems:
     def test_a_definition_asking_for_the_sandbox_tools_gets_the_whole_set(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        from maljan.core.config import ToolRef
+        from malspark.core.config import ToolRef
 
         container = _container()
         definitions = container.config.agents.definitions
@@ -256,7 +265,7 @@ class TestTheJudge:
         """The judge attaches on its own loop rather than through
         ``BaseAnalyst``, so its reference half is a second implementation and
         needs its own proof."""
-        from maljan.agents.judge_agent import JudgeAgent
+        from malspark.agents.judge_agent import JudgeAgent
 
         container = _container()
         judge = JudgeAgent(llm=MagicMock(), config=container.config)
@@ -268,7 +277,7 @@ class TestTheJudge:
 
     @pytest.mark.asyncio
     async def test_the_judge_still_gets_the_server_bound_to_its_role(self) -> None:
-        from maljan.agents.judge_agent import JudgeAgent
+        from malspark.agents.judge_agent import JudgeAgent
 
         registry = FakeRegistry(bound={"judge": {"threatintel": ["check_ip_reputation"]}})
         container = _container(registry=registry)
@@ -277,11 +286,14 @@ class TestTheJudge:
 
         await judge._initialize_mcp_client()
 
-        assert sorted(t.name for t in judge.tools) == ["attck_lookup", "check_ip_reputation"]
+        # Its servers', beside the in-process sandbox and ask tools its seed
+        # names (T-415d).
+        served = [t.name for t in judge.tools if not t.name.startswith(("sandbox_", "ask_"))]
+        assert sorted(served) == ["attck_lookup", "check_ip_reputation"]
 
     @pytest.mark.asyncio
     async def test_the_measurement_profile_leaves_the_judge_tool_free(self) -> None:
-        from maljan.agents.judge_agent import JudgeAgent
+        from malspark.agents.judge_agent import JudgeAgent
 
         registry = FakeRegistry(bound={"judge": {"threatintel": ["check_ip_reputation"]}})
         container = _container(profile="measurement", registry=registry)
@@ -294,12 +306,80 @@ class TestTheJudge:
         assert registry.asked_refs == []
 
 
+UNRESOLVED = "capability 'nosuchkind' resolves to no server"
+
+
+def _with_typo(container: Any, key: str) -> None:
+    """Agent ``key``'s definition, with a capability reference no server serves."""
+    from malspark.core.config import ToolRef
+
+    definitions = container.config.agents.definitions
+    held = definitions[key]
+    definitions[key] = held.model_copy(
+        update={"tools": [*held.tools, ToolRef(kind="capability", capability="nosuchkind")]}
+    )
+
+
+class TestACapabilityThatResolvesToNoServer:
+    """The real attach paths say it once, on the agent and on the registry (T-483)."""
+
+    def test_the_analyst_says_it_once(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        registry = FakeRegistry()
+        container = _container(registry=registry)
+        _with_typo(container, "static")
+        agent = _analyst(container, "static", monkeypatch)
+
+        agent._try_initialize_mcp()
+
+        assert list(agent.degradation_reasons).count(UNRESOLVED) == 1
+        assert registry.degradation_reasons.count(UNRESOLVED) == 1
+
+    def test_a_definition_without_one_says_nothing(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        registry = FakeRegistry()
+        container = _container(registry=registry)
+        agent = _analyst(container, "static", monkeypatch)
+
+        agent._try_initialize_mcp()
+
+        assert not any("resolves to no server" in r for r in agent.degradation_reasons)
+        assert not any("resolves to no server" in r for r in registry.degradation_reasons)
+
+    @pytest.mark.asyncio
+    async def test_the_judge_says_it_once(self) -> None:
+        from malspark.agents.judge_agent import JudgeAgent
+
+        registry = FakeRegistry()
+        container = _container(registry=registry)
+        _with_typo(container, "judge")
+        judge = JudgeAgent(llm=MagicMock(), config=container.config)
+        judge._container = container
+
+        await judge._initialize_mcp_client()
+
+        assert list(judge.degradation_reasons).count(UNRESOLVED) == 1
+        assert registry.degradation_reasons.count(UNRESOLVED) == 1
+
+    @pytest.mark.asyncio
+    async def test_the_judge_without_one_says_nothing(self) -> None:
+        from malspark.agents.judge_agent import JudgeAgent
+
+        registry = FakeRegistry()
+        container = _container(registry=registry)
+        judge = JudgeAgent(llm=MagicMock(), config=container.config)
+        judge._container = container
+
+        await judge._initialize_mcp_client()
+
+        assert not any("resolves to no server" in r for r in judge.degradation_reasons)
+        assert not any("resolves to no server" in r for r in registry.degradation_reasons)
+
+
 class TestAnAgentWithNoContainer:
     def test_the_reference_half_is_inert_rather_than_raising(self) -> None:
         """An analyst built bare — in a script, or in a test that wants no
         registry — must not acquire a container's worth of machinery to answer
         that it has no references."""
-        from maljan.agents.network_analyst import NetworkAnalyst
+        from malspark.agents.network_analyst import NetworkAnalyst
 
         agent = NetworkAnalyst(llm=MagicMock(), name="network")
 

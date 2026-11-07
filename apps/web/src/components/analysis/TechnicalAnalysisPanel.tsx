@@ -1,12 +1,18 @@
 "use client";
 
+import Link from "next/link";
+
+import { scrollRegion, SCROLL_REGION_FOCUS } from "@/components/ui/scrollRegion";
+import { useReport } from "./AnalysisContext";
+import BasisMark from "./BasisMark";
+import CitedProse from "./CitedProse";
 import EvidenceChips from "./EvidenceChips";
+import SafeMarkdown from "./SafeMarkdown";
 import {
   REPORT_MODEL_VOICE,
   c2Channels,
   channelEvidence,
   commands,
-  configFindings,
   configuration,
   defangEndpoint,
   executionFlow,
@@ -20,24 +26,25 @@ import {
 import type { MalwareReport } from "@/types/malware-report";
 
 /**
- * The report model's technical analysis: the execution flow, the
- * configuration it recovered, the host identifiers it read, the commands the
- * sample accepts and its C2 channels — the exported report's §4, §5.3, the
- * model's table in §9, §5.6 and §5.7, in that order.
+ * The report model's technical analysis: the execution flow, the host
+ * identifiers it read, the commands the sample accepts and its C2 channels —
+ * the exported report's §4, the model's table in §9, §5.6 and §5.7, in that
+ * order. The configuration it recovered (§5.3) is drawn once, under Static &
+ * code, and this panel links there.
  *
  * Every block is labelled with its voice. The words are the report model's and
  * are printed as written; a step's mark (observed or assessed) is the model's
  * own; a row that cites nothing says so. The platform's unresolved finding on
- * a step or a configuration item is printed beside it, as the exported report
- * prints it, and a channel's endpoints are defanged as they are there.
+ * a step is printed beside it, as the exported report prints it, and a
+ * channel's endpoints are defanged as they are there.
  */
 export default function TechnicalAnalysisPanel({ report }: { report: MalwareReport }) {
+  const { jobId } = useReport();
   if (!hasTechnicalAnalysis(report)) return null;
   const steps = executionFlow(report);
   const config = configuration(report);
   const cmds = commands(report);
   const channels = c2Channels(report);
-  const uncitedConfig = configFindings(report);
   const identifiers = hostIdentifiers(report);
   const uncitedIdentifiers = identifierFindings(report);
   const blocks = technicalSubsections(report);
@@ -45,7 +52,7 @@ export default function TechnicalAnalysisPanel({ report }: { report: MalwareRepo
   return (
     <div className="bg-bg-surface border border-border rounded">
       <div className="px-4 py-3 border-b border-border flex items-baseline gap-3">
-        <h2 className="text-xs font-medium text-text-primary uppercase tracking-wider">
+        <h2 className="text-sm font-semibold text-text-primary">
           Technical analysis
         </h2>
         <span className="text-[11px] italic text-text-muted">{REPORT_MODEL_VOICE}</span>
@@ -53,69 +60,54 @@ export default function TechnicalAnalysisPanel({ report }: { report: MalwareRepo
       <div className="p-4 space-y-5">
         {steps.length > 0 && (
           <section>
-            <h3 className="text-[11px] uppercase tracking-wider text-text-muted mb-1.5">
+            <h3 className="text-xs text-text-muted mb-1.5">
               Execution flow
             </h3>
-            <ol className="space-y-1.5">
+            {/* A sequence, so numbered; each step a row with its prose at a
+                reading width and how it is known beside it, as Overview's
+                key findings are. */}
+            <ol className="border-t border-border-light @container">
               {steps.map((step, i) => (
-                <li key={`${step.order}-${i}`} className="text-sm text-text-secondary">
-                  <span className="text-text-muted mr-2 font-mono">{i + 1}.</span>
-                  {step.action}
-                  <span className="ml-2 text-[10px] px-1.5 py-0.5 rounded bg-bg-active text-text-muted">
-                    {flowMark(step)}
+                <li
+                  key={`${step.order}-${i}`}
+                  className="grid grid-cols-[2rem_minmax(0,1fr)] gap-x-2 gap-y-1 border-b border-border-light py-2.5 text-sm text-text-secondary @[48rem]:grid-cols-[2rem_minmax(0,80ch)_12rem]"
+                >
+                  <span className="font-mono text-text-muted">{i + 1}.</span>
+                  <span className="break-words [overflow-wrap:anywhere]">
+                    <span className="whitespace-pre-wrap"><CitedProse text={step.action} /></span>
+                    <Cited ids={step.evidence_refs} />
+                    <Unresolved note={flowNote(report, step)} />
                   </span>
-                  <Cited ids={step.evidence_refs} />
-                  <Unresolved note={flowNote(report, step)} />
+                  <span className="col-start-2 @[48rem]:col-start-auto">
+                    <BasisMark
+                      basis={step.voice === "observed" ? "seen" : "not-seen"}
+                      label={step.voice === "observed" ? "Seen in sandbox" : "Assessed, not seen"}
+                      detail={flowMark(step)}
+                    />
+                  </span>
                 </li>
               ))}
             </ol>
           </section>
         )}
 
+        {/* Each fact once: the configuration's table is Static & code's, where
+            each value has a copy; this says where it is. */}
         {config.length > 0 && (
-          <section>
-            <h3 className="text-[11px] uppercase tracking-wider text-text-muted mb-1.5">
-              Configuration
-            </h3>
-            <table className="w-full text-xs">
-              <thead>
-                <tr className="text-left text-text-muted">
-                  <th className="py-1 pr-3 font-medium">Key</th>
-                  <th className="py-1 pr-3 font-medium">Value</th>
-                  <th className="py-1 pr-3 font-medium">How obtained</th>
-                  <th className="py-1 font-medium">Evidence</th>
-                </tr>
-              </thead>
-              <tbody>
-                {config.map((item, i) => (
-                  <tr key={`${item.key}-${i}`} className="border-t border-border align-top">
-                    <td className="py-1 pr-3 text-text-primary">{item.key}</td>
-                    <td className="py-1 pr-3 font-mono break-all text-text-secondary">
-                      {item.value}
-                    </td>
-                    <td className="py-1 pr-3 text-text-muted">
-                      {item.how_obtained}
-                      <Unresolved
-                        note={
-                          uncitedConfig.has(i + 1) ? "unresolved: report.configuration_uncited" : ""
-                        }
-                      />
-                    </td>
-                    <td className="py-1">
-                      <Cited ids={item.evidence_refs} />
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </section>
+          <p className="text-xs text-text-secondary">
+            Configuration: see{" "}
+            <Link href={`/analysis/${jobId}/static#decoded`} className="text-accent-strong underline hover:no-underline">
+              Static &amp; code › Decoded strings and configuration
+            </Link>
+          </p>
         )}
 
         {identifiers.length > 0 && (
           <section>
-            <h3 className="text-[11px] uppercase tracking-wider text-text-muted mb-1.5">
+            <h3 className="text-xs text-text-muted mb-1.5">
               Host identifiers
             </h3>
+            <div {...scrollRegion("Host identifiers")} className={`max-w-full overflow-x-auto ${SCROLL_REGION_FOCUS}`}>
             <table className="w-full text-xs">
               <thead>
                 <tr className="text-left text-text-muted">
@@ -132,7 +124,7 @@ export default function TechnicalAnalysisPanel({ report }: { report: MalwareRepo
                     <td className="py-1 pr-3 font-mono break-all text-text-secondary">
                       {item.value}
                     </td>
-                    <td className="py-1 pr-3 text-text-muted">{item.purpose?.trim() || "not stated"}</td>
+                    <td className="py-1 pr-3 break-words text-text-muted [overflow-wrap:anywhere]">{item.purpose?.trim() ? <span className="whitespace-pre-wrap"><CitedProse text={item.purpose.trim()} /></span> : "not stated"}</td>
                     <td className="py-1">
                       <Cited ids={item.evidence_refs} />
                       <Unresolved
@@ -147,8 +139,9 @@ export default function TechnicalAnalysisPanel({ report }: { report: MalwareRepo
                 ))}
               </tbody>
             </table>
+            </div>
             <p className="mt-1 text-[10px] italic text-text-muted">
-              Read out of this run&apos;s evidence by the report model. This table publishes
+              Read out of this run&apos;s evidence by the AI that wrote the report. This table publishes
               nothing itself: a value it lists is published only where the IOC table publishes
               it.
             </p>
@@ -157,9 +150,10 @@ export default function TechnicalAnalysisPanel({ report }: { report: MalwareRepo
 
         {cmds.length > 0 && (
           <section>
-            <h3 className="text-[11px] uppercase tracking-wider text-text-muted mb-1.5">
+            <h3 className="text-xs text-text-muted mb-1.5">
               Commands
             </h3>
+            <div {...scrollRegion("Commands")} className={`max-w-full overflow-x-auto ${SCROLL_REGION_FOCUS}`}>
             <table className="w-full text-xs">
               <thead>
                 <tr className="text-left text-text-muted">
@@ -173,8 +167,8 @@ export default function TechnicalAnalysisPanel({ report }: { report: MalwareRepo
                 {cmds.map((cmd, i) => (
                   <tr key={`${cmd.name}-${i}`} className="border-t border-border align-top">
                     <td className="py-1 pr-3 font-mono text-text-muted">{cmd.id ?? "-"}</td>
-                    <td className="py-1 pr-3 font-mono text-text-primary">{cmd.name}</td>
-                    <td className="py-1 pr-3 text-text-secondary">{cmd.description || "-"}</td>
+                    <td className="py-1 pr-3 font-mono break-all text-text-primary">{cmd.name}</td>
+                    <td className="py-1 pr-3 break-words text-text-secondary [overflow-wrap:anywhere]">{cmd.description ? <span className="whitespace-pre-wrap"><CitedProse text={cmd.description} /></span> : "-"}</td>
                     <td className="py-1">
                       <Cited ids={cmd.evidence_refs} />
                     </td>
@@ -182,12 +176,13 @@ export default function TechnicalAnalysisPanel({ report }: { report: MalwareRepo
                 ))}
               </tbody>
             </table>
+            </div>
           </section>
         )}
 
         {channels.length > 0 && (
           <section>
-            <h3 className="text-[11px] uppercase tracking-wider text-text-muted mb-1.5">
+            <h3 className="text-xs text-text-muted mb-1.5">
               C2 channels
             </h3>
             <ul className="space-y-2">
@@ -217,20 +212,23 @@ export default function TechnicalAnalysisPanel({ report }: { report: MalwareRepo
             shadow-copy commands, the encryption scheme and the ransom note. */}
         {blocks.map((block) => (
           <section key={block.key}>
-            <h3 className="text-[11px] uppercase tracking-wider text-text-muted mb-1.5">
+            <h3 className="text-xs text-text-muted mb-1.5">
               {block.title}
             </h3>
             {block.body && (
-              <p className="text-sm text-text-secondary whitespace-pre-wrap break-words">
-                {block.body}
-              </p>
+              <SafeMarkdown
+                markdown={block.body}
+                cite
+                regionName={block.title}
+                className="max-w-[75ch] space-y-2 text-sm leading-6 text-text-secondary break-words [overflow-wrap:anywhere]"
+              />
             )}
             {block.facts.length > 0 && (
               <dl className="mt-1 grid grid-cols-[max-content_1fr] gap-x-3 gap-y-1 text-xs">
                 {block.facts.map(([label, value]) => (
                   <div key={label} className="contents">
                     <dt className="text-text-muted">{label}</dt>
-                    <dd className="font-mono break-all text-text-secondary">{value}</dd>
+                    <dd className="min-w-0 font-mono break-all text-text-secondary"><CitedProse text={value} /></dd>
                   </div>
                 ))}
               </dl>
@@ -239,7 +237,7 @@ export default function TechnicalAnalysisPanel({ report }: { report: MalwareRepo
               <ul className="mt-1 space-y-0.5">
                 {block.items.map((item, i) => (
                   <li key={`${item}-${i}`} className="text-xs font-mono break-all text-text-secondary">
-                    {item}
+                    <CitedProse text={item} />
                   </li>
                 ))}
               </ul>

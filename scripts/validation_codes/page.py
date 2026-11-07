@@ -52,7 +52,7 @@ constants it belongs to, marked as such. A code counts as tested when a Python
 test names it, in a string other than a docstring or by its constant; that does
 not prove the test makes the platform raise it. The tests are not listed here:
 `{COMMAND} --tests` prints them. A code bound under a `{KEPT_PREFIX}` name is
-one nothing raises any more and stored runs still carry; the comment on that
+one nothing raises and stored runs carry; the comment on that
 name says what reads it."""
 
 

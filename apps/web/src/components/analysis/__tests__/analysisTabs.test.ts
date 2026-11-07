@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import type { ReportDetailDTO } from "@/lib/api";
 import type { EvidenceSection, MalwareReport } from "@/types/malware-report";
-import { TABS, tabHasContent, tabsFor } from "../analysisTabs";
+import { tabHasContent } from "../analysisTabs";
 import { hasRuleMatches } from "../ruleMatches";
 
 function section(over: Partial<EvidenceSection> = {}): EvidenceSection {
@@ -100,22 +100,38 @@ function report(over: Partial<ReportDetailDTO> = {}): ReportDetailDTO {
   };
 }
 
-function keys(tabs: { key: string }[]): string[] {
-  return tabs.map((t) => t.key);
+/* Every block the analysis page draws, by the key of the tab it used to be. */
+const BLOCKS = [
+  "",
+  "/conversation",
+  "/identity",
+  "/static",
+  "/dynamic",
+  "/network",
+  "/persistence",
+  "/capabilities",
+  "/attribution",
+  "/detection",
+  "/defense",
+  "/evidence",
+];
+
+function filled(r: ReportDetailDTO | null): string[] {
+  return BLOCKS.filter((key) => tabHasContent(key, r));
 }
 
-describe("the tabs a run offers", () => {
-  it("offers the three that answer before the run has produced anything", () => {
-    expect(keys(tabsFor(null))).toEqual(["", "/conversation", "/evidence"]);
+describe("the blocks a run fills", () => {
+  it("fills the three that answer before the run has produced anything", () => {
+    expect(filled(null)).toEqual(["", "/conversation", "/evidence"]);
   });
 
-  it("offers nothing a report with no findings cannot fill", () => {
+  it("fills nothing a report with no findings cannot fill", () => {
     // The identity block is always present on a report, so IDENTITY joins the
     // three; everything else has to be earned.
-    expect(keys(tabsFor(report()))).toEqual(["", "/conversation", "/identity", "/evidence"]);
+    expect(filled(report())).toEqual(["", "/conversation", "/identity", "/evidence"]);
   });
 
-  it("offers every tab once the run has filled them", () => {
+  it("fills every block once the run has filled them", () => {
     const full = report({
       mitre_techniques: [{ technique_id: "T1055" }],
       stix_bundle: { type: "bundle", objects: [{}] },
@@ -178,7 +194,7 @@ describe("the tabs a run offers", () => {
         ],
       }),
     });
-    expect(keys(tabsFor(full))).toEqual(TABS.map((t) => t.key));
+    expect(filled(full)).toEqual(BLOCKS);
   });
 });
 
@@ -188,6 +204,25 @@ describe("a tab earned by the ledger rather than by a typed block", () => {
       malware_report: malwareReport({ sections: [section()] }),
     });
     expect(tabHasContent("/dynamic", withSection)).toBe(true);
+  });
+
+  it("fills STATIC for a recovered configuration with no static block (T-465)", () => {
+    // The configuration's table is drawn on Static & code alone, and the
+    // technical analysis on Behaviour links there: the block must be drawn.
+    const configOnly = report({
+      malware_report: malwareReport({
+        static: null,
+        sections: [],
+        technical_analysis: {
+          configuration: [{ key: "C2 host", value: "c2.test", how_obtained: "decrypted", evidence_refs: [] }],
+        },
+      } as Partial<MalwareReport>),
+    });
+    expect(tabHasContent("/static", configOnly)).toBe(true);
+    const neither = report({
+      malware_report: malwareReport({ static: null, sections: [], technical_analysis: { configuration: [] } } as Partial<MalwareReport>),
+    });
+    expect(tabHasContent("/static", neither)).toBe(false);
   });
 
   it("does not offer DYNAMIC for a sandbox section that returned nothing", () => {

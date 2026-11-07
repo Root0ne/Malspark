@@ -66,8 +66,8 @@ CONSOLE_DIR = "apps/web/src"
 DOCS_DIR = "apps/docs/content/docs"
 PAGE = f"{DOCS_DIR}/validation-codes.mdx"
 
-# A code bound under a name with this prefix is one nothing raises any more and
-# a stored run still carries; the comment on that binding says what reads it.
+# A code bound under a name with this prefix is one nothing raises and a stored
+# run carries; the comment on that binding says what reads it.
 KEPT_PREFIX = "LEGACY_"
 
 # The keywords and dict keys a finding's text is read from.
@@ -2802,13 +2802,13 @@ def _words(text: str) -> set[str]:
 
 
 def _route(path: str) -> str:
-    """The address a docs page under ``content/docs`` is served at."""
+    """The address a docs page under ``content/docs`` is served at, under ``/docs/``."""
     stem = path[: -len(".mdx")]
     if stem == "index":
-        return "/"
+        return "/docs/"
     if stem.endswith("/index"):
         stem = stem[: -len("/index")]
-    return f"/{stem}/"
+    return f"/docs/{stem}/"
 
 
 def _title(text: str) -> str:

@@ -21,18 +21,18 @@ from typing import Any
 
 import pytest
 
-from maljan.core import builtin_declarations, declared_reading
-from maljan.core.config import Settings
-from maljan.core.settings_overrides import build_settings
-from maljan.core.tool_declarations import (
+from malspark.core import builtin_declarations, declared_reading
+from malspark.core.config import Settings
+from malspark.core.settings_overrides import build_settings
+from malspark.core.tool_declarations import (
     CHANGES_FORM,
     CHANGES_MARK,
     ToolDeclarations,
     ToolFacts,
     strict_declarations,
 )
-from maljan.extractors.sample_identity import UNKNOWN_FORMAT, routed_formats
-from maljan.pipeline.nodes import _needed_for, reason_applies_to_format
+from malspark.extractors.sample_identity import UNKNOWN_FORMAT, routed_formats
+from malspark.pipeline.nodes import _needed_for, reason_applies_to_format
 
 # ``pipeline.nodes._FORMAT_TOOLS`` as origin/dev held it.
 DEV_FORMAT_TOOLS: dict[str, frozenset[str]] = {
@@ -63,9 +63,17 @@ SHIPPED_SINCE = (
 )
 
 
+def _shipped(server: str) -> dict[str, Any]:
+    """A built-in server's tools as it ships them: its block's, and what it declares of itself."""
+    return {
+        tool: facts.model_dump(mode="json", exclude_defaults=True)
+        for tool, facts in declared_reading.builtin_tools(server).items()
+    }
+
+
 def _declared_formats(server: str) -> dict[str, frozenset[str]]:
     """The routed formats each tool of a built-in server's shipped declaration names."""
-    facts = builtin_declarations.server_declaration(server).get("tool_facts") or {}
+    facts = _shipped(server)
     return {
         tool: frozenset(held["routed_formats"])
         for tool, held in facts.items()
@@ -106,7 +114,7 @@ def test_every_built_in_tool_and_routed_format_reads_as_the_table_did(in_force: 
     built_in = builtin_declarations.builtin_server_names()
     tools = set(DEV_FORMAT_TOOLS) | {"no_such_tool"}
     for key in built_in:
-        tools |= set(builtin_declarations.server_declaration(key).get("tool_facts") or {})
+        tools |= set(_shipped(key))
 
     def differ(servers: tuple[str, ...]) -> list[tuple[str, str, str]]:
         return [
@@ -124,7 +132,7 @@ def test_every_built_in_tool_and_routed_format_reads_as_the_table_did(in_force: 
     # formats is needed for those (and for a sample of no known format) alone.
     for server in SHIPPED_SINCE:
         declared = _declared_formats(server)
-        for tool in sorted(builtin_declarations.server_declaration(server)["tool_facts"]):
+        for tool in sorted(_shipped(server)):
             for routed in FORMATS:
                 held = str(routed).strip().lower()
                 want = (
@@ -188,7 +196,7 @@ def test_an_operator_server_declares_formats_for_its_own_tools(in_force: Any) ->
 
 
 def test_a_built_in_map_stored_whole_before_the_field_reads_as_shipped(in_force: Any) -> None:
-    shipped = builtin_declarations.server_declaration("analysis")["tool_facts"]
+    shipped = _shipped("analysis")
     whole = {
         tool: {key: value for key, value in facts.items() if key != "routed_formats"}
         for tool, facts in shipped.items()
@@ -250,7 +258,7 @@ def test_every_format_given_a_platform_is_a_routed_format() -> None:
     every label the detector gives, is
     ``tests/unit/extractors/test_every_routed_format_is_listed.py``.
     """
-    from maljan.extractors import sample_identity
+    from malspark.extractors import sample_identity
 
     formats = set(routed_formats())
     assert UNKNOWN_FORMAT in formats

@@ -16,12 +16,12 @@ from typing import Any
 from langchain_core.tools import StructuredTool
 from mcp.types import CallToolResult, TextContent
 
-from maljan.agents.evidence_recorder import EvidenceRecorder, RepeatGuard, record_tools
-from maljan.agents.mcp_client import MCPLangChainToolkit
-from maljan.core.exceptions import SampleNotOpened
-from maljan.llm.context_window import note_call_began
-from maljan.providers.server_guard import ServerGuard
-from maljan.schemas.evidence import EvidenceCounter, LedgerEntry, build_entry
+from malspark.agents.evidence_recorder import EvidenceRecorder, RepeatGuard, record_tools
+from malspark.agents.mcp_client import MCPLangChainToolkit
+from malspark.core.exceptions import SampleNotOpened
+from malspark.llm.context_window import note_call_began
+from malspark.providers.server_guard import ServerGuard
+from malspark.schemas.evidence import EvidenceCounter, LedgerEntry, build_entry
 
 
 class _Sink:
@@ -58,9 +58,9 @@ def test_a_queued_call_s_duration_excludes_the_wait() -> None:
     by_tool = {e.tool: e for e in recorder.entries}
 
     assert by_tool["queued"].waited_ms >= 900
-    assert by_tool["queued"].duration_ms < 500
+    assert by_tool["queued"].duration_ms < by_tool["queued"].waited_ms / 2
     assert by_tool["free"].waited_ms == 0
-    assert by_tool["free"].duration_ms < 500
+    assert by_tool["free"].duration_ms < by_tool["queued"].waited_ms / 2
 
 
 def _failing_tool(raises: Exception, gate: asyncio.Event) -> StructuredTool:
@@ -96,7 +96,7 @@ def test_a_failed_call_that_queued_keeps_its_wait_apart_from_its_duration() -> N
 
     assert entry.ok is False
     assert entry.waited_ms >= 900
-    assert entry.duration_ms < 500
+    assert entry.duration_ms < entry.waited_ms / 2
 
 
 def test_a_call_that_ended_the_loop_keeps_its_wait_apart_from_its_duration() -> None:
@@ -104,7 +104,7 @@ def test_a_call_that_ended_the_loop_keeps_its_wait_apart_from_its_duration() -> 
 
     assert entry.ok is False
     assert entry.waited_ms >= 900
-    assert entry.duration_ms < 500
+    assert entry.duration_ms < entry.waited_ms / 2
 
 
 def test_the_client_says_a_call_began_only_after_it_holds_a_slot() -> None:
@@ -141,7 +141,7 @@ def test_the_client_says_a_call_began_only_after_it_holds_a_slot() -> None:
 
     assert by_item["first"].waited_ms < 300
     assert by_item["second"].waited_ms >= 800
-    assert by_item["second"].duration_ms < 500
+    assert by_item["second"].duration_ms < by_item["second"].waited_ms / 2
     # What the second asked of the server was sent only once the first had let go.
     assert sent_at["second"] - sent_at["first"] >= 0.9
 

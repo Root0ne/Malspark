@@ -15,7 +15,9 @@ answered the same way:
   per technique the analysts claimed and an indicator only for a value the run
   holds verbatim; the **technique question** keeps every technique it is asked;
 * the **narrative** and each **composer section** answer the JSON object their
-  request shows, citing ids the request carries.
+  request shows, citing ids the request carries;
+* the **agreement** question finds no sentence that says otherwise and lists
+  none.
 
 A scenario turns the same script into a failure the live runs met: an answer
 cut at its cap with only thinking, an empty answer, a schema break, a long tool
@@ -111,6 +113,7 @@ _UNUSUAL_STOPS = {
     "technique_question": "refusal",
     "narrative": "pause_turn",
     "composer": "pause_turn",
+    "agreement": "pause_turn",
 }
 _STRUCTURED_ROLES = {"mediator_extract", "judge", "technique_question", "narrative", "composer"}
 
@@ -125,6 +128,7 @@ class Markers:
     judge: str
     narrative: str
     composer: str
+    agreement: str
     revision: str
     feedback: str
     no_tool_nudge: str
@@ -146,18 +150,18 @@ def markers() -> Markers:
     product no longer builds the way a marker expects shows up as a request
     answered as ``other``, which the checklist fails.
     """
-    from maljan.agents import configurable_analyst
-    from maljan.agents.base_agent import _REVISION_ISR_FRAMING
-    from maljan.agents.judge_agent import (
+    from malspark.agents import configurable_analyst
+    from malspark.agents.base_agent import _REVISION_ISR_FRAMING
+    from malspark.agents.judge_agent import (
         JUDGE_VERDICT_SYSTEM,
         MEDIATION_EXTRACTION_SYSTEM,
         MEDIATOR_SYSTEM_HEAD,
         TECHNIQUE_QUESTION_SYSTEM,
     )
-    from maljan.agents.prompt_fragments import no_tool_call_question
-    from maljan.agents.static_analyst import _extract_load_hint
-    from maljan.pipeline.validation import FEEDBACK_PREAMBLE, RetryDrops, retry_drop_question
-    from maljan.reporting import composer, narrative_agent
+    from malspark.agents.prompt_fragments import no_tool_call_question
+    from malspark.agents.static_analyst import _extract_load_hint
+    from malspark.pipeline.validation import FEEDBACK_PREAMBLE, RetryDrops, retry_drop_question
+    from malspark.reporting import composer, narrative_agent, section_agreement
 
     keep = re.search(r"KEEP <label>: <reason>", retry_drop_question(RetryDrops()))
     if keep is None:
@@ -177,6 +181,7 @@ def markers() -> Markers:
         judge=_head(JUDGE_VERDICT_SYSTEM),
         narrative=_head(narrative_agent._SYSTEM_PROMPT),
         composer=_head(composer._SYSTEM),
+        agreement=_head(section_agreement.SYSTEM_PROMPT),
         revision=_head(_REVISION_ISR_FRAMING),
         feedback=FEEDBACK_PREAMBLE,
         no_tool_nudge=no_tool_call_question(["tool"]).split(".")[0],
@@ -276,14 +281,21 @@ def role_of(request: wire.Request) -> str:
     """The role a request is answered as, read from the request alone."""
     system = request.system
     found = markers()
-    for role in ("technique_question", "mediator_extract", "mediator", "judge", "narrative"):
+    for role in (
+        "technique_question",
+        "mediator_extract",
+        "mediator",
+        "judge",
+        "narrative",
+        "agreement",
+    ):
         if getattr(found, role) in system:
             return role
     if found.composer in system:
         return "composer"
     if found.revision in system:
         return "revision"
-    if request.tools or "CLAIM:" in request.all_text:
+    if _answer_tools(request) or "CLAIM:" in request.all_text:
         return "analyst"
     return "other"
 
@@ -310,7 +322,7 @@ STAGE_ROLES: dict[str, frozenset[str]] = {
     "analysis": frozenset({"analyst"}),
     "debate": frozenset({"mediator", "mediator_extract", "revision"}),
     "verdict": frozenset({"judge", "technique_question"}),
-    "report": frozenset({"narrative", "composer"}),
+    "report": frozenset({"narrative", "composer", "agreement"}),
 }
 # How long a call of the aimed-at stage is held: longer than any deadline a
 # rehearsal sets, so the run is still in that stage when its deadline fires.
@@ -375,7 +387,7 @@ class Brain:
         if request.api not in SCENARIO_WIRES.get(self.scenario, {request.api}):
             return ""
         if self.scenario == "prose_instead_of_tool" and not (
-            role in _STRUCTURED_ROLES and len(request.tools) == 1
+            role in _STRUCTURED_ROLES and len(_answer_tools(request)) == 1
         ):
             return ""
         if self.scenario == "stream_error" and not request.stream:
@@ -468,6 +480,12 @@ class Brain:
                 "deliberately_empty": self.deliberately_empty(section, request),
             }
             return reply
+        if role == "agreement":
+            # No sentence says otherwise: the report stands as written.
+            return wire.Reply(
+                thinking="Reading each passage against section 5 and the facts.",
+                text=json.dumps({"sentences": []}),
+            )
         return wire.Reply(text=self._previous_or(request, "No further answer."))
 
     def _mediator(self, request: wire.Request) -> wire.Reply:
@@ -629,9 +647,9 @@ class Brain:
                     "relationship_type": "uses",
                     "source_ref": "malware--1",
                     "target_ref": f"attack-pattern--{n}",
-                    "x_maljan_confidence": 0.8,
-                    "x_maljan_evidence_basis": "static",
-                    "x_maljan_contributing_agents": [],
+                    "x_malspark_confidence": 0.8,
+                    "x_malspark_evidence_basis": "static",
+                    "x_malspark_contributing_agents": [],
                 }
             )
         assessment: dict[str, Any] = {
@@ -649,7 +667,7 @@ class Brain:
         bundle = {
             "type": "bundle",
             "id": "bundle--1",
-            "x_maljan_assessment": assessment,
+            "x_malspark_assessment": assessment,
             "objects": objects,
         }
         return json.dumps(bundle, separators=(",", ":"))
@@ -865,24 +883,36 @@ def _thinks_first(role: str, request: wire.Request) -> bool:
     return role == "composer" and request.api == "anthropic"
 
 
+def _answer_tools(request: wire.Request) -> list[dict[str, Any]]:
+    """The tools a request offers for its answer: all but the read of a ledger entry by id.
+
+    A call outside a tool loop offers that read beside whatever it offered
+    before (``agents.ledger_reads``); it is never the answer's schema.
+    """
+    from malspark.agents.tool_answer_clearing import READ_EVIDENCE_TOOL
+
+    return [tool for tool in request.tools if tool.get("name") != READ_EVIDENCE_TOOL]
+
+
 def _as_schema_call(request: wire.Request, text: str, thinking: str = "") -> wire.Reply:
     """``text`` as the reply, or as a call of the one schema tool the request offers.
 
     A provider that asks for structured output offers the answer's schema as
-    its only tool and reads the call's input as the answer; any other request
-    reads the text.
+    its only answer tool and reads the call's input as the answer; any other
+    request reads the text.
     """
-    if len(request.tools) == 1:
+    offered = _answer_tools(request)
+    if len(offered) == 1:
         try:
             args = json.loads(text)
         except ValueError:
             args = None
         if isinstance(args, dict):
-            name = str(request.tools[0].get("name") or "")
+            name = str(offered[0].get("name") or "")
             return wire.Reply(thinking=thinking, tool_calls=[wire.ToolCall(name=name, args=args)])
         if isinstance(args, list):
-            name = str(request.tools[0].get("name") or "")
-            schema = request.tools[0].get("schema") or {}
+            name = str(offered[0].get("name") or "")
+            schema = offered[0].get("schema") or {}
             key = next(iter(schema.get("properties") or {"items": None}))
             return wire.Reply(
                 thinking=thinking, tool_calls=[wire.ToolCall(name=name, args={key: args})]

@@ -155,7 +155,7 @@ A claim that cites no evidence.
 
 - **Raised at** `demo.checks:check`
 - **Constant** `demo.checks:EMPTY_CODE`
-- **Docs** [Checks](/)
+- **Docs** [Checks](/docs/)
 
 ### `demo.fed`
 
@@ -1109,9 +1109,9 @@ def test_the_work_stays_linear_on_a_tree_ten_times_the_size(tmp_path: Path) -> N
             gc.collect()
             gc.disable()
             try:
-                start = time.perf_counter()
+                start = time.thread_time()
                 register = build(root)
-                best = min(best, time.perf_counter() - start)
+                best = min(best, time.thread_time() - start)
             finally:
                 gc.enable()
         assert len(register.codes) == modules * 20 + 3

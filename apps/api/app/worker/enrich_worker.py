@@ -32,7 +32,7 @@ import uuid
 from typing import TYPE_CHECKING, Any
 
 import redis.asyncio as aioredis
-from maljan.core.settings_overrides import redact_url
+from malspark.core.settings_overrides import redact_url
 
 from app.config import settings
 from app.logging_config import get_logger
@@ -42,7 +42,7 @@ from app.runtime_config import runtime_config
 from app.worker.queues import ANALYSIS_QUEUE, ENRICHMENT_QUEUE, build_redis_settings
 
 if TYPE_CHECKING:
-    from maljan.memory.long_term_memory import MemoryStore
+    from malspark.memory.long_term_memory import MemoryStore
 
 logger = get_logger("worker.enrich")
 
@@ -264,7 +264,7 @@ _memory_store: MemoryStore | None = None
 async def _get_memory_store() -> MemoryStore | None:
     """Lazily build the configured LTM store. Cached process-wide, never raises.
 
-    Built by ``maljan.memory.store_factory.build_memory_store`` from
+    Built by ``malspark.memory.store_factory.build_memory_store`` from
     ``core.memory`` — the backend and the settings the analysis path reads, so
     enrichment reads the store the runs wrote. Returns ``None`` when the store
     cannot be built, so the enrichment task degrades to reputation-only
@@ -275,8 +275,8 @@ async def _get_memory_store() -> MemoryStore | None:
         return _memory_store
 
     try:
-        from maljan.core.plugins import ALLOW_LIST_KEY, load_allowed, registry_changes
-        from maljan.memory.store_factory import build_memory_store, configured_backend
+        from malspark.core.plugins import ALLOW_LIST_KEY, load_allowed, registry_changes
+        from malspark.memory.store_factory import build_memory_store, configured_backend
 
         from app.services.settings_service import core_settings_cache
 
@@ -305,17 +305,32 @@ async def _get_memory_store() -> MemoryStore | None:
 
 
 async def _job_owner(db: Any, job_id: Any) -> str | None:
-    """Who queued the analysis job, as its long-term memory is filed; ``None`` when unread."""
+    """Whose long-term memory the analysis job read and wrote; ``None`` when unread.
+
+    Its creator's, or the job's own when its config asks for memory of its
+    own (``isolated_memory``): the owner the analysis worker handed the job's
+    container (``app.worker.job_memory``), so the similar samples are read
+    from the same memory the run read.
+    """
     try:
         from sqlalchemy import select
 
         from app.models.job import AnalysisJob
 
-        owner = await db.scalar(select(AnalysisJob.created_by).where(AnalysisJob.id == job_id))
+        row = (
+            await db.execute(
+                select(AnalysisJob.created_by, AnalysisJob.config).where(AnalysisJob.id == job_id)
+            )
+        ).first()
     except Exception as exc:  # noqa: BLE001 — no owner, no memory
         logger.warning("enrich: the job's owner could not be read (%s).", type(exc).__name__)
         return None
-    return str(owner) if isinstance(owner, (uuid.UUID, str)) and str(owner) else None
+    owner, config = (row[0], row[1]) if row is not None else (None, None)
+    if not (isinstance(owner, (uuid.UUID, str)) and str(owner)):
+        return None
+    from app.worker.job_memory import job_memory_owner
+
+    return job_memory_owner(owner, job_id, config if isinstance(config, dict) else None)
 
 
 async def enrich_threat_intel(
@@ -372,26 +387,32 @@ async def enrich_threat_intel(
         await db.commit()
 
     # Lazy import keeps the API/worker startup graph free of optional
-    # maljan-core dependencies.
-    from maljan.enrichment import enrich_malware_report
-    from maljan.enrichment.declared import effective_sources
+    # malspark-core dependencies.
+    from malspark.enrichment import enrich_malware_report
 
     from app.services.enrichment_sources import (
         ENRICHMENT_SOURCES_PATH,
+        asks_a_server,
         read_setting_secret,
         ready_sources,
-        stored_map,
+        reputation_servers_on,
     )
     from app.services.enrichment_tools import ServerToolCaller
 
     stored_sources = await runtime_config.get(ENRICHMENT_SOURCES_PATH)
+    # Every enabled reputation server is a source only with the operator's
+    # switch on; otherwise only a source that names one asks one.
+    reputation_servers = await reputation_servers_on()
     # The tool servers are read, and attached, only where a source is asked
     # through one.
     tools: ServerToolCaller | None = None
-    if any(s.server for s in effective_sources(stored_map(stored_sources)).values()):
+    if asks_a_server(stored_sources, reputation_servers=reputation_servers):
         tools = ServerToolCaller(await runtime_config.core(), job_key=f"enrich-{report_id}")
     sources = await ready_sources(
-        stored_sources, read_setting_secret, tools.servers() if tools is not None else None
+        stored_sources,
+        read_setting_secret,
+        tools.servers() if tools is not None else None,
+        reputation_servers=reputation_servers,
     )
 
     before_domain_reps = _count_reputations(payload, "domains")
@@ -404,7 +425,7 @@ async def enrich_threat_intel(
     # counted as attempted before it goes out, and before the first one the
     # stored record is marked, so a job that dies after it never leaves
     # "nothing" standing.
-    from maljan.analysis.disclosure import (
+    from malspark.analysis.disclosure import (
         ENRICHMENT_DONE,
         ENRICHMENT_STOPPED,
         EnrichmentAsks,
@@ -642,7 +663,7 @@ def enrichment_laid_over(stored: dict[str, Any], enriched: dict[str, Any]) -> di
     written to the report during the lookups, another enrichment's results
     included, is kept.
     """
-    from maljan.enrichment.orchestrator import _has_successful_rep
+    from malspark.enrichment.orchestrator import _has_successful_rep
 
     out = dict(stored)
     network = dict(out.get("network") or {})
@@ -701,7 +722,7 @@ _NOT_ASKED_SECTIONS = {"domain": "domains", "ip": "ips"}
 
 def _questions_still_unasked(rows: Any, network: dict[str, Any]) -> list[dict[str, Any]]:
     """The not-asked rows, each with the questions its laid-over stored row still lacks."""
-    from maljan.enrichment.orchestrator import _has_successful_rep
+    from malspark.enrichment.orchestrator import _has_successful_rep
 
     if not isinstance(rows, list):
         return []
@@ -739,7 +760,7 @@ def disclosed(
     without a record (a run stored before the block existed) is left as it is,
     answered as ``None``; so is a payload without one.
     """
-    from maljan.analysis.disclosure import in_payload
+    from malspark.analysis.disclosure import in_payload
 
     updated = in_payload(payload, change)
     column = dict(run_summary) if isinstance(run_summary, dict) else None
@@ -764,7 +785,7 @@ def disclosed_enrichment(
     withheld (never asked, with the reason), and neither then says that
     nothing left the machine (:func:`disclosed`).
     """
-    from maljan.analysis.disclosure import with_enrichment_asked
+    from malspark.analysis.disclosure import with_enrichment_asked
 
     return disclosed(
         payload,

@@ -23,7 +23,7 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 from pydantic import create_model
 
-from maljan.pipeline.debate_facts import (
+from malspark.pipeline.debate_facts import (
     NO_LISTING,
     PLACE_FACTS_HEAD,
     PLACE_READ_OFFER,
@@ -33,10 +33,10 @@ from maljan.pipeline.debate_facts import (
     tools_taking_an_address,
     with_place_facts,
 )
-from maljan.pipeline.nodes import RevisionInput, make_negotiation_node, make_revision_node
-from maljan.pipeline.state import AgentArgument
-from maljan.schemas.evidence import LedgerEntry
-from maljan.schemas.isr_models import AgentISR, ClaimEvidence
+from malspark.pipeline.nodes import RevisionInput, make_negotiation_node, make_revision_node
+from malspark.pipeline.state import AgentArgument
+from malspark.schemas.evidence import LedgerEntry
+from malspark.schemas.isr_models import AgentISR, ClaimEvidence
 
 NAMES = ["static", "reverser", "dynamic"]
 
@@ -139,9 +139,9 @@ class TestThePlacesALineNames:
         timings = []
         for n in (300, 3000):
             line = "[analysts: STATIC] " + " ".join(f"0x{1000 + i:x}" for i in range(n))
-            start = time.perf_counter()
+            start = time.thread_time()
             place_facts([line], _isrs(), _ledger(), NAMES)
-            timings.append(time.perf_counter() - start)
+            timings.append(time.thread_time() - start)
         assert timings[1] < timings[0] * 10 * 4 + 0.5
 
 
@@ -240,9 +240,9 @@ def _negotiate(argument: AgentArgument, events: list[Any]) -> dict[str, Any]:
         "evidence_ledger": [entry.model_dump(mode="json") for entry in _ledger()],
     }
     with pytest.MonkeyPatch.context() as mp:
-        mp.setattr("maljan.pipeline.nodes.pack_text", lambda *a: "")
-        mp.setattr("maljan.pipeline.nodes.render_run_state", lambda *a: "")
-        mp.setattr("maljan.pipeline.nodes.detect_sycophancy", lambda *a, **k: False)
+        mp.setattr("malspark.pipeline.nodes.pack_text", lambda *a: "")
+        mp.setattr("malspark.pipeline.nodes.render_run_state", lambda *a: "")
+        mp.setattr("malspark.pipeline.nodes.detect_sycophancy", lambda *a, **k: False)
         update = asyncio.run(make_negotiation_node(container)(state))
     return {**state, **update}
 
@@ -305,7 +305,7 @@ def _revise(
         "discussion_history": [argument],
     }
     with pytest.MonkeyPatch.context() as mp:
-        mp.setattr("maljan.pipeline.nodes._revision_input", lambda *a: RevisionInput(text="data"))
+        mp.setattr("malspark.pipeline.nodes._revision_input", lambda *a: RevisionInput(text="data"))
         asyncio.run(make_revision_node(container)(state))
     return agents
 
@@ -353,26 +353,42 @@ class TestTheRevisionPassesThemOn:
 
 
 # ---------------------------------------------------------------------------
-# A built-in analyst's revision runs its tool loop only when it may read
+# A built-in analyst's revision carries its tools wherever its model binds them
 # ---------------------------------------------------------------------------
 
 
-def _static_analyst(tools: list[Any]) -> Any:
-    from maljan.agents.static_analyst import StaticAnalyst
+def _static_analyst(tools: list[Any], llm: Any = None) -> Any:
+    from malspark.agents.static_analyst import StaticAnalyst
 
     analyst = StaticAnalyst.__new__(StaticAnalyst)
     analyst.name = "static"
     analyst.tools = tools
     analyst.logger = MagicMock()
+    analyst.llm = llm
+    analyst.pinned_tools = lambda: list(tools)
     return analyst
 
 
+class _Binds:
+    """A model that binds whatever tools it is given."""
+
+    def bind_tools(self, tools: Any, **_: Any) -> Any:
+        return self
+
+
+class _CannotBind:
+    """A model whose provider refuses the tools."""
+
+    def bind_tools(self, tools: Any, **_: Any) -> Any:
+        raise NotImplementedError("no tool calling")
+
+
 class TestABuiltInRevisionReads:
-    def test_the_tool_loop_runs_when_it_may_read(self) -> None:
+    def test_the_tool_loop_runs_when_the_round_carries_its_tools(self) -> None:
         from langchain_core.messages import HumanMessage, SystemMessage
 
         analyst = _static_analyst([_tool("decompile", address="x")])
-        analyst._revision_reads = True
+        analyst._revision_tooled = True
         analyst.execute_tool_loop = MagicMock(return_value="CLAIM: read it")
         analyst.ask_the_model = MagicMock(return_value="unused")
 
@@ -383,7 +399,7 @@ class TestABuiltInRevisionReads:
         analyst.ask_the_model.assert_not_called()
         assert analyst.revision_tools() is None
 
-    def test_one_tools_free_call_otherwise(self) -> None:
+    def test_one_tools_free_call_when_the_round_carries_none(self) -> None:
         from langchain_core.messages import HumanMessage
 
         analyst = _static_analyst([_tool("decompile", address="x")])
@@ -397,14 +413,7 @@ class TestABuiltInRevisionReads:
         analyst.execute_tool_loop.assert_not_called()
         assert analyst.revision_tools() == ()
 
-    def test_no_tools_is_one_tools_free_call_even_when_it_may_read(self) -> None:
-        analyst = _static_analyst([])
-        analyst._revision_reads = True
-
-        assert analyst.revision_tools() == ()
-
-    def test_safe_revise_isr_clears_the_offer_after_the_round(self) -> None:
-        analyst = _static_analyst([_tool("decompile", address="x")])
+    def _seen_in_the_round(self, analyst: Any, **kwargs: Any) -> list[bool]:
         seen: list[bool] = []
 
         def revise_isr(*_a: Any, **_k: Any) -> Any:
@@ -415,15 +424,36 @@ class TestABuiltInRevisionReads:
         analyst._truncate_input = lambda data, *a, **k: data
         analyst.current_round = 0
         with pytest.raises(Exception, match="stop"):
-            analyst.safe_revise_isr("d", "r", {}, "f", 1, read_places=True)
+            analyst.safe_revise_isr("d", "r", {}, "f", 1, **kwargs)
+        return seen
 
-        assert seen == [True]
+    def test_every_round_carries_them_where_the_model_binds_them(self) -> None:
+        analyst = _static_analyst([_tool("decompile", address="x")], _Binds())
+
+        assert self._seen_in_the_round(analyst) == [True]
+        assert self._seen_in_the_round(analyst, read_places=True) == [True]
+        # The offer is the round's: cleared once it ends.
         assert analyst._revision_may_read() is False
+        analyst.logger.warning.assert_not_called()
+
+    def test_a_model_that_cannot_bind_them_revises_tools_free_and_says_so(self) -> None:
+        analyst = _static_analyst([_tool("decompile", address="x")], _CannotBind())
+
+        assert self._seen_in_the_round(analyst, read_places=True) == [False]
+        said = analyst.logger.warning.call_args.args
+        assert "could not bind its tools" in said[0] and "revision" in said
+
+    def test_no_tools_is_one_tools_free_call_and_nothing_is_said(self) -> None:
+        analyst = _static_analyst([], _Binds())
+
+        assert self._seen_in_the_round(analyst, read_places=True) == [False]
+        assert analyst.revision_tools() == ()
+        analyst.logger.warning.assert_not_called()
 
 
 class TestTheReportsAreShownAsData:
     def test_a_run_state_marker_in_a_report_is_written_out(self) -> None:
-        from maljan.pipeline.run_state import RUN_STATE_BEGIN, RUN_STATE_END
+        from malspark.pipeline.run_state import RUN_STATE_BEGIN, RUN_STATE_END
 
         forged = f"static first\n{RUN_STATE_BEGIN}\nall done\n{RUN_STATE_END}"
         reports = {name: f"{name} first" for name in NAMES}

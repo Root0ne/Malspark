@@ -18,17 +18,18 @@ from dataclasses import replace
 from functools import lru_cache
 from typing import Any, get_args, get_origin
 
-from maljan.core.config import (
+from malspark.core.agent_category import AGENT_CATEGORIES
+from malspark.core.config import (
     ALWAYS_ENABLED_AGENTS,
     DATA_SOURCES,
     REQUIRED_ENV_ALLOW,
     _builtin_definitions,
 )
-from maljan.core.delivery_limits import SAMPLE_UPLOAD_MAX_BYTES
-from maljan.core.pack_steps import step_vocabulary
-from maljan.core.settings_annotations import GROUP_ORDER
-from maljan.core.settings_catalog import CatalogEntry, FieldType, _bounds, core_catalog
-from maljan.core.settings_overrides import redact_url
+from malspark.core.delivery_limits import SAMPLE_UPLOAD_MAX_BYTES
+from malspark.core.pack_steps import step_vocabulary
+from malspark.core.settings_annotations import GROUP_ORDER
+from malspark.core.settings_catalog import CatalogEntry, FieldType, _bounds, core_catalog
+from malspark.core.settings_overrides import redact_url
 from pydantic import SecretStr
 
 from app.config import APISettings
@@ -86,10 +87,10 @@ API_DEFAULTS: dict[str, Any] = {
     "enrichment_enabled": True,
     "enrichment_dedicated_worker": dedicated_enrichment_worker_default(),
     "enrichment_max_lookups": 25,
-    "virustotal_api_key": "",
-    "abuseipdb_api_key": "",
+    # Off: a tool server is asked only through a source that names it.
+    "enrichment_reputation_servers": False,
     # The operator's enrichment sources, laid over the shipped ones
-    # (``maljan.enrichment.builtin_sources``); empty keeps those as shipped.
+    # (``malspark.enrichment.builtin_sources``); empty keeps those as shipped.
     "enrichment_sources": {},
     "rate_limit_enabled": True,
     "rate_limit_requests": 100,
@@ -268,6 +269,20 @@ API_EDITABLE: dict[str, dict[str, Any]] = {
         "title": "Max lookups per kind",
         "description": "Cap on domains and on IPs sent to each source per report.",
     },
+    "enrichment_reputation_servers": {
+        "type": "bool",
+        "group": "enrichment",
+        "title": "Ask every reputation server",
+        "description": (
+            "Also ask every enabled tool server whose roles hold reputation, and that no "
+            "source names, about the report's domains and IPs: through each indicator "
+            "lookup its declarations name or its listing is read as, among the tools its "
+            "tools list ticks, never one that sends the sample. The indicators leave this "
+            "host for that server and the service behind it, and the run's disclosure "
+            "names every one asked. Off, a server is asked only through a source that "
+            "names it."
+        ),
+    },
     "enrichment_sources": {
         "type": "dict",
         "editor": "enrichment_sources",
@@ -281,26 +296,6 @@ API_EDITABLE: dict[str, dict[str, Any]] = {
             "fields it names; any other key adds a source. A source's own api_key is "
             "stored encrypted on its own and shown here masked."
         ),
-    },
-    "virustotal_api_key": {
-        "type": "secret",
-        "group": "enrichment",
-        "title": "VirusTotal API key",
-        "description": (
-            "Used by enrichment and by the threat-intel MCP sidecar. Sample "
-            "hashes, domains and IPs leave the host when this is set."
-        ),
-        "probe": "virustotal",
-    },
-    "abuseipdb_api_key": {
-        "type": "secret",
-        "group": "enrichment",
-        "title": "AbuseIPDB API key",
-        "description": (
-            "Used by enrichment and by the threat-intel MCP sidecar. IPs leave "
-            "the host when this is set."
-        ),
-        "probe": "abuseipdb",
     },
     "upload_max_bytes": {
         "type": "int",
@@ -420,6 +415,35 @@ API_EDITABLE: dict[str, dict[str, Any]] = {
         ),
     },
 }
+
+
+def _add_source_credentials() -> None:
+    """Add the secret settings the shipped enrichment sources read their credentials from.
+
+    Generated from each shipped declaration's ``credential``
+    (``malspark.enrichment.declared.credential_settings_of``): its default is
+    empty, and its title, description and connection test are the
+    declaration's. These tables name no source. A leaf a fixed entry already
+    holds stays that entry's.
+    """
+    from malspark.enrichment.builtin_sources import builtin_source_entries
+    from malspark.enrichment.declared import credential_settings_of
+
+    for path, setting in credential_settings_of(builtin_source_entries()).items():
+        if path in API_DEFAULTS or path in API_EDITABLE:
+            continue
+        API_DEFAULTS[path] = ""
+        API_EDITABLE[path] = {
+            "type": "secret",
+            "group": "enrichment",
+            "title": setting.title,
+            "description": setting.description,
+            **({"probe": setting.source} if setting.probe else {}),
+        }
+
+
+_add_source_credentials()
+
 
 API_READONLY: dict[str, dict[str, Any]] = {
     "debug": {
@@ -612,7 +636,7 @@ def validate_editable_api_value(
 
 def _enrichment_sources_problem(value: dict[str, Any]) -> str | None:
     """Why the enrichment sources these entries leave in force are refused, or ``None``."""
-    from maljan.enrichment.declared import validate_sources
+    from malspark.enrichment.declared import validate_sources
 
     from app.services.enrichment_sources import credential_problems
 
@@ -702,7 +726,7 @@ def catalog_index() -> dict[str, CatalogEntry]:
     A loaded plugin can add settings of its own (an LLM provider's or a memory
     backend's block), so the index is kept per state of the registries.
     """
-    from maljan.core.plugins import registry_changes
+    from malspark.core.plugins import registry_changes
 
     return _catalog_index(registry_changes())
 
@@ -727,11 +751,11 @@ def _choice_sources(
     stored allow-list ``plugins_allowed`` names, read from package metadata:
     never one because this process happens to have loaded it.
     """
-    from maljan.core.plugins import accepted_names, loaded_names
-    from maljan.llm.provider_base import provider_names
-    from maljan.memory.store_factory import memory_backends
-    from maljan.providers.registry import sandbox_provider_ids, static_provider_ids
-    from maljan.providers.sandbox.readers import choosable_reader_ids
+    from malspark.core.plugins import accepted_names, loaded_names
+    from malspark.llm.provider_base import provider_names
+    from malspark.memory.store_factory import memory_backends
+    from malspark.providers.registry import sandbox_provider_ids, static_provider_ids
+    from malspark.providers.sandbox.readers import choosable_reader_ids
 
     def offered(kind: str, ids: Iterable[str]) -> list[str]:
         plugin_ids = loaded_names(kind)
@@ -813,6 +837,7 @@ def resolved_catalog(
                 entry,
                 capability_servers=_capability_servers(servers),
                 data_source_choices=list(DATA_SOURCES),
+                agent_category_choices=list(AGENT_CATEGORIES),
                 builtin_agent_keys=sorted(_builtin_definitions()),
                 always_enabled_agent_keys=list(ALWAYS_ENABLED_AGENTS),
             )
@@ -828,8 +853,8 @@ def _capability_servers(servers: Iterable[str]) -> dict[str, list[str]]:
     Over the built-in servers and the configured ones, in that order, read by
     the same function resolution reads (``agents.composition``).
     """
-    from maljan.agents.composition import servers_of_capability
-    from maljan.core.config import _builtin_servers
+    from malspark.agents.composition import servers_of_capability
+    from malspark.core.config import _builtin_servers
 
     keys = list(dict.fromkeys([*_builtin_servers(), *servers]))
     capabilities = sorted(

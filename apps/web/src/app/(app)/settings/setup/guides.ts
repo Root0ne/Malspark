@@ -547,7 +547,7 @@ function probeOf(ctx: GuideContext, keys: string[]): string | undefined {
 const MEMORY_GUIDE: GuideDef = {
   id: "memory",
   title: "Set up long-term memory",
-  blurb: "Keep findings in process, or point Maljan at a store that survives a restart.",
+  blurb: "Keep findings in process, or point Malspark at a store that survives a restart.",
   groupHref: "/settings/configuration/tools/memory",
   steps: (ctx) => {
     const steps: GuideStep[] = [
@@ -597,8 +597,15 @@ const ENRICHMENT_GUIDE: GuideDef = {
     {
       id: "switch",
       title: "Enrichment and its budget",
-      intro: "The budget caps how many lookups a single analysis may spend.",
-      keys: ["api.enrichment_enabled", "api.enrichment_max_lookups"],
+      intro:
+        "The budget caps how many lookups a single analysis may spend. Asking every reputation " +
+        "server sends the report's domains and IPs to each enabled one, through the indicator " +
+        "lookups its tools list ticks.",
+      keys: [
+        "api.enrichment_enabled",
+        "api.enrichment_max_lookups",
+        "api.enrichment_reputation_servers",
+      ],
     },
     ...enrichmentSourceSteps(ctx.schema),
     REVIEW_STEP,

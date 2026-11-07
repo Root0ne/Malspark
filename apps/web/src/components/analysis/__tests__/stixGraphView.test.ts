@@ -27,8 +27,8 @@ const bundle = {
       relationship_type: "uses",
       source_ref: MALWARE,
       target_ref: TECHNIQUE,
-      x_maljan_confidence: 0.9,
-      x_maljan_evidence_refs: ["ev_0002"],
+      x_malspark_confidence: 0.9,
+      x_malspark_evidence_refs: ["ev_0002"],
     },
     { type: "report", id: "report--5", name: "r", object_refs: [MALWARE] },
   ],
@@ -79,7 +79,7 @@ describe("the table view", () => {
   });
 
   it("links an edge's ledger ids into the evidence view", () => {
-    expect(html).toContain("evidence?evidence=ev_0002");
+    expect(html).toContain("evidence/records?evidence=ev_0002");
   });
 
   it("says a missing confidence is not stated, never a number", () => {
@@ -89,7 +89,7 @@ describe("the table view", () => {
           objects: [
             bundle.objects[0],
             bundle.objects[1],
-            { ...bundle.objects[3], x_maljan_confidence: undefined },
+            { ...bundle.objects[3], x_malspark_confidence: undefined },
           ],
         },
         showGraph: false,
@@ -142,12 +142,16 @@ describe("the detail pane", () => {
     ).toBe(2);
   });
 
-  it("wraps the raw JSON block's long string values", () => {
+  it("lays the object out as fields, wraps its long values, and keeps the raw JSON one toggle away", () => {
     const html = renderToStaticMarkup(
       createElement(Detail, { graph, selection: { kind: "node", id: FILE }, onSelect: () => {} }),
     );
-    const jsonBlock = html.slice(html.indexOf("<div class=\"p-3"));
-    expect(jsonBlock).toContain("font-mono text-[11px] leading-relaxed break-all overflow-x-auto");
-    expect(jsonBlock).toContain(HASH);
+    const block = html.slice(html.indexOf("<dl"));
+    // Fields, not a JSON dump: the object's keys are terms, its values wrap.
+    expect(block).toContain("<dt");
+    expect(block).toContain(HASH);
+    expect(block).toContain("[overflow-wrap:anywhere]");
+    expect(html).not.toContain(`"${HASH}"`);
+    expect(html).toContain("View raw");
   });
 });

@@ -6,8 +6,8 @@ description: "Synthetic PE files whose ground truth is known, a deterministic sc
 A benchmark scored against one real sample can be tuned to that sample. The
 **calibration set** is a set of synthetic PE files built from seeds, each with
 a manifest of what it holds and what it does not, so a run can be scored with
-no human key and no model. It sits beside the [replay](/replay/) and
-[blind scoring](/blind-scoring/). Everything lives in `scripts/calibration/`,
+no human key and no model. It sits beside the [replay](/docs/replay/) and
+[blind scoring](/docs/blind-scoring/). Everything lives in `scripts/calibration/`,
 and none of it ships in the product.
 
 ## The cases
@@ -67,7 +67,7 @@ any other indicator. The config's host is under `.invalid`.
 ## Scoring a stored run
 
 ```bash
-python scripts/calibration/run.py score runs/cal-pe64-1101 [--json score.json]
+python scripts/calibration/run.py score <run dir> [--json score.json]
 ```
 
 The scorer reads only the run's directory, with the replay's reader, and
@@ -140,7 +140,7 @@ python scripts/calibration/run.py leak-check [--terms FILE] [--settings-export F
 This is a local check to run before promotion. It scans the files that ship
 what a model is told, tracked or not (a file git ignores is not read):
 
-- `src/maljan`: prompts, provider fragments, built-in agents, profiles and teams;
+- `src/malspark`: prompts, provider fragments, built-in agents, profiles and teams;
 - `services`: tool descriptions;
 - `apps/api`: seeded defaults;
 - `data`;

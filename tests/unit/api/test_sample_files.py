@@ -99,12 +99,12 @@ def test_sweep_skips_a_file_that_vanishes_between_listing_and_unlink(dirs, monke
 
 
 def test_an_orphaned_upload_staging_file_is_swept(dirs):
-    """The API stages an upload as ``maljan-upload-*`` there; a crash leaves it behind."""
-    staged = sf.temp_dir() / "maljan-upload-k2j3h4"
+    """The API stages an upload as ``malspark-upload-*`` there; a crash leaves it behind."""
+    staged = sf.temp_dir() / "malspark-upload-k2j3h4"
     staged.write_bytes(b"MZ live sample")
     other = sf.temp_dir() / "anything-else.bin"
     other.write_bytes(b"x")
-    fresh = sf.temp_dir() / "maljan-upload-fresh"
+    fresh = sf.temp_dir() / "malspark-upload-fresh"
     fresh.write_bytes(b"x")
     for path in (staged, other):
         os.utime(path, (time.time() - 90_000, time.time() - 90_000))
@@ -115,7 +115,7 @@ def test_an_orphaned_upload_staging_file_is_swept(dirs):
 def test_a_link_in_the_upload_directory_is_not_followed(dirs):
     target = dirs / "precious.bin"
     target.write_bytes(b"keep")
-    link = sf.temp_dir() / "maljan-upload-link"
+    link = sf.temp_dir() / "malspark-upload-link"
     link.symlink_to(target)
     os.utime(link, (time.time() - 90_000, time.time() - 90_000), follow_symlinks=False)
     sf.sweep()
@@ -200,6 +200,38 @@ def test_the_worker_s_own_marker_adopts_the_directory(dirs):
     (folder / sf.MIRROR_MARKER).write_text(sf.MIRROR_MARKER_TEXT)
     assert sf.work_dir("mine") == folder.resolve()
     assert stat.S_IMODE(os.stat(folder).st_mode) == 0o700
+
+
+def test_the_marker_a_release_before_the_rename_wrote_adopts_the_directory(dirs):
+    folder = Path(sf.settings.samples_dir) / "mine"
+    folder.mkdir(parents=True, mode=0o755)
+    (folder / sf.PREVIOUS_MIRROR_MARKER).write_text(sf.PREVIOUS_MIRROR_MARKER_TEXT)
+    (folder / f"{A}.exe").write_bytes(b"x")
+    assert sf.work_dir("mine") == folder.resolve()
+    assert sf.remove_for_sha(A, subdirs=["mine"]) == [folder.resolve() / f"{A}.exe"]
+
+
+def test_a_previous_name_marker_that_is_not_the_worker_s_own_adopts_nothing(dirs):
+    folder = Path(sf.settings.samples_dir) / "dataset"
+    folder.mkdir(parents=True, mode=0o755)
+    (folder / sf.PREVIOUS_MIRROR_MARKER).write_text("copied in with a dataset\n")
+    (folder / f"{A}.exe").write_bytes(b"corpus")
+    with pytest.raises(sf.NotAMirrorDirectory):
+        sf.work_dir("dataset")
+    assert sf.remove_for_sha(A, subdirs=["dataset"]) == []
+    assert (folder / f"{A}.exe").read_bytes() == b"corpus"
+
+
+def test_a_foreign_current_marker_is_refused_beside_a_valid_previous_one(dirs):
+    folder = Path(sf.settings.samples_dir) / "dataset"
+    folder.mkdir(parents=True, mode=0o755)
+    (folder / sf.MIRROR_MARKER).write_text("copied in with a dataset\n")
+    (folder / sf.PREVIOUS_MIRROR_MARKER).write_text(sf.PREVIOUS_MIRROR_MARKER_TEXT)
+    (folder / f"{A}.exe").write_bytes(b"corpus")
+    with pytest.raises(sf.NotAMirrorDirectory):
+        sf.work_dir("dataset")
+    assert sf.remove_for_sha(A, subdirs=["dataset"]) == []
+    assert (folder / f"{A}.exe").read_bytes() == b"corpus"
 
 
 def test_a_directory_that_cannot_be_opened_skips_only_itself(dirs, monkeypatch):

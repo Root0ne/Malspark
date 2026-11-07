@@ -12,7 +12,8 @@ from __future__ import annotations
 import re
 from typing import Any
 
-from maljan.core.config import (
+from malspark.core.agent_category import CATEGORY_REQUIRED, fitting_category
+from malspark.core.config import (
     AGENT_KEY_PATTERN,
     ALWAYS_ENABLED_AGENTS,
     PROMPT_ROLES,
@@ -26,10 +27,10 @@ from maljan.core.config import (
     convert_builtin_profile_document,
     with_the_role_seed_tools,
 )
-from maljan.core.settings_overrides import build_settings
-from maljan.core.team_layout import layout_team
-from maljan.core.team_lint import TeamFinding, lint_team, lint_teams, team_stages
-from maljan.providers.base import NO_STATIC_PROVIDER
+from malspark.core.settings_overrides import build_settings
+from malspark.core.team_layout import layout_team
+from malspark.core.team_lint import TeamFinding, lint_team, lint_teams, team_stages
+from malspark.providers.base import NO_STATIC_PROVIDER
 from pydantic import ValidationError
 
 AGENT_DEFINITIONS_KEY = "core.agents.definitions"
@@ -121,15 +122,21 @@ def validate_definitions(
     *,
     servers: dict[str, list[str] | None] | None = None,
     plugins_allowed: list[Any] | None = None,
+    stored_keys: Any = (),
 ) -> dict[str, Any]:
     """Return the definition map to store, or raise with one message per offender.
 
     ``plugins_allowed`` is the plugin allow-list the save leaves in force: a
     static provider id is a shipped one or an installed plugin it names, read
-    from package metadata (``maljan.core.plugins.id_refusal``), never what
+    from package metadata (``malspark.core.plugins.id_refusal``), never what
     the API process has loaded.
+
+    ``stored_keys`` are the definitions already stored. Any other definition
+    that is not a built-in is being created, and must name its category
+    (``core.agent_category``); a stored one that names none reads the one its
+    role and tools fit, as the settings model reads it.
     """
-    from maljan.core.plugins import id_refusal, shipped_ids
+    from malspark.core.plugins import id_refusal, shipped_ids
 
     if not isinstance(value, dict):
         raise AgentMapError(
@@ -140,6 +147,7 @@ def validate_definitions(
         )
 
     allow_lists = servers if servers is not None else {}
+    stored = {str(key) for key in stored_keys}
     errors: dict[str, str] = {}
     out: dict[str, Any] = {}
     seeds = {name: d.model_dump(mode="json") for name, d in _builtin_definitions().items()}
@@ -153,6 +161,9 @@ def validate_definitions(
             errors[name] = "an agent entry must be an object"
             continue
         seed = seeds.get(name)
+        if seed is None and name not in stored and entry.get("category") is None:
+            errors[f"{name}.category"] = CATEGORY_REQUIRED
+            continue
         # Fill in the seed's own values for whatever a built-in override left
         # out, exactly as ``AgentsConfig._merge_builtin_definition_defaults``
         # does at the Settings layer: an operator writing
@@ -217,6 +228,17 @@ def validate_definitions(
         if has_provider_ref and model.role not in PROMPT_ROLES:
             errors[name] = f"{name!r}: {PROVIDER_REFERENCE_RULE}"
             continue
+        # A provider a reference names is judged as the definition's own is.
+        for ref in model.tools:
+            if ref.kind != "provider" or ref.provider is None:
+                continue
+            refused = id_refusal("static", ref.provider, plugins_allowed or [])
+            if refused:
+                errors[f"{name}.tools"] = (
+                    f"unknown static provider {ref.provider!r} on a provider tool reference. "
+                    f"Available: {', '.join(sorted(shipped_ids('static')))}; {refused}"
+                )
+                break
         for ref in model.tools:
             if ref.kind != "mcp":
                 continue
@@ -251,6 +273,52 @@ def validate_definitions(
     return out
 
 
+def with_imported_categories(
+    values: dict[str, Any], stored_keys: Any = ()
+) -> tuple[dict[str, Any], dict[str, str]]:
+    """An imported document with a category on each new definition that names none.
+
+    A document exported before definitions carried a category names none on
+    any of them, and refusing it would make every such export impossible to
+    import. So an import, unlike an edit, gives each new definition that is
+    not a built-in the category its role and tools fit
+    (``core.agent_category.fitting_category``) and says so under that
+    definition's category, worded more strongly where the rule could not tell
+    and the category is ``other``. A definition already stored, a built-in and
+    one that names a category are left as written. Returns the document and
+    the warnings, keyed by the field.
+    """
+    definitions = values.get(AGENT_DEFINITIONS_KEY)
+    if not isinstance(definitions, dict):
+        return values, {}
+    stored = {str(key) for key in stored_keys}
+    seeds = _builtin_definitions()
+    fitted: dict[str, Any] = {}
+    warnings: dict[str, str] = {}
+    for key, entry in definitions.items():
+        name = str(key)
+        if (
+            not isinstance(entry, dict)
+            or name in seeds
+            or name in stored
+            or entry.get("category") is not None
+        ):
+            fitted[key] = entry
+            continue
+        category, told = fitting_category(entry)
+        fitted[key] = {**entry, "category": category}
+        warnings[f"{AGENT_DEFINITIONS_KEY}.{name}.category"] = (
+            f"set to {category} from its role and tools; pick the one that fits in Settings"
+            if told
+            else (
+                "set to other: its role and tools tell no category, so the platform works out "
+                "its steps from its tools and results; choose the category that matches what "
+                "this agent does in Settings"
+            )
+        )
+    return {**values, AGENT_DEFINITIONS_KEY: fitted}, warnings
+
+
 def finding_path(finding: TeamFinding) -> str:
     """The dotted settings path a team finding is reported under.
 
@@ -280,7 +348,7 @@ def validate_profiles(
 ) -> dict[str, Any]:
     """Return the profile map to store, or raise with one message per offender.
 
-    Every refusal is a team-lint error (``maljan.core.team_lint``), keyed by
+    Every refusal is a team-lint error (``malspark.core.team_lint``), keyed by
     the path the editor routes it to. The lint reads its errors off the same
     functions the settings model raises from, so the preview the console shows
     while a team is edited and what this refuses are one set of sentences.
@@ -296,7 +364,7 @@ def validate_profiles(
     team's static provider is judged as a definition's is
     (:func:`validate_definitions`).
     """
-    from maljan.core.plugins import id_refusal, shipped_ids
+    from malspark.core.plugins import id_refusal, shipped_ids
 
     if not isinstance(value, dict):
         raise AgentMapError(
@@ -450,7 +518,8 @@ def _reads_the_static_provider(definition: Any) -> bool:
     tools, own_provider = pair
     if own_provider not in (None, NO_STATIC_PROVIDER):
         return False
-    return any(t.get("kind") == "provider" for t in tools)
+    # A reference that names its provider reads that one, never the configured one.
+    return any(t.get("kind") == "provider" and not t.get("provider") for t in tools)
 
 
 def _only_provider_tools(definition: Any) -> bool:
@@ -624,12 +693,14 @@ def _validate_agent_map(changes: dict[str, Any], stored: dict[str, Any]) -> dict
         definitions_raw = stored.get(AGENT_DEFINITIONS_KEY) or {}
     elif definitions_raw is None:
         definitions_raw = {}
+    stored_definitions = stored.get(AGENT_DEFINITIONS_KEY)
     from app.services.settings_service import merged_allow_list
 
     definitions = validate_definitions(
         definitions_raw,
         servers=_server_allow_lists(_staged_over_stored(changes, stored)),
         plugins_allowed=merged_allow_list(changes, stored),
+        stored_keys=stored_definitions if isinstance(stored_definitions, dict) else (),
     )
     if AGENT_DEFINITIONS_KEY in changes and changes[AGENT_DEFINITIONS_KEY] is not None:
         out[AGENT_DEFINITIONS_KEY] = definitions
@@ -673,11 +744,11 @@ def _validate_agent_map(changes: dict[str, Any], stored: dict[str, Any]) -> dict
 def prompt_tool_warnings(settings: Any) -> dict[str, str]:
     """Agents whose own prompt names a tool they do not hold, keyed by definition path.
 
-    Advisory only (`maljan.agents.prompt_tools`): a prompt written against
+    Advisory only (`malspark.agents.prompt_tools`): a prompt written against
     last week's tool servers is still a legal thing to save. Read from the
     declarations, so no server is opened. Never raises.
     """
-    from maljan.agents.prompt_tools import warnings_for_settings
+    from malspark.agents.prompt_tools import warnings_for_settings
 
     try:
         return {

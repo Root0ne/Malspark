@@ -30,10 +30,10 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from maljan.core import ctype_locale
-from maljan.reporting import detection_signatures as drafts
-from maljan.reporting.builder import build_consolidated_iocs
-from maljan.reporting.detection_signatures import (
+from malspark.core import ctype_locale
+from malspark.reporting import detection_signatures as drafts
+from malspark.reporting.builder import build_consolidated_iocs
+from malspark.reporting.detection_signatures import (
     NOT_CHECKED_NO_ANSWER,
     NOT_CHECKED_NO_BUDGET,
     NOT_CHECKED_NO_ENGINE,
@@ -47,7 +47,7 @@ from maljan.reporting.detection_signatures import (
     OwnSample,
     build_detection_rules,
 )
-from maljan.reporting.models import (
+from malspark.reporting.models import (
     DetectionRule,
     FileHashes,
     MalwareReport,
@@ -55,7 +55,7 @@ from maljan.reporting.models import (
     NetworkIOCs,
     SampleIdentity,
 )
-from maljan.reporting.renderers.markdown import MarkdownRenderer
+from malspark.reporting.renderers.markdown import MarkdownRenderer
 
 needs_engine = pytest.mark.skipif(not drafts._YARA_AVAILABLE, reason="yara-python is not installed")
 
@@ -181,6 +181,13 @@ class TestTheEngineSaysWhichClauseHeld:
         assert f"`{_slot(rule, SECOND)}` at 0x28" in said
         assert "Found nowhere" not in said
 
+    def test_a_rule_whose_strings_match_carries_that_it_prints(self, tmp_path: Path) -> None:
+        path = _sample(tmp_path, BOTH)
+        rule = _yara(_report(), OwnSample(path=str(path), budget_seconds=BUDGET))
+
+        assert rule.printed is True
+        assert str(rule.standing).startswith("Precision: its strings match")
+
     def test_strings_and_the_sha256_holding_together_are_both_said(self, tmp_path: Path) -> None:
         path = _sample(tmp_path, BOTH)
         report = _drafted(
@@ -289,7 +296,7 @@ class TestTheEngineSaysWhichClauseHeld:
         assert path.read_bytes() == BOTH
 
     def test_the_html_report_says_it_too(self, tmp_path: Path) -> None:
-        from maljan.reporting.renderers import HtmlRenderer
+        from malspark.reporting.renderers import HtmlRenderer
 
         path = _sample(tmp_path, ONLY_FIRST)
         report = _drafted(_report(), OwnSample(path=str(path), budget_seconds=BUDGET))
@@ -303,7 +310,7 @@ class TestTheDraftAndItsProbeAreWrittenFromOneDeclaration:
 
     def _rendered(self, imphash: str | None = "d" * 32) -> Any:
         return drafts._render_yara(
-            rule_name="Maljan_AutoGen_loader",
+            rule_name="Malspark_AutoGen_loader",
             sha256=NOT_THE_SAMPLE,
             imphash=imphash,
             strings=[(f"$s{n}", value) for n, value in enumerate(self.VALUES)],
@@ -361,7 +368,7 @@ class TestTheDraftAndItsProbeAreWrittenFromOneDeclaration:
 
         assert len(names) == len(set(names)) == len(self.VALUES) + 4
         assert not set(names) & keywords
-        assert not [name for name in names if name.startswith("Maljan_AutoGen_")]
+        assert not [name for name in names if name.startswith("Malspark_AutoGen_")]
 
 
 @needs_engine
@@ -428,7 +435,7 @@ class TestTheProbeAnswersAsTheDraftDoes:
             sha256 = _sha256(blob) if rng.random() < 0.2 else NOT_THE_SAMPLE
             slots = [f"$s{n}" for n in range(count)]
             rendered = drafts._render_yara(
-                rule_name="Maljan_AutoGen_loader",
+                rule_name="Malspark_AutoGen_loader",
                 sha256=sha256,
                 imphash="d" * 32 if rng.random() < 0.3 else None,
                 strings=list(zip(slots, values, strict=True)),
@@ -494,9 +501,9 @@ class TestAHostileSampleCostsOneMatchPerString:
 
         monkeypatch.setattr(drafts, "_compile_yara", counting)
         tracemalloc.start()
-        start = time.perf_counter()
+        start = time.thread_time()
         rule = _yara(_report(names=names), OwnSample(path=str(path), budget_seconds=BUDGET))
-        took = time.perf_counter() - start
+        took = time.thread_time() - start
         _current, peak = tracemalloc.get_traced_memory()
         tracemalloc.stop()
 
@@ -514,9 +521,9 @@ class TestAHostileSampleCostsOneMatchPerString:
             path = _sample(
                 tmp_path, (FIRST + " ").encode() * repeats + SECOND.encode(), f"{repeats}.bin"
             )
-            start = time.perf_counter()
+            start = time.thread_time()
             rule = _yara(_report(), OwnSample(path=str(path), budget_seconds=BUDGET))
-            return time.perf_counter() - start, rule
+            return time.thread_time() - start, rule
 
         took(500)
         small, _rule = took(5_000)
@@ -645,7 +652,7 @@ class TestARuleNotCheckedSaysWhy:
         rule = _yara(_report(), OwnSample(path=str(path), budget_seconds=7))
 
         assert rule.sample_not_checked == NOT_CHECKED_TIMED_OUT.format(seconds=7)
-        assert "7 s (core.static.yara.timeout_seconds)" in rule.sample_not_checked
+        assert "7 s (core.reporting.detection_rule_check_seconds)" in rule.sample_not_checked
 
     @needs_engine
     @pytest.mark.parametrize(
@@ -715,11 +722,11 @@ class TestAnEngineThatFoldsCaseWronglyIsNotTrusted:
     SHAPE = """
         import sys, tempfile
         from pathlib import Path
-        from maljan.core import ctype_locale
+        from malspark.core import ctype_locale
 
         def check():
-            from maljan.reporting import detection_signatures as drafts
-            from maljan.reporting.detection_signatures import OwnSample
+            from malspark.reporting import detection_signatures as drafts
+            from malspark.reporting.detection_signatures import OwnSample
 
             folder = Path(tempfile.mkdtemp())
             path = folder / "sample.bin"
@@ -729,7 +736,7 @@ class TestAnEngineThatFoldsCaseWronglyIsNotTrusted:
             )
             slots = ["$s0", "$s1"]
             rendered = drafts._render_yara(
-                rule_name="Maljan_AutoGen_loader", sha256="c" * 64, imphash=None,
+                rule_name="Malspark_AutoGen_loader", sha256="c" * 64, imphash=None,
                 strings=list(zip(slots, [
                     "Software\\\\Microsoft\\\\Windows\\\\CurrentVersion\\\\Run", "mail.example.org"
                 ])),
@@ -770,9 +777,11 @@ class TestAnEngineThatFoldsCaseWronglyIsNotTrusted:
             _run(
                 textwrap.dedent(self.SHAPE)
                 + textwrap.dedent("""
-                import json, locale
+                import json, locale, platform
                 if locale.setlocale(locale.LC_CTYPE) != "tr_TR.UTF-8":
                     sys.exit(77)
+                if ctype_locale.libc_folds_ascii() and platform.libc_ver()[0] != "glibc":
+                    sys.exit(78)  # no Turkish fold for the failed pin to leave
                 ctype_locale.CANDIDATES = ("xx_NO.SUCH-LOCALE",)
                 assert ctype_locale.pin_character_classification() is None
                 found = check()
@@ -845,8 +854,8 @@ class TestOnlyTheYaraDraftCarriesACheck:
 class TestAStoredRuleReadsAsBefore:
     STORED = {
         "kind": "yara",
-        "name": "Maljan_AutoGen_loader",
-        "body": "rule Maljan_AutoGen_loader\n{\n    condition:\n        (filesize > 0)\n}\n",
+        "name": "Malspark_AutoGen_loader",
+        "body": "rule Malspark_AutoGen_loader\n{\n    condition:\n        (filesize > 0)\n}\n",
         "auto_generated": True,
         "source_evidence": ["sha256:" + NOT_THE_SAMPLE],
         "compile_error": None,
@@ -871,21 +880,31 @@ class TestAStoredRuleReadsAsBefore:
 
 class TestTheReportNodeHandsTheDrafterItsSample:
     def test_the_budget_is_the_operator_s_setting(self) -> None:
-        from maljan.core.config import Settings
-        from maljan.pipeline.nodes import _yara_scan_budget
+        from malspark.core.config import Settings
+        from malspark.pipeline.nodes import _rule_check_budget
 
         settings = Settings()
 
-        assert _yara_scan_budget(SimpleNamespace(config=settings)) == (
-            settings.static.yara.timeout_seconds
+        assert _rule_check_budget(SimpleNamespace(config=settings)) == (
+            settings.reporting.detection_rule_check_seconds
         )
-        assert _yara_scan_budget(SimpleNamespace(config=SimpleNamespace())) is None
+        assert _rule_check_budget(SimpleNamespace(config=SimpleNamespace())) is None
+
+    def test_the_budget_is_read_from_no_tool_s_block(self) -> None:
+        """The check's budget is the report's own setting, whatever the static blocks hold."""
+        from malspark.core.config import Settings
+        from malspark.pipeline.nodes import _rule_check_budget
+
+        settings = Settings.model_validate({"reporting": {"detection_rule_check_seconds": 12}})
+
+        assert _rule_check_budget(SimpleNamespace(config=settings)) == 12
+        assert not hasattr(settings.static.yara, "timeout_seconds")
 
     @needs_engine
     @pytest.mark.asyncio
     async def test_the_node_checks_the_draft_on_the_file_it_read(self, tmp_path: Path) -> None:
-        from maljan.pipeline.nodes import make_report_node
-        from maljan.reporting.builder import MalwareReportBuilder
+        from malspark.pipeline.nodes import make_report_node
+        from malspark.reporting.builder import MalwareReportBuilder
         from tests.stages import paper_profile
         from tests.unit.pipeline.test_what_is_served_is_the_final_report import _state
 
@@ -898,7 +917,7 @@ class TestTheReportNodeHandsTheDrafterItsSample:
         fake.config.reporting.enabled = True
         fake.config.llm.parallel_analysts = False
         fake.config.negotiation.max_iterations = 3
-        fake.config.static.yara.timeout_seconds = 9
+        fake.config.reporting.detection_rule_check_seconds = 9
         fake.active_profile.return_value = paper_profile(["static"], parallel=False)
         fake.get_narrative_agent.return_value = None
         fake.get_report_composer.return_value = None

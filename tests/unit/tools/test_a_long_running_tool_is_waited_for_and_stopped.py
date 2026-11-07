@@ -16,8 +16,9 @@ import subprocess
 import threading
 import time
 
-from maljan.providers.server_guard import ServerGuard
-from maljan.tools import children
+from malspark.providers.server_guard import ServerGuard
+from malspark.tools import children
+from tests.unit._process_table import running
 
 MANIFEST = {
     "capa": {"name": "capa", "timeout_s": None, "long_running": True},
@@ -41,13 +42,8 @@ class TestTheClientWaits:
 
 
 def _alive(pid: int) -> bool:
-    try:
-        os.kill(pid, 0)
-    except ProcessLookupError:
-        return False
-    # A zombie still answers; ask the table.
-    with open(f"/proc/{pid}/stat") as handle:
-        return handle.read().split()[2] != "Z"
+    # A zombie still answers a signal; the process table tells it apart.
+    return running(pid)
 
 
 class TestOneRunAtATime:
@@ -117,8 +113,8 @@ class TestAKillNeverReachesTheServer:
         from unittest.mock import patch
 
         with (
-            patch("maljan.tools.children.os.killpg") as killpg,
-            patch("maljan.tools.children.os.kill") as kill,
+            patch("malspark.tools.children.os.killpg") as killpg,
+            patch("malspark.tools.children.os.kill") as kill,
         ):
             for pid in (0, 1, -5, os.getpid(), os.getpgrp()):
                 children.kill_process_group(pid)
@@ -138,7 +134,7 @@ class TestAKillNeverReachesTheServer:
 
         from unittest.mock import patch
 
-        with patch("maljan.tools.children.kill_process_group") as killer:
+        with patch("malspark.tools.children.kill_process_group") as killer:
             with children.running_as(("floss", "done.dll")):
                 work()
                 children.kill(("floss", "done.dll"))

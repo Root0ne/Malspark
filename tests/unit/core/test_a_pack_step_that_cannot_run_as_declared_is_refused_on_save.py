@@ -22,15 +22,15 @@ from typing import Any
 import pytest
 from pydantic import ValidationError
 
-from maljan.core.config import Settings, TriageConfig
-from maljan.core.pack_steps import (
+from malspark.core.config import Settings, TriageConfig
+from malspark.core.pack_steps import (
     PackStep,
     check_steps,
     default_steps,
     effective_steps,
     placeholder_values,
 )
-from maljan.extractors import sample_identity
+from malspark.extractors import sample_identity
 
 SERVER = {"command": "invented-inventory", "enabled": True}
 
@@ -185,10 +185,10 @@ class TestAnArgumentTemplateAtAnyDepth:
         def seconds(n: int) -> float:
             template = deep(n)
             gc.collect()
-            began = time.perf_counter()
+            began = time.thread_time()
             PackStep(id="x", server="s", tool="t", arguments=template)
             placeholder_values(template, self.VALUES)
-            return time.perf_counter() - began
+            return time.thread_time() - began
 
         seconds(2_000)
         low = min(seconds(2_000) for _ in range(2))

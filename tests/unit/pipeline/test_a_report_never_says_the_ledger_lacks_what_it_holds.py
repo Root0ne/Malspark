@@ -22,13 +22,13 @@ from typing import Any
 
 import pytest
 
-from maljan.pipeline.validation import (
+from malspark.pipeline.validation import (
     ABSENCE_CONTRADICTS_LEDGER_CODE,
     KEPT_WITH_A_FINDING,
     EntryTexts,
     ledger_absence_contradictions,
 )
-from maljan.schemas.evidence import build_entry
+from malspark.schemas.evidence import build_entry
 
 BASE = 0x140000000
 
@@ -258,9 +258,9 @@ class TestLinearTime:
                 f"that are not confirmed by [ev_0004]. Its callers are not in the ledger."
                 for n in range(scale)
             )
-            start = time.perf_counter()
+            start = time.thread_time()
             ledger_absence_contradictions({"body": text}, entries)
-            return time.perf_counter() - start
+            return time.thread_time() - start
 
         cost(5)
         small = cost(50)

@@ -37,6 +37,20 @@ export type Editor =
   | "enrichment_sources"
   | "report_formats";
 
+/** A count of a reputation record at or above `at_least` marks an indicator malicious. */
+export interface ReputationThresholdEntry {
+  field: "malicious" | "suspicious" | "total" | "engines";
+  at_least: number;
+}
+
+/** `core.tool_declarations.ReputationService`. */
+export interface ReputationServiceEntry {
+  name?: string;
+  rank?: number | null;
+  rate_limit_seconds?: number | null;
+  malicious_when?: ReputationThresholdEntry[];
+}
+
 export interface CatalogEntry {
   key: string;
   namespace: "core" | "api";
@@ -102,6 +116,10 @@ export interface CatalogEntry {
    *  its `data_sources`, as the settings model accepts them. Absent from an
    *  API older than the field: only the stored slices are then drawn. */
   data_source_choices?: string[] | null;
+  /** For the agent definitions: the categories a definition may declare
+   *  (`core.agent_category.AGENT_CATEGORIES`), in the order to offer them.
+   *  Absent from an API older than the field: the console's own list. */
+  agent_category_choices?: string[] | null;
   /** For the tool-server map: the agent keys a server may be bound to, the
    *  effective definition map's keys. */
   agent_keys?: string[] | null;
@@ -233,7 +251,7 @@ export interface McpServerEntry {
    *  (zero: no deadline of its own; null: the deployment's floor). Optional because an API older than the
    *  field sends none; the server editor keeps it as stored. */
   call_timeout_seconds?: number | null;
-  /* The server's declaration (`maljan.core.tool_declarations`): what the
+  /* The server's declaration (`malspark.core.tool_declarations`): what the
    * platform reads about the server and its tools. Optional because an API
    * older than a field sends none, and a new server sends none until the
    * operator writes one; the API fills a built-in's from what it ships. */
@@ -247,7 +265,14 @@ export interface McpServerEntry {
   variable_names?: string[];
   reads_staged_sample?: boolean;
   platform_owned?: boolean;
+  trusts_served_declaration?: boolean;
+  /** The launch the trust above holds for, as the API serves a trusted
+   *  block; sent back unchanged it keeps the trust, and pointing the block
+   *  elsewhere withdraws it. `""` is an operator's tick: the API records the
+   *  trust for the server the block is saved pointing at. */
+  trust_granted_for?: string | null;
   auto_name_prefixes?: string[];
+  data_label_prefixes?: string[];
   reference_urls?: string[];
   /** Per tool, as served: its changes over the shipped declaration of that
    *  tool (the changed fields, `null` for a removed shipped tool, the whole
@@ -257,6 +282,16 @@ export interface McpServerEntry {
   /** How the server's credential is obtained by one request, or null when its
    *  token is typed in (`core.tool_declarations.CredentialBootstrap`). */
   credential_bootstrap?: CredentialBootstrapEntry | null;
+  /** What a reputation service's server says of its lookups as a whole
+   *  (`core.tool_declarations.ReputationService`): the service's name, the
+   *  rank the triage pack asks them at, and for post-verdict enrichment the
+   *  pause after each question and the counts that mark an indicator. */
+  reputation_service?: ReputationServiceEntry | null;
+  /** What every tool of the server does beyond answering unless the tool says
+   *  otherwise, and what its `sample_open.analyse_tool` does over that
+   *  (`core.tool_declarations.ToolEffects`), or null when nothing is said. */
+  default_effects?: Record<string, unknown> | null;
+  analyse_effects?: Record<string, unknown> | null;
   /** How many levels at the top of the process tree the worker starts for
    *  the server are a launcher that does not read the sample, or null when
    *  none is declared (`MCPServerConfig.launcher_depth`). */
@@ -324,10 +359,13 @@ export interface ToolFactsEntry {
 
 /**
  * One tool source an agent definition asks for, mirroring
- * `maljan.core.config.ToolRef`. `kind: "mcp"` names a server and, optionally,
+ * `malspark.core.config.ToolRef`. `kind: "mcp"` names a server and, optionally,
  * one of its tools — `name: null` means the server's whole allow-listed set.
  * `kind: "provider"` means "this agent's static provider's tools" and carries
- * nothing else. `kind: "sandbox"` means the job's sandbox report, read through
+ * nothing else, unless it names a provider by id (`provider: "r2"`): then it
+ * means that provider's tools, so one agent may hold several. The API writes
+ * `provider` only on a provider reference that names one.
+ * `kind: "sandbox"` means the job's sandbox report, read through
  * the in-process sandbox tool set, and likewise carries nothing else.
  * `kind: "agent"` names another definition: the agent gets a tool
  * `ask_<agent>` that hands that agent a task and returns its answer. The API
@@ -342,7 +380,12 @@ export interface ToolRefEntry {
   name: string | null;
   agent?: string | null;
   capability?: string | null;
+  provider?: string | null;
 }
+
+/** What kind of work an agent does (`core.agent_category`), separate from the
+ *  code its role runs. The platform offers an agent its own steps by it. */
+export type AgentCategory = "code_reader" | "static" | "dynamic" | "network" | "intel" | "other";
 
 /**
  * One entry of the `agents.definitions` map, keyed by a short agent name.
@@ -355,6 +398,11 @@ export interface ToolRefEntry {
  */
 export interface AgentDefinitionEntry {
   role: "static" | "dynamic" | "network" | "judge" | "generic" | "lead" | "report";
+  /** Required on a new definition: the API and the editor refuse one without
+   *  it, and only an import gives one the category it fits. Absent on
+   *  a new agent until one is chosen, and on a definition an API older than
+   *  the field, or a store not yet migrated, sends without one. */
+  category?: AgentCategory | null;
   label: string;
   prompt: string | null;
   tools: ToolRefEntry[];
@@ -387,7 +435,7 @@ export interface AgentDefinitionEntry {
 }
 
 /** How hard one debate stage argues before it hands over, mirroring
- *  `maljan.core.config.DebateOptions`. `null` on a stage means the global
+ *  `malspark.core.config.DebateOptions`. `null` on a stage means the global
  *  negotiation settings it was seeded from. */
 export interface DebateOptionsEntry {
   /** A field left out takes the value the API gives it. */
@@ -401,7 +449,7 @@ export type StageMode = "parallel" | "sequential";
 export type InjectUpstream = "none" | "findings" | "full";
 
 /**
- * One stage of a team, mirroring `maljan.core.config.StageDefinition`.
+ * One stage of a team, mirroring `malspark.core.config.StageDefinition`.
  *
  * `depends_on` may only name stages declared earlier, which is what makes the
  * card order the run order and a cycle unrepresentable. `when` is an
@@ -606,10 +654,15 @@ export interface PatchResult {
 
 /** The wire format `GET /settings/export` writes, mirrored from
  *  `EXPORT_FORMAT` in `apps/api/app/api/v1/settings.py`. */
-export const SETTINGS_EXPORT_FORMAT = "maljan-settings/2";
-/** Every format `POST /settings/import` reads (`IMPORT_FORMATS`): `/1`, written
+export const SETTINGS_EXPORT_FORMAT = "malspark-settings/3";
+/** Every format `POST /settings/import` reads (`IMPORT_FORMATS`): `/2`, written
+ *  before a server's call budget left the static blocks, and `/1`, written
  *  before a built-in block's tool declarations were stored per tool, too. */
-export const SETTINGS_IMPORT_FORMATS: readonly string[] = [SETTINGS_EXPORT_FORMAT, "maljan-settings/1"];
+export const SETTINGS_IMPORT_FORMATS: readonly string[] = [
+  SETTINGS_EXPORT_FORMAT,
+  "malspark-settings/2",
+  "malspark-settings/1",
+];
 
 export interface ExportResponse {
   format: string;

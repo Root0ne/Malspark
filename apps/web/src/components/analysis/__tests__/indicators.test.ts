@@ -1,9 +1,12 @@
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+
+vi.mock("next/navigation", () => ({ useParams: () => ({ id: "J1" }) }));
 
 import type { MalwareReport } from "@/types/malware-report";
-import IndicatorsPanel from "../IndicatorsPanel";
+import IocBrowser, { IocDetail } from "../IocBrowser";
+import { iocRows } from "../iocList";
 import {
   decisionOf,
   hasIndicators,
@@ -66,19 +69,27 @@ describe("the consolidated indicator table (T-346)", () => {
     ]);
   });
 
-  it("draws each indicator with its type, its decision and the reason", () => {
-    const html = renderToStaticMarkup(createElement(IndicatorsPanel, { mr: report() }));
-    expect(html).toContain("Indicators (5)");
-    expect(html).toContain("3 published · 2 withheld");
+  it("lists each indicator with its type and its decision, and counts them", () => {
+    const html = renderToStaticMarkup(createElement(IocBrowser, { mr: report() }));
+    expect(html).toContain(">Indicators<");
+    // An unanswered row is neither published nor withheld, and says so.
+    expect(html).toContain("3 published · 1 withheld · 1 no answer recorded");
     for (const row of CONSOLIDATED_IOCS) {
       expect(html).toContain(row.value);
       expect(html).toContain(row.type);
     }
+  });
+
+  it("opens each indicator with the decision's reason and what cites it", () => {
+    const mr = report();
+    const html = iocRows(mr)
+      .map((row) => renderToStaticMarkup(createElement(IocDetail, { row, mr })))
+      .join("\n");
     expect(html).toContain("the sample&#x27;s own digest");
     expect(html).toContain("the sandbox report does not say which process made the flows to it");
     expect(html).toContain("the publish rule recorded no answer");
     // A reason or a recovery that cites an entry links it.
-    expect(html).toContain('evidence?evidence=ev_0018"');
+    expect(html).toContain('evidence/records?evidence=ev_0018"');
   });
 
   it("draws the judge's indicators beside the table's decision for each", () => {
@@ -98,15 +109,18 @@ describe("the consolidated indicator table (T-346)", () => {
     ]);
     expect(judged[1].algorithm).toBe("SHA-256");
 
+    // One list: a value only the verdict names is a row of its own that says
+    // the table holds none.
     const html = renderToStaticMarkup(
-      createElement(IndicatorsPanel, {
+      createElement(IocBrowser, {
         mr: report({
           judge_indicators: [{ kind: "domain", value: "absent.invalid", algorithm: "" }],
         }),
       }),
     );
-    expect(html).toContain("Judge&#x27;s indicators (1)");
+    expect(html).toContain("absent.invalid");
     expect(html).toContain("not in the indicator table");
+    expect(html).toContain("in the verdict");
   });
 
   it("offers no panel for lists of malformed rows alone", () => {
@@ -120,7 +134,8 @@ describe("the consolidated indicator table (T-346)", () => {
   it("draws nothing for a report stored before either field", () => {
     const old = report({ consolidated_iocs: undefined, judge_indicators: undefined });
     expect(hasIndicators(old)).toBe(false);
-    expect(renderToStaticMarkup(createElement(IndicatorsPanel, { mr: old }))).toBe("");
+    // The block keeps its place and says it found nothing.
+    expect(renderToStaticMarkup(createElement(IocBrowser, { mr: old }))).toContain("Not found");
   });
 });
 
@@ -129,7 +144,7 @@ describe("why the MISP export is empty (T-333)", () => {
     const said = mispAbsence(report());
     expect(said).not.toContain("this run generated no MISP attributes");
     expect(said).toContain("it was stored before the platform built them");
-    expect(said).toContain("its 5 indicators are on DETECTION");
+    expect(said).toContain("its 5 indicators are under Indicators & detection");
   });
 
   it("says a run produced none only when an empty list was written", () => {

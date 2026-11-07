@@ -11,7 +11,10 @@ from __future__ import annotations
 import pytest
 
 from app.services.server_map import ServerMapError, validate_server_map
-from maljan.core.config import Settings
+from malspark.core.config import Settings
+
+# The mechanism is read against a block that ships a table of its tools.
+pytestmark = pytest.mark.usefixtures("a_built_in_server_ships_a_tool_table")
 
 
 def _entry(**over: object) -> dict:
@@ -21,14 +24,14 @@ def _entry(**over: object) -> dict:
 
 
 def test_a_built_in_saved_with_its_shipped_declaration_stores_none_of_it() -> None:
-    shipped = Settings().mcp.servers["analysis"].model_dump(mode="json")
-    out = validate_server_map({"analysis": {**shipped, "enabled": False}})
-    stored = out["analysis"]
+    shipped = Settings().mcp.servers["virustotal"].model_dump(mode="json")
+    out = validate_server_map({"virustotal": {**shipped, "enabled": False}})
+    stored = out["virustotal"]
     assert stored["enabled"] is False
     for name in ("tool_facts", "roles", "required_env_allow", "reads_staged_sample"):
         assert name not in stored, name
-    loaded = Settings.model_validate({"mcp": {"servers": out}}).mcp.servers["analysis"]
-    assert loaded.tool_facts["capa"].kind == "capability_rules"
+    loaded = Settings.model_validate({"mcp": {"servers": out}}).mcp.servers["virustotal"]
+    assert loaded.tool_facts["get_file_report"].kind == "reputation"
 
 
 def test_a_built_in_saved_without_the_fields_keeps_following_them() -> None:

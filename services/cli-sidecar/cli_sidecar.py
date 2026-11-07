@@ -11,7 +11,7 @@ What every such server does the same way:
 
 * **The sample is read where the deployment put it.** A path argument is
   resolved with ``realpath`` and must name a regular file under one of the
-  directories ``MALJAN_SAMPLE_ROOTS`` lists (the container's read-only sample
+  directories ``MALSPARK_SAMPLE_ROOTS`` lists (the container's read-only sample
   mount); anything else is refused, and the refusal names no host path.
 * **The program reads the file; nothing runs it.** The program is started
   with the path as an argument, its standard input closed, a scratch working
@@ -31,6 +31,9 @@ What every such server does the same way:
 * **The capabilities tool says what the host can run**, in the shape the
   platform's registry reads: each tool with whether its program is present
   and, when it is not, why and how to install it.
+* **Each tool declares itself** when the server lists it (``reading_tool``):
+  MCP annotations, and under its ``_meta`` the facts the platform reads it
+  by, which the client reads for any server alike.
 
 ``serve`` runs the server over streamable HTTP (``MCP_BIND_ADDRESS``,
 ``MCP_PORT``, ``MCP_AUTH_TOKEN``; a bind beyond loopback is refused without a
@@ -58,7 +61,7 @@ from typing import Any
 
 logger = logging.getLogger("cli_sidecar")
 
-# The codes, as the platform's tool servers write them (``maljan.tools.errors``).
+# The codes, as the platform's tool servers write them (``malspark.tools.errors``).
 MISSING_DEPENDENCY = "missing_dependency"
 TIMEOUT = "timeout"
 BAD_ARGUMENT = "bad_argument"
@@ -90,7 +93,7 @@ REMEDIATIONS: dict[str, str] = {
 }
 
 # The variables a sidecar reads.
-SAMPLE_ROOTS_ENV = "MALJAN_SAMPLE_ROOTS"
+SAMPLE_ROOTS_ENV = "MALSPARK_SAMPLE_ROOTS"
 TIMEOUT_ENV = "TOOL_TIMEOUT_SECONDS"
 BIND_ENV = "MCP_BIND_ADDRESS"
 PORT_ENV = "MCP_PORT"
@@ -335,7 +338,7 @@ def json_document(text: str, program: str) -> Any:
 
 
 def sample_roots() -> list[Path]:
-    """The directories a path argument may be under, from ``MALJAN_SAMPLE_ROOTS``.
+    """The directories a path argument may be under, from ``MALSPARK_SAMPLE_ROOTS``.
 
     Empty when the variable is unset: such a server reads nothing.
     """
@@ -398,6 +401,46 @@ def capabilities(
             cell["remediation"] = program.install
         cells.append(cell)
     return {"server": server, "version": version, "tools": cells}
+
+
+# ---------------------------------------------------------------------------
+# What each tool declares of itself
+# ---------------------------------------------------------------------------
+
+# The key of a tool definition's ``_meta`` under which its server declares it,
+# in the vocabulary of the platform's tool declarations; the platform's own
+# helper (``malspark.tools.declared_facts``) writes the same, and the client
+# reads it for every server alike.
+FACTS_META_KEY = "malspark/tool_facts"
+# The capabilities tool's declaration, the same on every server.
+CAPABILITIES_FACTS: dict[str, Any] = {"kind": "capabilities"}
+# A call runs nothing of the sample, reaches nothing beyond this server and
+# sends nothing of the sample to a third party.
+NO_EFFECT: dict[str, Any] = {"executes": "no", "network": False, "third_party": "no"}
+
+
+def reading_tool(title: str, facts: Mapping[str, Any]) -> dict[str, Any]:
+    """The keyword arguments of FastMCP's ``tool`` decorator that declare one tool here.
+
+    Every tool of such a server reads the file its path names and changes
+    nothing, so an identical call answers the same: it is declared read-only
+    (the declaration's ``read_only``, and the MCP hints ``readOnlyHint`` and
+    ``idempotentHint``), with no effect beyond answering, under ``title``.
+    """
+    from mcp.types import ToolAnnotations
+
+    held = json.loads(json.dumps(dict(facts)))
+    held.update(read_only=True, effects=dict(NO_EFFECT))
+    return {
+        "annotations": ToolAnnotations(
+            title=title,
+            readOnlyHint=True,
+            destructiveHint=False,
+            idempotentHint=True,
+            openWorldHint=False,
+        ),
+        "meta": {FACTS_META_KEY: held},
+    }
 
 
 # ---------------------------------------------------------------------------
