@@ -2,11 +2,14 @@
 
 A shard's unit is a directory directly below ``tests/`` or ``tests/unit/``,
 or the group of test files lying directly in one of those two. Every test file
-in the tree falls in exactly one unit, so a directory or a file added later
-lands in a shard without an edit here; a unit not in ``WEIGHTS`` is placed with
-``UNMEASURED`` seconds until the table is rebalanced. Units are placed longest
-first, each on the shard with the least time so far (ties go to the lower
-shard number), which makes the map a pure function of the tree and the table.
+in the tree falls in exactly one unit, so a test added later lands in a shard
+without an edit here: a new file joins the unit of its directory or of the
+loose files beside it, and a new directory is a unit of its own. A unit not in
+``WEIGHTS`` (a new directory, or the first loose file directly in ``tests/``)
+is placed with ``UNMEASURED`` seconds until the table is rebalanced. Units are
+placed longest first, each on the shard with the least time so far (ties go to
+the lower shard number), which makes the map a pure function of the tree and
+the table.
 
     shard_map.py --suite linux --shard 3   the paths shard 3 of 6 runs
     shard_map.py --suite linux --list      every shard with its units and seconds
@@ -159,7 +162,7 @@ def collect(paths: list[str], root: Path = ROOT) -> list[str]:
     if done.returncode != 0:
         sys.stderr.write(done.stdout + done.stderr)
         raise SystemExit(f"collecting {' '.join(paths)} failed with exit code {done.returncode}")
-    return [line.strip() for line in done.stdout.splitlines() if "::" in line]
+    return [line.rstrip("\n") for line in done.stdout.splitlines() if "::" in line]
 
 
 def check(suite: Suite, root: Path = ROOT) -> int:
@@ -180,15 +183,26 @@ def check(suite: Suite, root: Path = ROOT) -> int:
     return 1 if missing or extra else 0
 
 
-def weigh(reports: list[Path]) -> dict[str, float]:
-    """Seconds per unit summed from JUnit reports (``pytest --junitxml``)."""
+def weigh(reports: list[Path], root: Path = ROOT) -> dict[str, float]:
+    """Seconds per unit summed from JUnit reports (``pytest --junitxml``).
+
+    A test case's ``classname`` is its module's dotted path followed by any
+    class names. The module is the longest dotted prefix that names a test
+    file in the tree, which holds whatever case the class names are in. A case
+    whose module is no longer in the tree is named on stderr and left out.
+    """
+    modules = {path.removesuffix(".py").replace("/", "."): path for path in suite_files(root)}
     seconds: dict[str, float] = {}
     for report in reports:
         for case in ElementTree.parse(report).iter("testcase"):
             file = case.get("file") or ""
             if not file:
-                classname = case.get("classname") or ""
-                file = "/".join(p for p in classname.split(".") if not p[:1].isupper()) + ".py"
+                parts = (case.get("classname") or "").split(".")
+                prefixes = (".".join(parts[:end]) for end in range(len(parts), 0, -1))
+                file = next((modules[p] for p in prefixes if p in modules), "")
+            if not file:
+                sys.stderr.write(f"no test file in the tree for {case.get('classname')}\n")
+                continue
             key = unit_of(file)
             seconds[key] = seconds.get(key, 0.0) + float(case.get("time") or 0)
     return dict(sorted(seconds.items(), key=lambda item: (-item[1], item[0])))

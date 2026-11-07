@@ -78,6 +78,8 @@ jobs:
           SHARD: ${{ matrix.shard }}
         run: |
           uv run python scripts/ci/shard_map.py --suite macos --shard "$SHARD" > "$RUNNER_TEMP/shard-paths"
+          # pytest given no path would run its whole test path.
+          test -s "$RUNNER_TEMP/shard-paths"
           paths=()
           while IFS= read -r path; do paths+=("$path"); done < "$RUNNER_TEMP/shard-paths"
           DYLD_FALLBACK_LIBRARY_PATH="$(brew --prefix)/lib" \

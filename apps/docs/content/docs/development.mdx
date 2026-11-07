@@ -308,8 +308,11 @@ unit is a directory directly below `tests/` or `tests/unit/`, or the test files
 lying directly in one of the two, and every test file falls in exactly one
 unit. The units are placed longest first, each on the shard with the least
 time so far, from the seconds in the script's `WEIGHTS` table, so the map
-depends only on the tree and the table. A directory or file added later lands
-in a shard on its own, at `UNMEASURED` seconds until the table is rebalanced.
+depends only on the tree and the table. A test added later lands in a shard
+without an edit: a new file joins the unit of its directory or of the loose
+files beside it, and a new directory is a unit of its own. A unit the table
+does not name (a new directory, or the first loose file directly in `tests/`)
+is placed at `UNMEASURED` seconds until the table is rebalanced.
 `python scripts/ci/shard_map.py --suite linux --list` prints the map and
 `--shard N` the paths one shard runs.
 

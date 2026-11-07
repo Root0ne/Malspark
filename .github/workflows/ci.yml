@@ -86,14 +86,13 @@ jobs:
   # passes only when every shard passed and the shards were shown to cover the
   # suite.
   test-shard:
-    name: Tests (${{ matrix.python-version }}, shard ${{ matrix.shard }}/6)
+    name: Tests (3.13, shard ${{ matrix.shard }}/6)
     runs-on: ubuntu-latest
     needs: quality
 
     strategy:
       fail-fast: false
       matrix:
-        python-version: ["3.13"]
         # 1..SUITES["linux"].shards in scripts/ci/shard_map.py.
         shard: [1, 2, 3, 4, 5, 6]
 
@@ -103,10 +102,12 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Set up Python ${{ matrix.python-version }}
+      # The required check's name, "Test Suite (Python 3.13)", names this
+      # version.
+      - name: Set up Python
         uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
-          python-version: ${{ matrix.python-version }}
+          python-version: "3.13"
 
       - name: Install uv
         uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
@@ -122,6 +123,8 @@ jobs:
           SHARD: ${{ matrix.shard }}
         run: |
           uv run python scripts/ci/shard_map.py --suite linux --shard "$SHARD" > "$RUNNER_TEMP/shard-paths"
+          # pytest given no path would run its whole test path.
+          test -s "$RUNNER_TEMP/shard-paths"
           mapfile -t paths < "$RUNNER_TEMP/shard-paths"
           uv run pytest "${paths[@]}" -q --tb=short --junitxml="$RUNNER_TEMP/junit-linux-$SHARD.xml"
 

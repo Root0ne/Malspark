@@ -9,10 +9,13 @@ workflow's matrix lists every shard the script defines.
 from __future__ import annotations
 
 import importlib.util
+import subprocess
+import sys
 from pathlib import Path
 
 import pytest
 import yaml
+from defusedxml import ElementTree
 
 ROOT = Path(__file__).resolve().parents[3]
 SCRIPT = ROOT / "scripts" / "ci" / "shard_map.py"
@@ -103,6 +106,15 @@ def test_a_shard_outside_the_suite_is_refused() -> None:
         shard_map.shard_paths(suite, 0)
 
 
+def _jobs(workflow: str) -> dict:
+    return yaml.safe_load((ROOT / ".github" / "workflows" / workflow).read_text())["jobs"]
+
+
+def _shard_step(job: dict) -> str:
+    (run,) = [step["run"] for step in job["steps"] if "--shard" in step.get("run", "")]
+    return run
+
+
 @pytest.mark.parametrize(
     ("workflow", "job", "suite_name"),
     [("ci.yml", "test-shard", "linux"), ("macos.yml", "test-macos-shard", "macos")],
@@ -110,11 +122,32 @@ def test_a_shard_outside_the_suite_is_refused() -> None:
 def test_each_workflow_runs_every_shard_of_its_suite(
     workflow: str, job: str, suite_name: str
 ) -> None:
-    jobs = yaml.safe_load((ROOT / ".github" / "workflows" / workflow).read_text())["jobs"]
+    shard_job = _jobs(workflow)[job]
     shards = shard_map.SUITES[suite_name].shards
-    assert jobs[job]["strategy"]["matrix"]["shard"] == list(range(1, shards + 1))
-    assert jobs[job]["name"].endswith(f"/{shards})")
-    assert f"--suite {suite_name} --shard" in str(jobs[job]["steps"])
+    assert shard_job["strategy"]["matrix"] == {"shard": list(range(1, shards + 1))}
+    assert shard_job["name"].endswith(f"/{shards})")
+    run = _shard_step(shard_job)
+    assert f'--suite {suite_name} --shard "$SHARD" > "$RUNNER_TEMP/shard-paths"' in run
+    assert 'test -s "$RUNNER_TEMP/shard-paths"' in run
+    # Every test the shard's paths hold runs: no selection narrows them.
+    assert 'pytest "${paths[@]}" -q --tb=short' in run
+    assert " -k " not in run and " -m " not in run
+
+
+def test_the_linux_shards_run_after_the_quality_gate_on_the_named_python() -> None:
+    jobs = _jobs("ci.yml")
+    shard_job = jobs["test-shard"]
+    assert shard_job["needs"] == "quality"
+    assert shard_job["name"].startswith("Tests (3.13, shard ")
+    (setup,) = [s for s in shard_job["steps"] if "setup-python" in s.get("uses", "")]
+    assert setup["with"]["python-version"] == "3.13"
+    assert jobs["test"]["name"] == "Test Suite (Python 3.13)"
+
+
+def test_the_macos_shards_keep_the_hang_report_and_the_library_path() -> None:
+    run = _shard_step(_jobs("macos.yml")["test-macos-shard"])
+    assert "-o faulthandler_timeout=600" in run
+    assert 'DYLD_FALLBACK_LIBRARY_PATH="$(brew --prefix)/lib"' in run
 
 
 @pytest.mark.parametrize(
@@ -132,15 +165,62 @@ def test_each_workflow_runs_every_shard_of_its_suite(
 def test_the_suite_check_passes_only_when_every_shard_and_the_map_passed(
     workflow: str, job: str, name: str, needs: list[str]
 ) -> None:
-    jobs = yaml.safe_load((ROOT / ".github" / "workflows" / workflow).read_text())["jobs"]
-    check = jobs[job]
+    check = _jobs(workflow)[job]
     assert check["name"] == name
     assert check["needs"] == needs
     assert check["if"] == "always()"
-    script = check["steps"][-1]["run"]
-    for needed in needs:
-        variable = next(k for k, v in check["steps"][-1]["env"].items() if needed + ".result" in v)
-        assert f'test "${variable}" = success' in script
+    (step,) = check["steps"]
+    assert step["env"] == {
+        "SHARDS": f"${{{{ needs.{needs[0]}.result }}}}",
+        "SHARD_MAP": f"${{{{ needs.{needs[1]}.result }}}}",
+    }
+    assert step["run"] == (
+        'echo "shards: $SHARDS, shard map: $SHARD_MAP"\n'
+        'test "$SHARDS" = success\n'
+        'test "$SHARD_MAP" = success\n'
+    )
+
+
+def test_the_weights_are_read_from_a_junit_report_of_the_tree(tmp_path: Path) -> None:
+    files = {
+        "tests/unit/test_loose.py": (
+            "class lowercase_cases:\n    def test_a(self):\n        pass\n\n"
+            "def test_b():\n    pass\n"
+        ),
+        "tests/unit/agents/test_deep.py": (
+            "class TestUpper:\n    class TestInner:\n        def test_c(self):\n            pass\n"
+        ),
+        "tests/api/test_api.py": "def test_d():\n    pass\n",
+    }
+    for name, text in files.items():
+        (tmp_path / name).parent.mkdir(parents=True, exist_ok=True)
+        (tmp_path / name).write_text(text)
+    (tmp_path / "pytest.ini").write_text("[pytest]\n")
+    report = tmp_path / "junit.xml"
+    subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "pytest",
+            "-q",
+            "-p",
+            "no:cacheprovider",
+            "-o",
+            "junit_family=xunit2",
+            "-o",
+            "python_classes=Test* lowercase*",
+            f"--junitxml={report}",
+            "tests",
+        ],
+        cwd=tmp_path,
+        check=True,
+        capture_output=True,
+    )
+    classnames = {c.get("classname") for c in ElementTree.parse(report).iter("testcase")}
+    assert "tests.unit.test_loose.lowercase_cases" in classnames
+    assert "tests.unit.agents.test_deep.TestUpper.TestInner" in classnames
+    weights = shard_map.weigh([report], tmp_path)
+    assert sorted(weights) == ["tests/api", "tests/unit/agents", "tests/unit/test_*.py"]
 
 
 @pytest.mark.parametrize(
