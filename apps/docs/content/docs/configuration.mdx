@@ -173,24 +173,17 @@ Two keys of it belong to model-calling roles that are no agent definition:
 summariser. The Agents page lists both under **Roles with a model entry only**,
 with the same model fields and a **Test model** button that asks each model of
 the entry for one short answer and files it for the probe gate. With no entry
-either runs on the global expert model at the global effort, exactly as before
-the keys existed. The mediator does not fall back to `llm.agents.judge`: a judge
+either runs on the global expert model at the global effort. The mediator does not fall back to `llm.agents.judge`: a judge
 entry moves the verdict calls and never the mediation. No agent definition may
 take either key; one stored under it before is renamed to `<key>_custom` with
 every reference, its own `llm.agents` entry included.
 
-The function summariser used to name its model with
-`preprocessing.summarizer_provider` and `preprocessing.summarizer_model`. Neither
-ever reached a model — the summariser ran on the global expert model whatever
-they held, and the two values travelled as top-level fields of every summariser
-request. The Anthropic Messages API refuses a field it does not know, as does an
-OpenAI-compatible server that refuses unknown parameters, so on those endpoints
-every summary request failed and the summariser passed its raw input to the
-analysts. Its requests now carry neither field, so there it summarises on the
-expert model and the analysts receive summaries where they used to receive raw
-text. Both settings are gone and their stored rows deleted; no entry
-is made from them, since that would move a summariser onto a model it has
-never called. `llm.agents.summarizer` is what sets it now, and its model is
+The function summariser's model is set by `llm.agents.summarizer`; its
+requests carry no field of their own beside the model's, so an endpoint that
+refuses unknown parameters answers them. Stored rows of the retired
+`preprocessing.summarizer_provider` and `preprocessing.summarizer_model` are
+deleted, and no entry is made from them, since that would move a summariser
+onto a model it has never called. Its model is
 still built with no output cap of its own, each call held to what its window
 leaves.
 
@@ -810,8 +803,8 @@ setting, where the store held none (0 or a negative number, which the old
 loader read as "never check", as 0, and so is a number past the setting's
 bound), and a worker that still has it set warns at start and names the
 setting. A stored value the settings model refuses, of this or any key, is
-never replaced by a default where something runs: a job fails (it no longer
-runs on the shipped defaults, for this or any refusal of its settings, nor when
+never replaced by a default where something runs: a job fails (it does not
+run on the shipped defaults, for this or any refusal of its settings, nor when
 the stored settings cannot be read; a database or connection error is named by
 its class with the advice to run the job again once the database answers, any
 other failure of the read by its class alone, and a refusal by the keys or
@@ -1257,7 +1250,7 @@ the global model of its role. The judge's cap follows `llm.agents.judge` when
 one is set, and the global judge model only without one. Each
 derivation is logged and recorded in `run_summary.generation.output_caps`
 (`{agent: {tokens, derivation}}`), and the judge's is printed beside the
-verdict wait. 0 no longer means unbounded.
+verdict wait. 0 does not mean unbounded.
 
 **The report stage derives its budget as the judge does.** Each composer
 section and the narrative round is one reply written into the window its
@@ -1267,7 +1260,7 @@ prompt already fills, so for each model of the reporter's list, in order:
    (plus the reporter's own budget for reasoning, below), otherwise
    `llm.judge_max_tokens` above 0 — the reporter runs on the judge role and
    has always been built with the judge's cap; `llm.expert_max_tokens` is the
-   analysts' and no longer reaches the report stage;
+   analysts' and does not reach the report stage;
 2. else the derivation above (`context_window.derived_reply`), the one every
    role's cap follows: the smaller of a quarter of the window and the model's
    declared maximum output, a quarter of the window for a runtime we run, the
@@ -1275,11 +1268,9 @@ prompt already fills, so for each model of the reporter's list, in order:
 
 It is never more than the model's maximum — its declared maximum output, or
 the window it serves when it declares none — and a value held at it says so;
-the reasoning room is inside that bound too. Sized at the declared maximum
-alone, a model whose window is at or below its declared maximum output (for
-example a `context_size` set to 200,000 under DeepSeek's 393,216) was given the
-whole window as its answer, and
-the narrative was recorded as degraded and sections as not written. With
+the reasoning room is inside that bound too, so a model whose window is at or
+below its declared maximum output (for example a `context_size` set to 200,000
+under DeepSeek's 393,216) is never given the whole window as its answer. With
 nothing set, a section on DeepSeek's `deepseek-flash` with a 1,048,576-token
 window may write 262,144 tokens and the remaining 786,432 hold its evidence;
 on Claude Haiku 5.5's 1,000,000-token window, 128,000, its declared maximum,
@@ -1300,7 +1291,7 @@ Anthropic, `max_tokens` and `n_predict` in llama.cpp's request extras
 (whether or not the model was built with a cap: the models the container
 builds for a run carry a cap derived from the window and already sent these
 keys, and a model built without one — the function summarizer's, or the
-provider called directly — is now held to the call's cap too),
+provider called directly — is held to the call's cap too),
 `max_output_tokens` for Gemini — and the worker log says so. An Ollama model
 keeps the cap it was built with, since its client takes no per-call cap; a
 model the llama.cpp self-heal rebuilt without the extras is sent the cap only
@@ -1355,14 +1346,12 @@ Ollama's `prompt_eval_count` over `prompt_eval_duration` or llama.cpp's
 turns, and the prompt read where it is not timed on its own.
 The HTTP request carrying a call is sized the same way. Every provider's
 client is built with a 1,800 s request timeout
-(`PROVIDER_REQUEST_TIMEOUT_SECONDS`; Gemini's was a fixed 90 s and is now the
-same). httpx reads it as the longest silence it waits through, not as a
-deadline for the whole answer, so it ended an answer only on a server that
-sends nothing until it has finished — a non-streaming llama.cpp server, whose
-answers it held to about 1,800 s of generation (a llama.cpp server's
-answer is now read as a stream; see *Loops have no default limit* below). A
-streamed answer, and DeepSeek's, which sends keep-alive lines while it
-generates, were not ended by it. Once the model's pace is measured, an
+(`PROVIDER_REQUEST_TIMEOUT_SECONDS`, Gemini's included). httpx reads it as the
+longest silence it waits through, not as a deadline for the whole answer, so
+it ends an answer only on a server that sends nothing until it has finished (a
+llama.cpp server's answer is read as a stream; see *Loops have no default
+limit* below). A streamed answer, and DeepSeek's, which sends keep-alive lines
+while it generates, is not ended by it. Once the model's pace is measured, an
 OpenAI-compatible (chat
 completions or Responses API), Anthropic or Gemini request whose output cap
 takes longer at that pace than its client allows carries its own timeout, the
@@ -1378,8 +1367,7 @@ an answer. The function summariser's wait follows its request's.
 These waits have no upper bound of their own. A server that stays connected
 but stops generating, or a call left running on a single-slot llama.cpp
 server after its loop gave up on it, is held for the whole derived time — at
-3.8 tokens a second 32,768 tokens take about 12,900 s — where 1,800 s used to
-release it. The last resort is the job timeout, `core.job_timeout`, which is
+3.8 tokens a second 32,768 tokens take about 12,900 s. The last resort is the job timeout, `core.job_timeout`, which is
 empty — no limit — unless you set one (see "The job timeout" below). A composer section is its answer and the one retry its validation
 allows, so its wait holds two calls of its output cap: at 3.8 tokens a second
 a budget of 8,192 needs 2 × 8,192 / 3.8 × 1.5 ≈ 6,467 s; an operator's budget
@@ -1417,7 +1405,7 @@ window leaves). A model whose whole window the prompt already passes cannot
 answer it, is recorded as such, and does not hold the others' call.
 A section the cap cut is
 recorded as cut at that cap, not as a schema failure. On Ollama every output
-cap — this one, `judge_max_tokens`, `expert_max_tokens` — now reaches the
+cap — this one, `judge_max_tokens`, `expert_max_tokens` — reaches the
 server as `num_predict`, which `ChatOllama` otherwise drops, so a thinking
 model's reasoning counts against the judge's and the analysts' caps too;
 `disable_thinking`, or a larger cap, is the remedy. The verdict call records
@@ -2378,9 +2366,7 @@ the call's thinking left out with it. Text with no
 object in it — a preamble, a one-line refusal — is not an answer to read, and
 the section is asked again as before. Each structured answer is recorded on
 the run's ledger once, where it is read, and a model list's switch carried on
-it is announced there once, a kept answer's included.
-On haiku4 every one of the 16 structured answers was of this kind and was
-asked again, 16 calls and 0.86 USD of the composer's spend. The narrative
+it is announced there once, a kept answer's included. The narrative
 round, the mediator's verdict extraction and the judge's technique question
 read their structured answers by the same rule (one reader,
 `token_ledger.read_structured_reply`): the narrative round's answer in text is
@@ -2400,8 +2386,7 @@ same leading text on every section.
 
 No tool choice is sent for a schema on Anthropic, and a model that thinks by
 default cannot be made to call one: offered beside `read_evidence`, Claude
-Haiku 5.5 wrote the JSON as text in every structured call of haiku7 and
-haiku8. The provider says so for such a model (read from the vendored table's
+Haiku 5.5 writes the JSON as text in its structured calls. The provider says so for such a model (read from the vendored table's
 `thinks_by_default` rows, unless the model is built with thinking off), and
 says it asks for no
 JSON-schema answer natively (the pinned langchain-anthropic's `json_schema`
@@ -2432,15 +2417,14 @@ The mediation's turn leads with the triage pack and the sample's identity,
 then the run state, then the reports and the history: every round sends the
 same tools, system prompt and head, and the head is noted as standing facts,
 so its own breakpoint (below) is written once and read in each later round.
-With the run state first, haiku8's mediations shared about 920 characters.
 The order is the same on every provider; only Anthropic places a breakpoint
 on the head. The verdict and the technique question keep the run state first.
 
 ### The triage pack has a breakpoint of its own
 
 An agent's debate rounds send the same tools, system prompt and triage pack
-again, often more than five minutes apart (twelve to thirty-two in haiku8),
-so each round's first request wrote the whole prefix and read none of it. On
+again, often more than five minutes apart, so with a five-minute cache each
+round's first request would write the whole prefix and read none of it. On
 Anthropic the pack at the head of a conversation's first user turn, noted
 with its length where the
 platform puts it there, is sent as its own text block with a breakpoint that
@@ -2457,10 +2441,9 @@ pack's entry may live an hour, and a streamed answer's writes are settled by
 lifetime from the split its opening event reports. Other providers send the
 request as before.
 
-A stored `true` or `false` (a JSON boolean) keeps its meaning. Stages used to
-be written with `sequential` whether or not anybody chose it; the database
-revision `20261002000000` takes that word off every analysis stage, so the
-stage follows the job, except where `core.llm.parallel_analysts` is stored
+A stored `true` or `false` (a JSON boolean) keeps its meaning. The database
+revision `20261002000000` takes a stored `sequential` off every analysis stage
+nobody pinned, so the stage follows the job, except where `core.llm.parallel_analysts` is stored
 `true` (there a `sequential` stage was running one after another while the key
 said parallel, and it is left as written). It logs each team and stage it
 rewrote at WARNING. A team still derived from its analyst list is rebuilt from
@@ -2961,7 +2944,7 @@ routines an analyst read. Every analyst whose calls list code is asked it,
 whatever its category and whatever tool listed the code. An agent in
 `code_reader` none of whose calls lists code is told why in its conversation,
 where an agent in any other category is left alone. The built-in static
-analyst is a `code_reader`, so it now says when it listed no code.
+analyst is a `code_reader`, so it says when it listed no code.
 
 The built-in definitions ship with theirs: `static` (whose class reads its
 provider's decompiled functions) and `reverser` are `code_reader`, `triage` and
@@ -4974,12 +4957,12 @@ Per job and per tool server, three settings under **Tool servers → Resilience*
 
 | Setting | Default | Where the default came from |
 |---|---|---|
-| `core.mcp.breaker.failures_to_open` | 3 | The number of attempts the platform already gives a model call that drops its connection before calling it a failure. No recorded live run had a tool server fail at the transport, so it is a judgement, not a measurement. |
+| `core.mcp.breaker.failures_to_open` | 3 | The number of attempts the platform already gives a model call that drops its connection before calling it a failure. It is a judgement, not a measurement. |
 | `core.mcp.breaker.cooldown_seconds` | 60 | A judgement: long enough for a sidecar being restarted to come back, short against the analysts' own loop budgets. |
 | `core.mcp.breaker.call_timeout_seconds` | 0 (per server) | Set, the budget of every call to every server. Zero gives each server the `call_timeout_seconds` its own block declares, and a server that declares none (every built-in) `core.mcp.breaker.default_call_timeout_seconds`. A tool whose server declares a longer budget in its manifest or its declaration (`tool_facts.<tool>.timeout_seconds`) gets that, a long-running tool (by either) none unless this is set, and thirty seconds of grace are added either way. |
 | `<server block>.call_timeout_seconds` | empty | Each server's own budget per call (an `mcp.servers` entry, `static.ghidra`, `static.r2`, `sandbox.cape2.mcp`), read when `core.mcp.breaker.call_timeout_seconds` is zero; zero sends its calls with no deadline of their own, empty takes `core.mcp.breaker.default_call_timeout_seconds`. Ghidra's REST requests (open, call graph, anti-analysis scan) and radare2's open before the loop wait it too. |
-| `core.mcp.breaker.default_call_timeout_seconds` | 300 | The budget per call of every server whose block declares none (every built-in), read alike whatever the server or its tools are called; zero sends their calls with no deadline of their own. 300 is the floor every server got before servers declared their own, the longer of the two static timeouts as they ship. It used to be derived from `core.static.capa.timeout_seconds` and `core.static.yara.timeout_seconds`, two blocks named for one provider's tools; the upgrade wrote a deployment's own floor here (900 on a slow host still fits), so no server's budget changed, and importing a `malspark-settings/2` or `/1` export gives it the floor that export carried. |
-| `core.mcp.breaker.max_concurrent_calls` | 4 | A judgement: the shipped teams run their analysts one after another, and four lets one analyst's parallel tool calls through while bounding a team that fans out. `0` leaves the calls uncapped, as every server was before. |
+| `core.mcp.breaker.default_call_timeout_seconds` | 300 | The budget per call of every server whose block declares none (every built-in), read alike whatever the server or its tools are called; zero sends their calls with no deadline of their own. 300 is the longer of the two static timeouts as they ship (`core.static.capa.timeout_seconds` and `core.static.yara.timeout_seconds`); a deployment may set its own floor here (900 on a slow host still fits), and importing a `malspark-settings/2` or `/1` export gives it the floor that export carried. |
+| `core.mcp.breaker.max_concurrent_calls` | 4 | A judgement: the shipped teams run their analysts one after another, and four lets one analyst's parallel tool calls through while bounding a team that fans out. `0` leaves the calls uncapped. |
 
 An unanswered call is either a transport failure — a timeout, a refused or
 dropped connection, the server's process gone — or a call that did not finish
@@ -5465,9 +5448,8 @@ Memory backends were loaded from installed packages on their own before the
 list existed. Revision `20261016000000` adds the one memory plugin the stored
 `memory.backend` names, when it is installed in the image that runs the
 migration, to the list once, as `memory:<name>`, so a deployment that used one
-keeps it; nothing else is added. A memory plugin's entry point must now be named
-after the backend id it registers, in lowercase; the older advice only
-recommended it. When the stored backend is not shipped and no installed memory
+keeps it; nothing else is added. A memory plugin's entry point must be named
+after the backend id it registers, in lowercase. When the stored backend is not shipped and no installed memory
 entry point carries its name, the revision says so in its output and its log,
 naming the installed memory entry points, and the backend does not load; the
 health check and every job then name those entry points and the rule. To keep

@@ -74,7 +74,7 @@ With the signatures capa identifies library code (the runtime's startup code,
 statically linked library functions) in a PE it reads with vivisect, and
 matches no rule in it:
 
-- A rule that matches only inside library code is no longer reported. That is
+- A rule that matches only inside library code is not reported. That is
   capa's intended false-positive reduction.
 - A small PE takes about 2 s longer, the time the signatures take to load.
 - The `capa` answer names the functions it identified under

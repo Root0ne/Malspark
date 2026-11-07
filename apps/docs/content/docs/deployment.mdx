@@ -127,9 +127,8 @@ builds `malspark-backend` once rather than once per service.
 
 ### MinIO, built from source
 
-MinIO publishes its releases as source only, and the `minio/minio` image the
-stack used to pull is no longer served by its registry. Compose therefore
-builds the server: `docker/Dockerfile.minio` clones the pinned release tag,
+MinIO publishes its releases as source only, and its registry serves no
+current `minio/minio` image. Compose therefore builds the server: `docker/Dockerfile.minio` clones the pinned release tag,
 stops the build if the tag is not the pinned commit, compiles it with a Go
 release that still gets upstream fixes (the release's `go.mod` names only a
 floor, Go 1.24), and copies the binary and its licence
@@ -219,10 +218,10 @@ each under a sha256 of its own, and stops on any other.
 | `die-mcp` | Emulated: Detect It Easy 3.21 publishes Linux packages for amd64 only. |
 
 The two emulated services declare `platform: linux/amd64` and run slower than
-native. On an amd64 host every image is the amd64 one, as before.
+native. On an amd64 host every image is the amd64 one.
 
 FLOSS, the analysis server's emulating string decoder, is native too. On amd64
-the backend image installs FLARE's standalone x86-64 build, as before; on
+the backend image installs FLARE's standalone x86-64 build; on
 arm64, for which FLARE publishes none, it installs the same release, FLOSS
 3.1.1, from PyPI into an environment of its own, every package by hash, behind
 a launcher the analysis server checks by its own pinned sha256. The launcher
@@ -318,9 +317,8 @@ environment nor `docker/.env` sets them, and to 10001 when that user is root.
 
 ### Volume ownership
 
-Before the backend ran unprivileged it ran as root, so a deployment created
-then has entries in `data/samples/`, `data/uploads/` and the `attck_cache`
-volume owned by root. The one-shot `volume-init` service hands the
+A deployment whose backend once ran as root has entries in `data/samples/`,
+`data/uploads/` and the `attck_cache` volume owned by root. The one-shot `volume-init` service hands the
 root-owned ones to `MALSPARK_UID:MALSPARK_GID` before the API and the worker
 start, on every `up`:
 
@@ -338,9 +336,8 @@ start, on every `up`:
   (the second lets it enter the 0700 work directories), with no network, and
   exits. It refuses a uid or gid that is 0 or not a number.
 
-Nothing needs doing by hand: the first `docker compose up -d` after the upgrade
-runs it. To run it alone, `docker compose run --rm volume-init`. The ATT&CK
-cache now mounts at `/home/malspark/.cache/malspark` (the volume keeps its name),
+Nothing needs doing by hand: every `docker compose up -d` runs it. To run it alone, `docker compose run --rm volume-init`. The ATT&CK
+cache mounts at `/home/malspark/.cache/malspark` (the volume keeps its name),
 so its contents carry over.
 
 The worker writes its sample mirrors 0700 and 0600 as `MALSPARK_UID`. The

@@ -92,9 +92,8 @@ that declined has no row, and a run stored before stages were timed has no
 card.
 
 **When the verdict and the severity disagree.** A judge can call a sample
-Malicious and rate it Informational in the same run, and the console used to
-present the two as unrelated facts two cards apart — a reader had no way to
-know which to believe. Neither is overruled here: both are the judge's, and
+Malicious and rate it Informational in the same run. The console does not
+present the two as unrelated facts two cards apart, and neither is overruled: both are the judge's, and
 picking a winner would be the console inventing a finding. Instead the header
 says so, in one line — "Judge: Malicious 0.95 · Severity: Informational" —
 with the sentence that names the disagreement under it.
@@ -351,8 +350,7 @@ with `<` or `>`.
 Anyone signed in has Profile and API keys. An administrator also has the setup
 guides and, once a language model is connected, the configuration console —
 until then the console's route only bounces back to the guides, so it is not
-offered. A non-admin sees two entries rather than four, the two admin ones
-having been drawn permanently disabled before.
+offered. A non-admin sees two entries rather than four.
 
 Before a model is connected the hub lists the four guides a first analysis
 needs — a model, a static analyser, a sandbox and a team — and opens the other

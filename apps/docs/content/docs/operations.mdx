@@ -34,22 +34,20 @@ abandoned one.
 
 **The sandbox capture.** A capture is the full record of a detonation, and the
 path to it is written by the model rather than by the platform — the network
-analyst is told where it is and passes it to `pcap_summary`. It used to be
-fetched into one directory under the system temp directory, shared by every job
-and every worker on the host, named as a readable directory for every sidecar
-started afterwards, and removed by nothing. It now lands in the job's own
-`captures/` directory, at 0600 inside a 0700 tree, is named as a readable
-directory for that job's sidecars only, and goes when the job does. Whatever an
-earlier release left in the capture directory name used before the rename is swept on the same TTL; nothing
-writes there any more.
+analyst is told where it is and passes it to `pcap_summary`. It lands in the
+job's own `captures/` directory, never in a directory under the system temp
+directory shared by every job and worker on the host, at 0600 inside a 0700 tree, is named as a readable
+directory for that job's sidecars only, and goes when the job does. Anything
+left in the capture directory name used before the rename is swept on the same
+TTL; nothing writes there.
 
 Everything in it is live malware, on the same terms as `SAMPLES_DIR`: exclude it
 from on-access scanning and keep it off shared storage. A staging write that
 fails costs that server its tools for the run and is logged; it does not fail
 the job.
 
-*On upgrading:* the flat uploads and the single `carved/` tree of the previous
-release stay where they are and are swept by the same TTL. Nothing has to be
+*On upgrading:* flat uploads and a single `carved/` tree left in the staging
+base stay where they are and are swept by the same TTL. Nothing has to be
 migrated or moved; a host you want clean at once can have that directory
 emptied while no job is running.
 
@@ -219,7 +217,7 @@ with the latest anchored head:
 |---|---|---|
 | `database` (the default when `AUDIT_ANCHOR_DATABASE_URL` is set) | a row of `audit_chain_anchor`, written through `AUDIT_ANCHOR_DATABASE_URL` | a role that may only INSERT and SELECT the table, which is owned by a role the application does not hold; on PostgreSQL a trigger refuses UPDATE, DELETE and TRUNCATE (its owner can drop it) |
 | `object_store` | one object per head under `audit-chain/head/` in `MINIO_BUCKET` | the bucket's object lock when it has one (a COMPLIANCE default retention holds against the root user too; a lock without a default retention puts each head under a legal hold); a bucket without a lock holds against a database-only writer alone |
-| `none`, or unset with no URL | nowhere | nothing beyond the database head, as before |
+| `none`, or unset with no URL | nowhere | nothing beyond the database head |
 
 A database anchor takes this, run once as a database owner:
 `CREATE ROLE malspark_anchor LOGIN PASSWORD '...'`,

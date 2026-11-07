@@ -171,8 +171,8 @@ judge role's provider and model). No endpoint is taken from the snapshot: each
 model is served where its provider is served now (the current reporter entry's
 own address for that provider, else the provider's configured one), with the
 current credential, and the current entry's ceilings are kept. A model the run
-called at another place than its provider is served now, whose provider is no
-longer registered, that the snapshot hides, or that no longer builds settings
+called at another place than its provider is served now, whose provider is not
+registered, that the snapshot hides, or that does not build settings
 is not asked; the current report model is, and `model_source` says why. A job
 that ran as a mock is answered as one: it had no report model, so the answer
 is `not_determinable`. It is built as the report stage builds it, with the

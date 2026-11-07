@@ -16,7 +16,7 @@ model writes still needs a paired run.
 ## Running it
 
 ```bash
-python scripts/replay/run.py runs/haiku4
+python scripts/replay/run.py <run dir>
 ```
 
 A stored run is a directory in the benchmark's layout: `evidence.json` (the
@@ -171,7 +171,7 @@ table.
 ## Comparing two refs
 
 ```bash
-python scripts/replay/run.py runs/run7 runs/haiku4 --compare origin/dev HEAD
+python scripts/replay/run.py <run dir A> <run dir B> --compare origin/dev HEAD
 ```
 
 Each ref is replayed by its own harness over its own rules. The ref's

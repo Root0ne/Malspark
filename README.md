@@ -43,7 +43,7 @@ strength. Nothing is bound to Windows: the sample's own bytes decide its route.
 
 ## Benchmark
 
-The latest scored run: Claude Haiku 5.5 with the all-tools team on a
+The benchmark run of 2026-11-06: Claude Haiku 5.5 with the all-tools team on a
 Latrodectus sample, with a real sandbox, scored against public human reports
 of the family.
 
@@ -107,7 +107,7 @@ The full documentation is at <https://malspark.com/docs/>. The pages live in
 | Reference | [Configuration](https://malspark.com/docs/configuration/), [REST API](https://malspark.com/docs/api/), [CLI](https://malspark.com/docs/cli/), [Validation codes](https://malspark.com/docs/validation-codes/), [Security](https://malspark.com/docs/security/), [Architecture](https://malspark.com/docs/architecture/) |
 | Operations | [Deployment](https://malspark.com/docs/deployment/), [Upgrades](https://malspark.com/docs/upgrades/), [Backups](https://malspark.com/docs/backups/), [Monitoring](https://malspark.com/docs/monitoring/), [Day-to-day operations](https://malspark.com/docs/operations/) |
 | Development | [Development](https://malspark.com/docs/development/) |
-| Benchmark | [The latest run](https://malspark.com/docs/benchmark/) |
+| Benchmark | [The benchmark run](https://malspark.com/docs/benchmark/) |
 
 Release notes are in [CHANGELOG.md](CHANGELOG.md).
 

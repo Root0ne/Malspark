@@ -30,7 +30,7 @@ them too.
 
 ## What an entry holds
 
-This is `ev_0094` from an earlier run of the [benchmark](/docs/benchmark/) sample, as
+This is `ev_0094` from an analysis of the [benchmark](/docs/benchmark/) sample, as
 `GET /api/v1/jobs/{job_id}/evidence` returns it, shortened:
 
 ```json
@@ -98,7 +98,7 @@ When the run is stored, the worker seals the ledger. Each entry gets `digest`,
 a SHA-256 of everything stored for it, and `chain`, an HMAC that links it to
 the entry before. The chain head is written to the audit chain beside the
 report's own digest. A changed, removed or reordered entry, or a changed
-report, no longer verifies.
+report, fails verification.
 
 ```bash
 curl -s http://localhost:8000/api/v1/jobs/$JOB/evidence/verify \

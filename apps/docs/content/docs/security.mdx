@@ -146,7 +146,7 @@ stored as `enc:v1:<token>`; the process refuses to start without a valid key,
 so there is no read-only fallback mode in which secrets sit in plaintext. A
 credential nested inside a composite setting — an MCP server's `auth_token`, a
 frontier arm's `api_key` — is stored in its own encrypted row rather than
-inside the composite, and a startup repair moves any that an older version left
+inside the composite, and a startup repair moves any it finds
 inline.
 
 Stored secrets are never echoed back. Values are returned to the console as a
