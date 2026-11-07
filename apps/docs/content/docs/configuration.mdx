@@ -178,9 +178,7 @@ entry moves the verdict calls and never the mediation. No agent definition may
 take either key; one stored under it before is renamed to `<key>_custom` with
 every reference, its own `llm.agents` entry included.
 
-The function summariser's model is set by `llm.agents.summarizer`; its
-requests carry no field of their own beside the model's, so an endpoint that
-refuses unknown parameters answers them. Stored rows of the retired
+The function summariser's model is set by `llm.agents.summarizer`; its requests carry no field of their own beside the model's, so an endpoint that refuses unknown parameters does not refuse them for an extra field. Stored rows of the retired
 `preprocessing.summarizer_provider` and `preprocessing.summarizer_model` are
 deleted, and no entry is made from them, since that would move a summariser
 onto a model it has never called. Its model is
@@ -791,7 +789,7 @@ in a row, never longer than the interval, and logs when it will try again; the
 console's next-check line shows that time. The loader's own refresh at the first index build after the interval
 reads the same setting, which reaches it and the knowledge tool server as
 `MALSPARK_ATTCK_REFRESH_DAYS` (on that server's `env_allow`, written by the
-container from the store). `MALSPARK_ATTCK_MAX_AGE_DAYS` is retired: on upgrade, a migration reads a whole number other than 7 from it once into the setting where the store holds none (0 or a negative number, meaning "never check", as 0, and so is a number past the setting's bound), and a worker that still has it set warns at start and names the setting. A stored value the settings model refuses, of this or any key, is
+container from the store). `MALSPARK_ATTCK_MAX_AGE_DAYS` is retired. On upgrade, revision `20261014000000` writes a whole number other than 7 found in it into the setting once, where the store holds none; it writes 0 ("never check") for 0, for a negative number and for a number past the setting's bound. A worker that still has it set warns at start and names the setting. A stored value the settings model refuses, of this or any key, is
 never replaced by a default where something runs: a job fails (it does not
 run on the shipped defaults, for this or any refusal of its settings, nor when
 the stored settings cannot be read; a database or connection error is named by
@@ -1247,9 +1245,7 @@ prompt already fills, so for each model of the reporter's list, in order:
 
 It is never more than the model's maximum — its declared maximum output, or
 the window it serves when it declares none — and a value held at it says so;
-the reasoning room is inside that bound too, so a model whose window is at or
-below its declared maximum output (for example a `context_size` set to 200,000
-under DeepSeek's 393,216) is never given the whole window as its answer. With
+the reasoning room is inside that bound too. A model whose window is at or below its declared maximum output (for example a `context_size` set to 200,000 under DeepSeek's 393,216) is bounded by its window, and with nothing set its reply is a quarter of that window. With
 nothing set, a section on DeepSeek's `deepseek-flash` with a 1,048,576-token
 window may write 262,144 tokens and the remaining 786,432 hold its evidence;
 on Claude Haiku 5.5's 1,000,000-token window, 128,000, its declared maximum,
@@ -1401,7 +1397,7 @@ No agent loop has a step or time limit unless you set one.
 default, the two deprecated `core.react_agent_*_overrides` maps ship empty, no
 built-in agent definition carries `max_steps` or `timeout_seconds`, and an
 ask's `core.agents.delegation_steps` / `delegation_timeout_seconds` are empty
-too. A number you set — on an agent's card, in a map, or deployment-wide — is kept to exactly. The judge's tool loop reads its budget the same way
+too. A number you set — on an agent's card, in a map, or deployment-wide — is applied exactly as set. The judge's tool loop reads its budget the same way
 every agent's loop does (`loop_limits("judge")`): the `judge` entries of the
 maps, then the deployment's values.
 
@@ -1448,7 +1444,7 @@ fewer than two pieces records nothing, and the next call keeps the rule it
 had. On a streamed answer (and Ollama's, which its client streams), the
 connection's own read timeout after pieces have arrived is the same deadline,
 the silence after the last piece, and ends the call as one (a failed turn the
-loop salvages from, not a dropped connection); before the first piece it is raised. The deadline message
+loop salvages from, not a dropped connection); before the first piece it is raised as an ordinary read timeout. The deadline message
 says which rule applied — the model's measured pace, the pace measured in this
 call, silence before the first generated piece, or silence after the last —
 and its numbers.
@@ -1777,10 +1773,9 @@ loop runs over nothing. A revision whose agent cannot be built to measure its
 room chunks at the size its first analysis measured. A number you set wins, for
 splitting and joining: chunks of `max_tokens_per_chunk` go as they are set,
 with the full list of earlier calls. With no window learned nothing is derived:
-a chunk is the 20,000 tokens the setting shipped with, and sources are joined
-only within it, as a tool answer keeps its old 6,000 characters; a run whose
+a chunk is 20,000 tokens, the setting's shipped value, and sources are joined only within it, as a tool answer keeps 6,000 characters; a run whose
 input that size split says so in its run summary and its log, with the setting
-that would size it from the window. With no room measured the prompts are built from the configured sizes; two chunk boundaries differ on purpose: whole sources beside a
+that would size it from the window. With no room measured the prompts are built at those fixed sizes; two chunk boundaries differ on purpose: whole sources beside a
 split one are joined, and a packed bin counts the overlap it carries.
 
 **What the report leaves out, it says.** No table cell of the report's body
@@ -1857,8 +1852,7 @@ a killed worker's claim expires within 90 s instead of lingering.
 `reporting.reference_urls` lists the sample lookups linked under References
 on every report, first: each a URL template (`url`: `https://`, naming
 `{sha256}`, `{md5}` or `{sha1}`), the name it is linked under (`source`), its
-`note`, and whether the Sigma draft lists it among its references (`sigma`). It ships with VirusTotal's and MalwareBazaar's lookups, the two
-every report links (VirusTotal's with `sigma`); remove one and it is not linked. A tool
+`note`, and whether the Sigma draft lists it among its references (`sigma`). It ships with VirusTotal's and MalwareBazaar's lookups, linked by default (VirusTotal's with `sigma`); remove one and it is not linked. A tool
 server's own lookups (its declared `reference_urls`) are linked besides, only
 on a run that asked that server. A report keeps its own links live in the
 Markdown.
@@ -2408,8 +2402,7 @@ pack's entry may live an hour, and a streamed answer's writes are settled by
 lifetime from the split its opening event reports. Other providers send the request without a breakpoint.
 
 A stored `true` or `false` (a JSON boolean) keeps its meaning. The database
-revision `20261002000000` takes a stored `sequential` off every analysis stage
-nobody pinned, so the stage follows the job, except where `core.llm.parallel_analysts` is stored
+revision `20261002000000` takes a stored `sequential` off every analysis stage, so the stage follows the job, except where `core.llm.parallel_analysts` is stored
 `true` (there a `sequential` stage was running one after another while the key
 said parallel, and it is left as written). It logs each team and stage it
 rewrote at WARNING. A team still derived from its analyst list is rebuilt from
@@ -3205,7 +3198,7 @@ by its exact form:
   or the whole stretch: beside other pieces it is read by the rules above, so a key
   next to it is masked with it.
 
-Hex is read so: a run with eleven or more hex digits in a row is
+Hex: a run with eleven or more hex digits in a row is
 never one of these forms. A hex dump is masked in the events wherever it
 stands, a tool's own `"hex"` field (the bytes a memory or byte-range read
 returned) included, and so is a digest inside a list or a name that ends in
@@ -3414,7 +3407,7 @@ process's banner). The source is cut before each match and whole units are
 packed into a chunk, as the built-in boundaries of the static, dynamic and
 network domains do; a unit larger than a chunk is cut by a window. A pattern
 that RE2 cannot compile (a lookaround, a back-reference), that matches the empty
-text, or that names a source the agent does not list is refused. A source with no entry is cut to the default, and a definition with none stores and dumps by the defaults.
+text, or that names a source the agent does not list is refused. A source with no entry is cut at its domain's built-in boundaries, and a definition with none is stored and dumped without the field.
 
 A source with nothing behind it contributes nothing — an agent that asked for
 the network block on a sample nobody detonated has no network block, and the
@@ -3543,8 +3536,7 @@ thing standing between a live job and its own directory; there is no reason to.
 The sandbox capture a job fetches lands in a `captures/` child of the same
 directory and obeys every rule above: 0700, files 0600 from their first byte,
 removed with the job, swept by the same TTL, and unreachable from another job.
-The capture directory name used before the rename, under the system temp
-directory, is swept as well and is never written.
+The legacy capture directory under the system temp directory (`<previous name>-cape-pcap`) is swept as well; nothing writes to it.
 
 One configuration would widen this if nothing else stopped it: a
 `MALSPARK_SAMPLE_ROOTS` entry containing the staging base — the deployment's
@@ -3999,7 +3991,7 @@ it:
 | `display_name` | the name published text gives the tool: a rule table's title, the tool a recovered value names, the decoder a decoded value names; empty uses the tool's name |
 | `category` | the tag its description is shown with (`analyze`, `list`, `modify` …); an undeclared tool is tagged by its name's first word |
 | `aggregate_of` | the tools of the same server this tool is the aggregate (combined) form of: one call answers what many calls of those would (a decompilation of many functions at once, a whole-program graph that combines per-function ones). Its description, as the model is shown it, ends with "Aggregate form of `<tool>`: one call answers what many calls of it would.", written once the names a request offers are settled: each aggregated tool is named as the request offers it (`<server>__<tool>` where another server took the name), and a tool the request does not offer (withheld, or not picked by a reference) is left out of the note. The model can then choose the one call over the many; nothing else reads it, a server's own words quoted for it never carry the note, and a tool that declares none is shown and called without the note. Each name is a tool the server declares in `tool_facts` (an aggregated tool declared with only its `category` is enough) or that its `tools` allow-list names; it is not the tool itself, nor a tool that declares itself the aggregate form of this one. A save that adds or changes such a declaration is refused naming the field (`<tool>.aggregate_of`, "declare each in tool_facts (e.g. its category)"), checked against the allow-list in force (sent, else stored, else shipped), and a stored one that names a tool the server does not have is read without that name, with a warning. A reverser's aggregate tools are read from what it lists (`core.program_reading`): a `batch`, `bulk` or `full` tool, or one whose object is the plural of another tool's and whose arguments name it, aggregates each listed tool of its verb whose object is its own in the singular, or whose object an argument of its names (`batch_decompile` over `functions` of `decompile_function`), or else the one tool whose object holds its own. Ghidra's read so: `batch_decompile`, `batch_analyze_completeness`, `get_bulk_function_hashes`, `get_full_call_graph`, `batch_create_labels`, `batch_delete_labels`, `batch_set_comments`, `rename_variables`; `get_bulk_xrefs` fits several tools no argument tells apart and aggregates none, nor does `bulk_fuzzy_match`, whose verb is no other tool's |
-| `shows`, `does_not_show` | what this tool's answer shows and what it does not show, each one line in the operator's own words (a reputation lookup shows what others report of a hash, not this run's own analysis of the sample; a strings dump shows runs as they sit in the file, not strings that are encoded, encrypted or built at run time). Shown in the server card's **Tool declarations** box and here; the model is shown them only while `core.mcp.answer_scope_notes` is on (off by default, so every prompt is as it was): the tool's description then ends with `This answer shows: <shows>. It does not show: <does_not_show>.`, after its aggregate note, and a tool that declares neither is shown without them. A line break or another control character is refused on save (`<tool>.shows`); a stored one is read as a space, with a warning; no length is imposed. The shipped declarations: the analysis server's `strings` (shows printable ASCII and UTF-16LE runs as they sit in the file, with their offsets; does not show strings that are encoded, encrypted, compressed or built at run time, nor runs shorter than `min_len`, or past this page (read `next_offset`)) and `capa` (shows the capabilities whose capa rules match features of the file, its code and its structure; does not show whether the matched code runs, or a capability no rule describes); the threat-intel server's `check_hash`, `check_ip_reputation` and `check_domain_reputation` (what VirusTotal, and AbuseIPDB for an address, report; not this run's own analysis, nor whether the sample contacts an address or a domain); a reputation service's lookup read from its listing (what the service holds for the hash; not this run's own analysis, and an unknown hash or no detections is no evidence that the file is clean). Every other built-in tool declares neither |
+| `shows`, `does_not_show` | what this tool's answer shows and what it does not show, each one line in the operator's own words (a reputation lookup shows what others report of a hash, not this run's own analysis of the sample; a strings dump shows runs as they sit in the file, not strings that are encoded, encrypted or built at run time). Shown in the server card's **Tool declarations** box and here; the model is shown them only while `core.mcp.answer_scope_notes` is on (off by default, so no prompt carries them): the tool's description then ends with `This answer shows: <shows>. It does not show: <does_not_show>.`, after its aggregate note, and a tool that declares neither is shown without them. A line break or another control character is refused on save (`<tool>.shows`); a stored one is read as a space, with a warning; no length is imposed. The shipped declarations: the analysis server's `strings` (shows printable ASCII and UTF-16LE runs as they sit in the file, with their offsets; does not show strings that are encoded, encrypted, compressed or built at run time, nor runs shorter than `min_len`, or past this page (read `next_offset`)) and `capa` (shows the capabilities whose capa rules match features of the file, its code and its structure; does not show whether the matched code runs, or a capability no rule describes); the threat-intel server's `check_hash`, `check_ip_reputation` and `check_domain_reputation` (what VirusTotal, and AbuseIPDB for an address, report; not this run's own analysis, nor whether the sample contacts an address or a domain); a reputation service's lookup read from its listing (what the service holds for the hash; not this run's own analysis, and an unknown hash or no detections is no evidence that the file is clean). Every other built-in tool declares neither |
 
 **Paths** are JSON-pointer-like: `/strings/*/offset` is the `offset` of every
 item of `strings`; `*` is every item of a list or every value of an object at
@@ -4096,7 +4088,7 @@ reputation source, whatever the tool is called and however it answers:
   role is reputation; see Delegation).
 
 A tool named like a built-in lookup that declares another kind, or nothing,
-gets none of this. A stored report without the records is read without them.
+gets none of this. A stored report without the records has its reputation counts read from the key/value rows of the section its lookups were drawn in (`core.legacy_reputation`).
 
 **A reputation service read from what it lists.** The platform ships no
 declaration of a reputation service's tools, VirusTotal's included. For a
@@ -4138,8 +4130,7 @@ never takes the reading's reader, so its declared paths are read (one that
 names only a service or a rank keeps the shape reader), and a stored entry whose facts name no reader reads as stored.
 
 A stored change of such a tool that names no kind of its own (an operator's
-`get_file_report: {reputation: {rank: 30}}` on the built-in VirusTotal server,
-saved over a shipped table) is not dropped with its
+`get_file_report: {reputation: {rank: 30}}` on the built-in VirusTotal server, whose tools no shipped table declares) is not dropped with its
 kind-dependent fields: they are kept with the block and laid over the
 reading once it puts a kind in force, a `reputation` change field by field
 (`tool_declarations.kind_free_changes`). Until the server is first listed, or
@@ -4325,7 +4316,7 @@ its `/mcp/schema` is read as one (each entry's name, description and
 parameters, the required ones marked), so Ghidra over HTTP and over stdio read
 the same 165 tools alike. The schema's HTTP `method` is not read: the server
 opens, selects and saves programs by `GET` and reads by `POST`, so it says
-nothing of whether a call changes the program. A stored run keeps the facts its entries stored, and one whose entries recorded no facts reads the frozen snapshot (`core.legacy_tool_facts`).
+nothing of whether a call changes the program. A stored run keeps the facts its entries stored, and one whose entries recorded neither a source nor facts reads the frozen snapshot (`core.legacy_tool_facts`).
 
 **Readers** are named by the answer shape they read, never by a tool, so a
 tool of yours that answers in that shape may name one:
@@ -4867,8 +4858,7 @@ stored as that release shipped it is dropped and follows the current
 declaration, an edited tool keeps the fields you changed, and a missing shipped
 tool stays removed. Where the writing release cannot be told apart, the stored
 map is kept whole as yours. A server you added ships nothing, so its whole map
-is its changes and is marked. A provider block's tool declarations for which no
-release shipped a declaration (the `sandbox.cape2.mcp` block) are left as stored
+is its changes and is marked. A provider block's tool declarations that the migration's record of shipped declarations does not cover (the `sandbox.cape2.mcp` block) are left as stored
 and read whole until a save writes them marked. Each rewritten map is marked; a
 marked map is left alone, so running the migration again changes nothing. It
 logs one line when it rewrites anything. Until it has run, an unmarked map is
@@ -4897,7 +4887,7 @@ Per job and per tool server, three settings under **Tool servers → Resilience*
 | `core.mcp.breaker.cooldown_seconds` | 60 | A judgement: long enough for a sidecar being restarted to come back, short against the analysts' own loop budgets. |
 | `core.mcp.breaker.call_timeout_seconds` | 0 (per server) | Set, the budget of every call to every server. Zero gives each server the `call_timeout_seconds` its own block declares, and a server that declares none (every built-in) `core.mcp.breaker.default_call_timeout_seconds`. A tool whose server declares a longer budget in its manifest or its declaration (`tool_facts.<tool>.timeout_seconds`) gets that, a long-running tool (by either) none unless this is set, and thirty seconds of grace are added either way. |
 | `<server block>.call_timeout_seconds` | empty | Each server's own budget per call (an `mcp.servers` entry, `static.ghidra`, `static.r2`, `sandbox.cape2.mcp`), read when `core.mcp.breaker.call_timeout_seconds` is zero; zero sends its calls with no deadline of their own, empty takes `core.mcp.breaker.default_call_timeout_seconds`. Ghidra's REST requests (open, call graph, anti-analysis scan) and radare2's open before the loop wait it too. |
-| `core.mcp.breaker.default_call_timeout_seconds` | 300 | The budget per call of every server whose block declares none (every built-in), read alike whatever the server or its tools are called; zero sends their calls with no deadline of their own. 300 is capa's shipped timeout (`core.static.capa.timeout_seconds`); a deployment may set its own floor here (900 on a slow host still fits), and importing a `malspark-settings/2` or `/1` export gives it the floor that export carried. |
+| `core.mcp.breaker.default_call_timeout_seconds` | 300 | The budget per call of every server whose block declares none (every built-in), read alike whatever the server or its tools are called; zero sends their calls with no deadline of their own. 300 is the longer of the shipped capa and YARA budgets. On upgrade, revision `20261102000000` writes a deployment's own floor here (the longer of its stored `core.static.capa.timeout_seconds` and `core.static.yara.timeout_seconds`; 900 on a slow host still fits), so no server's budget changes, and importing a `malspark-settings/2` or `/1` export gives it the floor that export carried. |
 | `core.mcp.breaker.max_concurrent_calls` | 4 | A judgement: the shipped teams run their analysts one after another, and four lets one analyst's parallel tool calls through while bounding a team that fans out. `0` leaves the calls uncapped. |
 
 An unanswered call is either a transport failure — a timeout, a refused or
@@ -5033,7 +5023,7 @@ and does not load: a file that is there and holds no rule (a YARA corpus of
 `rules: []`) passes it, and the scan that reads it answers that it did not run,
 which degrades the run. A server whose
 block sets `PYTHONPATH` has neither its modules nor its data checked. A server
-does not probe a data path in its manifest. A tool that declares no data is checked without it.
+does not probe a data path in its manifest. A tool that declares no data has no data path checked.
 
 **Errors that name their remedy.** A tool that cannot answer returns, never
 raises:
@@ -5374,10 +5364,9 @@ whose plugin the change does not load (dropped, not allowed, or failed to load)
 is refused with the reason, and a `null` that clears a key deletes its stored
 row without loading the plugin.
 
-### Memory plugins written to the older advice
+### Memory plugins and the plugin list
 
-Memory backends were loaded from installed packages on their own before the
-list existed. Revision `20261016000000` adds the one memory plugin the stored
+Revision `20261016000000` adds the one memory plugin the stored
 `memory.backend` names, when it is installed in the image that runs the
 migration, to the list once, as `memory:<name>`, so a deployment that used one
 keeps it; nothing else is added. A memory plugin's entry point must be named

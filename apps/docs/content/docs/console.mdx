@@ -90,8 +90,7 @@ Overview and the strip cannot print different durations for one stage. A stage
 that declined has no row, and a run stored without stage timings has no card.
 
 **When the verdict and the severity disagree.** A judge can call a sample
-Malicious and rate it Informational in the same run. The console does not
-present the two as unrelated facts two cards apart, and neither is overruled: both are the judge's, and
+Malicious and rate it Informational in the same run. Neither is overruled: both are the judge's, and
 picking a winner would be the console inventing a finding. Instead the header
 says so, in one line — "Judge: Malicious 0.95 · Severity: Informational" —
 with the sentence that names the disagreement under it.
@@ -275,7 +274,7 @@ or a constant nothing knows is drawn as it arrived rather than guessed at.
 Static & code applies it twice over. The `identity` section is the one that
 overlaps the tab's own blocks, so it is split: its hashes go to the File
 hashes block, which draws only the fingerprints a tool produced, and its
-signing row is stated as a sentence rather than as `present=no`. A stored report whose `signing_info` answered for all three signing schemes carries three such rows,
+signing row is stated as a sentence rather than as `present=no`. A stored report whose `signing_info` answered for all three formats (PE, APK, Mach-O), not the routed one alone, carries three such rows,
 of which all but one are the tool's untouched defaults; the tab keeps the one
 for the format the run routed on and drops the rest.
 
@@ -299,7 +298,7 @@ else; Static & code says where they are and links there rather than drawing the 
 table twice. A Sigma row shows its level labelled as the rule's level, sorted
 and dotted by it on the same ladder (one dot per rung from Informational up);
 a rule that declares none says "no level declared" and takes no part in the
-sort. A stored run that recorded its matches as deterministic layers' claims is read from them:
+sort. A stored run that recorded its matches only as the deterministic layers' claims, with no rule-match sections, is read from them:
 its Sigma rows say "level not recorded", draw no dots, take no part in the
 sort, and show the layer's confidence — set from the rule's maturity status —
 as the number it is. Nothing reads a confidence as a severity.

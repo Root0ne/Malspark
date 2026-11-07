@@ -379,9 +379,9 @@ The debate ends when nothing is left to settle (`pipeline/debate_facts.py`,
 - For a listed line whose cited entries (cited by the line or by a claim it names) hold, in a field named for a count or a total, a number the line itself states, every such value is stated; the length of a list field (a match list: `matches = 0 items`) only where its key names the noun the line counts with that number ("0 hits" for `matches`, a hit being a match; "3 domains" for `domains`). A size or a time is not a count. No call is made for them: they ride on the revision directive of the analysts the line names and on the next mediation's prompt, and a debate that ends at this mediation spends nothing on them.
 - A blocking line the ledger states, told before, is recorded and shown, never taken away (`debate_facts.ledger_stated`). Its dispute must be about a count itself: two sides of the line (split at "while", "whereas", "but", "against", "versus", "although", "however" or a semicolon) each write one number, in digits or a number word, directly before one noun (at most one word between), and the numbers differ ("three matches" against "0 hits"). Two numbers on one side ("31 rules loaded, 3 matched") are two quantities, and a partitive or a ratio ("one of the rules", "0 hits of 31 rules", "3 out of 31", "3/31") is no count of its noun. "Hit" and "match" are one noun, a closed and deliberately minimal vocabulary; a line whose sides read counts both accept differently ("0 matches as benign" against "31 rules as malicious") is a dispute about meaning and is never stated. Every count it states (a number before a plural noun, "0 hits", "31 rules") is stated by a cited entry in a key naming that noun, the cited entries agree (every cited field of a counted noun holds one value) and are one record (an entry naming one of the line's nouns names all of them, so "0 connections" in one entry against "2 domains" in another is a dispute about meaning, not a count), and every fact stating one of its counts was stated by an earlier mediation of the debate. The line stays among the blocking lines, so the mediator, the judge and the report see it; it is said to the room, recorded in `AgentArgument.ledger_stated` and `run_summary.negotiation.ledger_stated`, and shown to the next mediation, which decides whether it still blocks. When every blocking line of a mediation is such a line, the debate ends as `ledger_stated`, with no consensus claimed. A line with a count no entry states, or with no count, is never stated, and a fact not yet told keeps the line out for the one round that tells it.
 - The mediator opens each line with `[analysts: <name>, <name>]`, the analysts who must revise over it, written as their reports are headed. A revision round asks only the analysts the blocking lines name; every other analyst keeps its answer in force, recorded in the round's `not_revised` as `not asked: not named by the mediator`. A named analyst's revision is shown the blocking lines that name it, with the mediator's summary and confidence, and of its peers only the ones those lines name, in the field or by key or label in any case or form; each is shown exactly as a round asking every analyst shows it, its answer in force whole, with no claim picked out by its number. A block that lists no blocking line holds no revision round: the debate goes to the judge as `consensus`; below the threshold, a stable confidence series still ends it as `convergence`, and otherwise it ends as `no_contested_point`. A blocking line without the field or naming no analyst of the debate, or a block that was not read, asks every analyst with every peer's answer, and the round's record says why under `asked_all`.
-- Sycophancy is a rise in likeness beyond shared sources, told and never enforced (`pipeline/sycophancy_detector.py`, `convergence_flags`). After each revision round, for each analyst revised that made no tool call and whose revision cites nothing its answer before the round did not (an entry the platform showed it in the round, a peer's tool result among them, is no citation of its own, and that entry's words are left out like a shared entry's: agreeing with what it states is no move, agreeing beyond it still is), the words of every ledger entry or sandbox item it and a peer both cite are left out of both, and its answer before the round and its revision are each compared with the peer's answer in force (bag-of-words cosine); a revision above the threshold and above its answer before the round is flagged and recorded on the round (`revision_rounds[].converged`). Two answers alike because they restate the same rows, or alike before the round, are not flagged. A flag is put to the next mediation as a sentence beside the facts block (`convergence_sentence`) and kept on the mediation (`AgentArgument.converged`); no analyst's prompt carries it, it never overrides the mediator's consensus or a block with no contested point, opens no round and never widens a round that asks only the analysts the mediator named. A stage with `sycophancy_check` off is told nothing. A stored round record with no flags is read by whole-answer likeness and decides no route either.
+- Sycophancy is a rise in likeness beyond shared sources, told and never enforced (`pipeline/sycophancy_detector.py`, `convergence_flags`). After each revision round, for each analyst revised that made no tool call and whose revision cites nothing its answer before the round did not (an entry the platform showed it in the round, a peer's tool result among them, is no citation of its own, and that entry's words are left out like a shared entry's: agreeing with what it states is no move, agreeing beyond it still is), the words of every ledger entry or sandbox item it and a peer both cite are left out of both, and its answer before the round and its revision are each compared with the peer's answer in force (bag-of-words cosine); a revision above the threshold and above its answer before the round is flagged and recorded on the round (`revision_rounds[].converged`). Two answers alike because they restate the same rows, or alike before the round, are not flagged. A flag is put to the next mediation as a sentence beside the facts block (`convergence_sentence`) and kept on the mediation (`AgentArgument.converged`); no analyst's prompt carries it, it never overrides the mediator's consensus or a block with no contested point, opens no round and never widens a round that asks only the analysts the mediator named. A stage with `sycophancy_check` off is told nothing. A stored round record with no `converged` field is read by whole-answer likeness and decides no route either.
 - For a blocking line naming a function the run knows (an address the line writes, or one a claim it names writes, that is a row of the function index or a function a decompile or disassembly call listed; an offset and its virtual address are one function where an image base the run read joins them), the platform states whether the ledger holds a listing of it and which entries hold it (`debate_facts.place_facts`, `AgentArgument.place_facts`, said to the room as a notice). The analysts the line names in its field (every analyst, for a line with no field) are told it in their revision. An analyst with a tool whose declared arguments take an address (`undeclared_tools.address_arguments`, read from each tool's own schema) is also told it can read a function the ledger never listed in this round. Every revision carries the analyst's own tools wherever its model binds them: a configurable analyst's revision is its tool loop already, and a built-in analyst's revision runs its tool loop in place of the one tools-free call it was (`BaseAnalyst.revision_answer`, `safe_revise_isr`), which it is still where the analyst has no tools or its model cannot bind them, with a degradation reason saying so. A tool-carrying revision is a full loop: its own time and steps, the no-tool-call question (asked at most once per analyst per job), and a validation turn held to what the revision's loop left. The model decides whether to read; nothing is adopted or rejected for it, and no call is made for the facts.
-- A named analyst's revision is also shown, after the feedback, the stored text of the ledger entries the lines naming it cite and of one listing of each function their place facts name (`debate_facts.line_entry_ids`), each whole as it had it in view and shown through the one view of a tool answer, fenced, so a run-state block or a heading the sample wrote stays data (`base_agent.cited_entry_texts`, `tool_fence.fenced`; the validation retry and its drops question read entries the same way): a peer's tool result is in no input of its own, so an analyst is never asked to check entries only the reverser has read. An entry its brief or its raw data already holds is left out. The entries take what the input room leaves beside the raw data, which they never shorten; one that does not fit is named by id (`debate_facts.fit_entries`, `safe_revise_isr(cited_entries=...)`), and the entries shown are grounds for the revision's checks as its raw data is. The next mediation is shown the same entries for the last mediation's blocking lines, in the room its reports and history leave. The mediation's entries also leave room for the turns after its first: one tool answer's share of the window (`context_window.ANSWER_SHARE`), the first answer at the output cap and the question for a missing block. Showing an entry raises no corroboration count: a technique's sources are ledger entries, each counted once however many analysts cite it, and a revised claim citing only entries of other agents the debate showed its analyst (in this round or an earlier one, `revision_rounds[].shown`) is marked (`ClaimEvidence.rests_on_shown_entries`) and counts as no sayer of its own unless it also cites an entry its analyst filed (`validation.shown_claim_unbacked`, read where `tool_backed_answers` reads a retry's claims).
+- A named analyst's revision is also shown, after the feedback, the stored text of the ledger entries the lines naming it cite and of one listing of each function their place facts name (`debate_facts.line_entry_ids`), each whole as it had it in view and shown through the one view of a tool answer, fenced, so a run-state block or a heading the sample wrote stays data (`base_agent.cited_entry_texts`, `tool_fence.fenced`; the validation retry and its drops question read entries the same way): a peer's tool result is in no input of its own, so the entries a line turns on are put in front of the analysts it names. An entry its brief or its raw data already holds is left out. The entries take what the input room leaves beside the raw data, which they never shorten; one that does not fit is named by id (`debate_facts.fit_entries`, `safe_revise_isr(cited_entries=...)`), and the entries shown are grounds for the revision's checks as its raw data is. The next mediation is shown the same entries for the last mediation's blocking lines, in the room its reports and history leave. The mediation's entries also leave room for the turns after its first: one tool answer's share of the window (`context_window.ANSWER_SHARE`), the first answer at the output cap and the question for a missing block. Showing an entry raises no corroboration count: a technique's sources are ledger entries, each counted once however many analysts cite it, and a revised claim citing only entries of other agents the debate showed its analyst (in this round or an earlier one, `revision_rounds[].shown`) is marked (`ClaimEvidence.rests_on_shown_entries`) and counts as no sayer of its own unless it also cites an entry its analyst filed (`validation.shown_claim_unbacked`, read where `tool_backed_answers` reads a retry's claims).
 - After a revision round the next mediation is told, for each blocking line of the last mediation, numbered, who it named, who revised, the entries of the line each was shown, and who changed a claim anywhere in its answer (`claim_drops.changed_anywhere`, read by the `reworded` route's own key `claim_substance`, claim for claim with counts: a claim added or removed, or one whose values, cited entries, technique, negators, confidence step, technical terms or content words differ, whatever it cites; reordering, punctuation and stopwords are no change, any other rewording is, by design, so the stop rule errs towards another round; an answer whose claims cannot be read is a change; an analyst that filed entries in the round changed), then the entries the round filed by agent (`debate_facts.round_facts_text`, `revision_rounds[].lines` and `filed`). It is asked once to write `[carried: L<n>]` after the field of each blocking line that raises line n again, or `[new]`; the mark is no part of the point (`debate_facts.carried_marks`, `AgentArgument.carried`).
 - A revision round whose every revision is the answer in force again, whitespace aside, ends the debate as `converged`; the router reads only the record of the round right before the mediation it routes.
 - A revision round whose every revision states the claims in force again, wording aside, ends the debate as `reworded`, with no consensus claimed: another round would argue over words. Nothing factual may change: each claim's values (numbers, hex addresses, technique ids, quoted values), the entry ids its evidence line cites, its technique, its negators ("not", "no", "never", "without", a word ending "n't"), its confidence in steps of 0.05, its technical terms (acronyms, identifiers and names holding a digit, folded: RC4 against XOR is a change) and its content words (every word but articles, prepositions, "and", "so", pronouns and forms of be, have and do, read before the plural fold; "or", "nor" and "but" count; case and plural folded: "three" against "four", "explorer" against "svchost", "packed" against "unpacked" is a change) are the same, claim for claim; a reordering, punctuation or a stopword is wording (`claim_drops.unchanged_in_substance`, recorded as `reworded` in the round's record). A claim that cannot be read so, or any difference, leaves the round not reworded, and the debate goes on.
@@ -411,7 +411,7 @@ Before any analyst starts, the pipeline runs the deterministic tools itself
 (`src/malspark/pipeline/triage_pack.py`) and writes each result to the evidence
 ledger as an ordinary entry under `agent="pipeline"`, `server="pipeline"`. A
 human analyst runs the same dozen commands on every sample before opening a
-disassembler, and a model may not ask for any of them; a fact a model may or may not ask for is not a fact a run can rely on.
+disassembler, and a model is not bound to ask for any of them; a fact a model may or may not ask for is not a fact a run can rely on.
 
 The pack is a list of steps declared as data (`malspark.core.pack_steps`; an
 operator lays their own over it in `triage.steps`, see *The pack's steps* in
@@ -1147,12 +1147,11 @@ evidence appendix prints them as the table "Observed behaviour linked to code",
 each value and place written as a code span.
 
 Ghidra's emulation is not run by the pack: Ghidra's `emulate_function`
-ignores its step limit and cannot be stopped, and one emulation took 130 to
-560 ms in a stored run. It stays a tool the reverser may call.
+ignores its step limit and cannot be stopped, and it stays a tool the reverser may call.
 
 When the pack does not fit its room, the passes' lines take only the room the
 other lines leave. **Decision:** a pass fact never shortens a decoded string
-or any other line the pack prints. A pass with a
+or any other line the pack prints besides the passes' own. A pass with a
 fact no other line carries — a constant set no capa rule agrees with, an exact
 instruction or TEB read at a function no capa anti-analysis rule matched — is
 offered that room first. A line that cannot show one item is left out, and every
@@ -1562,14 +1561,11 @@ bundle illustrates the decision; it does not make it.
 
 A judge may carry a `malware` object for a signed, clean utility while its
 own severity is `Informational`, its category `legitimate-utility` and its
-rationale says the object is only STIX's container for the assessment; the
-verdict published is the judge's stated one, never one derived from the
-bundle's shape.
+rationale says the object is only STIX's container for the assessment; when the judge states a verdict, that verdict is published, never one derived from the bundle's shape.
 
 The judge is shown the whole answer as a skeleton, with
 `x_malspark_assessment` beside `objects` and the three accepted words written
-where the verdict is asked for, so a model that knows a bundle as
-`{type, id, objects}` does not leave the extension out. A model that writes the
+where the verdict is asked for, rather than leaving it to a model that knows a bundle as `{type, id, objects}`; an answer that still leaves it out is asked for it (`verdict.unstated`). A model that writes the
 block inside `objects[0]` costs no retry, because a misplaced block is moved. Prompt text only: nothing in
 this pipeline writes a verdict.
 
@@ -1639,7 +1635,7 @@ Four rules follow from the statement:
   says, through `schemas/judgement.indicator_type_for` and STIX 2.1's
   `indicator-type-ov`: Malware is `malicious-activity`, Suspicious
   `anomalous-activity`, Benign `benign`, and a verdict that mapping does not
-  name is `unknown`. The indicator claims `malicious-activity` only when the published verdict is Malware: a consumer blocks on the indicator and reads the objects afterwards, so its type must agree with the verdict.
+  name is `unknown`. The sample's indicator therefore claims `malicious-activity` only when the published verdict is Malware: a consumer blocks on the indicator and reads the objects afterwards.
   An indicator for anything else — a domain, an address, a URL the analysts
   observed — keeps the type it already had (`malicious-activity` when the row
   is marked suspicious, `anomalous-activity` otherwise, and
@@ -1705,9 +1701,7 @@ prompt asks the judge for `<type>--<label>` ids unique in its bundle — a short
 label is enough — and `postprocess_judge_bundle` mints every published id: a
 random UUID under the object's own type (a technique-derived one for an
 attack-pattern) with every `*_ref` rewritten to match. The judge is not asked
-for random UUIDs, which a model cannot produce: it would copy
-documentation-shaped hex, repeated across runs and samples, with a version digit
-no RFC 4122 UUID has, which the OASIS validator refuses.
+for random UUIDs, which a model cannot produce: a model asked for one tends to copy documentation-shaped hex, which can repeat across runs and carry a version digit no RFC 4122 UUID has, which the OASIS validator refuses.
 
 A label two objects share is not resolved: `duplicate_label_violations` asks
 the judge (`stix.duplicate_label`), each object gets its own id, and no
@@ -2210,8 +2204,7 @@ decide.
    Tools, the current id of the retired T1562, not T1070 Indicator Removal).
    The cards are written from the ATT&CK definitions of the techniques the
    vendored table carries and cover every technique the capability terms
-   list and every technique the analysts named in the recorded benchmark
-   runs; a technique outside those may have none. A card
+   list and every technique the analysts named in the benchmark runs the cards were written from; a technique named first in another run may have none. A card
    is reference shown beside a technique a model already named: in this
    question and in the judge's technique question. Nothing is decided from
    it, no question is asked because of it, and the report does not print it.
@@ -2329,7 +2322,7 @@ of description, and no property the platform fills in — created, modified,
 spec_version, valid_from, and `pattern_type`, which is always `stix`. Every
 relationship is the judge's own: which indicator indicates the sample, and
 which does not, is its decision, and the platform writes no edge into its
-bundle. The compact contract shortens the judge's answer, and an answer that still stops at the budget is told so — `verdict.cut_at_output_cap`,
+bundle. An answer that stops at the budget is told so — `verdict.cut_at_output_cap`,
 with the cap, the answer's characters, the objects it began by type and its
 indented lines, the length it was cut at as the bound the next answer stays
 under and the kind of object it began most of, asking for the compact bundle —
@@ -2490,8 +2483,7 @@ revision neither writes again, withdraws nor argues in its disputes is
 withdrawn by rule, the line being its reason (only the mediation right before
 the round is read) (`debate_facts.read_claim_references` reads the claim numbers
 each line names per analyst, a list, a "claim" written again and a range of up
-to 20 claims, "claims 32-34" or "17 to 19", naming the analyst its first number
-names, every number a single reference names; the rest of a
+to 20 claims, "claims 32-34" or "17 to 19", naming the analyst its first number names, and every claim a single "claim N" names is still named; the rest of a
 longer range, or a "claim N" no analyst is read for, names no claim, withdraws
 nothing and, on a line that blocks by a mark that was read or by having none, is
 stated once in a sentence of the merge; on such a line a "claim N" no analyst is
@@ -2603,10 +2595,7 @@ answer is described, not sent back, and the question is asked only when the
 conversation it is sent in, with the turn that carries its questions, and an
 answer of the cap's size fit the model's window; otherwise it is recorded `"asked": "false"` with the reason. A whole
 answer that comes back is the analyst's, fewer claims and all, and the log
-says how many claims replaced how many; a retry cut again keeps the first answer, as a retry with fewer claims does, and the finding is recorded. The cap is the one in force: nothing raises it. A reference
-static analyst answered with 42 claims in exactly its 4,096 tokens, was asked
-fourteen questions over that answer, spent the whole cap again and returned no
-claim, and every question went unanswered.
+says how many claims replaced how many; a retry cut again keeps the first answer, as a retry with fewer claims does, and the finding is recorded. The cap is the one in force: nothing raises it.
 
 An analyst answer that writes the same claims again and again is asked the
 same whole-answer question once. After an answer arrives its claims are
@@ -3548,10 +3537,10 @@ triage pack writes one `sandbox_status` entry with the sentence that says so
 sandbox views, `sigma_match_sandbox` or `lolbin_lookup`, so a stand-in's empty
 sections are never rendered as "0 processes"; the in-process sandbox tools
 answer the stand-in with the same sentence; the dynamic and network analysts
-are skipped; the run carries the degradation reason `no sandbox ran …` (or, with no report at all, the reason for that); `run_summary.sandbox` holds
+are skipped; the run carries the degradation reason `no sandbox ran …` (or, with no report at all, its own degradation reason); `run_summary.sandbox` holds
 `{status, statement}` and the report's run summary prints it; and the entry
 becomes the report's *Sandbox* section, which the console files on the dynamic
-tab. A recorded fixture is said to be one — the same entry, then the sandbox views. A live sandbox's report is read as observed.
+tab. A recorded fixture is said to be one — the same entry, then the sandbox views.
 
 Every provider that can be reached over the network has a probe behind a Test
 button in the console; see [Configuration](/docs/configuration/).
@@ -3624,7 +3613,7 @@ job (none beyond the triage pass's when it ran).
 A load imports the file afresh, in the place of any program of the same name,
 and an import is not analysed: its functions come from the file's tables and
 no call or code reference is recorded, so callers, callees and
-cross-references read empty for every function, which read as "nothing calls it". So a model's `load_program` replaces the program the triage pass analysed with one whose cross-references read empty. The answer is not Ghidra's alone: any server whose
+cross-references read empty for every function, which read as "nothing calls it". Left alone, a model's `load_program` would replace the program the triage pass analysed with one whose cross-references read empty. The answer is not Ghidra's alone: any server whose
 open resets its analysis declares, as data in its settings block
 (`sample_open`), which tool opens a sample and optionally which selects one
 already open and which runs its analysis, and the general opener
@@ -3809,7 +3798,7 @@ it cannot place. A plugin backend declares the same in its own
 `register_memory_backend` call, read once a process has loaded it. A plugin
 that fails to load is reported against its own id; a selected id whose
 installed plugin is not allowed, or failed, is reported unavailable with the
-reason, and an id nothing declares is not configured. The flat keys (`memory.qdrant_url` and its siblings) are read, through the one map of moved keys
+reason, and an id nothing declares is not configured. The renamed flat keys (`memory.qdrant_url` and its siblings) are read, through the one map of moved keys
 (`settings_annotations.RENAMED_SETTINGS`): revision `20261010000000` renames
 the stored rows, an older export or a settings PATCH naming an old key writes
 the new one, and an environment's flat values land under the backend.
@@ -3882,7 +3871,7 @@ owner held for the sample, as on every job: the switch decides what a job
 reads, never what it writes, and a later job that wants independence sets it
 too. Its run summary
 carries `earlier_runs_ignored: true`, absent on every other job, so a score can
-state that the run did not see an earlier one. The benchmark's job config (`scripts/benchmark/jobs.py`) sets it.
+state that the run did not see an earlier one. The benchmark's job config (`scripts/benchmark/jobs.py`) sets it unless the caller asks for earlier runs.
 
 The switch leaves the similarity reads to the owner's whole memory, so run k of a series under one account reads, through the judge's
 similar cases, the attribution's similar samples and the function-hash
@@ -3894,12 +3883,12 @@ the enrichment of its report reads alike (`app/worker/job_memory.py`). Every
 reader is scoped by that owner under the owner rule, with no special case:
 `recall`, `match_functions` and `earlier_case` read only what the job wrote,
 which is nothing before it completes, and its own case and function hashes
-are filed under the job's key, so they never replace the owner's. Without the option the owner is the creator's key, byte for byte. A container
+are filed under the job's key, so they never replace the owner's. Without the option the owner is the creator's key. A container
 given the switch without an owner (the command line's unscoped memory) does
 not record it, since that job reads the whole unscoped memory. Its run
 summary carries `isolated_memory: true`, absent on every other job, and the
 benchmark's `score` and `gate` count a run as independent only when its
-summary says both switches (or its score states a fresh account's memory). The benchmark's job config sets it. A case corpus mined from the memory
+summary says both switches (or its score states a fresh account's memory). The benchmark's job config sets it unless the caller asks for earlier runs (`--with-earlier-runs`), and the score then has to say so. A case corpus mined from the memory
 (`scripts/knowledge/build_attck_case_kb.py`, read by the knowledge server's
 `similar_cases`) is not owner-scoped: every job reads it, an isolated one
 included. It is built from the unscoped cases alone, so no case filed under an
@@ -4171,7 +4160,7 @@ money:
   its cached prefix, the turn's answer priced at this loop's mean and every
   write priced for an hour where the model's cache entries live that long
   (`tool_answer_clearing.tier_clear_pays`). A model priced by no prompt length
-  is never cleared for it. A loop that does not meet both conditions at either cache lifetime is sent as it is.
+  is never cleared for it.
 
 A clear takes the oldest answers until the request weighs what no clear can
 take (the framing, the pack, the definitions, the agent's own turns and
@@ -4239,14 +4228,13 @@ its calls. A dropped socket sends the call again from its first turn, under that
 turn's admission, and the reads made before it stay counted. The one limit is
 physical: a call's wall clock (the verdict's and the technique question's wait
 sized from the model's pace for one answer, where one is set) covers all its
-turns, reads included, and a call that reads past it ends as a call that runs past it does. A read is filed nowhere: the entry it reads is already on
+turns, reads included, and a call that reads past it is ended at it like any other call. A read is filed nowhere: the entry it reads is already on
 the ledger, and the report is built over a fixed one. The reads are counted
 instead, in `run_summary.efficiency.ledger_reads` (reads by call, the ones that
 named no entry, the repeats refused; `reads: 0` where a model bound the read and
 made none), and the efficiency block says so in a line of its own. A model that cannot bind the tool is asked in the plain call, with no tool, and the run's degradation reasons say so once per
 agent. The reporter's calls share one definition, so the composer's shared
-header and the prefix its sections read from the cache are unchanged, and the
-definitions add a fraction of a cent to a run. The code is `malspark.agents.ledger_reads`.
+header and the prefix its sections read from the cache are unchanged. The code is `malspark.agents.ledger_reads`.
 
 The mediator's own loop reads the run's ledger the same way: the debate node
 hands each round the ledger, and the loop's `read_evidence` reads an entry any
@@ -4422,8 +4410,7 @@ value, is not a cut. `run_summary.evidence` counts such entries apart from the
 budget's trims (`cut`, `chars_dropped`), and §13's evidence bounds say
 "N cut by the tool-output guardrail (X characters dropped)"; a summary without the count reads the guardrail's own count from `run_summary.truncation`.
 A cut entry still holds its answer for a later chunk, which is answered from it
-as from any kept result. A cut entry is stored with `truncated` set, so the
-report never says nothing was cut.
+as from any kept result. A cut entry is stored with `truncated` set, and the report counts it as cut.
 
 The rows are written in one batch when the run ends, but `created_at` is not
 the flush time: it is the moment the call returned, `started_at + duration_ms`,
@@ -5000,8 +4987,7 @@ is assembled from what the run gathered rather than recomputed beside it:
   technique appears there too, with the words *claimed, not published* and the
   check's sentence under them rather than a colour.
 * An attack-pattern with a name and no technique id is asked for one
-  (`attck.missing_id`), because every ATT&CK check keys on the id and a
-  nameless technique would skip all of them, the Mobile-domain check on an
+  (`attck.missing_id`), because every ATT&CK check keys on the id and a technique without one would skip all of them, the Mobile-domain check on an
   Android sample's techniques included. One that survives is reported as a behaviour, in
   `report.unmapped_behaviours` and under its own heading in the markdown, and
   is never published as a technique.
@@ -5229,7 +5215,7 @@ is assembled from what the run gathered rather than recomputed beside it:
   name whose first label is two characters is read when that label holds a
   digit and a letter (`c2.ru`), and one of two letters (`ab.ru`, `to.do`) only
   by a check that asks the run's network evidence, or defanged where the run
-  recorded it, and every other name is read as well; a draft rule's
+  recorded it; a draft rule's
   body is printed as it compiles; an ATT&CK lookup (`/techniques/…`,
   `/tactics/…`, `/software/…`, `/matrices/…`), and a link the report itself
   holds (one of its references, which are the operator's lookups and those of
@@ -5382,8 +5368,7 @@ is assembled from what the run gathered rather than recomputed beside it:
   `/iocs?include=all` carries the analysts' listed non-network rows exactly
   as the report's IOC table shows them, both read by one reader
   (`builder.ioc_table`: rebuilt from the stored report, the stored rows only
-  when the rebuild fails), so an old report reads the same in both. The judge
-  naming such a value keeps the standing it had before, so it is published. The drafts read the table's
+  when the rebuild fails), so an old report reads the same in both. A value the judge names stands on the judge's keep, so it is published. The drafts read the table's
   answer, the Sigma selection included. **A published URL carries its name.**
   The host of every URL the rule publishes — the network block's and the
   judge's — follows the URL's decision (`published_url_hosts`,
@@ -5399,7 +5384,7 @@ is assembled from what the run gathered rather than recomputed beside it:
   `no:` and the half of it that refused the row (`stix_renderer.publish_answer`),
   asked with the arguments `/iocs` and the export ask it with. The renderer
   rebuilds the table on request from the stored report, the way `/iocs` does,
-  so an enrichment that ran later is reflected and a stored report whose table carries no kinds prints in the same shape. A row the export mints nothing
+  so an enrichment that ran later is reflected and a stored report whose table carries no kinds prints with them, as a fresh one does. A row the export mints nothing
   from says so rather than borrowing an answer. **One decision for the judge's
   values.** The export asks every value a judge indicator compares the one
   publish rule, exactly as the report's own row for that value is asked
@@ -5415,9 +5400,7 @@ is assembled from what the run gathered rather than recomputed beside it:
   the table would otherwise not ask (a sandbox's file write) is asked. The rule
   also answers two more kinds: a hash is publishable when it is a
   whole digest a second source knows (the sample's identity, a dropped file),
-  and a command line is not an indicator this run publishes. Two C2 names
-  decoded only from the sample's strings are unpublished rows under the rule
-  ("seen only in the file's strings"), and the export declines them. A test holds the export
+  and a command line is not an indicator this run publishes. A C2 name decoded only from the sample's strings is an unpublished row under the rule ("seen only in the file's strings"), and the export declines it. A test holds the export
   and the table to one decision.
 * **A decoded value the code passes to an API argument of its role is a row of
   its own.** A decoded mutex name, file path or user agent has no standing by
@@ -5506,15 +5489,7 @@ is assembled from what the run gathered rather than recomputed beside it:
   recovered, no decoder entry listed every result, or no `strings` entry
   listed every plain string, and the reason carries that. A stored report without the record is read from its kept `tool_floss_strings` and
   `strings` rows with the same reader, and the reason says the record is
-  partial. The export, the IOC table and `/iocs` read it through the one
-  rule. Replayed on the benchmark's stored runs when FLOSS strings were read
-  whole only, the two C2 names the sample decrypted published on both models'
-  runs (the static sweep's complete listing does not hold them), and nothing
-  new published on the benign control. Replayed again after the one reader
-  was added (23 stored runs, under each run's own verdict and with the
-  verdict forced to malicious), no published row was added or dropped. No
-  stored run holds a `decode_string_blobs` entry, so the decoder half is not
-  measured by that replay.
+  partial. The export, the IOC table and `/iocs` read it through the one rule.
 * **Draft detection rules match only what the run publishes.** The YARA,
   Sigma and Suricata drafts (`reporting.detection_signatures`) are generated
   after the export. A YARA string or a Suricata alert matches on the IOC
@@ -5624,7 +5599,7 @@ is assembled from what the run gathered rather than recomputed beside it:
   sentences and flagged sentences are applied in the fixed section order
   (`ReportComposer._author_at_once`, `_settle`). Every section's contract
   (`composer.section_contract`) says that a list item is written only with a
-  value and never with nulls, and that a value is a JSON string, numbers included: an item with no value is left out rather than written with `"value": null`, which fails the schema. Five
+  value and never with nulls, and that a value is a JSON string, numbers included, and that an item the evidence cannot fill is left out of the list rather than written with nulls. Five
   checks across the composer and the narrative round are shown to the model
   once through the existing retry-with-feedback
   and recorded unresolved when they survive, and none drops what it is about:
@@ -5691,7 +5666,7 @@ is assembled from what the run gathered rather than recomputed beside it:
   encryption section is also shown `crypto_finding_entries`: every answered
   entry of a crypto-finding kind (`crypto_constants`), whichever server or
   pack step wrote it, so a published constant set found in the file asks the
-  section; a run with none is shown the section without it.
+  section; a run with none is not shown `crypto_finding_entries`.
 * **A decompile figure draws code.** A code-listing figure draws a JSON
   answer's code field, read at the declared `values.code` path (inside the
   declared `rows`) or among its strings at any depth that read as code (the
@@ -5701,9 +5676,9 @@ is assembled from what the run gathered rather than recomputed beside it:
   lines each led by an address, so prose holding numbers is no code; a field
   under a code-ish key (`disassembly`, `listing`, `asm`, `code`) also reads as
   code with three or more lines of mnemonic-and-operand shape and an operand
-  mark (two operands joined by a comma, a memory reference). A JSON answer whose code no one string carries is drawn whole; a
+  mark (two operands joined by a comma, a memory reference). A JSON answer whose code no one string carries is drawn as the tool returned it; a
   JSON object holding no code (a search's hits, an error record) is not drawn,
-  and a plain text answer is drawn whole. An answer cut for storage
+  and a plain text answer is drawn as its text. An answer cut for storage
   is read to the cut, an escape the cut split left out and the cut's mark kept
   out of the listing, and the figure says the answer was cut. The caption names the call's symbol,
   else its address argument, declared or named for an address

@@ -34,7 +34,7 @@ after its last carriage return, and the client reads the answer out from there
 carry nothing from a sample, and no tool has been called yet. The client sets a
 connection up once and refuses a second setup while it is connected or still
 connecting, so this window never reopens. After setup every
-stray line is skipped, so an answer glued to other text is lost and its call fails: a tool's answer can echo text a sample's author wrote, and an
+stray line is skipped, so an answer glued to other text is lost and its call fails. A tool's answer can echo text a sample's author wrote, and an
 absent answer beats a forged one. A line that claims to be a protocol message
 (an object with a `jsonrpc` member) and is not a valid one is stated when it
 comes, with what failed its validation, since it is an answer the server got

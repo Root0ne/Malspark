@@ -50,7 +50,7 @@ own is kept under its own name. A CAPE, Cuckoo or mock report keeps its own
 arrangement: its document is the report itself, key for key and in order, with
 the four blocks CAPE names otherwise under the document's words in the same
 place (`CAPE` is `extracted`, `procdump` is `procdumps`, `procmemory` is
-`memory`, `suricata` is `ids`). A document laid out under its own words is read under them. A Triage report keeps its target's other
+`memory`, `suricata` is `ids`). A stored document that holds these blocks under CAPE's words is read under them: a block missing under the document's word is read under CAPE's. A Triage report keeps its target's other
 digests, each process's guest pid and parent and the sample mark, each
 signature's tags and label, what Triage extracted (overview and task reports),
 the overview's analysis, task and target blocks, each flow's and request's
