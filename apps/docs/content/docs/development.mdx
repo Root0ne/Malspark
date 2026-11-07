@@ -28,6 +28,7 @@ Malspark/
 │   ├── calibration/   the calibration set and its scorer
 │   ├── changelog/     folds changelog.d/ fragments into CHANGELOG.md
 │   ├── ci/            the uv.lock dependency-graph submission the workflow runs
+│   │                  and shard_map.py, the test jobs' shard map
 │   ├── dev/           fetch_external.sh, the Ghidra image manager and
 │   │                  run_capped.py, the capped scope for heavy local runs
 │   ├── goldens/       capture scripts that write tests/fixtures/golden/, plus
@@ -291,11 +292,42 @@ runs on pushes to
 | :-- | :-- |
 | `quality` | Ruff lint, ruff format check, mypy. Every other job needs it. |
 | `semgrep` | `p/python`, `p/security-audit`, `p/typescript` and `p/react` at the pinned version, over `src/ apps/api/ services/ scripts/ apps/web/src/`. `.semgrepignore` keeps out what is not source: build output, the Playwright suite (`e2e/*.spec.ts`) and the vitest specs (`__tests__/*.test.ts`). |
-| `test` | `pytest tests/ -q --tb=short` on Python 3.13. |
+| `test-shard` | `pytest tests/ -q --tb=short` on Python 3.13, split over six parallel runners (see *Test shards* below). |
+| `test-shard-map` | Fails unless the shards together collect exactly what `pytest tests/` collects. |
+| `test` | The required check *Test Suite (Python 3.13)*: passes only when every shard and the map check passed. |
 | `test-qdrant` | `tests/unit/test_qdrant_store.py` against a live Qdrant service container. |
 | `frontend` | `tsc --noEmit`, eslint, vitest and a production `next build`. |
 | `npm-audit` | `npm audit` over the console's shipped packages; high or critical fails. Not a required check, so an advisory published overnight does not block an unrelated merge. |
 | `e2e` | Playwright, through the same `npm run test:e2e` entry point developers use. |
+
+### Test shards
+
+The Python suite runs in shards so that its wall time is that of the longest
+shard rather than the sum. `scripts/ci/shard_map.py` holds the map: a shard's
+unit is a directory directly below `tests/` or `tests/unit/`, or the test files
+lying directly in one of the two, and every test file falls in exactly one
+unit. The units are placed longest first, each on the shard with the least
+time so far, from the seconds in the script's `WEIGHTS` table, so the map
+depends only on the tree and the table. A directory or file added later lands
+in a shard on its own, at `UNMEASURED` seconds until the table is rebalanced.
+`python scripts/ci/shard_map.py --suite linux --list` prints the map and
+`--shard N` the paths one shard runs.
+
+The `test-shard-map` job collects the suite whole and shard by shard and fails
+on a test that is in no shard or in two. The *Test Suite (Python 3.13)* job
+needs every shard and the map job and fails unless all of them succeeded,
+so the required check keeps its name and its meaning. The macOS workflow
+splits `tests/unit` and `tests/api` the same way (`--suite macos`), with its
+own map job on a macOS runner and *Test Suite (macOS arm64)* as the job that
+gathers them.
+
+To rebalance, download the `junit-linux-*` artifacts of a recent run, print
+a fresh table with `python scripts/ci/shard_map.py --weigh junit-linux-*.xml`
+and replace `WEIGHTS` with it. To change the number of shards, change the
+suite's `shards` in `SUITES` and the workflow's `shard` matrix together;
+`tests/unit/scripts/test_the_ci_shards_cover_every_test_once.py` fails while
+the two differ. A shard runs its tests without the ones that ran before them
+in the serial run, so a test must not rely on another test's leftovers.
 
 More workflows run beside CI. **Docs** checks these pages on every pull request that touches them (see *Documentation site* above). **CodeQL** analyses Python, TypeScript and
 the workflow files themselves on every push and pull request to `main` and
