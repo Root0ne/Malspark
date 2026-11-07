@@ -21,20 +21,36 @@ module turns that fact into one question before the analyst's answer stands:
   none is stated, the read routines a claim calls an entry, main,
   dispatcher, beacon, start-up or command routine stand in for it (the
   address the claim writes nearest that word).
-* **The rank** is a function's distance from the path: the calls between it
-  and the nearest start, plus one for each function beyond the first that
-  calls it (a routine called from everywhere is a shared helper, not a step
-  of the path). One no start reaches comes last. Ties go to the one calling
-  more functions itself, then to the lower address. No address is special to
-  the platform.
+* **The rank** puts first the functions on the path from a start down to a
+  routine read: the analyst read what lies below each, so its code is the
+  gap in a chain the analyst followed. Then what the run already ties to the
+  function: the artefacts the pack's function index states as its own (its
+  ``direct`` count: imports, calls through resolved slots, names its hashes
+  resolve to, strings it refers to, rules that matched in it), plus those of
+  the unread functions reached only through it (every chain of calls into
+  each, from where code can start or from a routine read, passes through
+  it), so a routine whose callee holds the strings is not ranked as empty.
+  That sum is compared by its power of two (none, 1, 2-3, 4-7, ...): between
+  two functions holding about as many, distance
+  decides, not a few artefacts more. Then its distance from the path: the
+  calls between it and the nearest start, plus one for each function beyond
+  the first that calls it (a routine called from everywhere is a shared
+  helper, not a step of the path); one no start reaches comes after. Ties go
+  to the one calling more functions itself, then to the lower address. No
+  address, tool or sample is special to the platform.
 
 The question lists at most :data:`CALLEES_SHOWN` of them, says how many there
-are and that the rest are left out, and gives each its reason in the
-platform's own words: addresses and counts, never a name or a string the
-sample or a tool wrote. The analyst decides: it may read any of them with its
-tools, or none; nothing is forced and no call is refused. Linear in the
-ledger and the call graph: each entry is read once, the path is one
-breadth-first walk each way, every lookup is a dict, a set or a bisection.
+are, and gives each its reason in the platform's own words: addresses and
+counts, never a name or a string the sample or a tool wrote. The analyst
+decides: it may read any of them with its tools, or none; nothing is forced
+and no call is refused. When more are unread than it lists, the last
+:data:`NEAREST_KEPT` places go to the nearest of the rest by distance alone,
+so a routine the index ties nothing to is not buried, and the rest follow as
+bare addresses in rank order, at most :data:`OTHERS_NAMED`, then how many
+more. Each entry is read once, the path is one breadth-first walk each way,
+every lookup is a dict, a set or a bisection; what is reached only through
+each function is read off one dominator tree built over the calls once (each
+call times the bits of the function count).
 """
 
 from __future__ import annotations
@@ -87,13 +103,21 @@ __all__ = [
 ]
 
 # An analyst reading code stopped on its own with the main-path callees of
-# routines it read unread. Those functions, ranked by the main path, are
-# listed to it, once per job, and it decides whether to read them.
+# routines it read unread. Those functions, ranked by the main path and by
+# the artefacts the run ties to them, are listed to it, once per job, and it
+# decides whether to read them.
 UNREAD_CALLEES_CODE = "isr.callees_not_read"
 
 # How many functions the question lists at most; the question says how many
 # there are in all and that the others are left out.
 CALLEES_SHOWN = 12
+
+# Of those, how many places go to the nearest of the rest by distance alone.
+NEAREST_KEPT = 2
+
+# How many of the functions past those the question names by address alone,
+# in rank order; it says how many more there are.
+OTHERS_NAMED = 100
 
 # The kind of answer that states a file's format header, whatever the format:
 # its entry point and its exports start the code.
@@ -125,7 +149,9 @@ class CalleeToRead:
     on the path); ``on_path`` whether it lies on the path from a start down to
     a read routine; ``depth`` the calls between it and the nearest start
     (``None``: no start reaches it); ``called_from`` how many functions call
-    it; ``calls`` how many it calls.
+    it; ``calls`` how many it calls. ``artefacts`` is what the function
+    index states as its own, ``reached`` the artefacts of the unread
+    functions reached only through it.
     """
 
     address: int
@@ -135,27 +161,53 @@ class CalleeToRead:
     called_from: int
     calls: int
     on_path: bool = False
+    artefacts: int = 0
+    reached: int = 0
 
     def distance(self) -> int | None:
-        """The rank: calls from the nearest start, plus one per further caller; ``None``: unreached."""
+        """Calls from the nearest start, plus one per further caller; ``None``: unreached."""
         if self.depth is None:
             return None
         return self.depth + max(0, self.called_from - 1)
 
+    def rank(self) -> tuple[bool, int, bool, int, int, int]:
+        """The order: on the path, then more artefacts by power of two, then nearer; stable ties."""
+        distance = self.distance()
+        return (
+            not self.on_path,
+            -(self.artefacts + self.reached).bit_length(),
+            distance is None,
+            distance or 0,
+            -self.calls,
+            self.address,
+        )
+
+    def nearness(self) -> tuple[bool, int, int, int]:
+        """The order by distance alone: nearer first, then calling more, then the lower address."""
+        distance = self.distance()
+        return (distance is None, distance or 0, -self.calls, self.address)
+
     def reason(self) -> str:
         """Why it is listed, in the platform's words: addresses and counts."""
         said: list[str] = []
+        if self.artefacts and self.reached:
+            said.append(f"{self.artefacts} artefact(s), {self.reached} more only through it")
+        elif self.artefacts:
+            said.append(f"{self.artefacts} artefact(s)")
+        elif self.reached:
+            said.append(f"{self.reached} artefact(s) only through it")
         if self.callers:
-            callers = ", ".join(hex(c) for c in self.callers[:2])
-            more = len(self.callers) - 2
-            said.append(f"called by {callers}" + (f" and {more} more" if more > 0 else ""))
+            # One caller by address, and the counts before the start's
+            # address: a bound on the row cuts the start first.
+            more = len(self.callers) - 1
+            said.append(f"called by {hex(self.callers[0])}" + (f" and {more} more" if more else ""))
         if self.on_path:
-            said.append("on the path from a start to routines you read")
+            said.append("on the path to routines you read")
+        said.append(f"{self.called_from} caller(s); calls {self.calls}")
         if self.depth is not None and self.start is not None:
             said.append(f"{self.depth} call(s) from the start {hex(self.start)}")
         else:
             said.append("no stated start reaches it")
-        said.append(f"{self.called_from} caller(s); calls {self.calls}")
         return "; ".join(said)
 
 
@@ -404,21 +456,257 @@ def _index_starts(entries: Iterable[Any], bases: Sequence[int]) -> set[int]:
     return out
 
 
+def _artefact_counts(entries: Iterable[Any], bases: Sequence[int]) -> dict[int, int]:
+    """Each function's own artefacts, as the pack's function index states them.
+
+    ``entries`` are the pack's: a sample's code shapes what an analyst's own
+    calls answer, the pack's index is the one the platform built. Read from a
+    whole index's ``rows`` and from the row an answer by address states as a
+    mapping (``function``); a row an answer gives as a line of text is not
+    read. A row's ``direct`` count where it states one, bounded by
+    :data:`_COUNT_BOUND`; else the cells of its lists other than calls,
+    threads and names. The most any row states for a function counts.
+    """
+    out: dict[int, int] = {}
+    for entry in entries:
+        if getattr(entry, "ok", True) is False or _map_kind(entry) != _INDEX_KIND:
+            continue
+        data = _parsed(entry)
+        if not isinstance(data, Mapping):
+            continue
+        rows = data.get("rows")
+        for row in [*(rows if isinstance(rows, list) else ()), data.get("function")]:
+            if not isinstance(row, Mapping):
+                continue
+            function = _hex(row.get("function")) or _hex(row.get("offset"))
+            if function is None:
+                continue
+            direct = row.get("direct")
+            if isinstance(direct, int) and not isinstance(direct, bool):
+                count = direct
+            else:
+                count = sum(
+                    len(value)
+                    for key, value in row.items()
+                    if isinstance(value, list) and key not in _NOT_ARTEFACTS
+                )
+            key = one_spelling(function, bases)
+            out[key] = max(out.get(key, 0), min(max(0, count), _COUNT_BOUND))
+    return out
+
+
+# The list fields of an index row that state calls, threads and names, not artefacts.
+_NOT_ARTEFACTS = frozenset(
+    {"callers", "callees", "starts_threads", "started_as_thread_by", "names"}
+)
+
+# The most artefacts one function is counted for: a count the sample's code
+# inflates past it ranks no higher, and the reason stays short.
+_COUNT_BOUND = 1 << 20
+
+
+def _sccs(nodes: Sequence[int], graph: Mapping[int, Iterable[int]]) -> list[list[int]]:
+    """The strongly connected components, callees' before callers' (Tarjan, without recursion)."""
+    index: dict[int, int] = {}
+    low: dict[int, int] = {}
+    on_stack: set[int] = set()
+    stack: list[int] = []
+    out: list[list[int]] = []
+    for root in nodes:
+        if root in index:
+            continue
+        index[root] = low[root] = len(index)
+        stack.append(root)
+        on_stack.add(root)
+        work = [(root, iter(sorted(graph.get(root, ()))))]
+        while work:
+            at, callees = work[-1]
+            pushed = False
+            for callee in callees:
+                if callee not in index:
+                    index[callee] = low[callee] = len(index)
+                    stack.append(callee)
+                    on_stack.add(callee)
+                    work.append((callee, iter(sorted(graph.get(callee, ())))))
+                    pushed = True
+                    break
+                if callee in on_stack:
+                    low[at] = min(low[at], index[callee])
+            if pushed:
+                continue
+            work.pop()
+            if work:
+                low[work[-1][0]] = min(low[work[-1][0]], low[at])
+            if low[at] == index[at]:
+                component: list[int] = []
+                while True:
+                    member = stack.pop()
+                    on_stack.discard(member)
+                    component.append(member)
+                    if member == at:
+                        break
+                out.append(component)
+    return out
+
+
+def _reached_only_through(
+    graph: Mapping[int, Iterable[int]],
+    callers_of: Mapping[int, Iterable[int]],
+    read: Mapping[int, Any],
+    held: Mapping[int, int],
+    starts: Iterable[int] = (),
+) -> dict[int, int]:
+    """Per function, the artefacts of the functions reached only through it.
+
+    A function is reached only through ``f`` when every chain of calls into
+    it, from where code can start, passes through ``f``: ``f`` dominates it.
+    Code can start at a stated start, at each routine read (what a routine
+    read reaches is the analyst's own, so a read cuts what only it reaches),
+    and in each group of functions no other calls (a component of the call
+    graph with no caller outside it) at its stated start, else at its lowest
+    address. A virtual root calls each of those. The dominator tree is built
+    once (Lengauer and Tarjan, with path compression, no recursion: the calls
+    times the bits of the function count) and the counts are summed once up
+    the tree, deepest first, so a loop through ``f`` and a loop under ``f``
+    both count for ``f``.
+    """
+    nodes = sorted(
+        {
+            *graph,
+            *callers_of,
+            *(c for cs in graph.values() for c in cs),
+            *(c for cs in callers_of.values() for c in cs),
+        }
+    )
+    if not nodes:
+        return {}
+    known = set(nodes)
+    begun = set(starts) | set(read)
+    entries = sorted(n for n in begun if n in known)
+    component_of: dict[int, int] = {}
+    components = _sccs(nodes, graph)
+    for number, component in enumerate(components):
+        for member in component:
+            component_of[member] = number
+    called_from_outside = {
+        component_of[callee]
+        for caller in nodes
+        for callee in graph.get(caller, ())
+        if component_of[callee] != component_of[caller]
+    }
+    for number, component in enumerate(components):
+        if number in called_from_outside or any(m in begun for m in component):
+            continue
+        entries.append(min(component))
+    # Index 0 is the virtual root; function ``nodes[k]`` is index ``k + 1``.
+    at = {node: k + 1 for k, node in enumerate(nodes)}
+    successors: list[list[int]] = [sorted(at[e] for e in set(entries))]
+    successors += [sorted(at[c] for c in graph.get(node, ())) for node in nodes]
+    predecessors: list[list[int]] = [[] for _ in range(len(nodes) + 1)]
+    for v, outs in enumerate(successors):
+        for w in outs:
+            predecessors[w].append(v)
+    idom = _dominators(successors, predecessors)
+    below = [0] * (len(nodes) + 1)
+    for v in idom.order[::-1]:
+        parent = idom.of[v]
+        if parent > 0:
+            below[parent] += held.get(nodes[v - 1], 0) + below[v]
+    return {nodes[v - 1]: below[v] for v in idom.order if below[v]}
+
+
+@dataclass
+class _Dominated:
+    """The immediate dominator of each vertex reached from the root, and the walk's order."""
+
+    of: dict[int, int]
+    order: list[int]
+
+
+def _dominators(
+    successors: Sequence[Sequence[int]], predecessors: Sequence[Sequence[int]]
+) -> _Dominated:
+    """Lengauer and Tarjan's dominators from vertex 0, without recursion.
+
+    Each vertex is numbered in a depth-first walk; its semidominator is found
+    from its predecessors through a forest whose paths are compressed, so the
+    whole is bounded by the edges times the bits of the vertex count.
+    """
+    count = len(successors)
+    number = [-1] * count
+    vertex: list[int] = []
+    parent = [0] * count
+    stack: list[tuple[int, int]] = [(0, 0)]
+    while stack:
+        v, from_ = stack.pop()
+        if number[v] != -1:
+            continue
+        number[v] = len(vertex)
+        vertex.append(v)
+        parent[v] = from_
+        for w in reversed(successors[v]):
+            if number[w] == -1:
+                stack.append((w, v))
+    semi = list(range(count))
+    for v in vertex:
+        semi[v] = number[v]
+    ancestor = [-1] * count
+    label = list(range(count))
+    idom = [0] * count
+    bucket: list[list[int]] = [[] for _ in range(count)]
+
+    def evaluate(v: int) -> int:
+        if ancestor[v] == -1:
+            return v
+        path = []
+        x = v
+        while ancestor[ancestor[x]] != -1:
+            path.append(x)
+            x = ancestor[x]
+        for y in reversed(path):
+            a = ancestor[y]
+            if semi[label[a]] < semi[label[y]]:
+                label[y] = label[a]
+            ancestor[y] = ancestor[a]
+        return label[v]
+
+    for k in range(len(vertex) - 1, 0, -1):
+        w = vertex[k]
+        for v in predecessors[w]:
+            if number[v] == -1:
+                continue
+            u = evaluate(v)
+            if semi[u] < semi[w]:
+                semi[w] = semi[u]
+        bucket[vertex[semi[w]]].append(w)
+        p = parent[w]
+        ancestor[w] = p
+        for v in bucket[p]:
+            u = evaluate(v)
+            idom[v] = u if semi[u] < semi[v] else p
+        bucket[p] = []
+    for k in range(1, len(vertex)):
+        w = vertex[k]
+        if idom[w] != vertex[semi[w]]:
+            idom[w] = idom[idom[w]]
+    return _Dominated({v: idom[v] for v in vertex[1:]}, vertex[1:])
+
+
 def callees_to_read(
     claims: Iterable[Any],
     entries: Sequence[Any],
     pack: Sequence[Any] = (),
     definition: Any = None,
 ) -> CalleesFound:
-    """The unread functions around the routines the analyst read, ranked by the main path.
+    """The unread functions around the routines the analyst read, ranked.
 
     ``entries`` are the analyst's own ledger entries, ``pack`` the triage
     pack's: its function index adds the calls the analyst's listings do not
-    state and the threads it starts, its format header the entry point and
-    exports. ``claims`` give the starts only where no answer states one.
-    ``definition`` is the analyst's, handed to :func:`reads_code`. Empty when
-    the analyst reads no code, and when every function around what it read is
-    read.
+    state, the threads it starts and the artefacts each function holds, its
+    format header the entry point and exports. ``claims`` give the starts
+    only where no answer states one. ``definition`` is the analyst's, handed
+    to :func:`reads_code`. Empty when the analyst reads no code, and when
+    every function around what it read is read.
     """
     own = list(entries)
     code, why = reads_code(definition, own)
@@ -449,8 +737,11 @@ def callees_to_read(
     if not callers and not path:
         stated = any(graph.get(r) for r in read)
         return CalleesFound(starts=said_starts, not_run="" if stated else NOT_RUN_NO_CALLS)
+    unread = {*callers, *path}
+    held = _artefact_counts(found.context, bases)
+    behind = _reached_only_through(graph, found.callers_of, read, held, starts)
     out: list[CalleeToRead] = []
-    for address in {*callers, *path}:
+    for address in unread:
         depth, start = depths.get(address, (None, None))
         out.append(
             CalleeToRead(
@@ -461,10 +752,28 @@ def callees_to_read(
                 called_from=len(found.callers_of.get(address, ())),
                 calls=len(graph.get(address, ())),
                 on_path=address in path,
+                artefacts=held.get(address, 0),
+                reached=min(behind.get(address, 0), _COUNT_BOUND),
             )
         )
-    out.sort(key=lambda c: (c.distance() is None, c.distance() or 0, -c.calls, c.address))
-    return CalleesFound(tuple(out), said_starts)
+    out.sort(key=CalleeToRead.rank)
+    return CalleesFound(_with_nearest(out), said_starts)
+
+
+def _with_nearest(ranked: list[CalleeToRead]) -> tuple[CalleeToRead, ...]:
+    """``ranked``, its last :data:`NEAREST_KEPT` listed places given to the nearest of the rest.
+
+    Nearest by distance alone, the order before artefacts counted: a short
+    routine the index ties nothing to (a loop, a check) is not buried under
+    every function holding strings.
+    """
+    head = CALLEES_SHOWN - NEAREST_KEPT
+    if len(ranked) <= CALLEES_SHOWN:
+        return tuple(ranked)
+    rest = ranked[head:]
+    nearest = sorted(rest, key=CalleeToRead.nearness)[:NEAREST_KEPT]
+    kept = {c.address for c in nearest}
+    return (*ranked[:head], *nearest, *(c for c in rest if c.address not in kept))
 
 
 def _claimed_starts(
@@ -508,10 +817,11 @@ def _held_in(address: int, keys: Iterable[int], bases: Sequence[int]) -> int | N
 def unread_callees_violation(found: CalleesFound) -> Violation | None:
     """The one question about ``found``, or ``None`` when there is none.
 
-    At most :data:`CALLEES_SHOWN` are listed, in rank order; the question
-    says how many there are and that the rest are not listed. It asks
-    whether to read them and forces nothing, so it is advisory: a question
-    never answered is no finding left unfixed.
+    At most :data:`CALLEES_SHOWN` are listed with their reasons, in rank
+    order; the others follow as bare addresses in rank order, at most
+    :data:`OTHERS_NAMED` of them, and the question says how many more there
+    are. It asks whether to read them and forces nothing, so it is advisory:
+    a question never answered is no finding left unfixed.
     """
     ranked = found.ranked
     if not ranked:
@@ -522,9 +832,19 @@ def unread_callees_violation(found: CalleesFound) -> Violation | None:
     # the row rule all the same, item by item, so a bound cuts one reason and
     # never the list.
     listed = "; ".join(safe_finding_value(f"{hex(c.address)} ({c.reason()})") for c in shown)
+    nearest = (
+        f"; the last {NEAREST_KEPT} places go to the nearest of the rest by distance alone"
+        if left
+        else ""
+    )
+    others = ranked[len(shown) : len(shown) + OTHERS_NAMED]
+    beyond = left - len(others)
     bound = (
-        f" The first {len(shown)} of {len(ranked)} are listed (the question lists at most "
-        f"{CALLEES_SHOWN}); the other {left} are not."
+        f" The first {len(shown)} of {len(ranked)} are listed with their reasons (the "
+        f"question gives at most {CALLEES_SHOWN} reasons); the other {left}, in rank order: "
+        + ", ".join(hex(c.address) for c in others)
+        + (f", and {beyond} more" if beyond > 0 else "")
+        + "."
         if left
         else ""
     )
@@ -534,13 +854,16 @@ def unread_callees_violation(found: CalleesFound) -> Violation | None:
             f"{len(ranked)} function(s) around the routines you read have code none of your "
             "listings holds: callees of those routines, and functions on the path from where "
             "the code starts down to them. Where the code starts: "
-            f"{safe_finding_value(found.starts)}. Ranked by "
-            "distance from those starts (the calls between, plus one for each further "
-            "function calling it, since a routine called from many places is a shared "
-            f"helper): {listed}.{bound} Decide whether any matters to this analysis: you may "
-            "read any of them with your tools and add or change claims for what their code "
-            "does, citing the entries that list it, or leave them unread and change "
-            "nothing. This is asked once."
+            f"{safe_finding_value(found.starts)}. Ranked first by whether it lies on the path "
+            "to routines you read, then by the artefacts the function index ties to it and "
+            "to the unread functions reached only through it, by power of two, then by "
+            "distance from those starts (the calls between, plus one for each further function "
+            f"calling it, since a routine called from many places is a shared helper){nearest}. "
+            "A function's counts may include those of other functions listed: "
+            f"{listed}.{bound} Decide whether any matters to this analysis: you may read any "
+            "of them with your tools and add or change claims for what their code does, "
+            "citing the entries that list it, or leave them unread and change nothing. This "
+            "is asked once."
         ),
         advisory=True,
     )
