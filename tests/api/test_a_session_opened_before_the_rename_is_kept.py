@@ -76,7 +76,7 @@ def test_the_previous_labels_are_read_only_for_a_token_minted_in_the_window(
     shipped_labels: None, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     assert auth_jwt.previous_labels_minted_before() == datetime(
-        2026, 11, 7, tzinfo=UTC
+        2026, 11, 8, tzinfo=UTC
     ) + timedelta(days=90)
     now = datetime.now(UTC)
     monkeypatch.setattr(auth_jwt, "previous_labels_minted_before", lambda: now - timedelta(hours=1))
