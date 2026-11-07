@@ -18,6 +18,7 @@ import {
   PREVIOUS_THEME_STORAGE_KEY,
   THEME_BOOT_SCRIPT,
   THEME_STORAGE_KEY,
+  scriptString,
 } from "@/components/analysis/themeScript";
 import { PREVIOUS_NAME_FORMAT_PREFIX } from "@/lib/previousName";
 import {
@@ -453,6 +454,13 @@ describe("the overview", () => {
 });
 
 describe("the switches", () => {
+  it("write a value into the boot script that cannot close the script or end its line", () => {
+    const written = scriptString("</script><b>\u2028\u2029/x");
+    expect(written).not.toMatch(/[<>/\u2028\u2029]/);
+    expect(JSON.parse(written.replace(/\\u002F/g, "/"))).toBe("</script><b>\u2028\u2029/x");
+    expect(scriptString(THEME_STORAGE_KEY)).toBe(JSON.stringify(THEME_STORAGE_KEY));
+    expect(scriptString(PREVIOUS_THEME_STORAGE_KEY)).toBe(JSON.stringify(PREVIOUS_THEME_STORAGE_KEY));
+  });
 
   it("apply the theme before paint with the same key and the same rule", () => {
     expect(THEME_BOOT_SCRIPT).toContain(JSON.stringify(THEME_STORAGE_KEY));

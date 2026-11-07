@@ -25,6 +25,25 @@ export const THEME_STORAGE_KEY = "malspark.ui-theme";
  *  reader's choice survives the upgrade. Never written. */
 export const PREVIOUS_THEME_STORAGE_KEY = `${PREVIOUS_NAME_FORMAT_PREFIX.replace(/-$/, ".")}ui-theme`;
 
-// The keys are constants, so the script is still one constant string; a test
-// pins it to THEME_STORAGE_KEY and PREVIOUS_THEME_STORAGE_KEY.
-export const THEME_BOOT_SCRIPT = `(function(){try{if(!/^\\/analysis\\//.test(location.pathname))return;var t=null;try{t=localStorage.getItem(${JSON.stringify(THEME_STORAGE_KEY)});if(t===null)t=localStorage.getItem(${JSON.stringify(PREVIOUS_THEME_STORAGE_KEY)})}catch(e){}if(t!=="light"&&t!=="dark"){t=window.matchMedia&&window.matchMedia("(prefers-color-scheme: light)").matches?"light":"dark"}document.documentElement.setAttribute("data-ui-theme",t)}catch(e){}})();`;
+/** A value written into an inline <script> as a JS string literal: JSON-quoted,
+ *  then every character that could close the script element or end a line in
+ *  a JS parser escaped. The keys are constants and carry none of them, so the
+ *  script stays one constant string; a test pins it to both keys. */
+const SCRIPT_UNSAFE: Record<string, string> = {
+  "<": "\\u003C",
+  ">": "\\u003E",
+  "/": "\\u002F",
+  "\b": "\\b",
+  "\f": "\\f",
+  "\n": "\\n",
+  "\r": "\\r",
+  "\t": "\\t",
+  "\0": "\\0",
+  "\u2028": "\\u2028",
+  "\u2029": "\\u2029",
+};
+export function scriptString(value: string): string {
+  return JSON.stringify(value).replace(/[<>/\b\f\n\r\t\0\u2028\u2029]/g, (c) => SCRIPT_UNSAFE[c] ?? c);
+}
+
+export const THEME_BOOT_SCRIPT = `(function(){try{if(!/^\\/analysis\\//.test(location.pathname))return;var t=null;try{t=localStorage.getItem(${scriptString(THEME_STORAGE_KEY)});if(t===null)t=localStorage.getItem(${scriptString(PREVIOUS_THEME_STORAGE_KEY)})}catch(e){}if(t!=="light"&&t!=="dark"){t=window.matchMedia&&window.matchMedia("(prefers-color-scheme: light)").matches?"light":"dark"}document.documentElement.setAttribute("data-ui-theme",t)}catch(e){}})();`;
