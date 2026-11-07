@@ -86,7 +86,7 @@ it.
   is exported.
 - **STIX 2.1 bundle and IOC feed,** with a publish decision on every indicator
   row; one publish rule decides what the bundle, the table and the feed carry.
-- **Detection drafts** for YARA, Sigma, Suricata and Snort, matching only what
+- **Detection drafts** for YARA, Sigma and Suricata, matching only what
   the run publishes.
 - **The evidence bundle** beside the report, and a section-by-section
   comparison of two runs.
@@ -145,8 +145,8 @@ it.
   MinIO, Qdrant and optional sidecar profiles; the CLI runs an analysis
   outside it.
 - **Native amd64 and arm64 images:** the release publishes every image for
-  both but Detect It Easy's, which is amd64 only; on an arm64 host Ghidra and
-  Detect It Easy run emulated under Rosetta.
+  both but Detect It Easy's, which is amd64 only. On an Apple Silicon Mac, the
+  locally built Ghidra image and Detect It Easy run emulated under Rosetta.
 - **Signed and attested releases:** every image and Python artefact is signed
   with cosign keyless and carries SLSA build provenance.
 - **macOS:** the stack runs on an Apple Silicon Mac, and the tests, API and

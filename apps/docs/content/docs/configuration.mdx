@@ -634,7 +634,7 @@ different question, finds no row, and is refused until it is probed: nothing
 has to expire a result, because a result is never read for a pair it was not
 taken against. The endpoint half of the pair is folded the way a URL folds —
 lower-case scheme and host, the scheme's default port dropped, no trailing
-slash — so one server typed four ways is one key rather than four. A row taken under another spelling of the endpoint is filed under that spelling; re-run the probe if the gate refuses a model you have tested.
+slash — so one server typed four ways is one key rather than four. A stored row whose endpoint is not in the folded form matches no pair; re-run the probe if the gate refuses a model you have tested.
 
 `core.llm.require_probe` is on, and turning it off is the only way past the
 gate — neither a job nor a save can ask to skip it. It is there for an
@@ -897,8 +897,7 @@ or below 1.5 fires no more often on malware than on ordinary software, and it
 goes. The trigger is a rule above 4% of ordinary Windows software whose lift is
 under 3 — not a threshold that deletes it, because the measured rate is carried
 precisely so a common association can ship honestly and let the reader weigh it,
-but a sign that the rule should be argued on its own terms. A rule is deleted when it is the sole row on no malware profile at all, so it tells a reader nothing another row does not; when it is weak on its own numbers; or when it fails the test that decides whether a name belongs in a rule, applied to the whole rule. A rule is deleted when one of those arguments carries, and
-not for its rate.
+but a sign that the rule should be argued on its own terms. A rule is deleted when it is the sole row on no malware profile at all, so it tells a reader nothing another row does not; when it is weak on its own numbers; or when it fails the test that decides whether a name belongs in a rule, applied to the whole rule — and not for its rate.
 
 **Every association carries the rate it was measured at**, under `measured`:
 `seen_on_benign_percent` is the share of a named benign corpus the association
@@ -1337,9 +1336,7 @@ completions or Responses API), Anthropic or Gemini request whose output cap
 takes longer at that pace than its client allows carries its own timeout, the
 SDK's per-request option: that time, by the same arithmetic and margin, its
 prompt counted at three characters a token. Any other request keeps its
-client's timeout. So no derived wait is held under 1,800 s any more: at 3.8
-tokens a second the judge's 8,192 tokens need 8,192 / 3.8 × 1.5 ≈ 3,234 s and
-get it, where 600 s allowed about 2,280 of them, and a 393,216-token section
+client's timeout. So no derived wait is held under 1,800 s: at 3.8 tokens a second the judge's 8,192 tokens need 8,192 / 3.8 × 1.5 ≈ 3,234 s and get it, and a 393,216-token section
 at 40 tokens a second gets 393,216 / 40 × 1.5 ≈ 14,746 s. The Ollama client
 streams every answer, so its 1,800 s bounds the silence between two pieces of
 an answer. The function summariser's wait follows its request's.
@@ -4900,7 +4897,7 @@ Per job and per tool server, three settings under **Tool servers → Resilience*
 | `core.mcp.breaker.cooldown_seconds` | 60 | A judgement: long enough for a sidecar being restarted to come back, short against the analysts' own loop budgets. |
 | `core.mcp.breaker.call_timeout_seconds` | 0 (per server) | Set, the budget of every call to every server. Zero gives each server the `call_timeout_seconds` its own block declares, and a server that declares none (every built-in) `core.mcp.breaker.default_call_timeout_seconds`. A tool whose server declares a longer budget in its manifest or its declaration (`tool_facts.<tool>.timeout_seconds`) gets that, a long-running tool (by either) none unless this is set, and thirty seconds of grace are added either way. |
 | `<server block>.call_timeout_seconds` | empty | Each server's own budget per call (an `mcp.servers` entry, `static.ghidra`, `static.r2`, `sandbox.cape2.mcp`), read when `core.mcp.breaker.call_timeout_seconds` is zero; zero sends its calls with no deadline of their own, empty takes `core.mcp.breaker.default_call_timeout_seconds`. Ghidra's REST requests (open, call graph, anti-analysis scan) and radare2's open before the loop wait it too. |
-| `core.mcp.breaker.default_call_timeout_seconds` | 300 | The budget per call of every server whose block declares none (every built-in), read alike whatever the server or its tools are called; zero sends their calls with no deadline of their own. 300 is the longer of the two static timeouts as they ship (`core.static.capa.timeout_seconds` and `core.static.yara.timeout_seconds`); a deployment may set its own floor here (900 on a slow host still fits), and importing a `malspark-settings/2` or `/1` export gives it the floor that export carried. |
+| `core.mcp.breaker.default_call_timeout_seconds` | 300 | The budget per call of every server whose block declares none (every built-in), read alike whatever the server or its tools are called; zero sends their calls with no deadline of their own. 300 is capa's shipped timeout (`core.static.capa.timeout_seconds`); a deployment may set its own floor here (900 on a slow host still fits), and importing a `malspark-settings/2` or `/1` export gives it the floor that export carried. |
 | `core.mcp.breaker.max_concurrent_calls` | 4 | A judgement: the shipped teams run their analysts one after another, and four lets one analyst's parallel tool calls through while bounding a team that fans out. `0` leaves the calls uncapped. |
 
 An unanswered call is either a transport failure — a timeout, a refused or
@@ -5448,7 +5445,7 @@ are rejected with 422 and a per-key error, and nothing is applied when any key
 fails. A key of a setting retired with no effect — `core.preprocessing.summarizer_provider`,
 `core.preprocessing.summarizer_model`, `core.reporting.narrative_max_tokens` —
 is refused the same way, and its error says it is retired, what replaced it and
-to delete that key from the file and import again; an export carries it only if the setting was saved. A successful import
+to delete that key from the file and import again. A successful import
 writes one audit row (`settings.import`) naming the applied keys. The console previews the document against the current
 configuration before sending it.
 

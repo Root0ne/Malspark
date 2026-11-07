@@ -163,7 +163,7 @@ opens a second session to write the result.
 
 A failed run records its failure through a session of its own. The session the
 run was writing through is the one most likely to be unusable — a terminated
-backend leaves every statement on it raising `PendingRollbackError` — and a job would publish its `error` event and still read `running`, with no error and no `completed_at`, for as long as the worker stayed up. What the
+backend leaves every statement on it raising `PendingRollbackError` — so a failure written through it would leave a job that published its `error` event still reading `running`, with no error and no `completed_at`, for as long as the worker stayed up. What the
 row then says is the class of the exception and the id of the log entry
 holding the rest: `error_message` is a field of `JobResponse`, so an
 exception's own message put there is published, and a failure names a path or
@@ -1639,9 +1639,7 @@ Four rules follow from the statement:
   says, through `schemas/judgement.indicator_type_for` and STIX 2.1's
   `indicator-type-ov`: Malware is `malicious-activity`, Suspicious
   `anomalous-activity`, Benign `benign`, and a verdict that mapping does not
-  name is `unknown`. The indicator never claims `malicious-activity` whatever
-  the run concluded: a consumer blocks on the indicator and reads the objects
-  afterwards, so its type must agree with the verdict.
+  name is `unknown`. The indicator claims `malicious-activity` only when the published verdict is Malware: a consumer blocks on the indicator and reads the objects afterwards, so its type must agree with the verdict.
   An indicator for anything else — a domain, an address, a URL the analysts
   observed — keeps the type it already had (`malicious-activity` when the row
   is marked suspicious, `anomalous-activity` otherwise, and
@@ -1784,7 +1782,7 @@ own bundle is not edited. The report object's type follows the verdict the
 record states (`stix_renderer.report_types_for`): `malware` under a Malware
 verdict, and `threat-report` under Suspicious or Benign — the `report-type-ov`
 vocabulary has no term for a finding of no threat, and its general entry is the
-one that claims no malware instance. No export is typed `software` or
+one that claims no malware instance. No export this release writes is typed `software` or
 `malware-analysis`, which are not in that vocabulary, and no export carries an
 identity no object names.
 
@@ -2122,8 +2120,7 @@ decide.
    platform mismatch, which get their own question. The answer stands; a kept
    id is published as stated and nothing is noted on the claim. OS Credential
    Dumping on "accesses the PEB … to bypass sandboxing" is asked; so is a true
-   claim whose sentence uses none of the technique's words (Ingress Tool
-   Transfer on "downloads and writes a file"), which the analyst keeps.
+   claim whose sentence uses none of the technique's words (Ingress Tool Transfer on "downloads and writes a file"), which the analyst may keep.
    A technique's procedure words (`validation.procedure_words`) are the
    calls, classes and artefacts the vendored data that ties an id to its
    procedures writes for it: the technique card's requirements and indicators
@@ -2332,8 +2329,7 @@ of description, and no property the platform fills in — created, modified,
 spec_version, valid_from, and `pattern_type`, which is always `stix`. Every
 relationship is the judge's own: which indicator indicates the sample, and
 which does not, is its decision, and the platform writes no edge into its
-bundle. The compact contract keeps the judge's answer short enough to close within its output cap.
-An answer that stopped at the budget is told so — `verdict.cut_at_output_cap`,
+bundle. The compact contract shortens the judge's answer, and an answer that still stops at the budget is told so — `verdict.cut_at_output_cap`,
 with the cap, the answer's characters, the objects it began by type and its
 indented lines, the length it was cut at as the bound the next answer stays
 under and the kind of object it began most of, asking for the compact bundle —
@@ -2921,8 +2917,7 @@ differs in any argument, a page (`offset`, `limit`) included. Each refusal
 names the ledger id that holds the answer and says how to read it again and
 page through it (`read_evidence` with that `evidence_id`, `offset` and
 `limit`), and the seventh says the next one ends the loop. Eight is a stall
-limit, not a measured optimum: it leaves room for several served repeats
-before a useful distinct call, and ends a loop that keeps sending one
+limit, not a measured optimum: it leaves room for several refused repeats before a useful distinct call, and ends a loop that keeps sending one
 identical call. A call outside a tool loop that reads the ledger
 (`ledger_reads`) ends at the same count of refused reads.
 
@@ -3629,7 +3624,7 @@ job (none beyond the triage pass's when it ran).
 A load imports the file afresh, in the place of any program of the same name,
 and an import is not analysed: its functions come from the file's tables and
 no call or code reference is recorded, so callers, callees and
-cross-references read empty for every function, which read as "nothing calls it", so a model's `load_program` would replace the program the triage pass analysed. The answer is not Ghidra's alone: any server whose
+cross-references read empty for every function, which read as "nothing calls it". So a model's `load_program` replaces the program the triage pass analysed with one whose cross-references read empty. The answer is not Ghidra's alone: any server whose
 open resets its analysis declares, as data in its settings block
 (`sample_open`), which tool opens a sample and optionally which selects one
 already open and which runs its analysis, and the general opener
@@ -4176,8 +4171,7 @@ money:
   its cached prefix, the turn's answer priced at this loop's mean and every
   write priced for an hour where the model's cache entries live that long
   (`tool_answer_clearing.tier_clear_pays`). A model priced by no prompt length
-  is never cleared for it. A loop that meets neither condition at either
-  cache lifetime is sent as it is.
+  is never cleared for it. A loop that does not meet both conditions at either cache lifetime is sent as it is.
 
 A clear takes the oldest answers until the request weighs what no clear can
 take (the framing, the pack, the definitions, the agent's own turns and
@@ -5630,7 +5624,7 @@ is assembled from what the run gathered rather than recomputed beside it:
   sentences and flagged sentences are applied in the fixed section order
   (`ReportComposer._author_at_once`, `_settle`). Every section's contract
   (`composer.section_contract`) says that a list item is written only with a
-  value and never with nulls, and that a value is a JSON string, numbers included, so a configuration section never fails its schema over a `"value": null`. Five
+  value and never with nulls, and that a value is a JSON string, numbers included: an item with no value is left out rather than written with `"value": null`, which fails the schema. Five
   checks across the composer and the narrative round are shown to the model
   once through the existing retry-with-feedback
   and recorded unresolved when they survive, and none drops what it is about:
