@@ -37,6 +37,7 @@ from malspark.reporting.section_agreement import (
     CLAIM_LED,
     DEBATE,
     FACT,
+    HELD_KEPT_CODE,
     LISTED_CODE,
     REWRITE_CITES_ELSEWHERE_CODE,
     REWRITE_DROPS_CITATION_CODE,
@@ -53,7 +54,10 @@ from malspark.reporting.section_agreement import (
     prompt_text,
 )
 
+# A whole-code absence written without the code, held by its shape (T-580).
 SLEEP = "The sleep constants are not established."
+# The fixture's other held absence, written without the code (T-580).
+CIPHER = "Its cipher use is not shown."
 # Not an absence a shape holds ("not established" is one, T-568): a sentence the
 # model lists against a fact of its own accord.
 MUTEX = "The listing shows two arguments, so the mutex name stays open."
@@ -70,7 +74,7 @@ def _report() -> MalwareReport:
             KeyFinding(text="It decodes its strings at run time.", evidence_ids=["ev_0002"]),
             KeyFinding(text='Open: the "runnung" text is not tied to a call.'),
         ],
-        intro_background="The sample is a DLL [ev_0001]. Its cipher use is not shown.",
+        intro_background=f"The sample is a DLL [ev_0001]. {CIPHER}",
         bound_values=[
             BoundValue(
                 value="runnung",
@@ -134,10 +138,56 @@ class _Reporter:
         self.calls: list[str] = []
         self.degradations: list[str] = []
 
+    # The report asked about: each answer gains a keep on no source for every held
+    # absence of the body it does not list (T-580), so a test of one row answers the
+    # listing the round asks for too.
+    report: MalwareReport | None = None
+
     async def ask(self, turns: list[BaseMessage], *, call: str, what: str) -> AIMessage:
         self.asked.append(list(turns))
         self.calls.append(call)
-        return AIMessage(content=self.answers.pop(0))
+        return AIMessage(content=_with_absences(self.report, self.answers.pop(0)))
+
+
+def _with_absences(report: MalwareReport | None, answer: str) -> str:
+    """``answer`` with a keep on no source, with its reason, for each held absence of the
+    body no row of it names."""
+    try:
+        parsed = json.loads(answer)
+    except ValueError:
+        return answer
+    if (
+        report is None
+        or not isinstance(parsed, dict)
+        or not isinstance(parsed.get("sentences"), list)
+    ):
+        return answer
+    named = {str(row.get("sentence")) for row in parsed["sentences"] if isinstance(row, dict)}
+    extra = [
+        {
+            "passage": p.id,
+            "sentence": absence,
+            "sources": [],
+            "decision": "keep",
+            "reason": "no source speaks of it",
+        }
+        for p in passages_of(report, discussion=_DEBATE)
+        for absence in p.absences
+        if absence not in named
+    ]
+    return json.dumps({**parsed, "sentences": [*parsed["sentences"], *extra]})
+
+
+# The records of the keeps :func:`_with_absences` adds, on no source with the reason:
+# each is recorded (T-580).
+KEPT = [(HELD_KEPT_CODE, SLEEP), (HELD_KEPT_CODE, CIPHER)]
+
+
+def _records(unresolved: list[dict[str, Any]]) -> list[tuple[str, str]]:
+    """Each record's code, with the fixture's held absence it is about, or ``""``."""
+    return [
+        (r["code"], next((s for s in (SLEEP, CIPHER) if s in r["message"]), "")) for r in unresolved
+    ]
 
 
 def _row(passage: str, sentence: str, sources: list[str], rewrite: str = "") -> dict[str, Any]:
@@ -151,6 +201,7 @@ def _row(passage: str, sentence: str, sources: list[str], rewrite: str = "") -> 
 
 
 def _ask(report: MalwareReport, reporter: _Reporter, **kwargs: Any) -> Any:
+    reporter.report = report
     return asyncio.run(
         ask_section_agreement(reporter, report, discussion=_DEBATE, citable_ids=CITABLE, **kwargs)
     )
@@ -244,9 +295,8 @@ def test_a_section_5_sentence_is_never_rewritten_on_another_passage_and_kept_is_
     assert done.tally.by_code[UNKNOWN_SOURCE_CODE] == 1
     assert report.technical_analysis.persistence_detail.body.endswith(MUTEX)
     assert done.summary["listed"] == 1 and done.summary["rewritten"] == 0
-    assert [(r["code"], r.get("answered")) for r in done.tally.unresolved] == [
-        (LISTED_CODE, "true")
-    ]
+    assert _records(done.tally.unresolved) == [(LISTED_CODE, ""), *KEPT]
+    assert all(r.get("answered") == "true" for r in done.tally.unresolved)
 
 
 def test_a_sentence_not_copied_as_written_is_asked_again_and_left_standing() -> None:
@@ -257,7 +307,7 @@ def test_a_sentence_not_copied_as_written_is_asked_again_and_left_standing() -> 
     reporter = _Reporter({"sentences": [row]}, {"sentences": [row]})
     done = _ask(report, reporter)
     assert done.tally.by_code[SENTENCE_NOT_FOUND_CODE] == 2
-    assert [r["code"] for r in done.tally.unresolved] == [SENTENCE_NOT_FOUND_CODE]
+    assert _records(done.tally.unresolved) == [(SENTENCE_NOT_FOUND_CODE, ""), *KEPT]
     assert SLEEP in report.technical_analysis.execution_flow[0].action
     assert done.summary["not_applied"] == 1
 
@@ -275,7 +325,7 @@ def test_a_passage_not_listed_to_answer_for_is_named() -> None:
     rows = {"sentences": [_row("bound.1", "runnung", ["command_and_control"], "y")]}
     done = _ask(report, _Reporter(rows, {"sentences": []}))
     assert done.tally.by_code[UNKNOWN_PASSAGE_CODE] == 1
-    assert done.tally.unresolved == []
+    assert _records(done.tally.unresolved) == KEPT
 
 
 def test_a_rewrite_with_no_text_breaks_the_schema() -> None:
@@ -290,7 +340,9 @@ def test_a_kept_sentence_stays_as_written() -> None:
     row = _row("key_findings.2", 'Open: the "runnung" text is not tied to a call.', ["bound.1"])
     done = _ask(report, _Reporter({"sentences": [row]}))
     assert report.key_findings[1].text == 'Open: the "runnung" text is not tied to a call.'
-    assert done.summary["kept"] == 1 and done.summary["rewritten"] == 0
+    # It, and the two held absences the answer keeps on no source (T-580).
+    assert done.summary["kept"] == 3 and done.summary["held_kept"] == 2
+    assert done.summary["rewritten"] == 0
 
 
 def test_a_sentence_copied_with_its_quote_escapes_is_found() -> None:
@@ -527,7 +579,8 @@ def test_the_round_never_raises_wherever_it_fails(monkeypatch: Any) -> None:
             patch.setattr(section_agreement, name, _boom)
             report = _report()
             before = report.model_dump()
-            row = _row("execution_flow.2", SLEEP, ["command_and_control"])
+            # A held absence, kept on the reason no source speaks of it (T-580).
+            row = {**_row("execution_flow.2", SLEEP, []), "reason": "no source speaks of it"}
             done = _ask(report, _Reporter({"sentences": [row]}))
             assert report.model_dump() == before
             assert done.degradations == [
@@ -547,6 +600,7 @@ def test_the_question_is_a_report_call_of_the_spend_plan() -> None:
 def _node_round(report: MalwareReport, reporter: Any) -> ValidationTally:
     from malspark.pipeline.nodes import _ask_section_agreement
 
+    reporter.report = report
     tally = ValidationTally()
     asyncio.run(
         _ask_section_agreement(
@@ -572,7 +626,7 @@ def test_the_node_puts_the_counts_and_the_findings_on_the_report() -> None:
     tally = _node_round(report, reporter)
     assert report.run_summary["kept"] == 1
     assert report.run_summary["section_agreement"]["listed"] == 1
-    assert [row["code"] for row in tally.unresolved] == [LISTED_CODE]
+    assert _records(tally.unresolved) == [(LISTED_CODE, ""), *KEPT]
     assert "earlier" not in report.degradation_reasons
 
 

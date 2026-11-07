@@ -84,7 +84,7 @@ A rewrite of a limitations sentence that still says a call failed, or a reading 
 
 ### `agreement.held_kept`
 
-A sentence of the conclusion or the limitations that the answer kept on no source with its reason, or on a source a check refused: it stands, and is recorded where a reader finds it. One kept on a source whose quote passed every check is counted, not recorded.
+A sentence of the conclusion or the limitations, or a held absence of the body, that the answer kept on no source with its reason, or on a source a check refused (a body absence stands then too): it stands, and is recorded where a reader finds it. One kept on a source whose quote passed every check is counted, not recorded.
 
 - **Raised at** `malspark.reporting.section_agreement:apply_rows`
 - **Constant** `malspark.reporting.section_agreement:HELD_KEPT_CODE`
@@ -100,7 +100,7 @@ A held sentence (any sentence of the conclusion or the limitations; one calling 
 
 ### `agreement.keep_unquoted`
 
-A kept closing sentence whose row quotes no words of a source it names that state the same (two or more of its own words, an absence on words stating one), or that names no source while a shown one speaks of it. Still so after the retry, the sentence is left out and recorded (`DROPPED_CODE`).
+A kept closing sentence, or a kept held absence of the body, whose row quotes no words of a source it names that state the same (two or more of its own words, an absence on words stating one), or that names no source while a shown one speaks of it (the rows of an entry it cites among them). Still so after the retry, a closing sentence is left out and recorded (`DROPPED_CODE`); a body absence stands, recorded (`HELD_KEPT_CODE`).
 
 - **Raised at** `malspark.reporting.section_agreement:_answer_violations`
 - **Constant** `malspark.reporting.section_agreement:KEEP_UNQUOTED_CODE`

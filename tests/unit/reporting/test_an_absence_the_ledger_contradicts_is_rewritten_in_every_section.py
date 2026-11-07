@@ -334,8 +334,12 @@ def test_without_a_listed_routine_nothing_is_held_and_the_prompt_is_as_before() 
     )
     passages = passages_of(report, entries=_ledger())
     assert not any(p.lists_code for p in passages)
-    # Only the closing sentence is held: every one is answered (T-568).
-    assert all(not p.held and not p.unread_listed for p in passages if not p.closing)
+    # Only the closing sentence is held for itself: every one is answered (T-568); the
+    # section 5 absence is held as one, by its shape, not on a listing (T-580).
+    assert all(not p.unread_listed for p in passages)
+    assert [p.held for p in passages if not p.closing and p.held] == [
+        ("The task is not confirmed [ev_0002].",)
+    ]
     assert [p.held for p in passages if p.closing] == [("None [ev_0002].",)]
     assert "list each of these sentences" not in prompt_text(passages)
 
