@@ -154,13 +154,10 @@ class TestEverythingElseIsReadAsBefore:
 
 
 def test_a_large_wrapped_answer_is_read_in_linear_time() -> None:
-    import time
+    from tests.linear_cost import assert_ratio
 
-    def _timed(n: int) -> float:
+    def reading(n: int) -> Any:
         answer = {"result": json.dumps({**RECORD, "rows": [{"name": "x"}] * n})}
-        start = time.thread_time()
-        propose_tool(_definition(_wrapper()), answer=answer)
-        return time.thread_time() - start
+        return lambda: propose_tool(_definition(_wrapper()), answer=answer)
 
-    small, large = _timed(2_000), _timed(20_000)
-    assert large < max(small * 30, 0.5)
+    assert_ratio(reading(2_000), reading(20_000), 30, floor=0.5 / 30, what="20,000 rows")

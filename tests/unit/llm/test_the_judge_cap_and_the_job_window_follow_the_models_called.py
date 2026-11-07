@@ -294,7 +294,7 @@ class TestTheWindowsModels:
 
         from malspark.agents.composition import window_assignments
         from malspark.llm.context_window import _questions
-        from tests.linear_cost import TIME_RATIO_LIMIT, cpu_seconds
+        from tests.linear_cost import TIME_RATIO_LIMIT, assert_ratio
 
         def _walk(count: int) -> Callable[[], None]:
             definitions = {
@@ -320,9 +320,7 @@ class TestTheWindowsModels:
 
             return _read
 
-        small, large = cpu_seconds(_walk(500)), cpu_seconds(_walk(2000))
-
-        assert large < small * TIME_RATIO_LIMIT, (small, large)
+        assert_ratio(_walk(500), _walk(2000), TIME_RATIO_LIMIT, repeats=5, what="2,000 agents")
 
 
 class TestAnEntryTheRegistryCannotBuild:

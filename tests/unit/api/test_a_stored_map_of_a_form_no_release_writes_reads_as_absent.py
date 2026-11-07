@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import logging
 import uuid
+from collections.abc import Callable
 from types import SimpleNamespace
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -225,15 +226,16 @@ def test_a_new_tool_spelled_as_its_server_s_renamed_tool_is_still_refused() -> N
 
 
 def test_reading_a_hostile_unreadable_map_is_linear() -> None:
-    import time
+    from tests.linear_cost import assert_ratio
 
-    def timed(n: int) -> float:
+    def reading(n: int) -> Callable[[], Any]:
         stored = {CHANGES_MARK: "Changes", **{f"t{i}": DECLARED for i in range(n)}}
-        start = time.thread_time()
-        svc.served_tool_facts(stored, {})
-        tool_declarations.stored_in_force({}, stored, "x")
-        tool_declarations.kept_stored_changes(stored, stored, {})
-        return time.thread_time() - start
 
-    small, large = timed(2_000), timed(20_000)
-    assert large < max(small, 0.001) * 40
+        def read() -> None:
+            svc.served_tool_facts(stored, {})
+            tool_declarations.stored_in_force({}, stored, "x")
+            tool_declarations.kept_stored_changes(stored, stored, {})
+
+        return read
+
+    assert_ratio(reading(2_000), reading(20_000), 40, floor=0.001, what="20,000 tools")

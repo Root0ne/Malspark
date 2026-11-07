@@ -15,18 +15,17 @@ installed into the environment.
 
 from __future__ import annotations
 
-import gc
 import json
 import logging
 import subprocess
 import sys
-import time
 from collections.abc import Callable, Iterator
 from pathlib import Path
 from typing import Any
 
 import pytest
 from pydantic import ValidationError
+from tests.linear_cost import assert_ratio
 from tests.unit._plugin_doubles import (
     AcmeLLM,
     AcmeSandbox,
@@ -682,27 +681,16 @@ class TestADroppedPluginStillSelectedIsNamed:
         assert plugins.dropped_selections(["static:acme"], ["static:acme"], core) == {}
 
 
-def _timed(work: Callable[[], None]) -> float:
-    """The seconds ``work`` takes, the collector held so no sweep is timed."""
-    gc.collect()
-    gc.disable()
-    try:
-        began = time.thread_time()
-        work()
-        return time.thread_time() - began
-    finally:
-        gc.enable()
-
-
 class TestALongListStaysLinear:
     """Ten times the input takes about ten times as long; a quadratic step would be a hundred."""
 
     def test_ten_times_the_plugins_and_names(self, installed: dict[str, list[FakePoint]]) -> None:
         def read(count: int) -> Callable[[], None]:
-            installed["static"][:] = [FakePoint(f"p{i}", AcmeStatic) for i in range(count)]
+            points = [FakePoint(f"p{i}", AcmeStatic) for i in range(count)]
             entries = [f"static:p{i}" for i in range(count)]
 
             def work() -> None:
+                installed["static"][:] = points
                 assert plugins.allow_list_problem(entries) == ""
                 assert len(plugins.accepted_names("static", entries)) == count
                 (static,) = [k for k in plugins.listing(entries) if k["kind"] == "static"]
@@ -710,11 +698,8 @@ class TestALongListStaysLinear:
 
             return work
 
-        _timed(read(2_000))
-        low = min(_timed(read(2_000)) for _ in range(3))
-        high = min(_timed(read(20_000)) for _ in range(3))
+        low, high = assert_ratio(read(2_000), read(20_000), 20, what="20,000 plugins and names")
         print("plugins and names, 2,000 and 20,000:", round(low, 4), round(high, 4))
-        assert high < low * 20
         assert all(point.loads == 0 for point in installed["static"])
 
     def test_a_hostile_entry_is_refused_by_a_quote_of_bounded_length(self) -> None:
@@ -727,9 +712,8 @@ class TestALongListStaysLinear:
 
             return work
 
-        _timed(refuse(1_000_000))
-        low = min(_timed(refuse(1_000_000)) for _ in range(3))
-        high = min(_timed(refuse(10_000_000)) for _ in range(3))
+        low, high = assert_ratio(
+            refuse(1_000_000), refuse(10_000_000), 20, what="ten million characters"
+        )
         print("one hostile entry, one and ten million characters:", round(low, 5), round(high, 5))
-        assert high < low * 20
         assert "(2000009 characters)" in plugins.allow_list_problem(["static:" + "a" * 2_000_000])

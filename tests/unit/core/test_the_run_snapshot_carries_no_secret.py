@@ -16,7 +16,7 @@ import json
 import random
 import re
 import string
-import time
+from collections.abc import Callable
 
 import pytest
 from pydantic import ValidationError
@@ -922,19 +922,19 @@ def test_a_token_alone_holding_openers_leaves_no_character_on_fuzzed_words():
 
 
 def test_masking_a_ten_times_longer_text_costs_about_ten_times_as_much():
+    from tests.linear_cost import assert_ratio
+
     from malspark.core.settings_masking import bare_addresses, masked_text
 
-    def cost(text: str) -> float:
-        best = float("inf")
-        for _ in range(3):
-            began = time.thread_time()
+    def masking(text: str) -> Callable[[], None]:
+        def mask() -> None:
             masked_text(text)
             bare_addresses(text)
-            best = min(best, time.thread_time() - began)
-        return best
+
+        return mask
 
     word = '("' * 200 + "p'ss" * 200 + "@h:8080"
     one, ten = " ".join([word] * 20), " ".join([word] * 200)
     long_word = '"(' * 2_000 + "a@" * 2_000 + "h:8080"
-    assert cost(ten) < 30 * cost(one)
-    assert cost(long_word * 10) < 30 * cost(long_word)
+    assert_ratio(masking(one), masking(ten), 30, what="ten times the words")
+    assert_ratio(masking(long_word), masking(long_word * 10), 30, what="ten long words")

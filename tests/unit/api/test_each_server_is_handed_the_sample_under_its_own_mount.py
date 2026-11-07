@@ -13,10 +13,12 @@ from __future__ import annotations
 
 import os
 import time
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
 import pytest
+from tests.linear_cost import assert_ratio
 
 from app.worker import analysis_worker, sample_files
 from malspark.core.config import MCPServerConfig
@@ -262,16 +264,11 @@ class TestTheDirectoriesComeFromTheConfiguration:
         assert oct(os.stat(made).st_mode & 0o777) == "0o700"
 
     def test_many_repeated_names_take_linear_time(self, samples: Path) -> None:
-        def timed(n: int) -> float:
+        def reading(n: int) -> Callable[[], Any]:
             names = [f"d{i % 3}" for i in range(n)]
-            start = time.thread_time()
-            sample_files.work_dirs(names)
-            return time.thread_time() - start
+            return lambda: sample_files.work_dirs(names)
 
-        timed(1_000)
-        small = min(timed(10_000) for _ in range(3))
-        large = min(timed(100_000) for _ in range(3))
-        assert large < small * 30 + 0.05
+        assert_ratio(reading(10_000), reading(100_000), 30, floor=0.05 / 30, what="100,000 names")
 
 
 class TestTheOperatorsOwnDirectoriesAreNeverTouched:

@@ -11,10 +11,11 @@ it resolves a name.
 
 from __future__ import annotations
 
-import time
+from collections.abc import Callable
 
 import pytest
 from tests.credential_shapes import password
+from tests.linear_cost import assert_ratio
 
 from malspark.core import host_locality
 from malspark.core.host_locality import LOCAL, REMOTE, UNKNOWN, host_of, taken_as_service_name
@@ -215,16 +216,21 @@ def test_the_analyst_mode_reads_a_transition_address_by_the_ipv4_address_it_carr
 
 
 def test_the_rule_stays_linear_on_a_hostile_host() -> None:
-    def took(host: str) -> float:
-        started = time.thread_time()
-        for _ in range(20):
-            locality(host)
-            host_of(f"http://{host}/v1")
-        return time.thread_time() - started
+    def placing(host: str) -> Callable[[], None]:
+        def place() -> None:
+            for _ in range(20):
+                locality(host)
+                host_of(f"http://{host}/v1")
 
-    small = took("a" * 6_000 + ".example")
-    large = took("a" * 60_000 + ".example")
-    assert large < max(small, 1e-3) * 40
+        return place
+
+    assert_ratio(
+        placing("a" * 6_000 + ".example"),
+        placing("a" * 60_000 + ".example"),
+        40,
+        floor=1e-3,
+        what="a tenfold host",
+    )
 
 
 @pytest.mark.parametrize(

@@ -152,20 +152,15 @@ class TestAutoNames:
         assert roles.declared_auto_name_pattern(settings).fullmatch("proc_401000")
 
     def test_reading_is_linear_in_the_text(self) -> None:
-        import time
+        from tests.linear_cost import assert_ratio
 
         pattern = roles.auto_name_pattern(roles.auto_name_words(["PROC_", "ROUTINE."]))
 
-        def best(n: int) -> float:
+        def reading(n: int) -> Any:
             text = "FUN_ " * n + "proc_" * n
-            times = []
-            for _ in range(3):
-                start = time.thread_time()
-                list(pattern.finditer(text))
-                times.append(time.thread_time() - start)
-            return min(times)
+            return lambda: list(pattern.finditer(text))
 
-        assert best(20000) <= best(2000) * 10 * 2.5 + 0.05
+        assert_ratio(reading(2000), reading(20000), 10 * 2.5, floor=0.05 / 25, what="20,000 names")
 
 
 class TestCaptureTools:

@@ -12,7 +12,6 @@ from __future__ import annotations
 
 import importlib.util
 import json
-import time
 import uuid
 from datetime import UTC, datetime
 from pathlib import Path
@@ -25,6 +24,7 @@ from alembic.runtime.migration import MigrationContext
 from sqlalchemy.dialects import postgresql
 from sqlalchemy.ext.compiler import compiles
 from tests.integration._session_probe import SessionFactory, fake_job, fake_sample, rows_for
+from tests.linear_cost import assert_ratio
 
 from app.models.evidence import EvidenceEntry
 from app.schemas.evidence import EvidenceEntryResponse
@@ -210,13 +210,13 @@ def test_chaining_is_linear_in_the_ledger_s_size():
     job_id = uuid.uuid4()
     small = _rows(job_id, 300)
     large = _rows(job_id, 3000)
-    started = time.thread_time()
-    ledger_chain.chain_rows(job_id, small, KEY)
-    small_time = time.thread_time() - started
-    started = time.thread_time()
-    ledger_chain.chain_rows(job_id, large, KEY)
-    large_time = time.thread_time() - started
-    assert large_time < max(small_time, 1e-3) * 30
+    assert_ratio(
+        lambda: ledger_chain.chain_rows(job_id, small, KEY),
+        lambda: ledger_chain.chain_rows(job_id, large, KEY),
+        30,
+        floor=1e-3,
+        what="3,000 rows",
+    )
 
 
 def _load():
