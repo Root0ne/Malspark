@@ -176,8 +176,7 @@ are each replaced by `***`; an open mapping's entry whose key names a credential
 `sandbox.cape2.submit_options` or `sandbox.rest.submit.*_fields`) is `***`;
 and every value the event scrub holds as a secret is masked wherever it still
 appears. The fingerprint's per-server digests are taken over the masked
-fields. A summary stored before this is read as stored and is not scrubbed
-again: its ledger seal covers it.
+fields. A stored summary is read as stored and is not scrubbed again: its ledger seal covers it.
 
 Beside these rules, which find a credential by where it stands, every secret
 value the platform holds is masked by value wherever it stands in text that
@@ -217,8 +216,7 @@ other side. A mask that comes back on import, or in a save from the console,
 means "keep the stored value", and the value read back is masked again where
 it lands; one with nothing stored behind it, or one whose stored value would
 land where it is not masked (a hidden argument moved behind another flag), is
-refused, named, never stored as the literal mask — the failure mode that the old
-`.env` export had.
+refused, named, never stored as the literal mask.
 
 ## Transport and browser surface
 
@@ -273,8 +271,7 @@ reader. The `ghidra-mcp` container is kept from the platform by Compose (an
 unprivileged uid, no capability, an internal network only, so no route out, to
 the host or to the stores, and none of the platform's secrets; its port is
 published by a separate relay; see [Deployment](/docs/deployment/)). What it can
-still reach is `backend-api` and the worker over that network, both of which
-answer only authenticated requests, as before. It is reached at an address, so
+still reach is `backend-api` and the worker over that network, both of which answer only authenticated requests. It is reached at an address, so
 a report says it is "not verified"; see [Where the sample was
 read](/docs/usage/reports-and-exports/#where-the-sample-was-read).
 

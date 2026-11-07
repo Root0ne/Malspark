@@ -59,8 +59,7 @@ most calls first, as flat bars with the count printed. It is read from each
 run's own `run_summary.evidence.by_tool` by `GET /api/v1/dashboard/tools`, so
 it counts what the ledger recorded rather than what the feed happened to
 carry. Only runs whose report carries that per-tool record stand behind the
-bars and the "N of M runs" each row speaks; a run written before the record
-existed says nothing about which tools ran, so it is not counted as a run that
+bars and the "N of M runs" each row speaks; a run without the record says nothing about which tools ran, so it is not counted as a run that
 called none of them, and the heading says how many such runs it read. A long
 tool name is cut on screen and whole on hover and to a screen reader, and the
 section is absent while no run has called anything.
@@ -88,8 +87,7 @@ ingestion and the writing of the report. The rows are the ones the stage strip
 draws, from the same run store and the same formatter
 (`stageTiming` in `apps/web/src/components/analysis/stageTimeline.ts`), so the
 Overview and the strip cannot print different durations for one stage. A stage
-that declined has no row, and a run stored before stages were timed has no
-card.
+that declined has no row, and a run stored without stage timings has no card.
 
 **When the verdict and the severity disagree.** A judge can call a sample
 Malicious and rate it Informational in the same run. The console does not
@@ -143,8 +141,7 @@ surface, so the defanging rule applies to it: a C2 channel's endpoints are
 written `hxxp://`, `[.]` and `[:]`; the machine surfaces keep them live. The
 severity card's platform line reads *Platform (from the file format,
 measured)*, since the builder reads it from the format and the judge did not
-assess it. A report stored before key findings
-existed shows its summary and the capability paragraphs it carried. Static & code
+assess it. A stored report without key findings shows its summary and the capability paragraphs it carries. Static & code
 adds the header facts the format tool read — architecture, whether the image is
 a DLL, the export directory's name and the version resource's internal name —
 and lists the exports with their ordinal and address when the tool
@@ -231,14 +228,12 @@ it. The arguments and the output as they were are on the evidence ledger,
 behind the report's ownership check.
 
 Every event carries a job-wide `seq`, which is the ordering key, the dedupe
-identity and the resume cursor. A run recorded before the numbering existed
-keeps the order its events arrived in. A run whose feed has passed the
+identity and the resume cursor. A run recorded without the numbering keeps the order its events arrived in. A run whose feed has passed the
 retention window replays from the conversation stored on its report instead —
 only then, so stored rows can never be laid over a feed that still has
 something to say. A stored row carries what its event carried, its kind and
 its stage included, so a replay groups by stage and keeps the arrow between a
-delegated ask and its answer. A run recorded before those were columns carries
-neither, and the view derives what it can: such a replay is one unnamed stage
+delegated ask and its answer. A run recorded without those columns carries neither, and the view derives what it can: such a replay is one unnamed stage
 of plain lines.
 
 ## Reputation
@@ -254,8 +249,7 @@ report when the answer carried one.
 It is read from the report's reputation record, which the lookup's
 declaration read from its ledger entry when the entry was written, and from
 nothing else, so a service that is configured and was never asked, or asked
-and answered nothing, draws no section at all. A report stored before the
-records is read from its ledger entry the way the console always read it.
+and answered nothing, draws no section at all. A stored report without the records is read from its ledger entry.
 
 ## A row that says nothing
 
@@ -281,8 +275,7 @@ or a constant nothing knows is drawn as it arrived rather than guessed at.
 Static & code applies it twice over. The `identity` section is the one that
 overlaps the tab's own blocks, so it is split: its hashes go to the File
 hashes block, which draws only the fingerprints a tool produced, and its
-signing row is stated as a sentence rather than as `present=no`. A report
-written before `signing_info` answered for one format carries three such rows,
+signing row is stated as a sentence rather than as `present=no`. A report whose `signing_info` answered for several formats carries three such rows,
 of which all but one are the tool's untouched defaults; the tab keeps the one
 for the format the run routed on and drops the rest.
 
@@ -306,8 +299,7 @@ else; Static & code says where they are and links there rather than drawing the 
 table twice. A Sigma row shows its level labelled as the rule's level, sorted
 and dotted by it on the same ladder (one dot per rung from Informational up);
 a rule that declares none says "no level declared" and takes no part in the
-sort. A run stored before those tools recorded its matches as the old
-deterministic layers' claims instead, and only such a run is read from them:
+sort. A stored run that recorded its matches as deterministic layers' claims is read from them:
 its Sigma rows say "level not recorded", draw no dots, take no part in the
 sort, and show the layer's confidence — set from the rule's maturity status —
 as the number it is. Nothing reads a confidence as a severity.
@@ -322,11 +314,10 @@ run on its sample", muted. The report's own §10.2 sentence is under the rule:
 which clauses held, each string found at its first offset, the strings found
 nowhere, or why the rule was not checked
 (`apps/web/src/components/analysis/sampleMatch.ts`). A Sigma or Suricata draft,
-and a rule stored before the check, carries no such badge. Every drafted
+and a stored rule without the check, carries no such badge. Every drafted
 rule's row and side panel also show the analyst report's §8.2 sentence for it,
 read from the record's `printed` and `standing`: the Precision line in muted
-text, or why its body is not printed there; a rule stored before those fields
-shows the badge alone.
+text, or why its body is not printed there; a stored rule without those fields shows the badge alone.
 
 A Behaviour tab signature's number is the sandbox's own, and its scale depends on
 which sandbox produced it: a CAPEv2 signature declares 1 to 3 (low, medium,
@@ -366,9 +357,7 @@ ticks settles rather than at every keystroke, and — when the server offers a c
 each tool's standing on its host, with the manifest's reason, what the tool
 still answers without the missing part and the remedy on the row of every tool
 it marks unavailable. It edits the per-server tick list and nothing else. A
-built-in's "every tool" becomes the explicit list on the first edit, as a
-single tick always did, and a name on the list the manifest no longer offers
-is kept.
+built-in's "every tool" becomes the explicit list on the first edit, as a single tick does, and a name on the list the manifest does not offer is kept.
 
 ## Width, contrast and the keyboard
 
@@ -462,8 +451,7 @@ each of its relationships as a button, which is how the keyboard reaches an
 edge, and a bundle with hundreds of edges does not put hundreds of stops in
 the tab order. The export writes that property from the run's record:
 the sample's `uses` edge to a technique carries the entries that tie to it,
-and an object the record ties to nothing says it carries none. A bundle stored
-before the property existed has none anywhere. The table is in the page
+and an object the record ties to nothing says it carries none. A stored bundle without the property has none anywhere. The table is in the page
 under the graph for a screen reader, and is the view itself under Table. A
 bundle of more than 300 objects opens on the table and says so, with the
 graph one click away; 300 lays out in tens of milliseconds and edge labels

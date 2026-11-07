@@ -82,16 +82,16 @@ Before any agent starts, the pipeline runs a fixed list of tools itself. A
 human analyst runs the same commands on every sample before opening a
 disassembler; the pack makes sure those facts are always there.
 
-Each result is an ordinary ledger entry under the agent `pipeline`. In an
-analysis of the [benchmark](/docs/benchmark/) sample, the pack wrote the first 28 entries:
+Each result is an ordinary ledger entry under the agent `pipeline`. In the
+[benchmark](/docs/benchmark/) run, the pack wrote the first 28 entries:
 
 | Entries | Tools |
 | :-- | :-- |
-| `ev_0001`–`ev_0006` | file identity, hashes, signature, PE structure, strings, indicators |
-| `ev_0007`–`ev_0011` | YARA, capa, Sigma over the sandbox events, API capabilities, LOLBin lookup |
-| `ev_0012`–`ev_0017` | the sandbox's processes, network, signatures, dropped files, channels, and the capture summary |
-| `ev_0018` | the VirusTotal report, through VirusTotal's own MCP server |
-| `ev_0019`–`ev_0028` | FLOSS, API hash resolution, decoded string blobs, crypto constants, anti-analysis scan, function index, code links |
+| `ev_0001`–`ev_0006` | `identify_file`, `hashes`, `signing_info`, `pe_info`, `strings`, `iocs_from_file` |
+| `ev_0007`–`ev_0011` | `yara_scan`, `capa`, `sigma_match_sandbox`, `api_capability`, `lolbin_lookup` |
+| `ev_0012`–`ev_0017` | `sandbox_processes`, `sandbox_network`, `sandbox_signatures`, `sandbox_dropped_files`, `sandbox_channels`, `pcap_summary` |
+| `ev_0018` | `get_file_report`, through VirusTotal's own MCP server |
+| `ev_0019`–`ev_0028` | `floss`, `resolve_api_hashes`, `decode_string_blobs`, `api_capability`, `find_crypto_constants`, `anti_analysis_scan`, `function_index`, `sandbox_sections`, `find_directed_text`, `behaviour_code_links` |
 
 The pack is a list of steps declared as data. You can add your own steps, and
 a step can call any tool server's tool. See [The pack's

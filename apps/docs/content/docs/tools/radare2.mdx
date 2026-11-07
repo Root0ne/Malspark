@@ -51,8 +51,7 @@ setting refuses a hidden segment and says why.
 The r2 analyst is handed the mirror and only the mirror. No analyst's chunk
 carries the worker's own copy (its staging path, under a hidden directory);
 the static role's family classifier reads that from the agent. A path argument
-that spells the worker's copy in full is replaced with the mirror before the
-call, as the bare file name always was. Before the analyst's loop, the r2
+that spells the worker's copy in full is replaced with the mirror before the call, as the bare file name is. Before the analyst's loop, the r2
 provider opens the mirror in r2mcp's session with r2mcp's own `open_file`
 (`R2StaticProvider.open_sample`), as the Ghidra provider loads its program, so
 a listing tool called first is answered rather than refused; a failed early

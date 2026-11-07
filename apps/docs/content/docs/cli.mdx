@@ -130,7 +130,7 @@ uv run malspark memory purge-low-quality --dry-run
 | Command | What it does |
 | :-- | :-- |
 | `memory stats` | Shows the configured backend and how many cases it holds. |
-| `memory purge-low-quality` | Removes cases stored before the write-time quality gate existed, which would otherwise bias later runs. |
+| `memory purge-low-quality` | Removes stored cases below the write-time quality gate, which would otherwise bias later runs. |
 
 `purge-low-quality` takes:
 

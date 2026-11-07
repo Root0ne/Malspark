@@ -61,20 +61,13 @@ read; nothing limits its calls.
 
 It ends its answer with a block that lists every contradiction still
 standing. Each line names the analysts who must answer it and says whether it
-blocks. Two lines from the first round of an analysis of the
-[benchmark](/docs/benchmark/) sample:
+blocks. Two lines from the first round of the [benchmark](/docs/benchmark/)
+run:
 
 ```
 CONTRADICTIONS:
-[analysts: TRIAGE ANALYST] Claim 7: routine 0x9484 builds some obfuscated strings on the
-stack at run time, contradicted by ALL_TOOLS_REVERSER claim 2 (0x9484 body, ev_0090:
-resolver records only, no string construction) and by ev_0019 (0 stack and 0 tight
-strings). [blocking: the stack-string attribution has no supporting decode and conflicts
-with the function body.]
-[analysts: ALL_TOOLS_STATIC_R2 ANALYST, STATIC ANALYST] Claim: the capture carries no DNS
-query names and lists addresses only (static_r2 claim 13; static claim 14), contradicted
-by ev_0113 (12 DNS query names) and ev_0114 (9 HTTP requests with Host headers), as
-NETWORK claim 12 corrects. [blocking: ...]
+[analysts: TRIAGE ANALYST, STATIC ANALYST, ALL_TOOLS_QU1CKSC0PE ANALYST] Claim: the 0x6f48 download routine is not linked to any file-write routine, so a fetched body is not shown written to disk (TRIAGE claim 24; STATIC claim 21; QU1CKSC0PE claim 21). Contradicted by ev_0067: the 0x6f48 body calls FUN_1360bc07acc(path, body, length) after its HTML checks, and ev_0068 and ev_0081 show 0x7acc is the file writer. [blocking: the decompiled body in ev_0067 links 0x6f48 to the write routine, so the "not linked" statement is contradicted by the ledger.]
+[analysts: TRIAGE ANALYST, STATIC ANALYST, ALL_TOOLS_QU1CKSC0PE ANALYST] Claim: the "LogonTrigger" path (0xc2c4) has no link to a scheduling or COM registration route, and the COM routine 0xc5e8 is not linked to it (TRIAGE claim 23; STATIC claim 22; QU1CKSC0PE claim 23). Contradicted by ev_0092 (0xb344 calls 0xc5e8 and 0xc42c) and ev_0077 (0xc42c calls 0xc2c4, and reaches a RegisterTaskDefinition-style vtable call). [blocking: the call chain is in the ledger, so the stated absence of a link is contradicted.]
 ```
 
 A last line, `agreement_confidence`, gives the mediator's agreement level.
@@ -134,8 +127,8 @@ ATT&CK catalogue for the sample's platform, and a claim behind it must
 describe the behaviour. A technique that fails is sent back to the judge with
 the reason, and one it cannot support is dropped. The report's ATT&CK section
 lists what was dropped and why. In the [benchmark](/docs/benchmark/) run, the
-judge published 22 techniques and dropped process injection, because no code
-or data written into another live process was shown.
+judge published 22 techniques and dropped two, among them process injection:
+its card requires code or data written into another live process.
 
 The judge's answer is written as a STIX 2.1 bundle: the malware object, an
 attack pattern per technique, and indicators for the IOCs it publishes.

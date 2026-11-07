@@ -30,7 +30,7 @@ them too.
 
 ## What an entry holds
 
-This is `ev_0094` from an analysis of the [benchmark](/docs/benchmark/) sample, as
+This is `ev_0094` from the [benchmark](/docs/benchmark/) run, as
 `GET /api/v1/jobs/{job_id}/evidence` returns it, shortened:
 
 ```json
@@ -42,14 +42,14 @@ This is `ev_0094` from an analysis of the [benchmark](/docs/benchmark/) sample, 
   "source": "provider:ghidra",
   "model": "anthropic/claude-haiku-5-5",
   "ok": true,
-  "duration_ms": 1394,
-  "args": {"functions": "0x1360bc0b344,0x1360bc0b154,0x1360bc03a24,..."},
-  "output": "{\"0x1360bc0b344\": \"int FUN_1360bc0b344(...) ...\"}",
+  "duration_ms": 474,
+  "args": {"program": null, "functions": "0x1360bc0378c,0x1360bc0cf14"},
+  "output": "{\"0x1360bc0378c\":\"...bool FUN_1360bc0378c(...) ...\"}",
   "truncated": false,
   "repeated_of": null,
-  "facts": {"kind": "decompile_batch", "effects": {"executes": "no", "network": false, "third_party": "no"}},
-  "digest": "86a40391…",
-  "chain": "74157505…"
+  "facts": {"v": 1, "kind": "decompile_batch", "effects": {"network": false, "executes": "no", "third_party": "no"}, "arguments": {"program": "program"}},
+  "digest": "94745b5d…",
+  "chain": "75a595bd…"
 }
 ```
 
@@ -72,16 +72,15 @@ agent's claims from the same run, as the stored findings hold it:
 
 ```json
 {
-  "claim": "The current user is read in code and is not observed. \"/c whoami /groups\" (0xf680, xref 0x2876 in 0x2200) runs through 0x1030. The result is placed in \"&whoami_group=\" (0xf7d0). GetUserNameA is resolved in 0x8ae0 and 0x904c.",
-  "evidence_ref": "ev_0021, ev_0025, ev_0020",
-  "confidence": 0.65,
+  "claim": "The decoded strings include system-discovery command lines: ipconfig /all, systeminfo, ver, whoami /groups, net config workstation, net view /all /domain, nltest /domain_trusts (and /all_trusts), net group \"Domain Admins\" /domain, and the WMI query for AntiVirusProduct. Code refers to these strings through the command routines. This is evidence of intent to run them, not of their execution.",
+  "evidence_ref": "[ev_0019] [ev_0021]",
+  "confidence": 0.75,
   "technique_id": "T1033"
 }
 ```
 
-`ev_0021` is the pack's decoded strings, `ev_0025` its function index and
-`ev_0020` its API hash resolution. Each value in the claim can be found in
-one of them.
+`ev_0019` is the pack's FLOSS answer and `ev_0021` its decoded string blobs.
+The command lines the claim names are decoded strings in them.
 
 Code checks every citation. A claim that cites no entry, cites one that does
 not exist, or cites one whose answer does not hold the value the claim states

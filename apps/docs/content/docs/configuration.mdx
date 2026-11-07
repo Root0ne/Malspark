@@ -403,8 +403,7 @@ the effort in force and where it came from, e.g. `Building anthropic/claude-haik
 
 Every probe asks each model at the effort its run sends — the agent probe and
 the provider's **Test** alike — and a model whose entry names its own effort is
-filed under that model and that effort. A model with no effort of its own is
-filed and looked up as before, so its earlier results stay valid; changing an
+filed under that model and that effort. A model with no effort of its own is filed and looked up by its model alone, so its probe results stay valid; changing an
 entry's effort is a change the probe gate asks about, on save and at submit,
 until the model has been probed at the new level.
 
@@ -447,8 +446,7 @@ means a staged endpoint is sent the stored key for that provider, which is a
 secret the console never shows in the clear. Every probe therefore writes one
 audit row (`settings.probe`) naming the probe, the endpoints it was pointed at
 (as labels: scheme and host), the keys that were staged for it and whether it
-succeeded. The values themselves are never in the row. The routes are
-admin-only, as they have always been; what was missing was the record.
+succeeded. The values themselves are never in the row. The routes are admin-only, and each call is recorded.
 
 ### Enrichment sources
 
@@ -565,9 +563,7 @@ the answer instead; it is off by default, because Ollama refuses the field for
 a model that has no thinking mode. A model whose thinking field is empty as
 well — some do not fill it at eight tokens — still comes back as *answered
 nothing*, so that failure and a timeout both carry a sentence naming the
-setting and what it does. A measured 12B reasoning model failed the probe in
-55 s at the default and passed in 243 ms with the setting on; with
-`llm.require_probe` on, every job is refused in between. See the low-memory
+setting and what it does. A reasoning model that fails the probe at the default can pass it with the setting on; with `llm.require_probe` on, every job is refused until it passes. See the low-memory
 option in [Quick start](/docs/getting-started/).
 Ollama's body also carries `options.num_ctx` and `keep_alive` from
 `llm.ollama.num_ctx` and `llm.ollama.keep_alive`, the two fields a run sends
@@ -638,9 +634,7 @@ different question, finds no row, and is refused until it is probed: nothing
 has to expire a result, because a result is never read for a pair it was not
 taken against. The endpoint half of the pair is folded the way a URL folds —
 lower-case scheme and host, the scheme's default port dropped, no trailing
-slash — so one server typed four ways is one key rather than four. A row
-written before that folding existed is filed under the spelling of the day it
-was taken; re-run the probe if the gate refuses a model you have tested.
+slash — so one server typed four ways is one key rather than four. A row taken under another spelling of the endpoint is filed under that spelling; re-run the probe if the gate refuses a model you have tested.
 
 `core.llm.require_probe` is on, and turning it off is the only way past the
 gate — neither a job nor a save can ask to skip it. It is there for an
@@ -797,12 +791,7 @@ in a row, never longer than the interval, and logs when it will try again; the
 console's next-check line shows that time. The loader's own refresh at the first index build after the interval
 reads the same setting, which reaches it and the knowledge tool server as
 `MALSPARK_ATTCK_REFRESH_DAYS` (on that server's `env_allow`, written by the
-container from the store). `MALSPARK_ATTCK_MAX_AGE_DAYS` is retired: the
-migration that retired it read a whole number other than 7 once into the
-setting, where the store held none (0 or a negative number, which the old
-loader read as "never check", as 0, and so is a number past the setting's
-bound), and a worker that still has it set warns at start and names the
-setting. A stored value the settings model refuses, of this or any key, is
+container from the store). `MALSPARK_ATTCK_MAX_AGE_DAYS` is retired: on upgrade, a migration reads a whole number other than 7 from it once into the setting where the store holds none (0 or a negative number, meaning "never check", as 0, and so is a number past the setting's bound), and a worker that still has it set warns at start and names the setting. A stored value the settings model refuses, of this or any key, is
 never replaced by a default where something runs: a job fails (it does not
 run on the shipped defaults, for this or any refusal of its settings, nor when
 the stored settings cannot be read; a database or connection error is named by
@@ -908,12 +897,7 @@ or below 1.5 fires no more often on malware than on ordinary software, and it
 goes. The trigger is a rule above 4% of ordinary Windows software whose lift is
 under 3 — not a threshold that deletes it, because the measured rate is carried
 precisely so a common association can ship honestly and let the reader weigh it,
-but a sign that the rule should be argued on its own terms. Three were, and each
-went for a different reason: one was the sole row on no malware profile at all
-and so told a reader nothing another row did not; one was weak on its own
-numbers; one failed the test that decides whether a name belongs in a rule,
-applied to the whole rule, because the act its names describe is not the act the
-technique describes. A rule is deleted when one of those arguments carries, and
+but a sign that the rule should be argued on its own terms. A rule is deleted when it is the sole row on no malware profile at all, so it tells a reader nothing another row does not; when it is weak on its own numbers; or when it fails the test that decides whether a name belongs in a rule, applied to the whole rule. A rule is deleted when one of those arguments carries, and
 not for its rate.
 
 **Every association carries the rate it was measured at**, under `measured`:
@@ -1020,9 +1004,7 @@ channel is a claim no substring can support.
 
 `core.preprocessing.max_tool_output_chars` is **0** by default, and 0 does not
 mean "no cap" — it means the cap is worked out at the moment of each call from
-the context window the served model was found to have. A positive value is an
-explicit operator cap and behaves as this setting always did: that many
-characters, on every answer, whatever the window.
+the context window the served model was found to have. A positive value is an explicit operator cap: that many characters, on every answer, whatever the window.
 
 The arithmetic lives in one function (`malspark.llm.context_window`) and reads:
 the served window, less the tokens held back for the model's own reply (the
@@ -1143,8 +1125,7 @@ turn, with the server's reported count as a floor; its answers are capped from
 its own room; its loop is streamed, ends on the step it runs out of room, and
 ends with `no_room` on the same strict full-window answer once it has gathered
 something. Its reasoning is then asked for once, with no tools, from what it
-gathered, and mediation reads the verdict from that; a judge loop that fails
-before gathering anything fails as before. Both salvages re-send the
+gathered, and mediation reads the verdict from that; a judge loop that fails before gathering anything fails. Both salvages re-send the
 conversation trimmed to the loop's own room less a margin: the window the
 budget counts on less the reply reserve (never less than a quarter of the
 window, whatever the generation cap), less an eighth of the window for what the
@@ -1258,8 +1239,7 @@ prompt already fills, so for each model of the reporter's list, in order:
 
 1. the operator's value: `composer_section_max_tokens` above 0 for a section
    (plus the reporter's own budget for reasoning, below), otherwise
-   `llm.judge_max_tokens` above 0 — the reporter runs on the judge role and
-   has always been built with the judge's cap; `llm.expert_max_tokens` is the
+   `llm.judge_max_tokens` above 0 — the reporter runs on the judge role and is built with the judge's cap; `llm.expert_max_tokens` is the
    analysts' and does not reach the report stage;
 2. else the derivation above (`context_window.derived_reply`), the one every
    role's cap follows: the smaller of a quarter of the window and the model's
@@ -1424,8 +1404,7 @@ No agent loop has a step or time limit unless you set one.
 default, the two deprecated `core.react_agent_*_overrides` maps ship empty, no
 built-in agent definition carries `max_steps` or `timeout_seconds`, and an
 ask's `core.agents.delegation_steps` / `delegation_timeout_seconds` are empty
-too. A number you set — on an agent's card, in a map, or deployment-wide — is
-kept to exactly as before. The judge's tool loop reads its budget the same way
+too. A number you set — on an agent's card, in a map, or deployment-wide — is kept to exactly. The judge's tool loop reads its budget the same way
 every agent's loop does (`loop_limits("judge")`): the `judge` entries of the
 maps, then the deployment's values.
 
@@ -1472,8 +1451,7 @@ fewer than two pieces records nothing, and the next call keeps the rule it
 had. On a streamed answer (and Ollama's, which its client streams), the
 connection's own read timeout after pieces have arrived is the same deadline,
 the silence after the last piece, and ends the call as one (a failed turn the
-loop salvages from, not a dropped connection); before the first piece it is
-raised as it always was. The deadline message
+loop salvages from, not a dropped connection); before the first piece it is raised. The deadline message
 says which rule applied — the model's measured pace, the pace measured in this
 call, silence before the first generated piece, or silence after the last —
 and its numbers.
@@ -1495,7 +1473,7 @@ the `APIConnectionError` it is on a whole answer. Ollama's client streams every
 answer. DeepSeek (`compat: deepseek`) is read as a stream too, its reasoning
 kept and sent back, so its calls take the streamed deadline: the pace of the
 call's own pieces, silence before the first piece and after the last. Another
-hosted API's answer is read whole, as before, and its first piece is its whole
+hosted API's answer is read whole, and its first piece is its whole
 answer, so there the provider's timeout still bounds the call until the model's
 pace is measured.
 
@@ -1700,11 +1678,9 @@ degradation reasons say the ceiling ended the tool phases.
 **An agent's own ceiling.** An `llm.agents.<key>` entry may set
 `max_spend_usd`, what that agent's priced calls may cost in US dollars, and
 `max_unpriced_tokens`, the input and output tokens its calls of a model with
-no known price (a local or unpriced one) may use. Neither has a default: an
-entry that sets none has none, and its models are built exactly as before. An
+no known price (a local or unpriced one) may use. Neither has a default: an entry that sets none has none, and its models are built without them. An
 entry may hold only its ceilings, with no provider or model: the agent then
-runs on the model it runs on with no entry, built exactly as before, and the
-entry only bounds it. Calls are priced as the job's ceiling prices them, and
+runs on the model it runs on with no entry, built the same way, and the entry only bounds it. Calls are priced as the job's ceiling prices them, and
 every model of the entry's list counts toward the same agent, fallbacks
 included, as does a failed attempt its provider bills; a call that reported no
 usage counts at the stated estimate it carried, and the reason says how many
@@ -1770,7 +1746,7 @@ which also keeps the tool definitions out of it and one tool answer's share
 Every chunk is a full tool loop, run after the one before it, so an input that
 fits is one chunk: the agent's sources (the sample context and a sandbox slice)
 are joined into one when they fit the room together, and the agent runs one
-loop over all of them, with the prompt a single-chunk input has always had;
+loop over all of them, with the prompt a single-chunk input has;
 where one source is split, the whole sources next to each other that fit
 together are still joined, leaving room for the header and the count of earlier
 calls a later chunk carries. The pieces of one split source never fit one chunk
@@ -1807,8 +1783,7 @@ with the full list of earlier calls. With no window learned nothing is derived:
 a chunk is the 20,000 tokens the setting shipped with, and sources are joined
 only within it, as a tool answer keeps its old 6,000 characters; a run whose
 input that size split says so in its run summary and its log, with the setting
-that would size it from the window. With no room measured the prompts are
-built as before; two chunk boundaries differ on purpose: whole sources beside a
+that would size it from the window. With no room measured the prompts are built from the configured sizes; two chunk boundaries differ on purpose: whole sources beside a
 split one are joined, and a packed bin counts the overlap it carries.
 
 **What the report leaves out, it says.** No table cell of the report's body
@@ -1886,8 +1861,7 @@ a killed worker's claim expires within 90 s instead of lingering.
 on every report, first: each a URL template (`url`: `https://`, naming
 `{sha256}`, `{md5}` or `{sha1}`), the name it is linked under (`source`), its
 `note`, and whether the Sigma draft lists it among its references (`sigma`). It ships with VirusTotal's and MalwareBazaar's lookups, the two
-every report has linked (VirusTotal's with `sigma`, as the draft has always
-referenced it); remove one and it is no longer linked. A tool
+every report links (VirusTotal's with `sigma`); remove one and it is not linked. A tool
 server's own lookups (its declared `reference_urls`) are linked besides, only
 on a run that asked that server. A report keeps its own links live in the
 Markdown.
@@ -2085,16 +2059,14 @@ provider resolves the name when it starts: a value with a directory in it is
 used as it is; a bare name is looked up on the worker's PATH, then in
 `$R2PM_BINDIR`, `$R2PM_PREFIX/bin` and `radare2/prefix/bin` under the user's
 data directory (`$XDG_DATA_HOME`, else `~/.local/share`) — where r2pm puts it.
-Nothing past those is guessed. Not found, r2 degrades as it always has: the
-run goes on without it, the log names every place looked, and the run summary
+Nothing past those is guessed. Not found, r2 degrades: the run goes on without it, the log names every place looked, and the run summary
 carries `static provider 'r2' unavailable: …` with the remedy (install it with
 `r2pm -ci r2mcp`, or set `binary_path` to the executable's absolute path). The
 connection test resolves the same way and names the same places.
 
 ### Running Ghidra lighter
 
-The `ghidra-mcp` service reads three variables from `docker/.env`, each
-defaulting to the value it has always had: `GHIDRA_JAVA_OPTS` (the JVM's
+The `ghidra-mcp` service reads three variables from `docker/.env`, each with a default: `GHIDRA_JAVA_OPTS` (the JVM's
 options, `-Xmx4g -XX:+UseG1GC`), `GHIDRA_MEM_LIMIT` (the container's memory
 and swap limit together, `6g`) and `GHIDRA_RESTART` (`unless-stopped`). Keep
 the memory limit about 2g above the heap: Ghidra's database is memory-mapped
@@ -2151,12 +2123,10 @@ it consulted nothing. A disabled server contributes no tools and no
 degradation reason, so every one of those references costs nothing until the
 server is registered.
 
-`services/threatintel-mcp` is unchanged: it still offers VirusTotal and
-AbuseIPDB lookups over their REST APIs with `VIRUSTOTAL_API_KEY` and
+`services/threatintel-mcp` offers VirusTotal and AbuseIPDB lookups over their REST APIs with `VIRUSTOTAL_API_KEY` and
 `ABUSEIPDB_API_KEY`. Where both are on, `virustotal` supersedes its VirusTotal
 half — it is VirusTotal's own server, richer and maintained by them — while
-the AbuseIPDB half stays the only source for IP abuse reports. A deployment
-with an API key and no agent token keeps working exactly as before.
+the AbuseIPDB half stays the only source for IP abuse reports. A deployment with an API key and no agent token works on the key.
 
 Both names reach that sidecar through its `env_allow`, and both are defaults
 rather than fixtures: an operator who clears that list in the Configuration tab
@@ -2364,7 +2334,7 @@ and are dropped, with a WARNING (the Preserved thinking recovery), and a call
 is said as text: its arguments as the answer and the correction after them,
 the call's thinking left out with it. Text with no
 object in it — a preamble, a one-line refusal — is not an answer to read, and
-the section is asked again as before. Each structured answer is recorded on
+the section is asked again. Each structured answer is recorded on
 the run's ledger once, where it is read, and a model list's switch carried on
 it is announced there once, a kept answer's included. The narrative
 round, the mediator's verdict extraction and the judge's technique question
@@ -2438,8 +2408,7 @@ and the same turn sent again without its note is split at the same place, so
 the history a thinking block was written after never changes; a turn never
 noted is never split. A call is admitted at the hour's write price while the
 pack's entry may live an hour, and a streamed answer's writes are settled by
-lifetime from the split its opening event reports. Other providers send the
-request as before.
+lifetime from the split its opening event reports. Other providers send the request without a breakpoint.
 
 A stored `true` or `false` (a JSON boolean) keeps its meaning. The database
 revision `20261002000000` takes a stored `sequential` off every analysis stage
@@ -2840,9 +2809,7 @@ deployment with `static.provider = none` that reference resolves to nothing:
 the stage still runs, and its prompt still asks it to open a decompiler, so
 what comes out is a confident ungrounded answer rather than a visible failure.
 
-Saving such a team is allowed and says so. A team validated against a runtime
-provider setting could not be saved before the provider was configured, and the
-order those two happen in is the operator's — so the settings API answers a
+Saving such a team is allowed and says so. The order in which a team and its provider are configured is the operator's, so the settings API answers a
 successful write with a **warning** on that stage instead of refusing it, and
 the console draws it on the stage card: *"reverser reads the static provider's
 tools, and this deployment's static provider is 'none'."* A stage whose agents
@@ -2936,9 +2903,7 @@ the console names them:
 | `other` | Other | none of these, or more than one |
 
 The platform offers an agent its own steps by its category. A category only
-adds steps: whatever an agent's category, the platform still works out what it
-can from the agent's tools and what they returned, as it did before the field
-existed, and a category never restricts the tools an agent may call. The first
+adds steps: whatever an agent's category, the platform works out what it can from the agent's tools and what they returned, and a category never restricts the tools an agent may call. The first
 step keyed on it is the question about the unread functions around the
 routines an analyst read. Every analyst whose calls list code is asked it,
 whatever its category and whatever tool listed the code. An agent in
@@ -2951,12 +2916,10 @@ provider's decompiled functions) and `reverser` are `code_reader`, `triage` and
 `android_static` are `static`, `dynamic` and `network` are their own, and
 `judge`, `reporter` and `lead` are `other`. The category is required: an edit
 through the settings API that creates a definition naming none is refused,
-under the field. A settings import is not refused for it: an export written
-before the field existed gives each new definition the category its role and
+under the field. A settings import is not refused for it: an export without the field gives each new definition the category its role and
 tools fit, by the rule below, and the import answers with a warning under that
 definition's category naming what was set, worded more strongly where the rule
-could not tell and the category is `other`. A
-definition stored before the field existed reads the category its role and
+could not tell and the category is `other`. A stored definition without the field reads the category its role and
 tools fit, and the `20261103000000` migration writes that value into the store
 once. The rule reads the role, the kinds of the tool references and the input
 slices, never a name: `static` is `code_reader`, `dynamic` and `network` are
@@ -3133,8 +3096,7 @@ team is saved, not when the first job builds its graph. A stage with no mode of
 its own is one node when the team is checked, and runs one after another
 wherever a debate hands over to it, whatever the job's analyst mode.
 
-A team stored as a plain list of analysts — every team written before stages
-existed — is read as the four stages that list has always meant: `analysis`
+A team stored as a plain list of analysts is read as four stages: `analysis`
 (those analysts, in the mode `llm.parallel_analysts` gives — unset on `auto`, so
 the job decides) → `debate` (with the round limit and threshold from
 `negotiation.*`) → `verdict` (the judge) → `report`
@@ -3243,10 +3205,10 @@ by its exact form:
   (`FindFirstFileA/W`, `NtQueryInformationProcess/Thread`);
 - a stretch of 24 or more characters of the standard or URL-safe base64
   alphabet itself, the table a decoder is built from, when it is the whole run
-  or the whole stretch: beside other pieces it is read as before, so a key
+  or the whole stretch: beside other pieces it is read by the rules above, so a key
   next to it is masked with it.
 
-Hex is read as it always was: a run with eleven or more hex digits in a row is
+Hex is read so: a run with eleven or more hex digits in a row is
 never one of these forms. A hex dump is masked in the events wherever it
 stands, a tool's own `"hex"` field (the bytes a memory or byte-range read
 returned) included, and so is a digest inside a list or a name that ends in
@@ -3262,7 +3224,7 @@ vendor prefix with a key's body after it, and a lowercase key body (24 or more
 lowercase letters and digits with at least one digit and four letters past
 `f`, so no hex run is one). Either opens the run to the rules above, and the
 key's stretch is masked; a separator line, a dump's file name or a scanner's
-label behind a dot is read as before. A token behind other text in one run
+label behind a dot is read by the rules above. A token behind other text in one run
 (`x_<token>`) is masked when its header opens with a quoted key (`{"`), so a
 dotted name whose head merely decodes to `{` is no token.
 
@@ -3312,7 +3274,7 @@ directory name:
   name (a random directory or file name, a long method name) reads as a key by
   its shape, and is masked with its stretch.
 
-A run that reads as a key as a whole is masked whole, as before.
+A run that reads as a key as a whole is masked whole.
 
 The names the scrub keeps (words, catalogue names, the platform's own variable
 names, digests, identifiers and MIME types, alone or joined by `/`; catalogue
@@ -3422,8 +3384,7 @@ pack and its agents see only the run state. See *The triage pack* in
 [Architecture](/docs/architecture/).
 
 Which slice of the job an agent reads is its own setting,
-`agents.definitions.<key>.data_sources`. Empty means the slice the agent's
-*role* has always read: the parsed sample for a static analyst without a
+`agents.definitions.<key>.data_sources`. Empty means the slice the agent's *role* reads: the parsed sample for a static analyst without a
 sandbox report and the report's `target` block with one, the behaviour log for
 a dynamic analyst, the network block for a network analyst, and the sample plus
 the whole report for a generic one. A non-empty list is taken literally and in
@@ -3456,16 +3417,14 @@ process's banner). The source is cut before each match and whole units are
 packed into a chunk, as the built-in boundaries of the static, dynamic and
 network domains do; a unit larger than a chunk is cut by a window. A pattern
 that RE2 cannot compile (a lookaround, a back-reference), that matches the empty
-text, or that names a source the agent does not list is refused. A source with no entry is cut as before, and a
-definition with none stores and dumps as it always did.
+text, or that names a source the agent does not list is refused. A source with no entry is cut to the default, and a definition with none stores and dumps by the defaults.
 
 A source with nothing behind it contributes nothing — an agent that asked for
 the network block on a sample nobody detonated has no network block, and the
 analyst node reports that once as a no-data stage rather than once per source.
 
 Whether an agent is asked for an ATT&CK technique line is its own setting too,
-`agents.definitions.<key>.attck_techniques`, on by default. On is the claim
-format every analyst has always been given: each claim ends with
+`agents.definitions.<key>.attck_techniques`, on by default. On is the claim format every analyst is given: each claim ends with
 `TECHNIQUE: <T-ID, several separated by commas, or NONE>`. A `generic` or
 `lead` definition whose work is not malware behaviour (a code reviewer, a
 configuration checker, a domain checker) may turn it off. Every text that asks
@@ -3489,8 +3448,7 @@ it writes anyway is read and checked exactly as with the line on: an unreadable
 line is asked about and an unknown id is flagged. A claim with no TECHNIQUE line
 raises no question either way. Corroboration, the judge and the capability
 matrix are unchanged; an agent with the line off contributes no asserted
-technique unless it writes one. A definition that keeps the line on is stored
-and exported without the field, as every definition written before it was. The
+technique unless it writes one. A definition that keeps the line on is stored and exported without the field. The
 console's agent editor shows the switch as **Ask for an ATT&CK technique line on
 each claim**, locked on every built-in definition (the served
 `builtin_agent_keys`).
@@ -3537,7 +3495,7 @@ about a file it can already open.
 
 Staging never fails a run. An upload that goes wrong is recorded as
 `sample staging failed for '<server>': <reason>` on the run's degradation
-reasons, and the server is called with the local path exactly as before. The
+reasons, and the server is called with the local path. The
 paths that were used are recorded on the run under `remote_sample_paths`, which
 stays empty on a default install because every built-in server is stdio.
 
@@ -3574,7 +3532,7 @@ default name is predictable and the system temp directory is shared. Each file
 is created with `O_CREAT|O_EXCL|O_NOFOLLOW` at 0o600 rather than written and
 then chmodded, and every `put_sample*` call prunes past the TTL: the files of a
 job directory still in use, the whole directory of one whose newest file is
-past the cutoff, and the flat files an older release left in the base. So a
+past the cutoff, and flat files left in the base. So a
 long-lived server accumulates neither samples nor job directories, and an
 upgrade has nothing to migrate.
 
@@ -3589,7 +3547,7 @@ The sandbox capture a job fetches lands in a `captures/` child of the same
 directory and obeys every rule above: 0700, files 0600 from their first byte,
 removed with the job, swept by the same TTL, and unreachable from another job.
 The capture directory name used before the rename, under the system temp
-directory, is swept as well and is no longer written.
+directory, is swept as well and is never written.
 
 One configuration would widen this if nothing else stopped it: a
 `MALSPARK_SAMPLE_ROOTS` entry containing the staging base — the deployment's
@@ -3932,7 +3890,7 @@ are ever removed.
 | `work_dir` | the directory under the worker's samples directory the sample is copied into for this server (one name); empty when it makes no copy of its own |
 | `error_patterns` | how the server's answers say "error" (below) |
 | `roles` | what the server is for: `reputation`, `decompiler`, `disassembler`, `sandbox`, `rule_scanner`, `strings`, `reference`, `capture`, or any word of your own |
-| `prompt_fragment` | the workflow text shown to an agent only while the server's tools are in its request: after the sentence about tools for a server of the registry, and, for a static provider's block, after the provider's opening sentence and the claim guidance every static analyst is given (the built-in Ghidra and radare2 blocks and the CAPE MCP block ship their workflows here). A sentence naming another server's tool is written `{{attached:<server key>\|<text while that server's tools are in the request>\|<text otherwise>}}`, in any block's fragment (a registry server's, a static provider's or the CAPE MCP block's): the key is a server's in `mcp.servers` (never `provider`, `sandbox` or `team`), neither text holds `\|`, `{` or `}`, and no part sits inside another; a fragment whose part does not read is refused when it is saved. Ghidra's names the analysis server's crypto-constant tool so. A Ghidra or radare2 block that stored the whole fragment of an earlier release (opening with the provider's old lead sentence), which no prompt read, is read as not set |
+| `prompt_fragment` | the workflow text shown to an agent only while the server's tools are in its request: after the sentence about tools for a server of the registry, and, for a static provider's block, after the provider's opening sentence and the claim guidance every static analyst is given (the built-in Ghidra and radare2 blocks and the CAPE MCP block ship their workflows here). A sentence naming another server's tool is written `{{attached:<server key>\|<text while that server's tools are in the request>\|<text otherwise>}}`, in any block's fragment (a registry server's, a static provider's or the CAPE MCP block's): the key is a server's in `mcp.servers` (never `provider`, `sandbox` or `team`), neither text holds `\|`, `{` or `}`, and no part sits inside another; a fragment whose part does not read is refused when it is saved. Ghidra's names the analysis server's crypto-constant tool so. A stored Ghidra or radare2 fragment that opens with the provider's own lead sentence, which no prompt reads, is read as not set |
 | `required_env_allow` | the environment names the server cannot run without |
 | `variable_names` | environment variable names of the server's that are not secrets; those a shipped declaration or a registered provider class (`variable_names`) names are kept whole in published text, read from those so the redaction does not depend on a run's settings |
 | `reads_staged_sample` | whether the server's path-taking tools read the sample the platform staged |
@@ -3946,7 +3904,7 @@ are ever removed.
 | `launcher_depth` | how many levels at the top of the process tree the worker starts for the server are a launcher that does not read the sample (1: the started process alone); the report's isolation part holds them only to carrying none of the platform's own variables and every process under them to every check ([Where the sample was read](/docs/usage/reports-and-exports/#where-the-sample-was-read)). Empty declares no launcher |
 | `default_effects` | what every tool of the server does beyond answering, unless the tool says otherwise: an `effects` value (`executes`, `network`, `third_party`, `when`), laid under the own `effects` of each tool its server listed, sub-field by sub-field (a tool nothing has listed has not said whether it does otherwise, so the statement says nothing of it). A tool that says otherwise keeps what it says: one read as emulating, as running whatever it is given (`why_undeclared`), or as sending the file. A block whose `default_effects` say what its tools send (`third_party`) and whose `roles` hold a program role drops the reading that a tool sends the file it opens (see "A decompiler's or disassembler's tools read from what it lists"); it never lifts that reading off another server's tools. The shipped Ghidra and radare2 blocks say their tools run nothing, reach no network and send nothing (`executes: no`, `network: false`, `third_party: no`); empty says nothing |
 | `analyse_effects` | what the tool `sample_open.analyse_tool` names does beyond answering, over `default_effects`: the server's analysis step as a whole, never a table of tools. radare2's block names `analyze` (with no open tool) and says it emulates the sample's code `when` the analysis level is 2 or above, where r2mcp runs `aaa`, whose type matching (`aaft`) emulates each function with ESIL; Ghidra's `run_analysis` gains nothing of it; empty says nothing |
-| `prepass_tools` | which of the server's tools the platform calls itself, once per job, when it is the server the `generic_mcp` provider drives (`static.generic.server`, or radare2's own block): `call_graph` (the program's whole call graph, read for the priority-functions pre-pass), `function_hashes` (a hash per function, read for function-hash attribution and the triage pack's function-hash step) and `anti_analysis` (the triage pack's anti-analysis scan). Empty, or a name left empty, declares nothing, and that pass is not made, as before (below) |
+| `prepass_tools` | which of the server's tools the platform calls itself, once per job, when it is the server the `generic_mcp` provider drives (`static.generic.server`, or radare2's own block): `call_graph` (the program's whole call graph, read for the priority-functions pre-pass), `function_hashes` (a hash per function, read for function-hash attribution and the triage pack's function-hash step) and `anti_analysis` (the triage pack's anti-analysis scan). Empty, or a name left empty, declares nothing, and that pass is not made (below) |
 
 #### Tools the platform calls itself
 
@@ -4024,11 +3982,11 @@ it:
 | `timeout_seconds` | the budget the tool itself keeps, where it has one |
 | `memory_peak_mb` | the tool's measured memory peak, where known |
 | `discloses_sample` | the tool sends the sample, or its bytes, out of the deployment |
-| `effects` | what a call does beyond answering, each part optional and said to be undeclared when left out: `executes` (`no`, `native`, `emulation` or `sandbox`: whether the call runs the sample's code, and how), `network` (`true` or `false`: whether the tool itself reaches a network service beyond its own server; or one of three named ways it reaches one only: `on_refresh`, only to fetch or refresh reference data it keeps, such as the ATT&CK bundle once stale or embedding weights on first use, never with anything of the sample; `case_store`, the configured case-memory store, which the disclosure's case-memory row places; `operator_sandbox`, the sandbox service its server fronts, at the address the operator configured; whether that is the operator's own, and so not a third party, is never taken from the declaration: the report derives it from where the disclosure places the call, and says it cannot be told where the disclosure cannot place it), `third_party` (`no`, `hash` or `bytes`: what of the sample it sends to a third party; `bytes` and `discloses_sample` say the same, and either one makes the call an upload in the disclosure block) `why_undeclared` (why a part is left out, printed with it) and `when` (the condition under which a declared effect happens, printed with it). A tick of `discloses_sample` lifts the tool's effects to `third_party: bytes` and a network that carries them, whatever the shipped effects say, so ticking it on a shipped tool (`put_sample` on a remote analysis server) saves as before; a save whose own effects send the sample or its hash with `network` `false`, `on_refresh` or `case_store` is refused. An operator's `effects` is merged with the shipped one sub-field by sub-field (`tool_declarations.SUBFIELD_MERGED`) and stored as the sub-fields that differ, so a later release's correction of another sub-field still reaches the tool; `effects: null` clears it. Printed per tool called in the report's **Tool effects** block; an operator declares a third-party server's tools here as a built-in's are. Every built-in tool declares all three (`builtin_declarations._with_effects`, held by a test that sweeps every shipped block): the CAPE sidecar's status, search, task status, report, IOC and configuration tools reach `operator_sandbox` and its `submit_file` hands the sample to it to run (`executes: sandbox`); radare2's analysis step (its block's `analyse_effects`, for the `analyze` its `sample_open` names) is `executes: emulation` `when` the analysis level is 2 or above, where r2mcp runs `aaa`, whose type matching (`aaft`) emulates each function with ESIL; VirusTotal's `submit_file` and `submit_local_file` are read from its listing as handing the sample to a third party's sandbox (`executes: sandbox`, `network: true`, `discloses_sample`; see "A reputation service read from what it lists"), since the service may run what it is sent; the ATT&CK knowledge tools, `family_lookup` and `similar_cases` are `on_refresh` (the bundle once stale, the embedding weights on first use), and the triage pack's `function_matches` is `case_store`. Ghidra's and radare2's tools are read from what each lists, under their blocks' `default_effects` (see "A decompiler's or disassembler's tools read from what it lists"): a tool that requires an argument naming code, a script or a command (Ghidra's `run_ghidra_script` and `run_script_inline`, radare2's `run_command`) runs whatever it is given and declares none, with that as its `why_undeclared`, and an `emulate` verb emulates. A tool map an earlier release stored whole keeps the shipped `effects` of each shipped tool it leaves them out of, merged per field as a stored change is (`tool_declarations.FIELDS_AFTER_WHOLE_MAPS`): a value the operator set wins |
+| `effects` | what a call does beyond answering, each part optional and said to be undeclared when left out: `executes` (`no`, `native`, `emulation` or `sandbox`: whether the call runs the sample's code, and how), `network` (`true` or `false`: whether the tool itself reaches a network service beyond its own server; or one of three named ways it reaches one only: `on_refresh`, only to fetch or refresh reference data it keeps, such as the ATT&CK bundle once stale or embedding weights on first use, never with anything of the sample; `case_store`, the configured case-memory store, which the disclosure's case-memory row places; `operator_sandbox`, the sandbox service its server fronts, at the address the operator configured; whether that is the operator's own, and so not a third party, is never taken from the declaration: the report derives it from where the disclosure places the call, and says it cannot be told where the disclosure cannot place it), `third_party` (`no`, `hash` or `bytes`: what of the sample it sends to a third party; `bytes` and `discloses_sample` say the same, and either one makes the call an upload in the disclosure block) `why_undeclared` (why a part is left out, printed with it) and `when` (the condition under which a declared effect happens, printed with it). A tick of `discloses_sample` lifts the tool's effects to `third_party: bytes` and a network that carries them, whatever the shipped effects say, so ticking it on a shipped tool (`put_sample` on a remote analysis server) saves; a save whose own effects send the sample or its hash with `network` `false`, `on_refresh` or `case_store` is refused. An operator's `effects` is merged with the shipped one sub-field by sub-field (`tool_declarations.SUBFIELD_MERGED`) and stored as the sub-fields that differ, so a later release's correction of another sub-field still reaches the tool; `effects: null` clears it. Printed per tool called in the report's **Tool effects** block; an operator declares a third-party server's tools here as a built-in's are. Every built-in tool declares all three (`builtin_declarations._with_effects`, held by a test that sweeps every shipped block): the CAPE sidecar's status, search, task status, report, IOC and configuration tools reach `operator_sandbox` and its `submit_file` hands the sample to it to run (`executes: sandbox`); radare2's analysis step (its block's `analyse_effects`, for the `analyze` its `sample_open` names) is `executes: emulation` `when` the analysis level is 2 or above, where r2mcp runs `aaa`, whose type matching (`aaft`) emulates each function with ESIL; VirusTotal's `submit_file` and `submit_local_file` are read from its listing as handing the sample to a third party's sandbox (`executes: sandbox`, `network: true`, `discloses_sample`; see "A reputation service read from what it lists"), since the service may run what it is sent; the ATT&CK knowledge tools, `family_lookup` and `similar_cases` are `on_refresh` (the bundle once stale, the embedding weights on first use), and the triage pack's `function_matches` is `case_store`. Ghidra's and radare2's tools are read from what each lists, under their blocks' `default_effects` (see "A decompiler's or disassembler's tools read from what it lists"): a tool that requires an argument naming code, a script or a command (Ghidra's `run_ghidra_script` and `run_script_inline`, radare2's `run_command`) runs whatever it is given and declares none, with that as its `why_undeclared`, and an `emulate` verb emulates. A tool map stored whole keeps the shipped `effects` of each shipped tool it leaves them out of, merged per field as a stored change is (`tool_declarations.FIELDS_AFTER_WHOLE_MAPS`): a value the operator set wins |
 | `read_only` | the tool changes nothing and answers an identical call the same (read-only or idempotent): a revision that repeats an identical call of an earlier round is answered from that round's entry, as a tool its server marks `readOnlyHint` is, while no call that is not read-only has run on the same server since that entry was recorded; any other tool runs again. The platform's own sidecars declare their reading tools themselves; Ghidra's and radare2's are read from what each lists: a listing, read or code listing that takes no file path and, where its block's `sample_open` names the argument a program is named by, takes it, read-only only while the block's `default_effects` say its tools run nothing and reach no network (see "A decompiler's or disassembler's tools read from what it lists") |
 | `holds_strings` | the answer holds the sample's strings as data though its kind is not a strings kind (a reverser's tool of another kind whose name says strings, such as Ghidra's `batch_string_anchor_report` and `find_undocumented_by_string`); a function claim's quoted value is looked for in it |
 | `reads_delay_imports` | the tool's import rows cover the imports the format binds late: the PE delay-load table, or the one import table ELF keeps them in (the shipped `pe_info` and `elf_info`). A format answer read whole is the binary's complete import list only when its tool declares this or the answer carries a `delay_imports` list; otherwise the report's binary facts call the list partial |
-| `routed_formats` | the routed sample formats a format-specific tool serves, each a known format the router gives a sample (`extractors.sample_identity.routed_formats()`: `pe`, `elf`, `mach-o`, `apk`, `dex`, `ole2`, `ooxml`, `pdf` …); a name it never gives, such as `macos` or `exe`, is refused on save, since it would drop the tool's reason for every sample, and so is `unknown`, the label of a sample of no known format, which no tool serves. When the tool cannot answer on its server, a sample of another known format loses nothing by it, so its unavailability is not recorded as a degradation of that run; a sample of an unknown format, and a tool that declares none, keep the reason. The shipped analysis server declares its parsers (`builtin_declarations.ANALYSIS_ROUTED_FORMATS`: `pe_info` `pe`, `elf_info` `elf`, `macho_info` `mach-o`, `apk_info` `apk` and `dex`, `document_info` `ole2`, `ooxml` and `pdf`); a map of the analysis server stored whole before the field existed reads those as shipped |
+| `routed_formats` | the routed sample formats a format-specific tool serves, each a known format the router gives a sample (`extractors.sample_identity.routed_formats()`: `pe`, `elf`, `mach-o`, `apk`, `dex`, `ole2`, `ooxml`, `pdf` …); a name it never gives, such as `macos` or `exe`, is refused on save, since it would drop the tool's reason for every sample, and so is `unknown`, the label of a sample of no known format, which no tool serves. When the tool cannot answer on its server, a sample of another known format loses nothing by it, so its unavailability is not recorded as a degradation of that run; a sample of an unknown format, and a tool that declares none, keep the reason. The shipped analysis server declares its parsers (`builtin_declarations.ANALYSIS_ROUTED_FORMATS`: `pe_info` `pe`, `elf_info` `elf`, `macho_info` `mach-o`, `apk_info` `apk` and `dex`, `document_info` `ole2`, `ooxml` and `pdf`); a whole stored map of the analysis server without the field reads those as shipped |
 | `runtimes` | the code runtimes a runtime-specific tool reads (`dotnet`, `go`), each a vocabulary word, in the words an identification answer gives as its `runtime` value. A pack step the platform takes of the tool by its kind (*The steps of a server's tool*, below) runs only where an identification step's answer names one of them, and is off where no identification step's tool declares a `runtime` value. The shipped ILSpy and GoReSym servers declare `dotnet` and `go` of their tools, and Detect It Easy's `die_scan` the `runtime` value of each detection |
 | `outputs` | the path of the answer that names each file the tool wrote, as its server names it (unblob's `container_extract`: `/files/*/path`). A pack step the platform takes of the tool by its kind declares it as its own `outputs`, so each file is taken into the job's artefact store for a step that `reads` it. Read through the kind |
 | `function_starts` | the path of the answer's list of function start addresses (offsets from the image base), read for a `function_list` or `capability_rules` answer by the triage pack's function index and the readings of an image with no function table of its own |
@@ -4043,8 +4001,8 @@ it:
 | `words` | words a statement may use to name this tool's entry |
 | `display_name` | the name published text gives the tool: a rule table's title, the tool a recovered value names, the decoder a decoded value names; empty uses the tool's name |
 | `category` | the tag its description is shown with (`analyze`, `list`, `modify` …); an undeclared tool is tagged by its name's first word |
-| `aggregate_of` | the tools of the same server this tool is the aggregate (combined) form of: one call answers what many calls of those would (a decompilation of many functions at once, a whole-program graph that combines per-function ones). Its description, as the model is shown it, ends with "Aggregate form of `<tool>`: one call answers what many calls of it would.", written once the names a request offers are settled: each aggregated tool is named as the request offers it (`<server>__<tool>` where another server took the name), and a tool the request does not offer (withheld, or not picked by a reference) is left out of the note. The model can then choose the one call over the many; nothing else reads it, a server's own words quoted for it never carry the note, and a tool that declares none is shown and called as before. Each name is a tool the server declares in `tool_facts` (an aggregated tool declared with only its `category` is enough) or that its `tools` allow-list names; it is not the tool itself, nor a tool that declares itself the aggregate form of this one. A save that adds or changes such a declaration is refused naming the field (`<tool>.aggregate_of`, "declare each in tool_facts (e.g. its category)"), checked against the allow-list in force (sent, else stored, else shipped), and a stored one that names a tool the server no longer has is read without that name, with a warning. A reverser's aggregate tools are read from what it lists (`core.program_reading`): a `batch`, `bulk` or `full` tool, or one whose object is the plural of another tool's and whose arguments name it, aggregates each listed tool of its verb whose object is its own in the singular, or whose object an argument of its names (`batch_decompile` over `functions` of `decompile_function`), or else the one tool whose object holds its own. Ghidra's read so: `batch_decompile`, `batch_analyze_completeness`, `get_bulk_function_hashes`, `get_full_call_graph`, `batch_create_labels`, `batch_delete_labels`, `batch_set_comments`, `rename_variables`; `get_bulk_xrefs` fits several tools no argument tells apart and aggregates none, nor does `bulk_fuzzy_match`, whose verb is no other tool's |
-| `shows`, `does_not_show` | what this tool's answer shows and what it does not show, each one line in the operator's own words (a reputation lookup shows what others report of a hash, not this run's own analysis of the sample; a strings dump shows runs as they sit in the file, not strings that are encoded, encrypted or built at run time). Shown in the server card's **Tool declarations** box and here; the model is shown them only while `core.mcp.answer_scope_notes` is on (off by default, so every prompt is as it was): the tool's description then ends with `This answer shows: <shows>. It does not show: <does_not_show>.`, after its aggregate note, and a tool that declares neither is shown as before. A line break or another control character is refused on save (`<tool>.shows`); a stored one is read as a space, with a warning; no length is imposed. The shipped declarations: the analysis server's `strings` (shows printable ASCII and UTF-16LE runs as they sit in the file, with their offsets; does not show strings that are encoded, encrypted, compressed or built at run time, nor runs shorter than `min_len`, or past this page (read `next_offset`)) and `capa` (shows the capabilities whose capa rules match features of the file, its code and its structure; does not show whether the matched code runs, or a capability no rule describes); the threat-intel server's `check_hash`, `check_ip_reputation` and `check_domain_reputation` (what VirusTotal, and AbuseIPDB for an address, report; not this run's own analysis, nor whether the sample contacts an address or a domain); a reputation service's lookup read from its listing (what the service holds for the hash; not this run's own analysis, and an unknown hash or no detections is no evidence that the file is clean). Every other built-in tool declares neither |
+| `aggregate_of` | the tools of the same server this tool is the aggregate (combined) form of: one call answers what many calls of those would (a decompilation of many functions at once, a whole-program graph that combines per-function ones). Its description, as the model is shown it, ends with "Aggregate form of `<tool>`: one call answers what many calls of it would.", written once the names a request offers are settled: each aggregated tool is named as the request offers it (`<server>__<tool>` where another server took the name), and a tool the request does not offer (withheld, or not picked by a reference) is left out of the note. The model can then choose the one call over the many; nothing else reads it, a server's own words quoted for it never carry the note, and a tool that declares none is shown and called without the note. Each name is a tool the server declares in `tool_facts` (an aggregated tool declared with only its `category` is enough) or that its `tools` allow-list names; it is not the tool itself, nor a tool that declares itself the aggregate form of this one. A save that adds or changes such a declaration is refused naming the field (`<tool>.aggregate_of`, "declare each in tool_facts (e.g. its category)"), checked against the allow-list in force (sent, else stored, else shipped), and a stored one that names a tool the server does not have is read without that name, with a warning. A reverser's aggregate tools are read from what it lists (`core.program_reading`): a `batch`, `bulk` or `full` tool, or one whose object is the plural of another tool's and whose arguments name it, aggregates each listed tool of its verb whose object is its own in the singular, or whose object an argument of its names (`batch_decompile` over `functions` of `decompile_function`), or else the one tool whose object holds its own. Ghidra's read so: `batch_decompile`, `batch_analyze_completeness`, `get_bulk_function_hashes`, `get_full_call_graph`, `batch_create_labels`, `batch_delete_labels`, `batch_set_comments`, `rename_variables`; `get_bulk_xrefs` fits several tools no argument tells apart and aggregates none, nor does `bulk_fuzzy_match`, whose verb is no other tool's |
+| `shows`, `does_not_show` | what this tool's answer shows and what it does not show, each one line in the operator's own words (a reputation lookup shows what others report of a hash, not this run's own analysis of the sample; a strings dump shows runs as they sit in the file, not strings that are encoded, encrypted or built at run time). Shown in the server card's **Tool declarations** box and here; the model is shown them only while `core.mcp.answer_scope_notes` is on (off by default, so every prompt is as it was): the tool's description then ends with `This answer shows: <shows>. It does not show: <does_not_show>.`, after its aggregate note, and a tool that declares neither is shown without them. A line break or another control character is refused on save (`<tool>.shows`); a stored one is read as a space, with a warning; no length is imposed. The shipped declarations: the analysis server's `strings` (shows printable ASCII and UTF-16LE runs as they sit in the file, with their offsets; does not show strings that are encoded, encrypted, compressed or built at run time, nor runs shorter than `min_len`, or past this page (read `next_offset`)) and `capa` (shows the capabilities whose capa rules match features of the file, its code and its structure; does not show whether the matched code runs, or a capability no rule describes); the threat-intel server's `check_hash`, `check_ip_reputation` and `check_domain_reputation` (what VirusTotal, and AbuseIPDB for an address, report; not this run's own analysis, nor whether the sample contacts an address or a domain); a reputation service's lookup read from its listing (what the service holds for the hash; not this run's own analysis, and an unknown hash or no detections is no evidence that the file is clean). Every other built-in tool declares neither |
 
 **Paths** are JSON-pointer-like: `/strings/*/offset` is the `offset` of every
 item of `strings`; `*` is every item of a list or every value of an object at
@@ -4097,7 +4055,7 @@ strings in an answer cannot stall a run. A pattern RE2 cannot compile, a
 back-reference or a lookaround, is refused when it is saved, with the reason.
 RE2's shorthand classes are ASCII only: `\s` is space, tab and the ASCII line
 breaks, `\d` is `0`-`9`, `\w` is `[0-9A-Za-z_]`, and `\b` is a boundary between
-those. A Python pattern ported as it is therefore no longer matches a
+those. A Python pattern ported as it is therefore does not match a
 non-breaking space with `\s` or a non-ASCII digit with `\d`, and `\b` sees a
 boundary before a non-ASCII letter. Where Unicode is meant, write the class out:
 `\p{Z}` (Unicode separators) or an explicit list such as
@@ -4141,8 +4099,7 @@ reputation source, whatever the tool is called and however it answers:
   role is reputation; see Delegation).
 
 A tool named like a built-in lookup that declares another kind, or nothing,
-gets none of this. A report stored before the records is read the way it
-always was.
+gets none of this. A stored report without the records is read without them.
 
 **A reputation service read from what it lists.** The platform ships no
 declaration of a reputation service's tools, VirusTotal's included. For a
@@ -4181,12 +4138,11 @@ A lookup that names the `reputation_shape` reader and declares no path is
 read by its answer's shape. Only such a lookup is: a lookup whose declaration
 declares a path or a pattern of its `reputation`, or a `reader` of its own,
 never takes the reading's reader, so its declared paths are read (one that
-names only a service or a rank keeps the shape reader), and a stored entry
-whose facts name no reader reads as it always did.
+names only a service or a rank keeps the shape reader), and a stored entry whose facts name no reader reads as stored.
 
 A stored change of such a tool that names no kind of its own (an operator's
 `get_file_report: {reputation: {rank: 30}}` on the built-in VirusTotal server,
-saved over the table a release once shipped) is not dropped with its
+saved over a shipped table) is not dropped with its
 kind-dependent fields: they are kept with the block and laid over the
 reading once it puts a kind in force, a `reputation` change field by field
 (`tool_declarations.kind_free_changes`). Until the server is first listed, or
@@ -4372,9 +4328,7 @@ its `/mcp/schema` is read as one (each entry's name, description and
 parameters, the required ones marked), so Ghidra over HTTP and over stdio read
 the same 165 tools alike. The schema's HTTP `method` is not read: the server
 opens, selects and saves programs by `GET` and reads by `POST`, so it says
-nothing of whether a call changes the program. A run stored before keeps the
-facts its entries stored, and one stored before entries recorded facts reads
-the frozen snapshot (`core.legacy_tool_facts`).
+nothing of whether a call changes the program. A stored run keeps the facts its entries stored, and one whose entries recorded no facts reads the frozen snapshot (`core.legacy_tool_facts`).
 
 **Readers** are named by the answer shape they read, never by a tool, so a
 tool of yours that answers in that shape may name one:
@@ -4418,8 +4372,7 @@ server's `mcp:<key>`, the server it drove when the entry was written: pointing
 `static.generic.server` elsewhere later does not change how a stored entry is
 read. A tool is looked up by that recorded source and its name together, never
 by its name alone, an agent's name or today's settings; a tool of yours that
-shares a built-in tool's name never takes the built-in's facts. An entry
-written before sources were recorded is read the way it always was.
+shares a built-in tool's name never takes the built-in's facts. A stored entry with no recorded source is read by its tool name.
 
 **The facts an entry stores.** When an entry is written, the facts its tool
 declares under its recorded source are stored with it (`facts` on the ledger
@@ -4436,14 +4389,11 @@ not say whether it reaches the network. Everything read from a run later (a late
 a re-render, the API) reads these stored facts, never the reading process's
 settings, so a run reads the same wherever it is opened, and changing a
 declaration later changes only new runs. A record of a newer version is read
-for the fields this release knows, and a record that no longer validates is
-read as declaring nothing, each with a warning. An entry that recorded a source
-but no facts is read as an undeclared tool; an entry written before sources
-were recorded is read the way it always was, from a frozen, digest-pinned
+for the fields this release knows, and a record that does not validate is read as declaring nothing, each with a warning. An entry that recorded a source
+but no facts is read as an undeclared tool; a stored entry with no recorded source is read from a frozen, digest-pinned
 snapshot of the facts the built-in tools declared then
 (`data/legacy_tool_facts_v1.json`), never from the declarations a release
-ships now, so a later change to a built-in declaration leaves a stored run
-reading as before.
+ships now, so a later change to a built-in declaration leaves a stored run reading as it was written.
 
 **Who reads a tool's kind.** A tool of yours declared with a built-in's kind is
 treated as the built-in of that kind, and its answer is read in that kind's
@@ -4551,8 +4501,7 @@ The report reads these from the facts each entry stored when it was written,
 copied onto the report's evidence index and captured outputs, never from the
 settings of the process that renders it, so the console shows what the worker
 built. So a reverser you add with tools of these kinds feeds every section as
-Ghidra's tools do. An entry written before sources were recorded is read by
-the tool names the report always read it by.
+Ghidra's tools do. A stored entry with no recorded source is read by its tool name.
 
 A server added under a built-in server's key (`analysis`, `knowledge`,
 `network`, `threatintel`, `virustotal`) is read as that built-in: a tool of
@@ -4639,7 +4588,7 @@ declaration of no kind keeps every reading an undeclared tool gets —
 the composer's citation routing below, the code-listing reading of its name,
 its server's own words, the network line — until a kind is accepted for it;
 `unclassified` is read as no kind only when the declaration sets no field a
-kind reads (with one, it is an ordinary kind word, read as it always was, and
+kind reads (with one, it is an ordinary kind word, and
 only a declaration with no kind at all loses such fields); a declaration's
 `display_name` and `words` still name
 the tool (a section built from an operator's tool is titled by its declared
@@ -4752,8 +4701,7 @@ the answers and the ledger, so a citation adds none. An agent definition
 declares the console tab its tools' sections are drawn on (`tab`: identity,
 static, dynamic, network or persistence; the built-ins declare theirs — the
 three analysts their own tabs, the judge identity — a generic or lead agent
-none until an operator sets one, a clone copies its source's, and a definition
-written before the field reads its role's). Every ledger entry records the
+none until an operator sets one, a clone copies its source's, and a stored definition without the field reads its role's). Every ledger entry records the
 calling agent's declared role and tab (`agent_role`, `agent_tab`; none for the
 pack), and the evidence index copies them. The served report (`GET
 /api/v1/reports/{id}`) names under `section_tabs` the console tab of each
@@ -4761,13 +4709,12 @@ section built from an operator's tool: by the kind its tool declared (a sandbox
 kind on DYNAMIC, a capture on NETWORK, a reputation lookup on IDENTITY, a code
 listing, rule match, strings or import listing on STATIC), else by the stored
 tab of the agent whose calls it cites, read from the entry and never from
-settings or an agent's name. A section of a built-in tool, a section of a
-stored run written before tabs, and a section neither reading places, keeps
+settings or an agent's name. A section of a built-in tool, a section of a stored run without tabs, and a section neither reading places, keeps
 its place by key.
 
 A tool's answer that the server gives as `structuredContent` beside a prose
 text is kept as the entry's structure (`structured`, marked
-`structured_from_server`); the text is what the model read, as before. It is
+`structured_from_server`); the text is what the model read. It is
 kept only where it adds something and costs nothing:
 
 - not when the text is JSON (the SDK's servers, every built-in among them,
@@ -4792,7 +4739,7 @@ structures fit in what its `reporting.evidence_budget_bytes` leaves after its
 texts (none, when its texts alone fill it).
 That covers an agent whose first record was already collected and that ran
 again later (a revision or debate round, a judge round, a teammate asking it
-again), whose earlier structures it could no longer drop itself. The pass
+again), whose earlier structures it cannot drop itself. The pass
 never touches a text and does nothing for a ledger with no such structure
 (every built-in's). So in the saved ledger and the report:
 
@@ -4822,7 +4769,7 @@ block of its own names that block's dotted path in `declaration_block`
 instead: the block joins the provider blocks, is read, snapshotted and
 switched on and off as a built-in's is, and leaves them when the provider is
 taken out. The built-in providers' blocks (`static.ghidra`, `static.r2`,
-`sandbox.cape2.mcp`) are read as before, and no class may name another path
+`sandbox.cape2.mcp`) are read at their own paths, and no class may name another path
 for one of them. Registration refuses, with the reason, a path where the
 settings model holds no server block (a block with `tool_facts`) and a path
 that is, holds or sits inside another provider's block, shipped or registered,
@@ -4871,22 +4818,19 @@ shipped** per tool; a provider block's tool declarations are edited the same
 way under its **Declaration** heading. A field holding a map or a list
 (`arguments`, `places`, `values`, `techniques`, `reputation`, `words`,
 `report_sections`) is one field: changing one key of it stores the whole field,
-which then no longer takes a key a later release adds to it. A server you add
+which then does not take a key a later release adds to it. A server you add
 has nothing shipped, so its stored map is its whole map.
 
 A map stored as changes carries a mark, `"": "changes"` (the empty key, which
 no tool can be named by), and `GET /api/v1/settings` and the export serve every
-stored map in this marked form. A map without the mark was stored whole by an
-earlier release and is read whole, exactly as that release read it: a shipped
-tool it does not name stays removed. Nothing tells the two forms apart by their
+stored map in this marked form. A map without the mark is a whole map and is read whole: a shipped tool it does not name stays removed. Nothing tells the two forms apart by their
 shape.
 
 **A map sent through the API is read by the same mark.** On every path that
 takes one (a save through `PATCH /api/v1/settings`, a connection test, a
 probe's candidate settings, and an import in either format), a marked map is
 the block's changes, so a tool it leaves out is not removed and `null` removes
-one; a map without the mark is the whole map, as earlier releases read every
-map, so a shipped tool it leaves out is removed. A `malspark-settings/1` import
+one; a map without the mark is the whole map, so a shipped tool it leaves out is removed. A `malspark-settings/1` import
 reads the same way: its maps carry no mark, so they are whole, and a map marked
 as changes (only `/2` writes the mark, so such a file was relabelled from one)
 is its changes there too, never a whole map that would remove every shipped
@@ -4894,10 +4838,7 @@ tool. A map sent back exactly as it is stored keeps the
 reading it is stored with, since it says what the stored one says; the console
 always sends the marked form it was served.
 
-When a later release changes a shipped declaration so that your stored change
-of that tool no longer validates over it (a field you set needs one the release
-no longer ships), or stops shipping a tool you changed (so your change alone
-is now its whole declaration), the change is left out of what is in force with
+When a release changes a shipped declaration so that your stored change of that tool does not validate over it (a field you set needs one the release does not ship), or does not ship a tool you changed (so your change alone is its whole declaration), the change is left out of what is in force with
 one warning in the log: the tool runs as shipped, or not at all where nothing
 ships for it, and the rest of the settings is built. No stored change stops the
 settings from being built. The declaration box marks that tool as conflicting
@@ -4920,25 +4861,23 @@ with the key named. Declaration data nested at any depth is read without
 failing: the settings build, and a save of such data is refused with the key
 named.
 
-Settings saved by an earlier release stored a built-in's tool declarations
-whole. The database migration (revision `20261012000000`) rewrites each such
-map once: against the declarations of the release that wrote it (inferred from
-a frozen record of what every earlier release shipped), a tool stored as that
-release shipped it is dropped and follows today's declaration, an edited tool
-keeps the fields you changed, and a missing shipped tool stays removed. Where
-the writing release cannot be told apart, the stored map is kept whole as
-yours. A server you added ships nothing, so its whole map is its changes: it is
-marked and reads as before. A provider block's tool declarations that no
-earlier release shipped any declaration for (the `sandbox.cape2.mcp` block
-today) are left as stored and read whole until a save of this release writes
-them marked. Each rewritten map is marked; a marked map, one this release saved
-also before the migration ran, is left alone, so running it again changes
-nothing. It logs one line when it rewrites anything. Run the migration
-(`make migrate`) before starting this release: until it has run, a map an
-earlier release stored reads as that release read it, and the API logs one
-warning at startup while the database is behind its latest migration (another
-when it is ahead of it, migrated by a later release). A downgrade writes every
-marked map whole again.
+**To upgrade an installation whose settings hold a built-in's tool
+declarations as a whole map** (one without the mark), run the migration
+(`make migrate`) before starting the new release. Revision `20261012000000`
+rewrites each such map once: against the declarations of the release that
+wrote it (read from a frozen record of what each release shipped), a tool
+stored as that release shipped it is dropped and follows the current
+declaration, an edited tool keeps the fields you changed, and a missing shipped
+tool stays removed. Where the writing release cannot be told apart, the stored
+map is kept whole as yours. A server you added ships nothing, so its whole map
+is its changes and is marked. A provider block's tool declarations for which no
+release shipped a declaration (the `sandbox.cape2.mcp` block) are left as stored
+and read whole until a save writes them marked. Each rewritten map is marked; a
+marked map is left alone, so running the migration again changes nothing. It
+logs one line when it rewrites anything. Until it has run, an unmarked map is
+read whole, and the API logs one warning at startup while the database is
+behind its latest migration (another when it is ahead of it). A downgrade
+writes every marked map whole again.
 
 **A declaration for a server you add.** `docs/examples/profiles/qu1cksc0pe.declaration.json`
 holds the declaration fields of a Qu1cksc0pe server, its six tools' kinds,
@@ -4949,7 +4888,7 @@ boxes of the same names, and save.
 
 ### What each tool's answer shows, told to the model
 
-`core.mcp.answer_scope_notes` (**Tool servers → Tool descriptions**, off by default) decides whether a tool's description, as the model is shown it, ends with what its declaration says its answer shows and does not show (`shows`, `does_not_show`). Off, the declarations are shown in the console and on this page only, and every prompt and stored run reads as before; it stays off until an A/B measures what it changes. The notes after a description (this one and `aggregate_of`'s) are written once over the agent's whole tool list, grouped by the source each tool is declared under, so a server's tool reached through one reference names the tools of the same server another reference or binding offered, and a note that names a tool the agent is not offered is taken off.
+`core.mcp.answer_scope_notes` (**Tool servers → Tool descriptions**, off by default) decides whether a tool's description, as the model is shown it, ends with what its declaration says its answer shows and does not show (`shows`, `does_not_show`). Off, the declarations are shown in the console and on this page only, and every prompt and stored run reads without it; it stays off until an A/B measures what it changes. The notes after a description (this one and `aggregate_of`'s) are written once over the agent's whole tool list, grouped by the source each tool is declared under, so a server's tool reached through one reference names the tools of the same server another reference or binding offered, and a note that names a tool the agent is not offered is taken off.
 
 ### A tool server that keeps failing is rested
 
@@ -4990,8 +4929,7 @@ that is not there) has answered, and never counts. Each rest is published as a
 `run_summary.server_rests`, which the report and the console's "What the run
 spent" print. The event and the record name the server by its key (`server`)
 and, where its block has a `label` other than its key, by that label too
-(`label`); the sentence printed names it `Label (key)`, else by the key, so a
-server with no label of its own reads as before. The call cap queues calls per event loop: a handle is opened per
+(`label`); the sentence printed names it `Label (key)`, else by the key, so a server with no label of its own is named by its key. The call cap queues calls per event loop: a handle is opened per
 loop, and for a stdio server that is one child process per loop.
 
 ## Writing a tool server
@@ -5098,8 +5036,7 @@ and does not load: a file that is there and holds no rule (a YARA corpus of
 `rules: []`) passes it, and the scan that reads it answers that it did not run,
 which degrades the run. A server whose
 block sets `PYTHONPATH` has neither its modules nor its data checked. A server
-does not probe a data path in its manifest. A tool that declares no data is
-checked as before.
+does not probe a data path in its manifest. A tool that declares no data is checked without it.
 
 **Errors that name their remedy.** A tool that cannot answer returns, never
 raises:
@@ -5115,8 +5052,7 @@ The codes are `missing_dependency`, `timeout`, `bad_argument`, `no_such_file`,
 `unsupported_format`, `not_configured` and `tool_failed`; a code of your own is
 kept as written. `malspark.tools.errors.tool_error(code, message, tool=...)`
 builds the shape with the authored remediation for the code, and each sidecar's
-guard maps an exception it catches to a code. The older flat shape,
-`{"error": "<text>"}`, is still read: the sidecars rewrite it into the
+guard maps an exception it catches to a code. The flat shape, `{"error": "<text>"}`, is read too: the sidecars rewrite it into the
 structured one on the way out, inferring the code from the text, and the
 ledger reads either. A returned error is a failed ledger entry: `ok` false,
 `error` the message, `remediation` the hint — the report header lists each
@@ -5270,8 +5206,7 @@ callable registers exactly the entry point's name.
 `core.providers` (Settings → Plugins → Third-party provider blocks, a JSON
 editor) holds one server block per third-party provider, keyed by the
 provider's id: the fields of a tool server's entry in `mcp.servers`, saying how
-the provider's server is reached and what it declares about its tools. Empty by
-default, and settings stored before it existed read exactly as before.
+the provider's server is reached and what it declares about its tools. Empty by default, and settings that do not hold it read as empty.
 
 ```json
 {"mydecomp": {"enabled": true, "transport": "streamable-http",
@@ -5361,7 +5296,7 @@ a load has run longer than a request's budget no request waits on it. Loading
 a plugin is logged with its package and version. A plugin that fails to
 import, or whose entry point names something that is not a provider of its
 kind, is logged with the error and the process goes on without it; a job that
-names it fails with that reason. A plugin the list no longer names is withdrawn
+names it fails with that reason. A plugin the list does not name is withdrawn
 from its registry at that process's next load; its code stays imported in that
 process until the process restarts.
 
@@ -5500,23 +5435,20 @@ sets `Content-Disposition: attachment; filename=malspark-settings.json`:
 changes over the shipped ones, one tool at a time (see **Tool declarations are
 saved one tool at a time**), so an export and import round trip keeps exactly
 those changes. A map in a `/3` or `/2` document without the mark is read whole, as
-a stored one is. A document in `malspark-settings/2`, written before a server's
-call budget had a setting of its own, is read as `/3` is, except that where it
+a stored one is. A document in `malspark-settings/2` is read as `/3` is, except that where it
 carries `core.static.capa.timeout_seconds` or `core.static.yara.timeout_seconds`
 and no `core.mcp.breaker.default_call_timeout_seconds`, the budget is given the
 floor that document gave every server (the longer of the two, each at its
 shipped default where it is absent), and its YARA timeout is the check budget
 `core.reporting.detection_rule_check_seconds`; a `/3` document's static
-timeouts are their own. A document in `malspark-settings/1`, written before, is still
-accepted: a built-in block's tool declarations there are its whole map, so a
+timeouts are their own. A document in `malspark-settings/1` is accepted: a built-in block's tool declarations there are its whole map, so a
 shipped tool it does not name stays removed and a tool it names reads as
 written; a map marked as changes reads as it does in `/2`, and its call budget as in `/2`. A `format` other than these three is rejected with 422; unknown or read-only keys
 are rejected with 422 and a per-key error, and nothing is applied when any key
 fails. A key of a setting retired with no effect — `core.preprocessing.summarizer_provider`,
 `core.preprocessing.summarizer_model`, `core.reporting.narrative_max_tokens` —
 is refused the same way, and its error says it is retired, what replaced it and
-to delete that key from the file and import again; an export written before the
-retirement carries it only if the setting had been saved. A successful import
+to delete that key from the file and import again; an export carries it only if the setting was saved. A successful import
 writes one audit row (`settings.import`) naming the applied keys. The console previews the document against the current
 configuration before sending it.
 

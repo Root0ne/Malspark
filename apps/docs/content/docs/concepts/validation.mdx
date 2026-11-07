@@ -57,8 +57,11 @@ corrected one.
 - **The report** prints what stayed unresolved where it affects a reader, such
   as a technique the judge could not support.
 
-The agents answer the findings in retry turns, and whatever stays unresolved
-is counted by code and listed in the run summary.
+In the [benchmark](/docs/benchmark/) run, `run_summary.validation.by_code`
+counts 183 findings under 31 codes, the most of them (49)
+`attck.claim_does_not_describe`: a technique whose claim does not describe the
+behaviour. The run summary records 35 retries, and 52 findings stayed
+unresolved and are listed there.
 
 ## Every code, listed
 
