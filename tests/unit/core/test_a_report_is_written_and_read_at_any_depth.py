@@ -11,13 +11,13 @@ import gc
 import json
 import math
 import random
-import time
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
 import pytest
 from pydantic import BaseModel
+from tests.linear_cost import assert_ratio, assert_scales
 
 from malspark.core import safe_json
 from malspark.core.safe_json import (
@@ -241,24 +241,10 @@ class TestAnyDepthIsRead:
             safe_json._loads_iteratively(text)
 
 
-def _seconds(make: Callable[[int], Any], run: Callable[[Any], Any], n: int) -> float:
-    subject = make(n)
-    best = float("inf")
-    for _ in range(2):
-        gc.collect()
-        gc.disable()
-        try:
-            started = time.thread_time()
-            run(subject)
-            best = min(best, time.thread_time() - started)
-        finally:
-            gc.enable()
-    return best
-
-
 def _linear(make: Callable[[int], Any], run: Callable[[Any], Any], small: int) -> None:
-    once, tenfold = _seconds(make, run, small), _seconds(make, run, small * 10)
-    assert tenfold <= 10 * once * 1.5 + 0.05, (once, tenfold)
+    # Ten times the input in under fifteen times the time, and 50 ms of
+    # allowance for a small run that is mostly fixed cost.
+    assert_scales(make, small, run, factor=10, limit=15, floor=0.05 / 15)
 
 
 class TestLinearTime:
@@ -431,12 +417,38 @@ class TestAHostileDeepBody:
         the body costs at most about ten times the time.
         """
         size = 10_000_000
-        plain_bytes, plain_seconds = _chunked_read("json", 500, size)
-        held_bytes, held_seconds = _chunked_read("safe", 500, size)
+        peaks: dict[tuple[str, int], int] = {}
+
+        def seconds(mode: str, size: int) -> Callable[[], float]:
+            def read() -> float:
+                added, took = _chunked_read(mode, 500, size)
+                peaks[(mode, size)] = min(added, peaks.get((mode, size), added))
+                return took
+
+            return read
+
+        assert_ratio(
+            seconds("json", size),
+            seconds("safe", size),
+            4,
+            what="the guarded read against json.loads",
+            repeats=1,
+            warm=False,
+            floor=0.5 / 4,
+            self_timed=True,
+        )
+        assert_ratio(
+            seconds("safe", size // 10),
+            seconds("safe", size),
+            15,
+            what="ten times the body",
+            repeats=1,
+            warm=False,
+            floor=0.2 / 15,
+            self_timed=True,
+        )
+        plain_bytes, held_bytes = peaks[("json", size)], peaks[("safe", size)]
         assert held_bytes <= 1.2 * plain_bytes + 8 * 2**20, (plain_bytes, held_bytes)
-        assert held_seconds <= 4 * plain_seconds + 0.5, (plain_seconds, held_seconds)
-        _small_bytes, small_seconds = _chunked_read("safe", 500, size // 10)
-        assert held_seconds <= 10 * small_seconds * 1.5 + 0.2, (small_seconds, held_seconds)
 
     def test_a_cut_body_reads_as_the_marked_copy_would(self) -> None:
         chunk = "[" * 500 + "]" * 500

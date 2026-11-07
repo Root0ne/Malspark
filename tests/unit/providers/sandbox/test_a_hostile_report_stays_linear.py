@@ -2,15 +2,15 @@
 
 Each shape here is ten times larger in the second run than in the first, and
 the second run may cost at most ten times the first (with the same margin
-every other linear-time test of the platform allows). Each timing holds the
-collector off and keeps the best of two runs, so a sweep that happens to land
+every other linear-time test of the platform allows). Each timing is the shared
+measure of ``tests.linear_cost``: the two sizes timed in turn with the
+collector off, the best of each read, so a sweep or a busy machine that lands
 in one run is not what is measured. No walk recurses, so depth costs no stack.
 """
 
 from __future__ import annotations
 
 import gc
-import time
 import tracemalloc
 from collections.abc import Callable
 from typing import Any
@@ -26,27 +26,13 @@ from malspark.schemas.sandbox_report import (
     stored_place,
     triage_overview_to_sandbox_report,
 )
-
-
-def _seconds(make: Callable[[int], Any], run: Callable[[Any], Any], n: int) -> float:
-    """The best of two timed runs of ``run`` on ``make(n)``, the collector held."""
-    subject = make(n)
-    best = float("inf")
-    for _ in range(2):
-        gc.collect()
-        gc.disable()
-        try:
-            started = time.thread_time()
-            run(subject)
-            best = min(best, time.thread_time() - started)
-        finally:
-            gc.enable()
-    return best
+from tests.linear_cost import assert_scales
 
 
 def _linear(make: Callable[[int], Any], run: Callable[[Any], Any], small: int) -> None:
-    once, tenfold = _seconds(make, run, small), _seconds(make, run, small * 10)
-    assert tenfold <= 10 * once * 1.5 + 0.05, (once, tenfold)
+    # Ten times the input in under fifteen times the time, and 50 ms of
+    # allowance for a small run that is mostly fixed cost.
+    assert_scales(make, small, run, factor=10, limit=15, floor=0.05 / 15)
 
 
 def _deep(depth: int, leaf: Any = 1) -> Any:
