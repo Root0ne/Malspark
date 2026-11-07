@@ -5368,7 +5368,7 @@ is assembled from what the run gathered rather than recomputed beside it:
   `/iocs?include=all` carries the analysts' listed non-network rows exactly
   as the report's IOC table shows them, both read by one reader
   (`builder.ioc_table`: rebuilt from the stored report, the stored rows only
-  when the rebuild fails), so an old report reads the same in both. A value the judge names stands on the judge's keep, so it is published. The drafts read the table's
+  when the rebuild fails), so an old report reads the same in both. A value named only by an analyst that the judge keeps as an indicator is published on the judge's keep. The drafts read the table's
   answer, the Sigma selection included. **A published URL carries its name.**
   The host of every URL the rule publishes — the network block's and the
   judge's — follows the URL's decision (`published_url_hosts`,
@@ -5487,8 +5487,7 @@ is assembled from what the run gathered rather than recomputed beside it:
   report prints it in the row's Context cell), and `/iocs` carries the same
   words. It says why it is partial when no FLOSS entry listed every string it
   recovered, no decoder entry listed every result, or no `strings` entry
-  listed every plain string, and the reason carries that. A stored report without the record is read from its kept `tool_floss_strings` and
-  `strings` rows with the same reader, and the reason says the record is
+  listed every plain string, and the reason carries that. A stored report without the record is read from its kept emulator strings table (a section drawn from a tool of kind `emulated_strings`) and its `strings` rows with the same reader, and the reason says the record is
   partial. The export, the IOC table and `/iocs` read it through the one rule.
 * **Draft detection rules match only what the run publishes.** The YARA,
   Sigma and Suricata drafts (`reporting.detection_signatures`) are generated

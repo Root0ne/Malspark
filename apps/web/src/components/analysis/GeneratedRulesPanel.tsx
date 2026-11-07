@@ -11,7 +11,9 @@ import ShowMoreRows from "@/components/ui/ShowMoreRows";
 import type { DetectionKind, DetectionRule } from "@/types/malware-report";
 import { ruleStanding, sampleMatchBadge, type RuleStanding, type SampleMatchTone } from "./sampleMatch";
 
-const KIND_ORDER: DetectionKind[] = ["yara", "sigma", "suricata", "snort"];
+/* The kinds the report drafts, in the order they are drawn. A stored rule of
+ * another kind is drawn after them. */
+const KIND_ORDER: DetectionKind[] = ["yara", "sigma", "suricata"];
 const KIND_EXT: Record<DetectionKind, string> = {
   yara: "yar",
   sigma: "yml",

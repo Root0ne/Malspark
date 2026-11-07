@@ -39,7 +39,7 @@ One report is reachable by its own id or by the job that produced it
 | `stix` | The exported STIX 2.1 bundle. `stix?source=judge` serves the judge's own bundle beside it, with the map from each id the judge wrote to the id it was published under. |
 | `mitre` | The ATT&CK view of the report. |
 | `iocs` | The indicator feed, with a publish decision on every row (below). |
-| `signatures/{kind}` | The detection drafts of one kind as plain text: `yara`, `sigma`, `suricata` or `snort`. |
+| `signatures/{kind}` | The detection drafts of one kind as plain text: `yara`, `sigma` or `suricata`. The route also accepts `snort`, for which no draft is generated, so it answers an empty body. |
 | `timeline` | The run's timeline. |
 
 <Tabs items={["Markdown", "STIX 2.1", "IOC feed", "YARA drafts"]}>
