@@ -5513,8 +5513,7 @@ VALUE_NOT_CARRIED_CODE = "report.value_not_carried"
 UNCITED_CONFIGURATION_CODE = "report.configuration_uncited"
 # A report section answer the output cap ended. Its JSON is cut before it
 # closes, so the schema check could only say "not JSON at all" — and a model
-# told that writes the same long answer again, into the same cap. Both answers
-# of a benchmark report's host-identifier section ran to exactly 8,192 tokens.
+# told that writes the same long answer again, into the same cap.
 SECTION_CUT_CODE = "composer.cut_at_output_cap"
 
 # An analyst's answer the output cap ended. The judge and the composer were

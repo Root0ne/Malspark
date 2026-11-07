@@ -139,14 +139,13 @@ CAP_ORPHAN_REASON = "cap_orphan"
 # own bundle keeps the object.
 MALWARE_UNDER_BENIGN_CODE = "stix.malware_object_under_benign"
 # One endpoint question, one code. A URL, a name and an address that fail the
-# same host question are one class of decline, and a reader filtering on the
-# code used to find that class under two names — with the second of them
-# covering addresses too, which is not what it is called. The kind is in the
-# sentence, where it says something.
+# same host question are one class of decline, so a reader filtering on the
+# code finds that class under one name. The kind is in the sentence, where it
+# says something.
 UNPUBLISHABLE_ENDPOINT_CODE = "stix.unpublishable_endpoint"
-# What a run stored before ``stix.unpublishable_endpoint`` replaced them carries
-# for the same decision. Nothing is migrated: a stored row is what that run
-# recorded. The console reads these as the same decision, and
+# What a stored run may carry for the decision ``stix.unpublishable_endpoint``
+# names. Nothing is migrated: a stored row is what that run recorded. The
+# console reads these as the same decision, and
 # ``apps/web/src/lib/validationRows.ts`` holds the list it reads them from.
 LEGACY_UNPUBLISHABLE_CODES = ("stix.unpublishable_url", "stix.unpublishable_domain")
 # A ``created_by_ref`` naming an identity the bundle does not hold, which the

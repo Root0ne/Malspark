@@ -185,11 +185,10 @@ _NOT_JSON_FEEDBACK = (
     "alone, with no prose around it."
 )
 
-# The correction for an answer the output cap cut off. The benchmark's large
-# model wrote a bundle of about 25,000 characters on one sample, twice: both
-# answers stopped at exactly the 8,192 tokens ``judge_max_tokens`` allows,
-# before the bundle closed, and the only correction it was given said the
-# answer "was not a JSON STIX bundle" — so it wrote the same bundle again.
+# The correction for an answer the output cap cut off. A bundle that stops at
+# the tokens ``judge_max_tokens`` allows, before it closes, is not told only
+# that it "was not a JSON STIX bundle": with that alone a model writes the same
+# bundle again, into the same cap.
 VERDICT_CUT_CODE = "verdict.cut_at_output_cap"
 
 # An object begun in an answer: its ``type`` written as a bundle object's is.
