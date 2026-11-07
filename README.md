@@ -3,7 +3,7 @@
 </p>
 
 <h1 align="center">Malspark</h1>
-<p align="center"><em>AI agents that analyse malware end to end, with the evidence behind every claim</em></p>
+<p align="center"><em>Your own malware analysis team</em></p>
 <p align="center"><a href="https://malspark.com">malspark.com</a> · <a href="https://malspark.com/docs/">Documentation</a></p>
 
 [![CI](https://github.com/Root0ne/Malspark/actions/workflows/ci.yml/badge.svg)](https://github.com/Root0ne/Malspark/actions/workflows/ci.yml)
