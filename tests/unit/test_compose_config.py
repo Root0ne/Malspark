@@ -6,6 +6,8 @@ from pathlib import Path
 import pytest
 import yaml
 
+from tests.unit._docker_cli import docker_env
+
 ROOT = Path(__file__).resolve().parents[2]
 
 
@@ -89,7 +91,7 @@ ALL_PROFILES = ("ghidra", "qdrant", *ONE_PROGRAM, *READERS)
 
 @pytest.mark.skipif(shutil.which("docker") is None, reason="docker not installed")
 def test_compose_binds_loopback_and_requires_the_secrets(tmp_path):
-    env = {**REQUIRED_ENV, "PATH": "/usr/bin:/bin"}
+    env = docker_env(REQUIRED_ENV)
     # Render a copy of the compose file, not the real one: docker compose
     # config reads docker/.env from disk for interpolation regardless of the
     # subprocess env passed below, so rendering the real file would fold the
@@ -135,7 +137,7 @@ def test_compose_binds_loopback_and_requires_the_secrets(tmp_path):
 
     missing = subprocess.run(
         ["docker", "compose", "--env-file", str(empty_env), "-f", str(copy), "config"],
-        env={"PATH": "/usr/bin:/bin"},
+        env=docker_env({}),
         capture_output=True,
         text=True,
     )
@@ -150,10 +152,9 @@ def test_compose_binds_loopback_and_requires_the_secrets(tmp_path):
     # that variable's own message is the one reported.
     for var in REQUIRED_ENV:
         partial_env = {k: v for k, v in REQUIRED_ENV.items() if k != var}
-        partial_env["PATH"] = "/usr/bin:/bin"
         result = subprocess.run(
             ["docker", "compose", "--env-file", str(empty_env), "-f", str(copy), "config"],
-            env=partial_env,
+            env=docker_env(partial_env),
             capture_output=True,
             text=True,
         )
@@ -175,7 +176,7 @@ def test_migrations_run_once_before_the_api_and_the_worker(tmp_path):
 
     out = subprocess.run(
         ["docker", "compose", "--env-file", str(empty_env), "-f", str(copy), "config"],
-        env={**REQUIRED_ENV, "PATH": "/usr/bin:/bin"},
+        env=docker_env(REQUIRED_ENV),
         capture_output=True,
         text=True,
         check=True,
@@ -273,6 +274,9 @@ def test_minio_is_built_from_the_release_its_tag_names() -> None:
     assert minio["container_name"] == "malspark-minio"
     assert set(minio["environment"]) == {"MINIO_ROOT_USER", "MINIO_ROOT_PASSWORD"}
     assert "/minio/health/live" in " ".join(minio["healthcheck"]["test"])
+    # No capability and no way to gain one (T-575); root, for the volume's owner.
+    assert minio["cap_drop"] == ["ALL"] and not minio.get("cap_add")
+    assert minio["security_opt"] == ["no-new-privileges:true"]
     # The build copies nothing from docker/, where docker/.env lives, and is
     # sent none of it.
     assert not re.search(r"^(COPY|ADD) (?!--from=)", text, re.MULTILINE)
@@ -427,7 +431,7 @@ def _render_ghidra(tmp_path: Path, **extra: str) -> dict:
             "ghidra",
             "config",
         ],
-        env={**REQUIRED_ENV, **OPTIONAL_ENV, **extra, "PATH": "/usr/bin:/bin"},
+        env=docker_env({**REQUIRED_ENV, **OPTIONAL_ENV, **extra}),
         capture_output=True,
         text=True,
         check=True,
@@ -473,7 +477,7 @@ def _render(tmp_path: Path, *profiles: str, env: dict[str, str] | None = None) -
     flags = [arg for profile in profiles for arg in ("--profile", profile)]
     out = subprocess.run(
         ["docker", "compose", "--env-file", str(empty_env), "-f", str(copy), *flags, "config"],
-        env={**(REQUIRED_ENV if env is None else env), "PATH": "/usr/bin:/bin"},
+        env=docker_env(REQUIRED_ENV if env is None else env),
         capture_output=True,
         text=True,
         check=True,
@@ -561,7 +565,7 @@ def test_the_shipped_env_file_runs_ghidra_and_qdrant_as_before(tmp_path):
             str(copy),
             "config",
         ],
-        env={**REQUIRED_ENV, **OPTIONAL_ENV, "PATH": "/usr/bin:/bin"},
+        env=docker_env({**REQUIRED_ENV, **OPTIONAL_ENV}),
         capture_output=True,
         text=True,
         check=True,
@@ -622,7 +626,7 @@ def _render_with(
             *[arg for profile in profiles for arg in ("--profile", profile)],
             "config",
         ],
-        env={**REQUIRED_ENV, **OPTIONAL_ENV, **(env or {}), "PATH": "/usr/bin:/bin"},
+        env=docker_env({**REQUIRED_ENV, **OPTIONAL_ENV, **(env or {})}),
         capture_output=True,
         text=True,
         check=True,

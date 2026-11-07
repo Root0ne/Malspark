@@ -55,6 +55,7 @@ from functools import partial
 from pathlib import Path
 from typing import Any
 
+from malspark.core.previous_name import PREVIOUS_NAME
 from malspark.tools import children, staging
 from malspark.tools.errors import MISSING_DEPENDENCY, tool_error
 from malspark.tools.strings import DEFAULT_STRINGS_LIMIT, _matcher
@@ -209,6 +210,23 @@ def accepted_sha256s(machine: str | None = None) -> frozenset[str]:
     return frozenset({FLOSS_BINARY_SHA256})
 
 
+def previous_install_path() -> Path:
+    """Where the installer of a release before the product's rename (T-576) wrote the same build.
+
+    Under the previous name (``malspark.core.previous_name``): a build installed
+    then is still found, and still has to be the pinned one.
+    """
+    return (
+        Path.home()
+        / ".local"
+        / "share"
+        / PREVIOUS_NAME
+        / "tools"
+        / f"floss-{FLOSS_VERSION}"
+        / "floss"
+    )
+
+
 def _is_pinned_build(path: Path) -> bool:
     """Whether ``path`` is the pinned build, by its sha256.
 
@@ -254,6 +272,7 @@ def find_floss(environ: Mapping[str, str] | None = None) -> tuple[Path | None, s
     else:
         candidates = [
             str(default_install_path()),
+            str(previous_install_path()),
             shutil.which("floss", path=source.get("PATH")) or "",
         ]
     found = [Path(c) for c in candidates if c and Path(c).is_file() and os.access(c, os.X_OK)]

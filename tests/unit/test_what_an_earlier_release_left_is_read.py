@@ -384,9 +384,6 @@ class _Store:
         self.made.append(name)
         self.buckets.add(name)
 
-    def set_bucket_policy(self, name: str, policy: str) -> None:
-        return None
-
 
 @pytest.fixture
 def unsettled(monkeypatch: Any) -> Any:
@@ -507,6 +504,63 @@ def _script(tmp_path: Path, env_text: str, *args: str) -> tuple[str, str, str]:
     return done.stdout, env_file.read_text(encoding="utf-8"), log.read_text(encoding="utf-8")
 
 
+# A docker that lists the volumes LISTING names, one per line, and has none of them in use.
+LISTING_DOCKER = """#!/bin/sh
+echo "docker $*" >> "$STUB_LOG"
+case "$1 $2" in
+  "volume ls") [ -n "$LISTING" ] && printf '%s\\n' $LISTING ;;
+  "volume inspect") exit 1 ;;
+  "ps -q") : ;;
+esac
+exit 0
+"""
+
+
+def _listed(tmp_path: Path, listing: str, *args: str) -> Any:
+    """The script's plan over a docker that lists ``listing``, and its log."""
+    import subprocess
+
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir(exist_ok=True)
+    docker = bin_dir / "docker"
+    docker.write_text(LISTING_DOCKER, encoding="utf-8")
+    docker.chmod(0o755)
+    log = tmp_path / "log"
+    log.write_text("", encoding="utf-8")
+    return subprocess.run(
+        ["bash", str(SCRIPT), "--env-file", str(tmp_path / "absent"), *args],
+        capture_output=True,
+        text=True,
+        env={
+            "PATH": f"{bin_dir}:{os.environ['PATH']}",
+            "STUB_LOG": str(log),
+            "LISTING": listing,
+        },
+        timeout=60,
+    )
+
+
+def test_the_script_refuses_two_old_projects_that_would_become_one_volume(
+    tmp_path: Path,
+) -> None:
+    done = _listed(tmp_path, f"{PREVIOUS_NAME}_minio_data docker_minio_data")
+    assert done.returncode == 1
+    assert (
+        f"refuse: both {PREVIOUS_NAME}_minio_data and docker_minio_data would become "
+        "malspark_minio_data"
+    ) in done.stderr
+    assert "--from-project" in done.stderr
+    assert "volume create" not in (tmp_path / "log").read_text(encoding="utf-8")
+
+
+def test_the_script_with_no_old_volume_says_so_and_copies_nothing(tmp_path: Path) -> None:
+    done = _listed(tmp_path, "", "--apply")
+    assert done.returncode == 0, done.stderr
+    assert f"no volume of the projects {PREVIOUS_NAME} docker found" in done.stdout
+    log = (tmp_path / "log").read_text(encoding="utf-8")
+    assert "volume create" not in log and "docker run" not in log
+
+
 @pytest.mark.parametrize("ending", ["\n", ""])
 def test_the_script_pins_the_old_bucket_on_its_own_line(tmp_path: Path, ending: str) -> None:
     out, env, log = _script(tmp_path, f"{OLD_ENV}UID=1{ending}", "--apply")
@@ -560,3 +614,18 @@ def test_a_mask_sent_back_under_the_previous_name_keeps_the_stored_value() -> No
     assert kept["analysis"]["env"] == {f"{NEW_ENV}X": "secret1", f"{NEW_ENV}Y": "secret2"}
     both = {"analysis": {"env": {f"{OLD_ENV}X": "old", f"{NEW_ENV}X": TOKEN_MASK}}}
     assert _keep_masked_env(both, stored)["analysis"]["env"] == {f"{NEW_ENV}X": "secret1"}
+
+
+# ---- the ATT&CK cache an earlier release left (T-579) ----------------------
+
+
+def test_the_attck_cache_an_earlier_release_left_is_read(tmp_path: Path) -> None:
+    from malspark.memory.attck_loader import PREVIOUS_CACHE_DIR, default_cache_dir
+
+    assert PREVIOUS_CACHE_DIR.parts[-2:] == (PREVIOUS_NAME, "attck")
+    current, previous = tmp_path / CURRENT_NAME / "attck", tmp_path / PREVIOUS_NAME / "attck"
+    assert default_cache_dir(current, previous) == current
+    previous.mkdir(parents=True)
+    assert default_cache_dir(current, previous) == previous
+    current.mkdir(parents=True)
+    assert default_cache_dir(current, previous) == current
