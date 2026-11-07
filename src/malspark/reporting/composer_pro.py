@@ -1185,6 +1185,507 @@ def procedure_value_violations(
     return out
 
 
+_NUMBER_WORDS = {
+    word: value
+    for value, word in enumerate(
+        "zero one two three four five six seven eight nine ten eleven twelve".split()
+    )
+}
+_NUMBER = r"-?(?:0x[0-9a-f]+|\d+)\b|\b(?:" + "|".join(_NUMBER_WORDS) + r")\b"
+# The numbers a check compares with: after a comparison word or sign, an
+# equality ("equals", "is not", "returns"), before an "or higher"-like close,
+# and a record field's offset written "+0x194". A number joined to a word by a
+# hyphen ("is 32-bit") is part of that word.
+_COMPARED = r"(" + _NUMBER + r")(?!-\w)"
+_COMPARED_NUMBER = re.compile(
+    r"\b(?:below|above|under|over|exceeds?|exceeding|(?:less|more|greater|fewer|longer|shorter"
+    r"|larger|smaller|higher|lower)\s+than|at\s+(?:least|most)|up\s+to|equals?|equal\s+to)\s+"
+    + _COMPARED
+    + r"|(?:[<>]=?)\s*"
+    + _COMPARED
+    + r"|\b"
+    + _COMPARED
+    + r"\s+or\s+(?:higher|more|greater|above|later|lower|less|fewer|below)\b"
+    r"|\+\s*(0x[0-9a-f]+)\b"
+    # The bare forms last, as their own groups: a 0, 1 or -1 they compare with is a
+    # truth value or a status unless a counted noun stands before them.
+    r"|((?:\b(?:is(?:\s+not)?|returns?)\s+|[!=]=\s*))" + _COMPARED,
+    re.IGNORECASE,
+)
+# The last two groups of :data:`_COMPARED_NUMBER`: a bare comparison and its number.
+_BARE_GROUP = 5
+# A noun that counts what it is compared with, alone or with what it counts
+# ("the processor count is 1", "the number of monitors is 1").
+_COUNTED_NOUN = re.compile(
+    r"\b(?:count|number|total|size|length|amount|quantity)(?:\s+of\s+\w+)?\s*$",
+    re.IGNORECASE,
+)
+_TRUTH_VALUES = frozenset({-1, 0, 1})
+_ANY_NUMBER = re.compile(r"(?<![\w.])(?:" + _NUMBER + r")", re.IGNORECASE)
+# A claim clause that states a check: the code fails, exits, aborts, stalls,
+# terminates, quits, halts, stops or bails out, returns failure, a null or a
+# number, or calls an API whose name says it ends a process or a thread (a
+# name that opens on Exit or Terminate, after a native prefix: ExitProcess,
+# NtTerminateProcess; never GetExitCodeThread), on a condition;
+# or, the condition first, a condition comparing with a number and then such an
+# outcome. A condition that is itself a failure ("returns 0 if an append
+# fails") is an error path, not a check.
+_OUTCOME = (
+    r"(?:\b(?:fail(?:s|ed|ure)?|exit(?:s|ed)?|abort(?:s|ed)?|stall(?:s|ed)?"
+    r"|terminat(?:e|es|ed)|quit(?:s)?|halt(?:s|ed)?|stop(?:s|ped)?|bail(?:s|ed)?"
+    r"|return(?:s|ed)?\s+(?:failure|false|null|zero|nonzero|-?(?:0x[0-9a-f]+|\d+)))(?![\w-])"
+    r"|(?-i:\b(?:Nt|Zw|Rtl)?(?:Exit|Terminate)[A-Z]\w*))"
+)
+_CONDITION = r"\b(?:when|whenever|if|unless)\b"
+_OUTCOME_FIRST = re.compile(_OUTCOME + r"[^.;]{0,160}?" + _CONDITION, re.IGNORECASE)
+_FAILURE_WORD = re.compile(r"\bfail", re.IGNORECASE)
+_CONDITION_FIRST = re.compile(_CONDITION + r"([^.;]{0,160}?)(" + _OUTCOME + ")", re.IGNORECASE)
+# Where a claim's clause ends: a semicolon, or a step of a chain (", then").
+_CLAUSE_END = re.compile(r";|,\s+(?:and\s+)?then\b", re.IGNORECASE)
+# A clause that opens on a word pointing back takes the code of the sentence before it.
+_POINTS_BACK = re.compile(r"^(?:it|its|this|that|these|they|their|the\s+routine)\b", re.IGNORECASE)
+# The words before an address that make it a value, not code: a slot, a size, a
+# flag or another datum ("slot 0x10c38", "size 0x130"), past a determiner; and a
+# value written in brackets after a constant's name ("GENERIC_WRITE (0x40000000)").
+_VALUE_NOUNS = frozenset(
+    {
+        "slot",
+        "slots",
+        "size",
+        "length",
+        "flag",
+        "flags",
+        "value",
+        "values",
+        "constant",
+        "mask",
+        "key",
+        "seed",
+        "id",
+        "ordinal",
+        "field",
+        "option",
+        "options",
+        "access",
+        "disposition",
+        "mode",
+        "type",
+        "class",
+        "magic",
+    }
+)
+_DETERMINERS = frozenset({"the", "a", "an", "its", "this", "that"})
+_WORD_BEFORE = re.compile(r"([A-Za-z_][\w]*)\W*$")
+_CONSTANT_NAME = re.compile(r"^[A-Z][A-Z0-9]*_[A-Z0-9_]+$")
+
+
+def _number_value(text: str) -> int | None:
+    word = text.strip().lower()
+    if word in _NUMBER_WORDS:
+        return _NUMBER_WORDS[word]
+    negative = word.startswith("-")
+    digits = word.lstrip("-")
+    try:
+        value = int(digits, 16) if digits.startswith("0x") else int(digits)
+    except ValueError:
+        return None
+    return -value if negative else value
+
+
+@dataclass(frozen=True)
+class _Check:
+    """What one claim states of a check: the code it names, and the values it tests."""
+
+    places: frozenset[int]
+    names: tuple[str, ...]
+    numbers: tuple[tuple[str, int], ...]
+    said: str
+
+
+@dataclass(frozen=True)
+class _Clause:
+    """One check clause of a claim: its words from its subject on, its condition,
+    and the code it is about."""
+
+    text: str
+    condition: str
+    places: frozenset[int]
+    # The words of the sentence before that a clause pointing back reads its
+    # called functions from.
+    borrowed: str = ""
+
+
+def _check_clauses(text: str) -> list[_Clause]:
+    """The clauses of ``text`` that state a check.
+
+    A clause is a sentence's part up to a semicolon or a chain's ", then". It
+    states a check when the code fails, exits or ends on a condition
+    (:data:`_OUTCOME_FIRST`), or on a condition that compares with a number
+    (:data:`_CONDITION_FIRST`). Its subject is the last code it names before the
+    outcome (:func:`_code_places`), and it is read from there on, so another
+    routine the clause names first is not its code ("0x401a00 decrypts the
+    configuration and 0x402b10 exits if …"); the code its condition names is its
+    code too. A check written in brackets is an aside of the clause, and is read
+    alone; a clause naming no code before its outcome that opens on a word
+    pointing back ("It returns failure when …") takes the code the sentence before
+    it names and the functions it calls (:func:`_called_names`), nothing else.
+    """
+    out: list[_Clause] = []
+    previous = ""
+    for sentence in sentences(text):
+        for clause in _CLAUSE_END.split(sentence):
+            clause = clause.strip(" ,")
+            found = None
+            condition = ""
+            for m in _OUTCOME_FIRST.finditer(clause):
+                if not _FAILURE_WORD.search(clause, m.end()):
+                    found, condition = m, clause[m.end() :]
+                    break
+            if found is None:
+                for m in _CONDITION_FIRST.finditer(clause):
+                    if _COMPARED_NUMBER.search(m.group(1)):
+                        found, condition = m, m.group(1)
+                        break
+            if found is None:
+                continue
+            start, stop = 0, len(clause)
+            opened = clause.rfind("(", 0, found.start())
+            if opened > clause.rfind(")", 0, found.start()):
+                closed = clause.find(")", found.end())
+                start, stop = opened + 1, closed if closed != -1 else len(clause)
+                condition = condition[: max(0, stop - found.end())]
+            outcome_at = found.start() if found.re is _OUTCOME_FIRST else found.start(2)
+            subject = _last_code_place(clause[start:outcome_at])
+            places = _code_places(condition)
+            if subject is not None:
+                places.add(subject[0])
+                start += subject[1]
+            elif _POINTS_BACK.match(clause[start:]) and previous:
+                places |= _code_places(previous)
+                out.append(_Clause(clause[start:stop], condition, frozenset(places), previous))
+                continue
+            out.append(_Clause(clause[start:stop], condition, frozenset(places)))
+        previous = sentence
+    return out
+
+
+def _check_of(claim: str) -> _Check | None:
+    """The check ``claim`` states, or ``None`` for a claim that states none.
+
+    Read from its check clauses (:func:`_check_clauses`) alone: the code they are
+    about, or, where no clause names any, the code the claim names; the functions
+    the clauses call from their subject on, and those of the sentence before a
+    clause pointing back (:func:`_called_names`); and the numbers their conditions
+    compare with. A claim that names no code, or whose check clauses carry no such
+    value, states none.
+    """
+    text = _CITATIONS.sub("", str(claim or ""))
+    # The claim's own words, not the evidence it lists after its dash.
+    text = re.split(r"\s+—\s+", text, maxsplit=1)[0]
+    clauses = _check_clauses(text)
+    if not clauses:
+        return None
+    said = " ".join(clause.text for clause in clauses)
+    # A condition written before the subject ("If GetSystemInfo reports …, 0x5500
+    # exits") is read for names too.
+    named = " ".join(
+        [said, *(c.condition for c in clauses if c.condition and c.condition not in c.text)]
+    )
+    places: set[int] = set().union(*(clause.places for clause in clauses))
+    if not places:
+        places = _code_places(text)
+    if not places:
+        return None
+    names = tuple(
+        dict.fromkeys(
+            [
+                *_called_names(named),
+                *(
+                    _called_names(clause.borrowed)[-1]
+                    for clause in clauses
+                    if clause.borrowed and _called_names(clause.borrowed)
+                ),
+            ]
+        )
+    )
+    numbers: dict[int, str] = {}
+    for clause in clauses:
+        for match in _COMPARED_NUMBER.finditer(clause.condition):
+            bare = match.group(_BARE_GROUP) is not None
+            written = (
+                match.group(_BARE_GROUP + 1)
+                if bare
+                else next(group for group in match.groups()[: _BARE_GROUP - 1] if group)
+            )
+            value = _number_value(written)
+            if value is None:
+                continue
+            # A 0, 1 or -1 a bare "is", "returns" or "==" tests is a truth value or
+            # a status, which any wording of the branch carries ("returns 0 when …"),
+            # unless a counted noun stands before it ("the processor count is 1").
+            if (
+                bare
+                and value in _TRUTH_VALUES
+                and not _COUNTED_NOUN.search(clause.condition[: match.start()])
+            ):
+                continue
+            numbers.setdefault(value, written)
+    if not names and not numbers:
+        return None
+    return _Check(
+        places=frozenset(places),
+        names=names,
+        numbers=tuple((written, value) for value, written in numbers.items()),
+        said=said,
+    )
+
+
+def _called_names(text: str) -> list[str]:
+    """The API-style names ``text`` carries (``claim_coverage.code_names``) that it
+    speaks of as functions, in order: not one written only as an argument inside
+    another call's brackets (``IsWow64Process(GetCurrentProcess())`` calls
+    IsWow64Process, and GetCurrentProcess only supplies its argument)."""
+    from malspark.reporting.claim_coverage import code_names
+
+    out: list[str] = []
+    for (kind, _value), written in code_names(text).items():
+        if kind != "name":
+            continue
+        spots = [m.start() for m in re.finditer(rf"(?<![\w]){re.escape(written)}(?![\w])", text)]
+        if spots and all(_inside_a_call(text, at) for at in spots):
+            continue
+        out.append(written)
+    return out
+
+
+def _inside_a_call(text: str, at: int) -> bool:
+    """Whether ``at`` stands inside the brackets of a call: an open bracket before it,
+    not closed before it, written right after a name (no space, no address)."""
+    depth = 0
+    for index in range(at - 1, -1, -1):
+        char = text[index]
+        if char == ")":
+            depth += 1
+        elif char == "(":
+            if depth:
+                depth -= 1
+                continue
+            # A call writes its name right before the bracket; a note in brackets
+            # after an address or a word ("0x68e8 (GetAdaptersInfo)") is no call.
+            name = re.search(r"([A-Za-z_]\w*)$", text[:index])
+            return name is not None and not re.fullmatch(r"0x[0-9a-fA-F]+", name.group(1))
+    return False
+
+
+def _places_in(text: str) -> set[int]:
+    """The code locations ``text`` names, by value (``claim_coverage``'s reading)."""
+    from malspark.reporting.claim_coverage import _address, _address_re
+
+    return {_address(m.group(1)) for m in _address_re().finditer(text)}
+
+
+def _code_place_matches(text: str) -> Iterator[re.Match[str]]:
+    """The address matches of ``text`` that are code (:func:`_code_places`)."""
+    from malspark.reporting.claim_coverage import _address_re
+
+    for m in _address_re().finditer(text):
+        before = text[: m.start()]
+        words = before.split()
+        while words and words[-1].lower().strip("(,") in _DETERMINERS:
+            words.pop()
+        word = _WORD_BEFORE.search(" ".join(words))
+        last = word.group(1) if word else ""
+        if last.lower() in _VALUE_NOUNS:
+            continue
+        if before.rstrip().endswith("(") and _CONSTANT_NAME.match(last):
+            continue
+        yield m
+
+
+def _code_places(text: str) -> set[int]:
+    """The code locations ``text`` names (:func:`_places_in`), but for an address the
+    word before it makes a value: a slot, a size, a flag or another datum, past a
+    determiner (``slot 0x10c38``), or a constant's name it is written beside in
+    brackets (``GENERIC_WRITE (0x40000000)``), as an address another noun governs is
+    no routine where the agreement round reads a sentence's subject."""
+    from malspark.reporting.claim_coverage import _address
+
+    return {_address(m.group(1)) for m in _code_place_matches(text)}
+
+
+def _last_code_place(text: str) -> tuple[int, int] | None:
+    """The last code location ``text`` names, with where it starts, or ``None``."""
+    from malspark.reporting.claim_coverage import _address
+
+    last = None
+    for m in _code_place_matches(text):
+        last = (_address(m.group(1)), m.start())
+    return last
+
+
+def _names_place(places: set[int], wanted: frozenset[int]) -> bool:
+    from malspark.reporting.claim_coverage import _same_place
+
+    return any(_same_place(one, other) for one in places for other in wanted)
+
+
+def _answer_units(payload: Any) -> list[tuple[str, str, str]]:
+    """The answer's texts a check is looked for in: ``(path, text, technique id)``.
+
+    A flow step's action; in a prose body, each sentence that names code with the
+    sentences after it up to the next one naming other code ("Routine 0x3868 runs
+    the gates. It exits when …"); and each procedure with its technique.
+    """
+    units: list[tuple[str, str, str]] = []
+    for index, row in enumerate(_rows(payload, "steps")):
+        units.append((f"steps[{index}].action", str(row.get("action") or ""), ""))
+    body = payload.get("body") if isinstance(payload, Mapping) else None
+    if isinstance(body, str):
+        group: list[str] = []
+        named: set[int] = set()
+        for sentence in sentences(body):
+            places = _places_in(sentence)
+            if places and group and not places <= named:
+                units.append(("body", " ".join(group), ""))
+                group, named = [], set()
+            group.append(sentence)
+            named |= places
+        if group:
+            units.append(("body", " ".join(group), ""))
+    for index, row in enumerate(_rows(payload, "procedures")):
+        tid = str(row.get("technique_id") or "").strip().upper()
+        units.append((f"procedures[{index}].procedure", str(row.get("procedure") or ""), tid))
+    return units
+
+
+# How many values one question names; the rest are counted.
+_NAMED_VALUES = 8
+
+
+def check_value_violations(
+    payload: Any, claims: Sequence[str] | Mapping[str, Sequence[str]]
+) -> list[Violation]:
+    """A text that names the code of a check a claim it was shown states, without what it tests.
+
+    ``claims`` are the claims the section was shown, or, for the ATT&CK
+    procedures, each published technique's claims by its id (a procedure is
+    held to its own technique's claims). A claim that states a check
+    (:func:`_check_of`) is read against the texts of the answer that name its
+    code (:func:`_answer_units`): each API-style name and compared number it
+    states that none of those texts carries is asked for, as one question per
+    claim. A number is carried in any base or as a small number word, wherever
+    it stands in those texts, so a number the text writes for another reason
+    (a step's "flags 6") carries a check's 6 as well; a name in any case. A
+    claim whose code the answer does not name is not asked about: where its
+    check belongs is the model's to decide, and the report lists a claim the
+    body leaves out (``claim_coverage``). A question on the same text and the
+    same code that asks for no more than another is asked once.
+
+    Known limitation: a check that compares a string ("exits if the user name
+    equals 'sandbox'", "if the MAC prefix matches 08:00:27") carries no API-style
+    name or number to read, and is not asked about.
+    """
+    units = _answer_units(payload)
+    if not units:
+        return []
+    by_technique = isinstance(claims, Mapping)
+    read: list[tuple[str, str, set[int], set[int]]] = [
+        (
+            path,
+            carrying_form(text),
+            _places_in(text),
+            {
+                value
+                for m in _ANY_NUMBER.finditer(text)
+                if (value := _number_value(m.group(0))) is not None
+            },
+        )
+        for path, text, _tid in units
+    ]
+    groups: list[tuple[list[int], Sequence[str]]]
+    if isinstance(claims, Mapping):
+        groups = []
+        for tid, own in claims.items():
+            rows = [i for i, unit in enumerate(units) if unit[2] == str(tid).upper()]
+            if rows:
+                groups.append((rows, own))
+    else:
+        groups = [(list(range(len(units))), claims)]
+    found: list[tuple[int, str, str, _Check, list[str], frozenset[str | int]]] = []
+    for rows, own in groups:
+        for claim in own:
+            check = _check_of(claim)
+            if check is None:
+                continue
+            naming = [read[i] for i in rows if _names_place(read[i][2], check.places)]
+            if not naming:
+                continue
+            held = " ".join(text for _path, text, _places, _numbers in naming)
+            numbers = set().union(*(numbers for *_rest, numbers in naming))
+            names = [name for name in check.names if carrying_form(name) not in held]
+            dropped = [(written, value) for written, value in check.numbers if value not in numbers]
+            if not names and not dropped:
+                continue
+            found.append(
+                (
+                    len(found),
+                    naming[0][0],
+                    ", ".join(dict.fromkeys(path for path, *_rest in naming)),
+                    check,
+                    [*names, *(written for written, _value in dropped)],
+                    frozenset([name.lower() for name in names] + [v for _w, v in dropped]),
+                )
+            )
+    # A claim asking a text for no more than another claim asks of it about the
+    # same code is not asked again; the larger question is kept, whichever came first.
+    kept: list[tuple[int, str, str, _Check, list[str], frozenset[str | int]]] = []
+    for row in sorted(found, key=lambda r: -len(r[5])):
+        if not any(
+            row[1] == other[1] and row[3].places == other[3].places and row[5] <= other[5]
+            for other in kept
+        ):
+            kept.append(row)
+    out: list[Violation] = []
+    for _order, path, where, check, missing, _wanted in sorted(kept, key=lambda r: r[0]):
+        listed = ", ".join(missing[:_NAMED_VALUES])
+        if len(missing) > _NAMED_VALUES:
+            listed += f" and {len(missing) - _NAMED_VALUES} more"
+        out.append(
+            Violation(
+                code=VALUE_NOT_CARRIED_CODE,
+                message=(
+                    f"The text at {safe_finding_value(where)} names code of which a claim you "
+                    f"were shown states a check: {safe_finding_value(quoted_claim(check.said))}. "
+                    f"It does not carry {safe_finding_value(listed)}, what that check tests. "
+                    "Where the text describes that check, carry each value it tests, or say "
+                    "why the evidence does not hold it; where it names the code for another "
+                    "reason, keep it as it is."
+                    + (" Hold each procedure to its own technique." if by_technique else "")
+                ),
+                path=path,
+                values=tuple(missing),
+            )
+        )
+    return out
+
+
+def shown_claim_texts(bundle: Mapping[str, Any]) -> list[str]:
+    """The words of each claim a section's bundle shows it, in order."""
+    return [
+        str(row.get("claim") or "")
+        for row in bundle.get("claims") or []
+        if isinstance(row, Mapping) and str(row.get("claim") or "").strip()
+    ]
+
+
+def quoted_claim(text: str, limit: int = 300) -> str:
+    """A claim's words as a question quotes them: on one line, cut at ``limit``."""
+    flat = " ".join(str(text or "").split())
+    if len(flat) > limit:
+        flat = flat[: limit - 1].rstrip() + "…"
+    return json.dumps(flat, ensure_ascii=False)
+
+
 @dataclass(frozen=True)
 class _Unit:
     """One part of a claim a procedure may be held to: its text, how many words of the

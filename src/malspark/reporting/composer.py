@@ -111,6 +111,7 @@ from malspark.reporting.composer_pro import (
     agent_names,
     analyst_bundle,
     channel_binding_violations,
+    check_value_violations,
     code_around_values,
     conclusion_shape_violations,
     evidence_text,
@@ -120,6 +121,7 @@ from malspark.reporting.composer_pro import (
     procedure_value_violations,
     procedure_violations,
     published_techniques,
+    shown_claim_texts,
     statements_to_fold,
     style_violations,
     summary_shape_violations,
@@ -1195,6 +1197,38 @@ def _listen_for_the_first_piece(llm: Any) -> bool:
     return heard
 
 
+def section_bundle(
+    section: str,
+    report: MalwareReport,
+    isr_reports: dict[str, Any] | None,
+    folded: dict[str, list[dict[str, str]]] | None = None,
+) -> dict[str, Any]:
+    """The evidence one section is shown: its bundle, with what the analyst report adds.
+
+    The analyst report's own sections read theirs from ``composer_pro``. A
+    functionality or command-and-control subsection is shown, as claims, the
+    analyst statements only the ATT&CK section held (``statements_to_fold``,
+    ``folded``: read once per report by the caller), so it states their facts
+    where they belong; a channel section is shown the functions the recovering
+    tools name around each network value.
+    """
+    if section in ANALYST_SECTIONS:
+        return analyst_bundle(section, report, report.technical_evidence, isr_reports)
+    bundle = bundle_for(section, report, report.technical_evidence, isr_reports)
+    if folded is None:
+        folded = statements_to_fold(report)
+    if folded.get(section):
+        bundle = {**bundle, "claims": [*(bundle.get("claims") or []), *folded[section]]}
+    if section in _CHANNEL_SECTIONS:
+        using = code_around_values(report)
+        if using:
+            bundle = {
+                **bundle,
+                "facts": {**(bundle.get("facts") or {}), CODE_AROUND_FACT: using},
+            }
+    return bundle
+
+
 class ReportComposer:
     """Authors the professional spine section-by-section. Async; per-section
     timeout + deterministic skip. Never raises to the caller."""
@@ -1501,6 +1535,16 @@ class ReportComposer:
         held = held_text(report)
         firsts = first_claim_sentences(report)
         reader = ValueReader.of(report)
+        # Each published technique's claims: a procedure is held to the checks
+        # its own technique's claims state.
+        technique_claims = {
+            tid: claims for tid, (_name, claims, _refs) in published_techniques(report).items()
+        }
+        self._claims_shown: dict[str, list[str]] = {}
+
+        def _checks(section: str) -> Validator:
+            # Read when the section's answer is checked, after its bundle is built.
+            return lambda p: check_value_violations(p, self._claims_shown.get(section, []))
 
         plan: list[_Planned] = [
             _Planned("introduction", _IntroOut, _INSTRUCTIONS["introduction"], None, _intro),
@@ -1519,6 +1563,7 @@ class ReportComposer:
                     lambda p: persistence_not_observed_violations(
                         p, saw_no_persistence, section="execution_flow"
                     ),
+                    _checks("execution_flow"),
                 ],
                 _flow,
             ),
@@ -1527,15 +1572,18 @@ class ReportComposer:
                     section,
                     _ProseOut,
                     _INSTRUCTIONS["prose"].format(title=title),
-                    (
-                        [
-                            lambda p: persistence_not_observed_violations(
-                                p, saw_no_persistence, section="persistence_detail"
-                            )
-                        ]
-                        if section == "persistence_detail"
-                        else None
-                    ),
+                    [
+                        *(
+                            [
+                                lambda p: persistence_not_observed_violations(
+                                    p, saw_no_persistence, section="persistence_detail"
+                                )
+                            ]
+                            if section == "persistence_detail"
+                            else []
+                        ),
+                        _checks(section),
+                    ],
                     _prose(section, title),
                 )
                 for section, title in _PROSE_SECTIONS.items()
@@ -1618,6 +1666,7 @@ class ReportComposer:
                 [
                     lambda p: procedure_violations(p, published_ids),
                     lambda p: procedure_value_violations(p, firsts, reader),
+                    lambda p: check_value_violations(p, technique_claims),
                 ],
                 _procedures,
             ),
@@ -1891,30 +1940,11 @@ class ReportComposer:
     def _bundle(
         self, section: str, report: MalwareReport, isr_reports: dict[str, Any] | None
     ) -> dict[str, Any]:
-        """The evidence one section is shown: its bundle, with what the analyst report adds.
-
-        The analyst report's own sections read theirs from ``composer_pro``. A
-        functionality or command-and-control subsection is shown, as claims, the
-        analyst statements only the ATT&CK section held (``statements_to_fold``),
-        so it states their facts where they belong; a channel section is shown
-        the functions the recovering tools name around each network value.
-        """
-        if section in ANALYST_SECTIONS:
-            return analyst_bundle(section, report, report.technical_evidence, isr_reports)
-        bundle = bundle_for(section, report, report.technical_evidence, isr_reports)
+        """The evidence one section is shown (:func:`section_bundle`)."""
         folded = getattr(self, "_folded", None)
         if folded is None:
             folded = self._folded = statements_to_fold(report)
-        if folded.get(section):
-            bundle = {**bundle, "claims": [*(bundle.get("claims") or []), *folded[section]]}
-        if section in _CHANNEL_SECTIONS:
-            using = code_around_values(report)
-            if using:
-                bundle = {
-                    **bundle,
-                    "facts": {**(bundle.get("facts") or {}), CODE_AROUND_FACT: using},
-                }
-        return bundle
+        return section_bundle(section, report, isr_reports, folded)
 
     def _settle(self, record: _SectionRecord) -> None:
         """Apply what one section said, as it would have been said written on its own."""
@@ -2009,6 +2039,12 @@ class ReportComposer:
         if shown is None:
             shown = self._shown = {}
         shown[section] = evidence_text(bundle)
+        # The claims the section is shown, for the check-value question
+        # (``composer_pro.check_value_violations``).
+        claims_shown = getattr(self, "_claims_shown", None)
+        if claims_shown is None:
+            claims_shown = self._claims_shown = {}
+        claims_shown[section] = shown_claim_texts(bundle)
         # The values the code this prompt shows compares, as its fact lines state them.
         compared = getattr(self, "_compared", None)
         if compared is None:

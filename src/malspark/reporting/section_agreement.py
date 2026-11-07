@@ -384,6 +384,12 @@ class Passage:
     # each one is held, and one its own clause names that the answer leaves
     # standing is qualified by the platform on those facts (T-562).
     unread_listed: tuple[tuple[str, tuple[str, ...], tuple[str, ...]], ...] = ()
+    # The sentences of a writable passage that state a branch (a condition and an
+    # outcome) or an argument of a routine an entry lists, each with the ids of
+    # the ``listing.N`` facts that show that routine's code
+    # (:func:`branch_sense_sentences`): each is held, to be checked against the
+    # listing and rewritten on it where it says otherwise.
+    branch_sense: tuple[tuple[str, tuple[str, ...]], ...] = ()
     # The sentences of a writable passage that call something absent from the
     # whole code read, naming no address (:func:`whole_code_absences`): each
     # is held, and one of section 5 may be rewritten in the model's words on a
@@ -746,7 +752,19 @@ def passages_of(
             # ledger may say otherwise of is the model's to answer in any section,
             # haiku13's "is therefore not shown to use anti-debug or environment checks"
             # beside the gates section 4 and the ATT&CK table describe (T-580).
-            passage.whole_code = whole_code_absences(passage.text, unsettled=not passage.closing)
+            # A section 5 sentence naming an address is held where the clause stating
+            # its absence names none (``by_clause``); one held as calling listed code
+            # unread keeps that question, as before.
+            listed_unread = {sentence for sentence, _ids, _own in passage.unread_listed}
+            passage.whole_code = tuple(
+                sentence
+                for sentence in whole_code_absences(
+                    passage.text,
+                    unsettled=not passage.closing,
+                    by_clause=passage.kind == SECTION_5,
+                )
+                if sentence not in listed_unread or not _addresses_named(sentence)
+            )
             holding = (*holding, *passage.whole_code)
             if passage.closing:
                 holding = (*holding, *closing_negations(passage.text))
@@ -767,6 +785,16 @@ def passages_of(
             # contradiction past every shape that chose which ones (T-568).
             holding = (*_sentences_of(passage.text), *holding)
         passage.held = tuple(dict.fromkeys(holding))
+    if found is not None and found.listed:
+        # A sentence stating a branch or an argument of a routine an entry lists is
+        # held to that routine's listing, shown in part (D4, D5 of T-580): the model
+        # reads the condition and the argument against the code; nothing is decided
+        # here. Only the routines held this way are shown.
+        facts.extend(
+            _branch_sense_passages(
+                [*coded, *uncoded], found, {str(_field(e, "id") or ""): e for e in held}
+            )
+        )
     if held:
         # A held sentence citing an entry whose rows record a value it names: the
         # rows are shown, and speak of it, so "no source states it" is read against
@@ -1483,6 +1511,366 @@ def unread_listed_sentences(
             named = tuple(fact.id for fact in facts if not fact.addresses.isdisjoint(own))
             out.append((sentence, tuple(fact.id for fact in facts), named))
     return tuple(out)
+
+
+# A sentence stating a branch: a condition ("if", "when", "unless", "otherwise",
+# a failure or a success, a zero or nonzero result) and an outcome that is a
+# branch's own (the code returns, loops, exits, skips, rejects, aborts, stops,
+# sleeps or waits); and a sentence naming an argument or a parameter with such
+# an outcome, or an argument by its place ("param_3", "argument 2", "its first
+# argument").
+_BRANCH_CONDITION = re.compile(
+    r"\b(?:if|when|whenever|unless|otherwise|else|fail(?:s|ed|ure)?|succeed(?:s|ed)?"
+    r"|success(?:ful)?|non-?zero|zero)\b",
+    re.IGNORECASE,
+)
+_BRANCH_OUTCOME = re.compile(
+    r"\b(?:return(?:s|ed)?|loop(?:s|ed)?|exit(?:s|ed)?|skip(?:s|ped)?|reject(?:s|ed)?"
+    r"|abort(?:s|ed)?|stop(?:s|ped)?|sleep(?:s)?|wait(?:s|ed)?|branch(?:es|ed)?"
+    r"|call(?:s|ed)?|runs?|proceed(?:s|ed)?|continue(?:s|d)?|jump(?:s|ed)?"
+    r"|retr(?:y|ies|ied)|falls?\s+through|(?:is|are)\s+(?:taken|reached))\b",
+    re.IGNORECASE,
+)
+# "calls" and "runs" say what code does on any path: they state a branch only
+# beside a condition word of its own, never beside a failure, a zero or an
+# argument alone ("0x3728 packs these arguments … and calls 0xb344").
+_WEAK_OUTCOME = re.compile(r"call(?:s|ed)?|runs?", re.IGNORECASE)
+_STRONG_CONDITION = re.compile(
+    r"\b(?:if|when|whenever|unless|otherwise|else|only|until|while)\b"
+    r"|\bon\s+(?:the\s+|its\s+)?(?:success|failure)\b",
+    re.IGNORECASE,
+)
+_ARGUMENT_WORD = re.compile(r"\b(?:argument|arguments|parameter|parameters)\b", re.IGNORECASE)
+_ARGUMENT_PLACE = re.compile(
+    r"\bparam_\d+\b|\b(?:argument|parameter|arg)\s*\d+\b"
+    r"|\b(?:first|second|third|fourth|fifth|sixth)\s+(?:argument|parameter)\b",
+    re.IGNORECASE,
+)
+# What a routine's listing shows at most in a ``listing.N`` fact; the lines left
+# out are counted where they fall.
+_LISTING_CHARS = 1200
+# The lines shown on each side of a line a held sentence anchors.
+_LISTING_WINDOW = 3
+# What one line of a listing shown in part (its signature included) shows at most;
+# the rest of it is counted.
+_SIGNATURE_CHARS = 200
+# What the listings of one question show at most, filled in passage order; a
+# routine past it is not shown, and the round says how many were left out.
+_LISTINGS_PER_QUESTION = 24_000
+LISTINGS_LEFT_ID = "listings.left"
+
+
+def branch_sense_sentences(
+    text: str, listed: Sequence[Passage]
+) -> tuple[tuple[str, tuple[str, ...]], ...]:
+    """Each sentence of ``text`` that states a branch or an argument of a listed routine.
+
+    ``listed`` holds one passage per routine an entry lists (its ``addresses``).
+    A sentence is held when it states a condition (:data:`_BRANCH_CONDITION`; "only
+    when" and "only if" among them) and a branch's outcome (:data:`_BRANCH_OUTCOME`),
+    an argument with such an outcome, or an argument by its place
+    (:data:`_ARGUMENT_PLACE`). It is held on every listed routine the clause of
+    each outcome or argument names (:func:`_branch_clause_addresses`), else, for a
+    clause naming none whose words before the outcome point back ("With a path
+    argument it rejects …"), the first address of the sentence before it; never on
+    an address another clause names. The listing shows which way the code goes and
+    which argument it reads, and the model reads them. One pass over the
+    sentences, in the order they stand.
+    """
+    out: list[tuple[str, tuple[str, ...]]] = []
+    ordered = _sentences_of(text)
+    for index, sentence in enumerate(ordered):
+        places = list(_ARGUMENT_PLACE.finditer(sentence))
+        if places:
+            anchors = places
+        elif _BRANCH_CONDITION.search(sentence) or _ARGUMENT_WORD.search(sentence):
+            strong = _STRONG_CONDITION.search(sentence) is not None
+            anchors = [
+                m
+                for m in _BRANCH_OUTCOME.finditer(sentence)
+                if strong or not _WEAK_OUTCOME.fullmatch(m.group(0))
+            ]
+        else:
+            continue
+        named: list[int] = []
+        for at in anchors:
+            found = _branch_clause_addresses(sentence, at.start(), at.end())
+            if found is None and index:
+                earlier = _addresses_named(ordered[index - 1])
+                found = earlier[:1]
+            named.extend(found or ())
+        ids = tuple(p.id for p in listed if not p.addresses.isdisjoint(named))
+        if ids:
+            out.append((sentence, ids))
+    return tuple(out)
+
+
+def _branch_clause_addresses(sentence: str, at: int, end: int) -> list[int] | None:
+    """The addresses the clause of the outcome or argument at ``at`` names: every one
+    of the clause (a clause a relative "which" opens adds the last address before
+    that word); ``None`` where the clause names none and its words before ``at``
+    point back ("it rejects"), for the sentence before to answer."""
+    start = 0
+    opened_by = ""
+    for mark in _ABSENCE_CLAUSE_END.finditer(sentence):
+        if mark.start() >= at:
+            break
+        start, opened_by = mark.end(), mark.group(0)
+    stop = next((m.start() for m in _ABSENCE_CLAUSE_END.finditer(sentence, end)), len(sentence))
+    found = list(_addresses_named(sentence[start:stop]))
+    if opened_by.strip().lower() == "which":
+        earlier = _addresses_named(sentence[: start - len(opened_by)])
+        if earlier:
+            found.insert(0, earlier[-1])
+    if found:
+        return found
+    if _POINTS_BACK.search(sentence[start:at]):
+        return None
+    return []
+
+
+def _listing_excerpt(code: str, sentences: Sequence[str], bases: Sequence[int]) -> str:
+    """A routine's code as a ``listing.N`` fact shows it: whole within
+    :data:`_LISTING_CHARS`; else its signature and the lines around each line that
+    names what the held sentences name (another address in any spelling the image
+    bases make, a ``param_N``, a function they name), :data:`_LISTING_WINDOW` lines on
+    each side, joined within the budget with each gap counted ("[… N lines …]");
+    else, where no line matches, its head, with what was left out counted."""
+    from malspark.agents.function_map import address_spellings
+    from malspark.reporting.claim_coverage import code_names
+
+    if len(code) <= _LISTING_CHARS:
+        return code
+    lines = code.splitlines()
+    words: set[str] = set()
+    for sentence in sentences:
+        for address in _addresses_named(sentence):
+            for spelled_as in address_spellings(address, bases):
+                digits = f"{spelled_as:x}"
+                if len(digits) >= 4:
+                    words.add(digits)
+        words.update(m.group(0).lower() for m in _PARAM_NAME.finditer(sentence))
+        words.update(
+            written.lower()
+            for (kind, _value), written in code_names(sentence).items()
+            if kind == "name"
+        )
+    hits = [
+        index
+        for index, line in enumerate(lines)
+        if any(_names_word(line.lower(), word) for word in words)
+    ]
+    signature = next((i for i, line in enumerate(lines) if "(" in line and line.strip()), 0)
+    if not hits:
+        head = code[:_LISTING_CHARS]
+        return f"{head}[… {len(code) - len(head)} characters left out …]"
+    # A line longer than a signature may be (a long signature, a string literal) is
+    # cut, its rest counted, so no one line takes the budget; a line naming what the
+    # sentences name keeps the window centred on that name.
+    lines = [_line_window(line, words) for line in lines]
+    keep: set[int] = {signature}
+    used = len(lines[signature]) + 1
+    # Each named thing's first line first, then the lines around those, then the
+    # windows of its other lines: what the sentences name is shown before context.
+    firsts = list(
+        dict.fromkeys(
+            next(i for i in hits if _names_word(lines[i].lower(), word))
+            for word in words
+            if any(_names_word(lines[i].lower(), word) for i in hits)
+        )
+    )
+    firsts.sort()
+
+    def _take(indexes: Iterable[int]) -> None:
+        nonlocal used
+        for index in indexes:
+            if index in keep:
+                continue
+            cost = len(lines[index]) + 1
+            if used + cost > _LISTING_CHARS:
+                continue
+            keep.add(index)
+            used += cost
+
+    def _around(hit: int) -> list[int]:
+        return [
+            i
+            for step in range(1, _LISTING_WINDOW + 1)
+            for i in (hit - step, hit + step)
+            if 0 <= i < len(lines)
+        ]
+
+    _take(firsts)
+    for hit in firsts:
+        _take(_around(hit))
+    for hit in hits:
+        _take([hit, *_around(hit)])
+    shown: list[str] = []
+    previous = -1
+    for index in sorted(keep):
+        if index - previous > 1:
+            shown.append(f"[… {index - previous - 1} lines …]")
+        shown.append(lines[index])
+        previous = index
+    if previous < len(lines) - 1:
+        shown.append(f"[… {len(lines) - 1 - previous} lines …]")
+    return "\n".join(shown)
+
+
+_PARAM_NAME = re.compile(r"\bparam_\d+\b", re.IGNORECASE)
+
+
+def _line_window(line: str, words: Iterable[str]) -> str:
+    """``line`` whole within :data:`_SIGNATURE_CHARS`; else that many characters,
+    centred on the first thing it names of ``words`` (else its start), each cut
+    counted."""
+    if len(line) <= _SIGNATURE_CHARS:
+        return line
+    lowered = line.lower()
+    at = min(
+        (
+            m.start()
+            for word in words
+            for m in [re.search(rf"(?<![0-9a-z])0*{re.escape(word)}(?![0-9a-z_])", lowered)]
+            if m is not None
+        ),
+        default=0,
+    )
+    start = max(0, min(at - _SIGNATURE_CHARS // 2, len(line) - _SIGNATURE_CHARS))
+    stop = start + _SIGNATURE_CHARS
+    before = f"[… {start} characters …]" if start else ""
+    after = f"[… {len(line) - stop} characters …]" if stop < len(line) else ""
+    return f"{before}{line[start:stop]}{after}"
+
+
+def _names_word(line: str, word: str) -> bool:
+    """Whether ``line`` names ``word`` as a whole token (hex digits or a name); a
+    decompiler's prefix before it (``FUN_``, ``DAT_``, ``fcn.``) and the zeros a 32-bit
+    name is padded with (``FUN_004012f0``) are no part of the token."""
+    return re.search(rf"(?<![0-9a-z])0*{re.escape(word)}(?![0-9a-z_])", line) is not None
+
+
+def _routine_code(
+    entries: dict[str, Any], address: int, listed_in: Sequence[str], bases: Sequence[int]
+) -> str:
+    """The code an entry of ``listed_in`` lists for the routine at ``address`` (spelled
+    as ``agreement_facts`` spells a read routine), or ``""``: a batch answer's function
+    under that address, or a single listing answered for it alone."""
+    from malspark.agents.function_map import one_spelling
+    from malspark.pipeline.validation import _batch_listings, _listing_text
+    from malspark.reporting.agreement_facts import answered_addresses
+
+    for entry_id in listed_in:
+        entry = entries.get(entry_id)
+        if entry is None:
+            continue
+        output = str(_field(entry, "output") or "")
+        shown, listings = _batch_listings(output)
+        if shown:
+            for key, code in listings.items():
+                if one_spelling(key, bases) == address:
+                    return code
+            continue
+        answered = {one_spelling(a, bases) for a in answered_addresses(entry)}
+        if answered == {address}:
+            code = _listing_text(output)
+            if code.strip():
+                return code
+    return ""
+
+
+def _branch_sense_passages(
+    passages: Sequence[Passage], found: LedgerFacts, entries: dict[str, Any]
+) -> list[Passage]:
+    """The ``listing.N`` facts of the routines a writable passage's branch or argument
+    sentence names, and each such sentence held on them (:func:`branch_sense_sentences`).
+
+    A fact shows the routine's code from an entry that lists it, whole or in the
+    part its held sentences anchor (:func:`_listing_excerpt`), with what is left out
+    counted; a routine none of whose entries' code is read here is not shown, and
+    its sentences are not held on it.
+    """
+    from malspark.reporting.agreement_facts import spelled
+
+    bases = tuple(found.image_bases)
+    routines = [
+        Passage(
+            id=f"routine.{index}",
+            label="",
+            text="",
+            kind=FACT,
+            addresses=_spelled_both([routine.address], bases),
+            cites=_ids(routine.listed_in),
+        )
+        for index, routine in enumerate(found.listed)
+    ]
+    held: dict[str, list[tuple[Passage, str]]] = {}
+    for passage in passages:
+        # A closing sentence is answered whole already (T-568).
+        if not _writable(passage) or passage.closing:
+            continue
+        for sentence, ids in branch_sense_sentences(passage.text, routines):
+            for rid in ids:
+                held.setdefault(rid, []).append((passage, sentence))
+    out: list[Passage] = []
+    by_routine: dict[str, str] = {}
+    used = 0
+    left = 0
+    by_id = {f"routine.{index}": routine for index, routine in enumerate(found.listed)}
+    # In passage order: the routines the first held sentences name come first.
+    for rid in held:
+        routine = by_id[rid]
+        code = _routine_code(entries, routine.address, routine.listed_in, bases)
+        if not code.strip():
+            continue
+        shown = _listing_excerpt(code, [sentence for _p, sentence in held[rid]], bases)
+        cut = f" [shown in part: {len(shown)} of {len(code)} characters]" if shown != code else ""
+        text = (
+            f"{spelled(routine.address, bases)}: "
+            f"{', '.join(sorted(_ids(routine.listed_in)))} list its code: "
+            f"{quoted_value(shown)}{cut}"
+        )
+        if used + len(text) > _LISTINGS_PER_QUESTION:
+            # Past the question's budget: no sentence is held on this routine.
+            left += 1
+            continue
+        used += len(text)
+        fid = f"listing.{len(out) + 1}"
+        by_routine[rid] = fid
+        out.append(
+            Passage(
+                id=fid,
+                label="the listing of a routine a sentence states a branch or an argument of",
+                text=text,
+                kind=FACT,
+                cites=_ids(routine.listed_in),
+                addresses=_spelled_both([routine.address], bases),
+            )
+        )
+    if left:
+        out.append(
+            Passage(
+                id=LISTINGS_LEFT_ID,
+                label="routine listings not shown",
+                text=(
+                    f"{left} {'listing' if left == 1 else 'listings'} not shown: budget "
+                    f"({_LISTINGS_PER_QUESTION} characters of listings per question); a "
+                    "sentence held only on them is not held"
+                ),
+                kind=FACT,
+            )
+        )
+    for rid, uses in held.items():
+        fact_id = by_routine.get(rid)
+        if fact_id is None:
+            continue
+        for passage, sentence in uses:
+            known = dict(passage.branch_sense)
+            known[sentence] = tuple(dict.fromkeys([*known.get(sentence, ()), fact_id]))
+            passage.branch_sense = tuple(known.items())
+            if sentence not in passage.held:
+                passage.held = (*passage.held, sentence)
+    return out
 
 
 # How a listed routine's code was read, in the facts' words.
@@ -2412,6 +2800,8 @@ def _row_violations(
         # A sentence answered in the model's words never rests on its own
         # passage: that would state what the passage says otherwise of.
         or ((in_words or absent_keep) and source.id == passage.id)
+        # The count of listings left out says nothing of the code: no rewrite rests on it.
+        or (row.decision == "rewrite" and source.id == LISTINGS_LEFT_ID)
     ]
     if wrong:
         out.append(
@@ -3354,6 +3744,16 @@ def _in_own_words(passage: Passage, sentence: str, sources: Sequence[Passage | N
         # A denial a bound value's fact contradicts: the fact's clause beside it
         # would state both (haiku12's mutex sentences, T-568).
         return True
+    listings = dict(passage.branch_sense).get(sentence, ())
+    if (
+        passage.kind == SECTION_5
+        and listings
+        and any(s is not None and s.id in listings for s in sources)
+    ):
+        # A branch or an argument rewritten on the routine's listing: what the listing
+        # shows is the model's to state; no fact clause says which way the code goes.
+        # A row on another fact is the platform's, as before.
+        return True
     if not _whole_code_sentence(passage, sentence):
         return False
     others = [s for s in sources if s is None or s.id != passage.id]
@@ -3500,20 +3900,63 @@ _UNSETTLED_ABSENCE = re.compile(
 )
 
 
-def whole_code_absences(text: str, *, unsettled: bool = False) -> tuple[str, ...]:
+def whole_code_absences(
+    text: str, *, unsettled: bool = False, by_clause: bool = False
+) -> tuple[str, ...]:
     """The sentences of ``text`` that call something absent from the code read, naming
     no address (:data:`_WHOLE_CODE_ABSENCE`), in the order they stand; with
     ``unsettled`` (a section 5 passage), also those calling something not established
-    (:data:`_UNSETTLED_ABSENCE`)."""
-    return tuple(
-        sentence
-        for sentence in _sentences_of(text)
-        if (
+    (:data:`_UNSETTLED_ABSENCE`).
+
+    With ``by_clause`` (a section 5 passage, the one written from the code), a sentence
+    that names an address is held too where a clause stating the absence
+    (:func:`_absence_clauses`) names none: "the code calls wrappers from 0x33ac, but
+    the copy destination is not established" denies a destination, not anything of
+    0x33ac (T-580). A clause that points back ("its body is not read", "…, which is
+    not established", "…, though its write is not shown") names what the sentence
+    names. In the passages written from the claims (key findings, identifier rows,
+    procedures) such a clause is most often about the row's own code or about what a
+    run saw, so there a sentence naming an address is read whole, as before."""
+    out: list[str] = []
+    for sentence in _sentences_of(text):
+        named = bool(_addresses_named(sentence))
+        if not named and (
             _WHOLE_CODE_ABSENCE.search(sentence)
             or (unsettled and _UNSETTLED_ABSENCE.search(sentence))
-        )
-        and not _addresses_named(sentence)
-    )
+        ):
+            # Read whole, as before: naming no address, the sentence is held.
+            out.append(sentence)
+            continue
+        if (
+            by_clause
+            and named
+            and any(
+                not back and not _addresses_named(clause)
+                for clause, back in _absence_clauses(sentence, unsettled=unsettled)
+            )
+        ):
+            out.append(sentence)
+    return tuple(out)
+
+
+def _absence_clauses(sentence: str, *, unsettled: bool) -> list[tuple[str, bool]]:
+    """The clauses of ``sentence`` that state an absence, as :func:`whole_code_absences`
+    reads them, each with whether it points back to what an earlier clause names: a
+    word pointing back (:data:`_POINTS_BACK`), or a clause a relative, a concession
+    or a reason opens (:data:`_BACK_JOINS`)."""
+    out: list[tuple[str, bool]] = []
+    start = 0
+    opened_by = ""
+    for end in [*_ABSENCE_CLAUSE_END.finditer(sentence), None]:
+        clause = sentence[start : end.start() if end is not None else len(sentence)]
+        if _WHOLE_CODE_ABSENCE.search(clause) or (unsettled and _UNSETTLED_ABSENCE.search(clause)):
+            back = bool(_POINTS_BACK.search(clause)) or (
+                _JOIN_WORD.sub(r"\1", opened_by.strip().lower()) in _BACK_JOINS
+            )
+            out.append((clause, back))
+        if end is not None:
+            start, opened_by = end.end(), end.group(0)
+    return out
 
 
 def body_absences(passage: Passage) -> tuple[str, ...]:
@@ -3566,6 +4009,18 @@ _UNESTABLISHED = re.compile(
 _CLAUSE_JOIN = re.compile(
     r",\s*(?:so|but|and)\s|\b(?:while|though|although|which|because)\b"
     r"|\[(?=[^\[\]]*\])[^\[\]]*\bev_\w+[^\[\]]*\]",
+    re.IGNORECASE,
+)
+# Where an absence's clause ends inside a sentence: a joined clause or a citation
+# (:data:`_CLAUSE_JOIN`), a semicolon or a colon.
+_ABSENCE_CLAUSE_END = re.compile(_CLAUSE_JOIN.pattern + r"|[;:]", re.IGNORECASE)
+# The joins whose clause speaks of what the clause before it names: a relative
+# "which", and a concession or a reason ("…, though its write is not shown").
+_BACK_JOINS = frozenset({"which", "though", "although", "because", "while"})
+_JOIN_WORD = re.compile(r"^\W*(\w+)\W*$")
+# A clause that points back to what an earlier clause names.
+_POINTS_BACK = re.compile(
+    r"\b(?:it|its|they|them|their)\b|^\W*(?:this|that|these|those|the\s+(?:routine|function))\b",
     re.IGNORECASE,
 )
 
@@ -3816,6 +4271,8 @@ def _held_unlisted(
                 if ids
                 else "calls something absent from the whole code read"
                 if sentence in passage.whole_code
+                else "states a branch or an argument of a routine a listing.N fact shows"
+                if any(s == sentence for s, _ids in passage.branch_sense)
                 else "denies what a decoded value's fact may state"
                 if sentence in passage.on_fact
                 else "states an absence the body or the ledger may say otherwise of"
@@ -3984,10 +4441,16 @@ def prompt_text(passages: Sequence[Passage]) -> str:
                 if passage.kind == CLAIM_LED and not passage.closing
                 else ()
             )
+            branch = tuple(
+                s for s, _ids in passage.branch_sense if s not in noted and s not in denied
+            )
             held = [
                 sentence
                 for sentence in passage.held
-                if sentence not in noted and sentence not in denied and sentence not in absent
+                if sentence not in noted
+                and sentence not in denied
+                and sentence not in absent
+                and sentence not in branch
             ]
             if passage.closing and _writable(passage):
                 # Every sentence is held: the passage is shown once, not again.
@@ -4019,6 +4482,16 @@ def prompt_text(passages: Sequence[Passage]) -> str:
                     "otherwise, rewrite it on that source, else list it with "
                     f"keep{_ABSENCE_KEPT}: "
                     + "; ".join(quoted_value(sentence) for sentence in absent)
+                )
+            if branch and not passage.closing:
+                # Read off the passage by code: a listing.N fact shows the routine (T-580).
+                lines.append(
+                    f"  [{passage.id}] each of these states a branch (a condition and what "
+                    "follows it) or an argument of a routine a listing.N fact shows; read it "
+                    "against that listing: where the listing shows otherwise (the other branch, "
+                    "another argument or local), rewrite it on the listing, citing an entry the "
+                    "fact cites, else list it with keep: "
+                    + "; ".join(quoted_value(sentence) for sentence in branch)
                 )
             if denied:
                 # Read off the passage by code: a decoded value's fact may contradict them.
@@ -4645,6 +5118,11 @@ async def _ask(
         discussion=discussion,
         entries=(evidence_texts.entries.values() if evidence_texts is not None else ()),
     )
+    left = next((p for p in passages if p.id == LISTINGS_LEFT_ID), None)
+    held_by = getattr(reporter, "degradations", None)
+    if left is not None and isinstance(held_by, list):
+        # Said where the report says what it is missing (``AgreementRound.degradations``).
+        held_by.append(f"The section agreement question: {left.text}.")
     claim_led = any(_writable(p) and p.kind == CLAIM_LED for p in passages)
     coded = any(_writable(p) and p.kind == SECTION_5 for p in passages)
     # A fact that rests on entries: the count of routines no passage names

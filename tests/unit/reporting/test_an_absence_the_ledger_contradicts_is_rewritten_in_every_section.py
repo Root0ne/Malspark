@@ -850,6 +850,55 @@ def test_a_past_absence_is_whole_code_only_where_its_clause_names_the_code_read(
     assert bool(whole_code_absences(sentence)) is held
 
 
+@pytest.mark.parametrize(
+    ("sentence", "held"),
+    [
+        # haiku13 (T-580 D6): the absence's clause names no address; 0x33ac is in another.
+        (
+            "The copy step is inferred: the code shown calls file-creation wrappers from 0x33ac, "
+            "but the copy destination is not established.",
+            True,
+        ),
+        ("The fetch source is not established, although 0x6988 refers to the URLs.", True),
+        # The clause stating the absence names the address: held to the ledger by it.
+        ("0x3868 calls 0x8560, but the body of 0x8820 is not established.", False),
+        # A clause pointing back names what the sentence names.
+        ("0x7414 is called first, and its body is not established.", False),
+        ("The write depends on the return sense of 0xbcac, which is not established.", False),
+        ("0x2800 is the task routine; this is not established.", False),
+        ("0x3a24 opens the file, though its target is not established.", False),
+        ("0x6f48 skips the write because the body is not shown to begin with MZ.", False),
+        # With no address anywhere, as before.
+        ("The copy destination is not established.", True),
+    ],
+)
+def test_a_section_5_absence_names_an_address_only_in_its_own_clause(
+    sentence: str, held: bool
+) -> None:
+    assert bool(whole_code_absences(sentence, unsettled=True, by_clause=True)) is held
+
+
+def test_outside_section_5_a_sentence_naming_an_address_is_read_whole() -> None:
+    # A claim-led row's clause is most often about the row's own code or a run.
+    row = "Candidate mutex name passed to the call at 0x3962; the slot target is not established"
+    assert whole_code_absences(row, unsettled=True) == ()
+    assert whole_code_absences(row, unsettled=True, by_clause=True) == (row,)
+
+
+def test_an_address_free_absence_held_as_unread_listed_stays_a_whole_code_one() -> None:
+    # Read whole, it names no address: the base held it as a whole-code absence,
+    # and its unread-listed question does not take that away.
+    sentence = (
+        "Its contents are not read, so whether a received payload is loaded this way is not "
+        "established [ev_0002]."
+    )
+    passages = passages_of(_report(section_5=sentence), entries=_ledger())
+    section_5 = next(p for p in passages if p.id == "persistence_detail")
+    assert [row[0] for row in section_5.unread_listed] == [sentence]
+    assert sentence in section_5.whole_code
+    assert sentence in section_5.held
+
+
 def test_a_retry_s_row_replaces_the_first_one_for_the_same_place_in_the_passage() -> None:
     first = {"sentences": [{"passage": "a", "sentence": "x", "decision": "keep"}]}
     retry = {"sentences": [{"passage": "a", "sentence": "x  copied", "decision": "rewrite"}]}
