@@ -70,7 +70,7 @@ _WARN_PREFIX = "[WARN]"
 # `static_qu1cksc0pe` called every tool with the sample's bare *filename*
 # instead — which Qu1cksc0pe then resolved against its own working directory.
 # The static role has never had this problem because its human turn opens with
-# an explicit line naming the path. The framework states it here for every
+# an explicit line naming the path. The platform states it here for every
 # custom agent, so an operator does not have to know to write it.
 _PATH_HEADER = (
     "Sample path (use exactly this string, verbatim, wherever a tool asks for "
