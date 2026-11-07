@@ -21,6 +21,7 @@ import json
 import os
 import subprocess
 import sys
+from collections.abc import Callable
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
@@ -38,7 +39,7 @@ from malspark.reporting.models import FileHashes, MalwareReport, SampleIdentity
 from malspark.reporting.narrative_agent import NarrativeAgent, build_prompt_text
 from malspark.reporting.question_round import question_prompt_text
 from malspark.schemas.evidence import build_entry
-from tests.linear_cost import TIME_RATIO_LIMIT, cpu_seconds
+from tests.linear_cost import TIME_RATIO_LIMIT, assert_ratio
 
 APPEND = "void FUN_0000b984(long *param_1,long param_2)\n{\n  FUN_0000b9cc(param_1,param_2);\n}"
 MAPPER = "long FUN_0000b670(long *param_1)\n{\n  return (*_DAT_00010dd0)(param_1);\n}"
@@ -301,21 +302,21 @@ class TestWhatNamesAnAddress:
                 [_index_entry(n, "function_index", {"rows": rows[n::8]}) for n in range(8)]
             )
 
-        def cost(objects: int) -> float:
+        def reading(objects: int) -> Callable[[], Any]:
             entries = ledger(objects)
-            return cpu_seconds(
-                lambda: _found(f"Slot {hex(0x20000)} is unresolved.", replace_holds(entries)),
-                repeats=3,
-            )
+            return lambda: _found(f"Slot {hex(0x20000)} is unresolved.", replace_holds(entries))
 
         size = 5_000
-        small = cost(size)
-        assert cost(size * 4) < max(small, 0.01) * TIME_RATIO_LIMIT
+        assert_ratio(
+            reading(size), reading(size * 4), TIME_RATIO_LIMIT, what="20,000 names", floor=0.01
+        )
 
 
 def replace_holds(entries: EntryTexts) -> EntryTexts:
-    """The same texts with the holdings not yet read, so each call reads them."""
+    """The same texts with nothing yet read of them, so each call reads them afresh."""
     entries._holds.clear()
+    entries._runs.clear()
+    entries._order.clear()
     return entries
 
 

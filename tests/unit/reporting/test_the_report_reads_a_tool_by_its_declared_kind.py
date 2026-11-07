@@ -12,8 +12,7 @@ else: sharing a built-in's name gives it nothing more.
 from __future__ import annotations
 
 import json
-import time
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from typing import Any
 
 import pytest
@@ -35,6 +34,7 @@ from malspark.reporting.renderers.stix_renderer import (
     recovered_by_words,
 )
 from malspark.schemas.evidence import build_entry
+from tests.linear_cost import assert_ratio
 
 # The invented reverser: one tool of every kind a technical section reads.
 REVERSER_TOOLS: dict[str, dict[str, Any]] = {
@@ -296,11 +296,9 @@ def test_an_operator_tool_of_a_built_in_kind_in_another_shape_is_still_reported(
     assert any("ev_0001" in s.evidence_ids for s in sections)
 
 
-def _operator_build_seconds(n: int) -> float:
+def _operator_build(n: int) -> Callable[[], Any]:
     ledger = [_entry(i, "who", {"elsewhere": f"thing {i}"}, "mcp:mine") for i in range(1, n + 1)]
-    started = time.thread_time()
-    build_sections(ledger)
-    return time.thread_time() - started
+    return lambda: build_sections(ledger)
 
 
 def test_building_an_operator_tool_s_sections_is_linear(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -313,10 +311,7 @@ def test_building_an_operator_tool_s_sections_is_linear(monkeypatch: pytest.Monk
     )
     held = ToolDeclarations.from_settings(settings)
     _HELD[:] = [held]
-    _operator_build_seconds(200)
-    small = min(_operator_build_seconds(2_000) for _ in range(2))
-    large = min(_operator_build_seconds(20_000) for _ in range(2))
-    assert large < small * 25
+    assert_ratio(_operator_build(2_000), _operator_build(20_000), 25, what="20,000 entries")
 
 
 def test_an_invented_rule_scanner_s_hits_carry_its_declared_name(
@@ -377,18 +372,13 @@ def test_a_lineage_dispute_names_the_sandbox_that_marked_it() -> None:
 # ---------------------------------------------------------------------------
 
 
-def _routing_seconds(n: int) -> float:
+def _routing(n: int) -> Callable[[], Any]:
     outputs = [_output("mcp:myrev", name, i) for i in range(n) for name in ("pseudo_c", "texts")]
-    started = time.thread_time()
-    _filter_tool_outputs({"static": outputs}, "command_and_control")
-    return time.thread_time() - started
+    return lambda: _filter_tool_outputs({"static": outputs}, "command_and_control")
 
 
 def test_routing_outputs_by_kind_is_linear(declared: ToolDeclarations) -> None:
-    _routing_seconds(200)
-    small = min(_routing_seconds(2_000) for _ in range(3))
-    large = min(_routing_seconds(20_000) for _ in range(3))
-    assert large < small * 30
+    assert_ratio(_routing(2_000), _routing(20_000), 30, what="20,000 outputs")
 
 
 def test_an_index_row_carries_the_source_only_when_recorded() -> None:

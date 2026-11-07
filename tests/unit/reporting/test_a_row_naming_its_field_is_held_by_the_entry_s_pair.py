@@ -14,9 +14,8 @@ Every name and number here is made up for the test.
 
 from __future__ import annotations
 
-import gc
 import json
-import time
+from collections.abc import Callable
 from typing import Any
 
 import pytest
@@ -31,6 +30,7 @@ from malspark.pipeline.validation import (
     wrong_entry_citations,
 )
 from malspark.schemas.evidence import LedgerEntry
+from tests.linear_cost import assert_ratio
 
 DECODER = {
     "tool": "example_decoder",
@@ -188,7 +188,7 @@ class TestTheSpellings:
         assert held_spellings("seed 0x5a17c0de")[0] == "seed 0x5a17c0de"
 
 
-def _timed(scale: int) -> float:
+def _checking(scale: int) -> Callable[[], None]:
     """A table of twenty-two rows over an entry ``scale`` times as long, two values as long."""
     blob = json.dumps(
         {
@@ -203,18 +203,19 @@ def _timed(scale: int) -> float:
         "seed " + "0" * scale,
         "seed" + " " * scale + "=" + "x" * scale,
     )
-    gc.collect()
-    began = time.thread_time()
-    found = stated_value_violations(payload, texts)
-    seconds = time.thread_time() - began
-    assert [v.code for v in found] == [STATED_VALUE_UNHELD_CODE]
-    return seconds
+
+    def check() -> None:
+        # Each run reads the entries afresh, as a report's first check does.
+        texts._runs.clear()
+        texts._order.clear()
+        texts._holds.clear()
+        found = stated_value_violations(payload, texts)
+        assert [v.code for v in found] == [STATED_VALUE_UNHELD_CODE]
+
+    return check
 
 
 class TestTheCheckStaysLinear:
     def test_ten_times_the_entry_takes_about_ten_times_as_long(self) -> None:
-        _timed(500)
-        low = min(_timed(2_000) for _ in range(2))
-        high = min(_timed(20_000) for _ in range(2))
+        low, high = assert_ratio(_checking(2_000), _checking(20_000), 20, what="20,000 pairs")
         print("field pairs, 2,000 and 20,000:", round(low, 4), round(high, 4))
-        assert high < low * 20

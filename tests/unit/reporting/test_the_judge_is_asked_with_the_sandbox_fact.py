@@ -1071,17 +1071,20 @@ class TestADeepLineageIsReadInLinearTime:
         assert "8000" in tree.pids
 
     def test_four_times_the_depth_costs_less_than_the_limit(self) -> None:
-        from tests.linear_cost import TIME_RATIO_LIMIT, cpu_seconds
+        from tests.linear_cost import TIME_RATIO_LIMIT, assert_ratio
 
         # A walk that tests each step against the chain so far costs the
         # square of the depth: sixteen times as much for four times the depth.
         # The shallow chain is sized to cost tens of milliseconds.
         shallow, deep = self._chain(8000), self._chain(32000)
 
-        small = cpu_seconds(lambda: self._tree_of(shallow), repeats=5)
-        large = cpu_seconds(lambda: self._tree_of(deep), repeats=5)
-
-        assert large < small * TIME_RATIO_LIMIT, (small, large)
+        assert_ratio(
+            lambda: self._tree_of(shallow),
+            lambda: self._tree_of(deep),
+            TIME_RATIO_LIMIT,
+            what="a chain 32,000 deep",
+            repeats=5,
+        )
 
 
 class TestTheVerdictNodeFindsTheTreeByTheReportSIdentity:

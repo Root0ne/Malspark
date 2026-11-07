@@ -6,7 +6,7 @@ of many backslashes must not cost time in the square of its length.
 
 from __future__ import annotations
 
-import time
+from tests.linear_cost import assert_scales
 
 from malspark.utils.written_forms import quoted_backslashes_written_out
 
@@ -18,15 +18,12 @@ def test_every_backslash_before_a_quote_is_written_out() -> None:
 
 
 def test_a_long_run_with_no_quote_after_it_grows_linearly() -> None:
-    def spent(n: int) -> float:
-        text = '"' + "\\" * n
-        best = float("inf")
-        for _ in range(3):
-            started = time.thread_time()
-            quoted_backslashes_written_out(text)
-            best = min(best, time.thread_time() - started)
-        return best
-
-    small, large = spent(5_000), spent(40_000)
     # Eight times the run: linear is about 8x, a rescan from every backslash about 64x.
-    assert large < small * 24 + 0.01, (small, large)
+    assert_scales(
+        lambda n: '"' + "\\" * n,
+        5_000,
+        quoted_backslashes_written_out,
+        factor=8,
+        limit=24,
+        floor=0.01 / 24,
+    )

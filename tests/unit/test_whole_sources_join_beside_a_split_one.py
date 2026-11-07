@@ -11,7 +11,7 @@ Every value is synthetic.
 
 from __future__ import annotations
 
-import time
+from collections.abc import Callable
 
 import pytest
 
@@ -25,6 +25,7 @@ from malspark.loaders.binary_chunker import (
     header_chars,
     joined_when_it_fits,
 )
+from tests.linear_cost import assert_ratio
 from tests.unit._chunking_doubles import _chunk, _room
 
 
@@ -77,16 +78,15 @@ class TestJoining:
         assert joined_when_it_fits(chunks, ChunkingConfig(), _room(room)) is chunks
 
     def test_ten_times_the_sources_take_about_ten_times_as_long(self) -> None:
-        def timed(count: int) -> float:
-            chunks = [_chunk("s" * 50) for _ in range(count)]
-            began = time.thread_time()
-            joined_when_it_fits(chunks, ChunkingConfig(), lambda text: len(text) // 7 + 60)
-            return time.thread_time() - began
+        def joining(count: int, runs: int) -> Callable[[], object]:
+            # Chunks of their own for every run, made before the measure.
+            made = iter([[_chunk("s" * 50) for _ in range(count)] for _ in range(runs)])
+            return lambda: joined_when_it_fits(
+                next(made), ChunkingConfig(), lambda text: len(text) // 7 + 60
+            )
 
-        timed(2_000)
-        small = min(timed(2_000) for _ in range(3))
-        large = min(timed(20_000) for _ in range(3))
-        assert large < small * 20
+        # The small call runs once more than the large one, to warm up.
+        assert_ratio(joining(2_000, 7), joining(20_000, 6), 20, what="20,000 sources")
 
 
 def test_a_join_near_the_room_leaves_room_for_its_header_and_no_sliver() -> None:

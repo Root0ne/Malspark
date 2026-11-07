@@ -3,11 +3,11 @@
 from __future__ import annotations
 
 import re
-import time
 
 import pytest
 
 from malspark.reporting.renderers import markdown as md
+from tests.linear_cost import TIME_RATIO_LIMIT, assert_ratio
 
 
 @pytest.mark.parametrize(
@@ -88,14 +88,15 @@ def test_a_name_that_only_ends_in_an_attribute_word_is_untouched() -> None:
     assert md._defanged_text(prose) == prose
 
 
-def _cpu(text: str) -> float:
-    """The CPU time of the best of three readings of ``text``."""
-    best = float("inf")
-    for _ in range(3):
-        start = time.process_time()
-        md._defanged_text(text)
-        best = min(best, time.process_time() - start)
-    return best
+def _assert_linear(small: str, large: str, what: str) -> None:
+    """Four times the input is read in less than eight times the CPU time of the process."""
+    assert_ratio(
+        lambda: md._defanged_text(small),
+        lambda: md._defanged_text(large),
+        TIME_RATIO_LIMIT,
+        what=what,
+        whole_process=True,
+    )
 
 
 @pytest.mark.parametrize(
@@ -107,10 +108,7 @@ def test_a_hostile_run_of_white_space_costs_in_proportion(opener: str) -> None:
         # The run ends where no slash follows, so every way of splitting it fails.
         return (opener + " \t\r\n" * (size // 4) + "x") * 3
 
-    small, large = _cpu(hostile(50_000)), _cpu(hostile(200_000))
-
-    # Four times the input takes less than eight times the time.
-    assert large < max(small, 0.002) * 8
+    _assert_linear(hostile(50_000), hostile(200_000), f"200,000 characters after {opener!r}")
 
 
 _CONTAINERS = ["> ", "- ", "+ ", "* ", "1. ", "12) ", "> - ", "- > ", "> 1. > * ", "   > "]
@@ -144,9 +142,7 @@ def test_a_line_of_container_prefixes_costs_in_proportion() -> None:
     def hostile(size: int) -> str:
         return ("> " * size + "x\n") * 2
 
-    small, large = _cpu(hostile(25_000)), _cpu(hostile(100_000))
-
-    assert large < max(small, 0.002) * 8
+    _assert_linear(hostile(25_000), hostile(100_000), "100,000 container prefixes")
 
 
 @pytest.mark.parametrize("lead", ["\x01", "\x00", "\x1f", " \x0b", "\x0c\x0e"])
@@ -158,14 +154,12 @@ def test_c0_controls_before_an_attribute_value_s_slashes_are_no_way_round(lead: 
 
 
 def test_c0_controls_before_an_attribute_value_cost_a_linear_read() -> None:
-    def best(size: int) -> float:
-        text = 'href="' + "\x01" * size
-        times = []
-        for _ in range(3):
-            started = time.process_time()
-            md._defanged_text(text)
-            times.append(time.process_time() - started)
-        return min(times)
-
-    small, large = best(50_000), best(200_000)
-    assert large < 8 * max(small, 1e-3)
+    small, large = 'href="' + "\x01" * 50_000, 'href="' + "\x01" * 200_000
+    assert_ratio(
+        lambda: md._defanged_text(small),
+        lambda: md._defanged_text(large),
+        TIME_RATIO_LIMIT,
+        what="200,000 controls",
+        floor=1e-3,
+        whole_process=True,
+    )

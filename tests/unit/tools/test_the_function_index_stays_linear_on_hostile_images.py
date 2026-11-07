@@ -12,14 +12,13 @@ with their product.
 
 from __future__ import annotations
 
-import gc
 import struct
-import time
 from collections.abc import Callable
 from typing import Any
 
 from malspark.tools import artefact_index
 from malspark.tools.pe_image import Image, Section
+from tests.linear_cost import assert_ratio
 
 BASE = 0x140000000
 TEXT_RVA = 0x1000
@@ -147,17 +146,41 @@ def pe_bytes(image: Image) -> bytes:
     return bytes(header) + bytes(bodies)
 
 
-def _timed(make: Callable[[int], tuple[Image, dict[str, Any]]], n: int) -> tuple[float, Any]:
-    """The seconds the index takes on ``make(n)``, the collector held so no sweep is timed."""
+Shape = Callable[[int], tuple[Image, dict[str, Any]]]
+
+
+def _index(make: Shape, n: int) -> Any:
+    """The index's answer on ``make(n)``."""
     image, joined = make(n)
-    gc.collect()
-    gc.disable()
-    try:
-        began = time.thread_time()
-        answer = artefact_index.index_image(image, **joined)
-        return time.thread_time() - began, answer
-    finally:
-        gc.enable()
+    return artefact_index.index_image(image, **joined)
+
+
+def _indexing(make: Shape, n: int, runs: int, answers: list[Any]) -> Callable[[], None]:
+    """A call that indexes a fresh ``make(n)`` on each of ``runs`` runs, the images built
+    before the measure, so no run reads what an earlier one left in its image."""
+    built = iter([make(n) for _ in range(runs)])
+
+    def index() -> None:
+        image, joined = next(built)
+        answers.append(artefact_index.index_image(image, **joined))
+
+    return index
+
+
+def _assert_tenfold(
+    make: Shape, small: int, what: str, *, repeats: int = 3
+) -> tuple[float, float, Any]:
+    """Ten times ``small`` under twenty times the time; the best times and the last large
+    answer. The small call runs once more than the large one, to warm up."""
+    answers: list[Any] = []
+    low, high = assert_ratio(
+        _indexing(make, small, 2 * repeats + 1, answers),
+        _indexing(make, small * 10, 2 * repeats, answers),
+        20,
+        what=what,
+        repeats=repeats,
+    )
+    return low, high, answers[-1]
 
 
 def _text_offsets(texts: list[bytes]) -> list[int]:
@@ -377,12 +400,12 @@ def _threads(n: int) -> tuple[Image, dict[str, Any]]:
 
 class TestEveryShapeFinishes:
     def test_many_sections_answer_the_call_targets_among_them(self) -> None:
-        _, answer = _timed(_many_sections, 2_000)
+        answer = _index(_many_sections, 2_000)
         assert answer["functions_known"] == 2
         assert answer["function_sources"]["call targets the decoder reached"] == 1
 
     def test_references_into_one_long_text_read_it_once_from_its_start(self) -> None:
-        _, answer = _timed(_into_one_run, 20_000)
+        answer = _index(_into_one_run, 20_000)
         # Only the reference to where the text starts reads it; the others
         # point inside it and read nothing.
         assert answer["total"] == 1
@@ -390,7 +413,7 @@ class TestEveryShapeFinishes:
         assert len(cells[0]["text"]) == 200_000
 
     def test_a_cyclic_graph_with_self_calls_ends_and_counts_each_callee_once(self) -> None:
-        _, answer = _timed(_cycle, 2_000)
+        answer = _index(_cycle, 2_000)
         assert answer["total"] == 2_000
         first = answer["rows"][0]
         assert first["callees"] == [hex(BASE + TEXT_RVA), hex(BASE + TEXT_RVA + 18)]
@@ -399,19 +422,19 @@ class TestEveryShapeFinishes:
         assert first["callers"] == [hex(BASE + TEXT_RVA + 18 * 1_999)]
 
     def test_a_deep_chain_no_table_lists_is_followed_without_recursion(self) -> None:
-        _, answer = _timed(_chain, 30_000)
+        answer = _index(_chain, 30_000)
         assert answer["functions_known"] == 30_000
         assert answer["function_sources"]["call targets the decoder reached"] == 29_999
         assert answer["total"] == 30_000
 
     def test_a_wide_fan_out_is_one_row_with_every_callee(self) -> None:
-        _, answer = _timed(_fan_out, 20_000)
+        answer = _index(_fan_out, 20_000)
         hub = next(r for r in answer["rows"] if r["offset"] == hex(TEXT_RVA))
         assert len(hub["callees"]) == 19_999
         assert hub["indirect"] == {"artefacts": 19_999, "through": 19_999}
 
     def test_one_function_holding_many_artefacts_called_from_many_places(self) -> None:
-        _, answer = _timed(_fan_in, 20_000)
+        answer = _index(_fan_in, 20_000)
         hub = answer["rows"][0]
         assert hub["direct"] == 2_000 and len(hub["callers"]) == 19_999
         # Each caller's callee holds 2,000 artefacts: counted once per callee,
@@ -420,20 +443,20 @@ class TestEveryShapeFinishes:
         assert answer["total"] == 20_000
 
     def test_overlapping_table_ranges_decode_each_instruction_start_once(self) -> None:
-        _, answer = _timed(_overlapping, 20_000)
+        answer = _index(_overlapping, 20_000)
         # The first range reads the whole code; every later one starts on a
         # byte already read, and holds what it read itself: nothing.
         assert answer["functions_known"] == 20_000
         assert answer["total"] == 1
 
     def test_every_resolved_call_site_names_its_slot_and_every_call_through_it(self) -> None:
-        _, answer = _timed(_resolved, 2_000)
+        answer = _index(_resolved, 2_000)
         assert len(answer["resolved_slots"]) == 2_000
         assert answer["calls_unnamed"] == {}
         assert sum(len(row["slot_calls"]) for row in answer["rows"]) == 2_000
 
     def test_many_thread_starts_and_one_address_taken_by_every_function(self) -> None:
-        _, answer = _timed(_threads, 2_000)
+        answer = _index(_threads, 2_000)
         assert len(answer["thread_starts"]) == 2_000
         assert {pair["through"] for pair in answer["thread_starts"]} == {"CreateThread"}
         assert len(answer["addresses_taken"]) == 1_999
@@ -454,63 +477,46 @@ class TestEveryShapeFinishes:
         assert first["resolved"] == [{"name": "OpenThing", "sources": ["ev_0020"]}]
 
 
-def _ratio(make: Callable[[int], tuple[Image, dict[str, Any]]], small: int) -> tuple[float, float]:
-    """The seconds at ``small`` and at ten times it, each the least of two runs after a warm-up."""
-    _timed(make, small)
-    low = min(_timed(make, small)[0] for _ in range(2))
-    high = min(_timed(make, small * 10)[0] for _ in range(2))
-    return low, high
-
-
 class TestTheCostGrowsWithTheFunctionsAndTheCalls:
     """Ten times the functions take about ten times as long; a quadratic step would be a hundred."""
 
     def test_a_dense_fan_out_at_one_ten_and_a_hundred_thousand_functions(self) -> None:
-        _timed(_dense, 1_000)
-        seconds = {n: min(_timed(_dense, n)[0] for _ in range(2)) for n in (1_000, 10_000)}
-        seconds[100_000] = min(_timed(_dense, 100_000)[0] for _ in range(2))
-        print("dense fan-out, 8 calls a function:", {n: round(s, 3) for n, s in seconds.items()})
-        assert seconds[100_000] < seconds[10_000] * 20
+        _index(_dense, 1_000)
+        # A run at 100,000 functions takes seconds: two pairs, not three.
+        low, high, _answer = _assert_tenfold(_dense, 10_000, "100,000 functions", repeats=2)
+        print("dense fan-out, 8 calls a function:", round(low, 3), round(high, 3))
 
     def test_a_hundred_thousand_resolved_call_sites(self) -> None:
-        _timed(_resolved, 1_000)
-        seconds = {n: min(_timed(_resolved, n)[0] for _ in range(2)) for n in (1_000, 10_000)}
-        runs = [_timed(_resolved, 100_000) for _ in range(2)]
-        seconds[100_000], answer = min(runs, key=lambda run: run[0])
-        print("resolved call sites:", {n: round(s, 3) for n, s in seconds.items()})
+        _index(_resolved, 1_000)
+        # A run at 100,000 call sites takes seconds: two pairs, not three.
+        low, high, answer = _assert_tenfold(_resolved, 10_000, "100,000 call sites", repeats=2)
+        print("resolved call sites, 10,000 and 100,000:", round(low, 3), round(high, 3))
         assert len(answer["resolved_slots"]) == 100_000
-        assert seconds[100_000] < seconds[10_000] * 20
 
     def test_many_callers_of_one_function_holding_many_artefacts(self) -> None:
-        low, high = _ratio(_fan_in, 2_000)
+        low, high, _answer = _assert_tenfold(_fan_in, 2_000, "ten times the functions")
         print("fan-in to a function of 2,000 artefacts:", round(low, 3), round(high, 3))
-        assert high < low * 20
 
     def test_references_into_one_long_text(self) -> None:
-        low, high = _ratio(_into_one_run, 2_000)
+        low, high, _answer = _assert_tenfold(_into_one_run, 2_000, "ten times the functions")
         print("references into one 200,000-byte text:", round(low, 3), round(high, 3))
-        assert high < low * 20
 
     def test_overlapping_table_ranges(self) -> None:
-        low, high = _ratio(_overlapping, 2_000)
+        low, high, _answer = _assert_tenfold(_overlapping, 2_000, "ten times the functions")
         print("overlapping table ranges:", round(low, 3), round(high, 3))
-        assert high < low * 20
 
     def test_many_thread_starts_and_addresses_taken(self) -> None:
-        low, high = _ratio(_threads, 2_000)
+        low, high, _answer = _assert_tenfold(_threads, 2_000, "ten times the functions")
         print("thread starts and addresses taken:", round(low, 3), round(high, 3))
-        assert high < low * 20
 
     def test_many_sections_and_many_calls(self) -> None:
-        low, high = _ratio(_many_sections, 2_000)
+        low, high, _answer = _assert_tenfold(_many_sections, 2_000, "ten times the functions")
         print("as many sections as calls:", round(low, 3), round(high, 3))
-        assert high < low * 20
 
     def test_starts_rules_and_recovered_strings_read_by_kind(self) -> None:
-        low, high = _ratio(_by_kind, 2_000)
+        low, high, _answer = _assert_tenfold(_by_kind, 2_000, "ten times the functions")
         print("starts, rules and strings by kind:", round(low, 3), round(high, 3))
-        assert high < low * 20
-        _, answer = _timed(_by_kind, 2_000)
+        answer = _index(_by_kind, 2_000)
         assert answer["function_sources"] == {"Lister function starts": 2_000}
         assert answer["total"] == 2_000
         assert all(

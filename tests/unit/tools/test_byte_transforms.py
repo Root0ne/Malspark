@@ -12,6 +12,7 @@ import gzip
 import hashlib
 import struct
 import zlib
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
@@ -21,6 +22,7 @@ from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
 
 from malspark.tools import transforms
 from malspark.tools.transforms import transform_bytes
+from tests.linear_cost import assert_ratio, assert_under
 from tests.unit.tools.synthetic_pe import DATA_RVA, SyntheticPE
 
 PLAIN = b"beacon to http://update.example.test/gate.php every 60s from HKCU\\Software\\Demo"
@@ -456,13 +458,10 @@ class TestHostileInputs:
         )
 
     def test_each_step_is_linear_in_its_buffer(self, tmp_path: Path) -> None:
-        import time
-
-        def timed(size: int) -> float:
+        def transforming(size: int) -> Callable[[], Any]:
             blob = bytes(range(256)) * (size // 256)
             path = _write(tmp_path, base64.b64encode(blob), f"{size}.bin")
-            started = time.thread_time()
-            transform_bytes(
+            return lambda: transform_bytes(
                 path,
                 offset=0,
                 steps=[
@@ -471,11 +470,15 @@ class TestHostileInputs:
                     {"op": "rc4", "key": {"text": "abc"}},
                 ],
             )
-            return time.thread_time() - started
 
-        small, large = timed(1 << 16), timed(1 << 19)
         # Eight times the bytes; a quadratic step would take some sixty times as long.
-        assert large < small * 24 + 0.5
+        assert_ratio(
+            transforming(1 << 16),
+            transforming(1 << 19),
+            24,
+            what="eight times the bytes",
+            floor=0.5 / 24,
+        )
 
 
 CAP = 1 << 18
@@ -562,13 +565,11 @@ class TestGrowthIsBounded:
         assert answer["output"]["length"] == CAP and "cut" in answer["steps"][0]
 
     def test_ten_thousand_cheap_steps(self, tmp_path: Path) -> None:
-        import time
-
         path = _write(tmp_path, PLAIN[:16])
         steps = [{"op": "reverse"}, {"op": "xor", "key": {"hex": "5a"}}] * 5_000
-        started = time.thread_time()
+        # The memory peak on a run of its own, the time on runs without the tracer.
         answer, peak = _peak(lambda: transform_bytes(path, offset=0, steps=steps))
-        assert time.thread_time() - started < 30
+        assert_under(lambda: transform_bytes(path, offset=0, steps=steps), 30, what="10,000 steps")
         assert len(answer["steps"]) == 10_000
         assert answer["output"]["sha256"] == hashlib.sha256(PLAIN[:16]).hexdigest()
         # The answer names all 10,000 steps; its size grows with them, not with the cap.
@@ -615,14 +616,17 @@ class TestGrowthIsBounded:
 
     def test_a_cap_sized_output_is_measured_whole_and_shown_in_part(self, tmp_path: Path) -> None:
         import json
-        import time
 
         line = b"GET http://host-%04d.example.org/a.php C:\\Users\\x\\f.exe\n"
         text = b"".join(line % i for i in range(CAP // len(line) + 1))[:CAP]
         path = _write(tmp_path, zlib.compress(text * 8, 9))
-        started = time.thread_time()
+        # The memory peak on a run of its own, the time on runs without the tracer.
         answer, peak = _peak(lambda: transform_bytes(path, offset=0, steps=[{"op": "zlib"}]))
-        assert time.thread_time() - started < 20
+        assert_under(
+            lambda: transform_bytes(path, offset=0, steps=[{"op": "zlib"}]),
+            20,
+            what="a cap-sized output",
+        )
         out = answer["output"]
         assert out["length"] == CAP and out["sha256"] == hashlib.sha256(text).hexdigest()
         assert 0 < out["shown"]["end"] <= transforms.SHOWN_BYTES
@@ -767,21 +771,18 @@ class TestTheReviewRulings:
         assert transform_bytes(path, offset="0X10")["input"]["offset"] == "0x10"
 
     def test_many_empty_gzip_members_stay_linear(self, tmp_path: Path) -> None:
-        import time
-
         member = gzip.compress(b"", mtime=0)
+        answers: list[dict[str, Any]] = []
 
-        def timed(size: int) -> tuple[float, dict[str, Any]]:
+        def reading(size: int) -> Callable[[], Any]:
             path = _write(tmp_path, member * (size // len(member)), f"{size}.gz")
-            started = time.thread_time()
-            answer = transform_bytes(path, offset=0, steps=[{"op": "gzip"}])
-            return time.thread_time() - started, answer
+            return lambda: answers.append(transform_bytes(path, offset=0, steps=[{"op": "gzip"}]))
 
-        small, _answer = timed(1 << 19)
-        large, answer = timed(5 << 20)
-        assert answer["steps"][0]["members"] == (5 << 20) // len(member)
         # Ten times the bytes, well above the largest piece fed at once.
-        assert large < small * 30 + 0.5
+        assert_ratio(
+            reading(1 << 19), reading(5 << 20), 30, what="ten times the members", floor=0.5 / 30
+        )
+        assert answers[-1]["steps"][0]["members"] == (5 << 20) // len(member)
 
     def test_the_worst_default_answers_stay_within_the_room(self, tmp_path: Path) -> None:
         import json

@@ -39,6 +39,7 @@ from malspark.reporting.models import (
 )
 from malspark.reporting.renderers.markdown import MarkdownRenderer
 from malspark.schemas.evidence import LedgerEntry
+from tests.linear_cost import assert_under
 
 KEY = "Software\\ExampleVendor\\Updater"
 JOINED = KEY + "\\ExampleExport"
@@ -369,8 +370,6 @@ class TestOddAndLargeInput:
         assert found[0].message.startswith("configuration items 2, 3, 4, 5 ")
 
     def test_a_large_table_against_a_large_ledger_finishes_quickly(self) -> None:
-        import time
-
         entries = [
             _entry(
                 f"ev_{n:04d}",
@@ -392,10 +391,12 @@ class TestOddAndLargeInput:
             ]
         }
 
-        started = time.thread_time()
-        found = stated_value_violations(payload, texts)
-        elapsed = time.thread_time() - started
+        def check() -> None:
+            # Each run reads the entries afresh, as a report's first check does.
+            texts._runs.clear()
+            texts._order.clear()
+            texts._holds.clear()
+            (asked,) = stated_value_violations(payload, texts)
+            assert asked.message.startswith("identifiers 1, 2, 3, ")
 
-        (asked,) = found
-        assert asked.message.startswith("identifiers 1, 2, 3, ")
-        assert elapsed < 10, elapsed
+        assert_under(check, 10, what="3,000 rows over 300 entries")

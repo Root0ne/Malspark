@@ -16,7 +16,7 @@ document, without the indentation.
 from __future__ import annotations
 
 import json
-import time
+from collections.abc import Callable
 from pathlib import Path
 from types import MethodType
 from typing import Any
@@ -42,6 +42,7 @@ from malspark.loaders.binary_chunker import (
     joined_when_it_fits,
 )
 from malspark.pipeline.nodes import agent_input_room, make_stage_agent_node
+from tests.linear_cost import assert_ratio
 from tests.stages import ANALYSIS_STAGE, paper_profile
 
 
@@ -507,18 +508,22 @@ class TestAnUpstreamBlockNearTheRoomAddsAtMostOneChunk:
     def test_ten_times_the_input_takes_about_ten_times_as_long(self) -> None:
         block = "U" * HOSTILE_ROOM
 
-        def timed(parsed: str) -> float:
-            agent, node, state, _container_ = _hostile_node(parsed, block)
-            with patch("malspark.pipeline.nodes.upstream_findings", lambda *_a: block):
-                began = time.thread_time()
-                node(state)
-                return time.thread_time() - began
+        def running(parsed: str, runs: int) -> Callable[[], None]:
+            # A node of its own for every run, built before the measure.
+            built = iter([_hostile_node(parsed, block) for _ in range(runs)])
 
-        timed(HOSTILE_INPUT)
-        small = min(timed(HOSTILE_INPUT) for _ in range(2))
-        large = min(timed(HOSTILE_INPUT * 10) for _ in range(2))
+            def run() -> None:
+                _agent_, node, state, _container_ = next(built)
+                node(state)
+
+            return run
+
         # Ten times the input in at most about ten times the time (twenty, for noise).
-        assert large < small * 20
+        # The small call runs once more than the large one, to warm up.
+        with patch("malspark.pipeline.nodes.upstream_findings", lambda *_a: block):
+            assert_ratio(
+                running(HOSTILE_INPUT, 7), running(HOSTILE_INPUT * 10, 6), 20, what="ten times"
+            )
 
 
 # ---------------------------------------------------------------------------
