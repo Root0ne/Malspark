@@ -140,7 +140,9 @@ class TestThePlacesALineNames:
             line = "[analysts: STATIC] " + " ".join(f"0x{1000 + i:x}" for i in range(n))
             return lambda: place_facts([line], _isrs(), _ledger(), NAMES)
 
-        assert_ratio(placing(300), placing(3000), 10 * 4, floor=0.5 / 40, what="a tenfold line")
+        assert_ratio(
+            placing(12_000), placing(120_000), 10 * 4, floor=0.5 / 40, what="a tenfold line"
+        )
 
 
 class TestWhoIsTold:

@@ -279,7 +279,11 @@ class TestTheSourcesOfATechnique:
             return lambda: technique_sources(isrs, ledger)
 
         assert_ratio(
-            read(200), read(2000), 10 * 4, what="2,000 claims against 200", floor=0.5 / (10 * 4)
+            read(1000),
+            read(10000),
+            10 * 4,
+            what="10,000 claims against 1,000",
+            floor=0.5 / (10 * 4),
         )
 
     def test_many_sources_are_joined_in_linear_time(self) -> None:
@@ -288,10 +292,10 @@ class TestTheSourcesOfATechnique:
             return lambda: summary_of_sources(held)
 
         assert_ratio(
-            join(2000),
-            join(20000),
+            join(30000),
+            join(300000),
             10 * 4,
-            what="20,000 sources against 2,000",
+            what="300,000 sources against 30,000",
             floor=0.5 / (10 * 4),
         )
 
@@ -387,10 +391,17 @@ class TestTheWholeAnswer:
 
         def read(n: int) -> Any:
             answer = {"rows": [{"routine": "0x4000", "text": str(i)} for i in range(n)], "total": n}
-            return lambda: answer_facts(answer)
+            # A row is read in a fraction of a microsecond: each answer is read
+            # four times so the small run outlasts the floor without holding
+            # a million rows.
+            return lambda: [answer_facts(answer) for _ in range(4)]
 
         assert_ratio(
-            read(2000), read(20000), 10 * 4, what="20,000 rows against 2,000", floor=0.5 / (10 * 4)
+            read(20000),
+            read(200000),
+            10 * 4,
+            what="200,000 rows against 20,000",
+            floor=0.5 / (10 * 4),
         )
 
 

@@ -280,7 +280,7 @@ class TestLinear:
             return lambda: run_roots(led).of_statement('the string "s5"', ["ev_0002"])
 
         assert_ratio(
-            read(2_000), read(16_000), 8 * 4, what="16,000 rows against 2,000", floor=0.5 / (8 * 4)
+            read(8_000), read(64_000), 8 * 4, what="64,000 rows against 8,000", floor=0.5 / (8 * 4)
         )
 
 
@@ -655,10 +655,10 @@ class TestAStatedRangeIsCheckedAgainstTheImage:
             return run
 
         assert_ratio(
-            timed(10_000),
-            timed(100_000),
+            timed(30_000),
+            timed(300_000),
             10 * 3,
-            what="100,000 ranges against 10,000",
+            what="300,000 ranges against 30,000",
             floor=0.5 / (10 * 3),
         )
 

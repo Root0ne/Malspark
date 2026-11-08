@@ -84,4 +84,4 @@ def test_the_assembly_is_linear_in_the_number_of_analysts() -> None:
         reports = {name: isr.to_text_summary() for name, isr in isrs.items()}
         return lambda: mediation_reports_text(reports, isrs)
 
-    assert_ratio(build(50), build(500), 40, what="500 analysts against 50")
+    assert_ratio(build(200), build(2000), 40, what="2,000 analysts against 200")

@@ -231,8 +231,8 @@ class TestTheCheckStaysLinear:
             return lambda: words(text, "T1027")
 
         low, high = assert_ratio(
-            reading(unit * 400),
-            reading(unit * 4000),
+            reading(unit * 1200),
+            reading(unit * 12000),
             20,
             floor=0.01 / 20,
             what="a ten times longer claim",

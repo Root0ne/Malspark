@@ -552,7 +552,7 @@ class TestLinearTime:
             told = ledger_count_facts(lines, {}, ledger, AGENTS)
             return lambda: ledger_stated(lines, {}, ledger, AGENTS, told)
 
-        assert_ratio(stating(100), stating(1_000), 30, floor=1e-3, what="1,000 lines")
+        assert_ratio(stating(400), stating(4_000), 30, floor=1e-3, what="4,000 lines")
 
 
 class _Address(BaseModel):

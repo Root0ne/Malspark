@@ -304,19 +304,26 @@ def test_the_vocabulary_is_listed_with_its_source() -> None:
     assert not {"core", "vr"} & tokens.products and "one" not in tokens.words
 
 
+# Each header is sized so its small read takes about ten milliseconds. An
+# unclosed comment is refused by one search for its end, done in C, so that
+# header is read a thousand times instead.
 @pytest.mark.parametrize(
-    "build",
+    ("build", "size", "reads"),
     [
-        lambda n: "Mozilla/5.0 (" + "Windows NT 10.0; " * n + ")",
-        lambda n: "Mozilla/5.0 (Windows NT 10.0) " + "Chrome/1.0 " * n,
-        lambda n: "Mozilla/5.0 (" + "1" * n + "-",
-        lambda n: "Mozilla/5.0 (x) " + "a" * n,
-        lambda n: "Mozilla/5.0 (" + "1" * (n * 8) + "-x)",
-        lambda n: "Mozilla/5.0 (" + "1" * (n * 8) + "a" * n + "!)",
-        lambda n: "Mozilla/5.0 (" + "Googlebot/2.1; +http://www.google.com/bot; " * n + ")",
-        lambda n: "Mozilla/5.0 (" + "Xbox One; " * n + ")",
-        lambda n: "Mozilla/5.0 (Windows NT 10.0) Core/1 " + "QQBrowser/1 " * n,
-        lambda n: "Mozilla/5.0 (rv:" + "1" * (n * 8) + "!)",
+        (lambda n: "Mozilla/5.0 (" + "Windows NT 10.0; " * n + ")", 12_000, 1),
+        (lambda n: "Mozilla/5.0 (Windows NT 10.0) " + "Chrome/1.0 " * n, 6_000, 1),
+        (lambda n: "Mozilla/5.0 (" + "1" * n + "-", 1_000_000, 1_000),
+        (lambda n: "Mozilla/5.0 (x) " + "a" * n, 120_000, 1),
+        (lambda n: "Mozilla/5.0 (" + "1" * (n * 8) + "-x)", 75_000, 1),
+        (lambda n: "Mozilla/5.0 (" + "1" * (n * 8) + "a" * n + "!)", 75_000, 1),
+        (
+            lambda n: "Mozilla/5.0 (" + "Googlebot/2.1; +http://www.google.com/bot; " * n + ")",
+            6_500,
+            1,
+        ),
+        (lambda n: "Mozilla/5.0 (" + "Xbox One; " * n + ")", 16_000, 1),
+        (lambda n: "Mozilla/5.0 (Windows NT 10.0) Core/1 " + "QQBrowser/1 " * n, 6_000, 1),
+        (lambda n: "Mozilla/5.0 (rv:" + "1" * (n * 8) + "!)", 85_000, 1),
     ],
     ids=[
         "entries",
@@ -331,5 +338,9 @@ def test_the_vocabulary_is_listed_with_its_source() -> None:
         "tail",
     ],
 )
-def test_reading_a_long_header_stays_linear(build: Callable[[int], str]) -> None:
-    assert_scales(build, 5_000, distinctive_user_agent_token)
+def test_reading_a_long_header_stays_linear(
+    build: Callable[[int], str], size: int, reads: int
+) -> None:
+    assert_scales(
+        build, size, lambda header: [distinctive_user_agent_token(header) for _ in range(reads)]
+    )

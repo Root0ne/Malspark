@@ -427,15 +427,20 @@ def test_a_hostile_answer_is_matched_in_linear_time() -> None:
     text = ReputationFacts(text_patterns=(r"(?P<malicious>(\d+)+)x",))
 
     def reading(n: int) -> Callable[[], None]:
+        letters, digits = "a" * n + "b", "1" * n + "y"
+
         def read() -> None:
-            assert not pattern.matches("t", "a" * n + "b")
-            assert text.counts_in_text("1" * n + "y") is None
+            # Each answer is matched eight times: the small run is measurable
+            # while the answers stay a few megabytes.
+            for _ in range(8):
+                assert not pattern.matches("t", letters)
+                assert text.counts_in_text(digits) is None
 
         return read
 
     # Four times the input, CPU time, the two sizes timed in turn and the best
     # of seven each read; a quadratic reader would take sixteen times as long.
-    # The smaller run takes more than a millisecond.
+    # The smaller run takes about ten milliseconds.
     assert_ratio(reading(640_000), reading(2_560_000), TIME_RATIO_LIMIT, repeats=7)
 
 

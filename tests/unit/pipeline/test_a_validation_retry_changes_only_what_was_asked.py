@@ -638,7 +638,7 @@ class TestAHostileRetryCostsALinearMerge:
             withdrawn = _isr(answer)
             return lambda: merge_retry(first, withdrawn, answer, asked=range(count))
 
-        _ten_times(run(1_000), run(10_000))
+        _ten_times(run(1_600), run(16_000))
 
     def test_reasonless_withdraw_lines_cost_a_linear_read_in_time_and_memory(self) -> None:
         def run(count: int) -> Callable[[], Any]:
@@ -660,24 +660,30 @@ class TestAHostileRetryCostsALinearMerge:
     def test_a_long_line_of_withdraw_words_costs_a_linear_read(self) -> None:
         def run(size: int) -> Callable[[], Any]:
             text = "withdraw " * size
-            return lambda: read_withdrawals(text)
+            # The line is read in C at a few nanoseconds a character: it is
+            # read three hundred times so the small run outlasts the floor.
+            return lambda: [read_withdrawals(text) for _ in range(300)]
 
         _ten_times(run(10_000), run(100_000))
 
     def test_long_lines_that_do_not_open_with_the_word_cost_a_linear_read(self) -> None:
-        for line in (
-            lambda size: "x " + "removed claim " * size,
-            lambda size: "CLAIM 1: " + "drop " * size + "claim 2",
-            lambda size: "CLAIM 1 (" + "retract " * size + "):",
-            lambda size: "**CLAIM 2** " + "claim 7 " * size + "withdrawn",
-            lambda size: "CLAIM 2: " + "[(~>" * size + "removed",
-            lambda size: "CLAIM 2: " + "removed " * size + "x",
-            lambda size: "CLAIM 2: " + "x " * size + "retract",
+        # Each line is read ``reads`` times, so its small run outlasts the
+        # floor while the lines stay a megabyte or less.
+        for line, reads in (
+            (lambda size: "x " + "removed claim " * size, 10),
+            (lambda size: "CLAIM 1: " + "drop " * size + "claim 2", 13),
+            (lambda size: "CLAIM 1 (" + "retract " * size + "):", 35),
+            (lambda size: "**CLAIM 2** " + "claim 7 " * size + "withdrawn", 8),
+            (lambda size: "CLAIM 2: " + "[(~>" * size + "removed", 40),
+            (lambda size: "CLAIM 2: " + "removed " * size + "x", 9),
+            (lambda size: "CLAIM 2: " + "x " * size + "retract", 35),
         ):
 
-            def run(size: int, line: Callable[[int], str] = line) -> Callable[[], Any]:
+            def run(
+                size: int, line: Callable[[int], str] = line, reads: int = reads
+            ) -> Callable[[], Any]:
                 text = line(size)
-                return lambda: read_withdrawals(text)
+                return lambda: [read_withdrawals(text) for _ in range(reads)]
 
             small, large = run(10_000), run(100_000)
 

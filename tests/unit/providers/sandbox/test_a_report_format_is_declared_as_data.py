@@ -420,7 +420,7 @@ def test_every_read_is_linear_on_a_hostile_payload() -> None:
         }
     )
     formats = effective_formats([wide_format])
-    small, large = _hostile(2_000), _hostile(20_000)
+    small, large = _hostile(8_000), _hostile(80_000)
     assert sniff(large, formats) is None
     assert_ratio(
         lambda: _read_all(small, formats),

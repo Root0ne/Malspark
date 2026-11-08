@@ -519,10 +519,14 @@ class TestAnUpstreamBlockNearTheRoomAddsAtMostOneChunk:
             return run
 
         # Ten times the input in at most about ten times the time (twenty, for noise).
-        # The small call runs once more than the large one, to warm up.
+        # The small call runs once more than the large one, to warm up. Twice the
+        # hostile input makes the small run measurable.
         with patch("malspark.pipeline.nodes.upstream_findings", lambda *_a: block):
             assert_ratio(
-                running(HOSTILE_INPUT, 7), running(HOSTILE_INPUT * 10, 6), 20, what="ten times"
+                running(HOSTILE_INPUT * 2, 7),
+                running(HOSTILE_INPUT * 20, 6),
+                20,
+                what="ten times",
             )
 
 

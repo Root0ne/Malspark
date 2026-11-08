@@ -254,17 +254,17 @@ def _numbered_answer(size: int) -> str:
     [
         pytest.param(_cited_answer, id="ids in the sentence"),
         pytest.param(_numbered_answer, id="numbers on their own lines"),
-        pytest.param(lambda size: "CLAIM 1:\n" + "\n" * (size * 40) + "CLAIM: x", id="blank run"),
-        pytest.param(lambda size: "CLAIM: " + "ev_" * (size * 20), id="unfinished ids"),
-        pytest.param(lambda size: "CLAIM: " + "[(" * (size * 20), id="open brackets"),
-        pytest.param(lambda size: "CLAIM: [" + "ev_0001 " * (size * 10), id="unclosed citation"),
+        pytest.param(lambda size: "CLAIM 1:\n" + "\n" * (size * 60) + "CLAIM: x", id="blank run"),
+        pytest.param(lambda size: "CLAIM: " + "ev_" * (size * 90), id="unfinished ids"),
+        pytest.param(lambda size: "CLAIM: " + "[(" * (size * 90), id="open brackets"),
+        pytest.param(lambda size: "CLAIM: [" + "ev_0001 " * (size * 30), id="unclosed citation"),
         pytest.param(lambda size: "CLAIM: " + "[(ev_0001)" * (size * 20), id="nested, unclosed"),
         pytest.param(lambda size: "CLAIM: " + "([ev_0001] " * (size * 20), id="nested, other way"),
-        pytest.param(lambda size: "CLAIM: [" + "(x) " * (size * 20), id="nested in one open"),
+        pytest.param(lambda size: "CLAIM: [" + "(x) " * (size * 45), id="nested in one open"),
     ],
 )
 def test_the_read_costs_time_linear_in_the_answer(answer) -> None:  # type: ignore[no-untyped-def]
-    small_text, large_text = answer(400), answer(1600)
+    small_text, large_text = answer(600), answer(2400)
 
     def small() -> object:
         return read_claim_blocks(small_text, require_evidence=True)

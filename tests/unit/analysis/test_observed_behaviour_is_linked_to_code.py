@@ -425,4 +425,4 @@ class TestRepeatsStayLinear:
             return lambda: bc.link_behaviour_to_code(report, None, inputs)
 
         # Eight times the repeats: linear is about 8x, a list scan per repeat about 64x.
-        assert_ratio(link(2_000), link(16_000), 24, what="16,000 repeats against 2,000")
+        assert_ratio(link(4_000), link(32_000), 24, what="32,000 repeats against 4,000")

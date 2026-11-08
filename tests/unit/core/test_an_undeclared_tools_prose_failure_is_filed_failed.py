@@ -117,7 +117,10 @@ def test_the_reading_is_one_pass_over_a_line() -> None:
         text = "Error: " + "a" * n
 
         def call() -> None:
-            for _ in range(200):
+            # A line over the prose cap is refused by its length alone, in
+            # about a tenth of a microsecond at any length: it is read a
+            # hundred thousand times so the small run is measurable.
+            for _ in range(100_000):
                 prose_error(text)
 
         return call
@@ -126,10 +129,12 @@ def test_the_reading_is_one_pass_over_a_line() -> None:
     assert prose_error("x\n" * 100_000) is None
     big = "Traceback (most recent call last):\n" + "  frame\n" * 100_000 + "ValueError: x"
     assert prose_error(big) == "ValueError: x"
+    # A traceback is read twenty times, so the small run is measurable
+    # without the large one splitting millions of lines.
     assert_scales(
         lambda frames: (
             "Traceback (most recent call last):\n" + "  frame\n" * frames + "ValueError: x"
         ),
-        12_500,
-        prose_error,
+        30_000,
+        lambda text: [prose_error(text) for _ in range(20)],
     )

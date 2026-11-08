@@ -99,7 +99,7 @@ def test_counting_stays_linear() -> None:
         catalogue = _catalogue(2, [(f"Api{n}", f"cat{n % 7}") for n in range(size)])
         return [called, catalogue]
 
-    assert_scales(build, 1_000, dynamic_from_ledger, factor=10, limit=30)
+    assert_scales(build, 9_000, dynamic_from_ledger, factor=10, limit=30)
 
 
 # The label the pack's line gives the catalogue asked about the sandbox's calls.

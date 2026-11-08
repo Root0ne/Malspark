@@ -698,8 +698,8 @@ class TestALongListStaysLinear:
 
             return work
 
-        low, high = assert_ratio(read(2_000), read(20_000), 20, what="20,000 plugins and names")
-        print("plugins and names, 2,000 and 20,000:", round(low, 4), round(high, 4))
+        low, high = assert_ratio(read(2_800), read(28_000), 20, what="28,000 plugins and names")
+        print("plugins and names, 2,800 and 28,000:", round(low, 4), round(high, 4))
         assert all(point.loads == 0 for point in installed["static"])
 
     def test_a_hostile_entry_is_refused_by_a_quote_of_bounded_length(self) -> None:
@@ -707,8 +707,12 @@ class TestALongListStaysLinear:
             entry = "static:" + "a" * length
 
             def work() -> None:
-                problem = plugins.allow_list_problem([entry])
-                assert "is not a plugin name" in problem and len(problem) < 400
+                # The entry is read in C in under a millisecond a million
+                # characters: it is read thirteen times so the small run is
+                # measurable without a hundred-million-character entry.
+                for _ in range(13):
+                    problem = plugins.allow_list_problem([entry])
+                    assert "is not a plugin name" in problem and len(problem) < 400
 
             return work
 

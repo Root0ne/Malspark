@@ -257,7 +257,7 @@ def test_a_long_line_is_read_in_linear_time() -> None:
     def build(size: int) -> str:
         return "[analysts: ALPHA] " + "rule ev_0192 " * size + "[blocking: x]"
 
-    assert_scales(build, 400, lambda line: ledger_count_facts([line], {}, LEDGER, AGENTS))
+    assert_scales(build, 12_000, lambda line: ledger_count_facts([line], {}, LEDGER, AGENTS))
 
 
 def test_the_stored_run_s_line_hears_both_rule_sets() -> None:

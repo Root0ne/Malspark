@@ -190,7 +190,7 @@ class TestAnArgumentTemplateAtAnyDepth:
 
             return read
 
-        low, high = assert_ratio(reading(2_000), reading(20_000), 20, what="a tenfold depth")
+        low, high = assert_ratio(reading(5_000), reading(50_000), 20, what="a tenfold depth")
         print("deep template:", round(low, 4), round(high, 4))
 
 

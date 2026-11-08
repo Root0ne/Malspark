@@ -232,9 +232,13 @@ def test_reading_a_hostile_unreadable_map_is_linear() -> None:
         stored = {CHANGES_MARK: "Changes", **{f"t{i}": DECLARED for i in range(n)}}
 
         def read() -> None:
-            svc.served_tool_facts(stored, {})
-            tool_declarations.stored_in_force({}, stored, "x")
-            tool_declarations.kept_stored_changes(stored, stored, {})
+            # An unreadable map is read as absent without a look past the mark,
+            # in about a microsecond at any size: each map is read ten thousand
+            # times so the small run is measurable.
+            for _ in range(10_000):
+                svc.served_tool_facts(stored, {})
+                tool_declarations.stored_in_force({}, stored, "x")
+                tool_declarations.kept_stored_changes(stored, stored, {})
 
         return read
 

@@ -293,7 +293,7 @@ class TestLinearTime:
             report = _report(sentence, persistence=sentence)
             return lambda: statements_against_publication(report)
 
-        small, large = read(100), read(400)
+        small, large = read(400), read(1_600)
         assert_ratio(small, large, TIME_RATIO_LIMIT, what="a run four times as long")
         assert calls(large) <= calls(small) * 4 * 1.2 + 100
 
@@ -305,8 +305,8 @@ class TestLinearTime:
             report = _report(sentence, persistence=sentence)
             return lambda: statements_against_publication(report)
 
-        small, large = read(10), read(40)
-        assert_ratio(small, large, TIME_RATIO_LIMIT, what="2,000 ids")
+        small, large = read(45), read(180)
+        assert_ratio(small, large, TIME_RATIO_LIMIT, what="9,000 ids")
         assert calls(large) <= calls(small) * 4 * 1.2 + 100
 
 

@@ -202,9 +202,13 @@ def test_the_comment_scan_is_linear_on_hostile_listings() -> None:
 
     # Unclosed comment marks after a string each, and comment marks inside
     # strings: a backtracking reader is quadratic on both.
-    assert_scales(lambda n: 'x = "/*";' * n + "/*" + " /*" * n, 2_000, _without_comments)
-    assert_scales(lambda n: 'x = "a//b/*c";\n' * n, 2_000, _without_comments)
-    assert_scales(lambda n: "/* x " * n, 2_000, _without_comments)
+    assert_scales(lambda n: 'x = "/*";' * n + "/*" + " /*" * n, 20_000, _without_comments)
+    assert_scales(lambda n: 'x = "a//b/*c";\n' * n, 12_000, _without_comments)
+    # One unclosed comment is one search for its end, done in C: the listing
+    # is read forty times so the small run is measurable.
+    assert_scales(
+        lambda n: "/* x " * n, 100_000, lambda text: [_without_comments(text) for _ in range(40)]
+    )
 
 
 def test_an_apostrophe_in_prose_opens_no_literal() -> None:

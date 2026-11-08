@@ -220,7 +220,7 @@ class TestTheEntriesText:
             return fit
 
         assert_ratio(
-            _fit(2_000), _fit(8_000), 8, what="8,000 entries against 2,000", floor=0.05 / 8
+            _fit(2_600), _fit(10_400), 8, what="10,400 entries against 2,600", floor=0.05 / 8
         )
 
 
