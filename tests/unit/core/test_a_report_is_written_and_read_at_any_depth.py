@@ -333,7 +333,7 @@ class TestSharedContainersAndCycles:
     def test_the_shared_and_cyclic_walks_are_linear(self) -> None:
         _linear(_shared_chain, exceeds_depth, 20_000)
         _linear(_shared_chain, dumps, 20_000)
-        _linear(_cycle, dumps, 5_000)
+        _linear(_cycle, dumps, 12_000)
 
     def test_the_shared_walk_holds_memory_linear_in_the_containers(self) -> None:
         small = _peak(lambda: dumps(_shared_chain(5_000)))
