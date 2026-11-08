@@ -10,6 +10,7 @@ in one run is not what is measured. No walk recurses, so depth costs no stack.
 from __future__ import annotations
 
 import gc
+import sys
 import time
 import tracemalloc
 from collections.abc import Callable
@@ -97,6 +98,14 @@ class TestTheTriageReader:
 
 
 class TestTheDocument:
+    @pytest.mark.skipif(
+        sys.platform == "darwin",
+        reason=(
+            "on macOS the allocation of many tiny items is counted in the wall-clock "
+            "time and grows faster than the read, so the ratio does not measure the "
+            "reader there; the same check runs on Linux"
+        ),
+    )
     def test_many_tiny_items_and_wide_sections(self) -> None:
         def make(n: int) -> dict[str, Any]:
             return {
