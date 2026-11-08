@@ -1,0 +1,114 @@
+{
+ "techniques": [
+  {
+   "name": "Ingress Tool Transfer",
+   "description": "The sample has code paths that fetch a body over WinINet and either write it to disk and run it, or run it from memory. Execution is not shown.\n- Disk path: codes 0xd, 0xc and 0xf in the dispatcher at 0x3cf4 reach 0x6c2c (code 0xd) and 0x6e04 (codes 0xc and 0xf). Each builds a destination \"<shell folder>\\<n>.dll\" or \".exe\" through the shell-folder routine 0x7e90 and calls 0x6f48 with the URL from its command argument. The disk branch of 0x6f48 calls 0x7acc, which uses 0x77b0 (NtCreateFile) and 0x7a54 (NtWri",
+   "technique_id": "T1105"
+  },
+  {
+   "name": "Rundll32",
+   "description": "The sample has code paths that fetch a body over WinINet and either write it to disk and run it, or run it from memory. Execution is not shown.\n- Disk path: codes 0xd, 0xc and 0xf in the dispatcher at 0x3cf4 reach 0x6c2c (code 0xd) and 0x6e04 (codes 0xc and 0xf). Each builds a destination \"<shell folder>\\<n>.dll\" or \".exe\" through the shell-folder routine 0x7e90 and calls 0x6f48 with the URL from its command argument. The disk branch of 0x6f48 calls 0x7acc, which uses 0x77b0 (NtCreateFile) and 0x7a54 (NtWri",
+   "technique_id": "T1218.011"
+  },
+  {
+   "name": "Web Protocols",
+   "description": "The file contains an HTTP beacon. The decoded strings include a form-style report with fields for counter, type, guid, OS, architecture, username, group, version, uptime and direction, plus \"POST\", \"GET\" and the Content-Type header. The WinINet functions InternetConnectA, InternetOpenW, HttpOpenRequestA, HttpSendRequestA and InternetReadFile are resolved by hash in the functions that build and send it (0x4c70, 0x5030, 0x8d90, 0x5750). The report's contents are not themselves a discovery finding; the host-re",
+   "technique_id": "T1071.001"
+  },
+  {
+   "name": "Process Discovery",
+   "description": "Process enumeration is resolved by hash: CreateToolhelp32Snapshot, Process32First and Process32Next (and their W variants) in the functions at 0x9484, 0x1c38, 0x14d8 and 0x8820. | The sample lists the running processes with CreateToolhelp32Snapshot, Process32First and Process32Next (routine 0x1c38 builds the list, and routine 0x8820 counts processes) and sends the list to the C2 as the \"&proclist=[\" field in JSON with \"pid\" and \"proc\" keys. | Process enumeration is resolved by hash: CreateToolhelp32Snapshot",
+   "technique_id": "T1057"
+  },
+  {
+   "name": "Obfuscated Files or Information",
+   "description": "The sample's strings are obfuscated. They are stored XOR-encoded in its data sections and decoded at run time by routine 0xae78, which reads a 4-byte seed and a 2-byte length from a header and XORs each byte with the low byte of (seed + i + 1). Readable strings in the file therefore omit the decoded text, which includes the C2 URLs, the command lines and the API names. The decoder's formula and its seed are confirmed on the \"init -zzzz\" string. | The string decoder is the routine at 0xae78. The static xor8 ",
+   "technique_id": "T1027"
+  },
+  {
+   "name": "Dynamic API Resolution",
+   "description": "Runtime API resolution is the main mechanism for reaching Windows functions. About 164 Windows function and module names are recovered from stored CRC32 hash values across 27 DLLs. They sit in tables at 0x84e4 (kernel32 module names), 0x904c (WinINet, urlmon, shell32, iphlpapi, user32), 0x9484 (kernel32 process, memory, file and thread APIs), 0xa59c (ntdll Nt* and Rtl APIs) and 0xac50 (ole32). Separately, the PEB is read at 0x8690, and the export table is walked at 0x869c. | API names are resolved at run ti",
+   "technique_id": "T1027.007"
+  },
+  {
+   "name": "Deobfuscate/Decode Files or Information",
+   "description": "The sample's strings are obfuscated. They are stored XOR-encoded in its data sections and decoded at run time by routine 0xae78, which reads a 4-byte seed and a 2-byte length from a header and XORs each byte with the low byte of (seed + i + 1). Readable strings in the file therefore omit the decoded text, which includes the C2 URLs, the command lines and the API names. The decoder's formula and its seed are confirmed on the \"init -zzzz\" string. | The string decoder is the routine at 0xae78. The static xor8 ",
+   "technique_id": "T1140"
+  },
+  {
+   "name": "Windows Command Shell",
+   "description": "The host-discovery routine runs eleven cmd.exe command lines through a helper that creates a pipe, starts cmd.exe with its output redirected and reads the output back. It runs once, when server command 4 starts it. | The sample builds command execution. The thread routine at 0x2200 passes decoded \"C:\\Windows\\System32\\cmd.exe\" and \"/c \u2026\" strings into the function at 0x1030. That function resolves CreatePipe, CreateProcessW, PeekNamedPipe, ReadFile and TerminateProcess, so it runs cmd.exe through a pipe. Whet",
+   "technique_id": "T1059.003"
+  },
+  {
+   "name": "System Information Discovery",
+   "description": "The decoded strings include system-discovery command lines: ipconfig /all, systeminfo, ver, whoami /groups, net config workstation, net view /all /domain, nltest /domain_trusts (and /all_trusts), net group \"Domain Admins\" /domain, and the WMI query for AntiVirusProduct. Code refers to these strings through the command routines. This is evidence of intent to run them, not of their execution. | The sample reads host version and computer name, as the beacon's report fields imply. The function at 0x8560 calls G",
+   "technique_id": "T1082"
+  },
+  {
+   "name": "System Network Configuration Discovery",
+   "description": "The decoded strings include system-discovery command lines: ipconfig /all, systeminfo, ver, whoami /groups, net config workstation, net view /all /domain, nltest /domain_trusts (and /all_trusts), net group \"Domain Admins\" /domain, and the WMI query for AntiVirusProduct. Code refers to these strings through the command routines. This is evidence of intent to run them, not of their execution. | The sample reads its OS version (GetVersionExW and RtlGetVersion, routine 0x8560), its computer name (GetComputerNam",
+   "technique_id": "T1016"
+  },
+  {
+   "name": "Symmetric Cryptography",
+   "description": "[Static] The beacon encrypts its traffic with RC4. Verdict: CONFIRMED (code). Routine 0x5750 builds the report, RC4-encrypts it under \"12345\" (0xcbe0 then the wrapper 0xc964, which calls PRGA 0xcaac), base64-encodes it (0x6634), POSTs it (0x4d20), base64-decodes the reply (0x6370), RC4-decrypts it with the same key, and passes the text to the command parser 0x541c. The key schedule 0xca08 (j += S[i] + K[i mod n], then swap) and the PRGA 0xcaac (i++, j += S[i], swap, XOR with S[(S[i]+S[j]) & 0xff]) are the s",
+   "technique_id": "T1573.001"
+  },
+  {
+   "name": "Native API",
+   "description": "Runtime API resolution is the main mechanism for reaching Windows functions. About 164 Windows function and module names are recovered from stored CRC32 hash values across 27 DLLs. They sit in tables at 0x84e4 (kernel32 module names), 0x904c (WinINet, urlmon, shell32, iphlpapi, user32), 0x9484 (kernel32 process, memory, file and thread APIs), 0xa59c (ntdll Nt* and Rtl APIs) and 0xac50 (ole32). Separately, the PEB is read at 0x8690, and the export table is walked at 0x869c. | The resolved names include an NT",
+   "technique_id": "T1106"
+  },
+  {
+   "name": "Debugger Evasion",
+   "description": "[Static] The PEB read at 0x8690 is a debugger check. Verdict: REFINED. Routine 0x309c returns the PEB's BeingDebugged byte (PEB+2), read through 0x8690. 0x3074 returns failure when that byte is set, and 0x3868 aborts on failure. | [Debugger check] Routine 0x3074 (through 0x309c) reads PEB+2 (BeingDebugged). When it is set, 0x3868 returns failure, and its caller 0x3cb4 stalls on Sleep(1000) forever, so the export never returns and the beacon never starts. | The sample checks whether a debugger is attached. R",
+   "technique_id": "T1622"
+  },
+  {
+   "name": "System Owner/User Discovery",
+   "description": "The decoded strings include system-discovery command lines: ipconfig /all, systeminfo, ver, whoami /groups, net config workstation, net view /all /domain, nltest /domain_trusts (and /all_trusts), net group \"Domain Admins\" /domain, and the WMI query for AntiVirusProduct. Code refers to these strings through the command routines. This is evidence of intent to run them, not of their execution. | The sample reads its OS version (GetVersionExW and RtlGetVersion, routine 0x8560), its computer name (GetComputerNam",
+   "technique_id": "T1033"
+  },
+  {
+   "name": "Remote System Discovery",
+   "description": "The decoded strings include system-discovery command lines: ipconfig /all, systeminfo, ver, whoami /groups, net config workstation, net view /all /domain, nltest /domain_trusts (and /all_trusts), net group \"Domain Admins\" /domain, and the WMI query for AntiVirusProduct. Code refers to these strings through the command routines. This is evidence of intent to run them, not of their execution. | Three of the discovery commands query the domain. \"/c net view /all /domain\" and \"/c net view /all\" list the network",
+   "technique_id": "T1018"
+  },
+  {
+   "name": "Domain Trust Discovery",
+   "description": "The decoded strings include system-discovery command lines: ipconfig /all, systeminfo, ver, whoami /groups, net config workstation, net view /all /domain, nltest /domain_trusts (and /all_trusts), net group \"Domain Admins\" /domain, and the WMI query for AntiVirusProduct. Code refers to these strings through the command routines. This is evidence of intent to run them, not of their execution. | Three of the discovery commands query the domain. \"/c net view /all /domain\" and \"/c net view /all\" list the network",
+   "technique_id": "T1482"
+  },
+  {
+   "name": "Domain Groups",
+   "description": "The decoded strings include system-discovery command lines: ipconfig /all, systeminfo, ver, whoami /groups, net config workstation, net view /all /domain, nltest /domain_trusts (and /all_trusts), net group \"Domain Admins\" /domain, and the WMI query for AntiVirusProduct. Code refers to these strings through the command routines. This is evidence of intent to run them, not of their execution. | Three of the discovery commands query the domain. \"/c net view /all /domain\" and \"/c net view /all\" list the network",
+   "technique_id": "T1069.002"
+  },
+  {
+   "name": "Security Software Discovery",
+   "description": "The decoded strings include system-discovery command lines: ipconfig /all, systeminfo, ver, whoami /groups, net config workstation, net view /all /domain, nltest /domain_trusts (and /all_trusts), net group \"Domain Admins\" /domain, and the WMI query for AntiVirusProduct. Code refers to these strings through the command routines. This is evidence of intent to run them, not of their execution. | The discovery routine queries the installed antivirus product through WMI: a \"/Node:localhost /Namespace:\\\\root\\Secu",
+   "technique_id": "T1518.001"
+  },
+  {
+   "name": "File Deletion",
+   "description": "The sample deletes itself by rename and delete-on-close. Dispatch code 0xf in 0x3cf4 calls 0x3a24, which opens the module path with CreateFileW and calls SetFileInformationByHandle twice: once with class 3 (rename) and a buffer holding the stream name, then with class 4 (disposition, delete on close) and value 1. The stream name \":wtfbbq\" (decoded at 0xfa18) is decoded inside 0x3a24 and used as the rename target, which is an alternate data stream of the module. | After installing or updating, the sample del",
+   "technique_id": "T1070.004"
+  },
+  {
+   "name": "Query Registry",
+   "description": "The sample reads the user's Shell Folders registry key through a path that reaches the registry-key routine 0x88f8, which resolves RtlFormatCurrentUserKeyPath. The registry-query APIs NtOpenKey and NtQueryValueKey are resolved and called through slots in 0xb0c4 and 0xb1d4. So the sample reads registry values, probably to find folder paths. Whether those two routines are on that path is not confirmed. | The sample reads the Shell Folders registry key for folder paths. 0x7b98 holds five folder names (\"AppData",
+   "technique_id": "T1012"
+  },
+  {
+   "name": "Scheduled Task",
+   "description": "The sample registers a logon-triggered scheduled task named \"Updater\", with an exec action that runs the sample's own module path with arguments. The read chain is: export `extra` at 0x3ce4, then 0x3cb4, then 0x3868, then 0x33ac (taken only when the gate at 0x378c returns 0), then 0x3728, then 0xb344, then COM creation at 0xc5e8 (CoCreateInstance, per the resolved names), then 0xc42c. In 0xc42c, the NewTask call on the service object is followed by 0xc2c4, which creates a trigger of type 9 (logon) with the ",
+   "technique_id": "T1053.005"
+  },
+  {
+   "name": "System Checks",
+   "description": "[Environment check on system-property thresholds] Routine 0x8560 maps the OS version to a code from 0 to 7 (code 6 is Windows 10; code 7 is Windows 11, build 21999 or later). Routine 0x8820 counts running processes with a Toolhelp snapshot. Routine 0x3868 exits with failure (-1) when the process count is below 75 on code 6 or higher, or below 50 on lower codes. The failure stalls the export (claim 39). These are host-property thresholds compared before the beacon starts, followed by an exit after the check.",
+   "technique_id": "T1497.001"
+  }
+ ]
+}
