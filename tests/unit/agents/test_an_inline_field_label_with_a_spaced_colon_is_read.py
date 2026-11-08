@@ -34,10 +34,14 @@ def _searches(search: Callable[[str], Any], text: str) -> int:
     """
     count = 1
     while True:
-        started = time.thread_time()
-        for _ in range(count):
-            search(text)
-        took = time.thread_time() - started
+        # The best of three, so a slow moment while counting does not make the
+        # count too small for the measure to read.
+        took = float("inf")
+        for _ in range(3):
+            started = time.thread_time()
+            for _ in range(count):
+                search(text)
+            took = min(took, time.thread_time() - started)
         if took >= 0.002:
             return max(1, round(count * 0.005 / took))
         count *= 2

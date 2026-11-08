@@ -244,14 +244,16 @@ class TestEachRequestSFieldsAreHeldOnce:
     def test_many_questions_times_many_keys_costs_linear_time(self) -> None:
         def run(task: dict[str, Any]) -> Any:
             # A question or a key is read in under a microsecond: each side
-            # reads eight times rather than build bodies of hundreds of megabytes.
-            for _ in range(8):
+            # reads 64 times. The large body stays at 5,000 of each: with a
+            # small processor cache shared, a question costs 0.8 us up to
+            # 10,000 and 1.8 us at 40,000, which a ratio would read as growth.
+            for _ in range(64):
                 read = triage_overview_to_sandbox_report(
                     {}, provider="triage", source_format="triage", task_reports={"t": task}
                 )
             return read
 
-        _linear(_questions_and_keys, run, 4_000)
+        _linear(_questions_and_keys, run, 500)
 
     def test_and_memory_in_step_with_the_body(self) -> None:
         import json

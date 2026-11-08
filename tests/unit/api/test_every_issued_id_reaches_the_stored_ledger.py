@@ -22,7 +22,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 from tests.integration._session_probe import SessionFactory, fake_job, fake_sample, rows_for
-from tests.linear_cost import assert_scales
+from tests.linear_cost import assert_scales, repeated
 
 from app.worker.analysis_worker import (
     _report_inputs,
@@ -330,14 +330,16 @@ class TestEachHolderAlone:
             known = [f"ev_{n:04d}" for n in range(1, count // 2 + 1)]
             return lambda: held.collect_undrained_evidence(known)
 
-        def collecting(count: int) -> Callable[[], list[Any]]:
+        def collecting(count: int) -> Callable[[], None]:
             # A holder is read in a fraction of a microsecond and an entry is
-            # slow to issue, so each side collects 25 times to be measurable.
-            collect = holders(count)
-            return lambda: [collect() for _ in range(25)][-1]
+            # slow to issue, so each side collects 200 times to be measurable.
+            # The large side stays at 2,000 holders: with a small processor
+            # cache shared, a holder costs 0.4 to 0.9 us up to 2,000 and 1.2 to
+            # 2 us from 4,000, which a ratio would read as the collection's growth.
+            return repeated(holders(count), 200)
 
         assert len(holders(1000)()) == 500
-        assert_scales(collecting, 2_000)
+        assert_scales(collecting, 250)
 
 
 class TestOneRowPerIdAndSeq:

@@ -2,12 +2,11 @@
 
 A model answer is untrusted and can be arbitrarily long. Each reader below is
 given a line of words with no comma, semicolon or full stop and many
-technique-id tokens, sized so that it costs at least 10 ms of CPU time (from
-20 KB up, and read several times over where even the largest line costs less),
-and four times as much of the same; the long one may cost less than
-``TIME_RATIO_LIMIT`` times the short one, the two timed in turn on their best
-CPU times (``tests.linear_cost.assert_ratio``), so a loaded machine does not
-move it.
+technique-id tokens of 20 or 40 KB, read as many times as it takes to cost at
+least 10 ms of CPU time, and four times as much of the same; the long one may
+cost less than ``TIME_RATIO_LIMIT`` times the short one, the two timed in turn
+on their best CPU times (``tests.linear_cost.assert_ratio``), so a loaded
+machine does not move it.
 Nothing is cut to make it pass.
 """
 
@@ -66,9 +65,14 @@ from tests.linear_cost import TIME_RATIO_LIMIT, assert_ratio, cpu_seconds
 
 UNIT = "T1234 Native words T1106 more is not read 0x1400 which that 12 hits Web Protocols "
 # The short line's least size and CPU time, and the largest size it grows to.
+# The long line is four times the short one, so at most 160 KB: most readers
+# build a text of their own from the line, and past about 300 KB the copies
+# and the walk leave a small processor cache (claim blocks reads 7.5 ns a
+# character up to 160 KB and 11 ns at 640 KB with the cache shared), which a
+# ratio would read as the reader's growth. A shorter line is read more times.
 SMALLEST = 20_000
 LEAST_SECONDS = 0.01
-LARGEST = 1_280_000
+LARGEST = 40_000
 
 
 _COUNTS = FailureCounts(failed=2, redone=1, by_name={"decompil": (1, 1)})
