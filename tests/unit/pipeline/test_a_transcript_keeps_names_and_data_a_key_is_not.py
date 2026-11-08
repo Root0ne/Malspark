@@ -265,4 +265,6 @@ def test_dotted_runs_cost_ten_times_a_tenth(unit: str) -> None:
 
         return run
 
-    assert_ratio(scrubbing(100_000), scrubbing(1_000_000), 12, what="a megabyte")
+    # A linear scrub reads about 10 at ten times the text; 15 leaves room for a
+    # runner's noise, and a quadratic scrub reads about 100.
+    assert_ratio(scrubbing(100_000), scrubbing(1_000_000), 15, what="a megabyte")
