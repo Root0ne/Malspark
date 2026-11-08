@@ -132,14 +132,14 @@ def test_many_rows_are_read_in_one_pass() -> None:
         ]
 
         def render() -> None:
-            # Five renders on each side put the small run past the 33 ms
-            # allowance; ten times the rows would take seconds to build.
+            # Five renders on each side make a small run of about 40 ms;
+            # ten times the rows would take seconds to build.
             for _ in range(5):
                 assert f"[{format_entry_id(n)}]" in _block(rows)
 
         return render
 
-    assert_ratio(rendering(2_000), rendering(20_000), 30, floor=1.0 / 30, what="20,000 rows")
+    assert_ratio(rendering(2_000), rendering(20_000), 30, what="20,000 rows")
 
 
 def test_a_failed_tool_s_names_are_written_on_one_line() -> None:

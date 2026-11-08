@@ -181,11 +181,12 @@ def assert_ratio(
     ``small`` and ``large`` are zero-argument calls on inputs built before
     the call, so the setup is outside the measure. ``warm`` runs ``small``
     once untimed first, so a first call's imports and compiled patterns are
-    not in the small time. ``floor`` is a test's additive allowance: the
-    bound is ``limit * max(small, floor)``, so ``large < a * small + b`` is
-    ``limit=a, floor=b / a``; without it the bound is ``limit * small``. A
-    best small time under :data:`FLOOR_SECONDS` fails whatever the floor:
-    grow the input until the small run is measurable.
+    not in the small time. The bound is ``limit * small + limit * floor``:
+    ``floor`` is a test's additive allowance, so ``large < a * small + b`` is
+    ``limit=a, floor=b / a`` and keeps that bound exactly; without it the
+    bound is ``limit * small``. A best small time under
+    :data:`FLOOR_SECONDS` fails whatever the floor: grow the input until the
+    small run is measurable.
     With ``self_timed`` each call returns the seconds it measured itself (a
     child process timing its own work), and the clock is not read.
     Returns the best small and large times.
@@ -203,14 +204,15 @@ def assert_ratio(
         f"the small run of {what} took {first_small * 1000:.2f} ms, under the "
         f"{FLOOR_SECONDS * 1000:g} ms a ratio can be read from: grow the input"
     )
-    first_ratio = first_large / max(first_small, floor)
-    if first_ratio < limit:
+    first_ratio = first_large / first_small
+    if first_large < limit * (first_small + floor):
         return first_small, first_large
     again_small, again_large = _best_pair(small, large, repeats, measure)
     best_small, best_large = min(first_small, again_small), min(first_large, again_large)
-    ratio = best_large / max(best_small, floor)
-    assert ratio < limit, (
-        f"{what} took {ratio:.1f} times as long, limit {limit:g}: "
+    ratio = best_large / best_small
+    allowed = f"limit {limit:g}" + (f" plus {limit * floor * 1000:.1f} ms" if floor else "")
+    assert best_large < limit * (best_small + floor), (
+        f"{what} took {ratio:.1f} times as long, {allowed}: "
         f"{first_small * 1000:.1f} ms to {first_large * 1000:.1f} ms "
         f"({first_ratio:.1f} times) on the first {repeats} pairs, "
         f"{again_small * 1000:.1f} ms to {again_large * 1000:.1f} ms on the next {repeats}"

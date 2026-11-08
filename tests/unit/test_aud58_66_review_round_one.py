@@ -188,7 +188,6 @@ def test_tb17_a_long_answer_of_prose_markers_is_read_in_linear_time() -> None:
         lambda: extract_json(large),
         TIME_RATIO_LIMIT,
         what="2 MB of prose markers",
-        floor=1e-3,
     )
 
 

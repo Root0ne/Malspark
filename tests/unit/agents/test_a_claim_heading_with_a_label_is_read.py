@@ -167,4 +167,4 @@ class TestLinearTime:
 
             return read
 
-        assert_ratio(cost(line), cost(line * 10), 30, what="ten times the line", floor=1e-3)
+        assert_ratio(cost(line), cost(line * 10), 30, what="ten times the line")

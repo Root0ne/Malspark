@@ -160,6 +160,5 @@ def test_c0_controls_before_an_attribute_value_cost_a_linear_read() -> None:
         lambda: md._defanged_text(large),
         TIME_RATIO_LIMIT,
         what="200,000 controls",
-        floor=1e-3,
         whole_process=True,
     )

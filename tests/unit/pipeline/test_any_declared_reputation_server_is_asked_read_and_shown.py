@@ -437,7 +437,7 @@ def test_reading_a_hostile_answer_grows_linearly() -> None:
 
         return read_it
 
-    assert_ratio(reading(5_000), reading(50_000), 30, floor=0.001, what="50,000 items")
+    assert_ratio(reading(5_000), reading(50_000), 30, what="50,000 items")
 
 
 # ---------------------------------------------------------------------------

@@ -426,7 +426,6 @@ def test_every_read_is_linear_on_a_hostile_payload() -> None:
         lambda: _read_all(small, formats),
         lambda: _read_all(large, formats),
         30,
-        floor=1e-6,
         what="ten times the payload",
     )
 

@@ -242,4 +242,4 @@ def test_reading_a_hostile_unreadable_map_is_linear() -> None:
 
         return read
 
-    assert_ratio(reading(2_000), reading(20_000), 40, floor=0.001, what="20,000 tools")
+    assert_ratio(reading(2_000), reading(20_000), 40, what="20,000 tools")

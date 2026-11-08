@@ -307,9 +307,7 @@ class TestWhatNamesAnAddress:
             return lambda: _found(f"Slot {hex(0x20000)} is unresolved.", replace_holds(entries))
 
         size = 5_000
-        assert_ratio(
-            reading(size), reading(size * 4), TIME_RATIO_LIMIT, what="20,000 names", floor=0.01
-        )
+        assert_ratio(reading(size), reading(size * 4), TIME_RATIO_LIMIT, what="20,000 names")
 
 
 def replace_holds(entries: EntryTexts) -> EntryTexts:

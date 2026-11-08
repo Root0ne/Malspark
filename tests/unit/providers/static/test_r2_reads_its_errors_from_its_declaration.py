@@ -121,7 +121,7 @@ def test_a_hostile_envelope_is_read_in_linear_time() -> None:
 
         return read
 
-    assert_ratio(reading(5_000), reading(50_000), 30, floor=0.002, what="50,000 lines")
+    assert_ratio(reading(5_000), reading(50_000), 30, what="50,000 lines")
 
 
 def test_the_open_first_refusal_is_read_from_the_protocol_error() -> None:

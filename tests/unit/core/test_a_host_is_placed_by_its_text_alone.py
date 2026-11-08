@@ -228,7 +228,6 @@ def test_the_rule_stays_linear_on_a_hostile_host() -> None:
         placing("a" * 80_000 + ".example"),
         placing("a" * 800_000 + ".example"),
         40,
-        floor=1e-3,
         what="a tenfold host",
     )
 

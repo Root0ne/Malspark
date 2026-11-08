@@ -196,7 +196,5 @@ def test_a_hostile_line_of_names_and_labels_is_read_in_linear_time() -> None:
         text = piece * copies
         return lambda: scrub(text)
 
-    _small, large = assert_ratio(
-        scrubbing(500), scrubbing(5000), 50, floor=0.01, what="5000 copies"
-    )
+    _small, large = assert_ratio(scrubbing(500), scrubbing(5000), 50, what="5000 copies")
     assert large < 20, large

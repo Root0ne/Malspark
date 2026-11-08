@@ -160,5 +160,5 @@ def test_a_large_wrapped_answer_is_read_in_linear_time() -> None:
         answer = {"result": json.dumps({**RECORD, "rows": [{"name": "x"}] * n})}
         return lambda: propose_tool(_definition(_wrapper()), answer=answer)
 
-    # Sized so the small read outlasts the 16.7 ms allowance.
-    assert_ratio(reading(150_000), reading(1_500_000), 30, floor=0.5 / 30, what="1,500,000 rows")
+    # Sized so the small read takes about 20 ms.
+    assert_ratio(reading(150_000), reading(1_500_000), 30, what="1,500,000 rows")

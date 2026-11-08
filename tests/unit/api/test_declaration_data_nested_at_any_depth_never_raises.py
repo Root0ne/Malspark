@@ -190,7 +190,7 @@ def _linear(make: Callable[[int], Callable[[], Any]], small: int) -> None:
     not the call, dominates: a linear walk gives about 10, a quadratic one
     about 100.
     """
-    assert_scales(make, small, factor=10, repeats=5, limit=25, floor=1e-6)
+    assert_scales(make, small, factor=10, repeats=5, limit=25)
 
 
 def _copying(depth: int) -> Callable[[], Any]:

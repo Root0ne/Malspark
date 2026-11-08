@@ -158,16 +158,28 @@ class TestUnderSimulatedLoad:
                 machine.work(0.003), machine.work(0.027), TIME_RATIO_LIMIT, clock=machine.clock
             )
 
-    def test_a_stated_allowance_is_the_floor(self) -> None:
-        # ``large < 8 * small + 0.03`` holds 3 ms against 27 ms: 24 + 30 ms.
+    def test_a_stated_allowance_is_added_to_the_bound(self) -> None:
+        # ``large < 8 * small + 0.03`` holds 10 ms against 100 ms: 80 + 30 ms.
+        # The allowance is added whatever the small run takes, not only when
+        # it is under the allowance: a bound of ``8 * max(small, 0.03 / 8)``
+        # would be 80 ms here and fail.
         machine = _Machine(lambda run: 1.0)
         assert_ratio(
-            machine.work(0.003),
-            machine.work(0.027),
+            machine.work(0.010),
+            machine.work(0.100),
             TIME_RATIO_LIMIT,
             floor=0.03 / TIME_RATIO_LIMIT,
             clock=machine.clock,
         )
+        over = _Machine(lambda run: 1.0)
+        with pytest.raises(AssertionError, match="limit 8 plus 30.0 ms"):
+            assert_ratio(
+                over.work(0.010),
+                over.work(0.111),
+                TIME_RATIO_LIMIT,
+                floor=0.03 / TIME_RATIO_LIMIT,
+                clock=over.clock,
+            )
 
     def test_a_passing_ratio_takes_one_attempt(self) -> None:
         machine = _Machine(lambda run: 1.0)

@@ -979,4 +979,4 @@ def test_the_record_stays_linear_on_a_hostile_ledger() -> None:
 
         return record
 
-    assert_ratio(took(2_000), took(20_000), 30, what="20,000 lookups against 2,000", floor=1e-3)
+    assert_ratio(took(2_000), took(20_000), 30, what="20,000 lookups against 2,000")

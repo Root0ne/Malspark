@@ -364,8 +364,8 @@ def test_the_head_is_read_in_one_pass_over_its_first_value() -> None:
         tail = json.dumps({"rows": ["x" * 40] * n})
         joined = HEAD_CHUNK + "\n\n" + tail
 
-        # One read of the head takes microseconds: 8,000 reads outlast the
-        # 10 ms allowance.
+        # One read of the head takes microseconds: 8,000 reads take about
+        # 10 ms.
         def read() -> None:
             for _ in range(8_000):
                 assert head_object(joined) == json.loads(HEAD_CHUNK)
@@ -373,6 +373,6 @@ def test_the_head_is_read_in_one_pass_over_its_first_value() -> None:
         return read
 
     # The joined tail is never decoded: ten times the tail costs about the same.
-    assert_ratio(_read(2_000), _read(20_000), 5, what="ten times the tail", floor=0.05 / 5)
+    assert_ratio(_read(2_000), _read(20_000), 5, what="ten times the tail")
     assert head_object("[1, 2]") is None
     assert head_object("{" * 100_000) is None

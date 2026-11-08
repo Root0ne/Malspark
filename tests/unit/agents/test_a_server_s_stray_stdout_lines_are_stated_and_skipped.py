@@ -178,13 +178,11 @@ class TestTheReadStream:
         def read(size: int) -> Any:
             line = ("{x\r" * size) + "{" * size
             # A line is read in C in well under a millisecond: the stream
-            # carries it six hundred times so the small run outlasts the floor.
+            # carries it six hundred times so the small run is about 10 ms.
             items = [_refused(line)] * 600
             return lambda: asyncio.run(_read_all(items))
 
-        _small, large = assert_ratio(
-            read(20_000), read(200_000), 50, what="a 200,000-unit line", floor=0.01
-        )
+        _small, large = assert_ratio(read(20_000), read(200_000), 50, what="a 200,000-unit line")
         assert large < 20, large
 
 

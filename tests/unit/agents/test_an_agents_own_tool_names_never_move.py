@@ -214,11 +214,10 @@ def test_many_colliding_tools_are_claimed_in_linear_time(monkeypatch: pytest.Mon
 
     small, large = _merge(300), _merge(3000)
     # A tool takes half a millisecond to build, so the sizes stay and each
-    # side is merged 15 times: the small run then outlasts the 16.7 ms allowance.
+    # side is merged 15 times, a small run of about 18 ms.
     assert_ratio(
         repeated(small, 15),
         repeated(large, 15),
         30,
         what="3,000 tools against 300",
-        floor=0.5 / 30,
     )

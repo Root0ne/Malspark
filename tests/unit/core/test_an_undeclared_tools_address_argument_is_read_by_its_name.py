@@ -196,6 +196,5 @@ def test_many_offered_names_are_read_in_linear_time() -> None:
         lambda: address_arguments(None, small),
         lambda: address_arguments(None, large),
         30,
-        floor=0.5 / 30,
         what="240,000 offered names",
     )

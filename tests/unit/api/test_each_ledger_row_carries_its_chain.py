@@ -214,7 +214,6 @@ def test_chaining_is_linear_in_the_ledger_s_size():
         lambda: ledger_chain.chain_rows(job_id, small, KEY),
         lambda: ledger_chain.chain_rows(job_id, large, KEY),
         30,
-        floor=1e-3,
         what="3,000 rows",
     )
 

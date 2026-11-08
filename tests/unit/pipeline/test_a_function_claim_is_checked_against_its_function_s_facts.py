@@ -404,7 +404,7 @@ class TestWhereAValueHolds:
             return lambda: named_values(body)
 
         # Eight times the repeats: linear is about 8x, a rescan per repeat about 64x.
-        assert_ratio(reading(2_000), reading(16_000), 24, floor=0.005, what="16,000 repeats")
+        assert_ratio(reading(2_000), reading(16_000), 24, what="16,000 repeats")
 
     def test_a_name_inside_a_statement_of_absence_is_no_claimed_call(self) -> None:
         held = _check(f"{MAIN_VA} does not use CreateRemoteThread; it guards with CreateMutexW.")

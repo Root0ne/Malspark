@@ -158,7 +158,6 @@ class TestHostileAnswersCostLinearWork:
             lambda: scrub_keeping_layout(small_text),
             lambda: scrub_keeping_layout(large_text),
             20,
-            floor=0.01,
             what="ten times the input",
         )
         small_peak, large_peak = self._peak(small_text), self._peak(large_text)
@@ -195,9 +194,7 @@ def test_a_megabyte_of_a_hostile_unit_costs_in_proportion_to_its_size(unit: str)
 
         return _run
 
-    assert_ratio(
-        _scrubbed(250_000), _scrubbed(1_000_000), TIME_RATIO_LIMIT, floor=0.01, what="a megabyte"
-    )
+    assert_ratio(_scrubbed(250_000), _scrubbed(1_000_000), TIME_RATIO_LIMIT, what="a megabyte")
 
 
 _NAME_FORMS = (
@@ -268,4 +265,4 @@ def test_dotted_runs_cost_ten_times_a_tenth(unit: str) -> None:
 
         return run
 
-    assert_ratio(scrubbing(100_000), scrubbing(1_000_000), 12, floor=0.01, what="a megabyte")
+    assert_ratio(scrubbing(100_000), scrubbing(1_000_000), 12, what="a megabyte")
