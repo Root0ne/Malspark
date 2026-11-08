@@ -35,7 +35,10 @@ The clock is the calling thread's CPU time, the whole process's with
 (``time.perf_counter`` for work whose time is a wait). On macOS it is the
 process's user time: there a thread's CPU time counts the kernel's mapping
 and zeroing of the pages a large input takes, which grows with the heap
-rather than with the work, and macOS counts user time exactly. Size the inputs so the
+rather than with the work, and macOS counts user time exactly. That time is
+the whole process's, so a test measured on macOS must not leave a thread
+spinning behind it: its time would be read as the measured call's.
+:func:`default_clock` is that clock, for a test that counts runs by it. Size the inputs so the
 small call takes about 10 ms or more: a ratio over a small run of a few
 clock ticks says nothing about the code, and a quadratic call whose small run
 is that short passes any limit. :func:`assert_ratio` fails a measure whose
@@ -61,6 +64,7 @@ __all__ = [
     "assert_under",
     "calls",
     "cpu_seconds",
+    "default_clock",
     "repeated",
 ]
 
@@ -113,6 +117,11 @@ def repeated(call: Callable[[], Any], times: int) -> Callable[[], None]:
 def _user_seconds() -> float:
     """The process's user CPU time, without the kernel's time on its behalf."""
     return resource.getrusage(resource.RUSAGE_SELF).ru_utime
+
+
+def default_clock() -> Callable[[], float]:
+    """The clock the measures read when a test names none: the one to calibrate by."""
+    return _clock_of(None, whole_process=False)
 
 
 def _clock_of(clock: Callable[[], float] | None, whole_process: bool) -> Callable[[], float]:

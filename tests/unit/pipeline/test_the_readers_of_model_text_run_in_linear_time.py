@@ -61,7 +61,7 @@ from malspark.reporting.section_agreement import (
     whole_code_absences,
 )
 from malspark.schemas.evidence import build_entry
-from tests.linear_cost import TIME_RATIO_LIMIT, assert_ratio, cpu_seconds
+from tests.linear_cost import TIME_RATIO_LIMIT, assert_ratio, cpu_seconds, repeated
 
 UNIT = "T1234 Native words T1106 more is not read 0x1400 which that 12 hits Web Protocols "
 # The short line's least size and CPU time, and the largest size it grows to.
@@ -365,3 +365,19 @@ LISTED = [SimpleNamespace(addresses=frozenset({0x1400}), id="listed.1")]
 )
 def test_four_times_the_hostile_line_stays_under_the_ratio(read: Callable[[str], object]) -> None:
     _scales_linearly(read)
+
+
+def test_a_megabyte_run_of_spaces_after_a_claim_word_stays_under_the_ratio() -> None:
+    # The lines above stay at 160 KB for the processor cache's sake; this one
+    # reader reaches megabytes. Its text is built before the measure and the
+    # pattern walks it in C at a constant 6.5 ns a character from 40 KB to
+    # 5 MB with a small cache shared, so 1.28 MB against 5.12 MB measures the
+    # reader alone, and a step quadratic in the run would read 16.
+    small, large = ("CLAIM" + " " * size + "x" for size in (1_280_000, 5_120_000))
+    assert CLAIM_HEAD_RE.match(small) is None
+    assert_ratio(
+        repeated(lambda: CLAIM_HEAD_RE.match(small), 2),
+        repeated(lambda: CLAIM_HEAD_RE.match(large), 2),
+        TIME_RATIO_LIMIT,
+        what="5,120,000 spaces against 1,280,000",
+    )

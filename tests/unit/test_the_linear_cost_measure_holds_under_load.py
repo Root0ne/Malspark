@@ -205,6 +205,8 @@ def test_on_macos_the_clock_is_the_process_s_user_time(monkeypatch: pytest.Monke
     assert linear_cost._clock_of(None, whole_process=False) is linear_cost._user_seconds
     assert linear_cost._clock_of(None, whole_process=True) is linear_cost._user_seconds
     assert linear_cost._clock_of(time.perf_counter, whole_process=False) is time.perf_counter
+    assert linear_cost.default_clock() is linear_cost._user_seconds
     monkeypatch.setattr(sys, "platform", "linux")
     assert linear_cost._clock_of(None, whole_process=False) is time.thread_time
+    assert linear_cost.default_clock() is time.thread_time
     assert linear_cost._user_seconds() > 0

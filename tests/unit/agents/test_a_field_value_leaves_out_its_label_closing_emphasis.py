@@ -14,7 +14,6 @@ Every value here is made up for the test.
 from __future__ import annotations
 
 import re
-import time
 from collections.abc import Callable
 from typing import Any
 
@@ -22,7 +21,7 @@ import pytest
 
 from malspark.agents import base_agent
 from malspark.agents.base_agent import read_claim_blocks
-from tests.linear_cost import assert_scales
+from tests.linear_cost import assert_scales, default_clock
 
 SENTENCE = "Routine 0x4100 decodes its strings at run time."
 
@@ -37,16 +36,17 @@ def _searches(search: Callable[[str], Any], text: str) -> int:
     or stops at once where the run is no part of a match: each text is
     searched this many times on both sides so the small run is measurable.
     """
+    clock = default_clock()
     count = 1
     while True:
         # The best of three, so a slow moment while counting does not make the
         # count too small for the measure to read.
         took = float("inf")
         for _ in range(3):
-            started = time.thread_time()
+            started = clock()
             for _ in range(count):
                 search(text)
-            took = min(took, time.thread_time() - started)
+            took = min(took, clock() - started)
         if took >= 0.002:
             return max(1, round(count * 0.005 / took))
         count *= 2
