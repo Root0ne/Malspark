@@ -240,13 +240,14 @@ class TestRw1TheReaderIsLinearInTheClaims:
         return lambda: ClaimRepeatReader(None).feed(text)
 
     def test_four_times_the_claims_cost_about_four_times_the_time(self) -> None:
-        # Linear reads about 4. At these sizes the claims' hashes stay in the
-        # cache, so the ratio is the reader's and not the memory's; a reader
-        # that walks a list of the claims so far reads 16. The copy of the
-        # claim set at every fence costs too little per element to show here:
-        # the count below is its measure.
+        # Linear reads about 4.5. At these sizes the claims' hashes stay in
+        # the cache, so the ratio is the reader's and not the memory's. A
+        # reader that compares each claim with every earlier one, at a method
+        # call a pair, reads about 9. The copy of the claim set at every fence
+        # costs a few nanoseconds an element, too little to show in a time at
+        # any size a test can afford: the count below is its measure.
         assert_ratio(
-            self._reading(2_000), self._reading(8_000), 6.5, what="8,000 claims against 2,000"
+            self._reading(3_000), self._reading(12_000), 6.5, what="12,000 claims against 3,000"
         )
 
     def test_the_claim_set_is_copied_log_times_per_claim_not_once_per_fence(
