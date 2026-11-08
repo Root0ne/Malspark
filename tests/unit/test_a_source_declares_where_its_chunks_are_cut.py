@@ -157,7 +157,7 @@ class TestThePatternRunsUnderRE2:
             return lambda: _chunker().chunk("custom", text, boundary=r"^(a+)+$")
 
         run(200)()
-        assert_scales(run, 25)
+        assert_scales(run, 60_000)
 
     def test_a_lookaround_is_refused_when_the_definition_is_saved(self) -> None:
         with pytest.raises(ValidationError, match="linear time"):

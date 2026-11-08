@@ -473,8 +473,8 @@ class TestHostileInputs:
 
         # Eight times the bytes; a quadratic step would take some sixty times as long.
         assert_ratio(
-            transforming(1 << 16),
-            transforming(1 << 19),
+            transforming(5 << 19),
+            transforming(5 << 22),
             24,
             what="eight times the bytes",
             floor=0.5 / 24,

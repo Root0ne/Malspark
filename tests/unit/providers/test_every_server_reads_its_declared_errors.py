@@ -157,7 +157,7 @@ def test_the_reading_is_linear_on_a_hostile_answer() -> None:
 
         return read
 
-    assert_ratio(reading(20_000), reading(200_000), 40, floor=1e-3, what="ten times the answer")
+    assert_ratio(reading(34_000), reading(340_000), 40, floor=1e-3, what="ten times the answer")
 
 
 def test_a_declared_open_tool_reads_its_errors_too() -> None:

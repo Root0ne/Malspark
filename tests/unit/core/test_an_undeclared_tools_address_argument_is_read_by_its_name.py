@@ -189,7 +189,7 @@ def test_many_offered_names_are_read_in_linear_time() -> None:
     def offered(n: int) -> list[str]:
         return [f"arg_{i}" for i in range(n)] + ["name_or_address"]
 
-    small, large = offered(2_000), offered(20_000)
+    small, large = offered(24_000), offered(240_000)
     assert address_arguments(None, small)[-1] == "name_or_address"
     assert address_arguments(None, large)[-1] == "name_or_address"
     assert_ratio(
@@ -197,5 +197,5 @@ def test_many_offered_names_are_read_in_linear_time() -> None:
         lambda: address_arguments(None, large),
         30,
         floor=0.5 / 30,
-        what="20,000 offered names",
+        what="240,000 offered names",
     )

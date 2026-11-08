@@ -255,7 +255,14 @@ class TestLinearTime:
         _linear(lambda n: [{"k": [i, str(i)]} for i in range(n)], dumps, 20_000)
 
     def test_reading_a_deep_body_is_linear(self) -> None:
-        _linear(lambda n: "[" * n + "]" * n, safe_json._loads_iteratively, 20_000)
+        # A run of brackets below the guard is read in one match, about two
+        # milliseconds a million brackets, so each side is read 30 times
+        # rather than grown to hundreds of megabytes.
+        _linear(
+            lambda n: "[" * n + "]" * n,
+            lambda text: [safe_json._loads_iteratively(text) for _ in range(30)],
+            200_000,
+        )
 
     def test_reading_a_wide_body_is_linear(self) -> None:
         _linear(
@@ -347,7 +354,8 @@ class TestAHostileDeepBody:
         # The dropped levels are held as one byte each: never more than the body.
         assert large <= len(text), (small, large)
         assert large <= 10 * small * 1.5 + 65_536, (small, large)
-        _linear(lambda n: "[" * n + "]" * n, loads, 500_000)
+        # Read 10 times on each side: one read of the small body is a millisecond.
+        _linear(lambda n: "[" * n + "]" * n, lambda text: [loads(text) for _ in range(10)], 500_000)
 
     def test_a_deep_body_of_mixed_brackets_is_read_linearly(self) -> None:
         def body(n: int) -> str:

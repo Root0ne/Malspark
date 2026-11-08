@@ -267,29 +267,39 @@ class TestLinear:
             return fit
 
         # Ten times the messages in at most about ten times the time (twenty, for noise).
-        assert_ratio(timed(200), timed(2_000), 20, what="2,000 turns against 200")
+        assert_ratio(timed(250), timed(2_500), 20, what="2,500 turns against 250")
 
     def test_ten_times_the_ids_in_one_answer_takes_about_ten_times_as_long(self) -> None:
+        def body(ids: int) -> str:
+            return "".join(f" ev_{n:04d}" for n in range(ids))
+
         def hostile(ids: int) -> list[Any]:
             messages = _conversation(3, 10)
-            body = "".join(f" ev_{n:05d}" for n in range(ids))
-            messages[3] = ToolMessage(content="[ev_0001]\n" + body, tool_call_id="c0_0")
+            messages[3] = ToolMessage(content="[ev_0001]\n" + body(ids), tool_call_id="c0_0")
             return messages
 
         def timed(ids: int) -> Any:
+            # A clear reads a tool answer's stamp and length only, and every id
+            # the model's turns cite where the price tier decides: the turn that
+            # asked for the answer writes the same ids, and the tier sits one
+            # character under the request, so a clear is due on every fit.
             messages = hostile(ids)
+            asked = messages[2]
+            messages[2] = AIMessage(content="Read" + body(ids), tool_calls=asked.tool_calls)
+            tier = _size(messages) - 1
 
             def fit() -> None:
                 for _ in range(5):
-                    _fit(tac.ToolAnswerClearing(window_chars=1), messages)
+                    fitted = _fit(tac.ToolAnswerClearing(tier_chars=tier), messages)
+                    assert fitted.clearing is not None
 
             return fit
 
-        assert_ratio(timed(2_000), timed(20_000), 20, what="20,000 ids against 2,000")
+        assert_ratio(timed(12_000), timed(120_000), 20, what="120,000 ids against 12,000")
         reference = str(
             _fit(tac.ToolAnswerClearing(window_chars=1), hostile(500)).messages[3].content
         )
-        assert reference.startswith("[cleared ev_0001]") and "ev_00002" not in reference
+        assert reference.startswith("[cleared ev_0001]") and "ev_0002" not in reference
 
 
 class TestReadAgain:

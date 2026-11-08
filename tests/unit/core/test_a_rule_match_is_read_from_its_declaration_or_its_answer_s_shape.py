@@ -235,7 +235,7 @@ def test_the_reading_is_linear_in_the_answer() -> None:
 
     found = shaped_rule_matches(build(400))
     assert found is not None and len(found[0]) == 400
-    assert_scales(build, 400, shaped_rule_matches)
+    assert_scales(build, 4_400, shaped_rule_matches)
 
 
 def test_a_deep_or_huge_answer_is_read_within_its_bound() -> None:

@@ -716,7 +716,7 @@ class TestTheMentionsOfALineAreReadInLinearTime:
             return lambda: _claims_named(line, NAMES)
 
         # Linear is about 10x; the quadratic scan it replaces was about 100x.
-        assert_ratio(reading(800), reading(8000), 30, what="8000 mentions")
+        assert_ratio(reading(8_000), reading(80_000), 30, what="80,000 mentions")
 
     def test_a_name_inside_a_longer_one_is_read_once(self) -> None:
         from malspark.pipeline.debate_facts import _claims_named

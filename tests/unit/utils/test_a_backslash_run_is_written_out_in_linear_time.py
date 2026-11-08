@@ -19,10 +19,13 @@ def test_every_backslash_before_a_quote_is_written_out() -> None:
 
 def test_a_long_run_with_no_quote_after_it_grows_linearly() -> None:
     # Eight times the run: linear is about 8x, a rescan from every backslash about 64x.
+    # The run is split and joined in C, a few microseconds for the small one,
+    # so each side is written out 5,000 times; grown instead, the copies of a
+    # large run cost more per character than those of a small one.
     assert_scales(
         lambda n: '"' + "\\" * n,
         5_000,
-        quoted_backslashes_written_out,
+        lambda text: [quoted_backslashes_written_out(text) for _ in range(5_000)],
         factor=8,
         limit=24,
         floor=0.01 / 24,

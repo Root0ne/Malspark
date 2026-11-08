@@ -47,19 +47,21 @@ def _quadratic(n: int) -> Callable[[], int]:
 
 class TestOnTheCpuClock:
     def test_linear_work_four_times_larger_passes(self) -> None:
-        small, large = assert_ratio(_linear(200_000), _linear(800_000), TIME_RATIO_LIMIT)
+        small, large = assert_ratio(_linear(500_000), _linear(2_000_000), TIME_RATIO_LIMIT)
         assert small > 0.002 and large > small
 
     def test_quadratic_work_four_times_larger_fails_and_says_both_attempts(self) -> None:
         with pytest.raises(AssertionError) as failed:
-            assert_ratio(_quadratic(1_500), _quadratic(6_000), TIME_RATIO_LIMIT)
+            assert_ratio(_quadratic(2_300), _quadratic(9_200), TIME_RATIO_LIMIT)
         message = str(failed.value)
         assert "on the first 3 pairs" in message and "on the next 3" in message
 
     def test_assert_scales_passes_linear_and_fails_quadratic(self) -> None:
-        assert_scales(_linear, 100_000, factor=8)
-        with pytest.raises(AssertionError):
-            assert_scales(_quadratic, 800, factor=8)
+        assert_scales(_linear, 500_000, factor=8)
+        # Failed on its ratio, not on a small run too short to read; one pair
+        # an attempt, as the large quadratic run takes over half a second.
+        with pytest.raises(AssertionError, match="times as long"):
+            assert_scales(_quadratic, 2_300, factor=8, repeats=1)
 
     def test_assert_under_bounds_a_cost(self) -> None:
         assert assert_under(_linear(10_000), 1.0) < 1.0

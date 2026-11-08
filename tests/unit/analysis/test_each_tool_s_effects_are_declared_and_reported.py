@@ -724,7 +724,7 @@ def test_ten_times_the_entries_cost_at_most_ten_times() -> None:
         ]
         return lambda: effects_part(entries)
 
-    assert_ratio(_read(2_000), _read(20_000), 10 * 3, what="20,000 entries against 2,000")
+    assert_ratio(_read(6_000), _read(60_000), 10 * 3, what="60,000 entries against 6,000")
 
 
 # ---------------------------------------------------------------------------

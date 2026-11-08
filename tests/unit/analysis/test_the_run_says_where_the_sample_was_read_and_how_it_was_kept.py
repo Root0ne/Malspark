@@ -184,7 +184,7 @@ def test_finding_the_readers_is_linear_in_the_entries() -> None:
         entries = [_reads(f"mcp:s{i % 50}") for i in range(count)]
         return lambda: sample_readers(STDIO, entries, lambda source: None)
 
-    assert_ratio(reading(2_000), reading(20_000), 40, floor=1e-3, what="20,000 entries")
+    assert_ratio(reading(4_000), reading(40_000), 40, floor=1e-3, what="40,000 entries")
 
 
 # ---------------------------------------------------------------------------

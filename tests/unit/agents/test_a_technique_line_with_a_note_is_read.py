@@ -224,5 +224,5 @@ def test_a_line_of_notes_is_read_in_linear_time() -> None:
         line = "; ".join(["T1071.001 (configured channel as listed)"] * repeats)
         return lambda: read_technique_line(line)
 
-    # 2,800 notes are about 112 KB.
-    assert_ratio(cost(280), cost(2800), 30, what="2,800 notes against 280", floor=1e-3)
+    # 6,000 notes are about 240 KB.
+    assert_ratio(cost(600), cost(6000), 30, what="6,000 notes against 600", floor=1e-3)

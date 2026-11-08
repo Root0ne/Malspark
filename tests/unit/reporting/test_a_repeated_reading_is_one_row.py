@@ -311,9 +311,11 @@ class TestAHostileStoredTree:
             assert len(_descendants(roots[0])) == count
         small_peak, large_peak = self._peak(small_stored), self._peak(large_stored)
         assert large_peak <= small_peak * 15, (small_peak, large_peak)
+        # The chains take seconds to build and trace, so each side is read
+        # twice rather than built larger.
         assert_ratio(
-            lambda: distinct_processes(small_stored),
-            lambda: distinct_processes(large_stored),
+            lambda: [distinct_processes(small_stored) for _ in range(2)],
+            lambda: [distinct_processes(large_stored) for _ in range(2)],
             20,
             what="10,000 roots against 1,000",
         )

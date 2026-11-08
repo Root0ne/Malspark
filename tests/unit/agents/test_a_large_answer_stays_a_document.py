@@ -97,6 +97,8 @@ def _took(
     size: int,
     limit: int | Callable[[int], int],
     factor: int = 8,
+    *,
+    timed_at: int | None = None,
 ) -> Any:
     """Shorten ``build(size)``, asserting the work grows with the size and not with its square.
 
@@ -105,7 +107,9 @@ def _took(
     CPU; a pass over every list per list would cost ``factor`` squared times as much.
     A ``limit`` given as a function of the size keeps a smaller document as far
     over its limit as the large one. The backstop is out of the way: a budget
-    that fired would make a slow machine look like a fast refusal.
+    that fired would make a slow machine look like a fast refusal. ``timed_at``
+    is the large timed size where ``size`` alone gives a small run too short
+    to measure; the result is still the one for ``size``.
     """
 
     def run(at: int) -> Callable[[], Any]:
@@ -113,7 +117,7 @@ def _took(
         cut = limit(at) if callable(limit) else limit
         return lambda: shorten_json_document(text, cut, budget_seconds=30.0)
 
-    assert_scales(run, size // factor, factor=factor)
+    assert_scales(run, (timed_at or size) // factor, factor=factor)
     return run(size)()
 
 
@@ -522,12 +526,12 @@ class TestItRefusesWhatItCannotHelpAtOnce:
     the old code produced instantly."""
 
     def test_a_four_thousand_entry_keyed_map_is_refused_in_no_time(self) -> None:
-        result = _took(_keyed_map, 4000, 8000)
+        result = _took(_keyed_map, 4000, 8000, timed_at=16_000)
 
         assert result.shortened is False
 
     def test_an_eight_thousand_entry_keyed_map_is_refused_in_no_time(self) -> None:
-        result = _took(_keyed_map, 8000, 8000)
+        result = _took(_keyed_map, 8000, 8000, timed_at=16_000)
 
         assert result.shortened is False
 
@@ -539,7 +543,7 @@ class TestItRefusesWhatItCannotHelpAtOnce:
 
         assert len(small_lists(20_000)) > 700_000
 
-        result = _took(small_lists, 20_000, 8000)
+        result = _took(small_lists, 20_000, 8000, timed_at=28_000)
 
         assert result.shortened is False
 
@@ -549,7 +553,7 @@ class TestItRefusesWhatItCannotHelpAtOnce:
         def many_lists(count: int) -> str:
             return json.dumps({f"k{index}": [index] * 200 for index in range(count)})
 
-        result = _took(many_lists, 400, lambda count: 500 * count, factor=4)
+        result = _took(many_lists, 400, lambda count: 500 * count, factor=4, timed_at=520)
 
         assert result.shortened
         assert len(result.text) <= 200_000

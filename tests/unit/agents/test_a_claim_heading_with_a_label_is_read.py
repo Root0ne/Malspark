@@ -141,19 +141,26 @@ class TestAPlainHeadingReadsAsBefore:
         assert [c.number for c in read.claims] == ["1", None]
 
 
+# A heading of many short words is read in about the same time at any length,
+# so each side reads it more times than the other lines to be measurable.
+_WORDS = "CLAIM " + ("R" * 50 + " ") * 40
+
+
 class TestLinearTime:
     @pytest.mark.parametrize(
         "line",
         [
             "CLAIM " + " " * 2_000 + "R" * 2_000 + ":",
-            "CLAIM " + ("R" * 50 + " ") * 40,
+            _WORDS,
             "CLAIM R" + "1" * 4_000 + " (" + "x" * 2_000,
         ],
     )
     def test_ten_times_the_line_costs_at_most_ten_times_the_time(self, line: str) -> None:
+        reads = 50 if line == _WORDS else 20
+
         def cost(text: str) -> Any:
             def read() -> None:
-                for _ in range(20):
+                for _ in range(reads):
                     CLAIM_HEAD_RE.match(text)
                     reader = ClaimRepeatReader(None)
                     reader.feed(text)

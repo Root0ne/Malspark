@@ -261,4 +261,4 @@ class TestLinearTime:
             )
             return lambda: ledger_absence_contradictions({"body": text}, entries)
 
-        assert_ratio(checking(50), checking(500), 30, floor=1e-3, what="500 routines")
+        assert_ratio(checking(250), checking(2_500), 30, floor=1e-3, what="2,500 routines")

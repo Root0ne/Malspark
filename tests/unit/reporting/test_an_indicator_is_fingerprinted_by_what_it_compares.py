@@ -151,6 +151,11 @@ class TestTheCanonicalPattern:
         )
 
 
+# Units read a run at a time in C are repeated more, so their small text costs
+# past the 2 ms allowance as the others' does.
+_REPEATS = {"  \t ": 60_000, "a": 60_000}
+
+
 @pytest.mark.parametrize(
     ("unit", "tail"),
     [
@@ -176,6 +181,7 @@ def test_a_hostile_pattern_is_read_and_fingerprinted_in_linear_time(unit: str, t
 
         return read
 
+    size = _REPEATS.get(unit, 5_000)
     assert_ratio(
-        reading(5_000), reading(50_000), 25, floor=0.05 / 25, repeats=5, what="ten times the text"
+        reading(size), reading(10 * size), 25, floor=0.05 / 25, repeats=5, what="ten times the text"
     )

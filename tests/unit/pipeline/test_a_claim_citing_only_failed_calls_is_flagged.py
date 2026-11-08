@@ -105,4 +105,4 @@ def test_marking_stays_linear() -> None:
         isr = _isr(*(_claim("c", f"ev_{n:05d}") for n in range(size)))
         return lambda: mark_claims_citing_only_failed_calls({"a": isr}, ledger)
 
-    assert_ratio(marking(500), marking(5_000), 30, what="5,000 claims")
+    assert_ratio(marking(3_000), marking(30_000), 30, what="30,000 claims")

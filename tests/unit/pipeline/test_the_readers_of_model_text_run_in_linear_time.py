@@ -3,7 +3,8 @@
 A model answer is untrusted and can be arbitrarily long. Each reader below is
 given a line of words with no comma, semicolon or full stop and many
 technique-id tokens, sized so that it costs at least 10 ms of CPU time (from
-20 KB up), and four times as much of the same; the long one may cost less than
+20 KB up, and read several times over where even the largest line costs less),
+and four times as much of the same; the long one may cost less than
 ``TIME_RATIO_LIMIT`` times the short one, the two timed in turn on their best
 CPU times (``tests.linear_cost.assert_ratio``), so a loaded machine does not
 move it.
@@ -12,6 +13,7 @@ Nothing is cut to make it pass.
 
 from __future__ import annotations
 
+import math
 from collections.abc import Callable
 from types import SimpleNamespace
 
@@ -77,17 +79,23 @@ def _hostile(size: int) -> str:
 
 
 def _scales_linearly(read: Callable[[str], object]) -> None:
-    def reading(size: int) -> Callable[[], object]:
+    def reading(size: int, times: int = 1) -> Callable[[], object]:
         text = _hostile(size)
-        return lambda: read(text)
+        return lambda: [read(text) for _ in range(times)]
 
     # The short size is the least that costs LEAST_SECONDS; only the ratio is asserted.
     size = SMALLEST
-    while cpu_seconds(reading(size), repeats=5) < LEAST_SECONDS and size < LARGEST:
+    took = cpu_seconds(reading(size), repeats=5)
+    while took < LEAST_SECONDS and size < LARGEST:
         size *= 2
+        took = cpu_seconds(reading(size), repeats=5)
+    # A reader that stops early, or reads even the largest line in C under
+    # LEAST_SECONDS, reads it this many times on both sides, so the short run
+    # is past the floor and the floor does not decide the ratio.
+    times = 1 if took >= LEAST_SECONDS else math.ceil(1.5 * LEAST_SECONDS / max(took, 1e-6))
     assert_ratio(
-        reading(size),
-        reading(size * 4),
+        reading(size, times),
+        reading(size * 4, times),
         TIME_RATIO_LIMIT,
         floor=LEAST_SECONDS,
         what=f"{size * 4} characters",
