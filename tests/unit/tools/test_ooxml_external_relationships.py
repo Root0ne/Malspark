@@ -573,7 +573,10 @@ class TestOneLongToken:
             def read() -> float:
                 length, took, rise = _measured(path)
                 lengths[megabytes] = length
-                rises[megabytes] = min(rise, rises.get(megabytes, rise))
+                # The bounded side keeps its largest rise and the baseline its
+                # least, so a run measured again never eases the memory bound.
+                keep = max if megabytes == 40 else min
+                rises[megabytes] = keep(rise, rises.get(megabytes, rise))
                 return took
 
             return read

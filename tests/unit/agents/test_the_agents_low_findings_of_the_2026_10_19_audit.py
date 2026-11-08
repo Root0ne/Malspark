@@ -253,32 +253,33 @@ class TestRw1TheReaderIsLinearInTheClaims:
     def test_the_claim_set_is_copied_log_times_per_claim_not_once_per_fence(
         self, monkeypatch: Any
     ) -> None:
-        # Every hash a fence's freeze puts in a new layer is counted. Merging a
-        # layer only into one at most twice its size copies each hash a
-        # logarithmic number of times (about 0.65 n log2 n); a copy of the whole
-        # set at every fence copies n**2 / 2, 32 million for 8,000 claims.
+        # Every hash in every set a layer of the claim set is given is counted,
+        # whichever path gives it: a freeze's merge, a fork, a peek or any
+        # other. Merging a layer only into one at most twice its size copies
+        # each hash a logarithmic number of times (about 0.65 n log2 n); a copy
+        # of the whole set at every fence copies n**2 / 2, 32 million for 8,000
+        # claims. A set filled in place after it is given (``update``) is not
+        # counted; every path the reader has gives a layer a whole set.
         import math
 
-        freeze = _Seen.freeze
+        from malspark.agents.repeat_watch import ClaimRepeatReader
+
+        slot = _Seen.__dict__["_own"]
         copied = 0
 
-        def chain(layer: _Seen | None) -> list[_Seen]:
-            layers = []
-            while layer is not None:
-                layers.append(layer)
-                layer = layer._base
-            return layers
-
-        def counted(self: _Seen) -> _Seen:
+        def given(layer: _Seen, hashes: set[bytes]) -> None:
             nonlocal copied
-            before = {id(layer) for layer in chain(self)}
-            top = freeze(self)
-            copied += sum(len(layer._own) for layer in chain(top) if id(layer) not in before)
-            return top
+            copied += len(hashes)
+            slot.__set__(layer, hashes)
 
-        monkeypatch.setattr(_Seen, "freeze", counted)
+        monkeypatch.setattr(_Seen, "_own", property(slot.__get__, given))
         claims = 8_000
-        self._reading(claims)()
+        # Fed a claim at a time and counted after each, as an analyst's
+        # stream is: the count reads a peek of the claims so far.
+        reader = ClaimRepeatReader(None)
+        for i in range(claims):
+            reader.feed(f"CLAIM: c{i}\n---\n```json\n{{}}\n```\n")
+            reader.count()
         assert 0 < copied <= 2 * claims * math.log2(claims), copied
 
 

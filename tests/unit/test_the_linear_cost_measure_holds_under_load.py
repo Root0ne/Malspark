@@ -140,6 +140,33 @@ class TestUnderSimulatedLoad:
                     clock=machine.clock,
                 )
 
+    def test_a_small_run_too_short_to_measure_fails_rather_than_pass(self) -> None:
+        # A small run of half a millisecond against a quadratic large one: a
+        # floor would have passed it, the measure says to grow the input.
+        machine = _Machine(lambda run: 1.0)
+        with pytest.raises(AssertionError, match="grow the input"):
+            assert_ratio(
+                machine.work(0.0005), machine.work(0.008), TIME_RATIO_LIMIT, clock=machine.clock
+            )
+
+    def test_without_a_floor_the_bound_is_the_small_run_itself(self) -> None:
+        machine = _Machine(lambda run: 1.0)
+        with pytest.raises(AssertionError, match="took 9.0 times"):
+            assert_ratio(
+                machine.work(0.003), machine.work(0.027), TIME_RATIO_LIMIT, clock=machine.clock
+            )
+
+    def test_a_stated_allowance_is_the_floor(self) -> None:
+        # ``large < 8 * small + 0.03`` holds 3 ms against 27 ms: 24 + 30 ms.
+        machine = _Machine(lambda run: 1.0)
+        assert_ratio(
+            machine.work(0.003),
+            machine.work(0.027),
+            TIME_RATIO_LIMIT,
+            floor=0.03 / TIME_RATIO_LIMIT,
+            clock=machine.clock,
+        )
+
     def test_a_passing_ratio_takes_one_attempt(self) -> None:
         machine = _Machine(lambda run: 1.0)
         assert_ratio(machine.work(0.01), machine.work(0.04), TIME_RATIO_LIMIT, clock=machine.clock)

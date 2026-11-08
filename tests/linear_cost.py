@@ -33,8 +33,11 @@ that such a run is not the one the assertion reads.
 The clock is the calling thread's CPU time, the whole process's with
 ``whole_process`` for work that crosses threads, or a clock the test passes
 (``time.perf_counter`` for work whose time is a wait). Size the inputs so the
-small call takes about 10 ms or more, or the clock's grain is the ratio;
-:data:`FLOOR_SECONDS` keeps a smaller time from being read as one.
+small call takes about 10 ms or more: a ratio over a small run of a few
+clock ticks says nothing about the code, and a quadratic call whose small run
+is that short passes any limit. :func:`assert_ratio` fails a measure whose
+best small run is under :data:`FLOOR_SECONDS`, so such a test cannot pass by
+being too fast to measure.
 """
 
 from __future__ import annotations
@@ -64,7 +67,8 @@ TIME_RATIO_LIMIT = 8
 # times that is noise and cache effects, a quadratic call takes k times more.
 SCALING_SLACK = 3.0
 
-# The CPU clock's grain: a smaller measured time says nothing about the ratio.
+# The least a small run may take: under it the clock's grain is the ratio, and
+# the measure fails rather than read it.
 FLOOR_SECONDS = 0.002
 
 
@@ -151,7 +155,7 @@ def assert_ratio(
     what: str = "the larger input",
     repeats: int = 3,
     warm: bool = True,
-    floor: float = FLOOR_SECONDS,
+    floor: float = 0.0,
     whole_process: bool = False,
     clock: Callable[[], float] | None = None,
     self_timed: bool = False,
@@ -161,7 +165,11 @@ def assert_ratio(
     ``small`` and ``large`` are zero-argument calls on inputs built before
     the call, so the setup is outside the measure. ``warm`` runs ``small``
     once untimed first, so a first call's imports and compiled patterns are
-    not in the small time. A small time under ``floor`` is read as ``floor``.
+    not in the small time. ``floor`` is a test's additive allowance: the
+    bound is ``limit * max(small, floor)``, so ``large < a * small + b`` is
+    ``limit=a, floor=b / a``; without it the bound is ``limit * small``. A
+    best small time under :data:`FLOOR_SECONDS` fails whatever the floor:
+    grow the input until the small run is measurable.
     With ``self_timed`` each call returns the seconds it measured itself (a
     child process timing its own work), and the clock is not read.
     Returns the best small and large times.
@@ -175,6 +183,10 @@ def assert_ratio(
         small()
     gc.collect()
     first_small, first_large = _best_pair(small, large, repeats, measure)
+    assert first_small >= FLOOR_SECONDS, (
+        f"the small run of {what} took {first_small * 1000:.2f} ms, under the "
+        f"{FLOOR_SECONDS * 1000:g} ms a ratio can be read from: grow the input"
+    )
     first_ratio = first_large / max(first_small, floor)
     if first_ratio < limit:
         return first_small, first_large
@@ -198,7 +210,7 @@ def assert_scales(
     factor: int = 8,
     repeats: int = 3,
     limit: float | None = None,
-    floor: float = FLOOR_SECONDS,
+    floor: float = 0.0,
     whole_process: bool = False,
 ) -> tuple[float, float]:
     """Assert ``factor`` times the input costs under ``SCALING_SLACK * factor`` times as much.
@@ -207,7 +219,7 @@ def assert_scales(
     ``call(input)`` is what is timed; without ``call``, ``build(size)`` returns
     the zero-argument call itself. Size ``small`` so its call takes a few
     milliseconds. ``limit`` replaces the default bound where the test states
-    its own, and ``floor`` the smallest time the ratio reads.
+    its own, and ``floor`` its additive allowance, as in :func:`assert_ratio`.
     """
 
     def timed(size: int) -> Callable[[], Any]:
