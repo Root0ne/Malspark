@@ -93,9 +93,14 @@ def _clock_of(clock: Callable[[], float] | None, whole_process: bool) -> Callabl
 
 
 def _timed_once(call: Callable[[], Any], clock: Callable[[], float]) -> float:
-    """One run of ``call`` by ``clock``, the collector emptied before and held during it."""
+    """One run of ``call`` by ``clock``, the collector held during it.
+
+    Only the young generations are emptied before the run: what an earlier
+    run left is young, and a full collection of the test process's heap
+    before every run would cost more than most runs it precedes.
+    """
     was_enabled = gc.isenabled()
-    gc.collect()
+    gc.collect(1)
     gc.disable()
     try:
         started = clock()
@@ -120,6 +125,7 @@ def cpu_seconds(
     for work whose time is a wait (``time.perf_counter``).
     """
     measure = _clock_of(clock, whole_process)
+    gc.collect()
     return min(_timed_once(call, measure) for _ in range(repeats))
 
 
@@ -167,6 +173,7 @@ def assert_ratio(
 
     if warm:
         small()
+    gc.collect()
     first_small, first_large = _best_pair(small, large, repeats, measure)
     first_ratio = first_large / max(first_small, floor)
     if first_ratio < limit:
@@ -237,6 +244,7 @@ def assert_under(
     Returns the best time.
     """
     clocked = _clock_of(clock, whole_process)
+    gc.collect()
     took: list[float] = []
     for _ in range(repeats):
         took.append(float(call()) if self_timed else _timed_once(call, clocked))
