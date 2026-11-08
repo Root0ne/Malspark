@@ -12,8 +12,19 @@
 [![Python](https://img.shields.io/badge/python-3.13-blue)](https://www.python.org/)
 [![Licence](https://img.shields.io/badge/licence-MIT-blue)](LICENSE)
 
-Upload a sample, and a team of AI agents analyses it from start to finish,
-with no human in the loop:
+Malspark is an open-source, self-hosted platform for malware analysis. You
+upload a sample, and a team of AI agents analyses it with real tools such as a
+decompiler, a disassembler and a sandbox, argues over what it found, and a
+judge decides the verdict. Every claim in the report cites the tool call that
+proves it, so each one can be checked.
+
+<p align="center">
+  <img src="docs/assets/readme/analysis-overview.webp" alt="The Overview tab of a finished analysis in the Malspark console: the verdict, severity, key findings and recommended actions for a Latrodectus sample" width="900">
+</p>
+
+## How it works
+
+From upload to report, with no human in the loop:
 
 1. **Code establishes the facts first.** A deterministic triage pack
    identifies the file, hashes it, checks its signature, runs the rule engines
@@ -54,6 +65,42 @@ of the family.
 The method and the per-group scores are on the
 [benchmark page](https://malspark.com/docs/benchmark/).
 
+## The console
+
+The web console shows each analysis in six tabs, from the Overview to the
+Evidence, which holds every tool call, the analysts' discussion and the
+debate. Teams and tool servers are configured in its settings.
+
+<table>
+  <tr>
+    <td width="50%" valign="top">
+      <img src="docs/assets/readme/evidence-debate.webp" alt="Evidence, Debate view: how the debate ended, the mean claim confidence by round, and each round's blocking and non-blocking lines with the mediator's reading">
+      <p><b>Debate.</b> How the debate ended, and each round's blocking and
+      non-blocking lines with the mediator's reading.</p>
+    </td>
+    <td width="50%" valign="top">
+      <img src="docs/assets/readme/evidence-analyst-discussion.webp" alt="Evidence, Analyst discussion view: the participating agents with their tool counts, and the triage pack's tool calls, each with its evidence id">
+      <p><b>Analyst discussion.</b> The participants, what each said and the
+      tool calls they made, each call linked to its row in the evidence
+      records.</p>
+    </td>
+  </tr>
+  <tr>
+    <td width="50%" valign="top">
+      <img src="docs/assets/readme/settings-teams.webp" alt="Settings, Teams: a team's ordered stages being edited, with the stage graph drawn beside them">
+      <p><b>Teams.</b> The team editor draws each team's stage graph and
+      checks the team as it is edited.</p>
+    </td>
+    <td width="50%" valign="top">
+      <img src="docs/assets/readme/settings-tool-servers.webp" alt="Settings, Tool servers (MCP): the list of configured servers and one server's transport, URL, auth token and the agents allowed its tools">
+      <p><b>Tool servers.</b> Each MCP server's transport and connection, and
+      the agents that may call its tools.</p>
+    </td>
+  </tr>
+</table>
+
+The [Console](https://malspark.com/docs/console/) page describes every view.
+
 ## The teams that ship
 
 | Team | Stages | For |
@@ -92,6 +139,17 @@ and [Deployment](https://malspark.com/docs/deployment/) covers production.
   <img src="apps/docs/public/assets/architecture.svg" alt="Malspark runtime components" width="720">
 </p>
 
+## Releases
+
+Each release publishes the container images to the GitHub Container Registry
+as `ghcr.io/root0ne/malspark-<name>` (`backend`, `frontend`, `minio` and the
+tool sidecars), tagged `<version>` and `<major>.<minor>`, and attaches the
+wheel, the sdist and `SHA256SUMS` to the
+[GitHub release](https://github.com/Root0ne/Malspark/releases). The images,
+the wheel and the sdist are signed with cosign keyless and carry a build
+provenance attestation. [RELEASING.md](RELEASING.md) lists every image and the
+commands that verify them.
+
 ## Documentation
 
 The full documentation is at <https://malspark.com/docs/>. The pages live in
@@ -110,6 +168,27 @@ The full documentation is at <https://malspark.com/docs/>. The pages live in
 | Benchmark | [The benchmark run](https://malspark.com/docs/benchmark/) |
 
 Release notes are in [CHANGELOG.md](CHANGELOG.md).
+
+## Contributing
+
+Discuss a substantial change in an issue first. Branch from `dev` and open the
+pull request against `dev`; [CONTRIBUTING.md](CONTRIBUTING.md) has the workflow
+and the gates to run locally. Everyone taking part follows the
+[code of conduct](CODE_OF_CONDUCT.md).
+
+## Security
+
+Report a vulnerability through
+[private vulnerability reporting](https://github.com/Root0ne/Malspark/security/advisories/new),
+never a public issue. [SECURITY.md](SECURITY.md) says what to include and what
+to expect.
+
+## Support
+
+Bug reports and feature requests go to
+[GitHub issues](https://github.com/Root0ne/Malspark/issues), through their
+forms. Setup, configuration and operations are covered in the
+[documentation](https://malspark.com/docs/).
 
 ## Licence
 
