@@ -158,7 +158,9 @@ class TestAutoNames:
 
         def reading(n: int) -> Any:
             text = "FUN_ " * n + "proc_" * n
-            return lambda: list(pattern.finditer(text))
+            # The text is read in C in a fraction of a millisecond: it is read
+            # forty times so the small run outlasts the floor.
+            return lambda: [list(pattern.finditer(text)) for _ in range(40)]
 
         assert_ratio(reading(2000), reading(20000), 10 * 2.5, floor=0.05 / 25, what="20,000 names")
 

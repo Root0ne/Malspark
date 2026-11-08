@@ -101,4 +101,4 @@ def test_the_mailbox_reader_is_linear_on_a_long_run_with_no_at() -> None:
 
         return call
 
-    assert_scales(read, 25_000)
+    assert_scales(read, 60_000)

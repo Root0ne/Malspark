@@ -736,32 +736,33 @@ def test_masking_backslashed_words_costs_time_linear_in_the_text():
         bare_addresses(text)
 
     word = '{"password":"' + "p\\\\" * 200 + '@h:8080"} C:\\\\' + "d\\\\" * 200 + "b@h:8080"
-    assert_scales(lambda size: " ".join([word] * size), 20, masking)
+    assert_scales(lambda size: " ".join([word] * size), 48, masking)
     # One long word for each way a path start is read: backslashes and a
     # quote, escaped quotes, a UNC share left open, an environment variable
     # left open, a path holding openers and a JSON string's escaped trailer.
-    for build in (
-        lambda size: '"' * size + "a\\\\" * size + "@h:8080",
-        lambda size: "u:" + '\\\\\\"' * size + "\\x@h:8080",
-        lambda size: "=\\\\" + "a" * size + "@h:8080",
-        lambda size: "(%(" * size + "\\@h:8080",
-        lambda size: "%P(" * size + "x%\\x@h:8080",
-        lambda size: "u:p@h:8080" + '\\"}' * size,
-        lambda size: "u:" + ",'.\\:" * size + "x@h:8080",
-        lambda size: "C:\\" + "('" * size + "t\\@h:8080",
+    # Each word is sized so its small run takes about ten milliseconds.
+    for build, small in (
+        (lambda size: '"' * size + "a\\\\" * size + "@h:8080", 28_000),
+        (lambda size: "u:" + '\\\\\\"' * size + "\\x@h:8080", 24_000),
+        (lambda size: "=\\\\" + "a" * size + "@h:8080", 140_000),
+        (lambda size: "(%(" * size + "\\@h:8080", 20_000),
+        (lambda size: "%P(" * size + "x%\\x@h:8080", 10_000),
+        (lambda size: "u:p@h:8080" + '\\"}' * size, 72_000),
+        (lambda size: "u:" + ",'.\\:" * size + "x@h:8080", 16_000),
+        (lambda size: "C:\\" + "('" * size + "t\\@h:8080", 17_000),
         # A path, then separators, drives and colons before the password, and
         # a WebDAV server name left open.
-        lambda size: "C:\\x" + ",D:\\y" * size + ",u:p@h:8080",
-        lambda size: "('" + "C:\\x'," * size + "'u:p@h:8080')",
-        lambda size: "C:\\x" + ",;" * size + "u:p@h:8080",
-        lambda size: "f(C:\\x" + ",a:/" * size + "@h:8080",
-        lambda size: "=\\\\a@SSL" + "@1" * size + "\\x@h/y",
-        lambda size: "\\\\a" + "@SSL$" * size + "\\x@h/y",
+        (lambda size: "C:\\x" + ",D:\\y" * size + ",u:p@h:8080", 8_000),
+        (lambda size: "('" + "C:\\x'," * size + "'u:p@h:8080')", 6_000),
+        (lambda size: "C:\\x" + ",;" * size + "u:p@h:8080", 29_000),
+        (lambda size: "f(C:\\x" + ",a:/" * size + "@h:8080", 62_000),
+        (lambda size: "=\\\\a@SSL" + "@1" * size + "\\x@h/y", 86_000),
+        (lambda size: "\\\\a" + "@SSL$" * size + "\\x@h/y", 34_000),
         # Escaped openers and backslash runs after the separator.
-        lambda size: "C:\\x," + "\\" * size + "@h:8080",
-        lambda size: "C:\\x," + "\\'" * size + "\\" * size + "@h:8080",
+        (lambda size: "C:\\x," + "\\" * size + "@h:8080", 44_000),
+        (lambda size: "C:\\x," + "\\'" * size + "\\" * size + "@h:8080", 10_000),
     ):
-        assert_scales(build, 2_000, masking)
+        assert_scales(build, small, masking)
 
 
 def configured_secret_values_of(text: str) -> set[str]:
@@ -934,7 +935,7 @@ def test_masking_a_ten_times_longer_text_costs_about_ten_times_as_much():
         return mask
 
     word = '("' * 200 + "p'ss" * 200 + "@h:8080"
-    one, ten = " ".join([word] * 20), " ".join([word] * 200)
-    long_word = '"(' * 2_000 + "a@" * 2_000 + "h:8080"
+    one, ten = " ".join([word] * 1_200), " ".join([word] * 12_000)
+    long_word = '"(' * 600_000 + "a@" * 600_000 + "h:8080"
     assert_ratio(masking(one), masking(ten), 30, what="ten times the words")
     assert_ratio(masking(long_word), masking(long_word * 10), 30, what="ten long words")

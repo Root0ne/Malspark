@@ -132,7 +132,9 @@ class TestTheEntriesALineCites:
             fact = f'For the line "{line}": ' + "0x1 is listed in ev_0001; " * n
             return lambda: line_entry_ids([line], [fact])
 
-        assert_ratio(reading(2000), reading(20000), 10 * 4, floor=0.5 / 40, what="a tenfold line")
+        assert_ratio(
+            reading(26_000), reading(260_000), 10 * 4, floor=0.5 / 40, what="a tenfold line"
+        )
 
 
 class TestTheEntriesAreFittedNeverCut:
@@ -400,24 +402,27 @@ class TestTheMark:
         assert carries_line_field("[analysts: STATIC] x [blocking: y] [carried: L2]")
 
     @pytest.mark.parametrize(
-        "line",
+        ("line", "reads"),
         [
-            pytest.param(lambda n: "[analysts: " + " [" * n + "*" * n, id="brackets"),
-            pytest.param(lambda n: "[" + " " * n, id="a bracket and spaces"),
-            pytest.param(lambda n: "x [blocking:" + " " * n, id="an open mark and spaces"),
-            pytest.param(lambda n: " " * n + "x", id="spaces"),
-            pytest.param(lambda n: "*" * n + " x", id="emphasis"),
+            pytest.param(lambda n: "[analysts: " + " [" * n + "*" * n, 2, id="brackets"),
+            pytest.param(lambda n: "[" + " " * n, 5, id="a bracket and spaces"),
+            pytest.param(lambda n: "x [blocking:" + " " * n, 10, id="an open mark and spaces"),
+            pytest.param(lambda n: " " * n + "x", 12, id="spaces"),
+            pytest.param(lambda n: "*" * n + " x", 12, id="emphasis"),
         ],
     )
-    def test_a_long_line_is_read_in_linear_time(self, line: Any) -> None:
+    def test_a_long_line_is_read_in_linear_time(self, line: Any, reads: int) -> None:
         def reading(n: int) -> Any:
             text = line(n)
 
             def read() -> None:
-                read_line_mark(text)
-                point_key(text)
-                read_marks([text])
-                carries_line_field(text)
+                # A run is read in C in a few milliseconds: the line is read
+                # ``reads`` times so the small run outlasts the floor.
+                for _ in range(reads):
+                    read_line_mark(text)
+                    point_key(text)
+                    read_marks([text])
+                    carries_line_field(text)
 
             return read
 

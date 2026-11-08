@@ -265,9 +265,23 @@ def _wide(n: int) -> dict[str, Any]:
 
 
 class TestLinear:
-    @pytest.mark.parametrize("make", [_wide, _nested], ids=["wide", "deep"])
-    def test_ten_times_the_report_costs_about_ten_times(self, make: Callable[[int], Any]) -> None:
-        assert_scales(make, 5_000, propose_format, factor=10, limit=10 * 1.5, floor=0.05 / 15)
+    # The deep report is read down to READ_DEPTH whatever its depth, in about
+    # ten microseconds: it is proposed 1,200 times so the small run outlasts
+    # the floor.
+    @pytest.mark.parametrize(
+        ("make", "proposals"), [(_wide, 1), (_nested, 1200)], ids=["wide", "deep"]
+    )
+    def test_ten_times_the_report_costs_about_ten_times(
+        self, make: Callable[[int], Any], proposals: int
+    ) -> None:
+        assert_scales(
+            make,
+            5_000,
+            lambda report: [propose_format(report) for _ in range(proposals)],
+            factor=10,
+            limit=10 * 1.5,
+            floor=0.05 / 15,
+        )
 
     def test_what_it_holds_and_returns_stays_small_beside_the_report(self) -> None:
         text = json.dumps(_wide(50_000))

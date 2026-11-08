@@ -166,7 +166,7 @@ class TestTheHistoryShowsEachLineOnce:
             return read
 
         # Four times the tail: linear is about 4x; a quadratic reading is ~16x.
-        assert_ratio(took(20_000), took(80_000), 8, what="an 80,000-line tail against 20,000")
+        assert_ratio(took(24_000), took(96_000), 8, what="a 96,000-line tail against 24,000")
 
     def test_a_mediation_with_no_lines_says_none(self) -> None:
         argument = AgentArgument(

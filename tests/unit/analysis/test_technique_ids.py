@@ -81,7 +81,7 @@ class TestOneStrictReader:
 
             return read
 
-        assert_ratio(took(20_000), took(200_000), 20, what="ten times the text", floor=0.05 / 20)
+        assert_ratio(took(40_000), took(400_000), 20, what="ten times the text", floor=0.05 / 20)
 
     def test_no_reader_outside_this_module_writes_the_id_again(self) -> None:
         import malspark

@@ -196,7 +196,7 @@ class TestAFatMachOIsWalkedSliceBySlice:
 
         answer = identify._macho_signing(fat(10_000))
 
-        assert_scales(fat, 1250, identify._macho_signing)
+        assert_scales(fat, 60_000, identify._macho_signing)
         assert answer["present"] is None and "slices" not in answer
         assert answer["reason"].startswith(f"{identify.NOT_A_FAT_HEADER}: the slices at")
 
@@ -225,8 +225,12 @@ class TestAFatMachOIsWalkedSliceBySlice:
 
         answer = identify._macho_signing(claiming(5_000_000))
 
-        # The commands claimed do not set the work: the slice's end does.
-        assert_scales(claiming, 625_000, identify._macho_signing)
+        # The commands claimed do not set the work: the slice's end does. A
+        # header is read in a few microseconds at any count, so each one is
+        # read eight hundred times to make the small run measurable.
+        assert_scales(
+            claiming, 625_000, lambda blob: [identify._macho_signing(blob) for _ in range(800)]
+        )
         assert answer["present"] is None
         assert answer["reason"].startswith("load commands unread:")
 

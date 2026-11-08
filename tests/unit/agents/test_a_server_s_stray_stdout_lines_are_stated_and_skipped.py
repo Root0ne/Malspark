@@ -177,7 +177,10 @@ class TestTheReadStream:
     def test_a_hostile_line_is_read_in_linear_time(self) -> None:
         def read(size: int) -> Any:
             line = ("{x\r" * size) + "{" * size
-            return lambda: asyncio.run(_read_all([_refused(line)]))
+            # A line is read in C in well under a millisecond: the stream
+            # carries it six hundred times so the small run outlasts the floor.
+            items = [_refused(line)] * 600
+            return lambda: asyncio.run(_read_all(items))
 
         _small, large = assert_ratio(
             read(20_000), read(200_000), 50, what="a 200,000-unit line", floor=0.01

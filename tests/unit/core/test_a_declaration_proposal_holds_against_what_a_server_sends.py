@@ -161,9 +161,13 @@ def _peak(definition: dict[str, Any]) -> int:
         tracemalloc.stop()
 
 
-def _linear(make: Any, n: int) -> None:
+def _linear(make: Any, n: int, proposals: int = 1) -> None:
     small, large = make(n), make(n * 10)
-    assert_ratio(lambda: propose([small]), lambda: propose([large]), 30)
+    assert_ratio(
+        lambda: [propose([small]) for _ in range(proposals)],
+        lambda: [propose([large]) for _ in range(proposals)],
+        30,
+    )
     assert _peak(large) < _peak(small) * 30
 
 
@@ -176,7 +180,9 @@ def test_a_deep_schema_is_linear_in_time_and_memory() -> None:
         schema = _nested(depth, ROWS)
         return {"name": "deep", "inputSchema": schema, "outputSchema": schema}
 
-    _linear(_deep, 1_000)
+    # The schema is proposed three times so the small run is measurable
+    # while the memory peak is still taken on a depth of a thousand.
+    _linear(_deep, 1_000, proposals=3)
 
 
 def test_a_huge_description_is_read_in_linear_time() -> None:
@@ -485,7 +491,7 @@ def test_a_hostile_answer_text_is_read_in_linear_time() -> None:
         text = "a_" * n + "proc_0040 " * n
         return lambda: auto_name_prefixes_in([text])
 
-    assert_ratio(reading(20_000), reading(200_000), 30, what="a tenfold answer")
+    assert_ratio(reading(60_000), reading(600_000), 30, what="a tenfold answer")
 
 
 def test_reputation_fields_are_read_by_generic_words() -> None:

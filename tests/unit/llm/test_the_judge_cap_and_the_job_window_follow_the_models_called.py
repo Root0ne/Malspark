@@ -320,7 +320,7 @@ class TestTheWindowsModels:
 
             return _read
 
-        assert_ratio(_walk(500), _walk(2000), TIME_RATIO_LIMIT, repeats=5, what="2,000 agents")
+        assert_ratio(_walk(700), _walk(2800), TIME_RATIO_LIMIT, repeats=5, what="2,800 agents")
 
 
 class TestAnEntryTheRegistryCannotBuild:

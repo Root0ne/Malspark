@@ -81,9 +81,16 @@ class TestJoining:
         def joining(count: int, runs: int) -> Callable[[], object]:
             # Chunks of their own for every run, made before the measure.
             made = iter([[_chunk("s" * 50) for _ in range(count)] for _ in range(runs)])
-            return lambda: joined_when_it_fits(
-                next(made), ChunkingConfig(), lambda text: len(text) // 7 + 60
-            )
+
+            def join() -> None:
+                # A join leaves the chunks it is given as they came: each
+                # run's chunks are joined fourteen times so the small run is
+                # measurable without millions of chunks.
+                chunks = next(made)
+                for _ in range(14):
+                    joined_when_it_fits(chunks, ChunkingConfig(), lambda text: len(text) // 7 + 60)
+
+            return join
 
         # The small call runs once more than the large one, to warm up.
         assert_ratio(joining(2_000, 7), joining(20_000, 6), 20, what="20,000 sources")

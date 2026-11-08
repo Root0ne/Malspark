@@ -747,38 +747,47 @@ def test_the_replay_s_own_bookkeeping_stays_linear() -> None:
 
     # Ten times the input in about ten times the time; a step that walked the
     # whole of it for each of its items would be a hundred.
-    small, large = _flagged_answer(2_000), _flagged_answer(20_000)
+    small, large = _flagged_answer(5_000), _flagged_answer(50_000)
     _claim_flags(*small, show_text=False)
     assert_ratio(
         lambda: _claim_flags(*small, show_text=True),
         lambda: _claim_flags(*large, show_text=True),
         20,
-        what="20,000 flagged claims",
+        what="50,000 flagged claims",
     )
 
     pairs = {n: (_record_of(n, "a.code"), _record_of(n, "b.code")) for n in (2_000, 20_000)}
+    # Each pair is compared three times so the small run is measurable while
+    # the large records stay at twenty thousand flags.
     assert_ratio(
-        lambda: diff_records(*pairs[2_000]),
-        lambda: diff_records(*pairs[20_000]),
+        lambda: [diff_records(*pairs[2_000]) for _ in range(3)],
+        lambda: [diff_records(*pairs[20_000]) for _ in range(3)],
         20,
         what="20,000 flags of a record",
     )
     assert len(diff_records(*pairs[20_000])["codes_gained"]) == 20_000
 
     def _name(n: int) -> None:
-        run = _Run(stored=StoredRun(name="hostile", root=FIXTURE), show_text=False)
-        for i in range(n):
-            run.name("part", f"why {i}")
-        assert len(run.not_replayed) == n
+        # A part is named in a fraction of a microsecond: a run names its
+        # parts thirty times over so the small run is measurable.
+        for _ in range(30):
+            run = _Run(stored=StoredRun(name="hostile", root=FIXTURE), show_text=False)
+            for i in range(n):
+                run.name("part", f"why {i}")
+            assert len(run.not_replayed) == n
 
     assert_ratio(lambda: _name(2_000), lambda: _name(20_000), 20, what="20,000 named parts")
 
     stores = {n: _summaries_of(n) for n in (200, 2_000)}
+
+    def _read_analysts(n: int) -> None:
+        # Each store is read fifteen times so the small run is measurable
+        # without holding hundreds of thousands of messages.
+        for _ in range(15):
+            _analysts(_Run(stored=stores[n], show_text=False))
+
     assert_ratio(
-        lambda: _analysts(_Run(stored=stores[200], show_text=False)),
-        lambda: _analysts(_Run(stored=stores[2_000], show_text=False)),
-        20,
-        what="2,000 analysts",
+        lambda: _read_analysts(200), lambda: _read_analysts(2_000), 20, what="2,000 analysts"
     )
     assert len(_analysts(_Run(stored=stores[2_000], show_text=False))) == 2_000
 
@@ -787,15 +796,15 @@ def test_the_replay_s_own_bookkeeping_stays_linear() -> None:
             Violation(code="stix.x", message="m", subject=f"s{i}" if i % 2 else f"t{i}")
             for i in range(n)
         ]
-        for n in (500, 5_000)
+        for n in (5_000, 50_000)
     }
     assert_ratio(
-        lambda: _shown_to(_unshown_run(500), "judge", found[500]),
         lambda: _shown_to(_unshown_run(5_000), "judge", found[5_000]),
+        lambda: _shown_to(_unshown_run(50_000), "judge", found[50_000]),
         20,
-        what="5,000 unshown findings",
+        what="50,000 unshown findings",
     )
-    assert len(_shown_to(_unshown_run(5_000), "judge", found[5_000])) == 2_500
+    assert len(_shown_to(_unshown_run(50_000), "judge", found[50_000])) == 25_000
 
 
 def test_stored_degradation_reasons_are_decided_again_or_named(tmp_path: Path) -> None:

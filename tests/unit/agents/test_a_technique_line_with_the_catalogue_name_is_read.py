@@ -67,7 +67,7 @@ def test_it_is_asked_about(line: str) -> None:
 
 def test_a_long_none_line_is_read_in_linear_time() -> None:
     unit = "none of these words names anything "
-    small, large = unit * 600, unit * 6000
+    small, large = unit * 1500, unit * 15000
     assert_ratio(
         lambda: read_technique_line(small),
         lambda: read_technique_line(large),
@@ -86,4 +86,4 @@ def test_ten_times_the_line_costs_at_most_ten_times_the_time() -> None:
         return read
 
     unit = "T1106 Native API word, "
-    assert_ratio(cost(unit * 40), cost(unit * 400), 30, what="ten times the line", floor=1e-3)
+    assert_ratio(cost(unit * 120), cost(unit * 1200), 30, what="ten times the line", floor=1e-3)

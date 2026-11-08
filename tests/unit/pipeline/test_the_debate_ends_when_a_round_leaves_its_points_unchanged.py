@@ -118,7 +118,9 @@ class TestAPointIsWhatItIsAbout:
             line = "[analysts: a] " + " ".join(f"{i} 0x{i:x} ev_{i:04d}" for i in range(n))
             return lambda: point_key(line)
 
-        assert_ratio(keying(2000), keying(20000), 10 * 4, floor=0.5 / (10 * 4), what="20000 items")
+        assert_ratio(
+            keying(12_000), keying(120_000), 10 * 4, floor=0.5 / (10 * 4), what="120000 items"
+        )
 
 
 class TestTheRouter:

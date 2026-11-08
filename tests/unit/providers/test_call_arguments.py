@@ -58,6 +58,9 @@ def test_ten_times_the_arguments_and_names_costs_about_ten_times_as_long() -> No
     def hostile(n: int) -> Callable[[], object]:
         arguments = [{"name": f"arg{i}", "value": "x" * 64} for i in range(n)]
         names = tuple(f"missing{i}" for i in range(n))
-        return lambda: pick_argument(arguments, names)
+        # A name is looked up in well under a microsecond: the arguments are
+        # read fifteen times so the small run is measurable without holding
+        # half a million of them.
+        return lambda: [pick_argument(arguments, names) for _ in range(15)]
 
     assert_ratio(hostile(5_000), hostile(50_000), 40, floor=0.05 / 40, what="50,000 arguments")

@@ -29,7 +29,7 @@ from tests.linear_cost import assert_scales
 
 def test_v1_5_a_long_run_with_one_separator_is_masked_in_linear_time() -> None:
     masked_values("a/" + "b" * 60_000)
-    assert_scales(lambda size: "a/" + "b" * size, 7_500, masked_values)
+    assert_scales(lambda size: "a/" + "b" * size, 300_000, masked_values)
     # The shape it reads is unchanged: a path with two separators is blanked.
     assert masked_values("see /SSH/Auth/Credentials now") == "see" + " " * 22 + " now"
 

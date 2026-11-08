@@ -14,6 +14,7 @@ import json
 from collections.abc import Callable
 from typing import Any
 
+from malspark.reporting import evidence_bundles
 from malspark.reporting.evidence_bundles import bundle_for, value_entries
 from malspark.reporting.models import (
     EvidenceIndexRow,
@@ -128,9 +129,16 @@ def test_reading_the_holders_stays_linear() -> None:
             technical_evidence={"static": texts},
         )
         values = [URL, HOST, *(f"h{n}.test" for n in range(size))]
-        return lambda: value_entries(report, values)
 
-    assert_ratio(reading(200), reading(2_000), 30, what="2,000 entries")
+        def read() -> dict[str, list[str]]:
+            # A report is read once and then answered from what was read: the
+            # holders kept are dropped so every run reads the entries again.
+            evidence_bundles._HOLDERS_READ.clear()
+            return value_entries(report, values)
+
+        return read
+
+    assert_ratio(reading(400), reading(4_000), 30, what="4,000 entries")
 
 
 def _big_answer(distinct: int) -> MalwareReport:
