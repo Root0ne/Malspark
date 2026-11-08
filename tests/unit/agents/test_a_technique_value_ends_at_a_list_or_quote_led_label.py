@@ -12,6 +12,7 @@ Every value here is made up for the test.
 
 from __future__ import annotations
 
+import math
 import re
 from collections.abc import Callable
 from typing import Any
@@ -20,32 +21,36 @@ import pytest
 
 from malspark.agents import base_agent
 from malspark.agents.base_agent import read_claim_blocks
-from tests.linear_cost import assert_scales, default_clock
+from tests.linear_cost import assert_scales, cpu_seconds, default_clock
 
 SENTENCE = "Routine 0x4100 decodes its strings at run time."
 
 
 def _searches(search: Callable[[str], Any], text: str) -> int:
-    """How many searches of ``text`` take about 5 ms, counted on the small text.
+    """How many searches of ``text`` take about 10 ms, counted on the small text.
 
     A pattern reads a run of a few thousand characters in C in microseconds,
     or stops at once where the run is no part of a match: each text is
     searched this many times on both sides so the small run is measurable.
+    The searches first run for 30 ms, so the processor has left an idle clock
+    or a slow core before it is counted; the count is then doubled until the
+    measure's own reading of it (its clock, the collector held, the best of
+    three) takes 10 ms, and the small run aims at five times the least the
+    measure reads. A count taken on a slow clock and timed on a fast one
+    still leaves the small run at twice that least.
     """
     clock = default_clock()
+    started = clock()
+    while clock() - started < 0.030:
+        search(text)
+
+    def reading(count: int) -> float:
+        return cpu_seconds(lambda: [search(text) for _ in range(count)], repeats=3)
+
     count = 1
-    while True:
-        # The best of three, so a slow moment while counting does not make the
-        # count too small for the measure to read.
-        took = float("inf")
-        for _ in range(3):
-            started = clock()
-            for _ in range(count):
-                search(text)
-            took = min(took, clock() - started)
-        if took >= 0.002:
-            return max(1, round(count * 0.005 / took))
+    while (took := reading(count)) < 0.010:
         count *= 2
+    return max(1, math.ceil(count * 0.010 / took))
 
 
 def _read(text: str) -> list[tuple[str, str, float, str | None, str | None]]:

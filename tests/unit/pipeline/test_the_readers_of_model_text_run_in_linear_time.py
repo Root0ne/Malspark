@@ -95,8 +95,12 @@ def _scales_linearly(read: Callable[[str], object]) -> None:
         took = cpu_seconds(reading(size), repeats=5)
     # A reader that stops early, or reads even the largest line in C under
     # LEAST_SECONDS, reads it this many times on both sides, so the short run
-    # is long enough to read a ratio from.
+    # is long enough to read a ratio from. A count estimated from a reading of
+    # a few clock ticks can fall short, so it is doubled until the short run,
+    # read by the measure's own clock, takes LEAST_SECONDS.
     times = 1 if took >= LEAST_SECONDS else math.ceil(1.5 * LEAST_SECONDS / max(took, 1e-6))
+    while times > 1 and cpu_seconds(reading(size, times), repeats=3) < LEAST_SECONDS:
+        times *= 2
     assert_ratio(
         reading(size, times),
         reading(size * 4, times),

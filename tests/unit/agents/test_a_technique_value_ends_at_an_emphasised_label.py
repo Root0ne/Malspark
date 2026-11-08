@@ -99,12 +99,12 @@ def test_such_words_in_prose_stay_in_the_technique_line(rest: str) -> None:
 @pytest.mark.parametrize(
     ("run", "searches"),
     [
-        (lambda size: " " * size + "**", 7),
-        (lambda size: " " + "*" * size, 6),
-        (lambda size: " " + "_" * size, 6),
-        (lambda size: " " * size + "_" * size, 3),
-        (lambda size: " *" * size, 3),
-        (lambda size: " _" * size + " **", 3),
+        (lambda size: " " * size + "**", 12),
+        (lambda size: " " + "*" * size, 10),
+        (lambda size: " " + "_" * size, 10),
+        (lambda size: " " * size + "_" * size, 5),
+        (lambda size: " *" * size, 5),
+        (lambda size: " _" * size + " **", 5),
     ],
     ids=["spaces", "stars", "underscores", "spaces-underscores", "space-star", "space-underscore"],
 )

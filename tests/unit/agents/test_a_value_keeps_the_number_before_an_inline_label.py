@@ -167,20 +167,20 @@ RUN_IDS = [
 # ":": the pattern reads a run of 4,000 marks in C in a few microseconds, and
 # a run before a colon is read faster still.
 SEARCHES = [
-    (542, 1250),
-    (42, 417),
-    (21, 25),
-    (5, 5),
-    (5, 5),
-    (10, 10),
-    (40, 500),
-    (40, 500),
-    (36, 250),
-    (10, 10),
-    (7, 7),
-    (40, 500),
-    (34, 34),
-    (38, 375),
+    (868, 2000),
+    (68, 668),
+    (34, 40),
+    (8, 8),
+    (8, 8),
+    (16, 16),
+    (64, 800),
+    (64, 800),
+    (58, 400),
+    (16, 16),
+    (12, 12),
+    (64, 800),
+    (55, 55),
+    (61, 600),
 ]
 
 
@@ -266,9 +266,9 @@ def test_an_evidence_value_of_many_runs_is_read_in_linear_time(
 @pytest.mark.parametrize(
     ("run", "searches"),
     [
-        (lambda size: " 2) 2)" * size, 5),
-        (lambda size: " - -" * size, 4),
-        (lambda size: " 1. *" * size, 8),
+        (lambda size: " 2) 2)" * size, 8),
+        (lambda size: " - -" * size, 7),
+        (lambda size: " 1. *" * size, 13),
     ],
     ids=["numbers-closed", "space-dashes", "numbered-star"],
 )
