@@ -427,6 +427,8 @@ class TestAHostileDeepBody:
         what it costs ``json.loads``. Measured against ``json.loads`` on the
         same machine, the memory and kernel cost of building millions of
         lists, which differs from one system to the next, is in both sides.
+        The cut alone is also held to the body's growth, with no
+        ``json.loads`` in its bound.
         """
         size = 10_000_000
         plain_bytes = _chunked_read("json", 500, size)
@@ -441,7 +443,17 @@ class TestAHostileDeepBody:
             held_growth = times[f"safe {large}"] / times[f"safe {small}"]
             # Half a second on ten megabytes, scaled to the body measured.
             near = times[f"safe {large}"] < 4 * times[f"json {large}"] + 0.5 * large / size
-            return plain_growth, held_growth, held_growth < 1.5 * plain_growth and near
+            # The cut alone, held to the body's own growth: a json.loads that
+            # grows faster on some machine cannot widen this bound. The cut is
+            # a walk in the interpreter and grows 5.0 times for five times the
+            # body; a quarter more is the bound.
+            cut_growth = times[f"safe {large} cut part"] / times[f"safe {small} cut part"]
+            cut_linear = cut_growth < 1.25 * large / small
+            return (
+                plain_growth,
+                held_growth,
+                held_growth < 1.5 * plain_growth and near and cut_linear,
+            )
 
         if not verdict(attempts[0])[2]:
             again = _chunked_times(500, small, large)
@@ -450,7 +462,8 @@ class TestAHostileDeepBody:
         plain_growth, held_growth, held = verdict(attempts[-1])
         assert held, (
             f"five times the body: json.loads {plain_growth:.1f} times, the guarded read "
-            f"{held_growth:.1f} times (limit 1.5 times json.loads's); each attempt's CPU "
+            f"{held_growth:.1f} times (limit 1.5 times json.loads's), its cut at most "
+            f"{1.25 * large / small:g} times; each attempt's CPU "
             f"seconds with their user and system parts, and the guarded read's cut "
             f"alone: {attempts}"
         )
