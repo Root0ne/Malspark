@@ -75,15 +75,19 @@ class TestTheTriageReader:
             return {f"t{i}": {"extracted": rows, "signatures": rows} for i in range(10)}
 
         def run(tasks: dict[str, dict[str, Any]]) -> Any:
-            # A row is read in a fraction of a microsecond and a larger list
-            # would hold hundreds of megabytes: each side reads five times.
-            for _ in range(5):
+            # A row is read in a fraction of a microsecond: each side reads 25
+            # times. The large side stays at 20,000 rows a task, a few
+            # megabytes: with a small processor cache shared, a row costs about
+            # 0.55 us up to 50,000 and 0.7 to 2 us from 100,000, and a macOS
+            # runner read 100,000 against 10,000 at 21 times, either of which a
+            # ratio would read as the reader's growth.
+            for _ in range(25):
                 read = triage_overview_to_sandbox_report(
                     {"extracted": []}, provider="triage", source_format="triage", task_reports=tasks
                 )
             return read
 
-        _linear(make, run, 10_000)
+        _linear(make, run, 2_000)
 
 
 class TestTheDocument:
@@ -244,16 +248,17 @@ class TestEachRequestSFieldsAreHeldOnce:
     def test_many_questions_times_many_keys_costs_linear_time(self) -> None:
         def run(task: dict[str, Any]) -> Any:
             # A question or a key is read in under a microsecond: each side
-            # reads 64 times. The large body stays at 5,000 of each: with a
-            # small processor cache shared, a question costs 0.8 us up to
-            # 10,000 and 1.8 us at 40,000, which a ratio would read as growth.
-            for _ in range(64):
+            # reads 128 times. The large body stays at 2,500 of each: with a
+            # small processor cache shared, a question's cost starts to rise
+            # between 5,000 and 10,000 and doubles by 40,000, which a ratio
+            # would read as growth.
+            for _ in range(128):
                 read = triage_overview_to_sandbox_report(
                     {}, provider="triage", source_format="triage", task_reports={"t": task}
                 )
             return read
 
-        _linear(_questions_and_keys, run, 500)
+        _linear(_questions_and_keys, run, 250)
 
     def test_and_memory_in_step_with_the_body(self) -> None:
         import json

@@ -332,14 +332,14 @@ class TestEachHolderAlone:
 
         def collecting(count: int) -> Callable[[], None]:
             # A holder is read in a fraction of a microsecond and an entry is
-            # slow to issue, so each side collects 200 times to be measurable.
-            # The large side stays at 2,000 holders: with a small processor
+            # slow to issue, so each side collects 400 times to be measurable.
+            # The large side stays at 1,000 holders: with a small processor
             # cache shared, a holder costs 0.4 to 0.9 us up to 2,000 and 1.2 to
             # 2 us from 4,000, which a ratio would read as the collection's growth.
-            return repeated(holders(count), 200)
+            return repeated(holders(count), 400)
 
         assert len(holders(1000)()) == 500
-        assert_scales(collecting, 250)
+        assert_scales(collecting, 125)
 
 
 class TestOneRowPerIdAndSeq:
