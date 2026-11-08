@@ -3038,6 +3038,7 @@ def mark_claims_citing_only_failed_calls(
             (answered if getattr(entry, "ok", True) else failed).add(ident)
     failed -= answered
     flagged: list[str] = []
+    named: set[str] = set()
     if not failed:
         return flagged
     for name, isr in (isr_reports or {}).items():
@@ -3054,7 +3055,8 @@ def mark_claims_citing_only_failed_calls(
             if cited and cited <= failed and hasattr(claim, "cites_only_failed_calls"):
                 claim.cites_only_failed_calls = True
                 label = f"{agent} claim {block + 1}"
-                if label not in flagged:
+                if label not in named:
+                    named.add(label)
                     flagged.append(label)
     if flagged:
         logger.info(
