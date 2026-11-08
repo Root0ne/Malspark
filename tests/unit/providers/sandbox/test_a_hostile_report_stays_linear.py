@@ -126,7 +126,11 @@ class TestTheDocument:
                 )
             return document
 
-        _linear(make, run, 1_000)
+        raw = make(1_000)
+        assert run(raw)["blob"] is raw["blob"], "the string is carried, not copied"
+        # Carried, ten times the string costs what the string costs: a bound of
+        # twice that leaves room for noise, and a read of the string costs ten.
+        assert_scales(make, 1_000, run, factor=10, limit=2)
 
 
 class TestAHostileMappedReport:
