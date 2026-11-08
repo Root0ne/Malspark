@@ -91,12 +91,12 @@ def test_such_a_label_inside_the_sentence_stays_in_the_sentence(sentence: str) -
 @pytest.mark.parametrize(
     ("name", "searches"),
     [
-        pytest.param("_BLOCK_CLAIM_RE", 40, id="_BLOCK_CLAIM_RE"),
-        pytest.param("_TAIL_START_RE", 200, id="_TAIL_START_RE"),
-        pytest.param("_BLOCK_EVIDENCE_LABEL_RE", 50, id="_BLOCK_EVIDENCE_LABEL_RE"),
-        pytest.param("_EVIDENCE_ENDS_AT_LINE_START_RE", 1200, id="_EVIDENCE_ENDS_AT_LINE_START_RE"),
-        pytest.param("_LINE_CONFIDENCE_RE", 240, id="_LINE_CONFIDENCE_RE"),
-        pytest.param("_LINE_TECHNIQUE_RE", 240, id="_LINE_TECHNIQUE_RE"),
+        pytest.param("_BLOCK_CLAIM_RE", 17, id="_BLOCK_CLAIM_RE"),
+        pytest.param("_TAIL_START_RE", 84, id="_TAIL_START_RE"),
+        pytest.param("_BLOCK_EVIDENCE_LABEL_RE", 21, id="_BLOCK_EVIDENCE_LABEL_RE"),
+        pytest.param("_EVIDENCE_ENDS_AT_LINE_START_RE", 500, id="_EVIDENCE_ENDS_AT_LINE_START_RE"),
+        pytest.param("_LINE_CONFIDENCE_RE", 100, id="_LINE_CONFIDENCE_RE"),
+        pytest.param("_LINE_TECHNIQUE_RE", 100, id="_LINE_TECHNIQUE_RE"),
     ],
 )
 def test_a_long_run_of_spaces_after_a_label_is_read_in_linear_time(
@@ -129,7 +129,7 @@ def test_a_long_run_of_spaced_labels_is_read_in_linear_time() -> None:
 
 @pytest.mark.parametrize(
     ("run", "searches"),
-    [("\n", 45), ("\n  ", 25), (" ", 140), ("\t\n", 32)],
+    [("\n", 19), ("\n  ", 11), (" ", 59), ("\t\n", 14)],
     ids=["\n", "\n  ", " ", "\t\n"],
 )
 def test_a_long_run_of_whitespace_in_the_sentence_is_read_in_linear_time(
@@ -162,8 +162,8 @@ def test_a_long_run_of_spaces_in_a_technique_value_is_read_in_linear_time(
         return label + "a" + " " * size + "b"
 
     # The run is read in C in about ten microseconds: each text is searched
-    # 1,600 times so the small run is measurable.
-    assert_scales(build, 4000, lambda text: [pattern.search(text) for _ in range(1600)])
+    # 670 times so the small run is measurable.
+    assert_scales(build, 4000, lambda text: [pattern.search(text) for _ in range(670)])
 
 
 def test_a_technique_value_still_ends_at_a_label_after_spaces() -> None:

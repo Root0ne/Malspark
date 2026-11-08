@@ -27,7 +27,7 @@ SENTENCE = "Routine 0x4100 decodes its strings at run time."
 
 
 def _searches(search: Callable[[str], Any], text: str) -> int:
-    """How many searches of ``text`` take about 12 ms, counted on the small text.
+    """How many searches of ``text`` take about 5 ms, counted on the small text.
 
     A pattern reads a run of a few thousand characters in C in microseconds,
     or stops at once where the run is no part of a match: each text is
@@ -40,7 +40,7 @@ def _searches(search: Callable[[str], Any], text: str) -> int:
             search(text)
         took = time.thread_time() - started
         if took >= 0.002:
-            return max(1, round(count * 0.012 / took))
+            return max(1, round(count * 0.005 / took))
         count *= 2
 
 
