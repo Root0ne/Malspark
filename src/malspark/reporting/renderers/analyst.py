@@ -115,6 +115,8 @@ _IDENTIFIER_NOT_EXPORTED = (
 )
 # Where a reader of this report finds every process the sandbox recorded.
 _BUNDLE_TREE = "the evidence bundle's process tree"
+# The bundle's section that prints the category with the export's malware types.
+_VERDICT_SECTION = "Verdict and assessment"
 # The entropy above which the single-file report flags a section [HIGH].
 _HIGH_ENTROPY = 7.0
 # Up to how many imports the metadata names one by one.
@@ -972,8 +974,18 @@ class _Analyst:
         facts = [f"**Verdict:** {self._verdict()}", f"**Severity:** {_one_line(severity)}"]
         facts.append(f"**Family:** {self._family()}")
         if self._category():
-            facts.append(f"**Category:** {self._category()}{ctx.category_mark}")
+            # The check of the category against the export's malware types is a
+            # mark the single-file report prints on its category lines, which
+            # the bundle prints whole; the analyst report prints no mark (T-555),
+            # only a line under the header saying where both are stated.
+            facts.append(f"**Category:** {self._category()}")
         lines.append(" · ".join(facts) + "  ")
+        if self._category() and ctx.category_mark:
+            where = _VERDICT_SECTION
+            lines.append(
+                "_The STIX export's malware types differ from this category; the evidence "
+                f"bundle states both ([{where}]({BUNDLE_HTML}#{bundle_anchor(where)}))._  "
+            )
         ident = report.identity
         lines.append(
             f"**Sample:** {_code_span(ident.hashes.sha256 or 'unknown')} "
