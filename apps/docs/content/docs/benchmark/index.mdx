@@ -282,10 +282,12 @@ public malware repository, such as
 [MalwareBazaar](https://bazaar.abuse.ch/sample/6091f2589fef42e0ab3d7975806cd8a0da012b519637c03b73f702f7586b21ef/)
 or [VirusTotal](https://www.virustotal.com/gui/file/6091f2589fef42e0ab3d7975806cd8a0da012b519637c03b73f702f7586b21ef).
 
-The published copies are defanged: every network address the sample or the
-sandbox touched is written as <code>hxxps://host[.]example/</code> or
-<code>192[.]0[.]2[.]1</code>, so no live address is served from this site.
-Local file paths keep only the file name, the server’s job and sample ids read
+The published copies are defanged: every URL, host name and IP address in
+them is written as <code>hxxps://host[.]example/</code> or
+<code>192[.]0[.]2[.]1</code>, and a hex dump that holds one is re-encoded from
+the defanged text, so no live address is served from this site. Only the links
+to VirusTotal, MalwareBazaar and MITRE ATT&CK, and the SVG namespace, are left
+as they are. Local file paths keep only the file name, the server’s job and sample ids read
 <code>&lt;job&gt;</code> and <code>&lt;sample&gt;</code>, internal names are
 replaced, and the ledger drops its internal row ids; nothing else is changed.
 Defanging changes the bytes, so the published ledger does not verify against

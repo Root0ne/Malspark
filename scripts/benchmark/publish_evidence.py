@@ -12,14 +12,23 @@ the published copies from it, and does nothing else to them:
   folder's ``job.json`` and ``meta.json``) become ``<job>``, ``<report>`` and
   ``<sample>``, and a ledger entry's row id is dropped (its ``entry_id``,
   ``ev_0001`` ..., is what the report cites and stays);
-- run and test names (``haiku13``, ``run4``, ``local3``), the runner's
-  collection names and the product's former name (now Malspark) are replaced;
+- run tags (a word such as ``run``, ``local`` or ``hk`` followed by digits,
+  ``run9``, ``run 9``, ``local7``, and a collection name built on one,
+  ``<prefix>_hk5*``) become ``<run>``; the product's former name
+  (``malspark.core.previous_name``) becomes Malspark;
 - a value shaped like a credential (a bearer token, an API key, a cookie) is
   replaced by ``<redacted>``;
 - every network indicator is defanged: ``http`` becomes ``hxxp`` and the dots
   of a host name or an IPv4 address become ``[.]``, in URLs and in plain text,
-  so the docs site never serves a live malicious address. Links to the public
-  reference services in ``REFERENCE_HOSTS`` stay as they are.
+  so the docs site never serves a live malicious address. A host name is any
+  dotted name whose last label is a top-level domain in IANA's list
+  (``tlds.txt`` beside this file) and not a common file extension; every
+  domain, address and URL of the run's ``iocs.json`` and of its sandbox and
+  capture records is defanged as well, whatever its ending. A hex run whose
+  decoded bytes hold an indicator is replaced by the hex of the defanged text.
+  Links to the public reference services in ``REFERENCE_HOSTS`` stay as they
+  are;
+- in an HTML copy each placeholder is written escaped (``&lt;job&gt;``).
 
 Defanging changes bytes, so a published ledger entry no longer matches the
 digest it carries; the docs say so and point at reproducing the run instead.
@@ -38,6 +47,8 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
+from malspark.core.previous_name import CURRENT_NAME, PREVIOUS_NAME
+
 OUT = Path(__file__).resolve().parents[2] / "apps" / "docs" / "public" / "assets" / "benchmark"
 
 # The published files, under the names the report's own links use.
@@ -51,23 +62,44 @@ REFERENCE_HOSTS = (
     "bazaar.abuse.ch",
     "attack.mitre.org",
     "w3.org",
-    "oasis-open.org",
 )
 
-# Top-level domains a bare host name is recognised by. File extensions such as
-# .dll, .exe or .dat are not among them, so a file name is never taken for a host.
-TLDS = (
-    "com|net|org|top|io|ru|su|ch|info|biz|xyz|me|cc|site|online|club|shop|pw|tk|icu|cn|"
-    "live|store|space|fun|digital|cloud|app|dev|link|click|work"
+# The top-level domains IANA delegates, one per line; a dotted name ending in
+# anything else (a CSS class, a rule keyword, a detection label) is not a host.
+TLDS = frozenset(
+    line.strip().lower()
+    for line in (Path(__file__).with_name("tlds.txt")).read_text(encoding="ascii").splitlines()
+    if line.strip() and not line.startswith("#")
 )
+
+# Top-level domains that are also file extensions; a name ending in one is a file.
+FILE_EXTENSIONS = frozenset(
+    "zip mov py sh so md rs pl cab ps bat exe dll sys dat bin cmd js json log txt csv".split()
+)
+
+# Detection-rule keywords that end in a top-level domain (Suricata's
+# ``http.host`` buffer); a rule the report prints keeps them.
+RULE_KEYWORDS = frozenset({"http.host"})
+
+# The run-folder records that hold network indicators, and the keys of a
+# sandbox or capture record whose values are an address or a host name.
+INDICATOR_KINDS = ("ip", "domain", "url")
+NETWORK_RECORD_KINDS = ("sandbox_network", "pcap")
+NETWORK_KEYS = frozenset({"dst", "src", "ip", "domain", "host", "hostname", "query", "url"})
 
 _UUID = r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}"
 # A path starts a word, or follows a newline escape of text quoted twice.
 _LOCAL_PATH = re.compile(
     r"(?:(?<![\w.~])|(?<=\\[nrt]))/(?:home|tmp|root|Users|var/folders)/[^\s\"'<>&|,;)\]}\\]*"
 )
-_RUN_NAME = re.compile(r"\b(?:haiku|run|local)\d+[a-z0-9_*]*\b", re.IGNORECASE)
-_FORMER_NAME = re.compile(r"maljan", re.IGNORECASE)
+# A run tag: a tag word with digits joined on, or ``run`` / ``hk`` and a spaced
+# number, with the collection prefix it was given. A Ghidra local such as
+# ``local_18`` and a model id such as ``x-5-5`` are not run tags.
+_RUN_NAME = re.compile(
+    r"\b(?:[a-z][a-z0-9]*_)?(?:(?:haiku|hk|run|local)\d+|(?:run|hk) \d+\b)[a-z0-9_]*\*?",
+    re.IGNORECASE,
+)
+_FORMER_NAME = re.compile(re.escape(PREVIOUS_NAME), re.IGNORECASE)
 _SECRETS = (
     re.compile(r"(?i)\b(bearer)\s+[A-Za-z0-9._~+/=-]{16,}"),
     re.compile(
@@ -79,10 +111,14 @@ _SECRETS = (
     re.compile(r"\bAKIA[0-9A-Z]{16}\b"),
 )
 _URL = re.compile(r"\b[hH][tT][tT][pP]([sS]?)://([^/\s\"'<>&)\]\\]+)")
+# Host names are written in lower case; a dotted name with capitals is a
+# detection label (``Trojan.Win64.X``) or code. The run's own indicators are
+# matched in any case.
 _DOMAIN = re.compile(
-    rf"(?<![\w.\-])((?:[a-z0-9](?:[a-z0-9-]{{0,61}}[a-z0-9])?\.)+(?:{TLDS}))(?![\w-]|\.[a-z0-9])",
-    re.IGNORECASE,
+    r"(?<![\w.\-])((?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+([a-z]{2,24}))(?![\w-]|\.[a-zA-Z0-9])"
 )
+_HEX = re.compile(r"(?<![0-9a-fA-F])(?:[0-9a-fA-F]{2}){12,}(?![0-9a-fA-F])")
+_PLACEHOLDER = re.compile(r"<(job|report|sample|run|redacted)>")
 _OCTET = r"(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)"
 # An address may end a sentence; a fifth dotted number makes it something else.
 _IPV4 = re.compile(rf"(?<!\d)(?<!\d\.)(?:{_OCTET}\.){{3}}{_OCTET}(?!\d|\.\d)")
@@ -93,19 +129,43 @@ def _is_reference(host: str) -> bool:
     return any(host == ref or host.endswith("." + ref) for ref in REFERENCE_HOSTS)
 
 
+def _is_host(name: str) -> bool:
+    last = name.rsplit(".", 1)[-1].lower()
+    return (
+        last in TLDS
+        and last not in FILE_EXTENSIONS
+        and name.lower() not in RULE_KEYWORDS
+        and not _is_reference(name)
+    )
+
+
+def _defang(value: str) -> str:
+    return re.sub(r"^[hH][tT][tT][pP]", "hxxp", value).replace(".", "[.]")
+
+
 def _former_name(match: re.Match[str]) -> str:
     word = match.group(0)
     if word.isupper():
-        return "MALSPARK"
-    return "Malspark" if word[0].isupper() else "malspark"
+        return CURRENT_NAME.upper()
+    return CURRENT_NAME.capitalize() if word[0].isupper() else CURRENT_NAME
 
 
 class Sanitiser:
     """Applies the rules above to text and counts each replacement by rule and value."""
 
-    def __init__(self, ids: dict[str, str]) -> None:
+    def __init__(self, ids: dict[str, str], indicators: frozenset[str] = frozenset()) -> None:
         self.ids = ids  # an id the server gave the run -> its placeholder
         self.counts: Counter[tuple[str, str]] = Counter()
+        # The run's own indicators, longest first, so a URL goes before its host.
+        literals = sorted((i for i in indicators if not _is_reference(i)), key=len, reverse=True)
+        self.indicators = (
+            re.compile(
+                r"(?<![\w.\-])(?:" + "|".join(map(re.escape, literals)) + r")(?![\w-]|\.\w)",
+                re.IGNORECASE,
+            )
+            if literals
+            else None
+        )
 
     def _sub(
         self, rule: str, pattern: re.Pattern[str], text: str, repl: Callable[[re.Match[str]], str]
@@ -118,7 +178,13 @@ class Sanitiser:
 
         return pattern.sub(counted, text)
 
-    def text(self, text: str) -> str:
+    def text(self, text: str, html: bool = False) -> str:
+        text = self._text(text)
+        if html:
+            text = _PLACEHOLDER.sub(r"&lt;\1&gt;", text)
+        return text
+
+    def _text(self, text: str, decode: bool = True) -> str:
         for value, placeholder in self.ids.items():
             if value in text:
                 self.counts[("server id", placeholder)] += text.count(value)
@@ -135,9 +201,25 @@ class Sanitiser:
                 text,
                 lambda m: (m.group(1) if m.lastindex else "") + "<redacted>",
             )
+        if decode:
+            text = self._sub("hex", _HEX, text, self._defang_hex)
         text = self._sub("url", _URL, text, self._defang_url)
+        if self.indicators:
+            text = self._sub("indicator", self.indicators, text, lambda m: _defang(m.group(0)))
         text = self._sub("host", _DOMAIN, text, self._defang_host)
         return self._sub("ipv4", _IPV4, text, lambda m: m.group(0).replace(".", "[.]"))
+
+    def _defang_hex(self, match: re.Match[str]) -> str:
+        """A hex run whose bytes hold an indicator, as the hex of the defanged bytes."""
+        raw = match.group(0)
+        decoded = bytes.fromhex(raw).decode("latin-1")
+        sanitised = Sanitiser(self.ids)
+        sanitised.indicators = self.indicators
+        clean = sanitised._text(decoded, decode=False)
+        if clean == decoded:
+            return raw
+        out = clean.encode("latin-1", errors="replace").hex()
+        return out.upper() if raw.isupper() else out
 
     @staticmethod
     def _defang_url(match: re.Match[str]) -> str:
@@ -149,7 +231,7 @@ class Sanitiser:
     @staticmethod
     def _defang_host(match: re.Match[str]) -> str:
         host = match.group(1)
-        return host if _is_reference(host) else host.replace(".", "[.]")
+        return host.replace(".", "[.]") if _is_host(host) else host
 
     def json(self, value: Any) -> Any:
         """``value`` with every key and string sanitised; a ledger entry's row id is dropped."""
@@ -184,13 +266,40 @@ def server_ids(run: Path) -> dict[str, str]:
     return ids
 
 
+def run_indicators(run: Path) -> frozenset[str]:
+    """Every domain, address and URL of the run's IOC list, sandbox and capture records."""
+    found: set[str] = set()
+    iocs = run / "iocs.json"
+    if iocs.exists():
+        for item in json.loads(iocs.read_text(encoding="utf-8")).get("items", []):
+            if item.get("kind") in INDICATOR_KINDS and isinstance(item.get("value"), str):
+                found.add(item["value"])
+    ledger = run / "evidence.json"
+    if ledger.exists():
+        for entry in json.loads(ledger.read_text(encoding="utf-8")).get("items", []):
+            if (entry.get("facts") or {}).get("kind") in NETWORK_RECORD_KINDS:
+                found.update(_network_values(entry.get("structured")))
+    return frozenset(found)
+
+
+def _network_values(value: Any, key: str = "") -> set[str]:
+    """The addresses and host names (a port dropped) under a network record's address keys."""
+    if isinstance(value, dict):
+        return {found for k, v in value.items() for found in _network_values(v, str(k).lower())}
+    if isinstance(value, list):
+        return {found for v in value for found in _network_values(v, key)}
+    if isinstance(value, str) and key in NETWORK_KEYS and "." in value:
+        return {re.sub(r":\d+$", "", value.strip())}
+    return set()
+
+
 def publish(run: Path, out: Path) -> Sanitiser:
     """Writes the published copies of ``run``'s files into ``out``; returns the counts."""
-    sanitiser = Sanitiser(server_ids(run))
+    sanitiser = Sanitiser(server_ids(run), run_indicators(run))
     out.mkdir(parents=True, exist_ok=True)
     for name in TEXT_FILES:
         text = (run / name).read_text(encoding="utf-8")
-        (out / name).write_text(sanitiser.text(text), encoding="utf-8")
+        (out / name).write_text(sanitiser.text(text, html=name.endswith(".html")), encoding="utf-8")
     for name in JSON_FILES:
         original = (run / name).read_text(encoding="utf-8")
         data = json.loads(original)

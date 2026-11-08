@@ -5208,17 +5208,17 @@ alert http any any -&gt; any any (msg:&quot;Malspark AutoGen HTTP user agent (La
 <tr>
 <td>56134</td>
 <td>ascii</td>
-<td>&quot;-6*1#5ul.m84&gt;*mt6u3 ?3e|)}3.cz</td>
+<td>&quot;-6*1#5ul.m84&gt;*mt6u3 ?3e|)}3[.]cz</td>
 </tr>
 <tr>
 <td>56246</td>
 <td>ascii</td>
-<td>&quot;-6*1#5ul.m84&gt;*mt6u3 ?3e|)}3.cz</td>
+<td>&quot;-6*1#5ul.m84&gt;*mt6u3 ?3e|)}3[.]cz</td>
 </tr>
 <tr>
 <td>56358</td>
 <td>ascii</td>
-<td>&quot;-6*1#5ul.m84&gt;*mt6u3 ?3e|)}3.cz</td>
+<td>&quot;-6*1#5ul.m84&gt;*mt6u3 ?3e|)}3[.]cz</td>
 </tr>
 <tr>
 <td>56501</td>
@@ -10325,7 +10325,7 @@ No regular beaconing interval detected in the packets read.
 </tr>
 <tr>
 <td>program</td>
-<td>6091f2589fef42e0ab3d7975806cd8a0da012b519637c03b73f702f7586b21ef.<job>.exe</td>
+<td>6091f2589fef42e0ab3d7975806cd8a0da012b519637c03b73f702f7586b21ef.&lt;job&gt;.exe</td>
 </tr>
 <tr>
 <td>image base</td>
@@ -13469,15 +13469,15 @@ No regular beaconing interval detected in the packets read.
 <tbody>
 <tr>
 <td>name</td>
-<td>6091f2589fef42e0ab3d7975806cd8a0da012b519637c03b73f702f7586b21ef.<job>.exe</td>
+<td>6091f2589fef42e0ab3d7975806cd8a0da012b519637c03b73f702f7586b21ef.&lt;job&gt;.exe</td>
 </tr>
 <tr>
 <td>path</td>
-<td>/6091f2589fef42e0ab3d7975806cd8a0da012b519637c03b73f702f7586b21ef.<job>.exe</td>
+<td>/6091f2589fef42e0ab3d7975806cd8a0da012b519637c03b73f702f7586b21ef.&lt;job&gt;.exe</td>
 </tr>
 <tr>
 <td>executable path</td>
-<td>/data/samples/.work/6091f2589fef42e0ab3d7975806cd8a0da012b519637c03b73f702f7586b21ef.<job>.exe</td>
+<td>/data/samples/.work/6091f2589fef42e0ab3d7975806cd8a0da012b519637c03b73f702f7586b21ef.&lt;job&gt;.exe</td>
 </tr>
 <tr>
 <td>executable format</td>
@@ -13581,7 +13581,7 @@ No regular beaconing interval detected in the packets read.
 </tr>
 <tr>
 <td>program</td>
-<td>6091f2589fef42e0ab3d7975806cd8a0da012b519637c03b73f702f7586b21ef.<job>.exe</td>
+<td>6091f2589fef42e0ab3d7975806cd8a0da012b519637c03b73f702f7586b21ef.&lt;job&gt;.exe</td>
 </tr>
 </tbody>
 </table>
@@ -20187,7 +20187,7 @@ GET /ocsp/MFQwUjBQME4wTDAJBgUrDgMCGgUABBR0TBEVYklX7A9yLoLD9hqmCWDxFgQU3pGGSLehMV
 <ul>
 <li>Model prompts: the Anthropic API (outside this machine) received 129 calls (all_tools_qu1cksc0pe 9, all_tools_reverser_ghidra 23, all_tools_static_r2 11, dynamic 6, judge 12, network 5, reporter 36, static 13, triage 14). It is also in the model list of mediator and summarizer, which recorded no answered call there.</li>
 <li>Lookups: <code>ai.virustotal.com</code> (outside this machine) was asked 8 times through tool server <code>virustotal</code> (streamable-http): domain 2, hash 3, ip 3.</li>
-<li>Sample upload: the sample was submitted once to the <code>triage</code> sandbox at <code>tria.ge</code> (outside this machine).</li>
+<li>Sample upload: the sample was submitted once to the <code>triage</code> sandbox at <code>tria[.]ge</code> (outside this machine).</li>
 <li>Sample upload: tool server <code>analysis</code> (stdio, run on this machine) was handed the sample 3 times by a tool declared to send it out of the deployment; the settings do not say where a local tool server sends what it is given, so where it went cannot be told.</li>
 <li>Sample upload: tool server <code>qu1cksc0pe</code> (stdio, run on this machine) was handed the sample 5 times by a tool declared to send it out of the deployment; the settings do not say where a local tool server sends what it is given, so where it went cannot be told.</li>
 <li>Tool calls: the <code>ghidra</code> provider's tool server over http at <code>localhost</code> (local): 40 calls.</li>
@@ -20320,7 +20320,7 @@ GET /ocsp/MFQwUjBQME4wTDAJBgUrDgMCGgUABBR0TBEVYklX7A9yLoLD9hqmCWDxFgQU3pGGSLehMV
 <li><code>check_resources</code> on <code>qu1cksc0pe</code>: 1 call over the sample.</li>
 <li><code>detect_language</code> on <code>qu1cksc0pe</code>: 1 call over the sample.</li>
 <li><code>get_current_program_info</code> (kind <code>program_info</code>): 1 call over an input the call does not name.</li>
-<li><code>load_program</code> (kind <code>open_sample</code>): 1 call over the file <code>/data/samples/.work/6091f2589fef42e0ab3d7975806cd8a0da012b519637c03b73f702f7586b21ef.<job>.exe</code>.</li>
+<li><code>load_program</code> (kind <code>open_sample</code>): 1 call over the file <code>/data/samples/.work/6091f2589fef42e0ab3d7975806cd8a0da012b519637c03b73f702f7586b21ef.&lt;job&gt;.exe</code>.</li>
 <li><code>extract_iocs_with_context</code> (kind <code>iocs_with_context</code>): 1 call over an input the call does not name.</li>
 <li><code>detect_malware_behaviors</code> (kind <code>behaviour_scan</code>): 1 call over an input the call does not name.</li>
 <li><code>list_imports</code> (kind <code>import_listing</code>): 1 call over an input the call does not name.</li>
