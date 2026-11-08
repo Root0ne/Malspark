@@ -193,3 +193,18 @@ class TestUnderSimulatedLoad:
         busy = _Machine(lambda run: 3.0 if run == 0 else 1.0)
         assert assert_under(busy.work(0.5), 1.0, clock=busy.clock) == pytest.approx(0.5)
         assert busy.runs == 2
+
+
+def test_on_macos_the_clock_is_the_process_s_user_time(monkeypatch: pytest.MonkeyPatch) -> None:
+    import sys
+    import time
+
+    from tests import linear_cost
+
+    monkeypatch.setattr(sys, "platform", "darwin")
+    assert linear_cost._clock_of(None, whole_process=False) is linear_cost._user_seconds
+    assert linear_cost._clock_of(None, whole_process=True) is linear_cost._user_seconds
+    assert linear_cost._clock_of(time.perf_counter, whole_process=False) is time.perf_counter
+    monkeypatch.setattr(sys, "platform", "linux")
+    assert linear_cost._clock_of(None, whole_process=False) is time.thread_time
+    assert linear_cost._user_seconds() > 0

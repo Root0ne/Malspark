@@ -32,7 +32,10 @@ that such a run is not the one the assertion reads.
 
 The clock is the calling thread's CPU time, the whole process's with
 ``whole_process`` for work that crosses threads, or a clock the test passes
-(``time.perf_counter`` for work whose time is a wait). Size the inputs so the
+(``time.perf_counter`` for work whose time is a wait). On macOS it is the
+process's user time: there a thread's CPU time counts the kernel's mapping
+and zeroing of the pages a large input takes, which grows with the heap
+rather than with the work, and macOS counts user time exactly. Size the inputs so the
 small call takes about 10 ms or more: a ratio over a small run of a few
 clock ticks says nothing about the code, and a quadratic call whose small run
 is that short passes any limit. :func:`assert_ratio` fails a measure whose
@@ -43,6 +46,7 @@ being too fast to measure.
 from __future__ import annotations
 
 import gc
+import resource
 import sys
 import time
 from collections.abc import Callable
@@ -106,9 +110,16 @@ def repeated(call: Callable[[], Any], times: int) -> Callable[[], None]:
     return run
 
 
+def _user_seconds() -> float:
+    """The process's user CPU time, without the kernel's time on its behalf."""
+    return resource.getrusage(resource.RUSAGE_SELF).ru_utime
+
+
 def _clock_of(clock: Callable[[], float] | None, whole_process: bool) -> Callable[[], float]:
     if clock is not None:
         return clock
+    if sys.platform == "darwin":
+        return _user_seconds
     return time.process_time if whole_process else time.thread_time
 
 
