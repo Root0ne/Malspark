@@ -749,6 +749,9 @@ class _Analyst:
         self.report = report
         self.ctx = ctx
         self.notes = CitationNotes(ctx)
+        # A model-written cell cites as this report's prose does: each bracketed
+        # group of evidence ids a note marker (``CitationNotes.moved``).
+        ctx.cell_citations = self.notes.moved
         self.ta = report.technical_analysis
         # The composer's procedure of each published technique, by id (``attack``).
         self._procedures: dict[str, Any] = {}
@@ -881,6 +884,19 @@ class _Analyst:
             return "-"
         return _one_line(self.notes.moved(self.ctx.plain(kept), ids))
 
+    def _as_written[T](self, build: Callable[[], T]) -> T:
+        """What ``build`` writes with the shared writers, each cell's citations as written.
+
+        For a block whose notes this report numbers in one pass afterwards
+        (:meth:`CitationNotes.moved`), so they follow reading order: a cell's
+        note is never numbered before a note printed above it.
+        """
+        cite, self.ctx.cell_citations = self.ctx.cell_citations, None
+        try:
+            return build()
+        finally:
+            self.ctx.cell_citations = cite
+
     def _findings(self, rows: list[dict[str, str]]) -> list[str]:
         """The platform's unresolved findings on a section, one item each."""
         return [
@@ -920,15 +936,21 @@ class _Analyst:
         return category if category and category.lower() != "unknown" else ""
 
     def _subsection(
-        self, number: str, title: str, prose: list[TechnicalSubsection | None], body: list[str]
+        self,
+        number: str,
+        title: str,
+        prose: list[TechnicalSubsection | None],
+        body: list[str] | Callable[[], list[str]] | None,
     ) -> list[str]:
+        """A subsection: its prose, then its body; a body given as a function is written
+        after the prose, so its notes are numbered in reading order."""
         parts = [sub for sub in prose if sub is not None and sub.body.strip()]
         if not parts and not body:
             return []
         lines = [_subheading(number, title), ""]
         for sub in parts:
             lines.extend([self._prose(sub.body, sub.evidence_refs), ""])
-        lines.extend(body)
+        lines.extend(body() if callable(body) else body or [])
         return [*lines, ""]
 
     # -- title block ------------------------------------------------------
@@ -1212,7 +1234,7 @@ class _Analyst:
         if report.capabilities_narrative:
             body = [self._prose(p) + "\n" for p in report.capabilities_narrative if p.strip()]
             blocks.extend(self._subsection(numbered(), "Overview", [], body))
-        cipher: list[str] = []
+        cipher: Callable[[], list[str]] | None = None
         enc = ta.encryption_scheme if ta is not None else None
         if enc is not None and not _encrypts_files(enc):
             cipher = self._encryption(enc)
@@ -1244,7 +1266,8 @@ class _Analyst:
                 self._subsection(numbered(), "Payloads and dropped files", prose, payloads)
             )
         if ta is not None:
-            family = _ransomware_block(ta, ctx, ransomware=_states_ransomware(report))
+            ransomware = _states_ransomware(report)
+            family = self._as_written(lambda: _ransomware_block(ta, ctx, ransomware=ransomware))
             if family:
                 head, _, rest = family.partition("\n")
                 title = head.split(" · ", 1)[0].removeprefix("### 5.9 ")
@@ -1253,14 +1276,21 @@ class _Analyst:
         lines.extend(blocks or ["The report model described no capability in this run.", ""])
         return "\n".join([*lines, _behind("functionality")])
 
-    def _encryption(self, enc: Any) -> list[str]:
-        table = _encryption_table(enc, self.ctx)
+    def _encryption(self, enc: Any) -> Callable[[], list[str]] | None:
+        """The scheme's table, written when its place is reached (:meth:`_subsection`), or
+        ``None`` where the model filled no field of it."""
+        table = self._as_written(lambda: _encryption_table(enc, self.ctx))
         if not table:
-            return []
-        # The table's own evidence row is its last; the citation is the note.
-        rows = table[2:-1]
-        cited = self.notes.marker([enc.evidence_ref or ""])
-        return ["Encryption scheme" + cited + ":", "", *rows, ""]
+            return None
+
+        def lines() -> list[str]:
+            # The table's own evidence row is its last; the citation is the note,
+            # numbered after the prose above the table and before its cells.
+            cited = self.notes.marker([enc.evidence_ref or ""])
+            rows = [self.notes.moved(row) for row in table[2:-1]]
+            return ["Encryption scheme" + cited + ":", "", *rows, ""]
+
+        return lines
 
     def _persistence(self) -> list[str]:
         report, ctx = self.report, self.ctx
