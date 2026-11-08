@@ -11,6 +11,7 @@ import gc
 import json
 import math
 import random
+import sys
 import time
 from collections.abc import Callable
 from pathlib import Path
@@ -422,6 +423,15 @@ class TestAHostileDeepBody:
         with pytest.raises(json.JSONDecodeError):
             loads(bad)
 
+    @pytest.mark.skipif(
+        sys.platform == "darwin",
+        reason=(
+            "on macOS the ten-megabyte body's allocation and release are counted in the "
+            "process CPU time and grow faster than the read itself, so this wall-clock "
+            "ratio does not measure the cut there; the same code runs and is held to "
+            "its bound on Linux"
+        ),
+    )
     def test_a_deep_body_json_loads_reads_is_cut_in_place_at_its_cost(self) -> None:
         """Ten megabytes of 500-deep chunks: ``json.loads`` reads it, and the guard cuts it.
 
