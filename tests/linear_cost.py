@@ -57,6 +57,7 @@ __all__ = [
     "assert_under",
     "calls",
     "cpu_seconds",
+    "repeated",
 ]
 
 # Four times the input may take under eight times as long; a quadratic reader
@@ -88,6 +89,21 @@ def calls(call: Callable[[], Any]) -> int:
     finally:
         sys.setprofile(previous)
     return made
+
+
+def repeated(call: Callable[[], Any], times: int) -> Callable[[], None]:
+    """A call that runs ``call`` ``times`` times and keeps none of its answers.
+
+    For a call too quick for the clock, or one whose cost does not grow with
+    its input: the ratio of ``times`` runs is the ratio of one, and an answer
+    is freed before the next run, so the measure holds one answer at a time.
+    """
+
+    def run() -> None:
+        for _ in range(times):
+            call()
+
+    return run
 
 
 def _clock_of(clock: Callable[[], float] | None, whole_process: bool) -> Callable[[], float]:

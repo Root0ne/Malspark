@@ -12,6 +12,7 @@ with their product.
 
 from __future__ import annotations
 
+import dataclasses
 import struct
 from collections.abc import Callable
 from typing import Any
@@ -155,13 +156,19 @@ def _index(make: Shape, n: int) -> Any:
     return artefact_index.index_image(image, **joined)
 
 
-def _indexing(make: Shape, n: int, runs: int, answers: list[Any]) -> Callable[[], None]:
-    """A call that indexes a fresh ``make(n)`` on each of ``runs`` runs, the images built
-    before the measure, so no run reads what an earlier one left in its image."""
-    built = iter([make(n) for _ in range(runs)])
+def _indexing(make: Shape, n: int, answers: list[Any]) -> Callable[[], None]:
+    """A call that indexes ``make(n)`` afresh on every run, the image built before the measure.
+
+    Each run indexes a copy of the one built image that shares its bytes and
+    tables but none of what an index remembers (the covers, the decoded walks,
+    the read imports), so no run reads what an earlier one left and only one
+    image of each size is held. ``answers`` keeps the last answer only.
+    """
+    built, joined = make(n)
 
     def index() -> None:
-        image, joined = next(built)
+        image = dataclasses.replace(built, _imports=None, _covers={}, _walks={})
+        answers.clear()
         answers.append(artefact_index.index_image(image, **joined))
 
     return index
@@ -171,11 +178,11 @@ def _assert_tenfold(
     make: Shape, small: int, what: str, *, repeats: int = 3
 ) -> tuple[float, float, Any]:
     """Ten times ``small`` under twenty times the time; the best times and the last large
-    answer. The small call runs once more than the large one, to warm up."""
+    answer."""
     answers: list[Any] = []
     low, high = assert_ratio(
-        _indexing(make, small, 2 * repeats + 1, answers),
-        _indexing(make, small * 10, 2 * repeats, answers),
+        _indexing(make, small, []),
+        _indexing(make, small * 10, answers),
         20,
         what=what,
         repeats=repeats,

@@ -19,7 +19,7 @@ from langchain_core.tools import StructuredTool
 
 from malspark.core.config import MCPServerConfig, Settings
 from malspark.providers.servers import ServerHandle
-from tests.linear_cost import assert_ratio
+from tests.linear_cost import assert_ratio, repeated
 
 # What each server offers, by key; a tool answers with its owner's name.
 OFFERS: dict[str, list[str]] = {
@@ -216,8 +216,8 @@ def test_many_colliding_tools_are_claimed_in_linear_time(monkeypatch: pytest.Mon
     # A tool takes half a millisecond to build, so the sizes stay and each
     # side is merged 15 times: the small run then outlasts the 16.7 ms allowance.
     assert_ratio(
-        lambda: [small() for _ in range(15)],
-        lambda: [large() for _ in range(15)],
+        repeated(small, 15),
+        repeated(large, 15),
         30,
         what="3,000 tools against 300",
         floor=0.5 / 30,

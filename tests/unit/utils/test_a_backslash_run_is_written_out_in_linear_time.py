@@ -6,7 +6,7 @@ of many backslashes must not cost time in the square of its length.
 
 from __future__ import annotations
 
-from tests.linear_cost import assert_scales
+from tests.linear_cost import assert_scales, repeated
 
 from malspark.utils.written_forms import quoted_backslashes_written_out
 
@@ -25,7 +25,7 @@ def test_a_long_run_with_no_quote_after_it_grows_linearly() -> None:
     assert_scales(
         lambda n: '"' + "\\" * n,
         5_000,
-        lambda text: [quoted_backslashes_written_out(text) for _ in range(5_000)],
+        lambda text: repeated(lambda: quoted_backslashes_written_out(text), 5_000)(),
         factor=8,
         limit=24,
         floor=0.01 / 24,
