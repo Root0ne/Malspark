@@ -12,12 +12,19 @@
 [![Python](https://img.shields.io/badge/python-3.13-blue)](https://www.python.org/)
 [![Licence](https://img.shields.io/badge/licence-MIT-blue)](LICENSE)
 
+Malspark is an open-source, self-hosted platform for malware analysis. You
+upload a sample, and a team of AI agents analyses it with real tools such as a
+decompiler, a disassembler and a sandbox, argues over what it found, and a
+judge decides the verdict. Every claim in the report cites the tool call that
+proves it, so each one can be checked.
+
 <p align="center">
   <img src="docs/assets/readme/analysis-overview.webp" alt="The Overview tab of a finished analysis in the Malspark console: the verdict, severity, key findings and recommended actions for a Latrodectus sample" width="900">
 </p>
 
-Upload a sample, and a team of AI agents analyses it from start to finish,
-with no human in the loop:
+## How it works
+
+From upload to report, with no human in the loop:
 
 1. **Code establishes the facts first.** A deterministic triage pack
    identifies the file, hashes it, checks its signature, runs the rule engines
