@@ -425,11 +425,14 @@ def test_an_endless_length_prefix_stops_at_the_room_left() -> None:
     def unpack(pairs: int) -> Callable[[], None]:
         stream = endless(pairs)
 
+        # The read stops at the room left whatever the stream holds, in a few
+        # microseconds: each side reads 1,600 times to be measurable.
         def call() -> None:
-            with pytest.raises(
-                upx.Damaged, match="a length at output byte 1 runs past the 4096 unpacked bytes"
-            ):
-                upx._nrv("2b", 4, stream, 4096)
+            for _ in range(1_600):
+                with pytest.raises(
+                    upx.Damaged, match="a length at output byte 1 runs past the 4096 unpacked bytes"
+                ):
+                    upx._nrv("2b", 4, stream, 4096)
 
         return call
 
@@ -614,12 +617,18 @@ def test_relocation_records_read_as_one_by_one_whatever_their_mix() -> None:
         assert _decode(stream) == _positions_one_by_one(stream)
 
 
-@pytest.mark.parametrize("shape", [_realistic, _long_forms])
-def test_relocation_records_take_time_linear_in_the_stream(shape: object) -> None:
+@pytest.mark.parametrize(
+    ("shape", "records"),
+    [
+        pytest.param(_realistic, 50_000, id="_realistic"),
+        pytest.param(_long_forms, 25_000, id="_long_forms"),
+    ],
+)
+def test_relocation_records_take_time_linear_in_the_stream(shape: object, records: int) -> None:
     # Ten times the records take at most about ten times as long (twenty, for noise).
     assert_ratio(
-        _decoding(shape(20_000)),  # type: ignore[operator]
-        _decoding(shape(200_000)),  # type: ignore[operator]
+        _decoding(shape(records)),  # type: ignore[operator]
+        _decoding(shape(10 * records)),  # type: ignore[operator]
         20,
         what="ten times the records",
         floor=0.05 / 20,

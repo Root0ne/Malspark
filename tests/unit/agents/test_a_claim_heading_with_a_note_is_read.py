@@ -287,6 +287,22 @@ def _sizes(name: str) -> tuple[str, str]:
     return _hostile(100_000), _hostile(1_000_000)
 
 
+# The line each reader is timed on, so the small read takes at least the
+# 6.7 ms the time check allows as fixed cost: the patterns read a line in C
+# many times faster than the streaming reader does.
+_TIMED_SIZES = {
+    "claim_blocks": 2_500_000,
+    "count_claims_begun": 1_400_000,
+    "read_claim_blocks": 220_000,
+    "repeat_reader": 400_000,
+}
+
+
+def _timed_sizes(name: str) -> tuple[str, str]:
+    size = _TIMED_SIZES[name]
+    return _hostile(size), _hostile(10 * size)
+
+
 class TestAnUnclosedNoteCostsALinearRead:
     """The streaming reader reads an open note's characters up to its bracket at once."""
 
@@ -301,7 +317,7 @@ class TestAnUnclosedNoteCostsALinearRead:
     @pytest.mark.parametrize("name", sorted(_READERS))
     def test_ten_times_the_line_costs_at_most_ten_times_the_time(self, name: str) -> None:
         read = _READERS[name]
-        small, large = _sizes(name)
+        small, large = _timed_sizes(name)
 
         assert_ratio(
             lambda: read(small),

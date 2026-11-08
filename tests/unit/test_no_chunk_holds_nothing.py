@@ -86,7 +86,7 @@ class TestNoChunkHoldsNothing:
             text = "w" * size + " " * size
             return lambda: chunker.chunk("triage", text, room=_room(1_000))
 
-        assert_ratio(chunking(200_000), chunking(2_000_000), 20, what="ten times the text")
+        assert_ratio(chunking(3_000_000), chunking(30_000_000), 20, what="ten times the text")
 
 
 def test_a_source_of_nothing_left_out_is_said(caplog: pytest.LogCaptureFixture) -> None:

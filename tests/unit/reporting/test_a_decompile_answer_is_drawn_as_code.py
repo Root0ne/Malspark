@@ -107,7 +107,7 @@ def test_reading_code_stays_linear() -> None:
         code_text(text)
         code_text(text[: len(text) // 2])
 
-    assert_scales(hostile, 20_000, read, factor=10, repeats=5)
+    assert_scales(hostile, 40_000, read, factor=10, repeats=5)
 
 
 def test_prose_holding_numbers_is_not_read_as_code() -> None:
@@ -189,4 +189,4 @@ def test_a_bare_listing_is_read_in_linear_time() -> None:
     def hostile(size: int) -> str:
         return json.dumps({"disassembly": ("mov eax, " + "a " * 40 + "\n") * size})
 
-    assert_scales(hostile, 2_000, code_text, factor=10, repeats=5)
+    assert_scales(hostile, 3_500, code_text, factor=10, repeats=5)

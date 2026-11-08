@@ -211,10 +211,10 @@ class TestItsRuleHits:
             return lambda: rule_match_hits(held)
 
         assert_ratio(
-            count(400),
-            count(4000),
+            count(3_000),
+            count(30_000),
             10 * 2.5,
-            what="4,000 rows against 400",
+            what="30,000 rows against 3,000",
             floor=0.05 / (10 * 2.5),
         )
 

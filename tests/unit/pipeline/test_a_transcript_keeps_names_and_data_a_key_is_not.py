@@ -149,7 +149,7 @@ class TestHostileAnswersCostLinearWork:
         return peak
 
     @pytest.mark.parametrize(
-        ("make", "small"), [("_many_hex", 300), ("_near", 300), ("_nested", 10_000)]
+        ("make", "small"), [("_many_hex", 300), ("_near", 300), ("_nested", 40_000)]
     )
     def test_ten_times_the_input_costs_about_ten_times(self, make: str, small: int) -> None:
         build = getattr(self, make)

@@ -192,7 +192,7 @@ def test_masking_by_value_costs_time_linear_in_the_text():
     sm.masked_text("warm the pattern")
     word = f"C:\\x,u:{values[17]}@h:8080 {lowercase_body(30)} "
 
-    assert_scales(lambda size: word * size, 400, sm.masked_text)
+    assert_scales(lambda size: word * size, 800, sm.masked_text)
 
 
 def test_a_pathological_value_set_still_masks_in_one_linear_pass():
@@ -206,7 +206,7 @@ def test_a_pathological_value_set_still_masks_in_one_linear_pass():
 
     assert sm.masked_text("x" + "a" * 2_000 + "y") == f"x{MASK}y"
     assert sm.masked_text("b" + "a" * 7 + "b") == "b" + "a" * 7 + "b"
-    assert_scales(lambda size: ("a" * 40 + " ") * size, 200, sm.masked_text)
+    assert_scales(lambda size: ("a" * 40 + " ") * size, 1_200, sm.masked_text)
 
 
 @pytest.mark.parametrize("seed", range(5))

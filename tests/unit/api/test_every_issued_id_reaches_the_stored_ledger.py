@@ -330,8 +330,14 @@ class TestEachHolderAlone:
             known = [f"ev_{n:04d}" for n in range(1, count // 2 + 1)]
             return lambda: held.collect_undrained_evidence(known)
 
+        def collecting(count: int) -> Callable[[], list[Any]]:
+            # A holder is read in a fraction of a microsecond and an entry is
+            # slow to issue, so each side collects 25 times to be measurable.
+            collect = holders(count)
+            return lambda: [collect() for _ in range(25)][-1]
+
         assert len(holders(1000)()) == 500
-        assert_scales(holders, 250)
+        assert_scales(collecting, 2_000)
 
 
 class TestOneRowPerIdAndSeq:

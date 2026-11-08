@@ -78,10 +78,10 @@ def _ruled(n: int) -> Callable[[], Any]:
 
 class TestTenTimesTheInput:
     def test_the_declared_steps(self) -> None:
-        low, high = _ratio(_declared, 2_000)
+        low, high = _ratio(_declared, 2_400)
         print("declared steps:", round(low, 4), round(high, 4))
-        ids = [step.id for step in effective_steps(_declared_steps(2_000))]
-        assert ids.index("strings") == ids.index("step_1999") + 1
+        ids = [step.id for step in effective_steps(_declared_steps(2_400))]
+        assert ids.index("strings") == ids.index("step_2399") + 1
 
     def test_the_function_starts_and_rules_an_answer_lists(self) -> None:
         low, high = _ratio(_joined, 5_000)

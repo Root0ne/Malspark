@@ -171,7 +171,7 @@ class TestTheCostOfReadingOne:
         comparisons = read_comparisons(chained(2000))
 
         assert [c.literal for c in comparisons] == ["abc"]
-        assert_scales(chained, 250, read_comparisons)
+        assert_scales(chained, 12_000, read_comparisons)
 
     def test_a_thousand_literals_are_read_in_one_pass(self) -> None:
         def listed(count: int) -> str:
@@ -181,4 +181,4 @@ class TestTheCostOfReadingOne:
         comparisons = read_comparisons(listed(1000))
 
         assert len(comparisons) == 1000
-        assert_scales(listed, 125, read_comparisons)
+        assert_scales(listed, 5_000, read_comparisons)

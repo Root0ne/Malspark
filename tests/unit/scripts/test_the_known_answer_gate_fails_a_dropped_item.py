@@ -545,8 +545,8 @@ def test_the_gate_is_linear_in_items_and_runs() -> None:
         baseline, candidate = arm(runs("b", 0)), arm(runs("c", 1))
         return lambda: gate(baseline, candidate)
 
-    small, large = build(500), build(2000)
+    small, large = build(1_200), build(4_800)
     # Four times the items must take under eight times the CPU time; a
     # quadratic gate takes sixteen. The calls made are held to the same ratio.
-    assert_ratio(small, large, TIME_RATIO_LIMIT, what="2,000 items")
+    assert_ratio(small, large, TIME_RATIO_LIMIT, what="4,800 items")
     assert calls(large) <= calls(small) * 4 * 1.2 + 100

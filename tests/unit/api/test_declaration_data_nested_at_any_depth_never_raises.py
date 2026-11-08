@@ -199,7 +199,7 @@ def _copying(depth: int) -> Callable[[], Any]:
 
 
 def test_copying_deep_declaration_data_is_linear() -> None:
-    _linear(_copying, 10_000)
+    _linear(_copying, 40_000)
 
 
 def _refusing(n: int) -> Callable[[], Any]:
@@ -213,4 +213,4 @@ def _refusing(n: int) -> Callable[[], Any]:
 
 
 def test_the_names_a_sent_map_refuses_are_read_in_linear_time() -> None:
-    _linear(_refusing, 5_000)
+    _linear(_refusing, 13_000)

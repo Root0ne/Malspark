@@ -111,7 +111,9 @@ class TestTheFlag:
             after["a"] = _isr("a", PEER)
             return lambda: convergence_flags(before, after, ["a"], {}, TEXTS)
 
-        assert_ratio(flagging(20), flagging(200), 10 * 4, floor=0.5 / (10 * 4), what="200 peers")
+        assert_ratio(
+            flagging(180), flagging(1_800), 10 * 4, floor=0.5 / (10 * 4), what="1,800 peers"
+        )
 
 
 def _negotiate(record: dict[str, Any]) -> tuple[dict[str, Any], Any]:

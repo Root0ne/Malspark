@@ -364,8 +364,10 @@ def test_the_head_is_read_in_one_pass_over_its_first_value() -> None:
         tail = json.dumps({"rows": ["x" * 40] * n})
         joined = HEAD_CHUNK + "\n\n" + tail
 
+        # One read of the head takes microseconds: 8,000 reads outlast the
+        # 10 ms allowance.
         def read() -> None:
-            for _ in range(20):
+            for _ in range(8_000):
                 assert head_object(joined) == json.loads(HEAD_CHUNK)
 
         return read

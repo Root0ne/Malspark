@@ -113,8 +113,11 @@ def test_a_hostile_envelope_is_read_in_linear_time() -> None:
     def reading(n: int) -> Callable[[], None]:
         reply = "<log>" + "[INFO] [ERROR] x\n" * n + "not a line"
 
+        # A pattern reads 5,000 lines in C in under a tenth of a millisecond:
+        # each side reads 130 times rather than hold a reply of 100 MB.
         def read() -> None:
-            assert r2._r2_logged_error(reply) is None
+            for _ in range(130):
+                assert r2._r2_logged_error(reply) is None
 
         return read
 

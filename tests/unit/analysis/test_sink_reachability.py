@@ -151,11 +151,11 @@ def test_a_hostile_graph_ten_times_larger_is_ranked_in_linear_time() -> None:
         edges = [(f"f{i}", f"f{i + 1}") for i in range(n)] + [(f"f{n}", "VirtualAllocEx")]
         return CallGraph.of_edges(edges)
 
-    small, large = graph(5_000), graph(50_000)
+    small, large = graph(6_000), graph(60_000)
     assert [f.name for f in rank_suspicious_functions(large, max_funcs=3)] == [
-        "f50000",
-        "f49999",
-        "f49998",
+        "f60000",
+        "f59999",
+        "f59998",
     ]
     assert_ratio(
         lambda: rank_suspicious_functions(small, max_funcs=3),

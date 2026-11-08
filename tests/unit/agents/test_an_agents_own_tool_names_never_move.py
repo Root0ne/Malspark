@@ -212,4 +212,13 @@ def test_many_colliding_tools_are_claimed_in_linear_time(monkeypatch: pytest.Mon
         assert sum(1 for t in merge() if t.name.startswith("kit__")) == n
         return merge
 
-    assert_ratio(_merge(300), _merge(3000), 30, what="3,000 tools against 300", floor=0.5 / 30)
+    small, large = _merge(300), _merge(3000)
+    # A tool takes half a millisecond to build, so the sizes stay and each
+    # side is merged 15 times: the small run then outlasts the 16.7 ms allowance.
+    assert_ratio(
+        lambda: [small() for _ in range(15)],
+        lambda: [large() for _ in range(15)],
+        30,
+        what="3,000 tools against 300",
+        floor=0.5 / 30,
+    )

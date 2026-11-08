@@ -526,8 +526,14 @@ class TestAHostileSampleCostsOneMatchPerString:
             )
             return lambda: _yara(_report(), OwnSample(path=str(path), budget_seconds=BUDGET))
 
+        def drafted(repeats: int) -> Callable[[], list[DetectionRule]]:
+            # A draft is mostly its fixed cost and a scan of a megabyte takes
+            # about a millisecond: each side drafts twelve times to be measurable.
+            draft = drafting(repeats)
+            return lambda: [draft() for _ in range(12)]
+
         large = drafting(50_000)
-        assert_ratio(drafting(5_000), large, 30, floor=1e-3, what="ten times the sample")
+        assert_ratio(drafted(5_000), drafted(50_000), 30, floor=1e-3, what="ten times the sample")
         rule = large()
         assert {s.identifier: s.offset for s in rule.sample_strings or []} == {
             _slot(rule, FIRST): 0,

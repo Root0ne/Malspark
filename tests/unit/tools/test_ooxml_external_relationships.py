@@ -348,10 +348,10 @@ def _many_parts_of(tmp_path: Path, n: int) -> Path:
 class TestLinearTime:
     def test_ten_times_the_relationships_take_about_ten_times_as_long(self, tmp_path: Path) -> None:
         assert_ratio(
-            _reading(_one_part_of(tmp_path, 2_000)),
-            _reading(_one_part_of(tmp_path, 20_000)),
+            _reading(_one_part_of(tmp_path, 6_500)),
+            _reading(_one_part_of(tmp_path, 65_000)),
             20,
-            what="20,000 relationships",
+            what="65,000 relationships",
         )
 
     def test_ten_times_the_relationship_parts_take_about_ten_times_as_long(

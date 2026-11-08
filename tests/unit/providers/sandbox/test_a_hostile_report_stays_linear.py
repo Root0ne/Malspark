@@ -67,7 +67,7 @@ class TestTheTriageReader:
                 overview, provider="triage", source_format="triage", task_reports={"t": task}
             )
 
-        _linear(make, run, 2_000)
+        _linear(make, run, 3_000)
 
     def test_many_tasks_each_extracting_many_rows(self) -> None:
         def make(n: int) -> dict[str, dict[str, Any]]:
@@ -75,11 +75,15 @@ class TestTheTriageReader:
             return {f"t{i}": {"extracted": rows, "signatures": rows} for i in range(10)}
 
         def run(tasks: dict[str, dict[str, Any]]) -> Any:
-            return triage_overview_to_sandbox_report(
-                {"extracted": []}, provider="triage", source_format="triage", task_reports=tasks
-            )
+            # A row is read in a fraction of a microsecond and a larger list
+            # would hold hundreds of megabytes: each side reads five times.
+            for _ in range(5):
+                read = triage_overview_to_sandbox_report(
+                    {"extracted": []}, provider="triage", source_format="triage", task_reports=tasks
+                )
+            return read
 
-        _linear(make, run, 2_000)
+        _linear(make, run, 10_000)
 
 
 class TestTheDocument:
@@ -114,9 +118,13 @@ class TestTheDocument:
             return {"blob": "A" * (n * 1_000), "behavior": {"processes": []}}
 
         def run(raw: dict[str, Any]) -> Any:
-            return sandbox_document(
-                cape_report_to_sandbox_report(raw, provider="x", source_format="cape2")
-            )
+            # The string is carried, so a read costs the same at any size and
+            # takes microseconds: each side reads 800 times to be measurable.
+            for _ in range(800):
+                document = sandbox_document(
+                    cape_report_to_sandbox_report(raw, provider="x", source_format="cape2")
+                )
+            return document
 
         _linear(make, run, 1_000)
 
@@ -131,8 +139,12 @@ class TestAHostileMappedReport:
             }
 
         mapping = RestMappingConfig(processes="$.run.procs[*]")
-        _linear(make, lambda payload: unnamed_blocks(mapping, payload), 20_000)
-        document = _mapped(make(1_000), mapping)
+        # The block is carried by reference, so finding it costs the same at
+        # any size; the timed read is the whole report the block rides in.
+        payload = make(1_000)
+        assert unnamed_blocks(mapping, payload)["report.huge"] is payload["huge"]
+        _linear(make, lambda payload: _mapped(payload, mapping), 50_000)
+        document = _mapped(payload, mapping)
         assert len(document["channels"]["report.huge"]) == 1_000
 
     @staticmethod
@@ -142,7 +154,7 @@ class TestAHostileMappedReport:
     EVERY_NODE = RestMappingConfig(target_sha256="", places={"memory": "$..*"})
 
     def test_a_path_that_matches_every_node_costs_linear_time(self) -> None:
-        _linear(self._every_node, lambda payload: _mapped(payload, self.EVERY_NODE), 2_000)
+        _linear(self._every_node, lambda payload: _mapped(payload, self.EVERY_NODE), 2_400)
 
     @pytest.mark.slow
     def test_a_path_that_matches_millions_of_nodes_holds_memory_in_step(self) -> None:
@@ -226,13 +238,16 @@ def _held(build: Callable[[], Any]) -> tuple[int, Any]:
 
 class TestEachRequestSFieldsAreHeldOnce:
     def test_many_questions_times_many_keys_costs_linear_time(self) -> None:
-        _linear(
-            _questions_and_keys,
-            lambda task: triage_overview_to_sandbox_report(
-                {}, provider="triage", source_format="triage", task_reports={"t": task}
-            ),
-            200,
-        )
+        def run(task: dict[str, Any]) -> Any:
+            # A question or a key is read in under a microsecond: each side
+            # reads eight times rather than build bodies of hundreds of megabytes.
+            for _ in range(8):
+                read = triage_overview_to_sandbox_report(
+                    {}, provider="triage", source_format="triage", task_reports={"t": task}
+                )
+            return read
+
+        _linear(_questions_and_keys, run, 4_000)
 
     def test_and_memory_in_step_with_the_body(self) -> None:
         import json
@@ -399,4 +414,4 @@ class TestEveryKindLosesItsLinkKeysLinearly:
                 network=SandboxNetwork(**network),
             )
 
-        _linear(report, sandbox_document, 2_000)
+        _linear(report, sandbox_document, 3_000)

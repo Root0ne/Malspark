@@ -12,6 +12,9 @@ Every value here is made up for the test.
 from __future__ import annotations
 
 import re
+import time
+from collections.abc import Callable
+from typing import Any
 
 import pytest
 
@@ -20,6 +23,24 @@ from malspark.agents.base_agent import read_claim_blocks
 from tests.linear_cost import assert_scales
 
 SENTENCE = "Routine 0x4100 decodes its strings at run time."
+
+
+def _searches(search: Callable[[str], Any], text: str) -> int:
+    """How many searches of ``text`` take about 12 ms, counted on the small text.
+
+    A pattern reads a run of a few thousand characters in C in microseconds,
+    or stops at once where the run is no part of a match: each text is
+    searched this many times on both sides so the small run is measurable.
+    """
+    count = 1
+    while True:
+        started = time.thread_time()
+        for _ in range(count):
+            search(text)
+        took = time.thread_time() - started
+        if took >= 0.002:
+            return max(1, round(count * 0.012 / took))
+        count *= 2
 
 
 def _read(text: str) -> list[tuple[str, str, float, str | None, str | None]]:
@@ -149,7 +170,8 @@ def test_a_long_run_of_spaces_around_an_inline_label_is_read_in_linear_time(
         run = " " * size
         return start + run + label + run + "**" + run + end
 
-    assert_scales(build, 4000, pattern.search)
+    times = _searches(pattern.search, build(4000))
+    assert_scales(build, 4000, lambda text: [pattern.search(text) for _ in range(times)])
 
 
 @pytest.mark.parametrize("end", ["x", ":"])
@@ -159,4 +181,4 @@ def test_a_line_of_many_spaced_labels_is_read_in_linear_time(label: str, end: st
         line = f" {label}    **  {end}" * rows
         return f"CLAIM: {SENTENCE}\nEVIDENCE: [ev_0001]{line}\nTECHNIQUE: T1027{line}\n"
 
-    assert_scales(build, 2000, read_claim_blocks)
+    assert_scales(build, 6000, read_claim_blocks)

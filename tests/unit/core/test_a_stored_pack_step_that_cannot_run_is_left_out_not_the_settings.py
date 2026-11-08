@@ -139,8 +139,8 @@ class TestAStoredStepThatCannotRunIsLeftOut:
             assert kept == [] and len(left) == len(value)
 
         left_out(chain(50))
-        assert_scales(chain, 300, left_out, factor=10, repeats=5)
-        assert_scales(chain, 600, left_out, factor=5, repeats=5)
+        assert_scales(chain, 2_000, left_out, factor=10, repeats=5)
+        assert_scales(chain, 4_000, left_out, factor=5, repeats=5)
 
 
 class TestEachLeftOutStepSaysWhy:
