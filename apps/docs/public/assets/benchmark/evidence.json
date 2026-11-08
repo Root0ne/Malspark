@@ -3039,7 +3039,7 @@
    "args_repaired": false,
    "args_raw": null,
    "model": null,
-   "output": "{\"status\": \"found\", \"source\": \"VirusTotal via VTAI\", \"retrieved_at\": \"2026-11-06T14:55:45.469572+00:00\", \"analysis_date\": \"2026-10-27T08:00:46Z\", \"report_url\": \"https://www.virustotal.com/gui/file/6091f2589fef42e0ab3d7975806cd8a0da012b519637c03b73f702f7586b21ef\", \"coverage\": {\"engines\": 75, \"categories\": [\"confirmed-timeout\", \"malicious\", \"type-unsupported\", \"undetected\"]}, \"data\": {\"source\": \"VirusTotal\", \"analysis_date\": \"2026-10-27T08:00:46Z\", \"report_url\": \"https://www.virustotal.com/gui/file/6091f2589fef42e0ab3d7975806cd8a0da012b519637c03b73f702f7586b21ef\", \"coverage\": {\"engines\": 75, \"categories\": [\"confirmed-timeout\", \"malicious\", \"type-unsupported\", \"undetected\"]}, \"id\": \"6091f2589fef42e0ab3d7975806cd8a0da012b519637c03b73f702f7586b21ef\", \"last_analysis_stats\": {\"malicious\": 56, \"suspicious\": 0, \"undetected\": 14, \"harmless\": 0, \"timeout\": 0, \"confirmed-timeout\": 1, \"failure\": 0, \"type-unsupported\": 4}, \"type_description\": \"Win32 DLL\", \"detections\": [\"W32.Malware.D0BC8737\", \"Trojan.Win32.Latrodectus.m!c\", \"Windows.Trojan.Latrodectus\", \"Gen:Variant.Ulise.482338\", \"Trojan.Agent.S33464281\", \"Trojan-FUKU!71D29D716410\", \"Trojan.Agent.Latrodectus\", \"Unsafe\", \"Gen:Variant.Ulise.482338\", \"Backdoor.Win64.Latrodectus.Volu\", \"Trojan ( 005ef6721 )\", \"Gen:Variant.Ulise.482338\", \"Trojan ( 005ef6721 )\", \"win/malicious_confidence_100% (W)\", \"Trojan.Ulise.D75C22\", \"Trojan.Win32.GenusT.FFRA\", \"Trojan.Coinminer\", \"Win64/Latrodectus.A trojan\", \"Malicious\", \"generic[.]ml\", \"Win.Keylogger.Lazy-10029334-0\", \"Backdoor.Win64.Agent.khs\", \"Trojan:Win64/IcedId.fa4752cd\", \"Trojan.Win64.Ulise.kqlkfh\", \"Trojan.IcedId!8.102AF (TFE:5:OBo76XN89uH)\", \"Troj/Loader-CB\", \"BackDoor.Siggen2.4752\", \"Trojan.Agent.Win64.51924\", \"Trojan.Win32.LACTRODECTUS.USBLHC26\", \"ti!6091F2589FEF\", \"Static AI - Malicious PE\", \"Gen:Variant.Ulise.482338 (B)\", \"Trojan.Win64.IcedID\", \"Trojan.Banker.IcedID.all\", \"W32.Trojan.Gen\", \"Detected\", \"W64/ABRisk.EELE-1491\", \"Trojan/Win32.Lactrodectus\", \"Win32.Troj.Generic.v\", \"Malware.Win64.Gen.tr\", \"Trojan:Win32/Lactrodectus.Z!MTB\", \"Troj/Loader-CB\", \"Gen:Variant.Ulise.482338\", \"Malicious (score: 100)\", \"Trojan/Win.Generic.R658689\", \"Trojan.Latrodectus\", \"MALICIOUS\", \"Trojan.Banker\", \"Trj/GdSda.A\", \"Trojan.Win32.LACTRODECTUS.USBLHC26\", \"Malware.Win32.Gencirc.140ac222\", \"Trojan-FUKU!71D29D716410\", \"Trojan/Agent.bxh\", \"Trojan.Malware.74412563.susgen\", \"W64/Latrodectus.CPA!tr\", \"Backdoor:Win/Lactrodectus.Z9OKG\"], \"ai_insights\": null}}",
+   "output": "{\"status\": \"found\", \"source\": \"VirusTotal via VTAI\", \"retrieved_at\": \"2026-11-06T14:55:45.469572+00:00\", \"analysis_date\": \"2026-10-27T08:00:46Z\", \"report_url\": \"https://www.virustotal.com/gui/file/6091f2589fef42e0ab3d7975806cd8a0da012b519637c03b73f702f7586b21ef\", \"coverage\": {\"engines\": 75, \"categories\": [\"confirmed-timeout\", \"malicious\", \"type-unsupported\", \"undetected\"]}, \"data\": {\"source\": \"VirusTotal\", \"analysis_date\": \"2026-10-27T08:00:46Z\", \"report_url\": \"https://www.virustotal.com/gui/file/6091f2589fef42e0ab3d7975806cd8a0da012b519637c03b73f702f7586b21ef\", \"coverage\": {\"engines\": 75, \"categories\": [\"confirmed-timeout\", \"malicious\", \"type-unsupported\", \"undetected\"]}, \"id\": \"6091f2589fef42e0ab3d7975806cd8a0da012b519637c03b73f702f7586b21ef\", \"last_analysis_stats\": {\"malicious\": 56, \"suspicious\": 0, \"undetected\": 14, \"harmless\": 0, \"timeout\": 0, \"confirmed-timeout\": 1, \"failure\": 0, \"type-unsupported\": 4}, \"type_description\": \"Win32 DLL\", \"detections\": [\"W32.Malware.D0BC8737\", \"Trojan.Win32.Latrodectus.m!c\", \"Windows.Trojan.Latrodectus\", \"Gen:Variant.Ulise.482338\", \"Trojan.Agent.S33464281\", \"Trojan-FUKU!71D29D716410\", \"Trojan.Agent.Latrodectus\", \"Unsafe\", \"Gen:Variant.Ulise.482338\", \"Backdoor.Win64.Latrodectus.Volu\", \"Trojan ( 005ef6721 )\", \"Gen:Variant.Ulise.482338\", \"Trojan ( 005ef6721 )\", \"win/malicious_confidence_100% (W)\", \"Trojan.Ulise.D75C22\", \"Trojan.Win32.GenusT.FFRA\", \"Trojan.Coinminer\", \"Win64/Latrodectus.A trojan\", \"Malicious\", \"generic[.]ml\", \"Win.Keylogger.Lazy-10029334-0\", \"Backdoor.Win64.Agent.khs\", \"Trojan:Win64/IcedId.fa4752cd\", \"Trojan.Win64.Ulise.kqlkfh\", \"Trojan.IcedId!8.102AF (TFE:5:OBo76XN89uH)\", \"Troj/Loader-CB\", \"BackDoor.Siggen2.4752\", \"Trojan.Agent.Win64.51924\", \"Trojan.Win32.LACTRODECTUS.USBLHC26\", \"ti!6091F2589FEF\", \"Static AI - Malicious PE\", \"Gen:Variant.Ulise.482338 (B)\", \"Trojan.Win64.IcedID\", \"Trojan.Banker.IcedID.all\", \"W32.Trojan.Gen\", \"Detected\", \"W64/ABRisk.EELE-1491\", \"Trojan/Win32.Lactrodectus\", \"Win32.Troj.Generic.v\", \"Malware[.]Win64[.]Gen[.]tr\", \"Trojan:Win32/Lactrodectus.Z!MTB\", \"Troj/Loader-CB\", \"Gen:Variant.Ulise.482338\", \"Malicious (score: 100)\", \"Trojan/Win.Generic.R658689\", \"Trojan.Latrodectus\", \"MALICIOUS\", \"Trojan.Banker\", \"Trj/GdSda.A\", \"Trojan.Win32.LACTRODECTUS.USBLHC26\", \"Malware.Win32.Gencirc.140ac222\", \"Trojan-FUKU!71D29D716410\", \"Trojan/Agent.bxh\", \"Trojan.Malware.74412563.susgen\", \"W64/Latrodectus[.]CPA!tr\", \"Backdoor:Win/Lactrodectus.Z9OKG\"], \"ai_insights\": null}}",
    "structured": {
     "data": {
      "id": "6091f2589fef42e0ab3d7975806cd8a0da012b519637c03b73f702f7586b21ef",
@@ -3093,7 +3093,7 @@
       "W64/ABRisk.EELE-1491",
       "Trojan/Win32.Lactrodectus",
       "Win32.Troj.Generic.v",
-      "Malware.Win64.Gen.tr",
+      "Malware[.]Win64[.]Gen[.]tr",
       "Trojan:Win32/Lactrodectus.Z!MTB",
       "Troj/Loader-CB",
       "Gen:Variant.Ulise.482338",
@@ -3108,7 +3108,7 @@
       "Trojan-FUKU!71D29D716410",
       "Trojan/Agent.bxh",
       "Trojan.Malware.74412563.susgen",
-      "W64/Latrodectus.CPA!tr",
+      "W64/Latrodectus[.]CPA!tr",
       "Backdoor:Win/Lactrodectus.Z9OKG"
      ],
      "report_url": "https://www.virustotal.com/gui/file/6091f2589fef42e0ab3d7975806cd8a0da012b519637c03b73f702f7586b21ef",
@@ -3225,7 +3225,7 @@
      "W64/ABRisk.EELE-1491",
      "Trojan/Win32.Lactrodectus",
      "Win32.Troj.Generic.v",
-     "Malware.Win64.Gen.tr",
+     "Malware[.]Win64[.]Gen[.]tr",
      "Trojan:Win32/Lactrodectus.Z!MTB",
      "Troj/Loader-CB",
      "Gen:Variant.Ulise.482338",
@@ -3240,7 +3240,7 @@
      "Trojan-FUKU!71D29D716410",
      "Trojan/Agent.bxh",
      "Trojan.Malware.74412563.susgen",
-     "W64/Latrodectus.CPA!tr",
+     "W64/Latrodectus[.]CPA!tr",
      "Backdoor:Win/Lactrodectus.Z9OKG"
     ],
     "suspicious": 0
@@ -24684,7 +24684,7 @@
    "args_repaired": false,
    "args_raw": null,
    "model": "anthropic/claude-haiku-5-5",
-   "output": "{\"status\": \"found\", \"source\": \"VirusTotal via VTAI\", \"retrieved_at\": \"2026-11-06T14:56:23.826987+00:00\", \"analysis_date\": \"2026-10-27T08:00:46Z\", \"report_url\": \"https://www.virustotal.com/gui/file/6091f2589fef42e0ab3d7975806cd8a0da012b519637c03b73f702f7586b21ef\", \"coverage\": {\"engines\": 75, \"categories\": [\"confirmed-timeout\", \"malicious\", \"type-unsupported\", \"undetected\"]}, \"data\": {\"source\": \"VirusTotal\", \"analysis_date\": \"2026-10-27T08:00:46Z\", \"report_url\": \"https://www.virustotal.com/gui/file/6091f2589fef42e0ab3d7975806cd8a0da012b519637c03b73f702f7586b21ef\", \"coverage\": {\"engines\": 75, \"categories\": [\"confirmed-timeout\", \"malicious\", \"type-unsupported\", \"undetected\"]}, \"id\": \"6091f2589fef42e0ab3d7975806cd8a0da012b519637c03b73f702f7586b21ef\", \"last_analysis_stats\": {\"confirmed-timeout\": 1, \"failure\": 0, \"harmless\": 0, \"malicious\": 56, \"suspicious\": 0, \"timeout\": 0, \"type-unsupported\": 4, \"undetected\": 14}, \"type_description\": \"Win32 DLL\", \"detections\": [\"W32.Malware.D0BC8737\", \"Trojan.Win32.Latrodectus.m!c\", \"Windows.Trojan.Latrodectus\", \"Gen:Variant.Ulise.482338\", \"Trojan.Agent.S33464281\", \"Trojan-FUKU!71D29D716410\", \"Trojan.Agent.Latrodectus\", \"Unsafe\", \"Gen:Variant.Ulise.482338\", \"Backdoor.Win64.Latrodectus.Volu\", \"Trojan ( 005ef6721 )\", \"Gen:Variant.Ulise.482338\", \"Trojan ( 005ef6721 )\", \"win/malicious_confidence_100% (W)\", \"Trojan.Ulise.D75C22\", \"Trojan.Win32.GenusT.FFRA\", \"Trojan.Coinminer\", \"Win64/Latrodectus.A trojan\", \"Malicious\", \"generic[.]ml\", \"Win.Keylogger.Lazy-10029334-0\", \"Backdoor.Win64.Agent.khs\", \"Trojan:Win64/IcedId.fa4752cd\", \"Trojan.Win64.Ulise.kqlkfh\", \"Trojan.IcedId!8.102AF (TFE:5:OBo76XN89uH)\", \"Troj/Loader-CB\", \"BackDoor.Siggen2.4752\", \"Trojan.Agent.Win64.51924\", \"Trojan.Win32.LACTRODECTUS.USBLHC26\", \"ti!6091F2589FEF\", \"Static AI - Malicious PE\", \"Gen:Variant.Ulise.482338 (B)\", \"Trojan.Win64.IcedID\", \"Trojan.Banker.IcedID.all\", \"W32.Trojan.Gen\", \"Detected\", \"W64/ABRisk.EELE-1491\", \"Trojan/Win32.Lactrodectus\", \"Win32.Troj.Generic.v\", \"Malware.Win64.Gen.tr\", \"Trojan:Win32/Lactrodectus.Z!MTB\", \"Troj/Loader-CB\", \"Gen:Variant.Ulise.482338\", \"Malicious (score: 100)\", \"Trojan/Win.Generic.R658689\", \"Trojan.Latrodectus\", \"MALICIOUS\", \"Trojan.Banker\", \"Trj/GdSda.A\", \"Trojan.Win32.LACTRODECTUS.USBLHC26\", \"Malware.Win32.Gencirc.140ac222\", \"Trojan-FUKU!71D29D716410\", \"Trojan/Agent.bxh\", \"Trojan.Malware.74412563.susgen\", \"W64/Latrodectus.CPA!tr\", \"Backdoor:Win/Lactrodectus.Z9OKG\"], \"ai_insights\": null}}",
+   "output": "{\"status\": \"found\", \"source\": \"VirusTotal via VTAI\", \"retrieved_at\": \"2026-11-06T14:56:23.826987+00:00\", \"analysis_date\": \"2026-10-27T08:00:46Z\", \"report_url\": \"https://www.virustotal.com/gui/file/6091f2589fef42e0ab3d7975806cd8a0da012b519637c03b73f702f7586b21ef\", \"coverage\": {\"engines\": 75, \"categories\": [\"confirmed-timeout\", \"malicious\", \"type-unsupported\", \"undetected\"]}, \"data\": {\"source\": \"VirusTotal\", \"analysis_date\": \"2026-10-27T08:00:46Z\", \"report_url\": \"https://www.virustotal.com/gui/file/6091f2589fef42e0ab3d7975806cd8a0da012b519637c03b73f702f7586b21ef\", \"coverage\": {\"engines\": 75, \"categories\": [\"confirmed-timeout\", \"malicious\", \"type-unsupported\", \"undetected\"]}, \"id\": \"6091f2589fef42e0ab3d7975806cd8a0da012b519637c03b73f702f7586b21ef\", \"last_analysis_stats\": {\"confirmed-timeout\": 1, \"failure\": 0, \"harmless\": 0, \"malicious\": 56, \"suspicious\": 0, \"timeout\": 0, \"type-unsupported\": 4, \"undetected\": 14}, \"type_description\": \"Win32 DLL\", \"detections\": [\"W32.Malware.D0BC8737\", \"Trojan.Win32.Latrodectus.m!c\", \"Windows.Trojan.Latrodectus\", \"Gen:Variant.Ulise.482338\", \"Trojan.Agent.S33464281\", \"Trojan-FUKU!71D29D716410\", \"Trojan.Agent.Latrodectus\", \"Unsafe\", \"Gen:Variant.Ulise.482338\", \"Backdoor.Win64.Latrodectus.Volu\", \"Trojan ( 005ef6721 )\", \"Gen:Variant.Ulise.482338\", \"Trojan ( 005ef6721 )\", \"win/malicious_confidence_100% (W)\", \"Trojan.Ulise.D75C22\", \"Trojan.Win32.GenusT.FFRA\", \"Trojan.Coinminer\", \"Win64/Latrodectus.A trojan\", \"Malicious\", \"generic[.]ml\", \"Win.Keylogger.Lazy-10029334-0\", \"Backdoor.Win64.Agent.khs\", \"Trojan:Win64/IcedId.fa4752cd\", \"Trojan.Win64.Ulise.kqlkfh\", \"Trojan.IcedId!8.102AF (TFE:5:OBo76XN89uH)\", \"Troj/Loader-CB\", \"BackDoor.Siggen2.4752\", \"Trojan.Agent.Win64.51924\", \"Trojan.Win32.LACTRODECTUS.USBLHC26\", \"ti!6091F2589FEF\", \"Static AI - Malicious PE\", \"Gen:Variant.Ulise.482338 (B)\", \"Trojan.Win64.IcedID\", \"Trojan.Banker.IcedID.all\", \"W32.Trojan.Gen\", \"Detected\", \"W64/ABRisk.EELE-1491\", \"Trojan/Win32.Lactrodectus\", \"Win32.Troj.Generic.v\", \"Malware[.]Win64[.]Gen[.]tr\", \"Trojan:Win32/Lactrodectus.Z!MTB\", \"Troj/Loader-CB\", \"Gen:Variant.Ulise.482338\", \"Malicious (score: 100)\", \"Trojan/Win.Generic.R658689\", \"Trojan.Latrodectus\", \"MALICIOUS\", \"Trojan.Banker\", \"Trj/GdSda.A\", \"Trojan.Win32.LACTRODECTUS.USBLHC26\", \"Malware.Win32.Gencirc.140ac222\", \"Trojan-FUKU!71D29D716410\", \"Trojan/Agent.bxh\", \"Trojan.Malware.74412563.susgen\", \"W64/Latrodectus[.]CPA!tr\", \"Backdoor:Win/Lactrodectus.Z9OKG\"], \"ai_insights\": null}}",
    "structured": {
     "data": {
      "id": "6091f2589fef42e0ab3d7975806cd8a0da012b519637c03b73f702f7586b21ef",
@@ -24738,7 +24738,7 @@
       "W64/ABRisk.EELE-1491",
       "Trojan/Win32.Lactrodectus",
       "Win32.Troj.Generic.v",
-      "Malware.Win64.Gen.tr",
+      "Malware[.]Win64[.]Gen[.]tr",
       "Trojan:Win32/Lactrodectus.Z!MTB",
       "Troj/Loader-CB",
       "Gen:Variant.Ulise.482338",
@@ -24753,7 +24753,7 @@
       "Trojan-FUKU!71D29D716410",
       "Trojan/Agent.bxh",
       "Trojan.Malware.74412563.susgen",
-      "W64/Latrodectus.CPA!tr",
+      "W64/Latrodectus[.]CPA!tr",
       "Backdoor:Win/Lactrodectus.Z9OKG"
      ],
      "report_url": "https://www.virustotal.com/gui/file/6091f2589fef42e0ab3d7975806cd8a0da012b519637c03b73f702f7586b21ef",
@@ -24876,7 +24876,7 @@
      "W64/ABRisk.EELE-1491",
      "Trojan/Win32.Lactrodectus",
      "Win32.Troj.Generic.v",
-     "Malware.Win64.Gen.tr",
+     "Malware[.]Win64[.]Gen[.]tr",
      "Trojan:Win32/Lactrodectus.Z!MTB",
      "Troj/Loader-CB",
      "Gen:Variant.Ulise.482338",
@@ -24891,7 +24891,7 @@
      "Trojan-FUKU!71D29D716410",
      "Trojan/Agent.bxh",
      "Trojan.Malware.74412563.susgen",
-     "W64/Latrodectus.CPA!tr",
+     "W64/Latrodectus[.]CPA!tr",
      "Backdoor:Win/Lactrodectus.Z9OKG"
     ],
     "suspicious": 0
@@ -26261,7 +26261,7 @@
    "args_repaired": false,
    "args_raw": null,
    "model": "anthropic/claude-haiku-5-5",
-   "output": "{\n  \"input\": {\n    \"asked\": {\n      \"rva\": \"0x10250\",\n      \"length\": \"64\"\n    },\n    \"rva\": \"0x10250\",\n    \"offset\": \"0xe050\",\n    \"length\": 64,\n    \"end\": \"0xe090\",\n    \"section\": \".data\"\n  },\n  \"steps\": [\n    {\n      \"step\": 1,\n      \"op\": \"slice\",\n      \"start\": 6,\n      \"length\": 58,\n      \"in_length\": 64,\n      \"out_length\": 58\n    },\n    {\n      \"step\": 2,\n      \"op\": \"xor\",\n      \"key\": {\n        \"hex\": \"41\"\n      },\n      \"increment\": 1,\n      \"rule\": \"output byte i is input byte i exclusive-or ((key byte i mod key length + increment * i) mod 256)\",\n      \"in_length\": 58,\n      \"out_length\": 58\n    }\n  ],\n  \"output\": {\n    \"length\": 58,\n    \"sha256\": \"ff894aec190117d3740ba5698fa5b556902e914d847da17c7b90b993cfe8628b\",\n    \"printable_share\": 0.8793,\n    \"printable_share_utf16le\": 0.0,\n    \"entropy_bits_per_byte\": 5.1145,\n    \"shown\": {\n      \"offset\": 0,\n      \"end\": 58\n    },\n    \"hex_head\": \"68787870733a2f2f7469746e6f76616372696f6e5b2e5d746f702f6c6976652f0060616223f9075538f5405c5c585b1207174b5351565641524d4946\",\n    \"indicators\": [\n      {\n        \"kind\": \"url\",\n        \"value\": \"hxxps://titnovacrion[.]top/live/\",\n        \"offset\": 0,\n        \"encoding\": \"ascii\"\n      },\n      {\n        \"kind\": \"domain\",\n        \"value\": \"titnovacrion[.]top\",\n        \"offset\": 8,\n        \"encoding\": \"ascii\"\n      }\n    ],\n    \"ascii\": \"hxxps://titnovacrion[.]top/live/\\\\x00`ab#\\\\xf9\\\\x07U8\\\\xf5@\\\\\\\\X[\\\\x12\\\\x07\\\\x17KSQVVARMIF\",\n    \"utf16le\": \"\u7468\u7074\u3a73\u2f2f\u6974\u6e74\u766f\u6361\u6972\u6e6f\u742e\u706f\u6c2f\u7669\u2f65\u6000\u6261\uf923\u5507\\\\xf538\u5c40\u585c\u125b\u1707\u534b\u5651\u4156\u4d52\u4649\"\n  }\n}",
+   "output": "{\n  \"input\": {\n    \"asked\": {\n      \"rva\": \"0x10250\",\n      \"length\": \"64\"\n    },\n    \"rva\": \"0x10250\",\n    \"offset\": \"0xe050\",\n    \"length\": 64,\n    \"end\": \"0xe090\",\n    \"section\": \".data\"\n  },\n  \"steps\": [\n    {\n      \"step\": 1,\n      \"op\": \"slice\",\n      \"start\": 6,\n      \"length\": 58,\n      \"in_length\": 64,\n      \"out_length\": 58\n    },\n    {\n      \"step\": 2,\n      \"op\": \"xor\",\n      \"key\": {\n        \"hex\": \"41\"\n      },\n      \"increment\": 1,\n      \"rule\": \"output byte i is input byte i exclusive-or ((key byte i mod key length + increment * i) mod 256)\",\n      \"in_length\": 58,\n      \"out_length\": 58\n    }\n  ],\n  \"output\": {\n    \"length\": 58,\n    \"sha256\": \"ff894aec190117d3740ba5698fa5b556902e914d847da17c7b90b993cfe8628b\",\n    \"printable_share\": 0.8793,\n    \"printable_share_utf16le\": 0.0,\n    \"entropy_bits_per_byte\": 5.1145,\n    \"shown\": {\n      \"offset\": 0,\n      \"end\": 58\n    },\n    \"hex_head\": \"68787870733a2f2f7469746e6f76616372696f6e5b2e5d746f702f6c6976652f0060616223f9075538f5405c5c585b1207174b5351565641524d4946\",\n    \"indicators\": [\n      {\n        \"kind\": \"url\",\n        \"value\": \"hxxps://titnovacrion[.]top/live/\",\n        \"offset\": 0,\n        \"encoding\": \"ascii\"\n      },\n      {\n        \"kind\": \"domain\",\n        \"value\": \"titnovacrion[.]top\",\n        \"offset\": 8,\n        \"encoding\": \"ascii\"\n      }\n    ],\n    \"ascii\": \"hxxps://titnovacrion[.]top/live/\\\\x00`ab#\\\\xf9\\\\x07U8\\\\xf5@\\\\\\\\X[\\\\x12\\\\x07\\\\x17KSQVVARMIF\",\n    \"utf16le\": \"\u7868\u7078\u3a73\u2f2f\u6974\u6e74\u766f\u6361\u6972\u6e6f\u2e5b\u745d\u706f\u6c2f\u7669\u2f65\u6000\u6261\uf923\u5507\\\\xf538\u5c40\u585c\u125b\u1707\u534b\u5651\u4156\u4d52\u4649\"\n  }\n}",
    "structured": {
     "input": {
      "end": "0xe090",
@@ -26303,7 +26303,7 @@
      },
      "length": 58,
      "sha256": "ff894aec190117d3740ba5698fa5b556902e914d847da17c7b90b993cfe8628b",
-     "utf16le": "\u7468\u7074\u3a73\u2f2f\u6974\u6e74\u766f\u6361\u6972\u6e6f\u742e\u706f\u6c2f\u7669\u2f65\u6000\u6261\uf923\u5507\\xf538\u5c40\u585c\u125b\u1707\u534b\u5651\u4156\u4d52\u4649",
+     "utf16le": "\u7868\u7078\u3a73\u2f2f\u6974\u6e74\u766f\u6361\u6972\u6e6f\u2e5b\u745d\u706f\u6c2f\u7669\u2f65\u6000\u6261\uf923\u5507\\xf538\u5c40\u585c\u125b\u1707\u534b\u5651\u4156\u4d52\u4649",
      "hex_head": "68787870733a2f2f7469746e6f76616372696f6e5b2e5d746f702f6c6976652f0060616223f9075538f5405c5c585b1207174b5351565641524d4946",
      "indicators": [
       {
@@ -32941,7 +32941,7 @@
    "args_repaired": false,
    "args_raw": null,
    "model": "anthropic/claude-haiku-5-5",
-   "output": "{\"status\": \"found\", \"source\": \"VirusTotal via VTAI\", \"retrieved_at\": \"2026-11-06T15:58:39.878172+00:00\", \"analysis_date\": \"2026-10-27T08:00:46Z\", \"report_url\": \"https://www.virustotal.com/gui/file/6091f2589fef42e0ab3d7975806cd8a0da012b519637c03b73f702f7586b21ef\", \"coverage\": {\"engines\": 75, \"categories\": [\"confirmed-timeout\", \"malicious\", \"type-unsupported\", \"undetected\"]}, \"data\": {\"source\": \"VirusTotal\", \"analysis_date\": \"2026-10-27T08:00:46Z\", \"report_url\": \"https://www.virustotal.com/gui/file/6091f2589fef42e0ab3d7975806cd8a0da012b519637c03b73f702f7586b21ef\", \"coverage\": {\"engines\": 75, \"categories\": [\"confirmed-timeout\", \"malicious\", \"type-unsupported\", \"undetected\"]}, \"id\": \"6091f2589fef42e0ab3d7975806cd8a0da012b519637c03b73f702f7586b21ef\", \"last_analysis_stats\": {\"malicious\": 56, \"suspicious\": 0, \"undetected\": 14, \"harmless\": 0, \"timeout\": 0, \"confirmed-timeout\": 1, \"failure\": 0, \"type-unsupported\": 4}, \"type_description\": \"Win32 DLL\", \"detections\": [\"W32.Malware.D0BC8737\", \"Trojan.Win32.Latrodectus.m!c\", \"Windows.Trojan.Latrodectus\", \"Gen:Variant.Ulise.482338\", \"Trojan.Agent.S33464281\", \"Trojan-FUKU!71D29D716410\", \"Trojan.Agent.Latrodectus\", \"Unsafe\", \"Gen:Variant.Ulise.482338\", \"Backdoor.Win64.Latrodectus.Volu\", \"Trojan ( 005ef6721 )\", \"Gen:Variant.Ulise.482338\", \"Trojan ( 005ef6721 )\", \"win/malicious_confidence_100% (W)\", \"Trojan.Ulise.D75C22\", \"Trojan.Win32.GenusT.FFRA\", \"Trojan.Coinminer\", \"Win64/Latrodectus.A trojan\", \"Malicious\", \"generic[.]ml\", \"Win.Keylogger.Lazy-10029334-0\", \"Backdoor.Win64.Agent.khs\", \"Trojan:Win64/IcedId.fa4752cd\", \"Trojan.Win64.Ulise.kqlkfh\", \"Trojan.IcedId!8.102AF (TFE:5:OBo76XN89uH)\", \"Troj/Loader-CB\", \"BackDoor.Siggen2.4752\", \"Trojan.Agent.Win64.51924\", \"Trojan.Win32.LACTRODECTUS.USBLHC26\", \"ti!6091F2589FEF\", \"Static AI - Malicious PE\", \"Gen:Variant.Ulise.482338 (B)\", \"Trojan.Win64.IcedID\", \"Trojan.Banker.IcedID.all\", \"W32.Trojan.Gen\", \"Detected\", \"W64/ABRisk.EELE-1491\", \"Trojan/Win32.Lactrodectus\", \"Win32.Troj.Generic.v\", \"Malware.Win64.Gen.tr\", \"Trojan:Win32/Lactrodectus.Z!MTB\", \"Troj/Loader-CB\", \"Gen:Variant.Ulise.482338\", \"Malicious (score: 100)\", \"Trojan/Win.Generic.R658689\", \"Trojan.Latrodectus\", \"MALICIOUS\", \"Trojan.Banker\", \"Trj/GdSda.A\", \"Trojan.Win32.LACTRODECTUS.USBLHC26\", \"Malware.Win32.Gencirc.140ac222\", \"Trojan-FUKU!71D29D716410\", \"Trojan/Agent.bxh\", \"Trojan.Malware.74412563.susgen\", \"W64/Latrodectus.CPA!tr\", \"Backdoor:Win/Lactrodectus.Z9OKG\"], \"ai_insights\": null}}",
+   "output": "{\"status\": \"found\", \"source\": \"VirusTotal via VTAI\", \"retrieved_at\": \"2026-11-06T15:58:39.878172+00:00\", \"analysis_date\": \"2026-10-27T08:00:46Z\", \"report_url\": \"https://www.virustotal.com/gui/file/6091f2589fef42e0ab3d7975806cd8a0da012b519637c03b73f702f7586b21ef\", \"coverage\": {\"engines\": 75, \"categories\": [\"confirmed-timeout\", \"malicious\", \"type-unsupported\", \"undetected\"]}, \"data\": {\"source\": \"VirusTotal\", \"analysis_date\": \"2026-10-27T08:00:46Z\", \"report_url\": \"https://www.virustotal.com/gui/file/6091f2589fef42e0ab3d7975806cd8a0da012b519637c03b73f702f7586b21ef\", \"coverage\": {\"engines\": 75, \"categories\": [\"confirmed-timeout\", \"malicious\", \"type-unsupported\", \"undetected\"]}, \"id\": \"6091f2589fef42e0ab3d7975806cd8a0da012b519637c03b73f702f7586b21ef\", \"last_analysis_stats\": {\"malicious\": 56, \"suspicious\": 0, \"undetected\": 14, \"harmless\": 0, \"timeout\": 0, \"confirmed-timeout\": 1, \"failure\": 0, \"type-unsupported\": 4}, \"type_description\": \"Win32 DLL\", \"detections\": [\"W32.Malware.D0BC8737\", \"Trojan.Win32.Latrodectus.m!c\", \"Windows.Trojan.Latrodectus\", \"Gen:Variant.Ulise.482338\", \"Trojan.Agent.S33464281\", \"Trojan-FUKU!71D29D716410\", \"Trojan.Agent.Latrodectus\", \"Unsafe\", \"Gen:Variant.Ulise.482338\", \"Backdoor.Win64.Latrodectus.Volu\", \"Trojan ( 005ef6721 )\", \"Gen:Variant.Ulise.482338\", \"Trojan ( 005ef6721 )\", \"win/malicious_confidence_100% (W)\", \"Trojan.Ulise.D75C22\", \"Trojan.Win32.GenusT.FFRA\", \"Trojan.Coinminer\", \"Win64/Latrodectus.A trojan\", \"Malicious\", \"generic[.]ml\", \"Win.Keylogger.Lazy-10029334-0\", \"Backdoor.Win64.Agent.khs\", \"Trojan:Win64/IcedId.fa4752cd\", \"Trojan.Win64.Ulise.kqlkfh\", \"Trojan.IcedId!8.102AF (TFE:5:OBo76XN89uH)\", \"Troj/Loader-CB\", \"BackDoor.Siggen2.4752\", \"Trojan.Agent.Win64.51924\", \"Trojan.Win32.LACTRODECTUS.USBLHC26\", \"ti!6091F2589FEF\", \"Static AI - Malicious PE\", \"Gen:Variant.Ulise.482338 (B)\", \"Trojan.Win64.IcedID\", \"Trojan.Banker.IcedID.all\", \"W32.Trojan.Gen\", \"Detected\", \"W64/ABRisk.EELE-1491\", \"Trojan/Win32.Lactrodectus\", \"Win32.Troj.Generic.v\", \"Malware[.]Win64[.]Gen[.]tr\", \"Trojan:Win32/Lactrodectus.Z!MTB\", \"Troj/Loader-CB\", \"Gen:Variant.Ulise.482338\", \"Malicious (score: 100)\", \"Trojan/Win.Generic.R658689\", \"Trojan.Latrodectus\", \"MALICIOUS\", \"Trojan.Banker\", \"Trj/GdSda.A\", \"Trojan.Win32.LACTRODECTUS.USBLHC26\", \"Malware.Win32.Gencirc.140ac222\", \"Trojan-FUKU!71D29D716410\", \"Trojan/Agent.bxh\", \"Trojan.Malware.74412563.susgen\", \"W64/Latrodectus[.]CPA!tr\", \"Backdoor:Win/Lactrodectus.Z9OKG\"], \"ai_insights\": null}}",
    "structured": {
     "data": {
      "id": "6091f2589fef42e0ab3d7975806cd8a0da012b519637c03b73f702f7586b21ef",
@@ -32995,7 +32995,7 @@
       "W64/ABRisk.EELE-1491",
       "Trojan/Win32.Lactrodectus",
       "Win32.Troj.Generic.v",
-      "Malware.Win64.Gen.tr",
+      "Malware[.]Win64[.]Gen[.]tr",
       "Trojan:Win32/Lactrodectus.Z!MTB",
       "Troj/Loader-CB",
       "Gen:Variant.Ulise.482338",
@@ -33010,7 +33010,7 @@
       "Trojan-FUKU!71D29D716410",
       "Trojan/Agent.bxh",
       "Trojan.Malware.74412563.susgen",
-      "W64/Latrodectus.CPA!tr",
+      "W64/Latrodectus[.]CPA!tr",
       "Backdoor:Win/Lactrodectus.Z9OKG"
      ],
      "report_url": "https://www.virustotal.com/gui/file/6091f2589fef42e0ab3d7975806cd8a0da012b519637c03b73f702f7586b21ef",
@@ -33133,7 +33133,7 @@
      "W64/ABRisk.EELE-1491",
      "Trojan/Win32.Lactrodectus",
      "Win32.Troj.Generic.v",
-     "Malware.Win64.Gen.tr",
+     "Malware[.]Win64[.]Gen[.]tr",
      "Trojan:Win32/Lactrodectus.Z!MTB",
      "Troj/Loader-CB",
      "Gen:Variant.Ulise.482338",
@@ -33148,7 +33148,7 @@
      "Trojan-FUKU!71D29D716410",
      "Trojan/Agent.bxh",
      "Trojan.Malware.74412563.susgen",
-     "W64/Latrodectus.CPA!tr",
+     "W64/Latrodectus[.]CPA!tr",
      "Backdoor:Win/Lactrodectus.Z9OKG"
     ],
     "suspicious": 0

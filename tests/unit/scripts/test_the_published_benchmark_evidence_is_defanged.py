@@ -94,6 +94,18 @@ def test_a_hex_run_that_holds_an_indicator_is_re_encoded_defanged() -> None:
     assert clean(digest) == digest
 
 
+def test_a_capitalised_host_is_defanged_and_a_capitalised_label_is_not() -> None:
+    assert clean('$s1 = "EVIL.COM" ascii') == '$s1 = "EVIL[.]COM" ascii'
+    assert clean("Trojan.Win64.IcedID") == "Trojan.Win64.IcedID"
+
+
+def test_bytes_shown_as_utf16le_that_hold_an_indicator_are_rebuilt_defanged() -> None:
+    raw = b"https://bad-host.top/live/\x00\x60"
+    shown = raw.decode("utf-16le")
+    out = clean(f'"utf16le": "{shown}"').split('"')[3]
+    assert out.encode("utf-16le").rstrip(b"\x00") == b"hxxps://bad-host[.]top/live/\x00\x60"
+
+
 def test_a_local_path_keeps_only_its_file_name() -> None:
     assert clean('"path": "/home/someone/work/data/samples/.tmp/abc.exe"') == '"path": "abc.exe"'
     assert clean("Analyzing: \\n/tmp/scratch/abc.exe\\n") == "Analyzing: \\nabc.exe\\n"
@@ -102,10 +114,10 @@ def test_a_local_path_keeps_only_its_file_name() -> None:
 
 def test_ids_run_tags_and_the_former_name_are_replaced() -> None:
     assert clean(f"job {JOB} done") == "job <job> done"
-    assert clean("scored as run9, beside local7, hk5 and run 7") == (
+    assert clean("scored as run97, beside local98, hk99 and run 97") == (
         "scored as <run>, beside <run>, <run> and <run>"
     )
-    assert clean("the empty collections store_hk5*") == "the empty collections <run>"
+    assert clean("the empty collections store_hk99*") == "the empty collections <run>"
     upper, title = OLD.upper(), OLD.capitalize()
     assert clean(f"{title}_AutoGen_x, {OLD}-evidence-bundle/1, {upper}") == (
         "Malspark_AutoGen_x, malspark-evidence-bundle/1, MALSPARK"
@@ -178,17 +190,43 @@ def test_a_run_folder_is_published_whole(tmp_path: Path) -> None:
 
 # Links that are not indicators of the sample.
 REFERENCE = ("virustotal.com", "bazaar.abuse.ch", "attack.mitre.org", "w3.org")
-# Dotted names that end in a file extension are files.
+# Dotted names that end in a file extension are files. An extension that is
+# also a top-level domain (.zip, .md, .py ...) is not listed: a file name with
+# one is allowed by name in NOT_HOSTS.
 EXTENSIONS = frozenset(
-    "dll exe dat sys txt json md html htm js css py pyc ps1 bat cmd vbs lnk ini cfg log xml yaml "
-    "yml csv tmp bin cab zip rar gz tar pdf doc docx xls xlsx png jpg gif svg ico msi db so elf "
+    "dll exe dat sys txt json html htm js css pyc ps1 bat cmd vbs lnk ini cfg log xml yaml "
+    "yml csv tmp bin rar gz tar pdf doc docx xls xlsx png jpg gif svg ico msi db elf "
     "apk jar crl cer crt".split()
 )
 # Dotted names in the copies that are no host, each read where it stands: CSS
 # selectors of the HTML report, keywords of the Suricata, Sigma and YARA rules
-# it prints, keys of the sandbox's own records, and a truncated command line.
+# it prints, keys of the sandbox's own records, a truncated command line, the
+# detection labels of the reputation answers, and file names whose extension
+# is also a top-level domain (a tool's script, certificate lists the sandbox
+# fetched). The two detection labels that end in a top-level domain,
+# ``Malware.Win64.Gen.tr`` and ``Latrodectus.CPA``, are defanged instead.
 NOT_HOSTS = frozenset(
     {
+        "Agent.bxh",
+        "Backdoor.Win64.Agent.khs",
+        "Backdoor.Win64.Latrodectus.Volu",
+        "Trojan.Agent.Latrodectus",
+        "Trojan.Banker",
+        "Trojan.Banker.IcedID.all",
+        "Trojan.Coinminer",
+        "Trojan.IcedId",
+        "Trojan.Latrodectus",
+        "Trojan.Malware.74412563.susgen",
+        "Trojan.Win32.GenusT.FFRA",
+        "Trojan.Win64.IcedID",
+        "Trojan.Win64.Ulise.kqlkfh",
+        "W32.Trojan.Gen",
+        "Win32.Lactrodectus",
+        "Windows.Trojan.Latrodectus",
+        "authrootstl.cab",
+        "disallowedcertstl.cab",
+        "pinrulesstl.cab",
+        "qu1cksc0pe.py",
         "agreement.dropped",
         "agreement.listed",
         "agreement.rewritten",
@@ -225,7 +263,7 @@ PUBLIC_IDS = frozenset(
     }
 )
 
-_NAME = re.compile(r"(?<![\w.\-\[\]])((?:[a-z0-9-]+\.)+([a-z]{2,24}))(?![\w-]|\.\w)")
+_NAME = re.compile(r"(?<![\w.\-\[\]])((?:[a-z0-9-]+\.)+([a-z]{2,24}))(?![\w-]|\.\w)", re.IGNORECASE)
 _LIVE_URL = re.compile(r"https?://([^/\s\"'<>\\)]+)", re.IGNORECASE)
 _ADDRESS = re.compile(r"(?<![\d.])(?:\d{1,3}\.){3}\d{1,3}(?![\d.]*\d)")
 _RUN_TAG = re.compile(r"\b(?:haiku|run|local|hk)[ _-]?\d[\w-]*", re.IGNORECASE)
@@ -233,6 +271,8 @@ _ID = re.compile(
     r"(?<![\w-])([a-z][a-z0-9-]*--)?([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})"
 )
 _HEX_RUN = re.compile(r"(?<![0-9a-fA-F])(?:[0-9a-fA-F]{2}){12,}(?![0-9a-fA-F])")
+# Bytes read back as UTF-16LE show as a run of characters above U+00FF.
+_WIDE_RUN = re.compile("[\u0100-\ud7ff\ue000-\uffff]{8,}")
 
 
 def _reference(host: str) -> bool:
@@ -245,7 +285,7 @@ def live_names(text: str) -> list[str]:
     return [
         m.group(1)
         for m in _NAME.finditer(text)
-        if m.group(2) not in EXTENSIONS
+        if m.group(2).lower() not in EXTENSIONS
         and m.group(1) not in NOT_HOSTS
         and not _reference(m.group(1))
     ]
@@ -256,7 +296,7 @@ def live_urls(text: str) -> list[str]:
 
 
 def test_the_scan_catches_a_live_host_put_back() -> None:
-    for host in ("evil.de", "c.pki.goog", "bad-host.top"):
+    for host in ("evil.de", "c.pki.goog", "bad-host.top", "EVIL.COM", "evil.zip"):
         assert live_names(f'"dst": "{host}", text') == [host]
     assert live_urls("GET https://evil.de/x") == ["https://evil.de"]
     assert _ADDRESS.findall("to 203.0.113.9.") == ["203.0.113.9"]
@@ -301,3 +341,23 @@ def test_a_hex_field_of_the_published_copy_decodes_to_no_live_indicator(name: st
         decoded = bytes.fromhex(match.group(0)).decode("latin-1")
         assert live_urls(decoded) == [], match.group(0)[:40]
         assert live_names(decoded) == [], match.group(0)[:40]
+
+
+@pytest.mark.parametrize("name", JSON_FILES)
+def test_a_utf16le_field_of_the_published_copy_decodes_to_no_live_indicator(name: str) -> None:
+    for string in _strings(json.loads((OUT / name).read_text(encoding="utf-8"))):
+        for match in _WIDE_RUN.finditer(string):
+            decoded = match.group(0).encode("utf-16le").decode("latin-1")
+            assert live_urls(decoded) == [], decoded[:40]
+            assert live_names(decoded) == [], decoded[:40]
+
+
+def _strings(value: object) -> list[str]:
+    """Every string in a parsed JSON value, keys included."""
+    if isinstance(value, str):
+        return [value]
+    if isinstance(value, dict):
+        return [s for k, v in value.items() for s in (*_strings(k), *_strings(v))]
+    if isinstance(value, list):
+        return [s for v in value for s in _strings(v)]
+    return []

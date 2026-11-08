@@ -13,8 +13,8 @@ the published copies from it, and does nothing else to them:
   ``<sample>``, and a ledger entry's row id is dropped (its ``entry_id``,
   ``ev_0001`` ..., is what the report cites and stays);
 - run tags (a word such as ``run``, ``local`` or ``hk`` followed by digits,
-  ``run9``, ``run 9``, ``local7``, and a collection name built on one,
-  ``<prefix>_hk5*``) become ``<run>``; the product's former name
+  ``run97``, ``run 97``, ``local98``, and a collection name built on one,
+  ``<prefix>_hk99*``) become ``<run>``; the product's former name
   (``malspark.core.previous_name``) becomes Malspark;
 - a value shaped like a credential (a bearer token, an API key, a cookie) is
   replaced by ``<redacted>``;
@@ -111,13 +111,13 @@ _SECRETS = (
     re.compile(r"\bAKIA[0-9A-Z]{16}\b"),
 )
 _URL = re.compile(r"\b[hH][tT][tT][pP]([sS]?)://([^/\s\"'<>&)\]\\]+)")
-# Host names are written in lower case; a dotted name with capitals is a
-# detection label (``Trojan.Win64.X``) or code. The run's own indicators are
-# matched in any case.
 _DOMAIN = re.compile(
-    r"(?<![\w.\-])((?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+([a-z]{2,24}))(?![\w-]|\.[a-zA-Z0-9])"
+    r"(?<![\w.\-])((?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+([a-z]{2,24}))(?![\w-]|\.[a-z0-9])",
+    re.IGNORECASE,
 )
 _HEX = re.compile(r"(?<![0-9a-fA-F])(?:[0-9a-fA-F]{2}){12,}(?![0-9a-fA-F])")
+# Bytes read back as UTF-16LE show as a run of characters above U+00FF.
+_WIDE = re.compile("[\u0100-\ud7ff\ue000-\uffff]{8,}")
 _PLACEHOLDER = re.compile(r"<(job|report|sample|run|redacted)>")
 _OCTET = r"(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)"
 # An address may end a sentence; a fifth dotted number makes it something else.
@@ -203,23 +203,37 @@ class Sanitiser:
             )
         if decode:
             text = self._sub("hex", _HEX, text, self._defang_hex)
+            text = self._sub("utf16le", _WIDE, text, self._defang_wide)
         text = self._sub("url", _URL, text, self._defang_url)
         if self.indicators:
             text = self._sub("indicator", self.indicators, text, lambda m: _defang(m.group(0)))
         text = self._sub("host", _DOMAIN, text, self._defang_host)
         return self._sub("ipv4", _IPV4, text, lambda m: m.group(0).replace(".", "[.]"))
 
-    def _defang_hex(self, match: re.Match[str]) -> str:
-        """A hex run whose bytes hold an indicator, as the hex of the defanged bytes."""
-        raw = match.group(0)
-        decoded = bytes.fromhex(raw).decode("latin-1")
+    def _defanged_bytes(self, data: bytes) -> bytes | None:
+        """``data`` with the rules applied to it read as Latin-1; ``None`` when nothing changed."""
+        decoded = data.decode("latin-1")
         sanitised = Sanitiser(self.ids)
         sanitised.indicators = self.indicators
         clean = sanitised._text(decoded, decode=False)
-        if clean == decoded:
+        return None if clean == decoded else clean.encode("latin-1", errors="replace")
+
+    def _defang_hex(self, match: re.Match[str]) -> str:
+        """A hex run whose bytes hold an indicator, as the hex of the defanged bytes."""
+        raw = match.group(0)
+        clean = self._defanged_bytes(bytes.fromhex(raw))
+        if clean is None:
             return raw
-        out = clean.encode("latin-1", errors="replace").hex()
-        return out.upper() if raw.isupper() else out
+        return clean.hex().upper() if raw.isupper() else clean.hex()
+
+    def _defang_wide(self, match: re.Match[str]) -> str:
+        """Bytes shown as UTF-16LE that hold an indicator, as the defanged bytes shown so."""
+        clean = self._defanged_bytes(match.group(0).encode("utf-16le"))
+        if clean is None:
+            return match.group(0)
+        if len(clean) % 2:
+            clean += b"\x00"
+        return clean.decode("utf-16le", errors="replace")
 
     @staticmethod
     def _defang_url(match: re.Match[str]) -> str:
