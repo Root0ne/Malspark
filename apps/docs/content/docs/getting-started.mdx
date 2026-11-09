@@ -10,11 +10,18 @@ For a production install, read [Deployment](/docs/deployment/) afterwards.
 
 ## Before you start
 
-- Docker with the Compose plugin
-- Python 3.13 and [uv](https://astral.sh/uv/)
-- `curl` and `jq`, for the API examples
+- Docker with the Compose plugin: Docker Desktop on Windows and macOS (Linux
+  containers, the default), Docker Engine on Linux
+- [uv](https://astral.sh/uv/), which provides the Python the setup commands
+  run on; they use the standard library only, so the host installs none of
+  the project's dependencies
+- `git`, and `curl` and `jq` for the API examples
 - Free host ports for the services below. Every published port binds to
   `BIND_ADDRESS`, which is `127.0.0.1` by default.
+
+The commands below are the same in PowerShell, on macOS and on Linux. Where
+make is installed, each `malspark_dev.py` command also has a make target of
+the same name (`make external`, `make dev-up`, ...).
 
 <Steps>
 
@@ -25,19 +32,23 @@ For a production install, read [Deployment](/docs/deployment/) afterwards.
 ```bash
 git clone https://github.com/Root0ne/Malspark.git
 cd Malspark
-make setup
+uv run --no-project python scripts/dev/malspark_dev.py setup
+uv run --no-project python scripts/dev/malspark_dev.py doctor
 ```
 
-`make setup` installs the Python dependencies and the pre-commit hooks, and
-runs `scripts/dev/fetch_external.sh`. That script fetches what is not kept in
-git: the trees the `ghidra-mcp` image is built from, capa's rules and
-signatures (`data/capa-rules`, `data/capa-signatures`) and the Sigma rule
-corpus (`data/sigma_rules`), each at its pinned version.
+`setup` fetches what is not kept in git: the tree the `ghidra-mcp` image is
+built from, capa's rules and signatures (`data/capa-rules`,
+`data/capa-signatures`) and the Sigma rule corpus (`data/sigma_rules`), each
+at its pinned version and checked against its recorded digest. `doctor` says
+what the host still lacks: Docker in Linux-containers mode, the Compose
+plugin, free ports, the fetched trees. To work on the code, `setup --dev`
+(`make setup`) also installs the Python dependencies and the pre-commit
+hooks.
 
 The stack mounts this checkout's `data/` over the image's copy, so run
-`make external` again in any new checkout or worktree. Without the rule
-corpora a run still completes, but it is marked degraded and names what was
-missing.
+`external` (`make external`) again in any new checkout or worktree. Without
+the rule corpora a run still completes, but it is marked degraded and names
+what was missing.
 
 </Step>
 
@@ -47,28 +58,25 @@ missing.
 
 Malspark reads two files, and neither is committed.
 
-**`docker/.env`** holds the values Compose substitutes into the stack.
-
 ```bash
-cp docker/.env.example docker/.env
-python -c "import secrets; [print(f'{k}={secrets.token_urlsafe(32)}') for k in ('GHIDRA_MCP_AUTH_TOKEN','REDIS_PASSWORD','QDRANT_API_KEY','POSTGRES_PASSWORD','MINIO_ROOT_PASSWORD')]"
-uv run python -c "from cryptography.fernet import Fernet; print('SETTINGS_ENCRYPTION_KEY=' + Fernet.generate_key().decode())"
-python -c "import secrets; print('JWT_SECRET_KEY=' + secrets.token_hex(32))"
+uv run --no-project python scripts/dev/malspark_dev.py env init
 ```
 
-Paste the generated values in, and pick a `MINIO_ROOT_USER` of your own. The
-core secrets are declared with `:?` in the compose file, so the stack refuses
-to start while one is missing.
+**`docker/.env`** holds the values Compose substitutes into the stack.
+`env init` writes it from `docker/.env.example` with a generated value for
+each secret the example leaves empty (the infrastructure tokens and
+passwords, `SETTINGS_ENCRYPTION_KEY`, `JWT_SECRET_KEY`). The core secrets
+are declared with `:?` in the compose file, so the stack refuses to start
+while one is missing.
 
 **`bootstrap.env`** (repository root) holds the same contract as process
 environment, for anything you run outside Compose, such as `make migrate`.
-`make dev-up` sources it too, so fill in the same secrets as in
-`docker/.env`. An empty value there overrides `docker/.env` and trips the
-compose file's `:?` guards.
+`env init` writes it with the same secrets and a `DATABASE_URL` on the port
+the stack publishes Postgres on (5433, or your `POSTGRES_PORT`). `dev-up`
+reads it too, and an empty value there would override `docker/.env`.
 
-```bash
-cp bootstrap.env.example bootstrap.env
-```
+Neither file is overwritten once it exists; `env init --force` rewrites both
+from the examples and keeps every value already set. No secret is printed.
 
 These two files are the whole environment surface. Every other setting lives
 in the settings store and is edited in the console. See
@@ -81,8 +89,8 @@ in the settings store and is edited in the console. See
 ### Start the stack
 
 ```bash
-make dev-up      # docker compose up -d, with the development overlay
-make dev-logs    # follow the logs
+uv run --no-project python scripts/dev/malspark_dev.py up     # make dev-up
+uv run --no-project python scripts/dev/malspark_dev.py logs   # make dev-logs
 ```
 
 The development overlay runs the console under `next dev` and restarts the
@@ -117,7 +125,8 @@ an account registered from the console's login page gets `analyst`. Make the
 first admin from the command line, in the API container:
 
 ```bash
-make create-admin EMAIL=you@example.com
+uv run --no-project python scripts/dev/malspark_dev.py create-admin you@example.com
+# or: make create-admin EMAIL=you@example.com
 ```
 
 It asks for the password twice, hidden, and creates the account with the
