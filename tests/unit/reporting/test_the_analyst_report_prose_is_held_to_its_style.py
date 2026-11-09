@@ -16,7 +16,9 @@ from __future__ import annotations
 
 import asyncio
 import json
+from collections.abc import Callable
 from datetime import UTC, datetime
+from functools import partial
 from typing import Any
 from unittest.mock import patch
 
@@ -70,11 +72,13 @@ from malspark.reporting.models import (
     TechniqueProcedure,
     TTPMapping,
 )
+from malspark.reporting.renderers.analyst import message_fields
 from malspark.reporting.renderers.html import HtmlRenderer
 from malspark.reporting.renderers.layout import ANALYST, BUNDLE
 from malspark.reporting.renderers.markdown import MarkdownRenderer, confidence_word
 from malspark.schemas.evidence import LedgerEntry
 from malspark.schemas.isr_models import AgentISR, ClaimEvidence
+from tests.linear_cost import assert_scales, repeated
 
 
 def _report(**over: Any) -> MalwareReport:
@@ -670,6 +674,23 @@ class TestTheDeterministicParts:
             c2_channels=[C2Channel(name="Check-in", beacon_format="A JSON body with an id field")]
         )
         assert "Message example" not in MarkdownRenderer(layout=ANALYST).render(report)
+
+    @pytest.mark.parametrize(
+        ("shape", "small"),
+        [
+            # A conversion's flags, width and length share characters: a long run
+            # of them is read once, not once per way of splitting it (T-590).
+            (lambda size: "id=%" + "0" * size + "&v=%d", 200),
+            (lambda size: "id=%" + "1" * size + "&v=%d", 200),
+            # ... and a run of spaces no citation follows, once.
+            (lambda size: "id=%d" + " " * size + "&v=%d", 800),
+        ],
+        ids=["zeros", "digits", "spaces"],
+    )
+    def test_a_long_format_is_read_in_linear_time(
+        self, shape: Callable[[int], str], small: int
+    ) -> None:
+        assert_scales(lambda size: repeated(partial(message_fields, shape(size)), 1000), small)
 
     def test_an_observed_request_is_its_table_row_printed_once(self) -> None:
         report = _report(
