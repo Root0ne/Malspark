@@ -891,6 +891,13 @@ def _set_lines(path: Path) -> dict[str, str]:
     return lines
 
 
+def _umask() -> int:
+    """The process umask, read without changing it for longer than the call."""
+    mask = os.umask(0o077)
+    os.umask(mask)
+    return mask
+
+
 def _write_text(path: Path, text: str, private: bool = False) -> None:
     """Written whole, with LF line ends; private files readable by their owner only."""
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -898,8 +905,10 @@ def _write_text(path: Path, text: str, private: bool = False) -> None:
     try:
         with os.fdopen(handle, "w", encoding="utf-8", newline="\n") as out:
             out.write(text)
-        if os.name == "posix":
-            os.chmod(temporary, 0o600 if private else 0o644)
+        if os.name == "posix" and not private:
+            # mkstemp makes the file owner-only; a shared one gets the mode a
+            # plain open would have given it under the user's umask.
+            os.chmod(temporary, 0o666 & ~_umask())
         os.replace(temporary, path)
     except BaseException:
         Path(temporary).unlink(missing_ok=True)

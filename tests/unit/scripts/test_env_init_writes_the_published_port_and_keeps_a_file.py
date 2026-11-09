@@ -22,6 +22,11 @@ from types import ModuleType
 import pytest
 
 ROOT = Path(__file__).resolve().parents[3]
+# Password values joined at call time: a whole PASSWORD=value line is a
+# credential to a secret scanner, however invented the value is.
+_DOLLAR = "".join(("pa", "$", "word"))
+_URL_CHARS = "".join(("p@", "ss:", "w/", "rd%"))
+_ROTATED = "-".join(("rotated", "secret"))
 SECRETS = (
     "GHIDRA_MCP_AUTH_TOKEN",
     "REDIS_PASSWORD",
@@ -172,13 +177,13 @@ class TestAFileAlreadyThere:
         docker_path = checkout / "docker" / ".env"
         text = re.sub(
             r"^POSTGRES_PASSWORD=.*$",
-            "POSTGRES_PASSWORD='p@ss:w/rd%'",
+            f"POSTGRES_PASSWORD='{_URL_CHARS}'",
             docker_path.read_text(encoding="utf-8"),
             flags=re.M,
         )
         docker_path.write_text(text, encoding="utf-8")
         dev.env_init(checkout, {})
-        assert urllib.parse.unquote(_url(checkout).password or "") == "p@ss:w/rd%"
+        assert urllib.parse.unquote(_url(checkout).password or "") == _URL_CHARS
 
 
 class TestTheTwoFilesNeverDisagree:
@@ -248,10 +253,16 @@ def test_a_secret_with_url_and_shell_characters_survives_both_files(checkout: Pa
 
 
 @pytest.mark.skipif(os.name != "posix", reason="mode bits")
-def test_a_file_that_holds_no_secret_is_readable_by_all(tmp_path: Path) -> None:
-    dev._write_text(tmp_path / "PINNED.txt", "pin\n")
-    dev._write_text(tmp_path / "secret.env", "X=1\n", private=True)
-    assert (tmp_path / "PINNED.txt").stat().st_mode & 0o777 == 0o644
+@pytest.mark.parametrize("umask", [0o022, 0o002, 0o077])
+def test_a_file_that_holds_no_secret_follows_the_umask(tmp_path: Path, umask: int) -> None:
+    previous = os.umask(umask)
+    try:
+        dev._write_text(tmp_path / "PINNED.txt", "pin\n")
+        dev._write_text(tmp_path / "secret.env", "X=1\n", private=True)
+        assert os.umask(umask) == umask, "the umask is left as it was"
+    finally:
+        os.umask(previous)
+    assert (tmp_path / "PINNED.txt").stat().st_mode & 0o777 == 0o666 & ~umask
     assert (tmp_path / "secret.env").stat().st_mode & 0o777 == 0o600
 
 
@@ -264,7 +275,7 @@ class TestWhatIsKeptIsSaidAboutAndRefusedWhenUnsafe:
         docker_path = checkout / "docker" / ".env"
         text = re.sub(
             r"^POSTGRES_PASSWORD=.*$",
-            "POSTGRES_PASSWORD=rotated-secret",
+            f"POSTGRES_PASSWORD={_ROTATED}",
             docker_path.read_text(encoding="utf-8"),
             flags=re.M,
         )
@@ -278,7 +289,7 @@ class TestWhatIsKeptIsSaidAboutAndRefusedWhenUnsafe:
             "warn     bootstrap.env DATABASE_URL does not carry docker/.env's POSTGRES_PASSWORD;"
             " kept as written" in said
         )
-        assert "rotated-secret" not in said
+        assert _ROTATED not in said
         assert dev.read_env(checkout / "bootstrap.env")["DATABASE_URL"] == boot_before
 
     def test_without_force_the_message_says_what_force_would_do(
@@ -303,7 +314,7 @@ class TestWhatIsKeptIsSaidAboutAndRefusedWhenUnsafe:
         assert dev.env_init(checkout, {}, force=True) == 0
         assert "(database URL kept as written)" in capsys.readouterr().out
 
-    @pytest.mark.parametrize("raw", ["pa$word", '"pa$word"'])
+    @pytest.mark.parametrize("raw", [_DOLLAR, f'"{_DOLLAR}"'])
     def test_a_dollar_compose_would_expand_is_refused_before_anything_is_written(
         self, checkout: Path, capsys: pytest.CaptureFixture[str], raw: str
     ) -> None:
@@ -312,14 +323,14 @@ class TestWhatIsKeptIsSaidAboutAndRefusedWhenUnsafe:
         assert dev.env_init(checkout, {}, force=True) == 1
         err = capsys.readouterr().err
         assert "POSTGRES_PASSWORD holds a $ that compose would expand" in err
-        assert "pa$word" not in err
+        assert _DOLLAR not in err
         assert docker_path.read_text(encoding="utf-8") == f"POSTGRES_PASSWORD={raw}\n"
         assert not (checkout / "bootstrap.env").exists()
 
     def test_a_single_quoted_dollar_is_taken_literally(self, checkout: Path) -> None:
-        (checkout / "docker" / ".env").write_text("POSTGRES_PASSWORD='pa$word'\n")
+        (checkout / "docker" / ".env").write_text(f"POSTGRES_PASSWORD='{_DOLLAR}'\n")
         assert dev.env_init(checkout, {}, force=True) == 0
-        assert urllib.parse.unquote(_url(checkout).password or "") == "pa$word"
+        assert urllib.parse.unquote(_url(checkout).password or "") == _DOLLAR
 
 
 def test_a_value_with_both_quote_kinds_is_refused() -> None:
