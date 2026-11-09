@@ -94,7 +94,10 @@ def _tree(tmp_path: Path, url: str, patch: str | None = _PATCH) -> Path:
     for corpus in ("sigma_rules", "capa-rules", "capa-signatures"):
         (tree / "data" / corpus).mkdir(parents=True)
     if patch is not None:
-        (tree / "scripts" / "dev" / "patches" / "tool-v1.patch").write_text(patch, encoding="utf-8")
+        # LF on every host, as .gitattributes keeps the shipped patches in any checkout.
+        (tree / "scripts" / "dev" / "patches" / "tool-v1.patch").write_text(
+            patch, encoding="utf-8", newline="\n"
+        )
     (tree / "url").write_text(url, encoding="utf-8")
     return tree
 
@@ -155,6 +158,26 @@ class TestThePatchIsAppliedOnce:
         again = fetch(tree)
         assert again.returncode == 0, again.stderr
         assert "carries tool-v1.patch" in again.stdout
+
+    def test_a_host_config_that_converts_line_endings_leaves_the_tree_as_pinned(
+        self, tmp_path: Path, fetch: Fetch, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Git for Windows turns core.autocrlf on; the pinned tree keeps the bytes of its tag."""
+        config = tmp_path / "host.gitconfig"
+        config.write_text("[core]\n\tautocrlf = true\n\teol = crlf\n", encoding="utf-8")
+        monkeypatch.setenv("GIT_CONFIG_GLOBAL", str(config))
+        upstream = _upstream(tmp_path, content=b"version=1\nname=tool\n")
+        (upstream / ".gitattributes").write_bytes(b"*.sh text=auto\n")
+        (upstream / "run.sh").write_bytes(b"#!/bin/sh\nexit 0\n")
+        _git(upstream, "add", ".")
+        _git(upstream, "commit", "--quiet", "-m", "a script")
+        _git(upstream, "tag", "-f", "v1")
+        tree = _tree(tmp_path, upstream.as_uri())
+        done = fetch(tree)
+        assert done.returncode == 0, done.stderr
+        built = tree / "external" / "tool"
+        assert (built / "build.txt").read_bytes() == b"version=2\nname=tool\n"
+        assert (built / "run.sh").read_bytes() == b"#!/bin/sh\nexit 0\n"
 
     def test_a_tree_without_a_patch_is_only_checked_out(self, tmp_path: Path, fetch: Fetch) -> None:
         tree = _tree(tmp_path, _upstream(tmp_path).as_uri(), patch=None)
