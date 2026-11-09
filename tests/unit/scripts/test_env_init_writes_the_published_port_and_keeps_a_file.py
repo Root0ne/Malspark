@@ -325,3 +325,29 @@ class TestWhatIsKeptIsSaidAboutAndRefusedWhenUnsafe:
 def test_a_value_with_both_quote_kinds_is_refused() -> None:
     with pytest.raises(ValueError, match="both ' and `"):
         dev.env_quote("it's `x`")
+
+
+def test_a_refused_bootstrap_env_leaves_both_files_byte_identical(
+    checkout: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A secret bootstrap.env cannot hold stops the run before either file is written."""
+    dev.env_init(checkout, {})
+    docker_path, boot_path = checkout / "docker" / ".env", checkout / "bootstrap.env"
+    text = re.sub(
+        r"^MINIO_ROOT_PASSWORD=.*$",
+        'MINIO_ROOT_PASSWORD="it\'s \\`x\\`"',
+        docker_path.read_text(encoding="utf-8"),
+        flags=re.M,
+    )
+    docker_path.write_text(re.sub(r"^JWT_SECRET_KEY=.*$", "JWT_SECRET_KEY=", text, flags=re.M))
+    boot_path.write_text(
+        re.sub(r"^MINIO_SECRET_KEY=.*$", "MINIO_SECRET_KEY=", boot_path.read_text(), flags=re.M)
+    )
+    before = (docker_path.read_bytes(), boot_path.read_bytes())
+    capsys.readouterr()
+
+    assert dev.env_init(checkout, {}, force=True) == 1
+
+    assert (docker_path.read_bytes(), boot_path.read_bytes()) == before
+    said = capsys.readouterr()
+    assert "FAIL     nothing written" in said.err and "wrote" not in said.out

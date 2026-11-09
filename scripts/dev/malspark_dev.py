@@ -976,10 +976,11 @@ def env_init(root: Path, environ: Mapping[str, str], force: bool = False) -> int
         )
         return 1
 
+    # Both files are built in memory and checked first; nothing is written
+    # unless both can be, so a refusal leaves the two as they were.
     generated: dict[str, str] = {}
-    if docker_env_path.exists() and not force:
-        _say("  ok       docker/.env is there: left as it is (--force rewrites it, values kept)")
-    else:
+    docker_text: str | None = None
+    if not (docker_env_path.exists() and not force):
         kept = _set_lines(docker_env_path)
         generated = {
             key: make()
@@ -988,49 +989,56 @@ def env_init(root: Path, environ: Mapping[str, str], force: bool = False) -> int
         }
         kept = {key: line for key, line in kept.items() if key not in generated}
         template = (root / "docker" / ".env.example").read_text(encoding="utf-8")
-        _write_text(docker_env_path, _fill(template, generated, kept), private=True)
+        docker_text = _fill(template, generated, kept)
+    docker_env = parse_env(docker_text) if docker_text is not None else read_env(docker_env_path)
+
+    stale = sorted(k for k, sources in DERIVED_FROM.items() if set(sources) & set(generated))
+    bootstrap_text: str | None = None
+    drifted: list[tuple[str, str]] = []
+    old = read_env(bootstrap_path)
+    if not (bootstrap_path.exists() and not force and not stale):
+        empty = [key for key in needed if not docker_env.get(key)]
+        if empty:
+            print(
+                f"  FAIL     nothing written: docker/.env sets no {', '.join(empty)}",
+                file=sys.stderr,
+            )
+            return 1
+        derived = _derived(root, environ, docker_env)
+        kept = _set_lines(bootstrap_path)
+        for key in derived:
+            value = old.get(key, "")
+            if key in stale or not value or _PLACEHOLDER.search(value):
+                kept.pop(key, None)
+                continue
+            # Kept as written: say so when it no longer carries what docker/.env holds.
+            for source in DERIVED_FROM[key]:
+                current = docker_env[source]
+                carried = (
+                    urllib.parse.quote(current, safe="") in value
+                    if key.endswith("_URL")
+                    else value == current
+                )
+                if not carried:
+                    drifted.append((key, source))
+        template = (root / "bootstrap.env.example").read_text(encoding="utf-8")
+        try:
+            bootstrap_text = _fill(template, derived, kept)
+        except ValueError as error:
+            print(f"  FAIL     nothing written: {error}", file=sys.stderr)
+            return 1
+
+    if docker_text is None:
+        _say("  ok       docker/.env is there: left as it is (--force rewrites it, values kept)")
+    else:
+        _write_text(docker_env_path, docker_text, private=True)
         made = ", ".join(sorted(generated)) or "none"
         _say(f"  wrote    docker/.env (generated: {made})")
-
-    docker_env = read_env(docker_env_path)
-    stale = sorted(k for k, sources in DERIVED_FROM.items() if set(sources) & set(generated))
-    if bootstrap_path.exists() and not force and not stale:
+    if bootstrap_text is None:
         _say("  ok       bootstrap.env is there: left as it is (--force fills only what is empty)")
         return 0
-    empty = [key for key in needed if not docker_env.get(key)]
-    if empty:
-        print(
-            f"  FAIL     bootstrap.env not written: docker/.env sets no {', '.join(empty)}",
-            file=sys.stderr,
-        )
-        return 1
-    derived = _derived(root, environ, docker_env)
-    old = read_env(bootstrap_path)
-    kept = _set_lines(bootstrap_path)
-    drifted = []
-    for key in derived:
-        value = old.get(key, "")
-        if key in stale or not value or _PLACEHOLDER.search(value):
-            kept.pop(key, None)
-            continue
-        # Kept as written: say so when it no longer carries what docker/.env holds.
-        for source in DERIVED_FROM[key]:
-            current = docker_env[source]
-            carried = (
-                urllib.parse.quote(current, safe="") in value
-                if key.endswith("_URL")
-                else value == current
-            )
-            if not carried:
-                drifted.append((key, source))
-    template = (root / "bootstrap.env.example").read_text(encoding="utf-8")
-    try:
-        text = _fill(template, derived, kept)
-    except ValueError as error:
-        print(f"  FAIL     bootstrap.env not written: {error}", file=sys.stderr)
-        return 1
-    _write_text(bootstrap_path, text, private=True)
-    url = urllib.parse.urlsplit(read_env(bootstrap_path).get("DATABASE_URL", ""))
+    _write_text(bootstrap_path, bootstrap_text, private=True)
+    url = urllib.parse.urlsplit(parse_env(bootstrap_text).get("DATABASE_URL", ""))
     try:
         where = f"database on {url.hostname}:{url.port}"
     except ValueError:
