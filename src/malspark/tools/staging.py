@@ -37,6 +37,7 @@ Who creates what, and who removes it:
 
 from __future__ import annotations
 
+import errno
 import os
 import re
 import stat
@@ -239,16 +240,33 @@ def is_link(path: Path) -> bool:
     return path.is_symlink() or path.is_junction()
 
 
+def is_reparse_point(path: Path, info: os.stat_result) -> bool:
+    """Whether ``path``, whose ``lstat`` is ``info``, is a link or any other reparse point.
+
+    A link (:func:`is_link`), and on Windows every entry that carries
+    ``FILE_ATTRIBUTE_REPARSE_POINT``: a junction, a mount point, and a
+    reparse point that is no link at all, such as a cloud file placeholder
+    (OneDrive), whose content the system fetches from somewhere else when it
+    is opened. Whatever asks this refuses all of them alike: what such an
+    entry leads to cannot be told from the entry.
+    """
+    return is_link(path) or bool(
+        getattr(info, "st_file_attributes", 0) & stat.FILE_ATTRIBUTE_REPARSE_POINT
+    )
+
+
 def owned_by_this_user(path: str | os.PathLike[str], info: os.stat_result) -> bool:
     """Whether ``path``, whose ``lstat`` is ``info``, is owned by this process's user.
 
-    POSIX compares user ids. Windows has none (``st_uid`` is always 0), so
-    there the owner the file's own security descriptor names is compared with
-    this process's (:func:`_windows_owner_is_ours`). A reparse point (a
-    junction, a symbolic link) is never this user's there: its owner says
-    nothing about the directory it leads to. Any failure to read either owner
-    answers ``False``: a file whose owner cannot be told is not taken for this
-    user's.
+    POSIX compares user ids (:func:`st_owned_by_this_user`). Windows has none
+    (``st_uid`` is always 0), so there the owner the file's own security
+    descriptor names is compared with this process's
+    (:func:`_windows_owner_is_ours`). A reparse point is never this user's
+    there: a junction or a symbolic link, whose owner says nothing about the
+    directory it leads to, and a reparse point that is no link, such as a
+    OneDrive placeholder, are refused alike (fail closed). Any failure to read
+    either owner answers ``False``: a file whose owner cannot be told is not
+    taken for this user's.
     """
     if sys.platform == "win32":
         if getattr(info, "st_file_attributes", 0) & stat.FILE_ATTRIBUTE_REPARSE_POINT:
@@ -257,8 +275,302 @@ def owned_by_this_user(path: str | os.PathLike[str], info: os.stat_result) -> bo
             return _windows_owner_is_ours(path)
         except (OSError, AttributeError, ValueError):
             return False
+    return st_owned_by_this_user(info)
+
+
+def st_owned_by_this_user(info: os.stat_result) -> bool:
+    """Whether the file ``info`` was read from is owned by this process's user, from ``info`` alone.
+
+    For a caller that holds a stat result and no path to name the file by,
+    such as one read with ``fstat`` from a descriptor opened relative to a
+    directory. POSIX compares user ids. On Windows a stat result names no
+    owner (``st_uid`` is always 0), so there the answer is ``False``: a file
+    whose owner cannot be told is not taken for this user's; ask
+    :func:`owned_by_this_user` with the file's path instead.
+    """
+    if sys.platform == "win32":
+        return False
     getuid = getattr(os, "getuid", None)
     return False if getuid is None else info.st_uid == getuid()
+
+
+# Why a name is refused where no flag of the system refuses a link at it.
+NOT_FOLLOWED = "it is a link or another reparse point, which is never followed"
+# Why a name is refused when the file opened at it is somewhere else.
+OPENED_ELSEWHERE = "the file opened at it is somewhere else, so a link stood on its way"
+# Why a name is refused where the system cannot say where an open file is.
+NO_DESCRIPTOR_PATH = (
+    "this system cannot say where an open file is, so a file opened without following "
+    "links cannot be checked; unavailable on this platform"
+)
+
+
+def open_no_follow(
+    path: str | os.PathLike[str], flags: int, mode: int = 0o600, *, at: str | None = None
+) -> int:
+    """``os.open(path, flags, mode)`` that follows no link at ``path``'s last part, or ``OSError``.
+
+    Where the system has ``O_NOFOLLOW`` (POSIX) it is added to ``flags``: the
+    one call it always was. On Windows, which has no such flag, what holds is:
+
+    1. The file is opened by ``CreateFileW`` with
+       ``FILE_FLAG_OPEN_REPARSE_POINT`` (:func:`_windows_open`): a link, a
+       junction or any other reparse point at the last part, a OneDrive
+       placeholder among them, is opened as itself, never followed, and then
+       refused on the open handle's own attributes (``ELOOP``), before
+       anything is written. ``O_CREAT``, ``O_EXCL`` and ``O_TRUNC`` are mapped
+       to the creation disposition the C runtime's ``open`` uses, except that
+       ``O_TRUNC`` never truncates at the open; the handle is not inherited and
+       carries ``SECURITY_IDENTIFICATION``, so a named pipe server reached
+       through the name cannot act as this process. It becomes a descriptor in
+       binary (``O_BINARY``, without which a write turns each newline byte
+       into two).
+    2. The path of the file actually open, asked of the system by its handle
+       (:func:`descriptor_path`), must be ``at``: by default the real path of
+       ``path``'s directory as it was before the open, joined with its name.
+       So a junction or link at any directory above the last part, put there
+       at any moment before the open, is caught on the file that is open.
+    3. Only then is the file truncated, where ``O_TRUNC`` was asked.
+
+    A POSIX system without ``O_NOFOLLOW`` (no real one; ``tests/without_posix.py``
+    makes one) refuses a link found at the name, opens with ``os.open`` and
+    holds the open file to steps 2 and 3.
+
+    ``at`` is for a caller that has checked more of the path than its last
+    part (``pipeline.artefacts.open_beneath``). A refusal raises ``OSError``
+    with ``ELOOP``, as ``O_NOFOLLOW`` does, naming why; a Win32 failure to
+    open raises the ``OSError`` its error stands for (``ENOENT``, ``EEXIST``,
+    ``EACCES``).
+    """
+    nofollow = getattr(os, "O_NOFOLLOW", None)
+    if nofollow is not None:
+        return os.open(path, flags | nofollow, mode)
+    where = os.path.abspath(os.fspath(path))
+    expected = at or os.path.join(os.path.realpath(os.path.dirname(where)), os.path.basename(where))
+    truncate = bool(flags & os.O_TRUNC)
+    if sys.platform == "win32":
+        fd = _windows_open(where, flags & ~os.O_TRUNC, mode)
+    else:
+        fd = _open_unless_a_link(where, flags & ~os.O_TRUNC, mode)
+    try:
+        opened = descriptor_path(fd)
+        if os.path.normcase(opened) != os.path.normcase(expected):
+            raise OSError(errno.ELOOP, OPENED_ELSEWHERE, where)
+        if truncate:
+            os.ftruncate(fd, 0)
+    except BaseException:
+        os.close(fd)
+        raise
+    return fd
+
+
+def _open_unless_a_link(where: str, flags: int, mode: int) -> int:
+    """``os.open`` of ``where`` unless a link or another reparse point stands there now."""
+    try:
+        info = os.lstat(where)
+    except FileNotFoundError:
+        pass
+    else:
+        if is_reparse_point(Path(where), info):
+            raise OSError(errno.ELOOP, NOT_FOLLOWED, where)
+    return os.open(where, flags | getattr(os, "O_BINARY", 0) | getattr(os, "O_NOINHERIT", 0), mode)
+
+
+# The Win32 constants the open passes (winnt.h, winbase.h, fileapi.h).
+_GENERIC_READ = 0x80000000
+_GENERIC_WRITE = 0x40000000
+_FILE_READ_ATTRIBUTES = 0x80
+_FILE_SHARE_READ_WRITE = 0x3  # what the C runtime's open shares: read and write
+_CREATE_NEW = 1
+_OPEN_EXISTING = 3
+_OPEN_ALWAYS = 4
+_FILE_ATTRIBUTE_READONLY = 0x1
+_FILE_ATTRIBUTE_NORMAL = 0x80
+_SECURITY_IDENTIFICATION = 0x00010000
+_SECURITY_SQOS_PRESENT = 0x00100000
+_INVALID_HANDLE = -1
+# A Win32 error, as the errno the C runtime gives it.
+_WIN32_ERRNO = {
+    2: errno.ENOENT,  # ERROR_FILE_NOT_FOUND
+    3: errno.ENOENT,  # ERROR_PATH_NOT_FOUND
+    4: errno.EMFILE,  # ERROR_TOO_MANY_OPEN_FILES
+    5: errno.EACCES,  # ERROR_ACCESS_DENIED
+    32: errno.EACCES,  # ERROR_SHARING_VIOLATION
+    33: errno.EACCES,  # ERROR_LOCK_VIOLATION
+    53: errno.ENOENT,  # ERROR_BAD_NETPATH
+    67: errno.ENOENT,  # ERROR_BAD_NET_NAME
+    80: errno.EEXIST,  # ERROR_FILE_EXISTS
+    123: errno.ENOENT,  # ERROR_INVALID_NAME
+    161: errno.ENOENT,  # ERROR_BAD_PATHNAME
+    183: errno.EEXIST,  # ERROR_ALREADY_EXISTS
+    206: errno.ENOENT,  # ERROR_FILENAME_EXCED_RANGE
+}
+
+
+def creation_disposition(flags: int) -> int:
+    """The ``CreateFileW`` disposition for ``O_CREAT`` and ``O_EXCL``; ``O_TRUNC`` is applied later.
+
+    As the C runtime maps them, with truncation left out: ``O_CREAT|O_EXCL``
+    creates a new file or fails, ``O_CREAT`` opens or creates, and without
+    ``O_CREAT`` only an existing file opens.
+    """
+    if flags & os.O_CREAT:
+        return _CREATE_NEW if flags & os.O_EXCL else _OPEN_ALWAYS
+    return _OPEN_EXISTING
+
+
+def _windows_access(flags: int) -> int:
+    """The access a handle opened for ``flags`` asks for, its attributes always among it."""
+    asked = flags & 0x3  # O_RDONLY 0, O_WRONLY 1, O_RDWR 2
+    access = {0: _GENERIC_READ, 1: _GENERIC_WRITE}.get(asked, _GENERIC_READ | _GENERIC_WRITE)
+    return access | _FILE_READ_ATTRIBUTES
+
+
+def _win32_error(code: int, call: str, where: str) -> OSError:
+    return OSError(
+        _WIN32_ERRNO.get(code, errno.EINVAL), f"{call} failed (Windows error {code})", where
+    )
+
+
+def _windows_open(where: str, flags: int, mode: int) -> int:
+    """``where`` opened as itself by ``CreateFileW``, as a descriptor; a reparse point refused.
+
+    ``flags`` carries no ``O_TRUNC`` (:func:`open_no_follow` truncates later).
+    A flag this does not map is refused rather than dropped.
+    """
+    import ctypes
+
+    known = 0x3 | os.O_CREAT | os.O_EXCL
+    known |= getattr(os, "O_BINARY", 0) | getattr(os, "O_NOINHERIT", 0)
+    if flags & ~known:
+        raise ValueError(f"open_no_follow cannot open with the flags {flags & ~known:#x} here")
+    kernel32, msvcrt = _win32_files()
+    created = flags & os.O_CREAT and not mode & stat.S_IWRITE
+    handle = kernel32.CreateFileW(
+        where,
+        _windows_access(flags),
+        _FILE_SHARE_READ_WRITE,
+        None,
+        creation_disposition(flags),
+        (_FILE_ATTRIBUTE_READONLY if created else _FILE_ATTRIBUTE_NORMAL)
+        | _FILE_FLAG_OPEN_REPARSE_POINT
+        | _SECURITY_SQOS_PRESENT
+        | _SECURITY_IDENTIFICATION,
+        None,
+    )
+    if handle is None or handle == _INVALID_HANDLE:
+        raise _win32_error(_last_error(), "CreateFileW", where)
+    try:
+        info = _by_handle_file_information()
+        if not kernel32.GetFileInformationByHandle(handle, ctypes.byref(info)):
+            raise _win32_error(_last_error(), "GetFileInformationByHandle", where)
+        if info.dwFileAttributes & stat.FILE_ATTRIBUTE_REPARSE_POINT:
+            raise OSError(errno.ELOOP, NOT_FOLLOWED, where)
+        return int(
+            msvcrt.open_osfhandle(
+                handle, getattr(os, "O_BINARY", 0) | getattr(os, "O_NOINHERIT", 0)
+            )
+        )
+    except BaseException:
+        kernel32.CloseHandle(handle)
+        raise
+
+
+def _by_handle_file_information() -> Any:
+    """An empty ``BY_HANDLE_FILE_INFORMATION``: its attributes are what the open reads.
+
+    Built where it is used, so that importing this module needs no ``ctypes``
+    on a system that never takes the Windows branch.
+    """
+    import ctypes
+
+    class _ByHandleFileInformation(ctypes.Structure):
+        _fields_ = [
+            ("dwFileAttributes", ctypes.c_uint32),
+            # the times, the volume, the size, the links, the index
+            ("rest", ctypes.c_uint32 * 12),
+        ]
+
+    return _ByHandleFileInformation()
+
+
+def _win32_files() -> tuple[Any, Any]:
+    """kernel32 typed for the open, and ``msvcrt`` that makes a descriptor of its handle."""
+    import ctypes
+    import msvcrt
+    from ctypes import wintypes
+
+    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)  # type: ignore[attr-defined]
+    kernel32.CreateFileW.argtypes = [
+        wintypes.LPCWSTR,
+        wintypes.DWORD,
+        wintypes.DWORD,
+        ctypes.c_void_p,
+        wintypes.DWORD,
+        wintypes.DWORD,
+        wintypes.HANDLE,
+    ]
+    kernel32.CreateFileW.restype = ctypes.c_ssize_t  # INVALID_HANDLE_VALUE reads as -1
+    kernel32.GetFileInformationByHandle.argtypes = [ctypes.c_ssize_t, ctypes.c_void_p]
+    kernel32.GetFileInformationByHandle.restype = wintypes.BOOL
+    kernel32.CloseHandle.argtypes = [ctypes.c_ssize_t]
+    kernel32.CloseHandle.restype = wintypes.BOOL
+    return kernel32, msvcrt
+
+
+def descriptor_path(fd: int) -> str:
+    """The path the file open as ``fd`` is at, every link on the way to it resolved.
+
+    Asked of the system by the open file, never of a path: on Windows
+    ``GetFinalPathNameByHandleW`` names the file the handle holds, and where
+    the system keeps a ``/proc/self/fd`` table its link names the same.
+    Raises ``OSError`` (:data:`NO_DESCRIPTOR_PATH`) where neither is there.
+    """
+    if sys.platform == "win32":
+        try:
+            return _windows_final_path(fd)
+        except (AttributeError, ImportError) as exc:
+            raise OSError(errno.ENOTSUP, NO_DESCRIPTOR_PATH) from exc
+    try:
+        return os.readlink(f"/proc/self/fd/{fd}")
+    except OSError as exc:
+        raise OSError(errno.ENOTSUP, NO_DESCRIPTOR_PATH) from exc
+
+
+def _windows_final_path(fd: int) -> str:
+    """``GetFinalPathNameByHandleW`` of ``fd``'s handle, as a drive or UNC path."""
+    import ctypes
+    import msvcrt
+    from ctypes import wintypes
+
+    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)  # type: ignore[attr-defined]
+    kernel32.GetFinalPathNameByHandleW.argtypes = [
+        wintypes.HANDLE,
+        wintypes.LPWSTR,
+        wintypes.DWORD,
+        wintypes.DWORD,
+    ]
+    kernel32.GetFinalPathNameByHandleW.restype = wintypes.DWORD
+    handle = msvcrt.get_osfhandle(fd)  # type: ignore[attr-defined,unused-ignore]
+    size = 512
+    while True:
+        buffer = ctypes.create_unicode_buffer(size)
+        # FILE_NAME_NORMALIZED | VOLUME_NAME_DOS: the long name, under its drive.
+        length = kernel32.GetFinalPathNameByHandleW(handle, buffer, size, 0)
+        if not length:
+            raise OSError(_last_error(), "GetFinalPathNameByHandleW failed")
+        if length < size:
+            return _without_dos_prefix(buffer.value)
+        size = length  # the size it needs, its terminating null counted
+
+
+def _without_dos_prefix(name: str) -> str:
+    r"""``\\?\C:\x`` as ``C:\x``, ``\\?\UNC\host\share`` as ``\\host\share``: as ``realpath``."""
+    if name.startswith("\\\\?\\UNC\\"):
+        return "\\\\" + name[len("\\\\?\\UNC\\") :]
+    if name.startswith("\\\\?\\"):
+        return name[len("\\\\?\\") :]
+    return name
 
 
 # The Win32 constants the owner check passes (winnt.h, winbase.h, accctrl.h).
@@ -471,8 +783,8 @@ def private_dir(path: Path, *, what: str = "staging path") -> Path:
     CPython creates with mode 0o700 gets a DACL that admits only its owner,
     SYSTEM and the Administrators, and that is the privacy there. The DACL of
     a directory that already exists is not verified; its owner is
-    (:func:`owned_by_this_user`), and a junction is refused as a link
-    (tracked in T-591-A2).
+    (:func:`owned_by_this_user`), and a junction or any other reparse point
+    is refused (:func:`is_reparse_point`).
     """
     try:
         path.mkdir(mode=0o700, parents=True, exist_ok=True)
@@ -481,6 +793,8 @@ def private_dir(path: Path, *, what: str = "staging path") -> Path:
     if is_link(path):
         raise RuntimeError(f"{what} {path} is a symlink")
     info = path.lstat()
+    if is_reparse_point(path, info):
+        raise RuntimeError(f"{what} {path} is a reparse point, which is never followed")
     if not stat.S_ISDIR(info.st_mode):
         raise RuntimeError(f"{what} {path} is not a directory")
     if not owned_by_this_user(path, info):
@@ -617,7 +931,7 @@ def make_private(path: Path) -> None:
     """Take everyone but this user off a file the platform just wrote.
 
     For a file a provider streamed in rather than one this project opened:
-    ``put_sample`` creates its own at 0o600 with ``O_NOFOLLOW``, while a
+    ``put_sample`` creates its own at 0o600 through :func:`open_no_follow`, while a
     capture arrives through an HTTP client that writes at the process umask —
     0o664 on this host, which on a shared machine is every local user.
     """

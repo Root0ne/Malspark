@@ -364,6 +364,7 @@ class TestAHostileDeepBody:
         assert _depth(loads(body(50_000))) == DEPTH_GUARD
         _linear(body, loads, 20_000)
 
+    @pytest.mark.posix
     @pytest.mark.parametrize(
         "unit",
         ['[{"":', '{"":['],
@@ -416,6 +417,7 @@ class TestAHostileDeepBody:
         with pytest.raises(json.JSONDecodeError):
             loads(bad)
 
+    @pytest.mark.posix
     def test_a_deep_body_json_loads_reads_is_cut_in_place_at_its_cost(self) -> None:
         """Bodies of 500-deep chunks: ``json.loads`` reads them, and the guard cuts them.
 

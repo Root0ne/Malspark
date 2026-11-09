@@ -154,6 +154,23 @@ def _worker_groups() -> frozenset[int]:
     return frozenset({os.getegid(), *os.getgroups()})
 
 
+# Why nothing of a process is measured on this host: what a measurement reads
+# is POSIX's and Linux's (user ids, ``/proc``), and Windows has neither.
+NOT_ON_THIS_PLATFORM = (
+    "this host has no POSIX user ids or /proc process table to measure a process by, "
+    "which is not available on this platform"
+)
+
+
+def measurable() -> bool:
+    """Whether this host has POSIX user and group ids, which every measurement compares with.
+
+    A POSIX host without ``/proc`` (macOS) is measurable: what it cannot read
+    there is ``None`` field by field, as anywhere a file cannot be read.
+    """
+    return all(hasattr(os, name) for name in ("geteuid", "getegid", "getgroups"))
+
+
 def _cap_zero(status: Mapping[str, str] | None, key: str) -> bool | None:
     """Whether a capability set (``CapEff``, ``CapPrm``, ``CapAmb``) is empty; ``None`` unread."""
     text = str((status or {}).get(key) or "")
@@ -188,8 +205,13 @@ def measure_process(pid: int, env_names: Iterable[str]) -> dict[str, Any]:
     """What separates process ``pid`` from this one, each field ``None`` where it cannot be read.
 
     ``env_names`` are the names of the environment the platform built and
-    handed to the process.
+    handed to the process. On a host that is not :func:`measurable` every
+    measured field is ``None``, unread, and fails like any unread fact.
     """
+    if not measurable():
+        unread: dict[str, Any] = dict.fromkeys(MEASURED_FIELDS)
+        unread["platform_names_in_env"] = platform_names(env_names)
+        return unread
     status = _status(pid)
     uids, gids, groups = _ids(status, "Uid"), _ids(status, "Gid"), _groups(status)
     out: dict[str, Any] = {
@@ -282,8 +304,18 @@ def measure_tree(pid: int, env_names: Iterable[str]) -> dict[str, Any]:
     Each descendant records its ``depth`` below the started process (its
     children are depth 1), which a block's declared launcher is read against
     (``launcher_depth``, :func:`isolation_part`).
+
+    On a host that is not :func:`measurable` no process of the tree is
+    walked, and the tree is said not judged, for :data:`NOT_ON_THIS_PLATFORM`.
     """
     started = measure_process(pid, env_names)
+    if not measurable():
+        return {
+            **started,
+            "descendants": [],
+            "descendants_judged": False,
+            "descendants_why": NOT_ON_THIS_PLATFORM,
+        }
     descendants: list[dict[str, Any]] = []
     judged, why = True, ""
     seen, queue = {pid}, [(pid, 0)]
@@ -320,7 +352,22 @@ def measure_tree(pid: int, env_names: Iterable[str]) -> dict[str, Any]:
 
 
 def worker_facts() -> dict[str, Any]:
-    """The worker process itself: its user, capabilities, flag and platform variables by name."""
+    """The worker process itself: its user, capabilities, flag and platform variables by name.
+
+    On a host that is not :func:`measurable` (Windows) its user and the rest
+    are ``None``, unread, and ``unavailable`` says why
+    (:data:`NOT_ON_THIS_PLATFORM`); the key is there only then.
+    """
+    if not measurable():
+        return {
+            "uid": None,
+            "cap_eff_zero": None,
+            "cap_prm_zero": None,
+            "cap_amb_zero": None,
+            "no_new_privs": None,
+            "platform_names_in_env": platform_names(os.environ),
+            "unavailable": NOT_ON_THIS_PLATFORM,
+        }
     status = _status("self")
     uid = _effective_uid(status)
     return {
@@ -687,7 +734,7 @@ def isolation_part(
                         transport=transport,
                         needs_network=network,
                         launcher_depth=levels,
-                        why_not_measured=NOT_MEASURED_CHILD,
+                        why_not_measured=str(worker.get("unavailable") or NOT_MEASURED_CHILD),
                     )
                 )
                 continue
@@ -850,6 +897,8 @@ def _joined_names(names: list[str]) -> str:
 def _worker_line(worker: Mapping[str, Any], code: Callable[[str], str]) -> str:
     uid = worker.get("uid")
     who = f"user {uid}" if uid is not None else "a user that could not be read"
+    if worker.get("unavailable"):
+        who += f" ({worker['unavailable']})"
     names = worker.get("platform_names_in_env")
     if names is None:
         clause = "its environment could not be read"

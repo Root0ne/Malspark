@@ -484,6 +484,7 @@ print(json.dumps({"size": len(blob), "took": took, "grew": rss_to_bytes(after - 
 
 
 class TestTheCostIsBoundedByTheFile:
+    @pytest.mark.posix
     def test_a_megabyte_of_the_shortest_marker(self) -> None:
         """The review's 1.2 MB file of ``[inst]``: every match counted, one group held.
 
@@ -537,6 +538,7 @@ print(json.dumps({"size": len(blob), "took": took, "grew": rss_to_bytes(after - 
 
 
 class TestTheViewsAreStreamed:
+    @pytest.mark.posix
     def test_twelve_megabytes_of_spaced_letters(self) -> None:
         """One spaced run the size of the file: memory a small constant of the file, no rows."""
         root = Path(__file__).resolve().parents[3]

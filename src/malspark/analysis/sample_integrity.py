@@ -29,6 +29,7 @@ read. The cost is linear in the sample's size, with no limit of its own.
 
 from __future__ import annotations
 
+import errno
 import hashlib
 import os
 import re
@@ -121,30 +122,19 @@ def _file_digests(
 ) -> tuple[dict[str, Any], str]:
     """The digests ``names`` and the size of one pass, read as :func:`file_sha256` reads."""
     where = os.fspath(path)
+    at_directory = hasattr(os, "O_DIRECTORY")
     try:
-        dir_fd = os.open(
-            os.path.dirname(where) or ".",
-            os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC,
-        )
+        fd = _open_copy(where) if at_directory else _open_copy_by_path(where)
     except OSError as exc:
         return {}, type(exc).__name__
-    try:
-        fd = os.open(
-            os.path.basename(where),
-            os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK | os.O_CLOEXEC,
-            dir_fd=dir_fd,
-        )
-    except OSError as exc:
-        return {}, type(exc).__name__
-    finally:
-        os.close(dir_fd)
     try:
         held = os.fstat(fd)
         if not stat.S_ISREG(held.st_mode):
             return {}, "not a regular file"
         if size is not None and held.st_size != size:
             return {}, f"size {held.st_size} is not the intake size {size}"
-        os.set_blocking(fd, True)
+        if at_directory:
+            os.set_blocking(fd, True)
         # An MD5 or SHA1 here is a sample fingerprint, never a signature.
         digests = {name: hashlib.new(name, usedforsecurity=False) for name in names}
         left = held.st_size if size is None else size
@@ -165,6 +155,52 @@ def _file_digests(
         return {}, type(exc).__name__
     finally:
         os.close(fd)
+
+
+def _open_copy(where: str) -> int:
+    """The copy opened through its directory's descriptor, neither through a link (POSIX)."""
+    dir_fd = os.open(
+        os.path.dirname(where) or ".",
+        os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC,
+    )
+    try:
+        return os.open(
+            os.path.basename(where),
+            os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK | os.O_CLOEXEC,
+            dir_fd=dir_fd,
+        )
+    finally:
+        os.close(dir_fd)
+
+
+def _open_copy_by_path(where: str) -> int:
+    """The copy opened where no descriptor opens a directory (Windows), held to the same rule.
+
+    The path the copy must be found at is fixed first, from the real path of
+    the directory above the copy's own, so the copy's directory itself is
+    never resolved. Then that directory is refused when it is a link or any
+    other reparse point (``tools.staging.is_reparse_point``), and the copy is
+    opened through ``tools.staging.open_no_follow``, which refuses one at the
+    copy's own name and checks, on the open file's handle, that it is at the
+    fixed path: a link put in place of either at any moment, before or after
+    the check, is a reading that failed. The directory's own name is compared
+    as given, so one given by its 8.3 short name is refused as well (the job
+    directories are never named that way). Windows has no pipe at a file's
+    path to block on.
+    """
+    from pathlib import Path
+
+    from malspark.tools import staging
+
+    directory = os.path.dirname(os.path.abspath(where))
+    at = os.path.join(
+        os.path.realpath(os.path.dirname(directory)),
+        os.path.basename(directory),
+        os.path.basename(where),
+    )
+    if staging.is_reparse_point(Path(directory), os.lstat(directory)):
+        raise OSError(errno.ELOOP, staging.NOT_FOLLOWED, directory)
+    return staging.open_no_follow(where, os.O_RDONLY, at=at)
 
 
 def reading(

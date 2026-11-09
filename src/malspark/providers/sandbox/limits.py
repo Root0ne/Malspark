@@ -63,7 +63,9 @@ def stream_to_file_capped(response: Any, out: Path, *, what: str, cap: int | Non
     else that goes wrong mid-stream: half a capture is not a capture, and
     leaving it behind would let the next reader mistake it for one.
 
-    Created 0o600 with ``O_NOFOLLOW`` rather than written and then chmodded.
+    Created 0o600 with no link followed (``tools.staging.open_no_follow``:
+    ``O_NOFOLLOW``, or on Windows its equivalent) rather than written and then
+    chmodded.
     What this writes is a sandbox capture — the whole of a detonation's
     traffic — and the two-step form leaves it readable at the process umask
     for as long as the download takes, which for a capture is the whole of the
@@ -71,11 +73,13 @@ def stream_to_file_capped(response: Any, out: Path, *, what: str, cap: int | Non
     """
     import os
 
+    from malspark.tools.staging import open_no_follow
+
     limit = MAX_RESPONSE_BYTES if cap is None else cap
     written = 0
-    flags = os.O_WRONLY | os.O_CREAT | os.O_TRUNC | os.O_NOFOLLOW
+    flags = os.O_WRONLY | os.O_CREAT | os.O_TRUNC
     try:
-        with os.fdopen(os.open(out, flags, 0o600), "wb") as handle:
+        with os.fdopen(open_no_follow(out, flags, 0o600), "wb") as handle:
             for chunk in response.iter_bytes(CHUNK_BYTES):
                 written += len(chunk)
                 if written > limit:
