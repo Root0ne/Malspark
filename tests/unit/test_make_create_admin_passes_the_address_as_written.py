@@ -2,7 +2,8 @@
 
 The address is the operator's text pasted into a recipe: a quote in it once
 closed the recipe's quoting and ran what followed, a ``$(...)`` was expanded by
-make, and a leading ``-`` was read as an option. The recipe is read from
+make, and a leading ``-`` was read as an option. The recipe hands it to the
+setup entry point, which passes it on as one argument. The recipe is read from
 ``make -n`` and also run, with a ``docker`` on PATH that prints each argument
 it is given on a line of its own.
 """
@@ -12,11 +13,14 @@ from __future__ import annotations
 import os
 import shutil
 import subprocess
+import sys
 from pathlib import Path
 
 import pytest
 
 ROOT = Path(__file__).resolve().parents[2]
+# This interpreter rather than uv's choice; the wrapper's uv call is held elsewhere.
+DEV = f"DEV={sys.executable} scripts/dev/malspark_dev.py"
 
 pytestmark = [
     pytest.mark.posix,
@@ -40,7 +44,7 @@ def _env(tmp_path: Path) -> dict[str, str]:
     docker = shims / "docker"
     docker.write_text('#!/bin/sh\nfor a in "$@"; do printf "[%s]\\n" "$a"; done\n')
     docker.chmod(0o755)
-    env = {k: v for k, v in os.environ.items() if k != "EMAIL"}
+    env = {k: v for k, v in os.environ.items() if k not in ("EMAIL", "DEV")}
     env["PATH"] = f"{shims}{os.pathsep}{env.get('PATH', '')}"
     return env
 
@@ -52,7 +56,7 @@ def test_the_address_reaches_the_command_as_one_argument_after_a_double_dash(
     canary = tmp_path / "ran"
     address = template.format(canary=canary)
     run = subprocess.run(
-        ["make", "-s", "create-admin", f"EMAIL={address}"],
+        ["make", "-s", "create-admin", f"EMAIL={address}", DEV],
         cwd=ROOT,
         env=_env(tmp_path),
         capture_output=True,
@@ -79,7 +83,7 @@ def test_a_dry_run_prints_the_address_quoted_and_runs_nothing(
     canary = tmp_path / "ran"
     address = template.format(canary=canary)
     dry = subprocess.run(
-        ["make", "-s", "-n", "create-admin", f"EMAIL={address}"],
+        ["make", "-s", "-n", "create-admin", f"EMAIL={address}", DEV],
         cwd=ROOT,
         env=_env(tmp_path),
         capture_output=True,
@@ -88,7 +92,7 @@ def test_a_dry_run_prints_the_address_quoted_and_runs_nothing(
         check=True,
     ).stdout
     quoted = "'" + address.replace("'", "'\\''") + "'"
-    assert f"malspark create-admin -- {quoted}" in dry
+    assert f"scripts/dev/malspark_dev.py create-admin -- {quoted}" in dry
     assert not canary.exists()
 
 
@@ -96,7 +100,7 @@ def test_an_address_in_the_environment_is_not_read(tmp_path: Path) -> None:
     # git and Debian's tools read an exported EMAIL: the user's own address.
     env = {**_env(tmp_path), "EMAIL": "me@example.com"}
     run = subprocess.run(
-        ["make", "-s", "create-admin"], cwd=ROOT, env=env, capture_output=True, text=True
+        ["make", "-s", "create-admin", DEV], cwd=ROOT, env=env, capture_output=True, text=True
     )
     assert run.returncode != 0 and run.stdout == ""
     assert "an EMAIL in the environment is not read" in run.stderr
@@ -104,7 +108,11 @@ def test_an_address_in_the_environment_is_not_read(tmp_path: Path) -> None:
 
 def test_without_an_address_the_target_says_how_to_call_it(tmp_path: Path) -> None:
     run = subprocess.run(
-        ["make", "-s", "create-admin"], cwd=ROOT, env=_env(tmp_path), capture_output=True, text=True
+        ["make", "-s", "create-admin", DEV],
+        cwd=ROOT,
+        env=_env(tmp_path),
+        capture_output=True,
+        text=True,
     )
     assert run.returncode != 0 and "usage: make create-admin EMAIL=" in run.stderr
     assert run.stdout == ""

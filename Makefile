@@ -1,4 +1,4 @@
-.PHONY: test lint typecheck format setup migrate check ci-check pre-commit-run prepare-attck prepare-api-db docker-build docker-up docker-down docker-logs dev-up dev-down dev-logs create-admin fe-rebuild worker-restart rebuild-ghidra external semgrep
+.PHONY: test lint typecheck format setup migrate doctor env-init check ci-check pre-commit-run prepare-attck prepare-api-db docker-build docker-up docker-down docker-logs dev-up dev-down dev-logs create-admin fe-rebuild worker-restart rebuild-ghidra external semgrep
 
 test:
 	uv run pytest tests/ -q
@@ -52,25 +52,42 @@ check: lint format-check typecheck test
 # Quick gate without typecheck (fast feedback loop)
 ci-check: lint format-check test
 
+# Setup and the stack's commands live in one standard-library script that runs
+# the same on Windows, macOS and Linux; each target below is a one-line call to
+# it. Without make (native Windows, say), run the script itself:
+#
+#   uv run --no-project python scripts/dev/malspark_dev.py setup
+#   uv run --no-project python scripts/dev/malspark_dev.py env init
+#   uv run --no-project python scripts/dev/malspark_dev.py up
+#
+# `doctor` says what this host has and lacks for the stack.
+DEV = uv run --no-project python scripts/dev/malspark_dev.py
+
+# The host environment a developer works in (uv sync, pre-commit), then what
+# `external` fetches. A host that only runs the stack needs `external` alone.
 setup:
-	uv sync --all-extras --all-packages
-	uv run pre-commit install
-	bash scripts/dev/fetch_external.sh
+	$(DEV) setup --dev
 
 # Applies the API's Alembic migrations to the configured database. The API
 # does not run them on startup unless RUN_MIGRATIONS_ON_STARTUP is set, so
 # run this after every pull that adds a revision under apps/api/alembic/.
-# DATABASE_URL comes from the process environment only (no .env discovery);
-# source bootstrap.env first if you keep it there.
+# DATABASE_URL comes from the process environment, with bootstrap.env read
+# over it when it is there.
 migrate:
-	set -a; [ -f bootstrap.env ] && . ./bootstrap.env; set +a; \
-	uv run --directory apps/api alembic upgrade head
+	$(DEV) migrate
 
 # The third-party trees, at the refs this project was built and measured
-# against. external/ is not in version control: none of it is ours to
-# redistribute, and the ik_llama.cpp commit here is the one the paper pins.
+# against, the Sigma rules and capa's data. external/ is not in version
+# control: none of it is ours to redistribute. ik_llama.cpp, the commit the
+# paper pins, only when named: `$(DEV) external ik_llama.cpp`.
 external:
-	bash scripts/dev/fetch_external.sh
+	$(DEV) external
+
+doctor:
+	$(DEV) doctor
+
+env-init:
+	$(DEV) env init
 
 pre-commit-run:
 	uv run pre-commit run --all-files
@@ -92,35 +109,25 @@ prepare-api-db:
 # the invoking user's ids (the user behind sudo, not root), so data/samples and
 # data/uploads stay that user's and volume-init does not refuse them as someone
 # else's. A value in docker/.env is read without its quotes, spaces or inline
-# comment; an id that still comes out 0 falls back to the image's 10001.
-COMPOSE_IDS = \
-	env_uid=$$(sed -n 's/^[[:space:]]*MALSPARK_UID[[:space:]]*=//p' docker/.env 2>/dev/null | tail -n 1 | cut -d '\#' -f 1 | tr -dc 0-9); \
-	env_gid=$$(sed -n 's/^[[:space:]]*MALSPARK_GID[[:space:]]*=//p' docker/.env 2>/dev/null | tail -n 1 | cut -d '\#' -f 1 | tr -dc 0-9); \
-	own_uid=$${SUDO_UID:-$$(id -u)}; [ "$$own_uid" != 0 ] || own_uid=10001; \
-	own_gid=$${SUDO_GID:-$$(id -g)}; [ "$$own_gid" != 0 ] || own_gid=10001; \
-	export MALSPARK_UID=$${MALSPARK_UID:-$${env_uid:-$$own_uid}} MALSPARK_GID=$${MALSPARK_GID:-$${env_gid:-$$own_gid}};
-
-docker-build:
-	cd docker && POSTGRES_PORT=$${POSTGRES_PORT:-5433} docker compose build
-
+# comment; an id that still comes out 0 falls back to the image's 10001. A host
+# without user ids (Windows) sets neither.
+#
 # The shipped compose file bind-mounts ./data over the image's /app/data, so the
-# stack reads this checkout's rule corpora, not the ones the image fetched: the
-# fetched ones (data/sigma_rules, data/capa-rules, data/capa-signatures) are in
-# place only after `make external` (or `make setup`). Each one missing is named
-# here, and a run without it is degraded.
-docker-up:
-	@for d in data/sigma_rules data/capa-rules data/capa-signatures; do \
-		[ -d "$$d" ] || echo "warning: $$d is missing; the stack mounts ./data over the image's copy, so run make external first" >&2; \
-	done
-	$(COMPOSE_IDS) cd docker && POSTGRES_PORT=$${POSTGRES_PORT:-5433} docker compose up -d
+# stack reads this checkout's rule corpora: docker-up names each one `external`
+# has not fetched. The docker-* targets pass compose no -f, so they do read
+# docker/docker-compose.override.yml. A down also stops the optional services
+# (ghidra, qdrant) whatever COMPOSE_PROFILES says now.
+docker-build:
+	$(DEV) docker-build
 
-# `--profile '*'` so a down also stops the optional services (ghidra, qdrant)
-# whatever COMPOSE_PROFILES says now.
+docker-up:
+	$(DEV) docker-up
+
 docker-down:
-	cd docker && docker compose --profile '*' down
+	$(DEV) docker-down
 
 docker-logs:
-	cd docker && docker compose logs -f
+	$(DEV) docker-logs
 
 # ── Development loop ───────────────────────────────────────────────
 # The production stack bakes the frontend into an image and runs the worker
@@ -134,8 +141,8 @@ docker-logs:
 #
 # The bootstrap secrets (JWT_SECRET_KEY, SETTINGS_ENCRYPTION_KEY) still come
 # from docker/.env for compose variable substitution; bootstrap.env (repo
-# root, gitignored) is sourced here too so the same file also covers `make
-# migrate` and any bare host process you run outside Docker.
+# root, gitignored) is read over the environment here too, so the same file
+# also covers `make migrate` and any bare host process you run outside Docker.
 #
 # COMPOSE_FILE_EXTRA adds compose files of your own after the shipped file and
 # the overlay, each as one more `-f`, so it wins over both: a port moved, a
@@ -149,22 +156,15 @@ docker-logs:
 # read from the repository root; paths inside the file are read from docker/,
 # the first file's directory. Compose reads docker-compose.override.yml on its
 # own only when it is given no -f, and these targets give it two, so an
-# override file is read here only when it is named in COMPOSE_FILE_EXTRA. The
-# docker-* targets pass no -f, so they do read docker/docker-compose.override.yml.
-DEV_COMPOSE = docker compose -f docker/docker-compose.yml -f docker/docker-compose.dev.yml \
-	$(foreach file,$(COMPOSE_FILE_EXTRA),-f $(file))
-
+# override file is read here only when it is named in COMPOSE_FILE_EXTRA.
 dev-up:
-	set -a; [ -f bootstrap.env ] && . ./bootstrap.env; set +a; $(COMPOSE_IDS) \
-	$(DEV_COMPOSE) up -d
+	$(DEV) up
 
 dev-down:
-	set -a; [ -f bootstrap.env ] && . ./bootstrap.env; set +a; \
-	$(DEV_COMPOSE) --profile '*' down
+	$(DEV) down
 
 dev-logs:
-	set -a; [ -f bootstrap.env ] && . ./bootstrap.env; set +a; \
-	$(DEV_COMPOSE) logs -f
+	$(DEV) logs
 
 # The first admin account, or an existing account promoted, in the running
 # stack's API container (`malspark create-admin`, which reads the API's own
@@ -174,11 +174,11 @@ dev-logs:
 #
 # EMAIL is taken as written: `$(value ...)` keeps make from expanding a `$(...)`
 # in it, the single quotes (each one inside written as '\'') keep the shell from
-# reading it, and `--` keeps an address that starts with `-` an argument. It is
-# unexported, since make expands an exported variable to put it in a recipe's
-# environment. It is read from the make command line only: an EMAIL exported in
-# the shell (git and Debian's tools read one) is someone's own address, not the
-# account meant here.
+# reading it, and `--` keeps an address that starts with `-` an argument; the
+# script hands it on as one argument. It is unexported, since make expands an
+# exported variable to put it in a recipe's environment. It is read from the
+# make command line only: an EMAIL exported in the shell (git and Debian's
+# tools read one) is someone's own address, not the account meant here.
 unexport EMAIL
 QUOTED_EMAIL = '$(subst ','\'',$(value EMAIL))'
 
@@ -187,15 +187,15 @@ ifneq ($(origin EMAIL),command line)
 	@echo "usage: make create-admin EMAIL=you@example.com (on the make command line; an EMAIL in the environment is not read)" >&2; exit 2
 else
 	@[ -n $(QUOTED_EMAIL) ] || { echo "usage: make create-admin EMAIL=you@example.com" >&2; exit 2; }
-	cd docker && docker compose exec backend-api malspark create-admin -- $(QUOTED_EMAIL)
+	$(DEV) create-admin -- $(QUOTED_EMAIL)
 endif
 
 # On the production stack, these are the two commands that make an edit real.
 fe-rebuild:
-	$(COMPOSE_IDS) cd docker && docker compose build frontend && docker compose up -d --no-deps frontend
+	$(DEV) fe-rebuild
 
 worker-restart:
-	docker restart malspark-worker
+	$(DEV) worker-restart
 
 # ── Ghidra MCP Manager ─────────────────────────────────────────────
 
