@@ -23,6 +23,12 @@ The commands below are the same in PowerShell, on macOS and on Linux. Where
 make is installed, each `malspark_dev.py` command also has a make target of
 the same name (`make external`, `make dev-up`, ...).
 
+**Supported systems.** Windows (native PowerShell with Docker Desktop), macOS
+and Linux. In CI, the Platforms workflow runs `setup`, `setup --dev`,
+`env init` and `doctor` from a fresh checkout on Ubuntu, macOS and Windows
+runners, validates the compose files on Ubuntu, and runs the host-side unit
+suites on Windows.
+
 <Steps>
 
 <Step>
