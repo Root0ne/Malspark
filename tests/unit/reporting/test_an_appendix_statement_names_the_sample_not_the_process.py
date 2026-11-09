@@ -516,6 +516,15 @@ def test_quoted_strings_are_found_in_linear_time() -> None:
     )
 
 
+def test_curly_quotes_nothing_closes_are_read_in_linear_time() -> None:
+    # Opening curly quotes with no closing one after them: each is read once, not
+    # each to the end of the text.
+    assert_scales(
+        lambda size: repeated(partial(_Shield.of, "\u201cx " * size + "x."), 24),
+        1000,
+    )
+
+
 @pytest.mark.parametrize(
     "shape",
     [
@@ -524,11 +533,12 @@ def test_quoted_strings_are_found_in_linear_time() -> None:
         lambda size: "0xa1" + " " * size + "claim 4 x.",
         lambda size: "0xa1" + " " * size + "(x) and" + " " * size + ", x) via X.",
         lambda size: "0xa1" + " " * size + "[x]" + " " * size + "x.",
-        # ... a run of dashes before one, and a word as long.
+        # ... a run of dashes before one, and a run of spaces before a word a claim
+        # number closes.
         lambda size: "[0xa1" + "-" * size + "x] via X.",
-        lambda size: "0xa1 " + "w" * size + " in claim 4 x.",
+        lambda size: "0xa1" + " " * size + "w in claim 4.",
     ],
-    ids=["spaces-claim", "spaces-bracket", "spaces-outcome", "dashes", "long-word"],
+    ids=["spaces-claim", "spaces-bracket", "spaces-outcome", "dashes", "spaces-clause"],
 )
 def test_a_long_run_of_one_character_is_read_in_linear_time(shape: Callable[[int], str]) -> None:
     analyst, named = _reader()

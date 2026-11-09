@@ -17,6 +17,8 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
+from malspark.reporting.renderers.analyst import _CITATION_RUN
+
 ROOT = Path(__file__).resolve().parents[3]
 BENCHMARK = Path(".superpowers") / "sdd" / "mandate-2026-09-17" / "benchmark" / "deepseek"
 
@@ -31,7 +33,6 @@ def stored_runs() -> Path | None:
 
 _NOTE_MARKER = re.compile(r"\[\[\d+\]\]\([^)\s]*\)")
 _ID_LINK = re.compile(r"\[(ev_\d+)\]\([^)\s]*\)")
-_CITATION_RUN = re.compile(r"(?:\s*[\[(]\s*ev_\d+(?:\s*[,;]\s*ev_\d+)*\s*[\])])+")
 _BARE_ID = re.compile(r"\bev_\d+\b")
 
 
