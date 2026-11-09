@@ -9,9 +9,11 @@ against the current working directory.
 
 from __future__ import annotations
 
+import ntpath
 import os
+import posixpath
 import re
-from pathlib import Path
+from pathlib import Path, PurePosixPath, PureWindowsPath
 
 from malspark.core.exceptions import ProjectRootNotFoundError
 
@@ -158,13 +160,22 @@ def _rooted(value: str, project_root: Path | None = None) -> tuple[str, bool]:
     return str(rooted), False
 
 
-# An absolute POSIX path in free text: a ``file://`` URL, or a slash not after
-# a word character, a colon, a dot or another slash (a URL's ``//`` and a
-# relative ``a/b`` are not one), then path characters.
+# A segment of a path in free text.
+_SEGMENT = r"[\w.@%+~-]+"
+
+# An absolute path in free text, in either system's form: a ``file://`` URL; a
+# Windows path, a drive letter then either separator (``C:\Users\x``,
+# ``D:/a/b``), not after a word character or a colon; or a POSIX path, a slash
+# not after a word character, a colon, a dot or another slash (a URL's ``//``
+# and a relative ``a/b`` are not one), then path characters.
 _ABSOLUTE_PATH = re.compile(
-    r"file://(?:localhost)?(?P<url>/[^\s'\"<>()]*)"
-    r"|(?<![\w:./])(?P<path>/[\w.@%+~-]+(?:/[\w.@%+~-]+)*/?)"
+    r"file://(?:localhost)?(?P<url>/?[A-Za-z]:[\\/][^\s'\"<>()]*|/[^\s'\"<>()]*)"
+    rf"|(?<![\w:./\\])(?P<drive>[A-Za-z]:[\\/](?:{_SEGMENT}(?:[\\/]{_SEGMENT})*[\\/]?)?)"
+    rf"|(?<![\w:./])(?P<path>/{_SEGMENT}(?:/{_SEGMENT})*/?)"
 )
+
+# A Windows path: a drive letter, a colon and a separator.
+_DRIVE = re.compile(r"[A-Za-z]:[\\/]")
 
 # The directories a host keeps its own files under. A path that starts with one
 # of them is the host's layout; anything else that reads as one (an HTTP route,
@@ -172,7 +183,8 @@ _ABSOLUTE_PATH = re.compile(
 # the same words mask the same way wherever they are rendered. The list is the
 # union of the layouts a host may have, not the running host's alone: the
 # second line is macOS's (its temporary and variable directories resolve under
-# /private, its users under /Users), so a path written there is masked too.
+# /private, its users under /Users), so a path written there is masked too. A
+# Windows path (``C:\...``) is the host's layout on any drive.
 HOST_ROOTS = (
     *("/home", "/tmp", "/opt", "/var", "/root", "/srv", "/mnt", "/media", "/usr", "/etc"),
     *("/private", "/Users", "/Volumes", "/Library", "/System", "/Applications"),
@@ -182,6 +194,15 @@ HOST_ROOTS = (
 OUTSIDE_PROJECT = "a path outside the project"
 
 
+def _written_path(written: str) -> PurePosixPath | PureWindowsPath:
+    """A path read from words, in the form it is written in rather than the host's."""
+    if written.startswith("/") and _DRIVE.match(written, 1):  # file:///C:/x
+        written = written[1:]
+    if _DRIVE.match(written):
+        return PureWindowsPath(ntpath.normpath(written))
+    return PurePosixPath(posixpath.normpath(written))
+
+
 def host_paths_masked(text: str, project_root: Path | None = None) -> str:
     """``text`` with each host path shown from the project root, or masked outside it.
 
@@ -189,23 +210,28 @@ def host_paths_masked(text: str, project_root: Path | None = None) -> str:
     the project reads as the operator wrote it relative to the root
     (``data/sigma_rules``), and a host path outside it as
     :data:`OUTSIDE_PROJECT`, never as the host's own layout. A host path is
-    one under :data:`HOST_ROOTS` or one of the project's parents; a ``file://``
-    URL is read as its path. Anything else that starts with a slash (an HTTP
-    route) is kept. Read from the words alone, never from the host's files, so
-    a reason masked when it is written reads the same wherever it is shown.
+    one under :data:`HOST_ROOTS` or one of the project's parents, or any
+    Windows path; a ``file://`` URL is read as its path. Anything else that
+    starts with a slash (an HTTP route) is kept. Read from the words alone,
+    never from the host's files, and in the form each path is written in, so a
+    reason masked when it is written reads the same wherever it is shown, and
+    a Windows project's paths are read as a POSIX project's are.
     """
-    root = get_project_root() if project_root is None else project_root
-    parents = tuple(str(parent) for parent in root.parents if parent != Path(parent.anchor))
+    root = _written_path(str(get_project_root() if project_root is None else project_root))
+    parents = tuple(
+        str(parent)
+        for parent in root.parents
+        if isinstance(root, PurePosixPath) and parent != PurePosixPath(parent.anchor)
+    )
 
     def shown(match: re.Match[str]) -> str:
-        written = match.group("url") or match.group("path")
-        path = Path(os.path.normpath(written))
-        if path.is_relative_to(root) and path != root:
+        path = _written_path(match.group("url") or match.group("drive") or match.group("path"))
+        if type(path) is type(root) and path.is_relative_to(root) and path != root:
             return path.relative_to(root).as_posix()
+        if isinstance(path, PureWindowsPath) or match.group("url"):
+            return OUTSIDE_PROJECT
         text = str(path)
         held = any(text == top or text.startswith(top + "/") for top in (*HOST_ROOTS, *parents))
-        if held or match.group("url"):
-            return OUTSIDE_PROJECT
-        return match.group(0)
+        return OUTSIDE_PROJECT if held else match.group(0)
 
     return _ABSOLUTE_PATH.sub(shown, str(text or ""))

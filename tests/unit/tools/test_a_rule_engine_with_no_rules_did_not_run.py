@@ -369,6 +369,27 @@ class TestOnlyAHostPathIsMasked:
         assert said == f"data/sigma_rules and {OUTSIDE_PROJECT}"
         assert host_paths_masked("file://localhost/opt/rules") == OUTSIDE_PROJECT
 
+    def test_a_windows_path_is_masked_on_any_host(self) -> None:
+        said = host_paths_masked(
+            'in "C:\\Users\\someone\\AppData\\Local\\Temp\\broken.yml", line 1 and D:/x/r.yml'
+        )
+        assert said == f'in "{OUTSIDE_PROJECT}", line 1 and {OUTSIDE_PROJECT}'
+        assert host_paths_masked("file:///C:/rules/r.yml") == OUTSIDE_PROJECT
+
+    def test_a_windows_project_s_paths_read_as_a_posix_project_s(self) -> None:
+        root = Path("D:\\a\\Malspark\\Malspark")
+        said = host_paths_masked(
+            "rules at D:\\a\\Malspark\\Malspark/data/capa-rules,"
+            " d:\\a\\malspark\\malspark\\data\\x,"
+            " file:///D:/a/Malspark/Malspark/data/sigma_rules, D:\\a\\other and /srv/r",
+            root,
+        )
+        assert said == (
+            f"rules at data/capa-rules, data/x, data/sigma_rules, {OUTSIDE_PROJECT} and "
+            f"{OUTSIDE_PROJECT}"
+        )
+        assert host_paths_masked("GET /api/v1/jobs failed", root) == "GET /api/v1/jobs failed"
+
     def test_the_run_summary_keeps_them_and_leaves_them_out_when_none(self) -> None:
         rows = [{"tool": "capa", "reason": "x"}]
         with_rows = RunSummaryBuilder(start_time=0.0).set_lost_tools(rows).build().to_dict()
