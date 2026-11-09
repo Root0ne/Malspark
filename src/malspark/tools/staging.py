@@ -37,6 +37,7 @@ Who creates what, and who removes it:
 
 from __future__ import annotations
 
+import ctypes
 import errno
 import os
 import re
@@ -311,41 +312,47 @@ def open_no_follow(
     """``os.open(path, flags, mode)`` that follows no link at ``path``'s last part, or ``OSError``.
 
     Where the system has ``O_NOFOLLOW`` (POSIX) it is added to ``flags``: the
-    one call it always was. Where it has none (Windows), the same refusal is
-    made in three steps, and none is weaker than the flag:
+    one call it always was. On Windows, which has no such flag, what holds is:
 
-    1. what stands at ``path`` now is refused when it is a link or any other
-       reparse point (:func:`is_reparse_point`), a OneDrive placeholder among
-       them (fail closed);
-    2. the file is opened in binary (``O_BINARY``, without which a write turns
-       each newline byte into two) and not inherited, with ``O_TRUNC`` held back;
-    3. the path of the file actually open, asked of the system by its handle
+    1. The file is opened by ``CreateFileW`` with
+       ``FILE_FLAG_OPEN_REPARSE_POINT`` (:func:`_windows_open`): a link, a
+       junction or any other reparse point at the last part, a OneDrive
+       placeholder among them, is opened as itself, never followed, and then
+       refused on the open handle's own attributes (``ELOOP``), before
+       anything is written. ``O_CREAT``, ``O_EXCL`` and ``O_TRUNC`` are mapped
+       to the creation disposition the C runtime's ``open`` uses, except that
+       ``O_TRUNC`` never truncates at the open; the handle is not inherited and
+       carries ``SECURITY_IDENTIFICATION``, so a named pipe server reached
+       through the name cannot act as this process. It becomes a descriptor in
+       binary (``O_BINARY``, without which a write turns each newline byte
+       into two).
+    2. The path of the file actually open, asked of the system by its handle
        (:func:`descriptor_path`), must be ``at``: by default the real path of
        ``path``'s directory as it was before the open, joined with its name.
-       So a link put in place between the first step and the open, at the name
-       or at any directory above it, is caught on the file that is open, and
-       nothing is written through it: only then is the file truncated, where
-       ``O_TRUNC`` was asked.
+       So a junction or link at any directory above the last part, put there
+       at any moment before the open, is caught on the file that is open.
+    3. Only then is the file truncated, where ``O_TRUNC`` was asked.
+
+    A POSIX system without ``O_NOFOLLOW`` (no real one; ``tests/without_posix.py``
+    makes one) refuses a link found at the name, opens with ``os.open`` and
+    holds the open file to steps 2 and 3.
 
     ``at`` is for a caller that has checked more of the path than its last
     part (``pipeline.artefacts.open_beneath``). A refusal raises ``OSError``
-    with ``ELOOP``, as ``O_NOFOLLOW`` does, naming why.
+    with ``ELOOP``, as ``O_NOFOLLOW`` does, naming why; a Win32 failure to
+    open raises the ``OSError`` its error stands for (``ENOENT``, ``EEXIST``,
+    ``EACCES``).
     """
     nofollow = getattr(os, "O_NOFOLLOW", None)
     if nofollow is not None:
         return os.open(path, flags | nofollow, mode)
     where = os.path.abspath(os.fspath(path))
     expected = at or os.path.join(os.path.realpath(os.path.dirname(where)), os.path.basename(where))
-    try:
-        info = os.lstat(where)
-    except FileNotFoundError:
-        pass
-    else:
-        if is_reparse_point(Path(where), info):
-            raise OSError(errno.ELOOP, NOT_FOLLOWED, where)
     truncate = bool(flags & os.O_TRUNC)
-    extra = getattr(os, "O_BINARY", 0) | getattr(os, "O_NOINHERIT", 0)
-    fd = os.open(where, (flags & ~os.O_TRUNC) | extra, mode)
+    if sys.platform == "win32":
+        fd = _windows_open(where, flags & ~os.O_TRUNC, mode)
+    else:
+        fd = _open_unless_a_link(where, flags & ~os.O_TRUNC, mode)
     try:
         opened = descriptor_path(fd)
         if os.path.normcase(opened) != os.path.normcase(expected):
@@ -356,6 +363,144 @@ def open_no_follow(
         os.close(fd)
         raise
     return fd
+
+
+def _open_unless_a_link(where: str, flags: int, mode: int) -> int:
+    """``os.open`` of ``where`` unless a link or another reparse point stands there now."""
+    try:
+        info = os.lstat(where)
+    except FileNotFoundError:
+        pass
+    else:
+        if is_reparse_point(Path(where), info):
+            raise OSError(errno.ELOOP, NOT_FOLLOWED, where)
+    return os.open(where, flags | getattr(os, "O_BINARY", 0) | getattr(os, "O_NOINHERIT", 0), mode)
+
+
+# The Win32 constants the open passes (winnt.h, winbase.h, fileapi.h).
+_GENERIC_READ = 0x80000000
+_GENERIC_WRITE = 0x40000000
+_FILE_READ_ATTRIBUTES = 0x80
+_FILE_SHARE_READ_WRITE = 0x3  # what the C runtime's open shares: read and write
+_CREATE_NEW = 1
+_OPEN_EXISTING = 3
+_OPEN_ALWAYS = 4
+_FILE_ATTRIBUTE_READONLY = 0x1
+_FILE_ATTRIBUTE_NORMAL = 0x80
+_SECURITY_IDENTIFICATION = 0x00010000
+_SECURITY_SQOS_PRESENT = 0x00100000
+_INVALID_HANDLE = -1
+# A Win32 error, as the errno the C runtime gives it.
+_WIN32_ERRNO = {
+    2: errno.ENOENT,  # ERROR_FILE_NOT_FOUND
+    3: errno.ENOENT,  # ERROR_PATH_NOT_FOUND
+    5: errno.EACCES,  # ERROR_ACCESS_DENIED
+    32: errno.EACCES,  # ERROR_SHARING_VIOLATION
+    80: errno.EEXIST,  # ERROR_FILE_EXISTS
+    183: errno.EEXIST,  # ERROR_ALREADY_EXISTS
+}
+
+
+def creation_disposition(flags: int) -> int:
+    """The ``CreateFileW`` disposition for ``O_CREAT`` and ``O_EXCL``; ``O_TRUNC`` is applied later.
+
+    As the C runtime maps them, with truncation left out: ``O_CREAT|O_EXCL``
+    creates a new file or fails, ``O_CREAT`` opens or creates, and without
+    ``O_CREAT`` only an existing file opens.
+    """
+    if flags & os.O_CREAT:
+        return _CREATE_NEW if flags & os.O_EXCL else _OPEN_ALWAYS
+    return _OPEN_EXISTING
+
+
+def _windows_access(flags: int) -> int:
+    """The access a handle opened for ``flags`` asks for, its attributes always among it."""
+    asked = flags & 0x3  # O_RDONLY 0, O_WRONLY 1, O_RDWR 2
+    access = {0: _GENERIC_READ, 1: _GENERIC_WRITE}.get(asked, _GENERIC_READ | _GENERIC_WRITE)
+    return access | _FILE_READ_ATTRIBUTES
+
+
+def _win32_error(code: int, call: str, where: str) -> OSError:
+    return OSError(
+        _WIN32_ERRNO.get(code, errno.EINVAL), f"{call} failed (Windows error {code})", where
+    )
+
+
+def _windows_open(where: str, flags: int, mode: int) -> int:
+    """``where`` opened as itself by ``CreateFileW``, as a descriptor; a reparse point refused.
+
+    ``flags`` carries no ``O_TRUNC`` (:func:`open_no_follow` truncates later).
+    A flag this does not map is refused rather than dropped.
+    """
+    import ctypes
+
+    known = 0x3 | os.O_CREAT | os.O_EXCL
+    known |= getattr(os, "O_BINARY", 0) | getattr(os, "O_NOINHERIT", 0)
+    if flags & ~known:
+        raise ValueError(f"open_no_follow cannot open with the flags {flags & ~known:#x} here")
+    kernel32, msvcrt = _win32_files()
+    created = flags & os.O_CREAT and not mode & stat.S_IWRITE
+    handle = kernel32.CreateFileW(
+        where,
+        _windows_access(flags),
+        _FILE_SHARE_READ_WRITE,
+        None,
+        creation_disposition(flags),
+        (_FILE_ATTRIBUTE_READONLY if created else _FILE_ATTRIBUTE_NORMAL)
+        | _FILE_FLAG_OPEN_REPARSE_POINT
+        | _SECURITY_SQOS_PRESENT
+        | _SECURITY_IDENTIFICATION,
+        None,
+    )
+    if handle is None or handle == _INVALID_HANDLE:
+        raise _win32_error(_last_error(), "CreateFileW", where)
+    try:
+        info = _ByHandleFileInformation()
+        if not kernel32.GetFileInformationByHandle(handle, ctypes.byref(info)):
+            raise _win32_error(_last_error(), "GetFileInformationByHandle", where)
+        if info.dwFileAttributes & stat.FILE_ATTRIBUTE_REPARSE_POINT:
+            raise OSError(errno.ELOOP, NOT_FOLLOWED, where)
+        return int(
+            msvcrt.open_osfhandle(
+                handle, getattr(os, "O_BINARY", 0) | getattr(os, "O_NOINHERIT", 0)
+            )
+        )
+    except BaseException:
+        kernel32.CloseHandle(handle)
+        raise
+
+
+class _ByHandleFileInformation(ctypes.Structure):
+    """``BY_HANDLE_FILE_INFORMATION``: its attributes are what the open reads."""
+
+    _fields_ = [
+        ("dwFileAttributes", ctypes.c_uint32),
+        ("rest", ctypes.c_uint32 * 12),  # the times, the volume, the size, the links, the index
+    ]
+
+
+def _win32_files() -> tuple[Any, Any]:
+    """kernel32 typed for the open, and ``msvcrt`` that makes a descriptor of its handle."""
+    import ctypes
+    import msvcrt
+    from ctypes import wintypes
+
+    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)  # type: ignore[attr-defined]
+    kernel32.CreateFileW.argtypes = [
+        wintypes.LPCWSTR,
+        wintypes.DWORD,
+        wintypes.DWORD,
+        ctypes.c_void_p,
+        wintypes.DWORD,
+        wintypes.DWORD,
+        wintypes.HANDLE,
+    ]
+    kernel32.CreateFileW.restype = ctypes.c_ssize_t  # INVALID_HANDLE_VALUE reads as -1
+    kernel32.GetFileInformationByHandle.argtypes = [ctypes.c_ssize_t, ctypes.c_void_p]
+    kernel32.GetFileInformationByHandle.restype = wintypes.BOOL
+    kernel32.CloseHandle.argtypes = [ctypes.c_ssize_t]
+    kernel32.CloseHandle.restype = wintypes.BOOL
+    return kernel32, msvcrt
 
 
 def descriptor_path(fd: int) -> str:

@@ -236,6 +236,211 @@ class TestTheOpenFilesPathOnWindows:
             staging.descriptor_path(3)
 
 
+class _Win32Files:
+    """kernel32 and msvcrt as the Windows open calls them, over this host's own files.
+
+    ``CreateFileW`` records what it was asked and answers a handle, or fails
+    with ``error``; ``open_osfhandle`` makes a real descriptor of the path the
+    handle was opened for, so what the open writes lands in a real file.
+    """
+
+    def __init__(self, monkeypatch: pytest.MonkeyPatch, *, attributes: int = 0, error: int = 0):
+        self.created: list[tuple[Any, ...]] = []
+        self.closed: list[int] = []
+        self.made: list[int] = []
+        self.paths: dict[int, str] = {}
+        self._attributes, self._error, self._next = attributes, error, 100
+        self.info_fails = False
+        kernel32 = SimpleNamespace(
+            CreateFileW=self.create,
+            GetFileInformationByHandle=self.information,
+            CloseHandle=self.closed.append,
+        )
+        msvcrt = SimpleNamespace(open_osfhandle=self.descriptor)
+        self._handles: dict[int, str] = {}
+        monkeypatch.setattr(sys, "platform", "win32")
+        monkeypatch.delattr(os, "O_NOFOLLOW", raising=False)
+        monkeypatch.setattr(staging, "_win32_files", lambda: (kernel32, msvcrt))
+        monkeypatch.setattr(staging, "descriptor_path", lambda fd: self.paths[fd])
+        monkeypatch.setattr(ctypes, "get_last_error", lambda: self._error, raising=False)
+
+    def create(self, path: str, *args: Any) -> int:
+        self.created.append((path, *args))
+        if self._error:
+            return -1
+        self._next += 1
+        self._handles[self._next] = path
+        return self._next
+
+    def information(self, _handle: int, info: Any) -> int:
+        if self.info_fails:
+            return 0
+        info._obj.dwFileAttributes = self._attributes
+        return 1
+
+    def descriptor(self, handle: int, flags: int) -> int:
+        self.made.append(flags)
+        fd = os.open(self._handles[handle], os.O_RDWR | os.O_CREAT, 0o600)
+        self.paths[fd] = os.path.realpath(self._handles[handle])
+        return fd
+
+
+class TestTheWin32Open:
+    """The open on Windows: the link itself, refused by its attributes, nothing written first."""
+
+    @pytest.mark.parametrize(
+        ("flags", "disposition"),
+        [
+            (os.O_RDONLY, staging._OPEN_EXISTING),
+            (os.O_WRONLY | os.O_TRUNC, staging._OPEN_EXISTING),
+            (os.O_WRONLY | os.O_CREAT, staging._OPEN_ALWAYS),
+            (os.O_WRONLY | os.O_CREAT | os.O_TRUNC, staging._OPEN_ALWAYS),
+            (os.O_WRONLY | os.O_CREAT | os.O_EXCL, staging._CREATE_NEW),
+            (os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_TRUNC, staging._CREATE_NEW),
+        ],
+    )
+    def test_the_disposition_is_the_c_runtime_s_without_truncating(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path, flags: int, disposition: int
+    ) -> None:
+        assert staging.creation_disposition(flags) == disposition
+        files = _Win32Files(monkeypatch)
+        target = tmp_path / "f"
+        target.write_bytes(b"x")
+        os.close(staging.open_no_follow(target, flags))
+        assert files.created[0][4] == disposition
+
+    def test_the_link_itself_is_opened_unshared_for_delete_and_not_impersonable(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        files = _Win32Files(monkeypatch)
+        target = tmp_path / "f"
+        target.write_bytes(PAYLOAD)
+        fd = staging.open_no_follow(target, os.O_RDONLY)
+        with os.fdopen(fd, "rb") as handle:
+            assert handle.read() == PAYLOAD
+        path, access, share, security, _disposition, attributes, template = files.created[0]
+        assert path == str(target) and security is None and template is None
+        assert access == staging._GENERIC_READ | staging._FILE_READ_ATTRIBUTES
+        assert share == staging._FILE_SHARE_READ_WRITE
+        assert attributes & staging._FILE_FLAG_OPEN_REPARSE_POINT
+        assert attributes & staging._SECURITY_SQOS_PRESENT
+        assert attributes & staging._SECURITY_IDENTIFICATION
+        assert not attributes & staging._FILE_FLAG_BACKUP_SEMANTICS
+        assert files.made == [getattr(os, "O_BINARY", 0) | getattr(os, "O_NOINHERIT", 0)]
+
+    def test_writing_asks_for_write_and_a_file_created_without_write_is_read_only(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        files = _Win32Files(monkeypatch)
+        os.close(staging.open_no_follow(tmp_path / "w", os.O_WRONLY | os.O_CREAT, 0o600))
+        os.close(staging.open_no_follow(tmp_path / "r", os.O_WRONLY | os.O_CREAT, 0o400))
+        (_, written, *_, normal, _), (_, _, *_, read_only, _) = files.created
+        assert written == staging._GENERIC_WRITE | staging._FILE_READ_ATTRIBUTES
+        assert normal & staging._FILE_ATTRIBUTE_NORMAL
+        assert read_only & staging._FILE_ATTRIBUTE_READONLY
+
+    def test_a_reparse_point_is_refused_on_its_handle_before_anything_is_written(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        files = _Win32Files(monkeypatch, attributes=stat.FILE_ATTRIBUTE_REPARSE_POINT)
+        target = tmp_path / "placeholder"
+        target.write_bytes(b"somebody's bytes")
+        with pytest.raises(OSError, match="never followed") as caught:
+            staging.open_no_follow(target, os.O_WRONLY | os.O_CREAT | os.O_TRUNC)
+        assert caught.value.errno == errno.ELOOP
+        assert target.read_bytes() == b"somebody's bytes"
+        assert files.closed == [101] and files.made == []
+
+    @pytest.mark.parametrize(
+        ("error", "kind", "number"),
+        [
+            (80, FileExistsError, errno.EEXIST),
+            (183, FileExistsError, errno.EEXIST),
+            (2, FileNotFoundError, errno.ENOENT),
+            (3, FileNotFoundError, errno.ENOENT),
+            (5, PermissionError, errno.EACCES),
+            (32, PermissionError, errno.EACCES),
+            (87, OSError, errno.EINVAL),
+        ],
+    )
+    def test_a_win32_failure_is_the_oserror_it_stands_for(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: Path,
+        error: int,
+        kind: type[OSError],
+        number: int,
+    ) -> None:
+        files = _Win32Files(monkeypatch, error=error)
+        with pytest.raises(kind) as caught:
+            staging.open_no_follow(tmp_path / "f", os.O_WRONLY | os.O_CREAT | os.O_EXCL)
+        assert caught.value.errno == number
+        assert files.closed == [] and files.made == []
+
+    def test_a_handle_whose_attributes_cannot_be_read_is_closed(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        files = _Win32Files(monkeypatch, error=5)
+        files._error = 0
+        files.info_fails = True
+        with pytest.raises(OSError, match="GetFileInformationByHandle"):
+            staging.open_no_follow(tmp_path / "f", os.O_WRONLY | os.O_CREAT)
+        assert files.closed == [101] and files.made == []
+
+    def test_a_handle_no_descriptor_is_made_of_is_closed(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        files = _Win32Files(monkeypatch)
+
+        def refusing(_handle: int, _flags: int) -> int:
+            raise OSError(errno.EMFILE, "too many open files")
+
+        kernel32 = SimpleNamespace(
+            CreateFileW=files.create,
+            GetFileInformationByHandle=files.information,
+            CloseHandle=files.closed.append,
+        )
+        monkeypatch.setattr(
+            staging, "_win32_files", lambda: (kernel32, SimpleNamespace(open_osfhandle=refusing))
+        )
+        with pytest.raises(OSError, match="too many open files"):
+            staging.open_no_follow(tmp_path / "f", os.O_WRONLY | os.O_CREAT)
+        assert files.closed == [101]
+
+    def test_a_file_found_elsewhere_once_open_is_closed_and_never_truncated(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        files = _Win32Files(monkeypatch)
+        target = tmp_path / "f"
+        target.write_bytes(b"somebody's bytes")
+        monkeypatch.setattr(staging, "descriptor_path", lambda _fd: str(tmp_path / "elsewhere"))
+        real_close, closed = os.close, []
+        monkeypatch.setattr(os, "close", lambda fd: closed.append(fd) or real_close(fd))
+        with pytest.raises(OSError, match="somewhere else"):
+            staging.open_no_follow(target, os.O_WRONLY | os.O_CREAT | os.O_TRUNC)
+        assert target.read_bytes() == b"somebody's bytes"
+        assert len(closed) == 1 and files.made
+
+    def test_a_file_in_place_is_truncated_once_checked(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        _Win32Files(monkeypatch)
+        target = tmp_path / "f"
+        target.write_bytes(b"old and longer")
+        fd = staging.open_no_follow(target, os.O_WRONLY | os.O_CREAT | os.O_TRUNC)
+        os.write(fd, b"new")
+        os.close(fd)
+        assert target.read_bytes() == b"new"
+
+    def test_a_flag_it_does_not_map_is_refused_before_any_open(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        files = _Win32Files(monkeypatch)
+        with pytest.raises(ValueError, match="cannot open with the flags"):
+            staging.open_no_follow(tmp_path / "f", os.O_WRONLY | os.O_APPEND)
+        assert files.created == []
+
+
 class TestOwnershipFromAStatResult:
     @pytest.mark.skipif(not hasattr(os, "getuid"), reason="no user ids on this host")
     def test_posix_compares_user_ids(self) -> None:
@@ -272,8 +477,15 @@ def test_a_reparse_point_is_refused_as_a_private_directory(
 @pytest.mark.posix
 @pytest.mark.usefixtures("no_posix_flags")
 def test_a_file_is_opened_beneath_its_root_with_no_link_followed_without_openat(
-    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
+    opened: list[str] = []
+    real = staging._open_unless_a_link
+    monkeypatch.setattr(
+        staging,
+        "_open_unless_a_link",
+        lambda where, flags, mode: opened.append(where) or real(where, flags, mode),
+    )
     root = tmp_path / "root"
     (root / "a").mkdir(parents=True)
     (root / "a" / "f").write_bytes(PAYLOAD)
@@ -289,6 +501,8 @@ def test_a_file_is_opened_beneath_its_root_with_no_link_followed_without_openat(
             assert os.read(fd, 100) == PAYLOAD
         finally:
             os.close(fd)
+    # Every open above went the way a system without O_NOFOLLOW goes.
+    assert opened == [str(root / "a" / "f")] * 3
     for bad, said in (
         ("dirlink/f", "not inside the root"),
         ("a/filelink", "cannot be opened as a file"),
@@ -339,6 +553,30 @@ class TestACopyIsHashedWithoutOpenat:
         (real / "link").symlink_to(real / "copy")
         assert sample_integrity.file_sha256(tmp_path / "dirlink" / "copy") == ("", "OSError")
         assert sample_integrity.file_sha256(real / "link") == ("", "OSError")
+
+
+@needs_proc
+@pytest.mark.posix
+@pytest.mark.usefixtures("no_posix_flags")
+def test_a_copy_s_directory_swapped_for_a_link_after_its_check_is_a_failed_reading(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """The path the copy must be at is fixed before the check, so a swap after it is caught."""
+    (tmp_path / "dir").mkdir()
+    (tmp_path / "dir" / "copy").write_bytes(b"real")
+    (tmp_path / "evil").mkdir()
+    (tmp_path / "evil" / "copy").write_bytes(b"evil bytes")
+    real = staging.is_reparse_point
+
+    def swapping(path: Path, info: os.stat_result) -> bool:
+        answer = real(path, info)
+        if path == tmp_path / "dir":
+            os.rename(tmp_path / "dir", tmp_path / "dir.old")
+            os.symlink(tmp_path / "evil", tmp_path / "dir")
+        return answer
+
+    monkeypatch.setattr(staging, "is_reparse_point", swapping)
+    assert sample_integrity.file_sha256(tmp_path / "dir" / "copy") == ("", "OSError")
 
 
 @needs_proc
