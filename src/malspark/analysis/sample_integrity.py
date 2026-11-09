@@ -183,8 +183,10 @@ def _open_copy_by_path(where: str) -> int:
     opened through ``tools.staging.open_no_follow``, which refuses one at the
     copy's own name and checks, on the open file's handle, that it is at the
     fixed path: a link put in place of either at any moment, before or after
-    the check, is a reading that failed. Windows has no pipe at a file's path
-    to block on.
+    the check, is a reading that failed. The directory's own name is compared
+    as given, so one given by its 8.3 short name is refused as well (the job
+    directories are never named that way). Windows has no pipe at a file's
+    path to block on.
     """
     from pathlib import Path
 

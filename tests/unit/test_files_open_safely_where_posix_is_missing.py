@@ -360,6 +360,13 @@ class TestTheWin32Open:
             (3, FileNotFoundError, errno.ENOENT),
             (5, PermissionError, errno.EACCES),
             (32, PermissionError, errno.EACCES),
+            (33, PermissionError, errno.EACCES),
+            (4, OSError, errno.EMFILE),
+            (53, FileNotFoundError, errno.ENOENT),
+            (67, FileNotFoundError, errno.ENOENT),
+            (123, FileNotFoundError, errno.ENOENT),
+            (161, FileNotFoundError, errno.ENOENT),
+            (206, FileNotFoundError, errno.ENOENT),
             (87, OSError, errno.EINVAL),
         ],
     )

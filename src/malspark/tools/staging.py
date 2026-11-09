@@ -37,7 +37,6 @@ Who creates what, and who removes it:
 
 from __future__ import annotations
 
-import ctypes
 import errno
 import os
 import re
@@ -394,10 +393,17 @@ _INVALID_HANDLE = -1
 _WIN32_ERRNO = {
     2: errno.ENOENT,  # ERROR_FILE_NOT_FOUND
     3: errno.ENOENT,  # ERROR_PATH_NOT_FOUND
+    4: errno.EMFILE,  # ERROR_TOO_MANY_OPEN_FILES
     5: errno.EACCES,  # ERROR_ACCESS_DENIED
     32: errno.EACCES,  # ERROR_SHARING_VIOLATION
+    33: errno.EACCES,  # ERROR_LOCK_VIOLATION
+    53: errno.ENOENT,  # ERROR_BAD_NETPATH
+    67: errno.ENOENT,  # ERROR_BAD_NET_NAME
     80: errno.EEXIST,  # ERROR_FILE_EXISTS
+    123: errno.ENOENT,  # ERROR_INVALID_NAME
+    161: errno.ENOENT,  # ERROR_BAD_PATHNAME
     183: errno.EEXIST,  # ERROR_ALREADY_EXISTS
+    206: errno.ENOENT,  # ERROR_FILENAME_EXCED_RANGE
 }
 
 
@@ -455,7 +461,7 @@ def _windows_open(where: str, flags: int, mode: int) -> int:
     if handle is None or handle == _INVALID_HANDLE:
         raise _win32_error(_last_error(), "CreateFileW", where)
     try:
-        info = _ByHandleFileInformation()
+        info = _by_handle_file_information()
         if not kernel32.GetFileInformationByHandle(handle, ctypes.byref(info)):
             raise _win32_error(_last_error(), "GetFileInformationByHandle", where)
         if info.dwFileAttributes & stat.FILE_ATTRIBUTE_REPARSE_POINT:
@@ -470,13 +476,22 @@ def _windows_open(where: str, flags: int, mode: int) -> int:
         raise
 
 
-class _ByHandleFileInformation(ctypes.Structure):
-    """``BY_HANDLE_FILE_INFORMATION``: its attributes are what the open reads."""
+def _by_handle_file_information() -> Any:
+    """An empty ``BY_HANDLE_FILE_INFORMATION``: its attributes are what the open reads.
 
-    _fields_ = [
-        ("dwFileAttributes", ctypes.c_uint32),
-        ("rest", ctypes.c_uint32 * 12),  # the times, the volume, the size, the links, the index
-    ]
+    Built where it is used, so that importing this module needs no ``ctypes``
+    on a system that never takes the Windows branch.
+    """
+    import ctypes
+
+    class _ByHandleFileInformation(ctypes.Structure):
+        _fields_ = [
+            ("dwFileAttributes", ctypes.c_uint32),
+            # the times, the volume, the size, the links, the index
+            ("rest", ctypes.c_uint32 * 12),
+        ]
+
+    return _ByHandleFileInformation()
 
 
 def _win32_files() -> tuple[Any, Any]:
