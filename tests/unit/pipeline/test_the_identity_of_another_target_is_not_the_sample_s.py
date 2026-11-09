@@ -222,6 +222,7 @@ class TestTheFingerprints:
     def test_nothing_read_is_nothing_given(self, path: Any) -> None:
         assert sample_fingerprints(path, INTAKE) == {}
 
+    @pytest.mark.posix
     def test_a_link_in_the_sample_s_place_is_not_followed(self, tmp_path: Path) -> None:
         real = _sample(tmp_path)
         link = tmp_path / "link.exe"

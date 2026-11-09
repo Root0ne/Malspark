@@ -73,6 +73,7 @@ def test_a_repointed_built_in_is_shown_without_the_trust_it_no_longer_has() -> N
     assert _trusted(again, "analysis") is False
 
 
+@pytest.mark.posix
 def test_an_operator_s_tick_on_a_repointed_built_in_trusts_the_server_it_points_at(
     tmp_path: Path,
 ) -> None:
@@ -89,6 +90,7 @@ def test_an_operator_s_tick_on_a_repointed_built_in_trusts_the_server_it_points_
     assert shown_trust_of("analysis", out["analysis"])["trusts_served_declaration"] is True
 
 
+@pytest.mark.posix
 def test_a_granted_trust_is_kept_by_an_unchanged_save_and_withdrawn_by_a_repoint(
     tmp_path: Path,
 ) -> None:
@@ -115,6 +117,7 @@ def test_a_granted_trust_is_kept_by_an_unchanged_save_and_withdrawn_by_a_repoint
     assert _trusted(validate_server_map({"analysis": back}), "analysis") is True
 
 
+@pytest.mark.posix
 def test_a_trusted_server_an_operator_added_loses_its_trust_when_pointed_elsewhere(
     tmp_path: Path,
 ) -> None:
@@ -149,6 +152,7 @@ def test_an_untick_turns_the_trust_off() -> None:
     assert _trusted(out, "analysis") is False
 
 
+@pytest.mark.posix
 def test_a_grant_outlives_a_release_that_changes_nothing_of_the_launch(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:

@@ -547,6 +547,7 @@ def _one_token_of(tmp_path: Path, megabytes: int) -> Path:
 
 def _measured(path: Path) -> tuple[int, float, int]:
     """The target's length, the read's seconds and its peak resident memory rise in bytes."""
+    pytest.importorskip("resource")  # the child reads its peak with getrusage
     env = {**os.environ, "PYTHONPATH": os.pathsep.join(p for p in sys.path if p)}
     done = subprocess.run(
         [sys.executable, "-c", _PEAK_PROBE, str(path)],

@@ -1,4 +1,5 @@
 import gc
+import os
 from collections.abc import Iterator
 from functools import cache
 from unittest.mock import MagicMock
@@ -35,6 +36,21 @@ def pytest_configure(config: pytest.Config) -> None:
         "no_kept_reputation_service: the test starts where a fresh deployment is, nothing "
         "read yet of the built-in reputation service's listing",
     )
+    config.addinivalue_line(
+        "markers",
+        "posix: the test needs what only POSIX has (a shell, symbolic links, mode bits, "
+        "process groups, a FIFO, user ids); skipped on Windows",
+    )
+
+
+def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item]) -> None:
+    """A test marked ``posix`` is skipped on Windows, which has none of what it needs."""
+    if os.name != "nt":
+        return
+    skip = pytest.mark.skip(reason="needs POSIX, which this host is not")
+    for item in items:
+        if item.get_closest_marker("posix") is not None:
+            item.add_marker(skip)
 
 
 @pytest.fixture(autouse=True)

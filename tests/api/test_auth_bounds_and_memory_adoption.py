@@ -247,7 +247,7 @@ def test_nothing_adopts_automatically() -> None:
     """The default stays: the repair that runs at start never labels an owner."""
     from malspark.memory import memory_repair
 
-    source = open(memory_repair.__file__).read()
+    source = open(memory_repair.__file__, encoding="utf-8").read()
     start_up = source.split("def repair_once")[1].split("def repair_memory")[0]
     assert "adopt" not in start_up
 

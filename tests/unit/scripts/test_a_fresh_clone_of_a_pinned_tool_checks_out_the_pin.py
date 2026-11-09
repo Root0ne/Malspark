@@ -19,7 +19,10 @@ import pytest
 ROOT = Path(__file__).resolve().parents[3]
 SCRIPT = ROOT / "scripts" / "dev" / "fetch_external.sh"
 
-pytestmark = pytest.mark.skipif(shutil.which("git") is None, reason="needs git")
+pytestmark = [
+    pytest.mark.posix,
+    pytest.mark.skipif(shutil.which("git") is None, reason="needs git"),
+]
 
 # The developer's own git config (core.autocrlf, url.*.insteadOf) never reaches these runs.
 _ENV = {**os.environ, "GIT_CONFIG_GLOBAL": os.devnull, "GIT_CONFIG_NOSYSTEM": "1"}

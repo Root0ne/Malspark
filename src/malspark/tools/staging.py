@@ -40,11 +40,13 @@ from __future__ import annotations
 import os
 import re
 import stat
+import sys
 import tempfile
 import threading
 from collections.abc import Mapping
 from hashlib import sha256
 from pathlib import Path
+from typing import Any
 
 from malspark.core.previous_name import PREVIOUS_NAME
 
@@ -227,6 +229,230 @@ def job_relative(path: str | Path, environ: Mapping[str, str] | None = None) -> 
     return target.name
 
 
+def is_link(path: Path) -> bool:
+    """Whether ``path`` is a link: a symbolic link, or on Windows a junction too.
+
+    A junction is a directory link ``is_symlink`` does not report and
+    ``lstat`` shows as a directory; whatever walks or removes a tree treats it
+    as the link it is.
+    """
+    return path.is_symlink() or path.is_junction()
+
+
+def owned_by_this_user(path: str | os.PathLike[str], info: os.stat_result) -> bool:
+    """Whether ``path``, whose ``lstat`` is ``info``, is owned by this process's user.
+
+    POSIX compares user ids. Windows has none (``st_uid`` is always 0), so
+    there the owner the file's own security descriptor names is compared with
+    this process's (:func:`_windows_owner_is_ours`). A reparse point (a
+    junction, a symbolic link) is never this user's there: its owner says
+    nothing about the directory it leads to. Any failure to read either owner
+    answers ``False``: a file whose owner cannot be told is not taken for this
+    user's.
+    """
+    if sys.platform == "win32":
+        if getattr(info, "st_file_attributes", 0) & stat.FILE_ATTRIBUTE_REPARSE_POINT:
+            return False
+        try:
+            return _windows_owner_is_ours(path)
+        except (OSError, AttributeError, ValueError):
+            return False
+    getuid = getattr(os, "getuid", None)
+    return False if getuid is None else info.st_uid == getuid()
+
+
+# The Win32 constants the owner check passes (winnt.h, winbase.h, accctrl.h).
+_SE_FILE_OBJECT = 1
+_OWNER_SECURITY_INFORMATION = 0x1
+_READ_CONTROL = 0x20000
+_FILE_SHARE_ALL = 0x7  # read, write and delete
+_OPEN_EXISTING = 3
+_FILE_FLAG_BACKUP_SEMANTICS = 0x02000000  # needed to open a directory
+_FILE_FLAG_OPEN_REPARSE_POINT = 0x00200000  # the link itself, never its target
+_TOKEN_QUERY = 0x8
+_TOKEN_USER = 1
+_TOKEN_OWNER = 4
+_TOKEN_ELEVATION = 20
+
+
+def _windows_owner_is_ours(path: str | os.PathLike[str]) -> bool:
+    """Whether the owner SID of ``path`` is one this process owns what it creates by.
+
+    That is the token's user and, only while the token is elevated, its
+    default owner as well: an elevated process makes its files owned by the
+    Administrators group rather than by its user, so a directory it created is
+    still its own. An unelevated process never takes a file the Administrators
+    own for its own. Raises ``OSError`` when the system refuses to answer.
+    """
+    return _owner_sid(path) in _process_sids()
+
+
+def _win32() -> tuple[Any, Any]:
+    """advapi32 and kernel32, loaded with the argument and result types the check uses."""
+    import ctypes
+    from ctypes import wintypes
+
+    advapi32 = ctypes.WinDLL("advapi32", use_last_error=True)  # type: ignore[attr-defined]
+    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)  # type: ignore[attr-defined]
+    pointer = ctypes.POINTER(ctypes.c_void_p)
+    advapi32.GetSecurityInfo.argtypes = [
+        wintypes.HANDLE,
+        ctypes.c_int,
+        wintypes.DWORD,
+        pointer,
+        pointer,
+        pointer,
+        pointer,
+        pointer,
+    ]
+    advapi32.GetSecurityInfo.restype = wintypes.DWORD
+    advapi32.OpenProcessToken.argtypes = [
+        wintypes.HANDLE,
+        wintypes.DWORD,
+        ctypes.POINTER(wintypes.HANDLE),
+    ]
+    advapi32.OpenProcessToken.restype = wintypes.BOOL
+    advapi32.GetTokenInformation.argtypes = [
+        wintypes.HANDLE,
+        ctypes.c_int,
+        ctypes.c_void_p,
+        wintypes.DWORD,
+        ctypes.POINTER(wintypes.DWORD),
+    ]
+    advapi32.GetTokenInformation.restype = wintypes.BOOL
+    advapi32.IsValidSid.argtypes = [ctypes.c_void_p]
+    advapi32.IsValidSid.restype = wintypes.BOOL
+    advapi32.GetLengthSid.argtypes = [ctypes.c_void_p]
+    advapi32.GetLengthSid.restype = wintypes.DWORD
+    kernel32.CreateFileW.argtypes = [
+        wintypes.LPCWSTR,
+        wintypes.DWORD,
+        wintypes.DWORD,
+        ctypes.c_void_p,
+        wintypes.DWORD,
+        wintypes.DWORD,
+        wintypes.HANDLE,
+    ]
+    kernel32.CreateFileW.restype = wintypes.HANDLE
+    kernel32.GetCurrentProcess.argtypes = []
+    kernel32.GetCurrentProcess.restype = wintypes.HANDLE
+    kernel32.CloseHandle.argtypes = [wintypes.HANDLE]
+    kernel32.CloseHandle.restype = wintypes.BOOL
+    kernel32.LocalFree.argtypes = [ctypes.c_void_p]
+    kernel32.LocalFree.restype = ctypes.c_void_p
+    return advapi32, kernel32
+
+
+def _last_error() -> int:
+    import ctypes
+
+    return int(getattr(ctypes, "get_last_error", lambda: 0)())
+
+
+def _sid_bytes(advapi32: Any, sid: Any) -> bytes:
+    """A SID's bytes, compared as ``EqualSid`` compares them: whole and exactly."""
+    import ctypes
+
+    if not sid or not advapi32.IsValidSid(sid):
+        raise OSError("the security descriptor holds no valid SID")
+    return ctypes.string_at(sid, advapi32.GetLengthSid(sid))
+
+
+def _owner_sid(path: str | os.PathLike[str]) -> bytes:
+    """The SID of the owner ``path``'s own security descriptor names.
+
+    The file is opened with ``FILE_FLAG_OPEN_REPARSE_POINT``, so a junction or
+    a symbolic link is examined itself and never the directory it leads to.
+    """
+    import ctypes
+    from ctypes import wintypes
+
+    advapi32, kernel32 = _win32()
+    handle = kernel32.CreateFileW(
+        os.fspath(path),
+        _READ_CONTROL,
+        _FILE_SHARE_ALL,
+        None,
+        _OPEN_EXISTING,
+        _FILE_FLAG_BACKUP_SEMANTICS | _FILE_FLAG_OPEN_REPARSE_POINT,
+        None,
+    )
+    if handle is None or handle == wintypes.HANDLE(-1).value:
+        raise OSError(_last_error(), "CreateFileW failed")
+    try:
+        owner = ctypes.c_void_p()
+        descriptor = ctypes.c_void_p()
+        status = advapi32.GetSecurityInfo(
+            handle,
+            _SE_FILE_OBJECT,
+            _OWNER_SECURITY_INFORMATION,
+            ctypes.byref(owner),
+            None,
+            None,
+            None,
+            ctypes.byref(descriptor),
+        )
+        if status != 0:
+            raise OSError(status, "GetSecurityInfo failed")
+        try:
+            return _sid_bytes(advapi32, owner)
+        finally:
+            kernel32.LocalFree(descriptor)
+    finally:
+        kernel32.CloseHandle(handle)
+
+
+def _token_information(advapi32: Any, token: Any, kind: int) -> Any:
+    """One class of the token's information, in a buffer of the size it asks for."""
+    import ctypes
+    from ctypes import wintypes
+
+    size = wintypes.DWORD()
+    advapi32.GetTokenInformation(token, kind, None, 0, ctypes.byref(size))
+    buffer = ctypes.create_string_buffer(size.value)
+    if not size.value or not advapi32.GetTokenInformation(
+        token, kind, buffer, size, ctypes.byref(size)
+    ):
+        raise OSError(_last_error(), "GetTokenInformation failed")
+    return buffer
+
+
+def _token_sid(advapi32: Any, token: Any, kind: int) -> bytes:
+    """The SID ``TOKEN_USER`` or ``TOKEN_OWNER`` names: both begin with its pointer."""
+    import ctypes
+
+    buffer = _token_information(advapi32, token, kind)
+    return _sid_bytes(advapi32, ctypes.cast(buffer, ctypes.POINTER(ctypes.c_void_p))[0])
+
+
+def _token_elevated(advapi32: Any, token: Any) -> bool:
+    """Whether the token is elevated (``TOKEN_ELEVATION.TokenIsElevated``)."""
+    import ctypes
+
+    buffer = _token_information(advapi32, token, _TOKEN_ELEVATION)
+    return bool(ctypes.cast(buffer, ctypes.POINTER(ctypes.c_uint32))[0])
+
+
+def _process_sids() -> frozenset[bytes]:
+    """The SIDs this process owns what it creates by (:func:`_windows_owner_is_ours`)."""
+    import ctypes
+    from ctypes import wintypes
+
+    advapi32, kernel32 = _win32()
+    token = wintypes.HANDLE()
+    if not advapi32.OpenProcessToken(
+        kernel32.GetCurrentProcess(), _TOKEN_QUERY, ctypes.byref(token)
+    ):
+        raise OSError(_last_error(), "OpenProcessToken failed")
+    try:
+        sids = {_token_sid(advapi32, token, _TOKEN_USER)}
+        if _token_elevated(advapi32, token):
+            sids.add(_token_sid(advapi32, token, _TOKEN_OWNER))
+        return frozenset(sids)
+    finally:
+        kernel32.CloseHandle(token)
+
+
 def private_dir(path: Path, *, what: str = "staging path") -> Path:
     """``path`` as a directory only this user may enter, or an error.
 
@@ -240,17 +466,24 @@ def private_dir(path: Path, *, what: str = "staging path") -> Path:
     One function for every directory this project creates under the base, so
     the capture directory the worker opens is held to exactly what the sidecar
     holds its own staging directory to.
+
+    On Windows the mode is not what keeps the directory private: a directory
+    CPython creates with mode 0o700 gets a DACL that admits only its owner,
+    SYSTEM and the Administrators, and that is the privacy there. The DACL of
+    a directory that already exists is not verified; its owner is
+    (:func:`owned_by_this_user`), and a junction is refused as a link
+    (tracked in T-591-A2).
     """
     try:
         path.mkdir(mode=0o700, parents=True, exist_ok=True)
     except FileExistsError as exc:  # a non-directory already sits at that path
         raise RuntimeError(f"{what} {path} is not a directory") from exc
-    if path.is_symlink():
+    if is_link(path):
         raise RuntimeError(f"{what} {path} is a symlink")
     info = path.lstat()
     if not stat.S_ISDIR(info.st_mode):
         raise RuntimeError(f"{what} {path} is not a directory")
-    if info.st_uid != os.getuid():
+    if not owned_by_this_user(path, info):
         raise RuntimeError(f"{what} {path} is owned by another user")
     if info.st_mode & 0o077:
         path.chmod(0o700)
@@ -510,23 +743,32 @@ def release_job_directory(job_id: str, environ: Mapping[str, str] | None = None)
 def remove_tree(root: Path) -> bool:
     """Delete ``root`` and everything under it. True when nothing is there.
 
-    A symlink at ``root`` is unlinked rather than followed, and so is every
-    link inside it: a directory of staged malware is exactly the place a link
-    planted into it must not turn a cleanup into a delete somewhere else.
+    A link at ``root`` is removed rather than followed, and so is every link
+    inside it: a directory of staged malware is exactly the place a link
+    planted into it must not turn a cleanup into a delete somewhere else. A
+    link is a symbolic link or, on Windows, a junction too (:func:`is_link`),
+    which ``os.walk`` would otherwise descend into.
     """
     try:
         info = root.lstat()
     except OSError:
         return True  # nothing there, which is the state this asks for
-    if not stat.S_ISDIR(info.st_mode):
+    if is_link(root) or not stat.S_ISDIR(info.st_mode):
         try:
             root.unlink()
         except OSError:
             return False
         return True
     ok = True
-    for directory, subdirectories, files in os.walk(root, topdown=False, followlinks=False):
+    # Walked from the top so a link to a directory is taken out of the walk
+    # before it could be entered, then emptied from the bottom.
+    visited: list[tuple[Path, list[str], list[str]]] = []
+    for directory, subdirectories, files in os.walk(root, topdown=True, followlinks=False):
         here = Path(directory)
+        links = [name for name in subdirectories if is_link(here / name)]
+        subdirectories[:] = [name for name in subdirectories if name not in links]
+        visited.append((here, files, links))
+    for here, files, links in reversed(visited):
         try:
             here.chmod(0o700)
         except OSError:
@@ -536,16 +778,14 @@ def remove_tree(root: Path) -> bool:
                 (here / name).unlink()
             except OSError:
                 ok = False
-        # ``os.walk`` reports a symlink to a directory among the directories
-        # and never descends into it, so it is unlinked here rather than
-        # rmdir'd — the target is somebody else's.
-        for name in subdirectories:
-            entry = here / name
-            if entry.is_symlink():
-                try:
-                    entry.unlink()
-                except OSError:
-                    ok = False
+        # The target of a link is somebody else's: the link alone goes. On
+        # Windows ``unlink`` removes a directory link, a junction among them,
+        # as the link it is.
+        for name in links:
+            try:
+                (here / name).unlink()
+            except OSError:
+                ok = False
         try:
             here.rmdir()
         except OSError:

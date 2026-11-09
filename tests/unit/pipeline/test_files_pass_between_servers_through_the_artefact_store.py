@@ -67,6 +67,7 @@ def _local(**over: Any) -> MCPServerConfig:
 
 
 class TestTheStore:
+    @pytest.mark.posix
     def test_a_file_is_kept_private_under_the_job_by_its_digest(self, base: Path) -> None:
         store = ArtefactStore("job-one")
         artefact = store.take_in_bytes(PAYLOAD, "drop.exe")
@@ -121,6 +122,7 @@ class TestTheStore:
 
 
 class TestTakingInWhatAServerWrote:
+    @pytest.mark.posix
     def test_a_server_on_this_host_is_read_inside_its_own_job_directory_only(
         self, base: Path, tmp_path: Path
     ) -> None:
@@ -138,6 +140,7 @@ class TestTakingInWhatAServerWrote:
         assert all("staging directory" in m["reason"] for m in missed)
         assert str(tmp_path) not in json.dumps(missed)
 
+    @pytest.mark.posix
     def test_a_file_is_opened_beneath_its_root_with_no_link_followed_anywhere(
         self, tmp_path: Path
     ) -> None:
@@ -673,6 +676,7 @@ CAPTURE_STEP = {
 
 
 class TestTheCaptureAndTheReport:
+    @pytest.mark.posix
     def test_a_capture_the_report_names_outside_the_job_s_captures_is_never_read(
         self, base: Path, tmp_path: Path
     ) -> None:

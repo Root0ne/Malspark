@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import pytest
+
 from app.worker import sample_files
 from app.worker.analysis_worker import mirror_target_for
 
@@ -24,6 +26,7 @@ def _spec():
     return MirrorSpec(work_subdir=".work", container_prefix="/data/samples")
 
 
+@pytest.mark.posix
 def test_two_jobs_on_one_sha256_get_two_names() -> None:
     sha = "a" * 64
     a_host, a_path = mirror_target_for(

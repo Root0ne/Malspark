@@ -95,6 +95,7 @@ def _fetch(
     )
 
 
+@pytest.mark.posix
 class TestThePatchIsAppliedOnce:
     def test_a_fresh_clone_is_patched_and_a_second_run_leaves_it(self, tmp_path: Path) -> None:
         tree = _tree(tmp_path, _upstream(tmp_path).as_uri())
@@ -130,6 +131,7 @@ class TestThePatchIsAppliedOnce:
         ).read_bytes() == b"version=1\r\nname=tool\r\n"
 
 
+@pytest.mark.posix
 class TestAPatchThatNoLongerFitsStopsTheScript:
     def test_a_tag_the_patch_does_not_fit(self, tmp_path: Path) -> None:
         upstream = _upstream(tmp_path, content=b"version=7\nname=tool\n")
@@ -141,6 +143,7 @@ class TestAPatchThatNoLongerFitsStopsTheScript:
         assert (tree / "external" / "tool" / "build.txt").read_bytes() == b"version=7\nname=tool\n"
 
 
+@pytest.mark.posix
 class TestNamedTargetsAndAnotherDirectory:
     def test_a_named_target_fetches_that_tree_and_nothing_after_it(self, tmp_path: Path) -> None:
         tree = _tree(tmp_path, _upstream(tmp_path).as_uri())
@@ -165,6 +168,7 @@ class TestNamedTargetsAndAnotherDirectory:
         assert not (tree / "external").exists()
 
 
+@pytest.mark.posix
 class TestANewPin:
     def _upstream_with_v2(self, tmp_path: Path) -> Path:
         upstream = _upstream(tmp_path)
@@ -238,6 +242,7 @@ class TestANewPin:
         assert not (tree / "capa-ran").exists()
 
 
+@pytest.mark.posix
 def test_a_name_that_is_no_target_stops_the_script(tmp_path: Path) -> None:
     tree = _tree(tmp_path, _upstream(tmp_path).as_uri())
 

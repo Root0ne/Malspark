@@ -812,6 +812,7 @@ class TestDocumentInfo:
 class TestCarvePayloads:
     """The private carver: the destination is the caller's, and it is made private."""
 
+    @pytest.mark.posix
     def test_a_file_with_nothing_embedded_carves_nothing(self, tmp_path: Path) -> None:
         target = tmp_path / "s.bin"
         target.write_bytes(_elf())

@@ -89,6 +89,7 @@ def _line(result: Any) -> str:
     )
 
 
+@pytest.mark.posix
 def test_the_unpacking_comes_last_and_writes_beside_the_carved_files(tmp_path: Path) -> None:
     path = _sample(tmp_path, su.build().data)
     result = _pack(path, tmp_path)

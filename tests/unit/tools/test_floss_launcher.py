@@ -146,6 +146,7 @@ def test_a_package_installed_twice_is_refused(env: tuple[Path, Path]) -> None:
     _refused(_pinned_run(prefix), "flare-floss is installed twice")
 
 
+@pytest.mark.posix
 def test_a_symlink_to_a_listed_file_is_refused(env: tuple[Path, Path]) -> None:
     prefix, site = env
     (site / "floss" / "alias.py").symlink_to(site / "floss" / "main.py")

@@ -16,6 +16,8 @@ import subprocess
 import threading
 import time
 
+import pytest
+
 from malspark.providers.server_guard import ServerGuard
 from malspark.tools import children
 from tests.unit._process_table import running
@@ -66,6 +68,7 @@ class TestOneRunAtATime:
         assert asyncio.run(two_callers()) == ["answer", "answer"]
         assert started == [1], "one child for one run"
 
+    @pytest.mark.posix
     def test_the_child_is_killed_when_every_caller_has_gone(self) -> None:
         pids: list[int] = []
         spawned = threading.Event()
@@ -108,6 +111,7 @@ class TestOneRunAtATime:
         assert asyncio.run(one_leaves_one_stays()) == "done"
 
 
+@pytest.mark.posix
 class TestAKillNeverReachesTheServer:
     def test_no_pid_that_names_this_process_or_its_group_is_signalled(self) -> None:
         from unittest.mock import patch

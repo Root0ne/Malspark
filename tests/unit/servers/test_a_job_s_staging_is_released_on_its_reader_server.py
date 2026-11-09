@@ -111,6 +111,7 @@ def test_no_job_id_names_anything_but_its_own_directory(
     assert staging.is_job_directory_name(name) and Path(name).name == name
 
 
+@pytest.mark.posix
 def test_a_link_standing_for_the_job_s_directory_is_unlinked_and_its_target_kept(
     base: Path, tmp_path: Path
 ) -> None:
@@ -122,6 +123,7 @@ def test_a_link_standing_for_the_job_s_directory_is_unlinked_and_its_target_kept
     assert (outside / "keep.txt").read_text() == "kept"
 
 
+@pytest.mark.posix
 def test_a_link_inside_the_job_s_directory_is_never_followed(base: Path, tmp_path: Path) -> None:
     outside = _outside(tmp_path)
     job_dir = _staged(base, JOB)

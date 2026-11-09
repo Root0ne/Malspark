@@ -69,6 +69,7 @@ def _server(**over: Any) -> dict[str, Any]:
     ).model_dump(mode="json")
 
 
+@pytest.mark.posix
 def test_static_copies_are_named_by_the_job_and_released_one_at_a_time(
     samples: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -87,6 +88,7 @@ def test_static_copies_are_named_by_the_job_and_released_one_at_a_time(
     assert not hosts_b[0].exists()
 
 
+@pytest.mark.posix
 def test_server_copies_are_job_scoped_and_not_written_twice(samples: Path, tmp_path: Path) -> None:
     settings = build_settings({"mcp.servers": {"bound": _server()}})
 

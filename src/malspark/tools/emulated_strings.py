@@ -44,7 +44,6 @@ import json
 import os
 import platform
 import re
-import resource
 import shutil
 import signal
 import subprocess
@@ -58,6 +57,11 @@ from typing import Any
 from malspark.core.previous_name import PREVIOUS_NAME
 from malspark.tools import children, staging
 from malspark.tools.errors import MISSING_DEPENDENCY, tool_error
+
+try:
+    import resource
+except ImportError:  # not POSIX: no run is capped (``NO_MEMORY_CAP``)
+    resource = None  # type: ignore[assignment]
 from malspark.tools.strings import DEFAULT_STRINGS_LIMIT, _matcher
 
 # The pinned build: FLARE's ``floss-v3.1.1-linux.zip`` release asset. The
@@ -176,7 +180,9 @@ _SCRATCH_DIRECTORY = "floss"
 # How a child that ran out of address space ends: Python's MemoryError, or a
 # signal from a native allocation that failed (SIGABRT, SIGSEGV) or from the
 # kernel (SIGKILL).
-_KILLED_BY = frozenset({-signal.SIGABRT, -signal.SIGSEGV, -signal.SIGKILL})
+_KILLED_BY = frozenset(
+    -getattr(signal, name) for name in ("SIGABRT", "SIGSEGV", "SIGKILL") if hasattr(signal, name)
+)
 _OUT_OF_MEMORY_WORDS = ("MemoryError", "Cannot allocate memory", "std::bad_alloc")
 
 Runner = Callable[[Sequence[str], float | None], "subprocess.CompletedProcess[str]"]
@@ -333,6 +339,8 @@ def _does_not_run(path: Path) -> str | None:
         )
     except NotThePinnedBuild as exc:
         reason = f"floss is not installed: {exc}"
+    except NoProcessGroups as exc:
+        reason = f"floss cannot be executed on this host: {exc}"
     except ExecRefused as exc:
         lasting = exc.errno in _LASTING_EXEC_ERRORS
         reason = f"floss cannot be executed on this host: {exc.strerror or type(exc).__name__}"
@@ -413,6 +421,23 @@ def _limit_address_space(pid: int) -> bool:
     return True
 
 
+# Said, as the reason FLOSS cannot run, where the host has no process groups.
+NO_PROCESS_GROUPS = (
+    "FLOSS runs in a process group of its own, killed whole on overrun, and process "
+    "groups (os.setsid, os.killpg) are unavailable on this platform; nothing was run"
+)
+
+
+class NoProcessGroups(OSError):
+    """The host cannot start the child in a group of its own or kill that group."""
+
+    def __init__(self) -> None:
+        super().__init__(errno.ENOSYS, NO_PROCESS_GROUPS)
+
+    def __str__(self) -> str:
+        return NO_PROCESS_GROUPS
+
+
 class NotThePinnedBuild(OSError):
     """The executable's bytes, read to be run, are not the pinned build's."""
 
@@ -433,8 +458,9 @@ def _verified_copy(source: Path, directory: Path) -> Path:
     """
     target = directory / _RUN_COPY
     hasher = hashlib.sha256()
-    flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW
-    fd = os.open(target, flags, 0o700)
+    # Without O_NOFOLLOW (Windows), O_EXCL alone refuses a name that exists.
+    flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0)
+    fd = os.open(target, flags | getattr(os, "O_BINARY", 0), 0o700)
     try:
         with source.open("rb") as handle, os.fdopen(fd, "wb") as out:
             for block in iter(lambda: handle.read(1024 * 1024), b""):
@@ -477,7 +503,13 @@ def _run(
     the run's directory as home and temporary directory, and the switch that
     keeps FLOSS from saving a vivisect workspace beside the sample. Nothing of
     the server's own environment reaches the child.
+
+    A host without process groups runs nothing (``NoProcessGroups``): an
+    overrun there could not be stopped whole, and the bootloader's interpreter
+    would outlive the kill.
     """
+    if not (hasattr(os, "setsid") and hasattr(os, "killpg")):
+        raise NoProcessGroups
     run = Path(tempfile.mkdtemp(prefix="run-", dir=_scratch(scratch)))
     try:
         command = list(argv)

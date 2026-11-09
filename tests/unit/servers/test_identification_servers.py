@@ -134,6 +134,7 @@ DIE_JSON = {
 
 
 class TestDetectItEasy:
+    @pytest.mark.posix
     def test_each_detected_item_is_a_row_with_where_it_was_found(
         self, roots: Path, bin_dir: Path
     ) -> None:
@@ -156,6 +157,7 @@ class TestDetectItEasy:
         args = _args(bin_dir, "diec")
         assert args == ["--json", "--deepscan", str((roots / "sample.bin").resolve())]
 
+    @pytest.mark.posix
     def test_the_scan_options_are_the_programs_own_flags(self, roots: Path, bin_dir: Path) -> None:
         _program(bin_dir, "diec", stdout=json.dumps({"detects": []}))
         answer = _call(
@@ -175,6 +177,7 @@ class TestDetectItEasy:
             "--alltypes",
         ]
 
+    @pytest.mark.posix
     def test_a_failed_run_says_the_programs_words(self, roots: Path, bin_dir: Path) -> None:
         _program(bin_dir, "diec", stderr="cannot open the database", code=2)
         answer = _call(die.die_scan(str(roots / "sample.bin")))
@@ -184,6 +187,7 @@ class TestDetectItEasy:
         )
         assert answer["tool"] == "die_scan"
 
+    @pytest.mark.posix
     def test_an_answer_with_no_document_is_a_failure(self, roots: Path, bin_dir: Path) -> None:
         _program(bin_dir, "diec", stdout="nothing here\n")
         answer = _call(die.die_scan(str(roots / "sample.bin")))
@@ -192,6 +196,7 @@ class TestDetectItEasy:
         answer = _call(die.die_scan(str(roots / "sample.bin")))
         assert _error(answer)[1].startswith("diec wrote JSON that does not parse: ")
 
+    @pytest.mark.posix
     def test_a_banner_with_a_bracket_before_the_document_is_read_past(
         self, roots: Path, bin_dir: Path
     ) -> None:
@@ -212,6 +217,7 @@ class TestDetectItEasy:
         assert cell["reason"] == "diec is not on PATH"
         assert cell["remediation"] == die.PROGRAM.install
 
+    @pytest.mark.posix
     def test_capabilities_says_what_this_host_runs(self, bin_dir: Path) -> None:
         _program(bin_dir, "diec")
         (cell,) = die.capabilities()["tools"]
@@ -225,6 +231,7 @@ class TestDetectItEasy:
 
 
 class TestTheSampleAndTheRun:
+    @pytest.mark.posix
     def test_a_path_outside_the_roots_is_refused_before_anything_runs(
         self, roots: Path, bin_dir: Path, tmp_path: Path
     ) -> None:
@@ -239,11 +246,13 @@ class TestTheSampleAndTheRun:
             assert str(tmp_path) not in json.dumps(answer)
         assert not (bin_dir / "diec.args").exists()
 
+    @pytest.mark.posix
     def test_a_missing_file_and_an_empty_path_are_said(self, roots: Path, bin_dir: Path) -> None:
         _program(bin_dir, "diec", stdout="{}")
         assert _error(_call(die.die_scan(str(roots / "gone.bin"))))[0] == "no_such_file"
         assert _error(_call(die.die_scan(" ")))[0] == "bad_argument"
 
+    @pytest.mark.posix
     def test_a_nul_in_a_path_or_a_value_is_a_bad_argument(self, roots: Path, bin_dir: Path) -> None:
         _program(bin_dir, "diec", stdout="{}")
         answer = _call(die.die_scan(str(roots / "sample.bin") + "\0x"))
@@ -253,6 +262,7 @@ class TestTheSampleAndTheRun:
         assert failed.value.code == "bad_argument"
         assert not (bin_dir / "diec.args").exists()
 
+    @pytest.mark.posix
     def test_a_server_given_no_roots_reads_nothing(
         self, roots: Path, bin_dir: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
@@ -260,6 +270,7 @@ class TestTheSampleAndTheRun:
         _program(bin_dir, "diec", stdout="{}")
         assert _error(_call(die.die_scan(str(roots / "sample.bin"))))[0] == "path_outside_roots"
 
+    @pytest.mark.posix
     def test_a_run_past_the_operators_bound_is_stopped_and_said(
         self, roots: Path, bin_dir: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
@@ -281,6 +292,7 @@ class TestTheSampleAndTheRun:
             monkeypatch.setenv(sidecar.TIMEOUT_ENV, raw)
             assert sidecar.timeout_seconds() == held
 
+    @pytest.mark.posix
     def test_a_cancelled_call_stops_its_run(self, roots: Path, bin_dir: Path) -> None:
         _program(bin_dir, "diec", stdout="{}", sleep=30)
 
@@ -298,6 +310,7 @@ class TestTheSampleAndTheRun:
         asyncio.run(cancel())
         _gone((bin_dir / "diec.pid").read_text().strip())
 
+    @pytest.mark.posix
     def test_the_program_gets_only_what_it_needs(
         self, roots: Path, bin_dir: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
@@ -331,6 +344,7 @@ def _gone(pid: str) -> None:
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.posix
 class TestILSpy:
     @pytest.fixture(autouse=True)
     def _on_path(self, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -472,6 +486,7 @@ GORESYM_JSON = {
 
 
 class TestGoReSym:
+    @pytest.mark.posix
     def test_functions_and_build_facts(self, roots: Path, bin_dir: Path) -> None:
         _program(bin_dir, "GoReSym", stdout=json.dumps(GORESYM_JSON))
         answer = _call(goresym.go_symbols(str(roots / "sample.bin"), standard_library=True,
@@ -501,6 +516,7 @@ class TestGoReSym:
         sample = str((roots / "sample.bin").resolve())
         assert _args(bin_dir, "GoReSym") == ["-d", "-p", "-v", "1.21", sample]
 
+    @pytest.mark.posix
     def test_types_and_strings(self, roots: Path, bin_dir: Path) -> None:
         _program(bin_dir, "GoReSym", stdout=json.dumps(GORESYM_JSON))
         types = _call(goresym.go_types(str(roots / "sample.bin")))
@@ -510,6 +526,7 @@ class TestGoReSym:
         assert strings["strings"] == GORESYM_JSON["Strings"] and strings["string_count"] == 1
         assert _args(bin_dir, "GoReSym")[:2] == ["-strings", "-nofuncs"]
 
+    @pytest.mark.posix
     def test_a_file_with_no_go_tables_is_another_format(self, roots: Path, bin_dir: Path) -> None:
         said = {"error": "Failed to parse file: no valid pclntab found"}
         _program(bin_dir, "GoReSym", stdout=json.dumps(said), code=1)
@@ -519,6 +536,7 @@ class TestGoReSym:
             "GoReSym: Failed to parse file: no valid pclntab found",
         )
 
+    @pytest.mark.posix
     def test_any_other_failure_is_the_programs_words(self, roots: Path, bin_dir: Path) -> None:
         _program(bin_dir, "GoReSym", stdout=json.dumps({"error": "invalid file: EOF"}), code=1)
         assert _error(_call(goresym.go_types(str(roots / "sample.bin")))) == (
@@ -634,6 +652,7 @@ class TestTheDeclarations:
         assert "MALSPARK_SAMPLE_ROOTS=/data/samples" in dockerfile
 
 
+@pytest.mark.posix
 def test_the_declared_rows_read_what_the_servers_answer(roots: Path, bin_dir: Path) -> None:
     """Each row path and value the declaration names finds what the answer holds."""
     _program(bin_dir, "diec", stdout=json.dumps(DIE_JSON))
@@ -652,6 +671,7 @@ def test_the_declared_rows_read_what_the_servers_answer(roots: Path, bin_dir: Pa
     assert strings == [{"text": ["http://c2.example/"]}]
 
 
+@pytest.mark.posix
 def test_the_dotnet_rows_read_what_the_server_answers(
     roots: Path, bin_dir: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

@@ -20,6 +20,7 @@ def dirs(tmp_path, monkeypatch):
     return tmp_path
 
 
+@pytest.mark.posix
 def test_directories_and_files_are_private(dirs):
     src = dirs / "src.bin"
     src.write_bytes(b"MZ" * 10)
@@ -32,6 +33,7 @@ def test_directories_and_files_are_private(dirs):
     assert sf.work_dir().name == ".work" and sf.work_dir().parent == (dirs / "samples").resolve()
 
 
+@pytest.mark.posix
 def test_remove_for_sha_touches_only_that_hash_and_only_the_scoped_dirs(dirs):
     (sf.work_dir() / f"{A}.exe").write_bytes(b"x")
     (sf.temp_dir() / f"{A}.exe").write_bytes(b"x")
@@ -46,6 +48,7 @@ def test_remove_for_sha_touches_only_that_hash_and_only_the_scoped_dirs(dirs):
     assert (sf.work_dir() / f"{A}.exe notes").exists()
 
 
+@pytest.mark.posix
 def test_a_prefix_of_a_hash_or_a_pattern_removes_nothing(dirs):
     (sf.work_dir() / f"{A}.exe").write_bytes(b"x")
     assert sf.remove_for_sha("aaa") == []
@@ -53,6 +56,7 @@ def test_a_prefix_of_a_hash_or_a_pattern_removes_nothing(dirs):
     assert (sf.work_dir() / f"{A}.exe").exists()
 
 
+@pytest.mark.posix
 def test_sweep_removes_only_old_files_in_the_scoped_dirs(dirs):
     old = sf.work_dir() / f"{C}.exe"
     old.write_bytes(b"x")
@@ -74,6 +78,7 @@ def test_remove_quietly_never_raises(dirs):
     sf.remove_quietly(None)
 
 
+@pytest.mark.posix
 def test_sweep_skips_a_file_that_vanishes_between_listing_and_unlink(dirs, monkeypatch):
     """One file that disappears (or becomes unreadable) mid-sweep must not
     abort the sweep for every other file in the scoped directories."""
@@ -98,6 +103,7 @@ def test_sweep_skips_a_file_that_vanishes_between_listing_and_unlink(dirs, monke
     assert not old.exists()
 
 
+@pytest.mark.posix
 def test_an_orphaned_upload_staging_file_is_swept(dirs):
     """The API stages an upload as ``malspark-upload-*`` there; a crash leaves it behind."""
     staged = sf.temp_dir() / "malspark-upload-k2j3h4"
@@ -112,6 +118,7 @@ def test_an_orphaned_upload_staging_file_is_swept(dirs):
     assert not staged.exists() and not other.exists() and fresh.exists()
 
 
+@pytest.mark.posix
 def test_a_link_in_the_upload_directory_is_not_followed(dirs):
     target = dirs / "precious.bin"
     target.write_bytes(b"keep")
@@ -122,6 +129,7 @@ def test_a_link_in_the_upload_directory_is_not_followed(dirs):
     assert target.read_bytes() == b"keep"
 
 
+@pytest.mark.posix
 def test_a_copy_onto_a_planted_link_writes_nothing_outside(dirs):
     """A link planted where the copy goes is replaced by the copy, never written through."""
     outside = dirs / "bashrc"
@@ -140,6 +148,7 @@ def test_a_copy_onto_a_planted_link_writes_nothing_outside(dirs):
     assert stat.S_IMODE(os.lstat(dest).st_mode) == 0o600
 
 
+@pytest.mark.posix
 def test_a_copy_into_a_directory_swapped_for_a_link_writes_nothing_outside(dirs):
     outside = dirs / "elsewhere"
     outside.mkdir()
@@ -154,6 +163,7 @@ def test_a_copy_into_a_directory_swapped_for_a_link_writes_nothing_outside(dirs)
     assert list(outside.iterdir()) == []
 
 
+@pytest.mark.posix
 def test_a_stale_copy_is_replaced(dirs):
     dest = sf.work_dir() / f"{A}.exe"
     dest.write_bytes(b"old")
@@ -163,6 +173,7 @@ def test_a_stale_copy_is_replaced(dirs):
     assert dest.read_bytes() == b"new"
 
 
+@pytest.mark.posix
 @pytest.mark.parametrize(
     "plant",
     [
@@ -186,6 +197,7 @@ def test_a_marker_that_is_not_the_worker_s_own_adopts_nothing(dirs, plant):
     assert stat.S_IMODE(os.stat(folder).st_mode) == 0o755
 
 
+@pytest.mark.posix
 def test_a_shipped_directory_with_a_foreign_marker_is_refused_too(dirs):
     shipped = Path(sf.settings.samples_dir) / ".work"
     shipped.mkdir(parents=True, mode=0o755)
@@ -194,6 +206,7 @@ def test_a_shipped_directory_with_a_foreign_marker_is_refused_too(dirs):
         sf.work_dir(".work")
 
 
+@pytest.mark.posix
 def test_the_worker_s_own_marker_adopts_the_directory(dirs):
     folder = Path(sf.settings.samples_dir) / "mine"
     folder.mkdir(parents=True, mode=0o755)
@@ -202,6 +215,7 @@ def test_the_worker_s_own_marker_adopts_the_directory(dirs):
     assert stat.S_IMODE(os.stat(folder).st_mode) == 0o700
 
 
+@pytest.mark.posix
 def test_the_marker_a_release_before_the_rename_wrote_adopts_the_directory(dirs):
     folder = Path(sf.settings.samples_dir) / "mine"
     folder.mkdir(parents=True, mode=0o755)
@@ -211,6 +225,7 @@ def test_the_marker_a_release_before_the_rename_wrote_adopts_the_directory(dirs)
     assert sf.remove_for_sha(A, subdirs=["mine"]) == [folder.resolve() / f"{A}.exe"]
 
 
+@pytest.mark.posix
 def test_a_previous_name_marker_that_is_not_the_worker_s_own_adopts_nothing(dirs):
     folder = Path(sf.settings.samples_dir) / "dataset"
     folder.mkdir(parents=True, mode=0o755)
@@ -222,6 +237,7 @@ def test_a_previous_name_marker_that_is_not_the_worker_s_own_adopts_nothing(dirs
     assert (folder / f"{A}.exe").read_bytes() == b"corpus"
 
 
+@pytest.mark.posix
 def test_a_foreign_current_marker_is_refused_beside_a_valid_previous_one(dirs):
     folder = Path(sf.settings.samples_dir) / "dataset"
     folder.mkdir(parents=True, mode=0o755)
@@ -234,6 +250,7 @@ def test_a_foreign_current_marker_is_refused_beside_a_valid_previous_one(dirs):
     assert (folder / f"{A}.exe").read_bytes() == b"corpus"
 
 
+@pytest.mark.posix
 def test_a_directory_that_cannot_be_opened_skips_only_itself(dirs, monkeypatch):
     stale = sf.work_dir("r2-work") / f"{C}.exe"
     stale.write_bytes(b"x")
@@ -251,6 +268,7 @@ def test_a_directory_that_cannot_be_opened_skips_only_itself(dirs, monkeypatch):
     assert sf.remove_for_sha(D) == []
 
 
+@pytest.mark.posix
 def test_a_directory_that_cannot_be_listed_skips_only_itself(dirs, monkeypatch):
     stale = sf.work_dir("r2-work") / f"{C}.exe"
     stale.write_bytes(b"x")

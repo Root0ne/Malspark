@@ -26,17 +26,19 @@ from malspark.providers.static.r2 import (
 
 def _executable(path: Path) -> Path:
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text("#!/bin/sh\n")
+    path.write_text("#!/bin/sh\n", encoding="utf-8")
     path.chmod(0o755)
     return path
 
 
+@pytest.mark.posix
 def test_a_name_on_path_is_found_there(tmp_path: Path) -> None:
     binary = _executable(tmp_path / "bin" / "r2mcp")
     found = resolve_r2_binary("r2mcp", {"PATH": str(tmp_path / "bin"), "HOME": str(tmp_path)})
     assert found.path == str(binary)
 
 
+@pytest.mark.posix
 def test_a_name_r2pm_installed_is_found_under_the_user_s_data_directory(tmp_path: Path) -> None:
     home = tmp_path / "home"
     binary = _executable(home / ".local" / "share" / "radare2" / "prefix" / "bin" / "r2mcp")
@@ -44,6 +46,7 @@ def test_a_name_r2pm_installed_is_found_under_the_user_s_data_directory(tmp_path
     assert found.path == str(binary)
 
 
+@pytest.mark.posix
 def test_xdg_data_home_moves_the_prefix(tmp_path: Path) -> None:
     data = tmp_path / "data"
     binary = _executable(data / "radare2" / "prefix" / "bin" / "r2mcp")
@@ -53,6 +56,7 @@ def test_xdg_data_home_moves_the_prefix(tmp_path: Path) -> None:
     assert found.path == str(binary)
 
 
+@pytest.mark.posix
 @pytest.mark.parametrize("variable", ["R2PM_BINDIR", "R2PM_PREFIX"])
 def test_r2pm_s_own_variables_are_read_first(tmp_path: Path, variable: str) -> None:
     where = tmp_path / "custom"
@@ -63,6 +67,7 @@ def test_r2pm_s_own_variables_are_read_first(tmp_path: Path, variable: str) -> N
     assert found.path == str(binary)
 
 
+@pytest.mark.posix
 def test_a_path_is_the_operator_s_and_is_used_as_it_is(tmp_path: Path) -> None:
     binary = _executable(tmp_path / "opt" / "r2mcp")
     assert resolve_r2_binary(str(binary), {"PATH": ""}).path == str(binary)
@@ -71,6 +76,7 @@ def test_a_path_is_the_operator_s_and_is_used_as_it_is(tmp_path: Path) -> None:
     assert missing.looked == (str(tmp_path / "nowhere" / "r2mcp"),)
 
 
+@pytest.mark.posix
 def test_a_file_that_cannot_run_is_not_found(tmp_path: Path) -> None:
     plain = tmp_path / "bin" / "r2mcp"
     plain.parent.mkdir()

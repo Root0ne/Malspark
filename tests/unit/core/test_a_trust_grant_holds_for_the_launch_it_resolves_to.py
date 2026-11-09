@@ -28,7 +28,7 @@ SOURCE = "mcp:zq-never-seen-server"
 
 def _program(path: Path) -> Path:
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text("#!/bin/sh\n")
+    path.write_text("#!/bin/sh\n", encoding="utf-8")
     path.chmod(0o755)
     return path
 
@@ -51,6 +51,7 @@ def _trusted(block: SimpleNamespace, grant: str) -> bool:
     return trusts_served(SOURCE, held)
 
 
+@pytest.mark.posix
 def test_a_command_link_pointed_elsewhere_withdraws_the_grant(tmp_path: Path) -> None:
     first = _program(tmp_path / "a" / "zq-server")
     second = _program(tmp_path / "b" / "zq-server")
@@ -67,6 +68,7 @@ def test_a_command_link_pointed_elsewhere_withdraws_the_grant(tmp_path: Path) ->
     assert not _trusted(block, grant)
 
 
+@pytest.mark.posix
 def test_a_relative_command_is_read_from_the_working_directory_it_runs_in(
     tmp_path: Path,
 ) -> None:
@@ -79,6 +81,7 @@ def test_a_relative_command_is_read_from_the_working_directory_it_runs_in(
     assert not _trusted(moved, grant)
 
 
+@pytest.mark.posix
 def test_a_working_directory_link_pointed_elsewhere_withdraws_the_grant(tmp_path: Path) -> None:
     for where in ("one", "two"):
         _program(tmp_path / where / "zq-server")
@@ -92,6 +95,7 @@ def test_a_working_directory_link_pointed_elsewhere_withdraws_the_grant(tmp_path
     assert not _trusted(block, grant)
 
 
+@pytest.mark.posix
 def test_an_interpreter_s_script_is_read_as_the_file_it_names(tmp_path: Path) -> None:
     for where in ("one", "two"):
         (tmp_path / where).mkdir()
@@ -106,6 +110,7 @@ def test_an_interpreter_s_script_is_read_as_the_file_it_names(tmp_path: Path) ->
     assert not _trusted(block, grant)
 
 
+@pytest.mark.posix
 def test_a_bare_command_is_read_as_the_file_path_finds(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -119,6 +124,7 @@ def test_a_bare_command_is_read_as_the_file_path_finds(
     assert not _trusted(block, grant)
 
 
+@pytest.mark.posix
 @pytest.mark.parametrize(
     "launch",
     [
@@ -140,6 +146,7 @@ def test_a_launch_that_does_not_resolve_holds_no_grant(
     assert not _trusted(block, granted_launch(resolved))
 
 
+@pytest.mark.posix
 def test_a_file_replaced_in_place_and_a_new_release_keep_the_grant(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -163,6 +170,7 @@ def test_an_address_is_read_as_written() -> None:
     )
 
 
+@pytest.mark.posix
 @pytest.mark.parametrize(
     "env",
     [
@@ -182,6 +190,7 @@ def test_a_changed_environment_withdraws_the_grant(tmp_path: Path, env: dict[str
     assert not _trusted(_block(command=str(program), env_allow=["LD_PRELOAD"]), grant)
 
 
+@pytest.mark.posix
 def test_no_environment_value_is_held_in_the_clear(tmp_path: Path) -> None:
     program = _program(tmp_path / "zq-server")
     block = _block(command=str(program), env={"ZQ_TOKEN": "zq-secret-value"})
@@ -199,6 +208,7 @@ def test_no_environment_value_is_held_in_the_clear(tmp_path: Path) -> None:
     assert seen and all("zq-secret-value" not in text for text in seen)
 
 
+@pytest.mark.posix
 def test_a_bare_command_is_found_on_the_path_the_child_is_given(tmp_path: Path) -> None:
     for where in ("good", "evil"):
         _program(tmp_path / where / "zq-server")
@@ -209,6 +219,7 @@ def test_a_bare_command_is_found_on_the_path_the_child_is_given(tmp_path: Path) 
     assert not _trusted(moved, grant)
 
 
+@pytest.mark.posix
 def test_an_option_s_path_value_is_read_as_the_file_it_names(tmp_path: Path) -> None:
     program = _program(tmp_path / "zq-server")
     for name in ("one.py", "two.py"):
@@ -223,6 +234,7 @@ def test_an_option_s_path_value_is_read_as_the_file_it_names(tmp_path: Path) -> 
     assert not _trusted(block, grant)
 
 
+@pytest.mark.posix
 def test_the_grant_reads_the_launch_as_the_server_is_started(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -259,6 +271,7 @@ def test_the_grant_reads_the_launch_as_the_server_is_started(
     assert granted_launch(config) != grant
 
 
+@pytest.mark.posix
 def test_a_server_started_away_from_its_grant_does_not_trust_its_declaration(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -287,6 +300,7 @@ def test_a_server_started_away_from_its_grant_does_not_trust_its_declaration(
     assert moved.config.trust_granted_for is None
 
 
+@pytest.mark.posix
 def test_the_grant_reads_a_relative_command_rooted_as_the_launch_starts_it(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -308,6 +322,7 @@ def test_the_grant_reads_a_relative_command_rooted_as_the_launch_starts_it(
     assert granted_launch(config) == grant
 
 
+@pytest.mark.posix
 @pytest.mark.parametrize("bare", [True, False], ids=["bare-name", "absolute"])
 def test_a_grant_for_a_bare_name_or_absolute_command_is_unchanged(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, bare: bool

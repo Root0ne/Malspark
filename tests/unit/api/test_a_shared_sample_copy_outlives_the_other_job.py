@@ -32,6 +32,7 @@ def _writer(dest: Path, calls: list[str]):
     return make
 
 
+@pytest.mark.posix
 def test_the_first_job_ending_leaves_the_copy_the_second_still_holds(tmp_path: Path) -> None:
     dest = tmp_path / f"{SHA}.exe"
     first, second = _job(), _job()
@@ -48,6 +49,7 @@ def test_the_first_job_ending_leaves_the_copy_the_second_still_holds(tmp_path: P
     assert list(tmp_path.iterdir()) == []
 
 
+@pytest.mark.posix
 def test_a_single_job_removes_its_copy_as_before(tmp_path: Path) -> None:
     dest = tmp_path / f"{SHA}.exe"
     job = _job()
@@ -58,6 +60,7 @@ def test_a_single_job_removes_its_copy_as_before(tmp_path: Path) -> None:
     assert list(tmp_path.iterdir()) == [tmp_path / "src"]
 
 
+@pytest.mark.posix
 def test_a_stale_copy_nobody_holds_is_written_fresh(tmp_path: Path) -> None:
     dest = tmp_path / f"{SHA}.exe"
     dest.write_bytes(b"left over")
@@ -69,6 +72,7 @@ def test_a_stale_copy_nobody_holds_is_written_fresh(tmp_path: Path) -> None:
     assert dest.read_bytes() == b"MZ sample"
 
 
+@pytest.mark.posix
 def test_a_shared_copy_is_renewed_for_the_age_sweep(tmp_path: Path) -> None:
     dest = tmp_path / f"{SHA}.exe"
     sample_files.hold_copy(dest, _job(), _writer(dest, []))
@@ -80,6 +84,7 @@ def test_a_shared_copy_is_renewed_for_the_age_sweep(tmp_path: Path) -> None:
     assert dest.stat().st_mtime > old + 86_400
 
 
+@pytest.mark.posix
 def test_a_copy_that_fails_leaves_no_hold(tmp_path: Path) -> None:
     dest = tmp_path / f"{SHA}.exe"
 
@@ -93,6 +98,7 @@ def test_a_copy_that_fails_leaves_no_hold(tmp_path: Path) -> None:
     assert list(tmp_path.iterdir()) == []
 
 
+@pytest.mark.posix
 def test_a_hold_reads_as_a_copy_so_the_sweep_and_a_delete_take_it(tmp_path: Path) -> None:
     """A crashed job's hold goes with the copies, never outliving the sample."""
     dest = tmp_path / f"{SHA}.exe"
@@ -125,6 +131,7 @@ def _source(tmp_path: Path) -> Path:
     return src
 
 
+@pytest.mark.posix
 def test_the_copy_is_written_aside_and_appears_whole(tmp_path: Path) -> None:
     """A reader of the copy's name never sees it half written."""
     dest = tmp_path / f"{SHA}.exe"

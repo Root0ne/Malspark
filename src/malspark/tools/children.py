@@ -26,6 +26,10 @@ from typing import Any
 
 from malspark.core.logger import logger
 
+# The signal that kills a child. Windows has no SIGKILL; there ``os.kill``
+# with any signal but its two console events terminates the process outright.
+_KILL = getattr(signal, "SIGKILL", signal.SIGTERM)
+
 _local = threading.local()
 _lock = threading.Lock()
 # The kill of each child, by the run it belongs to.
@@ -131,8 +135,9 @@ def kill_all_on_exit() -> None:
         signal.signal(number, signal.SIG_DFL)
         os.kill(os.getpid(), number)
 
-    for number in (signal.SIGTERM, signal.SIGHUP, signal.SIGINT):
-        signal.signal(number, _on_signal)
+    for name in ("SIGTERM", "SIGHUP", "SIGINT"):
+        if hasattr(signal, name):  # no SIGHUP on Windows
+            signal.signal(getattr(signal, name), _on_signal)
 
 
 def kill_process_group(pid: int) -> None:
@@ -140,17 +145,23 @@ def kill_process_group(pid: int) -> None:
 
     Never this process or its own group, and never a pid that names no child
     (0 and 1 are the caller's group and init): a mistaken pid here would
-    signal the server itself.
+    signal the server itself. A host without process groups (Windows) kills
+    the process alone.
     """
     pid = int(pid or 0)
-    if pid <= 1 or pid == os.getpid() or pid == os.getpgrp():
+    own_group = os.getpgrp() if hasattr(os, "getpgrp") else None
+    if pid <= 1 or pid == os.getpid() or pid == own_group:
         logger.debug("refused to kill pid %d: it is not a child of this run.", pid)
         return
-    try:
-        os.killpg(pid, signal.SIGKILL)
-    except (ProcessLookupError, PermissionError):
-        with contextlib.suppress(ProcessLookupError, PermissionError):
-            os.kill(pid, signal.SIGKILL)
+    if hasattr(os, "killpg"):
+        try:
+            os.killpg(pid, _KILL)
+        except (ProcessLookupError, PermissionError):
+            pass
+        else:
+            return
+    with contextlib.suppress(ProcessLookupError, PermissionError):
+        os.kill(pid, _KILL)
 
 
 class _Run:

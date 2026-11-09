@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import pytest
+
 from app.worker.analysis_worker import mirror_target_for
 
 
@@ -23,6 +25,7 @@ def test_no_mirror_when_the_provider_does_not_need_one():
     assert mirror_target_for(_Provider(False, None), sha256="a" * 64, extension=".exe") is None
 
 
+@pytest.mark.posix
 def test_the_mirror_path_comes_from_the_provider_spec():
     from malspark.providers.base import MirrorSpec
 
@@ -33,6 +36,7 @@ def test_the_mirror_path_comes_from_the_provider_spec():
     assert container == f"/data/samples/.work/{'b' * 64}.exe"
 
 
+@pytest.mark.posix
 def test_a_ghidra_spec_still_yields_the_container_path():
     """Regression: the empty-prefix branch below must not touch this path."""
     from malspark.providers.base import MirrorSpec
@@ -42,6 +46,7 @@ def test_a_ghidra_spec_still_yields_the_container_path():
     assert container == f"/data/samples/.work/{'d' * 64}.exe"
 
 
+@pytest.mark.posix
 def test_an_empty_container_prefix_yields_the_host_path_itself():
     """A co-located server (radare2's stdio r2mcp) has no separate container
     mount: the analyst-facing path is the same path the worker mirrored to."""
@@ -52,6 +57,7 @@ def test_an_empty_container_prefix_yields_the_host_path_itself():
     assert analyst_path == str(host)
 
 
+@pytest.mark.posix
 def test_the_r2_provider_gets_its_own_host_path_as_the_analyst_path():
     from malspark.core.config import Settings
     from malspark.providers.static.r2 import R2StaticProvider
@@ -74,6 +80,7 @@ def test_the_r2_provider_gets_its_own_host_path_as_the_analyst_path():
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.posix
 def test_the_host_directory_follows_the_specs_subdirectory(tmp_path, monkeypatch):
     from app.worker import sample_files
     from malspark.providers.base import MirrorSpec
@@ -91,6 +98,7 @@ def test_the_host_directory_follows_the_specs_subdirectory(tmp_path, monkeypatch
     assert ghidra_host != r2_host
 
 
+@pytest.mark.posix
 def test_the_r2_mirror_path_has_no_hidden_segment(tmp_path, monkeypatch):
     """The property the live failure came down to: r2mcp refuses a path with a
     ``/.`` segment, so no part of the mirror path may be hidden."""
@@ -112,6 +120,7 @@ def test_the_r2_mirror_path_has_no_hidden_segment(tmp_path, monkeypatch):
     assert analyst_path == str(host)
 
 
+@pytest.mark.posix
 def test_the_r2_mirror_directory_is_created_private(tmp_path, monkeypatch):
     """Same 0o700 as ``.work``: it holds uploaded sample bytes either way."""
     import os
@@ -125,6 +134,7 @@ def test_the_r2_mirror_directory_is_created_private(tmp_path, monkeypatch):
     assert oct(os.stat(created).st_mode & 0o777) == "0o700"
 
 
+@pytest.mark.posix
 def test_cleanup_reaches_every_mirror_directory(tmp_path, monkeypatch):
     """``remove_for_sha`` swept only ``.work``; a copy in the r2 directory
     would have outlived its job."""
@@ -146,6 +156,7 @@ def test_cleanup_reaches_every_mirror_directory(tmp_path, monkeypatch):
     assert not r2_copy.exists()
 
 
+@pytest.mark.posix
 def test_the_sweep_reaches_every_mirror_directory(tmp_path, monkeypatch):
     import os
     import time
@@ -164,6 +175,7 @@ def test_the_sweep_reaches_every_mirror_directory(tmp_path, monkeypatch):
     assert not stale.exists()
 
 
+@pytest.mark.posix
 def test_two_providers_landing_on_one_host_path_still_copy_once(tmp_path, monkeypatch):
     """The dedup that `test_each_distinct_host_path_is_copied_once_and_cleaned_up`
     used to cover with Ghidra and r2, before BUG 10 gave those two separate
@@ -230,6 +242,7 @@ def test_an_empty_name_does_not_fall_back_to_the_hidden_default(tmp_path, monkey
         sample_files.work_dir("")
 
 
+@pytest.mark.posix
 def test_an_ordinary_subdirectory_is_still_accepted(tmp_path, monkeypatch):
     from app.worker import sample_files
 

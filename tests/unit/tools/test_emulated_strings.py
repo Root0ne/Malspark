@@ -12,7 +12,6 @@ from __future__ import annotations
 import errno
 import json
 import os
-import resource
 import subprocess
 from collections.abc import Sequence
 from pathlib import Path
@@ -291,7 +290,13 @@ class TestFailuresAreAnswers:
 
     @pytest.mark.parametrize(
         "returncode, stderr",
-        [(1, "Traceback ...\nMemoryError\n"), (-6, ""), (-9, ""), (-11, "")],
+        [
+            (1, "Traceback ...\nMemoryError\n"),
+            # SIGABRT and SIGKILL: Windows numbers the one otherwise and has no other.
+            pytest.param(-6, "", marks=pytest.mark.posix),
+            pytest.param(-9, "", marks=pytest.mark.posix),
+            (-11, ""),
+        ],
     )
     def test_the_memory_limit_is_reported_as_the_budget(
         self, tmp_path: Path, returncode: int, stderr: str
@@ -306,6 +311,7 @@ class TestFailuresAreAnswers:
         assert "MiB of address space" in answer["error"]
 
 
+@pytest.mark.posix
 class TestTheExecutable:
     @pytest.fixture(autouse=True)
     def _staging(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -438,6 +444,7 @@ class TestTheExecutable:
         assert tool.find_floss({"PATH": str(tmp_path / "empty")})[0] is None
 
 
+@pytest.mark.posix
 class TestTheBuildMustRunHere:
     """The pinned digest is not enough: the probe asks the build its version once."""
 
@@ -652,6 +659,7 @@ class TestTheBuildMustRunHere:
         assert list((tmp_path / "staging" / "floss").iterdir()) == []
 
 
+@pytest.mark.posix
 class TestTheChild:
     @pytest.fixture(autouse=True)
     def _staging(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -661,6 +669,7 @@ class TestTheChild:
     def test_the_child_gets_the_limit_and_a_home_inside_staging_and_nothing_else(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
+        import resource
         import sys
 
         monkeypatch.setenv("A_SERVER_SECRET", "kept-out")
@@ -760,6 +769,7 @@ class TestOneEmulationPerSample:
         assert [answer["total"] for answer in answers] == [3, 3]
 
 
+@pytest.mark.posix
 class TestWhatRunsIsWhatWasVerified:
     @pytest.fixture(autouse=True)
     def _staging(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

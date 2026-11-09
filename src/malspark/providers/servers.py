@@ -146,7 +146,7 @@ def _own_child_pids() -> set[int]:
     children: set[int] = set()
     for task in tasks:
         try:
-            with open(f"/proc/self/task/{task}/children") as fh:
+            with open(f"/proc/self/task/{task}/children", encoding="utf-8") as fh:
                 children.update(int(pid) for pid in fh.read().split())
         except (OSError, ValueError):
             continue
@@ -1342,7 +1342,8 @@ class ServerHandle:
         pids = self._live_children()
         if not pids:
             return
-        self._signal_children(pids, signal.SIGKILL)
+        # No SIGKILL on Windows, where any other signal terminates outright.
+        self._signal_children(pids, getattr(signal, "SIGKILL", signal.SIGTERM))
         logger.warning(
             "mcp server '%s' child(ren) %s killed so its transport can finish unwinding.",
             self.name,
@@ -1386,7 +1387,7 @@ class ServerHandle:
         survivors = [pid for pid in pids if pid in _own_child_pids()]
         if not survivors:
             return []
-        self._signal_children(survivors, signal.SIGKILL)
+        self._signal_children(survivors, getattr(signal, "SIGKILL", signal.SIGTERM))
         if say:
             logger.warning(
                 "mcp server '%s' child(ren) %s ignored SIGTERM; killed.",

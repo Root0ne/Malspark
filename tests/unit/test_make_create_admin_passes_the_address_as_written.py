@@ -18,7 +18,10 @@ import pytest
 
 ROOT = Path(__file__).resolve().parents[2]
 
-pytestmark = pytest.mark.skipif(shutil.which("make") is None, reason="needs make")
+pytestmark = [
+    pytest.mark.posix,
+    pytest.mark.skipif(shutil.which("make") is None, reason="needs make"),
+]
 
 ADDRESSES = [
     "you@example.com",
