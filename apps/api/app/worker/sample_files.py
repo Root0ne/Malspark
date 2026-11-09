@@ -168,7 +168,7 @@ def _marker_is_the_workers(dir_fd: int) -> bool | None:
             return False
         try:
             st = os.fstat(fd)
-            if not stat.S_ISREG(st.st_mode) or not staging.owned_by_this_user(name, st):
+            if not stat.S_ISREG(st.st_mode) or not staging.st_owned_by_this_user(st):
                 return False
             return os.read(fd, len(text) + 1) == text.encode()
         finally:
