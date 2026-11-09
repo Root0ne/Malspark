@@ -59,7 +59,8 @@ ALLOWED = {
     ("src/malspark/agents/sample_staging.py", "_open_regular"): TRANSFER,
     ("src/malspark/agents/sample_staging.py", "stage_sample"): TRANSFER,
     ("src/malspark/pipeline/artefacts.py", "ArtefactStore._local_copy"): TRANSFER,
-    ("src/malspark/pipeline/artefacts.py", "open_beneath"): TRANSFER,
+    ("src/malspark/pipeline/artefacts.py", "_open_beneath_at"): TRANSFER,
+    ("src/malspark/pipeline/artefacts.py", "_open_beneath_by_path"): TRANSFER,
     ("src/malspark/loaders/cape2_client.py", "CAPEv2Client.submit"): TRANSFER,
     ("src/malspark/loaders/cape2_client.py", "CAPEv2Client._write_capture"): TRANSFER,
     ("src/malspark/providers/sandbox/limits.py", "stream_to_file_capped"): TRANSFER,
@@ -67,7 +68,8 @@ ALLOWED = {
     ("src/malspark/providers/sandbox/triage.py", "TriageSandboxProvider._post_sample"): TRANSFER,
     ("src/malspark/providers/sandbox/triage.py", "TriageSandboxProvider._sha256_of"): HASH,
     ("src/malspark/loaders/mock_sandbox_client.py", "MockSandboxClient._sha256"): HASH,
-    ("src/malspark/analysis/sample_integrity.py", "_file_digests"): HASH,
+    ("src/malspark/analysis/sample_integrity.py", "_open_copy"): HASH,
+    ("src/malspark/analysis/sample_integrity.py", "_open_copy_by_path"): HASH,
     ("src/malspark/reporting/ledger_projection.py", "_hashes_of"): HASH,
     ("src/malspark/app.py", "MalsparkApp._infer_sample_platform"): HASH,
     ("src/malspark/providers/sandbox/formats.py", "detect_sample_format"): HASH,
@@ -134,19 +136,24 @@ def _files() -> Iterator[Path]:
 # static-analysis builder, and a YARA match over a file.
 _PARSER_CALLS = {("pe_image", "load"), ("pe_image", "parse"), ("pefile", "PE")}
 _PARSER_NAMES = {"build_static_analysis", "image_of"}
+# ``os.open`` under another name: the one that follows no link on any system
+# (``tools.staging.open_no_follow``).
+_OPEN_NAMES = {"open_no_follow"}
 
 
 def _opens(node: ast.AST) -> bool:
     """Whether ``node`` opens a file's bytes or hands them to a parser.
 
-    ``read_bytes``, ``os.open``, ``mmap``, a read ``open``; and the parsers'
-    entry points (:data:`_PARSER_CALLS`, :data:`_PARSER_NAMES`, a ``match``
-    given ``filepath``).
+    ``read_bytes``, ``os.open`` or :data:`_OPEN_NAMES`, ``mmap``, a read
+    ``open``; and the parsers' entry points (:data:`_PARSER_CALLS`,
+    :data:`_PARSER_NAMES`, a ``match`` given ``filepath``).
     """
     if not isinstance(node, ast.Call):
         return False
     func = node.func
-    if isinstance(func, ast.Name) and func.id in _PARSER_NAMES:
+    if isinstance(func, ast.Name) and func.id in _PARSER_NAMES | _OPEN_NAMES:
+        return True
+    if isinstance(func, ast.Attribute) and func.attr in _OPEN_NAMES:
         return True
     if isinstance(func, ast.Attribute):
         if func.attr == "read_bytes" and not node.args:
