@@ -28,6 +28,13 @@ the published copies from it, and does nothing else to them:
   decoded bytes hold an indicator is replaced by the hex of the defanged text.
   Links to the public reference services in ``REFERENCE_HOSTS`` stay as they
   are;
+- a defanged copy made for open publication is marked TLP:CLEAR, whatever
+  Traffic Light Protocol marking the report kept in the platform carries (the
+  platform escalates it to AMBER when the report holds live network
+  indicators): the report's marking banner (``**TLP:AMBER**``, in HTML
+  ``<strong>TLP:AMBER</strong>``) and every ``tlp`` field of a JSON copy read
+  CLEAR; a mention of TLP in prose, in code or in decoded evidence bytes stays
+  as written;
 - in an HTML copy each placeholder is written escaped (``&lt;job&gt;``).
 
 Defanging changes bytes, so a published ledger entry no longer matches the
@@ -119,6 +126,15 @@ _HEX = re.compile(r"(?<![0-9a-fA-F])(?:[0-9a-fA-F]{2}){12,}(?![0-9a-fA-F])")
 # Bytes read back as UTF-16LE show as a run of characters above U+00FF.
 _WIDE = re.compile("[\u0100-\ud7ff\ue000-\uffff]{8,}")
 _PLACEHOLDER = re.compile(r"<(job|report|sample|run|redacted)>")
+# The report's Traffic Light Protocol marking banner, at any level, as the
+# Markdown prints it and the HTML renders it.
+TLP_LEVELS = frozenset({"CLEAR", "WHITE", "GREEN", "AMBER", "AMBER+STRICT", "AMBER_STRICT", "RED"})
+_TLP = re.compile(
+    r"(\*\*|<strong>)TLP:(?:CLEAR|WHITE|GREEN|AMBER(?:\+STRICT|_STRICT)?|RED)"
+    r"(?![\w+\-])(?=\*\*|</strong>)",
+    re.IGNORECASE,
+)
+PUBLIC_TLP = "CLEAR"
 _OCTET = r"(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)"
 # An address may end a sentence; a fifth dotted number makes it something else.
 _IPV4 = re.compile(rf"(?<!\d)(?<!\d\.)(?:{_OCTET}\.){{3}}{_OCTET}(?!\d|\.\d)")
@@ -202,6 +218,7 @@ class Sanitiser:
                 lambda m: (m.group(1) if m.lastindex else "") + "<redacted>",
             )
         if decode:
+            text = self._sub("tlp", _TLP, text, lambda m: f"{m.group(1)}TLP:{PUBLIC_TLP}")
             text = self._sub("hex", _HEX, text, self._defang_hex)
             text = self._sub("utf16le", _WIDE, text, self._defang_wide)
         text = self._sub("url", _URL, text, self._defang_url)
@@ -248,7 +265,10 @@ class Sanitiser:
         return host.replace(".", "[.]") if _is_host(host) else host
 
     def json(self, value: Any) -> Any:
-        """``value`` with every key and string sanitised; a ledger entry's row id is dropped."""
+        """``value`` with every key and string sanitised; a ledger entry's row id is dropped.
+
+        A ``tlp`` field that holds a marking level reads ``CLEAR``.
+        """
         if isinstance(value, str):
             return self.text(value)
         if isinstance(value, list):
@@ -256,8 +276,15 @@ class Sanitiser:
         if isinstance(value, dict):
             if "entry_id" in value and re.fullmatch(_UUID, str(value.get("id", ""))):
                 value = {k: v for k, v in value.items() if k != "id"}
-            return {self.text(k): self.json(v) for k, v in value.items()}
+            return {self.text(k): self._tlp_field(k, v) for k, v in value.items()}
         return value
+
+    def _tlp_field(self, key: str, value: Any) -> Any:
+        if key.lower() == "tlp" and isinstance(value, str) and value.upper() in TLP_LEVELS:
+            if value.upper() != PUBLIC_TLP:
+                self.counts[("tlp", value)] += 1
+            return PUBLIC_TLP.lower() if value.islower() else PUBLIC_TLP
+        return self.json(value)
 
 
 def server_ids(run: Path) -> dict[str, str]:

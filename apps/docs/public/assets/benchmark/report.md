@@ -1,6 +1,6 @@
 # Latrodectus downloader / backdoor (Latrodectus-family implant) analysis
 
-**TLP:AMBER** · Report MJN20261106-6091f2 · 2026-11-06 · Malspark Malware Analysis Report  
+**TLP:CLEAR** · Report MJN20261106-6091f2 · 2026-11-06 · Malspark Malware Analysis Report  
 **Verdict:** Malware (high confidence) · **Severity:** High · **Family:** Latrodectus (moderate-to-high confidence)[[1]](evidence-bundle.html#cite-1) · **Category:** downloader / backdoor (Latrodectus-family implant)  
 **Sample:** `6091f2589fef42e0ab3d7975806cd8a0da012b519637c03b73f702f7586b21ef` (pe, 60,928 bytes)
 
