@@ -13,6 +13,9 @@ Suricata rule). Rules are validated when feasible:
   - Sigma:   ``yaml.safe_load`` parse + minimum-key check.
   - Suricata: textual sanity check (``alert PROTO ...; sid:N; msg:"...";``).
 
+A format with no draft says why where the drafts are listed
+(:func:`drafts_not_built`), so a missing Sigma rule is never silent.
+
 Validation failure does NOT drop the rule body — it sets
 ``DetectionRule.compile_error`` so the operator can edit and re-validate.
 
@@ -43,6 +46,7 @@ from malspark.core import ctype_locale
 from malspark.core.logger import logger
 from malspark.reporting.models import (
     DetectionRule,
+    DraftNotBuilt,
     MalwareReport,
     NetworkDomain,
     NetworkIP,
@@ -1046,23 +1050,24 @@ def _run_on_sample(
 
 
 def _build_sigma(report: MalwareReport) -> DetectionRule | None:
-    """Build a Sigma YAML rule keyed by registry / persistence / sandbox sigs.
+    """Build a Sigma YAML rule keyed by the registry keys and images a log records.
 
     A Sigma selection is a value too, and it is held to the drafts' rule
     (:func:`sigma_admits`): a registry key or an image path is selected on only
-    when the IOC table publishes it or a sandbox watched it, and the sandbox's
-    own signature names only when a sandbox recorded them. Persistence an
+    when the IOC table publishes it or a sandbox watched it. Persistence an
     analyst listed selects nothing: it is printed in §5.4 as assessed and is an
     ``analyst`` row the table refuses, the analyst's reading and not a value
-    this run publishes. With no such source there is no Sigma draft.
+    this run publishes. A sandbox's signature names and descriptions select
+    nothing either: they are the sandbox's reading of what it saw, a field of
+    no log, and a rule over them matched no event; the rule's description names
+    them. A selection value is whole, never cut: a cut value matches no log.
+    With no value left to select on there is no Sigma draft, and the report
+    says why (:func:`drafts_not_built`).
     """
-    admitted = frozenset(_registry_form(item) for item in sigma_admits(report))
-    registry_targets = _collect_registry_targets(report, admitted)
-    persistence_images = _collect_persistence_images(report.persistence, admitted)
-    signatures = _collect_signature_names(report)
-
-    if not (registry_targets or persistence_images or signatures):
+    registry_targets, persistence_images = _sigma_values(report)
+    if not (registry_targets or persistence_images):
         return None
+    signatures = _collect_signature_names(report)
 
     sha256 = report.identity.hashes.sha256
     family = _rule_name_seed(report)
@@ -1082,19 +1087,12 @@ def _build_sigma(report: MalwareReport) -> DetectionRule | None:
             "Image|endswith": persistence_images,
         }
         sources.extend(f"persistence:{p}" for p in persistence_images[:5])
-    if signatures:
-        selections["selection_sandbox"] = {
-            "Description|contains": signatures,
-        }
-        sources.extend(f"sandbox:{s}" for s in signatures[:5])
 
     selection_keys = list(selections.keys())
     condition = "1 of selection_*" if len(selection_keys) > 1 else selection_keys[0]
 
     if registry_targets:
         logsource = {"product": "windows", "category": "registry_event"}
-    elif persistence_images:
-        logsource = {"product": "windows", "category": "process_creation"}
     else:
         logsource = {"product": "windows", "category": "process_creation"}
 
@@ -1107,7 +1105,7 @@ def _build_sigma(report: MalwareReport) -> DetectionRule | None:
         "title": f"Malspark AutoGen - {family}",
         "id": rule_id,
         "status": "experimental",
-        "description": f"Auto-generated for sha256 {sha256[:12]}",
+        "description": f"Auto-generated for sha256 {sha256[:12]}" + _signatures_named(signatures),
         "author": "Malspark Auto-Generator",
         "date": report.generated_at.strftime("%Y/%m/%d"),
         **({"references": lookups} if lookups else {}),
@@ -1310,7 +1308,75 @@ def _collect_persistence_images(
     return out
 
 
+def _sigma_values(report: MalwareReport) -> tuple[list[str], list[str]]:
+    """The registry keys and the images a Sigma draft selects on, each admitted and whole."""
+    admitted = frozenset(_registry_form(item) for item in sigma_admits(report))
+    return (
+        _collect_registry_targets(report, admitted),
+        _collect_persistence_images(report.persistence, admitted),
+    )
+
+
+# Why no Sigma draft was built when nothing is left to select on; the
+# signatures' clause is added when a sandbox recorded any.
+_SIGMA_NOTHING_TO_SELECT = (
+    "no registry key or image path that this run publishes or a sandbox watched is left to "
+    "select on"
+)
+_SIGMA_SIGNATURES_SELECT_NOTHING = (
+    "; the {count} the sandbox recorded {are} its reading of what it saw, a field of no log, "
+    "so a rule selecting on {them} would match no event"
+)
+_SIGMA_DRAFT_RAISED = "its draft failed while it was built; the worker log names the error"
+# How a format is named in the sentence that says it has no draft.
+_DRAFT_LABEL = {"yara": "YARA", "sigma": "Sigma", "suricata": "Suricata", "snort": "Snort"}
+
+
+def drafts_not_built(report: MalwareReport, rules: list[DetectionRule]) -> list[DraftNotBuilt]:
+    """The formats the drafts left out for want of a value to match on, each with why.
+
+    A Sigma draft selects only on a value a log records (:func:`_build_sigma`);
+    when none is left the run has no Sigma rule, and the report says so where
+    it lists the drafts instead of leaving the format out unsaid. A Benign
+    verdict, which drafts nothing and says so on its own, and a draft the gate
+    refused (:func:`_sigma_gate_reason`) add nothing here.
+    """
+    if is_benign(report) or _sigma_gate_reason(report):
+        return []
+    if any(rule.kind == "sigma" for rule in rules):
+        return []
+    registry_targets, persistence_images = _sigma_values(report)
+    if registry_targets or persistence_images:
+        return [DraftNotBuilt(kind="sigma", why=_SIGMA_DRAFT_RAISED)]
+    why = _SIGMA_NOTHING_TO_SELECT
+    count = len(_collect_signature_names(report))
+    if count:
+        why += _SIGMA_SIGNATURES_SELECT_NOTHING.format(
+            count="signature" if count == 1 else f"{count} signatures",
+            are="is" if count == 1 else "are",
+            them="it" if count == 1 else "them",
+        )
+    return [DraftNotBuilt(kind="sigma", why=why)]
+
+
+def not_drafted_sentence(item: DraftNotBuilt) -> str:
+    """The sentence a report prints for a format with no draft."""
+    label = _DRAFT_LABEL.get(item.kind, item.kind)
+    return f"No {label} draft: {item.why}."
+
+
+def _signatures_named(signatures: list[str]) -> str:
+    """The clause a Sigma draft's description names the sandbox's signatures in, or ``""``."""
+    if not signatures:
+        return ""
+    return (
+        ". The sandbox recorded these signatures, which name no log field and are not "
+        "selected on: " + "; ".join(signatures)
+    )
+
+
 def _collect_signature_names(report: MalwareReport) -> list[str]:
+    """Each sandbox signature's description, else its name, whole, most severe first."""
     if report.dynamic is None:
         return []
     out: list[str] = []
@@ -1325,7 +1391,7 @@ def _collect_signature_names(report: MalwareReport) -> list[str]:
         if not text or text.lower() in seen:
             continue
         seen.add(text.lower())
-        out.append(marked_cut(text, 80))
+        out.append(text)
     return out
 
 

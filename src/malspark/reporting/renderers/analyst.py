@@ -43,7 +43,11 @@ from malspark.reporting.composer_pro import (
     values_not_carried,
 )
 from malspark.reporting.defang import defang
-from malspark.reporting.detection_signatures import analyst_print_gate, rule_standing
+from malspark.reporting.detection_signatures import (
+    analyst_print_gate,
+    not_drafted_sentence,
+    rule_standing,
+)
 from malspark.reporting.judge_reasons import judge_reasons_shown
 from malspark.reporting.models import (
     LimitationInventory,
@@ -1978,13 +1982,15 @@ class _Analyst:
         matched by its hash alone, was not checked, did not match or did not
         compile is named here with the reason (``analyst_print_gate``) and
         printed in the bundle. Either sentence is the one the rule's record
-        carries (``rule_standing``).
+        carries (``rule_standing``). A format left without a draft says why
+        (``drafts_not_built``).
         """
         from malspark.reporting.renderers.markdown import _RULE_SECTIONS
 
         matched = [s for s in self.report.sections if s.key in _RULE_SECTIONS]
         rules = self.report.detection_signatures
-        if not rules and not matched:
+        not_built = self.report.drafts_not_built
+        if not rules and not matched and not not_built:
             return []
         lines = ["### 8.2 Detection rules", ""]
         # The rules that matched the sample, by name, as the single-file report
@@ -2001,7 +2007,7 @@ class _Analyst:
                     + self.notes.marker(section.evidence_ids)
                 )
             )
-        if matched and rules:
+        if matched and (rules or not_built):
             lines.append("")
         for rule in rules:
             kind = _one_line(rule.kind).upper()
@@ -2017,6 +2023,9 @@ class _Analyst:
             if rule.kind == "yara":
                 said += _stored_left_out(self.report)
             lines.append(_item(said))
+        lines.extend(
+            _item(self.ctx.plain(_one_line(not_drafted_sentence(item)))) for item in not_built
+        )
         if any(self._printed(rule) for rule in rules):
             lines.extend(
                 ["", "The rule bodies are in the appendix. Test a rule before deploying it."]

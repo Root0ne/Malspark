@@ -924,6 +924,19 @@ class DetectionRule(BaseModel):
     standing: str | None = Field(default=None, exclude_if=lambda value: value is None)
 
 
+class DraftNotBuilt(BaseModel):
+    """A rule format the run drafted nothing in, and why (``detection_signatures``).
+
+    Said where the drafts are listed, so a missing format is never silent.
+    ``why`` is a clause, completed by ``detection_signatures.not_drafted_sentence``.
+    """
+
+    model_config = _STRICT_CONFIG
+
+    kind: Literal["yara", "sigma", "suricata", "snort"]
+    why: str
+
+
 class DefensiveRecommendation(BaseModel):
     """One actionable blue-team recommendation."""
 
@@ -1931,6 +1944,11 @@ class MalwareReport(BaseModel):
 
     # --- Detection content ---
     detection_signatures: list[DetectionRule] = Field(default_factory=list)
+    # The formats a draft was not built in, each with why. Left out of the
+    # dump when empty, so a report stored before the record dumps as it did.
+    drafts_not_built: list[DraftNotBuilt] = Field(
+        default_factory=list, exclude_if=lambda value: not value
+    )
 
     # --- Pipeline observability ---
     run_summary: dict[str, Any] = Field(default_factory=dict)

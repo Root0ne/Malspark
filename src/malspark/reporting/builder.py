@@ -452,13 +452,19 @@ class MalwareReportBuilder:
         Calls into :mod:`malspark.reporting.detection_signatures` which produces
         up to three rules (YARA / Sigma / Suricata) keyed by the report's
         IOCs. Missing evidence in any of the three input domains results in
-        that format being skipped (never an empty rule). Generation is
+        that format being skipped (never an empty rule); a format skipped for
+        want of a value to match on is recorded with why
+        (``report.drafts_not_built``), which the report prints. Generation is
         deterministic — no LLM involvement. ``sample`` is the file the YARA
         draft is run against once it compiles.
         """
-        from malspark.reporting.detection_signatures import build_detection_rules
+        from malspark.reporting.detection_signatures import (
+            build_detection_rules,
+            drafts_not_built,
+        )
 
         report.detection_signatures = build_detection_rules(report, sample)
+        report.drafts_not_built = drafts_not_built(report, report.detection_signatures)
         return report
 
     @staticmethod

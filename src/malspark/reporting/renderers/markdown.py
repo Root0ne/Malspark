@@ -106,6 +106,7 @@ from malspark.reporting.models import (
     CapabilityCell,
     ConsolidatedIOC,
     DetectionRule,
+    DraftNotBuilt,
     LimitationInventory,
     MalwareReport,
     ProcessNode,
@@ -1899,6 +1900,10 @@ class MarkdownRenderer:
                 fenced = _fenced(rule.body.rstrip(), fence)
                 fenced[1] = ctx.keep(fenced[1])
                 body.extend([*fenced, ""])
+            # A format left without a draft says why (``drafts_not_built``).
+            body.extend(
+                line for item in report.drafts_not_built for line in (_not_drafted(item, ctx), "")
+            )
             blocks.append("\n".join(body).rstrip())
         else:
             blocks.append(
@@ -1909,7 +1914,8 @@ class MarkdownRenderer:
                     "publishes no malicious indicator to draft a rule from."
                     if str(report.verdict or "").strip().lower() == "benign"
                     else "Nothing generated in this run: no draft rule was built from the "
-                    "indicators this report publishes.",
+                    "indicators this report publishes."
+                    + "".join(" " + _not_drafted(item, ctx) for item in report.drafts_not_built),
                 )
             )
         hunting = [rec for rec in report.defensive_recommendations if rec.detection]
@@ -4448,6 +4454,13 @@ def _directed_text_lines(rows: list[Any], ctx: _Context) -> list[str]:
         )
     lines.append("")
     return lines
+
+
+def _not_drafted(item: DraftNotBuilt, ctx: _Context) -> str:
+    """The sentence for a format the run drafted nothing in (``not_drafted_sentence``)."""
+    from malspark.reporting.detection_signatures import not_drafted_sentence
+
+    return ctx.plain(_one_line(not_drafted_sentence(item)))
 
 
 def _sample_check_line(rule: DetectionRule, ctx: _Context) -> str | None:
