@@ -206,7 +206,7 @@ def _locked(
             if taken:
                 lock.release()
         return
-    with path.open("a+") as handle:
+    with path.open("a+", encoding="utf-8") as handle:
         try:
             fcntl.flock(handle.fileno(), fcntl.LOCK_EX | (0 if blocking else fcntl.LOCK_NB))
         except BlockingIOError:

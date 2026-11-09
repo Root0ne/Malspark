@@ -147,7 +147,7 @@ def _sweep_loose_runs() -> None:
             info = entry.lstat()
         except OSError:
             continue
-        if not stat.S_ISDIR(info.st_mode) or info.st_uid != os.getuid():
+        if not stat.S_ISDIR(info.st_mode) or not staging.owned_by_this_user(info):
             continue
         if staging.newest_mtime(entry) < cutoff:
             staging.remove_tree(entry)
@@ -213,14 +213,19 @@ def _ended(
     """The child's exit status and resource usage once it ends, or ``None`` at the budget.
 
     Reaped with ``os.wait4``, which hands over the child's own resource usage,
-    its peak resident memory among it, as the kernel measured it.
+    its peak resident memory among it, as the kernel measured it. A host
+    without ``wait4`` (Windows) reports no usage, so no peak is noted.
     """
     delay = 0.0005
     while True:
-        pid, status, usage = os.wait4(process.pid, os.WNOHANG)
-        if pid:
-            process.returncode = os.waitstatus_to_exitcode(status)
-            return process.returncode, usage
+        if not hasattr(os, "wait4"):
+            if process.poll() is not None:
+                return process.returncode, None
+        else:
+            pid, status, usage = os.wait4(process.pid, os.WNOHANG)
+            if pid:
+                process.returncode = os.waitstatus_to_exitcode(status)
+                return process.returncode, usage
         if timeout_seconds is not None and time.monotonic() - started >= timeout_seconds:
             return None
         delay = min(delay * 2, _POLL_SECONDS)
@@ -239,6 +244,10 @@ def _stop(process: subprocess.Popen[bytes]) -> Any:
     ended = _ended(process, _GRACE_SECONDS, time.monotonic())
     if ended is not None:
         return ended[1]
+    if not hasattr(os, "wait4"):  # Windows: no SIGKILL and no usage to hand back
+        process.kill()
+        process.wait()
+        return None
     with contextlib.suppress(ProcessLookupError):
         os.kill(process.pid, signal.SIGKILL)
     _, status, usage = os.wait4(process.pid, 0)

@@ -24,7 +24,6 @@ its copies cannot go in the hidden shared one (BUG 10, live on 2026-09-07).
 from __future__ import annotations
 
 import contextlib
-import fcntl
 import functools
 import os
 import re
@@ -39,6 +38,11 @@ from malspark.providers.base import DEFAULT_WORK_DIR
 
 from app.config import settings
 from app.logging_config import get_logger
+
+try:
+    import fcntl
+except ImportError:  # not POSIX: see ``_posix``
+    fcntl = None  # type: ignore[assignment]
 
 logger = get_logger("worker.sample_files")
 
@@ -89,8 +93,30 @@ PREVIOUS_MIRROR_MARKER_TEXT = (
 # The SHA-256 every copy the worker writes is named by.
 _SHA256 = re.compile(r"[0-9a-f]{64}")
 
-# A directory opened for acting on its entries: never through a link.
-_DIR_FLAGS = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW
+
+class NotPosix(RuntimeError):
+    """This host lacks a POSIX primitive the worker's copies are kept with."""
+
+
+def _posix(name: str) -> int:
+    """``os.<name>``, or the error saying this host cannot keep the worker's copies.
+
+    Every copy is opened relative to a directory descriptor and never through
+    a link, which only POSIX offers; the worker runs in its Linux container,
+    and a host without these says so rather than keeping a copy less safely.
+    """
+    value = getattr(os, name, None)
+    if value is None:
+        raise NotPosix(
+            f"the worker's sample copies need os.{name}, which is unavailable on this "
+            "platform; the worker runs in its Linux container"
+        )
+    return int(value)
+
+
+def _dir_flags() -> int:
+    """A directory opened for acting on its entries: never through a link."""
+    return os.O_RDONLY | _posix("O_DIRECTORY") | _posix("O_NOFOLLOW")
 
 
 class NotAMirrorDirectory(ValueError):
@@ -134,7 +160,7 @@ def _marker_is_the_workers(dir_fd: int) -> bool | None:
         (PREVIOUS_MIRROR_MARKER, PREVIOUS_MIRROR_MARKER_TEXT),
     ):
         try:
-            fd = os.open(name, os.O_RDONLY | os.O_NOFOLLOW, dir_fd=dir_fd)
+            fd = os.open(name, os.O_RDONLY | _posix("O_NOFOLLOW"), dir_fd=dir_fd)
         except FileNotFoundError:
             continue
         except OSError:
@@ -153,7 +179,7 @@ def _write_marker(dir_fd: int) -> None:
     try:
         fd = os.open(
             MIRROR_MARKER,
-            os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW,
+            os.O_WRONLY | os.O_CREAT | os.O_EXCL | _posix("O_NOFOLLOW"),
             0o600,
             dir_fd=dir_fd,
         )
@@ -185,7 +211,7 @@ def _open_mirror(subdir: str) -> tuple[Path, int]:
     name = _child_name(subdir)
     base = Path(settings.samples_dir).resolve()
     base.mkdir(parents=True, exist_ok=True)
-    base_fd = os.open(base, os.O_RDONLY | os.O_DIRECTORY)
+    base_fd = os.open(base, os.O_RDONLY | _posix("O_DIRECTORY"))
     try:
         created = False
         try:
@@ -194,7 +220,7 @@ def _open_mirror(subdir: str) -> tuple[Path, int]:
         except FileExistsError:
             pass
         try:
-            fd = os.open(name, _DIR_FLAGS, dir_fd=base_fd)
+            fd = os.open(name, _dir_flags(), dir_fd=base_fd)
         except OSError as exc:
             raise NotAMirrorDirectory(
                 f"sample mirror directory {name!r} is not a plain directory under the samples "
@@ -310,7 +336,7 @@ def private_copy(src: Path, dest: Path) -> None:
     created with ``O_CREAT | O_EXCL | O_NOFOLLOW``, so nothing outside the
     directory is ever written.
     """
-    dir_fd = os.open(dest.parent, _DIR_FLAGS)
+    dir_fd = os.open(dest.parent, _dir_flags())
     try:
         try:
             os.unlink(dest.name, dir_fd=dir_fd)
@@ -318,7 +344,7 @@ def private_copy(src: Path, dest: Path) -> None:
             pass
         fd = os.open(
             dest.name,
-            os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW,
+            os.O_WRONLY | os.O_CREAT | os.O_EXCL | _posix("O_NOFOLLOW"),
             0o600,
             dir_fd=dir_fd,
         )
@@ -391,11 +417,13 @@ def hold_copy(dest: Path, job_id: str, make: Callable[[Path], None]) -> None:
         make(dest)
         return
     staging = dest.with_name(f"{dest.name}{_STAGING_INFIX}{job_id}")
-    dir_fd = os.open(dest.parent, _DIR_FLAGS)
+    dir_fd = os.open(dest.parent, _dir_flags())
     try:
         with _locked(dir_fd):
             others = _holders(dir_fd, dest.name) - {str(job_id)}
-            fd = os.open(hold, os.O_WRONLY | os.O_CREAT | os.O_NOFOLLOW, 0o600, dir_fd=dir_fd)
+            fd = os.open(
+                hold, os.O_WRONLY | os.O_CREAT | _posix("O_NOFOLLOW"), 0o600, dir_fd=dir_fd
+            )
             os.close(fd)
             if others and _is_regular(dir_fd, dest.name):
                 os.utime(dest.name, dir_fd=dir_fd, follow_symlinks=False)
@@ -423,6 +451,11 @@ def hold_copy(dest: Path, job_id: str, make: Callable[[Path], None]) -> None:
 @contextlib.contextmanager
 def _locked(dir_fd: int) -> Iterator[None]:
     """An exclusive lock on the open directory, for the length of the block."""
+    if fcntl is None:
+        raise NotPosix(
+            "the worker's sample copies need fcntl.flock, which is unavailable on this "
+            "platform; the worker runs in its Linux container"
+        )
     fcntl.flock(dir_fd, fcntl.LOCK_EX)
     try:
         yield
@@ -451,7 +484,7 @@ def release_copy(path: Path | str | None, *, job_id: str) -> bool:
         remove_quietly(p, job_id=job_id)
         return True
     try:
-        dir_fd = os.open(p.parent, _DIR_FLAGS)
+        dir_fd = os.open(p.parent, _dir_flags())
     except OSError as exc:
         logger.warning(
             "Could not open %s: %s", p.parent, type(exc).__name__, extra={"job_id": job_id}
@@ -530,7 +563,7 @@ def _each_directory(
     done: list[Path] = []
     try:
         upload = temp_dir()
-        upload_fd = os.open(upload, _DIR_FLAGS)
+        upload_fd = os.open(upload, _dir_flags())
         opened = [(upload, upload_fd, True)]
     except OSError as exc:
         logger.warning("Skipped the upload staging directory: %s", type(exc).__name__)

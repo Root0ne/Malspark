@@ -985,9 +985,14 @@ def _write_carved(child: Path, blob: bytes) -> str | None:
     same content is the payload this call would have written, and it is reused.
     Anything else at that name — a link, a directory, a file whose bytes differ
     — is refused, because this call did not put it there.
+
+    Windows has no ``O_NOFOLLOW``; ``O_CREAT|O_EXCL`` alone already refuses a
+    name that exists, a link among them. It has ``O_BINARY``, without which a
+    write there turns every newline byte into two.
     """
+    flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0)
     try:
-        fd = os.open(child, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
+        fd = os.open(child, flags | getattr(os, "O_BINARY", 0), 0o600)
     except FileExistsError:
         try:
             info = child.lstat()

@@ -49,7 +49,6 @@ import hmac
 import json
 import logging
 import os
-import resource
 import shutil
 import signal
 import sys
@@ -58,6 +57,11 @@ from collections.abc import Awaitable, Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
+
+try:
+    import resource
+except ImportError:  # not POSIX: the sidecar runs in its Linux container
+    resource = None  # type: ignore[assignment]
 
 logger = logging.getLogger("cli_sidecar")
 
@@ -269,12 +273,18 @@ async def _stop(process: asyncio.subprocess.Process) -> None:
 
 # The resource limits a run may be held to, by the ``prlimit`` option that sets
 # each (soft and hard alike).
-PRLIMIT_OPTIONS: dict[int, str] = {
-    resource.RLIMIT_FSIZE: "--fsize",
-    resource.RLIMIT_NOFILE: "--nofile",
-    resource.RLIMIT_AS: "--as",
-    resource.RLIMIT_CPU: "--cpu",
-}
+# Empty where ``resource`` is missing: a run asked to be limited there is
+# refused (``limited``), never run without its limits.
+PRLIMIT_OPTIONS: dict[int, str] = (
+    {}
+    if resource is None
+    else {
+        resource.RLIMIT_FSIZE: "--fsize",
+        resource.RLIMIT_NOFILE: "--nofile",
+        resource.RLIMIT_AS: "--as",
+        resource.RLIMIT_CPU: "--cpu",
+    }
+)
 PRLIMIT_INSTALL = "install util-linux, whose prlimit sets a run's resource limits"
 
 

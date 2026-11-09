@@ -47,7 +47,6 @@ import hashlib
 import json
 import os
 import re
-import resource
 import shutil
 import stat
 import sys
@@ -64,6 +63,11 @@ from typing import Any
 from urllib.parse import quote, unquote_to_bytes
 
 from mcp.server.fastmcp import FastMCP
+
+try:
+    import resource
+except ImportError:  # not POSIX: the server runs in its Linux container
+    resource = None  # type: ignore[assignment]
 
 try:  # The image copies the shared module beside this file.
     import cli_sidecar as sidecar
@@ -249,6 +253,11 @@ def written_bound(sample: str) -> int:
 
 def file_size_limit(bound: int) -> dict[int, int]:
     """The run's limits: no one file it writes may pass ``bound`` bytes."""
+    if resource is None:
+        raise RuntimeError(
+            "an extraction runs under a file size limit, and resource limits are "
+            "unavailable on this platform; nothing was run"
+        )
     return {resource.RLIMIT_FSIZE: bound}
 
 

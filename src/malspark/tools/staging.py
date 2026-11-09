@@ -227,6 +227,20 @@ def job_relative(path: str | Path, environ: Mapping[str, str] | None = None) -> 
     return target.name
 
 
+def owned_by_this_user(info: os.stat_result) -> bool:
+    """Whether ``info``, an ``lstat`` result, is of a file this process's user owns.
+
+    POSIX compares user ids. A host without them (Windows, where ``st_uid`` is
+    always 0) answers ``True``: what the check guards against, another user
+    planting a directory in a temporary directory every user shares, has no
+    counterpart there, since the temporary directory is the user's own, inside
+    a profile no other unprivileged user may write to, and a directory's mode
+    bits grant nothing, so what keeps a directory private there is its ACL.
+    """
+    getuid = getattr(os, "getuid", None)
+    return True if getuid is None else info.st_uid == getuid()
+
+
 def private_dir(path: Path, *, what: str = "staging path") -> Path:
     """``path`` as a directory only this user may enter, or an error.
 
@@ -250,7 +264,7 @@ def private_dir(path: Path, *, what: str = "staging path") -> Path:
     info = path.lstat()
     if not stat.S_ISDIR(info.st_mode):
         raise RuntimeError(f"{what} {path} is not a directory")
-    if info.st_uid != os.getuid():
+    if not owned_by_this_user(info):
         raise RuntimeError(f"{what} {path} is owned by another user")
     if info.st_mode & 0o077:
         path.chmod(0o700)

@@ -53,7 +53,18 @@ _pinned: list[str | None] = []
 
 
 def _libc() -> Any:
-    """The C library this process runs with."""
+    """The C library this process runs with.
+
+    On Windows the Universal C Runtime, whose locale Python's ``setlocale`` and
+    every extension built against it share; the older ``msvcrt`` where it is
+    absent. There no program exports the C library's symbols, so ``CDLL(None)``
+    names nothing.
+    """
+    if sys.platform == "win32":
+        try:
+            return ctypes.CDLL("ucrtbase")
+        except OSError:
+            return ctypes.CDLL("msvcrt")
     try:
         return ctypes.CDLL(None)
     except OSError:  # a platform where the running program exports no libc symbols
