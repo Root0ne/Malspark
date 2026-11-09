@@ -3,26 +3,46 @@
 A tool's default branch can add a ``.gitattributes`` with line-ending
 normalisation while the pinned tag still holds CRLF files. A clone that checks
 out the default branch first sees those files as modified and the checkout of
-the pin stops. The script clones without a checkout, so that tree is never
-written. Everything here is a local ``file://`` repository.
+the pin stops. The setup entry point clones without a checkout, so that tree
+is never written. Everything here is a local ``file://`` repository.
 """
 
 from __future__ import annotations
 
+import importlib.util
 import os
 import shutil
 import subprocess
+import sys
 from pathlib import Path
+from types import ModuleType
 
 import pytest
 
 ROOT = Path(__file__).resolve().parents[3]
-SCRIPT = ROOT / "scripts" / "dev" / "fetch_external.sh"
 
-pytestmark = [
-    pytest.mark.posix,
-    pytest.mark.skipif(shutil.which("git") is None, reason="needs git"),
-]
+pytestmark = pytest.mark.skipif(shutil.which("git") is None, reason="needs git")
+
+
+def _load() -> ModuleType:
+    spec = importlib.util.spec_from_file_location(
+        "malspark_dev_clone_under_test", ROOT / "scripts" / "dev" / "malspark_dev.py"
+    )
+    assert spec and spec.loader
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+dev = _load()
+
+
+@pytest.fixture(autouse=True)
+def _own_git_config(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("GIT_CONFIG_GLOBAL", os.devnull)
+    monkeypatch.setenv("GIT_CONFIG_NOSYSTEM", "1")
+
 
 # The developer's own git config (core.autocrlf, url.*.insteadOf) never reaches these runs.
 _ENV = {**os.environ, "GIT_CONFIG_GLOBAL": os.devnull, "GIT_CONFIG_NOSYSTEM": "1"}
@@ -71,37 +91,21 @@ def _upstream(tmp_path: Path) -> Path:
     return repo
 
 
-def _tree_with_script(tmp_path: Path, url: str, ref: str) -> Path:
-    """A copy of the script whose one target is the local repo, with nothing else fetched."""
+def _fetch(tmp_path: Path, url: str, ref: str) -> tuple[int, Path]:
+    """The one target `tool` fetched from the local repo, with nothing else fetched."""
     tree = tmp_path / "tree"
-    (tree / "scripts" / "dev").mkdir(parents=True)
-    text = SCRIPT.read_text(encoding="utf-8")
-    start = text.index("targets=(")
-    end = text.index("\n)\n", start) + 3
-    text = text[:start] + f'targets=(\n  "tool|{url}|{ref}"\n)\n' + text[end:]
-    (tree / "scripts" / "dev" / "fetch_external.sh").write_text(text, encoding="utf-8")
-    (tree / "scripts" / "dev" / "fetch_capa_data.sh").write_text("exit 0\n")
-    # Present and not a checkout: the script skips the Sigma clone instead of fetching it.
-    (tree / "data" / "sigma_rules").mkdir(parents=True)
-    return tree
-
-
-def _fetch(tree: Path) -> subprocess.CompletedProcess[str]:
-    return subprocess.run(
-        ["bash", str(tree / "scripts" / "dev" / "fetch_external.sh")],
-        capture_output=True,
-        text=True,
-        env=_ENV,
-        check=False,
-    )
+    # Present and not checkouts: the corpora are said to be there, not fetched.
+    for corpus in ("sigma_rules", "capa-rules", "capa-signatures"):
+        (tree / "data" / corpus).mkdir(parents=True)
+    status = dev.fetch_external([], dev.Layout.of(tree, {}), (dev.Target("tool", url, ref),))
+    return status, tree
 
 
 class TestAFreshCloneEndsAtThePin:
     def test_a_tag_whose_files_the_default_branch_normalises(self, tmp_path: Path) -> None:
         upstream = _upstream(tmp_path)
-        tree = _tree_with_script(tmp_path, upstream.as_uri(), "v1")
-        done = _fetch(tree)
-        assert done.returncode == 0, done.stderr
+        status, tree = _fetch(tmp_path, upstream.as_uri(), "v1")
+        assert status == 0
         dest = tree / "external" / "tool"
         assert _git(dest, "rev-parse", "HEAD") == _git(upstream, "rev-parse", "v1^{commit}")
         assert (dest / "setup.ps1").read_bytes() == b"echo one\r\necho two\r\n"
@@ -112,7 +116,6 @@ class TestAFreshCloneEndsAtThePin:
         _git(upstream, "branch", "release", "v1")
         sha = _git(upstream, "rev-parse", "v1^{commit}")
         for number, ref in enumerate((sha, "release")):
-            tree = _tree_with_script(tmp_path / str(number), upstream.as_uri(), ref)
-            done = _fetch(tree)
-            assert done.returncode == 0, done.stderr
+            status, tree = _fetch(tmp_path / str(number), upstream.as_uri(), ref)
+            assert status == 0
             assert _git(tree / "external" / "tool", "rev-parse", "HEAD") == sha

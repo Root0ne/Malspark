@@ -1,6 +1,8 @@
+import importlib.util
 import re
 import shutil
 import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -575,9 +577,17 @@ def test_the_shipped_env_file_runs_ghidra_and_qdrant_as_before(tmp_path):
 
 
 def test_a_down_stops_the_optional_services_too():
-    makefile = (ROOT / "Makefile").read_text(encoding="utf-8")
-    downs = [line for line in makefile.splitlines() if line.rstrip().endswith(" down")]
-    assert downs and all("--profile '*'" in line for line in downs), downs
+    spec = importlib.util.spec_from_file_location(
+        "malspark_dev_down_under_test", ROOT / "scripts" / "dev" / "malspark_dev.py"
+    )
+    assert spec and spec.loader
+    dev = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = dev
+    spec.loader.exec_module(dev)
+    ctx = dev.Context(root=ROOT, environ={}, system="Linux")
+    for command in ("down", "docker-down"):
+        (step,) = dev.stack_plan(command, ctx)
+        assert step.argv[-3:] == ("--profile", "*", "down"), step.argv
 
 
 def test_the_migration_sees_the_retired_attck_variable() -> None:

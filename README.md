@@ -119,15 +119,20 @@ the console; the benchmark's all-tools team is
 ## Quick start
 
 The compose stack is the supported way to run Malspark. It needs Docker with
-the Compose plugin, Python 3.13 and [uv](https://astral.sh/uv/).
+the Compose plugin and [uv](https://astral.sh/uv/), on Windows (PowerShell),
+macOS or Linux; the setup commands use the standard library only.
 
 ```bash
 git clone https://github.com/Root0ne/Malspark.git && cd Malspark
-make setup                          # dependencies, pre-commit, third-party trees
-cp docker/.env.example docker/.env  # fill in every secret it declares
-cp bootstrap.env.example bootstrap.env  # the same secrets, for make dev-up and make migrate
-make dev-up                         # docker compose up -d, development overlay
+uv run --no-project python scripts/dev/malspark_dev.py setup     # third-party trees and rule corpora
+uv run --no-project python scripts/dev/malspark_dev.py env init  # docker/.env and bootstrap.env, secrets generated
+uv run --no-project python scripts/dev/malspark_dev.py doctor    # what the host still lacks
+uv run --no-project python scripts/dev/malspark_dev.py up        # docker compose up -d, development overlay
 ```
+
+With make, the same commands are `make external`, `make env-init`, `make doctor`
+and `make dev-up`; `make setup` also installs the development dependencies and
+pre-commit.
 
 Create the first admin account with `make create-admin EMAIL=you@example.com`,
 sign in at <http://localhost:3000>, then walk **Settings → Setup guides** to connect

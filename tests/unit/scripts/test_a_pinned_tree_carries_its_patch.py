@@ -1,25 +1,29 @@
 """A pinned tree whose tag does not build as released is patched after the checkout, once.
 
-``scripts/dev/patches/<name>-<ref>.patch`` is applied to the tree the script
-checked out. A second run finds it in place and leaves the tree alone; a patch
-that neither applies nor is in place stops the script, so an image is never
-built from a tree that is neither the release nor the fixed release. Named
-targets fetch only those trees, and ``MALSPARK_EXTERNAL_DIR`` moves them.
+``scripts/dev/patches/<name>-<ref>.patch`` is applied to the tree the setup
+entry point checked out. A second run finds it in place and leaves the tree
+alone; a patch that neither applies nor is in place stops the fetch, so an
+image is never built from a tree that is neither the release nor the fixed
+release. Named targets fetch only those trees, a target fetched only on
+request waits to be named, and ``MALSPARK_EXTERNAL_DIR`` moves them.
 Everything here is a local ``file://`` repository.
 """
 
 from __future__ import annotations
 
+import importlib.util
 import os
-import re
 import shutil
 import subprocess
+import sys
+from collections.abc import Callable
+from dataclasses import dataclass
 from pathlib import Path
+from types import ModuleType
 
 import pytest
 
 ROOT = Path(__file__).resolve().parents[3]
-SCRIPT = ROOT / "scripts" / "dev" / "fetch_external.sh"
 PATCHES = ROOT / "scripts" / "dev" / "patches"
 
 pytestmark = pytest.mark.skipif(shutil.which("git") is None, reason="needs git")
@@ -37,6 +41,26 @@ diff --git a/build.txt b/build.txt
 +version=2
  name=tool
 """
+
+
+def _load() -> ModuleType:
+    spec = importlib.util.spec_from_file_location(
+        "malspark_dev_patch_under_test", ROOT / "scripts" / "dev" / "malspark_dev.py"
+    )
+    assert spec and spec.loader
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+dev = _load()
+
+
+@pytest.fixture(autouse=True)
+def _own_git_config(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("GIT_CONFIG_GLOBAL", os.devnull)
+    monkeypatch.setenv("GIT_CONFIG_NOSYSTEM", "1")
 
 
 def _git(cwd: Path, *args: str) -> str:
@@ -64,111 +88,136 @@ def _upstream(tmp_path: Path, content: bytes = b"version=1\r\nname=tool\r\n") ->
 
 
 def _tree(tmp_path: Path, url: str, patch: str | None = _PATCH) -> Path:
-    """A copy of the script whose targets are the local repo, as `tool` and `other`."""
+    """A checkout whose rule corpora are there already, so only the trees are fetched."""
     tree = tmp_path / "tree"
     (tree / "scripts" / "dev" / "patches").mkdir(parents=True)
-    text = SCRIPT.read_text(encoding="utf-8")
-    start = text.index("targets=(")
-    end = text.index("\n)\n", start) + 3
-    text = text[:start] + f'targets=(\n  "tool|{url}|v1"\n  "other|{url}|v1"\n)\n' + text[end:]
-    (tree / "scripts" / "dev" / "fetch_external.sh").write_text(text, encoding="utf-8")
-    # Leaves a mark, so a run that reaches capa's step is told apart from one that does not.
-    (tree / "scripts" / "dev" / "fetch_capa_data.sh").write_text(
-        f'touch "{tree}/capa-ran"\n', encoding="utf-8"
-    )
-    (tree / "data" / "sigma_rules").mkdir(parents=True)
+    for corpus in ("sigma_rules", "capa-rules", "capa-signatures"):
+        (tree / "data" / corpus).mkdir(parents=True)
     if patch is not None:
         (tree / "scripts" / "dev" / "patches" / "tool-v1.patch").write_text(patch, encoding="utf-8")
+    (tree / "url").write_text(url, encoding="utf-8")
     return tree
 
 
-def _fetch(
-    tree: Path, *names: str, env: dict[str, str] | None = None
-) -> subprocess.CompletedProcess[str]:
-    return subprocess.run(
-        ["bash", str(tree / "scripts" / "dev" / "fetch_external.sh"), *names],
-        capture_output=True,
-        text=True,
-        env={**_ENV, **(env or {})},
-        check=False,
-        timeout=120,
-    )
+@dataclass
+class Done:
+    returncode: int
+    stdout: str
+    stderr: str
+
+    @property
+    def reached_the_corpora(self) -> bool:
+        return "capa rules" in self.stdout
 
 
-@pytest.mark.posix
+Fetch = Callable[..., Done]
+
+
+@pytest.fixture
+def fetch(capfd: pytest.CaptureFixture[str]) -> Fetch:
+    """The fetch of `tool` and `other` (fetched only when named) from the local repo."""
+
+    def run(tree: Path, *names: str, env: dict[str, str] | None = None, ref: str = "v1") -> Done:
+        url = (tree / "url").read_text(encoding="utf-8")
+        targets = (dev.Target("tool", url, ref), dev.Target("other", url, ref, default=False))
+        capfd.readouterr()
+        status = dev.fetch_external(list(names), dev.Layout.of(tree, env or {}), targets)
+        said = capfd.readouterr()
+        return Done(status, said.out, said.err)
+
+    return run
+
+
 class TestThePatchIsAppliedOnce:
-    def test_a_fresh_clone_is_patched_and_a_second_run_leaves_it(self, tmp_path: Path) -> None:
+    def test_a_fresh_clone_is_patched_and_a_second_run_leaves_it(
+        self, tmp_path: Path, fetch: Fetch
+    ) -> None:
         tree = _tree(tmp_path, _upstream(tmp_path).as_uri())
-        first = _fetch(tree)
+        first = fetch(tree)
         assert first.returncode == 0, first.stderr
         assert "patch    tool tool-v1.patch" in first.stdout
         built = tree / "external" / "tool" / "build.txt"
         # Only the changed line takes the patch's ending; the rest of the CRLF file is kept.
         assert built.read_bytes() == b"version=2\nname=tool\r\n"
 
-        second = _fetch(tree)
+        second = fetch(tree)
         assert second.returncode == 0, second.stderr
         assert "ok       tool carries tool-v1.patch" in second.stdout
         assert built.read_bytes() == b"version=2\nname=tool\r\n"
 
     def test_a_tree_whose_line_endings_an_editor_changed_still_counts_as_patched(
-        self, tmp_path: Path
+        self, tmp_path: Path, fetch: Fetch
     ) -> None:
         tree = _tree(tmp_path, _upstream(tmp_path).as_uri())
-        assert _fetch(tree).returncode == 0
+        assert fetch(tree).returncode == 0
         built = tree / "external" / "tool" / "build.txt"
         built.write_bytes(built.read_bytes().replace(b"\r\n", b"\n"))
-        again = _fetch(tree)
+        again = fetch(tree)
         assert again.returncode == 0, again.stderr
         assert "carries tool-v1.patch" in again.stdout
 
-    def test_a_tree_without_a_patch_is_only_checked_out(self, tmp_path: Path) -> None:
+    def test_a_tree_without_a_patch_is_only_checked_out(self, tmp_path: Path, fetch: Fetch) -> None:
         tree = _tree(tmp_path, _upstream(tmp_path).as_uri(), patch=None)
-        done = _fetch(tree)
+        done = fetch(tree)
         assert done.returncode == 0, done.stderr
         assert (
             tree / "external" / "tool" / "build.txt"
         ).read_bytes() == b"version=1\r\nname=tool\r\n"
 
 
-@pytest.mark.posix
-class TestAPatchThatNoLongerFitsStopsTheScript:
-    def test_a_tag_the_patch_does_not_fit(self, tmp_path: Path) -> None:
+class TestAPatchThatNoLongerFitsStopsTheFetch:
+    def test_a_tag_the_patch_does_not_fit(self, tmp_path: Path, fetch: Fetch) -> None:
         upstream = _upstream(tmp_path, content=b"version=7\nname=tool\n")
         tree = _tree(tmp_path, upstream.as_uri())
-        done = _fetch(tree)
+        done = fetch(tree)
         assert done.returncode == 1
         assert "FAIL     tool: tool-v1.patch neither applies" in done.stderr
-        assert not (tree / "capa-ran").exists()
+        assert not done.reached_the_corpora
         assert (tree / "external" / "tool" / "build.txt").read_bytes() == b"version=7\nname=tool\n"
 
 
-@pytest.mark.posix
 class TestNamedTargetsAndAnotherDirectory:
-    def test_a_named_target_fetches_that_tree_and_nothing_after_it(self, tmp_path: Path) -> None:
+    def test_a_named_target_fetches_that_tree_and_nothing_after_it(
+        self, tmp_path: Path, fetch: Fetch
+    ) -> None:
         tree = _tree(tmp_path, _upstream(tmp_path).as_uri())
-        done = _fetch(tree, "tool")
+        done = fetch(tree, "tool")
         assert done.returncode == 0, done.stderr
         assert (tree / "external" / "tool" / "build.txt").exists()
         assert not (tree / "external" / "other").exists()
-        assert not (tree / "capa-ran").exists()
+        assert not done.reached_the_corpora
 
-    def test_a_run_without_names_reaches_the_rule_corpora(self, tmp_path: Path) -> None:
+    def test_a_run_without_names_reaches_the_rule_corpora(
+        self, tmp_path: Path, fetch: Fetch
+    ) -> None:
         tree = _tree(tmp_path, _upstream(tmp_path).as_uri())
-        assert _fetch(tree).returncode == 0
-        assert (tree / "external" / "other").exists()
-        assert (tree / "capa-ran").exists()
+        done = fetch(tree)
+        assert done.returncode == 0, done.stderr
+        assert (tree / "external" / "tool").exists()
+        assert done.reached_the_corpora
 
-    def test_the_trees_land_in_the_directory_the_variable_names(self, tmp_path: Path) -> None:
+    def test_a_tree_fetched_on_request_waits_to_be_named(
+        self, tmp_path: Path, fetch: Fetch
+    ) -> None:
+        tree = _tree(tmp_path, _upstream(tmp_path).as_uri())
+        unnamed = fetch(tree)
+        assert not (tree / "external" / "other").exists()
+        assert "opt-in   other: fetched only when named" in unnamed.stdout
+        named = fetch(tree, "other")
+        assert named.returncode == 0, named.stderr
+        assert (tree / "external" / "other" / "build.txt").exists()
+
+    def test_the_trees_land_in_the_directory_the_variable_names(
+        self, tmp_path: Path, fetch: Fetch
+    ) -> None:
         tree = _tree(tmp_path, _upstream(tmp_path).as_uri())
         elsewhere = tmp_path / "elsewhere"
-        done = _fetch(tree, "tool", env={"MALSPARK_EXTERNAL_DIR": str(elsewhere)})
+        done = fetch(tree, "tool", env={"MALSPARK_EXTERNAL_DIR": str(elsewhere)})
         assert done.returncode == 0, done.stderr
         assert (elsewhere / "tool" / "build.txt").read_bytes() == b"version=2\nname=tool\r\n"
         assert not (tree / "external").exists()
 
 
-@pytest.mark.posix
 class TestANewPin:
     def _upstream_with_v2(self, tmp_path: Path) -> Path:
         upstream = _upstream(tmp_path)
@@ -177,18 +226,14 @@ class TestANewPin:
         _git(upstream, "tag", "v2")
         return upstream
 
-    def _pin(self, tree: Path, ref: str) -> None:
-        script = tree / "scripts" / "dev" / "fetch_external.sh"
-        text = script.read_text(encoding="utf-8")
-        script.write_text(text.replace('|v1"', f'|{ref}"'), encoding="utf-8")
-
-    def test_the_old_pin_s_patch_comes_off_before_the_checkout(self, tmp_path: Path) -> None:
+    def test_the_old_pin_s_patch_comes_off_before_the_checkout(
+        self, tmp_path: Path, fetch: Fetch
+    ) -> None:
         upstream = self._upstream_with_v2(tmp_path)
         tree = _tree(tmp_path, upstream.as_uri())
-        assert _fetch(tree, "tool").returncode == 0
-        self._pin(tree, "v2")
+        assert fetch(tree, "tool").returncode == 0
 
-        done = _fetch(tree, "tool")
+        done = fetch(tree, "tool", ref="v2")
 
         assert done.returncode == 0, done.stderr
         assert "unpatch  tool tool-v1.patch" in done.stdout
@@ -196,57 +241,57 @@ class TestANewPin:
         assert _git(dest, "rev-parse", "HEAD") == _git(upstream, "rev-parse", "v2^{commit}")
         assert (dest / "build.txt").read_bytes() == b"version=1b\r\nname=tool\r\n"
 
-    def test_only_the_patch_named_for_the_tree_s_ref_comes_off(self, tmp_path: Path) -> None:
+    def test_only_the_patch_named_for_the_tree_s_ref_comes_off(
+        self, tmp_path: Path, fetch: Fetch
+    ) -> None:
         """A patch named for another ref is left alone, even one that would come off."""
         upstream = self._upstream_with_v2(tmp_path)
         tree = _tree(tmp_path, upstream.as_uri())
         patches = tree / "scripts" / "dev" / "patches"
-        assert _fetch(tree, "tool").returncode == 0
+        assert fetch(tree, "tool").returncode == 0
         (patches / "tool-v0.patch").write_text(_PATCH, encoding="utf-8")
-        self._pin(tree, "v2")
 
-        done = _fetch(tree, "tool")
+        done = fetch(tree, "tool", ref="v2")
 
         assert done.returncode == 0, done.stderr
         assert "unpatch  tool tool-v1.patch" in done.stdout
         assert "tool-v0.patch" not in done.stdout
 
-    def test_a_patched_tree_an_editor_converted_moves_to_the_new_pin(self, tmp_path: Path) -> None:
+    def test_a_patched_tree_an_editor_converted_moves_to_the_new_pin(
+        self, tmp_path: Path, fetch: Fetch
+    ) -> None:
         upstream = self._upstream_with_v2(tmp_path)
         tree = _tree(tmp_path, upstream.as_uri())
-        assert _fetch(tree, "tool").returncode == 0
+        assert fetch(tree, "tool").returncode == 0
         built = tree / "external" / "tool" / "build.txt"
         built.write_bytes(built.read_bytes().replace(b"\r\n", b"\n"))
-        self._pin(tree, "v2")
 
-        done = _fetch(tree, "tool")
+        done = fetch(tree, "tool", ref="v2")
 
         assert done.returncode == 0, done.stderr
         assert built.read_bytes() == b"version=1b\r\nname=tool\r\n"
 
-    def test_a_local_change_in_the_way_stops_the_script_with_the_reason(
-        self, tmp_path: Path
+    def test_a_local_change_in_the_way_stops_the_fetch_with_the_reason(
+        self, tmp_path: Path, fetch: Fetch
     ) -> None:
         upstream = self._upstream_with_v2(tmp_path)
         tree = _tree(tmp_path, upstream.as_uri(), patch=None)
-        assert _fetch(tree, "tool").returncode == 0
+        assert fetch(tree, "tool").returncode == 0
         built = tree / "external" / "tool" / "build.txt"
         built.write_bytes(b"an operator's own edit\n")
-        self._pin(tree, "v2")
 
-        done = _fetch(tree, "tool")
+        done = fetch(tree, ref="v2")
 
         assert done.returncode == 1
         assert "FAIL     tool: cannot check out v2; local changes" in done.stderr
         assert built.read_bytes() == b"an operator's own edit\n"
-        assert not (tree / "capa-ran").exists()
+        assert not done.reached_the_corpora
 
 
-@pytest.mark.posix
-def test_a_name_that_is_no_target_stops_the_script(tmp_path: Path) -> None:
+def test_a_name_that_is_no_target_stops_the_fetch(tmp_path: Path, fetch: Fetch) -> None:
     tree = _tree(tmp_path, _upstream(tmp_path).as_uri())
 
-    done = _fetch(tree, "tool", "toll")
+    done = fetch(tree, "tool", "toll")
 
     assert done.returncode == 2
     assert "FAIL     no target named toll; the targets are: tool other" in done.stderr
@@ -254,11 +299,11 @@ def test_a_name_that_is_no_target_stops_the_script(tmp_path: Path) -> None:
 
 
 def test_every_shipped_patch_names_a_pinned_target() -> None:
-    text = SCRIPT.read_text(encoding="utf-8")
-    pins = {
-        f"{name}-{ref}.patch"
-        for name, ref in re.findall(r'^  "([^|"]+)\|[^|]+\|([^"]+)"$', text, re.M)
-    }
+    pins = {f"{target.name}-{target.ref}.patch" for target in dev.TARGETS}
     shipped = {path.name for path in PATCHES.glob("*.patch")}
     assert shipped, "no patch shipped"
     assert shipped <= pins, shipped - pins
+
+
+def test_only_the_inference_engine_waits_to_be_named() -> None:
+    assert [t.name for t in dev.TARGETS if not t.default] == ["ik_llama.cpp"]

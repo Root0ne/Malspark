@@ -1,6 +1,6 @@
 ghidra-mcp v5.6.0: build and start the headless server.
 
-Applied by scripts/dev/fetch_external.sh after it checks out the pinned tag.
+Applied by scripts/dev/malspark_dev.py external after it checks out the pinned tag.
 Two changes, both needed before the tag's image builds and its server starts:
 
 - docker/Dockerfile: the tag's pom.xml builds against Ghidra 12.0.4 while its

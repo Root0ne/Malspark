@@ -1,0 +1,1318 @@
+#!/usr/bin/env python3
+"""Set up Malspark and drive its compose stack, the same way on Windows, macOS and Linux.
+
+Standard library only, so a host needs no dependency of the project to install
+the stack: uv provides the interpreter and nothing else.
+
+    uv run --no-project python scripts/dev/malspark_dev.py <command>
+
+    setup [--dev]          fetch the pinned third-party trees and data; --dev also
+                           syncs the host environment and installs pre-commit
+    external [NAME ...]    the pinned trees (ghidra-mcp; ik_llama.cpp only when
+                           named), the Sigma rules and capa's data
+    env init [--force]     docker/.env and bootstrap.env from their examples, with
+                           generated secrets; an existing file is left as it is
+    doctor                 what this host has and lacks for the stack (informative)
+    up / down / logs       the development stack (live frontend and worker)
+    docker-up / docker-down / docker-logs / docker-build
+                           the production stack
+    migrate                the API's Alembic migrations against DATABASE_URL
+    create-admin EMAIL     the first admin account, in the running stack
+    fe-rebuild             rebuild and restart the production frontend
+    worker-restart         restart the production worker
+
+The Makefile's targets of the same names call this file, so ``make`` keeps
+working where make is installed. ``--dry-run`` on a stack command prints the
+commands instead of running them; no secret value is ever printed.
+"""
+
+from __future__ import annotations
+
+import argparse
+import base64
+import hashlib
+import os
+import platform
+import re
+import secrets
+import shlex
+import shutil
+import socket
+import struct
+import subprocess
+import sys
+import tarfile
+import tempfile
+import urllib.parse
+import urllib.request
+from collections.abc import Callable, Iterator, Mapping, Sequence
+from dataclasses import dataclass, field
+from pathlib import Path, PurePosixPath
+
+if sys.version_info < (3, 11):  # noqa: UP036 - read by an interpreter older than the project's
+    sys.exit("malspark_dev.py needs Python 3.11 or later (uv run --python 3.11 ...)")
+
+REPO_ROOT = Path(__file__).resolve().parents[2]
+
+# ── Environment files ────────────────────────────────────────────────────────
+
+_NAME = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
+_DOUBLE_QUOTED_ESCAPE = re.compile(r'\\(["\\$`])')
+
+
+def _env_value(text: str) -> str:
+    """One value as a shell assignment or compose's .env reads it, without its quotes."""
+    if text[:1] == "'":
+        end = text.find("'", 1)
+        return text[1:end] if end != -1 else text[1:]
+    if text[:1] == '"':
+        # The first quote no backslash escapes closes it.
+        closing = re.search(r'(?<!\\)(?:\\\\)*"', text[1:])
+        inner = text[1 : closing.end()] if closing else text[1:]
+        return _DOUBLE_QUOTED_ESCAPE.sub(r"\1", inner)
+    # Unquoted, a # after white space starts a comment, as in the shell.
+    comment = re.search(r"\s#", text)
+    return (text[: comment.start()] if comment else text).strip()
+
+
+def parse_env(text: str) -> dict[str, str]:
+    """``KEY=value`` lines of an env file: CRLF, quotes, comments and ``export`` tolerated.
+
+    A later line wins over an earlier one, as sourcing the file does. A line
+    that is no assignment is skipped. No ``$VAR`` in a value is expanded.
+    """
+    values: dict[str, str] = {}
+    for raw in text.splitlines():
+        line = raw.strip()
+        if not line or line.startswith("#"):
+            continue
+        if line.startswith("export ") or line.startswith("export\t"):
+            line = line[len("export") :].lstrip()
+        key, sep, value = line.partition("=")
+        key = key.strip()
+        if sep and _NAME.fullmatch(key):
+            values[key] = _env_value(value.strip())
+    return values
+
+
+def read_env(path: Path) -> dict[str, str]:
+    """The file's assignments, or none when it is not there."""
+    try:
+        return parse_env(path.read_text(encoding="utf-8-sig"))
+    except FileNotFoundError:
+        return {}
+
+
+# ── The stack's compose commands ─────────────────────────────────────────────
+
+SHIPPED_COMPOSE = ("docker/docker-compose.yml", "docker/docker-compose.dev.yml")
+IMAGE_DEFAULT_ID = "10001"
+
+# Samples and uploads go on named volumes on a host that is not Linux, where a
+# bind mount from the host's file system carries no Linux owner. The overlay
+# that moves them comes with the compose change that adds it; until that file
+# is there, every host keeps the bind mount.
+NAMED_DATA_OVERLAY = "docker/docker-compose.named-data.yml"
+
+CORPORA = ("data/sigma_rules", "data/capa-rules", "data/capa-signatures")
+
+
+@dataclass(frozen=True)
+class Step:
+    """One command: its arguments, where it runs, and the variables it is given."""
+
+    argv: tuple[str, ...]
+    cwd: Path
+    env: Mapping[str, str] = field(default_factory=dict)
+
+
+def compose_ids(
+    environ: Mapping[str, str],
+    docker_env: Mapping[str, str],
+    getuid: Callable[[], int] | None,
+    getgid: Callable[[], int] | None,
+) -> dict[str, str]:
+    """MALSPARK_UID and MALSPARK_GID for a command that starts the stack.
+
+    The environment's value first, then docker/.env's (its digits only), then
+    the invoking user's ids (the user behind sudo, not root); an id that comes
+    out 0 is the image's own 10001. A host without user ids (Windows) sets
+    neither, and the image's 10001 applies.
+    """
+    if getuid is None or getgid is None:
+        return {}
+
+    def own(sudo: str, real: Callable[[], int]) -> str:
+        value = environ.get(sudo) or str(real())
+        return IMAGE_DEFAULT_ID if value == "0" else value
+
+    ids = {}
+    for name, sudo, real in (
+        ("MALSPARK_UID", "SUDO_UID", getuid),
+        ("MALSPARK_GID", "SUDO_GID", getgid),
+    ):
+        from_file = re.sub(r"\D", "", docker_env.get(name, ""))
+        ids[name] = environ.get(name) or from_file or own(sudo, real)
+    return ids
+
+
+def host_overlays(root: Path, system: str | None = None) -> list[str]:
+    """The compose files this host adds after the shipped ones (see NAMED_DATA_OVERLAY)."""
+    if (system or platform.system()) == "Linux" or not (root / NAMED_DATA_OVERLAY).is_file():
+        return []
+    return [NAMED_DATA_OVERLAY]
+
+
+def _production_files(root: Path, system: str | None) -> list[str]:
+    """The production stack's ``-f`` arguments, run from docker/.
+
+    None at all, so compose reads docker-compose.override.yml on its own; with
+    a host overlay, the files compose would have read are named before it.
+    """
+    overlays = host_overlays(root, system)
+    if not overlays:
+        return []
+    files = ["docker-compose.yml"]
+    if (root / "docker" / "docker-compose.override.yml").is_file():
+        files.append("docker-compose.override.yml")
+    files += [str(PurePosixPath(path).relative_to("docker")) for path in overlays]
+    return [arg for path in files for arg in ("-f", path)]
+
+
+def _dev_files(root: Path, extra: Sequence[str], system: str | None) -> list[str]:
+    """The development stack's ``-f`` arguments, run from the repository root.
+
+    COMPOSE_FILE_EXTRA's files come last, each one more ``-f``, so they win
+    over the shipped file and the overlay.
+    """
+    files = [*SHIPPED_COMPOSE, *host_overlays(root, system), *extra]
+    return [arg for path in files for arg in ("-f", path)]
+
+
+@dataclass(frozen=True)
+class Context:
+    """What a stack command is built from: the checkout, the environment, the host."""
+
+    root: Path
+    environ: Mapping[str, str]
+    extra_files: tuple[str, ...] = ()
+    system: str | None = None
+    getuid: Callable[[], int] | None = None
+    getgid: Callable[[], int] | None = None
+
+    @classmethod
+    def here(cls, root: Path = REPO_ROOT, extra: Sequence[str] = ()) -> Context:
+        environ = dict(os.environ)
+        return cls(
+            root=root,
+            environ=environ,
+            extra_files=(*environ.get("COMPOSE_FILE_EXTRA", "").split(), *extra),
+            getuid=getattr(os, "getuid", None),
+            getgid=getattr(os, "getgid", None),
+        )
+
+    def bootstrap(self) -> dict[str, str]:
+        """bootstrap.env over the environment, as ``set -a; . ./bootstrap.env`` leaves it."""
+        return read_env(self.root / "bootstrap.env")
+
+    def ids(self, environ: Mapping[str, str]) -> dict[str, str]:
+        docker_env = read_env(self.root / "docker" / ".env")
+        return compose_ids(environ, docker_env, self.getuid, self.getgid)
+
+
+def _with(ctx: Context, *, bootstrap: bool = False, ids: bool = False) -> dict[str, str]:
+    """The variables a command is given beyond the environment it starts from."""
+    added: dict[str, str] = {}
+    if bootstrap:
+        added.update(ctx.bootstrap())
+    if ids:
+        added.update(ctx.ids({**ctx.environ, **added}))
+    return added
+
+
+def stack_plan(command: str, ctx: Context, email: str | None = None) -> list[Step]:
+    """The commands one stack command runs, in order; each runs only if the one before passed."""
+    docker_dir = ctx.root / "docker"
+    prod = ["docker", "compose", *_production_files(ctx.root, ctx.system)]
+    dev = ["docker", "compose", *_dev_files(ctx.root, ctx.extra_files, ctx.system)]
+    root = ctx.root
+    plans: dict[str, Callable[[], list[Step]]] = {
+        "docker-build": lambda: [Step((*prod, "build"), docker_dir)],
+        "docker-up": lambda: [Step((*prod, "up", "-d"), docker_dir, _with(ctx, ids=True))],
+        # `--profile *` so a down also stops the optional services (ghidra,
+        # qdrant) whatever COMPOSE_PROFILES says now.
+        "docker-down": lambda: [Step((*prod, "--profile", "*", "down"), docker_dir)],
+        "docker-logs": lambda: [Step((*prod, "logs", "-f"), docker_dir)],
+        "up": lambda: [Step((*dev, "up", "-d"), root, _with(ctx, bootstrap=True, ids=True))],
+        "down": lambda: [Step((*dev, "--profile", "*", "down"), root, _with(ctx, bootstrap=True))],
+        "logs": lambda: [Step((*dev, "logs", "-f"), root, _with(ctx, bootstrap=True))],
+        "migrate": lambda: [
+            Step(
+                ("uv", "run", "--directory", "apps/api", "alembic", "upgrade", "head"),
+                root,
+                _with(ctx, bootstrap=True),
+            )
+        ],
+        # exec reaches the service by the compose project's name, whichever
+        # files started it. `--` keeps an address that starts with `-` an argument.
+        "create-admin": lambda: [
+            Step(
+                (*prod, "exec", "backend-api", "malspark", "create-admin", "--", email or ""),
+                docker_dir,
+            )
+        ],
+        "fe-rebuild": lambda: [
+            Step((*prod, "build", "frontend"), docker_dir, _with(ctx, ids=True)),
+            Step((*prod, "up", "-d", "--no-deps", "frontend"), docker_dir, _with(ctx, ids=True)),
+        ],
+        "worker-restart": lambda: [Step(("docker", "restart", "malspark-worker"), root)],
+    }
+    return plans[command]()
+
+
+# Shown with their values in a dry run; every other variable is named only.
+_SHOWN = frozenset({"MALSPARK_UID", "MALSPARK_GID", "COMPOSE_PROFILES"})
+
+
+def describe(step: Step, root: Path) -> str:
+    """A step as one line, every variable it adds named and no secret value shown."""
+    try:
+        where = step.cwd.relative_to(root).as_posix() or "."
+    except ValueError:
+        where = str(step.cwd)
+    names = " ".join(
+        f"{key}={value}" if key in _SHOWN else key for key, value in sorted(step.env.items())
+    )
+    env = f" [{names}]" if names else ""
+    return f"({where}){env} {shlex.join(step.argv)}"
+
+
+def run_steps(steps: Sequence[Step], environ: Mapping[str, str], root: Path) -> int:
+    """Run each step in turn; the first that fails ends the run with its status."""
+    for step in steps:
+        program = shutil.which(step.argv[0], path=environ.get("PATH"))
+        if program is None:
+            print(
+                f"  FAIL     {step.argv[0]} is not on PATH{_install_hint(step.argv[0])}",
+                file=sys.stderr,
+            )
+            return 127
+        try:
+            done = subprocess.run(
+                [program, *step.argv[1:]],
+                cwd=step.cwd,
+                env={**environ, **step.env},
+                check=False,
+            )
+        except KeyboardInterrupt:
+            return 130
+        if done.returncode != 0:
+            return done.returncode
+    return 0
+
+
+def _install_hint(program: str) -> str:
+    if program == "docker":
+        return (
+            ": install Docker Desktop (Windows, macOS) or Docker Engine with the compose"
+            " plugin (Linux)"
+        )
+    if program == "uv":
+        return ": install uv (https://docs.astral.sh/uv/)"
+    return ""
+
+
+def warn_missing_corpora(root: Path) -> None:
+    """The stack mounts ./data over the image's copy, so a corpus missing here is missing there."""
+    for corpus in CORPORA:
+        if not (root / corpus).is_dir():
+            print(
+                f"warning: {corpus} is missing; the stack mounts ./data over the image's copy,"
+                " so run the external command first (make external, or"
+                " uv run --no-project python scripts/dev/malspark_dev.py external)",
+                file=sys.stderr,
+            )
+
+
+# ── The pinned third-party trees ─────────────────────────────────────────────
+#
+# external/ is not in version control and is not ours to redistribute: each of
+# these is someone else's project under its own licence. What the repository
+# carries instead is the exact ref each was used at, so a clone can reconstruct
+# the tree rather than receive a copy of it.
+#
+# CAPE is deliberately absent. It is somebody else's platform, wants a Linux
+# host of its own with KVM and registered Windows guest images, and is a
+# deployment rather than a dependency. This project talks to one over its REST
+# API; it does not install, build or package it.
+#
+# A pinned tag that does not build or start as released carries a patch,
+# scripts/dev/patches/<name>-<ref>.patch, applied after the checkout. A tree that
+# already carries it is left as it is; one where it neither applies nor is in
+# place stops the fetch, since the image built from it would not be the one
+# the pin describes. MALSPARK_EXTERNAL_DIR puts the trees somewhere other than
+# external/.
+
+
+@dataclass(frozen=True)
+class Target:
+    """A pinned tree: the ref is what the project was built and measured against."""
+
+    name: str
+    url: str
+    ref: str
+    # Fetched by a run that names no tree; otherwise only when named.
+    default: bool = True
+
+
+TARGETS: tuple[Target, ...] = (
+    Target("ghidra-mcp", "https://github.com/bethington/ghidra-mcp.git", "v5.6.0"),
+    # The commit the paper pins as the inference engine. Only a host that builds
+    # the local model server needs it, so it is fetched when named.
+    Target("ik_llama.cpp", "https://github.com/ikawrakow/ik_llama.cpp", "eb570eb9", default=False),
+)
+
+# The Sigma corpus is SigmaHQ's work, not ours, and it lands outside external/
+# because the layer reads it from data/sigma_rules by default. It used to be
+# committed here: 2,651 rule files by Florian Roth, Nasreddine Bencherchali,
+# frack113 and the rest of SigmaHQ, carrying no licence and no attribution, in a
+# repository that calls itself MIT. Their rules are under the Detection Rule
+# License. Fetching beats vendoring for the same reason it does above.
+SIGMA_URL = "https://github.com/SigmaHQ/sigma.git"
+SIGMA_REF = "r2026-07-01"
+
+# capa's rules and its library-identification signatures, for the flare-capa
+# version uv.lock pins; the flare-capa wheel carries neither. They land where
+# static.capa.rules_dir and static.capa.signatures_dir point by default, which
+# is also what the compose stack mounts over the image's own copies. The rules
+# are capa-rules' tag of that version, without its CI folder (.github), so a
+# rule count equals what capa loads. The signatures are the sigs/ directory of
+# flare-capa's own sdist on PyPI. Each archive is checked against the sha256
+# recorded when it was pinned (the sdist's is uv.lock's own), and each
+# directory keeps its licence file and a PINNED.txt line naming what it holds.
+# Keep the three values in step with uv.lock and docker/Dockerfile.backend; a
+# test holds them together. A directory that is already there is never
+# touched: it is said to be the pinned version or not, and left as it is.
+CAPA_VERSION = "9.4.0"
+CAPA_RULES_SHA256 = "273591b11737181b3bdaac18964f23627cf10c21c2b143fc9be88e4a33217669"
+CAPA_SDIST_SHA256 = "c4f421abac566e23657241e4ddc66119beb0caf5f082ee42d68b7c879ebb7fc6"
+
+
+@dataclass(frozen=True)
+class Capa:
+    """capa's pinned version, its two archives and what each directory's PINNED.txt says."""
+
+    version: str = CAPA_VERSION
+    rules_sha256: str = CAPA_RULES_SHA256
+    sdist_sha256: str = CAPA_SDIST_SHA256
+    rules_url: str = (
+        f"https://github.com/mandiant/capa-rules/archive/refs/tags/v{CAPA_VERSION}.tar.gz"
+    )
+    sdist_url: str = (
+        "https://files.pythonhosted.org/packages/source/f/flare-capa/"
+        f"flare_capa-{CAPA_VERSION}.tar.gz"
+    )
+
+    @property
+    def rules_pin(self) -> str:
+        return f"capa-rules v{self.version} sha256:{self.rules_sha256}"
+
+    @property
+    def signatures_pin(self) -> str:
+        return f"flare-capa {self.version} sigs sha256:{self.sdist_sha256}"
+
+
+@dataclass(frozen=True)
+class Layout:
+    """Where the fetched trees and corpora go."""
+
+    root: Path
+    external: Path
+
+    @classmethod
+    def of(cls, root: Path, environ: Mapping[str, str]) -> Layout:
+        return cls(root, Path(environ.get("MALSPARK_EXTERNAL_DIR") or root / "external"))
+
+    @property
+    def patches(self) -> Path:
+        return self.root / "scripts" / "dev" / "patches"
+
+    @property
+    def sigma(self) -> Path:
+        return self.root / "data" / "sigma_rules"
+
+    @property
+    def capa_rules(self) -> Path:
+        return self.root / "data" / "capa-rules"
+
+    @property
+    def capa_signatures(self) -> Path:
+        return self.root / "data" / "capa-signatures"
+
+
+class Stop(Exception):
+    """The fetch stops here with this exit status; its reason is already said."""
+
+    def __init__(self, status: int) -> None:
+        super().__init__(status)
+        self.status = status
+
+
+def _say(text: str) -> None:
+    print(text, flush=True)
+
+
+def _fail(text: str, status: int = 1) -> Stop:
+    print(text, file=sys.stderr, flush=True)
+    return Stop(status)
+
+
+# Windows' 260-character path limit stops a checkout of a deep tree unless git
+# is told to use long paths; the setting holds for each command, not the tree.
+GIT = ("git", "-c", "core.longpaths=true") if os.name == "nt" else ("git",)
+
+
+def _git(dest: Path, *args: str, quiet: bool = False) -> subprocess.CompletedProcess[str]:
+    """``git -C dest args``, its output read; quiet keeps its standard error off the terminal."""
+    return subprocess.run(
+        [*GIT, "-C", str(dest), *args],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE if quiet else None,
+        text=True,
+        check=False,
+    )
+
+
+def _runs(*argv: str) -> int:
+    """A git step's exit status, its messages on the terminal."""
+    return subprocess.run(argv, check=False).returncode
+
+
+def _passes(dest: Path, *args: str) -> bool:
+    """Whether a git check passes, its messages kept off the terminal."""
+    return _git(dest, *args, quiet=True).returncode == 0
+
+
+def _git_ok(dest: Path, *args: str) -> None:
+    """A git step that must pass; its own message is shown when it does not."""
+    status = _runs(*GIT, "-C", str(dest), *args)
+    if status != 0:
+        raise Stop(status)
+
+
+def _commit(dest: Path, ref: str) -> str:
+    """The commit ``ref`` names in ``dest``, or empty when it names none there."""
+    done = _git(dest, "rev-parse", "--verify", "--quiet", f"{ref}^{{commit}}", quiet=True)
+    return done.stdout.strip() if done.returncode == 0 else ""
+
+
+def _head(dest: Path, *flags: str) -> str:
+    done = _git(dest, "rev-parse", *flags, "HEAD", quiet=True)
+    if done.returncode != 0:
+        print(done.stderr, end="", file=sys.stderr)
+        raise Stop(done.returncode)
+    return done.stdout.strip()
+
+
+def _unpatch(layout: Layout, target: Target, dest: Path) -> None:
+    """The patch this fetch applied for the earlier pin comes off first.
+
+    So it does not stand in the checkout's way: only one whose ref (its file
+    name, <name>-<ref>.patch) is the tree's HEAD and that comes off cleanly,
+    and nothing else in the tree is touched.
+    """
+    prefix = f"{target.name}-"
+    patches = sorted(layout.patches.glob("*.patch")) if layout.patches.is_dir() else []
+    for applied in patches:
+        if not applied.name.startswith(prefix) or not applied.is_file():
+            continue
+        from_ref = applied.name[len(prefix) : -len(".patch")]
+        at = _commit(dest, from_ref)
+        if not at or at != _head(dest):
+            continue
+        reverse = ("apply", "--ignore-whitespace", "--reverse")
+        if not _passes(dest, *reverse, "--check", str(applied)):
+            continue
+        _git_ok(dest, *reverse, str(applied))
+        # The lines it puts back carry the patch's line endings; a file that
+        # then differs from the checkout in those alone is the checkout's again.
+        numstat = _git(dest, "apply", "--numstat", str(applied), quiet=True).stdout
+        for line in numstat.splitlines():
+            parts = line.split("\t", 2)
+            if len(parts) == 3 and _passes(
+                dest, "diff", "--quiet", "--ignore-cr-at-eol", "--", parts[2]
+            ):
+                _git_ok(dest, "checkout", "--quiet", "--", parts[2])
+        _say(f"  unpatch  {target.name} {applied.name}")
+
+
+def _fetch_tree(layout: Layout, target: Target) -> None:
+    dest = layout.external / target.name
+    name, ref = target.name, target.ref
+    if (dest / ".git").is_dir():
+        have = _head(dest, "--short")
+        # The pin is an exact ref: a tree merely ahead of it was not built or
+        # measured against it, so only HEAD == ref counts as in place.
+        want = _commit(dest, ref)
+        if (want and _head(dest) == want) or have == ref[: len(have)]:
+            _say(f"  ok       {name} at {have}")
+        else:
+            _say(f"  checkout {name} -> {ref}")
+            _unpatch(layout, target, dest)
+            _git_ok(dest, "fetch", "--quiet", "--tags", "origin")
+            if _runs(*GIT, "-C", str(dest), "checkout", "--quiet", ref) != 0:
+                raise _fail(
+                    f"  FAIL     {name}: cannot check out {ref}; local changes in {dest} are"
+                    f" in the way (see git -C {dest} status), or the ref is not there"
+                )
+    elif dest.exists():
+        print(f"  SKIP     {name} exists and is not a git checkout: {dest}", file=sys.stderr)
+        return
+    else:
+        _say(f"  clone    {name} {ref}")
+        # No default-branch checkout: its .gitattributes line-ending rules can make the
+        # pinned ref's files look locally modified and block the checkout below.
+        status = _runs(*GIT, "clone", "--quiet", "--no-checkout", target.url, str(dest))
+        if status != 0:
+            raise Stop(status)
+        _git_ok(dest, "checkout", "--quiet", ref)
+
+    # The tag's own files differ in line endings by checkout (CRLF as released,
+    # LF once an editor has touched them), so whitespace is not compared.
+    patch = layout.patches / f"{name}-{ref}.patch"
+    if patch.is_file():
+        apply = ("apply", "--ignore-whitespace")
+        if _passes(dest, *apply, "--check", str(patch)):
+            _git_ok(dest, *apply, str(patch))
+            _say(f"  patch    {name} {patch.name}")
+        elif _passes(dest, *apply, "--reverse", "--check", str(patch)):
+            _say(f"  ok       {name} carries {patch.name}")
+        else:
+            print(
+                f"  FAIL     {name}: {patch.name} neither applies to {dest} nor is in place",
+                file=sys.stderr,
+            )
+            _runs(*GIT, "-C", str(dest), *apply, "--check", str(patch))
+            raise Stop(1)
+
+
+def fetch_sigma(dest: Path, url: str = SIGMA_URL, ref: str = SIGMA_REF) -> None:
+    """The Sigma corpus at its exact pin.
+
+    A tree ahead of (or behind) the ref is not the corpus measured, and a ref
+    that is not there never falls back to the default branch.
+    """
+    if (dest / ".git").is_dir():
+        want = _commit(dest, ref)
+        if want and _head(dest) == want:
+            _say(f"  ok       sigma rules at {_head(dest, '--short')}")
+            return
+        _say(f"  checkout sigma rules -> {ref}")
+        tag = f"refs/tags/{ref}:refs/tags/{ref}"
+        git = (*GIT, "-C", str(dest))
+        if (
+            _runs(*git, "fetch", "--quiet", "--depth", "1", "origin", tag) != 0
+            and _runs(*git, "fetch", "--quiet", "--tags", "origin") != 0
+        ):
+            raise _fail(f"  FAIL     cannot fetch sigma rules {ref}")
+        if _runs(*git, "checkout", "--quiet", ref) != 0:
+            raise _fail(f"  FAIL     sigma rules {ref} not available")
+    elif dest.exists():
+        print(f"  SKIP     {dest} exists and is not a git checkout", file=sys.stderr)
+    else:
+        _say(f"  clone    sigma rules {ref}")
+        if _runs(*GIT, "clone", "--quiet", "--depth", "1", "--branch", ref, url, str(dest)):
+            raise _fail(f"  FAIL     cannot clone sigma rules at {ref}")
+
+
+def _download_checked(url: str, sha256: str, out: Path) -> None:
+    """The archive at ``url`` into ``out``, refused unless its sha256 is the pinned one."""
+    digest = hashlib.sha256()
+    try:
+        # nosemgrep: dynamic-urllib-use-detected — a pinned URL from this file, digest checked
+        with urllib.request.urlopen(url, timeout=120) as answer, out.open("wb") as sink:
+            for chunk in iter(lambda: answer.read(1 << 16), b""):
+                digest.update(chunk)
+                sink.write(chunk)
+    except OSError as error:
+        raise _fail(f"  FAIL     cannot fetch {url}: {error}") from None
+    if digest.hexdigest() != sha256:
+        raise _fail(f"  FAIL     {url}: sha256 {digest.hexdigest()} is not the pinned {sha256}")
+
+
+def _extract(
+    archive: Path, into: Path, strip: int, wanted: Callable[[tuple[str, ...]], bool]
+) -> int:
+    """The members ``wanted`` picks, their first ``strip`` path parts taken off.
+
+    As ``tar --strip-components`` does, under tarfile's ``data`` filter: no
+    absolute path, no path out of ``into``, no device, no link out of it.
+    """
+    if not hasattr(tarfile, "data_filter"):
+        raise _fail("  FAIL     unpacking safely needs Python 3.11.4 or later")
+    count = 0
+    try:
+        tar = tarfile.open(archive, "r:*")
+    except (tarfile.TarError, OSError) as error:
+        raise _fail(f"  FAIL     {archive.name}: {error}") from None
+    with tar:
+        for member in tar.getmembers():
+            parts = PurePosixPath(member.name).parts
+            if not wanted(parts) or len(parts) <= strip:
+                continue
+            changes = {"name": "/".join(parts[strip:])}
+            if member.islnk():
+                link = PurePosixPath(member.linkname).parts[strip:]
+                if not link:
+                    continue
+                changes["linkname"] = "/".join(link)
+            try:
+                tar.extract(member.replace(**changes, deep=False), into, filter="data")  # type: ignore[arg-type]
+            except (tarfile.TarError, OSError) as error:
+                raise _fail(f"  FAIL     {archive.name}: {member.name}: {error}") from None
+            count += 1
+    return count
+
+
+def _is_pinned(directory: Path, pin: str, tag: str | None = None) -> bool:
+    """It says so in its PINNED.txt, or, for the rules, it is a checkout of the pinned tag."""
+    pinned = directory / "PINNED.txt"
+    if pinned.is_file():
+        lines = pinned.read_text(encoding="utf-8", errors="replace").splitlines()
+        if lines and lines[0].rstrip("\r") == pin:
+            return True
+    if tag and (directory / ".git").exists() and shutil.which("git"):
+        at = _git(directory, "rev-parse", "-q", "--verify", "HEAD", quiet=True).stdout.strip()
+        tagged = _commit(directory, f"refs/tags/{tag}")
+        return bool(at) and at == tagged
+    return False
+
+
+def fetch_capa(layout: Layout, capa: Capa | None = None) -> None:
+    """capa's rules and signatures into data/, each only when its directory is not there."""
+    capa = capa or Capa()
+    # Unpacked beside its destination and renamed into place, so a failed fetch or
+    # a digest that does not match leaves no directory a later run would skip.
+    work: Path | None = None
+
+    def work_dir() -> Path:
+        nonlocal work
+        if work is None:
+            (layout.root / "data").mkdir(parents=True, exist_ok=True)
+            work = Path(tempfile.mkdtemp(prefix=".capa-fetch.", dir=layout.root / "data"))
+        return work
+
+    def say_present(directory: Path, pin: str, label: str, tag: str | None = None) -> None:
+        if _is_pinned(directory, pin, tag):
+            _say(f"  ok       {label} v{capa.version}")
+        else:
+            _say(
+                f"  present  {label} in data/, but not the pinned v{capa.version}: left as they are"
+            )
+
+    try:
+        if layout.capa_rules.exists():
+            say_present(layout.capa_rules, capa.rules_pin, "capa rules", f"v{capa.version}")
+        else:
+            _say(f"  fetch    capa rules v{capa.version}")
+            archive = work_dir() / "rules.tar.gz"
+            _download_checked(capa.rules_url, capa.rules_sha256, archive)
+            rules = work_dir() / "rules"
+            rules.mkdir()
+            # capa skips the rules' .github workflows; a rule count would not.
+            _extract(archive, rules, 1, lambda parts: ".github" not in parts)
+            _write_text(rules / "PINNED.txt", capa.rules_pin + "\n")
+            rules.rename(layout.capa_rules)
+
+        if layout.capa_signatures.exists():
+            say_present(layout.capa_signatures, capa.signatures_pin, "capa signatures")
+        else:
+            _say(f"  fetch    capa signatures from flare-capa {capa.version}")
+            archive = work_dir() / "sdist.tar.gz"
+            _download_checked(capa.sdist_url, capa.sdist_sha256, archive)
+            signatures = work_dir() / "signatures"
+            signatures.mkdir()
+            top = f"flare_capa-{capa.version}"
+            sigs = _extract(archive, signatures, 2, lambda parts: parts[:2] == (top, "sigs"))
+            licence = _extract(archive, signatures, 1, lambda parts: parts == (top, "LICENSE.txt"))
+            if not sigs or not licence:
+                raise _fail(f"  FAIL     {capa.sdist_url} holds no {top}/sigs or {top}/LICENSE.txt")
+            _write_text(signatures / "PINNED.txt", capa.signatures_pin + "\n")
+            signatures.rename(layout.capa_signatures)
+    finally:
+        if work is not None:
+            shutil.rmtree(work, ignore_errors=True)
+
+
+def fetch_external(
+    names: Sequence[str],
+    layout: Layout,
+    targets: Sequence[Target] = TARGETS,
+    sigma: tuple[str, str] = (SIGMA_URL, SIGMA_REF),
+    capa: Capa | None = None,
+) -> int:
+    """Every default tree, the Sigma rules and capa's data; or only the named trees."""
+    # A name that is no target is a typo, and fetching nothing for it would pass for success.
+    known = [t.name for t in targets]
+    for wanted in names:
+        if wanted not in known:
+            print(
+                f"  FAIL     no target named {wanted}; the targets are: {' '.join(known)}",
+                file=sys.stderr,
+            )
+            return 2
+    if shutil.which("git") is None:
+        print("  FAIL     git is not on PATH; install git first", file=sys.stderr)
+        return 1
+    try:
+        layout.external.mkdir(parents=True, exist_ok=True)
+        for target in targets:
+            if names and target.name not in names:
+                continue
+            if not names and not target.default:
+                _say(f"  opt-in   {target.name}: fetched only when named (external {target.name})")
+                continue
+            _fetch_tree(layout, target)
+        # Named trees only: the rule corpora below are fetched by a run without names.
+        if names:
+            return 0
+        fetch_sigma(layout.sigma, *sigma)
+        fetch_capa(layout, capa)
+    except Stop as stop:
+        return stop.status
+    _say("")
+    _say(
+        "external/, data/sigma_rules, data/capa-rules and data/capa-signatures are ignored by git."
+    )
+    _say("Re-run this after a fresh clone.")
+    return 0
+
+
+# ── docker/.env and bootstrap.env ────────────────────────────────────────────
+
+
+def _fernet_key() -> str:
+    """A key the settings store's Fernet accepts: 32 random bytes, URL-safe base64."""
+    return base64.urlsafe_b64encode(secrets.token_bytes(32)).decode()
+
+
+DOCKER_SECRETS: dict[str, Callable[[], str]] = {
+    "GHIDRA_MCP_AUTH_TOKEN": lambda: secrets.token_urlsafe(32),
+    "REDIS_PASSWORD": lambda: secrets.token_urlsafe(32),
+    "QDRANT_API_KEY": lambda: secrets.token_urlsafe(32),
+    "POSTGRES_PASSWORD": lambda: secrets.token_urlsafe(32),
+    "MINIO_ROOT_USER": lambda: "malspark",
+    "MINIO_ROOT_PASSWORD": lambda: secrets.token_urlsafe(32),
+    "SETTINGS_ENCRYPTION_KEY": _fernet_key,
+    "JWT_SECRET_KEY": lambda: secrets.token_hex(32),
+}
+
+_PUBLISHED = re.compile(r"\$\{(?P<var>[A-Z0-9_]+_PORT):-(?P<port>\d+)\}")
+_ASSIGNMENT = re.compile(r"^(?P<key>[A-Za-z_][A-Za-z0-9_]*)=")
+
+
+def published_ports(root: Path) -> dict[str, int]:
+    """Each ``${NAME_PORT:-N}`` the compose file publishes, with its default."""
+    text = (root / "docker" / "docker-compose.yml").read_text(encoding="utf-8")
+    return {m["var"]: int(m["port"]) for m in _PUBLISHED.finditer(text)}
+
+
+def port_of(
+    name: str, root: Path, environ: Mapping[str, str], docker_env: Mapping[str, str]
+) -> int:
+    """The host port compose publishes for ``name``: the environment, docker/.env, the default."""
+    value = environ.get(name) or docker_env.get(name)
+    return int(value) if value and value.isdigit() else published_ports(root)[name]
+
+
+def _host(environ: Mapping[str, str], docker_env: Mapping[str, str]) -> str:
+    """Where a host process reaches the published ports."""
+    bound = environ.get("BIND_ADDRESS") or docker_env.get("BIND_ADDRESS") or "127.0.0.1"
+    if bound in ("0.0.0.0", "::"):
+        return "127.0.0.1"
+    return f"[{bound}]" if ":" in bound else bound
+
+
+_PLAIN_VALUE = re.compile(r"[A-Za-z0-9_./:@%+=,-]*")
+_PLACEHOLDER = re.compile(r"<[^<>]*>")
+
+
+def env_quote(value: str) -> str:
+    """``value`` as parse_env and a POSIX shell read it back unchanged.
+
+    Bare when it holds nothing those read specially; single-quoted, which both
+    take literally, unless it holds a single quote; double-quoted with the
+    shell's escapes otherwise. A value holding both a single quote and a
+    backquote is refused: no quoting reads the same everywhere it is read.
+    """
+    if "'" in value and "`" in value:
+        raise ValueError("a value holding both ' and ` cannot be written to an env file")
+    if _PLAIN_VALUE.fullmatch(value):
+        return value
+    if "'" not in value:
+        return f"'{value}'"
+    return '"' + re.sub(r'(["\\$`])', r"\\\1", value) + '"'
+
+
+def _fill(template: str, values: Mapping[str, str], kept_lines: Mapping[str, str]) -> str:
+    """The example with each uncommented ``KEY=`` line given its value.
+
+    A key the earlier file set keeps that file's line as it was written; one
+    the example does not have is added at the end.
+    """
+    out = []
+    seen = set()
+    for line in template.splitlines():
+        match = _ASSIGNMENT.match(line)
+        key = match["key"] if match else None
+        if key is not None and key in kept_lines:
+            out.append(kept_lines[key])
+            seen.add(key)
+        elif key is not None and key in values:
+            out.append(f"{key}={env_quote(values[key])}")
+            seen.add(key)
+        else:
+            out.append(line)
+    rest = [line for key, line in kept_lines.items() if key not in seen]
+    if rest:
+        out += ["", "# Kept from the file this one replaced.", *rest]
+    return "\n".join(out) + "\n"
+
+
+def _set_lines(path: Path) -> dict[str, str]:
+    """The last uncommented line of each key the file assigns, as written, an empty one too."""
+    lines: dict[str, str] = {}
+    if not path.exists():
+        return lines
+    for line in path.read_text(encoding="utf-8-sig").splitlines():
+        match = _ASSIGNMENT.match(line.strip())
+        if match:
+            lines[match["key"]] = line.strip()
+    return lines
+
+
+def _umask() -> int:
+    """The process umask, read without changing it for longer than the call."""
+    mask = os.umask(0o077)
+    os.umask(mask)
+    return mask
+
+
+def _write_text(path: Path, text: str, private: bool = False) -> None:
+    """Written whole, with LF line ends; private files readable by their owner only."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    handle, temporary = tempfile.mkstemp(prefix=f".{path.name}.", dir=path.parent)
+    try:
+        with os.fdopen(handle, "w", encoding="utf-8", newline="\n") as out:
+            out.write(text)
+        if os.name == "posix" and not private:
+            # mkstemp makes the file owner-only; a shared one gets the mode a
+            # plain open would have given it under the user's umask.
+            os.chmod(temporary, 0o666 & ~_umask())
+        os.replace(temporary, path)
+    except BaseException:
+        Path(temporary).unlink(missing_ok=True)
+        raise
+
+
+# Each bootstrap.env value derived from docker/.env, with the docker/.env
+# values it carries: a new one of those makes the derived value stale.
+DERIVED_FROM = {
+    "DATABASE_URL": ("POSTGRES_PASSWORD",),
+    "REDIS_URL": ("REDIS_PASSWORD",),
+    "MINIO_ENDPOINT": (),
+    "MINIO_ACCESS_KEY": ("MINIO_ROOT_USER",),
+    "MINIO_SECRET_KEY": ("MINIO_ROOT_PASSWORD",),
+    # The same keys as the containers', so a host process reads the same settings store.
+    "SETTINGS_ENCRYPTION_KEY": ("SETTINGS_ENCRYPTION_KEY",),
+    "JWT_SECRET_KEY": ("JWT_SECRET_KEY",),
+}
+
+
+def _derived(
+    root: Path, environ: Mapping[str, str], docker_env: Mapping[str, str]
+) -> dict[str, str]:
+    """bootstrap.env's values as docker/.env and the published ports give them."""
+    host = _host(environ, docker_env)
+    quote = urllib.parse.quote
+    user = docker_env.get("POSTGRES_USER") or "malspark"
+    database = docker_env.get("POSTGRES_DB") or "malspark"
+    postgres = port_of("POSTGRES_PORT", root, environ, docker_env)
+    redis = port_of("REDIS_PORT", root, environ, docker_env)
+    minio = port_of("MINIO_API_PORT", root, environ, docker_env)
+    return {
+        "DATABASE_URL": (
+            f"postgresql+asyncpg://{quote(user, safe='')}"
+            f":{quote(docker_env['POSTGRES_PASSWORD'], safe='')}"
+            f"@{host}:{postgres}/{quote(database, safe='')}"
+        ),
+        "REDIS_URL": f"redis://:{quote(docker_env['REDIS_PASSWORD'], safe='')}@{host}:{redis}/0",
+        "MINIO_ENDPOINT": f"{host}:{minio}",
+        "MINIO_ACCESS_KEY": docker_env["MINIO_ROOT_USER"],
+        "MINIO_SECRET_KEY": docker_env["MINIO_ROOT_PASSWORD"],
+        "SETTINGS_ENCRYPTION_KEY": docker_env["SETTINGS_ENCRYPTION_KEY"],
+        "JWT_SECRET_KEY": docker_env["JWT_SECRET_KEY"],
+    }
+
+
+def env_init(root: Path, environ: Mapping[str, str], force: bool = False) -> int:
+    """docker/.env and bootstrap.env from their examples; no secret value is printed.
+
+    A file already there is left as it is unless ``force``; rewritten, it
+    keeps every assignment it had, empty ones included, and only an empty
+    secret is generated. When docker/.env gets a new secret, every
+    bootstrap.env value that carries it is derived again, so the two files
+    never disagree; a bootstrap.env value is otherwise kept unless it is
+    empty or still the example's placeholder.
+    """
+    docker_env_path = root / "docker" / ".env"
+    bootstrap_path = root / "bootstrap.env"
+    needed = dict.fromkeys(source for sources in DERIVED_FROM.values() for source in sources)
+
+    # Compose expands $ in a value that is not single-quoted; parse_env does
+    # not, so the two would disagree on the secret. Refused before anything
+    # is written.
+    expanded = []
+    for key, line in _set_lines(docker_env_path).items():
+        raw = line.partition("=")[2].strip()
+        if key in needed and "$" in parse_env(line).get(key, "") and not raw.startswith("'"):
+            expanded.append(key)
+    if expanded:
+        print(
+            f"  FAIL     docker/.env: {', '.join(expanded)} holds a $ that compose would expand;"
+            " single-quote the value ('...') and run env init again",
+            file=sys.stderr,
+        )
+        return 1
+
+    # Both files are built in memory and checked first; nothing is written
+    # unless both can be, so a refusal leaves the two as they were.
+    generated: dict[str, str] = {}
+    docker_text: str | None = None
+    if not (docker_env_path.exists() and not force):
+        kept = _set_lines(docker_env_path)
+        generated = {
+            key: make()
+            for key, make in DOCKER_SECRETS.items()
+            if not parse_env(kept.get(key, "")).get(key)
+        }
+        kept = {key: line for key, line in kept.items() if key not in generated}
+        template = (root / "docker" / ".env.example").read_text(encoding="utf-8")
+        docker_text = _fill(template, generated, kept)
+    docker_env = parse_env(docker_text) if docker_text is not None else read_env(docker_env_path)
+
+    stale = sorted(k for k, sources in DERIVED_FROM.items() if set(sources) & set(generated))
+    bootstrap_text: str | None = None
+    drifted: list[tuple[str, str]] = []
+    old = read_env(bootstrap_path)
+    if not (bootstrap_path.exists() and not force and not stale):
+        empty = [key for key in needed if not docker_env.get(key)]
+        if empty:
+            print(
+                f"  FAIL     nothing written: docker/.env sets no {', '.join(empty)}",
+                file=sys.stderr,
+            )
+            return 1
+        derived = _derived(root, environ, docker_env)
+        kept = _set_lines(bootstrap_path)
+        for key in derived:
+            value = old.get(key, "")
+            if key in stale or not value or _PLACEHOLDER.search(value):
+                kept.pop(key, None)
+                continue
+            # Kept as written: say so when it no longer carries what docker/.env holds.
+            for source in DERIVED_FROM[key]:
+                current = docker_env[source]
+                carried = (
+                    urllib.parse.quote(current, safe="") in value
+                    if key.endswith("_URL")
+                    else value == current
+                )
+                if not carried:
+                    drifted.append((key, source))
+        template = (root / "bootstrap.env.example").read_text(encoding="utf-8")
+        try:
+            bootstrap_text = _fill(template, derived, kept)
+        except ValueError as error:
+            print(f"  FAIL     nothing written: {error}", file=sys.stderr)
+            return 1
+
+    if docker_text is None:
+        _say("  ok       docker/.env is there: left as it is (--force rewrites it, values kept)")
+    else:
+        _write_text(docker_env_path, docker_text, private=True)
+        made = ", ".join(sorted(generated)) or "none"
+        _say(f"  wrote    docker/.env (generated: {made})")
+    if bootstrap_text is None:
+        _say("  ok       bootstrap.env is there: left as it is (--force fills only what is empty)")
+        return 0
+    _write_text(bootstrap_path, bootstrap_text, private=True)
+    url = urllib.parse.urlsplit(parse_env(bootstrap_text).get("DATABASE_URL", ""))
+    try:
+        where = f"database on {url.hostname}:{url.port}"
+    except ValueError:
+        where = "database URL kept as written"
+    _say(f"  wrote    bootstrap.env ({where})")
+    for key, source in drifted:
+        _say(
+            f"  warn     bootstrap.env {key} does not carry docker/.env's {source}; kept as written"
+        )
+    if stale and old:
+        _say(f"  note     bootstrap.env derived again from the new docker/.env: {', '.join(stale)}")
+    return 0
+
+
+# ── doctor ───────────────────────────────────────────────────────────────────
+
+
+def _probe(argv: Sequence[str], timeout: float = 20) -> str | None:
+    """A read-only command's output, or None when it fails or is not there."""
+    try:
+        done = subprocess.run(
+            list(argv), capture_output=True, text=True, timeout=timeout, check=False
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+    return done.stdout.strip() if done.returncode == 0 else None
+
+
+def port_in_use(host: str, port: int) -> bool:
+    """Whether something already listens where compose would publish ``port``."""
+    family = socket.AF_INET6 if ":" in host else socket.AF_INET
+    with socket.socket(family, socket.SOCK_STREAM) as probe:
+        # On Windows a bind can share a port another socket opened for reuse;
+        # an exclusive bind is refused wherever anything holds it.
+        exclusive = getattr(socket, "SO_EXCLUSIVEADDRUSE", None)
+        if exclusive is not None:
+            probe.setsockopt(socket.SOL_SOCKET, exclusive, 1)
+        try:
+            probe.bind((host.strip("[]"), port))
+        except OSError:
+            return True
+    return False
+
+
+def windows_filesystem(path: Path) -> str | None:
+    """The file system the drive holding ``path`` is formatted with (Windows only)."""
+    if os.name != "nt":
+        return None
+    import ctypes
+
+    drive = os.path.splitdrive(str(path.resolve()))[0] + "\\"
+    name = ctypes.create_unicode_buffer(64)
+    windll = getattr(ctypes, "windll", None)
+    if windll is None:
+        return None
+    ok = windll.kernel32.GetVolumeInformationW(
+        ctypes.c_wchar_p(drive), None, 0, None, None, None, name, len(name)
+    )
+    return name.value if ok else None
+
+
+# Beyond this many characters a checkout's path leaves the deepest files of the
+# fetched trees little room under Windows' 260-character limit.
+LONG_CHECKOUT = 60
+
+
+def doctor_report(
+    root: Path,
+    environ: Mapping[str, str],
+    probe: Callable[[Sequence[str]], str | None] = _probe,
+    in_use: Callable[[str, int], bool] = port_in_use,
+    filesystem: Callable[[Path], str | None] = windows_filesystem,
+    windows: bool = os.name == "nt",
+) -> Iterator[str]:
+    """What this host has and lacks for the stack, one line each."""
+    bits = struct.calcsize("P") * 8
+    emulated = environ.get("PROCESSOR_ARCHITEW6432")
+    yield (
+        f"  machine  {platform.system()} {platform.machine()}"
+        + (f" (an {emulated} host)" if emulated else "")
+        + f", Python {platform.python_version()} {bits}-bit"
+    )
+    if (fs := filesystem(root)) and fs.upper() == "NTFS":
+        yield (
+            f"  warn     the checkout is on NTFS ({root}): a bind mount from it carries no"
+            " Linux owner or mode, so files the containers write under data/ do not keep"
+            " the ownership a Linux host gives them"
+        )
+    if windows and len(str(root)) > LONG_CHECKOUT:
+        yield (
+            f"  warn     the checkout's path is {len(str(root))} characters long: a deep file"
+            " under it can pass Windows' 260-character limit; a shorter one (C:\\src\\malspark)"
+            " avoids it"
+        )
+    docker = shutil.which("docker", path=environ.get("PATH"))
+    if docker is None:
+        yield "  missing  docker" + _install_hint("docker")
+    else:
+        yield f"  docker   {docker}"
+        engine = probe(["docker", "version", "--format", "{{.Server.Os}} {{.Server.Version}}"])
+        if engine is None:
+            yield (
+                "  warn     the Docker engine does not answer:"
+                " start Docker Desktop or the docker service"
+            )
+        else:
+            server_os, _, version = engine.partition(" ")
+            if server_os == "linux":
+                yield f"  engine   Linux containers, server {version}"
+            else:
+                yield (
+                    f"  warn     the engine runs {server_os} containers:"
+                    " switch Docker Desktop to Linux containers"
+                )
+        compose = probe(["docker", "compose", "version", "--short"])
+        if compose is None:
+            yield "  missing  the docker compose plugin (compose v2)"
+        else:
+            major = compose.lstrip("v").split(".", 1)[0]
+            note = "" if major.isdigit() and int(major) >= 2 else ": compose v2 or later is needed"
+            yield f"  compose  {compose}{note}"
+    docker_env = read_env(root / "docker" / ".env")
+    if not (root / "docker" / ".env").is_file():
+        yield "  missing  docker/.env: run env init"
+    host = _host(environ, docker_env).strip("[]")
+    taken = []
+    for name in sorted(published_ports(root)):
+        port = port_of(name, root, environ, docker_env)
+        if in_use(host, port):
+            taken.append((port, name))
+    if taken:
+        listed = ", ".join(f"{port} ({name})" for port, name in taken)
+        yield f"  in use   {listed} on {host}: the stack's own, or another program's"
+        # A port another program holds is moved by its variable; a host process
+        # then needs Postgres's new port in bootstrap.env's DATABASE_URL too.
+        names = " or ".join(name for _, name in taken)
+        yield (
+            f"  hint     to publish elsewhere, set {names} in docker/.env"
+            + (
+                ", and the same port in bootstrap.env's DATABASE_URL"
+                if any(n == "POSTGRES_PORT" for _, n in taken)
+                else ""
+            )
+        )
+    else:
+        yield f"  ports    every published port is free on {host}"
+    for tree in [root / "external" / t.name for t in TARGETS if t.default]:
+        state = "present" if tree.is_dir() else "missing  (run external)"
+        yield f"  tree     {tree.relative_to(root).as_posix()} {state}"
+    for corpus in CORPORA:
+        state = "present" if (root / corpus).is_dir() else "missing  (run external)"
+        yield f"  data     {corpus} {state}"
+
+
+# ── setup ────────────────────────────────────────────────────────────────────
+
+
+def setup_plan(root: Path, dev: bool) -> list[Step]:
+    """The host environment a developer works in; a stack user needs none of it."""
+    if not dev:
+        return []
+    return [
+        Step(("uv", "sync", "--all-extras", "--all-packages"), root),
+        Step(("uv", "run", "pre-commit", "install"), root),
+    ]
+
+
+# ── Command line ─────────────────────────────────────────────────────────────
+
+STACK_COMMANDS = {
+    "up": ("dev-up", "start the development stack"),
+    "down": ("dev-down", "stop the development stack, optional services included"),
+    "logs": ("dev-logs", "follow the development stack's logs"),
+    "docker-up": (None, "start the production stack"),
+    "docker-down": (None, "stop the production stack, optional services included"),
+    "docker-logs": (None, "follow the production stack's logs"),
+    "docker-build": (None, "build the production images"),
+    "migrate": (None, "apply the API's migrations to bootstrap.env's DATABASE_URL"),
+    "fe-rebuild": (None, "rebuild and restart the production frontend"),
+    "worker-restart": (None, "restart the production worker"),
+}
+
+
+def build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(
+        prog="malspark_dev.py", description=__doc__.split("\n\n", 1)[0]
+    )
+    commands = parser.add_subparsers(dest="command", required=True, metavar="COMMAND")
+
+    setup = commands.add_parser(
+        "setup", help="fetch what the stack needs; --dev adds the host environment"
+    )
+    setup.add_argument(
+        "--dev",
+        action="store_true",
+        help="also uv sync --all-extras --all-packages and pre-commit install",
+    )
+
+    external = commands.add_parser("external", help="fetch the pinned third-party trees and data")
+    external.add_argument("names", nargs="*", metavar="NAME", help="only these trees")
+
+    env = commands.add_parser("env", help="the stack's env files")
+    env_commands = env.add_subparsers(dest="env_command", required=True, metavar="init")
+    init = env_commands.add_parser(
+        "init", help="docker/.env and bootstrap.env with generated secrets"
+    )
+    init.add_argument(
+        "--force", action="store_true", help="rewrite existing files, keeping the values they set"
+    )
+
+    commands.add_parser("doctor", help="what this host has and lacks (informative)")
+
+    for name, (alias, text) in STACK_COMMANDS.items():
+        sub = commands.add_parser(name, help=text, aliases=[alias] if alias else [])
+        sub.set_defaults(command=name)
+        sub.add_argument("--dry-run", action="store_true", help="print the commands, run nothing")
+        if name in ("up", "down", "logs"):
+            sub.add_argument(
+                "-f", "--file", action="append", default=[], metavar="FILE",
+                help="one more compose file after COMPOSE_FILE_EXTRA's (repeatable)",
+            )  # fmt: skip
+
+    admin = commands.add_parser(
+        "create-admin", help="the first admin account, in the running stack"
+    )
+    admin.add_argument("email", metavar="EMAIL")
+    admin.add_argument("--dry-run", action="store_true", help="print the command, run nothing")
+    return parser
+
+
+def main(argv: Sequence[str] | None = None, root: Path = REPO_ROOT) -> int:
+    args = build_parser().parse_args(argv)
+    environ = dict(os.environ)
+
+    if args.command == "external":
+        return fetch_external(args.names, Layout.of(root, environ))
+    if args.command == "setup":
+        status = run_steps(setup_plan(root, args.dev), environ, root)
+        if status:
+            return status
+        status = fetch_external([], Layout.of(root, environ))
+        if status == 0 and not (root / "docker" / ".env").exists():
+            _say("")
+            _say("Next: uv run --no-project python scripts/dev/malspark_dev.py env init")
+        return status
+    if args.command == "env":
+        return env_init(root, environ, force=args.force)
+    if args.command == "doctor":
+        for line in doctor_report(root, environ):
+            _say(line)
+        return 0
+
+    if args.command == "create-admin" and not args.email:
+        print("usage: malspark_dev.py create-admin EMAIL", file=sys.stderr)
+        return 2
+    ctx = Context.here(root, getattr(args, "file", ()))
+    steps = stack_plan(args.command, ctx, getattr(args, "email", None))
+    if args.command == "docker-up":
+        warn_missing_corpora(root)
+    if args.dry_run:
+        for step in steps:
+            _say(describe(step, root))
+        return 0
+    return run_steps(steps, environ, root)
+
+
+if __name__ == "__main__":
+    sys.exit(main())

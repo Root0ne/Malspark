@@ -73,6 +73,10 @@ services:
       POSTGRES_DB: ${POSTGRES_DB:-malspark}
       POSTGRES_USER: ${POSTGRES_USER:-malspark}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in docker/.env (see README)}
+    # 5432 on the host, whichever stack starts it, unless POSTGRES_PORT moves it
+    # (in docker/.env, say, when the host runs a Postgres of its own there):
+    # the port bootstrap.env's DATABASE_URL names, which env init writes from
+    # POSTGRES_PORT or this default.
     ports:
       - "${BIND_ADDRESS:-127.0.0.1}:${POSTGRES_PORT:-5432}:5432"
     volumes:
@@ -206,7 +210,7 @@ services:
       dockerfile: docker/Dockerfile
       # The Ghidra release the pinned tree's pom.xml builds against, passed here
       # so the image does not lean on the Dockerfile's default. The patch
-      # scripts/dev/fetch_external.sh applies moves that default to the same
+      # scripts/dev/malspark_dev.py external applies moves that default to the same
       # release: change the three together.
       args:
         GHIDRA_VERSION: "12.0.4"
