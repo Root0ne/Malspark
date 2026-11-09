@@ -1,0 +1,264 @@
+"""The analyst report's appendix prints an analyst's statement in the sample's terms.
+
+An analyst writes a statement for the debate: it numbers the claims it leans
+on ("(claim 72)", "in CLAIM 43"), labels a claim it checked again ("Verdict:
+CONFIRMED.", "CONFIRMED, …") and may name an analyst. The appendix prints the
+statement without those markers where the sentence stands without them,
+leaves out a sentence that does not and says how many it left out; the bundle
+prints every statement whole. Only claim numbers, the outcome words and the
+run's analysts' names are markers: the sample's own words never are, and a
+statement adds a value only by what it prints (T-566).
+"""
+
+from __future__ import annotations
+
+import pytest
+
+from malspark.reporting.models import (
+    CapabilityCell,
+    FileHashes,
+    MalwareReport,
+    SampleIdentity,
+    StaticAnalysis,
+)
+from malspark.reporting.renderers import MarkdownRenderer
+from malspark.reporting.renderers.layout import ANALYST, BUNDLE
+
+# The haiku13 shapes, the values changed.
+_PARENTHESISED = (
+    "static: [Static] Routine 0x3808 deletes the installed copy. It builds the install path "
+    'with 0x30d0 (the folder "Custom_upd" and the volume-derived "Upd_%x" name, claim 72) '
+    "and 0x3250. It renames the running image to the stream (0x3a24, claim 43), then "
+    "deletes the copy through NtDeleteFile."
+)
+_LABELLED = (
+    "static: [Static] Process listing: 0x1c38 lists processes with CreateToolhelp32Snapshot "
+    'and writes "&plist=[". Verdict: CONFIRMED. Child processes are gathered through '
+    "0x14d8."
+)
+_OWN_BRACKET = (
+    "static: The reply is decrypted and split into tokens by 0x541c, which is carried over "
+    "the HTTP session (claim 11). Tokens: CLEARURL calls 0xce20."
+)
+_EMBEDDED = (
+    "static: The beacon report carries the process list (PLIST_FIELD). The report travels "
+    "over the HTTP channel in claim 5, and no other channel is asserted, so T1048 is not "
+    "used. The host-reading routines are in CLAIM 43."
+)
+# The haiku10 shapes: a claim number closing a phrase, a bare outcome label.
+_CLOSING = (
+    "static: The reply is base64-decoded by 0x6370 and parsed over the HTTP(S) channel of CLAIM 26."
+)
+_BARE_LABELS = (
+    "static: CONFIRMED, command dispatch in 0x3cf4 selects the handler. CONFIRMED in "
+    "structure. VERDICT: refined. 0x7777 parses VALUE_Y."
+)
+_NAMED = "static_r2: The routine 0x7b98 reads the AppDataDir name, as static_r2 found."
+
+
+def _report(*statements: str) -> MalwareReport:
+    return MalwareReport(
+        identity=SampleIdentity(hashes=FileHashes(sha256="ab" * 32), file_name="sample.dll"),
+        verdict="Malware",
+        static=StaticAnalysis(
+            api_technique_hits=[
+                {
+                    "technique_id": "T1057",
+                    "matched_apis": ["Process32FirstW"],
+                    "resolved_apis": ["Process32FirstW"],
+                }
+            ]
+        ),
+        capability_matrix=[
+            CapabilityCell(
+                tactic="TA0007",
+                tactic_name="Discovery",
+                technique_id="T1057",
+                technique_name="Process Discovery",
+                statements=list(statements),
+            )
+        ],
+        run_summary={"profile": {"analysts": ["static_r2", "dynamic"]}},
+    )
+
+
+def _appendix(report: MalwareReport) -> str:
+    markdown = MarkdownRenderer(layout=ANALYST).render(report)
+    if "### Analyst statements that add detail" not in markdown:
+        return ""
+    return markdown.split("### Analyst statements that add detail", 1)[1].split("\n### ", 1)[0]
+
+
+def test_a_marker_that_stands_apart_is_taken_out_and_the_sentence_kept() -> None:
+    printed = _appendix(_report(_PARENTHESISED, _LABELLED, _OWN_BRACKET, _CLOSING))
+
+    assert '"Upd_%x" name) and 0x3250.' in printed
+    assert "to the stream (0x3a24), then deletes" in printed
+    assert 'writes "&plist=[". Child processes' in printed
+    assert "over the HTTP session. Tokens: CLEARURL" in printed
+    assert "base64-decoded by 0x6370 and parsed over the HTTP(S) channel." in printed
+    for marker in ("claim", "CLAIM", "Verdict", "CONFIRMED"):
+        assert marker not in printed
+    assert "left out" not in printed
+
+
+def test_an_outcome_label_goes_and_what_it_labels_stays() -> None:
+    printed = _appendix(_report(_BARE_LABELS))
+
+    assert "Command dispatch in 0x3cf4 selects the handler. 0x7777 parses VALUE_Y." in printed
+    for marker in ("CONFIRMED", "refined", "VERDICT", "structure"):
+        assert marker not in printed
+    assert "1 sentence of them was left out; the bundle prints every statement whole." in printed
+
+
+def test_a_sentence_that_does_not_stand_without_it_is_left_out_and_counted() -> None:
+    printed = _appendix(_report(_EMBEDDED, _NAMED))
+
+    assert "carries the process list (PLIST_FIELD)." in printed
+    assert "over the HTTP channel, and no other channel is asserted, so T1048" in printed
+    assert "host-reading" not in printed and "CLAIM" not in printed
+    assert "static_r2 found" not in printed
+    assert "2 sentences of them were left out; the bundle prints every statement whole." in (
+        printed
+    )
+
+
+def test_a_statement_left_out_whole_is_still_counted() -> None:
+    printed = _appendix(_report("static: The routine 0x9999 is in CLAIM 43."))
+
+    assert "0x9999" not in printed
+    assert "1 sentence of them was left out; the bundle prints every statement whole." in printed
+
+
+def test_a_label_takes_no_word_of_the_sample_with_it() -> None:
+    printed = _appendix(
+        _report(
+            "static: 0x1c38 lists processes. Verdict: CONFIRMED API hashing resolves NtQsi_X.",
+            "static: Verdict: REFINED HTTP POST beacon to ZZ_HOST_VALUE.",
+            'static: The sample logs "Verdict: MALICIOUS" through LOG_FN_X.',
+        )
+    )
+
+    assert "0x1c38 lists processes. API hashing resolves NtQsi_X." in printed
+    assert "HTTP POST beacon to ZZ_HOST_VALUE." in printed
+    assert 'The sample logs "Verdict: MALICIOUS" through LOG_FN_X.' in printed
+    assert "left out" not in printed
+
+
+def test_a_claim_of_the_debate_is_known_by_the_words_around_it() -> None:
+    # The haiku7, haiku9, haiku11 and run5 shapes, the values changed.
+    printed = _appendix(
+        _report(
+            "static: The window is hidden (NO_WINDOW_X). The fetch is the claim 17 path.",
+            "static: 0x3a24 sets INFO_CLASS_X. The point in peer claim 31 is superseded.",
+            "static: 0x6e04 runs PAYLOAD_X. T1218 is not asserted here; Claim 12 covers it.",
+            "static: CORRECTION of my round-0 claims 20 and 51. 0x6f48 writes FILE_X.",
+            "static: [Command dispatch — CONFIRMED] 0x3cf4 selects HANDLER_X.",
+        )
+    )
+
+    for kept in (
+        "The window is hidden (NO_WINDOW_X).",
+        "0x3a24 sets INFO_CLASS_X.",
+        "0x6e04 runs PAYLOAD_X.",
+        "0x6f48 writes FILE_X.",
+        "[Command dispatch] 0x3cf4 selects HANDLER_X.",
+    ):
+        assert kept in printed
+    for marker in ("claim", "Claim", "CONFIRMED", "CORRECTION"):
+        assert marker not in printed
+    assert "4 sentences of them were left out" in printed
+
+
+@pytest.mark.parametrize(
+    "statement",
+    [
+        "static: The ransom note at 0x5555 claims 2 victims via NOTE_X.",
+        "static: The stealer copies the Ledger Live data and the WALLET_DIR_X folder at 0x4444.",
+        "static: The implant answers tool calls from its MCP_CLIENT_X at 0x8888.",
+        "static: The earlier analysis by the vendor names DROPPER_X at 0x9999.",
+        'static: The panel string "Claim 7 payload" is decoded at 0xa002 (CLAIM_Y).',
+        "static: The license check at 0xa004 cites PATENT_X, see claim 2 in the patent.",
+        "static: REFUTED: access denied is printed by 0xa005 via PRINT_X.",
+        'static: The sample prints "REFUTED: access denied" via 0xa006 PRINT_Y.',
+        "static: CONFIRMED orders are exfiltrated by 0xa007 ORDERS_X.",
+        "static: The tool writes a [CONFIRMED] tag via 0xa008 TAG_X.",
+        "static: The ransom note at 0xa009 claims 4 and 8 GB were taken (NOTE_Y).",
+        "static: Claim 1 BTC is the demand at 0xa00a WALLET_Y.",
+        # A claim number inside a phrase that goes on is no clause to take out.
+        "static: The dropper writes the file named in claims 3 to 5 of the config, at 0xa00b "
+        "CFG_X.",
+        "static: The handler reads field of claim 9 from 0xa00c (FIELD_X).",
+    ],
+)
+def test_the_sample_s_own_words_are_never_markers(statement: str) -> None:
+    printed = _appendix(_report(statement))
+
+    assert statement.removeprefix("static: ") in printed
+    assert "left out" not in printed
+
+
+def test_a_claim_number_is_no_value_that_earns_a_statement_its_place() -> None:
+    # Every value but the label is printed already; the label adds none.
+    report = _report(_OWN_BRACKET, "static: 0x541c splits the reply. Verdict: REFINED.")
+
+    printed = _appendix(report)
+
+    assert "0x541c splits the reply" not in printed
+
+
+def test_a_statement_adds_a_value_only_by_what_it_prints() -> None:
+    # Its only new value stands in the sentence left out: the rest is printed once.
+    printed = _appendix(
+        _report(
+            "static: 0x1c38 lists processes.",
+            "static: 0x1c38 lists processes. The key KEY_ONLY_HERE is in claim 5.",
+        )
+    )
+
+    assert printed.count("0x1c38 lists processes.") == 1
+    assert "KEY_ONLY_HERE" not in printed
+    assert "1 sentence of them was left out" in printed
+
+
+def test_the_bundle_prints_every_statement_whole() -> None:
+    report = _report(_PARENTHESISED, _LABELLED, _OWN_BRACKET, _EMBEDDED, _NAMED, _BARE_LABELS)
+
+    bundle = MarkdownRenderer(layout=BUNDLE).render(report)
+
+    for text in (
+        "claim 72",
+        "Verdict: CONFIRMED.",
+        "(claim 11)",
+        "in claim 5",
+        "in CLAIM 43",
+        "static_r2 found",
+        "CONFIRMED in structure.",
+    ):
+        assert text in bundle
+
+
+def test_an_analyst_s_name_is_read_as_written_and_whole() -> None:
+    report = _report("win32: Win32 API calls at 0xa00d resolve GetProcAddress_X.")
+    report.run_summary = {"profile": {"analysts": ["win32", "static_r2"]}}
+
+    printed = _appendix(report)
+
+    assert "Win32 API calls at 0xa00d resolve GetProcAddress_X." in printed
+    assert "left out" not in printed
+
+
+def test_a_claim_the_debate_owns_inside_a_phrase_is_left_out_and_counted() -> None:
+    # Telling a noun that goes on from a verb would take reading the grammar: the
+    # sentence is left out, counted, and printed whole in the bundle.
+    printed = _appendix(
+        _report(
+            "static: The beacon follows the claim 3 of the C2 protocol at 0xa001 (CLAIM_X).",
+            "static: Claim 7 payload is fetched by 0xa003 (CLAIM_Z).",
+        )
+    )
+
+    assert "0xa001" not in printed and "0xa003" not in printed
+    assert "2 sentences of them were left out; the bundle prints every statement whole." in (
+        printed
+    )

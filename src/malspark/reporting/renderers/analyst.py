@@ -35,6 +35,7 @@ from malspark.pipeline.validation import NUMERIC_CONFIDENCE_CODE, UNPUBLISHED_VA
 from malspark.reporting.composer_pro import (
     _NUMERIC_CONFIDENCE,
     ValueReader,
+    agent_names,
     carrying_form,
     sentences,
     values_not_carried,
@@ -114,6 +115,8 @@ _IDENTIFIER_NOT_EXPORTED = (
 )
 # Where a reader of this report finds every process the sandbox recorded.
 _BUNDLE_TREE = "the evidence bundle's process tree"
+# The bundle's section that prints the category with the export's malware types.
+_VERDICT_SECTION = "Verdict and assessment"
 # The entropy above which the single-file report flags a section [HIGH].
 _HIGH_ENTROPY = 7.0
 # Up to how many imports the metadata names one by one.
@@ -122,10 +125,95 @@ _IMPORTS_NAMED = 10
 _NEW_VALUES = 1
 # The analyst layer a statement is labelled with ("static: …").
 _LAYER_LABEL = re.compile(r"^\s*[\w.-]+:\s+")
+# The outcome an analyst writes of a claim it checked again: how a statement
+# was made, never a fact of the sample.
+_OUTCOME = "(?:" + _PIPE.join(("CONFIRMED", "REFINED", "REJECTED", "REFUTED")) + ")"
+# That outcome labelled as a verdict where a sentence opens ("Verdict: CONFIRMED.",
+# "VERDICT: refined", "Verdict: CONFIRMED API hashing …"): the label alone goes, so
+# what follows it stays, and a quoted string the sample holds is never one.
+_VERDICT_LEAD = re.compile(rf"(?i:verdict)\s*:\s*(?i:{_OUTCOME})\b\s*[,:;.]?\s*")
+# The outcome in capitals opening a sentence as a label before what it says
+# ("CONFIRMED, command dispatch in 0x3cf4 …"): the label goes, the sentence stays.
+# A colon before lower-case words reads as a string the sample prints ("REFUTED:
+# access denied"), and is left as written.
+_OUTCOME_LABEL = re.compile(rf"{_OUTCOME}\s*(?:[,;.]" + _PIPE + r":(?!\s*[a-z]))\s*")
+# ... or as the head of a sentence about the claim itself ("CONFIRMED in structure."),
+# left out only where the sentence names no value: one that does is the sample's.
+_OUTCOME_HEAD = re.compile(rf"{_OUTCOME}\s+[a-z]")
+_OUTCOME_WORD = re.compile(rf"\b{_OUTCOME}\b")
+# The outcome closing a bracketed heading the analyst wrote ("[Command dispatch —
+# CONFIRMED]") or standing in brackets of its own ("(REFINED)", "[CONFIRMED]").
+_OUTCOME_BRACKETED = (
+    re.compile(rf"\s*[—–:-]+\s*{_OUTCOME}\s*(?=\])"),
+    # ... never a tag a word follows, which is the sample's ("writes a [CONFIRMED] tag").
+    re.compile(rf"\s*[\[(]\s*{_OUTCOME}\s*[\])](?!\s*\w)"),
+)
+# An analyst's claim named by its number: "claim 72", "CLAIM 43", "claims 12 and 13".
+_CLAIM_REF = (
+    r"\bclaims?\s+(?:no\.?\s*"
+    + _PIPE
+    + r"#)?\d+(?:\s*(?:"
+    + _PIPE.join((",", "and", "to"))
+    + r")\s*#?\d+)*\b"
+)
+_CLAIM = re.compile(_CLAIM_REF, re.IGNORECASE)
+# A quantity after the number, which makes it the sample's: "claims 4 and 8 GB",
+# "Claim 1 BTC is the demand".
+_CLAIM_QUANTITY = re.compile(
+    r"\s*(?:(?:"
+    + _PIPE.join((r"[KMGT]i?B", r"bytes?", r"days?", r"hours?", r"minutes?", r"seconds?"))
+    + _PIPE
+    + _PIPE.join(("times", "USD", "EUR", "BTC", r"prizes?"))
+    + r")\b"
+    + _PIPE
+    + "%)"
+)
+# A quoted string, whose words are the sample's: "…", “…”, `…`.
+_QUOTED = re.compile(r'"[^"]*"' + _PIPE + "\u201c[^\u201d]*\u201d" + _PIPE + r"`[^`]*`")
+# A claim number in brackets of its own, or at a bracket's edge: "(claim 11)",
+# "(0x3a24, claim 43)", "(claim 3, the decoder)".
+_CLAIM_BRACKETED = (
+    re.compile(r"\s*\(\s*" + _CLAIM_REF + r"\s*\)", re.IGNORECASE),
+    re.compile(r"\s*[,;]\s*" + _CLAIM_REF + r"\s*(?=\))", re.IGNORECASE),
+    re.compile(r"(?<=\()\s*" + _CLAIM_REF + r"\s*[,;]\s*", re.IGNORECASE),
+)
+# The words before a claim number that make it one claim of the debate.
+_CLAIM_OWNER = re.compile(
+    r"(?:\b(?:"
+    + _PIPE.join(("the", "this", "that", "these", "those", "my", "our", "its", "their", "peer"))
+    + r")"
+    + _PIPE
+    + r"\bround-?\d+)\s+$",
+    re.IGNORECASE,
+)
+# A claim number closing a phrase it qualifies: "the channel of CLAIM 26.", "in
+# claim 5, and"; never one inside a phrase that goes on ("named in claims 3 to 5 of
+# the config").
+_CLAIM_CLAUSE = re.compile(
+    r"(\s*\b\w+)\s+(?:"
+    + _PIPE.join(("in", "of", "see", "per", "from", "by", "under"))
+    + r")\s+"
+    + _CLAIM_REF
+    + r"(?=\s*(?:[,;:.)]"
+    + _PIPE
+    + "$))",
+    re.IGNORECASE,
+)
+# The words before such a phrase that leave nothing standing without it: "the
+# routines are in CLAIM 43", "as described in claim 5".
+_CLAIM_CARRIES = frozenset(
+    "is are was were be been being see described listed given shown covered stated noted "
+    "discussed detailed established explained argued made as".split()
+)
 
 # The anchor of a heading in the evidence bundle's HTML: its title without its
 # number and voice tag, as the HTML renderer slugs it.
 _SLUG = re.compile(r"[^a-z0-9]+")
+
+
+def _quoted_spans(text: str) -> list[tuple[int, int]]:
+    """Where ``text`` quotes a string (:data:`_QUOTED`)."""
+    return [found.span() for found in _QUOTED.finditer(text)]
 
 
 def bundle_anchor(title: str) -> str:
@@ -663,6 +751,9 @@ class _Analyst:
         self.report = report
         self.ctx = ctx
         self.notes = CitationNotes(ctx)
+        # A model-written cell cites as this report's prose does: each bracketed
+        # group of evidence ids a note marker (``CitationNotes.moved``).
+        ctx.cell_citations = self.notes.moved
         self.ta = report.technical_analysis
         # The composer's procedure of each published technique, by id (``attack``).
         self._procedures: dict[str, Any] = {}
@@ -795,6 +886,19 @@ class _Analyst:
             return "-"
         return _one_line(self.notes.moved(self.ctx.plain(kept), ids))
 
+    def _as_written[T](self, build: Callable[[], T]) -> T:
+        """What ``build`` writes with the shared writers, each cell's citations as written.
+
+        For a block whose notes this report numbers in one pass afterwards
+        (:meth:`CitationNotes.moved`), so they follow reading order: a cell's
+        note is never numbered before a note printed above it.
+        """
+        cite, self.ctx.cell_citations = self.ctx.cell_citations, None
+        try:
+            return build()
+        finally:
+            self.ctx.cell_citations = cite
+
     def _findings(self, rows: list[dict[str, str]]) -> list[str]:
         """The platform's unresolved findings on a section, one item each."""
         return [
@@ -834,15 +938,21 @@ class _Analyst:
         return category if category and category.lower() != "unknown" else ""
 
     def _subsection(
-        self, number: str, title: str, prose: list[TechnicalSubsection | None], body: list[str]
+        self,
+        number: str,
+        title: str,
+        prose: list[TechnicalSubsection | None],
+        body: list[str] | Callable[[], list[str]] | None,
     ) -> list[str]:
+        """A subsection: its prose, then its body; a body given as a function is written
+        after the prose, so its notes are numbered in reading order."""
         parts = [sub for sub in prose if sub is not None and sub.body.strip()]
         if not parts and not body:
             return []
         lines = [_subheading(number, title), ""]
         for sub in parts:
             lines.extend([self._prose(sub.body, sub.evidence_refs), ""])
-        lines.extend(body)
+        lines.extend(body() if callable(body) else body or [])
         return [*lines, ""]
 
     # -- title block ------------------------------------------------------
@@ -864,8 +974,18 @@ class _Analyst:
         facts = [f"**Verdict:** {self._verdict()}", f"**Severity:** {_one_line(severity)}"]
         facts.append(f"**Family:** {self._family()}")
         if self._category():
-            facts.append(f"**Category:** {self._category()}{ctx.category_mark}")
+            # The check of the category against the export's malware types is a
+            # mark the single-file report prints on its category lines, which
+            # the bundle prints whole; the analyst report prints no mark (T-555),
+            # only a line under the header saying where both are stated.
+            facts.append(f"**Category:** {self._category()}")
         lines.append(" · ".join(facts) + "  ")
+        if self._category() and ctx.category_mark:
+            where = _VERDICT_SECTION
+            lines.append(
+                "_The STIX export's malware types differ from this category; the evidence "
+                f"bundle states both ([{where}]({BUNDLE_HTML}#{bundle_anchor(where)}))._  "
+            )
         ident = report.identity
         lines.append(
             f"**Sample:** {_code_span(ident.hashes.sha256 or 'unknown')} "
@@ -1126,7 +1246,7 @@ class _Analyst:
         if report.capabilities_narrative:
             body = [self._prose(p) + "\n" for p in report.capabilities_narrative if p.strip()]
             blocks.extend(self._subsection(numbered(), "Overview", [], body))
-        cipher: list[str] = []
+        cipher: Callable[[], list[str]] | None = None
         enc = ta.encryption_scheme if ta is not None else None
         if enc is not None and not _encrypts_files(enc):
             cipher = self._encryption(enc)
@@ -1158,7 +1278,8 @@ class _Analyst:
                 self._subsection(numbered(), "Payloads and dropped files", prose, payloads)
             )
         if ta is not None:
-            family = _ransomware_block(ta, ctx, ransomware=_states_ransomware(report))
+            ransomware = _states_ransomware(report)
+            family = self._as_written(lambda: _ransomware_block(ta, ctx, ransomware=ransomware))
             if family:
                 head, _, rest = family.partition("\n")
                 title = head.split(" · ", 1)[0].removeprefix("### 5.9 ")
@@ -1167,14 +1288,21 @@ class _Analyst:
         lines.extend(blocks or ["The report model described no capability in this run.", ""])
         return "\n".join([*lines, _behind("functionality")])
 
-    def _encryption(self, enc: Any) -> list[str]:
-        table = _encryption_table(enc, self.ctx)
+    def _encryption(self, enc: Any) -> Callable[[], list[str]] | None:
+        """The scheme's table, written when its place is reached (:meth:`_subsection`), or
+        ``None`` where the model filled no field of it."""
+        table = self._as_written(lambda: _encryption_table(enc, self.ctx))
         if not table:
-            return []
-        # The table's own evidence row is its last; the citation is the note.
-        rows = table[2:-1]
-        cited = self.notes.marker([enc.evidence_ref or ""])
-        return ["Encryption scheme" + cited + ":", "", *rows, ""]
+            return None
+
+        def lines() -> list[str]:
+            # The table's own evidence row is its last; the citation is the note,
+            # numbered after the prose above the table and before its cells.
+            cited = self.notes.marker([enc.evidence_ref or ""])
+            rows = [self.notes.moved(row) for row in table[2:-1]]
+            return ["Encryption scheme" + cited + ":", "", *rows, ""]
+
+        return lines
 
     def _persistence(self) -> list[str]:
         report, ctx = self.report, self.ctx
@@ -1911,9 +2039,106 @@ class _Analyst:
 
     # -- appendix ----------------------------------------------------------
 
-    def _statements(self) -> list[str]:
+    def _named(self) -> re.Pattern[str] | None:
+        """The run's analysts' identifier names (``composer_pro.agent_names``), or ``None``."""
+        names = agent_names(self.report)
+        if not names:
+            return None
+        # As written and as a whole token: "win32" names an analyst, "Win32 API" does not.
+        return re.compile(
+            r"(?<![\w.-])(?:" + _PIPE.join(re.escape(name) for name in names) + r")(?![\w-])"
+        )
+
+    @staticmethod
+    def _claims_out(sentence: str) -> tuple[str, bool]:
+        """``sentence`` without the claim numbers that stand apart from it, and whether it
+        stands without the rest (:meth:`_without_markers`). A claim number inside a
+        quoted string is the sample's, and read as none."""
+
+        def quoted(found: re.Match[str]) -> bool:
+            return any(a <= found.start() < b for a, b in _quoted_spans(found.string))
+
+        for bracketed in _CLAIM_BRACKETED:
+            sentence = bracketed.sub(lambda m: m.group(0) if quoted(m) else "", sentence)
+        stands = True
+
+        def clause(found: re.Match[str]) -> str:
+            nonlocal stands
+            if quoted(found):
+                return found.group(0)
+            if found.group(1).strip().lower() in _CLAIM_CARRIES:
+                stands = False
+                return found.group(0)
+            return found.group(1)
+
+        sentence = _CLAIM_CLAUSE.sub(clause, sentence)
+        for found in _CLAIM.finditer(sentence):
+            ref = found.group(0)
+            if quoted(found) or _CLAIM_QUANTITY.match(sentence, found.end()):
+                continue
+            # A claim number capitalised, opening the sentence, after a word that
+            # makes it one claim of the debate ("the claim 17 path", "peer claim
+            # 31", "my round-0 claims 20 and 51"), or singular with no word after
+            # it is the analyst's; "claims 2 victims" is the sample's.
+            if (
+                ref[0] == "C"
+                or found.start() == 0
+                or _CLAIM_OWNER.search(sentence[: found.start()])
+                or (
+                    not ref.lower().startswith("claims")
+                    and not re.match(r"\s*\w", sentence[found.end() :])
+                )
+            ):
+                stands = False
+        return sentence, stands
+
+    def _without_markers(self, text: str, named: re.Pattern[str] | None) -> tuple[str, int]:
+        """``text`` as the appendix prints it, and how many of its sentences were left out.
+
+        What the debate wrote of a claim is taken out where the sentence stands
+        without it: an outcome label ("Verdict: CONFIRMED.", "CONFIRMED, …"), a
+        claim number in brackets or closing a phrase ("the channel of CLAIM
+        26"), an analyst's name in brackets. A sentence that does not stand
+        without one ("the routines are in CLAIM 43", "CONFIRMED in structure.",
+        "as static_r2 found") is left out and counted. Words of the sample are
+        never read as markers: only claim numbers, the outcome words and the
+        run's analysts' names are.
+        """
+        kept: list[str] = []
+        left = 0
+        for sentence in sentences(text):
+            label = _VERDICT_LEAD.match(sentence) or _OUTCOME_LABEL.match(sentence)
+            if label:
+                sentence = sentence[label.end() :]
+                if not sentence:
+                    continue
+                sentence = sentence[0].upper() + sentence[1:]
+            elif _OUTCOME_HEAD.match(sentence) and not _VALUE.search(
+                _OUTCOME_WORD.sub("", sentence)
+            ):
+                left += 1
+                continue
+            for bracketed in _OUTCOME_BRACKETED:
+                sentence = bracketed.sub("", sentence)
+            sentence, stands = self._claims_out(sentence)
+            if named is not None:
+                sentence = re.sub(r"\s*\(\s*" + named.pattern + r"\s*\)", "", sentence)
+                stands = stands and not named.search(sentence)
+            if not stands:
+                left += 1
+                continue
+            kept.append(sentence)
+        return " ".join(kept), left
+
+    def _statements(self) -> tuple[list[str], int]:
         """The analysts' statements of the ATT&CK section's rule-matched techniques that add a
-        value: each fact once, so one whose values the report already prints is left out."""
+        value: each fact once, so one whose values the report already prints is left out.
+
+        A statement is printed without what the debate wrote of a claim
+        (:meth:`_without_markers`), and adds a value only by what it prints;
+        the second value counts the sentences left out of the statements whose
+        facts add one. The bundle prints every statement whole.
+        """
         from malspark.reporting.renderers.markdown import _is_mbc_id, _tactic_key
 
         report = self.report
@@ -1922,7 +2147,9 @@ class _Analyst:
         for hit in hits:
             by_tid.setdefault(str(hit.get("technique_id") or ""), []).append(hit)
         have = set(_VALUE.findall("\n".join(self.written)))
+        named = self._named()
         out: list[str] = []
+        left = 0
         for cell in sorted(report.capability_matrix, key=_tactic_key):
             rules = by_tid.get(cell.technique_id) or []
             if _is_mbc_id(cell.technique_id) or not rules:
@@ -1934,7 +2161,14 @@ class _Analyst:
             if not all(_resolved_only(hit) for hit in rules):
                 continue
             for statement in cell.statements:
-                text = _LAYER_LABEL.sub("", str(statement), count=1)
+                written = _LAYER_LABEL.sub("", str(statement), count=1)
+                # The statement's facts: a claim number, an outcome or a name is none.
+                facts = _OUTCOME_WORD.sub("", _CLAIM.sub("", written))
+                facts = named.sub("", facts) if named is not None else facts
+                if not [v for v in _VALUE.findall(facts) if v not in have]:
+                    continue
+                text, dropped = self._without_markers(written, named)
+                left += dropped
                 new = [v for v in dict.fromkeys(_VALUE.findall(text)) if v not in have]
                 if len(new) < _NEW_VALUES:
                     continue
@@ -1944,7 +2178,7 @@ class _Analyst:
                         f"{cell.technique_id} {_one_line(cell.technique_name)}: {self._line(text)}"
                     )
                 )
-        return out
+        return out, left
 
     def appendix(self) -> str:
         report = self.report
@@ -1965,13 +2199,21 @@ class _Analyst:
                 fenced = _fenced(rule.body.rstrip(), fence)
                 fenced[1] = self.ctx.keep(fenced[1])
                 lines.extend([*fenced, ""])
-        statements = self._statements()
-        if statements:
+        statements, left = self._statements()
+        if statements or left:
             lines.extend(["### Analyst statements that add detail", ""])
+            # A sentence left out is counted: the bundle prints every statement whole.
+            said = (
+                f"{left} sentence{'' if left == 1 else 's'} of them "
+                f"{'was' if left == 1 else 'were'} left out; the bundle prints every statement "
+                "whole."
+                if left
+                else "Every statement is in the bundle."
+            )
             lines.append(
                 "_What the analysts wrote naming a technique a rule matched only on names "
                 "resolved at runtime, where a statement names a value this report prints "
-                "nowhere else. Every statement is in the bundle._"
+                f"nowhere else. {said}_"
             )
             lines.extend(["", *statements, ""])
         if report.references:

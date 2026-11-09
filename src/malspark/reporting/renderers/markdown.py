@@ -2588,6 +2588,10 @@ class _Context:
         self._nonce = secrets.token_hex(8)
         self._labels: set[str] | None = None
         self._hosts: set[str] | None = None
+        # How a model-written cell writes the citations in it (:meth:`cell`): as
+        # written here, where prose prints them so; the layout whose prose moves
+        # them to note markers sets its own, so a table and a paragraph cite alike.
+        self.cell_citations: Callable[[str], str] | None = None
         summary = report.run_summary or {}
         validation = summary.get("validation") or {}
         self.unresolved = [
@@ -2985,9 +2989,12 @@ class _Context:
         return self._labels
 
     def cell(self, text: Any) -> str:
-        """A model-written table cell: defanged like prose, and whole, as every body cell is."""
+        """A model-written table cell: defanged like prose, and whole, as every body cell is;
+        its citations written as the layout's prose writes them (``cell_citations``)."""
         raw = str(text or "")
         whole = self._defang(raw)
+        if self.cell_citations is not None:
+            whole = self.cell_citations(whole)
         marks = list(dict.fromkeys(mark for sentence, mark in self.flagged if sentence in raw))
         return f"{whole} {' '.join(marks)}" if marks else whole
 
