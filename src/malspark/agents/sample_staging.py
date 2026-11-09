@@ -389,11 +389,18 @@ async def put_file(
 
 
 def _open_regular(source: Path) -> Any:
-    """``source`` opened for reading, refusing a link at its last part or anything but a file."""
+    """``source`` opened for reading, refusing a link at its last part or anything but a file.
+
+    Opened as bytes and without following a link on every system
+    (``tools.staging.open_no_follow``): on Windows a descriptor opened in text
+    mode would hand over the sample with its line endings rewritten.
+    """
     import os
     import stat
 
-    fd = os.open(str(source), os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0))
+    from malspark.tools.staging import open_no_follow
+
+    fd = open_no_follow(source, os.O_RDONLY)
     handle = os.fdopen(fd, "rb")
     if not stat.S_ISREG(os.fstat(handle.fileno()).st_mode):
         handle.close()

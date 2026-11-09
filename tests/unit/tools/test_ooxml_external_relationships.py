@@ -562,6 +562,7 @@ def _measured(path: Path) -> tuple[int, float, int]:
 
 
 class TestOneLongToken:
+    @pytest.mark.posix
     def test_ten_times_the_token_costs_about_ten_times_the_time_and_memory(
         self, tmp_path: Path
     ) -> None:
