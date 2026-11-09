@@ -1790,10 +1790,11 @@ def _evict_stale_uploads() -> None:
 def _write_sample(filename: str, blob: bytes, sha256: str) -> dict[str, Any]:
     """Write the bytes under the staging directory, checking the digest first.
 
-    Created with ``O_CREAT|O_EXCL|O_NOFOLLOW`` at 0o600, not written and then
-    chmodded: the two-step form leaves the file readable at the process umask
-    for as long as the write takes, and would follow a symlink planted at the
-    destination.
+    Created with ``O_CREAT|O_EXCL`` at 0o600 and no link followed
+    (``staging.open_no_follow``: ``O_NOFOLLOW``, or on Windows its
+    equivalent), not written and then chmodded: the two-step form leaves the
+    file readable at the process umask for as long as the write takes, and
+    would follow a symlink planted at the destination.
     """
     if len(blob) > _MAX_SAMPLE_BYTES:
         return {"error": f"sample exceeds {_MAX_SAMPLE_BYTES} bytes"}
@@ -1809,10 +1810,10 @@ def _write_sample(filename: str, blob: bytes, sha256: str) -> dict[str, Any]:
     # carrying ``..`` or an absolute prefix must not decide where this writes.
     safe = Path(filename or actual).name or actual
     destination = root / f"{actual[:16]}_{safe}"
-    flags = os.O_WRONLY | os.O_CREAT | os.O_TRUNC | os.O_NOFOLLOW
+    flags = os.O_WRONLY | os.O_CREAT | os.O_TRUNC
     if not destination.exists():
         flags |= os.O_EXCL
-    fd = os.open(destination, flags, 0o600)
+    fd = staging.open_no_follow(destination, flags, 0o600)
     try:
         os.write(fd, blob)
     finally:

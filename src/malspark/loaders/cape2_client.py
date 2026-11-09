@@ -462,13 +462,16 @@ class CAPEv2Client:
     def _write_capture(resp: Any, out: Path) -> None:
         """Stream a capture to ``out``, owner-only from the first byte.
 
-        0o600 with ``O_NOFOLLOW``: a capture is the whole of a detonation's
-        traffic, and writing it at the process umask leaves it readable for as
-        long as the download takes. Streamed to disk, never held in memory; a
-        partial file is removed by the caller.
+        0o600 with no link followed (``tools.staging.open_no_follow``:
+        ``O_NOFOLLOW``, or on Windows its equivalent): a capture is the whole of
+        a detonation's traffic, and writing it at the process umask leaves it
+        readable for as long as the download takes. Streamed to disk, never
+        held in memory; a partial file is removed by the caller.
         """
-        flags = os.O_WRONLY | os.O_CREAT | os.O_TRUNC | os.O_NOFOLLOW
-        with os.fdopen(os.open(out, flags, 0o600), "wb") as f:
+        from malspark.tools.staging import open_no_follow
+
+        flags = os.O_WRONLY | os.O_CREAT | os.O_TRUNC
+        with os.fdopen(open_no_follow(out, flags, 0o600), "wb") as f:
             for chunk in resp.iter_bytes(65536):
                 f.write(chunk)
 
