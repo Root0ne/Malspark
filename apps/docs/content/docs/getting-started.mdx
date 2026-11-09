@@ -27,7 +27,7 @@ the same name (`make external`, `make dev-up`, ...).
 and Linux. In CI, the Platforms workflow runs `setup`, `setup --dev`,
 `env init` and `doctor` from a fresh checkout on Ubuntu, macOS and Windows
 runners, validates the compose files on Ubuntu, and runs the host-side unit
-suites on Windows.
+suites on Windows; these checks do not gate a merge.
 
 <Steps>
 

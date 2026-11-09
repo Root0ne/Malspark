@@ -124,7 +124,8 @@ macOS or Linux; the setup commands use the standard library only.
 
 **Supported systems:** Windows (native PowerShell with Docker Desktop), macOS
 and Linux. CI installs a fresh checkout on Ubuntu, macOS and Windows runners
-and runs the host-side unit suites on Windows.
+and runs the host-side unit suites on Windows, as checks that do not gate a
+merge.
 
 ```bash
 git clone https://github.com/Root0ne/Malspark.git && cd Malspark

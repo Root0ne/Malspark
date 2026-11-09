@@ -70,12 +70,33 @@ jobs:
       - name: env init
         run: uv run --no-project python scripts/dev/malspark_dev.py env init
 
-      - name: Both env files are written
-        run: uv run --no-project python -c "import pathlib, sys; sys.exit(not all(pathlib.Path(p).is_file() for p in ['docker/.env', 'bootstrap.env']))"
+      # Both files are there, and docker/.env holds a value for every name
+      # the compose file refuses to start without. Names are printed, values
+      # never. The one command is folded into a line, with no quote or sigil
+      # that bash and PowerShell read differently.
+      - name: Both env files hold what compose requires
+        run: >-
+          uv run --no-project python -c "import importlib.util, pathlib, re, sys;
+          spec = importlib.util.spec_from_file_location('malspark_dev', 'scripts/dev/malspark_dev.py');
+          dev = importlib.util.module_from_spec(spec);
+          sys.modules['malspark_dev'] = dev;
+          spec.loader.exec_module(dev);
+          compose = pathlib.Path('docker/docker-compose.yml').read_text(encoding='utf-8');
+          required = sorted(set(re.findall(re.escape(chr(36) + '{') + '([A-Z0-9_]+):' + re.escape('?'), compose)));
+          env = dev.read_env(pathlib.Path('docker/.env'));
+          empty = [name for name in required if not env.get(name)];
+          print('required:', len(required), 'empty:', empty);
+          sys.exit(bool(empty) or not required or not pathlib.Path('bootstrap.env').is_file())"
 
-      # A second run leaves both files as they are and still succeeds.
-      - name: env init again
-        run: uv run --no-project python scripts/dev/malspark_dev.py env init
+      # A second run succeeds and leaves both files byte for byte as they are.
+      - name: env init again leaves both files as they are
+        run: >-
+          uv run --no-project python -c "import hashlib, pathlib, subprocess, sys;
+          files = ['docker/.env', 'bootstrap.env'];
+          digest = lambda: [hashlib.sha256(pathlib.Path(p).read_bytes()).hexdigest() for p in files];
+          before = digest();
+          status = subprocess.run([sys.executable, 'scripts/dev/malspark_dev.py', 'env', 'init']).returncode;
+          sys.exit(status or before != digest())"
 
       - name: doctor
         run: uv run --no-project python scripts/dev/malspark_dev.py doctor
