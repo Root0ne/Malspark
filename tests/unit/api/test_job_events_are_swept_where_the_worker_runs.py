@@ -91,7 +91,6 @@ def _quiet_startup(monkeypatch: pytest.MonkeyPatch, worker_module: Any) -> None:
 
 
 @pytest.mark.posix
-@pytest.mark.posix
 @pytest.mark.asyncio
 async def test_startup_sweeps_once_beside_the_slot(monkeypatch: pytest.MonkeyPatch) -> None:
     from app.worker import analysis_worker as worker_module

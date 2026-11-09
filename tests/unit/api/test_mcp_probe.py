@@ -381,7 +381,6 @@ async def test_a_repointed_built_in_does_not_post_back_its_shipped_trust(monkeyp
 
 
 @pytest.mark.posix
-@pytest.mark.posix
 @pytest.mark.asyncio
 @pytest.mark.parametrize(("granted", "confidence"), [("", "high"), ("0123456789abcdef", "medium")])
 async def test_a_repointed_built_in_is_probed_as_trusted_only_where_the_operator_ticked_it(

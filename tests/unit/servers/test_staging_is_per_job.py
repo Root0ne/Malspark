@@ -1410,7 +1410,7 @@ class TestTheCaptureDirectoryIsHeldToTheSameRuleAsStaging:
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         monkeypatch.setenv(staging.STAGING_DIR_ENV, str(tmp_path / "staging"))
-        monkeypatch.setattr(staging.os, "getuid", lambda: -1)
+        monkeypatch.setattr(staging, "owned_by_this_user", lambda _path, _info: False)
 
         with pytest.raises(RuntimeError, match="owned by another user"):
             staging.open_capture_dir("one")

@@ -1671,7 +1671,7 @@ def _prune_legacy_base(base: Path, cutoff: float) -> int:
     this project's to empty.
     """
     root = Path(tempfile.gettempdir()) / staging.LEGACY_BASE_NAME
-    if root == base or root.is_symlink() or not root.is_dir():
+    if root == base or staging.is_link(root) or not root.is_dir():
         return 0
     try:
         if not staging.owned_by_this_user(root, root.lstat()):

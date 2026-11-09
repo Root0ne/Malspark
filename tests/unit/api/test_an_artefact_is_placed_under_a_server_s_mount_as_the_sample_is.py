@@ -47,7 +47,6 @@ def samples(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
 
 
 @pytest.mark.posix
-@pytest.mark.posix
 def test_the_copy_is_held_by_the_job_and_released_with_its_mirrors(
     samples: Path, tmp_path: Path
 ) -> None:

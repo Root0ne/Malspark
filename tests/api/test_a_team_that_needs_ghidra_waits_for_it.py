@@ -246,7 +246,6 @@ class TestAStdioGhidra:
         assert str(tmp_path) not in refusals[0], "a host path does not reach the refusal"
 
     @pytest.mark.posix
-    @pytest.mark.posix
     def test_an_executable_command_is_ready(self, tmp_path) -> None:
         binary = tmp_path / "ghidra-mcp-stdio"
         binary.write_text("#!/bin/sh\n")

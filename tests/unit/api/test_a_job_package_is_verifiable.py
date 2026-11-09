@@ -360,7 +360,6 @@ def test_a_symbolic_link_entry_is_rejected(tmp_path: Path):
 
 
 @pytest.mark.posix
-@pytest.mark.posix
 def test_a_symbolic_link_in_the_run_directory_is_refused(tmp_path: Path):
     run = _run(tmp_path / "run")
     (run / "stix-judge.json").symlink_to(tmp_path / "elsewhere.json")

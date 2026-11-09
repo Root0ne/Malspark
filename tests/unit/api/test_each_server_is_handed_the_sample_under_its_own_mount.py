@@ -78,7 +78,6 @@ def _mirror(settings: Any, ids: list[str], monkeypatch: pytest.MonkeyPatch, tmp:
 
 
 @pytest.mark.posix
-@pytest.mark.posix
 class TestTwoContainerisedServersWithDifferentMounts:
     def test_each_receives_its_own_path(
         self, samples: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
@@ -231,7 +230,6 @@ class TestTheDirectoriesComeFromTheConfiguration:
         assert {".work", "r2-work"} <= set(mirror_work_dirs(_settings(), selected_only=False))
 
     @pytest.mark.posix
-    @pytest.mark.posix
     def test_the_sweep_reaches_the_selected_provider_s_directory(self, samples: Path) -> None:
         settings = _generic(_remote(work_dir="mine-work"))
         stale = sample_files.work_dir("mine-work") / f"{SHA}.exe"
@@ -242,14 +240,12 @@ class TestTheDirectoriesComeFromTheConfiguration:
         assert not stale.exists()
 
     @pytest.mark.posix
-    @pytest.mark.posix
     def test_a_delete_reaches_the_selected_provider_s_directory(self, samples: Path) -> None:
         settings = _generic(_remote(work_dir="mine-work"))
         copy = sample_files.work_dir("mine-work") / f"{SHA}.exe"
         copy.write_bytes(b"MZ")
         assert sample_files.remove_for_sha(SHA, subdirs=mirror_work_dirs(settings)) == [copy]
 
-    @pytest.mark.posix
     @pytest.mark.posix
     def test_the_selected_provider_s_directory_is_a_sample_root(
         self, samples: Path, monkeypatch: pytest.MonkeyPatch
@@ -260,24 +256,20 @@ class TestTheDirectoriesComeFromTheConfiguration:
         assert (samples / "mine-work").resolve() in added
 
     @pytest.mark.posix
-    @pytest.mark.posix
     def test_with_no_settings_given_the_shipped_directories_are_swept(self, samples: Path) -> None:
         assert {p.name for p in sample_files.work_dirs()} == {".work", "r2-work"}
 
-    @pytest.mark.posix
     @pytest.mark.posix
     def test_a_name_that_is_no_child_directory_is_skipped_not_fatal(self, samples: Path) -> None:
         roots = {p.name for p in sample_files.work_dirs(["..", "", ".", "ok"])}
         assert roots == {".work", "r2-work", "ok"}
 
     @pytest.mark.posix
-    @pytest.mark.posix
     def test_a_created_directory_is_marked_private(self, samples: Path) -> None:
         made = sample_files.work_dir("mine-work")
         assert (made / sample_files.MIRROR_MARKER).is_file()
         assert oct(os.stat(made).st_mode & 0o777) == "0o700"
 
-    @pytest.mark.posix
     @pytest.mark.posix
     def test_many_repeated_names_take_linear_time(self, samples: Path) -> None:
         def reading(n: int) -> Callable[[], Any]:
@@ -287,7 +279,6 @@ class TestTheDirectoriesComeFromTheConfiguration:
         assert_ratio(reading(10_000), reading(100_000), 30, floor=0.05 / 30, what="100,000 names")
 
 
-@pytest.mark.posix
 @pytest.mark.posix
 class TestTheOperatorsOwnDirectoriesAreNeverTouched:
     """Two disabled servers name corpus folders, one of them a link out of the samples directory."""

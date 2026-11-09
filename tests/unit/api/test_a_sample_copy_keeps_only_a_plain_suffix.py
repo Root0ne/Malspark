@@ -47,7 +47,6 @@ def test_any_other_suffix_is_dropped(filename: str) -> None:
 
 
 @pytest.mark.posix
-@pytest.mark.posix
 def test_a_mirror_is_named_with_the_safe_suffix() -> None:
     from types import SimpleNamespace
 

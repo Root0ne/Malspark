@@ -35,6 +35,7 @@ from pathlib import Path
 
 from malspark.core.previous_name import PREVIOUS_NAME
 from malspark.providers.base import DEFAULT_WORK_DIR
+from malspark.tools import staging
 
 from app.config import settings
 from app.logging_config import get_logger
@@ -167,7 +168,7 @@ def _marker_is_the_workers(dir_fd: int) -> bool | None:
             return False
         try:
             st = os.fstat(fd)
-            if not stat.S_ISREG(st.st_mode) or st.st_uid != os.getuid():
+            if not stat.S_ISREG(st.st_mode) or not staging.owned_by_this_user(name, st):
                 return False
             return os.read(fd, len(text) + 1) == text.encode()
         finally:
