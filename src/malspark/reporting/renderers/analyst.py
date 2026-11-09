@@ -169,8 +169,9 @@ _CLAIM_QUANTITY = re.compile(
     + "%)"
 )
 # A quoted string, whose words are the sample's: "…", “…”, `…`. A straight quote
-# right after a word (a 5" drive) is an inch mark or a stray, and opens none.
-_QUOTED = re.compile(r'(?<!\w)"[^"]*"' + _PIPE + "\u201c[^\u201d]*\u201d" + _PIPE + r"`[^`]*`")
+# right after a digit (a 5" drive) is an inch mark, and opens none; one after a
+# prefix (L"…", b"…") opens a literal.
+_QUOTED = re.compile(r'(?<!\d)"[^"]*"' + _PIPE + "\u201c[^\u201d]*\u201d" + _PIPE + r"`[^`]*`")
 # A claim number in brackets of its own, or at a bracket's edge, pointed to or
 # not: "(claim 11)", "(see claim 8)", "(0x3a24, claim 43)", "(claim 3, the decoder)".
 _CLAIM_POINTER = r"(?:(?:" + _PIPE.join(("see", "per", "in", r"cf\.")) + r")\s+)?"
