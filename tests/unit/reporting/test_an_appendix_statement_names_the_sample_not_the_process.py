@@ -536,7 +536,7 @@ def test_curly_quotes_nothing_closes_are_read_in_linear_time() -> None:
         # ... a run of dashes before one, and a run of spaces before a word a claim
         # number closes.
         lambda size: "[0xa1" + "-" * size + "x] via X.",
-        lambda size: "0xa1" + " " * size + "w in claim 4.",
+        lambda size: "0xa1" + " " * size + "w in claim 4 of the config.",
     ],
     ids=["spaces-claim", "spaces-bracket", "spaces-outcome", "dashes", "spaces-clause"],
 )
