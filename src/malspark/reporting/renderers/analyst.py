@@ -170,8 +170,19 @@ _CLAIM_QUANTITY = re.compile(
 )
 # A quoted string, whose words are the sample's: "…", “…”, `…`. A straight quote
 # right after a digit (a 5" drive) is an inch mark, and opens none; one after a
-# prefix (L"…", b"…") opens a literal.
-_QUOTED = re.compile(r'(?<!\d)"[^"]*"' + _PIPE + "\u201c[^\u201d]*\u201d" + _PIPE + r"`[^`]*`")
+# prefix (L"…", b"…") opens a literal, and so does one after an identifier that
+# starts a token, digits after its letter or not (id2"…", u8"…"): an identifier
+# never starts with a digit, and one right after a quote (the x3 of 5"x3") closes
+# an inch mark rather than starting a token.
+_QUOTED = re.compile(
+    r'(?<![\w"])[A-Za-z_]\w*("[^"]*")'
+    + _PIPE
+    + r'(?<!\d)"[^"]*"'
+    + _PIPE
+    + "\u201c[^\u201d]*\u201d"
+    + _PIPE
+    + r"`[^`]*`"
+)
 # A claim number in brackets of its own, or at a bracket's edge, pointed to or
 # not: "(claim 11)", "(see claim 8)", "(0x3a24, claim 43)", "(claim 3, the decoder)".
 _CLAIM_POINTER = r"(?:(?:" + _PIPE.join(("see", "per", "in", r"cf\.")) + r")\s+)?"
@@ -215,8 +226,19 @@ _SLUG = re.compile(r"[^a-z0-9]+")
 
 
 def _quoted_spans(text: str) -> list[tuple[int, int]]:
-    """Where ``text`` quotes a string (:data:`_QUOTED`)."""
-    return [found.span() for found in _QUOTED.finditer(text)]
+    """Where ``text`` quotes a string (:data:`_QUOTED`), a literal's prefix not with it."""
+    return [found.span(1) if found.group(1) else found.span() for found in _QUOTED.finditer(text)]
+
+
+def _quoted(found: re.Match[str]) -> bool:
+    """Whether ``found`` starts inside a quoted string, whose words are the sample's."""
+    return any(a <= found.start() < b for a, b in _quoted_spans(found.string))
+
+
+def _stop(found: re.Match[str]) -> str:
+    """The stop a bracket ``found`` held, unless one already follows the bracket."""
+    follows = found.string[found.end() : found.end() + 1]
+    return "" if follows and follows in ".,;:!?" else found.group("stop")
 
 
 def bundle_anchor(title: str) -> str:
@@ -2062,17 +2084,13 @@ class _Analyst:
         """``sentence`` without the claim numbers that stand apart from it, and whether it
         stands without the rest (:meth:`_without_markers`). A claim number inside a
         quoted string is the sample's, and read as none."""
-
-        def quoted(found: re.Match[str]) -> bool:
-            return any(a <= found.start() < b for a, b in _quoted_spans(found.string))
-
         for bracketed in _CLAIM_BRACKETED:
-            sentence = bracketed.sub(lambda m: m.group(0) if quoted(m) else "", sentence)
+            sentence = bracketed.sub(lambda m: m.group(0) if _quoted(m) else "", sentence)
         stands = True
 
         def clause(found: re.Match[str]) -> str:
             nonlocal stands
-            if quoted(found):
+            if _quoted(found):
                 return found.group(0)
             if found.group(1).strip().lower() in _CLAIM_CARRIES:
                 stands = False
@@ -2082,7 +2100,7 @@ class _Analyst:
         sentence = _CLAIM_CLAUSE.sub(clause, sentence)
         for found in _CLAIM.finditer(sentence):
             ref = found.group(0)
-            if quoted(found) or _CLAIM_QUANTITY.match(sentence, found.end()):
+            if _quoted(found) or _CLAIM_QUANTITY.match(sentence, found.end()):
                 continue
             # A claim number capitalised, opening the sentence, after a word that
             # makes it one claim of the debate ("the claim 17 path", "peer claim
@@ -2130,8 +2148,15 @@ class _Analyst:
                 sentence = bracketed.sub("", sentence)
             sentence, stands = self._claims_out(sentence)
             if named is not None:
-                sentence = re.sub(r"\s*\(\s*" + named.pattern + r"\s*\)", "", sentence)
-                stands = stands and not named.search(sentence)
+                # The stop the bracket held stays where it stood: "FILE_Q (static_r2.)
+                # Next" reads "FILE_Q. Next". A name inside a quoted string is the
+                # sample's, as a claim number there is.
+                sentence = re.sub(
+                    r"\s*\(\s*(?:" + named.pattern + r")\s*(?P<stop>[.,;:!?]?)\s*\)",
+                    lambda m: m.group(0) if _quoted(m) else _stop(m),
+                    sentence,
+                )
+                stands = stands and all(_quoted(m) for m in named.finditer(sentence))
             if not stands:
                 left += 1
                 continue

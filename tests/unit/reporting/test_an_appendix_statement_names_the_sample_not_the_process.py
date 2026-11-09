@@ -22,7 +22,9 @@ from malspark.reporting.models import (
     StaticAnalysis,
 )
 from malspark.reporting.renderers import MarkdownRenderer
+from malspark.reporting.renderers.analyst import _quoted_spans
 from malspark.reporting.renderers.layout import ANALYST, BUNDLE
+from tests.linear_cost import assert_scales
 
 # The haiku13 shapes, the values changed.
 _PARENTHESISED = (
@@ -339,3 +341,72 @@ def test_a_bracket_that_points_to_no_claim_is_the_sample_s(statement: str) -> No
 
     assert statement.removeprefix("static: ") in printed
     assert "left out" not in printed
+
+
+@pytest.mark.parametrize(
+    "statement",
+    [
+        'static: 0xa001 compares the input with L"static_r2" via CMP_X.',
+        "static: 0xa019 logs `static_r2 ready` through LOG_X.",
+        "static: 0xa01a prints “static_r2” via PRINT_Z.",
+        'static: 0xa01b writes "(static_r2)" to the log via LOG_Y.',
+    ],
+)
+def test_an_analyst_s_name_inside_a_quoted_string_is_the_sample_s(statement: str) -> None:
+    printed = _appendix(_report(statement))
+
+    assert statement.removeprefix("static: ") in printed
+    assert "left out" not in printed
+
+
+def test_an_analyst_s_name_in_brackets_goes_with_the_stop_it_holds() -> None:
+    printed = _appendix(
+        _report(
+            "static: 0xa01c writes FILE_R (static_r2.) The table is read by 0xa01d.",
+            "static: 0xa01e reads KEY_R (static_r2;) then decrypts BLOB_R.",
+            "static: 0xa022 maps VIEW_R (static_r2.).",
+        )
+    )
+
+    assert "0xa01c writes FILE_R. The table is read by 0xa01d." in printed
+    assert "0xa01e reads KEY_R; then decrypts BLOB_R." in printed
+    assert "0xa022 maps VIEW_R." in printed and "VIEW_R.." not in printed
+    assert "static_r2" not in printed
+    assert "left out" not in printed
+
+
+@pytest.mark.parametrize(
+    "statement",
+    [
+        'static: 0xa01f compares the reply with id2"claim 4" via CMP_Y.',
+        'static: 0xa020 decodes u8"see claim 4" via DECODE_X.',
+    ],
+)
+def test_a_literal_after_an_identifier_ending_in_a_digit_is_a_quoted_string(
+    statement: str,
+) -> None:
+    printed = _appendix(_report(statement))
+
+    assert statement.removeprefix("static: ") in printed
+    assert "left out" not in printed
+
+
+def test_a_quote_closing_an_inch_mark_opens_no_literal() -> None:
+    # The x3 between two inch marks is no prefix: the quoted string after it shields.
+    printed = _appendix(
+        _report('static: 0xa021 prints a 5"x3" label "claim 4" (claim 6) via LABEL_X.')
+    )
+
+    assert '0xa021 prints a 5"x3" label "claim 4" via LABEL_X.' in printed
+    assert "(claim 6)" not in printed
+    assert "left out" not in printed
+
+
+def test_quoted_strings_are_found_in_linear_time() -> None:
+    # Long identifiers no quote follows, inch marks and literals with no closing
+    # quote: each is read once, whatever its length.
+    assert_scales(
+        lambda size: ("word9" * 64 + ' 5"x ') * size + 'id2"open ' * size,
+        2000,
+        _quoted_spans,
+    )
