@@ -13,6 +13,8 @@ statement adds a value only by what it prints (T-566).
 from __future__ import annotations
 
 import re
+from collections.abc import Callable
+from functools import partial
 
 import pytest
 
@@ -24,9 +26,9 @@ from malspark.reporting.models import (
     StaticAnalysis,
 )
 from malspark.reporting.renderers import MarkdownRenderer
-from malspark.reporting.renderers.analyst import _PIPE, _Analyst, _Shield
+from malspark.reporting.renderers.analyst import _Analyst, _Shield
 from malspark.reporting.renderers.layout import ANALYST, BUNDLE
-from tests.linear_cost import assert_scales
+from tests.linear_cost import assert_scales, repeated
 
 # The haiku13 shapes, the values changed.
 _PARENTHESISED = (
@@ -464,9 +466,9 @@ def test_a_quote_the_plain_reading_pairs_closes_no_literal_s_prefix(
 
 
 def test_a_name_inside_a_string_only_one_reading_makes_is_left_out_and_counted() -> None:
-    printed = _appendix(
-        _report('static: 0xa030 cuts a model3" plate as static_r2 found and labels "x" via X_Q.')
-    )
+    # The name stands only in the string a prefix's quotes open (id2"…"): read as
+    # the sample's under one reading and as the analyst's under the other.
+    printed = _appendix(_report('static: 0xa030 compares id2"static_r2 found" via X_Q.'))
 
     assert "static_r2" not in printed and "0xa030" not in printed
     assert "1 sentence of them was left out; the bundle prints every statement whole." in printed
@@ -483,18 +485,19 @@ def test_a_quote_closing_an_inch_mark_opens_no_literal() -> None:
     assert "left out" not in printed
 
 
+def _reader() -> tuple[_Analyst, re.Pattern[str]]:
+    """An analyst report's reader of markers and the run's analysts' names as it reads them."""
+    analyst = object.__new__(_Analyst)
+    analyst.report = _report()
+    named = analyst._named()
+    assert named is not None
+    return analyst, named
+
+
 def test_markers_are_read_in_linear_time() -> None:
     # Many names and claim numbers, quoted and not, in one long sentence: each
     # quoted string is found once per pass, not once per marker.
-    names = ["static_r2", "dynamic"]
-    named = re.compile(
-        r"(?<![\w.-])(?:"
-        + _PIPE.join(re.escape(name) for name in names)
-        + r")(?![\w-]"
-        + _PIPE
-        + r"\.\w)"
-    )
-    analyst = object.__new__(_Analyst)
+    analyst, named = _reader()
     chunk = '0xa1 w "static_r2" and "claim 4" (static_r2) (claim 5) id2"x" 5" more '
     assert_scales(
         lambda size: chunk * size + "end.",
@@ -510,4 +513,26 @@ def test_quoted_strings_are_found_in_linear_time() -> None:
         lambda size: ("word9" * 64 + ' 5"x ') * size + 'id2"open ' * size,
         2000,
         _Shield.of,
+    )
+
+
+@pytest.mark.parametrize(
+    "shape",
+    [
+        # A run of spaces before a claim number, a bracket and an outcome: each
+        # run is entered at its first space, not at every one (T-590).
+        lambda size: "0xa1" + " " * size + "claim 4 x.",
+        lambda size: "0xa1" + " " * size + "(x) and" + " " * size + ", x) via X.",
+        lambda size: "0xa1" + " " * size + "[x]" + " " * size + "x.",
+        # ... a run of dashes before one, and a word as long.
+        lambda size: "[0xa1" + "-" * size + "x] via X.",
+        lambda size: "0xa1 " + "w" * size + " in claim 4 x.",
+    ],
+    ids=["spaces-claim", "spaces-bracket", "spaces-outcome", "dashes", "long-word"],
+)
+def test_a_long_run_of_one_character_is_read_in_linear_time(shape: Callable[[int], str]) -> None:
+    analyst, named = _reader()
+    assert_scales(
+        lambda size: repeated(partial(analyst._without_markers, shape(size), named), 24),
+        1000,
     )

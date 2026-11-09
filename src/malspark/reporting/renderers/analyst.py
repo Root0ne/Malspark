@@ -88,10 +88,14 @@ from malspark.utils.sentence_cut import left_out_span
 if TYPE_CHECKING:
     from malspark.reporting.renderers.markdown import MarkdownRenderer, _Context
 
+# Where a pattern that opens with spaces may start: at the first space of a run,
+# never at a later one. A match from a later space is one from the first with
+# fewer spaces taken, so trying each would read the run once per space (T-590).
+_RUN_START = r"(?<!\s)"
 # A run of citations written into prose: ``[ev_0004]``, ``[ev_0024][ev_0008]``,
 # ``(ev_0021; ev_0025)``, each group with the space before it.
 _CITATION_RUN = re.compile(
-    r"(?:\s*[\[(]\s*ev_\d+(?:\s*[,;]\s*ev_\d+)*\s*[\])])+",
+    _RUN_START + r"(?:\s*[\[(]\s*ev_\d+(?:\s*[,;]\s*ev_\d+)*\s*[\])])+",
 )
 # A list of ids written bare beside other words: ``get_file_report, ev_0018, ev_0030``.
 _BARE_IDS = re.compile(r"\bev_\d+(?:\s*,\s*ev_\d+)*\b")
@@ -145,9 +149,10 @@ _OUTCOME_WORD = re.compile(rf"\b{_OUTCOME}\b")
 # The outcome closing a bracketed heading the analyst wrote ("[Command dispatch —
 # CONFIRMED]") or standing in brackets of its own ("(REFINED)", "[CONFIRMED]").
 _OUTCOME_BRACKETED = (
-    re.compile(rf"\s*[—–:-]+\s*{_OUTCOME}\s*(?=\])"),
+    # A run of dashes, as a run of spaces, is entered at its first dash only.
+    re.compile(_RUN_START + rf"(?!(?<=[—–:-])[—–:-])\s*[—–:-]+\s*{_OUTCOME}\s*(?=\])"),
     # ... never a tag a word follows, which is the sample's ("writes a [CONFIRMED] tag").
-    re.compile(rf"\s*[\[(]\s*{_OUTCOME}\s*[\])](?!\s*\w)"),
+    re.compile(_RUN_START + rf"\s*[\[(]\s*{_OUTCOME}\s*[\])](?!\s*\w)"),
 )
 # An analyst's claim named by its number: "claim 72", "CLAIM 43", "claims 12 and 13".
 _CLAIM_REF = (
@@ -181,8 +186,10 @@ _PREFIXED = re.compile(r'(?<![\w"])[A-Za-z_]\w*(?<=\d)("[^"]*")')
 # not: "(claim 11)", "(see claim 8)", "(0x3a24, claim 43)", "(claim 3, the decoder)".
 _CLAIM_POINTER = r"(?:(?:" + _PIPE.join(("see", "per", "in", r"cf\.")) + r")\s+)?"
 _CLAIM_BRACKETED = (
-    re.compile(r"\s*\(\s*" + _CLAIM_POINTER + _CLAIM_REF + r"\s*\)", re.IGNORECASE),
-    re.compile(r"\s*[,;]\s*" + _CLAIM_POINTER + _CLAIM_REF + r"\s*(?=\))", re.IGNORECASE),
+    re.compile(_RUN_START + r"\s*\(\s*" + _CLAIM_POINTER + _CLAIM_REF + r"\s*\)", re.IGNORECASE),
+    re.compile(
+        _RUN_START + r"\s*[,;]\s*" + _CLAIM_POINTER + _CLAIM_REF + r"\s*(?=\))", re.IGNORECASE
+    ),
     re.compile(r"(?<=\()\s*" + _CLAIM_POINTER + _CLAIM_REF + r"\s*[,;]\s*", re.IGNORECASE),
 )
 # A word right after a claim number.
@@ -213,7 +220,9 @@ _CLAIM_OWNER = re.compile(
 # claim 5, and"; never one inside a phrase that goes on ("named in claims 3 to 5 of
 # the config").
 _CLAIM_CLAUSE = re.compile(
-    r"(\s*\b\w+)\s+(?:"
+    r"("
+    + _RUN_START
+    + r"\s*\b\w+)\s+(?:"
     + _PIPE.join(("in", "of", "see", "per", "from", "by", "under"))
     + r")\s+"
     + _CLAIM_REF
@@ -572,13 +581,16 @@ def _mermaid_label(text: str) -> str:
 
 
 # The words a C2 message layout's field is annotated with, by the conversion
-# its recorded format string gives the field's value.
+# its recorded format string gives the field's value. The flags, the width and
+# the length share characters (``0``, the digits), so each run is taken whole and
+# never handed back: no conversion ends inside one, and a long run is read once
+# rather than once per way of splitting it (T-590).
 _FORMAT_WORDS: tuple[tuple[re.Pattern[str], str], ...] = (
-    (re.compile(r"%[-+ 0#]*\d*[hlLqjztI0-9]*[xX]"), "a hexadecimal number"),
-    (re.compile(r"%[-+ 0#]*\d*[hlLqjztI0-9]*[diu]"), "a decimal number"),
-    (re.compile(r"%[-+ 0#]*\d*l?[sS]"), "a text"),
-    (re.compile(r"%[-+ 0#]*\d*c"), "a character"),
-    (re.compile(r"%[-+ 0#]*\d*(?:\.\d+)?[fg]"), "a decimal fraction"),
+    (re.compile(r"%[-+ 0#]*+\d*+[hlLqjztI0-9]*+[xX]"), "a hexadecimal number"),
+    (re.compile(r"%[-+ 0#]*+\d*+[hlLqjztI0-9]*+[diu]"), "a decimal number"),
+    (re.compile(r"%[-+ 0#]*+\d*+l?[sS]"), "a text"),
+    (re.compile(r"%[-+ 0#]*+\d*+c"), "a character"),
+    (re.compile(r"%[-+ 0#]*+\d*+(?:\.\d+)?[fg]"), "a decimal fraction"),
 )
 # A recorded message format: ``name=value`` fields joined by ``&``, at least two.
 _QUERY_FORMAT = re.compile(r"^[\w.\[\]-]+=[^&\s]*(?:&[\w.\[\]-]+=[^&\s]*)+$")
@@ -2221,7 +2233,12 @@ class _Analyst:
                 # Next" reads "FILE_Q. Next". A name inside a quoted string is the
                 # sample's, as a claim number there is.
                 sentence, sure = _sub_unquoted(
-                    re.compile(r"\s*\(\s*(?:" + named.pattern + r")\s*(?P<stop>[.,;:!?]?)\s*\)"),
+                    re.compile(
+                        _RUN_START
+                        + r"\s*\(\s*(?:"
+                        + named.pattern
+                        + r")\s*(?P<stop>[.,;:!?]?)\s*\)"
+                    ),
                     _stop,
                     sentence,
                 )
