@@ -135,6 +135,7 @@
     {"path": "report:malware_report.attribution.campaign", "ref": "components/analysis/tabs/AttributionContent.tsx:42"},
     {"path": "report:malware_report.detection_signatures[].name", "ref": "components/analysis/GeneratedRulesPanel.tsx:137"},
     {"path": "report:malware_report.detection_signatures[].body", "ref": "components/analysis/GeneratedRulesPanel.tsx:174", "note": "in the side panel a rule's name opens; copied and downloaded from its row"},
+    {"path": "report:malware_report.drafts_not_built[].why", "ref": "components/analysis/sampleMatch.ts:141", "note": "a format no draft was built in, said under the list as the report says it"},
     {"path": "stix:objects[].name", "ref": "components/analysis/stixGraph.ts:103"},
     {"path": "stix:objects[].pattern", "ref": "components/analysis/stixGraph.ts:103"},
     {"path": "stix:objects[].value", "ref": "components/analysis/stixGraph.ts:103"},

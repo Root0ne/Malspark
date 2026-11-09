@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
-import type { DetectionRule } from "@/types/malware-report";
-import { ruleStanding, sampleMatchBadge } from "../sampleMatch";
+import type { DetectionRule, DraftNotBuilt } from "@/types/malware-report";
+import { draftsNotBuilt, ruleStanding, sampleMatchBadge } from "../sampleMatch";
 
 const SAID = "Run against the sample it was drafted from: ";
 
@@ -186,5 +186,21 @@ describe("what the analyst report says of a drafted rule", () => {
     expect(ruleStanding({ ...rule(), printed: null, standing: null } as unknown as DetectionRule)).toBeNull();
     expect(ruleStanding(rule({ printed: true }))).toBeNull();
     expect(ruleStanding(rule({ printed: true, standing: "" }))).toBeNull();
+  });
+});
+
+describe("draftsNotBuilt", () => {
+  it("says each format with no draft as the report does", () => {
+    const items: DraftNotBuilt[] = [
+      { kind: "sigma", why: "no registry key or image path that this run publishes or a sandbox watched is left to select on" },
+    ];
+    expect(draftsNotBuilt(items)).toEqual([
+      "No Sigma draft: no registry key or image path that this run publishes or a sandbox watched is left to select on.",
+    ]);
+  });
+
+  it("says nothing for a report stored before the record or an empty reason", () => {
+    expect(draftsNotBuilt(undefined)).toEqual([]);
+    expect(draftsNotBuilt([{ kind: "sigma", why: " " }])).toEqual([]);
   });
 });
