@@ -90,7 +90,7 @@ class APISettings(BaseSettings, PlatformSecrets):
     )
 
     # ── Database ─────────────────────────────────────────────────
-    database_url: str = "postgresql+asyncpg://malspark:malspark_dev@127.0.0.1:5433/malspark"
+    database_url: str = "postgresql+asyncpg://malspark:malspark_dev@127.0.0.1:5432/malspark"
     # Bounds, here and on every numeric leaf below:
     # each of these is a size, a count or a period, and a value at or below
     # zero does not mean "unlimited" for any of them -- it means a pool that

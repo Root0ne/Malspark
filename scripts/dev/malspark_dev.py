@@ -1033,9 +1033,17 @@ def doctor_report(
     for name in sorted(published_ports(root)):
         port = port_of(name, root, environ, docker_env)
         if in_use(host, port):
-            taken.append(f"{port} ({name})")
+            taken.append((port, name))
     if taken:
-        yield f"  in use   {', '.join(taken)} on {host}: the stack's own, or another program's"
+        listed = ", ".join(f"{port} ({name})" for port, name in taken)
+        yield f"  in use   {listed} on {host}: the stack's own, or another program's"
+        # A port another program holds is moved by its variable; Postgres's
+        # also moves bootstrap.env's DATABASE_URL, which env init --force writes.
+        names = " or ".join(name for _, name in taken)
+        yield (
+            f"  hint     to publish elsewhere, set {names} in docker/.env"
+            + (" (then env init --force)" if any(n == "POSTGRES_PORT" for _, n in taken) else "")
+        )
     else:
         yield f"  ports    every published port is free on {host}"
     for tree in [root / "external" / t.name for t in TARGETS if t.default]:

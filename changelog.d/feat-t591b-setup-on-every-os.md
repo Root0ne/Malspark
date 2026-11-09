@@ -17,12 +17,14 @@
 
 - **`external` fetches `ik_llama.cpp` only when it is named** (`external ik_llama.cpp`); the
   stack does not need it.
-- **Postgres is published on host port 5433 by every stack command**, the port
-  `bootstrap.env`'s `DATABASE_URL` names, unless `POSTGRES_PORT` says otherwise.
+- **Every stack command publishes Postgres on host port 5432**, the port `bootstrap.env`'s
+  `DATABASE_URL` names, unless `POSTGRES_PORT` in `docker/.env` moves it; `docker-up` and
+  `docker-build` honour that value too.
 
 ### Upgrading
 
-- A host process that reached the development stack's Postgres on 5432 reaches it on 5433 after
-  the next `dev-up`; set `POSTGRES_PORT=5432` in `docker/.env` to keep the old port.
+- A production stack started with `docker-up` publishes Postgres on 5432 instead of 5433, and a
+  `bootstrap.env` copied from the example names 5432; set `POSTGRES_PORT=5433` in `docker/.env`
+  (and the same port in `DATABASE_URL`) to keep 5433.
 - `scripts/dev/fetch_external.sh` and `scripts/dev/fetch_capa_data.sh` are replaced by
   `malspark_dev.py external`.

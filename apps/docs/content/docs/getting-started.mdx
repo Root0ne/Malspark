@@ -72,7 +72,7 @@ while one is missing.
 **`bootstrap.env`** (repository root) holds the same contract as process
 environment, for anything you run outside Compose, such as `make migrate`.
 `env init` writes it with the same secrets and a `DATABASE_URL` on the port
-the stack publishes Postgres on (5433, or your `POSTGRES_PORT`). `dev-up`
+the stack publishes Postgres on (5432, or your `POSTGRES_PORT`). `dev-up`
 reads it too, and an empty value there would override `docker/.env`.
 
 Neither file is overwritten once it exists; `env init --force` rewrites both

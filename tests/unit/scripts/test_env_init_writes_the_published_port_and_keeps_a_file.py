@@ -72,7 +72,7 @@ class TestAFreshCheckout:
         url = _url(checkout)
         assert url.scheme == "postgresql+asyncpg" and url.hostname == "127.0.0.1"
         assert urllib.parse.unquote(url.password or "") == docker["POSTGRES_PASSWORD"]
-        assert url.port == 5433
+        assert url.port == 5432
         for key in ("SETTINGS_ENCRYPTION_KEY", "JWT_SECRET_KEY"):
             assert boot[key] == docker[key]
         assert boot["MINIO_SECRET_KEY"] == docker["MINIO_ROOT_PASSWORD"]
@@ -112,7 +112,9 @@ class TestThePortIsTheOneComposePublishes:
     def test_the_shipped_files_agree_on_the_host_port(self) -> None:
         published = dev.published_ports(ROOT)["POSTGRES_PORT"]
         example = dev.read_env(ROOT / "bootstrap.env.example")["DATABASE_URL"]
-        assert published == 5433
+        assert published == 5432
+        api = (ROOT / "apps" / "api" / "app" / "config.py").read_text(encoding="utf-8")
+        assert f"@127.0.0.1:{published}/malspark" in api
         assert example.split("@", 1)[1].startswith(f"127.0.0.1:{published}/")
         makefile = (ROOT / "Makefile").read_text(encoding="utf-8")
         assert "POSTGRES_PORT" not in makefile, "the compose file alone names the default"

@@ -380,8 +380,9 @@ class TestDoctor:
         assert any("compose plugin" in s for s in _doctor(tmp_path, compose=None))
 
     def test_ports_in_use_are_listed_with_their_variable(self, tmp_path: Path) -> None:
-        said = "\n".join(_doctor(tmp_path, taken=frozenset({5433, 8000})))
-        assert "5433 (POSTGRES_PORT)" in said and "8000 (API_PORT)" in said
+        said = "\n".join(_doctor(tmp_path, taken=frozenset({5432, 8000})))
+        assert "5432 (POSTGRES_PORT)" in said and "8000 (API_PORT)" in said
+        assert "set API_PORT or POSTGRES_PORT in docker/.env (then env init --force)" in said
 
     def test_a_checkout_on_ntfs_is_warned_about(self, tmp_path: Path) -> None:
         assert any("on NTFS" in s for s in _doctor(tmp_path, filesystem="NTFS"))
