@@ -1,0 +1,161 @@
+name: Platforms
+
+on:
+  push:
+    branches: ["main", "dev"]
+  pull_request:
+    branches: ["main", "dev", "feat/**"]
+
+# The workflow reads the repository and nothing else; it references no secrets.
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # A fresh checkout installs on each of the three systems the stack supports,
+  # through the one entry point a user runs: uv and git, nothing else of the
+  # host's. Windows runs it from PowerShell. Not a required check.
+  #
+  # No step installs Python: uv finds an interpreter for the stdlib-only
+  # script, and `setup --dev` lets uv provide the project's own 3.13, as on a
+  # host that has only uv.
+  install:
+    name: Install (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    # Most of it is the fetch of the pinned trees and corpora and one uv sync.
+    timeout-minutes: 30
+
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        include:
+          - os: ubuntu-latest
+            shell: bash
+          - os: macos-latest
+            shell: bash
+          - os: windows-latest
+            shell: pwsh
+
+    defaults:
+      run:
+        # One native command per step: a pwsh step's status is its last
+        # command's exit code.
+        shell: ${{ matrix.shell }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+        with:
+          enable-cache: true
+
+      # What a stack user runs: the pinned trees, the Sigma rules, capa's data.
+      - name: setup
+        run: uv run --no-project python scripts/dev/malspark_dev.py setup
+
+      # What a developer runs: the host environment and the pre-commit hook,
+      # over a checkout that already holds the fetched trees, which are left
+      # as they are.
+      - name: setup --dev
+        run: uv run --no-project python scripts/dev/malspark_dev.py setup --dev
+
+      - name: env init
+        run: uv run --no-project python scripts/dev/malspark_dev.py env init
+
+      - name: Both env files are written
+        run: uv run --no-project python -c "import pathlib, sys; sys.exit(not all(pathlib.Path(p).is_file() for p in ['docker/.env', 'bootstrap.env']))"
+
+      # A second run leaves both files as they are and still succeeds.
+      - name: env init again
+        run: uv run --no-project python scripts/dev/malspark_dev.py env init
+
+      - name: doctor
+        run: uv run --no-project python scripts/dev/malspark_dev.py doctor
+
+      # The compose commands this host would run, with the host's overlays
+      # and ids, without running them.
+      - name: up --dry-run
+        run: uv run --no-project python scripts/dev/malspark_dev.py up --dry-run
+
+      - name: docker-up --dry-run
+        run: uv run --no-project python scripts/dev/malspark_dev.py docker-up --dry-run
+
+      # The compose files resolve against the env files env init wrote. Only
+      # the Linux runner has a Docker engine that runs Linux containers.
+      - name: Production compose config
+        if: runner.os == 'Linux'
+        working-directory: docker
+        run: docker compose config --quiet
+
+      - name: Development compose config
+        if: runner.os == 'Linux'
+        run: docker compose -f docker/docker-compose.yml -f docker/docker-compose.dev.yml config --quiet
+
+      # The overlay a host that is not Linux adds (NAMED_DATA_OVERLAY in
+      # malspark_dev.py), validated here once it is in the tree.
+      - name: Named-data overlay compose config
+        if: runner.os == 'Linux' && hashFiles('docker/docker-compose.named-data.yml') != ''
+        run: docker compose -f docker/docker-compose.yml -f docker/docker-compose.dev.yml -f docker/docker-compose.named-data.yml config --quiet
+
+      - name: Compose config (not on this runner)
+        if: runner.os != 'Linux'
+        run: >-
+          echo "Skipped: GitHub's macOS runners have no Docker, and its Windows
+          runners run Windows containers only; the Linux job validates the
+          compose files."
+
+  # The host-side suites that must pass on Windows, run on Windows. A test
+  # marked posix is deselected; every other test of these paths runs. Not a
+  # required check.
+  windows-tests:
+    name: Tests (Windows, Python 3.13)
+    runs-on: windows-latest
+    timeout-minutes: 45
+    defaults:
+      run:
+        shell: pwsh
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.13"
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+        with:
+          enable-cache: true
+
+      - name: Install dependencies
+        run: uv sync --frozen --all-packages
+
+      # A test still running after ten minutes has every thread's stack
+      # written to the log, so a hang names its test however the job ends.
+      - name: Run the Windows suites
+        run: |
+          $PSNativeCommandUseErrorActionPreference = $true
+          $paths = @(
+            "tests/unit/test_the_package_imports_where_posix_is_missing.py",
+            "tests/unit/test_a_posix_mark_is_never_lost.py",
+            "tests/unit/scripts",
+            "tests/unit/tools",
+            "tests/unit/pipeline"
+          )
+          # Call-time file paths where POSIX is missing: the file joins this
+          # run as soon as it is on the branch.
+          $filesOpenSafely = "tests/unit/test_files_open_safely_where_posix_is_missing.py"
+          if (Test-Path -LiteralPath $filesOpenSafely) { $paths += $filesOpenSafely }
+          uv run pytest @paths -m "not posix" -q --tb=short -o faulthandler_timeout=600
