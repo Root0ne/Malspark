@@ -186,6 +186,7 @@ def test_the_overlay_is_carried_over() -> None:
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.posix
 def test_the_tool_writes_the_program_private_and_states_the_facts(tmp_path: Path) -> None:
     packed = su.build()
     sample = tmp_path / "packed.exe"

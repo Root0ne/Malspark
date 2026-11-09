@@ -540,6 +540,7 @@ def _listed(tmp_path: Path, listing: str, *args: str) -> Any:
     )
 
 
+@pytest.mark.posix
 def test_the_script_refuses_two_old_projects_that_would_become_one_volume(
     tmp_path: Path,
 ) -> None:
@@ -553,6 +554,7 @@ def test_the_script_refuses_two_old_projects_that_would_become_one_volume(
     assert "volume create" not in (tmp_path / "log").read_text(encoding="utf-8")
 
 
+@pytest.mark.posix
 def test_the_script_with_no_old_volume_says_so_and_copies_nothing(tmp_path: Path) -> None:
     done = _listed(tmp_path, "", "--apply")
     assert done.returncode == 0, done.stderr
@@ -561,6 +563,7 @@ def test_the_script_with_no_old_volume_says_so_and_copies_nothing(tmp_path: Path
     assert "volume create" not in log and "docker run" not in log
 
 
+@pytest.mark.posix
 @pytest.mark.parametrize("ending", ["\n", ""])
 def test_the_script_pins_the_old_bucket_on_its_own_line(tmp_path: Path, ending: str) -> None:
     out, env, log = _script(tmp_path, f"{OLD_ENV}UID=1{ending}", "--apply")
@@ -570,12 +573,14 @@ def test_the_script_pins_the_old_bucket_on_its_own_line(tmp_path: Path, ending: 
     assert "set MINIO_BUCKET" in out
 
 
+@pytest.mark.posix
 def test_the_script_s_plan_writes_nothing(tmp_path: Path) -> None:
     out, env, _log = _script(tmp_path, f"{OLD_ENV}UID=1\n")
     assert env == f"{OLD_ENV}UID=1\n"
     assert "set MINIO_BUCKET" in out
 
 
+@pytest.mark.posix
 def test_the_script_keeps_a_set_bucket_and_never_overwrites_a_backup(tmp_path: Path) -> None:
     (tmp_path / "env.before-malspark").write_text("EARLIER\n", encoding="utf-8")
     out, env, _log = _script(tmp_path, f"{OLD_ENV}UID=1\nMINIO_BUCKET=mine\n", "--apply")
@@ -587,6 +592,7 @@ def test_the_script_keeps_a_set_bucket_and_never_overwrites_a_backup(tmp_path: P
     assert "keep MINIO_BUCKET" in out
 
 
+@pytest.mark.posix
 def test_the_script_without_an_env_file_still_runs_with_a_qdrant_url(tmp_path: Path) -> None:
     import subprocess
 

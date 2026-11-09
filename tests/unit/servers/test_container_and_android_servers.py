@@ -301,6 +301,7 @@ EXTRACT_REPORT = [
 ]
 
 
+@pytest.mark.posix
 class TestTheScan:
     @needs_prlimit
     def test_each_chunk_of_the_sample_is_a_row_and_nothing_is_kept(
@@ -339,6 +340,7 @@ class TestTheScan:
 
 
 class TestTheExtraction:
+    @pytest.mark.posix
     @needs_prlimit
     def test_files_links_and_special_files_are_listed_and_no_link_is_followed(
         self, roots: Path, bin_dir: Path, carve: Path, tmp_path: Path
@@ -393,6 +395,7 @@ class TestTheExtraction:
         assert args[args.index("--extract-dir") + 1] == str(carve / run_id)
         assert args[args.index("--depth") + 1] == "10" and "--skip-extraction" not in args
 
+    @pytest.mark.posix
     @needs_prlimit
     def test_an_extraction_past_the_upload_bound_is_stopped_and_says_so(
         self, roots: Path, bin_dir: Path, carve: Path, monkeypatch: pytest.MonkeyPatch
@@ -418,6 +421,7 @@ class TestTheExtraction:
         assert {row["reason"] for row in answer["not_handed_on"]} == {unblob.PAST_THE_BOUND}
         assert answer["chunks"] == [] and answer["problems"] == []
 
+    @pytest.mark.posix
     @needs_prlimit
     def test_a_run_of_too_many_entries_is_stopped_and_says_so(
         self, roots: Path, bin_dir: Path, carve: Path, monkeypatch: pytest.MonkeyPatch
@@ -427,6 +431,7 @@ class TestTheExtraction:
         answer = _call(unblob.container_extract(str(roots / "s.bin")))
         assert "it made more than 5 entries (UNBLOB_MAX_ENTRIES)" in answer["stopped"]
 
+    @pytest.mark.posix
     @needs_prlimit
     def test_no_one_file_may_pass_the_bound_and_one_cut_there_is_not_handed_on(
         self, roots: Path, bin_dir: Path, carve: Path, monkeypatch: pytest.MonkeyPatch
@@ -445,6 +450,7 @@ class TestTheExtraction:
         # The report was written, so the answer does not say it was not.
         assert "report" not in answer["stopped"]
 
+    @pytest.mark.posix
     def test_the_first_count_is_at_once(
         self, roots: Path, bin_dir: Path, carve: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
@@ -472,6 +478,7 @@ class TestTheExtraction:
         monkeypatch.setenv(unblob.UPLOAD_BOUND_ENV, "")
         assert unblob.upload_bound() == SAMPLE_UPLOAD_MAX_BYTES
 
+    @pytest.mark.posix
     @needs_prlimit
     def test_an_extraction_with_no_file_keeps_no_directory(
         self, roots: Path, bin_dir: Path, carve: Path
@@ -525,6 +532,7 @@ class TestTheExtraction:
         unblob.sweep(now=now, room_for=10**12)
         assert top.is_dir()
 
+    @pytest.mark.posix
     @needs_prlimit
     def test_a_run_being_read_is_the_last_to_go(
         self, roots: Path, bin_dir: Path, carve: Path, monkeypatch: pytest.MonkeyPatch
@@ -541,6 +549,7 @@ class TestTheExtraction:
         unblob.sweep(room_for=1)
         assert top.is_dir()
 
+    @pytest.mark.posix
     @needs_prlimit
     def test_a_finished_run_is_kept_from_when_its_writing_ended(
         self, roots: Path, bin_dir: Path, carve: Path, monkeypatch: pytest.MonkeyPatch
@@ -559,6 +568,7 @@ class TestTheExtraction:
         assert top.stat().st_mtime > time.time() - 60
         assert not unblob._writing
 
+    @pytest.mark.posix
     @needs_prlimit
     def test_no_report_is_a_failure_in_unblobs_words(
         self, roots: Path, bin_dir: Path, carve: Path
@@ -570,6 +580,7 @@ class TestTheExtraction:
         )
         assert list(carve.iterdir()) == []
 
+    @pytest.mark.posix
     @pytest.mark.parametrize("depth", [0, -1, True, "3"])
     def test_a_depth_that_is_no_depth_is_refused(
         self, roots: Path, bin_dir: Path, carve: Path, depth: Any
@@ -579,6 +590,7 @@ class TestTheExtraction:
         assert _error(answer)[0] == "bad_argument"
         assert not (bin_dir / "unblob.args").exists()
 
+    @pytest.mark.posix
     def test_a_path_outside_the_roots_and_a_missing_program_are_refused(
         self, roots: Path, bin_dir: Path, carve: Path, tmp_path: Path
     ) -> None:
@@ -688,6 +700,7 @@ class TestReadingAWrittenFileBack:
         )
         return _call(unblob.container_extract(str(roots / "s.bin")))
 
+    @pytest.mark.posix
     @needs_prlimit
     def test_a_file_is_read_in_chunks_with_its_digest(
         self, roots: Path, bin_dir: Path, carve: Path, tmp_path: Path
@@ -701,6 +714,7 @@ class TestReadingAWrittenFileBack:
         data = base64.b64decode(first["content_b64"]) + base64.b64decode(rest["content_b64"])
         assert data == b"A" * 10_000
 
+    @pytest.mark.posix
     @needs_prlimit
     def test_the_artefact_store_takes_each_listed_file_in_over_get_artefact(
         self, roots: Path, bin_dir: Path, carve: Path, tmp_path: Path, monkeypatch: Any
@@ -736,6 +750,7 @@ class TestReadingAWrittenFileBack:
             assert artefact.sha256 == listed["sha256"] and artefact.size == listed["size"]
             assert artefact.path.read_bytes() == (carve / listed["path"]).read_bytes()
 
+    @pytest.mark.posix
     @pytest.mark.parametrize(
         "name",
         [
@@ -765,6 +780,7 @@ class TestReadingAWrittenFileBack:
         ), name
         assert "content_b64" not in refused
 
+    @pytest.mark.posix
     @needs_prlimit
     def test_a_file_of_several_names_inside_is_one_row_and_read(
         self, roots: Path, bin_dir: Path, carve: Path, tmp_path: Path
@@ -781,6 +797,7 @@ class TestReadingAWrittenFileBack:
         unblob._names.clear()
         assert "content_b64" in _call(unblob.get_artefact(pair["path"]))
 
+    @pytest.mark.posix
     @needs_prlimit
     def test_a_file_with_a_name_outside_the_extraction_is_not_handed_on(
         self, roots: Path, bin_dir: Path, carve: Path, tmp_path: Path
@@ -805,6 +822,7 @@ class TestReadingAWrittenFileBack:
         assert refused["error"]["code"] == "path_outside_roots"
         assert "only 1 of them" in refused["error"]["message"]
 
+    @pytest.mark.posix
     @needs_prlimit
     def test_a_name_that_is_not_utf8_is_shown_escaped_and_read_by_its_bytes(
         self, roots: Path, bin_dir: Path, carve: Path
@@ -830,6 +848,7 @@ class TestReadingAWrittenFileBack:
         read = _call(unblob.get_artefact(row["path"]))
         assert base64.b64decode(read["content_b64"]) == b"raw"
 
+    @pytest.mark.posix
     @needs_prlimit
     def test_a_chunk_is_at_most_the_platforms_chunk(
         self, roots: Path, bin_dir: Path, carve: Path, tmp_path: Path, monkeypatch: Any
@@ -916,6 +935,7 @@ def _handed(bin_dir: Path) -> list[str]:
 
 
 class TestJadx:
+    @pytest.mark.posix
     def test_each_class_is_a_row_with_its_methods(self, roots: Path, bin_dir: Path) -> None:
         _jadx(bin_dir, mapping=MAPPING, stdout="ERROR - finished with errors, count: 3\n", code=1)
         sample = roots / "a.apk.jadx.kts"
@@ -955,6 +975,7 @@ class TestJadx:
         # Handed under a name of the server's own, by the file's bytes, not its upload name.
         assert _handed(bin_dir) == ["input.apk", str(sample.resolve())]
 
+    @pytest.mark.posix
     def test_a_package_keeps_its_classes_alone(self, roots: Path, bin_dir: Path) -> None:
         _jadx(bin_dir, mapping=MAPPING)
         answer = _call(jadx.android_classes(str(roots / "a.apk.jadx.kts"), package="com.evil"))
@@ -966,6 +987,7 @@ class TestJadx:
             answer = _call(jadx.android_classes(str(roots / "a.apk.jadx.kts"), package=package))
             assert _error(answer)[0] == "bad_argument", package
 
+    @pytest.mark.posix
     def test_one_class_decompiled_and_a_dex_handed_as_one(self, roots: Path, bin_dir: Path) -> None:
         source = "package com.evil.app;\n\npublic class MainActivity {\n}\n"
         _jadx(bin_dir, source=source)
@@ -982,6 +1004,7 @@ class TestJadx:
         assert args[args.index("--single-class") + 1] == "com.evil.app.MainActivity"
         assert _handed(bin_dir) == ["input.dex", str(sample.resolve())]
 
+    @pytest.mark.posix
     @pytest.mark.parametrize("name", ["-d/etc", "--config=/x", "a\0b", " "])
     def test_a_class_name_jadx_would_read_as_an_option_is_refused(
         self, roots: Path, bin_dir: Path, name: str
@@ -991,6 +1014,7 @@ class TestJadx:
         assert _error(answer)[0] == "bad_argument"
         assert not (bin_dir / "jadx.args").exists()
 
+    @pytest.mark.posix
     def test_a_class_jadx_did_not_find_and_a_parse_error_say_their_words(
         self, roots: Path, bin_dir: Path
     ) -> None:
@@ -1002,6 +1026,7 @@ class TestJadx:
         code, message = _error(_call(jadx.android_classes(str(roots / "a.apk.jadx.kts"))))
         assert code == "tool_failed" and "Arguments parse error" in message
 
+    @pytest.mark.posix
     def test_a_file_neither_zip_nor_dex_is_unsupported_and_nothing_runs(
         self, roots: Path, bin_dir: Path
     ) -> None:
@@ -1016,6 +1041,7 @@ class TestJadx:
         assert jadx.JADX_VERSION in answer["error"]["remediation"]
 
 
+@pytest.mark.posix
 def test_a_run_in_the_callers_directory_leaves_it_to_the_caller(
     roots: Path, bin_dir: Path, tmp_path: Path
 ) -> None:
@@ -1108,6 +1134,7 @@ def test_jadx_leaves_the_manifest_to_apk_info() -> None:
     assert "apk_info" in shipped and "android_classes" not in shipped
 
 
+@pytest.mark.posix
 @needs_prlimit
 def test_the_declared_rows_read_what_the_servers_answer(
     roots: Path, bin_dir: Path, carve: Path
@@ -1189,8 +1216,9 @@ def test_jadx_keeps_its_temporary_files_and_home_in_the_calls_scratch() -> None:
     assert jadx.PROGRAM.env["JAVA_OPTS"].split() == list(options[1:4])
 
 
+@pytest.mark.posix
 def test_a_run_is_held_to_the_limits_its_server_sets(bin_dir: Path, tmp_path: Path) -> None:
-    import resource
+    resource = pytest.importorskip("resource")
 
     script = bin_dir / "limits"
     script.write_text("#!/bin/sh\nulimit -f\n")
@@ -1203,8 +1231,9 @@ def test_a_run_is_held_to_the_limits_its_server_sets(bin_dir: Path, tmp_path: Pa
     assert unblob.file_size_limit(4096) == {resource.RLIMIT_FSIZE: 4096}
 
 
+@pytest.mark.posix
 def test_limits_are_set_by_prlimit_before_the_command_and_no_limit_leaves_it_as_it_is() -> None:
-    import resource
+    resource = pytest.importorskip("resource")
 
     command = ("unblob",)
     assert sidecar.limited(command, {resource.RLIMIT_FSIZE: 4096}) == (
@@ -1220,10 +1249,11 @@ def test_limits_are_set_by_prlimit_before_the_command_and_no_limit_leaves_it_as_
     assert "preexec_fn" not in (SERVICES / "cli-sidecar" / "cli_sidecar.py").read_text()
 
 
+@pytest.mark.posix
 def test_a_limited_run_without_prlimit_is_a_missing_dependency(
     bin_dir: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    import resource
+    resource = pytest.importorskip("resource")
 
     script = bin_dir / "tool"
     script.write_text("#!/bin/sh\necho ran\n")

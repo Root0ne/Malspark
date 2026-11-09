@@ -16,6 +16,8 @@ from pathlib import Path
 
 import pytest
 
+pytestmark = pytest.mark.posix
+
 ROOT = Path(__file__).resolve().parents[2]
 
 pytestmark = pytest.mark.skipif(shutil.which("make") is None, reason="needs make")

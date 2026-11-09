@@ -26,6 +26,8 @@ from pathlib import Path
 import pytest
 import yaml
 
+pytestmark = pytest.mark.posix
+
 ROOT = Path(__file__).resolve().parents[2]
 COMPOSE = ROOT / "docker" / "docker-compose.yml"
 DOCKERFILE = ROOT / "docker" / "Dockerfile.backend"

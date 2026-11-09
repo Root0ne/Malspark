@@ -76,6 +76,7 @@ class TestCarvedPayloadsLandUnderStaging:
         target.write_bytes(blob)
         return str(target), hashlib.sha256(blob).hexdigest()
 
+    @pytest.mark.posix
     def test_the_directory_is_the_staging_dir_keyed_by_the_sample_s_hash(
         self, server: Any, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
@@ -339,6 +340,7 @@ class TestReadingAFileAnEarlierCallWrote:
 
         assert answer["error"]["code"] == "path_outside_roots"
 
+    @pytest.mark.posix
     def test_a_symlink_out_of_the_tree_is_refused(
         self, server: Any, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
@@ -474,6 +476,7 @@ class TestWhatCarvedPathMayName:
         assert answer["error"]["code"] == "bad_argument"
         assert "regular file" in answer["error"]["message"]
 
+    @pytest.mark.posix
     def test_a_fifo_is_not_either(
         self, server: Any, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
@@ -759,6 +762,7 @@ class TestTheAnswerSaysWhichFieldToPassBack:
         assert "no quotes around it" in server.CARVED_NOTE
 
 
+@pytest.mark.posix
 class TestEverySpellingDecidesConfinementTheSameWay:
     """A link named like a payload was read by its label and refused by its path.
 
@@ -865,6 +869,7 @@ class TestTheCarveWriterDoesNotFollowALink:
         label, blob = carve(body)[0]
         return sample, tree / carved_file_name(label, hashlib.sha256(blob).hexdigest())
 
+    @pytest.mark.posix
     def test_a_planted_link_is_not_written_through(
         self, server: Any, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
@@ -902,6 +907,7 @@ class TestTheCarveWriterDoesNotFollowALink:
         assert "already taken" in answer["payloads"][0]["error"]
         assert name.read_bytes() == b"SOMETHING ELSE ENTIRELY"
 
+    @pytest.mark.posix
     def test_the_payload_is_written_private(
         self, server: Any, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:

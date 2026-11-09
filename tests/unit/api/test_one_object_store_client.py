@@ -141,6 +141,8 @@ def test_a_read_returns_the_bytes_and_releases_the_connection() -> None:
     store.response.release_conn.assert_called_once()
 
 
+@pytest.mark.posix
+@pytest.mark.posix
 def test_a_download_is_readable_by_its_owner_only(tmp_path: Path) -> None:
     store = _Store(exists=True)
     store.objects["samples/aa/aaaa"] = b"MZ"

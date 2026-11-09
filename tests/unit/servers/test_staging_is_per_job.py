@@ -498,6 +498,7 @@ class TestTheSweepReachesAJobDirectory:
         assert directory.is_dir() and fresh.exists()
         assert not stale.exists()
 
+    @pytest.mark.posix
     def test_the_newest_mtime_inside_decides_and_a_link_is_not_followed(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
@@ -557,6 +558,7 @@ class TestTheSweepReachesAJobDirectory:
         assert stale.exists()
 
 
+@pytest.mark.posix
 class TestRemovingADirectoryOfMalware:
     def test_a_link_inside_it_is_unlinked_and_never_followed(self, tmp_path: Path) -> None:
         outside = tmp_path / "outside"
@@ -1040,6 +1042,7 @@ class TestASandboxCaptureBelongsToItsJob:
     used to land in one directory shared by every job on the host, named as a
     permanent sample root and removed by nothing."""
 
+    @pytest.mark.posix
     def test_it_lands_in_this_jobs_own_directory(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
@@ -1058,6 +1061,7 @@ class TestASandboxCaptureBelongsToItsJob:
         roots = os.environ[SAMPLE_ROOTS_ENV].split(ROOT_SEPARATOR)
         assert str(captures) in roots, "this job's sidecars may read it"
 
+    @pytest.mark.posix
     def test_a_streamed_capture_is_not_left_readable(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
@@ -1106,6 +1110,7 @@ class TestASandboxCaptureBelongsToItsJob:
         assert second in configured_roots()
         staging.remove_job_staging("two")
 
+    @pytest.mark.posix
     def test_the_sweep_takes_the_directory_the_old_release_left(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
@@ -1410,6 +1415,7 @@ class TestTheCaptureDirectoryIsHeldToTheSameRuleAsStaging:
         with pytest.raises(RuntimeError, match="owned by another user"):
             staging.open_capture_dir("one")
 
+    @pytest.mark.posix
     def test_a_symlink_planted_at_the_capture_directory_is_refused(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
@@ -1445,6 +1451,7 @@ class TestACaptureIsPrivateFromItsFirstByte:
             if self._boom:
                 raise OSError("the connection went away")
 
+    @pytest.mark.posix
     def test_it_is_created_0600_rather_than_chmodded_afterwards(self, tmp_path: Path) -> None:
         from malspark.providers.sandbox.limits import stream_to_file_capped
 
@@ -1472,6 +1479,7 @@ class TestACaptureIsPrivateFromItsFirstByte:
 
         assert not out.exists()
 
+    @pytest.mark.posix
     def test_a_symlink_at_the_destination_is_not_followed(self, tmp_path: Path) -> None:
         from malspark.providers.sandbox.limits import stream_to_file_capped
 
@@ -1504,6 +1512,7 @@ class TestACaptureIsPrivateFromItsFirstByte:
         assert helper.count("unlink(missing_ok=True)") >= 3, helper[:80]
 
 
+@pytest.mark.posix
 class TestTheLegacyCaptureDirectoryCanActuallyGo:
     def test_a_link_left_in_it_is_unlinked_and_the_directory_follows(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch

@@ -226,6 +226,7 @@ class TestTheCapeReportIsReadWhole:
         assert result.sample_sha256 == "ab"
         assert len(result.report["x"]) == size
 
+    @pytest.mark.posix
     def test_the_report_is_spooled_through_an_owner_only_file(self, monkeypatch) -> None:
         import tempfile
 
@@ -283,6 +284,7 @@ class TestTheCapeReportIsReadWhole:
         out = c.fetch_pcap("7", tmp_path)
         assert out is not None and os.path.getsize(out) == len(body)
 
+    @pytest.mark.posix
     def test_a_capture_is_kept_owner_only(self, tmp_path) -> None:
         c = self._transport(PCAP_HEAD + b"\0" * 60, OCTETS)
         out = c.fetch_pcap("7", tmp_path)

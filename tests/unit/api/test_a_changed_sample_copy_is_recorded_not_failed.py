@@ -58,6 +58,8 @@ def _code(text: str) -> str:
     return f"`{text}`"
 
 
+@pytest.mark.posix
+@pytest.mark.posix
 class TestOneReading:
     def test_a_regular_file_reads_as_its_sha256(self, tmp_path: Path) -> None:
         path = tmp_path / "copy"
@@ -97,6 +99,8 @@ class TestTheCopies:
 
 
 class TestStartAndEnd:
+    @pytest.mark.posix
+    @pytest.mark.posix
     @pytest.mark.asyncio
     async def test_unchanged_copies_read_as_the_intake_digest_both_times(
         self, tmp_path: Path
@@ -115,6 +119,8 @@ class TestStartAndEnd:
         ]
         assert all(r["sha256"] == INTAKE for r in record["readings"])
 
+    @pytest.mark.posix
+    @pytest.mark.posix
     @pytest.mark.asyncio
     async def test_a_mirror_written_during_the_run_is_seen_at_the_end(self, tmp_path: Path) -> None:
         download, mirror = _copies(tmp_path)
@@ -129,6 +135,8 @@ class TestStartAndEnd:
         assert off["sha256"] == hashlib.sha256(BYTES + b"patched by a tool server").hexdigest()
         assert off["seen_at"]
 
+    @pytest.mark.posix
+    @pytest.mark.posix
     @pytest.mark.asyncio
     async def test_with_the_intake_size_a_grown_mirror_is_a_change_without_a_read(
         self, tmp_path: Path
@@ -143,6 +151,8 @@ class TestStartAndEnd:
         assert (off["copy"], off["at"], off["sha256"]) == ("mirror", AT_END, "")
         assert off["error"] == f"size {len(BYTES) + 24} is not the intake size {len(BYTES)}"
 
+    @pytest.mark.posix
+    @pytest.mark.posix
     @pytest.mark.asyncio
     async def test_with_the_intake_size_same_length_other_bytes_read_as_their_digest(
         self, tmp_path: Path
@@ -157,6 +167,8 @@ class TestStartAndEnd:
         [off] = [r for r in record["readings"] if r["sha256"] != INTAKE]
         assert off["sha256"] == hashlib.sha256(other).hexdigest()
 
+    @pytest.mark.posix
+    @pytest.mark.posix
     @pytest.mark.asyncio
     async def test_a_download_that_is_not_the_intake_bytes_is_seen_at_the_start(
         self, tmp_path: Path
@@ -229,6 +241,8 @@ async def _changed_record(tmp_path: Path) -> dict[str, Any]:
 
 
 class TestTheStoredRun:
+    @pytest.mark.posix
+    @pytest.mark.posix
     @pytest.mark.asyncio
     async def test_the_record_is_a_run_fact_and_an_isolation_line(self, tmp_path: Path) -> None:
         record = await _changed_record(tmp_path)
@@ -315,6 +329,8 @@ class TestTheStoredRun:
         )
 
 
+@pytest.mark.posix
+@pytest.mark.posix
 @pytest.mark.asyncio
 async def test_a_stopped_run_is_stored_with_its_end_reading(tmp_path: Path) -> None:
     from app.models.report import AnalysisReport
@@ -377,6 +393,8 @@ def test_the_worker_reads_the_copies_before_the_pipeline_and_before_each_store()
     )
 
 
+@pytest.mark.posix
+@pytest.mark.posix
 class TestWhatIsNotRead:
     def test_a_copy_of_another_size_is_not_read(self, tmp_path: Path) -> None:
         sparse = tmp_path / "copy"
@@ -450,6 +468,8 @@ class TestAFailedReading:
         assert sample_files.release_copy(mirror, job_id="") is True
         assert not download.exists() and not mirror.exists()
 
+    @pytest.mark.posix
+    @pytest.mark.posix
     @pytest.mark.asyncio
     async def test_an_end_reading_whose_caller_is_cancelled_is_taken_whole_by_the_next(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
@@ -502,6 +522,8 @@ def _disclosure_with_rows() -> dict[str, Any]:
     return record
 
 
+@pytest.mark.posix
+@pytest.mark.posix
 @pytest.mark.asyncio
 async def test_a_report_kept_after_a_failure_carries_the_end_reading(tmp_path: Path) -> None:
     from app.models.report import AnalysisReport
@@ -571,6 +593,8 @@ async def test_a_report_kept_after_a_failure_carries_the_end_reading(tmp_path: P
     assert f"The mirror in `r2` read `{hashlib.sha256(changed).hexdigest()}`" in markdown
 
 
+@pytest.mark.posix
+@pytest.mark.posix
 class TestTheCompletedRun:
     """``run_analysis`` end to end, the graph stubbed: a copy changed during it is stored."""
 

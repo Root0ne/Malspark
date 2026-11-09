@@ -153,6 +153,7 @@ class TestAPathOutsideEveryRootIsRefused:
 
         assert _refusal(answer)["code"] == "path_outside_roots", answer
 
+    @pytest.mark.posix
     def test_a_symlink_under_a_root_pointing_outside_is_refused(
         self, analysis: Any, staging: Path, tmp_path: Path
     ) -> None:
@@ -191,6 +192,7 @@ class TestAConfiguredRootIsRead:
 
         assert analysis.identify_file(_pe(second / "s.bin")).get("error") is None
 
+    @pytest.mark.posix
     def test_a_root_reached_through_a_symlink_is_still_a_root(
         self, analysis: Any, staging: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
@@ -260,6 +262,7 @@ class TestARulesetNamesACorpus:
             assert _refusal(answer)["code"] == "path_outside_roots", answer
 
 
+@pytest.mark.posix
 class TestTheWorkerNamesTheDirectoriesItWritesTo:
     """A default deployment configures nothing: the worker says where it put the sample."""
 

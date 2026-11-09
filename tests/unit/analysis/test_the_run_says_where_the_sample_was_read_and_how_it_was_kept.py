@@ -192,6 +192,8 @@ def test_finding_the_readers_is_linear_in_the_entries() -> None:
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.posix
+@pytest.mark.posix
 @pytest.mark.skipif(not Path("/proc/self/status").exists(), reason="no procfs")
 def test_a_child_of_the_worker_is_measured_as_sharing_the_worker() -> None:
     child = subprocess.Popen(
@@ -247,6 +249,8 @@ def _status_of(**lines: str) -> dict[str, str]:
     return status
 
 
+@pytest.mark.posix
+@pytest.mark.posix
 @pytest.mark.parametrize(
     "key, field",
     [("CapEff", "cap_eff_zero"), ("CapPrm", "cap_prm_zero"), ("CapAmb", "cap_amb_zero")],
@@ -278,6 +282,8 @@ def test_the_mount_check_is_said_as_the_namespace_it_compares(value: Any, said: 
     assert "view of the filesystem" not in line
 
 
+@pytest.mark.posix
+@pytest.mark.posix
 @pytest.mark.skipif(not Path("/proc/self/status").exists(), reason="no procfs")
 def test_a_launcher_is_measured_with_the_server_it_started_under_it() -> None:
     launcher = subprocess.Popen(
@@ -309,6 +315,8 @@ def _one_child_tree(monkeypatch: pytest.MonkeyPatch, names: list[str] | None) ->
     return isolation.measure_tree(4242, ["PATH"])
 
 
+@pytest.mark.posix
+@pytest.mark.posix
 def test_a_descendant_whose_launcher_added_a_platform_variable_is_read_as_holding_it(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -322,6 +330,8 @@ def test_a_descendant_whose_launcher_added_a_platform_variable_is_read_as_holdin
     assert part["isolated"] is False
 
 
+@pytest.mark.posix
+@pytest.mark.posix
 def test_a_descendant_whose_environment_cannot_be_read_is_unknown_and_fails(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -354,6 +364,8 @@ def test_environ_names_keeps_names_only(tmp_path: Path) -> None:
     assert isolation.environ_names(2**22 + 12345) is None
 
 
+@pytest.mark.posix
+@pytest.mark.posix
 def test_a_tree_wider_than_the_bound_is_not_judged(monkeypatch: pytest.MonkeyPatch) -> None:
     wide = list(range(10_000, 10_000 + isolation.MAX_TREE_PROCESSES + 5))
     monkeypatch.setattr(isolation, "_children", lambda pid: wide if pid == 1 else [])
@@ -364,6 +376,8 @@ def test_a_tree_wider_than_the_bound_is_not_judged(monkeypatch: pytest.MonkeyPat
     assert len(tree["descendants"]) == isolation.MAX_TREE_PROCESSES - 1
 
 
+@pytest.mark.posix
+@pytest.mark.posix
 def test_a_tree_whose_children_cannot_be_read_is_not_judged(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -420,6 +434,8 @@ LAUNCHER_SAID = (
 )
 
 
+@pytest.mark.posix
+@pytest.mark.posix
 def test_the_walk_records_how_deep_each_descendant_sits(monkeypatch: pytest.MonkeyPatch) -> None:
     tree = {4242: [4243], 4243: [4244]}
     monkeypatch.setattr(isolation, "_children", lambda pid: tree.get(pid, []))
@@ -551,6 +567,8 @@ def test_a_permitted_or_ambient_capability_is_said_and_keeps_the_reader_from_iso
     assert "; permitted capabilities;" in isolation_lines(part)[2]
 
 
+@pytest.mark.posix
+@pytest.mark.posix
 @pytest.mark.parametrize("field", range(4))
 def test_any_of_the_four_user_ids_being_the_workers_shares_the_worker(
     monkeypatch: pytest.MonkeyPatch, field: int
@@ -561,6 +579,8 @@ def test_any_of_the_four_user_ids_being_the_workers_shares_the_worker(
     assert measure_process(4242, [])["same_uid_as_worker"] is True
 
 
+@pytest.mark.posix
+@pytest.mark.posix
 def test_four_user_ids_none_of_them_the_workers_do_not_share_it(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -570,6 +590,8 @@ def test_four_user_ids_none_of_them_the_workers_do_not_share_it(
     assert measured["shares_group_with_worker"] is False
 
 
+@pytest.mark.posix
+@pytest.mark.posix
 @pytest.mark.parametrize("uid_line", ["", "1 2 3", "1 2 x 4"])
 def test_a_user_id_line_that_cannot_be_read_whole_is_absent(
     monkeypatch: pytest.MonkeyPatch, uid_line: str
@@ -578,6 +600,8 @@ def test_a_user_id_line_that_cannot_be_read_whole_is_absent(
     assert measure_process(4242, [])["same_uid_as_worker"] is None
 
 
+@pytest.mark.posix
+@pytest.mark.posix
 def test_a_group_id_or_a_supplementary_group_of_the_workers_shares_a_group(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

@@ -10,7 +10,6 @@ tried as the next format, and a real ``.tar.xz`` still lists.
 from __future__ import annotations
 
 import io
-import resource
 import tarfile
 from pathlib import Path
 
@@ -33,9 +32,10 @@ def capped_memory():
     ``/proc/self/statm``. A host without that file cannot set the cap, and the
     test is skipped there rather than run on an uncapped ask.
     """
+    resource = pytest.importorskip("resource")
     soft, hard = resource.getrlimit(resource.RLIMIT_AS)
     try:
-        with open("/proc/self/statm") as statm:
+        with open("/proc/self/statm", encoding="utf-8") as statm:
             held = int(statm.read().split()[0]) * resource.getpagesize()
     except FileNotFoundError:
         pytest.skip("no /proc/self/statm: the address space this process holds cannot be capped")

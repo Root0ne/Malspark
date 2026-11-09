@@ -617,6 +617,8 @@ class TestRootedArguments:
         assert "'../../../evil.py'" in said[0]
         assert "util.py" not in said[0]
 
+    @pytest.mark.posix
+    @pytest.mark.posix
     def test_a_path_through_a_link_out_of_the_project_is_not_rooted_and_is_said(
         self, project: Path, tmp_path: Path, caplog: pytest.LogCaptureFixture
     ) -> None:

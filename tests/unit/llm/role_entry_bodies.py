@@ -113,4 +113,6 @@ if __name__ == "__main__":
     import sys
     from pathlib import Path
 
-    Path(sys.argv[1]).write_text(json.dumps(bodies(), indent=1, sort_keys=True) + "\n")
+    Path(sys.argv[1]).write_text(
+        json.dumps(bodies(), indent=1, sort_keys=True) + "\n", encoding="utf-8"
+    )

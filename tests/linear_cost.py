@@ -49,11 +49,16 @@ being too fast to measure.
 from __future__ import annotations
 
 import gc
-import resource
+import os
 import sys
 import time
 from collections.abc import Callable
 from typing import Any
+
+try:
+    import resource
+except ImportError:  # Windows, whose default clock is the thread's anyway
+    resource = None  # type: ignore[assignment]
 
 __all__ = [
     "FLOOR_SECONDS",
@@ -115,7 +120,14 @@ def repeated(call: Callable[[], Any], times: int) -> Callable[[], None]:
 
 
 def _user_seconds() -> float:
-    """The process's user CPU time, without the kernel's time on its behalf."""
+    """The process's user CPU time, without the kernel's time on its behalf.
+
+    ``getrusage`` where there is one: ``os.times`` counts the same time on
+    POSIX, but in clock ticks (a hundredth of a second), coarser than a small
+    run may be.
+    """
+    if resource is None:
+        return os.times().user
     return resource.getrusage(resource.RUSAGE_SELF).ru_utime
 
 

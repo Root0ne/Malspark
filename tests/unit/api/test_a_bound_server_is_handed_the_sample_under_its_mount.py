@@ -70,6 +70,8 @@ def _mirror(
     )
 
 
+@pytest.mark.posix
+@pytest.mark.posix
 def test_a_server_that_declares_a_mount_is_copied_the_sample_under_it(
     samples: Path, tmp_path: Path
 ) -> None:
@@ -88,6 +90,8 @@ def test_a_server_that_declares_a_mount_is_copied_the_sample_under_it(
     assert hosts[0].read_bytes() == b"\x00demo"
 
 
+@pytest.mark.posix
+@pytest.mark.posix
 def test_a_copy_already_written_for_a_provider_is_not_written_twice(
     samples: Path, tmp_path: Path
 ) -> None:

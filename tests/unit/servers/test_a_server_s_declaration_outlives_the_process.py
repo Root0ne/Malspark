@@ -188,6 +188,7 @@ def test_a_row_listed_through_the_shipped_launch_is_read_under_this_host_s() -> 
     assert shipped == {"mcp:analysis": True, "mcp:knowledge": False}
 
 
+@pytest.mark.posix
 def test_two_names_of_one_program_in_one_place_are_one_launch(tmp_path: Path) -> None:
     program = tmp_path / "python3.13"
     program.write_text("")

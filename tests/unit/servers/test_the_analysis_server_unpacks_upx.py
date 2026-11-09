@@ -46,6 +46,7 @@ def _sample(tmp_path: Path, data: bytes, name: str = "packed.exe") -> str:
     return str(target)
 
 
+@pytest.mark.posix
 def test_the_unpacked_program_lands_beside_the_carved_files(server: Any, tmp_path: Path) -> None:
     packed = su.build()
     path = _sample(tmp_path, packed.data)
@@ -108,6 +109,7 @@ def test_a_carved_path_outside_this_sample_s_tree_is_refused(server: Any, tmp_pa
     assert answer["error"]["remediation"] == server.CARVED_REMEDIATION
 
 
+@pytest.mark.posix
 def test_a_linked_carved_directory_is_refused_and_nothing_written(
     server: Any, tmp_path: Path
 ) -> None:

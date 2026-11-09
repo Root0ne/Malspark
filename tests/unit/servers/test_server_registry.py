@@ -365,6 +365,7 @@ def test_an_absolute_cwd_that_does_not_exist_is_refused(tmp_path):
     assert "cwd" in str(exc.value) and "x" in str(exc.value)
 
 
+@pytest.mark.posix
 def test_a_symlink_escaping_the_repository_root_is_refused(tmp_path, monkeypatch):
     """``_resolve_cwd`` takes no root argument, so the root is faked by pointing
     ``get_project_root`` (imported locally inside the method, so patchable here)

@@ -19,7 +19,6 @@ import importlib.util
 import json
 import os
 import re
-import resource
 import shutil
 import stat
 import subprocess
@@ -144,6 +143,7 @@ YR_STDERR = (
 )
 
 
+@pytest.mark.posix
 class TestYaraX:
     def test_each_matching_rule_is_a_row_with_its_strings(
         self, roots: Path, bin_dir: Path, rules: Path
@@ -323,6 +323,7 @@ def report(bin_dir: Path, monkeypatch: pytest.MonkeyPatch) -> Any:
 
 
 class TestOletools:
+    @pytest.mark.posix
     def test_vba_macros_and_their_analysis(self, roots: Path, bin_dir: Path, report: Any) -> None:
         report(VBA_REPORT)
         answer = _call(oletools.ole_vba(str(roots / "sample.bin")))
@@ -332,6 +333,7 @@ class TestOletools:
         _call(oletools.ole_vba(str(roots / "sample.bin"), deobfuscate=True))
         assert _args(bin_dir, "ole-report") == ["vba", "--deobfuscate", "--", sample]
 
+    @pytest.mark.posix
     def test_each_other_report_answers_under_its_tool(
         self, roots: Path, bin_dir: Path, report: Any
     ) -> None:
@@ -349,6 +351,7 @@ class TestOletools:
                 assert answer[count[0]] == count[1]
             assert _args(bin_dir, "ole-report")[0] == name
 
+    @pytest.mark.posix
     def test_dde_links_with_the_field_filter_asked_for(
         self, roots: Path, bin_dir: Path, report: Any
     ) -> None:
@@ -359,6 +362,7 @@ class TestOletools:
         refused = _call(oletools.office_dde(str(roots / "sample.bin"), field_filter="--all"))
         assert _error(refused)[0] == "bad_argument"
 
+    @pytest.mark.posix
     def test_a_format_the_report_does_not_read_is_unsupported(
         self, roots: Path, bin_dir: Path, report: Any
     ) -> None:
@@ -368,6 +372,7 @@ class TestOletools:
         assert _error(answer) == ("unsupported_format", f"vba: {said}")
         assert answer["tool"] == "ole_vba"
 
+    @pytest.mark.posix
     def test_a_crashed_report_says_its_words(self, roots: Path, bin_dir: Path, report: Any) -> None:
         report({}, code=1, stderr="Traceback ...\nValueError: bad stream\n")
         answer = _call(oletools.rtf_objects(str(roots / "sample.bin")))
@@ -461,6 +466,7 @@ def deobfuscator(bin_dir: Path, monkeypatch: pytest.MonkeyPatch) -> Any:
     return answer
 
 
+@pytest.mark.posix
 class TestWebcrack:
     def test_each_script_is_a_row_and_the_options_are_flags(
         self, roots: Path, bin_dir: Path, deobfuscator: Any
@@ -648,6 +654,7 @@ class TestTheScriptScan:
 
 def _children_cpu_seconds() -> float:
     """The CPU time, user and system, of every child this process has waited for."""
+    resource = pytest.importorskip("resource")
     used = resource.getrusage(resource.RUSAGE_CHILDREN)
     return used.ru_utime + used.ru_stime
 
@@ -877,6 +884,7 @@ def test_the_macro_tools_say_no_macro_runs() -> None:
     assert "would run the script" in _declared("webcrack")["js_deobfuscate"].does_not_show
 
 
+@pytest.mark.posix
 def test_yara_x_matches_are_read_as_the_shipped_yara_scans_are(
     roots: Path, bin_dir: Path, rules: Path
 ) -> None:
@@ -896,6 +904,7 @@ def test_yara_x_matches_are_read_as_the_shipped_yara_scans_are(
     assert [row["rule"] for row in rows] == [["agent_loader"], ["agent_config"]]
 
 
+@pytest.mark.posix
 def test_the_declared_rows_read_what_the_servers_answer(
     roots: Path, bin_dir: Path, report: Any, deobfuscator: Any
 ) -> None:

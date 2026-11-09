@@ -419,6 +419,7 @@ class _Parent:
 
 @pytest.mark.skipif(not sys.platform.startswith("linux"), reason="reads /proc; prctl is Linux's")
 class TestTheChildDiesWithItsParent:
+    @pytest.mark.posix
     def test_a_parent_killed_outright_takes_its_child(self, tmp_path: Path) -> None:
         parent = _Parent(tmp_path, "main")
         try:
@@ -430,6 +431,7 @@ class TestTheChildDiesWithItsParent:
         finally:
             parent.clean_up()
 
+    @pytest.mark.posix
     def test_a_parent_that_exits_takes_its_child(self, tmp_path: Path) -> None:
         parent = _Parent(tmp_path, "exit")
         try:
@@ -440,6 +442,7 @@ class TestTheChildDiesWithItsParent:
         finally:
             parent.clean_up()
 
+    @pytest.mark.posix
     def test_a_group_kill_of_the_parent_takes_its_child(self, tmp_path: Path) -> None:
         """As mcp stops a server: SIGTERM to its group, SIGKILL two seconds later.
 
@@ -608,6 +611,7 @@ class TestTheRunDirectoryGoesWithTheJob:
         assert isinstance(provider, capa_yara.CapaYaraStaticProvider)
         assert provider.job_key == container.job_key() == JOB
 
+    @pytest.mark.posix
     @pytest.mark.skipif(not sys.platform.startswith("linux"), reason="reads /proc")
     def test_after_a_killed_parent_nothing_is_left_outside_the_job_directory(
         self, tmp_path: Path

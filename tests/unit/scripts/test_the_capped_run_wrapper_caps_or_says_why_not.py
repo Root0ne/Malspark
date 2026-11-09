@@ -322,6 +322,7 @@ def test_the_watcher_stops_its_own_scope_below_the_floor(
     assert calls == [["systemctl", "--user", "stop", "--", "u1.scope"]]
 
 
+@pytest.mark.posix
 def test_a_cap_accepted_but_not_enforced_kills_the_scope(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
@@ -436,6 +437,7 @@ def _capped(monkeypatch: pytest.MonkeyPatch, available: int) -> list[list[str]]:
 ARGS = ["--unit", "u1", "--memory", "1G", "--tasks", "64", "--cpu", "200%", "--interval", "0.02"]
 
 
+@pytest.mark.posix
 def test_main_reports_the_watcher_s_events_and_its_stop(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -454,6 +456,7 @@ def test_main_reports_the_watcher_s_events_and_its_stop(
     assert "memory events at the watcher's last poll: low 0, high 2, max 1" in err
 
 
+@pytest.mark.posix
 def test_main_says_when_the_scope_never_held_the_command(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -465,6 +468,7 @@ def test_main_says_when_the_scope_never_held_the_command(
     assert calls == []  # no result read and no reset-failed for a unit never seen
 
 
+@pytest.mark.posix
 def test_main_fails_a_run_whose_cap_was_not_enforced(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -476,6 +480,7 @@ def test_main_fails_a_run_whose_cap_was_not_enforced(
     assert "a cap was not enforced (pids.max is max, not 64)" in capsys.readouterr().err
 
 
+@pytest.mark.posix
 def test_sigterm_to_the_wrapper_stops_its_scope_and_keeps_waiting(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -494,6 +499,7 @@ def test_sigterm_to_the_wrapper_stops_its_scope_and_keeps_waiting(
     assert signal.getsignal(signal.SIGTERM) is before
 
 
+@pytest.mark.posix
 def test_sigterm_before_the_scope_holds_the_command_is_passed_to_it(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
@@ -548,6 +554,7 @@ def test_a_failed_stop_of_a_scope_already_gone_is_not_a_watcher_failure(
         still_there.check_once()
 
 
+@pytest.mark.posix
 def test_sigterm_kills_the_command_when_the_scope_stop_fails(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:

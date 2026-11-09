@@ -1049,6 +1049,7 @@ def test_a_job_export_over_a_stored_run_is_refused_before_the_database_is_read(
     assert digests(held) == before
 
 
+@pytest.mark.posix
 def test_a_dangling_link_of_the_layout_counts_as_a_stored_run(tmp_path: Path) -> None:
     target = tmp_path / "run"
     target.mkdir()

@@ -153,13 +153,13 @@ def test_an_extra_identifying_string_is_removed_too(runs: list[Path], tmp_path: 
 
 
 def _fill(template: Path, verdicts: dict[str, dict[str, str]], beyond: dict[str, int]) -> None:
-    with template.open(newline="") as handle:
+    with template.open(encoding="utf-8", newline="") as handle:
         rows = list(csv.reader(handle))
     header = rows[0]
     for row in rows[1:]:
         for column, anon in enumerate(header[1:], start=1):
             row[column] = str(beyond[anon]) if row[0] == BEYOND_ROW else verdicts[anon][row[0]]
-    with template.open("w", newline="") as handle:
+    with template.open("w", encoding="utf-8", newline="") as handle:
         csv.writer(handle).writerows(rows)
 
 

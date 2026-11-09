@@ -500,6 +500,7 @@ class TestTheLiveSidecarReadsTheSampleAndNothingElse:
 
 
 class TestTheWorkerNamesItsOwnDirectoriesBeforeAnySidecarStarts:
+    @pytest.mark.posix
     def test_the_environment_handed_to_a_spawn_carries_the_mirror_base(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:

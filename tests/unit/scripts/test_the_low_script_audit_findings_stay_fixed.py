@@ -33,6 +33,7 @@ def _git(repo: Path, *args: str) -> str:
     ).stdout.strip()
 
 
+@pytest.mark.posix
 def test_fetch_external_does_not_accept_a_tree_ahead_of_the_pin(tmp_path: Path) -> None:
     text = (ROOT / "scripts" / "dev" / "fetch_external.sh").read_text(encoding="utf-8")
     loop = text[text.index("for spec in") : text.index('\n\n\nif [[ -d "$SIGMA_DEST')]
@@ -211,6 +212,7 @@ def test_attck_corpus_files_are_written_atomically(
     assert json.loads((tmp_path / "valid.json").read_text())["enterprise"] == ["T1"]
 
 
+@pytest.mark.posix
 def test_sigma_is_pinned_exactly_and_never_falls_back_to_the_default_branch(
     tmp_path: Path,
 ) -> None:
