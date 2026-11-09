@@ -148,6 +148,51 @@ def test_a_ledger_entry_drops_its_row_id_and_keeps_its_entry_id() -> None:
     assert Sanitiser({}).json(stix) == {"id": "indicator--" + JOB, "x_malspark_confidence": 0.9}
 
 
+def test_every_tlp_marking_of_a_published_copy_reads_clear() -> None:
+    for level in ("AMBER", "AMBER+STRICT", "AMBER_STRICT", "RED", "GREEN", "WHITE", "CLEAR"):
+        assert clean(f"**TLP:{level}** · Report X") == "**TLP:CLEAR** · Report X"
+    assert clean("<strong>TLP:RED</strong>") == "<strong>TLP:CLEAR</strong>"
+    assert Sanitiser({}).json({"tlp": "AMBER", "front_matter": {"TLP": "red"}}) == {
+        "tlp": "CLEAR",
+        "front_matter": {"TLP": "CLEAR"},
+    }
+    # A field that is not a marking level is sanitised as any other.
+    assert Sanitiser({}).json({"tlp": "see evil.de"}) == {"tlp": "see evil[.]de"}
+
+
+def test_the_platform_still_escalates_and_the_public_copy_reads_clear() -> None:
+    from malspark.reporting.builder import MalwareReportBuilder
+    from malspark.reporting.models import (
+        FileHashes,
+        MalwareReport,
+        NetworkIOCs,
+        NetworkIP,
+        SampleIdentity,
+    )
+
+    builder = MalwareReportBuilder(
+        file_hash="a" * 64,
+        file_name=None,
+        sample_path=None,
+        sandbox_report=None,
+        reports={},
+        isr_reports={},
+        stix_output=None,
+        run_summary=None,
+        discussion_history=None,
+        final_decision="Malware",
+    )
+    report = MalwareReport(
+        identity=SampleIdentity(hashes=FileHashes(sha256="a" * 64)),
+        network=NetworkIOCs(ips=[NetworkIP(address="198.51.100.7", port=443)]),
+    )
+    tlp = builder._build_front_matter(report).tlp
+    # The report kept in the platform holds live C2, so it is marked AMBER ...
+    assert tlp == "AMBER"
+    # ... and the copy written for open publication is not.
+    assert clean(f"**TLP:{tlp}** · Report X") == "**TLP:CLEAR** · Report X"
+
+
 @pytest.mark.parametrize("indent", [1, 2, None])
 def test_a_json_copy_keeps_the_original_layout(indent: int | None) -> None:
     data = {"a": ["é", 1]}
@@ -168,21 +213,28 @@ def test_a_run_folder_is_published_whole(tmp_path: Path) -> None:
     sandbox = {"facts": {"kind": "sandbox_network"}, "structured": {"tcp": [{"dst": "zz.yy:443"}]}}
     for name in TEXT_FILES:
         (run / name).write_text(
-            f"job {JOB} beacons to https://bad-host.top/live/ via odd.zz and zz.yy\n",
+            f"**TLP:AMBER** job {JOB} beacons to https://bad-host.top/live/ via odd.zz and zz.yy\n",
             encoding="utf-8",
         )
     for name in JSON_FILES:
-        body = {"items": [sandbox]} if name == "evidence.json" else {"url": "https://bad-host.top/"}
+        body = (
+            {"items": [sandbox]}
+            if name == "evidence.json"
+            else {"url": "https://bad-host.top/", "tlp": "RED", "markdown": "**TLP:AMBER**"}
+        )
         (run / name).write_text(json.dumps(body, indent=1), encoding="utf-8")
     assert run_indicators(run) == {"odd.zz", "zz.yy"}
     publish(run, out)
     for name in TEXT_FILES:
         job = "&lt;job&gt;" if name.endswith(".html") else "<job>"
         assert (out / name).read_text(encoding="utf-8") == (
-            f"job {job} beacons to hxxps://bad-host[.]top/live/ via odd[.]zz and zz[.]yy\n"
+            f"**TLP:CLEAR** job {job} beacons to hxxps://bad-host[.]top/live/"
+            " via odd[.]zz and zz[.]yy\n"
         )
     assert json.loads((out / "stix-bundle.json").read_text(encoding="utf-8")) == {
-        "url": "hxxps://bad-host[.]top/"
+        "url": "hxxps://bad-host[.]top/",
+        "tlp": "CLEAR",
+        "markdown": "**TLP:CLEAR**",
     }
 
 
@@ -326,6 +378,24 @@ def test_the_published_copy_holds_no_internal_name_path_or_server_id(name: str, 
     assert tags == set()
     ids = {m.group(2) for m in _ID.finditer(text) if not m.group(1)}
     assert ids <= PUBLIC_IDS
+
+
+@pytest.mark.parametrize(("name", "text"), _copies(), ids=[n for n, _ in _copies()])
+def test_the_published_copy_carries_no_restricted_tlp_marking(name: str, text: str) -> None:
+    # The copies are published openly; a limited-distribution marking contradicts that.
+    assert not re.search(r"TLP\s*:\s*(?:AMBER|RED|GREEN|WHITE)", text, re.IGNORECASE)
+    if name.endswith(".json"):
+        assert set(_tlp_fields(json.loads(text))) <= {"CLEAR"}
+
+
+def _tlp_fields(value: object) -> list[object]:
+    """The value of every ``tlp`` field in a parsed JSON value."""
+    if isinstance(value, dict):
+        own = [v for k, v in value.items() if str(k).lower() == "tlp"]
+        return own + [f for v in value.values() for f in _tlp_fields(v)]
+    if isinstance(value, list):
+        return [f for v in value for f in _tlp_fields(v)]
+    return []
 
 
 @pytest.mark.parametrize("name", [n for n in TEXT_FILES if n.endswith(".html")])
