@@ -62,7 +62,7 @@ FROM floss-${TARGETARCH} AS floss
 # rule count is what capa loads. The signatures are the sigs/ directory of
 # flare-capa's own sdist on PyPI, checked against the sha256 uv.lock records
 # for that sdist. Both keep their licence file. Keep the three values in step
-# with uv.lock and scripts/dev/fetch_capa_data.sh; a test holds them together.
+# with uv.lock and scripts/dev/malspark_dev.py; a test holds them together.
 FROM python:3.13-slim@sha256:9d2e5553305c7c7b0097999bb17187c69b921ccd6bc9d40e4bb5ebe652c00285 AS capa-data
 ARG CAPA_VERSION=9.4.0
 ARG CAPA_RULES_SHA256=273591b11737181b3bdaac18964f23627cf10c21c2b143fc9be88e4a33217669
@@ -80,12 +80,12 @@ RUN python3 -c "import sys, urllib.request; urllib.request.urlretrieve(sys.argv[
     rm rules.tar.gz sdist.tar.gz
 
 # The Sigma corpus the in-process Sigma pass and the analysis sidecar read by
-# default (data/sigma_rules): SigmaHQ's tag that scripts/dev/fetch_external.sh
+# default (data/sigma_rules): SigmaHQ's tag that scripts/dev/malspark_dev.py
 # clones (SIGMA_REF), as GitHub's archive of the tag, whose sha256 was computed
 # when it was pinned. The whole tree, as the clone has it, licence included, so
 # an image and a workstation load the same rules. Without it every Sigma scan
 # in an image that bind-mounts no data/ would not run and degrade the run.
-# Keep SIGMA_REF in step with fetch_external.sh; a test holds them together.
+# Keep SIGMA_REF in step with malspark_dev.py; a test holds them together.
 FROM python:3.13-slim@sha256:9d2e5553305c7c7b0097999bb17187c69b921ccd6bc9d40e4bb5ebe652c00285 AS sigma-data
 ARG SIGMA_REF=r2026-07-01
 ARG SIGMA_ARCHIVE_SHA256=c9be92eecb216941f681504eb5cf917598377bee665b344a0456e90093f8023d

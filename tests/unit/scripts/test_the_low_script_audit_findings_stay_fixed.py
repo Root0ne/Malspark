@@ -33,27 +33,29 @@ def _git(repo: Path, *args: str) -> str:
     ).stdout.strip()
 
 
-@pytest.mark.posix
-def test_fetch_external_does_not_accept_a_tree_ahead_of_the_pin(tmp_path: Path) -> None:
-    text = (ROOT / "scripts" / "dev" / "fetch_external.sh").read_text(encoding="utf-8")
-    loop = text[text.index("for spec in") : text.index('\n\n\nif [[ -d "$SIGMA_DEST')]
+def _setup_entry_point() -> ModuleType:
+    return _load("scripts/dev/malspark_dev.py", "malspark_dev_audit_under_test")
+
+
+def test_fetch_external_does_not_accept_a_tree_ahead_of_the_pin(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    dev = _setup_entry_point()
     repo = tmp_path / "external" / "tree"
     repo.mkdir(parents=True)
     _git(repo, "init", "-q")
     _git(repo, "commit", "-q", "--allow-empty", "-m", "pin")
     _git(repo, "tag", "pin-tag")
-    harness = tmp_path / "loop.sh"
-    harness.write_text(
-        f'set -u\nEXTERNAL="{tmp_path}/external"\nPATCHES="{tmp_path}/patches"\n'
-        f'targets=("tree|file:///nowhere|pin-tag")\n{loop}\n',
-        encoding="utf-8",
-    )
+    layout = dev.Layout(tmp_path, tmp_path / "external")
+    target = dev.Target("tree", "file:///nowhere", "pin-tag")
 
     def run() -> str:
-        done = subprocess.run(
-            ["bash", str(harness)], capture_output=True, text=True, check=False, timeout=60
-        )
-        return done.stdout
+        capsys.readouterr()
+        try:
+            dev._fetch_tree(layout, target)
+        except dev.Stop:
+            pass
+        return capsys.readouterr().out
 
     assert "ok       tree" in run()
     _git(repo, "commit", "-q", "--allow-empty", "-m", "ahead of the pin")
@@ -212,12 +214,10 @@ def test_attck_corpus_files_are_written_atomically(
     assert json.loads((tmp_path / "valid.json").read_text())["enterprise"] == ["T1"]
 
 
-@pytest.mark.posix
 def test_sigma_is_pinned_exactly_and_never_falls_back_to_the_default_branch(
-    tmp_path: Path,
+    tmp_path: Path, capfd: pytest.CaptureFixture[str]
 ) -> None:
-    text = (ROOT / "scripts" / "dev" / "fetch_external.sh").read_text(encoding="utf-8")
-    block = text[text.index('if [[ -d "$SIGMA_DEST/.git" ]]') : text.index("# capa's rules")]
+    dev = _setup_entry_point()
     upstream = tmp_path / "upstream"
     upstream.mkdir()
     _git(upstream, "init", "-q")
@@ -225,25 +225,24 @@ def test_sigma_is_pinned_exactly_and_never_falls_back_to_the_default_branch(
     _git(upstream, "tag", "pin-tag")
     dest = tmp_path / "sigma"
 
-    def run(ref: str, target: Path) -> subprocess.CompletedProcess[str]:
-        harness = tmp_path / "sigma.sh"
-        harness.write_text(
-            f'set -u\nSIGMA_URL="file://{upstream}"\nSIGMA_REF="{ref}"\n'
-            f'SIGMA_DEST="{target}"\n{block}\n',
-            encoding="utf-8",
-        )
-        return subprocess.run(
-            ["bash", str(harness)], capture_output=True, text=True, check=False, timeout=60
-        )
+    def run(ref: str, target: Path) -> tuple[int, str, str]:
+        capfd.readouterr()
+        try:
+            dev.fetch_sigma(target, upstream.as_uri(), ref)
+            status = 0
+        except dev.Stop as stop:
+            status = stop.status
+        said = capfd.readouterr()
+        return status, said.out, said.err
 
-    assert run("pin-tag", dest).returncode == 0
-    assert "ok       sigma" in run("pin-tag", dest).stdout
+    assert run("pin-tag", dest)[0] == 0
+    assert "ok       sigma" in run("pin-tag", dest)[1]
     _git(dest, "commit", "-q", "--allow-empty", "-m", "ahead")
-    assert "ok       sigma" not in run("pin-tag", dest).stdout
+    assert "ok       sigma" not in run("pin-tag", dest)[1]
     assert _git(dest, "rev-parse", "HEAD") == _git(upstream, "rev-parse", "pin-tag")
-    missing = run("no-such-tag", tmp_path / "other")
-    assert missing.returncode != 0
-    assert "FAIL" in missing.stderr
+    status, _, err = run("no-such-tag", tmp_path / "other")
+    assert status != 0
+    assert "FAIL" in err
     assert not (tmp_path / "other").exists()
 
 

@@ -52,7 +52,7 @@ samples/
 data/uploads/
 
 # ── Third-party corpora, fetched rather than vendored ──────────────────
-# scripts/dev/fetch_external.sh clones each at a pinned ref, licence file and all.
+# scripts/dev/malspark_dev.py external fetches each at a pinned ref, licence file and all.
 external/
 data/sigma_rules/
 data/capa-rules/
