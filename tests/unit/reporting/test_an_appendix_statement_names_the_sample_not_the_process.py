@@ -12,6 +12,8 @@ statement adds a value only by what it prints (T-566).
 
 from __future__ import annotations
 
+import re
+
 import pytest
 
 from malspark.reporting.models import (
@@ -22,7 +24,9 @@ from malspark.reporting.models import (
     StaticAnalysis,
 )
 from malspark.reporting.renderers import MarkdownRenderer
+from malspark.reporting.renderers.analyst import _PIPE, _Analyst, _Shield
 from malspark.reporting.renderers.layout import ANALYST, BUNDLE
+from tests.linear_cost import assert_scales
 
 # The haiku13 shapes, the values changed.
 _PARENTHESISED = (
@@ -339,3 +343,171 @@ def test_a_bracket_that_points_to_no_claim_is_the_sample_s(statement: str) -> No
 
     assert statement.removeprefix("static: ") in printed
     assert "left out" not in printed
+
+
+@pytest.mark.parametrize(
+    "statement",
+    [
+        'static: 0xa001 compares the input with L"static_r2" via CMP_X.',
+        "static: 0xa019 logs `static_r2 ready` through LOG_X.",
+        "static: 0xa01a prints “static_r2” via PRINT_Z.",
+        'static: 0xa01b writes "(static_r2)" to the log via LOG_Y.',
+    ],
+)
+def test_an_analyst_s_name_inside_a_quoted_string_is_the_sample_s(statement: str) -> None:
+    printed = _appendix(_report(statement))
+
+    assert statement.removeprefix("static: ") in printed
+    assert "left out" not in printed
+
+
+def test_an_analyst_s_name_in_brackets_goes_with_the_stop_it_holds() -> None:
+    printed = _appendix(
+        _report(
+            "static: 0xa01c writes FILE_R (static_r2.) The table is read by 0xa01d.",
+            "static: 0xa01e reads KEY_R (static_r2;) then decrypts BLOB_R.",
+            "static: 0xa022 maps VIEW_R (static_r2.).",
+        )
+    )
+
+    assert "0xa01c writes FILE_R. The table is read by 0xa01d." in printed
+    assert "0xa01e reads KEY_R; then decrypts BLOB_R." in printed
+    assert "0xa022 maps VIEW_R." in printed and "VIEW_R.." not in printed
+    assert "static_r2" not in printed
+    assert "left out" not in printed
+
+
+@pytest.mark.parametrize(
+    ("statement", "kept"),
+    [
+        # A stop that ends no sentence there goes with the bracket.
+        (
+            "static: 0xa023 writes FILE_S (static_r2.) next to 0xa024.",
+            "0xa023 writes FILE_S next to 0xa024.",
+        ),
+        (
+            "static: 0xa025 writes FILE_T (static_r2?) the table.",
+            "0xa025 writes FILE_T the table.",
+        ),
+        # Nor does one at the sentence's head.
+        ("static: (static_r2.) 0xa026 writes FILE_U.", "0xa026 writes FILE_U."),
+        (
+            "static: 0xa027 writes FILE_V (static_r2!) Next 0xa028 reads it.",
+            "0xa027 writes FILE_V! Next 0xa028 reads it.",
+        ),
+    ],
+)
+def test_a_bracket_s_stop_stays_only_where_it_ends_the_sentence(statement: str, kept: str) -> None:
+    printed = _appendix(_report(statement))
+
+    assert kept in printed
+    assert f". {kept}" not in printed and f".. {kept}" not in printed
+    assert "static_r2" not in printed
+    assert "left out" not in printed
+
+
+@pytest.mark.parametrize(
+    "statement",
+    [
+        'static: 0xa01f compares the reply with id2"claim 4" via CMP_Y.',
+        'static: 0xa020 decodes u8"(claim 4)" via DECODE_X.',
+        'static: 0xa029 compares the input with id2"static_r2" via CMP_Z.',
+        'static: 0xa02a cuts a model3" plate (claim 6) and pads 5" more via CUT_X.',
+    ],
+)
+def test_a_string_only_one_reading_of_its_quotes_makes_leaves_the_sentence_out(
+    statement: str,
+) -> None:
+    # A quote after a digit is an inch mark or closes a literal's prefix (id2"…");
+    # where the readings disagree on a marker, the sentence is neither cut nor
+    # printed: it is left out, counted, and printed whole in the bundle.
+    printed = _appendix(_report(statement))
+
+    assert statement.split()[1] not in printed
+    assert "1 sentence of them was left out; the bundle prints every statement whole." in printed
+
+
+@pytest.mark.parametrize(
+    ("statement", "kept"),
+    [
+        (
+            'static: 0xa02b cuts a model3" plate (claim 6) and labels it "x" via CUT_Y.',
+            '0xa02b cuts a model3" plate and labels it "x" via CUT_Y.',
+        ),
+        (
+            'static: 0xa02c cuts a model3" plate (static_r2) and labels it "x" via CUT_Z.',
+            '0xa02c cuts a model3" plate and labels it "x" via CUT_Z.',
+        ),
+        (
+            'static: 0xa02d reads a size2" disk (see claim 6) per "spec" via DISK_X.',
+            '0xa02d reads a size2" disk per "spec" via DISK_X.',
+        ),
+        (
+            'static: 0xa02e reads a M3" bolt (claim 6) and "x" via BOLT_X.',
+            '0xa02e reads a M3" bolt and "x" via BOLT_X.',
+        ),
+        (
+            'static: 0xa02f reads a model3" thick plate "claim 4" (claim 6) via PLATE_X.',
+            '0xa02f reads a model3" thick plate "claim 4" via PLATE_X.',
+        ),
+    ],
+)
+def test_a_quote_the_plain_reading_pairs_closes_no_literal_s_prefix(
+    statement: str, kept: str
+) -> None:
+    # The quote after model3 is an inch mark: the next quote opens the string.
+    printed = _appendix(_report(statement))
+
+    assert kept in printed
+    assert "(claim 6)" not in printed and "static_r2" not in printed
+    assert "left out" not in printed
+
+
+def test_a_name_inside_a_string_only_one_reading_makes_is_left_out_and_counted() -> None:
+    printed = _appendix(
+        _report('static: 0xa030 cuts a model3" plate as static_r2 found and labels "x" via X_Q.')
+    )
+
+    assert "static_r2" not in printed and "0xa030" not in printed
+    assert "1 sentence of them was left out; the bundle prints every statement whole." in printed
+
+
+def test_a_quote_closing_an_inch_mark_opens_no_literal() -> None:
+    # The x3 between two inch marks is no prefix: the quoted string after it shields.
+    printed = _appendix(
+        _report('static: 0xa021 prints a 5"x3" label "claim 4" (claim 6) via LABEL_X.')
+    )
+
+    assert '0xa021 prints a 5"x3" label "claim 4" via LABEL_X.' in printed
+    assert "(claim 6)" not in printed
+    assert "left out" not in printed
+
+
+def test_markers_are_read_in_linear_time() -> None:
+    # Many names and claim numbers, quoted and not, in one long sentence: each
+    # quoted string is found once per pass, not once per marker.
+    names = ["static_r2", "dynamic"]
+    named = re.compile(
+        r"(?<![\w.-])(?:"
+        + _PIPE.join(re.escape(name) for name in names)
+        + r")(?![\w-]"
+        + _PIPE
+        + r"\.\w)"
+    )
+    analyst = object.__new__(_Analyst)
+    chunk = '0xa1 w "static_r2" and "claim 4" (static_r2) (claim 5) id2"x" 5" more '
+    assert_scales(
+        lambda size: chunk * size + "end.",
+        400,
+        lambda text: analyst._without_markers(text, named),
+    )
+
+
+def test_quoted_strings_are_found_in_linear_time() -> None:
+    # Long identifiers no quote follows, inch marks and literals with no closing
+    # quote: each is read once, whatever its length.
+    assert_scales(
+        lambda size: ("word9" * 64 + ' 5"x ') * size + 'id2"open ' * size,
+        2000,
+        _Shield.of,
+    )
