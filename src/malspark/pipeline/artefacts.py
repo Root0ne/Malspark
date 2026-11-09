@@ -296,9 +296,9 @@ def _open_beneath_by_path(root: Path, parts: list[str], where: str) -> int:
         if staging.is_reparse_point(here, info) or not stat.S_ISDIR(info.st_mode):
             raise ValueError(NOT_BENEATH.format(where=where))
     try:
-        return staging.open_no_follow(
-            here / parts[-1], _OPEN_FLAGS, at=os.path.join(real_root, *parts)
-        )
+        # The flags without ``O_NOFOLLOW``: ``open_no_follow`` adds it where it exists.
+        flags = os.O_RDONLY | getattr(os, "O_CLOEXEC", 0)
+        return staging.open_no_follow(here / parts[-1], flags, at=os.path.join(real_root, *parts))
     except OSError as exc:
         raise ValueError(f"it cannot be opened as a file inside {where}") from exc
 
