@@ -27,6 +27,7 @@ guard against a regression in a later refactor.
 from __future__ import annotations
 
 import json
+from pathlib import Path
 from types import MethodType
 from typing import Any
 from unittest.mock import MagicMock
@@ -35,6 +36,10 @@ from malspark.core.container import ServiceContainer
 from malspark.loaders.binary_chunker import TextChunk
 from malspark.pipeline.nodes import _is_placeholder_only, make_revision_node, make_stage_agent_node
 from tests.stages import ANALYSIS_STAGE, paper_profile
+
+# A host path as the run hands it over: absolute on this host (on Windows a
+# rooted path takes the drive the run is on).
+HOST_SAMPLE = str(Path("/srv/malspark/data/samples/abc123.exe").resolve())
 
 
 def _chunk(content: str) -> TextChunk:
@@ -275,11 +280,8 @@ class TestTheGenericContextAlwaysCarriesAnAbsolutePath:
     def test_a_provider_that_mirrors_nothing_falls_back_to_the_host_path(self) -> None:
         """Provider `none`: no mirror, so the absolute host path is what the
         agent must see. This is the live failure."""
-        shown = self._shown(
-            {"file_hash": "abc123", "sample_path": "/srv/malspark/data/samples/abc123.exe"},
-            provider_id="none",
-        )
-        assert "/srv/malspark/data/samples/abc123.exe" in shown
+        shown = self._shown({"file_hash": "abc123", "sample_path": HOST_SAMPLE}, provider_id="none")
+        assert json.dumps(HOST_SAMPLE) in shown
         assert '"analysis_file_path": "abc123.exe"' not in shown
 
     def test_the_mirror_path_still_wins_when_the_provider_mirrors(self) -> None:
@@ -310,8 +312,8 @@ class TestTheGenericContextAlwaysCarriesAnAbsolutePath:
         match = _re.search(r'"analysis_file_path":\s*("(?:[^"\\]|\\.)*")', shown)
         assert match is not None, f"no analysis_file_path in the generic context: {shown[:400]}"
         path = _json.loads(match.group(1))
-        assert path.startswith("/"), f"the agent was given a non-absolute path: {path!r}"
-        assert path.endswith("data/samples/abc123.exe")
+        assert Path(path).is_absolute(), f"the agent was given a non-absolute path: {path!r}"
+        assert Path(path).parts[-3:] == ("data", "samples", "abc123.exe")
 
     def test_nothing_is_invented_when_there_is_no_sample_path_at_all(self) -> None:
         """The existing carve-out stays: no mirror and no host path means the
@@ -352,13 +354,13 @@ class TestAGenericAgentIsPinnedToTheSamplePathToo:
         pinned = self._pin(
             {
                 "file_hash": "abc123",
-                "sample_path": "/srv/malspark/data/samples/abc123.exe",
+                "sample_path": HOST_SAMPLE,
                 "static_sample_path": None,
                 "static_sample_paths": {"r2": "/srv/malspark/data/samples/r2-work/abc123.exe"},
             },
             provider_id="none",
         )
-        assert pinned == "/srv/malspark/data/samples/abc123.exe"
+        assert pinned == HOST_SAMPLE
 
     def test_a_generic_agent_on_a_mirroring_provider_pins_its_own_mirror(self) -> None:
         pinned = self._pin(
