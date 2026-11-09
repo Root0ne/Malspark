@@ -262,3 +262,80 @@ def test_a_claim_the_debate_owns_inside_a_phrase_is_left_out_and_counted() -> No
     assert "2 sentences of them were left out; the bundle prints every statement whole." in (
         printed
     )
+
+
+def test_a_lone_quote_shields_no_marker() -> None:
+    # An inch mark opens no quotation: the claim number after it is the analyst's.
+    printed = _appendix(
+        _report(
+            'static: The 5" drive image is read by 0xa00e (claim 4) and hashed (DRIVE_X).',
+            'static: 0xa010 trims 3" of padding (claim 6), then logs "done" via LOG_Z.',
+        )
+    )
+
+    assert 'The 5" drive image is read by 0xa00e and hashed (DRIVE_X).' in printed
+    assert '0xa010 trims 3" of padding, then logs "done" via LOG_Z.' in printed
+    assert "claim" not in printed
+    assert "left out" not in printed
+
+
+def test_an_analyst_s_name_with_a_file_extension_is_a_file() -> None:
+    report = _report("static: The loader maps static_r2.dll at 0xa00f via LOAD_X.")
+
+    printed = _appendix(report)
+
+    assert "The loader maps static_r2.dll at 0xa00f via LOAD_X." in printed
+    assert "left out" not in printed
+
+
+@pytest.mark.parametrize("lead", ["see", "per", "in", "cf.", "See", "Cf."])
+def test_a_bracketed_pointer_to_a_claim_goes_and_the_sentence_stays(lead: str) -> None:
+    printed = _appendix(_report(f"static: 0xa011 decrypts the config ({lead} claim 8) with KEY_X."))
+
+    assert "0xa011 decrypts the config with KEY_X." in printed
+    assert "claim" not in printed
+    assert "left out" not in printed
+
+
+@pytest.mark.parametrize(
+    "statement",
+    [
+        'static: 0xa001 compares the input with L"see claim 4" via CMP_X.',
+        'static: 0xa001 sends b"claim 4" to the C2 via SEND_X.',
+    ],
+)
+def test_a_prefixed_literal_is_a_quoted_string(statement: str) -> None:
+    printed = _appendix(_report(statement))
+
+    assert statement.removeprefix("static: ") in printed
+    assert "left out" not in printed
+
+
+def test_an_analyst_s_name_closing_a_sentence_or_in_brackets_is_still_the_name() -> None:
+    printed = _appendix(
+        _report(
+            "static: The loader maps LOADER_Y at 0xa013. 0xa014 reads the table, as static_r2.",
+            "static: 0xa015 writes FILE_Q (static_r2).",
+        )
+    )
+
+    assert "The loader maps LOADER_Y at 0xa013." in printed
+    assert "0xa014" not in printed
+    assert "0xa015 writes FILE_Q." in printed
+    assert "static_r2" not in printed
+    assert "1 sentence of them was left out; the bundle prints every statement whole." in printed
+
+
+@pytest.mark.parametrize(
+    "statement",
+    [
+        "static: 0xa016 reads the table (in claim-free text) via TABLE_X.",
+        "static: 0xa017 parses the reply (in 3 claims) via REPLY_X.",
+        "static: 0xa018 reserves the buffer (see claims 4 GB) via ALLOC_X.",
+    ],
+)
+def test_a_bracket_that_points_to_no_claim_is_the_sample_s(statement: str) -> None:
+    printed = _appendix(_report(statement))
+
+    assert statement.removeprefix("static: ") in printed
+    assert "left out" not in printed
