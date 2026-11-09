@@ -176,21 +176,29 @@ def _open_copy(where: str) -> int:
 def _open_copy_by_path(where: str) -> int:
     """The copy opened where no descriptor opens a directory (Windows), held to the same rule.
 
-    The copy's directory is refused when it is a link or any other reparse
-    point (``tools.staging.is_reparse_point``), and the copy is opened through
-    ``tools.staging.open_no_follow``, which refuses one at the copy's own name
-    and checks, on the open file's handle, that it is in that directory: a
-    link put in place of either between the check and the open is a reading
-    that failed. Windows has no pipe at a file's path to block on.
+    The path the copy must be found at is fixed first, from the real path of
+    the directory above the copy's own, so the copy's directory itself is
+    never resolved. Then that directory is refused when it is a link or any
+    other reparse point (``tools.staging.is_reparse_point``), and the copy is
+    opened through ``tools.staging.open_no_follow``, which refuses one at the
+    copy's own name and checks, on the open file's handle, that it is at the
+    fixed path: a link put in place of either at any moment, before or after
+    the check, is a reading that failed. Windows has no pipe at a file's path
+    to block on.
     """
     from pathlib import Path
 
     from malspark.tools import staging
 
     directory = os.path.dirname(os.path.abspath(where))
+    at = os.path.join(
+        os.path.realpath(os.path.dirname(directory)),
+        os.path.basename(directory),
+        os.path.basename(where),
+    )
     if staging.is_reparse_point(Path(directory), os.lstat(directory)):
         raise OSError(errno.ELOOP, staging.NOT_FOLLOWED, directory)
-    return staging.open_no_follow(where, os.O_RDONLY)
+    return staging.open_no_follow(where, os.O_RDONLY, at=at)
 
 
 def reading(
