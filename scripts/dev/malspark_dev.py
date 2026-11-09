@@ -467,10 +467,15 @@ def _fail(text: str, status: int = 1) -> Stop:
     return Stop(status)
 
 
+# Windows' 260-character path limit stops a checkout of a deep tree unless git
+# is told to use long paths; the setting holds for each command, not the tree.
+GIT = ("git", "-c", "core.longpaths=true") if os.name == "nt" else ("git",)
+
+
 def _git(dest: Path, *args: str, quiet: bool = False) -> subprocess.CompletedProcess[str]:
     """``git -C dest args``, its output read; quiet keeps its standard error off the terminal."""
     return subprocess.run(
-        ["git", "-C", str(dest), *args],
+        [*GIT, "-C", str(dest), *args],
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE if quiet else None,
         text=True,
@@ -490,7 +495,7 @@ def _passes(dest: Path, *args: str) -> bool:
 
 def _git_ok(dest: Path, *args: str) -> None:
     """A git step that must pass; its own message is shown when it does not."""
-    status = _runs("git", "-C", str(dest), *args)
+    status = _runs(*GIT, "-C", str(dest), *args)
     if status != 0:
         raise Stop(status)
 
@@ -555,7 +560,7 @@ def _fetch_tree(layout: Layout, target: Target) -> None:
             _say(f"  checkout {name} -> {ref}")
             _unpatch(layout, target, dest)
             _git_ok(dest, "fetch", "--quiet", "--tags", "origin")
-            if _runs("git", "-C", str(dest), "checkout", "--quiet", ref) != 0:
+            if _runs(*GIT, "-C", str(dest), "checkout", "--quiet", ref) != 0:
                 raise _fail(
                     f"  FAIL     {name}: cannot check out {ref}; local changes in {dest} are"
                     f" in the way (see git -C {dest} status), or the ref is not there"
@@ -567,7 +572,7 @@ def _fetch_tree(layout: Layout, target: Target) -> None:
         _say(f"  clone    {name} {ref}")
         # No default-branch checkout: its .gitattributes line-ending rules can make the
         # pinned ref's files look locally modified and block the checkout below.
-        status = _runs("git", "clone", "--quiet", "--no-checkout", target.url, str(dest))
+        status = _runs(*GIT, "clone", "--quiet", "--no-checkout", target.url, str(dest))
         if status != 0:
             raise Stop(status)
         _git_ok(dest, "checkout", "--quiet", ref)
@@ -587,7 +592,7 @@ def _fetch_tree(layout: Layout, target: Target) -> None:
                 f"  FAIL     {name}: {patch.name} neither applies to {dest} nor is in place",
                 file=sys.stderr,
             )
-            _runs("git", "-C", str(dest), *apply, "--check", str(patch))
+            _runs(*GIT, "-C", str(dest), *apply, "--check", str(patch))
             raise Stop(1)
 
 
@@ -604,7 +609,7 @@ def fetch_sigma(dest: Path, url: str = SIGMA_URL, ref: str = SIGMA_REF) -> None:
             return
         _say(f"  checkout sigma rules -> {ref}")
         tag = f"refs/tags/{ref}:refs/tags/{ref}"
-        git = ("git", "-C", str(dest))
+        git = (*GIT, "-C", str(dest))
         if (
             _runs(*git, "fetch", "--quiet", "--depth", "1", "origin", tag) != 0
             and _runs(*git, "fetch", "--quiet", "--tags", "origin") != 0
@@ -616,7 +621,7 @@ def fetch_sigma(dest: Path, url: str = SIGMA_URL, ref: str = SIGMA_REF) -> None:
         print(f"  SKIP     {dest} exists and is not a git checkout", file=sys.stderr)
     else:
         _say(f"  clone    sigma rules {ref}")
-        if _runs("git", "clone", "--quiet", "--depth", "1", "--branch", ref, url, str(dest)):
+        if _runs(*GIT, "clone", "--quiet", "--depth", "1", "--branch", ref, url, str(dest)):
             raise _fail(f"  FAIL     cannot clone sigma rules at {ref}")
 
 
@@ -828,6 +833,24 @@ def _host(environ: Mapping[str, str], docker_env: Mapping[str, str]) -> str:
     return f"[{bound}]" if ":" in bound else bound
 
 
+_PLAIN_VALUE = re.compile(r"[A-Za-z0-9_./:@%+=,-]*")
+_PLACEHOLDER = re.compile(r"<[^<>]*>")
+
+
+def env_quote(value: str) -> str:
+    """``value`` as parse_env, compose and a shell read it back unchanged.
+
+    Bare when it holds nothing those read specially; single-quoted, which all
+    three take literally, unless it holds a single quote; double-quoted with
+    the shell's escapes otherwise.
+    """
+    if _PLAIN_VALUE.fullmatch(value):
+        return value
+    if "'" not in value:
+        return f"'{value}'"
+    return '"' + re.sub(r'(["\\$`])', r"\\\1", value) + '"'
+
+
 def _fill(template: str, values: Mapping[str, str], kept_lines: Mapping[str, str]) -> str:
     """The example with each uncommented ``KEY=`` line given its value.
 
@@ -843,7 +866,7 @@ def _fill(template: str, values: Mapping[str, str], kept_lines: Mapping[str, str
             out.append(kept_lines[key])
             seen.add(key)
         elif key is not None and key in values:
-            out.append(f"{key}={values[key]}")
+            out.append(f"{key}={env_quote(values[key])}")
             seen.add(key)
         else:
             out.append(line)
@@ -854,11 +877,13 @@ def _fill(template: str, values: Mapping[str, str], kept_lines: Mapping[str, str
 
 
 def _set_lines(path: Path) -> dict[str, str]:
-    """The last uncommented line of each key the file sets to something, as written."""
+    """The last uncommented line of each key the file assigns, as written, an empty one too."""
     lines: dict[str, str] = {}
+    if not path.exists():
+        return lines
     for line in path.read_text(encoding="utf-8-sig").splitlines():
         match = _ASSIGNMENT.match(line.strip())
-        if match and parse_env(line).get(match["key"]):
+        if match:
             lines[match["key"]] = line.strip()
     return lines
 
@@ -870,42 +895,32 @@ def _write_text(path: Path, text: str, private: bool = False) -> None:
     try:
         with os.fdopen(handle, "w", encoding="utf-8", newline="\n") as out:
             out.write(text)
-        if private and os.name == "posix":
-            os.chmod(temporary, 0o600)
+        if os.name == "posix":
+            os.chmod(temporary, 0o600 if private else 0o644)
         os.replace(temporary, path)
     except BaseException:
         Path(temporary).unlink(missing_ok=True)
         raise
 
 
-def env_init(root: Path, environ: Mapping[str, str], force: bool = False) -> int:
-    """docker/.env and bootstrap.env from their examples; no secret value is printed."""
-    docker_env_path = root / "docker" / ".env"
-    bootstrap_path = root / "bootstrap.env"
+# Each bootstrap.env value derived from docker/.env, with the docker/.env
+# values it carries: a new one of those makes the derived value stale.
+DERIVED_FROM = {
+    "DATABASE_URL": ("POSTGRES_PASSWORD",),
+    "REDIS_URL": ("REDIS_PASSWORD",),
+    "MINIO_ENDPOINT": (),
+    "MINIO_ACCESS_KEY": ("MINIO_ROOT_USER",),
+    "MINIO_SECRET_KEY": ("MINIO_ROOT_PASSWORD",),
+    # The same keys as the containers', so a host process reads the same settings store.
+    "SETTINGS_ENCRYPTION_KEY": ("SETTINGS_ENCRYPTION_KEY",),
+    "JWT_SECRET_KEY": ("JWT_SECRET_KEY",),
+}
 
-    if docker_env_path.exists() and not force:
-        _say("  ok       docker/.env is there: left as it is (--force rewrites it, values kept)")
-    else:
-        kept = _set_lines(docker_env_path) if docker_env_path.exists() else {}
-        generated = {key: make() for key, make in DOCKER_SECRETS.items() if key not in kept}
-        template = (root / "docker" / ".env.example").read_text(encoding="utf-8")
-        _write_text(docker_env_path, _fill(template, generated, kept), private=True)
-        made = ", ".join(sorted(generated)) or "none"
-        _say(f"  wrote    docker/.env (generated: {made})")
 
-    docker_env = read_env(docker_env_path)
-    if bootstrap_path.exists() and not force:
-        _say("  ok       bootstrap.env is there: left as it is (--force derives it again)")
-        return 0
-    needed = ("POSTGRES_PASSWORD", "REDIS_PASSWORD", "MINIO_ROOT_USER", "MINIO_ROOT_PASSWORD",
-              "SETTINGS_ENCRYPTION_KEY", "JWT_SECRET_KEY")  # fmt: skip
-    empty = [key for key in needed if not docker_env.get(key)]
-    if empty:
-        print(
-            f"  FAIL     bootstrap.env not written: docker/.env sets no {', '.join(empty)}",
-            file=sys.stderr,
-        )
-        return 1
+def _derived(
+    root: Path, environ: Mapping[str, str], docker_env: Mapping[str, str]
+) -> dict[str, str]:
+    """bootstrap.env's values as docker/.env and the published ports give them."""
     host = _host(environ, docker_env)
     quote = urllib.parse.quote
     user = docker_env.get("POSTGRES_USER") or "malspark"
@@ -913,7 +928,7 @@ def env_init(root: Path, environ: Mapping[str, str], force: bool = False) -> int
     postgres = port_of("POSTGRES_PORT", root, environ, docker_env)
     redis = port_of("REDIS_PORT", root, environ, docker_env)
     minio = port_of("MINIO_API_PORT", root, environ, docker_env)
-    derived = {
+    return {
         "DATABASE_URL": (
             f"postgresql+asyncpg://{quote(user, safe='')}"
             f":{quote(docker_env['POSTGRES_PASSWORD'], safe='')}"
@@ -923,15 +938,66 @@ def env_init(root: Path, environ: Mapping[str, str], force: bool = False) -> int
         "MINIO_ENDPOINT": f"{host}:{minio}",
         "MINIO_ACCESS_KEY": docker_env["MINIO_ROOT_USER"],
         "MINIO_SECRET_KEY": docker_env["MINIO_ROOT_PASSWORD"],
-        # The same keys as the containers', so a host process reads the same settings store.
         "SETTINGS_ENCRYPTION_KEY": docker_env["SETTINGS_ENCRYPTION_KEY"],
         "JWT_SECRET_KEY": docker_env["JWT_SECRET_KEY"],
     }
-    kept = _set_lines(bootstrap_path) if bootstrap_path.exists() else {}
-    kept = {key: line for key, line in kept.items() if key not in derived}
+
+
+def env_init(root: Path, environ: Mapping[str, str], force: bool = False) -> int:
+    """docker/.env and bootstrap.env from their examples; no secret value is printed.
+
+    A file already there is left as it is unless ``force``; rewritten, it
+    keeps every assignment it had, empty ones included, and only an empty
+    secret is generated. When docker/.env gets a new secret, every
+    bootstrap.env value that carries it is derived again, so the two files
+    never disagree; a bootstrap.env value is otherwise kept unless it is
+    empty or still the example's placeholder.
+    """
+    docker_env_path = root / "docker" / ".env"
+    bootstrap_path = root / "bootstrap.env"
+
+    generated: dict[str, str] = {}
+    if docker_env_path.exists() and not force:
+        _say("  ok       docker/.env is there: left as it is (--force rewrites it, values kept)")
+    else:
+        kept = _set_lines(docker_env_path)
+        generated = {
+            key: make()
+            for key, make in DOCKER_SECRETS.items()
+            if not parse_env(kept.get(key, "")).get(key)
+        }
+        kept = {key: line for key, line in kept.items() if key not in generated}
+        template = (root / "docker" / ".env.example").read_text(encoding="utf-8")
+        _write_text(docker_env_path, _fill(template, generated, kept), private=True)
+        made = ", ".join(sorted(generated)) or "none"
+        _say(f"  wrote    docker/.env (generated: {made})")
+
+    docker_env = read_env(docker_env_path)
+    stale = sorted(k for k, sources in DERIVED_FROM.items() if set(sources) & set(generated))
+    if bootstrap_path.exists() and not force and not stale:
+        _say("  ok       bootstrap.env is there: left as it is (--force derives it again)")
+        return 0
+    needed = dict.fromkeys(source for sources in DERIVED_FROM.values() for source in sources)
+    empty = [key for key in needed if not docker_env.get(key)]
+    if empty:
+        print(
+            f"  FAIL     bootstrap.env not written: docker/.env sets no {', '.join(empty)}",
+            file=sys.stderr,
+        )
+        return 1
+    derived = _derived(root, environ, docker_env)
+    old = read_env(bootstrap_path)
+    kept = _set_lines(bootstrap_path)
+    for key in derived:
+        value = old.get(key, "")
+        if key in stale or not value or _PLACEHOLDER.search(value):
+            kept.pop(key, None)
     template = (root / "bootstrap.env.example").read_text(encoding="utf-8")
     _write_text(bootstrap_path, _fill(template, derived, kept), private=True)
-    _say(f"  wrote    bootstrap.env (database on {host}:{postgres}, from docker/.env)")
+    url = urllib.parse.urlsplit(read_env(bootstrap_path).get("DATABASE_URL", ""))
+    _say(f"  wrote    bootstrap.env (database on {url.hostname}:{url.port})")
+    if stale and old:
+        _say(f"  note     bootstrap.env derived again from the new docker/.env: {', '.join(stale)}")
     return 0
 
 
@@ -953,6 +1019,11 @@ def port_in_use(host: str, port: int) -> bool:
     """Whether something already listens where compose would publish ``port``."""
     family = socket.AF_INET6 if ":" in host else socket.AF_INET
     with socket.socket(family, socket.SOCK_STREAM) as probe:
+        # On Windows a bind can share a port another socket opened for reuse;
+        # an exclusive bind is refused wherever anything holds it.
+        exclusive = getattr(socket, "SO_EXCLUSIVEADDRUSE", None)
+        if exclusive is not None:
+            probe.setsockopt(socket.SOL_SOCKET, exclusive, 1)
         try:
             probe.bind((host.strip("[]"), port))
         except OSError:
@@ -977,12 +1048,18 @@ def windows_filesystem(path: Path) -> str | None:
     return name.value if ok else None
 
 
+# Beyond this many characters a checkout's path leaves the deepest files of the
+# fetched trees little room under Windows' 260-character limit.
+LONG_CHECKOUT = 60
+
+
 def doctor_report(
     root: Path,
     environ: Mapping[str, str],
     probe: Callable[[Sequence[str]], str | None] = _probe,
     in_use: Callable[[str, int], bool] = port_in_use,
     filesystem: Callable[[Path], str | None] = windows_filesystem,
+    windows: bool = os.name == "nt",
 ) -> Iterator[str]:
     """What this host has and lacks for the stack, one line each."""
     bits = struct.calcsize("P") * 8
@@ -997,6 +1074,12 @@ def doctor_report(
             f"  warn     the checkout is on NTFS ({root}): a bind mount from it carries no"
             " Linux owner or mode, so files the containers write under data/ do not keep"
             " the ownership a Linux host gives them"
+        )
+    if windows and len(str(root)) > LONG_CHECKOUT:
+        yield (
+            f"  warn     the checkout's path is {len(str(root))} characters long: a deep file"
+            " under it can pass Windows' 260-character limit; a shorter one (C:\\src\\malspark)"
+            " avoids it"
         )
     docker = shutil.which("docker", path=environ.get("PATH"))
     if docker is None:
@@ -1037,12 +1120,16 @@ def doctor_report(
     if taken:
         listed = ", ".join(f"{port} ({name})" for port, name in taken)
         yield f"  in use   {listed} on {host}: the stack's own, or another program's"
-        # A port another program holds is moved by its variable; Postgres's
-        # also moves bootstrap.env's DATABASE_URL, which env init --force writes.
+        # A port another program holds is moved by its variable; a host process
+        # then needs Postgres's new port in bootstrap.env's DATABASE_URL too.
         names = " or ".join(name for _, name in taken)
         yield (
             f"  hint     to publish elsewhere, set {names} in docker/.env"
-            + (" (then env init --force)" if any(n == "POSTGRES_PORT" for _, n in taken) else "")
+            + (
+                ", and the same port in bootstrap.env's DATABASE_URL"
+                if any(n == "POSTGRES_PORT" for _, n in taken)
+                else ""
+            )
         )
     else:
         yield f"  ports    every published port is free on {host}"

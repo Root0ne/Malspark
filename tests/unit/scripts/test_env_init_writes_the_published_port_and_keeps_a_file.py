@@ -179,3 +179,76 @@ class TestAFileAlreadyThere:
         docker_path.write_text(text, encoding="utf-8")
         dev.env_init(checkout, {})
         assert urllib.parse.unquote(_url(checkout).password or "") == "p@ss:w/rd%"
+
+
+class TestTheTwoFilesNeverDisagree:
+    def test_a_new_docker_env_derives_an_existing_bootstrap_env_s_shared_values_again(
+        self, checkout: Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        (checkout / "bootstrap.env").write_text(
+            "DATABASE_URL=postgresql+asyncpg://malspark:OLD@127.0.0.1:5432/malspark\n"
+            "JWT_SECRET_KEY=old-secret-old-secret-old-secret-x\nDEBUG=true\n",
+            encoding="utf-8",
+        )
+        assert dev.env_init(checkout, {}) == 0
+        docker = dev.read_env(checkout / "docker" / ".env")
+        boot = dev.read_env(checkout / "bootstrap.env")
+        assert urllib.parse.unquote(_url(checkout).password or "") == docker["POSTGRES_PASSWORD"]
+        for key in ("SETTINGS_ENCRYPTION_KEY", "JWT_SECRET_KEY"):
+            assert boot[key] == docker[key]
+        assert boot["DEBUG"] == "true"
+        assert "derived again from the new docker/.env: DATABASE_URL" in capsys.readouterr().out
+
+
+class TestForceKeepsWhatTheUserSet:
+    def test_an_empty_assignment_is_kept_and_only_an_empty_secret_is_filled(
+        self, checkout: Path
+    ) -> None:
+        docker_path = checkout / "docker" / ".env"
+        docker_path.write_text(
+            "COMPOSE_PROFILES=\nPOSTGRES_PASSWORD=mine\nREDIS_PASSWORD=\n", encoding="utf-8"
+        )
+        assert dev.env_init(checkout, {}, force=True) == 0
+        lines = docker_path.read_text(encoding="utf-8").splitlines()
+        assert "COMPOSE_PROFILES=" in lines and "POSTGRES_PASSWORD=mine" in lines
+        assert dev.read_env(docker_path)["REDIS_PASSWORD"]
+
+    def test_a_derived_value_of_one_s_own_is_kept_and_a_placeholder_is_replaced(
+        self, checkout: Path
+    ) -> None:
+        dev.env_init(checkout, {})
+        boot_path = checkout / "bootstrap.env"
+        own = "postgresql+asyncpg://app:x@db.example.com:6543/prod"
+        text = re.sub(
+            r"^DATABASE_URL=.*$", f"DATABASE_URL={own}", boot_path.read_text(), flags=re.M
+        )
+        text = re.sub(r"^REDIS_URL=.*$", "REDIS_URL=redis://:<password>@h:1/0", text, flags=re.M)
+        boot_path.write_text(text, encoding="utf-8")
+
+        assert dev.env_init(checkout, {}, force=True) == 0
+
+        boot = dev.read_env(boot_path)
+        assert boot["DATABASE_URL"] == own
+        assert "<password>" not in boot["REDIS_URL"] and boot["REDIS_URL"].endswith(":6379/0")
+
+
+@pytest.mark.parametrize(
+    "value", ["plain-Token_1.2:3@x%2F+=,", "a b #c", "it's", 'say "$HOME" `x` \\ it\'s', ""]
+)
+def test_a_written_value_reads_back_unchanged(value: str) -> None:
+    assert dev.parse_env(f"KEY={dev.env_quote(value)}\n") == {"KEY": value}
+
+
+def test_a_secret_with_url_and_shell_characters_survives_both_files(checkout: Path) -> None:
+    docker_path = checkout / "docker" / ".env"
+    docker_path.write_text('MINIO_ROOT_PASSWORD="a b #c"\nMINIO_ROOT_USER=me\n', encoding="utf-8")
+    dev.env_init(checkout, {}, force=True)
+    assert dev.read_env(checkout / "bootstrap.env")["MINIO_SECRET_KEY"] == "a b #c"
+
+
+@pytest.mark.skipif(os.name != "posix", reason="mode bits")
+def test_a_file_that_holds_no_secret_is_readable_by_all(tmp_path: Path) -> None:
+    dev._write_text(tmp_path / "PINNED.txt", "pin\n")
+    dev._write_text(tmp_path / "secret.env", "X=1\n", private=True)
+    assert (tmp_path / "PINNED.txt").stat().st_mode & 0o777 == 0o644
+    assert (tmp_path / "secret.env").stat().st_mode & 0o777 == 0o600

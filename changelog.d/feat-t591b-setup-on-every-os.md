@@ -8,7 +8,9 @@
 - **`env init` writes `docker/.env` and `bootstrap.env`.** Each secret the examples leave empty
   is generated, both files carry the same database password, settings key and JWT secret, and
   `DATABASE_URL` names the port the stack publishes Postgres on. An existing file is left as it
-  is; `--force` rewrites it and keeps every value it set. No secret is printed.
+  is, except that a new `docker/.env` secret is carried into `bootstrap.env`; `--force`
+  rewrites both and keeps every value they set, filling only an empty secret. No secret is
+  printed.
 - **`doctor` says what the host lacks for the stack.** Docker in Linux-containers mode, the
   Compose plugin, free ports, the fetched trees and corpora, the machine's architecture, and a
   checkout on NTFS.

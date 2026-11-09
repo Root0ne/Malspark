@@ -382,7 +382,8 @@ class TestDoctor:
     def test_ports_in_use_are_listed_with_their_variable(self, tmp_path: Path) -> None:
         said = "\n".join(_doctor(tmp_path, taken=frozenset({5432, 8000})))
         assert "5432 (POSTGRES_PORT)" in said and "8000 (API_PORT)" in said
-        assert "set API_PORT or POSTGRES_PORT in docker/.env (then env init --force)" in said
+        assert "set API_PORT or POSTGRES_PORT in docker/.env, and the same port" in said
+        assert "bootstrap.env's DATABASE_URL" in said
 
     def test_a_checkout_on_ntfs_is_warned_about(self, tmp_path: Path) -> None:
         assert any("on NTFS" in s for s in _doctor(tmp_path, filesystem="NTFS"))
@@ -446,3 +447,29 @@ def test_where_posix_is_missing_the_stack_commands_run_and_set_no_ids() -> None:
         in done.stdout
     )
     assert "MALSPARK_UID" not in done.stdout
+
+
+def test_on_windows_git_runs_with_long_paths_and_a_long_checkout_is_warned_about(
+    tmp_path: Path,
+) -> None:
+    assert dev.GIT[0] == "git"
+    assert ("core.longpaths=true" in dev.GIT) == (os.name == "nt")
+    deep = tmp_path / ("d" * 70)
+    deep.mkdir()
+    (deep / "docker").mkdir()
+    (deep / "docker" / "docker-compose.yml").write_text("{}\n")
+
+    def said(windows: bool) -> list[str]:
+        return list(
+            dev.doctor_report(
+                deep,
+                {"PATH": ""},
+                probe=lambda argv: None,
+                in_use=lambda host, port: False,
+                filesystem=lambda _path: None,
+                windows=windows,
+            )
+        )
+
+    assert any("characters long" in line for line in said(windows=True))
+    assert not any("characters long" in line for line in said(windows=False))

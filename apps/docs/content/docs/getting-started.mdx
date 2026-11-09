@@ -75,8 +75,12 @@ environment, for anything you run outside Compose, such as `make migrate`.
 the stack publishes Postgres on (5432, or your `POSTGRES_PORT`). `dev-up`
 reads it too, and an empty value there would override `docker/.env`.
 
-Neither file is overwritten once it exists; `env init --force` rewrites both
-from the examples and keeps every value already set. No secret is printed.
+Neither file is overwritten once it exists, with one exception: when
+`docker/.env` gets a new secret, the `bootstrap.env` values that carry it are
+derived again, so the two never disagree. `env init --force` rewrites both
+from the examples and keeps every value already set, empty ones included; it
+fills only an empty secret, and replaces a `bootstrap.env` value only when it
+is empty or still the example's placeholder. No secret is printed.
 
 These two files are the whole environment surface. Every other setting lives
 in the settings store and is edited in the console. See
