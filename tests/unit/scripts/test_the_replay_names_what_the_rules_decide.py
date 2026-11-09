@@ -20,6 +20,7 @@ partial comparison.
 
 from __future__ import annotations
 
+import asyncio
 import copy
 import json
 import os
@@ -535,6 +536,49 @@ def test_the_replay_reaches_no_network_and_puts_every_door_back() -> None:
     assert socket.gethostbyname is by_name
     assert "sendto" not in vars(socket.socket)
     assert attck_loader.ATTCK_CACHE_DIR == cache
+
+
+def test_the_event_loop_s_socket_pair_is_made_where_the_system_has_no_native_one(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Windows makes the pair by a loopback connection; only that one is let through."""
+    monkeypatch.setattr(socket, "socketpair", socket._fallback_socketpair)  # type: ignore[attr-defined]
+
+    async def answered() -> str:
+        return "ran"
+
+    with replay_environment({}) as env:
+        first, second = socket.socketpair()
+        with first, second:
+            first.sendall(b"wake")
+            assert second.recv(4) == b"wake"
+        assert asyncio.run(answered()) == "ran"
+        with (
+            socket.socket(socket.AF_INET, socket.SOCK_STREAM) as stream,
+            pytest.raises(ReplayRefused),
+        ):
+            stream.connect(("127.0.0.1", 9))
+    assert socket.socketpair is socket._fallback_socketpair  # type: ignore[attr-defined]
+    assert "connect" not in vars(socket.socket)
+    assert not [door for door in env.missing if door.startswith("socket.")]
+
+
+def test_a_door_the_host_s_socket_module_lacks_is_not_a_door_the_tree_lacks(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Windows' sockets have no sendmsg: nothing to close, and nothing the tree is missing."""
+
+    class HostSocket:
+        def connect(self, *_args: Any) -> None: ...
+        def connect_ex(self, *_args: Any) -> int: ...
+        def sendto(self, *_args: Any) -> int: ...
+
+    sendto = vars(HostSocket)["sendto"]
+    monkeypatch.setattr(socket, "socket", HostSocket)
+    with replay_environment({}) as env, pytest.raises(ReplayRefused):
+        HostSocket().sendto(b"x", ("127.0.0.1", 9))
+    assert not [door for door in env.missing if door.startswith("socket.")]
+    assert vars(HostSocket)["sendto"] is sendto
 
 
 def test_two_records_are_told_apart_by_what_moved(record: dict[str, Any]) -> None:
