@@ -202,6 +202,7 @@ class TestCapaSPeakIsMeasured:
 
         assert capa_yara.measured_capa_peak_bytes() == 3 * GIB
 
+    @pytest.mark.posix
     def test_the_child_s_peak_is_read_as_it_is_reaped(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:

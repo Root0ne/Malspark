@@ -322,6 +322,7 @@ class TestFlossStreamsAndWhatIsRemembered:
         monkeypatch.setenv("MALSPARK_STAGING_DIR", str(tmp_path / "staging"))
         emulated_strings.forget_documents()
 
+    @pytest.mark.posix
     def test_stdout_is_read_whole_and_stderr_only_its_tail(self, tmp_path: Path) -> None:
         script = (
             "import sys; sys.stderr.write('w' * 300000 + '\\nlast line\\n'); "
