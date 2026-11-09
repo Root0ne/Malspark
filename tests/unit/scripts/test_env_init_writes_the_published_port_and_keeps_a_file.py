@@ -233,7 +233,8 @@ class TestForceKeepsWhatTheUserSet:
 
 
 @pytest.mark.parametrize(
-    "value", ["plain-Token_1.2:3@x%2F+=,", "a b #c", "it's", 'say "$HOME" `x` \\ it\'s', ""]
+    "value",
+    ["plain-Token_1.2:3@x%2F+=,", "a b #c", "it's", 'say "$HOME" \\ it\'s', "back`quote $x", ""],
 )
 def test_a_written_value_reads_back_unchanged(value: str) -> None:
     assert dev.parse_env(f"KEY={dev.env_quote(value)}\n") == {"KEY": value}
@@ -252,3 +253,75 @@ def test_a_file_that_holds_no_secret_is_readable_by_all(tmp_path: Path) -> None:
     dev._write_text(tmp_path / "secret.env", "X=1\n", private=True)
     assert (tmp_path / "PINNED.txt").stat().st_mode & 0o777 == 0o644
     assert (tmp_path / "secret.env").stat().st_mode & 0o777 == 0o600
+
+
+class TestWhatIsKeptIsSaidAboutAndRefusedWhenUnsafe:
+    def test_a_kept_url_that_no_longer_carries_the_password_is_warned_about_by_name(
+        self, checkout: Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        dev.env_init(checkout, {})
+        boot_before = dev.read_env(checkout / "bootstrap.env")["DATABASE_URL"]
+        docker_path = checkout / "docker" / ".env"
+        text = re.sub(
+            r"^POSTGRES_PASSWORD=.*$",
+            "POSTGRES_PASSWORD=rotated-secret",
+            docker_path.read_text(encoding="utf-8"),
+            flags=re.M,
+        )
+        docker_path.write_text(text, encoding="utf-8")
+        capsys.readouterr()
+
+        assert dev.env_init(checkout, {}, force=True) == 0
+
+        said = capsys.readouterr().out
+        assert (
+            "warn     bootstrap.env DATABASE_URL does not carry docker/.env's POSTGRES_PASSWORD;"
+            " kept as written" in said
+        )
+        assert "rotated-secret" not in said
+        assert dev.read_env(checkout / "bootstrap.env")["DATABASE_URL"] == boot_before
+
+    def test_without_force_the_message_says_what_force_would_do(
+        self, checkout: Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        dev.env_init(checkout, {})
+        dev.env_init(checkout, {})
+        assert "(--force fills only what is empty)" in capsys.readouterr().out
+
+    def test_a_kept_database_url_with_no_numeric_port_is_reported_as_kept(
+        self, checkout: Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        dev.env_init(checkout, {})
+        boot_path = checkout / "bootstrap.env"
+        text = re.sub(
+            r"^DATABASE_URL=.*$",
+            "DATABASE_URL=postgresql+asyncpg://u:p@db:port/x",
+            boot_path.read_text(encoding="utf-8"),
+            flags=re.M,
+        )
+        boot_path.write_text(text, encoding="utf-8")
+        assert dev.env_init(checkout, {}, force=True) == 0
+        assert "(database URL kept as written)" in capsys.readouterr().out
+
+    @pytest.mark.parametrize("raw", ["pa$word", '"pa$word"'])
+    def test_a_dollar_compose_would_expand_is_refused_before_anything_is_written(
+        self, checkout: Path, capsys: pytest.CaptureFixture[str], raw: str
+    ) -> None:
+        docker_path = checkout / "docker" / ".env"
+        docker_path.write_text(f"POSTGRES_PASSWORD={raw}\n", encoding="utf-8")
+        assert dev.env_init(checkout, {}, force=True) == 1
+        err = capsys.readouterr().err
+        assert "POSTGRES_PASSWORD holds a $ that compose would expand" in err
+        assert "pa$word" not in err
+        assert docker_path.read_text(encoding="utf-8") == f"POSTGRES_PASSWORD={raw}\n"
+        assert not (checkout / "bootstrap.env").exists()
+
+    def test_a_single_quoted_dollar_is_taken_literally(self, checkout: Path) -> None:
+        (checkout / "docker" / ".env").write_text("POSTGRES_PASSWORD='pa$word'\n")
+        assert dev.env_init(checkout, {}, force=True) == 0
+        assert urllib.parse.unquote(_url(checkout).password or "") == "pa$word"
+
+
+def test_a_value_with_both_quote_kinds_is_refused() -> None:
+    with pytest.raises(ValueError, match="both ' and `"):
+        dev.env_quote("it's `x`")

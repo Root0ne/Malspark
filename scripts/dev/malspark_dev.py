@@ -838,12 +838,15 @@ _PLACEHOLDER = re.compile(r"<[^<>]*>")
 
 
 def env_quote(value: str) -> str:
-    """``value`` as parse_env, compose and a shell read it back unchanged.
+    """``value`` as parse_env and a POSIX shell read it back unchanged.
 
-    Bare when it holds nothing those read specially; single-quoted, which all
-    three take literally, unless it holds a single quote; double-quoted with
-    the shell's escapes otherwise.
+    Bare when it holds nothing those read specially; single-quoted, which both
+    take literally, unless it holds a single quote; double-quoted with the
+    shell's escapes otherwise. A value holding both a single quote and a
+    backquote is refused: no quoting reads the same everywhere it is read.
     """
+    if "'" in value and "`" in value:
+        raise ValueError("a value holding both ' and ` cannot be written to an env file")
     if _PLAIN_VALUE.fullmatch(value):
         return value
     if "'" not in value:
@@ -955,6 +958,23 @@ def env_init(root: Path, environ: Mapping[str, str], force: bool = False) -> int
     """
     docker_env_path = root / "docker" / ".env"
     bootstrap_path = root / "bootstrap.env"
+    needed = dict.fromkeys(source for sources in DERIVED_FROM.values() for source in sources)
+
+    # Compose expands $ in a value that is not single-quoted; parse_env does
+    # not, so the two would disagree on the secret. Refused before anything
+    # is written.
+    expanded = []
+    for key, line in _set_lines(docker_env_path).items():
+        raw = line.partition("=")[2].strip()
+        if key in needed and "$" in parse_env(line).get(key, "") and not raw.startswith("'"):
+            expanded.append(key)
+    if expanded:
+        print(
+            f"  FAIL     docker/.env: {', '.join(expanded)} holds a $ that compose would expand;"
+            " single-quote the value ('...') and run env init again",
+            file=sys.stderr,
+        )
+        return 1
 
     generated: dict[str, str] = {}
     if docker_env_path.exists() and not force:
@@ -975,9 +995,8 @@ def env_init(root: Path, environ: Mapping[str, str], force: bool = False) -> int
     docker_env = read_env(docker_env_path)
     stale = sorted(k for k, sources in DERIVED_FROM.items() if set(sources) & set(generated))
     if bootstrap_path.exists() and not force and not stale:
-        _say("  ok       bootstrap.env is there: left as it is (--force derives it again)")
+        _say("  ok       bootstrap.env is there: left as it is (--force fills only what is empty)")
         return 0
-    needed = dict.fromkeys(source for sources in DERIVED_FROM.values() for source in sources)
     empty = [key for key in needed if not docker_env.get(key)]
     if empty:
         print(
@@ -988,14 +1007,39 @@ def env_init(root: Path, environ: Mapping[str, str], force: bool = False) -> int
     derived = _derived(root, environ, docker_env)
     old = read_env(bootstrap_path)
     kept = _set_lines(bootstrap_path)
+    drifted = []
     for key in derived:
         value = old.get(key, "")
         if key in stale or not value or _PLACEHOLDER.search(value):
             kept.pop(key, None)
+            continue
+        # Kept as written: say so when it no longer carries what docker/.env holds.
+        for source in DERIVED_FROM[key]:
+            current = docker_env[source]
+            carried = (
+                urllib.parse.quote(current, safe="") in value
+                if key.endswith("_URL")
+                else value == current
+            )
+            if not carried:
+                drifted.append((key, source))
     template = (root / "bootstrap.env.example").read_text(encoding="utf-8")
-    _write_text(bootstrap_path, _fill(template, derived, kept), private=True)
+    try:
+        text = _fill(template, derived, kept)
+    except ValueError as error:
+        print(f"  FAIL     bootstrap.env not written: {error}", file=sys.stderr)
+        return 1
+    _write_text(bootstrap_path, text, private=True)
     url = urllib.parse.urlsplit(read_env(bootstrap_path).get("DATABASE_URL", ""))
-    _say(f"  wrote    bootstrap.env (database on {url.hostname}:{url.port})")
+    try:
+        where = f"database on {url.hostname}:{url.port}"
+    except ValueError:
+        where = "database URL kept as written"
+    _say(f"  wrote    bootstrap.env ({where})")
+    for key, source in drifted:
+        _say(
+            f"  warn     bootstrap.env {key} does not carry docker/.env's {source}; kept as written"
+        )
     if stale and old:
         _say(f"  note     bootstrap.env derived again from the new docker/.env: {', '.join(stale)}")
     return 0
