@@ -290,9 +290,9 @@ to VirusTotal, MalwareBazaar and MITRE ATT&CK, and the SVG namespace, are left
 as they are. Local file paths keep only the file name, the server’s job and sample ids read
 <code>&lt;job&gt;</code> and <code>&lt;sample&gt;</code>, internal names are
 replaced, and the ledger drops its internal row ids. A defanged copy is made
-for open publication, so it is marked TLP:CLEAR, whatever Traffic Light
-Protocol marking the report kept in the platform carries; nothing else is
-changed.
+for open publication, so the report's marking reads TLP:CLEAR, whatever
+Traffic Light Protocol marking the report kept in the platform carries;
+nothing else is changed.
 Defanging changes the bytes, so the published ledger does not verify against
 the digests it carries. To check the ledger’s seal, reproduce the run as
 [Reproducing the run](#reproducing-the-run) describes.

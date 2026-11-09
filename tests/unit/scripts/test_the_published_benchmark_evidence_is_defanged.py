@@ -148,14 +148,36 @@ def test_a_ledger_entry_drops_its_row_id_and_keeps_its_entry_id() -> None:
     assert Sanitiser({}).json(stix) == {"id": "indicator--" + JOB, "x_malspark_confidence": 0.9}
 
 
-def test_every_tlp_marking_of_a_published_copy_reads_clear() -> None:
+def test_the_report_s_marking_banner_reads_clear() -> None:
     for level in ("AMBER", "AMBER+STRICT", "AMBER_STRICT", "RED", "GREEN", "WHITE", "CLEAR"):
         assert clean(f"**TLP:{level}** · Report X") == "**TLP:CLEAR** · Report X"
-    assert clean("<strong>TLP:RED</strong>") == "<strong>TLP:CLEAR</strong>"
-    assert Sanitiser({}).json({"tlp": "AMBER", "front_matter": {"TLP": "red"}}) == {
+    assert clean("<p><strong>TLP:RED</strong> · Report X") == (
+        "<p><strong>TLP:CLEAR</strong> · Report X"
+    )
+    # A level the banner does not print is not partly rewritten.
+    assert clean("**TLP:AMBER-STRICT**") == "**TLP:AMBER-STRICT**"
+
+
+def test_a_tlp_mention_outside_the_banner_stays_as_written() -> None:
+    for text in (
+        "The vendor's note was shared under TLP:RED.",
+        "the rule matches `TLP:AMBER` in the mail header",
+        "<code>TLP:AMBER</code>",
+    ):
+        assert clean(text) == text
+    # Evidence bytes shown as hex are decoded only to defang an indicator.
+    for raw in (b"TLP:AMBER sample string padding".hex(), b"**TLP:AMBER** sample padding".hex()):
+        assert Sanitiser({}).text(raw) == raw
+
+
+def test_a_tlp_field_of_a_json_copy_reads_clear_in_its_own_case() -> None:
+    sanitiser = Sanitiser({})
+    assert sanitiser.json({"tlp": "AMBER", "front_matter": {"TLP": "red"}}) == {
         "tlp": "CLEAR",
-        "front_matter": {"TLP": "CLEAR"},
+        "front_matter": {"TLP": "clear"},
     }
+    assert sanitiser.json({"tlp": "clear"}) == {"tlp": "clear"}
+    assert sanitiser.counts == {("tlp", "AMBER"): 1, ("tlp", "red"): 1}
     # A field that is not a marking level is sanitised as any other.
     assert Sanitiser({}).json({"tlp": "see evil.de"}) == {"tlp": "see evil[.]de"}
 
@@ -383,9 +405,25 @@ def test_the_published_copy_holds_no_internal_name_path_or_server_id(name: str, 
 @pytest.mark.parametrize(("name", "text"), _copies(), ids=[n for n, _ in _copies()])
 def test_the_published_copy_carries_no_restricted_tlp_marking(name: str, text: str) -> None:
     # The copies are published openly; a limited-distribution marking contradicts that.
-    assert not re.search(r"TLP\s*:\s*(?:AMBER|RED|GREEN|WHITE)", text, re.IGNORECASE)
+    banners = _BANNER.findall(text)
+    if name in BANNERED:
+        assert banners, "the report's marking banner is missing"
+    assert {level.upper() for level in banners} <= {"CLEAR"}
     if name.endswith(".json"):
-        assert set(_tlp_fields(json.loads(text))) <= {"CLEAR"}
+        assert {str(v).upper() for v in _tlp_fields(json.loads(text))} <= {"CLEAR"}
+
+
+# The report's marking banner as the Markdown prints it and the HTML renders it,
+# whatever the level reads; the copies that print the report carry one.
+_BANNER = re.compile(r"(?:\*\*|<strong>)TLP:([^*<\s]+)(?=\*\*|</strong>)", re.IGNORECASE)
+BANNERED = frozenset({"report.md", "report.html", "evidence-bundle.html", "evidence-bundle.json"})
+
+
+def test_the_banner_scan_reads_the_banner_the_sanitiser_rewrites() -> None:
+    for banner in ("**TLP:AMBER**", "<strong>tlp:red</strong>", "**TLP:AMBER+STRICT**"):
+        assert _BANNER.findall(banner) and _BANNER.findall(clean(banner)) == ["CLEAR"]
+    prose = "shared under TLP:RED. and `TLP:AMBER`"
+    assert _BANNER.findall(prose) == [] and clean(prose) == prose
 
 
 def _tlp_fields(value: object) -> list[object]:
