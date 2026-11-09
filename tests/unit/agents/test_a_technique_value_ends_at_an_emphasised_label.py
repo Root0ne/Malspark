@@ -97,14 +97,14 @@ def test_such_words_in_prose_stay_in_the_technique_line(rest: str) -> None:
 
 @pytest.mark.parametrize("end", ["x", ":"])
 @pytest.mark.parametrize(
-    "run",
+    ("run", "searches"),
     [
-        lambda size: " " * size + "**",
-        lambda size: " " + "*" * size,
-        lambda size: " " + "_" * size,
-        lambda size: " " * size + "_" * size,
-        lambda size: " *" * size,
-        lambda size: " _" * size + " **",
+        (lambda size: " " * size + "**", 12),
+        (lambda size: " " + "*" * size, 10),
+        (lambda size: " " + "_" * size, 10),
+        (lambda size: " " * size + "_" * size, 5),
+        (lambda size: " *" * size, 5),
+        (lambda size: " _" * size + " **", 5),
     ],
     ids=["spaces", "stars", "underscores", "spaces-underscores", "space-star", "space-underscore"],
 )
@@ -114,14 +114,16 @@ def test_such_words_in_prose_stay_in_the_technique_line(rest: str) -> None:
 )
 @pytest.mark.parametrize("label", ["EVIDENCE", "CONFIDENCE"])
 def test_a_long_run_of_marks_before_a_label_is_read_in_linear_time(
-    name: str, start: str, run: Callable[[int], str], label: str, end: str
+    name: str, start: str, run: Callable[[int], str], searches: int, label: str, end: str
 ) -> None:
     pattern: re.Pattern[str] = getattr(base_agent, name)
 
     def build(size: int) -> str:
         return start + run(size) + label + end
 
-    assert_scales(build, 4000, pattern.search)
+    # The pattern reads a run in C at about a nanosecond a mark: each text is
+    # searched ``searches`` times so the small run is measurable.
+    assert_scales(build, 700_000, lambda text: [pattern.search(text) for _ in range(searches)])
 
 
 @pytest.mark.parametrize("end", ["x", ":"])
@@ -131,4 +133,4 @@ def test_a_technique_line_of_many_marked_labels_is_read_in_linear_time(mark: str
         line = f" {mark}EVIDENCE  {end} {mark}CONFIDENCE{mark}{end}" * rows
         return f"CLAIM: {SENTENCE}\nEVIDENCE: [ev_0001]\nTECHNIQUE: T1027{line}\n"
 
-    assert_scales(build, 2000, read_claim_blocks)
+    assert_scales(build, 7000, read_claim_blocks)

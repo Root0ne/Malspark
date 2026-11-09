@@ -11,12 +11,13 @@ fingerprint errs toward two rows.
 
 from __future__ import annotations
 
-import time
+from collections.abc import Callable
 
 import pytest
 
 from malspark.reporting.dedupe import pattern_fingerprint
 from malspark.schemas.stix_pattern import canonical_pattern, read_comparisons
+from tests.linear_cost import assert_ratio
 
 
 def _same(a: str, b: str, pattern_type: str = "stix") -> bool:
@@ -150,6 +151,11 @@ class TestTheCanonicalPattern:
         )
 
 
+# Units read a run at a time in C are repeated more, so their small text costs
+# past the 2 ms allowance as the others' does.
+_REPEATS = {"  \t ": 60_000, "a": 60_000}
+
+
 @pytest.mark.parametrize(
     ("unit", "tail"),
     [
@@ -165,14 +171,17 @@ class TestTheCanonicalPattern:
 )
 def test_a_hostile_pattern_is_read_and_fingerprinted_in_linear_time(unit: str, tail: str) -> None:
     # Ten times the text takes at most about ten times as long (twenty-five, for
-    # noise on a loaded machine; the best of five runs each).
-    def took(size: int) -> float:
+    # noise on a loaded machine; the best of five runs each, timed in turn).
+    def reading(size: int) -> Callable[[], None]:
         text = unit * size + tail
-        start = time.thread_time()
-        read_comparisons(text)
-        pattern_fingerprint("stix", text)
-        return time.thread_time() - start
 
-    small = min(took(5_000) for _ in range(5))
-    large = min(took(50_000) for _ in range(5))
-    assert large < 25 * small + 0.05
+        def read() -> None:
+            read_comparisons(text)
+            pattern_fingerprint("stix", text)
+
+        return read
+
+    size = _REPEATS.get(unit, 5_000)
+    assert_ratio(
+        reading(size), reading(10 * size), 25, floor=0.05 / 25, repeats=5, what="ten times the text"
+    )

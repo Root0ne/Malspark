@@ -2,10 +2,11 @@
 
 from __future__ import annotations
 
-import time
 from pathlib import Path
+from typing import Any
 
 import pytest
+from tests.linear_cost import assert_ratio
 
 from malspark.analysis.technique_ids import (
     ID_BODY,
@@ -69,18 +70,18 @@ class TestOneStrictReader:
 
     def test_hostile_input_is_read_in_linear_time(self) -> None:
         # Ten times the text takes at most about ten times as long (twenty, for noise).
-        def took(size: int) -> float:
+        def took(size: int) -> Any:
             text = ("T1055." * size) + ("T" + "1" * 9) * size + "\n"
-            start = time.thread_time()
-            technique_ids_in(text)
-            TECHNIQUE_WORD_RE.findall(text)
-            is_technique_id(text)
-            sigma_technique_ids({"tags": [f"attack.{text}"]})
-            return time.thread_time() - start
 
-        small = min(took(20_000) for _ in range(3))
-        large = took(200_000)
-        assert large < 20 * small + 0.05
+            def read() -> None:
+                technique_ids_in(text)
+                TECHNIQUE_WORD_RE.findall(text)
+                is_technique_id(text)
+                sigma_technique_ids({"tags": [f"attack.{text}"]})
+
+            return read
+
+        assert_ratio(took(40_000), took(400_000), 20, what="ten times the text", floor=0.05 / 20)
 
     def test_no_reader_outside_this_module_writes_the_id_again(self) -> None:
         import malspark

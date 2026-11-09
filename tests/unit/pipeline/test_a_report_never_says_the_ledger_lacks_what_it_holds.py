@@ -17,7 +17,7 @@ cannot be read, or whose entry holds nothing of it, is not judged.
 from __future__ import annotations
 
 import json
-import time
+from collections.abc import Callable
 from typing import Any
 
 import pytest
@@ -29,6 +29,7 @@ from malspark.pipeline.validation import (
     ledger_absence_contradictions,
 )
 from malspark.schemas.evidence import build_entry
+from tests.linear_cost import assert_ratio
 
 BASE = 0x140000000
 
@@ -242,7 +243,7 @@ class TestAStatementThatStands:
 
 class TestLinearTime:
     def test_ten_times_the_text_and_the_ledger_cost_at_most_ten_times_the_time(self) -> None:
-        def cost(scale: int) -> float:
+        def checking(scale: int) -> Callable[[], Any]:
             extra = [
                 _entry(
                     1000 + n,
@@ -258,11 +259,6 @@ class TestLinearTime:
                 f"that are not confirmed by [ev_0004]. Its callers are not in the ledger."
                 for n in range(scale)
             )
-            start = time.thread_time()
-            ledger_absence_contradictions({"body": text}, entries)
-            return time.thread_time() - start
+            return lambda: ledger_absence_contradictions({"body": text}, entries)
 
-        cost(5)
-        small = cost(50)
-        large = cost(500)
-        assert large <= max(small, 1e-3) * 30
+        assert_ratio(checking(250), checking(2_500), 30, what="2,500 routines")

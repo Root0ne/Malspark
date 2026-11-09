@@ -18,6 +18,7 @@ from malspark.pipeline.validation import (
 )
 from malspark.reporting.renderers.markdown import _defanged_text
 from malspark.tools.strings import iocs_from_text
+from tests.linear_cost import assert_under
 
 # (input, sweep, host reader, values the publish check names, recommendation
 # questions, defanged text): dev's output for each.
@@ -143,11 +144,9 @@ def test_every_reader_reads_what_dev_read(
 
 
 def test_the_publish_checks_read_a_long_text_in_linear_time() -> None:
-    import time
-
     hosts = " ".join(f"h{i}.example{i % 97}.com" for i in range(10_000))
     objects = " ".join(f"Global\\h{i}.example.com" for i in range(12_500))
     for text in (hosts, objects):
-        started = time.thread_time()
-        _unstated_values(text, _no_row)
-        assert time.thread_time() - started < 10, len(text)
+        assert_under(
+            lambda text=text: _unstated_values(text, _no_row), 10, what=f"{len(text)} characters"
+        )

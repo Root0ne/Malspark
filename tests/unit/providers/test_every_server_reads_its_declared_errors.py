@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import asyncio
 import json
-import time
+from collections.abc import Callable
 from typing import Any
 
 from langchain_core.tools import StructuredTool
@@ -25,6 +25,7 @@ from malspark.providers.declared_errors import (
 )
 from malspark.providers.servers import ServerHandle
 from malspark.tools.errors import BAD_ARGUMENT, error_parts
+from tests.linear_cost import assert_ratio
 
 REFUSAL = "Unsupported query syntax near ']'"
 LISTING = "0x401000 Unsupported query syntax near ']' is a string the sample holds\nand more"
@@ -146,16 +147,17 @@ def test_radare2_reads_its_errors_by_the_same_function() -> None:
 def test_the_reading_is_linear_on_a_hostile_answer() -> None:
     patterns = [ErrorPattern.model_validate(PATTERN)]
 
-    def timed(n: int) -> float:
+    def reading(n: int) -> Callable[[], None]:
         text = "Unsupported query syntax " + "near ']' " * n + "\n" * (n // 10)
-        start = time.thread_time()
-        for _ in range(5):
-            declared_error(patterns, "search", text)
-            declared_error(patterns, "search", text.replace("\n", " "))
-        return time.thread_time() - start
 
-    small, large = timed(20_000), timed(200_000)
-    assert large < max(small, 1e-3) * 40
+        def read() -> None:
+            for _ in range(5):
+                declared_error(patterns, "search", text)
+                declared_error(patterns, "search", text.replace("\n", " "))
+
+        return read
+
+    assert_ratio(reading(34_000), reading(340_000), 40, what="ten times the answer")
 
 
 def test_a_declared_open_tool_reads_its_errors_too() -> None:

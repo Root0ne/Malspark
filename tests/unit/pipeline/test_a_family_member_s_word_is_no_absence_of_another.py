@@ -288,4 +288,4 @@ def test_the_negation_after_a_word_is_read_in_linear_time() -> None:
         ) + " found"
 
     assert _negated_after(build(10), 0, 10)
-    assert_scales(build, 20_000, lambda text: _negated_after(text, 0, 10))
+    assert_scales(build, 24_000, lambda text: _negated_after(text, 0, 10))

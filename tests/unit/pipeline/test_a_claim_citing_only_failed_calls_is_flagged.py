@@ -12,7 +12,7 @@ unchanged.
 from __future__ import annotations
 
 import json
-import time
+from collections.abc import Callable
 from types import SimpleNamespace
 
 from malspark.pipeline.validation import mark_claims_citing_only_failed_calls
@@ -22,6 +22,7 @@ from malspark.schemas.isr_models import (
     ClaimEvidence,
     claim_summary_line,
 )
+from tests.linear_cost import assert_ratio
 
 
 def _entry(ident: str, ok: bool) -> SimpleNamespace:
@@ -99,12 +100,9 @@ def test_the_attack_table_notes_a_technique_resting_only_on_such_claims() -> Non
 
 
 def test_marking_stays_linear() -> None:
-    def took(size: int) -> float:
+    def marking(size: int) -> Callable[[], list[str]]:
         ledger = [_entry(f"ev_{n:05d}", n % 2 == 0) for n in range(size)]
         isr = _isr(*(_claim("c", f"ev_{n:05d}") for n in range(size)))
-        start = time.thread_time()
-        mark_claims_citing_only_failed_calls({"a": isr}, ledger)
-        return time.thread_time() - start
+        return lambda: mark_claims_citing_only_failed_calls({"a": isr}, ledger)
 
-    small, large = took(500), took(5_000)
-    assert large < small * 30, (small, large)
+    assert_ratio(marking(3_000), marking(30_000), 30, what="30,000 claims")

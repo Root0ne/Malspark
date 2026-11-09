@@ -21,21 +21,31 @@ def _split(text: str) -> list[tuple[str, str | None, str | None]]:
 
 
 def test_a_run_of_blank_lines_is_split_in_linear_time() -> None:
-    assert_scales(lambda n: "CLAIM: a" + "\n" * n + "b", 2_000, _split)
-    assert_scales(lambda n: "CLAIM: a" + "\n  " * n + "b", 2_000, _split)
+    assert_scales(lambda n: "CLAIM: a" + "\n" * n + "b", 700_000, _split)
+    assert_scales(lambda n: "CLAIM: a" + "\n  " * n + "b", 230_000, _split)
     # Chains of separators: the old pattern was linear on these. They guard
-    # the new pattern's chain of ``---`` lines against backtracking.
-    assert_scales(lambda n: "CLAIM: a" + "\n---" * n + "x\n" + _CLAIM, 2_000, _split)
-    assert_scales(lambda n: "CLAIM: a" + "\n---\n\n  " * n + "b", 2_000, _split)
+    # the new pattern's chain of ``---`` lines against backtracking. A chain
+    # past a few megabytes costs about twice as much per character once it
+    # leaves the processor's cache, so each side is split 12 times instead.
+    assert_scales(
+        lambda n: "CLAIM: a" + "\n---" * n + "x\n" + _CLAIM,
+        50_000,
+        lambda text: [_split(text) for _ in range(12)],
+    )
+    assert_scales(
+        lambda n: "CLAIM: a" + "\n---\n\n  " * n + "b",
+        50_000,
+        lambda text: [_split(text) for _ in range(12)],
+    )
 
 
 def test_an_answer_with_a_run_of_blank_lines_is_read_in_linear_time() -> None:
-    assert_scales(lambda n: "CLAIM: a" + "\n" * n + "b", 2_000, read_claim_blocks)
-    assert_scales(lambda n: "CLAIM: a" + "\n  " * n + "b", 2_000, read_claim_blocks)
-    assert_scales(lambda n: "x" + "\n" * n + "y\n---\n" + _CLAIM, 2_000, read_claim_blocks)
-    assert_scales(lambda n: "x" + "\n  " * n + "y\n---\n" + _CLAIM, 2_000, read_claim_blocks)
+    assert_scales(lambda n: "CLAIM: a" + "\n" * n + "b", 20_000, read_claim_blocks)
+    assert_scales(lambda n: "CLAIM: a" + "\n  " * n + "b", 15_000, read_claim_blocks)
+    assert_scales(lambda n: "x" + "\n" * n + "y\n---\n" + _CLAIM, 24_000, read_claim_blocks)
+    assert_scales(lambda n: "x" + "\n  " * n + "y\n---\n" + _CLAIM, 19_000, read_claim_blocks)
     # Guards the new pattern's chain against backtracking, not the old bug.
-    assert_scales(lambda n: "x" + "\n---\n  " * n + "y\n---\n" + _CLAIM, 2_000, read_claim_blocks)
+    assert_scales(lambda n: "x" + "\n---\n  " * n + "y\n---\n" + _CLAIM, 9_500, read_claim_blocks)
 
 
 def _claims(text: str) -> list[tuple[str, float]]:

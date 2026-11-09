@@ -15,7 +15,7 @@ from __future__ import annotations
 
 import copy
 import json
-import time
+from collections.abc import Callable
 from typing import Any
 
 import pytest
@@ -28,6 +28,7 @@ from malspark.llm.openai_provider import (
     _Join,
     forget_standard_only,
 )
+from tests.linear_cost import assert_ratio
 
 
 @pytest.fixture(autouse=True)
@@ -238,23 +239,23 @@ def _stream_chunks(count: int) -> list[Any]:
     return [model._convert_chunk_to_generation_chunk(raw, AIMessageChunk, {}) for raw in raws]
 
 
-def _seconds_to_join(count: int) -> float:
+def _joining(count: int) -> Callable[[], None]:
     chunks = _stream_chunks(count)
-    join = _Join(keep_reasoning=True)
-    started = time.process_time()
-    for chunk in chunks:
-        join.add(chunk)
-    result = join.result()
-    elapsed = time.process_time() - started
-    assert len(result.generations[0].message.content) == 4 * count
-    return elapsed
+
+    def join_all() -> None:
+        join = _Join(keep_reasoning=True)
+        for chunk in chunks:
+            join.add(chunk)
+        result = join.result()
+        assert len(result.generations[0].message.content) == 4 * count
+
+    return join_all
 
 
 def test_four_times_the_chunks_cost_about_four_times_the_time() -> None:
-    short = _seconds_to_join(5_000)
-    long = _seconds_to_join(20_000)
-
-    assert long < short * 4 * 2.5
+    assert_ratio(
+        _joining(5_000), _joining(20_000), 4 * 2.5, whole_process=True, what="20,000 chunks"
+    )
 
 
 def test_a_chunk_is_not_held_once_joined() -> None:
@@ -360,16 +361,11 @@ async def test_an_async_ollama_answer_is_joined_as_chat_ollama_joins_it() -> Non
 
 
 def test_four_times_an_ollama_answer_costs_about_four_times_the_time() -> None:
-    def _seconds(count: int) -> float:
+    def joining(count: int) -> Callable[[], None]:
         model = _ollama(_ollama_parts(count))
-        started = time.process_time()
-        model._chat_stream_with_aggregation([], None, None)
-        return time.process_time() - started
+        return lambda: model._chat_stream_with_aggregation([], None, None)
 
-    short = _seconds(4_000)
-    long = _seconds(16_000)
-
-    assert long < short * 4 * 2.5
+    assert_ratio(joining(4_000), joining(16_000), 4 * 2.5, whole_process=True, what="16,000 parts")
 
 
 def _as_sent(chunk: Any) -> Any:

@@ -15,17 +15,17 @@ import os
 import random
 import stat
 import struct
-import time
 import tracemalloc
 import zlib
 from collections.abc import Callable
 from pathlib import Path
+from typing import Any
 
 import pefile
 import pytest
 
 from malspark.tools import binary, staging, upx
-from tests.linear_cost import assert_scales
+from tests.linear_cost import assert_ratio, assert_scales, assert_under
 from tests.unit.tools import synthetic_upx as su
 from tests.unit.tools.synthetic_pe import SyntheticPE
 
@@ -425,11 +425,14 @@ def test_an_endless_length_prefix_stops_at_the_room_left() -> None:
     def unpack(pairs: int) -> Callable[[], None]:
         stream = endless(pairs)
 
+        # The read stops at the room left whatever the stream holds, in a few
+        # microseconds: each side reads 1,600 times to be measurable.
         def call() -> None:
-            with pytest.raises(
-                upx.Damaged, match="a length at output byte 1 runs past the 4096 unpacked bytes"
-            ):
-                upx._nrv("2b", 4, stream, 4096)
+            for _ in range(1_600):
+                with pytest.raises(
+                    upx.Damaged, match="a length at output byte 1 runs past the 4096 unpacked bytes"
+                ):
+                    upx._nrv("2b", 4, stream, 4096)
 
         return call
 
@@ -439,10 +442,12 @@ def test_an_endless_length_prefix_stops_at_the_room_left() -> None:
 def test_random_bytes_as_a_stream_fail_in_linear_time() -> None:
     noise = os.urandom(200_000)
     for kind in ("2b", "2d", "2e"):
-        began = time.thread_time()
-        with pytest.raises(upx.Damaged):
-            upx._nrv(kind, 4, noise, 2_000_000)
-        assert time.thread_time() - began < 10.0
+
+        def unpack(kind: str = kind) -> None:
+            with pytest.raises(upx.Damaged):
+                upx._nrv(kind, 4, noise, 2_000_000)
+
+        assert_under(unpack, 10.0, what=f"noise as an NRV {kind} stream")
 
 
 def test_a_truncated_lzma_stream_is_an_error() -> None:
@@ -522,11 +527,13 @@ def _reloc_image(count: int, table_at: int, step: int = 4) -> tuple[upx._Image, 
 def test_three_million_relocations_cost_a_few_bytes_each() -> None:
     count = 3_000_000
     image, _buf = _reloc_image(count, 0)
-    began = time.thread_time()
     said, peak = _peak(lambda: upx._rebuild_relocations(image))
     assert said == f"from UPX's relocation records: {count} relocations"
     assert peak < 4 * 4 * count
-    assert time.thread_time() - began < 60
+    # The time on runs of their own, without the tracer, each on an image not yet
+    # rebuilt (a rebuild writes the table and reads the records through).
+    fresh = iter([_reloc_image(count, 0)[0] for _ in range(3)])
+    assert_under(lambda: upx._rebuild_relocations(next(fresh)), 60, what="3,000,000 relocations")
 
 
 def test_a_relocation_table_that_cannot_fit_is_refused_before_it_is_built() -> None:
@@ -581,12 +588,13 @@ def _long_forms(count: int) -> bytes:
     return b"\xf0\x04\x00" * count + b"\0"
 
 
-def _decode(stream: bytes) -> tuple[list[int], float]:
-    image = 1 << 30
+def _decoding(stream: bytes) -> Callable[[], Any]:
     buf = bytearray(stream)
-    began = time.thread_time()
-    out = upx._reloc_positions(buf, 0, image, 4)
-    return out.tolist(), time.thread_time() - began
+    return lambda: upx._reloc_positions(buf, 0, 1 << 30, 4)
+
+
+def _decode(stream: bytes) -> list[int]:
+    return _decoding(stream)().tolist()
 
 
 def test_relocation_records_read_as_one_by_one_whatever_their_mix() -> None:
@@ -604,17 +612,27 @@ def test_relocation_records_read_as_one_by_one_whatever_their_mix() -> None:
             else:
                 parts += b"\xf0\0\0" + rng.randint(1, 1 << 20).to_bytes(4, "little")
         stream = bytes(parts) + b"\0"
-        assert _decode(stream)[0] == _positions_one_by_one(stream)
+        assert _decode(stream) == _positions_one_by_one(stream)
     for stream in (_realistic(5000), _long_forms(5000), b"\x04" * (3 << 20) + b"\0"):
-        assert _decode(stream)[0] == _positions_one_by_one(stream)
+        assert _decode(stream) == _positions_one_by_one(stream)
 
 
-@pytest.mark.parametrize("shape", [_realistic, _long_forms])
-def test_relocation_records_take_time_linear_in_the_stream(shape: object) -> None:
+@pytest.mark.parametrize(
+    ("shape", "records"),
+    [
+        pytest.param(_realistic, 50_000, id="_realistic"),
+        pytest.param(_long_forms, 25_000, id="_long_forms"),
+    ],
+)
+def test_relocation_records_take_time_linear_in_the_stream(shape: object, records: int) -> None:
     # Ten times the records take at most about ten times as long (twenty, for noise).
-    small = min(_decode(shape(20_000))[1] for _ in range(3))  # type: ignore[operator]
-    large = _decode(shape(200_000))[1]  # type: ignore[operator]
-    assert large < 20 * small + 0.05
+    assert_ratio(
+        _decoding(shape(records)),  # type: ignore[operator]
+        _decoding(shape(10 * records)),  # type: ignore[operator]
+        20,
+        what="ten times the records",
+        floor=0.05 / 20,
+    )
 
 
 def test_a_moved_resource_with_origin_0_is_an_error() -> None:

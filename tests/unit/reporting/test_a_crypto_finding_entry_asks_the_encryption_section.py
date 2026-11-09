@@ -79,4 +79,4 @@ def test_the_fact_is_linear_in_the_index() -> None:
     def read(report: Any) -> None:
         assert crypto_finding_entries(report)
 
-    assert_scales(built, 2_000, read, factor=10, repeats=5)
+    assert_scales(built, 4_400, read, factor=10, repeats=5)

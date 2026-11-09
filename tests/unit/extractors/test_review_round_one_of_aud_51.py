@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import io
 import struct
-import time
 
 import pytest
 from elftools.elf.elffile import ELFFile
@@ -17,6 +16,7 @@ from malspark.extractors.capability_matrix import (
 from malspark.extractors.network_extractor import _scored_domain
 from malspark.extractors.pe_extractor import _parse_elf_imports
 from malspark.schemas.isr_models import AgentISR, ClaimEvidence
+from tests.linear_cost import assert_under
 from tests.unit._elf_image import ELF_SOURCES, elf_bytes
 
 
@@ -51,9 +51,9 @@ def test_n1_a_hostile_version_table_costs_no_time_and_no_import_row(
 ) -> None:
     image = elf_bytes(source)
     clean = _parse_elf_imports(image)
-    started = time.thread_time()
-    rows = _parse_elf_imports(_hostile_elf(which, image))
-    assert time.thread_time() - started < 10
+    hostile = _hostile_elf(which, image)
+    rows = _parse_elf_imports(hostile)
+    assert_under(lambda: _parse_elf_imports(hostile), 10, what="a hostile version table")
     assert sum(1 for r in rows if r.function) == sum(1 for r in clean if r.function)
 
 
@@ -98,7 +98,7 @@ def test_n_a_version_table_naming_one_long_string_costs_the_sections_size(source
     struct.pack_into("<Q", base, header + 24, region)
     struct.pack_into("<Q", base, header + 32, 16 * n)
     struct.pack_into("<I", base, header + 44, n)
-    started = time.thread_time()
-    rows = _parse_elf_imports(bytes(base))
-    assert time.thread_time() - started < 10
+    image = bytes(base)
+    rows = _parse_elf_imports(image)
+    assert_under(lambda: _parse_elf_imports(image), 10, what="one long named string")
     assert rows

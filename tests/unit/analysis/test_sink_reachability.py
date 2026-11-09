@@ -145,29 +145,21 @@ class TestBuildHint:
 
 
 def test_a_hostile_graph_ten_times_larger_is_ranked_in_linear_time() -> None:
-    import gc
-    import time
+    from tests.linear_cost import assert_ratio
 
     def graph(n: int) -> CallGraph:
         edges = [(f"f{i}", f"f{i + 1}") for i in range(n)] + [(f"f{n}", "VirtualAllocEx")]
         return CallGraph.of_edges(edges)
 
-    def best(held: CallGraph) -> float:
-        times = []
-        for _ in range(3):
-            gc.disable()
-            try:
-                started = time.thread_time()
-                rank_suspicious_functions(held, max_funcs=3)
-                times.append(time.thread_time() - started)
-            finally:
-                gc.enable()
-        return min(times)
-
-    small, large = graph(5_000), graph(50_000)
+    small, large = graph(6_000), graph(60_000)
     assert [f.name for f in rank_suspicious_functions(large, max_funcs=3)] == [
-        "f50000",
-        "f49999",
-        "f49998",
+        "f60000",
+        "f59999",
+        "f59998",
     ]
-    assert best(large) < best(small) * 30
+    assert_ratio(
+        lambda: rank_suspicious_functions(small, max_funcs=3),
+        lambda: rank_suspicious_functions(large, max_funcs=3),
+        30,
+        what="a call graph ten times larger",
+    )

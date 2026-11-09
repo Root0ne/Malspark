@@ -12,7 +12,6 @@ the whole input, uncut, within a bound of its own.
 from __future__ import annotations
 
 import re
-import time
 
 import pytest
 
@@ -25,6 +24,7 @@ from malspark.reporting.models import (
     TechnicalSubsection,
 )
 from malspark.reporting.renderers.markdown import MarkdownRenderer, _defanged_text
+from tests.linear_cost import assert_under
 
 SIZE = 200_000
 SHA = "a" * 64
@@ -74,19 +74,17 @@ def _report(text: str) -> MalwareReport:
 
 @pytest.mark.parametrize("shape", list(SHAPES))
 def test_an_adversarial_input_renders_quickly_and_keeps_every_section(shape: str) -> None:
-    started = time.thread_time()
-    markdown = MarkdownRenderer().render(_report(SHAPES[shape]))
-    elapsed = time.thread_time() - started
+    rendered: list[str] = []
+    assert_under(
+        lambda: rendered.append(MarkdownRenderer().render(_report(SHAPES[shape]))), 10, what=shape
+    )
+    markdown = rendered[0]
 
     assert "rendering failed" not in markdown
     assert re.search(r"^## 1\. ", markdown, re.M)
     assert re.search(r"^## 9\. ", markdown, re.M)
-    assert elapsed < 10, f"{shape}: {elapsed:.1f} s"
 
 
 @pytest.mark.parametrize("shape", list(SHAPES))
 def test_the_defanger_reads_a_whole_adversarial_input_in_seconds(shape: str) -> None:
-    started = time.thread_time()
-    _defanged_text(SHAPES[shape])
-
-    assert time.thread_time() - started < 50, shape
+    assert_under(lambda: _defanged_text(SHAPES[shape]), 50, what=shape)

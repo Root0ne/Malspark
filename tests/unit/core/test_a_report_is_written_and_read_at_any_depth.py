@@ -11,14 +11,13 @@ import gc
 import json
 import math
 import random
-import sys
-import time
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
 import pytest
 from pydantic import BaseModel
+from tests.linear_cost import assert_scales
 
 from malspark.core import safe_json
 from malspark.core.safe_json import (
@@ -242,24 +241,10 @@ class TestAnyDepthIsRead:
             safe_json._loads_iteratively(text)
 
 
-def _seconds(make: Callable[[int], Any], run: Callable[[Any], Any], n: int) -> float:
-    subject = make(n)
-    best = float("inf")
-    for _ in range(2):
-        gc.collect()
-        gc.disable()
-        try:
-            started = time.thread_time()
-            run(subject)
-            best = min(best, time.thread_time() - started)
-        finally:
-            gc.enable()
-    return best
-
-
 def _linear(make: Callable[[int], Any], run: Callable[[Any], Any], small: int) -> None:
-    once, tenfold = _seconds(make, run, small), _seconds(make, run, small * 10)
-    assert tenfold <= 10 * once * 1.5 + 0.05, (once, tenfold)
+    # Ten times the input in under fifteen times the time, and 50 ms of
+    # allowance for a small run that is mostly fixed cost.
+    assert_scales(make, small, run, factor=10, limit=15, floor=0.05 / 15)
 
 
 class TestLinearTime:
@@ -270,7 +255,14 @@ class TestLinearTime:
         _linear(lambda n: [{"k": [i, str(i)]} for i in range(n)], dumps, 20_000)
 
     def test_reading_a_deep_body_is_linear(self) -> None:
-        _linear(lambda n: "[" * n + "]" * n, safe_json._loads_iteratively, 20_000)
+        # A run of brackets below the guard is read in one match, about two
+        # milliseconds a million brackets, so each side is read 30 times
+        # rather than grown to hundreds of megabytes.
+        _linear(
+            lambda n: "[" * n + "]" * n,
+            lambda text: [safe_json._loads_iteratively(text) for _ in range(30)],
+            200_000,
+        )
 
     def test_reading_a_wide_body_is_linear(self) -> None:
         _linear(
@@ -341,7 +333,7 @@ class TestSharedContainersAndCycles:
     def test_the_shared_and_cyclic_walks_are_linear(self) -> None:
         _linear(_shared_chain, exceeds_depth, 20_000)
         _linear(_shared_chain, dumps, 20_000)
-        _linear(_cycle, dumps, 5_000)
+        _linear(_cycle, dumps, 12_000)
 
     def test_the_shared_walk_holds_memory_linear_in_the_containers(self) -> None:
         small = _peak(lambda: dumps(_shared_chain(5_000)))
@@ -362,7 +354,8 @@ class TestAHostileDeepBody:
         # The dropped levels are held as one byte each: never more than the body.
         assert large <= len(text), (small, large)
         assert large <= 10 * small * 1.5 + 65_536, (small, large)
-        _linear(lambda n: "[" * n + "]" * n, loads, 500_000)
+        # Read 10 times on each side: one read of the small body is a millisecond.
+        _linear(lambda n: "[" * n + "]" * n, lambda text: [loads(text) for _ in range(10)], 500_000)
 
     def test_a_deep_body_of_mixed_brackets_is_read_linearly(self) -> None:
         def body(n: int) -> str:
@@ -423,30 +416,57 @@ class TestAHostileDeepBody:
         with pytest.raises(json.JSONDecodeError):
             loads(bad)
 
-    @pytest.mark.skipif(
-        sys.platform == "darwin",
-        reason=(
-            "on macOS the ten-megabyte body's allocation and release are counted in the "
-            "process CPU time and grow faster than the read itself, so this wall-clock "
-            "ratio does not measure the cut there; the same code runs and is held to "
-            "its bound on Linux"
-        ),
-    )
     def test_a_deep_body_json_loads_reads_is_cut_in_place_at_its_cost(self) -> None:
-        """Ten megabytes of 500-deep chunks: ``json.loads`` reads it, and the guard cuts it.
+        """Bodies of 500-deep chunks: ``json.loads`` reads them, and the guard cuts them.
 
         The cut is made in the tree ``json.loads`` returned, never in a copy, so
-        the peak resident size a fresh process adds stays that of ``json.loads``
-        on the same body, and the time within a small constant of it; ten times
-        the body costs at most about ten times the time.
+        the peak resident size a fresh process adds on ten megabytes stays that
+        of ``json.loads`` on the same body. The time is held to ``json.loads``
+        itself: the guarded read costs within a small constant of it, and five
+        times the body costs the guarded read at most half as much again of
+        what it costs ``json.loads``. Measured against ``json.loads`` on the
+        same machine, the memory and kernel cost of building millions of
+        lists, which differs from one system to the next, is in both sides.
+        The cut alone is also held to the body's growth, with no
+        ``json.loads`` in its bound.
         """
         size = 10_000_000
-        plain_bytes, plain_seconds = _chunked_read("json", 500, size)
-        held_bytes, held_seconds = _chunked_read("safe", 500, size)
+        plain_bytes = _chunked_read("json", 500, size)
+        held_bytes = _chunked_read("safe", 500, size)
         assert held_bytes <= 1.2 * plain_bytes + 8 * 2**20, (plain_bytes, held_bytes)
-        assert held_seconds <= 4 * plain_seconds + 0.5, (plain_seconds, held_seconds)
-        _small_bytes, small_seconds = _chunked_read("safe", 500, size // 10)
-        assert held_seconds <= 10 * small_seconds * 1.5 + 0.2, (small_seconds, held_seconds)
+
+        small, large = 1_000_000, 5_000_000
+        attempts = [_chunked_times(500, small, large)]
+
+        def verdict(times: dict[str, float]) -> tuple[float, float, bool]:
+            plain_growth = times[f"json {large}"] / times[f"json {small}"]
+            held_growth = times[f"safe {large}"] / times[f"safe {small}"]
+            # Half a second on ten megabytes, scaled to the body measured.
+            near = times[f"safe {large}"] < 4 * times[f"json {large}"] + 0.5 * large / size
+            # The cut alone, held to the body's own growth: a json.loads that
+            # grows faster on some machine cannot widen this bound. The cut is
+            # a walk in the interpreter and grows 5.0 times for five times the
+            # body; a quarter more is the bound.
+            cut_growth = times[f"safe {large} cut part"] / times[f"safe {small} cut part"]
+            cut_linear = cut_growth < 1.25 * large / small
+            return (
+                plain_growth,
+                held_growth,
+                held_growth < 1.5 * plain_growth and near and cut_linear,
+            )
+
+        if not verdict(attempts[0])[2]:
+            again = _chunked_times(500, small, large)
+            attempts.append(again)
+            attempts.append({key: min(attempts[0][key], again[key]) for key in again})
+        plain_growth, held_growth, held = verdict(attempts[-1])
+        assert held, (
+            f"five times the body: json.loads {plain_growth:.1f} times, the guarded read "
+            f"{held_growth:.1f} times (limit 1.5 times json.loads's), its cut at most "
+            f"{1.25 * large / small:g} times; each attempt's CPU "
+            f"seconds with their user and system parts, and the guarded read's cut "
+            f"alone: {attempts}"
+        )
 
     def test_a_cut_body_reads_as_the_marked_copy_would(self) -> None:
         chunk = "[" * 500 + "]" * 500
@@ -457,7 +477,7 @@ class TestAHostileDeepBody:
 
 
 _CHUNK_SCRIPT = """
-import json, resource, sys, time
+import json, resource, sys
 from malspark.utils.peak_memory import rss_to_bytes
 from malspark.core.safe_json import loads
 mode, depth, size = sys.argv[1], int(sys.argv[2]), int(sys.argv[3])
@@ -465,15 +485,79 @@ chunk = "[" * depth + "]" * depth
 text = "[" + ",".join([chunk] * max(1, size // (2 * depth + 1))) + "]"
 read = json.loads if mode == "json" else loads
 base = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
-started = time.process_time()
 value = read(text)
-seconds = time.process_time() - started
-print(rss_to_bytes(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss - base), seconds)
+print(rss_to_bytes(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss - base))
+"""
+
+# Both reads at both sizes in one process, taken in turn three times, the
+# collector held: the best CPU time of each, with its user and system parts;
+# for the guarded read at each size also its cut alone, on a tree of its own
+# (the rest is the json.loads it starts with). macOS counts user time exactly
+# and its kernel's cost of building and freeing millions of lists differs from
+# Linux's, so there the time is the user time; Linux splits user from system
+# time only by sampling at the scheduler's tick, a few ticks of noise on the
+# smaller body, so there the time is both, which it counts exactly.
+_TIMES_SCRIPT = """
+import gc, json, resource, sys
+from malspark.core.safe_json import DEPTH_GUARD, _cut_below, loads
+user_only = sys.platform == "darwin"
+depth, small, large = int(sys.argv[1]), int(sys.argv[2]), int(sys.argv[3])
+chunk = "[" * depth + "]" * depth
+texts = {n: "[" + ",".join([chunk] * max(1, n // (2 * depth + 1))) + "]" for n in (small, large)}
+
+def cpu(call):
+    gc.collect()
+    gc.disable()
+    before = resource.getrusage(resource.RUSAGE_SELF)
+    value = call()
+    after = resource.getrusage(resource.RUSAGE_SELF)
+    gc.enable()
+    del value
+    return after.ru_utime - before.ru_utime, after.ru_stime - before.ru_stime
+
+best = {}
+def keep(key, took):
+    user, system = took
+    seconds = user if user_only else user + system
+    if key not in best or seconds < best[key]:
+        best[key] = seconds
+        best[key + " user"] = user
+        best[key + " system"] = system
+
+for _ in range(3):
+    for n, text in texts.items():
+        keep(f"json {n}", cpu(lambda: json.loads(text)))
+        keep(f"safe {n}", cpu(lambda: loads(text)))
+        tree = json.loads(text)
+        keep(f"safe {n} cut part", cpu(lambda: _cut_below(tree, DEPTH_GUARD)))
+        del tree
+print(json.dumps(best))
 """
 
 
-def _chunked_read(mode: str, depth: int, size: int) -> tuple[int, float]:
-    """``(peak resident bytes added, seconds)`` a fresh process takes to read the chunked body."""
+def _chunked_times(depth: int, small: int, large: int) -> dict[str, float]:
+    """The CPU seconds of each read at each size, from a process of its own."""
+    import os
+    import subprocess
+    import sys
+
+    import malspark
+
+    env = {**os.environ, "PYTHONPATH": str(Path(malspark.__file__).resolve().parents[1])}
+    done = subprocess.run(
+        [sys.executable, "-c", _TIMES_SCRIPT, str(depth), str(small), str(large)],
+        capture_output=True,
+        text=True,
+        check=True,
+        env=env,
+        timeout=300,
+    )
+    times: dict[str, float] = json.loads(done.stdout.strip().splitlines()[-1])
+    return times
+
+
+def _chunked_read(mode: str, depth: int, size: int) -> int:
+    """The peak resident bytes a fresh process adds reading the chunked body."""
     import os
     import subprocess
     import sys
@@ -489,8 +573,7 @@ def _chunked_read(mode: str, depth: int, size: int) -> tuple[int, float]:
         env=env,
         timeout=300,
     )
-    added, seconds = done.stdout.strip().splitlines()[-1].split()
-    return int(added), float(seconds)
+    return int(done.stdout.strip().splitlines()[-1])
 
 
 _PEAK_SCRIPT = """

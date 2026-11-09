@@ -24,7 +24,6 @@ from __future__ import annotations
 import re
 import shutil
 import subprocess
-import time
 from typing import Any
 
 import pytest
@@ -58,6 +57,7 @@ from malspark.schemas.isr_models import (
     ClaimEvidence,
 )
 from malspark.schemas.stix_models import Bundle
+from tests.linear_cost import assert_under
 
 SHA256 = "36dabc40fa8983ce900a90b8156d2c754875fe1b5413a997843c4a0ef3908220"
 # Longer than every width a body cell was ever cut to, and ending in a word
@@ -108,21 +108,25 @@ class TestABodyCellIsWhole:
         if pdftotext is None:
             pytest.skip("pdftotext is not installed on this host")
         # The whole process's CPU time: the renderer does part of its work on
-        # threads of its own.
-        started = time.process_time()
+        # threads of its own. An automatic layout took over two minutes on half
+        # this cell.
+        rendered: list[bytes] = []
         try:
-            pdf = PdfRenderer().render(report)
+            assert_under(
+                lambda: rendered.append(PdfRenderer().render(report)),
+                30,
+                what="a 20 KB cell's PDF",
+                whole_process=True,
+            )
         except PdfUnavailableError:
             pytest.skip("WeasyPrint cannot be loaded on this host")
-        took = time.process_time() - started
+        pdf = rendered[0]
 
         text = subprocess.run(
             [pdftotext, "-", "-"], input=pdf, capture_output=True, check=True
         ).stdout.decode()
         assert set(re.findall(r"W\d{5}", text)) == set(words.split())
         assert "ENDMARK" in text
-        # An automatic layout took over two minutes on half this cell.
-        assert took < 30, took
 
     def test_a_body_evidence_section_row_is_whole_and_appendix_a_still_cuts(self) -> None:
         report = _report(

@@ -14,18 +14,19 @@ hostile trees ten times the size, alias and re-export chains included.
 
 from __future__ import annotations
 
-import gc
 import os
 import subprocess
 import sys
 import textwrap
-import time
+from collections.abc import Callable
 from pathlib import Path
 
 import pytest
 from scripts.validation_codes.guard import check
 from scripts.validation_codes.page import COMMAND, HEADER, render
 from scripts.validation_codes.register import MAX_CHAIN, PAGE, Code, Register, Unresolved, build
+
+from tests.linear_cost import assert_ratio
 
 ROOT = Path(__file__).resolve().parents[3]
 RUN = ROOT / "scripts" / "validation_codes" / "run.py"
@@ -1102,21 +1103,14 @@ def _hostile(root: Path, modules: int) -> Path:
 
 
 def test_the_work_stays_linear_on_a_tree_ten_times_the_size(tmp_path: Path) -> None:
-    def took(modules: int) -> float:
+    def building(modules: int) -> Callable[[], None]:
         root = _hostile(tmp_path / str(modules), modules)
-        best = float("inf")
-        for _ in range(2):
-            gc.collect()
-            gc.disable()
-            try:
-                start = time.thread_time()
-                register = build(root)
-                best = min(best, time.thread_time() - start)
-            finally:
-                gc.enable()
-        assert len(register.codes) == modules * 20 + 3
-        assert register.unresolved == ()
-        return best
 
-    small, large = took(30), took(300)
-    assert large < small * 30, (small, large)
+        def run() -> None:
+            register = build(root)
+            assert len(register.codes) == modules * 20 + 3
+            assert register.unresolved == ()
+
+        return run
+
+    assert_ratio(building(30), building(300), 30, what="300 modules")

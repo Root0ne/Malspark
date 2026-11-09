@@ -23,6 +23,7 @@ from malspark.reporting.models import (
 from malspark.reporting.renderers.markdown import MarkdownRenderer, _reputation_line
 from malspark.reporting.renderers.stix_renderer import ExtendedSTIXRenderer, recovered_by_words
 from malspark.schemas.evidence import EvidenceCounter
+from tests.linear_cost import assert_ratio
 from tests.unit._ledger_helpers import entry
 from tests.unit.reporting._report_shapes import rich_report
 
@@ -291,29 +292,30 @@ class TestAHostileStoredTree:
         return roots + roots
 
     @staticmethod
-    def _measure(count: int) -> tuple[float, int, list[ProcessNode]]:
-        import time
+    def _peak(stored: list[ProcessNode]) -> int:
         import tracemalloc
 
-        stored = TestAHostileStoredTree._chain(count)
-        took = []
-        for _ in range(3):
-            started = time.thread_time()
-            roots = distinct_processes(stored)
-            took.append(time.thread_time() - started)
         tracemalloc.start()
         distinct_processes(stored)
         peak = tracemalloc.get_traced_memory()[1]
         tracemalloc.stop()
-        return min(took), peak, roots
+        return peak
 
     def test_ten_times_the_roots_costs_about_ten_times(self) -> None:
         from malspark.reporting.dedupe import _descendants
 
-        small_time, small_peak, small = self._measure(1_000)
-        large_time, large_peak, large = self._measure(10_000)
-        for roots, count in ((small, 1_000), (large, 10_000)):
+        small_stored, large_stored = self._chain(1_000), self._chain(10_000)
+        for stored, count in ((small_stored, 1_000), (large_stored, 10_000)):
+            roots = distinct_processes(stored)
             assert [root.pid for root in roots] == [1000]
             assert len(_descendants(roots[0])) == count
+        small_peak, large_peak = self._peak(small_stored), self._peak(large_stored)
         assert large_peak <= small_peak * 15, (small_peak, large_peak)
-        assert large_time <= small_time * 20, (small_time, large_time)
+        # The chains take seconds to build and trace, so each side is read
+        # twice rather than built larger.
+        assert_ratio(
+            lambda: [distinct_processes(small_stored) for _ in range(2)],
+            lambda: [distinct_processes(large_stored) for _ in range(2)],
+            20,
+            what="10,000 roots against 1,000",
+        )

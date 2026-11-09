@@ -15,12 +15,11 @@
 
 from __future__ import annotations
 
-import gc
-import time
 from typing import Any
 
 import pytest
 from pydantic import ValidationError
+from tests.linear_cost import assert_ratio
 
 from malspark.core.config import Settings, TriageConfig
 from malspark.core.pack_steps import (
@@ -182,19 +181,17 @@ class TestAnArgumentTemplateAtAnyDepth:
                 held = {"inner": [held]}
             return {"p": held}
 
-        def seconds(n: int) -> float:
+        def reading(n: int) -> Any:
             template = deep(n)
-            gc.collect()
-            began = time.thread_time()
-            PackStep(id="x", server="s", tool="t", arguments=template)
-            placeholder_values(template, self.VALUES)
-            return time.thread_time() - began
 
-        seconds(2_000)
-        low = min(seconds(2_000) for _ in range(2))
-        high = min(seconds(20_000) for _ in range(2))
+            def read() -> None:
+                PackStep(id="x", server="s", tool="t", arguments=template)
+                placeholder_values(template, self.VALUES)
+
+            return read
+
+        low, high = assert_ratio(reading(5_000), reading(50_000), 20, what="a tenfold depth")
         print("deep template:", round(low, 4), round(high, 4))
-        assert high < low * 20
 
 
 class TestADumpReadsBackToTheSameSteps:

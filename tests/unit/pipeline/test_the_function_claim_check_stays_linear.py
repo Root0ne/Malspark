@@ -10,9 +10,8 @@ Every name, string and address here is made up for the test.
 
 from __future__ import annotations
 
-import gc
 import json
-import time
+from collections.abc import Callable
 from types import SimpleNamespace
 
 from malspark.agents.function_map import function_artefacts
@@ -27,6 +26,7 @@ from malspark.pipeline.function_claims import (
 )
 from malspark.schemas.evidence import LedgerEntry
 from malspark.schemas.isr_models import ClaimEvidence
+from tests.linear_cost import assert_ratio, assert_under
 
 BASE = 0x140000000
 FUNCTIONS = 200
@@ -72,7 +72,7 @@ def _setup() -> tuple[list[LedgerEntry], list[LedgerEntry]]:
     return [index, strings], [listing]
 
 
-def _timed(claims: int) -> float:
+def _checking(claims: int) -> Callable[[], None]:
     pack, own = _setup()
     sentence = (
         f"0x{BASE + 0x1000 + 0x10 * (FUNCTIONS - 1):x} calls RtlUserRoutine001 and "
@@ -85,24 +85,22 @@ def _timed(claims: int) -> float:
             for n in range(claims)
         ]
     )
-    began = time.thread_time()
-    facts = function_facts(own, function_artefacts(pack), pack_entries=pack, bases=(BASE,))
-    found = check_function_claims(isr, listed_functions(own), facts, (BASE,))
-    seconds = time.thread_time() - began
-    assert found.asked == claims
-    return seconds
+
+    def check() -> None:
+        facts = function_facts(own, function_artefacts(pack), pack_entries=pack, bases=(BASE,))
+        found = check_function_claims(isr, listed_functions(own), facts, (BASE,))
+        assert found.asked == claims
+
+    return check
 
 
 class TestTheCheckGrowsWithTheClaims:
     def test_ten_times_the_claims_take_about_ten_times_as_long(self) -> None:
-        _timed(100)
-        low = min(_timed(300) for _ in range(2))
-        high = min(_timed(3_000) for _ in range(2))
+        low, high = assert_ratio(_checking(300), _checking(3_000), 20, what="3,000 claims")
         print("function claims, 300 and 3,000:", round(low, 3), round(high, 3))
-        assert high < low * 20
 
 
-def _grown(scale: int) -> float:
+def _grown(scale: int) -> Callable[[], None]:
     """``scale`` claims over a chain of ``20 * scale`` functions, each holding two strings."""
     functions = 20 * scale
     offsets = [0x100000 + 0x10 * i for i in range(functions)]
@@ -149,44 +147,36 @@ def _grown(scale: int) -> float:
             for n in range(scale)
         ]
     )
-    # The collector's sweeps of the whole test session's heap are not the check's cost.
-    gc.collect()
-    gc.disable()
-    try:
-        began = time.thread_time()
+
+    def check() -> None:
         facts = function_facts([listing], function_artefacts([index]), pack_entries=[index])
         found = check_function_claims(isr, listed_functions([listing]), facts, (BASE,))
-        seconds = time.thread_time() - began
-    finally:
-        gc.enable()
-    assert found.asked == 0 and found.checked == scale
-    return seconds
+        assert found.asked == 0 and found.checked == scale
+
+    return check
 
 
 class TestTheCheckGrowsWithClaimsAndGraphTogether:
     def test_ten_times_the_claims_over_ten_times_the_graph_take_about_ten_times_as_long(
         self,
     ) -> None:
-        _grown(20)
-        low = min(_grown(100) for _ in range(2))
-        high = _grown(1_000)
+        low, high = assert_ratio(_grown(100), _grown(1_000), 20, what="1,000 claims")
         print("claims over a graph, 100 over 2,000 and 1,000 over 20,000:", low, high)
-        assert high < low * 20
 
     def test_claims_naming_several_functions_cost_the_listings_times_the_graph_alone(
         self,
     ) -> None:
-        low, kept_low = _paired(19)
-        high, kept_high = _paired(190)
+        few, kept_low = _paired(19)
+        many, kept_high = _paired(190)
+        low, high = assert_ratio(few, many, 3, what="190 claims")
         print("claims naming two of 20 listed functions, 19 and 190:", low, high)
-        assert kept_low == kept_high == LISTINGS
-        assert high < low * 3
+        assert kept_low() == kept_high() == LISTINGS
 
 
 LISTINGS = 20
 
 
-def _paired(count: int) -> tuple[float, int]:
+def _paired(count: int) -> tuple[Callable[[], None], Callable[[], int]]:
     """``count`` claims, each naming two of 20 listed functions at the head of a chain of
     20,000 functions: each listed function reaches nearly the whole chain."""
     functions = 20_000
@@ -243,28 +233,24 @@ def _paired(count: int) -> tuple[float, int]:
     facts = function_facts(
         listings, function_artefacts([index]), pack_entries=[index], bases=(BASE,)
     )
-    # The collector's sweeps of the whole test session's heap are not the check's cost.
-    gc.collect()
-    gc.disable()
-    try:
-        began = time.thread_time()
+
+    def check() -> None:
+        # Each run walks the graph afresh, as an answer's first check does.
+        facts.reaches.clear()
         found = check_function_claims(isr, listed_functions(listings), facts, (BASE,))
-        seconds = time.thread_time() - began
-    finally:
-        gc.enable()
-    assert found.asked == 0 and found.checked == count
-    return seconds, len(facts.reaches)
+        assert found.asked == 0 and found.checked == count
+
+    return check, lambda: len(facts.reaches)
 
 
 class TestASentenceIsReadInWindows:
     def test_a_text_of_dots_finds_its_sentences_in_well_under_a_second(self) -> None:
         for unit in ("x. ", "e.g. ", "a."):
             text = (unit * (200_000 // len(unit) + 1))[:200_000]
-            began = time.thread_time()
-            _clause_starts(text)
-            seconds = time.thread_time() - began
+            seconds = assert_under(
+                lambda text=text: _clause_starts(text), 1.0, what=f"200 KB of {unit!r}"
+            )
             print("sentences of 200 KB of", repr(unit), round(seconds, 3))
-            assert seconds < 1.0
 
     def test_an_abbreviation_still_ends_no_sentence_and_a_long_word_still_does(self) -> None:
         assert _clause_starts("it reads e.g. the key") == [0]
@@ -277,12 +263,10 @@ class TestASentenceIsReadInWindows:
         text = " ".join(names[:4_000])
         assert len(text) > 60_000
         known = _catalogue_lower()
-        began = time.thread_time()
         apis, _strings = named_values(text, known)
-        seconds = time.thread_time() - began
-        print("4,000 names in one sentence:", round(seconds, 3))
         assert len(apis) > 3_000
-        assert seconds < 1.0
+        seconds = assert_under(lambda: named_values(text, known), 1.0, what="4,000 names")
+        print("4,000 names in one sentence:", round(seconds, 3))
 
     def test_thousands_of_names_in_one_clause_a_negation_opens_are_read_in_well_under_a_second(
         self,
@@ -298,11 +282,12 @@ class TestASentenceIsReadInWindows:
         ):
             text = (head + joint.join(names * 4))[:200_000]
             assert not any(mark in text for mark in ".;:!?\n")
-            began = time.thread_time()
-            named_values(text, known)
-            seconds = time.thread_time() - began
+            seconds = assert_under(
+                lambda text=text: named_values(text, known),
+                1.0,
+                what=f"a clause opened by {head!r}",
+            )
             print("one 200 KB clause opened by", repr(head + joint), round(seconds, 3))
-            assert seconds < 1.0
 
     def test_the_names_of_a_noun_negation_s_list_are_no_claimed_calls(self) -> None:
         text = "it shows no evidence of injection, such as VirtualAllocEx or CreateRemoteThread"

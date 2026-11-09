@@ -12,12 +12,13 @@ from __future__ import annotations
 
 import json
 import logging
-import time
+from collections.abc import Callable
 
 import pytest
 
 from malspark.core.config import ChunkingConfig
 from malspark.loaders.binary_chunker import BinaryChunker, head_room, header_chars
+from tests.linear_cost import assert_ratio
 from tests.unit._chunking_doubles import _container, _room
 
 
@@ -81,16 +82,11 @@ class TestNoChunkHoldsNothing:
     def test_ten_times_the_text_takes_about_ten_times_as_long(self) -> None:
         chunker = BinaryChunker(ChunkingConfig())
 
-        def timed(size: int) -> float:
+        def chunking(size: int) -> Callable[[], object]:
             text = "w" * size + " " * size
-            began = time.thread_time()
-            chunker.chunk("triage", text, room=_room(1_000))
-            return time.thread_time() - began
+            return lambda: chunker.chunk("triage", text, room=_room(1_000))
 
-        timed(200_000)
-        small = min(timed(200_000) for _ in range(3))
-        large = min(timed(2_000_000) for _ in range(3))
-        assert large < small * 20
+        assert_ratio(chunking(3_000_000), chunking(30_000_000), 20, what="ten times the text")
 
 
 def test_a_source_of_nothing_left_out_is_said(caplog: pytest.LogCaptureFixture) -> None:

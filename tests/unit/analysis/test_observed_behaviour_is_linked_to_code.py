@@ -14,6 +14,7 @@ import json
 from typing import Any
 
 import pytest
+from tests.linear_cost import assert_ratio
 
 from malspark.analysis import behaviour_code as bc
 from malspark.pipeline.triage_pack import PACK_SOURCE, PIPELINE, behaviour_inputs, render_pack
@@ -419,17 +420,9 @@ class TestRepeatsStayLinear:
         assert bc._index_functions(inputs.index[2] if inputs.index else None) == {MUTEX: ["0x2000"]}
 
     def test_many_repeats_grow_linearly(self) -> None:
-        import time
-
-        def spent(n: int) -> float:
+        def link(n: int) -> Any:
             report, inputs = _repeated(n)
-            best = float("inf")
-            for _ in range(3):
-                started = time.thread_time()
-                bc.link_behaviour_to_code(report, None, inputs)
-                best = min(best, time.thread_time() - started)
-            return best
+            return lambda: bc.link_behaviour_to_code(report, None, inputs)
 
-        small, large = spent(2_000), spent(16_000)
         # Eight times the repeats: linear is about 8x, a list scan per repeat about 64x.
-        assert large < small * 24, (small, large)
+        assert_ratio(link(4_000), link(32_000), 24, what="32,000 repeats against 4,000")

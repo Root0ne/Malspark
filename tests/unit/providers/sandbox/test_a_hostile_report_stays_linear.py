@@ -2,16 +2,15 @@
 
 Each shape here is ten times larger in the second run than in the first, and
 the second run may cost at most ten times the first (with the same margin
-every other linear-time test of the platform allows). Each timing holds the
-collector off and keeps the best of two runs, so a sweep that happens to land
+every other linear-time test of the platform allows). Each timing is the shared
+measure of ``tests.linear_cost``: the two sizes timed in turn with the
+collector off, the best of each read, so a sweep or a busy machine that lands
 in one run is not what is measured. No walk recurses, so depth costs no stack.
 """
 
 from __future__ import annotations
 
 import gc
-import sys
-import time
 import tracemalloc
 from collections.abc import Callable
 from typing import Any
@@ -27,27 +26,13 @@ from malspark.schemas.sandbox_report import (
     stored_place,
     triage_overview_to_sandbox_report,
 )
-
-
-def _seconds(make: Callable[[int], Any], run: Callable[[Any], Any], n: int) -> float:
-    """The best of two timed runs of ``run`` on ``make(n)``, the collector held."""
-    subject = make(n)
-    best = float("inf")
-    for _ in range(2):
-        gc.collect()
-        gc.disable()
-        try:
-            started = time.thread_time()
-            run(subject)
-            best = min(best, time.thread_time() - started)
-        finally:
-            gc.enable()
-    return best
+from tests.linear_cost import assert_scales
 
 
 def _linear(make: Callable[[int], Any], run: Callable[[Any], Any], small: int) -> None:
-    once, tenfold = _seconds(make, run, small), _seconds(make, run, small * 10)
-    assert tenfold <= 10 * once * 1.5 + 0.05, (once, tenfold)
+    # Ten times the input in under fifteen times the time, and 50 ms of
+    # allowance for a small run that is mostly fixed cost.
+    assert_scales(make, small, run, factor=10, limit=15, floor=0.05 / 15)
 
 
 def _deep(depth: int, leaf: Any = 1) -> Any:
@@ -82,7 +67,7 @@ class TestTheTriageReader:
                 overview, provider="triage", source_format="triage", task_reports={"t": task}
             )
 
-        _linear(make, run, 2_000)
+        _linear(make, run, 3_000)
 
     def test_many_tasks_each_extracting_many_rows(self) -> None:
         def make(n: int) -> dict[str, dict[str, Any]]:
@@ -90,22 +75,22 @@ class TestTheTriageReader:
             return {f"t{i}": {"extracted": rows, "signatures": rows} for i in range(10)}
 
         def run(tasks: dict[str, dict[str, Any]]) -> Any:
-            return triage_overview_to_sandbox_report(
-                {"extracted": []}, provider="triage", source_format="triage", task_reports=tasks
-            )
+            # A row is read in a fraction of a microsecond: each side reads 25
+            # times. The large side stays at 20,000 rows a task, a few
+            # megabytes: with a small processor cache shared, a row costs about
+            # 0.55 us up to 50,000 and 0.7 to 2 us from 100,000, and a macOS
+            # runner read 100,000 against 10,000 at 21 times, either of which a
+            # ratio would read as the reader's growth.
+            for _ in range(25):
+                read = triage_overview_to_sandbox_report(
+                    {"extracted": []}, provider="triage", source_format="triage", task_reports=tasks
+                )
+            return read
 
         _linear(make, run, 2_000)
 
 
 class TestTheDocument:
-    @pytest.mark.skipif(
-        sys.platform == "darwin",
-        reason=(
-            "on macOS the allocation of many tiny items is counted in the wall-clock "
-            "time and grows faster than the read, so the ratio does not measure the "
-            "reader there; the same check runs on Linux"
-        ),
-    )
     def test_many_tiny_items_and_wide_sections(self) -> None:
         def make(n: int) -> dict[str, Any]:
             return {
@@ -137,11 +122,19 @@ class TestTheDocument:
             return {"blob": "A" * (n * 1_000), "behavior": {"processes": []}}
 
         def run(raw: dict[str, Any]) -> Any:
-            return sandbox_document(
-                cape_report_to_sandbox_report(raw, provider="x", source_format="cape2")
-            )
+            # The string is carried, so a read costs the same at any size and
+            # takes microseconds: each side reads 800 times to be measurable.
+            for _ in range(800):
+                document = sandbox_document(
+                    cape_report_to_sandbox_report(raw, provider="x", source_format="cape2")
+                )
+            return document
 
-        _linear(make, run, 1_000)
+        raw = make(1_000)
+        assert run(raw)["blob"] is raw["blob"], "the string is carried, not copied"
+        # Carried, ten times the string costs what the string costs: a bound of
+        # twice that leaves room for noise, and a read of the string costs ten.
+        assert_scales(make, 1_000, run, factor=10, limit=2)
 
 
 class TestAHostileMappedReport:
@@ -154,8 +147,12 @@ class TestAHostileMappedReport:
             }
 
         mapping = RestMappingConfig(processes="$.run.procs[*]")
-        _linear(make, lambda payload: unnamed_blocks(mapping, payload), 20_000)
-        document = _mapped(make(1_000), mapping)
+        # The block is carried by reference, so finding it costs the same at
+        # any size; the timed read is the whole report the block rides in.
+        payload = make(1_000)
+        assert unnamed_blocks(mapping, payload)["report.huge"] is payload["huge"]
+        _linear(make, lambda payload: _mapped(payload, mapping), 50_000)
+        document = _mapped(payload, mapping)
         assert len(document["channels"]["report.huge"]) == 1_000
 
     @staticmethod
@@ -165,7 +162,7 @@ class TestAHostileMappedReport:
     EVERY_NODE = RestMappingConfig(target_sha256="", places={"memory": "$..*"})
 
     def test_a_path_that_matches_every_node_costs_linear_time(self) -> None:
-        _linear(self._every_node, lambda payload: _mapped(payload, self.EVERY_NODE), 2_000)
+        _linear(self._every_node, lambda payload: _mapped(payload, self.EVERY_NODE), 2_400)
 
     @pytest.mark.slow
     def test_a_path_that_matches_millions_of_nodes_holds_memory_in_step(self) -> None:
@@ -249,13 +246,19 @@ def _held(build: Callable[[], Any]) -> tuple[int, Any]:
 
 class TestEachRequestSFieldsAreHeldOnce:
     def test_many_questions_times_many_keys_costs_linear_time(self) -> None:
-        _linear(
-            _questions_and_keys,
-            lambda task: triage_overview_to_sandbox_report(
-                {}, provider="triage", source_format="triage", task_reports={"t": task}
-            ),
-            200,
-        )
+        def run(task: dict[str, Any]) -> Any:
+            # A question or a key is read in under a microsecond: each side
+            # reads 128 times. The large body stays at 2,500 of each: with a
+            # small processor cache shared, a question's cost starts to rise
+            # between 5,000 and 10,000 and doubles by 40,000, which a ratio
+            # would read as growth.
+            for _ in range(128):
+                read = triage_overview_to_sandbox_report(
+                    {}, provider="triage", source_format="triage", task_reports={"t": task}
+                )
+            return read
+
+        _linear(_questions_and_keys, run, 250)
 
     def test_and_memory_in_step_with_the_body(self) -> None:
         import json
@@ -422,4 +425,4 @@ class TestEveryKindLosesItsLinkKeysLinearly:
                 network=SandboxNetwork(**network),
             )
 
-        _linear(report, sandbox_document, 2_000)
+        _linear(report, sandbox_document, 3_000)

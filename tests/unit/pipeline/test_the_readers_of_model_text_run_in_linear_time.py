@@ -2,15 +2,17 @@
 
 A model answer is untrusted and can be arbitrarily long. Each reader below is
 given a line of words with no comma, semicolon or full stop and many
-technique-id tokens, sized so that it costs at least 10 ms of CPU time (from
-20 KB up), and four times as much of the same; the long one may cost less than
-``TIME_RATIO_LIMIT`` times the short one, each the best CPU time of five runs
-(``tests.linear_cost.cpu_seconds``), so a loaded machine does not move it.
+technique-id tokens of 20 or 40 KB, read as many times as it takes to cost at
+least 10 ms of CPU time, and four times as much of the same; the long one may
+cost less than ``TIME_RATIO_LIMIT`` times the short one, the two timed in turn
+on their best CPU times (``tests.linear_cost.assert_ratio``), so a loaded
+machine does not move it.
 Nothing is cut to make it pass.
 """
 
 from __future__ import annotations
 
+import math
 from collections.abc import Callable
 from types import SimpleNamespace
 
@@ -59,13 +61,18 @@ from malspark.reporting.section_agreement import (
     whole_code_absences,
 )
 from malspark.schemas.evidence import build_entry
-from tests.linear_cost import TIME_RATIO_LIMIT, cpu_seconds
+from tests.linear_cost import TIME_RATIO_LIMIT, assert_ratio, cpu_seconds, repeated
 
 UNIT = "T1234 Native words T1106 more is not read 0x1400 which that 12 hits Web Protocols "
 # The short line's least size and CPU time, and the largest size it grows to.
+# The long line is four times the short one, so at most 160 KB: most readers
+# build a text of their own from the line, and past about 300 KB the copies
+# and the walk leave a small processor cache (claim blocks reads 7.5 ns a
+# character up to 160 KB and 11 ns at 640 KB with the cache shared), which a
+# ratio would read as the reader's growth. A shorter line is read more times.
 SMALLEST = 20_000
 LEAST_SECONDS = 0.01
-LARGEST = 1_280_000
+LARGEST = 40_000
 
 
 _COUNTS = FailureCounts(failed=2, redone=1, by_name={"decompil": (1, 1)})
@@ -76,17 +83,30 @@ def _hostile(size: int) -> str:
 
 
 def _scales_linearly(read: Callable[[str], object]) -> None:
-    def cost(size: int) -> float:
+    def reading(size: int, times: int = 1) -> Callable[[], object]:
         text = _hostile(size)
-        return cpu_seconds(lambda: read(text), repeats=5)
+        return lambda: [read(text) for _ in range(times)]
 
+    # The short size is the least that costs LEAST_SECONDS; only the ratio is asserted.
     size = SMALLEST
-    small = cost(size)
-    while small < LEAST_SECONDS and size < LARGEST:
+    took = cpu_seconds(reading(size), repeats=5)
+    while took < LEAST_SECONDS and size < LARGEST:
         size *= 2
-        small = cost(size)
-    large = cost(size * 4)
-    assert large < max(small, LEAST_SECONDS) * TIME_RATIO_LIMIT, (size, small, large)
+        took = cpu_seconds(reading(size), repeats=5)
+    # A reader that stops early, or reads even the largest line in C under
+    # LEAST_SECONDS, reads it this many times on both sides, so the short run
+    # is long enough to read a ratio from. A count estimated from a reading of
+    # a few clock ticks can fall short, so it is doubled until the short run,
+    # read by the measure's own clock, takes LEAST_SECONDS.
+    times = 1 if took >= LEAST_SECONDS else math.ceil(1.5 * LEAST_SECONDS / max(took, 1e-6))
+    while times > 1 and cpu_seconds(reading(size, times), repeats=3) < LEAST_SECONDS:
+        times *= 2
+    assert_ratio(
+        reading(size, times),
+        reading(size * 4, times),
+        TIME_RATIO_LIMIT,
+        what=f"{size * 4} characters",
+    )
 
 
 ENTRIES = EntryTexts.from_ledger(
@@ -349,3 +369,19 @@ LISTED = [SimpleNamespace(addresses=frozenset({0x1400}), id="listed.1")]
 )
 def test_four_times_the_hostile_line_stays_under_the_ratio(read: Callable[[str], object]) -> None:
     _scales_linearly(read)
+
+
+def test_a_megabyte_run_of_spaces_after_a_claim_word_stays_under_the_ratio() -> None:
+    # The lines above stay at 160 KB for the processor cache's sake; this one
+    # reader reaches megabytes. Its text is built before the measure and the
+    # pattern walks it in C at a constant 6.5 ns a character from 40 KB to
+    # 5 MB with a small cache shared, so 1.28 MB against 5.12 MB measures the
+    # reader alone, and a step quadratic in the run would read 16.
+    small, large = ("CLAIM" + " " * size + "x" for size in (1_280_000, 5_120_000))
+    assert CLAIM_HEAD_RE.match(small) is None
+    assert_ratio(
+        repeated(lambda: CLAIM_HEAD_RE.match(small), 2),
+        repeated(lambda: CLAIM_HEAD_RE.match(large), 2),
+        TIME_RATIO_LIMIT,
+        what="5,120,000 spaces against 1,280,000",
+    )

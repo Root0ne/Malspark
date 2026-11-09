@@ -19,6 +19,7 @@ from langchain_core.tools import StructuredTool
 
 from malspark.core.config import MCPServerConfig, Settings
 from malspark.providers.servers import ServerHandle
+from tests.linear_cost import assert_ratio, repeated
 
 # What each server offers, by key; a tool answers with its owner's name.
 OFFERS: dict[str, list[str]] = {
@@ -192,32 +193,31 @@ class TestAGenericAgent:
 
 
 def test_many_colliding_tools_are_claimed_in_linear_time(monkeypatch: pytest.MonkeyPatch) -> None:
-    import gc
-    import time
-
     from malspark.providers.servers import ServerRegistry
 
-    def _timed(n: int) -> float:
+    registry = ServerRegistry(Settings(_env_file=None))
+
+    def _merge(n: int) -> Any:
         names = [f"t{i}" for i in range(n)]
         own = [_tool(name, "analysis") for name in names]
         added = [_tool(name, "kit") for name in names]
-        registry = ServerRegistry(Settings(_env_file=None))
-        seen: dict[str, str] = {}
-        tools: list[Any] = []
-        # A collection of the suite's heap inside the timed span measures
-        # the collector, not the merge (seen at ~2 s on a loaded runner).
-        gc.collect()
-        gc.disable()
-        try:
-            start = time.thread_time()
+
+        def merge() -> list[Any]:
+            seen: dict[str, str] = {}
+            tools: list[Any] = []
             registry.merge_tools("analysis", own, tools, seen)
             registry.merge_tools("kit", added, tools, seen)
-            took = time.thread_time() - start
-        finally:
-            gc.enable()
-        assert sum(1 for t in tools if t.name.startswith("kit__")) == n
-        return took
+            return tools
 
-    small = min(_timed(300) for _ in range(3))
-    large = min(_timed(3000) for _ in range(3))
-    assert large < max(small * 30, 0.5)
+        assert sum(1 for t in merge() if t.name.startswith("kit__")) == n
+        return merge
+
+    small, large = _merge(300), _merge(3000)
+    # A tool takes half a millisecond to build, so the sizes stay and each
+    # side is merged 15 times, a small run of about 18 ms.
+    assert_ratio(
+        repeated(small, 15),
+        repeated(large, 15),
+        30,
+        what="3,000 tools against 300",
+    )

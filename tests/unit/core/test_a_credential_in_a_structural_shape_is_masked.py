@@ -180,18 +180,21 @@ def test_masking_the_structural_shapes_costs_time_linear_in_the_text():
     # One long word for each new reading: separators and closers after the
     # host, dots and colons the host may not end in, a backslash run before
     # no quote, UNC and environment-variable starts left open, and the value
-    # separators between a path and a password.
-    for build in (
-        lambda size: "u:p@h" + ",;)" * size,
-        lambda size: "u:p@h" + ".:" * size + "!",
-        lambda size: "u:p@" + "a." * size + "!",
-        lambda size: "u:p@h" + "\\" * size + "x",
-        lambda size: "x:" + "\\\\a" * size + "@h",
-        lambda size: "x:" + "%a" * size + "@h",
-        lambda size: "C:\\x" + "=)]" * size + "u:p@h:8080",
-        lambda size: "C:\\x" + ")D:\\y" * size + ",u:p@h:8080,z",
-        lambda size: "u:" + "\\\\" * size + "@h",
-        lambda size: "u:p@h:8080" + "|!" * size,
-        lambda size: "u:p@" + "a:1" * size + "!",
+    # separators between a path and a password. A word most readings pass in
+    # C is read ``reads`` times so the small run is measurable.
+    for build, reads in (
+        (lambda size: "u:p@h" + ",;)" * size, 6),
+        (lambda size: "u:p@h" + ".:" * size + "!", 8),
+        (lambda size: "u:p@" + "a." * size + "!", 60),
+        (lambda size: "u:p@h" + "\\" * size + "x", 140),
+        (lambda size: "x:" + "\\\\a" * size + "@h", 1),
+        (lambda size: "x:" + "%a" * size + "@h", 85),
+        (lambda size: "C:\\x" + "=)]" * size + "u:p@h:8080", 1),
+        (lambda size: "C:\\x" + ")D:\\y" * size + ",u:p@h:8080,z", 1),
+        (lambda size: "u:" + "\\\\" * size + "@h", 1),
+        (lambda size: "u:p@h:8080" + "|!" * size, 48),
+        (lambda size: "u:p@" + "a:1" * size + "!", 48),
     ):
-        assert_scales(build, 2_000, masking)
+        assert_scales(
+            build, 20_000, lambda text, reads=reads: [masking(text) for _ in range(reads)]
+        )

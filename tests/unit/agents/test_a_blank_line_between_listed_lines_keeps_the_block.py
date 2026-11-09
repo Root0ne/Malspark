@@ -43,7 +43,7 @@ from malspark.pipeline.mediation_models import MediatorVerdict
 from malspark.pipeline.state import AgentArgument
 from malspark.schemas.isr_models import AgentISR, ClaimEvidence
 from tests.credential_shapes import lowercase_body
-from tests.linear_cost import TIME_RATIO_LIMIT, calls, cpu_seconds
+from tests.linear_cost import TIME_RATIO_LIMIT, assert_ratio, calls
 
 BLOCKING = [
     "[analysts: DYNAMIC ANALYST, STATIC ANALYST] DYNAMIC claim 24 says the name does not reach "
@@ -272,47 +272,55 @@ class TestWhatTheReviewFound:
 
 class TestLinearTime:
     @pytest.mark.parametrize(
-        "unit",
+        ("unit", "lines"),
         [
-            pytest.param(lambda n: f"[analysts: A{n}] x{n} [blocking: r]\n\n", id="field lines"),
             pytest.param(
-                lambda n: f"## Heading {n}\n\n[analysts: A] x [blocking: r]\n", id="heads"
+                lambda n: f"[analysts: A{n}] x{n} [blocking: r]\n\n", 12_000, id="field lines"
             ),
-            pytest.param(lambda n: "[ " + " " * 50 + f"analysts{n}\n\n", id="open brackets"),
-            pytest.param(lambda n: "*" * 60 + f" x{n}\n", id="emphasis runs"),
-            pytest.param(lambda n: f"x{n} [blocking: r]" + " " * 60 + "y\n", id="spaces after"),
+            pytest.param(
+                lambda n: f"## Heading {n}\n\n[analysts: A] x [blocking: r]\n", 6_000, id="heads"
+            ),
+            pytest.param(
+                lambda n: "[ " + " " * 50 + f"analysts{n}\n\n", 75_000, id="open brackets"
+            ),
+            pytest.param(lambda n: "*" * 60 + f" x{n}\n", 3_000, id="emphasis runs"),
+            pytest.param(
+                lambda n: f"x{n} [blocking: r]" + " " * 60 + "y\n", 6_000, id="spaces after"
+            ),
         ],
     )
-    def test_four_times_the_answer_costs_under_eight_times(self, unit: Any) -> None:
-        def read(lines: int) -> Any:
-            text = "CONTRADICTIONS:\n" + "".join(unit(n) for n in range(lines)) + AGREEMENT
+    def test_four_times_the_answer_costs_under_eight_times(self, unit: Any, lines: int) -> None:
+        def read(count: int) -> Any:
+            text = "CONTRADICTIONS:\n" + "".join(unit(n) for n in range(count)) + AGREEMENT
             return lambda: read_contradictions_block(text)
 
         # CPU time, not wall-clock: four times the lines must take under eight
         # times as long, and a quadratic read takes sixteen times. The calls
         # made are held to the same ratio, which a load cannot move.
-        read(50)()
-        small, large = read(3_000), read(12_000)
-        assert cpu_seconds(large) < cpu_seconds(small) * TIME_RATIO_LIMIT
+        small, large = read(lines), read(4 * lines)
+        assert_ratio(small, large, TIME_RATIO_LIMIT, what=f"{4 * lines:,} lines against {lines:,}")
         assert calls(large) <= calls(small) * 4 * 1.2 + 100
 
     @pytest.mark.parametrize(
-        "line",
+        ("line", "reads"),
         [
-            pytest.param(lambda size: "[analysts: " + " [" * size, id="open brackets"),
-            pytest.param(lambda size: "*" * size + " x", id="emphasis"),
-            pytest.param(lambda size: "x [blocking: r]" + " " * size + "y", id="spaces"),
-            pytest.param(lambda size: "x " + "[blocking " * size, id="mark openings"),
+            pytest.param(lambda size: "[analysts: " + " [" * size, 420, id="open brackets"),
+            pytest.param(lambda size: "*" * size + " x", 24, id="emphasis"),
+            pytest.param(lambda size: "x [blocking: r]" + " " * size + "y", 400, id="spaces"),
+            pytest.param(lambda size: "x " + "[blocking " * size, 4, id="mark openings"),
         ],
     )
-    def test_one_long_line_costs_in_proportion(self, line: Any) -> None:
+    def test_one_long_line_costs_in_proportion(self, line: Any, reads: int) -> None:
         def read(size: int) -> Any:
             text = f"CONTRADICTIONS:\n- a\n\n{line(size)}\n\n{AGREEMENT}"
-            return lambda: read_contradictions_block(text)
+            # A run of brackets, marks or spaces is read in C in well under a
+            # millisecond: the answer is read ``reads`` times so the small run
+            # is measurable.
+            return lambda: [read_contradictions_block(text) for _ in range(reads)]
 
-        read(50)()
-        small, large = read(100_000), read(400_000)
-        assert cpu_seconds(large) < cpu_seconds(small) * TIME_RATIO_LIMIT
+        assert_ratio(
+            read(25_000), read(100_000), TIME_RATIO_LIMIT, what="a 100,000 line against 25,000"
+        )
 
 
 class _Model:

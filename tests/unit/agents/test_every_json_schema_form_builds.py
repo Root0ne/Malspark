@@ -25,7 +25,6 @@ from __future__ import annotations
 
 import asyncio
 import json
-import time
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
@@ -41,6 +40,7 @@ from malspark.agents.mcp_client import MCPLangChainToolkit
 from malspark.agents.null_arguments import rules_of
 from malspark.agents.tool_pinning import _schema_without
 from malspark.llm.gemini_provider import gemini_tools
+from tests.linear_cost import assert_under
 
 FIXTURES = Path(__file__).parents[2] / "fixtures"
 CORPUS = FIXTURES / "mcp_schema_corpus"
@@ -395,10 +395,14 @@ HOSTILE: dict[str, dict[str, Any]] = {
 
 @pytest.mark.parametrize("case", sorted(HOSTILE))
 def test_a_hostile_property_costs_only_itself(case: str) -> None:
-    began = time.thread_time()
-    tool, session = _build(HOSTILE[case], case)
-    offered = _offered(tool)
-    assert time.thread_time() - began < 20.0
+    built: list[Any] = []
+
+    def build() -> None:
+        tool, session = _build(HOSTILE[case], case)
+        built[:] = [tool, session, _offered(tool)]
+
+    assert_under(build, 20.0, what=f"building {case}")
+    tool, session, offered = built
     text = json.dumps(offered)
     assert len(text) < 70_000
     assert "$ref" not in text

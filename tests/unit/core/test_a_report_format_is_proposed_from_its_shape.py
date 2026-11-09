@@ -11,13 +11,13 @@ from __future__ import annotations
 
 import gc
 import json
-import time
 import tracemalloc
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
 import pytest
+from tests.linear_cost import assert_scales
 
 from malspark.core.report_formats import ReportFormat
 from malspark.core.report_proposals import KEY_HORIZON, READ_DEPTH, propose_format
@@ -252,21 +252,6 @@ class TestTheReadingHorizonsSayWhatTheyLeft:
         assert "notes" not in proposal
 
 
-def _seconds(make: Callable[[int], Any], n: int) -> float:
-    subject = make(n)
-    best = float("inf")
-    for _ in range(2):
-        gc.collect()
-        gc.disable()
-        try:
-            started = time.thread_time()
-            propose_format(subject)
-            best = min(best, time.thread_time() - started)
-        finally:
-            gc.enable()
-    return best
-
-
 def _wide(n: int) -> dict[str, Any]:
     return {
         "run": {
@@ -280,10 +265,23 @@ def _wide(n: int) -> dict[str, Any]:
 
 
 class TestLinear:
-    @pytest.mark.parametrize("make", [_wide, _nested], ids=["wide", "deep"])
-    def test_ten_times_the_report_costs_about_ten_times(self, make: Callable[[int], Any]) -> None:
-        once, tenfold = _seconds(make, 5_000), _seconds(make, 50_000)
-        assert tenfold <= 10 * once * 1.5 + 0.05, (once, tenfold)
+    # The deep report is read down to READ_DEPTH whatever its depth, in about
+    # ten microseconds: it is proposed 1,200 times so the small run outlasts
+    # the floor.
+    @pytest.mark.parametrize(
+        ("make", "proposals"), [(_wide, 1), (_nested, 1200)], ids=["wide", "deep"]
+    )
+    def test_ten_times_the_report_costs_about_ten_times(
+        self, make: Callable[[int], Any], proposals: int
+    ) -> None:
+        assert_scales(
+            make,
+            5_000,
+            lambda report: [propose_format(report) for _ in range(proposals)],
+            factor=10,
+            limit=10 * 1.5,
+            floor=0.05 / 15,
+        )
 
     def test_what_it_holds_and_returns_stays_small_beside_the_report(self) -> None:
         text = json.dumps(_wide(50_000))

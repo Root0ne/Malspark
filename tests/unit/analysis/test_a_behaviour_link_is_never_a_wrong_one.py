@@ -41,7 +41,14 @@ def _network(**kinds: Any) -> dict[str, Any]:
 class TestHivePrefixesCostTheirLength:
     def test_a_megabyte_of_hive_prefixes_is_stripped_in_bounded_time(self) -> None:
         assert hiveless_key("HKCU\\" * 200_000 + "Software") == "Software"
-        assert_scales(lambda count: "HKCU\\" * count + "Software", 25_000, hiveless_key)
+        # A prefix is read in C in under a tenth of a microsecond: each key is
+        # read forty times so the small run is measurable while the large key
+        # stays a fifth of a megabyte.
+        assert_scales(
+            lambda count: "HKCU\\" * count + "Software",
+            5_000,
+            lambda key: [hiveless_key(key) for _ in range(40)],
+        )
 
     def test_a_megabyte_of_hive_prefixes_in_the_strings_head_links_in_bounded_time(self) -> None:
         report = _report(keys=["HKCU\\Software\\X"])

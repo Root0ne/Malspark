@@ -16,7 +16,6 @@ ones shown is named by id. With no window known every entry is shown.
 
 from __future__ import annotations
 
-import time
 from typing import Any
 from unittest.mock import MagicMock, patch
 
@@ -32,6 +31,7 @@ from malspark.pipeline.validation import (
 )
 from malspark.schemas.evidence import LedgerEntry
 from malspark.schemas.isr_models import AgentISR
+from tests.linear_cost import assert_ratio
 
 NAME = "all_tools_reverser_ghidra"
 BODY = "void FUN_3868(void) { CreateMutexW(0, 0); if (GetLastError() == 0xb7) ExitProcess(0); }"
@@ -197,7 +197,7 @@ class TestTheEntriesText:
         """Four times the entries take about four times as long; quadratic would take sixteen."""
         from malspark.llm.context_window import ContextBudget
 
-        def _fit(count: int) -> float:
+        def _fit(count: int) -> Any:
             analyst = _Analyst([FIXED])
             analyst._evidence_entries = [
                 LedgerEntry(id=f"ev_{n:05d}", agent=NAME, tool="batch_decompile", output="x" * 50)
@@ -208,20 +208,20 @@ class TestTheEntriesText:
             )
             isr = analyst._text_to_isr(FIRST, 0)
             isr.claims[0].evidence_ref = " ".join(f"[ev_{n:05d}]" for n in range(1, count + 1))
-            best = float("inf")
-            for _ in range(3):
-                started = time.thread_time()
-                closing = analyst._with_cited_entries(
+
+            def fit() -> str:
+                return analyst._with_cited_entries(
                     isr, [], "CLOSE", lambda text: [HumanMessage(content=text)], 16_384
                 )
-                best = min(best, time.thread_time() - started)
+
+            closing = fit()
             assert closing.endswith("\nCLOSE")
             assert VALIDATION_ENTRIES_UNFIT in closing
-            return best
+            return fit
 
-        small, large = _fit(2_000), _fit(8_000)
-
-        assert large < 8 * small + 0.05
+        assert_ratio(
+            _fit(2_600), _fit(10_400), 8, what="10,400 entries against 2,600", floor=0.05 / 8
+        )
 
 
 def _room(analyst: _Analyst) -> float:

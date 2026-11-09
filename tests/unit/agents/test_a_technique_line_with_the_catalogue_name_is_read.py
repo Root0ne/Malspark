@@ -15,11 +15,12 @@ still asked about.
 
 from __future__ import annotations
 
-import time
+from typing import Any
 
 import pytest
 
 from malspark.agents.base_agent import read_technique_line
+from tests.linear_cost import assert_ratio
 
 
 @pytest.mark.parametrize(
@@ -65,27 +66,23 @@ def test_it_is_asked_about(line: str) -> None:
 
 
 def test_a_long_none_line_is_read_in_linear_time() -> None:
-    def cost(line: str) -> float:
-        start = time.thread_time()
-        read_technique_line(line)
-        return time.thread_time() - start
-
     unit = "none of these words names anything "
-    cost(unit * 60)
-    small = cost(unit * 600)
-    large = cost(unit * 6000)
-    assert large <= max(small, 1e-3) * 30
+    small, large = unit * 1500, unit * 15000
+    assert_ratio(
+        lambda: read_technique_line(small),
+        lambda: read_technique_line(large),
+        30,
+        what="ten times the line",
+    )
 
 
 def test_ten_times_the_line_costs_at_most_ten_times_the_time() -> None:
-    def cost(line: str) -> float:
-        start = time.thread_time()
-        for _ in range(20):
-            read_technique_line(line)
-        return time.thread_time() - start
+    def cost(line: str) -> Any:
+        def read() -> None:
+            for _ in range(20):
+                read_technique_line(line)
+
+        return read
 
     unit = "T1106 Native API word, "
-    cost(unit)
-    small = cost(unit * 40)
-    large = cost(unit * 400)
-    assert large <= max(small, 1e-3) * 30
+    assert_ratio(cost(unit * 120), cost(unit * 1200), 30, what="ten times the line")

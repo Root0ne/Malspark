@@ -760,7 +760,7 @@ def test_no_record_prints_nothing() -> None:
 
 def test_the_reading_and_grouping_are_linear() -> None:
     """Many calls of one tool over distinct inputs and many negatives, each read once."""
-    from tests.linear_cost import TIME_RATIO_LIMIT, calls, cpu_seconds
+    from tests.linear_cost import TIME_RATIO_LIMIT, assert_ratio, calls
 
     def build(n: int) -> Callable[[], Any]:
         entries = [
@@ -779,12 +779,11 @@ def test_the_reading_and_grouping_are_linear() -> None:
         claims = [_claim(f"No detections were found [ev_{i + 1:04d}].") for i in range(n)]
         return lambda: _record(entries, *claims)
 
-    build(50)()  # one-time costs (caches, lazy imports) are not the reading's
     small, large = build(400), build(1600)
     # CPU time, not wall-clock: four times the input must take under eight times
     # as long, and a quadratic reading takes sixteen times. The calls made are
     # held to the same ratio too, which a load cannot move.
-    assert cpu_seconds(large) < cpu_seconds(small) * TIME_RATIO_LIMIT
+    assert_ratio(small, large, TIME_RATIO_LIMIT, what="1,600 calls and negatives against 400")
     assert calls(large) <= calls(small) * 4 * 1.2 + 100
 
 

@@ -20,7 +20,6 @@ Every value is synthetic.
 from __future__ import annotations
 
 import asyncio
-import time
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 
@@ -56,6 +55,7 @@ from malspark.pipeline.state import AgentArgument
 from malspark.pipeline.sycophancy_detector import convergence_flags
 from malspark.schemas.evidence import LedgerEntry
 from malspark.schemas.isr_models import AgentISR, ClaimEvidence
+from tests.linear_cost import assert_ratio
 
 NAMES = ["static", "reverser", "dynamic"]
 
@@ -127,13 +127,14 @@ class TestTheEntriesALineCites:
         assert line_places(LINE_KEY, [FACT_KEY, FACT_DELETE]) == {0x5750, 0xCBE0}
 
     def test_a_long_line_is_read_in_linear_time(self) -> None:
-        timings = []
-        for n in (2000, 20000):
+        def reading(n: int) -> Any:
             line = "[analysts: STATIC] " + " ".join(f"ev_{i:04d} 0x{i:x}" for i in range(n))
-            start = time.thread_time()
-            line_entry_ids([line], [f'For the line "{line}": ' + "0x1 is listed in ev_0001; " * n])
-            timings.append(time.thread_time() - start)
-        assert timings[1] < timings[0] * 10 * 4 + 0.5
+            fact = f'For the line "{line}": ' + "0x1 is listed in ev_0001; " * n
+            return lambda: line_entry_ids([line], [fact])
+
+        assert_ratio(
+            reading(26_000), reading(260_000), 10 * 4, floor=0.5 / 40, what="a tenfold line"
+        )
 
 
 class TestTheEntriesAreFittedNeverCut:
@@ -401,26 +402,31 @@ class TestTheMark:
         assert carries_line_field("[analysts: STATIC] x [blocking: y] [carried: L2]")
 
     @pytest.mark.parametrize(
-        "line",
+        ("line", "reads"),
         [
-            pytest.param(lambda n: "[analysts: " + " [" * n + "*" * n, id="brackets"),
-            pytest.param(lambda n: "[" + " " * n, id="a bracket and spaces"),
-            pytest.param(lambda n: "x [blocking:" + " " * n, id="an open mark and spaces"),
-            pytest.param(lambda n: " " * n + "x", id="spaces"),
-            pytest.param(lambda n: "*" * n + " x", id="emphasis"),
+            pytest.param(lambda n: "[analysts: " + " [" * n + "*" * n, 2, id="brackets"),
+            pytest.param(lambda n: "[" + " " * n, 5, id="a bracket and spaces"),
+            pytest.param(lambda n: "x [blocking:" + " " * n, 10, id="an open mark and spaces"),
+            pytest.param(lambda n: " " * n + "x", 12, id="spaces"),
+            pytest.param(lambda n: "*" * n + " x", 12, id="emphasis"),
         ],
     )
-    def test_a_long_line_is_read_in_linear_time(self, line: Any) -> None:
-        timings = []
-        for n in (20000, 200000):
+    def test_a_long_line_is_read_in_linear_time(self, line: Any, reads: int) -> None:
+        def reading(n: int) -> Any:
             text = line(n)
-            start = time.thread_time()
-            read_line_mark(text)
-            point_key(text)
-            read_marks([text])
-            carries_line_field(text)
-            timings.append(time.thread_time() - start)
-        assert timings[1] < timings[0] * 10 * 4 + 0.5
+
+            def read() -> None:
+                # A run is read in C in a few milliseconds: the line is read
+                # ``reads`` times so the small run outlasts the floor.
+                for _ in range(reads):
+                    read_line_mark(text)
+                    point_key(text)
+                    read_marks([text])
+                    carries_line_field(text)
+
+            return read
+
+        assert_ratio(reading(20000), reading(200000), 10 * 4, floor=0.5 / 40, what="a tenfold line")
 
 
 def _record(changed: set[str], revised: tuple[str, ...] = ("static", "dynamic")) -> dict:

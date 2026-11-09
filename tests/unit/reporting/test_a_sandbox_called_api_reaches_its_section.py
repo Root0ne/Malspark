@@ -11,13 +11,13 @@ covers is not counted; a zero count is not shown and asks nothing.
 
 from __future__ import annotations
 
-import time
 from typing import Any
 
 from malspark.reporting.evidence_bundles import bundle_for, is_empty
 from malspark.reporting.ledger_projection import dynamic_from_ledger
 from malspark.reporting.models import DynamicBehavior, FileHashes, MalwareReport, SampleIdentity
 from malspark.schemas.evidence import LedgerEntry
+from tests.linear_cost import assert_scales
 
 
 def _entry(n: int, tool: str, kind: str, structured: dict[str, Any]) -> LedgerEntry:
@@ -93,16 +93,13 @@ def test_no_called_category_asks_nothing() -> None:
 
 
 def test_counting_stays_linear() -> None:
-    def took(size: int) -> float:
+    def build(size: int) -> list[LedgerEntry]:
         rows = [{"api": f"Api{n}"} for n in range(size)]
         called = _entry(1, "api_reading", "sandbox_api_calls", {"apis": rows})
         catalogue = _catalogue(2, [(f"Api{n}", f"cat{n % 7}") for n in range(size)])
-        start = time.thread_time()
-        dynamic_from_ledger([called, catalogue])
-        return time.thread_time() - start
+        return [called, catalogue]
 
-    small, large = took(1_000), took(10_000)
-    assert large < small * 30, (small, large)
+    assert_scales(build, 9_000, dynamic_from_ledger, factor=10, limit=30)
 
 
 # The label the pack's line gives the catalogue asked about the sandbox's calls.

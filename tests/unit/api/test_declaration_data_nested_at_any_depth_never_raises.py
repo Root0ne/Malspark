@@ -10,10 +10,7 @@ Through the real router, over a fake database.
 
 from __future__ import annotations
 
-import gc
 import logging
-import statistics
-import time
 import uuid
 from collections.abc import Callable, Iterator
 from types import SimpleNamespace
@@ -23,6 +20,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
+from tests.linear_cost import assert_scales
 
 from app.services import settings_service as svc
 from malspark.core import tool_declarations
@@ -185,29 +183,14 @@ def test_the_copy_of_declaration_data_keeps_order_and_is_independent() -> None:
     assert value["b"][1]["c"] == [2, 3]
 
 
-def _seconds(work: Callable[[], Any]) -> float:
-    """``work``'s CPU time with the collector held, so its passes over the
-    input built beforehand are not counted as the walk's own time."""
-    gc.collect()
-    gc.disable()
-    try:
-        began = time.thread_time()
-        work()
-        return time.thread_time() - began
-    finally:
-        gc.enable()
+def _linear(make: Callable[[int], Callable[[], Any]], small: int) -> None:
+    """Ten times ``small`` costs under 25 times as much, by the shared measure.
 
-
-def _ratio(make: Callable[[int], Callable[[], Any]], small: int) -> float:
-    """The median seconds at ten times ``small`` over the median at ``small``.
-
-    Five runs each after a warm-up, at sizes where the walk, not the call,
-    dominates: a linear walk gives about 10, a quadratic one about 100.
+    Five runs of each size in turn after a warm-up, at sizes where the walk,
+    not the call, dominates: a linear walk gives about 10, a quadratic one
+    about 100.
     """
-    _seconds(make(small))
-    low = statistics.median(_seconds(make(small)) for _ in range(5))
-    high = statistics.median(_seconds(make(small * 10)) for _ in range(5))
-    return high / max(low, 1e-6)
+    assert_scales(make, small, factor=10, repeats=5, limit=25)
 
 
 def _copying(depth: int) -> Callable[[], Any]:
@@ -216,7 +199,7 @@ def _copying(depth: int) -> Callable[[], Any]:
 
 
 def test_copying_deep_declaration_data_is_linear() -> None:
-    assert _ratio(_copying, 10_000) < 25
+    _linear(_copying, 40_000)
 
 
 def _refusing(n: int) -> Callable[[], Any]:
@@ -230,4 +213,4 @@ def _refusing(n: int) -> Callable[[], Any]:
 
 
 def test_the_names_a_sent_map_refuses_are_read_in_linear_time() -> None:
-    assert _ratio(_refusing, 5_000) < 25
+    _linear(_refusing, 13_000)

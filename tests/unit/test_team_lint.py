@@ -9,7 +9,6 @@ never changes the team it reads.
 from __future__ import annotations
 
 import copy
-import time
 from typing import Any
 
 import pytest
@@ -25,6 +24,7 @@ from malspark.core.config import (
 )
 from malspark.core.team_layout import layout_team
 from malspark.core.team_lint import lint_team, lint_teams, team_stages
+from tests.linear_cost import assert_under
 
 TEAM = "mine"
 
@@ -487,26 +487,29 @@ def _fan(n: int) -> dict[str, Any]:
     )
 
 
-def _timed(team: dict[str, Any]) -> tuple[list[Any], float]:
-    started = time.thread_time()
-    findings = lint_team(TEAM, team, definitions=_definitions())
-    stages, _ = team_stages(TEAM, team)
-    layout_team(stages)
-    return findings, time.thread_time() - started
+def _linted(team: dict[str, Any]) -> list[Any]:
+    """The team's findings, its lint and layout held under :data:`BOUND_SECONDS`."""
+    found: list[list[Any]] = []
+
+    def lint_and_lay_out() -> None:
+        found.append(lint_team(TEAM, team, definitions=_definitions()))
+        stages, _ = team_stages(TEAM, team)
+        layout_team(stages)
+
+    assert_under(lint_and_lay_out, BOUND_SECONDS, what="the team")
+    return found[0]
 
 
 class TestALargeTeam:
     """No size limit on a team, so every pass over one is linear in its size."""
 
     def test_a_long_chain_is_linted_and_laid_out_in_bounded_time(self) -> None:
-        findings, took = _timed(_chain(LARGE))
-        assert took < BOUND_SECONDS
+        findings = _linted(_chain(LARGE))
         # Every agent is unknown; nothing else is wrong and no condition warns.
         assert {f.code for f in findings} == {"unknown_agent"}
 
     def test_a_wide_fan_out_is_linted_and_laid_out_in_bounded_time(self) -> None:
-        findings, took = _timed(_fan(LARGE))
-        assert took < BOUND_SECONDS
+        findings = _linted(_fan(LARGE))
         assert {f.code for f in findings} == {"unknown_agent"}
 
     def test_a_large_loop_is_named_without_running_out_of_stack(self) -> None:
@@ -523,8 +526,7 @@ class TestALargeTeam:
             ),
             _verdict(["s0"]),
         )
-        findings, took = _timed(team)
-        assert took < BOUND_SECONDS
+        findings = _linted(team)
         loop = [f for f in findings if f.code == "cycle"]
         assert len(loop) == LARGE
         assert loop[0].stage == "s0"

@@ -10,11 +10,11 @@ ships for any tool the operator did not change reaches the run.
 
 from __future__ import annotations
 
-import time
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from typing import Any
 
 import pytest
+from tests.linear_cost import assert_ratio
 
 from app.services import settings_service as svc
 from app.services.server_map import validate_server_map
@@ -179,21 +179,19 @@ def test_an_export_and_import_round_trip_keeps_the_changes() -> None:
 
 
 def test_merging_and_storing_grow_linearly() -> None:
-    def timed(size: int) -> float:
+    def storing(size: int) -> Callable[[], Any]:
         shipped = {f"t{i}": {"kind": "strings", "rows": f"/r{i}/*"} for i in range(size)}
         stored = {f"t{i}": ({"rows": "/x/*"} if i % 3 else None) for i in range(0, size, 2)}
         stored.update({f"n{i}": {"kind": "strings"} for i in range(size // 4)})
-        best = float("inf")
-        for _ in range(2):
-            start = time.thread_time()
+
+        def store() -> None:
             in_force = merge_tool_facts(shipped, stored)
             tool_facts_changes(in_force, shipped)
             stored_in_force(shipped, with_mark(stored))
-            best = min(best, time.thread_time() - start)
-        return best
 
-    small, large = timed(2_000), timed(20_000)
-    assert large <= small * 15 + 0.05
+        return store
+
+    assert_ratio(storing(2_000), storing(20_000), 15, floor=0.05 / 15, what="20,000 tools")
 
 
 def test_a_change_a_later_release_makes_invalid_never_stops_the_settings(

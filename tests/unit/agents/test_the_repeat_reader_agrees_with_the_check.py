@@ -14,7 +14,7 @@ analyst's, cut into pieces of random size.
 from __future__ import annotations
 
 import random
-import time
+from collections.abc import Callable
 
 import pytest
 
@@ -22,6 +22,7 @@ from malspark.agents.base_agent import strip_tool_call_scaffolding
 from malspark.agents.repeat_watch import ClaimRepeatReader
 from malspark.pipeline.validation import claims_repeated
 from tests.claim_block_counts import begun_and_distinct
+from tests.linear_cost import assert_ratio
 
 SENTENCES = [
     "The file reads its configuration from a resource.",
@@ -250,35 +251,45 @@ def test_a_runaway_crosses_where_the_check_does() -> None:
     assert written.startswith(_analyst_answer(random.Random(7), 3, 1)[:40])
 
 
-def _seconds_per_line(chars: int) -> tuple[float, float, int]:
-    """CPU seconds for an answer of distinct claims, read in four-character pieces."""
-    line = "CLAIM: The file carries configuration string number {n}.\nEVIDENCE: [ev_0001]\n"
-    parts, size, n = [], 0, 0
+def _feeding(opening: str, chars: int) -> tuple[Callable[[], None], int]:
+    """A read of an answer of distinct claims after ``opening``, in four-character pieces.
+
+    Returns the read, which starts a fresh reader each time, and the answer's line count.
+    """
+    claim = "CLAIM: The file carries configuration string number {n}.\nEVIDENCE: [ev_0001]\n"
+    parts, size, n = [opening], len(opening), 0
     while size < chars:
-        block = line.format(n=n)
+        block = claim.format(n=n)
         parts.append(block)
         size += len(block)
         n += 1
     text = "".join(parts)
-    reader = ClaimRepeatReader(None)
-    started = time.process_time()
-    for at in range(0, len(text), 4):
-        piece = text[at : at + 4]
-        reader.feed(piece)
-        if "\n" in piece:
-            assert not reader.count().crossed
-    return time.process_time() - started, len(text), text.count("\n")
+
+    def read() -> None:
+        reader = ClaimRepeatReader(None)
+        for at in range(0, len(text), 4):
+            piece = text[at : at + 4]
+            reader.feed(piece)
+            if "\n" in piece:
+                assert not reader.count().crossed
+
+    return read, text.count("\n")
 
 
 def test_the_cost_per_line_does_not_grow_with_the_answer() -> None:
-    short, _chars, short_lines = _seconds_per_line(100_000)
-    long, _chars, long_lines = _seconds_per_line(400_000)
-    per_short = short / short_lines
-    per_long = long / long_lines
+    short, short_lines = _feeding("", 100_000)
+    long, long_lines = _feeding("", 400_000)
     # Linear: four times the answer costs about four times as much, so the
     # cost of a line stays flat. A re-read of the whole answer at every line
-    # would make it sixteen times.
-    assert per_long < per_short * 2.5
+    # would make it sixteen times. The bound is a line's cost at most 2.5
+    # times its cost in the short answer.
+    assert_ratio(
+        short,
+        long,
+        2.5 * long_lines / short_lines,
+        what="four times the answer",
+        whole_process=True,
+    )
 
 
 def _agree_in_pieces_of(text: str, size: int, margin: int | None) -> None:
@@ -422,31 +433,11 @@ def test_a_tag_holding_its_closing_tag_before_its_bracket_agrees(text: str) -> N
     _agree_in_pieces_of(text, 1, None)
 
 
-def _seconds_after(opening: str, chars: int) -> float:
-    """CPU for an answer that opens ``opening`` and never resolves it, read in 4-char pieces."""
-    claim = "CLAIM: the file carries configuration string number {n}.\nEVIDENCE: [ev_0001]\n"
-    parts, size, n = [opening], len(opening), 0
-    while size < chars:
-        block = claim.format(n=n)
-        parts.append(block)
-        size += len(block)
-        n += 1
-    text = "".join(parts)
-    reader = ClaimRepeatReader(None)
-    started = time.process_time()
-    for at in range(0, len(text), 4):
-        piece = text[at : at + 4]
-        reader.feed(piece)
-        if "\n" in piece:
-            assert not reader.count().crossed
-    return time.process_time() - started
-
-
 @pytest.mark.parametrize("opening", ["```json\n{", "<tool_call"], ids=["fence", "tag"])
 def test_an_opening_that_never_resolves_costs_the_same_per_line(opening: str) -> None:
-    short = _seconds_after(opening, 100_000)
-    long = _seconds_after(opening, 400_000)
+    short, _lines = _feeding(opening, 100_000)
+    long, _lines = _feeding(opening, 400_000)
 
     # Four times the answer, about four times the time: the held block is
     # read once, as it arrives, not again at every line.
-    assert long < short * 4 * 2.5
+    assert_ratio(short, long, 4 * 2.5, what="four times the answer", whole_process=True)

@@ -13,7 +13,6 @@ whole private-use block included) renders every section.
 from __future__ import annotations
 
 import re
-import time
 
 import pytest
 
@@ -33,6 +32,7 @@ from malspark.reporting.renderers.markdown import (
     _defanged_text,
     _reference_spans,
 )
+from tests.linear_cost import assert_ratio, assert_under
 
 # A scheme GFM links: http, https or ftp after anything but a letter.
 _LIVE_SCHEME = re.compile(r"(?i)(?<![a-z])(?:https?|ftp)://")
@@ -140,21 +140,18 @@ def test_a_value_holding_every_private_use_character_keeps_every_section() -> No
     report.static.interesting_strings.append(
         StringIOC(value=_PRIVATE_USE + "x_www.evil.com", kind="path", notes=_PRIVATE_USE)
     )
-    started = time.thread_time()
-    markdown = MarkdownRenderer().render(report)
-    elapsed = time.thread_time() - started
+    rendered: list[str] = []
+    assert_under(
+        lambda: rendered.append(MarkdownRenderer().render(report)),
+        50,
+        what="the private-use report",
+    )
+    markdown = rendered[0]
 
     assert "rendering failed" not in markdown
     assert re.search(r"^## 1\. ", markdown, re.M)
     assert re.search(r"^## 9\. ", markdown, re.M)
     assert _live(markdown) == []
-    assert elapsed < 50
-
-
-def _timed(text: str) -> float:
-    started = time.thread_time()
-    _defanged_text(text)
-    return time.thread_time() - started
 
 
 def test_long_text_is_read_in_linear_time() -> None:
@@ -167,13 +164,16 @@ def test_long_text_is_read_in_linear_time() -> None:
     )
     small = unit * (50_000 // len(unit))
     large = unit * (200_000 // len(unit))
-    _timed(small)
-    small_time = min(_timed(small) for _ in range(2))
-    large_time = _timed(large)
 
     assert _live(_defanged_text(large)) == []
     # Four times the text: linear is about four times the time, quadratic sixteen.
-    assert large_time < 8 * small_time + 0.5
+    assert_ratio(
+        lambda: _defanged_text(small),
+        lambda: _defanged_text(large),
+        8,
+        what="200,000 characters",
+        floor=0.5 / 8,
+    )
 
 
 # Two-label names under a TLD that is also a file extension: files in free prose.

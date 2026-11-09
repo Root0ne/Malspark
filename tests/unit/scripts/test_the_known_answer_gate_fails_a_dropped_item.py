@@ -526,7 +526,7 @@ def test_the_command_line_exits_by_the_gate(
 
 
 def test_the_gate_is_linear_in_items_and_runs() -> None:
-    from tests.linear_cost import TIME_RATIO_LIMIT, calls, cpu_seconds
+    from tests.linear_cost import TIME_RATIO_LIMIT, assert_ratio, calls
 
     words = ("found", "partly (body)", "missed", "partly (dump)", "wrong")
 
@@ -545,9 +545,8 @@ def test_the_gate_is_linear_in_items_and_runs() -> None:
         baseline, candidate = arm(runs("b", 0)), arm(runs("c", 1))
         return lambda: gate(baseline, candidate)
 
-    build(50)()  # one-time costs (lazy imports) are not the gate's
-    small, large = build(500), build(2000)
+    small, large = build(1_200), build(4_800)
     # Four times the items must take under eight times the CPU time; a
     # quadratic gate takes sixteen. The calls made are held to the same ratio.
-    assert cpu_seconds(large) < cpu_seconds(small) * TIME_RATIO_LIMIT
+    assert_ratio(small, large, TIME_RATIO_LIMIT, what="4,800 items")
     assert calls(large) <= calls(small) * 4 * 1.2 + 100
