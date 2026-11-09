@@ -229,8 +229,27 @@ def open_beneath(root: Path, name: str, where: str) -> int:
     worker) and is refused unless ``fstat`` says it is a regular file.
     ``root`` itself is the deployment's own directory and is opened as it is.
     ``where`` names ``root`` in a refusal.
+
+    A system with no ``O_DIRECTORY`` and no ``openat`` (Windows) holds the
+    name to the same rule by path (:func:`_open_beneath_by_path`).
     """
     parts = _parts_beneath(root, name, where)
+    opened = _open_beneath_at if hasattr(os, "O_DIRECTORY") else _open_beneath_by_path
+    fd = opened(root, parts, where)
+    info = os.fstat(fd)
+    if not stat.S_ISREG(info.st_mode):
+        os.close(fd)
+        raise ValueError("it is not a regular file")
+    if info.st_nlink != 1:
+        # A hard link names the same file as a path outside the root may: what
+        # the root holds is then not the root's alone, and it is not read.
+        os.close(fd)
+        raise ValueError(f"it has {info.st_nlink} hard links, so it may be a file outside {where}")
+    return fd
+
+
+def _open_beneath_at(root: Path, parts: list[str], where: str) -> int:
+    """``parts`` opened beneath ``root`` relative to a descriptor each (:func:`open_beneath`)."""
     try:
         current = os.open(str(root), os.O_RDONLY | os.O_DIRECTORY | getattr(os, "O_CLOEXEC", 0))
     except OSError as exc:
@@ -249,16 +268,39 @@ def open_beneath(root: Path, name: str, where: str) -> int:
             raise ValueError(f"it cannot be opened as a file inside {where}") from exc
     finally:
         os.close(current)
-    info = os.fstat(fd)
-    if not stat.S_ISREG(info.st_mode):
-        os.close(fd)
-        raise ValueError("it is not a regular file")
-    if info.st_nlink != 1:
-        # A hard link names the same file as a path outside the root may: what
-        # the root holds is then not the root's alone, and it is not read.
-        os.close(fd)
-        raise ValueError(f"it has {info.st_nlink} hard links, so it may be a file outside {where}")
     return fd
+
+
+def _open_beneath_by_path(root: Path, parts: list[str], where: str) -> int:
+    """``parts`` opened beneath ``root`` where no descriptor opens a directory (Windows).
+
+    The same rule as :func:`_open_beneath_at`, held by path: ``root`` is
+    resolved as it is, each directory below it is refused when it is a link,
+    any other reparse point (``tools.staging.is_reparse_point``) or no
+    directory, and the file is opened through ``tools.staging.open_no_follow``
+    with the path it must be found at once open: the real ``root`` joined with
+    ``parts``. That check is made on the open file's own handle, so a link put
+    anywhere below ``root`` between the walk and the open is refused, never read.
+    """
+    try:
+        real_root = os.path.realpath(root, strict=True)
+    except OSError as exc:
+        raise ValueError(NOT_BENEATH.format(where=where)) from exc
+    here = Path(real_root)
+    for part in parts[:-1]:
+        here = here / part
+        try:
+            info = here.lstat()
+        except OSError as exc:
+            raise ValueError(NOT_BENEATH.format(where=where)) from exc
+        if staging.is_reparse_point(here, info) or not stat.S_ISDIR(info.st_mode):
+            raise ValueError(NOT_BENEATH.format(where=where))
+    try:
+        return staging.open_no_follow(
+            here / parts[-1], _OPEN_FLAGS, at=os.path.join(real_root, *parts)
+        )
+    except OSError as exc:
+        raise ValueError(f"it cannot be opened as a file inside {where}") from exc
 
 
 class _Fetched:
