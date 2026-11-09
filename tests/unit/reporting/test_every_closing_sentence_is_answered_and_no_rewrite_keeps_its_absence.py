@@ -224,9 +224,24 @@ def _settled(report: MalwareReport, rows: list[dict[str, Any]]) -> list[dict[str
                 out.append(_row(passage.id, sentence, "rewrite", listing, rewrite=WHOLE_READ))
             elif passage.closing:
                 out.append(_row(passage.id, sentence, "keep", [], reason="no source speaks of it"))
+            elif sentence in passage.absences:
+                # A held absence of the body, kept as a closing sentence is (T-580): on the
+                # words of a passage that speaks of it, else on the reason.
+                out.append(_absence_kept(report, passage, sentence))
             else:
                 out.append(_row(passage.id, sentence, "keep", ["bound.1"]))
     return out
+
+
+def _absence_kept(report: MalwareReport, passage: Any, sentence: str) -> dict[str, Any]:
+    from malspark.reporting.section_agreement import _speaking_sources
+
+    by_id = {p.id: p for p in passages_of(report, entries=_ledger())}
+    speaking = _speaking_sources(sentence, by_id, passage)
+    if not speaking:
+        return _row(passage.id, sentence, "keep", [], reason="no source speaks of it")
+    source, excerpt = speaking[0]
+    return _row(passage.id, sentence, "keep", [source], quote=excerpt)
 
 
 def _limitations(report: MalwareReport) -> str:
@@ -341,9 +356,17 @@ def test_a_keep_on_a_quote_that_passes_is_counted_one_on_no_source_recorded() ->
     report = _report(limitations=f"{STILL_OPEN} {SCOPE}")
     done, reporter = _ask(report, {"sentences": _settled(report, [quoted, scope])})
     assert len(reporter.asked) == 1
-    assert done.summary["held_kept"] == 3  # the two, and the conclusion's sentence
+    # The two, the conclusion's sentence, and section 5's held absence kept on the
+    # limitations' words (T-580).
+    assert done.summary["held_kept"] == 4
     records = [r["message"] for r in done.tally.unresolved if r["code"] == HELD_KEPT_CODE]
-    assert not any(STILL_OPEN[:30] in m for m in records)
+    assert not any(f"{STILL_OPEN!r} stands as written" in m for m in records)
+    # Section 5's absence rests on the limitations alone: one written passage agreeing
+    # with another grounds nothing, so it is recorded (T-580).
+    assert any(
+        f"{HASHED!r} stands as written" in m and "only on another written passage" in m
+        for m in records
+    )
     assert any(SCOPE[:30] in m and "no passage speaks of an operator" in m for m in records)
 
 

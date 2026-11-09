@@ -2686,17 +2686,32 @@ turn, each once, and what the analyst answers stands.
     that function. Listed are the callees of those routines no listing holds,
     from the analyst's own listings and the pack's function index, and the
     functions no listing holds on the path from a stated start down to them.
-  - *The rank.* Distance from where the code starts: the entry point and the
-    exports any format header answer states and the threads the function
-    index states. Where none is stated, the read routine a claim writes
-    nearest the word entry, main, dispatcher, beacon, start-up or command
-    stands in. Each further function calling one counts one more call, so a
-    shared helper comes last; ties go to the one calling more, then to the
-    lower address.
+  - *The rank.* First the functions on the path from a start down to a
+    routine read: the analyst read what lies below each, so its code is a
+    gap in a chain it followed. Then what the run already ties to the
+    function: the artefacts the pack's function index states as its own
+    (imports, calls through resolved slots, names its hashes resolve to,
+    strings it refers to, rules that matched in it; at most 2^20 a function),
+    plus those of the unread functions reached only through it (every chain
+    of calls into each, from a stated start, from a routine read or from a
+    group of functions nothing else calls, passes through it; a routine read
+    cuts what only it reaches), compared by power of two so that between two
+    functions holding about as many the distance decides. Those are read off
+    one dominator tree built over the calls once. Then the distance
+    from where the code starts: the entry point and the exports any format
+    header answer states and the threads the function index states. Where
+    none is stated, the read routine a claim writes nearest the word entry,
+    main, dispatcher, beacon, start-up or command stands in. Each further
+    function calling one counts one more call, so a shared helper comes last;
+    ties go to the one calling more, then to the lower address.
   - *The question.* At most 12, each with its reason in addresses and counts
-    only, never a name or a string the sample or a tool wrote. It says how
-    many there are and that the rest are not listed, and that the analyst may
-    read any with its tools or none. It is advisory, asked once per analyst
+    only, never a name or a string the sample or a tool wrote; when more are
+    unread, the last 2 places go to the nearest of the rest by distance alone,
+    so a routine the index ties nothing to is not buried. The others follow
+    as bare addresses in rank order, at most 100, then how many more. It says
+    how many there are, that a function's counts may include those of other
+    functions listed, and that the analyst may read any with its tools or
+    none. It is advisory, asked once per analyst
     and job in the first validation turn that has any, rides that turn with
     the other questions, and is asked only where that turn can carry the
     analyst's tools with three steps or more left.
@@ -2718,7 +2733,9 @@ turn, each once, and what the analyst answers stands.
     conversation and as `callees_question.not_run` on its loop's record.
   - *Why.* A reverser stopped on its own with the reader and the writer of
     its configuration file and its channel's cipher wrapper unread, each a
-    callee of a routine it had read.
+    callee of a routine it had read. Distance alone puts small helpers
+    first and leaves out routines the index ties strings and resolved calls
+    to.
 - **Library-only claims** (`isr.library_only_claims`).
   - *What counts.* A claim of one sentence whose subject (the sample, or none)
     uses, imports, calls or loads libraries or their APIs. It may add a short

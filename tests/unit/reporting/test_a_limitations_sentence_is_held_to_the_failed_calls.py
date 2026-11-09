@@ -257,6 +257,10 @@ def test_only_the_sentence_the_ledger_says_otherwise_of_is_held() -> None:
         ("The decompiler failed and was never redone [ev_0001].", True),
         # A redo said and cited agrees.
         ("The decompiler failed once and was redone [ev_0002][ev_0003].", False),
+        # A later call named by its kind says the redo too (haiku13's rewrite), and a
+        # negation before it says none.
+        ("The decompiler failed, but the code was read in a later disassembly [ev_0003].", False),
+        ("The decompiler failed and no later disassembly read it [ev_0001].", True),
         # A listing that is no listing of code names no call that lists code.
         ("The process listing failed to enumerate the running services [ev_0001].", False),
         ("The check-in failed, so no listing of the server's commands was kept [ev_0001].", False),
@@ -551,7 +555,9 @@ def _stored_names() -> list[str]:
 # reversing tools, and haiku10's "A batch emulation step did not complete", whose
 # emulation by a comma text was asked again with the list (T-562); and haiku12's
 # "The decompiler and disassembler calls for several functions failed", all six redone
-# (T-568).
+# (T-568). haiku13's "The decompiler pass failed on the function at 0x3728 [ev_0139],
+# but its code was read in a later disassembly of the same address" says the later
+# call, by its kind, and is not held (T-580).
 _HELD_TO_FAILED_CALLS = ("haiku8", "haiku10", "haiku12")
 
 

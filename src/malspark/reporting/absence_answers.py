@@ -49,7 +49,7 @@ _STOPWORDS = frozenset(
         "into onto any all also only then than there their they them these those such each "
         "our out per via would could can may might does did being what who how where when "
         "yet still here both either one some most more less same other not none nor neither "
-        "never nothing without cannot but because"
+        "never nothing without cannot but because therefore thus hence"
     ).split()
 )
 # A word whose prefix denies it ("unnamed"): read as the word it denies ("named").
@@ -254,19 +254,30 @@ def _items_before_negation(sentence: str) -> list[_Item]:
         return []
     before = sentence[: found.start()]
     items: list[_Item] = []
-    begin, joined = 0, False
+    begin, joined, opened = 0, False, 0
     for match in [*_ITEM_BREAK.finditer(before), None]:
         end = match.start() if match is not None else len(before)
         part = before[begin:end]
         first = next((w.lower() for w in _WORD.findall(part)), "")
-        if first:
+        if first and items and not content_words(part) and _VALUE_WORD.search(part):
+            # A value coordinated with the one before ("processes 83 and 88 are"): part
+            # of the item before, never a bare verb of its own.
+            own = _without_references(before[opened:end])
+            last = items[-1]
+            items[-1] = _Item(content_words(own), last.opener, last.joined, _head(own), _group(own))
+            joined = False
+        elif first:
             own = _without_references(part)
             items.append(_Item(content_words(own), first, joined, _head(own), _group(own)))
-            joined = False
+            joined, opened = False, begin
         if match is not None:
             begin = match.end()
             joined = joined or match.group(0).lower() in _JOINS
     return items
+
+
+# A word that writes a value: a number, decimal or hex.
+_VALUE_WORD = re.compile(r"\b(?:0x[0-9a-f]+|\d+)\b", re.IGNORECASE)
 
 
 # The verbs that make a denial one of observation ("observed no network exchange", "was
@@ -276,7 +287,7 @@ _OBSERVING = frozenset("observed recorded seen captured watched logged shown".sp
 _OBSERVING_REACH = 3
 
 
-def denies_an_observation(sentence: str) -> bool:
+def denies_an_observation(sentence: str, *, shown: bool = True) -> bool:
     """Whether a sentence's first negation denies an observation: an observing verb stands
     within :data:`_OBSERVING_REACH` words of it ("observed no network exchange", "was not
     observed")."""
@@ -287,7 +298,67 @@ def denies_an_observation(sentence: str) -> bool:
     after = [w.lower() for w in _WORD.findall(sentence[found.end() : found.end() + 80])][
         :_OBSERVING_REACH
     ]
-    return any(word in _OBSERVING for word in (*before, *after))
+    # "not shown to use" denies a reading of code as much as a run's record: ``shown``
+    # off, it is no observation (T-580).
+    verbs = _OBSERVING if shown else _OBSERVING - {"shown"}
+    return any(word in verbs for word in (*before, *after))
+
+
+def set_in_a_run(sentence: str) -> bool:
+    """Whether an absence is one of what a run saw: an observing verb at its negation
+    ("was not observed", "recorded no", never "not shown to") or a run frame on its
+    negated clause (:func:`observation_framed`) (T-580)."""
+    return denies_an_observation(sentence, shown=False) or observation_framed(sentence)
+
+
+# A frame that sets a denial in what a run saw, not in the code read: a frame opener
+# ("in", "during", …), up to three words, then a word naming a run or what it records
+# ("in the sandbox", "in this run", "in the capture"), never one naming code ("on the
+# Run key", "a run-time", "the run path"); "execution", "session", "trace" and
+# "traffic" only as a run's ("in the sandbox trace", "during execution"), never the
+# code's ("the execution path", "the session token routine").
+_RUN_NOUN = (
+    r"(?:run|runs|sandbox|capture|detonation|guest)"
+    r"(?!-|\s+(?:key|keys|flow|flows|path|paths|token|tokens)\b)"
+)
+_RUN_RECORD = r"(?:dynamic|live|sandbox)\s+(?:execution|session|trace|traffic)"
+_OBSERVATION_FRAME = re.compile(
+    r"\b(?:in|during|within|from|by|for|on)\s+(?:[\w'-]+\s+){0,3}?"
+    rf"(?:{_RUN_RECORD}|{_RUN_NOUN})\b"
+    r"|\bduring\s+execution\b",
+    re.IGNORECASE,
+)
+# A run as what a sentence is about: "The run gives no evidence that …".
+_RUN_SUBJECT = re.compile(rf"^\W*(?:the|this)\s+{_RUN_NOUN}\b", re.IGNORECASE)
+_SEEING = _OBSERVING - {"shown"}
+
+
+def observation_framed(text: str) -> bool:
+    """Whether an absence is set in what a run saw (T-580): a negated clause of it carries
+    a run frame (:data:`_OBSERVATION_FRAME`: "Whether the gate passes in the sandbox is not
+    established"); or its first clause carries one, or an observing verb, setting the
+    rest ("Observed in the sandbox for two processes; the launch is not established");
+    or a run is what it is about ("The run gives no evidence that …")."""
+    clauses = negated_clauses(text)
+    if not clauses:
+        return False
+    if any(_OBSERVATION_FRAME.search(clause) for clause in clauses):
+        return True
+    first = next(iter(clauses_of(text)), "")
+    return bool(
+        _OBSERVATION_FRAME.search(first)
+        or any(w.lower() in _SEEING for w in _WORD.findall(first))
+        or _RUN_SUBJECT.match(text)
+    )
+
+
+def observes(text: str) -> bool:
+    """Whether ``text`` states what a run saw: an observing verb ("shown" aside, which a
+    reading of code says too) or a run frame (:data:`_OBSERVATION_FRAME`). Only such a
+    sentence says otherwise of an absence set in a run (T-580)."""
+    return bool(_OBSERVATION_FRAME.search(text)) or any(
+        w.lower() in _SEEING for w in _WORD.findall(text)
+    )
 
 
 # A noun a demonstrative points back with ("that set", "these routines"): it names what
@@ -360,8 +431,11 @@ def _denied_items(sentence: str) -> list[_Item]:
     beacon reaches the configured hosts"). An item opening with a preposition ("In the
     sandbox run", "as for the sandbox run") is a frame, never what is denied. Where the
     negation denies what follows it ("no packer signature", "no contact with the C2
-    hosts", "neither configured host"), that phrase, up to the next clause break. One
-    pass over the words around the negation.
+    hosts", "neither configured host"), that phrase, up to the next clause break; where it
+    denies a doing shown or known ("not shown to use anti-debug or environment checks",
+    :data:`_INFINITIVE`), the object of that doing, the same way. A value coordinated with
+    the item before it ("processes 83 and 88") is part of that item. One pass over the
+    words around the negation.
     """
     found = _NEGATION.search(sentence)
     if found and found.group(0).lower() in _DENIES_WHAT_FOLLOWS:
@@ -370,6 +444,16 @@ def _denied_items(sentence: str) -> list[_Item]:
         part = _without_references(_before_preposition(rest[: cut.start()] if cut else rest))
         words = content_words(part)
         return [_Item(words, "", False, _head(part), _group(part))] if words else []
+    infinitive = _INFINITIVE.match(sentence, found.end()) if found else None
+    if infinitive:
+        # "The sample is not shown to use anti-debug or environment checks": what it is
+        # not shown to do is denied, the object after the verb, up to the clause break.
+        rest = sentence[infinitive.end() :]
+        cut = _ITEM_BREAK.search(rest)
+        part = _without_references(_before_preposition(rest[: cut.start()] if cut else rest))
+        words = content_words(part)
+        if words:
+            return [_Item(words, "", False, _head(part), _group(part))]
     items = [item for item in _items_before_negation(sentence) if item.opener not in _FRAME_OPENERS]
     chained = False
     while items and not items[-1].words:
@@ -391,6 +475,19 @@ def _denied_items(sentence: str) -> list[_Item]:
                 break
             out.append(items[at - 1])
     return out
+
+
+# A negated reading or showing verb with an infinitive of doing after it ("not shown to
+# use", "never confirmed to contact"): the object of that doing is what is denied. A
+# passive or a perfect ("not shown to be called", "not shown to have run") keeps the
+# subject.
+_INFINITIVE = re.compile(
+    r"\s+(?:\w+ly\s+)?(?:been\s+)?(?:shown|known|seen|observed|confirmed|established|found|"
+    r"proven|demonstrated)\s+to\s+"
+    r"(?!(?:be|been|have|has|had|the|a|an|this|that|these|those|its|their|any|each)\b)"
+    r"[a-z][\w'-]*\s+",
+    re.IGNORECASE,
+)
 
 
 def denied_subject(sentence: str) -> frozenset[str]:

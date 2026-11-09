@@ -113,6 +113,7 @@ COMPOSER_CHECKS: tuple[str, ...] = (
     "procedure_violations",
     "summary_value_violations",
     "procedure_value_violations",
+    "check_value_violations",
 )
 COMPOSER_NOT_REPLAYED: dict[str, str] = {
     "section_cut_violation": _CUT_NOT_STORED,
@@ -2333,6 +2334,16 @@ def _composer(run: _Run, built: _Built) -> dict[str, Any]:
     held = pro.held_text(report)
     firsts = pro.first_claim_sentences(report)
     reader = pro.ValueReader.of(report)
+    technique_claims = {
+        tid: claims for tid, (_name, claims, _refs) in pro.published_techniques(report).items()
+    }
+    folded = pro.statements_to_fold(report)
+
+    def _checks(section: str) -> Callable[[Any], list[Any]]:
+        # The claims the section's bundle shows it, rebuilt from the stored report.
+        shown = pro.shown_claim_texts(c.section_bundle(section, report, run.isrs, folded))
+        return lambda p: pro.check_value_violations(p, shown)
+
     extras: dict[str, list[Callable[[Any], list[Any]]]] = {
         "communications": [lambda p: pro.channel_binding_violations(p, entries)],
         "summary": [
@@ -2344,6 +2355,7 @@ def _composer(run: _Run, built: _Built) -> dict[str, Any]:
         "attack_procedures": [
             lambda p: pro.procedure_violations(p, published_ids),
             lambda p: pro.procedure_value_violations(p, firsts, reader),
+            lambda p: pro.check_value_violations(p, technique_claims),
         ],
         "execution_flow": [
             lambda p: v.flow_voice_violations(
@@ -2356,11 +2368,12 @@ def _composer(run: _Run, built: _Built) -> dict[str, Any]:
             lambda p: v.persistence_not_observed_violations(
                 p, saw_no_persistence, section="execution_flow"
             ),
+            _checks("execution_flow"),
         ],
         "persistence_detail": [
             lambda p: v.persistence_not_observed_violations(
                 p, saw_no_persistence, section="persistence_detail"
-            )
+            ),
         ],
         "configuration": [
             lambda p: v.configuration_citation_violations(p, known_ids, items),
@@ -2371,6 +2384,8 @@ def _composer(run: _Run, built: _Built) -> dict[str, Any]:
             lambda p: v.stated_value_violations(p, entries),
         ],
     }
+    for section in c._PROSE_SECTIONS:
+        extras.setdefault(section, []).append(_checks(section))
     sections: dict[str, Any] = {}
     not_written: list[str] = []
     run.name(
