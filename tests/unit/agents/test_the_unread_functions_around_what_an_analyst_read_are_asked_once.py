@@ -10,11 +10,14 @@ now lists those functions in one question:
   names it; a listing at an address inside a function reads that function;
 - the unread callees of those routines are listed, and so are the unread
   functions on the path from a stated start down to them;
-- the list is ranked by distance from where the code starts (the entry point
-  and exports any format header states, the threads the function index
-  states), a further caller counting one call, so a shared helper comes last;
+- the list is ranked first by the path from a start down to a routine read,
+  then by the artefacts the function index ties to each function and to the
+  unread functions reached only through it (by power of two), then by
+  distance from where the code starts (the entry point and exports any format
+  header states, the threads the function index states), a further caller
+  counting one call, so a shared helper comes last (T-565);
 - at most :data:`CALLEES_SHOWN` are listed, and the question says how many
-  there are and that the rest are not;
+  there are and how many more unread, ranked lower, are not listed;
 - it carries addresses and counts only, never a name or a string the sample
   or a tool wrote;
 - it is asked once per analyst and job, only where the turn after the loop can
@@ -30,6 +33,9 @@ Every address, name and sentence here is made up for the test.
 from __future__ import annotations
 
 import json
+import random
+import time
+from collections import deque
 from collections.abc import Iterator
 from typing import Any
 from unittest.mock import MagicMock, patch
@@ -40,12 +46,17 @@ from langchain_core.messages import AIMessage
 from malspark.agents.base_agent import BaseAnalyst
 from malspark.agents.callees_question import (
     CALLEES_SHOWN,
+    NEAREST_KEPT,
     NOT_RUN_NO_LISTING,
+    OTHERS_NAMED,
     STARTS_CLAIMED,
     STARTS_NONE,
     STARTS_STATED,
     UNREAD_CALLEES_CODE,
     CalleesFound,
+    _artefact_counts,
+    _reached_only_through,
+    _sccs,
     callees_asked_record,
     callees_to_read,
     reads_code,
@@ -262,6 +273,275 @@ class TestWhatIsListed:
         )
 
 
+def _index_with(direct: dict[int, int], extra: dict[int, list[int]] | None = None) -> LedgerEntry:
+    """The index above, with rows stating each function's own artefact count."""
+    entry = _index()
+    data = json.loads(str(entry.output))
+    data["rows"] = [
+        {"function": hex(a), "offset": hex(a - BASE), "direct": n, "callees": []}
+        for a, n in direct.items()
+    ]
+    for caller, callees in (extra or {}).items():
+        data["other_callees"].setdefault(hex(caller), []).extend(hex(c) for c in callees)
+    return entry.model_copy(update={"output": json.dumps(data)})
+
+
+class TestTheRank:
+    """T-565: what the run ties to a function ranks it before its distance does."""
+
+    def test_the_path_comes_first_then_what_the_index_ties_to_a_function(self) -> None:
+        found = callees_to_read(CLAIMS, OWN, [_header(), _index_with({SIDE: 5})])
+
+        # The gate is on the path; the side step holds five artefacts and now
+        # stands before the step that calls more but holds none.
+        assert _addresses(found) == [GATE, SIDE, STEP, HELPER]
+        side = found.ranked[1]
+        assert (side.artefacts, side.reached) == (5, 0)
+
+    def test_artefacts_are_compared_by_power_of_two_then_by_distance(self) -> None:
+        # Four and five are one power of two: the step, calling more, stays first.
+        about_as_many = [_header(), _index_with({STEP: 4, SIDE: 5})]
+        twice_as_many = [_header(), _index_with({STEP: 4, SIDE: 8})]
+
+        assert _addresses(callees_to_read(CLAIMS, OWN, about_as_many)) == [
+            GATE,
+            STEP,
+            SIDE,
+            HELPER,
+        ]
+        assert _addresses(callees_to_read(CLAIMS, OWN, twice_as_many)) == [
+            GATE,
+            SIDE,
+            STEP,
+            HELPER,
+        ]
+
+    def test_the_artefacts_reached_only_through_a_function_count_for_it(self) -> None:
+        found = callees_to_read(CLAIMS, OWN, [_header(), _index_with({BASE + 0x5000: 3, SIDE: 1})])
+
+        # The step holds nothing itself; the callee only it calls holds three.
+        step = next(c for c in found.ranked if c.address == STEP)
+        assert (step.artefacts, step.reached) == (0, 3)
+        assert _addresses(found) == [GATE, STEP, SIDE, HELPER]
+
+    def test_a_callee_another_function_also_calls_is_not_counted(self) -> None:
+        index = _index_with({BASE + 0x5000: 3, SIDE: 1}, extra={OTHERS[0]: [BASE + 0x5000]})
+
+        found = callees_to_read(CLAIMS, OWN, [_header(), index])
+
+        step = next(c for c in found.ranked if c.address == STEP)
+        assert step.reached == 0
+        assert _addresses(found) == [GATE, SIDE, STEP, HELPER]
+
+    def test_a_routine_read_ends_what_is_reached(self) -> None:
+        own = [*OWN, _decompile("ev_0005", BASE + 0x5000)]
+
+        found = callees_to_read(CLAIMS, own, [_header(), _index_with({BASE + 0x5000: 3})])
+
+        step = next(c for c in found.ranked if c.address == STEP)
+        assert step.reached == 0
+
+    def test_the_reason_gives_the_counts_and_no_value(self) -> None:
+        found = callees_to_read(CLAIMS, OWN, [_header(), _index_with({BASE + 0x5000: 3, SIDE: 2})])
+        violation = unread_callees_violation(found)
+
+        assert violation is not None
+        assert f"{STEP:#x} (3 artefact(s) only through it; called by {OUTER:#x};" in (
+            violation.message
+        )
+        assert f"{SIDE:#x} (2 artefact(s); called by {OUTER:#x};" in violation.message
+        assert "Ranked first by whether it lies on the path to routines you read" in (
+            violation.message
+        )
+        assert "counts may include those of other functions listed" in violation.message
+        assert SECRET not in violation.message
+
+    def test_the_order_is_the_same_whatever_order_the_rows_are_in(self) -> None:
+        rows = {STEP: 4, SIDE: 5, BASE + 0x5000: 1}
+        backwards = dict(reversed(list(rows.items())))
+
+        assert callees_to_read(CLAIMS, OWN, [_header(), _index_with(rows)]) == callees_to_read(
+            CLAIMS, OWN, [_index_with(backwards), _header()]
+        )
+
+
+def _row_entry(data: dict[str, Any]) -> LedgerEntry:
+    """A pack function index answer holding ``data``."""
+    return LedgerEntry(
+        id="ev_0026",
+        tool="function_index",
+        args={"path": "/x/s.dll", "carved_path": ""},
+        output=json.dumps({"tool": "function_index", "image_base": hex(BASE), **data}),
+    )
+
+
+class TestWhatIsCounted:
+    """T-565: what the index states is read whole, bounded, and from the pack only."""
+
+    def test_a_row_without_a_count_is_counted_by_its_artefact_cells(self) -> None:
+        row = {
+            "function": hex(STEP),
+            "imports": ["a", "b"],
+            "decoded_strings": [{"text": SECRET}],
+            "callers": [hex(OUTER)],
+            "callees": [hex(SIDE), hex(HELPER)],
+            "names": [SECRET],
+        }
+
+        assert _artefact_counts([_row_entry({"rows": [row]})], (BASE,)) == {STEP: 3}
+
+    def test_a_count_that_is_negative_or_not_a_number_is_not_taken(self) -> None:
+        rows = [
+            {"function": hex(STEP), "direct": -3},
+            {"function": hex(SIDE), "direct": True, "imports": ["a"]},
+            {"function": hex(HELPER), "direct": 10**250},
+        ]
+
+        held = _artefact_counts([_row_entry({"rows": rows})], (BASE,))
+
+        assert held[STEP] == 0 and held[SIDE] == 1
+        assert held[HELPER] == 1 << 20
+
+    def test_the_row_an_answer_by_address_states_as_a_mapping_is_read(self) -> None:
+        by_address = _row_entry({"function": {"function": hex(SIDE), "direct": 4}})
+        as_text = _row_entry({"row": f"{SIDE:#x} 9 artefacts"})
+
+        assert _artefact_counts([by_address, as_text], (BASE,)) == {SIDE: 4}
+
+    def test_only_the_pack_s_index_is_counted(self) -> None:
+        own = [*OWN, _index_with({SIDE: 9})]
+
+        found = callees_to_read(CLAIMS, own, [_header(), _index()])
+
+        assert all(c.artefacts == 0 for c in found.ranked)
+
+    def test_a_loop_through_the_function_counts_for_it(self) -> None:
+        f, h = BASE + 0x7000, BASE + 0x7100
+        graph = {f: {h: None}, h: {f: None}}
+        callers_of = {f: {h}, h: {f}}
+
+        # Code starts at f; every chain into h passes through f.
+        below = _reached_only_through(graph, callers_of, {}, {f: 2, h: 5}, [f])
+
+        assert below[f] == 5
+
+    def test_a_loop_under_the_function_counts_for_it(self) -> None:
+        a, b, f = BASE + 0x7000, BASE + 0x7100, BASE + 0x7200
+        graph = {f: {a: None}, a: {b: None}, b: {a: None}}
+        callers_of = {a: {f, b}, b: {a}}
+
+        below = _reached_only_through(graph, callers_of, {}, {a: 5, b: 7})
+
+        assert below[f] == 12
+
+    def test_a_routine_read_cuts_what_only_it_reaches(self) -> None:
+        # 0 -> 2 -> 5 -> 0 and 5 -> 3, with 3 read: 3 is never 0's.
+        graph = {0: {2: None}, 2: {5: None}, 5: {0: None, 3: None}}
+        callers_of = {2: {0}, 5: {2}, 0: {5}, 3: {5}}
+
+        below = _reached_only_through(graph, callers_of, {3: []}, {2: 10, 5: 100, 3: 1000})
+
+        assert below[0] == 110
+
+    def test_it_agrees_with_every_chain_passing_through_on_cyclic_graphs(self) -> None:
+        def entries(n: int, graph: dict[int, dict[int, None]], begun: set[int]) -> set[int]:
+            parts = _sccs(list(range(n)), graph)
+            part = {m: k for k, members in enumerate(parts) for m in members}
+            entered = {part[b] for a in range(n) for b in graph.get(a, ()) if part[a] != part[b]}
+            out = set(begun)
+            for k, members in enumerate(parts):
+                if k not in entered and not any(m in begun for m in members):
+                    out.add(min(members))
+            return out
+
+        def through(
+            n: int,
+            graph: dict[int, dict[int, None]],
+            read: dict[int, list[str]],
+            held: dict[int, int],
+            starts: list[int],
+        ) -> dict[int, int]:
+            """Every chain from where code starts to ``x`` passes through ``f``."""
+            roots = entries(n, graph, set(starts) | set(read))
+            out: dict[int, int] = {}
+            for f in range(n):
+                seen = {r for r in roots if r != f}
+                queue = deque(seen)
+                while queue:
+                    for callee in graph.get(queue.popleft(), ()):
+                        if callee != f and callee not in seen:
+                            seen.add(callee)
+                            queue.append(callee)
+                total = sum(held.get(x, 0) for x in range(n) if x != f and x not in seen)
+                if total:
+                    out[f] = total
+            return out
+
+        draw = random.Random(565)
+        for _ in range(400):
+            n = draw.randint(2, 16)
+            graph: dict[int, dict[int, None]] = {}
+            callers_of: dict[int, set[int]] = {}
+            for a in range(n):
+                for b in draw.sample(range(n), min(n, draw.randint(0, 3))):
+                    if a != b:
+                        graph.setdefault(a, {})[b] = None
+                        callers_of.setdefault(b, set()).add(a)
+            read: dict[int, list[str]] = {r: [] for r in draw.sample(range(n), draw.randint(0, 2))}
+            starts = draw.sample(range(n), draw.randint(0, 2))
+            held = {x: draw.randint(0, 5) for x in range(n)}
+
+            assert _reached_only_through(graph, callers_of, read, held, starts) == through(
+                n, graph, read, held, starts
+            )
+
+    def test_a_long_chain_is_counted_in_one_pass(self) -> None:
+        n = 20_000
+        graph = {i: {i + 1: None} for i in range(n)}
+        callers_of = {i + 1: {i} for i in range(n)}
+        held = {i: 1 for i in range(n + 1)}
+
+        began = time.monotonic()
+        below = _reached_only_through(graph, callers_of, {n: []}, held)
+        took = time.monotonic() - began
+
+        # The read routine at the end ends every walk: n - 1 functions lie below 0.
+        assert below[0] == n - 1 and below[n - 2] == 1
+        assert took < 2.0
+
+
+class TestTheNearestKept:
+    def test_the_last_places_go_to_the_nearest_of_the_rest(self) -> None:
+        many = [BASE + 0x20000 + 0x10 * i for i in range(CALLEES_SHOWN)]
+        near = [BASE + 0x30000 + 0x10 * i for i in range(3)]
+        own = [
+            _batch(
+                "ev_0003",
+                {START: _listing(START, GATE, *near), OUTER: _listing(OUTER, *many)},
+            )
+        ]
+        # The callees of the routine read last hold artefacts; the start's own
+        # callees hold none and are one call from it.
+        index = _index_with({m: 4 for m in many})
+
+        found = callees_to_read(CLAIMS, own, [_header(), index])
+        shown = [c.address for c in found.ranked[:CALLEES_SHOWN]]
+
+        assert shown[CALLEES_SHOWN - NEAREST_KEPT :] == near[:NEAREST_KEPT]
+        violation = unread_callees_violation(found)
+        assert violation is not None
+        assert f"the last {NEAREST_KEPT} places go to the nearest of the rest" in (
+            violation.message
+        )
+
+    def test_a_list_within_the_cap_keeps_its_rank_order(self) -> None:
+        found = callees_to_read(CLAIMS, OWN, [_header(), _index_with({SIDE: 5})])
+        violation = unread_callees_violation(found)
+
+        assert _addresses(found) == [GATE, SIDE, STEP, HELPER]
+        assert violation is not None and "nearest of the rest" not in violation.message
+
+
 class TestTheQuestion:
     def test_it_lists_each_with_its_reason_and_forces_nothing(self) -> None:
         violation = unread_callees_violation(callees_to_read(CLAIMS, OWN, PACK))
@@ -269,10 +549,12 @@ class TestTheQuestion:
         assert violation is not None
         assert violation.code == UNREAD_CALLEES_CODE and violation.advisory
         assert (
-            f"{STEP:#x} (called by {OUTER:#x}; 3 call(s) from the start {START:#x}; "
-            "1 caller(s); calls 2)"
+            f"{STEP:#x} (called by {OUTER:#x}; 1 caller(s); calls 2; 3 call(s) from the "
+            f"start {START:#x})"
         ) in violation.message
-        assert f"{GATE:#x} (called by {START:#x}; on the path from a start" in violation.message
+        assert f"{GATE:#x} (called by {START:#x}; on the path to routines you read" in (
+            violation.message
+        )
         assert "leave them unread and change nothing" in violation.message
         assert "This is asked once." in violation.message
 
@@ -292,10 +574,27 @@ class TestTheQuestion:
         assert len(found.ranked) == CALLEES_SHOWN + 3
         assert violation is not None
         assert (
-            f"The first {CALLEES_SHOWN} of {CALLEES_SHOWN + 3} are listed (the question lists "
-            f"at most {CALLEES_SHOWN}); the other 3 are not."
+            f"The first {CALLEES_SHOWN} of {CALLEES_SHOWN + 3} are listed with their reasons "
+            f"(the question gives at most {CALLEES_SHOWN} reasons); the other 3, in rank order: "
         ) in violation.message
-        assert hex(many[CALLEES_SHOWN]) not in violation.message
+        assert "ranked lower" not in violation.message
+        # Past the first, a function is named by its address alone.
+        rest = [c.address for c in found.ranked[CALLEES_SHOWN:]]
+        assert ", ".join(hex(a) for a in rest) + ". Decide" in violation.message
+        assert f"{hex(rest[0])} (" not in violation.message
+
+    def test_past_the_bound_the_addresses_stop_and_say_how_many_more(self) -> None:
+        many = [BASE + 0x20000 + 0x10 * i for i in range(CALLEES_SHOWN + OTHERS_NAMED + 7)]
+        own = [_batch("ev_0003", {OUTER: _listing(OUTER, *many)})]
+
+        found = callees_to_read(CLAIMS, own, [])
+        violation = unread_callees_violation(found)
+
+        assert violation is not None
+        named = found.ranked[CALLEES_SHOWN : CALLEES_SHOWN + OTHERS_NAMED]
+        assert ", ".join(hex(c.address) for c in named) + ", and 7 more." in violation.message
+        assert hex(found.ranked[-1].address) not in violation.message
+        assert SECRET not in violation.message and "FUN_" not in violation.message
 
     def test_nothing_unread_is_no_question(self) -> None:
         assert unread_callees_violation(callees_to_read(CLAIMS, [], PACK)) is None
