@@ -40,11 +40,13 @@ from __future__ import annotations
 import os
 import re
 import stat
+import sys
 import tempfile
 import threading
 from collections.abc import Mapping
 from hashlib import sha256
 from pathlib import Path
+from typing import Any
 
 from malspark.core.previous_name import PREVIOUS_NAME
 
@@ -227,18 +229,149 @@ def job_relative(path: str | Path, environ: Mapping[str, str] | None = None) -> 
     return target.name
 
 
-def owned_by_this_user(info: os.stat_result) -> bool:
-    """Whether ``info``, an ``lstat`` result, is of a file this process's user owns.
+def owned_by_this_user(path: str | os.PathLike[str], info: os.stat_result) -> bool:
+    """Whether ``path``, whose ``lstat`` is ``info``, is owned by this process's user.
 
-    POSIX compares user ids. A host without them (Windows, where ``st_uid`` is
-    always 0) answers ``True``: what the check guards against, another user
-    planting a directory in a temporary directory every user shares, has no
-    counterpart there, since the temporary directory is the user's own, inside
-    a profile no other unprivileged user may write to, and a directory's mode
-    bits grant nothing, so what keeps a directory private there is its ACL.
+    POSIX compares user ids. Windows has none (``st_uid`` is always 0), so
+    there the owner the file's security descriptor names is compared with the
+    user this process runs as (:func:`_windows_owner_is_ours`). Any failure to
+    read either answers ``False``: a file whose owner cannot be told is not
+    taken for this user's.
     """
+    if sys.platform == "win32":
+        try:
+            return _windows_owner_is_ours(path)
+        except (OSError, AttributeError, ValueError):
+            return False
     getuid = getattr(os, "getuid", None)
-    return True if getuid is None else info.st_uid == getuid()
+    return False if getuid is None else info.st_uid == getuid()
+
+
+# The Win32 constants the owner check passes (winnt.h, accctrl.h).
+_SE_FILE_OBJECT = 1
+_OWNER_SECURITY_INFORMATION = 0x1
+_TOKEN_QUERY = 0x8
+_TOKEN_USER = 1
+_TOKEN_OWNER = 4
+
+
+def _windows_owner_is_ours(path: str | os.PathLike[str]) -> bool:
+    """Whether the owner SID of ``path`` is this process's user, or the owner it gives.
+
+    The token's default owner counts beside its user: an elevated process
+    makes its files owned by the Administrators group rather than by the
+    user, and a directory this process created is still its own. Raises
+    ``OSError`` when the system refuses to answer.
+    """
+    return _owner_sid(path) in _process_sids()
+
+
+def _win32() -> tuple[Any, Any]:
+    """advapi32 and kernel32, loaded with the argument and result types the check uses."""
+    import ctypes
+    from ctypes import wintypes
+
+    advapi32 = ctypes.WinDLL("advapi32", use_last_error=True)  # type: ignore[attr-defined]
+    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)  # type: ignore[attr-defined]
+    pointer = ctypes.POINTER(ctypes.c_void_p)
+    advapi32.GetNamedSecurityInfoW.argtypes = [
+        wintypes.LPCWSTR,
+        ctypes.c_int,
+        wintypes.DWORD,
+        pointer,
+        pointer,
+        pointer,
+        pointer,
+        pointer,
+    ]
+    advapi32.GetNamedSecurityInfoW.restype = wintypes.DWORD
+    advapi32.OpenProcessToken.argtypes = [
+        wintypes.HANDLE,
+        wintypes.DWORD,
+        ctypes.POINTER(wintypes.HANDLE),
+    ]
+    advapi32.OpenProcessToken.restype = wintypes.BOOL
+    advapi32.GetTokenInformation.argtypes = [
+        wintypes.HANDLE,
+        ctypes.c_int,
+        ctypes.c_void_p,
+        wintypes.DWORD,
+        ctypes.POINTER(wintypes.DWORD),
+    ]
+    advapi32.GetTokenInformation.restype = wintypes.BOOL
+    advapi32.IsValidSid.argtypes = [ctypes.c_void_p]
+    advapi32.IsValidSid.restype = wintypes.BOOL
+    advapi32.GetLengthSid.argtypes = [ctypes.c_void_p]
+    advapi32.GetLengthSid.restype = wintypes.DWORD
+    kernel32.GetCurrentProcess.argtypes = []
+    kernel32.GetCurrentProcess.restype = wintypes.HANDLE
+    kernel32.CloseHandle.argtypes = [wintypes.HANDLE]
+    kernel32.CloseHandle.restype = wintypes.BOOL
+    kernel32.LocalFree.argtypes = [ctypes.c_void_p]
+    kernel32.LocalFree.restype = ctypes.c_void_p
+    return advapi32, kernel32
+
+
+def _sid_bytes(advapi32: Any, sid: Any) -> bytes:
+    """A SID's bytes, compared as ``EqualSid`` compares them: whole and exactly."""
+    import ctypes
+
+    if not sid or not advapi32.IsValidSid(sid):
+        raise OSError("the security descriptor holds no valid SID")
+    return ctypes.string_at(sid, advapi32.GetLengthSid(sid))
+
+
+def _owner_sid(path: str | os.PathLike[str]) -> bytes:
+    """The SID of the owner ``path``'s security descriptor names."""
+    import ctypes
+
+    advapi32, kernel32 = _win32()
+    owner = ctypes.c_void_p()
+    descriptor = ctypes.c_void_p()
+    status = advapi32.GetNamedSecurityInfoW(
+        os.fspath(path),
+        _SE_FILE_OBJECT,
+        _OWNER_SECURITY_INFORMATION,
+        ctypes.byref(owner),
+        None,
+        None,
+        None,
+        ctypes.byref(descriptor),
+    )
+    if status != 0:
+        raise OSError(status, "GetNamedSecurityInfoW failed")
+    try:
+        return _sid_bytes(advapi32, owner)
+    finally:
+        kernel32.LocalFree(descriptor)
+
+
+def _process_sids() -> frozenset[bytes]:
+    """The SIDs of this process's user and of the owner its token gives what it creates."""
+    import ctypes
+    from ctypes import wintypes
+
+    advapi32, kernel32 = _win32()
+    token = wintypes.HANDLE()
+    if not advapi32.OpenProcessToken(
+        kernel32.GetCurrentProcess(), _TOKEN_QUERY, ctypes.byref(token)
+    ):
+        raise OSError(ctypes.get_last_error(), "OpenProcessToken failed")  # type: ignore[attr-defined]
+    try:
+        sids = set()
+        for kind in (_TOKEN_USER, _TOKEN_OWNER):
+            size = wintypes.DWORD()
+            advapi32.GetTokenInformation(token, kind, None, 0, ctypes.byref(size))
+            buffer = ctypes.create_string_buffer(size.value)
+            if not size.value or not advapi32.GetTokenInformation(
+                token, kind, buffer, size, ctypes.byref(size)
+            ):
+                raise OSError(ctypes.get_last_error(), "GetTokenInformation failed")  # type: ignore[attr-defined]
+            # TOKEN_USER and TOKEN_OWNER both begin with the SID's pointer.
+            sids.add(_sid_bytes(advapi32, ctypes.cast(buffer, ctypes.POINTER(ctypes.c_void_p))[0]))
+        return frozenset(sids)
+    finally:
+        kernel32.CloseHandle(token)
 
 
 def private_dir(path: Path, *, what: str = "staging path") -> Path:
@@ -264,7 +397,7 @@ def private_dir(path: Path, *, what: str = "staging path") -> Path:
     info = path.lstat()
     if not stat.S_ISDIR(info.st_mode):
         raise RuntimeError(f"{what} {path} is not a directory")
-    if not owned_by_this_user(info):
+    if not owned_by_this_user(path, info):
         raise RuntimeError(f"{what} {path} is owned by another user")
     if info.st_mode & 0o077:
         path.chmod(0o700)

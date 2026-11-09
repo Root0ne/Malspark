@@ -1674,7 +1674,7 @@ def _prune_legacy_base(base: Path, cutoff: float) -> int:
     if root == base or root.is_symlink() or not root.is_dir():
         return 0
     try:
-        if root.lstat().st_uid != os.getuid():
+        if not staging.owned_by_this_user(root, root.lstat()):
             return 0
     except OSError:
         return 0

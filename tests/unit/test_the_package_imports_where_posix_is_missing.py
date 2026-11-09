@@ -146,17 +146,80 @@ class TestCapaWithoutWait4:
         assert process.returncode is not None
 
 
-class TestOwnershipWithoutUserIds:
+class TestOwnership:
     @pytest.mark.skipif(not hasattr(os, "getuid"), reason="no user ids on this host")
-    def test_posix_compares_user_ids(self) -> None:
+    def test_posix_compares_user_ids(self, tmp_path: Path) -> None:
         mine = SimpleNamespace(st_uid=os.getuid())
         theirs = SimpleNamespace(st_uid=os.getuid() + 1)
-        assert staging.owned_by_this_user(mine)  # type: ignore[arg-type]
-        assert not staging.owned_by_this_user(theirs)  # type: ignore[arg-type]
+        assert staging.owned_by_this_user(tmp_path, mine)  # type: ignore[arg-type]
+        assert not staging.owned_by_this_user(tmp_path, theirs)  # type: ignore[arg-type]
 
-    def test_a_host_without_user_ids_answers_yes(self, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_a_posix_host_without_user_ids_answers_no(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        monkeypatch.setattr(sys, "platform", "linux")
         monkeypatch.delattr(os, "getuid", raising=False)
-        assert staging.owned_by_this_user(SimpleNamespace(st_uid=0))  # type: ignore[arg-type]
+        assert not staging.owned_by_this_user(tmp_path, SimpleNamespace(st_uid=0))  # type: ignore[arg-type]
+
+
+class TestOwnershipOnWindows:
+    """The owner SID of the file against the user, or the default owner, of this process."""
+
+    @pytest.fixture(autouse=True)
+    def _windows(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setattr(sys, "platform", "win32")
+
+    def _owned(self, tmp_path: Path) -> bool:
+        return staging.owned_by_this_user(tmp_path, SimpleNamespace(st_uid=0))  # type: ignore[arg-type]
+
+    def _sids(self, monkeypatch: pytest.MonkeyPatch, owner: bytes) -> None:
+        monkeypatch.setattr(staging, "_owner_sid", lambda _path: owner)
+        monkeypatch.setattr(staging, "_process_sids", lambda: frozenset({b"user", b"admins"}))
+
+    def test_the_user_s_own_sid_is_this_user(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        self._sids(monkeypatch, b"user")
+        assert self._owned(tmp_path)
+
+    def test_the_owner_an_elevated_token_gives_is_this_user(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        self._sids(monkeypatch, b"admins")
+        assert self._owned(tmp_path)
+
+    def test_another_sid_is_not(self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+        self._sids(monkeypatch, b"someone else")
+        assert not self._owned(tmp_path)
+
+    def test_a_descriptor_the_system_refuses_is_not(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        advapi32 = SimpleNamespace(GetNamedSecurityInfoW=lambda *_args: 5)  # access denied
+        monkeypatch.setattr(staging, "_win32", lambda: (advapi32, SimpleNamespace()))
+        assert not self._owned(tmp_path)
+
+    def test_a_token_the_system_refuses_is_not(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        monkeypatch.setattr(staging, "_owner_sid", lambda _path: b"user")
+        advapi32 = SimpleNamespace(OpenProcessToken=lambda *_args: 0)
+        kernel32 = SimpleNamespace(GetCurrentProcess=lambda: -1)
+        monkeypatch.setattr(staging, "_win32", lambda: (advapi32, kernel32))
+        monkeypatch.setattr(ctypes, "get_last_error", lambda: 5, raising=False)
+        assert not self._owned(tmp_path)
+
+    def test_no_win32_api_is_not(self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+        monkeypatch.delattr(ctypes, "WinDLL", raising=False)
+        assert not self._owned(tmp_path)
+
+
+@pytest.mark.skipif(sys.platform != "win32", reason="the owner SID is read on Windows only")
+def test_a_directory_this_process_made_is_its_own_on_windows(tmp_path: Path) -> None:
+    made = tmp_path / "mine"
+    made.mkdir()
+    assert staging.owned_by_this_user(made, made.lstat())
+    assert staging.private_dir(made) == made
 
 
 class TestSampleCopiesWithoutPosix:

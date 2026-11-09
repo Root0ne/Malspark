@@ -147,7 +147,7 @@ def _sweep_loose_runs() -> None:
             info = entry.lstat()
         except OSError:
             continue
-        if not stat.S_ISDIR(info.st_mode) or not staging.owned_by_this_user(info):
+        if not stat.S_ISDIR(info.st_mode) or not staging.owned_by_this_user(entry, info):
             continue
         if staging.newest_mtime(entry) < cutoff:
             staging.remove_tree(entry)
