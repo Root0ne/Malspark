@@ -31,6 +31,7 @@ from malspark.pipeline.validation import FUNCTION_QUESTION_ASK
 from malspark.schemas.evidence import LedgerEntry, not_shown_record
 from malspark.schemas.isr_models import ClaimEvidence
 from malspark.tools.artefact_index import SELF, row_line
+from tests.linear_cost import assert_ratio
 
 BASE = 0x140000000
 MAIN = 0x2340
@@ -398,20 +399,12 @@ class TestWhereAValueHolds:
         assert found.violations == []
 
     def test_a_name_repeated_many_times_reads_in_linear_time(self) -> None:
-        import time
-
-        def spent(n: int) -> float:
+        def reading(n: int) -> Any:
             body = " ".join(f"{MAIN_VA} calls CreateMutexW;" for _ in range(n))
-            best = float("inf")
-            for _ in range(3):
-                started = time.thread_time()
-                named_values(body)
-                best = min(best, time.thread_time() - started)
-            return best
+            return lambda: named_values(body)
 
-        small, large = spent(2_000), spent(16_000)
         # Eight times the repeats: linear is about 8x, a rescan per repeat about 64x.
-        assert large < max(small, 0.005) * 24, (small, large)
+        assert_ratio(reading(2_000), reading(16_000), 24, what="16,000 repeats")
 
     def test_a_name_inside_a_statement_of_absence_is_no_claimed_call(self) -> None:
         held = _check(f"{MAIN_VA} does not use CreateRemoteThread; it guards with CreateMutexW.")

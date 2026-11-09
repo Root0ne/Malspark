@@ -421,5 +421,5 @@ class TestTheNeighbourCheckScales:
             return path
 
         answer = find_crypto_constants(str(far(1_048_576 // 8)))
-        assert_scales(far, 16_384, lambda path: find_crypto_constants(str(path)))
+        assert_scales(far, 32_768, lambda path: find_crypto_constants(str(path)))
         assert "sha1_init" not in _found(answer)

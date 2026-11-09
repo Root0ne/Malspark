@@ -21,8 +21,7 @@ Every sentence here is made up for the test.
 
 from __future__ import annotations
 
-import gc
-import time
+from collections.abc import Callable
 from fractions import Fraction
 
 import pytest
@@ -40,6 +39,7 @@ from malspark.pipeline.validation import (
 )
 from malspark.schemas.isr_models import AgentISR, ClaimEvidence
 from malspark.tools import knowledge
+from tests.linear_cost import assert_ratio
 
 PE = {"platform": "windows", "file_type": "pe"}
 
@@ -182,7 +182,7 @@ class TestTheWeights:
         assert not described_by_its_words("strings encoded and decoded from blobs", "T9999")
 
 
-def _timed(claims: int, *, long: int = 4) -> float:
+def _checking(claims: int, *, long: int = 4) -> Callable[[], None]:
     sentence = (
         "Routine 0x4100 writes a value to a buffer and returns its length to the caller, "
         "and nothing checks the bounds of the region, after a decode loop. "
@@ -200,21 +200,19 @@ def _timed(claims: int, *, long: int = 4) -> float:
             for n in range(claims)
         ],
     )
-    gc.collect()
-    began = time.thread_time()
-    found = validate_isr(isr, attck=knowledge, sample=PE)
-    seconds = time.thread_time() - began
-    assert sum(v.code == CLAIM_DOES_NOT_DESCRIBE_CODE for v in found) == claims
-    return seconds
+
+    def check() -> None:
+        found = validate_isr(isr, attck=knowledge, sample=PE)
+        assert sum(v.code == CLAIM_DOES_NOT_DESCRIBE_CODE for v in found) == claims
+
+    return check
 
 
 class TestTheCheckStaysLinear:
     def test_ten_times_the_claims_take_about_ten_times_as_long(self) -> None:
-        _timed(20)
-        low = min(_timed(40) for _ in range(2))
-        high = min(_timed(400) for _ in range(2))
+        _checking(20)()
+        low, high = assert_ratio(_checking(40), _checking(400), 20, what="400 claims")
         print("description words, 40 and 400 claims:", round(low, 3), round(high, 3))
-        assert high < low * 20
 
     @pytest.mark.parametrize(
         "unit",
@@ -229,13 +227,14 @@ class TestTheCheckStaysLinear:
         words = validation.described_by_its_words
         words("warm", "T1027")
 
-        def timed(text: str) -> float:
-            gc.collect()
-            start = time.thread_time()
-            words(text, "T1027")
-            return time.thread_time() - start
+        def reading(text: str) -> Callable[[], object]:
+            return lambda: words(text, "T1027")
 
-        low = min(timed(unit * 400) for _ in range(2))
-        high = min(timed(unit * 4000) for _ in range(2))
+        low, high = assert_ratio(
+            reading(unit * 1200),
+            reading(unit * 12000),
+            20,
+            floor=0.01 / 20,
+            what="a ten times longer claim",
+        )
         print("description words, a claim and ten times its length:", low, high)
-        assert high < low * 20 + 0.01

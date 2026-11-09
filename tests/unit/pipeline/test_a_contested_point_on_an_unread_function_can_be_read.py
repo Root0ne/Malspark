@@ -16,7 +16,6 @@ Every value is synthetic.
 from __future__ import annotations
 
 import asyncio
-import time
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 
@@ -37,6 +36,7 @@ from malspark.pipeline.nodes import RevisionInput, make_negotiation_node, make_r
 from malspark.pipeline.state import AgentArgument
 from malspark.schemas.evidence import LedgerEntry
 from malspark.schemas.isr_models import AgentISR, ClaimEvidence
+from tests.linear_cost import assert_ratio
 
 NAMES = ["static", "reverser", "dynamic"]
 
@@ -136,13 +136,13 @@ class TestThePlacesALineNames:
         assert place_facts([LINE_READ], _isrs(), [], NAMES) == []
 
     def test_a_hostile_line_is_read_in_linear_time(self) -> None:
-        timings = []
-        for n in (300, 3000):
+        def placing(n: int) -> Any:
             line = "[analysts: STATIC] " + " ".join(f"0x{1000 + i:x}" for i in range(n))
-            start = time.thread_time()
-            place_facts([line], _isrs(), _ledger(), NAMES)
-            timings.append(time.thread_time() - start)
-        assert timings[1] < timings[0] * 10 * 4 + 0.5
+            return lambda: place_facts([line], _isrs(), _ledger(), NAMES)
+
+        assert_ratio(
+            placing(12_000), placing(120_000), 10 * 4, floor=0.5 / 40, what="a tenfold line"
+        )
 
 
 class TestWhoIsTold:

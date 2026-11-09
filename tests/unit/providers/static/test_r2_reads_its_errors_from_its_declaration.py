@@ -11,11 +11,12 @@ from __future__ import annotations
 
 import random
 import re
-import time
+from collections.abc import Callable
 
 import pytest
 
 from malspark.providers.static import r2
+from tests.linear_cost import assert_ratio
 
 _ENVELOPE = re.compile(r"<log>(?P<body>.*)</log>", re.DOTALL)
 _LOG_LINE = re.compile(r"\[(?P<level>[A-Z]+)\]\s*\S.*")
@@ -109,15 +110,18 @@ def test_two_hundred_thousand_random_replies_are_decided_as_before() -> None:
 
 
 def test_a_hostile_envelope_is_read_in_linear_time() -> None:
-    def timed(n: int) -> float:
+    def reading(n: int) -> Callable[[], None]:
         reply = "<log>" + "[INFO] [ERROR] x\n" * n + "not a line"
-        started = time.thread_time()
-        assert r2._r2_logged_error(reply) is None
-        return time.thread_time() - started
 
-    timed(1_000)
-    small, large = timed(5_000), timed(50_000)
-    assert large < max(small, 0.002) * 30
+        # A pattern reads 5,000 lines in C in under a tenth of a millisecond:
+        # each side reads 130 times rather than hold a reply of 100 MB.
+        def read() -> None:
+            for _ in range(130):
+                assert r2._r2_logged_error(reply) is None
+
+        return read
+
+    assert_ratio(reading(5_000), reading(50_000), 30, what="50,000 lines")
 
 
 def test_the_open_first_refusal_is_read_from_the_protocol_error() -> None:

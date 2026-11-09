@@ -59,8 +59,11 @@ def test_a_huge_claim_is_scrubbed_over_a_window_only() -> None:
         return "word " * 79 + key + " " + "filler " * filler
 
     (shown,) = claims_to_payload([_claim(huge(600_000))])
+    # The window costs the same at any length, so each side is read 4 times.
     assert_scales(
-        lambda filler: _claim(huge(filler)), 75_000, lambda claim: claims_to_payload([claim])
+        lambda filler: _claim(huge(filler)),
+        75_000,
+        lambda claim: [claims_to_payload([claim]) for _ in range(4)],
     )
     assert key[:12] not in shown["claim"]
     assert len(shown["claim"]) <= 400
@@ -73,7 +76,11 @@ def test_a_huge_single_token_is_masked_at_the_window_edge() -> None:
 
     def both(size: int) -> Callable[[], Any]:
         claim = _claim("q" * size)
-        return lambda: (claims_to_payload([claim]), summarize_claims([claim], speaker="x"))
+        # A run of one letter is read in C, a quarter of a millisecond on the small
+        # claim, so each side is read 45 times rather than grown past 100 MB.
+        return lambda: [
+            (claims_to_payload([claim]), summarize_claims([claim], speaker="x")) for _ in range(45)
+        ]
 
     assert_scales(both, 500_000)
     assert shown["claim"].startswith("***") and "q" * 8 not in shown["claim"]

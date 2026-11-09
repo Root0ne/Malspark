@@ -21,8 +21,9 @@ Every value is synthetic.
 
 from __future__ import annotations
 
-import time
 from typing import Any
+
+from tests.linear_cost import assert_ratio
 
 from malspark.analysis.corroboration import corroborated, corroboration_row, support_sentence
 from malspark.analysis.evidence_roots import (
@@ -269,24 +270,34 @@ class TestTheSourcesOfATechnique:
         assert support_of({}) == ""
 
     def test_many_claims_are_read_in_linear_time(self) -> None:
-        timings = []
-        for n in (200, 2000):
+        ledger = _ledger()
+
+        def read(n: int) -> Any:
             isrs = {
                 "a": _isr("a", *[_claim(f'"Autorun" {i} [ev_0002]', "[ev_0002]") for i in range(n)])
             }
-            start = time.thread_time()
-            technique_sources(isrs, _ledger())
-            timings.append(time.thread_time() - start)
-        assert timings[1] < timings[0] * 10 * 4 + 0.5
+            return lambda: technique_sources(isrs, ledger)
+
+        assert_ratio(
+            read(1000),
+            read(10000),
+            10 * 4,
+            what="10,000 claims against 1,000",
+            floor=0.5 / (10 * 4),
+        )
 
     def test_many_sources_are_joined_in_linear_time(self) -> None:
-        timings = []
-        for n in (2000, 20000):
+        def join(n: int) -> Any:
             held = {f"ev_{i}": ("artefact", (f"root {i}", f"root {i + 1}")) for i in range(n)}
-            start = time.thread_time()
-            summary_of_sources(held)
-            timings.append(time.thread_time() - start)
-        assert timings[1] < timings[0] * 10 * 4 + 0.5
+            return lambda: summary_of_sources(held)
+
+        assert_ratio(
+            join(30000),
+            join(300000),
+            10 * 4,
+            what="300,000 sources against 30,000",
+            floor=0.5 / (10 * 4),
+        )
 
 
 class TestWhatARuleCitationIs:
@@ -378,13 +389,20 @@ class TestTheWholeAnswer:
     def test_many_rows_are_read_in_linear_time(self) -> None:
         from malspark.analysis.evidence_roots import answer_facts
 
-        timings = []
-        for n in (2000, 20000):
-            rows = [{"routine": "0x4000", "text": str(i)} for i in range(n)]
-            start = time.thread_time()
-            answer_facts({"rows": rows, "total": n})
-            timings.append(time.thread_time() - start)
-        assert timings[1] < timings[0] * 10 * 4 + 0.5
+        def read(n: int) -> Any:
+            answer = {"rows": [{"routine": "0x4000", "text": str(i)} for i in range(n)], "total": n}
+            # A row is read in a fraction of a microsecond: each answer is read
+            # four times so the small run outlasts the floor without holding
+            # a million rows.
+            return lambda: [answer_facts(answer) for _ in range(4)]
+
+        assert_ratio(
+            read(20000),
+            read(200000),
+            10 * 4,
+            what="200,000 rows against 20,000",
+            floor=0.5 / (10 * 4),
+        )
 
 
 class TestTheRefinements:

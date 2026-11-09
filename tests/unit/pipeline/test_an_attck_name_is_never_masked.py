@@ -19,8 +19,7 @@ from __future__ import annotations
 
 import json
 import re
-import time
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from pathlib import Path
 
 import pytest
@@ -28,6 +27,7 @@ import pytest
 from malspark.pipeline import events as ev
 from malspark.pipeline.events import safe_finding_value, scrub, scrub_keeping_layout
 from tests.credential_shapes import password
+from tests.linear_cost import assert_ratio
 from tests.unit.pipeline.test_live_event_schema import _every_key_shape
 
 ROOT = Path(__file__).resolve().parents[3]
@@ -192,12 +192,9 @@ def test_a_hostile_line_of_names_and_labels_is_read_in_linear_time() -> None:
         "SyncAppvPublishingServer Visual Basic (T1059.005) token x Bearer y "
     )
 
-    def took(copies: int) -> float:
+    def scrubbing(copies: int) -> Callable[[], str]:
         text = piece * copies
-        started = time.thread_time()
-        scrub(text)
-        return time.thread_time() - started
+        return lambda: scrub(text)
 
-    small, large = took(500), took(5000)
+    _small, large = assert_ratio(scrubbing(500), scrubbing(5000), 50, what="5000 copies")
     assert large < 20, large
-    assert large < 50 * max(small, 0.01), (small, large)

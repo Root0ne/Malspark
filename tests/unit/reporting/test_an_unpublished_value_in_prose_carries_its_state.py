@@ -44,6 +44,7 @@ from malspark.reporting.models import (
 )
 from malspark.reporting.narrative_agent import published_answers
 from malspark.reporting.renderers.markdown import MarkdownRenderer
+from tests.linear_cost import assert_under
 
 PUBLISHED = "gate.example.com"
 REFUSED = "198.51.100.7"
@@ -416,17 +417,14 @@ class TestOddAndLargeInput:
         assert REFUSED in found.message
 
     def test_a_long_section_finishes_quickly(self) -> None:
-        import time
-
         body = " ".join(
             f"Step {n} reaches 203.0.{n % 250}.{n % 200} and {PUBLISHED} [ev_0017]."
             for n in range(3000)
         )
 
-        started = time.thread_time()
-        found = unpublished_value_violations(_body(body), _answers())
-        elapsed = time.thread_time() - started
-
-        (asked,) = found
+        (asked,) = unpublished_value_violations(_body(body), _answers())
         assert asked.code == UNPUBLISHED_VALUE_CODE
-        assert elapsed < 10, elapsed
+        # Each run builds its own answer table, as the check's caller does.
+        assert_under(
+            lambda: unpublished_value_violations(_body(body), _answers()), 10, what="3,000 steps"
+        )

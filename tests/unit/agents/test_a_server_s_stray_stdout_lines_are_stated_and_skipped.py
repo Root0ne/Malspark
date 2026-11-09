@@ -33,6 +33,7 @@ from pydantic import ValidationError
 
 from malspark.agents import mcp_client
 from malspark.agents.mcp_client import MCPLangChainToolkit, _ProtocolLinesOnly
+from tests.linear_cost import assert_ratio
 
 MESSAGE = '{"jsonrpc":"2.0","id":7,"result":{}}'
 
@@ -174,17 +175,15 @@ class TestTheReadStream:
         assert len(log.warning.call_args_list) == 1
 
     def test_a_hostile_line_is_read_in_linear_time(self) -> None:
-        import time
-
-        def took(size: int) -> float:
+        def read(size: int) -> Any:
             line = ("{x\r" * size) + "{" * size
-            started = time.thread_time()
-            asyncio.run(_read_all([_refused(line)]))
-            return time.thread_time() - started
+            # A line is read in C in well under a millisecond: the stream
+            # carries it six hundred times so the small run is about 10 ms.
+            items = [_refused(line)] * 600
+            return lambda: asyncio.run(_read_all(items))
 
-        small, large = took(20_000), took(200_000)
+        _small, large = assert_ratio(read(20_000), read(200_000), 50, what="a 200,000-unit line")
         assert large < 20, large
-        assert large < 50 * max(small, 0.01), (small, large)
 
 
 SERVER = r"""

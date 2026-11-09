@@ -15,7 +15,7 @@ from typing import Any
 
 import pytest
 from pydantic import ValidationError
-from tests.linear_cost import TIME_RATIO_LIMIT, calls, cpu_seconds
+from tests.linear_cost import TIME_RATIO_LIMIT, assert_ratio, calls
 
 from malspark.core.config import MCPServerConfig, Settings, StaticConfig
 from malspark.core.tool_declarations import (
@@ -426,17 +426,22 @@ def test_a_hostile_answer_is_matched_in_linear_time() -> None:
     pattern = ErrorPattern(match=r"(a|aa)+$")
     text = ReputationFacts(text_patterns=(r"(?P<malicious>(\d+)+)x",))
 
-    def timed(n: int) -> float:
+    def reading(n: int) -> Callable[[], None]:
+        letters, digits = "a" * n + "b", "1" * n + "y"
+
         def read() -> None:
-            assert not pattern.matches("t", "a" * n + "b")
-            assert text.counts_in_text("1" * n + "y") is None
+            # Each answer is matched eight times: the small run is measurable
+            # while the answers stay a few megabytes.
+            for _ in range(8):
+                assert not pattern.matches("t", letters)
+                assert text.counts_in_text(digits) is None
 
-        return cpu_seconds(read, repeats=7)
+        return read
 
-    # Four times the input, CPU time, best of seven; a quadratic reader would
-    # take sixteen times as long. The smaller run takes more than a millisecond.
-    timed(160_000)  # one-time costs are not the reader's
-    assert timed(2_560_000) < timed(640_000) * TIME_RATIO_LIMIT
+    # Four times the input, CPU time, the two sizes timed in turn and the best
+    # of seven each read; a quadratic reader would take sixteen times as long.
+    # The smaller run takes about ten milliseconds.
+    assert_ratio(reading(640_000), reading(2_560_000), TIME_RATIO_LIMIT, repeats=7)
 
 
 def test_reputation_text_patterns_are_searched_first_match_first() -> None:
@@ -529,8 +534,7 @@ def test_reading_any_depth_stays_linear_on_a_hostile_answer() -> None:
     # CPU time, not wall-clock: four times the depth must take under eight
     # times as long, and a quadratic read takes sixteen times. The calls made
     # are held to the same ratio too, which a load cannot move.
-    read(small)()  # one-time costs (caches, lazy imports) are not the read's
-    assert cpu_seconds(read(large)) < cpu_seconds(read(small)) * TIME_RATIO_LIMIT
+    assert_ratio(read(small), read(large), TIME_RATIO_LIMIT, what="four times the depth")
     assert calls(read(large)) <= calls(read(small)) * 4 * 1.2 + 100
 
 

@@ -9,10 +9,11 @@ report, which is the analyst's own words beside the claims in force, keeps both.
 
 from __future__ import annotations
 
-import time
+from collections.abc import Callable
 
 from malspark.agents.judge_agent import mediation_reports_text
 from malspark.schemas.isr_models import AgentISR, ClaimEvidence
+from tests.linear_cost import assert_ratio
 
 ISR_HEADING = "=== STRUCTURED CLAIMS (ISR) ==="
 
@@ -78,12 +79,9 @@ def test_the_text_is_as_before_where_no_summary_repeats_a_report() -> None:
 
 
 def test_the_assembly_is_linear_in_the_number_of_analysts() -> None:
-    def build(n: int) -> float:
+    def build(n: int) -> Callable[[], str]:
         isrs = {f"a{i}": _isr(f"a{i}", *(f"claim {j} of {i}" for j in range(20))) for i in range(n)}
         reports = {name: isr.to_text_summary() for name, isr in isrs.items()}
-        started = time.thread_time()
-        mediation_reports_text(reports, isrs)
-        return time.thread_time() - started
+        return lambda: mediation_reports_text(reports, isrs)
 
-    small, large = build(50), build(500)
-    assert large < small * 40
+    assert_ratio(build(200), build(2000), 40, what="2,000 analysts against 200")

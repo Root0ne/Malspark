@@ -14,14 +14,13 @@ program and no target is fetched.
 
 from __future__ import annotations
 
-import gc
 import io
 import json
 import os
 import subprocess
 import sys
-import time
 import zipfile
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
@@ -29,6 +28,7 @@ import pytest
 
 from malspark.pipeline import triage_pack
 from malspark.tools import binary as tool
+from tests.linear_cost import assert_ratio, assert_under
 
 MIB = 1024 * 1024
 
@@ -233,10 +233,12 @@ class TestWhatIsNotRead:
             },
         )
 
-        started = time.thread_time()
-        answer = tool.document_info(str(path))
+        answers: list[dict[str, Any]] = []
+        assert_under(
+            lambda: answers.append(tool.document_info(str(path))), 20, what="the hostile parts"
+        )
+        answer = answers[0]
 
-        assert time.thread_time() - started < 20
         assert answer["relationship_parts_unread"] == [
             {
                 "part": "word/_rels/settings.xml.rels",
@@ -318,19 +320,8 @@ class TestWhatIsNotRead:
         assert [r["id"] for r in answer["external_relationships"]] == ["rId2"]
 
 
-def _timed(path: Path) -> float:
-    """The fastest of three reads, the collector held so no sweep is timed."""
-    gc.collect()
-    gc.disable()
-    try:
-        seconds = []
-        for _ in range(3):
-            began = time.thread_time()
-            tool.document_info(str(path))
-            seconds.append(time.thread_time() - began)
-        return min(seconds)
-    finally:
-        gc.enable()
+def _reading(path: Path) -> Callable[[], Any]:
+    return lambda: tool.document_info(str(path))
 
 
 def _one_part_of(tmp_path: Path, n: int) -> Path:
@@ -356,18 +347,22 @@ def _many_parts_of(tmp_path: Path, n: int) -> Path:
 
 class TestLinearTime:
     def test_ten_times_the_relationships_take_about_ten_times_as_long(self, tmp_path: Path) -> None:
-        low = _timed(_one_part_of(tmp_path, 2_000))
-        high = _timed(_one_part_of(tmp_path, 20_000))
-
-        assert high < low * 20
+        assert_ratio(
+            _reading(_one_part_of(tmp_path, 6_500)),
+            _reading(_one_part_of(tmp_path, 65_000)),
+            20,
+            what="65,000 relationships",
+        )
 
     def test_ten_times_the_relationship_parts_take_about_ten_times_as_long(
         self, tmp_path: Path
     ) -> None:
-        low = _timed(_many_parts_of(tmp_path, 500))
-        high = _timed(_many_parts_of(tmp_path, 5_000))
-
-        assert high < low * 20
+        assert_ratio(
+            _reading(_many_parts_of(tmp_path, 500)),
+            _reading(_many_parts_of(tmp_path, 5_000)),
+            20,
+            what="5,000 relationship parts",
+        )
 
 
 class TestTheCap:
@@ -569,11 +564,36 @@ class TestOneLongToken:
     def test_ten_times_the_token_costs_about_ten_times_the_time_and_memory(
         self, tmp_path: Path
     ) -> None:
-        low_length, low_seconds, low_rise = _measured(_one_token_of(tmp_path, 4))
-        high_length, high_seconds, high_rise = _measured(_one_token_of(tmp_path, 40))
+        lengths: dict[int, int] = {}
+        rises: dict[int, int] = {}
+
+        def seconds(megabytes: int) -> Callable[[], float]:
+            path = _one_token_of(tmp_path, megabytes)
+
+            def read() -> float:
+                length, took, rise = _measured(path)
+                lengths[megabytes] = length
+                # The bounded side keeps its largest rise and the baseline its
+                # least, so a run measured again never eases the memory bound.
+                keep = max if megabytes == 40 else min
+                rises[megabytes] = keep(rise, rises.get(megabytes, rise))
+                return took
+
+            return read
+
+        assert_ratio(
+            seconds(4),
+            seconds(40),
+            20,
+            what="ten times the token",
+            repeats=1,
+            warm=False,
+            self_timed=True,
+        )
+        low_length, high_length = lengths[4], lengths[40]
+        low_rise, high_rise = rises[4], rises[40]
 
         assert high_length > 40 * MIB > 10 * low_length * 0.99
-        assert high_seconds < 20 * low_seconds
         # The reader holds the whole value: about three times the token here.
         assert high_rise < 6 * high_length
         assert high_rise < 25 * max(low_rise, MIB)

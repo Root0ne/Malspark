@@ -13,9 +13,8 @@ argument of a tool whose answer is not code.
 
 from __future__ import annotations
 
-import time
-
 import pytest
+from tests.linear_cost import assert_ratio
 
 from malspark.core.tool_declarations import ToolFacts
 from malspark.core.undeclared_tools import (
@@ -187,11 +186,15 @@ def test_an_undeclared_decompile_is_placed_by_it() -> None:
 
 
 def test_many_offered_names_are_read_in_linear_time() -> None:
-    def _timed(n: int) -> float:
-        names = [f"arg_{i}" for i in range(n)] + ["name_or_address"]
-        start = time.thread_time()
-        assert address_arguments(None, names)[-1] == "name_or_address"
-        return time.thread_time() - start
+    def offered(n: int) -> list[str]:
+        return [f"arg_{i}" for i in range(n)] + ["name_or_address"]
 
-    small, large = _timed(2_000), _timed(20_000)
-    assert large < max(small * 30, 0.5)
+    small, large = offered(24_000), offered(240_000)
+    assert address_arguments(None, small)[-1] == "name_or_address"
+    assert address_arguments(None, large)[-1] == "name_or_address"
+    assert_ratio(
+        lambda: address_arguments(None, small),
+        lambda: address_arguments(None, large),
+        30,
+        what="240,000 offered names",
+    )

@@ -34,6 +34,7 @@ from malspark.pipeline.validation import (
     validation_metrics,
 )
 from malspark.schemas.isr_models import AgentISR, Finding
+from tests.linear_cost import assert_under
 
 
 def _block(n: int, technique: str) -> str:
@@ -407,17 +408,17 @@ class TestSeveralDecisionsOnALine:
         assert read_retry_drop_answers("It holds, so KEEP C1", self.LABELS) == {}
 
     def test_a_long_hostile_line_is_read_in_linear_time(self) -> None:
-        import time
-
         lines = [
             "KEEP " + " ".join(f"C{n}" for n in range(40_000)) + " " + "keep " * 40_000,
             ("KEEP C1" + " " * 100_000) * 3 + "x",
             "KEEP C1" + " and" * 100_000 + " x",
         ]
-        started = time.thread_time()
-        for line in lines:
-            read_retry_drop_answers(line, self.LABELS)
-        assert time.thread_time() - started < 2.0
+
+        def read() -> None:
+            for line in lines:
+                read_retry_drop_answers(line, self.LABELS)
+
+        assert_under(read, 2.0, what="three hostile lines")
 
 
 class TestMoreClauseStarts:
@@ -492,8 +493,6 @@ class TestMoreClauseStarts:
         }
 
     def test_every_new_form_is_read_in_linear_time(self) -> None:
-        import time
-
         repeats = 100_000
         lines = [
             "KEEP C1. " * repeats,
@@ -504,11 +503,13 @@ class TestMoreClauseStarts:
             "1. " * repeats,
             "KEEP C1: a" + ". KEEP C1 C2 C3 x" * repeats,
         ]
-        started = time.thread_time()
-        for line in lines:
-            read_retry_drop_answers(line, self.LABELS)
+
+        def read() -> None:
+            for line in lines:
+                read_retry_drop_answers(line, self.LABELS)
+
         # Linear: about a second here; quadratic would take hours.
-        assert time.thread_time() - started < 20.0
+        assert_under(read, 20.0, what="seven hostile lines")
 
 
 class TestTheQuestionShowsWhatTheItemsCite:

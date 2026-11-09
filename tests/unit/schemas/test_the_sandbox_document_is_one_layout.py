@@ -8,9 +8,8 @@ linear in the source's size.
 
 from __future__ import annotations
 
-import gc
 import json
-import time
+from collections.abc import Callable
 from typing import Any
 
 from malspark.schemas.sandbox_document import (
@@ -29,6 +28,7 @@ from malspark.schemas.sandbox_report import (
     SandboxReport,
     cape_report_to_sandbox_report,
 )
+from tests.linear_cost import assert_ratio
 
 
 def _same(a: Any, b: Any) -> bool:
@@ -137,22 +137,17 @@ class TestLinearTime:
         }
 
     @staticmethod
-    def _seconds(source: dict[str, Any]) -> float:
-        """The best of two timed runs, the collector held so no sweep is timed."""
-        best = float("inf")
-        for _ in range(2):
-            gc.collect()
-            gc.disable()
-            try:
-                started = time.thread_time()
-                sandbox_document(
-                    cape_report_to_sandbox_report(source, provider="x", source_format="cape2")
-                )
-                best = min(best, time.thread_time() - started)
-            finally:
-                gc.enable()
-        return best
+    def _laying_out(source: dict[str, Any]) -> Callable[[], Any]:
+        return lambda: sandbox_document(
+            cape_report_to_sandbox_report(source, provider="x", source_format="cape2")
+        )
 
     def test_ten_times_the_keys_costs_at_most_ten_times_the_time(self) -> None:
         small, large = self._source(5_000), self._source(50_000)
-        assert self._seconds(large) <= 10 * self._seconds(small) * 1.5 + 0.05
+        assert_ratio(
+            self._laying_out(small),
+            self._laying_out(large),
+            10 * 1.5,
+            what="50,000 keys",
+            floor=0.05 / (10 * 1.5),
+        )

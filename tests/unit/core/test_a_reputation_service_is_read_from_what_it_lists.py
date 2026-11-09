@@ -29,7 +29,7 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-from tests.linear_cost import FLOOR_SECONDS, cpu_seconds
+from tests.linear_cost import assert_ratio
 
 from malspark.analysis.tool_effects import sends_sample_bytes
 from malspark.core import served_declarations as sd
@@ -265,8 +265,8 @@ def test_the_shape_reading_is_bounded() -> None:
     # a reader that went on to the end would cost twenty-five times as much.
     capped = {"x": dict(list(flat.items())[: 2 * SHAPE_NODES]), "y": listed[: 2 * SHAPE_NODES]}
     whole = {"x": flat, "y": listed}
-    assert cpu_seconds(lambda: read_shape(whole)) < 12 * max(
-        cpu_seconds(lambda: read_shape(capped)), FLOOR_SECONDS
+    assert_ratio(
+        lambda: read_shape(capped), lambda: read_shape(whole), 12, what="the whole document"
     )
     assert len(_shape_nodes({"x": flat})) <= SHAPE_NODES
 

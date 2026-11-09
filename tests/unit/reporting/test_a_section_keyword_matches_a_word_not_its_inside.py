@@ -11,11 +11,12 @@ still matches inside a compound word (``deobfuscation``, ``stackstrings``).
 
 from __future__ import annotations
 
-import time
+from collections.abc import Callable
 
 import pytest
 
 from malspark.reporting.evidence_bundles import _SECTION_CLAIM_KEYWORDS, _filter_claims, mentions
+from tests.linear_cost import assert_scales
 
 
 def _claim(text: str) -> dict[str, str]:
@@ -129,12 +130,13 @@ def test_the_filter_keeps_the_claims_it_matches_in_order() -> None:
 
 
 def test_matching_stays_linear_on_a_hostile_text() -> None:
-    def took(size: int) -> float:
+    def build(size: int) -> Callable[[], None]:
         text = "aB" * size + " rehearsal" * size
-        start = time.thread_time()
-        for _ in range(5):
-            mentions(text, ENCRYPTION + C2)
-        return time.thread_time() - start
 
-    small, large = took(2_000), took(20_000)
-    assert large < small * 30, (small, large)
+        def match() -> None:
+            for _ in range(5):
+                mentions(text, ENCRYPTION + C2)
+
+        return match
+
+    assert_scales(build, 2_000, factor=10, limit=30)

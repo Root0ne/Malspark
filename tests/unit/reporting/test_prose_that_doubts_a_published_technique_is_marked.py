@@ -46,7 +46,7 @@ from malspark.reporting.prose_decisions import (
     statements_against_publication,
 )
 from malspark.reporting.renderers.markdown import MarkdownRenderer
-from tests.linear_cost import TIME_RATIO_LIMIT, calls, cpu_seconds
+from tests.linear_cost import TIME_RATIO_LIMIT, assert_ratio, calls
 
 KEPT = "kept by the judge when asked (The disassembly shows a gate with the 75 and 50 thresholds.)"
 GATES = (
@@ -281,9 +281,8 @@ class TestLinearTime:
         # CPU time, not wall-clock: four times the prose must take under eight
         # times as long, and a quadratic read takes sixteen times. The calls
         # made are held to the same ratio too, which a load cannot move.
-        read(10)()  # one-time costs (caches, lazy imports) are not the read's
         small, large = read(500), read(2_000)
-        assert cpu_seconds(large) < cpu_seconds(small) * TIME_RATIO_LIMIT
+        assert_ratio(small, large, TIME_RATIO_LIMIT, what="2,000 clauses")
         assert calls(large) <= calls(small) * 4 * 1.2 + 100
 
     def test_a_run_of_whitespace_four_times_as_long_costs_under_eight_times(self) -> None:
@@ -294,9 +293,8 @@ class TestLinearTime:
             report = _report(sentence, persistence=sentence)
             return lambda: statements_against_publication(report)
 
-        read(10)()
-        small, large = read(100), read(400)
-        assert cpu_seconds(large) < cpu_seconds(small) * TIME_RATIO_LIMIT
+        small, large = read(400), read(1_600)
+        assert_ratio(small, large, TIME_RATIO_LIMIT, what="a run four times as long")
         assert calls(large) <= calls(small) * 4 * 1.2 + 100
 
     def test_ids_written_without_spaces_four_times_as_many_cost_under_eight_times(self) -> None:
@@ -307,9 +305,8 @@ class TestLinearTime:
             report = _report(sentence, persistence=sentence)
             return lambda: statements_against_publication(report)
 
-        read(1)()
-        small, large = read(10), read(40)
-        assert cpu_seconds(large) < cpu_seconds(small) * TIME_RATIO_LIMIT
+        small, large = read(45), read(180)
+        assert_ratio(small, large, TIME_RATIO_LIMIT, what="9,000 ids")
         assert calls(large) <= calls(small) * 4 * 1.2 + 100
 
 

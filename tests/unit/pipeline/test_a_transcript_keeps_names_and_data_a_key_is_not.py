@@ -14,12 +14,14 @@ them), a digest inside a list and a name ending in long hex read as before.
 from __future__ import annotations
 
 import json
+from collections.abc import Callable
 
 import pytest
 
 from malspark.pipeline import events as ev
 from malspark.pipeline.events import scrub, scrub_keeping_layout
 from tests.credential_shapes import lowercase_body, prefixed_key
+from tests.linear_cost import TIME_RATIO_LIMIT, assert_ratio
 from tests.unit.pipeline.test_live_event_schema import _every_key_shape
 
 KEPT = (
@@ -137,27 +139,28 @@ class TestHostileAnswersCostLinearWork:
         return "".join(f'{{"hex": "{i:08x}{_hex_run(40)}", "x": [' for i in range(count))
 
     @staticmethod
-    def _cost(text: str) -> tuple[float, int]:
-        import time
+    def _peak(text: str) -> int:
         import tracemalloc
 
-        started = time.thread_time()
-        scrub_keeping_layout(text)
-        took = time.thread_time() - started
         tracemalloc.start()
         scrub_keeping_layout(text)
         peak = tracemalloc.get_traced_memory()[1]
         tracemalloc.stop()
-        return took, peak
+        return peak
 
     @pytest.mark.parametrize(
-        ("make", "small"), [("_many_hex", 300), ("_near", 300), ("_nested", 10_000)]
+        ("make", "small"), [("_many_hex", 300), ("_near", 300), ("_nested", 40_000)]
     )
     def test_ten_times_the_input_costs_about_ten_times(self, make: str, small: int) -> None:
         build = getattr(self, make)
-        small_time, small_peak = self._cost(build(small))
-        large_time, large_peak = self._cost(build(small * 10))
-        assert large_time <= max(small_time, 0.01) * 20, (small_time, large_time)
+        small_text, large_text = build(small), build(small * 10)
+        assert_ratio(
+            lambda: scrub_keeping_layout(small_text),
+            lambda: scrub_keeping_layout(large_text),
+            20,
+            what="ten times the input",
+        )
+        small_peak, large_peak = self._peak(small_text), self._peak(large_text)
         assert large_peak <= max(small_peak, 1 << 20) * 15, (small_peak, large_peak)
 
     def test_deep_nesting_and_garbage_are_masked_and_finish(self) -> None:
@@ -182,10 +185,6 @@ _REDOS_UNITS = {
 
 @pytest.mark.parametrize("unit", list(_REDOS_UNITS.values()), ids=list(_REDOS_UNITS))
 def test_a_megabyte_of_a_hostile_unit_costs_in_proportion_to_its_size(unit: str) -> None:
-    from collections.abc import Callable
-
-    from tests.linear_cost import TIME_RATIO_LIMIT, cpu_seconds
-
     def _scrubbed(size: int) -> Callable[[], None]:
         text = unit * (size // len(unit))
 
@@ -195,9 +194,7 @@ def test_a_megabyte_of_a_hostile_unit_costs_in_proportion_to_its_size(unit: str)
 
         return _run
 
-    small = cpu_seconds(_scrubbed(250_000), repeats=3)
-    large = cpu_seconds(_scrubbed(1_000_000), repeats=3)
-    assert large <= max(small, 0.01) * TIME_RATIO_LIMIT, (small, large)
+    assert_ratio(_scrubbed(250_000), _scrubbed(1_000_000), TIME_RATIO_LIMIT, what="a megabyte")
 
 
 _NAME_FORMS = (
@@ -257,17 +254,17 @@ _SPAN_UNITS = {
 
 @pytest.mark.parametrize("unit", list(_SPAN_UNITS.values()), ids=list(_SPAN_UNITS))
 def test_dotted_runs_cost_ten_times_a_tenth(unit: str) -> None:
-    """Best of three at each size, so a busy machine does not decide the ratio."""
-    import time
+    """The two sizes are timed in turn, so a busy machine does not decide the ratio."""
 
-    took = []
-    for size in (100_000, 1_000_000):
+    def scrubbing(size: int) -> Callable[[], None]:
         text = unit * (size // len(unit))
-        best = float("inf")
-        for _ in range(3):
-            started = time.thread_time()
+
+        def run() -> None:
             scrub(text)
             scrub_keeping_layout(text)
-            best = min(best, time.thread_time() - started)
-        took.append(best)
-    assert took[1] <= max(took[0], 0.01) * 12, took
+
+        return run
+
+    # A linear scrub reads about 10 at ten times the text; 15 leaves room for a
+    # runner's noise, and a quadratic scrub reads about 100.
+    assert_ratio(scrubbing(100_000), scrubbing(1_000_000), 15, what="a megabyte")

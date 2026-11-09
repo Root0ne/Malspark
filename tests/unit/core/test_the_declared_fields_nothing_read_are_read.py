@@ -14,12 +14,12 @@
 
 from __future__ import annotations
 
-import time
 from typing import Any
 
 import pytest
 from langchain_core.tools import StructuredTool
 from pydantic import create_model
+from tests.linear_cost import assert_ratio
 
 from malspark.agents.tool_pinning import pin_paths, reads_staged_sample
 from malspark.core.config import MCPServerConfig, Settings
@@ -199,16 +199,11 @@ def test_a_server_s_own_words_are_quoted_in_linear_time() -> None:
 
     tool = _tool("mine")
 
-    def timed(n: int) -> float:
+    def quoting(n: int) -> Any:
         hostile = ("<<x>> 〈 \r\n " * n) + "{{attached:a|b|c}}"
-        start = time.thread_time()
-        undeclared_server_text("mine", hostile, [tool])
-        return time.thread_time() - start
+        return lambda: undeclared_server_text("mine", hostile, [tool])
 
-    timed(1_000)
-    small = min(timed(10_000) for _ in range(3))
-    large = min(timed(100_000) for _ in range(3))
-    assert large < small * 30 + 0.05
+    assert_ratio(quoting(10_000), quoting(100_000), 30, floor=0.05 / 30, what="tenfold words")
 
 
 def test_a_server_s_own_words_hold_no_line_and_no_fence_of_their_own() -> None:

@@ -55,6 +55,7 @@ from malspark.pipeline.routing import (
 )
 from malspark.pipeline.state import AgentArgument
 from malspark.schemas.isr_models import AgentISR, ClaimEvidence
+from tests.linear_cost import assert_ratio
 
 NAMES = ["static", "all_tools_static_r2", "dynamic", "network"]
 
@@ -707,24 +708,15 @@ class TestAnUnknownNameIsNeverQuotedWhole:
 
 class TestTheMentionsOfALineAreReadInLinearTime:
     def test_eight_thousand_mentions_take_about_ten_times_eight_hundred(self) -> None:
-        import time
-
         from malspark.pipeline.debate_facts import _claims_named
 
-        def cost(count: int) -> float:
+        def reading(count: int) -> Any:
             line = "STATIC Claim 1 ALL_TOOLS_STATIC_R2 Claim 2 " * (count // 2)
-            best = float("inf")
-            for _ in range(3):
-                began = time.thread_time()
-                found = _claims_named(line, NAMES)
-                best = min(best, time.thread_time() - began)
-            assert len(found) == count
-            return best
-
-        small, large = cost(800), cost(8000)
+            assert len(_claims_named(line, NAMES)) == count
+            return lambda: _claims_named(line, NAMES)
 
         # Linear is about 10x; the quadratic scan it replaces was about 100x.
-        assert large < 30 * small
+        assert_ratio(reading(8_000), reading(80_000), 30, what="80,000 mentions")
 
     def test_a_name_inside_a_longer_one_is_read_once(self) -> None:
         from malspark.pipeline.debate_facts import _claims_named
@@ -744,22 +736,14 @@ class TestAFieldOfManyNamesIsReadInLinearTime:
     def test_thirty_two_thousand_names_take_about_ten_times_three_thousand_two_hundred(
         self,
     ) -> None:
-        import time
-
-        def cost(count: int) -> float:
+        def reading(count: int) -> Any:
             line = self._line(count)
-            best = float("inf")
-            for _ in range(3):
-                began = time.thread_time()
-                named, note = analysts_to_revise([line], NAMES)
-                best = min(best, time.thread_time() - began)
+            named, note = analysts_to_revise([line], NAMES)
             assert named is None and f"{count} name(s)" in note
-            return best
-
-        small, large = cost(3200), cost(32000)
+            return lambda: analysts_to_revise([line], NAMES)
 
         # Linear is about 10x; the list scans this replaces were about 100x.
-        assert large < 30 * small
+        assert_ratio(reading(3200), reading(32000), 30, what="32000 names")
 
     def test_each_distinct_readable_name_is_quoted_once(self) -> None:
         line = "[analysts: ghidra, Ghidra, GHIDRA, capa, ghidra] STATIC says x. [blocking: y]"

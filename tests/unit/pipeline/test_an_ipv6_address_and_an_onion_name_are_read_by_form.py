@@ -18,6 +18,7 @@ from malspark.pipeline.validation import (
     unpublished_value_violations,
 )
 from malspark.reporting.renderers.markdown import _defanged_text, _names_a_network_value
+from tests.linear_cost import assert_under
 
 V6 = "2001:db8::17"
 ONION = "relay-panel.onion"
@@ -163,36 +164,35 @@ class TestAnOnionNameEndsAtItsTld:
             assert ONION not in _defanged_text(f"It reaches {written}"), written
 
     def test_many_onion_names_are_read_in_linear_time(self) -> None:
-        import time
-
         def name(index: int) -> str:
             alphabet = "abcdefghijklmnopqrstuvwxyz234567"
             return "".join(alphabet[(index >> (5 * k)) % 32] for k in range(16))
 
         text = " ".join(f"{name(i * 7919 + 1)}.onion" for i in range(400_000 // 23))
-        started = time.thread_time()
-        network_values_in(text)
-        _defanged_text(text)
-        assert time.thread_time() - started < 20
+
+        def read() -> None:
+            network_values_in(text)
+            _defanged_text(text)
+
+        assert_under(read, 20, what="400,000 characters of onion names")
 
     def test_one_long_onion_name_of_many_labels_is_read_in_linear_time_and_memory(self) -> None:
-        import time
         import tracemalloc
 
         from malspark.pipeline.validation import _unstated_values
 
         text = "a." * (200_000 // 2) + "onion"
-        tracemalloc.start()
-        try:
-            started = time.thread_time()
+
+        def read() -> None:
             network_values_in(text)
             _unstated_values(text, lambda kind, value: "")
-            took = time.thread_time() - started
+
+        tracemalloc.start()
+        try:
+            read()
             peak = tracemalloc.get_traced_memory()[1]
         finally:
             tracemalloc.stop()
         assert peak < 50_000_000, peak
-        assert took < 20, took
-        started = time.thread_time()
-        _defanged_text(text)
-        assert time.thread_time() - started < 20
+        assert_under(read, 20, what="a name of 100,000 labels")
+        assert_under(lambda: _defanged_text(text), 20, what="defanging 100,000 labels")

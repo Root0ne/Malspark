@@ -12,7 +12,6 @@ text, and raises nothing.
 from __future__ import annotations
 
 import re
-import time
 
 import pytest
 
@@ -29,6 +28,7 @@ from malspark.reporting.models import (
 )
 from malspark.reporting.renderers.html import HtmlRenderer
 from malspark.reporting.renderers.markdown import MarkdownRenderer, _defanged_text
+from tests.linear_cost import assert_under
 
 HOST = "evil.example.com"
 SHA = "a" * 64
@@ -114,12 +114,16 @@ def test_no_payload_is_live_after_the_defanger(payload: str) -> None:
     ],
 )
 def test_text_nested_deep_renders_quickly_as_text(nested: str) -> None:
-    started = time.thread_time()
-    markdown = MarkdownRenderer().render(_report(nested))
-    html = HtmlRenderer().render(_report(nested))
-    elapsed = time.thread_time() - started
+    rendered: list[tuple[str, str]] = []
+    assert_under(
+        lambda: rendered.append(
+            (MarkdownRenderer().render(_report(nested)), HtmlRenderer().render(_report(nested)))
+        ),
+        30,
+        what="the nested text",
+    )
+    markdown, html = rendered[0]
 
-    assert elapsed < 30
     assert "x" in markdown and "x" in html
     assert HOST not in markdown.lower()
 

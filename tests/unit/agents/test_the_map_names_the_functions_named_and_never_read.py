@@ -282,7 +282,7 @@ def test_the_facts_are_linear_in_hostile_input() -> None:
     assert len(named_unread(found.read_from, found, found.said)) == 40
     named = _render((ledger, claims)).split(NAMED_IN_CLAIMS, 1)[1].split("\n", 1)[0]
     assert len(named.split(", ")) == NAMED_UNREAD_SHOWN
-    assert_scales(_build, 150, _render)
+    assert_scales(_build, 240, _render)
 
 
 # Through the real tool loop, under the platform's own settings: the line

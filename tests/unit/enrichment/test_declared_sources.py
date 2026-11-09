@@ -565,4 +565,4 @@ def test_reading_an_answer_is_linear_in_its_size() -> None:
         doc = answer(n)
         return lambda: read_record("domainrep", source, doc)
 
-    assert_scales(read, 2_000, factor=10)
+    assert_scales(read, 3_500, factor=10)

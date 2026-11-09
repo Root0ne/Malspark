@@ -163,20 +163,41 @@ RUN_IDS = [
     "long-number",
     "spaces-quotes",
 ]
+# How many times each text is matched, after a run that ends in "x" and in
+# ":": the pattern reads a run of 4,000 marks in C in a few microseconds, and
+# a run before a colon is read faster still.
+SEARCHES = [
+    (868, 2000),
+    (68, 668),
+    (34, 40),
+    (8, 8),
+    (8, 8),
+    (16, 16),
+    (64, 800),
+    (64, 800),
+    (58, 400),
+    (16, 16),
+    (12, 12),
+    (64, 800),
+    (55, 55),
+    (61, 600),
+]
 
 
 @pytest.mark.parametrize("end", ["x", ":"])
-@pytest.mark.parametrize("run", RUNS, ids=RUN_IDS)
+@pytest.mark.parametrize(("run", "searches"), list(zip(RUNS, SEARCHES, strict=True)), ids=RUN_IDS)
 @pytest.mark.parametrize("label", ["CONFIDENCE", "TECHNIQUE"])
 def test_a_long_run_of_marks_in_an_evidence_value_is_read_in_linear_time(
-    run: Callable[[int], str], label: str, end: str
+    run: Callable[[int], str], searches: tuple[int, int], label: str, end: str
 ) -> None:
     pattern: re.Pattern[str] = base_agent._EVIDENCE_ENDS_INLINE_RE
+    times = searches[end == ":"]
 
     def build(size: int) -> str:
         return "[ev_0001]" + run(size) + label + end
 
-    assert_scales(build, 4000, pattern.match)
+    # Each text is matched ``times`` times so the small run is measurable.
+    assert_scales(build, 4000, lambda text: [pattern.match(text) for _ in range(times)])
 
 
 PLAIN_EVIDENCE_END = re.compile(
@@ -234,7 +255,7 @@ def test_an_evidence_value_of_many_runs_is_read_in_linear_time(
         line = (run(8) + " CONFIDENCE x") * rows
         return f"CLAIM: {SENTENCE}\nEVIDENCE: [ev_0001]{line} CONFIDENCE: 0.9\n"
 
-    assert_scales(build, 400, read_claim_blocks)
+    assert_scales(build, 4000, read_claim_blocks)
 
 
 @pytest.mark.parametrize("end", ["x", ":"])
@@ -243,16 +264,22 @@ def test_an_evidence_value_of_many_runs_is_read_in_linear_time(
     [("_LINE_TECHNIQUE_RE", "TECHNIQUE: a"), ("_BLOCK_TECHNIQUE_LINE_RE", "x TECHNIQUE: a")],
 )
 @pytest.mark.parametrize(
-    "run",
-    [lambda size: " 2) 2)" * size, lambda size: " - -" * size, lambda size: " 1. *" * size],
+    ("run", "searches"),
+    [
+        (lambda size: " 2) 2)" * size, 8),
+        (lambda size: " - -" * size, 7),
+        (lambda size: " 1. *" * size, 13),
+    ],
     ids=["numbers-closed", "space-dashes", "numbered-star"],
 )
 def test_a_long_run_of_numbers_in_a_technique_value_is_read_in_linear_time(
-    name: str, start: str, run: Callable[[int], str], end: str
+    name: str, start: str, run: Callable[[int], str], searches: int, end: str
 ) -> None:
     pattern: re.Pattern[str] = getattr(base_agent, name)
 
     def build(size: int) -> str:
         return start + run(size) + "EVIDENCE" + end
 
-    assert_scales(build, 4000, pattern.search)
+    # The pattern reads a run of 4,000 marks in C in about a millisecond:
+    # each text is searched ``searches`` times so the small run is measurable.
+    assert_scales(build, 4000, lambda text: [pattern.search(text) for _ in range(searches)])

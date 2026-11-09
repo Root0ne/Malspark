@@ -34,6 +34,7 @@ from malspark.agents.tool_fence import excerpt_view, fenced_text
 from malspark.memory.in_memory_store import InMemoryStore
 from malspark.schemas.evidence import build_entry
 from malspark.schemas.isr_models import AgentISR, Artifact, Finding
+from tests.linear_cost import assert_ratio
 from tests.unit.agents.test_a_capped_lead_keeps_the_answers import (
     LEAD_REPORT,
     _lead,
@@ -232,36 +233,54 @@ class TestEr3AChunkSeedIsSettledAndNotWrittenOver:
 
 class TestRw1TheReaderIsLinearInTheClaims:
     @staticmethod
-    def _seconds(claims: int) -> float:
-        """The reader's CPU time over ``claims`` claims: the best of three, the collector off.
-
-        One reading on a shared runner carries whatever else the host did, and
-        a collection that lands inside the larger run is the interpreter's
-        cost, not the reader's; neither belongs in the ratio.
-        """
-        import gc
-
+    def _reading(claims: int) -> Any:
         from malspark.agents.repeat_watch import ClaimRepeatReader
 
         text = "".join(f"CLAIM: c{i}\n---\n```json\n{{}}\n```\n" for i in range(claims))
-        readings = []
-        for _ in range(3):
-            gc.collect()
-            gc.disable()
-            try:
-                started = time.thread_time()
-                ClaimRepeatReader(None).feed(text)
-                readings.append(time.thread_time() - started)
-            finally:
-                gc.enable()
-        return min(readings)
+        return lambda: ClaimRepeatReader(None).feed(text)
 
     def test_four_times_the_claims_cost_about_four_times_the_time(self) -> None:
-        small = self._seconds(8_000)
-        large = self._seconds(32_000)
-        # Linear reads about 4; the copy of the claim set at every fence made
-        # it about 9 (13 s for 32,000 claims).
-        assert large / small < 6.5, f"{small:.2f}s for 8,000 claims, {large:.2f}s for 32,000"
+        # Linear reads about 4.5. At these sizes the claims' hashes stay in
+        # the cache, so the ratio is the reader's and not the memory's. A
+        # reader that compares each claim with every earlier one, at a method
+        # call a pair, reads about 9. The copy of the claim set at every fence
+        # costs a few nanoseconds an element, too little to show in a time at
+        # any size a test can afford: the count below is its measure.
+        assert_ratio(
+            self._reading(3_000), self._reading(12_000), 6.5, what="12,000 claims against 3,000"
+        )
+
+    def test_the_claim_set_is_copied_log_times_per_claim_not_once_per_fence(
+        self, monkeypatch: Any
+    ) -> None:
+        # Every hash in every set a layer of the claim set is given is counted,
+        # whichever path gives it: a freeze's merge, a fork, a peek or any
+        # other. Merging a layer only into one at most twice its size copies
+        # each hash a logarithmic number of times (about 0.65 n log2 n); a copy
+        # of the whole set at every fence copies n**2 / 2, 32 million for 8,000
+        # claims. A set filled in place after it is given (``update``) is not
+        # counted; every path the reader has gives a layer a whole set.
+        import math
+
+        from malspark.agents.repeat_watch import ClaimRepeatReader
+
+        slot = _Seen.__dict__["_own"]
+        copied = 0
+
+        def given(layer: _Seen, hashes: set[bytes]) -> None:
+            nonlocal copied
+            copied += len(hashes)
+            slot.__set__(layer, hashes)
+
+        monkeypatch.setattr(_Seen, "_own", property(slot.__get__, given))
+        claims = 8_000
+        # Fed a claim at a time and counted after each, as an analyst's
+        # stream is: the count reads a peek of the claims so far.
+        reader = ClaimRepeatReader(None)
+        for i in range(claims):
+            reader.feed(f"CLAIM: c{i}\n---\n```json\n{{}}\n```\n")
+            reader.count()
+        assert 0 < copied <= 2 * claims * math.log2(claims), copied
 
 
 class TestRw1ForkingTheClaimSetCopiesNothing:

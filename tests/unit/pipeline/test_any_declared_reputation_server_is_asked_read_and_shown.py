@@ -11,8 +11,7 @@ nothing from the built-in treatment.
 from __future__ import annotations
 
 import json
-import time
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from pathlib import Path
 from typing import Any
 
@@ -36,6 +35,7 @@ from malspark.reporting.builder import _reputation_answers
 from malspark.reporting.models import EvidenceIndexRow, FileHashes, MalwareReport, SampleIdentity
 from malspark.reporting.renderers.markdown import MarkdownRenderer
 from malspark.schemas.evidence import EvidenceCounter, build_entry
+from tests.linear_cost import assert_ratio
 from tests.unit.pipeline.test_triage_pack import _inputs, _write
 from tests.unit.tools.test_binary import _pe
 
@@ -423,22 +423,21 @@ def test_reading_a_hostile_answer_grows_linearly() -> None:
         }
     )
 
-    def timed(n: int) -> float:
+    def reading(n: int) -> Callable[[], None]:
         answer = {
             "a": [{"names": [f"n{i}" for i in range(n)]}],
             "b": {"detections": [f"d{i % 97}" for i in range(n)]},
             "c": [{"x": i} for i in range(n)],
         }
-        started = time.thread_time()
-        text = json.dumps(answer) + "1" * n
-        read = read_answer(facts, output=text, structured=answer, server="x")
-        assert isinstance(read, ReputationRecord) and len(read.detections) == n
-        return time.thread_time() - started
 
-    timed(1_000)
-    small = min(timed(5_000) for _ in range(3))
-    large = min(timed(50_000) for _ in range(3))
-    assert large < max(small, 0.001) * 30
+        def read_it() -> None:
+            text = json.dumps(answer) + "1" * n
+            read = read_answer(facts, output=text, structured=answer, server="x")
+            assert isinstance(read, ReputationRecord) and len(read.detections) == n
+
+        return read_it
+
+    assert_ratio(reading(5_000), reading(50_000), 30, what="50,000 items")
 
 
 # ---------------------------------------------------------------------------

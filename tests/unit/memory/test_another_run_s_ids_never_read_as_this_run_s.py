@@ -11,7 +11,7 @@ a case with no id are untouched, byte for byte.
 
 from __future__ import annotations
 
-import time
+from collections.abc import Callable
 from datetime import UTC, datetime
 from types import SimpleNamespace
 
@@ -32,6 +32,7 @@ from malspark.pipeline.validation import _EVIDENCE_ID_RE
 from malspark.schemas.evidence import ENTRY_ID_JOIN_RE, ENTRY_ID_RE, entry_ids_in
 from malspark.schemas.isr_models import AgentISR, ClaimEvidence
 from malspark.utils.marked_cut import marked_cut
+from tests.linear_cost import assert_ratio
 
 
 def _no_id_of_this_run_s_shape(text: str) -> None:
@@ -77,15 +78,11 @@ class TestTheRenaming:
         assert foreign_quoted_value(text) == quoted_value(text)
 
     def test_linear_in_the_text(self) -> None:
-        def timed(n: int) -> float:
+        def writing(n: int) -> Callable[[], str]:
             text = "ev_0007net:4 ev_" * n + "e" * n + "net:" * n
-            started = time.thread_time()
-            foreign_ids_written_out(text)
-            return time.thread_time() - started
+            return lambda: foreign_ids_written_out(text)
 
-        timed(1_000)
-        small, large = timed(20_000), timed(200_000)
-        assert large < small * 40
+        assert_ratio(writing(20_000), writing(200_000), 40, what="a tenfold text")
 
 
 def _case(summary: str, category: str = "RAT") -> SimpleNamespace:

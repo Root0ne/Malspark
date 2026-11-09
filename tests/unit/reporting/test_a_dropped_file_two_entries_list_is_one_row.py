@@ -13,7 +13,7 @@ from typing import Any
 
 from malspark.reporting.ledger_projection import dynamic_from_ledger
 from malspark.schemas.evidence import build_entry
-from tests.linear_cost import TIME_RATIO_LIMIT, calls, cpu_seconds
+from tests.linear_cost import TIME_RATIO_LIMIT, assert_ratio, calls
 
 DROPPED = [
     {"name": "files/a.dat", "path": "", "size": 607, "type": None, "sha256": "aa" * 32},
@@ -83,5 +83,5 @@ class TestLinearTime:
         # made are held to the same ratio too, which a load cannot move.
         read(50)()  # one-time costs (caches, lazy imports) are not the read's
         small, large = read(4_000), read(16_000)
-        assert cpu_seconds(large) < cpu_seconds(small) * TIME_RATIO_LIMIT
+        assert_ratio(small, large, TIME_RATIO_LIMIT, what="16,000 rows")
         assert calls(large) <= calls(small) * 4 * 1.2 + 100

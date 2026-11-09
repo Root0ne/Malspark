@@ -23,6 +23,7 @@ from malspark.schemas.sandbox_report import cape_report_to_sandbox_report
 from malspark.tools import api_hashes, emulated_strings
 from malspark.tools.api_hashes import resolve_api_hashes
 from malspark.utils.json_cleaner import extract_json, json_decode_error, safe_parse_json
+from tests.linear_cost import TIME_RATIO_LIMIT, assert_ratio
 from tests.unit.tools.synthetic_pe import SyntheticPE
 
 OBJ = '{"verdict": "malicious", "claims": [{"id": 1}], "score": 0.9}'
@@ -177,22 +178,17 @@ def test_tb18_the_disclosure_says_it_arrived() -> None:
 
 
 def test_tb17_a_long_answer_of_prose_markers_is_read_in_linear_time() -> None:
-    import time
-
-    def best_of_three(size: int) -> float:
-        text = "x [1] " * (size // 6)
-        times = []
-        for _ in range(3):
-            started = time.thread_time()
-            extract_json(text)
-            times.append(time.thread_time() - started)
-        return min(times)
-
+    small = "x [1] " * (512 * 1024 // 6)
+    large = "x [1] " * (2 * 1024 * 1024 // 6)
     # Four times the text: a linear reading takes about four times as long, a
     # quadratic one sixteen. A ratio, not a wall-clock bound, so a slow
     # machine does not fail it.
-    small, large = best_of_three(512 * 1024), best_of_three(2 * 1024 * 1024)
-    assert large < 8 * max(small, 1e-3)
+    assert_ratio(
+        lambda: extract_json(small),
+        lambda: extract_json(large),
+        TIME_RATIO_LIMIT,
+        what="2 MB of prose markers",
+    )
 
 
 def test_l1_an_uppercase_hash_is_still_the_runs_own_sample() -> None:

@@ -17,6 +17,7 @@ import struct
 from dataclasses import replace
 from typing import Any
 
+from tests.linear_cost import assert_ratio
 from tests.unit.tools.synthetic_pe import TEXT_RVA, SyntheticPE
 
 from malspark.analysis.anti_analysis import GS_OFF_BOUNDARY, gs_reads, read_findings
@@ -137,15 +138,15 @@ class TestTheCostIsLinear:
     """
 
     @staticmethod
-    def _seconds(call: Any) -> float:
-        import time
-
-        best = float("inf")
-        for _ in range(2):
-            started = time.thread_time()
-            call()
-            best = min(best, time.thread_time() - started)
-        return best
+    def _tenfold(small: Any, large: Any) -> None:
+        """The scan of ``large``, ten times ``small``, under 15 times the scan of ``small``."""
+        assert_ratio(
+            lambda: gs_reads(small),
+            lambda: gs_reads(large),
+            10 * 1.5,
+            what="ten times the code",
+            floor=0.1 / (10 * 1.5),
+        )
 
     @staticmethod
     def _image(text: bytes, ranges: list[tuple[int, int]]) -> Any:
@@ -195,17 +196,16 @@ class TestTheCostIsLinear:
             tracemalloc.stop()
 
     def test_a_50_mb_range_holding_a_million_reads(self) -> None:
-        small, large = self._one_range_of_hits(100_000), self._one_range_of_hits(1_000_000)
-        assert len(large.data) >= 45_000_000
+        whole = self._one_range_of_hits(1_000_000)
+        assert len(whole.data) >= 45_000_000
 
-        rows = gs_reads(large)
+        rows = gs_reads(whole)
 
         assert len(rows) == 1_000_000
         assert not any(GS_OFF_BOUNDARY in row["what"] for row in rows)
-        assert (
-            self._seconds(lambda: gs_reads(large))
-            <= 10 * self._seconds(lambda: gs_reads(small)) * 1.5 + 0.1
-        )
+        # Timed a tenth of that size, where one scan takes under a second: the
+        # pair shows the scan linear as well as the 50 MB one does.
+        self._tenfold(self._one_range_of_hits(20_000), self._one_range_of_hits(200_000))
         traced, peak = self._traced(self._one_range_of_hits(10_000))
         # The rows themselves, and one byte per code byte for the starts.
         assert peak < 1_000 * len(traced) + 2 * 10_000 * len(GS_PEB) * 5
@@ -216,9 +216,6 @@ class TestTheCostIsLinear:
         rows = gs_reads(large)
 
         assert len(rows) == len(range(0, 100_000 * 16 - len(GS_PEB), 64))
-        assert (
-            self._seconds(lambda: gs_reads(large))
-            <= 10 * self._seconds(lambda: gs_reads(small)) * 1.5 + 0.1
-        )
+        self._tenfold(small, large)
         traced, peak = self._traced(small)
         assert peak < 1_000 * len(traced) + 2 * len(small.data)

@@ -9,11 +9,11 @@ A tool whose schema cannot be read loses only its own proposal.
 from __future__ import annotations
 
 import json
-import time
 import tracemalloc
 from typing import Any
 
 import pytest
+from tests.linear_cost import assert_ratio
 
 import malspark.core.declaration_proposals as proposals_module
 from malspark.core.declaration_proposals import (
@@ -152,12 +152,6 @@ def _wide(n: int) -> dict[str, Any]:
     }
 
 
-def _seconds(definition: dict[str, Any]) -> float:
-    start = time.thread_time()
-    propose([definition])
-    return time.thread_time() - start
-
-
 def _peak(definition: dict[str, Any]) -> int:
     tracemalloc.start()
     try:
@@ -167,10 +161,13 @@ def _peak(definition: dict[str, Any]) -> int:
         tracemalloc.stop()
 
 
-def _linear(make: Any, n: int) -> None:
+def _linear(make: Any, n: int, proposals: int = 1) -> None:
     small, large = make(n), make(n * 10)
-    _seconds(small)
-    assert min(_seconds(large) for _ in range(3)) < min(_seconds(small) for _ in range(3)) * 30
+    assert_ratio(
+        lambda: [propose([small]) for _ in range(proposals)],
+        lambda: [propose([large]) for _ in range(proposals)],
+        30,
+    )
     assert _peak(large) < _peak(small) * 30
 
 
@@ -183,20 +180,17 @@ def test_a_deep_schema_is_linear_in_time_and_memory() -> None:
         schema = _nested(depth, ROWS)
         return {"name": "deep", "inputSchema": schema, "outputSchema": schema}
 
-    _linear(_deep, 1_000)
+    # The schema is proposed three times so the small run is measurable
+    # while the memory peak is still taken on a depth of a thousand.
+    _linear(_deep, 1_000, proposals=3)
 
 
 def test_a_huge_description_is_read_in_linear_time() -> None:
-    def _timed(n: int) -> float:
+    def proposing(n: int) -> Any:
         definition = {"name": "talk", "description": "a rule matched the path. " * n}
-        start = time.thread_time()
-        propose([definition])
-        return time.thread_time() - start
+        return lambda: propose([definition])
 
-    _timed(10_000)
-    once = min(_timed(20_000) for _ in range(3))
-    tenfold = min(_timed(200_000) for _ in range(3))
-    assert tenfold < once * 30
+    assert_ratio(proposing(20_000), proposing(200_000), 30, what="a tenfold description")
 
 
 def test_a_wide_schema_proposes_one_argument_per_role_and_no_more() -> None:
@@ -493,16 +487,11 @@ def test_auto_name_prefixes_are_proposed_beyond_the_defaults_only() -> None:
 
 
 def test_a_hostile_answer_text_is_read_in_linear_time() -> None:
-    def _timed(n: int) -> float:
+    def reading(n: int) -> Any:
         text = "a_" * n + "proc_0040 " * n
-        start = time.thread_time()
-        auto_name_prefixes_in([text])
-        return time.thread_time() - start
+        return lambda: auto_name_prefixes_in([text])
 
-    _timed(10_000)
-    once = min(_timed(20_000) for _ in range(3))
-    tenfold = min(_timed(200_000) for _ in range(3))
-    assert tenfold < once * 30
+    assert_ratio(reading(60_000), reading(600_000), 30, what="a tenfold answer")
 
 
 def test_reputation_fields_are_read_by_generic_words() -> None:

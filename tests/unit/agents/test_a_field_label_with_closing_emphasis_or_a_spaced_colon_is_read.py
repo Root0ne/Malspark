@@ -89,48 +89,64 @@ def test_such_a_label_inside_the_sentence_stays_in_the_sentence(sentence: str) -
 
 
 @pytest.mark.parametrize(
-    "name",
+    ("name", "searches"),
     [
-        "_BLOCK_CLAIM_RE",
-        "_TAIL_START_RE",
-        "_BLOCK_EVIDENCE_LABEL_RE",
-        "_EVIDENCE_ENDS_AT_LINE_START_RE",
-        "_LINE_CONFIDENCE_RE",
-        "_LINE_TECHNIQUE_RE",
+        pytest.param("_BLOCK_CLAIM_RE", 28, id="_BLOCK_CLAIM_RE"),
+        pytest.param("_TAIL_START_RE", 135, id="_TAIL_START_RE"),
+        pytest.param("_BLOCK_EVIDENCE_LABEL_RE", 34, id="_BLOCK_EVIDENCE_LABEL_RE"),
+        pytest.param("_EVIDENCE_ENDS_AT_LINE_START_RE", 800, id="_EVIDENCE_ENDS_AT_LINE_START_RE"),
+        pytest.param("_LINE_CONFIDENCE_RE", 160, id="_LINE_CONFIDENCE_RE"),
+        pytest.param("_LINE_TECHNIQUE_RE", 160, id="_LINE_TECHNIQUE_RE"),
     ],
 )
-def test_a_long_run_of_spaces_after_a_label_is_read_in_linear_time(name: str) -> None:
+def test_a_long_run_of_spaces_after_a_label_is_read_in_linear_time(
+    name: str, searches: int
+) -> None:
     pattern: re.Pattern[str] = getattr(base_agent, name)
 
     def build(size: int) -> str:
         line = "\n**TECHNIQUE" + " " * size + "x"
         return "CLAIM: a" + line + "\nEVIDENCE" + " " * size + "x\nCONFIDENCE" + " " * size + "x"
 
-    assert_scales(build, 4000, pattern.search)
+    # A pattern reads the runs in C in well under a millisecond: each text is
+    # searched ``searches`` times so the small run is measurable.
+    assert_scales(build, 4000, lambda text: [pattern.search(text) for _ in range(searches)])
 
 
 def test_the_sentence_reads_many_label_lines_in_linear_time() -> None:
     def build(rows: int) -> str:
         return "CLAIM: a" + "\n**TECHNIQUE  **  x" * rows
 
-    assert_scales(build, 4000, base_agent._BLOCK_CLAIM_RE.search)
+    assert_scales(build, 20_000, base_agent._BLOCK_CLAIM_RE.search)
 
 
 def test_a_long_run_of_spaced_labels_is_read_in_linear_time() -> None:
     def build(rows: int) -> str:
         return f"CLAIM: {SENTENCE}\n" + "EVIDENCE   **   x\n" * rows + "CONFIDENCE: 0.8\n"
 
-    assert_scales(build, 2000, read_claim_blocks)
+    assert_scales(build, 5000, read_claim_blocks)
 
 
-@pytest.mark.parametrize("run", ["\n", "\n  ", " ", "\t\n"])
-def test_a_long_run_of_whitespace_in_the_sentence_is_read_in_linear_time(run: str) -> None:
+@pytest.mark.parametrize(
+    ("run", "searches"),
+    [("\n", 31), ("\n  ", 18), (" ", 95), ("\t\n", 23)],
+    ids=["\n", "\n  ", " ", "\t\n"],
+)
+def test_a_long_run_of_whitespace_in_the_sentence_is_read_in_linear_time(
+    run: str, searches: int
+) -> None:
     # A model stuck repeating newlines writes one; the sentence's end is
     # looked for where the run begins, not at every character of it.
     def build(size: int) -> str:
         return "CLAIM: a" + run * size + "b"
 
-    assert_scales(build, 4000, base_agent._BLOCK_CLAIM_RE.search)
+    # The run is read in C in under a millisecond: each text is searched
+    # ``searches`` times so the small run is measurable.
+    assert_scales(
+        build,
+        4000,
+        lambda text: [base_agent._BLOCK_CLAIM_RE.search(text) for _ in range(searches)],
+    )
 
 
 @pytest.mark.parametrize(
@@ -145,7 +161,9 @@ def test_a_long_run_of_spaces_in_a_technique_value_is_read_in_linear_time(
     def build(size: int) -> str:
         return label + "a" + " " * size + "b"
 
-    assert_scales(build, 4000, pattern.search)
+    # The run is read in C in about ten microseconds: each text is searched
+    # 1,072 times so the small run is measurable.
+    assert_scales(build, 4000, lambda text: [pattern.search(text) for _ in range(1072)])
 
 
 def test_a_technique_value_still_ends_at_a_label_after_spaces() -> None:

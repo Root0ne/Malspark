@@ -15,7 +15,7 @@ Every value is synthetic.
 
 from __future__ import annotations
 
-import time
+from collections.abc import Callable
 from typing import Any
 
 from malspark.analysis.run_summary import RunSummaryBuilder
@@ -28,6 +28,7 @@ from malspark.pipeline.routing import (
     points_unchanged,
 )
 from malspark.pipeline.state import AgentArgument
+from tests.linear_cost import assert_ratio
 
 COUNTS = (
     "[analysts: TRIAGE ANALYST, STATIC] TRIAGE claim 6 says 57 strings and STATIC claim 4 "
@@ -113,13 +114,13 @@ class TestAPointIsWhatItIsAbout:
         assert not same_points([COUNTS], [])
 
     def test_a_hostile_line_is_read_in_linear_time(self) -> None:
-        timings = []
-        for n in (2000, 20000):
+        def keying(n: int) -> Callable[[], Any]:
             line = "[analysts: a] " + " ".join(f"{i} 0x{i:x} ev_{i:04d}" for i in range(n))
-            start = time.thread_time()
-            point_key(line)
-            timings.append(time.thread_time() - start)
-        assert timings[1] < timings[0] * 10 * 4 + 0.5
+            return lambda: point_key(line)
+
+        assert_ratio(
+            keying(12_000), keying(120_000), 10 * 4, floor=0.5 / (10 * 4), what="120000 items"
+        )
 
 
 class TestTheRouter:

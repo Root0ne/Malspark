@@ -18,12 +18,13 @@ import shutil
 import subprocess
 import sys
 import time
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
 
 import pytest
+from tests.linear_cost import assert_ratio
 
 from malspark.analysis import isolation
 from malspark.analysis.disclosure import DISCLOSURE_VERSION, disclosure_lines, disclosure_record
@@ -179,14 +180,11 @@ def test_a_run_record_counts_a_call_handed_the_sample_path() -> None:
 
 
 def test_finding_the_readers_is_linear_in_the_entries() -> None:
-    def timed(count: int) -> float:
+    def reading(count: int) -> Callable[[], Any]:
         entries = [_reads(f"mcp:s{i % 50}") for i in range(count)]
-        started = time.thread_time()
-        sample_readers(STDIO, entries, lambda source: None)
-        return time.thread_time() - started
+        return lambda: sample_readers(STDIO, entries, lambda source: None)
 
-    small, large = timed(2_000), timed(20_000)
-    assert large < max(small, 1e-3) * 40
+    assert_ratio(reading(4_000), reading(40_000), 40, what="40,000 entries")
 
 
 # ---------------------------------------------------------------------------
