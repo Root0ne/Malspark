@@ -168,14 +168,16 @@ _CLAIM_QUANTITY = re.compile(
     + _PIPE
     + "%)"
 )
-# A quoted string, whose words are the sample's: "…", “…”, `…`.
-_QUOTED = re.compile(r'"[^"]*"' + _PIPE + "\u201c[^\u201d]*\u201d" + _PIPE + r"`[^`]*`")
-# A claim number in brackets of its own, or at a bracket's edge: "(claim 11)",
-# "(0x3a24, claim 43)", "(claim 3, the decoder)".
+# A quoted string, whose words are the sample's: "…", “…”, `…`. A straight quote
+# right after a word (a 5" drive) is an inch mark or a stray, and opens none.
+_QUOTED = re.compile(r'(?<!\w)"[^"]*"' + _PIPE + "\u201c[^\u201d]*\u201d" + _PIPE + r"`[^`]*`")
+# A claim number in brackets of its own, or at a bracket's edge, pointed to or
+# not: "(claim 11)", "(see claim 8)", "(0x3a24, claim 43)", "(claim 3, the decoder)".
+_CLAIM_POINTER = r"(?:(?:" + _PIPE.join(("see", "per", "in", r"cf\.")) + r")\s+)?"
 _CLAIM_BRACKETED = (
-    re.compile(r"\s*\(\s*" + _CLAIM_REF + r"\s*\)", re.IGNORECASE),
-    re.compile(r"\s*[,;]\s*" + _CLAIM_REF + r"\s*(?=\))", re.IGNORECASE),
-    re.compile(r"(?<=\()\s*" + _CLAIM_REF + r"\s*[,;]\s*", re.IGNORECASE),
+    re.compile(r"\s*\(\s*" + _CLAIM_POINTER + _CLAIM_REF + r"\s*\)", re.IGNORECASE),
+    re.compile(r"\s*[,;]\s*" + _CLAIM_POINTER + _CLAIM_REF + r"\s*(?=\))", re.IGNORECASE),
+    re.compile(r"(?<=\()\s*" + _CLAIM_POINTER + _CLAIM_REF + r"\s*[,;]\s*", re.IGNORECASE),
 )
 # The words before a claim number that make it one claim of the debate.
 _CLAIM_OWNER = re.compile(
@@ -2044,9 +2046,14 @@ class _Analyst:
         names = agent_names(self.report)
         if not names:
             return None
-        # As written and as a whole token: "win32" names an analyst, "Win32 API" does not.
+        # As written and as a whole token: "win32" names an analyst, "Win32 API" and
+        # "win32.dll" do not.
         return re.compile(
-            r"(?<![\w.-])(?:" + _PIPE.join(re.escape(name) for name in names) + r")(?![\w-])"
+            r"(?<![\w.-])(?:"
+            + _PIPE.join(re.escape(name) for name in names)
+            + r")(?![\w-]"
+            + _PIPE
+            + r"\.\w)"
         )
 
     @staticmethod
