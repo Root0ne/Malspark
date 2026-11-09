@@ -13,7 +13,9 @@ with its mark. Every value is a neutral one.
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from datetime import UTC, datetime
+from functools import partial
 
 import pytest
 
@@ -34,6 +36,7 @@ from malspark.reporting.renderers.analyst import UNPUBLISHED_STATE, _with_unpubl
 from malspark.reporting.renderers.layout import ANALYST, BUNDLE
 from malspark.reporting.renderers.markdown import MarkdownRenderer
 from malspark.schemas.isr_models import judge_kept_note
+from tests.linear_cost import assert_scales, repeated
 
 UNPUBLISHED = "The beacon also reaches 192.0.2.7 on port 80."
 PROCESS = "The ledger holds no listing of 0x5030."
@@ -195,6 +198,26 @@ def test_a_value_standing_nowhere_leaves_its_sentence_out() -> None:
     assert _with_unpublished_state("It contacts 18.8.8.81.", ["8.8.8.8"]) is None
     assert _with_unpublished_state("It contacts notevil.example.com.", ["evil.example.com"]) is None
     assert _with_unpublished_state("It contacts 192.0.2.7.", ["evil.example.com"]) is None
+
+
+@pytest.mark.parametrize(
+    "tail",
+    [
+        # Link openers with no closing bracket, and many sharing one closing bracket
+        # no target follows: each is read once, not each to its closing bracket.
+        lambda size: "[" * size + ".",
+        lambda size: "[a" * size + "] x.",
+    ],
+    ids=["unclosed", "shared-close"],
+)
+def test_link_openers_are_read_in_linear_time(tail: Callable[[int], str]) -> None:
+    assert_scales(
+        lambda size: repeated(
+            partial(_with_unpublished_state, "It contacts 8.8.8.8 " + tail(size), ["8.8.8.8"]),
+            48,
+        ),
+        1000,
+    )
 
 
 def test_a_numeric_confidence_is_worded_and_another_flag_leaves_its_sentence_out() -> None:

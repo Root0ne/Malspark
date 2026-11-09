@@ -91,6 +91,9 @@ if TYPE_CHECKING:
 # Where a pattern that opens with spaces may start: at the first space of a run,
 # never at a later one. A match from a later space is one from the first with
 # fewer spaces taken, so trying each would read the run once per space (T-590).
+# A pattern built on it is read from the start of its text only, never from a
+# later position (``search``, ``match`` or ``finditer`` with a ``pos``): there the
+# lookbehind would see the character before that position and miss a match.
 _RUN_START = r"(?<!\s)"
 # A run of citations written into prose: ``[ev_0004]``, ``[ev_0024][ev_0008]``,
 # ``(ev_0021; ev_0025)``, each group with the space before it.
@@ -174,10 +177,52 @@ _CLAIM_QUANTITY = re.compile(
     + _PIPE
     + "%)"
 )
-# A quoted string, whose words are the sample's: "…", “…”, `…`. A straight quote
-# right after a digit (a 5" drive) is an inch mark, and opens none; one after a
-# prefix (L"…", b"…") opens a literal.
-_QUOTED = re.compile(r'(?<!\d)"[^"]*"' + _PIPE + "\u201c[^\u201d]*\u201d" + _PIPE + r"`[^`]*`")
+
+
+class _NextOf:
+    """Where the first character a pattern matches stands at or after a position, for
+    positions asked in an order that never goes back: each answer holds until a later
+    position passes it, so each part of the text is read once however many openers
+    ask (an opener with no closer after it would otherwise read to the end)."""
+
+    def __init__(self, text: str, chars: str) -> None:
+        self._text = text
+        self._search = re.compile(chars).search
+        self._at = -1
+
+    def __call__(self, start: int) -> int:
+        """The first place at or after ``start``, or the text's length where none is."""
+        if start > self._at:
+            found = self._search(self._text, start)
+            self._at = found.start() if found else len(self._text)
+        return self._at
+
+
+# What opens a quoted string, and what closes each.
+_QUOTE_OPENS = re.compile('["\u201c`]')
+_QUOTE_CLOSES = {'"': '"', "\u201c": "\u201d", "`": "`"}
+
+
+def _quoted_spans(text: str) -> list[tuple[int, int]]:
+    """The quoted strings of ``text``, whose words are the sample's: "…", “…”, `…`, each
+    from its opening mark to the first closing one after it, read from left to right.
+    A straight quote right after a digit (a 5" drive) is an inch mark, and opens none;
+    one after a prefix (L"…", b"…") opens a literal. A mark nothing closes opens none."""
+    closes = {mark: _NextOf(text, re.escape(close)) for mark, close in _QUOTE_CLOSES.items()}
+    spans: list[tuple[int, int]] = []
+    at = 0
+    while found := _QUOTE_OPENS.search(text, at):
+        start, mark = found.start(), found.group()
+        at = start + 1
+        if mark == '"' and start and text[start - 1].isdecimal():
+            continue
+        close = closes[mark](start + 1)
+        if close < len(text):
+            spans.append((start, close + 1))
+            at = close + 1
+    return spans
+
+
 # ... and a prefix ending in a digit (id2"…", u8"…") may open one too, from quotes
 # the reading above leaves unpaired: it starts a token, never with a digit, and
 # never right after a quote (the x3 of 5"x3" closes an inch mark).
@@ -247,7 +292,7 @@ _SLUG = re.compile(r"[^a-z0-9]+")
 class _Shield:
     """The quoted strings of one text, each read as the sample's or as unsure.
 
-    A string :data:`_QUOTED` finds is the sample's. One that only a prefix ending
+    A string :func:`_quoted_spans` finds is the sample's. One that only a prefix ending
     in a digit opens (:data:`_PREFIXED`) is quoted under one reading of its
     quotes and not under the other (``model3" plate`` or ``id2"…"``), so a marker
     inside it is neither the sample's nor the analyst's for sure.
@@ -259,7 +304,7 @@ class _Shield:
 
     @classmethod
     def of(cls, text: str) -> _Shield:
-        plain = [found.span() for found in _QUOTED.finditer(text)]
+        plain = _quoted_spans(text)
         paired = {at for a, b in plain for at in (a, b - 1)}
         spans = [(a, b, True) for a, b in plain]
         for found in _PREFIXED.finditer(text):
@@ -699,9 +744,25 @@ def _url_host(value: str) -> re.Pattern[str]:
     )
 
 
-# A Markdown link, its text and its target: a value in either is written in the
-# link, and the state goes after it.
-_MARKDOWN_LINK = re.compile(r"\[[^\]\n]*\]\([^)\s]*\)")
+def _markdown_links(text: str) -> list[tuple[int, int]]:
+    """The Markdown links of ``text``, its text and its target: a value in either is
+    written in the link, and the state goes after it. A link is ``[``, its text up to
+    the first ``]`` with no line break in it, then ``(`` and its target up to the first
+    ``)`` with no space in it; read from left to right, a link taking what it spans."""
+    text_ends, target_ends = _NextOf(text, r"[\]\n]"), _NextOf(text, r"[)\s]")
+    spans: list[tuple[int, int]] = []
+    at = 0
+    while (start := text.find("[", at)) != -1:
+        at = start + 1
+        close = text_ends(start + 1)
+        if text.startswith("](", close):
+            stop = target_ends(close + 2)
+            if text.startswith(")", stop):
+                spans.append((start, stop + 1))
+                at = stop + 1
+    return spans
+
+
 # What may follow a closing single quote: a space, a clause's or a sentence's
 # punctuation, a bracket, or the end.
 _AFTER_CLOSING_QUOTE = frozenset(".,;:!?)]")
@@ -752,9 +813,9 @@ def _past_open_span(sentence: str, start: int, end: int) -> int:
     close = _single_quoted_close(sentence, start)
     if close != -1:
         return max(end, close + 1)
-    for link in _MARKDOWN_LINK.finditer(sentence):
-        if link.start() < start < link.end():
-            return max(end, link.end())
+    for link_start, link_end in _markdown_links(sentence):
+        if link_start < start < link_end:
+            return max(end, link_end)
     return end
 
 
