@@ -163,47 +163,121 @@ def _rooted(value: str, project_root: Path | None = None) -> tuple[str, bool]:
 # A segment of a path in free text.
 _SEGMENT = r"[\w.@%+~-]+"
 
-# A Windows separator: a slash, or one or more backslashes (an OSError's repr
-# and a JSON-escaped message write each backslash twice).
-_WINDOWS_SEP = r"(?:\\+|/)"
+# A Windows separator: a slash, or a run of backslashes (an OSError's repr and
+# a JSON-escaped message write each backslash twice), read whole so a match
+# never ends inside a run.
+_WINDOWS_SEP = r"(?:\\++|/)"
 # A device or long-path prefix before a drive: ``\\?\`` or ``\\.\``, either
 # written once or with every backslash doubled.
 _DEVICE = r"\\\\(?:\\\\)?[?.]\\\\?"
 # The start of a Windows path: a drive letter, a colon and a separator, after
-# an optional device prefix; or the two backslashes of a UNC path.
-_DRIVE_HEAD = rf"(?:{_DEVICE})?[A-Za-z]:{_WINDOWS_SEP}"
-_UNC_HEAD = r"\\\\(?:\\\\)?"
+# a device prefix, or not after an ASCII letter or digit (``https:/``,
+# ``error:\n`` are not drives) but after anything else (``a.C:\``,
+# ``path:C:\``, ``日本C:\``, a JSON line break ``\nC:\``); or the two
+# backslashes of a UNC path, not after another backslash.
+_DRIVE_HEAD = rf"(?:(?<!\\){_DEVICE}|(?<![A-Za-z0-9])|(?<=\\[nrt]))[A-Za-z]:{_WINDOWS_SEP}"
+_UNC_HEAD = r"(?<!\\)\\\\(?:\\\\)?"
+# A character of a Windows file name: any a name may hold but ``( ) , ; '``,
+# and never the letter that starts another drive (``a.C:\``).
+_WINDOWS_CHAR = r"(?:(?![A-Za-z]:[\\/])[\w.@%+~$!#&^{}\[\]=-])"
+_WINDOWS_MARK = r"[(),;']"
+# A directory of a Windows path: a separator follows it, so its marks are its
+# own, and it may hold up to eight single spaces (``John Smith``).
+_WINDOWS_DIR = (
+    rf"(?:{_WINDOWS_CHAR}|{_WINDOWS_MARK})+"
+    rf"(?:[ \u00a0](?:{_WINDOWS_CHAR}|{_WINDOWS_MARK})+){{0,8}}(?={_WINDOWS_SEP})"
+)
+# The last name of a Windows path: ``( ) , ; '`` only before more of the name
+# (``a(b)``, ``alice's``, ``(1).txt``, ``x,.'y``) that is not dots alone (a
+# name never ends in one), so a mark or a full stop after the path stays
+# outside it.
+_WINDOWS_NAME = (
+    rf"{_WINDOWS_MARK}*{_WINDOWS_CHAR}+"
+    rf"(?:(?:\.*{_WINDOWS_MARK})+\.*(?!\.){_WINDOWS_CHAR}+)*"
+)
+# What follows a Windows path's head. A separator before a quote is the
+# quote's escape in a JSON string (``\"``), never the path's.
+_WINDOWS_TAIL = rf"(?:{_WINDOWS_DIR}{_WINDOWS_SEP}(?!\"))*(?:{_WINDOWS_NAME})?"
+# A path past a server's name: the server, a separator and a name.
+_SERVER_TAIL = (
+    rf"{_WINDOWS_DIR}{_WINDOWS_SEP}(?!\")"
+    rf"(?=[\w(),;'$!#&^{{}}\[\]=@%+~.-]){_WINDOWS_TAIL}"
+)
+# A ``file:`` URL naming a Windows path: a drive (``file:///C:/``) or another
+# machine (``file://server/``, ``file:////server/``, ``file:\\server\``).
+_WINDOWS_URL = rf"file:(?://(?:localhost)?/?[A-Za-z]:{_WINDOWS_SEP}|//(?!/|localhost/)|////|\\\\)"
+# The start of a quoted Windows path.
+_QUOTED_HEAD = rf"(?:{_DRIVE_HEAD}|{_UNC_HEAD}[?.\w]|{_WINDOWS_URL})"
+_CLOSING = "\u2019\u201d\u00bb"
 
 # An absolute path in free text, in either system's form:
 #
-# * a ``file://`` URL, read as its path;
-# * a Windows path that follows a quote and runs to the same quote, spaces
-#   and all (``'C:\Users\John Smith\x'``), as an OSError prints its name;
+# * a ``file://`` URL, read as its path: ``file:///C:/x`` as the drive path,
+#   ``file://server/share``, ``file:////server/share`` and
+#   ``file:\\server\share`` as a path on another machine;
+# * a Windows path that follows a quote (``'``, ``"``, a backtick, ``‘``,
+#   ``“`` or ``«``) and runs to its closing quote, spaces and all
+#   (``'C:\Users\John Smith\x'``), as an OSError prints its name; the
+#   backslash escaping a JSON quote (``\"``) stays outside it;
 # * a Windows path: a drive (``C:\Users\x``, ``D:/a/b``, ``\\?\C:\x``) or a
 #   UNC path (``\\server\share\x``, ``\\?\UNC\server\share``), its
-#   separators single or doubled, not after a word character, a colon, a
-#   dot, a slash or a backslash;
+#   separators single or doubled;
 # * a POSIX path: a slash not after a word character, a colon, a dot or
 #   another slash (a URL's ``//`` and a relative ``a/b`` are not one), then
 #   path characters. A quoted POSIX path stops at a space, as it always has.
 _ABSOLUTE_PATH = re.compile(
-    rf"file://(?:localhost)?(?P<url>/?[A-Za-z]:{_WINDOWS_SEP}[^\s'\"<>()]*|/[^\s'\"<>()]*)"
-    rf"|(?<=(?P<quote>['\"]))(?P<quoted>(?:{_DRIVE_HEAD}|{_UNC_HEAD}[?.\w])"
-    r"(?:(?!(?P=quote))[^\r\n])*)(?=(?P=quote))"
-    rf"|(?<![\w:./\\])(?P<drive>{_DRIVE_HEAD}"
-    rf"(?:{_SEGMENT}(?:{_WINDOWS_SEP}{_SEGMENT})*{_WINDOWS_SEP}?)?)"
-    rf"|(?<![\w:./\\])(?P<unc>{_UNC_HEAD}(?:[?.]{_WINDOWS_SEP})?"
-    rf"{_SEGMENT}(?:{_WINDOWS_SEP}{_SEGMENT})+{_WINDOWS_SEP}?)"
+    rf"file://(?:localhost)?/?(?P<winurl>[A-Za-z]:{_WINDOWS_SEP}{_WINDOWS_TAIL})"
+    rf"|file:(?://(?!/|localhost/)|////|\\\\(?:\\\\)?)"
+    rf"(?P<remote>{_SERVER_TAIL}|{_WINDOWS_NAME})"
+    r"|file://(?:localhost)?(?P<url>/[^\s'\"<>()]*)"
+    rf"|(?<=(?P<quote>['\"`]))(?P<quoted>{_QUOTED_HEAD}"
+    r"(?:(?!\\*(?P=quote))[^\r\n])*)(?=\\*(?P=quote))"
+    rf"|(?<=[\u2018\u201c\u00ab])(?P<typographic>{_QUOTED_HEAD}[^\r\n{_CLOSING}]*)"
+    rf"(?=[{_CLOSING}])"
+    rf"|(?P<drive>{_DRIVE_HEAD}{_WINDOWS_TAIL})"
+    rf"|(?P<unc>{_UNC_HEAD}(?:[?.]{_WINDOWS_SEP})?{_SERVER_TAIL})"
     rf"|(?<![\w:./])(?P<path>/{_SEGMENT}(?:/{_SEGMENT})*/?)"
 )
 
 # A Windows path: a drive letter, a colon and a separator, after an optional
 # device prefix.
-_DRIVE = re.compile(_DRIVE_HEAD)
+_DRIVE = re.compile(rf"(?:{_DEVICE})?[A-Za-z]:{_WINDOWS_SEP}")
 
-# Another Windows path starting inside a quoted span: the span is then not one
-# path, and is masked whole.
-_ANOTHER_HEAD = re.compile(rf"(?<![\w:./\\])(?:{_DRIVE_HEAD}|{_UNC_HEAD}[?.\w])")
+# The Windows path a quoted span starts with, read as an unquoted one is: the
+# rest of the span is words, read again in the form they are written in.
+_SPAN_PATH = re.compile(
+    rf"file://(?:localhost)?/?(?P<url>[A-Za-z]:{_WINDOWS_SEP}{_WINDOWS_TAIL})"
+    rf"|{_DRIVE_HEAD}{_WINDOWS_TAIL}|{_UNC_HEAD}(?:[?.]{_WINDOWS_SEP})?{_SERVER_TAIL}"
+)
+
+# Inside a quoted span, past its own head: another drive, another URL, or a
+# run of backslashes before a name (a UNC or device head) at least twice as
+# long as the span's shortest separator, so a span written with doubled
+# separators is read in its own style.
+_SPAN_LEAD = re.compile(r"(?:file:(?://(?:localhost)?/?|[\\/]*))?\\*(?:[?.]\\*)?(?:[A-Za-z]:)?")
+_ANOTHER_HEAD = re.compile(r"(?:(?<![A-Za-z0-9])|(?<=\\[nrt]))[A-Za-z]:[\\/]|file:[\\/]")
+_BACKSLASHES = re.compile(r"\\+")
+_BACKSLASHES_BEFORE_A_NAME = re.compile(r"(?<!\\)\\{2,}(?=[?.\w])")
+
+
+def _holds_another_path(span: str) -> bool:
+    """Whether a quoted span starting with a Windows path holds another one.
+
+    The span is then not one path, and where each ends cannot be read (a name
+    may hold a space), so it is masked whole rather than shown in part.
+    """
+    lead = _SPAN_LEAD.match(span)
+    end = lead.end() if lead else 0
+    if _ANOTHER_HEAD.search(span, end):
+        return True
+    runs = [len(run.group()) for run in _BACKSLASHES.finditer(span)]
+    if span.startswith("\\"):  # a UNC or device head: two separators' worth
+        runs[0] //= 2
+    width = max(1, min(runs, default=1))
+    return any(
+        len(run.group()) >= 2 * width for run in _BACKSLASHES_BEFORE_A_NAME.finditer(span, end)
+    )
+
 
 # The directories a host keeps its own files under. A path that starts with one
 # of them is the host's layout; anything else that reads as one (an HTTP route,
@@ -229,8 +303,6 @@ def _written_path(written: str) -> PurePosixPath | PureWindowsPath:
     ``\\\\.\\``) is dropped before a drive, and ``\\\\?\\UNC\\`` is read as the
     UNC path it names, so a root written either way is the same root.
     """
-    if written.startswith("/") and _DRIVE.match(written, 1):  # file:///C:/x
-        written = written[1:]
     if not (_DRIVE.match(written) or written.startswith("\\")):
         return PurePosixPath(posixpath.normpath(written))
     unc = written.startswith("\\")
@@ -247,6 +319,23 @@ def _written_path(written: str) -> PurePosixPath | PureWindowsPath:
         else:
             body = "\\" + body
     return PureWindowsPath(ntpath.normpath(body))
+
+
+def _from_root(
+    path: PurePosixPath | PureWindowsPath, root: PurePosixPath | PureWindowsPath
+) -> str | None:
+    """``path`` as written from ``root`` when it is strictly inside it, else ``None``.
+
+    Compared part by part: ``is_relative_to`` walks every parent of the path,
+    each built anew, so a path of many parts (tool output can be hostile)
+    costs the square of its length.
+    """
+    count = len(root.parts)
+    if type(path) is not type(root) or len(path.parts) <= count:
+        return None
+    if type(path)(*path.parts[:count]) != root:
+        return None
+    return type(path)(*path.parts[count:]).as_posix()
 
 
 def host_paths_masked(text: str, project_root: Path | None = None) -> str:
@@ -272,28 +361,38 @@ def host_paths_masked(text: str, project_root: Path | None = None) -> str:
     )
 
     def shown(match: re.Match[str]) -> str:
-        quoted = match.group("quoted")
-        if quoted and _ANOTHER_HEAD.search(quoted, 1):
-            # Two paths, or a path and more words holding one: not one path,
-            # and where each ends cannot be read (a name may hold a space), so
-            # the whole span is masked rather than shown in part.
+        quoted = match.group("quoted") or match.group("typographic")
+        if quoted:
+            return spanned(quoted)
+        if match.group("remote"):  # a path on another machine
             return OUTSIDE_PROJECT
-        path = _written_path(
-            match.group("url")
-            or match.group("quoted")
-            or match.group("drive")
-            or match.group("unc")
-            or match.group("path")
-        )
-        if type(path) is type(root) and path.is_relative_to(root) and path != root:
-            relative = path.relative_to(root).as_posix()
-            # Words in a quoted span after the path come back with it: read
-            # again, so nothing path-shaped in them is left.
-            return _ABSOLUTE_PATH.sub(shown, relative) if quoted else relative
+        windows = match.group("winurl") or match.group("drive") or match.group("unc")
+        path = _written_path(windows or match.group("url") or match.group("path"))
+        relative = _from_root(path, root)
+        if relative is not None:
+            # A name holding a space may run into the words after it; one
+            # that reaches another path is not shown in part.
+            spaced = windows and re.search(r"[ \u00a0]", windows)
+            return OUTSIDE_PROJECT if spaced and _holds_another_path(windows) else relative
         if isinstance(path, PureWindowsPath) or match.group("url"):
             return OUTSIDE_PROJECT
         text = str(path)
         held = any(text == top or text.startswith(top + "/") for top in (*HOST_ROOTS, *parents))
         return OUTSIDE_PROJECT if held else match.group(0)
+
+    def spanned(span: str) -> str:
+        """A quoted span starting with a Windows path, spaces and all.
+
+        Outside the project, or holding a second path, it is masked whole:
+        where each path ends cannot be read (a name may hold a space). A path
+        in the project is shown from the root, and the words after it in the
+        span are read again as written, so nothing path-shaped in them is left.
+        """
+        head = None if _holds_another_path(span) else _SPAN_PATH.match(span)
+        written = head and (head.group("url") or head.group())
+        relative = _from_root(_written_path(written), root) if written else None
+        if head is None or relative is None:
+            return OUTSIDE_PROJECT
+        return relative + _ABSOLUTE_PATH.sub(shown, span[head.end() :])
 
     return _ABSOLUTE_PATH.sub(shown, str(text or ""))

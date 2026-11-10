@@ -23,12 +23,23 @@
   catalogue and its build record, whose catalogue digest now matches the file on Windows.
 - **On any host, a path in Windows form is masked too.** In a lost tool's reason or a rule
   file's load error, a drive path (`C:\Users\...`, `D:/...`, with single or doubled
-  backslashes, as an OSError prints its file name), a UNC path (`\\server\share\...`), a
-  device or long path (`\\?\C:\...`, `\\.\...`) and a `file:///C:/...` URL are shown as
-  "a path outside the project"; a quoted Windows path is masked up to its closing quote, spaces
-  and all. A path inside a Windows checkout is shown from the project root (`data/capa-rules`),
-  as on Linux and macOS. The words alone decide, never the host: text shaped like a Windows path
-  (`x:\d+`, or a guest's path quoted in a tool's error) is masked on a Linux host as well.
+  backslashes, as an OSError prints its file name), a UNC path (`\\server\share\...`,
+  `\\10.0.0.1\c$\...`), a device, volume or long path (`\\?\C:\...`, `\\.\...`,
+  `\\?\Volume{...}\...`) and a `file:///C:/...` URL are shown as "a path outside the
+  project", every name a Windows file name may hold included (`$Recycle.Bin`, `a(b)`,
+  `alice's`, a space inside a directory's name), wherever the path stands: after any character
+  but an ASCII letter or digit (`日本C:\...`, `path:C:\...`, `a.C:\...`), quoted in `'`, `"`,
+  backticks, `‘’`, `“”` or `«»`, or inside a JSON string, which still reads as JSON once
+  masked. A quoted Windows path is masked up to its closing quote, spaces and all, and a
+  quoted span holding a second path is masked whole. A `file://host/...` URL (also
+  `file:////host/...` and `file:\\host\...`) names a path on another machine and is masked
+  too. A path inside a Windows checkout is shown from the project root (`data/capa-rules`), as
+  on Linux and macOS, and a path of many parts is masked in time linear in its length. The
+  words alone decide, never the host, so on a Linux host too, text without a Windows-form path
+  reads as before, and these read as one and are masked: `x:\d+`; a doubled backslash before a
+  word (`\\d+\\s`, `'\\powershell.exe'`), read as a UNC path; a guest's path in a lost tool's
+  reason (`'C:\Windows\System32\cmd.exe'`); a quoted span starting with a Windows path, up to
+  its closing quote; and a `file://host/...` URL.
 - **The rule replay runs on Windows, and reaches no network there either.** The replay's
   network guard lets through the one loopback connection the event loop's socket pair is made
   with where the system has no native pair, and also refuses the connections and datagrams
