@@ -178,18 +178,24 @@ _DEVICE = r"\\\\(?:\\\\)?[?.]\\\\?"
 # backslashes of a UNC path, not after another backslash.
 _DRIVE_START = r"(?:(?<!\\)" + _DEVICE + r"|(?<![A-Za-z0-9])|(?<=\\[nrt]))"
 _DRIVE_HEAD = rf"{_DRIVE_START}[A-Za-z]:{_WINDOWS_SEP}"
-_UNC_HEAD = r"(?<!\\)\\\\(?:\\\\)?"
+# A UNC path starts with backslashes in pairs: two as written, four in a
+# repr or a JSON string, eight in a repr of one.
+_UNC_HEAD = r"(?<!\\)(?:\\\\)++"
+# What separates two names of a path: a slash, or backslashes that do not
+# begin a JSON string's ``\uXXXX`` (after doubled backslashes, the last one
+# may). A path's head keeps ``_WINDOWS_SEP``, so ``C:\ubeef`` opens a path.
+_NAME_SEP = r"(?:\\++(?!u[0-9A-Fa-f]{4})|(?:\\\\)++(?=\\?u[0-9A-Fa-f]{4})|/)"
 # A space inside a name: an ASCII, no-break, thin or other fixed-width space,
 # every space separator but a line's or a paragraph's.
 _WINDOWS_SPACES = " \u00a0\u1680\u2000-\u200a\u202f\u205f\u3000"
 _WINDOWS_SPACE = rf"[{_WINDOWS_SPACES}]"
 # A character of a Windows file name: any Windows does not forbid in one
 # (``< > : " / \ | ? *`` and control characters), but a space and the marks
-# below, and never the letter that starts another drive (``a.C:\``). After a
-# slash or a space, a JSON string's ``\uXXXX`` is the character it escapes,
-# the next of the name: a backslash there separates nothing.
+# below, and never the letter that starts another drive (``a.C:\``). A JSON
+# string's ``\uXXXX`` is the character it escapes wherever it stands in a
+# name; its backslash separates nothing (``_NAME_SEP``).
 _WINDOWS_CHAR = (
-    rf"(?:(?<=[/{_WINDOWS_SPACES}])\\u[0-9A-Fa-f]{{4}}"
+    r"(?:\\u[0-9A-Fa-f]{4}"
     r"|(?![A-Za-z]:[\\/])[^\s<>:\"/\\|?*\x00-\x1f(),;'`\u2019\u201d\u00bb])"
 )
 # A mark a name may hold that also closes words: ``( ) , ; '``, a backtick and
@@ -199,7 +205,7 @@ _WINDOWS_MARK = r"[(),;'`\u2019\u201d\u00bb]"
 # own, and it may hold up to eight single spaces (``John Smith``).
 _WINDOWS_DIR = (
     rf"(?:{_WINDOWS_CHAR}|{_WINDOWS_MARK})+"
-    rf"(?:{_WINDOWS_SPACE}(?:{_WINDOWS_CHAR}|{_WINDOWS_MARK})+){{0,8}}(?={_WINDOWS_SEP})"
+    rf"(?:{_WINDOWS_SPACE}(?:{_WINDOWS_CHAR}|{_WINDOWS_MARK})+){{0,8}}(?={_NAME_SEP})"
 )
 # The last name of a Windows path: a mark only before more of the name
 # (``a(b)``, ``alice's``, ``(1).txt``, ``x,.'y``) that is not dots alone (a
@@ -208,16 +214,14 @@ _WINDOWS_DIR = (
 # The name's own characters: dots only before more of it.
 _WINDOWS_RUN = rf"(?:\.*+(?!\.){_WINDOWS_CHAR})+"
 _WINDOWS_NAME = (
-    rf"{_WINDOWS_MARK}*{_WINDOWS_RUN}"
+    rf"(?:\.*+{_WINDOWS_MARK})*{_WINDOWS_RUN}"
     rf"(?:(?:\.*{_WINDOWS_MARK})+{_WINDOWS_RUN})*"
 )
 # What follows a Windows path's head. A separator before a quote is the
 # quote's escape in a JSON string (``\"``), never the path's.
-_WINDOWS_TAIL = rf"(?:{_WINDOWS_DIR}{_WINDOWS_SEP}(?!\"))*(?:{_WINDOWS_NAME})?"
+_WINDOWS_TAIL = rf"(?:{_WINDOWS_DIR}{_NAME_SEP}(?!\"))*(?:{_WINDOWS_NAME})?"
 # A path past a server's name: the server, a separator and a name.
-_SERVER_TAIL = (
-    rf"{_WINDOWS_DIR}{_WINDOWS_SEP}(?!\")(?={_WINDOWS_CHAR}|{_WINDOWS_MARK}){_WINDOWS_TAIL}"
-)
+_SERVER_TAIL = rf"{_WINDOWS_DIR}{_NAME_SEP}(?!\")(?={_WINDOWS_CHAR}|{_WINDOWS_MARK}){_WINDOWS_TAIL}"
 # A ``file:`` URL naming a Windows path: a drive (``file:///C:/``) or another
 # machine (``file://server/``, ``file:////server/``, ``file:\\server\``).
 # The scheme is read in any case (``File:``, ``FILE:``).

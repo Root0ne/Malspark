@@ -23,7 +23,7 @@
   catalogue and its build record, whose catalogue digest now matches the file on Windows.
 - **On any host, a path in Windows form is masked too.** In a lost tool's reason or a rule
   file's load error, a drive path (`C:\Users\...`, `D:/...`, with single or doubled
-  backslashes, as an OSError prints its file name), a UNC path (`\\server\share\...`,
+  backslashes, as an OSError prints its file name, or doubled again in a repr of its words), a UNC path (`\\server\share\...`,
   `\\10.0.0.1\c$\...`), a device, volume or long path (`\\?\C:\...`, `\\.\...`,
   `\\?\Volume{...}\...`) and a `file:///C:/...` URL are shown as "a path outside the
   project", every name a Windows file name may hold included: any character Windows allows in

@@ -604,6 +604,54 @@ class TestOnlyAHostPathIsMasked:
     ) -> None:
         assert host_paths_masked(f"Wrote {written}{after}") == f"Wrote {OUTSIDE_PROJECT}{after}"
 
+    @pytest.mark.parametrize(
+        ("written", "after"),
+        [
+            ("C:\\a\\.(secret", ") end"),
+            ("C:\\a\\.,bob", " end"),
+            ("C:\\a\\..'bob's", " end"),
+            ("C:\\a\\.;bob.txt", ". End"),
+            ("\\\\srv\\share\\..(bob", "), then"),
+        ],
+    )
+    def test_a_name_that_starts_with_dots_and_a_mark_is_masked_whole(
+        self, written: str, after: str
+    ) -> None:
+        assert host_paths_masked(f"see {written}{after}") == f"see {OUTSIDE_PROJECT}{after}"
+
+    def test_escaped_json_prose_after_a_path_is_kept(self) -> None:
+        # ``json.dumps`` writes each accented letter as an escape; the words
+        # after a path are prose however many of them start with one.
+        prose = "\u00e9t\u00e9 " + " ".join(["\u00e9l\u00e8ve"] * 50) + " \u00c7al\u0131\u015fma"
+        written = json.dumps({"m": f"error C:\\Users\\bob\\a.txt {prose}"})
+        assert "\\u00e9" in written
+        assert json.loads(host_paths_masked(written)) == {"m": f"error {OUTSIDE_PROJECT} {prose}"}
+
+    @pytest.mark.parametrize(
+        "path",
+        [
+            "C:\\Users\\John \u00e9mile\\x",
+            "C:\\Users\\\u00e9mile\\\u00e9t\u00e9\\x",
+            "C:/Users/\u00e9 \u00e9/\u00e9x",
+            "C:\\ubeef\\ucafe\\x",
+        ],
+    )
+    def test_an_escaped_name_inside_a_path_is_masked_with_it(self, path: str) -> None:
+        written = json.dumps({"m": f"open {path}: denied"})
+        assert json.loads(host_paths_masked(written)) == {"m": f"open {OUTSIDE_PROJECT}: denied"}
+
+    @pytest.mark.parametrize(
+        "path",
+        ["\\\\srv\\share\\alice\\x y", "C:\\Users\\alice\\x y", "\\\\?\\C:\\Users\\alice\\x"],
+    )
+    def test_a_repr_of_an_error_s_words_hides_the_path_too(self, path: str) -> None:
+        # An error's words hold its file name's repr; a repr of those words
+        # doubles every backslash again.
+        error = OSError(2, "No such file or directory", path)
+        for written in (repr(str(error)), repr(repr(str(error))), json.dumps(repr(str(error)))):
+            said = host_paths_masked(written)
+            assert "alice" not in said and "srv" not in said, said
+
     def test_any_space_windows_allows_in_a_name_is_inside_it(self) -> None:
         for space in " \u00a0\u1680\u2009\u3000":
             said = host_paths_masked(f"see C:\\Users\\qxa{space}qxb\\tailqxc end")

@@ -116,6 +116,10 @@ def _marked(rng: random.Random, marker: str, banned: str, spaced: bool) -> str:
     before = _segment(rng, banned + " ", False) if rng.random() < 0.4 else ""
     after = _segment(rng, banned + " ", False) if rng.random() < 0.4 else ""
     word = before + marker + after
+    if rng.random() < 0.15:
+        # A name may start with dots and a mark (``.(x)``, ``..'x``, ``.,x``).
+        leads = [lead for lead in (".(", "..'", ".,", "..;") if not set(lead) & set(banned)]
+        word = rng.choice(leads) + word
     if spaced and rng.random() < 0.3:
         word = f"{word} {_segment(rng, banned + ' ', False)}"
     return word
