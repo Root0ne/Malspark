@@ -138,12 +138,19 @@ code alike, "not shown to", "not confirmed" and "no evidence of" among the
 shapes, is held (:func:`body_absences`), and a keep of one is held as a closing
 keep is: on the words of a source stating the same (any passage but its own),
 or on the reason where no source, another passage of the body included, speaks
-of it. It is never left out: a keep a check still refuses after the retry
-stands, and every keep not tied to a source's words is recorded. A closing
+of it. It is never left out, unless the ledger's own lines hold it (below): a
+keep a check still refuses after the retry stands, and every keep not tied to a
+source's words is recorded. A closing
 sentence or a held absence citing an entry whose rows record a value it names
 is shown those rows as a fact that speaks of it (``entry.N``,
 ``reporting.entry_fields``), so a keep on no source is asked again with them; a
 keep quoting them is recorded.
+
+A sentence the ledger's own lines hold (T-600): one denying something of a name
+the run holds (``ledger.N``), one of the limitations naming a failed call a later
+call redid, or saying such a call failed. Its last answer a check refuses, it is
+left out, of the body as of a closing section, and recorded with what holds it;
+the question and every refusal of it say so.
 
 Every step is one pass over the passages and the answer's rows.
 """
@@ -399,7 +406,8 @@ class Passage:
     # absence the body or the ledger may say otherwise of (:func:`body_absences`):
     # each is held, and a keep of one is held as a closing keep is, naming the
     # source it rests on with its words or the reason no source speaks of it; it is
-    # never left out, and a keep not tied to a source's words is recorded (T-580).
+    # never left out, and a keep not tied to a source's words is recorded (T-580),
+    # unless the ledger's own lines hold it (:func:`_held_by_the_ledger`, T-600).
     absences: tuple[str, ...] = ()
     # The held sentences a fact read off the rows of an entry they cite bears on
     # (:func:`_entry_field_passages`): such a fact speaks of each one (T-580).
@@ -2204,11 +2212,19 @@ _WORD_CHARACTER = re.compile(r"\w")
 def _uncited(text: str) -> str:
     """``text`` without its citations (``composer_pro._CITATIONS``): one written between
     two word characters ("QueryHostMode[ev_0109]is not called") leaves a space, so the
-    words around it stay two; any other leaves nothing ("… `QueryHostMode` [ev_0109].")."""
+    words around it stay two; one inside a code span ("`Query[ev_0109]HostMode`"), which
+    is one name, and any other leave nothing ("… `QueryHostMode` [ev_0109].")."""
     from malspark.reporting.composer_pro import _CITATIONS
+
+    # Where each backtick stands: a citation with an odd number of them before it and one
+    # after it stands inside a code span.
+    ticks = [at for at, character in enumerate(text) if character == "`"]
 
     def _cut(match: re.Match[str]) -> str:
         start, end = match.span()
+        before = bisect.bisect_left(ticks, start)
+        if before % 2 and before < len(ticks):
+            return ""
         between = (
             start > 0
             and _WORD_CHARACTER.match(text, start - 1) is not None
@@ -3077,11 +3093,11 @@ def _failure_redone_violation(
     the calls that redid them answered, citing them, or a drop. The same words with a
     citation added are a keep (:func:`repeats_sentence`), so they are no way out.
 
-    ``otherwise``: what the sentence the text answers may do instead in a passage other
-    than a closing one (:func:`_otherwise`), offered beside citing the redo. ``""``: the
-    text answers a sentence of a closing passage, where a keep of a sentence saying a
-    redone call failed is refused: it is told to rewrite citing the calls that redid it,
-    or to drop it.
+    ``otherwise``: what the sentence the text answers may do instead (:func:`_otherwise`),
+    offered beside citing the redo, where a keep of it passes. ``""``: the text answers a
+    sentence of a closing passage where a keep of it is refused (the limitations sentence
+    saying a redone call failed, a closing sentence the ledger's lines hold): it is told to
+    rewrite citing the calls that redid it, or to drop it.
     ``held``: the redone calls the sentence a rewrite replaces is held to; the rewrite
     cites none of the calls that redid ``stale``, some or all of them, and is told the ends
     a keep of that sentence is told, for every call in ``held``."""
@@ -3098,8 +3114,14 @@ def _failure_redone_violation(
         Violation(
             code=FAILURE_REDONE_CODE,
             message=(
-                "it replaces a sentence held to a call that failed and a later call redid "
-                f"({safe_finding_value(said)}) and cites none of the calls that redid it. "
+                (
+                    "it replaces a sentence held to a call that failed and a later call redid "
+                    f"({safe_finding_value(said)}) and cites none of the calls that redid it. "
+                    if len(stale) == 1
+                    else "it replaces a sentence held to calls that failed and later calls "
+                    f"redid ({safe_finding_value(said)}) and cites none of the calls that redid "
+                    "them. "
+                )
                 + _sentence_start(ends)
                 if held
                 else "the rewrite still says a call failed or a reading could not be made, "
@@ -3188,8 +3210,8 @@ def _failure_added_check(
     sentence of the sample's behaviour writes), and only for what the rewrite
     adds: a failure the sentence it replaces did not claim, or a redone call
     it did not name. A rewrite that keeps what the sentence said passes. The finding
-    offers a closing passage's sentence a drop, any other a keep as it passes
-    (:func:`_failure_redone_violation`).
+    offers a closing sentence the ledger's lines hold (:func:`_held_ends`) a drop, any other
+    the keep that passes for it (:func:`_otherwise`, :func:`_failure_redone_violation`).
     """
 
     def _check(rewrite: str, sources: Sequence[str], sentence: str = "") -> list[Violation]:
@@ -3201,7 +3223,8 @@ def _failure_added_check(
         if _SAYS_FAILED.search(sentence):
             before = _stale_calls(sentence, failed, (), broad=False)
             stale = [call for call in stale if call not in before]
-        otherwise = "" if passage.closing else _otherwise(passage, sentence)
+        # A held closing sentence is told its ends (``""``); any other what passes for it.
+        otherwise = "" if _held_ends(passage, sentence) else _otherwise(passage, sentence)
         return _failure_redone_violation(stale, otherwise=otherwise) if stale else []
 
     return _check
@@ -3788,6 +3811,51 @@ def _row_violations(
     return out
 
 
+# What becomes of a sentence the ledger's own lines hold (:func:`_held_by_the_ledger`) whose
+# last answer the checks refuse, as the question and every refusal of an answer for it say:
+# it is left out, in a closing passage and in the body alike (T-600).
+_LEFT_OUT_END = "if the checks refuse its last answer, it is left out of the report"
+
+
+def _held_by_the_ledger(passage: Passage, sentence: str) -> str:
+    """What holds ``sentence`` of ``passage`` to the ledger's own lines (T-600), in the words
+    of the record of one left out: what the ``ledger.N`` facts shown for it hold lines on, the
+    redone calls it names, or a failed call a later call redid that it says failed; ``""``
+    for a sentence none of these holds."""
+    said = []
+    ids = dict(passage.ledger_named).get(sentence, ())
+    if ids:
+        said.append(
+            f"held on what {', '.join(ids)} {'holds' if len(ids) == 1 else 'hold'} lines on"
+        )
+    redos = dict(passage.redone_named).get(sentence, ())
+    if redos:
+        said.append(f"held to the redone calls it names (redone by {' and '.join(redos)})")
+    failed = dict(passage.failure_said).get(sentence, ())
+    if failed:
+        said.append(f"saying a call failed that a later call redid ({' and '.join(failed)})")
+    return "; ".join(said)
+
+
+def _told_the_end(
+    passage: Passage | None, sentence: str | None, found: Sequence[Violation]
+) -> list[Violation]:
+    """``found``, the refusals of an answer for ``sentence`` of ``passage``, each saying what
+    becomes of a sentence the ledger's lines hold when its last answer is refused
+    (:data:`_LEFT_OUT_END`) where it does not say so already; as they are for any other."""
+    if not found or passage is None or sentence is None:
+        return list(found)
+    if not _held_by_the_ledger(passage, sentence):
+        return list(found)
+    end = _sentence_start(_LEFT_OUT_END)
+    return [
+        violation
+        if end[:-1] in violation.message or _LEFT_OUT_END in violation.message
+        else replace(violation, message=f"{violation.message.rstrip()} {end}")
+        for violation in found
+    ]
+
+
 # What a closing sentence held on a name the run holds may do, as the question and every
 # refusal of a keep of it say: the same words with a citation added are a keep
 # (:func:`repeats_sentence`), and a keep of a held sentence is refused.
@@ -3799,8 +3867,8 @@ _HELD_NAME_ENDS = (
 
 
 # What a body sentence held on a name the run holds may do, as the question and every
-# refusal of a keep of it say: a body sentence is never left out, and the fact speaks to
-# it, so a keep names the fact and quotes a row of it naming what the sentence names.
+# refusal of a keep of it say: the fact speaks to it, so a keep names the fact and quotes a
+# row of it naming what the sentence names; one whose last answer is refused is left out.
 _HELD_NAME_BODY_ENDS = (
     'keep it naming that fact, with "quote": words inside one of its rows that name what '
     "the sentence names, copied exactly; or rewrite it in your own words on the lines "
@@ -3878,7 +3946,13 @@ def _held_ends(passage: Passage, sentence: str) -> str:
         )
     if not said:
         return ""
-    return " ".join([f"{said[0]}.", *(_sentence_start(part) for part in said[1:])])
+    return " ".join(
+        [
+            f"{said[0]}.",
+            *(_sentence_start(part) for part in said[1:]),
+            _sentence_start(_LEFT_OUT_END),
+        ]
+    )
 
 
 def _named_body_ends(passage: Passage, sentence: str) -> str:
@@ -3891,7 +3965,8 @@ def _named_body_ends(passage: Passage, sentence: str) -> str:
         return ""
     return (
         f"it names what {safe_finding_value(', '.join(ids))} "
-        f"{'holds' if len(ids) == 1 else 'hold'} lines on: {_HELD_NAME_BODY_ENDS}."
+        f"{'holds' if len(ids) == 1 else 'hold'} lines on: {_HELD_NAME_BODY_ENDS}. "
+        + _sentence_start(_LEFT_OUT_END)
     )
 
 
@@ -3937,12 +4012,18 @@ def _answer_violations(
     where = safe_finding_value(passage.id)
     out: list[Violation] = []
     if row.decision == "drop" and not passage.closing:
+        # A body sentence the ledger's lines hold is left out only where its last answer is
+        # refused (:data:`_LEFT_OUT_END`, which every refusal of it says), never on a drop.
+        held = span is not None and bool(_held_by_the_ledger(passage, span[2]))
         out.append(
             Violation(
                 code=UNKNOWN_PASSAGE_CODE,
                 message=(
-                    f"row {number}: only a sentence of the conclusion or the limitations is "
-                    f"left out; answer the sentence of {where} with keep or rewrite."
+                    f"row {number}: answer the sentence of {where} with keep or rewrite; a "
+                    "drop is answered only for a sentence of the conclusion or the limitations."
+                    if held
+                    else f"row {number}: only a sentence of the conclusion or the limitations "
+                    f"is left out; answer the sentence of {where} with keep or rewrite."
                 ),
                 path=f"{path}.decision",
             )
@@ -4236,7 +4317,8 @@ def _quote_problem(
 ) -> str:
     """What is wrong with a kept closing sentence's quote, or ``""``.
 
-    ``body``: a held absence of the body, never left out, whose quote may state no
+    ``body``: a held absence of the body, left out only where the ledger's own lines hold
+    it (:func:`_held_by_the_ledger`), whose quote may state no
     absence: a keep on the words of a source that speaks of it is the model's reading
     of that source, and is recorded (:func:`absence_keep_reason`, T-580).
 
@@ -5244,9 +5326,9 @@ def agreement_violations(payload: Any, passages: Sequence[Passage]) -> list[Viol
     rewritten: set[tuple[str, int]] = set()
     for index, row in _rows(payload):
         found = _row_violations(row, index, by_id, _sentences)
-        out.extend(found)
         passage = by_id.get(_form(row.passage))
         span = _sentences(passage).span(row.sentence) if passage is not None else None
+        out.extend(_told_the_end(passage, span[2] if span is not None else None, found))
         if passage is not None and span is not None:
             listed.add((passage.id, span[0]))
             # A rewrite whose own finding names the listing is asked about once.
@@ -5372,25 +5454,38 @@ def _rewrite_violations(
 
 
 def rewrites_violations(
-    payload: Any, citable: Sequence[str], items: Any, entries: EntryTexts | None
+    payload: Any,
+    citable: Sequence[str],
+    items: Any,
+    entries: EntryTexts | None,
+    passages: Sequence[Passage] = (),
 ) -> list[Violation]:
-    """Each rewrite's prose findings, its row named in the path."""
+    """Each rewrite's prose findings, its row named in the path; a rewrite of a sentence
+    the ledger's lines hold, among ``passages``, is told what becomes of it (T-600)."""
+    by_id = {passage.id: passage for passage in passages}
+    cut: dict[str, _Sentences] = {}
     out: list[Violation] = []
     for index, row in _rows(payload):
         if row.decision != "rewrite":
             continue
-        for violation in _rewrite_violations(row.rewrite, citable, items, entries):
-            out.append(
-                replace(
-                    violation,
-                    message=(
-                        f"row {safe_finding_value(index + 1)}: "
-                        f"{safe_finding_value(violation.message)}"
-                    ),
-                    sentence="",
-                    path=f"sentences.{index}.rewrite",
-                )
+        found = [
+            replace(
+                violation,
+                message=(
+                    f"row {safe_finding_value(index + 1)}: {safe_finding_value(violation.message)}"
+                ),
+                sentence="",
+                path=f"sentences.{index}.rewrite",
             )
+            for violation in _rewrite_violations(row.rewrite, citable, items, entries)
+        ]
+        passage = by_id.get(_form(row.passage))
+        span = None
+        if found and passage is not None:
+            if passage.id not in cut:
+                cut[passage.id] = _Sentences(passage.text)
+            span = cut[passage.id].span(row.sentence)
+        out.extend(_told_the_end(passage, span[2] if span is not None else None, found))
     return out
 
 
@@ -5552,7 +5647,8 @@ def prompt_text(passages: Sequence[Passage]) -> str:
                 lines.append(
                     f"  [{passage.id}] each of these denies something and names what a "
                     "ledger.N fact shows (an API's call lines, an export, a decoded text); "
-                    + (f"{_HELD_NAME_ENDS}: " if passage.closing else f"{_HELD_NAME_BODY_ENDS}: ")
+                    + (_HELD_NAME_ENDS if passage.closing else _HELD_NAME_BODY_ENDS)
+                    + f"; {_LEFT_OUT_END}: "
                     + "; ".join(
                         f"{quoted_value(sentence)} ({', '.join(ids)})"
                         for sentence, ids in named.items()
@@ -5569,7 +5665,7 @@ def prompt_text(passages: Sequence[Passage]) -> str:
                     + _redone_rewrite(
                         "the call named here" if most == 1 else "the calls named here", most
                     )
-                    + ": "
+                    + f"; {_LEFT_OUT_END}: "
                     + "; ".join(
                         f"{quoted_value(sentence)} (cite {' and '.join(ids)})"
                         for sentence, ids in passage.redone_named
@@ -5673,7 +5769,10 @@ def apply_rows(
     (``_platform_rewrites``). A sentence of a closing passage (the conclusion,
     the limitations) whose rewrite still fails, on a row every source of which it
     may rest on, is left out of the passage and returned with what stood
-    (``DROPPED_CODE``).
+    (``DROPPED_CODE``). A sentence the ledger's own lines hold (:func:`_held_by_the_ledger`)
+    whose answer a check refuses is left out the same way, of a closing passage or of the
+    body, recorded with what holds it and every code refusing the answer (T-600); every
+    other refused answer ends as before.
     """
     by_id = {passage.id: passage for passage in passages}
     payload = _platform_rewrites(payload, by_id)
@@ -5705,8 +5804,37 @@ def apply_rows(
         counts["sentences"] += 1
         passage = by_id.get(_form(row.passage))
         found = _row_violations(row, index, by_id, _sentences)
+        if row.decision == "rewrite":
+            found += _rewrite_violations(row.rewrite, citable, items, entries)
+        span = _sentences(passage).span(row.sentence) if passage is not None else None
+        held = (
+            _held_by_the_ledger(passage, span[2])
+            if found and passage is not None and span is not None
+            else ""
+        )
+        if held and passage is not None and span is not None:
+            # A sentence the ledger's own lines hold whose last answer is refused never
+            # prints as it stood: left out, in a closing passage and in the body alike, and
+            # recorded with what stood, what holds it and every code refusing the answer.
+            taken = spans.setdefault(passage.id, [])
+            if any(span[0] < end and start < span[1] for start, end, _ in taken):
+                counts["not_applied"] += 1
+                continue
+            taken.append((*left_out_span(passage.text, span[0], span[1]), ""))
+            counts["dropped"] += 1
+            why = (
+                ("the ledger says otherwise; " if _ledger_says_otherwise(found) else "")
+                + (
+                    "no rewrite of it passed the checks"
+                    if row.decision == "rewrite"
+                    else f"its last answer, a {row.decision}, was refused"
+                )
+                + f"; {held}"
+            )
+            written.append(_left_out(passage, index, span[2], why, found, every_code=True))
+            continue
         if row.decision == "keep":
-            standing = _sentences(passage).span(row.sentence) if passage is not None else None
+            standing = span
             # A held absence of the body, kept: never left out, counted where its quote
             # passed every check on two or more of its words, else recorded (T-580).
             absent = (
@@ -5742,7 +5870,6 @@ def apply_rows(
                 # refused, is never kept as written: the closing sections state only
                 # what a source backs. Left out, and recorded with what stood and the
                 # refused keep's sources, quote or reason (T-568).
-                span = _sentences(passage).span(row.sentence)
                 taken = spans.setdefault(passage.id, [])
                 if span is None or any(
                     span[0] < end and start < span[1] for start, end, _ in taken
@@ -5817,7 +5944,6 @@ def apply_rows(
                     )
             continue
         if row.decision == "drop":
-            span = _sentences(passage).span(row.sentence) if passage is not None else None
             taken = spans.setdefault(passage.id, []) if passage is not None else []
             if (
                 found
@@ -5832,8 +5958,6 @@ def apply_rows(
             counts["dropped"] += 1
             written.append(_left_out(passage, index, span[2], row.reason, ()))
             continue
-        found += _rewrite_violations(row.rewrite, citable, items, entries)
-        span = _sentences(passage).span(row.sentence) if passage is not None else None
         taken = spans.setdefault(passage.id, []) if passage is not None else []
         if (
             passage is None
@@ -5966,12 +6090,21 @@ def _unbacked(found: Sequence[Violation]) -> bool:
 
 
 def _left_out(
-    passage: Passage, index: int, sentence: str, why: str, found: Sequence[Violation]
+    passage: Passage,
+    index: int,
+    sentence: str,
+    why: str,
+    found: Sequence[Violation],
+    *,
+    every_code: bool = False,
 ) -> Violation:
-    """The record of a closing sentence left out: what stood, and why."""
+    """The record of a sentence left out: what stood, and why, with the codes of ``found``
+    that leave a closing keep out, or with ``every_code``, each code refusing the answer."""
     codes = ", ".join(
         dict.fromkeys(
-            v.code for v in found if v.code in _LEDGER_CODES or v.code == KEEP_UNQUOTED_CODE
+            v.code
+            for v in found
+            if every_code or v.code in _LEDGER_CODES or v.code == KEEP_UNQUOTED_CODE
         )
     )
     return Violation(
@@ -6277,7 +6410,7 @@ async def _ask(
                 AgreementOutput, p, code=SCHEMA_CODE, answer=answer_read[0]
             ),
             lambda p: agreement_violations(p, passages),
-            lambda p: rewrites_violations(p, citable, items, evidence_texts),
+            lambda p: rewrites_violations(p, citable, items, evidence_texts, passages),
         ],
         parse=_parse,
         on_feedback=tally.count,

@@ -1182,8 +1182,11 @@ class _Analyst:
         # The composer's capability bullets where it wrote them; the key
         # findings and the summary paragraph are then the bundle's, but for a
         # finding naming a value printed nowhere else. A bullet or finding a
-        # check flagged whole is the bundle's alone (T-555).
-        findings = [f for f in report.key_findings if not self._flagged_whole(f.text)]
+        # check flagged whole is the bundle's alone (T-555), and one the agreement question
+        # left its only sentence out of is printed nowhere: its record is the bundle's (T-600).
+        findings = [
+            f for f in report.key_findings if f.text.strip() and not self._flagged_whole(f.text)
+        ]
         if bullets:
             findings = [f for f in findings if self._keeps(f.text)]
         else:

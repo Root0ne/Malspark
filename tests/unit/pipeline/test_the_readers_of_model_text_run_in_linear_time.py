@@ -62,6 +62,7 @@ from malspark.reporting.section_agreement import (
     _name_passages,
     _reports_a_claim,
     _said_unread,
+    _uncited,
     _unread_addresses,
     closing_negations,
     name_readings,
@@ -460,6 +461,14 @@ LISTED = [SimpleNamespace(addresses=frozenset({0x1400}), id="listed.1")]
         pytest.param(
             lambda t: carried_values("QueryHostMode" + " " * len(t) + "x"),
             id="the values of a text with a run of spaces",
+        ),
+        pytest.param(
+            lambda t: _uncited("`Query[ev_1]Host` and Mode[ev_2]is " * (len(t) // 35)),
+            id="citations inside and outside code spans",
+        ),
+        pytest.param(
+            lambda t: _uncited("`" + "Query[ev_1]Host " * (len(t) // 16)),
+            id="citations after a code span never closed",
         ),
         pytest.param(_denying_many_names, id="a denial of as many names as the line holds"),
         pytest.param(_names_of_many_sentences, id="the facts of names many sentences deny"),

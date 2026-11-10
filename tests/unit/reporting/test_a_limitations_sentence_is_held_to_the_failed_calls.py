@@ -761,7 +761,9 @@ def test_a_denial_of_its_own_is_about_the_call_before_it(rewrite: str) -> None:
     row = _row(HAIKU8_SENTENCE, sources, _citing_every_redo(rewrite))
     done, _ = _ask(report, ledger, {"sentences": [row]}, {"sentences": [row]})
     _left_out_alone(report, done, body)
-    assert FAILURE_REDONE_CODE in [r["code"] for r in done.tally.unresolved]
+    # The finding names the call the denial is about, with the call that redid it.
+    (finding,) = [r for r in done.tally.unresolved if r["code"] == FAILURE_REDONE_CODE]
+    assert "(ev_0168 by ev_0171)" in finding["message"]
 
 
 def test_a_section_5_rewrite_is_read_by_its_citations() -> None:

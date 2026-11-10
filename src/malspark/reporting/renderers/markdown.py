@@ -588,6 +588,10 @@ class MarkdownRenderer:
         # not headed as if it were: each of its lines names its own voice.
         lines = [_heading(1, "Key findings", REPORT_MODEL if written else PER_ROW), ""]
         for finding in report.key_findings:
+            if not finding.text.strip():
+                # Its only sentence left out by the agreement question, which the
+                # validation findings below list with the reason (T-600): no empty item.
+                continue
             lines.append(
                 _item(
                     _cited(ctx.line(finding.text), finding.evidence_ids, finding.text)
@@ -837,7 +841,11 @@ class MarkdownRenderer:
             lines.append(
                 _step(
                     index,
-                    _cited(f"{ctx.line(step.action)} ({mark})", step.evidence_refs, step.action)
+                    # A step whose only sentence the agreement question left out reads
+                    # "-", as the analyst report prints it (T-600).
+                    _cited(
+                        f"{ctx.line(step.action) or '-'} ({mark})", step.evidence_refs, step.action
+                    )
                     + ctx.cited_row_mark(step)
                     + note,
                 )

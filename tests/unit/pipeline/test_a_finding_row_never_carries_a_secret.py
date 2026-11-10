@@ -382,6 +382,10 @@ CODE_OWNED: dict[tuple[str, str], frozenset[str]] = {
     # finding, under its own name; every other value stays wrapped.
     ("reporting/section_agreement.py", "_answer_violations"): frozenset({"failure_finding"}),
     ("reporting/section_agreement.py", "_row_violations"): frozenset({"failure_finding"}),
+    # A refusal of an answer for a sentence the ledger's lines hold is told what becomes of
+    # it: the finding as built, each value in it wrapped where it was written, and this
+    # module's own sentence (``_LEFT_OUT_END``) after it.
+    ("reporting/section_agreement.py", "_told_the_end"): frozenset({"violation", "end"}),
 }
 
 # A builtin that answers about its argument in this interpreter's own words: a

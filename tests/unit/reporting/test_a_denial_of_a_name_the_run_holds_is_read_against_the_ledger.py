@@ -661,11 +661,12 @@ def test_the_round_is_shown_the_redo_to_cite_and_refuses_an_uncited_keep() -> No
         "  [limitations] each of these names a call that failed and a later call redid, and "
         "cites none of the calls that redid it: a keep of it as written is refused, and the "
         "same words with a citation added are a keep; rewrite it in your own words on what the "
-        f'call named here answered, citing it, or drop it: "{_TRUE}" (cite ev_0107)'
+        "call named here answered, citing it, or drop it; if the checks refuse its last answer, "
+        f'it is left out of the report: "{_TRUE}" (cite ev_0107)'
     ) in text
     ends = (
         "rewrite it in your own words on what ev_0107 answered, citing it, or drop it; the "
-        "same words with a citation added are a keep."
+        f"same words with a citation added are a keep. {_LEFT_OUT}"
     )
     keep = {"sentences": [_keep("limitations", _TRUE, [], "no source speaks of it")]}
     refused = agreement_violations(keep, passages)
@@ -687,7 +688,7 @@ def test_a_sentence_held_to_a_redone_call_ends_as_the_round_is_told() -> None:
     assert "into the same words, which keeps it" in refused.message
     assert refused.message.endswith(
         "rewrite it in your own words on what ev_0107 answered, citing it, or drop it; the "
-        "same words with a citation added are a keep."
+        f"same words with a citation added are a keep. {_LEFT_OUT}"
     )
     # A rewrite in its own words on what the redo answered, citing it, and a drop stand
     # whole: no finding of any kind.
@@ -714,13 +715,14 @@ def test_a_closing_sentence_held_on_a_name_ends_as_the_round_is_told() -> None:
         "(an API's call lines, an export, a decoded text); a keep of it as written is refused, "
         "and the same words with a citation added are a keep; rewrite it in your own words on "
         "the lines shown, citing the entry they come from, saying what the lines show and what "
-        f'stays unknown, or drop it: "{_UNKNOWN}" ({fact.id})'
+        "stays unknown, or drop it; if the checks refuse its last answer, it is left out of the "
+        f'report: "{_UNKNOWN}" ({fact.id})'
     ) in prompt_text(passages)
     ends = (
         f"it names what {fact.id} holds lines on: a keep of it as written is refused, and the "
         "same words with a citation added are a keep; rewrite it in your own words on the "
         "lines shown, citing the entry they come from, saying what the lines show and what "
-        "stays unknown, or drop it."
+        f"stays unknown, or drop it. {_LEFT_OUT}"
     )
     # A keep in any form, and the same words with a citation added, are refused, each
     # told what to do and offered no source to quote.
@@ -857,6 +859,9 @@ _TWO_REDO_ENDS = (
     "it; the same words with a citation added are a keep."
 )
 _FAILED_ENDS = "ewrite it citing ev_0107 and saying what it answered, or drop it."
+# What every refusal of an answer for a held sentence ends with: a refused last answer leaves
+# it out, in a closing passage and in the body alike.
+_LEFT_OUT = "If the checks refuse its last answer, it is left out of the report."
 _LEAVING = "or, leaving it out, give the reason."
 _SLOT_ROW = f"(*_DAT_{SLOT:x})(self,&mode);  /* {SLOT:x} = {CALLED} */"
 _FAILED_ROW = 'ev_0101 ("lift_routine") failed: "no function there"'
@@ -1070,12 +1075,13 @@ def _expected() -> dict[str, dict[str, list[tuple[str, str]]]]:
             "keep quoting": [],
             **dict.fromkeys(_SAME, []),
             "reworded rewrite citing": [],
-            # A body sentence is never left out, and no text offers it.
+            # A drop is answered for a closing sentence alone; a held body sentence whose
+            # last answer is refused is left out by the platform, as every refusal says.
             "drop": [
                 (
                     UNKNOWN_PASSAGE_CODE,
-                    "row 1: only a sentence of the conclusion or the limitations is left out; "
-                    "answer the sentence of introduction with keep or rewrite.",
+                    "row 1: answer the sentence of introduction with keep or rewrite; a drop is "
+                    "answered only for a sentence of the conclusion or the limitations.",
                 ),
                 (UNKNOWN_SOURCE_CODE, _no_source("introduction", leaving=False)),
             ],
@@ -1141,11 +1147,13 @@ def _expected() -> dict[str, dict[str, list[tuple[str, str]]]]:
             ),
             "reworded rewrite citing": [],
             "drop": [],
+            # In the number of the calls it cites no redo of.
             "rewrite citing the failed calls only": [
                 (
                     FAILURE_REDONE_CODE,
-                    f"{_REWRITE_HELD}(ev_0101 by ev_0107; ev_0111 by ev_0112) and cites none of "
-                    f"the calls that redid it. R{_TWO_REDO_ENDS[1:]}",
+                    "row 1: the rewrite of limitations: it replaces a sentence held to calls that "
+                    "failed and later calls redid (ev_0101 by ev_0107; ev_0111 by ev_0112) and "
+                    f"cites none of the calls that redid them. R{_TWO_REDO_ENDS[1:]}",
                 )
             ],
             # Citing a call that redid one of the two, it names the other and the ends of both.
@@ -1216,7 +1224,10 @@ def test_every_answer_to_a_held_sentence_draws_what_the_round_is_told(
         **_OWN_ROWS.get(path, {}),
     }
     found = agreement_violations({"sentences": [{**rows[action], "passage": pid}]}, passages)
-    assert [(v.code, v.message) for v in found] == _EXPECTED[path][action]
+    # Each refusal ends saying what becomes of the sentence if its last answer is refused.
+    assert [(v.code, v.message) for v in found] == [
+        (code, f"{message} {_LEFT_OUT}") for code, message in _EXPECTED[path][action]
+    ]
     # No finding on a held sentence offers a keep where a keep is refused.
     if pid == "limitations":
         assert all("keep the sentence" not in v.message for v in found)
@@ -1231,22 +1242,24 @@ def test_every_answer_to_a_held_sentence_draws_what_the_round_is_told(
             "shows (an API's call lines, an export, a decoded text); keep it naming that fact, "
             'with "quote": words inside one of its rows that name what the sentence names, '
             "copied exactly; or rewrite it in your own words on the lines shown, citing an entry "
-            f'the fact cites: "{_UNKNOWN}" (ledger.1)',
+            "the fact cites; if the checks refuse its last answer, it is left out of the report: "
+            f'"{_UNKNOWN}" (ledger.1)',
         ),
         (
             "held to one redone call",
             "  [limitations] each of these names a call that failed and a later call redid, and "
             "cites none of the calls that redid it: a keep of it as written is refused, and the "
             "same words with a citation added are a keep; rewrite it in your own words on what "
-            f'the call named here answered, citing it, or drop it: "{_TRUE}" (cite ev_0107)',
+            "the call named here answered, citing it, or drop it; if the checks refuse its last "
+            f'answer, it is left out of the report: "{_TRUE}" (cite ev_0107)',
         ),
         (
             "held to two redone calls",
             "  [limitations] each of these names a call that failed and a later call redid, and "
             "cites none of the calls that redid it: a keep of it as written is refused, and the "
             "same words with a citation added are a keep; rewrite it in your own words on what "
-            "the calls named here answered, citing each, or drop it: "
-            f'"{_TWO}" (cite ev_0107 and ev_0112)',
+            "the calls named here answered, citing each, or drop it; if the checks refuse its "
+            f'last answer, it is left out of the report: "{_TWO}" (cite ev_0107 and ev_0112)',
         ),
     ],
 )
@@ -1277,7 +1290,7 @@ def test_a_held_sentence_no_row_lists_is_told_its_own_ends(path: str, ends: str)
     found = agreement_violations({"sentences": []}, passages_of(report(), entries=ledger()))
     (unlisted,) = [v for v in found if v.code == HELD_UNLISTED_CODE]
     assert unlisted.message.endswith(
-        f"List it: {ends} Answer with every row again, this one included."
+        f"List it: {ends} {_LEFT_OUT} Answer with every row again, this one included."
     )
 
 
@@ -1289,7 +1302,8 @@ def test_a_held_sentence_no_row_lists_is_told_its_own_ends(path: str, ends: str)
             _ledger,
             ["failed.1"],
             "Routine 0x5a10 as first lifted [ev_0101] holds no network call at all.",
-            "ev_0101 by ev_0107",
+            "a call that failed and a later call redid (ev_0101 by ev_0107) and cites none of the "
+            "calls that redid it",
             _ONE_REDO_ENDS,
         ),
         (
@@ -1297,7 +1311,8 @@ def test_a_held_sentence_no_row_lists_is_told_its_own_ends(path: str, ends: str)
             _ledger_two,
             ["failed.1", "failed.2"],
             "Routines 0x5a10 [ev_0101] and 0x6100 [ev_0111] as first lifted hold no network call.",
-            "ev_0101 by ev_0107; ev_0111 by ev_0112",
+            "calls that failed and later calls redid (ev_0101 by ev_0107; ev_0111 by ev_0112) and "
+            "cites none of the calls that redid them",
             _TWO_REDO_ENDS,
         ),
     ],
@@ -1312,9 +1327,10 @@ def test_a_rewrite_s_failure_finding_is_never_cut(
         for v in agreement_violations({"sentences": [row]}, passages)
         if v.code == FAILURE_REDONE_CODE
     ]
+    # In the number of its calls, and whole, the end it is left out on included.
     assert finding.message == (
-        f"row 1: the rewrite of limitations: it replaces a sentence held to a call that failed "
-        f"and a later call redid ({said}) and cites none of the calls that redid it. R{ends[1:]}"
+        f"row 1: the rewrite of limitations: it replaces a sentence held to {said}. "
+        f"R{ends[1:]} {_LEFT_OUT}"
     )
     assert len(finding.message) > 200
 
@@ -1345,11 +1361,16 @@ def test_a_rewrite_adding_a_redone_failure_is_told_what_stands_in_its_passage() 
                 quote="Routine 0x5a10 reads a host mode through a slot",
             ),
         ),
-        # A closing passage: dropped instead.
+        # A closing sentence no gate holds: the keep that passes for it, as in the body.
         (
             "conclusion",
-            "Rewrite it citing ev_0107 and saying what it answered, or drop it.",
-            _row(sentence, "drop", [], reason="a later call redid the call it names"),
+            "Cite ev_0107 and say what it answered, or keep the sentence.",
+            _row(
+                sentence,
+                "keep",
+                ["string_resolution"],
+                quote="Routine 0x5a10 reads a host mode through a slot",
+            ),
         ),
     ):
         found = [
@@ -1374,13 +1395,13 @@ def test_a_rewrite_dropping_a_cited_id_of_a_held_sentence_is_told_to_drop_it() -
     )
     (found,) = agreement_violations({"sentences": [row]}, passages)
     assert found.code == REWRITE_DROPS_CITATION_CODE
-    assert found.message.endswith("Keep every id the sentence cites, or drop it.")
+    assert found.message.endswith(f"Keep every id the sentence cites, or drop it. {_LEFT_OUT}")
 
 
 _UNKNOWN_CITED = f"The runtime result of `{CALLED}` is not known [ev_0109]."
 _BODY_KEEP = (
     'or keep it naming ledger.1, with "quote": words inside one of its rows that name what the '
-    "sentence names, copied exactly."
+    f"sentence names, copied exactly. {_LEFT_OUT}"
 )
 
 
