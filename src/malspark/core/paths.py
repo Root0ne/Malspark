@@ -14,6 +14,7 @@ import ntpath
 import os
 import posixpath
 import re
+from dataclasses import dataclass
 from pathlib import Path, PurePath, PurePosixPath, PureWindowsPath
 
 from malspark.core.exceptions import ProjectRootNotFoundError
@@ -181,72 +182,169 @@ _DRIVE_HEAD = rf"{_DRIVE_START}[A-Za-z]:{_WINDOWS_SEP}"
 # A UNC path starts with backslashes in pairs: two as written, four in a
 # repr or a JSON string, eight in a repr of one.
 _UNC_HEAD = r"(?<!\\)(?:\\\\)++"
-# What separates two names of a path: a slash, or backslashes that do not
-# begin a JSON string's ``\uXXXX`` (after doubled backslashes, the last one
-# may). A path's head keeps ``_WINDOWS_SEP``, so ``C:\ubeef`` opens a path.
-_NAME_SEP = r"(?:\\++(?!u[0-9A-Fa-f]{4})|(?:\\\\)++(?=\\?u[0-9A-Fa-f]{4})|/)"
 # A space inside a name: an ASCII, no-break, thin or other fixed-width space,
 # every space separator but a line's or a paragraph's.
 _WINDOWS_SPACES = " \u00a0\u1680\u2000-\u200a\u202f\u205f\u3000"
 _WINDOWS_SPACE = rf"[{_WINDOWS_SPACES}]"
+# One of them that is not the ASCII space: a name may start or end with it
+# (Windows trims no such space), where an ASCII space ends the words.
+_WINDOWS_EDGE_SPACE = rf"[{_WINDOWS_SPACES[1:]}]?"
 # A character of a Windows file name: any Windows does not forbid in one
 # (``< > : " / \ | ? *`` and control characters), but a space and the marks
-# below, and never the letter that starts another drive (``a.C:\``). A JSON
-# string's ``\uXXXX`` is the character it escapes wherever it stands in a
-# name; its backslash separates nothing (``_NAME_SEP``).
-_WINDOWS_CHAR = (
-    r"(?:\\u[0-9A-Fa-f]{4}"
-    r"|(?![A-Za-z]:[\\/])[^\s<>:\"/\\|?*\x00-\x1f(),;'`\u2019\u201d\u00bb])"
-)
+# below, and never the letter that starts another drive (``a.C:\``).
+_WINDOWS_CHAR = r"(?:(?![A-Za-z]:[\\/])[^\s<>:\"/\\|?*\x00-\x1f(),;'`\u2019\u201d\u00bb])"
 # A mark a name may hold that also closes words: ``( ) , ; '``, a backtick and
 # a closing typographic quote.
 _WINDOWS_MARK = r"[(),;'`\u2019\u201d\u00bb]"
-# A directory of a Windows path: a separator follows it, so its marks are its
-# own, and it may hold up to eight single spaces (``John Smith``).
-_WINDOWS_DIR = (
-    rf"(?:{_WINDOWS_CHAR}|{_WINDOWS_MARK})+"
-    rf"(?:{_WINDOWS_SPACE}(?:{_WINDOWS_CHAR}|{_WINDOWS_MARK})+){{0,8}}(?={_NAME_SEP})"
+# What an escaped text writes after the backslashes of an escape that is part
+# of a name: a character by its code (``\u00e9``) or an apostrophe (``\'``).
+_ESCAPED = r"(?:u[0-9A-Fa-f]{4}|')"
+
+
+@dataclass(frozen=True)
+class _Writing:
+    """What follows a Windows path's head, for one way its backslashes are written.
+
+    A text writes a path as it is (``C:\\Users\\x``), or escaped once or more:
+    a repr or a JSON string doubles each backslash and writes a character
+    that is not ASCII as ``\\uXXXX``, and a repr of that doubles them again.
+    So a path's own separators say how to read a backslash inside it: in a
+    path written as it is, every run of backslashes separates two names
+    (``John Smith\\uabcd.txt`` is two names); in a path whose separators are
+    ``width`` backslashes, a shorter run before ``uXXXX`` or an apostrophe is
+    that character, part of the name (the text was escaped after the path
+    was written), and any other run separates. A path written with slashes
+    shows no width, so there any run before ``uXXXX`` or an apostrophe is
+    the character. No run of backslashes ends a path but the one escaping a
+    JSON quote.
+    """
+
+    separator: str
+    char: str
+    mark: str
+
+    @classmethod
+    def of(cls, width: int | None) -> _Writing:
+        """A path whose separators are ``width`` backslashes; ``None`` for slashes."""
+        if width == 1:
+            return cls(r"(?:/?\\++|/)", _WINDOWS_CHAR, _WINDOWS_MARK)
+        run = r"\\++" if width is None else rf"(?<!\\)\\{{1,{width - 1}}}"
+        escape = rf"{run}(?={_ESCAPED})"
+        return cls(
+            rf"(?:/?(?!{escape})\\++|/)",
+            rf"(?:{run}u[0-9A-Fa-f]{{4}}|{_WINDOWS_CHAR})",
+            rf"(?:{run}'|{_WINDOWS_MARK})",
+        )
+
+    @property
+    def directory(self) -> str:
+        """A directory: a separator follows it, so its marks are its own, and it
+        may hold up to eight single spaces (``John Smith``)."""
+        word = rf"(?:{self.char}|{self.mark})+"
+        return (
+            rf"{_WINDOWS_EDGE_SPACE}{word}(?:{_WINDOWS_SPACE}{word}){{0,8}}"
+            rf"{_WINDOWS_EDGE_SPACE}(?={self.separator})"
+        )
+
+    @property
+    def name(self) -> str:
+        """The last name: a mark only before more of the name (``a(b)``,
+        ``alice's``, ``(1).txt``, ``.(x)``) and dots only before more of it (a
+        name never ends in one), so a mark or a full stop after the path
+        stays outside it."""
+        run = rf"(?:\.*+(?!\.){self.char})+"
+        return rf"{_WINDOWS_EDGE_SPACE}(?:\.*+{self.mark})*{run}(?:(?:\.*{self.mark})+{run})*"
+
+    @property
+    def tail(self) -> str:
+        """What follows the head. A separator before a quote is the quote's
+        escape in a JSON string (``\\"``), never the path's."""
+        return rf"(?:{self.directory}{self.separator}(?!\"))*+(?:{self.name})?"
+
+    @property
+    def server(self) -> str:
+        """A path past a server's name: the server, a separator and a name."""
+        return (
+            rf"{self.directory}{self.separator}(?!\")"
+            rf"(?={self.char}|{self.mark}){self.tail}"
+        )
+
+
+_AS_WRITTEN = _Writing.of(1)
+_ESCAPED_ONCE = _Writing.of(2)
+_ESCAPED_TWICE = _Writing.of(4)
+_ESCAPED_MORE = _Writing.of(8)
+_SLASHED = _Writing.of(None)
+# The separator a head ends with, and the writing it shows: one backslash is
+# a path as written, two or three one escaped once, four to seven twice,
+# more than that further still; a slash shows none.
+_BY_SEPARATOR = (
+    (r"\\(?!\\)", _AS_WRITTEN),
+    (r"\\{2,3}(?!\\)", _ESCAPED_ONCE),
+    (r"\\{4,7}(?!\\)", _ESCAPED_TWICE),
+    (r"\\{8,}+", _ESCAPED_MORE),
+    (r"/", _SLASHED),
 )
-# The last name of a Windows path: a mark only before more of the name
-# (``a(b)``, ``alice's``, ``(1).txt``, ``x,.'y``) that is not dots alone (a
-# name never ends in one), so a mark or a full stop after the path stays
-# outside it.
-# The name's own characters: dots only before more of it.
-_WINDOWS_RUN = rf"(?:\.*+(?!\.){_WINDOWS_CHAR})+"
-_WINDOWS_NAME = (
-    rf"(?:\.*+{_WINDOWS_MARK})*{_WINDOWS_RUN}"
-    rf"(?:(?:\.*{_WINDOWS_MARK})+{_WINDOWS_RUN})*"
+# The backslashes a UNC path starts with, in pairs, and the writing they show.
+# In an escaped text one more may follow them: the backslash of the escape
+# the server's name starts with (``\\\\\u00e9tage`` in a JSON string).
+_ESCAPE_NEXT = rf"\\(?={_ESCAPED})"
+_BY_UNC_HEAD = (
+    (r"\\\\(?!\\)", _AS_WRITTEN),
+    (rf"(?:\\\\){{2,3}}(?:(?!\\)|{_ESCAPE_NEXT})", _ESCAPED_ONCE),
+    (rf"(?:\\\\){{4,7}}(?:(?!\\)|{_ESCAPE_NEXT})", _ESCAPED_TWICE),
+    (rf"(?:\\\\){{8,}}+(?:{_ESCAPE_NEXT})?", _ESCAPED_MORE),
 )
-# What follows a Windows path's head. A separator before a quote is the
-# quote's escape in a JSON string (``\"``), never the path's.
-_WINDOWS_TAIL = rf"(?:{_WINDOWS_DIR}{_NAME_SEP}(?!\"))*(?:{_WINDOWS_NAME})?"
-# A path past a server's name: the server, a separator and a name.
-_SERVER_TAIL = rf"{_WINDOWS_DIR}{_NAME_SEP}(?!\")(?={_WINDOWS_CHAR}|{_WINDOWS_MARK}){_WINDOWS_TAIL}"
+
+
+def _after_separator(*, quote_guard: bool = False) -> str:
+    """A head's last separator and the path after it, in the writing it shows."""
+    guard = r"(?!\")" if quote_guard else ""
+    return "(?:" + "|".join(rf"{sep}{guard}{how.tail}" for sep, how in _BY_SEPARATOR) + ")"
+
+
+# A UNC path past its backslashes: an optional device mark (``?`` or ``.``)
+# and its separator, then the server and a name.
+_AFTER_UNC_HEAD = (
+    r"(?<!\\)(?:"
+    + "|".join(rf"{head}(?:[?.]{how.separator})?{how.server}" for head, how in _BY_UNC_HEAD)
+    + ")"
+)
+# A character or a mark a name may start with in any writing, to tell a head
+# from a run of backslashes before something else.
+_ANY_CHAR = rf"(?:\\*+u[0-9A-Fa-f]{{4}}|{_WINDOWS_CHAR})"
 # A ``file:`` URL naming a Windows path: a drive (``file:///C:/``) or another
 # machine (``file://server/``, ``file:////server/``, ``file:\\server\``).
 # The scheme is read in any case (``File:``, ``FILE:``).
 _FILE = r"(?i:file):"
 _WINDOWS_URL = rf"{_FILE}(?://(?:localhost)?/?[A-Za-z]:{_WINDOWS_SEP}|//(?!/|localhost/)|////|\\\\)"
 # The start of a quoted Windows path.
-_QUOTED_HEAD = rf"(?:{_DRIVE_HEAD}|{_UNC_HEAD}(?:[?.]|{_WINDOWS_CHAR})|{_WINDOWS_URL})"
+_QUOTED_HEAD = rf"(?:{_DRIVE_HEAD}|{_UNC_HEAD}(?:[?.]|{_ANY_CHAR})|{_WINDOWS_URL})"
 _OPENING = "\u2018\u201c\u00ab"
 _CLOSING = "\u2019\u201d\u00bb"
+# A machine's name and path in a ``file:`` URL, in the writing its head shows:
+# slashes, two backslashes (as written) or four (escaped once).
+_REMOTE = (
+    rf"(?:(?<=/)(?:{_SLASHED.server}|{_SLASHED.name})"
+    rf"|(?<=:\\\\)(?:{_AS_WRITTEN.server}|{_AS_WRITTEN.name})"
+    rf"|(?<=:\\\\\\\\)(?:{_ESCAPED_ONCE.server}|{_ESCAPED_ONCE.name}))"
+)
 
 # An absolute path in free text, in either system's form:
 #
-# * a ``file://`` URL, read as its path: ``file:///C:/x`` as the drive path,
-#   ``file://server/share``, ``file:////server/share`` and
-#   ``file:\\server\share`` as a path on another machine;
 # * a Windows path that follows a quote (``'``, ``"``, a backtick, ``‘``,
 #   ``“`` or ``«``) and runs to its closing quote, spaces and all
 #   (``'C:\Users\John Smith\x'``), as an OSError prints its name; the
 #   backslash escaping a JSON quote (``\"``) stays outside it;
+# * a ``file://`` URL, read as its path: ``file:///C:/x`` as the drive path,
+#   ``file://server/share``, ``file:////server/share`` and
+#   ``file:\\server\share`` as a path on another machine;
 # * the host's home directory as written in the text, its whole name a path
 #   even where it holds a space (``C:\Users\John Smith``), and the path
 #   after it read as any other;
 # * a Windows path: a drive (``C:\Users\x``, ``D:/a/b``, ``\\?\C:\x``) or a
 #   UNC path (``\\server\share\x``, ``\\?\UNC\server\share``), its
-#   separators single or doubled;
+#   separators written once or escaped;
 # * a POSIX path: a slash not after a word character, a colon, a dot or
 #   another slash (a URL's ``//`` and a relative ``a/b`` are not one), then
 #   path characters. A quoted POSIX path stops at a space, as it always has.
@@ -259,14 +357,13 @@ _BEFORE_HOME = (
     r"(?:(?!(?P=quote))[^\\\r\n]|\\++(?!(?P=quote)))*+)(?=\\*(?P=quote))"
     rf"|(?<=[{_OPENING}])(?P<typographic>{_QUOTED_HEAD}[^\r\n{_OPENING}{_CLOSING}]*+)"
     rf"(?=[{_CLOSING}])"
-    rf"|{_FILE}//(?:localhost)?/?(?P<winurl>[A-Za-z]:{_WINDOWS_SEP}{_WINDOWS_TAIL})"
-    rf"|{_FILE}(?://(?!/|localhost/)|////|\\\\(?:\\\\)?)"
-    rf"(?P<remote>{_SERVER_TAIL}|{_WINDOWS_NAME})"
+    rf"|{_FILE}//(?:localhost)?/?(?P<winurl>[A-Za-z]:{_after_separator()})"
+    rf"|{_FILE}(?://(?!/|localhost/)|////|\\\\(?:\\\\)?)(?P<remote>{_REMOTE})"
     r"|file://(?:localhost)?(?P<url>/[^\s'\"<>()]*)"
 )
 _AFTER_HOME = (
-    rf"(?P<drive>{_DRIVE_HEAD}{_WINDOWS_TAIL})"
-    rf"|(?P<unc>{_UNC_HEAD}(?:[?.]{_WINDOWS_SEP})?{_SERVER_TAIL})"
+    rf"(?P<drive>{_DRIVE_START}[A-Za-z]:{_after_separator()})"
+    rf"|(?P<unc>{_AFTER_UNC_HEAD})"
     rf"|(?<![\w:./])(?P<path>/{_SEGMENT}(?:/{_SEGMENT})*/?)"
 )
 
@@ -294,7 +391,7 @@ def _home_literal(home: str) -> str:
     body = "".join(rf"{_WINDOWS_SEP}(?i:{re.escape(name)})" for name in names)
     return (
         rf"{head}{body}(?!(?:\.|{_WINDOWS_MARK})*+(?!\.){_WINDOWS_CHAR})"
-        rf"(?:{_WINDOWS_SEP}(?!\"){_WINDOWS_TAIL})?"
+        rf"{_after_separator(quote_guard=True)}?"
     )
 
 
@@ -311,8 +408,8 @@ _DRIVE = re.compile(rf"(?:{_DEVICE})?[A-Za-z]:{_WINDOWS_SEP}")
 # The Windows path a quoted span starts with, read as an unquoted one is: the
 # rest of the span is words, read again in the form they are written in.
 _SPAN_PATH = re.compile(
-    rf"{_FILE}//(?:localhost)?/?(?P<url>[A-Za-z]:{_WINDOWS_SEP}{_WINDOWS_TAIL})"
-    rf"|{_DRIVE_HEAD}{_WINDOWS_TAIL}|{_UNC_HEAD}(?:[?.]{_WINDOWS_SEP})?{_SERVER_TAIL}"
+    rf"{_FILE}//(?:localhost)?/?(?P<url>[A-Za-z]:{_after_separator()})"
+    rf"|{_DRIVE_START}[A-Za-z]:{_after_separator()}|{_AFTER_UNC_HEAD}"
 )
 
 # Inside a quoted span, past its own head: another drive, another URL, or a
@@ -323,7 +420,7 @@ _SPAN_LEAD = re.compile(rf"(?:{_FILE}(?://(?:localhost)?/?|[\\/]*))?\\*(?:[?.]\\
 _ANOTHER_HEAD = re.compile(rf"(?:(?<![A-Za-z0-9])|(?<=\\[nrt]))[A-Za-z]:[\\/]|{_FILE}[\\/]")
 _BACKSLASHES = re.compile(r"\\+")
 _SPACE = re.compile(_WINDOWS_SPACE)
-_BACKSLASHES_BEFORE_A_NAME = re.compile(rf"(?<!\\)\\{{2,}}(?=[?.]|{_WINDOWS_CHAR})")
+_BACKSLASHES_BEFORE_A_NAME = re.compile(rf"(?<!\\)\\{{2,}}(?=[?.]|{_ANY_CHAR})")
 
 
 def _holds_another_path(span: str) -> bool:

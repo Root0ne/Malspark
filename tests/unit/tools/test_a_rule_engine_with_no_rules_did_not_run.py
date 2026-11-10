@@ -652,6 +652,51 @@ class TestOnlyAHostPathIsMasked:
             said = host_paths_masked(written)
             assert "alice" not in said and "srv" not in said, said
 
+    @pytest.mark.parametrize(
+        "written",
+        [
+            "C:\\Users\\John Smith\\ucafe.txt",
+            "C:\\Users\\John Smith\\uabcd1\\notes",
+            "\\\\srv\\u1234",
+            "\\\\srv\\sh\\a b\\u9575x",
+            "\\\\?\\UNC\\srv\\sh\\John Smith\\ud55Ex",
+            "\\\\.\\pipe\\a b\\uB1F5x\\ua7ef.txt",
+        ],
+    )
+    def test_a_name_that_reads_like_an_escape_is_a_name_in_a_path_written_as_it_is(
+        self, written: str
+    ) -> None:
+        # One backslash between names: the text is not escaped, so ``\uabcd``
+        # is a separator and a name, and the directory before it keeps its space.
+        assert host_paths_masked(f"open {written} denied") == f"open {OUTSIDE_PROJECT} denied"
+
+    def test_the_home_directory_before_such_a_name_is_still_one_path(self) -> None:
+        home = PureWindowsPath(r"C:\Users\John Smith")
+        said = host_paths_masked("open C:\\Users\\John Smith\\u1234 x", Path(r"D:\proj"), home)
+        assert said == f"open {OUTSIDE_PROJECT} x"
+
+    @pytest.mark.parametrize(
+        "text",
+        [
+            # a repr of a JSON string, a repr of a repr, JSON in JSON
+            repr(json.dumps({"m": "open C:/Users/alice/'b/AppData x"})),
+            repr(repr("open file:///C:/Users/alice/'b/c d\u00e9 x")),
+            json.dumps({"m": json.dumps({"m": "open C:/d/\u201dx.alice/\u0143\u01ddbob/share x"})}),
+            json.dumps({"m": repr("open C:\\Users\\\u00e9 alice\\x: denied")}),
+            json.dumps({"e": "cannot open \\\\\\\\srv\\\\share\\\\a \u65e5 b\\\\alice"}),
+            json.dumps({"e": "cannot open \\\\\u00e9tage\\share\\alice x"}),
+            json.dumps({"e": json.dumps("cannot open \\\\\u00e9tage\\share\\alice x")}),
+        ],
+    )
+    def test_a_path_escaped_more_than_once_is_masked_whole(self, text: str) -> None:
+        said = host_paths_masked(text)
+        assert "alice" not in said and "bob" not in said, said
+
+    @pytest.mark.parametrize("space", ["\u00a0", "\u2009", "\u202f"])
+    def test_a_name_may_start_or_end_with_a_space_that_is_not_ascii(self, space: str) -> None:
+        for written in (f"C:/Users/qxa{space}/qxb/x", f"C:\\Users\\{space}qxa\\{space}qxb"):
+            assert host_paths_masked(f"see {written} end") == f"see {OUTSIDE_PROJECT} end"
+
     def test_any_space_windows_allows_in_a_name_is_inside_it(self) -> None:
         for space in " \u00a0\u1680\u2009\u3000":
             said = host_paths_masked(f"see C:\\Users\\qxa{space}qxb\\tailqxc end")
