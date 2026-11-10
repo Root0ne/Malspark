@@ -376,10 +376,12 @@ CODE_OWNED: dict[tuple[str, str], frozenset[str]] = {
     ("pipeline/validation.py", "analyst_repeated_violation"): frozenset(
         {"answer", "chars", "begun", "distinct", "repeated", "margin", "streamed"}
     ),
-    # A refused closing keep names the finding of the passage's own failure check
-    # (``_failure_redone_violation``), whose every value is wrapped where it is
-    # written: wrapping it again would cut off what it says to do.
-    ("reporting/section_agreement.py", "_answer_violations"): frozenset({"violation"}),
+    # A refused closing keep, and a rewrite, name the finding of the passage's own
+    # failure check (``_failure_redone_violation``), whose every value is wrapped where
+    # it is written: wrapping it again would cut off what it says to do. Only that
+    # finding, under its own name; every other value stays wrapped.
+    ("reporting/section_agreement.py", "_answer_violations"): frozenset({"failure_finding"}),
+    ("reporting/section_agreement.py", "_row_violations"): frozenset({"failure_finding"}),
 }
 
 # A builtin that answers about its argument in this interpreter's own words: a

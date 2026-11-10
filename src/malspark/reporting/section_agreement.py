@@ -427,6 +427,10 @@ class Passage:
     # or cite (:func:`redone_calls_named`), each with what a keep must cite: for each such
     # call, one of the calls that redid it (:func:`_redo_choices`, T-600).
     redone_named: tuple[tuple[str, tuple[str, ...]], ...] = ()
+    # The limitations sentences saying a call failed that a later call redid, which the
+    # paragraph's failure check refuses as kept (:func:`_failure_redone_calls`), each with
+    # the calls that redid those calls, one choice each (:func:`_redo_choices`).
+    failure_said: tuple[tuple[str, tuple[str, ...]], ...] = ()
 
 
 def _ids(*sources: Any) -> frozenset[str]:
@@ -720,12 +724,19 @@ def passages_of(
         # write kind words ("decompiled or disassembled"): it is read by its
         # citations alone.
         added = _failure_added_check(limited)
+        added_closing = _failure_added_check(limited, closing=True)
         cited = _failure_cited_check(limited)
         for passage in (*coded, *uncoded):
             if passage.id == "limitations":
                 continue
             if _writable(passage) and passage.sourced_check is None:
-                passage.sourced_check = cited if passage.kind == SECTION_5 else added
+                passage.sourced_check = (
+                    cited
+                    if passage.kind == SECTION_5
+                    else added_closing
+                    if passage.closing
+                    else added
+                )
         uncoded[:] = [p for p in uncoded if p.id != "limitations"]
         uncoded.extend(limitations)
     facts.extend(limitation_facts)
@@ -3031,20 +3042,27 @@ def _failure_cited_check(
 
 
 def _failure_redone_violation(
-    stale: Sequence[FailedCall], says_failed: bool = True
+    stale: Sequence[FailedCall], says_failed: bool = True, *, closing: bool = False
 ) -> list[Violation]:
     """The finding on a text naming calls a later call redid: one saying a call failed is
     told the call was redone; one held only by the calls it names
     (:func:`redone_calls_named`) is told what it may do: a rewrite in its own words on what
     the calls that redid them answered, citing them, or a drop. The same words with a
-    citation added are a keep (:func:`repeats_sentence`), so they are no way out."""
+    citation added are a keep (:func:`repeats_sentence`), so they are no way out.
+
+    ``closing``: the text answers a sentence of a closing passage, where a keep of a
+    sentence saying a redone call failed is refused: it is told to rewrite citing the
+    calls that redid it, or to drop it. Elsewhere the sentence it replaces may be kept."""
     said = "; ".join(f"{call.entry} by {', '.join(call.redone_by)}" for call in stale)
     choices = _redo_choices(stale)
     return [
         Violation(
             code=FAILURE_REDONE_CODE,
             message=(
-                "the rewrite still says a call failed or a reading could not be made, but "
+                "it says a call failed or a reading could not be made, while a later call "
+                f"redid it ({safe_finding_value(said)}). " + _sentence_start(_failed_ends(choices))
+                if says_failed and closing
+                else "the rewrite still says a call failed or a reading could not be made, but "
                 f"a later call redid it ({safe_finding_value(said)}). Cite the call that "
                 "redid it and say what it answered, or keep the sentence."
                 if says_failed
@@ -3072,30 +3090,40 @@ def _failure_redone_check(
     sentences are held to (:func:`redone_calls_named`), the ones the question
     names for it. ``facts`` are the facts shown, read when the check runs.
     """
-    by_entry = {call.entry.lower(): call for call in failed}
 
     def _check(rewrite: str, sources: Sequence[str], sentence: str = "") -> list[Violation]:
-        says_failed = bool(_SAYS_FAILED.search(rewrite))
-        if not says_failed:
-            # Held by the calls its sentences name or cite alone: those, and no other, are
-            # what it is told to cite, as the question names them.
-            named = _redone_calls_in(rewrite, failed, bases)
-            return _failure_redone_violation(named, says_failed) if named else []
-        by_id = {fact.id: fact for fact in facts}
-        sourced: list[FailedCall] = []
-        for source in sources:
-            fact = by_id.get(_form(source))
-            for entry in sorted(fact.cites & by_entry.keys()) if fact is not None else ():
-                if by_entry[entry] not in sourced:
-                    sourced.append(by_entry[entry])
-        stale = _stale_calls(rewrite, failed, bases, broad=True, sourced=sourced)
-        return _failure_redone_violation(stale, says_failed) if stale else []
+        says_failed, stale = _failure_redone_calls(rewrite, sources, failed, facts, bases)
+        return _failure_redone_violation(stale, says_failed, closing=True) if stale else []
 
     return _check
 
 
-def _failure_added_check(
+def _failure_redone_calls(
+    text: str,
+    sources: Sequence[str],
     failed: Sequence[FailedCall],
+    facts: Sequence[Passage],
+    bases: Sequence[int],
+) -> tuple[bool, list[FailedCall]]:
+    """Whether a text of the limitations paragraph says a call failed, and the redone
+    calls it is held to (:func:`_failure_redone_check`)."""
+    if not _SAYS_FAILED.search(text):
+        # Held by the calls its sentences name or cite alone: those, and no other, are
+        # what it is told to cite, as the question names them.
+        return False, _redone_calls_in(text, failed, bases)
+    by_entry = {call.entry.lower(): call for call in failed}
+    by_id = {fact.id: fact for fact in facts}
+    sourced: list[FailedCall] = []
+    for source in sources:
+        fact = by_id.get(_form(source))
+        for entry in sorted(fact.cites & by_entry.keys()) if fact is not None else ():
+            if by_entry[entry] not in sourced:
+                sourced.append(by_entry[entry])
+    return True, _stale_calls(text, failed, bases, broad=True, sourced=sourced)
+
+
+def _failure_added_check(
+    failed: Sequence[FailedCall], *, closing: bool = False
 ) -> Callable[[str, Sequence[str], str], list[Violation]]:
     """What a rewrite of any other passage is held to while the limitation facts are
     shown: it adds no failure of a call a later call redid.
@@ -3105,6 +3133,8 @@ def _failure_added_check(
     sentence of the sample's behaviour writes), and only for what the rewrite
     adds: a failure the sentence it replaces did not claim, or a redone call
     it did not name. A rewrite that keeps what the sentence said passes.
+    ``closing``: the passage is a closing one, whose finding offers a drop, not a
+    keep (:func:`_failure_redone_violation`).
     """
 
     def _check(rewrite: str, sources: Sequence[str], sentence: str = "") -> list[Violation]:
@@ -3116,7 +3146,7 @@ def _failure_added_check(
         if _SAYS_FAILED.search(sentence):
             before = _stale_calls(sentence, failed, (), broad=False)
             stale = [call for call in stale if call not in before]
-        return _failure_redone_violation(stale) if stale else []
+        return _failure_redone_violation(stale, closing=closing) if stale else []
 
     return _check
 
@@ -3166,10 +3196,16 @@ def _limitation_passages(
     # The sentences held by the redone calls they name, with the calls that redid them:
     # the entries a keep must cite (T-600).
     redone_named = []
+    failure_said = []
     for sentence in held:
         calls = redone_calls_named(sentence, read.failed, bases)
         if calls:
             redone_named.append((sentence, _redo_choices(calls)))
+            continue
+        # A sentence saying a redone call failed, as the failure check reads a keep of it.
+        says, stale = _failure_redone_calls(sentence, (), read.failed, (), bases)
+        if says and stale:
+            failure_said.append((sentence, _redo_choices(stale)))
 
     facts: list[Passage] = []
     for index, call in enumerate(read.failed, 1):
@@ -3256,6 +3292,7 @@ def _limitation_passages(
         sourced_check=_failure_redone_check(read.failed, [*shown_facts, *facts], bases),
         closing=True,
         redone_named=tuple(redone_named),
+        failure_said=tuple(failure_said),
     )
     return [paragraph], facts, list(read.failed)
 
@@ -3636,15 +3673,18 @@ def _row_violations(
     if row.decision == "rewrite" and passage.sourced_check is not None:
         out.extend(
             replace(
-                violation,
+                failure_finding,
+                # The finding of a failure check (:func:`_failure_redone_violation`) is the
+                # platform's words, each value in it already made fit to print: whole, so
+                # what it says to do is never cut off.
                 message=(
                     f"row {safe_finding_value(index + 1)}: the rewrite of "
-                    f"{safe_finding_value(passage.id)}: {safe_finding_value(violation.message)}"
+                    f"{safe_finding_value(passage.id)}: {failure_finding.message}"
                 ),
                 sentence="",
                 path=f"{path}.rewrite",
             )
-            for violation in passage.sourced_check(row.rewrite, row.sources, row.sentence)
+            for failure_finding in passage.sourced_check(row.rewrite, row.sources, row.sentence)
         )
     if row.decision == "rewrite" and _writable(passage):
         # Only a source the passage may rest on grounds its rewrite: a section
@@ -3695,6 +3735,16 @@ _HELD_NAME_ENDS = (
 )
 
 
+# What a body sentence held on a name the run holds may do, as the question and every
+# refusal of a keep of it say: a body sentence is never left out, and the fact speaks to
+# it, so a keep names the fact and quotes a row of it naming what the sentence names.
+_HELD_NAME_BODY_ENDS = (
+    'keep it naming that fact, with "quote": words inside one of its rows that name what '
+    "the sentence names, copied exactly; or rewrite it in your own words on the lines "
+    "shown, citing an entry the fact cites"
+)
+
+
 def _redone_ends(redos: Sequence[str]) -> str:
     """What a sentence held to the redone calls it names may do: ``redos`` are the calls
     that redid them, one choice each (:func:`_redo_choices`)."""
@@ -3705,19 +3755,30 @@ def _redone_ends(redos: Sequence[str]) -> str:
     )
 
 
+def _failed_ends(redos: Sequence[str]) -> str:
+    """What a closing sentence saying a call failed that a later call redid may do:
+    ``redos`` are the calls that redid them, one choice each (:func:`_redo_choices`)."""
+    return (
+        f"rewrite it citing {safe_finding_value(' and '.join(redos))} and saying what "
+        f"{'it' if len(redos) == 1 else 'each'} answered, or drop it"
+    )
+
+
 def _sentence_start(text: str) -> str:
     """``text`` as a sentence of its own: its first letter upper case, a full stop after."""
     return f"{text[:1].upper()}{text[1:]}."
 
 
 def _held_ends(passage: Passage, sentence: str) -> str:
-    """For a closing sentence held on a name the run holds or to the redone calls it
-    names, what it may do, naming the facts it was shown or the calls to cite; ``""`` for
-    any other. No source states such a sentence's absence, so none is offered to quote."""
+    """For a closing sentence held on a name the run holds, to the redone calls it names,
+    or saying a call failed that a later call redid, what it may do, naming the facts it
+    was shown or the calls to cite; ``""`` for any other. No source states such a
+    sentence's absence, so none is offered to quote."""
     if not passage.closing:
         return ""
     ids = dict(passage.ledger_named).get(sentence, ())
     redos = dict(passage.redone_named).get(sentence, ())
+    failed = dict(passage.failure_said).get(sentence, ())
     said = []
     if ids:
         said.append(
@@ -3729,9 +3790,28 @@ def _held_ends(passage: Passage, sentence: str) -> str:
             "it names a call that failed and a later call redid: a keep of it as written is "
             f"refused; {_redone_ends(redos)}"
         )
+    if failed:
+        said.append(
+            "it says a call failed that a later call redid: a keep of it as written is "
+            f"refused; {_failed_ends(failed)}"
+        )
     if not said:
         return ""
     return " ".join([f"{said[0]}.", *(_sentence_start(part) for part in said[1:])])
+
+
+def _named_body_ends(passage: Passage, sentence: str) -> str:
+    """For a body sentence held on a name the run holds, what it may do, naming the facts
+    it was shown; ``""`` for any other."""
+    if passage.closing:
+        return ""
+    ids = dict(passage.ledger_named).get(sentence, ())
+    if not ids:
+        return ""
+    return (
+        f"it names what {safe_finding_value(', '.join(ids))} "
+        f"{'holds' if len(ids) == 1 else 'hold'} lines on: {_HELD_NAME_BODY_ENDS}."
+    )
 
 
 def _answer_violations(
@@ -3780,6 +3860,11 @@ def _answer_violations(
     reasoned = (
         (passage.closing or absent) and row.decision != "rewrite" and bool(row.reason.strip())
     )
+    # A closing sentence held on a name the run holds, or to a redone call, is told its
+    # ends, not a source to quote; a body sentence held on a name, the row to quote. Neither
+    # is kept on a reason.
+    closing_ends = _held_ends(passage, span[2]) if span is not None else ""
+    body_ends = _named_body_ends(passage, span[2]) if span is not None else ""
     if not row.sources and not reasoned:
         out.append(
             Violation(
@@ -3788,9 +3873,13 @@ def _answer_violations(
                     f"row {number} names no source. Name the ids of the sources you read for "
                     f"the sentence of {where}"
                     + (
-                        ", or, keeping a sentence no source speaks of, or leaving one out, "
+                        ", or, leaving it out, give the reason"
+                        if closing_ends
+                        else ", or, keeping a sentence no source speaks of, or leaving one out, "
                         "give the reason"
                         if passage.closing
+                        else ""
+                        if body_ends
                         else ", or, keeping an absence no source speaks of, give the reason"
                         if absent
                         else ""
@@ -3804,9 +3893,7 @@ def _answer_violations(
         return out
     sentence = span[2]
     keeping = row.decision == "keep" and (passage.closing or absent)
-    # A closing sentence held on a name the run holds, or to a redone call it names, is
-    # told its ends, not a source to quote.
-    held_ends = _held_ends(passage, sentence)
+    held_ends = closing_ends or body_ends
     if row.decision == "rewrite" and passage.closing and repeats_sentence(sentence, row.rewrite):
         # A rewrite saying what the sentence says is a keep on the sources it names,
         # quoting the one of their sentences that matches it best (T-568).
@@ -3926,17 +4013,14 @@ def _answer_violations(
     if row.decision == "keep" and passage.closing and passage.sourced_check is not None:
         out.extend(
             replace(
-                violation,
+                failure_finding,
                 # The finding is the platform's words, each value in it already made fit
                 # to print: whole, so what it says to do is never cut off.
-                message=(
-                    f"row {number}: {where} keeps a sentence that names what the ledger "
-                    f"holds lines on: {violation.message}"
-                ),
+                message=f"row {number}: {where} keeps the sentence, but {failure_finding.message}",
                 sentence="",
                 path=f"{path}.decision",
             )
-            for violation in passage.sourced_check(sentence, row.sources, "")
+            for failure_finding in passage.sourced_check(sentence, row.sources, "")
         )
     counted = (
         row.rewrite if row.decision == "rewrite" else sentence if row.decision == "keep" else ""
@@ -4127,7 +4211,12 @@ def repeats_sentence(sentence: str, rewrite: str) -> bool:
     so changing a word or two is no way round the keep checks, and it still states every
     absence of the sentence (:func:`absence_answers.kept_absence`): "0x2800 and 0x2c00
     were read, 0x7000 was not" corrects "0x2800, 0x2c00 and 0x7000 were not read" in the
+    same words. Both are read without their citations, wherever they stand: an entry id
+    in brackets cuts no clause, so the same words citing an entry mid-sentence are the
     same words."""
+    from malspark.reporting.composer_pro import _CITATIONS
+
+    sentence, rewrite = _CITATIONS.sub("", sentence), _CITATIONS.sub("", rewrite)
     mine, theirs = content_words(sentence), content_words(rewrite)
     if not mine or not theirs:
         return False
@@ -4988,6 +5077,12 @@ def _grounding_violations(
     path = f"sentences.{index}.rewrite"
     number = safe_finding_value(index + 1)
     out: list[Violation] = []
+    # A held closing sentence is not kept as written (:func:`_held_ends`): a drop is offered.
+    otherwise = (
+        "or drop it"
+        if span is not None and _held_ends(passage, span[2])
+        else "or keep the sentence"
+    )
     cited = entry_ids_in(row.rewrite)
     grounds = set().union(*(source.cites for source in sources))
     elsewhere = sorted(cited - grounds - set(passage.cites))
@@ -5012,7 +5107,7 @@ def _grounding_violations(
                 message=(
                     f"row {number}: the sentence cites "
                     f"{safe_finding_value(', '.join(dropped))}, which the rewrite does not. "
-                    "Keep every id the sentence cites, or keep the sentence."
+                    f"Keep every id the sentence cites, {otherwise}."
                 ),
                 path=path,
             )
@@ -5024,7 +5119,7 @@ def _grounding_violations(
                 message=(
                     f"row {number}: the rewrite cites none of the ids its sources cite"
                     + ("" if grounds else ", and sources that cite none ground no rewrite")
-                    + ". Cite the entry a source rests on, or keep the sentence."
+                    + f". Cite the entry a source rests on, {otherwise}."
                 ),
                 path=path,
             )
@@ -5114,6 +5209,8 @@ def _held_unlisted(
             if (passage.id, span[0]) in listed:
                 continue
             ids = unread.get(sentence)
+            # A sentence held on a name or to a redone call is told its own ends.
+            ends = _held_ends(passage, sentence) or _named_body_ends(passage, sentence)
             said = (
                 f"calls code not read that {safe_finding_value(', '.join(ids))} "
                 "states an entry lists"
@@ -5139,18 +5236,21 @@ def _held_unlisted(
                     code=HELD_UNLISTED_CODE,
                     message=(
                         f"{safe_finding_value(passage.id)} {said}, and no row lists this "
-                        f"sentence: {safe_finding_value(sentence)!r}. List it: rewrite it on "
-                        "the source that states otherwise, or keep it naming the source you "
-                        "read and found agreeing"
+                        f"sentence: {safe_finding_value(sentence)!r}. List it: "
                         + (
-                            ", quoting its words, or leave it out giving the reason"
-                            if passage.closing
-                            else ", quoting its words, or with the reason where no source "
-                            "speaks of it"
-                            if sentence in passage.absences
-                            else ""
+                            ends
+                            or "rewrite it on the source that states otherwise, or keep it "
+                            "naming the source you read and found agreeing"
+                            + (
+                                ", quoting its words, or leave it out giving the reason"
+                                if passage.closing
+                                else ", quoting its words, or with the reason where no source "
+                                "speaks of it"
+                                if sentence in passage.absences
+                                else ""
+                            )
+                            + "."
                         )
-                        + "."
                         + _EVERY_ROW
                     ),
                     path=f"held.{passage.id}",
@@ -5356,13 +5456,7 @@ def prompt_text(passages: Sequence[Passage]) -> str:
                 lines.append(
                     f"  [{passage.id}] each of these denies something and names what a "
                     "ledger.N fact shows (an API's call lines, an export, a decoded text); "
-                    + (
-                        f"{_HELD_NAME_ENDS}: "
-                        if passage.closing
-                        else "read it against that fact: where the fact shows otherwise, "
-                        "rewrite it on the fact, citing an entry it cites, else list it with "
-                        f"keep{_ABSENCE_KEPT}: "
-                    )
+                    + (f"{_HELD_NAME_ENDS}: " if passage.closing else f"{_HELD_NAME_BODY_ENDS}: ")
                     + "; ".join(
                         f"{quoted_value(sentence)} ({', '.join(ids)})"
                         for sentence, ids in named.items()

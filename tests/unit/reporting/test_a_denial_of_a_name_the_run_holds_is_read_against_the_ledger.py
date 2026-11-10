@@ -24,6 +24,7 @@ from __future__ import annotations
 import asyncio
 import json
 from datetime import UTC, datetime
+from functools import partial
 from typing import Any
 
 import pytest
@@ -52,8 +53,12 @@ from malspark.reporting.section_agreement import (
     DROPPED_CODE,
     FACT,
     FAILURE_REDONE_CODE,
+    HELD_UNLISTED_CODE,
     KEEP_UNQUOTED_CODE,
     QUALIFIED_CODE,
+    REWRITE_DROPS_CITATION_CODE,
+    UNKNOWN_PASSAGE_CODE,
+    UNKNOWN_SOURCE_CODE,
     _failure_redone_check,
     _redo_choices,
     _stale_calls,
@@ -65,6 +70,7 @@ from malspark.reporting.section_agreement import (
     prompt_text,
     redone_calls_named,
     relation_of,
+    repeats_sentence,
 )
 from malspark.schemas.evidence import LedgerEntry
 
@@ -574,7 +580,12 @@ def test_a_keep_is_asked_for_exactly_the_redos_the_round_names(
 def test_a_sentence_saying_a_call_failed_keeps_its_finding() -> None:
     check = _failure_redone_check([_REDONE], [], ())
     (found,) = check("The decompile of 0x2200 failed.", [], "")
-    assert found.message.startswith("the rewrite still says a call failed")
+    # Said of a keep and of a rewrite alike, and offering no keep: one is refused.
+    assert found.message == (
+        "it says a call failed or a reading could not be made, while a later call redid it "
+        "(ev_0201 by ev_0202). Rewrite it citing ev_0202 and saying what it answered, or "
+        "drop it."
+    )
 
 
 _TRUE = "The decompile of 0x5a10 shows no network call."
@@ -617,9 +628,8 @@ def test_the_round_is_shown_the_redo_to_cite_and_refuses_an_uncited_keep() -> No
     refused = agreement_violations(keep, passages)
     assert {v.code for v in refused} == {FAILURE_REDONE_CODE, KEEP_UNQUOTED_CODE}
     assert [v.message for v in refused if v.code == FAILURE_REDONE_CODE] == [
-        "row 1: limitations keeps a sentence that names what the ledger holds lines on: it "
-        "names a call that failed and a later call redid (ev_0101 by ev_0107) and cites none "
-        "of the calls that redid it. R" + ends[1:]
+        "row 1: limitations keeps the sentence, but it names a call that failed and a later "
+        "call redid (ev_0101 by ev_0107) and cites none of the calls that redid it. R" + ends[1:]
     ]
     # Every refusal says what to do, and offers no source to quote.
     assert all(v.message.endswith(ends[1:]) and "quot" not in v.message for v in refused)
@@ -695,6 +705,397 @@ def test_a_closing_sentence_held_on_a_name_ends_as_the_round_is_told() -> None:
         _row(_UNKNOWN, "drop", [], reason="the lines shown do not state its result"),
     ):
         assert agreement_violations({"sentences": [row]}, passages) == [], row
+
+
+def _cited(sentence: str, citation: str, where: str) -> str:
+    """The sentence in the same words with ``citation`` at its end, after its third word,
+    or before it."""
+    if where == "end":
+        return f"{sentence.rstrip('.')} {citation}."
+    if where == "middle":
+        words = sentence.split(" ")
+        return " ".join([*words[:3], citation, *words[3:]])
+    return f"{citation} {sentence}"
+
+
+@pytest.mark.parametrize("sentence", [_UNKNOWN, _TRUE])
+@pytest.mark.parametrize(
+    "citation", ["[ev_0109]", "[ev_0107][ev_0109]", "[ev_0107, ev_0109]", "(ev_0107)"]
+)
+@pytest.mark.parametrize("where", ["end", "middle", "start"])
+def test_the_same_words_citing_an_entry_anywhere_are_the_same_words(
+    sentence: str, citation: str, where: str
+) -> None:
+    assert repeats_sentence(sentence, _cited(sentence, citation, where))
+    # Several citations, each where it stands.
+    words = sentence.split(" ")
+    several = " ".join(["[ev_0107]", *words[:2], citation, *words[2:-1], f"{citation} {words[-1]}"])
+    assert repeats_sentence(sentence, several)
+    # An entry id cuts no clause: a rewrite in other words is still none.
+    assert not repeats_sentence(sentence, f"Routine 0x5a10 [ev_0107] reads a host mode {citation}.")
+
+
+_TWO = "The decompile of 0x5a10 and 0x6100 shows no network call."
+_SAYS_FAILED = "The decompile of 0x5a10 failed [ev_0101]."
+
+
+def _ledger_two() -> list[LedgerEntry]:
+    """The ledger with a second failed decompile, of the helper, redone."""
+    return [
+        *_ledger(),
+        LedgerEntry(
+            id="ev_0111",
+            tool="lift_routine",
+            args={"address": hex(HELPER)},
+            ok=False,
+            error="no function there",
+            facts=_DECOMPILE,
+        ),
+        _lifted("ev_0112", HELPER, "  return 0;"),
+    ]
+
+
+_NAME_ENDS = (
+    "it names what ledger.1 holds lines on: a keep of it as written is refused, and the "
+    "same words with a citation added are a keep; rewrite it in your own words on the lines "
+    "shown, citing the entry they come from, saying what the lines show and what stays "
+    "unknown, or drop it."
+)
+_BODY_ENDS = (
+    'it names what ledger.1 holds lines on: keep it naming that fact, with "quote": words '
+    "inside one of its rows that name what the sentence names, copied exactly; or rewrite it "
+    "in your own words on the lines shown, citing an entry the fact cites."
+)
+_ONE_REDO_ENDS = (
+    "rewrite it in your own words on what ev_0107 answered, citing it, or drop it; the same "
+    "words with a citation added are a keep."
+)
+_TWO_REDO_ENDS = (
+    "rewrite it in your own words on what ev_0107 and ev_0112 answered, citing each, or drop "
+    "it; the same words with a citation added are a keep."
+)
+_FAILED_ENDS = "ewrite it citing ev_0107 and saying what it answered, or drop it."
+_LEAVING = "or, leaving it out, give the reason."
+_SLOT_ROW = f"(*_DAT_{SLOT:x})(self,&mode);  /* {SLOT:x} = {CALLED} */"
+_FAILED_ROW = 'ev_0101 ("lift_routine") failed: "no function there"'
+
+# Each held path: the report, the ledger, the passage, the sentence, the sources a row
+# names, the citation the text asks for, a quote, and a rewrite in other words citing it.
+_PATHS: dict[str, tuple[Any, ...]] = {
+    "closing held on a name": (
+        partial(_report, _UNKNOWN),
+        _ledger,
+        "limitations",
+        _UNKNOWN,
+        ["ledger.1"],
+        "[ev_0109]",
+        _SLOT_ROW,
+        f"Routine 0x5a10 calls `{CALLED}` [ev_0107], but what it returns at run time is not "
+        "recorded.",
+    ),
+    "body held on a name": (
+        partial(_report, "", background=_UNKNOWN),
+        _ledger,
+        "introduction",
+        _UNKNOWN,
+        ["ledger.1"],
+        "[ev_0109]",
+        _SLOT_ROW,
+        f"Routine 0x5a10 calls `{CALLED}` [ev_0107], but what it returns at run time is not "
+        "recorded.",
+    ),
+    "held to one redone call": (
+        partial(_report, _TRUE),
+        _ledger,
+        "limitations",
+        _TRUE,
+        ["failed.1"],
+        "[ev_0107]",
+        _FAILED_ROW,
+        "The later decompile of 0x5a10 [ev_0107] contains no network call.",
+    ),
+    "held to two redone calls": (
+        partial(_report, _TWO),
+        _ledger_two,
+        "limitations",
+        _TWO,
+        ["failed.1", "failed.2"],
+        "[ev_0107][ev_0112]",
+        _FAILED_ROW,
+        "The later decompiles of 0x5a10 [ev_0107] and 0x6100 [ev_0112] contain no network call.",
+    ),
+    "says a call failed": (
+        partial(_report, _SAYS_FAILED),
+        _ledger,
+        "limitations",
+        _SAYS_FAILED,
+        ["failed.1"],
+        "[ev_0107]",
+        _FAILED_ROW,
+        "The first decompile of 0x5a10 failed [ev_0101]; a later call [ev_0107] lifted it and "
+        "shows a host-mode check.",
+    ),
+}
+
+_SAME = ("same words cited at the end", "same words cited mid-sentence", "same words cited first")
+
+# What each row answering a held sentence draws, the whole row: each finding's code and
+# how its message ends. A row with none stands.
+_EXPECTED: dict[str, dict[str, list[tuple[str, str]]]] = {
+    "closing held on a name": {
+        "keep": [(UNKNOWN_SOURCE_CODE, _LEAVING), (KEEP_UNQUOTED_CODE, _NAME_ENDS)],
+        "keep on a reason": [(KEEP_UNQUOTED_CODE, _NAME_ENDS)],
+        "keep quoting": [(KEEP_UNQUOTED_CODE, _NAME_ENDS)],
+        **dict.fromkeys(_SAME, [(KEEP_UNQUOTED_CODE, _NAME_ENDS)]),
+        "reworded rewrite citing": [],
+        "drop": [],
+    },
+    "body held on a name": {
+        "keep": [
+            (UNKNOWN_SOURCE_CODE, "the sentence of introduction."),
+            (KEEP_UNQUOTED_CODE, _BODY_ENDS),
+        ],
+        "keep on a reason": [(KEEP_UNQUOTED_CODE, _BODY_ENDS)],
+        # A body keep quoting the fact's row that names what the sentence names stands.
+        "keep quoting": [],
+        **dict.fromkeys(_SAME, []),
+        "reworded rewrite citing": [],
+        # A body sentence is never left out, and no text offers it.
+        "drop": [
+            (UNKNOWN_PASSAGE_CODE, "with keep or rewrite."),
+            (UNKNOWN_SOURCE_CODE, "the sentence of introduction."),
+        ],
+    },
+    "held to one redone call": {
+        "keep": [
+            (UNKNOWN_SOURCE_CODE, _LEAVING),
+            (KEEP_UNQUOTED_CODE, _ONE_REDO_ENDS),
+            (FAILURE_REDONE_CODE, "R" + _ONE_REDO_ENDS[1:]),
+        ],
+        "keep on a reason": [
+            (KEEP_UNQUOTED_CODE, _ONE_REDO_ENDS),
+            (FAILURE_REDONE_CODE, "R" + _ONE_REDO_ENDS[1:]),
+        ],
+        "keep quoting": [
+            (KEEP_UNQUOTED_CODE, _ONE_REDO_ENDS),
+            (FAILURE_REDONE_CODE, "R" + _ONE_REDO_ENDS[1:]),
+        ],
+        **dict.fromkeys(_SAME, [(KEEP_UNQUOTED_CODE, _ONE_REDO_ENDS)]),
+        "reworded rewrite citing": [],
+        "drop": [],
+    },
+    "held to two redone calls": {
+        "keep": [
+            (UNKNOWN_SOURCE_CODE, _LEAVING),
+            (KEEP_UNQUOTED_CODE, _TWO_REDO_ENDS),
+            (FAILURE_REDONE_CODE, "R" + _TWO_REDO_ENDS[1:]),
+        ],
+        "keep on a reason": [
+            (KEEP_UNQUOTED_CODE, _TWO_REDO_ENDS),
+            (FAILURE_REDONE_CODE, "R" + _TWO_REDO_ENDS[1:]),
+        ],
+        "keep quoting": [
+            (KEEP_UNQUOTED_CODE, _TWO_REDO_ENDS),
+            (FAILURE_REDONE_CODE, "R" + _TWO_REDO_ENDS[1:]),
+        ],
+        **dict.fromkeys(_SAME, [(KEEP_UNQUOTED_CODE, _TWO_REDO_ENDS)]),
+        "reworded rewrite citing": [],
+        "drop": [],
+    },
+    "says a call failed": {
+        "keep": [
+            (UNKNOWN_SOURCE_CODE, _LEAVING),
+            (KEEP_UNQUOTED_CODE, "r" + _FAILED_ENDS),
+            (FAILURE_REDONE_CODE, "R" + _FAILED_ENDS),
+        ],
+        "keep on a reason": [
+            (KEEP_UNQUOTED_CODE, "r" + _FAILED_ENDS),
+            (FAILURE_REDONE_CODE, "R" + _FAILED_ENDS),
+        ],
+        "keep quoting": [(FAILURE_REDONE_CODE, "R" + _FAILED_ENDS)],
+        # Citing the call that redid it is what the check asks: it stands.
+        **dict.fromkeys(_SAME, []),
+        "reworded rewrite citing": [],
+        "drop": [],
+    },
+}
+
+
+@pytest.mark.parametrize(
+    ("path", "action"),
+    [(path, action) for path, rows in _EXPECTED.items() for action in rows],
+)
+def test_every_answer_to_a_held_sentence_draws_what_the_round_is_told(
+    path: str, action: str
+) -> None:
+    report, ledger, pid, sentence, sources, citation, quote, reworded = _PATHS[path]
+    passages = passages_of(report(), entries=ledger())
+    rows = {
+        "keep": _row(sentence, "keep", []),
+        "keep on a reason": _row(sentence, "keep", [], reason="no source states it"),
+        "keep quoting": _row(sentence, "keep", sources[:1], quote=quote),
+        _SAME[0]: _row(sentence, "rewrite", sources, rewrite=_cited(sentence, citation, "end")),
+        _SAME[1]: _row(sentence, "rewrite", sources, rewrite=_cited(sentence, citation, "middle")),
+        _SAME[2]: _row(sentence, "rewrite", sources, rewrite=_cited(sentence, citation, "start")),
+        "reworded rewrite citing": _row(sentence, "rewrite", sources, rewrite=reworded),
+        "drop": _row(sentence, "drop", [], reason="the lines shown say otherwise"),
+    }
+    found = agreement_violations({"sentences": [{**rows[action], "passage": pid}]}, passages)
+    expected = _EXPECTED[path][action]
+    assert [v.code for v in found] == [code for code, _end in expected], found
+    for violation, (_code, end) in zip(found, expected, strict=True):
+        assert violation.message.endswith(end), violation.message
+    # No finding on a held sentence offers a keep where a keep is refused.
+    if pid == "limitations":
+        assert all("keep the sentence" not in v.message for v in found)
+
+
+@pytest.mark.parametrize(
+    ("path", "line"),
+    [
+        (
+            "body held on a name",
+            "  [introduction] each of these denies something and names what a ledger.N fact "
+            "shows (an API's call lines, an export, a decoded text); keep it naming that fact, "
+            'with "quote": words inside one of its rows that name what the sentence names, '
+            "copied exactly; or rewrite it in your own words on the lines shown, citing an entry "
+            f'the fact cites: "{_UNKNOWN}" (ledger.1)',
+        ),
+        (
+            "held to two redone calls",
+            "  [limitations] each of these names a call that failed and a later call redid, and "
+            "cites none of the calls that redid it: a keep of it as written is refused, and the "
+            "same words with a citation added are a keep; rewrite it in your own words on what "
+            "the call named here answered, citing it, or drop it: "
+            f'"{_TWO}" (cite ev_0107 and ev_0112)',
+        ),
+    ],
+)
+def test_the_round_is_told_what_stands_for_each_held_sentence(path: str, line: str) -> None:
+    report, ledger, *_rest = _PATHS[path]
+    assert line in prompt_text(passages_of(report(), entries=ledger())).splitlines()
+
+
+@pytest.mark.parametrize(
+    ("path", "ends"),
+    [
+        ("closing held on a name", _NAME_ENDS),
+        (
+            "held to one redone call",
+            "it names a call that failed and a later call redid: a keep of it as written is "
+            "refused; " + _ONE_REDO_ENDS,
+        ),
+        (
+            "says a call failed",
+            "it says a call failed that a later call redid: a keep of it "
+            "as written is refused; r" + _FAILED_ENDS,
+        ),
+        ("body held on a name", _BODY_ENDS),
+    ],
+)
+def test_a_held_sentence_no_row_lists_is_told_its_own_ends(path: str, ends: str) -> None:
+    report, ledger, *_rest = _PATHS[path]
+    found = agreement_violations({"sentences": []}, passages_of(report(), entries=ledger()))
+    (unlisted,) = [v for v in found if v.code == HELD_UNLISTED_CODE]
+    assert unlisted.message.endswith(
+        f"List it: {ends} Answer with every row again, this one included."
+    )
+
+
+@pytest.mark.parametrize(
+    ("sentence", "ledger", "sources", "rewrite", "said", "ends"),
+    [
+        (
+            _TRUE,
+            _ledger,
+            ["failed.1"],
+            "Routine 0x5a10 as first lifted [ev_0101] holds no network call at all.",
+            "ev_0101 by ev_0107",
+            _ONE_REDO_ENDS,
+        ),
+        (
+            _TWO,
+            _ledger_two,
+            ["failed.1", "failed.2"],
+            "Routines 0x5a10 [ev_0101] and 0x6100 [ev_0111] as first lifted hold no network call.",
+            "ev_0101 by ev_0107; ev_0111 by ev_0112",
+            _TWO_REDO_ENDS,
+        ),
+    ],
+)
+def test_a_rewrite_s_failure_finding_is_never_cut(
+    sentence: str, ledger: Any, sources: list[str], rewrite: str, said: str, ends: str
+) -> None:
+    passages = passages_of(_report(sentence), entries=ledger())
+    row = _row(sentence, "rewrite", sources, rewrite=rewrite)
+    (finding,) = [
+        v
+        for v in agreement_violations({"sentences": [row]}, passages)
+        if v.code == FAILURE_REDONE_CODE
+    ]
+    assert finding.message == (
+        f"row 1: the rewrite of limitations: it names a call that failed and a later call "
+        f"redid ({said}) and cites none of the calls that redid it. R{ends[1:]}"
+    )
+    assert len(finding.message) > 200
+
+
+def test_a_rewrite_adding_a_redone_failure_is_told_what_stands_in_its_passage() -> None:
+    report = _report(_TRUE, background="The gate reads a host mode [ev_0109].")
+    assert report.technical_analysis is not None
+    report.technical_analysis.analyst_conclusion = TechnicalSubsection(
+        title="Conclusion", body="The gate reads a host mode [ev_0109]."
+    )
+    passages = passages_of(report, entries=_ledger())
+    sentence = "The gate reads a host mode [ev_0109]."
+    added = _row(
+        sentence,
+        "rewrite",
+        ["failed.1"],
+        rewrite="The gate reads a host mode [ev_0109]; the decompiler failed on it [ev_0101].",
+    )
+    for pid, ends, stands in (
+        # The body: the sentence is kept, and a keep naming its source stands.
+        (
+            "introduction",
+            "Cite the call that redid it and say what it answered, or keep the sentence.",
+            _row(
+                sentence,
+                "keep",
+                ["string_resolution"],
+                quote="Routine 0x5a10 reads a host mode through a slot",
+            ),
+        ),
+        # A closing passage: dropped instead.
+        (
+            "conclusion",
+            "Rewrite it citing ev_0107 and saying what it answered, or drop it.",
+            _row(sentence, "drop", [], reason="a later call redid the call it names"),
+        ),
+    ):
+        found = [
+            v
+            for v in agreement_violations({"sentences": [{**added, "passage": pid}]}, passages)
+            if v.path.startswith("sentences.")
+        ]
+        assert [(v.code, v.message.endswith(ends)) for v in found] == [
+            (FAILURE_REDONE_CODE, True)
+        ], found
+        kept = agreement_violations({"sentences": [{**stands, "passage": pid}]}, passages)
+        assert [v for v in kept if v.path.startswith("sentences.")] == [], kept
+
+
+def test_a_rewrite_dropping_a_cited_id_of_a_held_sentence_is_told_to_drop_it() -> None:
+    passages = passages_of(_report(_SAYS_FAILED), entries=_ledger())
+    row = _row(
+        _SAYS_FAILED,
+        "rewrite",
+        ["failed.1"],
+        rewrite="The decompile of 0x5a10 [ev_0107] shows a host-mode check.",
+    )
+    (found,) = agreement_violations({"sentences": [row]}, passages)
+    assert found.code == REWRITE_DROPS_CITATION_CODE
+    assert found.message.endswith("Keep every id the sentence cites, or drop it.")
 
 
 @pytest.mark.parametrize(
