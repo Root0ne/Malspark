@@ -17,9 +17,13 @@ when it ends:
   port's ``connect``, ``sendto`` and ``connect_pipe`` (a named pipe to a
   local service) are refused too; the event loop's own socket pair uses
   none of them. Not covered: a socket made from the low-level ``_socket``
-  module, and a child process. No rule the replay calls needs the network,
-  and a rule that reached for it (a catalogue refresh, a model index) must
-  answer as it does on a box that cannot reach anything.
+  module; on Windows, the same class of door one level down: the
+  ``_overlapped`` module's ``ConnectEx``, ``WSAConnect`` and ``ConnectPipe``
+  called directly, ``_winapi.CreateFile`` opening a named pipe
+  (``\\\\.\\pipe\\...``) as a file, and ``multiprocessing.connection.Client``
+  given a pipe address; and a child process. No rule the replay calls
+  needs the network, and a rule that reached for it (a catalogue refresh, a
+  model index) must answer as it does on a box that cannot reach anything.
 * **the ATT&CK cache.** The catalogue is read from the vendored tables in the
   rules' own tree (``data/attck_*.json``) and nothing else: the bundle loads
   and downloads are refused, and the cache directory points at a directory of
