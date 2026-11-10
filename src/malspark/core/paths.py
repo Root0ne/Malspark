@@ -555,7 +555,9 @@ _STARTS_QUOTED = re.compile(_QUOTED_HEAD)
 _WRITTEN_DEPTH = 4
 # A drive whose separator the string writes once: in a string that escapes
 # its backslashes, a path written as it is (``D:\new\report.txt``).
-_WRITTEN_AS_IT_IS = re.compile(r"(?<![A-Za-z0-9])[A-Za-z]:\\(?![\\/])")
+_WRITTEN_AS_IT_IS = re.compile(r"(?<![A-Za-z0-9])[A-Za-z]:\\(?![\\/\"])")
+# One escape of a JSON string: the backslash and the character it writes with.
+_JSON_ESCAPE = re.compile(r"\\.", re.DOTALL)
 # Half of a pair: a JSON string may write one escaped, and no UTF-8 text holds it.
 _LONE_SURROGATE = re.compile("[\ud800-\udfff]")
 
@@ -569,6 +571,14 @@ def _json_document(text: str) -> bool:
     except (ValueError, RecursionError):
         return False
     return True
+
+
+def _json_string(text: str) -> bool:
+    """Whether ``text`` is one JSON string, quotes and all."""
+    try:
+        return isinstance(json.loads(text), str)
+    except (ValueError, RecursionError):
+        return False
 
 
 def _string_literal(text: str) -> str | None:
@@ -685,6 +695,25 @@ def host_paths_masked(
         as a quoted span's is; otherwise they are read as any text."""
         return spanned(words) if _STARTS_QUOTED.match(words) else read(words, depth)
 
+    def standing(token: str) -> str:
+        """A JSON string read as it stands, and still that string.
+
+        A path read in the string as written may end or start inside an
+        escape (``x:\\"1\\"`` ends on the backslash that writes the quote);
+        the escape keeps its backslash, so the string closes where it did. A
+        string that would still not read as one is masked whole.
+        """
+        inside = {escape.start() + 1 for escape in _JSON_ESCAPE.finditer(token)}
+
+        def whole(match: re.Match[str]) -> str:
+            said = shown(match)
+            if said == match.group():
+                return said
+            return "\\" * (match.start() in inside) + said + "\\" * (match.end() in inside)
+
+        masked = pattern.sub(whole, token)
+        return masked if masked == token or _json_string(masked) else json.dumps(OUTSIDE_PROJECT)
+
     def read(words: str, depth: int) -> str:
         """``words`` masked, an escaped text read as the text it writes.
 
@@ -701,7 +730,7 @@ def host_paths_masked(
                 def string(token: re.Match[str]) -> str:
                     written = json.loads(token.group())
                     if not _WINDOWS_FORM.search(written):
-                        return pattern.sub(shown, token.group())
+                        return standing(token.group())
                     said = within(written, depth + 1)
                     shows = token.group()
                     if said != written:
@@ -709,14 +738,15 @@ def host_paths_masked(
                             lambda half: f"\\u{ord(half.group()):04x}",
                             json.dumps(said, ensure_ascii=shows.isascii()),
                         )
-                    if _WRITTEN_AS_IT_IS.search(token.group()):
-                        return pattern.sub(shown, shows)
-                    return shows
+                    return standing(shows) if _WRITTEN_AS_IT_IS.search(token.group()) else shows
 
                 masked = _JSON_STRING.sub(string, words)
                 if not words.lstrip().startswith('"'):
                     return masked
-                words = masked
+                # One string in quotes is words in quotes too: read as it stands.
+                opens = len(masked) - len(masked.lstrip())
+                closes = len(masked.rstrip())
+                return masked[:opens] + standing(masked[opens:closes]) + masked[closes:]
             else:
                 written = _string_literal(words)
                 if written is not None and _WINDOWS_FORM.search(written):

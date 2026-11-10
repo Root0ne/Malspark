@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import json
 import random
+import re
 from collections import Counter
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -356,6 +357,56 @@ def test_no_generated_windows_path_leaves_a_name_behind() -> None:
         f"{sum(failed.values())} of {CASES} cases leak; by category {dict(failed.most_common())};"
         f" first: {examples}"
     )
+
+
+# What a JSON string may write, as it is written inside the quotes: paths
+# escaped and as they are, every escape, quotes, and marks a path may end at.
+_JSON_WRITINGS = (
+    r"C:\\Users\\alice", r"D:\new\table", "x:", "D:", r"\"", r"\\", r"\\\\", r"\/",
+    r"\/etc\/shadow", "/usr/lib/x", r"\n", r"\t", r"\b", r"\f", r"\r", r"\u00e9", r"\ud83d",
+    r"\\\\srv\\share", r"\\?\\C:\\l", "file:///C:/a b", r"file:\\\\host\\x", "C:/Users/b c",
+    r"\\d+", r"HKLM\\SOFT", " ", "q", "new", "u1234", "'", "`", "“", "”", ":", "(", ")", ".",
+    "é", "/home/op/x",
+)  # fmt: skip
+
+
+# Where a Windows-form path may start: a drive, two backslashes, a ``file:`` URL.
+_WINDOWS_FORM = re.compile(r"[A-Za-z]:[\\/]|\\\\|[Ff][Ii][Ll][Ee]:")
+
+
+def _json_text(rng: random.Random) -> str:
+    strings = [
+        '"' + "".join(rng.choice(_JSON_WRITINGS) for _ in range(rng.randint(1, 7))) + '"'
+        for _ in range(rng.randint(1, 3))
+    ]
+    shape = rng.randrange(4)
+    if shape == 0:
+        return "{" + ", ".join(f'"k{n}": {string}' for n, string in enumerate(strings)) + "}"
+    if shape == 1:
+        return "[" + ", ".join(strings) + "]"
+    if shape == 2:
+        return '{"a": [' + ", ".join(strings) + '], "n": 1.0}'
+    return rng.choice(("", " ", "\n")) + strings[0] + rng.choice(("", "\n"))
+
+
+def test_a_json_document_holding_a_windows_path_is_still_that_document() -> None:
+    """Whatever its strings write, the masked text parses and is UTF-8 text."""
+    rng = random.Random(SEED)
+    built = 0
+    broken: list[str] = []
+    while built < CASES:
+        text = _json_text(rng)
+        if not _WINDOWS_FORM.search(text):
+            continue  # no Windows-form path: read as it always has been
+        built += 1
+        json.loads(text)
+        said = host_paths_masked(text, ROOT)
+        try:
+            json.loads(said)
+            said.encode("utf-8")
+        except ValueError:
+            broken.append(f"{text!r} -> {said!r}")
+    assert not broken, f"{len(broken)} of {CASES} no longer read as JSON; first: {broken[:5]}"
 
 
 def test_the_grammar_writes_every_head_style_and_context() -> None:

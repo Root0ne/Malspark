@@ -756,6 +756,34 @@ class TestOnlyAHostPathIsMasked:
             "m": f"open {OUTSIDE_PROJECT}: see \\d+\\s in the rule"
         }
 
+    @pytest.mark.parametrize(
+        ("written", "said"),
+        [
+            # a path that ends on the backslash writing a quote; beside an
+            # escaped path, a drive before a quote is the words the string writes
+            (r'{"m": "set x:\"1\" now"}', {"m": f'set {OUTSIDE_PROJECT}"1" now'}),
+            (
+                r'{"m": "x C:\\a\\b and D:\"q\" z"}',
+                {"m": f'x {OUTSIDE_PROJECT} and D:"q" z'},
+            ),
+            (
+                r'["D:\\", "x:\"", "\\\\srv\\"]',
+                [OUTSIDE_PROJECT, f'{OUTSIDE_PROJECT}"', OUTSIDE_PROJECT],
+            ),
+            (r'"x:\"1\" C:\\Users\\alice"', f'{OUTSIDE_PROJECT}"1" {OUTSIDE_PROJECT}'),
+            # a drive named in quotes is no path written as it is
+            (
+                r'{"m": "drive \"C:\" is full, see D:\\logs\\x.txt"}',
+                {"m": f'drive "C:" is full, see {OUTSIDE_PROJECT}'},
+            ),
+            (r'{"m": "drive \"C:\" is full"}', {"m": f'drive "{OUTSIDE_PROJECT}" is full'}),
+        ],
+    )
+    def test_a_json_string_read_as_it_stands_is_still_that_string(
+        self, written: str, said: object
+    ) -> None:
+        assert json.loads(host_paths_masked(written)) == said
+
     def test_a_document_written_inside_a_document_is_read_through(self) -> None:
         inner = {"m": "tool failed: \\\\?\\C:\\long\\alice (exit 1) — réessayez plus tard, café"}
         said = host_paths_masked(json.dumps({"m": json.dumps(inner)}))
