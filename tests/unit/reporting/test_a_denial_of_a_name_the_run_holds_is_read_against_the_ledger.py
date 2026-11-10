@@ -50,6 +50,7 @@ from malspark.reporting.models import (
     TechnicalSubsection,
 )
 from malspark.reporting.section_agreement import (
+    ABSENCE_KEPT_CODE,
     DROPPED_CODE,
     FACT,
     FAILURE_REDONE_CODE,
@@ -229,6 +230,46 @@ def test_a_sentence_pointing_back_is_held_on_the_names_before_it() -> None:
     assert {(r.shown, r.back) for r in readings} == {(RESOLVED_ONLY, True), (CALLED, True)}
     # A sentence naming an address of its own is about it, never the sentence before.
     assert name_readings("Their bytes at 0x5a10 were not read.", previous, _names()) == []
+
+
+_DENIALS = (
+    f"`{CALLED}` is not called.",
+    f"No routine calls {CALLED}.",
+    f"{CALLED} is never called by any routine.",
+    f"No call to {CALLED} is shown.",
+)
+
+
+@pytest.mark.parametrize("sentence", _DENIALS)
+@pytest.mark.parametrize("citation", ["[ev_0109]", "[ev_0107][ev_0109]", "(ev_0109)"])
+@pytest.mark.parametrize("where", ["start", "after its second word", "middle", "end"])
+def test_a_denial_citing_an_entry_anywhere_is_held_on_the_same_names(
+    sentence: str, citation: str, where: str
+) -> None:
+    if where == "after its second word":
+        words = sentence.split(" ")
+        cited = " ".join([*words[:2], citation, *words[2:]])
+    else:
+        cited = _cited(sentence, citation, where)
+    assert _held(sentence) == {CALLED}
+    readings = name_readings(cited, "", _names())
+    assert {r.shown for r in readings} == {CALLED}
+    # The reading keeps the sentence as written: it is what the model is shown.
+    assert {r.sentence for r in readings} == {cited}
+
+
+@pytest.mark.parametrize("where", ["start", "middle", "end"])
+def test_a_sentence_pointing_back_citing_an_entry_is_held_on_the_names_before_it(
+    where: str,
+) -> None:
+    previous = f"Routine 0x6100 resolves {RESOLVED_ONLY} [ev_0107] and {CALLED} by hash."
+    sentence = _cited(
+        "These names are shown only as resolved; the code does not show them being called.",
+        "[ev_0109]",
+        where,
+    )
+    readings = name_readings(sentence, previous, _names())
+    assert {(r.shown, r.back) for r in readings} == {(RESOLVED_ONLY, True), (CALLED, True)}
 
 
 def test_the_export_table_is_named_by_its_word_only_as_what_is_denied() -> None:
@@ -735,6 +776,25 @@ def test_the_same_words_citing_an_entry_anywhere_are_the_same_words(
     assert not repeats_sentence(sentence, f"Routine 0x5a10 [ev_0107] reads a host mode {citation}.")
 
 
+@pytest.mark.parametrize("where", ["start", "middle", "after its address", "end"])
+def test_a_rewrite_restating_a_contradicted_absence_is_refused_wherever_it_cites(
+    where: str,
+) -> None:
+    passages = passages_of(_report(_TRUE), entries=_ledger())
+
+    def codes(rewrite: str) -> list[str]:
+        row = _row(_TRUE, "rewrite", ["listed.1"], rewrite=rewrite)
+        return [v.code for v in agreement_violations({"sentences": [row]}, passages)]
+
+    at_end = codes(_cited(_TRUE, "[ev_0107]", "end"))
+    assert ABSENCE_KEPT_CODE in at_end
+    if where == "after its address":
+        rewrite = "The decompile of 0x5a10 [ev_0107] shows no network call."
+    else:
+        rewrite = _cited(_TRUE, "[ev_0107]", where)
+    assert codes(rewrite) == at_end
+
+
 _TWO = "The decompile of 0x5a10 and 0x6100 shows no network call."
 _SAYS_FAILED = "The decompile of 0x5a10 failed [ev_0101]."
 
@@ -962,11 +1022,18 @@ def test_every_answer_to_a_held_sentence_draws_what_the_round_is_told(
             f'the fact cites: "{_UNKNOWN}" (ledger.1)',
         ),
         (
+            "held to one redone call",
+            "  [limitations] each of these names a call that failed and a later call redid, and "
+            "cites none of the calls that redid it: a keep of it as written is refused, and the "
+            "same words with a citation added are a keep; rewrite it in your own words on what "
+            f'the call named here answered, citing it, or drop it: "{_TRUE}" (cite ev_0107)',
+        ),
+        (
             "held to two redone calls",
             "  [limitations] each of these names a call that failed and a later call redid, and "
             "cites none of the calls that redid it: a keep of it as written is refused, and the "
             "same words with a citation added are a keep; rewrite it in your own words on what "
-            "the call named here answered, citing it, or drop it: "
+            "the calls named here answered, citing each, or drop it: "
             f'"{_TWO}" (cite ev_0107 and ev_0112)',
         ),
     ],

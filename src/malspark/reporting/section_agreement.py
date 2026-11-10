@@ -2220,30 +2220,34 @@ def name_readings(
     the names of the sentence before it: what "them" is the model reads. Code decides
     nothing of a reading: each is a question for the model, with the fact shown. A name
     written as a call ("`connect()` is not called") is read as the name: the empty
-    parentheses after it close no clause. Linear in the sentence and the names: the sentence
-    is read once, and a name is found in its clauses by its own words."""
+    parentheses after it close no clause. Both sentences are read without their citations:
+    an entry id in brackets, wherever it stands, cuts no clause and writes no name. The
+    reading keeps the sentence as written. Linear in the sentence and the names: the
+    sentence is read once, and a name is found in its clauses by its own words."""
     from malspark.reporting.absence_answers import clauses_of
+    from malspark.reporting.composer_pro import _CITATIONS
 
-    whole = _CALL_MARKS.sub("", sentence)
-    clauses = negated_clauses(whole)
-    if not clauses or set_in_a_run(sentence):
+    uncited = _CITATIONS.sub("", sentence).strip()
+    clauses = negated_clauses(_CALL_MARKS.sub("", uncited))
+    if not clauses or set_in_a_run(uncited):
         return []
     read = _Clauses(clauses)
     bare = any(_bare_clause(clause, generic) for clause in clauses)
-    written = _held_names(sentence, names, read.exports_denied)
+    written = _held_names(uncited, names, read.exports_denied)
     if any((bare and kind != "text") or read.denies(kind, shown) for kind, _key, shown in written):
         # Held on every name it writes: where a list of names is cut into clauses is no
         # reading of which of them the denial is of.
         return [NameReading(sentence, *name) for name in written]
-    opening = next(iter(clauses_of(sentence)), "").strip()
+    opening = next(iter(clauses_of(uncited)), "").strip()
     if (
         previous
         and _POINTS_BACK.match(opening)
-        and not _held_names(sentence, names)
-        and not _addresses_named(sentence)
+        and not _held_names(uncited, names)
+        and not _addresses_named(uncited)
     ):
         # Only the names the sentence before writes: what "them" stands for is the model's.
-        return [NameReading(sentence, *name, back=True) for name in _held_names(previous, names)]
+        before = _CITATIONS.sub("", previous)
+        return [NameReading(sentence, *name, back=True) for name in _held_names(before, names)]
     return []
 
 
@@ -3749,9 +3753,17 @@ def _redone_ends(redos: Sequence[str]) -> str:
     """What a sentence held to the redone calls it names may do: ``redos`` are the calls
     that redid them, one choice each (:func:`_redo_choices`)."""
     return (
-        f"rewrite it in your own words on what {safe_finding_value(' and '.join(redos))} "
-        f"answered, citing {'it' if len(redos) == 1 else 'each'}, or drop it; the same words "
-        "with a citation added are a keep"
+        _redone_rewrite(safe_finding_value(" and ".join(redos)), len(redos))
+        + "; the same words with a citation added are a keep"
+    )
+
+
+def _redone_rewrite(said: str, count: int) -> str:
+    """The rewrite or drop a sentence held to ``count`` redone calls may end as, ``said``
+    naming the calls that redid them: in the number of the calls."""
+    return (
+        f"rewrite it in your own words on what {said} answered, citing "
+        f"{'it' if count == 1 else 'each'}, or drop it"
     )
 
 
@@ -3832,8 +3844,10 @@ def _answer_violations(
     ledger itself contradicts (a failed call a later call redid) is not kept; one
     giving failed calls a number the ledger's count does not is told so. A rewrite
     gives failed calls no such number, and states no absence again that a fact it
-    rests on contradicts (:func:`absence_answers.kept_absence`).
+    rests on contradicts (:func:`absence_answers.kept_absence`), whatever either cites.
     """
+    from malspark.reporting.composer_pro import _CITATIONS
+
     path = f"sentences.{index}"
     number = safe_finding_value(index + 1)
     where = safe_finding_value(passage.id)
@@ -4029,7 +4043,12 @@ def _answer_violations(
         out.append(_count_violation(number, where, passage.counts, path))
     if row.decision == "rewrite":
         facts = [s for s in sources if s is not None and s.kind == FACT]
-        kept = kept_absence(_contradicted_absences(passage.text, sentence, facts), row.rewrite)
+        # Both read without their citations: an entry id in brackets cuts no clause, so a
+        # rewrite citing an entry mid-sentence restates the same absence.
+        kept = kept_absence(
+            _contradicted_absences(passage.text, _CITATIONS.sub("", sentence), facts),
+            _CITATIONS.sub("", row.rewrite),
+        )
         if kept:
             out.append(
                 Violation(
@@ -5463,13 +5482,17 @@ def prompt_text(passages: Sequence[Passage]) -> str:
                     )
                 )
             if passage.redone_named:
-                # Read off the passage by code: the redone calls each one names (T-600).
+                # Read off the passage by code: the redone calls each one names (T-600),
+                # in the number of the most any one names.
+                most = max(len(ids) for _sentence, ids in passage.redone_named)
                 lines.append(
                     f"  [{passage.id}] each of these names a call that failed and a later call "
                     "redid, and cites none of the calls that redid it: a keep of it as written "
-                    "is refused, and the same words with a citation added are a keep; rewrite "
-                    "it in your own words on what the call named here answered, citing it, or "
-                    "drop it: "
+                    "is refused, and the same words with a citation added are a keep; "
+                    + _redone_rewrite(
+                        "the call named here" if most == 1 else "the calls named here", most
+                    )
+                    + ": "
                     + "; ".join(
                         f"{quoted_value(sentence)} (cite {' and '.join(ids)})"
                         for sentence, ids in passage.redone_named
