@@ -24,8 +24,8 @@ An answer's export rows and imports are read only where the answer is about the
 sample: its call read no file the run produced, and the program or path it names,
 if any, is the sample's. Another file's are none of the sample's.
 
-Which sentence a fact bears on, and whether a sentence it names is
-contradicted, is read in ``section_agreement``. Linear in the ledger.
+Which sentence a fact is shown for is read in ``section_agreement``; what the
+sentence says of it is the model's to answer. Linear in the ledger.
 """
 
 from __future__ import annotations
@@ -46,10 +46,11 @@ __all__ = [
     "run_names",
 ]
 
-# The keys the run's answers hold each relation under: the words a sentence
-# denying that relation writes are read off these, never off a list of verbs
-# (``section_agreement.relation_of``). A decoded text and a plain one are two
-# relations: the index lists each under its own key.
+# The keys the run's answers hold each relation under: the words that hold a
+# sentence naming an export by its kind, or a quoted text, to the ledger are read off
+# these, never off a list of verbs (``section_agreement.relation_of``), and decide
+# nothing. A decoded text and a plain one are two relations: the index lists each
+# under its own key.
 RELATION_KEYS: dict[str, tuple[str, ...]] = {
     "called": ("slot_calls", "callees", "callers"),
     "resolved": ("resolved",),
@@ -137,9 +138,6 @@ class RunNames:
     # in call nothing it lists.
     index_whole: bool = False
     bases: tuple[int, ...] = ()
-    # Whether an answer's export rows or import names were set aside as another file's:
-    # then no denial of an export or an import is read as backed by what is left.
-    set_aside: bool = False
 
     def api(self, name: str) -> ApiHeld | None:
         """The API the run holds under ``name`` (case aside), or ``None``."""
@@ -313,9 +311,7 @@ def run_names(entries: Iterable[Any], bases: Sequence[int] = ()) -> RunNames:
         data = getattr(entry, "structured", None)
         if not isinstance(data, Mapping) or ("export_rows" not in data and "imports" not in data):
             continue
+        # Another file's exports and imports are none of the sample's.
         if _about_the_sample(entry, _sample):
             _format_rows(names, entry, data)
-        else:
-            # Another file's exports and imports are none of the sample's.
-            names.set_aside = True
     return names

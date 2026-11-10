@@ -208,7 +208,6 @@ from malspark.reporting.absence_answers import (
     reading_denied_in,
     said_of,
     set_in_a_run,
-    words_in_order,
 )
 from malspark.reporting.models import (
     C2Channel,
@@ -264,20 +263,13 @@ LISTED_CODE = "agreement.listed"
 # A rewrite of a limitations sentence that still says a call failed, or a
 # reading could not be made, where a later call redid it.
 FAILURE_REDONE_CODE = "agreement.failure_redone"
-# A sentence that denies something of a name the run holds (an API, an export, a
-# decoded or plain text) which the ledger itself states ("no routine calls X" beside a routine
-# the function index lists calling X), or a rewrite of one still denying it without
-# citing every entry the fact cites: a keep is refused, and one left standing is
-# qualified on the ledger's fact in the body, or left out of a closing section.
-LEDGER_CONTRADICTS_CODE = "agreement.ledger_contradicts"
 # A sentence of the conclusion or the limitations paragraph listed as saying
 # otherwise than a section 5 passage, a fact or a closed debate line, whose
 # rewrite passed no check: left out of the section, which only sums up what
 # sections 4 to 6 state, and recorded here with what stood; one the answer
 # leaves out with its reason, keeps while the ledger says otherwise (a failed call a
-# later call redid, a name the ledger states denied), or keeps on no source or a quote
-# the checks refused, the same way, with the refused keep's sources, quote or reason;
-# and one denying what the ledger states of a name that the answer leaves standing.
+# later call redid), or keeps on no source or a quote the checks refused, the same
+# way, with the refused keep's sources, quote or reason.
 DROPPED_CODE = "agreement.dropped"
 # A held sentence (any sentence of the conclusion or the limitations; one
 # calling open an address or a value a section 5 passage or a fact states) that no
@@ -288,9 +280,7 @@ HELD_UNLISTED_CODE = "agreement.held_unlisted"
 # the platform adds what the ledger shows to it, in the facts' own words, and
 # records what stood. Never left out, never left as written. Also a
 # section 5 denial a decoded value's fact contradicts whose rewrite in the model's
-# words passed no check: the fact's clause is added, and what stood recorded. Also a
-# sentence of the body denying what the ledger states of a name the run holds that
-# the answer leaves standing: the ledger fact's clause is added.
+# words passed no check: the fact's clause is added, and what stood recorded.
 QUALIFIED_CODE = "agreement.qualified"
 # A sentence of the conclusion or the limitations, or a held absence of the body,
 # that the answer kept on no source with its reason, or on a source a check refused
@@ -431,15 +421,12 @@ class Passage:
     names: tuple[str, ...] = ()
     # The sentences of a writable passage that deny something and name what a
     # ``ledger.N`` fact shows (:func:`name_readings`), each with those facts' ids: each
-    # is held, read against the fact (T-600).
+    # is held, the model reading it against the fact (T-600).
     ledger_named: tuple[tuple[str, tuple[str, ...]], ...] = ()
-    # Of those, the ones the ledger itself contradicts, with the facts that do: a keep
-    # is refused, and one left standing is qualified on the facts (the body) or left
-    # out (a closing section) (``LEDGER_CONTRADICTS_CODE``).
-    ledger_decided: tuple[tuple[str, tuple[str, ...]], ...] = ()
-    # The ids of the ``ledger.N`` facts a text still says the opposite of, which a
-    # rewrite of a contradicted sentence is held to.
-    ledger_check: Callable[[str], tuple[str, ...]] | None = None
+    # The limitations sentences held to a failed call a later call redid that they name
+    # or cite (:func:`redone_calls_named`), each with the entries of the calls that redid
+    # it: a keep must cite one (T-600).
+    redone_named: tuple[tuple[str, tuple[str, ...]], ...] = ()
 
 
 def _ids(*sources: Any) -> frozenset[str]:
@@ -822,8 +809,7 @@ def passages_of(
     if held and found is not None:
         # A negated sentence naming an API, an export or a text the run holds is
         # held to what the ledger holds of it, the call lines of the routines calling an
-        # API shown with their slots named, so no keep rests on no source; one the
-        # ledger itself contradicts is marked (T-600).
+        # API shown with their slots named, so no keep rests on no source (T-600).
         from malspark.reporting.ledger_entities import run_names
 
         names = run_names(held, found.image_bases)
@@ -1918,11 +1904,6 @@ def _branch_sense_passages(
 # A denial of a name the run holds, read against the ledger (T-600)
 # ---------------------------------------------------------------------------
 
-# What the ledger says of a name a negated sentence writes: it states what the
-# sentence denies, it holds nothing of it, or the sentence says more than code reads.
-CONTRADICTED = "contradicted"
-BACKED = "backed"
-UNDECIDED = "undecided"
 # What the ``ledger.N`` facts of one question show at most, filled closing passages
 # first, then in passage order (T-580's bound for the round's facts); a name past it
 # is not shown, and the round says how many were left out.
@@ -1990,9 +1971,10 @@ def _relation_forms() -> tuple[dict[str, frozenset[str]], dict[str, tuple[str, .
 
 
 _RELATIONS, _HELD_IN = _relation_forms()
-# The relations a denial of each kind of name is decided on.
+# The relations a name of each kind is held under where a clause writes it by its kind
+# alone: the export table's word, or the words a quoted text is held in. Read only to
+# hold a sentence for the model, never to decide one.
 _KIND_RELATIONS = {
-    "api": ("called", "resolved", "imported"),
     "export": ("exported",),
     "text": ("decoded", "plain"),
 }
@@ -2000,9 +1982,7 @@ _KIND_RELATIONS = {
 
 def _kind_words(kind: str) -> frozenset[str]:
     """The word forms every relation of a kind is held in ("string", "text" of a decoded
-    and a plain text: they say which kind of name it is, and decide no relation). A word
-    only some are held in ("slot", "callee", "caller" of a call) narrows the relation,
-    which code does not read."""
+    and a plain text: they say which kind of name it is)."""
     held = [set(_HELD_IN[relation]) for relation in _KIND_RELATIONS[kind]]
     every = set.intersection(*held) if held else set()
     return frozenset(form for word in every for form in word_forms(word))
@@ -2029,16 +2009,15 @@ _CALL_MARKS = re.compile(r"(?<=[A-Za-z0-9_])\(\s*\)")
 
 @dataclass(frozen=True)
 class NameReading:
-    """A name a negated sentence writes (or, pointing back, the sentence before it writes)
-    and what the ledger says of it: ``kind`` is "api", "export" or "text", ``key`` the
-    name as the ledger holds it (an API's lowered name, an export's address in hex, a
-    text lowered), ``shown`` as the sentence writes it."""
+    """A name a negated sentence writes (or, pointing back, the sentence before it writes),
+    which holds the sentence to what the ledger holds of it: ``kind`` is "api", "export"
+    or "text", ``key`` the name as the ledger holds it (an API's lowered name, an export's
+    address in hex, a text lowered), ``shown`` as the sentence writes it."""
 
     sentence: str
     kind: str
     key: str
     shown: str
-    verdict: str
     back: bool = False
 
 
@@ -2202,193 +2181,24 @@ def _plain_word(word: str, skip: frozenset[str]) -> bool:
     return word in skip or bool(_addresses_named(word))
 
 
-# The words a denial code decides may write besides its own (T-600): the articles, the
-# forms of "be", "do" and "have", and five prepositions. Any other word ("other", "only",
-# "all", "both", "except", "if", "it") may scope or turn what is denied: the model reads
-# the sentence.
-_FUNCTION_WORDS = frozenset(
-    (
-        "a an the be am is are was were been being do does did done doing have has had "
-        "having by any at in of for"
-    ).split()
-)
-# The prepositions an address list repeats before an item ("0x2200 or at 0x1030").
-_LIST_PREPOSITIONS = frozenset({"at", "in", "of", "for"})
-# The words joining addresses into one list ("0x2200 or 0x1030", "0x2200 and 0x1030"),
-# and the word standing, before a word naming an address, for the addresses a sentence
-# names ("at either address": any of them, as "any" stands for any address).
-_LIST_JOINS = frozenset({"and", "or"})
-_LIST_ITEM = "either"
-
-
-def _words_left(
-    text: str, *, scoped: bool, addressed: bool
-) -> tuple[list[str], list[int], int] | None:
-    """Every word of ``text``, all its clauses and no word left out
-    (``absence_answers.words_in_order``), the places of those this rule leaves to the
-    decider reading it, and the place of its one negation; ``None`` where it holds no
-    negation or more than one.
-
-    The rule accounts for a negation, the function words (:data:`_FUNCTION_WORDS`) and an
-    evidence citation; where ``scoped`` (the decider reads the routines or the addresses a
-    text names) also for an address, a routine noun, a word naming an address, "and" or
-    "or" between two addresses, and, where ``addressed`` (the sentence names the addresses
-    it stands for), "either" straight before a word naming an address. Every other word is
-    left: the decider reads among them its name and its relation (:func:`name_readings`)
-    or the call it holds a denial to (:func:`_denies_its_output`), and any word it does not
-    read leaves the text to the model. Both deciders read a text through this one rule. One
-    pass over the words."""
-    from malspark.reporting.absence_answers import _ENTRY_ID
-    from malspark.reporting.absence_answers import _NEGATION as NEGATION
-
-    words = words_in_order(text)
-    address = [scoped and bool(_addresses_named(word)) for word in words]
-
-    def _item(at: int) -> bool:
-        # An address, or "either" before a word naming the addresses the sentence names.
-        if at < len(words) and words[at] in _LIST_PREPOSITIONS:
-            at += 1
-        return at < len(words) and (address[at] or _either(at))
-
-    def _either(at: int) -> bool:
-        return (
-            addressed
-            and words[at] == _LIST_ITEM
-            and at + 1 < len(words)
-            and _address_word(words[at + 1])
-            and not (at + 2 < len(words) and address[at + 2])
-        )
-
-    left: list[int] = []
-    negations: list[int] = []
-    for at, word in enumerate(words):
-        if NEGATION.fullmatch(word) or word.endswith("n't"):
-            negations.append(at)
-            if NEGATION.fullmatch(word) or word[: -len("n't")] in _FUNCTION_WORDS:
-                continue
-        elif word in _FUNCTION_WORDS or _ENTRY_ID.match(word):
-            continue
-        elif scoped and (
-            address[at]
-            or word in _ROUTINE_NOUNS
-            or _address_word(word)
-            or (word in _LIST_JOINS and at > 0 and address[at - 1] and _item(at + 1))
-            or _either(at)
-        ):
-            continue
-        left.append(at)
-    if len(negations) != 1:
-        return None
-    return words, left, negations[0]
-
-
-def _kind_denial(text: str, kind: str, addressed: bool) -> tuple[str, frozenset[str]] | None:
-    """The one relation of a kind of name a text denies, and the words it writes beyond
-    the shared rule (:func:`_words_left`), the relation's word forms (:func:`relation_of`)
-    and the words every relation of the kind is held in ("string", "text"); ``None`` where
-    it writes no relation of the kind or more than one. Routine nouns and addresses are
-    read only for an API, whose calls are read in the routines a text names."""
-    from malspark.reporting.absence_answers import _DENIED_WORDS
-
-    read = _words_left(text, scoped=kind == "api", addressed=addressed)
-    if read is None:
-        return None
-    words, left, negation = read
-    relations: set[str] = set()
-    if words[negation] in _DENIED_WORDS:
-        # "unresolved" denies "resolved".
-        found = relation_of(words[negation][2:], _KIND_RELATIONS[kind])
-        if found is not None:
-            relations.add(found)
-    rest: set[str] = set()
-    for at in left:
-        relation = relation_of(words[at], _KIND_RELATIONS[kind])
-        if relation is not None:
-            relations.add(relation)
-        elif words[at] not in _KIND_WORDS_HELD[kind]:
-            rest.add(words[at])
-    if len(relations) != 1:
-        return None
-    return next(iter(relations)), frozenset(rest)
-
-
-def _verdict(
-    kind: str,
-    key: str,
-    denied: frozenset[str],
-    within: frozenset[int],
-    names: Any,
-    called_in: frozenset[int] = frozenset(),
-) -> str:
-    """What the ledger says of a denial of ``denied`` of a name: it states one of them
-    (contradicted), it is read whole and states none (backed), or neither (undecided).
-    ``within`` are the routines the clause names (``function_map.one_spelling``), which an
-    API's calls are read in; ``called_in`` the routines the index lists calling it. A text
-    is contradicted only on a relation whose key the index lists it under. Where an answer's
-    export rows or import names were set aside as another file's
-    (``ledger_entities.RunNames.set_aside``), a denial of an export or an import is never
-    backed."""
-    from malspark.reporting.ledger_entities import RELATION_KEYS
-
-    set_aside = bool(getattr(names, "set_aside", False))
-    if kind == "export":
-        if "exported" in denied and int(key, 16) in names.by_address:
-            return CONTRADICTED
-        return UNDECIDED if set_aside else BACKED
-    if kind == "text":
-        text = names.texts.get(key)
-        under = {
-            relation
-            for relation in _KIND_RELATIONS["text"]
-            if text is not None and not text.held_as.keys().isdisjoint(RELATION_KEYS[relation])
-        }
-        if denied & under:
-            return CONTRADICTED
-        return BACKED if names.index_whole else UNDECIDED
-    held = names.apis.get(key)
-    if held is None:
-        return UNDECIDED
-    states = {
-        "called": bool(held.calls) and (not within or not within.isdisjoint(called_in)),
-        "resolved": bool(held.resolved) and not within,
-        "imported": bool(held.imported) and not within,
-    }
-    if any(states.get(relation) for relation in denied):
-        return CONTRADICTED
-    if not names.index_whole or not within <= names.rows:
-        return UNDECIDED
-    if set_aside and "imported" in denied:
-        return UNDECIDED
-    return BACKED
-
-
 def name_readings(
     sentence: str, previous: str, names: Any, generic: frozenset[str] = frozenset()
 ) -> list[NameReading]:
-    """Each name the run holds that a negated sentence writes, and what the ledger says of
-    its denial (T-600).
+    """Each name the run holds that a negated sentence writes, each read as the model's to
+    answer against the ledger's fact (T-600).
 
     A sentence denying nothing, or denying what a run saw (``absence_answers.set_in_a_run``:
     "was not observed at run time"), names nothing here: the ledger's code facts do not
     speak of a run. A name is held where a negated clause denies something of it
     (:meth:`_Clauses.denies`), or where a negated clause writes nothing of its own but what
-    it denies (:func:`_bare_clause`), its subject the rest of the sentence. A sentence naming
-    no name and no address that opens pointing back ("These names are shown only as
-    resolved; the code does not show them being called") names the APIs of the sentence
-    before it, read as undecided, where a negated clause of it writes a relation an API is
-    held under: what "them" is the model reads. Each name is decided by code only where
-    every word of the whole sentence, in all its clauses, is accounted for
-    (:func:`_words_left`, :func:`_kind_denial`): the name's own words, the word forms of
-    one relation it is held under, and the words the shared rule reads: "IsWow64Process is
-    not called", "no routine calls CreateRemoteThread", "`run` is not exported", "'x' was
-    not decoded"; the ledger then states the relation (contradicted) or, read whole, holds
-    nothing of it (backed). A second name, a word saying what a run did ("executed",
-    "reached"), or any other word ("no other routine", "apart from 0x1400", "if the check
-    fails") leaves it undecided, shown to the model with the ledger's fact. A name written
-    as a call ("`connect()` is not called") is read as the name: the empty parentheses
-    after it close no clause. Linear in the sentence and the names: the sentence is read
-    once for each kind of name, and a name is held to the words left by its own words."""
-    from malspark.agents.function_map import one_spelling
+    it denies (:func:`_bare_clause`), its subject the rest of the sentence. A negated
+    sentence naming no name the run holds and no address that opens pointing back ("These
+    names are shown only as resolved; the code does not show them being called") is held on
+    the names of the sentence before it: what "them" is the model reads. Code decides
+    nothing of a reading: each is a question for the model, with the fact shown. A name
+    written as a call ("`connect()` is not called") is read as the name: the empty
+    parentheses after it close no clause. Linear in the sentence and the names: the sentence
+    is read once, and a name is found in its clauses by its own words."""
     from malspark.reporting.absence_answers import clauses_of
 
     whole = _CALL_MARKS.sub("", sentence)
@@ -2402,45 +2212,18 @@ def name_readings(
         for kind, key, shown in _held_names(sentence, names, read.exports_denied)
         if (bare and kind != "text") or read.denies(kind, shown)
     ]
-    back = False
+    if held:
+        return [NameReading(sentence, *name) for name in held]
     opening = next(iter(clauses_of(sentence)), "").strip()
     if (
-        not held
-        and previous
+        previous
+        and _POINTS_BACK.match(opening)
         and not _held_names(sentence, names)
         and not _addresses_named(sentence)
-        and _POINTS_BACK.match(opening)
-        and any(relation_of(word, _KIND_RELATIONS["api"]) for word in read.by_word)
     ):
-        # Only the APIs the sentence before names: what "them" stands for is the model's.
-        held = [h for h in _held_names(previous, names) if h[0] == "api"]
-        back = True
-    if back:
-        return [NameReading(sentence, *name, UNDECIDED, True) for name in held]
-    addresses = _addresses_named(whole)
-    within = frozenset(one_spelling(r, names.bases) for r in addresses)
-    # A preposition says how an address bears on the call ("outside 0x1400", "except in
-    # 0x1400"): only a sentence naming its routine as the call's own ("routine 0x1400
-    # does not call it") is decided.
-    placed = bool(within) and not PREPOSITIONS.isdisjoint(
-        w.lower() for w in _NAME_TOKEN.findall(whole)
-    )
-    denials: dict[str, tuple[str, frozenset[str]] | None] = {}
-    out: list[NameReading] = []
-    for kind, key, shown in held:
-        if kind not in denials:
-            denials[kind] = _kind_denial(whole, kind, bool(addresses))
-        found = denials[kind]
-        verdict = UNDECIDED
-        # The words left are the name's own alone: a second name, or any word the rule
-        # does not account for, leaves the sentence to the model.
-        own = frozenset(words_in_order(shown.replace(",", " ")))
-        if found is not None and not placed and found[1] <= own:
-            api = names.apis.get(key) if kind == "api" else None
-            called_in = frozenset(call.routine for call in api.calls) if api else frozenset()
-            verdict = _verdict(kind, key, frozenset({found[0]}), within, names, called_in)
-        out.append(NameReading(sentence, kind, key, shown, verdict))
-    return out
+        # Only the names the sentence before writes: what "them" stands for is the model's.
+        return [NameReading(sentence, *name, back=True) for name in _held_names(previous, names)]
+    return []
 
 
 def _slot_noted(line: str, slots: dict[int, str], bases: Sequence[int]) -> str:
@@ -2680,8 +2463,7 @@ def _name_passages(
     first and then in passage order within :data:`_NAMES_PER_QUESTION` characters; a
     name past it is not shown, its sentences not held on it, and the count is said. A
     sentence held this way is answered as a held absence of the body is (or as every
-    closing sentence is), and one the ledger contradicts is marked so
-    (:attr:`Passage.ledger_decided`)."""
+    closing sentence is): code decides none of them."""
     listed = {routine.address: routine.listed_in for routine in found.listed}
     ordered = sorted((p for p in passages if _writable(p)), key=lambda p: 0 if p.closing else 1)
     made: dict[tuple[str, str], str | None] = {}
@@ -2732,38 +2514,20 @@ def _name_passages(
         made[(kind, key)] = fid
         return fid
 
-    def _check(text: str) -> tuple[str, ...]:
-        ids: dict[str, None] = {}
-        for sentence in _sentences_of(text):
-            for reading in name_readings(sentence, "", names, generic):
-                fid = made.get((reading.kind, reading.key))
-                if reading.verdict == CONTRADICTED and fid is not None:
-                    ids[fid] = None
-        return tuple(ids)
-
     for passage in ordered:
         previous = ""
         named: dict[str, list[str]] = {}
-        decided: dict[str, list[str]] = {}
         for sentence in _sentences_of(passage.text):
             found_here = name_readings(sentence, previous, names, generic)
             previous = sentence
             readings.extend(found_here)
             for reading in found_here:
-                if reading.verdict == BACKED:
-                    continue
                 fid = _fact(reading.kind, reading.key, sentence)
-                if fid is None:
-                    continue
-                named.setdefault(sentence, []).append(fid)
-                if reading.verdict == CONTRADICTED:
-                    decided.setdefault(sentence, []).append(fid)
+                if fid is not None:
+                    named.setdefault(sentence, []).append(fid)
         if not named:
             continue
         passage.ledger_named = tuple((s, tuple(dict.fromkeys(ids))) for s, ids in named.items())
-        passage.ledger_decided = tuple((s, tuple(dict.fromkeys(ids))) for s, ids in decided.items())
-        if decided:
-            passage.ledger_check = _check
         if not passage.closing:
             passage.absences = tuple(dict.fromkeys([*passage.absences, *named]))
         passage.held = tuple(dict.fromkeys([*passage.held, *named]))
@@ -2947,9 +2711,6 @@ _SAYS_REDONE = re.compile(
     re.IGNORECASE,
 )
 _NEGATION = frozenset({"no", "not", "never", "without"})
-# The word giving the reason for what the words before it say: what it opens is said
-# as a sentence of its own.
-_REASON = re.compile(r"\bbecause\b", re.IGNORECASE)
 # The words before a redo word read for a negation.
 _NEGATION_REACH = 3
 # What a call's kind is called in prose, by the start of a word: a sentence
@@ -3044,90 +2805,40 @@ def _names_call(
     return call.lists_code and bool(listing.search(text))
 
 
-def _denies_its_output(text: str, call: FailedCall) -> bool:
-    """Whether every word of a text, all its clauses, says nothing beyond what the call
-    itself answers: the words the shared rule reads (:func:`_words_left`: one negation, the
-    function words, routine nouns, addresses and the words naming them, a list of
-    addresses), the call's tool and kind words (:func:`_stems_of`), and the call's one
-    verb, standing straight after the call's own word and straight before the negation,
-    where it writes no relation a name is held under ("the decompiler produced no function
-    at 0x2200", "lift_routine returned nothing for 0x2200"). "shows no network call", "the
-    network-call search in the decompile of 0x2200 found nothing", "the decompile of
-    0x2200 calls nothing", "no other function", "apart from a thunk" say something of the
-    code it read, or scope the denial, which the model reads; so does a text with a second
-    negation."""
-    read = _words_left(text, scoped=True, addressed=True)
-    if read is None:
-        return False
-    words, left, negation = read
-    tool = call.tool.lower()
-    names = {tool, *tool.split("_")}
-    stems = _stems_of(call)
-
-    def _the_call(word: str) -> bool:
-        # A kind stem begins only words naming that kind of call ("decompiler").
-        return word in names or any(word.startswith(stem) for stem in stems)
-
-    rest = [at for at in left if not _the_call(words[at])]
-    if not rest:
-        return True
-    return (
-        rest == [negation - 1]
-        and negation >= 2
-        and _the_call(words[negation - 2])
-        and relation_of(words[negation - 1], tuple(_RELATIONS)) is None
-    )
-
-
-def _address_word(word: str) -> bool:
-    """Whether a word names an address (:data:`_ADDRESS_WORDS`), or is its plural."""
-    return any(word == plain or word in (plain + "s", plain + "es") for plain in _ADDRESS_WORDS)
-
-
-def _denies_a_failed_call(text: str, failed: Sequence[FailedCall], bases: Sequence[int]) -> bool:
-    """Whether a sentence of ``text`` denies something of a call a later call redid, naming
-    the call (T-600): the sentence, or the reason it gives for a denial, writes the call's
-    tool or kind (as :func:`_names_call` reads them, the narrow listing of code among them)
-    and says nothing in any of its words beyond the call's own output
-    (:func:`_denies_its_output`), or cites the call itself, the sentence names an address
-    the call asked for, and it cites no call that redid it. "The decompiler produced no
-    function at 0x2200" says a call failed in words no failure word reads; "the decompile
-    of 0x2200 shows no network call" and "0x2200, decompiled later, shows no network call"
-    deny nothing of a call, "the decompiler produced no other function at 0x2200" says
-    more than its output, and one citing the redo reads it."""
-    redone = [call for call in failed if call.redone and call.asked]
-    if not redone:
-        return False
-    for sentence in _sentences_of(text):
-        if not carries_negation(sentence):
+def redone_calls_named(
+    sentence: str, failed: Sequence[FailedCall], bases: Sequence[int]
+) -> list[FailedCall]:
+    """The calls a later call redid that a negated sentence is held to (T-600), read by
+    entities alone: each it names by an address the call asked for together with the call's
+    tool or kind (:func:`_names_call`, the narrow listing of code among them), or cites,
+    while it cites none of the calls that redid it. What the sentence says of the call or of
+    the code its redo read is the model's to answer, citing a call that redid it."""
+    if not carries_negation(sentence):
+        return []
+    cited = entry_ids_in(sentence)
+    named: set[int] | None = None
+    out: list[FailedCall] = []
+    for call in failed:
+        if not call.redone or cited & {by.lower() for by in call.redone_by}:
             continue
-        named = set(_addresses_named(sentence))
-        cited = entry_ids_in(sentence)
-        # The sentence is read whole; where it gives the reason for a denial, the reason
-        # is read as a sentence of its own: "the boundaries of 0x2200 and 0x1030 are not
-        # confirmed, because the decompiler produced no function at either address".
-        parts = [sentence]
-        reason = _REASON.search(sentence)
-        if reason and carries_negation(sentence[: reason.start()]):
-            parts.append(sentence[reason.end() :])
-        for call in redone:
-            if cited & {by.lower() for by in call.redone_by}:
-                continue
-            if not named & _spelled_both(call.asked, bases):
-                continue
-            unaddressed = replace(call, asked=())
-            if call.entry.lower() in cited:
-                # Citing the call itself, and no call that redid it, the sentence rests on
-                # the failed output, whatever else it says.
-                if _names_call(sentence, unaddressed, ()):
-                    return True
-                continue
-            if any(
-                _names_call(part, unaddressed, ()) and _denies_its_output(part, call)
-                for part in parts
-            ):
-                return True
-    return False
+        if call.entry.lower() in cited:
+            out.append(call)
+            continue
+        if not call.asked:
+            continue
+        if named is None:
+            named = set(_addresses_named(sentence))
+        if named & _spelled_both(call.asked, bases) and _names_call(
+            sentence, replace(call, asked=()), ()
+        ):
+            out.append(call)
+    return out
+
+
+def _names_a_redone_call(text: str, failed: Sequence[FailedCall], bases: Sequence[int]) -> bool:
+    """Whether a sentence of ``text`` is held to a call a later call redid
+    (:func:`redone_calls_named`)."""
+    return any(redone_calls_named(sentence, failed, bases) for sentence in _sentences_of(text))
 
 
 def _stale_citations(sentence: str, redone: Sequence[FailedCall]) -> list[FailedCall]:
@@ -3145,15 +2856,16 @@ def held_limitation_sentences(
 ) -> list[str]:
     """The sentences of a limitations paragraph held to the ledger's failed calls.
 
-    A sentence that says a call failed or a reading could not be made, or denies
-    something of a redone call it names (:func:`_denies_a_failed_call`: "the
-    decompiler produced no function at 0x2200", T-600), is held where it cites a
-    failed call a later call redid and none of the calls that redid it, whatever
-    else it says; and, where it does not say the call was redone, where it names
-    a redone call (:func:`_names_call`: an address it was asked for, its tool,
-    its kind) or an address whose code an entry lists, whatever it cites. A
-    sentence of a sample's behaviour ("the beacon failed to connect", "the
-    process listing failed") names none. One pass over the sentences.
+    A negated sentence naming a call a later call redid by an address it asked for and
+    its tool or kind, or citing it, and citing none of the calls that redid it, is held
+    (:func:`redone_calls_named`, T-600), whatever else it says. A sentence that says a
+    call failed or a reading could not be made is held where it cites a failed call a
+    later call redid and none of the calls that redid it, whatever else it says; and,
+    where it does not say the call was redone, where it names a redone call
+    (:func:`_names_call`: an address it was asked for, its tool, its kind) or an address
+    whose code an entry lists, whatever it cites. A sentence of a sample's behaviour
+    ("the beacon failed to connect", "the process listing failed") names none. One pass
+    over the sentences.
     """
     redone = [call for call in failed if call.redone]
     listed = _spelled_both(listed, bases)
@@ -3161,7 +2873,10 @@ def held_limitation_sentences(
         return []
     held: list[str] = []
     for sentence in _sentences_of(text):
-        if not _SAYS_FAILED.search(sentence) and not _denies_a_failed_call(sentence, redone, bases):
+        if redone_calls_named(sentence, redone, bases):
+            held.append(sentence)
+            continue
+        if not _SAYS_FAILED.search(sentence):
             continue
         if _stale_citations(sentence, redone):
             held.append(sentence)
@@ -3286,8 +3001,14 @@ def _failure_cited_check(
     return _check
 
 
-def _failure_redone_violation(stale: Sequence[FailedCall]) -> list[Violation]:
+def _failure_redone_violation(
+    stale: Sequence[FailedCall], says_failed: bool = True
+) -> list[Violation]:
+    """The finding on a text naming calls a later call redid: one saying a call failed is
+    told the call was redone; one held only by the calls it names
+    (:func:`redone_calls_named`) is told which entries to cite."""
     said = "; ".join(f"{call.entry} by {', '.join(call.redone_by)}" for call in stale)
+    redos = " or ".join(dict.fromkeys(by for call in stale for by in call.redone_by))
     return [
         Violation(
             code=FAILURE_REDONE_CODE,
@@ -3295,6 +3016,11 @@ def _failure_redone_violation(stale: Sequence[FailedCall]) -> list[Violation]:
                 "the rewrite still says a call failed or a reading could not be made, but "
                 f"a later call redid it ({safe_finding_value(said)}). Cite the call that "
                 "redid it and say what it answered, or keep the sentence."
+                if says_failed
+                else "it names a call that failed and a later call redid "
+                f"({safe_finding_value(said)}) and cites none of the calls that redid it. "
+                f"Cite {safe_finding_value(redos)} for what it states, or rewrite it on what "
+                f"{safe_finding_value(redos)} answered, or drop it."
             ),
             path="rewrite",
         )
@@ -3307,8 +3033,8 @@ def _failure_redone_check(
     """What a rewrite of the limitations paragraph is held to: it says no call failed for
     good that a later call redid.
 
-    A rewrite that says a call failed, or denies something of a redone call it names
-    (:func:`_denies_a_failed_call`, T-600), fails for each redone call it cites,
+    A rewrite that says a call failed, or is held to a redone call it names or cites
+    (:func:`redone_calls_named`, T-600), fails for each redone call it cites,
     rests on (a fact among its sources citing that call: a failed-call fact,
     an answered-later fact, an open question) or names, read clause by clause
     and broadly (:func:`_stale_calls`), unless it cites a call that redid it
@@ -3319,7 +3045,8 @@ def _failure_redone_check(
     by_entry = {call.entry.lower(): call for call in failed}
 
     def _check(rewrite: str, sources: Sequence[str], sentence: str = "") -> list[Violation]:
-        if not _SAYS_FAILED.search(rewrite) and not _denies_a_failed_call(rewrite, failed, bases):
+        says_failed = bool(_SAYS_FAILED.search(rewrite))
+        if not says_failed and not _names_a_redone_call(rewrite, failed, bases):
             return []
         by_id = {fact.id: fact for fact in facts}
         sourced: list[FailedCall] = []
@@ -3329,7 +3056,7 @@ def _failure_redone_check(
                 if by_entry[entry] not in sourced:
                     sourced.append(by_entry[entry])
         stale = _stale_calls(rewrite, failed, bases, broad=True, sourced=sourced)
-        return _failure_redone_violation(stale) if stale else []
+        return _failure_redone_violation(stale, says_failed) if stale else []
 
     return _check
 
@@ -3393,14 +3120,24 @@ def _limitation_passages(
     bases = found.image_bases
     read = limitation_facts(report, entries, found.answered, bases, found.redone)
     # A paragraph that says a call failed, or names a failed call (an address it was
-    # asked for, its tool, its kind), is read further (T-600).
+    # asked for, its tool, its kind) or cites one, is read further (T-600).
+    cited = entry_ids_in(sub.body)
     if not _SAYS_FAILED.search(sub.body) and not any(
-        _names_call(sub.body, call, bases) for call in read.failed
+        call.entry.lower() in cited or _names_call(sub.body, call, bases) for call in read.failed
     ):
         return [], [], []
     listed = [routine.address for routine in found.listed]
-    if not held_limitation_sentences(sub.body, read.failed, listed, bases):
+    held = held_limitation_sentences(sub.body, read.failed, listed, bases)
+    if not held:
         return [], [], []
+    # The sentences held by the redone calls they name, with the calls that redid them:
+    # the entries a keep must cite (T-600).
+    redone_named = []
+    for sentence in held:
+        calls = redone_calls_named(sentence, read.failed, bases)
+        if calls:
+            redos = tuple(dict.fromkeys(by for call in calls for by in call.redone_by))
+            redone_named.append((sentence, redos))
 
     facts: list[Passage] = []
     for index, call in enumerate(read.failed, 1):
@@ -3486,6 +3223,7 @@ def _limitation_passages(
         write=_setter(sub, "body"),
         sourced_check=_failure_redone_check(read.failed, [*shown_facts, *facts], bases),
         closing=True,
+        redone_named=tuple(redone_named),
     )
     return [paragraph], facts, list(read.failed)
 
@@ -4102,7 +3840,6 @@ def _answer_violations(
             )
             for violation in passage.sourced_check(sentence, row.sources, "")
         )
-    out.extend(_ledger_name_violations(row, passage, sentence, by_id or {}, index))
     counted = (
         row.rewrite if row.decision == "rewrite" else sentence if row.decision == "keep" else ""
     )
@@ -5281,8 +5018,6 @@ def _held_unlisted(
                 if sentence in passage.whole_code
                 else "states a branch or an argument of a routine a listing.N fact shows"
                 if any(s == sentence for s, _ids in passage.branch_sense)
-                else "denies what a ledger.N fact states the ledger holds"
-                if any(s == sentence for s, _ids in passage.ledger_decided)
                 else "names what a ledger.N fact shows"
                 if any(s == sentence for s, _ids in passage.ledger_named)
                 else "denies what a decoded value's fact may state"
@@ -5461,7 +5196,6 @@ def prompt_text(passages: Sequence[Passage]) -> str:
             )
             # Read against what the ledger holds of a name (T-600): asked once, under it.
             named = dict(passage.ledger_named)
-            decided = dict(passage.ledger_decided)
             absent = tuple(a for a in absent if a not in named)
             held = [
                 sentence
@@ -5513,24 +5247,7 @@ def prompt_text(passages: Sequence[Passage]) -> str:
                     "fact cites, else list it with keep: "
                     + "; ".join(quoted_value(sentence) for sentence in branch)
                 )
-            if decided:
-                # Read off the passage by code: the ledger states what each one denies.
-                lines.append(
-                    f"  [{passage.id}] the ledger states what each of these denies (the "
-                    "ledger.N fact named): rewrite it on that fact, stating what it states and "
-                    "citing every entry it cites"
-                    + (
-                        ", or drop it: "
-                        if passage.closing
-                        else "; left standing, the platform appends the fact to it: "
-                    )
-                    + "; ".join(
-                        f"{quoted_value(sentence)} ({', '.join(ids)})"
-                        for sentence, ids in decided.items()
-                    )
-                )
-            undecided = [(s, ids) for s, ids in named.items() if s not in decided]
-            if undecided:
+            if named:
                 # Read off the passage by code: a ledger.N fact shows what each one names.
                 lines.append(
                     f"  [{passage.id}] each of these denies something and names what a "
@@ -5544,7 +5261,19 @@ def prompt_text(passages: Sequence[Passage]) -> str:
                     )
                     + "; ".join(
                         f"{quoted_value(sentence)} ({', '.join(ids)})"
-                        for sentence, ids in undecided
+                        for sentence, ids in named.items()
+                    )
+                )
+            if passage.redone_named:
+                # Read off the passage by code: the redone calls each one names (T-600).
+                lines.append(
+                    f"  [{passage.id}] each of these names a call that failed and a later call "
+                    "redid, and cites none of the calls that redid it: a keep of it as written "
+                    "is refused; rewrite it citing the call named here for what it states, or "
+                    "on what that call answered, or drop it: "
+                    + "; ".join(
+                        f"{quoted_value(sentence)} (cite {' or '.join(ids)})"
+                        for sentence, ids in passage.redone_named
                     )
                 )
             if denied:
@@ -5886,7 +5615,6 @@ def apply_rows(
             )
         )
     written.extend(_qualify_unread_left(passages, by_id, spans, _sentences, counts))
-    written.extend(_qualify_ledger_left(passages, by_id, spans, _sentences, counts))
     for pid, rewrites in spans.items():
         if not rewrites:
             continue
@@ -5897,116 +5625,6 @@ def apply_rows(
         if passage.write is not None:
             passage.write(text)
     return counts, [*listed, *written]
-
-
-def _ledger_name_violations(
-    row: AgreementRow,
-    passage: Passage,
-    sentence: str,
-    by_id: dict[str, Passage],
-    index: int,
-) -> list[Violation]:
-    """A keep of a sentence the ledger contradicts, or a rewrite that still says the opposite
-    of a ``ledger.N`` fact without citing every entry the fact cites (T-600)."""
-    path = f"sentences.{index}"
-    number = safe_finding_value(index + 1)
-    where = safe_finding_value(passage.id)
-    decided = dict(passage.ledger_decided)
-    ids: tuple[str, ...] = ()
-    said = ""
-    if row.decision == "keep":
-        ids = decided.get(sentence, ())
-        said = "keeps"
-    elif row.decision == "rewrite" and passage.ledger_check is not None:
-        cited = entry_ids_in(row.rewrite)
-        ids = tuple(
-            fid
-            for fid in passage.ledger_check(row.rewrite)
-            if fid in by_id and not by_id[fid].cites <= cited
-        )
-        said = "rewrites into words that still deny"
-    facts = [by_id[fid] for fid in ids if fid in by_id]
-    if not facts:
-        return []
-    return [
-        Violation(
-            code=LEDGER_CONTRADICTS_CODE,
-            message=(
-                f"row {number}: {where} {said} what the ledger states "
-                f"({safe_finding_value(', '.join(f.id for f in facts))}: "
-                f"{safe_finding_value('; '.join(f.qualifier for f in facts))}). Rewrite it on "
-                "that fact, stating what it states and citing every entry it cites"
-                + (
-                    ", or drop it."
-                    if passage.closing
-                    else "; left standing, the platform appends the fact to it."
-                )
-            ),
-            path=f"{path}.decision" if row.decision == "keep" else f"{path}.rewrite",
-        )
-    ]
-
-
-def _qualify_ledger_left(
-    passages: Sequence[Passage],
-    by_id: dict[str, Passage],
-    spans: dict[str, list[tuple[int, int, str]]],
-    sentences_of: Callable[[Passage], _Sentences],
-    counts: dict[str, int],
-) -> list[Violation]:
-    """Each sentence the ledger contradicts that the answer left standing (T-600): in the
-    body the platform appends the ``ledger.N`` facts' own clauses and the entries they
-    cite (``_qualified``), the model's words unchanged; in a closing section, which states
-    only what a source backs, the sentence is left out. What stood is recorded."""
-    out: list[Violation] = []
-    for passage in passages:
-        if not passage.ledger_decided or passage.write is None:
-            continue
-        taken = spans.setdefault(passage.id, [])
-        for sentence, ids in passage.ledger_decided:
-            facts = [by_id[i] for i in ids if i in by_id and by_id[i].qualifier]
-            span = sentences_of(passage).span(sentence) if facts else None
-            if span is None or any(span[0] < end and start < span[1] for start, end, _ in taken):
-                continue
-            said = safe_finding_value("; ".join(f.qualifier for f in facts))
-            if passage.closing:
-                taken.append((*left_out_span(passage.text, span[0], span[1]), ""))
-                counts["dropped"] += 1
-                out.append(
-                    Violation(
-                        code=DROPPED_CODE,
-                        message=(
-                            "The agreement question leaves a sentence of "
-                            f"{safe_finding_value(passage.label)} out of the section (the "
-                            f"ledger says otherwise: {LEDGER_CONTRADICTS_CODE}, {said}): "
-                            f"{safe_finding_value(span[2])!r}."
-                        ),
-                        path=f"held.{passage.id}",
-                        subject=passage.id,
-                    )
-                )
-                continue
-            facts = [f for f in facts if f.qualifier.lower() not in span[2].lower()]
-            if not facts:
-                continue
-            rewrite = _qualified(span[2], facts)
-            taken.append((span[0], span[1], rewrite))
-            counts["qualified"] += 1
-            out.append(
-                Violation(
-                    code=QUALIFIED_CODE,
-                    message=(
-                        "A sentence of "
-                        f"{safe_finding_value(passage.label)} denies what "
-                        f"{safe_finding_value(', '.join(f.id for f in facts))} states the ledger "
-                        "holds, and no row rewrote it: the platform adds the fact: "
-                        f"{safe_finding_value(span[2])!r} now reads "
-                        f"{safe_finding_value(rewrite)!r}."
-                    ),
-                    path=f"held.{passage.id}",
-                )
-            )
-    return out
 
 
 def _codes_of(found: Sequence[Violation]) -> str:
@@ -6032,11 +5650,10 @@ def _fact_fallback(
 
 
 # The codes by which the ledger itself, not a model's words, says a kept sentence
-# is false: a failed call a later call redid, code an entry lists called not read
-# in a closing sentence, or a name the ledger states denied (T-600). A count of
-# failed calls the ledger's does not hold is read off the words and recorded, never
-# a reason to leave a sentence out.
-_LEDGER_CODES = frozenset({FAILURE_REDONE_CODE, UNREAD_STANDING_CODE, LEDGER_CONTRADICTS_CODE})
+# is false: a failed call a later call redid, or code an entry lists called not read
+# in a closing sentence. A count of failed calls the ledger's does not hold is read
+# off the words and recorded, never a reason to leave a sentence out.
+_LEDGER_CODES = frozenset({FAILURE_REDONE_CODE, UNREAD_STANDING_CODE})
 
 
 def _ledger_says_otherwise(found: Sequence[Violation]) -> bool:

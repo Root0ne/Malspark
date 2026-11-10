@@ -12,9 +12,9 @@ platform's own code and no model call, each held sentence that denies
 something of a name the run holds (``section_agreement.name_readings``) and
 each limitations sentence held to the failed calls a later call redid
 (``section_agreement.held_limitation_sentences``), and prints per sentence:
-the name, what the ledger decides (contradicted by which entries, backed, or
-undecided and which fact the round would be shown), and the characters of
-the facts the round was shown before and would be shown now.
+the name, the fact the round would be shown for it, how its answer is held,
+and the characters of the facts the round was shown before and would be
+shown now. Code decides none of these sentences: each is the model's to answer.
 
 Read-only over the runs: nothing is written beside them, no network is reached,
 no credential is read. ``--json PATH`` also writes the readings to ``PATH``.
@@ -133,7 +133,7 @@ def _cut(text: str, limit: int = 160) -> str:
 
 
 def read_run(run: Path) -> dict[str, Any]:
-    """What the ledger decides of each held name in one stored run, and the facts' sizes."""
+    """Each held name in one stored run with the fact shown for it, and the facts' sizes."""
     from malspark.reporting.agreement_facts import ledger_facts
     from malspark.reporting.ledger_entities import run_names
     from malspark.reporting.limitation_facts import failed_calls
@@ -150,6 +150,7 @@ def read_run(run: Path) -> dict[str, Any]:
         _stale_calls,
         generic_words,
         held_limitation_sentences,
+        redone_calls_named,
     )
 
     prompt = _request_text(run / "worker.log")
@@ -167,8 +168,7 @@ def read_run(run: Path) -> dict[str, Any]:
     rows: list[dict[str, Any]] = []
     for passage in shown:
         named = dict(passage.ledger_named)
-        decided = dict(passage.ledger_decided)
-        for reading in (r for r in readings if r.sentence in named or r.verdict == "backed"):
+        for reading in (r for r in readings if r.sentence in named):
             if reading.sentence not in passage.text:
                 continue
             ids = named.get(reading.sentence, ())
@@ -179,26 +179,15 @@ def read_run(run: Path) -> dict[str, Any]:
                     "sentence": reading.sentence,
                     "name": f"{reading.kind} {reading.shown}"
                     + (" (sentence before)" if reading.back else ""),
-                    "verdict": reading.verdict,
                     "facts": [
                         {"id": fid, "cites": sorted(by_fact[fid].cites), "text": by_fact[fid].text}
                         for fid in ids
                         if fid in by_fact
                     ],
                     "outcome": (
-                        (
-                            "left out unless rewritten on the fact"
-                            if passage.closing
-                            else "qualified on the fact unless rewritten"
-                        )
-                        if reading.sentence in decided
-                        else (
-                            "held; a keep must quote a source"
-                            if passage.closing
-                            else "held; a keep is recorded unless quoted"
-                        )
-                        if reading.verdict == "undecided"
-                        else "not held by name"
+                        "held; a keep must quote a source"
+                        if passage.closing
+                        else "held; a keep is recorded unless quoted"
                     ),
                 }
             )
@@ -214,11 +203,14 @@ def read_run(run: Path) -> dict[str, Any]:
         ):
             stale = _stale_calls(sentence, failed, found.image_bases, broad=True)
             refused = "a keep is refused (agreement.failure_redone): left out unless rewritten"
+            named = redone_calls_named(sentence, failed, found.image_bases)
             held_failed.append(
                 {
                     "sentence": sentence,
                     "redone": [f"{c.entry} by {', '.join(c.redone_by)}" for c in stale],
                     "outcome": refused if stale else "held; read against the failed.N facts",
+                    # Held by the calls it names or cites: the entries a keep must cite.
+                    "cite": sorted({by for call in named for by in call.redone_by}),
                     # Held before too: the sentence says a call failed in words read so.
                     "held_before": bool(_SAYS_FAILED.search(sentence)),
                 }
@@ -269,7 +261,7 @@ def _print(read: dict[str, Any]) -> None:
         + ", ".join(f"{f}->{a}{' (redo)' if r else ''}" for f, a, r in read["answered"])
     )
     for row in read["names"]:
-        print(f" - [{row['passage']}] {row['name']}: {row['verdict']}; {row['outcome']}")
+        print(f" - [{row['passage']}] {row['name']}: {row['outcome']}")
         print(f"     sentence: {_cut(row['sentence'], 220)}")
         for fact in row["facts"]:
             print(
@@ -280,6 +272,7 @@ def _print(read: dict[str, Any]) -> None:
         print(
             f" - [limitations] failed call ({before}): {row['outcome']} "
             f"({'; '.join(row['redone'])})"
+            + (f"; cite {' or '.join(row['cite'])}" if row["cite"] else "")
         )
         print(f"     sentence: {_cut(row['sentence'], 220)}")
 
