@@ -7,11 +7,14 @@ targets append the compose files COMPOSE_FILE_EXTRA names: compose reads
 ``make dev-up`` gives it two (the shipped file and the dev overlay), so a
 host's own overrides reach the dev stack only through COMPOSE_FILE_EXTRA, from
 the environment and from the make command line alike. Run through make with a
-``docker`` on PATH that writes down what it is given.
+``docker`` on PATH that writes down what it is given. A host that is not Linux
+adds its overlays after the shipped files, so what is expected there holds them
+too: the entry point's own tests say which host adds which.
 """
 
 from __future__ import annotations
 
+import importlib.util
 import json
 import os
 import re
@@ -19,12 +22,34 @@ import shutil
 import subprocess
 import sys
 from pathlib import Path
+from types import ModuleType
 
 import pytest
 
 ROOT = Path(__file__).resolve().parents[2]
-SHIPPED = ["-f", "docker/docker-compose.yml", "-f", "docker/docker-compose.dev.yml"]
 DEV = f"DEV={sys.executable} scripts/dev/malspark_dev.py"
+HOST_CHOICES = ("COMPOSE_FILE_EXTRA", "MALSPARK_DATA_VOLUMES", "VIRTUAL_ENV")
+
+
+def _entry() -> ModuleType:
+    spec = importlib.util.spec_from_file_location(
+        "malspark_dev_for_the_make_targets", ROOT / "scripts" / "dev" / "malspark_dev.py"
+    )
+    assert spec and spec.loader
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+entry = _entry()
+SHIPPED = [arg for path in entry.SHIPPED_COMPOSE for arg in ("-f", path)]
+# What this host adds by itself, with nothing in the environment choosing.
+HOST = [
+    arg
+    for path in (*entry.host_overlays(ROOT, None, {}), *entry.dev_overlays(ROOT))
+    for arg in ("-f", path)
+]
 
 needs_make = pytest.mark.skipif(shutil.which("make") is None, reason="needs make")
 
@@ -79,7 +104,7 @@ def _calls(tmp_path: Path, target: str, *args: str, extra: str | None = None) ->
         f"open({str(log)!r}, 'a').write(json.dumps(sys.argv[1:]) + '\\n')\n"
     )
     docker.chmod(0o755)
-    env = {k: v for k, v in os.environ.items() if k not in ("COMPOSE_FILE_EXTRA", "VIRTUAL_ENV")}
+    env = {k: v for k, v in os.environ.items() if k not in HOST_CHOICES}
     env["PATH"] = f"{shims}{os.pathsep}{env.get('PATH', '')}"
     if extra is not None:
         env["COMPOSE_FILE_EXTRA"] = extra
@@ -100,7 +125,7 @@ def _calls(tmp_path: Path, target: str, *args: str, extra: str | None = None) ->
 @needs_make
 @pytest.mark.parametrize("target", sorted(TARGETS))
 def test_without_extra_files_the_two_shipped_files_are_passed(tmp_path: Path, target: str) -> None:
-    assert _calls(tmp_path, target, DEV) == [["compose", *SHIPPED, *TARGETS[target]]]
+    assert _calls(tmp_path, target, DEV) == [["compose", *SHIPPED, *HOST, *TARGETS[target]]]
 
 
 @pytest.mark.posix
@@ -111,18 +136,19 @@ def test_each_extra_file_is_appended_after_the_shipped_ones_in_order(
 ) -> None:
     calls = _calls(tmp_path, target, DEV, extra="docker/local.yml  /srv/gpu.yml")
     extra = ["-f", "docker/local.yml", "-f", "/srv/gpu.yml"]
-    assert calls == [["compose", *SHIPPED, *extra, *TARGETS[target]]]
+    assert calls == [["compose", *SHIPPED, *HOST, *extra, *TARGETS[target]]]
 
 
 @pytest.mark.posix
 @needs_make
 def test_the_extra_files_may_be_given_on_the_command_line(tmp_path: Path) -> None:
     calls = _calls(tmp_path, "dev-up", DEV, "COMPOSE_FILE_EXTRA=docker/local.yml")
-    assert calls == [["compose", *SHIPPED, "-f", "docker/local.yml", "up", "-d"]]
+    assert calls == [["compose", *SHIPPED, *HOST, "-f", "docker/local.yml", "up", "-d"]]
 
 
 @pytest.mark.posix
 @needs_make
 @pytest.mark.skipif(shutil.which("uv") is None, reason="needs uv")
 def test_the_shipped_wrapper_runs_the_entry_point_through_uv(tmp_path: Path) -> None:
-    assert _calls(tmp_path, "docker-down") == [["compose", "--profile", "*", "down"]]
+    files = entry._production_files(ROOT, None, {})
+    assert _calls(tmp_path, "docker-down") == [["compose", *files, "--profile", "*", "down"]]

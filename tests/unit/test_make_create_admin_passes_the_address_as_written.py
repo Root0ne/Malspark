@@ -46,6 +46,9 @@ def _env(tmp_path: Path) -> dict[str, str]:
     docker.chmod(0o755)
     env = {k: v for k, v in os.environ.items() if k not in ("EMAIL", "DEV")}
     env["PATH"] = f"{shims}{os.pathsep}{env.get('PATH', '')}"
+    # Which compose files a host adds is the entry point's own tests' subject:
+    # bind mounts here, so the command is the same on every host.
+    env["MALSPARK_DATA_VOLUMES"] = "0"
     return env
 
 
