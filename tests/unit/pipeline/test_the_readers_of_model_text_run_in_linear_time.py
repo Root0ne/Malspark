@@ -116,6 +116,26 @@ def _scales_linearly(read: Callable[[str], object]) -> None:
     )
 
 
+def _built(make: Callable[[str], str], read: Callable[[str], object]) -> Callable[[str], object]:
+    """``read`` of the text ``make`` builds from the hostile line, built once for each line.
+
+    For a reader whose own work does not grow with its text (it reads a bounded
+    part of it): built in the timed call, the building is the whole cost
+    measured, and a text four times as long can cross the allocator's
+    large-block threshold, past which each one takes fresh pages the system
+    maps and zeroes (building 40 KB took 1.5 us and 160 KB 57 us), which the
+    ratio would read as the reader's growth.
+    """
+    built: dict[int, str] = {}
+
+    def read_built(text: str) -> object:
+        if len(text) not in built:
+            built[len(text)] = make(text)
+        return read(built[len(text)])
+
+    return read_built
+
+
 ENTRIES = EntryTexts.from_ledger(
     [
         build_entry(
@@ -307,7 +327,7 @@ LISTED = [SimpleNamespace(addresses=frozenset({0x1400}), id="listed.1")]
             id="the clause denying a reading",
         ),
         pytest.param(
-            lambda t: denies_an_observation("not " + "that word " * (len(t) // 10)),
+            _built(lambda t: "not " + "that word " * (len(t) // 10), denies_an_observation),
             id="a denied observation",
         ),
         pytest.param(
