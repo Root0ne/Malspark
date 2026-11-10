@@ -9,11 +9,14 @@ against the current working directory.
 
 from __future__ import annotations
 
+import ast
 import functools
+import json
 import ntpath
 import os
 import posixpath
 import re
+import warnings
 from dataclasses import dataclass
 from pathlib import Path, PurePath, PurePosixPath, PureWindowsPath
 
@@ -227,11 +230,11 @@ class _Writing:
     def of(cls, width: int | None) -> _Writing:
         """A path whose separators are ``width`` backslashes; ``None`` for slashes."""
         if width == 1:
-            return cls(r"(?:/?\\++|/)", _WINDOWS_CHAR, _WINDOWS_MARK)
+            return cls(r"(?:/?\\++/?|/)", _WINDOWS_CHAR, _WINDOWS_MARK)
         run = r"\\++" if width is None else rf"(?<!\\)\\{{1,{width - 1}}}"
         escape = rf"{run}(?={_ESCAPED})"
         return cls(
-            rf"(?:/?(?!{escape})\\++|/)",
+            rf"(?:/?(?!{escape})\\++/?|/)",
             rf"(?:{run}u[0-9A-Fa-f]{{4}}|{_WINDOWS_CHAR})",
             rf"(?:{run}'|{_WINDOWS_MARK})",
         )
@@ -266,7 +269,7 @@ class _Writing:
         """A path past a server's name: the server, a separator and a name."""
         return (
             rf"{self.directory}{self.separator}(?!\")"
-            rf"(?={self.char}|{self.mark}){self.tail}"
+            rf"(?={_WINDOWS_EDGE_SPACE}(?:{self.char}|{self.mark})){self.tail}"
         )
 
 
@@ -274,17 +277,28 @@ _AS_WRITTEN = _Writing.of(1)
 _ESCAPED_ONCE = _Writing.of(2)
 _ESCAPED_TWICE = _Writing.of(4)
 _ESCAPED_MORE = _Writing.of(8)
-_SLASHED = _Writing.of(None)
 # The separator a head ends with, and the writing it shows: one backslash is
 # a path as written, two or three one escaped once, four to seven twice,
 # more than that further still; a slash shows none.
-_BY_SEPARATOR = (
-    (r"\\(?!\\)", _AS_WRITTEN),
+_BY_SEPARATOR_BACK = (
+    (r"\\(?!\\)/?", _AS_WRITTEN),
     (r"\\{2,3}(?!\\)", _ESCAPED_ONCE),
     (r"\\{4,7}(?!\\)", _ESCAPED_TWICE),
     (r"\\{8,}+", _ESCAPED_MORE),
-    (r"/", _SLASHED),
 )
+
+
+class _Slashed(_Writing):
+    @property
+    def tail(self) -> str:
+        backs = "|".join(rf"{sep}(?!\"){how.tail}" for sep, how in _BY_SEPARATOR_BACK)
+        return (
+            rf"(?:{self.directory}/(?![\\\"]))*+(?:(?:{self.directory}/?)?(?:{backs})|{self.name})?"
+        )
+
+
+_SLASHED = _Slashed(**vars(_Writing.of(None)))
+_BY_SEPARATOR = (*_BY_SEPARATOR_BACK, (r"/", _SLASHED))
 # The backslashes a UNC path starts with, in pairs, and the writing they show.
 # In an escaped text one more may follow them: the backslash of the escape
 # the server's name starts with (``\\\\\u00e9tage`` in a JSON string).
@@ -305,9 +319,17 @@ def _after_separator(*, quote_guard: bool = False) -> str:
 
 # A UNC path past its backslashes: an optional device mark (``?`` or ``.``)
 # and its separator, then the server and a name.
+# Two backslashes are a UNC path as written or one backslash escaped once
+# (a registry key or a regex in a JSON string): the separator after the
+# server tells which.
+_BY_SERVER_SEPARATOR = "|".join(
+    rf"{_AS_WRITTEN.directory}{sep}(?!\")(?={_WINDOWS_EDGE_SPACE}(?:{how.char}|{how.mark})){how.tail}"
+    for sep, how in (*_BY_SEPARATOR_BACK, (r"/", _AS_WRITTEN))
+)
 _AFTER_UNC_HEAD = (
     r"(?<!\\)(?:"
-    + "|".join(rf"{head}(?:[?.]{how.separator})?{how.server}" for head, how in _BY_UNC_HEAD)
+    + rf"\\\\(?!\\)(?:[?.]{_AS_WRITTEN.separator}{_AS_WRITTEN.server}|(?:{_BY_SERVER_SEPARATOR}))|"
+    + "|".join(rf"{head}(?:[?.]{how.separator})?{how.server}" for head, how in _BY_UNC_HEAD[1:])
     + ")"
 )
 # A character or a mark a name may start with in any writing, to tell a head
@@ -520,6 +542,49 @@ def _held(path: PurePosixPath, parents: tuple[str, ...]) -> bool:
     return any(text == top or text.startswith(top + "/") for top in (*HOST_ROOTS, *parents))
 
 
+# A text that writes another: a JSON document, or one Python string literal.
+# Its strings are read as the words they write, so a path in them is read in
+# the form it was written in before the text was escaped, however many times.
+_JSON_STRING = re.compile(r'"(?:[^"\\]|\\.)*+"', re.DOTALL)
+# Where a Windows-form path may start: a drive, two backslashes or a ``file:``
+# URL. Only a string holding one is read through its escapes; any other reads
+# as the text writes it.
+_WINDOWS_FORM = re.compile(rf"[A-Za-z]:[\\/]|\\\\|{_FILE}")
+_STARTS_QUOTED = re.compile(_QUOTED_HEAD)
+# How deep a text written inside a text is followed.
+_WRITTEN_DEPTH = 4
+
+
+def _json_document(text: str) -> bool:
+    """Whether ``text`` is one JSON document holding a string."""
+    if text.lstrip()[:1] not in ("{", "[", '"'):
+        return False
+    try:
+        json.loads(text)
+    except (ValueError, RecursionError):
+        return False
+    return True
+
+
+def _string_literal(text: str) -> str | None:
+    """The string ``text`` writes when it is the repr of one, else ``None``.
+
+    Only a repr as Python writes it: words in quotes that merely parse as a
+    literal (``'\\\\srv\\share'`` does, a backslash before ``s`` being kept)
+    are words in quotes, read as they stand.
+    """
+    stripped = text.strip()
+    if len(stripped) < 2 or stripped[0] not in "'\"" or stripped[-1] != stripped[0]:
+        return None
+    try:
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            value = ast.literal_eval(stripped)
+    except (ValueError, SyntaxError, MemoryError, RecursionError):
+        return None
+    return value if isinstance(value, str) and repr(value) == stripped else None
+
+
 def _home() -> str:
     """The running host's home directory, or nothing where it cannot be read."""
     try:
@@ -564,8 +629,12 @@ def host_paths_masked(
     starts with a slash (an HTTP route) is kept. Read from the words alone,
     never from the host's files, and in the form each path is written in, so a
     reason masked when it is written reads the same wherever it is shown, and
-    a Windows project's paths are read as a POSIX project's are. A caller
-    holding one path rather than words masks it with :func:`host_path_masked`.
+    a Windows project's paths are read as a POSIX project's are. A text that
+    writes another (a JSON document, a Python string literal) and holds a
+    Windows-form path is read through its escapes, each string as the words
+    it writes, and written back the same way, so it is still that document.
+    A caller holding one path rather than words masks it with
+    :func:`host_path_masked`.
     """
     root, parents = _read_root(project_root)
     pattern = _absolute_path(_home() if home is None else str(home))
@@ -606,4 +675,44 @@ def host_paths_masked(
             return OUTSIDE_PROJECT
         return relative + pattern.sub(shown, span[head.end() :])
 
-    return pattern.sub(shown, str(text or ""))
+    def within(words: str, depth: int) -> str:
+        """The words a string writes: a path it starts with is the whole of it,
+        as a quoted span's is; otherwise they are read as any text."""
+        return spanned(words) if _STARTS_QUOTED.match(words) else read(words, depth)
+
+    def read(words: str, depth: int) -> str:
+        """``words`` masked, an escaped text read as the text it writes.
+
+        A string of a JSON object or array that writes a Windows-form path is
+        read as those words and written back escaped the same way; one that
+        writes none is read as it stands. A text that is one string in quotes
+        (a JSON string, a repr) may be an escaped text or words in quotes
+        (``"C:\\new\\table"`` is both a string writing a line break and a
+        path in quotes), so it is read both ways: what either shows is masked.
+        """
+        if depth < _WRITTEN_DEPTH and _WINDOWS_FORM.search(words):
+            if _json_document(words):
+
+                def string(token: re.Match[str]) -> str:
+                    written = json.loads(token.group())
+                    if not _WINDOWS_FORM.search(written):
+                        return pattern.sub(shown, token.group())
+                    said = within(written, depth + 1)
+                    if said == written:
+                        return token.group()
+                    return json.dumps(said, ensure_ascii=token.group().isascii())
+
+                masked = _JSON_STRING.sub(string, words)
+                if not words.lstrip().startswith('"'):
+                    return masked
+                words = masked
+            else:
+                written = _string_literal(words)
+                if written is not None and _WINDOWS_FORM.search(written):
+                    said = within(written, depth + 1)
+                    if said != written:
+                        lead = words[: len(words) - len(words.lstrip())]
+                        words = lead + repr(said) + words[len(words.rstrip()) :]
+        return pattern.sub(shown, words)
+
+    return read(str(text or ""), 0)

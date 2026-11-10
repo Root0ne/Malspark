@@ -697,6 +697,106 @@ class TestOnlyAHostPathIsMasked:
         for written in (f"C:/Users/qxa{space}/qxb/x", f"C:\\Users\\{space}qxa\\{space}qxb"):
             assert host_paths_masked(f"see {written} end") == f"see {OUTSIDE_PROJECT} end"
 
+    def test_a_json_document_is_read_as_the_words_it_writes(self) -> None:
+        # Each string is read through its escapes and written back the same
+        # way: the path is masked whole, the words and lines after it stay,
+        # and what the document's other strings write is as it was.
+        written = json.dumps(
+            {
+                "level": 3,
+                "msg": (
+                    "capa failed reading C:\\work\\John Smith\\s.bin with three words"
+                    "\nsecond line\nétage"
+                ),
+                "joined": "open C:/Users/alice\\John Smith\\Émile.txt failed",
+                "note": "café /api/v1/jobs",
+            }
+        )
+        said = host_paths_masked(written)
+        assert json.loads(said) == {
+            "level": 3,
+            "msg": f"capa failed reading {OUTSIDE_PROJECT} with three words\nsecond line\nétage",
+            "joined": f"open {OUTSIDE_PROJECT} failed",
+            "note": "café /api/v1/jobs",
+        }
+        assert '"note": "caf\\u00e9 /api/v1/jobs"' in said and '"level": 3' in said
+
+    def test_a_json_document_keeps_how_it_writes_what_is_not_ascii(self) -> None:
+        written = json.dumps({"p": "open C:\\Users\\Élodie Martin\\x: refusé"}, ensure_ascii=False)
+        assert host_paths_masked(written) == json.dumps(
+            {"p": f"open {OUTSIDE_PROJECT}: refusé"}, ensure_ascii=False
+        )
+
+    def test_a_json_key_and_a_slash_written_escaped_are_read_too(self) -> None:
+        said = host_paths_masked(json.dumps({"C:\\Users\\alice\\x y": 1}))
+        assert json.loads(said) == {OUTSIDE_PROJECT: 1}
+        escaped = json.dumps({"m": "open C:/Users/alice/AppData/x.txt now"}).replace("/", "\\/")
+        assert json.loads(host_paths_masked(escaped)) == {"m": f"open {OUTSIDE_PROJECT} now"}
+
+    def test_a_document_written_inside_a_document_is_read_through(self) -> None:
+        inner = {"m": "tool failed: \\\\?\\C:\\long\\alice (exit 1) — réessayez plus tard, café"}
+        said = host_paths_masked(json.dumps({"m": json.dumps(inner)}))
+        assert json.loads(json.loads(said)["m"]) == {
+            "m": f"tool failed: {OUTSIDE_PROJECT} (exit 1) — réessayez plus tard, café"
+        }
+        deep = "open C:\\Users\\alice bob\\x: denied"
+        for _ in range(6):
+            deep = json.dumps(deep)
+        assert "alice" not in host_paths_masked(deep)
+
+    def test_a_repr_is_read_as_the_words_it_writes(self) -> None:
+        words = (
+            "capa failed reading C:\\work\\John Smith\\s.bin with three words"
+            "\nsecond line, it's étage"
+        )
+        assert host_paths_masked(repr(words)) == repr(
+            f"capa failed reading {OUTSIDE_PROJECT} with three words\nsecond line, it's étage"
+        )
+        # A repr of that repr writes the line break as two backslashes and
+        # ``n``, which also read as a path's head; the path itself is gone.
+        twice = host_paths_masked(repr(repr(words)))
+        assert "work" not in twice and "Smith" not in twice and "s.bin" not in twice
+
+    @pytest.mark.parametrize(
+        "written",
+        [
+            # words in quotes that also parse as an escaped string
+            '"open C:\\new\\table.txt now"',
+            "'open C:\\new\\table.txt now'",
+            '{"error": "open C:\\new\\table.txt now"}',
+            '"\\\\srv/share/alice and file:////srv/share/bob"',
+            "'\\\\srv\\share\\alice and D:\\x\\bob'",
+            "'see C:\\\\real\\\\alice y and C:\\new\\bob z'",
+        ],
+    )
+    def test_words_in_quotes_that_read_as_an_escaped_string_are_read_both_ways(
+        self, written: str
+    ) -> None:
+        said = host_paths_masked(written)
+        assert not re.search(r"table|alice|bob|share", said), said
+
+    def test_a_json_document_is_masked_in_linear_time(self) -> None:
+        def document(count: int) -> str:
+            return json.dumps(
+                {
+                    **{f"k{n}": "open C:\\Users\\alice b\\x y: no" for n in range(count)},
+                    "prose": "C:\\work\\s.bin " + "été crème\n" * count,
+                    "inner": json.dumps({"m": "D:\\x\\y " + "word " * count}),
+                }
+            )
+
+        def brackets(count: int) -> str:
+            return "[" * count + '"C:\\\\x"' + "]" * count
+
+        assert "alice" not in host_paths_masked(document(3))
+        for text in (document, brackets, lambda count: repr(document(count))):
+            # The least count whose text costs a measurable time; only the
+            # ratio is asserted.
+            count = 200
+            while cpu_seconds(partial(host_paths_masked, text(count)), repeats=3) < 0.005:
+                count *= 2
+            assert_scales(text, count, host_paths_masked, factor=4)
+
     def test_any_space_windows_allows_in_a_name_is_inside_it(self) -> None:
         for space in " \u00a0\u1680\u2009\u3000":
             said = host_paths_masked(f"see C:\\Users\\qxa{space}qxb\\tailqxc end")

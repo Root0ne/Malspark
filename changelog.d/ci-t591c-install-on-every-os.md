@@ -31,26 +31,30 @@
   `a(b)`, `alice's`, `.(x)`, `OneDrive – Firma`, `a€b`, an accent written as a combining mark,
   an emoji, a space, no-break space or thin space inside a directory's name), a character an
   escaped text writes as `\uXXXX`, and a name that only reads like such an escape in a path
-  written as it is (`John Smith\uabcd.txt`). It is masked wherever the path stands: after any
+  written as it is (`John Smith\uabcd.txt`), with its separators single, doubled, mixed with
+  slashes (`C:/Users/a\b`) or written `\/`. It is masked wherever the path stands: after any
   character but an ASCII letter or digit (`日本C:\...`, `path:C:\...`, `a.C:\...`), quoted in
-  `'`, `"`, backticks, `‘’`, `“”` or `«»`, or inside a JSON string, which still reads as JSON
-  once masked. A quoted Windows path or `file:` URL is masked up to its closing quote, spaces
-  and all, and a quoted span holding a second path is masked whole; a full stop after an
-  unquoted path stays outside it, and so do the words after it, escaped or not. A
-  `file://host/...` URL (also `file:////host/...` and `file:\\host\...`, the scheme in any
-  case) names a path on another machine and is masked too. The host's home directory written in
-  a text (a Windows one with single, doubled or forward separators, in any case) is one path
-  with every space in its name, and the path after it is read as any other. capa's rules
-  directory in the reason it did not run is read as the one path it is, whatever its name
-  holds: inside the project it is shown from the project root, and a rules directory outside
-  the project, under any directory, is shown as a path outside the project. A path inside a
-  Windows checkout is shown from the project root (`data/capa-rules`), as on Linux and macOS,
-  and any text is masked in time linear in its length. The words alone decide, never the host,
-  so on a Linux host too, text without a Windows-form path or the home directory reads as
-  before, and these read as one and are masked: `x:\d+`; backslashes in pairs before a word
-  (`\\d+\\s`, `'\\powershell.exe'`), read as a UNC path; a guest's path in a lost tool's reason
-  (`'C:\Windows\System32\cmd.exe'`); a quoted span starting with a Windows path, up to its
-  closing quote; and a `file://host/...` URL.
+  `'`, `"`, backticks, `‘’`, `“”` or `«»`, or inside a text that writes another: a JSON
+  document or the repr of a string is read through its escapes, each string as the words it
+  writes, and written back the same way, so it still reads as that document and the words and
+  lines after a path stay. A text that is one string in quotes is read both as escaped and as
+  it stands, and what either reading shows is masked. A quoted Windows path or `file:` URL is
+  masked up to its closing quote, spaces and all, and a quoted span holding a second path is
+  masked whole; a full stop after an unquoted path stays outside it. A `file://host/...` URL
+  (also `file:////host/...` and `file:\\host\...`, the scheme in any case) names a path on
+  another machine and is masked too. The host's home directory written in a text (a Windows one
+  with single, doubled or forward separators, in any case) is one path with every space in its
+  name, and the path after it is read as any other. capa's rules directory in the reason it did
+  not run is read as the one path it is, whatever its name holds: inside the project it is
+  shown from the project root, and a rules directory outside the project, under any directory,
+  is shown as a path outside the project. A path inside a Windows checkout is shown from the
+  project root (`data/capa-rules`), as on Linux and macOS, and any text is masked in time
+  linear in its length. The words alone decide, never the host, so on a Linux host too, text
+  without a Windows-form path or the home directory reads as before, and these read as one and
+  are masked: `x:\d+`; backslashes in pairs before a word (`\\d+\\s`, `'\\powershell.exe'`),
+  read as a UNC path; a guest's path in a lost tool's reason (`'C:\Windows\System32\cmd.exe'`);
+  a quoted span starting with a Windows path, up to its closing quote; and a `file://host/...`
+  URL.
 - **The rule replay runs on Windows, and reaches no network there either.** The replay's
   network guard lets through the one loopback connection the event loop's socket pair is made
   with where the system has no native pair, and also refuses the connections and datagrams

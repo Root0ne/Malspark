@@ -234,6 +234,30 @@ CONTEXTS = (
         lambda p: json.dumps({"error": f"cannot open {p}"}),
         json=True,
     ),
+    # A text written inside a text: a repr of the words, a repr of a JSON
+    # document, a document inside a document, and JSON with its slashes
+    # escaped.
+    Context("a repr of the words", False, "", lambda p: repr(f"cannot open {p} now\nnext")),
+    Context(
+        "a repr of JSON",
+        False,
+        "",
+        lambda p: repr(json.dumps({"error": f"cannot open {p}"})),
+    ),
+    Context(
+        "JSON in JSON",
+        False,
+        "",
+        lambda p: json.dumps({"m": json.dumps({"error": f"cannot open {p}: denied"})}),
+        json=True,
+    ),
+    Context(
+        "JSON, its slashes escaped",
+        False,
+        "",
+        lambda p: json.dumps({"error": f"cannot open {p}"}).replace("/", "\\/"),
+        json=True,
+    ),
 )
 
 # Two paths in one quoted span, in every order.
