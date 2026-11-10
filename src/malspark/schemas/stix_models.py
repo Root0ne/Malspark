@@ -245,6 +245,10 @@ class STIXObject(_SpecConformantModel):
     # own identity on every object it publishes; ``None`` keeps the property
     # out of a bundle that has no identity to name.
     created_by_ref: str | None = None
+    # The marking definitions that apply to the object. The export names the
+    # report's TLP marking (``TLP_MARKING_IDS``) on every object it publishes;
+    # empty, and so absent from the dump, elsewhere.
+    object_marking_refs: list[str] = Field(default_factory=list)
 
 
 # A property of a judge object that the platform's model for its type does not
@@ -753,6 +757,62 @@ class Report(STIXObject):
     object_refs: list[str] = Field(default_factory=list)
 
 
+# The TLP 2.0 marking definitions, as the STIX extension for TLP 2.0 publishes
+# them: one fixed id per level, the same in every producer's bundle, so a
+# consumer reads the level from the id alone. Keyed by the report's TLP level.
+TLP_EXTENSION_ID = "extension-definition--60a3c5c5-0d10-413e-aab3-9e08dde9e88d"
+TLP_MARKING_IDS = {
+    "CLEAR": "marking-definition--94868c89-83c2-464b-929b-a1a8aa3c8487",
+    "GREEN": "marking-definition--bab4a63c-aed9-4cf5-a766-dfca5abac2bb",
+    "AMBER": "marking-definition--55d920b0-5e8b-4f79-9ee9-91f868d9b421",
+    "AMBER_STRICT": "marking-definition--939a9414-2ddd-4d32-a0cd-375ea402b003",
+    "RED": "marking-definition--e828b379-4e03-4974-9ac4-e53a884c97c1",
+}
+# The level's word in the extension (``tlp_2_0``), lower case: ``amber+strict``.
+TLP_WORDS = {
+    "CLEAR": "clear",
+    "GREEN": "green",
+    "AMBER": "amber",
+    "AMBER_STRICT": "amber+strict",
+    "RED": "red",
+}
+_TLP_CREATED = datetime(2022, 10, 1, tzinfo=UTC)
+
+
+def tlp_name(level: str) -> str | None:
+    """The TLP 2.0 name of a report's level (``TLP:AMBER+STRICT``), or ``None`` for no level."""
+    word = TLP_WORDS.get(str(level or "").strip().upper())
+    return f"TLP:{word.upper()}" if word else None
+
+
+class MarkingDefinition(_SpecConformantModel):
+    """A STIX 2.1 marking definition: here, one of the TLP 2.0 levels (``tlp_marking``)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    type: Literal["marking-definition"] = "marking-definition"
+    spec_version: Literal["2.1"] = "2.1"
+    id: str
+    created: datetime
+    name: str
+    extensions: dict[str, Any]
+
+
+def tlp_marking(level: str) -> MarkingDefinition | None:
+    """The TLP 2.0 marking definition of a report's level, as the extension writes it."""
+    key = str(level or "").strip().upper()
+    if key not in TLP_MARKING_IDS:
+        return None
+    return MarkingDefinition(
+        id=TLP_MARKING_IDS[key],
+        created=_TLP_CREATED,
+        name=str(tlp_name(key)),
+        extensions={
+            TLP_EXTENSION_ID: {"extension_type": "property-extension", "tlp_2_0": TLP_WORDS[key]}
+        },
+    )
+
+
 # ---------------------------------------------------------------------------
 # Bundle — updated to include ConfidenceAnnotatedRelationship + extended SDOs
 # ---------------------------------------------------------------------------
@@ -922,7 +982,9 @@ class Bundle(_SpecConformantModel):
 
     type: Literal["bundle"] = "bundle"
     id: str = Field(default_factory=lambda: f"bundle--{_generate_uuid()}")
-    objects: list[_BundleObject] = Field(default_factory=list)
+    # A marking definition is the export's own (``tlp_marking``) and outside
+    # the union a judge's answer is read with: a judge's is set aside as before.
+    objects: list[_BundleObject | MarkingDefinition] = Field(default_factory=list)
     # Severity, malware category and family attribution, as the judge answered
     # them. A STIX custom property (``x_`` prefixed, per the spec's extension
     # rule) rather than three bare bundle fields, because the Bundle's property

@@ -67,11 +67,15 @@ from tests.unit.reporting.test_an_entry_without_a_source_is_read_as_before impor
 # line, and the export's producer name and ``x_malspark_*`` properties; with
 # the previous name each digest is the one pinned before, and the Markdown did
 # not change.
+# The STIX re-pinned when the export came to carry the report's TLP level
+# (T-621): the level's marking definition, and ``object_marking_refs`` naming
+# it on every domain object and relationship; the Markdown and HTML did not
+# change.
 STORED_RENDERS = {
-    "run7": ("87ad1594f3cbc6ea", "f8c2570b24983f04", "b23832cca0c12242"),
-    "run5": ("4fbb0b856aea7f8e", "827d5f7ebdee3768", "eef2b4ff2b507c84"),
-    "run4": ("581eb11ec3924a68", "0d81125d321278da", "f18d8e14c64c335e"),
-    "local8": ("058e0d21f925bb0e", "6016e1c49686fbb1", "cafa41d179455da0"),
+    "run7": ("87ad1594f3cbc6ea", "f8c2570b24983f04", "6f5f4f1b2ed8ea58"),
+    "run5": ("4fbb0b856aea7f8e", "827d5f7ebdee3768", "b7c19ebb4cb31921"),
+    "run4": ("581eb11ec3924a68", "0d81125d321278da", "07a486002a8891ac"),
+    "local8": ("058e0d21f925bb0e", "6016e1c49686fbb1", "86c2fdd68be6dde0"),
 }
 
 _UUID = re.compile(r"--[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}")

@@ -730,10 +730,11 @@ class TestTheMispAttributes:
             False,
         )
         assert techniques[0]["Tag"] == [
-            {"name": f'misp-galaxy:mitre-attack-pattern="{canonical.name} - T1547.001"'}
+            {"name": "tlp:clear"},
+            {"name": f'misp-galaxy:mitre-attack-pattern="{canonical.name} - T1547.001"'},
         ]
         unknown = next(a for a in techniques if a["value"].startswith("T9999"))
-        assert unknown["value"] == "T9999" and "Tag" not in unknown
+        assert unknown["value"] == "T9999" and unknown["Tag"] == [{"name": "tlp:clear"}]
 
     def test_the_same_report_builds_the_same_attributes_and_another_owner_others(
         self,

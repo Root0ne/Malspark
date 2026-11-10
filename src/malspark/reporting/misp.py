@@ -11,7 +11,7 @@ ssdeep or a TLSH also matches files that are not the sample, so it is
 published unflagged for IDS. A technique is a ``text`` attribute, tagged with
 its ATT&CK galaxy cluster when the vendored ATT&CK table names it; it
 describes the sample rather than matching anything, so it is not flagged for
-IDS either.
+IDS either. Every attribute carries the report's TLP level as a ``tlp:`` tag.
 
 One pass over the table and one over the techniques; no per-sample value is
 written here.
@@ -25,6 +25,7 @@ from typing import Any
 
 from malspark.core.previous_name import PREVIOUS_NAME
 from malspark.reporting.renderers.stix_renderer import digest_label, publishes
+from malspark.schemas.stix_models import tlp_name
 
 # The namespace each attribute's uuid is derived in, with the report's own id
 # (or its job's) and the attribute's type and value: the same report always
@@ -179,8 +180,13 @@ def build_misp_attributes(
     out: list[dict[str, Any]] = []
     seen: set[tuple[str, str]] = set()
 
+    # The report's TLP level as MISP's ``tlp`` taxonomy tags it (``tlp:amber``),
+    # on every attribute; none when the report holds no level.
+    level = tlp_name(str(getattr(report, "tlp", "") or ""))
+    tlp_tags = [{"name": level.lower()}] if level else []
+
     def _attribute(kind: str, category: str, value: str, to_ids: bool, comment: str) -> dict:
-        return {
+        attribute: dict[str, Any] = {
             "uuid": str(uuid.uuid5(_NAMESPACE, f"{owner}|{kind}|{value}")),
             "type": kind,
             "category": category,
@@ -188,6 +194,9 @@ def build_misp_attributes(
             "to_ids": to_ids,
             "comment": comment,
         }
+        if tlp_tags:
+            attribute["Tag"] = list(tlp_tags)
+        return attribute
 
     for row in table:
         value = str(getattr(row, "value", "") or "").strip()
@@ -234,6 +243,9 @@ def build_misp_attributes(
             "ATT&CK technique this report publishes",
         )
         if canonical:
-            attribute["Tag"] = [{"name": f'misp-galaxy:mitre-attack-pattern="{canonical} - {tid}"'}]
+            attribute["Tag"] = [
+                *tlp_tags,
+                {"name": f'misp-galaxy:mitre-attack-pattern="{canonical} - {tid}"'},
+            ]
         out.append(attribute)
     return out

@@ -18,7 +18,14 @@ from malspark.reporting.builder import MalwareReportBuilder
 from malspark.reporting.models import MalwareReport
 from malspark.reporting.renderers.stix_renderer import ExtendedSTIXRenderer
 from malspark.schemas.judgement import JudgeAssessment
-from malspark.schemas.stix_models import Bundle, Identity, Indicator, Malware, Report
+from malspark.schemas.stix_models import (
+    Bundle,
+    Identity,
+    Indicator,
+    Malware,
+    MarkingDefinition,
+    Report,
+)
 
 
 def _report(verdict: str = "Malware") -> MalwareReport:
@@ -93,7 +100,9 @@ class TestEveryObjectNamesItsProducer:
         bundle = ExtendedSTIXRenderer().render(_report(), _judge_bundle())
         producer = _identity(bundle).id
 
-        others = [o for o in bundle.objects if not isinstance(o, Identity)]
+        # The TLP marking definition is the one the TLP 2.0 extension publishes,
+        # produced by no identity of this bundle.
+        others = [o for o in bundle.objects if not isinstance(o, Identity | MarkingDefinition)]
         assert others
         assert {o.type: o.created_by_ref for o in others} == {o.type: producer for o in others}
 
@@ -104,7 +113,7 @@ class TestEveryObjectNamesItsProducer:
         assert all(
             o.get("created_by_ref") == producer
             for o in dumped["objects"]
-            if o["type"] != "identity"
+            if o["type"] not in {"identity", "marking-definition"}
         )
 
     def test_the_judges_own_bundle_is_not_edited(self) -> None:
@@ -122,5 +131,7 @@ class TestEveryObjectNamesItsProducer:
         present = {o.id for o in bundle.objects}
 
         assert all(
-            o.created_by_ref in present for o in bundle.objects if not isinstance(o, Identity)
+            o.created_by_ref in present
+            for o in bundle.objects
+            if not isinstance(o, Identity | MarkingDefinition)
         )

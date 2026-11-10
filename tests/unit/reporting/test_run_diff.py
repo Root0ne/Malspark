@@ -350,7 +350,10 @@ class TestStix:
         ids_b = {o["id"] for o in stored["second_bundle"]["objects"]}
         assert ids_a == ids_b
         text = json.dumps(stored["second_bundle"])
-        for oid in sorted(i for i in ids_b if not i.startswith(("attack-pattern--", "identity--"))):
+        # The ids every export shares (the techniques, the producer, the TLP
+        # marking) stay; every other object gets another id.
+        shared = ("attack-pattern--", "identity--", "marking-definition--")
+        for oid in sorted(i for i in ids_b if not i.startswith(shared)):
             kind = oid.split("--", 1)[0]
             text = text.replace(oid, f"{kind}--{uuid.uuid4()}")
         moved = {**stored, "second_bundle": json.loads(text)}

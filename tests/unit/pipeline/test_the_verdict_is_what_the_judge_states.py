@@ -745,4 +745,10 @@ class TestAStoredReportWithoutTheField:
         assert renderer.declined == []
         assert assessment_conflict_violations(bundle) == []
         assert "malware" not in _types(exported)
-        assert set(_types(exported)) <= {"identity", "indicator", "note", "report"}
+        assert set(_types(exported)) <= {
+            "identity",
+            "indicator",
+            "note",
+            "report",
+            "marking-definition",
+        }

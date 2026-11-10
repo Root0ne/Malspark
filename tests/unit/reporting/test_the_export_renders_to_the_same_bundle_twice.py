@@ -124,6 +124,7 @@ def test_each_id_is_derived_from_what_identifies_the_object() -> None:
         "created": "2026-05-16T08:30:00Z",
         "modified": "2026-05-16T08:30:00Z",
         "created_by_ref": PRODUCER_IDENTITY_ID,
+        "object_marking_refs": ["marking-definition--94868c89-83c2-464b-929b-a1a8aa3c8487"],
         "name": f"IP {C2}",
         "description": "Published because: the sandbox recorded it.",
         "indicator_types": ["malicious-activity"],
@@ -153,7 +154,8 @@ def test_every_time_is_the_time_the_report_was_built() -> None:
         (o["type"], name, o[name])
         for o in bundle["objects"]
         for name in ("created", "modified")
-        if name in o
+        # The TLP marking keeps the time its standard definition states.
+        if name in o and o["type"] != "marking-definition"
     }
     assert {stamp for _type, _name, stamp in stamps} == {"2026-05-16T08:30:00Z"}
     indicators = [o for o in bundle["objects"] if o["type"] == "indicator"]

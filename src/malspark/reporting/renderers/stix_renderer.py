@@ -116,9 +116,11 @@ from malspark.schemas.stix_models import (
     Process,
     Relationship,
     Report,
+    STIXObject,
     attack_pattern_id,
     crediting_only,
     produced_by,
+    tlp_marking,
 )
 from malspark.schemas.stix_pattern import (
     object_path_problems,
@@ -1477,7 +1479,7 @@ class ExtendedSTIXRenderer:
         sample = str(sha256 or "")
         return Bundle(
             id=_stable_id("bundle", sample),
-            objects=_with_stable_ids(objects, sample, report.generated_at),
+            objects=_with_tlp(_with_stable_ids(objects, sample, report.generated_at), report.tlp),
         )
 
     def _without_empty_references(self, objects: list[Any]) -> list[Any]:
@@ -1828,6 +1830,26 @@ def _with_stable_ids(objects: list[Any], sample: str, stamp: datetime) -> list[A
             update["valid_from"] = stamp
         out.append(obj.model_copy(update=update) if update else obj)
     return out
+
+
+def _with_tlp(objects: list[Any], level: str) -> list[Any]:
+    """``objects`` marked with the report's TLP level, and its marking definition after them.
+
+    Every domain object and relationship names the level's TLP 2.0 marking
+    definition (``tlp_marking``) in ``object_marking_refs``, in place of any
+    marking it named; the level is the report's own (``report.tlp``), the one
+    its cover prints. A level with no TLP 2.0 definition marks nothing.
+    """
+    marking = tlp_marking(level)
+    if marking is None:
+        return objects
+    marked = [
+        obj.model_copy(update={"object_marking_refs": [marking.id]})
+        if isinstance(obj, STIXObject)
+        else obj
+        for obj in objects
+    ]
+    return [*marked, marking]
 
 
 # The namespace the technique objects' ids are derived in: one, in

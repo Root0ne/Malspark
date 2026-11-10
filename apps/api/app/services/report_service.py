@@ -12,7 +12,7 @@ from malspark.reporting.detection_signatures import analyst_print_gate, rule_sta
 from malspark.reporting.models import ConsolidatedIOC, DetectionRule
 from malspark.reporting.renderers.stix_renderer import SAMPLE_DIGESTS, publishes, yes_because
 from malspark.reporting.run_diff import RunRecord, diff_runs
-from malspark.schemas.stix_models import with_current_property_names
+from malspark.schemas.stix_models import tlp_name, with_current_property_names
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -157,7 +157,7 @@ def ioc_feed_rows(mr: dict, kind: str | None = None) -> list[dict]:
     The sample's own digests, which the router established and no rule
     decides, are served even when the table cannot be read at all. A
     ``secret`` or ``crypto_wallet`` row is served only to a ``kind`` filter
-    that names its kind.
+    that names its kind. Every row carries the report's TLP level (``tlp``).
     """
     typed = _typed_report(mr)
     if typed is not None:
@@ -172,6 +172,8 @@ def ioc_feed_rows(mr: dict, kind: str | None = None) -> list[dict]:
     if not any(row.source == "identity" for row in table):
         table = [*_identity_rows(mr), *table]
     network = _network_rows(mr)
+    # The report's level as it stored it, which the cover prints.
+    tlp = tlp_name(str(mr.get("tlp") or ""))
     out: list[dict] = []
     for row in table:
         row_kind = str(row.kind or "")
@@ -193,6 +195,7 @@ def ioc_feed_rows(mr: dict, kind: str | None = None) -> list[dict]:
                 "published": publishes(row.published),
                 "publish_answer": row.published,
                 "recovered_by": row.recovered_by or None,
+                "tlp": tlp,
             }
         )
     return out
