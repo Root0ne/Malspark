@@ -557,8 +557,10 @@ def _stored_names() -> list[str]:
 # "The decompiler and disassembler calls for several functions failed", all six redone
 # (T-568). haiku13's "The decompiler pass failed on the function at 0x3728 [ev_0139],
 # but its code was read in a later disassembly of the same address" says the later
-# call, by its kind, and is not held (T-580).
-_HELD_TO_FAILED_CALLS = ("haiku8", "haiku10", "haiku12")
+# call, by its kind, and is not held (T-580). hk14-ref-haiku's "The decompiler produced
+# no function at 0x2200 or 0x1030", which no failure word reads, denies something of the
+# decompile calls it names by their kind and addresses, both redone (T-600).
+_HELD_TO_FAILED_CALLS = ("haiku8", "haiku10", "haiku12", "hk14-ref-haiku")
 
 
 @pytest.mark.parametrize("name", _stored_names())

@@ -1,0 +1,302 @@
+"""Read a stored run's agreement question against the ledger's names, at zero cost.
+
+Over one or more stored runs, each a directory in the benchmark's layout::
+
+    python scripts/replay/agreement_names.py runs/hk14 runs/haiku13
+
+rebuilds the agreement round's inputs from what the run stored: the passages
+as the round was first shown them (the first agreement request in
+``worker.log``), the ledger (``evidence.json``) and the run's recorded
+limitations and open questions (``report.json``). It then reads, with the
+platform's own code and no model call, each held sentence that denies
+something of a name the run holds (``section_agreement.name_readings``) and
+each limitations sentence held to the failed calls a later call redid
+(``section_agreement.held_limitation_sentences``), and prints per sentence:
+the name, what the ledger decides (contradicted by which entries, backed, or
+undecided and which fact the round would be shown), and the characters of
+the facts the round was shown before and would be shown now.
+
+Read-only: nothing is written, no network is reached, no credential is read.
+The agreement round itself is not replayable (``scripts/replay/rules.py``):
+this reads its inputs, not its answer.
+"""
+
+from __future__ import annotations
+
+import argparse
+import ast
+import json
+import re
+import sys
+from pathlib import Path
+from typing import Any
+
+_ROOT = Path(__file__).resolve().parents[2]
+if str(_ROOT) not in sys.path:
+    sys.path.insert(0, str(_ROOT))
+
+# The headings the round's prompt groups its passages under (``section_agreement``).
+_KINDS = {
+    "FACTS THE PLATFORM STATES": "fact",
+    "SECTION 5, WRITTEN FROM THE CODE AND THE TOOL ANSWERS": "section 5",
+    "THE DEBATE'S MEDIATIONS, IN ROUND ORDER": "debate",
+    "PASSAGES WRITTEN WITHOUT THE CODE": "claim-led",
+}
+_PASSAGE = re.compile(r"^- \[([^\]]+)\] (.*?)(?: \(read only\))?(?: \(cites [^)]*\))?: (.*)$")
+_CLOSING = ("conclusion", "limitations")
+
+
+def _request_text(log: Path) -> str:
+    """The human turn of the first agreement request the worker logged, or ``""``."""
+    with log.open(encoding="utf-8", errors="replace", newline="\n") as lines:
+        for line in lines:
+            if "Request options: " not in line or "FACTS THE PLATFORM STATES" not in line:
+                continue
+            if "PASSAGES WRITTEN WITHOUT THE CODE" not in line:
+                continue
+            options = ast.literal_eval(line.split("Request options: ", 1)[1].strip())
+            data = options.get("json_data") or {}
+            for message in data.get("messages") or []:
+                content = message.get("content")
+                if isinstance(content, list):
+                    content = "\n".join(str(part.get("text") or "") for part in content)
+                if isinstance(content, str) and "FACTS THE PLATFORM STATES" in content:
+                    return content
+    return ""
+
+
+def _unquoted(text: str) -> str:
+    from malspark.utils.written_forms import pack_reads
+
+    text = text.strip()
+    if len(text) >= 2 and text[0] == '"' and text[-1] == '"':
+        text = text[1:-1]
+    read = pack_reads(text)
+    return read[0] if read else text
+
+
+def _passages(prompt: str) -> list[Any]:
+    """The passages the prompt shows, each as the round built it: its id, label, text,
+    kind, and whether it may be rewritten (a writable one carries a no-op writer)."""
+    from malspark.reporting.section_agreement import Passage
+
+    kind = ""
+    out: list[Any] = []
+    for line in prompt.splitlines():
+        if line.strip() in _KINDS:
+            kind = _KINDS[line.strip()]
+            continue
+        found = _PASSAGE.match(line)
+        if not found or not kind:
+            continue
+        pid, label, text = found.groups()
+        read_only = "(read only)" in line.split(": ", 1)[0]
+        writable = kind in ("claim-led", "section 5") and not read_only
+        out.append(
+            Passage(
+                id=pid,
+                label=label,
+                text=text if kind == "fact" else _unquoted(text),
+                kind=kind,
+                write=(lambda _text: None) if writable else None,
+                closing=pid in _CLOSING,
+            )
+        )
+    return out
+
+
+def _ledger(run: Path) -> list[Any]:
+    from scripts.replay.stored import evidence_rows
+
+    from malspark.reporting.follow_up import stored_ledger
+
+    rows, _why = evidence_rows(json.loads((run / "evidence.json").read_bytes()))
+    ledger: list[Any] = stored_ledger(rows)[0]
+    return ledger
+
+
+def _report(run: Path, limitations: str) -> Any:
+    """The stored report, its limitations paragraph as the round was shown it."""
+    from malspark.reporting.models import MalwareReport
+
+    report = MalwareReport.model_validate(json.loads((run / "report.json").read_bytes()))
+    ta = report.technical_analysis
+    if ta is not None and ta.analyst_limitations is not None and limitations:
+        ta.analyst_limitations.body = limitations
+    return report
+
+
+def _cut(text: str, limit: int = 160) -> str:
+    line = " ".join(text.split())
+    return line if len(line) <= limit else line[: limit - 1] + "…"
+
+
+def read_run(run: Path) -> dict[str, Any]:
+    """What the ledger decides of each held name in one stored run, and the facts' sizes."""
+    from malspark.reporting.agreement_facts import ledger_facts
+    from malspark.reporting.ledger_entities import run_names
+    from malspark.reporting.limitation_facts import failed_calls
+    from malspark.reporting.section_agreement import (
+        _SAYS_FAILED,
+        FACT,
+        SECTION_5,
+        _count_fact,
+        _failure_counts,
+        _ledger_passages,
+        _limitation_passages,
+        _name_passages,
+        _named_addresses,
+        _stale_calls,
+        generic_words,
+        held_limitation_sentences,
+    )
+
+    prompt = _request_text(run / "worker.log")
+    shown = _passages(prompt)
+    ledger = _ledger(run)
+    found = ledger_facts(ledger)
+    names = run_names(ledger, found.image_bases)
+    by_id = {p.id: p for p in shown}
+    generic = generic_words({p.id: p for p in shown if p.kind == SECTION_5})
+    facts_before = sum(len(p.text) for p in shown if p.kind == FACT)
+    name_facts, readings = _name_passages(
+        shown, names, found, {str(getattr(e, "id", "")): e for e in ledger}, generic
+    )
+    by_fact = {f.id: f for f in name_facts}
+    rows: list[dict[str, Any]] = []
+    for passage in shown:
+        named = dict(passage.ledger_named)
+        decided = dict(passage.ledger_decided)
+        for reading in (r for r in readings if r.sentence in named or r.verdict == "backed"):
+            if reading.sentence not in passage.text:
+                continue
+            ids = named.get(reading.sentence, ())
+            rows.append(
+                {
+                    "passage": passage.id,
+                    "closing": passage.closing,
+                    "sentence": reading.sentence,
+                    "name": f"{reading.kind} {reading.shown}"
+                    + (" (sentence before)" if reading.back else ""),
+                    "verdict": reading.verdict,
+                    "facts": [
+                        {"id": fid, "cites": sorted(by_fact[fid].cites), "text": by_fact[fid].text}
+                        for fid in ids
+                        if fid in by_fact
+                    ],
+                    "outcome": (
+                        (
+                            "left out unless rewritten on the fact"
+                            if passage.closing
+                            else "qualified on the fact unless rewritten"
+                        )
+                        if reading.sentence in decided
+                        else (
+                            "held; a keep must quote a source"
+                            if passage.closing
+                            else "held; a keep is recorded unless quoted"
+                        )
+                        if reading.verdict == "undecided"
+                        else "not held by name"
+                    ),
+                }
+            )
+    # The limitations paragraph held to the failed calls a later call redid.
+    failed = failed_calls(ledger, found.answered, found.image_bases, found.redone)
+    limitations = by_id.get("limitations")
+    held_failed: list[dict[str, Any]] = []
+    added_limitation = 0
+    if limitations is not None:
+        listed = [routine.address for routine in found.listed]
+        for sentence in held_limitation_sentences(
+            limitations.text, failed, listed, found.image_bases
+        ):
+            stale = _stale_calls(sentence, failed, found.image_bases, broad=True)
+            refused = "a keep is refused (agreement.failure_redone): left out unless rewritten"
+            held_failed.append(
+                {
+                    "sentence": sentence,
+                    "redone": [f"{c.entry} by {', '.join(c.redone_by)}" for c in stale],
+                    "outcome": refused if stale else "held; read against the failed.N facts",
+                    # Held before too: the sentence says a call failed in words read so.
+                    "held_before": bool(_SAYS_FAILED.search(sentence)),
+                }
+            )
+        if not any(p.id.startswith("failed.") for p in shown):
+            _para, limit_facts, _failed = _limitation_passages(
+                _report(run, limitations.text), ledger, found, ()
+            )
+            added_limitation = sum(len(p.text) for p in limit_facts)
+            counts = _failure_counts(failed)
+            if limit_facts and counts is not None and "calls.1" not in by_id:
+                # The ledger's count of failed calls is shown beside them.
+                added_limitation += len(_count_fact(counts, failed).text)
+    # The answered facts as the round is shown them now: the call that redid each failure.
+    answered_before = sum(len(p.text) for p in shown if p.id.startswith("answered."))
+    closing = [p for p in shown if p.closing]
+    answered_after = sum(
+        len(p.text)
+        for p in _ledger_passages(ledger, shown, found, also=_named_addresses(closing))
+        if p.id.startswith("answered.")
+    )
+    names_size = sum(len(f.text) for f in name_facts)
+    return {
+        "run": run.name,
+        "passages": len(shown),
+        "names": rows,
+        "failed": held_failed,
+        "answered": [(a.failed, a.answered, a.redone) for a in found.answered],
+        "facts_before": facts_before,
+        "facts_after": facts_before
+        + names_size
+        + added_limitation
+        + answered_after
+        - answered_before,
+        "names_chars": names_size,
+        "limitation_chars": added_limitation,
+    }
+
+
+def _print(read: dict[str, Any]) -> None:
+    print(f"== {read['run']}: {read['passages']} passages shown")
+    print(
+        f"   facts shown: {read['facts_before']} characters before, {read['facts_after']} after "
+        f"(ledger.N {read['names_chars']}, limitation facts {read['limitation_chars']})"
+    )
+    print(
+        "   answered: "
+        + ", ".join(f"{f}->{a}{' (redo)' if r else ''}" for f, a, r in read["answered"])
+    )
+    for row in read["names"]:
+        print(f" - [{row['passage']}] {row['name']}: {row['verdict']}; {row['outcome']}")
+        print(f"     sentence: {_cut(row['sentence'], 220)}")
+        for fact in row["facts"]:
+            print(
+                f"     {fact['id']} (cites {', '.join(fact['cites'])}): {_cut(fact['text'], 400)}"
+            )
+    for row in read["failed"]:
+        before = "held before too" if row["held_before"] else "not held before"
+        print(
+            f" - [limitations] failed call ({before}): {row['outcome']} "
+            f"({'; '.join(row['redone'])})"
+        )
+        print(f"     sentence: {_cut(row['sentence'], 220)}")
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(description=__doc__.split("\n", 1)[0])
+    parser.add_argument("runs", nargs="+", type=Path, help="stored run directories")
+    parser.add_argument("--json", type=Path, default=None, help="write the readings here too")
+    args = parser.parse_args(argv)
+    found = []
+    for run in args.runs:
+        read = read_run(run)
+        _print(read)
+        found.append(read)
+    if args.json is not None:
+        args.json.write_text(json.dumps(found, indent=2))
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

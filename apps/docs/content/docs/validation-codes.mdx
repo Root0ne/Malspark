@@ -46,7 +46,7 @@ not prove the test makes the platform raise it. The tests are not listed here:
 one nothing raises and stored runs carry; the comment on that
 name says what reads it.
 
-**127 codes in 12 families:** [agreement](#agreement) 18 · [attck](#attck) 6 · [attribution](#attribution) 1 · [composer](#composer) 4 · [isr](#isr) 15 · [narrative](#narrative) 5 · [question](#question) 9 · [report](#report) 19 · [stix](#stix) 32 · [tool](#tool) 1 · [validation](#validation) 1 · [verdict](#verdict) 16. 14 code positions the register could not resolve are [listed at the end](#unresolved-code-positions).
+**128 codes in 12 families:** [agreement](#agreement) 19 · [attck](#attck) 6 · [attribution](#attribution) 1 · [composer](#composer) 4 · [isr](#isr) 15 · [narrative](#narrative) 5 · [question](#question) 9 · [report](#report) 19 · [stix](#stix) 32 · [tool](#tool) 1 · [validation](#validation) 1 · [verdict](#verdict) 16. 14 code positions the register could not resolve are [listed at the end](#unresolved-code-positions).
 
 ## agreement
 
@@ -60,9 +60,9 @@ A rewrite resting on a fact that states again the absence of the sentence the fa
 
 ### `agreement.dropped`
 
-A sentence of the conclusion or the limitations paragraph listed as saying otherwise than a section 5 passage, a fact or a closed debate line, whose rewrite passed no check: left out of the section, which only sums up what sections 4 to 6 state, and recorded here with what stood; one the answer leaves out with its reason, keeps while the ledger says otherwise (a failed call a later call redid), or keeps on no source or a quote the checks refused, the same way, with the refused keep's sources, quote or reason.
+A sentence of the conclusion or the limitations paragraph listed as saying otherwise than a section 5 passage, a fact or a closed debate line, whose rewrite passed no check: left out of the section, which only sums up what sections 4 to 6 state, and recorded here with what stood; one the answer leaves out with its reason, keeps while the ledger says otherwise (a failed call a later call redid, a name the ledger states denied), or keeps on no source or a quote the checks refused, the same way, with the refused keep's sources, quote or reason; and one denying what the ledger states of a name that the answer leaves standing.
 
-- **Raised at** `malspark.reporting.section_agreement:_left_out`, `malspark.reporting.section_agreement:apply_rows`
+- **Raised at** `malspark.reporting.section_agreement:_left_out`, `malspark.reporting.section_agreement:_qualify_ledger_left`, `malspark.reporting.section_agreement:apply_rows`
 - **Constant** `malspark.reporting.section_agreement:DROPPED_CODE`
 - **Docs** none
 
@@ -106,6 +106,14 @@ A kept closing sentence, or a kept held absence of the body, whose row quotes no
 - **Constant** `malspark.reporting.section_agreement:KEEP_UNQUOTED_CODE`
 - **Docs** none
 
+### `agreement.ledger_contradicts`
+
+A sentence that denies something of a name the run holds (an API, an export, a decoded text) which the ledger itself states ("no routine calls X" beside a routine the function index lists calling X), or a rewrite of one still denying it without citing every entry the fact cites: a keep is refused, and one left standing is qualified on the ledger's fact in the body, or left out of a closing section.
+
+- **Raised at** `malspark.reporting.section_agreement:_ledger_name_violations`
+- **Constant** `malspark.reporting.section_agreement:LEDGER_CONTRADICTS_CODE`
+- **Docs** none
+
 ### `agreement.listed`
 
 A sentence of a passage shown for reading only (a section 5 passage, a record's value field), listed as saying otherwise than its sources and kept as written: the model's answer, recorded where a reader finds it.
@@ -116,9 +124,9 @@ A sentence of a passage shown for reading only (a section 5 passage, a record's 
 
 ### `agreement.qualified`
 
-A held sentence whose own clause calls code not read that an entry lists, left standing by the answer (no row, a kept row, or a rewrite that failed): the platform adds what the ledger shows to it, in the facts' own words, and records what stood. Never left out, never left as written. Also a section 5 denial a decoded value's fact contradicts whose rewrite in the model's words passed no check: the fact's clause is added, and what stood recorded.
+A held sentence whose own clause calls code not read that an entry lists, left standing by the answer (no row, a kept row, or a rewrite that failed): the platform adds what the ledger shows to it, in the facts' own words, and records what stood. Never left out, never left as written. Also a section 5 denial a decoded value's fact contradicts whose rewrite in the model's words passed no check: the fact's clause is added, and what stood recorded. Also a sentence of the body denying what the ledger states of a name the run holds that the answer leaves standing: the ledger fact's clause is added.
 
-- **Raised at** `malspark.reporting.section_agreement:_qualify_unread_left`, `malspark.reporting.section_agreement:apply_rows`
+- **Raised at** `malspark.reporting.section_agreement:_qualify_ledger_left`, `malspark.reporting.section_agreement:_qualify_unread_left`, `malspark.reporting.section_agreement:apply_rows`
 - **Constant** `malspark.reporting.section_agreement:QUALIFIED_CODE`
 - **Docs** none
 

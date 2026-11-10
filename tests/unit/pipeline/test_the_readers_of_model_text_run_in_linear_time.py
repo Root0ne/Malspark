@@ -51,12 +51,15 @@ from malspark.reporting.absence_answers import (
     quote_stands,
     reading_denied_in,
 )
+from malspark.reporting.ledger_entities import ApiCall, ApiHeld, ExportHeld, RunNames, TextHeld
 from malspark.reporting.section_agreement import (
+    _call_lines,
     _candidates,
     _reports_a_claim,
     _said_unread,
     _unread_addresses,
     closing_negations,
+    name_readings,
     unread_listed_sentences,
     whole_code_absences,
 )
@@ -76,6 +79,18 @@ LARGEST = 40_000
 
 
 _COUNTS = FailureCounts(failed=2, redone=1, by_name={"decompil": (1, 1)})
+# The names a run holds, as the agreement round reads a denial of one (T-600).
+_EXPORT = ExportHeld(names=("begin", "Native"), address=0x1400, entries=("ev_0001",))
+_NAMES = RunNames(
+    apis={
+        "queryhostmode": ApiHeld(name="QueryHostMode", calls=[ApiCall(0x1400, 0x2000)]),
+        "web": ApiHeld(name="Web", resolved={"ev_0002": None}),
+    },
+    exports={"begin": _EXPORT, "Native": _EXPORT},
+    by_address={0x1400: _EXPORT},
+    texts={"words": TextHeld(text="words")},
+    index_whole=True,
+)
 
 
 def _hostile(size: int) -> str:
@@ -333,6 +348,24 @@ LISTED = [SimpleNamespace(addresses=frozenset({0x1400}), id="listed.1")]
             id="an absence kept among clauses sharing its words",
         ),
         pytest.param(lambda t: quote_stands(t[: len(t) // 2], [t]), id="a kept sentence's quote"),
+        pytest.param(
+            lambda t: name_readings(t + " QueryHostMode is not called", t, _NAMES),
+            id="a denial of a name the run holds",
+        ),
+        pytest.param(
+            lambda t: name_readings(
+                "the export 'words' " * (len(t) // 19) + "is not established", "", _NAMES
+            ),
+            id="a denial of names written many times",
+        ),
+        pytest.param(
+            lambda t: name_readings("These are not shown; " + t, "QueryHostMode " + t, _NAMES),
+            id="a denial pointing back to the names before it",
+        ),
+        pytest.param(
+            lambda t: _call_lines(t.replace(" is ", "\n"), ["1400", "native"], {0x1400: "X"}, ()),
+            id="the call lines of a listing",
+        ),
         pytest.param(
             lambda t: _candidates(
                 "The more words of 0x1400 are not read.",
