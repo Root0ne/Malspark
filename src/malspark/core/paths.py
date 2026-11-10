@@ -426,17 +426,17 @@ def host_path_masked(path: str | os.PathLike[str], project_root: PurePath | None
 
     The whole value is the path, whatever characters it holds (a space, a
     parenthesis, a quote), never words: inside the project it reads relative
-    to the root (``data/capa-rules``), and a host path outside it (one
-    :func:`host_paths_masked` masks) as :data:`OUTSIDE_PROJECT`. Any other
-    value (a relative path, an absolute path off the host's layout) is kept.
+    to the root (``data/capa-rules``); any other absolute path, in either
+    system's form and under any directory, and a path from a home directory
+    (``~/x``) read as :data:`OUTSIDE_PROJECT`. A relative path is kept.
     """
     written = os.fspath(path)
-    root, parents = _read_root(project_root)
+    root, _parents = _read_root(project_root)
     read = _written_path(written)
     relative = _from_root(read, root)
     if relative is not None:
         return relative
-    if isinstance(read, PureWindowsPath) or _held(read, parents):
+    if isinstance(read, PureWindowsPath) or read.is_absolute() or written.startswith("~"):
         return OUTSIDE_PROJECT
     return written
 

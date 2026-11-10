@@ -669,23 +669,46 @@ class TestOnlyAHostPathIsMasked:
         home = Path.home()
         assert host_paths_masked(f"cwd: {home}") == f"cwd: {OUTSIDE_PROJECT}"
 
-    def test_a_path_a_caller_holds_is_masked_as_one_path(self) -> None:
+    def test_a_path_a_caller_holds_is_shown_from_the_project_as_one_path(self) -> None:
         root = PurePosixPath("/home/op/proj")
         for path, said in (
             ("/home/op/proj/data/capa rules (old)", "data/capa rules (old)"),
             ("/home/op/proj/data/capa-rules", "data/capa-rules"),
-            ("/home/Jane Doe/capa rules", OUTSIDE_PROJECT),
-            ("/srv/a(1)/b", OUTSIDE_PROJECT),
-            ("/home/op/proj", OUTSIDE_PROJECT),
-            ("/data/capa-rules", "/data/capa-rules"),
-            ("data/capa-rules", "data/capa-rules"),
-            (r"C:\Users\Jane Doe\capa rules", OUTSIDE_PROJECT),
-            (r"\\server\share\Jane Doe", OUTSIDE_PROJECT),
         ):
-            assert host_path_masked(path, root) == said, path  # type: ignore[arg-type]
+            assert host_path_masked(path, root) == said, path
         windows = Path(r"D:\a\proj")
         assert host_path_masked(r"D:\a\proj\data\capa rules", windows) == "data/capa rules"
+        assert host_path_masked(r"d:\A\PROJ\data\x", windows) == "data/x"
         assert host_path_masked(PureWindowsPath(r"D:\a\proj\data\x"), windows) == "data/x"
+
+    @pytest.mark.parametrize(
+        "path",
+        [
+            "/data/capa-rules",
+            "/x",
+            "/home/op/proj",
+            "/home/Jane Doe",
+            "/home/Jane Doe/capa rules",
+            "/srv/a(1)/b",
+            "~",
+            "~/x",
+            "~jane/capa-rules",
+            r"C:\Users\Jane Doe",
+            r"c:\users\jane doe\capa rules",
+            r"D:\a\proj",
+            r"D:\a\proj2\x",
+            "E:/data/x",
+            r"\\server\share\Jane Doe",
+            r"\\?\C:\Users\Jane Doe\x",
+        ],
+    )
+    def test_any_other_absolute_path_a_caller_holds_is_masked(self, path: str) -> None:
+        for root in (PurePosixPath("/home/op/proj"), PureWindowsPath(r"D:\a\proj")):
+            assert host_path_masked(path, root) == OUTSIDE_PROJECT
+
+    @pytest.mark.parametrize("path", ["data/capa-rules", "./rules", "rules x/y", "a~b/c"])
+    def test_a_relative_path_a_caller_holds_is_kept(self, path: str) -> None:
+        assert host_path_masked(path, PurePosixPath("/home/op/proj")) == path
 
     def test_a_long_path_or_unc_root_is_the_same_root(self) -> None:
         said = host_paths_masked(
