@@ -163,19 +163,43 @@ def _rooted(value: str, project_root: Path | None = None) -> tuple[str, bool]:
 # A segment of a path in free text.
 _SEGMENT = r"[\w.@%+~-]+"
 
-# An absolute path in free text, in either system's form: a ``file://`` URL; a
-# Windows path, a drive letter then either separator (``C:\Users\x``,
-# ``D:/a/b``), not after a word character or a colon; or a POSIX path, a slash
-# not after a word character, a colon, a dot or another slash (a URL's ``//``
-# and a relative ``a/b`` are not one), then path characters.
+# A Windows separator: a slash, or one or more backslashes (an OSError's repr
+# and a JSON-escaped message write each backslash twice).
+_WINDOWS_SEP = r"(?:\\+|/)"
+# A device or long-path prefix before a drive: ``\\?\`` or ``\\.\``, either
+# written once or with every backslash doubled.
+_DEVICE = r"\\\\(?:\\\\)?[?.]\\\\?"
+# The start of a Windows path: a drive letter, a colon and a separator, after
+# an optional device prefix; or the two backslashes of a UNC path.
+_DRIVE_HEAD = rf"(?:{_DEVICE})?[A-Za-z]:{_WINDOWS_SEP}"
+_UNC_HEAD = r"\\\\(?:\\\\)?"
+
+# An absolute path in free text, in either system's form:
+#
+# * a ``file://`` URL, read as its path;
+# * a Windows path that follows a quote and runs to the same quote, spaces
+#   and all (``'C:\Users\John Smith\x'``), as an OSError prints its name;
+# * a Windows path: a drive (``C:\Users\x``, ``D:/a/b``, ``\\?\C:\x``) or a
+#   UNC path (``\\server\share\x``, ``\\?\UNC\server\share``), its
+#   separators single or doubled, not after a word character, a colon, a
+#   dot, a slash or a backslash;
+# * a POSIX path: a slash not after a word character, a colon, a dot or
+#   another slash (a URL's ``//`` and a relative ``a/b`` are not one), then
+#   path characters. A quoted POSIX path stops at a space, as it always has.
 _ABSOLUTE_PATH = re.compile(
-    r"file://(?:localhost)?(?P<url>/?[A-Za-z]:[\\/][^\s'\"<>()]*|/[^\s'\"<>()]*)"
-    rf"|(?<![\w:./\\])(?P<drive>[A-Za-z]:[\\/](?:{_SEGMENT}(?:[\\/]{_SEGMENT})*[\\/]?)?)"
+    rf"file://(?:localhost)?(?P<url>/?[A-Za-z]:{_WINDOWS_SEP}[^\s'\"<>()]*|/[^\s'\"<>()]*)"
+    rf"|(?<=(?P<quote>['\"]))(?P<quoted>(?:{_DRIVE_HEAD}|{_UNC_HEAD}[?.\w])"
+    r"(?:(?!(?P=quote))[^\r\n])*)(?=(?P=quote))"
+    rf"|(?<![\w:./\\])(?P<drive>{_DRIVE_HEAD}"
+    rf"(?:{_SEGMENT}(?:{_WINDOWS_SEP}{_SEGMENT})*{_WINDOWS_SEP}?)?)"
+    rf"|(?<![\w:./\\])(?P<unc>{_UNC_HEAD}(?:[?.]{_WINDOWS_SEP})?"
+    rf"{_SEGMENT}(?:{_WINDOWS_SEP}{_SEGMENT})+{_WINDOWS_SEP}?)"
     rf"|(?<![\w:./])(?P<path>/{_SEGMENT}(?:/{_SEGMENT})*/?)"
 )
 
-# A Windows path: a drive letter, a colon and a separator.
-_DRIVE = re.compile(r"[A-Za-z]:[\\/]")
+# A Windows path: a drive letter, a colon and a separator, after an optional
+# device prefix.
+_DRIVE = re.compile(_DRIVE_HEAD)
 
 # The directories a host keeps its own files under. A path that starts with one
 # of them is the host's layout; anything else that reads as one (an HTTP route,
@@ -195,12 +219,30 @@ OUTSIDE_PROJECT = "a path outside the project"
 
 
 def _written_path(written: str) -> PurePosixPath | PureWindowsPath:
-    """A path read from words, in the form it is written in rather than the host's."""
+    """A path read from words, in the form it is written in rather than the host's.
+
+    A Windows path's separators are read single, a device prefix (``\\\\?\\``,
+    ``\\\\.\\``) is dropped before a drive, and ``\\\\?\\UNC\\`` is read as the
+    UNC path it names, so a root written either way is the same root.
+    """
     if written.startswith("/") and _DRIVE.match(written, 1):  # file:///C:/x
         written = written[1:]
-    if _DRIVE.match(written):
-        return PureWindowsPath(ntpath.normpath(written))
-    return PurePosixPath(posixpath.normpath(written))
+    if not (_DRIVE.match(written) or written.startswith("\\")):
+        return PurePosixPath(posixpath.normpath(written))
+    unc = written.startswith("\\")
+    body = re.sub(r"\\+", r"\\", written.replace("/", "\\"))
+    if unc:
+        if body[1:3] in ("?\\", ".\\"):
+            rest = body[3:]
+            if rest[:4].upper() == "UNC\\":
+                body = "\\\\" + rest[4:]
+            elif _DRIVE.match(rest):
+                body = rest
+            else:  # a device other than a drive: never a path in the project
+                body = "\\\\.\\" + rest
+        else:
+            body = "\\" + body
+    return PureWindowsPath(ntpath.normpath(body))
 
 
 def host_paths_masked(text: str, project_root: Path | None = None) -> str:
@@ -211,7 +253,8 @@ def host_paths_masked(text: str, project_root: Path | None = None) -> str:
     (``data/sigma_rules``), and a host path outside it as
     :data:`OUTSIDE_PROJECT`, never as the host's own layout. A host path is
     one under :data:`HOST_ROOTS` or one of the project's parents, or any
-    Windows path; a ``file://`` URL is read as its path. Anything else that
+    Windows path (a drive, a UNC or a device path), on any host; a
+    ``file://`` URL is read as its path. Anything else that
     starts with a slash (an HTTP route) is kept. Read from the words alone,
     never from the host's files, and in the form each path is written in, so a
     reason masked when it is written reads the same wherever it is shown, and
@@ -225,7 +268,13 @@ def host_paths_masked(text: str, project_root: Path | None = None) -> str:
     )
 
     def shown(match: re.Match[str]) -> str:
-        path = _written_path(match.group("url") or match.group("drive") or match.group("path"))
+        path = _written_path(
+            match.group("url")
+            or match.group("quoted")
+            or match.group("drive")
+            or match.group("unc")
+            or match.group("path")
+        )
         if type(path) is type(root) and path.is_relative_to(root) and path != root:
             return path.relative_to(root).as_posix()
         if isinstance(path, PureWindowsPath) or match.group("url"):

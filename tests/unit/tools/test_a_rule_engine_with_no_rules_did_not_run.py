@@ -376,6 +376,65 @@ class TestOnlyAHostPathIsMasked:
         assert said == f'in "{OUTSIDE_PROJECT}", line 1 and {OUTSIDE_PROJECT}'
         assert host_paths_masked("file:///C:/rules/r.yml") == OUTSIDE_PROJECT
 
+    def test_an_os_error_s_doubled_backslashes_hide_the_whole_path(self) -> None:
+        """How an OSError prints its file name, and how a JSON-escaped message reads."""
+        missing = FileNotFoundError(2, "No such file or directory", r"C:\Users\alice\Temp\r.yml")
+        said = host_paths_masked(f"{type(missing).__name__}: {missing}")
+        assert "alice" not in said and "Temp" not in said
+        assert said.endswith(f"No such file or directory: '{OUTSIDE_PROJECT}'")
+        assert (
+            host_paths_masked(r"at C:\\Users\\alice\\r.yml, then") == f"at {OUTSIDE_PROJECT}, then"
+        )
+        escaped = r'{"error": "cannot read C:\\\\Users\\\\alice\\\\r.yml"}'
+        assert host_paths_masked(escaped) == f'{{"error": "cannot read {OUTSIDE_PROJECT}"}}'
+
+    @pytest.mark.parametrize(
+        "written",
+        [
+            r"\\server\share\me\f",
+            r"\\\\server\\share\\me\\f",
+            r"\\?\C:\Users\me\f",
+            r"\\\\?\\C:\\Users\\me\\f",
+            r"\\.\C:\Users\me\f",
+            r"\\\\.\\C:\\Users\\me\\f",
+            r"\\?\UNC\server\share\me\f",
+            r"\\\\?\\UNC\\server\\share\\me\\f",
+            r"\\.\pipe\me",
+        ],
+    )
+    def test_a_unc_or_device_path_is_masked(self, written: str) -> None:
+        assert host_paths_masked(f"read {written} then") == f"read {OUTSIDE_PROJECT} then"
+
+    def test_a_quoted_windows_path_is_masked_to_its_closing_quote(self) -> None:
+        said = host_paths_masked(
+            r"""open 'C:\Users\John Smith\AppData\x.yml' and "\\srv\my share\x" failed"""
+        )
+        assert said == f"""open '{OUTSIDE_PROJECT}' and "{OUTSIDE_PROJECT}" failed"""
+        # A quoted POSIX path stops at a space, as it always has.
+        assert host_paths_masked("'/home/a b/c'") == f"'{OUTSIDE_PROJECT} b/c'"
+
+    def test_text_shaped_like_a_windows_path_is_masked_on_any_host_too(self) -> None:
+        r"""A decision, not an accident: the words alone decide, never the host.
+
+        ``x:\d+`` reads as a drive path, so a regular expression or a guest's
+        path quoted in a tool's error is masked on a Linux host as well.
+        """
+        assert host_paths_masked(r"pattern x:\d+ matched") == f"pattern {OUTSIDE_PROJECT} matched"
+
+    def test_a_long_path_or_unc_root_is_the_same_root(self) -> None:
+        said = host_paths_masked(
+            r"at D:\a\Malspark\Malspark\data\x and \\?\D:\\a\\Malspark\\Malspark\\data\\y",
+            Path(r"\\?\D:\a\Malspark\Malspark"),
+        )
+        assert said == "at data/x and data/y"
+        unc = Path(r"\\fs\share\Malspark")
+        said = host_paths_masked(
+            r"at \\fs\share\Malspark\data\x, \\\\fs\\share\\Malspark\\data\\y,"
+            r" \\?\UNC\fs\share\Malspark\data\z and \\fs\share\other",
+            unc,
+        )
+        assert said == f"at data/x, data/y, data/z and {OUTSIDE_PROJECT}"
+
     def test_a_windows_project_s_paths_read_as_a_posix_project_s(self) -> None:
         root = Path("D:\\a\\Malspark\\Malspark")
         said = host_paths_masked(
