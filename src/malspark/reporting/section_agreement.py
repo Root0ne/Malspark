@@ -893,7 +893,7 @@ def _failed_calls(entries: Sequence[Any], found: LedgerFacts | None) -> list[Fai
         return []
     from malspark.reporting.limitation_facts import failed_calls
 
-    return failed_calls(entries, found.answered, found.image_bases)
+    return failed_calls(entries, found.answered, found.image_bases, found.redone)
 
 
 def _failure_counts(failed: Sequence[FailedCall]) -> FailureCounts | None:
@@ -1998,6 +1998,8 @@ def _ledger_passages(
                     f"{link.failed} ({quoted_value(link.failed_tool)}) for "
                     f"{spelled(link.address, bases)} failed; the later call {link.answered} "
                     f"({quoted_value(link.answered_tool)}) for the same address answered"
+                    # The call the run summary names as its redo (``redone_calls.redo_map``).
+                    + (", asking the same question again" if link.redone else "")
                 ),
                 kind=FACT,
                 cites=_ids([link.failed, link.answered]),
@@ -2390,7 +2392,7 @@ def _limitation_passages(
     if not _SAYS_FAILED.search(sub.body):
         return [], [], []
     bases = found.image_bases
-    read = limitation_facts(report, entries, found.answered, bases)
+    read = limitation_facts(report, entries, found.answered, bases, found.redone)
     listed = [routine.address for routine in found.listed]
     if not held_limitation_sentences(sub.body, read.failed, listed, bases):
         return [], [], []

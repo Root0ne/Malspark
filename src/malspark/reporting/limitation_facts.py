@@ -9,12 +9,12 @@ from the ledger and the report alone:
 
 * **The failed calls**: each call that ran and failed (a repeat answered from
   an earlier entry is not one), with the addresses it was asked for. Whether a
-  later call redid it is read by the one rule the run summary reads
-  (``redone_calls.redone_failures``, T-494 D6: the same question asked again
-  and answered whole); a call asked for no address has nothing to be matched
-  by, and stays a failure. A call no later call redid keeps the later calls
-  that answered for some of its addresses (``agreement_facts.answered_later``,
-  T-396), so the fact can say which ones.
+  later call redid it is read off the one redo map the run summary and the
+  agreement round's answered facts read (``redone_calls.redo_map``, T-494 D6:
+  the same question asked again and answered whole; T-600); a call asked for no
+  address is redone only by the same question asked again. A call no later call
+  redid keeps the later calls that answered for some of its addresses
+  (``agreement_facts.answered_later``, T-396), so the fact can say which ones.
 * **The tools not run**: each ``server.<key>.<tool>_unavailable(<reason>)`` the
   run recorded as a limitation or an operator choice, and how many of a
   server's tools the job withheld from the agents.
@@ -42,6 +42,7 @@ from typing import Any
 from malspark.agents.function_map import one_spelling
 from malspark.pipeline.events import scrub
 from malspark.reporting.agreement_facts import AnsweredLater, asked_addresses
+from malspark.reporting.redone_calls import Redo, redo_map
 from malspark.schemas.evidence import entry_ids_in
 
 __all__ = [
@@ -96,7 +97,7 @@ class FailedCall:
     # Each address a later call answered for, with that call's id, by the
     # agreement round's address rule: what a call no later call redid says.
     answered: tuple[tuple[int, str], ...] = ()
-    # The later calls that redid it (``redone_calls.redone_failures``).
+    # The later calls that redid it (``redone_calls.redo_map``).
     redone_by: tuple[str, ...] = ()
     # Whether the call lists code (decompiled or disassembled).
     lists_code: bool = False
@@ -156,17 +157,21 @@ def _error(entry: Any) -> str:
 
 
 def failed_calls(
-    entries: Iterable[Any], answered: Sequence[AnsweredLater], bases: Sequence[int]
+    entries: Iterable[Any],
+    answered: Sequence[AnsweredLater],
+    bases: Sequence[int],
+    redone: Sequence[Redo] | None = None,
 ) -> list[FailedCall]:
-    """Each call that ran and failed, in ledger order, with the later calls that redid it."""
+    """Each call that ran and failed, in ledger order, with the later calls that redid it:
+    ``redone``, the redo map the answered facts were read with, read off the entries
+    when not given."""
     from malspark.core.undeclared_tools import entry_lists_any_code
-    from malspark.reporting.redone_calls import redone_failures
     from malspark.reporting.tool_kinds import code_family_kind, kind_of
 
     entries = list(entries)
     redid = {
-        str(row["entry_id"]): tuple(str(i) for i in row["answered_by"])
-        for row in redone_failures(entries)
+        redo.entry_id: redo.answered_by
+        for redo in (redo_map(entries) if redone is None else redone)
     }
     by_failed: dict[str, dict[int, str]] = {}
     for link in answered:
@@ -261,7 +266,11 @@ def open_questions(report: Any, bases: Sequence[int]) -> list[OpenQuestion]:
 
 
 def limitation_facts(
-    report: Any, entries: Iterable[Any], answered: Sequence[AnsweredLater], bases: Sequence[int]
+    report: Any,
+    entries: Iterable[Any],
+    answered: Sequence[AnsweredLater],
+    bases: Sequence[int],
+    redone: Sequence[Redo] | None = None,
 ) -> LimitationFacts:
     """The facts the limitations paragraph is held to, read off the report and its ledger."""
     reasons = [str(r) for r in getattr(report, "degradation_reasons", None) or [] if str(r).strip()]
@@ -271,7 +280,7 @@ def limitation_facts(
     held = set(reasons)
     recorded = [_plain(line) for line in rest if line in held and not _ANSWER_READ_NOTE.match(line)]
     return LimitationFacts(
-        failed=tuple(failed_calls(entries, answered, bases)),
+        failed=tuple(failed_calls(entries, answered, bases, redone)),
         not_run=tuple(not_run),
         withheld=withheld,
         recorded=tuple(recorded),
