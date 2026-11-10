@@ -173,8 +173,8 @@ python scripts/replay/remerge_revisions.py <run dir> [<run dir> ...] [--json OUT
 ```
 
 merges each debate revision of a stored run into its answer in force again
-(`pipeline.revision_merge`), under the rule the checkout holds and under the
-previous one, which pooled a claim's values over the revision's blocks. The
+(`pipeline.revision_merge`), under the rule the checkout holds and under a rule
+that pools a claim's values over the revision's blocks. The
 answers in force are read from the run's `worker.log`, as each mediation was
 shown them: a revision's own claims are those of the next answer in force that
 no carried-forward note marks, and the round's lines come from the next

@@ -220,7 +220,7 @@ def _read(block: _Block) -> _Reading:
 
 def _is_stated_in(value: str, reading: _Reading) -> bool:
     """``claim_drops._is_stated`` of ``value`` in ``reading``, a number in one lookup."""
-    if re.fullmatch(r"0x[0-9a-f]+", value) or value.isdigit():
+    if re.fullmatch(r"0x[0-9a-f]+", value) or value.isdecimal():
         number = int(value, 16) if value.startswith("0x") else int(value)
         if number in reading.searched.numbers:
             return True
@@ -385,7 +385,7 @@ def _declares_withdrawal(claim: Any) -> bool:
 def _written_number(block: _Block) -> int | None:
     written = getattr(block.claims[0], "number", None)
     text = str(written or "").strip()
-    return int(text) if text.isdigit() else None
+    return int(text) if text.isdecimal() else None
 
 
 def _spans(numbers: Sequence[int]) -> str:
@@ -939,7 +939,9 @@ def merge_revision(
             claims.extend(revised[index].claims)
     # Each claim carried beside the block that states it again without an
     # address of it says so, naming that block by its number in this answer.
-    now = {id(block.claims[0]): block.number for block in _blocks(claims)}
+    # Every claim of a block is indexed: two added blocks that end up neighbours
+    # may read as one block, so a block's first claim need not head one here.
+    now = {id(claim): block.number for block in _blocks(claims) for claim in block.claims}
     beside_rows: list[tuple[int, str, int, tuple[str, ...]]] = []
     for block in carried_blocks:
         if block.number not in beside:

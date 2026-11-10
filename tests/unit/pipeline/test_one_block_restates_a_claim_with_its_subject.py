@@ -19,9 +19,10 @@ from typing import Any
 from unittest.mock import MagicMock
 
 from malspark.agents.base_agent import read_claim_blocks
+from malspark.pipeline.claim_drops import dropped_values
 from malspark.pipeline.nodes import make_revision_node
 from malspark.pipeline.revision_merge import merge_revision
-from malspark.schemas.isr_models import AgentISR, carried_note
+from malspark.schemas.isr_models import AgentISR, ClaimEvidence, carried_note
 
 
 def _block(sentence: str, technique: str = "NONE") -> str:
@@ -372,3 +373,60 @@ class TestTheRecordOfDroppedClaims:
         stands = out["isr_reports"]["static"].claims
         assert LOADER in [c.claim for c in stands]
         assert not [r for r in out.get("dropped_claims") or [] if r["claim"] == LOADER]
+
+
+class TestTheMarkNamesTheBlockWhateverTheGrouping:
+    def test_added_blocks_that_read_as_one_still_carry_the_mark(self) -> None:
+        # Claims built without the block reader carry no block of their own.
+        # The two added claims share a sentence; once the block between them
+        # replaces a claim in force they are neighbours and read as one block,
+        # and the second of them is the one that restates the task claim.
+        def claim(text: str, technique: str | None = None) -> ClaimEvidence:
+            return ClaimEvidence(
+                claim=text, evidence_ref="[ev_0001]", confidence=0.8, technique_id=technique
+            )
+
+        task = "Routine 0x5000 runs schtasks to persist under the name WinUpdater daily."
+        cipher = "Routine 0x7000 encrypts the configuration with RC4 using the key 'k3yk3y'."
+        again = "A scheduled task named WinUpdater is created by routine 0x5200."
+        first = AgentISR(
+            agent_id="static",
+            domain="static",
+            claims=[claim(task, "T1053.005"), claim(cipher)],
+        )
+        revision = AgentISR(
+            agent_id="static",
+            domain="static",
+            claims=[claim(again, "T1059"), claim(cipher), claim(again, "T1053.005")],
+        )
+
+        merge = merge_revision(first, revision, "", 1)
+
+        assert merge.merged is not None
+        assert merge.replaced == (2,) and _carried(merge) == [1]
+        assert [(number, addresses) for number, _s, _k, addresses in merge.beside] == [
+            (1, ("0x5000",))
+        ]
+        carried = next(c for c in merge.merged.claims if c.claim == task)
+        assert "0x5000" in carried.carried_beside
+
+
+class TestADigitThatIsNoDecimalNumberIsAQuotedValue:
+    # A quoted superscript such as "²²" is made of digits and is no number:
+    # it is compared as written, and neither the merge nor the record of
+    # dropped values stops on it.
+    SIZE = '0x405000 raises the buffer to "²²" units before the copy.'
+
+    def test_the_merge_reads_it_as_written(self) -> None:
+        answer = _block('The copy at 0x405000 is sized "²²" by the caller.')
+
+        merge = merge_revision(_isr(_block(self.SIZE)), _isr(answer), answer, 1)
+
+        assert merge.replaced == (1,) and _carried(merge) == []
+
+    def test_the_record_of_dropped_values_names_it_when_it_is_gone(self) -> None:
+        answer = _block("0x405000 raises the buffer before the copy.")
+
+        dropped = dropped_values(_isr(_block(self.SIZE)), _isr(answer), answer, 1)
+
+        assert [d.missing for d in dropped] == [("²²",)]

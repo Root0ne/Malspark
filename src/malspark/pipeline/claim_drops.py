@@ -124,7 +124,8 @@ def _is_stated(value: str, searched: _Searched) -> bool:
     number: int | None = None
     if re.fullmatch(r"0x[0-9a-f]+", value):
         number = int(value, 16)
-    elif value.isdigit():
+    elif value.isdecimal():
+        # A decimal number; a superscript or circled digit is a digit and no number.
         number = int(value)
     if number is not None:
         if number in searched.numbers:
