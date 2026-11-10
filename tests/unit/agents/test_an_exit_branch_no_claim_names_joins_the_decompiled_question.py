@@ -14,8 +14,11 @@ tested. The branches are read off the analyst's own listings by their shape:
   no term.
 
 An exit is covered when one claim names its function and one of its terms.
-The ones left join the decompiled-functions question, one finding, at most 8
-listed, ranked; the report prints their count and the run record their list.
+The ones left join the decompiled-functions question, at most 8 listed,
+ranked, but only in a validation turn that is asked anyway: they never open
+one. They are a question, not a finding: what is recorded of the code is the
+functions alone, and the loop's record notes the branches the kept answer
+leaves.
 
 Every address, name and sentence here is made up for the test.
 """
@@ -34,8 +37,8 @@ from malspark.pipeline import exit_branches
 from malspark.pipeline.exit_branches import (
     EXITS_LISTED,
     exit_line,
-    exits_left_in_report,
     listing_exits,
+    read_listings,
     resolved_slots,
     uncovered_exits,
 )
@@ -43,12 +46,15 @@ from malspark.pipeline.exit_branches import (
     exit_branches as read_exits,
 )
 from malspark.pipeline.validation import (
+    CLAIM_WITHOUT_CONFIDENCE_CODE,
     DECOMPILED_NOT_DESCRIBED_CODE,
-    analyst_answer_checks,
+    Violation,
     decompiled_functions,
     decompiled_not_described_violation,
+    exit_branches_left_out,
+    with_exit_branches,
 )
-from malspark.schemas.evidence import LedgerEntry
+from malspark.schemas.evidence import LedgerEntry, not_shown_record
 from malspark.schemas.isr_models import AgentISR, ClaimEvidence
 
 BASE = 0x140000000
@@ -223,6 +229,71 @@ class TestTheReader:
 
         assert found == []
 
+    def test_a_goto_alone_says_nothing(self) -> None:
+        found = listing_exits(
+            _function(
+                f"  if (FUN_{HELPER:x}() == 0x20) {{\n    goto fail;\n  }}\n"
+                f"  if (FUN_{CHECK:x}() == 0x30) {{\n    return -1;\n  }}\n  return 0;"
+            )
+        )
+
+        assert found is None
+
+    def test_a_label_in_a_comment_or_outside_the_body_silences_nothing(self) -> None:
+        body = (
+            "  /* WARNING:\nnote:\n  */\n"
+            f"  if (FUN_{HELPER:x}() == 0x20) {{\n    return 0x30;\n  }}\n  return 0;"
+        )
+        listing = "Note:\n" + _function(body) + "after:\n"
+
+        assert _terms(listing_exits(listing)) == [(0x30, (HELPER,), (), (0x20,))]
+
+    def test_a_constant_of_ten_is_a_term_and_a_negative_one_keeps_its_sign(self) -> None:
+        ten = listing_exits(_function("  if (param_1 == 10) {\n    return 0x20;\n  }\n  return 0;"))
+        negative = listing_exits(
+            _function("  if (param_1 == -0x20) {\n    return 5;\n  }\n  return 0;")
+        )
+
+        assert _terms(ten) == [(0x20, (), (), (10,))]
+        assert _terms(negative) == [(5, (), (), (-0x20,))]
+
+    def test_a_write_in_another_branch_does_not_reach_a_later_condition(self) -> None:
+        found = listing_exits(
+            _function(
+                f"  int v;\n  v = FUN_{HELPER:x}();\n"
+                f"  if (param_1 == 0) {{\n    v = FUN_{CHECK:x}();\n  }}\n"
+                "  else {\n    if (v == 0) {\n      return -1;\n    }\n  }\n  return 0;"
+            )
+        )
+
+        assert _terms(found) == [(-1, (HELPER,), (), ())]
+
+    def test_a_constant_given_to_a_variable_never_returned_is_no_exit(self) -> None:
+        found = listing_exits(
+            _function(
+                f"  int r;\n  int s;\n  r = 0;\n  if (FUN_{HELPER:x}() == 0) {{\n"
+                "    s = 0x7f;\n  }\n  return r;"
+            )
+        )
+
+        assert found == []
+
+    def test_a_slot_the_index_resolved_is_a_term_without_a_call_through_it(self) -> None:
+        listing = _function(f"  if (_DAT_{SLOT_A:x} == 0) {{\n    return -1;\n  }}\n  return 0;")
+
+        assert _terms(listing_exits(listing, SLOTS)) == [(-1, (), (SLOT_A,), ())]
+        assert listing_exits(listing, {}) == []
+
+    def test_a_cast_s_type_is_no_variable(self) -> None:
+        found = listing_exits(
+            _function(
+                f"  undefined8 local_10 = FUN_{HELPER:x}();\n"
+                "  if ((undefined8)param_1 == 0) {\n    return -1;\n  }\n  return 0;"
+            )
+        )
+
+        assert found == []
+
     def test_no_tool_name_or_api_name_decides(self) -> None:
         # A tool the platform has never heard of, a server that declares its
         # own prefixes, and a slot the index resolved to a name of no API.
@@ -247,6 +318,73 @@ class TestTheReader:
         assert (site.slots, site.value) == ((SLOT_A,), -1)
         assert "(Qx9Mn)" in line
         assert covered == []
+
+    def test_a_repeat_and_an_answer_not_shown_are_not_read(self) -> None:
+        repeat = LedgerEntry(
+            id="ev_0004",
+            tool="decompile_function",
+            args={"address": hex(GATE)},
+            output=GATE_LISTING,
+            repeated_of="ev_0002",
+        )
+        unseen = LedgerEntry(
+            id="ev_0005",
+            tool="decompile_function",
+            args={"address": hex(OTHER)},
+            output=not_shown_record(4000),
+            truncated=True,
+        )
+
+        assert _exits(repeat, unseen) == []
+
+    def test_a_listing_that_says_nothing_does_not_hide_a_later_whole_one(self) -> None:
+        cut = _entry("ev_0003", GATE, GATE_LISTING[: GATE_LISTING.index("else")])
+        labelled = _entry(
+            "ev_0004", GATE, GATE_LISTING.replace("  return iVar2;", "LAB_1:\n  return iVar2;")
+        )
+        whole = _entry("ev_0005", GATE, GATE_LISTING)
+
+        found = read_listings([cut, labelled, whole], SLOTS)
+
+        assert {site.function.entries for site in found.exits} == {("ev_0005",)}
+        assert (found.listings, len(found.exits)) == (1, 5)
+
+    def test_a_condition_handing_back_one_value_twice_is_one_exit(self) -> None:
+        (site,) = _exits(
+            _entry(
+                "ev_0007",
+                OTHER,
+                _function(
+                    f"  int r;\n  r = 0;\n  if (FUN_{HELPER:x}() == 0x20) {{\n    r = -1;\n"
+                    "    return -1;\n  }\n  return r;"
+                ),
+            )
+        )
+
+        assert (site.value, site.same_value) == (-1, 1)
+
+    def test_an_exit_ranks_by_the_fewest_listings_calling_a_term_and_its_value_s_count(
+        self,
+    ) -> None:
+        # The condition's own call, and the call its variable hops to.
+        both = _function(
+            f"  int v;\n  v = FUN_{HELPER:x}();\n"
+            f"  if ((v == 0) || (FUN_{CHECK:x}() == 0)) {{\n    return -1;\n  }}\n  return 0;"
+        )
+        callers = [
+            _entry(
+                f"ev_00{20 + i}",
+                OTHER + (i + 1) * 0x100,
+                _function(f"  FUN_{HELPER:x}();", OTHER + (i + 1) * 0x100),
+            )
+            for i in range(2)
+        ]
+
+        (site,) = _exits(_entry("ev_0007", OTHER, both), *callers)
+        gate = _exits(_entry("ev_0003", GATE, GATE_LISTING))
+
+        assert site.fan_in == 1
+        assert sorted((s.value, s.same_value) for s in gate) == [(-1, 4)] * 4 + [(0, 1)]
 
     def test_every_entry_is_read_by_its_shape_and_a_function_listed_twice_once(self) -> None:
         first = _entry("ev_0003", GATE, GATE_LISTING)
@@ -297,6 +435,25 @@ class TestWhatAClaimNames:
         assert (-1, SLOT_A) not in self._left(by_offset)
         assert (-1, SLOT_A) in self._left(neither)
 
+    def test_a_slot_is_named_by_the_data_label_its_listing_writes(self) -> None:
+        by_label = _claim(f"{GATE:#x} returns -1 unless _DAT_{SLOT_A:x} says no.")
+
+        assert (-1, SLOT_A) not in self._left(by_label)
+
+    def test_with_no_image_base_a_callee_64_kib_away_is_not_named_by_its_function(self) -> None:
+        far = OTHER + 0x10000
+        found = _exits(
+            _entry(
+                "ev_0007",
+                OTHER,
+                _function(f"  if (FUN_{far:x}() == 0) {{\n    return -1;\n  }}\n  return 0;"),
+            )
+        )
+
+        left = uncovered_exits(_isr(_claim(f"{OTHER:#x} decides the run.")), found)
+
+        assert [site.callees for site in left] == [(far,)]
+
     def test_a_constant_is_named_in_hex_or_in_decimal(self) -> None:
         in_hex = _claim(f"{GATE:#x} gives up when the error is 0x3c.")
         in_decimal = _claim(f"{GATE:#x} gives up when the error is 60.")
@@ -314,6 +471,27 @@ def _many(count: int) -> list[Any]:
     return _exits(_entry("ev_0007", OTHER, _function(body + "\n  return 0;")))
 
 
+def _many(count: int) -> list[Any]:
+    body = "\n".join(
+        f"  if (FUN_{HELPER + i * 0x10:x}() == 0) {{\n    return {0x100 + i};\n  }}"
+        for i in range(count)
+    )
+    return _exits(_entry("ev_0007", OTHER, _function(body + "\n  return 0;")))
+
+
+def _inputs(*entries: Any) -> Any:
+    from tests.unit.agents.test_the_unread_functions_around_what_an_analyst_read_are_asked_once import (  # noqa: E501
+        _inputs as inputs,
+    )
+
+    held = inputs()
+    object.__setattr__(held, "decompiled", decompiled_functions(list(entries)))
+    return held
+
+
+OTHER_FINDING = Violation(code=CLAIM_WITHOUT_CONFIDENCE_CODE, message="Claim 1 has no confidence.")
+
+
 class TestTheQuestion:
     def test_at_most_the_cap_are_listed_with_how_many_more(self) -> None:
         left = uncovered_exits(_isr(), _many(11))
@@ -323,8 +501,8 @@ class TestTheQuestion:
         assert violation is not None
         message = violation.message
         assert EXITS_LISTED == 8
-        assert message.count(" hands back ") == 8
-        assert "11 branch(es) end the function" in message
+        assert message.count(" on [calls ") == 8
+        assert message.startswith("Of the functions you decompiled, 11 branch(es) end one")
         assert "; and 3 more." in message
 
     def test_the_rank_puts_a_named_routine_s_specific_gate_first(self) -> None:
@@ -342,57 +520,95 @@ class TestTheQuestion:
         # this routine calls.
         assert [site.callees for site in left][-1] == (HELPER,)
 
-    def test_the_question_says_what_it_accepts_and_lets_a_branch_stay(self) -> None:
-        left = uncovered_exits(_isr(), _exits(_entry("ev_0003", GATE, GATE_LISTING)))
+    def test_a_routine_a_claim_names_ranks_before_one_no_claim_names(self) -> None:
+        # The unnamed routine's exit has the rarer term and more exits of its value.
+        unnamed = _function(
+            "\n".join(
+                f"  if (FUN_{OTHER + 0x10 + i:x}() == 0) {{\n    return -1;\n  }}" for i in range(5)
+            )
+            + "\n  return 0;"
+        )
+        found = _exits(_entry("ev_0003", GATE, GATE_LISTING), _entry("ev_0007", OTHER, unnamed))
+
+        left = uncovered_exits(_isr(_claim(f"{GATE:#x} runs first.")), found)
+
+        assert [site.function.address for site in left] == [GATE] * 5 + [OTHER] * 5
+
+    def test_the_whole_question_for_one_branch(self) -> None:
+        listing = _function(
+            f"  if (FUN_{HELPER:x}(param_1) == 0x2c) {{\n    return -1;\n  }}\n"
+            f"  if ((*_DAT_{SLOT_A:x})() == 0x51) {{\n    return 2;\n  }}\n  return 0;"
+        )
+        left = uncovered_exits(_isr(), _exits(_entry("ev_0005", OTHER, listing)))
 
         violation = decompiled_not_described_violation([], left)
 
         assert violation is not None
-        assert (
-            "names the function, by a name the decompiler gave it or by its address or its "
-            "offset from the image base in hex (with 0x, with a trailing h, as bare hex "
-            "digits, or inside the decompiler's generic name), and one term listed with it: "
-            "an address written the same ways, a slot's API name, or a constant written in "
-            "hex with 0x or in decimal"
-        ) in violation.message
-        assert violation.message.endswith(
-            "A branch that only handles a failed call or allocation, or that this analysis "
-            "does not need, may stay undescribed."
-        )
-        assert f"slot {SLOT_A:#x} (QueryAlpha)" in violation.message
-
-    def test_the_exits_join_the_one_decompiled_question_and_add_no_call(self) -> None:
-        from tests.unit.agents.test_the_unread_functions_around_what_an_analyst_read_are_asked_once import (  # noqa: E501
-            _inputs,
+        assert violation.message == (
+            "Of the functions you decompiled, 2 branch(es) end one with a constant on a "
+            "condition, and no one claim names that function together with a term of the "
+            "condition. Ranked, functions a claim names first, then by how few of your listings "
+            f"call the terms: {OTHER:#x} (ev_0005) hands back -1 on [calls {HELPER:#x}, "
+            f"constant 0x2c], 2 on [slot {SLOT_A:#x} (QueryAlpha), constant 0x51]. For each "
+            "that matters, write one claim naming the function (by a name the decompiler gave "
+            "it, or its address or offset from the image base in hex: with 0x, a trailing h, "
+            "as bare hex digits, or inside the decompiler's generic name) and one of its terms "
+            "(an address written the same ways or inside a data label, a slot's API name, or a "
+            "constant in hex with 0x or in decimal), saying what the condition checks and what "
+            "the function does when it holds. A branch that only handles a failed call or "
+            "allocation, or that this analysis does not need, may stay undescribed."
         )
 
+    def test_the_branches_join_the_functions_question(self) -> None:
         entries = [_entry("ev_0003", GATE, GATE_LISTING), _entry("ev_0004", OTHER, _function(""))]
-        inputs = _inputs()
-        object.__setattr__(inputs, "decompiled", decompiled_functions(entries))
-        object.__setattr__(inputs, "exits", _exits(*entries))
+        inputs = _inputs(*entries)
+        isr = _isr(_claim(f"{GATE:#x} checks the host."))
+        functions = decompiled_not_described_violation([decompiled_functions(entries)[1]])
+        assert functions is not None
+
+        joined = with_exit_branches([OTHER_FINDING, functions], isr, inputs, _exits(*entries))
+
+        assert joined[0] == OTHER_FINDING
+        (question,) = joined[1:]
+        assert question.code == DECOMPILED_NOT_DESCRIBED_CODE
+        assert question.message.startswith(
+            f"{functions.message} Of the functions you decompiled, 5 branch(es)"
+        )
+        assert exit_branches_left_out(joined, isr, inputs) == [OTHER_FINDING, functions]
+
+    def test_the_branches_stand_alone_beside_another_finding(self) -> None:
+        entries = [_entry("ev_0003", GATE, GATE_LISTING)]
+        inputs = _inputs(*entries)
         isr = _isr(_claim(f"{GATE:#x} checks the host."))
 
-        with patch("malspark.pipeline.validation.validate_isr", return_value=[]):
-            found = analyst_answer_checks(
-                isr,
-                inputs,
-                whole_answer=[],
-                unread=[],
-                functions=[],
-                weak_alignment_challenges=False,
-                callees=None,
-            )
+        joined = with_exit_branches([OTHER_FINDING], isr, inputs, _exits(*entries))
 
-        (question,) = found
-        assert question.code == DECOMPILED_NOT_DESCRIBED_CODE
-        assert question.message.startswith("You decompiled 1 function(s)")
-        assert f"{OTHER:#x}" in question.message
-        assert "Of the functions you decompiled, 5 branch(es)" in question.message
+        assert [v.code for v in joined] == [
+            CLAIM_WITHOUT_CONFIDENCE_CODE,
+            DECOMPILED_NOT_DESCRIBED_CODE,
+        ]
+        assert joined[1].message.startswith("Of the functions you decompiled, 5 branch(es)")
+        assert exit_branches_left_out(joined, isr, inputs) == [OTHER_FINDING]
+
+    def test_the_branches_alone_or_beside_a_check_that_could_not_run_ask_nothing(self) -> None:
+        from malspark.pipeline.validation import CHECK_FAILED_CODE
+
+        entries = [_entry("ev_0003", GATE, GATE_LISTING)]
+        inputs = _inputs(*entries)
+        isr = _isr(_claim(f"{GATE:#x} checks the host."))
+        failed = Violation(code=CHECK_FAILED_CODE, message="A check could not run.")
+
+        assert with_exit_branches([], isr, inputs, _exits(*entries)) == []
+        assert with_exit_branches([failed], isr, inputs, _exits(*entries)) == [failed]
 
 
 FIRST = (
     f"CLAIM 1: {GATE:#x} decides whether the sample runs.\n"
     "EVIDENCE: [ev_0003]\nCONFIDENCE: 0.8\nTECHNIQUE: NONE\n---\n"
+)
+# The same answer with a second finding: a claim with no confidence line.
+UNSURE = FIRST + (
+    f"CLAIM 2: {GATE:#x} is reached from the entry.\nEVIDENCE: [ev_0003]\nTECHNIQUE: NONE\n---\n"
 )
 GATES = FIRST + (
     f"CLAIM 2: {GATE:#x} returns -1 when FUN_{HELPER:x} or FUN_{CHECK:x} returns 0.\n"
@@ -402,6 +618,8 @@ GATES = FIRST + (
 )
 SOME = FIRST + (
     f"CLAIM 2: {GATE:#x} returns -1 when FUN_{HELPER:x} returns 0.\n"
+    "EVIDENCE: [ev_0003]\nCONFIDENCE: 0.8\nTECHNIQUE: NONE\n---\n"
+    f"CLAIM 3: {GATE:#x} is reached from the entry.\n"
     "EVIDENCE: [ev_0003]\nCONFIDENCE: 0.8\nTECHNIQUE: NONE\n---\n"
 )
 
@@ -440,79 +658,97 @@ class _Analyst(BaseAnalyst):
         return text
 
 
-def _check(analyst: _Analyst, first: str = FIRST) -> AgentISR:
+def _check(
+    analyst: _Analyst, first: str = FIRST, *, time_left: float | None = None, whole: bool = False
+) -> AgentISR:
     isr = analyst._text_to_isr(first, 0)
+    if whole:
+        # An answer not written as one is fixed by a whole retry, never merged.
+        isr.note_answer_text("")
     with (
         patch("malspark.agents.base_agent.validity_check_available", return_value=True),
         patch.object(BaseAnalyst, "_fits_the_window", return_value=True),
+        patch.object(BaseAnalyst, "_seconds_the_last_loop_left", return_value=time_left),
+        patch.object(BaseAnalyst, "seconds_an_answer_needs", return_value=60.0),
     ):
         return analyst._validate_isr(isr, "evidence")
 
 
+def _recorded(analyst: _Analyst, code: str = DECOMPILED_NOT_DESCRIBED_CODE) -> list[str]:
+    return [v.message for v in analyst.validation_findings if v.code == code]
+
+
 class TestTheValidationTurn:
-    def test_the_slots_the_index_resolved_name_the_slots(self) -> None:
+    def test_an_answer_whose_only_shortcoming_is_its_branches_is_not_asked(self) -> None:
+        analyst = _Analyst([], [_entry("ev_0003", GATE, GATE_LISTING)])
+
+        result = _check(analyst)
+
+        assert analyst.seen_turns == []
+        assert analyst.validation_retries == 0
+        assert analyst.validation_findings == []
+        assert len(result.claims) == 1
+        note = analyst._budget_records[-1]["exit_branches"]
+        assert (note["listings"], note["exits"], note["left"], note["asked"]) == (1, 5, 5, False)
+        assert len(note["shown"]) == 5
+
+    def test_the_branches_are_asked_when_another_finding_opens_the_turn(self) -> None:
         analyst = _Analyst([GATES], [_entry("ev_0003", GATE, GATE_LISTING)])
+
+        result = _check(analyst, UNSURE)
+
+        (turns,) = analyst.seen_turns
+        question = str(turns[-1].content)
+        assert CLAIM_WITHOUT_CONFIDENCE_CODE in question
+        assert "Of the functions you decompiled, 5 branch(es)" in question
+        assert f"slot {SLOT_A:#x} (QueryAlpha)" in question
+        assert len(result.claims) == 3
+        assert _recorded(analyst) == []
+        note = analyst._budget_records[-1]["exit_branches"]
+        assert (note["left"], note["shown"], note["asked"]) == (0, [], True)
+
+    def test_what_the_kept_answer_leaves_is_recorded_as_the_functions_alone(self) -> None:
+        entries = [_entry("ev_0003", GATE, GATE_LISTING), _entry("ev_0004", OTHER, _function(""))]
+        analyst = _Analyst([SOME], entries)
 
         _check(analyst)
 
         (turns,) = analyst.seen_turns
         question = str(turns[-1].content)
-        assert DECOMPILED_NOT_DESCRIBED_CODE in question
-        assert f"slot {SLOT_A:#x} (QueryAlpha)" in question
+        assert "You decompiled 1 function(s)" in question
+        assert "Of the functions you decompiled, 5 branch(es)" in question
+        functions = decompiled_not_described_violation([decompiled_functions(entries)[1]])
+        assert functions is not None
+        assert _recorded(analyst) == [functions.message]
+        note = analyst._budget_records[-1]["exit_branches"]
+        assert (note["left"], note["asked"]) == (4, True)
+        assert note["shown"][0].startswith(f"{GATE:#x} (ev_0003) hands back -1")
 
-    def test_an_answer_naming_every_gate_with_its_routine_stands(self) -> None:
-        analyst = _Analyst([GATES], [_entry("ev_0003", GATE, GATE_LISTING)])
-
-        result = _check(analyst)
-
-        assert len(result.claims) == 3
-        assert DECOMPILED_NOT_DESCRIBED_CODE not in [v.code for v in analyst.validation_findings]
-        assert analyst._budget_records[-1]["exit_branches"] == {"read": 5, "left": []}
-
-    def test_the_exits_left_after_the_retry_are_recorded_and_not_printed(self) -> None:
-        from malspark.pipeline.validation import validation_metrics
-        from malspark.reporting.renderers.bundle import bundle_json
-        from malspark.reporting.renderers.markdown import MarkdownRenderer
-        from tests.unit.reporting._report_shapes import rich_report
-
-        analyst = _Analyst([SOME], [_entry("ev_0003", GATE, GATE_LISTING)])
-        _check(analyst)
-        (left,) = [
-            v for v in analyst.validation_findings if v.code == DECOMPILED_NOT_DESCRIBED_CODE
-        ]
-        report = rich_report()
-        rows = validation_metrics(1, [("reverser", left)])["unresolved"]
-        report.run_summary["validation"]["unresolved"].extend(rows)
-
-        markdown = MarkdownRenderer().render(report)
-        bundle = bundle_json(report)
-
-        # The finding and the run record list them; the loop record too.
-        assert f"{GATE:#x} (ev_0003) hands back -1" in rows[0]["message"]
-        assert len(analyst._budget_records[-1]["exit_branches"]["left"]) == 4
-        # The report's line, here alone, gives their count and no list.
-        (line,) = [text for text in markdown.splitlines() if DECOMPILED_NOT_DESCRIBED_CODE in text]
-        assert "(reverser)" in line
-        assert "Of the functions you decompiled, 4 branch(es) that end the function" in line
-        assert "hands back" not in line and "You decompiled" not in line
-        assert "hands back" not in bundle
-
-    def test_the_report_keeps_naming_the_functions_and_adds_the_count(self) -> None:
-        left = uncovered_exits(_isr(), _exits(_entry("ev_0003", GATE, GATE_LISTING)))
-        functions = decompiled_functions([_entry("ev_0004", OTHER, _function(""))])
-        message = decompiled_not_described_violation(functions, left).message  # type: ignore[union-attr]
-
-        printed = exits_left_in_report(f"{message} Not asked: no time was left.")
-
-        assert (
-            printed
-            == (
-                decompiled_not_described_violation(functions).message  # type: ignore[union-attr]
-                + " Of the functions you decompiled, 5 branch(es) that end the function with a "
-                "constant on a condition are named with their function by no claim; the run "
-                "record lists them. Not asked: no time was left."
-            )
+    def test_a_first_answer_kept_over_its_retry_is_checked_without_its_branches(self) -> None:
+        analyst = _Analyst(
+            ["The answer stands as written."], [_entry("ev_0003", GATE, GATE_LISTING)]
         )
+
+        result = _check(analyst, UNSURE, whole=True)
+
+        assert len(analyst.seen_turns) == 1
+        assert [c.claim for c in result.claims] == [f"{GATE:#x} decides whether the sample runs."]
+        assert _recorded(analyst, CLAIM_WITHOUT_CONFIDENCE_CODE)
+        assert _recorded(analyst) == []
+        note = analyst._budget_records[-1]["exit_branches"]
+        assert (note["left"], note["asked"]) == (5, True)
+
+    def test_a_turn_not_asked_records_the_functions_alone(self) -> None:
+        entries = [_entry("ev_0003", GATE, GATE_LISTING), _entry("ev_0004", OTHER, _function(""))]
+        analyst = _Analyst([], entries)
+
+        _check(analyst, time_left=1.0)
+
+        assert analyst.seen_turns == []
+        (message,) = _recorded(analyst)
+        assert message.startswith("You decompiled 1 function(s)")
+        assert "branch(es)" not in message and "hands back" not in message
+        assert analyst._budget_records[-1]["exit_branches"]["asked"] is False
 
     def test_an_analyst_whose_branches_are_all_named_is_not_asked(self) -> None:
         analyst = _Analyst([], [_entry("ev_0003", GATE, GATE_LISTING)])
@@ -520,6 +756,7 @@ class TestTheValidationTurn:
         _check(analyst, GATES)
 
         assert analyst.seen_turns == []
+        assert analyst._budget_records[-1]["exit_branches"]["left"] == 0
 
 
 def test_the_slots_are_read_off_the_function_index_by_offset_and_by_each_base() -> None:

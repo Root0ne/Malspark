@@ -639,7 +639,6 @@ def _inputs() -> AnswerCheckInputs:
         sample={"file_type": "pe", "platform": "windows"},
         items=None,
         decompiled=[],
-        exits=[],
         image_bases=(),
         techniques=False,
         alignment=None,

@@ -5712,12 +5712,12 @@ def chunk_cut_unread_sentence(chunk: str) -> str:
 # A reverser decompiled two routines that held half of what the analysis
 # needed, kept both in its own ledger, and no claim of its answer described
 # either. The functions its ledger entries decompiled are listed to it, once.
-# In the same question, the branches of its listings that end a function with a
-# constant on a condition, where no one claim names the function together with
-# a term of that condition (a function or slot it calls, the slot's resolved
-# API name, a constant of 10 or more): at most 8, ranked, the rest counted
-# (``pipeline.exit_branches``). The report's line keeps naming the functions
-# and gives only the count of those branches left; the run record lists them.
+# The branches of its listings that end a function with a constant on a
+# condition, where no one claim names the function together with a term of
+# that condition (a function or slot it calls, the slot's resolved API name, a
+# constant of 10 or more), join the same question when a validation turn is
+# asked anyway: at most 8, ranked, the rest counted (``pipeline.exit_branches``).
+# They are a question, not a finding: what is recorded is the functions alone.
 DECOMPILED_NOT_DESCRIBED_CODE = "isr.decompiled_not_described"
 
 # The argument names a decompile call gives its function under, besides an
@@ -6141,9 +6141,10 @@ def decompiled_not_described_violation(
     Every such function is listed, with its names and the entries that hold
     its listing, in one question. ``exits`` are the branches no one claim
     names with their function (``exit_branches.uncovered_exits``, ranked):
-    they join the same question, after the functions or alone. What the
-    analyst answers stands; what its kept answer still leaves is the finding
-    the report prints, the branches as a count.
+    they join the same question, after the functions or alone
+    (:func:`with_exit_branches` says when). What the analyst answers stands;
+    the functions its kept answer still names in no claim are the finding the
+    report prints.
     """
     if not functions and not exits:
         return None
@@ -14343,7 +14344,6 @@ class AnswerCheckInputs:
     sample: Mapping[str, str]
     items: Any
     decompiled: Sequence[Any]
-    exits: Sequence[ExitSite]
     image_bases: tuple[int, ...]
     techniques: bool
     alignment: Any
@@ -14394,6 +14394,59 @@ def whole_answer_questions(
     ]
 
 
+def with_exit_branches(
+    violations: Sequence[Violation],
+    candidate: Any,
+    inputs: AnswerCheckInputs,
+    exits: Sequence[ExitSite],
+) -> list[Violation]:
+    """``violations`` with the branches no one claim of ``candidate`` names put to the analyst.
+
+    The branches never open a turn. They join the decompiled-functions
+    question when it lists functions, or stand as that code's question when
+    another finding the turn asks about is there; with neither, nothing is
+    added and the answer stands as it would without them. They are a
+    question, not a finding: the check of a retry is not handed them, and
+    what a record keeps of a turn is :func:`exit_branches_left_out`'s.
+    """
+    left = uncovered_exits(candidate, exits, inputs.image_bases)
+    if not left:
+        return list(violations)
+    at = next(
+        (i for i, v in enumerate(violations) if v.code == DECOMPILED_NOT_DESCRIBED_CODE), None
+    )
+    if at is not None:
+        functions = undescribed_decompiles(candidate, inputs.decompiled, inputs.image_bases)
+        joined = decompiled_not_described_violation(functions, left)
+        return [*violations[:at], *([joined] if joined else []), *violations[at + 1 :]]
+    if not _askable(violations):
+        return list(violations)
+    alone = decompiled_not_described_violation((), left)
+    return [*violations, *([alone] if alone else [])]
+
+
+def exit_branches_left_out(
+    violations: Sequence[Violation], candidate: Any, inputs: AnswerCheckInputs
+) -> list[Violation]:
+    """``violations`` as a record keeps them: the decompiled question by its functions alone.
+
+    What :func:`with_exit_branches` put to the analyst about ``candidate`` is
+    no finding; a turn that put it and gave no answer records the rest.
+    """
+    if all(v.code != DECOMPILED_NOT_DESCRIBED_CODE for v in violations):
+        return list(violations)
+    functions = decompiled_not_described_violation(
+        undescribed_decompiles(candidate, inputs.decompiled, inputs.image_bases)
+    )
+    out: list[Violation] = []
+    for v in violations:
+        if v.code != DECOMPILED_NOT_DESCRIBED_CODE:
+            out.append(v)
+        elif functions is not None:
+            out.append(functions)
+    return out
+
+
 def analyst_answer_checks(
     candidate: Any,
     inputs: AnswerCheckInputs,
@@ -14414,8 +14467,7 @@ def analyst_answer_checks(
     ``None`` where the turn does not ask it (once per analyst and job).
     """
     undescribed = decompiled_not_described_violation(
-        undescribed_decompiles(candidate, inputs.decompiled, inputs.image_bases),
-        uncovered_exits(candidate, inputs.exits, inputs.image_bases),
+        undescribed_decompiles(candidate, inputs.decompiled, inputs.image_bases)
     )
     callees_asked = None
     if callees is not None:

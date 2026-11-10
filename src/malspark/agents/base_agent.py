@@ -120,8 +120,9 @@ from malspark.llm.transient import retry_after as _retry_after  # noqa: F401 —
 from malspark.llm.transient import retry_on_connection_error as retry_on_connection_error
 from malspark.pipeline.claim_drops import values_as_written
 from malspark.pipeline.exit_branches import (
-    exit_branches,
+    EXITS_LISTED,
     exit_line,
+    read_listings,
     resolved_slots,
     uncovered_exits,
 )
@@ -174,6 +175,7 @@ from malspark.pipeline.validation import (
     count_claim_blocks,
     decompiled_functions,
     discarded_retry_row,
+    exit_branches_left_out,
     library_only_claims,
     parse_violations,
     read_retry_drop_answers,
@@ -192,6 +194,7 @@ from malspark.pipeline.validation import (
     validation_entries_text,
     validity_check_available,
     whole_answer_questions,
+    with_exit_branches,
 )
 from malspark.schemas.evidence import (
     ENTRY_ID_RE,
@@ -10247,10 +10250,11 @@ class BaseAnalyst(BudgetMeter, ABC):
             )
             # The branches of this analyst's own listings that end a function
             # with a constant on a condition: any no one claim names with its
-            # function joins the same question (``pipeline.exit_branches``).
-            # A slot is named by what the pack's function index resolved.
+            # function joins a question this turn asks anyway
+            # (``validation.with_exit_branches``). A slot is named by what the
+            # pack's function index resolved.
             pack = list(getattr(self, "pack_entries", None) or ())
-            exits = exit_branches(
+            exits = read_listings(
                 own_entries, resolved_slots(slot_names([*pack, *own_entries]), image_bases)
             )
             # The functions this analyst's own calls listed, and their facts:
@@ -10397,7 +10401,6 @@ class BaseAnalyst(BudgetMeter, ABC):
                 sample=sample,
                 items=items,
                 decompiled=ledger.decompiled,
-                exits=ledger.exits,
                 image_bases=ledger.image_bases,
                 techniques=techniques,
                 alignment=gate,
@@ -10443,18 +10446,43 @@ class BaseAnalyst(BudgetMeter, ABC):
                 )
             return [answered] if answered is not None else []
 
-        def _note_exits(candidate: AgentISR) -> None:
-            # The branches the answer checked leaves, whole, on the loop's
-            # record: the last answer checked is the one kept, and the report
-            # prints only their count.
-            ledger = _ledger()
-            if ledger.exits:
-                left = uncovered_exits(candidate, ledger.exits, ledger.image_bases)
-                BaseAnalyst._note_on_last_loop(  # type: ignore[arg-type]
-                    self,
-                    "exit_branches",
-                    {"read": len(ledger.exits), "left": [exit_line(site) for site in left]},
-                )
+        # The branches no one claim names with their function are put to the
+        # analyst only with the first questions about this answer, and only
+        # beside a question the turn asks anyway: they never open a turn, the
+        # retry's check is not handed them, and no record keeps them as a
+        # finding (``validation.with_exit_branches``). ``carried``: the last
+        # check of this answer put them, against ``put_with``'s ledger;
+        # ``asked``: the questions sent did.
+        exits_state = {"open": True, "carried": False, "asked": False}
+        put_with: list[AnswerCheckInputs] = []
+
+        def _left_out(violations: Sequence[Violation]) -> list[Violation]:
+            # What a record keeps of questions put about this answer.
+            if not exits_state["carried"]:
+                return list(violations)
+            return exit_branches_left_out(violations, isr, put_with[-1])
+
+        def _settled(kept: AgentISR) -> AgentISR:
+            # The branches the kept answer leaves, on the loop's record once
+            # the turn has settled: how many listings were read, how many
+            # exits they hold and how many no one claim names, the lines a
+            # question lists, and whether this turn put them.
+            if not only_cut:
+                listings = _ledger().exits
+                if listings.listings:
+                    left = uncovered_exits(kept, listings.exits, _ledger().image_bases)
+                    BaseAnalyst._note_on_last_loop(  # type: ignore[arg-type]
+                        self,
+                        "exit_branches",
+                        {
+                            "listings": listings.listings,
+                            "exits": len(listings.exits),
+                            "left": len(left),
+                            "shown": [exit_line(site) for site in left[:EXITS_LISTED]],
+                            "asked": bool(exits_state["asked"]),
+                        },
+                    )
+            return kept
 
         def _validator(candidate: AgentISR) -> list[Violation]:
             if only_cut:
@@ -10463,11 +10491,11 @@ class BaseAnalyst(BudgetMeter, ABC):
             # Every answer checked that no claim could be read from, the first
             # and its retry alike, goes to the run record whole.
             self._keep_unparsed_answers(unread, candidate.revision_round)
-            _note_exits(candidate)
-            return [
+            inputs = _inputs()
+            found = [
                 *analyst_answer_checks(
                     candidate,
-                    _inputs(),
+                    inputs,
                     whole_answer=_whole_answer_questions(candidate),
                     unread=unread,
                     functions=_function_check(candidate).violations,
@@ -10476,6 +10504,12 @@ class BaseAnalyst(BudgetMeter, ABC):
                 ),
                 *_callees_answered(),
             ]
+            if not (exits_state["open"] and candidate is isr):
+                return found
+            joined = with_exit_branches(found, candidate, inputs, _ledger().exits.exits)
+            exits_state["carried"] = joined != found
+            put_with[:] = [inputs]
+            return joined
 
         if nudged and not only_cut:
             unasked = parse_violations(isr, techniques=techniques)
@@ -10509,7 +10543,7 @@ class BaseAnalyst(BudgetMeter, ABC):
                     self, "function_claims", checked.record()
                 )
         if not initial:
-            return isr
+            return _settled(isr)
 
         # The turn gets what the loop it follows left, and is not asked at all
         # when that cannot hold an answer at this model's pace: a question after
@@ -10531,7 +10565,7 @@ class BaseAnalyst(BudgetMeter, ABC):
             # describe its technique, are questions for the analyst, and one
             # never sent notes nothing on the claim: the finding is recorded
             # saying it was not asked, and the technique goes through as claimed.
-            return _settle_an_unanswered_turn(self, isr, initial, detail)
+            return _settled(_settle_an_unanswered_turn(self, isr, _left_out(initial), detail))
 
         from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 
@@ -10548,11 +10582,16 @@ class BaseAnalyst(BudgetMeter, ABC):
             if no_tools:
                 callees_to_ask = None
                 initial = [v for v in initial if v.code != UNREAD_CALLEES_CODE]
+                # The branches stay only beside a question still asked.
+                if exits_state["carried"]:
+                    initial = with_exit_branches(
+                        _left_out(initial), isr, put_with[-1], _ledger().exits.exits
+                    )
                 BaseAnalyst._state_callees_not_run(  # type: ignore[arg-type]
                     self, NOT_RUN_NO_TOOLS.format(why=no_tools), job
                 )
                 if not initial:
-                    return isr
+                    return _settled(isr)
         prompt = self._system_prompt("", tools=None if tooled else ())
         messages: list[BaseMessage] = []
         if prompt:
@@ -11353,6 +11392,9 @@ class BaseAnalyst(BudgetMeter, ABC):
             def _fed_back(violations: Sequence[Violation]) -> None:
                 if not fed_at:
                     fed_at.append(len(getattr(self, "_evidence_entries", None) or []))
+                if exits_state["open"]:
+                    exits_state["asked"] = exits_state["carried"]
+                    exits_state["open"] = False
                 if callees_to_ask is not None and any(
                     v.code == UNREAD_CALLEES_CODE for v in violations
                 ):
@@ -11400,29 +11442,33 @@ class BaseAnalyst(BudgetMeter, ABC):
                 answered_tally.count(returned)
             for code, count in answered_tally.by_code.items():
                 self.validation_fed_back[code] = self.validation_fed_back.get(code, 0) + count
-            earlier_rounds = [v for returned in rounds_answered for v in returned]
+            earlier_rounds = _left_out([v for returned in rounds_answered for v in returned])
             if round_asked:
-                return _settle_an_unanswered_turn(
-                    self,
-                    isr,
-                    initial,
-                    f"not asked: the validation turn failed ({failed})",
-                    asked=round_asked[0],
-                    asked_detail=f"asked; no answer came ({failed})",
-                    answered_earlier=earlier_rounds,
-                    answered_earlier_detail=f"asked; the answer could not be kept ({failed})",
+                return _settled(
+                    _settle_an_unanswered_turn(
+                        self,
+                        isr,
+                        _left_out(initial),
+                        f"not asked: the validation turn failed ({failed})",
+                        asked=_left_out(round_asked[0]),
+                        asked_detail=f"asked; no answer came ({failed})",
+                        answered_earlier=earlier_rounds,
+                        answered_earlier_detail=f"asked; the answer could not be kept ({failed})",
+                    )
                 )
             if rounds_answered:
-                return _settle_an_unanswered_turn(
-                    self,
-                    isr,
-                    initial,
-                    f"not asked: the validation turn failed ({failed})",
-                    asked=earlier_rounds,
-                    asked_detail=f"asked; the answer could not be kept ({failed})",
+                return _settled(
+                    _settle_an_unanswered_turn(
+                        self,
+                        isr,
+                        _left_out(initial),
+                        f"not asked: the validation turn failed ({failed})",
+                        asked=earlier_rounds,
+                        asked_detail=f"asked; the answer could not be kept ({failed})",
+                    )
                 )
             detail = f"not asked: the validation turn failed ({failed})"
-            return _settle_an_unanswered_turn(self, isr, initial, detail)
+            return _settled(_settle_an_unanswered_turn(self, isr, _left_out(initial), detail))
 
         self.validation_retries += retries
         for code, count in tally.by_code.items():
@@ -11477,7 +11523,7 @@ class BaseAnalyst(BudgetMeter, ABC):
                 self.name,
                 ", ".join(sorted({v.code for v in violations})),
             )
-        return revised
+        return _settled(revised)
 
     def _fits_the_window(self, messages: list[Any], cap: int) -> bool:
         """Whether ``messages`` and an answer of ``cap`` tokens fit this model's window.

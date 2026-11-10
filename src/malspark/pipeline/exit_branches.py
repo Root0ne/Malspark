@@ -11,9 +11,10 @@ What a listing says:
 
 * **A readable listing** is a function body in C form: a signature ending in
   ``)``, an opening brace, balanced braces and statements ended by ``;``. A
-  listing with a label line (``name:`` alone on a line) or a ``goto`` says
+  body with a label (``name:`` where a statement starts) or a ``goto`` says
   nothing, because a path's condition is then no longer the blocks around it;
-  so does a body that does not parse, prose and JSON.
+  so does a body that does not parse, prose and JSON. A comment, a string and
+  the text around the body are no part of it.
 * **An exit** is a statement inside at least one condition (``if``, ``else``,
   a loop, ``switch``) that returns a constant (a number, negated or cast, or
   ``true``/``false``), or gives a constant to a variable some ``return v;`` of
@@ -31,7 +32,10 @@ An exit is covered when one claim names both its function and one of its
 terms. The uncovered ones are ranked (a function a claim already names first,
 then the term the fewest of the analyst's listings call, then the function
 with the most exits handing back that value) and at most :data:`EXITS_LISTED`
-are listed. Read in time linear in the listing: one tokenising pass, an
+are listed. They are a question, never a finding: they join a validation turn
+that is asked anyway (``validation.with_exit_branches``) and are left out of
+what any record keeps of it. Read in time linear in the listing: one
+tokenising pass, an
 explicit stack, and the statements a variable was last mentioned in kept in a
 dict with an undo log, so no path is ever copied.
 """
@@ -57,14 +61,6 @@ LEAST_CONSTANT = 10
 # last mentioned it calling something, which is where its value came from.
 HOP_DEPTH = 1
 
-# The words the exit part of the question opens and closes with; the report
-# prints the count of exits left in their place (:func:`exits_left_in_report`).
-EXITS_OPENING = "Of the functions you decompiled, "
-EXITS_CLOSING = (
-    "A branch that only handles a failed call or allocation, or that this analysis does "
-    "not need, may stay undescribed."
-)
-_EXITS_COUNT = re.compile(r"(\d+) branch")
 
 # One token of a listing. A comment or a string left open runs to the end of
 # the text or of its line, so no position is read twice.
@@ -77,11 +73,6 @@ _TOKEN = re.compile(
     r"|(?P<mark>->|\+\+|--|<<=|>>=|==|!=|<=|>=|&&|\|\||[^\s\w])",
     re.DOTALL,
 )
-# A label line: a name and a colon alone on a line (a comment may follow).
-_LABEL_LINE = re.compile(
-    r"^[ \t]*([A-Za-z_$][\w$.]*)[ \t]*:(?!:)[ \t]*(?://[^\n]*)?[ \t\r]*$", re.MULTILINE
-)
-_NOT_LABELS = frozenset({"default", "public", "private", "protected"})
 _KEYWORDS = frozenset(
     {
         "if",
@@ -176,10 +167,6 @@ def _tokens(text: str) -> tuple[list[str], list[str]]:
             kinds.append(str(kind))
             texts.append(match.group(0))
     return kinds, texts
-
-
-def _has_label(text: str) -> bool:
-    return any(m.group(1) not in _NOT_LABELS for m in _LABEL_LINE.finditer(text))
 
 
 def _number_value(text: str) -> int:
@@ -535,6 +522,14 @@ class _Reader:
                 i = j + 1
                 done = True
                 continue
+            if (
+                self.kinds[i] == _NAME
+                and i + 1 < n
+                and texts[i + 1] == ":"
+                and (i + 2 >= n or texts[i + 2] != ":")
+            ):
+                # A label where a statement starts.
+                return None
             j, depth = i, 0
             while j < n:
                 mark = texts[j]
@@ -612,8 +607,6 @@ def _read(
     if reader.body() is None:
         return None
     called = reader.called()
-    if "goto" in texts or _has_label(text):
-        return None, called
     return reader.read(), called
 
 
@@ -664,18 +657,34 @@ def _listings(entry: Any) -> list[tuple[Any, str]]:
     return [(v.DecompiledFunction(address, tuple(names), (entry_id,)), text)]
 
 
+@dataclass(frozen=True)
+class ListingsRead:
+    """What an analyst's own listings hold: how many were read, and their exits."""
+
+    listings: int
+    exits: tuple[ExitSite, ...]
+
+
 def exit_branches(entries: Iterable[Any], slots: Mapping[int, str]) -> list[ExitSite]:
+    """The exits of every function the analyst's own entries list (:func:`read_listings`)."""
+    return list(read_listings(entries, slots).exits)
+
+
+def read_listings(entries: Iterable[Any], slots: Mapping[int, str]) -> ListingsRead:
     """The exits of every function the analyst's own entries list, read by shape.
 
     Every entry that answered and was shown is read, whatever its tool: the
     listing's shape decides (a repeat the guard answered holds no listing, and
     a text with no function body is none). A function listed twice is read
-    once, from the first listing. ``slots``:
+    once, from the first listing that says something: a cut listing, or one
+    with a label, does not hide a later whole one. ``slots``:
     :func:`resolved_slots`.
     """
     labels = _Labels()
     read: dict[Any, tuple[Any, list[tuple[tuple[_Part, ...], int, str]]]] = {}
-    fan: dict[tuple[str, int], int] = {}
+    # What each function's listing calls, once per function: the one read,
+    # or the first that said nothing for a function no listing was read of.
+    calls: dict[Any, set[tuple[str, int]]] = {}
     for entry in entries:
         if not getattr(entry, "ok", True) or answer_not_shown(entry):
             continue
@@ -689,9 +698,15 @@ def exit_branches(entries: Iterable[Any], slots: Mapping[int, str]) -> list[Exit
             if found is None:
                 continue
             exits, called = found
-            read[key] = (function, exits or [])
-            for term in called:
-                fan[term] = fan.get(term, 0) + 1
+            if exits is None:
+                calls.setdefault(key, called)
+                continue
+            read[key] = (function, exits)
+            calls[key] = called
+    fan: dict[tuple[str, int], int] = {}
+    for called in calls.values():
+        for term in called:
+            fan[term] = fan.get(term, 0) + 1
     out: list[ExitSite] = []
     least: dict[int, int | None] = {}
     # Keyed once per condition, whose parts every exit under it shares: an
@@ -722,7 +737,7 @@ def exit_branches(entries: Iterable[Any], slots: Mapping[int, str]) -> list[Exit
                     apis=slots,
                 )
             )
-    return out
+    return ListingsRead(listings=len(read), exits=tuple(out))
 
 
 def _least_fan(
@@ -743,28 +758,32 @@ def _least_fan(
 class _Claim:
     """What one claim's sentence and evidence line write: addresses, numbers, words."""
 
-    def __init__(self, text: str) -> None:
+    def __init__(self, text: str, labels: _Labels) -> None:
         from malspark.pipeline import validation as v
 
         self.text = text
         self.addresses = set(v._addresses_written(text))
-        self.low: dict[int, bool] = {}
-        for address in self.addresses:
-            self.low[address & 0xFFFF] = self.low.get(address & 0xFFFF, False) or address > 0
         runs = [m.group(1) for m in v._DIGIT_RUN.finditer(text)]
         self.digits = {run.lstrip("0") for run in runs}
         self.numbers = {int(run) for run in runs}
         self.numbers |= {int(m.group(1), 16) for m in v._HEX_ADDRESS.finditer(text)}
         self.words = set(_WORD.findall(text))
+        # A slot named by its datum's label, as the listing writes it.
+        for word in self.words:
+            address = labels.datum(word)
+            if address is not None:
+                self.addresses.add(address)
 
     def names_address(self, address: int, bases: Sequence[int]) -> bool:
-        """``validation._named_by``'s reading of an address, in constant time per base."""
+        """An address written as ``validation._named_by`` reads one, in constant time per base.
+
+        With no image base known, an address 64 KiB away is not read as this
+        one: a term is no function a claim names, and a claim naming only its
+        function would name every callee a multiple of 64 KiB from it.
+        """
         if address in self.addresses:
             return True
-        if bases:
-            if any(address + b in self.addresses or address - b in self.addresses for b in bases):
-                return True
-        elif address > 0 and self.low.get(address & 0xFFFF):
+        if any(address + b in self.addresses or address - b in self.addresses for b in bases):
             return True
         spelled = f"{address:x}"
         return spelled.isdigit() and spelled.lstrip("0") in self.digits
@@ -807,7 +826,8 @@ def uncovered_exits(
         f"{getattr(claim, 'claim', '') or ''} {getattr(claim, 'evidence_ref', '') or ''}"
         for claim in (getattr(isr, "claims", None) or [])
     ]
-    claims = [_Claim(text) for text in texts]
+    labels = _Labels()
+    claims = [_Claim(text, labels) for text in texts]
     naming: dict[Any, frozenset[int]] = {}
     parts: dict[int, frozenset[int]] = {}
     conditions: dict[int, frozenset[int]] = {}
@@ -848,7 +868,7 @@ def uncovered_exits(
 
 
 # ---------------------------------------------------------------------------
-# The question, and the report's count
+# The question
 # ---------------------------------------------------------------------------
 
 
@@ -856,71 +876,76 @@ def _hex(value: int) -> str:
     return f"-{-value:#x}" if value < 0 else f"{value:#x}"
 
 
-def exit_line(site: ExitSite) -> str:
-    """``0x… (ev_0003) hands back -1 on a condition over calls 0x…, slot 0x… (Api)``."""
-    function = site.function
+def _function_head(function: Any) -> str:
+    """``0x… (a name; ev_0003)``: the function by its address, its own names and entries."""
     generic = declared_auto_name_pattern()
     said = [n for n in function.names if not generic.fullmatch(n)]
     head = hex(function.address) if function.address is not None else function.names[0]
     if function.address is None:
         said = said[1:] if said and said[0] == function.names[0] else said
     where = "; ".join([*said, *function.entries])
+    return f"{safe_finding_value(head)}{f' ({where})' if where else ''}"
+
+
+def _terms(site: ExitSite) -> str:
+    """``calls 0x…, slot 0x… (Api), constant 0x…``: the terms of an exit's condition."""
     terms = [f"calls {_hex(a)}" for a in site.callees]
     for address in site.slots:
         api = site.apis.get(address, "")
         terms.append(f"slot {_hex(address)}" + (f" ({safe_finding_value(api)})" if api else ""))
     terms += [f"constant {_hex(c)}" for c in site.constants]
-    return (
-        f"{safe_finding_value(head)}{f' ({where})' if where else ''} hands back "
-        f"{site.written} on a condition over {', '.join(terms)}"
-    )
+    return ", ".join(terms)
+
+
+def exit_line(site: ExitSite) -> str:
+    """``0x… (ev_0003) hands back -1 on a condition over calls 0x…, slot 0x… (Api)``."""
+    head = _function_head(site.function)
+    return f"{head} hands back {site.written} on a condition over {_terms(site)}"
+
+
+def _listed(shown: Sequence[ExitSite]) -> list[str]:
+    """The exits listed, grouped by function in the rank of each function's first.
+
+    One piece per exit, each a value of its own bound: ``0x… (ev_0003) hands
+    back -1 on [calls 0x…]``, then ``, 0 on [constant 0x…]`` for the same
+    function and ``; 0x… hands back …`` for the next.
+    """
+    grouped: dict[Any, list[ExitSite]] = {}
+    for site in shown:
+        grouped.setdefault(site.function, []).append(site)
+    pieces: list[str] = []
+    for function, sites in grouped.items():
+        for k, site in enumerate(sites):
+            said = f"{site.written} on [{_terms(site)}]"
+            if k:
+                pieces.append(f", {said}")
+            else:
+                pieces.append(
+                    f"{'; ' if pieces else ''}{_function_head(function)} hands back {said}"
+                )
+    return pieces
 
 
 def exits_question(exits: Sequence[ExitSite]) -> str:
     """The exit part of the decompiled-functions question, for ``exits`` ranked.
 
-    Each line is bounded as a finding value is: it quotes names a tool wrote.
+    The ones listed are grouped by function, in the rank of each function's
+    first. Each name is bounded as a finding value is: a tool wrote it.
     """
     shown = list(exits[:EXITS_LISTED])
     more = len(exits[EXITS_LISTED:])
-    lead = f"The {len(shown)} listed here are" if more else "They are"
     return (
-        f"{EXITS_OPENING}{len(exits)} branch(es) end the function with a constant on a "
-        "condition, and no one claim of this answer names the function together with a term "
-        "of that condition: a function it calls or the call that set a value it tests calls, "
-        f"a slot either calls through, or a constant of {LEAST_CONSTANT} or more. {lead} "
-        "ranked with the functions a claim already names first, then by how few of your "
-        f"listings call their terms: "
-        f"{'; '.join(safe_finding_value(exit_line(site)) for site in shown)}"
-        f"{f'; and {more} more' if more else ''}. For each that matters to this analysis, "
-        "write one claim that names the function, by a name the decompiler gave it or by its "
-        "address or its offset from the image base in hex (with 0x, with a trailing h, as "
-        "bare hex digits, or inside the decompiler's generic name), and one term listed with "
-        "it: an address written the same ways, a slot's API name, or a constant written in "
-        "hex with 0x or in decimal; and say what the condition checks and what the function "
-        f"does when it holds. {EXITS_CLOSING}"
-    )
-
-
-def exits_left_sentence(count: int) -> str:
-    """What the report prints in place of the exit part: the count, never the list."""
-    return (
-        f"{EXITS_OPENING}{count} branch(es) that end the function with a constant on a "
-        "condition are named with their function by no claim; the run record lists them."
-    )
-
-
-def exits_left_in_report(message: str) -> str:
-    """``message`` with its exit part, if any, cut to the count of exits it lists."""
-    at = message.find(EXITS_OPENING)
-    if at < 0:
-        return message
-    count = _EXITS_COUNT.match(message, at + len(EXITS_OPENING))
-    end = message.find(EXITS_CLOSING, at)
-    if count is None or end < 0:
-        return message
-    return (
-        message[:at]
-        + exits_left_sentence(int(count.group(1)))
-        + message[end + len(EXITS_CLOSING) :]
+        f"Of the functions you decompiled, {len(exits)} branch(es) end one with a constant on "
+        "a condition, and no one claim names that function together with a term of the "
+        "condition. Ranked, functions a claim names first, then by how few of your listings "
+        "call the terms: "
+        f"{''.join(safe_finding_value(piece) for piece in _listed(shown))}"
+        f"{f'; and {more} more' if more else ''}. For each that "
+        "matters, write one claim naming the function (by a name the decompiler gave it, or "
+        "its address or offset from the image base in hex: with 0x, a trailing h, as bare hex "
+        "digits, or inside the decompiler's generic name) and one of its terms (an address "
+        "written the same ways or inside a data label, a slot's API name, or a constant in hex "
+        "with 0x or in decimal), saying what the condition checks and what the function does "
+        "when it holds. A branch that only handles a failed call or allocation, or that this "
+        "analysis does not need, may stay undescribed."
     )
