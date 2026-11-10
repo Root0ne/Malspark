@@ -24,6 +24,12 @@ the stack: uv provides the interpreter and nothing else.
 The Makefile's targets of the same names call this file, so ``make`` keeps
 working where make is installed. ``--dry-run`` on a stack command prints the
 commands instead of running them; no secret value is ever printed.
+
+On a host that is not Linux, samples and uploads are on named volumes
+(docker/docker-compose.named-data.yml) and the development stack's reloads
+poll (docker/docker-compose.dev-polling.yml). MALSPARK_DATA_VOLUMES=1 (or
+true, yes, on) puts them on named volumes on any host, MALSPARK_DATA_VOLUMES=0
+(or false, no, off) keeps them under data/ on any host.
 """
 
 from __future__ import annotations
@@ -109,10 +115,24 @@ SHIPPED_COMPOSE = ("docker/docker-compose.yml", "docker/docker-compose.dev.yml")
 IMAGE_DEFAULT_ID = "10001"
 
 # Samples and uploads go on named volumes on a host that is not Linux, where a
-# bind mount from the host's file system carries no Linux owner. The overlay
-# that moves them comes with the compose change that adds it; until that file
-# is there, every host keeps the bind mount.
+# bind mount from the host's file system carries no Linux owner; Linux keeps
+# the bind mount. MALSPARK_DATA_VOLUMES set to one of DATA_VOLUMES_ON adds the
+# overlay on any host and one of DATA_VOLUMES_OFF leaves it out on any host: a
+# worker run on the host writes its sample copies to data/samples, where only
+# a bind mount shows them to the sidecars.
 NAMED_DATA_OVERLAY = "docker/docker-compose.named-data.yml"
+DATA_VOLUMES_ON = ("1", "true", "yes", "on")
+DATA_VOLUMES_OFF = ("0", "false", "no", "off")
+# The volumes the overlay declares, named under the compose project as compose
+# names them (<project>_samples), and the project the shipped file names.
+DATA_VOLUMES = ("samples", "uploads")
+COMPOSE_PROJECT = "malspark"
+# The development stack's reloads poll on a host that is not Linux, whose
+# shared files raise no change notification in the containers.
+DEV_POLLING_OVERLAY = "docker/docker-compose.dev-polling.yml"
+# Where the named volumes mount under the read-only ../data mount. Docker
+# cannot create a mount point there, so each must exist on the host.
+DATA_MOUNT_POINTS = ("data/samples", "data/uploads")
 
 CORPORA = ("data/sigma_rules", "data/capa-rules", "data/capa-signatures")
 
@@ -156,20 +176,101 @@ def compose_ids(
     return ids
 
 
-def host_overlays(root: Path, system: str | None = None) -> list[str]:
+def _linux(system: str | None) -> bool:
+    return (system or platform.system()) == "Linux"
+
+
+def data_volumes_choice(environ: Mapping[str, str]) -> bool | None:
+    """MALSPARK_DATA_VOLUMES as on, off or neither (any case); neither leaves it to the host."""
+    value = environ.get("MALSPARK_DATA_VOLUMES", "").strip().lower()
+    if value in DATA_VOLUMES_ON:
+        return True
+    if value in DATA_VOLUMES_OFF:
+        return False
+    return None
+
+
+def warn_data_volumes_value(environ: Mapping[str, str]) -> None:
+    """A value of MALSPARK_DATA_VOLUMES that is neither on nor off is named, not ignored."""
+    value = environ.get("MALSPARK_DATA_VOLUMES", "").strip()
+    if value and data_volumes_choice(environ) is None:
+        print(
+            f"warning: MALSPARK_DATA_VOLUMES={value} is not read; it takes"
+            f" {', '.join(DATA_VOLUMES_ON)} (named volumes) or {', '.join(DATA_VOLUMES_OFF)}"
+            " (bind mounts), so this host's own choice stands",
+            file=sys.stderr,
+        )
+
+
+def host_overlays(
+    root: Path, system: str | None = None, environ: Mapping[str, str] | None = None
+) -> list[str]:
     """The compose files this host adds after the shipped ones (see NAMED_DATA_OVERLAY)."""
-    if (system or platform.system()) == "Linux" or not (root / NAMED_DATA_OVERLAY).is_file():
+    choice = data_volumes_choice(environ or {})
+    wanted = not _linux(system) if choice is None else choice
+    if not wanted or not (root / NAMED_DATA_OVERLAY).is_file():
         return []
     return [NAMED_DATA_OVERLAY]
 
 
-def _production_files(root: Path, system: str | None) -> list[str]:
+def data_volumes_note(root: Path, environ: Mapping[str, str]) -> str:
+    """Where samples and uploads are, when the named-data overlay puts them on volumes."""
+    project = (
+        environ.get("COMPOSE_PROJECT_NAME")
+        or read_env(root / "docker" / ".env").get("COMPOSE_PROJECT_NAME")
+        or COMPOSE_PROJECT
+    )
+    names = " and ".join(f"{project}_{volume}" for volume in DATA_VOLUMES)
+    return (
+        f"samples and uploads are on the named volumes {names}: the containers do not see"
+        " a file put in data/samples or data/uploads, the tracked fixtures apart for the"
+        " API and the worker (MALSPARK_DATA_VOLUMES=0 keeps the bind mounts)"
+    )
+
+
+def dev_overlays(root: Path, system: str | None = None) -> list[str]:
+    """The files the development stack adds on this host (see DEV_POLLING_OVERLAY)."""
+    if _linux(system) or not (root / DEV_POLLING_OVERLAY).is_file():
+        return []
+    return [DEV_POLLING_OVERLAY]
+
+
+def make_mount_points(root: Path) -> None:
+    """Each named data volume's mount point under data/ (see DATA_MOUNT_POINTS).
+
+    Something other than a directory standing at one stops the start here,
+    named, before Docker fails on it.
+    """
+    for path in DATA_MOUNT_POINTS:
+        try:
+            (root / path).mkdir(parents=True, exist_ok=True)
+        except OSError as error:
+            raise _fail(
+                f"  FAIL     {path} cannot be the mount point of a named volume: {error};"
+                " move what stands there and run this again"
+            ) from None
+
+
+def split_extra_files(value: str, windows: bool | None = None) -> list[str]:
+    """COMPOSE_FILE_EXTRA's files, one ``-f`` each.
+
+    On Windows (this host's, unless ``windows`` says) the value is split on
+    ``;``, as compose splits its own COMPOSE_FILE there, so a path may hold a
+    space; elsewhere on white space.
+    """
+    if windows is None:
+        windows = os.name == "nt"
+    parts = value.split(";") if windows else value.split()
+    return [part.strip() for part in parts if part.strip()]
+
+
+def _production_files(root: Path, system: str | None, environ: Mapping[str, str]) -> list[str]:
     """The production stack's ``-f`` arguments, run from docker/.
 
     None at all, so compose reads docker-compose.override.yml on its own; with
     a host overlay, the files compose would have read are named before it.
     """
-    overlays = host_overlays(root, system)
+    overlays = host_overlays(root, system, environ)
     if not overlays:
         return []
     files = ["docker-compose.yml"]
@@ -179,13 +280,20 @@ def _production_files(root: Path, system: str | None) -> list[str]:
     return [arg for path in files for arg in ("-f", path)]
 
 
-def _dev_files(root: Path, extra: Sequence[str], system: str | None) -> list[str]:
+def _dev_files(
+    root: Path, extra: Sequence[str], system: str | None, environ: Mapping[str, str]
+) -> list[str]:
     """The development stack's ``-f`` arguments, run from the repository root.
 
     COMPOSE_FILE_EXTRA's files come last, each one more ``-f``, so they win
-    over the shipped file and the overlay.
+    over the shipped file and the overlays.
     """
-    files = [*SHIPPED_COMPOSE, *host_overlays(root, system), *extra]
+    files = [
+        *SHIPPED_COMPOSE,
+        *host_overlays(root, system, environ),
+        *dev_overlays(root, system),
+        *extra,
+    ]
     return [arg for path in files for arg in ("-f", path)]
 
 
@@ -206,7 +314,7 @@ class Context:
         return cls(
             root=root,
             environ=environ,
-            extra_files=(*environ.get("COMPOSE_FILE_EXTRA", "").split(), *extra),
+            extra_files=(*split_extra_files(environ.get("COMPOSE_FILE_EXTRA", "")), *extra),
             getuid=getattr(os, "getuid", None),
             getgid=getattr(os, "getgid", None),
         )
@@ -233,8 +341,8 @@ def _with(ctx: Context, *, bootstrap: bool = False, ids: bool = False) -> dict[s
 def stack_plan(command: str, ctx: Context, email: str | None = None) -> list[Step]:
     """The commands one stack command runs, in order; each runs only if the one before passed."""
     docker_dir = ctx.root / "docker"
-    prod = ["docker", "compose", *_production_files(ctx.root, ctx.system)]
-    dev = ["docker", "compose", *_dev_files(ctx.root, ctx.extra_files, ctx.system)]
+    prod = ["docker", "compose", *_production_files(ctx.root, ctx.system, ctx.environ)]
+    dev = ["docker", "compose", *_dev_files(ctx.root, ctx.extra_files, ctx.system, ctx.environ)]
     root = ctx.root
     plans: dict[str, Callable[[], list[Step]]] = {
         "docker-build": lambda: [Step((*prod, "build"), docker_dir)],
@@ -1132,6 +1240,7 @@ def doctor_report(
     in_use: Callable[[str, int], bool] = port_in_use,
     filesystem: Callable[[Path], str | None] = windows_filesystem,
     windows: bool = os.name == "nt",
+    system: str | None = None,
 ) -> Iterator[str]:
     """What this host has and lacks for the stack, one line each."""
     bits = struct.calcsize("P") * 8
@@ -1141,11 +1250,19 @@ def doctor_report(
         + (f" (an {emulated} host)" if emulated else "")
         + f", Python {platform.python_version()} {bits}-bit"
     )
+    named_data = bool(host_overlays(root, system, environ))
+    if named_data:
+        yield f"  volumes  {data_volumes_note(root, environ)}"
     if (fs := filesystem(root)) and fs.upper() == "NTFS":
         yield (
             f"  warn     the checkout is on NTFS ({root}): a bind mount from it carries no"
-            " Linux owner or mode, so files the containers write under data/ do not keep"
-            " the ownership a Linux host gives them"
+            " Linux owner or mode, so "
+            + (
+                "the stack keeps samples and uploads on named volumes"
+                if named_data
+                else "files the containers write under data/samples and data/uploads do not"
+                " keep the ownership a Linux host gives them"
+            )
         )
     if windows and len(str(root)) > LONG_CHECKOUT:
         yield (
@@ -1322,6 +1439,7 @@ def main(argv: Sequence[str] | None = None, root: Path = REPO_ROOT) -> int:
     if args.command == "env":
         return env_init(root, environ, force=args.force)
     if args.command == "doctor":
+        warn_data_volumes_value(environ)
         for line in doctor_report(root, environ):
             _say(line)
         return 0
@@ -1331,12 +1449,23 @@ def main(argv: Sequence[str] | None = None, root: Path = REPO_ROOT) -> int:
         return 2
     ctx = Context.here(root, getattr(args, "file", ()))
     steps = stack_plan(args.command, ctx, getattr(args, "email", None))
+    warn_data_volumes_value(environ)
     if args.command == "docker-up":
         warn_missing_corpora(root)
+    starts_named_data = args.command in ("up", "docker-up") and bool(
+        host_overlays(root, ctx.system, ctx.environ)
+    )
+    if starts_named_data:
+        print(f"note: {data_volumes_note(root, environ)}", file=sys.stderr)
     if args.dry_run:
         for step in steps:
             _say(describe(step, root))
         return 0
+    if starts_named_data:
+        try:
+            make_mount_points(root)
+        except Stop as stop:
+            return stop.status
     return run_steps(steps, environ, root)
 
 
