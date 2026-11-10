@@ -44,10 +44,18 @@ A revision block restates a claim in force when it states four fifths of the
 claim's content words, or at least half of the claim's values that are no
 mere small number (a value of three characters or more, or a technique id)
 with at least one of them strong (four characters or more, or a technique
-id), or a third of them with the claim's technique id. Values, never words,
-may be pooled over several blocks of the revision, and only over blocks that
-each state one of the claim's values: a claim split over two of the
-revision's claims is written again, a claim whose words merely recur is not.
+id), or a third of them with the claim's technique id; and when it states
+every address the claim's sentence names (``0x…`` of at least
+:data:`LEAST_ADDRESS`, or in a decompiler's name) that no other block of the
+revision states: the claim's subject. An address another block states is
+still in the answer; one no block states left it, and a block without it
+writes another claim, not this one. An address is stated as the record of
+dropped values reads one (``claim_drops``): as written, or by a decompiler's
+name holding it under an image base. One block restates a claim, or none
+does: values and words are never pooled over blocks, since a claim's helpers
+recurring across other claims of the revision say nothing of the claim
+itself. A claim that names no address is restated by one block on its words
+or values alone.
 A revision that writes again or withdraws every claim in force merges
 nothing: it stands as written, as it always did.
 
@@ -70,7 +78,11 @@ from typing import Any
 
 from malspark.analysis.technique_ids import is_technique_id
 from malspark.pipeline.claim_drops import (
+    _DECOMPILER_NAME,
+    _HEX,
     _is_stated,
+    _refanged,
+    _Searched,
     _searched,
     claim_values,
     content_words,
@@ -107,6 +119,9 @@ STRONG_LENGTH = 4
 # The share of a claim's values one block of a validation retry must state
 # for the claim to be read as written again in other words, not left out.
 REWRITTEN_SHARE = 2 / 3
+# A hex value this large or larger is an address a claim names, the floor the
+# validation reads a routine's address by; below it, a key, a flag or a count.
+LEAST_ADDRESS = 0x100
 
 # One line of the round's mediation that named a claim: its number (from 1)
 # and whether it blocks.
@@ -244,24 +259,51 @@ def _entry_ids(text: str) -> frozenset[str]:
     return frozenset(m.group(0).lower() for m in re.finditer(r"\bev_\d++\b", text, re.I))
 
 
-def _restated(earlier: _Block, readings: Sequence[_Reading]) -> tuple[bool, int | None]:
-    """``(restated, the first block that restates it by itself or None)``.
+def _addresses(sentence: str) -> frozenset[int]:
+    """The addresses a claim's sentence names: ``0x…`` or in a decompiler's name, none small."""
+    plain = _refanged(sentence)
+    found = {int(m.group(1), 16) for m in _HEX.finditer(plain)}
+    found |= {int(m.group(1), 16) for m in _DECOMPILER_NAME.finditer(plain)}
+    return frozenset(a for a in found if a >= LEAST_ADDRESS)
 
-    Values may be pooled over the blocks that each state one of the claim's
-    values; words never are.
+
+def _subject_left_out(earlier: _Block, revised: _Searched) -> bool:
+    """Whether an address ``earlier`` names is stated by no block of the revision (``revised``).
+
+    The one block that restates the claim must state each address no other
+    block states; one that no block states is in none, so no block restates
+    the claim.
     """
+    return any(not _is_stated(f"0x{a:x}", revised) for a in _addresses(earlier.sentence))
+
+
+def _revised_text(revision: Sequence[_Block]) -> _Searched:
+    """What the revision's blocks state, headings with them, read once for the addresses they name.
+
+    The blocks only: an address the revision writes only in its prose or its
+    disputes is in none of its claims, and no claim of it stands for the
+    claim in force.
+    """
+    return _searched(
+        "\n".join(
+            f"{getattr(block.claims[0], 'heading_note', '') or ''}\n{_text_of(block)}"
+            for block in revision
+        )
+    )
+
+
+def _restated(earlier: _Block, readings: Sequence[_Reading], revised: _Searched) -> int | None:
+    """The first revision block that restates ``earlier`` by itself, or ``None``.
+
+    Never values pooled over blocks, and never a block while an address of
+    the claim is stated by no block (:func:`_subject_left_out`).
+    """
+    if _subject_left_out(earlier, revised):
+        return None
     for index, reading in enumerate(readings):
         if _block_restates(earlier, reading):
-            return True, index
-    values = _counted_values(earlier)
-    if not values:
-        return False, None
-    pooled: set[str] = set()
-    for reading in readings:
-        pooled |= _stated(values, reading)
-    if any(_strong(v) for v in pooled) and len(pooled) / len(values) >= RESTATED_SHARE:
-        return True, None
-    return False, None
+            return index
+    return None
 
 
 _OWN_CLAIM_NUMBERS = re.compile(
@@ -594,13 +636,14 @@ def rule_sentence(name: str, revision_round: int, number: int, sentence: str, re
 
 
 def _by_number(
-    first: list[_Block], revision: list[_Block], readings: list[_Reading]
+    first: list[_Block], revision: list[_Block], readings: list[_Reading], revised: _Searched
 ) -> dict[int, int] | None:
     """``{revision block index: claim in force number}`` from written numbers, or ``None``.
 
     ``None`` when a block wrote no number or one twice, or a number naming a
-    claim in force it does not restate: then its numbers may not name the
-    claims in force.
+    claim in force it does not restate, its subject with it
+    (:func:`_subject_left_out`): then its numbers may not name the claims in
+    force.
     """
     if not revision:
         return None
@@ -622,28 +665,32 @@ def _by_number(
         if (
             earlier.sentence != block.sentence
             and not _declares_withdrawal(block.claims[0])
-            and not _block_restates(earlier, readings[index])
+            and not (
+                _block_restates(earlier, readings[index])
+                and not _subject_left_out(earlier, revised)
+            )
         ):
             return None
         placed[index] = number
     return placed
 
 
-def _by_statement(first: list[_Block], readings: list[_Reading]) -> tuple[set[int], dict[int, int]]:
+def _by_statement(
+    first: list[_Block], readings: list[_Reading], revised: _Searched
+) -> tuple[set[int], dict[int, int]]:
     """``(numbers restated, {revision block index: claim in force number})``.
 
     Each revision block stands at the first claim in force it restates by
-    itself.
+    itself (:func:`_restated`).
     """
     restated: set[int] = set()
     target: dict[int, int] = {}
     for earlier in first:
-        found, index = _restated(earlier, readings)
-        if not found:
+        index = _restated(earlier, readings, revised)
+        if index is None:
             continue
         restated.add(earlier.number)
-        if index is not None and index not in target:
-            target[index] = earlier.number
+        target.setdefault(index, earlier.number)
     return restated, target
 
 
@@ -702,7 +749,8 @@ def merge_revision(
     unread = read.unread
 
     readings = [_read(block) for block in revised]
-    numbered = _by_number(first, revised, readings)
+    revised_text = _revised_text(revised)
+    numbered = _by_number(first, revised, readings, revised_text)
     kept_blocks: list[int] = list(range(len(revised)))
     # Where each revision block stands in the merged answer: the number of
     # the claim in force it writes again; a block with none is added.
@@ -726,7 +774,7 @@ def merge_revision(
         written_again = set(target.values())
     else:
         placed_by = "statement"
-        written_again, target = _by_statement(first, readings)
+        written_again, target = _by_statement(first, readings, revised_text)
     # A claim written again stands as written, whatever a line withdrew.
     for number in written_again:
         withdrawn.pop(number, None)

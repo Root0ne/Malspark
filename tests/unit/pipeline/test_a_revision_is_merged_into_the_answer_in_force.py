@@ -378,7 +378,9 @@ class TestOnlyARealRestatementReplacesAClaim:
         first = _block("0x405000 runs net view through 0x1030 into net_view.", "T1018")
         first += _block(PERSIST)
         answer = _block("0x405000 runs nltest and ipconfig through a hidden runner.", "T1018")
-        answer += _block(PERSIST)
+        # The runner's address is still in the answer, in another block: the
+        # correction leaves no address of the claim out of the revision.
+        answer += _block(PERSIST + " The runner at 0x1030 writes it.")
 
         assert merge_revision(_isr(first), _isr(answer), answer, 1).merged is None
 

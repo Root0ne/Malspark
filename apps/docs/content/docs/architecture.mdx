@@ -2510,9 +2510,18 @@ claim in force the block restates, or a number after the last one, is placed by
 those numbers; any other is placed by what its claims state. A block restates a
 claim when it states four fifths of the claim's content words, or half of the
 claim's values of three characters or more (one of them four or more, or a
-technique id), or a third of them with the claim's technique id; values may be
-pooled over blocks that each state one of them, words never. A revision that
-restates or withdraws every claim in force stands as written.
+technique id), or a third of them with the claim's technique id, and states
+every address the claim names (`0x…` of at least `0x100`, or in a decompiler's
+name) that no other block of the revision states, as the record of dropped
+values reads an address (as written, or by a decompiler's name holding it under
+an image base): an address no block states left the answer, so no block
+restates the claim. One block restates a claim or none does; values and words
+are never pooled over blocks, so a claim whose helpers recur in other claims of
+the revision stays in force whole, and a correction that leaves out the claim's
+address is added beside it (a blocking line that named the claim still
+withdraws it by rule). A claim that names no address is restated by one block
+on its words or values. A revision that restates or withdraws every claim in
+force stands as written.
 `run_summary.negotiation.revision_replacements` states each merge that carried
 claims, with their numbers, and each withdrawal with its reason (a withdrawal by
 rule also among `dropped_claims`, with the claim's values); a revision with
