@@ -218,6 +218,10 @@ class Violation:
     # question sent carries it (:func:`feedback_text`); the finding recorded,
     # stored and printed is the message alone.
     shown: str = ""
+    # A question put to the producer beside the findings that is no finding of
+    # its own (``with_exit_branches``): asked, and never counted, published or
+    # recorded. Never stored on the channel.
+    question_only: bool = False
 
     def __post_init__(self) -> None:
         # A row written by a validator has no route, and its message is its
@@ -12579,14 +12583,19 @@ def _announce_feedback(
     feed: _FeedbackFeed | None = None,
     retry_index: int = 0,
 ) -> None:
-    """Log the correction turn, publish it, and hand it to the run's tally."""
+    """Log the correction turn, publish it, and hand it to the run's tally.
+
+    A question that is no finding (``Violation.question_only``) is neither
+    logged nor published; the tally is the caller's to keep.
+    """
+    found = [v for v in violations if not v.question_only]
     logger.info(
         "validation: retrying after %d violation(s): %s.",
-        len(violations),
-        ", ".join(sorted({v.code for v in violations})),
+        len(found),
+        ", ".join(sorted({v.code for v in found})),
     )
     if feed is not None:
-        feed.announce(violations, retry_index)
+        feed.announce(found, retry_index)
     if on_feedback is None:
         return
     try:
@@ -12628,6 +12637,8 @@ class _FeedbackFeed:
         left = {(v.code, v.path) for v in remaining}
         seen: set[tuple[str, str]] = set()
         for violation in shown:
+            if violation.question_only:
+                continue
             key = (violation.code, violation.path)
             if key in left or key in seen:
                 continue
@@ -14406,8 +14417,10 @@ def with_exit_branches(
     question when it lists functions, or stand as that code's question when
     another finding the turn asks about is there; with neither, nothing is
     added and the answer stands as it would without them. They are a
-    question, not a finding: the check of a retry is not handed them, and
-    what a record keeps of a turn is :func:`exit_branches_left_out`'s.
+    question, not a finding: the check of a retry is not handed them, what a
+    record keeps of a turn is :func:`exit_branches_left_out`'s, and the
+    question standing alone is ``question_only``, counted and published
+    nowhere.
     """
     left = uncovered_exits(candidate, exits, inputs.image_bases)
     if not left:
@@ -14422,7 +14435,7 @@ def with_exit_branches(
     if not _askable(violations):
         return list(violations)
     alone = decompiled_not_described_violation((), left)
-    return [*violations, *([alone] if alone else [])]
+    return [*violations, *([replace(alone, question_only=True)] if alone else [])]
 
 
 def exit_branches_left_out(

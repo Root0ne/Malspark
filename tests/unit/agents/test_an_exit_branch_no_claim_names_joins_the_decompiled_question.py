@@ -588,6 +588,7 @@ class TestTheQuestion:
             DECOMPILED_NOT_DESCRIBED_CODE,
         ]
         assert joined[1].message.startswith("Of the functions you decompiled, 5 branch(es)")
+        assert [v.question_only for v in joined] == [False, True]
         assert exit_branches_left_out(joined, isr, inputs) == [OTHER_FINDING]
 
     def test_the_branches_alone_or_beside_a_check_that_could_not_run_ask_nothing(self) -> None:
@@ -707,6 +708,32 @@ class TestTheValidationTurn:
         note = analyst._budget_records[-1]["exit_branches"]
         assert (note["left"], note["shown"], note["asked"]) == (0, [], True)
 
+    def test_an_exits_only_question_asked_beside_a_finding_counts_only_that_finding(self) -> None:
+        from types import SimpleNamespace
+
+        published: list[tuple[str, str]] = []
+        analyst = _Analyst([GATES], [_entry("ev_0003", GATE, GATE_LISTING)])
+        analyst._container = SimpleNamespace(event_sink=object())
+
+        with patch(
+            "malspark.pipeline.validation.emit_validation_feedback",
+            lambda _sink, **kw: published.append((kw["state"], kw["code"])),
+        ):
+            _check(analyst, UNSURE)
+
+        (turns,) = analyst.seen_turns
+        assert "Of the functions you decompiled, 5 branch(es)" in str(turns[-1].content)
+        # The counts, the published lines and the records are the other finding's alone.
+        assert analyst.validation_retries == 1
+        assert analyst.validation_fed_back == {CLAIM_WITHOUT_CONFIDENCE_CODE: 1}
+        assert published == [
+            ("retried", CLAIM_WITHOUT_CONFIDENCE_CODE),
+            ("resolved", CLAIM_WITHOUT_CONFIDENCE_CODE),
+        ]
+        assert analyst.validation_findings == []
+        note = analyst._budget_records[-1]["exit_branches"]
+        assert (note["left"], note["asked"]) == (0, True)
+
     def test_what_the_kept_answer_leaves_is_recorded_as_the_functions_alone(self) -> None:
         entries = [_entry("ev_0003", GATE, GATE_LISTING), _entry("ev_0004", OTHER, _function(""))]
         analyst = _Analyst([SOME], entries)
@@ -720,6 +747,8 @@ class TestTheValidationTurn:
         functions = decompiled_not_described_violation([decompiled_functions(entries)[1]])
         assert functions is not None
         assert _recorded(analyst) == [functions.message]
+        # Joined to the functions, the counts are the one question's, as without them.
+        assert analyst.validation_fed_back == {DECOMPILED_NOT_DESCRIBED_CODE: 1}
         note = analyst._budget_records[-1]["exit_branches"]
         assert (note["left"], note["asked"]) == (4, True)
         assert note["shown"][0].startswith(f"{GATE:#x} (ev_0003) hands back -1")

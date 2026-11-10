@@ -11401,7 +11401,8 @@ class BaseAnalyst(BudgetMeter, ABC):
                     self._callees_asked_job = job
                     callees_asked_here.append(callees_to_ask)
                 shown.extend(violations)
-                tally.count(violations)
+                # A question that is no finding is asked and never counted.
+                tally.count([v for v in violations if not v.question_only])
                 round_asked[:] = [list(violations)]
 
             revised, violations, retries = retry_with_feedback_sync(
@@ -11439,7 +11440,7 @@ class BaseAnalyst(BudgetMeter, ABC):
             self.validation_retries += len(rounds_answered)
             answered_tally = ValidationTally()
             for returned in rounds_answered:
-                answered_tally.count(returned)
+                answered_tally.count([v for v in returned if not v.question_only])
             for code, count in answered_tally.by_code.items():
                 self.validation_fed_back[code] = self.validation_fed_back.get(code, 0) + count
             earlier_rounds = _left_out([v for returned in rounds_answered for v in returned])
