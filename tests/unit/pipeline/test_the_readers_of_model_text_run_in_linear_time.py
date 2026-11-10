@@ -52,6 +52,7 @@ from malspark.reporting.absence_answers import (
     quote_stands,
     reading_denied_in,
 )
+from malspark.reporting.composer_pro import carried_values
 from malspark.reporting.ledger_entities import ApiCall, ApiHeld, ExportHeld, RunNames, TextHeld
 from malspark.reporting.section_agreement import (
     CLAIM_LED,
@@ -64,6 +65,7 @@ from malspark.reporting.section_agreement import (
     _unread_addresses,
     closing_negations,
     name_readings,
+    repeats_sentence,
     unread_listed_sentences,
     whole_code_absences,
 )
@@ -415,6 +417,22 @@ LISTED = [SimpleNamespace(addresses=frozenset({0x1400}), id="listed.1")]
         pytest.param(
             lambda t: name_readings("These are not shown; " + t, "QueryHostMode " + t, _NAMES),
             id="a denial pointing back to the names before it",
+        ),
+        pytest.param(
+            lambda t: name_readings(
+                "QueryHostMode is not called" + " " * len(t) + "x.", "", _NAMES
+            ),
+            id="a denial of a name with a run of spaces",
+        ),
+        pytest.param(
+            lambda t: repeats_sentence(
+                "QueryHostMode is not called" + " " * len(t) + "x.", "QueryHostMode [ev_1] is not"
+            ),
+            id="the same words with a run of spaces",
+        ),
+        pytest.param(
+            lambda t: carried_values("QueryHostMode" + " " * len(t) + "x"),
+            id="the values of a text with a run of spaces",
         ),
         pytest.param(_denying_many_names, id="a denial of as many names as the line holds"),
         pytest.param(_names_of_many_sentences, id="the facts of names many sentences deny"),

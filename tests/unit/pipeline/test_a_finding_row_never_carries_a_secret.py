@@ -440,6 +440,8 @@ MESSAGE_BUILDERS: frozenset[str] = frozenset(
         "shortened_evidence_note",
         "partial_evidence_note",
         "unreadable_answer_reason",
+        # What an agreement refusal offers a sentence beside mending its text.
+        "_otherwise",
     }
 )
 

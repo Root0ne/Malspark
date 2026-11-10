@@ -58,11 +58,13 @@ from malspark.reporting.section_agreement import (
     KEEP_UNQUOTED_CODE,
     QUALIFIED_CODE,
     REWRITE_DROPS_CITATION_CODE,
+    REWRITE_UNGROUNDED_CODE,
     UNKNOWN_PASSAGE_CODE,
     UNKNOWN_SOURCE_CODE,
     _failure_redone_check,
     _redo_choices,
     _stale_calls,
+    _uncited,
     agreement_violations,
     ask_section_agreement,
     held_limitation_sentences,
@@ -533,7 +535,7 @@ def test_a_sentence_citing_one_redo_is_held_to_the_other_call_only() -> None:
 
 
 def test_an_uncited_keep_is_refused_naming_the_redo_to_cite() -> None:
-    check = _failure_redone_check([_REDONE], [], ())
+    check = _failure_redone_check([_REDONE], [], (), {})
     for sentence in (
         "The decompiler produced no function at 0x2200.",
         "The decompile of 0x2200 shows no network call.",
@@ -560,7 +562,7 @@ def test_a_keep_naming_two_redone_calls_is_told_to_cite_a_redo_of_each() -> None
         lists_code=True,
         kind="decompile",
     )
-    check = _failure_redone_check([_REDONE, redone_twice], [], ())
+    check = _failure_redone_check([_REDONE, redone_twice], [], (), {})
     sentence = "The decompiler produced no function at 0x2200 or 0x1030."
     (found,) = check(sentence, [], "")
     assert "on what ev_0202 and ev_0204 or ev_0205 answered, citing each, or drop" in (
@@ -613,13 +615,13 @@ def test_a_keep_is_asked_for_exactly_the_redos_the_round_names(
 ) -> None:
     named = redone_calls_named(sentence, _OTHER_KINDS, ())
     assert " and ".join(_redo_choices(named)) == redos
-    (found,) = _failure_redone_check(_OTHER_KINDS, [], ())(sentence, [], "")
+    (found,) = _failure_redone_check(_OTHER_KINDS, [], (), {})(sentence, [], "")
     assert f"redid ({said}) and cites" in found.message
     assert f"on what {redos} answered" in found.message
 
 
 def test_a_sentence_saying_a_call_failed_keeps_its_finding() -> None:
-    check = _failure_redone_check([_REDONE], [], ())
+    check = _failure_redone_check([_REDONE], [], (), {})
     (found,) = check("The decompile of 0x2200 failed.", [], "")
     # Said of a keep and of a rewrite alike, and offering no keep: one is refused.
     assert found.message == (
@@ -776,6 +778,26 @@ def test_the_same_words_citing_an_entry_anywhere_are_the_same_words(
     assert not repeats_sentence(sentence, f"Routine 0x5a10 [ev_0107] reads a host mode {citation}.")
 
 
+@pytest.mark.parametrize(
+    ("sentence", "uncited"),
+    [
+        (f"{CALLED}[ev_0109]is not called.", f"{CALLED} is not called."),
+        (
+            f"No routine calls {CALLED}[ev_0109]and none reads it.",
+            f"No routine calls {CALLED} and none reads it.",
+        ),
+        (f"No call to {CALLED}(ev_0109, ev_0107)is shown.", f"No call to {CALLED} is shown."),
+        (f"{CALLED}[ev_0109] is not called.", f"{CALLED} is not called."),
+        (f"No call to `{CALLED}` [ev_0109].", f"No call to `{CALLED}`."),
+    ],
+)
+def test_a_citation_written_between_two_words_parts_them(sentence: str, uncited: str) -> None:
+    assert _uncited(sentence) == uncited
+    # Held on the name it writes, and the same words as the sentence without the citation.
+    assert _held(sentence) == {CALLED}
+    assert repeats_sentence(uncited, sentence)
+
+
 @pytest.mark.parametrize("where", ["start", "middle", "after its address", "end"])
 def test_a_rewrite_restating_a_contradicted_absence_is_refused_wherever_it_cites(
     where: str,
@@ -899,86 +921,278 @@ _PATHS: dict[str, tuple[Any, ...]] = {
 
 _SAME = ("same words cited at the end", "same words cited mid-sentence", "same words cited first")
 
-# What each row answering a held sentence draws, the whole row: each finding's code and
-# how its message ends. A row with none stands.
-_EXPECTED: dict[str, dict[str, list[tuple[str, str]]]] = {
-    "closing held on a name": {
-        "keep": [(UNKNOWN_SOURCE_CODE, _LEAVING), (KEEP_UNQUOTED_CODE, _NAME_ENDS)],
-        "keep on a reason": [(KEEP_UNQUOTED_CODE, _NAME_ENDS)],
-        "keep quoting": [(KEEP_UNQUOTED_CODE, _NAME_ENDS)],
-        **dict.fromkeys(_SAME, [(KEEP_UNQUOTED_CODE, _NAME_ENDS)]),
-        "reworded rewrite citing": [],
-        "drop": [],
-    },
-    "body held on a name": {
-        "keep": [
-            (UNKNOWN_SOURCE_CODE, "the sentence of introduction."),
-            (KEEP_UNQUOTED_CODE, _BODY_ENDS),
-        ],
-        "keep on a reason": [(KEEP_UNQUOTED_CODE, _BODY_ENDS)],
-        # A body keep quoting the fact's row that names what the sentence names stands.
-        "keep quoting": [],
-        **dict.fromkeys(_SAME, []),
-        "reworded rewrite citing": [],
-        # A body sentence is never left out, and no text offers it.
-        "drop": [
-            (UNKNOWN_PASSAGE_CODE, "with keep or rewrite."),
-            (UNKNOWN_SOURCE_CODE, "the sentence of introduction."),
-        ],
-    },
+# The rows each held path is answered with beyond those every path is: rewrites citing
+# none of the calls that redid the calls the sentence is held to, or only some of them.
+_OWN_ROWS: dict[str, dict[str, dict[str, Any]]] = {
     "held to one redone call": {
-        "keep": [
-            (UNKNOWN_SOURCE_CODE, _LEAVING),
-            (KEEP_UNQUOTED_CODE, _ONE_REDO_ENDS),
-            (FAILURE_REDONE_CODE, "R" + _ONE_REDO_ENDS[1:]),
-        ],
-        "keep on a reason": [
-            (KEEP_UNQUOTED_CODE, _ONE_REDO_ENDS),
-            (FAILURE_REDONE_CODE, "R" + _ONE_REDO_ENDS[1:]),
-        ],
-        "keep quoting": [
-            (KEEP_UNQUOTED_CODE, _ONE_REDO_ENDS),
-            (FAILURE_REDONE_CODE, "R" + _ONE_REDO_ENDS[1:]),
-        ],
-        **dict.fromkeys(_SAME, [(KEEP_UNQUOTED_CODE, _ONE_REDO_ENDS)]),
-        "reworded rewrite citing": [],
-        "drop": [],
+        "rewrite citing the failed call only": _row(
+            _TRUE,
+            "rewrite",
+            ["failed.1"],
+            rewrite="Routine 0x5a10 holds a host-mode check and returns [ev_0101].",
+        ),
     },
     "held to two redone calls": {
-        "keep": [
-            (UNKNOWN_SOURCE_CODE, _LEAVING),
-            (KEEP_UNQUOTED_CODE, _TWO_REDO_ENDS),
-            (FAILURE_REDONE_CODE, "R" + _TWO_REDO_ENDS[1:]),
-        ],
-        "keep on a reason": [
-            (KEEP_UNQUOTED_CODE, _TWO_REDO_ENDS),
-            (FAILURE_REDONE_CODE, "R" + _TWO_REDO_ENDS[1:]),
-        ],
-        "keep quoting": [
-            (KEEP_UNQUOTED_CODE, _TWO_REDO_ENDS),
-            (FAILURE_REDONE_CODE, "R" + _TWO_REDO_ENDS[1:]),
-        ],
-        **dict.fromkeys(_SAME, [(KEEP_UNQUOTED_CODE, _TWO_REDO_ENDS)]),
-        "reworded rewrite citing": [],
-        "drop": [],
+        "rewrite citing the failed calls only": _row(
+            _TWO,
+            "rewrite",
+            ["failed.1", "failed.2"],
+            rewrite=(
+                "Routines 0x5a10 [ev_0101] and 0x6100 [ev_0111] hold only a host-mode read and "
+                "a return."
+            ),
+        ),
+        "rewrite citing the redo of one of the two": _row(
+            _TWO,
+            "rewrite",
+            ["failed.1", "failed.2"],
+            rewrite="The later decompile of 0x5a10 [ev_0107] contains no network call.",
+        ),
     },
     "says a call failed": {
-        "keep": [
-            (UNKNOWN_SOURCE_CODE, _LEAVING),
-            (KEEP_UNQUOTED_CODE, "r" + _FAILED_ENDS),
-            (FAILURE_REDONE_CODE, "R" + _FAILED_ENDS),
-        ],
-        "keep on a reason": [
-            (KEEP_UNQUOTED_CODE, "r" + _FAILED_ENDS),
-            (FAILURE_REDONE_CODE, "R" + _FAILED_ENDS),
-        ],
-        "keep quoting": [(FAILURE_REDONE_CODE, "R" + _FAILED_ENDS)],
-        # Citing the call that redid it is what the check asks: it stands.
-        **dict.fromkeys(_SAME, []),
-        "reworded rewrite citing": [],
-        "drop": [],
+        "rewrite no longer saying it failed": _row(
+            _SAYS_FAILED,
+            "rewrite",
+            ["failed.1"],
+            rewrite="Routine 0x5a10 holds a host-mode check and returns [ev_0101].",
+        ),
+        "rewrite denying instead": _row(
+            _SAYS_FAILED,
+            "rewrite",
+            ["failed.1"],
+            rewrite="Routine 0x5a10 holds no network call [ev_0101].",
+        ),
     },
 }
+
+
+def _no_source(where: str, *, leaving: bool) -> str:
+    return (
+        f"row 1 names no source. Name the ids of the sources you read for the sentence of "
+        f"{where}" + (", or, leaving it out, give the reason." if leaving else ".")
+    )
+
+
+def _kept(where: str, sentence: str, why: str, ends: str) -> str:
+    return f"row 1: {where} keeps {sentence!r} {why}: {ends}"
+
+
+def _same_words(where: str, sentence: str, sources: str, why: str, ends: str) -> str:
+    return (
+        f"row 1: {where} rewrites {sentence!r} into the same words, which keeps it, on "
+        f"{sources}, but the best sentence of those sources {why}: {ends}"
+    )
+
+
+_HELD_REDONE = "it names a call that failed and a later call redid: a keep of it as written is "
+_KEEP_REDONE = (
+    "row 1: limitations keeps the sentence, but it names a call that failed and a later call "
+)
+_KEEP_FAILED = (
+    "row 1: limitations keeps the sentence, but it says a call failed or a reading could not be "
+    "made, while a later call redid it (ev_0101 by ev_0107). R" + _FAILED_ENDS
+)
+_REWRITE_HELD = (
+    "row 1: the rewrite of limitations: it replaces a sentence held to a call that failed and a "
+    "later call redid "
+)
+_UNQUOTED_ROW = (
+    "quotes the rows of an entry, which state no absence, while the sentence states one: "
+)
+_FEW = "shares too few of the words the sentence denies something of"
+
+
+def _expected() -> dict[str, dict[str, list[tuple[str, str]]]]:
+    """What each row answering a held sentence draws, the whole row: each finding's code and
+    its whole message. A row with none stands."""
+    name = _NAME_ENDS
+    named = "naming no source, but ledger.1 speaks of what it names"
+    one = f"{_HELD_REDONE}refused; {_ONE_REDO_ENDS}"
+    two = f"{_HELD_REDONE}refused; {_TWO_REDO_ENDS}"
+    failed = "it says a call failed that a later call redid: a keep of it as written is refused; r"
+    keep_one = (
+        f"{_KEEP_REDONE}redid (ev_0101 by ev_0107) and cites none of the calls that redid it. "
+        f"R{_ONE_REDO_ENDS[1:]}"
+    )
+    keep_two = (
+        f"{_KEEP_REDONE}redid (ev_0101 by ev_0107; ev_0111 by ev_0112) and cites none of the "
+        f"calls that redid it. R{_TWO_REDO_ENDS[1:]}"
+    )
+    one_rows = "naming no source, but answered.1, failed.1 speaks of what it names"
+    two_rows = (
+        "naming no source, but answered.1, answered.2, failed.1, 1 more speaks of what it names"
+    )
+    return {
+        "closing held on a name": {
+            "keep": [
+                (UNKNOWN_SOURCE_CODE, _no_source("limitations", leaving=True)),
+                (KEEP_UNQUOTED_CODE, _kept("limitations", _UNKNOWN, named, name)),
+            ],
+            "keep on a reason": [(KEEP_UNQUOTED_CODE, _kept("limitations", _UNKNOWN, named, name))],
+            "keep quoting": [
+                (
+                    KEEP_UNQUOTED_CODE,
+                    _kept(
+                        "limitations",
+                        _UNKNOWN,
+                        f"on ledger.1, but its quote {_UNQUOTED_ROW}rewrite it on them, or drop it",
+                        name,
+                    ),
+                )
+            ],
+            **dict.fromkeys(
+                _SAME,
+                [
+                    (
+                        KEEP_UNQUOTED_CODE,
+                        _same_words(
+                            "limitations",
+                            _UNKNOWN,
+                            "ledger.1",
+                            "quotes no single row of the entry holding a value the sentence names",
+                            name,
+                        ),
+                    )
+                ],
+            ),
+            "reworded rewrite citing": [],
+            "drop": [],
+        },
+        "body held on a name": {
+            "keep": [
+                (UNKNOWN_SOURCE_CODE, _no_source("introduction", leaving=False)),
+                (KEEP_UNQUOTED_CODE, _kept("introduction", _UNKNOWN, named, _BODY_ENDS)),
+            ],
+            "keep on a reason": [
+                (KEEP_UNQUOTED_CODE, _kept("introduction", _UNKNOWN, named, _BODY_ENDS))
+            ],
+            # A body keep quoting the fact's row that names what the sentence names stands.
+            "keep quoting": [],
+            **dict.fromkeys(_SAME, []),
+            "reworded rewrite citing": [],
+            # A body sentence is never left out, and no text offers it.
+            "drop": [
+                (
+                    UNKNOWN_PASSAGE_CODE,
+                    "row 1: only a sentence of the conclusion or the limitations is left out; "
+                    "answer the sentence of introduction with keep or rewrite.",
+                ),
+                (UNKNOWN_SOURCE_CODE, _no_source("introduction", leaving=False)),
+            ],
+        },
+        "held to one redone call": {
+            "keep": [
+                (UNKNOWN_SOURCE_CODE, _no_source("limitations", leaving=True)),
+                (KEEP_UNQUOTED_CODE, _kept("limitations", _TRUE, one_rows, one)),
+                (FAILURE_REDONE_CODE, keep_one),
+            ],
+            "keep on a reason": [
+                (KEEP_UNQUOTED_CODE, _kept("limitations", _TRUE, one_rows, one)),
+                (FAILURE_REDONE_CODE, keep_one),
+            ],
+            "keep quoting": [
+                (
+                    KEEP_UNQUOTED_CODE,
+                    _kept("limitations", _TRUE, f"on failed.1, but its quote {_FEW}", one),
+                ),
+                (FAILURE_REDONE_CODE, keep_one),
+            ],
+            **dict.fromkeys(
+                _SAME,
+                [(KEEP_UNQUOTED_CODE, _same_words("limitations", _TRUE, "failed.1", _FEW, one))],
+            ),
+            "reworded rewrite citing": [],
+            "drop": [],
+            # A rewrite citing none of the calls that redid the call its sentence is held to
+            # is told what a keep of it is told, whatever it says.
+            "rewrite citing the failed call only": [
+                (
+                    FAILURE_REDONE_CODE,
+                    f"{_REWRITE_HELD}(ev_0101 by ev_0107) and cites none of the calls that redid "
+                    f"it. R{_ONE_REDO_ENDS[1:]}",
+                )
+            ],
+        },
+        "held to two redone calls": {
+            "keep": [
+                (UNKNOWN_SOURCE_CODE, _no_source("limitations", leaving=True)),
+                (KEEP_UNQUOTED_CODE, _kept("limitations", _TWO, two_rows, two)),
+                (FAILURE_REDONE_CODE, keep_two),
+            ],
+            "keep on a reason": [
+                (KEEP_UNQUOTED_CODE, _kept("limitations", _TWO, two_rows, two)),
+                (FAILURE_REDONE_CODE, keep_two),
+            ],
+            "keep quoting": [
+                (
+                    KEEP_UNQUOTED_CODE,
+                    _kept("limitations", _TWO, f"on failed.1, but its quote {_FEW}", two),
+                ),
+                (FAILURE_REDONE_CODE, keep_two),
+            ],
+            **dict.fromkeys(
+                _SAME,
+                [
+                    (
+                        KEEP_UNQUOTED_CODE,
+                        _same_words("limitations", _TWO, "failed.1, failed.2", _FEW, two),
+                    )
+                ],
+            ),
+            "reworded rewrite citing": [],
+            "drop": [],
+            "rewrite citing the failed calls only": [
+                (
+                    FAILURE_REDONE_CODE,
+                    f"{_REWRITE_HELD}(ev_0101 by ev_0107; ev_0111 by ev_0112) and cites none of "
+                    f"the calls that redid it. R{_TWO_REDO_ENDS[1:]}",
+                )
+            ],
+            # Citing a call that redid one of the two, it names the other and the ends of both.
+            "rewrite citing the redo of one of the two": [
+                (
+                    FAILURE_REDONE_CODE,
+                    f"{_REWRITE_HELD}(ev_0111 by ev_0112) and cites none of the calls that redid "
+                    f"it. R{_TWO_REDO_ENDS[1:]}",
+                )
+            ],
+        },
+        "says a call failed": {
+            "keep": [
+                (UNKNOWN_SOURCE_CODE, _no_source("limitations", leaving=True)),
+                (
+                    KEEP_UNQUOTED_CODE,
+                    _kept("limitations", _SAYS_FAILED, one_rows, failed + _FAILED_ENDS),
+                ),
+                (FAILURE_REDONE_CODE, _KEEP_FAILED),
+            ],
+            "keep on a reason": [
+                (
+                    KEEP_UNQUOTED_CODE,
+                    _kept("limitations", _SAYS_FAILED, one_rows, failed + _FAILED_ENDS),
+                ),
+                (FAILURE_REDONE_CODE, _KEEP_FAILED),
+            ],
+            "keep quoting": [(FAILURE_REDONE_CODE, _KEEP_FAILED)],
+            # Citing the call that redid it is what the check asks: it stands.
+            **dict.fromkeys(_SAME, []),
+            "reworded rewrite citing": [],
+            "drop": [],
+            **dict.fromkeys(
+                ("rewrite no longer saying it failed", "rewrite denying instead"),
+                [
+                    (
+                        FAILURE_REDONE_CODE,
+                        f"{_REWRITE_HELD}(ev_0101 by ev_0107) and cites none of the calls that "
+                        f"redid it. R{_FAILED_ENDS}",
+                    )
+                ],
+            ),
+        },
+    }
+
+
+_EXPECTED = _expected()
 
 
 @pytest.mark.parametrize(
@@ -999,12 +1213,10 @@ def test_every_answer_to_a_held_sentence_draws_what_the_round_is_told(
         _SAME[2]: _row(sentence, "rewrite", sources, rewrite=_cited(sentence, citation, "start")),
         "reworded rewrite citing": _row(sentence, "rewrite", sources, rewrite=reworded),
         "drop": _row(sentence, "drop", [], reason="the lines shown say otherwise"),
+        **_OWN_ROWS.get(path, {}),
     }
     found = agreement_violations({"sentences": [{**rows[action], "passage": pid}]}, passages)
-    expected = _EXPECTED[path][action]
-    assert [v.code for v in found] == [code for code, _end in expected], found
-    for violation, (_code, end) in zip(found, expected, strict=True):
-        assert violation.message.endswith(end), violation.message
+    assert [(v.code, v.message) for v in found] == _EXPECTED[path][action]
     # No finding on a held sentence offers a keep where a keep is refused.
     if pid == "limitations":
         assert all("keep the sentence" not in v.message for v in found)
@@ -1101,8 +1313,8 @@ def test_a_rewrite_s_failure_finding_is_never_cut(
         if v.code == FAILURE_REDONE_CODE
     ]
     assert finding.message == (
-        f"row 1: the rewrite of limitations: it names a call that failed and a later call "
-        f"redid ({said}) and cites none of the calls that redid it. R{ends[1:]}"
+        f"row 1: the rewrite of limitations: it replaces a sentence held to a call that failed "
+        f"and a later call redid ({said}) and cites none of the calls that redid it. R{ends[1:]}"
     )
     assert len(finding.message) > 200
 
@@ -1125,7 +1337,7 @@ def test_a_rewrite_adding_a_redone_failure_is_told_what_stands_in_its_passage() 
         # The body: the sentence is kept, and a keep naming its source stands.
         (
             "introduction",
-            "Cite the call that redid it and say what it answered, or keep the sentence.",
+            "Cite ev_0107 and say what it answered, or keep the sentence.",
             _row(
                 sentence,
                 "keep",
@@ -1163,6 +1375,64 @@ def test_a_rewrite_dropping_a_cited_id_of_a_held_sentence_is_told_to_drop_it() -
     (found,) = agreement_violations({"sentences": [row]}, passages)
     assert found.code == REWRITE_DROPS_CITATION_CODE
     assert found.message.endswith("Keep every id the sentence cites, or drop it.")
+
+
+_UNKNOWN_CITED = f"The runtime result of `{CALLED}` is not known [ev_0109]."
+_BODY_KEEP = (
+    'or keep it naming ledger.1, with "quote": words inside one of its rows that name what the '
+    "sentence names, copied exactly."
+)
+
+
+def test_a_refused_rewrite_of_a_body_sentence_held_on_a_name_is_offered_the_keep_that_passes() -> (
+    None
+):
+    passages = passages_of(_report(_TWO, background=_UNKNOWN_CITED), entries=_ledger_two())
+
+    def found(row: dict[str, Any]) -> list[tuple[str, str]]:
+        answer = {"sentences": [{**row, "passage": "introduction"}]}
+        return [
+            (v.code, v.message)
+            for v in agreement_violations(answer, passages)
+            if v.path.startswith("sentences.")
+        ]
+
+    def rewrite(sources: list[str], text: str) -> list[tuple[str, str]]:
+        return found(_row(_UNKNOWN_CITED, "rewrite", sources, rewrite=text))
+
+    assert rewrite(
+        ["ledger.1"], f"Routine 0x5a10 calls `{CALLED}` [ev_0107]; its result at run time is unset."
+    ) == [
+        (
+            REWRITE_DROPS_CITATION_CODE,
+            "row 1: the sentence cites ev_0109, which the rewrite does not. Keep every id the "
+            "sentence cites, " + _BODY_KEEP,
+        )
+    ]
+    assert rewrite(
+        ["failed.1"], f"Routine 0x5a10 calls `{CALLED}`, whose result is unset [ev_0109]."
+    ) == [
+        (
+            REWRITE_UNGROUNDED_CODE,
+            "row 1: the rewrite cites none of the ids its sources cite. Cite the entry a source "
+            "rests on, " + _BODY_KEEP,
+        )
+    ]
+    # Told of two calls a later call redid, it is told to cite each.
+    assert rewrite(
+        ["ledger.1", "failed.1", "failed.2"],
+        _UNKNOWN_CITED.rstrip(".")
+        + "; the decompiles of 0x5a10 and 0x6100 failed [ev_0101][ev_0111].",
+    ) == [
+        (
+            FAILURE_REDONE_CODE,
+            "row 1: the rewrite of introduction: the rewrite still says a call failed or a reading "
+            "could not be made, but a later call redid it (ev_0101 by ev_0107; ev_0111 by "
+            "ev_0112). Cite ev_0107 and ev_0112 and say what each answered, " + _BODY_KEEP,
+        )
+    ]
+    # The keep it is offered stands.
+    assert found(_row(_UNKNOWN_CITED, "keep", ["ledger.1"], quote=_SLOT_ROW)) == []
 
 
 @pytest.mark.parametrize(
@@ -1205,7 +1475,7 @@ calls = [
     for i, kind in enumerate(("emulate", "disassemble", "decompile"))
 ]
 text = "The emulator, the disassembler and the decompiler failed."
-sys.stdout.write(_failure_redone_check(calls, [], ())(text, [], "")[0].message)
+sys.stdout.write(_failure_redone_check(calls, [], (), {})(text, [], "")[0].message)
 """
 
 

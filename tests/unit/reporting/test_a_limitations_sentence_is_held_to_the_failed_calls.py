@@ -516,6 +516,19 @@ HAIKU8_SENTENCE = (
 )
 
 
+# haiku8's sentence is held to the batch decompile, the disassembly and the decompile of
+# 0x7b80, each redone: a rewrite of it cites a call that redid each (T-600). The rows below
+# each end with this clause, which cites the other two.
+_OTHERS_REDONE = (
+    "; the disassembly of 0x3868 and the decompile of 0x7b80 were redone [ev_0170][ev_0191]."
+)
+
+
+def _citing_every_redo(rewrite: str) -> str:
+    """A rewrite of haiku8's sentence with :data:`_OTHERS_REDONE` after its own words."""
+    return rewrite.rstrip(".") + _OTHERS_REDONE
+
+
 def _left_out(body: str, sentence: str) -> str:
     """``body`` with ``sentence`` and the space after it left out."""
     assert f"{sentence} " in body
@@ -675,7 +688,18 @@ def test_the_stored_run_s_false_rewrite_is_not_put_in_and_a_true_one_is() -> Non
         "failed was redone by a later call, so the dispatch routines' control flow was read "
         "from its listing [ev_0025][ev_0171]."
     )
+    # Citing the call that redid one of the three calls the sentence is held to, it is not
+    # put in: the round is told to cite one that redid each.
     row = _row(HAIKU8_SENTENCE, [emulation, batch], true)
+    done, _ = _ask(report, ledger, {"sentences": [row]}, {"sentences": [row]})
+    _left_out_alone(report, done, body)
+    report, ledger = _haiku8()
+    others = [
+        next(i for i, p in facts.items() if p.text.startswith(f'{entry} ("'))
+        for entry in ("ev_0169", "ev_0187")
+    ]
+    true = _citing_every_redo(true)
+    row = _row(HAIKU8_SENTENCE, [emulation, batch, *others], true)
     done, _ = _ask(report, ledger, {"sentences": [row]})
     assert done.summary["rewritten"] == 1
     assert report.technical_analysis.analyst_limitations.body == body.replace(HAIKU8_SENTENCE, true)
@@ -707,9 +731,10 @@ def test_the_stored_run_s_false_rewrite_is_not_put_in_and_a_true_one_is() -> Non
 )
 def test_a_denial_or_a_kind_word_counts_in_its_own_clause(rewrite: str) -> None:
     report, ledger = _haiku8()
-    sources = ["failed.2", "failed.3"]
+    sources = ["failed.2", "failed.3", "failed.4", "failed.5"]
     facts = _by_id(report, ledger)
     assert "ev_0122" in facts["failed.2"].cites and "ev_0168" in facts["failed.3"].cites
+    rewrite = _citing_every_redo(rewrite)
     done, _ = _ask(report, ledger, {"sentences": [_row(HAIKU8_SENTENCE, sources, rewrite)]})
     assert done.summary["rewritten"] == 1
     assert rewrite in report.technical_analysis.analyst_limitations.body
@@ -732,7 +757,8 @@ def test_a_denial_or_a_kind_word_counts_in_its_own_clause(rewrite: str) -> None:
 def test_a_denial_of_its_own_is_about_the_call_before_it(rewrite: str) -> None:
     report, ledger = _haiku8()
     body = report.technical_analysis.analyst_limitations.body
-    row = _row(HAIKU8_SENTENCE, ["failed.3"], rewrite)
+    sources = ["failed.3", "failed.4", "failed.5"]
+    row = _row(HAIKU8_SENTENCE, sources, _citing_every_redo(rewrite))
     done, _ = _ask(report, ledger, {"sentences": [row]}, {"sentences": [row]})
     _left_out_alone(report, done, body)
     assert FAILURE_REDONE_CODE in [r["code"] for r in done.tally.unresolved]
