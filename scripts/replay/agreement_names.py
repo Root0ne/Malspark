@@ -147,6 +147,7 @@ def read_run(run: Path) -> dict[str, Any]:
         _limitation_passages,
         _name_passages,
         _named_addresses,
+        _redo_choices,
         _stale_calls,
         generic_words,
         held_limitation_sentences,
@@ -210,7 +211,7 @@ def read_run(run: Path) -> dict[str, Any]:
                     "redone": [f"{c.entry} by {', '.join(c.redone_by)}" for c in stale],
                     "outcome": refused if stale else "held; read against the failed.N facts",
                     # Held by the calls it names or cites: the entries a keep must cite.
-                    "cite": sorted({by for call in named for by in call.redone_by}),
+                    "cite": list(_redo_choices(named)),
                     # Held before too: the sentence says a call failed in words read so.
                     "held_before": bool(_SAYS_FAILED.search(sentence)),
                 }
@@ -272,7 +273,7 @@ def _print(read: dict[str, Any]) -> None:
         print(
             f" - [limitations] failed call ({before}): {row['outcome']} "
             f"({'; '.join(row['redone'])})"
-            + (f"; cite {' or '.join(row['cite'])}" if row["cite"] else "")
+            + (f"; cite {' and '.join(row['cite'])}" if row["cite"] else "")
         )
         print(f"     sentence: {_cut(row['sentence'], 220)}")
 

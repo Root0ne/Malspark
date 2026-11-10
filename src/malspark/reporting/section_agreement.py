@@ -424,8 +424,8 @@ class Passage:
     # is held, the model reading it against the fact (T-600).
     ledger_named: tuple[tuple[str, tuple[str, ...]], ...] = ()
     # The limitations sentences held to a failed call a later call redid that they name
-    # or cite (:func:`redone_calls_named`), each with the entries of the calls that redid
-    # it: a keep must cite one (T-600).
+    # or cite (:func:`redone_calls_named`), each with what a keep must cite: for each such
+    # call, one of the calls that redid it (:func:`_redo_choices`, T-600).
     redone_named: tuple[tuple[str, tuple[str, ...]], ...] = ()
 
 
@@ -2835,6 +2835,12 @@ def redone_calls_named(
     return out
 
 
+def _redo_choices(calls: Sequence[FailedCall]) -> tuple[str, ...]:
+    """What a text naming ``calls`` must cite, once each: for each call, one of the calls
+    that redid it ("ev_0063 or ev_0065")."""
+    return tuple(dict.fromkeys(" or ".join(call.redone_by) for call in calls))
+
+
 def _names_a_redone_call(text: str, failed: Sequence[FailedCall], bases: Sequence[int]) -> bool:
     """Whether a sentence of ``text`` is held to a call a later call redid
     (:func:`redone_calls_named`)."""
@@ -3008,7 +3014,7 @@ def _failure_redone_violation(
     told the call was redone; one held only by the calls it names
     (:func:`redone_calls_named`) is told which entries to cite."""
     said = "; ".join(f"{call.entry} by {', '.join(call.redone_by)}" for call in stale)
-    redos = " or ".join(dict.fromkeys(by for call in stale for by in call.redone_by))
+    redos = " and ".join(_redo_choices(stale))
     return [
         Violation(
             code=FAILURE_REDONE_CODE,
@@ -3136,8 +3142,7 @@ def _limitation_passages(
     for sentence in held:
         calls = redone_calls_named(sentence, read.failed, bases)
         if calls:
-            redos = tuple(dict.fromkeys(by for call in calls for by in call.redone_by))
-            redone_named.append((sentence, redos))
+            redone_named.append((sentence, _redo_choices(calls)))
 
     facts: list[Passage] = []
     for index, call in enumerate(read.failed, 1):
@@ -5272,7 +5277,7 @@ def prompt_text(passages: Sequence[Passage]) -> str:
                     "is refused; rewrite it citing the call named here for what it states, or "
                     "on what that call answered, or drop it: "
                     + "; ".join(
-                        f"{quoted_value(sentence)} (cite {' or '.join(ids)})"
+                        f"{quoted_value(sentence)} (cite {' and '.join(ids)})"
                         for sentence, ids in passage.redone_named
                     )
                 )

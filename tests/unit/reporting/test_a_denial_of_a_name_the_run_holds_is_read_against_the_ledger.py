@@ -488,6 +488,25 @@ def test_an_uncited_keep_is_refused_naming_the_redo_to_cite() -> None:
         assert check(sentence.rstrip(".") + " [ev_0202].", [], "") == []
 
 
+def test_a_keep_naming_two_redone_calls_is_told_to_cite_a_redo_of_each() -> None:
+    redone_twice = FailedCall(
+        entry="ev_0203",
+        tool="lift_routine",
+        error="no function there",
+        asked=(0x1030,),
+        redone_by=("ev_0204", "ev_0205"),
+        lists_code=True,
+        kind="decompile",
+    )
+    check = _failure_redone_check([_REDONE, redone_twice], [], ())
+    sentence = "The decompiler produced no function at 0x2200 or 0x1030."
+    (found,) = check(sentence, [], "")
+    assert "Cite ev_0202 and ev_0204 or ev_0205 for what it states" in found.message
+    # One redo of each call passes; the redo of one call alone does not.
+    assert check(sentence.rstrip(".") + " [ev_0202][ev_0205].", [], "") == []
+    assert check(sentence.rstrip(".") + " [ev_0202].", [], "") != []
+
+
 def test_a_sentence_saying_a_call_failed_keeps_its_finding() -> None:
     check = _failure_redone_check([_REDONE], [], ())
     (found,) = check("The decompile of 0x2200 failed.", [], "")
