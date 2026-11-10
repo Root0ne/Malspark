@@ -389,10 +389,9 @@ def redone_failures(ledger: Iterable[Any]) -> list[dict[str, Any]]:
 
 def redo_map(ledger: Iterable[Any], bases: Sequence[int] | None = None) -> list[Redo]:
     """:func:`redone_failures` with the call that redid each address: the one redo map the
-    run summary, the limitation facts and the agreement round's answered facts read
-    (T-600: the agreement round was shown the first later call for an address while the
-    run summary named the call that redid it). ``bases`` are the image bases an address
-    is spelled by, read off the ledger when not given."""
+    run summary, the limitation facts and the agreement round's answered facts read.
+    ``bases`` are the image bases an address is spelled by, read off the ledger when not
+    given."""
     entries = list(ledger)
     failed_at = [
         at

@@ -148,17 +148,20 @@ def answered_later(
     A failed call later calls redid (``redone``, read off the entries when not
     given: ``redone_calls.redo_map``, the map the run summary reads) is linked,
     for each address, to the call that redid it there, never to an earlier
-    call that only answered for the address (a disassembly read before the
-    decompile that redid the call, T-600). Any other is read in ledger order: a
-    failed call waits under each address it was asked for, as what it is (its
+    call that only answered for the address. Any other is read in ledger order:
+    a failed call waits under each address it was asked for, as what it is (its
     tool; a listing of code); a later call that answered, was shown and is no
     repeat takes every call waiting under an address it answered for, as what
     it is. A failed repeat waits as its own call. An offset and its virtual
-    address are one address when exactly one image base was read.
+    address are one address when exactly one image base was read: ``image_bases``,
+    or, when none are given, the bases the ledger's function map reads, the
+    same for the redo map and every lookup in it.
     """
     entries = list(entries)
+    if not image_bases:
+        image_bases = tuple(build_function_map(entries, None, ()).image_bases)
     if redone is None:
-        redone = redo_map(entries, image_bases or None)
+        redone = redo_map(entries, image_bases)
     redid = {redo.entry_id: dict(redo.by_address) for redo in redone if redo.by_address}
     at_of = {str(getattr(entry, "id", "") or ""): at for at, entry in enumerate(entries)}
     waiting: dict[tuple[int, tuple[str, str]], list[Any]] = {}

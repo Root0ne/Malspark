@@ -102,7 +102,12 @@ def content_words(text: str) -> frozenset[str]:
     """The words a clause is about: lowered, at least three characters, no stop word, no
     negation, no entry id and no bare number; a word its prefix denies as the word it
     denies ("unnamed": "named")."""
-    out: set[str] = set()
+    return frozenset(content_words_in_order(text))
+
+
+def content_words_in_order(text: str) -> list[str]:
+    """:func:`content_words` in the order they stand in ``text``, each once."""
+    out: dict[str, None] = {}
     for match in _WORD.finditer(text):
         word = _possessive_off(match.group(0).lower().strip("'-"))
         if word in _DENIED_WORDS:
@@ -111,8 +116,8 @@ def content_words(text: str) -> frozenset[str]:
             continue
         if word.isdigit():
             continue
-        out.add(word)
-    return frozenset(out)
+        out[word] = None
+    return list(out)
 
 
 class _Said:

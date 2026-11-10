@@ -137,6 +137,9 @@ class RunNames:
     # in call nothing it lists.
     index_whole: bool = False
     bases: tuple[int, ...] = ()
+    # Whether an answer's export rows or import names were set aside as another file's:
+    # then no denial of an export or an import is read as backed by what is left.
+    set_aside: bool = False
 
     def api(self, name: str) -> ApiHeld | None:
         """The API the run holds under ``name`` (case aside), or ``None``."""
@@ -221,24 +224,33 @@ def _index(names: RunNames, data: Mapping[str, Any], entry_id: str) -> None:
     names.index_entry = entry_id
 
 
+def _unset(value: Any) -> bool:
+    """Whether an argument's value sets nothing: none, blank, empty quotes, or the
+    literal text ``null``."""
+    text = "" if value is None else str(value).strip()
+    text = text.strip("\"'").strip()
+    return not text or text.lower() == "null"
+
+
 def _about_the_sample(entry: Any, sample: Callable[[], tuple[str, ...]]) -> bool:
-    """Whether an answer is about the sample: its call read no file the run produced
-    (``function_callees._about_the_sample``), and the program or path its declared
-    arguments name, where one is set, is one of the sample's own names (``sample``,
-    read once and only when asked)."""
-    from malspark.agents.function_callees import _about_the_sample as reads_the_sample
+    """Whether an answer is about the sample: its call read no file the run produced (the
+    carved file's argument, ``function_callees._CARVED_ROLE``, is unset), and the program
+    or path its declared arguments name, where one is set, is one of the sample's own
+    names (``sample``, read once and only when asked)."""
+    from malspark.agents.function_callees import _CARVED_ARGUMENT, _CARVED_ROLE
     from malspark.agents.image_range import same_program
     from malspark.core.declared_reading import kind_free_facts
 
-    if not reads_the_sample(entry):
-        return False
     roles = getattr(kind_free_facts(entry), "arguments", None)
     args = getattr(entry, "args", None)
-    if not isinstance(roles, Mapping) or not isinstance(args, Mapping):
+    if not isinstance(args, Mapping):
         return True
+    roles = roles if isinstance(roles, Mapping) else {}
+    if not _unset(args.get(str(roles.get(_CARVED_ROLE) or _CARVED_ARGUMENT))):
+        return False
     for role in _SUBJECT_ROLES:
         value = args.get(str(roles.get(role) or "")) if roles.get(role) else None
-        if value in (None, ""):
+        if _unset(value):
             continue
         if not any(same_program(str(value), name) for name in sample()):
             return False
@@ -302,6 +314,8 @@ def run_names(entries: Iterable[Any], bases: Sequence[int] = ()) -> RunNames:
         if not isinstance(data, Mapping) or ("export_rows" not in data and "imports" not in data):
             continue
         if _about_the_sample(entry, _sample):
-            # Another file's exports and imports are none of the sample's.
             _format_rows(names, entry, data)
+        else:
+            # Another file's exports and imports are none of the sample's.
+            names.set_aside = True
     return names

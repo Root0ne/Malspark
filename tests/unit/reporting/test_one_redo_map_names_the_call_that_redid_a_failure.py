@@ -166,3 +166,23 @@ def test_a_reader_given_no_image_bases_reads_the_redo_map_the_run_summary_reads(
     assert [r.entry_id for r in redo_map(ledger)] == ["ev_0001"]
     links = answered_later(ledger)
     assert [(a.failed, a.answered, a.redone) for a in links] == [("ev_0001", "ev_0003", True)]
+
+
+def test_a_failure_asked_by_its_offset_keeps_the_call_that_redid_it_by_its_address() -> None:
+    # The failed call asked by the offset, the call that redid it by the virtual address:
+    # one address by the one image base the index read, in the map and in its lookups.
+    base = GATE & ~0xFFFF
+    index = LedgerEntry(
+        id="ev_0004",
+        tool="routine_table",
+        output=json.dumps(
+            {"image_base": hex(base), "rows": [{"function": hex(GATE), "callees": []}]}
+        ),
+        facts={"v": 1, "kind": "function_index", "reader": "function_table"},
+    )
+    ledger = [index, _failed("ev_0001", GATE - base), _lifted("ev_0003", GATE)]
+    assert [r.entry_id for r in redo_map(ledger)] == ["ev_0001"]
+    links = answered_later(ledger)
+    assert [(a.address, a.failed, a.answered, a.redone) for a in links] == [
+        (GATE, "ev_0001", "ev_0003", True)
+    ]

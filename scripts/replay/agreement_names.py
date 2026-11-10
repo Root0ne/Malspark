@@ -2,7 +2,7 @@
 
 Over one or more stored runs, each a directory in the benchmark's layout::
 
-    python scripts/replay/agreement_names.py runs/hk14 runs/haiku13
+    python scripts/replay/agreement_names.py <run dir> [<run dir> ...]
 
 rebuilds the agreement round's inputs from what the run stored: the passages
 as the round was first shown them (the first agreement request in

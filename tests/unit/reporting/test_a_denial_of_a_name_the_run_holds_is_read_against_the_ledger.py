@@ -30,6 +30,7 @@ from langchain_core.messages import AIMessage, BaseMessage
 from malspark.pipeline.validation import EntryTexts
 from malspark.reporting.agreement_facts import ledger_facts
 from malspark.reporting.ledger_entities import (
+    RELATION_KEYS,
     ApiCall,
     ApiHeld,
     ExportHeld,
@@ -61,6 +62,7 @@ from malspark.reporting.section_agreement import (
     name_readings,
     passages_of,
     prompt_text,
+    relation_of,
 )
 from malspark.schemas.evidence import LedgerEntry
 
@@ -524,8 +526,143 @@ def test_an_answer_about_another_file_decides_nothing_of_the_sample() -> None:
     assert names.exports["begin"].address == ENTRY
 
 
+@pytest.mark.parametrize("unset", ["null", '""', "  ", "''"])
+def test_an_unset_file_argument_reads_the_sample(unset: str) -> None:
+    ledger = [
+        *_ledger(),
+        LedgerEntry(
+            id="ev_0110",
+            tool="file_header",
+            args={"carved_path": unset},
+            structured={"export_rows": [{"rva": "0x9000", "name": "spare"}]},
+        ),
+    ]
+    names = run_names(ledger, ledger_facts(ledger).image_bases)
+    assert names.exports["spare"].address == BASE + 0x9000
+    assert not names.set_aside
+
+
+def test_a_denial_is_not_backed_where_an_answer_was_set_aside() -> None:
+    ledger = [
+        *_ledger(),
+        LedgerEntry(
+            id="ev_0110",
+            tool="file_header",
+            args={"carved_path": "/work/carved/dropped.bin"},
+            structured={"export_rows": [{"rva": "0x9000", "name": "spare"}]},
+        ),
+    ]
+    names = run_names(ledger, ledger_facts(ledger).image_bases)
+    assert names.set_aside
+    # The sample's own export still contradicts; an absence is no longer backed.
+    assert _named("`begin` is not exported.", names) == {"begin": CONTRADICTED}
+    assert _named(f"{RESOLVED_ONLY} is not imported.", names) == {RESOLVED_ONLY: UNDECIDED}
+    whole = run_names(_ledger(), ledger_facts(_ledger()).image_bases)
+    assert _named(f"{RESOLVED_ONLY} is not imported.", whole) == {RESOLVED_ONLY: BACKED}
+
+
+def _named(sentence: str, names: Any) -> dict[str, str]:
+    return {r.shown: r.verdict for r in name_readings(sentence, "", names)}
+
+
+def test_a_name_written_as_a_call_is_the_name() -> None:
+    assert _word_verdicts("`connect()` is not called.") == {"connect": CONTRADICTED}
+    assert _word_verdicts("`Sleep()` is not called.") == {"Sleep": CONTRADICTED}
+
+
+_CALLEES = RunNames(
+    apis={"openprocess": ApiHeld(name="OpenProcess", calls=[ApiCall(0x1400, None)])},
+    callees={0x1400: (0x1600,), 0x1600: ()},
+    rows=frozenset({0x1400, 0x1600}),
+    index_whole=True,
+)
+
+
+@pytest.mark.parametrize(
+    "sentence",
+    [
+        "No callee of 0x1400 calls OpenProcess.",
+        "OpenProcess is not called by any callee of 0x1400.",
+        "OpenProcess is not called by the callees of 0x1400.",
+        "No caller of 0x1600 calls OpenProcess.",
+    ],
+)
+def test_a_callee_or_caller_narrows_the_call_and_code_does_not_decide_it(sentence: str) -> None:
+    assert _named(sentence, _CALLEES) == {"OpenProcess": UNDECIDED}
+
+
+@pytest.mark.parametrize(
+    "sentence",
+    [
+        "OpenProcess is not called outside 0x1400.",
+        "OpenProcess is not called except in 0x1400.",
+        "OpenProcess is not called from 0x1400.",
+        "OpenProcess is not never called.",
+    ],
+)
+def test_a_preposition_on_an_address_or_a_second_negation_leaves_it_to_the_model(
+    sentence: str,
+) -> None:
+    assert _named(sentence, _CALLEES) == {"OpenProcess": UNDECIDED}
+
+
+def test_a_routine_named_as_the_call_s_own_is_still_decided() -> None:
+    assert _named("Routine 0x1400 does not call OpenProcess.", _CALLEES) == {
+        "OpenProcess": CONTRADICTED
+    }
+    assert _named("Routine 0x1600 does not call OpenProcess.", _CALLEES) == {"OpenProcess": BACKED}
+
+
+def test_a_relation_is_written_only_in_the_word_forms_of_its_keys() -> None:
+    for word in ("call", "calls", "called", "calling"):
+        assert relation_of(word, ("called",)) == "called", word
+    for word in ("decode", "decodes", "decoded", "decoding"):
+        assert relation_of(word, ("decoded",)) == "decoded", word
+    for word in ("resolve", "resolves", "resolved", "resolving"):
+        assert relation_of(word, ("resolved",)) == "resolved", word
+    for word in ("import", "imports", "imported", "export", "exports", "exported", "plain"):
+        assert relation_of(word, ("imported", "exported", "plain")) is not None, word
+    for word in _NEAR:
+        assert relation_of(word, tuple(RELATION_KEYS)) is None, word
+
+
+def test_a_generic_word_is_no_plain_word_of_a_denial() -> None:
+    # "loader" stands in most passages, yet "the loader" may be one routine of many.
+    sentence = "The loader does not call OpenProcess."
+    assert {
+        r.shown: r.verdict for r in name_readings(sentence, "", _CALLEES, frozenset({"loader"}))
+    } == {"OpenProcess": UNDECIDED}
+
+
+@pytest.mark.parametrize(
+    "sentence",
+    [
+        "The network-call search in the decompile of 0x2200 found nothing.",
+        "The decompile of 0x2200 for registry keys returned nothing.",
+        "The decompiled routine at 0x2200 calls nothing.",
+        "The decompile of 0x2200 calls nothing.",
+        "The decompiled routine at 0x2200 writes nothing.",
+        "The decompile of 0x2200 returned nothing.",
+    ],
+)
+def test_a_clause_ending_in_its_negation_is_read_whole(sentence: str) -> None:
+    assert held_limitation_sentences(sentence, [_REDONE], [], ()) == []
+
+
+@pytest.mark.parametrize(
+    "sentence",
+    [
+        "Lift_routine returned nothing for 0x2200.",
+        "The decompiler produced nothing at 0x2200.",
+    ],
+)
+def test_a_clause_ending_in_its_negation_on_the_call_s_output_is_held(sentence: str) -> None:
+    assert held_limitation_sentences(sentence, [_REDONE], [], ()) == [sentence]
+
+
 # The property: a negated clause saying anything beyond names, relation words and the
-# plain words is never contradicted by code, and never held to a failed call.
+# plain words is never contradicted by code, and never held to a failed call; the same
+# clause without that word is.
 _PROPERTY_NAMES = RunNames(
     apis={
         "queryhostmode": ApiHeld(
@@ -542,9 +679,9 @@ _PROPERTY_NAMES = RunNames(
     index_whole=True,
 )
 _RELATION_WORDS = {
-    "api": ["called", "calls", "resolved", "imported"],
+    "api": ["called", "calls", "calling", "resolved", "resolving", "imported", "imports"],
     "export": ["exported", "exports"],
-    "text": ["decoded", "plain"],
+    "text": ["decoded", "decoding", "plain"],
 }
 _FILLER = ["routine", "function", "at", "in", "of", "through", "established", "shown", "0x1400"]
 _FAILED_FILLER = ["function", "routine", "at", "in", "address", "0x2200", "decompiled", "listed"]
@@ -552,59 +689,107 @@ _FAILED_FILLER = ["function", "routine", "at", "in", "address", "0x2200", "decom
 _LETTERS = "ghjklmnpqrstvwxz"
 # Words of prose a clause may add: "slot" narrows a call to one through a slot.
 _PROSE = ["slot", "slots", "remote", "handle", "network", "registry", "loop", "debugger"]
+# Words that begin with a relation's root and write none.
+_NEAR = [
+    "callee",
+    "callees",
+    "caller",
+    "callback",
+    "important",
+    "exporter",
+    "plainly",
+    "decoder",
+    "resolver",
+]
+# The stems of the keys' words; a word built on one with a letter no ending starts with
+# ("s", "e", "d", "i") is no form of it.
+_STEMS = sorted(
+    {
+        word[:-2] if word.endswith("ed") else word[:-1] if word.endswith("s") else word
+        for keys in RELATION_KEYS.values()
+        for key in keys
+        for word in key.split("_")
+    }
+)
+_NO_ENDING = "bcfhjklmopqrtuvwxyz"
 
 
 def _extra(rng: random.Random) -> str:
-    if rng.random() < 0.5:
+    pick = rng.random()
+    if pick < 0.25:
         return rng.choice(_PROSE)
+    if pick < 0.45:
+        return rng.choice(_NEAR)
+    if pick < 0.75:
+        tail = "".join(rng.choice(_NO_ENDING) for _ in range(rng.randint(0, 3)))
+        return rng.choice(_STEMS) + rng.choice(_NO_ENDING) + tail
     return "".join(rng.choice(_LETTERS) for _ in range(rng.randint(4, 8)))
 
 
-def _clause(rng: random.Random, kind: str, extra: str, before: str = "") -> str:
-    """A negated clause denying a relation of a name, ``extra`` among the words after its
-    negation and ``before`` (a word and a space) before the name."""
+def _sentence(words: list[str]) -> str:
+    text = " ".join(words)
+    return text[0].upper() + text[1:] + "."
+
+
+def _with(words: list[str], negation: int, extra: str, rng: random.Random, before: bool) -> str:
+    """``words`` with ``extra`` inserted before the negation at ``negation`` or after it."""
+    at = rng.randint(0, negation) if before else rng.randint(negation + 1, len(words))
+    return _sentence([*words[:at], extra, *words[at:]])
+
+
+def _name_clause(rng: random.Random, kind: str) -> tuple[list[str], int]:
+    """A negated clause denying a relation of a name, and where its negation stands."""
     after = [rng.choice(_RELATION_WORDS[kind]), *rng.sample(_FILLER, rng.randint(0, 3))]
-    if extra:
-        after.insert(rng.randint(0, len(after)), extra)
-    tail = " ".join(after)
-    if kind == "api":
-        return rng.choice(
-            [f"{before}QueryHostMode is not {tail}.", f"No {before}routine {tail} QueryHostMode."]
-        )
-    if kind == "export":
-        return f"{before}`begin` is not {tail}."
-    return f"No {before}'quietmode' text is {tail}."
+    if kind == "api" and rng.random() < 0.5:
+        return ["no", "routine", *after, "QueryHostMode"], 0
+    if kind == "text":
+        return ["no", "'quietmode'", "text", "is", *after], 0
+    name = {"api": "QueryHostMode", "export": "`begin`"}[kind]
+    return [name, "is", "not", *after], 2
 
 
 def test_a_clause_saying_more_than_the_relation_is_never_contradicted_by_code() -> None:
     rng = random.Random(600)
     decided = 0
-    for _ in range(400):
+    for _ in range(600):
         kind = rng.choice(list(_RELATION_WORDS))
+        words, negation = _name_clause(rng, kind)
         extra = _extra(rng)
-        seed = rng.random()
-        for sentence in (
-            _clause(random.Random(seed), kind, extra),
-            _clause(random.Random(seed), kind, "", before=f"{extra} "),
-        ):
+        for before in (True, False):
+            sentence = _with(words, negation, extra, rng, before)
             readings = name_readings(sentence, "", _PROPERTY_NAMES)
             assert all(r.verdict != CONTRADICTED for r in readings), sentence
         # The same clause without the word is decided: the property is not vacuous.
-        plain = _clause(random.Random(seed), kind, "")
+        plain = _sentence(words)
         decided += any(r.verdict == CONTRADICTED for r in name_readings(plain, "", _PROPERTY_NAMES))
-    assert decided > 300
+    assert decided > 450
+
+
+def _failed_clause(rng: random.Random) -> tuple[list[str], int]:
+    """A negated clause denying a redone call's output, and where its negation stands."""
+    lead = rng.choice(
+        [
+            ["the", "decompiler", "produced"],
+            ["lift_routine", "returned"],
+            ["the", "decompile", "shows"],
+            ["the", "decompilation", "returned"],
+        ]
+    )
+    if rng.random() < 0.3:
+        # The negation ends the clause.
+        ending = rng.choice(["nothing", "none"])
+        return [*lead, ending, "at", "0x2200"], len(lead)
+    words = rng.sample(_FAILED_FILLER, rng.randint(1, 4))
+    return [*lead, "no", *words, "at", "0x2200"], len(lead)
 
 
 def test_a_clause_saying_more_than_the_call_s_output_is_never_held_to_the_failed_calls() -> None:
     rng = random.Random(601)
-    for _ in range(400):
+    for _ in range(600):
+        words, negation = _failed_clause(rng)
         extra = _extra(rng)
-        words = [*rng.sample(_FAILED_FILLER, rng.randint(1, 4))]
-        words.insert(rng.randint(0, len(words)), extra)
-        lead = rng.choice(
-            ["The decompiler produced", "lift_routine returned", "The decompile shows"]
-        )
-        sentence = f"{lead} no {' '.join(words)} at 0x2200."
-        assert held_limitation_sentences(sentence, [_REDONE], [], ()) == [], sentence
-        without = f"{lead} no {' '.join(w for w in words if w != extra)} at 0x2200."
+        for before in (True, False):
+            sentence = _with(words, negation, extra, rng, before)
+            assert held_limitation_sentences(sentence, [_REDONE], [], ()) == [], sentence
+        without = _sentence(words)
         assert held_limitation_sentences(without, [_REDONE], [], ()) == [without], without
