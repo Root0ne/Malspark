@@ -277,6 +277,7 @@ class TestTheRowsAboutUnreadFunctions:
 WALKED: tuple[str, ...] = (
     "pipeline/validation.py",
     "pipeline/function_claims.py",
+    "pipeline/exit_branches.py",
     "pipeline/nodes.py",
     "agents/callees_question.py",
     "agents/delegation.py",
@@ -434,6 +435,11 @@ MESSAGE_BUILDERS: frozenset[str] = frozenset(
         "shortened_evidence_note",
         "partial_evidence_note",
         "unreadable_answer_reason",
+        # The decompiled-functions question, its two parts and their join:
+        # each value a listing or a tool wrote goes through the helper.
+        "_decompiled_question",
+        "_functions_not_described",
+        "exits_question",
     }
 )
 

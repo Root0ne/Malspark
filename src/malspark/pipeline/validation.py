@@ -78,6 +78,7 @@ from malspark.pipeline.events import (
     safe_finding_value,
     unparsed_answer_kept_sentence,
 )
+from malspark.pipeline.exit_branches import ExitSite, exits_question, uncovered_exits
 from malspark.pipeline.retry_merge import folded_title
 from malspark.schemas.evidence import ENTRY_ID_RE, answer_not_shown, entry_ids_in
 from malspark.schemas.judgement import BENIGN_VERDICT, SEVERITY_RATINGS, VERDICT_VALUES
@@ -5711,6 +5712,12 @@ def chunk_cut_unread_sentence(chunk: str) -> str:
 # A reverser decompiled two routines that held half of what the analysis
 # needed, kept both in its own ledger, and no claim of its answer described
 # either. The functions its ledger entries decompiled are listed to it, once.
+# In the same question, the branches of its listings that end a function with a
+# constant on a condition, where no one claim names the function together with
+# a term of that condition (a function or slot it calls, the slot's resolved
+# API name, a constant of 10 or more): at most 8, ranked, the rest counted
+# (``pipeline.exit_branches``). The report's line keeps naming the functions
+# and gives only the count of those branches left; the run record lists them.
 DECOMPILED_NOT_DESCRIBED_CODE = "isr.decompiled_not_described"
 
 # The argument names a decompile call gives its function under, besides an
@@ -6127,31 +6134,49 @@ def _decompiled_words(function: DecompiledFunction) -> str:
 
 def decompiled_not_described_violation(
     functions: Sequence[DecompiledFunction],
+    exits: Sequence[ExitSite] = (),
 ) -> Violation | None:
     """The question for the decompiled functions no claim names, or ``None`` when none is left.
 
     Every such function is listed, with its names and the entries that hold
-    its listing, in one question. What the analyst answers stands; the
-    functions its kept answer still names in no claim are the finding the
-    report prints.
+    its listing, in one question. ``exits`` are the branches no one claim
+    names with their function (``exit_branches.uncovered_exits``, ranked):
+    they join the same question, after the functions or alone. What the
+    analyst answers stands; what its kept answer still leaves is the finding
+    the report prints, the branches as a count.
     """
-    if not functions:
+    if not functions and not exits:
         return None
     return Violation(
-        code=DECOMPILED_NOT_DESCRIBED_CODE,
-        message=(
-            f"You decompiled {len(functions)} function(s) that no claim of this answer names "
-            "by a name the decompiler gave it, or by its address or its offset from the "
-            "image base written in hex (with 0x, with a trailing h, as bare hex digits, or "
-            "inside a name such as FUN_); an offset written in decimal digits alone is not "
-            "read as one: "
-            f"{'; '.join(safe_finding_value(_decompiled_words(f)) for f in functions)}. For "
-            "each one that matters to this analysis, write a claim naming it by its address "
-            "and saying what its code does: the checks it makes, the calls it makes and "
-            "their arguments, and the decoded strings and resolved names it uses, citing the "
-            "entry that holds its listing. A function that does nothing this analysis needs "
-            "may stay undescribed."
-        ),
+        code=DECOMPILED_NOT_DESCRIBED_CODE, message=_decompiled_question(functions, exits)
+    )
+
+
+def _decompiled_question(functions: Sequence[DecompiledFunction], exits: Sequence[ExitSite]) -> str:
+    """The functions' part, the branches' part, or both, in that order."""
+    said = ""
+    if functions:
+        said = _functions_not_described(functions)
+    asked = ""
+    if exits:
+        asked = exits_question(exits)
+    return (said + " " + asked).strip()
+
+
+def _functions_not_described(functions: Sequence[DecompiledFunction]) -> str:
+    """The question's words for the functions no claim names, every one listed."""
+    return (
+        f"You decompiled {len(functions)} function(s) that no claim of this answer names "
+        "by a name the decompiler gave it, or by its address or its offset from the "
+        "image base written in hex (with 0x, with a trailing h, as bare hex digits, or "
+        "inside a name such as FUN_); an offset written in decimal digits alone is not "
+        "read as one: "
+        f"{'; '.join(safe_finding_value(_decompiled_words(f)) for f in functions)}. For "
+        "each one that matters to this analysis, write a claim naming it by its address "
+        "and saying what its code does: the checks it makes, the calls it makes and "
+        "their arguments, and the decoded strings and resolved names it uses, citing the "
+        "entry that holds its listing. A function that does nothing this analysis needs "
+        "may stay undescribed."
     )
 
 
@@ -14318,6 +14343,7 @@ class AnswerCheckInputs:
     sample: Mapping[str, str]
     items: Any
     decompiled: Sequence[Any]
+    exits: Sequence[ExitSite]
     image_bases: tuple[int, ...]
     techniques: bool
     alignment: Any
@@ -14388,7 +14414,8 @@ def analyst_answer_checks(
     ``None`` where the turn does not ask it (once per analyst and job).
     """
     undescribed = decompiled_not_described_violation(
-        undescribed_decompiles(candidate, inputs.decompiled, inputs.image_bases)
+        undescribed_decompiles(candidate, inputs.decompiled, inputs.image_bases),
+        uncovered_exits(candidate, inputs.exits, inputs.image_bases),
     )
     callees_asked = None
     if callees is not None:

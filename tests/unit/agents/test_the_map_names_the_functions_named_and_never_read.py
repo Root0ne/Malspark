@@ -411,8 +411,12 @@ def _run_loop(window_tokens: int) -> tuple[list[dict[str, Any]], str]:
     analyst._job_id = "job-1"
     analyst._container = _Container(window_tokens)
     # The question about the unread callees after the loop (T-558) is tested
-    # apart; here the loop's own calls are counted.
-    with patch("malspark.agents.base_agent.callees_to_read", return_value=CalleesFound()):
+    # apart, and so is the one about the branches its listings end on; here
+    # the loop's own calls are counted.
+    with (
+        patch("malspark.agents.base_agent.callees_to_read", return_value=CalleesFound()),
+        patch("malspark.agents.base_agent.exit_branches", return_value=[]),
+    ):
         analyst.safe_analyze_isr("the task")
     last = [str(m.content) for m in model.seen[-1] if isinstance(m, ToolMessage)][-1]
     return calls, last

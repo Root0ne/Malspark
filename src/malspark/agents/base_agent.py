@@ -71,6 +71,7 @@ from malspark.agents.tool_answer_clearing import (
     tier_clear_pays,
 )
 from malspark.analysis.sandbox_sections import item_index_of
+from malspark.analysis.slot_names import slot_names
 from malspark.analysis.technique_ids import ID_BODY
 from malspark.core.config import get_settings
 from malspark.core.exceptions import AgentLoopCancelled, AnalystError, SampleNotOpened
@@ -118,6 +119,12 @@ from malspark.llm.transient import provider_fault as _provider_fault  # noqa: F4
 from malspark.llm.transient import retry_after as _retry_after  # noqa: F401 — read from here
 from malspark.llm.transient import retry_on_connection_error as retry_on_connection_error
 from malspark.pipeline.claim_drops import values_as_written
+from malspark.pipeline.exit_branches import (
+    exit_branches,
+    exit_line,
+    resolved_slots,
+    uncovered_exits,
+)
 from malspark.pipeline.function_claims import (
     FUNCTION_CLAIM_UNHELD_CODE,
     FunctionClaimCheck,
@@ -10201,6 +10208,7 @@ class BaseAnalyst(BudgetMeter, ABC):
         class _Ledger:
             ledger_ids: Any
             decompiled: Any
+            exits: Any
             image_bases: Any
             listed: Any
             facts: Any
@@ -10237,6 +10245,14 @@ class BaseAnalyst(BudgetMeter, ABC):
             image_bases = run_image_bases(
                 own_entries, getattr(self, "pack_image_bases", None) or ()
             )
+            # The branches of this analyst's own listings that end a function
+            # with a constant on a condition: any no one claim names with its
+            # function joins the same question (``pipeline.exit_branches``).
+            # A slot is named by what the pack's function index resolved.
+            pack = list(getattr(self, "pack_entries", None) or ())
+            exits = exit_branches(
+                own_entries, resolved_slots(slot_names([*pack, *own_entries]), image_bases)
+            )
             # The functions this analyst's own calls listed, and their facts:
             # a claim naming a call or a string its function's facts do not
             # hold is stated to it, once (``pipeline.function_claims``).
@@ -10259,7 +10275,7 @@ class BaseAnalyst(BudgetMeter, ABC):
                     self.logger.warning("%s: function claims %s.", self.name, facts_failed)
                     facts = None
             held = _Ledger(
-                ledger_ids, decompiled, image_bases, listed, facts, facts_failed, own_entries
+                ledger_ids, decompiled, exits, image_bases, listed, facts, facts_failed, own_entries
             )
             read[len(own_entries)] = held
             return held
@@ -10381,6 +10397,7 @@ class BaseAnalyst(BudgetMeter, ABC):
                 sample=sample,
                 items=items,
                 decompiled=ledger.decompiled,
+                exits=ledger.exits,
                 image_bases=ledger.image_bases,
                 techniques=techniques,
                 alignment=gate,
@@ -10426,6 +10443,19 @@ class BaseAnalyst(BudgetMeter, ABC):
                 )
             return [answered] if answered is not None else []
 
+        def _note_exits(candidate: AgentISR) -> None:
+            # The branches the answer checked leaves, whole, on the loop's
+            # record: the last answer checked is the one kept, and the report
+            # prints only their count.
+            ledger = _ledger()
+            if ledger.exits:
+                left = uncovered_exits(candidate, ledger.exits, ledger.image_bases)
+                BaseAnalyst._note_on_last_loop(  # type: ignore[arg-type]
+                    self,
+                    "exit_branches",
+                    {"read": len(ledger.exits), "left": [exit_line(site) for site in left]},
+                )
+
         def _validator(candidate: AgentISR) -> list[Violation]:
             if only_cut:
                 return _whole_answer_questions(candidate)
@@ -10433,6 +10463,7 @@ class BaseAnalyst(BudgetMeter, ABC):
             # Every answer checked that no claim could be read from, the first
             # and its retry alike, goes to the run record whole.
             self._keep_unparsed_answers(unread, candidate.revision_round)
+            _note_exits(candidate)
             return [
                 *analyst_answer_checks(
                     candidate,

@@ -482,6 +482,7 @@ class _Own:
     ledger_ids: list[str]
     items: Any
     decompiled: list[Any]
+    exits: list[Any]
     image_bases: tuple[int, ...]
     listed: list[Any]
     facts: Any
@@ -491,6 +492,8 @@ class _Own:
 def _own(run: _Run, agent: str, before: datetime | None) -> _Own:
     """The analyst's own entries up to ``before`` (all of them when ``None``), and the pack's."""
     from malspark.analysis.sandbox_sections import item_index_of
+    from malspark.analysis.slot_names import slot_names
+    from malspark.pipeline.exit_branches import exit_branches, resolved_slots
     from malspark.pipeline.validation import (
         analyst_ledger_ids,
         decompiled_functions,
@@ -540,6 +543,7 @@ def _own(run: _Run, agent: str, before: datetime | None) -> _Own:
         ledger_ids=analyst_ledger_ids(own, [], [e.id for e in pack]),
         items=item_index_of(pack),
         decompiled=decompiled_functions(own),
+        exits=exit_branches(own, resolved_slots(slot_names([*pack, *own]), image_bases)),
         image_bases=image_bases,
         listed=listed,
         facts=facts,
@@ -625,6 +629,7 @@ def _analyst_checks(
         },
         items=own.items,
         decompiled=own.decompiled,
+        exits=own.exits,
         image_bases=own.image_bases,
         techniques=techniques,
         # The alignment gate reads the ATT&CK index, which the replay does not load.

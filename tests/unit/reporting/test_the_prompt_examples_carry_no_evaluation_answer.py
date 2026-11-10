@@ -156,6 +156,7 @@ from malspark.pipeline.debate_facts import (
     with_place_facts,
 )
 from malspark.pipeline.evidence_summary import summarise
+from malspark.pipeline.exit_branches import exit_branches
 from malspark.pipeline.mediation_models import (
     CONTRADICTIONS_BLOCK_MISSING_NOTE,
     CONTRADICTIONS_BLOCK_MIXED_NOTE,
@@ -2556,6 +2557,26 @@ PROMPTS: dict[str, str] = {
                 DecompiledFunction(address=0x10, names=("FUN_10",), entries=("ev_0001",)),
                 DecompiledFunction(address=None, names=("F",), entries=("ev_0002",)),
             ]
+        )
+    ),
+    "decompiled-functions question with the branches no claim names": _message_of(
+        decompiled_not_described_violation(
+            [DecompiledFunction(address=0x10, names=("FUN_10",), entries=("ev_0001",))],
+            exit_branches(
+                [
+                    LedgerEntry(
+                        id="ev_0002",
+                        tool="t",
+                        args={"address": "0x20"},
+                        output=(
+                            "int FUN_20(void)\n{\n  int r;\n  r = 0;\n"
+                            "  if ((FUN_30() == 0x40) || ((*DAT_00000050)() == 0)) {\n"
+                            "    r = -1;\n  }\n  return r;\n}\n"
+                        ),
+                    )
+                ],
+                {0x50: "ReadValue"},
+            ),
         )
     ),
     "ledger counts told to a revision round and to the next mediation": with_ledger_facts(

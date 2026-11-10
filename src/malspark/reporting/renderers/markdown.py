@@ -4398,8 +4398,16 @@ def _finding_text(row: dict[str, Any], plain: Callable[[str], str] = _defanged_t
     printed live in the list of findings, is defanged. ``plain`` is the
     render's own defanger (``ctx.plain``): the run's recorded values first,
     as a tool's text is read (``ctx.inline``), then every other value.
+
+    The decompiled-functions question's branches are printed as their count;
+    the run record keeps their list (``exit_branches.exits_left_in_report``).
     """
+    from malspark.pipeline.exit_branches import exits_left_in_report
+    from malspark.pipeline.validation import DECOMPILED_NOT_DESCRIBED_CODE
+
     message = str(row.get("message") or "")
+    if row.get("code") == DECOMPILED_NOT_DESCRIBED_CODE:
+        message = exits_left_in_report(message)
     try:
         return _emphasis_escaped(plain(_escaped_keeping_spans(message, _INLINE_META)))
     except Exception as exc:  # noqa: BLE001 — never the raw values
