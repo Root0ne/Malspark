@@ -120,6 +120,13 @@ def content_words_in_order(text: str) -> list[str]:
     return list(out)
 
 
+def words_in_order(text: str) -> list[str]:
+    """Every word of ``text`` in the order it stands, lowered and without its possessive
+    ending: :func:`content_words_in_order`'s reading with no word left out."""
+    words = (_possessive_off(m.group(0).lower().strip("'-")) for m in _WORD.finditer(text))
+    return [word for word in words if word]
+
+
 class _Said:
     """A rewrite clause's words, read so a word of an absence is found in it whole or by
     a shared beginning (:data:`_STEM_FLOOR`), in time linear in the words."""

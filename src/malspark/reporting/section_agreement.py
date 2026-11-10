@@ -208,6 +208,7 @@ from malspark.reporting.absence_answers import (
     reading_denied_in,
     said_of,
     set_in_a_run,
+    words_in_order,
 )
 from malspark.reporting.models import (
     C2Channel,
@@ -1997,19 +1998,14 @@ _KIND_RELATIONS = {
 }
 
 
-def _kind_words(kind: str) -> tuple[frozenset[str], frozenset[str]]:
+def _kind_words(kind: str) -> frozenset[str]:
     """The word forms every relation of a kind is held in ("string", "text" of a decoded
-    and a plain text: they say which kind of name it is, and decide no relation), and
-    those only some are ("slot", "callee", "caller" of a call: they narrow the relation,
-    which code does not read)."""
+    and a plain text: they say which kind of name it is, and decide no relation). A word
+    only some are held in ("slot", "callee", "caller" of a call) narrows the relation,
+    which code does not read."""
     held = [set(_HELD_IN[relation]) for relation in _KIND_RELATIONS[kind]]
     every = set.intersection(*held) if held else set()
-    some = set().union(*held) - every
-
-    def _forms(words: set[str]) -> frozenset[str]:
-        return frozenset(form for word in words for form in word_forms(word))
-
-    return _forms(every), _forms(some)
+    return frozenset(form for word in every for form in word_forms(word))
 
 
 _KIND_WORDS_HELD = {kind: _kind_words(kind) for kind in _KIND_RELATIONS}
@@ -2023,7 +2019,7 @@ def relation_of(word: str, relations: Sequence[str]) -> str | None:
 
 def _writes_kind(word: str, kind: str) -> bool:
     """Whether a word writes a relation of ``kind`` or a word all of them are held in."""
-    return relation_of(word, _KIND_RELATIONS[kind]) is not None or word in _KIND_WORDS_HELD[kind][0]
+    return relation_of(word, _KIND_RELATIONS[kind]) is not None or word in _KIND_WORDS_HELD[kind]
 
 
 # The empty parentheses a name written as a call ends in ("connect()"): they say no
@@ -2156,9 +2152,8 @@ class _Clauses:
         self.by_word: dict[str, list[int]] = {}
         self.by_subject: dict[str, list[int]] = {}
         self.by_quote: dict[str, list[int]] = {}
-        # The clauses writing the word the export table is held under.
-        self.export_word: list[int] = []
-        # Whether one denies something of what it writes with that word.
+        # Whether one denies something of what it writes with the word the export table
+        # is held under.
         self.exports_denied = False
         for at, clause in enumerate(self.read):
             self.after |= clause.after
@@ -2166,8 +2161,6 @@ class _Clauses:
                 self.by_word.setdefault(word, []).append(at)
             for word in clause.subject:
                 self.by_subject.setdefault(word, []).append(at)
-            if any(relation_of(word, ("exported",)) for word in clause.words):
-                self.export_word.append(at)
             if any(relation_of(word, ("exported",)) for word in clause.subject):
                 self.exports_denied = True
             if any(_writes_kind(word, "text") for word in clause.words):
@@ -2194,18 +2187,6 @@ class _Clauses:
         rarest = min(own, key=lambda word: len(self.by_subject.get(word, ())))
         return any(own <= self.read[at].subject for at in self.by_subject.get(rarest, ()))
 
-    def writing(self, kind: str, shown: str) -> list[int]:
-        """The clauses writing a name as :func:`_held_names` read it from its sentence: a
-        text where the clause also writes a word it is held under ("no 'Run' key path
-        appears in the recovered text"), an API or an export by its name; the clauses
-        writing the export table's word are read apart (:attr:`export_word`)."""
-        if kind == "text":
-            return self.by_quote.get(shown.lower(), [])
-        found: dict[int, None] = {}
-        for part in shown.split(","):
-            found.update(dict.fromkeys(self.by_word.get(part.strip().lower(), ())))
-        return list(found)
-
 
 def _bare_clause(clause: str, generic: frozenset[str]) -> bool:
     """Whether a negated clause writes no word of its own but what it denies: its subject
@@ -2221,46 +2202,114 @@ def _plain_word(word: str, skip: frozenset[str]) -> bool:
     return word in skip or bool(_addresses_named(word))
 
 
-def _denied_relations(clause: str, own: frozenset[str], kind: str) -> frozenset[str] | None:
-    """The relations of a kind of name a negated clause denies, where that is all it says;
-    else ``None``.
+# The words a denial code decides may write besides its own (T-600): the articles, the
+# forms of "be", "do" and "have", and five prepositions. Any other word ("other", "only",
+# "all", "both", "except", "if", "it") may scope or turn what is denied: the model reads
+# the sentence.
+_FUNCTION_WORDS = frozenset(
+    (
+        "a an the be am is are was were been being do does did done doing have has had "
+        "having by any at in of for"
+    ).split()
+)
+# The prepositions an address list repeats before an item ("0x2200 or at 0x1030").
+_LIST_PREPOSITIONS = frozenset({"at", "in", "of", "for"})
+# The words joining addresses into one list ("0x2200 or 0x1030", "0x2200 and 0x1030"),
+# and the word standing, before a word naming an address, for the addresses a sentence
+# names ("at either address": any of them, as "any" stands for any address).
+_LIST_JOINS = frozenset({"and", "or"})
+_LIST_ITEM = "either"
 
-    Read off every word of the clause (``absence_answers.content_words``): before its
-    negation only names the run holds (``own``), addresses, routine nouns and words
-    saying what is denied; after it, besides those and the words every relation of the
-    kind is held in ("string", "text"), only words writing a relation, each a form of a
-    key's word (:func:`relation_of`), one at least. A word narrowing the relation
-    ("slot", "callee", "caller"), and any other word, leaves the clause to the model: "is
-    never called with a remote handle", "is not called through a slot", "no callee of
-    0x1400 calls it", "the loader does not call it", "the decryption routine does not
-    call it". The report's generic words are none of these: "the loader" may be one
-    routine of many.
-    """
-    from malspark.reporting.absence_answers import _DENIED_WORDS
+
+def _words_left(
+    text: str, *, scoped: bool, addressed: bool
+) -> tuple[list[str], list[int], int] | None:
+    """Every word of ``text``, all its clauses and no word left out
+    (``absence_answers.words_in_order``), the places of those this rule leaves to the
+    decider reading it, and the place of its one negation; ``None`` where it holds no
+    negation or more than one.
+
+    The rule accounts for a negation, the function words (:data:`_FUNCTION_WORDS`) and an
+    evidence citation; where ``scoped`` (the decider reads the routines or the addresses a
+    text names) also for an address, a routine noun, a word naming an address, "and" or
+    "or" between two addresses, and, where ``addressed`` (the sentence names the addresses
+    it stands for), "either" straight before a word naming an address. Every other word is
+    left: the decider reads among them its name and its relation (:func:`name_readings`)
+    or the call it holds a denial to (:func:`_denies_its_output`), and any word it does not
+    read leaves the text to the model. Both deciders read a text through this one rule. One
+    pass over the words."""
+    from malspark.reporting.absence_answers import _ENTRY_ID
     from malspark.reporting.absence_answers import _NEGATION as NEGATION
 
-    found = NEGATION.search(clause)
-    if not found or NEGATION.search(clause, found.end()):
-        # A second negation turns the first ("is not never called"): the model's to read.
+    words = words_in_order(text)
+    address = [scoped and bool(_addresses_named(word)) for word in words]
+
+    def _item(at: int) -> bool:
+        # An address, or "either" before a word naming the addresses the sentence names.
+        if at < len(words) and words[at] in _LIST_PREPOSITIONS:
+            at += 1
+        return at < len(words) and (address[at] or _either(at))
+
+    def _either(at: int) -> bool:
+        return (
+            addressed
+            and words[at] == _LIST_ITEM
+            and at + 1 < len(words)
+            and _address_word(words[at + 1])
+            and not (at + 2 < len(words) and address[at + 2])
+        )
+
+    left: list[int] = []
+    negations: list[int] = []
+    for at, word in enumerate(words):
+        if NEGATION.fullmatch(word) or word.endswith("n't"):
+            negations.append(at)
+            if NEGATION.fullmatch(word) or word[: -len("n't")] in _FUNCTION_WORDS:
+                continue
+        elif word in _FUNCTION_WORDS or _ENTRY_ID.match(word):
+            continue
+        elif scoped and (
+            address[at]
+            or word in _ROUTINE_NOUNS
+            or _address_word(word)
+            or (word in _LIST_JOINS and at > 0 and address[at - 1] and _item(at + 1))
+            or _either(at)
+        ):
+            continue
+        left.append(at)
+    if len(negations) != 1:
         return None
-    skip = own | _ROUTINE_NOUNS | _ABSENCE_PREDICATES | PREPOSITIONS
-    if any(not _plain_word(w, skip) for w in content_words(clause[: found.start()])):
+    return words, left, negations[0]
+
+
+def _kind_denial(text: str, kind: str, addressed: bool) -> tuple[str, frozenset[str]] | None:
+    """The one relation of a kind of name a text denies, and the words it writes beyond
+    the shared rule (:func:`_words_left`), the relation's word forms (:func:`relation_of`)
+    and the words every relation of the kind is held in ("string", "text"); ``None`` where
+    it writes no relation of the kind or more than one. Routine nouns and addresses are
+    read only for an API, whose calls are read in the routines a text names."""
+    from malspark.reporting.absence_answers import _DENIED_WORDS
+
+    read = _words_left(text, scoped=kind == "api", addressed=addressed)
+    if read is None:
         return None
-    words = list(content_words(clause[found.end() :]))
-    if found.group(0).lower() in _DENIED_WORDS:
+    words, left, negation = read
+    relations: set[str] = set()
+    if words[negation] in _DENIED_WORDS:
         # "unresolved" denies "resolved".
-        words.append(found.group(0).lower()[2:])
-    every, narrowing = _KIND_WORDS_HELD[kind]
-    denied: set[str] = set()
-    for word in words:
-        if word in narrowing:
-            return None
-        relation = relation_of(word, _KIND_RELATIONS[kind])
+        found = relation_of(words[negation][2:], _KIND_RELATIONS[kind])
+        if found is not None:
+            relations.add(found)
+    rest: set[str] = set()
+    for at in left:
+        relation = relation_of(words[at], _KIND_RELATIONS[kind])
         if relation is not None:
-            denied.add(relation)
-        elif not (word in every or _plain_word(word, skip)):
-            return None
-    return frozenset(denied) or None
+            relations.add(relation)
+        elif words[at] not in _KIND_WORDS_HELD[kind]:
+            rest.add(words[at])
+    if len(relations) != 1:
+        return None
+    return next(iter(relations)), frozenset(rest)
 
 
 def _verdict(
@@ -2327,19 +2376,23 @@ def name_readings(
     no name and no address that opens pointing back ("These names are shown only as
     resolved; the code does not show them being called") names the APIs of the sentence
     before it, read as undecided, where a negated clause of it writes a relation an API is
-    held under: what "them" is the model reads. Each name is decided by code only where a
-    negated clause writing it says no more than the relation it denies
-    (:func:`_denied_relations`): "IsWow64Process is not called", "no routine calls
-    CreateRemoteThread", "the export 'run' is not exported", "no 'x' text is decoded"; the
-    ledger then states the relation (contradicted) or, read whole, holds nothing of it
-    (backed). Any other is undecided, shown to the model with the ledger's fact. A name
-    written as a call ("`connect()` is not called") is read as the name: the empty
-    parentheses after it close no clause. Linear in the sentence and the names: each
-    clause is read once, and a name is looked up by its words."""
+    held under: what "them" is the model reads. Each name is decided by code only where
+    every word of the whole sentence, in all its clauses, is accounted for
+    (:func:`_words_left`, :func:`_kind_denial`): the name's own words, the word forms of
+    one relation it is held under, and the words the shared rule reads: "IsWow64Process is
+    not called", "no routine calls CreateRemoteThread", "`run` is not exported", "'x' was
+    not decoded"; the ledger then states the relation (contradicted) or, read whole, holds
+    nothing of it (backed). A second name, a word saying what a run did ("executed",
+    "reached"), or any other word ("no other routine", "apart from 0x1400", "if the check
+    fails") leaves it undecided, shown to the model with the ledger's fact. A name written
+    as a call ("`connect()` is not called") is read as the name: the empty parentheses
+    after it close no clause. Linear in the sentence and the names: the sentence is read
+    once for each kind of name, and a name is held to the words left by its own words."""
     from malspark.agents.function_map import one_spelling
     from malspark.reporting.absence_answers import clauses_of
 
-    clauses = negated_clauses(_CALL_MARKS.sub("", sentence))
+    whole = _CALL_MARKS.sub("", sentence)
+    clauses = negated_clauses(whole)
     if not clauses or set_in_a_run(sentence):
         return []
     read = _Clauses(clauses)
@@ -2362,56 +2415,31 @@ def name_readings(
         # Only the APIs the sentence before names: what "them" stands for is the model's.
         held = [h for h in _held_names(previous, names) if h[0] == "api"]
         back = True
-    if not held:
-        return []
-    own = frozenset(
-        word for _kind, _key, shown in held for word in content_words(shown.replace(",", " "))
+    if back:
+        return [NameReading(sentence, *name, UNDECIDED, True) for name in held]
+    addresses = _addresses_named(whole)
+    within = frozenset(one_spelling(r, names.bases) for r in addresses)
+    # A preposition says how an address bears on the call ("outside 0x1400", "except in
+    # 0x1400"): only a sentence naming its routine as the call's own ("routine 0x1400
+    # does not call it") is decided.
+    placed = bool(within) and not PREPOSITIONS.isdisjoint(
+        w.lower() for w in _NAME_TOKEN.findall(whole)
     )
-    denied: dict[tuple[int, str], frozenset[str] | None] = {}
-    within: dict[int, frozenset[int]] = {}
-
-    def _denied(at: int, kind: str) -> frozenset[str] | None:
-        if (at, kind) not in denied:
-            denied[(at, kind)] = _denied_relations(read.read[at].text, own, kind)
-        return denied[(at, kind)]
-
-    def _decided(at: int, kind: str, key: str, called_in: frozenset[int]) -> str:
-        relations = _denied(at, kind)
-        if relations is None:
-            return UNDECIDED
-        if at not in within:
-            within[at] = frozenset(one_spelling(r, names.bases) for r in read.read[at].addresses)
-        if within[at] and not read.read[at].words.isdisjoint(PREPOSITIONS):
-            # A preposition says how the address bears on the call ("outside 0x1400",
-            # "except in 0x1400"): only a clause naming its routine as the call's own
-            # ("routine 0x1400 does not call it") is decided.
-            return UNDECIDED
-        return _verdict(kind, key, relations, within[at], names, called_in)
-
-    # The clauses writing the export table's word deny alike of every export: read once.
-    export_denials: dict[frozenset[str] | None, None] = {}
-    if not back and any(kind == "export" for kind, _key, _shown in held):
-        export_denials = dict.fromkeys(_denied(at, "export") for at in read.export_word)
+    denials: dict[str, tuple[str, frozenset[str]] | None] = {}
     out: list[NameReading] = []
     for kind, key, shown in held:
-        verdicts: list[str] = []
-        if not back:
+        if kind not in denials:
+            denials[kind] = _kind_denial(whole, kind, bool(addresses))
+        found = denials[kind]
+        verdict = UNDECIDED
+        # The words left are the name's own alone: a second name, or any word the rule
+        # does not account for, leaves the sentence to the model.
+        own = frozenset(words_in_order(shown.replace(",", " ")))
+        if found is not None and not placed and found[1] <= own:
             api = names.apis.get(key) if kind == "api" else None
             called_in = frozenset(call.routine for call in api.calls) if api else frozenset()
-            verdicts = [_decided(at, kind, key, called_in) for at in read.writing(kind, shown)]
-            if kind == "export":
-                verdicts.extend(
-                    UNDECIDED if found is None else _verdict(kind, key, found, frozenset(), names)
-                    for found in export_denials
-                )
-        verdict = (
-            CONTRADICTED
-            if CONTRADICTED in verdicts
-            else BACKED
-            if BACKED in verdicts
-            else UNDECIDED
-        )
-        out.append(NameReading(sentence, kind, key, shown, verdict, back))
+            verdict = _verdict(kind, key, frozenset({found[0]}), within, names, called_in)
+        out.append(NameReading(sentence, kind, key, shown, verdict))
     return out
 
 
@@ -2919,6 +2947,9 @@ _SAYS_REDONE = re.compile(
     re.IGNORECASE,
 )
 _NEGATION = frozenset({"no", "not", "never", "without"})
+# The word giving the reason for what the words before it say: what it opens is said
+# as a sentence of its own.
+_REASON = re.compile(r"\bbecause\b", re.IGNORECASE)
 # The words before a redo word read for a negation.
 _NEGATION_REACH = 3
 # What a call's kind is called in prose, by the start of a word: a sentence
@@ -3013,26 +3044,23 @@ def _names_call(
     return call.lists_code and bool(listing.search(text))
 
 
-def _denies_its_output(clause: str, call: FailedCall) -> bool:
-    """Whether every word of a clause, before its negation and after it, says nothing
-    beyond what the call itself answers: routine nouns, words naming an address (and
-    their plurals), addresses, words saying what is denied, prepositions, and the call's
-    tool and kind words (:func:`_stems_of`), as :func:`_denied_relations` reads a
-    clause's plain words; and, before the negation, the call's one verb, standing
-    straight after the call's own word and straight before the negation, where it
-    writes no relation a name is held under ("the decompiler produced no function at
-    0x2200", "lift_routine returned nothing"). "shows no network call", "the
+def _denies_its_output(text: str, call: FailedCall) -> bool:
+    """Whether every word of a text, all its clauses, says nothing beyond what the call
+    itself answers: the words the shared rule reads (:func:`_words_left`: one negation, the
+    function words, routine nouns, addresses and the words naming them, a list of
+    addresses), the call's tool and kind words (:func:`_stems_of`), and the call's one
+    verb, standing straight after the call's own word and straight before the negation,
+    where it writes no relation a name is held under ("the decompiler produced no function
+    at 0x2200", "lift_routine returned nothing for 0x2200"). "shows no network call", "the
     network-call search in the decompile of 0x2200 found nothing", "the decompile of
-    0x2200 calls nothing" say something of the code it read, which the model reads; so
-    does a clause with a second negation."""
-    from malspark.reporting.absence_answers import _NEGATION as NEGATION
-    from malspark.reporting.absence_answers import content_words_in_order
-
-    found = NEGATION.search(clause)
-    if not found or NEGATION.search(clause, found.end()):
+    0x2200 calls nothing", "no other function", "apart from a thunk" say something of the
+    code it read, or scope the denial, which the model reads; so does a text with a second
+    negation."""
+    read = _words_left(text, scoped=True, addressed=True)
+    if read is None:
         return False
+    words, left, negation = read
     tool = call.tool.lower()
-    skip = _ROUTINE_NOUNS | _ABSENCE_PREDICATES | PREPOSITIONS
     names = {tool, *tool.split("_")}
     stems = _stems_of(call)
 
@@ -3040,21 +3068,14 @@ def _denies_its_output(clause: str, call: FailedCall) -> bool:
         # A kind stem begins only words naming that kind of call ("decompiler").
         return word in names or any(word.startswith(stem) for stem in stems)
 
-    def _plain(word: str) -> bool:
-        return _plain_word(word, skip) or _address_word(word) or _the_call(word)
-
-    if not all(_plain(word) for word in content_words(clause[found.end() :])):
-        return False
-    before = content_words_in_order(clause[: found.start()])
-    rest = [at for at, word in enumerate(before) if not _plain(word)]
+    rest = [at for at in left if not _the_call(words[at])]
     if not rest:
         return True
-    verb = before[-1]
     return (
-        rest == [len(before) - 1]
-        and len(before) >= 2
-        and _the_call(before[-2])
-        and relation_of(verb, tuple(_RELATIONS)) is None
+        rest == [negation - 1]
+        and negation >= 2
+        and _the_call(words[negation - 2])
+        and relation_of(words[negation - 1], tuple(_RELATIONS)) is None
     )
 
 
@@ -3065,32 +3086,45 @@ def _address_word(word: str) -> bool:
 
 def _denies_a_failed_call(text: str, failed: Sequence[FailedCall], bases: Sequence[int]) -> bool:
     """Whether a sentence of ``text`` denies something of a call a later call redid, naming
-    the call (T-600): a negated clause of it writes the call's tool or kind (as
-    :func:`_names_call` reads them, the narrow listing of code among them) and says
-    nothing in any of its words beyond the call's own output (:func:`_denies_its_output`),
-    the sentence names an address the call asked for, and it cites no call that redid
-    it. "The decompiler produced no function at 0x2200" says a call failed in words no
-    failure word reads; "the decompile of 0x2200 shows no network call" and "0x2200,
-    decompiled later, shows no network call" deny nothing of a call, and one citing the
-    redo reads it."""
+    the call (T-600): the sentence, or the reason it gives for a denial, writes the call's
+    tool or kind (as :func:`_names_call` reads them, the narrow listing of code among them)
+    and says nothing in any of its words beyond the call's own output
+    (:func:`_denies_its_output`), or cites the call itself, the sentence names an address
+    the call asked for, and it cites no call that redid it. "The decompiler produced no
+    function at 0x2200" says a call failed in words no failure word reads; "the decompile
+    of 0x2200 shows no network call" and "0x2200, decompiled later, shows no network call"
+    deny nothing of a call, "the decompiler produced no other function at 0x2200" says
+    more than its output, and one citing the redo reads it."""
     redone = [call for call in failed if call.redone and call.asked]
     if not redone:
         return False
     for sentence in _sentences_of(text):
-        clauses = negated_clauses(sentence)
-        if not clauses:
+        if not carries_negation(sentence):
             continue
         named = set(_addresses_named(sentence))
         cited = entry_ids_in(sentence)
+        # The sentence is read whole; where it gives the reason for a denial, the reason
+        # is read as a sentence of its own: "the boundaries of 0x2200 and 0x1030 are not
+        # confirmed, because the decompiler produced no function at either address".
+        parts = [sentence]
+        reason = _REASON.search(sentence)
+        if reason and carries_negation(sentence[: reason.start()]):
+            parts.append(sentence[reason.end() :])
         for call in redone:
             if cited & {by.lower() for by in call.redone_by}:
                 continue
             if not named & _spelled_both(call.asked, bases):
                 continue
             unaddressed = replace(call, asked=())
+            if call.entry.lower() in cited:
+                # Citing the call itself, and no call that redid it, the sentence rests on
+                # the failed output, whatever else it says.
+                if _names_call(sentence, unaddressed, ()):
+                    return True
+                continue
             if any(
-                _names_call(clause, unaddressed, ()) and _denies_its_output(clause, call)
-                for clause in clauses
+                _names_call(part, unaddressed, ()) and _denies_its_output(part, call)
+                for part in parts
             ):
                 return True
     return False

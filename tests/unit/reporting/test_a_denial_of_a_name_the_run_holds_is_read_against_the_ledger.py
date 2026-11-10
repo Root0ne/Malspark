@@ -21,7 +21,9 @@ from __future__ import annotations
 import asyncio
 import json
 import random
+import re
 from datetime import UTC, datetime
+from functools import lru_cache
 from typing import Any
 
 import pytest
@@ -230,7 +232,9 @@ def test_the_export_table_is_named_by_its_word_only_as_what_is_denied() -> None:
 
 
 def test_a_quoted_text_is_decided_against_the_decoded_strings() -> None:
-    assert _verdicts(f"No '{TEXT}' text appears in the decoded strings.") == {TEXT: CONTRADICTED}
+    assert _verdicts(f"No '{TEXT}' text is decoded.") == {TEXT: CONTRADICTED}
+    # "appears" says more than the relation: the model reads it, with the fact shown.
+    assert _verdicts(f"No '{TEXT}' text appears in the decoded strings.") == {TEXT: UNDECIDED}
     # A text the run holds none of is no name of the run's: the sentence is not held.
     assert _verdicts("No 'loudmode' text appears in the decoded strings.") == {}
 
@@ -660,9 +664,169 @@ def test_a_clause_ending_in_its_negation_on_the_call_s_output_is_held(sentence: 
     assert held_limitation_sentences(sentence, [_REDONE], [], ()) == [sentence]
 
 
-# The property: a negated clause saying anything beyond names, relation words and the
-# plain words is never contradicted by code, and never held to a failed call; the same
-# clause without that word is.
+# ---------------------------------------------------------------------------
+# Code decides only where every word of the whole sentence is accounted for: the one
+# name decided, the word forms of one relation, an address or a routine noun where the
+# decider scopes by routine, one negation, a few function words and the citations. A
+# word beyond them, in any clause, leaves the sentence to the model.
+# ---------------------------------------------------------------------------
+
+_RUN = RunNames(
+    apis={
+        "openprocess": ApiHeld(name="OpenProcess", calls=[ApiCall(0x1400, None)]),
+        "createprocessw": ApiHeld(name="CreateProcessW", calls=[ApiCall(0x1500, None)]),
+        "connect": ApiHeld(name="connect", calls=[ApiCall(0x1400, None)], imported={"ev_3": None}),
+        "sleep": ApiHeld(name="Sleep", resolved={"ev_2": None}),
+    },
+    exports={"run": ExportHeld(names=("run",), address=0x1600, entries=("ev_4",))},
+    by_address={0x1600: ExportHeld(names=("run",), address=0x1600, entries=("ev_4",))},
+    texts={
+        "secret.dat": _held("secret.dat", "decoded_strings"),
+        "cmd.exe": _held("cmd.exe", "plain_strings"),
+    },
+    rows=frozenset({0x1400, 0x1500, 0x1600}),
+    index_whole=True,
+)
+# Each sentence code still decides, the name it decides and its verdict.
+_DECIDED = [
+    ("OpenProcess is never called.", "OpenProcess", CONTRADICTED),
+    ("No routine calls OpenProcess.", "OpenProcess", CONTRADICTED),
+    ("`Sleep` is not resolved.", "Sleep", CONTRADICTED),
+    ("`connect` is not imported.", "connect", CONTRADICTED),
+    ("'secret.dat' was not decoded.", "secret.dat", CONTRADICTED),
+    ("'cmd.exe' is not a plain string.", "cmd.exe", CONTRADICTED),
+    ("`run` is not exported.", "run", CONTRADICTED),
+    ("Routine 0x1400 does not call OpenProcess.", "OpenProcess", CONTRADICTED),
+    ("Routine 0x1600 does not call OpenProcess.", "OpenProcess", BACKED),
+]
+
+
+@pytest.mark.parametrize(("sentence", "shown", "verdict"), _DECIDED)
+def test_a_denial_saying_only_the_relation_is_still_decided(
+    sentence: str, shown: str, verdict: str
+) -> None:
+    assert _named(sentence, _RUN) == {shown: verdict}
+
+
+@pytest.mark.parametrize(
+    "sentence",
+    [
+        # A word the content-word reader drops still says something.
+        "No other routine calls OpenProcess.",
+        "OpenProcess is not called by other routines.",
+        "Not all routines call OpenProcess.",
+        "`connect` is not only imported but also called.",
+        # A clause beside the negated one scopes it.
+        "Apart from 0x1400, no routine calls OpenProcess.",
+        "OpenProcess is not called, except in 0x1400.",
+        "OpenProcess is not called (except by 0x1400).",
+        "If the check fails, OpenProcess is not called.",
+        # A word saying what a run did is no word of the index.
+        "No call to OpenProcess was executed.",
+        "No call to OpenProcess was reached.",
+        "No call to OpenProcess was traced.",
+        "No call to OpenProcess was exercised.",
+        "No call to OpenProcess was completed.",
+        "No call of OpenProcess was executed.",
+        "No call of OpenProcess was reached.",
+    ],
+)
+def test_a_sentence_saying_more_than_the_relation_in_any_word_is_the_model_s(
+    sentence: str,
+) -> None:
+    verdicts = _named(sentence, _RUN)
+    assert verdicts and set(verdicts.values()) == {UNDECIDED}, verdicts
+
+
+@pytest.mark.parametrize(
+    "sentence",
+    [
+        "OpenProcess does not call CreateProcessW.",
+        "No routine calls both OpenProcess and CreateProcessW.",
+    ],
+)
+def test_a_second_name_the_run_holds_is_a_word_beyond_the_one_decided(sentence: str) -> None:
+    assert _named(sentence, _RUN) == {"OpenProcess": UNDECIDED, "CreateProcessW": UNDECIDED}
+
+
+@pytest.mark.parametrize(
+    "sentence",
+    [
+        "The decompiler produced no other function at 0x2200.",
+        "The decompiler produced no more functions at 0x2200.",
+        "Apart from a thunk, the decompiler produced no function at 0x2200.",
+    ],
+)
+def test_a_denial_of_a_redone_call_saying_more_in_any_word_is_not_held(sentence: str) -> None:
+    assert held_limitation_sentences(sentence, [_REDONE], [], ()) == []
+
+
+_REDONE_AT_TWO = [
+    _REDONE,
+    FailedCall(
+        entry="ev_0203",
+        tool="lift_routine",
+        error="no function there",
+        asked=(0x1030,),
+        redone_by=("ev_0204",),
+        lists_code=True,
+        kind="decompile",
+    ),
+]
+
+
+@pytest.mark.parametrize(
+    "sentence",
+    [
+        "The decompiler produced no function at 0x2200 or 0x1030 [ev_0109].",
+        "The decompiler produced no function at 0x2200, 0x1030 or at either address.",
+        # The reason a denial gives is read as a sentence of its own.
+        "The function boundaries of 0x2200 and 0x1030 are not confirmed, because the "
+        "decompiler produced no function at either address [ev_0109].",
+    ],
+)
+def test_a_denial_of_redone_calls_at_a_list_of_addresses_is_held(sentence: str) -> None:
+    assert held_limitation_sentences(sentence, _REDONE_AT_TWO, [], ()) == [sentence]
+
+
+@pytest.mark.parametrize(
+    "sentence",
+    [
+        "The function boundaries of 0x2200 and 0x1030 are not confirmed, because the "
+        "decompiler produced no other function at either address.",
+        "The decompiler produced no function at 0x2200 and other 0x1030.",
+        "The decompiler produced no function at either 0x2200.",
+    ],
+)
+def test_a_reason_or_an_address_list_saying_more_is_not_held(sentence: str) -> None:
+    assert held_limitation_sentences(sentence, _REDONE_AT_TWO, [], ()) == []
+
+
+def test_a_sentence_citing_a_redone_call_and_not_its_redo_is_held_whatever_else_it_says() -> None:
+    cited = "The decompiler produced no function at 0x2200 [ev_0201], and its bytes were read."
+    assert held_limitation_sentences(cited, [_REDONE], [], ()) == [cited]
+    uncited = "The decompiler produced no function at 0x2200, and its bytes were read."
+    assert held_limitation_sentences(uncited, [_REDONE], [], ()) == []
+    redone = "The decompiler produced no function at 0x2200 [ev_0201][ev_0202]."
+    assert held_limitation_sentences(redone, [_REDONE], [], ()) == []
+
+
+def test_both_deciders_read_the_sentence_through_one_rule(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from malspark.reporting import section_agreement
+
+    held = "The decompiler produced no function at 0x2200."
+    assert _named("No routine calls OpenProcess.", _RUN) == {"OpenProcess": CONTRADICTED}
+    assert held_limitation_sentences(held, [_REDONE], [], ()) == [held]
+    monkeypatch.setattr(section_agreement, "_words_left", lambda *_a, **_k: None)
+    assert _named("No routine calls OpenProcess.", _RUN) == {"OpenProcess": UNDECIDED}
+    assert held_limitation_sentences(held, [_REDONE], [], ()) == []
+
+
+# The property: one word inserted anywhere in a sentence code decides, or added as a
+# clause of its own, leaves it to the model (never contradicted by code, never held to
+# a failed call); the sentence as it stands is decided.
 _PROPERTY_NAMES = RunNames(
     apis={
         "queryhostmode": ApiHeld(
@@ -670,25 +834,45 @@ _PROPERTY_NAMES = RunNames(
             calls=[ApiCall(0x1400, 0x2000)],
             resolved={"ev_0102": None},
             imported={"ev_0104": None},
-        )
+        ),
+        "readselftoken": ApiHeld(name="ReadSelfToken", calls=[ApiCall(0x1500, None)]),
     },
     exports={"begin": ExportHeld(names=("begin",), address=0x1400, entries=("ev_0104",))},
     by_address={0x1400: ExportHeld(names=("begin",), address=0x1400, entries=("ev_0104",))},
-    texts={"quietmode": _held("quietmode", "decoded_strings", "plain_strings")},
-    rows=frozenset({0x1400}),
+    texts={
+        "quietmode": _held("quietmode", "decoded_strings", "plain_strings"),
+        "loudmode": _held("loudmode", "plain_strings"),
+    },
+    rows=frozenset({0x1400, 0x1500, 0x1600}),
     index_whole=True,
 )
-_RELATION_WORDS = {
-    "api": ["called", "calls", "calling", "resolved", "resolving", "imported", "imports"],
-    "export": ["exported", "exports"],
-    "text": ["decoded", "decoding", "plain"],
-}
-_FILLER = ["routine", "function", "at", "in", "of", "through", "established", "shown", "0x1400"]
-_FAILED_FILLER = ["function", "routine", "at", "in", "address", "0x2200", "decompiled", "listed"]
+# Each sentence code decides, and the names the run holds it does not write.
+_NAME_BASES = [
+    ("QueryHostMode is never called.", ["ReadSelfToken", "`begin`", "'loudmode'"]),
+    ("No routine calls QueryHostMode.", ["ReadSelfToken", "'quietmode'"]),
+    ("`QueryHostMode` is not resolved.", ["ReadSelfToken", "`begin`"]),
+    ("QueryHostMode isn't imported [ev_0104].", ["ReadSelfToken", "'loudmode'"]),
+    ("Routine 0x1400 does not call QueryHostMode.", ["ReadSelfToken", "`begin`"]),
+    ("Routine 0x1600 does not call QueryHostMode.", ["ReadSelfToken"]),
+    ("QueryHostMode is unresolved.", ["ReadSelfToken"]),
+    ("'quietmode' was not decoded.", ["'loudmode'", "QueryHostMode"]),
+    ("'quietmode' is not a plain string.", ["'loudmode'", "ReadSelfToken"]),
+    ("`begin` is not exported.", ["QueryHostMode", "'quietmode'"]),
+]
+# Each sentence held to the failed calls, and the part of it a word is put in: a reason
+# a denial gives is read on its own, so a word is put in the reason.
+_FAILED_BASES = [
+    ("", "The decompiler produced no function at 0x2200."),
+    ("", "Lift_routine returned nothing for 0x2200."),
+    ("", "The decompiler produced nothing at 0x2200 [ev_0109]."),
+    ("", "The decompiler produced no function at 0x2200 or 0x1030."),
+    (
+        "The function boundaries of 0x2200 and 0x1030 are not confirmed, because ",
+        "the decompiler produced no function at either address.",
+    ),
+]
 # Letters no relation root, stop word, negation or hex number is spelled with.
 _LETTERS = "ghjklmnpqrstvwxz"
-# Words of prose a clause may add: "slot" narrows a call to one through a slot.
-_PROSE = ["slot", "slots", "remote", "handle", "network", "registry", "loop", "debugger"]
 # Words that begin with a relation's root and write none.
 _NEAR = [
     "callee",
@@ -712,84 +896,115 @@ _STEMS = sorted(
     }
 )
 _NO_ENDING = "bcfhjklmopqrtuvwxyz"
+# How a word is put in: on its own, or as a clause of its own.
+_JOINED = ("{}", ", {}", "and {}", "but {}", "({})")
 
 
-def _extra(rng: random.Random) -> str:
-    pick = rng.random()
-    if pick < 0.25:
-        return rng.choice(_PROSE)
-    if pick < 0.45:
-        return rng.choice(_NEAR)
-    if pick < 0.75:
-        tail = "".join(rng.choice(_NO_ENDING) for _ in range(rng.randint(0, 3)))
-        return rng.choice(_STEMS) + rng.choice(_NO_ENDING) + tail
-    return "".join(rng.choice(_LETTERS) for _ in range(rng.randint(4, 8)))
+@lru_cache(maxsize=1)
+def _held_in() -> frozenset[str]:
+    """Every word form of every key's word."""
+    from malspark.reporting.section_agreement import word_forms
 
-
-def _sentence(words: list[str]) -> str:
-    text = " ".join(words)
-    return text[0].upper() + text[1:] + "."
-
-
-def _with(words: list[str], negation: int, extra: str, rng: random.Random, before: bool) -> str:
-    """``words`` with ``extra`` inserted before the negation at ``negation`` or after it."""
-    at = rng.randint(0, negation) if before else rng.randint(negation + 1, len(words))
-    return _sentence([*words[:at], extra, *words[at:]])
-
-
-def _name_clause(rng: random.Random, kind: str) -> tuple[list[str], int]:
-    """A negated clause denying a relation of a name, and where its negation stands."""
-    after = [rng.choice(_RELATION_WORDS[kind]), *rng.sample(_FILLER, rng.randint(0, 3))]
-    if kind == "api" and rng.random() < 0.5:
-        return ["no", "routine", *after, "QueryHostMode"], 0
-    if kind == "text":
-        return ["no", "'quietmode'", "text", "is", *after], 0
-    name = {"api": "QueryHostMode", "export": "`begin`"}[kind]
-    return [name, "is", "not", *after], 2
-
-
-def test_a_clause_saying_more_than_the_relation_is_never_contradicted_by_code() -> None:
-    rng = random.Random(600)
-    decided = 0
-    for _ in range(600):
-        kind = rng.choice(list(_RELATION_WORDS))
-        words, negation = _name_clause(rng, kind)
-        extra = _extra(rng)
-        for before in (True, False):
-            sentence = _with(words, negation, extra, rng, before)
-            readings = name_readings(sentence, "", _PROPERTY_NAMES)
-            assert all(r.verdict != CONTRADICTED for r in readings), sentence
-        # The same clause without the word is decided: the property is not vacuous.
-        plain = _sentence(words)
-        decided += any(r.verdict == CONTRADICTED for r in name_readings(plain, "", _PROPERTY_NAMES))
-    assert decided > 450
-
-
-def _failed_clause(rng: random.Random) -> tuple[list[str], int]:
-    """A negated clause denying a redone call's output, and where its negation stands."""
-    lead = rng.choice(
-        [
-            ["the", "decompiler", "produced"],
-            ["lift_routine", "returned"],
-            ["the", "decompile", "shows"],
-            ["the", "decompilation", "returned"],
-        ]
+    return frozenset(
+        form
+        for keys in RELATION_KEYS.values()
+        for key in keys
+        for word in key.split("_")
+        for form in word_forms(word)
     )
-    if rng.random() < 0.3:
-        # The negation ends the clause.
-        ending = rng.choice(["nothing", "none"])
-        return [*lead, ending, "at", "0x2200"], len(lead)
-    words = rng.sample(_FAILED_FILLER, rng.randint(1, 4))
-    return [*lead, "no", *words, "at", "0x2200"], len(lead)
 
 
-def test_a_clause_saying_more_than_the_call_s_output_is_never_held_to_the_failed_calls() -> None:
+def _by_design(word: str) -> bool:
+    """Whether a word is one the rule reads in a decided sentence: a function word, a
+    negation, a relation's or a key's word form, a routine noun, an address word, or a
+    word naming the failed call."""
+    from malspark.pipeline.validation import _ROUTINE_NOUNS
+    from malspark.reporting.absence_answers import carries_negation
+    from malspark.reporting.section_agreement import _ADDRESS_WORDS, _FUNCTION_WORDS
+
+    return (
+        word in _FUNCTION_WORDS
+        or carries_negation(word)
+        or relation_of(word, tuple(RELATION_KEYS)) is not None
+        or word in _held_in()
+        or word in _ROUTINE_NOUNS
+        or any(word in (plain, plain + "s", plain + "es") for plain in _ADDRESS_WORDS)
+        or word.startswith(("decompil", "disassembl", "emulat", "listing", "lift"))
+    )
+
+
+def _ordinary_words() -> list[str]:
+    """A seeded sample of the ordinary English words this file's own text writes."""
+    from pathlib import Path
+
+    text = Path(__file__).read_text(encoding="utf-8")
+    words = sorted({w for w in re.findall(r"(?<![\w`'])[a-z]{3,}(?![\w`'])", text)})
+    # The run's own names are the name a sentence decides, or a second one put in apart.
+    held = {*_PROPERTY_NAMES.apis, *_PROPERTY_NAMES.exports, *_PROPERTY_NAMES.texts}
+    words = [w for w in words if not _by_design(w) and w not in held]
+    assert len(words) >= 300, len(words)
+    return random.Random(600).sample(words, 300)
+
+
+def _inserted() -> list[str]:
+    """Every word the property puts in: the stop words the content-word reader drops,
+    ordinary words, the words saying what a run did, words built on a relation's stem."""
+    from malspark.reporting.absence_answers import _STOPWORDS
+    from malspark.reporting.section_agreement import _ABSENCE_PREDICATES
+
     rng = random.Random(601)
-    for _ in range(600):
-        words, negation = _failed_clause(rng)
-        extra = _extra(rng)
-        for before in (True, False):
-            sentence = _with(words, negation, extra, rng, before)
-            assert held_limitation_sentences(sentence, [_REDONE], [], ()) == [], sentence
-        without = _sentence(words)
-        assert held_limitation_sentences(without, [_REDONE], [], ()) == [without], without
+    stems = [
+        stem + rng.choice(_NO_ENDING) + "".join(rng.choice(_NO_ENDING) for _ in range(n))
+        for stem in _STEMS
+        for n in (0, 2)
+    ]
+    letters = ["".join(rng.choice(_LETTERS) for _ in range(rng.randint(4, 8))) for _ in range(5)]
+    drawn = [
+        *sorted(_STOPWORDS),
+        # The word joining a list of addresses, too short for the content-word reader.
+        "or",
+        *_ordinary_words(),
+        *sorted(_ABSENCE_PREDICATES),
+        *stems,
+        *_NEAR,
+        *letters,
+    ]
+    return [w for w in dict.fromkeys(drawn) if not _by_design(w)]
+
+
+def _put_in(lead: str, part: str, word: str) -> list[str]:
+    """``lead`` + ``part`` with ``word`` put in ``part`` at every place, on its own or as
+    a clause of its own."""
+    words = part.rstrip(".").split()
+    end = "." if part.endswith(".") else ""
+    return [
+        lead + " ".join([*words[:at], joined.format(word), *words[at:]]) + end
+        for at in range(len(words) + 1)
+        for joined in _JOINED
+    ]
+
+
+def test_a_word_put_in_a_decided_denial_of_a_name_leaves_it_to_the_model() -> None:
+    inserted = _inserted()
+    for base, others in _NAME_BASES:
+        readings = name_readings(base, "", _PROPERTY_NAMES)
+        # The sentence as it stands is decided: the property is not vacuous.
+        assert readings and all(r.verdict != UNDECIDED for r in readings), base
+        for word in [*inserted, *others]:
+            for sentence in _put_in("", base, word):
+                readings = name_readings(sentence, "", _PROPERTY_NAMES)
+                assert all(r.verdict != CONTRADICTED for r in readings), sentence
+                assert all(r.verdict == UNDECIDED for r in readings), sentence
+
+
+def test_a_word_put_in_a_denial_of_a_redone_call_leaves_it_unheld() -> None:
+    from malspark.reporting.section_agreement import _denies_a_failed_call
+
+    inserted = [*_inserted(), "QueryHostMode", "'quietmode'"]
+    for lead, part in _FAILED_BASES:
+        base = lead + part
+        assert _denies_a_failed_call(base, _REDONE_AT_TWO, ()), base
+        assert held_limitation_sentences(base, _REDONE_AT_TWO, [], ()) == [base], base
+        for word in inserted:
+            for sentence in _put_in(lead, part, word):
+                assert not _denies_a_failed_call(sentence, _REDONE_AT_TWO, ()), sentence
