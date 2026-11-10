@@ -109,6 +109,18 @@ jobs:
       - name: docker-up --dry-run
         run: uv run --no-project python scripts/dev/malspark_dev.py docker-up --dry-run
 
+      # A host that is not Linux adds the named-data overlay to both stacks
+      # and the polling overlay to the development stack; Linux adds neither.
+      - name: The dry runs add the overlays this host needs
+        run: >-
+          uv run --no-project python -c "import platform, subprocess, sys;
+          run = lambda command: subprocess.run([sys.executable, 'scripts/dev/malspark_dev.py', command, '--dry-run'], capture_output=True, text=True, check=True).stdout;
+          up, prod = run('up'), run('docker-up');
+          other = platform.system() != 'Linux';
+          held = [('named-data.yml' in up) == other, ('dev-polling.yml' in up) == other, ('named-data.yml' in prod) == other, 'dev-polling.yml' not in prod];
+          print(up + prod, held);
+          sys.exit(not all(held))"
+
       # The compose files resolve against the env files env init wrote. Only
       # the Linux runner has a Docker engine that runs Linux containers.
       - name: Production compose config
@@ -120,11 +132,17 @@ jobs:
         if: runner.os == 'Linux'
         run: docker compose -f docker/docker-compose.yml -f docker/docker-compose.dev.yml config --quiet
 
-      # The overlay a host that is not Linux adds (NAMED_DATA_OVERLAY in
-      # malspark_dev.py), validated here once it is in the tree.
-      - name: Named-data overlay compose config
-        if: runner.os == 'Linux' && hashFiles('docker/docker-compose.named-data.yml') != ''
-        run: docker compose -f docker/docker-compose.yml -f docker/docker-compose.dev.yml -f docker/docker-compose.named-data.yml config --quiet
+      # The files a host that is not Linux adds (NAMED_DATA_OVERLAY and
+      # DEV_POLLING_OVERLAY in malspark_dev.py), with each stack. The Native
+      # images workflow brings the named-data overlay up on the backend image.
+      - name: Production compose config with the named-data overlay
+        if: runner.os == 'Linux'
+        working-directory: docker
+        run: docker compose -f docker-compose.yml -f docker-compose.named-data.yml config --quiet
+
+      - name: Development compose config with the named-data and polling overlays
+        if: runner.os == 'Linux'
+        run: docker compose -f docker/docker-compose.yml -f docker/docker-compose.dev.yml -f docker/docker-compose.named-data.yml -f docker/docker-compose.dev-polling.yml config --quiet
 
       - name: Compose config (not on this runner)
         if: runner.os != 'Linux'

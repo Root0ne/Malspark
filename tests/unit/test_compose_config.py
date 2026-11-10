@@ -644,10 +644,18 @@ def _render_with(
     return yaml.safe_load(out)
 
 
+# The named volume docker-compose.named-data.yml puts the samples on.
+SAMPLES_VOLUME = "samples"
+
+
 def _mounts_samples(service: dict) -> bool:
+    """A mount of the samples directory: the checkout's, or the named volume in its place."""
     return any(
-        volume.get("type") == "bind"
-        and Path(str(volume.get("source"))).parts[-2:] == ("data", "samples")
+        (
+            volume.get("type") == "bind"
+            and Path(str(volume.get("source"))).parts[-2:] == ("data", "samples")
+        )
+        or (volume.get("type") == "volume" and volume.get("source") == SAMPLES_VOLUME)
         for volume in service.get("volumes") or []
     )
 
@@ -678,10 +686,45 @@ def _networks_of(service: dict) -> set[str]:
     return set(service.get("networks") or {DEFAULT_NETWORK: None})
 
 
+# Each stack as Linux runs it, and as malspark_dev.py runs it on a host that is
+# not Linux: samples and uploads on named volumes, and the development
+# stack's reloads polling.
+NAMED_DATA = "docker-compose.named-data.yml"
+DEV_POLLING = "docker-compose.dev-polling.yml"
 STACKS = [
     pytest.param(("docker-compose.yml",), id="production"),
     pytest.param(("docker-compose.yml", "docker-compose.dev.yml"), id="development"),
+    pytest.param(("docker-compose.yml", NAMED_DATA), id="production-named-data"),
+    pytest.param(
+        ("docker-compose.yml", "docker-compose.dev.yml", NAMED_DATA, DEV_POLLING),
+        id="development-named-data",
+    ),
 ]
+
+
+@pytest.mark.skipif(shutil.which("docker") is None, reason="docker not installed")
+@pytest.mark.parametrize("files", STACKS[2:])
+def test_with_the_named_data_overlay_no_data_directory_is_bind_mounted(
+    tmp_path: Path, files: tuple[str, ...]
+) -> None:
+    config = _render_with(tmp_path, *files, profiles=ALL_PROFILES)
+    data = {("data", "samples"), ("data", "uploads")}
+    named: dict[str, set[str]] = {}
+    for name, service in config["services"].items():
+        for volume in service.get("volumes") or []:
+            source = str(volume.get("source"))
+            if volume.get("type") == "bind":
+                # ../data itself stays a bind mount; nothing under samples or uploads does.
+                parts = Path(source).parts
+                assert not data & set(zip(parts, parts[1:], strict=False)), name
+            elif source in ("samples", "uploads"):
+                named.setdefault(source, set()).add(name)
+                assert not (volume.get("volume") or {}).get("nocopy"), name
+    # The writers hold both; every sample opener and nothing else holds samples.
+    writers = {"volume-init", "backend-api", "backend-worker"}
+    assert named["uploads"] == writers
+    assert named["samples"] == writers | set(_sample_openers(config))
+    assert {"samples", "uploads"} <= set(config["volumes"])
 
 
 @pytest.mark.skipif(shutil.which("docker") is None, reason="docker not installed")

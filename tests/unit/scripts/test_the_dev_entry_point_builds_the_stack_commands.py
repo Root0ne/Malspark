@@ -232,6 +232,19 @@ class TestExtraComposeFiles:
         ctx = dev.Context.here(ROOT, ["mine.yml"])
         assert ctx.extra_files == ("docker/local.yml", "/srv/gpu.yml", "mine.yml")
 
+    def test_on_windows_the_variable_is_split_on_semicolons_so_a_path_may_hold_a_space(
+        self,
+    ) -> None:
+        value = r"C:\Users\A B\local.yml; docker/gpu.yml;"
+        assert dev.split_extra_files(value, windows=True) == [
+            r"C:\Users\A B\local.yml",
+            "docker/gpu.yml",
+        ]
+        assert dev.split_extra_files("docker/local.yml  /srv/gpu.yml", windows=False) == [
+            "docker/local.yml",
+            "/srv/gpu.yml",
+        ]
+
     def test_the_production_stack_takes_no_file_and_reads_compose_s_override_itself(
         self, tmp_path: Path
     ) -> None:
@@ -269,6 +282,132 @@ class TestTheHostOverlayHook:
             "-f", "docker-compose.override.yml",
             "-f", Path(dev.NAMED_DATA_OVERLAY).name,
         ]  # fmt: skip
+
+
+class TestNamedDataAndPolling:
+    """MALSPARK_DATA_VOLUMES and the development stack's polling, with both overlays there."""
+
+    def _root(self, tmp_path: Path) -> Path:
+        root = _checkout(tmp_path, bootstrap=None)
+        for overlay in (dev.NAMED_DATA_OVERLAY, dev.DEV_POLLING_OVERLAY):
+            (root / overlay).write_text("services: {}\n")
+        return root
+
+    def _files(self, root: Path, command: str, system: str, **environ: str) -> list[str]:
+        ctx = dev.Context(root=root, environ=environ, system=system, getuid=_uid(1000))
+        (step,) = dev.stack_plan(command, ctx)
+        return [Path(a).name for a in step.argv if a.endswith(".yml")]
+
+    @pytest.mark.parametrize("system", ["Darwin", "Windows"])
+    def test_polling_is_added_to_the_development_stack_only_after_the_named_data_overlay(
+        self, tmp_path: Path, system: str
+    ) -> None:
+        root = self._root(tmp_path)
+        named, polling = Path(dev.NAMED_DATA_OVERLAY).name, Path(dev.DEV_POLLING_OVERLAY).name
+        for command in ("up", "down", "logs"):
+            assert self._files(root, command, system)[-2:] == [named, polling]
+        for command in ("docker-up", "docker-down", "docker-build"):
+            assert polling not in self._files(root, command, system)
+
+    def test_linux_adds_neither_overlay(self, tmp_path: Path) -> None:
+        root = self._root(tmp_path)
+        assert self._files(root, "up", "Linux") == [Path(f).name for f in SHIPPED[1::2]]
+        assert self._files(root, "docker-up", "Linux") == []
+
+    def test_one_forces_the_named_volumes_on_linux_without_polling(self, tmp_path: Path) -> None:
+        root = self._root(tmp_path)
+        named = Path(dev.NAMED_DATA_OVERLAY).name
+        up = self._files(root, "up", "Linux", MALSPARK_DATA_VOLUMES="1")
+        assert up[-1] == named and Path(dev.DEV_POLLING_OVERLAY).name not in up
+        assert self._files(root, "docker-up", "Linux", MALSPARK_DATA_VOLUMES="1") == [
+            "docker-compose.yml",
+            named,
+        ]
+
+    @pytest.mark.parametrize("system", ["Darwin", "Windows"])
+    def test_zero_keeps_the_bind_mounts_elsewhere_and_the_polling(
+        self, tmp_path: Path, system: str
+    ) -> None:
+        root = self._root(tmp_path)
+        up = self._files(root, "up", system, MALSPARK_DATA_VOLUMES="0")
+        assert Path(dev.NAMED_DATA_OVERLAY).name not in up
+        assert up[-1] == Path(dev.DEV_POLLING_OVERLAY).name
+        assert self._files(root, "docker-up", system, MALSPARK_DATA_VOLUMES="0") == []
+
+    def test_any_other_value_leaves_the_host_s_choice(self, tmp_path: Path) -> None:
+        root = self._root(tmp_path)
+        named = Path(dev.NAMED_DATA_OVERLAY).name
+        assert named not in self._files(root, "up", "Linux", MALSPARK_DATA_VOLUMES="yes")
+        assert named in self._files(root, "up", "Darwin", MALSPARK_DATA_VOLUMES="")
+
+
+class TestTheDataMountPoints:
+    """data/samples and data/uploads exist before a stack with the named volumes starts."""
+
+    def _run(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        argv: list[str],
+        system: str = "Linux",
+        **environ: str,
+    ) -> tuple[Path, list[bool]]:
+        """The checkout, and for each command run whether the mount points were there."""
+        root = _checkout(tmp_path, bootstrap=None)
+        (root / dev.NAMED_DATA_OVERLAY).write_text("services: {}\n")
+        ran: list[bool] = []
+        monkeypatch.setattr(dev.platform, "system", lambda: system)
+        monkeypatch.delenv("MALSPARK_DATA_VOLUMES", raising=False)
+        for name, value in environ.items():
+            monkeypatch.setenv(name, value)
+
+        def run(steps: Any, *_: Any) -> int:
+            ran.extend(self._made(root) == [True, True] for _ in steps)
+            return 0
+
+        monkeypatch.setattr(dev, "run_steps", run)
+        assert dev.main(argv, root=root) == 0
+        return root, ran
+
+    def _made(self, root: Path) -> list[bool]:
+        return [(root / path).is_dir() for path in dev.DATA_MOUNT_POINTS]
+
+    @pytest.mark.parametrize("command", ["up", "docker-up"])
+    @pytest.mark.parametrize("system", ["Darwin", "Windows"])
+    def test_a_start_with_the_overlay_creates_both(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, command: str, system: str
+    ) -> None:
+        _, ran = self._run(tmp_path, monkeypatch, [command], system)
+        assert ran and all(ran)
+
+    def test_one_on_linux_creates_both(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        _, ran = self._run(tmp_path, monkeypatch, ["up"], MALSPARK_DATA_VOLUMES="1")
+        assert ran == [True]
+
+    @pytest.mark.parametrize(
+        ("argv", "system", "environ"),
+        [
+            (["up"], "Linux", {}),
+            (["up"], "Darwin", {"MALSPARK_DATA_VOLUMES": "0"}),
+            (["up", "--dry-run"], "Darwin", {}),
+            (["docker-up", "--dry-run"], "Linux", {"MALSPARK_DATA_VOLUMES": "1"}),
+            (["down"], "Darwin", {}),
+            (["fe-rebuild"], "Windows", {}),
+        ],
+        ids=["linux", "opted-out", "dry-run", "docker-dry-run", "down", "fe-rebuild"],
+    )
+    def test_nothing_is_created_without_the_overlay_a_start_or_a_real_run(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        argv: list[str],
+        system: str,
+        environ: dict[str, str],
+    ) -> None:
+        root, _ = self._run(tmp_path, monkeypatch, argv, system, **environ)
+        assert self._made(root) == [False, False]
 
 
 class TestRunningAndDryRuns:
@@ -387,7 +526,10 @@ class TestDoctor:
         assert "bootstrap.env's DATABASE_URL" in said
 
     def test_a_checkout_on_ntfs_is_warned_about(self, tmp_path: Path) -> None:
-        assert any("on NTFS" in s for s in _doctor(tmp_path, filesystem="NTFS"))
+        assert any(
+            "on NTFS" in s and "samples and uploads on named volumes" in s
+            for s in _doctor(tmp_path, filesystem="NTFS")
+        )
         assert not any("NTFS" in s for s in _doctor(tmp_path, filesystem=None))
 
     def test_a_port_check_sees_a_listener(self) -> None:

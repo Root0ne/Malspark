@@ -1,0 +1,94 @@
+# Samples and uploads on named volumes instead of the checkout's data/.
+#
+#   docker compose -f docker/docker-compose.yml -f docker/docker-compose.dev.yml \
+#     -f docker/docker-compose.named-data.yml up -d
+#
+# scripts/dev/malspark_dev.py adds this file on a host that is not Linux, and
+# on any host where MALSPARK_DATA_VOLUMES=1 (MALSPARK_DATA_VOLUMES=0 leaves it
+# out everywhere). There a bind mount from the host's file system carries no
+# Linux owner or mode, so the files the containers write there do not keep the
+# ownership volume-init hands them and the 0700/0600 mirrors the sidecars are
+# held to; a named volume lives in Docker's own Linux file system and does.
+#
+# Each entry replaces the base file's mount of ../data/samples or
+# ../data/uploads at the same container path (Compose merges a service's
+# volumes by target), read-only where the base mount is. Every other mount,
+# ../data's rule sets and reference tables among them, stays a bind mount.
+# Both directories hold copies only: an upload goes on to the object store, a
+# sample mirror is the worker's copy of an object there.
+#
+# The API's and the worker's mounts carry no nocopy: a fresh samples volume
+# receives the image's sample fixtures, which the mock sandbox reads, and
+# volume-init hands them to MALSPARK_UID with the rest. The mount point of
+# each under the read-only ../data mount must exist on the host: Docker cannot
+# create it there, and the container does not start. malspark_dev.py creates
+# data/samples and data/uploads before it starts a stack with this file.
+
+services:
+  volume-init:
+    volumes:
+      - samples:/own/data/samples
+      - uploads:/own/data/uploads
+
+  backend-api:
+    volumes:
+      - samples:/app/data/samples
+      - uploads:/app/data/uploads
+
+  backend-worker:
+    volumes:
+      - samples:/app/data/samples
+      - uploads:/app/data/uploads
+
+  # The containers that open the sample, each read-only at its sample_mount.
+  ghidra-mcp:
+    volumes:
+      - samples:/data/samples:ro
+
+  die-mcp:
+    volumes:
+      - samples:/data/samples:ro
+
+  ilspy-mcp:
+    volumes:
+      - samples:/data/samples:ro
+
+  goresym-mcp:
+    volumes:
+      - samples:/data/samples:ro
+
+  yarax-mcp:
+    volumes:
+      - samples:/data/samples:ro
+
+  oletools-mcp:
+    volumes:
+      - samples:/data/samples:ro
+
+  webcrack-mcp:
+    volumes:
+      - samples:/data/samples:ro
+
+  unblob-mcp:
+    volumes:
+      - samples:/data/samples:ro
+
+  jadx-mcp:
+    volumes:
+      - samples:/data/samples:ro
+
+  analysis-mcp:
+    volumes:
+      - samples:/data/samples:ro
+
+  network-mcp:
+    volumes:
+      - samples:/data/samples:ro
+
+# Named under the project as the base file's volumes are (malspark_samples,
+# malspark_uploads). `docker compose down -v` deletes them with the others.
+volumes:
+  samples:
+    driver: local
+  uploads:
+    driver: local
