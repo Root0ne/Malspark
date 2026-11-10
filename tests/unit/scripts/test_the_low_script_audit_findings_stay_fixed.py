@@ -83,7 +83,9 @@ def test_validation_out_is_never_the_root_the_home_or_the_checkout(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     run = _load("scripts/validation/run.py", "validation_run_under_test")
+    # The home directory: HOME on POSIX, USERPROFILE on Windows.
     monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("USERPROFILE", str(tmp_path))
     for refused in (Path("/"), tmp_path, ROOT, ROOT.parent):
         with pytest.raises(SystemExit):
             run.no_hidden_segment(refused)

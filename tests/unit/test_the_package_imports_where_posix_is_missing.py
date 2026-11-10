@@ -323,9 +323,16 @@ class TestAJunctionIsALink:
 
 
 class TestSampleCopiesWithoutPosix:
-    def test_a_missing_flag_is_named(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        monkeypatch.delattr(os, "O_NOFOLLOW", raising=False)
-        with pytest.raises(sample_files.NotPosix, match="os.O_NOFOLLOW, which is unavailable"):
+    @pytest.mark.parametrize(
+        ("missing", "present"), [("O_NOFOLLOW", "O_DIRECTORY"), ("O_DIRECTORY", "O_NOFOLLOW")]
+    )
+    def test_a_missing_flag_is_named(
+        self, monkeypatch: pytest.MonkeyPatch, missing: str, present: str
+    ) -> None:
+        # The other flag is there, so this one is the one named (Windows has neither).
+        monkeypatch.setattr(os, present, getattr(os, present, 0o400000), raising=False)
+        monkeypatch.delattr(os, missing, raising=False)
+        with pytest.raises(sample_files.NotPosix, match=f"os.{missing}, which is unavailable"):
             sample_files._dir_flags()
 
     def test_a_missing_lock_is_named(self, monkeypatch: pytest.MonkeyPatch) -> None:

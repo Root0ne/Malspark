@@ -893,10 +893,10 @@ class TestEveryRowIsHeldToTheSameRule:
 
     def test_it_walks_every_module_that_builds_one(self) -> None:
         elsewhere = sorted(
-            str(path.relative_to(SRC))
+            path.relative_to(SRC).as_posix()
             for path in SRC.rglob("*.py")
             if _builds_a_row(ast.parse(path.read_text(encoding="utf-8")))
-            and str(path.relative_to(SRC)) not in WALKED
+            and path.relative_to(SRC).as_posix() not in WALKED
         )
 
         assert not elsewhere, (
@@ -1380,7 +1380,7 @@ class TestOnlyTheWalkedValidatorsFillTheList:
         found: set[tuple[str, str]] = set()
         for path in SRC.rglob("*.py"):
             tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
-            where = str(path.relative_to(SRC))
+            where = path.relative_to(SRC).as_posix()
             found |= {(where, function) for function in _writes_to(tree, FINDING_LIST)}
 
         unexpected = sorted(found - set(WRITES_THE_LIST))

@@ -65,8 +65,11 @@ def main(argv: list[str] | None = None) -> int:
             print(f"{code}: not a code the register knows")
         return 1 if unknown else 0
     text = render(register)
+    # LF on every host: the page is the same bytes wherever it is generated.
     if args.stdout:
-        sys.stdout.write(text)
+        sys.stdout.flush()
+        sys.stdout.buffer.write(text.encode("utf-8"))
+        sys.stdout.buffer.flush()
         return 0
     page = root / PAGE
     committed = page.read_text(encoding="utf-8") if page.is_file() else None
@@ -75,7 +78,7 @@ def main(argv: list[str] | None = None) -> int:
         for finding in found:
             print(finding)
         return 1 if found else 0
-    page.write_text(text, encoding="utf-8")
+    page.write_text(text, encoding="utf-8", newline="\n")
     print(
         f"wrote {PAGE}: {len(register.codes)} codes in {len(register.families())} families, "
         f"{len(register.unresolved)} unresolved code positions"

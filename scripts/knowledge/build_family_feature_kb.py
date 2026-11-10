@@ -262,9 +262,13 @@ def build_manifest_path(out_path: Path) -> Path:
 
 
 def _write_atomically(target: Path, text: str) -> None:
-    """Write ``text`` beside ``target`` and rename it over ``target``."""
+    """Write ``text`` beside ``target`` and rename it over ``target``.
+
+    LF on every host: the build record holds the catalogue's sha256, taken
+    from ``text`` itself.
+    """
     part = target.with_name(f".{target.name}.part")
-    part.write_text(text, encoding="utf-8")
+    part.write_text(text, encoding="utf-8", newline="\n")
     os.replace(part, target)
 
 

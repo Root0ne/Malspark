@@ -15,6 +15,7 @@ Every value is synthetic.
 from __future__ import annotations
 
 import json
+from pathlib import Path
 from typing import Any
 from unittest.mock import MagicMock
 
@@ -25,6 +26,10 @@ from malspark.pipeline.nodes import _build_revision_context, _revision_input_is_
 from tests.unit._chunking_doubles import _container
 
 PLACEHOLDER = "No {role} data available for sample abc."
+
+# A host path as the run hands it over: absolute on this host (on Windows a
+# rooted path takes the drive the run is on).
+SAMPLE = str(Path("/samples/abc.bin").resolve())
 
 
 def _double(role: str, *, room: int | None = None) -> Any:
@@ -53,12 +58,10 @@ class TestTheRevisionReadsTheFirstInput:
     def test_a_sample_fed_analyst_reads_its_head_with_the_sample_path(self) -> None:
         container = _double("static")
 
-        context = _build_revision_context(
-            _state(sample_path="/samples/abc.bin"), container, "agent"
-        )
+        context = _build_revision_context(_state(sample_path=SAMPLE), container, "agent")
 
         head = json.loads(context)
-        assert head["analysis_file_path"] == "/samples/abc.bin"
+        assert head["analysis_file_path"] == SAMPLE
         assert head["sha256"] == "abc"
 
     def test_the_load_is_the_one_round_zero_makes(self) -> None:
@@ -67,13 +70,13 @@ class TestTheRevisionReadsTheFirstInput:
         report = {"behavior": {"x": 1}}
 
         _build_revision_context(
-            _state(sandbox_report=report, sample_path="/samples/abc.bin"), container, "agent"
+            _state(sandbox_report=report, sample_path=SAMPLE), container, "agent"
         )
 
         kwargs = container.load_data_for_agent.call_args.kwargs
         assert kwargs["file_hash"] == "abc"
         assert kwargs["sandbox_report"] == report
-        assert kwargs["sample_path"] == "/samples/abc.bin"
+        assert kwargs["sample_path"] == SAMPLE
 
 
 class TestAnAbsentInputIsSaid:
@@ -140,7 +143,7 @@ class TestTheGuardIsRoundZeros:
         agent._input_room_chars.side_effect = lambda _text: None
         agent._resolved.static_provider_id = None
         container.get_agent.return_value = agent
-        state = _state(sample_path="/samples/abc.bin")
+        state = _state(sample_path=SAMPLE)
         if sandbox is not None:
             state["sandbox_report"] = sandbox
 

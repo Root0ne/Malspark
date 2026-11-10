@@ -11,6 +11,7 @@ what a dry run and ``doctor`` say.
 from __future__ import annotations
 
 import importlib.util
+import io
 import os
 import sys
 from collections.abc import Callable
@@ -454,6 +455,8 @@ def test_on_windows_git_runs_with_long_paths_and_a_long_checkout_is_warned_about
 ) -> None:
     assert dev.GIT[0] == "git"
     assert ("core.longpaths=true" in dev.GIT) == (os.name == "nt")
+    # On every host, whatever its git config: no line ending is rewritten.
+    assert {"core.autocrlf=false", "core.eol=lf"} <= set(dev.GIT)
     deep = tmp_path / ("d" * 70)
     deep.mkdir()
     (deep / "docker").mkdir()
@@ -473,3 +476,22 @@ def test_on_windows_git_runs_with_long_paths_and_a_long_checkout_is_warned_about
 
     assert any("characters long" in line for line in said(windows=True))
     assert not any("characters long" in line for line in said(windows=False))
+
+
+def test_a_character_the_console_cannot_encode_is_printed_escaped(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A Windows console piped to a file encodes in its code page; any path still prints."""
+    out = io.TextIOWrapper(io.BytesIO(), encoding="cp1252")
+    err = io.TextIOWrapper(io.BytesIO(), encoding="cp1252")
+    monkeypatch.setattr(sys, "stdout", out)
+    monkeypatch.setattr(sys, "stderr", err)
+    dev._console_takes_any_text()
+    dev._say("  ok       tree at C:\\Users\\Kişi")
+    dev._fail("  FAIL     Kişi")
+    out.flush()
+    err.flush()
+    assert (
+        out.buffer.getvalue() == b"  ok       tree at C:\\Users\\Ki\\u015fi" + os.linesep.encode()
+    )
+    assert err.buffer.getvalue() == b"  FAIL     Ki\\u015fi" + os.linesep.encode()

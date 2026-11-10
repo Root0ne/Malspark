@@ -350,9 +350,20 @@ def test_a_refused_bootstrap_env_leaves_both_files_byte_identical(
         docker_path.read_text(encoding="utf-8"),
         flags=re.M,
     )
-    docker_path.write_text(re.sub(r"^JWT_SECRET_KEY=.*$", "JWT_SECRET_KEY=", text, flags=re.M))
+    docker_path.write_text(
+        re.sub(r"^JWT_SECRET_KEY=.*$", "JWT_SECRET_KEY=", text, flags=re.M),
+        encoding="utf-8",
+        newline="\n",
+    )
     boot_path.write_text(
-        re.sub(r"^MINIO_SECRET_KEY=.*$", "MINIO_SECRET_KEY=", boot_path.read_text(), flags=re.M)
+        re.sub(
+            r"^MINIO_SECRET_KEY=.*$",
+            "MINIO_SECRET_KEY=",
+            boot_path.read_text(encoding="utf-8"),
+            flags=re.M,
+        ),
+        encoding="utf-8",
+        newline="\n",
     )
     before = (docker_path.read_bytes(), boot_path.read_bytes())
     capsys.readouterr()

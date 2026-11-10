@@ -58,15 +58,25 @@ def test_the_stub_log_answers_instead_of_deadlocking() -> None:
     assert after.status_code == 200
 
 
-def test_a_model_id_cannot_leave_the_description_directory(tmp_path: Path) -> None:
+def test_a_model_id_cannot_leave_the_description_directory(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    assert models._description("claude-haiku-5-5") is not None
+    # A description directory beside the file, so a relative path leads there on
+    # any host (on Windows the temporary directory may be on another drive).
+    descriptions = tmp_path / "descriptions"
+    descriptions.mkdir()
+    (descriptions / "inside.json").write_text('{"inside": true}', encoding="utf-8")
+    monkeypatch.setattr(models, "_DESCRIPTIONS", descriptions)
     outside = tmp_path / "outside.json"
     outside.write_text('{"secret": true}', encoding="utf-8")
     relative = os.path.relpath(outside.with_suffix(""), models._DESCRIPTIONS)
     assert ".." in relative
     assert models._description(relative) is None
+    assert models._description("../outside") is None
     assert models._description("a/b") is None
     assert models._description("..") is None
-    assert models._description("claude-haiku-5-5") is not None
+    assert models._description("inside") == {"inside": True}
 
 
 def test_a_non_ascii_signature_is_a_refusal_not_an_error() -> None:

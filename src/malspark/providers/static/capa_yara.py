@@ -576,14 +576,14 @@ class CapaYaraStaticProvider(StaticProvider):
 
         rules_dir = Path(resolve_data(self._capa.rules_dir))
         if not rules_dir.is_dir() or not any(rules_dir.rglob("*.yml")):
-            from malspark.core.paths import host_paths_masked
+            from malspark.core.paths import host_path_masked
             from malspark.pipeline.operator_choice import provider_pass_reason
             from malspark.tools.sidecar_needs import CAPA_RULES
 
             logger.warning(
                 "capa rules directory %s is missing or empty; capa did not run.", rules_dir
             )
-            shown = host_paths_masked(str(rules_dir))
+            shown = host_path_masked(rules_dir)
             self._unavailable = (
                 provider_pass_reason(
                     self.id,
