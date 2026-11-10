@@ -20,14 +20,24 @@ from __future__ import annotations
 
 import asyncio
 import json
+import random
 from datetime import UTC, datetime
 from typing import Any
 
+import pytest
 from langchain_core.messages import AIMessage, BaseMessage
 
 from malspark.pipeline.validation import EntryTexts
 from malspark.reporting.agreement_facts import ledger_facts
-from malspark.reporting.ledger_entities import run_names
+from malspark.reporting.ledger_entities import (
+    ApiCall,
+    ApiHeld,
+    ExportHeld,
+    RunNames,
+    TextHeld,
+    run_names,
+)
+from malspark.reporting.limitation_facts import FailedCall
 from malspark.reporting.models import (
     FileHashes,
     MalwareReport,
@@ -47,6 +57,7 @@ from malspark.reporting.section_agreement import (
     UNDECIDED,
     agreement_violations,
     ask_section_agreement,
+    held_limitation_sentences,
     name_readings,
     passages_of,
     prompt_text,
@@ -384,3 +395,216 @@ def test_a_sentence_on_a_redone_routine_s_content_is_not_held_to_the_failed_call
     passages = passages_of(_report(sentence), entries=_ledger())
     limitations = next(p for p in passages if p.id == "limitations")
     assert limitations.sourced_check is None
+
+
+# ---------------------------------------------------------------------------
+# Code decides only a denial saying nothing beyond the relation the ledger holds
+# the name under; anything more is the model's, with the deciding lines shown.
+# ---------------------------------------------------------------------------
+
+_REDONE = FailedCall(
+    entry="ev_0201",
+    tool="lift_routine",
+    error="no function there",
+    asked=(0x2200,),
+    redone_by=("ev_0202",),
+    lists_code=True,
+    kind="decompile",
+)
+
+
+@pytest.mark.parametrize(
+    "sentence",
+    [
+        "The decompile of 0x2200 shows no network call.",
+        "The decompiled code at 0x2200 does not reference any registry key.",
+        "The decompilation of 0x2200 contains no loop.",
+    ],
+)
+def test_a_denial_of_a_redone_call_s_content_is_not_held_to_the_failed_calls(
+    sentence: str,
+) -> None:
+    assert held_limitation_sentences(sentence, [_REDONE], [], ()) == []
+
+
+def test_a_denial_of_a_redone_call_s_own_output_is_still_held_to_the_failed_calls() -> None:
+    sentence = "The decompiler produced no function at 0x2200 or at either address."
+    assert held_limitation_sentences(sentence, [_REDONE], [], ()) == [sentence]
+
+
+def _held(text: str, *keys: str) -> TextHeld:
+    return TextHeld(text=text, held_as=dict.fromkeys(keys))
+
+
+_TEXTS = RunNames(
+    texts={
+        "plainmode": _held("plainmode", "plain_strings"),
+        "codedmode": _held("codedmode", "decoded_strings"),
+    },
+    index_whole=True,
+)
+
+
+def test_a_text_is_contradicted_only_under_the_key_it_is_held_under() -> None:
+    def verdict(sentence: str) -> dict[str, str]:
+        return {r.shown: r.verdict for r in name_readings(sentence, "", _TEXTS)}
+
+    assert verdict("'plainmode' is not decoded.") != {"plainmode": CONTRADICTED}
+    assert verdict("'codedmode' is not a plain string.") != {"codedmode": CONTRADICTED}
+    assert verdict("'codedmode' is not decoded.") == {"codedmode": CONTRADICTED}
+    assert verdict("'plainmode' is not a plain string.") == {"plainmode": CONTRADICTED}
+    # "text" and "string" alone name no key.
+    assert CONTRADICTED not in verdict("'plainmode' is not a string.").values()
+    assert CONTRADICTED not in verdict("The 'codedmode' text is not there.").values()
+
+
+def test_a_text_s_keys_are_read_off_the_index() -> None:
+    ledger = _ledger()
+    names = run_names(ledger, ledger_facts(ledger).image_bases)
+    assert set(names.texts[TEXT].held_as) == {"decoded_strings"}
+
+
+_WORDS = RunNames(
+    apis={
+        "connect": ApiHeld(name="connect", calls=[ApiCall(0x1400, None)], imported={"ev_3": None}),
+        "sleep": ApiHeld(name="Sleep", calls=[ApiCall(0x1400, 0x2000)]),
+        "openprocess": ApiHeld(name="OpenProcess", calls=[ApiCall(0x1400, None)]),
+    },
+    rows=frozenset({0x1400}),
+    index_whole=True,
+)
+
+
+def _word_verdicts(sentence: str, previous: str = "") -> dict[str, str]:
+    return {r.shown: r.verdict for r in name_readings(sentence, previous, _WORDS)}
+
+
+def test_a_word_of_prose_spelled_like_an_api_is_no_name_of_the_run_s() -> None:
+    assert _word_verdicts("The sample does not connect to any server.") == {}
+    assert _word_verdicts("The sample does not sleep.") == {}
+    # Written as code or beside a word saying it is a function, it is the API.
+    assert _word_verdicts("The `connect` function is not called.") == {"connect": CONTRADICTED}
+    assert _word_verdicts("`Sleep` is not called.") == {"Sleep": CONTRADICTED}
+
+
+def test_a_slot_narrows_the_call_and_code_does_not_decide_it() -> None:
+    # The only call the index lists is an import call: no slot.
+    assert _word_verdicts("OpenProcess is not called through a slot.") == {"OpenProcess": UNDECIDED}
+    assert _word_verdicts("OpenProcess is not called.") == {"OpenProcess": CONTRADICTED}
+
+
+def test_a_sentence_pointing_back_is_held_only_where_it_denies_a_relation() -> None:
+    previous = "Routine 0x1400 starts the child with OpenProcess."
+    assert _word_verdicts("This is an immediate launch and not a persistence step.", previous) == {}
+    readings = name_readings("These are not shown being called.", previous, _WORDS)
+    assert [(r.shown, r.back) for r in readings] == [("OpenProcess", True)]
+
+
+def test_an_answer_about_another_file_decides_nothing_of_the_sample() -> None:
+    ledger = [
+        *_ledger(),
+        LedgerEntry(
+            id="ev_0110",
+            tool="file_header",
+            args={"carved_path": "/work/carved/dropped.bin"},
+            structured={
+                "export_rows": [{"rva": "0x9000", "name": "spare"}],
+                "imports": [{"function": RESOLVED_ONLY}],
+            },
+        ),
+    ]
+    names = run_names(ledger, ledger_facts(ledger).image_bases)
+    assert "spare" not in names.exports
+    assert 0x9000 not in names.by_address
+    # Read as the sample's, the ledger would contradict it; it is another file's.
+    assert {r.shown: r.verdict for r in name_readings("`spare` is not exported.", "", names)} == {}
+    # Nor is its import one of the sample's.
+    assert not names.apis[RESOLVED_ONLY.lower()].imported
+    # The sample's own row still counts.
+    assert names.exports["begin"].address == ENTRY
+
+
+# The property: a negated clause saying anything beyond names, relation words and the
+# plain words is never contradicted by code, and never held to a failed call.
+_PROPERTY_NAMES = RunNames(
+    apis={
+        "queryhostmode": ApiHeld(
+            name="QueryHostMode",
+            calls=[ApiCall(0x1400, 0x2000)],
+            resolved={"ev_0102": None},
+            imported={"ev_0104": None},
+        )
+    },
+    exports={"begin": ExportHeld(names=("begin",), address=0x1400, entries=("ev_0104",))},
+    by_address={0x1400: ExportHeld(names=("begin",), address=0x1400, entries=("ev_0104",))},
+    texts={"quietmode": _held("quietmode", "decoded_strings", "plain_strings")},
+    rows=frozenset({0x1400}),
+    index_whole=True,
+)
+_RELATION_WORDS = {
+    "api": ["called", "calls", "resolved", "imported"],
+    "export": ["exported", "exports"],
+    "text": ["decoded", "plain"],
+}
+_FILLER = ["routine", "function", "at", "in", "of", "through", "established", "shown", "0x1400"]
+_FAILED_FILLER = ["function", "routine", "at", "in", "address", "0x2200", "decompiled", "listed"]
+# Letters no relation root, stop word, negation or hex number is spelled with.
+_LETTERS = "ghjklmnpqrstvwxz"
+# Words of prose a clause may add: "slot" narrows a call to one through a slot.
+_PROSE = ["slot", "slots", "remote", "handle", "network", "registry", "loop", "debugger"]
+
+
+def _extra(rng: random.Random) -> str:
+    if rng.random() < 0.5:
+        return rng.choice(_PROSE)
+    return "".join(rng.choice(_LETTERS) for _ in range(rng.randint(4, 8)))
+
+
+def _clause(rng: random.Random, kind: str, extra: str, before: str = "") -> str:
+    """A negated clause denying a relation of a name, ``extra`` among the words after its
+    negation and ``before`` (a word and a space) before the name."""
+    after = [rng.choice(_RELATION_WORDS[kind]), *rng.sample(_FILLER, rng.randint(0, 3))]
+    if extra:
+        after.insert(rng.randint(0, len(after)), extra)
+    tail = " ".join(after)
+    if kind == "api":
+        return rng.choice(
+            [f"{before}QueryHostMode is not {tail}.", f"No {before}routine {tail} QueryHostMode."]
+        )
+    if kind == "export":
+        return f"{before}`begin` is not {tail}."
+    return f"No {before}'quietmode' text is {tail}."
+
+
+def test_a_clause_saying_more_than_the_relation_is_never_contradicted_by_code() -> None:
+    rng = random.Random(600)
+    decided = 0
+    for _ in range(400):
+        kind = rng.choice(list(_RELATION_WORDS))
+        extra = _extra(rng)
+        seed = rng.random()
+        for sentence in (
+            _clause(random.Random(seed), kind, extra),
+            _clause(random.Random(seed), kind, "", before=f"{extra} "),
+        ):
+            readings = name_readings(sentence, "", _PROPERTY_NAMES)
+            assert all(r.verdict != CONTRADICTED for r in readings), sentence
+        # The same clause without the word is decided: the property is not vacuous.
+        plain = _clause(random.Random(seed), kind, "")
+        decided += any(r.verdict == CONTRADICTED for r in name_readings(plain, "", _PROPERTY_NAMES))
+    assert decided > 300
+
+
+def test_a_clause_saying_more_than_the_call_s_output_is_never_held_to_the_failed_calls() -> None:
+    rng = random.Random(601)
+    for _ in range(400):
+        extra = _extra(rng)
+        words = [*rng.sample(_FAILED_FILLER, rng.randint(1, 4))]
+        words.insert(rng.randint(0, len(words)), extra)
+        lead = rng.choice(
+            ["The decompiler produced", "lift_routine returned", "The decompile shows"]
+        )
+        sentence = f"{lead} no {' '.join(words)} at 0x2200."
+        assert held_limitation_sentences(sentence, [_REDONE], [], ()) == [], sentence
+        without = f"{lead} no {' '.join(w for w in words if w != extra)} at 0x2200."
+        assert held_limitation_sentences(without, [_REDONE], [], ()) == [without], without

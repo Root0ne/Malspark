@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import math
 from collections.abc import Callable
+from functools import lru_cache
 from types import SimpleNamespace
 
 import pytest
@@ -91,6 +92,28 @@ _NAMES = RunNames(
     texts={"words": TextHeld(text="words")},
     index_whole=True,
 )
+
+
+@lru_cache(maxsize=8)
+def _many_names(count: int) -> RunNames:
+    """A run holding ``count`` APIs, each called from one routine: as many names as the
+    line is long, so a reader walking the text once per name grows with the square."""
+    return RunNames(
+        apis={
+            f"queryhostmode{i:05d}": ApiHeld(
+                name=f"QueryHostMode{i:05d}", calls=[ApiCall(0x1400, 0x2000)]
+            )
+            for i in range(count)
+        },
+        rows=frozenset({0x1400}),
+        index_whole=True,
+    )
+
+
+def _denying_many_names(text: str) -> object:
+    count = len(text) // 40
+    denied = ", and ".join(f"QueryHostMode{i:05d} is not called" for i in range(count))
+    return name_readings(f"{text} {denied}.", "", _many_names(count))
 
 
 def _hostile(size: int) -> str:
@@ -362,6 +385,7 @@ LISTED = [SimpleNamespace(addresses=frozenset({0x1400}), id="listed.1")]
             lambda t: name_readings("These are not shown; " + t, "QueryHostMode " + t, _NAMES),
             id="a denial pointing back to the names before it",
         ),
+        pytest.param(_denying_many_names, id="a denial of as many names as the line holds"),
         pytest.param(
             lambda t: _call_lines(t.replace(" is ", "\n"), ["1400", "native"], {0x1400: "X"}, ()),
             id="the call lines of a listing",

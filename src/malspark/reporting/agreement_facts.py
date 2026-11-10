@@ -158,7 +158,7 @@ def answered_later(
     """
     entries = list(entries)
     if redone is None:
-        redone = redo_map(entries, image_bases)
+        redone = redo_map(entries, image_bases or None)
     redid = {redo.entry_id: dict(redo.by_address) for redo in redone if redo.by_address}
     at_of = {str(getattr(entry, "id", "") or ""): at for at, entry in enumerate(entries)}
     waiting: dict[tuple[int, tuple[str, str]], list[Any]] = {}

@@ -14,11 +14,15 @@ ledger, by the answers' own keys, never by a tool's name:
 * **The exports**: each ``export_rows`` row an answer holds, by address, with
   the entries listing them.
 * **The texts**: each decoded or plain string the index ties to a routine
-  (``decoded_strings``, ``plain_strings``), with the routines and the entries
-  it rests on.
+  (``decoded_strings``, ``plain_strings``), with the routines, the entries it
+  rests on and the keys it is listed under.
 * **The calls**: each routine's callees as the index lists them, and each
   slot's API name (``slot_calls``, ``resolved_slots``), which a listing's line
   is read by.
+
+An answer's export rows and imports are read only where the answer is about the
+sample: its call read no file the run produced, and the program or path it names,
+if any, is the sample's. Another file's are none of the sample's.
 
 Which sentence a fact bears on, and whether a sentence it names is
 contradicted, is read in ``section_agreement``. Linear in the ledger.
@@ -26,7 +30,7 @@ contradicted, is read in ``section_agreement``. Linear in the ledger.
 
 from __future__ import annotations
 
-from collections.abc import Iterable, Mapping, Sequence
+from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -44,17 +48,22 @@ __all__ = [
 
 # The keys the run's answers hold each relation under: the words a sentence
 # denying that relation writes are read off these, never off a list of verbs
-# (``section_agreement.relation_words``).
+# (``section_agreement.relation_of``). A decoded text and a plain one are two
+# relations: the index lists each under its own key.
 RELATION_KEYS: dict[str, tuple[str, ...]] = {
     "called": ("slot_calls", "callees", "callers"),
     "resolved": ("resolved",),
     "imported": ("imports",),
     "exported": ("exports", "export_rows"),
-    "decoded": ("decoded_strings", "plain_strings", "text"),
+    "decoded": ("decoded_strings", "text"),
+    "plain": ("plain_strings", "text"),
 }
 # A name shorter than this is never read as one the run holds: a word of
 # ordinary prose is as long.
 NAME_FLOOR = 4
+# The declared argument roles that name the file a call read: set, they must name
+# the sample for its export rows to be the sample's (``agents.image_range``).
+_SUBJECT_ROLES = ("path", "program")
 
 
 def _hex(value: Any) -> int | None:
@@ -105,6 +114,9 @@ class TextHeld:
     text: str
     routines: dict[int, None] = field(default_factory=dict)
     sources: dict[str, None] = field(default_factory=dict)
+    # The index keys it is listed under ("decoded_strings", "plain_strings"): a denial
+    # of a relation it is not held under is no denial of what the ledger states.
+    held_as: dict[str, None] = field(default_factory=dict)
 
 
 @dataclass
@@ -187,6 +199,7 @@ def _index(names: RunNames, data: Mapping[str, Any], entry_id: str) -> None:
                 found = names.texts.setdefault(text.strip().lower(), TextHeld(text=text.strip()))
                 found.routines[routine] = None
                 found.sources.update(dict.fromkeys(_sources(cell)))
+                found.held_as[key] = None
     # Every slot the index names, called or not: what a listing's line is read by.
     resolved = data.get("resolved_slots")
     for address, name in resolved.items() if isinstance(resolved, Mapping) else ():
@@ -206,6 +219,30 @@ def _index(names: RunNames, data: Mapping[str, Any], entry_id: str) -> None:
             )
     names.rows = frozenset(rows)
     names.index_entry = entry_id
+
+
+def _about_the_sample(entry: Any, sample: Callable[[], tuple[str, ...]]) -> bool:
+    """Whether an answer is about the sample: its call read no file the run produced
+    (``function_callees._about_the_sample``), and the program or path its declared
+    arguments name, where one is set, is one of the sample's own names (``sample``,
+    read once and only when asked)."""
+    from malspark.agents.function_callees import _about_the_sample as reads_the_sample
+    from malspark.agents.image_range import same_program
+    from malspark.core.declared_reading import kind_free_facts
+
+    if not reads_the_sample(entry):
+        return False
+    roles = getattr(kind_free_facts(entry), "arguments", None)
+    args = getattr(entry, "args", None)
+    if not isinstance(roles, Mapping) or not isinstance(args, Mapping):
+        return True
+    for role in _SUBJECT_ROLES:
+        value = args.get(str(roles.get(role) or "")) if roles.get(role) else None
+        if value in (None, ""):
+            continue
+        if not any(same_program(str(value), name) for name in sample()):
+            return False
+    return True
 
 
 def _format_rows(names: RunNames, entry: Any, data: Mapping[str, Any]) -> None:
@@ -237,10 +274,22 @@ def _format_rows(names: RunNames, entry: Any, data: Mapping[str, Any]) -> None:
 
 def run_names(entries: Iterable[Any], bases: Sequence[int] = ()) -> RunNames:
     """What the ledger holds by name, read once: the function index's rows (the last index
-    read whole), and each answer's export rows and import names. ``bases`` are the image
+    read whole), and each answer's export rows and import names where the answer is about
+    the sample (:func:`_about_the_sample`). ``bases`` are the image
     bases the run read, which an address is spelled by (``function_map.one_spelling``)."""
     entries = list(entries)
     names = RunNames(bases=tuple(bases))
+    held: list[tuple[str, ...]] = []
+
+    def _sample() -> tuple[str, ...]:
+        # The sample's own file names by the pipeline's pack answers, read once.
+        if not held:
+            from malspark.agents.image_range import _sample_names
+            from malspark.pipeline.triage_pack import pack_entries
+
+            held.append(_sample_names(pack_entries(entries)))
+        return held[0]
+
     found = function_artefacts(entries)
     data = found.index_data
     if isinstance(data, Mapping):
@@ -250,6 +299,9 @@ def run_names(entries: Iterable[Any], bases: Sequence[int] = ()) -> RunNames:
         if not getattr(entry, "ok", True):
             continue
         data = getattr(entry, "structured", None)
-        if isinstance(data, Mapping) and ("export_rows" in data or "imports" in data):
+        if not isinstance(data, Mapping) or ("export_rows" not in data and "imports" not in data):
+            continue
+        if _about_the_sample(entry, _sample):
+            # Another file's exports and imports are none of the sample's.
             _format_rows(names, entry, data)
     return names

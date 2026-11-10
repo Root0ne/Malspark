@@ -12,6 +12,7 @@ name here is a neutral synthetic value, read by declared kinds.
 
 from __future__ import annotations
 
+import json
 from datetime import UTC, datetime
 from typing import Any
 
@@ -139,3 +140,29 @@ def test_the_round_is_shown_the_call_that_redid_the_failure() -> None:
         '("lift_routine") for the same address answered, asking the same question again'
     ) in text
     assert "ev_0002" not in facts["answered.1"].text
+
+
+def test_a_reader_given_no_image_bases_reads_the_redo_map_the_run_summary_reads() -> None:
+    # Another tool listed the function whole by its offset: the one image base the
+    # index read makes it the address the failed call asked for.
+    base = GATE & ~0xFFFF
+    index = LedgerEntry(
+        id="ev_0004",
+        tool="routine_table",
+        output=json.dumps(
+            {"image_base": hex(base), "rows": [{"function": hex(GATE), "callees": []}]}
+        ),
+        facts={"v": 1, "kind": "function_index", "reader": "function_table"},
+    )
+    offset = GATE - base
+    other = LedgerEntry(
+        id="ev_0003",
+        tool="read_routine",
+        args={"address": hex(offset)},
+        output=f"int FUN_{offset:x}(int a)\n{{\n  return a;\n}}\n",
+        facts=_DECOMPILE,
+    )
+    ledger = [index, _failed("ev_0001", GATE), other]
+    assert [r.entry_id for r in redo_map(ledger)] == ["ev_0001"]
+    links = answered_later(ledger)
+    assert [(a.failed, a.answered, a.redone) for a in links] == [("ev_0001", "ev_0003", True)]

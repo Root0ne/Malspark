@@ -16,7 +16,8 @@ the name, what the ledger decides (contradicted by which entries, backed, or
 undecided and which fact the round would be shown), and the characters of
 the facts the round was shown before and would be shown now.
 
-Read-only: nothing is written, no network is reached, no credential is read.
+Read-only over the runs: nothing is written beside them, no network is reached,
+no credential is read. ``--json PATH`` also writes the readings to ``PATH``.
 The agreement round itself is not replayable (``scripts/replay/rules.py``):
 this reads its inputs, not its answer.
 """
