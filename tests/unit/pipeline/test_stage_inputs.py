@@ -11,6 +11,7 @@ which is why the goldens did not move.
 from __future__ import annotations
 
 import json
+from pathlib import Path
 from typing import Any
 from unittest.mock import MagicMock
 
@@ -20,6 +21,10 @@ from malspark.core.container import ServiceContainer
 from malspark.loaders.binary_chunker import TextChunk
 from malspark.pipeline.nodes import make_stage_agent_node, upstream_findings
 from malspark.schemas.isr_models import AgentISR, ClaimEvidence
+
+# A host path as the run hands it over: absolute on this host (on Windows a
+# rooted path takes the drive the run is on).
+SAMPLE = str(Path("/srv/samples/abc123.exe").resolve())
 
 
 def _chunk(content: str) -> TextChunk:
@@ -468,7 +473,7 @@ class TestInjectionKeepsTheHeadChunkAContract:
         )
         state = {
             "file_hash": "abc123",
-            "sample_path": "/srv/samples/abc123.exe",
+            "sample_path": SAMPLE,
             "isr_reports": {"static": _isr("static", "packed with UPX")},
             "reports": {"static": "The full static prose report."},
         }
@@ -483,7 +488,7 @@ class TestInjectionKeepsTheHeadChunkAContract:
         assert "LOAD THIS BINARY FIRST" in _extract_load_hint(
             head, frozenset({"load_program"}), GHIDRA_SAMPLE_OPEN
         )
-        assert _extract_analysis_path(head) == "/srv/samples/abc123.exe"
+        assert _extract_analysis_path(head) == SAMPLE
 
     def test_the_load_hint_still_fires_with_full_reports_injected(self) -> None:
         from malspark.agents.static_analyst import _extract_load_hint
@@ -496,7 +501,7 @@ class TestInjectionKeepsTheHeadChunkAContract:
 
     def test_the_block_arrives_as_a_field_of_the_document(self) -> None:
         parsed = json.loads(self._head("findings"))
-        assert parsed["analysis_file_path"] == "/srv/samples/abc123.exe"
+        assert parsed["analysis_file_path"] == SAMPLE
         assert parsed["sha256"] == "abc123"
         assert "packed with UPX" in parsed["upstream_findings"]
 

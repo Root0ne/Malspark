@@ -168,9 +168,16 @@ def _scales_linearly(read: Callable[[str], object]) -> None:
     # LEAST_SECONDS, reads it this many times on both sides, so the short run
     # is long enough to read a ratio from. A count estimated from a reading of
     # a few clock ticks can fall short, so it is doubled until the short run,
-    # read by the measure's own clock, takes LEAST_SECONDS.
-    times = 1 if took >= LEAST_SECONDS else math.ceil(1.5 * LEAST_SECONDS / max(took, 1e-6))
-    while times > 1 and cpu_seconds(reading(size, times), repeats=3) < LEAST_SECONDS:
+    # read by the measure's own clock, takes LEAST_SECONDS. A reading of no
+    # tick at all (Windows' thread clock moves in 15.6 ms steps) estimates
+    # nothing, and the doubling starts from two.
+    if took >= LEAST_SECONDS:
+        times = 1
+    elif took > 0:
+        times = math.ceil(1.5 * LEAST_SECONDS / took)
+    else:
+        times = 2
+    while cpu_seconds(reading(size, times), repeats=3) < LEAST_SECONDS:
         times *= 2
     assert_ratio(
         reading(size, times),
@@ -178,6 +185,26 @@ def _scales_linearly(read: Callable[[str], object]) -> None:
         TIME_RATIO_LIMIT,
         what=f"{size * 4} characters",
     )
+
+
+def _built(make: Callable[[str], str], read: Callable[[str], object]) -> Callable[[str], object]:
+    """``read`` of the text ``make`` builds from the hostile line, built once for each line.
+
+    For a reader whose own work does not grow with its text (it reads a bounded
+    part of it): built in the timed call, the building is the whole cost
+    measured, and a text four times as long can cross the allocator's
+    large-block threshold, past which each one takes fresh pages the system
+    maps and zeroes (building 40 KB took 1.5 us and 160 KB 57 us), which the
+    ratio would read as the reader's growth.
+    """
+    built: dict[int, str] = {}
+
+    def read_built(text: str) -> object:
+        if len(text) not in built:
+            built[len(text)] = make(text)
+        return read(built[len(text)])
+
+    return read_built
 
 
 ENTRIES = EntryTexts.from_ledger(
@@ -371,7 +398,7 @@ LISTED = [SimpleNamespace(addresses=frozenset({0x1400}), id="listed.1")]
             id="the clause denying a reading",
         ),
         pytest.param(
-            lambda t: denies_an_observation("not " + "that word " * (len(t) // 10)),
+            _built(lambda t: "that word " * (len(t) // 10) + "not seen", denies_an_observation),
             id="a denied observation",
         ),
         pytest.param(

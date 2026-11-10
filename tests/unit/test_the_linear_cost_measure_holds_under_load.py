@@ -9,10 +9,12 @@ shared runner adds, written down, and the measure must read through it.
 
 from __future__ import annotations
 
+import time
 from collections.abc import Callable
 
 import pytest
 
+from tests import linear_cost
 from tests.linear_cost import (
     TIME_RATIO_LIMIT,
     assert_ratio,
@@ -73,6 +75,43 @@ class TestOnTheCpuClock:
 
     def test_calls_counts_and_does_not_time(self) -> None:
         assert calls(lambda: [abs(i) for i in range(100)]) >= 100
+
+
+class TestOnACoarseClock:
+    """Windows' CPU clocks move in steps of about 15.6 ms."""
+
+    @staticmethod
+    def _coarse(monkeypatch: pytest.MonkeyPatch) -> Callable[[], float]:
+        step = 0.015625
+
+        def clock() -> float:
+            return int(time.perf_counter() / step) * step
+
+        monkeypatch.setattr(linear_cost, "_clock_of", lambda _clock, _whole: clock)
+        return clock
+
+    def test_its_step_is_read(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        assert linear_cost.clock_grain(self._coarse(monkeypatch)) == pytest.approx(0.015625)
+
+    def test_linear_work_is_read_over_enough_steps_and_given_per_call(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        self._coarse(monkeypatch)
+        counted = [0]
+        work = _linear(50_000)
+
+        def small() -> int:
+            counted[0] += 1
+            return work()
+
+        low, high = assert_ratio(small, _linear(200_000), TIME_RATIO_LIMIT)
+        assert counted[0] > 2 * 3 + 1, "each timed run repeats the small call"
+        assert 0 < low < linear_cost.GRAINS * 0.015625 and high > low
+
+    def test_quadratic_work_still_fails(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        self._coarse(monkeypatch)
+        with pytest.raises(AssertionError, match="times as long"):
+            assert_ratio(_quadratic(1_000), _quadratic(4_000), TIME_RATIO_LIMIT, repeats=1)
 
 
 class _Machine:

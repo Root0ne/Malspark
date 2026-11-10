@@ -25,6 +25,12 @@ import pytest
 LAUNCHER = Path(__file__).resolve().parents[3] / "scripts" / "floss" / "floss"
 MAIN = b'def main():\n    print("floss 3.1.1")\n    return 0\n'
 
+# The launcher is a file of the Linux backend image only (/usr/local/bin/floss
+# on arm64, run by /opt/floss/bin/python3 over lib/pythonX.Y/site-packages);
+# on any other host FLOSS runs in that image, and emulated_strings refuses to
+# run it where process groups are missing.
+pytestmark = pytest.mark.posix
+
 
 def _row(site: Path, relative: str) -> list[str]:
     data = (site / relative).read_bytes()
@@ -146,7 +152,6 @@ def test_a_package_installed_twice_is_refused(env: tuple[Path, Path]) -> None:
     _refused(_pinned_run(prefix), "flare-floss is installed twice")
 
 
-@pytest.mark.posix
 def test_a_symlink_to_a_listed_file_is_refused(env: tuple[Path, Path]) -> None:
     prefix, site = env
     (site / "floss" / "alias.py").symlink_to(site / "floss" / "main.py")

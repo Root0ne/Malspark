@@ -18,8 +18,12 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import ntpath
+import random
 import re
-from pathlib import Path
+from collections.abc import Callable
+from functools import partial
+from pathlib import Path, PurePath, PurePosixPath, PureWindowsPath
 from typing import Any
 
 import pytest
@@ -28,7 +32,13 @@ from app.services.tool_availability import WORKER, as_rows, unavailable_tools
 from malspark.agents.evidence_recorder import EvidenceRecorder
 from malspark.analysis.run_summary import RunSummaryBuilder
 from malspark.core.config import Settings
-from malspark.core.paths import OUTSIDE_PROJECT, get_project_root, host_paths_masked
+from malspark.core.paths import (
+    OUTSIDE_PROJECT,
+    _windows_normal,
+    get_project_root,
+    host_path_masked,
+    host_paths_masked,
+)
 from malspark.pipeline.operator_choice import SampleFacts, lost_tool_rows
 from malspark.pipeline.triage_pack import PIPELINE, run_is_degraded, run_pack
 from malspark.reporting.models import MalwareReport
@@ -37,6 +47,7 @@ from malspark.reporting.renderers.layout import ANALYST
 from malspark.schemas.evidence import EvidenceCounter
 from malspark.tools import capabilities, emulated_strings, rules, sidecar_needs
 from malspark.tools.errors import BAD_ARGUMENT, MISSING_DEPENDENCY, error_parts
+from tests.linear_cost import assert_scales, cpu_seconds
 from tests.unit.pipeline.test_triage_pack import SANDBOX_REPORT, _inputs, _write
 from tests.unit.tools.test_binary import _pe
 from tests.unit.tools.test_rules import SIGMA_RULE
@@ -225,6 +236,19 @@ class TestAnEmptyCorpusIsReadAgainOnlyWhenItChanges:
         assert rules.sigma_match_sandbox(SANDBOX_REPORT)["rule_count"] == 1
 
 
+CAPA_MODULES = (
+    "capa",
+    "capa.capabilities",
+    "capa.capabilities.common",
+    "capa.helpers",
+    "capa.loader",
+    "capa.render",
+    "capa.render.result_document",
+    "capa.rules",
+    "capa.rules.cache",
+)
+
+
 class TestTheEvidenceOnlyProvider:
     """``capa_yara``, for a run with no triage pack: missing rules are a pass not made."""
 
@@ -238,17 +262,7 @@ class TestTheEvidenceOnlyProvider:
         from malspark.providers.static.capa_yara import CapaYaraStaticProvider
 
         # capa's modules present, so the rules are what is missing.
-        for name in (
-            "capa",
-            "capa.capabilities",
-            "capa.capabilities.common",
-            "capa.helpers",
-            "capa.loader",
-            "capa.render",
-            "capa.render.result_document",
-            "capa.rules",
-            "capa.rules.cache",
-        ):
+        for name in CAPA_MODULES:
             monkeypatch.setitem(sys.modules, name, types.ModuleType(name))
         provider = CapaYaraStaticProvider(
             StaticCapaConfig(rules_dir=str(tmp_path / "capa-rules")),
@@ -266,6 +280,29 @@ class TestTheEvidenceOnlyProvider:
         assert sidecar_needs.CAPA_RULES.remedy in reason
         assert provider.capabilities.provides_evidence, "rules put in place later are read"
         assert provider.capabilities.degrade_on_failure
+
+    def test_its_rules_directory_is_masked_as_one_path_whatever_its_name_holds(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        import sys
+        import types
+
+        from malspark.core.config import StaticCapaConfig, StaticYaraConfig
+        from malspark.providers.static.capa_yara import CapaYaraStaticProvider
+
+        for name in CAPA_MODULES:
+            monkeypatch.setitem(sys.modules, name, types.ModuleType(name))
+        provider = CapaYaraStaticProvider(
+            StaticCapaConfig(rules_dir=str(tmp_path / "Jane Doe" / "rules (qz)")),
+            StaticYaraConfig(rules_dir=str(tmp_path / "no-yara")),
+        )
+        sample = tmp_path / "s.exe"
+        sample.write_bytes(b"MZ")
+
+        (reason,) = provider.collect_evidence(str(sample)).unavailable  # type: ignore[union-attr]
+
+        assert f"no rule was loaded from {OUTSIDE_PROJECT}, which is missing" in reason
+        assert "Doe" not in reason and "qz" not in reason
 
 
 class TestTheRunIsDegraded:
@@ -368,6 +405,741 @@ class TestOnlyAHostPathIsMasked:
         said = host_paths_masked(f"file://{root}/data/sigma_rules and file:///srv/x/r.yml")
         assert said == f"data/sigma_rules and {OUTSIDE_PROJECT}"
         assert host_paths_masked("file://localhost/opt/rules") == OUTSIDE_PROJECT
+
+    def test_a_windows_path_is_masked_on_any_host(self) -> None:
+        said = host_paths_masked(
+            'in "C:\\Users\\someone\\AppData\\Local\\Temp\\broken.yml", line 1 and D:/x/r.yml'
+        )
+        assert said == f'in "{OUTSIDE_PROJECT}", line 1 and {OUTSIDE_PROJECT}'
+        assert host_paths_masked("file:///C:/rules/r.yml") == OUTSIDE_PROJECT
+
+    def test_an_os_error_s_doubled_backslashes_hide_the_whole_path(self) -> None:
+        """How an OSError prints its file name, and how a JSON-escaped message reads."""
+        missing = FileNotFoundError(2, "No such file or directory", r"C:\Users\alice\Temp\r.yml")
+        said = host_paths_masked(f"{type(missing).__name__}: {missing}")
+        assert "alice" not in said and "Temp" not in said
+        assert said.endswith(f"No such file or directory: '{OUTSIDE_PROJECT}'")
+        assert (
+            host_paths_masked(r"at C:\\Users\\alice\\r.yml, then") == f"at {OUTSIDE_PROJECT}, then"
+        )
+        escaped = r'{"error": "cannot read C:\\\\Users\\\\alice\\\\r.yml"}'
+        assert host_paths_masked(escaped) == f'{{"error": "cannot read {OUTSIDE_PROJECT}"}}'
+
+    @pytest.mark.parametrize(
+        "written",
+        [
+            r"\\server\share\me\f",
+            r"\\\\server\\share\\me\\f",
+            r"\\?\C:\Users\me\f",
+            r"\\\\?\\C:\\Users\\me\\f",
+            r"\\.\C:\Users\me\f",
+            r"\\\\.\\C:\\Users\\me\\f",
+            r"\\?\UNC\server\share\me\f",
+            r"\\\\?\\UNC\\server\\share\\me\\f",
+            r"\\.\pipe\me",
+        ],
+    )
+    def test_a_unc_or_device_path_is_masked(self, written: str) -> None:
+        assert host_paths_masked(f"read {written} then") == f"read {OUTSIDE_PROJECT} then"
+
+    def test_a_quoted_windows_path_is_masked_to_its_closing_quote(self) -> None:
+        said = host_paths_masked(
+            r"""open 'C:\Users\John Smith\AppData\x.yml' and "\\srv\my share\x" failed"""
+        )
+        assert said == f"""open '{OUTSIDE_PROJECT}' and "{OUTSIDE_PROJECT}" failed"""
+        # A quoted POSIX path stops at a space, as it always has.
+        assert host_paths_masked("'/home/a b/c'") == f"'{OUTSIDE_PROJECT} b/c'"
+
+    @pytest.mark.parametrize(
+        "span",
+        [
+            r"D:\proj\rules\a.yml and C:\Users\alice\secret.txt",
+            r"C:\Users\alice\secret.txt and D:\proj\rules\a.yml",
+            r"C:\Users\alice\a.txt and C:\Users\bob\b.txt",
+            r"D:\proj\x.yml (copied from \\srv\share\alice\y.yml)",
+            r"D:\proj\x.yml (copied from \\\\srv\\share\\alice\\y.yml)",
+            r"D:\proj\a then \\?\C:\Users\alice",
+            r"D:\proj\x and \\srv\c$\alice",
+            r"D:\proj\a then path:C:\Users\alice",
+            r"D:\proj\a.C:\Users\alice",
+            r"D:\proj\a, file://srv/share/alice",
+        ],
+    )
+    def test_a_quoted_span_holding_another_path_is_masked_whole(self, span: str) -> None:
+        root = Path(r"D:\proj")
+        for quote in ("'", '"'):
+            said = host_paths_masked(f"read {quote}{span}{quote} then", root)
+            assert said == f"read {quote}{OUTSIDE_PROJECT}{quote} then"
+
+    def test_a_quoted_project_path_s_words_are_read_again(self) -> None:
+        root = Path(r"D:\proj")
+        said = host_paths_masked(r"read 'D:\proj\rules\a b.yml, from /home/alice/x' then", root)
+        assert said == f"read 'rules/a b.yml, from {OUTSIDE_PROJECT}' then"
+        assert host_paths_masked(r"read 'D:\proj\rules\a b.yml' then", root) == (
+            "read 'rules/a b.yml' then"
+        )
+
+    def test_text_shaped_like_a_windows_path_is_masked_on_any_host_too(self) -> None:
+        r"""A decision, not an accident: the words alone decide, never the host.
+
+        ``x:\d+`` reads as a drive path, a doubled backslash before a word as a
+        UNC path, a quoted span holding a Windows path is masked up to its
+        closing quote, and a ``file://host/`` URL names another machine; so a
+        regular expression or a guest's path quoted in a tool's error is masked
+        on a Linux host as well.
+        """
+        assert host_paths_masked(r"pattern x:\d+ matched") == f"pattern {OUTSIDE_PROJECT} matched"
+        assert host_paths_masked(r'"\\d+\\s" matched') == f'"{OUTSIDE_PROJECT}" matched'
+        assert host_paths_masked(r"ran '\\powershell.exe'") == f"ran '{OUTSIDE_PROJECT}'"
+        assert host_paths_masked(r"lost: 'C:\Windows\System32\cmd.exe' is gone") == (
+            f"lost: '{OUTSIDE_PROJECT}' is gone"
+        )
+        assert host_paths_masked(r"'C:\a.yml: bad key, see docs'") == f"'{OUTSIDE_PROJECT}'"
+        assert host_paths_masked("from file://host/share/r.yml") == f"from {OUTSIDE_PROJECT}"
+
+    def test_a_drive_after_an_ascii_letter_or_digit_is_a_scheme_not_a_path(self) -> None:
+        """``https://`` and an escaped line break (``error:\\n``) are never drives."""
+        for text in ("see https://example.com/a", r"error:\nnext", "2C:/x", "wordC:\\x"):
+            assert host_paths_masked(text) == text
+
+    @pytest.mark.parametrize("before", ["日本", "é", "path:", "_", "a.", "(", "\\n"])
+    def test_a_drive_glued_to_other_words_is_masked(self, before: str) -> None:
+        said = host_paths_masked(f"{before}C:\\Users\\alice\\x then")
+        assert said == f"{before}{OUTSIDE_PROJECT} then"
+
+    def test_a_drive_inside_a_project_path_starts_another_path(self) -> None:
+        said = host_paths_masked(r"read D:\proj\a.C:\Users\alice then", Path(r"D:\proj"))
+        assert said == f"read a.{OUTSIDE_PROJECT} then"
+
+    @pytest.mark.parametrize(
+        "written",
+        [
+            r"\\10.0.0.1\c$\Users\alice",
+            r"\\?\UNC\10.0.0.5\c$\Users\alice",
+            r"\\server\admin$\alice",
+            r"C:\$Recycle.Bin\S-1-5-21-123\alice.txt",
+            r"\\?\Volume{1234-abcd}\Users\alice",
+            r"C:\Users\a(b)\alice",
+            r"C:\Users\alice's files\x",
+            r"C:\Users\New folder (2)\alice",
+            r"C:\(x)\[y]\{z}\a=b;c,d\alice",
+            "C:\\Users\\alice\u00a0smith\\x",
+            r"C:\Users\John Smith\AppData\x",
+            r"C:\\Users\\John Smith\\x",
+            r"file://server/share/alice",
+            r"file:\\server\share\alice",
+            r"file:////server/share/a(b)/alice",
+            "C:\\Users\\alice\\OneDrive \u2013 Firma\\x",
+            "C:\\Users\\al\u0301ice\\x",
+            "C:\\Users\\a\u20acb\\alice",
+            "C:\\Users\\R\u00e9sum\u00e9 \u00a92024\\alice",
+            "C:\\Users\\alice\\\U0001f600 notes\\x",
+            "C:\\Users\\a`b\\alice",
+            "C:\\Users\\a\u200bb\\alice",
+            "C:\\Users\\alice\u2009smith\\x",
+            "C:\\Users\\alice\u2019s files\\x",
+            "\\\\server\\€share\\alice",
+            r"File://server/share/alice",
+            r"FILE:///C:/Users/alice",
+            r"File:\\server\share\alice",
+        ],
+    )
+    def test_every_name_a_windows_path_may_hold_is_masked_with_it(self, written: str) -> None:
+        for after in (" then", ": denied", ").", ", next"):
+            assert host_paths_masked(f"read {written}{after}") == f"read {OUTSIDE_PROJECT}{after}"
+
+    @pytest.mark.parametrize(
+        ("opening", "closing"),
+        [("`", "`"), ("\u2018", "\u2019"), ("\u201c", "\u201d"), ("\u00ab", "\u00bb")],
+    )
+    def test_a_path_in_any_quotes_is_masked_to_its_closing_quote(
+        self, opening: str, closing: str
+    ) -> None:
+        said = host_paths_masked(f"open {opening}C:\\Users\\John Smith\\my file.txt{closing} x")
+        assert said == f"open {opening}{OUTSIDE_PROJECT}{closing} x"
+
+    @pytest.mark.parametrize(
+        ("opening", "closing"),
+        [("'", "'"), ('"', '"'), ("`", "`"), ("\u201c", "\u201d")],
+    )
+    @pytest.mark.parametrize(
+        "url",
+        [
+            "file:///C:/Users/x/My Docs",
+            "file:///C:/Users/x/My Docs/y z",
+            "file://srv/share/x/My Docs",
+            "FILE:\\\\srv\\share\\x\\My Docs",
+        ],
+    )
+    def test_a_quoted_file_url_is_masked_to_its_closing_quote(
+        self, url: str, opening: str, closing: str
+    ) -> None:
+        said = host_paths_masked(f"open {opening}{url}{closing} x")
+        assert said == f"open {opening}{OUTSIDE_PROJECT}{closing} x"
+
+    @pytest.mark.parametrize(
+        "message",
+        [
+            "cannot open C:/Users/\u00c9lodie/x now",
+            "cannot open file:///C:/Users/\u7530\u4e2d/AppData/x now",
+            "cannot open C:/Users/a \u65e5\u672c/x now",
+            "cannot open c:\\Users\\p \u011f\\x now",
+        ],
+    )
+    def test_json_written_with_escapes_hides_a_name_that_is_not_ascii(self, message: str) -> None:
+        # ``json.dumps`` writes a character that is not ASCII as ``\uXXXX``;
+        # after a slash that escape is the name's first character.
+        written = json.dumps({"m": message})
+        assert "\\u" in written
+        said = json.loads(host_paths_masked(written))
+        assert said == {"m": f"cannot open {OUTSIDE_PROJECT} now"}
+
+    @pytest.mark.parametrize(
+        ("written", "after"),
+        [
+            ("C:\\Users\\bob\\rules.yml", ". Check the path"),
+            ("C:\\Users\\bob\\x", "."),
+            ("\\\\srv\\share\\bob\\notes.txt", ". Next"),
+            ("C:\\Users\\bob\\a.b.c", "... and so on"),
+        ],
+    )
+    def test_a_full_stop_after_a_windows_path_stays_outside_it(
+        self, written: str, after: str
+    ) -> None:
+        assert host_paths_masked(f"Wrote {written}{after}") == f"Wrote {OUTSIDE_PROJECT}{after}"
+
+    @pytest.mark.parametrize(
+        ("written", "after"),
+        [
+            ("C:\\a\\.(secret", ") end"),
+            ("C:\\a\\.,bob", " end"),
+            ("C:\\a\\..'bob's", " end"),
+            ("C:\\a\\.;bob.txt", ". End"),
+            ("\\\\srv\\share\\..(bob", "), then"),
+        ],
+    )
+    def test_a_name_that_starts_with_dots_and_a_mark_is_masked_whole(
+        self, written: str, after: str
+    ) -> None:
+        assert host_paths_masked(f"see {written}{after}") == f"see {OUTSIDE_PROJECT}{after}"
+
+    def test_escaped_json_prose_after_a_path_is_kept(self) -> None:
+        # ``json.dumps`` writes each accented letter as an escape; the words
+        # after a path are prose however many of them start with one.
+        prose = "\u00e9t\u00e9 " + " ".join(["\u00e9l\u00e8ve"] * 50) + " \u00c7al\u0131\u015fma"
+        written = json.dumps({"m": f"error C:\\Users\\bob\\a.txt {prose}"})
+        assert "\\u00e9" in written
+        assert json.loads(host_paths_masked(written)) == {"m": f"error {OUTSIDE_PROJECT} {prose}"}
+
+    @pytest.mark.parametrize(
+        "path",
+        [
+            "C:\\Users\\John \u00e9mile\\x",
+            "C:\\Users\\\u00e9mile\\\u00e9t\u00e9\\x",
+            "C:/Users/\u00e9 \u00e9/\u00e9x",
+            "C:\\ubeef\\ucafe\\x",
+        ],
+    )
+    def test_an_escaped_name_inside_a_path_is_masked_with_it(self, path: str) -> None:
+        written = json.dumps({"m": f"open {path}: denied"})
+        assert json.loads(host_paths_masked(written)) == {"m": f"open {OUTSIDE_PROJECT}: denied"}
+
+    @pytest.mark.parametrize(
+        "path",
+        ["\\\\srv\\share\\alice\\x y", "C:\\Users\\alice\\x y", "\\\\?\\C:\\Users\\alice\\x"],
+    )
+    def test_a_repr_of_an_error_s_words_hides_the_path_too(self, path: str) -> None:
+        # An error's words hold its file name's repr; a repr of those words
+        # doubles every backslash again.
+        error = OSError(2, "No such file or directory", path)
+        for written in (repr(str(error)), repr(repr(str(error))), json.dumps(repr(str(error)))):
+            said = host_paths_masked(written)
+            assert "alice" not in said and "srv" not in said, said
+
+    @pytest.mark.parametrize(
+        "written",
+        [
+            "C:\\Users\\John Smith\\ucafe.txt",
+            "C:\\Users\\John Smith\\uabcd1\\notes",
+            "\\\\srv\\u1234",
+            "\\\\srv\\sh\\a b\\u9575x",
+            "\\\\?\\UNC\\srv\\sh\\John Smith\\ud55Ex",
+            "\\\\.\\pipe\\a b\\uB1F5x\\ua7ef.txt",
+        ],
+    )
+    def test_a_name_that_reads_like_an_escape_is_a_name_in_a_path_written_as_it_is(
+        self, written: str
+    ) -> None:
+        # One backslash between names: the text is not escaped, so ``\uabcd``
+        # is a separator and a name, and the directory before it keeps its space.
+        assert host_paths_masked(f"open {written} denied") == f"open {OUTSIDE_PROJECT} denied"
+
+    def test_the_home_directory_before_such_a_name_is_still_one_path(self) -> None:
+        home = PureWindowsPath(r"C:\Users\John Smith")
+        said = host_paths_masked("open C:\\Users\\John Smith\\u1234 x", Path(r"D:\proj"), home)
+        assert said == f"open {OUTSIDE_PROJECT} x"
+
+    @pytest.mark.parametrize(
+        "text",
+        [
+            # a repr of a JSON string, a repr of a repr, JSON in JSON
+            repr(json.dumps({"m": "open C:/Users/alice/'b/AppData x"})),
+            repr(repr("open file:///C:/Users/alice/'b/c d\u00e9 x")),
+            json.dumps({"m": json.dumps({"m": "open C:/d/\u201dx.alice/\u0143\u01ddbob/share x"})}),
+            json.dumps({"m": repr("open C:\\Users\\\u00e9 alice\\x: denied")}),
+            json.dumps({"e": "cannot open \\\\\\\\srv\\\\share\\\\a \u65e5 b\\\\alice"}),
+            json.dumps({"e": "cannot open \\\\\u00e9tage\\share\\alice x"}),
+            json.dumps({"e": json.dumps("cannot open \\\\\u00e9tage\\share\\alice x")}),
+        ],
+    )
+    def test_a_path_escaped_more_than_once_is_masked_whole(self, text: str) -> None:
+        said = host_paths_masked(text)
+        assert "alice" not in said and "bob" not in said, said
+
+    @pytest.mark.parametrize("space", ["\u00a0", "\u2009", "\u202f"])
+    def test_a_name_may_start_or_end_with_a_space_that_is_not_ascii(self, space: str) -> None:
+        for written in (f"C:/Users/qxa{space}/qxb/x", f"C:\\Users\\{space}qxa\\{space}qxb"):
+            assert host_paths_masked(f"see {written} end") == f"see {OUTSIDE_PROJECT} end"
+
+    def test_a_json_document_is_read_as_the_words_it_writes(self) -> None:
+        # Each string is read through its escapes and written back the same
+        # way: the path is masked whole, the words and lines after it stay,
+        # and what the document's other strings write is as it was.
+        written = json.dumps(
+            {
+                "level": 3,
+                "msg": (
+                    "capa failed reading C:\\work\\John Smith\\s.bin with three words"
+                    "\nsecond line\nétage"
+                ),
+                "joined": "open C:/Users/alice\\John Smith\\Émile.txt failed",
+                "note": "café /api/v1/jobs",
+            }
+        )
+        said = host_paths_masked(written)
+        assert json.loads(said) == {
+            "level": 3,
+            "msg": f"capa failed reading {OUTSIDE_PROJECT} with three words\nsecond line\nétage",
+            "joined": f"open {OUTSIDE_PROJECT} failed",
+            "note": "café /api/v1/jobs",
+        }
+        assert '"note": "caf\\u00e9 /api/v1/jobs"' in said and '"level": 3' in said
+
+    def test_a_json_document_keeps_how_it_writes_what_is_not_ascii(self) -> None:
+        written = json.dumps({"p": "open C:\\Users\\Élodie Martin\\x: refusé"}, ensure_ascii=False)
+        assert host_paths_masked(written) == json.dumps(
+            {"p": f"open {OUTSIDE_PROJECT}: refusé"}, ensure_ascii=False
+        )
+
+    def test_a_json_key_and_a_slash_written_escaped_are_read_too(self) -> None:
+        said = host_paths_masked(json.dumps({"C:\\Users\\alice\\x y": 1}))
+        assert json.loads(said) == {OUTSIDE_PROJECT: 1}
+        escaped = json.dumps({"m": "open C:/Users/alice/AppData/x.txt now"}).replace("/", "\\/")
+        assert json.loads(host_paths_masked(escaped)) == {"m": f"open {OUTSIDE_PROJECT} now"}
+
+    def test_half_a_surrogate_pair_a_json_string_writes_stays_escaped(self) -> None:
+        # The masked document is stored as UTF-8, which holds no lone half.
+        for words in ("é", "e"):
+            written = '{"s": "' + words + ' \\ud83d C:\\\\Users\\\\bob"}'
+            said = host_paths_masked(written)
+            assert said == '{"s": "' + words + f' \\ud83d {OUTSIDE_PROJECT}"' + "}"
+            assert said.encode("utf-8")
+
+    def test_a_path_written_as_it_is_beside_an_escaped_one_in_a_json_string(self) -> None:
+        # ``D:\new\report.txt`` in a string that escapes its other path: the
+        # string writes a line break there, and the words in it are a path.
+        for raw in ("D:\\new\\report.txt", "path:D:\\table\\bob.txt", "D:\\u00e9t\\u00e9\\ray.txt"):
+            written = '{"m": "x C:\\\\Users\\\\alice and ' + raw + '"}'
+            said = host_paths_masked(written)
+            assert not re.search(r"alice|report|bob|ray", said), said
+            assert json.loads(said)
+        # A string that writes every path escaped keeps the other words it writes.
+        kept = json.dumps({"m": "open C:\\Users\\alice: see \\d+\\s in the rule"})
+        assert json.loads(host_paths_masked(kept)) == {
+            "m": f"open {OUTSIDE_PROJECT}: see \\d+\\s in the rule"
+        }
+
+    @pytest.mark.parametrize(
+        ("written", "said"),
+        [
+            # a path that ends on the backslash writing a quote; beside an
+            # escaped path, a drive before a quote is the words the string writes
+            (r'{"m": "set x:\"1\" now"}', {"m": f'set {OUTSIDE_PROJECT}"1" now'}),
+            (
+                r'{"m": "x C:\\a\\b and D:\"q\" z"}',
+                {"m": f'x {OUTSIDE_PROJECT} and D:"q" z'},
+            ),
+            (
+                r'["D:\\", "x:\"", "\\\\srv\\"]',
+                [OUTSIDE_PROJECT, f'{OUTSIDE_PROJECT}"', OUTSIDE_PROJECT],
+            ),
+            (r'"x:\"1\" C:\\Users\\alice"', f'{OUTSIDE_PROJECT}"1" {OUTSIDE_PROJECT}'),
+            # a drive named in quotes is no path written as it is
+            (
+                r'{"m": "drive \"C:\" is full, see D:\\logs\\x.txt"}',
+                {"m": f'drive "C:" is full, see {OUTSIDE_PROJECT}'},
+            ),
+            (r'{"m": "drive \"C:\" is full"}', {"m": f'drive "{OUTSIDE_PROJECT}" is full'}),
+        ],
+    )
+    def test_a_json_string_read_as_it_stands_is_still_that_string(
+        self, written: str, said: object
+    ) -> None:
+        assert json.loads(host_paths_masked(written)) == said
+
+    def test_a_document_written_inside_a_document_is_read_through(self) -> None:
+        inner = {"m": "tool failed: \\\\?\\C:\\long\\alice (exit 1) — réessayez plus tard, café"}
+        said = host_paths_masked(json.dumps({"m": json.dumps(inner)}))
+        assert json.loads(json.loads(said)["m"]) == {
+            "m": f"tool failed: {OUTSIDE_PROJECT} (exit 1) — réessayez plus tard, café"
+        }
+        deep = "open C:\\Users\\alice bob\\x: denied"
+        for _ in range(6):
+            deep = json.dumps(deep)
+        assert "alice" not in host_paths_masked(deep)
+
+    def test_a_repr_is_read_as_the_words_it_writes(self) -> None:
+        words = (
+            "capa failed reading C:\\work\\John Smith\\s.bin with three words"
+            "\nsecond line, it's étage"
+        )
+        assert host_paths_masked(repr(words)) == repr(
+            f"capa failed reading {OUTSIDE_PROJECT} with three words\nsecond line, it's étage"
+        )
+        # A repr of that repr writes the line break as two backslashes and
+        # ``n``, which also read as a path's head; the path itself is gone.
+        twice = host_paths_masked(repr(repr(words)))
+        assert "work" not in twice and "Smith" not in twice and "s.bin" not in twice
+
+    @pytest.mark.parametrize(
+        "written",
+        [
+            # words in quotes that also parse as an escaped string
+            '"open C:\\new\\table.txt now"',
+            "'open C:\\new\\table.txt now'",
+            '{"error": "open C:\\new\\table.txt now"}',
+            '"\\\\srv/share/alice and file:////srv/share/bob"',
+            "'\\\\srv\\share\\alice and D:\\x\\bob'",
+            "'see C:\\\\real\\\\alice y and C:\\new\\bob z'",
+        ],
+    )
+    def test_words_in_quotes_that_read_as_an_escaped_string_are_read_both_ways(
+        self, written: str
+    ) -> None:
+        said = host_paths_masked(written)
+        assert not re.search(r"table|alice|bob|share", said), said
+
+    def test_a_json_document_is_masked_in_linear_time(self) -> None:
+        def document(count: int) -> str:
+            return json.dumps(
+                {
+                    **{f"k{n}": "open C:\\Users\\alice b\\x y: no" for n in range(count)},
+                    "prose": "C:\\work\\s.bin " + "été crème\n" * count,
+                    "inner": json.dumps({"m": "D:\\x\\y " + "word " * count}),
+                }
+            )
+
+        def brackets(count: int) -> str:
+            return "[" * count + '"C:\\\\x"' + "]" * count
+
+        assert "alice" not in host_paths_masked(document(3))
+        for text in (document, brackets, lambda count: repr(document(count))):
+            # The least count whose text costs a measurable time; only the
+            # ratio is asserted.
+            count = 200
+            while cpu_seconds(partial(host_paths_masked, text(count)), repeats=3) < 0.005:
+                count *= 2
+            assert_scales(text, count, host_paths_masked, factor=4)
+
+    @pytest.mark.parametrize(
+        "text",
+        [
+            lambda count: "x 'C:" + "\\" * count + "' y",
+            lambda count: 'x "C:' + "\\" * count + '" y',
+            lambda count: json.dumps({"m": "x 'C:" + "\\" * count + "' y"}),
+            lambda count: "x '" + "\\" * count + "srv\\share' y",
+            lambda count: "x 'C:" + "\\\\a" * count + "' y",
+        ],
+    )
+    def test_a_quoted_run_of_backslashes_is_masked_in_linear_time(
+        self, text: Callable[[int], str]
+    ) -> None:
+        # The least count whose text costs a measurable time; only the ratio
+        # is asserted.
+        count = 1_000
+        while cpu_seconds(partial(host_paths_masked, text(count)), repeats=3) < 0.005:
+            count *= 2
+        assert_scales(text, count, host_paths_masked, factor=4)
+
+    @pytest.mark.parametrize(
+        "directory",
+        [
+            "Jane Word1 Word2 Word3 Word4 Word5 Word6 Word7 Word8 Word9",
+            "Jane  Doe",
+            "Copy of Copy of My Documents backup from old laptop 2019 (2)",
+            "a  b   c\u00a0\u00a0d e f g h i j k l m",
+            "\u00a0\u00a0Jane",
+            "Jane\u2009\u00a0",
+            "\u2009\u00a0Jane Doe\u00a0\u2009\u00a0",
+        ],
+    )
+    def test_a_directory_s_name_holds_its_spaces_however_many(self, directory: str) -> None:
+        for separator in ("\\", "\\" * 2, "\\" * 4, "\\" * 8, "/"):
+            heads = ["C:", "file:///C:"]
+            if separator != "/":
+                heads.append(f"{separator * 2}srv{separator}share")
+            if len(separator) <= 2 and separator != "/":
+                heads.append(f"{separator * 2}?{separator}C:")
+            for head in heads:
+                written = separator.join((head, "Users", directory, "secret.txt"))
+                said = f"open {OUTSIDE_PROJECT} failed"
+                assert host_paths_masked(f"open {written} failed") == said, written
+                document = json.dumps({"m": f"open {written} failed"})
+                assert json.loads(host_paths_masked(document)) == {"m": said}, written
+
+    @pytest.mark.parametrize(
+        "text",
+        [
+            lambda count: "open C:\\a" + " w" * count,
+            lambda count: ("open C:\\a" + " w" * 40 + " ") * count,
+            lambda count: ("open C:\\a" + " w" * 40 + "/") * count,
+            lambda count: "open \\\\srv\\share\\a" + "  w" * count + " 'C:\\\\a" + " w" * count,
+            lambda count: json.dumps({"m": "open C:\\a" + " w" * count}),
+        ],
+    )
+    def test_the_words_after_a_path_are_read_in_linear_time(
+        self, text: Callable[[int], str]
+    ) -> None:
+        # The least count whose text costs a measurable time; only the ratio
+        # is asserted.
+        count = 1_000
+        while cpu_seconds(partial(host_paths_masked, text(count)), repeats=3) < 0.005:
+            count *= 2
+        assert_scales(text, count, host_paths_masked, factor=4)
+
+    def test_a_written_windows_path_is_normalised_as_ntpath_does(self) -> None:
+        rng = random.Random(591)
+        heads = (
+            "", "\\", "C:", "C:\\", "c:", "C:..", "..", ".\\", "\\\\srv\\share", "\\\\srv\\share\\",
+            "\\\\srv", "\\\\?\\C:\\", "\\\\.\\pipe\\", "\\\\?\\UNC\\s\\h\\",
+        )  # fmt: skip
+        names = ("a", "b c", ".", "..", "", "x.txt", "é", "...", "..a")
+        for _ in range(4_000):
+            written = rng.choice(heads) + "\\".join(
+                rng.choice(names) for _ in range(rng.randrange(8))
+            )
+            assert _windows_normal(written) == ntpath.normpath(written), written
+
+    @pytest.mark.parametrize("part", ["\\.", "\\..", "\\a\\..", "\\.\\a"])
+    def test_a_path_of_many_dots_is_masked_in_linear_time(self, part: str) -> None:
+        def text(count: int) -> str:
+            return "open \\\\srv\\share" + part * count + " and C:\\x" + part * count
+
+        # The least count whose text costs a measurable time; only the ratio
+        # is asserted.
+        count = 4_000
+        while cpu_seconds(partial(host_paths_masked, text(count)), repeats=3) < 0.005:
+            count *= 2
+        assert_scales(text, count, host_paths_masked, factor=16)
+
+    def test_any_space_windows_allows_in_a_name_is_inside_it(self) -> None:
+        for space in " \u00a0\u1680\u2009\u3000":
+            said = host_paths_masked(f"see C:\\Users\\qxa{space}qxb\\tailqxc end")
+            assert said == f"see {OUTSIDE_PROJECT} end", repr(space)
+
+    def test_masked_json_still_reads_as_json(self) -> None:
+        for message in (
+            'open "C:\\Users\\a b\\x": denied',
+            "cannot open C:\\Users\\John Smith\\x",
+            "cannot open C:\\Users\\alice\\",
+            'open "\\\\srv\\share\\alice\\": denied',
+        ):
+            said = json.loads(host_paths_masked(json.dumps({"msg": message})))
+            assert "alice" not in said["msg"] and "Users" not in said["msg"]
+        said = host_paths_masked(json.dumps({"msg": 'open "C:\\Users\\a b\\x": denied'}))
+        assert json.loads(said) == {"msg": f'open "{OUTSIDE_PROJECT}": denied'}
+
+    def test_a_path_of_many_parts_is_masked_in_linear_time(self) -> None:
+        root = Path(r"D:\proj")
+
+        def text(parts: int) -> str:
+            return (
+                "/a" * parts
+                + " | D:\\proj"
+                + "\\a" * parts
+                + " | '\\\\s"
+                + "\\a b" * parts
+                + "' | 'C:\\x"
+                + "\\" * parts
+                + "x'\n'C:\\x"
+                + "\\" * parts
+                + "x\n'\\\\a"
+                + "\\" * parts
+            )
+
+        assert host_paths_masked(text(3), root) == (
+            f"/a/a/a | a/a/a | '{OUTSIDE_PROJECT}' | '{OUTSIDE_PROJECT}'\n'{OUTSIDE_PROJECT}"
+            "\n'\\\\a\\\\\\"
+        )
+        assert_scales(text, 5_000, lambda written: host_paths_masked(written, root), factor=4)
+
+    @pytest.mark.parametrize(
+        "unit",
+        [
+            "\\",
+            "a ",
+            "C:\\a b\\",
+            "'",
+            '"',
+            "`",
+            "\u2018",
+            "\u2018C:\\a ",
+            "'C:\\a ",
+            "\\\\s\\a b",
+            "C:\\Users\\Jane Doe ",
+            "/home/Jane Doe ",
+            "\u00e9\u65e5\u2013\u20ac\u00a9\u0301\U0001f600",
+            ".",
+            ".x",
+            "...(",
+            "/\\u00e9",
+            " \\u00e9",
+            "\\u00e9",
+            "\\u00e9\\\\",
+            "a\u1680",
+            "'file:///C:/a b' ",
+            "file:///C:/a b/",
+        ],
+    )
+    def test_a_hostile_text_is_masked_in_linear_time(self, unit: str) -> None:
+        """Every reader of a path costs time linear in the text, whatever it repeats."""
+        root = Path(r"D:\proj")
+        homes = (PureWindowsPath(r"C:\Users\Jane Doe"), PurePosixPath("/home/Jane Doe"))
+
+        def text(count: int) -> str:
+            return "read C:\\x\\" + unit * count + " then 'C:\\x" + unit * count
+
+        for home in homes:
+
+            def masked(written: str, home: PurePath = home) -> str:
+                return host_paths_masked(written, root, home)
+
+            # The least count whose text costs a measurable time; only the
+            # ratio is asserted.
+            count = 1_000
+            while cpu_seconds(partial(masked, text(count)), repeats=3) < 0.005 and count < 1 << 22:
+                count *= 2
+            assert_scales(text, count, masked, factor=4)
+
+    def test_the_home_directory_is_one_path_whatever_its_name_holds(self) -> None:
+        root = Path(r"C:\Users\Jane Doe\proj")
+        home = PureWindowsPath(r"C:\Users\Jane Doe")
+        for written in (
+            r"C:\Users\Jane Doe",
+            r"C:\\Users\\Jane Doe",
+            "C:/Users/Jane Doe",
+            r"c:\users\JANE DOE",
+            r"\\?\C:\Users\Jane Doe",
+            r"C:\Users\Jane Doe\AppData\Local",
+        ):
+            for after in ("", " then", ": denied", ")."):
+                said = host_paths_masked(f"cwd: {written}{after}", root, home)
+                assert said == f"cwd: {OUTSIDE_PROJECT}{after}", written
+        said = host_paths_masked(r"at C:\Users\Jane Doe\proj\data\x then", root, home)
+        assert said == "at data/x then"
+        said = host_paths_masked(
+            json.dumps({"cwd": r"C:\Users\Jane Doe", "at": r"C:\Users\Jane Doe\proj\x"}),
+            root,
+            home,
+        )
+        assert json.loads(said) == {"cwd": OUTSIDE_PROJECT, "at": "x"}
+
+    def test_a_posix_home_directory_is_one_path_too(self) -> None:
+        root = PurePosixPath("/home/Jane Doe/proj")
+        home = PurePosixPath("/home/Jane Doe")
+        said = host_paths_masked(
+            "cwd: /home/Jane Doe, rules at /home/Jane Doe/proj/data/x and /home/Jane Doe/r.yml",
+            root,  # type: ignore[arg-type]
+            home,
+        )
+        assert said == f"cwd: {OUTSIDE_PROJECT}, rules at data/x and {OUTSIDE_PROJECT}"
+        # The home's name is a whole name: a longer one is another path.
+        assert host_paths_masked("/home/Jane Does", root, home) == (  # type: ignore[arg-type]
+            host_paths_masked("/home/Jane Does", root, PurePosixPath("/home/other"))  # type: ignore[arg-type]
+        )
+
+    def test_the_real_home_directory_is_the_default(self) -> None:
+        home = Path.home()
+        assert host_paths_masked(f"cwd: {home}") == f"cwd: {OUTSIDE_PROJECT}"
+
+    def test_a_path_a_caller_holds_is_shown_from_the_project_as_one_path(self) -> None:
+        root = PurePosixPath("/home/op/proj")
+        for path, said in (
+            ("/home/op/proj/data/capa rules (old)", "data/capa rules (old)"),
+            ("/home/op/proj/data/capa-rules", "data/capa-rules"),
+        ):
+            assert host_path_masked(path, root) == said, path
+        windows = Path(r"D:\a\proj")
+        assert host_path_masked(r"D:\a\proj\data\capa rules", windows) == "data/capa rules"
+        assert host_path_masked(r"d:\A\PROJ\data\x", windows) == "data/x"
+        assert host_path_masked(PureWindowsPath(r"D:\a\proj\data\x"), windows) == "data/x"
+
+    @pytest.mark.parametrize(
+        "path",
+        [
+            "/data/capa-rules",
+            "/x",
+            "/home/op/proj",
+            "/home/Jane Doe",
+            "/home/Jane Doe/capa rules",
+            "/srv/a(1)/b",
+            "~",
+            "~/x",
+            "~jane/capa-rules",
+            r"C:\Users\Jane Doe",
+            r"c:\users\jane doe\capa rules",
+            r"D:\a\proj",
+            r"D:\a\proj2\x",
+            "E:/data/x",
+            r"\\server\share\Jane Doe",
+            r"\\?\C:\Users\Jane Doe\x",
+        ],
+    )
+    def test_any_other_absolute_path_a_caller_holds_is_masked(self, path: str) -> None:
+        for root in (PurePosixPath("/home/op/proj"), PureWindowsPath(r"D:\a\proj")):
+            assert host_path_masked(path, root) == OUTSIDE_PROJECT
+
+    @pytest.mark.parametrize("path", ["data/capa-rules", "./rules", "rules x/y", "a~b/c"])
+    def test_a_relative_path_a_caller_holds_is_kept(self, path: str) -> None:
+        assert host_path_masked(path, PurePosixPath("/home/op/proj")) == path
+
+    def test_a_long_path_or_unc_root_is_the_same_root(self) -> None:
+        said = host_paths_masked(
+            r"at D:\a\Malspark\Malspark\data\x and \\?\D:\\a\\Malspark\\Malspark\\data\\y",
+            Path(r"\\?\D:\a\Malspark\Malspark"),
+        )
+        assert said == "at data/x and data/y"
+        unc = Path(r"\\fs\share\Malspark")
+        said = host_paths_masked(
+            r"at \\fs\share\Malspark\data\x, \\\\fs\\share\\Malspark\\data\\y,"
+            r" \\?\UNC\fs\share\Malspark\data\z and \\fs\share\other",
+            unc,
+        )
+        assert said == f"at data/x, data/y, data/z and {OUTSIDE_PROJECT}"
+
+    def test_a_windows_project_s_paths_read_as_a_posix_project_s(self) -> None:
+        root = Path("D:\\a\\Malspark\\Malspark")
+        said = host_paths_masked(
+            "rules at D:\\a\\Malspark\\Malspark/data/capa-rules,"
+            " d:\\a\\malspark\\malspark\\data\\x,"
+            " file:///D:/a/Malspark/Malspark/data/sigma_rules, D:\\a\\other and /srv/r",
+            root,
+        )
+        assert said == (
+            f"rules at data/capa-rules, data/x, data/sigma_rules, {OUTSIDE_PROJECT} and "
+            f"{OUTSIDE_PROJECT}"
+        )
+        assert host_paths_masked("GET /api/v1/jobs failed", root) == "GET /api/v1/jobs failed"
 
     def test_the_run_summary_keeps_them_and_leaves_them_out_when_none(self) -> None:
         rows = [{"tool": "capa", "reason": "x"}]

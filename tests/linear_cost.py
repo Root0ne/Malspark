@@ -62,12 +62,14 @@ except ImportError:  # Windows, whose default clock is the thread's anyway
 
 __all__ = [
     "FLOOR_SECONDS",
+    "GRAINS",
     "SCALING_SLACK",
     "TIME_RATIO_LIMIT",
     "assert_ratio",
     "assert_scales",
     "assert_under",
     "calls",
+    "clock_grain",
     "cpu_seconds",
     "default_clock",
     "repeated",
@@ -84,6 +86,14 @@ SCALING_SLACK = 3.0
 # The least a small run may take: under it the clock's grain is the ratio, and
 # the measure fails rather than read it.
 FLOOR_SECONDS = 0.002
+
+# The fewest of the clock's ticks a timed run spans where a tick is coarse:
+# Windows' thread and process clocks move in steps of about 15.6 ms, so a run
+# of one or two steps is read as up to half or twice what it took.
+GRAINS = 8
+
+# Each clock's tick, once measured.
+_GRAIN: dict[Callable[[], float], float] = {}
 
 
 def calls(call: Callable[[], Any]) -> int:
@@ -142,6 +152,17 @@ def _clock_of(clock: Callable[[], float] | None, whole_process: bool) -> Callabl
     if sys.platform == "darwin":
         return _user_seconds
     return time.process_time if whole_process else time.thread_time
+
+
+def clock_grain(clock: Callable[[], float]) -> float:
+    """The step ``clock`` moves in: the first change it reads, within half a second."""
+    if clock not in _GRAIN:
+        start = now = clock()
+        deadline = time.perf_counter() + 0.5
+        while now == start and time.perf_counter() < deadline:
+            now = clock()
+        _GRAIN[clock] = now - start
+    return _GRAIN[clock]
 
 
 def _timed_once(call: Callable[[], Any], clock: Callable[[], float]) -> float:
@@ -221,7 +242,10 @@ def assert_ratio(
     small run is measurable.
     With ``self_timed`` each call returns the seconds it measured itself (a
     child process timing its own work), and the clock is not read.
-    Returns the best small and large times.
+    Where the default clock's tick is coarse (Windows), each timed run
+    repeats both calls as often as it takes the small one to span
+    :data:`GRAINS` ticks; the times and the floor are per call all the same.
+    Returns the best small and large times, per call.
     """
     clocked = _clock_of(clock, whole_process)
 
@@ -231,6 +255,13 @@ def assert_ratio(
     if warm:
         small()
     gc.collect()
+    times = 1
+    coarse = not self_timed and clock is None
+    if coarse and (least := GRAINS * clock_grain(clocked)) > FLOOR_SECONDS:
+        while times < 1 << 16 and _timed_once(repeated(small, times), clocked) < least:
+            times *= 2
+        if times > 1:
+            small, large, floor = repeated(small, times), repeated(large, times), floor * times
     first_small, first_large = _best_pair(small, large, repeats, measure)
     assert first_small >= FLOOR_SECONDS, (
         f"the small run of {what} took {first_small * 1000:.2f} ms, under the "
@@ -238,7 +269,7 @@ def assert_ratio(
     )
     first_ratio = first_large / first_small
     if first_large < limit * (first_small + floor):
-        return first_small, first_large
+        return first_small / times, first_large / times
     again_small, again_large = _best_pair(small, large, repeats, measure)
     best_small, best_large = min(first_small, again_small), min(first_large, again_large)
     ratio = best_large / best_small
@@ -248,8 +279,9 @@ def assert_ratio(
         f"{first_small * 1000:.1f} ms to {first_large * 1000:.1f} ms "
         f"({first_ratio:.1f} times) on the first {repeats} pairs, "
         f"{again_small * 1000:.1f} ms to {again_large * 1000:.1f} ms on the next {repeats}"
+        + (f" (each run {times} calls)" if times > 1 else "")
     )
-    return best_small, best_large
+    return best_small / times, best_large / times
 
 
 def assert_scales(

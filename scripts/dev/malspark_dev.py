@@ -467,9 +467,20 @@ def _fail(text: str, status: int = 1) -> Stop:
     return Stop(status)
 
 
-# Windows' 260-character path limit stops a checkout of a deep tree unless git
-# is told to use long paths; the setting holds for each command, not the tree.
-GIT = ("git", "-c", "core.longpaths=true") if os.name == "nt" else ("git",)
+# A pinned tree is the same bytes on every host: no line ending is rewritten on
+# checkout or patch, whatever the host's git config (Git for Windows turns
+# core.autocrlf on), and a file whose attributes leave its ending to the host
+# gets LF, the ending of the Linux images it is built into. Windows' 260-character
+# path limit stops a checkout of a deep tree unless git is told to use long
+# paths. Each setting holds for the command, not the tree.
+GIT = (
+    "git",
+    "-c",
+    "core.autocrlf=false",
+    "-c",
+    "core.eol=lf",
+    *(("-c", "core.longpaths=true") if os.name == "nt" else ()),
+)
 
 
 def _git(dest: Path, *args: str, quiet: bool = False) -> subprocess.CompletedProcess[str]:
@@ -1278,7 +1289,22 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
+def _console_takes_any_text() -> None:
+    """A character the console's encoding lacks is written escaped, never raised.
+
+    A Windows console redirected to a pipe or a file encodes in the host's code
+    page (cp1252, say), and a path or a git message holding a character outside
+    it would stop the run with UnicodeEncodeError; UTF-8 has every character,
+    so Linux and macOS print the same as before.
+    """
+    for stream in (sys.stdout, sys.stderr):
+        reconfigure = getattr(stream, "reconfigure", None)
+        if callable(reconfigure):
+            reconfigure(errors="backslashreplace")
+
+
 def main(argv: Sequence[str] | None = None, root: Path = REPO_ROOT) -> int:
+    _console_takes_any_text()
     args = build_parser().parse_args(argv)
     environ = dict(os.environ)
 

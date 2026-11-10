@@ -8,10 +8,22 @@ when it ends:
   ``sendmsg``) and every name or address lookup (``getaddrinfo``,
   ``gethostbyname``, ``gethostbyname_ex``, ``gethostbyaddr``, ``getnameinfo``)
   raises :class:`ReplayRefused`. A socket that cannot connect sends nothing
-  through ``send``. Not covered: a socket made from the low-level ``_socket``
-  module, and a child process. No rule the replay calls needs the network,
-  and a rule that reached for it (a catalogue refresh, a model index) must
-  answer as it does on a box that cannot reach anything.
+  through ``send``. One connection is let through: the one ``socketpair``
+  makes over loopback where the system has no native pair (Windows), the
+  event loop's own wake-up, which reaches nothing past the process. A door
+  the host's ``socket`` module does not have (``sendmsg`` on Windows) is not
+  there to be opened. Windows' default event loop connects and sends through
+  its I/O completion port rather than the socket's own methods, so the
+  port's ``connect``, ``sendto`` and ``connect_pipe`` (a named pipe to a
+  local service) are refused too; the event loop's own socket pair uses
+  none of them. Not covered: a socket made from the low-level ``_socket``
+  module; on Windows, the same class of door one level down: the
+  ``_overlapped`` module's ``ConnectEx``, ``WSAConnect`` and ``ConnectPipe``
+  called directly, ``_winapi.CreateFile`` opening a named pipe
+  (``\\\\.\\pipe\\...``) as a file, and ``multiprocessing.connection.Client``
+  given a pipe address; and a child process. No rule the replay calls
+  needs the network, and a rule that reached for it (a catalogue refresh, a
+  model index) must answer as it does on a box that cannot reach anything.
 * **the ATT&CK cache.** The catalogue is read from the vendored tables in the
   rules' own tree (``data/attck_*.json``) and nothing else: the bundle loads
   and downloads are refused, and the cache directory points at a directory of
@@ -33,6 +45,7 @@ import logging
 import os
 import socket
 import tempfile
+import threading
 from collections.abc import Iterator, Mapping
 from contextlib import contextmanager
 from dataclasses import dataclass, field
@@ -54,6 +67,34 @@ class ReplayRefused(OSError):
 
 def _refuse(*_args: Any, **_kwargs: Any) -> Any:
     raise ReplayRefused("the replay makes no network call and loads no ATT&CK bundle")
+
+
+# Set on a thread while it makes a socket pair; its connections are the pair's own.
+_PAIRING = threading.local()
+
+
+def _refuse_but_the_pair(original: Any) -> Any:
+    """``original`` (a socket's ``connect``) refused, except inside :func:`_pair`'s call."""
+
+    def connect(sock: Any, *args: Any, **kwargs: Any) -> Any:
+        if getattr(_PAIRING, "making", False):
+            return original(sock, *args, **kwargs)
+        return _refuse()
+
+    return connect
+
+
+def _pair(original: Any) -> Any:
+    """``socket.socketpair``, whose loopback connection (Windows) the guard lets through."""
+
+    def socketpair(*args: Any, **kwargs: Any) -> Any:
+        _PAIRING.making = True
+        try:
+            return original(*args, **kwargs)
+        finally:
+            _PAIRING.making = False
+
+    return socketpair
 
 
 @dataclass
@@ -136,9 +177,14 @@ def replay_environment(snapshot: Mapping[str, Any] | None = None) -> Iterator[Re
     # put back by removing the replay's own.
     saved: list[tuple[Any, str, Any, bool]] = []
 
-    def _swap(owner: Any, attribute: str, value: Any, label: str) -> None:
+    def _swap(
+        owner: Any, attribute: str, value: Any, label: str, *, of_the_tree: bool = True
+    ) -> None:
         if owner is None or not hasattr(owner, attribute):
-            env.missing.append(label)
+            # A door of the platform's modules this tree lacks is said; one
+            # the host's own modules lack is not there to be opened.
+            if of_the_tree:
+                env.missing.append(label)
             return
         held = attribute in vars(owner)
         saved.append((owner, attribute, getattr(owner, attribute), held))
@@ -151,10 +197,25 @@ def replay_environment(snapshot: Mapping[str, Any] | None = None) -> Iterator[Re
         try:
             # A connection, a datagram sent to an address, and every name or
             # address lookup. A socket that cannot connect can send nothing
-            # through ``send``; a socket pair (the event loop's own wake-up)
-            # neither connects nor looks anything up.
-            for name in ("connect", "connect_ex", "sendto", "sendmsg"):
-                _swap(socket.socket, name, _refuse, f"socket.socket.{name}")
+            # through ``send``. A socket pair (the event loop's own wake-up)
+            # looks nothing up; where the system has no native one (Windows)
+            # it is made by a loopback connection, the one let through.
+            _swap(
+                socket.socket,
+                "connect",
+                _refuse_but_the_pair(socket.socket.connect),
+                "socket.socket.connect",
+                of_the_tree=False,
+            )
+            for name in ("connect_ex", "sendto", "sendmsg"):
+                _swap(socket.socket, name, _refuse, f"socket.socket.{name}", of_the_tree=False)
+            _swap(
+                socket,
+                "socketpair",
+                _pair(socket.socketpair),
+                "socket.socketpair",
+                of_the_tree=False,
+            )
             for name in (
                 "create_connection",
                 "getaddrinfo",
@@ -163,7 +224,18 @@ def replay_environment(snapshot: Mapping[str, Any] | None = None) -> Iterator[Re
                 "gethostbyaddr",
                 "getnameinfo",
             ):
-                _swap(socket, name, _refuse, f"socket.{name}")
+                _swap(socket, name, _refuse, f"socket.{name}", of_the_tree=False)
+            # Windows' proactor event loop reaches the network through its
+            # completion port (ConnectEx, WSASendTo), past the socket's
+            # methods; an IP literal needs no lookup. Elsewhere there is no
+            # such port and nothing to close.
+            try:
+                from asyncio import windows_events
+            except ImportError:
+                windows_events = None  # type: ignore[assignment]
+            port = getattr(windows_events, "IocpProactor", None)
+            for name in ("connect", "sendto", "connect_pipe"):
+                _swap(port, name, _refuse, f"IocpProactor.{name}", of_the_tree=False)
 
             from malspark.memory import attck_loader
 
