@@ -937,10 +937,10 @@ class TestOnlyAHostPathIsMasked:
 
         # The least count whose text costs a measurable time; only the ratio
         # is asserted.
-        count = 1_000
+        count = 4_000
         while cpu_seconds(partial(host_paths_masked, text(count)), repeats=3) < 0.005:
             count *= 2
-        assert_scales(text, count, host_paths_masked, factor=4)
+        assert_scales(text, count, host_paths_masked, factor=16)
 
     def test_any_space_windows_allows_in_a_name_is_inside_it(self) -> None:
         for space in " \u00a0\u1680\u2009\u3000":

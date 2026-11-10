@@ -29,7 +29,7 @@
   a JSON string writes it, or doubled again in a repr of those words. Every name a Windows file
   name may hold is masked with the path: any character Windows allows in one (`$Recycle.Bin`,
   `a(b)`, `alice's`, `.(x)`, `OneDrive – Firma`, `a€b`, an accent written as a combining mark,
-  an emoji, and spaces, no-break spaces or thin spaces inside a directory's name, however
+  an emoji, and spaces, no-break spaces or thin spaces in a directory's name, however
   many), a character an escaped text writes as `\uXXXX`, and a name that only reads like such
   an escape in a path written as it is (`John Smith\uabcd.txt`), with its separators single,
   doubled, mixed with slashes (`C:/Users/a\b`) or written `\/`. It is masked wherever the path
