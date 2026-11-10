@@ -55,6 +55,8 @@ from malspark.reporting.section_agreement import (
     KEEP_UNQUOTED_CODE,
     QUALIFIED_CODE,
     _failure_redone_check,
+    _redo_choices,
+    _stale_calls,
     agreement_violations,
     ask_section_agreement,
     held_limitation_sentences,
@@ -228,6 +230,18 @@ def test_the_export_table_is_named_by_its_word_only_as_what_is_denied() -> None:
     assert _held("The hash set was not reproduced against the export tables of 27 DLLs.") == set()
     # The export table writes "begin": a "Begin" key is none of its names.
     assert _held("No 'Begin' key path appears in the strings read.") == set()
+
+
+@pytest.mark.parametrize(
+    "sentence",
+    [
+        f"No call to {CALLED}, {RESOLVED_ONLY} or `connect` is shown.",
+        f"{CALLED} and {RESOLVED_ONLY} are not called.",
+        f"The code calls neither {CALLED} nor {RESOLVED_ONLY}.",
+    ],
+)
+def test_a_sentence_held_on_one_name_is_held_on_every_name_it_writes(sentence: str) -> None:
+    assert _held(sentence) == {CALLED, RESOLVED_ONLY}
 
 
 def test_a_quoted_text_the_run_holds_is_held() -> None:
@@ -481,10 +495,11 @@ def test_an_uncited_keep_is_refused_naming_the_redo_to_cite() -> None:
         assert found.code == FAILURE_REDONE_CODE
         assert found.message == (
             "it names a call that failed and a later call redid (ev_0201 by ev_0202) and "
-            "cites none of the calls that redid it. Cite ev_0202 for what it states, or "
-            "rewrite it on what ev_0202 answered, or drop it."
+            "cites none of the calls that redid it. Rewrite it in your own words on what "
+            "ev_0202 answered, citing it, or drop it; the same words with a citation added "
+            "are a keep."
         )
-        # The same words citing the call that redid it pass the check.
+        # Citing the call that redid it passes this check; the same words are still a keep.
         assert check(sentence.rstrip(".") + " [ev_0202].", [], "") == []
 
 
@@ -501,10 +516,59 @@ def test_a_keep_naming_two_redone_calls_is_told_to_cite_a_redo_of_each() -> None
     check = _failure_redone_check([_REDONE, redone_twice], [], ())
     sentence = "The decompiler produced no function at 0x2200 or 0x1030."
     (found,) = check(sentence, [], "")
-    assert "Cite ev_0202 and ev_0204 or ev_0205 for what it states" in found.message
+    assert "on what ev_0202 and ev_0204 or ev_0205 answered, citing each, or drop" in (
+        found.message
+    )
     # One redo of each call passes; the redo of one call alone does not.
     assert check(sentence.rstrip(".") + " [ev_0202][ev_0205].", [], "") == []
     assert check(sentence.rstrip(".") + " [ev_0202].", [], "") != []
+
+
+_OTHER_KINDS = [
+    *_REDONE_AT_TWO,
+    FailedCall(
+        entry="ev_0205",
+        tool="list_asm",
+        error="bad",
+        asked=(0x5000,),
+        redone_by=("ev_0206",),
+        lists_code=True,
+        kind="disassemble",
+    ),
+    FailedCall(
+        entry="ev_0207",
+        tool="run_emulator",
+        error="bad",
+        asked=(0x6000,),
+        redone_by=("ev_0208",),
+        lists_code=False,
+        kind="emulate",
+    ),
+]
+
+
+@pytest.mark.parametrize(
+    ("sentence", "said", "redos"),
+    [
+        # A kind word names no call of its kind the sentence does not name by its address.
+        ("The decompile of 0x2200 shows no network call.", "ev_0201 by ev_0202", "ev_0202"),
+        ("0x2200 does not call 0x5000, as the disassembly shows.", "ev_0205 by ev_0206", "ev_0206"),
+        (
+            "The function boundaries of 0x2200 and 0x1030 are not confirmed, because the "
+            "decompiler produced no function at either address [ev_0109].",
+            "ev_0201 by ev_0202; ev_0203 by ev_0204",
+            "ev_0202 and ev_0204",
+        ),
+    ],
+)
+def test_a_keep_is_asked_for_exactly_the_redos_the_round_names(
+    sentence: str, said: str, redos: str
+) -> None:
+    named = redone_calls_named(sentence, _OTHER_KINDS, ())
+    assert " and ".join(_redo_choices(named)) == redos
+    (found,) = _failure_redone_check(_OTHER_KINDS, [], ())(sentence, [], "")
+    assert f"redid ({said}) and cites" in found.message
+    assert f"on what {redos} answered" in found.message
 
 
 def test_a_sentence_saying_a_call_failed_keeps_its_finding() -> None:
@@ -514,6 +578,19 @@ def test_a_sentence_saying_a_call_failed_keeps_its_finding() -> None:
 
 
 _TRUE = "The decompile of 0x5a10 shows no network call."
+
+
+def _row(sentence: str, decision: str, sources: list[str], **said: str) -> dict[str, Any]:
+    return {
+        "passage": "limitations",
+        "sentence": sentence,
+        "sources": sources,
+        "decision": decision,
+        "rewrite": "",
+        "reason": "",
+        "quote": "",
+        **said,
+    }
 
 
 def test_the_round_is_shown_the_redo_to_cite_and_refuses_an_uncited_keep() -> None:
@@ -528,33 +605,173 @@ def test_the_round_is_shown_the_redo_to_cite_and_refuses_an_uncited_keep() -> No
     ) in text
     assert (
         "  [limitations] each of these names a call that failed and a later call redid, and "
-        "cites none of the calls that redid it: a keep of it as written is refused; rewrite it "
-        "citing the call named here for what it states, or on what that call answered, or "
-        f'drop it: "{_TRUE}" (cite ev_0107)'
+        "cites none of the calls that redid it: a keep of it as written is refused, and the "
+        "same words with a citation added are a keep; rewrite it in your own words on what the "
+        f'call named here answered, citing it, or drop it: "{_TRUE}" (cite ev_0107)'
     ) in text
+    ends = (
+        "rewrite it in your own words on what ev_0107 answered, citing it, or drop it; the "
+        "same words with a citation added are a keep."
+    )
     keep = {"sentences": [_keep("limitations", _TRUE, [], "no source speaks of it")]}
-    refused = [v for v in agreement_violations(keep, passages) if v.code == FAILURE_REDONE_CODE]
-    assert [v.message for v in refused] == [
-        "row 1: limitations keeps a sentence the ledger says otherwise of: it names a call "
-        "that failed and a later call redid (ev_0101 by ev_0107) and cites none of the calls "
-        "that redid it. Cite ev_0107 for what it states, or rewrite it on what ev_0107 "
-        "answered, or drop it."
+    refused = agreement_violations(keep, passages)
+    assert {v.code for v in refused} == {FAILURE_REDONE_CODE, KEEP_UNQUOTED_CODE}
+    assert [v.message for v in refused if v.code == FAILURE_REDONE_CODE] == [
+        "row 1: limitations keeps a sentence that names what the ledger holds lines on: it "
+        "names a call that failed and a later call redid (ev_0101 by ev_0107) and cites none "
+        "of the calls that redid it. R" + ends[1:]
     ]
-    # Its words citing the call that redid it are accepted by the failure check.
-    cited = {
-        "sentences": [
-            {
-                "passage": "limitations",
-                "sentence": _TRUE,
-                "sources": ["failed.1"],
-                "decision": "rewrite",
-                "rewrite": "The decompile of 0x5a10 shows no network call [ev_0107].",
-            }
-        ]
-    }
-    assert FAILURE_REDONE_CODE not in {v.code for v in agreement_violations(cited, passages)}
-    assert limitations.sourced_check is not None
-    assert limitations.sourced_check(cited["sentences"][0]["rewrite"], ["failed.1"], "") == []
+    # Every refusal says what to do, and offers no source to quote.
+    assert all(v.message.endswith(ends[1:]) and "quot" not in v.message for v in refused)
+
+
+def test_a_sentence_held_to_a_redone_call_ends_as_the_round_is_told() -> None:
+    passages = passages_of(_report(_TRUE), entries=_ledger())
+    # The same words with the citation added are a keep, and refused, saying what to do.
+    same = _row(_TRUE, "rewrite", ["failed.1"], rewrite=_TRUE.rstrip(".") + " [ev_0107].")
+    (refused,) = agreement_violations({"sentences": [same]}, passages)
+    assert refused.code == KEEP_UNQUOTED_CODE
+    assert "into the same words, which keeps it" in refused.message
+    assert refused.message.endswith(
+        "rewrite it in your own words on what ev_0107 answered, citing it, or drop it; the "
+        "same words with a citation added are a keep."
+    )
+    # A rewrite in its own words on what the redo answered, citing it, and a drop stand
+    # whole: no finding of any kind.
+    for row in (
+        _row(
+            _TRUE,
+            "rewrite",
+            ["failed.1"],
+            rewrite="The later decompile of 0x5a10 [ev_0107] contains no network call.",
+        ),
+        _row(_TRUE, "drop", [], reason="a later call redid the call it names"),
+    ):
+        assert agreement_violations({"sentences": [row]}, passages) == [], row
+
+
+_UNKNOWN = f"The runtime result of `{CALLED}` is not known."
+
+
+def test_a_closing_sentence_held_on_a_name_ends_as_the_round_is_told() -> None:
+    passages = passages_of(_report(_UNKNOWN), entries=_ledger())
+    (fact,) = [p for p in passages if p.id.startswith("ledger.")]
+    assert (
+        "  [limitations] each of these denies something and names what a ledger.N fact shows "
+        "(an API's call lines, an export, a decoded text); a keep of it as written is refused, "
+        "and the same words with a citation added are a keep; rewrite it in your own words on "
+        "the lines shown, citing the entry they come from, saying what the lines show and what "
+        f'stays unknown, or drop it: "{_UNKNOWN}" ({fact.id})'
+    ) in prompt_text(passages)
+    ends = (
+        f"it names what {fact.id} holds lines on: a keep of it as written is refused, and the "
+        "same words with a citation added are a keep; rewrite it in your own words on the "
+        "lines shown, citing the entry they come from, saying what the lines show and what "
+        "stays unknown, or drop it."
+    )
+    # A keep in any form, and the same words with a citation added, are refused, each
+    # told what to do and offered no source to quote.
+    for row in (
+        _row(_UNKNOWN, "keep", [], reason="no source states it"),
+        _row(_UNKNOWN, "keep", [fact.id], reason="the fact shows the call, not its result"),
+        _row(_UNKNOWN, "keep", [fact.id], quote=f"(*_DAT_{SLOT:x})(self,&mode);"),
+        _row(_UNKNOWN, "rewrite", [fact.id], rewrite=_UNKNOWN.rstrip(".") + " [ev_0109]."),
+    ):
+        found = agreement_violations({"sentences": [row]}, passages)
+        assert [v.code for v in found] == [KEEP_UNQUOTED_CODE], row
+        assert found[0].message.endswith(ends), row
+    # A rewrite in its own words on the lines shown, citing their entry, and a drop stand
+    # whole: no finding of any kind.
+    for row in (
+        _row(
+            _UNKNOWN,
+            "rewrite",
+            [fact.id],
+            rewrite=(
+                f"Routine 0x5a10 calls `{CALLED}` [ev_0107], but what it returns at run time "
+                "is not recorded."
+            ),
+        ),
+        _row(_UNKNOWN, "drop", [], reason="the lines shown do not state its result"),
+    ):
+        assert agreement_violations({"sentences": [row]}, passages) == [], row
+
+
+@pytest.mark.parametrize(
+    "other",
+    [
+        # Set in what a run saw: not held, and kept on its reason as on a run without the
+        # ledger's names.
+        f"No `{CALLED}` call from the listed routine was observed at run time.",
+        f"The code index call lines of `{CALLED}` were not observed in the sandbox.",
+        "Whether the sample is packed is not known.",
+    ],
+)
+def test_a_fact_of_a_name_speaks_only_to_the_sentences_held_on_it(other: str) -> None:
+    passages = passages_of(_report(f"{_UNKNOWN} {other}"), entries=_ledger())
+    limitations = next(p for p in passages if p.id == "limitations")
+    assert dict(limitations.ledger_named).keys() == {_UNKNOWN}
+    rows = [
+        _row(_UNKNOWN, "drop", [], reason="the lines shown do not state its result"),
+        _row(other, "keep", [], reason="stated by the analysts"),
+    ]
+    assert agreement_violations({"sentences": rows}, passages) == []
+
+
+def test_a_negated_sentence_naming_an_api_in_a_run_s_words_is_held_on_it() -> None:
+    # "No sandbox run" sets no denial in what a run saw: the name is held, the sentence the
+    # model's to rewrite or drop.
+    other = f"No sandbox run exercised the `{CALLED}` gate."
+    passages = passages_of(_report(f"{_UNKNOWN} {other}"), entries=_ledger())
+    limitations = next(p for p in passages if p.id == "limitations")
+    assert other in dict(limitations.ledger_named)
+
+
+_ORDER_PROBE = """
+import sys
+from malspark.reporting.limitation_facts import FailedCall
+from malspark.reporting.section_agreement import _failure_redone_check
+calls = [
+    FailedCall(entry=f"ev_02{i}0", tool=f"tool{i}", error="bad", asked=(0x2000 + i,),
+               redone_by=(f"ev_02{i}1",), lists_code=True, kind=kind)
+    for i, kind in enumerate(("emulate", "disassemble", "decompile"))
+]
+text = "The emulator, the disassembler and the decompiler failed."
+sys.stdout.write(_failure_redone_check(calls, [], ())(text, [], "")[0].message)
+"""
+
+
+def test_the_finding_on_failed_calls_reads_the_same_under_every_hash_seed() -> None:
+    import os
+    import subprocess
+    import sys
+
+    seen = set()
+    for seed in ("1", "2", "3", "4"):
+        env = {**os.environ, "PYTHONHASHSEED": seed, "PYTHONPATH": os.pathsep.join(sys.path)}
+        done = subprocess.run(
+            [sys.executable, "-c", _ORDER_PROBE],
+            env=env,
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        seen.add(done.stdout)
+    (message,) = seen
+    # The kind stems in order: decompile, disassemble, emulate.
+    assert "(ev_0220 by ev_0221; ev_0210 by ev_0211; ev_0200 by ev_0201)" in message
+    calls = [
+        FailedCall(
+            entry=f"ev_03{i}", tool="t", error="e", asked=(0x3000,), redone_by=("ev_0399",), kind=k
+        )
+        for i, k in enumerate(("emulate", "decompile"))
+    ]
+    assert [
+        c.entry for c in _stale_calls("Decompiling and emulating failed.", calls, (), broad=True)
+    ] == [
+        "ev_031",
+        "ev_030",
+    ]
 
 
 # ---------------------------------------------------------------------------

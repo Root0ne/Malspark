@@ -54,8 +54,11 @@ from malspark.reporting.absence_answers import (
 )
 from malspark.reporting.ledger_entities import ApiCall, ApiHeld, ExportHeld, RunNames, TextHeld
 from malspark.reporting.section_agreement import (
+    CLAIM_LED,
+    Passage,
     _call_lines,
     _candidates,
+    _name_passages,
     _reports_a_claim,
     _said_unread,
     _unread_addresses,
@@ -114,6 +117,34 @@ def _denying_many_names(text: str) -> object:
     count = len(text) // 40
     denied = ", and ".join(f"QueryHostMode{i:05d} is not called" for i in range(count))
     return name_readings(f"{text} {denied}.", "", _many_names(count))
+
+
+# A run holding this many exports, each at its own address.
+_EXPORTS = {
+    0x1000 + 16 * i: ExportHeld(
+        names=(f"Exp{i:05d}",), address=0x1000 + 16 * i, entries=("ev_0004",)
+    )
+    for i in range(40)
+}
+_MANY_EXPORTS = RunNames(
+    exports={export.names[0]: export for export in _EXPORTS.values()},
+    by_address=_EXPORTS,
+    index_whole=True,
+)
+
+
+def _names_of_many_sentences(text: str) -> object:
+    """The facts of a passage of as many distinct sentences as the line holds, each denying
+    something of the run's exports: every fact speaks to every one of them."""
+    passage = Passage(
+        id="p",
+        label="x",
+        text=" ".join(f"No export is called by routine {i:05d}." for i in range(len(text) // 80)),
+        kind=CLAIM_LED,
+        write=print,
+    )
+    found = SimpleNamespace(listed=[])
+    return _name_passages([passage], _MANY_EXPORTS, found, {}, frozenset())  # type: ignore[arg-type]
 
 
 def _hostile(size: int) -> str:
@@ -386,6 +417,7 @@ LISTED = [SimpleNamespace(addresses=frozenset({0x1400}), id="listed.1")]
             id="a denial pointing back to the names before it",
         ),
         pytest.param(_denying_many_names, id="a denial of as many names as the line holds"),
+        pytest.param(_names_of_many_sentences, id="the facts of names many sentences deny"),
         pytest.param(
             lambda t: _call_lines(t.replace(" is ", "\n"), ["1400", "native"], {0x1400: "X"}, ()),
             id="the call lines of a listing",

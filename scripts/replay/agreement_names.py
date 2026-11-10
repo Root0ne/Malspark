@@ -186,7 +186,7 @@ def read_run(run: Path) -> dict[str, Any]:
                         if fid in by_fact
                     ],
                     "outcome": (
-                        "held; a keep must quote a source"
+                        "held; a keep as written is refused: rewritten on the lines or left out"
                         if passage.closing
                         else "held; a keep is recorded unless quoted"
                     ),
@@ -202,9 +202,15 @@ def read_run(run: Path) -> dict[str, Any]:
         for sentence in held_limitation_sentences(
             limitations.text, failed, listed, found.image_bases
         ):
-            stale = _stale_calls(sentence, failed, found.image_bases, broad=True)
-            refused = "a keep is refused (agreement.failure_redone): left out unless rewritten"
             named = redone_calls_named(sentence, failed, found.image_bases)
+            # The calls a keep of it is refused for, as the failure check reads them: the
+            # ones it names or cites, unless it says a call failed.
+            stale = (
+                _stale_calls(sentence, failed, found.image_bases, broad=True)
+                if _SAYS_FAILED.search(sentence)
+                else named
+            )
+            refused = "a keep is refused (agreement.failure_redone): left out unless rewritten"
             held_failed.append(
                 {
                     "sentence": sentence,
@@ -270,9 +276,12 @@ def _print(read: dict[str, Any]) -> None:
             )
     for row in read["failed"]:
         before = "held before too" if row["held_before"] else "not held before"
+        # The redone calls it is held to, each with the calls that redid it; none where
+        # it is held by a failure no later call redid.
+        redone = "; ".join(row["redone"])
         print(
-            f" - [limitations] failed call ({before}): {row['outcome']} "
-            f"({'; '.join(row['redone'])})"
+            f" - [limitations] failed call ({before}): {row['outcome']}"
+            + (f" ({redone})" if redone else "")
             + (f"; cite {' and '.join(row['cite'])}" if row["cite"] else "")
         )
         print(f"     sentence: {_cut(row['sentence'], 220)}")
