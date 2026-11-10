@@ -413,6 +413,30 @@ class TestOnlyAHostPathIsMasked:
         # A quoted POSIX path stops at a space, as it always has.
         assert host_paths_masked("'/home/a b/c'") == f"'{OUTSIDE_PROJECT} b/c'"
 
+    @pytest.mark.parametrize(
+        "span",
+        [
+            r"D:\proj\rules\a.yml and C:\Users\alice\secret.txt",
+            r"C:\Users\alice\secret.txt and D:\proj\rules\a.yml",
+            r"C:\Users\alice\a.txt and C:\Users\bob\b.txt",
+            r"D:\proj\x.yml (copied from \\srv\share\alice\y.yml)",
+            r"D:\proj\x.yml (copied from \\\\srv\\share\\alice\\y.yml)",
+        ],
+    )
+    def test_a_quoted_span_holding_another_path_is_masked_whole(self, span: str) -> None:
+        root = Path(r"D:\proj")
+        for quote in ("'", '"'):
+            said = host_paths_masked(f"read {quote}{span}{quote} then", root)
+            assert said == f"read {quote}{OUTSIDE_PROJECT}{quote} then"
+
+    def test_a_quoted_project_path_s_words_are_read_again(self) -> None:
+        root = Path(r"D:\proj")
+        said = host_paths_masked(r"read 'D:\proj\rules\a b.yml, from /home/alice/x' then", root)
+        assert said == f"read 'rules/a b.yml, from {OUTSIDE_PROJECT}' then"
+        assert host_paths_masked(r"read 'D:\proj\rules\a b.yml' then", root) == (
+            "read 'rules/a b.yml' then"
+        )
+
     def test_text_shaped_like_a_windows_path_is_masked_on_any_host_too(self) -> None:
         r"""A decision, not an accident: the words alone decide, never the host.
 

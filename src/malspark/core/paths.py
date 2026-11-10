@@ -201,6 +201,10 @@ _ABSOLUTE_PATH = re.compile(
 # device prefix.
 _DRIVE = re.compile(_DRIVE_HEAD)
 
+# Another Windows path starting inside a quoted span: the span is then not one
+# path, and is masked whole.
+_ANOTHER_HEAD = re.compile(rf"(?<![\w:./\\])(?:{_DRIVE_HEAD}|{_UNC_HEAD}[?.\w])")
+
 # The directories a host keeps its own files under. A path that starts with one
 # of them is the host's layout; anything else that reads as one (an HTTP route,
 # ``/api/v1/jobs``) is left as written. Nothing is looked up on the host, so
@@ -268,6 +272,12 @@ def host_paths_masked(text: str, project_root: Path | None = None) -> str:
     )
 
     def shown(match: re.Match[str]) -> str:
+        quoted = match.group("quoted")
+        if quoted and _ANOTHER_HEAD.search(quoted, 1):
+            # Two paths, or a path and more words holding one: not one path,
+            # and where each ends cannot be read (a name may hold a space), so
+            # the whole span is masked rather than shown in part.
+            return OUTSIDE_PROJECT
         path = _written_path(
             match.group("url")
             or match.group("quoted")
@@ -276,7 +286,10 @@ def host_paths_masked(text: str, project_root: Path | None = None) -> str:
             or match.group("path")
         )
         if type(path) is type(root) and path.is_relative_to(root) and path != root:
-            return path.relative_to(root).as_posix()
+            relative = path.relative_to(root).as_posix()
+            # Words in a quoted span after the path come back with it: read
+            # again, so nothing path-shaped in them is left.
+            return _ABSOLUTE_PATH.sub(shown, relative) if quoted else relative
         if isinstance(path, PureWindowsPath) or match.group("url"):
             return OUTSIDE_PROJECT
         text = str(path)
