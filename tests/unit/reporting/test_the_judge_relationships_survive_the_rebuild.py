@@ -167,11 +167,13 @@ class TestARelationshipToASurvivingTechnique:
 
         bundle = ExtendedSTIXRenderer().render(report, Bundle.model_validate(stix))
 
+        # The judge's malware object, under the id the export derives for it.
+        (malware,) = [obj.id for obj in bundle.objects if getattr(obj, "type", "") == "malware"]
         uses = [
             obj
             for obj in bundle.objects
             if getattr(obj, "relationship_type", "") == "uses"
-            and getattr(obj, "source_ref", "") == MALWARE_ID
+            and getattr(obj, "source_ref", "") == malware
         ]
         assert len(uses) == 1
 

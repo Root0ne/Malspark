@@ -33,12 +33,16 @@ from tests.unit.reporting.test_an_entry_without_a_source_is_read_as_before impor
 # Re-pinned when the product took its new name (T-576): the producer's name and
 # the ``x_malspark_*`` properties; with the previous name each is the digest
 # pinned before.
+# Re-pinned when the export came to derive every id it writes (T-621): the
+# judge's ids that are no UUID (``malware--1``, ``relationship--uses-rundll32``)
+# become derived UUIDs, which the normalisation then reads as ``--ID``; with
+# every id normalised, each export is the one pinned before.
 STORED_EXPORTS = {
-    "run7": "9f3586c36e867b3e",
-    "run5": "3abdff0c8db7948c",
-    "run4": "4cf5568e843e294e",
-    "local8": "d5d7b39ea49f8f5c",
-    "haiku4": "ac8035fc45db4cdf",
+    "run7": "97010073acb3f66e",
+    "run5": "83f0081d6a7cc8ad",
+    "run4": "fbe50964e8194ae7",
+    "local8": "87edb4219361fbde",
+    "haiku4": "51e71519130d4a8c",
 }
 # ``(markdown, html with the nonce "fixed", normalised STIX)`` for haiku4. The
 # Markdown and HTML were re-pinned when a sample's, a tool's or a finding's text

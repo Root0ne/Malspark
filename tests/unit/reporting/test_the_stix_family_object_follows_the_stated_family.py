@@ -72,13 +72,13 @@ def test_a_judge_sample_object_is_kept_and_the_family_is_added_beside_it() -> No
 
     by_name = {m.name: m for m in _malware(bundle)}
     assert set(by_name) == {"loader.dll sample", FAMILY}
-    # The judge's object as written.
+    # The judge's object as written, under the id the export derives for it.
     kept = by_name["loader.dll sample"]
-    assert (kept.id, kept.is_family, kept.malware_types) == (judge.id, False, ["downloader"])
+    assert (kept.is_family, kept.malware_types) == (False, ["downloader"])
     # The family's object.
     assert by_name[FAMILY].is_family is True
     variants = [r for r in _relationships(bundle) if r.relationship_type == "variant-of"]
-    assert [(r.source_ref, r.target_ref) for r in variants] == [(judge.id, by_name[FAMILY].id)]
+    assert [(r.source_ref, r.target_ref) for r in variants] == [(kept.id, by_name[FAMILY].id)]
 
 
 def test_a_judge_family_object_is_the_family_and_nothing_is_added() -> None:

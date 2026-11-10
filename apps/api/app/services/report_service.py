@@ -244,8 +244,9 @@ def _one_line(text: str) -> str:
 
 
 # What a report stored before the current publish rule is told about its
-# export: the bundle is the one stored, and is not re-rendered when served,
-# because a render mints fresh ids and timestamps every time.
+# export: the bundle is the one stored, and is not re-rendered when served:
+# it is what its consumers already hold, and a bundle stored before the export
+# derived its ids carries other ids than a render under today's rules.
 OLD_RULE_STIX_NOTE = (
     "This report was stored before its IOC table, /iocs and MISP attributes were built by "
     "the current publish rule. They are rebuilt by that rule when served; the STIX bundle "

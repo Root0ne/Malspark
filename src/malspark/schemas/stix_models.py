@@ -121,6 +121,13 @@ UNPUBLISHED_NOTICE = (
 )
 
 
+# The namespace the export derives every other object id it writes in
+# (``reporting.renderers.stix_renderer``): a UUIDv5 over the object's kind and
+# what identifies it (the sample's SHA-256, a pattern, a relationship's ends),
+# so one object of one sample is one object across renders and across runs.
+STIX_ID_NAMESPACE = uuid.uuid5(uuid.NAMESPACE_URL, "malspark:stix")
+
+
 def attack_pattern_id(technique_id: str) -> str:
     """The object id of one ATT&CK technique. The same id every time."""
     return f"attack-pattern--{uuid.uuid5(ATTACK_PATTERN_NAMESPACE, technique_id)}"

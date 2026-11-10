@@ -480,6 +480,16 @@ def _sample(bundle: dict[str, Any]) -> dict[str, Any]:
     return sample
 
 
+def _judge_malware_id(bundle: dict[str, Any]) -> str:
+    """The id the export gives the judge's malware object, derived from what identifies it."""
+    (found,) = [
+        o["id"]
+        for o in bundle["objects"]
+        if o["type"] == "malware" and o["name"] == MALWARE["name"]
+    ]
+    return str(found)
+
+
 class TestTheExport:
     def test_names_the_sample_by_its_identity_digests_and_passes_the_validator(self) -> None:
         bundle = _export(_report())
@@ -551,7 +561,7 @@ class TestTheExport:
             and o.get("description") != PLATFORM_INDICATES_EDGE
         ]
         assert [(e["source_ref"], e["target_ref"]) for e in edges] == [
-            (sample["id"], MALWARE["id"])
+            (sample["id"], _judge_malware_id(bundle))
         ]
 
     def test_the_judge_s_bundle_is_unchanged_and_renders_the_same_twice(self) -> None:
@@ -572,7 +582,9 @@ class TestTheExport:
                 if o["type"] == "relationship"
                 and o["relationship_type"] == "indicates"
                 and o["source_ref"] == sample["id"]
-            ] == [MALWARE["id"]]
+            ] == [_judge_malware_id(bundle)]
+        # The same report renders to the same bundle, byte for byte.
+        assert first == second
 
     def test_a_folded_indicator_s_sets_are_merged_onto_the_sample_s(
         self, monkeypatch: pytest.MonkeyPatch

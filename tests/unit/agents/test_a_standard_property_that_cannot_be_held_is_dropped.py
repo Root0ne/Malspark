@@ -135,8 +135,7 @@ def test_the_export_carries_what_the_run_grounds_and_declines_the_rest() -> None
     )
     renderer = ExtendedSTIXRenderer()
     exported = renderer.render(report, Bundle.model_validate(bundle_dict)).model_dump(mode="json")
-    objects = {o["id"]: o for o in exported["objects"]}
-    malware = objects["malware--1"]
+    (malware,) = [o for o in exported["objects"] if o["type"] == "malware"]
     assert malware["aliases"] == ["LDR"]
     assert malware["kill_chain_phases"] == [PHASE]
     assert "first_seen" not in malware

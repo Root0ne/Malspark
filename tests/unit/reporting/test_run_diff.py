@@ -11,6 +11,7 @@ from __future__ import annotations
 import copy
 import itertools
 import json
+import uuid
 from typing import Any
 
 import pytest
@@ -342,11 +343,20 @@ class TestDetection:
 
 class TestStix:
     def test_two_renders_with_different_ids_pair_by_key_not_by_id(self, stored) -> None:
+        # The renderer derives every id it writes, so the same report renders
+        # to the same ids; a bundle stored before that carries other ids for
+        # the same objects, which is what the second bundle is made to be here.
         ids_a = {o["id"] for o in stored["bundle"]["objects"]}
         ids_b = {o["id"] for o in stored["second_bundle"]["objects"]}
-        assert ids_a != ids_b  # the renderer mints fresh ids for some objects
+        assert ids_a == ids_b
+        text = json.dumps(stored["second_bundle"])
+        for oid in sorted(i for i in ids_b if not i.startswith(("attack-pattern--", "identity--"))):
+            kind = oid.split("--", 1)[0]
+            text = text.replace(oid, f"{kind}--{uuid.uuid4()}")
+        moved = {**stored, "second_bundle": json.loads(text)}
+        assert {o["id"] for o in moved["second_bundle"]["objects"]} != ids_a
 
-        diff = _pair(stored)
+        diff = _pair(moved)
 
         section = _section(diff, "stix")
         assert section["counts"][ADDED] == section["counts"][REMOVED] == 0
