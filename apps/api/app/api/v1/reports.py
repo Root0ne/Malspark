@@ -553,19 +553,30 @@ async def get_full_malware_report_iocs(
 async def get_full_malware_report_signatures(
     report_id: uuid.UUID,
     kind: str,
+    include: str = Query(
+        default="printed",
+        pattern="^(printed|all)$",
+        description=(
+            "Which drafts to return. 'printed' (the default) is the rules the report prints, "
+            "each of which compiles; 'all' is every draft, each with its standing in a comment "
+            "line."
+        ),
+    ),
     user: User = Depends(get_current_user),
     svc: ReportService = Depends(_get_service),
 ) -> str:
-    """Return rule bodies for a single signature ``kind`` as plain text.
+    """Return rule bodies for a single signature ``kind`` as one file of that kind.
 
-    Accepted kinds: ``yara``, ``sigma``, ``suricata``, ``snort``.
+    Accepted kinds: ``yara``, ``sigma``, ``suricata``, ``snort``. Each rule's
+    name is a comment line of the kind's own syntax, and Sigma documents form
+    one YAML stream, so the file parses as the kind it is.
     """
     if kind not in {"yara", "sigma", "suricata", "snort"}:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=(f"Unknown signature kind '{kind}'. Use yara, sigma, suricata, or snort."),
         )
-    body = await svc.get_malware_report_signature(report_id, user, kind=kind)
+    body = await svc.get_malware_report_signature(report_id, user, kind=kind, include=include)
     if body is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,

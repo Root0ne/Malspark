@@ -4,7 +4,8 @@
  *
  * Quick is what a reader hands on: the report and the indicator list. Deep is
  * what another tool imports: STIX, MISP, the ATT&CK layer, the generated
- * rules. Data is the raw record. Each item calls the download the console
+ * rules (those the report prints, and every draft where some are not). Data
+ * is the raw record. Each item calls the download the console
  * already had (`lib/api.ts`); nothing here is a new endpoint. An item with
  * nothing to download is left out, or kept with the reason it is unavailable
  * printed beside it, never a dead control without a word.
@@ -84,6 +85,7 @@ export function exportFileNames(baseName: string) {
     misp: `${baseName}-misp.json`,
     attackLayer: NAVIGATOR_LAYER_FILE,
     rules: (kind: DetectionKind) => `malspark-${kind}.${RULE_EXT[kind]}`,
+    allRules: (kind: DetectionKind) => `malspark-${kind}-all.${RULE_EXT[kind]}`,
     report: `${baseName}-report.json`,
     techniques: `${baseName}-mitre.json`,
     timeline: `${baseName}-timeline.json`,
@@ -105,6 +107,11 @@ function json(body: unknown): string {
 export function ruleKinds(mr: MalwareReport | null | undefined): DetectionKind[] {
   const present = new Set((mr?.detection_signatures ?? []).map((r) => r.kind));
   return (Object.keys(RULE_LABEL) as DetectionKind[]).filter((k) => present.has(k));
+}
+
+/** Whether a draft of `kind` is one the report may not print, so "all drafts" holds more. */
+function hasUnprintedDraft(mr: MalwareReport | null | undefined, kind: DetectionKind): boolean {
+  return (mr?.detection_signatures ?? []).some((r) => r.kind === kind && r.printed !== true);
 }
 
 /**
@@ -214,18 +221,34 @@ export function reportExportGroups(
           "application/json",
         ),
     },
-    ...ruleKinds(mr).map(
-      (kind): ExportItem => ({
+    ...ruleKinds(mr).flatMap((kind): ExportItem[] => [
+      {
         key: `rules-${kind}`,
         label: RULE_LABEL[kind],
+        hint: "The rules the report prints",
         run: async () =>
           downloadBlob(
             await api.getReportSignature(reportId, kind),
             names.rules(kind),
             RULE_MIME[kind],
           ),
-      }),
-    ),
+      },
+      ...(hasUnprintedDraft(mr, kind)
+        ? [
+            {
+              key: `rules-${kind}-all`,
+              label: `${RULE_LABEL[kind]}, all drafts`,
+              hint: "Every draft, each with why the report does or does not print it",
+              run: async () =>
+                downloadBlob(
+                  await api.getReportSignature(reportId, kind, "all"),
+                  names.allRules(kind),
+                  RULE_MIME[kind],
+                ),
+            },
+          ]
+        : []),
+    ]),
   ];
 
   const data: ExportItem[] = [

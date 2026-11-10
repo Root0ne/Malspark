@@ -8,7 +8,8 @@ from typing import TYPE_CHECKING, Any, NamedTuple
 
 from arq import ArqRedis
 from malspark.reporting.builder import ioc_table
-from malspark.reporting.models import ConsolidatedIOC
+from malspark.reporting.detection_signatures import analyst_print_gate, rule_standing
+from malspark.reporting.models import ConsolidatedIOC, DetectionRule
 from malspark.reporting.renderers.stix_renderer import SAMPLE_DIGESTS, publishes, yes_because
 from malspark.reporting.run_diff import RunRecord, diff_runs
 from malspark.schemas.stix_models import with_current_property_names
@@ -195,6 +196,51 @@ def ioc_feed_rows(mr: dict, kind: str | None = None) -> list[dict]:
             }
         )
     return out
+
+
+# The line comment of each rule kind's own syntax: the download's name and
+# standing lines must not break the file a rule engine or converter reads.
+_RULE_COMMENT = {"yara": "//", "sigma": "#", "suricata": "#", "snort": "#"}
+
+
+def signature_download(signatures: list[dict], kind: str, include: str = "printed") -> str:
+    """The drafted rules of one ``kind`` as one file of that kind's syntax.
+
+    Each rule is preceded by its name in a comment line of the kind's own
+    syntax (``//`` YARA, ``#`` Sigma, Suricata and Snort). Sigma documents are
+    joined as a YAML multi-document stream (``---``); the others by a blank
+    line. ``printed`` (the default) serves the rules the analyst report prints
+    (``analyst_print_gate``), so a rule that does not compile is never in it;
+    ``all`` serves every draft, each with its standing (``rule_standing``) in
+    a second comment line. A stored rule the model cannot read is served only
+    to ``all``, with no standing. An empty string when no rule is served.
+    """
+    mark = _RULE_COMMENT.get(kind, "#")
+    every = include == "all"
+    parts: list[str] = []
+    for stored in signatures:
+        if stored.get("kind") != kind:
+            continue
+        try:
+            rule: DetectionRule | None = DetectionRule.model_validate(stored)
+        except Exception:  # noqa: BLE001 — a rule that will not read has no standing
+            rule = None
+        printed = rule is not None and analyst_print_gate(rule) is None
+        if not (printed or every):
+            continue
+        lines = [f"{mark} {_one_line(stored.get('name') or 'rule')}"]
+        if every and rule is not None:
+            lines.append(f"{mark} {_one_line(rule_standing(rule)[1])}")
+        lines.append(str(stored.get("body") or "").rstrip("\n"))
+        parts.append("\n".join(lines))
+    if not parts:
+        return ""
+    return ("\n---\n" if kind == "sigma" else "\n\n").join(parts) + "\n"
+
+
+def _one_line(text: str) -> str:
+    """A value on one comment line: its whitespace runs, line breaks among them, as one space."""
+    return " ".join(str(text).split())
 
 
 # What a report stored before the current publish rule is told about its
@@ -713,10 +759,13 @@ class ReportService:
         report_id: uuid.UUID,
         user: User,
         kind: str,
+        include: str = "printed",
     ) -> str | None:
-        """Return the concatenated rule bodies for a single signature ``kind``.
+        """Return the rule bodies of a single signature ``kind`` as one file of that kind.
 
-        ``kind`` is one of ``yara``, ``sigma``, ``suricata``, ``snort``.
+        ``kind`` is one of ``yara``, ``sigma``, ``suricata``, ``snort``;
+        ``include`` is ``printed`` (the rules the report prints) or ``all``
+        (every draft, each with its standing). See ``signature_download``.
 
         Distinguishes "report missing" (``None`` -> caller raises 404) from
         "report exists but no bodies of this kind" (empty string -> caller
@@ -727,15 +776,7 @@ class ReportService:
         mr = await self.get_malware_report(report_id, user)
         if not mr:
             return None
-        signatures = mr.get("detection_signatures") or []
-        bodies: list[str] = []
-        for sig in signatures:
-            if sig.get("kind") != kind:
-                continue
-            name = sig.get("name") or "rule"
-            body = sig.get("body") or ""
-            bodies.append(f"// {name}\n{body}")
-        return "\n\n".join(bodies) if bodies else ""
+        return signature_download(mr.get("detection_signatures") or [], kind, include)
 
     async def enqueue_enrichment(
         self,

@@ -1238,8 +1238,19 @@ class ApiClient {
     return this.blobRequest(`/api/v1/reports/${encodeURIComponent(reportId)}/pdf`);
   }
 
-  getReportSignature(reportId: string, kind: "yara" | "sigma" | "suricata" | "snort") {
-    return this.textRequest(`/api/v1/reports/${encodeURIComponent(reportId)}/signatures/${encodeURIComponent(kind)}`);
+  /**
+   * The drafted rules of one kind as one file of that kind. By default the
+   * rules the report prints; `"all"` is every draft, each with its standing.
+   */
+  getReportSignature(
+    reportId: string,
+    kind: "yara" | "sigma" | "suricata" | "snort",
+    include: "printed" | "all" = "printed",
+  ) {
+    const query = include === "all" ? "?include=all" : "";
+    return this.textRequest(
+      `/api/v1/reports/${encodeURIComponent(reportId)}/signatures/${encodeURIComponent(kind)}${query}`
+    );
   }
 
   /** The follow-up questions asked of a finished job, oldest first. */

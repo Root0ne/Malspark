@@ -91,9 +91,33 @@ describe("the export groups", () => {
       "misp",
       "attack-layer",
       "rules-yara",
+      "rules-yara-all",
       "rules-sigma",
+      "rules-sigma-all",
     ]);
     expect(ruleKinds(null)).toEqual([]);
+  });
+
+  it("offer every draft of a kind beside the printed rules only when a draft is not printed", async () => {
+    const printed = report({
+      detection_signatures: [
+        { kind: "yara", name: "y", body: "", auto_generated: true, source_evidence: [], compile_error: null, printed: true },
+        { kind: "sigma", name: "s", body: "", auto_generated: true, source_evidence: [], compile_error: null, printed: false },
+      ],
+    });
+    const deep = reportExportGroups("r1", printed, "b")[1].items;
+    expect(deep.filter((i) => i.key.startsWith("rules-")).map(({ key, label, hint }) => ({ key, label, hint }))).toEqual([
+      { key: "rules-yara", label: "YARA rules", hint: "The rules the report prints" },
+      { key: "rules-sigma", label: "Sigma rules", hint: "The rules the report prints" },
+      {
+        key: "rules-sigma-all",
+        label: "Sigma rules, all drafts",
+        hint: "Every draft, each with why the report does or does not print it",
+      },
+    ]);
+    await deep.find((i) => i.key === "rules-sigma-all")!.run();
+    expect(calls).toEqual(["getReportSignature(r1,sigma,all)"]);
+    expect(saved).toEqual([{ name: "malspark-sigma-all.yml", body: "rule x {}", type: "application/yaml" }]);
   });
 
   it("keep MISP with the reason it is unavailable: walked to, but not run", () => {
@@ -119,7 +143,9 @@ describe("the export groups", () => {
       "getReportEvidenceBundleJson(r1)",
       "getReportAttackLayer(r1)",
       "getReportSignature(r1,yara)",
+      "getReportSignature(r1,yara,all)",
       "getReportSignature(r1,sigma)",
+      "getReportSignature(r1,sigma,all)",
       "getReportMitre(r1)",
       "getReportTimeline(r1)",
     ]);
@@ -135,7 +161,9 @@ describe("the export groups", () => {
       "evidence-bundle.json",
       "malspark-attack-layer.json",
       "malspark-yara.yar",
+      "malspark-yara-all.yar",
       "malspark-sigma.yml",
+      "malspark-sigma-all.yml",
       "malspark-9f86d081884c-report.json",
       "malspark-9f86d081884c-mitre.json",
       "malspark-9f86d081884c-timeline.json",
