@@ -19,6 +19,7 @@ from __future__ import annotations
 import importlib.util
 import json
 import re
+from collections.abc import Callable
 from functools import partial
 from pathlib import Path, PurePath, PurePosixPath, PureWindowsPath
 from typing import Any
@@ -733,6 +734,28 @@ class TestOnlyAHostPathIsMasked:
         escaped = json.dumps({"m": "open C:/Users/alice/AppData/x.txt now"}).replace("/", "\\/")
         assert json.loads(host_paths_masked(escaped)) == {"m": f"open {OUTSIDE_PROJECT} now"}
 
+    def test_half_a_surrogate_pair_a_json_string_writes_stays_escaped(self) -> None:
+        # The masked document is stored as UTF-8, which holds no lone half.
+        for words in ("é", "e"):
+            written = '{"s": "' + words + ' \\ud83d C:\\\\Users\\\\bob"}'
+            said = host_paths_masked(written)
+            assert said == '{"s": "' + words + f' \\ud83d {OUTSIDE_PROJECT}"' + "}"
+            assert said.encode("utf-8")
+
+    def test_a_path_written_as_it_is_beside_an_escaped_one_in_a_json_string(self) -> None:
+        # ``D:\new\report.txt`` in a string that escapes its other path: the
+        # string writes a line break there, and the words in it are a path.
+        for raw in ("D:\\new\\report.txt", "path:D:\\table\\bob.txt", "D:\\u00e9t\\u00e9\\ray.txt"):
+            written = '{"m": "x C:\\\\Users\\\\alice and ' + raw + '"}'
+            said = host_paths_masked(written)
+            assert not re.search(r"alice|report|bob|ray", said), said
+            assert json.loads(said)
+        # A string that writes every path escaped keeps the other words it writes.
+        kept = json.dumps({"m": "open C:\\Users\\alice: see \\d+\\s in the rule"})
+        assert json.loads(host_paths_masked(kept)) == {
+            "m": f"open {OUTSIDE_PROJECT}: see \\d+\\s in the rule"
+        }
+
     def test_a_document_written_inside_a_document_is_read_through(self) -> None:
         inner = {"m": "tool failed: \\\\?\\C:\\long\\alice (exit 1) — réessayez plus tard, café"}
         said = host_paths_masked(json.dumps({"m": json.dumps(inner)}))
@@ -796,6 +819,26 @@ class TestOnlyAHostPathIsMasked:
             while cpu_seconds(partial(host_paths_masked, text(count)), repeats=3) < 0.005:
                 count *= 2
             assert_scales(text, count, host_paths_masked, factor=4)
+
+    @pytest.mark.parametrize(
+        "text",
+        [
+            lambda count: "x 'C:" + "\\" * count + "' y",
+            lambda count: 'x "C:' + "\\" * count + '" y',
+            lambda count: json.dumps({"m": "x 'C:" + "\\" * count + "' y"}),
+            lambda count: "x '" + "\\" * count + "srv\\share' y",
+            lambda count: "x 'C:" + "\\\\a" * count + "' y",
+        ],
+    )
+    def test_a_quoted_run_of_backslashes_is_masked_in_linear_time(
+        self, text: Callable[[int], str]
+    ) -> None:
+        # The least count whose text costs a measurable time; only the ratio
+        # is asserted.
+        count = 1_000
+        while cpu_seconds(partial(host_paths_masked, text(count)), repeats=3) < 0.005:
+            count *= 2
+        assert_scales(text, count, host_paths_masked, factor=4)
 
     def test_any_space_windows_allows_in_a_name_is_inside_it(self) -> None:
         for space in " \u00a0\u1680\u2009\u3000":

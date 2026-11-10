@@ -37,8 +37,10 @@
   `'`, `"`, backticks, `‘’`, `“”` or `«»`, or inside a text that writes another: a JSON
   document or the repr of a string is read through its escapes, each string as the words it
   writes, and written back the same way, so it still reads as that document and the words and
-  lines after a path stay. A text that is one string in quotes is read both as escaped and as
-  it stands, and what either reading shows is masked. A quoted Windows path or `file:` URL is
+  lines after a path stay; a string that starts with a Windows path is masked whole, as a
+  quoted span is. A text that is one string in quotes, or a string that writes a drive's
+  separator once among escaped ones (`D:\new\report.txt`), is read both as escaped and as it
+  stands, and what either reading shows is masked. A quoted Windows path or `file:` URL is
   masked up to its closing quote, spaces and all, and a quoted span holding a second path is
   masked whole; a full stop after an unquoted path stays outside it. A `file://host/...` URL
   (also `file:////host/...` and `file:\\host\...`, the scheme in any case) names a path on

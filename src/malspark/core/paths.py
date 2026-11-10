@@ -442,7 +442,7 @@ _SPAN_LEAD = re.compile(rf"(?:{_FILE}(?://(?:localhost)?/?|[\\/]*))?\\*(?:[?.]\\
 _ANOTHER_HEAD = re.compile(rf"(?:(?<![A-Za-z0-9])|(?<=\\[nrt]))[A-Za-z]:[\\/]|{_FILE}[\\/]")
 _BACKSLASHES = re.compile(r"\\+")
 _SPACE = re.compile(_WINDOWS_SPACE)
-_BACKSLASHES_BEFORE_A_NAME = re.compile(rf"(?<!\\)\\{{2,}}(?=[?.]|{_ANY_CHAR})")
+_BACKSLASHES_BEFORE_A_NAME = re.compile(rf"(?<!\\)\\{{2,}}+(?=[?.]|{_ANY_CHAR})")
 
 
 def _holds_another_path(span: str) -> bool:
@@ -553,6 +553,11 @@ _WINDOWS_FORM = re.compile(rf"[A-Za-z]:[\\/]|\\\\|{_FILE}")
 _STARTS_QUOTED = re.compile(_QUOTED_HEAD)
 # How deep a text written inside a text is followed.
 _WRITTEN_DEPTH = 4
+# A drive whose separator the string writes once: in a string that escapes
+# its backslashes, a path written as it is (``D:\new\report.txt``).
+_WRITTEN_AS_IT_IS = re.compile(r"(?<![A-Za-z0-9])[A-Za-z]:\\(?![\\/])")
+# Half of a pair: a JSON string may write one escaped, and no UTF-8 text holds it.
+_LONE_SURROGATE = re.compile("[\ud800-\udfff]")
 
 
 def _json_document(text: str) -> bool:
@@ -698,9 +703,15 @@ def host_paths_masked(
                     if not _WINDOWS_FORM.search(written):
                         return pattern.sub(shown, token.group())
                     said = within(written, depth + 1)
-                    if said == written:
-                        return token.group()
-                    return json.dumps(said, ensure_ascii=token.group().isascii())
+                    shows = token.group()
+                    if said != written:
+                        shows = _LONE_SURROGATE.sub(
+                            lambda half: f"\\u{ord(half.group()):04x}",
+                            json.dumps(said, ensure_ascii=shows.isascii()),
+                        )
+                    if _WRITTEN_AS_IT_IS.search(token.group()):
+                        return pattern.sub(shown, shows)
+                    return shows
 
                 masked = _JSON_STRING.sub(string, words)
                 if not words.lstrip().startswith('"'):
