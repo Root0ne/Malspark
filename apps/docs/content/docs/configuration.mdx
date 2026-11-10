@@ -98,6 +98,12 @@ Outside Compose, keep these in the gitignored `bootstrap.env` at the repository
 root. `make dev-up`, `make dev-down`, `make dev-logs` and `make migrate` source
 it; for a bare process, `set -a; . ./bootstrap.env; set +a` first.
 
+Three more variables are read by the host-side entry (`malspark_dev.py`, the
+Makefile's targets) and by the development stack, not by the API:
+`MALSPARK_DATA_VOLUMES`, `COMPOSE_FILE_EXTRA` and `MALSPARK_WATCH_POLL_MS`.
+They are listed in *Host-side variables of the entry* in
+[Deployment](/docs/deployment/).
+
 ## Settings → Configuration
 
 Everything else is a catalog entry. The catalog is derived from the core

@@ -88,19 +88,42 @@ development overlay `docker/docker-compose.dev.yml`. Compose reads a
 `docker-compose.override.yml` on its own only when it is given no `-f`, so on
 the dev targets an override file is not read unless you name it.
 `COMPOSE_FILE_EXTRA` names it: each file in it, space-separated, is appended as
-one more `-f`, after the two shipped files, so it wins over both.
+one more `-f`, after the shipped files and the host overlays below, so it wins
+over all of them.
 
 ```bash
 COMPOSE_FILE_EXTRA=docker/local.yml make dev-up
 make dev-logs COMPOSE_FILE_EXTRA="docker/local.yml docker/gpu.yml"
 ```
 
-Give `dev-down` and `dev-logs` the same value. The value is split on spaces,
-so a path with a space in it is not supported. A path in `COMPOSE_FILE_EXTRA`
+Give `dev-down` and `dev-logs` the same value. On Windows the value is split
+on `;`, as Compose splits its own `COMPOSE_FILE` there, so a path may hold a
+space; elsewhere it is split on white space and a path with a space in it is
+not supported. A path in `COMPOSE_FILE_EXTRA`
 is read from the repository root; relative paths inside the file (a volume, a
 build context) are read from `docker/`, the first file's directory. The
 `docker-up` family passes no `-f`, and so does read
 `docker/docker-compose.override.yml` when it is there.
+
+### The development stack on macOS and Windows
+
+On macOS and Windows `up` (and `make dev-up`) adds two files by itself, after
+the shipped ones and before `COMPOSE_FILE_EXTRA`'s:
+
+- `docker/docker-compose.named-data.yml` puts samples and uploads on named
+  volumes; see *Where samples and uploads live* in
+  [Deployment](/docs/deployment/).
+- `docker/docker-compose.dev-polling.yml` makes the stack reload by polling.
+  Docker Desktop delivers no change notification inside the containers for an
+  edit made on the host, so the API's and the worker's watchers
+  (`WATCHFILES_FORCE_POLLING`, `WATCHFILES_POLL_DELAY_MS`) and `next dev`
+  (`WATCHPACK_POLLING`) look for changed files once a second. The API's reload
+  watches `src/` and `apps/api/` only. `MALSPARK_WATCH_POLL_MS`, which the
+  overlay sets to `1000` on the frontend, is the polling interval in
+  milliseconds that `apps/web/next.config.ts` sets as `watchOptions.pollIntervalMs`;
+  it applies when it is a whole number above zero.
+
+Linux adds neither file and keeps the bind mounts. `up --dry-run` prints the `-f` files a host gets.
 
 ## Tests
 
