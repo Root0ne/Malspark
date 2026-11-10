@@ -50,9 +50,20 @@ const MOVED: Array<[string, string]> = [
   ["/reports", "/jobs?status=completed"],
 ];
 
+/* `next dev` looks for changed files every this many milliseconds instead of
+ * waiting for the file system to report them, when MALSPARK_WATCH_POLL_MS is
+ * a whole number above zero: docker/docker-compose.dev-polling.yml sets it
+ * where the source is shared from a host whose edits raise no change
+ * notification in the container. Unset, the watcher is Next's own. */
+const POLL_MS = Number(process.env.MALSPARK_WATCH_POLL_MS);
+
 const nextConfig: NextConfig = {
   /* Enable standalone output for Docker deployment */
   output: "standalone",
+
+  ...(Number.isInteger(POLL_MS) && POLL_MS > 0
+    ? { watchOptions: { pollIntervalMs: POLL_MS } }
+    : {}),
 
   redirects() {
     return Promise.resolve(

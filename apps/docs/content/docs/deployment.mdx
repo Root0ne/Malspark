@@ -344,6 +344,62 @@ its read-only mount; it shares nothing else with the worker. A Ghidra that runs
 as another user needs a group it shares with the worker, and mirrors written
 0750 and 0640 for that group.
 
+### Where samples and uploads live
+
+| Host | `samples` and `uploads` |
+| :-- | :-- |
+| Linux | Bind mounts of `data/samples` and `data/uploads` in the checkout. |
+| macOS, Windows | The named volumes `malspark_samples` and `malspark_uploads` (`docker/docker-compose.named-data.yml`), mounted wherever the base file mounts those two folders, read-only where it does. |
+
+A bind mount from Docker Desktop's shared files carries no Linux owner or mode,
+so what the containers write there would not keep the ownership `volume-init`
+hands them; a named volume lives in Docker's own file system and does. The
+entry (`malspark_dev.py`) adds the overlay to `up` and `docker-up` by itself on
+those hosts, and `doctor` names the two volumes whenever they are used. Before
+`up` or `docker-up` with the volumes it prints the same note and creates
+`data/samples` and `data/uploads` in the checkout as the volumes' mount points;
+something other than a directory standing there stops the start with a `FAIL`
+line naming it.
+
+`MALSPARK_DATA_VOLUMES` overrides the host's choice. `1`, `true`, `yes` or `on`
+(any case) uses the volumes on any host; `0`, `false`, `no` or `off` keeps the
+bind mounts on any host, which a worker run on the host needs, since it writes
+its sample copies to `data/samples`. Any other value is named in a warning and
+the host's choice stands.
+
+With the volumes in use:
+
+- The containers do not see a file put in `data/samples` or `data/uploads`.
+  What those folders held stays there, unseen; a sample is copied into the
+  volume again from the object store when a job needs it. The API and the
+  worker still read the tracked fixture directories under `data/samples`
+  read-only from the checkout. Every other mount,
+  `data/`'s rule sets and reference tables among them, stays a bind mount.
+- A file in a volume is read with `docker compose cp` through the service that
+  mounts it, `backend-api` at `/app/data/samples` and `/app/data/uploads`:
+
+  ```bash
+  docker compose -f docker/docker-compose.yml cp backend-api:/app/data/samples/<name> .
+  ```
+
+  The project name comes from that file, so no further file is needed for a
+  copy. `up --dry-run` prints the `-f` files the entry itself uses.
+- `volume-init` fills a fresh `samples` volume with the image's sample fixtures
+  before it hands the volume to `MALSPARK_UID:MALSPARK_GID`, on `up` and on a
+  `compose run` that starts it. A container started with `--no-deps` before
+  `volume-init` has run on a fresh volume leaves it owned by root, which the
+  API and the worker cannot write, until `volume-init` runs: start the stack,
+  or `volume-init`, first.
+- `docker compose down -v` deletes the two volumes with the others.
+
+#### Host-side variables of the entry
+
+| Variable | Read by | Effect |
+| :-- | :-- | :-- |
+| `MALSPARK_DATA_VOLUMES` | `malspark_dev.py` | `1`, `true`, `yes`, `on`: samples and uploads on named volumes on any host; `0`, `false`, `no`, `off`: bind mounts on any host; unset: the host's choice. |
+| `COMPOSE_FILE_EXTRA` | `malspark_dev.py`, the dev targets | Compose files of your own, each one more `-f` after the shipped files and the host overlays. Split on `;` on Windows, on white space elsewhere. See [Development](/docs/development/). |
+| `MALSPARK_WATCH_POLL_MS` | `apps/web/next.config.ts` | `next dev`'s polling interval in milliseconds, when a whole number above zero. The macOS and Windows dev stack sets it to `1000`. |
+
 ### The container that opens the sample
 
 `ghidra-mcp` opens the sample, so it is kept from the platform: it runs as
