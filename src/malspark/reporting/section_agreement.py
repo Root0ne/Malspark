@@ -2254,7 +2254,11 @@ def name_readings(
     held on every name it writes ("No call to A, B or C is shown"). A negated
     sentence naming no name the run holds and no address that opens pointing back ("These
     names are shown only as resolved; the code does not show them being called") is held on
-    the names of the sentence before it: what "them" is the model reads. Code decides
+    the names of the sentence before it: what "them" is the model reads. It is so held only
+    where its denial is of what it points back to: a negated clause writes a word pointing
+    back, or denies something of no subject of its own (``absence_answers.denied_subject``:
+    "They serve the lookup, not a shadow-copy routine"); "It resolves the hashes, so the
+    working API set is not in the import table" denies something of its own. Code decides
     nothing of a reading: each is a question for the model, with the fact shown. A name
     written as a call ("`connect()` is not called") is read as the name: the empty
     parentheses after it close no clause. Both sentences are read without their citations:
@@ -2278,6 +2282,7 @@ def name_readings(
     if (
         previous
         and _POINTS_BACK.match(opening)
+        and any(_POINTS_BACK.search(clause.text) or not clause.subject for clause in read.read)
         and not _held_names(uncited, names)
         and not _addresses_named(uncited)
     ):

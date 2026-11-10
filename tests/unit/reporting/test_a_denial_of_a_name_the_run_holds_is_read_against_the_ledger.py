@@ -1647,6 +1647,11 @@ def test_a_negated_sentence_pointing_back_is_held_on_the_names_before_it() -> No
     # An export the sentence before names by its own name is held the same way.
     after_export = name_readings("It is not a loader.", "The `run` export starts it.", _WORDS)
     assert [(r.kind, r.shown, r.back) for r in after_export] == [("export", "run", True)]
+    # A denial of no subject of its own is of what the sentence points back to.
+    readings = name_readings(
+        "They serve the volume lookup, not a persistence step.", previous, _WORDS
+    )
+    assert [(r.shown, r.back) for r in readings] == [("OpenProcess", True)]
 
 
 @pytest.mark.parametrize(
@@ -1659,6 +1664,8 @@ def test_a_negated_sentence_pointing_back_is_held_on_the_names_before_it() -> No
         # Naming an address or a name of its own: about that, never the sentence before.
         "This is not routine 0x1500.",
         "This is not CreateProcessW.",
+        # Pointing back only where nothing is denied: the denial is of something of its own.
+        "It resolves the names by hash, so the working set is not in the import table.",
     ],
 )
 def test_a_sentence_not_pointing_back_alone_is_not_held_on_the_names_before_it(
