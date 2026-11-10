@@ -46,24 +46,43 @@ def retry_added_marker(revision_round: int) -> str:
     return f"added by a tool-less retry, round {int(revision_round)}"
 
 
-def carried_marker(revision_round: int, contested_by: Sequence[str] = ()) -> str:
+def carried_marker(revision_round: int, contested_by: Sequence[str] = (), beside: str = "") -> str:
     """The note on a claim in force a revision neither wrote again nor withdrew.
 
     The revision is merged into the answer in force by claim
     (``pipeline.revision_merge``): a claim it leaves unwritten stays as it
     was, and carries this note from the first round that left it unwritten
     (``ClaimEvidence.carried_since_round``) to the judge's summary, the
-    transcript and the report.
+    transcript and the report. A claim the last merge carried beside a
+    revision claim that states it again without an address of it
+    (``ClaimEvidence.carried_beside``, :func:`carried_beside_marker`) says so
+    instead.
     """
     said = (
-        f"carried forward: the round-{int(revision_round)} revision neither wrote it "
-        "again nor withdrew it"
+        f"carried forward beside {beside}"
+        if beside
+        else (
+            f"carried forward: the round-{int(revision_round)} revision neither wrote it "
+            "again nor withdrew it"
+        )
     )
     if contested_by:
         # A line of the round's mediation that named it, not blocking: the
         # claim stands, and the reader is told it was contested.
         said += f"; contested by {', '.join(contested_by)} and not answered"
     return said
+
+
+def carried_beside_marker(revision_round: int, number: int, addresses: Sequence[str]) -> str:
+    """``ClaimEvidence.carried_beside``: the claim of the merged answer that states it again.
+
+    ``number`` is that claim's number in the answer the revision left in
+    force, ``addresses`` each address of the carried claim it does not state.
+    """
+    return (
+        f"claim {int(number)} of the answer the round-{int(revision_round)} revision left in "
+        f"force, which states it again without {', '.join(addresses)}"
+    )
 
 
 def carried_note(claim: Any) -> str:
@@ -75,7 +94,11 @@ def carried_note(claim: Any) -> str:
     """
     since = getattr(claim, "carried_since_round", None)
     said = (
-        carried_marker(since, list(getattr(claim, "carried_contested_by", None) or []))
+        carried_marker(
+            since,
+            list(getattr(claim, "carried_contested_by", None) or []),
+            str(getattr(claim, "carried_beside", "") or ""),
+        )
         if isinstance(since, int) and not isinstance(since, bool)
         else ""
     )
@@ -234,6 +257,18 @@ class ClaimEvidence(BaseModel):
         default_factory=list,
         description=(
             "The non-blocking lines of the round's mediation that named this carried claim."
+        ),
+        exclude_if=lambda value: not value,
+    )
+    # The claim of the merged answer that states this carried claim again
+    # without an address of it (``isr_models.carried_beside_marker``), set by
+    # the last merge that carried it so. Left out of the serialised claim
+    # when empty.
+    carried_beside: str = Field(
+        default="",
+        description=(
+            "The claim of the merged answer that states this carried claim again without "
+            "an address of it, and those addresses."
         ),
         exclude_if=lambda value: not value,
     )

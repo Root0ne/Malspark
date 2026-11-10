@@ -44,10 +44,23 @@ A revision block restates a claim in force when it states four fifths of the
 claim's content words, or at least half of the claim's values that are no
 mere small number (a value of three characters or more, or a technique id)
 with at least one of them strong (four characters or more, or a technique
-id), or a third of them with the claim's technique id. Values, never words,
-may be pooled over several blocks of the revision, and only over blocks that
-each state one of the claim's values: a claim split over two of the
-revision's claims is written again, a claim whose words merely recur is not.
+id), or a third of them with the claim's technique id; and when it states
+every address the claim's sentence names (``0x…`` of at least
+:data:`LEAST_ADDRESS`, or in a decompiler's name) that no other block of the
+revision states: the claim's subject. An address another block states is
+still in the answer; one no block states left it, and a block without it
+writes another claim, not this one. An address is stated by a ``0x…`` or a
+decompiler's name of at least :data:`LEAST_ADDRESS` (never a decimal) that
+equals it or differs from it by a multiple of 64 KiB, either way: a whole
+address and its offset under an image base are one address. A claim a block
+restates while an address of it is stated nowhere is carried beside that
+block, and the merge says so, naming the addresses
+(``ClaimEvidence.carried_beside``, :func:`beside_sentence`). One block
+restates a claim, or none does: values and words are never pooled over
+blocks, since a claim's helpers recurring across other claims of the
+revision say nothing of the claim itself. A claim that names no address is
+restated by one block on its words or values alone. A revision placed by
+its numbers asks no block for the subject: the number names the claim.
 A revision that writes again or withdraws every claim in force merges
 nothing: it stands as written, as it always did.
 
@@ -70,7 +83,11 @@ from typing import Any
 
 from malspark.analysis.technique_ids import is_technique_id
 from malspark.pipeline.claim_drops import (
+    _DECOMPILER_NAME,
+    _HEX,
+    _IMAGE_BASE_ALIGNMENT,
     _is_stated,
+    _refanged,
     _searched,
     claim_values,
     content_words,
@@ -90,6 +107,7 @@ from malspark.pipeline.retry_merge import (
     _WITHDRAWING_OPENER_RE,
     read_withdrawals,
 )
+from malspark.schemas.isr_models import carried_beside_marker
 
 # The share of a claim's values the revision must state to write it again.
 RESTATED_SHARE = 0.5
@@ -107,6 +125,9 @@ STRONG_LENGTH = 4
 # The share of a claim's values one block of a validation retry must state
 # for the claim to be read as written again in other words, not left out.
 REWRITTEN_SHARE = 2 / 3
+# A hex value this large or larger is an address a claim names, the floor the
+# validation reads a routine's address by; below it, a key, a flag or a count.
+LEAST_ADDRESS = 0x100
 
 # One line of the round's mediation that named a claim: its number (from 1)
 # and whether it blocks.
@@ -169,22 +190,46 @@ def _strong(value: str) -> bool:
 
 @dataclass(frozen=True)
 class _Reading:
-    """What a revision block states, read once."""
+    """What a revision block states, read once.
+
+    ``highest`` is, per offset in 64 KiB, the highest address a decompiler's
+    name in the block holds there: a number is stated by a name that holds
+    it under an image base when that name is higher, so one lookup answers
+    what ``claim_drops._is_stated`` asks of every name.
+    """
 
     searched: Any
     words: frozenset[str]
     techniques: frozenset[str]
+    highest: Mapping[int, int] = field(default_factory=dict)
+
+
+def _reading(searched: Any, words: frozenset[str], techniques: frozenset[str]) -> _Reading:
+    highest: dict[int, int] = {}
+    for name in searched.names:
+        offset = name % _IMAGE_BASE_ALIGNMENT
+        if name > highest.get(offset, -1):
+            highest[offset] = name
+    return _Reading(searched=searched, words=words, techniques=techniques, highest=highest)
 
 
 def _read(block: _Block) -> _Reading:
     text = _text_of(block)
-    return _Reading(
-        searched=_searched(text), words=content_words(text), techniques=_techniques(block)
-    )
+    return _reading(_searched(text), content_words(text), _techniques(block))
+
+
+def _is_stated_in(value: str, reading: _Reading) -> bool:
+    """``claim_drops._is_stated`` of ``value`` in ``reading``, a number in one lookup."""
+    if re.fullmatch(r"0x[0-9a-f]+", value) or value.isdecimal():
+        number = int(value, 16) if value.startswith("0x") else int(value)
+        if number in reading.searched.numbers:
+            return True
+        return reading.highest.get(number % _IMAGE_BASE_ALIGNMENT, -1) > number
+    return _is_stated(value, reading.searched)
 
 
 def _stated(values: frozenset[str], reading: _Reading) -> set[str]:
-    return {v for v in values if _is_stated(v, reading.searched)}
+    return {v for v in values if _is_stated_in(v, reading)}
 
 
 def _block_restates(earlier: _Block, reading: _Reading) -> bool:
@@ -244,24 +289,54 @@ def _entry_ids(text: str) -> frozenset[str]:
     return frozenset(m.group(0).lower() for m in re.finditer(r"\bev_\d++\b", text, re.I))
 
 
-def _restated(earlier: _Block, readings: Sequence[_Reading]) -> tuple[bool, int | None]:
-    """``(restated, the first block that restates it by itself or None)``.
+def _hex_addresses(text: str) -> set[int]:
+    """The addresses ``text`` writes: ``0x…`` or in a decompiler's name, none small, no decimal."""
+    plain = _refanged(text)
+    found = {int(m.group(1), 16) for m in _HEX.finditer(plain)}
+    found |= {int(m.group(1), 16) for m in _DECOMPILER_NAME.finditer(plain)}
+    return {a for a in found if a >= LEAST_ADDRESS}
 
-    Values may be pooled over the blocks that each state one of the claim's
-    values; words never are.
+
+def _stated_addresses(revision: Sequence[_Block]) -> frozenset[int]:
+    """Each address the revision's blocks state, headings with them, as its offset in 64 KiB.
+
+    Two addresses are one where they differ by a multiple of the image base
+    alignment, either way: a whole address and its offset, or one address
+    under two bases. Reduced to that offset, an address is stated when its
+    own offset is in this set. The blocks only: an address the revision
+    writes only in its prose or its disputes is in none of its claims, and
+    no claim of it stands for the claim in force.
+    """
+    text = "\n".join(
+        f"{getattr(block.claims[0], 'heading_note', '') or ''}\n{_text_of(block)}"
+        for block in revision
+    )
+    return frozenset(a % _IMAGE_BASE_ALIGNMENT for a in _hex_addresses(text))
+
+
+def _subject_left_out(earlier: _Block, stated: frozenset[int]) -> tuple[int, ...]:
+    """Each address ``earlier`` names that no block of the revision states, in order.
+
+    ``stated`` is :func:`_stated_addresses` of the revision. The one block
+    that restates the claim must state each address no other block states;
+    one that no block states is in none, so no block restates the claim.
+    """
+    return tuple(
+        a
+        for a in sorted(_hex_addresses(earlier.sentence))
+        if a % _IMAGE_BASE_ALIGNMENT not in stated
+    )
+
+
+def _restated(earlier: _Block, readings: Sequence[_Reading]) -> int | None:
+    """The first revision block that restates ``earlier`` by itself, or ``None``.
+
+    Never values pooled over blocks.
     """
     for index, reading in enumerate(readings):
         if _block_restates(earlier, reading):
-            return True, index
-    values = _counted_values(earlier)
-    if not values:
-        return False, None
-    pooled: set[str] = set()
-    for reading in readings:
-        pooled |= _stated(values, reading)
-    if any(_strong(v) for v in pooled) and len(pooled) / len(values) >= RESTATED_SHARE:
-        return True, None
-    return False, None
+            return index
+    return None
 
 
 _OWN_CLAIM_NUMBERS = re.compile(
@@ -290,9 +365,7 @@ def _disputed(earlier: _Block, disputes: Sequence[str]) -> bool:
     for item in disputes:
         if earlier.number in _numbers_written(item):
             return True
-        reading = _Reading(
-            searched=_searched(item), words=content_words(item), techniques=frozenset()
-        )
+        reading = _reading(_searched(item), content_words(item), frozenset())
         if _block_restates(earlier, reading):
             return True
     return False
@@ -312,7 +385,7 @@ def _declares_withdrawal(claim: Any) -> bool:
 def _written_number(block: _Block) -> int | None:
     written = getattr(block.claims[0], "number", None)
     text = str(written or "").strip()
-    return int(text) if text.isdigit() else None
+    return int(text) if text.isdecimal() else None
 
 
 def _spans(numbers: Sequence[int]) -> str:
@@ -356,7 +429,10 @@ class RevisionMerge:
     numbers written for no analyst that are read as this analyst's
     (``debate_facts.OwnedClaim``); ``numbering`` ``(a number the revision's
     text may name a claim by, its number in the merged answer)``
-    (:func:`_numbering`, :func:`numbering_key`).
+    (:func:`_numbering`, :func:`numbering_key`); ``beside`` ``(number,
+    sentence, its number in the merged answer of the block that states it
+    again, the addresses that block leaves out)`` per claim carried only
+    because the one block that restates it states an address of it nowhere.
     """
 
     merged: Any | None = None
@@ -374,6 +450,7 @@ class RevisionMerge:
     range_carried: tuple[tuple[int, str, int, str], ...] = ()
     owned: tuple[OwnedClaim, ...] = ()
     numbering: tuple[tuple[int, int], ...] = ()
+    beside: tuple[tuple[int, str, int, tuple[str, ...]], ...] = ()
 
     def sentences(self, name: str, revision_round: int) -> list[str]:
         """The run summary's sentences: the merge, each withdrawal, each unplaced reference."""
@@ -412,6 +489,8 @@ class RevisionMerge:
             out.append(rule_sentence(name, r, number, sentence, reason))
         for number, sentence, line, reference in self.range_carried:
             out.append(range_carried_sentence(name, r, number, sentence, line, reference))
+        for number, sentence, now, addresses in self.beside:
+            out.append(beside_sentence(name, r, number, sentence, now, addresses))
         for owned_claim in self.owned:
             out.append(owned_sentence(name, r, owned_claim))
         for unread_reference in self.unplaced:
@@ -427,6 +506,16 @@ def range_carried_sentence(
         f"Blocking line L{int(line)} of the round-{int(revision_round)} mediation names "
         f"{reference} of the {name} analyst; claim {number} of its answer in force "
         f'("{sentence}") shares no ledger id or address with it, so it is carried.'
+    )
+
+
+def beside_sentence(
+    name: str, revision_round: int, number: int, sentence: str, now: int, addresses: Sequence[str]
+) -> str:
+    """The sentence for a claim carried beside a block that states it without an address of it."""
+    return defanged(
+        f'Claim {int(number)} of the {name} analyst\'s answer in force ("{sentence}") is '
+        f"carried beside {carried_beside_marker(revision_round, now, addresses)}."
     )
 
 
@@ -600,7 +689,8 @@ def _by_number(
 
     ``None`` when a block wrote no number or one twice, or a number naming a
     claim in force it does not restate: then its numbers may not name the
-    claims in force.
+    claims in force. A block under the number of a claim it restates writes
+    that claim again, its addresses or not: the number names it.
     """
     if not revision:
         return None
@@ -629,22 +719,32 @@ def _by_number(
     return placed
 
 
-def _by_statement(first: list[_Block], readings: list[_Reading]) -> tuple[set[int], dict[int, int]]:
-    """``(numbers restated, {revision block index: claim in force number})``.
+def _by_statement(
+    first: list[_Block], readings: list[_Reading], stated: frozenset[int]
+) -> tuple[set[int], dict[int, int], dict[int, tuple[int, tuple[int, ...]]]]:
+    """``(numbers restated, {revision block index: claim in force number}, beside)``.
 
     Each revision block stands at the first claim in force it restates by
-    itself.
+    itself (:func:`_restated`) with every address of the claim stated by
+    some block (:func:`_subject_left_out`). ``beside`` is ``{claim in force
+    number: (the first block that restates it, the addresses no block
+    states)}`` for each claim a block restates while an address of it is
+    stated nowhere: it is carried, beside that block.
     """
     restated: set[int] = set()
     target: dict[int, int] = {}
+    beside: dict[int, tuple[int, tuple[int, ...]]] = {}
     for earlier in first:
-        found, index = _restated(earlier, readings)
-        if not found:
+        index = _restated(earlier, readings)
+        if index is None:
+            continue
+        left_out = _subject_left_out(earlier, stated)
+        if left_out:
+            beside[earlier.number] = (index, left_out)
             continue
         restated.add(earlier.number)
-        if index is not None and index not in target:
-            target[index] = earlier.number
-    return restated, target
+        target.setdefault(index, earlier.number)
+    return restated, target, beside
 
 
 def merge_revision(
@@ -708,6 +808,7 @@ def merge_revision(
     # the claim in force it writes again; a block with none is added.
     target: dict[int, int] = {}
     written_again: set[int] = set()
+    beside: dict[int, tuple[int, tuple[int, ...]]] = {}
     if numbered is not None:
         placed_by = "number"
         declared = 0
@@ -726,7 +827,7 @@ def merge_revision(
         written_again = set(target.values())
     else:
         placed_by = "statement"
-        written_again, target = _by_statement(first, readings)
+        written_again, target, beside = _by_statement(first, readings, _stated_addresses(revised))
     # A claim written again stands as written, whatever a line withdrew.
     for number in written_again:
         withdrawn.pop(number, None)
@@ -813,6 +914,7 @@ def merge_revision(
     carried_numbers = {block.number for block in carried_blocks}
     # The first claim each carried block stands with, for the numbering key.
     carried_ids: dict[int, int] = {}
+    copies: dict[int, list[Any]] = {}
     for block in first:
         if block.number in carried_numbers:
             for claim in block.claims:
@@ -824,15 +926,35 @@ def merge_revision(
                     copy.carried_contested_by = [
                         f"L{n} (round {int(revision_round)})" for n in contested[block.number]
                     ]
+                # Set below where this merge carries it beside a block; a mark
+                # of an earlier merge names a number of an earlier answer.
+                copy.carried_beside = ""
                 carried_ids.setdefault(block.number, id(copy))
+                copies.setdefault(block.number, []).append(copy)
                 claims.append(copy)
         for index in at.get(block.number, ()):
             claims.extend(revised[index].claims)
     for index in kept_blocks:
         if index not in target:
             claims.extend(revised[index].claims)
+    # Each claim carried beside the block that states it again without an
+    # address of it says so, naming that block by its number in this answer.
+    # Every claim of a block is indexed: two added blocks that end up neighbours
+    # may read as one block, so a block's first claim need not head one here.
+    now = {id(claim): block.number for block in _blocks(claims) for claim in block.claims}
+    beside_rows: list[tuple[int, str, int, tuple[str, ...]]] = []
+    for block in carried_blocks:
+        if block.number not in beside:
+            continue
+        index, left_out = beside[block.number]
+        addresses = tuple(f"0x{a:x}" for a in left_out)
+        number = now[id(revised[index].claims[0])]
+        beside_rows.append((block.number, block.sentence, number, addresses))
+        for copy in copies[block.number]:
+            copy.carried_beside = carried_beside_marker(revision_round, number, addresses)
     merged = revision.model_copy(update={"claims": claims})
     return RevisionMerge(
+        beside=tuple(beside_rows),
         numbering=_numbering(placed_by, revised, kept_blocks, claims, carried_ids),
         merged=merged,
         placed_by=placed_by,

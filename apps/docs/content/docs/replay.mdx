@@ -166,6 +166,26 @@ the catalogue forget one technique unpublishes it and drops it from the
 export, and letting a judge's indicator through publishes its row in the IOC
 table.
 
+## Revisions merged again
+
+```bash
+python scripts/replay/remerge_revisions.py <run dir> [<run dir> ...] [--json OUT]
+```
+
+merges each debate revision of a stored run into its answer in force again
+(`pipeline.revision_merge`), under the rule the checkout holds and under a rule
+that pools a claim's values over the revision's blocks. The
+answers in force are read from the run's `worker.log`, as each mediation was
+shown them: a revision's own claims are those of the next answer in force that
+no carried-forward note marks, and the round's lines come from the next
+mediation's account of them. A revision placed by its written numbers is merged
+by what it states, since the summary shows only the merged numbers. Per round
+and analyst it prints the claims each rule restated, carried (and, of those,
+carried beside a block that states the claim again without an address of it),
+withdrew and left with values the answer states nowhere, the merge the run's log stated beside
+them, and each claim the current rule keeps in force with the revision block
+nearest it. It reads the stored run only and calls no model.
+
 ## Comparing two refs
 
 ```bash

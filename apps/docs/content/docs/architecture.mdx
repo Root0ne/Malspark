@@ -2502,7 +2502,8 @@ ledger id or an address with it, and is otherwise carried with the line and
 stated); and any other claim it neither writes again nor
 withdraws stands unchanged, marked carried forward from that round
 (`ClaimEvidence.carried_since_round`, with `carried_contested_by` when a line
-that does not block named it), shown beside the claim in every summary, the
+that does not block named it, and `carried_beside` when a block of the revision
+states it again without an address of it), shown beside the claim in every summary, the
 transcript event, the upstream findings, the evidence bundle and the ATT&CK
 table's note, and counted per analyst in the report's list of claims the body
 does not discuss. A revision whose every block writes a number that names a
@@ -2510,8 +2511,22 @@ claim in force the block restates, or a number after the last one, is placed by
 those numbers; any other is placed by what its claims state. A block restates a
 claim when it states four fifths of the claim's content words, or half of the
 claim's values of three characters or more (one of them four or more, or a
-technique id), or a third of them with the claim's technique id; values may be
-pooled over blocks that each state one of them, words never. A revision that
+technique id), or a third of them with the claim's technique id. Placed by what
+it states, the block must also leave none of the claim's addresses (`0x…` of at
+least `0x100`, or in a decompiler's name) stated by no block of the revision: an
+address is stated by a `0x…` or a decompiler's name of at least `0x100`, never a
+decimal, equal to it or differing from it by a multiple of 64 KiB either way, so
+a whole address and its offset under an image base are one address. One block
+restates a claim or none does; values and words are never pooled over blocks,
+so a claim whose helpers recur in other claims of the revision stays in force
+whole. A claim a block restates while an address of it is stated nowhere (a
+correction that changes or leaves out an address)
+stays in force beside that block, and the merge says so: the claim's note reads
+"carried forward beside claim K of the answer the round-N revision left in
+force, which states it again without 0x…", and
+`revision_replacements` states the pair with the same addresses (a blocking
+line that named the claim still withdraws it by rule). A claim that names no
+address is restated by one block on its words or values. A revision that
 restates or withdraws every claim in force stands as written.
 `run_summary.negotiation.revision_replacements` states each merge that carried
 claims, with their numbers, and each withdrawal with its reason (a withdrawal by
