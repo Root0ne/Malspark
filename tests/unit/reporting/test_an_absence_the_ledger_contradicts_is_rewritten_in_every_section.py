@@ -464,12 +464,29 @@ def test_haiku11_s_section_5_absence_is_held_and_states_the_listing() -> None:
     # An answer that lists nothing: the platform qualifies it on the listing.
     counts, found = apply_rows({"sentences": []}, passages)
     assert counts["qualified"] == 1
-    # Beside it, each sentence the ledger's own lines hold, which no row answered, is left
-    # out with that reason (T-600).
-    assert [v.code for v in found if v.code != DROPPED_CODE] == [QUALIFIED_CODE]
-    assert all(
-        "(no answer was given for it; " in v.message for v in found if v.code == DROPPED_CODE
-    )
+    # Beside it, each sentence the ledger's own lines hold is left out: an answer listing
+    # nothing is no answer at all (T-600).
+    assert [v.code for v in found] == [QUALIFIED_CODE, DROPPED_CODE, DROPPED_CODE]
+    assert [(v.subject, v.message) for v in found[1:]] == [
+        (
+            "discovery",
+            "The agreement question leaves a sentence of 5. Technical analysis, 'Discovery & "
+            "Enumeration' out of the section (the agreement question got no answer at all; held "
+            "on what ledger.1, ledger.2, ledger.3, ledger.4, ledger.5, ledger.6, ledger.7, "
+            "ledger.8, ledger.9, ledger.10, ledger.11, ledger.12, ledger.13, ledger.…): 'The "
+            'pairings in the code are: "/c ipconfig /all" with key "&ipconfig="; "/c systeminfo" '
+            'with "&systeminfo="; "/c nltest /domain_trusts" with "&domain_trusts="; "/c nltest '
+            "/domain_trusts /all_trusts\"…'.",
+        ),
+        (
+            "evasion_antiforensics",
+            "The agreement question leaves a sentence of 5. Technical analysis, 'Defense Evasion "
+            "& Anti-Forensics' out of the section (the agreement question got no answer at all; "
+            "held on what ledger.21, ledger.22, ledger.23 hold lines on): 'They serve the "
+            "volume-serial lookup that forms the install-folder name [ev_0087, ev_0084], not a "
+            "shadow-copy routine.'.",
+        ),
+    ]
     ta = report.technical_analysis
     assert ta is not None and ta.persistence_detail is not None
     body = ta.persistence_detail.body

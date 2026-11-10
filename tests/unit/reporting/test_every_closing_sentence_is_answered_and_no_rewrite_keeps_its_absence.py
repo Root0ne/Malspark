@@ -711,24 +711,50 @@ def test_haiku12_s_true_limitation_kept_on_the_named_source_stands() -> None:
     assert said["TASK"] in _limitations(report)
     assert counts["held_kept"] == 1
     # Only the sentences the ledger's own lines hold that no row answers are left out (T-600).
-    assert (
-        counts["dropped"]
-        == len(_unanswered(records))
-        == len([v for v in records if v.code == DROPPED_CODE])
-    )
+    assert counts["dropped"] == 3
+    assert [v.message for v in records if v.code == DROPPED_CODE] == [
+        _UNANSWERED_EVASION,
+        _UNANSWERED_PAYLOADS,
+        _UNANSWERED_LIMITATIONS,
+    ]
     # Tied by its address alone (review r4): recorded, as no subject word backs it.
     (held,) = [v for v in records if v.code == HELD_KEPT_CODE]
     assert "resting on fewer than two" in held.message
 
 
-def _unanswered(records: list[Any]) -> list[Any]:
-    """The records of the sentences the ledger's own lines hold that no row answered: left
-    out, each with that reason (T-600)."""
-    return [
-        v
-        for v in records
-        if v.code == DROPPED_CODE and "(no answer was given for it; " in v.message
-    ]
+# haiku12's sentences the ledger's own lines hold that the rows below never answer: each is
+# left out with that reason (T-600).
+_UNANSWERED_EVASION = (
+    "The agreement question leaves a sentence of 5. Technical analysis, 'Defense Evasion & "
+    "Anti-Forensics' out of the section (no answer was given for it; held on what ledger.1 "
+    "holds lines on): 'Confidence is moderate: the information-class values passed to "
+    "SetFileInformationByHandle were not established.'."
+)
+_UNANSWERED_PAYLOADS = (
+    "The agreement question leaves a sentence of 5. Technical analysis, 'Payloads and Dropped "
+    "Files' out of the section (no answer was given for it; held on what ledger.2 holds lines "
+    "on): \"The sample's own exports are extra, follower, run and scub [ev_0004], so the named "
+    "export is not among them; we assess that the launch would not resolve to an export of "
+    'this file, although the DLL be…".'
+)
+_LIMITATIONS_LABEL = (
+    "11. Limitations, the composed paragraph (each sentence saying a call failed or a reading "
+    "could not be made is held to the failed calls, the tools not run, the recorded "
+    "limitations and the open questi…"
+)
+_UNANSWERED_LIMITATIONS = (
+    f"The agreement question leaves a sentence of {_LIMITATIONS_LABEL} out of the section (no "
+    "answer was given for it; saying a call failed that a later call redid (ev_0078 and "
+    "ev_0079 and ev_0138)): 'The decompiler and disassembler calls for several functions "
+    "failed, so some routine bodies were read from the function index and decoded-string "
+    "references alone [ev_0025].'."
+)
+_UNANSWERED = (_UNANSWERED_EVASION, _UNANSWERED_PAYLOADS, _UNANSWERED_LIMITATIONS)
+
+
+def _unanswered(records: list[Any]) -> list[str]:
+    """The records of the sentences no row answered, of :data:`_UNANSWERED`, in order."""
+    return [v.message for v in records if v.code == DROPPED_CODE and v.message in _UNANSWERED]
 
 
 def test_haiku12_s_c1_to_c6_kept_unsourced_again_are_left_out_and_recorded() -> None:
@@ -744,11 +770,13 @@ def test_haiku12_s_c1_to_c6_kept_unsourced_again_are_left_out_and_recorded() -> 
     counts, records = apply_rows({"sentences": rows}, passages)
     body = _limitations(report)
     assert all(said[n] not in body for n in names)
-    # Beside them, each sentence the ledger's own lines hold that no row answers (T-600).
+    # Beside them, the two body sentences the ledger's own lines hold that no row answers; the
+    # limitations sentence saying a redone call failed is among the five (T-600).
+    assert _unanswered(records) == [_UNANSWERED_EVASION, _UNANSWERED_PAYLOADS]
     dropped = [
-        v.message for v in records if v.code == DROPPED_CODE and v not in _unanswered(records)
+        v.message for v in records if v.code == DROPPED_CODE and v.message not in _UNANSWERED
     ]
-    assert counts["dropped"] == len(dropped) + len(_unanswered(records)) and len(dropped) == 5
+    assert counts["dropped"] == 7 and len(dropped) == 5
     assert all(any(said[n][:40] in m for m in dropped) for n in names)
 
 
@@ -783,11 +811,12 @@ def test_haiku12_s_c2_to_c5_kept_unsourced_on_both_answers_are_left_out_and_reco
     counts, records = apply_rows({"sentences": rows}, passages)
     body = _limitations(report)
     # Beside them, each sentence the ledger's own lines hold that no row answers (T-600).
-    assert counts["dropped"] == 3 + len(_unanswered(records))
+    assert _unanswered(records) == list(_UNANSWERED)
+    assert counts["dropped"] == 6
     for which in ("C2", "C4", "C5"):
         assert said[which] not in body, which
     dropped = [
-        v.message for v in records if v.code == DROPPED_CODE and v not in _unanswered(records)
+        v.message for v in records if v.code == DROPPED_CODE and v.message not in _UNANSWERED
     ]
     assert len(dropped) == 3
     # C2 "read only in part" of listed code: the ledger says otherwise of it.

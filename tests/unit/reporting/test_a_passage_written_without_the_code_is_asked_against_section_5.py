@@ -642,7 +642,20 @@ def test_the_node_says_what_the_question_could_not_do() -> None:
         "The prompt did not fit.",
         "The section agreement question was not answered (RuntimeError).",
     ]
-    assert "section_agreement" not in (report.run_summary or {})
+    # The round's counts are kept, as for any answer: no row was read, and only a sentence
+    # the ledger's own lines hold would be left out, of which this report has none (T-600).
+    assert (report.run_summary or {})["section_agreement"] == {
+        "passages": 11,
+        "claim_led_passages": 9,
+        "sentences": 0,
+        "rewritten": 0,
+        "kept": 0,
+        "listed": 0,
+        "not_applied": 0,
+        "dropped": 0,
+        "qualified": 0,
+        "held_kept": 0,
+    }
 
 
 def test_the_node_keeps_every_section_when_the_question_raises(monkeypatch: Any) -> None:

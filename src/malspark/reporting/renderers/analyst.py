@@ -1207,7 +1207,7 @@ class _Analyst:
                 lines.append("")
             lines.append(self._prose(summary))
         if not summary and not findings and not bullets:
-            left = self.ctx.left_out_by_checks(*SUMMARY_SUBJECTS)
+            left = self.ctx.left_out_clause(*SUMMARY_SUBJECTS)
             lines.append(
                 (
                     f"No summary is printed in this run: {left}"

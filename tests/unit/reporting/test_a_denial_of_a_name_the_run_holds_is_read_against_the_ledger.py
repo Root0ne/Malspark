@@ -922,6 +922,15 @@ _SAME = ("same words cited at the end", "same words cited mid-sentence", "same w
 # The rows each held path is answered with beyond those every path is: rewrites citing
 # none of the calls that redid the calls the sentence is held to, or only some of them.
 _OWN_ROWS: dict[str, dict[str, dict[str, Any]]] = {
+    "body held on a name": {
+        "same words cited, quoting a row": _row(
+            _UNKNOWN,
+            "rewrite",
+            ["ledger.1"],
+            rewrite=_cited(_UNKNOWN, "[ev_0109]", "end"),
+            quote=CALLED,
+        ),
+    },
     "held to one redone call": {
         "rewrite citing the failed call only": _row(
             _TRUE,
@@ -979,6 +988,13 @@ def _same_words(where: str, sentence: str, sources: str, why: str, ends: str) ->
     return (
         f"row 1: {where} rewrites {sentence!r} into the same words, which keeps it, on "
         f"{sources}, but the best sentence of those sources {why}: {ends}"
+    )
+
+
+def _same_kept(where: str, sentence: str, sources: str, why: str, ends: str) -> str:
+    return (
+        f"row 1: {where} rewrites {sentence!r} into the same words, which keeps it, on "
+        f"{sources}, but its quote {why}: {ends}"
     )
 
 
@@ -1066,7 +1082,24 @@ def _expected() -> dict[str, dict[str, list[tuple[str, str]]]]:
             ],
             # A body keep quoting the fact's row that names what the sentence names stands.
             "keep quoting": [],
-            **dict.fromkeys(_SAME, []),
+            # The same words with a citation added, wherever it stands, are a keep: its quote
+            # is read as a keep's (T-600).
+            **dict.fromkeys(
+                _SAME,
+                [
+                    (
+                        KEEP_UNQUOTED_CODE,
+                        _same_kept(
+                            "introduction",
+                            _UNKNOWN,
+                            "ledger.1",
+                            "does not stand in a source it names",
+                            _BODY_ENDS,
+                        ),
+                    )
+                ],
+            ),
+            "same words cited, quoting a row": [],
             "reworded rewrite citing": [],
             # A held body sentence is left out where no answer for it passes: a drop of it,
             # with its reason, is an answer (T-600).

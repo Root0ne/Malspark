@@ -588,16 +588,14 @@ class MarkdownRenderer:
 
     def _section_key_findings(self, report: MalwareReport, ctx: _Context) -> str:
         summary = report.executive_summary.strip()
-        # A finding the agreement question left its only sentence out of is no finding written.
-        written = bool(summary or any(f.text.strip() for f in report.key_findings))
+        # A finding the agreement question left its only sentence out of is no finding written:
+        # it prints no empty item, and the validation findings below list it with the reason.
+        findings = [f for f in report.key_findings if f.text.strip()]
+        written = bool(summary or findings)
         # The platform's fallback below is not the report model's text, and is
         # not headed as if it were: each of its lines names its own voice.
         lines = [_heading(1, "Key findings", REPORT_MODEL if written else PER_ROW), ""]
-        for finding in report.key_findings:
-            if not finding.text.strip():
-                # Its only sentence left out by the agreement question, which the
-                # validation findings below list with the reason (T-600): no empty item.
-                continue
+        for finding in findings:
             lines.append(
                 _item(
                     _cited(ctx.line(finding.text), finding.evidence_ids, finding.text)
@@ -605,10 +603,10 @@ class MarkdownRenderer:
                 )
             )
         if summary:
-            if report.key_findings:
+            if findings:
                 lines.append("")
             lines.append(ctx.prose(summary))
-            if not report.key_findings and not _EV_RE.search(summary):
+            if not findings and not _EV_RE.search(summary):
                 lines.extend(["", _UNCITED_NOTE])
         if written:
             lines.extend(_findings_beside(ctx.narrative_findings, ctx.plain))
@@ -625,7 +623,7 @@ class MarkdownRenderer:
             "",
         )
         reason = why.split(":", 1)[1].strip() if ":" in why else "the report model wrote none"
-        left = ctx.left_out_by_checks(*SUMMARY_SUBJECTS)
+        left = ctx.left_out_clause(*SUMMARY_SUBJECTS)
         lines.append(
             f"No summary is printed: {left}. _({MEASURED})_"
             if left
@@ -2096,7 +2094,7 @@ class MarkdownRenderer:
                     "12.3",
                     "Background",
                     f"Not printed in this run: {left}."
-                    if (left := ctx.left_out_by_checks("introduction"))
+                    if (left := ctx.left_out_clause("introduction"))
                     else "Not written in this run: the report model wrote no background.",
                 )
             )
@@ -2796,12 +2794,13 @@ class _Context:
         tool = row.tool or "tool"
         return f"{row.agent} ({tool})" if row.agent else tool
 
-    def left_out_by_checks(self, *subjects: str) -> str:
+    def left_out_clause(self, *subjects: str, on: str = "") -> str:
         """The clause a line saying nothing was written for a passage says instead where the
-        agreement question's checks left its sentences out (T-600), with their count: the
-        records of them (``section_agreement.DROPPED_CODE``) whose subject is one of
-        ``subjects``, or, for one ending in ".", a record of that list ("key_findings.");
-        ``""`` where they left none out."""
+        agreement question left its sentences out (T-600), with their count, naming no one
+        as having left them out (its checks or the round's own drop): the records of them
+        (``section_agreement.DROPPED_CODE``) whose subject is one of ``subjects``, or, for
+        one ending in ".", a record of that list ("key_findings."); ``on`` follows "wrote"
+        (" on it"); ``""`` where none was left out."""
         from malspark.reporting.section_agreement import DROPPED_CODE
 
         whole = {s for s in subjects if not s.endswith(".")}
@@ -2819,7 +2818,8 @@ class _Context:
             return ""
         one = count == 1
         return (
-            f"the checks left out the {count} sentence{'' if one else 's'} the report model wrote"
+            f"the {count} sentence{'' if one else 's'} the report model wrote{on} "
+            f"{'was' if one else 'were'} left out"
         )
 
     def no_sandbox_clause(self) -> str:
@@ -2836,10 +2836,12 @@ class _Context:
         It names what looked: the tools that ran over the file, and the
         sandbox's state where the capability is one a sandbox would see. "Not
         examined" is said only when nothing looked at all. Where the agreement
-        question's checks left out what the report model wrote in the passages
-        ``subjects`` name, it says so, with the count (:meth:`left_out_by_checks`).
+        question left out what the report model wrote in the passages ``subjects``
+        name, it says so, with the count (:meth:`left_out_clause`).
         """
-        wrote = f"{self.left_out_by_checks(*subjects) or 'the report model wrote nothing'} on it"
+        wrote = (
+            self.left_out_clause(*subjects, on=" on it") or "the report model wrote nothing on it"
+        )
         tools = self.file_tools
         named = ", ".join(tools[:6]) + (f" and {len(tools) - 6} more" if len(tools) > 6 else "")
         blind = sandbox and not self.sandbox_observed

@@ -526,6 +526,15 @@ _OTHERS_REDONE = (
 )
 
 
+# What a rewrite of haiku8's held sentence cites after each denial: an entry shown for it, or
+# the failed calls its facts show that no later call redid (the emulation's among them).
+_UNREDONE_DENIAL = (
+    "each denial in it followed at once by the entry it rests on, one shown for it or a failed "
+    "call the facts show that no later call redid"
+)
+_LEFT_OUT_END = "If no answer for it passes the checks, it is left out of the report."
+
+
 def _citing_every_redo(rewrite: str) -> str:
     """A rewrite of haiku8's sentence with :data:`_OTHERS_REDONE` after its own words."""
     return rewrite.rstrip(".") + _OTHERS_REDONE
@@ -713,19 +722,51 @@ def test_the_stored_run_s_false_rewrite_is_not_put_in_and_a_true_one_is() -> Non
     _left_out_alone(report, done, body)
 
 
-def test_a_denial_of_a_call_the_sentence_is_not_held_to_needs_an_entry_shown_for_it() -> None:
-    # A2: "no later call redid" the emulation, in its own clause, denies no redo of the
-    # decompile; but the sentence is held to the redone calls, and the entry after that
-    # denial (the emulation's own) is not one shown for it, so the rewrite is refused for
-    # that alone (T-600).
+def test_a_denial_may_rest_on_a_failed_call_no_later_call_redid() -> None:
+    # A2: "no later call redid" the emulation, in its own clause, followed at once by the
+    # emulation's own failed call: the paragraph's facts show it and no later call redid it,
+    # so the denial rests on an entry shown for the sentence and the rewrite stands, as
+    # before the denial check (T-600).
+    report, ledger = _haiku8()
+    body = report.technical_analysis.analyst_limitations.body
+    # A refusal of a keep of it says so where it says what its rewrite cites.
+    keep = {**_row(HAIKU8_SENTENCE, [], ""), "decision": "keep", "reason": "it failed"}
+    found = agreement_violations({"sentences": [keep]}, passages_of(report, entries=ledger))
+    assert (
+        FAILURE_REDONE_CODE,
+        "row 1: limitations keeps the sentence, but it says a call failed or a reading could "
+        "not be made, while a later call redid it (ev_0168 by ev_0171; ev_0187 by ev_0191; "
+        "ev_0169 by ev_0170). Rewrite it citing ev_0171 and ev_0191 and ev_0170 and saying "
+        f"what each answered, {_UNREDONE_DENIAL}, or drop it. {_LEFT_OUT_END}",
+    ) in [(v.code, v.message) for v in found]
+    tail = "; the batch decompile that failed was answered by a later call [ev_0025][ev_0171]."
+    rewrite = _citing_every_redo(
+        "No later call redid the emulation by candidate names [ev_0122]" + tail
+    )
+    row = _row(HAIKU8_SENTENCE, ["failed.2", "failed.3", "failed.4", "failed.5"], rewrite)
+    done, _ = _ask(report, ledger, {"sentences": [row]})
+    assert done.summary["rewritten"] == 1
+    assert report.technical_analysis.analyst_limitations.body == body.replace(
+        HAIKU8_SENTENCE, rewrite
+    )
+    # Resting on a failed call a later call redid, it is not: that call's answer is shown.
     report, ledger = _haiku8()
     rewrite = _citing_every_redo(
-        "No later call redid the emulation by candidate names [ev_0122]; the batch decompile "
-        "that failed was answered by a later call [ev_0025][ev_0171]."
+        "No later call redid the emulation by candidate names [ev_0168]" + tail
     )
     row = _row(HAIKU8_SENTENCE, ["failed.2", "failed.3", "failed.4", "failed.5"], rewrite)
     found = agreement_violations({"sentences": [row]}, passages_of(report, entries=ledger))
-    assert [v.code for v in found if v.path.startswith("sentences.0")] == [REWRITE_UNGROUNDED_CODE]
+    assert [v.code for v in found if v.path.startswith("sentences.0")] == [
+        REWRITE_UNGROUNDED_CODE,
+        FAILURE_REDONE_CODE,
+    ]
+    assert found[0].message == (
+        "row 1: the rewrite of limitations denies something in 'No later call redid the "
+        "emulation by candidate names' and no entry shown for the sentence follows that denial "
+        "at once: in a rewrite of this sentence each denial is followed at once by the entry it "
+        "rests on, cited in square brackets, one of ev_0008, ev_0122, ev_0170, ev_0171, "
+        f"ev_0191. {_LEFT_OUT_END}"
+    )
 
 
 @pytest.mark.parametrize(
@@ -776,8 +817,11 @@ def test_a_denial_of_its_own_is_about_the_call_before_it(rewrite: str) -> None:
     done, _ = _ask(report, ledger, {"sentences": [row]}, {"sentences": [row]})
     _left_out_alone(report, done, body)
     # The finding names the call the denial is about, with the call that redid it.
-    (finding,) = [r for r in done.tally.unresolved if r["code"] == FAILURE_REDONE_CODE]
-    assert "(ev_0168 by ev_0171)" in finding["message"]
+    assert [r["message"] for r in done.tally.unresolved if r["code"] == FAILURE_REDONE_CODE] == [
+        "row 1: the rewrite of limitations: it says a call failed or a reading could not be "
+        "made, while a later call redid it (ev_0168 by ev_0171). Rewrite it citing ev_0171 and "
+        f"saying what it answered, {_UNREDONE_DENIAL}, or drop it. {_LEFT_OUT_END}"
+    ]
 
 
 def test_a_section_5_rewrite_is_read_by_its_citations() -> None:
@@ -829,12 +873,13 @@ def test_a_section_5_sentence_saying_a_comparison_fails_is_put_in() -> None:
     }
     done, _ = _ask(report, ledger, {"sentences": [row]})
     assert done.summary["rewritten"] == 1
-    # No finding of the payloads row (a refused row of a held limitations sentence stays its
-    # last answer, and is the limitations', T-600).
-    assert not [
-        r
-        for r in done.tally.unresolved
-        if r["code"] == FAILURE_REDONE_CODE and "payloads" in r["message"]
+    # No finding of the payloads row: the one finding is the limitations sentence's, whose
+    # refused row stays its last answer (T-600).
+    assert [r["message"] for r in done.tally.unresolved if r["code"] == FAILURE_REDONE_CODE] == [
+        "row 36: limitations keeps the sentence, but it says a call failed or a reading could "
+        "not be made, while a later call redid it (ev_0168 by ev_0171; ev_0187 by ev_0191; "
+        "ev_0169 by ev_0170). Rewrite it citing ev_0171 and ev_0191 and ev_0170 and saying what "
+        f"each answered, {_UNREDONE_DENIAL}, or drop it. {_LEFT_OUT_END}"
     ]
 
 

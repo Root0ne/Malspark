@@ -11,7 +11,7 @@ answers after the retry, refused or never answered, is left out and recorded
 with the reason; a drop of one is an answer in the body too; where the platform
 already changes such a sentence or leaves it out, that end stands with its own
 record; and a printed line saying nothing was written for a passage says how
-many of its sentences the checks left out. Every address, entry and name here is
+many of its sentences were left out. Every address, entry and name here is
 a neutral synthetic value.
 """
 
@@ -172,7 +172,9 @@ def test_a_rewrite_with_no_denial_stands_and_two_denials_each_need_their_own() -
 
 def test_a_held_sentence_no_turn_answers_is_left_out_with_the_reason() -> None:
     report = _background()
-    reporter = _Reporter({"sentences": []}, {"sentences": []})
+    # Both turns answer the sentence beside it alone.
+    beside = {**_row(FIRST, "keep", ["ledger.1"]), "passage": "introduction"}
+    reporter = _Reporter({"sentences": [beside]}, {"sentences": [beside]})
     done = _ask(report, reporter)
     assert report.intro_background == FIRST
     assert done.summary["dropped"] == 1
@@ -334,13 +336,13 @@ def test_a_subsection_whose_only_sentence_is_left_out_says_so_in_print() -> None
     done = _ask(report, _Reporter({"sentences": []}, {"sentences": []}))
     assert report.technical_analysis.discovery.body == ""
     report.run_summary = {"validation": {"retries": 1, "unresolved": done.tally.unresolved}}
-    # The bundle's line for the subsection says the checks left its one sentence out; the
+    # The bundle's line for the subsection says its one sentence was left out; the
     # next subsection, where the model wrote nothing, says that as before.
     bundle = MarkdownRenderer(layout=BUNDLE).render(report)
     assert (
         "### 5.5 Discovery · _Measured_\n\nNot examined in this run: this report records no "
-        "sandbox observation, no tool looked at the file, and the checks left out the 1 sentence "
-        "the report model wrote on it.\n"
+        "sandbox observation, no tool looked at the file, and the 1 sentence the report model "
+        "wrote on it was left out.\n"
     ) in bundle
     assert (
         "### 5.7 Command and control · _Measured_\n\nNot examined in this run: this report "
@@ -365,13 +367,13 @@ def test_a_summary_emptied_with_its_findings_says_so_in_print() -> None:
     }
     report.run_summary = {"validation": {"retries": 1, "unresolved": done.tally.unresolved}}
     bundle = MarkdownRenderer(layout=BUNDLE).render(report)
-    assert "No summary is printed: the checks left out the 2 sentences the report model wrote." in (
+    assert "No summary is printed: the 2 sentences the report model wrote were left out." in (
         bundle
     )
     assert "No summary was written" not in bundle
     analyst = MarkdownRenderer(layout=ANALYST).render(report)
     assert (
-        "No summary is printed in this run: the checks left out the 2 sentences the report "
-        "model wrote; the findings below are the platform's own record of what the run "
+        "No summary is printed in this run: the 2 sentences the report model wrote were left "
+        "out; the findings below are the platform's own record of what the run "
         "established."
     ) in analyst
