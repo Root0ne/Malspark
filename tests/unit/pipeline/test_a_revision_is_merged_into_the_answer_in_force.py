@@ -375,14 +375,31 @@ class TestOnlyARealRestatementReplacesAClaim:
         assert merge_revision(_isr(first), _isr(answer), answer, 1).merged is None
 
     def test_a_third_of_the_values_with_the_technique_restates_a_correction(self) -> None:
-        first = _block("0x405000 runs net view through 0x1030 into net_view.", "T1018")
-        first += _block(PERSIST)
-        answer = _block("0x405000 runs nltest and ipconfig through a hidden runner.", "T1018")
-        # The runner's address is still in the answer, in another block: the
-        # correction leaves no address of the claim out of the revision.
-        answer += _block(PERSIST + " The runner at 0x1030 writes it.")
+        net_view = "0x405000 runs net view through 0x1030 into net_view."
+        corrected = "0x405000 runs nltest and ipconfig through a hidden runner."
+        first = _block(net_view, "T1018") + _block(PERSIST)
+        answer = _block(corrected, "T1018") + _block(PERSIST)
 
-        assert merge_revision(_isr(first), _isr(answer), answer, 1).merged is None
+        merge = merge_revision(_isr(first), _isr(answer), answer, 1)
+
+        # The correction restates the claim but states 0x1030 nowhere: both
+        # stand, and the claim in force is marked beside the correction.
+        assert merge.merged is not None
+        assert _sentences(merge.merged) == [net_view, PERSIST, corrected]
+        assert merge.replaced == (2,) and merge.added == 1
+        assert merge.beside == ((1, net_view, 3, ("0x1030",)),)
+        assert merge.merged.claims[0].carried_beside.startswith("claim 3 of the answer")
+
+    def test_a_numbered_correction_is_placed_by_its_number(self) -> None:
+        first = _block("0x405000 runs net view through 0x1030 into net_view.", "T1018", 1)
+        first += _block(PERSIST, number=2)
+        corrected = "0x405000 runs net view and nltest into net_view, not through a runner."
+        answer = _block(corrected, "T1018", 1) + _block(PERSIST, number=2)
+
+        merge = merge_revision(_isr(first), _isr(answer), answer, 1)
+
+        assert merge.placed_by == "number" and merge.replaced == (1, 2)
+        assert merge.merged is None and merge.beside == ()
 
     def test_a_number_that_restates_only_small_values_is_not_trusted(self) -> None:
         first = _block("Init returns 0 at 0x309c.") + _block(PERSIST)

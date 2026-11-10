@@ -2,7 +2,7 @@
 
 Over one or more stored runs, each a directory in the benchmark's layout::
 
-    python scripts/replay/remerge_revisions.py runs/haiku13 runs/haiku12
+    python scripts/replay/remerge_revisions.py <run dir> [<run dir> ...]
 
 reads the answers in force each mediation was given from the run's
 ``worker.log`` (the requests the model client logged), and for each analyst a
@@ -10,9 +10,10 @@ revision round revised merges its revision into the answer in force again
 (``pipeline.revision_merge.merge_revision``) twice: under the rule this tree
 holds, and under the earlier one, which pooled a claim's values over the
 revision's blocks and asked no block for the claim's subject. It prints, per
-round and analyst, the claims each rule restated, carried, withdrew (by a
-line or by rule) and left with values the merged answer states nowhere
-(``claim_drops.dropped_values``), the claims this tree's rule keeps in force
+round and analyst, the claims each rule restated, carried (and, of those,
+carried beside a block that states the claim again without an address of it),
+withdrew (by a line or by rule) and left with values the merged answer states
+nowhere (``claim_drops.dropped_values``), the claims this tree's rule keeps in force
 that the earlier one replaced, and, for each, the revision block nearest to
 it, so a near duplicate is seen. ``--json OUT`` writes the record.
 
@@ -73,7 +74,7 @@ _TECHNIQUES = re.compile(r" \(((?:T\d{4}(?:\.\d{3})?(?: — [^,()]*)?(?:, )?)+)\
 _MARKER = re.compile(
     r" \((?:the claim cites only tool calls that failed"
     r"|added by a tool-less retry, round \d+"
-    r"|carried forward: [^\n]*?)\)$"
+    r"|carried forward[: ][^\n]*?)\)$"
 )
 _STANDING = re.compile(r"(?m)^- \(standing: [^)]*\) (.+)$")
 _MERGE_SAID = re.compile(
@@ -248,7 +249,7 @@ def _earlier_rule() -> Iterator[None]:
             return True, None
         return False, None
 
-    def by_statement(first: Any, readings: Any, _revised: Any = None) -> Any:
+    def by_statement(first: Any, readings: Any, _stated: Any = None) -> Any:
         found: set[int] = set()
         target: dict[int, int] = {}
         for earlier in first:
@@ -258,12 +259,9 @@ def _earlier_rule() -> Iterator[None]:
             found.add(earlier.number)
             if index is not None and index not in target:
                 target[index] = earlier.number
-        return found, target
+        return found, target, {}
 
-    with (
-        patch.object(rm, "_by_statement", by_statement),
-        patch.object(rm, "_subject_left_out", lambda *_a, **_k: False),
-    ):
+    with patch.object(rm, "_by_statement", by_statement):
         yield
 
 
@@ -290,6 +288,7 @@ def _merge_row(merge: Any, in_force: AgentISR, revision: AgentISR, besides: str)
         "withdrawn": [n for n, _s, _r in merge.withdrawn],
         "withdrawn_by_rule": [n for n, _s, _r in merge.withdrawn_by_rule],
         "carried": [n for n, _s in merge.carried],
+        "beside": [[n, now, list(addresses)] for n, _s, now, addresses in merge.beside],
         "dropped_claims": len(dropped),
         "dropped_values": sum(len(d.missing) for d in dropped),
     }
@@ -403,7 +402,8 @@ def _print(record: dict[str, Any]) -> None:
         for label, said in (("earlier", old), ("this   ", new)):
             print(
                 f"    {label} rule: restated {len(said['restated'])}, added {said['added']}, "
-                f"carried {len(said['carried'])}, withdrawn {len(said['withdrawn'])}, by rule "
+                f"carried {len(said['carried'])} ({len(said['beside'])} beside a "
+                f"restatement), withdrawn {len(said['withdrawn'])}, by rule "
                 f"{len(said['withdrawn_by_rule'])}, claims with dropped values "
                 f"{said['dropped_claims']} ({said['dropped_values']} value(s))"
             )

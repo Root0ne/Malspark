@@ -6,7 +6,8 @@ that restates it and states every address the claim names that no other
 block states; a claim's helpers recurring over several of the revision's
 claims never write it again. A claim neither written again by one block nor
 withdrawn (a ``WITHDRAW CLAIM`` line, or by rule on a blocking line) stays in
-force whole.
+force whole; one a block states again without an address of it stays marked
+beside that block, the addresses named.
 
 Every address, name and sentence here is made up for the test.
 """
@@ -20,7 +21,7 @@ from unittest.mock import MagicMock
 from malspark.agents.base_agent import read_claim_blocks
 from malspark.pipeline.nodes import make_revision_node
 from malspark.pipeline.revision_merge import merge_revision
-from malspark.schemas.isr_models import AgentISR
+from malspark.schemas.isr_models import AgentISR, carried_note
 
 
 def _block(sentence: str, technique: str = "NONE") -> str:
@@ -64,8 +65,8 @@ class TestValuesPooledOverBlocksRestateNothing:
         assert merge.merged is not None
         assert merge.replaced == (2,) and _carried(merge) == [1]
         loader = next(c for c in merge.merged.claims if c.claim == LOADER)
-        assert loader.carried_since_round == 1
-        assert merge.added == 3
+        assert loader.carried_since_round == 1 and loader.carried_beside == ""
+        assert merge.added == 3 and merge.beside == ()
 
     def test_one_block_with_the_helpers_but_not_the_subject_restates_nothing(self) -> None:
         # Three of the claim's four values in one block, but not the routine
@@ -97,6 +98,17 @@ class TestOneBlockNamingTheSubjectReplacesTheClaim:
         merge = merge_revision(_isr(_block(crypto) + _block(GATE)), _isr(answer), answer, 1)
 
         assert merge.replaced == (1,) and _carried(merge) == [2]
+
+    def test_a_restatement_with_nothing_pooled_beside_it_replaces_the_claim(self) -> None:
+        added = "0x409000 enumerates the running processes with a snapshot."
+        answer = _block(LOADER_AGAIN) + _block(added)
+
+        merge = merge_revision(_isr(IN_FORCE), _isr(answer), answer, 1)
+
+        assert merge.merged is not None
+        assert merge.replaced == (1,) and _carried(merge) == [2] and merge.added == 1
+        assert [c.claim for c in merge.merged.claims] == [LOADER_AGAIN, GATE, added]
+        assert merge.beside == ()
 
 
 class TestAClaimWithSeveralSubjectAddresses:
@@ -141,15 +153,38 @@ class TestAClaimWithSeveralSubjectAddresses:
 
         assert merge.replaced == (1,) and _carried(merge) == [2]
 
-    def test_a_whole_address_written_again_only_as_its_offset_is_left_out(self) -> None:
-        # The record of dropped values reads 0x1360bc0cf14 as stated nowhere
-        # here (``claim_drops``), and so does the merge: the claim stays.
+    def test_a_whole_address_written_again_only_as_its_offset_is_stated(self) -> None:
+        # An address and its offset under an image base are one address,
+        # read either way.
         named = "FUN_1360bc0cf14 (0x1360bc0cf14) loads the saved URL list through 0xcea4."
-        answer = _block("Routine 0xcf14 loads the URL list through 0xcea4.") + _block(GATE_AGAIN)
+        answer = _block("Routine 0xcf14 loads the URL list through 0xcea4.") + GATE_HELPERS
 
         merge = merge_revision(_isr(_block(named) + _block(GATE)), _isr(answer), answer, 1)
 
-        assert merge.replaced == (2,) and _carried(merge) == [1]
+        assert merge.replaced == (1,) and _carried(merge) == [2] and merge.beside == ()
+
+    def test_a_routine_named_whole_is_replaced_by_its_offset(self) -> None:
+        named = "FUN_140005000 (0x140005000) starts the C2 thread with start routine 0x5750."
+        again = "0x5000 starts the C2 thread with start routine 0x5750."
+        answer = _block(again) + GATE_HELPERS
+
+        merge = merge_revision(_isr(_block(named) + _block(GATE)), _isr(answer), answer, 1)
+
+        assert merge.merged is not None
+        assert merge.replaced == (1,) and _carried(merge) == [2]
+        assert [c.claim for c in merge.merged.claims][0] == again
+
+    def test_a_decimal_number_states_no_address(self) -> None:
+        # "4096 bytes" is a size: an address is read as hex or in a
+        # decompiler's name only.
+        claim = "Routine 0x1000 allocates the staging buffer for the payload."
+        answer = _block("The routine allocates 4096 bytes for the staging buffer of the payload.")
+        answer += GATE_HELPERS
+
+        merge = merge_revision(_isr(_block(claim) + _block(GATE)), _isr(answer), answer, 1)
+
+        assert merge.replaced == () and _carried(merge) == [1, 2]
+        assert [(n, k, a) for n, _s, k, a in merge.beside] == [(1, 3, ("0x1000",))]
 
 
 class TestAClaimWithNoAddress:
@@ -203,6 +238,9 @@ class TestAWithdrawalStaysExplicit:
         assert merge.merged is not None
         assert [c.claim for c in merge.merged.claims] == [LOADER, GATE_AGAIN, corrected]
         assert _carried(merge) == [1] and merge.added == 1
+        # Not in silence: the claim stands beside the block that states it
+        # again without its subject.
+        assert merge.beside == ((1, LOADER, 3, ("0x40cf14",)),)
 
     def test_a_blocking_line_withdraws_the_claim_a_correction_omitted_the_subject_of(
         self,
@@ -223,6 +261,76 @@ class TestAWithdrawalStaysExplicit:
             ),
         )
         assert merge.merged is None
+
+
+class TestAClaimCarriedBesideItsRestatementIsMarked:
+    NET_VIEW = "0x405000 runs net view through 0x1030 into net_view."
+
+    def test_a_correction_that_changes_a_helper_address_is_carried_and_marked(self) -> None:
+        corrected = "0x405000 runs net view through 0x1034 into net_view."
+        answer = _block(corrected, "T1018") + _block(GATE_AGAIN)
+
+        merge = merge_revision(
+            _isr(_block(self.NET_VIEW, "T1018") + _block(GATE)), _isr(answer), answer, 2
+        )
+
+        assert merge.merged is not None
+        assert [c.claim for c in merge.merged.claims] == [self.NET_VIEW, GATE_AGAIN, corrected]
+        assert merge.beside == ((1, self.NET_VIEW, 3, ("0x1030",)),)
+        carried = merge.merged.claims[0]
+        assert carried.carried_since_round == 2
+        assert carried_note(carried) == (
+            "carried forward beside claim 3 of the answer the round-2 revision left in force, "
+            "which states it again without 0x1030"
+        )
+        assert (
+            "Claim 1 of the static analyst's answer in force (\"0x405000 runs net view through "
+            '0x1030 into net_view.") is carried beside claim 3 of the answer the round-2 '
+            "revision left in force, which states it again without 0x1030."
+        ) in merge.sentences("static", 2)
+
+    def test_a_changed_constant_is_read_as_an_address_and_the_claim_is_marked(self) -> None:
+        # The rule reads no meaning into a number: a hex value of 0x100 or
+        # more is an address of the claim's subject, whether it is a call
+        # target, a hash or a seed. A block that writes the claim again with
+        # another polynomial leaves the earlier value stated nowhere, so the
+        # earlier claim stays beside it, marked, and the reader sees both
+        # values rather than the merge choosing one.
+        crc = "0x407000 hashes each API name with the CRC32 polynomial 0xEDB88320."
+        changed = "0x407000 hashes each API name with the CRC32 polynomial 0x82F63B78."
+        answer = _block(changed) + _block(GATE_AGAIN)
+
+        merge = merge_revision(_isr(_block(crc) + _block(GATE)), _isr(answer), answer, 1)
+
+        assert [c.claim for c in merge.merged.claims] == [crc, GATE_AGAIN, changed]
+        assert merge.beside == ((1, crc, 3, ("0xedb88320",)),)
+
+    def test_the_same_constant_written_again_replaces_the_claim(self) -> None:
+        crc = "0x407000 hashes each API name with the CRC32 polynomial 0xEDB88320."
+        again = "0x407000 hashes every API name with CRC32, polynomial 0xedb88320."
+        answer = _block(again) + GATE_HELPERS
+
+        merge = merge_revision(_isr(_block(crc) + _block(GATE)), _isr(answer), answer, 1)
+
+        assert merge.replaced == (1,) and merge.beside == ()
+
+    def test_a_later_merge_that_carries_it_unwritten_drops_the_mark(self) -> None:
+        # The mark names a claim by its number in one merged answer; the next
+        # merge numbers anew, so it says only what that merge read.
+        corrected = "0x405000 runs net view through 0x1034 into net_view."
+        answer = _block(corrected, "T1018") + _block(GATE_AGAIN)
+        first = merge_revision(
+            _isr(_block(self.NET_VIEW, "T1018") + _block(GATE)), _isr(answer), answer, 1
+        ).merged
+        added = "0x409000 enumerates the running processes with a snapshot."
+        later = _block(added)
+
+        merge = merge_revision(first, _isr(later), later, 2)
+
+        assert merge.merged is not None and merge.beside == ()
+        carried = merge.merged.claims[0]
+        assert carried.claim == self.NET_VIEW and carried.carried_beside == ""
+        assert carried.carried_since_round == 1
 
 
 class TestTheRecordOfDroppedClaims:
