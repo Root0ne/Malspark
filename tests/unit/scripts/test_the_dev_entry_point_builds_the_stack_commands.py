@@ -225,10 +225,12 @@ class TestExtraComposeFiles:
         extra = ["-f", "docker/local.yml", "-f", "/srv/gpu.yml"]
         assert list(step.argv[1:]) == ["compose", *SHIPPED, *extra, *tail]
 
-    def test_the_variable_is_split_on_white_space_and_the_option_comes_after_it(
+    def test_the_variable_is_split_on_the_host_s_separator_and_the_option_comes_after_it(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        monkeypatch.setenv("COMPOSE_FILE_EXTRA", "docker/local.yml  /srv/gpu.yml")
+        # Whichever host runs this: ';' on Windows, white space elsewhere.
+        separator = ";" if os.name == "nt" else "  "
+        monkeypatch.setenv("COMPOSE_FILE_EXTRA", f"docker/local.yml{separator}/srv/gpu.yml")
         ctx = dev.Context.here(ROOT, ["mine.yml"])
         assert ctx.extra_files == ("docker/local.yml", "/srv/gpu.yml", "mine.yml")
 
@@ -334,11 +336,41 @@ class TestNamedDataAndPolling:
         assert up[-1] == Path(dev.DEV_POLLING_OVERLAY).name
         assert self._files(root, "docker-up", system, MALSPARK_DATA_VOLUMES="0") == []
 
-    def test_any_other_value_leaves_the_host_s_choice(self, tmp_path: Path) -> None:
+    @pytest.mark.parametrize(
+        ("value", "named"),
+        [
+            *((value, True) for value in ("1", "true", "Yes", " ON ")),
+            *((value, False) for value in ("0", "FALSE", "no", "Off")),
+        ],
+    )
+    def test_each_spelling_of_on_and_off_is_read_on_any_host(
+        self, tmp_path: Path, value: str, named: bool
+    ) -> None:
+        root = self._root(tmp_path)
+        overlay = Path(dev.NAMED_DATA_OVERLAY).name
+        for system in ("Linux", "Darwin", "Windows"):
+            files = self._files(root, "docker-up", system, MALSPARK_DATA_VOLUMES=value)
+            assert (overlay in files) == named
+
+    def test_any_other_value_is_named_and_leaves_the_host_s_choice(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
         root = self._root(tmp_path)
         named = Path(dev.NAMED_DATA_OVERLAY).name
-        assert named not in self._files(root, "up", "Linux", MALSPARK_DATA_VOLUMES="yes")
+        assert named not in self._files(root, "up", "Linux", MALSPARK_DATA_VOLUMES="maybe")
+        assert named in self._files(root, "up", "Darwin", MALSPARK_DATA_VOLUMES="maybe")
         assert named in self._files(root, "up", "Darwin", MALSPARK_DATA_VOLUMES="")
+        monkeypatch.setenv("MALSPARK_DATA_VOLUMES", "maybe")
+        assert dev.main(["down", "--dry-run"], root=root) == 0
+        warned = capsys.readouterr().err
+        assert warned.count("MALSPARK_DATA_VOLUMES=maybe is not read") == 1
+        assert "1, true, yes, on" in warned and "0, false, no, off" in warned
+        monkeypatch.setenv("MALSPARK_DATA_VOLUMES", "")
+        assert dev.main(["down", "--dry-run"], root=root) == 0
+        assert "warning" not in capsys.readouterr().err
 
 
 class TestTheDataMountPoints:
@@ -386,6 +418,31 @@ class TestTheDataMountPoints:
         _, ran = self._run(tmp_path, monkeypatch, ["up"], MALSPARK_DATA_VOLUMES="1")
         assert ran == [True]
 
+    @pytest.mark.parametrize("taken", ["data/uploads", "data/samples", "data"])
+    def test_a_file_where_a_mount_point_goes_stops_the_start_with_its_name(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture[str],
+        taken: str,
+    ) -> None:
+        root = _checkout(tmp_path, bootstrap=None)
+        (root / dev.NAMED_DATA_OVERLAY).write_text("services: {}\n")
+        (root / taken).parent.mkdir(parents=True, exist_ok=True)
+        (root / taken).write_text("not a directory\n")
+        monkeypatch.setenv("MALSPARK_DATA_VOLUMES", "1")
+        ran: list[object] = []
+
+        def run(steps: object, *_: object) -> int:
+            ran.append(steps)
+            return 0
+
+        monkeypatch.setattr(dev, "run_steps", run)
+        assert dev.main(["up"], root=root) == 1
+        failed = capsys.readouterr().err
+        assert "  FAIL     data/" in failed and "cannot be the mount point" in failed
+        assert not ran
+
     @pytest.mark.parametrize(
         ("argv", "system", "environ"),
         [
@@ -408,6 +465,77 @@ class TestTheDataMountPoints:
     ) -> None:
         root, _ = self._run(tmp_path, monkeypatch, argv, system, **environ)
         assert self._made(root) == [False, False]
+
+
+class TestTheNoteBeforeAStartWithTheNamedVolumes:
+    """Before up or docker-up with the overlay, the stack says where samples and uploads are."""
+
+    def _said(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture[str],
+        command: str,
+        system: str,
+        **environ: str,
+    ) -> str:
+        root = _checkout(tmp_path, bootstrap=None)
+        (root / dev.NAMED_DATA_OVERLAY).write_text("services: {}\n")
+        monkeypatch.setattr(dev.platform, "system", lambda: system)
+        for name in ("MALSPARK_DATA_VOLUMES", "COMPOSE_PROJECT_NAME"):
+            monkeypatch.delenv(name, raising=False)
+        for name, value in environ.items():
+            monkeypatch.setenv(name, value)
+        monkeypatch.setattr(dev, "run_steps", lambda *_: 0)
+        assert dev.main([command], root=root) == 0
+        return capsys.readouterr().err
+
+    @pytest.mark.parametrize("command", ["up", "docker-up"])
+    @pytest.mark.parametrize(
+        ("system", "environ"),
+        [("Darwin", {}), ("Windows", {}), ("Linux", {"MALSPARK_DATA_VOLUMES": "1"})],
+    )
+    def test_the_volumes_are_named_and_the_host_folders_said_unseen(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture[str],
+        command: str,
+        system: str,
+        environ: dict[str, str],
+    ) -> None:
+        said = self._said(tmp_path, monkeypatch, capsys, command, system, **environ)
+        (note,) = [line for line in said.splitlines() if line.startswith("note:")]
+        assert "malspark_samples and malspark_uploads" in note
+        assert "do not see a file put in data/samples or data/uploads" in note
+        assert "MALSPARK_DATA_VOLUMES=0 keeps the bind mounts" in note
+
+    def test_the_volumes_are_named_under_the_project_compose_is_given(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        said = self._said(tmp_path, monkeypatch, capsys, "up", "Darwin", COMPOSE_PROJECT_NAME="lab")
+        assert "lab_samples and lab_uploads" in said
+
+    @pytest.mark.parametrize(
+        ("command", "system", "environ"),
+        [
+            ("up", "Linux", {}),
+            ("up", "Darwin", {"MALSPARK_DATA_VOLUMES": "0"}),
+            ("down", "Darwin", {}),
+            ("fe-rebuild", "Windows", {}),
+        ],
+        ids=["linux", "opted-out", "down", "fe-rebuild"],
+    )
+    def test_nothing_is_said_without_the_volumes_or_a_start(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture[str],
+        command: str,
+        system: str,
+        environ: dict[str, str],
+    ) -> None:
+        assert "note:" not in self._said(tmp_path, monkeypatch, capsys, command, system, **environ)
 
 
 class TestRunningAndDryRuns:
@@ -474,12 +602,15 @@ def _doctor(
     taken: frozenset[int] = frozenset(),
     filesystem: str | None = None,
     path: str | None = None,
+    system: str = "Linux",
+    environ: dict[str, str] | None = None,
 ) -> list[str]:
     root = tmp_path
     (root / "docker").mkdir(exist_ok=True)
-    (root / "docker" / "docker-compose.yml").write_text(
-        (ROOT / "docker" / "docker-compose.yml").read_text(encoding="utf-8"), encoding="utf-8"
-    )
+    for name in ("docker-compose.yml", Path(dev.NAMED_DATA_OVERLAY).name):
+        (root / "docker" / name).write_text(
+            (ROOT / "docker" / name).read_text(encoding="utf-8"), encoding="utf-8"
+        )
     shims = tmp_path / "shims"
     shims.mkdir(exist_ok=True)
     name = "docker.exe" if os.name == "nt" else "docker"
@@ -492,10 +623,11 @@ def _doctor(
     return list(
         dev.doctor_report(
             root,
-            {"PATH": str(shims) if path is None else path},
+            {"PATH": str(shims) if path is None else path, **(environ or {})},
             probe=probe,
             in_use=lambda host, port: port in taken,
             filesystem=lambda _path: filesystem,
+            system=system,
         )
     )
 
@@ -526,11 +658,31 @@ class TestDoctor:
         assert "bootstrap.env's DATABASE_URL" in said
 
     def test_a_checkout_on_ntfs_is_warned_about(self, tmp_path: Path) -> None:
-        assert any(
-            "on NTFS" in s and "samples and uploads on named volumes" in s
-            for s in _doctor(tmp_path, filesystem="NTFS")
-        )
-        assert not any("NTFS" in s for s in _doctor(tmp_path, filesystem=None))
+        (ntfs,) = [s for s in _doctor(tmp_path, filesystem="NTFS", system="Windows") if "NTFS" in s]
+        assert "samples and uploads on named volumes" in ntfs
+        assert not any("NTFS" in s for s in _doctor(tmp_path, filesystem=None, system="Windows"))
+
+    def test_on_ntfs_with_the_bind_mounts_kept_no_volume_is_claimed(self, tmp_path: Path) -> None:
+        off = {"MALSPARK_DATA_VOLUMES": "0"}
+        said = _doctor(tmp_path, filesystem="NTFS", system="Windows", environ=off)
+        (ntfs,) = [s for s in said if "NTFS" in s]
+        assert "named volume" not in ntfs and "do not keep the ownership" in ntfs
+        assert not any(s.startswith("  volumes") for s in said)
+
+    @pytest.mark.parametrize(
+        ("system", "environ"),
+        [("Darwin", {}), ("Windows", {}), ("Linux", {"MALSPARK_DATA_VOLUMES": "yes"})],
+    )
+    def test_where_the_volumes_are_used_on_any_host_it_says_so(
+        self, tmp_path: Path, system: str, environ: dict[str, str]
+    ) -> None:
+        said = _doctor(tmp_path, system=system, environ=environ)
+        (line,) = [s for s in said if s.startswith("  volumes")]
+        assert line.startswith("  volumes  samples and uploads are on the named volumes")
+        assert "malspark_samples and malspark_uploads" in line
+
+    def test_linux_with_the_bind_mounts_says_nothing_of_volumes(self, tmp_path: Path) -> None:
+        assert not any("named volume" in s for s in _doctor(tmp_path, system="Linux"))
 
     def test_a_port_check_sees_a_listener(self) -> None:
         import socket

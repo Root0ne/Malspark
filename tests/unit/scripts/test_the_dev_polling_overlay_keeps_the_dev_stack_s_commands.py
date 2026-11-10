@@ -44,11 +44,19 @@ def test_each_watcher_polls_once_a_second_and_nothing_else_changes() -> None:
     assert set(polling) == {"backend-api", "backend-worker", "frontend"}
     assert polling["backend-api"]["environment"] == WATCHFILES
     assert polling["backend-worker"] == {"environment": WATCHFILES}
-    assert polling["frontend"] == {"environment": {"MALSPARK_WATCH_POLL_MS": "1000"}}
+    # next.config.ts's watchOptions, and Watchpack's own (a number is its interval).
+    assert polling["frontend"] == {
+        "environment": {"MALSPARK_WATCH_POLL_MS": "1000", "WATCHPACK_POLLING": "1000"}
+    }
     assert set(polling["backend-api"]) == {"command", "environment"}
 
 
 def test_the_frontend_reads_the_interval_it_is_given() -> None:
     config = (ROOT / "apps" / "web" / "next.config.ts").read_text(encoding="utf-8")
-    assert "process.env.MALSPARK_WATCH_POLL_MS" in config
-    assert "watchOptions: { pollIntervalMs: POLL_MS }" in config
+    assert "const POLL_MS = Number(process.env.MALSPARK_WATCH_POLL_MS);" in config
+    # Only a whole number above zero: unset (NaN), 0, -1 or 0.5 leave Next's own watcher.
+    assert (
+        "...(Number.isInteger(POLL_MS) && POLL_MS > 0\n"
+        "    ? { watchOptions: { pollIntervalMs: POLL_MS } }\n"
+        "    : {}),"
+    ) in config

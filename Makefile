@@ -145,18 +145,21 @@ docker-logs:
 # also covers `make migrate` and any bare host process you run outside Docker.
 #
 # COMPOSE_FILE_EXTRA adds compose files of your own after the shipped file and
-# the overlay, each as one more `-f`, so it wins over both: a port moved, a
-# volume added, a service turned off on this host. Several are space-separated:
+# the overlays, each as one more `-f`, so it wins over all of them: a port
+# moved, a volume added, a service turned off on this host. Several are
+# separated by white space, and on Windows by `;`, so a path there may hold a
+# space:
 #
 #   COMPOSE_FILE_EXTRA=docker/local.yml make dev-up
 #   make dev-up COMPOSE_FILE_EXTRA="docker/local.yml docker/gpu.yml"
 #
-# Give the same value to dev-down and dev-logs. A path with a space in it is
-# not supported: the value is split on spaces. A path on the command line is
-# read from the repository root; paths inside the file are read from docker/,
-# the first file's directory. Compose reads docker-compose.override.yml on its
-# own only when it is given no -f, and these targets give it two, so an
-# override file is read here only when it is named in COMPOSE_FILE_EXTRA.
+# Give the same value to dev-down and dev-logs. Elsewhere a path with a space
+# in it is not supported: the value is split on white space. A path on the
+# command line is read from the repository root; paths inside the file are
+# read from docker/, the first file's directory. Compose reads
+# docker-compose.override.yml on its own only when it is given no -f, and
+# these targets give it at least two, so an override file is read here only
+# when it is named in COMPOSE_FILE_EXTRA.
 dev-up:
 	$(DEV) up
 

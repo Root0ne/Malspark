@@ -709,13 +709,24 @@ def test_with_the_named_data_overlay_no_data_directory_is_bind_mounted(
 ) -> None:
     config = _render_with(tmp_path, *files, profiles=ALL_PROFILES)
     data = {("data", "samples"), ("data", "uploads")}
+    tracked = subprocess.run(
+        ["git", "ls-files", "-z", "--", "data/samples"], cwd=ROOT, capture_output=True, check=True
+    ).stdout.decode()
+    fixtures = {p.split("/")[2] for p in tracked.split("\0") if p.count("/") > 2}
     named: dict[str, set[str]] = {}
+    read_fixtures: dict[str, set[str]] = {}
     for name, service in config["services"].items():
         for volume in service.get("volumes") or []:
             source = str(volume.get("source"))
             if volume.get("type") == "bind":
-                # ../data itself stays a bind mount; nothing under samples or uploads does.
+                # ../data itself stays a bind mount; under samples or uploads only the
+                # tracked fixture directories do, read-only where the image keeps them.
                 parts = Path(source).parts
+                if parts[-3:-1] == ("data", "samples") and parts[-1] in fixtures:
+                    assert volume.get("read_only"), name
+                    assert volume["target"] == f"/app/data/samples/{parts[-1]}", name
+                    read_fixtures.setdefault(name, set()).add(parts[-1])
+                    continue
                 assert not data & set(zip(parts, parts[1:], strict=False)), name
             elif source in ("samples", "uploads"):
                 named.setdefault(source, set()).add(name)
@@ -725,6 +736,12 @@ def test_with_the_named_data_overlay_no_data_directory_is_bind_mounted(
     assert named["uploads"] == writers
     assert named["samples"] == writers | set(_sample_openers(config))
     assert {"samples", "uploads"} <= set(config["volumes"])
+    assert read_fixtures == {"backend-api": fixtures, "backend-worker": fixtures}
+    # volume-init holds samples where the image keeps them, so its creation fills it.
+    owner = config["services"]["volume-init"]["volumes"]
+    assert {"/own/data/samples", "/app/data/samples"} <= {
+        volume["target"] for volume in owner if volume.get("source") == "samples"
+    }
 
 
 @pytest.mark.skipif(shutil.which("docker") is None, reason="docker not installed")

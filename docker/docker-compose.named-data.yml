@@ -17,28 +17,44 @@
 # Both directories hold copies only: an upload goes on to the object store, a
 # sample mirror is the worker's copy of an object there.
 #
-# The API's and the worker's mounts carry no nocopy: a fresh samples volume
-# receives the image's sample fixtures, which the mock sandbox reads, and
-# volume-init hands them to MALSPARK_UID with the rest. The mount point of
-# each under the read-only ../data mount must exist on the host: Docker cannot
-# create it there, and the container does not start. malspark_dev.py creates
-# data/samples and data/uploads before it starts a stack with this file.
+# No mount carries nocopy. volume-init also mounts samples at the backend
+# image's own /app/data/samples, so whichever way the stack starts (up, or a
+# `compose run` of the API or the worker, which starts volume-init first) a
+# fresh samples volume receives the image's sample fixtures when volume-init is
+# created, before it hands the volume to MALSPARK_UID; a container created
+# before it, as `up --no-deps` creates one, would leave the volume root's.
+# The API and the worker read the tracked fixture directories (the mock
+# sandbox's recorded answers) read-only from the checkout, inside the volume,
+# so a pull that changes them reaches the stack as a bind mount shows it on
+# Linux; nothing in the stack writes there (the worker's own copies go to
+# the volume's root and its marked mirror directories). The mount point of
+# each volume under the read-only ../data mount must exist on the host:
+# Docker cannot create it there, and the container does not start.
+# malspark_dev.py creates data/samples and data/uploads before it starts a
+# stack with this file.
 
 services:
   volume-init:
     volumes:
       - samples:/own/data/samples
       - uploads:/own/data/uploads
+      - samples:/app/data/samples
 
   backend-api:
     volumes:
       - samples:/app/data/samples
       - uploads:/app/data/uploads
+      - ../data/samples/dynamic:/app/data/samples/dynamic:ro
+      - ../data/samples/network:/app/data/samples/network:ro
+      - ../data/samples/static:/app/data/samples/static:ro
 
   backend-worker:
     volumes:
       - samples:/app/data/samples
       - uploads:/app/data/uploads
+      - ../data/samples/dynamic:/app/data/samples/dynamic:ro
+      - ../data/samples/network:/app/data/samples/network:ro
+      - ../data/samples/static:/app/data/samples/static:ro
 
   # The containers that open the sample, each read-only at its sample_mount.
   ghidra-mcp:

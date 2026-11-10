@@ -3,12 +3,13 @@
 #   docker compose -f docker/docker-compose.yml -f docker/docker-compose.dev.yml \
 #     -f docker/docker-compose.named-data.yml -f docker/docker-compose.dev-polling.yml up -d
 #
-# scripts/dev/malspark_dev.py adds this file after the named-data overlay to
-# the development stack, wherever it adds that one. Docker Desktop shares the
-# host's files with its Linux machine through a file system that delivers no
-# change notification for an edit made on the host, so the worker's and the
-# API's watchfiles and Next's watcher, which wait for one, never reload. Here
-# each looks for changes once a second instead.
+# scripts/dev/malspark_dev.py adds this file to the development stack on a
+# host that is not Linux, whatever MALSPARK_DATA_VOLUMES says, after the
+# named-data overlay when it adds that one. Docker Desktop shares the host's
+# files with its Linux machine through a file system that delivers no change
+# notification for an edit made on the host, so the worker's and the API's
+# watchfiles and Next's watchers, which wait for one, never reload. Here each
+# looks for changes once a second instead.
 
 services:
   # watchfiles reads both variables (uvicorn's reloader and the worker's
@@ -27,7 +28,11 @@ services:
       WATCHFILES_FORCE_POLLING: "true"
       WATCHFILES_POLL_DELAY_MS: "1000"
 
-  # Read by apps/web/next.config.ts as watchOptions.pollIntervalMs.
+  # MALSPARK_WATCH_POLL_MS is read by apps/web/next.config.ts as
+  # watchOptions.pollIntervalMs. `next dev`'s own watcher of its pages and
+  # configuration (Watchpack) reads WATCHPACK_POLLING: a number is its
+  # interval in milliseconds.
   frontend:
     environment:
       MALSPARK_WATCH_POLL_MS: "1000"
+      WATCHPACK_POLLING: "1000"
