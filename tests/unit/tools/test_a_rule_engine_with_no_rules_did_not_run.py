@@ -19,7 +19,8 @@ from __future__ import annotations
 import importlib.util
 import json
 import re
-from pathlib import Path
+from functools import partial
+from pathlib import Path, PurePath, PurePosixPath, PureWindowsPath
 from typing import Any
 
 import pytest
@@ -28,7 +29,12 @@ from app.services.tool_availability import WORKER, as_rows, unavailable_tools
 from malspark.agents.evidence_recorder import EvidenceRecorder
 from malspark.analysis.run_summary import RunSummaryBuilder
 from malspark.core.config import Settings
-from malspark.core.paths import OUTSIDE_PROJECT, get_project_root, host_paths_masked
+from malspark.core.paths import (
+    OUTSIDE_PROJECT,
+    get_project_root,
+    host_path_masked,
+    host_paths_masked,
+)
 from malspark.pipeline.operator_choice import SampleFacts, lost_tool_rows
 from malspark.pipeline.triage_pack import PIPELINE, run_is_degraded, run_pack
 from malspark.reporting.models import MalwareReport
@@ -37,7 +43,7 @@ from malspark.reporting.renderers.layout import ANALYST
 from malspark.schemas.evidence import EvidenceCounter
 from malspark.tools import capabilities, emulated_strings, rules, sidecar_needs
 from malspark.tools.errors import BAD_ARGUMENT, MISSING_DEPENDENCY, error_parts
-from tests.linear_cost import assert_scales
+from tests.linear_cost import assert_scales, cpu_seconds
 from tests.unit.pipeline.test_triage_pack import SANDBOX_REPORT, _inputs, _write
 from tests.unit.tools.test_binary import _pe
 from tests.unit.tools.test_rules import SIGMA_RULE
@@ -226,6 +232,19 @@ class TestAnEmptyCorpusIsReadAgainOnlyWhenItChanges:
         assert rules.sigma_match_sandbox(SANDBOX_REPORT)["rule_count"] == 1
 
 
+CAPA_MODULES = (
+    "capa",
+    "capa.capabilities",
+    "capa.capabilities.common",
+    "capa.helpers",
+    "capa.loader",
+    "capa.render",
+    "capa.render.result_document",
+    "capa.rules",
+    "capa.rules.cache",
+)
+
+
 class TestTheEvidenceOnlyProvider:
     """``capa_yara``, for a run with no triage pack: missing rules are a pass not made."""
 
@@ -239,17 +258,7 @@ class TestTheEvidenceOnlyProvider:
         from malspark.providers.static.capa_yara import CapaYaraStaticProvider
 
         # capa's modules present, so the rules are what is missing.
-        for name in (
-            "capa",
-            "capa.capabilities",
-            "capa.capabilities.common",
-            "capa.helpers",
-            "capa.loader",
-            "capa.render",
-            "capa.render.result_document",
-            "capa.rules",
-            "capa.rules.cache",
-        ):
+        for name in CAPA_MODULES:
             monkeypatch.setitem(sys.modules, name, types.ModuleType(name))
         provider = CapaYaraStaticProvider(
             StaticCapaConfig(rules_dir=str(tmp_path / "capa-rules")),
@@ -267,6 +276,29 @@ class TestTheEvidenceOnlyProvider:
         assert sidecar_needs.CAPA_RULES.remedy in reason
         assert provider.capabilities.provides_evidence, "rules put in place later are read"
         assert provider.capabilities.degrade_on_failure
+
+    def test_its_rules_directory_is_masked_as_one_path_whatever_its_name_holds(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        import sys
+        import types
+
+        from malspark.core.config import StaticCapaConfig, StaticYaraConfig
+        from malspark.providers.static.capa_yara import CapaYaraStaticProvider
+
+        for name in CAPA_MODULES:
+            monkeypatch.setitem(sys.modules, name, types.ModuleType(name))
+        provider = CapaYaraStaticProvider(
+            StaticCapaConfig(rules_dir=str(tmp_path / "Jane Doe" / "rules (qz)")),
+            StaticYaraConfig(rules_dir=str(tmp_path / "no-yara")),
+        )
+        sample = tmp_path / "s.exe"
+        sample.write_bytes(b"MZ")
+
+        (reason,) = provider.collect_evidence(str(sample)).unavailable  # type: ignore[union-attr]
+
+        assert f"no rule was loaded from {OUTSIDE_PROJECT}, which is missing" in reason
+        assert "Doe" not in reason and "qz" not in reason
 
 
 class TestTheRunIsDegraded:
@@ -493,6 +525,19 @@ class TestOnlyAHostPathIsMasked:
             r"file://server/share/alice",
             r"file:\\server\share\alice",
             r"file:////server/share/a(b)/alice",
+            "C:\\Users\\alice\\OneDrive \u2013 Firma\\x",
+            "C:\\Users\\al\u0301ice\\x",
+            "C:\\Users\\a\u20acb\\alice",
+            "C:\\Users\\R\u00e9sum\u00e9 \u00a92024\\alice",
+            "C:\\Users\\alice\\\U0001f600 notes\\x",
+            "C:\\Users\\a`b\\alice",
+            "C:\\Users\\a\u200bb\\alice",
+            "C:\\Users\\alice\u2009smith\\x",
+            "C:\\Users\\alice\u2019s files\\x",
+            "\\\\server\\€share\\alice",
+            r"File://server/share/alice",
+            r"FILE:///C:/Users/alice",
+            r"File:\\server\share\alice",
         ],
     )
     def test_every_name_a_windows_path_may_hold_is_masked_with_it(self, written: str) -> None:
@@ -526,11 +571,121 @@ class TestOnlyAHostPathIsMasked:
 
         def text(parts: int) -> str:
             return (
-                "/a" * parts + " | D:\\proj" + "\\a" * parts + " | '\\\\s" + "\\a b" * parts + "'"
+                "/a" * parts
+                + " | D:\\proj"
+                + "\\a" * parts
+                + " | '\\\\s"
+                + "\\a b" * parts
+                + "' | 'C:\\x"
+                + "\\" * parts
+                + "x'\n'C:\\x"
+                + "\\" * parts
+                + "x\n'\\\\a"
+                + "\\" * parts
             )
 
-        assert host_paths_masked(text(3), root) == f"/a/a/a | a/a/a | '{OUTSIDE_PROJECT}'"
+        assert host_paths_masked(text(3), root) == (
+            f"/a/a/a | a/a/a | '{OUTSIDE_PROJECT}' | '{OUTSIDE_PROJECT}'\n'{OUTSIDE_PROJECT}"
+            "\n'\\\\a\\\\\\"
+        )
         assert_scales(text, 5_000, lambda written: host_paths_masked(written, root), factor=4)
+
+    @pytest.mark.parametrize(
+        "unit",
+        [
+            "\\",
+            "a ",
+            "C:\\a b\\",
+            "'",
+            '"',
+            "`",
+            "\u2018",
+            "\u2018C:\\a ",
+            "'C:\\a ",
+            "\\\\s\\a b",
+            "C:\\Users\\Jane Doe ",
+            "/home/Jane Doe ",
+            "\u00e9\u65e5\u2013\u20ac\u00a9\u0301\U0001f600",
+        ],
+    )
+    def test_a_hostile_text_is_masked_in_linear_time(self, unit: str) -> None:
+        """Every reader of a path costs time linear in the text, whatever it repeats."""
+        root = Path(r"D:\proj")
+        homes = (PureWindowsPath(r"C:\Users\Jane Doe"), PurePosixPath("/home/Jane Doe"))
+
+        def text(count: int) -> str:
+            return "read C:\\x\\" + unit * count + " then 'C:\\x" + unit * count
+
+        for home in homes:
+
+            def masked(written: str, home: PurePath = home) -> str:
+                return host_paths_masked(written, root, home)
+
+            # The least count whose text costs a measurable time; only the
+            # ratio is asserted.
+            count = 1_000
+            while cpu_seconds(partial(masked, text(count)), repeats=3) < 0.005 and count < 1 << 22:
+                count *= 2
+            assert_scales(text, count, masked, factor=4)
+
+    def test_the_home_directory_is_one_path_whatever_its_name_holds(self) -> None:
+        root = Path(r"C:\Users\Jane Doe\proj")
+        home = PureWindowsPath(r"C:\Users\Jane Doe")
+        for written in (
+            r"C:\Users\Jane Doe",
+            r"C:\\Users\\Jane Doe",
+            "C:/Users/Jane Doe",
+            r"c:\users\JANE DOE",
+            r"\\?\C:\Users\Jane Doe",
+            r"C:\Users\Jane Doe\AppData\Local",
+        ):
+            for after in ("", " then", ": denied", ")."):
+                said = host_paths_masked(f"cwd: {written}{after}", root, home)
+                assert said == f"cwd: {OUTSIDE_PROJECT}{after}", written
+        said = host_paths_masked(r"at C:\Users\Jane Doe\proj\data\x then", root, home)
+        assert said == "at data/x then"
+        said = host_paths_masked(
+            json.dumps({"cwd": r"C:\Users\Jane Doe", "at": r"C:\Users\Jane Doe\proj\x"}),
+            root,
+            home,
+        )
+        assert json.loads(said) == {"cwd": OUTSIDE_PROJECT, "at": "x"}
+
+    def test_a_posix_home_directory_is_one_path_too(self) -> None:
+        root = PurePosixPath("/home/Jane Doe/proj")
+        home = PurePosixPath("/home/Jane Doe")
+        said = host_paths_masked(
+            "cwd: /home/Jane Doe, rules at /home/Jane Doe/proj/data/x and /home/Jane Doe/r.yml",
+            root,  # type: ignore[arg-type]
+            home,
+        )
+        assert said == f"cwd: {OUTSIDE_PROJECT}, rules at data/x and {OUTSIDE_PROJECT}"
+        # The home's name is a whole name: a longer one is another path.
+        assert host_paths_masked("/home/Jane Does", root, home) == (  # type: ignore[arg-type]
+            host_paths_masked("/home/Jane Does", root, PurePosixPath("/home/other"))  # type: ignore[arg-type]
+        )
+
+    def test_the_real_home_directory_is_the_default(self) -> None:
+        home = Path.home()
+        assert host_paths_masked(f"cwd: {home}") == f"cwd: {OUTSIDE_PROJECT}"
+
+    def test_a_path_a_caller_holds_is_masked_as_one_path(self) -> None:
+        root = PurePosixPath("/home/op/proj")
+        for path, said in (
+            ("/home/op/proj/data/capa rules (old)", "data/capa rules (old)"),
+            ("/home/op/proj/data/capa-rules", "data/capa-rules"),
+            ("/home/Jane Doe/capa rules", OUTSIDE_PROJECT),
+            ("/srv/a(1)/b", OUTSIDE_PROJECT),
+            ("/home/op/proj", OUTSIDE_PROJECT),
+            ("/data/capa-rules", "/data/capa-rules"),
+            ("data/capa-rules", "data/capa-rules"),
+            (r"C:\Users\Jane Doe\capa rules", OUTSIDE_PROJECT),
+            (r"\\server\share\Jane Doe", OUTSIDE_PROJECT),
+        ):
+            assert host_path_masked(path, root) == said, path  # type: ignore[arg-type]
+        windows = Path(r"D:\a\proj")
+        assert host_path_masked(r"D:\a\proj\data\capa rules", windows) == "data/capa rules"
+        assert host_path_masked(PureWindowsPath(r"D:\a\proj\data\x"), windows) == "data/x"
 
     def test_a_long_path_or_unc_root_is_the_same_root(self) -> None:
         said = host_paths_masked(

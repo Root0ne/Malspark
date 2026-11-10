@@ -9,11 +9,12 @@ against the current working directory.
 
 from __future__ import annotations
 
+import functools
 import ntpath
 import os
 import posixpath
 import re
-from pathlib import Path, PurePosixPath, PureWindowsPath
+from pathlib import Path, PurePath, PurePosixPath, PureWindowsPath
 
 from malspark.core.exceptions import ProjectRootNotFoundError
 
@@ -175,19 +176,25 @@ _DEVICE = r"\\\\(?:\\\\)?[?.]\\\\?"
 # ``error:\n`` are not drives) but after anything else (``a.C:\``,
 # ``path:C:\``, ``日本C:\``, a JSON line break ``\nC:\``); or the two
 # backslashes of a UNC path, not after another backslash.
-_DRIVE_HEAD = rf"(?:(?<!\\){_DEVICE}|(?<![A-Za-z0-9])|(?<=\\[nrt]))[A-Za-z]:{_WINDOWS_SEP}"
+_DRIVE_START = r"(?:(?<!\\)" + _DEVICE + r"|(?<![A-Za-z0-9])|(?<=\\[nrt]))"
+_DRIVE_HEAD = rf"{_DRIVE_START}[A-Za-z]:{_WINDOWS_SEP}"
 _UNC_HEAD = r"(?<!\\)\\\\(?:\\\\)?"
-# A character of a Windows file name: any a name may hold but ``( ) , ; '``,
-# and never the letter that starts another drive (``a.C:\``).
-_WINDOWS_CHAR = r"(?:(?![A-Za-z]:[\\/])[\w.@%+~$!#&^{}\[\]=-])"
-_WINDOWS_MARK = r"[(),;']"
+# A character of a Windows file name: any Windows does not forbid in one
+# (``< > : " / \ | ? *`` and control characters), but a space and the marks
+# below, and never the letter that starts another drive (``a.C:\``).
+_WINDOWS_CHAR = r"(?:(?![A-Za-z]:[\\/])[^\s<>:\"/\\|?*\x00-\x1f(),;'`\u2019\u201d\u00bb])"
+# A mark a name may hold that also closes words: ``( ) , ; '``, a backtick and
+# a closing typographic quote.
+_WINDOWS_MARK = r"[(),;'`\u2019\u201d\u00bb]"
+# A space inside a name: an ASCII, no-break, thin or other fixed-width space.
+_WINDOWS_SPACE = r"[ \u00a0\u2000-\u200a\u202f\u205f\u3000]"
 # A directory of a Windows path: a separator follows it, so its marks are its
 # own, and it may hold up to eight single spaces (``John Smith``).
 _WINDOWS_DIR = (
     rf"(?:{_WINDOWS_CHAR}|{_WINDOWS_MARK})+"
-    rf"(?:[ \u00a0](?:{_WINDOWS_CHAR}|{_WINDOWS_MARK})+){{0,8}}(?={_WINDOWS_SEP})"
+    rf"(?:{_WINDOWS_SPACE}(?:{_WINDOWS_CHAR}|{_WINDOWS_MARK})+){{0,8}}(?={_WINDOWS_SEP})"
 )
-# The last name of a Windows path: ``( ) , ; '`` only before more of the name
+# The last name of a Windows path: a mark only before more of the name
 # (``a(b)``, ``alice's``, ``(1).txt``, ``x,.'y``) that is not dots alone (a
 # name never ends in one), so a mark or a full stop after the path stays
 # outside it.
@@ -200,14 +207,16 @@ _WINDOWS_NAME = (
 _WINDOWS_TAIL = rf"(?:{_WINDOWS_DIR}{_WINDOWS_SEP}(?!\"))*(?:{_WINDOWS_NAME})?"
 # A path past a server's name: the server, a separator and a name.
 _SERVER_TAIL = (
-    rf"{_WINDOWS_DIR}{_WINDOWS_SEP}(?!\")"
-    rf"(?=[\w(),;'$!#&^{{}}\[\]=@%+~.-]){_WINDOWS_TAIL}"
+    rf"{_WINDOWS_DIR}{_WINDOWS_SEP}(?!\")(?={_WINDOWS_CHAR}|{_WINDOWS_MARK}){_WINDOWS_TAIL}"
 )
 # A ``file:`` URL naming a Windows path: a drive (``file:///C:/``) or another
 # machine (``file://server/``, ``file:////server/``, ``file:\\server\``).
-_WINDOWS_URL = rf"file:(?://(?:localhost)?/?[A-Za-z]:{_WINDOWS_SEP}|//(?!/|localhost/)|////|\\\\)"
+# The scheme is read in any case (``File:``, ``FILE:``).
+_FILE = r"(?i:file):"
+_WINDOWS_URL = rf"{_FILE}(?://(?:localhost)?/?[A-Za-z]:{_WINDOWS_SEP}|//(?!/|localhost/)|////|\\\\)"
 # The start of a quoted Windows path.
-_QUOTED_HEAD = rf"(?:{_DRIVE_HEAD}|{_UNC_HEAD}[?.\w]|{_WINDOWS_URL})"
+_QUOTED_HEAD = rf"(?:{_DRIVE_HEAD}|{_UNC_HEAD}(?:[?.]|{_WINDOWS_CHAR})|{_WINDOWS_URL})"
+_OPENING = "\u2018\u201c\u00ab"
 _CLOSING = "\u2019\u201d\u00bb"
 
 # An absolute path in free text, in either system's form:
@@ -222,22 +231,68 @@ _CLOSING = "\u2019\u201d\u00bb"
 # * a Windows path: a drive (``C:\Users\x``, ``D:/a/b``, ``\\?\C:\x``) or a
 #   UNC path (``\\server\share\x``, ``\\?\UNC\server\share``), its
 #   separators single or doubled;
+# * the host's home directory as written in the text, its whole name a path
+#   even where it holds a space (``C:\Users\John Smith``), and the path
+#   after it read as any other;
+# * a Windows path: a drive (``C:\Users\x``, ``D:/a/b``, ``\\?\C:\x``) or a
+#   UNC path (``\\server\share\x``, ``\\?\UNC\server\share``), its
+#   separators single or doubled;
 # * a POSIX path: a slash not after a word character, a colon, a dot or
 #   another slash (a URL's ``//`` and a relative ``a/b`` are not one), then
 #   path characters. A quoted POSIX path stops at a space, as it always has.
-_ABSOLUTE_PATH = re.compile(
-    rf"file://(?:localhost)?/?(?P<winurl>[A-Za-z]:{_WINDOWS_SEP}{_WINDOWS_TAIL})"
-    rf"|file:(?://(?!/|localhost/)|////|\\\\(?:\\\\)?)"
+#
+# Each text is read once over: a quoted span reads a run of backslashes
+# whole, and a typographic one never runs past another opening quote, so no
+# character is read again from each quote or backslash before it.
+_BEFORE_HOME = (
+    rf"{_FILE}//(?:localhost)?/?(?P<winurl>[A-Za-z]:{_WINDOWS_SEP}{_WINDOWS_TAIL})"
+    rf"|{_FILE}(?://(?!/|localhost/)|////|\\\\(?:\\\\)?)"
     rf"(?P<remote>{_SERVER_TAIL}|{_WINDOWS_NAME})"
     r"|file://(?:localhost)?(?P<url>/[^\s'\"<>()]*)"
     rf"|(?<=(?P<quote>['\"`]))(?P<quoted>{_QUOTED_HEAD}"
-    r"(?:(?!\\*(?P=quote))[^\r\n])*)(?=\\*(?P=quote))"
-    rf"|(?<=[\u2018\u201c\u00ab])(?P<typographic>{_QUOTED_HEAD}[^\r\n{_CLOSING}]*)"
+    r"(?:(?!(?P=quote))[^\\\r\n]|\\++(?!(?P=quote)))*+)(?=\\*(?P=quote))"
+    rf"|(?<=[{_OPENING}])(?P<typographic>{_QUOTED_HEAD}[^\r\n{_OPENING}{_CLOSING}]*+)"
     rf"(?=[{_CLOSING}])"
-    rf"|(?P<drive>{_DRIVE_HEAD}{_WINDOWS_TAIL})"
+)
+_AFTER_HOME = (
+    rf"(?P<drive>{_DRIVE_HEAD}{_WINDOWS_TAIL})"
     rf"|(?P<unc>{_UNC_HEAD}(?:[?.]{_WINDOWS_SEP})?{_SERVER_TAIL})"
     rf"|(?<![\w:./])(?P<path>/{_SEGMENT}(?:/{_SEGMENT})*/?)"
 )
+
+
+def _home_literal(home: str) -> str:
+    """The pattern of the home directory ``home`` as a text may write it, or one matching nothing.
+
+    A Windows home is read without case, with any separator style and after
+    the head a drive path has; a POSIX one as written. Either holds the whole
+    of its last name, so ``/home/John Smith`` is not ``/home/John Smithy``.
+    """
+    written = _written_path(home) if home else PurePosixPath("/")
+    names = [name for name in written.parts[1:] if name]
+    if not names or not written.is_absolute():
+        return "(?!)"
+    if isinstance(written, PurePosixPath):
+        body = "".join("/" + re.escape(name) for name in names)
+        return rf"(?<![\w:./]){body}(?!\.*+[\w@%+~-])(?:/{_SEGMENT})*/?"
+    anchor = written.drive
+    if _DRIVE.match(anchor + "\\"):
+        head = rf"{_DRIVE_START}(?i:{re.escape(anchor)})"
+    else:  # a UNC home: \\server\share
+        server, share = anchor.strip("\\").split("\\", 1)
+        head = rf"{_UNC_HEAD}(?i:{re.escape(server)}){_WINDOWS_SEP}(?i:{re.escape(share)})"
+    body = "".join(rf"{_WINDOWS_SEP}(?i:{re.escape(name)})" for name in names)
+    return (
+        rf"{head}{body}(?!(?:\.|{_WINDOWS_MARK})*+(?!\.){_WINDOWS_CHAR})"
+        rf"(?:{_WINDOWS_SEP}(?!\"){_WINDOWS_TAIL})?"
+    )
+
+
+@functools.lru_cache(maxsize=8)
+def _absolute_path(home: str) -> re.Pattern[str]:
+    """Every absolute path in free text, the home directory ``home`` among them."""
+    return re.compile(rf"{_BEFORE_HOME}|(?P<home>{_home_literal(home)})|{_AFTER_HOME}")
+
 
 # A Windows path: a drive letter, a colon and a separator, after an optional
 # device prefix.
@@ -246,7 +301,7 @@ _DRIVE = re.compile(rf"(?:{_DEVICE})?[A-Za-z]:{_WINDOWS_SEP}")
 # The Windows path a quoted span starts with, read as an unquoted one is: the
 # rest of the span is words, read again in the form they are written in.
 _SPAN_PATH = re.compile(
-    rf"file://(?:localhost)?/?(?P<url>[A-Za-z]:{_WINDOWS_SEP}{_WINDOWS_TAIL})"
+    rf"{_FILE}//(?:localhost)?/?(?P<url>[A-Za-z]:{_WINDOWS_SEP}{_WINDOWS_TAIL})"
     rf"|{_DRIVE_HEAD}{_WINDOWS_TAIL}|{_UNC_HEAD}(?:[?.]{_WINDOWS_SEP})?{_SERVER_TAIL}"
 )
 
@@ -254,10 +309,11 @@ _SPAN_PATH = re.compile(
 # run of backslashes before a name (a UNC or device head) at least twice as
 # long as the span's shortest separator, so a span written with doubled
 # separators is read in its own style.
-_SPAN_LEAD = re.compile(r"(?:file:(?://(?:localhost)?/?|[\\/]*))?\\*(?:[?.]\\*)?(?:[A-Za-z]:)?")
-_ANOTHER_HEAD = re.compile(r"(?:(?<![A-Za-z0-9])|(?<=\\[nrt]))[A-Za-z]:[\\/]|file:[\\/]")
+_SPAN_LEAD = re.compile(rf"(?:{_FILE}(?://(?:localhost)?/?|[\\/]*))?\\*(?:[?.]\\*)?(?:[A-Za-z]:)?")
+_ANOTHER_HEAD = re.compile(rf"(?:(?<![A-Za-z0-9])|(?<=\\[nrt]))[A-Za-z]:[\\/]|{_FILE}[\\/]")
 _BACKSLASHES = re.compile(r"\\+")
-_BACKSLASHES_BEFORE_A_NAME = re.compile(r"(?<!\\)\\{2,}(?=[?.\w])")
+_SPACE = re.compile(_WINDOWS_SPACE)
+_BACKSLASHES_BEFORE_A_NAME = re.compile(rf"(?<!\\)\\{{2,}}(?=[?.]|{_WINDOWS_CHAR})")
 
 
 def _holds_another_path(span: str) -> bool:
@@ -338,27 +394,74 @@ def _from_root(
     return type(path)(*path.parts[count:]).as_posix()
 
 
-def host_paths_masked(text: str, project_root: Path | None = None) -> str:
-    """``text`` with each host path shown from the project root, or masked outside it.
-
-    For words a report or an answer to any signed-in user carries: a path in
-    the project reads as the operator wrote it relative to the root
-    (``data/sigma_rules``), and a host path outside it as
-    :data:`OUTSIDE_PROJECT`, never as the host's own layout. A host path is
-    one under :data:`HOST_ROOTS` or one of the project's parents, or any
-    Windows path (a drive, a UNC or a device path), on any host; a
-    ``file://`` URL is read as its path. Anything else that
-    starts with a slash (an HTTP route) is kept. Read from the words alone,
-    never from the host's files, and in the form each path is written in, so a
-    reason masked when it is written reads the same wherever it is shown, and
-    a Windows project's paths are read as a POSIX project's are.
-    """
+def _read_root(
+    project_root: PurePath | None,
+) -> tuple[PurePosixPath | PureWindowsPath, tuple[str, ...]]:
+    """The project root as written, and the parents a POSIX root's host keeps."""
     root = _written_path(str(get_project_root() if project_root is None else project_root))
     parents = tuple(
         str(parent)
         for parent in root.parents
         if isinstance(root, PurePosixPath) and parent != PurePosixPath(parent.anchor)
     )
+    return root, parents
+
+
+def _held(path: PurePosixPath, parents: tuple[str, ...]) -> bool:
+    """Whether a POSIX path is the host's layout: under a host root or a project parent."""
+    text = str(path)
+    return any(text == top or text.startswith(top + "/") for top in (*HOST_ROOTS, *parents))
+
+
+def _home() -> str:
+    """The running host's home directory, or nothing where it cannot be read."""
+    try:
+        return str(Path.home())
+    except (RuntimeError, KeyError, OSError):
+        return ""
+
+
+def host_path_masked(path: str | os.PathLike[str], project_root: PurePath | None = None) -> str:
+    """One path a caller holds, shown from the project root, or masked outside it.
+
+    The whole value is the path, whatever characters it holds (a space, a
+    parenthesis, a quote), never words: inside the project it reads relative
+    to the root (``data/capa-rules``), and a host path outside it (one
+    :func:`host_paths_masked` masks) as :data:`OUTSIDE_PROJECT`. Any other
+    value (a relative path, an absolute path off the host's layout) is kept.
+    """
+    written = os.fspath(path)
+    root, parents = _read_root(project_root)
+    read = _written_path(written)
+    relative = _from_root(read, root)
+    if relative is not None:
+        return relative
+    if isinstance(read, PureWindowsPath) or _held(read, parents):
+        return OUTSIDE_PROJECT
+    return written
+
+
+def host_paths_masked(
+    text: str, project_root: PurePath | None = None, home: PurePath | str | None = None
+) -> str:
+    """``text`` with each host path shown from the project root, or masked outside it.
+
+    For words a report or an answer to any signed-in user carries: a path in
+    the project reads as the operator wrote it relative to the root
+    (``data/sigma_rules``), and a host path outside it as
+    :data:`OUTSIDE_PROJECT`, never as the host's own layout. A host path is
+    one under :data:`HOST_ROOTS` or one of the project's parents, the home
+    directory (``home``, the running host's by default) written whole, spaces
+    and all, or any Windows path (a drive, a UNC or a device path), on any
+    host; a ``file://`` URL is read as its path. Anything else that
+    starts with a slash (an HTTP route) is kept. Read from the words alone,
+    never from the host's files, and in the form each path is written in, so a
+    reason masked when it is written reads the same wherever it is shown, and
+    a Windows project's paths are read as a POSIX project's are. A caller
+    holding one path rather than words masks it with :func:`host_path_masked`.
+    """
+    root, parents = _read_root(project_root)
+    pattern = _absolute_path(_home() if home is None else str(home))
 
     def shown(match: re.Match[str]) -> str:
         quoted = match.group("quoted") or match.group("typographic")
@@ -366,19 +469,20 @@ def host_paths_masked(text: str, project_root: Path | None = None) -> str:
             return spanned(quoted)
         if match.group("remote"):  # a path on another machine
             return OUTSIDE_PROJECT
+        homed = match.group("home")
         windows = match.group("winurl") or match.group("drive") or match.group("unc")
-        path = _written_path(windows or match.group("url") or match.group("path"))
+        if homed and (_DRIVE.match(homed) or homed.startswith("\\")):
+            windows = homed
+        path = _written_path(windows or homed or match.group("url") or match.group("path"))
         relative = _from_root(path, root)
         if relative is not None:
             # A name holding a space may run into the words after it; one
             # that reaches another path is not shown in part.
-            spaced = windows and re.search(r"[ \u00a0]", windows)
+            spaced = windows and _SPACE.search(windows)
             return OUTSIDE_PROJECT if spaced and _holds_another_path(windows) else relative
-        if isinstance(path, PureWindowsPath) or match.group("url"):
+        if homed or isinstance(path, PureWindowsPath) or match.group("url"):
             return OUTSIDE_PROJECT
-        text = str(path)
-        held = any(text == top or text.startswith(top + "/") for top in (*HOST_ROOTS, *parents))
-        return OUTSIDE_PROJECT if held else match.group(0)
+        return OUTSIDE_PROJECT if _held(path, parents) else match.group(0)
 
     def spanned(span: str) -> str:
         """A quoted span starting with a Windows path, spaces and all.
@@ -393,6 +497,6 @@ def host_paths_masked(text: str, project_root: Path | None = None) -> str:
         relative = _from_root(_written_path(written), root) if written else None
         if head is None or relative is None:
             return OUTSIDE_PROJECT
-        return relative + _ABSOLUTE_PATH.sub(shown, span[head.end() :])
+        return relative + pattern.sub(shown, span[head.end() :])
 
-    return _ABSOLUTE_PATH.sub(shown, str(text or ""))
+    return pattern.sub(shown, str(text or ""))

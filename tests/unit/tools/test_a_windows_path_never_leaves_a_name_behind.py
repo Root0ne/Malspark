@@ -31,10 +31,16 @@ ROOT = Path(f"D:\\{ROOT_NAME}")
 SEED = 591
 CASES = 4000
 
-# The legal file-name alphabet: letters (some not ASCII), digits, and every
-# mark a Windows name may hold.
-_LETTERS = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789éüçğışÅñ日本語"
+# The legal file-name alphabet: letters (some not ASCII, a combining accent),
+# digits, symbols and an emoji, a no-break space, and every mark a Windows name
+# may hold. A no-break space stands where a space may: inside a name, never at
+# either end of it nor beside another space.
+_LETTERS = (
+    "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789éüçğışÅñ日本語"
+    "\u0301\u2013\u20ac\u00a9\U0001f600\u00a0"
+)
 _MARKS = "$!#&^{}[](),;'=@%+~.-"
+_SPACES = " \u00a0"
 
 # How a path's separators are written: once, doubled (an OSError's repr, a
 # JSON string), as slashes, or mixed.
@@ -85,6 +91,8 @@ def _sep(rng: random.Random, style: str) -> str:
 
 def _segment(rng: random.Random, banned: str, spaced: bool) -> str:
     """A legal name: never all dots, never ending in a dot or a space."""
+    if " " in banned:
+        banned += _SPACES
     while True:
         chars = [
             rng.choice(_MARKS if rng.random() < 0.3 else _LETTERS) for _ in range(rng.randint(1, 7))
@@ -93,7 +101,13 @@ def _segment(rng: random.Random, banned: str, spaced: bool) -> str:
         if spaced and len(chars) > 1 and rng.random() < 0.5:
             chars.insert(rng.randint(1, len(chars) - 1), " ")
         word = "".join(chars)
-        if word.strip(".") and not word.endswith((".", " ")) and "  " not in word:
+        spaces = [i for i, c in enumerate(word) if c in _SPACES]
+        if (
+            word.strip(".")
+            and not word.endswith(".")
+            and not {0, len(word) - 1} & set(spaces)
+            and not any(b - a == 1 for a, b in zip(spaces, spaces[1:], strict=False))
+        ):
             return word
 
 
@@ -303,7 +317,7 @@ def test_the_grammar_writes_every_head_style_and_context() -> None:
         assert any(category.endswith("/ " + context.name) for category in seen), context.name
     assert any(category.endswith("project path first") for category in seen)
     texts = " ".join(case.text for case in cases)
-    for mark in _MARKS:
+    for mark in _MARKS + _LETTERS:
         assert mark in texts
     assert "\\\\\\\\" in texts and " " in texts
 
