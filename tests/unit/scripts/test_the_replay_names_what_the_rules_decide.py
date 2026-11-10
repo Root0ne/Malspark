@@ -27,6 +27,7 @@ import os
 import re
 import shutil
 import socket
+import sys
 import uuid
 from collections.abc import Callable, Iterator
 from datetime import UTC, datetime
@@ -561,6 +562,48 @@ def test_the_event_loop_s_socket_pair_is_made_where_the_system_has_no_native_one
     assert socket.socketpair is socket._fallback_socketpair  # type: ignore[attr-defined]
     assert "connect" not in vars(socket.socket)
     assert not [door for door in env.missing if door.startswith("socket.")]
+
+
+def test_a_connection_through_the_event_loop_is_refused() -> None:
+    """An IP literal needs no lookup; Windows' proactor connects past the socket's methods."""
+
+    async def connect() -> None:
+        await asyncio.open_connection("127.0.0.1", 9)
+
+    async def datagram() -> None:
+        loop = asyncio.get_running_loop()
+        await loop.create_datagram_endpoint(asyncio.DatagramProtocol, remote_addr=("127.0.0.1", 9))
+
+    with replay_environment({}):
+        with pytest.raises(ReplayRefused):
+            asyncio.run(connect())
+        with pytest.raises(ReplayRefused):
+            asyncio.run(datagram())
+
+
+def test_the_completion_port_s_doors_are_closed_where_there_is_one(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The proactor's own connect, sendto and connect_pipe, put back after the block."""
+    import types
+
+    class IocpProactor:
+        def connect(self, *_args: Any) -> None: ...
+        def sendto(self, *_args: Any) -> None: ...
+        def connect_pipe(self, *_args: Any) -> None: ...
+
+    held = dict(vars(IocpProactor))
+    module = types.ModuleType("asyncio.windows_events")
+    module.IocpProactor = IocpProactor  # type: ignore[attr-defined]
+    monkeypatch.setitem(sys.modules, "asyncio.windows_events", module)
+    monkeypatch.setattr(asyncio, "windows_events", module, raising=False)
+    with replay_environment({}) as env:
+        for name in ("connect", "sendto", "connect_pipe"):
+            with pytest.raises(ReplayRefused):
+                getattr(IocpProactor(), name)(("127.0.0.1", 9))
+    for name in ("connect", "sendto", "connect_pipe"):
+        assert vars(IocpProactor)[name] is held[name]
+    assert not [door for door in env.missing if door.startswith("IocpProactor.")]
 
 
 def test_a_door_the_host_s_socket_module_lacks_is_not_a_door_the_tree_lacks(

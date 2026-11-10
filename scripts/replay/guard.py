@@ -12,8 +12,12 @@ when it ends:
   makes over loopback where the system has no native pair (Windows), the
   event loop's own wake-up, which reaches nothing past the process. A door
   the host's ``socket`` module does not have (``sendmsg`` on Windows) is not
-  there to be opened. Not covered: a socket made from the low-level
-  ``_socket`` module, and a child process. No rule the replay calls needs the network,
+  there to be opened. Windows' default event loop connects and sends through
+  its I/O completion port rather than the socket's own methods, so the
+  port's ``connect``, ``sendto`` and ``connect_pipe`` (a named pipe to a
+  local service) are refused too; the event loop's own socket pair uses
+  none of them. Not covered: a socket made from the low-level ``_socket``
+  module, and a child process. No rule the replay calls needs the network,
   and a rule that reached for it (a catalogue refresh, a model index) must
   answer as it does on a box that cannot reach anything.
 * **the ATT&CK cache.** The catalogue is read from the vendored tables in the
@@ -217,6 +221,17 @@ def replay_environment(snapshot: Mapping[str, Any] | None = None) -> Iterator[Re
                 "getnameinfo",
             ):
                 _swap(socket, name, _refuse, f"socket.{name}", of_the_tree=False)
+            # Windows' proactor event loop reaches the network through its
+            # completion port (ConnectEx, WSASendTo), past the socket's
+            # methods; an IP literal needs no lookup. Elsewhere there is no
+            # such port and nothing to close.
+            try:
+                from asyncio import windows_events
+            except ImportError:
+                windows_events = None  # type: ignore[assignment]
+            port = getattr(windows_events, "IocpProactor", None)
+            for name in ("connect", "sendto", "connect_pipe"):
+                _swap(port, name, _refuse, f"IocpProactor.{name}", of_the_tree=False)
 
             from malspark.memory import attck_loader
 

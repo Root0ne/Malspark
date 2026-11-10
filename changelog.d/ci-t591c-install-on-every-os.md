@@ -21,14 +21,20 @@
 - **Generated files are written with LF on every host.** The validation-code page
   (`scripts/validation_codes/run.py`, also with `--stdout`) and the family fingerprint
   catalogue and its build record, whose catalogue digest now matches the file on Windows.
-- **A host path in a tool's reason is masked in Windows form too.** A path such as
-  `C:\Users\...` or `D:/...`, or a `file:///C:/...` URL, in a lost tool's reason or a rule
-  file's load error is shown as "a path outside the project", and a path inside a Windows
-  checkout is shown from the project root (`data/capa-rules`), as on Linux and macOS.
-- **The rule replay runs on Windows.** The replay's network guard lets through the one
-  loopback connection the event loop's socket pair is made with where the system has no
-  native pair, and a socket method the host lacks (`sendmsg` on Windows) is no longer listed
-  as a door the replayed tree lacks.
+- **On any host, a path in Windows form is masked too.** In a lost tool's reason or a rule
+  file's load error, a drive path (`C:\Users\...`, `D:/...`, with single or doubled
+  backslashes, as an OSError prints its file name), a UNC path (`\\server\share\...`), a
+  device or long path (`\\?\C:\...`, `\\.\...`) and a `file:///C:/...` URL are shown as
+  "a path outside the project"; a quoted Windows path is masked up to its closing quote, spaces
+  and all. A path inside a Windows checkout is shown from the project root (`data/capa-rules`),
+  as on Linux and macOS. The words alone decide, never the host: text shaped like a Windows path
+  (`x:\d+`, or a guest's path quoted in a tool's error) is masked on a Linux host as well.
+- **The rule replay runs on Windows, and reaches no network there either.** The replay's
+  network guard lets through the one loopback connection the event loop's socket pair is made
+  with where the system has no native pair, and also refuses the connections and datagrams
+  Windows' event loop makes through its I/O completion port, and its named-pipe connections.
+  A socket method the host lacks (`sendmsg` on Windows) is no longer listed as a door the
+  replayed tree lacks.
 
 ### Documentation
 
