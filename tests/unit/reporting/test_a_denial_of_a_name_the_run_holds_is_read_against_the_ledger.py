@@ -59,7 +59,6 @@ from malspark.reporting.section_agreement import (
     QUALIFIED_CODE,
     REWRITE_DROPS_CITATION_CODE,
     REWRITE_UNGROUNDED_CODE,
-    UNKNOWN_PASSAGE_CODE,
     UNKNOWN_SOURCE_CODE,
     _failure_redone_check,
     _redo_choices,
@@ -403,10 +402,11 @@ def test_a_body_sentence_denying_what_the_ledger_states_is_left_as_the_model_ans
     denied = f"No routine calls {CALLED}."
     report = _report("The gate reads a host mode [ev_0107].", background=denied)
     done = _ask(report, _Reporter({"sentences": []}, {"sentences": []}))
-    # Held and shown its fact; no row answered it, and code adds nothing to it.
-    assert report.intro_background == denied
+    # Held and shown its fact; no row answered it in either turn: code writes nothing in its
+    # place and leaves it out, recorded (T-600).
+    assert report.intro_background == ""
     assert QUALIFIED_CODE not in {r["code"] for r in done.tally.unresolved}
-    assert DROPPED_CODE not in {r["code"] for r in done.tally.unresolved}
+    assert [r["code"] for r in done.tally.unresolved if r["code"] == DROPPED_CODE] == [DROPPED_CODE]
 
 
 def test_a_rewrite_still_denying_the_ledger_s_fact_is_not_refused_for_its_words() -> None:
@@ -661,13 +661,10 @@ def test_the_round_is_shown_the_redo_to_cite_and_refuses_an_uncited_keep() -> No
         "  [limitations] each of these names a call that failed and a later call redid, and "
         "cites none of the calls that redid it: a keep of it as written is refused, and the "
         "same words with a citation added are a keep; rewrite it in your own words on what the "
-        "call named here answered, citing it, or drop it; if the checks refuse its last answer, "
-        f'it is left out of the report: "{_TRUE}" (cite ev_0107)'
+        f"call named here answered, citing it, {_DENIAL}, or drop it; if no answer for it passes "
+        f'the checks, it is left out of the report: "{_TRUE}" (cite ev_0107)'
     ) in text
-    ends = (
-        "rewrite it in your own words on what ev_0107 answered, citing it, or drop it; the "
-        f"same words with a citation added are a keep. {_LEFT_OUT}"
-    )
+    ends = f"{_ONE_REDO_ENDS} {_LEFT_OUT}"
     keep = {"sentences": [_keep("limitations", _TRUE, [], "no source speaks of it")]}
     refused = agreement_violations(keep, passages)
     assert {v.code for v in refused} == {FAILURE_REDONE_CODE, KEEP_UNQUOTED_CODE}
@@ -686,10 +683,7 @@ def test_a_sentence_held_to_a_redone_call_ends_as_the_round_is_told() -> None:
     (refused,) = agreement_violations({"sentences": [same]}, passages)
     assert refused.code == KEEP_UNQUOTED_CODE
     assert "into the same words, which keeps it" in refused.message
-    assert refused.message.endswith(
-        "rewrite it in your own words on what ev_0107 answered, citing it, or drop it; the "
-        f"same words with a citation added are a keep. {_LEFT_OUT}"
-    )
+    assert refused.message.endswith(f"{_ONE_REDO_ENDS} {_LEFT_OUT}")
     # A rewrite in its own words on what the redo answered, citing it, and a drop stand
     # whole: no finding of any kind.
     for row in (
@@ -697,7 +691,7 @@ def test_a_sentence_held_to_a_redone_call_ends_as_the_round_is_told() -> None:
             _TRUE,
             "rewrite",
             ["failed.1"],
-            rewrite="The later decompile of 0x5a10 [ev_0107] contains no network call.",
+            rewrite="The later decompile of 0x5a10 contains no network call [ev_0107].",
         ),
         _row(_TRUE, "drop", [], reason="a later call redid the call it names"),
     ):
@@ -715,15 +709,10 @@ def test_a_closing_sentence_held_on_a_name_ends_as_the_round_is_told() -> None:
         "(an API's call lines, an export, a decoded text); a keep of it as written is refused, "
         "and the same words with a citation added are a keep; rewrite it in your own words on "
         "the lines shown, citing the entry they come from, saying what the lines show and what "
-        "stays unknown, or drop it; if the checks refuse its last answer, it is left out of the "
-        f'report: "{_UNKNOWN}" ({fact.id})'
+        f"stays unknown, {_DENIAL}, or drop it; if no answer for it passes the checks, it is left "
+        f'out of the report: "{_UNKNOWN}" ({fact.id})'
     ) in prompt_text(passages)
-    ends = (
-        f"it names what {fact.id} holds lines on: a keep of it as written is refused, and the "
-        "same words with a citation added are a keep; rewrite it in your own words on the "
-        "lines shown, citing the entry they come from, saying what the lines show and what "
-        f"stays unknown, or drop it. {_LEFT_OUT}"
-    )
+    ends = f"{_NAME_ENDS} {_LEFT_OUT}"
     # A keep in any form, and the same words with a citation added, are refused, each
     # told what to do and offered no source to quote.
     for row in (
@@ -744,7 +733,7 @@ def test_a_closing_sentence_held_on_a_name_ends_as_the_round_is_told() -> None:
             [fact.id],
             rewrite=(
                 f"Routine 0x5a10 calls `{CALLED}` [ev_0107], but what it returns at run time "
-                "is not recorded."
+                "is not recorded [ev_0107]."
             ),
         ),
         _row(_UNKNOWN, "drop", [], reason="the lines shown do not state its result"),
@@ -839,29 +828,33 @@ def _ledger_two() -> list[LedgerEntry]:
     ]
 
 
+# How each held sentence's rewrite carries its denials: each followed at once by an entry
+# shown for that sentence.
+_DENIAL = "each denial in it followed at once by the entry it rests on, one shown for it"
 _NAME_ENDS = (
     "it names what ledger.1 holds lines on: a keep of it as written is refused, and the "
     "same words with a citation added are a keep; rewrite it in your own words on the lines "
     "shown, citing the entry they come from, saying what the lines show and what stays "
-    "unknown, or drop it."
+    f"unknown, {_DENIAL}, or drop it."
 )
 _BODY_ENDS = (
     'it names what ledger.1 holds lines on: keep it naming that fact, with "quote": words '
     "inside one of its rows that name what the sentence names, copied exactly; or rewrite it "
-    "in your own words on the lines shown, citing an entry the fact cites."
+    f"in your own words on the lines shown, citing an entry the fact cites, {_DENIAL}; or "
+    "drop it."
 )
 _ONE_REDO_ENDS = (
-    "rewrite it in your own words on what ev_0107 answered, citing it, or drop it; the same "
-    "words with a citation added are a keep."
+    f"rewrite it in your own words on what ev_0107 answered, citing it, {_DENIAL}, or drop it; "
+    "the same words with a citation added are a keep."
 )
 _TWO_REDO_ENDS = (
-    "rewrite it in your own words on what ev_0107 and ev_0112 answered, citing each, or drop "
-    "it; the same words with a citation added are a keep."
+    f"rewrite it in your own words on what ev_0107 and ev_0112 answered, citing each, {_DENIAL}, "
+    "or drop it; the same words with a citation added are a keep."
 )
-_FAILED_ENDS = "ewrite it citing ev_0107 and saying what it answered, or drop it."
+_FAILED_ENDS = f"ewrite it citing ev_0107 and saying what it answered, {_DENIAL}, or drop it."
 # What every refusal of an answer for a held sentence ends with: a refused last answer leaves
 # it out, in a closing passage and in the body alike.
-_LEFT_OUT = "If the checks refuse its last answer, it is left out of the report."
+_LEFT_OUT = "If no answer for it passes the checks, it is left out of the report."
 _LEAVING = "or, leaving it out, give the reason."
 _SLOT_ROW = f"(*_DAT_{SLOT:x})(self,&mode);  /* {SLOT:x} = {CALLED} */"
 _FAILED_ROW = 'ev_0101 ("lift_routine") failed: "no function there"'
@@ -878,7 +871,7 @@ _PATHS: dict[str, tuple[Any, ...]] = {
         "[ev_0109]",
         _SLOT_ROW,
         f"Routine 0x5a10 calls `{CALLED}` [ev_0107], but what it returns at run time is not "
-        "recorded.",
+        "recorded [ev_0107].",
     ),
     "body held on a name": (
         partial(_report, "", background=_UNKNOWN),
@@ -889,7 +882,7 @@ _PATHS: dict[str, tuple[Any, ...]] = {
         "[ev_0109]",
         _SLOT_ROW,
         f"Routine 0x5a10 calls `{CALLED}` [ev_0107], but what it returns at run time is not "
-        "recorded.",
+        "recorded [ev_0107].",
     ),
     "held to one redone call": (
         partial(_report, _TRUE),
@@ -899,7 +892,7 @@ _PATHS: dict[str, tuple[Any, ...]] = {
         ["failed.1"],
         "[ev_0107]",
         _FAILED_ROW,
-        "The later decompile of 0x5a10 [ev_0107] contains no network call.",
+        "The later decompile of 0x5a10 contains no network call [ev_0107].",
     ),
     "held to two redone calls": (
         partial(_report, _TWO),
@@ -909,7 +902,7 @@ _PATHS: dict[str, tuple[Any, ...]] = {
         ["failed.1", "failed.2"],
         "[ev_0107][ev_0112]",
         _FAILED_ROW,
-        "The later decompiles of 0x5a10 [ev_0107] and 0x6100 [ev_0112] contain no network call.",
+        "The later decompiles of 0x5a10 and 0x6100 contain no network call [ev_0107][ev_0112].",
     ),
     "says a call failed": (
         partial(_report, _SAYS_FAILED),
@@ -951,7 +944,7 @@ _OWN_ROWS: dict[str, dict[str, dict[str, Any]]] = {
             _TWO,
             "rewrite",
             ["failed.1", "failed.2"],
-            rewrite="The later decompile of 0x5a10 [ev_0107] contains no network call.",
+            rewrite="The later decompile of 0x5a10 contains no network call [ev_0107].",
         ),
     },
     "says a call failed": {
@@ -1065,7 +1058,7 @@ def _expected() -> dict[str, dict[str, list[tuple[str, str]]]]:
         },
         "body held on a name": {
             "keep": [
-                (UNKNOWN_SOURCE_CODE, _no_source("introduction", leaving=False)),
+                (UNKNOWN_SOURCE_CODE, _no_source("introduction", leaving=True)),
                 (KEEP_UNQUOTED_CODE, _kept("introduction", _UNKNOWN, named, _BODY_ENDS)),
             ],
             "keep on a reason": [
@@ -1075,16 +1068,9 @@ def _expected() -> dict[str, dict[str, list[tuple[str, str]]]]:
             "keep quoting": [],
             **dict.fromkeys(_SAME, []),
             "reworded rewrite citing": [],
-            # A drop is answered for a closing sentence alone; a held body sentence whose
-            # last answer is refused is left out by the platform, as every refusal says.
-            "drop": [
-                (
-                    UNKNOWN_PASSAGE_CODE,
-                    "row 1: answer the sentence of introduction with keep or rewrite; a drop is "
-                    "answered only for a sentence of the conclusion or the limitations.",
-                ),
-                (UNKNOWN_SOURCE_CODE, _no_source("introduction", leaving=False)),
-            ],
+            # A held body sentence is left out where no answer for it passes: a drop of it,
+            # with its reason, is an answer (T-600).
+            "drop": [],
         },
         "held to one redone call": {
             "keep": [
@@ -1186,16 +1172,28 @@ def _expected() -> dict[str, dict[str, list[tuple[str, str]]]]:
             **dict.fromkeys(_SAME, []),
             "reworded rewrite citing": [],
             "drop": [],
-            **dict.fromkeys(
-                ("rewrite no longer saying it failed", "rewrite denying instead"),
-                [
-                    (
-                        FAILURE_REDONE_CODE,
-                        f"{_REWRITE_HELD}(ev_0101 by ev_0107) and cites none of the calls that "
-                        f"redid it. R{_FAILED_ENDS}",
-                    )
-                ],
-            ),
+            "rewrite no longer saying it failed": [
+                (
+                    FAILURE_REDONE_CODE,
+                    f"{_REWRITE_HELD}(ev_0101 by ev_0107) and cites none of the calls that "
+                    f"redid it. R{_FAILED_ENDS}",
+                )
+            ],
+            # Its denial cites the failed call, which is not among the entries shown for it.
+            "rewrite denying instead": [
+                (
+                    REWRITE_UNGROUNDED_CODE,
+                    "row 1: the rewrite of limitations denies something in 'Routine 0x5a10 holds "
+                    "no network call' and no entry shown for the sentence follows that denial at "
+                    "once: in a rewrite of this sentence each denial is followed at once by the "
+                    "entry it rests on, cited in square brackets, one of ev_0107.",
+                ),
+                (
+                    FAILURE_REDONE_CODE,
+                    f"{_REWRITE_HELD}(ev_0101 by ev_0107) and cites none of the calls that "
+                    f"redid it. R{_FAILED_ENDS}",
+                ),
+            ],
         },
     }
 
@@ -1242,24 +1240,25 @@ def test_every_answer_to_a_held_sentence_draws_what_the_round_is_told(
             "shows (an API's call lines, an export, a decoded text); keep it naming that fact, "
             'with "quote": words inside one of its rows that name what the sentence names, '
             "copied exactly; or rewrite it in your own words on the lines shown, citing an entry "
-            "the fact cites; if the checks refuse its last answer, it is left out of the report: "
-            f'"{_UNKNOWN}" (ledger.1)',
+            f"the fact cites, {_DENIAL}; or drop it; if no answer for it passes the checks, it is "
+            f'left out of the report: "{_UNKNOWN}" (ledger.1)',
         ),
         (
             "held to one redone call",
             "  [limitations] each of these names a call that failed and a later call redid, and "
             "cites none of the calls that redid it: a keep of it as written is refused, and the "
             "same words with a citation added are a keep; rewrite it in your own words on what "
-            "the call named here answered, citing it, or drop it; if the checks refuse its last "
-            f'answer, it is left out of the report: "{_TRUE}" (cite ev_0107)',
+            f"the call named here answered, citing it, {_DENIAL}, or drop it; if no answer for it "
+            f'passes the checks, it is left out of the report: "{_TRUE}" (cite ev_0107)',
         ),
         (
             "held to two redone calls",
             "  [limitations] each of these names a call that failed and a later call redid, and "
             "cites none of the calls that redid it: a keep of it as written is refused, and the "
             "same words with a citation added are a keep; rewrite it in your own words on what "
-            "the calls named here answered, citing each, or drop it; if the checks refuse its "
-            f'last answer, it is left out of the report: "{_TWO}" (cite ev_0107 and ev_0112)',
+            f"the calls named here answered, citing each, {_DENIAL}, or drop it; if no answer for "
+            f'it passes the checks, it is left out of the report: "{_TWO}" (cite ev_0107 and '
+            "ev_0112)",
         ),
     ],
 )
@@ -1401,7 +1400,7 @@ def test_a_rewrite_dropping_a_cited_id_of_a_held_sentence_is_told_to_drop_it() -
 _UNKNOWN_CITED = f"The runtime result of `{CALLED}` is not known [ev_0109]."
 _BODY_KEEP = (
     'or keep it naming ledger.1, with "quote": words inside one of its rows that name what the '
-    f"sentence names, copied exactly. {_LEFT_OUT}"
+    f"sentence names, copied exactly, or drop it. {_LEFT_OUT}"
 )
 
 

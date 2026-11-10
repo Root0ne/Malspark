@@ -709,11 +709,26 @@ def test_haiku12_s_true_limitation_kept_on_the_named_source_stands() -> None:
     assert KEEP_UNQUOTED_CODE not in [v.code for v in found if v.path.startswith("sentences")]
     counts, records = apply_rows({"sentences": [row]}, passages)
     assert said["TASK"] in _limitations(report)
-    assert counts["held_kept"] == 1 and counts["dropped"] == 0
-    assert not [v for v in records if v.code == DROPPED_CODE]
+    assert counts["held_kept"] == 1
+    # Only the sentences the ledger's own lines hold that no row answers are left out (T-600).
+    assert (
+        counts["dropped"]
+        == len(_unanswered(records))
+        == len([v for v in records if v.code == DROPPED_CODE])
+    )
     # Tied by its address alone (review r4): recorded, as no subject word backs it.
     (held,) = [v for v in records if v.code == HELD_KEPT_CODE]
     assert "resting on fewer than two" in held.message
+
+
+def _unanswered(records: list[Any]) -> list[Any]:
+    """The records of the sentences the ledger's own lines hold that no row answered: left
+    out, each with that reason (T-600)."""
+    return [
+        v
+        for v in records
+        if v.code == DROPPED_CODE and "(no answer was given for it; " in v.message
+    ]
 
 
 def test_haiku12_s_c1_to_c6_kept_unsourced_again_are_left_out_and_recorded() -> None:
@@ -729,8 +744,11 @@ def test_haiku12_s_c1_to_c6_kept_unsourced_again_are_left_out_and_recorded() -> 
     counts, records = apply_rows({"sentences": rows}, passages)
     body = _limitations(report)
     assert all(said[n] not in body for n in names)
-    dropped = [v.message for v in records if v.code == DROPPED_CODE]
-    assert counts["dropped"] == len(dropped) == 5
+    # Beside them, each sentence the ledger's own lines hold that no row answers (T-600).
+    dropped = [
+        v.message for v in records if v.code == DROPPED_CODE and v not in _unanswered(records)
+    ]
+    assert counts["dropped"] == len(dropped) + len(_unanswered(records)) and len(dropped) == 5
     assert all(any(said[n][:40] in m for m in dropped) for n in names)
 
 
@@ -764,10 +782,13 @@ def test_haiku12_s_c2_to_c5_kept_unsourced_on_both_answers_are_left_out_and_reco
     # The retry's answer, as the first: apply_rows reads the last answer.
     counts, records = apply_rows({"sentences": rows}, passages)
     body = _limitations(report)
-    assert counts["dropped"] == 3
+    # Beside them, each sentence the ledger's own lines hold that no row answers (T-600).
+    assert counts["dropped"] == 3 + len(_unanswered(records))
     for which in ("C2", "C4", "C5"):
         assert said[which] not in body, which
-    dropped = [v.message for v in records if v.code == DROPPED_CODE]
+    dropped = [
+        v.message for v in records if v.code == DROPPED_CODE and v not in _unanswered(records)
+    ]
     assert len(dropped) == 3
     # C2 "read only in part" of listed code: the ledger says otherwise of it.
     assert all(

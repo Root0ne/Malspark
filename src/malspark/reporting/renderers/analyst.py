@@ -51,6 +51,7 @@ from malspark.reporting.renderers.markdown import (
     _NETWORK_KINDS,
     _PIPE,
     ANALYST_LIMITATIONS_TITLE,
+    SUMMARY_SUBJECTS,
     _code_span,
     _degraded_sentence,
     _divider,
@@ -1206,9 +1207,14 @@ class _Analyst:
                 lines.append("")
             lines.append(self._prose(summary))
         if not summary and not findings and not bullets:
+            left = self.ctx.left_out_by_checks(*SUMMARY_SUBJECTS)
             lines.append(
-                "No summary was written in this run; the findings below are the platform's "
-                "own record of what the run established."
+                (
+                    f"No summary is printed in this run: {left}"
+                    if left
+                    else "No summary was written in this run"
+                )
+                + "; the findings below are the platform's own record of what the run established."
             )
         if self.ctx.narrative_findings:
             lines.extend(["", *self._findings(self.ctx.narrative_findings)])

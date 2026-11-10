@@ -8,8 +8,10 @@ was never left out, and a closing one only on some refusals, the route by which
 a closing section said otherwise than the body. Now a held sentence whose last
 answer the checks refuse is left out, of the body as of a closing section, and
 recorded with the dropped code, what holds it and every code refusing the
-answer; the question and every refusal of an answer for it say so. Every other
-refused answer ends as before. Every address, entry and name here is a neutral
+answer; the question and every refusal of an answer for it say so. Where the
+platform already leaves such a closing sentence out, that end stands with its own
+record, and a drop of a held body sentence is an answer. Every other refused
+answer ends as before. Every address, entry and name here is a neutral
 synthetic value.
 """
 
@@ -45,7 +47,7 @@ from tests.unit.reporting.test_a_denial_of_a_name_the_run_holds_is_read_against_
 
 # A sentence of the same passage no gate holds, which stays where it stands.
 FIRST = "The gate reads a host mode [ev_0107]."
-_LEFT_OUT = "If the checks refuse its last answer, it is left out of the report."
+_LEFT_OUT = "If no answer for it passes the checks, it is left out of the report."
 # The limitations label once the paragraph is held to the failed calls, as a record cuts it.
 _HELD_LIMITATIONS = (
     "11. Limitations, the composed paragraph (each sentence saying a call failed or a reading "
@@ -68,9 +70,11 @@ _REFUSED: dict[str, tuple[str, str, dict[str, Any], str]] = {
         "limitations",
         _UNKNOWN,
         _row(_UNKNOWN, "keep", [], reason="no source states it"),
+        # A closing keep on no source a check accepts is one the platform leaves out on its
+        # own: that end and its record stand.
         _left_out(
             "11. Limitations",
-            "its last answer, a keep, was refused; held on what ledger.1 holds lines on: "
+            "kept on no source a check accepts: no source, because 'no source states it': "
             "agreement.keep_unquoted",
             _UNKNOWN,
         ),
@@ -79,12 +83,10 @@ _REFUSED: dict[str, tuple[str, str, dict[str, Any], str]] = {
         "limitations",
         _UNKNOWN,
         _row(_UNKNOWN, "rewrite", ["ledger.1"], rewrite=_UNKNOWN.rstrip(".") + " [ev_0109]."),
-        _left_out(
-            "11. Limitations",
-            "no rewrite of it passed the checks; held on what ledger.1 holds lines on: "
-            "agreement.keep_unquoted",
-            _UNKNOWN,
-        ),
+        # So is a closing rewrite on a source that passed no check.
+        "The agreement question lists a sentence of 11. Limitations as saying otherwise than "
+        f"ledger.1, and no rewrite of it passed the checks: it is left out of the section: "
+        f"{_UNKNOWN!r}.",
     ),
     "body on a name, a keep on a reason": (
         "introduction",
@@ -117,10 +119,11 @@ _REFUSED: dict[str, tuple[str, str, dict[str, Any], str]] = {
         "introduction",
         _UNKNOWN,
         _row(_UNKNOWN, "drop", [], reason="the lines shown say otherwise"),
+        # A drop of it is an answer: left out as the round dropped it.
         _left_out(
             "12.3 Background",
-            "its last answer, a drop, was refused; held on what ledger.1 holds lines on: "
-            "agreement.unknown_passage, agreement.unknown_source",
+            "the round dropped it; held on what ledger.1 holds lines on; its reason: the lines "
+            "shown say otherwise",
             _UNKNOWN,
         ),
     ),
@@ -130,9 +133,7 @@ _REFUSED: dict[str, tuple[str, str, dict[str, Any], str]] = {
         _row(_TRUE, "keep", [], reason="no source"),
         _left_out(
             _HELD_LIMITATIONS,
-            "the ledger says otherwise; its last answer, a keep, was refused; held to the "
-            "redone calls it names (redone by ev_0107): agreement.keep_unquoted, "
-            "agreement.failure_redone",
+            "the ledger says otherwise: agreement.keep_unquoted, agreement.failure_redone",
             _TRUE,
         ),
     ),
@@ -160,8 +161,7 @@ _REFUSED: dict[str, tuple[str, str, dict[str, Any], str]] = {
         _row(_SAYS_FAILED, "keep", ["failed.1"], quote="no function there"),
         _left_out(
             _HELD_LIMITATIONS,
-            "the ledger says otherwise; its last answer, a keep, was refused; saying a call "
-            "failed that a later call redid (ev_0107): agreement.failure_redone",
+            "the ledger says otherwise: agreement.failure_redone",
             _SAYS_FAILED,
         ),
     ),
@@ -174,12 +174,9 @@ _REFUSED: dict[str, tuple[str, str, dict[str, Any], str]] = {
             ["failed.1"],
             rewrite="Routine 0x5a10 holds no network call [ev_0101].",
         ),
-        _left_out(
-            _HELD_LIMITATIONS,
-            "the ledger says otherwise; no rewrite of it passed the checks; saying a call "
-            "failed that a later call redid (ev_0107): agreement.failure_redone",
-            _SAYS_FAILED,
-        ),
+        f"The agreement question lists a sentence of {_HELD_LIMITATIONS} as saying otherwise "
+        f"than failed.1, and no rewrite of it passed the checks: it is left out of the section: "
+        f"{_SAYS_FAILED!r}.",
     ),
 }
 
@@ -230,7 +227,6 @@ def test_every_refusal_of_a_held_sentence_says_it_is_left_out() -> None:
     assert prose and all(v.message.endswith(_LEFT_OUT) for v in prose), prose
     # So does every row finding, the refused drop's among them, each once.
     for row in (
-        _row(_UNKNOWN, "drop", [], reason="the lines shown say otherwise"),
         _row(_UNKNOWN, "keep", [], reason="no source states it"),
         rewrite,
     ):

@@ -38,8 +38,10 @@ from malspark.reporting.section_agreement import (
     FACT,
     FAILURE_REDONE_CODE,
     HELD_KEPT_CODE,
+    REWRITE_UNGROUNDED_CODE,
     REWRITTEN_CODE,
     _sentences_of,
+    agreement_violations,
     ask_section_agreement,
     held_limitation_sentences,
     passages_of,
@@ -711,6 +713,21 @@ def test_the_stored_run_s_false_rewrite_is_not_put_in_and_a_true_one_is() -> Non
     _left_out_alone(report, done, body)
 
 
+def test_a_denial_of_a_call_the_sentence_is_not_held_to_needs_an_entry_shown_for_it() -> None:
+    # A2: "no later call redid" the emulation, in its own clause, denies no redo of the
+    # decompile; but the sentence is held to the redone calls, and the entry after that
+    # denial (the emulation's own) is not one shown for it, so the rewrite is refused for
+    # that alone (T-600).
+    report, ledger = _haiku8()
+    rewrite = _citing_every_redo(
+        "No later call redid the emulation by candidate names [ev_0122]; the batch decompile "
+        "that failed was answered by a later call [ev_0025][ev_0171]."
+    )
+    row = _row(HAIKU8_SENTENCE, ["failed.2", "failed.3", "failed.4", "failed.5"], rewrite)
+    found = agreement_violations({"sentences": [row]}, passages_of(report, entries=ledger))
+    assert [v.code for v in found if v.path.startswith("sentences.0")] == [REWRITE_UNGROUNDED_CODE]
+
+
 @pytest.mark.parametrize(
     "rewrite",
     [
@@ -718,9 +735,6 @@ def test_the_stored_run_s_false_rewrite_is_not_put_in_and_a_true_one_is() -> Non
         "The emulation call by candidate names failed for good [ev_0122]; the batch decompile "
         "that failed was redone by a later call, so the dispatch routines were read from its "
         "output [ev_0025][ev_0171].",
-        # A2: "no later call redid" the emulation, in its own clause.
-        "No later call redid the emulation by candidate names [ev_0122]; the batch decompile "
-        "that failed was answered by a later call [ev_0025][ev_0171].",
         # A3: the clause naming the batch decompile cites the call that redid it.
         "The emulation call by candidate names failed [ev_0122]; the batch decompile that "
         "failed was answered by a later call [ev_0025][ev_0171].",
@@ -815,7 +829,13 @@ def test_a_section_5_sentence_saying_a_comparison_fails_is_put_in() -> None:
     }
     done, _ = _ask(report, ledger, {"sentences": [row]})
     assert done.summary["rewritten"] == 1
-    assert FAILURE_REDONE_CODE not in [r["code"] for r in done.tally.unresolved]
+    # No finding of the payloads row (a refused row of a held limitations sentence stays its
+    # last answer, and is the limitations', T-600).
+    assert not [
+        r
+        for r in done.tally.unresolved
+        if r["code"] == FAILURE_REDONE_CODE and "payloads" in r["message"]
+    ]
 
 
 def test_a_claim_led_rewrite_keeping_its_sentence_s_failure_is_put_in() -> None:

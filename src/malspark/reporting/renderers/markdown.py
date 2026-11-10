@@ -331,6 +331,11 @@ SECTION_5_PROSE: dict[str, tuple[str, ...]] = {
 }
 
 
+# The passages the summary is written in, as the agreement question's records name them
+# (``section_agreement.passages_of``): the summary paragraph and each key finding.
+SUMMARY_SUBJECTS = ("executive_summary", "key_findings.")
+
+
 def _section_5_prose(ta: Any, number: str) -> list[TechnicalSubsection | None]:
     """The prose subsections section ``number`` prints (:data:`SECTION_5_PROSE`)."""
     return [getattr(ta, name, None) for name in SECTION_5_PROSE[number]] if ta else []
@@ -583,7 +588,8 @@ class MarkdownRenderer:
 
     def _section_key_findings(self, report: MalwareReport, ctx: _Context) -> str:
         summary = report.executive_summary.strip()
-        written = bool(summary or report.key_findings)
+        # A finding the agreement question left its only sentence out of is no finding written.
+        written = bool(summary or any(f.text.strip() for f in report.key_findings))
         # The platform's fallback below is not the report model's text, and is
         # not headed as if it were: each of its lines names its own voice.
         lines = [_heading(1, "Key findings", REPORT_MODEL if written else PER_ROW), ""]
@@ -619,7 +625,12 @@ class MarkdownRenderer:
             "",
         )
         reason = why.split(":", 1)[1].strip() if ":" in why else "the report model wrote none"
-        lines.append(f"No summary was written: {_one_line(reason)}. _({MEASURED})_")
+        left = ctx.left_out_by_checks(*SUMMARY_SUBJECTS)
+        lines.append(
+            f"No summary is printed: {left}. _({MEASURED})_"
+            if left
+            else f"No summary was written: {_one_line(reason)}. _({MEASURED})_"
+        )
         if any(r in _INCONCLUSIVE for r in report.degradation_reasons):
             lines.extend(
                 [
@@ -937,7 +948,11 @@ class MarkdownRenderer:
                 _section_5_prose(ta, "5.1"),
                 measured,
                 ctx,
-                absent=ctx.absence("packing, obfuscation or anti-analysis", sandbox=False),
+                absent=ctx.absence(
+                    "packing, obfuscation or anti-analysis",
+                    sandbox=False,
+                    subjects=SECTION_5_PROSE["5.1"],
+                ),
             )
         )
 
@@ -971,7 +986,9 @@ class MarkdownRenderer:
                 _section_5_prose(ta, "5.2"),
                 measured,
                 ctx,
-                absent=ctx.absence("imports or API resolution", sandbox=False),
+                absent=ctx.absence(
+                    "imports or API resolution", sandbox=False, subjects=SECTION_5_PROSE["5.2"]
+                ),
             )
         )
 
@@ -1059,7 +1076,9 @@ class MarkdownRenderer:
                 _section_5_prose(ta, "5.4"),
                 measured,
                 ctx,
-                absent=ctx.absence("persistence mechanism", sandbox=True),
+                absent=ctx.absence(
+                    "persistence mechanism", sandbox=True, subjects=SECTION_5_PROSE["5.4"]
+                ),
             )
         )
 
@@ -1081,7 +1100,9 @@ class MarkdownRenderer:
                 _section_5_prose(ta, "5.5"),
                 measured,
                 ctx,
-                absent=ctx.absence("discovery command", sandbox=True),
+                absent=ctx.absence(
+                    "discovery command", sandbox=True, subjects=SECTION_5_PROSE["5.5"]
+                ),
             )
         )
 
@@ -1189,7 +1210,9 @@ class MarkdownRenderer:
                 prose,
                 measured,
                 ctx,
-                absent=ctx.absence("command-and-control channel", sandbox=True),
+                absent=ctx.absence(
+                    "command-and-control channel", sandbox=True, subjects=SECTION_5_PROSE["5.7"]
+                ),
             )
         )
 
@@ -1243,7 +1266,9 @@ class MarkdownRenderer:
                 _section_5_prose(ta, "5.8"),
                 measured,
                 ctx,
-                absent=ctx.absence("carved payload or dropped file", sandbox=True),
+                absent=ctx.absence(
+                    "carved payload or dropped file", sandbox=True, subjects=SECTION_5_PROSE["5.8"]
+                ),
             )
         )
 
@@ -2070,7 +2095,9 @@ class MarkdownRenderer:
                 _absent_subsection(
                     "12.3",
                     "Background",
-                    "Not written in this run: the report model wrote no background.",
+                    f"Not printed in this run: {left}."
+                    if (left := ctx.left_out_by_checks("introduction"))
+                    else "Not written in this run: the report model wrote no background.",
                 )
             )
         return "\n\n".join(blocks)
@@ -2769,6 +2796,32 @@ class _Context:
         tool = row.tool or "tool"
         return f"{row.agent} ({tool})" if row.agent else tool
 
+    def left_out_by_checks(self, *subjects: str) -> str:
+        """The clause a line saying nothing was written for a passage says instead where the
+        agreement question's checks left its sentences out (T-600), with their count: the
+        records of them (``section_agreement.DROPPED_CODE``) whose subject is one of
+        ``subjects``, or, for one ending in ".", a record of that list ("key_findings.");
+        ``""`` where they left none out."""
+        from malspark.reporting.section_agreement import DROPPED_CODE
+
+        whole = {s for s in subjects if not s.endswith(".")}
+        lists = tuple(s for s in subjects if s.endswith("."))
+        count = sum(
+            1
+            for row in self.unresolved
+            if row.get("code") == DROPPED_CODE
+            and (
+                (subject := str(row.get("subject") or "")) in whole
+                or (bool(lists) and subject.startswith(lists))
+            )
+        )
+        if not count:
+            return ""
+        one = count == 1
+        return (
+            f"the checks left out the {count} sentence{'' if one else 's'} the report model wrote"
+        )
+
     def no_sandbox_clause(self) -> str:
         """Why no sandbox observation stands behind a subsection, as a clause."""
         if self.sandbox_state == "empty":
@@ -2777,13 +2830,16 @@ class _Context:
             return "no sandbox ran"
         return "this report records no sandbox observation"
 
-    def absence(self, what: str, *, sandbox: bool) -> str:
+    def absence(self, what: str, *, sandbox: bool, subjects: Sequence[str] = ()) -> str:
         """The one line a capability subsection prints when nothing speaks in it.
 
         It names what looked: the tools that ran over the file, and the
         sandbox's state where the capability is one a sandbox would see. "Not
-        examined" is said only when nothing looked at all.
+        examined" is said only when nothing looked at all. Where the agreement
+        question's checks left out what the report model wrote in the passages
+        ``subjects`` name, it says so, with the count (:meth:`left_out_by_checks`).
         """
+        wrote = f"{self.left_out_by_checks(*subjects) or 'the report model wrote nothing'} on it"
         tools = self.file_tools
         named = ", ".join(tools[:6]) + (f" and {len(tools) - 6} more" if len(tools) > 6 else "")
         blind = sandbox and not self.sandbox_observed
@@ -2793,11 +2849,11 @@ class _Context:
                 if blind
                 else ("no tool looked at the file")
             )
-            return f"Not examined in this run: {said}, and the report model wrote nothing on it."
+            return f"Not examined in this run: {said}, and {wrote}."
         said = f"the tools that ran over the file ({named}) recorded no {what}"
         if blind:
             said += f", and {self.no_sandbox_clause()}"
-        line = f"Nothing recorded in this run: {said}; the report model wrote nothing on it."
+        line = f"Nothing recorded in this run: {said}; {wrote}."
         # Where the run recorded what each tool looked for and over which
         # input (``analysis.coverage``), the line says where; a report stored
         # without the record prints the line as before.

@@ -63,6 +63,7 @@ from malspark.reporting.section_agreement import (
     _reports_a_claim,
     _said_unread,
     _uncited,
+    _uncited_denials,
     _unread_addresses,
     closing_negations,
     name_readings,
@@ -469,6 +470,16 @@ LISTED = [SimpleNamespace(addresses=frozenset({0x1400}), id="listed.1")]
         pytest.param(
             lambda t: _uncited("`" + "Query[ev_1]Host " * (len(t) // 16)),
             id="citations after a code span never closed",
+        ),
+        pytest.param(
+            lambda t: _uncited_denials(
+                "no call is made [ev_0001], " * (len(t) // 28), frozenset({"ev_0002"})
+            ),
+            id="denials each followed by a citation",
+        ),
+        pytest.param(
+            lambda t: _uncited_denials("not " + "[ev_0001] " * (len(t) // 10), frozenset()),
+            id="a denial followed by many citations",
         ),
         pytest.param(_denying_many_names, id="a denial of as many names as the line holds"),
         pytest.param(_names_of_many_sentences, id="the facts of names many sentences deny"),

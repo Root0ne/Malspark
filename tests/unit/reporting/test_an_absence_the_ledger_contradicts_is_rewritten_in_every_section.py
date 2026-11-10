@@ -49,6 +49,7 @@ from malspark.reporting.renderers.layout import ANALYST
 from malspark.reporting.section_agreement import (
     CLAIM_LED,
     DEBATE,
+    DROPPED_CODE,
     HELD_KEPT_CODE,
     QUALIFIED_CODE,
     REWRITE_UNGROUNDED_CODE,
@@ -463,7 +464,12 @@ def test_haiku11_s_section_5_absence_is_held_and_states_the_listing() -> None:
     # An answer that lists nothing: the platform qualifies it on the listing.
     counts, found = apply_rows({"sentences": []}, passages)
     assert counts["qualified"] == 1
-    assert [v.code for v in found] == [QUALIFIED_CODE]
+    # Beside it, each sentence the ledger's own lines hold, which no row answered, is left
+    # out with that reason (T-600).
+    assert [v.code for v in found if v.code != DROPPED_CODE] == [QUALIFIED_CODE]
+    assert all(
+        "(no answer was given for it; " in v.message for v in found if v.code == DROPPED_CODE
+    )
     ta = report.technical_analysis
     assert ta is not None and ta.persistence_detail is not None
     body = ta.persistence_detail.body

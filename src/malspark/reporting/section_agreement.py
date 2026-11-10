@@ -148,9 +148,13 @@ keep quoting them is recorded.
 
 A sentence the ledger's own lines hold (T-600): one denying something of a name
 the run holds (``ledger.N``), one of the limitations naming a failed call a later
-call redid, or saying such a call failed. Its last answer a check refuses, it is
-left out, of the body as of a closing section, and recorded with what holds it;
-the question and every refusal of it say so.
+call redid, or saying such a call failed. Where no answer for it passes the checks
+after the retry, refused or never given, it is left out, of the body as of a
+closing section, and recorded with what holds it, unless the platform's own end
+(its fact qualification, a closing sentence it leaves out) already changes it; the
+question and every refusal of it say so. A drop of it is an answer in the body too.
+A rewrite of it follows each clause denying something with a citation of an entry
+shown for it.
 
 Every step is one pass over the passages and the answer's rows.
 """
@@ -258,7 +262,8 @@ REWRITE_DROPS_CITATION_CODE = "agreement.rewrite_drops_citation"
 # stating that the run's own reading (the ledger, its entries, the listings or
 # the function index) does not establish, show, settle, trace or list something
 # and naming no address, nothing its passage names, or with no clause of their
-# own.
+# own; for a sentence the ledger's own lines hold, one with a clause denying
+# something that no entry shown for that sentence follows at once.
 REWRITE_UNGROUNDED_CODE = "agreement.rewrite_ungrounded"
 # A sentence the agreement question rewrote: what stood, what replaced it and
 # on which sources, recorded as the model's answer.
@@ -3086,6 +3091,7 @@ def _failure_redone_violation(
     *,
     otherwise: str = "",
     held: Sequence[FailedCall] = (),
+    of_held: bool = False,
 ) -> list[Violation]:
     """The finding on a text naming calls a later call redid: one saying a call failed is
     told the call was redone; one held only by the calls it names
@@ -3100,15 +3106,17 @@ def _failure_redone_violation(
     rewrite citing the calls that redid it, or to drop it.
     ``held``: the redone calls the sentence a rewrite replaces is held to; the rewrite
     cites none of the calls that redid ``stale``, some or all of them, and is told the ends
-    a keep of that sentence is told, for every call in ``held``."""
+    a keep of that sentence is told, for every call in ``held``.
+    ``of_held``: the text answers a sentence the ledger's lines hold (a keep of it), whose
+    rewrite is told to cite each denial (:data:`_DENIAL_CITED`), as with ``held``."""
     said = "; ".join(f"{call.entry} by {', '.join(call.redone_by)}" for call in stale)
     choices = _redo_choices(held or stale)
     ends = (
         _cite_redo(choices, otherwise)
         if says_failed and otherwise and not held
-        else _failed_ends(choices)
+        else _failed_ends(choices, held=bool(held) or of_held)
         if says_failed
-        else _redone_ends(choices)
+        else _redone_ends(choices, held=bool(held) or of_held)
     )
     return [
         Violation(
@@ -3170,7 +3178,9 @@ def _failure_redone_check(
         if uncited:
             return _failure_redone_violation(uncited, says, held=calls)
         says_failed, stale = _failure_redone_calls(rewrite, sources, failed, facts, bases)
-        return _failure_redone_violation(stale, says_failed) if stale else []
+        # A keep is read as its own text (``sentence`` empty): held, it is told so.
+        of_held = (sentence or rewrite) in held
+        return _failure_redone_violation(stale, says_failed, of_held=of_held) if stale else []
 
     return _check
 
@@ -3811,10 +3821,15 @@ def _row_violations(
     return out
 
 
-# What becomes of a sentence the ledger's own lines hold (:func:`_held_by_the_ledger`) whose
-# last answer the checks refuse, as the question and every refusal of an answer for it say:
-# it is left out, in a closing passage and in the body alike (T-600).
-_LEFT_OUT_END = "if the checks refuse its last answer, it is left out of the report"
+# What becomes of a sentence the ledger's own lines hold (:func:`_held_by_the_ledger`) that no
+# answer passing the checks answers after the round's retry, refused or never answered, as the
+# question and every refusal of an answer for it say: it is left out, in a closing passage and
+# in the body alike (T-600).
+_LEFT_OUT_END = "if no answer for it passes the checks, it is left out of the report"
+# What a rewrite of such a sentence carries, as every text describing one says: each clause
+# denying something (``absence_answers.negated_clauses``) followed at once by a citation of an
+# entry shown for that sentence (:func:`_uncited_denials`, T-600).
+_DENIAL_CITED = "each denial in it followed at once by the entry it rests on, one shown for it"
 
 
 def _held_by_the_ledger(passage: Passage, sentence: str) -> str:
@@ -3835,6 +3850,46 @@ def _held_by_the_ledger(passage: Passage, sentence: str) -> str:
     if failed:
         said.append(f"saying a call failed that a later call redid ({' and '.join(failed)})")
     return "; ".join(said)
+
+
+def _shown_entries(passage: Passage, sentence: str, by_id: Mapping[str, Passage]) -> frozenset[str]:
+    """The entries the round was shown for ``sentence`` of ``passage``, held by the ledger's
+    lines: the ones each ``ledger.N`` fact shown for it cites, and the calls that redid the
+    redone calls it names or says failed."""
+    shown: set[str] = set()
+    for fid in dict(passage.ledger_named).get(sentence, ()):
+        fact = by_id.get(fid)
+        if fact is not None:
+            shown |= fact.cites
+    for choice in (
+        *dict(passage.redone_named).get(sentence, ()),
+        *dict(passage.failure_said).get(sentence, ()),
+    ):
+        shown |= entry_ids_in(choice)
+    return frozenset(shown)
+
+
+def _uncited_denials(rewrite: str, shown: frozenset[str]) -> list[str]:
+    """The clauses of ``rewrite`` that deny something (``absence_answers.negated_clauses``,
+    cut by ``clauses_of``, which parts a citation's bracket from its clause) that no entry of
+    ``shown`` follows at once: the clauses made only of entry ids directly after one name
+    none of them (T-600). In order; one pass over the clauses."""
+    from malspark.reporting.absence_answers import clauses_of
+    from malspark.schemas.evidence import ENTRY_ID_RE
+
+    out: list[str] = []
+    denial = ""
+    cited: set[str] = set()
+    for clause in [*clauses_of(rewrite), "."]:
+        ids = entry_ids_in(clause)
+        if ids and _WORD_CHARACTER.search(ENTRY_ID_RE.sub("", clause)) is None:
+            cited |= ids
+            continue
+        if denial and not cited & shown:
+            out.append(denial)
+        denial = clause if carries_negation(clause) else ""
+        cited = set()
+    return out
 
 
 def _told_the_end(
@@ -3862,44 +3917,51 @@ def _told_the_end(
 _HELD_NAME_ENDS = (
     "a keep of it as written is refused, and the same words with a citation added are a "
     "keep; rewrite it in your own words on the lines shown, citing the entry they come "
-    "from, saying what the lines show and what stays unknown, or drop it"
+    f"from, saying what the lines show and what stays unknown, {_DENIAL_CITED}, or drop it"
 )
 
 
 # What a body sentence held on a name the run holds may do, as the question and every
 # refusal of a keep of it say: the fact speaks to it, so a keep names the fact and quotes a
-# row of it naming what the sentence names; one whose last answer is refused is left out.
+# row of it naming what the sentence names; a drop leaves it out, as one no answer passes is.
 _HELD_NAME_BODY_ENDS = (
     'keep it naming that fact, with "quote": words inside one of its rows that name what '
     "the sentence names, copied exactly; or rewrite it in your own words on the lines "
-    "shown, citing an entry the fact cites"
+    f"shown, citing an entry the fact cites, {_DENIAL_CITED}; or drop it"
 )
 
 
-def _redone_ends(redos: Sequence[str]) -> str:
+def _redone_ends(redos: Sequence[str], *, held: bool = True) -> str:
     """What a sentence held to the redone calls it names may do: ``redos`` are the calls
-    that redid them, one choice each (:func:`_redo_choices`)."""
+    that redid them, one choice each (:func:`_redo_choices`); ``held``: the rewrite replaces
+    a sentence the ledger's lines hold, so each denial in it is cited (:data:`_DENIAL_CITED`)."""
     return (
-        _redone_rewrite(safe_finding_value(" and ".join(redos)), len(redos))
+        _redone_rewrite(safe_finding_value(" and ".join(redos)), len(redos), held=held)
         + "; the same words with a citation added are a keep"
     )
 
 
-def _redone_rewrite(said: str, count: int) -> str:
+def _redone_rewrite(said: str, count: int, *, held: bool = True) -> str:
     """The rewrite or drop a sentence held to ``count`` redone calls may end as, ``said``
-    naming the calls that redid them: in the number of the calls."""
+    naming the calls that redid them: in the number of the calls, and, for a rewrite of a
+    sentence the ledger's lines hold (``held``), each denial in it cited."""
     return (
         f"rewrite it in your own words on what {said} answered, citing "
-        f"{'it' if count == 1 else 'each'}, or drop it"
+        f"{'it' if count == 1 else 'each'}, "
+        + (f"{_DENIAL_CITED}, " if held else "")
+        + "or drop it"
     )
 
 
-def _failed_ends(redos: Sequence[str]) -> str:
+def _failed_ends(redos: Sequence[str], *, held: bool = True) -> str:
     """What a closing sentence saying a call failed that a later call redid may do:
-    ``redos`` are the calls that redid them, one choice each (:func:`_redo_choices`)."""
+    ``redos`` are the calls that redid them, one choice each (:func:`_redo_choices`);
+    ``held`` as for :func:`_redone_rewrite`."""
     return (
         f"rewrite it citing {safe_finding_value(' and '.join(redos))} and saying what "
-        f"{'it' if len(redos) == 1 else 'each'} answered, or drop it"
+        f"{'it' if len(redos) == 1 else 'each'} answered, "
+        + (f"{_DENIAL_CITED}, " if held else "")
+        + "or drop it"
     )
 
 
@@ -3974,7 +4036,8 @@ def _otherwise(passage: Passage, sentence: str) -> str:
     """What a refusal offers a sentence beside mending the text that answers it: a held
     closing sentence is not kept as written (:func:`_held_ends`), and is dropped; a body
     sentence held on a name the run holds (:func:`_named_body_ends`) is kept naming the
-    facts shown for it and quoting a row of one, in their number; any other is kept."""
+    facts shown for it and quoting a row of one, in their number, or dropped; any other is
+    kept."""
     if _held_ends(passage, sentence):
         return "or drop it"
     ids = () if passage.closing else dict(passage.ledger_named).get(sentence, ())
@@ -3983,7 +4046,8 @@ def _otherwise(passage: Passage, sentence: str) -> str:
     rows = "its" if len(ids) == 1 else "their"
     return (
         f'or keep it naming {safe_finding_value(" or ".join(ids))}, with "quote": words '
-        f"inside one of {rows} rows that name what the sentence names, copied exactly"
+        f"inside one of {rows} rows that name what the sentence names, copied exactly, or "
+        "drop it"
     )
 
 
@@ -4011,18 +4075,15 @@ def _answer_violations(
     number = safe_finding_value(index + 1)
     where = safe_finding_value(passage.id)
     out: list[Violation] = []
-    if row.decision == "drop" and not passage.closing:
-        # A body sentence the ledger's lines hold is left out only where its last answer is
-        # refused (:data:`_LEFT_OUT_END`, which every refusal of it says), never on a drop.
-        held = span is not None and bool(_held_by_the_ledger(passage, span[2]))
+    # A sentence the ledger's own lines hold is left out where no answer for it passes
+    # (:data:`_LEFT_OUT_END`): a drop of it is an answer, in the body as in a closing passage.
+    held = span is not None and bool(_held_by_the_ledger(passage, span[2]))
+    if row.decision == "drop" and not passage.closing and not held:
         out.append(
             Violation(
                 code=UNKNOWN_PASSAGE_CODE,
                 message=(
-                    f"row {number}: answer the sentence of {where} with keep or rewrite; a "
-                    "drop is answered only for a sentence of the conclusion or the limitations."
-                    if held
-                    else f"row {number}: only a sentence of the conclusion or the limitations "
+                    f"row {number}: only a sentence of the conclusion or the limitations "
                     f"is left out; answer the sentence of {where} with keep or rewrite."
                 ),
                 path=f"{path}.decision",
@@ -4037,7 +4098,9 @@ def _answer_violations(
         and row.decision == "keep"
     )
     reasoned = (
-        (passage.closing or absent) and row.decision != "rewrite" and bool(row.reason.strip())
+        (passage.closing or absent or (held and row.decision == "drop"))
+        and row.decision != "rewrite"
+        and bool(row.reason.strip())
     )
     # A closing sentence held on a name the run holds, or to a redone call, is told its
     # ends, not a source to quote; a body sentence held on a name, the row to quote. Neither
@@ -4053,12 +4116,10 @@ def _answer_violations(
                     f"the sentence of {where}"
                     + (
                         ", or, leaving it out, give the reason"
-                        if closing_ends
+                        if closing_ends or body_ends
                         else ", or, keeping a sentence no source speaks of, or leaving one out, "
                         "give the reason"
                         if passage.closing
-                        else ""
-                        if body_ends
                         else ", or, keeping an absence no source speaks of, give the reason"
                         if absent
                         else ""
@@ -4206,6 +4267,31 @@ def _answer_violations(
     )
     if counted and count_disagrees(counted, passage.counts):
         out.append(_count_violation(number, where, passage.counts, path))
+    if (
+        row.decision == "rewrite"
+        and held
+        and (passage.kind != SECTION_5 or _in_own_words(passage, sentence, sources))
+        and not repeats_sentence(sentence, row.rewrite)
+    ):
+        # A rewrite in the model's words of a sentence the ledger's lines hold: each clause of
+        # it denying something is followed at once by an entry shown for that sentence (T-600).
+        # A section 5 rewrite the platform writes on a fact (``_qualified``) is not the model's,
+        # and the same words with a citation added are a keep, answered as one.
+        shown = _shown_entries(passage, sentence, by_id or {})
+        out.extend(
+            Violation(
+                code=REWRITE_UNGROUNDED_CODE,
+                message=(
+                    f"row {number}: the rewrite of {where} denies something in "
+                    f"{safe_finding_value(denial)!r} and no entry shown for the sentence follows "
+                    "that denial at once: in a rewrite of this sentence each denial is followed "
+                    "at once by the entry it rests on, cited in square brackets, one of "
+                    f"{safe_finding_value(', '.join(sorted(shown)))}."
+                ),
+                path=f"{path}.rewrite",
+            )
+            for denial in _uncited_denials(row.rewrite, shown)
+        )
     if row.decision == "rewrite":
         facts = [s for s in sources if s is not None and s.kind == FACT]
         # Both read without their citations: an entry id in brackets cuts no clause, so a
@@ -5770,9 +5856,13 @@ def apply_rows(
     the limitations) whose rewrite still fails, on a row every source of which it
     may rest on, is left out of the passage and returned with what stood
     (``DROPPED_CODE``). A sentence the ledger's own lines hold (:func:`_held_by_the_ledger`)
-    whose answer a check refuses is left out the same way, of a closing passage or of the
-    body, recorded with what holds it and every code refusing the answer (T-600); every
-    other refused answer ends as before.
+    that no answer passing the checks answers is left out the same way, of a closing passage
+    or of the body, where it would otherwise print as written: one whose answer a check
+    refuses, recorded with what holds it and every code refusing the answer, and one no row
+    answers, recorded with what holds it; where this function or the platform's
+    qualification already changes or leaves out the sentence, that end stands, with its own
+    record. A drop of it is the round's answer, recorded with what holds it (T-600). Every
+    other answer ends as before.
     """
     by_id = {passage.id: passage for passage in passages}
     payload = _platform_rewrites(payload, by_id)
@@ -5800,6 +5890,10 @@ def apply_rows(
     listed: list[Violation] = []
     written: list[Violation] = []
     spans: dict[str, list[tuple[int, int, str]]] = {}
+    # Each sentence the ledger's own lines hold that would print as written though no answer
+    # for it passed: left out once every other end is in (T-600), with the record of why.
+    unpassed: list[tuple[Passage, tuple[int, int, str, int], str, Sequence[Violation], str]] = []
+    answered: set[tuple[str, int]] = set()
     for index, row in _rows(payload):
         counts["sentences"] += 1
         passage = by_id.get(_form(row.passage))
@@ -5807,32 +5901,30 @@ def apply_rows(
         if row.decision == "rewrite":
             found += _rewrite_violations(row.rewrite, citable, items, entries)
         span = _sentences(passage).span(row.sentence) if passage is not None else None
-        held = (
-            _held_by_the_ledger(passage, span[2])
-            if found and passage is not None and span is not None
+        held = _held_by_the_ledger(passage, span[2]) if passage and span else ""
+        if passage is not None and span is not None:
+            answered.add((passage.id, span[0]))
+        # Why such a sentence is left out where its answer is refused.
+        refused = (
+            ("the ledger says otherwise; " if _ledger_says_otherwise(found) else "")
+            + (
+                "no rewrite of it passed the checks"
+                if row.decision == "rewrite"
+                else f"its last answer, a {row.decision}, was refused"
+            )
+            + f"; {held}"
+            if held and found
             else ""
         )
-        if held and passage is not None and span is not None:
-            # A sentence the ledger's own lines hold whose last answer is refused never
-            # prints as it stood: left out, in a closing passage and in the body alike, and
-            # recorded with what stood, what holds it and every code refusing the answer.
-            taken = spans.setdefault(passage.id, [])
-            if any(span[0] < end and start < span[1] for start, end, _ in taken):
-                counts["not_applied"] += 1
+        if refused and passage is not None and span is not None:
+            if row.decision == "drop" or (
+                row.decision == "keep"
+                and not (passage.closing and (_ledger_says_otherwise(found) or _unbacked(found)))
+            ):
+                # A refused drop, or a refused keep this function would let stand: left out
+                # below, unless the platform's qualification takes the sentence first.
+                unpassed.append((passage, span, refused, found, f"sentences.{index}"))
                 continue
-            taken.append((*left_out_span(passage.text, span[0], span[1]), ""))
-            counts["dropped"] += 1
-            why = (
-                ("the ledger says otherwise; " if _ledger_says_otherwise(found) else "")
-                + (
-                    "no rewrite of it passed the checks"
-                    if row.decision == "rewrite"
-                    else f"its last answer, a {row.decision}, was refused"
-                )
-                + f"; {held}"
-            )
-            written.append(_left_out(passage, index, span[2], why, found, every_code=True))
-            continue
         if row.decision == "keep":
             standing = span
             # A held absence of the body, kept: never left out, counted where its quote
@@ -5889,7 +5981,7 @@ def apply_rows(
                         else f"no source, because {_capped(row.reason)!r}"
                     )
                 )
-                written.append(_left_out(passage, index, span[2], why, found))
+                written.append(_left_out(passage, f"sentences.{index}", span[2], why, found))
             else:
                 counts["kept"] += 1
                 if (
@@ -5953,10 +6045,21 @@ def apply_rows(
             ):
                 counts["not_applied"] += 1
                 continue
-            # Left out on the model's reason, recorded with what stood (T-568).
+            # Left out on the model's reason, recorded with what stood (T-568), and, for a
+            # sentence the ledger's lines hold, what holds it (T-600).
             taken.append((*left_out_span(passage.text, span[0], span[1]), ""))
             counts["dropped"] += 1
-            written.append(_left_out(passage, index, span[2], row.reason, ()))
+            written.append(
+                _left_out(
+                    passage,
+                    f"sentences.{index}",
+                    span[2],
+                    f"the round dropped it; {held}; its reason: {row.reason}"
+                    if held
+                    else row.reason,
+                    (),
+                )
+            )
             continue
         taken = spans.setdefault(passage.id, []) if passage is not None else []
         if (
@@ -6008,6 +6111,10 @@ def apply_rows(
                         path=f"sentences.{index}",
                     )
                 )
+            elif refused:
+                # A refused rewrite of a sentence the ledger's lines hold, which would print
+                # as written: left out below, unless the platform's qualification takes it.
+                unpassed.append((passage, span, refused, found, f"sentences.{index}"))
             else:
                 counts["not_applied"] += 1
             continue
@@ -6038,6 +6145,35 @@ def apply_rows(
             )
         )
     written.extend(_qualify_unread_left(passages, by_id, spans, _sentences, counts))
+    for passage in passages:
+        if not _writable(passage) or passage.write is None:
+            continue
+        for sentence in dict.fromkeys(
+            s for s, _ids in (*passage.ledger_named, *passage.redone_named, *passage.failure_said)
+        ):
+            span = _sentences(passage).span(sentence)
+            if span is not None and (passage.id, span[0]) not in answered:
+                unpassed.append(
+                    (
+                        passage,
+                        span,
+                        f"no answer was given for it; {_held_by_the_ledger(passage, span[2])}",
+                        (),
+                        f"held.{passage.id}",
+                    )
+                )
+    for passage, span, why, refusals, path in unpassed:
+        # A sentence the ledger's own lines hold that no answer passing the checks answers
+        # never prints as it stood: left out, in a closing passage and in the body alike.
+        # Where another end took it first (the platform's qualification), that end stands.
+        taken = spans.setdefault(passage.id, [])
+        if any(span[0] < end and start < span[1] for start, end, _ in taken):
+            if refusals:
+                counts["not_applied"] += 1
+            continue
+        taken.append((*left_out_span(passage.text, span[0], span[1]), ""))
+        counts["dropped"] += 1
+        written.append(_left_out(passage, path, span[2], why, refusals, every_code=True))
     for pid, rewrites in spans.items():
         if not rewrites:
             continue
@@ -6091,7 +6227,7 @@ def _unbacked(found: Sequence[Violation]) -> bool:
 
 def _left_out(
     passage: Passage,
-    index: int,
+    path: str,
     sentence: str,
     why: str,
     found: Sequence[Violation],
@@ -6116,7 +6252,7 @@ def _left_out(
             + (f": {safe_finding_value(codes)}" if codes else "")
             + f"): {safe_finding_value(sentence)!r}."
         ),
-        path=f"sentences.{index}",
+        path=path,
         subject=passage.id,
     )
 
@@ -6237,7 +6373,8 @@ def _merged_rows(
     """The retry's rows, with each sound row of the first answer the retry leaves out.
 
     A retry asked about one held sentence may answer that one alone: the first
-    answer's rows that passed every check (``sound``) are kept, the retry's row
+    answer's rows ``sound`` keeps (the ones that passed every check, and the one
+    answering a sentence the ledger's lines hold, :func:`apply_rows`) are kept, the retry's row
     winning for the same passage and sentence: where it stands in the passage
     (``where``, the place :class:`_Sentences` locates it at, so the same sentence
     copied with its escapes read back is one), else its words. Either answer that
@@ -6363,24 +6500,38 @@ async def _ask(
         if not isinstance(parsed, dict):
             return None
         # A retry answering only what it was asked keeps the first answer's rows
-        # that passed every check; one that did not is the retry's to fix or leave.
-        parsed = _merged_rows(answered[0], parsed, _sound, _where)
+        # that passed every check; one that did not is the retry's to fix or leave,
+        # but for a sentence the ledger's lines hold, whose refused row stays its last
+        # answer: no answer for it passed, and it is left out as refused (T-600).
+        parsed = _merged_rows(answered[0], parsed, lambda row: _sound(row) or _held(row), _where)
         answered[0] = parsed
         return _platform_rewrites(parsed, by_id)
 
     located_in: dict[str, _Sentences] = {}
 
+    def _span(row: Any) -> tuple[Passage, tuple[int, int, str, int]] | None:
+        passage = by_id.get(_form(_field(row, "passage")))
+        if passage is None:
+            return None
+        if passage.id not in located_in:
+            located_in[passage.id] = _Sentences(passage.text)
+        span = located_in[passage.id].span(str(_field(row, "sentence") or ""))
+        return (passage, span) if span is not None else None
+
     def _where(row: Any) -> tuple[str, str]:
-        pid = _form(_field(row, "passage"))
-        sentence = str(_field(row, "sentence") or "")
-        passage = by_id.get(pid)
-        if passage is not None:
-            if pid not in located_in:
-                located_in[pid] = _Sentences(passage.text)
-            span = located_in[pid].span(sentence)
-            if span is not None:
-                return (pid, str(span[0]))
-        return (pid, " ".join(sentence.split()))
+        found = _span(row)
+        if found is not None:
+            return (found[0].id, str(found[1][0]))
+        return (_form(_field(row, "passage")), " ".join(str(_field(row, "sentence") or "").split()))
+
+    def _held(row: Any) -> bool:
+        # A row fitting the schema that answers a sentence the ledger's own lines hold.
+        try:
+            AgreementRow.model_validate(row)
+        except Exception:  # noqa: BLE001 — a row that fits no schema answers nothing
+            return False
+        found = _span(row)
+        return found is not None and bool(_held_by_the_ledger(found[0], found[1][2]))
 
     def _sound(row: Any) -> bool:
         try:
