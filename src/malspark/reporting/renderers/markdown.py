@@ -332,8 +332,9 @@ SECTION_5_PROSE: dict[str, tuple[str, ...]] = {
 
 
 # The passages the summary is written in, as the agreement question's records name them
-# (``section_agreement.passages_of``): the summary paragraph and each key finding.
-SUMMARY_SUBJECTS = ("executive_summary", "key_findings.")
+# (``section_agreement.passages_of``): the summary paragraph, each key finding and each
+# capability bullet.
+SUMMARY_SUBJECTS = ("executive_summary", "key_findings.", "capability_summary.")
 
 
 def _section_5_prose(ta: Any, number: str) -> list[TechnicalSubsection | None]:
@@ -2794,6 +2795,17 @@ class _Context:
         tool = row.tool or "tool"
         return f"{row.agent} ({tool})" if row.agent else tool
 
+    def left_out(self, subject: str) -> bool:
+        """Whether the agreement question left a sentence of the passage ``subject`` out
+        (``section_agreement.DROPPED_CODE``), so an empty field of it was written, not
+        missing (T-600)."""
+        from malspark.reporting.section_agreement import DROPPED_CODE
+
+        return any(
+            row.get("code") == DROPPED_CODE and str(row.get("subject") or "") == subject
+            for row in self.unresolved
+        )
+
     def left_out_clause(self, *subjects: str, on: str = "") -> str:
         """The clause a line saying nothing was written for a passage says instead where the
         agreement question left its sentences out (T-600), with their count, naming no one
@@ -5066,23 +5078,29 @@ def _encrypts_files(enc: Any) -> bool:
 
 
 def _encryption_table(enc: Any, ctx: _Context) -> list[str]:
-    """The scheme the model wrote, the fields it filled only, or nothing."""
+    """The scheme the model wrote, the fields it filled only, or nothing. A field the
+    agreement question left no sentence of prints "-", not nothing (T-600)."""
     rows = [
-        ("Cipher", enc.cipher),
-        ("Mode", enc.mode),
-        ("Library", enc.library),
-        ("Key source", enc.key_source),
-        ("Key management", enc.key_management),
-        ("IV", enc.iv),
-        ("File marker", enc.file_marker),
-        ("Extension", enc.extension),
-        ("Partial-encryption threshold", enc.partial_threshold),
+        ("Cipher", "cipher", enc.cipher),
+        ("Mode", "mode", enc.mode),
+        ("Library", "library", enc.library),
+        ("Key source", "key_source", enc.key_source),
+        ("Key management", "key_management", enc.key_management),
+        ("IV", "iv", enc.iv),
+        ("File marker", "file_marker", enc.file_marker),
+        ("Extension", "extension", enc.extension),
+        ("Partial-encryption threshold", "partial_threshold", enc.partial_threshold),
         (
             "Per-file key",
+            "per_file_key",
             None if enc.per_file_key is None else ("yes" if enc.per_file_key else "no"),
         ),
     ]
-    present = [(label, value) for label, value in rows if _said(value)]
+    present = [
+        (label, value if _said(value) else "-")
+        for label, field, value in rows
+        if _said(value) or ctx.left_out(f"encryption_scheme.{field}")
+    ]
     if not present:
         return []
     out = [f"_{REPORT_MODEL}:_ encryption scheme", "", _row("Property", "Value"), _divider(2)]
@@ -5371,6 +5389,8 @@ def _endpoint(value: str) -> str:
 # cell nobody filled in; the model was asked for a purpose where the evidence or
 # an analyst's claim states one, so an empty one is a purpose not stated.
 PURPOSE_NOT_STATED = "not stated"
+# What it says where the agreement question left the purpose the model wrote out (T-600).
+PURPOSE_LEFT_OUT = "left out by the agreement question"
 
 
 def _host_identifier_table(identifiers: list[Any], ctx: _Context) -> list[str]:
@@ -5400,7 +5420,11 @@ def _host_identifier_table(identifiers: list[Any], ctx: _Context) -> list[str]:
                 _code_span(ctx.plain(_one_line(item.value)))
                 + (f" (published in the {where} table)" if where else "")
                 + ctx.publish_state(item.value),
-                ctx.cell(item.purpose) if item.purpose.strip() else PURPOSE_NOT_STATED,
+                ctx.cell(item.purpose)
+                if item.purpose.strip()
+                else PURPOSE_LEFT_OUT
+                if ctx.left_out(f"host_identifiers.{index + 1}")
+                else PURPOSE_NOT_STATED,
                 cited,
             )
         )

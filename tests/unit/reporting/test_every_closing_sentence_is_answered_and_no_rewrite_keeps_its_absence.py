@@ -710,13 +710,14 @@ def test_haiku12_s_true_limitation_kept_on_the_named_source_stands() -> None:
     counts, records = apply_rows({"sentences": [row]}, passages)
     assert said["TASK"] in _limitations(report)
     assert counts["held_kept"] == 1
-    # Only the sentences the ledger's own lines hold that no row answers are left out (T-600).
-    assert counts["dropped"] == 3
-    assert [v.message for v in records if v.code == DROPPED_CODE] == [
-        _UNANSWERED_EVASION,
-        _UNANSWERED_PAYLOADS,
-        _UNANSWERED_LIMITATIONS,
-    ]
+    # Only the sentences the ledger's own lines hold that no row answers are left out, and
+    # each sentence of a value cell or a capability bullet no row answers (T-600).
+    whole = _whole_unanswered(passages)
+    assert len(whole) == 15
+    assert counts["dropped"] == 3 + len(whole)
+    assert sorted(v.message for v in records if v.code == DROPPED_CODE) == sorted(
+        [_UNANSWERED_EVASION, _UNANSWERED_PAYLOADS, _UNANSWERED_LIMITATIONS, *whole]
+    )
     # Tied by its address alone (review r4): recorded, as no subject word backs it.
     (held,) = [v for v in records if v.code == HELD_KEPT_CODE]
     assert "resting on fewer than two" in held.message
@@ -752,6 +753,20 @@ _UNANSWERED_LIMITATIONS = (
 _UNANSWERED = (_UNANSWERED_EVASION, _UNANSWERED_PAYLOADS, _UNANSWERED_LIMITATIONS)
 
 
+def _whole_unanswered(passages: list[Any]) -> list[str]:
+    """The records of every sentence of haiku12's value cells and capability bullets, which
+    are answered whole and which the rows below never answer: each left out, with that
+    reason (T-600)."""
+    from malspark.reporting.section_agreement import _left_out
+
+    return [
+        _left_out(p, "", s, f"no answer was given for it; {p.whole}", ()).message
+        for p in passages
+        if p.whole
+        for s in _sentences_of(p.text)
+    ]
+
+
 def _unanswered(records: list[Any]) -> list[str]:
     """The records of the sentences no row answered, of :data:`_UNANSWERED`, in order."""
     return [v.message for v in records if v.code == DROPPED_CODE and v.message in _UNANSWERED]
@@ -773,10 +788,14 @@ def test_haiku12_s_c1_to_c6_kept_unsourced_again_are_left_out_and_recorded() -> 
     # Beside them, the two body sentences the ledger's own lines hold that no row answers; the
     # limitations sentence saying a redone call failed is among the five (T-600).
     assert _unanswered(records) == [_UNANSWERED_EVASION, _UNANSWERED_PAYLOADS]
+    whole = _whole_unanswered(passages)
+    assert sorted(v.message for v in records if v.message in whole) == sorted(whole)
     dropped = [
-        v.message for v in records if v.code == DROPPED_CODE and v.message not in _UNANSWERED
+        v.message
+        for v in records
+        if v.code == DROPPED_CODE and v.message not in (*_UNANSWERED, *whole)
     ]
-    assert counts["dropped"] == 7 and len(dropped) == 5
+    assert counts["dropped"] == 7 + len(whole) and len(dropped) == 5
     assert all(any(said[n][:40] in m for m in dropped) for n in names)
 
 
@@ -812,11 +831,15 @@ def test_haiku12_s_c2_to_c5_kept_unsourced_on_both_answers_are_left_out_and_reco
     body = _limitations(report)
     # Beside them, each sentence the ledger's own lines hold that no row answers (T-600).
     assert _unanswered(records) == list(_UNANSWERED)
-    assert counts["dropped"] == 6
+    whole = _whole_unanswered(passages)
+    assert sorted(v.message for v in records if v.message in whole) == sorted(whole)
+    assert counts["dropped"] == 6 + len(whole)
     for which in ("C2", "C4", "C5"):
         assert said[which] not in body, which
     dropped = [
-        v.message for v in records if v.code == DROPPED_CODE and v.message not in _UNANSWERED
+        v.message
+        for v in records
+        if v.code == DROPPED_CODE and v.message not in (*_UNANSWERED, *whole)
     ]
     assert len(dropped) == 3
     # C2 "read only in part" of listed code: the ledger says otherwise of it.

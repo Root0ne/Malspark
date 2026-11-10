@@ -465,15 +465,16 @@ def test_haiku11_s_section_5_absence_is_held_and_states_the_listing() -> None:
     counts, found = apply_rows({"sentences": []}, passages)
     assert counts["qualified"] == 1
     # Beside it, each sentence the ledger's own lines hold is left out: an answer listing
-    # nothing is no answer at all (T-600).
-    assert [v.code for v in found] == [QUALIFIED_CODE, DROPPED_CODE, DROPPED_CODE]
+    # nothing is no answer at all (T-600). A capability bullet the ledger's lines hold is
+    # among them; a cell or bullet nothing but its kind holds stands as written then.
+    assert [v.code for v in found] == [QUALIFIED_CODE, *[DROPPED_CODE] * 3]
     assert [(v.subject, v.message) for v in found[1:]] == [
         (
             "discovery",
             "The agreement question leaves a sentence of 5. Technical analysis, 'Discovery & "
             "Enumeration' out of the section (the agreement question got no answer at all; held "
-            "on what ledger.1, ledger.2, ledger.3, ledger.4, ledger.5, ledger.6, ledger.7, "
-            "ledger.8, ledger.9, ledger.10, ledger.11, ledger.12, ledger.13, ledger.…): 'The "
+            "on what ledger.6, ledger.7, ledger.8, ledger.9, ledger.10, ledger.11, ledger.12, "
+            "ledger.13, ledger.14, ledger.15, ledger.16, ledger.17, ledger.18, le…): 'The "
             'pairings in the code are: "/c ipconfig /all" with key "&ipconfig="; "/c systeminfo" '
             'with "&systeminfo="; "/c nltest /domain_trusts" with "&domain_trusts="; "/c nltest '
             "/domain_trusts /all_trusts\"…'.",
@@ -482,9 +483,18 @@ def test_haiku11_s_section_5_absence_is_held_and_states_the_listing() -> None:
             "evasion_antiforensics",
             "The agreement question leaves a sentence of 5. Technical analysis, 'Defense Evasion "
             "& Anti-Forensics' out of the section (the agreement question got no answer at all; "
-            "held on what ledger.21, ledger.22, ledger.23 hold lines on): 'They serve the "
+            "held on what ledger.26, ledger.27, ledger.28 hold lines on): 'They serve the "
             "volume-serial lookup that forms the install-folder name [ev_0087, ev_0084], not a "
             "shadow-copy routine.'.",
+        ),
+        (
+            "capability_summary.7",
+            "The agreement question leaves a sentence of 1. Executive summary, capability bullet "
+            "7 out of the section (the agreement question got no answer at all; held on what "
+            'ledger.1, ledger.2, ledger.3, ledger.4, ledger.5 hold lines on): "Persistence is '
+            "indicated but not confirmed: strings for the 'Updater' and 'Custom_update' names, "
+            "LogonTrigger, and the Startup and Shell Folders paths are present, and routine 0x3a24 "
+            'uses CreateFileW…".',
         ),
     ]
     ta = report.technical_analysis

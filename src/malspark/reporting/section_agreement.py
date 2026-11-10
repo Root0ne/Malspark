@@ -331,9 +331,9 @@ DEBATE = "debate"
 
 # The fields of each record that hold the report model's sentences, which a
 # rewrite may replace, and the fields that hold a value in a record's cell (a
-# cipher's name, a channel's protocol), shown for reading and never rewritten.
-# A host identifier's value or a channel's endpoint is the indicator itself
-# and is not shown at all.
+# cipher's name, a channel's protocol), each answered whole as a closing passage is,
+# and printed "-" where no answer passes (T-600). A host identifier's value or a
+# channel's endpoint is the indicator itself and is not shown at all.
 _PROSE_FIELDS: dict[type[BaseModel], tuple[str, ...]] = {
     KeyFinding: ("text",),
     FlowStep: ("action",),
@@ -451,6 +451,12 @@ class Passage:
     # (the redo map holds none for them), by entry id: a denial in a rewrite of a sentence of
     # it the ledger's lines hold may rest on one (:func:`_shown_entries`, T-600).
     unredone_failed: frozenset[str] = frozenset()
+    # A passage answered whole by being that kind of field, a record's value cell or a
+    # capability bullet of the summary (T-600): what its record of a sentence left out
+    # says of it, and what an emptied one prints. A sentence of it no answer passing the
+    # checks answers is left out, as one the ledger's lines hold is (:func:`_ends_on_answer`).
+    whole: str = ""
+    emptied: str = ""
 
 
 def _ids(*sources: Any) -> frozenset[str]:
@@ -483,6 +489,14 @@ def _setter(obj: Any, name: str) -> Callable[[str], None]:
     return _write
 
 
+# What the record of a sentence left out of a value cell or a capability bullet says
+# holds it, and what an emptied one prints, as the question says (T-600).
+_CELL_WHOLE = "a table cell, every sentence of which is answered"
+_CELL_EMPTIED = 'a cell left with no sentence prints "-"'
+_BULLET_WHOLE = "a capability bullet of the summary, every sentence of which is answered"
+_BULLET_EMPTIED = "a bullet left with no sentence is not printed"
+
+
 def _record_passages(
     prefix: str, label: str, rows: Sequence[Any], kind: str, *, number: bool = True
 ) -> list[Passage]:
@@ -503,6 +517,7 @@ def _record_passages(
             where = f"{prefix}.{index}" if number else prefix
             single = len(fields) == 1
             said = label + (f" {index}" if number else "")
+            cell = name not in prose
             out.append(
                 Passage(
                     id=where if single else f"{where}.{name}",
@@ -510,7 +525,11 @@ def _record_passages(
                     text=text,
                     kind=kind,
                     cites=_ids(refs, text),
-                    write=_setter(row, name) if name in prose else None,
+                    write=_setter(row, name),
+                    # A value cell is answered whole, as a closing sentence is (T-600).
+                    closing=cell,
+                    whole=_CELL_WHOLE if cell else "",
+                    emptied=_CELL_EMPTIED if cell else "",
                 )
             )
     return out
@@ -651,6 +670,23 @@ def passages_of(
             ),
         ]
     if ta is not None:
+        # The summary's capability bullets, each answered whole (T-600): a bullet is a
+        # passage of its own, tied to no key finding.
+        uncoded.extend(
+            Passage(
+                id=f"capability_summary.{index}",
+                label=f"1. Executive summary, capability bullet {index}",
+                text=bullet.text,
+                kind=CLAIM_LED,
+                cites=_ids(bullet.evidence_refs, bullet.text),
+                write=_setter(bullet, "text"),
+                closing=True,
+                whole=_BULLET_WHOLE,
+                emptied=_BULLET_EMPTIED,
+            )
+            for index, bullet in enumerate(ta.capability_summary, 1)
+            if bullet.text.strip()
+        )
         steps = sorted(ta.execution_flow, key=lambda step: step.order)
         uncoded.extend(
             _record_passages("execution_flow", "4. Execution flow, step", steps, CLAIM_LED)
@@ -3884,6 +3920,14 @@ def _held_by_the_ledger(passage: Passage, sentence: str) -> str:
     return "; ".join(said)
 
 
+def _ends_on_answer(passage: Passage, sentence: str) -> str:
+    """What leaves ``sentence`` of ``passage`` out where no answer for it passes the checks,
+    in the words of its record: the ledger's lines that hold it (:func:`_held_by_the_ledger`),
+    or the kind of field answered whole it stands in (``Passage.whole``); ``""`` for any
+    other sentence, which ends as before."""
+    return _held_by_the_ledger(passage, sentence) or passage.whole
+
+
 def _shown_entries(passage: Passage, sentence: str, by_id: Mapping[str, Passage]) -> frozenset[str]:
     """The entries the round was shown for ``sentence`` of ``passage``, held by the ledger's
     lines: the ones each ``ledger.N`` fact shown for it cites, the calls that redid the
@@ -3934,7 +3978,7 @@ def _told_the_end(
     (:data:`_LEFT_OUT_END`) where it does not say so already; as they are for any other."""
     if not found or passage is None or sentence is None:
         return list(found)
-    if not _held_by_the_ledger(passage, sentence):
+    if not _ends_on_answer(passage, sentence):
         return list(found)
     end = _sentence_start(_LEFT_OUT_END)
     return [
@@ -5768,7 +5812,8 @@ def prompt_text(passages: Sequence[Passage]) -> str:
                 count = len(_sentences_of(passage.text))
                 lines.append(
                     f"  [{passage.id}] answer every sentence of this passage, one row each "
-                    f"({count} {'sentence' if count == 1 else 'sentences'}), as the TASK asks."
+                    f"({count} {'sentence' if count == 1 else 'sentences'}), as the TASK asks"
+                    + (f"; {_LEFT_OUT_END}, and {passage.emptied}." if passage.whole else ".")
                 )
                 held = []
             if held:
@@ -5992,7 +6037,7 @@ def apply_rows(
         if row.decision == "rewrite":
             found += _rewrite_violations(row.rewrite, citable, items, entries)
         span = _sentences(passage).span(row.sentence) if passage is not None else None
-        held = _held_by_the_ledger(passage, span[2]) if passage and span else ""
+        held = _ends_on_answer(passage, span[2]) if passage and span else ""
         if passage is not None and span is not None:
             answered.add((passage.id, span[0]))
             if not found:
@@ -6247,11 +6292,15 @@ def apply_rows(
     for passage in passages:
         if not _writable(passage) or passage.write is None:
             continue
-        for sentence in dict.fromkeys(
+        ledger_held = [
             s for s, _ids in (*passage.ledger_named, *passage.redone_named, *passage.failure_said)
-        ):
+        ]
+        # A field answered whole leaves out each sentence no answer reached, but not where
+        # the question got no answer at all: a failed call blanks no table and no summary.
+        whole = _sentences_of(passage.text) if passage.whole and rows else []
+        for sentence in dict.fromkeys([*ledger_held, *whole]):
             span = _sentences(passage).span(sentence)
-            held = _held_by_the_ledger(passage, sentence)
+            held = _ends_on_answer(passage, sentence)
             if span is not None and (passage.id, span[0]) not in answered:
                 unpassed.append((passage, span, f"{unanswered}; {held}", (), f"held.{passage.id}"))
             elif span is None:
@@ -6635,13 +6684,14 @@ async def _ask(
         return (_form(_field(row, "passage")), " ".join(str(_field(row, "sentence") or "").split()))
 
     def _held(row: Any) -> bool:
-        # A row fitting the schema that answers a sentence the ledger's own lines hold.
+        # A row fitting the schema that answers a sentence the ledger's own lines hold, or
+        # one of a field answered whole.
         try:
             AgreementRow.model_validate(row)
         except Exception:  # noqa: BLE001 — a row that fits no schema answers nothing
             return False
         found = _span(row)
-        return found is not None and bool(_held_by_the_ledger(found[0], found[1][2]))
+        return found is not None and bool(_ends_on_answer(found[0], found[1][2]))
 
     def _sound(row: Any) -> bool:
         try:

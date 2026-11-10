@@ -876,7 +876,7 @@ def test_a_section_5_sentence_saying_a_comparison_fails_is_put_in() -> None:
     # No finding of the payloads row: the one finding is the limitations sentence's, whose
     # refused row stays its last answer (T-600).
     assert [r["message"] for r in done.tally.unresolved if r["code"] == FAILURE_REDONE_CODE] == [
-        "row 36: limitations keeps the sentence, but it says a call failed or a reading could "
+        "row 55: limitations keeps the sentence, but it says a call failed or a reading could "
         "not be made, while a later call redid it (ev_0168 by ev_0171; ev_0187 by ev_0191; "
         "ev_0169 by ev_0170). Rewrite it citing ev_0171 and ev_0191 and ev_0170 and saying what "
         f"each answered, {_UNREDONE_DENIAL}, or drop it. {_LEFT_OUT_END}"
