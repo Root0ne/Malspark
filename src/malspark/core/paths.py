@@ -241,11 +241,13 @@ class _Writing:
 
     @property
     def directory(self) -> str:
-        """A directory: a separator follows it, so its marks are its own, and it
-        may hold up to eight single spaces (``John Smith``)."""
-        word = rf"(?:{self.char}|{self.mark})+"
+        """A directory: a separator follows it, so its marks are its own and so
+        are the spaces between its words, however many (``John Smith``). The
+        words are read once: the first character no name holds ends them, and
+        only a separator there makes them a directory."""
+        word = rf"(?:{self.char}|{self.mark})++"
         return (
-            rf"{_WINDOWS_EDGE_SPACE}{word}(?:{_WINDOWS_SPACE}{word}){{0,8}}"
+            rf"{_WINDOWS_EDGE_SPACE}{word}(?:{_WINDOWS_SPACE}++{word})*+"
             rf"{_WINDOWS_EDGE_SPACE}(?={self.separator})"
         )
 

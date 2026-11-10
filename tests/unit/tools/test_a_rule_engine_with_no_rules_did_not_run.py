@@ -868,6 +868,44 @@ class TestOnlyAHostPathIsMasked:
             count *= 2
         assert_scales(text, count, host_paths_masked, factor=4)
 
+    @pytest.mark.parametrize(
+        "directory",
+        [
+            "Jane Word1 Word2 Word3 Word4 Word5 Word6 Word7 Word8 Word9",
+            "Jane  Doe",
+            "Copy of Copy of My Documents backup from old laptop 2019 (2)",
+            "a  b   c\u00a0\u00a0d e f g h i j k l m",
+        ],
+    )
+    def test_a_directory_s_name_holds_its_spaces_however_many(self, directory: str) -> None:
+        for separator in ("\\", "\\\\", "/"):
+            heads = ["C:"] if separator == "/" else ["C:", f"{separator * 2}srv{separator}share"]
+            for head in heads:
+                written = separator.join((head, "Users", directory, "secret.txt"))
+                assert host_paths_masked(f"open {written} failed") == (
+                    f"open {OUTSIDE_PROJECT} failed"
+                ), written
+
+    @pytest.mark.parametrize(
+        "text",
+        [
+            lambda count: "open C:\\a" + " w" * count,
+            lambda count: ("open C:\\a" + " w" * 40 + " ") * count,
+            lambda count: ("open C:\\a" + " w" * 40 + "/") * count,
+            lambda count: "open \\\\srv\\share\\a" + "  w" * count + " 'C:\\\\a" + " w" * count,
+            lambda count: json.dumps({"m": "open C:\\a" + " w" * count}),
+        ],
+    )
+    def test_the_words_after_a_path_are_read_in_linear_time(
+        self, text: Callable[[int], str]
+    ) -> None:
+        # The least count whose text costs a measurable time; only the ratio
+        # is asserted.
+        count = 1_000
+        while cpu_seconds(partial(host_paths_masked, text(count)), repeats=3) < 0.005:
+            count *= 2
+        assert_scales(text, count, host_paths_masked, factor=4)
+
     def test_any_space_windows_allows_in_a_name_is_inside_it(self) -> None:
         for space in " \u00a0\u1680\u2009\u3000":
             said = host_paths_masked(f"see C:\\Users\\qxa{space}qxb\\tailqxc end")
