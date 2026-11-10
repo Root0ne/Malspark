@@ -106,26 +106,21 @@ def test_the_same_words_with_a_citation_in_the_body_are_the_keep_they_are(where:
 
 
 def test_a_held_sentence_written_twice_is_left_out_each_time_it_stands() -> None:
-    report = _report(FIRST, background=f"{FIRST} {_UNKNOWN} {_UNKNOWN}")
-    passages = passages_of(report, entries=_ledger())
-    # The round is told no row can name it, and what becomes of it.
-    assert [
-        (v.code, v.path, v.message)
-        for v in agreement_violations({"sentences": []}, passages)
-        if v.path == "held.introduction"
-    ] == [
-        (
-            HELD_UNLISTED_CODE,
-            "held.introduction",
-            f"introduction: {_UNKNOWN!r} is held ({_HELD}) and stands more than once in the "
-            "passage, so no row can name it: each time it stands, it is left out of the report.",
-        )
-    ]
-    counts, records = _applied(report, [_intro(_row(FIRST, "keep", ["ledger.1"]))])
+    report = _report("", background=f"{FIRST} {_UNKNOWN} {_UNKNOWN}")
+    # No row can name it, so it is no refusal of its own: nothing else wrong, no retry.
+    reporter = _Reporter({"sentences": [_intro(_row(FIRST, "keep", ["ledger.1"]))]})
+    done = _ask(report, reporter)
+    assert len(reporter.asked) == 1
+    assert done.tally.retries == 0
     assert report.intro_background.rstrip() == FIRST
-    assert counts["dropped"] == 2
+    assert done.summary["dropped"] == 2
     why = f"it stands more than once in the passage, so no answer could name it; {_HELD}"
-    assert records == [(DROPPED_CODE, "introduction", _left_out(why))] * 2
+    assert [
+        (r["code"], r["subject"], r["message"])
+        for r in done.tally.unresolved
+        if r["code"] == DROPPED_CODE
+    ] == [(DROPPED_CODE, "introduction", _left_out(why))] * 2
+    assert not [r for r in done.tally.unresolved if r["code"] == HELD_UNLISTED_CODE]
 
 
 def test_a_sentence_written_twice_that_is_not_held_stands_as_before() -> None:

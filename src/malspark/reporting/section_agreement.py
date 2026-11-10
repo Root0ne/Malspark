@@ -5525,29 +5525,12 @@ def _held_unlisted(
 ) -> list[Violation]:
     """Each held sentence no row lists, in the passages' order; one whose own clause calls
     listed code not read and that no row rewrote is asked about with the listing named. One
-    the ledger's own lines hold that the passage writes more than once, which no row can
-    name, is said to be left out each time it stands (T-600)."""
+    the passage writes more than once, which no row can name, is not asked about: a refusal
+    the round cannot act on opens no retry, and one the ledger's own lines hold is left out
+    each time it stands (:func:`apply_rows`, T-600)."""
     by_id = {passage.id: passage for passage in passages}
     out: list[Violation] = []
     for passage in passages:
-        for sentence in dict.fromkeys(
-            s for s, _ids in (*passage.ledger_named, *passage.redone_named, *passage.failure_said)
-        ):
-            if len(sentences_of(passage).starts.get(sentence.strip(), ())) < 2:
-                continue
-            out.append(
-                Violation(
-                    code=HELD_UNLISTED_CODE,
-                    message=(
-                        f"{safe_finding_value(passage.id)}: "
-                        f"{safe_finding_value(sentence)!r} is held "
-                        f"({safe_finding_value(_held_by_the_ledger(passage, sentence))}) and "
-                        "stands more than once in the passage, so no row can name it: each "
-                        "time it stands, it is left out of the report."
-                    ),
-                    path=f"held.{passage.id}",
-                )
-            )
         unread = {sentence: ids for sentence, ids, _own in passage.unread_listed}
         for sentence in passage.held:
             span = sentences_of(passage).span(sentence)
