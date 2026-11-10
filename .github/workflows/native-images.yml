@@ -16,6 +16,7 @@ on:
       # from, and the sources every sidecar image copies in.
       - "docker/Dockerfile.*"
       - "docker/docker-compose.yml"
+      - "docker/docker-compose.named-data.yml"
       - "pyproject.toml"
       - "uv.lock"
       - "apps/api/pyproject.toml"
@@ -38,6 +39,7 @@ on:
       # from, and the sources every sidecar image copies in.
       - "docker/Dockerfile.*"
       - "docker/docker-compose.yml"
+      - "docker/docker-compose.named-data.yml"
       - "pyproject.toml"
       - "uv.lock"
       - "apps/api/pyproject.toml"
@@ -175,6 +177,60 @@ jobs:
           SMOKE: ${{ matrix.image.smoke }}
         # Through sh whatever the image's entrypoint (MinIO's is the server).
         run: docker run --rm --entrypoint sh "$IMAGE" -c "$SMOKE"
+
+      # The named-data overlay (docker/docker-compose.named-data.yml) on the
+      # backend image just built, as MALSPARK_DATA_VOLUMES=1 runs it. A fresh
+      # checkout has no data/uploads; docker-up creates it as the mount point
+      # under the read-only data/ mount (run with a docker on PATH that does
+      # nothing, so nothing starts there). Each start fills a fresh samples
+      # volume with the image's fixtures when volume-init is created, which
+      # then hands both volumes over: once with the API's container created
+      # beside it, as `up` creates them, and once on fresh volumes with
+      # volume-init alone before the API's container, as `compose run` of the
+      # API starts it. Each time the API reads the tracked fixtures read-only
+      # from the checkout and writes both volumes as the stack's id, and a
+      # sample reader reads the image's fixture and what the API wrote, and
+      # cannot write.
+      - name: Named data volumes
+        if: matrix.image.name == 'backend'
+        env:
+          MALSPARK_DATA_VOLUMES: "1"
+        run: |
+          set -euo pipefail
+          docker tag "$IMAGE" malspark-backend
+          python3 scripts/dev/malspark_dev.py env init
+          test ! -e data/uploads
+          shim="$RUNNER_TEMP/docker-shim"
+          mkdir -p "$shim"
+          printf '#!/bin/sh\nexit 0\n' > "$shim/docker"
+          chmod +x "$shim/docker"
+          PATH="$shim:$PATH" python3 scripts/dev/malspark_dev.py docker-up
+          test -d data/samples && test -d data/uploads
+          cd docker
+          files=(-f docker-compose.yml -f docker-compose.named-data.yml)
+          used() {
+            test "$(docker wait malspark-volume-init)" = 0
+            docker compose "${files[@]}" run --rm --no-deps --entrypoint sh backend-api -c \
+              'test -f data/samples/dynamic/sample_1.json && ! touch data/samples/dynamic/written && mkdir -p data/uploads/.tmp && echo ci > data/uploads/.tmp/probe && echo ci > data/samples/probe'
+            docker compose "${files[@]}" --profile analysis run --rm --no-deps --entrypoint sh analysis-mcp -c \
+              'test -f /data/samples/probe && test -f /data/samples/dynamic/sample_1.json && ! touch /data/samples/written'
+          }
+          docker compose "${files[@]}" up --no-start --no-build --no-deps volume-init backend-api
+          docker compose "${files[@]}" start volume-init
+          used
+          docker compose "${files[@]}" down -v
+          docker compose "${files[@]}" up -d --no-build --no-deps volume-init
+          used
+
+      - name: Remove the named data volumes
+        if: always() && matrix.image.name == 'backend'
+        working-directory: docker
+        run: |
+          if [ ! -f .env ]; then
+            echo "docker/.env was never written, so nothing was brought up"
+            exit 0
+          fi
+          docker compose -f docker-compose.yml -f docker-compose.named-data.yml --profile '*' down -v
 
   # GoReSym's arm64 stage cross-compiles on the build host's platform, so on
   # an amd64 runner it runs natively, without emulation, and its binary must
