@@ -18,6 +18,8 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import ntpath
+import random
 import re
 from collections.abc import Callable
 from functools import partial
@@ -32,6 +34,7 @@ from malspark.analysis.run_summary import RunSummaryBuilder
 from malspark.core.config import Settings
 from malspark.core.paths import (
     OUTSIDE_PROJECT,
+    _windows_normal,
     get_project_root,
     host_path_masked,
     host_paths_masked,
@@ -875,16 +878,24 @@ class TestOnlyAHostPathIsMasked:
             "Jane  Doe",
             "Copy of Copy of My Documents backup from old laptop 2019 (2)",
             "a  b   c\u00a0\u00a0d e f g h i j k l m",
+            "\u00a0\u00a0Jane",
+            "Jane\u2009\u00a0",
+            "\u2009\u00a0Jane Doe\u00a0\u2009\u00a0",
         ],
     )
     def test_a_directory_s_name_holds_its_spaces_however_many(self, directory: str) -> None:
-        for separator in ("\\", "\\\\", "/"):
-            heads = ["C:"] if separator == "/" else ["C:", f"{separator * 2}srv{separator}share"]
+        for separator in ("\\", "\\" * 2, "\\" * 4, "\\" * 8, "/"):
+            heads = ["C:", "file:///C:"]
+            if separator != "/":
+                heads.append(f"{separator * 2}srv{separator}share")
+            if len(separator) <= 2 and separator != "/":
+                heads.append(f"{separator * 2}?{separator}C:")
             for head in heads:
                 written = separator.join((head, "Users", directory, "secret.txt"))
-                assert host_paths_masked(f"open {written} failed") == (
-                    f"open {OUTSIDE_PROJECT} failed"
-                ), written
+                said = f"open {OUTSIDE_PROJECT} failed"
+                assert host_paths_masked(f"open {written} failed") == said, written
+                document = json.dumps({"m": f"open {written} failed"})
+                assert json.loads(host_paths_masked(document)) == {"m": said}, written
 
     @pytest.mark.parametrize(
         "text",
@@ -899,6 +910,31 @@ class TestOnlyAHostPathIsMasked:
     def test_the_words_after_a_path_are_read_in_linear_time(
         self, text: Callable[[int], str]
     ) -> None:
+        # The least count whose text costs a measurable time; only the ratio
+        # is asserted.
+        count = 1_000
+        while cpu_seconds(partial(host_paths_masked, text(count)), repeats=3) < 0.005:
+            count *= 2
+        assert_scales(text, count, host_paths_masked, factor=4)
+
+    def test_a_written_windows_path_is_normalised_as_ntpath_does(self) -> None:
+        rng = random.Random(591)
+        heads = (
+            "", "\\", "C:", "C:\\", "c:", "C:..", "..", ".\\", "\\\\srv\\share", "\\\\srv\\share\\",
+            "\\\\srv", "\\\\?\\C:\\", "\\\\.\\pipe\\", "\\\\?\\UNC\\s\\h\\",
+        )  # fmt: skip
+        names = ("a", "b c", ".", "..", "", "x.txt", "é", "...", "..a")
+        for _ in range(4_000):
+            written = rng.choice(heads) + "\\".join(
+                rng.choice(names) for _ in range(rng.randrange(8))
+            )
+            assert _windows_normal(written) == ntpath.normpath(written), written
+
+    @pytest.mark.parametrize("part", ["\\.", "\\..", "\\a\\..", "\\.\\a"])
+    def test_a_path_of_many_dots_is_masked_in_linear_time(self, part: str) -> None:
+        def text(count: int) -> str:
+            return "open \\\\srv\\share" + part * count + " and C:\\x" + part * count
+
         # The least count whose text costs a measurable time; only the ratio
         # is asserted.
         count = 1_000

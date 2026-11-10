@@ -246,10 +246,8 @@ class _Writing:
         words are read once: the first character no name holds ends them, and
         only a separator there makes them a directory."""
         word = rf"(?:{self.char}|{self.mark})++"
-        return (
-            rf"{_WINDOWS_EDGE_SPACE}{word}(?:{_WINDOWS_SPACE}++{word})*+"
-            rf"{_WINDOWS_EDGE_SPACE}(?={self.separator})"
-        )
+        edge = rf"[{_WINDOWS_SPACES[1:]}]*+"
+        return rf"{edge}{word}(?:{_WINDOWS_SPACE}++{word})*+{edge}(?={self.separator})"
 
     @property
     def name(self) -> str:
@@ -483,6 +481,27 @@ HOST_ROOTS = (
 OUTSIDE_PROJECT = "a path outside the project"
 
 
+def _windows_normal(path: str) -> str:
+    """``path``, its separators backslashes, as :func:`ntpath.normpath` writes it.
+
+    Read part by part, once: that function drops each ``.`` and ``..`` from
+    the middle of a list where it has no native form, so a path of many such
+    parts (tool output can be hostile) costs the square of its length.
+    """
+    drive, root, tail = ntpath.splitroot(path)
+    kept: list[str] = []
+    for part in tail.split("\\"):
+        if not part or part == ".":
+            continue
+        if part != "..":
+            kept.append(part)
+        elif kept and kept[-1] != "..":
+            kept.pop()
+        elif not root:
+            kept.append(part)
+    return drive + root + "\\".join(kept) or "."
+
+
 def _written_path(written: str) -> PurePosixPath | PureWindowsPath:
     """A path read from words, in the form it is written in rather than the host's.
 
@@ -505,7 +524,7 @@ def _written_path(written: str) -> PurePosixPath | PureWindowsPath:
                 body = "\\\\.\\" + rest
         else:
             body = "\\" + body
-    return PureWindowsPath(ntpath.normpath(body))
+    return PureWindowsPath(_windows_normal(body))
 
 
 def _from_root(
