@@ -327,7 +327,7 @@ LISTED = [SimpleNamespace(addresses=frozenset({0x1400}), id="listed.1")]
             id="the clause denying a reading",
         ),
         pytest.param(
-            _built(lambda t: "not " + "that word " * (len(t) // 10), denies_an_observation),
+            _built(lambda t: "that word " * (len(t) // 10) + "not seen", denies_an_observation),
             id="a denied observation",
         ),
         pytest.param(
