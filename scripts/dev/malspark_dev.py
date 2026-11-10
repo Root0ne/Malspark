@@ -223,8 +223,8 @@ def data_volumes_note(root: Path, environ: Mapping[str, str]) -> str:
     names = " and ".join(f"{project}_{volume}" for volume in DATA_VOLUMES)
     return (
         f"samples and uploads are on the named volumes {names}: the containers do not see"
-        " a file put in data/samples or data/uploads, the tracked fixtures apart"
-        " (MALSPARK_DATA_VOLUMES=0 keeps the bind mounts)"
+        " a file put in data/samples or data/uploads, the tracked fixtures apart for the"
+        " API and the worker (MALSPARK_DATA_VOLUMES=0 keeps the bind mounts)"
     )
 
 

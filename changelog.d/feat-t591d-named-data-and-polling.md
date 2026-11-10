@@ -33,9 +33,10 @@
 
 ### Upgrading
 
-- A macOS or Windows host starts with empty `samples` and `uploads` volumes: what its
-  `data/samples` and `data/uploads` held stays there, unseen by the containers, and a sample is
-  copied into the volume again from the object store when a job needs it.
+- A macOS or Windows host starts with a `samples` volume that holds only the image's sample
+  fixtures and an empty `uploads` volume: what its `data/samples` and `data/uploads` held stays
+  there, unseen by the containers, and a sample is copied into the volume again from the object
+  store when a job needs it.
   `MALSPARK_DATA_VOLUMES=0` keeps the bind mounts. `docker compose down -v` deletes the two
   volumes with the others.
 - A container started with `--no-deps` before `volume-init` has run on a fresh `samples`

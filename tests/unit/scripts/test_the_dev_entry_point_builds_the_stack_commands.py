@@ -508,6 +508,7 @@ class TestTheNoteBeforeAStartWithTheNamedVolumes:
         (note,) = [line for line in said.splitlines() if line.startswith("note:")]
         assert "malspark_samples and malspark_uploads" in note
         assert "do not see a file put in data/samples or data/uploads" in note
+        assert "the tracked fixtures apart for the API and the worker" in note
         assert "MALSPARK_DATA_VOLUMES=0 keeps the bind mounts" in note
 
     def test_the_volumes_are_named_under_the_project_compose_is_given(
