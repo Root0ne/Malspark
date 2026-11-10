@@ -435,9 +435,8 @@ MESSAGE_BUILDERS: frozenset[str] = frozenset(
         "shortened_evidence_note",
         "partial_evidence_note",
         "unreadable_answer_reason",
-        # The decompiled-functions question, its two parts and their join:
-        # each value a listing or a tool wrote goes through the helper.
-        "_decompiled_question",
+        # The decompiled-functions question's two parts: each value a listing
+        # or a tool wrote goes through the helper.
         "_functions_not_described",
         "exits_question",
     }

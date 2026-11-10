@@ -1220,6 +1220,12 @@ def _message_of(violation: Violation | None) -> str:
     return violation.message
 
 
+def _sent_of(violation: Violation | None) -> str:
+    """A question's words and what the question sent shows after them."""
+    assert violation is not None
+    return f"{violation.message} {violation.shown}".strip()
+
+
 def _network_reputation_paragraph() -> str:
     """The network analyst's flows text, with the paragraph on reputation records."""
     from malspark.parsers.network_parser import REPUTATION_HEADING, NetworkParser
@@ -2559,7 +2565,7 @@ PROMPTS: dict[str, str] = {
             ]
         )
     ),
-    "decompiled-functions question with the branches no claim names": _message_of(
+    "decompiled-functions question with the branches no claim names": _sent_of(
         decompiled_not_described_violation(
             [DecompiledFunction(address=0x10, names=("FUN_10",), entries=("ev_0001",))],
             exit_branches(

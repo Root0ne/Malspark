@@ -571,10 +571,10 @@ class TestTheQuestion:
         assert joined[0] == OTHER_FINDING
         (question,) = joined[1:]
         assert question.code == DECOMPILED_NOT_DESCRIBED_CODE
-        assert question.message.startswith(
-            f"{functions.message} Of the functions you decompiled, 5 branch(es)"
-        )
-        assert exit_branches_left_out(joined, isr, inputs) == [OTHER_FINDING, functions]
+        # The finding's words are the functions'; the branches are only shown.
+        assert question.message == functions.message
+        assert question.shown.startswith("Of the functions you decompiled, 5 branch(es)")
+        assert exit_branches_left_out(joined) == [OTHER_FINDING, functions]
 
     def test_the_branches_stand_alone_beside_another_finding(self) -> None:
         entries = [_entry("ev_0003", GATE, GATE_LISTING)]
@@ -589,7 +589,7 @@ class TestTheQuestion:
         ]
         assert joined[1].message.startswith("Of the functions you decompiled, 5 branch(es)")
         assert [v.question_only for v in joined] == [False, True]
-        assert exit_branches_left_out(joined, isr, inputs) == [OTHER_FINDING]
+        assert exit_branches_left_out(joined) == [OTHER_FINDING]
 
     def test_the_branches_alone_or_beside_a_check_that_could_not_run_ask_nothing(self) -> None:
         from malspark.pipeline.validation import CHECK_FAILED_CODE
@@ -626,7 +626,7 @@ SOME = FIRST + (
 
 
 class _Analyst(BaseAnalyst):
-    def __init__(self, replies: list[str], entries: list[LedgerEntry]) -> None:
+    def __init__(self, replies: list[Any], entries: list[LedgerEntry]) -> None:
         super().__init__(llm=MagicMock(), name="reverser")
         self._evidence_entries = list(entries)
         self._replies = list(replies)
@@ -655,12 +655,19 @@ class _Analyst(BaseAnalyst):
     def _invoke_llm_with_timeout(self, messages: list, timeout: float, **_: Any) -> str:
         self.seen_turns.append(list(messages))
         text = self._replies.pop(0)
+        if isinstance(text, Exception):
+            raise text
         self._record_usage(AIMessage(content=text))
         return text
 
 
 def _check(
-    analyst: _Analyst, first: str = FIRST, *, time_left: float | None = None, whole: bool = False
+    analyst: _Analyst,
+    first: str = FIRST,
+    *,
+    time_left: float | None = None,
+    whole: bool = False,
+    fits: Any = None,
 ) -> AgentISR:
     isr = analyst._text_to_isr(first, 0)
     if whole:
@@ -668,7 +675,9 @@ def _check(
         isr.note_answer_text("")
     with (
         patch("malspark.agents.base_agent.validity_check_available", return_value=True),
-        patch.object(BaseAnalyst, "_fits_the_window", return_value=True),
+        patch.object(
+            BaseAnalyst, "_fits_the_window", fits if fits is not None else lambda *_a: True
+        ),
         patch.object(BaseAnalyst, "_seconds_the_last_loop_left", return_value=time_left),
         patch.object(BaseAnalyst, "seconds_an_answer_needs", return_value=60.0),
     ):
@@ -786,6 +795,272 @@ class TestTheValidationTurn:
 
         assert analyst.seen_turns == []
         assert analyst._budget_records[-1]["exit_branches"]["left"] == 0
+
+
+BIG = "1" * 5000
+OTHER_LISTING = _function("")
+
+
+def _turn(
+    replies: list[Any],
+    entries: list[LedgerEntry],
+    first: str = UNSURE,
+    *,
+    patches: tuple[Any, ...] = (),
+    **check: Any,
+) -> dict[str, Any]:
+    """One validation turn as everything outside the loop's record sees it."""
+    from contextlib import ExitStack
+    from types import SimpleNamespace
+
+    published: list[tuple[str, str, str]] = []
+    analyst = _Analyst(replies, entries)
+    analyst._container = SimpleNamespace(event_sink=object())
+    with ExitStack() as stack:
+        for held in patches:
+            stack.enter_context(held)
+        stack.enter_context(
+            patch(
+                "malspark.pipeline.validation.emit_validation_feedback",
+                lambda _sink, **kw: published.append((kw["state"], kw["code"], kw["message"])),
+            )
+        )
+        result = _check(analyst, first, **check)
+    record = dict(analyst._budget_records[-1])
+    return {
+        "claims": [c.claim for c in result.claims],
+        "sent": [[str(m.content) for m in turn] for turn in analyst.seen_turns],
+        "retries": analyst.validation_retries,
+        "fed_back": dict(analyst.validation_fed_back),
+        "findings": [(v.code, v.message, v.asked) for v in analyst.validation_findings],
+        "events": published,
+        "note": record.pop("exit_branches", None),
+        "record": record,
+    }
+
+
+def _without(view: dict[str, Any]) -> dict[str, Any]:
+    """``view`` less the note and the branches' words in what was sent."""
+    return {
+        **{k: v for k, v in view.items() if k not in ("note", "sent")},
+        "calls": len(view["sent"]),
+    }
+
+
+def _as_without_branches(
+    replies: list[Any], entries: list[LedgerEntry], *, patches: tuple[Any, ...] = (), **check: Any
+) -> Any:
+    """The same turn with no branch read: the turn as it is without them."""
+    from malspark.pipeline.exit_branches import ListingsRead
+
+    return _turn(
+        replies,
+        entries,
+        patches=(
+            *patches,
+            patch(
+                "malspark.agents.base_agent.read_listings",
+                return_value=ListingsRead(listings=0, exits=()),
+            ),
+        ),
+        **check,
+    )
+
+
+class TestTheBranchesNeverCostAnAnswer:
+    def test_a_number_longer_than_a_constant_is_no_constant_and_reads_in_one_token(
+        self,
+    ) -> None:
+        compared = listing_exits(
+            _function(f"  if (FUN_{HELPER:x}() == {BIG}) {{\n    return -1;\n  }}\n  return 0;")
+        )
+        returned = listing_exits(
+            _function(f"  if (FUN_{HELPER:x}() == 0) {{\n    return {BIG};\n  }}\n  return 0;")
+        )
+        wide_hex = listing_exits(
+            _function(
+                f"  if (FUN_{HELPER:x}() == 0x{'f' * 17}) {{\n    return 0x{'f' * 17};\n  }}\n"
+                "  return 0;"
+            )
+        )
+        widest = listing_exits(
+            _function(
+                f"  if (param_1 == {'9' * 20}) {{\n    return 0x{'f' * 16};\n  }}\n  return 0;"
+            )
+        )
+
+        assert _terms(compared) == [(-1, (HELPER,), (), ())]
+        assert returned == [] and wide_hex == []
+        assert _terms(widest) == [(0xFFFFFFFFFFFFFFFF, (), (), (10**20 - 1,))]
+
+    def test_a_turn_over_a_listing_with_a_huge_number_answers_as_without_branches(
+        self,
+    ) -> None:
+        entries = [
+            _entry("ev_0003", GATE, GATE_LISTING),
+            _entry(
+                "ev_0004",
+                OTHER,
+                _function(
+                    f"  if (FUN_{HELPER:x}() == {BIG}) {{\n    return {BIG};\n  }}\n  return 0;"
+                ),
+            ),
+        ]
+
+        view = _turn([GATES], entries)
+
+        assert view["claims"] and view["retries"] == 1
+        assert view["note"]["asked"] is True
+
+    def test_a_reader_that_raises_changes_nothing_against_the_turn_without_branches(
+        self,
+    ) -> None:
+        entries = [_entry("ev_0003", GATE, GATE_LISTING), _entry("ev_0004", OTHER, OTHER_LISTING)]
+        without = _as_without_branches([SOME], entries)
+        for target in (
+            "malspark.agents.base_agent.read_listings",
+            "malspark.agents.base_agent.with_exit_branches",
+        ):
+            view = _turn(
+                [SOME], entries, patches=(patch(target, side_effect=RuntimeError("boom")),)
+            )
+
+            assert _without(view) == _without(without), target
+            assert view["sent"] == without["sent"], target
+
+    def test_a_note_that_cannot_be_written_changes_nothing_else(self) -> None:
+        entries = [_entry("ev_0003", GATE, GATE_LISTING), _entry("ev_0004", OTHER, OTHER_LISTING)]
+        asked = _turn([SOME], entries)
+        view = _turn(
+            [SOME],
+            entries,
+            patches=(
+                patch(
+                    "malspark.agents.base_agent.uncovered_exits",
+                    side_effect=RuntimeError("boom"),
+                ),
+            ),
+        )
+
+        assert view["note"] is None
+        assert {k: v for k, v in view.items() if k != "note"} == {
+            k: v for k, v in asked.items() if k != "note"
+        }
+
+    def test_each_line_of_the_note_is_bounded_as_a_finding_value(self) -> None:
+        from malspark.pipeline.events import FINDING_VALUE_LIMIT
+
+        long_name = "routine_" + "q" * 5000
+        listing = (
+            f"int {long_name}(int param_1)\n{{\n  if (FUN_{HELPER:x}() == 0x20) {{\n"
+            "    return -1;\n  }\n  return 0;\n}\n"
+        )
+        entry = LedgerEntry(
+            id="ev_0003", tool="decompile_function", args={"address": hex(OTHER)}, output=listing
+        )
+
+        view = _turn([], [entry], FIRST)
+
+        (line,) = view["note"]["shown"]
+        assert len(line) <= FINDING_VALUE_LIMIT + 1
+
+
+class TestTheBranchesAreNotPublished:
+    def test_joined_to_the_functions_the_events_carry_the_functions_alone(self) -> None:
+        entries = [_entry("ev_0003", GATE, GATE_LISTING), _entry("ev_0004", OTHER, OTHER_LISTING)]
+        asked = _turn([SOME], entries, FIRST)
+        without = _as_without_branches([SOME], entries, first=FIRST)
+
+        assert "Of the functions you decompiled, 5 branch(es)" in asked["sent"][0][-1]
+        assert asked["events"] == without["events"]
+        assert all("branch(es)" not in message for _s, _c, message in asked["events"])
+        assert _without(asked) == _without(without)
+        assert asked["note"]["asked"] is True
+
+
+class TestTheBranchesGoFirstFromATurnThatDoesNotFit:
+    def test_a_window_too_narrow_for_the_branches_drops_them_and_measures_as_without(
+        self,
+    ) -> None:
+        # A window that holds every turn but one carrying the branches. The
+        # second answer's technique question carries a card, kept only where
+        # the turn is measured as it is without the branches.
+        entries = [_entry("ev_0003", GATE, GATE_LISTING), _entry("ev_0004", OTHER, OTHER_LISTING)]
+        technique = FIRST.replace("TECHNIQUE: NONE", "TECHNIQUE: T1082")
+
+        def narrow(_self: Any, turns: list[Any], _cap: int) -> bool:
+            return not any("branch(es)" in str(getattr(m, "content", m)) for m in turns)
+
+        for listed, first in ((entries, FIRST), (entries[:1], technique)):
+            view = _turn([GATES], listed, first, fits=narrow)
+            without = _as_without_branches([GATES], listed, first=first, fits=narrow)
+
+            assert view["sent"] and view["sent"] == without["sent"]
+            assert _without(view) == _without(without)
+            assert view["note"]["asked"] is False
+
+
+class TestATurnThatFailsRecordsTheTurnWithoutBranches:
+    def test_a_retry_that_raises_after_the_joined_question(self) -> None:
+        entries = [_entry("ev_0003", GATE, GATE_LISTING), _entry("ev_0004", OTHER, OTHER_LISTING)]
+        for listed in (entries, entries[:1]):
+            view = _turn([RuntimeError("boom")], listed)
+            without = _as_without_branches([RuntimeError("boom")], listed)
+
+            assert _without(view) == _without(without)
+            assert all("branch(es)" not in message for _c, message, _a in view["findings"])
+
+    def test_a_retry_answered_and_then_lost_counts_and_records_as_without(self) -> None:
+        entries = [_entry("ev_0003", GATE, GATE_LISTING), _entry("ev_0004", OTHER, OTHER_LISTING)]
+        for listed in (entries, entries[:1]):
+            # The retry answered; settling what it left out of the first fails.
+            views = [
+                make(
+                    [SOME],
+                    listed,
+                    patches=(
+                        patch.object(
+                            BaseAnalyst, "_settle_retry_drops", side_effect=RuntimeError("lost")
+                        ),
+                    ),
+                )
+                for make in (_turn, _as_without_branches)
+            ]
+
+            assert views[0]["sent"] and views[0]["retries"] == 1
+            assert _without(views[0]) == _without(views[1])
+            assert views[0]["findings"] and all(
+                "branch(es)" not in message for _c, message, _a in views[0]["findings"]
+            )
+
+    def test_a_turn_without_tools_whose_only_other_question_was_the_callees_asks_nothing(
+        self,
+    ) -> None:
+        from malspark.agents.callees_question import CalleesFound, CalleeToRead
+
+        callees = CalleesFound(
+            ranked=(
+                CalleeToRead(
+                    address=HELPER, callers=(GATE,), depth=1, start=GATE, called_from=1, calls=0
+                ),
+            )
+        )
+        built = MagicMock()
+        view = _turn(
+            [GATES],
+            [_entry("ev_0003", GATE, GATE_LISTING)],
+            FIRST,
+            patches=(
+                patch.object(BaseAnalyst, "_callees_to_ask", return_value=callees),
+                patch.object(BaseAnalyst, "_callees_without_tools", return_value="no tools"),
+                patch.object(BaseAnalyst, "_question_base_of", built),
+            ),
+        )
+
+        # The turn stops where it stops without the branches: no question is built.
+        assert view["sent"] == [] and view["retries"] == 0
+        built.assert_not_called()
+        assert view["note"]["asked"] is False
 
 
 def test_the_slots_are_read_off_the_function_index_by_offset_and_by_each_base() -> None:

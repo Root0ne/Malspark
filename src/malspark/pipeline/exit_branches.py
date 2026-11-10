@@ -63,12 +63,15 @@ HOP_DEPTH = 1
 
 
 # One token of a listing. A comment or a string left open runs to the end of
-# the text or of its line, so no position is read twice.
+# the text or of its line, so no position is read twice. A number is a
+# constant up to 16 hex or 20 decimal digits; a longer run is one token that
+# is no constant (``long``), never cut into one.
 _TOKEN = re.compile(
     r"(?P<space>\s+)"
     r"|(?P<comment>/\*.*?(?:\*/|\Z)|//[^\n]*)"
     r"|(?P<string>\"[^\"\\\n]*(?:\\.[^\"\\\n]*)*\"?|'[^'\\\n]*(?:\\.[^'\\\n]*)*'?)"
-    r"|(?P<number>0[xX][0-9a-fA-F]+|\d+)[uUlL]*"
+    r"|(?P<number>0[xX][0-9a-fA-F]{1,16}(?![0-9a-fA-F])|\d{1,20}(?![\dxX]))[uUlL]*"
+    r"|(?P<long>0[xX][0-9a-fA-F]+|\d+)[uUlL]*"
     r"|(?P<name>[A-Za-z_$][\w$]*(?:\.[\w$]+)*)"
     r"|(?P<mark>->|\+\+|--|<<=|>>=|==|!=|<=|>=|&&|\|\||[^\s\w])",
     re.DOTALL,
@@ -163,6 +166,9 @@ def _tokens(text: str) -> tuple[list[str], list[str]]:
         elif kind == "string":
             kinds.append("string")
             texts.append('""')
+        elif kind == "long":
+            kinds.append("long")
+            texts.append("#")
         else:
             kinds.append(str(kind))
             texts.append(match.group(0))

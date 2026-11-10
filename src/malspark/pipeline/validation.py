@@ -6145,27 +6145,23 @@ def decompiled_not_described_violation(
     Every such function is listed, with its names and the entries that hold
     its listing, in one question. ``exits`` are the branches no one claim
     names with their function (``exit_branches.uncovered_exits``, ranked):
-    they join the same question, after the functions or alone
-    (:func:`with_exit_branches` says when). What the analyst answers stands;
-    the functions its kept answer still names in no claim are the finding the
-    report prints.
+    they join the same question (:func:`with_exit_branches` says when).
+    After the functions they are only what the question sent shows
+    (``Violation.shown``): the finding's words, which every event, row and
+    count carries, are the functions' alone. Alone they are the question's
+    words, of a question that is no finding (``question_only``). What the
+    analyst answers stands; the functions its kept answer still names in no
+    claim are the finding the report prints.
     """
     if not functions and not exits:
         return None
+    if not functions:
+        return Violation(code=DECOMPILED_NOT_DESCRIBED_CODE, message=exits_question(exits))
     return Violation(
-        code=DECOMPILED_NOT_DESCRIBED_CODE, message=_decompiled_question(functions, exits)
+        code=DECOMPILED_NOT_DESCRIBED_CODE,
+        message=_functions_not_described(functions),
+        shown=exits_question(exits) if exits else "",
     )
-
-
-def _decompiled_question(functions: Sequence[DecompiledFunction], exits: Sequence[ExitSite]) -> str:
-    """The functions' part, the branches' part, or both, in that order."""
-    said = ""
-    if functions:
-        said = _functions_not_described(functions)
-    asked = ""
-    if exits:
-        asked = exits_question(exits)
-    return (said + " " + asked).strip()
 
 
 def _functions_not_described(functions: Sequence[DecompiledFunction]) -> str:
@@ -14438,25 +14434,18 @@ def with_exit_branches(
     return [*violations, *([replace(alone, question_only=True)] if alone else [])]
 
 
-def exit_branches_left_out(
-    violations: Sequence[Violation], candidate: Any, inputs: AnswerCheckInputs
-) -> list[Violation]:
-    """``violations`` as a record keeps them: the decompiled question by its functions alone.
+def exit_branches_left_out(violations: Sequence[Violation]) -> list[Violation]:
+    """``violations`` without what :func:`with_exit_branches` put: as the turn without them.
 
-    What :func:`with_exit_branches` put to the analyst about ``candidate`` is
-    no finding; a turn that put it and gave no answer records the rest.
+    The decompiled question keeps the functions alone, and the question the
+    branches stood as alone goes.
     """
-    if all(v.code != DECOMPILED_NOT_DESCRIBED_CODE for v in violations):
-        return list(violations)
-    functions = decompiled_not_described_violation(
-        undescribed_decompiles(candidate, inputs.decompiled, inputs.image_bases)
-    )
     out: list[Violation] = []
     for v in violations:
         if v.code != DECOMPILED_NOT_DESCRIBED_CODE:
             out.append(v)
-        elif functions is not None:
-            out.append(functions)
+        elif not v.question_only:
+            out.append(replace(v, shown="") if v.shown else v)
     return out
 
 

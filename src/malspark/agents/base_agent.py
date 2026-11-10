@@ -119,8 +119,10 @@ from malspark.llm.transient import provider_fault as _provider_fault  # noqa: F4
 from malspark.llm.transient import retry_after as _retry_after  # noqa: F401 — read from here
 from malspark.llm.transient import retry_on_connection_error as retry_on_connection_error
 from malspark.pipeline.claim_drops import values_as_written
+from malspark.pipeline.events import safe_finding_value
 from malspark.pipeline.exit_branches import (
     EXITS_LISTED,
+    ListingsRead,
     exit_line,
     read_listings,
     resolved_slots,
@@ -10253,10 +10255,19 @@ class BaseAnalyst(BudgetMeter, ABC):
             # function joins a question this turn asks anyway
             # (``validation.with_exit_branches``). A slot is named by what the
             # pack's function index resolved.
+            # They never cost an answer: a reading that fails reads nothing.
             pack = list(getattr(self, "pack_entries", None) or ())
-            exits = read_listings(
-                own_entries, resolved_slots(slot_names([*pack, *own_entries]), image_bases)
-            )
+            try:
+                exits = read_listings(
+                    own_entries, resolved_slots(slot_names([*pack, *own_entries]), image_bases)
+                )
+            except Exception as exc:  # noqa: BLE001 — no branches, the answer as without them
+                self.logger.warning(
+                    "%s: the exit branches were not read (%s).",
+                    self.name,
+                    describe_exception_for_log(exc),
+                )
+                exits = ListingsRead(listings=0, exits=())
             # The functions this analyst's own calls listed, and their facts:
             # a claim naming a call or a string its function's facts do not
             # hold is stated to it, once (``pipeline.function_claims``).
@@ -10457,17 +10468,31 @@ class BaseAnalyst(BudgetMeter, ABC):
         put_with: list[AnswerCheckInputs] = []
 
         def _left_out(violations: Sequence[Violation]) -> list[Violation]:
-            # What a record keeps of questions put about this answer.
-            if not exits_state["carried"]:
-                return list(violations)
-            return exit_branches_left_out(violations, isr, put_with[-1])
+            # What a record keeps, and the window measures, of questions put
+            # about this answer: the turn as it is without the branches.
+            return exit_branches_left_out(violations)
+
+        def _joined(found: list[Violation], inputs: AnswerCheckInputs) -> list[Violation]:
+            # The branches joined to ``found``, or ``found`` when that fails:
+            # they never cost an answer.
+            try:
+                return with_exit_branches(found, isr, inputs, _ledger().exits.exits)
+            except Exception as exc:  # noqa: BLE001
+                self.logger.warning(
+                    "%s: the exit branches were not asked (%s).",
+                    self.name,
+                    describe_exception_for_log(exc),
+                )
+                return found
 
         def _settled(kept: AgentISR) -> AgentISR:
             # The branches the kept answer leaves, on the loop's record once
             # the turn has settled: how many listings were read, how many
             # exits they hold and how many no one claim names, the lines a
             # question lists, and whether this turn put them.
-            if not only_cut:
+            if only_cut:
+                return kept
+            try:
                 listings = _ledger().exits
                 if listings.listings:
                     left = uncovered_exits(kept, listings.exits, _ledger().image_bases)
@@ -10478,10 +10503,18 @@ class BaseAnalyst(BudgetMeter, ABC):
                             "listings": listings.listings,
                             "exits": len(listings.exits),
                             "left": len(left),
-                            "shown": [exit_line(site) for site in left[:EXITS_LISTED]],
+                            "shown": [
+                                safe_finding_value(exit_line(site)) for site in left[:EXITS_LISTED]
+                            ],
                             "asked": bool(exits_state["asked"]),
                         },
                     )
+            except Exception as exc:  # noqa: BLE001 — a record never costs an answer
+                self.logger.warning(
+                    "%s: the exit branches were not noted (%s).",
+                    self.name,
+                    describe_exception_for_log(exc),
+                )
             return kept
 
         def _validator(candidate: AgentISR) -> list[Violation]:
@@ -10506,7 +10539,7 @@ class BaseAnalyst(BudgetMeter, ABC):
             ]
             if not (exits_state["open"] and candidate is isr):
                 return found
-            joined = with_exit_branches(found, candidate, inputs, _ledger().exits.exits)
+            joined = _joined(found, inputs)
             exits_state["carried"] = joined != found
             put_with[:] = [inputs]
             return joined
@@ -10584,9 +10617,7 @@ class BaseAnalyst(BudgetMeter, ABC):
                 initial = [v for v in initial if v.code != UNREAD_CALLEES_CODE]
                 # The branches stay only beside a question still asked.
                 if exits_state["carried"]:
-                    initial = with_exit_branches(
-                        _left_out(initial), isr, put_with[-1], _ledger().exits.exits
-                    )
+                    initial = _joined(_left_out(initial), put_with[-1])
                 BaseAnalyst._state_callees_not_run(  # type: ignore[arg-type]
                     self, NOT_RUN_NO_TOOLS.format(why=no_tools), job
                 )
@@ -10645,10 +10676,14 @@ class BaseAnalyst(BudgetMeter, ABC):
         # A question about technique ids carries what the catalogue holds for
         # each id the answer writes: deterministic facts, not a look-up the
         # model makes for each (its tools stay attached).
-        facts = technique_facts_note(initial, isr.claims, knowledge)
+        # Every measure of the window is taken on the turn as it is without the
+        # branches, so it is the turn's measure without them; the branches go
+        # first where the turn with them does not fit what that measure kept.
+        measured = _left_out(initial)
+        facts = technique_facts_note(measured, isr.claims, knowledge)
         if facts:
             closing = f"{facts}\n{closing}"
-        sent = with_question(messages, feedback_text(initial, closing=closing))
+        sent = with_question(messages, feedback_text(measured, closing=closing))
         loop_repeat = _repeated(isr)
         widest = max((cap for cap, _text, _chunk in loop_cuts), default=0)
         if loop_repeat is not None:
@@ -10659,13 +10694,13 @@ class BaseAnalyst(BudgetMeter, ABC):
         # answer of the output cap, on every path, and sent without them when
         # it does not fit with them.
         cards = True
-        if feedback_text(initial, closing=closing) != feedback_text(
-            initial, closing=closing, cards=False
+        if feedback_text(measured, closing=closing) != feedback_text(
+            measured, closing=closing, cards=False
         ) and not BaseAnalyst._fits_the_window(  # type: ignore[arg-type]
             self, sent, max(widest, int(self.output_cap_tokens() or 0))
         ):
             cards = False
-            sent = with_question(messages, feedback_text(initial, closing=closing, cards=False))
+            sent = with_question(messages, feedback_text(measured, closing=closing, cards=False))
         # The tool results the answer was written from are not in the
         # conversation the retry is sent in: the ledger entries the answer
         # cites are shown in front of the closing, as the analyst had them in
@@ -10681,16 +10716,40 @@ class BaseAnalyst(BudgetMeter, ABC):
             lambda text: [
                 *messages,
                 AIMessage(content=str(_PriorAnswer(isr).content or "")),
-                HumanMessage(content=feedback_text(initial, closing=text, cards=cards)),
+                HumanMessage(content=feedback_text(measured, closing=text, cards=cards)),
             ],
             max(widest, int(self.output_cap_tokens() or 0)),
         )
         if with_entries != closing:
             closing = with_entries
-            sent = with_question(messages, feedback_text(initial, closing=closing, cards=cards))
+            sent = with_question(messages, feedback_text(measured, closing=closing, cards=cards))
         too_big = (loop_cuts or loop_repeat is not None) and not BaseAnalyst._fits_the_window(  # type: ignore[arg-type]
             self, sent, widest
         )
+        if measured != initial and not (
+            BaseAnalyst._fits_the_window(  # type: ignore[arg-type]
+                self,
+                [
+                    *messages,
+                    AIMessage(content=str(_PriorAnswer(isr).content or "")),
+                    HumanMessage(content=feedback_text(initial, closing=closing, cards=cards)),
+                ],
+                max(widest, int(self.output_cap_tokens() or 0)),
+            )
+            and (
+                too_big
+                or not (loop_cuts or loop_repeat is not None)
+                or BaseAnalyst._fits_the_window(  # type: ignore[arg-type]
+                    self,
+                    with_question(messages, feedback_text(initial, closing=closing, cards=cards)),
+                    widest,
+                )
+            )
+        ):
+            # The branches are dropped: the turn is asked as it is without them.
+            initial = measured
+            exits_state["open"] = False
+            exits_state["carried"] = False
         if too_big:
             detail = (
                 "not asked: the conversation the question is sent in and the "
@@ -10758,6 +10817,7 @@ class BaseAnalyst(BudgetMeter, ABC):
             # The block moves to the retry's own question, the last message,
             # and the turn that carried it before is sent as it was written.
             plain = frame_messages(turns, run_state=current_run_state(self))
+            bare_turns: list[Any] = []
             # Over the loop's own conversation where the answer is the one it
             # ended on (:meth:`_continued_question`): the entries the answer
             # cites are fitted again against that conversation, which holds
@@ -10773,13 +10833,17 @@ class BaseAnalyst(BudgetMeter, ABC):
                 and isinstance(base, KeptConversation)
             ):
                 asked_now = round_asked[0]
+                # Measured without the branches, as the turn without them is.
+                measured_now = _left_out(asked_now)
                 prior = turns[-2]
 
                 def _continued_turns(text: str) -> list[Any]:
                     return [
                         *base.messages,
                         prior,
-                        HumanMessage(content=feedback_text(asked_now, closing=text, cards=cards)),
+                        HumanMessage(
+                            content=feedback_text(measured_now, closing=text, cards=cards)
+                        ),
                     ]
 
                 held = BaseAnalyst._with_cited_entries(  # type: ignore[arg-type]
@@ -10799,8 +10863,14 @@ class BaseAnalyst(BudgetMeter, ABC):
                     messages,
                     str(turns[-1].content),
                     base,
-                    feedback_text(asked_now, closing=held, cards=cards),
+                    feedback_text(measured_now, closing=held, cards=cards),
                 ):
+                    bare_turns = [
+                        *turns[:-1],
+                        HumanMessage(
+                            content=feedback_text(measured_now, closing=held, cards=cards)
+                        ),
+                    ]
                     turns = [
                         *turns[:-1],
                         HumanMessage(content=feedback_text(asked_now, closing=held, cards=cards)),
@@ -10819,6 +10889,17 @@ class BaseAnalyst(BudgetMeter, ABC):
                 if turns
                 else None
             )
+            if continued is None and bare_turns and bare_turns != turns:
+                # Continued only without the branches: they go first.
+                continued = BaseAnalyst._continued_question(  # type: ignore[arg-type]
+                    self,
+                    bare_turns,
+                    messages,
+                    max(widest, int(self.output_cap_tokens() or 0)),
+                    tools=tooled,
+                )
+                if continued is not None:
+                    exits_state["asked"] = False
             if continued is None:
                 held_closing.clear()
             answer = BaseAnalyst._answer_after_loop(  # type: ignore[arg-type]
@@ -10966,7 +11047,8 @@ class BaseAnalyst(BudgetMeter, ABC):
                     first_answer.answer_text or first_answer.to_text_summary()
                     if prior is None
                     else prior,
-                    shown,
+                    # As the turn without the branches is measured: they go first.
+                    _left_out(shown),
                     closing=text,
                     cards=cards,
                 )
