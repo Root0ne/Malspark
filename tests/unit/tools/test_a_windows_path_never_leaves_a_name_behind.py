@@ -207,6 +207,29 @@ CONTEXTS = (
         lambda p: json.dumps({"error": f"cannot open {p}"}, ensure_ascii=False),
         json=True,
     ),
+    # The same three as ``json.dumps`` writes them by default: every character
+    # that is not ASCII as its ``\uXXXX`` escape.
+    Context(
+        "escaped JSON, the path its value",
+        True,
+        "",
+        lambda p: json.dumps({"path": p}),
+        json=True,
+    ),
+    Context(
+        "escaped JSON, the path in escaped quotes",
+        True,
+        "",
+        lambda p: json.dumps({"msg": f'open "{p}": denied'}),
+        json=True,
+    ),
+    Context(
+        "escaped JSON, the path in words",
+        False,
+        "",
+        lambda p: json.dumps({"error": f"cannot open {p}"}),
+        json=True,
+    ),
 )
 
 # Two paths in one quoted span, in every order.

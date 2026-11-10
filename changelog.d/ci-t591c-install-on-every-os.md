@@ -31,8 +31,10 @@
   combining mark, an emoji, a space, no-break space or thin space inside a directory's name),
   wherever the path stands: after any character but an ASCII letter or digit (`日本C:\...`,
   `path:C:\...`, `a.C:\...`), quoted in `'`, `"`, backticks, `‘’`, `“”` or `«»`, or inside a
-  JSON string, which still reads as JSON once masked. A quoted Windows path is masked up to
-  its closing quote, spaces and all, and a quoted span holding a second path is masked whole.
+  JSON string (a name written there as `\uXXXX` escapes included), which still reads as JSON
+  once masked. A quoted Windows path or `file:` URL is masked up to its closing quote, spaces
+  and all, and a quoted span holding a second path is masked whole; a full stop after an
+  unquoted path stays outside it.
   A `file://host/...` URL (also `file:////host/...` and `file:\\host\...`, the scheme in any
   case) names a path on another machine and is masked too. The host's home directory written in a text
   (a Windows one with single, doubled or forward separators, in any case) is one path with

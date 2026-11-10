@@ -179,15 +179,22 @@ _DEVICE = r"\\\\(?:\\\\)?[?.]\\\\?"
 _DRIVE_START = r"(?:(?<!\\)" + _DEVICE + r"|(?<![A-Za-z0-9])|(?<=\\[nrt]))"
 _DRIVE_HEAD = rf"{_DRIVE_START}[A-Za-z]:{_WINDOWS_SEP}"
 _UNC_HEAD = r"(?<!\\)\\\\(?:\\\\)?"
+# A space inside a name: an ASCII, no-break, thin or other fixed-width space,
+# every space separator but a line's or a paragraph's.
+_WINDOWS_SPACES = " \u00a0\u1680\u2000-\u200a\u202f\u205f\u3000"
+_WINDOWS_SPACE = rf"[{_WINDOWS_SPACES}]"
 # A character of a Windows file name: any Windows does not forbid in one
 # (``< > : " / \ | ? *`` and control characters), but a space and the marks
-# below, and never the letter that starts another drive (``a.C:\``).
-_WINDOWS_CHAR = r"(?:(?![A-Za-z]:[\\/])[^\s<>:\"/\\|?*\x00-\x1f(),;'`\u2019\u201d\u00bb])"
+# below, and never the letter that starts another drive (``a.C:\``). After a
+# slash or a space, a JSON string's ``\uXXXX`` is the character it escapes,
+# the next of the name: a backslash there separates nothing.
+_WINDOWS_CHAR = (
+    rf"(?:(?<=[/{_WINDOWS_SPACES}])\\u[0-9A-Fa-f]{{4}}"
+    r"|(?![A-Za-z]:[\\/])[^\s<>:\"/\\|?*\x00-\x1f(),;'`\u2019\u201d\u00bb])"
+)
 # A mark a name may hold that also closes words: ``( ) , ; '``, a backtick and
 # a closing typographic quote.
 _WINDOWS_MARK = r"[(),;'`\u2019\u201d\u00bb]"
-# A space inside a name: an ASCII, no-break, thin or other fixed-width space.
-_WINDOWS_SPACE = r"[ \u00a0\u2000-\u200a\u202f\u205f\u3000]"
 # A directory of a Windows path: a separator follows it, so its marks are its
 # own, and it may hold up to eight single spaces (``John Smith``).
 _WINDOWS_DIR = (
@@ -198,9 +205,11 @@ _WINDOWS_DIR = (
 # (``a(b)``, ``alice's``, ``(1).txt``, ``x,.'y``) that is not dots alone (a
 # name never ends in one), so a mark or a full stop after the path stays
 # outside it.
+# The name's own characters: dots only before more of it.
+_WINDOWS_RUN = rf"(?:\.*+(?!\.){_WINDOWS_CHAR})+"
 _WINDOWS_NAME = (
-    rf"{_WINDOWS_MARK}*{_WINDOWS_CHAR}+"
-    rf"(?:(?:\.*{_WINDOWS_MARK})+\.*(?!\.){_WINDOWS_CHAR}+)*"
+    rf"{_WINDOWS_MARK}*{_WINDOWS_RUN}"
+    rf"(?:(?:\.*{_WINDOWS_MARK})+{_WINDOWS_RUN})*"
 )
 # What follows a Windows path's head. A separator before a quote is the
 # quote's escape in a JSON string (``\"``), never the path's.
@@ -228,9 +237,6 @@ _CLOSING = "\u2019\u201d\u00bb"
 #   ``“`` or ``«``) and runs to its closing quote, spaces and all
 #   (``'C:\Users\John Smith\x'``), as an OSError prints its name; the
 #   backslash escaping a JSON quote (``\"``) stays outside it;
-# * a Windows path: a drive (``C:\Users\x``, ``D:/a/b``, ``\\?\C:\x``) or a
-#   UNC path (``\\server\share\x``, ``\\?\UNC\server\share``), its
-#   separators single or doubled;
 # * the host's home directory as written in the text, its whole name a path
 #   even where it holds a space (``C:\Users\John Smith``), and the path
 #   after it read as any other;
@@ -245,14 +251,14 @@ _CLOSING = "\u2019\u201d\u00bb"
 # whole, and a typographic one never runs past another opening quote, so no
 # character is read again from each quote or backslash before it.
 _BEFORE_HOME = (
-    rf"{_FILE}//(?:localhost)?/?(?P<winurl>[A-Za-z]:{_WINDOWS_SEP}{_WINDOWS_TAIL})"
-    rf"|{_FILE}(?://(?!/|localhost/)|////|\\\\(?:\\\\)?)"
-    rf"(?P<remote>{_SERVER_TAIL}|{_WINDOWS_NAME})"
-    r"|file://(?:localhost)?(?P<url>/[^\s'\"<>()]*)"
-    rf"|(?<=(?P<quote>['\"`]))(?P<quoted>{_QUOTED_HEAD}"
+    rf"(?<=(?P<quote>['\"`]))(?P<quoted>{_QUOTED_HEAD}"
     r"(?:(?!(?P=quote))[^\\\r\n]|\\++(?!(?P=quote)))*+)(?=\\*(?P=quote))"
     rf"|(?<=[{_OPENING}])(?P<typographic>{_QUOTED_HEAD}[^\r\n{_OPENING}{_CLOSING}]*+)"
     rf"(?=[{_CLOSING}])"
+    rf"|{_FILE}//(?:localhost)?/?(?P<winurl>[A-Za-z]:{_WINDOWS_SEP}{_WINDOWS_TAIL})"
+    rf"|{_FILE}(?://(?!/|localhost/)|////|\\\\(?:\\\\)?)"
+    rf"(?P<remote>{_SERVER_TAIL}|{_WINDOWS_NAME})"
+    r"|file://(?:localhost)?(?P<url>/[^\s'\"<>()]*)"
 )
 _AFTER_HOME = (
     rf"(?P<drive>{_DRIVE_HEAD}{_WINDOWS_TAIL})"

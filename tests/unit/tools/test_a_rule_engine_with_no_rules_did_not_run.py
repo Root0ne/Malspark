@@ -554,6 +554,61 @@ class TestOnlyAHostPathIsMasked:
         said = host_paths_masked(f"open {opening}C:\\Users\\John Smith\\my file.txt{closing} x")
         assert said == f"open {opening}{OUTSIDE_PROJECT}{closing} x"
 
+    @pytest.mark.parametrize(
+        ("opening", "closing"),
+        [("'", "'"), ('"', '"'), ("`", "`"), ("\u201c", "\u201d")],
+    )
+    @pytest.mark.parametrize(
+        "url",
+        [
+            "file:///C:/Users/x/My Docs",
+            "file:///C:/Users/x/My Docs/y z",
+            "file://srv/share/x/My Docs",
+            "FILE:\\\\srv\\share\\x\\My Docs",
+        ],
+    )
+    def test_a_quoted_file_url_is_masked_to_its_closing_quote(
+        self, url: str, opening: str, closing: str
+    ) -> None:
+        said = host_paths_masked(f"open {opening}{url}{closing} x")
+        assert said == f"open {opening}{OUTSIDE_PROJECT}{closing} x"
+
+    @pytest.mark.parametrize(
+        "message",
+        [
+            "cannot open C:/Users/\u00c9lodie/x now",
+            "cannot open file:///C:/Users/\u7530\u4e2d/AppData/x now",
+            "cannot open C:/Users/a \u65e5\u672c/x now",
+            "cannot open c:\\Users\\p \u011f\\x now",
+        ],
+    )
+    def test_json_written_with_escapes_hides_a_name_that_is_not_ascii(self, message: str) -> None:
+        # ``json.dumps`` writes a character that is not ASCII as ``\uXXXX``;
+        # after a slash that escape is the name's first character.
+        written = json.dumps({"m": message})
+        assert "\\u" in written
+        said = json.loads(host_paths_masked(written))
+        assert said == {"m": f"cannot open {OUTSIDE_PROJECT} now"}
+
+    @pytest.mark.parametrize(
+        ("written", "after"),
+        [
+            ("C:\\Users\\bob\\rules.yml", ". Check the path"),
+            ("C:\\Users\\bob\\x", "."),
+            ("\\\\srv\\share\\bob\\notes.txt", ". Next"),
+            ("C:\\Users\\bob\\a.b.c", "... and so on"),
+        ],
+    )
+    def test_a_full_stop_after_a_windows_path_stays_outside_it(
+        self, written: str, after: str
+    ) -> None:
+        assert host_paths_masked(f"Wrote {written}{after}") == f"Wrote {OUTSIDE_PROJECT}{after}"
+
+    def test_any_space_windows_allows_in_a_name_is_inside_it(self) -> None:
+        for space in " \u00a0\u1680\u2009\u3000":
+            said = host_paths_masked(f"see C:\\Users\\qxa{space}qxb\\tailqxc end")
+            assert said == f"see {OUTSIDE_PROJECT} end", repr(space)
+
     def test_masked_json_still_reads_as_json(self) -> None:
         for message in (
             'open "C:\\Users\\a b\\x": denied',
@@ -606,6 +661,16 @@ class TestOnlyAHostPathIsMasked:
             "C:\\Users\\Jane Doe ",
             "/home/Jane Doe ",
             "\u00e9\u65e5\u2013\u20ac\u00a9\u0301\U0001f600",
+            ".",
+            ".x",
+            "...(",
+            "/\\u00e9",
+            " \\u00e9",
+            "\\u00e9",
+            "\\u00e9\\\\",
+            "a\u1680",
+            "'file:///C:/a b' ",
+            "file:///C:/a b/",
         ],
     )
     def test_a_hostile_text_is_masked_in_linear_time(self, unit: str) -> None:
