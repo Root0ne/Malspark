@@ -26,6 +26,7 @@ Every address, name and sentence here is made up for the test.
 from __future__ import annotations
 
 import json
+import re
 from typing import Any
 from unittest.mock import MagicMock, patch
 
@@ -1061,6 +1062,243 @@ class TestATurnThatFailsRecordsTheTurnWithoutBranches:
         assert view["sent"] == [] and view["retries"] == 0
         built.assert_not_called()
         assert view["note"]["asked"] is False
+
+
+# A window measured by size: a turn fits when its characters and an answer of
+# the cap do, and the room the cited entries are fitted in is the same. The
+# run-state block every turn is framed with is part of what is measured.
+CAP = 300
+STATE = "run state: " + "r" * 120
+# The branches' words as a question carries them, joined to the functions
+# line or standing under their code.
+BRANCHES_SAID = re.compile(
+    r"(?:\n- \[[\w.]+\])? Of the functions you decompiled, \d+ branch\(es\).*?"
+    r"may stay undescribed\.",
+    re.S,
+)
+
+
+def _size(turn: list[Any]) -> int:
+    return sum(len(str(getattr(m, "content", m))) for m in turn)
+
+
+def _window(limit: int) -> dict[str, Any]:
+    """``_turn``'s arguments for a window of ``limit`` characters."""
+
+    def fits(_self: Any, turns: list[Any], cap: int) -> bool:
+        return _size(turns) + int(cap) <= limit
+
+    return {
+        "fits": fits,
+        "patches": (
+            patch.object(BaseAnalyst, "output_cap_tokens", return_value=CAP),
+            patch.object(BaseAnalyst, "_window_room_chars", lambda _s, cap: float(limit - cap)),
+            patch("malspark.agents.base_agent.current_run_state", lambda _agent: STATE),
+        ),
+    }
+
+
+def _unsaid(sent: list[list[str]]) -> list[list[str]]:
+    return [[BRANCHES_SAID.sub("", text) for text in turn] for turn in sent]
+
+
+WINDOW_CASES = (
+    # The branches joined to the functions line, then standing beside another
+    # finding; each again with a technique card the turn carries.
+    ([SOME], "functions", FIRST),
+    ([GATES], "alone", UNSURE),
+    ([SOME], "functions", FIRST.replace("TECHNIQUE: NONE", "TECHNIQUE: T1082")),
+    ([GATES], "alone", UNSURE.replace("TECHNIQUE: NONE", "TECHNIQUE: T1082")),
+)
+
+
+def _listed(kind: str) -> list[LedgerEntry]:
+    gate = _entry("ev_0003", GATE, GATE_LISTING)
+    return [gate, _entry("ev_0004", OTHER, OTHER_LISTING)] if kind == "functions" else [gate]
+
+
+class TestTheWindowIsMeasuredBySize:
+    def test_at_every_size_the_turn_is_the_one_without_branches_or_it_plus_them(
+        self,
+    ) -> None:
+        # Every size at which a turn of either, unbounded, starts or stops
+        # fitting beside the cap, and a step through the rest: the cited
+        # entry, the card and the branches each go in turn as it narrows.
+        for replies, kind, first in WINDOW_CASES:
+            listed = _listed(kind)
+            wide = _window(10**9)
+            sizes = {
+                _size(turn)
+                for view in (
+                    _turn(replies, listed, first, **wide),
+                    _as_without_branches(replies, listed, first=first, **wide),
+                )
+                for turn in view["sent"]
+            }
+            limits = sorted(
+                {s + CAP + d for s in sizes for d in (-1, 0, 1)}
+                | set(range(min(sizes) - 1500, max(sizes) + CAP + 100, 61))
+            )
+            seen: set[bool] = set()
+            for limit in limits:
+                window = _window(limit)
+                view = _turn(replies, listed, first, **window)
+                without = _as_without_branches(replies, listed, first=first, **window)
+                kept = view["sent"] != without["sent"]
+                seen.add(kept)
+
+                assert _unsaid(view["sent"]) == without["sent"], (first, limit)
+                assert _without(view) == _without(without), (first, limit)
+                assert view["note"]["asked"] is kept, (first, limit)
+                # What the turn without them fits, the turn sent fits.
+                for asked, bare in zip(view["sent"], without["sent"], strict=True):
+                    if _size(bare) + CAP <= limit:
+                        assert _size(asked) + CAP <= limit, (first, limit)
+            assert seen == {True, False}, first
+
+    def test_an_entry_that_fits_only_without_the_branches_is_shown_and_they_go(
+        self,
+    ) -> None:
+        # The narrowest window whose turn without the branches shows the cited
+        # entry: measured with the branches, the entry would not fit.
+        listed = _listed("functions")
+        shown = "[ev_0003] decompile_function:\n"
+
+        def without_at(limit: int) -> Any:
+            return _as_without_branches([SOME], listed, first=FIRST, **_window(limit))
+
+        low, high = 0, 2 * _size(without_at(10**9)["sent"][0]) + CAP
+        while high - low > 1:
+            middle = (low + high) // 2
+            low, high = (
+                (low, middle) if shown in without_at(middle)["sent"][0][-1] else (middle, high)
+            )
+        wide = _turn([SOME], listed, FIRST, **_window(10**9))
+        assert _size(wide["sent"][0]) + CAP > high
+
+        view = _turn([SOME], listed, FIRST, **_window(high))
+        without = without_at(high)
+
+        assert shown in without["sent"][0][-1]
+        assert view["sent"] == without["sent"]
+        assert _without(view) == _without(without)
+        assert view["note"]["asked"] is False
+
+
+def _continued(limit: int, paths: list[tuple[tuple[bool, bool], ...]]) -> dict[str, Any]:
+    """``_window``, the retry continuing the loop's own conversation where it fits.
+
+    ``paths`` gets, for each retry, each continued question tried: whether it
+    carried the branches and whether it is asked.
+    """
+    import time
+
+    from langchain_core.messages import HumanMessage
+
+    from malspark.agents.base_agent import KeptConversation
+
+    window = _window(limit)
+    plains: list[Any] = []
+    tried: list[tuple[bool, bool]] = []
+    continued = BaseAnalyst._continued_question
+
+    def trying(self: Any, turns: list[Any], *args: Any, **kwargs: Any) -> Any:
+        found = continued(self, turns, *args, **kwargs)
+        tried.append(("branch(es)" in str(turns[-1].content), found is not None))
+        return found
+
+    def asked(
+        self: Any, messages: list[Any], _timeout: Any, *, what: str, tools: bool, plain: Any = None
+    ) -> Any:
+        paths.append(tuple(tried))
+        tried.clear()
+        self.seen_turns.append(list(messages))
+        plains.append(None if plain is None else [str(m.content) for m in plain])
+        text = self._replies.pop(0)
+        self._record_usage(AIMessage(content=text))
+        return AIMessage(content=text)
+
+    base = KeptConversation((HumanMessage(content="Analyse. " + "y" * 3000),), time.monotonic())
+    window["patches"] = (
+        *window["patches"],
+        patch.object(BaseAnalyst, "_turns_carry_tools", return_value=True),
+        patch.object(BaseAnalyst, "_question_base_of", lambda *_a, **_k: base),
+        patch("malspark.llm.anthropic_history.prompt_cache_seconds", lambda *_a, **_k: 300),
+        patch.object(BaseAnalyst, "_shows_what_the_rebuilt_shows", return_value=True),
+        patch.object(BaseAnalyst, "_continued_question", trying),
+        patch.object(BaseAnalyst, "_answer_after_loop", asked),
+    )
+    window["plains"] = plains
+    return window
+
+
+class TestAContinuedQuestion:
+    def test_one_that_fits_only_without_the_branches_is_asked_and_noted_without_them(
+        self,
+    ) -> None:
+        # Through every size: the question is continued with the branches, or
+        # without them where only that fits, or rebuilt; what is sent, and
+        # the turn its tools-free call would ask, is the turn without them or
+        # it plus them, and the note says which.
+        listed = _listed("functions")
+        taken: set[tuple[tuple[bool, bool], ...]] = set()
+        for limit in range(3000, 12000, 37):
+            views = []
+            for make in (_turn, _as_without_branches):
+                paths: list[tuple[tuple[bool, bool], ...]] = []
+                window = _continued(limit, paths)
+                plains = window.pop("plains")
+                if make is _turn:
+                    view = _turn([SOME], listed, FIRST, **window)
+                else:
+                    view = _as_without_branches([SOME], listed, first=FIRST, **window)
+                views.append((view, plains, paths))
+            (view, plains, paths), (without, without_plains, _p) = views
+            kept = view["sent"] != without["sent"]
+            taken.update(paths)
+
+            assert _unsaid(view["sent"]) == without["sent"], limit
+            assert [None if p is None else _unsaid([p])[0] for p in plains] == without_plains
+            assert all(p is None or not kept or "branch(es)" in p[-1] for p in plains), limit
+            if not kept:
+                assert plains == without_plains, limit
+            assert _without(view) == _without(without), limit
+            assert view["note"]["asked"] is kept, limit
+        # Continued with them, continued only without them, and rebuilt.
+        assert {
+            ((True, True),),
+            ((True, False), (False, True)),
+            ((True, False), (False, False)),
+        } <= taken
+
+
+class TestTheWholeAnswerAskedAfterARetryNotMerged:
+    def test_it_asks_without_the_branches(self) -> None:
+        # The retry writes a block without its number: not merged, so the
+        # analyst's whole answer is asked for after it.
+        listed = _listed("functions")
+        replies = [SOME.replace("CLAIM 3:", "CLAIM:"), SOME]
+
+        view = _turn(replies, listed, FIRST)
+        without = _as_without_branches(replies, listed, first=FIRST)
+
+        retry, whole = view["sent"]
+        assert "branch(es)" in retry[-1]
+        assert "whole" in whole[-1]
+        assert whole == without["sent"][1]
+        assert _unsaid([retry]) == without["sent"][:1]
+        assert _without(view) == _without(without)
+
+
+def test_a_cut_chunk_s_turn_writes_no_note() -> None:
+    analyst = _Analyst([], [_entry("ev_0003", GATE, GATE_LISTING)])
+    isr = analyst._text_to_isr(FIRST, 0)
+
+    with patch("malspark.agents.base_agent.validity_check_available", return_value=True):
+        analyst._validate_isr(isr, "evidence", only_cut=True)
+
+    assert analyst.seen_turns == []
+    assert analyst._budget_records == [{"agent": "reverser"}]
 
 
 def test_the_slots_are_read_off_the_function_index_by_offset_and_by_each_base() -> None:

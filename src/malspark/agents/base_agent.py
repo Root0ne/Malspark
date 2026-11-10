@@ -10726,14 +10726,19 @@ class BaseAnalyst(BudgetMeter, ABC):
         too_big = (loop_cuts or loop_repeat is not None) and not BaseAnalyst._fits_the_window(  # type: ignore[arg-type]
             self, sent, widest
         )
+        # The turn with the branches is measured framed, as it is sent: the
+        # run-state block and the technique facts in their places.
         if measured != initial and not (
             BaseAnalyst._fits_the_window(  # type: ignore[arg-type]
                 self,
-                [
-                    *messages,
-                    AIMessage(content=str(_PriorAnswer(isr).content or "")),
-                    HumanMessage(content=feedback_text(initial, closing=closing, cards=cards)),
-                ],
+                frame_messages(
+                    [
+                        *messages,
+                        AIMessage(content=str(_PriorAnswer(isr).content or "")),
+                        HumanMessage(content=feedback_text(initial, closing=closing, cards=cards)),
+                    ],
+                    run_state=current_run_state(self),
+                ),
                 max(widest, int(self.output_cap_tokens() or 0)),
             )
             and (
@@ -10741,7 +10746,12 @@ class BaseAnalyst(BudgetMeter, ABC):
                 or not (loop_cuts or loop_repeat is not None)
                 or BaseAnalyst._fits_the_window(  # type: ignore[arg-type]
                     self,
-                    with_question(messages, feedback_text(initial, closing=closing, cards=cards)),
+                    frame_messages(
+                        with_question(
+                            messages, feedback_text(initial, closing=closing, cards=cards)
+                        ),
+                        run_state=current_run_state(self),
+                    ),
                     widest,
                 )
             )
@@ -10818,6 +10828,7 @@ class BaseAnalyst(BudgetMeter, ABC):
             # and the turn that carried it before is sent as it was written.
             plain = frame_messages(turns, run_state=current_run_state(self))
             bare_turns: list[Any] = []
+            bare_plain = plain
             # Over the loop's own conversation where the answer is the one it
             # ended on (:meth:`_continued_question`): the entries the answer
             # cites are fitted again against that conversation, which holds
@@ -10871,6 +10882,17 @@ class BaseAnalyst(BudgetMeter, ABC):
                             content=feedback_text(measured_now, closing=held, cards=cards)
                         ),
                     ]
+                    # The rebuilt question as it is without the branches, for
+                    # the tools-free call of a question continued without them.
+                    bare_plain = frame_messages(
+                        [
+                            *turns[:-1],
+                            HumanMessage(
+                                content=feedback_text(measured_now, closing=closing, cards=cards)
+                            ),
+                        ],
+                        run_state=current_run_state(self),
+                    )
                     turns = [
                         *turns[:-1],
                         HumanMessage(content=feedback_text(asked_now, closing=held, cards=cards)),
@@ -10900,6 +10922,7 @@ class BaseAnalyst(BudgetMeter, ABC):
                 )
                 if continued is not None:
                     exits_state["asked"] = False
+                    plain = bare_plain
             if continued is None:
                 held_closing.clear()
             answer = BaseAnalyst._answer_after_loop(  # type: ignore[arg-type]
