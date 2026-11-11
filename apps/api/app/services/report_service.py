@@ -728,6 +728,32 @@ class ReportService:
             logger.warning("get_malware_report_%s: validation failed (%s).", export, exc)
             return None
 
+    async def get_malware_report_misp_event(
+        self,
+        report_id: uuid.UUID,
+        user: User,
+    ) -> dict | None:
+        """The report as one MISP event (``misp.build_misp_event``), or ``None`` for no report.
+
+        Its attributes are the ones the report serves (``with_current_iocs``):
+        the stored ones, or the current rule's for a report stored before
+        them. The event's uuid is derived from the report's job, as the
+        attributes the pipeline built are. A report the model cannot read
+        has no event: ``None``.
+        """
+        from malspark.reporting.misp import build_misp_event, misp_owner
+
+        report = await self.get_report(report_id, user)
+        if report is None or not isinstance(report.malware_report, dict):
+            return None
+        mr = report.malware_report
+        typed = _typed_report(mr)
+        if typed is None:
+            return None
+        served, _note = with_current_iocs(mr, str(report.id))
+        attributes = served.get("misp_attributes") or []
+        return build_misp_event(typed, attributes, owner=misp_owner(typed, report.job_id))
+
     async def get_malware_report_iocs(
         self,
         report_id: uuid.UUID,

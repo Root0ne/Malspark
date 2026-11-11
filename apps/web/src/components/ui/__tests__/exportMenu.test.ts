@@ -31,6 +31,7 @@ vi.mock("@/lib/api", () => {
         return stix.answer;
       },
       getReportAttackLayer: record("getReportAttackLayer", { name: "layer" }),
+      getReportMispEvent: record("getReportMispEvent", { Event: { uuid: "e1" } }),
       getReportSignature: record("getReportSignature", "rule x {}"),
       getReportMitre: record("getReportMitre", { techniques: [] }),
       getReportTimeline: record("getReportTimeline", { rounds: [] }),
@@ -89,6 +90,7 @@ describe("the export groups", () => {
       "evidence-bundle-html",
       "evidence-bundle-json",
       "misp",
+      "misp-event",
       "attack-layer",
       "rules-yara",
       "rules-yara-all",
@@ -120,6 +122,24 @@ describe("the export groups", () => {
     expect(saved).toEqual([{ name: "malspark-sigma-all.yml", body: "rule x {}", type: "application/yaml" }]);
   });
 
+  it("offer the MISP event beside the attributes and save the event as served", async () => {
+    const event = item("misp-event");
+    expect({ label: event.label, hint: event.hint, unavailable: event.unavailable }).toEqual({
+      label: "MISP event",
+      hint: "The attributes in one event a MISP instance imports",
+      unavailable: undefined,
+    });
+    await event.run();
+    expect(calls).toEqual(["getReportMispEvent(r1)"]);
+    expect(saved).toEqual([
+      {
+        name: "malspark-9f86d081884c-misp-event.json",
+        body: JSON.stringify({ Event: { uuid: "e1" } }, null, 2),
+        type: "application/json",
+      },
+    ]);
+  });
+
   it("keep MISP with the reason it is unavailable: walked to, but not run", () => {
     const groups = reportExportGroups("r1", report(), "b");
     const misp = groups[1].items.find((i) => i.key === "misp");
@@ -141,6 +161,7 @@ describe("the export groups", () => {
       "getReportStix(r1)",
       "getReportEvidenceBundleHtml(r1)",
       "getReportEvidenceBundleJson(r1)",
+      "getReportMispEvent(r1)",
       "getReportAttackLayer(r1)",
       "getReportSignature(r1,yara)",
       "getReportSignature(r1,yara,all)",
@@ -159,6 +180,7 @@ describe("the export groups", () => {
       "malspark-stix-bundle.json",
       "evidence-bundle.html",
       "evidence-bundle.json",
+      "malspark-9f86d081884c-misp-event.json",
       "malspark-attack-layer.json",
       "malspark-yara.yar",
       "malspark-yara-all.yar",
@@ -175,6 +197,7 @@ describe("the export groups", () => {
   it("pin every file name, the MISP and per-kind ones included", () => {
     const names = exportFileNames("malspark-9f86d081884c");
     expect(names.misp).toBe("malspark-9f86d081884c-misp.json");
+    expect(names.mispEvent).toBe("malspark-9f86d081884c-misp-event.json");
     expect(names.stixDraft).toBe("malspark-stix-bundle-draft.json");
     expect(names.rules("suricata")).toBe("malspark-suricata.rules");
     expect(names.rules("snort")).toBe("malspark-snort.rules");

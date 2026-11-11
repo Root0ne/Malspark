@@ -273,7 +273,7 @@ def test_missing_parts_are_listed_as_absent_with_why(tmp_path: Path):
         "judge_stix_bundle",
         "sandbox_behaviour",
     }
-    assert "builds no MISP event" in absent["misp_event"]
+    assert absent["misp_event"] == job_package.NO_MISP
     assert "stored before the platform built them" in absent["misp_attributes"]
     assert "run-summary.json" in absent["run_summary"]
     assert all(absent.values())
@@ -306,8 +306,56 @@ def test_a_report_s_misp_attributes_are_a_part_of_the_package(tmp_path: Path):
         "count": 1,
     }
     assert "misp_attributes" not in {a["part"] for a in manifest["absent"]}
-    report = json.loads(_members(tmp_path / "m.tar.gz")["run/report.json"])
+    members = _members(tmp_path / "m.tar.gz")
+    report = json.loads(members["run/report.json"])
     assert report["misp_attributes"] == [attribute]
+
+
+def test_a_report_s_misp_event_is_a_part_of_the_package(tmp_path: Path):
+    attribute = {"type": "md5", "category": "Payload delivery", "value": "cd" * 16}
+    manifest = _build(_run(tmp_path / "run", misp=[attribute]), tmp_path / "m.tar.gz")
+    parts = {p["part"]: p for p in manifest["parts"]}
+    assert parts["misp_event"] == {
+        "part": "misp_event",
+        "path": "export/misp-event.json",
+        "count": 1,
+    }
+    members = _members(tmp_path / "m.tar.gz")
+    report = json.loads(members["run/report.json"])
+    namespace = uuid.uuid5(uuid.NAMESPACE_URL, "malspark:misp-event")
+    owner = manifest["job_id"]
+    assert json.loads(members["export/misp-event.json"]) == {
+        "Event": {
+            "uuid": str(uuid.uuid5(namespace, owner)),
+            "info": f"Malspark analysis of {'ab' * 6}",
+            "date": report["generated_at"][:10],
+            "analysis": "2",
+            "distribution": "0",
+            "threat_level_id": "4",
+            "Tag": [{"name": "tlp:clear"}, {"name": 'malspark:verdict="Malware"'}],
+            "Attribute": [attribute],
+            "Object": [
+                {
+                    "uuid": str(uuid.uuid5(namespace, f"{owner}|file")),
+                    "name": "file",
+                    "meta-category": "file",
+                    "template_uuid": "688c46fb-5edb-40a3-8273-1af7923e2215",
+                    "template_version": "25",
+                    "Attribute": [
+                        {
+                            "uuid": str(uuid.uuid5(namespace, f"{owner}|file|{rel}|{value}")),
+                            "object_relation": rel,
+                            "type": rel,
+                            "category": "Payload delivery",
+                            "value": value,
+                            "to_ids": True,
+                        }
+                        for rel, value in (("md5", "cd" * 16), ("sha256", "ab" * 32))
+                    ],
+                }
+            ],
+        }
+    }
 
 
 def test_a_spilled_part_is_packaged_only_when_its_bytes_verify(tmp_path: Path):

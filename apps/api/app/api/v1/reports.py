@@ -287,6 +287,29 @@ async def get_attack_navigator_layer(
     )
 
 
+@router.get("/{report_id}/misp-event")
+async def get_misp_event(
+    report_id: uuid.UUID,
+    user: User = Depends(get_current_user),
+    svc: ReportService = Depends(_get_service),
+) -> dict:
+    """The report as one MISP event: ``{"Event": ...}``, ready for a MISP instance to import.
+
+    Its attributes are the report's published MISP attributes; its uuid is
+    the same on every request, and so is every attribute's. The
+    distribution is the organisation only: the receiver decides how far it
+    shares. 404 for an unknown or unauthorized report, or one with no
+    readable report document.
+    """
+    event = await svc.get_malware_report_misp_event(report_id, user)
+    if event is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Report not found or no MalwareReport persisted",
+        )
+    return event
+
+
 @router.get("/{report_id}/mitre")
 async def get_mitre_techniques(
     report_id: uuid.UUID,

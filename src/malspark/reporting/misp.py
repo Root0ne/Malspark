@@ -15,7 +15,7 @@ describes the sample rather than matching anything, so it is not flagged for
 IDS either. Every attribute carries the report's TLP level as a ``tlp:`` tag.
 
 One pass over the table and one over the techniques; no per-sample value is
-written here.
+written here. ``build_misp_event`` wraps the attributes in one MISP event.
 """
 
 from __future__ import annotations
@@ -259,3 +259,112 @@ def build_misp_attributes(
             ]
         out.append(attribute)
     return out
+
+
+# The namespace an event's uuid is derived in, with what its attributes' uuids
+# are derived from (``misp_owner``): one report is one event in every export.
+_EVENT_NAMESPACE = uuid.uuid5(uuid.NAMESPACE_URL, "malspark:misp-event")
+
+# MISP's ``file`` object template, as the MISP object library publishes it.
+_FILE_TEMPLATE = "688c46fb-5edb-40a3-8273-1af7923e2215"
+_FILE_TEMPLATE_VERSION = "25"
+
+# The sample's identity digests, as the file object's relations name them.
+_FILE_DIGESTS = (
+    ("md5", "md5"),
+    ("sha1", "sha1"),
+    ("sha256", "sha256"),
+    ("sha512", "sha512"),
+    ("imphash", "imphash"),
+    ("ssdeep", "ssdeep"),
+    ("tlsh", "tlsh"),
+)
+
+
+def build_misp_event(report: Any, attributes: Iterable[dict[str, Any]], *, owner: str) -> dict:
+    """The report as one MISP event: ``{"Event": ...}``, from what the report already holds.
+
+    ``attributes`` are the report's published MISP attributes
+    (:func:`build_misp_attributes`), carried as they are. The event's uuid is
+    derived from ``owner``, as the attributes' are, and its date is the day
+    the report was built, so one report is one event in every export. The
+    analysis is complete (2) and the distribution is the organisation only
+    (0): the receiver decides how far it shares. The threat level is
+    undefined (4): no field of the report maps to MISP's levels one to one.
+    The tags are the report's TLP level, its verdict and the ATT&CK galaxy
+    clusters its technique attributes carry, each where the report holds it,
+    and a ``file`` object names the sample by the digests its identity holds.
+    """
+    identity = getattr(report, "identity", None)
+    hashes = getattr(identity, "hashes", None)
+    sha256 = str(getattr(hashes, "sha256", "") or "")
+    built = getattr(report, "generated_at", None)
+    carried = [dict(attribute) for attribute in attributes]
+
+    tags: list[dict[str, str]] = []
+    level = tlp_name(str(getattr(report, "tlp", "") or ""))
+    if level:
+        tags.append({"name": level.lower()})
+    verdict = str(getattr(report, "verdict", "") or "").strip()
+    if verdict:
+        tags.append({"name": f'malspark:verdict="{verdict}"'})
+    for attribute in carried:
+        for tag in attribute.get("Tag") or []:
+            name = str(tag.get("name") or "")
+            if name.startswith("misp-galaxy:") and {"name": name} not in tags:
+                tags.append({"name": name})
+
+    event: dict[str, Any] = {
+        "uuid": str(uuid.uuid5(_EVENT_NAMESPACE, owner)),
+        "info": f"Malspark analysis of {sha256[:12] if sha256 else 'sample'}",
+        "date": built.date().isoformat() if built is not None else None,
+        "analysis": "2",
+        "distribution": "0",
+        "threat_level_id": "4",
+        "Tag": tags,
+        "Attribute": carried,
+    }
+    if event["date"] is None:
+        del event["date"]
+    sample = _file_object(identity, owner)
+    if sample is not None:
+        event["Object"] = [sample]
+    return {"Event": event}
+
+
+def _file_object(identity: Any, owner: str) -> dict[str, Any] | None:
+    """MISP's ``file`` object for the sample: its name, size and identity digests, as held."""
+    hashes = getattr(identity, "hashes", None)
+    relations: list[tuple[str, str, str, bool]] = []
+    for relation, field in _FILE_DIGESTS:
+        value = str(getattr(hashes, field, "") or "").strip()
+        if value:
+            relations.append((relation, relation, value, relation not in _SIMILARITY_TYPES))
+    if not relations:
+        return None
+    name = str(getattr(identity, "file_name", "") or "").strip()
+    if name:
+        relations.append(("filename", "filename", name, False))
+    size = getattr(identity, "file_size_bytes", None)
+    if isinstance(size, int) and size > 0:
+        relations.append(("size-in-bytes", "size-in-bytes", str(size), False))
+    return {
+        "uuid": str(uuid.uuid5(_EVENT_NAMESPACE, f"{owner}|file")),
+        "name": "file",
+        "meta-category": "file",
+        "template_uuid": _FILE_TEMPLATE,
+        "template_version": _FILE_TEMPLATE_VERSION,
+        "Attribute": [
+            {
+                "uuid": str(uuid.uuid5(_EVENT_NAMESPACE, f"{owner}|file|{relation}|{value}")),
+                "object_relation": relation,
+                "type": kind,
+                # MISP files a size under "Other", every other relation here
+                # under "Payload delivery".
+                "category": "Other" if kind == "size-in-bytes" else "Payload delivery",
+                "value": value,
+                "to_ids": to_ids,
+            }
+            for relation, kind, value, to_ids in relations
+        ],
+    }

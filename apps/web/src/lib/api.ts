@@ -1238,6 +1238,13 @@ class ApiClient {
     return this.blobRequest(`/api/v1/reports/${encodeURIComponent(reportId)}/pdf`);
   }
 
+  /** The report as one MISP event (`{"Event": ...}`), its published attributes inside. */
+  getReportMispEvent(reportId: string) {
+    return this.request<Record<string, unknown>>(
+      `/api/v1/reports/${encodeURIComponent(reportId)}/misp-event`
+    );
+  }
+
   /**
    * The drafted rules of one kind as one file of that kind. By default the
    * rules the report prints; `"all"` is every draft, each with its standing.

@@ -83,6 +83,7 @@ export function exportFileNames(baseName: string) {
     stix: STIX_EXPORT_FILE,
     stixDraft: STIX_DRAFT_FILE,
     misp: `${baseName}-misp.json`,
+    mispEvent: `${baseName}-misp-event.json`,
     attackLayer: NAVIGATOR_LAYER_FILE,
     rules: (kind: DetectionKind) => `malspark-${kind}.${RULE_EXT[kind]}`,
     allRules: (kind: DetectionKind) => `malspark-${kind}-all.${RULE_EXT[kind]}`,
@@ -210,6 +211,14 @@ export function reportExportGroups(
       label: "MISP attributes",
       unavailable: hasMisp ? undefined : mr ? sentence(mispAbsence(mr)) : "None were generated for this analysis",
       run: async () => downloadBlob(json(misp ?? []), names.misp, "application/json"),
+    },
+    {
+      key: "misp-event",
+      label: "MISP event",
+      hint: "The attributes in one event a MISP instance imports",
+      unavailable: mr ? undefined : "The analysis has no stored report",
+      run: async () =>
+        downloadBlob(json(await api.getReportMispEvent(reportId)), names.mispEvent, "application/json"),
     },
     {
       key: "attack-layer",
