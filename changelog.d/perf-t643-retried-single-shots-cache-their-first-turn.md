@@ -1,0 +1,3 @@
+### Changed
+
+- **On Claude, a report section's retry reads its first turn from the prompt cache (T-643).** A report section is asked once and, where its answer breaks a rule, asked again with that answer and the question after the whole first turn. The section's request now carries a cache breakpoint at the end of that turn as well as on the head the sections share, so the retry reads the turn instead of writing it again. Only cache markers change: the text, the order of the turns and every other request field stay as they were, no request carries more than four breakpoints, and every other call sends the request it sent before. Providers that cache a prefix on their own already read this one and send the same request as before.
