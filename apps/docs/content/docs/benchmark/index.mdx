@@ -102,11 +102,12 @@ export const run = {
 export const partly = run.partlyBody + run.partlyDump;
 export const recovered = run.found + partly;
 /* Every scored fact: group, item, fact, verdict, ledger entries the scoring
- * cites, report sections, origin (core, sharpened, added or completion). An
- * empty entry list means the scoring cites the report section alone. */
+ * cites, report sections, origin (core, sharpened, added or completion). Every
+ * found or partly found fact lists its entries; a fact the run did not recover
+ * lists none. */
 export const keyItems = [
   ['K1', 'K1.1a', 'Family: Latrodectus', 'found', 'ev_0014, ev_0018', 'header, §1, §7; STIX malware object', 'core'],
-  ['K1', 'K1.1b', 'Role: loader (downloader / backdoor)', 'found', '', 'header, §7', 'core'],
+  ['K1', 'K1.1b', 'Role: loader (downloader / backdoor)', 'found', 'ev_0014', 'header, §7', 'core'],
   ['K1', 'K1.2', 'Link to IcedID', 'partly', 'ev_0018', '§1, §2, §7, §11 (labels only)', 'core'],
   ['K1', 'K1.4', 'x86-64, with an architecture check', 'partly', 'ev_0069', '§3 (no architecture check in the body)', 'core'],
   ['K1', 'K1.5', 'Four exports at one address: `extra`, `follower`, `run`, `scub`. The shared export address is RVA `0x3CE4`. Ordinals 1–4: `extra` 1, `follower` 2, `run` 3, `scub` 4', 'partly', 'ev_0004, ev_0080', '§3, §4 step 2 (the ordinals only in the bundle)', 'sharpened'],
@@ -118,7 +119,7 @@ export const keyItems = [
   ['K1', 'K1.11', 'The file has five sections', 'found', 'ev_0004, ev_0034', '§2, §3', 'completion'],
   ['K1', 'K1.12', 'The import table holds 2 libraries and 5 imports', 'found', 'ev_0004, ev_0034, ev_0056', '§3, §5.2', 'completion'],
   ['K2', 'K2.1', 'APIs resolved by hash', 'found', 'ev_0020, ev_0068', '§1, §5.1, §5.2', 'core'],
-  ['K2', 'K2.2', 'Abort on a failed check', 'found (detail wrong)', '', '§4 step 3, §6.1', 'core'],
+  ['K2', 'K2.2', 'Abort on a failed check', 'found (detail wrong)', 'ev_0077, ev_0069', '§4 step 3, §6.1', 'core'],
   ['K2', 'K2.3', 'Mutex, created with CreateMutexW after its name is decrypted', 'found', 'ev_0021, ev_0025, ev_0069', '§4 step 4, §8.1', 'sharpened'],
   ['K2', 'K2.4', 'Install, then persist; the copy is started in a new `rundll32.exe` process through CreateProcessW, with `rundll32.exe` and the template `"%s", %s %s` as decrypted strings. After starting the copy, the original process shuts itself down. The relaunch command line is `rundll32.exe "<%APPDATA%\\Custom_update\\Update_<8 hex>.dll>", scub`: the copy is restarted with the same export', 'partly', 'ev_0086, ev_0090, ev_0094, ev_0019, ev_0025', '§4 steps 6–8, §5.3 (no relaunch command line)', 'sharpened'],
   ['K2', 'K2.5', 'Register, then loop. C2 communication and command dispatch run in a thread the bot creates, after the scheduled task is set up', 'found', 'ev_0067', '§4 steps 9–11', 'sharpened'],
@@ -145,48 +146,48 @@ export const keyItems = [
   ['K5', 'K5.3', '`update_data.dat` holds the C2s', 'found', 'ev_0098', '§6.1, §8.1', 'core'],
   ['K5', 'K5.6', 'Install folder looked up through `Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\Shell Folders` (AppData, Desktop, Startup, Personal, Local AppData)', 'found', 'ev_0021, ev_0019, ev_0025', '§5.3, §5.4, §8.1', 'added'],
   ['K6', 'K6.1', 'HTTPS POST to `/live/` with `Content-Type: application/x-www-form-urlencoded`, a decrypted string. The POST carries `Accept: */*`. The POST carries `Cache-Control: no-cache`', 'partly', 'ev_0069, ev_0021', '§6.1, §6.2 (no Accept or Cache-Control header)', 'sharpened'],
-  ['K6', 'K6.2', 'User-Agent', 'found', '', '§6.1, §6.2, §8.1; STIX', 'core'],
-  ['K6', 'K6.3', 'RC4, then base64. Base64 is done in code with the standard alphabet, which is itself one of the encrypted strings', 'partly', '', '§4 step 11, §6.1; T1573.001 published (the alphabet only in the bundle)', 'sharpened'],
-  ['K6', 'K6.4', 'Beacon interval. The beacon timeout is jittered: a random number seeded with the cursor position multiplied by the system uptime (GetTickCount) is passed to RtlRandomEx', 'partly', '', '§4 step 9, §6.1, §6.3 (no jitter seed or RtlRandomEx)', 'sharpened'],
-  ['K6', 'K6.5', 'Data format at registration. `counter` is the number of HTTP requests, one more per callback. `username` is ASCII. `username` is the owner of the running process. `direction` is the C2 domain the request is sent to. The MACs come from GetAdaptersInfo', 'partly', '', '§4 step 11, §6.1, §6.2 (what counter and direction carry is not stated)', 'sharpened'],
-  ['K6', 'K6.6', 'Beacon types', 'partly', '', '§5.4, §6.1, appendix (types 3, 4 and 5 only)', 'core'],
+  ['K6', 'K6.2', 'User-Agent', 'found', 'ev_0021, ev_0019', '§6.1, §6.2, §8.1; STIX', 'core'],
+  ['K6', 'K6.3', 'RC4, then base64. Base64 is done in code with the standard alphabet, which is itself one of the encrypted strings', 'partly', 'ev_0021, ev_0019, ev_0025', '§4 step 11, §6.1; T1573.001 published (the alphabet only in the bundle)', 'sharpened'],
+  ['K6', 'K6.4', 'Beacon interval. The beacon timeout is jittered: a random number seeded with the cursor position multiplied by the system uptime (GetTickCount) is passed to RtlRandomEx', 'partly', 'ev_0067, ev_0025', '§4 step 9, §6.1, §6.3 (no jitter seed or RtlRandomEx)', 'sharpened'],
+  ['K6', 'K6.5', 'Data format at registration. `counter` is the number of HTTP requests, one more per callback. `username` is ASCII. `username` is the owner of the running process. `direction` is the C2 domain the request is sent to. The MACs come from GetAdaptersInfo', 'partly', 'ev_0021, ev_0067, ev_0025', '§4 step 11, §6.1, §6.2 (what counter and direction carry is not stated)', 'sharpened'],
+  ['K6', 'K6.6', 'Beacon types', 'partly', 'ev_0067', '§5.4, §6.1, appendix (types 3, 4 and 5 only)', 'core'],
   ['K6', 'K6.7', 'Reply verbs; each reply line reads `VERB|index-or-id|argument`, and the `front://` placeholder is replaced with the current C2 URL. Before dispatch, the second-layer handler checks that the token after `COMMAND` is one of the expected IDs. A `front` placeholder becomes the active C2 with `/files/` appended (`front://sysinfo.bin` → `<C2>/files/sysinfo.bin`). The format string `URLS|%d|%s` is one of the decoded strings', 'partly', 'ev_0077, ev_0082', '§4 step 12, §6.1, §6.3 (ERROR only in the bundle)', 'sharpened'],
   ['K6', 'K6.9', 'The RC4 key `12345` is itself an encrypted string, decrypted by the same routine', 'found', 'ev_0021, ev_0019, ev_0067', '§5.1 (encryption table), §6.2', 'added'],
   ['K6', 'K6.10', 'WinINet transport: InternetConnectA to the C2 host, HttpSendRequestA for the POST', 'found', 'ev_0025, ev_0097, ev_0069', '§6.1', 'added'],
   ['K6', 'K6.11', 'Failover: the same request goes to the second C2 when the first fails', 'found', 'ev_0067', '§6.1', 'added'],
-  ['K7', 'K7.2', 'Desktop links (0x2)', 'found', '', '§6.3', 'core'],
-  ['K7', 'K7.3', 'Process list (0x3). The process list is taken with CreateToolhelp32Snapshot. `subproc` nests recursively (children, grandchildren), so the list is a tree', 'found', '', '§6.3', 'sharpened'],
-  ['K7', 'K7.4', 'System information (0x4)', 'found', '', '§5.4, §6.3', 'core'],
+  ['K7', 'K7.2', 'Desktop links (0x2)', 'found', 'ev_0077, ev_0021, ev_0025', '§6.3', 'core'],
+  ['K7', 'K7.3', 'Process list (0x3). The process list is taken with CreateToolhelp32Snapshot. `subproc` nests recursively (children, grandchildren), so the list is a tree', 'found', 'ev_0077, ev_0021, ev_0025', '§6.3', 'sharpened'],
+  ['K7', 'K7.4', 'System information (0x4)', 'found', 'ev_0077, ev_0021, ev_0025', '§5.4, §6.3', 'core'],
   ['K7', 'K7.12', 'Run an EXE (0xc), saved under AppData as `%s%d.exe`. The EXE is saved in `%LOCALAPPDATA%` (AppData\\Local) under a random signed-decimal name. It runs as a child of the rundll32 host', 'partly', 'ev_0021, ev_0069', '§6.3 (no random name or parent process)', 'sharpened'],
   ['K7', 'K7.13', 'Run a DLL through rundll32 (0xd), saved under AppData as `%s%d.dll` or `%s\\%d.dll` and started with `C:\\WINDOWS\\SYSTEM32\\rundll32.exe %s,%s`. The command argument is `<URL>, <export name>`', 'found', 'ev_0021, ev_0069', '§5.5, §6.3', 'sharpened'],
-  ['K7', 'K7.14', 'Run shellcode (0xe). The shellcode is read with InternetReadFile, copied into allocated memory and started on a new thread', 'found', '', '§6.3', 'sharpened'],
-  ['K7', 'K7.15', 'Update (0xf). On update the running thread and the mutex are notified and released; the file is deleted, the new binary run and the old process ended', 'partly', '', '§6.3 (no release of the thread and the mutex)', 'sharpened'],
-  ['K7', 'K7.17', 'Uninstall (0x11)', 'found', '', '§6.3', 'core'],
+  ['K7', 'K7.14', 'Run shellcode (0xe). The shellcode is read with InternetReadFile, copied into allocated memory and started on a new thread', 'found', 'ev_0081, ev_0025, ev_0077', '§6.3', 'sharpened'],
+  ['K7', 'K7.15', 'Update (0xf). On update the running thread and the mutex are notified and released; the file is deleted, the new binary run and the old process ended', 'partly', 'ev_0077, ev_0090, ev_0025', '§6.3 (no release of the thread and the mutex)', 'sharpened'],
+  ['K7', 'K7.17', 'Uninstall (0x11)', 'found', 'ev_0077', '§6.3', 'core'],
   ['K7', 'K7.18', '`bp.dat` (0x12): the rundll32 argument is built from `init -="%s\\%s"` (the FLOSS form) and `files/bp.dat` is downloaded. The rundll32 argument is `init -zzzz="<folder>\\<file>.dat"` (FLOSS renders the stored string without the `zzzz` run as `init -="%s\\%s"`). Both files go into a new folder under `%APPDATA%` (Roaming) named by a random signed number. The IcedID loader DLL (`test.dll` on the server) is saved as `<n>.dll`. `/files/bp.dat` is saved as `<n>.dat`. Folder and file names come from a custom random number generator. The two are launched together through CreateProcessW as `rundll32.exe <folder>\\<n>.dll,init -zzzz="<folder>\\<n>.dat"`. The `.dat` name comes from the decoded format string `%d.dat`', 'partly', 'ev_0021, ev_0019, ev_0077', '§5.2, §6.3 (IcedID not named)', 'sharpened'],
-  ['K7', 'K7.19', 'Longer interval (0x13)', 'found', '', '§6.3', 'core'],
-  ['K7', 'K7.20', 'Reset the counter (0x14)', 'found', '', '§6.3', 'core'],
+  ['K7', 'K7.19', 'Longer interval (0x13)', 'found', 'ev_0077, ev_0067', '§6.3', 'core'],
+  ['K7', 'K7.20', 'Reset the counter (0x14)', 'found', 'ev_0077, ev_0067', '§6.3', 'core'],
   ['K7', 'K7.21', 'Command 21 (0x15): download and execute a module; the bot downloads the module DLL and runs it in a new thread to collect data', 'found', 'ev_0077, ev_0081, ev_0086', '§6.3', 'completion'],
   ['K8', 'K8', 'Discovery commands, run in a dedicated thread, each output sent in a named field (`&ipconfig=` … `&whoami_group=`). The commands are started through absolute paths `C:\\Windows\\System32\\cmd.exe /c …` and `C:\\Windows\\System32\\wbem\\wmic.exe …`. Both paths are decoded strings', 'found', 'ev_0025, ev_0067, ev_0021', '§5.4, §6.2', 'sharpened'],
   ['K8', 'K8.1', 'Computer name through GetComputerNameExA', 'found', 'ev_0025, ev_0082', '§4 step 10, §5.4, §10', 'added'],
   ['K8', 'K8.2', 'User name through GetUserNameA', 'found', 'ev_0025, ev_0090', '§4 step 10, §5.3, §5.4, §10', 'added'],
-  ['K9', 'K9', 'The sample’s own hashes', 'found', '', '§2, §3, §8.1; STIX; IOC feed', 'core'],
-  ['K9', 'K9', 'URL path `/live/`', 'found', '', 'STIX; IOC feed; Suricata rules', 'core'],
-  ['K9', 'K9', 'User-Agent', 'found', '', '§8.1; STIX; IOC feed; Suricata rule', 'core'],
-  ['K9', 'K9', 'Mutex', 'found', '', '§8.1; STIX; IOC feed; YARA rule', 'core'],
-  ['K9', 'K9', 'Folder `Custom_update\\`', 'found', '', '§8.1', 'core'],
-  ['K9', 'K9', 'File name `Update_<hex>.dll`', 'found', '', '§4 step 6, §5.3, §8.1', 'core'],
-  ['K9', 'K9', '`update_data.dat`', 'partly', '', '§8.1 (no directory)', 'core'],
-  ['K9', 'K9', 'Task `Updater`', 'found', '', '§8.1, §8.3', 'core'],
+  ['K9', 'K9', 'The sample’s own hashes', 'found', 'ev_0002, ev_0030', '§2, §3, §8.1; STIX; IOC feed', 'core'],
+  ['K9', 'K9', 'URL path `/live/`', 'found', 'ev_0021, ev_0019', 'STIX; IOC feed; Suricata rules', 'core'],
+  ['K9', 'K9', 'User-Agent', 'found', 'ev_0021, ev_0019', '§8.1; STIX; IOC feed; Suricata rule', 'core'],
+  ['K9', 'K9', 'Mutex', 'found', 'ev_0021, ev_0019', '§8.1; STIX; IOC feed; YARA rule', 'core'],
+  ['K9', 'K9', 'Folder `Custom_update\\`', 'found', 'ev_0021, ev_0019, ev_0025', '§8.1', 'core'],
+  ['K9', 'K9', 'File name `Update_<hex>.dll`', 'found', 'ev_0021, ev_0019, ev_0025', '§4 step 6, §5.3, §8.1', 'core'],
+  ['K9', 'K9', '`update_data.dat`', 'partly', 'ev_0021, ev_0019, ev_0025', '§8.1 (no directory)', 'core'],
+  ['K9', 'K9', 'Task `Updater`', 'found', 'ev_0021, ev_0019, ev_0025', '§8.1, §8.3', 'core'],
   ['K9', 'K9', 'The decoded strings include `<!DOCTYPE` and `html`', 'partly', 'ev_0019, ev_0021, ev_0025', '§5.5, §6.3 (not as decoded strings)', 'completion'],
   ['K9', 'K9', 'The decoded strings include `/files/`, used when the bot rewrites a C2 reply into a download URL', 'found', 'ev_0021, ev_0019, ev_0077', '§6.2, §6.3', 'completion'],
   ['K9', 'K9', 'The decoded strings include `\\Registry\\Machine\\`, a native registry root', 'found', 'ev_0021, ev_0019, ev_0086', '§5.4', 'completion'],
   ['K9', 'K9', 'The decoded strings include a second rundll32 command-line template without an export, `C:\\WINDOWS\\SYSTEM32\\rundll32.exe %s`, beside the `…%s,%s` template of K7.13', 'partly, bundle', 'ev_0019, ev_0021, ev_0025, ev_0069', 'evidence bundle only (decoded strings)', 'completion'],
-  ['K10', 'K10', 'T1027 Obfuscated files or information', 'found', '', '§10, published', 'core'],
-  ['K10', 'K10', 'T1218.011 Rundll32', 'found', '', '§10, published', 'core'],
+  ['K10', 'K10', 'T1027 Obfuscated files or information', 'found', 'ev_0021, ev_0019', '§10, published', 'core'],
+  ['K10', 'K10', 'T1218.011 Rundll32', 'found', 'ev_0021, ev_0028', '§10, published', 'core'],
   ['K10', 'K10', 'T1055 Process injection', 'missed', '', '§10: claimed, not published (the judge dropped it)', 'core'],
-  ['K10', 'K10', 'T1053.005 Scheduled task', 'found', '', '§10, published', 'core'],
-  ['K10', 'K10', 'T1070.004 File deletion', 'found', '', '§10, published', 'core'],
-  ['K10', 'K10', 'T1059.003 Windows command shell', 'found', '', '§10, published', 'core'],
+  ['K10', 'K10', 'T1053.005 Scheduled task', 'found', 'ev_0021, ev_0019, ev_0020', '§10, published', 'core'],
+  ['K10', 'K10', 'T1070.004 File deletion', 'found', 'ev_0021, ev_0019, ev_0020', '§10, published', 'core'],
+  ['K10', 'K10', 'T1059.003 Windows command shell', 'found', 'ev_0021, ev_0020', '§10, published', 'core'],
   ['K10', 'K10', 'T1105 Ingress tool transfer', 'found', 'ev_0067, ev_0069, ev_0095', '§10, published', 'added'],
   ['K10', 'K10', 'T1497 Virtualization/sandbox evasion', 'found', 'ev_0069, ev_0082, ev_0105', '§4 step 3, §10 (T1497.001)', 'added'],
   ['K10', 'K10', 'T1057 Process discovery', 'found', 'ev_0077, ev_0092', '§10, published', 'added'],
@@ -504,8 +505,10 @@ listed separately and left out of the total.
 All {run.items} scored facts, with the verdict, the ledger entries the scoring
 cites and the report sections that state the fact. Sections use the report’s
 own numbering; “appendix” is its closing block of analyst statements that add
-detail. Where no entry is listed, the scoring cites the report section alone,
-and that section’s citations lead to the ledger through the evidence bundle.
+detail. Every found or partly found fact names the ledger entries behind it,
+taken from the scoring or, where the scoring cites a report section, from the
+notes that section cites in the evidence bundle; a fact the run did not recover
+lists none.
 
 The last column tells where a fact comes from: **core** facts were fixed before
 the run from three analyses; **sharpened** facts were fixed then too, and carry

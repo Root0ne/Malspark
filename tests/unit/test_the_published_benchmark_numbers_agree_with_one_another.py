@@ -13,6 +13,7 @@ agree.
 
 from __future__ import annotations
 
+import json
 import re
 from pathlib import Path
 
@@ -22,6 +23,7 @@ ROOT = Path(__file__).resolve().parents[2]
 PAGE = ROOT / "apps" / "docs" / "content" / "docs" / "benchmark" / "index.mdx"
 README = ROOT / "README.md"
 DOCS_HOME = ROOT / "apps" / "docs" / "content" / "docs" / "index.mdx"
+EVIDENCE = ROOT / "apps" / "docs" / "public" / "assets" / "benchmark" / "evidence.json"
 GATE = ROOT / "apps" / "docs" / "content" / "docs" / "known-answer-gate.mdx"
 
 _TOKEN = re.compile(r"'((?:\\.|[^'\\])*)'|(-?\d+)")
@@ -119,6 +121,12 @@ def _verdict_kind(verdict: str) -> str:
     }[verdict]
 
 
+def _evidence_ids() -> set[str]:
+    """The ids of the published evidence ledger."""
+    ledger = json.loads(EVIDENCE.read_text(encoding="utf-8"))
+    return {entry["entry_id"] for entry in ledger["items"]}
+
+
 def problems(page: str, readme: str, docs_home: str, gate: str) -> list[str]:
     """Every place where the public numbers disagree; empty when they agree."""
     found: list[str] = []
@@ -141,6 +149,15 @@ def problems(page: str, readme: str, docs_home: str, gate: str) -> list[str]:
         found.append("two keyItems rows share an id and a fact")
     if {str(row[6]) for row in key} - ORIGINS:
         found.append(f"keyItems names an origin outside {sorted(ORIGINS)}")
+    for row in key:
+        kind = _verdict_kind(str(row[3]))
+        if kind in ("found", "partlyBody", "partlyDump") and not str(row[4]).strip():
+            found.append(f"{row[1]} is {row[3]} but lists no ledger entry")
+        if kind in ("missed", "wrong") and str(row[4]).strip():
+            found.append(f"{row[1]} is {row[3]} but lists ledger entries")
+    unknown = set(re.findall(r"ev_\d+", page)) - _evidence_ids()
+    if unknown:
+        found.append(f"the page cites entries the published evidence lacks: {sorted(unknown)}")
     missed = _run_list(page, "missedItems")
     partly = _run_list(page, "partlyItems")
     check_items = re.search(r"^  checkItems: \[(.*)\],$", _run_block(page), re.M)
@@ -331,6 +348,33 @@ def test_the_published_benchmark_numbers_agree_with_one_another() -> None:
         ("readme", "calls, 84 minutes)", "calls, 83 minutes)"),
         ("gate", "`55 found / 23 partly (body) /", "`54 found / 23 partly (body) /"),
         ("gate", "credited 83 of 88`", "credited 83 of 89`"),
+        # A recovered fact without its entries, a missed one with entries, and an
+        # entry the published evidence does not hold.
+        (
+            "page",
+            "'Role: loader (downloader / backdoor)', 'found', 'ev_0014',",
+            "'Role: loader (downloader / backdoor)', 'found', '',",
+        ),
+        (
+            "page",
+            "which is itself one of the encrypted strings', 'partly', 'ev_0021, ev_0019, ev_0025',",
+            "which is itself one of the encrypted strings', 'partly', '',",
+        ),
+        (
+            "page",
+            "'Link to IcedID', 'partly', 'ev_0018',",
+            "'Link to IcedID', 'partly', '',",
+        ),
+        (
+            "page",
+            "'T1055 Process injection', 'missed', '',",
+            "'T1055 Process injection', 'missed', 'ev_0014',",
+        ),
+        (
+            "page",
+            "'Family: Latrodectus', 'found', 'ev_0014,",
+            "'Family: Latrodectus', 'found', 'ev_9999,",
+        ),
         # An example that is no longer a fact beyond the key: K1.6 now holds it.
         (
             "page",
