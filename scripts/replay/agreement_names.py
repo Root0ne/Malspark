@@ -45,6 +45,8 @@ _KINDS = {
 }
 _PASSAGE = re.compile(r"^- \[([^\]]+)\] (.*?)(?: \(read only\))?(?: \(cites [^)]*\))?: (.*)$")
 _CLOSING = ("conclusion", "limitations")
+# The ids the limitations paragraph's facts were shown under before the inventory's rows.
+_LIMITATION_FACTS = ("failed", "not_run", "recorded", "open", "inv")
 
 
 def _request_text(log: Path) -> str:
@@ -215,22 +217,25 @@ def read_run(run: Path) -> dict[str, Any]:
                 {
                     "sentence": sentence,
                     "redone": [f"{c.entry} by {', '.join(c.redone_by)}" for c in stale],
-                    "outcome": refused if stale else "held; read against the failed.N facts",
+                    "outcome": refused if stale else "held; read against the inv.N facts",
                     # Held by the calls it names or cites: the entries a keep must cite.
                     "cite": list(_redo_choices(named)),
                     # Held before too: the sentence says a call failed in words read so.
                     "held_before": bool(_SAYS_FAILED.search(sentence)),
                 }
             )
-        if not any(p.id.startswith("failed.") for p in shown):
-            _para, limit_facts, _failed = _limitation_passages(
-                _report(run, limitations.text), ledger, found, ()
-            )
-            added_limitation = sum(len(p.text) for p in limit_facts)
-            counts = _failure_counts(failed)
-            if limit_facts and counts is not None and "calls.1" not in by_id:
-                # The ledger's count of failed calls is shown beside them.
-                added_limitation += len(_count_fact(counts, failed).text)
+        # The limitations inventory's rows (``inv.N``) are shown wherever the paragraph
+        # stands (T-601), in place of the failure facts the stored prompt held, if any.
+        _para, limit_facts, _failed = _limitation_passages(
+            _report(run, limitations.text), ledger, found, ()
+        )
+        added_limitation = sum(len(p.text) for p in limit_facts) - sum(
+            len(p.text) for p in shown if p.id.split(".", 1)[0] in _LIMITATION_FACTS
+        )
+        counts = _failure_counts(failed)
+        if limit_facts and counts is not None and "calls.1" not in by_id:
+            # The ledger's count of failed calls is shown beside them.
+            added_limitation += len(_count_fact(counts, failed).text)
     # The answered facts as the round is shown them now: the call that redid each failure.
     answered_before = sum(len(p.text) for p in shown if p.id.startswith("answered."))
     closing = [p for p in shown if p.closing]
