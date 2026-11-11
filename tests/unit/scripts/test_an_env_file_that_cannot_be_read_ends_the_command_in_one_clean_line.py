@@ -210,3 +210,78 @@ def test_doctor_goes_on_past_an_unreadable_docker_env_too(
     assert shown.err.count("FAIL") == 1
     assert "  tree     " in shown.out and "  data     " in shown.out
     assert "missing  docker/.env" not in shown.out
+
+
+def _report(root: Path, in_use: Callable[[str, int], bool], system: str | None = None) -> list[str]:
+    """Doctor's lines, up to the stop an unreadable file ends it with."""
+    lines: list[str] = []
+    try:
+        for line in dev.doctor_report(
+            root,
+            {"PATH": ""},
+            probe=lambda argv: None,
+            in_use=in_use,
+            filesystem=lambda p: None,
+            system=system,
+        ):
+            lines.append(line)
+    except dev.Stop:
+        pass
+    return lines
+
+
+def test_doctor_does_not_state_what_it_cannot_know_without_docker_env(checkout: Path) -> None:
+    shutil.copy(ROOT / "docker" / "docker-compose.named-data.yml", checkout / "docker")
+    _directory(checkout / "docker" / ".env")
+    probed: list[tuple[str, int]] = []
+
+    def in_use(host: str, port: int) -> bool:
+        probed.append((host, port))
+        return False
+
+    text = "\n".join(_report(checkout, in_use, system="Darwin"))
+
+    assert probed == []
+    assert "  ports    not checked: docker/.env could not be read" in text
+    assert "  volumes  not checked: docker/.env could not be read" in text
+    assert "  secrets  not checked: docker/.env could not be read" in text
+    assert "  derived  not checked: docker/.env could not be read" in text
+    assert "every published port is free" not in text and "malspark_samples" not in text
+    assert "  tree     " in text and "  data     " in text and "  machine  " in text
+
+
+def test_doctor_does_not_check_derived_values_without_bootstrap_env(checkout: Path) -> None:
+    (checkout / "docker" / ".env").write_text("X_KEY=value\n", encoding="utf-8")
+    _directory(checkout / "bootstrap.env")
+
+    text = "\n".join(_report(checkout, lambda host, port: False))
+
+    assert "  derived  not checked: bootstrap.env could not be read" in text
+    assert "  ports    every published port is free" in text
+    assert "  secrets  " not in text
+
+
+def test_doctor_does_not_check_ports_without_the_compose_file(checkout: Path) -> None:
+    _skip_unless_modes_apply()
+    (checkout / "docker" / ".env").write_text("X_KEY=value\n", encoding="utf-8")
+    compose = checkout / "docker" / "docker-compose.yml"
+    compose.chmod(0)
+    try:
+        text = "\n".join(_report(checkout, lambda host, port: False))
+    finally:
+        compose.chmod(0o600)
+
+    assert "  ports    not checked: docker/docker-compose.yml could not be read" in text
+    assert "  tree     " in text
+
+
+def test_a_port_probe_error_is_never_reported_as_an_unreadable_file(
+    checkout: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    def broken(host: str, port: int) -> bool:
+        raise OSError("probe failed")
+
+    with pytest.raises(OSError, match="probe failed"):
+        _report(checkout, broken)
+
+    assert "FAIL" not in capsys.readouterr().err

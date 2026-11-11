@@ -967,11 +967,17 @@ def published_ports(root: Path) -> dict[str, int]:
 
 
 def port_of(
-    name: str, root: Path, environ: Mapping[str, str], docker_env: Mapping[str, str]
+    name: str,
+    root: Path,
+    environ: Mapping[str, str],
+    docker_env: Mapping[str, str],
+    defaults: Mapping[str, int] | None = None,
 ) -> int:
     """The host port compose publishes for ``name``: the environment, docker/.env, the default."""
     value = environ.get(name) or docker_env.get(name)
-    return int(value) if value and value.isdigit() else published_ports(root)[name]
+    if value and value.isdigit():
+        return int(value)
+    return (published_ports(root) if defaults is None else defaults)[name]
 
 
 def _host(environ: Mapping[str, str], docker_env: Mapping[str, str]) -> str:
@@ -1313,21 +1319,26 @@ def doctor_report(
 ) -> Iterator[str]:
     """What this host has and lacks for the stack, one line each.
 
-    An env file that cannot be read is said once on stderr and the checks that
-    do not need it go on; the report then ends with the stop, so the exit is
-    non-zero.
+    A file that cannot be read is said once on stderr; a check that depends on
+    it is not run and says so in one line, and the checks that do not need it
+    go on. The report then ends with the stop, so the exit is non-zero.
+    What each check reads: volumes, ports (the bind address and the port
+    variables) and the secrets check read docker/.env; ports also reads
+    docker/docker-compose.yml for the published defaults; the derived-values
+    check reads docker/.env and bootstrap.env; the machine, file system, path
+    length, docker, engine, compose, tree and data checks read neither.
     """
     unreadable: list[str] = []
 
-    def tolerant(path: Path) -> dict[str, str] | None:
+    def tolerant(path: Path, label: str) -> dict[str, str] | None:
         try:
             return read_env(path)
         except Stop:
-            unreadable.append(path.name)
+            unreadable.append(label)
             return None
 
-    docker_read = tolerant(root / "docker" / ".env")
-    bootstrap_read = tolerant(root / "bootstrap.env")
+    docker_read = tolerant(root / "docker" / ".env", "docker/.env")
+    bootstrap_read = tolerant(root / "bootstrap.env", "bootstrap.env")
     docker_env = docker_read or {}
     bits = struct.calcsize("P") * 8
     emulated = environ.get("PROCESSOR_ARCHITEW6432")
@@ -1337,7 +1348,9 @@ def doctor_report(
         + f", Python {platform.python_version()} {bits}-bit"
     )
     named_data = bool(host_overlays(root, system, environ))
-    if named_data:
+    if named_data and docker_read is None:
+        yield "  volumes  not checked: docker/.env could not be read"
+    elif named_data:
         yield f"  volumes  {data_volumes_note(root, environ, docker_env)}"
     if (fs := filesystem(root)) and fs.upper() == "NTFS":
         yield (
@@ -1383,33 +1396,43 @@ def doctor_report(
             major = compose.lstrip("v").split(".", 1)[0]
             note = "" if major.isdigit() and int(major) >= 2 else ": compose v2 or later is needed"
             yield f"  compose  {compose}{note}"
-    if docker_read is not None:
-        if not (root / "docker" / ".env").is_file():
-            yield "  missing  docker/.env: run env init"
-        else:
-            for key in empty_secrets(docker_env):
-                yield (
-                    f"  missing  docker/.env {key} is empty or not set;"
-                    " run env init --force to generate it"
-                )
-            for key, source in stale_derived(bootstrap_read or {}, docker_env):
-                yield _stale_line(key, source)
+    if docker_read is None:
+        yield "  secrets  not checked: docker/.env could not be read"
+    elif not (root / "docker" / ".env").is_file():
+        yield "  missing  docker/.env: run env init"
+    else:
+        for key in empty_secrets(docker_env):
+            yield (
+                f"  missing  docker/.env {key} is empty or not set;"
+                " run env init --force to generate it"
+            )
+    if docker_read is None or bootstrap_read is None:
+        names = " and ".join(n for n in unreadable if n.endswith(".env"))
+        yield f"  derived  not checked: {names} could not be read"
+    elif (root / "docker" / ".env").is_file():
+        for key, source in stale_derived(bootstrap_read, docker_env):
+            yield _stale_line(key, source)
     host = _host(environ, docker_env).strip("[]")
+    defaults: dict[str, int] | None = None
+    if docker_read is not None:
+        try:
+            defaults = published_ports(root)
+        except OSError:
+            unreadable.append("docker/docker-compose.yml")
+            print(
+                f"  FAIL     {root / 'docker' / 'docker-compose.yml'} cannot be read",
+                file=sys.stderr,
+            )
     taken = []
-    try:
-        for name in sorted(published_ports(root)):
-            port = port_of(name, root, environ, docker_env)
+    if defaults is not None:
+        for name in sorted(defaults):
+            port = port_of(name, root, environ, docker_env, defaults)
             if in_use(host, port):
                 taken.append((port, name))
-        ports_read = True
-    except OSError:
-        ports_read = False
-        unreadable.append("docker-compose.yml")
-        print(
-            f"  FAIL     {root / 'docker' / 'docker-compose.yml'} cannot be read", file=sys.stderr
-        )
-    if not ports_read:
-        pass
+    if docker_read is None:
+        yield "  ports    not checked: docker/.env could not be read"
+    elif defaults is None:
+        yield "  ports    not checked: docker/docker-compose.yml could not be read"
     elif taken:
         listed = ", ".join(f"{port} ({name})" for port, name in taken)
         yield f"  in use   {listed} on {host}: the stack's own, or another program's"
