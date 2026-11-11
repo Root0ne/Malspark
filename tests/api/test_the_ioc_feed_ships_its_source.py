@@ -374,6 +374,7 @@ class TestEveryRowCarriesTheReportsTlp:
                 "published": True,
                 "publish_answer": "yes: the sample's own digest",
                 "recovered_by": None,
+                "evidence_ids": [],
                 "tlp": "TLP:AMBER+STRICT",
             }
         ]

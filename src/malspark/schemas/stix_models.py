@@ -314,6 +314,9 @@ class Indicator(STIXObject):
     # later than ``valid_from``.
     valid_until: datetime | None = None
     kill_chain_phases: list[KillChainPhase] = Field(default_factory=list)
+    # See ``EVIDENCE_REFS_PROPERTY``: the ledger entries the report's IOC table
+    # ties to the indicator's values.
+    x_malspark_evidence_refs: list[str] | None = None
 
     @field_validator("valid_from", "valid_until", mode="after")
     @classmethod

@@ -1484,6 +1484,12 @@ class ConsolidatedIOC(BaseModel):
     # ``decode_string_blobs``, a static decoding of the file's bytes). Empty
     # for every other row.
     recovered_by: str = ""
+    # The ledger entries the run's record ties to the row: the entries an
+    # analyst's listing cites, the entry a call binding was read in, the
+    # entries of the tools that recovered a hidden network value. Only ids
+    # the report's evidence index holds, in its order; absent when the record
+    # ties none (``builder.ioc_table``).
+    evidence_ids: list[str] = Field(default_factory=list, exclude_if=lambda value: not value)
 
 
 class Figure(BaseModel):

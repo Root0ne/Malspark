@@ -6,8 +6,9 @@ techniques it publishes. Nothing is asked again here, so the attributes carry
 exactly what the IOC table, ``/reports/{id}/iocs`` and the STIX export carry:
 a withheld row is never an attribute. Each indicator attribute has MISP's
 standard type and category for its kind, ``to_ids`` set from the publish
-decision, and a comment naming why the row is published. An imphash, an
-ssdeep or a TLSH also matches files that are not the sample, so it is
+decision, and a comment naming why the row is published and the ledger
+entries the table ties to it. An imphash, an ssdeep or a TLSH also matches
+files that are not the sample, so it is
 published unflagged for IDS. A technique is a ``text`` attribute, tagged with
 its ATT&CK galaxy cluster when the vendored ATT&CK table names it; it
 describes the sample rather than matching anything, so it is not flagged for
@@ -163,6 +164,11 @@ def _reason(answer: Any) -> str:
     return text.split(":", 1)[1].strip() if ":" in text else ""
 
 
+def row_evidence(row: Any) -> list[str]:
+    """The ledger ids an IOC-table row carries (``ConsolidatedIOC.evidence_ids``)."""
+    return [str(i) for i in getattr(row, "evidence_ids", None) or []]
+
+
 def build_misp_attributes(
     report: Any, rows: Iterable[Any] | None = None, *, owner: str
 ) -> list[dict[str, Any]]:
@@ -212,12 +218,16 @@ def build_misp_attributes(
         seen.add(key)
         label = str(getattr(row, "type", "") or "")
         why = _reason(answer)
+        cited = row_evidence(row)
         comment = "; ".join(
             part
             for part in (
                 label if kind == "text" else "",
                 str(getattr(row, "context", "") or ""),
                 f"published because {why}" if why else "",
+                # The ledger entries the table ties to the row, which MISP has
+                # no field for: named in the comment.
+                f"evidence {', '.join(cited)}" if cited else "",
             )
             if part
         )

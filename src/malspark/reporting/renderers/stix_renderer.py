@@ -1404,6 +1404,7 @@ class ExtendedSTIXRenderer:
             ledger_order,
             minted_family_id,
             support=_support_by_pattern(report),
+            value_evidence=_value_evidence(table),
         )
 
         # 9) Report SDO bundles every object_ref. Pre-existing AttackPattern
@@ -2087,14 +2088,17 @@ def _with_record_evidence(
     ledger_order: Mapping[str, int],
     minted_id: str | None = None,
     support: Mapping[str, tuple[str, str]] | None = None,
+    value_evidence: Mapping[tuple[str, str], Sequence[str]] | None = None,
 ) -> list[Any]:
     """``objects`` with the property on each object exactly as the record gives it.
 
     The sample's ``uses`` edge to a technique gets that technique's ledger ids.
     The malware object this export minted keeps the family ids it was minted
-    with (already checked against the ledger). Every other object that could
-    carry the property carries none. A copy is written rather than the object
-    changed, because the judge's objects are the judge's own bundle's too.
+    with (already checked against the ledger). An indicator gets the ids the
+    report's IOC table ties to the values its pattern compares
+    (``value_evidence``, :func:`_value_evidence`). Every other object that
+    could carry the property carries none. A copy is written rather than the
+    object changed, because the judge's objects are the judge's own bundle's too.
     """
     by_pattern: dict[str, list[str]] = {}
     for tid, ids in technique_evidence.items():
@@ -2116,6 +2120,17 @@ def _with_record_evidence(
             and getattr(obj, "source_ref", None) == malware_id
         ):
             wanted = by_pattern.get(str(getattr(obj, "target_ref", "") or ""))
+        elif isinstance(obj, Indicator):
+            wanted = _evidence_refs(
+                [
+                    eid
+                    for value in rule_values(obj.pattern or "")
+                    for eid in (value_evidence or {}).get(
+                        (value.kind, _value_key(value.kind, value.value)), ()
+                    )
+                ],
+                ledger_order,
+            )
         else:
             wanted = None
         if wanted != current:
@@ -4301,6 +4316,22 @@ def _recovery_place(how: RecoveredValue) -> list[str]:
     return where
 
 
+def recovered_entries(record: EmulatedStrings, kind: str, value: str) -> list[str]:
+    """The ledger entries of the tools that recovered a network value the sample hid.
+
+    The entries :func:`recovered_by_words` names, from the same record; empty
+    for any other value.
+    """
+    if kind not in ("domain", "ip", "url"):
+        return []
+    key = str(value or "").strip().lower().rstrip(".")
+    entry = record.values.get(key)
+    if not entry:
+        return []
+    listed = [how.entry for how in record.recovered_by.get(key) or [] if how.entry]
+    return list(dict.fromkeys(listed or [entry]))
+
+
 def recovered_by_words(record: EmulatedStrings, kind: str, value: str) -> str:
     """Which tools recovered a network value the sample hid, and where; ``""`` for any other.
 
@@ -5244,6 +5275,22 @@ def _indicator_for_url(url: NetworkURL, report: Any = None) -> Indicator | None:
 
 # What an exported indicator's description says of why it is published.
 PUBLISHED_BECAUSE = "Published because"
+
+
+def _value_evidence(rows: Sequence[Any]) -> dict[tuple[str, str], list[str]]:
+    """The ledger ids each published value of the report's IOC table carries, by kind and value.
+
+    Keyed as :func:`_with_the_publish_reason` reads the table, so an
+    indicator's ids are those of the rows whose answers it prints.
+    """
+    out: dict[tuple[str, str], list[str]] = {}
+    for row in rows:
+        kind = str(row.kind or "")
+        ids = list(getattr(row, "evidence_ids", None) or [])
+        if ids and publishes(row.published):
+            held = out.setdefault((kind, _value_key(kind, row.value)), [])
+            held.extend(i for i in ids if i not in held)
+    return out
 
 
 def _with_the_publish_reason(objects: list[Any], rows: Sequence[Any]) -> list[Any]:

@@ -157,7 +157,8 @@ def ioc_feed_rows(mr: dict, kind: str | None = None) -> list[dict]:
     The sample's own digests, which the router established and no rule
     decides, are served even when the table cannot be read at all. A
     ``secret`` or ``crypto_wallet`` row is served only to a ``kind`` filter
-    that names its kind. Every row carries the report's TLP level (``tlp``).
+    that names its kind. Every row carries the report's TLP level (``tlp``)
+    and the ledger ids the table ties to it (``evidence_ids``).
     """
     typed = _typed_report(mr)
     if typed is not None:
@@ -195,6 +196,7 @@ def ioc_feed_rows(mr: dict, kind: str | None = None) -> list[dict]:
                 "published": publishes(row.published),
                 "publish_answer": row.published,
                 "recovered_by": row.recovered_by or None,
+                "evidence_ids": list(row.evidence_ids),
                 "tlp": tlp,
             }
         )
