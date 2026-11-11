@@ -57,7 +57,7 @@ from malspark.core.spend import (
 )
 from malspark.core.token_ledger import read_structured_reply, say_structured_reply
 from malspark.llm.answer_text import structured_answer_text
-from malspark.llm.anthropic_history import SHARED_HEAD
+from malspark.llm.anthropic_history import SENT_AGAIN, SHARED_HEAD
 from malspark.llm.registry import schema_tool_worth_offering, structured_output_supported_for_llm
 from malspark.pipeline.validation import (
     CHANNEL_BINDING_CODE,
@@ -2086,12 +2086,17 @@ class ReportComposer:
             head_chars if section in (getattr(self, "_manual_noted_sections", None) or ()) else 0
         )
 
+        # The section's validation retry may send the whole turn again, noted
+        # for the same provider (``anthropic_history.SENT_AGAIN``) so the
+        # retry reads it rather than writing it again.
+        again = {SENT_AGAIN: len(human)}
+
         def _turns(noted: int) -> list[BaseMessage]:
             return [
                 SystemMessage(content=_SYSTEM),
-                HumanMessage(content=human, response_metadata={SHARED_HEAD: noted})
+                HumanMessage(content=human, response_metadata={SHARED_HEAD: noted, **again})
                 if noted
-                else HumanMessage(content=human),
+                else HumanMessage(content=human, response_metadata=again),
             ]
 
         messages = _turns(shared)

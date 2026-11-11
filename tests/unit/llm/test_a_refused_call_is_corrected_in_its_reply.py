@@ -161,12 +161,15 @@ class TestTheRetryOfAnAnswerThatIsACall:
     ) -> None:
         wire, _report_ = _compose(monkeypatch, _RefusedCalls())
         retried = _retried(wire)
-        # A section alone with its schema carries no breakpoint at all, as its
-        # one request did before; a prose section reads the group's head only.
-        assert _markers(retried["introduction"][1]) == []
-        prose = retried["packing_obfuscation"][1]
-        assert _markers(prose) == [(0, 0)], "only the shared head, which the group wrote"
-        assert _markers(retried["packing_obfuscation"][0]) == [(0, 0)]
+        # The reply carries none. The first turn's end, which the section's
+        # first request wrote for the retry that may follow, is read; a prose
+        # section reads the group's head before it.
+        first, retry = retried["introduction"]
+        assert _markers(first) == [(0, 0)]
+        assert _markers(retry) == [(0, 0)], "the first turn the first request wrote"
+        first, retry = retried["packing_obfuscation"]
+        assert _markers(first) == [(0, 0), (0, 1)]
+        assert _markers(retry) == [(0, 0), (0, 1)], "the head and the turn, both written"
 
     def test_every_call_of_the_answer_is_answered_in_call_order(
         self, monkeypatch: pytest.MonkeyPatch
