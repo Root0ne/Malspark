@@ -30,7 +30,7 @@ from collections.abc import Iterable, Iterator, Mapping, Sequence
 from contextlib import contextmanager
 from contextvars import ContextVar
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Any
 
 from malspark.agents._indicator_denylists import (
@@ -914,6 +914,9 @@ class ExtendedSTIXRenderer:
         self.unlinked = []
         self.declined = []
         self.renamed = {}
+        # The instant the report was built, as one UTC stamp: every time the
+        # bundle takes from it and the id key read it from here.
+        generated_at = _as_utc(report.generated_at)
         ledger_order = {eid: i for i, eid in reversed(list(enumerate(ledger_ids or [])))}
         minted_family_id: str | None = None
         # A verdict of Benign is a finding that this sample is not malware, so
@@ -971,9 +974,7 @@ class ExtendedSTIXRenderer:
             # stamping, the moves and the integrity pass below never edit the
             # bundle the caller handed in, and a second render of it is the same.
             judge_objects = [obj.model_copy(deep=True) for obj in base_bundle.objects]
-            self.declined.extend(
-                self._normalize_judge_timestamps(judge_objects, report.generated_at)
-            )
+            self.declined.extend(self._normalize_judge_timestamps(judge_objects, generated_at))
             remap = _technique_remap(report, base_bundle)
             gone = _rejected_pattern_ids(base_bundle, remap)
             # A credit the judge was asked about and kept, naming an agent no
@@ -1358,8 +1359,8 @@ class ExtendedSTIXRenderer:
                 objects.extend(observables)
                 objects.append(
                     ObservedData(
-                        first_observed=report.generated_at,
-                        last_observed=report.generated_at,
+                        first_observed=generated_at,
+                        last_observed=generated_at,
                         number_observed=1,
                         object_refs=[obs.id for obs in observables],
                     )
@@ -1430,7 +1431,7 @@ class ExtendedSTIXRenderer:
                             else "Severity not assessed."
                         )
                     ),
-                    published=report.generated_at,
+                    published=generated_at,
                     report_types=report_types_for(report.verdict),
                     object_refs=refs,
                 )
@@ -1485,11 +1486,9 @@ class ExtendedSTIXRenderer:
         # run of the sample to other objects, so no id carries two ``created``.
         sample = str(sha256 or "")
         return Bundle(
-            id=_stable_id("bundle", sample, report.generated_at.isoformat()),
+            id=_stable_id("bundle", sample, _stamp_key(generated_at)),
             objects=_with_tlp(
-                _with_stable_ids(
-                    objects, sample, report.generated_at, self.renamed, own=malware_id
-                ),
+                _with_stable_ids(objects, sample, generated_at, self.renamed, own=malware_id),
                 report.tlp,
             ),
         )
@@ -1724,6 +1723,16 @@ def _produced_by(
     return out
 
 
+def _as_utc(moment: datetime) -> datetime:
+    """``moment`` in UTC, a naive one read as UTC: the form the standard writes with ``Z``."""
+    return moment.replace(tzinfo=UTC) if moment.tzinfo is None else moment.astimezone(UTC)
+
+
+def _stamp_key(stamp: datetime) -> str:
+    """The UTC stamp as the id key carries it, to the microsecond: one instant, one key."""
+    return f"{_as_utc(stamp):%Y-%m-%dT%H:%M:%S.%f}Z"
+
+
 def _stable_id(kind: str, *identifying: str) -> str:
     """The id of a ``kind`` object derived from what identifies it (``STIX_ID_NAMESPACE``).
 
@@ -1819,7 +1828,7 @@ def _with_stable_ids(
     consumer importing it again holds one object per object. ``renamed``, when
     given, is filled with ``{the id an object came with: its derived id}``.
     """
-    report = (sample, stamp.isoformat())
+    report = (sample, _stamp_key(stamp))
     used: set[str] = {
         str(getattr(obj, "id", "")) for obj in objects if _identifying(obj, report, own) is None
     }

@@ -19,7 +19,7 @@ run gave it.
 from __future__ import annotations
 
 import uuid
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta, timezone
 
 from malspark.reporting.builder import MalwareReportBuilder
 from malspark.reporting.models import (
@@ -35,7 +35,7 @@ from malspark.schemas.stix_models import STIX_ID_NAMESPACE, Bundle, Indicator, M
 
 SHA256 = "36dabc40fa8983ce900a90b8156d2c754875fe1b5413a997843c4a0ef3908220"
 BUILT = datetime(2026, 5, 16, 8, 30, tzinfo=UTC)
-REPORT = (SHA256, "2026-05-16T08:30:00+00:00")
+REPORT = (SHA256, "2026-05-16T08:30:00.000000Z")
 C2 = "82.157.13.47"
 
 
@@ -216,7 +216,7 @@ def test_the_sample_s_malware_object_keeps_its_id_whatever_the_run_names_it() ->
     assert (
         _ids(first)["malware"]
         == _ids(second)["malware"]
-        == ["malware--80e6e3f8-f7e4-4b0f-bcd0-dda8910191c6"]
+        == ["malware--45e2d530-fc87-4227-8f05-b8c833d6955a"]
     )
     assert _ids(first)["malware"] == [_derived("malware", *REPORT)]
     assert first["id"] == second["id"]
@@ -244,3 +244,29 @@ def test_another_run_of_the_sample_is_other_objects() -> None:
         "identity": [PRODUCER_IDENTITY_ID],
         "marking-definition": ["marking-definition--94868c89-83c2-464b-929b-a1a8aa3c8487"],
     }
+
+
+def test_one_instant_written_three_ways_is_one_bundle() -> None:
+    plus_three = timezone(timedelta(hours=3))
+    written = [BUILT, BUILT.astimezone(plus_three), BUILT.replace(tzinfo=None)]
+    assert [w.isoformat() for w in written] == [
+        "2026-05-16T08:30:00+00:00",
+        "2026-05-16T11:30:00+03:00",
+        "2026-05-16T08:30:00",
+    ]
+    dumps = []
+    for moment in written:
+        report = _report()
+        report.generated_at = moment
+        dumps.append(ExtendedSTIXRenderer().render(report, _judge()).model_dump_json())
+
+    assert dumps[0] == dumps[1] == dumps[2]
+    bundle = Bundle.model_validate_json(dumps[0]).model_dump(mode="json")
+    assert bundle["id"] == _derived("bundle", SHA256, "2026-05-16T08:30:00.000000Z")
+    (observed,) = [o for o in bundle["objects"] if o["type"] == "observed-data"]
+    (report_object,) = [o for o in bundle["objects"] if o["type"] == "report"]
+    assert (observed["first_observed"], observed["last_observed"], report_object["published"]) == (
+        "2026-05-16T08:30:00Z",
+        "2026-05-16T08:30:00Z",
+        "2026-05-16T08:30:00Z",
+    )
