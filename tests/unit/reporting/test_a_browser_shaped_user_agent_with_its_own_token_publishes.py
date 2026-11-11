@@ -305,14 +305,18 @@ def test_the_vocabulary_is_listed_with_its_source() -> None:
 
 
 # Each header is sized so its small read takes about ten milliseconds. An
-# unclosed comment is refused by one search for its end, done in C, so that
-# header is read a thousand times instead.
+# unclosed comment is refused by one search for its end, done in C at the
+# speed the memory hands it over, so that header stays small enough for its
+# large side, 256 KB, to sit in a small processor cache, and is read four
+# thousand times instead. At 1 MB against 8 MB a runner whose cache held the
+# small side and not the large one read 10.3 us against 280 us a header, 27
+# times, the search walking 3.4 times slower outside the cache.
 @pytest.mark.parametrize(
     ("build", "size", "reads"),
     [
         (lambda n: "Mozilla/5.0 (" + "Windows NT 10.0; " * n + ")", 12_000, 1),
         (lambda n: "Mozilla/5.0 (Windows NT 10.0) " + "Chrome/1.0 " * n, 6_000, 1),
-        (lambda n: "Mozilla/5.0 (" + "1" * n + "-", 1_000_000, 1_000),
+        (lambda n: "Mozilla/5.0 (" + "1" * n + "-", 32_000, 4_000),
         (lambda n: "Mozilla/5.0 (x) " + "a" * n, 120_000, 1),
         (lambda n: "Mozilla/5.0 (" + "1" * (n * 8) + "-x)", 75_000, 1),
         (lambda n: "Mozilla/5.0 (" + "1" * (n * 8) + "a" * n + "!)", 75_000, 1),
