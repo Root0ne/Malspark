@@ -248,3 +248,81 @@ def test_a_galaxy_cluster_two_attributes_carry_is_one_event_tag() -> None:
         {"name": 'malspark:verdict="Malware"'},
         {"name": 'misp-galaxy:mitre-attack-pattern="Command and Scripting Interpreter - T1059"'},
     ]
+
+
+def _hashes_only(**hashes: str) -> dict[str, Any]:
+    return {
+        "identity": {
+            "hashes": hashes,
+            "file_name": "",
+            "file_size_bytes": 0,
+            "file_type": "PE",
+            "signing": {"is_signed": False},
+        }
+    }
+
+
+def test_a_file_object_that_would_name_nothing_is_left_out() -> None:
+    # Both digests the identity holds are attributes of the event already, and
+    # it holds no file name and no size: the object would be empty.
+    md5 = {**ATTRIBUTE, "type": "md5", "value": "d" * 32}
+    response = _client(
+        _malware_report(
+            misp_attributes=[ATTRIBUTE, md5], **_hashes_only(sha256=SHA256, md5="d" * 32)
+        )
+    ).get(f"/api/v1/reports/{REPORT_ID}/misp-event")
+
+    assert response.status_code == 200, response.text
+    namespace = uuid.uuid5(uuid.NAMESPACE_URL, "malspark:misp-event")
+    assert response.json() == {
+        "Event": {
+            "uuid": str(uuid.uuid5(namespace, str(JOB_ID))),
+            "info": "Malspark analysis of ffffffffffff",
+            "date": "2026-05-16",
+            "analysis": "2",
+            "distribution": "0",
+            "threat_level_id": "4",
+            "Tag": [{"name": "tlp:amber"}, {"name": 'malspark:verdict="Malware"'}],
+            "Attribute": [ATTRIBUTE, md5],
+        }
+    }
+
+
+def test_digests_differing_only_in_letter_case_are_one_digest() -> None:
+    # The event carries the md5 in upper case; the identity holds it in lower.
+    md5 = {**ATTRIBUTE, "type": "md5", "value": "D" * 32}
+    response = _client(
+        _malware_report(
+            misp_attributes=[ATTRIBUTE, md5],
+            identity={
+                "hashes": {"sha256": SHA256, "md5": "d" * 32, "sha1": "e" * 40},
+                "file_name": "",
+                "file_size_bytes": 0,
+                "file_type": "PE",
+                "signing": {"is_signed": False},
+            },
+        )
+    ).get(f"/api/v1/reports/{REPORT_ID}/misp-event")
+
+    assert response.status_code == 200, response.text
+    namespace = uuid.uuid5(uuid.NAMESPACE_URL, "malspark:misp-event")
+    owner = str(JOB_ID)
+    assert response.json()["Event"]["Object"] == [
+        {
+            "uuid": str(uuid.uuid5(namespace, f"{owner}|file")),
+            "name": "file",
+            "meta-category": "file",
+            "template_uuid": "688c46fb-5edb-40a3-8273-1af7923e2215",
+            "template_version": "25",
+            "Attribute": [
+                {
+                    "uuid": str(uuid.uuid5(namespace, f"{owner}|file|sha1|{'e' * 40}")),
+                    "object_relation": "sha1",
+                    "type": "sha1",
+                    "category": "Payload delivery",
+                    "value": "e" * 40,
+                    "to_ids": True,
+                }
+            ],
+        }
+    ]

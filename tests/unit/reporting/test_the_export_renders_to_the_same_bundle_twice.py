@@ -270,3 +270,27 @@ def test_one_instant_written_three_ways_is_one_bundle() -> None:
         "2026-05-16T08:30:00Z",
         "2026-05-16T08:30:00Z",
     )
+
+
+def test_a_second_malware_object_is_the_report_s_too() -> None:
+    judge = Bundle(
+        objects=[
+            *_judge().objects,
+            Malware(id="malware--2", name="other family", is_family=True),
+        ]
+    )
+    later = _report()
+    later.generated_at = datetime(2026, 5, 17, 9, 0, tzinfo=UTC)
+
+    first = ExtendedSTIXRenderer().render(_report(), judge).model_dump(mode="json")
+    second = ExtendedSTIXRenderer().render(later, judge).model_dump(mode="json")
+
+    assert _ids(first)["malware"] == [
+        _derived("malware", *REPORT),
+        _derived("malware", *REPORT, "other family", "True"),
+    ]
+    assert _ids(second)["malware"] == [
+        _derived("malware", SHA256, "2026-05-17T09:00:00.000000Z"),
+        _derived("malware", SHA256, "2026-05-17T09:00:00.000000Z", "other family", "True"),
+    ]
+    assert set(_ids(first)["malware"]) & set(_ids(second)["malware"]) == set()
