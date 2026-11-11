@@ -267,10 +267,13 @@ list item. The dashboard's `verdict_distribution` counts completed jobs only,
 like its average duration and its tool usage; a failed job that kept its
 report is counted under `jobs_by_status.failed` and not by its verdict.
 
-`stix` serves the exported bundle, as the report stored it. Its ids are
-derived from what identifies each object (the sample's SHA-256, the kind, the
-pattern, name or relationship ends) and its times are the time the report was
-built, so the same report renders to the same bundle. Every domain object and
+`stix` serves the exported bundle, as the report stored it. Its id and the
+object ids the platform writes are derived from the report's identity (the
+sample's SHA-256 and the time the report was built) and what identifies each
+object (the kind, the pattern, name or relationship ends), written in the
+UUID version 4 form, and its times are the time the report was built: the ids
+are stable per report, not across reports, so the same report renders to the
+same bundle and another run of the sample to other ids. Every domain object and
 relationship names the report's TLP 2.0 marking definition, by its fixed id,
 in `object_marking_refs`, and the bundle carries the definition; an indicator
 carries `x_malspark_evidence_refs`, the ledger entries of its IOC rows, where

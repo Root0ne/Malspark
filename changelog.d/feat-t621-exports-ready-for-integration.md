@@ -1,11 +1,12 @@
 ### Added
 
 - **`GET /reports/{id}/misp-event` serves a report as one MISP event (T-621).** The event wraps the
-  report's published MISP attributes with a uuid derived from the report's job, the day the report
+  report's published MISP attributes with a uuid derived from what their uuids are (the report's
+  job, or the report's id for attributes built when served), the day the report
   was built, analysis complete, distribution `0` (the receiver decides how far it shares) and an
   undefined threat level; its tags are the report's `tlp:` level, its verdict and the ATT&CK
   galaxy clusters of its published techniques, and a `file` object names the sample by its name,
-  size and identity digests. The signed job package carries it as `export/misp-event.json`, and
+  size and the identity digests no attribute of the event carries. The signed job package carries it as `export/misp-event.json`, and
   the console's Export menu offers it beside the attribute download.
 - **Every export carries the report's TLP level (T-621).** The STIX bundle carries the level's
   TLP 2.0 marking definition, by its fixed id, and names it in `object_marking_refs` on every
@@ -19,12 +20,14 @@
 
 ### Changed
 
-- **The STIX export derives every id it writes (T-621).** Each id is derived from what identifies
-  the object (the sample's SHA-256, its kind and pattern, name or relationship ends) and every
-  `created`, `modified` and `valid_from` the platform writes is the time the report was built,
-  so the same report renders to the same bundle and a consumer importing it again holds one
-  object per object. The judge's label map names the derived ids. Stored bundles are served as
-  stored; technique and producer ids are unchanged.
+- **The STIX export derives every id it writes (T-621).** The bundle id and each object id are
+  derived from the report's identity (the sample's SHA-256 and the time the report was built) and
+  what identifies the object (its kind and pattern, name or relationship ends), written in the
+  UUID version 4 form, and every `created`, `modified` and `valid_from` the platform writes is the
+  time the report was built. The ids are stable per report, not across reports: the same report
+  renders to the same bundle and a consumer importing it again holds one object per object, while
+  another run of the sample yields other ids. The judge's label map names the derived ids. Stored
+  bundles are served as stored; technique and producer ids are unchanged.
 
 ### Fixed
 
@@ -33,4 +36,5 @@
   joined Sigma documents without `---`, so a Sigma or Suricata download did not load. Each name
   is now a comment of the kind's own syntax and Sigma documents form one YAML stream. The default
   serves the drafts the report prints, none of which fails to compile; `?include=all` serves
-  every draft with its standing, and the console offers it where a draft is not printed.
+  every draft with its standing, and the console offers it where a draft is not printed (alone,
+  for a kind the report prints no rule of).
