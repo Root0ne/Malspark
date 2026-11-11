@@ -740,6 +740,50 @@ def test_every_open_question_reason_has_a_printed_label() -> None:
     assert "needs_sandbox_run: 1" in row.text and "tool_failed: 1" in row.text
 
 
+def test_an_unheld_paragraph_s_rows_leave_out_no_item_and_speak_of_no_body_absence() -> None:
+    from malspark.reporting.section_agreement import (
+        SECTION_5,
+        Passage,
+        _quote_problem,
+        _speaking_sources,
+        generic_words,
+    )
+
+    ledger = _ledger()
+    by_id = {p.id: p for p in passages_of(_report(ledger), entries=ledger)}
+    rows = [p for p in by_id.values() if p.id.startswith("inv.")]
+    assert rows and all(p.silent for p in rows)
+    # A closing keep on a section 5 sentence leaving out the capture item, which a row
+    # names; and a body absence a row's words bear on.
+    flow = Passage(
+        id="flow",
+        label="5. flow",
+        text="Whether the gate routine passes on a live host is not established.",
+        kind=SECTION_5,
+    )
+    absence = "No routine they call has listed code."
+    body = Passage(
+        id="body", label="5. body", text=absence, kind=SECTION_5, absences=(absence,),
+        write=lambda _text: None,
+    )  # fmt: skip
+    by_id.update(flow=flow, body=body)
+    sentence = (
+        "Whether the gate routine passes, and the packet capture window, were not established."
+    )
+
+    def read() -> tuple[str, list[str]]:
+        problem = _quote_problem(sentence, flow.text, [flow], generic_words(by_id), by_id)
+        return problem, [pid for pid, _excerpt in _speaking_sources(absence, by_id, body)]
+
+    # origin/dev showed no row here: nothing is left out, nothing speaks.
+    assert read() == ("", [])
+    # The same rows, speaking as a held paragraph's do, would raise both.
+    for row in rows:
+        row.silent = False
+    problem, speaking = read()
+    assert problem.startswith("leaves out an item") and speaking
+
+
 def test_an_unheld_paragraph_s_rows_alone_ask_no_question() -> None:
     import asyncio
 
