@@ -96,7 +96,7 @@ def _bundle(run: Path) -> dict[str, Any] | None:
 
 def read_run(run: Path) -> dict[str, Any]:
     """The checked techniques of one stored run, each with where it was seen."""
-    from malspark.extractors.capability_matrix import checked_technique_questions
+    from malspark.extractors.capability_matrix import checked_technique_questions, judge_questions
 
     isr_reports, unread = _isr_reports(run)
     bundle, ledger = _bundle(run), _ledger(run)
@@ -112,10 +112,14 @@ def read_run(run: Path) -> dict[str, Any]:
         for q in checked_technique_questions(bundle, claims_only, ledger)
         if q.technique_id not in listed
     ]
+    # The ids the question leaves out, with why, as it leaves out any other: the
+    # catalogue's answer (the sample's scope is not read here).
+    _asked, left_out = judge_questions(bundle, isr_reports, None, ledger=ledger)
     return {
         "run": run.name,
         "claims_unread": unread,
         "carried_by_a_finding": on_findings,
+        "not_asked": {tid: why for tid, why in left_out.items() if tid in listed},
         "checked": [
             {
                 "id": q.technique_id,
@@ -137,6 +141,8 @@ def _print(read: dict[str, Any]) -> None:
             "   checked, and carried by a stored finding only (asked as a finding): "
             + ", ".join(read["carried_by_a_finding"])
         )
+    for tid, why in read["not_asked"].items():
+        print(f"   {tid} is listed and {terminal_text(why)}")
     if read["claims_unread"]:
         print(f"   {read['claims_unread']} stored claim(s) did not read as this tree's claims")
     for row in read["checked"]:

@@ -183,7 +183,8 @@ def build_capability_matrix(
             for text, ids in info.get("cited") or []:
                 counted.add(*roots_of.of_statement(text, ids))
         row = corroboration_row(rows.get(tid.upper())) if rows else {}
-        held = list(row.get("sources") or [])
+        # A technique the judge mapped rests on the entries it mapped it to.
+        held = list(row.get("sources") or []) or list(info.get("mapped_entries") or [])
         support = str(row.get("support") or "")
         # Corroboration is two sayers (analyst layers in statements of their
         # own, and the rules that assert it) and, where the ledger was read,
@@ -832,6 +833,23 @@ def _collect_techniques(
                         row.setdefault("statements", []).append(said)
                     row.setdefault("cited", []).append(cited)
 
+    # 4. The techniques the judge mapped to ledger entries when asked after its
+    # verdict: an id an agent checked or a tool named that nothing carried, a
+    # map every check passed (``settle_mapped_techniques``). The judge states
+    # it, as it states an attack-pattern, and the mapped entries are its
+    # sources; its reason is the row's statement of what they show.
+    for decision in mapped_decisions(technique_review(stix_output)):
+        tid = decision.technique_id.strip().upper()
+        if tid in techniques:
+            continue
+        row = _row(tid)
+        row["claimed"] = True
+        row["judge_named"] = True
+        row["mapped_entries"] = [str(i).lower() for i in decision.evidence_ids]
+        row["layers"].append(_JUDGE_SOURCE)
+        if decision.reason.strip():
+            row["evidence"].append(decision.reason.strip())
+
     # The catalogue question, asked of every id still standing. A claim was
     # asked it in the analyst's own loop and carries the answer; an id that
     # arrived on a finding was asked it nowhere, and one catalogue giving one
@@ -1196,7 +1214,12 @@ def judge_questions(
     read. Those come back as ``{id: "not asked: <reason>"}``.
 
     With ``ledger``, each question states its layers beside the distinct
-    evidence roots its mentions cite, where the mentions are listed.
+    evidence roots its mentions cite, where the mentions are listed, and (d)
+    each id an agent's call arguments or a tool answer's declared technique
+    field named that no final claim, finding or bundle object carries is asked
+    about as ``checked`` (:func:`checked_technique_questions`), to map to
+    ledger entries or decline; the catalogue and the sample's scope leave one
+    out as they leave out any other.
     """
     in_bundle = bundle_technique_ids(stix_output)
     questions: dict[str, TechniqueQuestion] = {}
@@ -1249,6 +1272,9 @@ def judge_questions(
                 questions.setdefault(tid, TechniqueQuestion(tid, "finding")).mentions.append(
                     (agent, text, ids)
                 )
+    # (d) Each id an agent checked or a tool's answer named that nothing carries.
+    for question in checked_technique_questions(stix_output, isr_reports, ledger):
+        questions.setdefault(question.technique_id, question)
     ids = list(questions)
     unknown = flagged | _unknown_to_the_catalogue(ids)
     out_of_scope = _out_of_scope(ids, sample)
@@ -1321,3 +1347,122 @@ def techniques_for_the_judge(
     not listed.
     """
     return judge_questions(stix_output, isr_reports, sample, attck=attck)[0]
+
+
+def checked_question_line(question: TechniqueQuestion) -> str:
+    """Where a ``checked`` question says its id was seen: each agent with its entries, by place."""
+    from malspark.analysis.checked_techniques import IN_ARGUMENTS
+
+    by_agent: dict[str, dict[str, list[str]]] = {}
+    for agent, entry_id, place in question.checked:
+        ids = by_agent.setdefault(agent, {}).setdefault(place, [])
+        if entry_id not in ids:
+            ids.append(entry_id)
+    parts = []
+    for agent, places in by_agent.items():
+        said = [
+            f"in the {'arguments' if place == IN_ARGUMENTS else 'answer'} of {', '.join(ids)}"
+            for place, ids in places.items()
+        ]
+        parts.append(f"{agent or 'an unnamed agent'} {' and '.join(said)}")
+    return "; ".join(parts)
+
+
+def mapped_decisions(review: TechniqueReview | None) -> list[Any]:
+    """The judge's maps that stand: ``map`` decisions no check declined, each with its entries."""
+    if review is None:
+        return []
+    return [
+        d
+        for d in review.decisions
+        if d.decision == "map" and d.evidence_ids and not d.declined_by_check
+    ]
+
+
+def settle_mapped_techniques(
+    review: TechniqueReview,
+    stix_output: dict[str, Any] | None,
+    isr_reports: dict[str, Any] | None,
+    sample: dict[str, Any] | None = None,
+    *,
+    ledger: Sequence[Any] | None = None,
+    attck: Any = None,
+) -> TechniqueReview:
+    """``review`` with each ``map`` that fails a check recorded as declined by that check.
+
+    A map is asked what an analyst's claim of the technique is asked
+    (``validation.mapped_technique_violations``: entries this run's ledger
+    holds, at least one; the catalogue, the absence reading, the sample's
+    scope and the describe check). Then, by the family rule, a mapped parent
+    technique one of whose sub-techniques the report publishes is declined
+    (``validation.parent_beside_sub_technique_violation``): the published set
+    is the matrix's own, built from the bundle with the review so far. The
+    first finding names the decline; the judge's entries and reason are kept.
+    Never raises: a check that cannot run declines the map, since a map is
+    published only on the checks' word.
+    """
+    from malspark.pipeline.validation import (
+        mapped_technique_violations,
+        parent_beside_sub_technique_violation,
+    )
+
+    if not any(d.decision == "map" for d in review.decisions):
+        return review
+    ledger_ids = [str(getattr(e, "id", "") or "") for e in ledger or ()]
+    decisions = list(review.decisions)
+
+    def _declined(index: int, code: str, finding: str) -> None:
+        decisions[index] = decisions[index].model_copy(
+            update={"decision": "decline", "declined_by_check": code, "check_finding": finding}
+        )
+
+    for index, decision in enumerate(decisions):
+        if decision.decision != "map":
+            continue
+        try:
+            found = mapped_technique_violations(
+                decision.technique_id,
+                decision.reason,
+                decision.evidence_ids,
+                ledger_ids,
+                attck=attck,
+                sample=sample,
+            )
+        except Exception as exc:  # noqa: BLE001 — unchecked is not published
+            logger.warning(
+                "capability_matrix: the checks of the map of %s did not run (%s)",
+                decision.technique_id,
+                exc,
+            )
+            _declined(index, CHECK_NOT_RUN, f"the checks did not run ({type(exc).__name__})")
+            continue
+        if found:
+            _declined(index, found[0].code, found[0].message)
+    settled = review.model_copy(update={"decisions": decisions})
+    if not mapped_decisions(settled):
+        return settled
+    try:
+        bundle = {**(stix_output or {}), TECHNIQUE_REVIEW_PROPERTY: settled.model_dump()}
+        published = {
+            m.technique_id.upper()
+            for m in build_capability_matrix(
+                stix_output=bundle, isr_reports=isr_reports, sample=sample
+            )[1]
+        }
+    except Exception as exc:  # noqa: BLE001 — unchecked is not published
+        logger.warning("capability_matrix: the published list was not read (%s)", exc)
+        for index, decision in enumerate(decisions):
+            if decision.decision == "map":
+                _declined(index, CHECK_NOT_RUN, f"the checks did not run ({type(exc).__name__})")
+        return review.model_copy(update={"decisions": decisions})
+    for index, decision in enumerate(decisions):
+        if decision.decision != "map":
+            continue
+        parent = parent_beside_sub_technique_violation(decision.technique_id, published)
+        if parent is not None:
+            _declined(index, parent.code, parent.message)
+    return review.model_copy(update={"decisions": decisions})
+
+
+# What a map's record says when its checks could not run: it is not published.
+CHECK_NOT_RUN = "not checked"

@@ -38,7 +38,7 @@ def _run(tmp_path: Path) -> Path:
                     "entry_id": "ev_0001",
                     "agent": "analyst_a",
                     "tool": "any_tool",
-                    "args": {"ids": ["T1041", "T1082", "T1083"]},
+                    "args": {"ids": ["T1041", "T1082", "T1083", "T1999"]},
                     "output": '{"invalid": []}',
                 },
                 {
@@ -93,7 +93,10 @@ def test_a_built_run_lists_the_id_nothing_carries(tmp_path: Path, capsys: Any) -
 
     read = reader.read_run(run)
 
-    assert [row["id"] for row in read["checked"]] == ["T1041"]
+    assert [row["id"] for row in read["checked"]] == ["T1041", "T1999"]
+    # An id the catalogue rejects is listed, and the question leaves it out with why.
+    assert list(read["not_asked"]) == ["T1999"]
+    assert read["not_asked"]["T1999"].startswith("not asked: ")
     assert read["checked"][0]["seen"] == [
         {"agent": "analyst_a", "entry": "ev_0001", "place": "arguments"}
     ]
@@ -102,7 +105,8 @@ def test_a_built_run_lists_the_id_nothing_carries(tmp_path: Path, capsys: Any) -
     assert read["carried_by_a_finding"] == ["T1083"]
     assert reader.main([str(run)]) == 0
     out = capsys.readouterr().out
-    assert "built: 1 checked technique(s): T1041" in out
+    assert "built: 2 checked technique(s): T1041, T1999" in out
+    assert "T1999 is listed and not asked: " in out
     assert "analyst_a: ev_0001 (arguments); its final claims cite 1 entry" in out
 
 
@@ -112,7 +116,7 @@ def test_the_reader_writes_the_readings_as_json(tmp_path: Path) -> None:
 
     assert reader.main([str(run), "--json", str(out)]) == 0
 
-    assert [row["id"] for row in json.loads(out.read_text())[0]["checked"]] == ["T1041"]
+    assert [row["id"] for row in json.loads(out.read_text())[0]["checked"]] == ["T1041", "T1999"]
 
 
 def test_stored_text_reaches_the_terminal_escaped() -> None:
@@ -148,6 +152,7 @@ def test_the_stored_runs_give_the_scoping_s_lists() -> None:
     for name, (count, on_findings) in _STORED.items():
         assert len(read[name]["checked"]) == count, name
         assert tuple(read[name]["carried_by_a_finding"]) == on_findings, name
+        assert read[name]["not_asked"] == {}, name
     (t1041,) = [row for row in read["haiku13"]["checked"] if row["id"] == "T1041"]
     assert t1041["seen"] == [{"agent": "triage", "entry": "ev_0038", "place": "arguments"}]
     assert "T1083" in [row["id"] for row in read["haiku11"]["checked"]]

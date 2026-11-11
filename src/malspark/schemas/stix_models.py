@@ -900,12 +900,26 @@ class FallbackVerdict(_SpecConformantModel):
 
 
 class TechniqueDecision(_SpecConformantModel):
-    """The judge's word on one technique it was asked about: keep or drop, and why."""
+    """The judge's word on one technique it was asked about, and why.
+
+    ``keep`` or ``drop`` for a technique an analyst named; ``map`` or
+    ``decline`` for one an agent checked or a tool's answer named that nothing
+    carried (``capability_matrix.checked_technique_questions``). A map names
+    the ledger entries the technique rests on (``evidence_ids``) and is
+    checked as an analyst's claim of it is; one that fails a check is recorded
+    as ``decline`` with the check's code (``declined_by_check``) and finding
+    (``check_finding``), the judge's own entries and reason kept beside them.
+    """
 
     technique_id: str
-    decision: Literal["keep", "drop"]
+    decision: Literal["keep", "drop", "map", "decline"]
     # The judge's reason as it wrote it, whole.
     reason: str = ""
+    # Each field below is left out of the serialised decision when empty, so a
+    # keep or a drop dumps exactly as one written before they existed.
+    evidence_ids: list[str] = Field(default_factory=list, exclude_if=lambda value: not value)
+    declined_by_check: str = Field(default="", exclude_if=lambda value: not value)
+    check_finding: str = Field(default="", exclude_if=lambda value: not value)
 
 
 class TechniqueReview(_SpecConformantModel):
@@ -913,7 +927,9 @@ class TechniqueReview(_SpecConformantModel):
 
     The techniques an analyst claimed that the judge's bundle does not carry,
     and the ones named only on a finding, are put to the judge once, together:
-    keep or drop, with a reason. ``asked`` is every technique in that question
+    keep or drop, with a reason; the ones an agent checked or a tool's answer
+    named that nothing carries go in the same question, to map to the ledger
+    entries they rest on or to decline. ``asked`` is every technique in that question
     and ``decisions`` what the answer said of each; a technique it said nothing
     of is not decided. ``unanswered`` says why there is no answer at all — the
     question timed out, failed, was not asked, or was answered in no line the
@@ -934,6 +950,11 @@ class TechniqueReview(_SpecConformantModel):
     # naming them describes them, each with that finding as the question
     # showed it; the report prints it beside the judge's answer.
     undescribed: dict[str, str] = Field(default_factory=dict)
+    # The techniques asked as checked by an agent or named by a tool's answer
+    # and carried by nothing, each with where the question said it was seen.
+    # Left out of the serialised review when empty, so a review written before
+    # it existed dumps as it did.
+    checked: dict[str, str] = Field(default_factory=dict, exclude_if=lambda value: not value)
 
     def decision_for(self, technique_id: str) -> TechniqueDecision | None:
         """What the answer said of ``technique_id``, or ``None`` when it said nothing."""

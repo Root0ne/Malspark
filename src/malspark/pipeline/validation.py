@@ -513,6 +513,9 @@ def technique_facts_note(violations: Sequence[Violation], claims: Iterable[Any],
     return "\n".join([TECHNIQUE_FACTS_LEAD, *lines]) if lines else ""
 
 
+# A technique nothing in the run establishes: a claim's technique cites no
+# ledger entry this run issued, or a technique the judge mapped cites no entry
+# or one the run never recorded.
 UNGROUNDED_TECHNIQUE_CODE = "isr.ungrounded_technique"
 
 # A check that raised on an answer. Its findings are missing from the run, and
@@ -2452,6 +2455,110 @@ def claim_asked_whether_it_describes(
     if platform_mismatch_message(tid, attck, expected_technique_scope(sample)):
         return False
     return claim_does_not_describe_violation(claim, tid, attck) is not None
+
+
+# ---------------------------------------------------------------------------
+# A technique the judge mapped to ledger entries
+# ---------------------------------------------------------------------------
+
+# The codes of the checks a claim's technique is asked in its analyst's own
+# loop (``validate_isr``), which a technique the judge mapped is asked too.
+MAPPED_TECHNIQUE_CODES = frozenset(
+    {
+        UNGROUNDED_TECHNIQUE_CODE,
+        "attck.unknown_id",
+        ABSENCE_CLAIM_CODE,
+        "attck.platform_mismatch",
+        CLAIM_DOES_NOT_DESCRIBE_CODE,
+    }
+)
+
+# A parent technique beside its published sub-technique says nothing the
+# sub-technique does not: a sentence that describes a sub-technique describes
+# its parent (``description_phrases``), so the parent is not published beside it.
+PARENT_OF_A_PUBLISHED_SUB_TECHNIQUE_CODE = "attck.parent_of_a_published_sub_technique"
+
+
+def mapped_technique_violations(
+    technique_id: str,
+    reason: str,
+    evidence_ids: Sequence[str],
+    ledger_ids: Collection[str],
+    *,
+    attck: Any = None,
+    sample: Mapping[str, Any] | None = None,
+) -> list[Violation]:
+    """What the analysts' technique checks find on a technique the judge mapped to entries.
+
+    The map is read as an analyst's claim of the technique: its reason the
+    claim's sentence, its entries the claim's evidence line. It must cite at
+    least one entry, and every entry it cites must be one the run's ledger
+    holds (``ledger_ids``): an id the run never issued is a citation of
+    nothing. It is then asked the questions :func:`validate_isr` asks a
+    claim's technique — whether the catalogue knows it, whether its sentence
+    reads as absence, whether the sample can host it and whether its sentence
+    describes it — by that function, keeping only those findings
+    (:data:`MAPPED_TECHNIQUE_CODES`). Empty when every check passes.
+    """
+    from malspark.schemas.isr_models import AgentISR, ClaimEvidence
+
+    tid = str(technique_id or "").strip().upper()
+    held = {str(i).strip().lower() for i in ledger_ids if str(i).strip()}
+    cited = [str(i).strip().lower() for i in evidence_ids if str(i).strip()]
+    unknown = [i for i in cited if i not in held]
+    if not cited or unknown:
+        said = (
+            f"cites {', '.join(safe_finding_value(i) for i in unknown)}, which this run's "
+            "ledger does not hold"
+            if unknown
+            else "cites no ledger entry"
+        )
+        return [
+            Violation(
+                code=UNGROUNDED_TECHNIQUE_CODE,
+                message=f"the map of {safe_finding_value(tid)} {said}",
+                subject=tid,
+            )
+        ]
+    # The id is one the question asked, so it has a technique id's shape.
+    claim = ClaimEvidence(
+        claim=str(reason or ""),
+        evidence_ref=", ".join(f"[{i}]" for i in cited),
+        confidence=0.5,
+        technique_id=tid,
+    )
+    isr = AgentISR(agent_id="judge", domain="judge", claims=[claim], revision_round=0)
+    return [
+        violation
+        for violation in validate_isr(isr, attck=attck, ledger_ids=sorted(held), sample=sample)
+        if violation.code in MAPPED_TECHNIQUE_CODES
+    ]
+
+
+def parent_beside_sub_technique_violation(
+    technique_id: str, published: Collection[str]
+) -> Violation | None:
+    """The finding on a mapped parent technique one of whose sub-techniques is published.
+
+    ``None`` for a sub-technique, and for a parent none of whose
+    sub-techniques is in ``published``.
+    """
+    tid = str(technique_id or "").strip().upper()
+    if "." in tid:
+        return None
+    subs = sorted(
+        {str(p).strip().upper() for p in published if str(p).strip().upper().startswith(f"{tid}.")}
+    )
+    if not subs:
+        return None
+    return Violation(
+        code=PARENT_OF_A_PUBLISHED_SUB_TECHNIQUE_CODE,
+        message=(
+            f"{safe_finding_value(tid)} is the parent of {', '.join(subs)}, which the report "
+            "publishes; a sub-technique says its parent"
+        ),
+        subject=tid,
+    )
 
 
 # ---------------------------------------------------------------------------
