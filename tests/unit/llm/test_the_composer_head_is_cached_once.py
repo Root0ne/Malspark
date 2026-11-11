@@ -193,7 +193,7 @@ class TestTheManualPathAfterAStructuredAttempt:
         prefixes = {_prefix(b) for b in manual}
         assert len(prefixes) == 1 and "" not in prefixes, "one byte-identical prefix"
 
-    def test_the_structured_attempts_are_marked_as_before(
+    def test_the_prose_attempts_share_a_head_and_every_other_turn_is_marked_at_its_end(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         bodies = self._bodies(monkeypatch)

@@ -15,7 +15,9 @@ A turn a question was later added to is not marked by its note, a request no
 later one sends again carries the mark only where an earlier request wrote
 it, no request carries more than four breakpoints, every call kind without the
 note sends the body it sent before (``anthropic_cache_bodies``), and the
-other providers send the same body with the note or without it.
+other providers send the same body with the note or without it. The mark
+asks for five minutes whatever lifetime the other breakpoints ask for: its
+only reader is the retry of the same call, and it is the request's last.
 """
 
 from __future__ import annotations
@@ -23,6 +25,7 @@ from __future__ import annotations
 import asyncio
 import json
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 from unittest.mock import patch
 
@@ -48,6 +51,7 @@ FIXTURE = (
 )
 USAGE = {"input_tokens": 10, "output_tokens": 5}
 MARK = {"type": "ephemeral"}
+HOUR = {"type": "ephemeral", "ttl": "1h"}
 SYSTEM = "You are a report writer."
 HEAD = "DETERMINISTIC FACTS (complete list):\n- file_type: PE32 executable\n\n"
 TASK = "Write the introduction.\n\nThe evidence follows.\n" + "evidence line\n" * 20
@@ -103,6 +107,24 @@ def _markers(body: dict[str, Any]) -> int:
     return json.dumps([body.get("tools"), body.get("system"), body["messages"]]).count(
         '"cache_control"'
     )
+
+
+def _marks(body: dict[str, Any]) -> list[tuple[int, int, dict[str, str]]]:
+    """Each breakpoint of the body's turns, in order: turn, block and marker."""
+    return [
+        (i, j, block["cache_control"])
+        for i, turn in enumerate(body["messages"])
+        if isinstance(turn["content"], list)
+        for j, block in enumerate(turn["content"])
+        if "cache_control" in block
+    ]
+
+
+def _clock(monkeypatch: pytest.MonkeyPatch) -> list[float]:
+    """The clock the provider reads its cache entries' age by, set by the test."""
+    now = [1000.0]
+    monkeypatch.setattr(anthropic_history, "time", SimpleNamespace(monotonic=lambda: now[0]))
+    return now
 
 
 class TestTheFirstPass:
@@ -187,6 +209,36 @@ class TestTheRetryReadsIt:
         assert "cache_control" not in body["messages"][0]["content"][1]
         assert _markers(body) == 1
 
+    @pytest.mark.parametrize("ttl", ["5m", "1h"])
+    def test_a_last_request_after_the_mark_s_five_minutes_carries_no_end_mark(
+        self, wire: Wire, monkeypatch: pytest.MonkeyPatch, ttl: str
+    ) -> None:
+        now = _clock(monkeypatch)
+        model = _model(prompt_cache_ttl=ttl)
+        model.invoke([SystemMessage(content=SYSTEM), _noted(TASK)])
+        now[0] += 301
+        reply = HumanMessage(content=QUESTION, response_metadata={LAST_REQUEST: True})
+        model.invoke([SystemMessage(content=SYSTEM), _noted(TASK), _answered(2), reply])
+        first, late = wire.bodies
+        assert first["messages"][0]["content"][-1]["cache_control"] == MARK
+        assert _markers(late) == 0, "the entry the first pass wrote has expired"
+
+    def test_a_loop_marks_its_later_turns_and_not_the_noted_turn_s_end(self, wire: Wire) -> None:
+        from malspark.llm.anthropic_history import TOOL_LOOP_TURN
+
+        loop = {TOOL_LOOP_TURN: True}
+        first = HumanMessage(content=TASK, response_metadata={SENT_AGAIN: len(TASK), **loop})
+        turns: list[Any] = [SystemMessage(content=SYSTEM), first]
+        for turn in (2, 4):
+            # Sent as a block list, which carries a breakpoint as it is.
+            question = [{"type": "text", "text": f"{QUESTION} {turn}"}]
+            turns += [_answered(turn), HumanMessage(content=question, response_metadata=loop)]
+        _model().invoke(turns)
+        (body,) = wire.bodies
+        marked = [i for i, _j, _marker in _marks(body)]
+        assert marked and 0 not in marked, "a later breakpoint reads the noted turn on its own"
+        assert marked[-1] == len(body["messages"]) - 1
+
     def test_a_turn_a_question_was_added_to_is_not_marked_by_its_note(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
@@ -267,6 +319,58 @@ class TestTheComposer:
             assert _through_first_turn(retry) == _through_first_turn(first)
 
 
+class TestTheMarkAsksForFiveMinutes:
+    """Under an hour's cache setting the turn's end asks for five minutes, after every hour."""
+
+    def test_the_end_is_the_last_mark_and_the_only_short_one(self, wire: Wire) -> None:
+        _model(prompt_cache_ttl="1h").invoke(
+            [SystemMessage(content=SYSTEM), _noted(HEAD + TASK, len(HEAD))]
+        )
+        (body,) = wire.bodies
+        assert wire.refused == []
+        assert _marks(body) == [(0, 0, HOUR), (0, 1, MARK)]
+
+    def test_with_standing_facts_every_hour_comes_before_it(self, wire: Wire) -> None:
+        from malspark.agents.technique_facts import STANDING_FACTS_CHARS
+
+        pack = "TRIAGE PACK\n" + "standing fact\n" * 30
+        text = pack + HEAD + TASK
+        notes = {
+            STANDING_FACTS_CHARS: len(pack),
+            SHARED_HEAD: len(pack + HEAD),
+            SENT_AGAIN: len(text),
+        }
+        _model(prompt_cache_ttl="1h", pack_cache_ttl="1h").invoke(
+            [SystemMessage(content=SYSTEM), HumanMessage(content=text, response_metadata=notes)]
+        )
+        (body,) = wire.bodies
+        lifetimes = [marker for _i, _j, marker in _marks(body)]
+        assert lifetimes[-1] == MARK and MARK not in lifetimes[:-1]
+        assert body["messages"][0]["content"][-1]["cache_control"] == MARK
+
+    def test_a_later_turn_s_head_leaves_the_end_unmarked(self, wire: Wire) -> None:
+        model = _model(prompt_cache_ttl="1h")
+        model.invoke([SystemMessage(content=SYSTEM), _noted(TASK)])
+        later = HumanMessage(
+            content=HEAD + QUESTION,
+            response_metadata={SHARED_HEAD: len(HEAD), LAST_REQUEST: True},
+        )
+        model.invoke([SystemMessage(content=SYSTEM), _noted(TASK), _answered(2), later])
+        assert _marks(wire.bodies[-1]) == [(2, 0, HOUR)], "the head keeps its hour"
+
+    @pytest.mark.parametrize("head", [0, len(HEAD)], ids=["whole turn", "shared head"])
+    def test_the_retry_sends_the_first_pass_through_its_mark(self, wire: Wire, head: int) -> None:
+        text = HEAD + TASK if head else TASK
+        model = _model(prompt_cache_ttl="1h")
+        model.invoke([SystemMessage(content=SYSTEM), _noted(text, head)])
+        reply = HumanMessage(content=QUESTION, response_metadata={LAST_REQUEST: True})
+        model.invoke([SystemMessage(content=SYSTEM), _noted(text, head), _answered(2), reply])
+        first, retry = wire.bodies
+        assert wire.refused == []
+        assert _through_first_turn(retry) == _through_first_turn(first)
+        assert _marks(retry)[-1] == (0, len(retry["messages"][0]["content"]) - 1, MARK)
+
+
 class TestNeverAFifthBreakpoint:
     def test_no_composer_request_carries_more_than_four(
         self, monkeypatch: pytest.MonkeyPatch
@@ -274,7 +378,7 @@ class TestNeverAFifthBreakpoint:
         composer = TestTheComposer()
         for structured in (False, True):
             for body in composer._compose(monkeypatch, structured):
-                assert _markers(body) <= anthropic_history.MAX_BREAKPOINTS
+                assert _markers(body) <= 4
 
     def test_no_request_reading_the_ledger_carries_more_than_four(
         self, monkeypatch: pytest.MonkeyPatch
@@ -294,7 +398,7 @@ class TestNeverAFifthBreakpoint:
             asyncio.run(composer.compose(_report(), _isr(), facts_block=FACTS, concurrent=True))
         assert found.bodies
         for body in found.bodies:
-            assert _markers(body) <= anthropic_history.MAX_BREAKPOINTS
+            assert _markers(body) <= 4
 
     def test_standing_facts_a_head_and_a_loop_stay_within_four(self, wire: Wire) -> None:
         from malspark.agents.technique_facts import STANDING_FACTS_CHARS
@@ -324,7 +428,25 @@ class TestNeverAFifthBreakpoint:
         model.invoke(turns)
         assert wire.refused == []
         for body in wire.bodies:
-            assert _markers(body) <= anthropic_history.MAX_BREAKPOINTS
+            assert _markers(body) <= 4
+
+    def test_more_than_four_are_cut_to_four_keeping_the_first(self, wire: Wire) -> None:
+        # Breakpoints a caller set on an earlier turn, beside the provider's own;
+        # with no standing facts' breakpoint, the note alone has them counted.
+        given = [{"type": "text", "text": f"part {n}\n", "cache_control": MARK} for n in range(4)]
+        _model(pack_cache_ttl="off").invoke(
+            [
+                SystemMessage(content=SYSTEM),
+                HumanMessage(content=given),
+                _answered(2),
+                _noted(TASK),
+            ]
+        )
+        (body,) = wire.bodies
+        marks = [(i, j) for i, j, _marker in _marks(body)]
+        assert len(marks) == 4
+        assert marks[0] == (0, 0), "the first, the longest-lived, is kept"
+        assert marks[-1] == (2, 0)
 
 
 class TestEveryOtherCallKind:
