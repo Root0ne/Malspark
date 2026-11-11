@@ -285,3 +285,83 @@ def test_a_port_probe_error_is_never_reported_as_an_unreadable_file(
         _report(checkout, broken)
 
     assert "FAIL" not in capsys.readouterr().err
+
+
+def _compose_not_utf8(path: Path) -> None:
+    path.unlink()
+    path.write_bytes(b"services: " + _MARK.encode() + b"\xff\xfe\n")
+
+
+def _compose_fifo(path: Path) -> None:
+    path.unlink()
+    os.mkfifo(path)
+
+
+COMPOSE_CASES = [
+    pytest.param(_compose_not_utf8, "is not UTF-8 text", id="not-utf8"),
+    pytest.param(
+        _compose_fifo,
+        "is not a regular file",
+        id="fifo",
+        marks=pytest.mark.skipif(not hasattr(os, "mkfifo"), reason="a FIFO needs POSIX"),
+    ),
+]
+
+
+@pytest.mark.parametrize(("make", "said"), COMPOSE_CASES)
+def test_doctor_names_a_compose_file_that_cannot_be_read(
+    checkout: Path, capsys: pytest.CaptureFixture[str], make: Callable[[Path], None], said: str
+) -> None:
+    target = checkout / "docker" / "docker-compose.yml"
+    make(target)
+
+    status = dev.main(["doctor"], root=checkout)
+    shown = capsys.readouterr()
+    text = shown.out + shown.err
+
+    assert status != 0
+    assert "Traceback" not in text and _MARK not in text
+    assert [line for line in shown.err.splitlines() if str(target) in line and said in line]
+    assert "  ports    not checked: docker/docker-compose.yml could not be read" in shown.out
+    assert "  tree     " in shown.out
+
+
+@pytest.mark.parametrize("command", [["up", "--dry-run"], ["docker-up", "--dry-run"]], ids=" ".join)
+@pytest.mark.parametrize(("make", "said"), COMPOSE_CASES)
+def test_the_stack_commands_do_not_read_the_compose_file_themselves(
+    checkout: Path,
+    capsys: pytest.CaptureFixture[str],
+    command: list[str],
+    make: Callable[[Path], None],
+    said: str,
+) -> None:
+    make(checkout / "docker" / "docker-compose.yml")
+
+    assert dev.main(command, root=checkout) == 0
+    shown = capsys.readouterr()
+    assert "Traceback" not in shown.out + shown.err
+
+
+@pytest.mark.parametrize("example", ["docker/.env.example", "bootstrap.env.example"])
+def test_env_init_names_an_example_file_that_is_not_utf8(
+    checkout: Path, capsys: pytest.CaptureFixture[str], example: str
+) -> None:
+    target = checkout / example
+    target.write_bytes(b"X_KEY=" + _MARK.encode() + b"\xff\n")
+
+    status = dev.main(["env", "init"], root=checkout)
+    shown = capsys.readouterr()
+    text = shown.out + shown.err
+
+    assert status != 0
+    assert "Traceback" not in text and _MARK not in text
+    assert [
+        line for line in text.splitlines() if str(target) in line and "is not UTF-8 text" in line
+    ]
+
+
+def test_a_missing_example_file_keeps_its_old_error(checkout: Path) -> None:
+    (checkout / "docker" / ".env.example").unlink()
+
+    with pytest.raises(FileNotFoundError, match=r"\.env\.example"):
+        dev.main(["env", "init"], root=checkout)

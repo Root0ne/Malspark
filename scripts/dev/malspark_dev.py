@@ -102,8 +102,11 @@ def parse_env(text: str) -> dict[str, str]:
     return values
 
 
-def _read_text(path: Path) -> str | None:
+def _read_text(path: Path, required: bool = False) -> str | None:
     """The file's text, None when it is not there; a file that cannot be read stops the run.
+
+    A ``required`` file that is not there raises the FileNotFoundError a plain
+    read gives.
 
     One stat says what the path is, and only a regular file is opened (a FIFO
     would block the read). The one line names the path and what is wrong, never
@@ -112,6 +115,8 @@ def _read_text(path: Path) -> str | None:
     try:
         mode = os.stat(path).st_mode
     except (FileNotFoundError, NotADirectoryError):
+        if required:
+            raise
         return None
     except OSError:
         raise _fail(f"  FAIL     {path} cannot be read") from None
@@ -122,6 +127,8 @@ def _read_text(path: Path) -> str | None:
     try:
         return path.read_text(encoding="utf-8-sig")
     except FileNotFoundError:
+        if required:
+            raise
         return None
     except UnicodeDecodeError:
         problem = "is not UTF-8 text"
@@ -962,7 +969,7 @@ _ASSIGNMENT = re.compile(r"^(?P<key>[A-Za-z_][A-Za-z0-9_]*)=")
 
 def published_ports(root: Path) -> dict[str, int]:
     """Each ``${NAME_PORT:-N}`` the compose file publishes, with its default."""
-    text = (root / "docker" / "docker-compose.yml").read_text(encoding="utf-8")
+    text = _read_text(root / "docker" / "docker-compose.yml", required=True) or ""
     return {m["var"]: int(m["port"]) for m in _PUBLISHED.finditer(text)}
 
 
@@ -1198,7 +1205,7 @@ def _env_init(root: Path, environ: Mapping[str, str], force: bool) -> int:
             if not parse_env(kept.get(key, "")).get(key)
         }
         kept = {key: line for key, line in kept.items() if key not in generated}
-        template = (root / "docker" / ".env.example").read_text(encoding="utf-8")
+        template = _read_text(root / "docker" / ".env.example", required=True) or ""
         docker_text = _fill(template, generated, kept)
     docker_env = parse_env(docker_text) if docker_text is not None else read_env(docker_env_path)
 
@@ -1222,7 +1229,7 @@ def _env_init(root: Path, environ: Mapping[str, str], force: bool) -> int:
             if key in stale or not value or _PLACEHOLDER.search(value):
                 kept.pop(key, None)
                 continue
-        template = (root / "bootstrap.env.example").read_text(encoding="utf-8")
+        template = _read_text(root / "bootstrap.env.example", required=True) or ""
         try:
             bootstrap_text = _fill(template, derived, kept)
         except ValueError as error:
@@ -1417,6 +1424,8 @@ def doctor_report(
     if docker_read is not None:
         try:
             defaults = published_ports(root)
+        except Stop:
+            unreadable.append("docker/docker-compose.yml")
         except OSError:
             unreadable.append("docker/docker-compose.yml")
             print(
