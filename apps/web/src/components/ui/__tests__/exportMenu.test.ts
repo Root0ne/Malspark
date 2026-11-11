@@ -50,9 +50,12 @@ import type { MalwareReport } from "@/types/malware-report";
 
 const report = (over: Partial<MalwareReport> = {}) =>
   ({
+    // Of each kind, one draft the report prints and one it leaves out.
     detection_signatures: [
-      { kind: "sigma", name: "s", body: "", auto_generated: true, source_evidence: [], compile_error: null },
-      { kind: "yara", name: "y", body: "", auto_generated: true, source_evidence: [], compile_error: null },
+      { kind: "sigma", name: "s", body: "", auto_generated: true, source_evidence: [], compile_error: null, printed: true },
+      { kind: "sigma", name: "s2", body: "", auto_generated: true, source_evidence: [], compile_error: null },
+      { kind: "yara", name: "y", body: "", auto_generated: true, source_evidence: [], compile_error: null, printed: true },
+      { kind: "yara", name: "y2", body: "", auto_generated: true, source_evidence: [], compile_error: null, printed: false },
     ],
     misp_attributes: [],
     ...over,
@@ -110,7 +113,6 @@ describe("the export groups", () => {
     const deep = reportExportGroups("r1", printed, "b")[1].items;
     expect(deep.filter((i) => i.key.startsWith("rules-")).map(({ key, label, hint }) => ({ key, label, hint }))).toEqual([
       { key: "rules-yara", label: "YARA rules", hint: "The rules the report prints" },
-      { key: "rules-sigma", label: "Sigma rules", hint: "The rules the report prints" },
       {
         key: "rules-sigma-all",
         label: "Sigma rules, all drafts",
@@ -120,6 +122,26 @@ describe("the export groups", () => {
     await deep.find((i) => i.key === "rules-sigma-all")!.run();
     expect(calls).toEqual(["getReportSignature(r1,sigma,all)"]);
     expect(saved).toEqual([{ name: "malspark-sigma-all.yml", body: "rule x {}", type: "application/yaml" }]);
+  });
+
+  it("offer only every draft of a kind the report prints no rule of", async () => {
+    const unprinted = report({
+      detection_signatures: [
+        { kind: "yara", name: "y", body: "", auto_generated: true, source_evidence: [], compile_error: null, printed: false },
+        { kind: "yara", name: "y2", body: "", auto_generated: true, source_evidence: [], compile_error: null },
+      ],
+    });
+    const deep = reportExportGroups("r1", unprinted, "b")[1].items;
+    expect(deep.filter((i) => i.key.startsWith("rules-")).map(({ key, label, hint }) => ({ key, label, hint }))).toEqual([
+      {
+        key: "rules-yara-all",
+        label: "YARA rules, all drafts",
+        hint: "Every draft, each with why the report does or does not print it",
+      },
+    ]);
+    await deep.find((i) => i.key === "rules-yara-all")!.run();
+    expect(calls).toEqual(["getReportSignature(r1,yara,all)"]);
+    expect(saved).toEqual([{ name: "malspark-yara-all.yar", body: "rule x {}", type: "text/x-yara" }]);
   });
 
   it("offer the MISP event beside the attributes and save the event as served", async () => {

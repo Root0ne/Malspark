@@ -110,9 +110,13 @@ export function ruleKinds(mr: MalwareReport | null | undefined): DetectionKind[]
   return (Object.keys(RULE_LABEL) as DetectionKind[]).filter((k) => present.has(k));
 }
 
-/** Whether a draft of `kind` is one the report may not print, so "all drafts" holds more. */
-function hasUnprintedDraft(mr: MalwareReport | null | undefined, kind: DetectionKind): boolean {
-  return (mr?.detection_signatures ?? []).some((r) => r.kind === kind && r.printed !== true);
+/** The drafts of `kind`: whether the report prints any, and whether it leaves any out. */
+function draftsOf(mr: MalwareReport | null | undefined, kind: DetectionKind) {
+  const drafts = (mr?.detection_signatures ?? []).filter((r) => r.kind === kind);
+  return {
+    printed: drafts.some((r) => r.printed === true),
+    unprinted: drafts.some((r) => r.printed !== true),
+  };
 }
 
 /**
@@ -230,19 +234,25 @@ export function reportExportGroups(
           "application/json",
         ),
     },
+    // A kind the report prints no rule of has no printed file to save, only
+    // its drafts: the default item would download an empty file.
     ...ruleKinds(mr).flatMap((kind): ExportItem[] => [
-      {
-        key: `rules-${kind}`,
-        label: RULE_LABEL[kind],
-        hint: "The rules the report prints",
-        run: async () =>
-          downloadBlob(
-            await api.getReportSignature(reportId, kind),
-            names.rules(kind),
-            RULE_MIME[kind],
-          ),
-      },
-      ...(hasUnprintedDraft(mr, kind)
+      ...(draftsOf(mr, kind).printed
+        ? [
+            {
+              key: `rules-${kind}`,
+              label: RULE_LABEL[kind],
+              hint: "The rules the report prints",
+              run: async () =>
+                downloadBlob(
+                  await api.getReportSignature(reportId, kind),
+                  names.rules(kind),
+                  RULE_MIME[kind],
+                ),
+            },
+          ]
+        : []),
+      ...(draftsOf(mr, kind).unprinted
         ? [
             {
               key: `rules-${kind}-all`,
