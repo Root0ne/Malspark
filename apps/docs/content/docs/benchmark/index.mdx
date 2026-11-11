@@ -49,10 +49,10 @@ export const run = {
   ],
   missedItems: [
     'K1: the family’s other names (IceNova, Unidentified 111, Lotus, BLACKWIDOW). The report gives none of them.',
-    'K3: two imported functions resolved with a hash other than CRC-32. The report does not mention it; the run’s hash scan read every resolved value as a CRC-32 variant, which cannot show that other hashes are absent.',
+    'K3: two imported functions resolved with a hash other than CRC-32. The report does not mention it.',
     'K10: process injection (T1055). Analysts claimed it; the judge dropped it, because no code or data written into another live process was shown.',
     'K10: file and directory discovery (T1083). The desktop listing of command 2 is described, but the technique is not mapped.',
-    'K10: exfiltration over the C2 channel (T1041). The triage agent validated the id, but it is neither listed nor published.',
+    'K10: exfiltration over the C2 channel (T1041). It is not mapped.',
   ],
   partlyItems: [
     'K1: the link to IcedID appears only as reputation labels; the command that fetches bp.dat is not tied to IcedID.',
@@ -60,7 +60,7 @@ export const run = {
     'K1: the four exports and their shared address 0x3ce4 are stated; the ordinal of each export is only in the evidence bundle.',
     'K1: the entry point at RVA 0x3c7c appears only in the evidence bundle’s PE-header rows.',
     'K1: the Windows GUI subsystem appears only in the evidence bundle’s PE-header rows.',
-    'K2: the copy is started in a new rundll32.exe process through CreateProcessW, but the relaunch command-line template is called not decoded, although the ledger holds it.',
+    'K2: the copy is started in a new rundll32.exe process through CreateProcessW; the relaunch command line and its export are not in the body.',
     'K2: the campaign ID and the module path are tied to routine 0x463c, but the report does not describe it as the step that stores the user name and the file and process handles once the checks pass.',
     'K3: the process-count check is named without its thresholds of 75 and 50 processes.',
     'K3: the network-adapter check is named without what it rejects.',
@@ -68,9 +68,9 @@ export const run = {
     'K3: the PEB walk and the CRC-32 name hashing are stated; the module list it walks (InMemoryOrderModuleList), the scan of *.dll in the system directory and the LoadLibraryW load are not in the body.',
     'K3: the per-module hash tables that fill the API slots are named, but not the table entry layout (hash, module handle, function pointer) or that the table is filled one entry at a time.',
     'K3: the ntdll.dll hash 0x26797e77 appears only in the evidence bundle’s copy of the hash-scan row, bound to routine 0xabd4.',
-    'K3: the kernel32.dll hash 0x2eca438c appears only in a YARA rule comment, labelled a function-name hash and not tied to the module lookup.',
+    'K3: the kernel32.dll hash 0x2eca438c appears only in a YARA rule comment, not tied to the module lookup.',
     'K4: the routine that supplies the bot ID and its volume calls are named, but not the ID’s format or how it is derived.',
-    'K5: the task strings LogonTrigger and PT0S are stated; the Task Scheduler interface GUID is in neither the report nor the ledger.',
+    'K5: the task strings LogonTrigger and PT0S are stated; the Task Scheduler interface GUID is not.',
     'K6: beacon types 3, 4 and 5 are in the body; type 0x15 and the meaning of types 1 and 2 are not.',
     'K6: three reply verbs are named; the fourth, ERROR, is only in the bundle’s decoded strings, and the body says neither that a reply line is pipe-separated nor that the front:// placeholder is replaced with the current C2 URL.',
     'K6: the POST to /live/ and its Content-Type header are stated; the Accept and Cache-Control headers are not.',
@@ -84,15 +84,17 @@ export const run = {
     'K9: <!DOCTYPE and html are named with their use, but not as decoded strings.',
     'K9: the export-less rundll32 command-line template appears only in the evidence bundle’s decoded strings.',
   ],
+  /* Examples of facts beyond the key: wording, ledger entries, then the class
+   * and number of the fact in beyondFacts. */
   beyondExamples: [
-    ['The compile time stamp, 2024-03-25 15:54:25 UTC', 'ev_0004'],
-    ['The string cipher’s constants: seed 0x33629d40, first key 0x41, decoder at 0xae78', 'ev_0021, ev_0067, ev_0068'],
-    ['The first beacon after 1,800 sleeps of 100 ms, about 180 s', 'ev_0067'],
-    ['The scheduled task’s definition and its registration: settings and principal, then the folder object’s register call', 'ev_0077, ev_0092'],
-    ['The installed copy is started with CREATE_NO_WINDOW', 'ev_0086, ev_0090'],
-    ['The API slots that could inject into another process have no caller', 'ev_0025'],
-    ['The registry routine picks the machine hive or the current user’s by its argument', 'ev_0086, ev_0021'],
-    ['The VirusTotal score at analysis time, 56 of 75', 'ev_0018'],
+    ['The compile time stamp, 2024-03-25 15:54:25 UTC', 'ev_0004', 'C', '1'],
+    ['The string cipher’s constants: seed 0x33629d40, first key 0x41, decoder at 0xae78', 'ev_0021, ev_0067, ev_0068', 'B', '6'],
+    ['The first beacon after 1,800 sleeps of 100 ms, about 180 s', 'ev_0067', 'A', '34'],
+    ['The scheduled task’s definition and its registration: settings and principal, then the folder object’s register call', 'ev_0077, ev_0092', 'A', 'N13'],
+    ['The installed copy is started with CREATE_NO_WINDOW', 'ev_0086, ev_0090', 'B', '47'],
+    ['The API slots that could inject into another process have no caller', 'ev_0025', 'B', '30'],
+    ['The registry routine picks the machine hive or the current user’s by its argument', 'ev_0086, ev_0021', 'A', 'N16'],
+    ['The VirusTotal score at analysis time, 56 of 75', 'ev_0018', 'C', '26'],
   ],
 };
 
@@ -117,7 +119,7 @@ export const keyItems = [
   ['K2', 'K2.1', 'APIs resolved by hash', 'found', 'ev_0020, ev_0068', '§1, §5.1, §5.2', 'core'],
   ['K2', 'K2.2', 'Abort on a failed check', 'found (detail wrong)', '', '§4 step 3, §6.1', 'core'],
   ['K2', 'K2.3', 'Mutex, created with CreateMutexW after its name is decrypted', 'found', 'ev_0021, ev_0025, ev_0069', '§4 step 4, §8.1', 'sharpened'],
-  ['K2', 'K2.4', 'Install, then persist; the copy is started in a new `rundll32.exe` process through CreateProcessW, with `rundll32.exe` and the template `"%s", %s %s` as decrypted strings. After starting the copy, the original process shuts itself down. The relaunch command line is `rundll32.exe "<%APPDATA%\\Custom_update\\Update_<8 hex>.dll>", scub`: the copy is restarted with the same export', 'partly', 'ev_0086, ev_0090, ev_0094, ev_0019, ev_0025', '§4 steps 6–8, §5.3 (the template is said to be not decoded)', 'sharpened'],
+  ['K2', 'K2.4', 'Install, then persist; the copy is started in a new `rundll32.exe` process through CreateProcessW, with `rundll32.exe` and the template `"%s", %s %s` as decrypted strings. After starting the copy, the original process shuts itself down. The relaunch command line is `rundll32.exe "<%APPDATA%\\Custom_update\\Update_<8 hex>.dll>", scub`: the copy is restarted with the same export', 'partly', 'ev_0086, ev_0090, ev_0094, ev_0019, ev_0025', '§4 steps 6–8, §5.3 (no relaunch command line)', 'sharpened'],
   ['K2', 'K2.5', 'Register, then loop. C2 communication and command dispatch run in a thread the bot creates, after the scheduled task is set up', 'found', 'ev_0067', '§4 steps 9–11', 'sharpened'],
   ['K2', 'K2.6', '`update_data.dat` read first', 'found', 'ev_0069, ev_0094', '§4 step 5', 'core'],
   ['K2', 'K2.7', 'Once all checks pass, the bot initialises its campaign globals: the current user name, a handle to its own file, a handle to the current process, and the campaign ID', 'partly', 'ev_0069', '§5.1, §5.3, §6.1 (not as the step after the checks)', 'completion'],
@@ -130,7 +132,7 @@ export const keyItems = [
   ['K3', 'K3.7', 'Self-deletion (ADS): CreateFileW with DELETE on its own path, SetFileInformationByHandle (FileRenameInfo) to `:wtfbbq`, close, reopen, SetFileInformationByHandle (FileDispositionInfo, DeleteFile TRUE), close. The path to delete is the running module\'s own path, taken with GetModuleFileName', 'found', 'ev_0069, ev_0025', '§4 step 8, §5.1, §10', 'sharpened'],
   ['K3', 'K3.8', 'The resolved-API table: entries of {function hash, module-handle pointer, function pointer}, filled one at a time at start-up', 'partly', 'ev_0020, ev_0025, ev_0082', '§4 step 3, §5.2 (no entry layout)', 'added'],
   ['K3', 'K3.9', '`ntdll.dll` matched in the PEB walk by CRC-32 0x26797E77', 'partly, bundle', 'ev_0020', 'evidence bundle only (hash-scan row, routine 0xabd4)', 'added'],
-  ['K3', 'K3.10', '`kernel32.dll` matched in the PEB walk by CRC-32 0x2ECA438C', 'partly', 'ev_0020', 'appendix (YARA rule $h0), §5.2 (labelled a function-name hash)', 'added'],
+  ['K3', 'K3.10', '`kernel32.dll` matched in the PEB walk by CRC-32 0x2ECA438C', 'partly', 'ev_0020', 'appendix (YARA rule $h0), §5.2 (not tied to the module lookup)', 'added'],
   ['K3', 'K3.11', 'API hashes are plain CRC-32 of the ASCII export name (NtAllocateVirtualMemory = 0xE0762FEB, RtlGetVersion = 0xB46508B5)', 'found', 'ev_0020, ev_0068, ev_0023', '§5.1, §5.2, appendix (YARA comments)', 'added'],
   ['K3', 'K3.12', 'Two imported functions use a hash other than CRC-32', 'missed', '', 'not stated', 'added'],
   ['K3', 'K3.13', 'Every encrypted string starts with the same 4-byte key, a marker for finding them', 'found', 'ev_0021', '§5.1, §6.2, appendix (YARA rule $d0)', 'added'],
@@ -198,7 +200,7 @@ export const beyondFacts = [
   ['A', '23', '0x7fa8 writes each MAC byte with `%02x`', 'ev_0082, ev_0025', '§4 step 10, §5.4', 'network signature', 'in part'],
   ['A', '27', 'Sandbox: two `rundll32.exe <sample>.dll,#1` processes and an unattributed svchost', 'ev_0012', '§4 step 1', 'process-tree detection', 'none, this file'],
   ['A', '34', 'First beacon after 1800 × 100 ms ≈ 180 s', 'ev_0067', '§4 step 9, §6.1', 'sandbox timeout, hunting window', 'none, family'],
-  ['A', '48', 'Partly. 0x6e04 gets its Local AppData folder by CSIDL 0x1c, through 0x7e90', 'ev_0069', '§6.3 0xc', 'host artefact location', 'in part'],
+  ['A', '48', '0x6e04 gets its Local AppData folder by CSIDL 0x1c, through 0x7e90', 'ev_0069', '§6.3 0xc', 'host artefact location', 'in part'],
   ['A', 'N13', 'The task definition and its registration (0xc42c): a new definition through the service slot +0x48, settings 0xc7b4 and principal 0xc8c4 (when its flag is set); then the folder object’s slot +0x88 is called with the name, the definition, flags 6, empty user / password variants and logon type 0', 'ev_0077, ev_0092', '§4 step 7, §5.3, §8.1', 'task XML artefacts', 'in part'],
   ['A', 'N14', 'The task action depends on DAT_10488: only when it is nonzero is the program `rundll32.exe`; when it is zero, the program is formatted from 0xf9a0 and the arguments are the literal at 0xf9b0', 'ev_0086', '§5.3', 'persistence hunting', 'in part'],
   ['A', 'N16', '0x88f8 chooses the hive by its argument: 1 selects the `\\Registry\\Machine\\` root, any other value the current-user path from RtlFormatCurrentUserKeyPath', 'ev_0086, ev_0021', '§5.4, appendix (T1012)', 'where to look', 'in part'],
@@ -207,7 +209,7 @@ export const beyondFacts = [
   ['B', '54', 'Resolver tables and their contents (0x84e4 kernel32 modules, 0x904c WinINet…, 0x9484 kernel32 process / memory / file, 0xa47c, 0xa59c ntdll, 0xac50 ole32); GetCursorPos is resolved by hash at 0x92cc', 'ev_0020', '§5.2, §5.4', 'extractor, decoder', 'in part'],
   ['B', '10', '0x3868’s gate chain returns -1 when a gate fails', 'ev_0069', '§4 step 3, §6.1', '', 'in part'],
   ['B', '13', '0x5030 picks POST / GET by its second argument; HttpOpenRequestA, InternetSetOptionA', 'ev_0069', '§6.1', '', 'in part'],
-  ['B', '29', 'Partly. Thread 0xb670 (started by 0x72c8) maps the body with CreateFileMappingA / MapViewOfFile and calls through the body pointer (the mapping name `12345` is not stated)', 'ev_0081, ev_0086', '§6.3 0x15', '', 'in part'],
+  ['B', '29', 'Thread 0xb670 (started by 0x72c8) maps the body with CreateFileMappingA / MapViewOfFile and calls through the body pointer (the mapping name `12345` is not stated)', 'ev_0081, ev_0086', '§6.3 0x15', '', 'in part'],
   ['B', '30', 'The injection-capable slots have no caller: “no routine calls WriteProcessMemory or CreateRemoteThread through a slot”', 'ev_0025', '§5.2', '', 'none, family'],
   ['B', '38', 'Task COM chain 0x3728 → 0xb344 → 0xc5e8 / 0xc42c (CoInitializeEx, CoCreateInstance)', 'ev_0090, ev_0092, ev_0077', '§4 step 7, §5.3', '', 'in part'],
   ['B', '40', '0x3808 builds the path through 0x30d0 / 0x3250 and deletes it through the NtDeleteFile wrapper 0x7694', 'ev_0098, ev_0025', '§5.1', '', 'in part'],
@@ -221,9 +223,9 @@ export const beyondFacts = [
   ['B', 'N9', 'The writer 0x7acc calls the NtCreateFile wrapper 0x77b0 (disposition 3) and the NtWriteFile wrapper 0x7a54, which is decompiled', 'ev_0068, ev_0081', '§5.5', '', 'none, family'],
   ['B', '#22', 'Registry read chain for the Shell Folders values: 0x7b98 → 0xb154 → 0x88f8 (RtlFormatCurrentUserKeyPath) / 0xb1d4 (NtQueryValueKey)', 'ev_0069, ev_0098, ev_0086, ev_0025', '§5.3, §5.4', '', 'in part'],
   ['B', '#39', 'NtSetValueKey is resolved and no caller is located', 'ev_0020, ev_0025', '§5.3', '', 'none, family'],
-  ['B', '#44', 'Partly. The install copy goes through 0x7504 (0x79c8 read, 0x7acc write) with its delete flag clear', 'ev_0086, ev_0090', '§5.3, §5.5', '', 'in part'],
+  ['B', '#44', 'The install copy goes through 0x7504 (0x79c8 read, 0x7acc write) with its delete flag clear', 'ev_0086, ev_0090', '§5.3, §5.5', '', 'in part'],
   ['B', 'N12', 'The logon trigger is created as type 9', 'ev_0069', '§5.3', '', 'in part'],
-  ['B', 'N1', 'Partly. For an HTTPS URL 0x5030 sets InternetSetOptionA option 0x1f to 0x4380 (the request flags 0x4883000 are not stated)', 'ev_0069', '§6.1', '', 'none, family'],
+  ['B', 'N1', 'For an HTTPS URL 0x5030 sets InternetSetOptionA option 0x1f to 0x4380 (the request flags 0x4883000 are not stated)', 'ev_0069', '§6.1', '', 'none, family'],
   ['B', 'N17', 'InternetConnectA’s arguments, from disassembly: InternetOpenW at 0x4cb0 is called with the agent and four zeros; InternetConnectA at 0x4cfa (slot 0x10e08) with port, NULL user / password, service 3 (HTTP), flags 0 and context 1', 'ev_0097', 'appendix (T1071.001)', '', 'in part'],
   ['B', 'N20', 'The command path is a single chain: 0x3cf4’s only caller is 0x541c, and 0x541c’s only caller is 0x5750', 'ev_0078, ev_0083', 'appendix (T1071.001 / T1105)', '', 'none, family'],
   ['C', '1', 'Compile TimeDateStamp 2024-03-25 15:54:25 UTC', 'ev_0004', '§3', '', 'none, this file'],
@@ -353,13 +355,15 @@ the family:
 Of the {run.items} facts, {origins.core + origins.sharpened} were fixed before
 the run from the first three analyses, Bitsight, Elastic Security Labs and
 Proofpoint. The other {origins.added + origins.completion} were drawn after the run from the
-full text of the eight analyses, by readers who had not seen the run’s report:
-{origins.added} from the five further analyses, and {origins.completion} in a
+full text of the eight analyses. Readers who had not seen the run’s report drew
+{origins.added} from the five further analyses, and {origins.completion - 3} in a
 completion pass that read all eight end to end and listed every checkable fact
 that no item held. The same readers added specifics from the analyses to
-{origins.sharpened} of the facts fixed before the run. Three items, the
+{origins.sharpened} of the facts fixed before the run. Three more items, the
 export-directory name, the missing signature and command 21, entered the key
-when the run’s own facts were checked against the analyses.
+when the run’s own facts were checked against the analyses. The specifics added
+to the self-deletion item and to the command that fetches bp.dat entered through
+that same check.
 
 Some analyses show a value from a sibling file of the same build. Such a value
 is an item only where this file’s own headers hold the same value; the headers
@@ -507,7 +511,8 @@ The last column tells where a fact comes from: **core** facts were fixed before
 the run from three analyses; **sharpened** facts were fixed then too, and carry
 specifics drawn after the run from the other analyses; **added** facts were
 drawn after the run from the five further analyses; **completion** facts were
-drawn after the run in the completion pass over all eight. Where a fact carries
+drawn after the run to complete the key: most in the pass over all eight, three
+when the run’s facts were checked against them. Where a fact carries
 added specifics, they follow the key fact in the same cell and are scored with
 it.
 
@@ -576,10 +581,11 @@ describe only by behaviour, and named them by address. A sample:
 #### Read against the eight analyses
 
 The {run.beyondKey} facts were also read against the full text of the eight
-analyses. None of them is printed by an analysis in full, and none is shown
-only in a screenshot. {run.audit.partly} are printed in part: the analysis
-describes the behaviour, and the run adds the specific value, routine or step.
-{run.audit.none} are printed by none of the eight, even in part:
+analyses; a screenshot was opened where the text pointed to one, not every
+image. None of them is printed in full in the text. {run.audit.partly} are
+printed in part: the analysis describes the behaviour, and the run adds the
+specific value, routine or step. {run.audit.none} are printed in the text of
+none of the eight, even in part:
 {run.audit.noneFamily} of those hold for the family, and {run.audit.noneFile}
 are values of this one file. The last column of the full list below gives the
 reading for each fact.
