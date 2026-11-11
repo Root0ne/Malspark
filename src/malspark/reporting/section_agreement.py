@@ -158,10 +158,15 @@ section, so a keep quoting the passage that states what it denies is refused (T-
 
 A sentence the ledger's own lines hold (T-600): one denying something of a name
 the run holds (``ledger.N``), one of the limitations naming a failed call a later
-call redid, or saying such a call failed. Where no answer for it passes the checks
-after the retry, refused or never given, it is left out, of the body as of a
-closing section, and recorded with what holds it, unless the platform's own end
-(its fact qualification, a closing sentence it leaves out) already changes it; the
+call redid, or saying such a call failed. A negated clause writing a word a text is
+held under ("not decoded") that names a data address a routine's listing names after
+a declared data label, where no decoded row holds a text at it, holds its sentence on
+a ``ledger.N`` fact of that routine's data: the routines it passes them to, the texts
+the function index ties to it, and that no decoded row holds a text there (T-652).
+Where no answer for such a sentence passes the checks after the retry, refused or
+never given, it is left out, of the body as of a closing section, and recorded with
+what holds it, unless the platform's own end (its fact qualification, a closing
+sentence it leaves out) already changes it; the
 question and every refusal of it say so. A drop of it is an answer in the body too.
 A rewrite of it follows each clause denying something with a citation of an entry
 shown for it (in the limitations, also a failed call no later call redid). An answer
@@ -935,12 +940,13 @@ def passages_of(
         from malspark.reporting.ledger_entities import run_names
 
         names = run_names(held, found.image_bases)
-        if names.apis or names.exports or names.texts:
+        by_entry = {str(_field(e, "id") or ""): e for e in held}
+        if names.apis or names.exports or names.texts or found.listed:
             name_facts, _readings = _name_passages(
                 [*coded, *uncoded],
                 names,
                 found,
-                {str(_field(e, "id") or ""): e for e in held},
+                by_entry,
                 generic_words({p.id: p for p in coded}),
             )
             facts.extend(name_facts)
@@ -2279,6 +2285,8 @@ class _Clauses:
         self.by_word: dict[str, list[int]] = {}
         self.by_subject: dict[str, list[int]] = {}
         self.by_quote: dict[str, list[int]] = {}
+        # The addresses a clause writing a word a text is held under names (T-652).
+        self.text_at: dict[int, None] = {}
         # Whether one denies something of what it writes with the word the export table
         # is held under.
         self.exports_denied = False
@@ -2293,6 +2301,35 @@ class _Clauses:
             if any(_writes_kind(word, "text") for word in clause.words):
                 for quoted in clause.quoted:
                     self.by_quote.setdefault(quoted, []).append(at)
+                self.text_at.update(dict.fromkeys(clause.addresses))
+
+    def data(self, names: Any, sentence: str) -> list[tuple[str, str, str]]:
+        """``(kind, key, shown)`` of each routine whose listing names a data address
+        ``sentence`` names, where a clause writing a word a text is held under names one
+        such address ("The texts at 0xf9a0 and 0xf9b0 are not decoded") and no decoded row
+        holds a text at it: keyed by the routine and those addresses, shown as the sentence
+        writes them. A routine's own address is no datum (T-652)."""
+        from malspark.agents.function_map import one_spelling
+
+        def _held(address: int) -> int | None:
+            at = one_spelling(address, names.bases)
+            if names.routine_at(at) or at in names.decoded_at or at not in names.data_at:
+                return None
+            return at
+
+        if not any(_held(address) is not None for address in self.text_at):
+            return []
+        out: dict[int, dict[int, str]] = {}
+        for address in dict.fromkeys(_addresses_named(sentence)):
+            at = _held(address)
+            if at is None:
+                continue
+            for routine in names.data_at[at]:
+                out.setdefault(routine, {})[at] = hex(address)
+        return [
+            ("data", f"{routine:x}:" + ",".join(f"{at:x}" for at in held), ", ".join(held.values()))
+            for routine, held in out.items()
+        ]
 
     def denies(self, kind: str, shown: str) -> bool:
         """Whether a clause denies something of a name: the name stands after its negation
@@ -2392,10 +2429,14 @@ def name_readings(
     read = _Clauses(clauses)
     bare = any(_bare_clause(clause, generic) for clause in clauses)
     written = _held_names(uncited, names, read.exports_denied)
+    # A data address is held only where the clause denying a text names it (T-652).
+    data = read.data(names, uncited) if names.data_at else []
     if any((bare and kind != "text") or read.denies(kind, shown) for kind, _key, shown in written):
         # Held on every name it writes: where a list of names is cut into clauses is no
         # reading of which of them the denial is of.
-        return [NameReading(sentence, *name) for name in written]
+        return [NameReading(sentence, *name) for name in (*written, *data)]
+    if data:
+        return [NameReading(sentence, *name) for name in data]
     opening = next(iter(clauses_of(uncited)), "").strip()
     if (
         previous
@@ -2633,6 +2674,103 @@ def _text_fact(key: str, names: Any) -> _NameFact | None:
     )
 
 
+# How many data addresses, and texts, a fact of a routine's data names at most; the rest
+# are counted.
+_DATA_SHOWN = 6
+_TEXTS_SHOWN = 6
+
+
+def _hold_listed_data(names: Any, found: LedgerFacts, entries: dict[str, Any]) -> None:
+    """Each data address the listing of a routine an entry lists names after a data label a
+    source declares (``undeclared_tools.declared_labels``), held on ``names``
+    (``ledger_entities.hold_data``, T-652). Each batch answer is read once."""
+    from malspark.agents.function_map import one_spelling
+    from malspark.core.undeclared_tools import declared_labels
+    from malspark.pipeline.validation import _batch_listings
+    from malspark.reporting.ledger_entities import hold_data
+
+    prefixes = declared_labels().data
+    batches: dict[str, dict[int, str]] = {}
+    for routine in found.listed:
+        code = ""
+        for entry_id in routine.listed_in:
+            if entry_id not in batches:
+                entry = entries.get(entry_id)
+                output = str(_field(entry, "output") or "") if entry is not None else ""
+                shown, listings = _batch_listings(output)
+                batches[entry_id] = (
+                    {one_spelling(k, names.bases): c for k, c in listings.items()} if shown else {}
+                )
+            code = batches[entry_id].get(routine.address, "")
+            if code:
+                break
+        if not code:
+            # A single listing answered for the routine alone.
+            code = _routine_code(entries, routine.address, routine.listed_in, names.bases)
+        if code.strip():
+            hold_data(names, routine.address, code, routine.listed_in, prefixes)
+
+
+def _text_at_fact(key: str, names: Any) -> _NameFact | None:
+    """What the ledger holds of data addresses a routine's listing names (``key``: the routine
+    and the addresses) that no decoded row holds a text at: the routines its lines pass each
+    to, the texts the function index ties to the routine, and that no decoded row holds a
+    text at them (T-652). It never says which text is stored where: the ledger does not hold
+    that."""
+    head_key, _, held_key = key.partition(":")
+    routine = int(head_key, 16)
+    ref = names.refs_of.get(routine)
+    if ref is None:
+        return None
+    bases = names.bases
+    data = [int(a, 16) for a in held_key.split(",") if a]
+    data = [a for a in data if a in ref.addresses and a not in names.decoded_at][:_DATA_SHOWN]
+    if not data:
+        return None
+    # The addresses by the routines their lines pass them to, in the order read.
+    by_callee: dict[tuple[int, ...], list[int]] = {}
+    for address in data:
+        by_callee.setdefault(tuple(ref.addresses[address])[:_CALLEES_SHOWN], []).append(address)
+    passes = "; ".join(
+        f"passes the data at {_offsets(at, bases)} to the routine at {_offsets(list(to), bases)}"
+        if to
+        else f"names the data at {_offsets(at, bases)}"
+        for to, at in by_callee.items()
+    )
+    texts = [names.texts[k] for k in names.texts_of.get(routine, ())][:_TEXTS_SHOWN]
+    tied = ", ".join(
+        quoted_value(t.text)
+        + (f" ({', '.join(sorted(_ids(t.sources)))})" if _ids(t.sources) else "")
+        for t in texts
+    )
+    listed = ", ".join(sorted(_ids(ref.listed_in)))
+    head = f"the routine at {_offsets([routine], bases)} {passes} ({listed})"
+    index = (
+        f"the function index ({names.index_entry}) ties to that routine the texts {tied}"
+        if texts
+        else f"the function index ({names.index_entry}) ties no text to that routine"
+        if names.index_entry
+        else ""
+    )
+    decoded = ", ".join(sorted(_ids(names.decoded_entries)))
+    tail = f"no decoded row holds a text at {_offsets(data, bases)}" + (
+        f" ({decoded})" if decoded else ""
+    )
+    rows = tuple(part for part in (head, index, tail) if part)
+    one = len(bases) == 1
+    return _NameFact(
+        text="; ".join(rows),
+        qualifier=tail.split(" (", 1)[0],
+        cites=_ids(
+            [names.index_entry, *ref.listed_in, *names.decoded_entries]
+            + [source for t in texts for source in t.sources]
+        ),
+        rows=rows,
+        values=tuple(hex(a - bases[0]) if one and a >= bases[0] else hex(a) for a in data),
+        addresses=_spelled_both([routine, *data], bases),
+    )
+
+
 def _name_passages(
     passages: Sequence[Passage],
     names: Any,
@@ -2648,7 +2786,9 @@ def _name_passages(
     in passage order within :data:`_NAMES_PER_QUESTION` characters; a
     name past it is not shown, its sentences not held on it, and the count is said. A
     sentence held this way is answered as a held absence of the body is (or as every
-    closing sentence is): code decides none of them."""
+    closing sentence is): code decides none of them. The data addresses the listings name
+    are read first (:func:`_hold_listed_data`, T-652)."""
+    _hold_listed_data(names, found, entries)
     listed = {routine.address: routine.listed_in for routine in found.listed}
     # The conclusion and the limitations first, then the fields answered whole (a value
     # cell, a capability bullet), then the rest: a cell or bullet never takes a closing
@@ -2678,6 +2818,8 @@ def _name_passages(
             if kind == "api"
             else _export_fact(key, names, listed, entries)
             if kind == "export"
+            else _text_at_fact(key, names)
+            if kind == "data"
             else _text_fact(key, names)
         )
         if built is None or not built.cites:
