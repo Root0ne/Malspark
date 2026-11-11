@@ -672,7 +672,7 @@ def _bundle_text(
         lines.append("DETERMINISTIC FACTS:")
         for k, v in facts.items():
             # A fact that holds nothing is left out; ``False`` and ``0`` are
-            # facts (no packer was detected, no crypto API was counted).
+            # facts (no packer was detected, the import table held no import).
             if v or isinstance(v, bool | int | float):
                 lines.append(f"- {k}: {_fact_line(k, v)}")
         lines.append("")

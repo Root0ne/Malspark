@@ -54,7 +54,7 @@ def test_a_false_or_zero_fact_is_shown_and_an_empty_one_is_not() -> None:
         {
             "facts": {
                 "packer_detected": False,
-                "crypto_api_count": 0,
+                "static_import_count": 0,
                 "obfuscation_indicators": [],
                 "packer_hint": None,
                 "note": "",
@@ -62,7 +62,7 @@ def test_a_false_or_zero_fact_is_shown_and_an_empty_one_is_not() -> None:
         },
     )
     assert "- packer_detected: False" in text
-    assert "- crypto_api_count: 0" in text
+    assert "- static_import_count: 0" in text
     for empty in ("obfuscation_indicators", "packer_hint", "note"):
         assert empty not in text
 
@@ -490,23 +490,31 @@ def test_the_narrative_asserts_no_absence_without_a_sandbox() -> None:
 
 
 @pytest.mark.parametrize(
-    ("section", "facts"),
+    ("section", "categories"),
     [
-        ("encryption_scheme", ("crypto_api_count",)),
-        ("discovery", ("discovery_api_count",)),
-        ("evasion_antiforensics", ("anti_debug_api_count", "evasion_api_count")),
-        ("persistence_detail", ("persistence_api_count", "registry_api_count")),
+        ("encryption_scheme", ("crypto",)),
+        ("discovery", ("discovery",)),
+        ("evasion_antiforensics", ("anti_debug", "evasion")),
+        ("persistence_detail", ("persistence", "registry")),
     ],
 )
-def test_a_profile_count_is_stated_only_when_measured(section: str, facts: tuple[str, ...]) -> None:
+def test_a_profile_count_is_stated_only_when_measured(
+    section: str, categories: tuple[str, ...]
+) -> None:
     from malspark.reporting.evidence_bundles import bundle_for
 
+    profiles = {
+        "capability_profile_of_import_table",
+        "capability_profile_of_names_resolved_at_runtime_not_imports",
+    }
     unmeasured = bundle_for(section, _report(static=StaticAnalysis()), {}, None)["facts"]
-    assert not set(facts) & set(unmeasured)
+    assert not profiles & set(unmeasured)
     measured = _report(
         static=StaticAnalysis(
             api_capabilities={"network": 3}, api_capabilities_evidence_ids=["ev_1"]
         )
     )
     stated = bundle_for(section, measured, {}, None)["facts"]
-    assert {fact: stated[fact] for fact in facts} == dict.fromkeys(facts, 0)
+    assert {fact: stated[fact] for fact in profiles & set(stated)} == {
+        "capability_profile_of_import_table": dict.fromkeys(categories, 0)
+    }

@@ -5723,9 +5723,16 @@ is assembled from what the run gathered rather than recomputed beside it:
   answered entries whose captured output, one-entry section or self-naming
   table row holds it, read once per report and only for the wanted values, so
   a section can cite the entry behind a value whether or not an analyst did; a
-  value no entry is known to hold is left out. The encryption, discovery and
-  evasion sections are shown `sandbox_called_<category>_api_count` beside the
-  import profile's count: the APIs a sandbox API reading (kind
+  value no entry is known to hold is left out. The encryption, discovery,
+  evasion and persistence sections are shown their categories' counts in each
+  capability profile the run measured, under the key that names its scope:
+  `capability_profile_of_import_table` (the import table's names) and
+  `capability_profile_of_names_resolved_at_runtime_not_imports` (the names the
+  run resolved at runtime). A profile that was measured states every category
+  of the section, a zero included; a profile that was not measured is not
+  named. The encryption, discovery and
+  evasion sections are also shown `sandbox_called_<category>_api_count`: the
+  APIs a sandbox API reading (kind
   `sandbox_api_calls`) recorded called, by the category an API catalogue
   answer of the run (kind `api_catalogue`) gave each name
   (`DynamicBehavior.api_capabilities`), so a sandbox-only crypto call asks the

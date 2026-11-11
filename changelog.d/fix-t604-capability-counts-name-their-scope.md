@@ -1,0 +1,3 @@
+### Fixed
+
+- **Each capability count a report section is shown names the scope it was counted in.** The encryption, discovery, evasion and persistence sections are shown their categories' counts in each capability profile the run measured: `capability_profile_of_import_table` for the names the import table holds and `capability_profile_of_names_resolved_at_runtime_not_imports` for the names the run resolved at runtime. A zero is shown under the scope it holds for, and a profile that was not measured is not named. The string-resolution section's string count is `strings_typed_as_indicators_count`, the strings an indicator reading typed (T-604).
