@@ -107,14 +107,16 @@ def _parser() -> argparse.ArgumentParser:
     return parser
 
 
-def _error(message: str) -> NoReturn:
-    """Say ``message`` and end with the status an error has (2).
+def _error(words: str, *values: object) -> NoReturn:
+    """Say ``words`` with each ``{}`` filled by a value, and end with the status an error has (2).
 
-    A message can quote a path or a name from a stored run, so it is shown escaped.
+    A value can be a path or a name from a stored run, so each is escaped on its
+    own: a mark that starts one is shown as an escape, never drawn on the words.
     """
     from scripts.replay.output import terminal_safe
 
-    print(f"replay: {terminal_safe(message)}", file=sys.stderr)
+    said = terminal_safe(words).format(*(terminal_safe(value) for value in values))
+    print(f"replay: {said}", file=sys.stderr)
     raise SystemExit(2)
 
 
@@ -123,7 +125,7 @@ def _outside(path: Path, runs: list[Path]) -> None:
     target = path.resolve()
     for run in runs:
         if target == run.resolve() or run.resolve() in target.parents:
-            _error(f"refused: {path} is inside the stored run {run}")
+            _error("refused: {} is inside the stored run {}", path, run)
 
 
 def _write(path: Path | None, value: Any) -> None:
@@ -181,9 +183,9 @@ def _compare(
                     tree, runs, base / f"{side}-replay.json", show_text=show_text, timeout=timeout
                 )
             except compare.PredatesTheReplay as exc:
-                _error(str(exc))
+                _error("{}", exc)
             except compare.RefTimedOut as exc:
-                _error(f"{ref}: {exc}")
+                _error("{}: {}", ref, exc)
         for run in runs:
             check_unchanged(before[str(run)], digests(run))
         diffs = [
@@ -220,7 +222,7 @@ def main(argv: list[str] | None = None) -> int:
                     args.job, target, database_url=args.database_url, overwrite=args.overwrite
                 )
             except StoredRunExists as exc:
-                _error(f"refused: {exc}")
+                _error("refused: {}", exc)
             for directory, cleared in exported:
                 if cleared and not args.quiet:
                     from scripts.replay.output import terminal_safe
@@ -236,7 +238,7 @@ def main(argv: list[str] | None = None) -> int:
             _parser().error("name a stored run or a --job")
         for run in runs:
             if not run.is_dir():
-                _error(f"no stored run at {run}")
+                _error("no stored run at {}", run)
         if args.compare:
             diffs, status = _compare(
                 runs,
@@ -258,7 +260,8 @@ def main(argv: list[str] | None = None) -> int:
         raised = [(record.get("run"), row) for record in records for row in errors(record)]
         for name, row in raised:
             print(
-                terminal_safe(f"replay: {name}: {row['part']} raised: {row['why']}"),
+                f"replay: {terminal_safe(name)}: {terminal_safe(row['part'])} raised: "
+                f"{terminal_safe(row['why'])}",
                 file=sys.stderr,
             )
         return 2 if raised else 0

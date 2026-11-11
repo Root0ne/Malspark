@@ -501,7 +501,7 @@ def test_an_error_the_runner_says_quotes_a_stored_name_without_a_raw_character(
     from scripts.replay import run as replay_cli
 
     with pytest.raises(SystemExit) as stopped:
-        replay_cli._error(f"no stored run at {HOSTILE}")
+        replay_cli._error("no stored run at {}", HOSTILE)
     assert stopped.value.code == 2
     said = capsys.readouterr().err
     assert not _bare(said.rstrip("\n")) and said.count("\n") == 1
@@ -640,3 +640,126 @@ def test_a_decomposed_word_in_any_script_comes_through_unchanged(word: str) -> N
 def test_a_long_run_of_marks_is_read_in_linear_time() -> None:
     shown = terminal_safe("x" + "\u0301" * 200_000, encoding="utf-8")
     assert shown.count("\\u0301") == 200_000 - 30
+
+
+MARK = "\u0301"
+
+
+def _leading_mark(text: str) -> str:
+    return f"{MARK}v"
+
+
+def _raw_marks(shown: str) -> list[str]:
+    """Each combining mark shown as itself: with only the values starting with one, none may be."""
+    return [c for c in shown if unicodedata.category(c).startswith("M")]
+
+
+@pytest.mark.parametrize("build", [_full_record, lambda: _full_diff(_full_record())])
+def test_no_value_that_starts_with_a_mark_draws_it_on_the_renderer_s_words(
+    build: Callable[[], dict[str, Any]],
+) -> None:
+    source = _marked(build(), _leading_mark)
+    if "analysts" in source:
+        shown = render_record(source)
+    else:
+        shown = render_diff(source, _leading_mark("a"), _leading_mark("b"))
+    assert not _raw_marks(shown)
+    assert shown.count(f"\\u{ord(MARK):04x}v") > 30
+
+
+def test_no_line_the_scripts_print_draws_a_value_s_leading_mark_on_their_words(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    read: dict[str, Any] = {
+        "run": "r",
+        "passages": 1,
+        "facts_before": 2,
+        "facts_after": 3,
+        "names_chars": 4,
+        "limitation_chars": 5,
+        "answered": [("E1", "E2", True)],
+        "names": [
+            {
+                "passage": "p",
+                "name": "n",
+                "outcome": "o",
+                "sentence": "s",
+                "facts": [{"id": "i", "cites": ["c1", "c2"], "text": "t"}],
+            }
+        ],
+        "failed": [
+            {
+                "held_before": True,
+                "outcome": "o",
+                "redone": ["r1", "r2"],
+                "cite": ["c1", "c2"],
+                "sentence": "s",
+            }
+        ],
+    }
+    agreement_names._print(_marked(read, _leading_mark))
+    limitation_inventory._print(
+        _marked({"run": "r", "printed": ["a", "b"], "not_printed": ["c"]}, _leading_mark)
+    )
+    rule = {
+        "restated": [],
+        "added": "1",
+        "carried": [],
+        "beside": [],
+        "withdrawn": [],
+        "withdrawn_by_rule": [],
+        "dropped_claims": "0",
+        "dropped_values": "0",
+    }
+    remerge_revisions._print(
+        _marked(
+            {
+                "run": "r",
+                "mediations": "3",
+                "revisions": [
+                    {
+                        "round": "1",
+                        "analyst": "a",
+                        "in_force": "2",
+                        "revision_blocks": "3",
+                        "logged": "l",
+                        "earlier_rule": rule,
+                        "this_rule": rule,
+                        "kept_in_force_now": [
+                            {"claim": "4", "now": "n", "nearest_share": 0.5, "sentence": "s"}
+                        ],
+                    }
+                ],
+            },
+            _leading_mark,
+        )
+    )
+    said = remerge_revisions._not_read(_leading_mark("r"), ValueError(_leading_mark("e")))
+    shown = capsys.readouterr().out + said
+    assert not _raw_marks(shown)
+    assert shown.count(f"\\u{ord(MARK):04x}v") > 25
+
+
+def test_the_runner_s_stderr_lines_draw_no_leading_mark_on_their_words(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], tmp_path: Path
+) -> None:
+    from scripts.replay import run as replay_cli
+
+    record = _marked(_full_record(), _leading_mark)
+    monkeypatch.setattr(replay_cli, "_replay", lambda _runs, _show: [record])
+    assert replay_cli.main([str(tmp_path)]) == 2
+    printed = capsys.readouterr()
+    assert " raised: " in printed.err and not _raw_marks(printed.out + printed.err)
+
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / f"{MARK}d").mkdir()
+    for argv in (
+        [f"{MARK}nowhere"],
+        [f"{MARK}d", "--json", f"{MARK}d/out.json"],
+    ):
+        with pytest.raises(SystemExit) as stopped:
+            replay_cli.main(argv)
+        assert stopped.value.code == 2
+        said = capsys.readouterr().err
+        assert said.startswith("replay: ") and f"\\u{ord(MARK):04x}" in said
+        assert not _raw_marks(said)

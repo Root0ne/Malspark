@@ -279,18 +279,18 @@ def _print(read: dict[str, Any]) -> None:
         print(f"     sentence: {safe(_cut(row['sentence'], 220))}")
         for fact in row["facts"]:
             print(
-                f"     {safe(fact['id'])} (cites {safe(', '.join(fact['cites']))}): "
+                f"     {safe(fact['id'])} (cites {', '.join(safe(c) for c in fact['cites'])}): "
                 f"{safe(_cut(fact['text'], 400))}"
             )
     for row in read["failed"]:
         before = "held before too" if row["held_before"] else "not held before"
         # The redone calls it is held to, each with the calls that redid it; none where
         # it is held by a failure no later call redid.
-        redone = "; ".join(row["redone"])
+        redone = "; ".join(safe(r) for r in row["redone"])
         print(
             f" - [limitations] failed call ({before}): {safe(row['outcome'])}"
-            + (f" ({safe(redone)})" if redone else "")
-            + (f"; cite {safe(' and '.join(row['cite']))}" if row["cite"] else "")
+            + (f" ({redone})" if redone else "")
+            + (f"; cite {' and '.join(safe(c) for c in row['cite'])}" if row["cite"] else "")
         )
         print(f"     sentence: {safe(_cut(row['sentence'], 220))}")
 

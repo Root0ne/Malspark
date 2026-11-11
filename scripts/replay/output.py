@@ -379,7 +379,7 @@ def render_record(record: Mapping[str, Any]) -> str:
         lines.append("")
         lines.append("Findings")
         for where, flags in flagged:
-            lines.append(f"  {_s(where)}")
+            lines.append(f"  {where}")
             lines.extend(f"    {_flag_line(flag)}" for flag in flags)
 
     not_replayed = record.get("not_replayed") or []
@@ -478,17 +478,17 @@ def _flags(record: Mapping[str, Any]) -> list[tuple[str, Sequence[Mapping[str, A
     for agent, entry in (record.get("analysts") or {}).items():
         for answer in entry.get("answers") or []:
             if answer.get("flags"):
-                out.append((f"analyst {agent}, {answer.get('answer')}", answer["flags"]))
+                out.append((f"analyst {_s(agent)}, {_s(answer.get('answer'))}", answer["flags"]))
         in_force = entry.get("in_force") or {}
         if in_force.get("flags"):
-            out.append((f"analyst {agent}, claims in force", in_force["flags"]))
+            out.append((f"analyst {_s(agent)}, claims in force", in_force["flags"]))
     for part in ("judge", "narrative", "tool", "fp_linter"):
         flags = (record.get(part) or {}).get("flags") or []
         if flags:
             out.append((part, flags))
     for section, entry in ((record.get("composer") or {}).get("sections") or {}).items():
         if entry.get("flags"):
-            out.append((f"composer {section}", entry["flags"]))
+            out.append((f"composer {_s(section)}", entry["flags"]))
     return out
 
 
