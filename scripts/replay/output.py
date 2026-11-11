@@ -7,6 +7,7 @@ them (``--show-text``), and are printed only then.
 
 from __future__ import annotations
 
+import sys
 import unicodedata
 from collections.abc import Mapping, Sequence
 from typing import Any
@@ -18,14 +19,17 @@ from scripts.replay.record import errors
 _UNPRINTABLE = frozenset({"Cc", "Cf", "Zl", "Zp"})
 
 
-def terminal_safe(text: object, *, keep_newlines: bool = False) -> str:
+def terminal_safe(text: object, *, keep_newlines: bool = False, encoding: str | None = None) -> str:
     """``text`` with every unprintable character shown as a visible escape.
 
     A string read from a stored run is data, not terminal input: an escape
     sequence, a carriage return or a bidirectional override in it must not act
     on the operator's terminal. Printable text, non-ASCII letters included, is
     unchanged. A newline is shown as ``\\n`` so one value stays on one line, unless
-    ``keep_newlines`` is set for a text that is built of lines. One pass, linear.
+    ``keep_newlines`` is set for a text that is built of lines. A character the
+    stream's ``encoding`` (default: ``sys.stdout``'s) cannot carry, such as a
+    letter on a Windows code page, is shown as an escape too, so printing never
+    raises; a UTF-8 stream shows every printable character as it was. One pass, linear.
     """
     out: list[str] = []
     for char in str(text):
@@ -44,7 +48,20 @@ def terminal_safe(text: object, *, keep_newlines: bool = False) -> str:
             )
         else:
             out.append(char)
-    return "".join(out)
+    return _encodable("".join(out), encoding or getattr(sys.stdout, "encoding", None))
+
+
+def _encodable(text: str, encoding: str | None) -> str:
+    """``text`` with each character ``encoding`` cannot carry shown as an escape."""
+    if not encoding:
+        return text
+    try:
+        text.encode(encoding)
+    except UnicodeEncodeError:
+        return text.encode(encoding, "backslashreplace").decode(encoding)
+    except LookupError:
+        return text
+    return text
 
 
 def _codes(codes: Mapping[str, int] | None) -> str:

@@ -306,7 +306,7 @@ def main(argv: list[str] | None = None) -> int:
         _print(read)
         found.append(read)
     if args.json is not None:
-        args.json.write_text(json.dumps(found, indent=2))
+        args.json.write_text(json.dumps(found, indent=2), encoding="utf-8")
     return 0
 
 

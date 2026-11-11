@@ -39,7 +39,7 @@ def _unprintable(text: str) -> list[str]:
     ["", "plain text 123 []{}", "naïve café – İstanbul ğüşıöç", "日本語 Привет"],
 )
 def test_printable_text_comes_through_unchanged(text: str) -> None:
-    assert terminal_safe(text) == text
+    assert terminal_safe(text, encoding="utf-8") == text
 
 
 def test_an_escape_sequence_is_shown_as_visible_escapes() -> None:
@@ -105,7 +105,38 @@ def test_the_inventory_script_prints_no_raw_control_character_and_json_keeps_the
     assert not _unprintable(printed)
     assert "\\x1b]0;owned\\x07" in printed and "\\x1b[31m" in printed
     assert "\\u202e" in printed and "\\x08" in printed
-    kept: list[dict[str, Any]] = json.loads(out_json.read_text())
+    kept: list[dict[str, Any]] = json.loads(out_json.read_text(encoding="utf-8"))
     assert kept[0]["run"] == f"run{ESCAPE}"
     assert any(OSC in t for t in kept[0]["printed"] + kept[0]["not_printed"])
     assert any(ESCAPE in t for t in kept[0]["not_printed"] + kept[0]["printed"])
+
+
+def _windows_text_encoding(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Make a file opened without an explicit encoding use cp1252, as on Windows."""
+    real = Path.write_text
+
+    def write_text(self: Path, data: str, encoding: str | None = None, **kw: Any) -> int:
+        return real(self, data, encoding=encoding or "cp1252", **kw)
+
+    monkeypatch.setattr(Path, "write_text", write_text)
+
+
+def test_the_json_and_golden_files_are_written_as_utf_8_where_the_default_is_a_code_page(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], tmp_path: Path
+) -> None:
+    _hostile_inventory(monkeypatch)
+    _windows_text_encoding(monkeypatch)
+    out_json, golden = tmp_path / "out.json", tmp_path / "golden"
+    args = [str(tmp_path / "run"), "--json", str(out_json), "--golden", str(golden)]
+    assert limitation_inventory.main(args) == 0
+    capsys.readouterr()
+    kept = json.loads(out_json.read_text(encoding="utf-8"))
+    assert any("\u202e" in t for t in kept[0]["not_printed"] + kept[0]["printed"])
+    assert "\u202e" in (golden / "run.json").read_text(encoding="utf-8")
+
+
+def test_a_letter_the_stream_cannot_carry_is_shown_as_an_escape_not_raised() -> None:
+    shown = terminal_safe("naïve ğ 日本", encoding="cp1252")
+    assert shown == "naïve \\u011f \\u65e5\\u672c"
+    shown.encode("cp1252")
+    assert terminal_safe("naïve ğ 日本", encoding="utf-8") == "naïve ğ 日本"

@@ -90,10 +90,10 @@ def main(argv: list[str] | None = None) -> int:
         if args.golden is not None:
             args.golden.mkdir(parents=True, exist_ok=True)
             (args.golden / f"{run.name}.json").write_text(
-                json.dumps(read, indent=2, ensure_ascii=False) + "\n"
+                json.dumps(read, indent=2, ensure_ascii=False) + "\n", encoding="utf-8"
             )
     if args.json is not None:
-        args.json.write_text(json.dumps(found, indent=2, ensure_ascii=False))
+        args.json.write_text(json.dumps(found, indent=2, ensure_ascii=False), encoding="utf-8")
     return 0
 
 
