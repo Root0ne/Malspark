@@ -737,9 +737,10 @@ class ReportService:
 
         Its attributes are the ones the report serves (``with_current_iocs``):
         the stored ones, or the current rule's for a report stored before
-        them. The event's uuid is derived from the report's job, as the
-        attributes the pipeline built are. A report the model cannot read
-        has no event: ``None``.
+        them. The event's uuid is derived from what its attributes' are: the
+        report's job for the attributes the pipeline built, the report's own
+        id for those built when served. A report the model cannot read has no
+        event: ``None``.
         """
         from malspark.reporting.misp import build_misp_event, misp_owner
 
@@ -750,9 +751,13 @@ class ReportService:
         typed = _typed_report(mr)
         if typed is None:
             return None
-        served, _note = with_current_iocs(mr, str(report.id))
+        # One owner for the event and its attributes: an event uuid from the
+        # job beside attributes rebuilt under the report's id would be two.
+        built = mr.get("misp_attributes") is not None
+        owner = misp_owner(typed, report.job_id) if built else str(report.id)
+        served, _note = with_current_iocs(mr, owner)
         attributes = served.get("misp_attributes") or []
-        return build_misp_event(typed, attributes, owner=misp_owner(typed, report.job_id))
+        return build_misp_event(typed, attributes, owner=owner)
 
     async def get_malware_report_iocs(
         self,

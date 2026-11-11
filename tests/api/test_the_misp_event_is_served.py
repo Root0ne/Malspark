@@ -19,6 +19,7 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from app.api.v1 import reports as module
+from malspark.core.previous_name import PREVIOUS_NAME
 
 REPORT_ID = uuid.uuid4()
 JOB_ID = uuid.uuid4()
@@ -65,13 +66,15 @@ def _malware_report(**over: Any) -> dict[str, Any]:
     }
 
 
-def _client(stored: dict[str, Any] | None) -> TestClient:
+def _client(
+    stored: dict[str, Any] | None, report_id: uuid.UUID = REPORT_ID, job_id: uuid.UUID = JOB_ID
+) -> TestClient:
     from app.database import get_db
     from app.deps import get_current_user, require_active_user
 
     report = MagicMock()
-    report.id = REPORT_ID
-    report.job_id = JOB_ID
+    report.id = report_id
+    report.job_id = job_id
     report.malware_report = stored
     service = module.ReportService(db=AsyncMock())
     service.get_report = AsyncMock(return_value=report)  # type: ignore[method-assign]
@@ -103,8 +106,8 @@ def test_the_event_wraps_the_published_attributes() -> None:
          "category": category,
          "uuid": str(uuid.uuid5(namespace, f"{owner}|file|{rel}|{value}"))}
         for rel, value, ids, category in (
+            # The sha256 is an attribute of the event already: not repeated.
             ("md5", "d" * 32, True, "Payload delivery"),
-            ("sha256", SHA256, True, "Payload delivery"),
             ("filename", "sample.exe", False, "Payload delivery"),
             ("size-in-bytes", "2048", False, "Other"),
         )
@@ -150,3 +153,98 @@ def test_a_second_request_is_the_same_event() -> None:
 
     assert (first.status_code, second.status_code) == (200, 200)
     assert first.json() == second.json()
+
+
+def test_a_report_stored_before_its_attributes_is_one_owner_s_event() -> None:
+    # The attributes are built when served, under the report's id; the
+    # event's uuid is derived from the same id, not from the job's.
+    report_id = uuid.UUID("11111111-1111-4111-8111-111111111111")
+    job_id = uuid.UUID("22222222-2222-4222-8222-222222222222")
+    stored = _malware_report(misp_attributes=None)
+    client = _client(stored, report_id=report_id, job_id=job_id)
+
+    response = client.get(f"/api/v1/reports/{report_id}/misp-event")
+
+    assert response.status_code == 200, response.text
+    events = uuid.uuid5(uuid.NAMESPACE_URL, "malspark:misp-event")
+    attributes = uuid.uuid5(uuid.NAMESPACE_URL, f"{PREVIOUS_NAME}:misp-attribute")
+    # The recipes, restated: both from the report's id.
+    assert str(uuid.uuid5(events, str(report_id))) == "499775dc-79f4-54da-8f29-2432d2b0ddd0"
+    assert (
+        str(uuid.uuid5(attributes, f"{report_id}|sha256|{SHA256}"))
+        == "d2df177d-ef50-5614-8dd7-1c7c5bae89f8"
+    )
+    digest = {
+        "category": "Payload delivery",
+        "to_ids": True,
+        "comment": "the sample; published because the sample's own digest",
+        "Tag": [{"name": "tlp:amber"}],
+    }
+    size_and_name = {"category": "Payload delivery", "to_ids": False}
+    assert response.json() == {
+        "Event": {
+            "uuid": "499775dc-79f4-54da-8f29-2432d2b0ddd0",
+            "info": "Malspark analysis of ffffffffffff",
+            "date": "2026-05-16",
+            "analysis": "2",
+            "distribution": "0",
+            "threat_level_id": "4",
+            "Tag": [{"name": "tlp:amber"}, {"name": 'malspark:verdict="Malware"'}],
+            "Attribute": [
+                {
+                    "uuid": "d2df177d-ef50-5614-8dd7-1c7c5bae89f8",
+                    "type": "sha256",
+                    "value": SHA256,
+                    **digest,
+                },
+                {
+                    "uuid": "3feda721-8542-5774-99e3-833dcffb6228",
+                    "type": "md5",
+                    "value": "d" * 32,
+                    **digest,
+                },
+            ],
+            "Object": [
+                {
+                    "uuid": "ad21c44b-393a-55b0-bb6d-e7dff4c400e8",
+                    "name": "file",
+                    "meta-category": "file",
+                    "template_uuid": "688c46fb-5edb-40a3-8273-1af7923e2215",
+                    "template_version": "25",
+                    # Both digests are attributes of the event: the object
+                    # names the file and its size only.
+                    "Attribute": [
+                        {
+                            **size_and_name,
+                            "uuid": "6c47794c-e2ff-5a92-b184-6437dd805463",
+                            "object_relation": "filename",
+                            "type": "filename",
+                            "value": "sample.exe",
+                        },
+                        {
+                            **size_and_name,
+                            "uuid": "2988344f-9e4d-5ebc-8481-cef1a7bbcbfc",
+                            "object_relation": "size-in-bytes",
+                            "type": "size-in-bytes",
+                            "category": "Other",
+                            "value": "2048",
+                        },
+                    ],
+                }
+            ],
+        }
+    }
+
+
+def test_a_galaxy_cluster_two_attributes_carry_is_one_event_tag() -> None:
+    again = {**TECHNIQUE, "uuid": "00000000-0000-5000-8000-000000000003", "value": "T1059"}
+    client = _client(_malware_report(misp_attributes=[ATTRIBUTE, TECHNIQUE, again]))
+
+    response = client.get(f"/api/v1/reports/{REPORT_ID}/misp-event")
+
+    assert response.status_code == 200, response.text
+    assert response.json()["Event"]["Tag"] == [
+        {"name": "tlp:amber"},
+        {"name": 'malspark:verdict="Malware"'},
+        {"name": 'misp-galaxy:mitre-attack-pattern="Command and Scripting Interpreter - T1059"'},
+    ]

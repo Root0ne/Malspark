@@ -293,7 +293,8 @@ def build_misp_event(report: Any, attributes: Iterable[dict[str, Any]], *, owner
     undefined (4): no field of the report maps to MISP's levels one to one.
     The tags are the report's TLP level, its verdict and the ATT&CK galaxy
     clusters its technique attributes carry, each where the report holds it,
-    and a ``file`` object names the sample by the digests its identity holds.
+    and a ``file`` object names the sample by its name, its size and the
+    digests its identity holds that no attribute of the event carries already.
     """
     identity = getattr(report, "identity", None)
     hashes = getattr(identity, "hashes", None)
@@ -326,21 +327,35 @@ def build_misp_event(report: Any, attributes: Iterable[dict[str, Any]], *, owner
     }
     if event["date"] is None:
         del event["date"]
-    sample = _file_object(identity, owner)
+    sample = _file_object(identity, owner, carried)
     if sample is not None:
         event["Object"] = [sample]
     return {"Event": event}
 
 
-def _file_object(identity: Any, owner: str) -> dict[str, Any] | None:
-    """MISP's ``file`` object for the sample: its name, size and identity digests, as held."""
+def _file_object(
+    identity: Any, owner: str, attributes: Iterable[dict[str, Any]] = ()
+) -> dict[str, Any] | None:
+    """MISP's ``file`` object for the sample: its name, size and identity digests, as held.
+
+    A digest one of the event's ``attributes`` carries (same type, same value)
+    is not repeated in the object: MISP would hold it twice. ``None`` when the
+    identity holds no digest at all, or the object would name nothing.
+    """
     hashes = getattr(identity, "hashes", None)
+    carried = {
+        (str(a.get("type") or ""), str(a.get("value") or "").strip().lower()) for a in attributes
+    }
+    held = False
     relations: list[tuple[str, str, str, bool]] = []
     for relation, field in _FILE_DIGESTS:
         value = str(getattr(hashes, field, "") or "").strip()
-        if value:
+        if not value:
+            continue
+        held = True
+        if (relation, value.lower()) not in carried:
             relations.append((relation, relation, value, relation not in _SIMILARITY_TYPES))
-    if not relations:
+    if not held:
         return None
     name = str(getattr(identity, "file_name", "") or "").strip()
     if name:
@@ -348,6 +363,8 @@ def _file_object(identity: Any, owner: str) -> dict[str, Any] | None:
     size = getattr(identity, "file_size_bytes", None)
     if isinstance(size, int) and size > 0:
         relations.append(("size-in-bytes", "size-in-bytes", str(size), False))
+    if not relations:
+        return None
     return {
         "uuid": str(uuid.uuid5(_EVENT_NAMESPACE, f"{owner}|file")),
         "name": "file",
