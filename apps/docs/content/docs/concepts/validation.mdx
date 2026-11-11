@@ -58,10 +58,13 @@ corrected one.
   as a technique the judge could not support.
 
 In the [benchmark](/docs/benchmark/) run, `run_summary.validation.by_code`
-counts 183 findings under 31 codes, the most of them (49)
+counts 183 records under 31 codes, the most of them (49)
 `attck.claim_does_not_describe`: a technique whose claim does not describe the
-behaviour. The run summary records 35 retries, and 52 findings stayed
-unresolved and are listed there.
+behaviour. It is not a count of distinct findings, because a finding fed back
+and then left standing is counted once for each. The run summary records 35
+retries and 52 rows on the unresolved list after them: 28 are answered (a
+rewrite, or a sentence kept with its reason) and 24 were left unresolved, the
+number the evidence bundle prints.
 
 ## Every code, listed
 
