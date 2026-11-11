@@ -4005,11 +4005,24 @@ def _told_the_end(
 ) -> list[Violation]:
     """``found``, the refusals of an answer for ``sentence`` of ``passage``, each saying what
     becomes of a sentence the ledger's lines hold when its last answer is refused
-    (:data:`_LEFT_OUT_END`) where it does not say so already; as they are for any other."""
+    (:data:`_LEFT_OUT_END`) where it does not say so already; as they are for any other.
+    One of a field answered whole is told, once, what the field is, every end that passes
+    for it and that end (:func:`_whole_ends`), each part it does not carry already (T-600)."""
     if not found or passage is None or sentence is None:
         return list(found)
     if not _ends_on_answer(passage, sentence):
         return list(found)
+    if passage.whole:
+        ends = _whole_ends(passage, sentence)
+        what = f"{safe_finding_value(passage.id)} is {safe_finding_value(passage.whole)}"
+        return [
+            violation
+            if what in violation.message
+            else replace(violation, message=f"{violation.message.rstrip()} {what}.")
+            if ends in violation.message
+            else replace(violation, message=f"{violation.message.rstrip()} {what}: {ends}")
+            for violation in found
+        ]
     end = _left_out_end(passage)
     return [
         violation
@@ -4110,6 +4123,15 @@ _WHOLE_ENDS = (
     'the same thing, copied exactly, or with "sources": [] and "reason" where no source '
     'speaks of it; or drop it with "reason"'
 )
+
+
+def _whole_ends(passage: Passage, sentence: str) -> str:
+    """Every end that passes for ``sentence`` of a field answered whole, and what becomes of
+    it where none does: its own where the ledger's lines hold it (:func:`_held_ends`),
+    :data:`_WHOLE_ENDS` for any other."""
+    return _held_ends(passage, sentence) or (
+        f"{_WHOLE_ENDS}. {safe_finding_value(_left_out_end(passage))}"
+    )
 
 
 def _held_ends(passage: Passage, sentence: str) -> str:
@@ -4342,7 +4364,8 @@ def _answer_violations(
                         )
                         + f" on {safe_finding_value(', '.join(_form(n) for n in row.sources))}, "
                         "but "
-                        f"its quote {safe_finding_value(problem)}: "
+                        + ("" if problem == _QUOTE_NONE else "its quote ")
+                        + f"{safe_finding_value(problem)}: "
                         + (
                             held_ends
                             or "quote the words of a source that state the same thing, or "
@@ -4563,6 +4586,8 @@ _QUOTE_SHORT = (
     f"is shorter than {QUOTE_FLOOR} characters, so it quotes nothing; quote at least "
     f"{QUOTE_FLOOR} characters of the source's words"
 )
+# What a keep naming a source with no quote at all is refused for (T-600).
+_QUOTE_NONE = f"gives no quote; quote at least {QUOTE_FLOOR} characters of the source's words"
 _QUOTE_FLOOR_SAID = (
     f'A "quote" is at least {QUOTE_FLOOR} characters of the source\'s words, copied exactly.'
 )
@@ -4599,8 +4624,8 @@ def _quote_problem(
     """
     if quote_too_short(quote):
         # Shorter than the floor it quotes nothing, wherever it stands: said so, as the
-        # TASK states the floor (T-600).
-        return _QUOTE_SHORT
+        # TASK states the floor; an empty one is said to give none (T-600).
+        return _QUOTE_SHORT if quote.strip() else _QUOTE_NONE
     if not quote_stands(quote, [s.text for s in sources]):
         return "does not stand in a source it names"
     rows = [s for s in sources if sentence in s.speaks_to and quote_stands(quote, [s.text])]
@@ -5571,12 +5596,21 @@ def _grounding_violations(
     return out
 
 
-def agreement_violations(payload: Any, passages: Sequence[Passage]) -> list[Violation]:
+def agreement_violations(
+    payload: Any,
+    passages: Sequence[Passage],
+    citable: Sequence[str] = (),
+    items: Any = None,
+    entries: EntryTexts | None = None,
+) -> list[Violation]:
     """What is structurally wrong with the answer's rows, as the retry turn shows it.
 
     Nothing for an answer that does not fit the schema: the schema check
     speaks for it. Each passage is cut into sentences once; a section 5
     rewrite on a fact is read as the platform writes it (``_platform_rewrites``).
+    A refused row for a sentence another row answers passing every check, its
+    rewrite read against ``citable``, ``items`` and ``entries`` (:func:`_checked_rows`),
+    asks nothing more (T-600).
     """
     by_id = {passage.id: passage for passage in passages}
     payload = _platform_rewrites(payload, by_id)
@@ -5591,11 +5625,12 @@ def agreement_violations(payload: Any, passages: Sequence[Passage]) -> list[Viol
     listed: set[tuple[str, int]] = set()
     rewritten: set[tuple[str, int]] = set()
     rows = _rows(payload)
-    for index, row in rows:
-        found = _row_violations(row, index, by_id, _sentences)
-        passage = by_id.get(_form(row.passage))
-        span = _sentences(passage).span(row.sentence) if passage is not None else None
-        out.extend(_told_the_end(passage, span[2] if span is not None else None, found))
+    checked, passed = _checked_rows(rows, by_id, _sentences, citable, items, entries)
+    for _index, row, passage, found, _rewritten, span in checked:
+        if passage is not None and span is not None and (passage.id, span[0]) not in passed:
+            out.extend(_told_the_end(passage, span[2], found))
+        elif passage is None or span is None:
+            out.extend(found)
         if passage is not None and span is not None:
             listed.add((passage.id, span[0]))
             # A rewrite whose own finding names the listing is asked about once.
@@ -5695,7 +5730,7 @@ def _held_unlisted(
                         f"{safe_finding_value(passage.id)} {said}, and no row lists this "
                         f"sentence: {safe_finding_value(sentence)!r}. List it: "
                         + (
-                            ends or f"{_WHOLE_ENDS}. {safe_finding_value(_left_out_end(passage))}"
+                            _whole_ends(passage, sentence)
                             if passage.whole
                             else ends
                             or "rewrite it on the source that states otherwise, or keep it "
@@ -5742,12 +5777,21 @@ def rewrites_violations(
     passages: Sequence[Passage] = (),
 ) -> list[Violation]:
     """Each rewrite's prose findings, its row named in the path; a rewrite of a sentence
-    the ledger's lines hold, among ``passages``, is told what becomes of it (T-600)."""
+    the ledger's lines hold, among ``passages``, is told what becomes of it, and one of a
+    sentence another row answers passing every check (:func:`_checked_rows`) asks nothing
+    more (T-600)."""
     by_id = {passage.id: passage for passage in passages}
     cut: dict[str, _Sentences] = {}
+
+    def _sentences(passage: Passage) -> _Sentences:
+        if passage.id not in cut:
+            cut[passage.id] = _Sentences(passage.text)
+        return cut[passage.id]
+
     out: list[Violation] = []
-    for index, row in _rows(payload):
-        if row.decision != "rewrite":
+    checked, passed = _checked_rows(_rows(payload), by_id, _sentences, citable, items, entries)
+    for index, _row, passage, _own, rewritten, span in checked:
+        if passage is not None and span is not None and (passage.id, span[0]) in passed:
             continue
         found = [
             replace(
@@ -5758,14 +5802,8 @@ def rewrites_violations(
                 sentence="",
                 path=f"sentences.{index}.rewrite",
             )
-            for violation in _rewrite_violations(row.rewrite, citable, items, entries)
+            for violation in rewritten
         ]
-        passage = by_id.get(_form(row.passage))
-        span = None
-        if found and passage is not None:
-            if passage.id not in cut:
-                cut[passage.id] = _Sentences(passage.text)
-            span = cut[passage.id].span(row.sentence)
         out.extend(_told_the_end(passage, span[2] if span is not None else None, found))
     return out
 
@@ -6045,6 +6083,48 @@ def _rests_on_a_source(row: AgreementRow, by_id: dict[str, Passage]) -> bool:
     )
 
 
+# A row as :func:`_checked_rows` reads it: its index, the row, its passage, its own
+# refusals, its rewrite's, and the span of its sentence.
+_CheckedRow = tuple[
+    int,
+    AgreementRow,
+    Passage | None,
+    list[Violation],
+    list[Violation],
+    tuple[int, int, str, int] | None,
+]
+
+
+def _checked_rows(
+    rows: Sequence[tuple[int, AgreementRow]],
+    by_id: dict[str, Passage],
+    sentences_of: Callable[[Passage], _Sentences],
+    citable: Sequence[str],
+    items: Any,
+    entries: EntryTexts | None,
+) -> tuple[list[_CheckedRow], set[tuple[str, int]]]:
+    """Each row with the passage and the sentence it names, its own refusals
+    (:func:`_row_violations`) and its rewrite's (:func:`_rewrite_violations`); and the
+    sentences a row that passed every check answers, read over every row first: such an
+    answer stands, and a refused row for the same sentence, before or after it, ends
+    nothing and asks nothing more, in a closing passage as in any other (T-600)."""
+    passed: set[tuple[str, int]] = set()
+    checked: list[_CheckedRow] = []
+    for index, row in rows:
+        passage = by_id.get(_form(row.passage))
+        own = _row_violations(row, index, by_id, sentences_of)
+        rewritten = (
+            _rewrite_violations(row.rewrite, citable, items, entries)
+            if row.decision == "rewrite"
+            else []
+        )
+        span = sentences_of(passage).span(row.sentence) if passage is not None else None
+        if passage is not None and span is not None and not own and not rewritten:
+            passed.add((passage.id, span[0]))
+        checked.append((index, row, passage, own, rewritten, span))
+    return checked, passed
+
+
 def apply_rows(
     payload: Any,
     passages: Sequence[Passage],
@@ -6111,26 +6191,12 @@ def apply_rows(
     # for it passed: left out once every other end is in (T-600), with the record of why.
     unpassed: list[tuple[Passage, tuple[int, int, str, int], str, Sequence[Violation], str]] = []
     answered: set[tuple[str, int]] = set()
-    # The sentences a row that passed every check answers, read over every row first: such
-    # an answer stands, and a refused row for the same sentence, before or after it, ends
-    # nothing, in a closing passage as in any other (T-600).
-    passed: set[tuple[str, int]] = set()
     rows = _rows(payload) if asked else []
-    checked: list[
-        tuple[int, AgreementRow, Passage | None, list[Violation], tuple[int, int, str, int] | None]
-    ] = []
-    for index, row in rows:
-        passage = by_id.get(_form(row.passage))
-        found = _row_violations(row, index, by_id, _sentences)
-        if row.decision == "rewrite":
-            found += _rewrite_violations(row.rewrite, citable, items, entries)
-        span = _sentences(passage).span(row.sentence) if passage is not None else None
+    checked, passed = _checked_rows(rows, by_id, _sentences, citable, items, entries)
+    for index, row, passage, own, rewritten, span in checked:
+        found = [*own, *rewritten]
         if passage is not None and span is not None:
             answered.add((passage.id, span[0]))
-            if not found:
-                passed.add((passage.id, span[0]))
-        checked.append((index, row, passage, found, span))
-    for index, row, passage, found, span in checked:
         counts["sentences"] += 1
         if found and passage is not None and span is not None and (passage.id, span[0]) in passed:
             # Another row's answer passed: this refused one is not applied.
@@ -6817,7 +6883,7 @@ async def _ask(
                 lambda p: schema_violations(
                     AgreementOutput, p, code=SCHEMA_CODE, answer=answer_read[0]
                 ),
-                lambda p: agreement_violations(p, passages),
+                lambda p: agreement_violations(p, passages, citable, items, evidence_texts),
                 lambda p: rewrites_violations(p, citable, items, evidence_texts, passages),
             ],
             parse=_parse,

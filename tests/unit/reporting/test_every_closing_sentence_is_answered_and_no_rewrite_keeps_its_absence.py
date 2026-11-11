@@ -332,8 +332,8 @@ def test_a_kept_closing_sentence_quotes_a_source_stating_the_same() -> None:
     unquoted = _row("limitations", STILL_OPEN, "keep", ["persistence_detail"])
     passages = passages_of(report, entries=_ledger())
     for row, said in (
-        # No quote at all is shorter than the floor, and refused as such (T-600).
-        (unquoted, "is shorter than 12 characters, so it quotes nothing"),
+        # No quote at all is refused as giving none (T-600).
+        (unquoted, "but gives no quote; quote at least 12 characters"),
         ({**unquoted, "quote": "a quote standing nowhere"}, "does not stand in a source it names"),
         # haiku12's gamed keep: words that stand, but quote no particular absence.
         ({**unquoted, "quote": "is not established"}, "shares too few"),

@@ -1089,15 +1089,10 @@ def _expected() -> dict[str, dict[str, list[tuple[str, str]]]]:
                 [
                     (
                         KEEP_UNQUOTED_CODE,
-                        _same_kept(
-                            "introduction",
-                            _UNKNOWN,
-                            "ledger.1",
-                            # It gives no quote: shorter than the floor (T-600).
-                            "is shorter than 12 characters, so it quotes nothing; quote at "
-                            "least 12 characters of the source's words",
-                            _BODY_ENDS,
-                        ),
+                        # It gives no quote, and is told so (T-600).
+                        f"row 1: introduction rewrites {_UNKNOWN!r} into the same words, which "
+                        "keeps it, on ledger.1, but gives no quote; quote at least 12 characters "
+                        f"of the source's words: {_BODY_ENDS}",
                     )
                 ],
             ),

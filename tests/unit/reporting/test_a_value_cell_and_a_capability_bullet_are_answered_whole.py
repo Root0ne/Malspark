@@ -40,6 +40,7 @@ from malspark.reporting.section_agreement import (
     apply_rows,
     passages_of,
     prompt_text,
+    rewrites_violations,
 )
 from tests.unit.reporting.test_a_denial_of_a_name_the_run_holds_is_read_against_the_ledger import (
     _UNKNOWN,
@@ -506,11 +507,7 @@ def test_a_quote_shorter_than_the_floor_is_refused_for_that_and_told_the_end() -
         _at("limitations", _beside()),
         _at("capability_summary.1", _row(BULLET, "keep", [], reason="no source speaks of it")),
     ]
-    told = (
-        "quote the words of a source that state the same thing, or rewrite the sentence on the "
-        "source that states otherwise. If no answer for it passes the checks, it is left out of "
-        'the report, and a cell left with no sentence prints "-".'
-    )
+    told = f"{_KEEP_TOLD} {_CELL_TOLD}"
     # "RC4" stands in section 5, but is shorter than the floor: the refusal says so.
     short = _at(
         "communications.1.encryption", _row(CELL, "keep", ["string_resolution"], quote="RC4")
@@ -628,3 +625,329 @@ def test_a_record_of_procedure_10_leaves_procedure_1_as_before() -> None:
     # The record names procedure 10 alone: procedure 1 is no left-out one.
     assert "rolling XOR key" in _row_of("T1001")
     assert _row_of("T1010").rstrip().endswith("| - |")
+
+
+# What every refusal of an answer for a cell or a bullet ends with: what the field is, every
+# end that passes for it, and what becomes of it where none does.
+_PASSING_ENDS = (
+    "every sentence of which is answered: rewrite it on the source that states otherwise, "
+    "citing an entry that source cites; keep it naming the source you read and found agreeing, "
+    'with "quote": its words that state the same thing, copied exactly, or with "sources": [] '
+    'and "reason" where no source speaks of it; or drop it with "reason". If no answer for it '
+    "passes the checks, it is left out of the report, and "
+)
+_CELL_TOLD = (
+    f"communications.1.encryption is a table cell, {_PASSING_ENDS}a cell left with no sentence "
+    'prints "-".'
+)
+_BULLET_TOLD = (
+    f"capability_summary.1 is a capability bullet of the summary, {_PASSING_ENDS}a bullet left "
+    "with no sentence is not printed."
+)
+_KEEP_TOLD = (
+    "quote the words of a source that state the same thing, or rewrite the sentence on the "
+    "source that states otherwise."
+)
+_NOT_SHOWN = (
+    "row 1: [ev_0999] is not an entry this answer was shown. Cite an entry by its evidence id "
+    "in brackets — this answer may cite ev_0101, ev_0102, ev_0103, ev_0104, ev_0107, ev_0109 — "
+    "or write the sentence witho…"
+)
+_UNGROUNDED = (
+    "row 1: the rewrite cites none of the ids its sources cite. Cite the entry a source rests "
+    "on, or keep the sentence."
+)
+
+
+def _refusals(pid: str, row: dict[str, Any]) -> list[tuple[str, str, str]]:
+    """Every refusal of the agreement round's two checks for ``row`` answering ``pid``, the
+    other passages answered by a passing row each."""
+    ledger = _ledger()
+    citable = [str(e.id) for e in ledger]
+    entries = EntryTexts.from_ledger(ledger)
+    passages = passages_of(_with_section_5(), entries=ledger)
+    others = [
+        _at(p, _row(s, "keep", [], reason="no source speaks of it"))
+        for p, s in (
+            ("limitations", FIRST),
+            ("capability_summary.1", BULLET),
+            ("communications.1.encryption", CELL),
+        )
+        if p != pid
+    ]
+    payload = {"sentences": [_at(pid, row), *others]}
+    return [
+        (v.code, v.path, v.message)
+        for v in [
+            *agreement_violations(payload, passages, citable, None, entries),
+            *rewrites_violations(payload, citable, None, entries, passages),
+        ]
+    ]
+
+
+@pytest.mark.parametrize(
+    ("pid", "row", "expected"),
+    [
+        (
+            "communications.1.encryption",
+            _row(CELL, "keep", []),
+            [
+                (
+                    "agreement.unknown_source",
+                    "sentences.0.sources",
+                    "row 1 names no source. Name the ids of the sources you read for the "
+                    "sentence of communications.1.encryption, or, keeping a sentence no source "
+                    f"speaks of, or leaving one out, give the reason. {_CELL_TOLD}",
+                )
+            ],
+        ),
+        (
+            "communications.1.encryption",
+            _row(CELL, "keep", ["string_resolution"], quote="RC4"),
+            [
+                (
+                    "agreement.keep_unquoted",
+                    "sentences.0.quote",
+                    "row 1: communications.1.encryption keeps 'Not established.' on "
+                    "string_resolution, but its quote is shorter than 12 characters, so it "
+                    "quotes nothing; quote at least 12 characters of the source's words: "
+                    f"{_KEEP_TOLD} {_CELL_TOLD}",
+                )
+            ],
+        ),
+        (
+            "communications.1.encryption",
+            _row(CELL, "keep", ["string_resolution"], quote="a quote nowhere to be found"),
+            [
+                (
+                    "agreement.keep_unquoted",
+                    "sentences.0.quote",
+                    "row 1: communications.1.encryption keeps 'Not established.' on "
+                    "string_resolution, but its quote does not stand in a source it names: "
+                    f"{_KEEP_TOLD} {_CELL_TOLD}",
+                )
+            ],
+        ),
+        (
+            "communications.1.encryption",
+            _row(CELL, "rewrite", ["string_resolution"], rewrite="RC4 over each report [ev_0999]."),
+            [
+                (
+                    "agreement.rewrite_cites_elsewhere",
+                    "sentences.0.rewrite",
+                    "row 1: the rewrite cites ev_0999, which neither its sources nor "
+                    "communications.1.encryption cite. Cite only what the sources you name, or "
+                    f"the passage itself, cite. {_CELL_TOLD}",
+                ),
+                (
+                    "agreement.rewrite_ungrounded",
+                    "sentences.0.rewrite",
+                    f"{_UNGROUNDED} {_CELL_TOLD}",
+                ),
+                (
+                    "report.citation_not_evidence",
+                    "sentences.0.rewrite",
+                    f"{_NOT_SHOWN} {_CELL_TOLD}",
+                ),
+            ],
+        ),
+        (
+            "capability_summary.1",
+            _row(BULLET, "keep", []),
+            [
+                (
+                    "agreement.unknown_source",
+                    "sentences.0.sources",
+                    "row 1 names no source. Name the ids of the sources you read for the "
+                    "sentence of capability_summary.1, or, keeping a sentence no source speaks "
+                    f"of, or leaving one out, give the reason. {_BULLET_TOLD}",
+                )
+            ],
+        ),
+        (
+            "capability_summary.1",
+            _row(BULLET, "keep", ["string_resolution"], quote="host mode"),
+            [
+                (
+                    "agreement.keep_unquoted",
+                    "sentences.0.quote",
+                    f"row 1: capability_summary.1 keeps {BULLET!r} on string_resolution, but its "
+                    "quote is shorter than 12 characters, so it quotes nothing; quote at least 12 "
+                    f"characters of the source's words: {_KEEP_TOLD} {_BULLET_TOLD}",
+                )
+            ],
+        ),
+        (
+            "capability_summary.1",
+            _row(BULLET, "rewrite", ["string_resolution"], rewrite="It resolves a mode [ev_0999]."),
+            [
+                (
+                    "agreement.rewrite_cites_elsewhere",
+                    "sentences.0.rewrite",
+                    "row 1: the rewrite cites ev_0999, which neither its sources nor "
+                    "capability_summary.1 cite. Cite only what the sources you name, or the "
+                    f"passage itself, cite. {_BULLET_TOLD}",
+                ),
+                (
+                    "agreement.rewrite_drops_citation",
+                    "sentences.0.rewrite",
+                    "row 1: the sentence cites ev_0107, which the rewrite does not. Keep every id "
+                    f"the sentence cites, or keep the sentence. {_BULLET_TOLD}",
+                ),
+                (
+                    "agreement.rewrite_ungrounded",
+                    "sentences.0.rewrite",
+                    f"{_UNGROUNDED} {_BULLET_TOLD}",
+                ),
+                (
+                    "report.citation_not_evidence",
+                    "sentences.0.rewrite",
+                    f"{_NOT_SHOWN} {_BULLET_TOLD}",
+                ),
+            ],
+        ),
+    ],
+)
+def test_every_refusal_for_a_cell_or_bullet_says_what_it_is_and_every_end(
+    pid: str, row: dict[str, Any], expected: list[tuple[str, str, str]]
+) -> None:
+    assert _refusals(pid, row) == expected
+
+
+def test_a_keep_naming_a_source_with_no_quote_is_refused_for_giving_none() -> None:
+    assert _refusals("communications.1.encryption", _row(CELL, "keep", ["string_resolution"])) == [
+        (
+            "agreement.keep_unquoted",
+            "sentences.0.quote",
+            "row 1: communications.1.encryption keeps 'Not established.' on string_resolution, "
+            "but gives no quote; quote at least 12 characters of the source's words: "
+            f"{_KEEP_TOLD} {_CELL_TOLD}",
+        )
+    ]
+
+
+def test_a_quote_of_exactly_the_floor_is_not_too_short() -> None:
+    from malspark.reporting.absence_answers import quote_stands, quote_too_short
+
+    # Twelve characters, as read: the floor, which a quote may reach.
+    assert (quote_too_short("a host mode."), quote_too_short("host mode.")) == (False, True)
+    assert quote_stands("a host mode.", ["It reads a host mode."]) is True
+
+
+@pytest.mark.parametrize("order", ["passing first", "refused first"])
+@pytest.mark.parametrize(
+    "refused",
+    [
+        _row(CELL, "keep", ["string_resolution"], quote="zz"),
+        _row(CELL, "rewrite", ["string_resolution"], rewrite="RC4 over each report [ev_0999]."),
+    ],
+    ids=["refused keep", "refused rewrite"],
+)
+def test_a_refused_row_beside_a_passing_one_for_its_sentence_asks_nothing_more(
+    order: str, refused: dict[str, Any]
+) -> None:
+    passing = _at("communications.1.encryption", _row(CELL, "keep", [], reason="no source speaks"))
+    pair = [passing, _at("communications.1.encryption", refused)]
+    rows = [
+        *(pair if order == "passing first" else pair[::-1]),
+        _at("limitations", _beside()),
+        _at("capability_summary.1", _row(BULLET, "keep", [], reason="no source speaks of it")),
+    ]
+    ledger = _ledger()
+    citable = [str(e.id) for e in ledger]
+    entries = EntryTexts.from_ledger(ledger)
+    passages = passages_of(_with_section_5(), entries=ledger)
+    payload = {"sentences": rows}
+    assert agreement_violations(payload, passages, citable, None, entries) == []
+    assert rewrites_violations(payload, citable, None, entries, passages) == []
+    # That was the only refusal: the round makes one call, and records no refusal.
+    report = _with_section_5()
+    reporter = _Reporter(payload, payload)
+    done = _ask(report, reporter)
+    assert len(reporter.asked) == 1
+    assert report.c2_channels[0].encryption == CELL
+    assert [r["code"] for r in done.tally.unresolved] == ["agreement.held_kept"] * 3
+
+
+_HELD_CELL = "Which export the loader calls is not established."
+
+
+def _held_cell() -> MalwareReport:
+    report = _report(FIRST)
+    report.c2_channels = [C2Channel(name="HTTP channel", encryption=_HELD_CELL)]
+    return report
+
+
+def test_a_cell_the_ledger_holds_is_asked_again_after_an_empty_answer_told_its_ends() -> None:
+    passages = passages_of(_held_cell(), entries=_ledger())
+    found = agreement_violations({"sentences": []}, passages)
+    # Held on a name the run holds, not only by its kind: asked about where no row could be
+    # read, told the ends of a held sentence and what an emptied cell prints.
+    assert [(v.code, v.path, v.message) for v in found] == [
+        (
+            HELD_UNLISTED_CODE,
+            "held.communications.1.encryption",
+            "communications.1.encryption names what a ledger.N fact shows, and no row lists "
+            f"this sentence: {_HELD_CELL!r}. List it: it names what ledger.1 holds lines on: a "
+            "keep of it as written is refused, and the same words with a citation added are a "
+            "keep; rewrite it in your own words on the lines shown, citing the entry they come "
+            "from, saying what the lines show and what stays unknown, each denial in it "
+            "followed at once by the entry it rests on, one shown for it, or drop it. If no "
+            "answer for it passes the checks, it is left out of the report, and a cell left "
+            'with no sentence prints "-". Answer with every row again, this one included.',
+        ),
+        (
+            HELD_UNLISTED_CODE,
+            "held.limitations",
+            "limitations holds a sentence of a closing section, every one of which is answered, "
+            f"and no row lists this sentence: {FIRST!r}. List it: rewrite it on the source that "
+            "states otherwise, or keep it naming the source you read and found agreeing, quoting "
+            "its words, or leave it out giving the reason. Answer with every row again, this one "
+            "included.",
+        ),
+    ]
+
+
+def test_a_refusal_for_a_cell_the_ledger_holds_says_what_it_is_once() -> None:
+    passages = passages_of(_held_cell(), entries=_ledger())
+    keep = _at("communications.1.encryption", _row(_HELD_CELL, "keep", [], reason="none"))
+    found = agreement_violations({"sentences": [keep, _at("limitations", _beside())]}, passages)
+    # The refusal carries the held sentence's ends already: only what the field is is added.
+    assert [(v.code, v.path, v.message) for v in found] == [
+        (
+            "agreement.keep_unquoted",
+            "sentences.0.sources",
+            f"row 1: communications.1.encryption keeps {_HELD_CELL!r} naming no source, but "
+            "ledger.1 speaks of what it names: it names what ledger.1 holds lines on: a keep of "
+            "it as written is refused, and the same words with a citation added are a keep; "
+            "rewrite it in your own words on the lines shown, citing the entry they come from, "
+            "saying what the lines show and what stays unknown, each denial in it followed at "
+            "once by the entry it rests on, one shown for it, or drop it. If no answer for it "
+            "passes the checks, it is left out of the report, and a cell left with no sentence "
+            'prints "-". communications.1.encryption is a table cell, every sentence of which is '
+            "answered.",
+        )
+    ]
+
+
+def test_a_cell_s_name_fact_comes_before_a_body_sentence_s_in_the_budget(
+    monkeypatch: Any,
+) -> None:
+    import malspark.reporting.section_agreement as agreement
+
+    # A budget the cell's fact fills exactly: the body sentence's fact, read after it, is
+    # not shown, and its sentence is not held on it.
+    monkeypatch.setattr(agreement, "_NAMES_PER_QUESTION", 146)
+    report = _held_cell()
+    assert report.technical_analysis is not None
+    assert report.technical_analysis.string_resolution is not None
+    report.technical_analysis.string_resolution.body = "No 'quietmode' text is decoded."
+    passages = passages_of(report, entries=_ledger())
+    assert [(p.id, dict(p.ledger_named)) for p in passages if p.ledger_named] == [
+        ("communications.1.encryption", {_HELD_CELL: ("ledger.1",)})
+    ]
+    assert [(p.id, len(p.text)) for p in passages if p.id == "ledger.1"] == [("ledger.1", 146)]
+    assert next(p.text for p in passages if p.id == "ledger.left") == (
+        "1 name the ledger holds not shown: budget (146 characters of such facts per "
+        "question); a sentence held only on them is not held"
+    )
