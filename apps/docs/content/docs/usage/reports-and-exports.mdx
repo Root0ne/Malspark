@@ -36,10 +36,11 @@ One report is reachable by its own id or by the job that produced it
 | `html` | The report as HTML. |
 | `pdf` | The report as PDF. |
 | `full` | The whole `MalwareReport` JSON document: identity, static, dynamic, network, persistence, capability matrix, executive summary, detection signatures and the rest. |
-| `stix` | The exported STIX 2.1 bundle. `stix?source=judge` serves the judge's own bundle beside it, with the map from each id the judge wrote to the id it was published under. |
+| `stix` | The exported STIX 2.1 bundle (below). `stix?source=judge` serves the judge's own bundle beside it, with the map from each id the judge wrote to the id it was published under. |
 | `mitre` | The ATT&CK view of the report. |
 | `iocs` | The indicator feed, with a publish decision on every row (below). |
-| `signatures/{kind}` | The detection drafts of one kind as plain text: `yara`, `sigma` or `suricata`. The route also accepts `snort`, for which no draft is generated, so it answers an empty body. |
+| `misp-event` | The report as one MISP event (below). |
+| `signatures/{kind}` | The detection drafts of one kind as one file of that kind: `yara`, `sigma` or `suricata` (below). The route also accepts `snort`, for which no draft is generated, so it answers an empty body. |
 | `timeline` | The run's timeline. |
 
 <Tabs items={["Markdown", "STIX 2.1", "IOC feed", "YARA drafts"]}>
@@ -100,9 +101,55 @@ Every row carries its `kind`, its `value`, a `source` (`sandbox`, `analyst`,
 `strings`, `identity` or `judge`), whether it is `published`, and
 `publish_answer`: `yes:` and why the row is published, or `no:` and why not. A
 value the sample hid carries `recovered_by`, naming the tool that recovered it
-and its ledger entry. The full rule — which kinds exist, when a sandbox address
+and its ledger entry. `evidence_ids` lists the ledger entries the run's record
+ties to the row (the entries an analyst's listing cites, the entry a call
+binding was read in, the entries of the tools that recovered a hidden value),
+only ids the run's ledger holds, and is empty when the record ties none. `tlp`
+is the report's TLP level by its TLP 2.0 name (`TLP:AMBER`), the one its cover
+prints. The full rule — which kinds exist, when a sandbox address
 counts as the sample's — is in [Reports](/docs/api/#reports) in the REST API
 reference.
+
+## The STIX bundle
+
+The bundle a report stores is served as stored. The bundle's id and every
+object id the platform writes are derived, not random: from the report's
+identity (the sample's SHA-256 and the time the report was built) and what
+identifies the object — its kind and its pattern, name or relationship ends;
+the sample's own malware object by the report alone — and written in the
+UUID version 4 form STIX asks for. Every `created`, `modified` and
+`valid_from` the platform writes is the time the report was built. The ids are
+stable per report, not across reports: the report rendered again is the same
+bundle, and a consumer importing it again holds one object per object, while
+another run of the same sample is a bundle of other ids. The technique
+objects and the producer's identity have one id across every report, and a
+`file` observable keeps the id the standard derives for it.
+
+Every domain object and relationship names the report's TLP level in
+`object_marking_refs`, by the fixed id of its TLP 2.0 marking definition, and
+the bundle carries that definition. An indicator carries
+`x_malspark_evidence_refs`, the ledger entries of the IOC rows it publishes,
+where the record ties any. The standard's `confidence` property is not set:
+no rule maps the report's support for a value to a number.
+
+## The MISP event
+
+`misp-event` answers `{"Event": ...}`: the report's published MISP attributes
+(the same ones the report's `misp_attributes` holds), a `file` object naming
+the sample by its name, its size and the identity digests no attribute of the
+event already carries, and the tags the report
+holds a value for: its TLP level (`tlp:amber`), its verdict
+(`malspark:verdict="Malware"`) and the ATT&CK galaxy cluster of each published
+technique. The event's uuid, like every attribute's, is derived from the
+report's job (for a report stored before its attributes, which are built when
+served, from the report's id, as theirs are), so a second import updates the
+same event. `date` is the day the
+report was built, `analysis` is `2` (complete), `distribution` is `0` (this
+organisation only: the receiver decides how far it shares) and
+`threat_level_id` is `4` (undefined): no field of the report maps to MISP's
+levels one to one. Each attribute carries the `tlp:` tag, and its comment names
+the ledger entries of its IOC row. The console's Export menu offers the event
+beside the bare attributes.
 
 ## Detection drafts
 
@@ -112,6 +159,16 @@ table's rows published `yes`, and a Sigma selection names a registry key or an
 image path only when the table publishes it or a sandbox recorded it. A Benign
 verdict publishes no malicious indicator, so it gets no draft, and the report
 says so. They are drafts: review them before deploying them.
+
+`signatures/{kind}` serves the drafts the report prints — each compiles and,
+for YARA, matched its sample by its content — as one file of the kind: each
+rule's name is a comment line in the kind's own syntax (`//` for YARA, `#` for
+Sigma, Suricata and Snort), and Sigma documents are one YAML stream separated
+by `---`. `?include=all` serves every draft instead, each with a second comment
+line saying whether the report prints it and why. The console's Export menu
+offers the printed rules of each kind the report prints a rule of, and every
+draft of a kind where one is not printed. Suricata SIDs are numbered per sample from its SHA-256; renumber them
+before loading drafts of several samples into one ruleset.
 
 ## What left this machine
 

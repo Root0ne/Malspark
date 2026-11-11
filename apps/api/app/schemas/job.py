@@ -536,6 +536,14 @@ class IOCEntry(BaseModel):
     # decoding of the file's bytes), its ledger entry and where in the file,
     # as the report's IOC table states it. Absent for every other row.
     recovered_by: str | None = None
+    # The ledger entries the report's IOC table ties to the row
+    # (``ConsolidatedIOC.evidence_ids``): only ids the run's ledger holds;
+    # empty when the record ties none.
+    evidence_ids: list[str] = []
+    # The report's TLP level by its TLP 2.0 name (``TLP:AMBER``), the one its
+    # cover prints and its STIX export marks every object with. Absent when
+    # the stored report holds none.
+    tlp: str | None = None
 
 
 class IOCListResponse(BaseModel):

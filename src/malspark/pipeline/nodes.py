@@ -8049,6 +8049,7 @@ def make_report_node(
 
         from malspark.reporting.builder import MalwareReportBuilder
         from malspark.reporting.renderers import ExtendedSTIXRenderer, MarkdownRenderer
+        from malspark.reporting.renderers.stix_renderer import relabelled
         from malspark.schemas.stix_models import Bundle
 
         isr_reports = dict(state.get("isr_reports") or {})
@@ -8564,6 +8565,7 @@ def make_report_node(
             logger.warning("report_node: figure generation failed (%s).", exc)
 
         extended_dump: dict[str, Any] | None = None
+        _relabelled: dict[str, Any] | None = None
         if cfg is None or cfg.include_extended_stix:
             try:
                 base = (
@@ -8614,6 +8616,10 @@ def make_report_node(
                 # the bundle is what a consumer acts on, and a reader is owed
                 # the sentence saying which one this run kept.
                 _note_export_findings(report, _renderer.declined)
+                # The judge's label map names the id each of its objects is
+                # published under: the export derives every id it writes.
+                if state.get("stix_labels") and _renderer.renamed:
+                    _relabelled = relabelled(state.get("stix_labels") or {}, _renderer.renamed)
             except Exception as exc:  # noqa: BLE001
                 logger.warning("report_node: extended STIX render failed (%s).", exc)
                 extended_dump = None
@@ -8932,6 +8938,8 @@ def make_report_node(
             "malware_report_markdown": markdown,
             "stix_bundle_extended": extended_dump,
         }
+        if _relabelled is not None:
+            result["stix_labels"] = _relabelled
         if _undrained or _capa_entries:
             # ``evidence_ledger`` is append-only, so this adds the undrained
             # and the provider's entries to the run's rather than replacing it.

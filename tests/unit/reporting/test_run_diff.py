@@ -342,9 +342,11 @@ class TestDetection:
 
 class TestStix:
     def test_two_renders_with_different_ids_pair_by_key_not_by_id(self, stored) -> None:
+        # Every id is derived per report: the second bundle is another build
+        # of the report (its own build time), so another run, with other ids.
         ids_a = {o["id"] for o in stored["bundle"]["objects"]}
         ids_b = {o["id"] for o in stored["second_bundle"]["objects"]}
-        assert ids_a != ids_b  # the renderer mints fresh ids for some objects
+        assert ids_a != ids_b
 
         diff = _pair(stored)
 

@@ -4,7 +4,8 @@
  *
  * Quick is what a reader hands on: the report and the indicator list. Deep is
  * what another tool imports: STIX, MISP, the ATT&CK layer, the generated
- * rules. Data is the raw record. Each item calls the download the console
+ * rules (those the report prints, and every draft where some are not). Data
+ * is the raw record. Each item calls the download the console
  * already had (`lib/api.ts`); nothing here is a new endpoint. An item with
  * nothing to download is left out, or kept with the reason it is unavailable
  * printed beside it, never a dead control without a word.
@@ -82,8 +83,10 @@ export function exportFileNames(baseName: string) {
     stix: STIX_EXPORT_FILE,
     stixDraft: STIX_DRAFT_FILE,
     misp: `${baseName}-misp.json`,
+    mispEvent: `${baseName}-misp-event.json`,
     attackLayer: NAVIGATOR_LAYER_FILE,
     rules: (kind: DetectionKind) => `malspark-${kind}.${RULE_EXT[kind]}`,
+    allRules: (kind: DetectionKind) => `malspark-${kind}-all.${RULE_EXT[kind]}`,
     report: `${baseName}-report.json`,
     techniques: `${baseName}-mitre.json`,
     timeline: `${baseName}-timeline.json`,
@@ -105,6 +108,15 @@ function json(body: unknown): string {
 export function ruleKinds(mr: MalwareReport | null | undefined): DetectionKind[] {
   const present = new Set((mr?.detection_signatures ?? []).map((r) => r.kind));
   return (Object.keys(RULE_LABEL) as DetectionKind[]).filter((k) => present.has(k));
+}
+
+/** The drafts of `kind`: whether the report prints any, and whether it leaves any out. */
+function draftsOf(mr: MalwareReport | null | undefined, kind: DetectionKind) {
+  const drafts = (mr?.detection_signatures ?? []).filter((r) => r.kind === kind);
+  return {
+    printed: drafts.some((r) => r.printed === true),
+    unprinted: drafts.some((r) => r.printed !== true),
+  };
 }
 
 /**
@@ -205,6 +217,14 @@ export function reportExportGroups(
       run: async () => downloadBlob(json(misp ?? []), names.misp, "application/json"),
     },
     {
+      key: "misp-event",
+      label: "MISP event",
+      hint: "The attributes in one event a MISP instance imports",
+      unavailable: mr ? undefined : "The analysis has no stored report",
+      run: async () =>
+        downloadBlob(json(await api.getReportMispEvent(reportId)), names.mispEvent, "application/json"),
+    },
+    {
       key: "attack-layer",
       label: "ATT&CK Navigator layer",
       run: async () =>
@@ -214,18 +234,40 @@ export function reportExportGroups(
           "application/json",
         ),
     },
-    ...ruleKinds(mr).map(
-      (kind): ExportItem => ({
-        key: `rules-${kind}`,
-        label: RULE_LABEL[kind],
-        run: async () =>
-          downloadBlob(
-            await api.getReportSignature(reportId, kind),
-            names.rules(kind),
-            RULE_MIME[kind],
-          ),
-      }),
-    ),
+    // A kind the report prints no rule of has no printed file to save, only
+    // its drafts: the default item would download an empty file.
+    ...ruleKinds(mr).flatMap((kind): ExportItem[] => [
+      ...(draftsOf(mr, kind).printed
+        ? [
+            {
+              key: `rules-${kind}`,
+              label: RULE_LABEL[kind],
+              hint: "The rules the report prints",
+              run: async () =>
+                downloadBlob(
+                  await api.getReportSignature(reportId, kind),
+                  names.rules(kind),
+                  RULE_MIME[kind],
+                ),
+            },
+          ]
+        : []),
+      ...(draftsOf(mr, kind).unprinted
+        ? [
+            {
+              key: `rules-${kind}-all`,
+              label: `${RULE_LABEL[kind]}, all drafts`,
+              hint: "Every draft, each with why the report does or does not print it",
+              run: async () =>
+                downloadBlob(
+                  await api.getReportSignature(reportId, kind, "all"),
+                  names.allRules(kind),
+                  RULE_MIME[kind],
+                ),
+            },
+          ]
+        : []),
+    ]),
   ];
 
   const data: ExportItem[] = [

@@ -21,6 +21,7 @@ after this deterministic phase.
 
 from __future__ import annotations
 
+from collections.abc import Iterable, Mapping
 from typing import TYPE_CHECKING, Any
 
 from malspark.analysis.run_summary import NOT_APPLICABLE
@@ -758,6 +759,7 @@ def _build_consolidated_iocs(report: MalwareReport) -> list[ConsolidatedIOC]:
         publish_answer,
         query_answers,
         recovered_by_words,
+        recovered_entries,
         sandbox_host_kwargs,
         yes_because,
     )
@@ -773,6 +775,8 @@ def _build_consolidated_iocs(report: MalwareReport) -> list[ConsolidatedIOC]:
     # read out of the file's bytes: a network value it holds is a source of
     # its own under the one rule.
     emulated = emulation_record(report)
+    # The run's ledger as the report indexes it: a row carries only ids it holds.
+    index = {row.id: at for at, row in enumerate(report.evidence_index)}
 
     def _add(
         ioc_type: str,
@@ -783,6 +787,7 @@ def _build_consolidated_iocs(report: MalwareReport) -> list[ConsolidatedIOC]:
         *,
         published: str | None = None,
         is_network: bool = False,
+        evidence: Iterable[str] = (),
     ) -> None:
         value = (value or "").strip()
         if not value:
@@ -801,6 +806,7 @@ def _build_consolidated_iocs(report: MalwareReport) -> list[ConsolidatedIOC]:
                 description=context,
                 published=published,
                 is_network=is_network,
+                evidence_ids=_in_the_index(evidence, index),
             )
         )
 
@@ -889,6 +895,7 @@ def _build_consolidated_iocs(report: MalwareReport) -> list[ConsolidatedIOC]:
                     **bound_kwargs(report, bound.kind, bound.value),
                 ),
                 is_network=network,
+                evidence=[bound.entry] if bound.entry else [],
             )
 
     _add_bound(network=False)
@@ -1002,7 +1009,7 @@ def _build_consolidated_iocs(report: MalwareReport) -> list[ConsolidatedIOC]:
     # is the judge's row.
     for kind, section in artifact_sections(report.sections):
         headings = listed_headings(section)
-        for analyst, _cited, cells in listed_rows(section):
+        for analyst, cited, cells in listed_rows(section):
             for ioc_kind, value, _payload in listed_non_network_values(kind, [cells], headings):
                 if (ioc_kind, value.strip().lower()) in judged:
                     continue
@@ -1025,6 +1032,7 @@ def _build_consolidated_iocs(report: MalwareReport) -> list[ConsolidatedIOC]:
                         tool_search=searched,
                         asked_in="" if sighted else query_answers(report, ioc_kind, value),
                     ),
+                    evidence=cited.split(","),
                 )
 
     net = report.network
@@ -1141,12 +1149,25 @@ def _build_consolidated_iocs(report: MalwareReport) -> list[ConsolidatedIOC]:
     table = _with_the_hosts_of_published_urls(_with_the_judge_s_values(rows, report), report)
     # Which tool recovered each network value the sample hid, and where: the
     # table states it on every row the record holds, whoever recorded the row.
-    return [
-        row.model_copy(update={"recovered_by": said})
-        if (said := recovered_by_words(emulated, row.kind or "", row.value))
-        else row
-        for row in table
-    ]
+    out: list[ConsolidatedIOC] = []
+    for row in table:
+        said = recovered_by_words(emulated, row.kind or "", row.value)
+        if said:
+            recovered = recovered_entries(emulated, row.kind or "", row.value)
+            row = row.model_copy(
+                update={
+                    "recovered_by": said,
+                    "evidence_ids": _in_the_index([*row.evidence_ids, *recovered], index),
+                }
+            )
+        out.append(row)
+    return out
+
+
+def _in_the_index(ids: Iterable[str], index: Mapping[str, int]) -> list[str]:
+    """``ids`` the evidence index holds, each once, in the index's order."""
+    held = {str(i).strip() for i in ids} & set(index)
+    return sorted(held, key=lambda i: index[i])
 
 
 # The table's type for each kind a bound value can be, and the kinds that are

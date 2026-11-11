@@ -342,3 +342,39 @@ class TestARecoveredValueNamesItsTool:
             "decode_string_blobs, ev_0020 (xor8, at file offset 0xfd30)"
         )
         assert by_value["rosoft.com"] is None
+
+
+class TestEveryRowCarriesTheReportsTlp:
+    def test_a_row_names_the_level_the_report_stored(self) -> None:
+        from app.database import get_db
+        from app.deps import get_current_user, require_active_user
+
+        report = MagicMock()
+        report.id = REPORT_ID
+        report.malware_report = {**_malware_report(), "tlp": "AMBER_STRICT"}
+        service = module.ReportService(db=AsyncMock())
+        service.get_report = AsyncMock(return_value=report)  # type: ignore[method-assign]
+        app = FastAPI()
+        app.include_router(module.router, prefix="/api/v1")
+        user = MagicMock(id=uuid.uuid4(), email="op@example.com")
+        app.dependency_overrides[get_db] = lambda: AsyncMock()
+        app.dependency_overrides[get_current_user] = lambda: user
+        app.dependency_overrides[require_active_user] = lambda: user
+        app.dependency_overrides[module._get_service] = lambda: service
+
+        rows = _rows(TestClient(app), "?kind=hash")
+
+        assert rows == [
+            {
+                "kind": "hash",
+                "value": "sha256:" + "f" * 64,
+                "is_suspicious": False,
+                "notes": None,
+                "source": "identity",
+                "published": True,
+                "publish_answer": "yes: the sample's own digest",
+                "recovered_by": None,
+                "evidence_ids": [],
+                "tlp": "TLP:AMBER+STRICT",
+            }
+        ]

@@ -26,6 +26,8 @@ is. It holds:
   evidence bundle behind the analyst report, beside it under the names its
   links name (``malspark.reporting.renderers.bundle``);
 - ``export/stix-bundle.json``: the STIX bundle the report row serves;
+- ``export/misp-event.json``: the report's MISP attributes in one MISP event,
+  as ``/reports/{id}/misp-event`` serves it (``malspark.reporting.misp``);
 - ``ledger/spilled.json`` and ``ledger/objects/<sha256>``: every part of an
   answer the ledger does not keep whole (``malspark.schemas.evidence_spill``),
   with the kept bytes where the build could read them back, bounded, and
@@ -117,6 +119,7 @@ MARKDOWN = "report/report.md"
 BUNDLE_HTML = "report/evidence-bundle.html"
 BUNDLE_JSON = "report/evidence-bundle.json"
 STIX = "export/stix-bundle.json"
+MISP_EVENT = "export/misp-event.json"
 SPILLED = "ledger/spilled.json"
 OBJECTS = "ledger/objects"
 # ``scripts.ledger.verify.report_row`` reads a STIX bundle file where a run has
@@ -165,8 +168,8 @@ OTHER_KEY = "other_key"
 SEAL_UNVERIFIABLE = "seal_unverifiable"
 
 NO_MISP = (
-    "The platform builds no MISP event: the report's MISP attributes, built from its published "
-    "indicators and techniques, are the misp_attributes part."
+    "The report holds no MISP attributes, so no MISP event is built from them: it was stored "
+    "before the platform built them, or its report document cannot be read."
 )
 NO_MISP_ATTRIBUTES = (
     "The report holds no MISP attributes: it was stored before the platform built them."
@@ -223,6 +226,21 @@ UNSIGNED_NO_KEY = (
 )
 
 Fetch = Callable[[str], Iterable[bytes]]
+
+
+def _misp_event(
+    report: Any, attributes: Any, verification: Mapping[str, Any], job: Any
+) -> dict[str, Any] | None:
+    """The report's MISP event (``misp.build_misp_event``), or ``None`` when it cannot be read."""
+    from malspark.reporting.misp import build_misp_event, misp_owner
+    from malspark.reporting.models import MalwareReport
+
+    try:
+        typed = MalwareReport.model_validate(report)
+    except Exception:  # noqa: BLE001 — an unreadable document has no event
+        return None
+    job_id = verification.get("job_id") or (job.get("id") if isinstance(job, Mapping) else None)
+    return build_misp_event(typed, attributes, owner=misp_owner(typed, job_id))
 
 
 class PackageError(ValueError):
@@ -639,8 +657,20 @@ def build_package(
         else:
             _part("stix_bundle", None, "The report row holds no STIX bundle.")
         del stix, byjob
-        _part("misp_event", None, NO_MISP)
         attributes = report.get("misp_attributes") if isinstance(report, Mapping) else None
+        # The report's MISP attributes in one event, as /reports/{id}/misp-event
+        # serves it: its uuid derived from the job, as the attributes' are.
+        event = (
+            _misp_event(report, attributes, verification, job)
+            if isinstance(attributes, list)
+            else None
+        )
+        if event is not None:
+            stage.json(MISP_EVENT, event, "the report's MISP attributes in one MISP event")
+            _part("misp_event", MISP_EVENT, None, count=len(attributes or []))
+        else:
+            _part("misp_event", None, NO_MISP)
+        del event
         if isinstance(attributes, list):
             # In the report document, or in the report row that carried it.
             where, pointer = (

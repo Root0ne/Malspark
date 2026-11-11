@@ -264,7 +264,8 @@ class TestWhenThereIsNothingToReferTo:
 
         bundle = ExtendedSTIXRenderer().render(report, base_bundle=Bundle(objects=[]))
 
-        assert [str(obj.type) for obj in bundle.objects] == ["identity"]
+        # The producer, and the TLP marking it is shared under.
+        assert [str(obj.type) for obj in bundle.objects] == ["identity", "marking-definition"]
         assert_conforms(bundle)
 
 
