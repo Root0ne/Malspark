@@ -22,6 +22,7 @@ from tests.linear_cost import (
     assert_under,
     calls,
     cpu_seconds,
+    peak_bytes,
 )
 
 
@@ -75,6 +76,11 @@ class TestOnTheCpuClock:
 
     def test_calls_counts_and_does_not_time(self) -> None:
         assert calls(lambda: [abs(i) for i in range(100)]) >= 100
+
+    def test_peak_bytes_counts_a_copy_and_not_a_read(self) -> None:
+        line = "x" * 160_000
+        assert peak_bytes(lambda: "CLAIM " + line) >= len(line)
+        assert peak_bytes(lambda: line.startswith("CLAIM")) < 4096
 
 
 class TestOnACoarseClock:
