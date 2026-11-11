@@ -101,12 +101,28 @@ def parse_env(text: str) -> dict[str, str]:
     return values
 
 
+def _read_text(path: Path) -> str | None:
+    """The file's text, None when it is not there; a file that cannot be read stops the run.
+
+    The one line names the path and what is wrong, never any of the content.
+    """
+    try:
+        return path.read_text(encoding="utf-8-sig")
+    except FileNotFoundError:
+        return None
+    except UnicodeDecodeError:
+        problem = "is not UTF-8 text"
+    except IsADirectoryError:
+        problem = "is a directory, not a file"
+    except OSError:
+        # Windows reports a directory as a refused open.
+        problem = "is a directory, not a file" if path.is_dir() else "cannot be read"
+    raise _fail(f"  FAIL     {path} {problem}")
+
+
 def read_env(path: Path) -> dict[str, str]:
     """The file's assignments, or none when it is not there."""
-    try:
-        return parse_env(path.read_text(encoding="utf-8-sig"))
-    except FileNotFoundError:
-        return {}
+    return parse_env(_read_text(path) or "")
 
 
 # ── The stack's compose commands ─────────────────────────────────────────────
@@ -1001,9 +1017,7 @@ def _fill(template: str, values: Mapping[str, str], kept_lines: Mapping[str, str
 def _set_lines(path: Path) -> dict[str, str]:
     """The last uncommented line of each key the file assigns, as written, an empty one too."""
     lines: dict[str, str] = {}
-    if not path.exists():
-        return lines
-    for line in path.read_text(encoding="utf-8-sig").splitlines():
+    for line in (_read_text(path) or "").splitlines():
         match = _ASSIGNMENT.match(line.strip())
         if match:
             lines[match["key"]] = line.strip()
@@ -1074,7 +1088,56 @@ def _derived(
     }
 
 
+def empty_secrets(docker_env_path: Path) -> list[str]:
+    """The secrets docker/.env assigns an empty value; ``env init --force`` fills them."""
+    kept = _set_lines(docker_env_path)
+    return [key for key in DOCKER_SECRETS if key in kept and not parse_env(kept[key]).get(key)]
+
+
+def stale_derived(
+    bootstrap_env: Mapping[str, str], docker_env: Mapping[str, str]
+) -> list[tuple[str, str]]:
+    """Each bootstrap.env value, with the docker/.env key, that no longer carries its source."""
+    found = []
+    for key, sources in DERIVED_FROM.items():
+        value = bootstrap_env.get(key, "")
+        if not value or _PLACEHOLDER.search(value):
+            continue
+        for source in sources:
+            current = docker_env.get(source, "")
+            if not current:
+                continue
+            carried = (
+                urllib.parse.quote(current, safe="") in value
+                if key.endswith("_URL")
+                else value == current
+            )
+            if not carried:
+                found.append((key, source))
+    return found
+
+
+def _empty_line(key: str) -> str:
+    return f"  warn     docker/.env {key} is empty; run env init --force to generate it"
+
+
+def _stale_line(key: str, source: str, rewritten: bool = False) -> str:
+    what = (
+        "kept as written"
+        if rewritten
+        else "remove it from bootstrap.env and run env init --force to derive it again"
+    )
+    return f"  warn     bootstrap.env {key} does not carry docker/.env's {source}; {what}"
+
+
 def env_init(root: Path, environ: Mapping[str, str], force: bool = False) -> int:
+    try:
+        return _env_init(root, environ, force)
+    except Stop as stop:
+        return stop.status
+
+
+def _env_init(root: Path, environ: Mapping[str, str], force: bool) -> int:
     """docker/.env and bootstrap.env from their examples; no secret value is printed.
 
     A file already there is left as it is unless ``force``; rewritten, it
@@ -1122,8 +1185,9 @@ def env_init(root: Path, environ: Mapping[str, str], force: bool = False) -> int
 
     stale = sorted(k for k, sources in DERIVED_FROM.items() if set(sources) & set(generated))
     bootstrap_text: str | None = None
-    drifted: list[tuple[str, str]] = []
     old = read_env(bootstrap_path)
+    # Kept as written: say so when it no longer carries what docker/.env holds.
+    drifted = [pair for pair in stale_derived(old, docker_env) if pair[0] not in stale]
     if not (bootstrap_path.exists() and not force and not stale):
         empty = [key for key in needed if not docker_env.get(key)]
         if empty:
@@ -1139,16 +1203,6 @@ def env_init(root: Path, environ: Mapping[str, str], force: bool = False) -> int
             if key in stale or not value or _PLACEHOLDER.search(value):
                 kept.pop(key, None)
                 continue
-            # Kept as written: say so when it no longer carries what docker/.env holds.
-            for source in DERIVED_FROM[key]:
-                current = docker_env[source]
-                carried = (
-                    urllib.parse.quote(current, safe="") in value
-                    if key.endswith("_URL")
-                    else value == current
-                )
-                if not carried:
-                    drifted.append((key, source))
         template = (root / "bootstrap.env.example").read_text(encoding="utf-8")
         try:
             bootstrap_text = _fill(template, derived, kept)
@@ -1158,12 +1212,16 @@ def env_init(root: Path, environ: Mapping[str, str], force: bool = False) -> int
 
     if docker_text is None:
         _say("  ok       docker/.env is there: left as it is (--force rewrites it, values kept)")
+        for key in empty_secrets(docker_env_path):
+            _say(_empty_line(key))
     else:
         _write_text(docker_env_path, docker_text, private=True)
         made = ", ".join(sorted(generated)) or "none"
         _say(f"  wrote    docker/.env (generated: {made})")
     if bootstrap_text is None:
         _say("  ok       bootstrap.env is there: left as it is (--force fills only what is empty)")
+        for key, source in drifted:
+            _say(_stale_line(key, source))
         return 0
     _write_text(bootstrap_path, bootstrap_text, private=True)
     url = urllib.parse.urlsplit(parse_env(bootstrap_text).get("DATABASE_URL", ""))
@@ -1173,9 +1231,7 @@ def env_init(root: Path, environ: Mapping[str, str], force: bool = False) -> int
         where = "database URL kept as written"
     _say(f"  wrote    bootstrap.env ({where})")
     for key, source in drifted:
-        _say(
-            f"  warn     bootstrap.env {key} does not carry docker/.env's {source}; kept as written"
-        )
+        _say(_stale_line(key, source, rewritten=True))
     if stale and old:
         _say(f"  note     bootstrap.env derived again from the new docker/.env: {', '.join(stale)}")
     return 0
@@ -1300,6 +1356,11 @@ def doctor_report(
     docker_env = read_env(root / "docker" / ".env")
     if not (root / "docker" / ".env").is_file():
         yield "  missing  docker/.env: run env init"
+    else:
+        for key in empty_secrets(root / "docker" / ".env"):
+            yield f"  missing  docker/.env {key} is empty; run env init --force to generate it"
+        for key, source in stale_derived(read_env(root / "bootstrap.env"), docker_env):
+            yield _stale_line(key, source)
     host = _host(environ, docker_env).strip("[]")
     taken = []
     for name in sorted(published_ports(root)):
@@ -1421,6 +1482,13 @@ def _console_takes_any_text() -> None:
 
 
 def main(argv: Sequence[str] | None = None, root: Path = REPO_ROOT) -> int:
+    try:
+        return _main(argv, root)
+    except Stop as stop:
+        return stop.status
+
+
+def _main(argv: Sequence[str] | None, root: Path) -> int:
     _console_takes_any_text()
     args = build_parser().parse_args(argv)
     environ = dict(os.environ)
