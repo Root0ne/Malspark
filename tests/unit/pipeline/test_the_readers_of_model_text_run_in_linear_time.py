@@ -73,7 +73,13 @@ from malspark.reporting.section_agreement import (
     whole_code_absences,
 )
 from malspark.schemas.evidence import build_entry
-from tests.linear_cost import TIME_RATIO_LIMIT, assert_ratio, cpu_seconds, repeated
+from tests.linear_cost import (
+    TIME_RATIO_LIMIT,
+    assert_ratio,
+    cpu_seconds,
+    peak_bytes,
+    repeated,
+)
 
 UNIT = "T1234 Native words T1106 more is not read 0x1400 which that 12 hits Web Protocols "
 # The short line's least size and CPU time, and the largest size it grows to.
@@ -161,6 +167,14 @@ def _scales_linearly(read: Callable[[str], object]) -> None:
         text = _hostile(size)
         return lambda: [read(text) for _ in range(times)]
 
+    if getattr(read, "bounded", False):
+        # Counted, not timed: a reader of a bounded part holds no copy of the
+        # longest line, which a timed call building or copying it would.
+        longest = _hostile(4 * LARGEST)
+        read(longest)
+        held = peak_bytes(lambda: read(longest))
+        assert held < len(longest) // 4, f"reading {len(longest)} characters held {held} bytes"
+
     # The short size is the least that costs LEAST_SECONDS; only the ratio is asserted.
     size = SMALLEST
     took = cpu_seconds(reading(size), repeats=5)
@@ -190,15 +204,18 @@ def _scales_linearly(read: Callable[[str], object]) -> None:
     )
 
 
-def _built(make: Callable[[str], str], read: Callable[[str], object]) -> Callable[[str], object]:
+def _built(
+    make: Callable[[str], str], read: Callable[[str], object], *, bounded: bool = False
+) -> Callable[[str], object]:
     """``read`` of the text ``make`` builds from the hostile line, built once for each line.
 
-    For a reader whose own work does not grow with its text (it reads a bounded
-    part of it): built in the timed call, the building is the whole cost
-    measured, and a text four times as long can cross the allocator's
-    large-block threshold, past which each one takes fresh pages the system
-    maps and zeroes (building 40 KB took 1.5 us and 160 KB 57 us), which the
-    ratio would read as the reader's growth.
+    Built in the timed call, the building is measured with the reader, and a
+    text four times as long can cross the allocator's large-block threshold,
+    past which each one takes fresh pages the system maps and zeroes
+    (building 40 KB took 1.5 us and 160 KB 57 us), which the ratio would read
+    as the reader's growth. ``bounded`` declares that ``read`` reads a bounded
+    part of its text, so the building would be the whole cost: the measure
+    then counts that the timed call holds no copy of the text.
     """
     built: dict[int, str] = {}
 
@@ -207,7 +224,19 @@ def _built(make: Callable[[str], str], read: Callable[[str], object]) -> Callabl
             built[len(text)] = make(text)
         return read(built[len(text)])
 
+    read_built.bounded = bounded  # type: ignore[attr-defined]
     return read_built
+
+
+def _claim_line(text: str) -> str:
+    """A line the heading rule turns down after its first words: the rest is never read.
+
+    Built in the timed call, the line was the whole cost measured: one Windows
+    test process took fresh pages for every 160 KB line and reused them for
+    every 40 KB one, and read 25 to 28 times the cost for four times the line
+    on every pair; with the pages reused it reads about 4 times.
+    """
+    return "CLAIM " + text
 
 
 ENTRIES = EntryTexts.from_ledger(
@@ -280,7 +309,7 @@ EXITS = exit_branches(
     [
         pytest.param(read_technique_line, id="technique line"),
         pytest.param(lambda t: read_technique_line("T1106 " + t), id="technique line after an id"),
-        pytest.param(lambda t: CLAIM_HEAD_RE.match("CLAIM " + t), id="claim heading"),
+        pytest.param(_built(_claim_line, CLAIM_HEAD_RE.match, bounded=True), id="claim heading"),
         pytest.param(lambda t: CLAIM_HEAD_RE.match("CLAIM" + " " * len(t) + "x"), id="spaces"),
         pytest.param(lambda t: claim_blocks("CLAIM R1: " + t), id="claim blocks"),
         pytest.param(lambda t: ClaimRepeatReader(None).feed("CLAIM R1: " + t), id="streaming"),
