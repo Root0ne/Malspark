@@ -285,18 +285,18 @@ class TestTechnicalSectionsSeeTheirOwnMeasurements:
 
     def test_the_discovery_section_sees_discovery_apis_only(self) -> None:
         facts = bundle_for("discovery", self._measured())["facts"]
-        assert facts["discovery_api_count"] == 27
+        assert facts["capability_profile_of_import_table"] == {"discovery": 27}
         assert "discovery_imports" not in facts, "no import is labelled by the report"
         assert facts["discovery_techniques"] == ["T1083"], "and not the evasion technique"
 
     def test_the_evasion_section_sees_evasion_techniques_only(self) -> None:
         facts = bundle_for("evasion_antiforensics", self._measured())["facts"]
         assert facts["evasion_techniques"] == ["T1622"]
-        assert facts["anti_debug_api_count"] == 10
+        assert facts["capability_profile_of_import_table"] == {"anti_debug": 10, "evasion": 0}
 
     def test_the_encryption_section_sees_the_crypto_count_and_no_labelled_imports(self) -> None:
         facts = bundle_for("encryption_scheme", self._measured())["facts"]
-        assert facts == {"crypto_api_count": 15}
+        assert facts == {"capability_profile_of_import_table": {"crypto": 15}}
 
     def test_a_report_without_static_analysis_does_not_raise(self) -> None:
         assert bundle_for("discovery", _report())["facts"] == {}

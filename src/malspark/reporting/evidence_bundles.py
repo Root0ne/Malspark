@@ -1500,26 +1500,71 @@ def section_keywords(section: str) -> tuple[str, ...]:
 
 
 # The catalogue categories of the sandbox-called APIs each section is shown,
-# beside the import profile's count of the same category.
+# beside each capability profile's count of the same category.
 _SANDBOX_CALLED_CATEGORIES: dict[str, tuple[str, ...]] = {
     "encryption_scheme": ("crypto",),
     "discovery": ("discovery",),
     "evasion_antiforensics": ("anti_debug", "evasion"),
 }
 
+# The capability profile of each scope, under a key that names the scope: the
+# names the import table holds (``static.api_capabilities``) and the names the
+# run resolved at runtime instead (``static.api_capabilities_resolved``). A
+# count under a key that names no scope reads as true of the sample whole, and
+# an import-table zero then denies the names the run resolved.
+IMPORT_TABLE_PROFILE_FACT = "capability_profile_of_import_table"
+RESOLVED_PROFILE_FACT = "capability_profile_of_names_resolved_at_runtime_not_imports"
 
-def _profile_counts(static: Any, **categories: str) -> dict[str, int]:
-    """``{fact: count}`` of the capability profile's categories, when the profile was measured.
 
-    A count of 0 is a finding only where something counted: with no profile
-    (no catalogue answer read the import table) each fact is left out, as an
-    absent key reads "not measured", rather than stated as 0.
+class _ImportTableCounts(dict[str, int]):
+    """A section's categories in the import table's profile.
+
+    :func:`is_empty` reads it one count at a time: a nonzero count opens the
+    section and a profile of zeros alone does not, as when each count was a
+    fact of its own.
     """
-    caps = (getattr(static, "api_capabilities", None) or {}) if static is not None else {}
-    measured = bool(caps) or bool(getattr(static, "api_capabilities_evidence_ids", None))
-    if not measured:
+
+
+class _ResolvedNameCounts(dict[str, int]):
+    """A section's categories in the profile of the names resolved at runtime.
+
+    :func:`is_empty` never reads it: these counts were not among a section's
+    facts before they were scoped, so they open no section.
+    """
+
+
+_PROFILE_SCOPES: tuple[tuple[str, str, str, type[dict[str, int]]], ...] = (
+    (
+        IMPORT_TABLE_PROFILE_FACT,
+        "api_capabilities",
+        "api_capabilities_evidence_ids",
+        _ImportTableCounts,
+    ),
+    (
+        RESOLVED_PROFILE_FACT,
+        "api_capabilities_resolved",
+        "api_capabilities_resolved_evidence_ids",
+        _ResolvedNameCounts,
+    ),
+)
+
+
+def _profile_counts(static: Any, *categories: str) -> dict[str, dict[str, int]]:
+    """``{scope's key: {category: count}}`` for each capability profile the run measured.
+
+    A count of 0 is a finding only where something counted: a profile no
+    catalogue answer filled is left out, as an absent key reads "not
+    measured", rather than stated as 0. In a profile that was measured every
+    category of the section is stated, a 0 included: it is true of that scope.
+    """
+    if static is None:
         return {}
-    return {fact: int(caps.get(category, 0)) for fact, category in categories.items()}
+    facts: dict[str, dict[str, int]] = {}
+    for fact, counts, evidence_ids, scoped in _PROFILE_SCOPES:
+        caps = getattr(static, counts, None) or {}
+        if caps or getattr(static, evidence_ids, None):
+            facts[fact] = scoped({category: int(caps.get(category, 0)) for category in categories})
+    return facts
 
 
 def _technical_facts(section: str, report: MalwareReport) -> dict[str, Any]:
@@ -1537,11 +1582,7 @@ def _technical_facts(section: str, report: MalwareReport) -> dict[str, Any]:
         return {
             "persistence_mechanisms": [p.kind for p in report.persistence],
             "persistence_assessed": _assessed_persistence(report),
-            **_profile_counts(
-                report.static,
-                persistence_api_count="persistence",
-                registry_api_count="registry",
-            ),
+            **_profile_counts(report.static, "persistence", "registry"),
         }
     if section == "configuration":
         net = report.network
@@ -1628,37 +1669,37 @@ def _technical_facts(section: str, report: MalwareReport) -> dict[str, Any]:
     # aggregated. The per-import lists that sat beside them were that table
     # read back one import at a time, and they are gone.
     if section == "encryption_scheme":
-        return {**_profile_counts(static, crypto_api_count="crypto"), **observed[section]}
+        return {**_profile_counts(static, "crypto"), **observed[section]}
     if section == "discovery":
         return {
-            **_profile_counts(static, discovery_api_count="discovery"),
+            **_profile_counts(static, "discovery"),
             "discovery_techniques": [t for t in techniques if t in _DISCOVERY_TECHNIQUES],
             **observed[section],
         }
     if section == "evasion_antiforensics":
         return {
-            **_profile_counts(
-                static, anti_debug_api_count="anti_debug", evasion_api_count="evasion"
-            ),
+            **_profile_counts(static, "anti_debug", "evasion"),
             "evasion_techniques": [t for t in techniques if t in _EVASION_TECHNIQUES],
             **observed[section],
         }
     if section == "cli_flags":
-        return {"capability_profile": dict(sorted(caps.items(), key=lambda kv: -kv[1]))}
+        return {IMPORT_TABLE_PROFILE_FACT: dict(sorted(caps.items(), key=lambda kv: -kv[1]))}
     if section == "string_resolution":
         resolution: dict[str, Any] = {
             "static_import_count": len(static.imports),
-            "interesting_string_count": len(static.interesting_strings),
-            "capability_profile": dict(sorted(caps.items(), key=lambda kv: -kv[1])),
+            # The strings an indicator reading typed (url, ip, path, registry
+            # key, ...), not every string the file holds.
+            "strings_typed_as_indicators_count": len(static.interesting_strings),
+            IMPORT_TABLE_PROFILE_FACT: dict(sorted(caps.items(), key=lambda kv: -kv[1])),
         }
         if static.api_capabilities_resolved:
             # The names the run resolved at runtime, apart from the imports:
             # the section is about how the sample finds them.
-            resolution["capability_profile_of_names_resolved_at_runtime_not_imports"] = dict(
+            resolution[RESOLVED_PROFILE_FACT] = dict(
                 sorted(static.api_capabilities_resolved.items(), key=lambda kv: -kv[1])
             )
         return resolution
-    return {"capability_profile": dict(sorted(caps.items(), key=lambda kv: -kv[1]))}
+    return {IMPORT_TABLE_PROFILE_FACT: dict(sorted(caps.items(), key=lambda kv: -kv[1]))}
 
 
 # Technique IDs the import-derived ATT&CK table can emit for these two
@@ -1746,4 +1787,17 @@ def is_empty(bundle: dict[str, Any]) -> bool:
     if bundle.get("claims") or bundle.get("tool_outputs") or bundle.get("function_code"):
         return False
     facts = bundle.get("facts") or {}
-    return not any(v for v in facts.values())
+    # The skip decision is the one made before the counts were scoped. A
+    # section's import-table counts open it only when one is nonzero; its
+    # resolved-name counts never do; every other fact, a whole profile
+    # included, opens it when it holds anything.
+    return not any(_opens_section(v) for v in facts.values())
+
+
+def _opens_section(value: Any) -> bool:
+    """Whether one fact makes its section worth writing (:func:`is_empty`)."""
+    if isinstance(value, _ResolvedNameCounts):
+        return False
+    if isinstance(value, _ImportTableCounts):
+        return any(value.values())
+    return bool(value)
