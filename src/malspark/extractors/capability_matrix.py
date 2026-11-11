@@ -1041,15 +1041,20 @@ class TechniqueQuestion:
     """One technique the judge is asked about after its verdict, with what names it.
 
     ``kind`` is ``claimed`` for a technique an analyst claimed that the judge's
-    bundle does not carry, ``finding`` for one named only on a finding, and
+    bundle does not carry, ``finding`` for one named only on a finding,
     ``undescribed`` for one the bundle carries that no claim naming it
-    describes. Each mention is ``(agent, the claim's or the finding's text, its
-    evidence ids)``, the text as the analyst wrote it. ``check`` is the ATT&CK
-    check's finding when no claim naming the technique describes it
-    (``validation.undescribed_technique_finding``), shown with the question,
-    and ``""`` otherwise. ``roots`` is the layers that name it beside the
-    distinct evidence roots their mentions cite (``analysis.evidence_roots``),
+    describes, and ``checked`` for one an agent's call arguments or a tool
+    answer's declared technique field named that no final claim, finding or
+    bundle object carries. Each mention is ``(agent, the claim's or the
+    finding's text, its evidence ids)``, the text as the analyst wrote it.
+    ``check`` is the ATT&CK check's finding when no claim naming the technique
+    describes it (``validation.undescribed_technique_finding``), shown with the
+    question, and ``""`` otherwise. ``roots`` is the layers that name it beside
+    the distinct evidence roots their mentions cite (``analysis.evidence_roots``),
     when the question was built with the ledger, and ``""`` otherwise.
+    ``checked`` is, for a ``checked`` question, each place the id was seen
+    (``analysis.checked_techniques.CheckedMention``), and ``claim_entries``
+    the entries each of those agents' final claims cite.
     """
 
     technique_id: str
@@ -1057,6 +1062,8 @@ class TechniqueQuestion:
     mentions: list[tuple[str, str, list[str]]] = field(default_factory=list)
     check: str = ""
     roots: str = ""
+    checked: list[tuple[str, str, str]] = field(default_factory=list)
+    claim_entries: dict[str, list[str]] = field(default_factory=dict)
 
 
 def technique_review(stix_output: dict[str, Any] | None) -> TechniqueReview | None:
@@ -1076,6 +1083,60 @@ def bundle_technique_ids(stix_output: dict[str, Any] | None) -> set[str]:
     return {tid.upper() for tid in _judge_technique_ids(stix_output)} | {
         tid.upper() for tid, _c in _judge_relationship_rows(stix_output)
     }
+
+
+def carried_technique_ids(
+    stix_output: dict[str, Any] | None, isr_reports: dict[str, Any] | None
+) -> set[str]:
+    """Every technique id a final claim, a finding or the judge's bundle carries, upper-cased."""
+    carried = bundle_technique_ids(stix_output)
+    for isr in (isr_reports or {}).values():
+        for claim in getattr(isr, "claims", None) or []:
+            tid = str(getattr(claim, "technique_id", "") or "").strip().upper()
+            if tid and not says_no_technique(tid):
+                carried.add(tid)
+        for finding in getattr(isr, "findings", None) or []:
+            for raw in getattr(finding, "technique_ids", None) or []:
+                tid = str(raw or "").strip().upper()
+                if tid and not says_no_technique(tid):
+                    carried.add(tid)
+    return carried
+
+
+def checked_technique_questions(
+    stix_output: dict[str, Any] | None,
+    isr_reports: dict[str, Any] | None,
+    ledger: Sequence[Any] | None,
+) -> list[TechniqueQuestion]:
+    """(d) Each technique an agent checked or a tool named that nothing carries, as a question.
+
+    The ids any entry's call arguments write and any answer's declared
+    technique field names (``analysis.checked_techniques``) that no final
+    claim, finding or bundle object carries (:func:`carried_technique_ids`),
+    in the order first seen. Each states where it was seen and the entries
+    the final claims of each agent that passed it cite. Without a ledger,
+    none. Linear in the ledger and the claims.
+    """
+    if not ledger:
+        return []
+    from malspark.analysis.checked_techniques import checked_techniques, claim_entries
+
+    found = checked_techniques(ledger, carried_technique_ids(stix_output, isr_reports))
+    if not found:
+        return []
+    cited = claim_entries(isr_reports)
+    questions: list[TechniqueQuestion] = []
+    for tid, mentions in found.items():
+        agents = list(dict.fromkeys(m.agent for m in mentions))
+        questions.append(
+            TechniqueQuestion(
+                tid,
+                "checked",
+                checked=[(m.agent, m.entry_id, m.place) for m in mentions],
+                claim_entries={agent: list(cited.get(agent) or []) for agent in agents},
+            )
+        )
+    return questions
 
 
 # Why a technique the judge's question would name is left out of it: the

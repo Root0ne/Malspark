@@ -575,6 +575,24 @@ def render_diff(diff: Mapping[str, Any], ref_a: str, ref_b: str) -> str:
     return "\n".join(lines)
 
 
+def terminal_text(value: Any, limit: int = 0) -> str:
+    """A stored text as one terminal line: every control or format character escaped.
+
+    A run's stored text is the model's and the tools' and may hold an escape
+    sequence, a bidirectional override or a bare carriage return; each is
+    written as its escape (``\\x1b``, ``\\u202e``), as ``repr`` writes it, and
+    runs of whitespace are one space. ``limit`` cuts the line to that many
+    characters with a closing ``…``; ``0`` keeps it whole.
+    """
+    import unicodedata
+
+    line = " ".join(str(value if value is not None else "").split())
+    shown = "".join(
+        repr(char)[1:-1] if unicodedata.category(char).startswith("C") else char for char in line
+    )
+    return shown if not limit or len(shown) <= limit else shown[: limit - 1] + "…"
+
+
 def _nested(value: Any, prefix: str = "") -> list[str]:
     if isinstance(value, Mapping):
         if set(value) == {"a", "b"}:
