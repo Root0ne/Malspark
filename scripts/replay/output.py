@@ -26,29 +26,36 @@ _UNPRINTABLE = frozenset({"Cc", "Cf", "Zl", "Zp", "Cs"})
 # on one base counts here, so no base carries a longer stack.
 _STREAM_SAFE_MARKS = 30
 
+# The most characters whose fit to the stream's encoding is remembered at once:
+# a text of many distinct characters costs a fixed amount of memory, not one
+# entry per character.
+_FITS_REMEMBERED = 256
+
 
 def terminal_safe(text: object, *, encoding: str | None = None) -> str:
     """``text`` with every character that would not draw as itself shown as a visible escape.
 
     A string read from a stored run is data, not terminal input: an escape
     sequence, a carriage return or a bidirectional override in it must not act
-    on the operator's terminal. Printable text in any script is unchanged,
-    combining marks on their base letter included. A newline is shown as ``\\n``
-    so one value stays on one line; the lines of a rendered text come from the
-    renderer alone. A backslash is shown doubled, so a newline and the two
-    characters backslash and ``n`` read apart and the text can be turned back
-    into the value.
+    on the operator's terminal, so every control, format character, line or
+    paragraph separator and lone surrogate is shown as an escape. A newline is
+    shown as ``\\n`` so one value stays on one line; the lines of a rendered
+    text come from the renderer alone. A backslash is shown doubled, so a
+    newline and the two characters backslash and ``n`` read apart and the text
+    can be turned back into the value.
 
     A combining mark draws on the characters beside it, so three kinds are
     shown as escapes: an overlay mark (combining class 1) or an enclosing mark
-    (category ``Me``), which draws over or around its neighbours; a mark with no
+    (category ``Me``, a keycap among them), which draws over or around its
+    neighbours, wherever it stands; a mark with no
     base inside the value (the value's first character, or one after a
     character shown as an escape), which would attach to the text printed
     before it; and a mark past the Stream-Safe limit of marks on one base. A
     character the stream's ``encoding`` (default: ``sys.stdout``'s) cannot
     carry, such as a letter on a Windows code page, is shown as an escape too,
-    so printing never raises; a UTF-8 stream shows every printable character as
-    it was. One pass, linear.
+    so printing never raises. Every other character is shown as it was, in any
+    script: letters, and the marks on them (a decomposed accent, a vowel sign,
+    a point, a variation selector). One pass, linear.
     """
     text = str(text)
     fits = _fits(text, encoding or getattr(sys.stdout, "encoding", None))
@@ -115,13 +122,13 @@ def _fits(text: str, encoding: str | None) -> Callable[[str], bool]:
     seen: dict[str, bool] = {}
 
     def fits(char: str) -> bool:
-        if char not in seen:
-            try:
-                char.encode(encoding)
-                seen[char] = True
-            except UnicodeEncodeError:
-                seen[char] = False
-        return seen[char]
+        known = seen.get(char)
+        if known is None:
+            if len(seen) >= _FITS_REMEMBERED:
+                seen.clear()
+            # A character the codec cannot carry encodes to nothing when ignored.
+            known = seen[char] = bool(char.encode(encoding, "ignore"))
+        return known
 
     return fits
 

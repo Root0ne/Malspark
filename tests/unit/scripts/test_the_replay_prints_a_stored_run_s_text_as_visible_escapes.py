@@ -27,6 +27,7 @@ from scripts.replay.stored import read_run
 from malspark.reporting.limitation_inventory import build_inventory
 from malspark.reporting.models import InventoryTool
 from malspark.schemas.evidence import LedgerEntry
+from tests.linear_cost import assert_scales
 from tests.unit.reporting.test_the_limitations_inventory_is_written_by_code import (
     _DECOMPILE,
     _ledger,
@@ -590,11 +591,25 @@ def test_a_mark_that_starts_a_value_never_attaches_to_the_label_before_it() -> N
         assert _back(shown) == value
 
 
-@pytest.mark.parametrize("before", ["\x1b", "\n", "\u202e", "\ud800", "\u0338"])
-def test_a_mark_after_a_character_shown_as_an_escape_is_shown_as_an_escape(before: str) -> None:
+@pytest.mark.parametrize(
+    ("before", "encoding"),
+    [
+        ("\x1b", "utf-8"),
+        ("\n", "utf-8"),
+        ("\u202e", "utf-8"),
+        ("\ud800", "utf-8"),
+        ("\u0338", "utf-8"),
+        # A letter the stream cannot carry, in the middle of the value.
+        ("\u65e5", "cp1258"),
+        ("\u0101", "ascii"),
+    ],
+)
+def test_a_mark_after_a_character_shown_as_an_escape_is_shown_as_an_escape(
+    before: str, encoding: str
+) -> None:
     for char in ("\u0301", "\u093e", "\u05b8", "\ufe0f"):
         value = f"a{before}{char}b"
-        shown = terminal_safe(value, encoding="utf-8")
+        shown = terminal_safe(value, encoding=encoding)
         assert f"\\u{ord(char):04x}b" in shown and char not in shown
         assert _back(shown) == value
 
@@ -604,7 +619,15 @@ def test_a_mark_after_a_letter_the_stream_cannot_carry_is_shown_as_an_escape() -
     shown = terminal_safe(value, encoding="cp1258")
     assert shown == "\\u65e5\\u0301x"
     assert _back(shown) == value
+    assert terminal_safe("a\u65e5\u0301x", encoding="cp1258") == "a\\u65e5\\u0301x"
     assert terminal_safe("a\u0301", encoding="cp1258") == "a\u0301"
+
+
+def test_a_keycap_shows_its_enclosing_mark_as_an_escape() -> None:
+    # The keycap is an enclosing mark: it draws around what stands before it, so
+    # it is shown as an escape wherever it stands, on a digit too.
+    assert terminal_safe("1\ufe0f\u20e3", encoding="utf-8") == "1\ufe0f\\u20e3"
+    assert _back(terminal_safe("1\ufe0f\u20e3", encoding="utf-8")) == "1\ufe0f\u20e3"
 
 
 @pytest.mark.parametrize("count", [31, 32, 200])
@@ -637,9 +660,30 @@ def test_a_decomposed_word_in_any_script_comes_through_unchanged(word: str) -> N
     )
 
 
-def test_a_long_run_of_marks_is_read_in_linear_time() -> None:
+def test_a_long_run_of_marks_is_shown_with_the_marks_past_the_limit_escaped() -> None:
     shown = terminal_safe("x" + "\u0301" * 200_000, encoding="utf-8")
     assert shown.count("\\u0301") == 200_000 - 30
+
+
+def test_a_run_of_marks_costs_time_in_proportion_to_its_length() -> None:
+    # Eight times the run: linear is about 8x, a rescan of the base's marks about 64x.
+    assert_scales(
+        lambda n: "x" + "\u0301" * n,
+        20_000,
+        lambda text: terminal_safe(text, encoding="utf-8"),
+        factor=8,
+    )
+
+
+def test_a_run_of_letters_the_stream_cannot_carry_costs_time_in_proportion_to_its_length() -> None:
+    # More distinct letters than the escaper remembers, so its memory is cleared
+    # along the way and every letter is tried again.
+    assert_scales(
+        lambda n: "".join(chr(0x4E00 + i % 5_000) for i in range(n)),
+        20_000,
+        lambda text: terminal_safe(text, encoding="cp1252"),
+        factor=8,
+    )
 
 
 MARK = "\u0301"
