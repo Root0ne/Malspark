@@ -46,9 +46,9 @@ from tests.unit.reporting.test_the_composer_writes_its_sections_at_once import (
 from .anthropic_cache_bodies import bodies
 from .anthropic_wire import MODEL, Wire, install, message
 
-FIXTURE = (
-    Path(__file__).resolve().parents[2] / "fixtures" / "anthropic_bodies_before_sent_again.json"
-)
+FIXTURES = Path(__file__).resolve().parents[2] / "fixtures"
+FIXTURE = FIXTURES / "anthropic_bodies_before_sent_again.json"
+BY_LIFETIME = FIXTURES / "anthropic_bodies_before_sent_again_by_lifetime.json"
 USAGE = {"input_tokens": 10, "output_tokens": 5}
 MARK = {"type": "ephemeral"}
 HOUR = {"type": "ephemeral", "ttl": "1h"}
@@ -120,6 +120,31 @@ def _marks(body: dict[str, Any]) -> list[tuple[int, int, dict[str, str]]]:
     ]
 
 
+def _lifetimes(body: dict[str, Any]) -> list[str]:
+    """Each breakpoint's lifetime in the order the body holds them: tools, system, turns."""
+    found: list[str] = []
+
+    def walk(value: Any) -> None:
+        if isinstance(value, dict):
+            if isinstance(value.get("cache_control"), dict):
+                found.append(value["cache_control"].get("ttl", "5m"))
+            for inner in value.values():
+                walk(inner)
+        elif isinstance(value, list):
+            for inner in value:
+                walk(inner)
+
+    walk([body.get("tools"), body.get("system"), body["messages"]])
+    return found
+
+
+def _in_order(body: dict[str, Any]) -> bool:
+    """Whether no hour-long breakpoint follows a five-minute one, and at most four are set."""
+    lifetimes = _lifetimes(body)
+    after = lifetimes[lifetimes.index("5m") :] if "5m" in lifetimes else []
+    return len(lifetimes) <= 4 and "1h" not in after
+
+
 def _clock(monkeypatch: pytest.MonkeyPatch) -> list[float]:
     """The clock the provider reads its cache entries' age by, set by the test."""
     now = [1000.0]
@@ -149,12 +174,13 @@ class TestTheFirstPass:
 
 
 class TestTheRetryReadsIt:
+    @pytest.mark.parametrize("ttl", ["5m", "1h"])
     @pytest.mark.parametrize("head", [0, len(HEAD)], ids=["whole turn", "shared head"])
     def test_a_retry_after_the_answer_sends_the_first_pass_through_its_mark(
-        self, wire: Wire, head: int
+        self, wire: Wire, head: int, ttl: str
     ) -> None:
         text = HEAD + TASK if head else TASK
-        model = _model()
+        model = _model(prompt_cache_ttl=ttl)
         model.invoke([SystemMessage(content=SYSTEM), _noted(text, head)])
         model.invoke(
             [
@@ -168,8 +194,13 @@ class TestTheRetryReadsIt:
         assert wire.refused == []
         assert _through_first_turn(retry) == _through_first_turn(first)
         assert retry["messages"][0]["content"][-1]["cache_control"] == MARK
+        assert _in_order(first) and _in_order(retry)
 
-    def test_a_retry_in_its_call_s_reply_reads_the_first_turn(self, wire: Wire) -> None:
+    @pytest.mark.parametrize("ttl", ["5m", "1h"])
+    @pytest.mark.parametrize("last", [True, False], ids=["kept answer", "not last"])
+    def test_a_retry_in_its_call_s_reply_reads_the_first_turn(
+        self, wire: Wire, ttl: str, last: bool
+    ) -> None:
         from langchain_core.tools import StructuredTool
 
         from .anthropic_cache_bodies import _What
@@ -188,16 +219,23 @@ class TestTheRetryReadsIt:
             content=QUESTION,
             tool_call_id="call_0",
             status="error",
-            response_metadata={LAST_REQUEST: True},
+            response_metadata={LAST_REQUEST: True} if last else {},
         )
-        bound = _model().bind_tools([tool])
+        bound = _model(prompt_cache_ttl=ttl).bind_tools([tool])
         turn = _noted(HEAD + TASK, len(HEAD))
         bound.invoke([SystemMessage(content=SYSTEM), turn])
         bound.invoke([SystemMessage(content=SYSTEM), turn, call, reply])
         first, retry = wire.bodies
         assert wire.refused == []
         assert _through_first_turn(retry) == _through_first_turn(first)
-        assert _markers(retry) == 2, "the head and the turn's end; the last reply writes nothing"
+        assert _in_order(first) and _in_order(retry)
+        if last:
+            assert _markers(retry) == 2, (
+                "the head and the turn's end; the last reply writes nothing"
+            )
+        else:
+            # The reply's own breakpoint follows the turn's end, five minutes too.
+            assert _lifetimes(retry)[1:] == ["5m", "5m"]
 
     def test_a_last_request_nothing_wrote_before_marks_only_the_head(self, wire: Wire) -> None:
         reply = HumanMessage(content=QUESTION, response_metadata={LAST_REQUEST: True})
@@ -227,6 +265,58 @@ class TestTheRetryReadsIt:
             assert _through_first_turn(late) == _through_first_turn(first)
         else:
             assert _markers(late) == 0, "the entry the first pass wrote has expired"
+
+    def test_a_read_refreshes_the_end_mark_s_five_minutes(
+        self, wire: Wire, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        now = _clock(monkeypatch)
+        model = _model()
+        model.invoke([SystemMessage(content=SYSTEM), _noted(TASK)])
+        reply = HumanMessage(content=QUESTION, response_metadata={LAST_REQUEST: True})
+        for after in (200, 250):
+            now[0] += after
+            model.invoke([SystemMessage(content=SYSTEM), _noted(TASK), _answered(2), reply])
+        first, read, again = wire.bodies
+        assert _marks(read) == _marks(again) == [(0, 0, MARK)], "450 s on, 250 s after a read"
+
+    def test_a_retry_s_mark_on_the_turn_counts_for_five_minutes_under_the_hour(
+        self, wire: Wire, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        now = _clock(monkeypatch)
+        model = _model(prompt_cache_ttl="1h")
+        model.invoke([SystemMessage(content=SYSTEM), _noted(TASK)])
+        now[0] += 1
+        retry = [SystemMessage(content=SYSTEM), _noted(TASK), _answered(2)]
+        model.invoke([*retry, HumanMessage(content=QUESTION)])
+        now[0] += 1800
+        reply = HumanMessage(content=QUESTION, response_metadata={LAST_REQUEST: True})
+        model.invoke([*retry, reply])
+        _first, again, late = wire.bodies
+        assert _marks(again)[0] == (0, 0, MARK)
+        assert _markers(late) == 0, "the entry the retry read has expired"
+
+    def test_an_hour_long_entry_of_the_prefix_is_kept_after_its_end_mark(
+        self, wire: Wire, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from malspark.llm.anthropic_history import TOOL_LOOP_TURN
+
+        # A loop's request, which keeps the setting's hour, writes the prefix
+        # first; a single shot marks its end ten seconds later.
+        now = _clock(monkeypatch)
+        model = _model(prompt_cache_ttl="1h")
+        looped = HumanMessage(
+            content=TASK, response_metadata={SENT_AGAIN: len(TASK), TOOL_LOOP_TURN: True}
+        )
+        model.invoke([SystemMessage(content=SYSTEM), looped])
+        now[0] += 10
+        model.invoke([SystemMessage(content=SYSTEM), _noted(TASK)])
+        now[0] += 990
+        reply = HumanMessage(content=QUESTION, response_metadata={LAST_REQUEST: True})
+        model.invoke([SystemMessage(content=SYSTEM), _noted(TASK), _answered(2), reply])
+        loop, single, late = wire.bodies
+        assert _marks(loop) == [(0, 0, HOUR)]
+        assert _marks(single) == [(0, 0, MARK)]
+        assert _marks(late) == [(0, 0, MARK)], "the hour's entry still holds the prefix"
 
     def test_a_loop_marks_its_later_turns_and_not_the_noted_turn_s_end(self, wire: Wire) -> None:
         from malspark.llm.anthropic_history import TOOL_LOOP_TURN
@@ -316,7 +406,9 @@ class TestTheComposer:
         start = text.index(_LEAD) + len(_LEAD)
         return text[start : text.index(" section follows.", start)]
 
-    def _compose(self, monkeypatch: pytest.MonkeyPatch, structured: bool) -> list[dict[str, Any]]:
+    def _compose(
+        self, monkeypatch: pytest.MonkeyPatch, structured: bool, ttl: str = "5m"
+    ) -> list[dict[str, Any]]:
         def reply(body: dict[str, Any]) -> dict[str, Any]:
             answer = _answer(self._section(body)) if _LEAD in self._text_of(body) else {}
             if body.get("tools"):
@@ -328,7 +420,7 @@ class TestTheComposer:
 
         found = Wire(reply)
         install(monkeypatch, found)
-        composer = ReportComposer(llm=_model(), per_section_timeout=60)
+        composer = ReportComposer(llm=_model(prompt_cache_ttl=ttl), per_section_timeout=60)
         with patch(
             "malspark.reporting.composer.structured_output_supported_for_llm",
             return_value=structured,
@@ -337,11 +429,13 @@ class TestTheComposer:
         assert found.refused == []
         return found.bodies
 
+    @pytest.mark.parametrize("ttl", ["5m", "1h"])
     @pytest.mark.parametrize("structured", [False, True], ids=["manual", "structured"])
     def test_each_retry_sends_its_first_pass_through_the_marked_turn(
-        self, monkeypatch: pytest.MonkeyPatch, structured: bool
+        self, monkeypatch: pytest.MonkeyPatch, structured: bool, ttl: str
     ) -> None:
-        sent = self._compose(monkeypatch, structured)
+        sent = self._compose(monkeypatch, structured, ttl)
+        assert all(_in_order(body) for body in sent)
         firsts = {
             (self._section(b), json.dumps(b.get("tools"))): b
             for b in sent
@@ -420,8 +514,9 @@ class TestNeverAFifthBreakpoint:
     ) -> None:
         composer = TestTheComposer()
         for structured in (False, True):
-            for body in composer._compose(monkeypatch, structured):
-                assert _markers(body) <= 4
+            for ttl in ("5m", "1h"):
+                for body in composer._compose(monkeypatch, structured, ttl):
+                    assert _markers(body) <= 4
 
     def test_no_request_reading_the_ledger_carries_more_than_four(
         self, monkeypatch: pytest.MonkeyPatch
@@ -496,6 +591,17 @@ class TestEveryOtherCallKind:
     def test_every_body_is_the_one_built_before(self) -> None:
         before = json.loads(FIXTURE.read_text(encoding="utf-8"))
         now = bodies()
+        assert list(now) == list(before)
+        for kind in before:
+            assert now[kind] == before[kind], kind
+
+    @pytest.mark.parametrize("prompt", ["5m", "1h"])
+    @pytest.mark.parametrize("pack", ["off", "5m", "1h"])
+    def test_under_every_lifetime_every_body_is_the_one_built_before(
+        self, prompt: str, pack: str
+    ) -> None:
+        before = json.loads(BY_LIFETIME.read_text(encoding="utf-8"))[f"{prompt},{pack}"]
+        now = bodies(prompt, pack)
         assert list(now) == list(before)
         for kind in before:
             assert now[kind] == before[kind], kind

@@ -7,7 +7,9 @@ conversation's last. None of them carries a ``SENT_AGAIN`` note
 (``anthropic_history.SENT_AGAIN``), so each body must be the one built before
 that note existed: ``python -m tests.unit.llm.anthropic_cache_bodies PATH``
 writes them, and the fixture holds what it wrote on the branch the note was
-added to.
+added to. With ``--lifetimes`` it writes them under every combination of
+``prompt_cache_ttl`` and ``pack_cache_ttl`` (:data:`LIFETIMES`), keyed
+``"<prompt>,<pack>"``.
 """
 
 from __future__ import annotations
@@ -29,6 +31,7 @@ TASK = "Write the introduction.\n\nThe evidence follows.\n" + "evidence line\n" 
 PACK = "TRIAGE PACK\n" + "standing fact\n" * 30
 ANSWER = "CLAIM: it reads a file\nEVIDENCE: [ev_0001]\n"
 QUESTION = "Your previous answer had these problems: claim 1 cites no entry. Fix it."
+LIFETIMES = [(prompt, pack) for prompt in ("5m", "1h") for pack in ("off", "5m", "1h")]
 
 
 class _What(BaseModel):
@@ -150,15 +153,26 @@ def _sequences() -> dict[str, list[tuple[str, list[Any]]]]:
     }
 
 
-def bodies() -> dict[str, list[dict[str, Any]]]:
-    """Every body, keyed by the call kind that sent it, in the order sent."""
+def bodies(
+    prompt: str | None = None, pack_ttl: str | None = None
+) -> dict[str, list[dict[str, Any]]]:
+    """Every body, keyed by the call kind that sent it, in the order sent.
+
+    With ``prompt`` and ``pack_ttl``, every model is built with those
+    lifetimes; else with the defaults, the standing facts' an hour.
+    """
+    lifetimes = (
+        {"prompt_cache_ttl": prompt, "pack_cache_ttl": pack_ttl}
+        if prompt is not None and pack_ttl is not None
+        else None
+    )
     out: dict[str, list[dict[str, Any]]] = {}
     with pytest.MonkeyPatch.context() as monkeypatch:
         for kind, requests in _sequences().items():
             wire = Wire(_reply)
             install(monkeypatch, wire)
-            plain = _model()
-            pack = _model(pack_cache_ttl="1h")
+            plain = _model(**(lifetimes or {}))
+            pack = _model(**(lifetimes or {"pack_cache_ttl": "1h"}))
             for how, turns in requests:
                 if how == "plain":
                     plain.invoke(turns)
@@ -176,4 +190,9 @@ if __name__ == "__main__":
     import sys
     from pathlib import Path
 
-    Path(sys.argv[1]).write_text(json.dumps(bodies(), indent=1) + "\n", encoding="utf-8")
+    if "--lifetimes" in sys.argv[1:]:
+        found: Any = {f"{prompt},{pack}": bodies(prompt, pack) for prompt, pack in LIFETIMES}
+    else:
+        found = bodies()
+    path = next(arg for arg in sys.argv[1:] if not arg.startswith("--"))
+    Path(path).write_text(json.dumps(found, indent=1) + "\n", encoding="utf-8")
