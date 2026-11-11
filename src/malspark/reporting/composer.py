@@ -387,6 +387,19 @@ _INSTRUCTIONS: dict[str, str] = {
         "analysis did not establish and why ('in the analysed sample', 'not recovered'). "
         "Say each gap once, in the sample's terms."
     ),
+    # For a report holding the limitations inventory (``composer_pro.measured_limitation_facts``):
+    # the list is printed above the paragraph, so the paragraph is what the list leaves.
+    "limitations_measured": (
+        "Write the limitations: one short paragraph of scoped sentences saying what this "
+        "analysis did not establish and why ('in the analysed sample', 'not recovered'). The "
+        "report prints each line under measured_list above your paragraph as written, and the "
+        "evidence bundle prints each line under measured_rows_not_printed: restate none of "
+        "them, and write only what they do not state. You may say what a line leaves open, "
+        "citing the entries that show it. A question under "
+        "open_questions_whose_routines_have_listed_code names only routines whose code an "
+        "entry lists: a listing is not an answer, so read it before you call the question "
+        "open. Say each gap once, in the sample's terms."
+    ),
     "attack_procedures": (
         "Write one sentence for each technique listed under published_techniques, saying "
         "how this sample carries it out, with the concrete value that shows it. Use only the "
@@ -1655,7 +1668,9 @@ class ReportComposer:
             _Planned(
                 "limitations",
                 LimitationsOut,
-                _INSTRUCTIONS["limitations"],
+                _INSTRUCTIONS[
+                    "limitations" if report.limitation_inventory is None else "limitations_measured"
+                ],
                 [lambda p: limitations_shape_violations(p)],
                 _closing("analyst_limitations", "Limitations"),
             ),

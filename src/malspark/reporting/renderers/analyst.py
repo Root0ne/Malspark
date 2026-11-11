@@ -44,7 +44,12 @@ from malspark.reporting.composer_pro import (
 from malspark.reporting.defang import defang
 from malspark.reporting.detection_signatures import analyst_print_gate, rule_standing
 from malspark.reporting.judge_reasons import judge_reasons_shown
-from malspark.reporting.models import MalwareReport, TechnicalSubsection, outcome_words
+from malspark.reporting.models import (
+    LimitationInventory,
+    MalwareReport,
+    TechnicalSubsection,
+    outcome_words,
+)
 from malspark.reporting.renderers.layout import BUNDLE_HTML, BUNDLE_JSON
 from malspark.reporting.renderers.markdown import (
     _EV_RE,
@@ -2183,6 +2188,8 @@ class _Analyst:
             said.append(f"No verdict was assessed: {_one_line(report.verdict_not_assessed)}.")
         if report.degraded_mode:
             said.append(_degraded_sentence(report, ctx))
+        if report.limitation_inventory is not None:
+            return self._measured_limitations(report.limitation_inventory, said)
         partial = ctx.partial_sentence().strip()
         if partial:
             said.append(partial)
@@ -2222,6 +2229,40 @@ class _Analyst:
             said.append("The run recorded no limitation.")
         lines = [_heading(11, ANALYST_LIMITATIONS_TITLE), "", _paragraph_line(" ".join(said))]
         return "\n".join([*lines, "", _behind("limitations")])
+
+    def _measured_limitations(self, inventory: LimitationInventory, said: list[str]) -> str:
+        """Section 11 of a report that holds the limitations inventory: each row of it that
+        states a limit, one line each from the inventory's own templates, then the
+        composer's paragraph and the platform's verdict and degraded-run sentences."""
+        from malspark.reporting.limitation_inventory import LIST_LABEL, printed_rows
+
+        report = self.report
+        rows = printed_rows(
+            inventory,
+            claims_not_discussed=len(getattr(report, "claims_not_discussed", None) or []),
+        )
+        lines = [_heading(11, ANALYST_LIMITATIONS_TITLE), ""]
+        if rows:
+            lines.extend([LIST_LABEL, ""])
+            lines.extend(
+                _item(self.notes.moved(self.ctx.plain(_one_line(row.text)))) for row in rows
+            )
+            lines.append("")
+        composed = self.ta.analyst_limitations if self.ta is not None else None
+        paragraph = ""
+        if composed is not None:
+            # The composer's paragraph: what the list does not state. A paragraph
+            # every sentence of which was left out says so (T-555).
+            paragraph = self._prose(" ".join(composed.body.split()), composed.evidence_refs)
+            if not paragraph.strip():
+                paragraph = _LEFT_OUT_WHOLE.format(what="limitations", verb="were")
+        if said:
+            paragraph = " ".join(p for p in (paragraph, _paragraph_line(" ".join(said))) if p)
+        if not rows and not paragraph:
+            paragraph = "The run recorded no limitation."
+        if paragraph:
+            lines.extend([paragraph, ""])
+        return "\n".join([*lines, _behind("limitations")])
 
     # -- appendix ----------------------------------------------------------
 
