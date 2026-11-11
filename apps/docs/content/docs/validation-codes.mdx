@@ -100,7 +100,7 @@ A held sentence (any sentence of the conclusion or the limitations, of a record'
 
 ### `agreement.keep_unquoted`
 
-A kept closing sentence, or a kept held absence of the body, whose row quotes no words of a source it names that state the same (two or more of its own words, an absence on words stating one; never one shorter than `absence_answers.QUOTE_FLOOR`, refused as such), or that names no source while a shown one speaks of it (the rows of an entry it cites among them). Still so after the retry, a closing sentence is left out and recorded (`DROPPED_CODE`); a body absence stands, recorded (`HELD_KEPT_CODE`).
+A kept closing sentence, or a kept held absence of the body, whose row quotes no words of a source it names that state the same (two or more of its own words, an absence on words stating one, of the body as of a closing section, so a quote of the passage stating what an absence denies backs no keep of it; never one shorter than `absence_answers.QUOTE_FLOOR`, refused as such), or that names no source while a shown one speaks of it (the rows of an entry it cites among them). The refusal of a body absence names the sources that speak of it, which a rewrite of it may rest on, and offers a keep quoting one only where its words state the same absence. Still so after the retry, a closing sentence is left out and recorded (`DROPPED_CODE`); a body absence stands, recorded (`HELD_KEPT_CODE`).
 
 - **Raised at** `malspark.reporting.section_agreement:_answer_violations`
 - **Constant** `malspark.reporting.section_agreement:KEEP_UNQUOTED_CODE`
@@ -180,7 +180,7 @@ A row names a passage the round was not shown as one it may answer for.
 
 ### `agreement.unknown_source`
 
-A row names a source the round was not shown, or answers a section 5 passage with a source that is not a platform fact.
+A row names a source the round was not shown, or answers a section 5 passage with a source that is not a platform fact (a held absence of the body rests a rewrite on any source that speaks of it, a passage written without the code included).
 
 - **Raised at** `malspark.reporting.section_agreement:_answer_violations`, `malspark.reporting.section_agreement:_row_violations`
 - **Constant** `malspark.reporting.section_agreement:UNKNOWN_SOURCE_CODE`

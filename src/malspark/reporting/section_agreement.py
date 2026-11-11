@@ -150,6 +150,12 @@ is shown those rows as a fact that speaks of it (``entry.N``,
 ``reporting.entry_fields``), so a keep on no source is asked again with them; a
 keep quoting them is recorded.
 
+A held absence of the body, of section 5 too, may be rewritten in the model's words on
+any source that speaks of it, a passage written without the code included: the
+passage stating the checks the absence denies is the one that says otherwise of it.
+A keep's quote states an absence where the sentence does, of the body as of a closing
+section, so a keep quoting the passage that states what it denies is refused (T-652).
+
 A sentence the ledger's own lines hold (T-600): one denying something of a name
 the run holds (``ledger.N``), one of the limitations naming a failed call a later
 call redid, or saying such a call failed. Where no answer for it passes the checks
@@ -269,7 +275,9 @@ UNKNOWN_PASSAGE_CODE = "agreement.unknown_passage"
 # A row's sentence does not stand in its passage as copied.
 SENTENCE_NOT_FOUND_CODE = "agreement.sentence_not_found"
 # A row names a source the round was not shown, or answers a section 5
-# passage with a source that is not a platform fact.
+# passage with a source that is not a platform fact (a held absence of the body
+# rests a rewrite on any source that speaks of it, a passage written without the
+# code included).
 UNKNOWN_SOURCE_CODE = "agreement.unknown_source"
 # A rewrite cites an id that neither its sources nor its passage cite.
 REWRITE_CITES_ELSEWHERE_CODE = "agreement.rewrite_cites_elsewhere"
@@ -341,11 +349,14 @@ UNREAD_STANDING_CODE = "agreement.unread_standing"
 ABSENCE_KEPT_CODE = "agreement.absence_kept"
 # A kept closing sentence, or a kept held absence of the body, whose row quotes no
 # words of a source it names that state the same (two or more of its own words, an
-# absence on words stating one; never one shorter than ``absence_answers.QUOTE_FLOOR``,
-# refused as such), or that names no source while a shown one speaks of it (the rows of
-# an entry it cites among them). Still so after the retry, a closing
-# sentence is left out and recorded (``DROPPED_CODE``); a body absence stands,
-# recorded (``HELD_KEPT_CODE``).
+# absence on words stating one, of the body as of a closing section, so a quote of the
+# passage stating what an absence denies backs no keep of it; never one shorter than
+# ``absence_answers.QUOTE_FLOOR``, refused as such), or that names no source while a
+# shown one speaks of it (the rows of an entry it cites among them). The refusal of a
+# body absence names the sources that speak of it, which a rewrite of it may rest on,
+# and offers a keep quoting one only where its words state the same absence. Still so
+# after the retry, a closing sentence is left out and recorded (``DROPPED_CODE``); a
+# body absence stands, recorded (``HELD_KEPT_CODE``).
 KEEP_UNQUOTED_CODE = "agreement.keep_unquoted"
 # A sentence, or a rewrite, giving failed calls a number the ledger's count
 # does not.
@@ -446,7 +457,8 @@ class Passage:
     # each is held, and a keep of one is held as a closing keep is, naming the
     # source it rests on with its words or the reason no source speaks of it; it is
     # never left out, and a keep not tied to a source's words is recorded (T-580),
-    # unless the ledger's own lines hold it (:func:`_held_by_the_ledger`, T-600).
+    # unless the ledger's own lines hold it (:func:`_held_by_the_ledger`, T-600). A
+    # rewrite of one may rest on any source that speaks of it (T-652).
     absences: tuple[str, ...] = ()
     # The held sentences a fact read off the rows of an entry they cite bears on
     # (:func:`_entry_field_passages`): such a fact speaks of each one (T-580).
@@ -3835,7 +3847,8 @@ def _row_violations(
     sources = [by_id.get(_form(source)) for source in row.sources]
     # A section 5 sentence calling something absent from the whole code read
     # names nothing a fact is about: it may rest on a fact or a section 5
-    # passage, never on another model's claim or a debate round (T-562).
+    # passage, never on a debate round, nor on another model's claim unless that
+    # claim speaks of a held absence (T-562, T-652, below).
     whole = span is not None and _in_own_words(passage, span[2], sources)
     in_words = span is not None and (
         _whole_code_sentence(passage, span[2])
@@ -3859,11 +3872,23 @@ def _row_violations(
         if passage.kind == SECTION_5
         else (FACT, SECTION_5, DEBATE)
     )
+    # A held absence of the body rewritten rests on any source that speaks of it
+    # (:func:`_body_speaking`), a passage written without the code included: the passage
+    # stating what it denies is the one that says otherwise of it (T-652).
+    speaking = (
+        frozenset(pid for pid, _excerpt in _body_speaking(span[2], by_id, passage))
+        if row.decision == "rewrite"
+        and span is not None
+        and not passage.closing
+        and span[2] in passage.absences
+        and any(s is not None and s.kind not in allowed for s in sources)
+        else frozenset()
+    )
     wrong = [
         _form(name)
         for name, source in zip(row.sources, sources, strict=True)
         if source is None
-        or source.kind not in allowed
+        or (source.kind not in allowed and source.id not in speaking)
         # A sentence answered in the model's words never rests on its own
         # passage: that would state what the passage says otherwise of.
         or ((in_words or absent_keep) and source.id == passage.id)
@@ -3961,7 +3986,7 @@ def _row_violations(
     if row.decision == "rewrite" and _writable(passage):
         # Only a source the passage may rest on grounds its rewrite: a section
         # 5 sentence's, a fact about what the sentence or its rewrite names.
-        grounds = [s for s in sources if s is not None and s.kind in allowed]
+        grounds = [s for s in sources if s is not None and (s.kind in allowed or s.id in speaking)]
         if passage.kind == SECTION_5 and not whole:
             reading = _Reading(row.sentence, passage.text)
             about = [s for s in grounds if _grounds_section_5(s, reading)]
@@ -4940,13 +4965,18 @@ def _quote_problem(
     by_id: dict[str, Passage] | None = None,
     *,
     body: bool = False,
+    speaking: bool = False,
 ) -> str:
     """What is wrong with a kept closing sentence's quote, or ``""``.
 
     ``body``: a held absence of the body, left out only where the ledger's own lines hold
-    it (:func:`_held_by_the_ledger`), whose quote may state no
-    absence: a keep on the words of a source that speaks of it is the model's reading
-    of that source, and is recorded (:func:`absence_keep_reason`, T-580).
+    it (:func:`_held_by_the_ledger`), which may be kept on the rows of an entry it cites:
+    a keep on them is the model's reading of them, and is recorded
+    (:func:`entry_keep_reason`, T-580). ``speaking``: the quote is read for whether its
+    source speaks of the sentence at all (:func:`_body_speaking`), where a source stating
+    what the sentence denies does, so it need state no absence; a keep's quote, of the
+    body as of a closing section, does: the passage stating what an absence denies backs
+    no keep of it (T-652).
 
     It stands whole in a named source (:func:`absence_answers.quote_stands`), and
     states an absence where the sentence does. Where the sentence names addresses, the
@@ -4982,7 +5012,7 @@ def _quote_problem(
             )
         return ""
     absent = carries_negation(sentence)
-    if absent and not body and not carries_negation(quote):
+    if absent and not speaking and not carries_negation(quote):
         return "states no absence, while the sentence states one"
     named = frozenset(_addresses_named(sentence))
     by_quote = bool(named & set(_addresses_named(quote)))
@@ -5180,8 +5210,9 @@ def _speaking_sources(
 
     For a held absence of the body (``passage`` given, not a closing one, holding the
     sentence among its :attr:`Passage.absences`), :func:`_body_speaking`: a source speaks
-    only where one sentence of it is a quote the keep check passes, so every refusal can
-    be answered by quoting what it names (T-580).
+    only where one sentence of it is a quote the keep check passes but for stating an
+    absence, so every refusal can be answered by rewriting on what it names, or by quoting
+    it where it states the same absence (T-580, T-652).
     """
     body = passage is not None and not passage.closing and sentence in passage.absences
     if body and passage is not None:
@@ -5253,7 +5284,9 @@ def _body_speaking(
     sentence: str, by_id: dict[str, Passage], passage: Passage
 ) -> list[tuple[str, str]]:
     """The sources that speak of a held absence of the body, each with the sentence of it
-    the keep check passes as a quote (:func:`_quote_problem` with ``body``), best first.
+    the keep check passes as a quote but for stating an absence (:func:`_quote_problem`
+    with ``speaking``), best first. A rewrite of the absence may rest on any of them; a
+    keep quoting one passes only where its words state the same absence (T-652).
 
     Every other passage written without the code speaks as section 5 does: the body's
     claims say otherwise of an absence too (haiku13's "not shown to use anti-debug or
@@ -5262,9 +5295,9 @@ def _body_speaking(
     "not observed") is spoken of only by a sentence stating what a run saw and denying
     nothing (:func:`absence_answers.observes`): no passage of code says otherwise of
     it, and a run that saw nothing agrees with it. Each excerpt is the shortest run of
-    a sentence (or row) between clause marks that the keep check passes
+    a sentence (or row) between clause marks that the check passes
     and a finding row prints whole (:func:`_shortest_quote`); a source with none does
-    not speak, so every refusal can be answered by quoting its excerpt. The
+    not speak, so every refusal names an excerpt the model can rest an answer on. The
     rows of an entry it cites speak through a row naming a value. Such a keep is never left
     out, so a source speaking costs a question, never the sentence.
     """
@@ -5324,8 +5357,9 @@ def _passes_as_body_quote(
     by_id: dict[str, Passage],
     quote: str,
 ) -> bool:
-    """Whether a keep of a held body absence on ``quote`` passes :func:`_quote_problem`."""
-    return not _quote_problem(sentence, quote, sources, generic, by_id, body=True)
+    """Whether ``quote`` speaks of a held body absence as :func:`_quote_problem` reads a
+    keep's quote, but for stating an absence: what states what it denies speaks of it."""
+    return not _quote_problem(sentence, quote, sources, generic, by_id, body=True, speaking=True)
 
 
 # Where a quote of a source sentence may end short of its end: a clause mark.
@@ -5385,17 +5419,30 @@ def _candidates(sentence: str, by_id: dict[str, Passage], passage: Passage | Non
     )
     more = len(found) - _SPEAKING_SHOWN
     body = passage is not None and not passage.closing
+    # A keep of a body absence quoting one of these passes only where its excerpt states
+    # the same absence (:func:`_quote_problem`); the rest are rewritten on (T-652).
+    generic = generic_words(by_id) if body else frozenset()
+    keepable = body and any(
+        not _quote_problem(sentence, excerpt, [by_id[pid]], generic, by_id, body=True)
+        for pid, excerpt in found[:_SPEAKING_SHOWN]
+        if pid in by_id
+    )
     return (
         f" The shown sources that speak of it: {shown}"
         + (f"; and {more} more" if more > 0 else "")
         + (
             f". {_ON_THE_ONE}"
             + (
-                " (a section 5 sentence: on a fact or another section 5 passage)"
+                " (a section 5 sentence too: on any of these, a passage written without the "
+                "code included)"
                 if (passage is not None and passage.kind == SECTION_5)
                 else ""
             )
-            + f", {_OR_KEEP_NAMING} the one you read, quoting its words."
+            + (
+                f", {_OR_KEEP_NAMING} the one you read, quoting its words."
+                if keepable
+                else "; their words state no absence, so no keep rests on them."
+            )
             if body
             else f". {_ON_A_CANDIDATE}"
             + (
