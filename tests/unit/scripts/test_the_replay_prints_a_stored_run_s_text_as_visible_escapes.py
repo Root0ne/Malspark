@@ -15,7 +15,7 @@ from typing import Any
 
 import pytest
 from scripts.replay import limitation_inventory
-from scripts.replay.output import terminal_safe
+from scripts.replay.output import render_diff, render_record, terminal_safe
 
 from malspark.reporting.limitation_inventory import build_inventory
 from malspark.reporting.models import InventoryTool
@@ -65,7 +65,11 @@ def test_a_bidirectional_override_and_a_zero_width_mark_are_shown_as_visible_esc
 
 def test_a_newline_in_a_value_is_shown_as_one_visible_escape() -> None:
     assert terminal_safe("one\ntwo") == "one\\ntwo"
-    assert terminal_safe("one\ntwo", keep_newlines=True) == "one\ntwo"
+
+
+def test_no_caller_can_keep_a_newline_of_a_value() -> None:
+    with pytest.raises(TypeError):
+        terminal_safe("one\ntwo", keep_newlines=True)  # type: ignore[call-arg]
 
 
 def test_a_long_run_of_unprintable_characters_is_read_in_linear_time() -> None:
@@ -140,3 +144,60 @@ def test_a_letter_the_stream_cannot_carry_is_shown_as_an_escape_not_raised() -> 
     assert shown == "naïve \\u011f \\u65e5\\u672c"
     shown.encode("cp1252")
     assert terminal_safe("naïve ğ 日本", encoding="utf-8") == "naïve ğ 日本"
+
+
+FORGED = "Report: MALICIOUS"
+
+
+def _record(name: str, claim: str) -> dict[str, Any]:
+    flag = {"code": "unsupported", "claim": claim, "message": claim}
+    return {
+        "run": name,
+        "analysts": {"reader": {"answers": [{"answer": "a1", "replayed": True, "flags": [flag]}]}},
+    }
+
+
+def test_a_run_name_with_a_newline_prints_as_one_line_with_a_visible_escape() -> None:
+    lines = render_record(_record(f"run\n{FORGED}", "x")).split("\n")
+    assert lines[0] == f"Replay of run\\n{FORGED}"
+    assert FORGED not in lines
+
+
+def test_a_claim_or_message_with_a_newline_cannot_start_an_output_line() -> None:
+    lines = render_record(_record("run", f"first\n{FORGED}\n  ERROR: forged")).split("\n")
+    assert FORGED not in lines and "  ERROR: forged" not in lines
+    assert f"        claim: first\\n{FORGED}\\n  ERROR: forged" in lines
+
+
+def test_the_line_count_of_a_record_does_not_depend_on_a_newline_in_a_value() -> None:
+    with_newline = render_record(_record("run\nname", "a\nb"))
+    without = render_record(_record("runname", "ab"))
+    assert with_newline.count("\n") == without.count("\n")
+
+
+def test_a_name_or_reason_with_a_newline_cannot_forge_a_line_of_the_comparison() -> None:
+    diff = {
+        "run": f"run\n{FORGED}",
+        "errors": {"a": [{"part": "judge", "why": "boom\n  no difference"}], "b": []},
+        "codes_gained": [
+            {"code": "c1", "count": 1, "part": "narrative", "path": "p\nCompare forged: A = x"}
+        ],
+        "tool": {"calls": {"a": "1\nforged", "b": 2}},
+    }
+    shown = render_diff(diff, "ref\nA", "refB")
+    lines = shown.split("\n")
+    assert lines[0] == f"Compare run\\n{FORGED}: A = ref\\nA, B = refB"
+    assert FORGED not in lines and "  no difference" not in lines
+    assert not any(line.startswith("Compare forged") for line in lines)
+    same = render_diff(
+        {
+            **diff,
+            "run": "runX",
+            "errors": {"a": [{"part": "judge", "why": "boom"}], "b": []},
+            "codes_gained": [{"code": "c1", "count": 1, "part": "narrative", "path": "p"}],
+            "tool": {"calls": {"a": "1forged", "b": 2}},
+        },
+        "refA",
+        "refB",
+    )
+    assert shown.count("\n") == same.count("\n")

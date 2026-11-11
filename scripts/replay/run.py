@@ -160,7 +160,7 @@ def _compare(
 ) -> tuple[list[dict[str, Any]], int]:
     """The diff of each run between the two refs, and the status the comparison ends with."""
     from scripts.replay import compare
-    from scripts.replay.output import render_diff, terminal_safe
+    from scripts.replay.output import render_diff
 
     ref_a, ref_b = refs
     owned = work is None
@@ -184,12 +184,7 @@ def _compare(
             compare.diff_records(a, b) for a, b in zip(records["a"], records["b"], strict=True)
         ]
         if not quiet:
-            print(
-                terminal_safe(
-                    "\n\n".join(render_diff(diff, ref_a, ref_b) for diff in diffs),
-                    keep_newlines=True,
-                )
-            )
+            print("\n\n".join(render_diff(diff, ref_a, ref_b) for diff in diffs))
         if any(compare.has_errors(diff) or compare.is_partial(diff) for diff in diffs):
             return diffs, 2
         return diffs, 1 if any(compare.differs(diff) for diff in diffs) else 0
@@ -249,11 +244,7 @@ def main(argv: list[str] | None = None) -> int:
         from scripts.replay.output import render_record, terminal_safe
 
         if not args.quiet:
-            print(
-                terminal_safe(
-                    "\n\n".join(render_record(record) for record in records), keep_newlines=True
-                )
-            )
+            print("\n\n".join(render_record(record) for record in records))
         raised = [(record.get("run"), row) for record in records for row in errors(record)]
         for name, row in raised:
             print(
