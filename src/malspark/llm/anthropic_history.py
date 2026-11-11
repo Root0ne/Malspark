@@ -74,7 +74,8 @@ may follow) carries a breakpoint at its end as well, on a single shot too,
 wherever no breakpoint is placed after it: the first pass writes the turn and
 the retry, which sends it again, reads it. That breakpoint asks for five
 minutes whatever ``prompt_cache_ttl`` is, the retry following within seconds,
-and outside a loop so does every breakpoint on or after such a turn.
+and outside a loop so does every breakpoint on or after such a turn, unless a
+later turn carries a head of its own, which keeps the setting for them all.
 On a request no later one sends again it is placed only where an earlier
 request of the model marked that prefix, where it reads and writes nothing.
 
@@ -784,8 +785,11 @@ def _cache_breakpoints(
     follows every longer-lived one, as the API requires. Outside a loop, a
     noted turn another rule marks asks for five minutes too, and so does
     every breakpoint after it, so no longer-lived one follows it and a retry
-    sends the first pass's marked turn byte for byte. Each such prefix counts
-    as written for five minutes only, unless an entry of it lives longer.
+    sends the first pass's marked turn byte for byte; where a later turn
+    carries a head of its own (:func:`_head_after`), they keep ``marker`` as
+    a request without the note does, and the end is left unmarked. Each
+    such prefix counts as written for five minutes only, unless an entry of
+    it lives longer.
 
     With ``memory``, a breakpoint whose turn cannot carry one as sent (a turn
     written as one string that keeps that shape, :func:`_turns_listed`) goes
@@ -823,7 +827,7 @@ def _cache_breakpoints(
                 placed.add(earlier)
         ends = _again_placed(messages, again, placed, last, digests, written)
         marks = placed
-        ends |= _short_after_noted(marks, again, loop)
+        ends |= _short_after_noted(messages, marks, again, loop)
         with memory.lock:
             memory.marked.update((digests[i], now) for i in marks - ends)
             # Stamped so that it counts as written for five minutes, unless
@@ -832,19 +836,34 @@ def _cache_breakpoints(
             for i in ends:
                 memory.marked[digests[i]] = max(memory.marked.get(digests[i], at), at)
     elif again:
-        ends = _again_placed(messages, again, marks, last) | _short_after_noted(marks, again, loop)
+        ends = _again_placed(messages, again, marks, last)
+        ends |= _short_after_noted(messages, marks, again, loop)
     return [
         _marked(m, short) if i in ends else _marked(m, marker) if i in marks else m
         for i, m in enumerate(messages)
     ]
 
 
-def _short_after_noted(marks: set[int], again: frozenset[int], loop: bool) -> set[int]:
+def _head_after(messages: list[Any], index: int) -> bool:
+    """Whether a turn after ``index`` carries a breakpoint of its own (a shared head)."""
+    return any(
+        isinstance(m, dict)
+        and isinstance(m.get("content"), list)
+        and any(isinstance(b, dict) and "cache_control" in b for b in m["content"])
+        for m in messages[index + 1 :]
+    )
+
+
+def _short_after_noted(
+    messages: list[Any], marks: set[int], again: frozenset[int], loop: bool
+) -> set[int]:
     """The breakpoints from the first noted turn ``marks`` holds on, outside a loop.
 
-    Each asks for five minutes (:func:`_cache_breakpoints`); a loop's are left as they are.
+    Each asks for five minutes (:func:`_cache_breakpoints`); a loop's are left
+    as they are, and so are a noted turn's where a later turn carries a head
+    of its own (:func:`_head_after`), whose lifetime would follow theirs.
     """
-    noted = marks & again
+    noted = {i for i in marks & again if not _head_after(messages, i)}
     if loop or not noted:
         return set()
     return {i for i in marks if i >= min(noted)}
@@ -862,22 +881,16 @@ def _again_placed(
 
     A turn so noted is marked where it can carry one as sent and no breakpoint
     is placed at it or after it, which would read its entry on its own: a
-    later turn's head included, so the mark is always the request's last. On
-    a ``last`` request it is marked only where its prefix is one an earlier
-    request marked (``digests`` and ``written``, :func:`_cache_breakpoints`).
+    later turn's head included (:func:`_head_after`), so the mark is always
+    the request's last. On a ``last`` request it is marked only where its
+    prefix is one an earlier request marked (``digests`` and ``written``,
+    :func:`_cache_breakpoints`).
     """
-    headed = {
-        i
-        for i, m in enumerate(messages)
-        if isinstance(m, dict)
-        and isinstance(m.get("content"), list)
-        and any(isinstance(b, dict) and "cache_control" in b for b in m["content"])
-    }
     out: set[int] = set()
     for index in sorted(again, reverse=True):
         if not _markable(messages[index]) or any(i >= index for i in placed | out):
             continue
-        if any(i > index for i in headed):
+        if _head_after(messages, index):
             continue
         if last and (digests is None or written is None or digests[index] not in written):
             continue
@@ -896,8 +909,9 @@ def _within_breakpoint_limit(messages: list[Any]) -> list[Any]:
     (the standing facts, the newest user turn, the turn before the newest
     answer) besides a shared head's, a turn noted as sent again is marked,
     for five minutes, only where none of those is placed at it or after it,
-    outside a loop every breakpoint on or after a noted turn asks for five
-    minutes, and only the first user turn's facts ask for an hour.
+    outside a loop every breakpoint on or after a noted turn no later turn's
+    head follows asks for five minutes, and only the first user turn's facts
+    ask for an hour.
     """
 
     def places(turns: list[Any]) -> list[tuple[int, int]]:

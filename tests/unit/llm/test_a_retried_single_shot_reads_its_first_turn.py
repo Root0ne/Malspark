@@ -495,6 +495,114 @@ class TestTheMarkAsksForFiveMinutes:
         assert _marks(body) == [(2, 0, HOUR)], "the head keeps its hour"
         assert "cache_control" not in body["messages"][0]["content"][-1], "the end is unmarked"
 
+    @pytest.mark.parametrize("ttl", ["5m", "1h"])
+    @pytest.mark.parametrize("last", [False, True], ids=["not last", "last"])
+    def test_a_later_turn_s_head_keeps_the_body_a_call_without_the_note_sends(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        caplog: pytest.LogCaptureFixture,
+        ttl: str,
+        last: bool,
+    ) -> None:
+        marker = HOUR if ttl == "1h" else MARK
+        notes: dict[str, Any] = {SHARED_HEAD: len(HEAD)}
+        if last:
+            notes[LAST_REQUEST] = True
+        later = HumanMessage(content=HEAD + QUESTION, response_metadata=notes)
+        sent: list[dict[str, Any]] = []
+        for first in (_noted(TASK), HumanMessage(content=[{"type": "text", "text": TASK}])):
+            found = Wire(_reply)
+            install(monkeypatch, found)
+            model = _model(prompt_cache_ttl=ttl)
+            with caplog.at_level("WARNING", logger="malspark"):
+                model.invoke([SystemMessage(content=SYSTEM), first])
+                model.invoke([SystemMessage(content=SYSTEM), first, _answered(2), later])
+            assert found.refused == []
+            sent.append(found.bodies[-1])
+        noted, plain = sent
+        if last:
+            assert _marks(noted) == [(2, 0, marker)], "the head only; the end is unmarked"
+        else:
+            assert _marks(noted) == [(0, 0, marker), (2, 0, marker), (2, 1, marker)]
+        assert noted["messages"] == plain["messages"]
+        assert not [r for r in caplog.records if "asking for an hour followed" in r.getMessage()]
+
+    @pytest.mark.parametrize("ttl", ["5m", "1h"])
+    def test_no_noted_call_s_request_is_shortened_after_it_is_built(
+        self, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture, ttl: str
+    ) -> None:
+        from langchain_core.tools import StructuredTool
+
+        from malspark.agents.technique_facts import STANDING_FACTS_CHARS
+        from malspark.llm.anthropic_history import TOOL_LOOP_TURN
+
+        from .anthropic_cache_bodies import _What
+
+        system = SystemMessage(content=SYSTEM)
+        pack = "TRIAGE PACK\n" + "standing fact\n" * 30
+        loop = {TOOL_LOOP_TURN: True}
+        kept = {LAST_REQUEST: True}
+        tool = StructuredTool.from_function(
+            func=lambda what="": what, name="lookup", description="Look.", args_schema=_What
+        )
+        call = AIMessage(
+            content=[
+                _thinking(2),
+                {"type": "tool_use", "id": "call_0", "name": "lookup", "input": {"what": "a"}},
+            ],
+            tool_calls=[{"name": "lookup", "args": {"what": "a"}, "id": "call_0"}],
+        )
+        standing = HumanMessage(
+            content=pack + HEAD + TASK,
+            response_metadata={
+                STANDING_FACTS_CHARS: len(pack),
+                SHARED_HEAD: len(pack + HEAD),
+                SENT_AGAIN: len(pack + HEAD + TASK),
+            },
+        )
+        looped = HumanMessage(content=TASK, response_metadata={SENT_AGAIN: len(TASK), **loop})
+        reply = HumanMessage(content=QUESTION, response_metadata=kept)
+        shapes: list[tuple[bool, list[list[Any]]]] = []
+        for head in (0, len(HEAD)):
+            turn = _noted(HEAD + TASK if head else TASK, head)
+            question = HumanMessage(content=QUESTION)
+            shapes.append((False, [[system, turn], [system, turn, _answered(2), question]]))
+            shapes.append((False, [[system, turn], [system, turn, _answered(2), reply]]))
+            shapes.append((False, [[system, turn, _answered(2), reply]]))
+            for meta in ({}, kept):
+                answer = ToolMessage(
+                    content=QUESTION, tool_call_id="call_0", status="error", response_metadata=meta
+                )
+                shapes.append((True, [[system, turn], [system, turn, call, answer]]))
+        for meta in ({}, kept):
+            later = HumanMessage(
+                content=HEAD + QUESTION, response_metadata={SHARED_HEAD: len(HEAD), **meta}
+            )
+            shapes.append(
+                (False, [[system, _noted(TASK)], [system, _noted(TASK), _answered(2), later]])
+            )
+        shapes.append((False, [[system, standing], [system, standing, _answered(2), reply]]))
+        tail = [
+            _answered(2),
+            HumanMessage(content=[{"type": "text", "text": QUESTION}], response_metadata=loop),
+        ]
+        shapes.append((False, [[system, looped], [system, looped, *tail]]))
+        for bound, requests in shapes:
+            found = Wire(_reply)
+            install(monkeypatch, found)
+            model = _model(prompt_cache_ttl=ttl, pack_cache_ttl=ttl)
+            runnable = model.bind_tools([tool]) if bound else model
+            with caplog.at_level("WARNING", logger="malspark"):
+                for turns in requests:
+                    runnable.invoke(turns)
+            assert found.refused == []
+            assert all(_in_order(body) for body in found.bodies)
+        composer = TestTheComposer()
+        with caplog.at_level("WARNING", logger="malspark"):
+            for structured in (False, True):
+                composer._compose(monkeypatch, structured, ttl)
+        assert not [r for r in caplog.records if "asking for an hour followed" in r.getMessage()]
+
     @pytest.mark.parametrize("head", [0, len(HEAD)], ids=["whole turn", "shared head"])
     def test_the_retry_sends_the_first_pass_through_its_mark(self, wire: Wire, head: int) -> None:
         text = HEAD + TASK if head else TASK
