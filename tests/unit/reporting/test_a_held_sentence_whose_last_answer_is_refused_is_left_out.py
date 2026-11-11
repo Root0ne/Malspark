@@ -158,7 +158,7 @@ _REFUSED: dict[str, tuple[str, str, dict[str, Any], str]] = {
     "says a call failed, a keep quoting the failed call": (
         "limitations",
         _SAYS_FAILED,
-        _row(_SAYS_FAILED, "keep", ["failed.1"], quote="no function there"),
+        _row(_SAYS_FAILED, "keep", ["inv.1"], quote="no function there"),
         _left_out(
             _HELD_LIMITATIONS,
             "the ledger says otherwise: agreement.failure_redone",
@@ -171,11 +171,11 @@ _REFUSED: dict[str, tuple[str, str, dict[str, Any], str]] = {
         _row(
             _SAYS_FAILED,
             "rewrite",
-            ["failed.1"],
+            ["inv.1"],
             rewrite="Routine 0x5a10 holds no network call [ev_0101].",
         ),
         f"The agreement question lists a sentence of {_HELD_LIMITATIONS} as saying otherwise "
-        f"than failed.1, and no rewrite of it passed the checks: it is left out of the section: "
+        f"than inv.1, and no rewrite of it passed the checks: it is left out of the section: "
         f"{_SAYS_FAILED!r}.",
     ),
 }
