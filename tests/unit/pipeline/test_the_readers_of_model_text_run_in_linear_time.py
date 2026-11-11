@@ -548,6 +548,7 @@ EXITS = exit_branches(
                         write=print,
                         lists_code=False,
                         label="5",
+                        silent=False,
                     )
                 },  # type: ignore[dict-item]
             ),
