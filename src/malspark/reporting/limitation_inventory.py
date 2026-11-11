@@ -520,22 +520,28 @@ def _capture_row(inv: LimitationInventory) -> list[InventoryRow]:
 
 
 def reason_label(reason: str) -> str:
-    """An open question's reason as a printed line names it: its declared label."""
+    """An open question's reason as a printed line names it: its declared label, and a
+    word outside the declared reasons the label of ``other``, never its code."""
     from malspark.schemas.isr_models import OPEN_QUESTION_REASON_LABELS
 
-    return OPEN_QUESTION_REASON_LABELS.get(reason, reason)
+    return OPEN_QUESTION_REASON_LABELS.get(reason, OPEN_QUESTION_REASON_LABELS["other"])
 
 
 def _question_rows(inv: LimitationInventory, reason_as: Callable[[str], str]) -> list[InventoryRow]:
     questions = inv.questions
     if not questions:
         return []
-    by_reason: dict[str, int] = {}
+    # Counted as each reason is written, so reasons written alike are one item (an
+    # undeclared word under the label of "other", beside the declared "other"), ordered by
+    # count, then by the first code counted under it.
+    by_reason: dict[str, tuple[int, str]] = {}
     for question in questions:
-        by_reason[question.reason] = by_reason.get(question.reason, 0) + 1
+        written = reason_as(question.reason)
+        n, first = by_reason.get(written, (0, question.reason))
+        by_reason[written] = (n + 1, min(first, question.reason))
     reasons = ", ".join(
-        f"{reason_as(reason)}: {n}"
-        for reason, n in sorted(by_reason.items(), key=lambda kv: (-kv[1], kv[0]))
+        f"{written}: {n}"
+        for written, (n, _first) in sorted(by_reason.items(), key=lambda kv: (-kv[1][0], kv[1][1]))
     )
     marked = [q for q in questions if q.all_listed]
     after = sum(1 for q in marked if q.listed_after)

@@ -34,7 +34,8 @@ So, after every section is written, the reporter's model is shown, once:
   the limitations inventory as facts (``inv.N``): the failed calls and the
   later calls that answered them, the code read, the tools not run, the
   recorded limitations, the sandbox's sections, the capture and the open
-  questions (``reporting.limitation_inventory``, T-601).
+  questions (``reporting.limitation_inventory``, T-601), which speak of a
+  sentence only where the paragraph is held.
 
 It lists each sentence of a passage written without the code that calls
 absent, unknown or open, or states the opposite of, what a section 5 passage,
@@ -493,6 +494,11 @@ class Passage:
     # checks of a keep read it (:func:`_ledger_refuses_keep`). Each is offered a rewrite or a
     # drop alone (T-600).
     unkept: tuple[str, ...] = ()
+    # A fact that speaks of no sentence: a row of the limitations inventory shown where the
+    # paragraph is not held to the failed calls, where dev showed none of its facts. It is
+    # shown and may be named, but raises no refusal, no item a quote leaves out and no
+    # question of its own (T-601).
+    silent: bool = False
 
 
 def _ids(*sources: Any) -> frozenset[str]:
@@ -827,6 +833,11 @@ def passages_of(
                 )
         uncoded[:] = [p for p in uncoded if p.id != "limitations"]
         uncoded.extend(limitations)
+    else:
+        # Not held, the rows are shown where dev showed none of the paragraph's facts:
+        # they speak of no sentence, so every hold, end and refusal is dev's (T-601).
+        for fact in limitation_facts:
+            fact.silent = True
     facts.extend(limitation_facts)
     failed = _failed_calls(held, found)
     counts = _failure_counts(failed)
@@ -5090,7 +5101,9 @@ def _could_contradict(item: frozenset[str], by_id: dict[str, Passage]) -> bool:
     return any(
         said_of(p.text).count(words) >= least
         for p in by_id.values()
-        if (p.kind == SECTION_5 or (p.kind == FACT and p.cites)) and "open question" not in p.label
+        if (p.kind == SECTION_5 or (p.kind == FACT and p.cites))
+        and "open question" not in p.label
+        and not p.silent
     )
 
 
@@ -5185,7 +5198,7 @@ def _speaking_sources(
     heads = frozenset(h for h in denied_groups(sentence) if h in subject)
     ranked: list[tuple[tuple[int, int, int, int], int, str, str]] = []
     for order, source in enumerate(by_id.values()):
-        if source.id == own_id or _not_shown_for(source, sentence):
+        if source.id == own_id or source.silent or _not_shown_for(source, sentence):
             continue
         claimed = body and source.kind == CLAIM_LED and _writable(source)
         if not claimed and (
@@ -5261,7 +5274,7 @@ def _body_speaking(
     run_set = set_in_a_run(sentence)
     ranked: list[tuple[int, int, str, str]] = []
     for order, source in enumerate(by_id.values()):
-        if source.id == passage.id:
+        if source.id == passage.id or source.silent:
             continue
         if sentence in source.speaks_to and source.row_texts:
             row = next(
@@ -7216,10 +7229,13 @@ async def _ask(
     coded = any(_writable(p) and p.kind == SECTION_5 for p in passages)
     # A fact that rests on entries: the count of routines no passage names
     # grounds no rewrite, and asks nothing on its own.
-    facts = any(p.kind == FACT and p.cites for p in passages)
+    facts = any(p.kind == FACT and p.cites and not p.silent for p in passages)
     # A passage written without the code is asked against any source; a
     # section 5 passage against a fact alone.
-    sourced = any((p.kind == FACT and p.cites) or p.kind in (SECTION_5, DEBATE) for p in passages)
+    sourced = any(
+        (p.kind == FACT and p.cites and not p.silent) or p.kind in (SECTION_5, DEBATE)
+        for p in passages
+    )
     if not (claim_led and sourced) and not (coded and facts):
         return AgreementRound(tally=tally)
     citable = list(dict.fromkeys(str(value) for value in citable_ids))

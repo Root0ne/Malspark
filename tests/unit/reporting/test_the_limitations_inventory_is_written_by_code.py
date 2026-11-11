@@ -513,7 +513,7 @@ def test_an_unheld_paragraph_raises_dev_s_refusals_and_ends() -> None:
     # The limitations paragraph agrees with the ledger, so it is not held; a closing
     # sentence and a cell say a call failed that a later call redid. On dev no failure
     # check reads a passage then: a rewrite saying so passes, a keep naming no source is
-    # refused as dev refuses it, and only the inventory's rows are shown besides.
+    # refused as dev refuses it, the inventory's rows shown besides and speaking of none.
     ledger = _table_ledger()
     for subject in (
         _Subject(CONCLUSION, "conclusion", _FAILED, (("conclusion", _FAILED),)),
@@ -542,9 +542,124 @@ def test_an_unheld_paragraph_raises_dev_s_refusals_and_ends() -> None:
             if v.path.startswith("sentences.0")
         ]
         assert refused.code == KEEP_UNQUOTED_CODE
-        assert "naming no source, but answered.1, inv.1 speaks of what it names" in (
-            refused.message
+        # origin/dev's message: answered.1 alone speaks, no row of the inventory.
+        assert "naming no source, but answered.1 speaks of what it names" in refused.message
+        assert "The shown sources that speak of it: [answered.1] " in refused.message
+        assert "inv." not in refused.message
+    # Where no other fact speaks, an unheld paragraph's rows raise nothing.
+    assert _gate_codes(held=False) == _UNHELD_DEV_CODES
+
+
+# The gate case: a failed call no later call answered, which a conclusion sentence says
+# failed; the limitations paragraph either says nothing of it (not held) or says it too
+# (held). Keyed by the row's passage: (path, code) of every violation origin/dev raises
+# for a keep naming no source.
+_GATE_CONCLUSION = "The routine at 0x8000 could not be decompiled [ev_0201]."
+_GATE_AGREES = "The gate reads a host mode [ev_0107]."
+_GATE_FAILED = "The decompile of 0x8000 failed [ev_0201]."
+_HELD_UNLISTED = "agreement.held_unlisted"
+_KEEP_UNQUOTED = "agreement.keep_unquoted"
+# origin/dev's codes (7e919a623), not held: no row refuses the keep.
+_UNHELD_DEV_CODES = {
+    "conclusion": [("held.limitations", _HELD_UNLISTED)],
+    "limitations": [("held.conclusion", _HELD_UNLISTED)],
+}
+# origin/dev's codes, held: failed.2 speaks of both sentences.
+_HELD_DEV_CODES = {
+    "conclusion": [
+        ("sentences.0.sources", _KEEP_UNQUOTED),
+        ("held.limitations", _HELD_UNLISTED),
+        ("held.limitations", _HELD_UNLISTED),
+    ],
+    "limitations": [
+        ("sentences.0.sources", _KEEP_UNQUOTED),
+        ("held.conclusion", _HELD_UNLISTED),
+        ("held.limitations", _HELD_UNLISTED),
+    ],
+}
+# origin/dev's refusal of the held conclusion keep, word for word; the row's id there is
+# failed.2, the inventory's inv.2 here.
+_HELD_DEV_MESSAGE = (
+    "row 1: conclusion keeps 'The routine at 0x8000 could not be decompiled [ev_0201].' "
+    "naming no source, but failed.2 speaks of what it names: name the source and quote its "
+    "words that state the same thing, or rewrite the sentence on it. The shown sources that "
+    'speak of it: [failed.2] "ev_0201 (\\"lift_routine\\") failed: \\"no function there\\"; '
+    'no later call answered for offset 0x8000". Keep it on one of these, quoting its words, '
+    "or rewrite or drop it."
+)
+
+
+def _gate_passages(held: bool) -> Any:
+    from malspark.schemas.evidence import LedgerEntry
+    from tests.unit.reporting import (
+        test_a_denial_of_a_name_the_run_holds_is_read_against_the_ledger as denial,
+    )
+
+    failed = LedgerEntry(
+        id="ev_0201",
+        tool="lift_routine",
+        args={"address": hex(denial.BASE + 0x8000)},
+        ok=False,
+        error="no function there",
+        facts=denial._DECOMPILE,
+    )
+    ledger = [*denial._ledger(), failed]
+    report = denial._report(f"{_GATE_AGREES} {_GATE_FAILED}" if held else _GATE_AGREES)
+    report.technical_analysis.analyst_conclusion = TechnicalSubsection(
+        title="Conclusion", body=_GATE_CONCLUSION
+    )
+    return passages_of(report, entries=ledger)
+
+
+def _gate_violations(held: bool) -> dict[str, list[Any]]:
+    from malspark.reporting.section_agreement import agreement_violations
+
+    passages = _gate_passages(held)
+    rows = {
+        "conclusion": _GATE_CONCLUSION,
+        "limitations": _GATE_FAILED if held else _GATE_AGREES,
+    }
+    return {
+        pid: agreement_violations(
+            {
+                "sentences": [
+                    {
+                        "passage": pid,
+                        "sentence": sentence,
+                        "decision": "keep",
+                        "sources": [],
+                        "rewrite": "",
+                        "quote": "",
+                        "reason": "no source speaks of it",
+                    }
+                ]
+            },  # fmt: skip
+            passages,
         )
+        for pid, sentence in rows.items()
+    }
+
+
+def _gate_codes(held: bool) -> dict[str, list[tuple[str, str]]]:
+    return {pid: [(v.path, v.code) for v in found] for pid, found in _gate_violations(held).items()}
+
+
+def test_an_unheld_paragraph_s_rows_are_shown_and_speak_of_no_sentence() -> None:
+    passages = _gate_passages(held=False)
+    rows = [p for p in passages if p.id.startswith("inv.")]
+    # Shown: the failed call no later call answered is among them, citing its entry.
+    assert any("ev_0201" in p.cites for p in rows)
+    assert next(p for p in passages if p.id == "limitations").sourced_check is None
+    # origin/dev showed none of these and refused no keep: the codes are dev's.
+    assert _gate_codes(held=False) == _UNHELD_DEV_CODES
+
+
+def test_a_held_paragraph_s_rows_speak_as_dev_s_facts_did() -> None:
+    passages = _gate_passages(held=True)
+    assert next(p for p in passages if p.id == "limitations").sourced_check is not None
+    assert _gate_codes(held=True) == _HELD_DEV_CODES
+    (refused,) = [v for v in _gate_violations(held=True)["conclusion"] if v.code == _KEEP_UNQUOTED]
+    assert refused.message == _HELD_DEV_MESSAGE.replace("failed.2", "inv.2")
 
 
 def test_entries_trimmed_to_the_budget_are_a_printed_limit() -> None:
@@ -623,6 +738,66 @@ def test_every_open_question_reason_has_a_printed_label() -> None:
     passages = passages_of(_report(ledger), entries=ledger)
     (row,) = [p for p in passages if p.text.startswith("Open questions:")]
     assert "needs_sandbox_run: 1" in row.text and "tool_failed: 1" in row.text
+
+
+def test_an_unheld_paragraph_s_rows_alone_ask_no_question() -> None:
+    import asyncio
+
+    from malspark.pipeline.validation import EntryTexts
+    from malspark.reporting.section_agreement import ask_section_agreement
+    from tests.unit.reporting import (
+        test_every_closing_sentence_is_answered_and_no_rewrite_keeps_its_absence as closing,
+    )
+
+    # Two closing passages and a failed call neither says failed: origin/dev showed no fact
+    # and asked nothing; the rows shown now ask nothing either.
+    ledger = [_failed("ev_0004", OTHER)]
+    report = _report(ledger, paragraph="The beacon interval is fixed [ev_0004].")
+    report.technical_analysis.analyst_conclusion = TechnicalSubsection(
+        title="Conclusion", body="The sample loads a key [ev_0004]."
+    )
+    assert any(p.id.startswith("inv.") for p in passages_of(report, entries=ledger))
+    reporter = closing._Reporter()
+    asyncio.run(
+        ask_section_agreement(
+            reporter,
+            report,
+            citable_ids=["ev_0004"],
+            evidence_texts=EntryTexts.from_ledger(ledger),
+        )
+    )
+    assert reporter.asked == []
+
+
+def _with_reasons(*whys: str) -> Any:
+    ledger = _ledger()
+    report = _report(ledger, build=False)
+    report.sections[0].rows = [
+        ["reader", f"Question {n}?", why, "a listing", "ev_0003"] for n, why in enumerate(whys)
+    ]
+    report.limitation_inventory = build_inventory(report, ledger)
+    return report, ledger
+
+
+def test_an_undeclared_reason_prints_under_the_label_of_other() -> None:
+    # Alone, and beside a declared "other": one item, its count summed, never the word.
+    for whys, printed in (
+        (("made_up_word: x",), "Open questions: 1 filed (other: 1)"),
+        (("made_up_word: x", "other: y"), "Open questions: 2 filed (other: 2)"),
+        (
+            ("made_up_word: x", "other: y", "tool_failed: z"),
+            "Open questions: 3 filed (other: 2, a tool failed: 1)",
+        ),
+    ):
+        report, ledger = _with_reasons(*whys)
+        assert reason_label("made_up_word") == reason_label("other") == "other"
+        (row,) = [r for r in printed_rows(report.limitation_inventory) if r.part == "questions"]
+        assert row.text.startswith(printed)
+        assert "made_up_word" not in _section_11(report)
+        # The round's facts keep the word the run recorded.
+        passages = passages_of(report, entries=ledger)
+        (fact,) = [p for p in passages if p.text.startswith("Open questions:")]
+        assert "made_up_word: 1" in fact.text
 
 
 @pytest.mark.parametrize("name", ("haiku11", "haiku13"))

@@ -44,5 +44,6 @@
   every other row in its own words, and each open question filed on a failed call or a missing
   tool. They replace the failed-call, tool, recorded-limitation and open-question facts that
   were shown only where a sentence of the paragraph was held to the failed calls. Which
-  passages are held, and the checks, ends and refusals the round applies, are as before; a
-  refusal that lists the facts speaking of a sentence lists the `inv.N` rows among them.
+  passages are held, and the checks, ends and refusals the round applies, are as before: where
+  the paragraph is held, a refusal that lists the facts speaking of a sentence names the `inv.N`
+  rows in place of the facts they replace; elsewhere the rows speak of no sentence.
