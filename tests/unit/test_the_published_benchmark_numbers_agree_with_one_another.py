@@ -4,7 +4,9 @@ The benchmark page holds the key, the per-group rows and the list of facts
 beyond the key as data, and states the totals beside them; the README and the
 docs home repeat the headline. A number changed in one place only must fail
 here: the row counts of the arrays, the verdicts in them, the per-group rows,
-the headline totals and the two pages that quote them have to agree.
+the lists of missed and partly facts, the reading of each fact beyond the key
+against the eight analyses, the headline totals and the two pages that quote
+them have to agree.
 """
 
 from __future__ import annotations
@@ -59,6 +61,18 @@ def _run_groups(text: str) -> list[list[str | int]]:
     return [_row(line) for line in block.splitlines() if line.startswith("    [")]
 
 
+def _run_list(text: str, name: str) -> list[str]:
+    """The single-quoted lines of ``run.<name>``, a list of sentences."""
+    block = _run_block(text)
+    start = block.index(f"  {name}: [\n")
+    block = block[start : block.index("\n  ],", start)]
+    return [line for line in block.splitlines() if line.startswith("    '")]
+
+
+ORIGINS = {"core", "sharpened", "added", "completion"}
+_EIGHT = {"in part": "partly", "none, family": "noneFamily", "none, this file": "noneFile"}
+
+
 def _verdict_kind(verdict: str) -> str:
     """found, partlyBody, partlyDump, missed or wrong; ``found (…)`` counts as found."""
     if verdict.startswith("found"):
@@ -89,6 +103,12 @@ def problems(page: str, readme: str, docs_home: str) -> list[str]:
             found.append(f"keyItems holds {count} {name}, run.{name} says {run[name]}")
     if len({(row[1], row[2]) for row in key}) != len(key):
         found.append("two keyItems rows share an id and a fact")
+    if {str(row[6]) for row in key} - ORIGINS:
+        found.append(f"keyItems names an origin outside {sorted(ORIGINS)}")
+    if len(_run_list(page, "missedItems")) != run["missed"]:
+        found.append("run.missedItems does not list every missed fact")
+    if len(_run_list(page, "partlyItems")) != run["partlyBody"] + run["partlyDump"]:
+        found.append("run.partlyItems does not list every partly fact")
 
     totals = [0] * 6
     for group in groups:
@@ -114,10 +134,21 @@ def problems(page: str, readme: str, docs_home: str) -> list[str]:
     if len({(row[0], row[1]) for row in beyond}) != len(beyond):
         found.append("two beyondFacts rows share a class and a number")
     audit = _run_audit(page)
-    if audit["same"] + audit["partly"] + audit["screenshot"] + audit["none"] != run["beyondKey"]:
+    if sum(n for k, n in audit.items() if k not in ("noneFamily", "noneFile")) != run["beyondKey"]:
         found.append("the audit counts do not add up to run.beyondKey")
     if audit["noneFamily"] + audit["noneFile"] != audit["none"]:
         found.append("the unprinted facts do not split into family and file")
+    eight = {name: 0 for name in _EIGHT.values()}
+    for row in beyond:
+        if len(row) != 7 or row[6] not in _EIGHT:
+            found.append(f"beyondFacts row {row[:2]} has no reading against the eight analyses")
+            continue
+        eight[_EIGHT[str(row[6])]] += 1
+    for name, count in eight.items():
+        if count != audit.get(name):
+            found.append(
+                f"beyondFacts reads {count} facts as {name}, run.audit says {audit.get(name)}"
+            )
     out = re.search(r"export const outOfStrict = '([^']*)';", page)
     strict_drop = 1 if out and any(row[1] == out.group(1) for row in beyond) else 0
     if run["beyondKeyStrict"] != run["beyondKey"] - strict_drop:
@@ -171,20 +202,26 @@ def test_the_published_benchmark_numbers_agree_with_one_another() -> None:
     ("target", "old", "new"),
     [
         ("page", "  found: 55,", "  found: 54,"),
-        ("page", "  items: 75,", "  items: 76,"),
-        ("page", "  beyondKey: 53,", "  beyondKey: 54,"),
-        ("page", "  beyondKeyStrict: 52,", "  beyondKeyStrict: 53,"),
-        ("page", "  audit: { same: 4,", "  audit: { same: 5,"),
+        ("page", "  items: 88,", "  items: 89,"),
+        ("page", "  partlyBody: 23,", "  partlyBody: 22,"),
+        ("page", "  beyondKey: 38,", "  beyondKey: 39,"),
+        ("page", "  beyondKeyStrict: 37,", "  beyondKeyStrict: 38,"),
+        ("page", "  audit: { partly: 26,", "  audit: { partly: 27,"),
+        ("page", "none: 12, noneFamily: 6,", "none: 12, noneFamily: 7,"),
         (
             "page",
-            "    ['K6', 'Command and control', 10, 8, 2, 0, 0, 0],",
-            "    ['K6', 'Command and control', 10, 9, 1, 0, 0, 0],",
+            "    ['K6', 'Command and control', 10, 4, 6, 0, 0, 0],",
+            "    ['K6', 'Command and control', 10, 5, 5, 0, 0, 0],",
         ),
         ("page", "'Link to IcedID', 'partly',", "'Link to IcedID', 'found',"),
-        ("readme", "**71 of 75** (55 found, 16 partly)", "**70 of 75** (54 found, 16 partly)"),
-        ("readme", "| **53** |", "| **58** |"),
-        ("docs", "recovered 71 of 75", "recovered 72 of 75"),
-        ("docs", "stated 53 verified", "stated 54 verified"),
+        ("page", "'completion'],", "'extension'],"),
+        ("page", "    'K1: the family’s other names", "    // 'K1: the family’s other names"),
+        ("page", "    'K9: update_data.dat is named", "    // 'K9: update_data.dat is named"),
+        ("page", "'none, family'],", "'in part'],"),
+        ("readme", "**83 of 88** (55 found, 28 partly)", "**82 of 88** (55 found, 27 partly)"),
+        ("readme", "| **38** |", "| **37** |"),
+        ("docs", "recovered 83 of 88", "recovered 84 of 88"),
+        ("docs", "stated 38 verified", "stated 37 verified"),
     ],
 )
 def test_a_number_changed_in_one_place_only_is_caught(target: str, old: str, new: str) -> None:
