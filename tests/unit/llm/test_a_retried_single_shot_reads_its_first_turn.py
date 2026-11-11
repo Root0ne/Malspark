@@ -210,18 +210,23 @@ class TestTheRetryReadsIt:
         assert _markers(body) == 1
 
     @pytest.mark.parametrize("ttl", ["5m", "1h"])
-    def test_a_last_request_after_the_mark_s_five_minutes_carries_no_end_mark(
-        self, wire: Wire, monkeypatch: pytest.MonkeyPatch, ttl: str
+    @pytest.mark.parametrize("after", [299, 301, 1800])
+    def test_a_last_request_reads_the_end_mark_within_its_five_minutes_only(
+        self, wire: Wire, monkeypatch: pytest.MonkeyPatch, ttl: str, after: int
     ) -> None:
         now = _clock(monkeypatch)
         model = _model(prompt_cache_ttl=ttl)
         model.invoke([SystemMessage(content=SYSTEM), _noted(TASK)])
-        now[0] += 301
+        now[0] += after
         reply = HumanMessage(content=QUESTION, response_metadata={LAST_REQUEST: True})
         model.invoke([SystemMessage(content=SYSTEM), _noted(TASK), _answered(2), reply])
         first, late = wire.bodies
         assert first["messages"][0]["content"][-1]["cache_control"] == MARK
-        assert _markers(late) == 0, "the entry the first pass wrote has expired"
+        if after < 300:
+            assert _marks(late) == [(0, 0, MARK)], "the entry the first pass wrote is read"
+            assert _through_first_turn(late) == _through_first_turn(first)
+        else:
+            assert _markers(late) == 0, "the entry the first pass wrote has expired"
 
     def test_a_loop_marks_its_later_turns_and_not_the_noted_turn_s_end(self, wire: Wire) -> None:
         from malspark.llm.anthropic_history import TOOL_LOOP_TURN
@@ -238,6 +243,42 @@ class TestTheRetryReadsIt:
         marked = [i for i, _j, _marker in _marks(body)]
         assert marked and 0 not in marked, "a later breakpoint reads the noted turn on its own"
         assert marked[-1] == len(body["messages"]) - 1
+
+    def test_a_noted_turn_after_every_placed_breakpoint_carries_its_end_mark(
+        self, wire: Wire
+    ) -> None:
+        from malspark.llm.anthropic_history import TOOL_LOOP_TURN
+
+        # The opening turn, written by an earlier request of the model.
+        opening = HumanMessage(content=[{"type": "text", "text": HEAD}])
+        model = _model()
+        model.invoke(
+            [
+                SystemMessage(content=SYSTEM),
+                opening.model_copy(update={"response_metadata": {TOOL_LOOP_TURN: True}}),
+            ]
+        )
+        # A noted turn sent as one text block, then two string turns, which
+        # carry no breakpoint as sent: theirs fall back to the opening turn.
+        noted = HumanMessage(
+            content=[{"type": "text", "text": TASK}], response_metadata={SENT_AGAIN: len(TASK)}
+        )
+        model.invoke(
+            [
+                SystemMessage(content=SYSTEM),
+                opening,
+                _answered(2),
+                noted,
+                _answered(4),
+                HumanMessage(content=f"{QUESTION} 4"),
+                _answered(6),
+                HumanMessage(content=f"{QUESTION} 6"),
+            ]
+        )
+        body = wire.bodies[-1]
+        assert wire.refused == []
+        assert _marks(body) == [(0, 0, MARK), (2, 0, MARK)]
+        assert _markers(body) <= 4
 
     def test_a_turn_a_question_was_added_to_is_not_marked_by_its_note(
         self, monkeypatch: pytest.MonkeyPatch
@@ -356,7 +397,9 @@ class TestTheMarkAsksForFiveMinutes:
             response_metadata={SHARED_HEAD: len(HEAD), LAST_REQUEST: True},
         )
         model.invoke([SystemMessage(content=SYSTEM), _noted(TASK), _answered(2), later])
-        assert _marks(wire.bodies[-1]) == [(2, 0, HOUR)], "the head keeps its hour"
+        body = wire.bodies[-1]
+        assert _marks(body) == [(2, 0, HOUR)], "the head keeps its hour"
+        assert "cache_control" not in body["messages"][0]["content"][-1], "the end is unmarked"
 
     @pytest.mark.parametrize("head", [0, len(HEAD)], ids=["whole turn", "shared head"])
     def test_the_retry_sends_the_first_pass_through_its_mark(self, wire: Wire, head: int) -> None:
