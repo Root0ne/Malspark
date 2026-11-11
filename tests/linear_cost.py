@@ -29,6 +29,12 @@ that such a run is not the one the assertion reads.
 * :func:`calls` counts the function calls (Python and built-in) a call makes.
   It does not move with load, but it cannot see work done inside one C
   operation, so it is an extra assertion, never the only one.
+* :func:`peak_bytes` is the most memory a call holds at once, by tracemalloc:
+  a count, for a call whose input is built before the measure, that the
+  timed call does not copy that input. A timed call that builds or copies a
+  large input times the allocator: one process takes fresh pages for the
+  large block on every call and reuses them for the small one, another
+  reuses both, and the same call reads 25 times or 4 times as dear.
 
 The clock is the calling thread's CPU time, the whole process's with
 ``whole_process`` for work that crosses threads, or a clock the test passes
@@ -52,6 +58,7 @@ import gc
 import os
 import sys
 import time
+import tracemalloc
 from collections.abc import Callable
 from typing import Any
 
@@ -72,6 +79,7 @@ __all__ = [
     "clock_grain",
     "cpu_seconds",
     "default_clock",
+    "peak_bytes",
     "repeated",
 ]
 
@@ -112,6 +120,22 @@ def calls(call: Callable[[], Any]) -> int:
     finally:
         sys.setprofile(previous)
     return made
+
+
+def peak_bytes(call: Callable[[], Any]) -> int:
+    """The most memory ``call`` holds at once while it runs, in bytes: a count, not a time."""
+    tracing = tracemalloc.is_tracing()
+    if tracing:
+        tracemalloc.reset_peak()
+    else:
+        tracemalloc.start()
+    try:
+        held = tracemalloc.get_traced_memory()[0]
+        call()
+        return tracemalloc.get_traced_memory()[1] - held
+    finally:
+        if not tracing:
+            tracemalloc.stop()
 
 
 def repeated(call: Callable[[], Any], times: int) -> Callable[[], None]:
