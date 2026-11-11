@@ -55,3 +55,7 @@ def test_the_browser_install_is_cut_short_and_retried_once() -> None:
     assert isinstance(second["timeout-minutes"], int)
     assert "continue-on-error" not in second
     assert steps.index(second) == steps.index(first) + 1
+    assert first["timeout-minutes"] <= 15
+    assert second["timeout-minutes"] <= 15
+    assert first["run"] == second["run"]
+    assert first["id"] == "browsers"

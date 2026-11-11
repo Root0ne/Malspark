@@ -70,7 +70,7 @@ jobs:
   build:
     name: ${{ matrix.image.name }} on ${{ matrix.arch.platform }}
     runs-on: ${{ matrix.arch.runner }}
-    timeout-minutes: 20
+    timeout-minutes: 60
     strategy:
       fail-fast: false
       matrix:
@@ -238,7 +238,7 @@ jobs:
   goresym-cross:
     name: goresym-mcp's arm64 stage cross-compiled on amd64
     runs-on: ubuntu-24.04
-    timeout-minutes: 15
+    timeout-minutes: 20
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
