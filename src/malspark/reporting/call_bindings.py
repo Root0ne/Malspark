@@ -47,6 +47,8 @@ from dataclasses import dataclass
 from functools import lru_cache
 from typing import Any
 
+from malspark.analysis.slot_names import file_of as _file_of
+from malspark.analysis.slot_names import slot_names
 from malspark.core.paths import resolve_data
 from malspark.core.tool_declarations import select
 from malspark.reporting import tool_kinds
@@ -58,11 +60,11 @@ DEFAULT_ARGUMENT_ROLES = "data/api_argument_roles_v1.json"
 BOUND_SOURCE = "call_argument"
 
 # The consumer whose declared kinds are read here
-# (``core.builtin_declarations.CONSUMER_KINDS``), and the two of them: a
-# static decoder's results and the function index's slot names.
+# (``core.builtin_declarations.CONSUMER_KINDS``), and the one of them read in
+# this module: a static decoder's results. The function index's slot names are
+# read by ``analysis.slot_names``.
 _CONSUMER = "call_bindings"
 _DECODED = "decoded_strings"
-_INDEX = "function_index"
 # A decoder's rows and each row's text where its declaration names neither.
 _ROWS = "/results/*"
 _TEXT = "/text"
@@ -74,10 +76,6 @@ _FRAME_SLOT = "the frame slot ["
 # it (``call_sites``: no store into it, no call that could write it, on the
 # way); a hop stated without it, as one stored before it existed, binds nothing.
 _UNCHANGED = "contents_unchanged"
-# The declared argument role a tool reads a produced file under, as a kind is
-# declaration vocabulary (``analysis.coverage.LAYER_ROLE``).
-_CARVED_ROLE = "carved"
-_CARVED_ARGUMENT = "carved_path"
 
 
 @dataclass(frozen=True)
@@ -399,52 +397,11 @@ def _entry_id(entry: Any) -> str:
     return str(_field(entry, "id") or _field(entry, "entry_id") or "")
 
 
-def _file_of(entry: Any, facts: Any) -> str:
-    """The produced file an entry's call read, ``""`` for the sample itself."""
-    arguments = getattr(facts, "arguments", None) or {}
-    name = str(arguments.get(_CARVED_ROLE) or _CARVED_ARGUMENT)
-    args = _field(entry, "args")
-    return str(args.get(name) or "") if isinstance(args, Mapping) else ""
-
-
 def _number(text: Any) -> int | None:
     try:
         return int(str(text), 16)
     except (TypeError, ValueError):
         return None
-
-
-def _slot_names(ledger: Iterable[Any]) -> dict[tuple[str, int], tuple[str, str] | None]:
-    """``{(file, slot RVA): (name, entry)}`` index entries name; ``None`` where they disagree."""
-    names: dict[tuple[str, int], tuple[str, str] | None] = {}
-    for entry in ledger:
-        if not tool_kinds.is_of(entry, _CONSUMER) or tool_kinds.kind_of(entry) != _INDEX:
-            continue
-        structured = _field(entry, "structured")
-        if not isinstance(structured, Mapping):
-            continue
-        base = _number(structured.get("image_base"))
-        resolved = structured.get("resolved_slots")
-        if base is None or not isinstance(resolved, Mapping):
-            continue
-        where = _file_of(entry, tool_kinds.facts_of(entry))
-        entry_id = _entry_id(entry)
-        ambiguous = structured.get("ambiguous_slots")
-        for address in ambiguous if isinstance(ambiguous, Mapping) else ():
-            at = _number(address)
-            if at is not None:
-                names[(where, at - base)] = None
-        for address, name in resolved.items():
-            at = _number(address)
-            if at is None or not name:
-                continue
-            key = (where, at - base)
-            held = names.get(key, ...)
-            if held is ...:
-                names[key] = (str(name), entry_id)
-            elif held is not None and held[0] != str(name):
-                names[key] = None
-    return names
 
 
 def _api_of(
@@ -545,7 +502,7 @@ def bound_values_from_ledger(
     """
     entries = list(ledger or ())
     table = argument_roles() if roles is None else roles
-    slots = _slot_names(entries)
+    slots = slot_names(entries)
     out: list[BoundValue] = []
     seen: set[tuple[str, str]] = set()
     for entry in entries:

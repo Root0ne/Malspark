@@ -277,6 +277,7 @@ class TestTheRowsAboutUnreadFunctions:
 WALKED: tuple[str, ...] = (
     "pipeline/validation.py",
     "pipeline/function_claims.py",
+    "pipeline/exit_branches.py",
     "pipeline/nodes.py",
     "agents/callees_question.py",
     "agents/delegation.py",
@@ -446,6 +447,10 @@ MESSAGE_BUILDERS: frozenset[str] = frozenset(
         "unreadable_answer_reason",
         # What an agreement refusal offers a sentence beside mending its text.
         "_otherwise",
+        # The decompiled-functions question's two parts: each value a listing
+        # or a tool wrote goes through the helper.
+        "_functions_not_described",
+        "exits_question",
     }
 )
 

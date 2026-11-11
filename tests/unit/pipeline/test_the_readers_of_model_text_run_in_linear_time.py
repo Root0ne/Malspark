@@ -35,6 +35,7 @@ from malspark.pipeline.debate_facts import (
     read_claim_references,
     read_marks,
 )
+from malspark.pipeline.exit_branches import exit_branches, listing_exits, uncovered_exits
 from malspark.pipeline.limit_rulings import REASON_LIMIT, clean_quote, read_rulings
 from malspark.pipeline.validation import (
     EntryTexts,
@@ -225,6 +226,53 @@ ENTRIES = EntryTexts.from_ledger(
 LEDGER = [{"id": "ev_0001", "tool": "t", "structured": {"matches": [], "total": 12}}]
 # A fact about a routine an entry lists, as the agreement round reads it.
 LISTED = [SimpleNamespace(addresses=frozenset({0x1400}), id="listed.1")]
+
+
+def _hostile_listing(text: str) -> str:
+    """A listing as long as ``text``: deep nesting, a long else-if chain, a wide condition.
+
+    A tool's listing is not model text, but the exit reader is read on every
+    answer checked. The wide condition tests every variable the statements
+    before it set by a call, and every exit under it hands back its own value.
+    """
+    k = max(1, len(text) // 4 // 60)
+    flat = "".join(f"  v{i} = FUN_{0x402000 + i:x}(v{i + 1});\n" for i in range(k))
+    deep = (
+        "".join(
+            f"if (v{i} == 0x20) {{\n  v{i} = FUN_{0x401000 + i:x}(v{i + 1});\n  r = 0x30;\n"
+            for i in range(k)
+        )
+        + "}\n" * k
+    )
+    chain = "".join(f"if (w == {12 + i}) r = -1;\nelse " for i in range(k)) + "r = 0;\n"
+    wide = (
+        "if ("
+        + " || ".join(f"v{i}" for i in range(k))
+        + ") {\n"
+        + "".join(f"  r = {0x40 + i};\n" for i in range(k))
+        + "}\n"
+    )
+    return f"int FUN_401000(int v0)\n{{\n  int r;\n{flat}{deep}{chain}{wide}  return r;\n}}\n"
+
+
+# The exits a claim's words are read against.
+EXITS = exit_branches(
+    [
+        build_entry(
+            entry_id="ev_0002",
+            seq=2,
+            agent="a",
+            server="a",
+            tool="decompile_function",
+            args={"address": "0x1400"},
+            output=(
+                "int FUN_00001400(void)\n{\n  int r;\n  r = 0;\n"
+                "  if (FUN_00001800() == 0x1c) {\n    r = -1;\n  }\n  return r;\n}"
+            ),
+        )
+    ],
+    {},
+)
 
 
 @pytest.mark.parametrize(
@@ -519,6 +567,14 @@ LISTED = [SimpleNamespace(addresses=frozenset({0x1400}), id="listed.1")]
         ),
         pytest.param(lambda t: read_rulings("- **L1 " + t, 1), id="limit ruling with no word"),
         pytest.param(lambda t: clean_quote(t, REASON_LIMIT), id="limit ruling reason"),
+        pytest.param(_built(_hostile_listing, listing_exits), id="exit branches of a listing"),
+        pytest.param(
+            lambda t: uncovered_exits(
+                SimpleNamespace(claims=[SimpleNamespace(claim=t, evidence_ref="[ev_0002]")]),
+                EXITS,
+            ),
+            id="a claim's words against exit branches",
+        ),
     ],
 )
 def test_four_times_the_hostile_line_stays_under_the_ratio(read: Callable[[str], object]) -> None:
