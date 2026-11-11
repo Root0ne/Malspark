@@ -21,11 +21,13 @@ from malspark.reporting.builder import MalwareReportBuilder, ioc_table
 from malspark.reporting.misp import build_misp_attributes
 from malspark.reporting.models import (
     ConsolidatedIOC,
+    EmulatedStrings,
     EvidenceIndexRow,
     EvidenceSection,
     MalwareReport,
     NetworkIOCs,
     NetworkIP,
+    RecoveredValue,
 )
 from malspark.reporting.renderers.stix_renderer import ExtendedSTIXRenderer
 
@@ -86,6 +88,32 @@ def test_an_analyst_row_carries_the_entries_its_listing_cites_that_the_index_hol
         ),
         "recovered_by": "",
         "evidence_ids": ["ev_a", "ev_b"],
+    }
+
+
+def test_a_recovered_row_carries_the_entry_of_the_tool_that_recovered_it() -> None:
+    report = _report()
+    report.network = NetworkIOCs(
+        ips=[NetworkIP(address=C2, source="sandbox", sample_process_tree=True)]
+    )
+    report.emulated_strings = EmulatedStrings(
+        values={C2: "ev_b"},
+        recovered_by={C2: [RecoveredValue(tool="floss", entry="ev_b", scheme="decoded")]},
+    )
+
+    (row,) = [r for r in ioc_table(report) if r.kind == "ip"]
+
+    assert row.model_dump() == {
+        "type": "IPv4",
+        "description": "reached by the sample's process tree",
+        "value": C2,
+        "is_network": True,
+        "kind": "ip",
+        "source": "sandbox",
+        "context": "reached by the sample's process tree",
+        "published": "yes: the sandbox recorded it",
+        "recovered_by": "floss, ev_b (decoded string)",
+        "evidence_ids": ["ev_b"],
     }
 
 

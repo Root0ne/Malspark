@@ -174,3 +174,16 @@ class TestAllServesEveryDraftWithItsStanding:
     def test_an_unknown_include_is_refused(self, client: TestClient) -> None:
         response = client.get(f"/api/v1/reports/{REPORT_ID}/signatures/yara?include=every")
         assert response.status_code == 422
+
+
+def test_a_name_with_a_line_break_stays_on_its_comment_line() -> None:
+    from app.services.report_service import signature_download
+
+    stored = {"kind": "yara", "name": "Evil\nrule Injected { condition: true }", "body": "x"}
+
+    assert signature_download([stored], "yara", "all") == (
+        "// Evil rule Injected { condition: true }\n"
+        "// Not printed in the analyst report: it was drafted before drafts were run against "
+        "their sample, so no match by its content is shown; its body is in the evidence bundle.\n"
+        "x\n"
+    )
