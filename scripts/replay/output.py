@@ -7,9 +7,12 @@ them (``--show-text``), and are printed only then.
 
 from __future__ import annotations
 
+import json
+import re
 import sys
 import unicodedata
 from collections.abc import Iterable, Mapping, Sequence
+from pathlib import Path
 from typing import Any
 
 from scripts.replay.record import errors
@@ -51,6 +54,20 @@ def terminal_safe(text: object, *, encoding: str | None = None) -> str:
         else:
             out.append(char)
     return _encodable("".join(out), encoding or getattr(sys.stdout, "encoding", None))
+
+
+_LONE_SURROGATE = re.compile("[\ud800-\udfff]")
+
+
+def write_json(path: Path, value: Any, *, newline: bool = False, **dumps: Any) -> None:
+    """``value`` as JSON text in ``path``, as UTF-8, whatever strings it holds.
+
+    A lone surrogate, which a stored text may hold, cannot be encoded: it is
+    written as its JSON escape, so the file stays valid and loads back to the
+    value. Every other byte is what ``json.dumps`` gives.
+    """
+    text = _LONE_SURROGATE.sub(lambda m: f"\\u{ord(m.group()):04x}", json.dumps(value, **dumps))
+    path.write_text(text + ("\n" if newline else ""), encoding="utf-8")
 
 
 def _encodable(text: str, encoding: str | None) -> str:

@@ -40,7 +40,6 @@ named and a temporary directory of the replay's own.
 from __future__ import annotations
 
 import argparse
-import json
 import shutil
 import sys
 import tempfile
@@ -129,7 +128,9 @@ def _outside(path: Path, runs: list[Path]) -> None:
 
 def _write(path: Path | None, value: Any) -> None:
     if path is not None:
-        path.write_text(json.dumps(value, indent=1, sort_keys=True), encoding="utf-8")
+        from scripts.replay.output import write_json
+
+        write_json(path, value, indent=1, sort_keys=True)
 
 
 def _replay(runs: list[Path], show_text: bool) -> list[dict[str, Any]]:

@@ -19,7 +19,7 @@ from typing import Any
 import pytest
 from scripts.replay import agreement_names, limitation_inventory, remerge_revisions
 from scripts.replay.compare import diff_records
-from scripts.replay.output import render_diff, render_record, terminal_safe
+from scripts.replay.output import render_diff, render_record, terminal_safe, write_json
 from scripts.replay.rules import replay_run
 from scripts.replay.stored import read_run
 
@@ -238,19 +238,24 @@ class _Keyed(dict):  # type: ignore[type-arg]
         return super().__contains__(self._key(key))
 
 
-def _marked(value: Any, mark: Callable[[str], str]) -> Any:
-    """``value`` with every string and every dict key (but ``a`` and ``b``) marked."""
+def _marked(value: Any, mark: Callable[[str], str], ids: dict[str, int] | None = None) -> Any:
+    """``value`` with every string and every dict key (but ``a`` and ``b``) marked.
+
+    A key is numbered once for the whole record, so the same key is the same mark
+    in every dict and two keys never share one.
+    """
+    ids = {} if ids is None else ids
     if isinstance(value, str):
         return mark(value)
     if isinstance(value, dict):
-        keys = {k: (k if k in {"a", "b"} else mark(f"{k}")) for k in value}
-        # A marked key stays unique: the index is kept outside the marked text.
-        keys = {k: (m if k in {"a", "b"} else f"{m}#{i}") for i, (k, m) in enumerate(keys.items())}
-        return _Keyed({keys[k]: _marked(v, mark) for k, v in value.items()}, keys)
+        keys = {
+            k: k if k in {"a", "b"} else f"{mark(k)}#{ids.setdefault(k, len(ids))}" for k in value
+        }
+        return _Keyed({keys[k]: _marked(v, mark, ids) for k, v in value.items()}, keys)
     if isinstance(value, list):
-        return [_marked(item, mark) for item in value]
+        return [_marked(item, mark, ids) for item in value]
     if isinstance(value, tuple):
-        return tuple(_marked(item, mark) for item in value)
+        return tuple(_marked(item, mark, ids) for item in value)
     return value
 
 
@@ -322,13 +327,14 @@ def test_every_field_and_key_of_a_record_or_a_comparison_prints_on_the_lines_the
 ) -> None:
     source = build()
 
-    def render(mark: Callable[[str], str]) -> str:
-        data = _marked(source, mark)
-        if "analysts" in source:
-            return render_record(data)
-        return render_diff(data, mark("ref-a"), mark("ref-b"))
+    def render(mark: Callable[[str], str] | None) -> str:
+        data = source if mark is None else _marked(source, mark)
+        refs = ("ref-a", "ref-b") if mark is None else (mark("ref-a"), mark("ref-b"))
+        return render_record(data) if "analysts" in source else render_diff(data, *refs)
 
     shown, plain = render(_hostile), render(_benign)
+    # The marker hides no section: the marked benign text has the unmarked text's lines.
+    assert plain.count("\n") == render(None).count("\n")
     assert not _bare(shown)
     assert shown.count("\n") == plain.count("\n")
     # The marks reach the text: the test would pass vacuously on an empty rendering.
@@ -475,3 +481,37 @@ def test_an_error_the_runner_says_quotes_a_stored_name_without_a_raw_character(
     assert stopped.value.code == 2
     said = capsys.readouterr().err
     assert not _bare(said.rstrip("\n")) and said.count("\n") == 1
+
+
+@pytest.mark.parametrize("ascii_only", [True, False])
+def test_a_json_file_holding_a_lone_surrogate_is_written_and_loads_back_the_same(
+    tmp_path: Path, ascii_only: bool
+) -> None:
+    value = {"k\ud800": ["a\udfffb", "naïve 日本", "x\n"]}
+    target = tmp_path / "out.json"
+    write_json(target, value, indent=2, ensure_ascii=ascii_only, newline=True)
+    assert json.loads(target.read_text(encoding="utf-8")) == value
+    plain = {"k": ["naïve 日本", "x\n"]}
+    write_json(target, plain, indent=2, ensure_ascii=ascii_only, newline=True)
+    assert (
+        target.read_bytes()
+        == (json.dumps(plain, indent=2, ensure_ascii=ascii_only) + "\n").encode()
+    )
+
+
+def test_the_inventory_script_writes_its_json_and_golden_for_a_text_with_a_lone_surrogate(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], tmp_path: Path
+) -> None:
+    report = _report(_ledger(), build=False)
+    report.limitation_inventory = build_inventory(report, _ledger())
+    report.limitation_inventory.not_offered.append(InventoryTool(tool="t\ud800", reason="r"))
+    monkeypatch.setattr(
+        limitation_inventory, "stored_inventory", lambda _run: (report, report.limitation_inventory)
+    )
+    out_json, golden = tmp_path / "out.json", tmp_path / "golden"
+    args = [str(tmp_path / "run"), "--json", str(out_json), "--golden", str(golden)]
+    assert limitation_inventory.main(args) == 0
+    capsys.readouterr()
+    kept = json.loads(out_json.read_text(encoding="utf-8"))
+    assert any("\ud800" in t for t in kept[0]["not_printed"] + kept[0]["printed"])
+    assert json.loads((golden / "run.json").read_text(encoding="utf-8")) == kept[0]

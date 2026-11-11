@@ -77,6 +77,8 @@ def _print(read: dict[str, Any]) -> None:
 
 
 def main(argv: list[str] | None = None) -> int:
+    from scripts.replay.output import write_json
+
     parser = argparse.ArgumentParser(description=__doc__.split("\n", 1)[0])
     parser.add_argument("runs", nargs="+", type=Path, help="stored run directories")
     parser.add_argument("--json", type=Path, default=None, help="write the records here too")
@@ -89,11 +91,11 @@ def main(argv: list[str] | None = None) -> int:
         found.append(read)
         if args.golden is not None:
             args.golden.mkdir(parents=True, exist_ok=True)
-            (args.golden / f"{run.name}.json").write_text(
-                json.dumps(read, indent=2, ensure_ascii=False) + "\n", encoding="utf-8"
+            write_json(
+                args.golden / f"{run.name}.json", read, newline=True, indent=2, ensure_ascii=False
             )
     if args.json is not None:
-        args.json.write_text(json.dumps(found, indent=2, ensure_ascii=False), encoding="utf-8")
+        write_json(args.json, found, indent=2, ensure_ascii=False)
     return 0
 
 

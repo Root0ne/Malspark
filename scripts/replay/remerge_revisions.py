@@ -38,7 +38,6 @@ from __future__ import annotations
 
 import argparse
 import ast
-import json
 import re
 import sys
 from collections.abc import Iterator
@@ -443,7 +442,9 @@ def main(argv: list[str] | None = None) -> int:
         records.append(record)
         _print(record)
     if args.json is not None:
-        args.json.write_text(json.dumps(records, indent=1), encoding="utf-8")
+        from scripts.replay.output import write_json
+
+        write_json(args.json, records, indent=1)
     return 0
 
 
