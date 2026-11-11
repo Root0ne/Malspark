@@ -33,12 +33,20 @@ from tests.unit.reporting.test_an_entry_without_a_source_is_read_as_before impor
 # Re-pinned when the product took its new name (T-576): the producer's name and
 # the ``x_malspark_*`` properties; with the previous name each is the digest
 # pinned before.
+# Re-pinned when the export came to derive every id it writes (T-621): the
+# judge's ids that are no UUID (``malware--1``, ``relationship--uses-rundll32``)
+# become derived UUIDs, which the normalisation then reads as ``--ID``; with
+# every id normalised, each export is the one pinned before.
+# Re-pinned when the export came to carry the report's TLP level (T-621): each
+# export, here and in ``HAIKU4_RENDERS``, gains the level's marking definition
+# and ``object_marking_refs`` naming it on every domain object and
+# relationship, and nothing else; the Markdown and HTML did not change.
 STORED_EXPORTS = {
-    "run7": "9f3586c36e867b3e",
-    "run5": "3abdff0c8db7948c",
-    "run4": "4cf5568e843e294e",
-    "local8": "d5d7b39ea49f8f5c",
-    "haiku4": "ac8035fc45db4cdf",
+    "run7": "ea6974f900ddabbe",
+    "run5": "677740f6b195cec8",
+    "run4": "52b7d9f99d8e7122",
+    "local8": "bcd9ef067839c344",
+    "haiku4": "8ca0ad2fc5d8e4c9",
 }
 # ``(markdown, html with the nonce "fixed", normalised STIX)`` for haiku4. The
 # Markdown and HTML were re-pinned when a sample's, a tool's or a finding's text
@@ -71,7 +79,7 @@ STORED_EXPORTS = {
 # The HTML and the STIX re-pinned when the product took its new name (T-576):
 # the generator line, the producer's name and the ``x_malspark_*`` properties;
 # with the previous name each is the digest pinned before.
-HAIKU4_RENDERS = ("06a395f0432b80a2", "a56231bf54979dba", "7796b8f69c8a6a3b")
+HAIKU4_RENDERS = ("06a395f0432b80a2", "a56231bf54979dba", "2bbc1e9a9eec44c6")
 
 _UUID = re.compile(r"--[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}")
 _STAMP = re.compile(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})")

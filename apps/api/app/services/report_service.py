@@ -8,10 +8,11 @@ from typing import TYPE_CHECKING, Any, NamedTuple
 
 from arq import ArqRedis
 from malspark.reporting.builder import ioc_table
-from malspark.reporting.models import ConsolidatedIOC
+from malspark.reporting.detection_signatures import analyst_print_gate, rule_standing
+from malspark.reporting.models import ConsolidatedIOC, DetectionRule
 from malspark.reporting.renderers.stix_renderer import SAMPLE_DIGESTS, publishes, yes_because
 from malspark.reporting.run_diff import RunRecord, diff_runs
-from malspark.schemas.stix_models import with_current_property_names
+from malspark.schemas.stix_models import tlp_name, with_current_property_names
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -156,7 +157,8 @@ def ioc_feed_rows(mr: dict, kind: str | None = None) -> list[dict]:
     The sample's own digests, which the router established and no rule
     decides, are served even when the table cannot be read at all. A
     ``secret`` or ``crypto_wallet`` row is served only to a ``kind`` filter
-    that names its kind.
+    that names its kind. Every row carries the report's TLP level (``tlp``)
+    and the ledger ids the table ties to it (``evidence_ids``).
     """
     typed = _typed_report(mr)
     if typed is not None:
@@ -171,6 +173,8 @@ def ioc_feed_rows(mr: dict, kind: str | None = None) -> list[dict]:
     if not any(row.source == "identity" for row in table):
         table = [*_identity_rows(mr), *table]
     network = _network_rows(mr)
+    # The report's level as it stored it, which the cover prints.
+    tlp = tlp_name(str(mr.get("tlp") or ""))
     out: list[dict] = []
     for row in table:
         row_kind = str(row.kind or "")
@@ -192,20 +196,96 @@ def ioc_feed_rows(mr: dict, kind: str | None = None) -> list[dict]:
                 "published": publishes(row.published),
                 "publish_answer": row.published,
                 "recovered_by": row.recovered_by or None,
+                "evidence_ids": list(row.evidence_ids),
+                "tlp": tlp,
             }
         )
     return out
 
 
+# The line comment of each rule kind's own syntax: the download's name and
+# standing lines must not break the file a rule engine or converter reads.
+_RULE_COMMENT = {"yara": "//", "sigma": "#", "suricata": "#", "snort": "#"}
+
+
+def signature_download(signatures: list[dict], kind: str, include: str = "printed") -> str:
+    """The drafted rules of one ``kind`` as one file of that kind's syntax.
+
+    Each rule is preceded by its name in a comment line of the kind's own
+    syntax (``//`` YARA, ``#`` Sigma, Suricata and Snort). Sigma documents are
+    joined as a YAML multi-document stream (``---``); the others by a blank
+    line. ``printed`` (the default) serves the rules the analyst report prints
+    (``analyst_print_gate``), so a rule that does not compile is never in it;
+    ``all`` serves every draft, each with its standing (``rule_standing``) in
+    a second comment line. A stored rule the model cannot read is served only
+    to ``all``, with no standing. An empty string when no rule is served.
+    """
+    mark = _RULE_COMMENT.get(kind, "#")
+    every = include == "all"
+    parts: list[str] = []
+    for stored in signatures:
+        if stored.get("kind") != kind:
+            continue
+        try:
+            rule: DetectionRule | None = DetectionRule.model_validate(stored)
+        except Exception:  # noqa: BLE001 — a rule that will not read has no standing
+            rule = None
+        printed = rule is not None and analyst_print_gate(rule) is None
+        if not (printed or every):
+            continue
+        lines = [f"{mark} {_one_line(stored.get('name') or 'rule')}"]
+        if every and rule is not None:
+            lines.append(f"{mark} {_one_line(rule_standing(rule)[1])}")
+        lines.append(str(stored.get("body") or "").rstrip("\n"))
+        parts.append("\n".join(lines))
+    if not parts:
+        return ""
+    return ("\n---\n" if kind == "sigma" else "\n\n").join(parts) + "\n"
+
+
+def _one_line(text: str) -> str:
+    """A value on one comment line: its whitespace runs, line breaks among them, as one space."""
+    return " ".join(str(text).split())
+
+
 # What a report stored before the current publish rule is told about its
-# export: the bundle is the one stored, and is not re-rendered when served,
-# because a render mints fresh ids and timestamps every time.
+# export: the bundle is the one stored, and is not re-rendered when served:
+# it is what its consumers already hold, and a bundle stored before the export
+# derived its ids carries other ids than a render under today's rules.
 OLD_RULE_STIX_NOTE = (
     "This report was stored before its IOC table, /iocs and MISP attributes were built by "
     "the current publish rule. They are rebuilt by that rule when served; the STIX bundle "
     "is served as it was rendered when the report was stored, and may carry fewer "
     "indicators than the table publishes."
 )
+
+
+def _lacks_standing(stored: Any) -> bool:
+    """Whether a stored rule lacks what the report says of it (``printed``, ``standing``)."""
+    return isinstance(stored, dict) and (
+        stored.get("printed") is None or stored.get("standing") is None
+    )
+
+
+def _with_standing(stored: Any) -> Any:
+    """A stored rule with a missing ``printed``/``standing`` filled by ``rule_standing``.
+
+    The server's default download reads the standing of every rule the same way,
+    so the console's rule card and the file agree. A rule the model cannot read
+    is served as stored.
+    """
+    if not _lacks_standing(stored):
+        return stored
+    try:
+        rule = DetectionRule.model_validate(stored)
+    except Exception:  # noqa: BLE001 — a rule that will not read has no standing
+        return stored
+    printed, standing = rule_standing(rule)
+    return {
+        **stored,
+        "printed": stored["printed"] if stored.get("printed") is not None else printed,
+        "standing": stored["standing"] if stored.get("standing") is not None else standing,
+    }
 
 
 def with_current_iocs(mr: Any, owner: str) -> tuple[Any, str | None]:
@@ -216,7 +296,9 @@ def with_current_iocs(mr: Any, owner: str) -> tuple[Any, str | None]:
     statements carry, after the stored ones, the sentences the exports mark
     against what the run published (``prose_decisions``). A report stored
     before MISP attributes were built has them built here, their uuids derived
-    from ``owner`` (the report's id). The second value is the note a report
+    from ``owner`` (the report's id). A drafted rule stored before ``printed``
+    and ``standing`` existed has them filled from ``rule_standing``, so the
+    console and the default download agree. The second value is the note a report
     stored under the earlier rule carries about its STIX bundle, else
     ``None``. A report the model cannot read is served as stored.
     """
@@ -233,6 +315,9 @@ def with_current_iocs(mr: Any, owner: str) -> tuple[Any, str | None]:
     flagged = with_decided_statements(list(typed.flagged_statements), typed)
     if len(flagged) > len(typed.flagged_statements):
         served["flagged_statements"] = [row.model_dump(mode="json") for row in flagged]
+    stored_rules = mr.get("detection_signatures")
+    if isinstance(stored_rules, list) and any(_lacks_standing(rule) for rule in stored_rules):
+        served["detection_signatures"] = [_with_standing(rule) for rule in stored_rules]
     note = None
     if mr.get("misp_attributes") is None:
         served["misp_attributes"] = build_misp_attributes(typed, table, owner=owner)
@@ -676,6 +761,37 @@ class ReportService:
             logger.warning("get_malware_report_%s: validation failed (%s).", export, exc)
             return None
 
+    async def get_malware_report_misp_event(
+        self,
+        report_id: uuid.UUID,
+        user: User,
+    ) -> dict | None:
+        """The report as one MISP event (``misp.build_misp_event``), or ``None`` for no report.
+
+        Its attributes are the ones the report serves (``with_current_iocs``):
+        the stored ones, or the current rule's for a report stored before
+        them. The event's uuid is derived from what its attributes' are: the
+        report's job for the attributes the pipeline built, the report's own
+        id for those built when served. A report the model cannot read has no
+        event: ``None``.
+        """
+        from malspark.reporting.misp import build_misp_event, misp_owner
+
+        report = await self.get_report(report_id, user)
+        if report is None or not isinstance(report.malware_report, dict):
+            return None
+        mr = report.malware_report
+        typed = _typed_report(mr)
+        if typed is None:
+            return None
+        # One owner for the event and its attributes: an event uuid from the
+        # job beside attributes rebuilt under the report's id would be two.
+        built = mr.get("misp_attributes") is not None
+        owner = misp_owner(typed, report.job_id) if built else str(report.id)
+        served, _note = with_current_iocs(mr, owner)
+        attributes = served.get("misp_attributes") or []
+        return build_misp_event(typed, attributes, owner=owner)
+
     async def get_malware_report_iocs(
         self,
         report_id: uuid.UUID,
@@ -713,10 +829,13 @@ class ReportService:
         report_id: uuid.UUID,
         user: User,
         kind: str,
+        include: str = "printed",
     ) -> str | None:
-        """Return the concatenated rule bodies for a single signature ``kind``.
+        """Return the rule bodies of a single signature ``kind`` as one file of that kind.
 
-        ``kind`` is one of ``yara``, ``sigma``, ``suricata``, ``snort``.
+        ``kind`` is one of ``yara``, ``sigma``, ``suricata``, ``snort``;
+        ``include`` is ``printed`` (the rules the report prints) or ``all``
+        (every draft, each with its standing). See ``signature_download``.
 
         Distinguishes "report missing" (``None`` -> caller raises 404) from
         "report exists but no bodies of this kind" (empty string -> caller
@@ -727,15 +846,7 @@ class ReportService:
         mr = await self.get_malware_report(report_id, user)
         if not mr:
             return None
-        signatures = mr.get("detection_signatures") or []
-        bodies: list[str] = []
-        for sig in signatures:
-            if sig.get("kind") != kind:
-                continue
-            name = sig.get("name") or "rule"
-            body = sig.get("body") or ""
-            bodies.append(f"// {name}\n{body}")
-        return "\n\n".join(bodies) if bodies else ""
+        return signature_download(mr.get("detection_signatures") or [], kind, include)
 
     async def enqueue_enrichment(
         self,

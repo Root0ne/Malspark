@@ -185,9 +185,10 @@ class TestBaseBundlePreserved:
             if isinstance(obj, Malware | AttackPattern):
                 assert obj.created.year >= 2024, f"{obj.type} kept placeholder date"
                 assert obj.modified >= obj.created
-        # id (and therefore any relationship ref) is preserved verbatim
-        malware_ids = [o.id for o in bundle.objects if isinstance(o, Malware)]
-        assert "malware--b2c3d4e5-f6a7-8901-bcde-f12345678901" in malware_ids
+        # The object is kept under the id the export derives from what
+        # identifies it, and nothing refers to the judge's id any more.
+        assert [o.name for o in bundle.objects if isinstance(o, Malware)] == ["Packed Dropper"]
+        assert "malware--b2c3d4e5-f6a7-8901-bcde-f12345678901" not in bundle.model_dump_json()
 
     def test_the_judges_is_family_is_published_as_written(self) -> None:
         # The renderer used to force a judge's ``is_family: true`` to false,

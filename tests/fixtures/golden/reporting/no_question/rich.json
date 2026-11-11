@@ -636,6 +636,11 @@
   "malware_category": "loader",
   "misp_attributes": [
    {
+    "Tag": [
+     {
+      "name": "tlp:amber"
+     }
+    ],
     "category": "Payload delivery",
     "comment": "the sample; published because the sample's own digest",
     "to_ids": true,
@@ -644,6 +649,11 @@
     "value": "275a021bbfb6489e54d471899f7db9d1663fc695ec2fe2a2c4538aabf651fd0f"
    },
    {
+    "Tag": [
+     {
+      "name": "tlp:amber"
+     }
+    ],
     "category": "Payload delivery",
     "comment": "the sample; published because the sample's own digest",
     "to_ids": true,
@@ -652,6 +662,11 @@
     "value": "3395856ce81f2b7382dee72602f798b642f14140"
    },
    {
+    "Tag": [
+     {
+      "name": "tlp:amber"
+     }
+    ],
     "category": "Payload delivery",
     "comment": "the sample; published because the sample's own digest",
     "to_ids": true,
@@ -660,6 +675,11 @@
     "value": "44d88612fea8a8f36de82e1278abb02f"
    },
    {
+    "Tag": [
+     {
+      "name": "tlp:amber"
+     }
+    ],
     "category": "Payload delivery",
     "comment": "the sample; published because the sample's own digest",
     "to_ids": false,
@@ -668,6 +688,11 @@
     "value": "f34d5f2d4577ed6d9ceec516c1f5a744"
    },
    {
+    "Tag": [
+     {
+      "name": "tlp:amber"
+     }
+    ],
     "category": "Persistence mechanism",
     "comment": "run key; modify; published because a persistence mechanism this run recorded",
     "to_ids": true,
@@ -676,6 +701,11 @@
     "value": "HKLM\\Software\\Microsoft\\Windows\\CurrentVersion\\Run"
    },
    {
+    "Tag": [
+     {
+      "name": "tlp:amber"
+     }
+    ],
     "category": "Network activity",
     "comment": "published because the host of http://c2.evil.tld/gate.php, which this run publishes",
     "to_ids": true,
@@ -684,6 +714,11 @@
     "value": "c2.evil.tld"
    },
    {
+    "Tag": [
+     {
+      "name": "tlp:amber"
+     }
+    ],
     "category": "Network activity",
     "comment": "reached by the sample's process tree; published because the sandbox recorded it",
     "to_ids": true,
@@ -692,6 +727,11 @@
     "value": "185.220.101.5"
    },
    {
+    "Tag": [
+     {
+      "name": "tlp:amber"
+     }
+    ],
     "category": "Network activity",
     "comment": "POST; published because the sandbox recorded it",
     "to_ids": true,

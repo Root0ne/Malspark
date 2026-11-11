@@ -31,6 +31,7 @@ vi.mock("@/lib/api", () => {
         return stix.answer;
       },
       getReportAttackLayer: record("getReportAttackLayer", { name: "layer" }),
+      getReportMispEvent: record("getReportMispEvent", { Event: { uuid: "e1" } }),
       getReportSignature: record("getReportSignature", "rule x {}"),
       getReportMitre: record("getReportMitre", { techniques: [] }),
       getReportTimeline: record("getReportTimeline", { rounds: [] }),
@@ -49,9 +50,12 @@ import type { MalwareReport } from "@/types/malware-report";
 
 const report = (over: Partial<MalwareReport> = {}) =>
   ({
+    // Of each kind, one draft the report prints and one it leaves out.
     detection_signatures: [
-      { kind: "sigma", name: "s", body: "", auto_generated: true, source_evidence: [], compile_error: null },
-      { kind: "yara", name: "y", body: "", auto_generated: true, source_evidence: [], compile_error: null },
+      { kind: "sigma", name: "s", body: "", auto_generated: true, source_evidence: [], compile_error: null, printed: true },
+      { kind: "sigma", name: "s2", body: "", auto_generated: true, source_evidence: [], compile_error: null },
+      { kind: "yara", name: "y", body: "", auto_generated: true, source_evidence: [], compile_error: null, printed: true },
+      { kind: "yara", name: "y2", body: "", auto_generated: true, source_evidence: [], compile_error: null, printed: false },
     ],
     misp_attributes: [],
     ...over,
@@ -89,11 +93,73 @@ describe("the export groups", () => {
       "evidence-bundle-html",
       "evidence-bundle-json",
       "misp",
+      "misp-event",
       "attack-layer",
       "rules-yara",
+      "rules-yara-all",
       "rules-sigma",
+      "rules-sigma-all",
     ]);
     expect(ruleKinds(null)).toEqual([]);
+  });
+
+  it("offer every draft of a kind beside the printed rules only when a draft is not printed", async () => {
+    const printed = report({
+      detection_signatures: [
+        { kind: "yara", name: "y", body: "", auto_generated: true, source_evidence: [], compile_error: null, printed: true },
+        { kind: "sigma", name: "s", body: "", auto_generated: true, source_evidence: [], compile_error: null, printed: false },
+      ],
+    });
+    const deep = reportExportGroups("r1", printed, "b")[1].items;
+    expect(deep.filter((i) => i.key.startsWith("rules-")).map(({ key, label, hint }) => ({ key, label, hint }))).toEqual([
+      { key: "rules-yara", label: "YARA rules", hint: "The rules the report prints" },
+      {
+        key: "rules-sigma-all",
+        label: "Sigma rules, all drafts",
+        hint: "Every draft, each with why the report does or does not print it",
+      },
+    ]);
+    await deep.find((i) => i.key === "rules-sigma-all")!.run();
+    expect(calls).toEqual(["getReportSignature(r1,sigma,all)"]);
+    expect(saved).toEqual([{ name: "malspark-sigma-all.yml", body: "rule x {}", type: "application/yaml" }]);
+  });
+
+  it("offer only every draft of a kind the report prints no rule of", async () => {
+    const unprinted = report({
+      detection_signatures: [
+        { kind: "yara", name: "y", body: "", auto_generated: true, source_evidence: [], compile_error: null, printed: false },
+        { kind: "yara", name: "y2", body: "", auto_generated: true, source_evidence: [], compile_error: null },
+      ],
+    });
+    const deep = reportExportGroups("r1", unprinted, "b")[1].items;
+    expect(deep.filter((i) => i.key.startsWith("rules-")).map(({ key, label, hint }) => ({ key, label, hint }))).toEqual([
+      {
+        key: "rules-yara-all",
+        label: "YARA rules, all drafts",
+        hint: "Every draft, each with why the report does or does not print it",
+      },
+    ]);
+    await deep.find((i) => i.key === "rules-yara-all")!.run();
+    expect(calls).toEqual(["getReportSignature(r1,yara,all)"]);
+    expect(saved).toEqual([{ name: "malspark-yara-all.yar", body: "rule x {}", type: "text/x-yara" }]);
+  });
+
+  it("offer the MISP event beside the attributes and save the event as served", async () => {
+    const event = item("misp-event");
+    expect({ label: event.label, hint: event.hint, unavailable: event.unavailable }).toEqual({
+      label: "MISP event",
+      hint: "The attributes in one event a MISP instance imports",
+      unavailable: undefined,
+    });
+    await event.run();
+    expect(calls).toEqual(["getReportMispEvent(r1)"]);
+    expect(saved).toEqual([
+      {
+        name: "malspark-9f86d081884c-misp-event.json",
+        body: JSON.stringify({ Event: { uuid: "e1" } }, null, 2),
+        type: "application/json",
+      },
+    ]);
   });
 
   it("keep MISP with the reason it is unavailable: walked to, but not run", () => {
@@ -117,9 +183,12 @@ describe("the export groups", () => {
       "getReportStix(r1)",
       "getReportEvidenceBundleHtml(r1)",
       "getReportEvidenceBundleJson(r1)",
+      "getReportMispEvent(r1)",
       "getReportAttackLayer(r1)",
       "getReportSignature(r1,yara)",
+      "getReportSignature(r1,yara,all)",
       "getReportSignature(r1,sigma)",
+      "getReportSignature(r1,sigma,all)",
       "getReportMitre(r1)",
       "getReportTimeline(r1)",
     ]);
@@ -133,9 +202,12 @@ describe("the export groups", () => {
       "malspark-stix-bundle.json",
       "evidence-bundle.html",
       "evidence-bundle.json",
+      "malspark-9f86d081884c-misp-event.json",
       "malspark-attack-layer.json",
       "malspark-yara.yar",
+      "malspark-yara-all.yar",
       "malspark-sigma.yml",
+      "malspark-sigma-all.yml",
       "malspark-9f86d081884c-report.json",
       "malspark-9f86d081884c-mitre.json",
       "malspark-9f86d081884c-timeline.json",
@@ -147,6 +219,7 @@ describe("the export groups", () => {
   it("pin every file name, the MISP and per-kind ones included", () => {
     const names = exportFileNames("malspark-9f86d081884c");
     expect(names.misp).toBe("malspark-9f86d081884c-misp.json");
+    expect(names.mispEvent).toBe("malspark-9f86d081884c-misp-event.json");
     expect(names.stixDraft).toBe("malspark-stix-bundle-draft.json");
     expect(names.rules("suricata")).toBe("malspark-suricata.rules");
     expect(names.rules("snort")).toBe("malspark-snort.rules");

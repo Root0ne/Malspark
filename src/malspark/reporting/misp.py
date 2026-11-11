@@ -6,15 +6,16 @@ techniques it publishes. Nothing is asked again here, so the attributes carry
 exactly what the IOC table, ``/reports/{id}/iocs`` and the STIX export carry:
 a withheld row is never an attribute. Each indicator attribute has MISP's
 standard type and category for its kind, ``to_ids`` set from the publish
-decision, and a comment naming why the row is published. An imphash, an
-ssdeep or a TLSH also matches files that are not the sample, so it is
+decision, and a comment naming why the row is published and the ledger
+entries the table ties to it. An imphash, an ssdeep or a TLSH also matches
+files that are not the sample, so it is
 published unflagged for IDS. A technique is a ``text`` attribute, tagged with
 its ATT&CK galaxy cluster when the vendored ATT&CK table names it; it
 describes the sample rather than matching anything, so it is not flagged for
-IDS either.
+IDS either. Every attribute carries the report's TLP level as a ``tlp:`` tag.
 
 One pass over the table and one over the techniques; no per-sample value is
-written here.
+written here. ``build_misp_event`` wraps the attributes in one MISP event.
 """
 
 from __future__ import annotations
@@ -25,6 +26,7 @@ from typing import Any
 
 from malspark.core.previous_name import PREVIOUS_NAME
 from malspark.reporting.renderers.stix_renderer import digest_label, publishes
+from malspark.schemas.stix_models import tlp_name
 
 # The namespace each attribute's uuid is derived in, with the report's own id
 # (or its job's) and the attribute's type and value: the same report always
@@ -162,6 +164,11 @@ def _reason(answer: Any) -> str:
     return text.split(":", 1)[1].strip() if ":" in text else ""
 
 
+def row_evidence(row: Any) -> list[str]:
+    """The ledger ids an IOC-table row carries (``ConsolidatedIOC.evidence_ids``)."""
+    return [str(i) for i in getattr(row, "evidence_ids", None) or []]
+
+
 def build_misp_attributes(
     report: Any, rows: Iterable[Any] | None = None, *, owner: str
 ) -> list[dict[str, Any]]:
@@ -179,8 +186,13 @@ def build_misp_attributes(
     out: list[dict[str, Any]] = []
     seen: set[tuple[str, str]] = set()
 
+    # The report's TLP level as MISP's ``tlp`` taxonomy tags it (``tlp:amber``),
+    # on every attribute; none when the report holds no level.
+    level = tlp_name(str(getattr(report, "tlp", "") or ""))
+    tlp_tags = [{"name": level.lower()}] if level else []
+
     def _attribute(kind: str, category: str, value: str, to_ids: bool, comment: str) -> dict:
-        return {
+        attribute: dict[str, Any] = {
             "uuid": str(uuid.uuid5(_NAMESPACE, f"{owner}|{kind}|{value}")),
             "type": kind,
             "category": category,
@@ -188,6 +200,9 @@ def build_misp_attributes(
             "to_ids": to_ids,
             "comment": comment,
         }
+        if tlp_tags:
+            attribute["Tag"] = list(tlp_tags)
+        return attribute
 
     for row in table:
         value = str(getattr(row, "value", "") or "").strip()
@@ -203,12 +218,16 @@ def build_misp_attributes(
         seen.add(key)
         label = str(getattr(row, "type", "") or "")
         why = _reason(answer)
+        cited = row_evidence(row)
         comment = "; ".join(
             part
             for part in (
                 label if kind == "text" else "",
                 str(getattr(row, "context", "") or ""),
                 f"published because {why}" if why else "",
+                # The ledger entries the table ties to the row, which MISP has
+                # no field for: named in the comment.
+                f"evidence {', '.join(cited)}" if cited else "",
             )
             if part
         )
@@ -234,6 +253,135 @@ def build_misp_attributes(
             "ATT&CK technique this report publishes",
         )
         if canonical:
-            attribute["Tag"] = [{"name": f'misp-galaxy:mitre-attack-pattern="{canonical} - {tid}"'}]
+            attribute["Tag"] = [
+                *tlp_tags,
+                {"name": f'misp-galaxy:mitre-attack-pattern="{canonical} - {tid}"'},
+            ]
         out.append(attribute)
     return out
+
+
+# The namespace an event's uuid is derived in, with what its attributes' uuids
+# are derived from (``misp_owner``): one report is one event in every export.
+_EVENT_NAMESPACE = uuid.uuid5(uuid.NAMESPACE_URL, "malspark:misp-event")
+
+# MISP's ``file`` object template, as the MISP object library publishes it.
+_FILE_TEMPLATE = "688c46fb-5edb-40a3-8273-1af7923e2215"
+_FILE_TEMPLATE_VERSION = "25"
+
+# The sample's identity digests, as the file object's relations name them.
+_FILE_DIGESTS = (
+    ("md5", "md5"),
+    ("sha1", "sha1"),
+    ("sha256", "sha256"),
+    ("sha512", "sha512"),
+    ("imphash", "imphash"),
+    ("ssdeep", "ssdeep"),
+    ("tlsh", "tlsh"),
+)
+
+
+def build_misp_event(report: Any, attributes: Iterable[dict[str, Any]], *, owner: str) -> dict:
+    """The report as one MISP event: ``{"Event": ...}``, from what the report already holds.
+
+    ``attributes`` are the report's published MISP attributes
+    (:func:`build_misp_attributes`), carried as they are. The event's uuid is
+    derived from ``owner``, as the attributes' are, and its date is the day
+    the report was built, so one report is one event in every export. The
+    analysis is complete (2) and the distribution is the organisation only
+    (0): the receiver decides how far it shares. The threat level is
+    undefined (4): no field of the report maps to MISP's levels one to one.
+    The tags are the report's TLP level, its verdict and the ATT&CK galaxy
+    clusters its technique attributes carry, each where the report holds it,
+    and a ``file`` object names the sample by its name, its size and the
+    digests its identity holds that no attribute of the event carries already.
+    """
+    identity = getattr(report, "identity", None)
+    hashes = getattr(identity, "hashes", None)
+    sha256 = str(getattr(hashes, "sha256", "") or "")
+    built = getattr(report, "generated_at", None)
+    carried = [dict(attribute) for attribute in attributes]
+
+    tags: list[dict[str, str]] = []
+    level = tlp_name(str(getattr(report, "tlp", "") or ""))
+    if level:
+        tags.append({"name": level.lower()})
+    verdict = str(getattr(report, "verdict", "") or "").strip()
+    if verdict:
+        tags.append({"name": f'malspark:verdict="{verdict}"'})
+    for attribute in carried:
+        for tag in attribute.get("Tag") or []:
+            name = str(tag.get("name") or "")
+            if name.startswith("misp-galaxy:") and {"name": name} not in tags:
+                tags.append({"name": name})
+
+    event: dict[str, Any] = {
+        "uuid": str(uuid.uuid5(_EVENT_NAMESPACE, owner)),
+        "info": f"Malspark analysis of {sha256[:12] if sha256 else 'sample'}",
+        "date": built.date().isoformat() if built is not None else None,
+        "analysis": "2",
+        "distribution": "0",
+        "threat_level_id": "4",
+        "Tag": tags,
+        "Attribute": carried,
+    }
+    if event["date"] is None:
+        del event["date"]
+    sample = _file_object(identity, owner, carried)
+    if sample is not None:
+        event["Object"] = [sample]
+    return {"Event": event}
+
+
+def _file_object(
+    identity: Any, owner: str, attributes: Iterable[dict[str, Any]] = ()
+) -> dict[str, Any] | None:
+    """MISP's ``file`` object for the sample: its name, size and identity digests, as held.
+
+    A digest one of the event's ``attributes`` carries (same type, same value)
+    is not repeated in the object: MISP would hold it twice. ``None`` when the
+    identity holds no digest at all, or the object would name nothing.
+    """
+    hashes = getattr(identity, "hashes", None)
+    carried = {
+        (str(a.get("type") or ""), str(a.get("value") or "").strip().lower()) for a in attributes
+    }
+    held = False
+    relations: list[tuple[str, str, str, bool]] = []
+    for relation, field in _FILE_DIGESTS:
+        value = str(getattr(hashes, field, "") or "").strip()
+        if not value:
+            continue
+        held = True
+        if (relation, value.lower()) not in carried:
+            relations.append((relation, relation, value, relation not in _SIMILARITY_TYPES))
+    if not held:
+        return None
+    name = str(getattr(identity, "file_name", "") or "").strip()
+    if name:
+        relations.append(("filename", "filename", name, False))
+    size = getattr(identity, "file_size_bytes", None)
+    if isinstance(size, int) and size > 0:
+        relations.append(("size-in-bytes", "size-in-bytes", str(size), False))
+    if not relations:
+        return None
+    return {
+        "uuid": str(uuid.uuid5(_EVENT_NAMESPACE, f"{owner}|file")),
+        "name": "file",
+        "meta-category": "file",
+        "template_uuid": _FILE_TEMPLATE,
+        "template_version": _FILE_TEMPLATE_VERSION,
+        "Attribute": [
+            {
+                "uuid": str(uuid.uuid5(_EVENT_NAMESPACE, f"{owner}|file|{relation}|{value}")),
+                "object_relation": relation,
+                "type": kind,
+                # MISP files a size under "Other", every other relation here
+                # under "Payload delivery".
+                "category": "Other" if kind == "size-in-bytes" else "Payload delivery",
+                "value": value,
+                "to_ids": to_ids,
+            }
+            for relation, kind, value, to_ids in relations
+        ],
+    }

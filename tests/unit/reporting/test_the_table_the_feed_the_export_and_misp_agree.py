@@ -33,6 +33,7 @@ from app.services.report_service import (
     OLD_RULE_STIX_NOTE,
     ReportService,
     ioc_feed_rows,
+    signature_download,
     with_current_iocs,
 )
 from malspark.core.previous_name import PREVIOUS_NAME
@@ -480,6 +481,16 @@ def _sample(bundle: dict[str, Any]) -> dict[str, Any]:
     return sample
 
 
+def _judge_malware_id(bundle: dict[str, Any]) -> str:
+    """The id the export gives the judge's malware object, derived from what identifies it."""
+    (found,) = [
+        o["id"]
+        for o in bundle["objects"]
+        if o["type"] == "malware" and o["name"] == MALWARE["name"]
+    ]
+    return str(found)
+
+
 class TestTheExport:
     def test_names_the_sample_by_its_identity_digests_and_passes_the_validator(self) -> None:
         bundle = _export(_report())
@@ -551,7 +562,7 @@ class TestTheExport:
             and o.get("description") != PLATFORM_INDICATES_EDGE
         ]
         assert [(e["source_ref"], e["target_ref"]) for e in edges] == [
-            (sample["id"], MALWARE["id"])
+            (sample["id"], _judge_malware_id(bundle))
         ]
 
     def test_the_judge_s_bundle_is_unchanged_and_renders_the_same_twice(self) -> None:
@@ -572,7 +583,9 @@ class TestTheExport:
                 if o["type"] == "relationship"
                 and o["relationship_type"] == "indicates"
                 and o["source_ref"] == sample["id"]
-            ] == [MALWARE["id"]]
+            ] == [_judge_malware_id(bundle)]
+        # The same report renders to the same bundle, byte for byte.
+        assert first == second
 
     def test_a_folded_indicator_s_sets_are_merged_onto_the_sample_s(
         self, monkeypatch: pytest.MonkeyPatch
@@ -718,10 +731,11 @@ class TestTheMispAttributes:
             False,
         )
         assert techniques[0]["Tag"] == [
-            {"name": f'misp-galaxy:mitre-attack-pattern="{canonical.name} - T1547.001"'}
+            {"name": "tlp:clear"},
+            {"name": f'misp-galaxy:mitre-attack-pattern="{canonical.name} - T1547.001"'},
         ]
         unknown = next(a for a in techniques if a["value"].startswith("T9999"))
-        assert unknown["value"] == "T9999" and "Tag" not in unknown
+        assert unknown["value"] == "T9999" and unknown["Tag"] == [{"name": "tlp:clear"}]
 
     def test_the_same_report_builds_the_same_attributes_and_another_owner_others(
         self,
@@ -807,6 +821,47 @@ class TestAReportStoredBeforeTheseFields:
         assert ("md5", MD5) in {(a["type"], a["value"]) for a in served["misp_attributes"]}
         assert note == OLD_RULE_STIX_NOTE
         assert stored.get("misp_attributes") is None
+
+    def test_a_rule_stored_without_its_standing_is_served_with_it(self) -> None:
+        printed_rule = {"kind": "sigma", "name": "Drops a file", "body": "title: drops"}
+        broken_rule = {**printed_rule, "name": "Broken", "compile_error": "bad"}
+        already = {**printed_rule, "name": "Stated", "printed": True, "standing": "as stored"}
+        stored = {
+            **self._stored(),
+            "detection_signatures": [printed_rule, broken_rule, already],
+        }
+
+        served, _note = with_current_iocs(stored, OWNER)
+
+        assert served["detection_signatures"] == [
+            {
+                **printed_rule,
+                "printed": True,
+                "standing": (
+                    "Precision: it selects on values this run publishes or a sandbox recorded; "
+                    "not run against any other log (no retro-hunt), so how often it fires "
+                    "elsewhere is not measured."
+                ),
+            },
+            {
+                **broken_rule,
+                "printed": False,
+                "standing": (
+                    "Not printed in the analyst report: it does not compile; "
+                    "its body is in the evidence bundle."
+                ),
+            },
+            already,
+        ]
+        # The default download prints exactly the rules the console now marks printed.
+        assert signature_download(served["detection_signatures"], "sigma") == (
+            "# Drops a file\ntitle: drops\n---\n# Stated\ntitle: drops\n"
+        )
+        assert stored["detection_signatures"][0] == {
+            "kind": "sigma",
+            "name": "Drops a file",
+            "body": "title: drops",
+        }
 
     def test_a_report_built_under_the_rule_carries_no_note(self) -> None:
         stored = _report(misp_attributes=[]).model_dump(mode="json")

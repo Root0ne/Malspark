@@ -30,6 +30,7 @@ from collections.abc import Iterable, Iterator, Mapping, Sequence
 from contextlib import contextmanager
 from contextvars import ContextVar
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from typing import Any
 
 from malspark.agents._indicator_denylists import (
@@ -103,6 +104,7 @@ from malspark.schemas.stix_models import (
     LINEAGE_DISPUTED_PROPERTY,
     PROPERTY_NOT_CARRIED_CODE,
     SAMPLE_TREE_PROPERTY,
+    STIX_ID_NAMESPACE,
     AttackPattern,
     Bundle,
     File,
@@ -114,10 +116,11 @@ from malspark.schemas.stix_models import (
     Process,
     Relationship,
     Report,
+    STIXObject,
     attack_pattern_id,
     crediting_only,
-    get_utcnow,
     produced_by,
+    tlp_marking,
 )
 from malspark.schemas.stix_pattern import (
     object_path_problems,
@@ -848,6 +851,10 @@ class ExtendedSTIXRenderer:
         # node writes these rows beside the run's other findings so a reader
         # of the export is told what is not in it.
         self.declined: list[tuple[str, str]] = []
+        # Per render: ``{the id an object came with: the id the export derived
+        # for it}`` (``_with_stable_ids``), so the judge's label map can name
+        # the id each of its objects is published under (``relabelled``).
+        self.renamed: dict[str, str] = {}
 
     def render(
         self,
@@ -906,6 +913,10 @@ class ExtendedSTIXRenderer:
         objects: list[Any] = []
         self.unlinked = []
         self.declined = []
+        self.renamed = {}
+        # The instant the report was built, as one UTC stamp: every time the
+        # bundle takes from it and the id key read it from here.
+        generated_at = _as_utc(report.generated_at)
         ledger_order = {eid: i for i, eid in reversed(list(enumerate(ledger_ids or [])))}
         minted_family_id: str | None = None
         # A verdict of Benign is a finding that this sample is not malware, so
@@ -963,7 +974,7 @@ class ExtendedSTIXRenderer:
             # stamping, the moves and the integrity pass below never edit the
             # bundle the caller handed in, and a second render of it is the same.
             judge_objects = [obj.model_copy(deep=True) for obj in base_bundle.objects]
-            self.declined.extend(self._normalize_judge_timestamps(judge_objects))
+            self.declined.extend(self._normalize_judge_timestamps(judge_objects, generated_at))
             remap = _technique_remap(report, base_bundle)
             gone = _rejected_pattern_ids(base_bundle, remap)
             # A credit the judge was asked about and kept, naming an agent no
@@ -1348,8 +1359,8 @@ class ExtendedSTIXRenderer:
                 objects.extend(observables)
                 objects.append(
                     ObservedData(
-                        first_observed=report.generated_at,
-                        last_observed=report.generated_at,
+                        first_observed=generated_at,
+                        last_observed=generated_at,
                         number_observed=1,
                         object_refs=[obs.id for obs in observables],
                     )
@@ -1399,6 +1410,7 @@ class ExtendedSTIXRenderer:
             ledger_order,
             minted_family_id,
             support=_support_by_pattern(report),
+            value_evidence=_value_evidence(table),
         )
 
         # 9) Report SDO bundles every object_ref. Pre-existing AttackPattern
@@ -1419,7 +1431,7 @@ class ExtendedSTIXRenderer:
                             else "Severity not assessed."
                         )
                     ),
-                    published=report.generated_at,
+                    published=generated_at,
                     report_types=report_types_for(report.verdict),
                     object_refs=refs,
                 )
@@ -1467,7 +1479,19 @@ class ExtendedSTIXRenderer:
             objects = _every_indicator_indicates(
                 objects, malware_id, sample_similarity_pattern(report.identity.hashes)
             )
-        return Bundle(objects=_produced_by(objects, identity.id, self.declined))
+        objects = _produced_by(objects, identity.id, self.declined)
+        # Every id derived from the report's identity and what identifies the
+        # object, and every time the report's own (``_with_stable_ids``): the
+        # same report renders to the same bundle, byte for byte, and another
+        # run of the sample to other objects, so no id carries two ``created``.
+        sample = str(sha256 or "")
+        return Bundle(
+            id=_stable_id("bundle", sample, _stamp_key(generated_at)),
+            objects=_with_tlp(
+                _with_stable_ids(objects, sample, generated_at, self.renamed, own=malware_id),
+                report.tlp,
+            ),
+        )
 
     def _without_empty_references(self, objects: list[Any]) -> list[Any]:
         """``objects`` less every object whose required references are now empty."""
@@ -1516,14 +1540,14 @@ class ExtendedSTIXRenderer:
         return _evidence_refs(report.attribution.family_evidence_ids, ledger_order)
 
     @staticmethod
-    def _normalize_judge_timestamps(objects: list[Any]) -> list[Declined]:
+    def _normalize_judge_timestamps(objects: list[Any], stamp: datetime) -> list[Declined]:
         """Stamp the judge's SDOs with the time the platform published them.
 
         ``created`` and ``modified`` are the platform's bookkeeping — when this
         export made the object — and the prompt tells the judge to leave them
         out; a model that writes them copies the documentation's
-        ``2023-01-01T00:00:00Z``. They are set to the render time, matching
-        every renderer-produced SDO.
+        ``2023-01-01T00:00:00Z``. They are set to ``stamp``, the time the
+        report was built, matching every renderer-produced SDO.
 
         Nothing the judge states is touched. ``is_family`` used to be forced to
         ``false`` here, on the reasoning that one sample is not a family; whether
@@ -1540,13 +1564,12 @@ class ExtendedSTIXRenderer:
         platform does not know is not carried either. Each is recorded, and the
         judge's own bundle keeps it as written. Returns those records.
         """
-        now = get_utcnow()
         declined: list[Declined] = []
         for position, obj in enumerate(objects):
             if hasattr(obj, "created"):
-                obj.created = now
+                obj.created = stamp
             if hasattr(obj, "modified"):
-                obj.modified = now
+                obj.modified = stamp
             named = safe_finding_value(getattr(obj, "id", "") or getattr(obj, "type", "object"))
             # The object is replaced by a copy without them, so the judge's own
             # model of it is not edited.
@@ -1698,6 +1721,191 @@ def _produced_by(
             )
         out.append(produced_by(obj, producer))
     return out
+
+
+def _as_utc(moment: datetime) -> datetime:
+    """``moment`` in UTC, a naive one read as UTC: the form the standard writes with ``Z``."""
+    return moment.replace(tzinfo=UTC) if moment.tzinfo is None else moment.astimezone(UTC)
+
+
+def _stamp_key(stamp: datetime) -> str:
+    """The UTC stamp as the id key carries it, to the microsecond: one instant, one key."""
+    return f"{_as_utc(stamp):%Y-%m-%dT%H:%M:%S.%f}Z"
+
+
+def _stable_id(kind: str, *identifying: str) -> str:
+    """The id of a ``kind`` object derived from what identifies it (``STIX_ID_NAMESPACE``).
+
+    The UUIDv5 of the joined values, written in the UUIDv4 form: STIX 2.1
+    requires a version 4 UUID of an observable the standard derives no id for
+    (a ``process``), and its validator warns on any other version in a domain
+    object's id. The bits are the name's digest either way, so the id is the
+    same on every render.
+    """
+    derived = uuid.uuid5(STIX_ID_NAMESPACE, "|".join((kind, *identifying)))
+    return f"{kind}--{uuid.UUID(bytes=derived.bytes, version=4)}"
+
+
+def _identifying(obj: Any, report: tuple[str, str], own: str | None) -> tuple[str, ...] | None:
+    """What identifies one exported object besides its kind, or ``None`` to keep its id.
+
+    ``report`` is the report's identity (the sample's SHA-256 and the time the
+    report was built), first in every key: an id is one report's, never shared
+    by two runs. An indicator is its pattern; the sample's own malware object
+    (``own``) the report alone, whatever it is named, and any other malware
+    object its name and whether it stands for the family; a relationship its
+    type and its two ends (ids already derived); a process its pid, its
+    command line and its image. The report, the note and the observed-data are
+    the report's one each. The technique objects and the producer's identity
+    keep the ids they are derived with already, and a cyber-observable the
+    standard derives (a ``file``) or one the judge wrote under any other type
+    keeps the id it has.
+    """
+    kind = str(getattr(obj, "type", "") or "")
+    if kind == "indicator":
+        return (*report, str(getattr(obj, "pattern", "") or ""))
+    if kind == "malware":
+        if own is not None and str(getattr(obj, "id", "")) == own:
+            return report
+        return (*report, str(getattr(obj, "name", "") or ""), str(getattr(obj, "is_family", None)))
+    if kind == "relationship":
+        return (
+            *report,
+            str(getattr(obj, "relationship_type", "") or ""),
+            str(getattr(obj, "source_ref", "") or ""),
+            str(getattr(obj, "target_ref", "") or ""),
+        )
+    if kind == "process":
+        return (
+            *report,
+            str(getattr(obj, "pid", None)),
+            str(getattr(obj, "command_line", None) or ""),
+            str(getattr(obj, "image_ref", None) or ""),
+        )
+    if kind in {"report", "note", "observed-data"}:
+        return report
+    return None
+
+
+def _ref_fields(obj: Any) -> list[str]:
+    """The properties of ``obj`` that name other objects: every ``*_ref`` and ``*_refs``."""
+    names = [*type(obj).model_fields, *(getattr(obj, "model_extra", None) or {})]
+    return [n for n in names if n.endswith(("_ref", "_refs"))]
+
+
+def _relinked_refs(obj: Any, remap: Mapping[str, str]) -> Any:
+    """A copy of ``obj`` with every reference ``remap`` moves moved, or ``obj`` itself."""
+    update: dict[str, Any] = {}
+    for name in _ref_fields(obj):
+        value = getattr(obj, name, None)
+        if isinstance(value, str) and value in remap:
+            update[name] = remap[value]
+        elif isinstance(value, list) and any(isinstance(v, str) and v in remap for v in value):
+            update[name] = [remap.get(v, v) if isinstance(v, str) else v for v in value]
+    return obj.model_copy(update=update) if update else obj
+
+
+def _with_stable_ids(
+    objects: list[Any],
+    sample: str,
+    stamp: datetime,
+    renamed: dict[str, str] | None = None,
+    *,
+    own: str | None = None,
+) -> list[Any]:
+    """``objects`` with ids derived from the report and what identifies them, and its own times.
+
+    Each object :func:`_identifying` names is given the id ``_stable_id``
+    derives from the report's identity (``sample`` and ``stamp``) and the
+    object's, ``own`` being the id of the sample's own malware object, and
+    every reference to its old id follows it. Relationships are
+    derived last, from ends already moved. Two objects that the recipe cannot
+    tell apart (two notes, two edges of one type between the same ends) are
+    told apart by their order in the bundle. ``created`` and ``modified`` are
+    ``stamp`` on every object, and so is ``valid_from`` where nobody wrote one:
+    the time the report was built, which the stored report keeps, never the
+    time of the render. A re-rendered report is then the same bundle, and a
+    consumer importing it again holds one object per object. ``renamed``, when
+    given, is filled with ``{the id an object came with: its derived id}``.
+    """
+    report = (sample, _stamp_key(stamp))
+    used: set[str] = {
+        str(getattr(obj, "id", "")) for obj in objects if _identifying(obj, report, own) is None
+    }
+    remap: dict[str, str] = {}
+
+    def _derive(obj: Any, ends_moved: Any) -> None:
+        identifying = _identifying(ends_moved, report, own)
+        if identifying is None:
+            return
+        kind = str(obj.type)
+        new_id = _stable_id(kind, *identifying)
+        n = 1
+        while new_id in used:
+            n += 1
+            new_id = _stable_id(kind, *identifying, str(n))
+        used.add(new_id)
+        remap[str(obj.id)] = new_id
+
+    for obj in objects:
+        if getattr(obj, "type", "") != "relationship":
+            _derive(obj, obj)
+    for obj in objects:
+        if getattr(obj, "type", "") == "relationship":
+            _derive(obj, _relinked_refs(obj, remap))
+    # One pass over the objects as they came, so an id is moved once.
+    out: list[Any] = []
+    for obj in objects:
+        old_id = str(getattr(obj, "id", ""))
+        obj = _relinked_refs(obj, remap)
+        update: dict[str, Any] = {}
+        if old_id in remap:
+            update["id"] = remap[old_id]
+        for name in ("created", "modified"):
+            if name in type(obj).model_fields:
+                update[name] = stamp
+        if "valid_from" in type(obj).model_fields and "valid_from" not in obj.model_fields_set:
+            update["valid_from"] = stamp
+        out.append(obj.model_copy(update=update) if update else obj)
+    if renamed is not None:
+        renamed.update(remap)
+    return out
+
+
+def relabelled(labels: Mapping[str, Any], renamed: Mapping[str, str]) -> dict[str, Any]:
+    """The judge's label map with each id it names moved to the id the export derived for it.
+
+    ``labels`` is ``{the judge's label: the id its object was given}``, or a
+    list of ids for a label two objects share (``judge_postprocess``);
+    ``renamed`` is the export's ``ExtendedSTIXRenderer.renamed``. An id the
+    export did not carry stays as it was.
+    """
+    return {
+        label: [renamed.get(str(i), i) for i in ids]
+        if isinstance(ids, list)
+        else renamed.get(str(ids), ids)
+        for label, ids in labels.items()
+    }
+
+
+def _with_tlp(objects: list[Any], level: str) -> list[Any]:
+    """``objects`` marked with the report's TLP level, and its marking definition after them.
+
+    Every domain object and relationship names the level's TLP 2.0 marking
+    definition (``tlp_marking``) in ``object_marking_refs``, in place of any
+    marking it named; the level is the report's own (``report.tlp``), the one
+    its cover prints. A level with no TLP 2.0 definition marks nothing.
+    """
+    marking = tlp_marking(level)
+    if marking is None:
+        return objects
+    marked = [
+        obj.model_copy(update={"object_marking_refs": [marking.id]})
+        if isinstance(obj, STIXObject)
+        else obj
+        for obj in objects
+    ]
+    return [*marked, marking]
 
 
 # The namespace the technique objects' ids are derived in: one, in
@@ -1935,14 +2143,17 @@ def _with_record_evidence(
     ledger_order: Mapping[str, int],
     minted_id: str | None = None,
     support: Mapping[str, tuple[str, str]] | None = None,
+    value_evidence: Mapping[tuple[str, str], Sequence[str]] | None = None,
 ) -> list[Any]:
     """``objects`` with the property on each object exactly as the record gives it.
 
     The sample's ``uses`` edge to a technique gets that technique's ledger ids.
     The malware object this export minted keeps the family ids it was minted
-    with (already checked against the ledger). Every other object that could
-    carry the property carries none. A copy is written rather than the object
-    changed, because the judge's objects are the judge's own bundle's too.
+    with (already checked against the ledger). An indicator gets the ids the
+    report's IOC table ties to the values its pattern compares
+    (``value_evidence``, :func:`_value_evidence`). Every other object that
+    could carry the property carries none. A copy is written rather than the
+    object changed, because the judge's objects are the judge's own bundle's too.
     """
     by_pattern: dict[str, list[str]] = {}
     for tid, ids in technique_evidence.items():
@@ -1964,6 +2175,17 @@ def _with_record_evidence(
             and getattr(obj, "source_ref", None) == malware_id
         ):
             wanted = by_pattern.get(str(getattr(obj, "target_ref", "") or ""))
+        elif isinstance(obj, Indicator):
+            wanted = _evidence_refs(
+                [
+                    eid
+                    for value in rule_values(obj.pattern or "")
+                    for eid in (value_evidence or {}).get(
+                        (value.kind, _value_key(value.kind, value.value)), ()
+                    )
+                ],
+                ledger_order,
+            )
         else:
             wanted = None
         if wanted != current:
@@ -4149,6 +4371,22 @@ def _recovery_place(how: RecoveredValue) -> list[str]:
     return where
 
 
+def recovered_entries(record: EmulatedStrings, kind: str, value: str) -> list[str]:
+    """The ledger entries of the tools that recovered a network value the sample hid.
+
+    The entries :func:`recovered_by_words` names, from the same record; empty
+    for any other value.
+    """
+    if kind not in ("domain", "ip", "url"):
+        return []
+    key = str(value or "").strip().lower().rstrip(".")
+    entry = record.values.get(key)
+    if not entry:
+        return []
+    listed = [how.entry for how in record.recovered_by.get(key) or [] if how.entry]
+    return list(dict.fromkeys(listed or [entry]))
+
+
 def recovered_by_words(record: EmulatedStrings, kind: str, value: str) -> str:
     """Which tools recovered a network value the sample hid, and where; ``""`` for any other.
 
@@ -5092,6 +5330,22 @@ def _indicator_for_url(url: NetworkURL, report: Any = None) -> Indicator | None:
 
 # What an exported indicator's description says of why it is published.
 PUBLISHED_BECAUSE = "Published because"
+
+
+def _value_evidence(rows: Sequence[Any]) -> dict[tuple[str, str], list[str]]:
+    """The ledger ids each published value of the report's IOC table carries, by kind and value.
+
+    Keyed as :func:`_with_the_publish_reason` reads the table, so an
+    indicator's ids are those of the rows whose answers it prints.
+    """
+    out: dict[tuple[str, str], list[str]] = {}
+    for row in rows:
+        kind = str(row.kind or "")
+        ids = list(getattr(row, "evidence_ids", None) or [])
+        if ids and publishes(row.published):
+            held = out.setdefault((kind, _value_key(kind, row.value)), [])
+            held.extend(i for i in ids if i not in held)
+    return out
 
 
 def _with_the_publish_reason(objects: list[Any], rows: Sequence[Any]) -> list[Any]:
