@@ -11,7 +11,8 @@ before the report's prose is written, and stored on the report
 
 * **Failed calls**: each call that ran and failed, with the later calls that
   redid it by the one redo map (``redone_calls.redo_map``), else each address a
-  later call answered for (``limitation_facts.failed_calls``).
+  later call answered for (``limitation_facts.failed_calls``); and how many
+  entries were trimmed to the budget, as the run's evidence bounds count them.
 * **Code read**: how many routines have listed code, how many routines they
   call have none (``agreement_facts.ledger_facts``), and the first of those on
   the path from a start the run's answers state, by the rank the analysts'
@@ -19,7 +20,9 @@ before the report's prose is written, and stored on the report
   how many routines call one.
 * **Recorded limitations**: the tools the run could not offer with the reason
   it recorded, the tools the job's configuration withheld (the operator's
-  choice), and every other limitation the run recorded.
+  choice), and every other limitation the run recorded, split by
+  ``limitation_facts.recorded_reasons``: a reason recorded after the record
+  was built is read in by the same split (:func:`with_reasons_as_recorded`).
 * **Sandbox**: whether a sandbox recorded the sample, and the sections of the
   sandbox report's index (the entry of the declared kind ``sandbox_sections``):
   each one's item count, or whether the report lists it as unavailable from its
@@ -32,10 +35,13 @@ before the report's prose is written, and stored on the report
   The mark is a fact; whether the listing closes the question is the model's.
 
 Every reader prints or shows what the record holds from the fixed templates of
-:func:`inventory_rows`, each row citing its entries: counts, entry ids,
-addresses, tool names, the sandbox's own section names, durations and the
-reasons the run recorded. No row says what a routine does, why a call failed or
-whether a question is answered, and no row edits a sentence a model wrote.
+:func:`inventory_rows`, a row citing the entries it rests on where it has any:
+counts, entry ids, addresses, tool names, the sandbox's own section names,
+durations and the reasons the run recorded. A printed line names an open
+question's reason by its label (``isr_models.OPEN_QUESTION_REASON_LABELS``);
+what a model is shown keeps the code. No row says what a routine does, why a
+call failed or whether a question is answered, and no row edits a sentence a
+model wrote.
 Built in one pass over the ledger and the report, plus the readings it reuses.
 """
 
@@ -66,7 +72,9 @@ __all__ = [
     "inventory_rows",
     "printed_rows",
     "question_lines",
+    "reason_label",
     "redone_rows",
+    "with_reasons_as_recorded",
 ]
 
 # The label the analyst report's section 11 prints its list under.
@@ -150,6 +158,7 @@ def build_inventory(report: MalwareReport, entries: Iterable[Any]) -> Limitation
     from malspark.reporting.limitation_facts import limitation_facts
 
     entries = list(entries)
+    evidence = (getattr(report, "run_summary", None) or {}).get("evidence") or {}
     found = ledger_facts(entries)
     bases = tuple(found.image_bases)
     read = limitation_facts(report, entries, found.answered, bases, found.redone)
@@ -157,6 +166,7 @@ def build_inventory(report: MalwareReport, entries: Iterable[Any]) -> Limitation
     listed = {routine.address: list(routine.listed_in) for routine in found.listed}
     return LimitationInventory(
         entries=len(entries),
+        trimmed=_count(evidence.get("trimmed")) or 0,
         image_bases=list(bases),
         failed=[
             InventoryCall(
@@ -172,14 +182,33 @@ def build_inventory(report: MalwareReport, entries: Iterable[Any]) -> Limitation
         listed=len(listed),
         unread=len(unread),
         unread_first=_first_on_the_start_path(entries, unread, bases),
-        not_offered=[InventoryTool(tool=t.tool, reason=t.reason) for t in read.not_run],
-        withheld=read.withheld,
-        recorded=list(read.recorded),
+        **_reasons(report),
         sandbox_observed=sandbox_recorded(report),
         **_sandbox_index(entries),
         capture=_capture(entries),
         questions=_questions(read.questions, listed, entries),
     )
+
+
+def _reasons(report: MalwareReport) -> dict[str, Any]:
+    """The record's parts read off the report's recorded reasons, by the one split."""
+    from malspark.reporting.limitation_facts import recorded_reasons
+
+    not_run, withheld, recorded = recorded_reasons(report)
+    return {
+        "not_offered": [InventoryTool(tool=t.tool, reason=t.reason) for t in not_run],
+        "withheld": withheld,
+        "recorded": list(recorded),
+    }
+
+
+def with_reasons_as_recorded(report: MalwareReport) -> None:
+    """Read the parts of ``report``'s inventory that come from its recorded reasons again, by
+    the split that built them: a reason recorded after the record was built (a section the
+    composer left out, a question the round could not ask) is counted as the others are."""
+    inventory = report.limitation_inventory
+    if inventory is not None:
+        report.limitation_inventory = inventory.model_copy(update=_reasons(report))
 
 
 def _first_on_the_start_path(
@@ -325,6 +354,15 @@ def _failed_rows(inv: LimitationInventory, name: Callable[[str], str]) -> list[I
     left = [call for call in inv.failed if not call.redone_by]
     redone = [call for call in inv.failed if call.redone_by]
     out: list[InventoryRow] = []
+    # Entries trimmed to the budget are a limit of the evidence too: the row prints for them.
+    trimmed = (
+        f"{_number(inv.trimmed)} of {_number(inv.entries)} ledger "
+        f"{_plural(inv.trimmed, 'entry was', 'entries were')} trimmed to the budget."
+        if inv.trimmed
+        else ""
+    )
+    if not left and trimmed:
+        out.append(InventoryRow(FAILED, f"Tool calls: {trimmed}", printed=True))
     if left:
         named = "; ".join(_call(call, inv.image_bases, name) for call in left[:_CALLS_NAMED])
         more = len(left) - _CALLS_NAMED
@@ -339,6 +377,7 @@ def _failed_rows(inv: LimitationInventory, name: Callable[[str], str]) -> list[I
                 else ""
             )
             + "."
+            + (f" {trimmed}" if trimmed else "")
         )
         cites = [i for call in left for i in (call.entry, *(e for _a, e in call.answered))]
         out.append(InventoryRow(FAILED, text, tuple(dict.fromkeys(cites)), printed=True))
@@ -422,7 +461,7 @@ def _recorded_rows(
     return out
 
 
-def _sandbox_rows(inv: LimitationInventory) -> list[InventoryRow]:
+def _sandbox_rows(inv: LimitationInventory, name: Callable[[str], str]) -> list[InventoryRow]:
     out: list[InventoryRow] = []
     entry = inv.sandbox_entry
     held = [s for s in inv.sandbox_sections if s.items is not None]
@@ -431,13 +470,13 @@ def _sandbox_rows(inv: LimitationInventory) -> list[InventoryRow]:
             InventoryRow(
                 SANDBOX_HELD,
                 f"Sandbox report [{entry}]: holds "
-                + ", ".join(f"{s.name} ({_number(s.items or 0)})" for s in held)
+                + ", ".join(f"{name(s.name)} ({_number(s.items or 0)})" for s in held)
                 + ".",
                 (entry,),
             )
         )
-    unavailable = [s.name for s in inv.sandbox_sections if s.items is None and s.unavailable]
-    absent = [s.name for s in inv.sandbox_sections if s.items is None and not s.unavailable]
+    unavailable = [name(s.name) for s in inv.sandbox_sections if s.items is None and s.unavailable]
+    absent = [name(s.name) for s in inv.sandbox_sections if s.items is None and not s.unavailable]
     said: list[str] = []
     if not inv.sandbox_observed:
         said.append("no sandbox observation of the sample is recorded in this run")
@@ -447,7 +486,10 @@ def _sandbox_rows(inv: LimitationInventory) -> list[InventoryRow]:
             "the sandbox"
         )
     if entry and absent:
-        said.append(f"{_joined(absent)} {_plural(len(absent), 'is', 'are')} not in the report")
+        said.append(
+            f"{_joined(absent)} {_plural(len(absent), 'is', 'are')} not in the sandbox report "
+            "as read"
+        )
     if said:
         head = f"Sandbox report [{entry}]" if entry and (unavailable or absent) else "Sandbox"
         out.append(
@@ -462,20 +504,29 @@ def _capture_row(inv: LimitationInventory) -> list[InventoryRow]:
         return []
     packets = ""
     if capture.packets is not None:
-        packets = f", {_number(capture.packets)} {_plural(capture.packets, 'packet', 'packets')}"
+        packets = f"{_number(capture.packets)} {_plural(capture.packets, 'packet', 'packets')}"
         if capture.packets_read is not None and capture.packets_read != capture.packets:
-            packets += f" ({_number(capture.packets_read)} read)"
+            packets += f", {_number(capture.packets_read)} read"
+        packets = f" ({packets})"
     return [
         InventoryRow(
             CAPTURE,
-            f"Packet capture [{capture.entry}]: {capture.duration_s:.1f} s{packets}.",
+            f"Packet capture [{capture.entry}] covers {capture.duration_s:.1f} s{packets}; "
+            "traffic outside that window was not captured.",
             (capture.entry,),
             printed=True,
         )
     ]
 
 
-def _question_rows(inv: LimitationInventory) -> list[InventoryRow]:
+def reason_label(reason: str) -> str:
+    """An open question's reason as a printed line names it: its declared label."""
+    from malspark.schemas.isr_models import OPEN_QUESTION_REASON_LABELS
+
+    return OPEN_QUESTION_REASON_LABELS.get(reason, reason)
+
+
+def _question_rows(inv: LimitationInventory, reason_as: Callable[[str], str]) -> list[InventoryRow]:
     questions = inv.questions
     if not questions:
         return []
@@ -483,7 +534,8 @@ def _question_rows(inv: LimitationInventory) -> list[InventoryRow]:
     for question in questions:
         by_reason[question.reason] = by_reason.get(question.reason, 0) + 1
     reasons = ", ".join(
-        f"{reason} {n}" for reason, n in sorted(by_reason.items(), key=lambda kv: (-kv[1], kv[0]))
+        f"{reason_as(reason)}: {n}"
+        for reason, n in sorted(by_reason.items(), key=lambda kv: (-kv[1], kv[0]))
     )
     marked = [q for q in questions if q.all_listed]
     after = sum(1 for q in marked if q.listed_after)
@@ -533,12 +585,14 @@ def inventory_rows(
     *,
     quote: Callable[[str], str] = _plain_quote,
     name: Callable[[str], str] = str,
+    reason_as: Callable[[str], str] = str,
     claims_not_discussed: int | None = None,
 ) -> list[InventoryRow]:
     """Every row of the inventory, in a fixed order, each from its fixed template.
 
     ``quote`` writes a reason the run recorded (a tool's or a server's words), ``name`` a
-    tool's name (a server's word);
+    tool's name or a sandbox section's (recorded words), ``reason_as`` an open question's
+    reason (its code, or :func:`reason_label` on a printed line);
     ``claims_not_discussed``, the count of analyst claims in force the report's body
     neither cites nor discusses, adds the row saying so (read after the body is
     written, so only the renderers know it).
@@ -547,9 +601,9 @@ def inventory_rows(
         *_failed_rows(inv, name),
         *_code_row(inv),
         *_recorded_rows(inv, quote, name),
-        *_sandbox_rows(inv),
+        *_sandbox_rows(inv, name),
         *_capture_row(inv),
-        *_question_rows(inv),
+        *_question_rows(inv, reason_as),
     ]
     if claims_not_discussed:
         n = claims_not_discussed
@@ -566,12 +620,22 @@ def inventory_rows(
 
 
 def printed_rows(
-    inv: LimitationInventory, *, claims_not_discussed: int | None = None
+    inv: LimitationInventory,
+    *,
+    quote: Callable[[str], str] = _plain_quote,
+    name: Callable[[str], str] = str,
+    claims_not_discussed: int | None = None,
 ) -> list[InventoryRow]:
-    """The rows section 11 prints: each one that states a limit, at most seven."""
-    return [
-        row for row in inventory_rows(inv, claims_not_discussed=claims_not_discussed) if row.printed
-    ]
+    """The rows section 11 prints: each one that states a limit, at most seven, an open
+    question's reason by its label."""
+    rows = inventory_rows(
+        inv,
+        quote=quote,
+        name=name,
+        reason_as=reason_label,
+        claims_not_discussed=claims_not_discussed,
+    )
+    return [row for row in rows if row.printed]
 
 
 def question_lines(

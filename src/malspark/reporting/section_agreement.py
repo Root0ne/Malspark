@@ -811,27 +811,22 @@ def passages_of(
     # of (T-526); it then stands where the paragraph alone stood.
     limitations, limitation_facts, limited = _limitation_passages(report, held, found, facts)
     if limitations:
-        uncoded[:] = [p for p in uncoded if p.id != "limitations"]
-        uncoded.extend(limitations)
-    elif limited:
-        # The failed calls no later call redid are among the facts shown: a
-        # denial in a rewrite of a sentence of the paragraph may rest on one.
-        for passage in uncoded:
-            if passage.id == "limitations":
-                passage.unredone_failed = _ids([c.entry for c in limited if not c.redone])
-    if limited:
-        # A false failure is wrong in any section: while the failed calls are
-        # shown, a rewrite of any other passage adds none. A section 5 rewrite
-        # is the platform's own (``_qualified``), whose fact clauses write kind
-        # words ("decompiled or disassembled"): it is read by its citations
-        # alone. A paragraph held to the failed calls has its own check.
+        # A false failure is wrong in any section: while the paragraph is held
+        # to the failed calls, a rewrite of any other passage adds none. A
+        # section 5 rewrite is the platform's own (``_qualified``), whose fact
+        # clauses write kind words ("decompiled or disassembled"): it is read
+        # by its citations alone.
         for passage in (*coded, *uncoded):
+            if passage.id == "limitations":
+                continue
             if _writable(passage) and passage.sourced_check is None:
                 passage.sourced_check = (
                     _failure_cited_check(limited, passage)
                     if passage.kind == SECTION_5
                     else _failure_added_check(limited, passage)
                 )
+        uncoded[:] = [p for p in uncoded if p.id != "limitations"]
+        uncoded.extend(limitations)
     facts.extend(limitation_facts)
     failed = _failed_calls(held, found)
     counts = _failure_counts(failed)
@@ -845,7 +840,7 @@ def passages_of(
             for passage in writable
             for sentence in _sentences_of(passage.text)
         )
-        if miscounted or limitation_facts:
+        if miscounted or limitations:
             facts.append(_count_fact(counts, failed))
         for passage in writable:
             passage.counts = counts

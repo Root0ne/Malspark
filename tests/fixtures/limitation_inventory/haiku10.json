@@ -2,6 +2,7 @@
   "run": "haiku10",
   "inventory": {
     "entries": 130,
+    "trimmed": 0,
     "image_bases": [
       1331636994048
     ],
@@ -817,9 +818,9 @@
   "printed": [
     "Code read: 63 routines have listed code; 63 routines they call have none, first on the start path: offsets 0x9484, 0xa59c.",
     "Tools the run could not offer: check_domain_reputation, check_hash (\"VIRUSTOTAL_API_KEY is not configured\"); check_ip_reputation (\"VIRUSTOTAL_API_KEY is not configured; ABUSEIPDB_API_KEY is not configured\").",
-    "Sandbox report [ev_0026]: events, apistats, registry, api_calls and screenshots are unavailable from the sandbox; files, alerts, mutexes, commands, services, procdumps and resolved_apis are not in the report.",
-    "Packet capture [ev_0017]: 583.6 s, 1,309 packets.",
-    "Open questions: 40 filed (needs_sandbox_run 15, other 13, obfuscated 5, tool_failed 4, no_capable_tool 3); 7 name only routines that have listed code, 2 of them listed after the question was filed. All are in the bundle.",
+    "Sandbox report [ev_0026]: events, apistats, registry, api_calls and screenshots are unavailable from the sandbox; files, alerts, mutexes, commands, services, procdumps and resolved_apis are not in the sandbox report as read.",
+    "Packet capture [ev_0017] covers 583.6 s (1,309 packets); traffic outside that window was not captured.",
+    "Open questions: 40 filed (needs a sandbox run: 15, other: 13, obfuscated code: 5, a tool failed: 4, no capable tool: 3); 7 name only routines that have listed code, 2 of them listed after the question was filed. All are in the bundle.",
     "33 analyst claims in force are not discussed in this report and are printed whole in the bundle."
   ],
   "not_printed": [

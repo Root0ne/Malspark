@@ -410,6 +410,16 @@ OpenQuestionReason = Literal[
     "other",
 ]
 OPEN_QUESTION_REASONS: tuple[str, ...] = get_args(OpenQuestionReason)
+# How a printed report line names each reason: plain words, one for every reason
+# above, so none prints as its code. The facts a model is shown keep the codes.
+OPEN_QUESTION_REASON_LABELS: dict[str, str] = {
+    "no_capable_tool": "no capable tool",
+    "tool_failed": "a tool failed",
+    "obfuscated": "obfuscated code",
+    "out_of_turns": "out of turns",
+    "needs_sandbox_run": "needs a sandbox run",
+    "other": "other",
+}
 
 
 class OpenQuestion(BaseModel):

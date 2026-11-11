@@ -513,7 +513,7 @@ def analyst_sections(
         # value only a sentence the analyst report leaves out names is printed
         # in the bundle beside it, so it brings no replaced text back.
         flagged = "\n".join(sentence for sentence, _mark in ctx.flagged)
-        layout.elsewhere = carrying_form("\n".join([*sections, flagged]))
+        layout.elsewhere = carrying_form("\n".join([*layout.described(sections), flagged]))
         for index, (key, build) in enumerate(plan):
             if key in _REPLACING:
                 layout.notes.section = key
@@ -934,6 +934,8 @@ class _Analyst:
         self.values = ValueReader.of(report)
         # What the sections before the one being written printed.
         self.written: list[str] = []
+        # The lines of section 11's measured list, once written (``_measured_limitations``).
+        self.measured_list: list[str] = []
         # How many sentences the section being written left out (``counted``).
         self.left = 0
 
@@ -1022,6 +1024,18 @@ class _Analyst:
         return ta is not None and bool(
             ta.capability_summary or ta.analyst_conclusion or ta.technique_procedures
         )
+
+    def described(self, sections: list[str]) -> list[str]:
+        """``sections`` with section 11's measured list taken out: an address or a value only
+        the list names is named, not described, so replaced text naming it stays."""
+        if not self.measured_list:
+            return sections
+        out = []
+        for section in sections:
+            for line in self.measured_list:
+                section = section.replace(line, "")
+            out.append(section)
+        return out
 
     def _keeps(self, text: str) -> bool:
         """Whether replaced text stays: it names a value printed nowhere else in the
@@ -2237,17 +2251,24 @@ class _Analyst:
         from malspark.reporting.limitation_inventory import LIST_LABEL, printed_rows
 
         report = self.report
+        ctx = self.ctx
+        # A tool's name, a sandbox's section name and a reason the run recorded are
+        # escaped as the bundle escapes its rows; the template's citations become notes.
         rows = printed_rows(
             inventory,
+            quote=lambda text: f'"{ctx.inline(" ".join(str(text).split()))}"',
+            name=ctx.inline,
             claims_not_discussed=len(getattr(report, "claims_not_discussed", None) or []),
         )
         lines = [_heading(11, ANALYST_LIMITATIONS_TITLE), ""]
         if rows:
             lines.extend([LIST_LABEL, ""])
-            lines.extend(
-                _item(self.notes.moved(self.ctx.plain(_one_line(row.text)))) for row in rows
-            )
+            listed = [_item(self.notes.moved(_one_line(row.text))) for row in rows]
+            lines.extend(listed)
             lines.append("")
+            # The list names what it measured, it describes nothing: what it names is
+            # not printed elsewhere for the keep rules (``_keeps``, ``_statements``).
+            self.measured_list = listed
         composed = self.ta.analyst_limitations if self.ta is not None else None
         paragraph = ""
         if composed is not None:
@@ -2397,7 +2418,8 @@ class _Analyst:
         by_tid: dict[str, list[dict[str, Any]]] = {}
         for hit in hits:
             by_tid.setdefault(str(hit.get("technique_id") or ""), []).append(hit)
-        have = set(_VALUE.findall("\n".join(self.written)))
+        # A value section 11's measured list names is named there, not discussed (T-601).
+        have = set(_VALUE.findall("\n".join(self.described(self.written))))
         named = self._named()
         out: list[str] = []
         left = 0

@@ -47,10 +47,12 @@ def stored_inventory(run: Path) -> tuple[Any, Any]:
 
 def read_run(run: Path) -> dict[str, Any]:
     """One stored run's inventory, its printed list and its other rows."""
-    from malspark.reporting.limitation_inventory import inventory_rows
+    from malspark.reporting.limitation_inventory import inventory_rows, reason_label
 
     report, inventory = stored_inventory(run)
-    rows = inventory_rows(inventory, claims_not_discussed=len(report.claims_not_discussed))
+    rows = inventory_rows(
+        inventory, reason_as=reason_label, claims_not_discussed=len(report.claims_not_discussed)
+    )
     return {
         "run": run.name,
         "inventory": inventory.model_dump(mode="json"),

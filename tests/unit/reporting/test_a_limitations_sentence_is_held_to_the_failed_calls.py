@@ -328,20 +328,24 @@ def test_an_open_question_s_path_names_no_address() -> None:
 def _plain_limitations(report: MalwareReport, ledger: list[LedgerEntry]) -> None:
     """The paragraph is shown as a closing passage (T-554), not held to the failed calls:
     every other passage is the one shown without it, in its order, and the limitations
-    inventory's rows join after them (``inv.N``, with the count of failed calls), shown
-    wherever the paragraph stands (T-601)."""
+    inventory's rows join after them (``inv.N``), shown wherever the paragraph stands
+    (T-601); no failure check and no count fact joins, as on dev."""
     without = report.model_copy(deep=True)
     without.technical_analysis.analyst_limitations = None
     shown = passages_of(report, entries=ledger)
     inventory = [p.id for p in shown if p.id.startswith("inv.")]
     assert inventory == [f"inv.{n}" for n in range(1, len(inventory) + 1)] and inventory
-    added = {*inventory, "calls.1", "limitations"}
+    added = {*inventory, "limitations"}
     assert [(p.id, p.text) for p in shown if p.id not in added] == [
         (p.id, p.text) for p in passages_of(without, entries=ledger)
     ]
     (limitations,) = [p for p in shown if p.id == "limitations"]
     assert limitations.label == "11. Limitations" and limitations.closing
     assert limitations.redone_named == () and limitations.failure_said == ()
+    assert limitations.sourced_check is None and limitations.unredone_failed == frozenset()
+    assert [p.sourced_check is None for p in shown if p.id not in added] == [
+        p.sourced_check is None for p in passages_of(without, entries=ledger)
+    ]
 
 
 def test_a_correct_paragraph_is_shown_with_the_inventory_and_is_not_held() -> None:
@@ -519,7 +523,7 @@ def test_a_question_filed_on_a_redone_call_is_marked_and_kept() -> None:
     assert passages["inv.8"].cites == {"ev_0001", "ev_0002", "ev_0003"}
     # The others are counted in the inventory's open-questions row (T-601).
     assert passages["inv.7"].text == (
-        "Open questions: 2 filed (needs_sandbox_run 1, tool_failed 1); 1 names only routines "
+        "Open questions: 2 filed (needs_sandbox_run: 1, tool_failed: 1); 1 names only routines "
         "that have listed code. All are in the bundle."
     )
 
@@ -612,7 +616,7 @@ def test_no_stored_run_but_haiku8_and_haiku10_hold_their_limitations_to_the_fail
     held = [
         p.id
         for p in passages_of(report, entries=ledger)
-        if p.id == "limitations" and p.label.startswith("11. Limitations, the composed")
+        if p.id == "limitations" and p.sourced_check is not None
     ]
     assert held == (["limitations"] if name in _HELD_TO_FAILED_CALLS else [])
 

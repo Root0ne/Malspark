@@ -2138,9 +2138,9 @@ class MarkdownRenderer:
         if report.limitation_inventory is not None:
             # Every row of the inventory the analyst report's section 11 prints
             # from, the ones it leaves to this bundle too, in the same words.
-            from malspark.reporting.limitation_inventory import inventory_rows
+            from malspark.reporting.limitation_inventory import inventory_rows, reason_label
 
-            rows = inventory_rows(report.limitation_inventory)
+            rows = inventory_rows(report.limitation_inventory, reason_as=reason_label)
             if rows:
                 lines.extend([f"**{INVENTORY_HEADING}:**", ""])
                 lines.extend(_item(ctx.inline(row.text)) for row in rows)
@@ -2172,7 +2172,7 @@ class MarkdownRenderer:
                 + ", "
                 + (f"{repeats} answered from an earlier entry without running, " if repeats else "")
                 + (f"{guarded} answered by a guard with no tool run, " if guarded else "")
-                + f"{evidence.get('trimmed', 0)} trimmed to the budget"
+                + f"{_trimmed(evidence, report.limitation_inventory)} trimmed to the budget"
                 + _guardrail_cut_clause(evidence, summary.get("truncation"))
                 + "."
             )
@@ -3130,7 +3130,7 @@ class _Context:
             redone = len(_redone_rows(evidence))
             failed = max(0, int(evidence.get("failed") or 0) - redone)
             entries = int(evidence.get("entries") or 0)
-        trimmed = int(evidence.get("trimmed") or 0)
+        trimmed = int(_trimmed(evidence, inventory) or 0)
         parts = []
         if failed:
             not_redone = " and were not redone" if redone else ""
@@ -3138,6 +3138,12 @@ class _Context:
         if trimmed:
             parts.append(f"{trimmed} of {entries} ledger entries were trimmed")
         return f" The evidence is partial: {' and '.join(parts)}." if parts else ""
+
+
+def _trimmed(evidence: dict[str, Any], inventory: LimitationInventory | None) -> Any:
+    """The entries trimmed to the budget: the limitations inventory's count, where the report
+    holds one, else the run's bounds' (``run_summary.evidence.trimmed``), as held."""
+    return inventory.trimmed if inventory is not None else evidence.get("trimmed", 0)
 
 
 def _redone_rows(

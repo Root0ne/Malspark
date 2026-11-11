@@ -38,6 +38,7 @@ from malspark.reporting.limitation_inventory import (
     build_inventory,
     inventory_rows,
     printed_rows,
+    reason_label,
 )
 from malspark.reporting.models import (
     DynamicBehavior,
@@ -263,8 +264,17 @@ def test_section_11_prints_only_the_rows_that_state_a_limit_then_the_paragraph()
     assert plain("Tool calls: 1 of 6 failed and was not redone: lift_routine for 0x401b40") in (
         plain(section)
     )
-    assert "registry is unavailable from the sandbox; mutexes is not in the report" in section
-    assert "300.2 s, 1,234 packets" in section
+    assert (
+        "registry is unavailable from the sandbox; mutexes is not in the sandbox report as read"
+        in section
+    )
+    assert plain(
+        "Packet capture [ev_0002] covers 300.2 s (1,234 packets); traffic outside that window "
+        "was not captured."
+    ) in plain(section)
+    # An open question's reason prints by its label, never its code.
+    assert "Open questions: 2 filed (needs a sandbox run: 1, a tool failed: 1)" in section
+    assert "tool_failed" not in section and "needs_sandbox_run" not in section
     assert section.index(LIST_LABEL) < section.index("Whether the decoded commands run")
     # dev's platform sentences are folded into the list: none is printed beside it.
     assert "The evidence is partial" not in section and "The run recorded 2" not in section
@@ -313,9 +323,18 @@ def test_the_list_and_the_bundle_s_bounds_count_the_same_failed_and_redone_calls
 def test_the_writer_is_shown_every_row_and_the_split_questions() -> None:
     report = _report(_ledger())
     facts = analyst_bundle("limitations", report)["facts"]
-    rows = inventory_rows(report.limitation_inventory)
-    assert facts[MEASURED_LIST_FACT] == [row.text for row in rows if row.printed]
-    assert facts[NOT_PRINTED_FACT] == [row.text for row in rows if not row.printed]
+    rows = inventory_rows(report.limitation_inventory, reason_as=reason_label)
+    # The list as printed, open questions' reasons by their labels; the marked questions'
+    # row is shown once, under its own key.
+    assert facts[MEASURED_LIST_FACT] == [
+        row.text for row in printed_rows(report.limitation_inventory)
+    ]
+    assert facts[NOT_PRINTED_FACT] == [
+        row.text for row in rows if not row.printed and row.part != "marks"
+    ]
+    assert not any(
+        text.startswith("Open questions naming only") for text in facts[NOT_PRINTED_FACT]
+    )
     assert facts[LISTED_QUESTIONS_FACT] == [
         '"Which key does 0x401a30 load?" (filed by reader as tool_failed; cites ev_0005): '
         "every routine it names has listed code: 0x401a30 in ev_0003, ev_0006"
@@ -365,8 +384,10 @@ def test_the_round_is_shown_the_rows_wherever_the_paragraph_stands() -> None:
     # The gated ids are gone, and the paragraph, which agrees, is not held.
     assert not any(i.split(".")[0] in ("failed", "not_run", "recorded", "open") for i in passages)
     assert passages["limitations"].label == "11. Limitations"
-    # The failed call no later call redid counts as shown (T-600 R6).
-    assert passages["limitations"].unredone_failed == {"ev_0004"}
+    # Not held, the paragraph is dev's closing passage: no failure check, no failed call
+    # counted as shown (T-600's gating, untouched).
+    assert passages["limitations"].unredone_failed == frozenset()
+    assert passages["limitations"].sourced_check is None
 
 
 def test_no_paragraph_no_rows() -> None:
@@ -394,8 +415,8 @@ def test_a_stored_run_builds_its_golden_inventory(name: str) -> None:
     report, inventory = _stored(name)
     golden = json.loads((GOLDEN / f"{name}.json").read_text())
     assert inventory.model_dump(mode="json") == golden["inventory"]
-    rows = inventory_rows(inventory, claims_not_discussed=len(report.claims_not_discussed))
-    assert [row.text for row in rows if row.printed] == golden["printed"]
+    rows = printed_rows(inventory, claims_not_discussed=len(report.claims_not_discussed))
+    assert [row.text for row in rows] == golden["printed"]
 
 
 # Section B of the scope, per run: failed / redone by the map / answered in part; listed /
@@ -443,3 +464,227 @@ def test_haiku13_names_a_partial_answer_and_haiku8_its_calls_not_redone() -> Non
     assert {c.entry for c in haiku8.failed if not c.redone_by} == {"ev_0008", "ev_0122"}
     (row,) = [r for r in printed_rows(haiku8) if r.part == "failed"]
     assert "ev_0008" in row.text and "ev_0122" in row.text
+
+
+# -- late reasons, the round's gating, escaping, labels and the keep rules -----------
+
+
+def test_a_reason_recorded_after_the_record_is_counted_as_the_others() -> None:
+    from malspark.pipeline.nodes import _limitations_as_recorded
+    from malspark.reporting.limitation_facts import recorded_reasons
+
+    report = _report(_ledger())
+    # A section the composer left out, recorded after the record was built.
+    report.degradation_reasons.append("The conclusion section was left out after its retries.")
+    _limitations_as_recorded(report)
+    inventory = report.limitation_inventory
+    not_run, withheld, recorded = recorded_reasons(report)
+    assert inventory.recorded == recorded and len(recorded) == 2
+    assert [t.tool for t in inventory.not_offered] == [t.tool for t in not_run]
+    assert inventory.withheld == withheld
+    # Section 11's count is the bundle's list of what limited the run, minus its tool line.
+    assert "2 other limitations the run recorded" in _section_11(report)
+    bundle = MarkdownRenderer(layout=BUNDLE).render(report)
+    limited = bundle.split("**What limited this run:**", 1)[1].split("\n\n", 2)[1]
+    items = [line for line in limited.splitlines() if line.startswith("- ")]
+    assert len(items) - len(inventory.not_offered) == 2
+
+
+def test_an_unheld_paragraph_raises_dev_s_refusals_and_ends() -> None:
+    from malspark.reporting.section_agreement import (
+        FAILURE_REDONE_CODE,
+        KEEP_UNQUOTED_CODE,
+        agreement_violations,
+    )
+    from tests.unit.reporting.test_every_refusal_offers_only_the_ends_that_pass import (
+        _CELL_ID,
+        _FAILED,
+        _LIMITATION,
+        CONCLUSION,
+        VALUE_CELL,
+        _report_of,
+        _row,
+        _Subject,
+    )
+    from tests.unit.reporting.test_every_refusal_offers_only_the_ends_that_pass import (
+        _ledger as _table_ledger,
+    )
+
+    # The limitations paragraph agrees with the ledger, so it is not held; a closing
+    # sentence and a cell say a call failed that a later call redid. On dev no failure
+    # check reads a passage then: a rewrite saying so passes, a keep naming no source is
+    # refused as dev refuses it, and only the inventory's rows are shown besides.
+    ledger = _table_ledger()
+    for subject in (
+        _Subject(CONCLUSION, "conclusion", _FAILED, (("conclusion", _FAILED),)),
+        _Subject(VALUE_CELL, _CELL_ID, _FAILED, ((_CELL_ID, _FAILED),)),
+    ):
+        report = _report_of(_Subject(subject.kind, subject.pid, subject.sentence, (
+            *subject.fields, ("limitations", _LIMITATION))))  # fmt: skip
+        passages = passages_of(report, entries=ledger)
+        (limitations,) = [p for p in passages if p.id == "limitations"]
+        assert limitations.label == "11. Limitations"
+        assert limitations.unredone_failed == frozenset()
+        assert all(p.sourced_check is None for p in passages if p.write is not None)
+        assert not any(p.id == "calls.1" for p in passages)
+
+        def codes(row: dict[str, Any], passages: Any = passages) -> list[str]:
+            found = agreement_violations({"sentences": [row]}, passages)
+            return [v.code for v in found if v.path.startswith("sentences.0")]
+
+        rewrite = _row(subject, "rewrite", ["answered.1"], rewrite=_FAILED)
+        assert FAILURE_REDONE_CODE not in codes(rewrite)
+        assert codes(rewrite) == []
+        keep = _row(subject, "keep", [], reason="x")
+        (refused,) = [
+            v
+            for v in agreement_violations({"sentences": [keep]}, passages)
+            if v.path.startswith("sentences.0")
+        ]
+        assert refused.code == KEEP_UNQUOTED_CODE
+        assert "naming no source, but answered.1, inv.1 speaks of what it names" in (
+            refused.message
+        )
+
+
+def test_entries_trimmed_to_the_budget_are_a_printed_limit() -> None:
+    ledger = _ledger()
+    report = _report(ledger, build=False)
+    report.run_summary["evidence"]["trimmed"] = 2
+    report.limitation_inventory = build_inventory(report, ledger)
+    assert report.limitation_inventory.trimmed == 2
+    (row,) = [r for r in printed_rows(report.limitation_inventory) if r.part == "failed"]
+    assert row.text.endswith(" 2 of 6 ledger entries were trimmed to the budget.")
+    # The bundle's bounds read the record's count, as section 11 does.
+    report.run_summary["evidence"]["trimmed"] = 5
+    bundle = MarkdownRenderer(layout=BUNDLE).render(report)
+    assert "2 trimmed to the budget" in bundle and "5 trimmed" not in bundle
+    # With no failed call left standing, the trimmed entries still print a row.
+    alone = [_listing("ev_0003", GATE)]
+    report = _report(alone, build=False)
+    report.run_summary["evidence"]["trimmed"] = 1
+    report.limitation_inventory = build_inventory(report, alone)
+    (row,) = [r for r in printed_rows(report.limitation_inventory) if r.part == "failed"]
+    assert row.text == "Tool calls: 1 of 1 ledger entry was trimmed to the budget."
+
+
+def test_the_writer_is_shown_every_printed_line_but_the_claims_count() -> None:
+    from malspark.reporting.models import ClaimNotDiscussed
+
+    report = _report(_ledger())
+    report.claims_not_discussed = [
+        ClaimNotDiscussed(agent="reader", claim_number=n, claim=f"claim {n}") for n in (1, 2)
+    ]
+    text = _bundle_text("limitations", analyst_bundle("limitations", report))
+    instruction = _INSTRUCTIONS["limitations_measured"]
+    assert "counting the analyst claims the report does not discuss" in instruction
+    shown = analyst_bundle("limitations", report)["facts"][MEASURED_LIST_FACT]
+    assert all(quoted_value(line) in text for line in shown)
+    section = _section_11(report)
+    printed = [plain(line[2:]) for line in section.splitlines() if line.startswith("- ")]
+    claims = (
+        "2 analyst claims in force are not discussed in this report and are printed whole in "
+        "the bundle."
+    )
+    assert printed == [plain(line) for line in shown] + [plain(claims)]
+
+
+def test_a_hostile_tool_name_and_reason_print_escaped() -> None:
+    from malspark.reporting.models import InventoryTool
+    from malspark.reporting.renderers.html import HtmlRenderer
+
+    report = _report(_ledger())
+    report.limitation_inventory.not_offered.append(
+        InventoryTool(
+            tool="evil_*tool*", reason="see [click](https://example.org/x) **now** <b>x</b>"
+        )
+    )
+    section = _section_11(report)
+    (line,) = [line for line in section.splitlines() if "evil" in line]
+    assert "evil\\_\\*tool\\*" in line
+    assert "\\[click\\]" in line and "\\*\\*now\\*\\*" in line and "\\<b\\>" in line
+    assert "https://example.org" not in line
+    html = HtmlRenderer(layout=ANALYST).render(report)
+    at = html.index("evil")
+    item = html[at : html.index("</li>", at)]
+    assert "<a " not in item and "<strong>" not in item and "<em>" not in item
+    assert "<b>" not in item
+
+
+def test_every_open_question_reason_has_a_printed_label() -> None:
+    from malspark.schemas.isr_models import OPEN_QUESTION_REASON_LABELS, OPEN_QUESTION_REASONS
+
+    assert set(OPEN_QUESTION_REASON_LABELS) == set(OPEN_QUESTION_REASONS)
+    for reason in OPEN_QUESTION_REASONS:
+        label = reason_label(reason)
+        assert label == label.lower() and "_" not in label and label.strip() == label
+    # The round's row keeps the codes it is matched by.
+    ledger = _ledger()
+    passages = passages_of(_report(ledger), entries=ledger)
+    (row,) = [p for p in passages if p.text.startswith("Open questions:")]
+    assert "needs_sandbox_run: 1" in row.text and "tool_failed: 1" in row.text
+
+
+@pytest.mark.parametrize("name", ("haiku11", "haiku13"))
+def test_the_appendix_of_a_stored_run_is_dev_s_with_the_record(name: str) -> None:
+    report, inventory = _stored(name)
+    without = MarkdownRenderer(layout=ANALYST).render(report)
+    report.limitation_inventory = inventory
+    held = MarkdownRenderer(layout=ANALYST).render(report)
+
+    def appendix(text: str) -> str:
+        # The notes are numbered in the order the report cites: the list's citations come
+        # before the appendix's, so only the numbers differ.
+        return re.sub(r"\[\[\d+\]\]|#cite-\d+", "#", text[text.index("\n## Appendix") :])
+
+    assert LIST_LABEL in held and LIST_LABEL not in without
+    assert appendix(held) == appendix(without)
+
+
+def test_a_capture_entry_that_failed_is_not_read() -> None:
+    failed = _capture("ev_0002").model_copy(update={"ok": False, "error": "x"})
+    good = _capture("ev_0007").model_copy(
+        update={"structured": {"duration_s": 12.5, "packets_in_capture": 9}}
+    )
+    ledger = [_index(), failed, good]
+    inventory = build_inventory(_report(ledger, build=False), ledger)
+    assert inventory.capture is not None and inventory.capture.entry == "ev_0007"
+    assert inventory.capture.duration_s == 12.5
+    ledger = [_index(), failed]
+    assert build_inventory(_report(ledger, build=False), ledger).capture is None
+
+
+def test_the_start_path_names_only_a_callee_on_it(monkeypatch: pytest.MonkeyPatch) -> None:
+    import malspark.agents.callees_question as callees
+
+    ledger = _ledger()
+
+    def ranked(on_path: bool) -> Any:
+        callee = callees.CalleeToRead(
+            address=HELPER, callers=(GATE,), depth=1, start=GATE, called_from=1, calls=0,
+            on_path=on_path,
+        )  # fmt: skip
+        return callees.CalleesFound(ranked=(callee,), starts=callees.STARTS_STATED)
+
+    for on_path, first in ((False, []), (True, [HELPER])):
+        monkeypatch.setattr(callees, "callees_to_read", lambda *a, o=on_path, **k: ranked(o))
+        assert build_inventory(_report(ledger, build=False), ledger).unread_first == first
+
+
+def test_the_marked_questions_row_names_up_to_twelve_routines() -> None:
+    def run(count: int) -> str:
+        addresses = [0x402000 + 0x10 * n for n in range(count)]
+        ledger = [_listing(f"ev_{n + 1:04d}", a) for n, a in enumerate(addresses)]
+        report = _report(ledger, build=False)
+        report.sections[0].rows = [
+            ["reader", f"What does {hex(a)} hold?", "tool_failed: x", "a listing", "ev_0001"]
+            for a in addresses
+        ]
+        inventory = build_inventory(report, ledger)
+        (row,) = [r for r in inventory_rows(inventory) if r.part == "marks"]
+        return row.text
+
+    five = run(5)
+    assert five.count(" in ev_") == 5 and "more." not in five
+    fourteen = run(14)
+    assert fourteen.count(" in ev_") == 12 and fourteen.endswith("; and 2 more.")

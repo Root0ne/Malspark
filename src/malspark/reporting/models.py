@@ -1273,6 +1273,8 @@ class LimitationInventory(BaseModel):
 
     # Every ledger entry, as the run's evidence bounds count them.
     entries: int = 0
+    # The entries trimmed to the budget, as the run's evidence bounds count them.
+    trimmed: int = 0
     image_bases: list[int] = Field(default_factory=list)
     failed: list[InventoryCall] = Field(default_factory=list)
     # Routines whose code an entry lists, the routines they call that no entry lists,

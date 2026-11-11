@@ -51,6 +51,7 @@ __all__ = [
     "NotRun",
     "OpenQuestion",
     "limitation_facts",
+    "recorded_reasons",
 ]
 
 # The reasons an open question is filed under that say a tool could not answer:
@@ -268,6 +269,18 @@ def open_questions(report: Any, bases: Sequence[int]) -> list[OpenQuestion]:
     return []
 
 
+def recorded_reasons(report: Any) -> tuple[list[NotRun], int, list[str]]:
+    """The tools the run could not offer, the count withheld from the agents, and every
+    other limitation the run recorded, read off the report's reasons as they stand."""
+    reasons = [str(r) for r in getattr(report, "degradation_reasons", None) or [] if str(r).strip()]
+    choices = [str(c) for c in getattr(report, "operator_choices", None) or [] if str(c).strip()]
+    not_run, withheld, rest = _not_run(dict.fromkeys([*reasons, *choices]))
+    # An operator choice that is no tool left out is the operator's, not the run's limitation.
+    held = set(reasons)
+    recorded = [_plain(line) for line in rest if line in held and not _ANSWER_READ_NOTE.match(line)]
+    return not_run, withheld, recorded
+
+
 def limitation_facts(
     report: Any,
     entries: Iterable[Any],
@@ -276,12 +289,7 @@ def limitation_facts(
     redone: Sequence[Redo] | None = None,
 ) -> LimitationFacts:
     """The facts the limitations paragraph is held to, read off the report and its ledger."""
-    reasons = [str(r) for r in getattr(report, "degradation_reasons", None) or [] if str(r).strip()]
-    choices = [str(c) for c in getattr(report, "operator_choices", None) or [] if str(c).strip()]
-    not_run, withheld, rest = _not_run(dict.fromkeys([*reasons, *choices]))
-    # An operator choice that is no tool left out is the operator's, not the run's limitation.
-    held = set(reasons)
-    recorded = [_plain(line) for line in rest if line in held and not _ANSWER_READ_NOTE.match(line)]
+    not_run, withheld, recorded = recorded_reasons(report)
     return LimitationFacts(
         failed=tuple(failed_calls(entries, answered, bases, redone)),
         not_run=tuple(not_run),

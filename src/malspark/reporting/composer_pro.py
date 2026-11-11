@@ -231,10 +231,16 @@ def _redone_calls(report: MalwareReport) -> list[str]:
 def measured_limitation_facts(report: MalwareReport) -> dict[str, Any]:
     """What the limitations' writer is shown of a report holding the limitations inventory:
     the rows section 11 prints above the paragraph, in the words it prints them; every
-    other row, which the evidence bundle prints; the open questions, those every routine
+    other row, which the evidence bundle prints, but the marked questions' row, whose
+    questions are shown once, under their own key; the open questions, those every routine
     of which has listed code apart, each with its analyst, its reason and its citations;
     and the verdict and degraded-run facts as before."""
-    from malspark.reporting.limitation_inventory import inventory_rows, question_lines
+    from malspark.reporting.limitation_inventory import (
+        MARKS,
+        inventory_rows,
+        question_lines,
+        reason_label,
+    )
 
     inventory = report.limitation_inventory
     if inventory is None:
@@ -247,11 +253,11 @@ def measured_limitation_facts(report: MalwareReport) -> dict[str, Any]:
     def _quoted(text: str) -> str:
         return f'"{" ".join(ids_written_out(str(text)).split())}"'
 
-    rows = inventory_rows(inventory, quote=_quoted, name=ids_written_out)
+    rows = inventory_rows(inventory, quote=_quoted, name=ids_written_out, reason_as=reason_label)
     listed, other = question_lines(inventory, quote=_quoted, name=ids_written_out)
     return {
         MEASURED_LIST_FACT: [row.text for row in rows if row.printed],
-        NOT_PRINTED_FACT: [row.text for row in rows if not row.printed],
+        NOT_PRINTED_FACT: [row.text for row in rows if not row.printed and row.part != MARKS],
         LISTED_QUESTIONS_FACT: listed,
         OTHER_QUESTIONS_FACT: other,
         "degraded_run": bool(report.degraded_mode),

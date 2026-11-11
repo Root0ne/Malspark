@@ -2,6 +2,7 @@
   "run": "haiku13",
   "inventory": {
     "entries": 149,
+    "trimmed": 0,
     "image_bases": [
       1331636994048
     ],
@@ -890,9 +891,9 @@
     "Tool calls: 1 of 149 failed and was not redone: decompile_function for offset 0x3728 (ev_0139; a later call for the same address: ev_0142).",
     "Code read: 92 routines have listed code; 42 routines they call have none, first on the start path: offsets 0x9484, 0xa59c.",
     "Tools the run could not offer: check_domain_reputation, check_hash (\"VIRUSTOTAL_API_KEY is not configured\"); check_ip_reputation (\"VIRUSTOTAL_API_KEY is not configured; ABUSEIPDB_API_KEY is not configured\").",
-    "Sandbox report [ev_0026]: events, apistats, registry, api_calls and screenshots are unavailable from the sandbox; files, alerts, mutexes, commands, services, procdumps and resolved_apis are not in the report.",
-    "Packet capture [ev_0017]: 576.0 s, 1,474 packets.",
-    "Open questions: 41 filed (needs_sandbox_run 20, other 10, no_capable_tool 7, obfuscated 2, tool_failed 2); 14 name only routines that have listed code. All are in the bundle.",
+    "Sandbox report [ev_0026]: events, apistats, registry, api_calls and screenshots are unavailable from the sandbox; files, alerts, mutexes, commands, services, procdumps and resolved_apis are not in the sandbox report as read.",
+    "Packet capture [ev_0017] covers 576.0 s (1,474 packets); traffic outside that window was not captured.",
+    "Open questions: 41 filed (needs a sandbox run: 20, other: 10, no capable tool: 7, obfuscated code: 2, a tool failed: 2); 14 name only routines that have listed code. All are in the bundle.",
     "37 analyst claims in force are not discussed in this report and are printed whole in the bundle."
   ],
   "not_printed": [
