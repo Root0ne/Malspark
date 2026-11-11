@@ -11,6 +11,7 @@ from __future__ import annotations
 import copy
 import io
 import json
+import re
 import unicodedata
 from collections.abc import Callable
 from pathlib import Path
@@ -122,21 +123,43 @@ def test_the_inventory_script_prints_no_raw_control_character_and_json_keeps_the
     assert any(ESCAPE in t for t in kept[0]["not_printed"] + kept[0]["printed"])
 
 
-def _windows_text_encoding(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Make a file opened without an explicit encoding use cp1252, as on Windows."""
-    real = Path.write_text
+def _windows_text_defaults(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Make a file opened as text without an explicit encoding or newline behave as on Windows.
 
-    def write_text(self: Path, data: str, encoding: str | None = None, **kw: Any) -> int:
-        return real(self, data, encoding=encoding or "cp1252", **kw)
+    The encoding is cp1252 and each ``\\n`` written becomes ``\\r\\n``.
+    """
+    real = io.open
 
-    monkeypatch.setattr(Path, "write_text", write_text)
+    def windows_open(file: Any, mode: str = "r", *args: Any, **kw: Any) -> Any:
+        if "b" not in mode:
+            names = ("buffering", "encoding", "errors", "newline")
+            kw.update(zip(names, args, strict=False))
+            args = ()
+            if kw.get("encoding") in (None, "locale"):
+                kw["encoding"] = "cp1252"
+            if kw.get("newline") is None and set(mode) & set("wax+"):
+                kw["newline"] = "\r\n"
+        return real(file, mode, *args, **kw)
+
+    monkeypatch.setattr(io, "open", windows_open)
+    monkeypatch.setattr("builtins.open", windows_open)
+
+
+def test_the_windows_defaults_stand_in_translates_a_text_write(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    _windows_text_defaults(monkeypatch)
+    (tmp_path / "t").write_text("ğ\n", encoding="utf-8")
+    assert (tmp_path / "t").read_bytes() == "ğ\r\n".encode()
+    with pytest.raises(UnicodeEncodeError):
+        (tmp_path / "t").write_text("ğ")
 
 
 def test_the_json_and_golden_files_are_written_as_utf_8_where_the_default_is_a_code_page(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], tmp_path: Path
 ) -> None:
     _hostile_inventory(monkeypatch)
-    _windows_text_encoding(monkeypatch)
+    _windows_text_defaults(monkeypatch)
     out_json, golden = tmp_path / "out.json", tmp_path / "golden"
     args = [str(tmp_path / "run"), "--json", str(out_json), "--golden", str(golden)]
     assert limitation_inventory.main(args) == 0
@@ -144,6 +167,7 @@ def test_the_json_and_golden_files_are_written_as_utf_8_where_the_default_is_a_c
     kept = json.loads(out_json.read_text(encoding="utf-8"))
     assert any("\u202e" in t for t in kept[0]["not_printed"] + kept[0]["printed"])
     assert "\u202e" in (golden / "run.json").read_text(encoding="utf-8")
+    assert b"\r" not in out_json.read_bytes() + (golden / "run.json").read_bytes()
 
 
 def test_a_letter_the_stream_cannot_carry_is_shown_as_an_escape_not_raised() -> None:
@@ -515,3 +539,104 @@ def test_the_inventory_script_writes_its_json_and_golden_for_a_text_with_a_lone_
     kept = json.loads(out_json.read_text(encoding="utf-8"))
     assert any("\ud800" in t for t in kept[0]["not_printed"] + kept[0]["printed"])
     assert json.loads((golden / "run.json").read_text(encoding="utf-8")) == kept[0]
+
+
+@pytest.mark.parametrize("ascii_only", [True, False])
+def test_a_json_file_holds_the_same_bytes_where_text_writes_translate_line_ends(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, ascii_only: bool
+) -> None:
+    _windows_text_defaults(monkeypatch)
+    value = {"k": ["naïve 日本", "x\n"], "l": [1, 2]}
+    target = tmp_path / "out.json"
+    write_json(target, value, indent=2, ensure_ascii=ascii_only, newline=True)
+    expected = json.dumps(value, indent=2, ensure_ascii=ascii_only) + "\n"
+    assert target.read_bytes() == expected.encode()
+
+
+def _back(shown: str) -> str:
+    """The value a shown text was made from: every escape turned back into its character."""
+    return re.sub(
+        r"\\(\\|n|x[0-9a-f]{2}|u[0-9a-f]{4}|U[0-9a-f]{8})",
+        lambda m: "\\" if m[1] == "\\" else "\n" if m[1] == "n" else chr(int(m[1][1:], 16)),
+        shown,
+    )
+
+
+def _draws_over(char: str) -> bool:
+    return unicodedata.combining(char) == 1 or unicodedata.category(char) == "Me"
+
+
+_MARKS = [chr(c) for c in range(0x110000) if unicodedata.category(chr(c)).startswith("M")]
+_OVER = [chr(c) for c in range(0x110000) if _draws_over(chr(c))]
+
+
+def test_no_overlay_or_enclosing_mark_of_the_database_is_shown_raw() -> None:
+    assert len(_OVER) > 20 and "\u0338" in _OVER and "\u20dd" in _OVER
+    for char in _OVER:
+        for value in (char, f"ab{char}cd", f"e\u0301{char}x"):
+            shown = terminal_safe(value, encoding="utf-8")
+            assert not any(_draws_over(c) for c in shown), hex(ord(char))
+            assert _back(shown) == value
+
+
+def test_a_mark_that_starts_a_value_never_attaches_to_the_label_before_it() -> None:
+    assert len(_MARKS) > 2000
+    for char in _MARKS:
+        value = f"{char}x"
+        shown = terminal_safe(value, encoding="utf-8")
+        assert not unicodedata.category(shown[0]).startswith("M"), hex(ord(char))
+        line = "label: " + shown
+        assert not unicodedata.category(line[len("label: ")]).startswith("M")
+        assert _back(shown) == value
+
+
+@pytest.mark.parametrize("before", ["\x1b", "\n", "\u202e", "\ud800", "\u0338"])
+def test_a_mark_after_a_character_shown_as_an_escape_is_shown_as_an_escape(before: str) -> None:
+    for char in ("\u0301", "\u093e", "\u05b8", "\ufe0f"):
+        value = f"a{before}{char}b"
+        shown = terminal_safe(value, encoding="utf-8")
+        assert f"\\u{ord(char):04x}b" in shown and char not in shown
+        assert _back(shown) == value
+
+
+def test_a_mark_after_a_letter_the_stream_cannot_carry_is_shown_as_an_escape() -> None:
+    value = "\u65e5\u0301x"
+    shown = terminal_safe(value, encoding="cp1258")
+    assert shown == "\\u65e5\\u0301x"
+    assert _back(shown) == value
+    assert terminal_safe("a\u0301", encoding="cp1258") == "a\u0301"
+
+
+@pytest.mark.parametrize("count", [31, 32, 200])
+def test_no_more_marks_than_the_stream_safe_limit_stay_on_one_base(count: int) -> None:
+    for mark in ("\u0301", "\u0951", "\u0e49"):
+        value = "x" + mark * count + "y" + mark * 30
+        shown = terminal_safe(value, encoding="utf-8")
+        assert shown.startswith("x" + mark * 30 + f"\\u{ord(mark):04x}")
+        assert shown.count(mark) == 60 and shown.endswith("y" + mark * 30)
+        assert _back(shown) == value
+
+
+@pytest.mark.parametrize(
+    "word",
+    [
+        "cafe\u0301 nai\u0308ve",  # Latin, decomposed
+        "\u0645\u064f\u062d\u064e\u0645\u0651\u064e\u062f",  # Arabic with vowel marks
+        "\u0939\u093f\u0928\u094d\u0926\u0940",  # Devanagari, vowel signs (Mc) and virama
+        "\u05e9\u05c1\u05b8\u05dc\u05d5\u05b9\u05dd",  # Hebrew with points
+        "\u0e20\u0e32\u0e29\u0e32\u0e44\u0e17\u0e22\u0e48",  # Thai with a tone mark
+        "\u1f00\u0313\u0342 \u03b1\u0301",  # Greek, decomposed
+        "\u2764\ufe0f \u845b\U000e0100",  # variation selectors after a base
+        "\u0995\u09cb\u09a8",  # Bengali, a vowel sign (Mc)
+    ],
+)
+def test_a_decomposed_word_in_any_script_comes_through_unchanged(word: str) -> None:
+    assert terminal_safe(word, encoding="utf-8") == word
+    assert terminal_safe(unicodedata.normalize("NFD", word), encoding="utf-8") == (
+        unicodedata.normalize("NFD", word)
+    )
+
+
+def test_a_long_run_of_marks_is_read_in_linear_time() -> None:
+    shown = terminal_safe("x" + "\u0301" * 200_000, encoding="utf-8")
+    assert shown.count("\\u0301") == 200_000 - 30

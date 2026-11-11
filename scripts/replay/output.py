@@ -11,7 +11,7 @@ import json
 import re
 import sys
 import unicodedata
-from collections.abc import Iterable, Mapping, Sequence
+from collections.abc import Callable, Iterable, Mapping, Sequence
 from pathlib import Path
 from typing import Any
 
@@ -21,39 +21,113 @@ from scripts.replay.record import errors
 # line and paragraph separators, and lone surrogates: none of them is printable text.
 _UNPRINTABLE = frozenset({"Cc", "Cf", "Zl", "Zp", "Cs"})
 
+# Unicode Standard Annex #15 (Unicode Normalization Forms), Stream-Safe Text
+# Format: no more than 30 non-starters follow one starter. Every combining mark
+# on one base counts here, so no base carries a longer stack.
+_STREAM_SAFE_MARKS = 30
+
 
 def terminal_safe(text: object, *, encoding: str | None = None) -> str:
-    """``text`` with every unprintable character shown as a visible escape.
+    """``text`` with every character that would not draw as itself shown as a visible escape.
 
     A string read from a stored run is data, not terminal input: an escape
     sequence, a carriage return or a bidirectional override in it must not act
-    on the operator's terminal. Printable text, non-ASCII letters included, is
-    unchanged. A newline is shown as ``\\n`` so one value stays on one line; the
-    lines of a rendered text come from the renderer alone. A backslash is shown
-    doubled, so a newline and the two characters backslash and ``n`` read apart
-    and the text can be turned back into the value. A character the
-    stream's ``encoding`` (default: ``sys.stdout``'s) cannot carry, such as a
-    letter on a Windows code page, is shown as an escape too, so printing never
-    raises; a UTF-8 stream shows every printable character as it was. One pass, linear.
+    on the operator's terminal. Printable text in any script is unchanged,
+    combining marks on their base letter included. A newline is shown as ``\\n``
+    so one value stays on one line; the lines of a rendered text come from the
+    renderer alone. A backslash is shown doubled, so a newline and the two
+    characters backslash and ``n`` read apart and the text can be turned back
+    into the value.
+
+    A combining mark draws on the characters beside it, so three kinds are
+    shown as escapes: an overlay mark (combining class 1) or an enclosing mark
+    (category ``Me``), which draws over or around its neighbours; a mark with no
+    base inside the value (the value's first character, or one after a
+    character shown as an escape), which would attach to the text printed
+    before it; and a mark past the Stream-Safe limit of marks on one base. A
+    character the stream's ``encoding`` (default: ``sys.stdout``'s) cannot
+    carry, such as a letter on a Windows code page, is shown as an escape too,
+    so printing never raises; a UTF-8 stream shows every printable character as
+    it was. One pass, linear.
     """
+    text = str(text)
+    fits = _fits(text, encoding or getattr(sys.stdout, "encoding", None))
     out: list[str] = []
-    for char in str(text):
+    base = False  # the last character shown is one a mark may attach to
+    marks = 0  # marks shown on that base
+    for char in text:
         if char == "\n":
             out.append("\\n")
-        elif char == "\\":
+            base = False
+            continue
+        if char == "\\":
             out.append("\\\\")
-        elif unicodedata.category(char) in _UNPRINTABLE:
-            code = ord(char)
-            out.append(
-                f"\\x{code:02x}"
-                if code < 0x100
-                else f"\\u{code:04x}"
-                if code < 0x10000
-                else f"\\U{code:08x}"
-            )
+            base, marks = True, 0
+            continue
+        category = unicodedata.category(char)
+        if category in _UNPRINTABLE or not fits(char):
+            out.append(_escape(char))
+            base = False
+            continue
+        if category[0] == "M":
+            if (
+                not base
+                or category == "Me"
+                or unicodedata.combining(char) == 1
+                or marks >= _STREAM_SAFE_MARKS
+            ):
+                out.append(_escape(char))
+                base = False
+                continue
+            marks += 1
         else:
-            out.append(char)
-    return _encodable("".join(out), encoding or getattr(sys.stdout, "encoding", None))
+            base, marks = True, 0
+        out.append(char)
+    return "".join(out)
+
+
+def _escape(char: str) -> str:
+    code = ord(char)
+    return (
+        f"\\x{code:02x}"
+        if code < 0x100
+        else f"\\u{code:04x}"
+        if code < 0x10000
+        else f"\\U{code:08x}"
+    )
+
+
+def _fits(text: str, encoding: str | None) -> Callable[[str], bool]:
+    """Whether a character of ``text`` is one ``encoding`` can carry.
+
+    When the whole text encodes, every character does and none is tried alone.
+    """
+    if not encoding:
+        return _always
+    try:
+        text.encode(encoding)
+    except UnicodeEncodeError:
+        pass
+    except LookupError:
+        return _always
+    else:
+        return _always
+    seen: dict[str, bool] = {}
+
+    def fits(char: str) -> bool:
+        if char not in seen:
+            try:
+                char.encode(encoding)
+                seen[char] = True
+            except UnicodeEncodeError:
+                seen[char] = False
+        return seen[char]
+
+    return fits
+
+
+def _always(char: str) -> bool:
+    return True
 
 
 _LONE_SURROGATE = re.compile("[\ud800-\udfff]")
@@ -64,23 +138,12 @@ def write_json(path: Path, value: Any, *, newline: bool = False, **dumps: Any) -
 
     A lone surrogate, which a stored text may hold, cannot be encoded: it is
     written as its JSON escape, so the file stays valid and loads back to the
-    value. Every other byte is what ``json.dumps`` gives.
+    value. The bytes are written as they are, with no line-end translation, so
+    every operating system writes the same file. Every other byte is what
+    ``json.dumps`` gives.
     """
     text = _LONE_SURROGATE.sub(lambda m: f"\\u{ord(m.group()):04x}", json.dumps(value, **dumps))
-    path.write_text(text + ("\n" if newline else ""), encoding="utf-8")
-
-
-def _encodable(text: str, encoding: str | None) -> str:
-    """``text`` with each character ``encoding`` cannot carry shown as an escape."""
-    if not encoding:
-        return text
-    try:
-        text.encode(encoding)
-    except UnicodeEncodeError:
-        return text.encode(encoding, "backslashreplace").decode(encoding)
-    except LookupError:
-        return text
-    return text
+    path.write_bytes((text + ("\n" if newline else "")).encode("utf-8"))
 
 
 def _s(value: object) -> str:
