@@ -48,3 +48,12 @@
   the paragraph is held, a refusal that lists the facts speaking of a sentence names the `inv.N`
   rows among them: in place of the facts they replace, and beside them for a row that replaces
   none (the capture, the sandbox, the code read); elsewhere the rows speak of no sentence.
+
+### Security
+
+- **The replay scripts show a stored run's text with every unprintable character escaped
+  (T-601).** The run's name, tool names, recorded reasons and the other words a replay prints
+  from a stored run are shown on the terminal with control characters (escape sequences,
+  carriage returns, backspaces), bidirectional overrides, zero-width marks and line separators
+  written as visible escapes (`\x1b`, `‮`), and a newline inside one value as `\n`. Printable
+  text is unchanged, and the `--json` and `--golden` files keep the raw text.

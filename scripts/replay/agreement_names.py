@@ -263,7 +263,9 @@ def read_run(run: Path) -> dict[str, Any]:
 
 
 def _print(read: dict[str, Any]) -> None:
-    print(f"== {read['run']}: {read['passages']} passages shown")
+    from scripts.replay.output import terminal_safe as safe
+
+    print(f"== {safe(read['run'])}: {read['passages']} passages shown")
     print(
         f"   facts shown: {read['facts_before']} characters before, {read['facts_after']} after "
         f"(ledger.N {read['names_chars']}, limitation facts {read['limitation_chars']})"
@@ -273,11 +275,12 @@ def _print(read: dict[str, Any]) -> None:
         + ", ".join(f"{f}->{a}{' (redo)' if r else ''}" for f, a, r in read["answered"])
     )
     for row in read["names"]:
-        print(f" - [{row['passage']}] {row['name']}: {row['outcome']}")
-        print(f"     sentence: {_cut(row['sentence'], 220)}")
+        print(f" - [{safe(row['passage'])}] {safe(row['name'])}: {safe(row['outcome'])}")
+        print(f"     sentence: {safe(_cut(row['sentence'], 220))}")
         for fact in row["facts"]:
             print(
-                f"     {fact['id']} (cites {', '.join(fact['cites'])}): {_cut(fact['text'], 400)}"
+                f"     {safe(fact['id'])} (cites {safe(', '.join(fact['cites']))}): "
+                f"{safe(_cut(fact['text'], 400))}"
             )
     for row in read["failed"]:
         before = "held before too" if row["held_before"] else "not held before"
@@ -285,11 +288,11 @@ def _print(read: dict[str, Any]) -> None:
         # it is held by a failure no later call redid.
         redone = "; ".join(row["redone"])
         print(
-            f" - [limitations] failed call ({before}): {row['outcome']}"
-            + (f" ({redone})" if redone else "")
-            + (f"; cite {' and '.join(row['cite'])}" if row["cite"] else "")
+            f" - [limitations] failed call ({before}): {safe(row['outcome'])}"
+            + (f" ({safe(redone)})" if redone else "")
+            + (f"; cite {safe(' and '.join(row['cite']))}" if row["cite"] else "")
         )
-        print(f"     sentence: {_cut(row['sentence'], 220)}")
+        print(f"     sentence: {safe(_cut(row['sentence'], 220))}")
 
 
 def main(argv: list[str] | None = None) -> int:

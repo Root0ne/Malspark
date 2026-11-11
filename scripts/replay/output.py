@@ -7,10 +7,44 @@ them (``--show-text``), and are printed only then.
 
 from __future__ import annotations
 
+import unicodedata
 from collections.abc import Mapping, Sequence
 from typing import Any
 
 from scripts.replay.record import errors
+
+# Controls, format characters (bidirectional overrides, zero-width marks) and the
+# line and paragraph separators: none of them is printable text.
+_UNPRINTABLE = frozenset({"Cc", "Cf", "Zl", "Zp"})
+
+
+def terminal_safe(text: object, *, keep_newlines: bool = False) -> str:
+    """``text`` with every unprintable character shown as a visible escape.
+
+    A string read from a stored run is data, not terminal input: an escape
+    sequence, a carriage return or a bidirectional override in it must not act
+    on the operator's terminal. Printable text, non-ASCII letters included, is
+    unchanged. A newline is shown as ``\\n`` so one value stays on one line, unless
+    ``keep_newlines`` is set for a text that is built of lines. One pass, linear.
+    """
+    out: list[str] = []
+    for char in str(text):
+        if char == "\n" and keep_newlines:
+            out.append(char)
+        elif char == "\n":
+            out.append("\\n")
+        elif unicodedata.category(char) in _UNPRINTABLE:
+            code = ord(char)
+            out.append(
+                f"\\x{code:02x}"
+                if code < 0x100
+                else f"\\u{code:04x}"
+                if code < 0x10000
+                else f"\\U{code:08x}"
+            )
+        else:
+            out.append(char)
+    return "".join(out)
 
 
 def _codes(codes: Mapping[str, int] | None) -> str:

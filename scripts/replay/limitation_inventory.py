@@ -62,15 +62,18 @@ def read_run(run: Path) -> dict[str, Any]:
 
 
 def _print(read: dict[str, Any]) -> None:
+    from scripts.replay.output import terminal_safe
+
     from malspark.reporting.limitation_inventory import LIST_LABEL
 
-    print(f"== {read['run']}")
+    # The run's name and the rows' words come from the stored run: shown, never obeyed.
+    print(f"== {terminal_safe(read['run'])}")
     print(LIST_LABEL)
     for text in read["printed"]:
-        print(f"- {text}")
+        print(f"- {terminal_safe(text)}")
     print("Shown, not printed:")
     for text in read["not_printed"]:
-        print(f"  * {text}")
+        print(f"  * {terminal_safe(text)}")
 
 
 def main(argv: list[str] | None = None) -> int:

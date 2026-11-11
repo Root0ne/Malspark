@@ -392,12 +392,14 @@ def remerge(run: Path) -> dict[str, Any]:
 
 
 def _print(record: dict[str, Any]) -> None:
-    print(f"== {record['run']} (mediation prompts at log lines {record['mediations']})")
+    from scripts.replay.output import terminal_safe as safe
+
+    print(f"== {safe(record['run'])} (mediation prompts at log lines {record['mediations']})")
     for row in record["revisions"]:
         old, new = row["earlier_rule"], row["this_rule"]
         print(
-            f"  round {row['round']} {row['analyst']}: {row['in_force']} in force, "
-            f"{row['revision_blocks']} revision block(s); logged: {row['logged']}"
+            f"  round {row['round']} {safe(row['analyst'])}: {row['in_force']} in force, "
+            f"{row['revision_blocks']} revision block(s); logged: {safe(row['logged'])}"
         )
         for label, said in (("earlier", old), ("this   ", new)):
             print(
@@ -410,7 +412,7 @@ def _print(record: dict[str, Any]) -> None:
         for kept in row["kept_in_force_now"]:
             print(
                 f"    kept now (claim {kept['claim']}, {kept['now']}; nearest block "
-                f"{kept['nearest_share']:.2f}): {kept['sentence'][:110]}"
+                f"{kept['nearest_share']:.2f}): {safe(kept['sentence'][:110])}"
             )
 
 
