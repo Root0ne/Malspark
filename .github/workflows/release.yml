@@ -87,7 +87,7 @@ jobs:
   images:
     name: Image (${{ matrix.name }}, ${{ matrix.arch }})
     runs-on: ${{ matrix.arch == 'arm64' && 'ubuntu-24.04-arm' || 'ubuntu-latest' }}
-    timeout-minutes: 90
+    timeout-minutes: 45
     permissions:
       contents: read
       packages: write

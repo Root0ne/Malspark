@@ -99,7 +99,7 @@ jobs:
   test-macos-shard-map:
     name: Test shard map (macOS arm64)
     runs-on: macos-15
-    timeout-minutes: 30
+    timeout-minutes: 15
     env:
       HOMEBREW_NO_AUTO_UPDATE: "1"
 
@@ -135,6 +135,7 @@ jobs:
   test-macos:
     name: Test Suite (macOS arm64)
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     needs: [test-macos-shard, test-macos-shard-map]
     # Runs whatever the shards' outcome, so a failed, cancelled or skipped
     # shard fails this check instead of leaving it skipped.
