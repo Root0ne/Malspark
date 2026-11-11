@@ -341,16 +341,16 @@ def test_a_report_s_misp_event_is_a_part_of_the_package(tmp_path: Path):
                     "meta-category": "file",
                     "template_uuid": "688c46fb-5edb-40a3-8273-1af7923e2215",
                     "template_version": "25",
+                    # The md5 is an attribute of the event already: not repeated.
                     "Attribute": [
                         {
-                            "uuid": str(uuid.uuid5(namespace, f"{owner}|file|{rel}|{value}")),
-                            "object_relation": rel,
-                            "type": rel,
+                            "uuid": str(uuid.uuid5(namespace, f"{owner}|file|sha256|{'ab' * 32}")),
+                            "object_relation": "sha256",
+                            "type": "sha256",
                             "category": "Payload delivery",
-                            "value": value,
+                            "value": "ab" * 32,
                             "to_ids": True,
                         }
-                        for rel, value in (("md5", "cd" * 16), ("sha256", "ab" * 32))
                     ],
                 }
             ],
