@@ -1479,14 +1479,18 @@ class ExtendedSTIXRenderer:
                 objects, malware_id, sample_similarity_pattern(report.identity.hashes)
             )
         objects = _produced_by(objects, identity.id, self.declined)
-        # Every id derived from what identifies the object and every time the
-        # report's own (``_with_stable_ids``): the same report renders to the
-        # same bundle, byte for byte.
+        # Every id derived from the report's identity and what identifies the
+        # object, and every time the report's own (``_with_stable_ids``): the
+        # same report renders to the same bundle, byte for byte, and another
+        # run of the sample to other objects, so no id carries two ``created``.
         sample = str(sha256 or "")
         return Bundle(
-            id=_stable_id("bundle", sample),
+            id=_stable_id("bundle", sample, report.generated_at.isoformat()),
             objects=_with_tlp(
-                _with_stable_ids(objects, sample, report.generated_at, self.renamed), report.tlp
+                _with_stable_ids(
+                    objects, sample, report.generated_at, self.renamed, own=malware_id
+                ),
+                report.tlp,
             ),
         )
 
@@ -1733,38 +1737,44 @@ def _stable_id(kind: str, *identifying: str) -> str:
     return f"{kind}--{uuid.UUID(bytes=derived.bytes, version=4)}"
 
 
-def _identifying(obj: Any, sample: str) -> tuple[str, ...] | None:
+def _identifying(obj: Any, report: tuple[str, str], own: str | None) -> tuple[str, ...] | None:
     """What identifies one exported object besides its kind, or ``None`` to keep its id.
 
-    An indicator is its sample and its pattern; a malware object its sample,
-    its name and whether it stands for the family; a relationship its type and
-    its two ends (ids already derived); a process its sample, its pid, its
+    ``report`` is the report's identity (the sample's SHA-256 and the time the
+    report was built), first in every key: an id is one report's, never shared
+    by two runs. An indicator is its pattern; the sample's own malware object
+    (``own``) the report alone, whatever it is named, and any other malware
+    object its name and whether it stands for the family; a relationship its
+    type and its two ends (ids already derived); a process its pid, its
     command line and its image. The report, the note and the observed-data are
-    the sample's one each. The technique objects and the producer's identity
+    the report's one each. The technique objects and the producer's identity
     keep the ids they are derived with already, and a cyber-observable the
     standard derives (a ``file``) or one the judge wrote under any other type
     keeps the id it has.
     """
     kind = str(getattr(obj, "type", "") or "")
     if kind == "indicator":
-        return (sample, str(getattr(obj, "pattern", "") or ""))
+        return (*report, str(getattr(obj, "pattern", "") or ""))
     if kind == "malware":
-        return (sample, str(getattr(obj, "name", "") or ""), str(getattr(obj, "is_family", None)))
+        if own is not None and str(getattr(obj, "id", "")) == own:
+            return report
+        return (*report, str(getattr(obj, "name", "") or ""), str(getattr(obj, "is_family", None)))
     if kind == "relationship":
         return (
+            *report,
             str(getattr(obj, "relationship_type", "") or ""),
             str(getattr(obj, "source_ref", "") or ""),
             str(getattr(obj, "target_ref", "") or ""),
         )
     if kind == "process":
         return (
-            sample,
+            *report,
             str(getattr(obj, "pid", None)),
             str(getattr(obj, "command_line", None) or ""),
             str(getattr(obj, "image_ref", None) or ""),
         )
     if kind in {"report", "note", "observed-data"}:
-        return (sample,)
+        return report
     return None
 
 
@@ -1787,12 +1797,19 @@ def _relinked_refs(obj: Any, remap: Mapping[str, str]) -> Any:
 
 
 def _with_stable_ids(
-    objects: list[Any], sample: str, stamp: datetime, renamed: dict[str, str] | None = None
+    objects: list[Any],
+    sample: str,
+    stamp: datetime,
+    renamed: dict[str, str] | None = None,
+    *,
+    own: str | None = None,
 ) -> list[Any]:
-    """``objects`` with ids derived from what identifies them and the report's own times.
+    """``objects`` with ids derived from the report and what identifies them, and its own times.
 
     Each object :func:`_identifying` names is given the id ``_stable_id``
-    derives, and every reference to its old id follows it. Relationships are
+    derives from the report's identity (``sample`` and ``stamp``) and the
+    object's, ``own`` being the id of the sample's own malware object, and
+    every reference to its old id follows it. Relationships are
     derived last, from ends already moved. Two objects that the recipe cannot
     tell apart (two notes, two edges of one type between the same ends) are
     told apart by their order in the bundle. ``created`` and ``modified`` are
@@ -1802,13 +1819,14 @@ def _with_stable_ids(
     consumer importing it again holds one object per object. ``renamed``, when
     given, is filled with ``{the id an object came with: its derived id}``.
     """
+    report = (sample, stamp.isoformat())
     used: set[str] = {
-        str(getattr(obj, "id", "")) for obj in objects if _identifying(obj, sample) is None
+        str(getattr(obj, "id", "")) for obj in objects if _identifying(obj, report, own) is None
     }
     remap: dict[str, str] = {}
 
     def _derive(obj: Any, ends_moved: Any) -> None:
-        identifying = _identifying(ends_moved, sample)
+        identifying = _identifying(ends_moved, report, own)
         if identifying is None:
             return
         kind = str(obj.type)

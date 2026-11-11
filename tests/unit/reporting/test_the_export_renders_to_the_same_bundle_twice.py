@@ -8,6 +8,12 @@ stored bundle was never rendered again. Each id is now derived from what
 identifies the object (the sample's SHA-256, the kind, the pattern, a
 relationship's ends) in one namespace, and every time is the time the report
 was built.
+
+Each id is the report's: the report's identity (the sample's SHA-256 and the
+time it was built) is in every key, so another run of the same sample yields
+other objects and no id is ever published with two ``created`` values. The
+sample's own malware object is keyed on the report alone, not on the name the
+run gave it.
 """
 
 from __future__ import annotations
@@ -29,6 +35,7 @@ from malspark.schemas.stix_models import STIX_ID_NAMESPACE, Bundle, Indicator, M
 
 SHA256 = "36dabc40fa8983ce900a90b8156d2c754875fe1b5413a997843c4a0ef3908220"
 BUILT = datetime(2026, 5, 16, 8, 30, tzinfo=UTC)
+REPORT = (SHA256, "2026-05-16T08:30:00+00:00")
 C2 = "82.157.13.47"
 
 
@@ -113,14 +120,14 @@ def test_each_id_is_derived_from_what_identifies_the_object() -> None:
     for obj in bundle["objects"]:
         by_type.setdefault(obj["type"], []).append(obj)
 
-    assert bundle["id"] == _derived("bundle", SHA256)
+    assert bundle["id"] == _derived("bundle", *REPORT)
     (malware,) = by_type["malware"]
-    assert malware["id"] == _derived("malware", SHA256, "loader sample", "False")
+    assert malware["id"] == _derived("malware", *REPORT)
     (c2,) = [o for o in by_type["indicator"] if C2 in o["pattern"]]
     assert c2 == {
         "type": "indicator",
         "spec_version": "2.1",
-        "id": _derived("indicator", SHA256, f"[ipv4-addr:value = '{C2}']"),
+        "id": _derived("indicator", *REPORT, f"[ipv4-addr:value = '{C2}']"),
         "created": "2026-05-16T08:30:00Z",
         "modified": "2026-05-16T08:30:00Z",
         "created_by_ref": PRODUCER_IDENTITY_ID,
@@ -138,12 +145,12 @@ def test_each_id_is_derived_from_what_identifies_the_object() -> None:
         if o["relationship_type"] == "indicates" and o["source_ref"] == c2["id"]
     ]
     assert [o["id"] for o in indicates] == [
-        _derived("relationship", "indicates", c2["id"], malware["id"])
+        _derived("relationship", *REPORT, "indicates", c2["id"], malware["id"])
     ]
     (report_object,) = by_type["report"]
-    assert report_object["id"] == _derived("report", SHA256)
+    assert report_object["id"] == _derived("report", *REPORT)
     (observed,) = by_type["observed-data"]
-    assert observed["id"] == _derived("observed-data", SHA256)
+    assert observed["id"] == _derived("observed-data", *REPORT)
     assert {o["id"] for o in by_type["process"]} <= set(observed["object_refs"])
 
 
@@ -183,4 +190,57 @@ def test_the_judge_s_labels_name_the_ids_the_export_publishes_under() -> None:
         "the address": "indicator--1",
         "shared": [malware["id"], "indicator--1"],
     }
-    assert malware["id"] == _derived("malware", SHA256, "loader sample", "False")
+    assert malware["id"] == _derived("malware", *REPORT)
+
+
+def _ids(bundle: dict) -> dict[str, list[str]]:
+    by_type: dict[str, list[str]] = {}
+    for obj in bundle["objects"]:
+        by_type.setdefault(obj["type"], []).append(obj["id"])
+    return by_type
+
+
+def test_the_sample_s_malware_object_keeps_its_id_whatever_the_run_names_it() -> None:
+    judge = _judge()
+    renamed = Bundle(
+        objects=[
+            Malware(id="malware--1", name="renamed family", is_family=True),
+            *judge.objects[1:],
+        ]
+    )
+
+    first = ExtendedSTIXRenderer().render(_report(), judge).model_dump(mode="json")
+    second = ExtendedSTIXRenderer().render(_report(), renamed).model_dump(mode="json")
+
+    assert [o["name"] for o in second["objects"] if o["type"] == "malware"] == ["renamed family"]
+    assert (
+        _ids(first)["malware"]
+        == _ids(second)["malware"]
+        == ["malware--80e6e3f8-f7e4-4b0f-bcd0-dda8910191c6"]
+    )
+    assert _ids(first)["malware"] == [_derived("malware", *REPORT)]
+    assert first["id"] == second["id"]
+
+
+def test_another_run_of_the_sample_is_other_objects() -> None:
+    later = _report()
+    later.generated_at = datetime(2026, 5, 17, 9, 0, tzinfo=UTC)
+
+    first = ExtendedSTIXRenderer().render(_report(), _judge()).model_dump(mode="json")
+    second = ExtendedSTIXRenderer().render(later, _judge()).model_dump(mode="json")
+
+    assert first["id"] != second["id"]
+    kept = {
+        kind: sorted(set(ids) & set(_ids(second).get(kind, [])))
+        for kind, ids in _ids(first).items()
+    }
+    # Only what is not one report's keeps its id: the producer's identity, the
+    # TLP marking the standard fixes and the files the standard derives ids for.
+    assert {kind: ids for kind, ids in kept.items() if ids} == {
+        "file": [
+            "file--89cf33b0-d6ed-55ab-ad48-857fa71e17f5",
+            "file--92f3be57-c516-591d-98b0-b5e7c5424cb3",
+        ],
+        "identity": [PRODUCER_IDENTITY_ID],
+        "marking-definition": ["marking-definition--94868c89-83c2-464b-929b-a1a8aa3c8487"],
+    }

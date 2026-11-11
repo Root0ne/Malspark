@@ -122,9 +122,11 @@ UNPUBLISHED_NOTICE = (
 
 
 # The namespace the export derives every other object id it writes in
-# (``reporting.renderers.stix_renderer``): a UUIDv5 over the object's kind and
-# what identifies it (the sample's SHA-256, a pattern, a relationship's ends),
-# so one object of one sample is one object across renders and across runs.
+# (``reporting.renderers.stix_renderer``): a UUIDv5 over the object's kind, the
+# report's identity (the sample's SHA-256 and the time the report was built)
+# and what identifies the object (a pattern, a relationship's ends), so one
+# object of one report is one object across renders, and another run of the
+# sample is other objects.
 STIX_ID_NAMESPACE = uuid.uuid5(uuid.NAMESPACE_URL, "malspark:stix")
 
 
