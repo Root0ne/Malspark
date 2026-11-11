@@ -260,6 +260,34 @@ OLD_RULE_STIX_NOTE = (
 )
 
 
+def _lacks_standing(stored: Any) -> bool:
+    """Whether a stored rule lacks what the report says of it (``printed``, ``standing``)."""
+    return isinstance(stored, dict) and (
+        stored.get("printed") is None or stored.get("standing") is None
+    )
+
+
+def _with_standing(stored: Any) -> Any:
+    """A stored rule with a missing ``printed``/``standing`` filled by ``rule_standing``.
+
+    The server's default download reads the standing of every rule the same way,
+    so the console's rule card and the file agree. A rule the model cannot read
+    is served as stored.
+    """
+    if not _lacks_standing(stored):
+        return stored
+    try:
+        rule = DetectionRule.model_validate(stored)
+    except Exception:  # noqa: BLE001 — a rule that will not read has no standing
+        return stored
+    printed, standing = rule_standing(rule)
+    return {
+        **stored,
+        "printed": stored["printed"] if stored.get("printed") is not None else printed,
+        "standing": stored["standing"] if stored.get("standing") is not None else standing,
+    }
+
+
 def with_current_iocs(mr: Any, owner: str) -> tuple[Any, str | None]:
     """The stored report as served: its IOC table rebuilt, and MISP attributes when it has none.
 
@@ -268,7 +296,9 @@ def with_current_iocs(mr: Any, owner: str) -> tuple[Any, str | None]:
     statements carry, after the stored ones, the sentences the exports mark
     against what the run published (``prose_decisions``). A report stored
     before MISP attributes were built has them built here, their uuids derived
-    from ``owner`` (the report's id). The second value is the note a report
+    from ``owner`` (the report's id). A drafted rule stored before ``printed``
+    and ``standing`` existed has them filled from ``rule_standing``, so the
+    console and the default download agree. The second value is the note a report
     stored under the earlier rule carries about its STIX bundle, else
     ``None``. A report the model cannot read is served as stored.
     """
@@ -285,6 +315,9 @@ def with_current_iocs(mr: Any, owner: str) -> tuple[Any, str | None]:
     flagged = with_decided_statements(list(typed.flagged_statements), typed)
     if len(flagged) > len(typed.flagged_statements):
         served["flagged_statements"] = [row.model_dump(mode="json") for row in flagged]
+    stored_rules = mr.get("detection_signatures")
+    if isinstance(stored_rules, list) and any(_lacks_standing(rule) for rule in stored_rules):
+        served["detection_signatures"] = [_with_standing(rule) for rule in stored_rules]
     note = None
     if mr.get("misp_attributes") is None:
         served["misp_attributes"] = build_misp_attributes(typed, table, owner=owner)

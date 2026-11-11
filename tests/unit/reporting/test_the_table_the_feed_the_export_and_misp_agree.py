@@ -33,6 +33,7 @@ from app.services.report_service import (
     OLD_RULE_STIX_NOTE,
     ReportService,
     ioc_feed_rows,
+    signature_download,
     with_current_iocs,
 )
 from malspark.core.previous_name import PREVIOUS_NAME
@@ -820,6 +821,47 @@ class TestAReportStoredBeforeTheseFields:
         assert ("md5", MD5) in {(a["type"], a["value"]) for a in served["misp_attributes"]}
         assert note == OLD_RULE_STIX_NOTE
         assert stored.get("misp_attributes") is None
+
+    def test_a_rule_stored_without_its_standing_is_served_with_it(self) -> None:
+        printed_rule = {"kind": "sigma", "name": "Drops a file", "body": "title: drops"}
+        broken_rule = {**printed_rule, "name": "Broken", "compile_error": "bad"}
+        already = {**printed_rule, "name": "Stated", "printed": True, "standing": "as stored"}
+        stored = {
+            **self._stored(),
+            "detection_signatures": [printed_rule, broken_rule, already],
+        }
+
+        served, _note = with_current_iocs(stored, OWNER)
+
+        assert served["detection_signatures"] == [
+            {
+                **printed_rule,
+                "printed": True,
+                "standing": (
+                    "Precision: it selects on values this run publishes or a sandbox recorded; "
+                    "not run against any other log (no retro-hunt), so how often it fires "
+                    "elsewhere is not measured."
+                ),
+            },
+            {
+                **broken_rule,
+                "printed": False,
+                "standing": (
+                    "Not printed in the analyst report: it does not compile; "
+                    "its body is in the evidence bundle."
+                ),
+            },
+            already,
+        ]
+        # The default download prints exactly the rules the console now marks printed.
+        assert signature_download(served["detection_signatures"], "sigma") == (
+            "# Drops a file\ntitle: drops\n---\n# Stated\ntitle: drops\n"
+        )
+        assert stored["detection_signatures"][0] == {
+            "kind": "sigma",
+            "name": "Drops a file",
+            "body": "title: drops",
+        }
 
     def test_a_report_built_under_the_rule_carries_no_note(self) -> None:
         stored = _report(misp_attributes=[]).model_dump(mode="json")
