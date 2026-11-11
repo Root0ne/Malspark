@@ -528,6 +528,24 @@ class TestTheMarkAsksForFiveMinutes:
         assert not [r for r in caplog.records if "asking for an hour followed" in r.getMessage()]
 
     @pytest.mark.parametrize("ttl", ["5m", "1h"])
+    def test_a_breakpoint_before_a_noted_later_turn_keeps_the_setting(
+        self, wire: Wire, caplog: pytest.LogCaptureFixture, ttl: str
+    ) -> None:
+        # The opening turn, sent as one text block, carries the breakpoint
+        # before the newest answer; the noted turn is the newest user turn.
+        opening = HumanMessage(content=[{"type": "text", "text": TASK}])
+        with caplog.at_level("WARNING", logger="malspark"):
+            _model(prompt_cache_ttl=ttl).invoke(
+                [SystemMessage(content=SYSTEM), opening, _answered(2), _noted(QUESTION)]
+            )
+        (body,) = wire.bodies
+        assert wire.refused == []
+        before = HOUR if ttl == "1h" else MARK
+        assert _marks(body) == [(0, 0, before), (2, 0, MARK)]
+        assert _in_order(body)
+        assert not [r for r in caplog.records if "asking for an hour followed" in r.getMessage()]
+
+    @pytest.mark.parametrize("ttl", ["5m", "1h"])
     def test_no_noted_call_s_request_is_shortened_after_it_is_built(
         self, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture, ttl: str
     ) -> None:
