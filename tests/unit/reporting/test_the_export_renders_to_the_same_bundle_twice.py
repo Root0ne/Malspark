@@ -161,3 +161,26 @@ def test_every_time_is_the_time_the_report_was_built() -> None:
     indicators = [o for o in bundle["objects"] if o["type"] == "indicator"]
     assert len(indicators) == 2
     assert {o["valid_from"] for o in indicators} == {"2026-05-16T08:30:00Z"}
+
+
+def test_the_judge_s_labels_name_the_ids_the_export_publishes_under() -> None:
+    from malspark.reporting.renderers.stix_renderer import relabelled
+
+    renderer = ExtendedSTIXRenderer()
+    bundle = renderer.render(_report(), _judge()).model_dump(mode="json")
+    (malware,) = [o for o in bundle["objects"] if o["type"] == "malware"]
+
+    labels = {
+        "the sample": "malware--1",
+        "the address": "indicator--1",
+        "shared": ["malware--1", "indicator--1"],
+    }
+
+    # The judge's address indicator is folded into the one the export mints
+    # for the same value, so the export does not carry it: its id stays.
+    assert relabelled(labels, renderer.renamed) == {
+        "the sample": malware["id"],
+        "the address": "indicator--1",
+        "shared": [malware["id"], "indicator--1"],
+    }
+    assert malware["id"] == _derived("malware", SHA256, "loader sample", "False")

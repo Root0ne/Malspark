@@ -851,6 +851,10 @@ class ExtendedSTIXRenderer:
         # node writes these rows beside the run's other findings so a reader
         # of the export is told what is not in it.
         self.declined: list[tuple[str, str]] = []
+        # Per render: ``{the id an object came with: the id the export derived
+        # for it}`` (``_with_stable_ids``), so the judge's label map can name
+        # the id each of its objects is published under (``relabelled``).
+        self.renamed: dict[str, str] = {}
 
     def render(
         self,
@@ -909,6 +913,7 @@ class ExtendedSTIXRenderer:
         objects: list[Any] = []
         self.unlinked = []
         self.declined = []
+        self.renamed = {}
         ledger_order = {eid: i for i, eid in reversed(list(enumerate(ledger_ids or [])))}
         minted_family_id: str | None = None
         # A verdict of Benign is a finding that this sample is not malware, so
@@ -1480,7 +1485,9 @@ class ExtendedSTIXRenderer:
         sample = str(sha256 or "")
         return Bundle(
             id=_stable_id("bundle", sample),
-            objects=_with_tlp(_with_stable_ids(objects, sample, report.generated_at), report.tlp),
+            objects=_with_tlp(
+                _with_stable_ids(objects, sample, report.generated_at, self.renamed), report.tlp
+            ),
         )
 
     def _without_empty_references(self, objects: list[Any]) -> list[Any]:
@@ -1779,7 +1786,9 @@ def _relinked_refs(obj: Any, remap: Mapping[str, str]) -> Any:
     return obj.model_copy(update=update) if update else obj
 
 
-def _with_stable_ids(objects: list[Any], sample: str, stamp: datetime) -> list[Any]:
+def _with_stable_ids(
+    objects: list[Any], sample: str, stamp: datetime, renamed: dict[str, str] | None = None
+) -> list[Any]:
     """``objects`` with ids derived from what identifies them and the report's own times.
 
     Each object :func:`_identifying` names is given the id ``_stable_id``
@@ -1790,7 +1799,8 @@ def _with_stable_ids(objects: list[Any], sample: str, stamp: datetime) -> list[A
     ``stamp`` on every object, and so is ``valid_from`` where nobody wrote one:
     the time the report was built, which the stored report keeps, never the
     time of the render. A re-rendered report is then the same bundle, and a
-    consumer importing it again holds one object per object.
+    consumer importing it again holds one object per object. ``renamed``, when
+    given, is filled with ``{the id an object came with: its derived id}``.
     """
     used: set[str] = {
         str(getattr(obj, "id", "")) for obj in objects if _identifying(obj, sample) is None
@@ -1830,7 +1840,25 @@ def _with_stable_ids(objects: list[Any], sample: str, stamp: datetime) -> list[A
         if "valid_from" in type(obj).model_fields and "valid_from" not in obj.model_fields_set:
             update["valid_from"] = stamp
         out.append(obj.model_copy(update=update) if update else obj)
+    if renamed is not None:
+        renamed.update(remap)
     return out
+
+
+def relabelled(labels: Mapping[str, Any], renamed: Mapping[str, str]) -> dict[str, Any]:
+    """The judge's label map with each id it names moved to the id the export derived for it.
+
+    ``labels`` is ``{the judge's label: the id its object was given}``, or a
+    list of ids for a label two objects share (``judge_postprocess``);
+    ``renamed`` is the export's ``ExtendedSTIXRenderer.renamed``. An id the
+    export did not carry stays as it was.
+    """
+    return {
+        label: [renamed.get(str(i), i) for i in ids]
+        if isinstance(ids, list)
+        else renamed.get(str(ids), ids)
+        for label, ids in labels.items()
+    }
 
 
 def _with_tlp(objects: list[Any], level: str) -> list[Any]:
