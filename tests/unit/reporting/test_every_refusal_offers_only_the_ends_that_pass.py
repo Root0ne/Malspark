@@ -5,10 +5,13 @@ does not, or calling code an entry lists not read was offered a keep that every 
 refuses, a refusal of its keep said "or keep the sentence", and one said the platform
 appends the ledger's listing fact to a sentence the round then left out (T-600). One table
 now walks every refusal the round can raise, for every kind of passage it answers, by the
-answer that raises it: each refusal is asserted whole, each end it offers is given back
-as an answer and passes every check, and what it says becomes of the sentence where no
-answer passes is what the round does. A combination that cannot be raised is listed with
-why. Every address, entry and name here is a neutral synthetic value.
+answer that raises it: each refusal is asserted whole, and what it says becomes of the
+sentence where no answer passes is what the round does. Over every kind and every answer, the
+ends each refusal offers are read off the refusal by the module's own end texts: each passes
+when given back, and every end that passes is offered, but in dev's own texts for a sentence
+nothing holds, listed by code; the first turn's lines on each kind are held to the same. A
+combination that cannot be raised is listed with why. Every address, entry and name here is
+a neutral synthetic value.
 """
 
 from __future__ import annotations
@@ -260,6 +263,19 @@ _ANSWERS: dict[str, Any] = {
     "rewrite, a denial no entry follows": lambda s: _row(
         s, "rewrite", ["ledger.1"], rewrite="The loader calls no export, as the table shows."
     ),
+    "keep, a quote too short": lambda s: _row(s, "keep", ["string_resolution"], quote="RC4 key"),
+    "keep, quoting the listing": lambda s: _row(
+        s, "keep", [s.listing], quote="lists its code (decompiled or disassembled)"
+    ),
+    "keep twice": lambda s: [
+        _row(s, "keep", [], reason="no source speaks of it"),
+        _row(s, "keep", [], reason="no source speaks of it"),
+    ],
+    "keep, then the same words cited": lambda s: [
+        _row(s, "keep", [], reason="no source speaks of it"),
+        _row(s, "rewrite", ["string_resolution"], rewrite=s.sentence.rstrip(".") + " [ev_0107]."),
+    ],
+    "drop, no reason": lambda s: _row(s, "drop", []),
     "rows naming no sentence of it": lambda s: [
         _row(s, "keep", ["string_resolution"], sentence=_NOWHERE, quote=_S5[:20]),
         _row(s, "rewrite", ["string_resolution"], sentence=_NOWHERE, rewrite="RC4 [ev_0107]."),
@@ -312,12 +328,21 @@ def _refusals(subject: _Subject, answer: Any) -> list[tuple[str, str, str]]:
     ]
 
 
+def _fits(row: dict[str, Any]) -> bool:
+    """Whether ``row`` fits the schema: one that does not answers nothing."""
+    try:
+        agreement.AgreementRow.model_validate(row)
+    except ValueError:
+        return False
+    return True
+
+
 def _cells(subject: _Subject, answer: Any) -> set[tuple[str, str, str]]:
     """The (kind, code, answer kind) each refusal of ``answer`` stands for: a row's own by its
     decision; one asked of the sentence itself by the decision of the row answering it, or
-    "none" where no row does."""
+    "none" where no row that fits the schema does."""
     rows = _rows_of(answer)
-    answering = [r["decision"] for r in rows if r["sentence"] == subject.sentence]
+    answering = [r["decision"] for r in rows if r["sentence"] == subject.sentence and _fits(r)]
     out = set()
     for code, path, _message in _refusals(subject, answer):
         if path.startswith("sentences."):
@@ -607,6 +632,15 @@ TABLE: dict[str, list[str]] = {
         f"saying what the lines show and what stays unknown, {_DENIAL}, or drop it. "
         f"{_LEFT_OUT}, and {_DASH}. {_CELL_IS}.",
     ],
+    "held cell | keep, a source, no quote | -": [
+        "agreement.keep_unquoted at sentences.0.quote: row 1: communications.1.encryption "
+        "keeps 'Which export the loader calls is not established [ev_0104].' on "
+        "string_resolution, but gives no quote: it names what ledger.1 holds lines on: a keep "
+        "of it as written is refused, and the same words with a citation added are a keep; "
+        "rewrite it in your own words on the lines shown, citing the entry they come from, "
+        f"saying what the lines show and what stays unknown, {_DENIAL}, or drop it. "
+        f"{_LEFT_OUT}, and {_DASH}. {_CELL_IS}.",
+    ],
     "held cell | drop, naming a passage as its source | -": [
         "agreement.unknown_source at sentences.0.sources: row 1 names executive_summary as "
         "what states otherwise than communications.1.encryption, but only the facts, the "
@@ -768,6 +802,12 @@ TABLE: dict[str, list[str]] = {
         f"from, saying what the lines show and what stays unknown, {_DENIAL}, or drop it. "
         f"{_LEFT_OUT}, and {_NOT_PRINTED}. {_EVERY_ROW}",
     ],
+    "conclusion | keep, a source, no quote | left out": [
+        "agreement.keep_unquoted at sentences.0.quote: row 1: conclusion keeps 'The file is a "
+        "loader [ev_0107].' on string_resolution, but gives no quote; quote at least 12 "
+        "characters of the source's words: quote the words of a source that state the same "
+        "thing, or rewrite the sentence on the source that states otherwise.",
+    ],
     "conclusion | drop, naming a passage as its source | as written": [
         "agreement.unknown_source at sentences.0.sources: row 1 names executive_summary as what "
         "states otherwise than conclusion, but only the facts, the section 5 passages and the "
@@ -901,7 +941,9 @@ TABLE: dict[str, list[str]] = {
     "held limitations | drop, naming a passage as its source | left out": [
         "agreement.unknown_source at sentences.0.sources: row 1 names executive_summary as "
         "what states otherwise than limitations, but only the facts, the section 5 passages "
-        f"and the debate rounds listed are sources. Name the sources by their ids. {_LEFT_OUT}.",
+        "and the debate rounds listed are sources. Name the sources by their ids. It says a "
+        "call failed that a later call redid: a keep of it as written is refused; rewrite it "
+        f"citing ev_0107 and saying what it answered, {_DENIAL}, or drop it. {_LEFT_OUT}.",
     ],
     "held limitations | rewrite, no source | left out": [
         "agreement.unknown_source at sentences.0.sources: row 1 names no source. Name the ids "
@@ -946,7 +988,9 @@ TABLE: dict[str, list[str]] = {
         f"{_LEFT_OUT}.",
         f"report.citation_wrong_entry at sentences.0.rewrite: {_WRONG_ENTRY} {_LEFT_OUT}.",
         f"report.entry_contents_misstated at sentences.0.rewrite: {_MISSTATED} {_LEFT_OUT}.",
-        f"report.absence_contradicts_ledger at sentences.0.rewrite: {_NOT_READ} {_LEFT_OUT}.",
+        f"report.absence_contradicts_ledger at sentences.0.rewrite: {_NOT_READ} It says a call "
+        "failed that a later call redid: a keep of it as written is refused; rewrite it citing "
+        f"ev_0107 and saying what it answered, {_DENIAL}, or drop it. {_LEFT_OUT}.",
     ],
     "held limitations | rows naming no sentence of it | left out": [
         "agreement.sentence_not_found at sentences.0.sentence: row 1: the sentence does not "
@@ -982,8 +1026,11 @@ TABLE: dict[str, list[str]] = {
         "agreement.rewrite_ungrounded at sentences.0.rewrite: row 1: the rewrite cites none of "
         "the ids its sources cite, and sources that cite none ground no rewrite. Cite the "
         'entry a source rests on, or keep it naming ledger.1, with "quote": words inside one '
-        "of its rows that name what the sentence names, copied exactly, or drop it. "
-        f"{_LEFT_OUT}.",
+        "of its rows that name what the sentence names, copied exactly, or drop it. It names "
+        'what ledger.1 holds lines on: keep it naming that fact, with "quote": words inside '
+        "one of its rows that name what the sentence names, copied exactly; or rewrite it in "
+        f"your own words on the lines shown, citing an entry the fact cites, {_DENIAL}; or drop "
+        f"it. {_LEFT_OUT}.",
     ],
     "held body | rewrite, misreading entries | left out": [
         "agreement.rewrite_drops_citation at sentences.0.rewrite: row 1: the sentence cites "
@@ -992,7 +1039,11 @@ TABLE: dict[str, list[str]] = {
         f"sentence names, copied exactly, or drop it. {_LEFT_OUT}.",
         f"report.citation_wrong_entry at sentences.0.rewrite: {_WRONG_ENTRY} {_LEFT_OUT}.",
         f"report.entry_contents_misstated at sentences.0.rewrite: {_MISSTATED} {_LEFT_OUT}.",
-        f"report.absence_contradicts_ledger at sentences.0.rewrite: {_NOT_READ} {_LEFT_OUT}.",
+        f"report.absence_contradicts_ledger at sentences.0.rewrite: {_NOT_READ} It names what "
+        'ledger.1 holds lines on: keep it naming that fact, with "quote": words inside one of '
+        "its rows that name what the sentence names, copied exactly; or rewrite it in your own "
+        f"words on the lines shown, citing an entry the fact cites, {_DENIAL}; or drop it. "
+        f"{_LEFT_OUT}.",
     ],
     "held body | rewrite, saying a redone call failed | left out": [
         "agreement.failure_redone at sentences.0.rewrite: row 1: the rewrite of introduction: "
@@ -1003,7 +1054,10 @@ TABLE: dict[str, list[str]] = {
         "agreement.rewrite_drops_citation at sentences.0.rewrite: row 1: the sentence cites "
         "ev_0109, which the rewrite does not. Keep every id the sentence cites, or keep it "
         'naming ledger.1, with "quote": words inside one of its rows that name what the '
-        f"sentence names, copied exactly, or drop it. {_LEFT_OUT}.",
+        "sentence names, copied exactly, or drop it. It names what ledger.1 holds lines on: "
+        'keep it naming that fact, with "quote": words inside one of its rows that name what '
+        "the sentence names, copied exactly; or rewrite it in your own words on the lines "
+        f"shown, citing an entry the fact cites, {_DENIAL}; or drop it. {_LEFT_OUT}.",
     ],
     "held body | rows naming no sentence of it | left out": [
         "agreement.sentence_not_found at sentences.0.sentence: row 1: the sentence does not "
@@ -1015,8 +1069,6 @@ TABLE: dict[str, list[str]] = {
         "agreement.sentence_not_found at sentences.2.sentence: row 3: the sentence does not "
         "stand in introduction as copied. Copy the whole sentence as the passage writes it; it "
         "must stand there once.",
-        "agreement.unknown_source at sentences.2.sources: row 3 names no source. Name the ids "
-        "of the sources you read for the sentence of introduction.",
         "agreement.held_unlisted at held.introduction: introduction calls something absent "
         "from the whole code read, and no row lists this sentence: 'The runtime result of "
         "`QueryHostMode` is not known [ev_0109].'. List it: it names what ledger.1 holds lines "
@@ -1026,9 +1078,8 @@ TABLE: dict[str, list[str]] = {
         f"{_EVERY_ROW}",
     ],
     "cell failed | keep, no source, no reason | -": [
-        "agreement.unknown_source at sentences.0.sources: row 1 names no source. Name the ids "
-        "of the sources you read for the sentence of communications.1.encryption, or, leaving "
-        "it out, give the reason.",
+        "agreement.unknown_source at sentences.0.sources: row 1 names no source; leaving it "
+        "out, give the reason.",
         "agreement.keep_unquoted at sentences.0.sources: row 1: communications.1.encryption "
         "keeps 'The decompile of 0x5a10 failed [ev_0101].' naming no source, but answered.1, "
         f"failed.1 speaks of what it names: {_UNKEPT}. {_LEFT_OUT}, and {_DASH}.",
@@ -1045,6 +1096,13 @@ TABLE: dict[str, list[str]] = {
         "keeps the sentence, but it says a call failed or a reading could not be made, while a "
         "later call redid it (ev_0101 by ev_0107). Rewrite it citing ev_0107 and saying what "
         f"it answered, or drop it. {_CELL_IS}.",
+    ],
+    "cell failed | rewrite, the same words cited | -": [
+        "agreement.failure_redone at sentences.0.decision: row 1: communications.1.encryption "
+        "rewrites the sentence into the same words, which keeps it, but it says a call failed "
+        "or a reading could not be made, while a later call redid it (ev_0101 by ev_0107). "
+        f"Rewrite it citing ev_0107 and saying what it answered, or drop it. {_CELL_IS}: "
+        f"{_UNKEPT}. {_LEFT_OUT}, and {_DASH}.",
     ],
     "cell failed | rewrite, misreading entries | -": [
         "agreement.unread_standing at sentences.0.rewrite: communications.1.encryption: the "
@@ -1067,9 +1125,8 @@ TABLE: dict[str, list[str]] = {
         f"{_LEFT_OUT}, and {_DASH}. {_EVERY_ROW}",
     ],
     "cell count | keep, no source, no reason | -": [
-        "agreement.unknown_source at sentences.0.sources: row 1 names no source. Name the ids "
-        "of the sources you read for the sentence of communications.1.encryption, or, leaving "
-        "it out, give the reason.",
+        "agreement.unknown_source at sentences.0.sources: row 1 names no source; leaving it "
+        "out, give the reason.",
         "agreement.failure_count at sentences.0.rewrite: row 1: communications.1.encryption "
         "gives failed calls a number the ledger's count (calls.1: 1 failed, 1 of them redone, "
         f"0 not redone) does not. State the ledger's count, or no number. {_CELL_IS}: "
@@ -1087,9 +1144,8 @@ TABLE: dict[str, list[str]] = {
         f"{_LEFT_OUT}, and {_DASH}. {_EVERY_ROW}",
     ],
     "cell unread | keep, no source, no reason | -": [
-        "agreement.unknown_source at sentences.0.sources: row 1 names no source. Name the ids "
-        "of the sources you read for the sentence of communications.1.encryption, or, leaving "
-        "it out, give the reason.",
+        "agreement.unknown_source at sentences.0.sources: row 1 names no source; leaving it "
+        "out, give the reason.",
         "agreement.unread_standing at sentences.0.decision: communications.1.encryption: 'The "
         "routine at 0x5a10 was not read [ev_0107].' calls code not read that the ledger lists "
         "(listed.1: 0x2475a10 (offset 0x5a10): ev_0107 lists its code (decompiled or "
@@ -1110,6 +1166,35 @@ TABLE: dict[str, list[str]] = {
         "keeps 'The routine at 0x5a10 was not read [ev_0107].' naming no source, but listed.1, "
         f"answered.1, failed.1 speaks of what it names: {_UNKEPT}. {_LEFT_OUT}, and {_DASH}. "
         f"{_CELL_IS}.",
+    ],
+    "cell unread | drop, naming a passage as its source | -": [
+        "agreement.unknown_source at sentences.0.sources: row 1 names executive_summary as "
+        "what states otherwise than communications.1.encryption, but only the facts, the "
+        "section 5 passages and the debate rounds listed are sources. Name the sources by "
+        f"their ids. {_CELL_IS}: {_UNKEPT}. {_LEFT_OUT}, and {_DASH}.",
+        "agreement.unread_standing at held.communications.1.encryption: "
+        "communications.1.encryption: 'The routine at 0x5a10 was not read [ev_0107].' calls "
+        "code not read that the ledger lists (listed.1: 0x2475a10 (offset 0x5a10): ev_0107 "
+        "lists its code (decompiled or disassembled)). Rewrite it in your own words to state "
+        "that the code was read and what the sentence can still say, citing an entry that fact "
+        f"cites, or drop it. {_EVERY_ROW} {_CELL_IS}: {_UNKEPT}. {_LEFT_OUT}, and {_DASH}.",
+    ],
+    "cell unread | rewrite, citing an entry not shown | -": [
+        "agreement.rewrite_cites_elsewhere at sentences.0.rewrite: row 1: the rewrite cites "
+        "ev_0999, which neither its sources nor communications.1.encryption cite. Cite only "
+        "what the sources you name, or the passage itself, cite.",
+        "agreement.rewrite_drops_citation at sentences.0.rewrite: row 1: the sentence cites "
+        "ev_0107, which the rewrite does not. Keep every id the sentence cites, or drop it.",
+        "agreement.rewrite_ungrounded at sentences.0.rewrite: row 1: the rewrite cites none of "
+        "the ids its sources cite. Cite the entry a source rests on, or drop it.",
+        "agreement.unread_standing at held.communications.1.encryption: "
+        "communications.1.encryption: 'The routine at 0x5a10 was not read [ev_0107].' calls "
+        "code not read that the ledger lists (listed.1: 0x2475a10 (offset 0x5a10): ev_0107 "
+        "lists its code (decompiled or disassembled)). Rewrite it in your own words to state "
+        "that the code was read and what the sentence can still say, citing an entry that fact "
+        f"cites, or drop it. {_EVERY_ROW} {_CELL_IS}: {_UNKEPT}. {_LEFT_OUT}, and {_DASH}.",
+        f"report.citation_not_evidence at sentences.0.rewrite: {_NOT_SHOWN} {_CELL_IS}: "
+        f"{_UNKEPT}. {_LEFT_OUT}, and {_DASH}.",
     ],
     "cell unread | rewrite, calling listed code not read | -": [
         "agreement.unread_standing at sentences.0.rewrite: communications.1.encryption: the "
@@ -1162,9 +1247,8 @@ TABLE: dict[str, list[str]] = {
         f"cites, or drop it. {_EVERY_ROW} {_CELL_IS}: {_UNKEPT}. {_LEFT_OUT}, and {_DASH}.",
     ],
     "bullet failed | keep, no source, no reason | not printed": [
-        "agreement.unknown_source at sentences.0.sources: row 1 names no source. Name the ids "
-        "of the sources you read for the sentence of capability_summary.1, or, leaving it out, "
-        "give the reason.",
+        "agreement.unknown_source at sentences.0.sources: row 1 names no source; leaving it "
+        "out, give the reason.",
         "agreement.keep_unquoted at sentences.0.sources: row 1: capability_summary.1 keeps "
         "'The decompile of 0x5a10 failed [ev_0101].' naming no source, but answered.1, "
         f"failed.1 speaks of what it names: {_UNKEPT}. {_LEFT_OUT}, and {_NOT_PRINTED}.",
@@ -1203,9 +1287,8 @@ TABLE: dict[str, list[str]] = {
         f"{_LEFT_OUT}, and {_NOT_PRINTED}. {_EVERY_ROW}",
     ],
     "bullet count | keep, no source, no reason | not printed": [
-        "agreement.unknown_source at sentences.0.sources: row 1 names no source. Name the ids "
-        "of the sources you read for the sentence of capability_summary.1, or, leaving it out, "
-        "give the reason.",
+        "agreement.unknown_source at sentences.0.sources: row 1 names no source; leaving it "
+        "out, give the reason.",
         "agreement.failure_count at sentences.0.rewrite: row 1: capability_summary.1 gives "
         "failed calls a number the ledger's count (calls.1: 1 failed, 1 of them redone, 0 not "
         f"redone) does not. State the ledger's count, or no number. {_BULLET_IS}: {_UNKEPT}. "
@@ -1223,9 +1306,8 @@ TABLE: dict[str, list[str]] = {
         f"and {_NOT_PRINTED}. {_EVERY_ROW}",
     ],
     "bullet unread | keep, no source, no reason | not printed": [
-        "agreement.unknown_source at sentences.0.sources: row 1 names no source. Name the ids "
-        "of the sources you read for the sentence of capability_summary.1, or, leaving it out, "
-        "give the reason.",
+        "agreement.unknown_source at sentences.0.sources: row 1 names no source; leaving it "
+        "out, give the reason.",
         "agreement.unread_standing at sentences.0.decision: capability_summary.1: 'The routine "
         "at 0x5a10 was not read [ev_0107].' calls code not read that the ledger lists "
         "(listed.1: 0x2475a10 (offset 0x5a10): ev_0107 lists its code (decompiled or "
@@ -1246,6 +1328,18 @@ TABLE: dict[str, list[str]] = {
         "'The routine at 0x5a10 was not read [ev_0107].' naming no source, but listed.1, "
         f"answered.1, failed.1 speaks of what it names: {_UNKEPT}. {_LEFT_OUT}, and "
         f"{_NOT_PRINTED}. {_BULLET_IS}.",
+    ],
+    "bullet unread | drop, naming a passage as its source | not printed": [
+        "agreement.unknown_source at sentences.0.sources: row 1 names executive_summary as "
+        "what states otherwise than capability_summary.1, but only the facts, the section 5 "
+        "passages and the debate rounds listed are sources. Name the sources by their ids. "
+        f"{_BULLET_IS}: {_UNKEPT}. {_LEFT_OUT}, and {_NOT_PRINTED}.",
+        "agreement.unread_standing at held.capability_summary.1: capability_summary.1: 'The "
+        "routine at 0x5a10 was not read [ev_0107].' calls code not read that the ledger lists "
+        "(listed.1: 0x2475a10 (offset 0x5a10): ev_0107 lists its code (decompiled or "
+        "disassembled)). Rewrite it in your own words to state that the code was read and what "
+        f"the sentence can still say, citing an entry that fact cites, or drop it. {_EVERY_ROW} "
+        f"{_BULLET_IS}: {_UNKEPT}. {_LEFT_OUT}, and {_NOT_PRINTED}.",
     ],
     "bullet unread | rewrite, calling listed code not read | not printed": [
         "agreement.unread_standing at sentences.0.rewrite: capability_summary.1: the rewrite "
@@ -1298,9 +1392,8 @@ TABLE: dict[str, list[str]] = {
         f"{_BULLET_IS}: {_UNKEPT}. {_LEFT_OUT}, and {_NOT_PRINTED}.",
     ],
     "conclusion failed | keep, no source, no reason | left out": [
-        "agreement.unknown_source at sentences.0.sources: row 1 names no source. Name the ids "
-        "of the sources you read for the sentence of conclusion, or, leaving it out, give the "
-        "reason.",
+        "agreement.unknown_source at sentences.0.sources: row 1 names no source; leaving it "
+        "out, give the reason.",
         "agreement.keep_unquoted at sentences.0.sources: row 1: conclusion keeps 'The "
         "decompile of 0x5a10 failed [ev_0101].' naming no source, but answered.1, failed.1 "
         f"speaks of what it names: {_UNKEPT}.",
@@ -1317,6 +1410,12 @@ TABLE: dict[str, list[str]] = {
         "sentence, but it says a call failed or a reading could not be made, while a later call "
         "redid it (ev_0101 by ev_0107). Rewrite it citing ev_0107 and saying what it answered, "
         "or drop it.",
+    ],
+    "conclusion failed | rewrite, the same words cited | left out": [
+        "agreement.failure_redone at sentences.0.decision: row 1: conclusion rewrites the "
+        "sentence into the same words, which keeps it, but it says a call failed or a reading "
+        "could not be made, while a later call redid it (ev_0101 by ev_0107). Rewrite it citing "
+        "ev_0107 and saying what it answered, or drop it.",
     ],
     "conclusion failed | rewrite, misreading entries | left out": [
         "agreement.unread_standing at sentences.0.rewrite: conclusion: the rewrite 'Routine "
@@ -1339,14 +1438,21 @@ TABLE: dict[str, list[str]] = {
         f"decompile of 0x5a10 failed [ev_0101].'. List it: {_UNKEPT}. {_EVERY_ROW}",
     ],
     "conclusion count | keep, no source, no reason | as written": [
-        "agreement.unknown_source at sentences.0.sources: row 1 names no source. Name the ids "
-        "of the sources you read for the sentence of conclusion, or, leaving it out, give the "
-        "reason.",
+        "agreement.unknown_source at sentences.0.sources: row 1 names no source; leaving it "
+        "out, give the reason.",
         "agreement.failure_count at sentences.0.rewrite: row 1: conclusion gives failed calls a "
         "number the ledger's count (calls.1: 1 failed, 1 of them redone, 0 not redone) does "
         "not. State the ledger's count, or no number.",
     ],
     "conclusion count | keep, no source, a reason | as written": [
+        "agreement.failure_count at sentences.0.rewrite: row 1: conclusion gives failed calls a "
+        "number the ledger's count (calls.1: 1 failed, 1 of them redone, 0 not redone) does "
+        "not. State the ledger's count, or no number.",
+    ],
+    "conclusion count | keep, a quote too short | left out": [
+        "agreement.keep_unquoted at sentences.0.quote: row 1: conclusion keeps 'Five tool "
+        "calls failed [ev_0107].' on string_resolution, but its quote is shorter than 12 "
+        f"characters, so it quotes nothing: {_UNKEPT}.",
         "agreement.failure_count at sentences.0.rewrite: row 1: conclusion gives failed calls a "
         "number the ledger's count (calls.1: 1 failed, 1 of them redone, 0 not redone) does "
         "not. State the ledger's count, or no number.",
@@ -1357,9 +1463,8 @@ TABLE: dict[str, list[str]] = {
         f"calls failed [ev_0107].'. List it: {_UNKEPT}. {_EVERY_ROW}",
     ],
     "conclusion unread | keep, no source, no reason | left out": [
-        "agreement.unknown_source at sentences.0.sources: row 1 names no source. Name the ids "
-        "of the sources you read for the sentence of conclusion, or, leaving it out, give the "
-        "reason.",
+        "agreement.unknown_source at sentences.0.sources: row 1 names no source; leaving it "
+        "out, give the reason.",
         "agreement.unread_standing at sentences.0.decision: conclusion: 'The routine at 0x5a10 "
         "was not read [ev_0107].' calls code not read that the ledger lists (listed.1: "
         "0x2475a10 (offset 0x5a10): ev_0107 lists its code (decompiled or disassembled)). "
@@ -1380,6 +1485,33 @@ TABLE: dict[str, list[str]] = {
         "agreement.keep_unquoted at sentences.0.sources: row 1: conclusion keeps 'The routine "
         "at 0x5a10 was not read [ev_0107].' naming no source, but listed.1, answered.1, "
         f"failed.1 speaks of what it names: {_UNKEPT}.",
+    ],
+    "conclusion unread | drop, naming a passage as its source | appended": [
+        "agreement.unknown_source at sentences.0.sources: row 1 names executive_summary as what "
+        "states otherwise than conclusion, but only the facts, the section 5 passages and the "
+        "debate rounds listed are sources. Name the sources by their ids.",
+        "agreement.unread_standing at held.conclusion: conclusion: 'The routine at 0x5a10 was "
+        "not read [ev_0107].' calls code not read that the ledger lists (listed.1: 0x2475a10 "
+        "(offset 0x5a10): ev_0107 lists its code (decompiled or disassembled)). Rewrite it in "
+        "your own words to state that the code was read and what the sentence can still say, "
+        "citing an entry that fact cites, or drop it; refused, a drop leaves it standing, and "
+        f"the platform appends the ledger's listing fact to it. {_EVERY_ROW}",
+    ],
+    "conclusion unread | rewrite, citing an entry not shown | left out": [
+        "agreement.rewrite_cites_elsewhere at sentences.0.rewrite: row 1: the rewrite cites "
+        "ev_0999, which neither its sources nor conclusion cite. Cite only what the sources you "
+        "name, or the passage itself, cite.",
+        "agreement.rewrite_drops_citation at sentences.0.rewrite: row 1: the sentence cites "
+        "ev_0107, which the rewrite does not. Keep every id the sentence cites, or drop it.",
+        "agreement.rewrite_ungrounded at sentences.0.rewrite: row 1: the rewrite cites none of "
+        "the ids its sources cite. Cite the entry a source rests on, or drop it.",
+        "agreement.unread_standing at held.conclusion: conclusion: 'The routine at 0x5a10 was "
+        "not read [ev_0107].' calls code not read that the ledger lists (listed.1: 0x2475a10 "
+        "(offset 0x5a10): ev_0107 lists its code (decompiled or disassembled)). Rewrite it in "
+        "your own words to state that the code was read and what the sentence can still say, "
+        "citing an entry that fact cites, or drop it; refused, a rewrite resting on the "
+        f"sources it names leaves it out of the report. {_EVERY_ROW}",
+        f"report.citation_not_evidence at sentences.0.rewrite: {_NOT_SHOWN}",
     ],
     "conclusion unread | rewrite, calling listed code not read | left out": [
         "agreement.unread_standing at sentences.0.rewrite: conclusion: the rewrite 'The "
@@ -1463,9 +1595,8 @@ TABLE: dict[str, list[str]] = {
         f"the ledger's listing fact to it. {_EVERY_ROW}",
     ],
     "limitations count | keep, no source, no reason | as written": [
-        "agreement.unknown_source at sentences.0.sources: row 1 names no source. Name the ids "
-        "of the sources you read for the sentence of limitations, or, leaving it out, give the "
-        "reason.",
+        "agreement.unknown_source at sentences.0.sources: row 1 names no source; leaving it "
+        "out, give the reason.",
         "agreement.failure_count at sentences.0.rewrite: row 1: limitations gives failed calls "
         "a number the ledger's count (calls.1: 1 failed, 1 of them redone, 0 not redone) does "
         "not. State the ledger's count, or no number.",
@@ -1481,9 +1612,8 @@ TABLE: dict[str, list[str]] = {
         f"'Five tool calls failed [ev_0107].'. List it: {_UNKEPT}. {_EVERY_ROW}",
     ],
     "limitations unread | keep, no source, no reason | left out": [
-        "agreement.unknown_source at sentences.0.sources: row 1 names no source. Name the ids "
-        "of the sources you read for the sentence of limitations, or, leaving it out, give the "
-        "reason.",
+        "agreement.unknown_source at sentences.0.sources: row 1 names no source; leaving it "
+        "out, give the reason.",
         "agreement.unread_standing at sentences.0.decision: limitations: 'The routine at "
         "0x6100 was not read [ev_0112].' calls code not read that the ledger lists (listed.2: "
         "0x2476100 (offset 0x6100): ev_0112 lists its code (decompiled or disassembled)). "
@@ -1504,6 +1634,17 @@ TABLE: dict[str, list[str]] = {
         "agreement.keep_unquoted at sentences.0.sources: row 1: limitations keeps 'The routine "
         "at 0x6100 was not read [ev_0112].' naming no source, but listed.2 speaks of what it "
         f"names: {_UNKEPT}.",
+    ],
+    "limitations unread | drop, naming a passage as its source | appended": [
+        "agreement.unknown_source at sentences.0.sources: row 1 names executive_summary as what "
+        "states otherwise than limitations, but only the facts, the section 5 passages and the "
+        "debate rounds listed are sources. Name the sources by their ids.",
+        "agreement.unread_standing at held.limitations: limitations: 'The routine at 0x6100 "
+        "was not read [ev_0112].' calls code not read that the ledger lists (listed.2: "
+        "0x2476100 (offset 0x6100): ev_0112 lists its code (decompiled or disassembled)). "
+        "Rewrite it in your own words to state that the code was read and what the sentence "
+        "can still say, citing an entry that fact cites, or drop it; refused, a drop leaves it "
+        f"standing, and the platform appends the ledger's listing fact to it. {_EVERY_ROW}",
     ],
     "limitations unread | rewrite, its absence again on the listing | left out": [
         "agreement.unread_standing at sentences.0.rewrite: limitations: the rewrite 'The "
@@ -1563,13 +1704,12 @@ TABLE: dict[str, list[str]] = {
     "limitations one failed call | keep, on the failed call's fact | left out": [
         "agreement.failure_redone at sentences.0.decision: row 1: limitations keeps the "
         "sentence, but it says a call failed or a reading could not be made, while a later call "
-        "redid it (ev_0101 by ev_0107). Rewrite it citing ev_0107 and saying what it answered, "
-        "or drop it.",
+        "redid it (ev_0101 by ev_0107). Cite ev_0107 and say what it answered, or keep the "
+        "sentence.",
     ],
     "held cell twice | keep, no source, no reason | -": [
-        "agreement.unknown_source at sentences.0.sources: row 1 names no source. Name the ids "
-        "of the sources you read for the sentence of communications.1.encryption, or, leaving "
-        "it out, give the reason.",
+        "agreement.unknown_source at sentences.0.sources: row 1 names no source; leaving it "
+        "out, give the reason.",
         "agreement.unread_standing at sentences.0.decision: communications.1.encryption: "
         "'Which export the loader calls is not established, the routine at 0x5a10 was not "
         "read, the decompile of 0x5a10 failed and five tool calls failed [ev_0101] [ev_0104].' "
@@ -1616,6 +1756,26 @@ TABLE: dict[str, list[str]] = {
         "agreement.failure_count at sentences.0.rewrite: row 1: communications.1.encryption "
         "gives failed calls a number the ledger's count (calls.1: 1 failed, 1 of them redone, "
         f"0 not redone) does not. State the ledger's count, or no number. {_CELL_IS}.",
+    ],
+    "held cell twice | drop, naming a passage as its source | -": [
+        "agreement.unknown_source at sentences.0.sources: row 1 names executive_summary as "
+        "what states otherwise than communications.1.encryption, but only the facts, the "
+        "section 5 passages and the debate rounds listed are sources. Name the sources by "
+        f"their ids. {_CELL_IS}: it names what ledger.1 holds lines on: a keep of it as written "
+        "is refused, and the same words with a citation added are a keep; rewrite it in your "
+        "own words on the lines shown, citing the entry they come from, saying what the lines "
+        f"show and what stays unknown, {_DENIAL}, or drop it. {_LEFT_OUT}, and {_DASH}.",
+        "agreement.unread_standing at held.communications.1.encryption: "
+        "communications.1.encryption: 'Which export the loader calls is not established, the "
+        "routine at 0x5a10 was not read, the decompile of 0x5a10 failed and five tool calls "
+        "failed [ev_0101] [ev_0104].' calls code not read that the ledger lists (listed.1: "
+        "0x2475a10 (offset 0x5a10): ev_0107 lists its code (decompiled or disassembled)). "
+        "Rewrite it in your own words to state that the code was read and what the sentence "
+        f"can still say, citing an entry that fact cites, or drop it. {_EVERY_ROW} {_CELL_IS}: "
+        "it names what ledger.1 holds lines on: a keep of it as written is refused, and the "
+        "same words with a citation added are a keep; rewrite it in your own words on the "
+        "lines shown, citing the entry they come from, saying what the lines show and what "
+        f"stays unknown, {_DENIAL}, or drop it. {_LEFT_OUT}, and {_DASH}.",
     ],
     "held cell twice | rewrite, misreading entries | -": [
         "agreement.unread_standing at sentences.0.rewrite: communications.1.encryption: the "
@@ -1713,9 +1873,8 @@ TABLE: dict[str, list[str]] = {
         f"stays unknown, {_DENIAL}, or drop it. {_LEFT_OUT}, and {_DASH}.",
     ],
     "held bullet twice | keep, no source, no reason | not printed": [
-        "agreement.unknown_source at sentences.0.sources: row 1 names no source. Name the ids "
-        "of the sources you read for the sentence of capability_summary.2, or, leaving it out, "
-        "give the reason.",
+        "agreement.unknown_source at sentences.0.sources: row 1 names no source; leaving it "
+        "out, give the reason.",
         "agreement.unread_standing at sentences.0.decision: capability_summary.2: 'Which "
         "export the loader calls is not established, the routine at 0x5a10 was not read, the "
         "decompile of 0x5a10 failed and five tool calls failed [ev_0101] [ev_0104].' calls "
@@ -1762,6 +1921,26 @@ TABLE: dict[str, list[str]] = {
         "agreement.failure_count at sentences.0.rewrite: row 1: capability_summary.2 gives "
         "failed calls a number the ledger's count (calls.1: 1 failed, 1 of them redone, 0 not "
         f"redone) does not. State the ledger's count, or no number. {_HELD_BULLET_IS}.",
+    ],
+    "held bullet twice | drop, naming a passage as its source | not printed": [
+        "agreement.unknown_source at sentences.0.sources: row 1 names executive_summary as "
+        "what states otherwise than capability_summary.2, but only the facts, the section 5 "
+        "passages and the debate rounds listed are sources. Name the sources by their ids. "
+        f"{_HELD_BULLET_IS}: it names what ledger.1 holds lines on: a keep of it as written is "
+        "refused, and the same words with a citation added are a keep; rewrite it in your own "
+        "words on the lines shown, citing the entry they come from, saying what the lines show "
+        f"and what stays unknown, {_DENIAL}, or drop it. {_LEFT_OUT}, and {_NOT_PRINTED}.",
+        "agreement.unread_standing at held.capability_summary.2: capability_summary.2: 'Which "
+        "export the loader calls is not established, the routine at 0x5a10 was not read, the "
+        "decompile of 0x5a10 failed and five tool calls failed [ev_0101] [ev_0104].' calls "
+        "code not read that the ledger lists (listed.1: 0x2475a10 (offset 0x5a10): ev_0107 "
+        "lists its code (decompiled or disassembled)). Rewrite it in your own words to state "
+        "that the code was read and what the sentence can still say, citing an entry that fact "
+        f"cites, or drop it. {_EVERY_ROW} {_HELD_BULLET_IS}: it names what ledger.1 holds lines "
+        "on: a keep of it as written is refused, and the same words with a citation added are "
+        "a keep; rewrite it in your own words on the lines shown, citing the entry they come "
+        f"from, saying what the lines show and what stays unknown, {_DENIAL}, or drop it. "
+        f"{_LEFT_OUT}, and {_NOT_PRINTED}.",
     ],
     "held bullet twice | rewrite, misreading entries | not printed": [
         "agreement.unread_standing at sentences.0.rewrite: capability_summary.2: the rewrite "
@@ -1859,9 +2038,8 @@ TABLE: dict[str, list[str]] = {
         f"{_LEFT_OUT}, and {_NOT_PRINTED}.",
     ],
     "held limitations twice | keep, no source, no reason | left out": [
-        "agreement.unknown_source at sentences.0.sources: row 1 names no source. Name the ids "
-        "of the sources you read for the sentence of limitations, or, leaving it out, give the "
-        f"reason. {_LEFT_OUT}.",
+        "agreement.unknown_source at sentences.0.sources: row 1 names no source; leaving it "
+        f"out, give the reason. {_LEFT_OUT}.",
         "agreement.unread_standing at sentences.0.decision: limitations: 'The decompile of "
         "0x5a10 failed [ev_0101], so the routine at 0x5a10 was not read, and five tool calls "
         "failed.' calls code not read that the ledger lists (listed.1: 0x2475a10 (offset "
@@ -1902,6 +2080,23 @@ TABLE: dict[str, list[str]] = {
         "agreement.failure_count at sentences.0.rewrite: row 1: limitations gives failed calls "
         "a number the ledger's count (calls.1: 1 failed, 1 of them redone, 0 not redone) does "
         f"not. State the ledger's count, or no number. {_LEFT_OUT}.",
+    ],
+    "held limitations twice | drop, naming a passage as its source | left out": [
+        "agreement.unknown_source at sentences.0.sources: row 1 names executive_summary as "
+        "what states otherwise than limitations, but only the facts, the section 5 passages "
+        "and the debate rounds listed are sources. Name the sources by their ids. It names a "
+        "call that failed and a later call redid: a keep of it as written is refused; rewrite "
+        f"it in your own words on what ev_0107 answered, citing it, {_DENIAL}, or drop it; the "
+        f"same words with a citation added are a keep. {_LEFT_OUT}.",
+        "agreement.unread_standing at held.limitations: limitations: 'The decompile of 0x5a10 "
+        "failed [ev_0101], so the routine at 0x5a10 was not read, and five tool calls failed.' "
+        "calls code not read that the ledger lists (listed.1: 0x2475a10 (offset 0x5a10): "
+        "ev_0107 lists its code (decompiled or disassembled)). Rewrite it in your own words to "
+        "state that the code was read and what the sentence can still say, citing an entry "
+        f"that fact cites, or drop it. {_EVERY_ROW} It names a call that failed and a later "
+        "call redid: a keep of it as written is refused; rewrite it in your own words on what "
+        f"ev_0107 answered, citing it, {_DENIAL}, or drop it; the same words with a citation "
+        f"added are a keep. {_LEFT_OUT}.",
     ],
     "held limitations twice | rewrite, its absence again on the listing | left out": [
         "agreement.unread_standing at sentences.0.rewrite: limitations: the rewrite 'The "
@@ -1952,7 +2147,10 @@ TABLE: dict[str, list[str]] = {
         "calls code not read that the ledger lists (listed.1: 0x2475a10 (offset 0x5a10): "
         "ev_0107 lists its code (decompiled or disassembled)). Rewrite it in your own words to "
         "state that the code was read and what the sentence can still say, citing an entry "
-        f"that fact cites, or drop it. {_EVERY_ROW} {_LEFT_OUT}.",
+        f"that fact cites, or drop it. {_EVERY_ROW} It names a call that failed and a later "
+        "call redid: a keep of it as written is refused; rewrite it in your own words on what "
+        f"ev_0107 answered, citing it, {_DENIAL}, or drop it; the same words with a citation "
+        f"added are a keep. {_LEFT_OUT}.",
     ],
     "held limitations twice | no row | left out": [
         "agreement.unread_standing at held.limitations: limitations: 'The decompile of 0x5a10 "
@@ -1960,12 +2158,14 @@ TABLE: dict[str, list[str]] = {
         "calls code not read that the ledger lists (listed.1: 0x2475a10 (offset 0x5a10): "
         "ev_0107 lists its code (decompiled or disassembled)). Rewrite it in your own words to "
         "state that the code was read and what the sentence can still say, citing an entry "
-        f"that fact cites, or drop it. {_EVERY_ROW} {_LEFT_OUT}.",
+        f"that fact cites, or drop it. {_EVERY_ROW} It names a call that failed and a later "
+        "call redid: a keep of it as written is refused; rewrite it in your own words on what "
+        f"ev_0107 answered, citing it, {_DENIAL}, or drop it; the same words with a citation "
+        f"added are a keep. {_LEFT_OUT}.",
     ],
     "held body twice | keep, no source, no reason | left out": [
-        "agreement.unknown_source at sentences.0.sources: row 1 names no source. Name the ids "
-        "of the sources you read for the sentence of introduction, or, leaving it out, give "
-        f"the reason. {_LEFT_OUT}.",
+        "agreement.unknown_source at sentences.0.sources: row 1 names no source; leaving it "
+        f"out, give the reason. {_LEFT_OUT}.",
         "agreement.keep_unquoted at sentences.0.sources: row 1: introduction keeps 'The "
         "runtime result of `QueryHostMode` is not known, the routine at 0x5a10 was not read "
         "and five tool calls failed [ev_0109].' naming no source, but ledger.1, entry.1 speaks "
@@ -1980,7 +2180,10 @@ TABLE: dict[str, list[str]] = {
         "failed [ev_0109].' calls code not read that the ledger lists (listed.1: 0x2475a10 "
         "(offset 0x5a10): ev_0107 lists its code (decompiled or disassembled)). Rewrite it in "
         "your own words to state that the code was read and what the sentence can still say, "
-        f"citing an entry that fact cites, or drop it. {_EVERY_ROW} {_LEFT_OUT}.",
+        f"citing an entry that fact cites, or drop it. {_EVERY_ROW} It names what ledger.1 "
+        "holds lines on: a keep of it is refused whatever it names; rewrite it in your own "
+        f"words on the lines shown, citing an entry the fact cites, {_DENIAL}; or drop it. "
+        f"{_LEFT_OUT}.",
     ],
     "held body twice | keep, no source, a reason | left out": [
         "agreement.keep_unquoted at sentences.0.sources: row 1: introduction keeps 'The "
@@ -1997,18 +2200,27 @@ TABLE: dict[str, list[str]] = {
         "failed [ev_0109].' calls code not read that the ledger lists (listed.1: 0x2475a10 "
         "(offset 0x5a10): ev_0107 lists its code (decompiled or disassembled)). Rewrite it in "
         "your own words to state that the code was read and what the sentence can still say, "
-        f"citing an entry that fact cites, or drop it. {_EVERY_ROW} {_LEFT_OUT}.",
+        f"citing an entry that fact cites, or drop it. {_EVERY_ROW} It names what ledger.1 "
+        "holds lines on: a keep of it is refused whatever it names; rewrite it in your own "
+        f"words on the lines shown, citing an entry the fact cites, {_DENIAL}; or drop it. "
+        f"{_LEFT_OUT}.",
     ],
     "held body twice | drop, naming a passage as its source | left out": [
         "agreement.unknown_source at sentences.0.sources: row 1 names executive_summary as "
         "what states otherwise than introduction, but only the facts, the section 5 passages "
-        f"and the debate rounds listed are sources. Name the sources by their ids. {_LEFT_OUT}.",
+        "and the debate rounds listed are sources. Name the sources by their ids. It names "
+        "what ledger.1 holds lines on: a keep of it is refused whatever it names; rewrite it "
+        f"in your own words on the lines shown, citing an entry the fact cites, {_DENIAL}; or "
+        f"drop it. {_LEFT_OUT}.",
         "agreement.unread_standing at held.introduction: introduction: 'The runtime result of "
         "`QueryHostMode` is not known, the routine at 0x5a10 was not read and five tool calls "
         "failed [ev_0109].' calls code not read that the ledger lists (listed.1: 0x2475a10 "
         "(offset 0x5a10): ev_0107 lists its code (decompiled or disassembled)). Rewrite it in "
         "your own words to state that the code was read and what the sentence can still say, "
-        f"citing an entry that fact cites, or drop it. {_EVERY_ROW} {_LEFT_OUT}.",
+        f"citing an entry that fact cites, or drop it. {_EVERY_ROW} It names what ledger.1 "
+        "holds lines on: a keep of it is refused whatever it names; rewrite it in your own "
+        f"words on the lines shown, citing an entry the fact cites, {_DENIAL}; or drop it. "
+        f"{_LEFT_OUT}.",
     ],
     "held body twice | rewrite, citing an entry not shown | left out": [
         "agreement.rewrite_cites_elsewhere at sentences.0.rewrite: row 1: the rewrite cites "
@@ -2024,8 +2236,14 @@ TABLE: dict[str, list[str]] = {
         "failed [ev_0109].' calls code not read that the ledger lists (listed.1: 0x2475a10 "
         "(offset 0x5a10): ev_0107 lists its code (decompiled or disassembled)). Rewrite it in "
         "your own words to state that the code was read and what the sentence can still say, "
-        f"citing an entry that fact cites, or drop it. {_EVERY_ROW} {_LEFT_OUT}.",
-        f"report.citation_not_evidence at sentences.0.rewrite: {_NOT_SHOWN} {_LEFT_OUT}.",
+        f"citing an entry that fact cites, or drop it. {_EVERY_ROW} It names what ledger.1 "
+        "holds lines on: a keep of it is refused whatever it names; rewrite it in your own "
+        f"words on the lines shown, citing an entry the fact cites, {_DENIAL}; or drop it. "
+        f"{_LEFT_OUT}.",
+        f"report.citation_not_evidence at sentences.0.rewrite: {_NOT_SHOWN} It names what "
+        "ledger.1 holds lines on: a keep of it is refused whatever it names; rewrite it in "
+        f"your own words on the lines shown, citing an entry the fact cites, {_DENIAL}; or drop "
+        f"it. {_LEFT_OUT}.",
     ],
     "held body twice | rewrite, its absence again on the listing | left out": [
         "agreement.unread_standing at sentences.0.rewrite: introduction: the rewrite 'The "
@@ -2039,10 +2257,9 @@ TABLE: dict[str, list[str]] = {
         "agreement.keep_unquoted at sentences.0.quote: row 1: introduction rewrites 'The "
         "runtime result of `QueryHostMode` is not known, the routine at 0x5a10 was not read "
         "and five tool calls failed [ev_0109].' into the same words, which keeps it, on "
-        "listed.1, but gives no quote; quote at least 12 characters of the source's words: it "
-        "names what ledger.1 holds lines on: a keep of it is refused whatever it names; "
-        "rewrite it in your own words on the lines shown, citing an entry the fact cites, "
-        f"{_DENIAL}; or drop it. {_LEFT_OUT}.",
+        "listed.1, but gives no quote: it names what ledger.1 holds lines on: a keep of it is "
+        "refused whatever it names; rewrite it in your own words on the lines shown, citing an "
+        f"entry the fact cites, {_DENIAL}; or drop it. {_LEFT_OUT}.",
         "agreement.failure_count at sentences.0.rewrite: row 1: introduction gives failed "
         "calls a number the ledger's count (calls.1: 1 failed, 1 of them redone, 0 not redone) "
         f"does not. State the ledger's count, or no number. {_LEFT_OUT}.",
@@ -2061,14 +2278,15 @@ TABLE: dict[str, list[str]] = {
         "agreement.sentence_not_found at sentences.2.sentence: row 3: the sentence does not "
         "stand in introduction as copied. Copy the whole sentence as the passage writes it; it "
         "must stand there once.",
-        "agreement.unknown_source at sentences.2.sources: row 3 names no source. Name the ids "
-        "of the sources you read for the sentence of introduction.",
         "agreement.unread_standing at held.introduction: introduction: 'The runtime result of "
         "`QueryHostMode` is not known, the routine at 0x5a10 was not read and five tool calls "
         "failed [ev_0109].' calls code not read that the ledger lists (listed.1: 0x2475a10 "
         "(offset 0x5a10): ev_0107 lists its code (decompiled or disassembled)). Rewrite it in "
         "your own words to state that the code was read and what the sentence can still say, "
-        f"citing an entry that fact cites, or drop it. {_EVERY_ROW} {_LEFT_OUT}.",
+        f"citing an entry that fact cites, or drop it. {_EVERY_ROW} It names what ledger.1 "
+        "holds lines on: a keep of it is refused whatever it names; rewrite it in your own "
+        f"words on the lines shown, citing an entry the fact cites, {_DENIAL}; or drop it. "
+        f"{_LEFT_OUT}.",
     ],
     "held body twice | no row | left out": [
         "agreement.unread_standing at held.introduction: introduction: 'The runtime result of "
@@ -2076,7 +2294,10 @@ TABLE: dict[str, list[str]] = {
         "failed [ev_0109].' calls code not read that the ledger lists (listed.1: 0x2475a10 "
         "(offset 0x5a10): ev_0107 lists its code (decompiled or disassembled)). Rewrite it in "
         "your own words to state that the code was read and what the sentence can still say, "
-        f"citing an entry that fact cites, or drop it. {_EVERY_ROW} {_LEFT_OUT}.",
+        f"citing an entry that fact cites, or drop it. {_EVERY_ROW} It names what ledger.1 "
+        "holds lines on: a keep of it is refused whatever it names; rewrite it in your own "
+        f"words on the lines shown, citing an entry the fact cites, {_DENIAL}; or drop it. "
+        f"{_LEFT_OUT}.",
     ],
 }
 
@@ -2129,8 +2350,8 @@ def _cannot(kind: str, code: str, decision: str) -> str:
     if code == agreement.UNKNOWN_PASSAGE_CODE:
         return (
             "a row naming a passage not shown answers none; none of these kinds is shown for "
-            "reading only; each may be dropped (closing, or held by the ledger), and a drop "
-            "naming no sentence of its passage is refused for that alone"
+            "reading only; each may be dropped (closing, or held by the ledger), and a drop of "
+            "the body naming no sentence of its passage is refused for that alone"
         )
     if code in _PROCEDURE:
         return "a procedure's own checks hold an ATT&CK procedure alone, none of these kinds"
@@ -2148,11 +2369,6 @@ def _cannot(kind: str, code: str, decision: str) -> str:
         decision == "none"
     ):
         return "no row names a sentence or a source"
-    if code == agreement.UNREAD_STANDING_CODE and decision == "drop" and kind != HELD_BODY:
-        return (
-            "a row answering a closing sentence is told its end by its own refusals, and a "
-            "drop's say nothing of a reading"
-        )
     if code == agreement.FAILURE_REDONE_CODE and decision == "keep" and kind == HELD_BODY:
         return "a body keep is held to no failure check: only a closing keep is"
     return ""
@@ -2197,6 +2413,25 @@ def _ends_failing(name: str) -> list[tuple[str, list[tuple[str, str, str]]]]:
 _FAILING = {name: _ends_failing(name) for name in SUBJECTS}
 
 
+def _assert_the_end_said(subject: _Subject, answer: Any, end: str | None = None) -> None:
+    """What the refusals of ``answer`` say becomes of the subject's sentence where no answer
+    passes is what the round does (``end``, where the table states it)."""
+    said = [message for _code, _path, message in _refusals(subject, answer)]
+    done = _end(subject, answer)
+    assert end is None or done == end
+    stated = {e for e, words in _STATES.items() if any(words in s for s in said)}
+    if not said:
+        return
+    if done in ("-", "not printed"):
+        assert stated == {done, "left out"}
+    elif subject.kind in _HELD_KINDS:
+        assert stated == {done}
+    else:
+        # A sentence of the conclusion or the limitations no hold or keep refusal says the
+        # end of ends as dev ends it, unsaid.
+        assert stated <= {done}
+
+
 @pytest.mark.parametrize("key", list(TABLE))
 def test_every_refusal_is_true_of_the_ends_it_offers_and_of_its_end(key: str) -> None:
     name, answer_name, end = _key(key)
@@ -2216,13 +2451,243 @@ def test_every_refusal_is_true_of_the_ends_it_offers_and_of_its_end(key: str) ->
     # (b) Every end a refusal of the subject's sentence offers passes every check.
     assert _FAILING[name] == []
     # (c) What the refusals say becomes of it where no answer passes is what the round does.
-    assert _end(subject, answer) == end
-    stated = {e for e, words in _STATES.items() if any(words in s for s in said)}
-    if end in ("-", "not printed"):
-        assert stated == {end, "left out"}
-    elif subject.kind in _HELD_KINDS:
-        assert stated == {end}
-    else:
-        # A sentence of the conclusion or the limitations no hold or keep refusal says the
-        # end of ends as dev ends it, unsaid.
-        assert stated <= {end}
+    _assert_the_end_said(subject, answer, end)
+
+
+# The answers a refusal can offer: a row's decision, or "own", the decision of the row the
+# refusal is on, its fault mended.
+_KEEP, _REWRITE, _DROP, _OWN = "keep", "rewrite", "drop", "own"
+# Each text by which the round offers an end, as the module writes it, and the answers it
+# offers: what a message offers is read off the message by these alone.
+_OFFERS: dict[str, frozenset[str]] = {
+    agreement._WHOLE_ENDS: frozenset({_KEEP, _REWRITE, _DROP}),
+    agreement._UNKEPT_ENDS: frozenset({_REWRITE, _DROP}),
+    agreement._HELD_NAME_BODY_ENDS: frozenset({_KEEP, _REWRITE, _DROP}),
+    agreement._HELD_UNKEPT_BODY_ENDS: frozenset({_REWRITE, _DROP}),
+    agreement._OR_DROP: frozenset({_DROP}),
+    agreement._OR_KEEP: frozenset({_KEEP}),
+    agreement._OR_KEEP_NAMING: frozenset({_KEEP}),
+    agreement._ON_THE_LINES: frozenset({_REWRITE}),
+    agreement._ON_THE_REDO: frozenset({_REWRITE}),
+    agreement._CITING_THE_REDO: frozenset({_REWRITE}),
+    agreement._SAY_THE_REDO: frozenset({_REWRITE}),
+    agreement._LEAVING_REASON: frozenset({_DROP}),
+    agreement._REASON_KEEPING: frozenset({_KEEP, _DROP}),
+    agreement._REASON_ABSENCE: frozenset({_KEEP}),
+    agreement._NAME_THE_SOURCES_READ: frozenset({_OWN}),
+    agreement._NAME_THE_SOURCES: frozenset({_OWN}),
+    agreement._COPY_THE_SENTENCE: frozenset({_OWN}),
+    agreement._KEEP_OR_REWRITE: frozenset({_KEEP, _REWRITE}),
+    agreement._CITE_ONLY: frozenset({_REWRITE}),
+    agreement._KEEP_EVERY_ID: frozenset({_REWRITE}),
+    agreement._CITE_A_SOURCE: frozenset({_REWRITE}),
+    agreement._EACH_DENIAL_CITED: frozenset({_REWRITE}),
+    agreement._LEAVE_THE_CLAUSE: frozenset({_REWRITE}),
+    agreement._STATE_THE_READING: frozenset({_REWRITE}),
+    agreement._STATE_THE_COUNT: frozenset({_REWRITE}),
+    agreement._QUOTE_MEND: frozenset({_KEEP}),
+    agreement._QUOTE_OR_REWRITE: frozenset({_KEEP, _REWRITE}),
+    agreement._NAME_AND_QUOTE: frozenset({_KEEP, _REWRITE}),
+    agreement._TO_THE_SOURCES: frozenset({_REWRITE, _DROP}),
+    agreement._ON_THE_ROWS: frozenset({_REWRITE, _DROP}),
+    agreement._ON_A_CANDIDATE: frozenset({_KEEP, _REWRITE, _DROP}),
+    agreement._ON_THE_ONE: frozenset({_REWRITE}),
+    agreement._LIST_IT: frozenset({_REWRITE, _KEEP}),
+    agreement._LIST_IT_LEAVING: frozenset({_DROP}),
+    agreement._LIST_IT_ABSENCE: frozenset({_KEEP}),
+}
+# The report rounds' prose checks write their own findings, each mending the rewrite it reads.
+_MENDS_THE_REWRITE = _PROSE
+# Dev's own texts for a sentence nothing holds, a plain sentence of the conclusion or the
+# limitations: they offer fewer ends than pass, as dev's round does (T-613), and keep its
+# wording, each end in them one of the texts above.
+_DEV_TEXTS = {
+    (code, kind): "dev's text"
+    for kind in (CONCLUSION, LIMITATIONS)
+    for code in (
+        agreement.FAILURE_COUNT_CODE,
+        agreement.FAILURE_REDONE_CODE,
+        agreement.KEEP_UNQUOTED_CODE,
+        agreement.REWRITE_CITES_ELSEWHERE_CODE,
+        agreement.REWRITE_DROPS_CITATION_CODE,
+        agreement.REWRITE_UNGROUNDED_CODE,
+        agreement.UNKNOWN_SOURCE_CODE,
+        agreement.UNREAD_STANDING_CODE,
+        *_PROSE,
+    )
+}
+
+
+def _said(text: str, words: str) -> bool:
+    """Whether ``text`` writes ``words``, at the start of a sentence too."""
+    return words in text or f"{words[:1].upper()}{words[1:]}" in text
+
+
+def _offered(code: str, message: str, decision: str) -> frozenset[str] | None:
+    """The answers ``message``, a refusal of a row deciding ``decision``, offers, read off it
+    by the module's own texts (:data:`_OFFERS`); ``None`` where it holds none of them."""
+    kinds = {kind for words, offers in _OFFERS.items() if _said(message, words) for kind in offers}
+    if code in _MENDS_THE_REWRITE:
+        kinds.add(_OWN)
+    if not kinds:
+        return None
+    return frozenset(decision if kind == _OWN else kind for kind in kinds)
+
+
+def _offers_of(subject: _Subject, answer: Any) -> list[tuple[str, str, frozenset[str] | None]]:
+    """Each refusal of ``answer`` about the subject's sentence (its own rows' and the ones
+    asked of it), by code and message, with the answers it offers; a refusal of a row naming
+    another sentence, with what it offers that row."""
+    rows = _rows_of(answer)
+    out = []
+    for code, path, message in _refusals(subject, answer):
+        row = rows[int(path.split(".")[1])] if path.startswith("sentences.") else None
+        offered = _offered(code, message, row["decision"] if row is not None else "none")
+        about = row is None or row["sentence"] == subject.sentence
+        out.append((code if about else "", message, offered))
+    return out
+
+
+@pytest.mark.parametrize("name", list(SUBJECTS))
+def test_every_message_offers_exactly_the_ends_that_pass(name: str) -> None:
+    """(b) Over every answer the table holds, every refusal offers at least one end, read off
+    it; each end offered for the subject's sentence passes when given, and every end that
+    passes for it is offered, but by dev's own texts for a sentence nothing holds. What the
+    refusals say becomes of it where no answer passes is what the round does, and none is
+    one the table says cannot be raised."""
+    subject = SUBJECTS[name]
+    passing = _ends(name)
+    for answer_name, given in _ANSWERS.items():
+        answer = given(subject)
+        assert [cell for cell in _cells(subject, answer) if _cannot(*cell)] == [], answer_name
+        _assert_the_end_said(subject, answer)
+        found = _offers_of(subject, answer)
+        assert [m for _c, m, offered in found if offered is None] == [], answer_name
+        about = [(code, message, offered) for code, message, offered in found if code]
+        union: set[str] = set().union(*(offered or () for _c, _m, offered in about))
+        for kind in union:
+            assert kind in passing, (answer_name, kind, [m for _c, m, _o in about])
+            assert _refusals(subject, passing[kind]) == []
+        unoffered = set(passing) - union
+        if about and unoffered:
+            assert subject.kind in (CONCLUSION, LIMITATIONS), (answer_name, unoffered)
+            assert {(code, subject.kind) for code, _m, _o in about} <= set(_DEV_TEXTS), (
+                answer_name,
+                unoffered,
+            )
+
+
+def _question_lines(subject: _Subject) -> list[str]:
+    """The lines of the round's first turn that show the subject's passage and ask of it."""
+    passages = passages_of(_report_of(subject), entries=_ledger())
+    return [
+        line
+        for line in agreement.prompt_text(passages).splitlines()
+        if line.startswith((f"- [{subject.pid}]", f"  [{subject.pid}]"))
+    ]
+
+
+# The first turn's lines on the passage of a sentence of each kind: a sentence no keep passes
+# for, and one the ledger's lines hold, listed under the ends that pass for it.
+PROMPTED: dict[str, list[str]] = {
+    "cell failed": [
+        "- [communications.1.encryption] 5. Technical analysis, channel row 1, encryption "
+        '(cites ev_0101): "The decompile of 0x5a10 failed [ev_0101]."',
+        f'  [communications.1.encryption] "The decompile of 0x5a10 failed [ev_0101].": {_UNKEPT}. '
+        f"{_LEFT_OUT}, and {_DASH}.",
+    ],
+    "bullet unread": [
+        "- [capability_summary.1] 1. Executive summary, capability bullet 1 (cites ev_0107): "
+        '"The routine at 0x5a10 was not read [ev_0107]."',
+        f'  [capability_summary.1] "The routine at 0x5a10 was not read [ev_0107].": {_UNKEPT}. '
+        f"{_LEFT_OUT}, and {_NOT_PRINTED}.",
+    ],
+    "held cell": [
+        "- [communications.1.encryption] 5. Technical analysis, channel row 1, encryption "
+        '(cites ev_0104): "Which export the loader calls is not established [ev_0104]."',
+        "  [communications.1.encryption] each of these denies something and names what a "
+        "ledger.N fact shows (an API's call lines, an export, a decoded text); a keep of it as "
+        "written is refused, and the same words with a citation added are a keep; rewrite it "
+        "in your own words on the lines shown, citing the entry they come from, saying what "
+        f"the lines show and what stays unknown, {_DENIAL}, or drop it; if no answer for it "
+        'passes the checks, it is left out of the report: "Which export the loader calls is '
+        'not established [ev_0104]." (ledger.1)',
+    ],
+    "held bullet": [
+        "- [capability_summary.2] 1. Executive summary, capability bullet 2 (cites ev_0104, "
+        'ev_0107): "Which export the loader calls is not established [ev_0104]."',
+        "  [capability_summary.2] each of these denies something and names what a ledger.N fact "
+        "shows (an API's call lines, an export, a decoded text); a keep of it as written is "
+        "refused, and the same words with a citation added are a keep; rewrite it in your own "
+        "words on the lines shown, citing the entry they come from, saying what the lines show "
+        f"and what stays unknown, {_DENIAL}, or drop it; if no answer for it passes the checks, "
+        'it is left out of the report: "Which export the loader calls is not established '
+        '[ev_0104]." (ledger.1)',
+    ],
+    "conclusion count": [
+        '- [conclusion] 7. Conclusion (cites ev_0107): "Five tool calls failed [ev_0107]."',
+        "  [conclusion] answer every sentence of this passage, one row each (1 sentence), as the "
+        "TASK asks.",
+        f'  [conclusion] "Five tool calls failed [ev_0107].": {_UNKEPT}.',
+    ],
+    "limitations unread": [
+        "- [limitations] 11. Limitations, the composed paragraph (each sentence saying a call "
+        "failed or a reading could not be made is held to the failed calls, the tools not run, "
+        "the recorded limitations and the open questions among the facts) (cites ev_0101, "
+        'ev_0112): "The decompile of 0x5a10 failed [ev_0101]. The routine at 0x6100 was not '
+        'read [ev_0112]."',
+        "  [limitations] answer every sentence of this passage, one row each (2 sentences), as "
+        "the TASK asks.",
+        '  [limitations] "The decompile of 0x5a10 failed [ev_0101].": it says a call failed that '
+        "a later call redid: a keep of it as written is refused; rewrite it citing ev_0107 and "
+        f"saying what it answered, {_DENIAL}, or drop it. {_LEFT_OUT}.",
+        f'  [limitations] "The routine at 0x6100 was not read [ev_0112].": {_UNKEPT}.',
+    ],
+    "held limitations": [
+        "- [limitations] 11. Limitations, the composed paragraph (each sentence saying a call "
+        "failed or a reading could not be made is held to the failed calls, the tools not run, "
+        "the recorded limitations and the open questions among the facts) (cites ev_0101, "
+        'ev_0107): "The decompile of 0x5a10 failed [ev_0101]. The gate reads a host mode '
+        '[ev_0107]."',
+        "  [limitations] answer every sentence of this passage, one row each (2 sentences), as "
+        "the TASK asks.",
+        '  [limitations] "The decompile of 0x5a10 failed [ev_0101].": it says a call failed that '
+        "a later call redid: a keep of it as written is refused; rewrite it citing ev_0107 and "
+        f"saying what it answered, {_DENIAL}, or drop it. {_LEFT_OUT}.",
+    ],
+    "held body": [
+        '- [introduction] 12.3 Background (cites ev_0109): "The runtime result of '
+        '`QueryHostMode` is not known [ev_0109]."',
+        "  [introduction] each of these denies something and names what a ledger.N fact shows "
+        "(an API's call lines, an export, a decoded text); keep it naming that fact, with "
+        '"quote": words inside one of its rows that name what the sentence names, copied '
+        "exactly; or rewrite it in your own words on the lines shown, citing an entry the fact "
+        f"cites, {_DENIAL}; or drop it; if no answer for it passes the checks, it is left out "
+        'of the report: "The runtime result of `QueryHostMode` is not known [ev_0109]." '
+        "(ledger.1)",
+    ],
+    "held body twice": [
+        '- [introduction] 12.3 Background (cites ev_0109): "The runtime result of '
+        "`QueryHostMode` is not known, the routine at 0x5a10 was not read and five tool calls "
+        'failed [ev_0109]."',
+        "  [introduction] each of these denies something and names what a ledger.N fact shows "
+        "(an API's call lines, an export, a decoded text); a keep of it is refused whatever it "
+        "names; rewrite it in your own words on the lines shown, citing an entry the fact "
+        f"cites, {_DENIAL}; or drop it; if no answer for it passes the checks, it is left out "
+        'of the report: "The runtime result of `QueryHostMode` is not known, the routine at '
+        '0x5a10 was not read and five tool calls failed [ev_0109]." (ledger.1)',
+    ],
+}
+
+
+@pytest.mark.parametrize("name", list(PROMPTED))
+def test_the_first_turn_offers_exactly_the_ends_that_pass(name: str) -> None:
+    subject = SUBJECTS[name]
+    lines = _question_lines(subject)
+    assert lines == PROMPTED[name]
+    # Each line asking of the sentence (the passage's own line shows it) offers every end that
+    # passes for it, and only those.
+    asked = [line for line in lines[1:] if agreement.quoted_value(subject.sentence) in line]
+    assert asked
+    for line in asked:
+        assert _offered("", line, "none") == frozenset(_ends(name))

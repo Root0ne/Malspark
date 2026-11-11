@@ -279,7 +279,9 @@ def test_the_retry_tells_a_refused_rewrite_of_a_held_sentence_what_becomes_of_it
         EntryTexts.from_ledger(ledger),
         passages_of(_report(FIRST, background=f"{FIRST} {_UNKNOWN}"), entries=ledger),
     )
-    assert prose.message.endswith(f"… {_LEFT_OUT}")
+    # The row's last refusal, it says the sentence's ends once, then that end.
+    assert "… It names what ledger.1 holds lines on: keep it naming that fact" in prose.message
+    assert prose.message.endswith(f"; or drop it. {_LEFT_OUT}")
     reporter = _Reporter({"sentences": [rewrite]}, {"sentences": []})
     asyncio.run(
         ask_section_agreement(

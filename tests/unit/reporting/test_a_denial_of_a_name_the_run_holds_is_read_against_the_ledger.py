@@ -980,6 +980,11 @@ def _no_source(where: str, *, leaving: bool) -> str:
     )
 
 
+# A keep naming no source of a closing sentence no keep passes for: asked only for a drop's
+# reason, never for sources.
+_NO_SOURCE_KEPT = "row 1 names no source; leaving it out, give the reason."
+
+
 def _kept(where: str, sentence: str, why: str, ends: str) -> str:
     return f"row 1: {where} keeps {sentence!r} {why}: {ends}"
 
@@ -1039,7 +1044,7 @@ def _expected() -> dict[str, dict[str, list[tuple[str, str]]]]:
     return {
         "closing held on a name": {
             "keep": [
-                (UNKNOWN_SOURCE_CODE, _no_source("limitations", leaving=True)),
+                (UNKNOWN_SOURCE_CODE, _NO_SOURCE_KEPT),
                 (KEEP_UNQUOTED_CODE, _kept("limitations", _UNKNOWN, named, name)),
             ],
             "keep on a reason": [(KEEP_UNQUOTED_CODE, _kept("limitations", _UNKNOWN, named, name))],
@@ -1104,7 +1109,7 @@ def _expected() -> dict[str, dict[str, list[tuple[str, str]]]]:
         },
         "held to one redone call": {
             "keep": [
-                (UNKNOWN_SOURCE_CODE, _no_source("limitations", leaving=True)),
+                (UNKNOWN_SOURCE_CODE, _NO_SOURCE_KEPT),
                 (KEEP_UNQUOTED_CODE, _kept("limitations", _TRUE, one_rows, one)),
                 (FAILURE_REDONE_CODE, keep_one),
             ],
@@ -1137,7 +1142,7 @@ def _expected() -> dict[str, dict[str, list[tuple[str, str]]]]:
         },
         "held to two redone calls": {
             "keep": [
-                (UNKNOWN_SOURCE_CODE, _no_source("limitations", leaving=True)),
+                (UNKNOWN_SOURCE_CODE, _NO_SOURCE_KEPT),
                 (KEEP_UNQUOTED_CODE, _kept("limitations", _TWO, two_rows, two)),
                 (FAILURE_REDONE_CODE, keep_two),
             ],
@@ -1183,7 +1188,7 @@ def _expected() -> dict[str, dict[str, list[tuple[str, str]]]]:
         },
         "says a call failed": {
             "keep": [
-                (UNKNOWN_SOURCE_CODE, _no_source("limitations", leaving=True)),
+                (UNKNOWN_SOURCE_CODE, _NO_SOURCE_KEPT),
                 (
                     KEEP_UNQUOTED_CODE,
                     _kept("limitations", _SAYS_FAILED, one_rows, failed + _FAILED_ENDS),

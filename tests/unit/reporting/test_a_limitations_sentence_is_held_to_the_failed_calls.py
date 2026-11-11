@@ -816,11 +816,15 @@ def test_a_denial_of_its_own_is_about_the_call_before_it(rewrite: str) -> None:
     row = _row(HAIKU8_SENTENCE, sources, _citing_every_redo(rewrite))
     done, _ = _ask(report, ledger, {"sentences": [row]}, {"sentences": [row]})
     _left_out_alone(report, done, body)
-    # The finding names the call the denial is about, with the call that redid it.
+    # The finding names the call the denial is about, with the call that redid it, and the
+    # ends of the sentence it answers, held to every call it says failed.
     assert [r["message"] for r in done.tally.unresolved if r["code"] == FAILURE_REDONE_CODE] == [
         "row 1: the rewrite of limitations: it says a call failed or a reading could not be "
         "made, while a later call redid it (ev_0168 by ev_0171). Rewrite it citing ev_0171 and "
-        f"saying what it answered, {_UNREDONE_DENIAL}, or drop it. {_LEFT_OUT_END}"
+        f"saying what it answered, {_UNREDONE_DENIAL}, or drop it. It says a call failed that a "
+        "later call redid: a keep of it as written is refused; rewrite it citing ev_0171 and "
+        f"ev_0191 and ev_0170 and saying what each answered, {_UNREDONE_DENIAL}, or drop it. "
+        f"{_LEFT_OUT_END}"
     ]
 
 
