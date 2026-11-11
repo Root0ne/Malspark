@@ -5,7 +5,8 @@ beyond the key as data, and states the totals beside them; the README, the docs
 home and the known-answer gate's example repeat them. A number changed in one
 place only must fail here: the row counts of the arrays, the verdicts in them,
 the per-group rows, the lists of missed and partly facts, the examples of facts
-beyond the key, the reading of each fact beyond the key against the eight
+beyond the key and their wording, the items that entered through the check of the
+run's facts, the reading of each fact beyond the key against the eight
 analyses, the headline totals, the cost and the pages that quote them have to
 agree.
 """
@@ -99,6 +100,13 @@ _UNPRINTED = {
 }
 
 
+_NUMBER_WORDS = {"one": 1, "two": 2, "three": 3, "four": 4, "five": 5, "six": 6, "seven": 7}
+
+
+def _words_of(text: str) -> set[str]:
+    return {w.lower() for w in re.findall(r"[^\W\d_]{4,}", text)}
+
+
 def _verdict_kind(verdict: str) -> str:
     """found, partlyBody, partlyDump, missed or wrong; ``found (…)`` counts as found."""
     if verdict.startswith("found"):
@@ -133,6 +141,15 @@ def problems(page: str, readme: str, docs_home: str, gate: str) -> list[str]:
         found.append(f"keyItems names an origin outside {sorted(ORIGINS)}")
     missed = _run_list(page, "missedItems")
     partly = _run_list(page, "partlyItems")
+    check_items = re.search(r"^  checkItems: \[(.*)\],$", _run_block(page), re.M)
+    check = re.findall(r"'([^']*)'", check_items.group(1)) if check_items else []
+    completion = {str(row[1]) for row in key if row[6] == "completion"}
+    if not check or len(set(check)) != len(check) or not set(check) <= completion:
+        found.append("run.checkItems is not a list of distinct completion rows of keyItems")
+    for pattern in (r"\b(\w+)\s+more items\b", r"\b(\w+)\s+when the run’s facts were checked"):
+        said = re.search(pattern, page, re.I)
+        if not said or _NUMBER_WORDS.get(said.group(1).lower()) != len(check):
+            found.append(f"the page's {pattern!r} does not say {len(check)}")
     if len(missed) != run["missed"]:
         found.append("run.missedItems does not list every missed fact")
     if len(partly) != run["partlyBody"] + run["partlyDump"]:
@@ -184,6 +201,7 @@ def problems(page: str, readme: str, docs_home: str, gate: str) -> list[str]:
     out = re.search(r"export const outOfStrict = '([^']*)';", page)
     strict_drop = 1 if out and any(row[1] == out.group(1) for row in beyond) else 0
     entries = {(str(row[0]), str(row[1])): row[3] for row in beyond}
+    entries_text = {(str(row[0]), str(row[1])): row[2] for row in beyond}
     examples = _run_rows(page, "beyondExamples")
     for example in examples:
         fact = (str(example[2]), str(example[3])) if len(example) == 4 else None
@@ -191,6 +209,13 @@ def problems(page: str, readme: str, docs_home: str, gate: str) -> list[str]:
             found.append(f"the example {example[0]!r} is not a fact on the strict list")
         elif entries[fact] != example[1]:
             found.append(f"the example {example[0]!r} cites other entries than fact {fact}")
+        else:
+            said, fact_text = str(example[0]), str(entries_text[fact])
+            for token in re.findall(r"0x[0-9a-fA-F]+|\d+", said):
+                if token.lower() not in fact_text.lower():
+                    found.append(f"the example {said!r} has {token}, which fact {fact} lacks")
+            if not _words_of(said) & _words_of(fact_text):
+                found.append(f"the example {said!r} shares no word with fact {fact}")
     if len({(str(e[2]), str(e[3])) for e in examples if len(e) == 4}) != len(examples):
         found.append("two examples name the same fact beyond the key")
     if run["beyondKeyStrict"] != run["beyondKey"] - strict_drop:
@@ -304,6 +329,22 @@ def test_the_published_benchmark_numbers_agree_with_one_another() -> None:
             "page",
             "    ['The VirusTotal score at analysis time, 56 of 75', 'ev_0018', 'C', '26'],",
             "    ['The export directory’s own name, UpdaterTag.dll', 'ev_0004', 'C', '26'],",
+        ),
+        # The list of items that came through the check cut to three, a count word
+        # changed, and an id that is not a completion row.
+        (
+            "page",
+            "['K1.6', 'K1.7', 'K1.11', 'K1.12', 'K7.21']",
+            "['K1.6', 'K1.7', 'K1.11']",
+        ),
+        ("page", "Five more items", "Three more items"),
+        ("page", "five\nwhen the run’s facts", "three\nwhen the run’s facts"),
+        ("page", "'K1.12', 'K7.21']", "'K1.12', 'K7.1']"),
+        # An example worded for another fact than the one it points at.
+        (
+            "page",
+            "    ['The compile time stamp, 2024-03-25 15:54:25 UTC', 'ev_0004', 'C', '1'],",
+            "    ['The export directory’s own name, UpdaterTag.dll', 'ev_0004', 'C', '1'],",
         ),
         # An example of the fact outside the strict reading.
         ("page", "'ev_0018', 'C', '26'],", "'ev_0069', 'B', '10'],"),

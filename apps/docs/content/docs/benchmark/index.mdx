@@ -19,6 +19,7 @@ export const run = {
   partlyDump: 5,
   missed: 5,
   wrong: 0,
+  checkItems: ['K1.6', 'K1.7', 'K1.11', 'K1.12', 'K7.21'],
   beyondKey: 38,
   beyondKeyStrict: 37,
   /* The facts beyond the key against the full text of the eight analyses; the
@@ -355,16 +356,14 @@ the family:
 Of the {run.items} facts, {origins.core + origins.sharpened} were fixed before
 the run from the first three analyses, Bitsight, Elastic Security Labs and
 Proofpoint. The other {origins.added + origins.completion} were drawn after the run from the
-full text of the eight analyses. Readers who had not seen the run’s report drew
-{origins.added} from the five further analyses, and {origins.completion - 5} in a
-completion pass that read all eight end to end and listed every checkable fact
+eight analyses: their full text, and a screenshot where the text pointed to one.
+Readers who had not seen the run’s report drew {origins.added} from the five further analyses, and
+{origins.completion - run.checkItems.length} in a completion pass that read all eight end to end and listed every checkable fact
 that no item held. The same readers added specifics from the analyses to
 {origins.sharpened} of the facts fixed before the run. Five more items, the
 export-directory name, the missing signature, the section count, the import
 counts and command 21, entered the key when the run’s own facts were checked
-against the analyses. The specifics added
-to the self-deletion item and to the command that fetches bp.dat entered through
-that same check.
+against the analyses.
 
 Some analyses show a value from a sibling file of the same build. Such a value
 is an item only where this file’s own headers hold the same value; the headers
@@ -510,7 +509,7 @@ and that section’s citations lead to the ledger through the evidence bundle.
 
 The last column tells where a fact comes from: **core** facts were fixed before
 the run from three analyses; **sharpened** facts were fixed then too, and carry
-specifics drawn after the run from the other analyses; **added** facts were
+specifics drawn after the run from the eight analyses; **added** facts were
 drawn after the run from the five further analyses; **completion** facts were
 drawn after the run to complete the key: most in the pass over all eight, five
 when the run’s facts were checked against them. Where a fact carries
