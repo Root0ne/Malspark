@@ -322,6 +322,7 @@ _NOT_SENT = (
     ("agents/tool_fence.py", "<(?=<)"),
     ("analysis/directed_text.py", "<\\|(?:im_start"),
     ("core/undeclared_tools.py", "^[ \\t"),
+    ("pipeline/exit_branches.py", "(?P<space>"),
     ("schemas/stix_pattern.py", "<>|!="),
     ("utils/written_forms.py", "|>"),
     ("utils/written_forms.py", "<|"),

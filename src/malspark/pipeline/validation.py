@@ -78,6 +78,7 @@ from malspark.pipeline.events import (
     safe_finding_value,
     unparsed_answer_kept_sentence,
 )
+from malspark.pipeline.exit_branches import ExitSite, exits_question, uncovered_exits
 from malspark.pipeline.retry_merge import folded_title
 from malspark.schemas.evidence import ENTRY_ID_RE, answer_not_shown, entry_ids_in
 from malspark.schemas.judgement import BENIGN_VERDICT, SEVERITY_RATINGS, VERDICT_VALUES
@@ -217,6 +218,10 @@ class Violation:
     # question sent carries it (:func:`feedback_text`); the finding recorded,
     # stored and printed is the message alone.
     shown: str = ""
+    # A question put to the producer beside the findings that is no finding of
+    # its own (``with_exit_branches``): asked, and never counted, published or
+    # recorded. Never stored on the channel.
+    question_only: bool = False
 
     def __post_init__(self) -> None:
         # A row written by a validator has no route, and its message is its
@@ -5711,6 +5716,12 @@ def chunk_cut_unread_sentence(chunk: str) -> str:
 # A reverser decompiled two routines that held half of what the analysis
 # needed, kept both in its own ledger, and no claim of its answer described
 # either. The functions its ledger entries decompiled are listed to it, once.
+# The branches of its listings that end a function with a constant on a
+# condition, where no one claim names the function together with a term of
+# that condition (a function or slot it calls, the slot's resolved API name, a
+# constant of 10 or more), join the same question when a validation turn is
+# asked anyway: at most 8, ranked, the rest counted (``pipeline.exit_branches``).
+# They are a question, not a finding: what is recorded is the functions alone.
 DECOMPILED_NOT_DESCRIBED_CODE = "isr.decompiled_not_described"
 
 # The argument names a decompile call gives its function under, besides an
@@ -6127,31 +6138,46 @@ def _decompiled_words(function: DecompiledFunction) -> str:
 
 def decompiled_not_described_violation(
     functions: Sequence[DecompiledFunction],
+    exits: Sequence[ExitSite] = (),
 ) -> Violation | None:
     """The question for the decompiled functions no claim names, or ``None`` when none is left.
 
     Every such function is listed, with its names and the entries that hold
-    its listing, in one question. What the analyst answers stands; the
-    functions its kept answer still names in no claim are the finding the
-    report prints.
+    its listing, in one question. ``exits`` are the branches no one claim
+    names with their function (``exit_branches.uncovered_exits``, ranked):
+    they join the same question (:func:`with_exit_branches` says when).
+    After the functions they are only what the question sent shows
+    (``Violation.shown``): the finding's words, which every event, row and
+    count carries, are the functions' alone. Alone they are the question's
+    words, of a question that is no finding (``question_only``). What the
+    analyst answers stands; the functions its kept answer still names in no
+    claim are the finding the report prints.
     """
-    if not functions:
+    if not functions and not exits:
         return None
+    if not functions:
+        return Violation(code=DECOMPILED_NOT_DESCRIBED_CODE, message=exits_question(exits))
     return Violation(
         code=DECOMPILED_NOT_DESCRIBED_CODE,
-        message=(
-            f"You decompiled {len(functions)} function(s) that no claim of this answer names "
-            "by a name the decompiler gave it, or by its address or its offset from the "
-            "image base written in hex (with 0x, with a trailing h, as bare hex digits, or "
-            "inside a name such as FUN_); an offset written in decimal digits alone is not "
-            "read as one: "
-            f"{'; '.join(safe_finding_value(_decompiled_words(f)) for f in functions)}. For "
-            "each one that matters to this analysis, write a claim naming it by its address "
-            "and saying what its code does: the checks it makes, the calls it makes and "
-            "their arguments, and the decoded strings and resolved names it uses, citing the "
-            "entry that holds its listing. A function that does nothing this analysis needs "
-            "may stay undescribed."
-        ),
+        message=_functions_not_described(functions),
+        shown=exits_question(exits) if exits else "",
+    )
+
+
+def _functions_not_described(functions: Sequence[DecompiledFunction]) -> str:
+    """The question's words for the functions no claim names, every one listed."""
+    return (
+        f"You decompiled {len(functions)} function(s) that no claim of this answer names "
+        "by a name the decompiler gave it, or by its address or its offset from the "
+        "image base written in hex (with 0x, with a trailing h, as bare hex digits, or "
+        "inside a name such as FUN_); an offset written in decimal digits alone is not "
+        "read as one: "
+        f"{'; '.join(safe_finding_value(_decompiled_words(f)) for f in functions)}. For "
+        "each one that matters to this analysis, write a claim naming it by its address "
+        "and saying what its code does: the checks it makes, the calls it makes and "
+        "their arguments, and the decoded strings and resolved names it uses, citing the "
+        "entry that holds its listing. A function that does nothing this analysis needs "
+        "may stay undescribed."
     )
 
 
@@ -12553,14 +12579,19 @@ def _announce_feedback(
     feed: _FeedbackFeed | None = None,
     retry_index: int = 0,
 ) -> None:
-    """Log the correction turn, publish it, and hand it to the run's tally."""
+    """Log the correction turn, publish it, and hand it to the run's tally.
+
+    A question that is no finding (``Violation.question_only``) is neither
+    logged nor published; the tally is the caller's to keep.
+    """
+    found = [v for v in violations if not v.question_only]
     logger.info(
         "validation: retrying after %d violation(s): %s.",
-        len(violations),
-        ", ".join(sorted({v.code for v in violations})),
+        len(found),
+        ", ".join(sorted({v.code for v in found})),
     )
     if feed is not None:
-        feed.announce(violations, retry_index)
+        feed.announce(found, retry_index)
     if on_feedback is None:
         return
     try:
@@ -12602,6 +12633,8 @@ class _FeedbackFeed:
         left = {(v.code, v.path) for v in remaining}
         seen: set[tuple[str, str]] = set()
         for violation in shown:
+            if violation.question_only:
+                continue
             key = (violation.code, violation.path)
             if key in left or key in seen:
                 continue
@@ -14366,6 +14399,54 @@ def whole_answer_questions(
         analyst_cut_violation(cap, text, chunk=named, techniques=techniques)
         for cap, text, named in cuts
     ]
+
+
+def with_exit_branches(
+    violations: Sequence[Violation],
+    candidate: Any,
+    inputs: AnswerCheckInputs,
+    exits: Sequence[ExitSite],
+) -> list[Violation]:
+    """``violations`` with the branches no one claim of ``candidate`` names put to the analyst.
+
+    The branches never open a turn. They join the decompiled-functions
+    question when it lists functions, or stand as that code's question when
+    another finding the turn asks about is there; with neither, nothing is
+    added and the answer stands as it would without them. They are a
+    question, not a finding: the check of a retry is not handed them, what a
+    record keeps of a turn is :func:`exit_branches_left_out`'s, and the
+    question standing alone is ``question_only``, counted and published
+    nowhere.
+    """
+    left = uncovered_exits(candidate, exits, inputs.image_bases)
+    if not left:
+        return list(violations)
+    at = next(
+        (i for i, v in enumerate(violations) if v.code == DECOMPILED_NOT_DESCRIBED_CODE), None
+    )
+    if at is not None:
+        functions = undescribed_decompiles(candidate, inputs.decompiled, inputs.image_bases)
+        joined = decompiled_not_described_violation(functions, left)
+        return [*violations[:at], *([joined] if joined else []), *violations[at + 1 :]]
+    if not _askable(violations):
+        return list(violations)
+    alone = decompiled_not_described_violation((), left)
+    return [*violations, *([replace(alone, question_only=True)] if alone else [])]
+
+
+def exit_branches_left_out(violations: Sequence[Violation]) -> list[Violation]:
+    """``violations`` without what :func:`with_exit_branches` put: as the turn without them.
+
+    The decompiled question keeps the functions alone, and the question the
+    branches stood as alone goes.
+    """
+    out: list[Violation] = []
+    for v in violations:
+        if v.code != DECOMPILED_NOT_DESCRIBED_CODE:
+            out.append(v)
+        elif not v.question_only:
+            out.append(replace(v, shown="") if v.shown else v)
+    return out
 
 
 def analyst_answer_checks(

@@ -2692,6 +2692,42 @@ turn, each once, and what the analyst answers stands.
     alone is not read as one. The functions the kept answer
     still names in no claim are recorded, and §13's validation list prints the
     line naming them.
+  - *Branches that end a function* (`pipeline/exit_branches.py`). Every
+    listing of the analyst's own entries that answered and was shown is read
+    by its shape, whatever its tool. A readable listing is a C body after a
+    signature's `)`; a body with a label or a `goto`, one that does not
+    parse, prose and JSON say nothing (comments, strings and the text around
+    the body are no part of it). An exit is a `return` of a constant
+    (negated or cast, or `true`/`false`), or a constant given to a variable
+    the function returns, inside a condition. Its terms come from the
+    innermost condition alone: the functions it calls (a generic name, by the
+    declared prefixes), the slots it calls through (a datum's label, by the
+    declared data prefixes, called through a pointer or resolved by the
+    function index) and its constants of 10 or more; each variable it tests
+    adds the functions and slots of the nearest statement before it on its
+    path that mentions the variable and calls one, unless the condition
+    assigns the variable itself. An exit with no term says nothing. An exit is
+    covered when one claim names its function and one of its terms (an
+    address written as for a function or inside a data label, a slot's
+    resolved API name, or a constant in hex with `0x` or in decimal). The
+    others never open a turn: they join the question when it lists functions,
+    or stand under its code beside another finding the turn asks about, and
+    with neither nothing is asked. At most 8 are listed, grouped by function:
+    a function a claim already names first, then the term the fewest of the
+    analyst's listings call, then the function with the most exits handing
+    back that value, and the rest counted. A branch that only handles a failed
+    call or allocation may stay undescribed. They are a question, not a
+    finding: the retry's check is not asked them, what any record, published
+    event or validation count keeps of the code is the functions alone, and
+    the window is measured on the turn without them, from which they go first
+    when the turn with them, framed as it is sent, does not fit. A number
+    longer than 16 hex or 20 decimal digits is no constant and no term; the
+    other exits are still asked. A listing or a reading that fails never
+    costs an answer: the turn is then asked as it is without them. The loop's
+    record notes, for the answer kept, how many listings were read, how many
+    exits they hold and how many no claim names, the lines a question lists,
+    and whether the turn asked them. The reader runs in time linear in the
+    listing.
   - *Why.* A reverser had decompiled two routines holding half of what the
     analysis needed and described neither.
 - **Functions not read** (`isr.callees_not_read`, `agents/callees_question.py`).
