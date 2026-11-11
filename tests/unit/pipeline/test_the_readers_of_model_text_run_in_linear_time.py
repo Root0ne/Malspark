@@ -13,6 +13,7 @@ Nothing is cut to make it pass.
 from __future__ import annotations
 
 import math
+import tracemalloc
 from collections.abc import Callable
 from functools import lru_cache
 from types import SimpleNamespace
@@ -210,6 +211,17 @@ def _built(make: Callable[[str], str], read: Callable[[str], object]) -> Callabl
     return read_built
 
 
+def _claim_line(text: str) -> str:
+    """A line the heading rule turns down after its first words: the rest is never read.
+
+    Built in the timed call, the line was the whole cost measured: one Windows
+    test process took fresh pages for every 160 KB line and reused them for
+    every 40 KB one, and read 25 to 28 times the cost for four times the line
+    on every pair; with the pages reused it reads about 4 times.
+    """
+    return "CLAIM " + text
+
+
 ENTRIES = EntryTexts.from_ledger(
     [
         build_entry(
@@ -280,7 +292,7 @@ EXITS = exit_branches(
     [
         pytest.param(read_technique_line, id="technique line"),
         pytest.param(lambda t: read_technique_line("T1106 " + t), id="technique line after an id"),
-        pytest.param(lambda t: CLAIM_HEAD_RE.match("CLAIM " + t), id="claim heading"),
+        pytest.param(_built(_claim_line, CLAIM_HEAD_RE.match), id="claim heading"),
         pytest.param(lambda t: CLAIM_HEAD_RE.match("CLAIM" + " " * len(t) + "x"), id="spaces"),
         pytest.param(lambda t: claim_blocks("CLAIM R1: " + t), id="claim blocks"),
         pytest.param(lambda t: ClaimRepeatReader(None).feed("CLAIM R1: " + t), id="streaming"),
@@ -579,6 +591,24 @@ EXITS = exit_branches(
 )
 def test_four_times_the_hostile_line_stays_under_the_ratio(read: Callable[[str], object]) -> None:
     _scales_linearly(read)
+
+
+@pytest.mark.parametrize("size", [SMALLEST, LARGEST, 4 * LARGEST])
+def test_the_claim_heading_case_times_the_rule_and_no_copy_of_the_line(size: int) -> None:
+    # The rule decides the hostile line on its first words, so a timed call
+    # that copied the line would time the copy alone: the call holds no block
+    # of the line's size, counted rather than timed.
+    text = _hostile(size)
+    read = _built(_claim_line, CLAIM_HEAD_RE.match)
+    assert read(text) is None
+    assert CLAIM_HEAD_RE.match(_claim_line(text[:24])) is None
+    tracemalloc.start()
+    try:
+        read(text)
+        _, peak = tracemalloc.get_traced_memory()
+    finally:
+        tracemalloc.stop()
+    assert peak < 4096
 
 
 def test_a_megabyte_run_of_spaces_after_a_claim_word_stays_under_the_ratio() -> None:
