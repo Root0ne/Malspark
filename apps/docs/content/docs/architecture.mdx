@@ -5008,7 +5008,34 @@ is assembled from what the run gathered rather than recomputed beside it:
   standalone keep or drop — never from a word in the reason. Each cited entry
   is shown as stored (`question_evidence`), with its tool, and marked when the
   run holds only part of it or only its lower-cased search copy. An id the catalogue rejects or the sample cannot host is not asked and
-  is recorded in `not_asked`. The answer is kept on the judge's bundle
+  is recorded in `not_asked`. **A technique an agent checked is asked too.**
+  With the run's ledger the question also lists, as checked, every technique
+  id an entry's call arguments write, whatever the tool, or a tool answer's
+  declared technique field names (`ToolFacts.techniques`), that no final
+  claim, finding or bundle object carries
+  (`capability_matrix.checked_technique_questions`; a parent and its
+  sub-technique are two ids). Each is listed with the agents and entries it
+  was seen in and its card, and the entries the final claims of each such
+  agent cite are listed once under the techniques, by id; a question with no
+  checked technique reads as it did before. A checked technique is answered
+  `map`, with the ledger entries it rests on (`evidence_ids`), or `decline`,
+  with a reason; a keep or a drop on it, or a map on any other technique,
+  decides nothing, and one left unanswered is not published. A map is checked
+  as an analyst's claim of the technique is
+  (`validation.mapped_technique_violations`): at least one entry, every entry
+  one the run's ledger holds (`isr.ungrounded_technique`), then the
+  catalogue, absence, scope and describe checks of `validate_isr`; and a
+  mapped parent technique one of whose sub-techniques the report publishes is
+  declined (`attck.parent_of_a_published_sub_technique`), since a
+  sub-technique says its parent. A map that fails is recorded as `decline`
+  with the check's code and finding (`declined_by_check`, `check_finding`),
+  the judge's entries and reason kept beside them, and is never published; one
+  that stands is published as a technique the judge states — its row and
+  mapping list the mapped entries as sources and carry the judge-only note —
+  and so reaches the STIX attack-patterns and `/reports/{id}/mitre`. A
+  declined technique stays on the review (`checked`, `decisions`) and adds no
+  text to the report. `scripts/replay/checked_techniques.py` rebuilds the
+  checked list from a stored run's files. The answer is kept on the judge's bundle
   (`x_malspark_technique_review`, never exported) and the matrix publishes per
   it: a dropped technique is not published and reads "the judge dropped it
   (\<reason>)", a kept one is published — a finding's technique included — with
