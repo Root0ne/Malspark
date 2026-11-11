@@ -627,8 +627,8 @@ def test_a_record_of_procedure_10_leaves_procedure_1_as_before() -> None:
     assert _row_of("T1010").rstrip().endswith("| - |")
 
 
-# What every refusal of an answer for a cell or a bullet ends with: what the field is, every
-# end that passes for it, and what becomes of it where none does.
+# What the last refusal of a row answering a cell or a bullet ends with: what the field is,
+# every end that passes for it, and what becomes of it where none does; said once a row.
 _PASSING_ENDS = (
     "every sentence of which is answered: rewrite it on the source that states otherwise, "
     "citing an entry that source cites; keep it naming the source you read and found agreeing, "
@@ -737,13 +737,9 @@ def _refusals(pid: str, row: dict[str, Any]) -> list[tuple[str, str, str]]:
                     "sentences.0.rewrite",
                     "row 1: the rewrite cites ev_0999, which neither its sources nor "
                     "communications.1.encryption cite. Cite only what the sources you name, or "
-                    f"the passage itself, cite. {_CELL_TOLD}",
+                    "the passage itself, cite.",
                 ),
-                (
-                    "agreement.rewrite_ungrounded",
-                    "sentences.0.rewrite",
-                    f"{_UNGROUNDED} {_CELL_TOLD}",
-                ),
+                ("agreement.rewrite_ungrounded", "sentences.0.rewrite", _UNGROUNDED),
                 (
                     "report.citation_not_evidence",
                     "sentences.0.rewrite",
@@ -786,19 +782,15 @@ def _refusals(pid: str, row: dict[str, Any]) -> list[tuple[str, str, str]]:
                     "sentences.0.rewrite",
                     "row 1: the rewrite cites ev_0999, which neither its sources nor "
                     "capability_summary.1 cite. Cite only what the sources you name, or the "
-                    f"passage itself, cite. {_BULLET_TOLD}",
+                    "passage itself, cite.",
                 ),
                 (
                     "agreement.rewrite_drops_citation",
                     "sentences.0.rewrite",
                     "row 1: the sentence cites ev_0107, which the rewrite does not. Keep every id "
-                    f"the sentence cites, or keep the sentence. {_BULLET_TOLD}",
+                    "the sentence cites, or keep the sentence.",
                 ),
-                (
-                    "agreement.rewrite_ungrounded",
-                    "sentences.0.rewrite",
-                    f"{_UNGROUNDED} {_BULLET_TOLD}",
-                ),
+                ("agreement.rewrite_ungrounded", "sentences.0.rewrite", _UNGROUNDED),
                 (
                     "report.citation_not_evidence",
                     "sentences.0.rewrite",
@@ -808,7 +800,7 @@ def _refusals(pid: str, row: dict[str, Any]) -> list[tuple[str, str, str]]:
         ),
     ],
 )
-def test_every_refusal_for_a_cell_or_bullet_says_what_it_is_and_every_end(
+def test_every_row_refused_for_a_cell_or_bullet_says_once_what_it_is_and_every_end(
     pid: str, row: dict[str, Any], expected: list[tuple[str, str, str]]
 ) -> None:
     assert _refusals(pid, row) == expected
@@ -951,3 +943,64 @@ def test_a_cell_s_name_fact_comes_before_a_body_sentence_s_in_the_budget(
         "1 name the ledger holds not shown: budget (146 characters of such facts per "
         "question); a sentence held only on them is not held"
     )
+
+
+def test_a_keep_quoting_only_blanks_is_refused_for_giving_no_quote() -> None:
+    keep = _row(CELL, "keep", ["string_resolution"], quote="   ")
+    assert _refusals("communications.1.encryption", keep) == [
+        (
+            "agreement.keep_unquoted",
+            "sentences.0.quote",
+            "row 1: communications.1.encryption keeps 'Not established.' on string_resolution, "
+            "but gives no quote; quote at least 12 characters of the source's words: "
+            f"{_KEEP_TOLD} {_CELL_TOLD}",
+        )
+    ]
+
+
+def _beside_the_cell(*rows: dict[str, Any]) -> dict[str, Any]:
+    """An answer of ``rows`` for the cell, with the limitations sentence and the bullet each
+    answered by a passing row."""
+    return {
+        "sentences": [
+            *(_at("communications.1.encryption", row) for row in rows),
+            _at("limitations", _beside()),
+            _at("capability_summary.1", _row(BULLET, "keep", [], reason="no source speaks of it")),
+        ]
+    }
+
+
+def test_a_rewrite_only_the_prose_checks_refuse_answers_nothing_for_its_sentence() -> None:
+    # Its own checks pass; the report rounds' prose checks refuse it: no answer passed, so the
+    # refused keep beside it is asked about, and so is the rewrite.
+    payload = _beside_the_cell(
+        _row(
+            CELL, "rewrite", ["string_resolution"], rewrite="Routine 0x5a10 was not read [ev_0107]."
+        ),
+        _row(CELL, "keep", ["string_resolution"], quote="zz"),
+    )
+    ledger = _ledger()
+    citable = [str(e.id) for e in ledger]
+    entries = EntryTexts.from_ledger(ledger)
+    passages = passages_of(_with_section_5(), entries=ledger)
+    assert [v.code for v in agreement_violations(payload, passages, citable, None, entries)] == [
+        "agreement.keep_unquoted"
+    ]
+    assert [v.code for v in rewrites_violations(payload, citable, None, entries, passages)] == [
+        "report.absence_contradicts_ledger"
+    ]
+
+
+def test_a_passing_cited_rewrite_beside_a_refused_keep_asks_nothing_more_in_the_round() -> None:
+    # The round reads the rewrite against the entries it may cite, as the report rounds do: it
+    # passes, and the refused keep beside it asks no retry.
+    rewrite = "Each report is encrypted with RC4 [ev_0107]."
+    payload = _beside_the_cell(
+        _row(CELL, "rewrite", ["string_resolution"], rewrite=rewrite),
+        _row(CELL, "keep", ["string_resolution"], quote="zz"),
+    )
+    report = _with_section_5()
+    reporter = _Reporter(payload, payload)
+    _ask(report, reporter)
+    assert len(reporter.asked) == 1
+    assert report.c2_channels[0].encryption == rewrite

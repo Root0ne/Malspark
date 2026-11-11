@@ -248,8 +248,9 @@ def test_a_drop_of_a_held_body_sentence_is_an_answer() -> None:
     findings, counts, _records = _answered(report, _row(FIRST, "drop", [], reason="x"))
     assert (
         UNKNOWN_PASSAGE_CODE,
-        "row 1: only a sentence of the conclusion or the limitations is left out; answer the "
-        "sentence of introduction with keep or rewrite.",
+        "row 1: only a sentence of the conclusion, the limitations, a value cell or a "
+        "capability bullet, or one the ledger's lines hold, is left out; answer the sentence "
+        "of introduction with keep or rewrite.",
     ) in findings
     assert counts["not_applied"] == 1 and report.intro_background == FIRST
 
