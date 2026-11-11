@@ -832,16 +832,22 @@ def test_an_undeclared_reason_prints_under_the_label_of_other() -> None:
             ("made_up_word: x", "other: y", "tool_failed: z"),
             "Open questions: 3 filed (other: 2, a tool failed: 1)",
         ),
+        # Equal counts: the smallest code counted under a label decides, not the last seen.
+        (
+            ("other: a", "zzz: b", "tool_failed: c", "tool_failed: d"),
+            "Open questions: 4 filed (other: 2, a tool failed: 2)",
+        ),
     ):
         report, ledger = _with_reasons(*whys)
         assert reason_label("made_up_word") == reason_label("other") == "other"
         (row,) = [r for r in printed_rows(report.limitation_inventory) if r.part == "questions"]
         assert row.text.startswith(printed)
-        assert "made_up_word" not in _section_11(report)
+        word = "zzz" if "zzz: b" in whys else "made_up_word"
+        assert word not in _section_11(report)
         # The round's facts keep the word the run recorded.
         passages = passages_of(report, entries=ledger)
         (fact,) = [p for p in passages if p.text.startswith("Open questions:")]
-        assert "made_up_word: 1" in fact.text
+        assert f"{word}: 1" in fact.text
 
 
 @pytest.mark.parametrize("name", ("haiku11", "haiku13"))

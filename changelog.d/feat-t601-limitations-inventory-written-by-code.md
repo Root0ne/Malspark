@@ -46,4 +46,5 @@
   were shown only where a sentence of the paragraph was held to the failed calls. Which
   passages are held, and the checks, ends and refusals the round applies, are as before: where
   the paragraph is held, a refusal that lists the facts speaking of a sentence names the `inv.N`
-  rows in place of the facts they replace; elsewhere the rows speak of no sentence.
+  rows among them: in place of the facts they replace, and beside them for a row that replaces
+  none (the capture, the sandbox, the code read); elsewhere the rows speak of no sentence.

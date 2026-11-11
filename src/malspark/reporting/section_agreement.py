@@ -496,8 +496,8 @@ class Passage:
     unkept: tuple[str, ...] = ()
     # A fact that speaks of no sentence: a row of the limitations inventory shown where the
     # paragraph is not held to the failed calls, where dev showed none of its facts. It is
-    # shown and may be named, but raises no refusal, no item a quote leaves out and no
-    # question of its own (T-601).
+    # shown and may be named, but raises no refusal of a row that does not name it, no item a
+    # quote leaves out and no question of its own (T-601).
     silent: bool = False
 
 

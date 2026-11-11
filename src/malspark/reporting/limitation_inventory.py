@@ -533,7 +533,7 @@ def _question_rows(inv: LimitationInventory, reason_as: Callable[[str], str]) ->
         return []
     # Counted as each reason is written, so reasons written alike are one item (an
     # undeclared word under the label of "other", beside the declared "other"), ordered by
-    # count, then by the first code counted under it.
+    # count, then by the smallest code counted under it.
     by_reason: dict[str, tuple[int, str]] = {}
     for question in questions:
         written = reason_as(question.reason)
