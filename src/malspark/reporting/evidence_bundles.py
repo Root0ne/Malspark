@@ -1514,11 +1514,39 @@ _SANDBOX_CALLED_CATEGORIES: dict[str, tuple[str, ...]] = {
 # an import-table zero then denies the names the run resolved.
 IMPORT_TABLE_PROFILE_FACT = "capability_profile_of_import_table"
 RESOLVED_PROFILE_FACT = "capability_profile_of_names_resolved_at_runtime_not_imports"
-_PROFILE_SCOPES: tuple[tuple[str, str, str], ...] = (
-    (IMPORT_TABLE_PROFILE_FACT, "api_capabilities", "api_capabilities_evidence_ids"),
-    (RESOLVED_PROFILE_FACT, "api_capabilities_resolved", "api_capabilities_resolved_evidence_ids"),
+
+
+class _ImportTableCounts(dict[str, int]):
+    """A section's categories in the import table's profile.
+
+    :func:`is_empty` reads it one count at a time: a nonzero count opens the
+    section and a profile of zeros alone does not, as when each count was a
+    fact of its own.
+    """
+
+
+class _ResolvedNameCounts(dict[str, int]):
+    """A section's categories in the profile of the names resolved at runtime.
+
+    :func:`is_empty` never reads it: these counts were not among a section's
+    facts before they were scoped, so they open no section.
+    """
+
+
+_PROFILE_SCOPES: tuple[tuple[str, str, str, type[dict[str, int]]], ...] = (
+    (
+        IMPORT_TABLE_PROFILE_FACT,
+        "api_capabilities",
+        "api_capabilities_evidence_ids",
+        _ImportTableCounts,
+    ),
+    (
+        RESOLVED_PROFILE_FACT,
+        "api_capabilities_resolved",
+        "api_capabilities_resolved_evidence_ids",
+        _ResolvedNameCounts,
+    ),
 )
-_PROFILE_FACTS = frozenset(fact for fact, _counts, _ids in _PROFILE_SCOPES)
 
 
 def _profile_counts(static: Any, *categories: str) -> dict[str, dict[str, int]]:
@@ -1532,10 +1560,10 @@ def _profile_counts(static: Any, *categories: str) -> dict[str, dict[str, int]]:
     if static is None:
         return {}
     facts: dict[str, dict[str, int]] = {}
-    for fact, counts, evidence_ids in _PROFILE_SCOPES:
+    for fact, counts, evidence_ids, scoped in _PROFILE_SCOPES:
         caps = getattr(static, counts, None) or {}
         if caps or getattr(static, evidence_ids, None):
-            facts[fact] = {category: int(caps.get(category, 0)) for category in categories}
+            facts[fact] = scoped({category: int(caps.get(category, 0)) for category in categories})
     return facts
 
 
@@ -1759,9 +1787,17 @@ def is_empty(bundle: dict[str, Any]) -> bool:
     if bundle.get("claims") or bundle.get("tool_outputs") or bundle.get("function_code"):
         return False
     facts = bundle.get("facts") or {}
-    # A profile's counts are read one by one, as they were when each was a
-    # fact of its own: a profile of zeros alone leaves the section empty.
-    return not any(
-        any(v.values()) if k in _PROFILE_FACTS and isinstance(v, dict) else v
-        for k, v in facts.items()
-    )
+    # The skip decision is the one made before the counts were scoped. A
+    # section's import-table counts open it only when one is nonzero; its
+    # resolved-name counts never do; every other fact, a whole profile
+    # included, opens it when it holds anything.
+    return not any(_opens_section(v) for v in facts.values())
+
+
+def _opens_section(value: Any) -> bool:
+    """Whether one fact makes its section worth writing (:func:`is_empty`)."""
+    if isinstance(value, _ResolvedNameCounts):
+        return False
+    if isinstance(value, _ImportTableCounts):
+        return any(value.values())
+    return bool(value)

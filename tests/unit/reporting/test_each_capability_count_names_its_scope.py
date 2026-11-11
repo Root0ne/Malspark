@@ -105,54 +105,57 @@ def test_with_no_resolved_profile_only_the_import_table_is_named(
 
 
 @pytest.mark.parametrize(
-    ("section", "others"),
+    ("section", "facts"),
     [
-        ("encryption_scheme", {}),
-        ("discovery", {"discovery_techniques": []}),
-        ("evasion_antiforensics", {"evasion_techniques": []}),
-        ("persistence_detail", {"persistence_mechanisms": [], "persistence_assessed": []}),
+        ("encryption_scheme", {RESOLVED: {"crypto": 2}}),
+        ("discovery", {RESOLVED: {"discovery": 0}, "discovery_techniques": []}),
+        (
+            "evasion_antiforensics",
+            {RESOLVED: {"anti_debug": 7, "evasion": 0}, "evasion_techniques": []},
+        ),
+        (
+            "persistence_detail",
+            {
+                "persistence_mechanisms": [],
+                "persistence_assessed": [],
+                RESOLVED: {"persistence": 0, "registry": 0},
+            },
+        ),
     ],
 )
 def test_with_no_import_profile_only_a_measured_resolved_profile_is_named(
-    section: str, others: dict[str, Any]
+    section: str, facts: dict[str, Any]
 ) -> None:
-    assert bundle_for(section, _report())["facts"] == others
+    unmeasured = {k: v for k, v in facts.items() if k != RESOLVED}
+    assert bundle_for(section, _report())["facts"] == unmeasured
     resolved = _report(
         api_capabilities_resolved={"crypto": 2, "anti_debug": 7},
         api_capabilities_resolved_evidence_ids=["ev_0011"],
     )
-    facts = bundle_for(section, resolved)["facts"]
-    assert IMPORTS not in facts
-    assert set(facts) == {RESOLVED, *others}
+    assert bundle_for(section, resolved)["facts"] == facts
 
 
 def test_the_section_request_holds_both_scoped_lines_and_no_unscoped_count() -> None:
     bundle = bundle_for("evasion_antiforensics", _both_measured())
     text = _bundle_text("evasion_antiforensics", bundle)
-    lines = text.splitlines()
-    assert any(line.startswith(f"- {IMPORTS}: ") and "0" in line for line in lines)
-    assert any(line.startswith(f"- {RESOLVED}: ") and "7" in line for line in lines)
-    assert not [line for line in lines if line.split(":")[0].endswith("_api_count")]
-
-
-def test_a_profile_of_zeros_alone_leaves_a_section_empty() -> None:
-    report = _report(api_capabilities={"persistence": 1}, api_capabilities_evidence_ids=["ev_0010"])
-    assert is_empty(bundle_for("encryption_scheme", report))
-    resolved = _report(
-        api_capabilities={"persistence": 1},
-        api_capabilities_evidence_ids=["ev_0010"],
-        api_capabilities_resolved={"crypto": 2},
-        api_capabilities_resolved_evidence_ids=["ev_0011"],
-    )
-    assert not is_empty(bundle_for("encryption_scheme", resolved))
+    block = text.split("DETERMINISTIC FACTS:\n", 1)[1].split("\n\n", 1)[0]
+    assert block.splitlines() == [
+        '- capability_profile_of_import_table: {"anti_debug": 0, "evasion": 0}',
+        "- capability_profile_of_names_resolved_at_runtime_not_imports:"
+        ' {"anti_debug": 7, "evasion": 4}',
+        '- evasion_techniques: ["T1622"]',
+    ]
 
 
 def test_the_string_count_names_the_strings_it_counts() -> None:
     from malspark.reporting.models import StringIOC
 
     report = _report(interesting_strings=[StringIOC(value="http://a.example/x", kind="url")])
-    facts = bundle_for("string_resolution", report)["facts"]
-    assert facts["strings_typed_as_indicators_count"] == 1
+    assert bundle_for("string_resolution", report)["facts"] == {
+        "static_import_count": 0,
+        "strings_typed_as_indicators_count": 1,
+        IMPORTS: {},
+    }
 
 
 def test_the_string_section_names_each_profile_by_the_same_scoped_key() -> None:
@@ -190,3 +193,120 @@ def test_every_other_section_names_the_import_profile_by_its_scope(section: str)
     facts = bundle_for(section, report)["facts"]
     assert facts == {IMPORTS: {"network": 5, "registry": 2}}
     assert list(facts[IMPORTS]) == ["network", "registry"]
+
+
+# The constructed profiles of the skip-decision cases: every combination of a
+# measured, unmeasured, zero, nonzero, negative or unknown category in either
+# scope, and two ordinary runs.
+_SKIP_CASES: dict[str, dict[str, Any]] = {
+    "nothing_measured": {},
+    "both_measured": {
+        "api_capabilities": {"persistence": 1},
+        "api_capabilities_evidence_ids": ["ev_0010"],
+        "api_capabilities_resolved": {
+            "anti_debug": 7,
+            "evasion": 4,
+            "discovery": 10,
+            "registry": 5,
+            "persistence": 4,
+        },
+        "api_capabilities_resolved_evidence_ids": ["ev_0011"],
+        "api_technique_hits": [
+            {"technique_id": "T1622", "name": "Debugger Evasion"},
+            {"technique_id": "T1082", "name": "System Information Discovery"},
+        ],
+    },
+    "resolved_only_nonzero": {
+        "api_capabilities_resolved": {"crypto": 2, "anti_debug": 7},
+        "api_capabilities_resolved_evidence_ids": ["ev_1"],
+    },
+    "imports_zero_resolved_nonzero": {
+        "api_capabilities": {"network": 3},
+        "api_capabilities_evidence_ids": ["ev_0"],
+        "api_capabilities_resolved": {"crypto": 2, "discovery": 1, "persistence": 1},
+        "api_capabilities_resolved_evidence_ids": ["ev_1"],
+    },
+    "resolved_measured_empty": {
+        "api_capabilities": {"network": 3},
+        "api_capabilities_evidence_ids": ["ev_0"],
+        "api_capabilities_resolved_evidence_ids": ["ev_1"],
+    },
+    "resolved_ids_only": {"api_capabilities_resolved_evidence_ids": ["ev_1"]},
+    "imports_zero_valued_category": {
+        "api_capabilities": {"network": 0},
+        "api_capabilities_evidence_ids": ["ev_0"],
+    },
+    "resolved_zero_valued_category": {
+        "api_capabilities_resolved": {"crypto": 0},
+        "api_capabilities_resolved_evidence_ids": ["ev_1"],
+    },
+    "resolved_counts_no_ids": {"api_capabilities_resolved": {"crypto": 2}},
+    "imports_counts_no_ids": {"api_capabilities": {"crypto": 2}},
+    "unknown_category": {
+        "api_capabilities": {"quantum_magic": 9},
+        "api_capabilities_resolved": {"quantum_magic": 4},
+        "api_capabilities_evidence_ids": ["e"],
+        "api_capabilities_resolved_evidence_ids": ["f"],
+    },
+    "same_category_both": {
+        "api_capabilities": {"anti_debug": 3},
+        "api_capabilities_resolved": {"anti_debug": 3},
+        "api_capabilities_evidence_ids": ["e"],
+        "api_capabilities_resolved_evidence_ids": ["f"],
+    },
+    "negative": {
+        "api_capabilities": {"crypto": -1},
+        "api_capabilities_evidence_ids": ["e"],
+        "api_capabilities_resolved": {"crypto": -2},
+        "api_capabilities_resolved_evidence_ids": ["f"],
+    },
+    "large": {
+        "api_capabilities": {f"c{i:03d}": i % 7 + 1 for i in range(300)},
+        "api_capabilities_evidence_ids": ["e"],
+    },
+}
+
+_WHOLE_PROFILE = ("cli_flags", "conclusion", "summary")
+
+# The sections written, per case, as they were before the counts were scoped
+# (read off that source on the same inputs); every other section is skipped.
+_WRITTEN: dict[str, set[str]] = {
+    "nothing_measured": set(),
+    "both_measured": {
+        *_WHOLE_PROFILE,
+        "string_resolution",
+        "persistence_detail",
+        "evasion_antiforensics",
+        "discovery",
+    },
+    "resolved_only_nonzero": {"string_resolution"},
+    "imports_zero_resolved_nonzero": {*_WHOLE_PROFILE, "string_resolution"},
+    "resolved_measured_empty": {*_WHOLE_PROFILE, "string_resolution"},
+    "resolved_ids_only": set(),
+    "imports_zero_valued_category": {*_WHOLE_PROFILE, "string_resolution"},
+    "resolved_zero_valued_category": {"string_resolution"},
+    "resolved_counts_no_ids": {"string_resolution"},
+    "imports_counts_no_ids": {*_WHOLE_PROFILE, "string_resolution", "encryption_scheme"},
+    "unknown_category": {*_WHOLE_PROFILE, "string_resolution"},
+    "same_category_both": {*_WHOLE_PROFILE, "string_resolution", "evasion_antiforensics"},
+    "negative": {*_WHOLE_PROFILE, "string_resolution", "encryption_scheme"},
+    "large": {*_WHOLE_PROFILE, "string_resolution"},
+}
+
+_SKIP_SECTIONS = (
+    "encryption_scheme",
+    "discovery",
+    "evasion_antiforensics",
+    "persistence_detail",
+    "string_resolution",
+    *_WHOLE_PROFILE,
+)
+
+
+@pytest.mark.parametrize("case", sorted(_SKIP_CASES))
+def test_a_section_is_skipped_exactly_when_it_was_before_the_counts_were_scoped(
+    case: str,
+) -> None:
+    report = _report(**_SKIP_CASES[case])
+    written = {s for s in _SKIP_SECTIONS if not is_empty(bundle_for(s, report))}
+    assert written == _WRITTEN[case]
