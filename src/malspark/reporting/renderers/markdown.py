@@ -331,10 +331,12 @@ SECTION_5_PROSE: dict[str, tuple[str, ...]] = {
 }
 
 
-# The passages the summary is written in, as the agreement question's records name them
-# (``section_agreement.passages_of``): the summary paragraph, each key finding and each
-# capability bullet.
-SUMMARY_SUBJECTS = ("executive_summary", "key_findings.", "capability_summary.")
+# The passages the bundle's summary is written in, as the agreement question's records
+# name them (``section_agreement.passages_of``): the summary paragraph and each key
+# finding. The analyst report's summary also prints each capability bullet
+# (:data:`SUMMARY_SUBJECTS`); the bundle prints none, so counts none.
+BUNDLE_SUMMARY_SUBJECTS = ("executive_summary", "key_findings.")
+SUMMARY_SUBJECTS = (*BUNDLE_SUMMARY_SUBJECTS, "capability_summary.")
 
 
 def _section_5_prose(ta: Any, number: str) -> list[TechnicalSubsection | None]:
@@ -624,7 +626,7 @@ class MarkdownRenderer:
             "",
         )
         reason = why.split(":", 1)[1].strip() if ":" in why else "the report model wrote none"
-        left = ctx.left_out_clause(*SUMMARY_SUBJECTS)
+        left = ctx.left_out_clause(*BUNDLE_SUMMARY_SUBJECTS)
         lines.append(
             f"No summary is printed: {left}. _({MEASURED})_"
             if left

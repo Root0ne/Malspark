@@ -1093,7 +1093,9 @@ def _expected() -> dict[str, dict[str, list[tuple[str, str]]]]:
                             "introduction",
                             _UNKNOWN,
                             "ledger.1",
-                            "does not stand in a source it names",
+                            # It gives no quote: shorter than the floor (T-600).
+                            "is shorter than 12 characters, so it quotes nothing; quote at "
+                            "least 12 characters of the source's words",
                             _BODY_ENDS,
                         ),
                     )

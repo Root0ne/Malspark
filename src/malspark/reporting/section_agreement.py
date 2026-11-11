@@ -45,11 +45,12 @@ passage written without the code may be rewritten on any source; a sentence of
 a section 5 prose passage only on the platform's facts, never on another
 model's words (a section 5 sentence was pulled toward an analyst's wrong claim
 when it could be), and kept, it is listed, the listing recorded as the model's answer; a
-table cell's value is shown for reading, and a sentence of one is listed and
-kept. Code checks the answer's structure: the passage is one it
-was shown, the copied text is one whole sentence of it standing there once,
-a section 5 passage is answered by a fact alone, about an address or a value
-the sentence or its rewrite names, and a rewrite keeps every id
+passage marked read only (a row of the configuration, command or flag tables) is
+shown for reading, and a sentence of one is listed and kept. Code checks the
+answer's structure: the passage is one it was shown, the copied text is one
+whole sentence of it standing there once, a section 5 passage is answered by a
+fact alone, about an address or a value the sentence or its rewrite names, and
+a rewrite keeps every id
 its sentence cites, cites at least one id its sources cite (sources citing no
 id ground no rewrite) and no id that neither they nor the passage cite;
 and it reads each rewrite as the report rounds read their prose (its
@@ -159,6 +160,16 @@ that passes answers it, whatever another row says; one written twice in its pass
 left out each time; a question that got no answer at all leaves each such sentence out
 for that one reason.
 
+A record's value cell (a channel's protocol, encryption and packet layout; a scheme's
+cipher, mode, library and IV) and each capability bullet of the summary is answered
+whole, as a closing section is, held for being that kind of field, never for its words
+(T-600): a sentence of one no answer passes is left out, a cell left with no sentence
+printing "-" and a bullet left with none not printed; where no row could be read, it
+prints as written. Their facts on a name come after the conclusion's and the
+limitations'. On every path an answer that passes answers its sentence, and a refused
+row for the same sentence is not applied. A quote shorter than
+``absence_answers.QUOTE_FLOOR`` is refused as such, and the question states the floor.
+
 Every step is one pass over the passages and the answer's rows.
 """
 
@@ -204,6 +215,7 @@ from malspark.pipeline.validation import (
 )
 from malspark.reporting.absence_answers import (
     PREPOSITIONS,
+    QUOTE_FLOOR,
     FailureCounts,
     carries_negation,
     content_words,
@@ -219,6 +231,7 @@ from malspark.reporting.absence_answers import (
     negated_clauses,
     observes,
     quote_stands,
+    quote_too_short,
     reading_denied_in,
     said_of,
     set_in_a_run,
@@ -271,9 +284,10 @@ REWRITE_UNGROUNDED_CODE = "agreement.rewrite_ungrounded"
 # A sentence the agreement question rewrote: what stood, what replaced it and
 # on which sources, recorded as the model's answer.
 REWRITTEN_CODE = "agreement.rewritten"
-# A sentence of a passage shown for reading only (a section 5 passage, a
-# record's value field), listed as saying otherwise than its sources and kept
-# as written: the model's answer, recorded where a reader finds it.
+# A sentence of a passage shown for reading only (a section 5 passage, a row
+# of the configuration, command or flag tables), listed as saying otherwise than
+# its sources and kept as written: the model's answer, recorded where a reader
+# finds it.
 LISTED_CODE = "agreement.listed"
 # A rewrite of a limitations sentence that still says a call failed, or a
 # reading could not be made, where a later call redid it.
@@ -284,11 +298,18 @@ FAILURE_REDONE_CODE = "agreement.failure_redone"
 # sections 4 to 6 state, and recorded here with what stood; one the answer
 # leaves out with its reason, keeps while the ledger says otherwise (a failed call a
 # later call redid), or keeps on no source or a quote the checks refused, the same
-# way, with the refused keep's sources, quote or reason.
+# way, with the refused keep's sources, quote or reason. Also a sentence the
+# ledger's own lines hold, in the body as in a closing section, and a sentence of a
+# record's value cell or a capability bullet of the summary, that no answer passing
+# the checks answers after the retry (refused, never answered, or standing twice in
+# its passage), or that the round dropped: left out with what holds it, a cell left
+# with no sentence printing "-" and a bullet left with none not printed (T-600).
 DROPPED_CODE = "agreement.dropped"
-# A held sentence (any sentence of the conclusion or the limitations; one
-# calling open an address or a value a section 5 passage or a fact states) that no
-# row of the answer lists: the model decides each one, and is asked once more.
+# A held sentence (any sentence of the conclusion or the limitations, of a
+# record's value cell or of a capability bullet; one calling open an address or a
+# value a section 5 passage or a fact states; one the ledger's own lines hold, in
+# the body too) that no row of the answer lists: the model decides each one, and
+# is asked once more, told its ends and what becomes of it where none passes.
 HELD_UNLISTED_CODE = "agreement.held_unlisted"
 # A held sentence whose own clause calls code not read that an entry lists,
 # left standing by the answer (no row, a kept row, or a rewrite that failed):
@@ -297,10 +318,11 @@ HELD_UNLISTED_CODE = "agreement.held_unlisted"
 # section 5 denial a decoded value's fact contradicts whose rewrite in the model's
 # words passed no check: the fact's clause is added, and what stood recorded.
 QUALIFIED_CODE = "agreement.qualified"
-# A sentence of the conclusion or the limitations, or a held absence of the body,
-# that the answer kept on no source with its reason, or on a source a check refused
-# (a body absence stands then too): it stands, and is recorded where a reader finds
-# it. One kept on a source whose quote passed every check is counted, not recorded.
+# A sentence of the conclusion or the limitations, of a record's value cell or of a
+# capability bullet, or a held absence of the body, that the answer kept on no
+# source with its reason, or on a source a check refused (a body absence stands
+# then too): it stands, and is recorded where a reader finds it. One kept on a
+# source whose quote passed every check is counted, not recorded.
 HELD_KEPT_CODE = "agreement.held_kept"
 # A held sentence whose own clause calls code not read that an entry lists,
 # which the answer left standing or rewrote still calling it not read: the
@@ -311,8 +333,9 @@ UNREAD_STANDING_CODE = "agreement.unread_standing"
 ABSENCE_KEPT_CODE = "agreement.absence_kept"
 # A kept closing sentence, or a kept held absence of the body, whose row quotes no
 # words of a source it names that state the same (two or more of its own words, an
-# absence on words stating one), or that names no source while a shown one speaks of
-# it (the rows of an entry it cites among them). Still so after the retry, a closing
+# absence on words stating one; never one shorter than ``absence_answers.QUOTE_FLOOR``,
+# refused as such), or that names no source while a shown one speaks of it (the rows of
+# an entry it cites among them). Still so after the retry, a closing
 # sentence is left out and recorded (``DROPPED_CODE``); a body absence stands,
 # recorded (``HELD_KEPT_CODE``).
 KEEP_UNQUOTED_CODE = "agreement.keep_unquoted"
@@ -2568,13 +2591,20 @@ def _name_passages(
     """The ``ledger.N`` facts of the names the writable passages' negated sentences write,
     each held on them (:func:`name_readings`), and every reading made.
 
-    One fact per name, shared by every sentence naming it, filled closing passages
-    first and then in passage order within :data:`_NAMES_PER_QUESTION` characters; a
+    One fact per name, shared by every sentence naming it, filled for the conclusion
+    and the limitations first, then for the value cells and capability bullets, and then
+    in passage order within :data:`_NAMES_PER_QUESTION` characters; a
     name past it is not shown, its sentences not held on it, and the count is said. A
     sentence held this way is answered as a held absence of the body is (or as every
     closing sentence is): code decides none of them."""
     listed = {routine.address: routine.listed_in for routine in found.listed}
-    ordered = sorted((p for p in passages if _writable(p)), key=lambda p: 0 if p.closing else 1)
+    # The conclusion and the limitations first, then the fields answered whole (a value
+    # cell, a capability bullet), then the rest: a cell or bullet never takes a closing
+    # sentence's fact (T-600).
+    ordered = sorted(
+        (p for p in passages if _writable(p)),
+        key=lambda p: 0 if p.closing and not p.whole else 1 if p.whole else 2,
+    )
     made: dict[tuple[str, str], str | None] = {}
     out: list[Passage] = []
     # The sentences each fact speaks to, by its id, in the order they are read: set on
@@ -3980,7 +4010,7 @@ def _told_the_end(
         return list(found)
     if not _ends_on_answer(passage, sentence):
         return list(found)
-    end = _sentence_start(_LEFT_OUT_END)
+    end = _left_out_end(passage)
     return [
         violation
         if end[:-1] in violation.message or _LEFT_OUT_END in violation.message
@@ -4064,6 +4094,24 @@ def _sentence_start(text: str) -> str:
     return f"{text[:1].upper()}{text[1:]}."
 
 
+def _left_out_end(passage: Passage) -> str:
+    """:data:`_LEFT_OUT_END` as a sentence of its own, saying, for a field answered whole,
+    what it prints once every sentence of it is left out (``Passage.emptied``)."""
+    return _sentence_start(
+        f"{_LEFT_OUT_END}, and {passage.emptied}" if passage.whole else _LEFT_OUT_END
+    )
+
+
+# What a sentence of a field answered whole (a value cell, a capability bullet) may end as,
+# as the question and every text asking for it say: an answer a closing sentence may give.
+_WHOLE_ENDS = (
+    "rewrite it on the source that states otherwise, citing an entry that source cites; keep "
+    'it naming the source you read and found agreeing, with "quote": its words that state '
+    'the same thing, copied exactly, or with "sources": [] and "reason" where no source '
+    'speaks of it; or drop it with "reason"'
+)
+
+
 def _held_ends(passage: Passage, sentence: str) -> str:
     """For a closing sentence held on a name the run holds, to the redone calls it names,
     or saying a call failed that a later call redid, what it may do, naming the facts it
@@ -4097,7 +4145,7 @@ def _held_ends(passage: Passage, sentence: str) -> str:
         [
             f"{said[0]}.",
             *(_sentence_start(part) for part in said[1:]),
-            _sentence_start(_LEFT_OUT_END),
+            _left_out_end(passage),
         ]
     )
 
@@ -4509,6 +4557,17 @@ def quote_overlap(sentence: str, quote: str, generic: frozenset[str] = frozenset
     return said_of(quote).count(kept_subject(sentence, generic))
 
 
+# What a quote shorter than :data:`absence_answers.QUOTE_FLOOR` is refused for, and what the
+# TASK says of every quote once (T-600).
+_QUOTE_SHORT = (
+    f"is shorter than {QUOTE_FLOOR} characters, so it quotes nothing; quote at least "
+    f"{QUOTE_FLOOR} characters of the source's words"
+)
+_QUOTE_FLOOR_SAID = (
+    f'A "quote" is at least {QUOTE_FLOOR} characters of the source\'s words, copied exactly.'
+)
+
+
 def _quote_problem(
     sentence: str,
     quote: str,
@@ -4538,6 +4597,10 @@ def _quote_problem(
     coordinated list that a shown source could say otherwise of is refused; one leaving
     out an item no source speaks of is recorded (:func:`_unbacked_items`).
     """
+    if quote_too_short(quote):
+        # Shorter than the floor it quotes nothing, wherever it stands: said so, as the
+        # TASK states the floor (T-600).
+        return _QUOTE_SHORT
     if not quote_stands(quote, [s.text for s in sources]):
         return "does not stand in a source it names"
     rows = [s for s in sources if sentence in s.speaks_to and quote_stands(quote, [s.text])]
@@ -5527,7 +5590,8 @@ def agreement_violations(payload: Any, passages: Sequence[Passage]) -> list[Viol
     out: list[Violation] = []
     listed: set[tuple[str, int]] = set()
     rewritten: set[tuple[str, int]] = set()
-    for index, row in _rows(payload):
+    rows = _rows(payload)
+    for index, row in rows:
         found = _row_violations(row, index, by_id, _sentences)
         passage = by_id.get(_form(row.passage))
         span = _sentences(passage).span(row.sentence) if passage is not None else None
@@ -5540,7 +5604,7 @@ def agreement_violations(payload: Any, passages: Sequence[Passage]) -> list[Viol
             ):
                 rewritten.add((passage.id, span[0]))
     if isinstance(payload, dict):
-        out.extend(_held_unlisted(passages, listed, _sentences, rewritten))
+        out.extend(_held_unlisted(passages, listed, _sentences, rewritten, read=bool(rows)))
     return out
 
 
@@ -5566,12 +5630,17 @@ def _held_unlisted(
     listed: set[tuple[str, int]],
     sentences_of: Callable[[Passage], _Sentences],
     rewritten: set[tuple[str, int]] | None = None,
+    *,
+    read: bool = True,
 ) -> list[Violation]:
     """Each held sentence no row lists, in the passages' order; one whose own clause calls
     listed code not read and that no row rewrote is asked about with the listing named. One
     the passage writes more than once, which no row can name, is not asked about: a refusal
     the round cannot act on opens no retry, and one the ledger's own lines hold is left out
-    each time it stands (:func:`apply_rows`, T-600)."""
+    each time it stands (:func:`apply_rows`, T-600). A sentence of a field answered whole
+    is told what the field is, its ends and what an emptied one prints; where no row could
+    be read (``read`` false), one nothing but its field's kind holds is not asked about:
+    it prints as written then, with no record of its own (T-600)."""
     by_id = {passage.id: passage for passage in passages}
     out: list[Violation] = []
     for passage in passages:
@@ -5579,6 +5648,8 @@ def _held_unlisted(
         for sentence in passage.held:
             span = sentences_of(passage).span(sentence)
             if span is None:
+                continue
+            if passage.whole and not read and not _held_by_the_ledger(passage, sentence):
                 continue
             decisive = _decisive_unread(passage, sentence)
             if (
@@ -5609,6 +5680,8 @@ def _held_unlisted(
                 if sentence in passage.on_fact
                 else "states an absence the body or the ledger may say otherwise of"
                 if sentence in passage.absences and not passage.closing
+                else f"is {passage.whole}"
+                if passage.whole
                 else "holds a sentence of a closing section, every one of which is answered"
                 if passage.closing
                 else "gives failed calls a number the ledger's count may not"
@@ -5622,7 +5695,9 @@ def _held_unlisted(
                         f"{safe_finding_value(passage.id)} {said}, and no row lists this "
                         f"sentence: {safe_finding_value(sentence)!r}. List it: "
                         + (
-                            ends
+                            ends or f"{_WHOLE_ENDS}. {safe_finding_value(_left_out_end(passage))}"
+                            if passage.whole
+                            else ends
                             or "rewrite it on the source that states otherwise, or keep it "
                             "naming the source you read and found agreeing"
                             + (
@@ -5742,8 +5817,8 @@ SYSTEM_PROMPT = (
     "square brackets at least one ev_ id its sources cite, and no id that neither the "
     "sources nor the passage cite;\n"
     "  - keep: the sources do not state otherwise on reading (they speak of another routine, "
-    "value or run), or the passage is marked (read only): a table cell is listed with keep "
-    "and never rewritten. A section 5 sentence is rewritten only where a fact contradicts it, "
+    "value or run), or the passage is marked (read only): a passage so marked is listed with "
+    "keep and never rewritten. A section 5 sentence is rewritten only where a fact contradicts it, "
     "and then states what the fact states and nothing a passage written without the code or "
     "a debate round says. A section 5 sentence answered by a fact is not reworded: the "
     "decision rewrite only asks that it be qualified, and the platform adds the fact's own "
@@ -5808,13 +5883,14 @@ def prompt_text(passages: Sequence[Passage]) -> str:
                 and sentence not in named
             ]
             if passage.closing and _writable(passage):
-                # Every sentence is held: the passage is shown once, not again.
+                # Every sentence is held: the passage is shown once, not again. A field
+                # answered whole is told so once, in the TASK, for every such field (T-600).
                 count = len(_sentences_of(passage.text))
-                lines.append(
-                    f"  [{passage.id}] answer every sentence of this passage, one row each "
-                    f"({count} {'sentence' if count == 1 else 'sentences'}), as the TASK asks"
-                    + (f"; {_LEFT_OUT_END}, and {passage.emptied}." if passage.whole else ".")
-                )
+                if not passage.whole:
+                    lines.append(
+                        f"  [{passage.id}] answer every sentence of this passage, one row each "
+                        f"({count} {'sentence' if count == 1 else 'sentences'}), as the TASK asks."
+                    )
                 held = []
             if held:
                 # Read off the passage by code: each one is listed, as the model decides.
@@ -5899,12 +5975,21 @@ def prompt_text(passages: Sequence[Passage]) -> str:
             "TASK",
             "----",
             "List each sentence that says otherwise than its sources, as the system prompt "
-            "asks. Return ONLY the JSON object shown there.",
+            f"asks. Return ONLY the JSON object shown there. {_QUOTE_FLOOR_SAID}",
         ]
     )
     closing = [p.id for p in passages if p.closing and _writable(p)]
     if closing:
         lines.append(_CLOSING_TASK.format(ids=", ".join(f"[{pid}]" for pid in closing)))
+    whole = [p for p in passages if p.whole and _writable(p)]
+    if whole:
+        # Said once for every field answered whole, not per passage (T-600).
+        lines.append(
+            f"Of these, {', '.join(f'[{p.id}]' for p in whole)} are value cells and capability "
+            f"bullets: for each sentence of them, {_LEFT_OUT_END}; "
+            + "; ".join(dict.fromkeys(p.emptied for p in whole))
+            + "."
+        )
     return "\n".join(lines)
 
 
@@ -6026,22 +6111,32 @@ def apply_rows(
     # for it passed: left out once every other end is in (T-600), with the record of why.
     unpassed: list[tuple[Passage, tuple[int, int, str, int], str, Sequence[Violation], str]] = []
     answered: set[tuple[str, int]] = set()
-    # The sentences a row that passed every check answers: such an answer stands, and no
-    # refused row for the same sentence leaves it out.
+    # The sentences a row that passed every check answers, read over every row first: such
+    # an answer stands, and a refused row for the same sentence, before or after it, ends
+    # nothing, in a closing passage as in any other (T-600).
     passed: set[tuple[str, int]] = set()
     rows = _rows(payload) if asked else []
+    checked: list[
+        tuple[int, AgreementRow, Passage | None, list[Violation], tuple[int, int, str, int] | None]
+    ] = []
     for index, row in rows:
-        counts["sentences"] += 1
         passage = by_id.get(_form(row.passage))
         found = _row_violations(row, index, by_id, _sentences)
         if row.decision == "rewrite":
             found += _rewrite_violations(row.rewrite, citable, items, entries)
         span = _sentences(passage).span(row.sentence) if passage is not None else None
-        held = _ends_on_answer(passage, span[2]) if passage and span else ""
         if passage is not None and span is not None:
             answered.add((passage.id, span[0]))
             if not found:
                 passed.add((passage.id, span[0]))
+        checked.append((index, row, passage, found, span))
+    for index, row, passage, found, span in checked:
+        counts["sentences"] += 1
+        if found and passage is not None and span is not None and (passage.id, span[0]) in passed:
+            # Another row's answer passed: this refused one is not applied.
+            counts["not_applied"] += 1
+            continue
+        held = _ends_on_answer(passage, span[2]) if passage and span else ""
         # Why such a sentence is left out where its answer is refused.
         refused = (
             ("the ledger says otherwise; " if _ledger_says_otherwise(found) else "")
@@ -6317,8 +6412,6 @@ def apply_rows(
                             f"held.{passage.id}",
                         )
                     )
-    # An answer that passed answers its sentence: a refused row for it ends nothing.
-    unpassed = [entry for entry in unpassed if (entry[0].id, entry[1][0]) not in passed]
     for passage, span, why, refusals, path in unpassed:
         # A sentence the ledger's own lines hold that no answer passing the checks answers
         # never prints as it stood: left out, in a closing passage and in the body alike.
