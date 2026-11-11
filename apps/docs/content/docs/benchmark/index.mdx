@@ -423,10 +423,11 @@ listed separately and left out of the total.
 - **The run is blind to the key.** None of the eight analyses is given to the
   agents, and the run starts on {run.memory}, so nothing learnt from another
   run of the same sample reaches it.
-- **Nothing is tuned for the sample.** The team and its prompts are the
-  importable [all-tools team](/examples/profiles/all-tools.json), unchanged;
-  the model, effort and sandbox are the ones listed under Setup, and nothing
-  was set for this sample.
+- **Nothing is tuned for the sample.** The run used the all-tools team with
+  the model, effort and sandbox listed under Setup, and nothing was set for
+  this sample. The [reference configuration](/examples/profiles/all-tools-reference-run.json)
+  carries the all-tools team as it ships and the model and effort the run
+  gave each agent.
 - **Blind A/B scoring is available.** When two runs are compared, the
   [blind scoring](/docs/blind-scoring/) tool hides which report came from which
   run until the scorer has finished. This page scores a single run, so it has
@@ -442,7 +443,7 @@ listed separately and left out of the total.
 | Sandbox | {run.sandbox}, a real detonation |
 | Memory | {run.memory} |
 | Limits | no job timeout; no spend ceiling inside the product |
-| Degraded | {run.degraded ? 'yes' : 'no: every tool was ready, capa ran and the Sigma rules loaded'} |
+| Degraded | {run.degraded ? 'yes' : <>no: the run recorded no degradation reason and no failed analyst; the analysis, knowledge, network and VirusTotal servers, the declared MCP tool, Ghidra and radare2 answered the agents' calls; capa ran (<code>ev_0008</code>) and 4,241 Sigma rules loaded (<code>ev_0009</code>)</>} |
 
 ## Results
 

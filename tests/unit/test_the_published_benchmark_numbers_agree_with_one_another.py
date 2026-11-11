@@ -9,14 +9,18 @@ beyond the key and their wording, the items that entered through the check of th
 run's facts, the reading of each fact beyond the key against the eight
 analyses, the headline totals, the cost and the pages that quote them have to
 agree. The model and effort the page states for each agent are the ones the
-reference configuration it links (``all-tools-reference-run.json``) sets.
+reference configuration it links (``all-tools-reference-run.json``) sets, and
+the entries the Setup's Degraded row cites are the capa and Sigma calls it says
+they are.
 """
 
 from __future__ import annotations
 
 import json
 import re
+from functools import lru_cache
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -117,8 +121,8 @@ def stated_models(page: str, team: dict[str, list[str]]) -> dict[str, tuple[str,
 def _reference_problems(page: str, reference: str) -> list[str]:
     """Where the reference configuration and the page's model and effort disagree."""
     found: list[str] = []
-    if REFERENCE_LINK not in page:
-        found.append(f"the page does not link {REFERENCE_LINK}")
+    if REFERENCE_LINK not in page[page.find("## Reproducing the run") :]:
+        found.append(f"the steps to reproduce the run do not link {REFERENCE_LINK}")
     values = json.loads(reference)["values"]
     team: dict[str, list[str]] = {}
     for stage in values["core.agents.profiles"][str(_run_text(page, "team"))]["stages"]:
@@ -187,15 +191,43 @@ def _verdict_kind(verdict: str) -> str:
     }[verdict]
 
 
+@lru_cache(maxsize=1)
+def _evidence() -> dict[str, dict[str, Any]]:
+    """The published evidence ledger's entries, by id."""
+    ledger = json.loads(EVIDENCE.read_text(encoding="utf-8"))
+    return {entry["entry_id"]: entry for entry in ledger["items"]}
+
+
 def _evidence_ids() -> set[str]:
     """The ids of the published evidence ledger."""
-    ledger = json.loads(EVIDENCE.read_text(encoding="utf-8"))
-    return {entry["entry_id"] for entry in ledger["items"]}
+    return set(_evidence())
+
+
+def _degraded_problems(page: str) -> list[str]:
+    """Where the Setup's Degraded row and the entries it cites disagree."""
+    row = re.search(r"^\| Degraded \| (.*) \|$", page, re.M)
+    cell = row.group(1) if row else ""
+    found: list[str] = []
+    capa = re.search(r"capa ran \(<code>(ev_\d+)</code>\)", cell)
+    entry = _evidence().get(capa.group(1), {}) if capa else {}
+    if entry.get("tool") != "capa" or entry.get("ok") is not True:
+        found.append("the Degraded row does not cite a capa call that answered")
+    sigma = re.search(r"([\d,]+) Sigma rules loaded \(<code>(ev_\d+)</code>\)", cell)
+    entry = _evidence().get(sigma.group(2), {}) if sigma else {}
+    structured = entry.get("structured") if isinstance(entry.get("structured"), dict) else {}
+    if entry.get("tool") != "sigma_match_sandbox" or entry.get("ok") is not True:
+        found.append("the Degraded row does not cite a Sigma match that answered")
+    elif sigma and structured.get("rule_count") != int(sigma.group(1).replace(",", "")):
+        found.append(
+            f"the Degraded row says {sigma.group(1)} Sigma rules, "
+            f"{sigma.group(2)} loaded {structured.get('rule_count')}"
+        )
+    return found
 
 
 def problems(page: str, readme: str, docs_home: str, gate: str, reference: str) -> list[str]:
     """Every place where the public numbers disagree; empty when they agree."""
-    found: list[str] = _reference_problems(page, reference)
+    found: list[str] = _reference_problems(page, reference) + _degraded_problems(page)
     run = _run_numbers(page)
     key = _array_rows(page, "keyItems", 2)
     beyond = _array_rows(page, "beyondFacts", 2)
@@ -501,7 +533,15 @@ def test_the_published_benchmark_numbers_agree_with_one_another() -> None:
         ),
         ("page", "model: 'Claude Haiku 5.5',", "model: 'Claude Haiku 5.6',"),
         ("page", "high for the analysts and the judge;", "high for the analysts;"),
-        ("page", "(/examples/profiles/all-tools-reference-run.json)", "(/docs/configuration/)"),
+        (
+            "page",
+            "(/examples/profiles/all-tools-reference-run.json),\nwhich holds",
+            "(/docs/configuration/),\nwhich holds",
+        ),
+        # The Degraded row: a rule count, or an entry that is another tool's.
+        ("page", "4,241 Sigma rules loaded", "4,240 Sigma rules loaded"),
+        ("page", "capa ran (<code>ev_0008</code>)", "capa ran (<code>ev_0009</code>)"),
+        ("page", "loaded (<code>ev_0009</code>)", "loaded (<code>ev_0008</code>)"),
     ],
 )
 def test_a_number_changed_in_one_place_only_is_caught(target: str, old: str, new: str) -> None:
