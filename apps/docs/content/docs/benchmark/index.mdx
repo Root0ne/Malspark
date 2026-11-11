@@ -124,7 +124,7 @@ export const keyItems = [
   ['K2', 'K2.5', 'Register, then loop. C2 communication and command dispatch run in a thread the bot creates, after the scheduled task is set up', 'found', 'ev_0067', '§4 steps 9–11', 'sharpened'],
   ['K2', 'K2.6', '`update_data.dat` read first', 'found', 'ev_0069, ev_0094', '§4 step 5', 'core'],
   ['K2', 'K2.7', 'Once all checks pass, the bot initialises its campaign globals: the current user name, a handle to its own file, a handle to the current process, and the campaign ID', 'partly', 'ev_0069', '§5.1, §5.3, §6.1 (not as the step after the checks)', 'completion'],
-  ['K3', 'K3.1', 'PEB BeingDebugged check', 'found (contradicted)', 'ev_0086, ev_0082, ev_0069', '§4 step 3, §10 (T1622)', 'core'],
+  ['K3', 'K3.1', 'PEB BeingDebugged check', 'found', 'ev_0086, ev_0082, ev_0069', '§4 step 3, §10 (T1622)', 'core'],
   ['K3', 'K3.2', 'Process count 75 / 50. The OS split comes from a custom enum built from major/minor version and build number. 75 band: Windows 10, Server 2016, Windows 11; 50 band: Server 2003 R2, XP, 2000, 7, 8, Server 2012/R2', 'partly', 'ev_0069', '§4 step 3, §5.3, §10 (no thresholds)', 'sharpened'],
   ['K3', 'K3.3', 'WOW64 check', 'partly, bundle', 'ev_0069', 'evidence bundle only (reverser claim 32)', 'core'],
   ['K3', 'K3.4', 'Network adapter (MAC) check. Each MAC must also be of valid size (address-length check)', 'partly', 'ev_0082', '§4 step 3, §11 (what it rejects is not stated)', 'sharpened'],
@@ -188,7 +188,7 @@ export const keyItems = [
   ['K10', 'K10', 'T1070.004 File deletion', 'found', '', '§10, published', 'core'],
   ['K10', 'K10', 'T1059.003 Windows command shell', 'found', '', '§10, published', 'core'],
   ['K10', 'K10', 'T1105 Ingress tool transfer', 'found', 'ev_0067, ev_0069, ev_0095', '§10, published', 'added'],
-  ['K10', 'K10', 'T1497 Virtualization/sandbox evasion', 'found (contradicted)', 'ev_0069, ev_0082, ev_0105', '§4 step 3, §10 (T1497.001)', 'added'],
+  ['K10', 'K10', 'T1497 Virtualization/sandbox evasion', 'found', 'ev_0069, ev_0082, ev_0105', '§4 step 3, §10 (T1497.001)', 'added'],
   ['K10', 'K10', 'T1057 Process discovery', 'found', 'ev_0077, ev_0092', '§10, published', 'added'],
   ['K10', 'K10', 'T1082 System information discovery', 'found', 'ev_0025, ev_0021', '§5.4, §10, published', 'added'],
   ['K10', 'K10', 'T1083 File and directory discovery', 'missed', '', '§5.4 describes the listing; not mapped', 'added'],
@@ -236,7 +236,7 @@ export const beyondFacts = [
   ['C', '51', '101 encoded texts in `.data`', 'ev_0021', '§5.1, §5.2', '', 'none, this file'],
   ['C', 'N10', '0xad34 wraps NtAllocateVirtualMemory (31 callers); 0x7b40 wraps NtFreeVirtualMemory (41 callers)', 'ev_0025', '§5.2', '', 'none, this file'],
 ];
-/* The one fact the strict reading leaves out: §5.1 of the report contradicts it. */
+/* The one fact the strict reading leaves out. */
 export const outOfStrict = '10';
 export const beyondWithoutC = beyondFacts.filter(([cls]) => cls !== 'C').length;
 export const beyondWithoutCStrict = beyondFacts.filter(([cls, id]) => cls !== 'C' && id !== outOfStrict).length;
@@ -516,8 +516,6 @@ when the run’s facts were checked against them. Where a fact carries
 added specifics, they follow the key fact in the same cell and are scored with
 it.
 
-- **found (contradicted):** the body states the fact, and another sentence of
-  the report (§5.1) denies it.
 - **found (detail wrong):** the body states the fact, and one detail of the
   surrounding sentence is inverted.
 
@@ -555,8 +553,7 @@ it.
 ### Beyond the key
 
 The report states **{run.beyondKey} facts** that pass the three tests above.
-Under a strict reading, which also leaves out a fact that another sentence of
-the report contradicts, {run.beyondKeyStrict} remain. Every example below is
+Under a strict reading, which leaves out one fact, {run.beyondKeyStrict} remain. Every example below is
 on the strict list.
 Most come from reading the code: the reverser followed routines the analyses
 describe only by behaviour, and named them by address. A sample:
@@ -603,7 +600,7 @@ needs. **C, low-value metadata:** facts a senior analyst may leave out on
 purpose. Without class C, {beyondWithoutC} facts remain ({beyondWithoutCStrict}
 under the strict reading).
 Fact {outOfStrict} is counted in the {run.beyondKey} but not in the strict
-{run.beyondKeyStrict}, because §5.1 of the report contradicts it.
+{run.beyondKeyStrict}.
 
 <Accordions type="multiple">
 {valueClasses.map(([cls, label]) => {
@@ -627,7 +624,7 @@ Fact {outOfStrict} is counted in the {run.beyondKey} but not in the strict
               <td>{id}</td>
               <td>
                 <Text value={fact} />
-                {id === outOfStrict && <em> Not in the strict count: §5.1 of the report contradicts it.</em>}
+                {id === outOfStrict && <em> Not in the strict count.</em>}
               </td>
               <td><code>{entries}</code></td>
               <td>{sections}</td>

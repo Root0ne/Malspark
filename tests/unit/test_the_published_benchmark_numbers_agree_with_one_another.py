@@ -135,6 +135,8 @@ def problems(page: str, readme: str, docs_home: str, gate: str) -> list[str]:
     for name, count in counts.items():
         if count != run[name]:
             found.append(f"keyItems holds {count} {name}, run.{name} says {run[name]}")
+    if any("contradicted" in str(row[3]) for row in key):
+        found.append("a verdict shown in keyItems says contradicted")
     if len({(row[1], row[2]) for row in key}) != len(key):
         found.append("two keyItems rows share an id and a fact")
     if {str(row[6]) for row in key} - ORIGINS:
@@ -310,6 +312,11 @@ def test_the_published_benchmark_numbers_agree_with_one_another() -> None:
             "    ['K6', 'Command and control', 10, 5, 5, 0, 0, 0],",
         ),
         ("page", "'Link to IcedID', 'partly',", "'Link to IcedID', 'found',"),
+        (
+            "page",
+            "'PEB BeingDebugged check', 'found',",
+            "'PEB BeingDebugged check', 'found (contradicted)',",
+        ),
         ("page", "'completion'],", "'extension'],"),
         ("page", "    'K1: the family’s other names", "    // 'K1: the family’s other names"),
         ("page", "    'K9: update_data.dat is named", "    // 'K9: update_data.dat is named"),
