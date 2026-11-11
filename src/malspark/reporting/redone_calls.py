@@ -62,9 +62,10 @@ from __future__ import annotations
 
 import re
 from collections.abc import Iterable, Iterator, Mapping, Sequence
+from dataclasses import dataclass
 from typing import Any
 
-__all__ = ["ENTRY_ID", "redone_failures"]
+__all__ = ["ENTRY_ID", "Redo", "redo_map", "redone_failures"]
 
 # The characters of a tool's name a row keeps: a server's word, one line.
 _TOOL_CHARS = 80
@@ -357,6 +358,18 @@ def _answers(answering: Any) -> bool:
     return not listing_is_error(answering)
 
 
+@dataclass(frozen=True)
+class Redo:
+    """A failed call later calls redid: its id and tool, the calls that redid it in ledger
+    order, and, for a call asked for addresses, the call that redid it for each one (the
+    address in the one spelling ``function_map.one_spelling`` writes it)."""
+
+    entry_id: str
+    tool: str
+    answered_by: tuple[str, ...]
+    by_address: tuple[tuple[int, str], ...] = ()
+
+
 def redone_failures(ledger: Iterable[Any]) -> list[dict[str, Any]]:
     """Each failed call a later call redid for every address it was asked, in ledger order.
 
@@ -365,8 +378,20 @@ def redone_failures(ledger: Iterable[Any]) -> list[dict[str, Any]]:
     "answered_by"}``, the first later answer for each address, in ledger
     order; for a call asked for no address, the first later call of its tool
     that asked the same question. Empty when nothing failed, without reading
-    the ledger further.
+    the ledger further. The rows of :func:`redo_map`, the one map every reader
+    of a redo reads.
     """
+    return [
+        {"entry_id": redo.entry_id, "tool": redo.tool, "answered_by": list(redo.answered_by)}
+        for redo in redo_map(ledger)
+    ]
+
+
+def redo_map(ledger: Iterable[Any], bases: Sequence[int] | None = None) -> list[Redo]:
+    """:func:`redone_failures` with the call that redid each address: the one redo map the
+    run summary, the limitation facts and the agreement round's answered facts read.
+    ``bases`` are the image bases an address is spelled by, read off the ledger when not
+    given."""
     entries = list(ledger)
     failed_at = [
         at
@@ -379,7 +404,8 @@ def redone_failures(ledger: Iterable[Any]) -> list[dict[str, Any]]:
     from malspark.core.undeclared_tools import entry_lists_any_code
     from malspark.reporting.agreement_facts import answered_addresses, asked_addresses
 
-    bases = tuple(build_function_map(entries, None, ()).image_bases)
+    if bases is None:
+        bases = tuple(build_function_map(entries, None, ()).image_bases)
     answers = [at for at, entry in enumerate(entries) if _answers(entry)]
     held: list[tuple[str, ...]] = []
 
@@ -393,7 +419,10 @@ def redone_failures(ledger: Iterable[Any]) -> list[dict[str, Any]]:
             held.append(_sample_names(pack_entries(entries)))
         return held[0]
 
-    out: list[dict[str, Any]] = []
+    def _id(at: int) -> str:
+        return str(getattr(entries[at], "id", "") or "")
+
+    out: list[Redo] = []
     for at in failed_at:
         failed = entries[at]
         asked = {one_spelling(address, bases) for address in asked_addresses(failed)}
@@ -410,13 +439,7 @@ def redone_failures(ledger: Iterable[Any]) -> list[dict[str, Any]]:
                 None,
             )
             if again is not None:
-                out.append(
-                    {
-                        "entry_id": str(getattr(failed, "id", "") or ""),
-                        "tool": _tool(failed),
-                        "answered_by": [str(getattr(entries[again], "id", "") or "")],
-                    }
-                )
+                out.append(Redo(entry_id=_id(at), tool=_tool(failed), answered_by=(_id(again),)))
             continue
         lists_code = entry_lists_any_code(failed)
         by: dict[int, int] = {}
@@ -447,12 +470,11 @@ def redone_failures(ledger: Iterable[Any]) -> list[dict[str, Any]]:
         if by.keys() != asked:
             continue
         out.append(
-            {
-                "entry_id": str(getattr(failed, "id", "") or ""),
-                "tool": _tool(failed),
-                "answered_by": [
-                    str(getattr(entries[i], "id", "") or "") for i in sorted(set(by.values()))
-                ],
-            }
+            Redo(
+                entry_id=_id(at),
+                tool=_tool(failed),
+                answered_by=tuple(_id(i) for i in sorted(set(by.values()))),
+                by_address=tuple((address, _id(by[address])) for address in sorted(by)),
+            )
         )
     return out

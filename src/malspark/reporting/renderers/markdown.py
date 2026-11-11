@@ -331,6 +331,14 @@ SECTION_5_PROSE: dict[str, tuple[str, ...]] = {
 }
 
 
+# The passages the bundle's summary is written in, as the agreement question's records
+# name them (``section_agreement.passages_of``): the summary paragraph and each key
+# finding. The analyst report's summary also prints each capability bullet
+# (:data:`SUMMARY_SUBJECTS`); the bundle prints none, so counts none.
+BUNDLE_SUMMARY_SUBJECTS = ("executive_summary", "key_findings.")
+SUMMARY_SUBJECTS = (*BUNDLE_SUMMARY_SUBJECTS, "capability_summary.")
+
+
 def _section_5_prose(ta: Any, number: str) -> list[TechnicalSubsection | None]:
     """The prose subsections section ``number`` prints (:data:`SECTION_5_PROSE`)."""
     return [getattr(ta, name, None) for name in SECTION_5_PROSE[number]] if ta else []
@@ -583,11 +591,14 @@ class MarkdownRenderer:
 
     def _section_key_findings(self, report: MalwareReport, ctx: _Context) -> str:
         summary = report.executive_summary.strip()
-        written = bool(summary or report.key_findings)
+        # A finding the agreement question left its only sentence out of is no finding written:
+        # it prints no empty item, and the validation findings below list it with the reason.
+        findings = [f for f in report.key_findings if f.text.strip()]
+        written = bool(summary or findings)
         # The platform's fallback below is not the report model's text, and is
         # not headed as if it were: each of its lines names its own voice.
         lines = [_heading(1, "Key findings", REPORT_MODEL if written else PER_ROW), ""]
-        for finding in report.key_findings:
+        for finding in findings:
             lines.append(
                 _item(
                     _cited(ctx.line(finding.text), finding.evidence_ids, finding.text)
@@ -595,10 +606,10 @@ class MarkdownRenderer:
                 )
             )
         if summary:
-            if report.key_findings:
+            if findings:
                 lines.append("")
             lines.append(ctx.prose(summary))
-            if not report.key_findings and not _EV_RE.search(summary):
+            if not findings and not _EV_RE.search(summary):
                 lines.extend(["", _UNCITED_NOTE])
         if written:
             lines.extend(_findings_beside(ctx.narrative_findings, ctx.plain))
@@ -615,7 +626,12 @@ class MarkdownRenderer:
             "",
         )
         reason = why.split(":", 1)[1].strip() if ":" in why else "the report model wrote none"
-        lines.append(f"No summary was written: {_one_line(reason)}. _({MEASURED})_")
+        left = ctx.left_out_clause(*BUNDLE_SUMMARY_SUBJECTS)
+        lines.append(
+            f"No summary is printed: {left}. _({MEASURED})_"
+            if left
+            else f"No summary was written: {_one_line(reason)}. _({MEASURED})_"
+        )
         if any(r in _INCONCLUSIVE for r in report.degradation_reasons):
             lines.extend(
                 [
@@ -837,7 +853,11 @@ class MarkdownRenderer:
             lines.append(
                 _step(
                     index,
-                    _cited(f"{ctx.line(step.action)} ({mark})", step.evidence_refs, step.action)
+                    # A step whose only sentence the agreement question left out reads
+                    # "-", as the analyst report prints it (T-600).
+                    _cited(
+                        f"{ctx.line(step.action) or '-'} ({mark})", step.evidence_refs, step.action
+                    )
                     + ctx.cited_row_mark(step)
                     + note,
                 )
@@ -929,7 +949,11 @@ class MarkdownRenderer:
                 _section_5_prose(ta, "5.1"),
                 measured,
                 ctx,
-                absent=ctx.absence("packing, obfuscation or anti-analysis", sandbox=False),
+                absent=ctx.absence(
+                    "packing, obfuscation or anti-analysis",
+                    sandbox=False,
+                    subjects=SECTION_5_PROSE["5.1"],
+                ),
             )
         )
 
@@ -963,7 +987,9 @@ class MarkdownRenderer:
                 _section_5_prose(ta, "5.2"),
                 measured,
                 ctx,
-                absent=ctx.absence("imports or API resolution", sandbox=False),
+                absent=ctx.absence(
+                    "imports or API resolution", sandbox=False, subjects=SECTION_5_PROSE["5.2"]
+                ),
             )
         )
 
@@ -1051,7 +1077,9 @@ class MarkdownRenderer:
                 _section_5_prose(ta, "5.4"),
                 measured,
                 ctx,
-                absent=ctx.absence("persistence mechanism", sandbox=True),
+                absent=ctx.absence(
+                    "persistence mechanism", sandbox=True, subjects=SECTION_5_PROSE["5.4"]
+                ),
             )
         )
 
@@ -1073,7 +1101,9 @@ class MarkdownRenderer:
                 _section_5_prose(ta, "5.5"),
                 measured,
                 ctx,
-                absent=ctx.absence("discovery command", sandbox=True),
+                absent=ctx.absence(
+                    "discovery command", sandbox=True, subjects=SECTION_5_PROSE["5.5"]
+                ),
             )
         )
 
@@ -1181,7 +1211,9 @@ class MarkdownRenderer:
                 prose,
                 measured,
                 ctx,
-                absent=ctx.absence("command-and-control channel", sandbox=True),
+                absent=ctx.absence(
+                    "command-and-control channel", sandbox=True, subjects=SECTION_5_PROSE["5.7"]
+                ),
             )
         )
 
@@ -1235,7 +1267,9 @@ class MarkdownRenderer:
                 _section_5_prose(ta, "5.8"),
                 measured,
                 ctx,
-                absent=ctx.absence("carved payload or dropped file", sandbox=True),
+                absent=ctx.absence(
+                    "carved payload or dropped file", sandbox=True, subjects=SECTION_5_PROSE["5.8"]
+                ),
             )
         )
 
@@ -2062,7 +2096,9 @@ class MarkdownRenderer:
                 _absent_subsection(
                     "12.3",
                     "Background",
-                    "Not written in this run: the report model wrote no background.",
+                    f"Not printed in this run: {left}."
+                    if (left := ctx.left_out_clause("introduction"))
+                    else "Not written in this run: the report model wrote no background.",
                 )
             )
         return "\n\n".join(blocks)
@@ -2761,6 +2797,45 @@ class _Context:
         tool = row.tool or "tool"
         return f"{row.agent} ({tool})" if row.agent else tool
 
+    def left_out(self, subject: str) -> bool:
+        """Whether the agreement question left a sentence of the passage ``subject`` out
+        (``section_agreement.DROPPED_CODE``), so an empty field of it was written, not
+        missing (T-600)."""
+        from malspark.reporting.section_agreement import DROPPED_CODE
+
+        return any(
+            row.get("code") == DROPPED_CODE and str(row.get("subject") or "") == subject
+            for row in self.unresolved
+        )
+
+    def left_out_clause(self, *subjects: str, on: str = "") -> str:
+        """The clause a line saying nothing was written for a passage says instead where the
+        agreement question left its sentences out (T-600), with their count, naming no one
+        as having left them out (its checks or the round's own drop): the records of them
+        (``section_agreement.DROPPED_CODE``) whose subject is one of ``subjects``, or, for
+        one ending in ".", a record of that list ("key_findings."); ``on`` follows "wrote"
+        (" on it"); ``""`` where none was left out."""
+        from malspark.reporting.section_agreement import DROPPED_CODE
+
+        whole = {s for s in subjects if not s.endswith(".")}
+        lists = tuple(s for s in subjects if s.endswith("."))
+        count = sum(
+            1
+            for row in self.unresolved
+            if row.get("code") == DROPPED_CODE
+            and (
+                (subject := str(row.get("subject") or "")) in whole
+                or (bool(lists) and subject.startswith(lists))
+            )
+        )
+        if not count:
+            return ""
+        one = count == 1
+        return (
+            f"the {count} sentence{'' if one else 's'} the report model wrote{on} "
+            f"{'was' if one else 'were'} left out"
+        )
+
     def no_sandbox_clause(self) -> str:
         """Why no sandbox observation stands behind a subsection, as a clause."""
         if self.sandbox_state == "empty":
@@ -2769,13 +2844,18 @@ class _Context:
             return "no sandbox ran"
         return "this report records no sandbox observation"
 
-    def absence(self, what: str, *, sandbox: bool) -> str:
+    def absence(self, what: str, *, sandbox: bool, subjects: Sequence[str] = ()) -> str:
         """The one line a capability subsection prints when nothing speaks in it.
 
         It names what looked: the tools that ran over the file, and the
         sandbox's state where the capability is one a sandbox would see. "Not
-        examined" is said only when nothing looked at all.
+        examined" is said only when nothing looked at all. Where the agreement
+        question left out what the report model wrote in the passages ``subjects``
+        name, it says so, with the count (:meth:`left_out_clause`).
         """
+        wrote = (
+            self.left_out_clause(*subjects, on=" on it") or "the report model wrote nothing on it"
+        )
         tools = self.file_tools
         named = ", ".join(tools[:6]) + (f" and {len(tools) - 6} more" if len(tools) > 6 else "")
         blind = sandbox and not self.sandbox_observed
@@ -2785,11 +2865,11 @@ class _Context:
                 if blind
                 else ("no tool looked at the file")
             )
-            return f"Not examined in this run: {said}, and the report model wrote nothing on it."
+            return f"Not examined in this run: {said}, and {wrote}."
         said = f"the tools that ran over the file ({named}) recorded no {what}"
         if blind:
             said += f", and {self.no_sandbox_clause()}"
-        line = f"Nothing recorded in this run: {said}; the report model wrote nothing on it."
+        line = f"Nothing recorded in this run: {said}; {wrote}."
         # Where the run recorded what each tool looked for and over which
         # input (``analysis.coverage``), the line says where; a report stored
         # without the record prints the line as before.
@@ -5000,23 +5080,29 @@ def _encrypts_files(enc: Any) -> bool:
 
 
 def _encryption_table(enc: Any, ctx: _Context) -> list[str]:
-    """The scheme the model wrote, the fields it filled only, or nothing."""
+    """The scheme the model wrote, the fields it filled only, or nothing. A field the
+    agreement question left no sentence of prints "-", not nothing (T-600)."""
     rows = [
-        ("Cipher", enc.cipher),
-        ("Mode", enc.mode),
-        ("Library", enc.library),
-        ("Key source", enc.key_source),
-        ("Key management", enc.key_management),
-        ("IV", enc.iv),
-        ("File marker", enc.file_marker),
-        ("Extension", enc.extension),
-        ("Partial-encryption threshold", enc.partial_threshold),
+        ("Cipher", "cipher", enc.cipher),
+        ("Mode", "mode", enc.mode),
+        ("Library", "library", enc.library),
+        ("Key source", "key_source", enc.key_source),
+        ("Key management", "key_management", enc.key_management),
+        ("IV", "iv", enc.iv),
+        ("File marker", "file_marker", enc.file_marker),
+        ("Extension", "extension", enc.extension),
+        ("Partial-encryption threshold", "partial_threshold", enc.partial_threshold),
         (
             "Per-file key",
+            "per_file_key",
             None if enc.per_file_key is None else ("yes" if enc.per_file_key else "no"),
         ),
     ]
-    present = [(label, value) for label, value in rows if _said(value)]
+    present = [
+        (label, value if _said(value) else "-")
+        for label, field, value in rows
+        if _said(value) or ctx.left_out(f"encryption_scheme.{field}")
+    ]
     if not present:
         return []
     out = [f"_{REPORT_MODEL}:_ encryption scheme", "", _row("Property", "Value"), _divider(2)]
@@ -5305,6 +5391,8 @@ def _endpoint(value: str) -> str:
 # cell nobody filled in; the model was asked for a purpose where the evidence or
 # an analyst's claim states one, so an empty one is a purpose not stated.
 PURPOSE_NOT_STATED = "not stated"
+# What it says where the agreement question left the purpose the model wrote out (T-600).
+PURPOSE_LEFT_OUT = "left out by the agreement question"
 
 
 def _host_identifier_table(identifiers: list[Any], ctx: _Context) -> list[str]:
@@ -5334,7 +5422,11 @@ def _host_identifier_table(identifiers: list[Any], ctx: _Context) -> list[str]:
                 _code_span(ctx.plain(_one_line(item.value)))
                 + (f" (published in the {where} table)" if where else "")
                 + ctx.publish_state(item.value),
-                ctx.cell(item.purpose) if item.purpose.strip() else PURPOSE_NOT_STATED,
+                ctx.cell(item.purpose)
+                if item.purpose.strip()
+                else PURPOSE_LEFT_OUT
+                if ctx.left_out(f"host_identifiers.{index + 1}")
+                else PURPOSE_NOT_STATED,
                 cited,
             )
         )

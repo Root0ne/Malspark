@@ -103,8 +103,9 @@ def _report() -> MalwareReport:
                 HostIdentifier(kind="String", value="runnung", purpose="Candidate mutex name"),
                 HostIdentifier(kind="String", value="Littlehw"),
             ],
+            # No value cell: a cell is answered whole (T-600), asked about in the tests of
+            # a cell alone.
             encryption_scheme=EncryptionScheme(
-                cipher="RC4, capa-only",
                 key_management="No key exchange is shown.",
                 evidence_ref="ev_0008",
             ),
@@ -208,7 +209,9 @@ def _ask(report: MalwareReport, reporter: _Reporter, **kwargs: Any) -> Any:
 
 
 def test_each_passage_is_shown_as_what_wrote_it() -> None:
-    kinds = {p.id: p.kind for p in passages_of(_report(), discussion=_DEBATE)}
+    report = _report()
+    report.technical_analysis.encryption_scheme.cipher = "RC4, capa-only"
+    kinds = {p.id: p.kind for p in passages_of(report, discussion=_DEBATE)}
     assert kinds["bound.1"] == FACT
     assert kinds["command_and_control"] == SECTION_5
     assert kinds["persistence_detail"] == SECTION_5
@@ -227,13 +230,18 @@ def test_each_passage_is_shown_as_what_wrote_it() -> None:
     assert "debate.2" not in kinds and "host_identifiers.2" not in kinds
 
 
-def test_only_prose_may_be_rewritten() -> None:
-    writable = {p.id for p in passages_of(_report(), discussion=_DEBATE) if p.write is not None}
+def test_only_prose_and_value_cells_may_be_rewritten() -> None:
+    report = _report()
+    report.technical_analysis.encryption_scheme.cipher = "RC4, capa-only"
+    passages = {p.id: p for p in passages_of(report, discussion=_DEBATE)}
+    writable = {pid for pid, p in passages.items() if p.write is not None}
     assert {"encryption_scheme.key_management", "execution_flow.2", "introduction"} <= writable
-    # Section 5 prose is rewritten on a fact alone; a table cell's value and a
-    # fact are shown for reading.
+    # Section 5 prose is rewritten on a fact alone; a table cell's value is answered whole,
+    # as a closing sentence is (T-600); a fact is shown for reading.
     assert "command_and_control" in writable
-    assert not {"encryption_scheme.cipher", "bound.1"} & writable
+    assert "encryption_scheme.cipher" in writable and passages["encryption_scheme.cipher"].closing
+    assert not passages["encryption_scheme.key_management"].closing
+    assert "bound.1" not in writable
 
 
 def test_the_flow_is_numbered_as_the_report_prints_it() -> None:
@@ -532,16 +540,18 @@ def test_a_rewrite_citing_none_of_its_sources_ids_is_not_applied() -> None:
     assert report.intro_background.endswith("Its cipher use is not shown.")
 
 
-def test_a_cell_value_is_listed_and_kept() -> None:
+def test_a_cell_value_is_answered_whole_and_a_rewrite_on_a_source_stands() -> None:
+    # A value cell is asked about as a closing sentence is, and rewritten on a source
+    # (T-600); it was shown for reading, and a rewrite of it refused.
     report = _report()
+    report.technical_analysis.encryption_scheme.cipher = "RC4, capa-only"
     cipher = "encryption_scheme.cipher"
     rewrite = {
-        "sentences": [_row(cipher, "RC4, capa-only", ["command_and_control"], "RC4 [ev_0064]")]
+        "sentences": [_row(cipher, "RC4, capa-only", ["command_and_control"], "RC4 [ev_0064].")]
     }
-    keep = {"sentences": [_row(cipher, "RC4, capa-only", ["command_and_control"])]}
-    done = _ask(report, _Reporter(rewrite, keep))
-    assert report.technical_analysis.encryption_scheme.cipher == "RC4, capa-only"
-    assert done.summary["listed"] == 1
+    done = _ask(report, _Reporter(rewrite, rewrite))
+    assert report.technical_analysis.encryption_scheme.cipher == "RC4 [ev_0064]."
+    assert done.summary["rewritten"] == 1
 
 
 def test_nothing_is_asked_without_a_source_or_a_reporter() -> None:
@@ -642,7 +652,20 @@ def test_the_node_says_what_the_question_could_not_do() -> None:
         "The prompt did not fit.",
         "The section agreement question was not answered (RuntimeError).",
     ]
-    assert "section_agreement" not in (report.run_summary or {})
+    # The round's counts are kept, as for any answer: no row was read, and only a sentence
+    # the ledger's own lines hold would be left out, of which this report has none (T-600).
+    assert (report.run_summary or {})["section_agreement"] == {
+        "passages": 11,
+        "claim_led_passages": 9,
+        "sentences": 0,
+        "rewritten": 0,
+        "kept": 0,
+        "listed": 0,
+        "not_applied": 0,
+        "dropped": 0,
+        "qualified": 0,
+        "held_kept": 0,
+    }
 
 
 def test_the_node_keeps_every_section_when_the_question_raises(monkeypatch: Any) -> None:

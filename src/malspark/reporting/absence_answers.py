@@ -11,7 +11,8 @@ readers check the answer, never choose the sentence:
   deny something; :func:`kept_absence` says which of them a rewrite states
   again, the same words on the same addresses, measured clause by clause;
 - :func:`quote_stands` says whether a kept sentence's quote stands in a source
-  the answer names, and :func:`carries_negation` whether it states an absence;
+  the answer names (:func:`quote_too_short`: one shorter than the floor stands
+  nowhere), and :func:`carries_negation` whether it states an absence;
 - :func:`failure_counts` reads the number a sentence gives failed calls, and
   :func:`count_disagrees` holds it to the ledger's count.
 
@@ -651,12 +652,25 @@ def _spaced(text: str) -> str:
     return " ".join(plain.lower().split())
 
 
-def quote_stands(quote: str, texts: Sequence[str]) -> bool:
-    """Whether the quote, read without its outer quotes or an ellipsis at either end,
-    stands whole in one of ``texts``, and is at least :data:`QUOTE_FLOOR` characters."""
+def _quoted(quote: str) -> str:
+    """The quote as :func:`quote_stands` reads it: spacing read, without its outer quotes or
+    an ellipsis at either end."""
     said = _spaced(quote).strip().strip("\"'").strip()
     for mark in ("…", "..."):
         said = said.removeprefix(mark).removesuffix(mark).strip()
+    return said
+
+
+def quote_too_short(quote: str) -> bool:
+    """Whether the quote, read as :func:`quote_stands` reads it, is shorter than
+    :data:`QUOTE_FLOOR` characters, so it quotes nothing wherever it stands."""
+    return len(_quoted(quote)) < QUOTE_FLOOR
+
+
+def quote_stands(quote: str, texts: Sequence[str]) -> bool:
+    """Whether the quote, read without its outer quotes or an ellipsis at either end,
+    stands whole in one of ``texts``, and is at least :data:`QUOTE_FLOOR` characters."""
+    said = _quoted(quote)
     if len(said) < QUOTE_FLOOR:
         return False
     return any(said in _spaced(text) for text in texts)
