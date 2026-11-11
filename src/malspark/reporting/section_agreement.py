@@ -3278,7 +3278,10 @@ def _failure_redone_check(
     and the clause naming it does not deny the redo. Its words for a redo
     never pass it alone. Any other fails for exactly the redone calls its
     sentences are held to (:func:`redone_calls_named`), the ones the question
-    names for it. ``facts`` are the facts shown, read when the check runs.
+    names for it. ``facts`` are the facts shown, read when the check runs. The check's
+    fourth argument is what the sentence may do instead where a keep of it passes
+    (:func:`_otherwise`, ``""`` where none does): a text refused for a redone call is told it
+    beside citing the calls that redid them, as for any other passage.
     """
 
     # Whether the facts shown hold a failed call no later call redid, which a denial in a
@@ -3300,7 +3303,7 @@ def _failure_redone_check(
             _failure_redone_violation(
                 stale,
                 says_failed,
-                otherwise="" if sentence else kept,
+                otherwise=kept,
                 of_held=of_held,
                 unredone=unredone,
                 keep=not sentence,
@@ -3933,7 +3936,13 @@ def _row_violations(
                 path=f"{path}.rewrite",
             )
             for failure_finding in passage.sourced_check(
-                row.rewrite, row.sources, span[2] if span is not None else row.sentence, ""
+                row.rewrite,
+                row.sources,
+                span[2] if span is not None else row.sentence,
+                # What the sentence may do instead, where a keep of it passes (T-600).
+                ""
+                if span is None or _keep_refused(passage, span[2])
+                else _otherwise(passage, span[2]),
             )
         )
     if row.decision == "rewrite" and _writable(passage):
@@ -4131,14 +4140,17 @@ def _told_the_end(
     """``found``, the refusals of an answer for ``sentence`` of ``passage``, each saying what
     becomes of a sentence the ledger's lines hold when its last answer is refused
     (:data:`_LEFT_OUT_END`) where it does not say so already, and, once, on its last refusal,
-    its own ends where no refusal of the row carries them; as they are for any other.
+    its own ends where no refusal of the row carries them; a closing sentence no keep passes
+    for (``Passage.unkept``) that nothing else holds is told its ends the same way, once, and
+    ends as before, unsaid; as they are for any other.
     A row answering a sentence of a field answered whole is told, once, on its last refusal
     (``last``: ``found`` holds it), what the field is, every end that passes for it and that
     end (:func:`_whole_ends`), each part no refusal of the row (``found`` and ``beside``, its
     others) carries already (T-600)."""
     if not found or passage is None or sentence is None:
         return list(found)
-    if not _ends_on_answer(passage, sentence):
+    held = bool(_ends_on_answer(passage, sentence))
+    if not held and not (passage.closing and sentence in passage.unkept):
         return list(found)
     if passage.whole:
         if not last:
@@ -4155,7 +4167,9 @@ def _told_the_end(
             if any(ends in message for message in said)
             else replace(violation, message=f"{violation.message.rstrip()} {what}: {ends}"),
         ]
-    end = _left_out_end(passage)
+    # What becomes of it, said by every refusal: a sentence the ledger's lines hold is left
+    # out; one no keep passes for that nothing else holds ends as before, unsaid (``""``).
+    end = _left_out_end(passage) if held else ""
     told = [
         violation
         if end[:-1] in violation.message or _LEFT_OUT_END in violation.message
@@ -4393,8 +4407,9 @@ def _unread_end(
 
 def _held_offers(passage: Passage, sentence: str) -> list[str]:
     """The ends a sentence the ledger's lines hold is offered, one per thing that holds it, as
-    :func:`_held_ends` and :func:`_named_body_ends` write them: a refusal carrying each one
-    has told it its ends (:func:`_told_the_end`)."""
+    :func:`_held_ends` and :func:`_named_body_ends` write them, and those of a closing
+    sentence no keep passes for that nothing else holds, :data:`_UNKEPT_ENDS`: a refusal
+    carrying each one has told it its ends (:func:`_told_the_end`)."""
     if not passage.closing:
         if not dict(passage.ledger_named).get(sentence, ()):
             return []
@@ -4402,11 +4417,12 @@ def _held_offers(passage: Passage, sentence: str) -> list[str]:
     unredone = bool(passage.unredone_failed)
     redos = dict(passage.redone_named).get(sentence, ())
     failed = dict(passage.failure_said).get(sentence, ())
-    return [
+    held = [
         *([_held_name_ends(unredone)] if dict(passage.ledger_named).get(sentence, ()) else []),
         *([_redone_ends(redos, unredone=unredone)] if redos else []),
         *([_failed_ends(failed, unredone=unredone)] if failed else []),
     ]
+    return held or ([_UNKEPT_ENDS] if sentence in passage.unkept else [])
 
 
 def _held_ends(passage: Passage, sentence: str) -> str:

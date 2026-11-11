@@ -8,8 +8,9 @@ now walks every refusal the round can raise, for every kind of passage it answer
 answer that raises it: each refusal is asserted whole, and what it says becomes of the
 sentence where no answer passes is what the round does. Over every kind and every answer, the
 ends each refusal offers are read off the refusal by the module's own end texts: each passes
-when given back, and every end that passes is offered, but in dev's own texts for a sentence
-nothing holds, listed by code; the first turn's lines on each kind are held to the same. A
+when given back, and every end that passes is offered, but in dev's own end texts for a
+sentence nothing holds, listed by text; the first turn's lines on each kind are held to the
+same. Ends are read as answer kinds, never which entries a rewrite must cite. A
 combination that cannot be raised is listed with why. Every address, entry and name here is
 a neutral synthetic value.
 """
@@ -898,10 +899,10 @@ TABLE: dict[str, list[str]] = {
         f"report.absence_contradicts_ledger at sentences.0.rewrite: {_NOT_READ}",
     ],
     "limitations | rewrite, saying a redone call failed | left out": [
-        "agreement.failure_redone at sentences.0.rewrite: row 1: the rewrite of limitations: it "
-        "says a call failed or a reading could not be made, while a later call redid it "
-        "(ev_0101 by ev_0107). Rewrite it citing ev_0107 and saying what it answered, or drop "
-        "it.",
+        "agreement.failure_redone at sentences.0.rewrite: row 1: the rewrite of limitations: "
+        "the rewrite still says a call failed or a reading could not be made, but a later call "
+        "redid it (ev_0101 by ev_0107). Cite ev_0107 and say what it answered, or keep the "
+        "sentence.",
         "agreement.rewrite_drops_citation at sentences.0.rewrite: row 1: the sentence cites "
         "ev_0107, which the rewrite does not. Keep every id the sentence cites, or keep the "
         "sentence.",
@@ -1415,7 +1416,9 @@ TABLE: dict[str, list[str]] = {
         "agreement.failure_redone at sentences.0.decision: row 1: conclusion rewrites the "
         "sentence into the same words, which keeps it, but it says a call failed or a reading "
         "could not be made, while a later call redid it (ev_0101 by ev_0107). Rewrite it citing "
-        "ev_0107 and saying what it answered, or drop it.",
+        "ev_0107 and saying what it answered, or drop it. A keep of it is refused whatever it "
+        "names, and the same words with a citation added are a keep; rewrite it on the source "
+        'that states otherwise, citing an entry that source cites, or drop it with "reason".',
     ],
     "conclusion failed | rewrite, misreading entries | left out": [
         "agreement.unread_standing at sentences.0.rewrite: conclusion: the rewrite 'Routine "
@@ -1430,7 +1433,10 @@ TABLE: dict[str, list[str]] = {
         "ev_0101, which the rewrite does not. Keep every id the sentence cites, or drop it.",
         f"report.citation_wrong_entry at sentences.0.rewrite: {_WRONG_ENTRY}",
         f"report.entry_contents_misstated at sentences.0.rewrite: {_MISSTATED}",
-        f"report.absence_contradicts_ledger at sentences.0.rewrite: {_NOT_READ}",
+        f"report.absence_contradicts_ledger at sentences.0.rewrite: {_NOT_READ} A keep of it is "
+        "refused whatever it names, and the same words with a citation added are a keep; "
+        "rewrite it on the source that states otherwise, citing an entry that source cites, or "
+        'drop it with "reason".',
     ],
     "conclusion failed | no row | as written": [
         "agreement.held_unlisted at held.conclusion: conclusion holds a sentence of a closing "
@@ -1442,12 +1448,16 @@ TABLE: dict[str, list[str]] = {
         "out, give the reason.",
         "agreement.failure_count at sentences.0.rewrite: row 1: conclusion gives failed calls a "
         "number the ledger's count (calls.1: 1 failed, 1 of them redone, 0 not redone) does "
-        "not. State the ledger's count, or no number.",
+        "not. State the ledger's count, or no number. A keep of it is refused whatever it "
+        "names, and the same words with a citation added are a keep; rewrite it on the source "
+        'that states otherwise, citing an entry that source cites, or drop it with "reason".',
     ],
     "conclusion count | keep, no source, a reason | as written": [
         "agreement.failure_count at sentences.0.rewrite: row 1: conclusion gives failed calls a "
         "number the ledger's count (calls.1: 1 failed, 1 of them redone, 0 not redone) does "
-        "not. State the ledger's count, or no number.",
+        "not. State the ledger's count, or no number. A keep of it is refused whatever it "
+        "names, and the same words with a citation added are a keep; rewrite it on the source "
+        'that states otherwise, citing an entry that source cites, or drop it with "reason".',
     ],
     "conclusion count | keep, a quote too short | left out": [
         "agreement.keep_unquoted at sentences.0.quote: row 1: conclusion keeps 'Five tool "
@@ -1489,13 +1499,19 @@ TABLE: dict[str, list[str]] = {
     "conclusion unread | drop, naming a passage as its source | appended": [
         "agreement.unknown_source at sentences.0.sources: row 1 names executive_summary as what "
         "states otherwise than conclusion, but only the facts, the section 5 passages and the "
-        "debate rounds listed are sources. Name the sources by their ids.",
+        "debate rounds listed are sources. Name the sources by their ids. A keep of it is "
+        "refused whatever it names, and the same words with a citation added are a keep; "
+        "rewrite it on the source that states otherwise, citing an entry that source cites, or "
+        'drop it with "reason".',
         "agreement.unread_standing at held.conclusion: conclusion: 'The routine at 0x5a10 was "
         "not read [ev_0107].' calls code not read that the ledger lists (listed.1: 0x2475a10 "
         "(offset 0x5a10): ev_0107 lists its code (decompiled or disassembled)). Rewrite it in "
         "your own words to state that the code was read and what the sentence can still say, "
         "citing an entry that fact cites, or drop it; refused, a drop leaves it standing, and "
-        f"the platform appends the ledger's listing fact to it. {_EVERY_ROW}",
+        f"the platform appends the ledger's listing fact to it. {_EVERY_ROW} A keep of it is "
+        "refused whatever it names, and the same words with a citation added are a keep; "
+        "rewrite it on the source that states otherwise, citing an entry that source cites, or "
+        'drop it with "reason".',
     ],
     "conclusion unread | rewrite, citing an entry not shown | left out": [
         "agreement.rewrite_cites_elsewhere at sentences.0.rewrite: row 1: the rewrite cites "
@@ -1510,8 +1526,14 @@ TABLE: dict[str, list[str]] = {
         "(offset 0x5a10): ev_0107 lists its code (decompiled or disassembled)). Rewrite it in "
         "your own words to state that the code was read and what the sentence can still say, "
         "citing an entry that fact cites, or drop it; refused, a rewrite resting on the "
-        f"sources it names leaves it out of the report. {_EVERY_ROW}",
-        f"report.citation_not_evidence at sentences.0.rewrite: {_NOT_SHOWN}",
+        f"sources it names leaves it out of the report. {_EVERY_ROW} A keep of it is refused "
+        "whatever it names, and the same words with a citation added are a keep; rewrite it on "
+        "the source that states otherwise, citing an entry that source cites, or drop it with "
+        '"reason".',
+        f"report.citation_not_evidence at sentences.0.rewrite: {_NOT_SHOWN} A keep of it is "
+        "refused whatever it names, and the same words with a citation added are a keep; "
+        "rewrite it on the source that states otherwise, citing an entry that source cites, or "
+        'drop it with "reason".',
     ],
     "conclusion unread | rewrite, calling listed code not read | left out": [
         "agreement.unread_standing at sentences.0.rewrite: conclusion: the rewrite 'The "
@@ -1584,7 +1606,9 @@ TABLE: dict[str, list[str]] = {
         "(offset 0x5a10): ev_0107 lists its code (decompiled or disassembled)). Rewrite it in "
         "your own words to state that the code was read and what the sentence can still say, "
         "citing an entry that fact cites, or drop it; left with no row, the platform appends "
-        f"the ledger's listing fact to it. {_EVERY_ROW}",
+        f"the ledger's listing fact to it. {_EVERY_ROW} A keep of it is refused whatever it "
+        "names, and the same words with a citation added are a keep; rewrite it on the source "
+        'that states otherwise, citing an entry that source cites, or drop it with "reason".',
     ],
     "conclusion unread | no row | appended": [
         "agreement.unread_standing at held.conclusion: conclusion: 'The routine at 0x5a10 was "
@@ -1592,19 +1616,25 @@ TABLE: dict[str, list[str]] = {
         "(offset 0x5a10): ev_0107 lists its code (decompiled or disassembled)). Rewrite it in "
         "your own words to state that the code was read and what the sentence can still say, "
         "citing an entry that fact cites, or drop it; left with no row, the platform appends "
-        f"the ledger's listing fact to it. {_EVERY_ROW}",
+        f"the ledger's listing fact to it. {_EVERY_ROW} A keep of it is refused whatever it "
+        "names, and the same words with a citation added are a keep; rewrite it on the source "
+        'that states otherwise, citing an entry that source cites, or drop it with "reason".',
     ],
     "limitations count | keep, no source, no reason | as written": [
         "agreement.unknown_source at sentences.0.sources: row 1 names no source; leaving it "
         "out, give the reason.",
         "agreement.failure_count at sentences.0.rewrite: row 1: limitations gives failed calls "
         "a number the ledger's count (calls.1: 1 failed, 1 of them redone, 0 not redone) does "
-        "not. State the ledger's count, or no number.",
+        "not. State the ledger's count, or no number. A keep of it is refused whatever it "
+        "names, and the same words with a citation added are a keep; rewrite it on the source "
+        'that states otherwise, citing an entry that source cites, or drop it with "reason".',
     ],
     "limitations count | keep, no source, a reason | as written": [
         "agreement.failure_count at sentences.0.rewrite: row 1: limitations gives failed calls "
         "a number the ledger's count (calls.1: 1 failed, 1 of them redone, 0 not redone) does "
-        "not. State the ledger's count, or no number.",
+        "not. State the ledger's count, or no number. A keep of it is refused whatever it "
+        "names, and the same words with a citation added are a keep; rewrite it on the source "
+        'that states otherwise, citing an entry that source cites, or drop it with "reason".',
     ],
     "limitations count | no row | as written": [
         "agreement.held_unlisted at held.limitations: limitations holds a sentence of a "
@@ -1638,13 +1668,19 @@ TABLE: dict[str, list[str]] = {
     "limitations unread | drop, naming a passage as its source | appended": [
         "agreement.unknown_source at sentences.0.sources: row 1 names executive_summary as what "
         "states otherwise than limitations, but only the facts, the section 5 passages and the "
-        "debate rounds listed are sources. Name the sources by their ids.",
+        "debate rounds listed are sources. Name the sources by their ids. A keep of it is "
+        "refused whatever it names, and the same words with a citation added are a keep; "
+        "rewrite it on the source that states otherwise, citing an entry that source cites, or "
+        'drop it with "reason".',
         "agreement.unread_standing at held.limitations: limitations: 'The routine at 0x6100 "
         "was not read [ev_0112].' calls code not read that the ledger lists (listed.2: "
         "0x2476100 (offset 0x6100): ev_0112 lists its code (decompiled or disassembled)). "
         "Rewrite it in your own words to state that the code was read and what the sentence "
         "can still say, citing an entry that fact cites, or drop it; refused, a drop leaves it "
-        f"standing, and the platform appends the ledger's listing fact to it. {_EVERY_ROW}",
+        f"standing, and the platform appends the ledger's listing fact to it. {_EVERY_ROW} A "
+        "keep of it is refused whatever it names, and the same words with a citation added are "
+        "a keep; rewrite it on the source that states otherwise, citing an entry that source "
+        'cites, or drop it with "reason".',
     ],
     "limitations unread | rewrite, its absence again on the listing | left out": [
         "agreement.unread_standing at sentences.0.rewrite: limitations: the rewrite 'The "
@@ -1691,7 +1727,10 @@ TABLE: dict[str, list[str]] = {
         "0x2476100 (offset 0x6100): ev_0112 lists its code (decompiled or disassembled)). "
         "Rewrite it in your own words to state that the code was read and what the sentence "
         "can still say, citing an entry that fact cites, or drop it; left with no row, the "
-        f"platform appends the ledger's listing fact to it. {_EVERY_ROW}",
+        f"platform appends the ledger's listing fact to it. {_EVERY_ROW} A keep of it is "
+        "refused whatever it names, and the same words with a citation added are a keep; "
+        "rewrite it on the source that states otherwise, citing an entry that source cites, or "
+        'drop it with "reason".',
     ],
     "limitations unread | no row | appended": [
         "agreement.unread_standing at held.limitations: limitations: 'The routine at 0x6100 "
@@ -1699,7 +1738,10 @@ TABLE: dict[str, list[str]] = {
         "0x2476100 (offset 0x6100): ev_0112 lists its code (decompiled or disassembled)). "
         "Rewrite it in your own words to state that the code was read and what the sentence "
         "can still say, citing an entry that fact cites, or drop it; left with no row, the "
-        f"platform appends the ledger's listing fact to it. {_EVERY_ROW}",
+        f"platform appends the ledger's listing fact to it. {_EVERY_ROW} A keep of it is "
+        "refused whatever it names, and the same words with a citation added are a keep; "
+        "rewrite it on the source that states otherwise, citing an entry that source cites, or "
+        'drop it with "reason".',
     ],
     "limitations one failed call | keep, on the failed call's fact | left out": [
         "agreement.failure_redone at sentences.0.decision: row 1: limitations keeps the "
@@ -2498,24 +2540,105 @@ _OFFERS: dict[str, frozenset[str]] = {
 }
 # The report rounds' prose checks write their own findings, each mending the rewrite it reads.
 _MENDS_THE_REWRITE = _PROSE
-# Dev's own texts for a sentence nothing holds, a plain sentence of the conclusion or the
-# limitations: they offer fewer ends than pass, as dev's round does (T-613), and keep its
-# wording, each end in them one of the texts above.
-_DEV_TEXTS = {
-    (code, kind): "dev's text"
-    for kind in (CONCLUSION, LIMITATIONS)
-    for code in (
-        agreement.FAILURE_COUNT_CODE,
-        agreement.FAILURE_REDONE_CODE,
-        agreement.KEEP_UNQUOTED_CODE,
-        agreement.REWRITE_CITES_ELSEWHERE_CODE,
-        agreement.REWRITE_DROPS_CITATION_CODE,
-        agreement.REWRITE_UNGROUNDED_CODE,
-        agreement.UNKNOWN_SOURCE_CODE,
-        agreement.UNREAD_STANDING_CODE,
-        *_PROSE,
-    )
+# The plain sentences: of the conclusion or the limitations, nothing holds them and a keep of
+# them passes.
+_PLAIN = frozenset(
+    name
+    for name, subject in SUBJECTS.items()
+    if subject.kind in (CONCLUSION, LIMITATIONS) and name in _KEPT
+)
+# Dev's own end texts: each stands verbatim in origin/dev's round. A refusal of a plain
+# sentence whose ends are only these, or a prose check's own finding, offers what dev's round
+# offers, fewer ends than pass at times (T-613); any other refusal offers every end that passes.
+_DEV_ENDS = frozenset(
+    {
+        agreement._OR_DROP,
+        agreement._OR_KEEP,
+        agreement._OR_KEEP_NAMING,
+        agreement._SAY_THE_REDO,
+        agreement._REASON_KEEPING,
+        agreement._REASON_ABSENCE,
+        agreement._NAME_THE_SOURCES_READ,
+        agreement._NAME_THE_SOURCES,
+        agreement._COPY_THE_SENTENCE,
+        agreement._KEEP_OR_REWRITE,
+        agreement._CITE_ONLY,
+        agreement._KEEP_EVERY_ID,
+        agreement._CITE_A_SOURCE,
+        agreement._LEAVE_THE_CLAUSE,
+        agreement._STATE_THE_READING,
+        agreement._STATE_THE_COUNT,
+        agreement._QUOTE_OR_REWRITE,
+        agreement._NAME_AND_QUOTE,
+        agreement._TO_THE_SOURCES,
+        agreement._ON_THE_ROWS,
+        agreement._ON_A_CANDIDATE,
+        agreement._ON_THE_ONE,
+        agreement._LIST_IT,
+        agreement._LIST_IT_LEAVING,
+        agreement._LIST_IT_ABSENCE,
+    }
+)
+
+
+# Held open, not dev's: a plain keep refused for a quote too short, or none, is told the floor
+# beside dev's own ends, which offer no drop; a drop offered there would change dev's ends for
+# a plain sentence, and leaving the floor out its message.
+_OPEN = frozenset({agreement._QUOTE_MEND})
+
+
+# Each answer for a plain sentence whose refusals, dev's own, leave an end that passes
+# unoffered, with the ends they leave: none other may, and these leave exactly these.
+_DEV_UNOFFERED: dict[str, frozenset[str]] = {
+    "conclusion | keep, no source, no reason": frozenset({_REWRITE}),
+    "conclusion | keep, a source, no quote": frozenset({_DROP}),
+    "conclusion | keep, a quote of a blank": frozenset({_DROP}),
+    "conclusion | keep, a quote no source holds": frozenset({_DROP}),
+    "conclusion | drop, naming a passage as its source": frozenset({_KEEP, _REWRITE}),
+    "conclusion | rewrite, citing an entry not shown": frozenset({_DROP}),
+    "conclusion | rewrite, misreading entries": frozenset({_KEEP, _DROP}),
+    "conclusion | rewrite, saying a redone call failed": frozenset({_DROP}),
+    "conclusion | rewrite, a count the ledger does not hold": frozenset({_KEEP, _DROP}),
+    "conclusion | rewrite, calling listed code not read": frozenset({_KEEP}),
+    "conclusion | rewrite, a denial no entry follows": frozenset({_DROP}),
+    "conclusion | keep, a quote too short": frozenset({_DROP}),
+    "limitations | keep, no source, no reason": frozenset({_REWRITE}),
+    "limitations | keep, a source, no quote": frozenset({_DROP}),
+    "limitations | keep, a quote of a blank": frozenset({_DROP}),
+    "limitations | keep, a quote no source holds": frozenset({_DROP}),
+    "limitations | drop, naming a passage as its source": frozenset({_KEEP, _REWRITE}),
+    "limitations | rewrite, citing an entry not shown": frozenset({_DROP}),
+    "limitations | rewrite, misreading entries": frozenset({_KEEP, _DROP}),
+    "limitations | rewrite, saying a redone call failed": frozenset({_DROP}),
+    "limitations | rewrite, a count the ledger does not hold": frozenset({_KEEP, _DROP}),
+    "limitations | rewrite, calling listed code not read": frozenset({_KEEP}),
+    "limitations | rewrite, a denial no entry follows": frozenset({_DROP}),
+    "limitations | keep, a quote too short": frozenset({_DROP}),
+    "limitations one failed call | keep, no source, no reason": frozenset({_REWRITE}),
+    "limitations one failed call | keep, a source, no quote": frozenset({_DROP}),
+    "limitations one failed call | keep, a quote of a blank": frozenset({_DROP}),
+    "limitations one failed call | keep, on the failed call's fact": frozenset({_DROP}),
+    "limitations one failed call | keep, a quote no source holds": frozenset({_DROP}),
+    "limitations one failed call | drop, naming a passage as its source": frozenset(
+        {_KEEP, _REWRITE}
+    ),
+    "limitations one failed call | rewrite, citing an entry not shown": frozenset({_DROP}),
+    "limitations one failed call | rewrite, misreading entries": frozenset({_KEEP, _DROP}),
+    "limitations one failed call | rewrite, saying a redone call failed": frozenset({_DROP}),
+    "limitations one failed call | rewrite, a count the ledger does not hold": frozenset(
+        {_KEEP, _DROP}
+    ),
+    "limitations one failed call | rewrite, calling listed code not read": frozenset({_KEEP}),
+    "limitations one failed call | rewrite, a denial no entry follows": frozenset({_DROP}),
+    "limitations one failed call | keep, a quote too short": frozenset({_DROP}),
 }
+
+
+def _dev_text(code: str, message: str) -> bool:
+    """Whether ``message`` offers its ends in dev's own end texts alone (or beside one held
+    open, :data:`_OPEN`)."""
+    ends = {words for words in _OFFERS if _said(message, words)}
+    return code in _MENDS_THE_REWRITE or bool(ends - _OPEN) and ends <= _DEV_ENDS | _OPEN
 
 
 def _said(text: str, words: str) -> bool:
@@ -2552,9 +2675,10 @@ def _offers_of(subject: _Subject, answer: Any) -> list[tuple[str, str, frozenset
 def test_every_message_offers_exactly_the_ends_that_pass(name: str) -> None:
     """(b) Over every answer the table holds, every refusal offers at least one end, read off
     it; each end offered for the subject's sentence passes when given, and every end that
-    passes for it is offered, but by dev's own texts for a sentence nothing holds. What the
-    refusals say becomes of it where no answer passes is what the round does, and none is
-    one the table says cannot be raised."""
+    passes for it is offered, but by dev's own end texts for a sentence nothing holds. What
+    the refusals say becomes of it where no answer passes is what the round does, and none is
+    one the table says cannot be raised. Ends are read as answer kinds (keep, rewrite, drop):
+    which entries a rewrite must cite, or which sources a keep names, is not read here."""
     subject = SUBJECTS[name]
     passing = _ends(name)
     for answer_name, given in _ANSWERS.items():
@@ -2568,13 +2692,13 @@ def test_every_message_offers_exactly_the_ends_that_pass(name: str) -> None:
         for kind in union:
             assert kind in passing, (answer_name, kind, [m for _c, m, _o in about])
             assert _refusals(subject, passing[kind]) == []
-        unoffered = set(passing) - union
-        if about and unoffered:
-            assert subject.kind in (CONCLUSION, LIMITATIONS), (answer_name, unoffered)
-            assert {(code, subject.kind) for code, _m, _o in about} <= set(_DEV_TEXTS), (
-                answer_name,
-                unoffered,
-            )
+        unoffered = set(passing) - union if about else set()
+        # Only a plain sentence leaves an end unoffered, only in dev's own end texts, and
+        # exactly the ends listed for that answer.
+        assert unoffered == _DEV_UNOFFERED.get(f"{name} | {answer_name}", set()), answer_name
+        if unoffered:
+            assert name in _PLAIN, (answer_name, unoffered)
+            assert [m for c, m, _o in about if not _dev_text(c, m)] == [], (answer_name, unoffered)
 
 
 def _question_lines(subject: _Subject) -> list[str]:
