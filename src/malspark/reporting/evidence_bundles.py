@@ -1655,7 +1655,7 @@ def _technical_facts(section: str, report: MalwareReport) -> dict[str, Any]:
             **observed[section],
         }
     if section == "cli_flags":
-        return {"capability_profile": dict(sorted(caps.items(), key=lambda kv: -kv[1]))}
+        return {IMPORT_TABLE_PROFILE_FACT: dict(sorted(caps.items(), key=lambda kv: -kv[1]))}
     if section == "string_resolution":
         resolution: dict[str, Any] = {
             "static_import_count": len(static.imports),
@@ -1671,7 +1671,7 @@ def _technical_facts(section: str, report: MalwareReport) -> dict[str, Any]:
                 sorted(static.api_capabilities_resolved.items(), key=lambda kv: -kv[1])
             )
         return resolution
-    return {"capability_profile": dict(sorted(caps.items(), key=lambda kv: -kv[1]))}
+    return {IMPORT_TABLE_PROFILE_FACT: dict(sorted(caps.items(), key=lambda kv: -kv[1]))}
 
 
 # Technique IDs the import-derived ATT&CK table can emit for these two

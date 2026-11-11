@@ -176,3 +176,17 @@ def test_the_string_section_names_each_profile_by_the_same_scoped_key() -> None:
         "evasion",
         "persistence",
     ]
+
+
+@pytest.mark.parametrize(
+    "section",
+    ["cli_flags", "attack_procedures", "conclusion", "limitations", "ransom_note", "summary"],
+)
+def test_every_other_section_names_the_import_profile_by_its_scope(section: str) -> None:
+    report = _report(
+        api_capabilities={"registry": 2, "network": 5},
+        api_capabilities_evidence_ids=["ev_0010"],
+    )
+    facts = bundle_for(section, report)["facts"]
+    assert facts == {IMPORTS: {"network": 5, "registry": 2}}
+    assert list(facts[IMPORTS]) == ["network", "registry"]
