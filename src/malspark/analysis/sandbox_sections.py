@@ -190,6 +190,14 @@ NO_LIST = "no: the report holds no `{path}`"
 NO_NORMALISED = "no: the {provider} report as normalised here carries no `{section}`"
 NO_PARTIAL = "no: the {provider} report, {how}, carries no `{section}`"
 NO_PID_ROWS = "no: the `{section}` rows name no process"
+_NO_UNAVAILABLE_HEAD, _NO_UNAVAILABLE_TAIL = NO_UNAVAILABLE.split("{name}")
+
+
+def listed_unavailable(no: str) -> bool:
+    """Whether a section's ``no:`` sentence is :data:`NO_UNAVAILABLE`: the report lists the
+    section as unavailable from its sandbox, rather than not carrying it."""
+    text = str(no or "")
+    return text.startswith(_NO_UNAVAILABLE_HEAD) and text.endswith(_NO_UNAVAILABLE_TAIL)
 
 
 @dataclass(frozen=True)

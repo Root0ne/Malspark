@@ -127,6 +127,8 @@ class OpenQuestion:
     reason: str
     cites: tuple[str, ...] = ()
     addresses: tuple[int, ...] = ()
+    # The analyst its table names as the one that filed it.
+    agent: str = ""
 
 
 @dataclass(frozen=True)
@@ -259,6 +261,7 @@ def open_questions(report: Any, bases: Sequence[int]) -> list[OpenQuestion]:
                     addresses=tuple(
                         dict.fromkeys(one_spelling(a, bases) for a in _addresses_named(named))
                     ),
+                    agent=_cell(columns, row, "Agent"),
                 ),
             )
         return list(out.values())

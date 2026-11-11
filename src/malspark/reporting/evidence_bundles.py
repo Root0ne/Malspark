@@ -759,8 +759,24 @@ def _function_index(section: str, table: list[FunctionCode]) -> list[dict[str, A
 # (``composer_pro._redone_calls``) is one of them: entry ids of their own
 # shape and the platform's words, no tool's text.
 REDONE_CALLS_FACT = "failed_calls_redone"
+# The limitations inventory's rows and open questions the limitations' writer is shown
+# (``composer_pro.measured_limitation_facts``): the platform's words and citations, every
+# ledger id in a tool's name, a recorded reason or an analyst's question written out.
+MEASURED_LIST_FACT = "measured_list"
+NOT_PRINTED_FACT = "measured_rows_not_printed"
+LISTED_QUESTIONS_FACT = "open_questions_whose_routines_have_listed_code"
+OTHER_QUESTIONS_FACT = "open_questions_other"
 PLATFORM_CITED_FACTS: frozenset[str] = frozenset(
-    {"sandbox_entries", "string_entries", "crypto_finding_entries", REDONE_CALLS_FACT}
+    {
+        "sandbox_entries",
+        "string_entries",
+        "crypto_finding_entries",
+        REDONE_CALLS_FACT,
+        MEASURED_LIST_FACT,
+        NOT_PRINTED_FACT,
+        LISTED_QUESTIONS_FACT,
+        OTHER_QUESTIONS_FACT,
+    }
 )
 # The fact mapping each of the sample's values to the entries holding it
 # (:func:`value_entries`): its values are the sample's, its ids the platform's.
@@ -1065,6 +1081,18 @@ def sandbox_watched_persistence(report: MalwareReport) -> bool:
     blind = {section_id(name) for name in (dyn.unavailable if dyn else [])}
     return dyn is not None and not blind.intersection(
         {"registry", "files", "file", "file_operations", "filesystem"}
+    )
+
+
+def sandbox_recorded(report: MalwareReport) -> bool:
+    """Whether a sandbox recorded the sample's behaviour: the report holds a sandbox report,
+    or a network row the sandbox is the source of. What the renderers' sandbox sentences
+    and the limitations inventory both read."""
+    net = report.network
+    return report.dynamic is not None or any(
+        getattr(row, "source", None) == "sandbox"
+        for row in [*(net.domains if net else []), *(net.ips if net else [])]
+        + list(net.urls if net else [])
     )
 
 

@@ -8454,6 +8454,18 @@ def make_report_node(
                     report.degradation_reasons.append(_reason)
             hold_the_report_in_progress(container, report)
 
+        # What the run could not do, measured once from the ledger before the
+        # report's prose is written: the limitations' writer is shown it, the
+        # agreement round holds the paragraph to it and section 11 prints it
+        # (``reporting.limitation_inventory``). A read that fails leaves the
+        # report as one stored before it existed, never without its report.
+        try:
+            from malspark.reporting.limitation_inventory import build_inventory
+
+            report.limitation_inventory = await asyncio.to_thread(build_inventory, report, _ledger)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("report_node: the limitations inventory was not read (%s).", exc)
+
         # Section-wise Composer authors the professional
         # spine (background, execution flow, technical-analysis subsections by
         # capability, configuration, commands, C2 channels),
