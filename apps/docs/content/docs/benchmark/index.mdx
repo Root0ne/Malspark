@@ -356,12 +356,13 @@ Of the {run.items} facts, {origins.core + origins.sharpened} were fixed before
 the run from the first three analyses, Bitsight, Elastic Security Labs and
 Proofpoint. The other {origins.added + origins.completion} were drawn after the run from the
 full text of the eight analyses. Readers who had not seen the run’s report drew
-{origins.added} from the five further analyses, and {origins.completion - 3} in a
+{origins.added} from the five further analyses, and {origins.completion - 5} in a
 completion pass that read all eight end to end and listed every checkable fact
 that no item held. The same readers added specifics from the analyses to
-{origins.sharpened} of the facts fixed before the run. Three more items, the
-export-directory name, the missing signature and command 21, entered the key
-when the run’s own facts were checked against the analyses. The specifics added
+{origins.sharpened} of the facts fixed before the run. Five more items, the
+export-directory name, the missing signature, the section count, the import
+counts and command 21, entered the key when the run’s own facts were checked
+against the analyses. The specifics added
 to the self-deletion item and to the command that fetches bp.dat entered through
 that same check.
 
@@ -511,7 +512,7 @@ The last column tells where a fact comes from: **core** facts were fixed before
 the run from three analyses; **sharpened** facts were fixed then too, and carry
 specifics drawn after the run from the other analyses; **added** facts were
 drawn after the run from the five further analyses; **completion** facts were
-drawn after the run to complete the key: most in the pass over all eight, three
+drawn after the run to complete the key: most in the pass over all eight, five
 when the run’s facts were checked against them. Where a fact carries
 added specifics, they follow the key fact in the same cell and are scored with
 it.
