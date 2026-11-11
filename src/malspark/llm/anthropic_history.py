@@ -68,7 +68,16 @@ where its first user turn is noted with a head that other requests repeat
 (:data:`SHARED_HEAD`, the report composer's sections): that turn is sent as two
 text blocks, the head with a breakpoint and the rest after it, whose texts
 joined are the turn's text, so every request sharing the head reads one cached
-prefix.
+prefix. A user turn noted as one a later request may send again
+(:data:`SENT_AGAIN`, the report composer's sections, which a validation retry
+may follow) carries a breakpoint at its end as well, on a single shot too,
+wherever no breakpoint is placed after it: the first pass writes the turn and
+the retry, which sends it again, reads it. That breakpoint asks for five
+minutes whatever ``prompt_cache_ttl`` is, the retry following within seconds,
+and outside a loop so does every breakpoint on or after such a turn, unless a
+later turn carries a head of its own, which keeps the setting for them all.
+On a request no later one sends again it is placed only where an earlier
+request of the model marked that prefix, where it reads and writes nothing.
 
 **The standing facts** at the head of a conversation's first user turn (the
 triage pack, noted with its length where the platform puts it there:
@@ -114,6 +123,11 @@ SHARED_HEAD = "malspark_shared_head"
 # again, in ``response_metadata``: an entry written at a breakpoint there would
 # never be read, so the request carries none but a shared head's.
 LAST_REQUEST = "malspark_last_request"
+# Where a user turn says a later request may send it again (a validation
+# retry of a single shot), in ``response_metadata``: its length in characters
+# as noted. A turn whose text is still that long carries a breakpoint at its
+# end; one a question was later added to is not marked by the note.
+SENT_AGAIN = "malspark_sent_again"
 # Where a chat model class this module built states how long its cache entries
 # live, in seconds: the lifetime its breakpoints ask for (``prompt_cache_ttl``).
 CACHE_LIFETIME_ATTR = "_malspark_cache_seconds"
@@ -628,6 +642,23 @@ def _standing_heads(
     return out
 
 
+def _sent_again(messages: list[Any], noted: dict[str, int]) -> frozenset[int]:
+    """The indexes of the user turns noted as sent again (:data:`SENT_AGAIN`), as they still read.
+
+    ``noted`` maps a noted turn's text to the length the note gives; a turn
+    whose text is longer now (a question asked at its end) is not one of them.
+    """
+    if not noted:
+        return frozenset()
+    found: set[int] = set()
+    for index, message in enumerate(messages):
+        if isinstance(message, dict) and message.get("role") == "user":
+            text = _turn_text(message.get("content"))
+            if text is not None and text.strip() and noted.get(text) == len(text):
+                found.add(index)
+    return frozenset(found)
+
+
 def _breakpoint_turns(roles: list[Any], loop: bool, last: bool) -> set[int]:
     """The indexes of the user turns a request's breakpoints go on, by its turns' roles.
 
@@ -652,7 +683,13 @@ def _listed(message: dict[str, Any]) -> dict[str, Any]:
     return {**message, "content": [{"type": "text", "text": message["content"]}]}
 
 
-def _turns_listed(memory: Memory, messages: list[Any], loop: bool, last: bool) -> list[Any]:
+def _turns_listed(
+    memory: Memory,
+    messages: list[Any],
+    loop: bool,
+    last: bool,
+    again: frozenset[int] = frozenset(),
+) -> list[Any]:
     """The user turn before the newest answer, and each listed before, as a one-block list.
 
     A turn written as one string carries no marker, so a tools-free request
@@ -664,17 +701,20 @@ def _turns_listed(memory: Memory, messages: list[Any], loop: bool, last: bool) -
     (:func:`_breakpoint_turns`) and no thinking block follows it in the
     request, so a turn sent before a block was written keeps the shape it had
     and the cache prefix keeps its bytes (the binding digest reads both
-    shapes as one, :func:`_as_blocks`). Any other turn, the newest included,
-    is listed only where an earlier request of the model listed it
-    (``Memory.listed_turns``), marked or not, so a listed turn's shape never
-    changes again. Run before the thinking check, which so reads the turns as
-    they are sent. One pass over the turns.
+    shapes as one, :func:`_as_blocks`). A turn noted as sent again (``again``,
+    :data:`SENT_AGAIN`) is listed the same way, on the single shot that
+    first sends it too. Any other turn, the newest included, is listed only
+    where an earlier request of the model listed it (``Memory.listed_turns``),
+    marked or not, so a listed turn's shape never changes again. Run before
+    the thinking check, which so reads the turns as they are sent. One pass
+    over the turns.
     """
     roles = [m.get("role") if isinstance(m, dict) else None for m in messages]
     with memory.lock:
         listed = set(memory.listed_turns)
     assistants = [i for i, role in enumerate(roles) if role == "assistant"]
     resent = {i for i in _breakpoint_turns(roles, loop, last) if assistants and i < assistants[-1]}
+    resent |= again
     thought = [
         i
         for i in assistants
@@ -728,11 +768,28 @@ def _cache_breakpoints(
     last: bool = False,
     memory: Memory | None = None,
     payload: dict[str, Any] | None = None,
+    again: frozenset[int] = frozenset(),
 ) -> list[Any]:
     """Explicit breakpoints on a conversation that re-sends its prefix, none otherwise.
 
     ``last``: no later request sends this conversation again (:data:`LAST_REQUEST`),
     so a breakpoint here would write an entry nothing reads.
+
+    ``again`` holds the user turns noted as sent again by a later request
+    (:data:`SENT_AGAIN`): each carries a breakpoint where no other is placed
+    at it or after it, on a single shot too; on a ``last`` request only where
+    an earlier request of the model marked that prefix within the marker's
+    lifetime, so it reads that entry and writes none. That breakpoint asks
+    for five minutes whatever ``marker`` asks: its only reader is the retry
+    of the same call, seconds later, and as the request's last breakpoint it
+    follows every longer-lived one, as the API requires. Outside a loop, a
+    noted turn another rule marks asks for five minutes too, and so does
+    every breakpoint after it, so no longer-lived one follows it and a retry
+    sends the first pass's marked turn byte for byte; where a later turn
+    carries a head of its own (:func:`_head_after`), they keep ``marker`` as
+    a request without the note does, and the end is left unmarked. Each
+    such prefix counts as written for five minutes only, unless an entry of
+    it lives longer.
 
     With ``memory``, a breakpoint whose turn cannot carry one as sent (a turn
     written as one string that keeps that shape, :func:`_turns_listed`) goes
@@ -747,7 +804,9 @@ def _cache_breakpoints(
     """
     roles = [m.get("role") if isinstance(m, dict) else None for m in messages]
     marks = _breakpoint_turns(roles, loop, last)
-    if memory is not None and marks:
+    short = {k: v for k, v in marker.items() if k != "ttl"}
+    ends: set[int] = set()
+    if memory is not None and (marks or again):
         digests = _prefix_digests(payload or {}, messages)
         with memory.lock:
             now = time.monotonic()
@@ -766,10 +825,77 @@ def _cache_breakpoints(
             # A breakpoint already placed after it reads that entry on its own.
             if earlier is not None and not any(i > earlier for i in placed):
                 placed.add(earlier)
+        ends = _again_placed(messages, again, placed, last, digests, written)
         marks = placed
+        ends |= _short_after_noted(messages, marks, again, loop)
         with memory.lock:
-            memory.marked.update((digests[i], now) for i in marks)
-    return [_marked(m, marker) if i in marks else m for i, m in enumerate(messages)]
+            memory.marked.update((digests[i], now) for i in marks - ends)
+            # Stamped so that it counts as written for five minutes, unless
+            # an entry of its prefix already lives longer.
+            at = now - (lifetime - _FIVE_MINUTES)
+            for i in ends:
+                memory.marked[digests[i]] = max(memory.marked.get(digests[i], at), at)
+    elif again:
+        ends = _again_placed(messages, again, marks, last)
+        ends |= _short_after_noted(messages, marks, again, loop)
+    return [
+        _marked(m, short) if i in ends else _marked(m, marker) if i in marks else m
+        for i, m in enumerate(messages)
+    ]
+
+
+def _head_after(messages: list[Any], index: int) -> bool:
+    """Whether a turn after ``index`` carries a breakpoint of its own (a shared head)."""
+    return any(
+        isinstance(m, dict)
+        and isinstance(m.get("content"), list)
+        and any(isinstance(b, dict) and "cache_control" in b for b in m["content"])
+        for m in messages[index + 1 :]
+    )
+
+
+def _short_after_noted(
+    messages: list[Any], marks: set[int], again: frozenset[int], loop: bool
+) -> set[int]:
+    """The breakpoints from the first noted turn ``marks`` holds on, outside a loop.
+
+    Each asks for five minutes (:func:`_cache_breakpoints`); a loop's are left
+    as they are, and so are a noted turn's where a later turn carries a head
+    of its own (:func:`_head_after`), whose lifetime would follow theirs.
+    """
+    noted = {i for i in marks & again if not _head_after(messages, i)}
+    if loop or not noted:
+        return set()
+    return {i for i in marks if i >= min(noted)}
+
+
+def _again_placed(
+    messages: list[Any],
+    again: frozenset[int],
+    placed: set[int],
+    last: bool,
+    digests: list[str] | None = None,
+    written: set[str] | None = None,
+) -> set[int]:
+    """The turns noted as sent again (``again``) that carry a breakpoint of their own.
+
+    A turn so noted is marked where it can carry one as sent and no breakpoint
+    is placed at it or after it, which would read its entry on its own: a
+    later turn's head included (:func:`_head_after`), so the mark is always
+    the request's last. On a ``last`` request it is marked only where its
+    prefix is one an earlier request marked (``digests`` and ``written``,
+    :func:`_cache_breakpoints`).
+    """
+    out: set[int] = set()
+    for index in sorted(again, reverse=True):
+        if not _markable(messages[index]) or any(i >= index for i in placed | out):
+            continue
+        if _head_after(messages, index):
+            continue
+        if last and (digests is None or written is None or digests[index] not in written):
+            continue
+        out.add(index)
+    return out
 
 
 def _within_breakpoint_limit(messages: list[Any]) -> list[Any]:
@@ -781,7 +907,11 @@ def _within_breakpoint_limit(messages: list[Any]) -> list[Any]:
     minutes, which the API refuses, asks for five minutes. Each is logged
     where it happens; no request this module builds carries more than three
     (the standing facts, the newest user turn, the turn before the newest
-    answer), and only the first user turn's facts ask for an hour.
+    answer) besides a shared head's, a turn noted as sent again is marked,
+    for five minutes, only where none of those is placed at it or after it,
+    outside a loop every breakpoint on or after a noted turn no later turn's
+    head follows asks for five minutes, and only the first user turn's facts
+    ask for an hour.
     """
 
     def places(turns: list[Any]) -> list[tuple[int, int]]:
@@ -920,6 +1050,7 @@ def prepared(
     last: bool = False,
     standing: dict[str, int] | None = None,
     standing_marker: dict[str, str] | None = None,
+    resent: dict[str, int] | None = None,
 ) -> dict[str, Any]:
     """The request ``payload`` built to keep its replayed thinking valid and cache what repeats.
 
@@ -932,7 +1063,9 @@ def prepared(
     noted with a shared head to the head's length (:data:`SHARED_HEAD`), and
     ``standing`` each user turn noted with standing facts at its head to their
     length, sent as their own block with ``standing_marker`` where one is
-    given. On every model, a text block that is empty or only whitespace is
+    given. ``resent`` maps the text of each user turn noted as one a later
+    request may send again to the noted length (:data:`SENT_AGAIN`). On every
+    model, a text block that is empty or only whitespace is
     left out first (:func:`_without_empty_text`). Never raises: a request
     this cannot read is sent as built.
     """
@@ -945,6 +1078,8 @@ def prepared(
         # keeps, read the request as it is sent.
         messages = _without_empty_text(payload, messages)
         payload["messages"] = messages
+        # Read before a head splits a turn; no later step adds or drops one.
+        again = _sent_again(messages, dict(resent or {}))
         messages = _shared_heads(messages, dict(heads or {}), cache_marker)
         if standing_marker:
             messages = _standing_heads(
@@ -953,7 +1088,7 @@ def prepared(
         messages = _first_turn_listed(memory, messages, loop, attached)
         if bound:
             messages = _keep_run_state_appended(memory, messages, attached)
-        messages = _turns_listed(memory, messages, loop, last)
+        messages = _turns_listed(memory, messages, loop, last, again)
         if bound:
             messages, ask_to_drop, whole = _settle_thinking(memory, payload, messages)
             if ask_to_drop:
@@ -962,9 +1097,9 @@ def prepared(
             if pending is not None:
                 pending[:] = [whole]
         payload["messages"] = _cache_breakpoints(
-            messages, cache_marker, loop, last, memory=memory, payload=payload
+            messages, cache_marker, loop, last, memory=memory, payload=payload, again=again
         )
-        if standing_marker:
+        if standing_marker or again:
             payload["messages"] = _within_breakpoint_limit(payload["messages"])
         newest = messages[-1] if messages else None
         if isinstance(newest, dict) and newest.get("role") == "assistant":
@@ -1082,6 +1217,7 @@ def with_preserved_thinking(chat_class: Any, cache_ttl: str = "5m", pack_ttl: st
             last=last,
             standing=_heads_of(self, input_, _standing_note()) if pack_marker else None,
             standing_marker=pack_marker,
+            resent=_heads_of(self, input_, SENT_AGAIN),
         )
 
     def _generate_with_cache(self: Any, *args: Any, **kwargs: Any) -> Any:

@@ -10,7 +10,9 @@ rest, joined the turn's text character for character — and the group's first
 section is sent alone, the others once its answer has begun: Anthropic makes
 a cached prefix readable only from then on
 (https://platform.claude.com/docs/en/build-with-claude/prompt-caching). A
-section that shares its prefix with no other is sent as it was, at once.
+section that shares its prefix with no other is sent at once, its turn as one
+text block. Every section's turn is marked at its end too, for the validation
+retry that may send it again (``test_a_retried_single_shot_reads_its_first_turn``).
 """
 
 from __future__ import annotations
@@ -97,6 +99,20 @@ def _prefix(body: dict[str, Any]) -> str:
     return json.dumps([body.get("tools"), body.get("system"), content[0]], sort_keys=True)
 
 
+def _only_its_end_marked(body: dict[str, Any]) -> bool:
+    """Whether the body's first turn is one text block, marked at its end and nowhere else.
+
+    A section that shares no head with another sends its turn whole, marked
+    where it ends, for its validation retry to read.
+    """
+    content = body["messages"][0]["content"]
+    return (
+        isinstance(content, list)
+        and len(content) == 1
+        and set(content[0]) == {"type", "text", "cache_control"}
+    )
+
+
 PROSE = (
     "packing_obfuscation",
     "string_resolution",
@@ -122,7 +138,7 @@ class TestOnTheStructuredPath:
         # the manual path, with no tool; those requests are not the ones here.
         return [b for b in wire.bodies if len(b["messages"]) == 1 and b.get("tools")]
 
-    def test_the_prose_sections_share_one_cached_prefix_and_no_other_is_marked(
+    def test_the_prose_sections_share_one_cached_prefix_and_no_other_shares_a_head(
         self, wire: Wire
     ) -> None:
         firsts = self._bodies(wire)
@@ -131,7 +147,7 @@ class TestOnTheStructuredPath:
         prose = {_prefix(by_section[name]) for name in PROSE}
         assert len(prose) == 1 and "" not in prose, "one byte-identical prefix"
         for name in set(COMPOSED_SECTIONS) - set(PROSE):
-            assert isinstance(by_section[name]["messages"][0]["content"], str), name
+            assert _only_its_end_marked(by_section[name]), name
 
     def test_only_the_prose_group_waits_for_its_lead(self, wire: Wire) -> None:
         order = [_section(b) for b in self._bodies(wire)]
@@ -177,14 +193,14 @@ class TestTheManualPathAfterAStructuredAttempt:
         prefixes = {_prefix(b) for b in manual}
         assert len(prefixes) == 1 and "" not in prefixes, "one byte-identical prefix"
 
-    def test_the_structured_attempts_are_marked_as_before(
+    def test_the_prose_attempts_share_a_head_and_every_other_turn_is_marked_at_its_end(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         bodies = self._bodies(monkeypatch)
         tooled = {_section(b): b for b in bodies if len(b["messages"]) == 1 and b.get("tools")}
         assert set(tooled) == set(COMPOSED_SECTIONS)
         for name in set(COMPOSED_SECTIONS) - set(PROSE):
-            assert isinstance(tooled[name]["messages"][0]["content"], str), name
+            assert _only_its_end_marked(tooled[name]), name
         assert len({_prefix(tooled[name]) for name in PROSE}) == 1
 
 
@@ -234,7 +250,8 @@ class TestTheHeadIsCachedOnce:
         for body in firsts:
             head, rest = body["messages"][0]["content"]
             assert head["cache_control"]["type"] == "ephemeral"
-            assert "cache_control" not in rest
+            # The turn's end too: the section's validation retry sends it again.
+            assert rest["cache_control"] == head["cache_control"]
             heads.add(head["text"])
         assert heads == {f"{FACTS}\n\n{_published_techniques(_report())}\n\n"}, (
             "one prefix, the same on every section"

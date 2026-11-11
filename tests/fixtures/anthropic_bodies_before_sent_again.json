@@ -1,0 +1,626 @@
+{
+ "single shot": [
+  {
+   "max_tokens": 4096,
+   "messages": [
+    {
+     "role": "user",
+     "content": "Write the introduction.\n\nThe evidence follows.\nevidence line\nevidence line\nevidence line\nevidence line\nevidence line\nevidence line\nevidence line\nevidence line\nevidence line\nevidence line\nevidence line\nevidence line\nevidence line\nevidence line\nevidence line\nevidence line\nevidence line\nevidence line\nevidence line\nevidence line\n"
+    }
+   ],
+   "model": "claude-haiku-5-5",
+   "system": "You are a static analyst."
+  }
+ ],
+ "single shot, shared head": [
+  {
+   "max_tokens": 4096,
+   "messages": [
+    {
+     "role": "user",
+     "content": [
+      {
+       "type": "text",
+       "text": "DETERMINISTIC FACTS (complete list):\n- file_type: PE32 executable\n\n",
+       "cache_control": {
+        "type": "ephemeral"
+       }
+      },
+      {
+       "type": "text",
+       "text": "Write the introduction.\n\nThe evidence follows.\nevidence line\nevidence line\nevidence line\nevidence line\nevidence line\nevidence line\nevidence line\nevidence line\nevidence line\nevidence line\nevidence line\nevidence line\nevidence line\nevidence line\nevidence line\nevidence line\nevidence line\nevidence line\nevidence line\nevidence line\n"
+      }
+     ]
+    }
+   ],
+   "model": "claude-haiku-5-5",
+   "system": "You are a static analyst."
+  }
+ ],
+ "single shot, standing facts": [
+  {
+   "max_tokens": 4096,
+   "messages": [
+    {
+     "role": "user",
+     "content": [
+      {
+       "type": "text",
+       "text": "TRIAGE PACK\nstanding fact\nstanding fact\nstanding fact\nstanding fact\nstanding fact\nstanding fact\nstanding fact\nstanding fact\nstanding fact\nstanding fact\nstanding fact\nstanding fact\nstanding fact\nstanding fact\nstanding fact\nstanding fact\nstanding fact\nstanding fact\nstanding fact\nstanding fact\nstanding fact\nstanding fact\nstanding fact\nstanding fact\nstanding fact\nstanding fact\nstanding fact\nstanding fact\nstanding fact\nstanding fact\n",
+       "cache_control": {
+        "type": "ephemeral",
+        "ttl": "1h"
+       }
+      },
+      {
+       "type": "text",
+       "text": "Write the introduction.\n\nThe evidence follows.\nevidence line\nevidence line\nevidence line\nevidence line\nevidence line\nevidence line\nevidence line\nevidence line\nevidence line\nevidence line\nevidence line\nevidence line\nevidence line\nevidence line\nevidence line\nevidence line\nevidence line\nevidence line\nevidence line\nevidence line\n"
+      }
+     ]
+    }
+   ],
+   "model": "claude-haiku-5-5",
+   "system": "You are a static analyst."
+  }
+ ],
+ "tools-free retry and its questions": [
+  {
+   "max_tokens": 4096,
+   "messages": [
+    {
+     "role": "user",
+     "content": "Write the introduction.\n\nThe evidence follows.\nevidence line\nevidence line\nevidence line\nevidence line\nevidence line\nevidence line\nevidence line\nevidence line\nevidence line\nevidence line\nevidence line\nevidence line\nevidence line\nevidence line\nevidence line\nevidence line\nevidence line\nevidence line\nevidence line\nevidence line\n"
+    }
+   ],
+   "model": "claude-haiku-5-5",
+   "system": "You are a static analyst."
+  },
+  {
+   "max_tokens": 4096,
+   "messages": [
+    {
+     "role": "user",
+     "content": "Write the introduction.\n\nThe evidence follows.\nevidence line\nevidence line\nevidence line\nevidence line\nevidence line\nevidence line\nevidence line\nevidence line\nevidence line\nevidence line\nevidence line\nevidence line\nevidence line\nevidence line\nevidence line\nevidence line\nevidence line\nevidence line\nevidence line\nevidence line\n"
+    },
+    {
+     "role": "assistant",
+     "content": [
+      {
+       "type": "thinking",
+       "thinking": "",
+       "signature": "EoBsig2/+=EoBsig2/+=EoBsig2/+=EoBsig2/+=EoBsig2/+=EoBsig2/+=EoBsig2/+=EoBsig2/+="
+      },
+      {
+       "type": "text",
+       "text": "CLAIM: it reads a file\nEVIDENCE: [ev_0001]\n"
+      }
+     ]
+    },
+    {
+     "role": "user",
+     "content": "Your previous answer had these problems: claim 1 cites no entry. Fix it."
+    }
+   ],
+   "model": "claude-haiku-5-5",
+   "system": "You are a static analyst."
+  },
+  {
+   "max_tokens": 4096,
+   "messages": [
+    {
+     "role": "user",
+     "content": "Write the introduction.\n\nThe evidence follows.\nevidence line\nevidence line\nevidence line\nevidence line\nevidence line\nevidence line\nevidence line\nevidence line\nevidence line\nevidence line\nevidence line\nevidence line\nevidence line\nevidence line\nevidence line\nevidence line\nevidence line\nevidence line\nevidence line\nevidence line\n"
+    },
+    {
+     "role": "assistant",
+     "content": [
+      {
+       "type": "thinking",
+       "thinking": "",
+       "signature": "EoBsig2/+=EoBsig2/+=EoBsig2/+=EoBsig2/+=EoBsig2/+=EoBsig2/+=EoBsig2/+=EoBsig2/+="
+      },
+      {
+       "type": "text",
+       "text": "CLAIM: it reads a file\nEVIDENCE: [ev_0001]\n"
+      }
+     ]
+    },
+    {
+     "role": "user",
+     "content": "Your previous answer had these problems: claim 1 cites no entry. Fix it."
+    },
+    {
+     "role": "assistant",
+     "content": [
+      {
+       "type": "thinking",
+       "thinking": "",
+       "signature": "EoBsig4/+=EoBsig4/+=EoBsig4/+=EoBsig4/+=EoBsig4/+=EoBsig4/+=EoBsig4/+=EoBsig4/+="
+      },
+      {
+       "type": "text",
+       "text": "CLAIM: it reads a file\nEVIDENCE: [ev_0001]\n"
+      }
+     ]
+    },
+    {
+     "role": "user",
+     "content": "Write your whole corrected answer."
+    }
+   ],
+   "model": "claude-haiku-5-5",
+   "system": "You are a static analyst."
+  }
+ ],
+ "shared head, retry": [
+  {
+   "max_tokens": 4096,
+   "messages": [
+    {
+     "role": "user",
+     "content": [
+      {
+       "type": "text",
+       "text": "DETERMINISTIC FACTS (complete list):\n- file_type: PE32 executable\n\n",
+       "cache_control": {
+        "type": "ephemeral"
+       }
+      },
+      {
+       "type": "text",
+       "text": "Write the introduction.\n\nThe evidence follows.\nevidence line\nevidence line\nevidence line\nevidence line\nevidence line\nevidence line\nevidence line\nevidence line\nevidence line\nevidence line\nevidence line\nevidence line\nevidence line\nevidence line\nevidence line\nevidence line\nevidence line\nevidence line\nevidence line\nevidence line\n"
+      }
+     ]
+    }
+   ],
+   "model": "claude-haiku-5-5",
+   "system": "You are a static analyst."
+  },
+  {
+   "max_tokens": 4096,
+   "messages": [
+    {
+     "role": "user",
+     "content": [
+      {
+       "type": "text",
+       "text": "DETERMINISTIC FACTS (complete list):\n- file_type: PE32 executable\n\n",
+       "cache_control": {
+        "type": "ephemeral"
+       }
+      },
+      {
+       "type": "text",
+       "text": "Write the introduction.\n\nThe evidence follows.\nevidence line\nevidence line\nevidence line\nevidence line\nevidence line\nevidence line\nevidence line\nevidence line\nevidence line\nevidence line\nevidence line\nevidence line\nevidence line\nevidence line\nevidence line\nevidence line\nevidence line\nevidence line\nevidence line\nevidence line\n",
+       "cache_control": {
+        "type": "ephemeral"
+       }
+      }
+     ]
+    },
+    {
+     "role": "assistant",
+     "content": [
+      {
+       "type": "thinking",
+       "thinking": "",
+       "signature": "EoBsig2/+=EoBsig2/+=EoBsig2/+=EoBsig2/+=EoBsig2/+=EoBsig2/+=EoBsig2/+=EoBsig2/+="
+      },
+      {
+       "type": "text",
+       "text": "CLAIM: it reads a file\nEVIDENCE: [ev_0001]\n"
+      }
+     ]
+    },
+    {
+     "role": "user",
+     "content": "Your previous answer had these problems: claim 1 cites no entry. Fix it."
+    }
+   ],
+   "model": "claude-haiku-5-5",
+   "system": "You are a static analyst."
+  }
+ ],
+ "tool loop and the question at its end": [
+  {
+   "max_tokens": 4096,
+   "messages": [
+    {
+     "role": "user",
+     "content": [
+      {
+       "type": "text",
+       "text": "Write the introduction.\n\nThe evidence follows.\nevidence line\nevidence line\nevidence line\nevidence line\nevidence line\nevidence line\nevidence line\nevidence line\nevidence line\nevidence line\nevidence line\nevidence line\nevidence line\nevidence line\nevidence line\nevidence line\nevidence line\nevidence line\nevidence line\nevidence line\n",
+       "cache_control": {
+        "type": "ephemeral"
+       }
+      }
+     ]
+    }
+   ],
+   "model": "claude-haiku-5-5",
+   "system": "You are a static analyst.",
+   "tools": [
+    {
+     "name": "lookup",
+     "input_schema": {
+      "properties": {
+       "what": {
+        "default": "",
+        "type": "string"
+       }
+      },
+      "type": "object"
+     },
+     "description": "Look it up."
+    }
+   ]
+  },
+  {
+   "max_tokens": 4096,
+   "messages": [
+    {
+     "role": "user",
+     "content": [
+      {
+       "type": "text",
+       "text": "Write the introduction.\n\nThe evidence follows.\nevidence line\nevidence line\nevidence line\nevidence line\nevidence line\nevidence line\nevidence line\nevidence line\nevidence line\nevidence line\nevidence line\nevidence line\nevidence line\nevidence line\nevidence line\nevidence line\nevidence line\nevidence line\nevidence line\nevidence line\n",
+       "cache_control": {
+        "type": "ephemeral"
+       }
+      }
+     ]
+    },
+    {
+     "role": "assistant",
+     "content": [
+      {
+       "type": "thinking",
+       "thinking": "",
+       "signature": "EoBsig2/+=EoBsig2/+=EoBsig2/+=EoBsig2/+=EoBsig2/+=EoBsig2/+=EoBsig2/+=EoBsig2/+="
+      },
+      {
+       "type": "tool_use",
+       "name": "lookup",
+       "input": {
+        "what": "call_0"
+       },
+       "id": "call_0"
+      }
+     ]
+    },
+    {
+     "role": "user",
+     "content": [
+      {
+       "type": "tool_result",
+       "content": "answer for call_0",
+       "tool_use_id": "call_0",
+       "is_error": false,
+       "cache_control": {
+        "type": "ephemeral"
+       }
+      }
+     ]
+    }
+   ],
+   "model": "claude-haiku-5-5",
+   "system": "You are a static analyst.",
+   "tools": [
+    {
+     "name": "lookup",
+     "input_schema": {
+      "properties": {
+       "what": {
+        "default": "",
+        "type": "string"
+       }
+      },
+      "type": "object"
+     },
+     "description": "Look it up."
+    }
+   ]
+  },
+  {
+   "max_tokens": 4096,
+   "messages": [
+    {
+     "role": "user",
+     "content": [
+      {
+       "type": "text",
+       "text": "Write the introduction.\n\nThe evidence follows.\nevidence line\nevidence line\nevidence line\nevidence line\nevidence line\nevidence line\nevidence line\nevidence line\nevidence line\nevidence line\nevidence line\nevidence line\nevidence line\nevidence line\nevidence line\nevidence line\nevidence line\nevidence line\nevidence line\nevidence line\n"
+      }
+     ]
+    },
+    {
+     "role": "assistant",
+     "content": [
+      {
+       "type": "thinking",
+       "thinking": "",
+       "signature": "EoBsig2/+=EoBsig2/+=EoBsig2/+=EoBsig2/+=EoBsig2/+=EoBsig2/+=EoBsig2/+=EoBsig2/+="
+      },
+      {
+       "type": "tool_use",
+       "name": "lookup",
+       "input": {
+        "what": "call_0"
+       },
+       "id": "call_0"
+      }
+     ]
+    },
+    {
+     "role": "user",
+     "content": [
+      {
+       "type": "tool_result",
+       "content": "answer for call_0",
+       "tool_use_id": "call_0",
+       "is_error": false
+      }
+     ]
+    },
+    {
+     "role": "assistant",
+     "content": [
+      {
+       "type": "thinking",
+       "thinking": "",
+       "signature": "EoBsig4/+=EoBsig4/+=EoBsig4/+=EoBsig4/+=EoBsig4/+=EoBsig4/+=EoBsig4/+=EoBsig4/+="
+      },
+      {
+       "type": "text",
+       "text": "CLAIM: it reads a file\nEVIDENCE: [ev_0001]\n"
+      }
+     ]
+    },
+    {
+     "role": "user",
+     "content": "Your previous answer had these problems: claim 1 cites no entry. Fix it."
+    }
+   ],
+   "model": "claude-haiku-5-5",
+   "system": "You are a static analyst.",
+   "tools": [
+    {
+     "name": "lookup",
+     "input_schema": {
+      "properties": {
+       "what": {
+        "default": "",
+        "type": "string"
+       }
+      },
+      "type": "object"
+     },
+     "description": "Look it up."
+    }
+   ]
+  }
+ ],
+ "retry in its call's reply, the last request": [
+  {
+   "max_tokens": 4096,
+   "messages": [
+    {
+     "role": "user",
+     "content": [
+      {
+       "type": "text",
+       "text": "DETERMINISTIC FACTS (complete list):\n- file_type: PE32 executable\n\n",
+       "cache_control": {
+        "type": "ephemeral"
+       }
+      },
+      {
+       "type": "text",
+       "text": "Write the introduction.\n\nThe evidence follows.\nevidence line\nevidence line\nevidence line\nevidence line\nevidence line\nevidence line\nevidence line\nevidence line\nevidence line\nevidence line\nevidence line\nevidence line\nevidence line\nevidence line\nevidence line\nevidence line\nevidence line\nevidence line\nevidence line\nevidence line\n"
+      }
+     ]
+    }
+   ],
+   "model": "claude-haiku-5-5",
+   "system": "You are a static analyst.",
+   "tools": [
+    {
+     "name": "lookup",
+     "input_schema": {
+      "properties": {
+       "what": {
+        "default": "",
+        "type": "string"
+       }
+      },
+      "type": "object"
+     },
+     "description": "Look it up."
+    }
+   ]
+  },
+  {
+   "max_tokens": 4096,
+   "messages": [
+    {
+     "role": "user",
+     "content": [
+      {
+       "type": "text",
+       "text": "DETERMINISTIC FACTS (complete list):\n- file_type: PE32 executable\n\n",
+       "cache_control": {
+        "type": "ephemeral"
+       }
+      },
+      {
+       "type": "text",
+       "text": "Write the introduction.\n\nThe evidence follows.\nevidence line\nevidence line\nevidence line\nevidence line\nevidence line\nevidence line\nevidence line\nevidence line\nevidence line\nevidence line\nevidence line\nevidence line\nevidence line\nevidence line\nevidence line\nevidence line\nevidence line\nevidence line\nevidence line\nevidence line\n"
+      }
+     ]
+    },
+    {
+     "role": "assistant",
+     "content": [
+      {
+       "type": "thinking",
+       "thinking": "",
+       "signature": "EoBsig2/+=EoBsig2/+=EoBsig2/+=EoBsig2/+=EoBsig2/+=EoBsig2/+=EoBsig2/+=EoBsig2/+="
+      },
+      {
+       "type": "tool_use",
+       "name": "lookup",
+       "input": {
+        "what": "call_0"
+       },
+       "id": "call_0"
+      }
+     ]
+    },
+    {
+     "role": "user",
+     "content": [
+      {
+       "type": "tool_result",
+       "content": "Your previous answer had these problems: claim 1 cites no entry. Fix it.",
+       "tool_use_id": "call_0",
+       "is_error": true
+      }
+     ]
+    }
+   ],
+   "model": "claude-haiku-5-5",
+   "system": "You are a static analyst.",
+   "tools": [
+    {
+     "name": "lookup",
+     "input_schema": {
+      "properties": {
+       "what": {
+        "default": "",
+        "type": "string"
+       }
+      },
+      "type": "object"
+     },
+     "description": "Look it up."
+    }
+   ]
+  }
+ ],
+ "standing facts, tool loop": [
+  {
+   "max_tokens": 4096,
+   "messages": [
+    {
+     "role": "user",
+     "content": [
+      {
+       "type": "text",
+       "text": "TRIAGE PACK\nstanding fact\nstanding fact\nstanding fact\nstanding fact\nstanding fact\nstanding fact\nstanding fact\nstanding fact\nstanding fact\nstanding fact\nstanding fact\nstanding fact\nstanding fact\nstanding fact\nstanding fact\nstanding fact\nstanding fact\nstanding fact\nstanding fact\nstanding fact\nstanding fact\nstanding fact\nstanding fact\nstanding fact\nstanding fact\nstanding fact\nstanding fact\nstanding fact\nstanding fact\nstanding fact\n",
+       "cache_control": {
+        "type": "ephemeral",
+        "ttl": "1h"
+       }
+      },
+      {
+       "type": "text",
+       "text": "Write the introduction.\n\nThe evidence follows.\nevidence line\nevidence line\nevidence line\nevidence line\nevidence line\nevidence line\nevidence line\nevidence line\nevidence line\nevidence line\nevidence line\nevidence line\nevidence line\nevidence line\nevidence line\nevidence line\nevidence line\nevidence line\nevidence line\nevidence line\n"
+      }
+     ]
+    }
+   ],
+   "model": "claude-haiku-5-5",
+   "system": "You are a static analyst.",
+   "tools": [
+    {
+     "name": "lookup",
+     "input_schema": {
+      "properties": {
+       "what": {
+        "default": "",
+        "type": "string"
+       }
+      },
+      "type": "object"
+     },
+     "description": "Look it up."
+    }
+   ]
+  },
+  {
+   "max_tokens": 4096,
+   "messages": [
+    {
+     "role": "user",
+     "content": [
+      {
+       "type": "text",
+       "text": "TRIAGE PACK\nstanding fact\nstanding fact\nstanding fact\nstanding fact\nstanding fact\nstanding fact\nstanding fact\nstanding fact\nstanding fact\nstanding fact\nstanding fact\nstanding fact\nstanding fact\nstanding fact\nstanding fact\nstanding fact\nstanding fact\nstanding fact\nstanding fact\nstanding fact\nstanding fact\nstanding fact\nstanding fact\nstanding fact\nstanding fact\nstanding fact\nstanding fact\nstanding fact\nstanding fact\nstanding fact\n",
+       "cache_control": {
+        "type": "ephemeral",
+        "ttl": "1h"
+       }
+      },
+      {
+       "type": "text",
+       "text": "Write the introduction.\n\nThe evidence follows.\nevidence line\nevidence line\nevidence line\nevidence line\nevidence line\nevidence line\nevidence line\nevidence line\nevidence line\nevidence line\nevidence line\nevidence line\nevidence line\nevidence line\nevidence line\nevidence line\nevidence line\nevidence line\nevidence line\nevidence line\n",
+       "cache_control": {
+        "type": "ephemeral"
+       }
+      }
+     ]
+    },
+    {
+     "role": "assistant",
+     "content": [
+      {
+       "type": "thinking",
+       "thinking": "",
+       "signature": "EoBsig2/+=EoBsig2/+=EoBsig2/+=EoBsig2/+=EoBsig2/+=EoBsig2/+=EoBsig2/+=EoBsig2/+="
+      },
+      {
+       "type": "tool_use",
+       "name": "lookup",
+       "input": {
+        "what": "call_0"
+       },
+       "id": "call_0"
+      }
+     ]
+    },
+    {
+     "role": "user",
+     "content": [
+      {
+       "type": "tool_result",
+       "content": "answer for call_0",
+       "tool_use_id": "call_0",
+       "is_error": false,
+       "cache_control": {
+        "type": "ephemeral"
+       }
+      }
+     ]
+    }
+   ],
+   "model": "claude-haiku-5-5",
+   "system": "You are a static analyst.",
+   "tools": [
+    {
+     "name": "lookup",
+     "input_schema": {
+      "properties": {
+       "what": {
+        "default": "",
+        "type": "string"
+       }
+      },
+      "type": "object"
+     },
+     "description": "Look it up."
+    }
+   ]
+  }
+ ]
+}
