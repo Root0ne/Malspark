@@ -44,6 +44,7 @@ import secrets
 import shlex
 import shutil
 import socket
+import stat
 import struct
 import subprocess
 import sys
@@ -104,19 +105,28 @@ def parse_env(text: str) -> dict[str, str]:
 def _read_text(path: Path) -> str | None:
     """The file's text, None when it is not there; a file that cannot be read stops the run.
 
-    The one line names the path and what is wrong, never any of the content.
+    One stat says what the path is, and only a regular file is opened (a FIFO
+    would block the read). The one line names the path and what is wrong, never
+    any of the content.
     """
+    try:
+        mode = os.stat(path).st_mode
+    except (FileNotFoundError, NotADirectoryError):
+        return None
+    except OSError:
+        raise _fail(f"  FAIL     {path} cannot be read") from None
+    if stat.S_ISDIR(mode):
+        raise _fail(f"  FAIL     {path} is a directory, not a file")
+    if not stat.S_ISREG(mode):
+        raise _fail(f"  FAIL     {path} is not a regular file")
     try:
         return path.read_text(encoding="utf-8-sig")
     except FileNotFoundError:
         return None
     except UnicodeDecodeError:
         problem = "is not UTF-8 text"
-    except IsADirectoryError:
-        problem = "is a directory, not a file"
     except OSError:
-        # Windows reports a directory as a refused open.
-        problem = "is a directory, not a file" if path.is_dir() else "cannot be read"
+        problem = "cannot be read"
     raise _fail(f"  FAIL     {path} {problem}")
 
 
@@ -229,11 +239,15 @@ def host_overlays(
     return [NAMED_DATA_OVERLAY]
 
 
-def data_volumes_note(root: Path, environ: Mapping[str, str]) -> str:
+def data_volumes_note(
+    root: Path, environ: Mapping[str, str], docker_env: Mapping[str, str] | None = None
+) -> str:
     """Where samples and uploads are, when the named-data overlay puts them on volumes."""
     project = (
         environ.get("COMPOSE_PROJECT_NAME")
-        or read_env(root / "docker" / ".env").get("COMPOSE_PROJECT_NAME")
+        or (read_env(root / "docker" / ".env") if docker_env is None else docker_env).get(
+            "COMPOSE_PROJECT_NAME"
+        )
         or COMPOSE_PROJECT
     )
     names = " and ".join(f"{project}_{volume}" for volume in DATA_VOLUMES)
@@ -1088,10 +1102,9 @@ def _derived(
     }
 
 
-def empty_secrets(docker_env_path: Path) -> list[str]:
-    """The secrets docker/.env assigns an empty value; ``env init --force`` fills them."""
-    kept = _set_lines(docker_env_path)
-    return [key for key in DOCKER_SECRETS if key in kept and not parse_env(kept[key]).get(key)]
+def empty_secrets(docker_env: Mapping[str, str]) -> list[str]:
+    """The secrets docker/.env leaves empty or does not set; ``env init --force`` fills them."""
+    return [key for key in DOCKER_SECRETS if not docker_env.get(key)]
 
 
 def stale_derived(
@@ -1118,7 +1131,7 @@ def stale_derived(
 
 
 def _empty_line(key: str) -> str:
-    return f"  warn     docker/.env {key} is empty; run env init --force to generate it"
+    return f"  warn     docker/.env {key} is empty or not set; run env init --force to generate it"
 
 
 def _stale_line(key: str, source: str, rewritten: bool = False) -> str:
@@ -1212,7 +1225,7 @@ def _env_init(root: Path, environ: Mapping[str, str], force: bool) -> int:
 
     if docker_text is None:
         _say("  ok       docker/.env is there: left as it is (--force rewrites it, values kept)")
-        for key in empty_secrets(docker_env_path):
+        for key in empty_secrets(docker_env):
             _say(_empty_line(key))
     else:
         _write_text(docker_env_path, docker_text, private=True)
@@ -1298,7 +1311,24 @@ def doctor_report(
     windows: bool = os.name == "nt",
     system: str | None = None,
 ) -> Iterator[str]:
-    """What this host has and lacks for the stack, one line each."""
+    """What this host has and lacks for the stack, one line each.
+
+    An env file that cannot be read is said once on stderr and the checks that
+    do not need it go on; the report then ends with the stop, so the exit is
+    non-zero.
+    """
+    unreadable: list[str] = []
+
+    def tolerant(path: Path) -> dict[str, str] | None:
+        try:
+            return read_env(path)
+        except Stop:
+            unreadable.append(path.name)
+            return None
+
+    docker_read = tolerant(root / "docker" / ".env")
+    bootstrap_read = tolerant(root / "bootstrap.env")
+    docker_env = docker_read or {}
     bits = struct.calcsize("P") * 8
     emulated = environ.get("PROCESSOR_ARCHITEW6432")
     yield (
@@ -1308,7 +1338,7 @@ def doctor_report(
     )
     named_data = bool(host_overlays(root, system, environ))
     if named_data:
-        yield f"  volumes  {data_volumes_note(root, environ)}"
+        yield f"  volumes  {data_volumes_note(root, environ, docker_env)}"
     if (fs := filesystem(root)) and fs.upper() == "NTFS":
         yield (
             f"  warn     the checkout is on NTFS ({root}): a bind mount from it carries no"
@@ -1353,21 +1383,34 @@ def doctor_report(
             major = compose.lstrip("v").split(".", 1)[0]
             note = "" if major.isdigit() and int(major) >= 2 else ": compose v2 or later is needed"
             yield f"  compose  {compose}{note}"
-    docker_env = read_env(root / "docker" / ".env")
-    if not (root / "docker" / ".env").is_file():
-        yield "  missing  docker/.env: run env init"
-    else:
-        for key in empty_secrets(root / "docker" / ".env"):
-            yield f"  missing  docker/.env {key} is empty; run env init --force to generate it"
-        for key, source in stale_derived(read_env(root / "bootstrap.env"), docker_env):
-            yield _stale_line(key, source)
+    if docker_read is not None:
+        if not (root / "docker" / ".env").is_file():
+            yield "  missing  docker/.env: run env init"
+        else:
+            for key in empty_secrets(docker_env):
+                yield (
+                    f"  missing  docker/.env {key} is empty or not set;"
+                    " run env init --force to generate it"
+                )
+            for key, source in stale_derived(bootstrap_read or {}, docker_env):
+                yield _stale_line(key, source)
     host = _host(environ, docker_env).strip("[]")
     taken = []
-    for name in sorted(published_ports(root)):
-        port = port_of(name, root, environ, docker_env)
-        if in_use(host, port):
-            taken.append((port, name))
-    if taken:
+    try:
+        for name in sorted(published_ports(root)):
+            port = port_of(name, root, environ, docker_env)
+            if in_use(host, port):
+                taken.append((port, name))
+        ports_read = True
+    except OSError:
+        ports_read = False
+        unreadable.append("docker-compose.yml")
+        print(
+            f"  FAIL     {root / 'docker' / 'docker-compose.yml'} cannot be read", file=sys.stderr
+        )
+    if not ports_read:
+        pass
+    elif taken:
         listed = ", ".join(f"{port} ({name})" for port, name in taken)
         yield f"  in use   {listed} on {host}: the stack's own, or another program's"
         # A port another program holds is moved by its variable; a host process
@@ -1389,6 +1432,8 @@ def doctor_report(
     for corpus in CORPORA:
         state = "present" if (root / corpus).is_dir() else "missing  (run external)"
         yield f"  data     {corpus} {state}"
+    if unreadable:
+        raise Stop(1)
 
 
 # ── setup ────────────────────────────────────────────────────────────────────
