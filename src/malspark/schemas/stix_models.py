@@ -43,7 +43,14 @@ import uuid
 from datetime import UTC, datetime
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    field_serializer,
+    field_validator,
+    model_validator,
+)
 
 from malspark.core.previous_name import PREVIOUS_NAME
 from malspark.schemas.judgement import JudgeAssessment
@@ -801,6 +808,16 @@ class MarkingDefinition(_SpecConformantModel):
     created: datetime
     name: str
     extensions: dict[str, Any]
+
+    @field_serializer("created")
+    def _created_as_published(self, value: datetime) -> str:
+        """``created`` as the extension writes it, milliseconds and all: ``…T00:00:00.000Z``.
+
+        The object is the standard's own; a consumer comparing it with the
+        published one byte for byte finds the same object.
+        """
+        stamp = value.astimezone(UTC)
+        return f"{stamp:%Y-%m-%dT%H:%M:%S}.{stamp.microsecond // 1000:03d}Z"
 
 
 def tlp_marking(level: str) -> MarkingDefinition | None:
