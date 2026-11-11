@@ -377,6 +377,18 @@ CODE_OWNED: dict[tuple[str, str], frozenset[str]] = {
     ("pipeline/validation.py", "analyst_repeated_violation"): frozenset(
         {"answer", "chars", "begun", "distinct", "repeated", "margin", "streamed"}
     ),
+    # A refused closing keep, and a rewrite, name the finding of the passage's own
+    # failure check (``_failure_redone_violation``), whose every value is wrapped where
+    # it is written: wrapping it again would cut off what it says to do. Only that
+    # finding, under its own name; every other value stays wrapped.
+    ("reporting/section_agreement.py", "_answer_violations"): frozenset({"failure_finding"}),
+    ("reporting/section_agreement.py", "_row_violations"): frozenset({"failure_finding"}),
+    # A refusal of an answer for a sentence the ledger's lines hold is told what becomes of
+    # it: the finding as built, each value in it wrapped where it was written, and this
+    # module's own sentence (``_LEFT_OUT_END``) after it; for a field answered whole, its
+    # ends (``_whole_ends``): this module's own sentences, each value in them wrapped where
+    # it was written.
+    ("reporting/section_agreement.py", "_told_the_end"): frozenset({"violation", "end", "ends"}),
 }
 
 # A builtin that answers about its argument in this interpreter's own words: a
@@ -435,6 +447,8 @@ MESSAGE_BUILDERS: frozenset[str] = frozenset(
         "shortened_evidence_note",
         "partial_evidence_note",
         "unreadable_answer_reason",
+        # What an agreement refusal offers a sentence beside mending its text.
+        "_otherwise",
         # The decompiled-functions question's two parts: each value a listing
         # or a tool wrote goes through the helper.
         "_functions_not_described",

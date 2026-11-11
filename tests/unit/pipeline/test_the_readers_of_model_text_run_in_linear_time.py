@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import math
 from collections.abc import Callable
+from functools import lru_cache
 from types import SimpleNamespace
 
 import pytest
@@ -52,12 +53,22 @@ from malspark.reporting.absence_answers import (
     quote_stands,
     reading_denied_in,
 )
+from malspark.reporting.composer_pro import carried_values
+from malspark.reporting.ledger_entities import ApiCall, ApiHeld, ExportHeld, RunNames, TextHeld
 from malspark.reporting.section_agreement import (
+    CLAIM_LED,
+    Passage,
+    _call_lines,
     _candidates,
+    _name_passages,
     _reports_a_claim,
     _said_unread,
+    _uncited,
+    _uncited_denials,
     _unread_addresses,
     closing_negations,
+    name_readings,
+    repeats_sentence,
     unread_listed_sentences,
     whole_code_absences,
 )
@@ -77,6 +88,68 @@ LARGEST = 40_000
 
 
 _COUNTS = FailureCounts(failed=2, redone=1, by_name={"decompil": (1, 1)})
+# The names a run holds, as the agreement round reads a denial of one (T-600).
+_EXPORT = ExportHeld(names=("begin", "Native"), address=0x1400, entries=("ev_0001",))
+_NAMES = RunNames(
+    apis={
+        "queryhostmode": ApiHeld(name="QueryHostMode", calls=[ApiCall(0x1400, 0x2000)]),
+        "web": ApiHeld(name="Web", resolved={"ev_0002": None}),
+    },
+    exports={"begin": _EXPORT, "Native": _EXPORT},
+    by_address={0x1400: _EXPORT},
+    texts={"words": TextHeld(text="words")},
+    index_whole=True,
+)
+
+
+@lru_cache(maxsize=8)
+def _many_names(count: int) -> RunNames:
+    """A run holding ``count`` APIs, each called from one routine: as many names as the
+    line is long, so a reader walking the text once per name grows with the square."""
+    return RunNames(
+        apis={
+            f"queryhostmode{i:05d}": ApiHeld(
+                name=f"QueryHostMode{i:05d}", calls=[ApiCall(0x1400, 0x2000)]
+            )
+            for i in range(count)
+        },
+        rows=frozenset({0x1400}),
+        index_whole=True,
+    )
+
+
+def _denying_many_names(text: str) -> object:
+    count = len(text) // 40
+    denied = ", and ".join(f"QueryHostMode{i:05d} is not called" for i in range(count))
+    return name_readings(f"{text} {denied}.", "", _many_names(count))
+
+
+# A run holding this many exports, each at its own address.
+_EXPORTS = {
+    0x1000 + 16 * i: ExportHeld(
+        names=(f"Exp{i:05d}",), address=0x1000 + 16 * i, entries=("ev_0004",)
+    )
+    for i in range(40)
+}
+_MANY_EXPORTS = RunNames(
+    exports={export.names[0]: export for export in _EXPORTS.values()},
+    by_address=_EXPORTS,
+    index_whole=True,
+)
+
+
+def _names_of_many_sentences(text: str) -> object:
+    """The facts of a passage of as many distinct sentences as the line holds, each denying
+    something of the run's exports: every fact speaks to every one of them."""
+    passage = Passage(
+        id="p",
+        label="x",
+        text=" ".join(f"No export is called by routine {i:05d}." for i in range(len(text) // 80)),
+        kind=CLAIM_LED,
+        write=print,
+    )
+    found = SimpleNamespace(listed=[])
+    return _name_passages([passage], _MANY_EXPORTS, found, {}, frozenset())  # type: ignore[arg-type]
 
 
 def _hostile(size: int) -> str:
@@ -408,6 +481,60 @@ EXITS = exit_branches(
             id="an absence kept among clauses sharing its words",
         ),
         pytest.param(lambda t: quote_stands(t[: len(t) // 2], [t]), id="a kept sentence's quote"),
+        pytest.param(
+            lambda t: name_readings(t + " QueryHostMode is not called", t, _NAMES),
+            id="a denial of a name the run holds",
+        ),
+        pytest.param(
+            lambda t: name_readings(
+                "the export 'words' " * (len(t) // 19) + "is not established", "", _NAMES
+            ),
+            id="a denial of names written many times",
+        ),
+        pytest.param(
+            lambda t: name_readings("These are not shown; " + t, "QueryHostMode " + t, _NAMES),
+            id="a denial pointing back to the names before it",
+        ),
+        pytest.param(
+            lambda t: name_readings(
+                "QueryHostMode is not called" + " " * len(t) + "x.", "", _NAMES
+            ),
+            id="a denial of a name with a run of spaces",
+        ),
+        pytest.param(
+            lambda t: repeats_sentence(
+                "QueryHostMode is not called" + " " * len(t) + "x.", "QueryHostMode [ev_1] is not"
+            ),
+            id="the same words with a run of spaces",
+        ),
+        pytest.param(
+            lambda t: carried_values("QueryHostMode" + " " * len(t) + "x"),
+            id="the values of a text with a run of spaces",
+        ),
+        pytest.param(
+            lambda t: _uncited("`Query[ev_1]Host` and Mode[ev_2]is " * (len(t) // 35)),
+            id="citations inside and outside code spans",
+        ),
+        pytest.param(
+            lambda t: _uncited("`" + "Query[ev_1]Host " * (len(t) // 16)),
+            id="citations after a code span never closed",
+        ),
+        pytest.param(
+            lambda t: _uncited_denials(
+                "no call is made [ev_0001], " * (len(t) // 28), frozenset({"ev_0002"})
+            ),
+            id="denials each followed by a citation",
+        ),
+        pytest.param(
+            lambda t: _uncited_denials("not " + "[ev_0001] " * (len(t) // 10), frozenset()),
+            id="a denial followed by many citations",
+        ),
+        pytest.param(_denying_many_names, id="a denial of as many names as the line holds"),
+        pytest.param(_names_of_many_sentences, id="the facts of names many sentences deny"),
+        pytest.param(
+            lambda t: _call_lines(t.replace(" is ", "\n"), ["1400", "native"], {0x1400: "X"}, ()),
+            id="the call lines of a listing",
+        ),
         pytest.param(
             lambda t: _candidates(
                 "The more words of 0x1400 are not read.",

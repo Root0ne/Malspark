@@ -60,7 +60,7 @@ A rewrite resting on a fact that states again the absence of the sentence the fa
 
 ### `agreement.dropped`
 
-A sentence of the conclusion or the limitations paragraph listed as saying otherwise than a section 5 passage, a fact or a closed debate line, whose rewrite passed no check: left out of the section, which only sums up what sections 4 to 6 state, and recorded here with what stood; one the answer leaves out with its reason, keeps while the ledger says otherwise (a failed call a later call redid), or keeps on no source or a quote the checks refused, the same way, with the refused keep's sources, quote or reason.
+A sentence of the conclusion or the limitations paragraph listed as saying otherwise than a section 5 passage, a fact or a closed debate line, whose rewrite passed no check: left out of the section, which only sums up what sections 4 to 6 state, and recorded here with what stood; one the answer leaves out with its reason, keeps while the ledger says otherwise (a failed call a later call redid), or keeps on no source or a quote the checks refused, the same way, with the refused keep's sources, quote or reason. Also a sentence the ledger's own lines hold, in the body as in a closing section, and a sentence of a record's value cell or a capability bullet of the summary, that no answer passing the checks answers after the retry (refused, never answered, or standing twice in its passage), or that the round dropped: left out with what holds it, a cell left with no sentence printing "-" and a bullet left with none not printed (T-600).
 
 - **Raised at** `malspark.reporting.section_agreement:_left_out`, `malspark.reporting.section_agreement:apply_rows`
 - **Constant** `malspark.reporting.section_agreement:DROPPED_CODE`
@@ -84,7 +84,7 @@ A rewrite of a limitations sentence that still says a call failed, or a reading 
 
 ### `agreement.held_kept`
 
-A sentence of the conclusion or the limitations, or a held absence of the body, that the answer kept on no source with its reason, or on a source a check refused (a body absence stands then too): it stands, and is recorded where a reader finds it. One kept on a source whose quote passed every check is counted, not recorded.
+A sentence of the conclusion or the limitations, of a record's value cell or of a capability bullet, or a held absence of the body, that the answer kept on no source with its reason, or on a source a check refused (a body absence stands then too): it stands, and is recorded where a reader finds it. One kept on a source whose quote passed every check is counted, not recorded.
 
 - **Raised at** `malspark.reporting.section_agreement:apply_rows`
 - **Constant** `malspark.reporting.section_agreement:HELD_KEPT_CODE`
@@ -92,7 +92,7 @@ A sentence of the conclusion or the limitations, or a held absence of the body, 
 
 ### `agreement.held_unlisted`
 
-A held sentence (any sentence of the conclusion or the limitations; one calling open an address or a value a section 5 passage or a fact states) that no row of the answer lists: the model decides each one, and is asked once more.
+A held sentence (any sentence of the conclusion or the limitations, of a record's value cell or of a capability bullet; one calling open an address or a value a section 5 passage or a fact states; one the ledger's own lines hold, in the body too) that no row of the answer lists: the model decides each one, and is asked once more, told its ends and what becomes of it where none passes.
 
 - **Raised at** `malspark.reporting.section_agreement:_held_unlisted`
 - **Constant** `malspark.reporting.section_agreement:HELD_UNLISTED_CODE`
@@ -100,7 +100,7 @@ A held sentence (any sentence of the conclusion or the limitations; one calling 
 
 ### `agreement.keep_unquoted`
 
-A kept closing sentence, or a kept held absence of the body, whose row quotes no words of a source it names that state the same (two or more of its own words, an absence on words stating one), or that names no source while a shown one speaks of it (the rows of an entry it cites among them). Still so after the retry, a closing sentence is left out and recorded (`DROPPED_CODE`); a body absence stands, recorded (`HELD_KEPT_CODE`).
+A kept closing sentence, or a kept held absence of the body, whose row quotes no words of a source it names that state the same (two or more of its own words, an absence on words stating one; never one shorter than `absence_answers.QUOTE_FLOOR`, refused as such), or that names no source while a shown one speaks of it (the rows of an entry it cites among them). Still so after the retry, a closing sentence is left out and recorded (`DROPPED_CODE`); a body absence stands, recorded (`HELD_KEPT_CODE`).
 
 - **Raised at** `malspark.reporting.section_agreement:_answer_violations`
 - **Constant** `malspark.reporting.section_agreement:KEEP_UNQUOTED_CODE`
@@ -108,7 +108,7 @@ A kept closing sentence, or a kept held absence of the body, whose row quotes no
 
 ### `agreement.listed`
 
-A sentence of a passage shown for reading only (a section 5 passage, a record's value field), listed as saying otherwise than its sources and kept as written: the model's answer, recorded where a reader finds it.
+A sentence of a passage shown for reading only (a section 5 passage, a row of the configuration, command or flag tables), listed as saying otherwise than its sources and kept as written: the model's answer, recorded where a reader finds it.
 
 - **Raised at** `malspark.reporting.section_agreement:apply_rows`
 - **Constant** `malspark.reporting.section_agreement:LISTED_CODE`
@@ -116,7 +116,7 @@ A sentence of a passage shown for reading only (a section 5 passage, a record's 
 
 ### `agreement.qualified`
 
-A held sentence whose own clause calls code not read that an entry lists, left standing by the answer (no row, a kept row, or a rewrite that failed): the platform adds what the ledger shows to it, in the facts' own words, and records what stood. Never left out, never left as written. Also a section 5 denial a decoded value's fact contradicts whose rewrite in the model's words passed no check: the fact's clause is added, and what stood recorded.
+A held sentence whose own clause calls code not read that an entry lists, left standing by the answer (no row; in the body a kept row, a refused drop or a failed rewrite; in a closing section a refused drop or a rewrite that failed resting on no source): the platform adds what the ledger shows to it, in the facts' own words, and records what stood. Never left as written; a sentence the ledger's own lines hold, and one of a value cell or a capability bullet where a row was read, is left out instead, as its question says (T-600). Also a section 5 denial a decoded value's fact contradicts whose rewrite in the model's words passed no check: the fact's clause is added, and what stood recorded.
 
 - **Raised at** `malspark.reporting.section_agreement:_qualify_unread_left`, `malspark.reporting.section_agreement:apply_rows`
 - **Constant** `malspark.reporting.section_agreement:QUALIFIED_CODE`
@@ -140,9 +140,9 @@ A rewrite that leaves out an id the sentence it replaces cites.
 
 ### `agreement.rewrite_ungrounded`
 
-A rewrite that cites none of the ids its sources cite, or rests only on sources that cite none; for a section 5 sentence, one resting only on facts about nothing the sentence names (the routine or its caller, the address, the value or the call), or, for a routine or bound-value fact on a sentence stating that the run's own reading (the ledger, its entries, the listings or the function index) does not establish, show, settle, trace or list something and naming no address, nothing its passage names, or with no clause of their own.
+A rewrite that cites none of the ids its sources cite, or rests only on sources that cite none; for a section 5 sentence, one resting only on facts about nothing the sentence names (the routine or its caller, the address, the value or the call), or, for a routine or bound-value fact on a sentence stating that the run's own reading (the ledger, its entries, the listings or the function index) does not establish, show, settle, trace or list something and naming no address, nothing its passage names, or with no clause of their own; for a sentence the ledger's own lines hold, one with a clause denying something that no entry shown for that sentence follows at once.
 
-- **Raised at** `malspark.reporting.section_agreement:_grounding_violations`, `malspark.reporting.section_agreement:_row_violations`
+- **Raised at** `malspark.reporting.section_agreement:_answer_violations`, `malspark.reporting.section_agreement:_grounding_violations`, `malspark.reporting.section_agreement:_row_violations`
 - **Constant** `malspark.reporting.section_agreement:REWRITE_UNGROUNDED_CODE`
 - **Docs** none
 
@@ -188,7 +188,7 @@ A row names a source the round was not shown, or answers a section 5 passage wit
 
 ### `agreement.unread_standing`
 
-A held sentence whose own clause calls code not read that an entry lists, which the answer left standing or rewrote still calling it not read: the retry names the listing, so the model may state it in its own words.
+A held sentence whose own clause calls code not read that an entry lists, which the answer left standing or rewrote still calling it not read: the retry names the listing, so the model may state it in its own words, and what becomes of the sentence where that answer is its last (T-600).
 
 - **Raised at** `malspark.reporting.section_agreement:_unread_standing`
 - **Constant** `malspark.reporting.section_agreement:UNREAD_STANDING_CODE`

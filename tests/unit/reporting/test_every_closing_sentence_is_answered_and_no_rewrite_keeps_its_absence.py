@@ -296,7 +296,8 @@ def test_a_report_with_no_closing_section_asks_as_before() -> None:
     prompt = prompt_text(passages)
     assert prompt.endswith(
         "List each sentence that says otherwise than its sources, as the system prompt "
-        "asks. Return ONLY the JSON object shown there."
+        'asks. Return ONLY the JSON object shown there. A "quote" is at least 12 characters of '
+        "the source's words, copied exactly."
     )
     assert "calls.1" not in prompt
 
@@ -331,7 +332,9 @@ def test_a_kept_closing_sentence_quotes_a_source_stating_the_same() -> None:
     unquoted = _row("limitations", STILL_OPEN, "keep", ["persistence_detail"])
     passages = passages_of(report, entries=_ledger())
     for row, said in (
-        (unquoted, "does not stand in a source it names"),
+        # No quote at all is refused as giving none (T-600).
+        (unquoted, "but gives no quote; quote at least 12 characters"),
+        ({**unquoted, "quote": "a quote standing nowhere"}, "does not stand in a source it names"),
         # haiku12's gamed keep: words that stand, but quote no particular absence.
         ({**unquoted, "quote": "is not established"}, "shares too few"),
         ({**unquoted, "quote": "Routine 0x1400 calls 0x2800 and"}, "states no absence"),
@@ -709,11 +712,176 @@ def test_haiku12_s_true_limitation_kept_on_the_named_source_stands() -> None:
     assert KEEP_UNQUOTED_CODE not in [v.code for v in found if v.path.startswith("sentences")]
     counts, records = apply_rows({"sentences": [row]}, passages)
     assert said["TASK"] in _limitations(report)
-    assert counts["held_kept"] == 1 and counts["dropped"] == 0
-    assert not [v for v in records if v.code == DROPPED_CODE]
+    assert counts["held_kept"] == 1
+    # Only the sentences the ledger's own lines hold that no row answers are left out, and
+    # each sentence of a value cell or a capability bullet no row answers (T-600).
+    whole = _whole_unanswered()
+    assert len(whole) == 15
+    assert counts["dropped"] == 3 + len(whole)
+    assert sorted(v.message for v in records if v.code == DROPPED_CODE) == sorted(
+        [_UNANSWERED_EVASION, _UNANSWERED_PAYLOADS, _UNANSWERED_LIMITATIONS, *whole]
+    )
     # Tied by its address alone (review r4): recorded, as no subject word backs it.
     (held,) = [v for v in records if v.code == HELD_KEPT_CODE]
     assert "resting on fewer than two" in held.message
+
+
+# haiku12's sentences the ledger's own lines hold that the rows below never answer: each is
+# left out with that reason (T-600).
+_UNANSWERED_EVASION = (
+    "The agreement question leaves a sentence of 5. Technical analysis, 'Defense Evasion & "
+    "Anti-Forensics' out of the section (no answer was given for it; held on what ledger.1 "
+    "holds lines on): 'Confidence is moderate: the information-class values passed to "
+    "SetFileInformationByHandle were not established.'."
+)
+_UNANSWERED_PAYLOADS = (
+    "The agreement question leaves a sentence of 5. Technical analysis, 'Payloads and Dropped "
+    "Files' out of the section (no answer was given for it; held on what ledger.2 holds lines "
+    "on): \"The sample's own exports are extra, follower, run and scub [ev_0004], so the named "
+    "export is not among them; we assess that the launch would not resolve to an export of "
+    'this file, although the DLL be…".'
+)
+_LIMITATIONS_LABEL = (
+    "11. Limitations, the composed paragraph (each sentence saying a call failed or a reading "
+    "could not be made is held to the failed calls, the tools not run, the recorded "
+    "limitations and the open questi…"
+)
+_UNANSWERED_LIMITATIONS = (
+    f"The agreement question leaves a sentence of {_LIMITATIONS_LABEL} out of the section (no "
+    "answer was given for it; saying a call failed that a later call redid (ev_0078 and "
+    "ev_0079 and ev_0138)): 'The decompiler and disassembler calls for several functions "
+    "failed, so some routine bodies were read from the function index and decoded-string "
+    "references alone [ev_0025].'."
+)
+_UNANSWERED = (_UNANSWERED_EVASION, _UNANSWERED_PAYLOADS, _UNANSWERED_LIMITATIONS)
+
+
+# haiku12's value cells and capability bullets, each sentence as its record of one left out
+# writes it (a long one cut): the rows below answer none of them (T-600).
+_BULLET = "1. Executive summary"
+_CELL = "5. Technical analysis"
+_HAIKU12_WHOLE = (
+    (
+        "capability bullet 1",
+        _BULLET,
+        "The sample is a C2-driven loader whose code builds a counter-coded POST beacon, "
+        "RC4-encrypts and base64-encodes it, and sends it through WinINet to the decoded "
+        "base URLs https://titnovacrion.top/… an…",
+    ),
+    (
+        "capability bullet 2",
+        _BULLET,
+        "Routine 0x4110 formats DLL file names under AppData from the decoded %s%d.dll "
+        "pattern, and routine 0xb4cc formats the decoded rundll32.exe %s,%s command line and "
+        "launches it with CreateProcessW, a do…",
+    ),
+    (
+        "capability bullet 3",
+        _BULLET,
+        "Routine 0x2200 runs fixed reconnaissance commands through cmd.exe and wmic.exe, "
+        "including whoami /groups, ipconfig /all, net group Domain Admins /domain, nltest "
+        "/domain_trusts /all_trusts and an anti…",
+    ),
+    (
+        "capability bullet 4",
+        _BULLET,
+        "Routine 0x9484 resolves process-injection and memory APIs by CRC-32 hash, including "
+        "VirtualAllocEx, WriteProcessMemory, CreateRemoteThread and QueueUserAPC, after the "
+        "PEB access at 0x8690.",
+    ),
+    (
+        "capability bullet 5",
+        _BULLET,
+        "The sample hides its Windows API names and most of its text: the names resolve at "
+        "run time from CRC-32 hashes, and the strings are XOR-encoded in the data sections "
+        "with a rolling key and decoded by r…",
+    ),
+    (
+        "capability bullet 6",
+        _BULLET,
+        "In the sandbox run the sample was launched as a DLL through rundll32 with ordinal "
+        "#1 in two processes, and no C2 contact was observed in the capture.",
+    ),
+    (
+        "capability bullet 7",
+        _BULLET,
+        "The family is assessed as Latrodectus with moderate confidence, based on the "
+        "sandbox signatures and the VirusTotal labels, and the verdict is malware with high "
+        "confidence.",
+    ),
+    (
+        "capability bullet 8",
+        _BULLET,
+        "The file is an unsigned AMD64 DLL with five sections, no packer signature and no "
+        "matching local YARA rule, although it was submitted under an .exe name.",
+    ),
+    (
+        "encryption scheme, cipher",
+        _CELL,
+        "RC4 (stream cipher; identified from the PRGA code shape, moderate confidence, no "
+        "known-vector test run)",
+    ),
+    (
+        "encryption scheme, library",
+        _CELL,
+        "None: in-code routines (key setup at 0xcbe0, keystream at 0xcaac); no crypto API is "
+        "imported (crypto_api_count 0)",
+    ),
+    (
+        "channel row 1, protocol",
+        _CELL,
+        "HTTPS POST over WinINet (InternetOpenW/InternetConnectA via 0x4c70, "
+        "HttpOpenRequestA, HttpSendRequestA and InternetSetOptionA in 0x5030, "
+        "InternetCrackUrlA in 0x52c4); not observed in the sandbox run",
+    ),
+    (
+        "channel row 1, encryption",
+        _CELL,
+        "RC4-style stream cipher keyed with the 5-byte string 12345 (0xfd30): key setup "
+        "0xcbe0, keystream 0xcaac/0xc964, identified from the PRGA shape and modulo-256 "
+        "loops, with confidence moderate; request…",
+    ),
+    (
+        "channel row 1, packet layout",
+        _CELL,
+        "POST body built from the template "
+        "counter=%d&type=%d&guid=%s&os=%d&arch=%d&username=%s&group=%lu&ver=%d.%d&up=%d&"
+        "direction=%s, "
+        "with host-profile fields &computername=%s, &mac= and &domain=%s appended…",
+    ),
+    (
+        "channel row 2, protocol",
+        _CELL,
+        "HTTP via WinINet (InternetOpenUrlW in 0x8d90, user agent from 0xff40); request verb "
+        "not established in this routine",
+    ),
+    (
+        "channel row 2, packet layout",
+        _CELL,
+        "Response body is refused when it begins with <html> or <!DOCTYPE; otherwise the "
+        "body is returned in memory or written to a path-derived file through 0x7acc",
+    ),
+)
+
+
+def _whole_unanswered() -> list[str]:
+    """The records of every sentence of haiku12's value cells and capability bullets, which
+    are answered whole and which the rows below never answer: each left out, with that
+    reason (T-600)."""
+    whole = {
+        _BULLET: "a capability bullet of the summary, every sentence of which is answered",
+        _CELL: "a table cell, every sentence of which is answered",
+    }
+    return [
+        f"The agreement question leaves a sentence of {section}, {field} out of the section "
+        f"(no answer was given for it; {whole[section]}): {sentence!r}."
+        for field, section, sentence in _HAIKU12_WHOLE
+    ]
+
+
+def _unanswered(records: list[Any]) -> list[str]:
+    """The records of the sentences no row answered, of :data:`_UNANSWERED`, in order."""
+    return [v.message for v in records if v.code == DROPPED_CODE and v.message in _UNANSWERED]
 
 
 def test_haiku12_s_c1_to_c6_kept_unsourced_again_are_left_out_and_recorded() -> None:
@@ -729,8 +897,17 @@ def test_haiku12_s_c1_to_c6_kept_unsourced_again_are_left_out_and_recorded() -> 
     counts, records = apply_rows({"sentences": rows}, passages)
     body = _limitations(report)
     assert all(said[n] not in body for n in names)
-    dropped = [v.message for v in records if v.code == DROPPED_CODE]
-    assert counts["dropped"] == len(dropped) == 5
+    # Beside them, the two body sentences the ledger's own lines hold that no row answers; the
+    # limitations sentence saying a redone call failed is among the five (T-600).
+    assert _unanswered(records) == [_UNANSWERED_EVASION, _UNANSWERED_PAYLOADS]
+    whole = _whole_unanswered()
+    assert sorted(v.message for v in records if v.message in whole) == sorted(whole)
+    dropped = [
+        v.message
+        for v in records
+        if v.code == DROPPED_CODE and v.message not in (*_UNANSWERED, *whole)
+    ]
+    assert counts["dropped"] == 7 + len(whole) and len(dropped) == 5
     assert all(any(said[n][:40] in m for m in dropped) for n in names)
 
 
@@ -764,10 +941,18 @@ def test_haiku12_s_c2_to_c5_kept_unsourced_on_both_answers_are_left_out_and_reco
     # The retry's answer, as the first: apply_rows reads the last answer.
     counts, records = apply_rows({"sentences": rows}, passages)
     body = _limitations(report)
-    assert counts["dropped"] == 3
+    # Beside them, each sentence the ledger's own lines hold that no row answers (T-600).
+    assert _unanswered(records) == list(_UNANSWERED)
+    whole = _whole_unanswered()
+    assert sorted(v.message for v in records if v.message in whole) == sorted(whole)
+    assert counts["dropped"] == 6 + len(whole)
     for which in ("C2", "C4", "C5"):
         assert said[which] not in body, which
-    dropped = [v.message for v in records if v.code == DROPPED_CODE]
+    dropped = [
+        v.message
+        for v in records
+        if v.code == DROPPED_CODE and v.message not in (*_UNANSWERED, *whole)
+    ]
     assert len(dropped) == 3
     # C2 "read only in part" of listed code: the ledger says otherwise of it.
     assert all(

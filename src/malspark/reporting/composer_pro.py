@@ -967,7 +967,9 @@ _GENERIC_TOKENS = frozenset(
         "ipv6",
     }
 )
-_CITATIONS = re.compile(r"(?:\s*[\[(]\s*ev_\d+(?:\s*[,;]\s*ev_\d+)*\s*[\])])+")
+# A run of citations with the space before each. The space opens a match only where no
+# space stands before it, so a long run of spaces is walked once, not from each of them.
+_CITATIONS = re.compile(r"(?:(?<!\s)\s*[\[(]\s*ev_\d+(?:\s*[,;]\s*ev_\d+)*\s*[\])])+")
 
 
 @dataclass(frozen=True)

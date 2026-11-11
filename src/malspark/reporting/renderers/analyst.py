@@ -51,6 +51,7 @@ from malspark.reporting.renderers.markdown import (
     _NETWORK_KINDS,
     _PIPE,
     ANALYST_LIMITATIONS_TITLE,
+    SUMMARY_SUBJECTS,
     _code_span,
     _degraded_sentence,
     _divider,
@@ -919,6 +920,7 @@ class _Analyst:
         self.ta = report.technical_analysis
         # The composer's procedure of each published technique, by id (``attack``).
         self._procedures: dict[str, Any] = {}
+        self._procedures_left: set[str] = set()
         # Every section as first written, once known and in ``carrying_form``:
         # what a replaced text's values are looked for in (``_keeps``). ``None``
         # on the first writing.
@@ -1178,12 +1180,18 @@ class _Analyst:
     def summary(self) -> str:
         report = self.report
         lines = [_heading(1, "Executive summary"), ""]
-        bullets = list(self.ta.capability_summary) if self.ta is not None else []
+        # A bullet the agreement question left every sentence of out is not printed (T-600).
+        bullets = (
+            [b for b in self.ta.capability_summary if b.text.strip()] if self.ta is not None else []
+        )
         # The composer's capability bullets where it wrote them; the key
         # findings and the summary paragraph are then the bundle's, but for a
         # finding naming a value printed nowhere else. A bullet or finding a
-        # check flagged whole is the bundle's alone (T-555).
-        findings = [f for f in report.key_findings if not self._flagged_whole(f.text)]
+        # check flagged whole is the bundle's alone (T-555), and one the agreement question
+        # left its only sentence out of is printed nowhere: its record is the bundle's (T-600).
+        findings = [
+            f for f in report.key_findings if f.text.strip() and not self._flagged_whole(f.text)
+        ]
         if bullets:
             findings = [f for f in findings if self._keeps(f.text)]
         else:
@@ -1203,9 +1211,14 @@ class _Analyst:
                 lines.append("")
             lines.append(self._prose(summary))
         if not summary and not findings and not bullets:
+            left = self.ctx.left_out_clause(*SUMMARY_SUBJECTS)
             lines.append(
-                "No summary was written in this run; the findings below are the platform's "
-                "own record of what the run established."
+                (
+                    f"No summary is printed in this run: {left}"
+                    if left
+                    else "No summary was written in this run"
+                )
+                + "; the findings below are the platform's own record of what the run established."
             )
         if self.ctx.narrative_findings:
             lines.extend(["", *self._findings(self.ctx.narrative_findings)])
@@ -2043,6 +2056,15 @@ class _Analyst:
             for p in (self.ta.technique_procedures if self.ta is not None else [])
             if p.procedure.strip()
         }
+        # The techniques whose procedure the agreement question left out: their row prints
+        # "-", never an analyst claim that did not pass the question (T-600).
+        self._procedures_left = {
+            p.technique_id.strip().upper()
+            for index, p in enumerate(
+                self.ta.technique_procedures if self.ta is not None else [], 1
+            )
+            if not p.procedure.strip() and self.ctx.left_out(f"procedures.{index}")
+        }
         rows: list[str] = []
         seen: set[str] = set()
         held: list[str] = []
@@ -2135,6 +2157,8 @@ class _Analyst:
     def _procedure(self, claim: str, ids: list[str], technique_id: str = "") -> str:
         """The composer's procedure for the technique, else its first claim's first sentence."""
         written = self._procedures.get(technique_id.strip().upper())
+        if technique_id.strip().upper() in self._procedures_left:
+            return "-"
         sentence = _first_sentence(_CITATION_RUN.sub("", claim))
         # A first sentence a check left standing is the bundle's: the written
         # procedure stands, or nothing (T-555).
