@@ -1377,13 +1377,14 @@ class CodeConstant(BaseModel):
 
     Built from the ledger at build time (``reporting.code_constants``): a
     decoder's stated seed, kept in the header of each string it decoded, or a
-    value the code compares with a computed hash to find a function by name.
+    value the code compares with a computed hash to find a function or module by name.
     ``value`` is the number as the tool wrote it (``0x33629d40``), stored
-    little-endian; ``meaning`` says what the tool read it as, in a few words;
+    little-endian; ``meaning`` says what the tool read it as, in a few words, with the set a
+    hash was resolved in when its row states one;
     ``entry`` and ``tool`` are the answer that states it; ``first_offset`` is
     the first file offset that answer gives for it and ``places`` how many it
     gives. ``role`` says which of the two it is: a drafted YARA rule matches on
-    these bytes, a function-name hash only together with a seed
+    these bytes, a name hash only together with a seed
     (``detection_signatures``).
     """
 
@@ -1950,7 +1951,7 @@ class MalwareReport(BaseModel):
     # report stored before it existed or a run that bound none.
     bound_values: list[BoundValue] = Field(default_factory=list, exclude_if=lambda value: not value)
     # Each 32-bit value the sample stores that a tool read as a decoder's seed
-    # or a function-name hash, built from the ledger at build time
+    # or a name hash, built from the ledger at build time
     # (``reporting.code_constants``): what a drafted YARA rule matches on
     # beside the published indicators. Empty, and left out of the dump, on a
     # report stored before it existed or a run whose tools read none.

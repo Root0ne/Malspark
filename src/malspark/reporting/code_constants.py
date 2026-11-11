@@ -12,10 +12,12 @@ places they stand (the consumer ``code_constants`` of
   result decoded under a seed-and-length header states the seed, which the
   header stores in front of each encoded text. One seed is read once, with the
   number of results that state it.
-* **A function-name hash** (kind ``api_hash_resolution``, declared values
-  ``value`` and ``algorithm``). Each hit is a value stored in the file that
-  equals a hash of a function or module name under one or more algorithms,
-  with every place it stands (``occurrences``).
+* **A name hash** (kind ``api_hash_resolution``, declared values ``value``,
+  ``algorithm``, ``name`` and ``set``). Each hit is a value stored in the file
+  that equals a hash of a name under one or more algorithms, with every place
+  it stands (``occurrences``). Its meaning says the set each reading was
+  resolved in (``exports``, ``modules``) in the tool's own word, and says none
+  when the row states none.
 
 Each answer's rows and values are read where its declaration points them, and
 where it points none, where the built-in tool of that kind keeps them; never by
@@ -34,7 +36,7 @@ What is not read:
 * a value too plain to tell one file from another: below 0x10000, or of fewer
   than three distinct bytes.
 
-A function-name hash says how a program finds its imports, which many programs
+A name hash says how a program finds its imports, which many programs
 share; it is drafted only together with a seed (``detection_signatures``). Each
 value is kept once, at the first answer that states it, seeds first and then
 hashes, each in the order of the ledger.
@@ -62,6 +64,7 @@ _SEED = "/parameters/seed"
 _VALUE = "/value"
 _ALGORITHM = "/readings/*/algorithm"
 _NAME = "/readings/*/name"
+_SET = "/readings/*/set"
 _OFFSETS = "/occurrences/*/offset"
 _ROW_OFFSET = "/offset"
 _SCHEME = "/scheme"
@@ -114,6 +117,7 @@ def code_constants_from_ledger(ledger: Iterable[Any] | None) -> list[CodeConstan
                     str(values.get("value") or _VALUE),
                     str(values.get("algorithm") or _ALGORITHM),
                     str(values.get("name") or _NAME),
+                    str(values.get("set") or _SET),
                     said,
                     seen,
                 )
@@ -175,6 +179,7 @@ def _hashes(
     value_path: str,
     algorithm_path: str,
     name_path: str,
+    set_path: str,
     said: _Said,
     seen: set[int],
 ) -> list[CodeConstant]:
@@ -209,11 +214,14 @@ def _hashes(
         listed = ", ".join(names[:_NAMES_SAID])
         if len(names) > _NAMES_SAID:
             listed += f" and {len(names) - _NAMES_SAID} more"
+        # The set each reading was resolved in, in the tool's own word.
+        sets = sorted({_word(w) for w in select(row, set_path)} - {""})
+        said_in = f"set {', '.join(sets)}: " if sets else ""
         out.append(
             CodeConstant(
                 value=f"{number:#010x}",
                 role="hash",
-                meaning=f"a function-name hash ({listed or 'no name stated'})",
+                meaning=f"a name hash ({said_in}{listed or 'no name stated'})",
                 entry=said.entry,
                 tool=said.tool,
                 first_offset=_word(offsets[0]),

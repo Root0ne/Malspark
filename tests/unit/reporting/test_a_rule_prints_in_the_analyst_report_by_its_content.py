@@ -10,7 +10,7 @@ says nothing a hash lookup does not. What is held here:
   or was stored before the check is named with the reason and printed in the
   evidence bundle, and every printed rule carries a Precision line;
 * the values the sample stores as they are — a decoder's seed, a
-  function-name hash — are read from the ledger by the answer's kind
+  name hash — are read from the ledger by the answer's kind
   (``reporting.code_constants``) and drafted as a group of their own, which the
   engine finds in the sample's bytes where the published strings are encoded;
 * one hunting query, built from the published user agents and URL paths, leaves
@@ -231,6 +231,16 @@ def _decoder(*seeds: Any, entry: str = "ev_0021", **args: Any) -> LedgerEntry:
     )
 
 
+def _set_of(entry: LedgerEntry, word: str | None) -> None:
+    """Restate the set every reading of every hit was resolved in; ``None`` states none."""
+    assert isinstance(entry.structured, dict)
+    for hit in entry.structured["hits"]:
+        for reading in hit["readings"]:
+            reading.pop("set", None)
+            if word is not None:
+                reading["set"] = word
+
+
 def _resolver(
     *values: str,
     names: tuple[str, ...] = ("InternetOpenW",),
@@ -275,7 +285,7 @@ class TestTheStoredValuesAreReadByTheAnswersKind:
         assert seed.meaning == (
             "the decoder seed stored in the header of 3 encoded strings, xor8_rolling_header"
         )
-        assert constants[1].meaning == "a function-name hash (InternetOpenW)"
+        assert constants[1].meaning == "a name hash (set exports: InternetOpenW)"
 
     def test_a_carved_file_a_failed_call_and_a_plain_value_are_not_read(self) -> None:
         failed = _decoder("0x5a17c0de", entry="ev_0030").model_copy(update={"ok": False})
@@ -319,7 +329,57 @@ class TestTheStoredValuesAreReadByTheAnswersKind:
         name = "Internet‮Open‍W x "
         constant = code_constants_from_ledger([_resolver(*HASHES[:2], names=(name,))])[0]
 
-        assert constant.meaning == "a function-name hash (InternetOpenW x)"
+        assert constant.meaning == "a name hash (set exports: InternetOpenW x)"
+
+    def test_a_hash_resolved_in_modules_prints_set_modules(self) -> None:
+        entry = _resolver(*HASHES[:2], names=("kernel32.dll",))
+        _set_of(entry, "modules")
+
+        meaning = code_constants_from_ledger([entry])[0].meaning
+
+        assert meaning == "a name hash (set modules: kernel32.dll)"
+
+    def test_a_hash_resolved_in_exports_prints_set_exports(self) -> None:
+        meaning = code_constants_from_ledger([_resolver(*HASHES[:2])])[0].meaning
+
+        assert meaning == "a name hash (set exports: InternetOpenW)"
+
+    def test_a_row_with_no_set_prints_neither_word(self) -> None:
+        entry = _resolver(*HASHES[:2])
+        _set_of(entry, None)
+
+        meaning = code_constants_from_ledger([entry])[0].meaning
+
+        assert meaning == "a name hash (InternetOpenW)"
+        assert "set" not in meaning
+        assert "function" not in meaning
+        assert "module" not in meaning
+
+    def test_two_sets_on_one_constant_are_listed_once_each_in_a_stable_order(self) -> None:
+        entry = _resolver(*HASHES[:2])
+        assert isinstance(entry.structured, dict)
+        for hit in entry.structured["hits"]:
+            hit["readings"] = [
+                {"set": "modules", "name": "kernel32.dll", "algorithm": ALGORITHM},
+                {"set": "exports", "name": "InternetOpenW", "algorithm": ALGORITHM},
+                {"set": "modules", "name": "KERNEL32.DLL", "algorithm": ALGORITHM},
+            ]
+
+        meaning = code_constants_from_ledger([entry])[0].meaning
+
+        assert (
+            meaning
+            == "a name hash (set exports, modules: kernel32.dll, InternetOpenW, KERNEL32.DLL)"
+        )
+
+    def test_a_hostile_set_word_cannot_leave_the_comment(self) -> None:
+        entry = _resolver(*HASHES[:2])
+        _set_of(entry, "modules*/\nrule x { condition: true } //\r\n<script>`|")
+
+        meaning = code_constants_from_ledger([entry])[0].meaning
+
+        assert not any(c in meaning for c in "\r\n*/<>`|{}")
+        assert meaning.startswith("a name hash (set modules")
 
     def test_a_value_is_read_as_an_int_as_hexadecimal_or_as_decimal(self) -> None:
         constants = code_constants_from_ledger(

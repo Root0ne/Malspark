@@ -333,9 +333,11 @@ _API_HASHES: dict[str, Any] = {
     "kind": "api_hash_resolution",
     "rows": "/hits/*",
     "places": {"rva": "/occurrences/*/rva"},
-    # ``value``: the stored value itself; ``algorithm``: the hash of each reading.
+    # ``value``: the stored value itself; ``algorithm``: the hash of each reading;
+    # ``set``: the set of names each reading was resolved in.
     "values": {
         "name": "/readings/*/name",
+        "set": "/readings/*/set",
         "value": "/value",
         "algorithm": "/readings/*/algorithm",
     },
