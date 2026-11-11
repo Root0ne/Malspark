@@ -1662,7 +1662,7 @@ def _technical_facts(section: str, report: MalwareReport) -> dict[str, Any]:
             # The strings an indicator reading typed (url, ip, path, registry
             # key, ...), not every string the file holds.
             "strings_typed_as_indicators_count": len(static.interesting_strings),
-            "capability_profile": dict(sorted(caps.items(), key=lambda kv: -kv[1])),
+            IMPORT_TABLE_PROFILE_FACT: dict(sorted(caps.items(), key=lambda kv: -kv[1])),
         }
         if static.api_capabilities_resolved:
             # The names the run resolved at runtime, apart from the imports:

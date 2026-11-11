@@ -153,3 +153,26 @@ def test_the_string_count_names_the_strings_it_counts() -> None:
     report = _report(interesting_strings=[StringIOC(value="http://a.example/x", kind="url")])
     facts = bundle_for("string_resolution", report)["facts"]
     assert facts["strings_typed_as_indicators_count"] == 1
+
+
+def test_the_string_section_names_each_profile_by_the_same_scoped_key() -> None:
+    from malspark.reporting.models import ImportRow, StringIOC
+
+    report = _both_measured()
+    assert report.static is not None
+    report.static.imports = [ImportRow(dll="advapi32.dll", function="RegSetValueExW")]
+    report.static.interesting_strings = [StringIOC(value="http://a.example/x", kind="url")]
+    facts = bundle_for("string_resolution", report)["facts"]
+    assert facts == {
+        "static_import_count": 1,
+        "strings_typed_as_indicators_count": 1,
+        IMPORTS: {"persistence": 1},
+        RESOLVED: {"discovery": 10, "anti_debug": 7, "registry": 5, "evasion": 4, "persistence": 4},
+    }
+    assert list(facts[RESOLVED]) == [
+        "discovery",
+        "anti_debug",
+        "registry",
+        "evasion",
+        "persistence",
+    ]
