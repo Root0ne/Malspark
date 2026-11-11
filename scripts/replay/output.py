@@ -15,8 +15,8 @@ from typing import Any
 from scripts.replay.record import errors
 
 # Controls, format characters (bidirectional overrides, zero-width marks) and the
-# line and paragraph separators: none of them is printable text.
-_UNPRINTABLE = frozenset({"Cc", "Cf", "Zl", "Zp"})
+# line and paragraph separators, and lone surrogates: none of them is printable text.
+_UNPRINTABLE = frozenset({"Cc", "Cf", "Zl", "Zp", "Cs"})
 
 
 def terminal_safe(text: object, *, encoding: str | None = None) -> str:
@@ -26,7 +26,9 @@ def terminal_safe(text: object, *, encoding: str | None = None) -> str:
     sequence, a carriage return or a bidirectional override in it must not act
     on the operator's terminal. Printable text, non-ASCII letters included, is
     unchanged. A newline is shown as ``\\n`` so one value stays on one line; the
-    lines of a rendered text come from the renderer alone. A character the
+    lines of a rendered text come from the renderer alone. A backslash is shown
+    doubled, so a newline and the two characters backslash and ``n`` read apart
+    and the text can be turned back into the value. A character the
     stream's ``encoding`` (default: ``sys.stdout``'s) cannot carry, such as a
     letter on a Windows code page, is shown as an escape too, so printing never
     raises; a UTF-8 stream shows every printable character as it was. One pass, linear.
@@ -35,6 +37,8 @@ def terminal_safe(text: object, *, encoding: str | None = None) -> str:
     for char in str(text):
         if char == "\n":
             out.append("\\n")
+        elif char == "\\":
+            out.append("\\\\")
         elif unicodedata.category(char) in _UNPRINTABLE:
             code = ord(char)
             out.append(
@@ -65,6 +69,23 @@ def _encodable(text: str, encoding: str | None) -> str:
 def _s(value: object) -> str:
     """A value read from a stored run, on one line and safe for the terminal."""
     return terminal_safe(value)
+
+
+def _show(value: object) -> str:
+    """``value`` as Python writes it, each string escaped once and quoted like ``repr``."""
+    if isinstance(value, str):
+        quote = '"' if "'" in value and '"' not in value else "'"
+        body = _s(value).replace("'", "\\'") if quote == "'" else _s(value)
+        return f"{quote}{body}{quote}"
+    if isinstance(value, Mapping):
+        return "{" + ", ".join(f"{_show(k)}: {_show(v)}" for k, v in value.items()) + "}"
+    if isinstance(value, list):
+        return "[" + ", ".join(_show(item) for item in value) + "]"
+    if isinstance(value, tuple):
+        return (
+            "(" + ", ".join(_show(item) for item in value) + ("," if len(value) == 1 else "") + ")"
+        )
+    return _s(repr(value))
 
 
 def _join(sep: str, values: Iterable[object]) -> str:
@@ -103,7 +124,8 @@ def _flag_line(flag: Mapping[str, Any]) -> str:
     if flag.get("message"):
         line += f"\n        said: {_s(flag['message'])}"
     if flag.get("values"):
-        line += f"\n        values: {_s(flag['values'])}"
+        values = flag["values"]
+        line += f"\n        values: {_s(values) if isinstance(values, str) else _show(values)}"
     return line
 
 
@@ -295,7 +317,7 @@ def _said(value: Any) -> str:
     """A text the record keeps as a digest, and its words when they are there."""
     if not isinstance(value, Mapping):
         return "absent" if value is None else _s(value)
-    return f"{_s(value.get('digest'))}" + (f" {_s(repr(value['text']))}" if "text" in value else "")
+    return f"{_s(value.get('digest'))}" + (f" {_show(value['text'])}" if "text" in value else "")
 
 
 def _against_stored_lines(block: Mapping[str, Any]) -> list[str]:
@@ -319,8 +341,7 @@ def _against_stored_lines(block: Mapping[str, Any]) -> list[str]:
 
     for key, row in (block.get("values") or {}).items():
         lines.append(
-            f"  {_s(key)}: stored {_s(repr(row.get('stored')))}, "
-            f"replayed {_s(repr(row.get('replayed')))}"
+            f"  {_s(key)}: stored {_show(row.get('stored'))}, replayed {_show(row.get('replayed'))}"
         )
     for name, ids in (block.get("techniques") or {}).items():
         lines.append(f"  techniques published {_s(name.replace('_', ' '))}: {_join(', ', ids)}")
@@ -470,19 +491,19 @@ def render_diff(diff: Mapping[str, Any], ref_a: str, ref_b: str) -> str:
 def _nested(value: Any, prefix: str = "") -> list[str]:
     if isinstance(value, Mapping):
         if set(value) == {"a", "b"}:
-            return [f"{prefix}A {_s(repr(value['a']))} -> B {_s(repr(value['b']))}"]
+            return [f"{prefix}A {_show(value['a'])} -> B {_show(value['b'])}"]
         out: list[str] = []
         for key, inner in value.items():
             label = f"{prefix}{_s(key)}"
             if isinstance(inner, Mapping | list) and inner:
                 if isinstance(inner, Mapping) and set(inner) == {"a", "b"}:
-                    out.append(f"{label}: A {_s(repr(inner['a']))} -> B {_s(repr(inner['b']))}")
+                    out.append(f"{label}: A {_show(inner['a'])} -> B {_show(inner['b'])}")
                 else:
                     out.append(f"{label}:")
                     out.extend(f"  {line}" for line in _nested(inner))
             else:
-                out.append(f"{label}: {_s(repr(inner))}")
+                out.append(f"{label}: {_show(inner)}")
         return out
     if isinstance(value, list):
         return [line for item in value for line in _nested(item, prefix)]
-    return [f"{prefix}{_s(repr(value))}"]
+    return [f"{prefix}{_show(value)}"]

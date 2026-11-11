@@ -109,8 +109,13 @@ def _parser() -> argparse.ArgumentParser:
 
 
 def _error(message: str) -> NoReturn:
-    """Say ``message`` and end with the status an error has (2)."""
-    print(f"replay: {message}", file=sys.stderr)
+    """Say ``message`` and end with the status an error has (2).
+
+    A message can quote a path or a name from a stored run, so it is shown escaped.
+    """
+    from scripts.replay.output import terminal_safe
+
+    print(f"replay: {terminal_safe(message)}", file=sys.stderr)
     raise SystemExit(2)
 
 
@@ -217,8 +222,12 @@ def main(argv: list[str] | None = None) -> int:
                 _error(f"refused: {exc}")
             for directory, cleared in exported:
                 if cleared and not args.quiet:
+                    from scripts.replay.output import terminal_safe
+
                     print(
-                        f"replay: cleared the earlier export's {', '.join(cleared)} in {directory}",
+                        "replay: cleared the earlier export's "
+                        f"{', '.join(terminal_safe(c) for c in cleared)} in "
+                        f"{terminal_safe(directory)}",
                         file=sys.stderr,
                     )
                 runs.append(directory)

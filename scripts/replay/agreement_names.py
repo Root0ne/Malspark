@@ -272,7 +272,7 @@ def _print(read: dict[str, Any]) -> None:
     )
     print(
         "   answered: "
-        + ", ".join(f"{f}->{a}{' (redo)' if r else ''}" for f, a, r in read["answered"])
+        + ", ".join(f"{safe(f)}->{safe(a)}{' (redo)' if r else ''}" for f, a, r in read["answered"])
     )
     for row in read["names"]:
         print(f" - [{safe(row['passage'])}] {safe(row['name'])}: {safe(row['outcome'])}")
