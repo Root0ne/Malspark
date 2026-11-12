@@ -488,7 +488,10 @@ def _without_unconfirmed_credit(
 
     ``asked`` is whether the judge was shown the credit question. The sentence
     says which: "kept the credit when asked" of a credit it was never asked
-    about is a statement the run's record does not support.
+    about is a statement the run's record does not support. Why it was not
+    asked (no turn left, or ``validation.feedback`` set to ``record_only``) is
+    the run record's to say: a stored run is exported again under other
+    settings.
     """
     from malspark.pipeline.validation import credited_agents
 
@@ -496,10 +499,7 @@ def _without_unconfirmed_credit(
     copy = crediting_only(obj, kept)
     names = ", ".join(repr(safe_finding_value(n)) for n in credit.uncredited)
     what_the_judge_did = (
-        "the judge kept the credit when asked"
-        if asked
-        else "the judge was not asked about it: the credit first appeared in an answer no "
-        "turn was left to question"
+        "the judge kept the credit when asked" if asked else "the judge was not asked about it"
     )
     return copy, Declined(
         UNPUBLISHABLE_CREDIT_CODE,
@@ -513,15 +513,15 @@ def _missing_what_the_standard_requires(obj: Any, unasked: Sequence[str] = ()) -
     """The recorded sentence for a judge object the standard refuses as written, or ``""``.
 
     ``unasked`` is the run's ``stix.is_family_missing`` findings the judge was
-    never shown; the sentence says it was asked only when it was.
+    never shown; the sentence says it was asked only when it was, and not why
+    it was not (:func:`_without_unconfirmed_credit`).
     """
     kind = str(getattr(obj, "type", "") or "")
     label = safe_finding_value(getattr(obj, "name", "") or getattr(obj, "id", ""))
     if kind == "malware" and getattr(obj, "is_family", None) is None:
         named = f"{safe_finding_value(str(getattr(obj, 'name', '') or '').strip())!r}"
         what_the_judge_did = (
-            "the judge was not asked about it: it first appeared in an answer no turn was "
-            "left to question"
+            "the judge was not asked about it"
             if any(
                 said == str(getattr(obj, "name", "") or "").strip() or named in said
                 for said in unasked
