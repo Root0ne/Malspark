@@ -335,13 +335,13 @@ EXITS = exit_branches(
         ),
         pytest.param(
             lambda t: citation_violations(
-                {"body": ("[" + "a" * 190 + "!] [ev_0001] ") * (len(t) // 205)}, ["ev_0001"]
+                {"body": ("[" + "a" * 12 + "!] [ev_0001] ") * (len(t) // 27)}, ["ev_0001"]
             ),
-            id="citations of closed groups of one long name that almost fit an operand",
+            id="citations of closed groups of one name that almost fit an operand",
         ),
         pytest.param(
             lambda t: citation_violations(
-                {"body": ("[" + "a+" * 95 + "!] ") * (len(t) // 194)}, ["ev_0001"]
+                {"body": ("[" + "a+" * 6 + "!] ") * (len(t) // 16)}, ["ev_0001"]
             ),
             id="citations of closed groups of many sums that almost fit an operand",
         ),

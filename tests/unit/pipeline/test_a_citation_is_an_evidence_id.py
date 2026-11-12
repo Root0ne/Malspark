@@ -24,6 +24,7 @@ from malspark.pipeline.validation import (
 from malspark.reporting.composer import ReportComposer
 from malspark.reporting.models import FileHashes, MalwareReport, SampleIdentity
 from malspark.reporting.narrative_agent import NarrativeAgent
+from tests.linear_cost import TIME_RATIO_LIMIT, assert_ratio, repeated
 
 CITABLE = ["ev_0001", "ev_0004", "ev_0011"]
 
@@ -475,6 +476,23 @@ class TestAnOperandInASentenceIsNotACitation:
             f"[{item}] is cited, and it is not an evidence id.{self.REMEDY}"
             for item in ("0x60", "0x30")
         ]
+
+    def test_a_group_twice_as_long_costs_about_the_same(self) -> None:
+        """A group is capped in length, so a line's growth cannot show a term that backtracks.
+
+        A name that almost fits an operand, eight letters and sixteen: a term read
+        in time linear in the group costs the same per call, one that tries every
+        split of the name costs 256 times as much.
+        """
+        small, large = ({"body": f"It reads [{'a' * size}!] here."} for size in (8, 16))
+        assert len(self._prose(small["body"])) == 1
+
+        def _read(payload: dict[str, str]) -> Any:
+            return repeated(lambda: citation_violations(payload, self.LEDGER, prose=("body",)), 200)
+
+        assert_ratio(
+            _read(small), _read(large), TIME_RATIO_LIMIT, what="a 16-letter group against 8"
+        )
 
     def test_digits_and_letters_outside_ascii_are_not_an_operand(self) -> None:
         for item in ("\u0661\u0662+\u0661\u0663", "\u017f+1", "\u212a+0x1"):
