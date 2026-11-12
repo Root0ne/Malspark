@@ -1419,6 +1419,21 @@ ANNOTATIONS: dict[str, Annotation] = {
         ),
         "subgroup": "Technique check",
     },
+    "validation.feedback": {
+        "title": "What a finding leads to",
+        "description": (
+            "'feed_back', the default: the findings of every check are put to the agent "
+            "that wrote the answer in one correction turn. 'record_only': every check "
+            "runs and every finding is recorded as not asked; no correction turn is sent "
+            "and the answer stands as written. An answer that could not be read (cut at "
+            "the output cap, not JSON, outside its schema, unparsed, its claims repeated) "
+            "is asked again in both. What the platform does afterwards with a finding "
+            "left standing is the same in both, so a run in each shows what the "
+            "correction turns change. The run summary names the mode when it is not the "
+            "default."
+        ),
+        "subgroup": "Findings",
+    },
     "react_agent_max_steps": {
         "title": "Steps per agent loop",
         "description": (

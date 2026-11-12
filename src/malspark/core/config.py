@@ -4892,7 +4892,15 @@ ATTCK_REFRESH_DAYS_MAX = (_date(9999, 12, 31) - _date(2100, 1, 1)).days
 
 
 class ValidationConfig(BaseModel):
-    """The technique check's one heuristic part, and when it is allowed to run.
+    """What the checks do with their findings, and the technique check's heuristic part.
+
+    ``feedback`` is what a finding leads to. ``feed_back``, the default, puts
+    the findings to the agent that wrote the answer in one correction turn.
+    ``record_only`` runs every check and records every finding as not asked,
+    and sends no correction turn: the answer stands as written. Findings that
+    say an answer could not be read are asked in both
+    (``validation.REASKED_IN_EVERY_MODE_CODES``), and what code does after a
+    stage with what is left is the same in both.
 
     Validity, platform consistency and corroboration are exact and always on.
     The alignment gate ranks a claim's text against the ATT&CK index, and the
@@ -4931,6 +4939,9 @@ class ValidationConfig(BaseModel):
     # asked once for a whole answer (``isr.claims_repeated``). ``None`` derives
     # it from the answer: the number of distinct headings it wrote.
     claim_repeat_margin: Annotated[int, Field(ge=0)] | None = None
+    # What a finding leads to: a correction turn, or a record alone
+    # (``pipeline.feedback_mode``).
+    feedback: Literal["feed_back", "record_only"] = "feed_back"
 
 
 # ---------------------------------------------------------------------------

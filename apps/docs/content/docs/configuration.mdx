@@ -2784,6 +2784,25 @@ claims it wrote. A whole answer that does not repeat replaces the repeating
 one; otherwise the answer stands as written. On a streamed path (llama.cpp,
 Ollama, DeepSeek) the same margin ends the answer while it streams.
 
+`validation.feedback` (`feed_back`) is what a check's finding leads to.
+`feed_back` puts the findings to the agent that wrote the answer in one
+correction turn, as described in [Validation and
+feedback](/docs/concepts/validation/). `record_only` runs every check and
+records every finding exactly as `feed_back` does, marked not asked, and sends
+no correction turn and no follow-on question: the analysts', the judge's
+verdict and technique question, the composer's, the narrative's, the question
+round's and the section agreement's answers stand as written. An answer that
+could not be read (cut at the output cap, not JSON, outside its schema, no
+claim parsed, its claims repeated) is asked again in both modes. What the
+platform does afterwards with a finding left standing is the same in both: an
+ungrounded indicator stays out of the exports, an unknown technique id is
+flagged, a sentence that fails its citation check is left out of the analyst
+report and counted. A run in each mode therefore shows what the correction
+turns change, read from `run_summary.validation.unresolved`, which is recorded
+before anything is left out. A run in `record_only` says so in
+`run_summary.validation.feedback` and among its operator choices; a run in the
+default carries neither.
+
 `mobile` and `deep_static` are built from three seeded generic agent
 definitions — `triage`, `android_static` and `reverser` — whose prompts live in
 `src/malspark/agents/prompts/`. A generic agent has no class: it is a definition,

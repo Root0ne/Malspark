@@ -55,6 +55,13 @@ happens. If it is still there, the finding stays on the record as
 **unresolved**. A later turn never silently replaces the agent's answer with a
 corrected one.
 
+With `validation.feedback` set to `record_only` the checks run and every
+finding is recorded, marked not asked, and no agent is told: the answer stands
+as written. Only an answer that could not be read is asked again. Everything
+the platform does afterwards with what is left standing is unchanged, so a run
+in each mode shows what the correction turns change
+([Configuration](/docs/configuration/)).
+
 ## Where to see the findings
 
 - **The run summary** counts the findings by code under
