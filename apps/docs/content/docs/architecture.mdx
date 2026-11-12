@@ -5015,16 +5015,32 @@ is assembled from what the run gathered rather than recomputed beside it:
   claim, finding or bundle object carries
   (`capability_matrix.checked_technique_questions`; a parent and its
   sub-technique are two ids). Each is listed with the agents and entries it
-  was seen in and its card, and the entries the final claims of each such
-  agent cite are listed once under the techniques, by id; a question with no
-  checked technique reads as it did before. A checked technique is answered
+  was seen in (at most three entries per agent and place, then how many more)
+  and its card, and the entries the final claims of each such agent cite are
+  listed once under the techniques, by id; a question with no checked
+  technique reads as it did before. The ids an agent passed in a call's
+  arguments come first, then the ones only a tool's answer named, each in the
+  order first seen; the question asks at most `MAX_CHECKED_QUESTIONS` (32,
+  twice the most a stored benchmark run listed), and the checked ones go in
+  only where the judge's window has room left after the other techniques, the
+  reports and the evidence, so the claimed, finding and undescribed ones keep
+  their place. Each one left out is recorded in `not_asked` with why, and the
+  question says how many were left out. A checked technique is answered
   `map`, with the ledger entries it rests on (`evidence_ids`), or `decline`,
   with a reason; a keep or a drop on it, or a map on any other technique,
-  decides nothing, and one left unanswered is not published. A map is checked
+  decides nothing, and one left unanswered is not published. In a free-text
+  answer the decision is the word after the id's separator, else the first map
+  or decline on the line, and a map's entries are the ids written outside its
+  reason: before the decision and leading what follows it. A map is checked
   as an analyst's claim of the technique is
   (`validation.mapped_technique_violations`): at least one entry, every entry
-  one the run's ledger holds (`isr.ungrounded_technique`), then the
-  catalogue, absence, scope and describe checks of `validate_isr`; and a
+  one the run's ledger holds (`isr.ungrounded_technique`), not every entry
+  one that only passed the id in its call's arguments, since a lookup of the
+  technique is not evidence of the behaviour
+  (`attck.map_rests_on_its_lookup`; an entry whose answer's declared field
+  names the id, or any other entry, counts), then the catalogue, absence,
+  scope and describe checks of `validate_isr`, all declined as not checked
+  when the catalogue cannot be read; and a
   mapped parent technique one of whose sub-techniques the report publishes is
   declined (`attck.parent_of_a_published_sub_technique`), since a
   sub-technique says its parent. A map that fails is recorded as `decline`
@@ -5032,9 +5048,11 @@ is assembled from what the run gathered rather than recomputed beside it:
   the judge's entries and reason kept beside them, and is never published; one
   that stands is published as a technique the judge states — its row and
   mapping list the mapped entries as sources and carry the judge-only note —
-  and so reaches the STIX attack-patterns and `/reports/{id}/mitre`. A
-  declined technique stays on the review (`checked`, `decisions`) and adds no
-  text to the report. `scripts/replay/checked_techniques.py` rebuilds the
+  and so reaches the STIX attack-patterns, its mapped entries written on the
+  export's `uses` edge, and `/reports/{id}/mitre`. A
+  declined technique stays on the review (`checked`, `checked_decisions`, a
+  field of its own so a reader of the earlier review still reads every keep
+  and drop) and adds no text to the report. `scripts/replay/checked_techniques.py` rebuilds the
   checked list from a stored run's files. The answer is kept on the judge's bundle
   (`x_malspark_technique_review`, never exported) and the matrix publishes per
   it: a dropped technique is not published and reads "the judge dropped it
