@@ -1660,6 +1660,11 @@ def _with_standard_retry(
             from malspark.llm.agent_ceiling import carry_agent_ceiling
 
             carry_agent_ceiling(model_obj, replacement)
+            # And what it sends, read off the rebuilt model: the extras it
+            # was rebuilt without are no longer sent.
+            from malspark.llm.sent_request import carry_sent_request
+
+            carry_sent_request(model_obj, replacement)
             healed.append(replacement)
         _close_sync_client(model_obj)
         _announce_healed(model_obj, replacement)
