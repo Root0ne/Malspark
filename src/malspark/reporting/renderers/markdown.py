@@ -54,6 +54,7 @@ from malspark.analysis.efficiency import efficiency_lines
 from malspark.analysis.isolation import INTRO_SENTENCE as ISOLATION_INTRO
 from malspark.analysis.isolation import isolation_lines
 from malspark.analysis.run_summary import (
+    NEGOTIATION_CONFIDENCE_LABEL,
     NOT_APPLICABLE,
     NOT_APPLICABLE_PHRASE,
     NOT_APPLICABLE_SENTENCE,
@@ -2378,7 +2379,7 @@ class MarkdownRenderer:
                 lines.append(_item(f"Termination reason: {_code_span(str(reason))}"))
             if final_conf is not None:
                 try:
-                    lines.append(_item(f"Final confidence: {float(final_conf):.3f}"))
+                    lines.append(_item(f"{NEGOTIATION_CONFIDENCE_LABEL}: {float(final_conf):.3f}"))
                 except (TypeError, ValueError):
                     pass
             for sentence in negotiation.get("revision_replacements") or []:

@@ -1,0 +1,3 @@
+### Changed
+
+- **The two confidence figures a run carries are named apart (T-662).** The run summary appendix of the report, the run-summary table and the CLI printed the debate's last figure as "Final confidence" beside the verdict's confidence, though it is the mean claim confidence of the analysts in the last round and not the judge's confidence in the verdict. All three now print it as "Mean analyst claim confidence (last round)" from one shared label, the run summary's field comment says what the series holds, and the report documentation states what each figure measures. No field, event, API or stored file changed.

@@ -62,6 +62,11 @@ MEDIATION_FAILED = "mediation_failed"
 NOT_APPLICABLE_PHRASE = "not applicable; no agreement was measured"
 NOT_APPLICABLE_SENTENCE = f"Consensus: {NOT_APPLICABLE_PHRASE}."
 
+# What every surface calls ``negotiation.final_confidence`` when it prints it:
+# the analysts' mean claim confidence in the last debate round, which is not
+# the judge's confidence in the verdict (``overall_confidence``).
+NEGOTIATION_CONFIDENCE_LABEL = "Mean analyst claim confidence (last round)"
+
 # What every surface heads the operator's choices with: what the configuration
 # left out, apart from what limited the run (``pipeline.operator_choice``).
 OPERATOR_CHOICES_HEADING = "Not configured or withheld by choice"
@@ -103,8 +108,10 @@ class NegotiationMetrics:
                              from the router's own rules
                              (``pipeline.routing.debate_route``).
         sycophancy_events:   Number of rounds where sycophancy was detected.
-        confidence_history:  Per-round mediator confidence scores.
-        final_confidence:    Last recorded confidence value; ``None`` when
+        confidence_history:  Per-round mean claim confidence of the analysts
+                             that produced claims (the mediator's own score
+                             only when none did).
+        final_confidence:    The last of those round values; ``None`` when
                              consensus did not apply, because fewer than two
                              analysts produced claims or the debate did not
                              run, and when no round measured one — a
@@ -1456,7 +1463,7 @@ class RunSummary:
         ]
         if n.consensus_applicable and n.final_confidence is not None:
             lines += [
-                f"| Final confidence | {n.final_confidence:.3f} |",
+                f"| {NEGOTIATION_CONFIDENCE_LABEL} | {n.final_confidence:.3f} |",
                 f"| Converged early | {'yes' if n.converged_early else 'no'} |",
             ]
         lines.append("")

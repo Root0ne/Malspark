@@ -170,6 +170,10 @@ offers the printed rules of each kind the report prints a rule of, and every
 draft of a kind where one is not printed. Suricata SIDs are numbered per sample from its SHA-256; renumber them
 before loading drafts of several samples into one ruleset.
 
+## Two confidence figures
+
+A run carries two figures that are not the same measure. The verdict's confidence (`overall_confidence`, and `confidence` on the completed event) is how sure the judge is of the verdict; the run summary's negotiation block carries `final_confidence`, printed as "Mean analyst claim confidence (last round)" in the run summary appendix, the run-summary table and the CLI, which is how confident the analysts were in their own claims in the last debate round and says nothing about the verdict.
+
 ## What left this machine
 
 Every report a run finishes carries a **Disclosure** block at the end of its
