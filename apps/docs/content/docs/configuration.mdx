@@ -2848,7 +2848,7 @@ It is a settings import document (`malspark-settings/1`) holding
 setting holding a whole map, and an import replaces what it names, so merge the
 document into your own export first. The document's keys are all `all_tools_*`
 (the team is `all_tools`), so it adds entries and replaces none of yours. `$TOKEN` is
-a signed-in session's access token, not an API key:
+an administrator's session access token, not an API key:
 
 ```bash
 curl -s http://localhost:8000/api/v1/settings/export \

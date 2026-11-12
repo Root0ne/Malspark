@@ -23,9 +23,9 @@ export const run = {
   beyondKey: 37,
   beyondKeyStrict: 36,
   /* The facts beyond the key against the full text and the figures of the eight
-   * analyses; the first two counts add up to beyondKey, the next two split the
-   * ones no text prints, and noFigure counts those that no figure shows either. */
-  audit: { partly: 25, none: 12, noneFamily: 6, noneFile: 6, noFigure: 9 },
+   * analyses; the first two counts add up to beyondKey, and the last two split
+   * the ones of which no reading found any part. */
+  audit: { partly: 28, none: 9, noneFamily: 5, noneFile: 4 },
   calls: 129,
   seconds: 5028,
   usd: '8.24',
@@ -202,7 +202,7 @@ export const keyItems = [
 export const beyondFacts = [
   ['A', '16', '0x2200 runs each discovery line through 0x1030: CreatePipe, CreateProcessW, PeekNamedPipe / ReadFile, TerminateProcess; STARTUPINFO flags 0x101, hidden window', 'ev_0067, ev_0077, ev_0025', '§5.4, §10 T1059.003', 'behaviour detection (T1059.003)', 'in part'],
   ['A', '23', '0x7fa8 writes each MAC byte with `%02x`', 'ev_0082, ev_0025', '§4 step 10, §5.4', 'network signature', 'in part'],
-  ['A', '27', 'Sandbox: two `rundll32.exe <sample>.dll,#1` processes and an unattributed svchost', 'ev_0012', '§4 step 1', 'process-tree detection', 'none, this file'],
+  ['A', '27', 'Sandbox: two `rundll32.exe <sample>.dll,#1` processes and an unattributed svchost', 'ev_0012', '§4 step 1', 'process-tree detection', 'in part'],
   ['A', '34', 'First beacon after 1800 × 100 ms ≈ 180 s', 'ev_0067', '§4 step 9, §6.1', 'sandbox timeout, hunting window', 'none, family'],
   ['A', '48', '0x6e04 gets its Local AppData folder by CSIDL 0x1c, through 0x7e90', 'ev_0069', '§6.3 0xc', 'host artefact location', 'in part'],
   ['A', 'N14', 'The task action depends on DAT_10488: only when it is nonzero is the program `rundll32.exe`; when it is zero, the program is formatted from 0xf9a0 and the arguments are the literal at 0xf9b0', 'ev_0086', '§5.3', 'persistence hunting', 'in part'],
@@ -230,13 +230,13 @@ export const beyondFacts = [
   ['B', 'N12', 'The logon trigger is created as type 9', 'ev_0069', '§5.3', '', 'in part'],
   ['B', 'N1', 'For an HTTPS URL 0x5030 sets InternetSetOptionA option 0x1f to 0x4380 (the request flags 0x4883000 are not stated)', 'ev_0069', '§6.1', '', 'none, family'],
   ['B', 'N17', 'InternetConnectA’s arguments, from disassembly: InternetOpenW at 0x4cb0 is called with the agent and four zeros; InternetConnectA at 0x4cfa (slot 0x10e08) with port, NULL user / password, service 3 (HTTP), flags 0 and context 1', 'ev_0097', 'appendix (T1071.001)', '', 'in part'],
-  ['B', 'N20', 'The command path is a single chain: 0x3cf4’s only caller is 0x541c, and 0x541c’s only caller is 0x5750', 'ev_0078, ev_0083', 'appendix (T1071.001 / T1105)', '', 'none, family'],
+  ['B', 'N20', 'The command path is a single chain: 0x3cf4’s only caller is 0x541c, and 0x541c’s only caller is 0x5750', 'ev_0078, ev_0083', 'appendix (T1071.001 / T1105)', '', 'in part'],
   ['C', '1', 'Compile TimeDateStamp 2024-03-25 15:54:25 UTC', 'ev_0004', '§3', '', 'none, this file'],
   ['C', '3', 'Section entropies (.text 5.42, .rdata 4.68, .data 6.48, .pdata 3.87, .reloc 0.08); no packer', 'ev_0004, ev_0051', '§3, §5.1', '', 'in part'],
   ['C', '4', 'The five static imports by name: KERNEL32 PeekNamedPipe, GetLastError, CreateMutexW; USER32 MessageBeep, MessageBoxA', 'ev_0004', '§3, §5.2', '', 'in part'],
   ['C', '26', 'VirusTotal 56 of 75, analysis 2026-10-27', 'ev_0018', '§3', '', 'none, this file'],
   ['C', '51', '101 encoded texts in `.data`', 'ev_0021', '§5.1, §5.2', '', 'none, this file'],
-  ['C', 'N10', '0xad34 wraps NtAllocateVirtualMemory (31 callers); 0x7b40 wraps NtFreeVirtualMemory (41 callers)', 'ev_0025', '§5.2', '', 'none, this file'],
+  ['C', 'N10', '0xad34 wraps NtAllocateVirtualMemory (31 callers); 0x7b40 wraps NtFreeVirtualMemory (41 callers)', 'ev_0025', '§5.2', '', 'in part'],
 ];
 /* The one fact the strict reading leaves out. */
 export const outOfStrict = '10';
@@ -358,7 +358,7 @@ the family:
 Of the {run.items} facts, {origins.core + origins.sharpened} were fixed before
 the run from the first three analyses, Bitsight, Elastic Security Labs and
 Proofpoint. The other {origins.added + origins.completion} were drawn after the run from the
-eight analyses: their full text, and a screenshot where the text pointed to one.
+eight analyses: their full text and their figures.
 Readers who had not seen the run’s report drew {origins.added} from the five further analyses, and
 {origins.completion - run.checkItems.length} in a completion pass that read all eight end to end and listed every checkable fact
 that no item held. The same readers added specifics from the analyses to
@@ -586,12 +586,10 @@ describe only by behaviour, and named them by address. A sample:
 The {run.beyondKey} facts were also read against the full text of the eight
 analyses and their figures. None of them is printed in full in the text or in a
 figure. {run.audit.partly} are
-printed in part: the analysis describes the behaviour, and the run adds the
-specific value, routine or step. {run.audit.none} are printed in the text of
-none of the eight, even in part:
-{run.audit.noneFamily} of those hold for the family, and {run.audit.noneFile}
-are values of this one file. {run.audit.noFigure} of the {run.audit.none} appear in
-no figure either. The last column of the full list below gives the
+printed in part: an analysis describes the behaviour or shows part of it, and the run adds the
+specific value, routine or step. {run.audit.none} appear in no part in the text or in a
+figure of any of the eight: {run.audit.noneFamily} of those hold for the family, and
+{run.audit.noneFile} are values of this one file. The last column of the full list below gives the
 reading for each fact.
 
 #### Every fact beyond the key, by use

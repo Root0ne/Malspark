@@ -162,17 +162,11 @@ _UNPRINTED = {
     ("B", "N9"): "none, family",
     ("B", "#39"): "none, family",
     ("B", "N1"): "none, family",
-    ("B", "N20"): "none, family",
-    ("A", "27"): "none, this file",
     ("B", "N8"): "none, this file",
     ("C", "1"): "none, this file",
     ("C", "26"): "none, this file",
     ("C", "51"): "none, this file",
-    ("C", "N10"): "none, this file",
 }
-# Of those, the ones a figure of some analysis shows in part or a reader of a figure
-# caption saw in part; the other nine appear in no text and no figure at all.
-_IN_A_FIGURE = {("A", "27"), ("B", "N20"), ("C", "N10")}
 
 
 _NUMBER_WORDS = {"one": 1, "two": 2, "three": 3, "four": 4, "five": 5, "six": 6, "seven": 7}
@@ -301,15 +295,10 @@ def problems(page: str, readme: str, docs_home: str, gate: str, reference: str) 
     if len({(row[0], row[1]) for row in beyond}) != len(beyond):
         found.append("two beyondFacts rows share a class and a number")
     audit = _run_audit(page)
-    if (
-        sum(n for k, n in audit.items() if k not in ("noneFamily", "noneFile", "noFigure"))
-        != run["beyondKey"]
-    ):
+    if sum(n for k, n in audit.items() if k not in ("noneFamily", "noneFile")) != run["beyondKey"]:
         found.append("the audit counts do not add up to run.beyondKey")
     if audit["noneFamily"] + audit["noneFile"] != audit["none"]:
         found.append("the unprinted facts do not split into family and file")
-    if audit["noFigure"] != len(_UNPRINTED) - len(_IN_A_FIGURE):
-        found.append("run.audit.noFigure is not the unprinted facts less those a figure shows")
     eight = {name: 0 for name in _EIGHT.values()}
     for row in beyond:
         if len(row) != 7 or row[6] not in _EIGHT:
@@ -428,14 +417,13 @@ def test_the_published_benchmark_numbers_agree_with_one_another() -> None:
         ("page", "  partlyBody: 23,", "  partlyBody: 22,"),
         ("page", "  beyondKey: 37,", "  beyondKey: 38,"),
         ("page", "  beyondKeyStrict: 36,", "  beyondKeyStrict: 37,"),
-        ("page", "  audit: { partly: 25,", "  audit: { partly: 26,"),
-        ("page", "noneFile: 6, noFigure: 9 }", "noneFile: 6, noFigure: 10 }"),
+        ("page", "  audit: { partly: 28,", "  audit: { partly: 29,"),
         (
             "page",
             "    ['K5', 'Persistence', 5, 4, 1, 0, 0, 0],",
             "    ['K5', 'Persistence', 4, 4, 1, 0, 0, 0],",
         ),
-        ("page", "none: 12, noneFamily: 6,", "none: 12, noneFamily: 7,"),
+        ("page", "none: 9, noneFamily: 5,", "none: 9, noneFamily: 6,"),
         (
             "page",
             "    ['K6', 'Command and control', 10, 4, 6, 0, 0, 0],",
@@ -451,6 +439,12 @@ def test_the_published_benchmark_numbers_agree_with_one_another() -> None:
         ("page", "    'K1: the family’s other names", "    // 'K1: the family’s other names"),
         ("page", "    'K9: update_data.dat is named", "    // 'K9: update_data.dat is named"),
         ("page", "'none, family'],", "'in part'],"),
+        # A fact of the none class moved back to the part class, the counts unchanged.
+        (
+            "page",
+            "'ev_0018', '§3', '', 'none, this file'],",
+            "'ev_0018', '§3', '', 'in part'],",
+        ),
         ("readme", "**84 of 89** (56 found, 28 partly)", "**83 of 89** (55 found, 28 partly)"),
         ("readme", "| **37** |", "| **38** |"),
         ("docs", "recovered 84 of 89", "recovered 84 of 88"),
@@ -522,12 +516,14 @@ def test_the_published_benchmark_numbers_agree_with_one_another() -> None:
         # Two readings against the eight analyses swapped; the counts stay equal.
         (
             "page",
-            "'process-tree detection', 'none, this file'],\n"
-            "  ['A', '34', 'First beacon after 1800 × 100 ms ≈ 180 s', 'ev_0067', "
-            "'§4 step 9, §6.1', 'sandbox timeout, hunting window', 'none, family'],",
-            "'process-tree detection', 'none, family'],\n"
-            "  ['A', '34', 'First beacon after 1800 × 100 ms ≈ 180 s', 'ev_0067', "
-            "'§4 step 9, §6.1', 'sandbox timeout, hunting window', 'none, this file'],",
+            "'ev_0051', '§5.1', '', 'none, this file'],\n"
+            "  ['B', 'N9', 'The writer 0x7acc calls the NtCreateFile wrapper 0x77b0 "
+            "(disposition 3) and the NtWriteFile wrapper 0x7a54, which is decompiled', "
+            "'ev_0068, ev_0081', '§5.5', '', 'none, family'],",
+            "'ev_0051', '§5.1', '', 'none, family'],\n"
+            "  ['B', 'N9', 'The writer 0x7acc calls the NtCreateFile wrapper 0x77b0 "
+            "(disposition 3) and the NtWriteFile wrapper 0x7a54, which is decompiled', "
+            "'ev_0068, ev_0081', '§5.5', '', 'none, this file'],",
         ),
         # A missed item replaced by a second copy of another.
         (
