@@ -14628,12 +14628,13 @@ def exit_branches_left_out(violations: Sequence[Violation]) -> list[Violation]:
     return out
 
 
-# What a finding of the describe check says when it opened no turn: it stood
-# alone, and the judge's technique question is where the technique is asked.
+# Why the describe findings of an answer opened no turn: said in the log beside
+# the rows, never written into a row, which stays the validator's own
+# (:func:`describe_without_a_turn`); the row says it was not asked.
 DESCRIBE_NOT_ASKED = (
-    "Not asked: this check opens no validation turn of its own and is put to the analyst "
+    "not asked: this check opens no validation turn of its own and is put to the analyst "
     "only beside another finding; the judge's technique question asks about the technique "
-    "when no claim naming it describes it."
+    "when no claim naming it describes it"
 )
 
 
@@ -14664,15 +14665,15 @@ def describe_stands_alone(violations: Sequence[Violation]) -> bool:
 def describe_without_a_turn(violations: Sequence[Violation]) -> list[Violation]:
     """``violations`` as an answer whose describe findings stood alone records them.
 
-    Each describe finding is recorded with :data:`DESCRIBE_NOT_ASKED` after
-    its message and as not asked (``asked=False``); every other finding is
-    recorded as it is, and a question that is no finding is left out, as
-    :func:`exit_branches_left_out` leaves it.
+    Each describe finding is the validator's own row, changed only by being
+    marked not asked (``asked=False``): its message, wrapped where the check
+    wrote it, is left as it is. Every other finding is recorded as it is, and
+    a question that is no finding is left out, as
+    :func:`exit_branches_left_out` leaves it. Why no turn was asked is
+    :data:`DESCRIBE_NOT_ASKED`, which the caller logs.
     """
     return [
-        replace(v, message=f"{v.message} {DESCRIBE_NOT_ASKED}", sentence="", asked=False)
-        if v.code == CLAIM_DOES_NOT_DESCRIBE_CODE
-        else v
+        replace(v, asked=False) if v.code == CLAIM_DOES_NOT_DESCRIBE_CODE else v
         for v in exit_branches_left_out(violations)
     ]
 

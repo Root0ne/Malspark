@@ -152,6 +152,7 @@ from malspark.pipeline.validation import (
     CLAIM_DOES_NOT_DESCRIBE_CODE,
     CLAIMS_UNDER_DISPUTES_CODE,
     DECOMPILED_NOT_DESCRIBED_CODE,
+    DESCRIBE_NOT_ASKED,
     LIBRARY_ONLY_CLAIMS_CODE,
     RETRY_DROP_KEPT,
     RETRY_DROP_NOT_ANSWERED,
@@ -10602,11 +10603,14 @@ class BaseAnalyst(BudgetMeter, ABC):
                 stage=str(getattr(self, "pipeline_stage", "") or "analysis"),
                 violations=recorded,
             )
+            # The rows are the validator's own, marked not asked; why is said in
+            # the log beside them, never written into a row.
+            alone_count = sum(1 for v in recorded if v.code == CLAIM_DOES_NOT_DESCRIBE_CODE)
             self.logger.info(
-                "Validation: %d describe finding(s) for '%s' stood alone; no turn is opened, "
-                "and the judge's technique question carries them.",
-                sum(1 for v in recorded if v.code == CLAIM_DOES_NOT_DESCRIBE_CODE),
+                "Validation: %d describe finding(s) for '%s' stood alone; %s.",
+                alone_count,
                 self.name,
+                DESCRIBE_NOT_ASKED,
             )
             return _settled(isr)
 

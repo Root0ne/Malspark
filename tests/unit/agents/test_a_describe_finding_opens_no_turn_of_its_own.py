@@ -128,8 +128,8 @@ class TestTheRule:
 
         assert [v.code for v in recorded] == [CLAIM_DOES_NOT_DESCRIBE_CODE, CHECK_FAILED_CODE]
         first = recorded[0]
-        assert first.message == f"{described.message} {DESCRIBE_NOT_ASKED}"
-        assert first.sentence == first.message
+        # The validator's own row, marked not asked, its words untouched.
+        assert (first.message, first.sentence) == (described.message, described.sentence)
         assert (first.asked, first.path, first.subject) == (False, described.path, "T1003")
         assert first.to_dict()["asked"] == "false"
         assert recorded[1] is failed
@@ -203,7 +203,7 @@ class TestTheValidationTurn:
         (found,) = _recorded(analyst)
         assert found.asked is False
         assert found.subject == UNDESCRIBED
-        assert found.message.endswith(DESCRIBE_NOT_ASKED)
+        assert DESCRIBE_NOT_ASKED not in found.message
         assert "carries TECHNIQUE T1003 OS Credential Dumping" in found.message
         # Published as a finding nobody was shown, never as asked.
         assert published == [("survived", CLAIM_DOES_NOT_DESCRIBE_CODE)]
@@ -303,7 +303,7 @@ class TestTheValidationTurn:
         _check(analyst, DESCRIBE_ONLY, time_left=1.0)
 
         (found,) = _recorded(analyst)
-        assert found.message.endswith(DESCRIBE_NOT_ASKED)
+        assert DESCRIBE_NOT_ASKED not in found.message
         assert VALIDATION_TURN_NOT_RUN_CODE not in (analyst.validation_not_run or [])
 
     def test_with_no_time_left_beside_another_finding_the_turn_is_not_run_as_before(
@@ -349,7 +349,7 @@ class TestAFindingTakenOutBeforeTheQuestionIsSent:
         assert analyst.seen_turns == []
         assert analyst.validation_retries == 0
         (found,) = _recorded(analyst)
-        assert found.asked is False and found.message.endswith(DESCRIBE_NOT_ASKED)
+        assert found.asked is False and DESCRIBE_NOT_ASKED not in found.message
         assert published == [("survived", CLAIM_DOES_NOT_DESCRIBE_CODE)]
         # The callees question is stated as not put, as on dev, and recorded nowhere else.
         assert analyst._callees_stated_job == "job"
@@ -378,7 +378,7 @@ class TestAFindingTakenOutBeforeTheQuestionIsSent:
         assert analyst.seen_turns == []
         assert analyst.validation_retries == 0
         (found,) = _recorded(analyst)
-        assert found.asked is False and found.message.endswith(DESCRIBE_NOT_ASKED)
+        assert found.asked is False and DESCRIBE_NOT_ASKED not in found.message
         assert published == [("survived", CLAIM_DOES_NOT_DESCRIBE_CODE)]
         # The cut question is recorded not asked, with why, as on dev.
         (cut,) = _recorded(analyst, ANALYST_CUT_CODE)
