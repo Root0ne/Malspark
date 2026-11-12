@@ -1021,7 +1021,9 @@ _ASSIGNMENT = re.compile(r"^(?P<key>[A-Za-z_][A-Za-z0-9_]*)=")
 
 def published_ports(root: Path) -> dict[str, int]:
     """Each ``${NAME_PORT:-N}`` the compose file publishes, with its default."""
-    text = _read_text(root / "docker" / "docker-compose.yml", required=True) or ""
+    text = _read_text(root / "docker" / "docker-compose.yml", required=True)
+    if text is None:
+        return {}
     return {m["var"]: int(m["port"]) for m in _PUBLISHED.finditer(text)}
 
 
@@ -1052,7 +1054,9 @@ def bind_address(environ: Mapping[str, str], docker_env: Mapping[str, str]) -> s
     a port taken by anything listening on those addresses is seen.
     """
     given = environ["BIND_ADDRESS"] if "BIND_ADDRESS" in environ else docker_env.get("BIND_ADDRESS")
-    address = (given or "").strip().strip("[]").strip()
+    if given is None:
+        return LOOPBACK
+    address = given.strip().strip("[]").strip()
     if not address or address in ("0.0.0.0", "::"):
         return LOOPBACK
     return address
