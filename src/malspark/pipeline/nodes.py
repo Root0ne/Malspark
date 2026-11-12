@@ -129,6 +129,7 @@ from malspark.pipeline.events import (
 )
 from malspark.pipeline.evidence_summary import collect as collect_technique_sources
 from malspark.pipeline.evidence_summary import summarise, technique_evidence
+from malspark.pipeline.feedback_mode import RECORD_ONLY_CHOICE, feeds_back
 from malspark.pipeline.limit_rulings import (
     LimitRulings,
     ends_at_the_limit,
@@ -7010,6 +7011,8 @@ def make_judge_node(
         # unset settings are the ones the servers' manifests mark by code.
         _operator_choices: list[str] = []
         _not_configured: list[str] = []
+        # ``validation.feedback`` set to ``record_only`` is one of them too.
+        _mode_choices: list[str] = [] if feeds_back() else [RECORD_ONLY_CHOICE]
         try:
             for _server_reason in container.server_degradation_reasons():
                 if str(_server_reason) not in _degradation_reasons:
@@ -7463,6 +7466,9 @@ def make_judge_node(
                 notes=[_ungrounded_note] if _ungrounded_note else (),
                 choices=_operator_choices,
             )
+            # Added after the judge's note, which reads the same in both modes;
+            # from here it reaches the summary, the state and the report.
+            _operator_choices = [*_operator_choices, *_mode_choices]
 
             verdict = await judge.give_verdict(
                 reports=reports,
@@ -7970,7 +7976,7 @@ def make_judge_node(
             # The reasons may not have been split yet: the judge can fail
             # before the body assembles them.
             _failed_reasons, _moved = split_operator_choices(_degradation_reasons, _not_configured)
-            _failed_choices = list(dict.fromkeys([*_operator_choices, *_moved]))
+            _failed_choices = list(dict.fromkeys([*_operator_choices, *_moved, *_mode_choices]))
             if _judge_failed not in _failed_reasons:
                 _failed_reasons.append(_judge_failed)
             _failed_record = _verdict_record(

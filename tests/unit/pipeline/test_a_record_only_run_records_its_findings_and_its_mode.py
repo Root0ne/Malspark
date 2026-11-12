@@ -22,6 +22,7 @@ import pytest
 from langchain_core.messages import AIMessage
 
 from malspark.agents.base_agent import BaseAnalyst
+from malspark.agents.judge_agent import JudgeAgent as JudgeAgentClass
 from malspark.core.token_ledger import TokenLedger
 from malspark.core.truncation_ledger import TruncationLedger
 from malspark.pipeline.feedback_mode import RECORD_ONLY_CHOICE
@@ -127,7 +128,8 @@ def _analysis() -> tuple[_Analyst, dict[str, Any]]:
     }
 
 
-def _run(mode: str, monkeypatch: pytest.MonkeyPatch) -> tuple[dict[str, Any], int, int]:
+def _node(mode: str, monkeypatch: pytest.MonkeyPatch) -> tuple[dict[str, Any], Any, int, _Llm]:
+    """The judge node's update, the judge, the analyst's calls and the judge's model."""
     built = _settings(mode)
     monkeypatch.setattr("malspark.core.config.get_settings", lambda: built)
     analyst, state = _analysis()
@@ -136,7 +138,12 @@ def _run(mode: str, monkeypatch: pytest.MonkeyPatch) -> tuple[dict[str, Any], in
     llm = _Llm(json.dumps(FIRST), json.dumps(FIXED))
     judge.llm = llm  # type: ignore[assignment]
     update = asyncio.run(make_judge_node(container)(state))
-    return update["run_summary"], analyst.calls, llm.calls
+    return update, judge, analyst.calls, llm
+
+
+def _run(mode: str, monkeypatch: pytest.MonkeyPatch) -> tuple[dict[str, Any], int, int]:
+    update, _judge, analyst_calls, llm = _node(mode, monkeypatch)
+    return update["run_summary"], analyst_calls, llm.calls
 
 
 def test_a_record_only_run_asks_nothing_and_says_so(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -164,3 +171,37 @@ def test_a_default_run_carries_no_mode(monkeypatch: pytest.MonkeyPatch) -> None:
     assert "feedback" not in summary["validation"]
     assert RECORD_ONLY_CHOICE not in summary.get("operator_choices", [])
     assert "record_only" not in json.dumps(summary, default=str)
+
+
+def test_the_record_only_choice_reaches_the_state_and_not_the_judge(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    notes: list[str] = []
+    real = JudgeAgentClass.give_verdict
+
+    async def _noted(self: Any, *args: Any, **kwargs: Any) -> Any:
+        notes.append(str(kwargs.get("degradation_note") or ""))
+        return await real(self, *args, **kwargs)
+
+    monkeypatch.setattr(JudgeAgentClass, "give_verdict", _noted)
+    update, _judge, _calls, _llm = _node("record_only", monkeypatch)
+
+    # The state channel the report node reads its operator choices from.
+    assert update["operator_choices"].count(RECORD_ONLY_CHOICE) == 1
+    assert update["run_summary"]["operator_choices"].count(RECORD_ONLY_CHOICE) == 1
+    # The judge's prompt is the same in both modes.
+    assert notes and all("record_only" not in note for note in notes)
+
+
+def test_a_record_only_run_whose_judge_failed_names_its_mode(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    async def _fails(self: Any, *args: Any, **kwargs: Any) -> Any:
+        raise RuntimeError("no verdict")
+
+    monkeypatch.setattr(JudgeAgentClass, "give_verdict", _fails)
+    update, _judge, _calls, _llm = _node("record_only", monkeypatch)
+
+    assert update["final_decision"] == "Suspicious"
+    assert RECORD_ONLY_CHOICE in update["operator_choices"]
+    assert RECORD_ONLY_CHOICE in update["run_summary"]["operator_choices"]

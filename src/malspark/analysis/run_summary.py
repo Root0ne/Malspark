@@ -2694,11 +2694,6 @@ class RunSummaryBuilder:
             },
             feedback=str(metrics.get("feedback") or ""),
         )
-        if self._validation.feedback:
-            # No finding was put to an agent: the operator's choice, no loss.
-            from malspark.pipeline.feedback_mode import RECORD_ONLY_CHOICE
-
-            self.set_operator_choices([RECORD_ONLY_CHOICE])
         return self
 
     def set_corroboration(self, corroboration: dict[str, Any] | None) -> RunSummaryBuilder:
