@@ -125,11 +125,13 @@ platform then checks each value in code, and exports it as source `analysis`
   longer value, and not only in an entry the row does not cite. A name, a
   folder or a file name counts only where its two ends are delimiters that
   pair: a quote, the start or end of the text, a line break and, for a folder or
-  a file name, a path separator take each other; an opening `(` or `[`, or a `=`
-  or `:` written right before the value, takes only a quote or a closing `)`,
-  `]`, `,` or `;` (`CreateMutexW(abc123)`, `name=abc123,`). Never a word of
-  running text, never a key (`{"name": 1}`, `name: value`), never a path
-  component of a URL. A mutex or a named pipe stated bare also counts under its
+  a file name, a path separator take each other; an opening `(` or `[` written
+  right after a name (a call), or a `=` or `:` written right before the value,
+  takes only a quote or a closing `)`, `]`, `,` or `;` (`CreateMutexW(abc123)`,
+  `name=abc123,`); after a quote, such a closing mark counts only where a quote,
+  a closing bracket, a line break or the end of the text follows it. Never a
+  word of running text or of a bracket in it (`the loader (explorer) then`),
+  never a key (`{"name": 1}`, `name: value`), never a path component of a URL. A mutex or a named pipe stated bare also counts under its
   own namespace (`Global\`, `\\.\pipe\`), and a stream after its file's name
   (`a.exe:stream`);
 - it holds no format placeholder (`%x`, `%s`, `{0}`): a template is no value a
