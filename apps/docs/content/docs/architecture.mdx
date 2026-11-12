@@ -2115,7 +2115,10 @@ decide.
    turn of its own (`validation.describe_stands_alone`): beside a finding that
    opens the turn it is asked there, with the technique's card, and standing
    alone (beside nothing but a check that could not run, or the exit branches
-   that joined it) no turn is asked. The finding is then recorded as not asked
+   that joined it) no turn is asked. The rule is asked again wherever a
+   finding that opened the turn is taken out before the question is sent (the
+   unread-functions question on a turn without tools, a whole-answer question
+   that does not fit the window). The finding is then recorded as not asked
    (`"asked": "false"`, its message saying why), published on the live
    conversation as a finding nobody was shown and counted as no feedback; the
    claims stand as written, and the judge's technique question below asks
