@@ -79,7 +79,7 @@ class TestTheEarlierResultAnswersTheCall:
         answer = _wrapped(guard, calls).invoke({"path": "0x3c7c"})
 
         assert calls == []
-        assert answer == earlier_chunk_answer("decompile_function", "ev_0003", RESULT)
+        assert answer == earlier_chunk_answer("decompile_function", "ev_0003", RESULT, fresh=True)
         assert answer.startswith(f"[ev_0003]\n{fenced('ev_0003', RESULT)}")
         assert guard.served_repeats == 0
 
@@ -91,17 +91,19 @@ class TestTheEarlierResultAnswersTheCall:
         assert "[ev_0003]" in tail
         assert "not run again" in tail
 
-    def test_asking_again_in_the_same_chunk_is_a_repeat(self) -> None:
+    def test_asking_again_in_the_same_chunk_runs_it_fresh_and_then_is_a_repeat(self) -> None:
         guard = seeded_repeat_guard([_entry()])
         calls: list[str] = []
         tool = _wrapped(guard, calls)
 
         tool.invoke({"path": "0x3c7c"})
+        fresh = tool.invoke({"path": "0x3c7c"})
         again = tool.invoke({"path": "0x3c7c"})
 
-        assert calls == []
-        assert "the result is in [ev_0003]" in again
-        assert guard.served_repeats == 1
+        assert calls == ["0x3c7c"], "the call after the served answer ran"
+        assert "fresh answer for 0x3c7c" in fresh
+        assert "Do not call it again" in again and "fresh answer" not in again
+        assert guard.served_repeats == 2
 
     def test_several_earlier_calls_asked_once_each_leave_the_loop_running(self) -> None:
         guard = seeded_repeat_guard(

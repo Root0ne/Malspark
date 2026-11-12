@@ -438,14 +438,17 @@ class TestTheLoopsGuardCountsAsBefore:
 
         tool.invoke({"domain": "example.test"})
         served = tool.invoke({"domain": "example.test"})
+        fresh = tool.invoke({"domain": "example.test"})
         refused = tool.invoke({"domain": "example.test"})
 
-        first = recorder.entries[0]
-        assert calls == ["domain_report"]
+        first, _served, ran, _refused = recorder.entries
+        assert calls == ["domain_report", "domain_report"], "the served answer's fresh run ran"
         assert REPORT in served, "the served repeat still reads the answer"
-        assert REPORT not in refused, "the third identical call is refused as before"
-        assert guard.served_repeats == 2
-        assert [e.repeated_of for e in recorder.entries] == [None, first.id, first.id]
+        assert REPORT in fresh
+        assert REPORT not in refused, "the call after the fresh run is refused as before"
+        assert guard.served_repeats == 3
+        assert guard.refused_repeats == 1
+        assert [e.repeated_of for e in recorder.entries] == [None, first.id, None, ran.id]
 
 
 def _poll(answers: list[str], calls: list) -> Any:

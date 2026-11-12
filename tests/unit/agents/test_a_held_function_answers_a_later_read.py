@@ -23,6 +23,7 @@ from pydantic import BaseModel
 
 from malspark.agents.delegation import TEAM_SERVER
 from malspark.agents.evidence_recorder import (
+    FRESH_RUN_SENTENCE,
     EvidenceRecorder,
     RepeatGuard,
     aggregate_members,
@@ -209,12 +210,13 @@ class TestABatchMember:
         second = tools["decompile_function"].invoke({"address": "0x1360bc0ae78"})
         third = tools["decompile_function"].invoke({"address": "0x1360bc0ae78"})
 
-        batch = recorder.entries[0]
-        assert _ran(calls) == ["batch_decompile"]
+        batch, _served, fresh, _refused = recorder.entries
+        assert _ran(calls) == ["batch_decompile", "decompile_function"], "asked again, it ran"
         assert "second call" not in first
-        assert FIRST in second and "A third will not be run" in second
-        assert FIRST not in third and f"[{batch.id}]" in third
-        assert [e.repeated_of for e in recorder.entries[1:]] == [batch.id] * 3
+        assert FIRST in first and FRESH_RUN_SENTENCE in first
+        assert second.startswith(f"[{fresh.id}]\n") and FIRST in second
+        assert FIRST not in third and f"[{fresh.id}]" in third
+        assert [e.repeated_of for e in recorder.entries[1:]] == [batch.id, None, fresh.id]
 
 
 class TestAnIdenticalWholeRead:
@@ -228,7 +230,8 @@ class TestAnIdenticalWholeRead:
         first, second = recorder.entries
         assert second.repeated_of == first.id
         assert answer.startswith(f"[{first.id}]\n") and FIRST in answer
-        assert "answered from the ledger" in answer and "A third will not be run" in answer
+        assert "answered from the ledger" in answer and FRESH_RUN_SENTENCE in answer
+        assert "After that fresh run it will not be run" in answer
 
     def test_an_empty_answer_runs_again(self) -> None:
         # local6: the first decompile answered nothing, the identical second
