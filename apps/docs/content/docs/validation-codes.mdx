@@ -46,7 +46,7 @@ not prove the test makes the platform raise it. The tests are not listed here:
 one nothing raises and stored runs carry; the comment on that
 name says what reads it.
 
-**127 codes in 12 families:** [agreement](#agreement) 18 · [attck](#attck) 6 · [attribution](#attribution) 1 · [composer](#composer) 4 · [isr](#isr) 15 · [narrative](#narrative) 5 · [question](#question) 9 · [report](#report) 19 · [stix](#stix) 32 · [tool](#tool) 1 · [validation](#validation) 1 · [verdict](#verdict) 16. 14 code positions the register could not resolve are [listed at the end](#unresolved-code-positions).
+**129 codes in 12 families:** [agreement](#agreement) 18 · [attck](#attck) 8 · [attribution](#attribution) 1 · [composer](#composer) 4 · [isr](#isr) 15 · [narrative](#narrative) 5 · [question](#question) 9 · [report](#report) 19 · [stix](#stix) 32 · [tool](#tool) 1 · [validation](#validation) 1 · [verdict](#verdict) 16. 14 code positions the register could not resolve are [listed at the end](#unresolved-code-positions).
 
 ## agreement
 
@@ -212,12 +212,28 @@ No comment names its meaning, and `malspark.pipeline.validation:claim_does_not_d
 - **Constant** `malspark.pipeline.validation:CLAIM_DOES_NOT_DESCRIBE_CODE`
 - **Docs** [Architecture](/docs/architecture/), [Validation and feedback](/docs/concepts/validation/)
 
+### `attck.map_rests_on_its_lookup`
+
+A map that cites only entries in which the technique's id was written in a call's arguments: an agent looking the technique up, whose answer says what the technique is and nothing of what the sample does. A lookup of the technique is not evidence of the behaviour.
+
+- **Raised at** `malspark.pipeline.validation:mapped_technique_violations`
+- **Constant** `malspark.pipeline.validation:MAP_RESTS_ON_ITS_LOOKUP_CODE`
+- **Docs** [Architecture](/docs/architecture/)
+
 ### `attck.missing_id`
 
 A technique named with no id. Its own code because the answer is different from an id that does not resolve: there is nothing to look up, and a behaviour the model could not map is still a behaviour the report can carry.
 
 - **Raised at** `malspark.pipeline.validation:validate_verdict_bundle`
 - **Constant** `malspark.pipeline.validation:MISSING_ID_CODE`
+- **Docs** [Architecture](/docs/architecture/)
+
+### `attck.parent_of_a_published_sub_technique`
+
+A parent technique beside its published sub-technique says nothing the sub-technique does not: a sentence that describes a sub-technique describes its parent (`description_phrases`), so the parent is not published beside it.
+
+- **Raised at** `malspark.pipeline.validation:parent_beside_sub_technique_violation`
+- **Constant** `malspark.pipeline.validation:PARENT_OF_A_PUBLISHED_SUB_TECHNIQUE_CODE`
 - **Docs** [Architecture](/docs/architecture/)
 
 ### `attck.platform_mismatch`
@@ -397,9 +413,9 @@ A claim whose TECHNIQUE line is more than ids or NONE. No id is read from it, an
 
 ### `isr.ungrounded_technique`
 
-No comment names its meaning; the message at `malspark.pipeline.validation:validate_isr` reads: "TECHNIQUE \<tid> cites no evidence id from this run.\<said> Name the ledger entry it was read from, for example \<shown>, or drop the technique: a technique nothing in the run establishes is read downstream as a finding."
+A technique nothing in the run establishes: a claim's technique cites no ledger entry this run issued, or a technique the judge mapped cites no entry or one the run never recorded.
 
-- **Raised at** `malspark.pipeline.validation:validate_isr`
+- **Raised at** `malspark.pipeline.validation:mapped_technique_violations`, `malspark.pipeline.validation:validate_isr`
 - **Constant** `malspark.pipeline.validation:UNGROUNDED_TECHNIQUE_CODE`
 - **Docs** [Architecture](/docs/architecture/), [Evidence ledger](/docs/concepts/ledger/)
 

@@ -32,7 +32,7 @@ import re
 import threading
 import uuid
 from collections import Counter
-from collections.abc import Iterable, Mapping, Sequence
+from collections.abc import Collection, Iterable, Mapping, Sequence
 from dataclasses import dataclass, replace
 from typing import TYPE_CHECKING, Any, Literal, NamedTuple, cast
 
@@ -1152,6 +1152,31 @@ TECHNIQUE_ANSWER_FORM = (
     "you leave out is reported as it would be without this question, marked as not "
     "confirmed by you."
 )
+# Said after the system text, and after the answer's form, only when the
+# question lists a technique an agent checked or a tool's answer named that
+# nothing carries (``capability_matrix.checked_technique_questions``): a
+# question without one reads as it always did.
+TECHNIQUE_QUESTION_CHECKED_NOTE = (
+    " A technique an agent checked that nothing carries is listed as checked, with "
+    "where it was seen: map it to the ledger entries it rests on, or decline it."
+)
+TECHNIQUE_MAP_FORM = (
+    'A checked technique is decided "map" or "decline": {"id": "<technique id>", '
+    '"decision": "map", "evidence_ids": ["<ledger entry id>"], "reason": "<what those '
+    'entries show the sample doing>"}. A map cites at least one entry of this run and is '
+    "checked as a claim of the technique is; one that fails a check, or one you leave "
+    "out, is not published. An entry that only passed the id in its call's arguments "
+    "(a lookup of it) is not an entry it rests on."
+)
+# Said under the techniques when checked techniques were left out of the
+# question: past its count, or past the room its window had left.
+CHECKED_LEFT_OUT_NOTICE = (
+    "NOTE: {count} more technique(s) an agent checked are not asked here; each is "
+    "recorded as not asked, with why, and is not published."
+)
+# The heading of the entries the final claims cite, of each agent that passed
+# a checked technique, listed once under the techniques.
+QUESTION_CLAIM_ENTRIES_HEADING = "ENTRIES THE FINAL CLAIMS OF THOSE AGENTS CITE"
 # Why a technique question has no answer, for ``TechniqueReview.unanswered``.
 TECHNIQUE_QUESTION_NOT_ASKED = "not asked: the verdict call timed out"
 TECHNIQUE_ANSWER_UNREAD = "the answer named none of the techniques in a form that could be read"
@@ -1359,6 +1384,7 @@ def technique_question_text(
     *,
     notice: str = "",
     cards: bool = True,
+    checked_left_out: int = 0,
 ) -> str:
     """The question's list of techniques and the answer's form, as the judge reads it.
 
@@ -1369,11 +1395,22 @@ def technique_question_text(
     (text, or :class:`QuestionEvidence`), looked up whatever the case the id
     was cited in, and listed once under the techniques with the tool behind
     it and a mark when it is not the whole answer as stored; ``notice`` says
-    what was shortened. ``cards=False`` leaves the technique cards out.
+    what was shortened. ``cards=False`` leaves the technique cards out. A
+    ``checked`` question is listed with where its id was seen; the entries
+    the final claims of each agent that passed one cite are listed once,
+    by id, under the techniques, and the answer's form then says how a
+    checked technique is mapped or declined (``TECHNIQUE_MAP_FORM``).
+    ``checked_left_out`` is how many checked techniques the question left out,
+    said under the techniques. A list with no checked question reads as it did
+    before there were any.
     """
+    from malspark.extractors.capability_matrix import checked_question_line
+
     shown = {str(k).lower(): _as_evidence(v) for k, v in (evidence or {}).items()}
     lines = ["TECHNIQUES TO DECIDE"]
     cited: list[str] = []
+    # Per agent that passed a checked technique, the entries its final claims cite.
+    claim_entries: dict[str, list[str]] = {}
     for n, question in enumerate(questions, 1):
         where = {
             "claimed": "claimed by an analyst and not in your bundle",
@@ -1382,6 +1419,10 @@ def technique_question_text(
                 "catalogue's terms for it"
             ),
         }.get(question.kind, "named only on an analyst's finding")
+        if question.kind == "checked":
+            where = f"checked by {checked_question_line(question)}; on no claim, finding or bundle object"
+            for agent, ids in (getattr(question, "claim_entries", None) or {}).items():
+                claim_entries.setdefault(agent, list(ids))
         lines.append(f"{n}. {technique_label(question.technique_id)} — {where}")
         for agent, text, ids in question.mentions:
             listed = ", ".join(ids) if ids else "none cited"
@@ -1397,6 +1438,17 @@ def technique_question_text(
         if card and TECHNIQUE_CARDS_INTRO not in lines:
             lines.insert(1, TECHNIQUE_CARDS_INTRO)
         lines.extend(f"   {line}" for line in card)
+    if checked_left_out:
+        lines += ["", CHECKED_LEFT_OUT_NOTICE.format(count=checked_left_out)]
+    if claim_entries:
+        # Ids only: each entry is read by its id, and the claims citing them are
+        # in the reports above.
+        lines += ["", QUESTION_CLAIM_ENTRIES_HEADING]
+        lines.extend(
+            f"- {agent or 'an unnamed agent'}: "
+            + (", ".join(ids) if ids else "its final claims cite no entry")
+            for agent, ids in claim_entries.items()
+        )
     if cited:
         lines += ["", "EVIDENCE CITED"]
         if any(needs_fence(e.text) for e in (shown.get(i) for i in cited) if e is not None):
@@ -1420,7 +1472,10 @@ def technique_question_text(
             if marks:
                 heading += " — " + "; ".join(marks)
             lines.append(f"{heading}\n{fenced(entry_id, entry.text)}")
-    return "\n".join(lines) + "\n\n" + TECHNIQUE_ANSWER_FORM
+    form = TECHNIQUE_ANSWER_FORM
+    if any(question.kind == "checked" for question in questions):
+        form += "\n" + TECHNIQUE_MAP_FORM
+    return "\n".join(lines) + "\n\n" + form
 
 
 def _without_reasoning(text: str) -> str:
@@ -1555,6 +1610,121 @@ def _line_decision(line: str) -> tuple[str, _Decision, str] | None:
     return _technique_id(tid), _as_decision(word), reason
 
 
+# The decisions on a checked technique (``TECHNIQUE_MAP_FORM``), read as the
+# keep and drop words are: in the decision position, or standing alone.
+_MAP_DECISION_RE = re.compile(
+    r"(?<![A-Za-z'])(map|mapped|decline|declined)(?![A-Za-z'])", re.IGNORECASE
+)
+_MAP_DECISION_AT_RE = re.compile(
+    r"^[ \t*_`>]*(?:decision[ \t*_`]*[:\-\u2013\u2014][ \t*_`]*)?"
+    r"(map|mapped|decline|declined)(?![A-Za-z'])",
+    re.IGNORECASE,
+)
+# The keys a JSON row may list a map's ledger entries under.
+_EVIDENCE_KEYS = ("evidence_ids", "evidence", "entries")
+_MapDecision = Literal["map", "decline"]
+
+
+def _as_map_decision(word: str) -> _MapDecision:
+    return "map" if word.lower() in ("map", "mapped") else "decline"
+
+
+def _entry_ids(value: Any) -> list[str]:
+    """The ledger entry ids ``value`` writes (a string or a list of them), lower-cased, once."""
+    from malspark.schemas.evidence import ENTRY_ID_RE
+
+    texts = value if isinstance(value, list) else [value]
+    found: list[str] = []
+    for text in texts:
+        for entry_id in ENTRY_ID_RE.findall(str(text or "")):
+            if entry_id.lower() not in found:
+                found.append(entry_id.lower())
+    return found
+
+
+def _row_map_decision(row: Mapping[str, Any]) -> tuple[str, _MapDecision, str, list[str]] | None:
+    """``(id, map|decline, reason, entries)`` for one JSON row, or ``None`` when it states none.
+
+    The ``decision`` field is read as one whole word, as :func:`_row_decision`
+    reads it; the entries are the ledger ids the row lists under
+    ``evidence_ids`` (or ``evidence``, ``entries``), never ones its reason
+    writes.
+    """
+    tid = ""
+    for key in _ID_KEYS:
+        match = _TECHNIQUE_ID_RE.search(str(row.get(key) or ""))
+        if match:
+            tid = _technique_id(match)
+            break
+    word = str(row.get("decision") or "").strip().strip(".").strip()
+    if not tid or word.lower() not in ("map", "mapped", "decline", "declined"):
+        return None
+    entries = next((_entry_ids(row[k]) for k in _EVIDENCE_KEYS if row.get(k)), [])
+    return tid, _as_map_decision(word), str(row.get("reason") or "").strip(), entries
+
+
+# A run of ledger entry ids leading what follows a map's decision word, before
+# the reason: ``map — ev_0004, ev_0005: the beacon …``.
+_LEADING_ENTRIES_RE = re.compile(
+    r"^[\s|*_`:=\-\u2013\u2014\u2192>,;()\[\]]*"
+    r"((?:ev_\d{3,}(?:[\s,;()\[\]]|and\b)*)+)",
+    re.IGNORECASE,
+)
+
+
+def _line_map_decision(line: str) -> tuple[str, _MapDecision, str, list[str]] | None:
+    """``(id, map|decline, reason, entries)`` for one line of a free answer, or ``None``.
+
+    The line's first technique id, then its decision: the word straight after
+    the first separator that follows the id, and failing that the first
+    standalone map or decline on the line ("I decline to map it" declines). A
+    map the line negates ("do not map", "not mapped", as
+    ``validation._is_negated`` reads absence) is a decline.
+    A map's entries are the ledger ids written outside its reason: between the
+    technique id and the decision, and in a run of ids leading what follows the
+    decision. An id the reason writes is not one. The reason is what follows,
+    and with the decision read from inside a sentence, that whole sentence.
+    """
+    body = _LINE_LEAD_RE.sub("", line)
+    tid = _TECHNIQUE_ID_RE.search(body)
+    if tid is None:
+        return None
+    rest = body[tid.end() :]
+    separator = _ID_SEPARATOR_RE.search(rest)
+    at = _MAP_DECISION_AT_RE.match(rest[separator.end() :]) if separator else None
+    if separator is not None and at is not None:
+        start, end, word = separator.end() + at.start(1), separator.end() + at.end(1), at.group(1)
+        in_sentence = False
+    else:
+        first = _MAP_DECISION_RE.search(rest)
+        if first is None:
+            return None
+        start, end, word = first.start(1), first.end(1), first.group(1)
+        in_sentence = True
+    decision = _as_map_decision(word)
+    if decision == "map":
+        from malspark.pipeline.validation import _is_negated
+
+        if _is_negated(rest, start, end):
+            # "do not map", "not mapped": the judge declines, in that sentence.
+            decision, in_sentence = "decline", True
+    after = rest[end:]
+    leading = _LEADING_ENTRIES_RE.match(after) if decision == "map" else None
+    if in_sentence:
+        sentence = rest[separator.end() if separator is not None else 0 :]
+        reason = _REASON_LEAD_RE.sub("", sentence).strip().rstrip(" \t|*_`").strip()
+    else:
+        tail = after[leading.end() :] if leading is not None else after
+        reason = _REASON_LEAD_RE.sub("", tail).strip().rstrip(" \t|*_`").strip()
+    if decision != "map":
+        return _technique_id(tid), decision, reason, []
+    entries = _entry_ids(rest[:start])
+    for entry_id in _entry_ids(leading.group(1)) if leading is not None else []:
+        if entry_id not in entries:
+            entries.append(entry_id)
+    return _technique_id(tid), decision, reason, entries
+
+
 # What the token ledger calls the question asked after the verdict.
 TECHNIQUE_QUESTION_CALL = "technique question"
 
@@ -1573,27 +1743,74 @@ class TechniqueAnswer(BaseModel):
     decisions: list[TechniqueAnswerRow] = Field(default_factory=list)
 
 
-def _structured_decisions(parsed: Any, asked: Sequence[str]) -> list[Any]:
-    """The decisions a structured answer states for the ``asked`` techniques, last per id."""
-    from malspark.schemas.stix_models import TechniqueDecision
+class TechniqueMapAnswerRow(TechniqueAnswerRow):
+    """One row of the judge's answer when the question lists a checked technique."""
 
+    evidence_ids: list[str] = Field(default_factory=list)
+
+
+class TechniqueMapAnswer(BaseModel):
+    """The judge's answer about the techniques, when the question lists a checked technique."""
+
+    decisions: list[TechniqueMapAnswerRow] = Field(default_factory=list)
+
+
+_Stated = tuple[str, _Decision | _MapDecision, str, list[str]]
+
+
+def _stated(
+    kept: tuple[str, _Decision, str] | None,
+    mapped: tuple[str, _MapDecision, str, list[str]] | None,
+    mappable: Collection[str],
+) -> _Stated | None:
+    """The one reading of a row or line that fits its id's kind, or ``None``.
+
+    A checked id (in ``mappable``) takes the map or decline reading, any
+    other id the keep or drop reading.
+    """
+    if mapped is not None and mapped[0] in mappable:
+        return mapped
+    if kept is not None and kept[0] not in mappable:
+        return kept[0], kept[1], kept[2], []
+    return None
+
+
+def _decision(stated: _Stated) -> Any:
+    """One stated decision as the review records it: a keep or drop, or a map or decline."""
+    from malspark.schemas.stix_models import CheckedDecision, TechniqueDecision
+
+    tid, word, reason, entries = stated
+    if word == "map" or word == "decline":
+        return CheckedDecision(
+            technique_id=tid, decision=word, reason=reason, evidence_ids=list(entries)
+        )
+    return TechniqueDecision(technique_id=tid, decision=word, reason=reason)
+
+
+def _structured_decisions(
+    parsed: Any, asked: Sequence[str], mappable: Collection[str] = ()
+) -> list[Any]:
+    """The decisions a structured answer states for the ``asked`` techniques, last per id.
+
+    Read by kind as :func:`read_technique_answer` reads them.
+    """
     rows = (
         parsed.get("decisions") if isinstance(parsed, dict) else getattr(parsed, "decisions", None)
     )
     if not isinstance(rows, list):
         return []
     wanted = [str(t).upper() for t in asked]
-    found: dict[str, TechniqueDecision] = {}
+    mapped = {str(t).upper() for t in mappable}
+    found: dict[str, Any] = {}
     for row in rows:
         if not isinstance(row, BaseModel | dict):
             continue
-        stated = _row_decision(row.model_dump() if isinstance(row, BaseModel) else dict(row))
+        read = row.model_dump() if isinstance(row, BaseModel) else dict(row)
+        stated = _stated(_row_decision(read), _row_map_decision(read), mapped)
         if stated is None or stated[0] not in wanted:
             continue
         found.pop(stated[0], None)
-        found[stated[0]] = TechniqueDecision(
-            technique_id=stated[0], decision=stated[1], reason=stated[2]
-        )
+        found[stated[0]] = _decision(stated)
     return sorted(found.values(), key=lambda d: wanted.index(d.technique_id))
 
 
@@ -1648,32 +1865,44 @@ def _fit_evidence(texts: dict[str, str], room: int | None) -> tuple[dict[str, st
     return shown, notice
 
 
-def read_technique_answer(text: str, asked: Sequence[str]) -> list[Any]:
+def read_technique_answer(
+    text: str, asked: Sequence[str], mappable: Collection[str] = ()
+) -> list[Any]:
     """The decisions ``text`` states for the ``asked`` techniques.
 
     A reasoning block is taken out first. A JSON answer is read when there is
     one; otherwise each line is read on its own. The last answer for an id
     wins, since a model restates before it concludes. Each reason is kept
     whole, as written, and a decision with no reason has an empty one. A
-    technique that was not asked is not read.
+    technique that was not asked is not read. An id in ``mappable`` (a
+    checked technique) is read only as ``map`` with its entries or
+    ``decline``, and any other id only as ``keep`` or ``drop``: a row in the
+    other form states nothing, and the id is left undecided.
     """
-    from malspark.schemas.stix_models import TechniqueDecision
-
     body = _without_reasoning(text)
     wanted = {str(tid).upper() for tid in asked}
+    mapped = {str(tid).upper() for tid in mappable}
     rows = _json_rows(body)
     if rows:
         # A JSON answer is read as JSON only: a row whose decision is not one
         # word states none, and the JSON's own lines are not read again.
-        stated = [d for row in rows if (d := _row_decision(row)) is not None]
+        stated = [
+            d
+            for row in rows
+            if (d := _stated(_row_decision(row), _row_map_decision(row), mapped)) is not None
+        ]
     else:
-        stated = [d for line in body.splitlines() if (d := _line_decision(line)) is not None]
-    found: dict[str, TechniqueDecision] = {}
-    for tid, decision, reason in stated:
-        if tid not in wanted:
+        stated = [
+            d
+            for line in body.splitlines()
+            if (d := _stated(_line_decision(line), _line_map_decision(line), mapped)) is not None
+        ]
+    found: dict[str, Any] = {}
+    for read in stated:
+        if read[0] not in wanted:
             continue
-        found.pop(tid, None)
-        found[tid] = TechniqueDecision(technique_id=tid, decision=decision, reason=reason)
+        found.pop(read[0], None)
+        found[read[0]] = _decision(read)
     order = [str(t).upper() for t in asked]
     return sorted(found.values(), key=lambda d: order.index(d.technique_id))
 
@@ -4817,7 +5046,12 @@ class JudgeAgent(BudgetMeter):
         type: a technique the sample cannot host, or one the catalogue
         rejects, is not asked about and is recorded as such. ``ledger`` is
         the run's tool calls: with it, each technique states its layers beside
-        the distinct evidence roots its mentions cite.
+        the distinct evidence roots its mentions cite, and each id an agent
+        checked or a tool's answer named that nothing carries is asked too, to
+        map to the ledger entries it rests on or decline; a map is checked as
+        an analyst's claim of the technique is
+        (``capability_matrix.settle_mapped_techniques``) and one that fails is
+        recorded as declined by the check.
 
         Returns the :class:`~malspark.schemas.stix_models.TechniqueReview`, or
         ``None`` when there is nothing to ask or record. A question that times
@@ -4830,7 +5064,14 @@ class JudgeAgent(BudgetMeter):
         is asked for a JSON array and read tolerantly
         (:func:`read_technique_answer`).
         """
-        from malspark.extractors.capability_matrix import bundle_technique_ids, judge_questions
+        from malspark.extractors.capability_matrix import (
+            CHECKED_CAP_REASON,
+            CHECKED_WINDOW_REASON,
+            bundle_technique_ids,
+            checked_question_line,
+            judge_questions,
+            settle_mapped_techniques,
+        )
         from malspark.pipeline.outcome import decide_from_bundle
         from malspark.schemas.stix_models import TechniqueReview
 
@@ -4854,12 +5095,19 @@ class JudgeAgent(BudgetMeter):
         asked = [q.technique_id for q in questions]
         # The check's finding each question carried, kept on the answer for the report.
         undescribed = {q.technique_id: q.check for q in questions if q.check}
+        # Each checked technique with where the question said it was seen: it
+        # is answered by map or decline, and recorded on the answer.
+        checked = {
+            q.technique_id: checked_question_line(q) for q in questions if q.kind == "checked"
+        }
+        answer_model: type[BaseModel] = TechniqueMapAnswer if checked else TechniqueAnswer
         if verdict_timed_out:
             return TechniqueReview(
                 asked=asked,
                 undescribed=undescribed,
                 unanswered=TECHNIQUE_QUESTION_NOT_ASKED,
                 not_asked=not_asked,
+                checked=checked,
             )
 
         carried = sorted(bundle_technique_ids(dumped))
@@ -4874,8 +5122,11 @@ class JudgeAgent(BudgetMeter):
         )
         entries = {i: known.get(i, QuestionEvidence("")) for i in cited}
         cap = self._output_cap().tokens or None
+        # The checked techniques take no room from the others: the room is sized
+        # without them, and they go in where it has some left (below).
+        core = [q for q in questions if q.kind != "checked"]
         bare = technique_question_text(
-            questions, {i: e._replace(text="") for i, e in entries.items()}, cards=False
+            core, {i: e._replace(text="") for i, e in entries.items()}, cards=False
         )
         empty_head = lead + technique_question_head("", decided, carried)
         from malspark.llm.registry import schema_tool_worth_offering
@@ -4888,12 +5139,15 @@ class JudgeAgent(BudgetMeter):
         # ``read_evidence`` over the run's ledger from the first turn, beside
         # the answer's schema on the structured path, where the model binds
         # it; else the question as it always was, its system text saying so.
-        reads, reading = self._reading_model(ledger, [TechniqueAnswer] if structured else ())
-        system = (
+        reads, reading = self._reading_model(ledger, [answer_model] if structured else ())
+        system_head = (
             TECHNIQUE_QUESTION_SYSTEM
             if reading is not None
             else TECHNIQUE_QUESTION_SYSTEM_WITHOUT_TOOLS
         )
+        # Sized with the sentence about checked techniques while any is listed;
+        # said only where one is still asked once the window has had its say.
+        system = system_head + (TECHNIQUE_QUESTION_CHECKED_NOTE if checked else "")
         room = self._question_room(
             len(system) + len(empty_head) + len(bare) + _NOTICE_ROOM,
             int(cap or 0),
@@ -4948,13 +5202,51 @@ class JudgeAgent(BudgetMeter):
                 f"{_standing_blocks(run_state, pointed)}{_identity_prefix(sample)}"
                 + technique_question_head(join_prompt_parts(fitted_reports), decided, carried)
             )
+        # The checked techniques go in, in their order, only where the window
+        # has room left after the other techniques, the reports and the
+        # evidence: the claimed, finding and undescribed ones keep their place.
+        # One that does not fit is not asked, is recorded so, and the question
+        # says how many were left out.
+        checked_chars = 0
+        if evidence_room is not None and len(core) < len(questions):
+            left = evidence_room - sum(len(t) for t in texts.values())
+            base = len(technique_question_text(core, {}, cards=False))
+            kept = list(core)
+            for question in [q for q in questions if q.kind == "checked"]:
+                grown = len(technique_question_text([*kept, question], {}, cards=False)) - base
+                if grown <= left:
+                    kept.append(question)
+                    checked_chars = grown
+                    continue
+                not_asked[question.technique_id] = CHECKED_WINDOW_REASON
+                checked.pop(question.technique_id, None)
+            if len(kept) < len(questions):
+                self.logger.warning(
+                    "JudgeAgent technique question: %d checked technique(s) left out; the "
+                    "window had %d characters left after the reports and the evidence.",
+                    len(questions) - len(kept),
+                    max(0, left),
+                )
+            questions = kept
+            asked = [q.technique_id for q in questions]
+            if not questions:
+                # Every technique was a checked one the window had no room for.
+                return TechniqueReview(not_asked=not_asked)
+        left_out = sum(
+            1 for why in not_asked.values() if why in (CHECKED_CAP_REASON, CHECKED_WINDOW_REASON)
+        )
+        system = system_head + (TECHNIQUE_QUESTION_CHECKED_NOTE if checked else "")
         # The technique cards are reference beside the claims: they go in only
         # where the window has room left after the reports and the evidence,
         # so they never shorten either.
-        question_text = technique_question_text(questions, fitted, notice=notice)
+        question_text = technique_question_text(
+            questions, fitted, notice=notice, checked_left_out=left_out
+        )
         if evidence_room is not None:
-            without_cards = technique_question_text(questions, fitted, notice=notice, cards=False)
-            left = evidence_room - sum(len(t) for t in texts.values())
+            without_cards = technique_question_text(
+                questions, fitted, notice=notice, cards=False, checked_left_out=left_out
+            )
+            left = evidence_room - sum(len(t) for t in texts.values()) - checked_chars
             if len(question_text) - len(without_cards) > left:
                 self.logger.info(
                     "JudgeAgent technique question: the technique cards (%d characters) are "
@@ -4993,6 +5285,7 @@ class JudgeAgent(BudgetMeter):
                 undescribed=undescribed,
                 unanswered=f"not asked: {stop}",
                 not_asked=not_asked,
+                checked=checked,
             )
         turns_sent = [0]
 
@@ -5023,11 +5316,9 @@ class JudgeAgent(BudgetMeter):
                     if reading is not None:
                         from malspark.agents.ledger_reads import structured_reply
 
-                        result = structured_reply(await _reading(reading), TechniqueAnswer)
+                        result = structured_reply(await _reading(reading), answer_model)
                     else:
-                        runnable = self.llm.with_structured_output(
-                            TechniqueAnswer, include_raw=True
-                        )
+                        runnable = self.llm.with_structured_output(answer_model, include_raw=True)
                         result = await as_call(
                             "Judge technique question", runnable.ainvoke(messages)
                         )
@@ -5090,6 +5381,7 @@ class JudgeAgent(BudgetMeter):
                 unanswered=reason,
                 not_asked=not_asked,
                 shortened=notice or None,
+                checked=checked,
             )
 
         try:
@@ -5109,9 +5401,9 @@ class JudgeAgent(BudgetMeter):
         except Exception as exc:  # noqa: BLE001 — an unanswered question withholds nothing
             self.logger.error("JudgeAgent technique question failed (%s).", type(exc).__name__)
             return _unanswered(f"the question failed ({type(exc).__name__})")
-        decisions = _structured_decisions(parsed, asked)
+        decisions = _structured_decisions(parsed, asked, checked)
         if not decisions:
-            decisions = read_technique_answer(_answer_text(answer), asked)
+            decisions = read_technique_answer(_answer_text(answer), asked, checked)
         self.logger.info(
             "JudgeAgent answered for %d of %d technique(s): %s",
             len(decisions),
@@ -5120,12 +5412,19 @@ class JudgeAgent(BudgetMeter):
         )
         if not decisions:
             return _unanswered(TECHNIQUE_ANSWER_UNREAD)
-        return TechniqueReview(
+        review = TechniqueReview(
             asked=asked,
             undescribed=undescribed,
-            decisions=decisions,
+            decisions=[d for d in decisions if d.decision in ("keep", "drop")],
+            checked_decisions=[d for d in decisions if d.decision in ("map", "decline")],
             not_asked=not_asked,
             shortened=notice or None,
+            checked=checked,
+        )
+        # Each map is checked as an analyst's claim of its technique is; one that
+        # fails a check is recorded as declined by it and never published.
+        return settle_mapped_techniques(
+            review, dumped, isr_reports, routed, ledger=ledger, attck=attck
         )
 
     def _question_room(self, fixed_chars: int, cap_tokens: int) -> int | None:

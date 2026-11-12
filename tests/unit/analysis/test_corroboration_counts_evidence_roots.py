@@ -426,7 +426,9 @@ class TestTheJudgeQuestion:
         from malspark.agents.judge_agent import QUESTION_ROOTS_LABEL, technique_question_text
 
         questions, _ = judge_questions({"objects": []}, _isrs(), ledger=_ledger())
-        (question,) = questions
+        # The ledger's rule answers also name techniques no claim carries, asked as
+        # checked; the claimed one is the question whose mentions are listed.
+        (question,) = [q for q in questions if q.kind == "claimed"]
         assert question.roots == "2 layers, one evidence root (0x5010 in .data)"
         text = technique_question_text(questions, {}, cards=False)
         assert f"   {QUESTION_ROOTS_LABEL} 2 layers, one evidence root (0x5010 in .data)" in text
@@ -446,7 +448,7 @@ class TestTheJudgeQuestion:
             ),
         }
         questions, _ = judge_questions({"objects": []}, isrs, ledger=_ledger())
-        (question,) = questions
+        (question,) = [q for q in questions if q.kind == "claimed"]
         _, mappings = build_capability_matrix(stix_output=None, isr_reports=isrs, ledger=_ledger())
         (mapping,) = mappings
         assert question.roots == layers_and_roots(

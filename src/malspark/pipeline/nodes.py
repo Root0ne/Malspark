@@ -8608,6 +8608,8 @@ def make_report_node(
                 )
                 base = None
             try:
+                from malspark.extractors.capability_matrix import with_mapped_evidence
+
                 _renderer = ExtendedSTIXRenderer()
                 extended_bundle = _renderer.render(
                     report,
@@ -8627,7 +8629,12 @@ def make_report_node(
                     # The ledger entries the record ties to each technique:
                     # the ids a finding naming it cites, and the entries of the
                     # tools that asserted it. Written on the export's edges.
-                    technique_evidence=technique_evidence(isr_reports, _ledger),
+                    # A technique the judge mapped is tied to the entries it
+                    # mapped it to.
+                    technique_evidence=with_mapped_evidence(
+                        technique_evidence(isr_reports, _ledger),
+                        getattr(base, "x_malspark_technique_review", None),
+                    ),
                     # The run's ledger, in its order: the export writes no id
                     # it does not hold.
                     ledger_ids=[entry.id for entry in _ledger],
