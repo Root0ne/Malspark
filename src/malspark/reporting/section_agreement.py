@@ -3981,10 +3981,20 @@ _HELD_ABSENCE_GROUNDS = (
 )
 
 
+def _an_open_question(source: Passage) -> bool:
+    """Whether ``source`` is the fact of a question an analyst left open (``open.N``, and its
+    ``inv.N`` copy): its words, and the addresses read off them, are an analyst's, so it
+    states nothing to say otherwise with and holds no address of the ledger's."""
+    return source.kind == FACT and "open question" in source.label
+
+
 def _ledger_named(passage: Passage, by_id: dict[str, Passage]) -> frozenset[int]:
     """The addresses ``passage`` names that a fact shown holds (a routine, a slot, a datum
-    the ledger's own lines name): a constant both passages write is no such address."""
-    held = frozenset().union(*(s.addresses for s in by_id.values() if s.kind == FACT))
+    the ledger's own lines name): a constant both passages write is no such address, nor
+    one only an open question names (:func:`_an_open_question`)."""
+    held = frozenset().union(
+        *(s.addresses for s in by_id.values() if s.kind == FACT and not _an_open_question(s))
+    )
     return frozenset(_addresses_named(passage.text)) & held
 
 
@@ -5384,7 +5394,7 @@ def _could_contradict(item: frozenset[str], by_id: dict[str, Passage]) -> bool:
         said_of(p.text).count(words) >= least
         for p in by_id.values()
         if (p.kind == SECTION_5 or (p.kind == FACT and p.cites))
-        and "open question" not in p.label
+        and not _an_open_question(p)
         and not p.silent
     )
 
@@ -5487,7 +5497,7 @@ def _speaking_sources(
             source.kind not in (FACT, SECTION_5) or not (source.kind == SECTION_5 or source.cites)
         ):
             continue
-        if source.kind == FACT and "open question" in source.label:
+        if _an_open_question(source):
             # A question an analyst left open states nothing to say otherwise with.
             continue
         # A fact on whether a routine's code was listed says otherwise only of a sentence
@@ -5581,7 +5591,7 @@ def _body_speaking(
         claimed = source.kind == CLAIM_LED and _writable(source)
         if not (claimed or source.kind == SECTION_5 or (source.kind == FACT and source.cites)):
             continue
-        if source.kind == FACT and "open question" in source.label:
+        if _an_open_question(source):
             continue
         if claimed and held is not None and not _tied(source, held):
             continue

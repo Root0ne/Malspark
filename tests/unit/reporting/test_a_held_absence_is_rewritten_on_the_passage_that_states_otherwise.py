@@ -519,3 +519,32 @@ def test_a_quote_sharing_too_few_words_is_told_so_before_its_denial_is_read() ->
     assert "its quote shares too few of the words the sentence denies something of" in (
         refused.message
     )
+
+
+def test_an_open_question_naming_the_shared_constant_does_not_tie() -> None:
+    # An open question's addresses are read off the analyst's words: one naming the
+    # constant both passages write holds no address of the ledger's (T-652).
+    from malspark.reporting.section_agreement import FACT, Passage, _speaking_sources
+
+    other = (
+        "Other droppers XOR with 0x60 and run environment checks and anti-debug probes [ev_0025]."
+    )
+    passages = passages_of(_report(flow=other, procedure="It sleeps [ev_0025]."), entries=_ledger())
+    asked = Passage(
+        id="open.1",
+        label="open question an analyst filed on a failed call or a missing tool",
+        text='"Which routine reads offset 0x60?", filed as no tool',
+        kind=FACT,
+        cites=frozenset({"ev_0025"}),
+        addresses=frozenset({0x60}),
+    )
+    by_id = {p.id: p for p in (*passages, asked)}
+    assert _speaking_sources(DENIED, by_id, by_id["evasion_antiforensics"]) == []
+    row = _rewrite(
+        "evasion_antiforensics",
+        DENIED,
+        ["execution_flow.3"],
+        "The sample runs environment checks and anti-debug probes [ev_0025].",
+    )
+    found = agreement_violations({"sentences": [row]}, list(by_id.values()))
+    assert UNKNOWN_SOURCE_CODE in [v.code for v in found if v.path.startswith("sentences")]
