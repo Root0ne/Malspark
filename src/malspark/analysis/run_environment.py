@@ -6,16 +6,25 @@ should happen:
 
 * ``host`` is the worker's host as it reads itself (:func:`host_facts`): the
   operating system and its release, the machine type, the processor model,
-  the logical processors and the total memory. A fact the host does not give
-  is left out, and reading the host never fails the run.
-* ``agents`` is, per agent, what each model of its list sent with every
-  request (``llm.sent_request``, kept by the registry as each model is built):
-  the sampling parameters read off the built model, or the statement that none
-  was sent and the provider's default applied; the effort level sent and the
-  setting it came from, or why none was; and, beside them, each model
-  identifier the provider's answers carried and how many answers carried it
-  (``TokenLedger.response_models``). An agent whose answers carried none has
-  an empty map.
+  and the kernel's logical processors and total memory; beside them, what
+  the worker process itself may use where a limit is readable — the
+  processors its CPU affinity and CPU quota leave it (``cpus_available``)
+  and its memory limit (``memory_limit_bytes``), both from the control
+  groups it runs in, v2 or v1. A fact the host does not give is left out,
+  and reading the host never fails the run.
+* ``agents`` is, per agent, one row per model of its list it was built to
+  send with (``llm.sent_request``, kept by the registry as each model is
+  built): the sampling parameters and thinking switches its provider adapter
+  read off the request body the client would send, the statement that no
+  sampling parameter was sent and the provider's default applied, or the
+  statement that the adapter reported nothing; the effort level sent and the
+  setting it came from, or why none was; and how many calls that model
+  answered (``answered``; a fallback that was never needed answered none).
+  Beside the rows, each model identifier the provider's answers carried and
+  how many answers carried it (``TokenLedger.response_models``), an
+  identifier shaped like a file-system path kept by its base name and listed
+  in ``response_models_reduced``. An agent whose answers carried none has an
+  empty map.
 
 Written when the judge builds the summary and again once the run's last
 model call is made (the report node, and a stopped run's summary), so the
@@ -34,8 +43,10 @@ from typing import Any
 
 from malspark.core.logger import logger
 
-# The record's shape version: a reader that meets a newer one reads what it knows.
-ENVIRONMENT_VERSION = 1
+# The record's shape version: a reader that meets a newer one reads what it
+# knows. 2: a row's ``sampling`` may be ``None`` (not reported), and rows carry
+# ``thinking`` and ``answered``.
+ENVIRONMENT_VERSION = 2
 
 # How long a host query (``sysctl`` on macOS) may take, in seconds.
 _QUERY_TIMEOUT_S = 2.0
@@ -129,6 +140,92 @@ def _posix_memory_bytes() -> int | None:
     return total if total > 0 else None
 
 
+# Where the control groups are mounted, and the value a v1 limit holds when
+# none is set (the page counter's maximum, rounded to a page): any value at or
+# above it is no limit.
+_CGROUP_ROOT = "/sys/fs/cgroup"
+_V1_NO_LIMIT = 1 << 62
+
+
+def _read_text(path: str) -> str:
+    try:
+        with open(path, encoding="utf-8", errors="replace") as handle:
+            return handle.read().strip()
+    except OSError:
+        return ""
+
+
+def _cgroup_dirs() -> tuple[list[str], dict[str, list[str]]]:
+    """The v2 directories of this process's group, its own first, then each parent up to
+    the mount; and per v1 controller, its directory and the controller's mount root."""
+    v2: list[str] = []
+    v1: dict[str, list[str]] = {}
+    for line in _read_text("/proc/self/cgroup").splitlines():
+        _id, _sep, rest = line.partition(":")
+        controllers, _sep, path = rest.partition(":")
+        path = path.strip() or "/"
+        if not controllers:
+            parts = [p for p in path.split("/") if p and p != ".."]
+            while True:
+                v2.append(os.path.join(_CGROUP_ROOT, *parts))
+                if not parts:
+                    break
+                parts.pop()
+            continue
+        for controller in controllers.split(","):
+            mount = os.path.join(_CGROUP_ROOT, controller)
+            v1[controller] = [os.path.join(mount, *[p for p in path.split("/") if p]), mount]
+    return v2, v1
+
+
+def _cpu_quota(v2: list[str], v1: dict[str, list[str]]) -> float | None:
+    """The fewest processors a CPU quota of this process's groups allows, or ``None``."""
+    quotas: list[float] = []
+    for folder in v2:
+        quota, _sep, period = _read_text(os.path.join(folder, "cpu.max")).partition(" ")
+        q, p = _positive_int(quota), _positive_int(period)
+        if q and p:
+            quotas.append(q / p)
+    for folder in v1.get("cpu", []):
+        q = _positive_int(_read_text(os.path.join(folder, "cpu.cfs_quota_us")))
+        p = _positive_int(_read_text(os.path.join(folder, "cpu.cfs_period_us")))
+        if q and p:
+            quotas.append(q / p)
+            break
+    return min(quotas) if quotas else None
+
+
+def _cpus_available() -> int | float | None:
+    """The processors this process may use: its CPU affinity, held to its groups' quota."""
+    affinity: int | None = None
+    try:
+        affinity = len(os.sched_getaffinity(0)) or None  # type: ignore[attr-defined]
+    except (AttributeError, OSError):
+        affinity = None
+    quota = _cpu_quota(*_cgroup_dirs())
+    if quota is None:
+        return affinity
+    allowed = min(float(affinity), quota) if affinity else quota
+    rounded = round(allowed, 2)
+    return int(rounded) if rounded.is_integer() else rounded
+
+
+def _memory_limit_bytes() -> int | None:
+    """The lowest memory limit of this process's groups, or ``None`` where none is set."""
+    v2, v1 = _cgroup_dirs()
+    limits = [
+        value
+        for folder in v2
+        if (value := _positive_int(_read_text(os.path.join(folder, "memory.max")))) is not None
+    ]
+    for folder in v1.get("memory", []):
+        value = _positive_int(_read_text(os.path.join(folder, "memory.limit_in_bytes")))
+        if value is not None and value < _V1_NO_LIMIT:
+            limits.append(value)
+            break
+    return min(limits) if limits else None
+
+
 def _positive_int(text: str) -> int | None:
     try:
         value = int(text)
@@ -145,7 +242,13 @@ def host_facts() -> dict[str, Any]:
     Linux, the product version on macOS), ``os_version`` the build string,
     ``machine`` the machine type, ``cpu_model`` the processor's own name,
     ``logical_cpus`` the logical processors and ``memory_bytes`` the total
-    physical memory. Read once per process: none of them changes while it runs.
+    physical memory, both as the kernel counts them for the whole machine.
+    ``cpus_available`` is how many processors this process may use (its CPU
+    affinity, held to a CPU quota of its control groups, a fraction where the
+    quota is one) and ``memory_limit_bytes`` the memory limit of its control
+    groups, each only where it is readable and, for the limit, where one is
+    set: inside a container they are what the worker had, where the kernel's
+    are the host's. Read once per process: none of them changes while it runs.
     """
     facts: dict[str, Any] = {}
     try:
@@ -171,6 +274,8 @@ def host_facts() -> dict[str, Any]:
             ("cpu_model", cpu_model or _text(platform.processor())),
             ("logical_cpus", os.cpu_count()),
             ("memory_bytes", memory),
+            ("cpus_available", _cpus_available()),
+            ("memory_limit_bytes", _memory_limit_bytes()),
         ):
             if value:
                 facts[key] = value
@@ -179,25 +284,55 @@ def host_facts() -> dict[str, Any]:
     return facts
 
 
-def agents_record(sent: list[Any], response_models: dict[str, dict[str, int]]) -> dict[str, Any]:
-    """Per agent, what each model of its list sent and which models its answers named.
+def agents_record(
+    sent: list[Any],
+    response_models: dict[str, dict[str, int]],
+    answered: dict[str, dict[int, int]] | None = None,
+    reduced: dict[str, list[str]] | None = None,
+) -> dict[str, Any]:
+    """Per agent, what each model of its list was built to send and which models answered.
 
     ``sent`` is the registry's records in build order (``SentRequest``); a
     model built again (for another event loop) that sends the same is listed
-    once. ``response_models`` is the token ledger's own map.
+    once. ``response_models``, ``answered`` and ``reduced`` are the token
+    ledger's own maps (``response_models``, ``answers_by_position``,
+    ``reduced_response_models``). Where ``answered`` is given, each row
+    carries the calls the model at its place in the list answered. Agents are
+    keyed in lowercase on both sides, as the registry keys them.
     """
     out: dict[str, dict[str, Any]] = {}
+
+    def _block(agent: Any) -> dict[str, Any]:
+        return out.setdefault(str(agent).lower(), {"requests": [], "response_models": {}})
+
     for record in sent:
         row = record.as_dict()
-        block = out.setdefault(str(record.agent), {"requests": [], "response_models": {}})
+        block = _block(record.agent)
         if row not in block["requests"]:
             block["requests"].append(row)
     for agent, models in (response_models or {}).items():
-        block = out.setdefault(str(agent), {"requests": [], "response_models": {}})
-        block["response_models"] = {str(k): int(v) for k, v in models.items()}
+        held = _block(agent)["response_models"]
+        for name, count in models.items():
+            held[str(name)] = held.get(str(name), 0) + int(count)
+    for agent, names in (reduced or {}).items():
+        if names:
+            _block(agent)["response_models_reduced"] = sorted({str(n) for n in names})
+    if answered is not None:
+        counts = {str(a).lower(): dict(by) for a, by in answered.items()}
+        for agent, block in out.items():
+            for row in block["requests"]:
+                row["answered"] = int(counts.get(agent, {}).get(int(row["position"]), 0))
     for block in out.values():
         block["requests"].sort(key=lambda row: int(row.get("position") or 0))
+        block["response_models"] = dict(sorted(block["response_models"].items()))
     return dict(sorted(out.items()))
+
+
+def _ledger_map(ledger: Any, name: str) -> dict[str, Any] | None:
+    """One of the token ledger's per-agent maps, or ``None`` where it keeps none."""
+    read = getattr(ledger, name, None)
+    held = read() if callable(read) else None
+    return held if isinstance(held, dict) else None
 
 
 def environment_record(container: Any) -> dict[str, Any] | None:
@@ -212,9 +347,12 @@ def environment_record(container: Any) -> dict[str, Any] | None:
         sent = list(sent_of()) if callable(sent_of) else []
         ledger_of = getattr(container, "get_token_ledger", None)
         ledger = ledger_of() if callable(ledger_of) else None
-        models_of = getattr(ledger, "response_models", None)
-        models = models_of() if callable(models_of) else {}
-        agents = agents_record(sent, models if isinstance(models, dict) else {})
+        agents = agents_record(
+            sent,
+            _ledger_map(ledger, "response_models") or {},
+            _ledger_map(ledger, "answers_by_position"),
+            _ledger_map(ledger, "reduced_response_models"),
+        )
         if agents:
             record["agents"] = agents
         return record if len(record) > 1 else None

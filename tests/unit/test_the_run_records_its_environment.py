@@ -1,10 +1,12 @@
 """A finished run records the environment it ran in (``run_summary.environment``).
 
-The host the worker read, and per agent what each model sent with every
-request — the sampling parameters or the statement that none was sent, the
-effort with the setting it came from or why none was — and which models the
-provider's answers named. Each fact only where it is known; a summary without
-the block reads as it always has.
+The host the worker read, and per agent what each model was built to send
+with every request — the sampling parameters and thinking switches, the
+statement that none was sent or that the adapter reported nothing, the effort
+with the setting it came from or why none was — how many calls each model
+answered, and which models the provider's answers named. Each fact only where
+it is known; a summary without the block reads as it always has, and the
+report node, a stopped run and a failed verdict each write it.
 """
 
 from __future__ import annotations
@@ -28,7 +30,7 @@ from malspark.analysis.run_summary import RunSummaryBuilder
 from malspark.core.config import Settings
 from malspark.core.token_ledger import TokenLedger, record_response_usage, response_model_of
 from malspark.llm.registry import LLMProviderRegistry
-from malspark.llm.sent_request import NO_SAMPLING_SENT, SentRequest, sampling_sent
+from malspark.llm.sent_request import NO_SAMPLING_SENT, NOT_REPORTED, SentRequest
 
 
 @pytest.fixture(autouse=True)
@@ -55,6 +57,8 @@ class TestTheHost:
             "cpu_model",
             "logical_cpus",
             "memory_bytes",
+            "cpus_available",
+            "memory_limit_bytes",
         }
 
     def test_a_host_that_gives_nothing_records_nothing(
@@ -65,6 +69,8 @@ class TestTheHost:
         monkeypatch.setattr(run_environment.os, "cpu_count", lambda: None)
         monkeypatch.setattr(run_environment.sys, "platform", "plan9")
         monkeypatch.setattr(run_environment, "_posix_memory_bytes", lambda: None)
+        monkeypatch.setattr(run_environment, "_cpus_available", lambda: None)
+        monkeypatch.setattr(run_environment, "_memory_limit_bytes", lambda: None)
         assert host_facts() == {}
 
     def test_a_host_that_fails_to_read_never_raises(self, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -91,6 +97,87 @@ class TestTheHost:
         facts = host_facts()
         assert facts["cpu_model"] == "Some CPU @ 3.0GHz"
         assert facts["memory_bytes"] == 17179869184
+
+    def _groups(
+        self, tmp_path: Any, monkeypatch: pytest.MonkeyPatch, files: dict[str, str]
+    ) -> None:
+        """A control-group tree under ``tmp_path``, and ``/proc/self/cgroup`` naming it."""
+        proc = files.pop("/proc/self/cgroup")
+        for name, text in files.items():
+            path = tmp_path / name
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(text)
+        monkeypatch.setattr(run_environment, "_CGROUP_ROOT", str(tmp_path))
+        real = run_environment._read_text
+        monkeypatch.setattr(
+            run_environment,
+            "_read_text",
+            lambda path: proc if path == "/proc/self/cgroup" else real(path),
+        )
+        monkeypatch.setattr(run_environment.os, "sched_getaffinity", lambda pid: set(range(16)))
+
+    def test_a_v2_quota_and_limit_beside_the_kernel_s_counts(
+        self, tmp_path: Any, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # The worker's group allows 4 processors and 8 GiB; its parent sets
+        # no limit; the kernel still counts the whole machine.
+        self._groups(
+            tmp_path,
+            monkeypatch,
+            {
+                "/proc/self/cgroup": "0::/job/worker\n",
+                "job/worker/cpu.max": "400000 100000",
+                "job/worker/memory.max": "8589934592",
+                "job/cpu.max": "max 100000",
+                "job/memory.max": "max",
+            },
+        )
+        facts = host_facts()
+        assert facts["cpus_available"] == 4
+        assert facts["memory_limit_bytes"] == 8589934592
+        assert facts["logical_cpus"] == run_environment.os.cpu_count()
+
+    def test_a_parent_s_tighter_limit_and_a_fractional_quota(
+        self, tmp_path: Any, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        self._groups(
+            tmp_path,
+            monkeypatch,
+            {
+                "/proc/self/cgroup": "0::/job/worker\n",
+                "job/worker/memory.max": "8589934592",
+                "job/memory.max": "4294967296",
+                "job/cpu.max": "150000 100000",
+            },
+        )
+        facts = host_facts()
+        assert facts["cpus_available"] == 1.5
+        assert facts["memory_limit_bytes"] == 4294967296
+
+    def test_v1_limits_are_read_and_its_no_limit_value_is_none(
+        self, tmp_path: Any, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        self._groups(
+            tmp_path,
+            monkeypatch,
+            {
+                "/proc/self/cgroup": "4:memory:/\n3:cpu,cpuacct:/\n",
+                "cpu/cpu.cfs_quota_us": "200000",
+                "cpu/cpu.cfs_period_us": "100000",
+                "memory/memory.limit_in_bytes": "9223372036854771712",
+            },
+        )
+        facts = host_facts()
+        assert facts["cpus_available"] == 2
+        assert "memory_limit_bytes" not in facts
+
+    def test_no_group_limit_leaves_the_affinity_and_no_limit(
+        self, tmp_path: Any, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        self._groups(tmp_path, monkeypatch, {"/proc/self/cgroup": "0::/\n"})
+        facts = host_facts()
+        assert facts["cpus_available"] == 16
+        assert "memory_limit_bytes" not in facts
 
     def test_an_unread_memory_is_left_out(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setattr(run_environment.sys, "platform", "darwin")
@@ -146,22 +233,38 @@ class TestTheAgents:
         assert agents["static"]["response_models"] == {"m-2026": 3}
         assert agents["judge"] == {"requests": [], "response_models": {"j-1": 1}}
 
-    def test_sampling_is_read_from_fields_and_the_passed_through_channels(self) -> None:
-        class _Model:
-            temperature = 0.2
-            top_p = None
-            max_tokens = 99
-            model_kwargs = {"seed": 7}
-            extra_body = {"repeat_penalty": 1.1, "n_predict": 99}
+    def test_nothing_reported_is_said_and_is_not_none_sent(self) -> None:
+        row = _record(sampling=None, thinking=None).as_dict()
+        assert row["sampling"] is None and row["thinking"] is None
+        assert row["sampling_statement"] == NOT_REPORTED
 
-        assert sampling_sent(_Model()) == {"temperature": 0.2, "seed": 7, "repeat_penalty": 1.1}
+    def test_a_thinking_switch_sent_is_listed(self) -> None:
+        row = _record(thinking={"think": False}).as_dict()
+        assert row["thinking"] == {"think": False}
 
-    def test_a_model_that_sets_nothing_sends_nothing(self) -> None:
-        class _Model:
-            temperature = None
+    def test_each_row_carries_the_calls_its_model_answered(self) -> None:
+        sent = [_record(), _record(position=1, model="fallback")]
+        block = agents_record(sent, {}, {"static": {0: 3}})["static"]
+        assert [(row["model"], row["answered"]) for row in block["requests"]] == [
+            ("m", 3),
+            ("fallback", 0),
+        ]
 
-        assert sampling_sent(_Model()) == {}
-        assert sampling_sent(None) == {}
+    def test_without_the_ledger_s_counts_no_row_claims_a_count(self) -> None:
+        (row,) = agents_record([_record()], {})["static"]["requests"]
+        assert "answered" not in row
+
+    def test_agent_names_are_keyed_alike_on_both_sides(self) -> None:
+        agents = agents_record(
+            [_record(agent="MyAgent")], {"MyAgent": {"m-1": 1}}, {"MyAgent": {0: 1}}
+        )
+        assert list(agents) == ["myagent"]
+        assert agents["myagent"]["response_models"] == {"m-1": 1}
+        assert agents["myagent"]["requests"][0]["answered"] == 1
+
+    def test_a_reduced_identifier_is_said(self) -> None:
+        agents = agents_record([], {"static": {"x.gguf": 2}}, None, {"static": ["x.gguf"]})
+        assert agents["static"]["response_models_reduced"] == ["x.gguf"]
 
 
 # ---------------------------------------------------------------------------
@@ -183,7 +286,60 @@ class TestTheAnswersModels:
             answer = AIMessage(content="x", response_metadata={"model_name": name} if name else {})
             record_response_usage(ledger, answer, agent="static", model="label")
         assert ledger.response_models() == {"static": {"m-2026-01": 2}}
+        # Every answer counts at its place in the list, one naming no model too.
+        assert ledger.answers_by_position() == {"static": {0: 3}}
         assert "response_models" not in json.dumps(ledger.snapshot())
+
+    def test_a_fallback_s_answer_counts_at_its_place(self) -> None:
+        ledger = TokenLedger()
+        answer = AIMessage(
+            content="x",
+            response_metadata={
+                "model_name": "f-1",
+                "malspark_model": "p/f",
+                "malspark_model_position": 1,
+            },
+        )
+        record_response_usage(ledger, answer, agent="static", model="label")
+        assert ledger.answers_by_position() == {"static": {1: 1}}
+
+    def test_the_agent_is_keyed_in_lowercase(self) -> None:
+        ledger = TokenLedger()
+        ledger.note_response_model("MyAgent", "m-1")
+        assert ledger.response_models() == {"myagent": {"m-1": 1}}
+
+    def test_the_mediator_s_answers_are_filed_under_the_mediator_and_charged_to_the_judge(
+        self,
+    ) -> None:
+        ledger = TokenLedger()
+        answer = AIMessage(
+            content="x",
+            response_metadata={"model_name": "mediator-model"},
+            usage_metadata={"input_tokens": 3, "output_tokens": 1, "total_tokens": 4},
+        )
+        record_response_usage(ledger, answer, agent="judge", model="label", runs_on="mediator")
+        assert ledger.response_models() == {"mediator": {"mediator-model": 1}}
+        assert set(ledger.snapshot()["agents"]) == {"judge"}
+
+    @pytest.mark.parametrize(
+        ("served", "kept", "reduced"),
+        [
+            ("/home/someone/models/Qwen3.6-35B-A3B.gguf", "Qwen3.6-35B-A3B.gguf", True),
+            ("C:\\Users\\someone\\m.gguf", "m.gguf", True),
+            ("~/models/m.gguf", "m.gguf", True),
+            ("./m.gguf", "m.gguf", True),
+            ("x-ai/grok-4.fast", "x-ai/grok-4.fast", False),
+            ("models/gemini-2.5-flash", "models/gemini-2.5-flash", False),
+            ("deepseek-chat", "deepseek-chat", False),
+        ],
+    )
+    def test_a_path_shaped_identifier_is_kept_by_its_base_name(
+        self, served: str, kept: str, reduced: bool
+    ) -> None:
+        ledger = TokenLedger()
+        ledger.note_response_model("static", served)
+        assert ledger.response_models() == {"static": {kept: 1}}
+        assert ledger.reduced_response_models() == ({"static": [kept]} if reduced else {})
 
 
 # ---------------------------------------------------------------------------
@@ -358,3 +514,110 @@ class TestTheRegistry:
         lines = [r.getMessage() for r in caplog.records if "claude-haiku-5-5" in r.getMessage()]
         assert any(f"sends sampling: {NO_SAMPLING_SENT}" in line for line in lines), lines
         assert not any("temp=" in line for line in lines)
+
+
+# ---------------------------------------------------------------------------
+# Through a job's container: the mediator's answers under the mediator
+
+
+def test_the_mediator_s_answers_are_filed_under_the_mediator_through_the_container() -> None:
+    from malspark.core.container import ServiceContainer
+
+    settings = _openai_settings(
+        {"mediator": {"provider": "openai", "model": "m-mediator"}}, expert_max_tokens=64
+    )
+    container = ServiceContainer(config=settings, mock=True)
+    container._llm_registry = LLMProviderRegistry(settings)
+    mediator = container.get_judge_agent("mediator")
+    mediator._record_usage(AIMessage(content="x", response_metadata={"model_name": "m-med-1"}))
+    record = environment_record(container)
+    assert record is not None
+    agents = record["agents"]
+    assert agents["mediator"]["requests"][0]["model"] == "m-mediator"
+    assert agents["mediator"]["response_models"] == {"m-med-1": 1}
+    assert agents["mediator"]["requests"][0]["answered"] == 1
+    assert "judge" not in agents or not agents["judge"]["response_models"]
+
+
+# ---------------------------------------------------------------------------
+# Each writer puts the block on the summary it writes
+
+BLOCK = {"v": ENVIRONMENT_VERSION, "host": {"os": "Linux"}}
+
+
+def test_a_stopped_run_writes_the_block(monkeypatch: pytest.MonkeyPatch) -> None:
+    import time
+
+    from malspark.core.container import ServiceContainer
+    from malspark.pipeline.stopped_run import stopped_run_summary
+
+    monkeypatch.setattr(run_environment, "environment_record", lambda container: dict(BLOCK))
+    container = ServiceContainer(Settings(_env_file=None), mock=True)
+    state = {
+        "file_hash": "b" * 64,
+        "run_started_at": time.time() - 5,
+        "reports": {},
+        "isr_reports": {},
+        "evidence_ledger": [],
+        "degradation_reasons": [],
+        "stage_results": {},
+    }
+    summary = stopped_run_summary(state, container, note="stopped")
+    assert summary["environment"] == BLOCK
+
+
+def test_a_failed_verdict_writes_the_block(monkeypatch: pytest.MonkeyPatch) -> None:
+    from malspark.core.container import ServiceContainer
+    from malspark.pipeline import nodes
+
+    monkeypatch.setattr(nodes, "environment_record", lambda container: dict(BLOCK))
+    container = ServiceContainer(Settings(_env_file=None), mock=True)
+    state: dict[str, Any] = {
+        "file_hash": "b" * 64,
+        "reports": {},
+        "isr_reports": {},
+        "evidence_ledger": [],
+        "degradation_reasons": [],
+        "stage_results": {},
+    }
+    summary = nodes._failed_verdict_summary(container, state, None, ["the judge failed"])  # type: ignore[arg-type]
+    assert summary is not None
+    assert summary["environment"] == BLOCK
+
+
+@pytest.mark.asyncio
+async def test_the_report_node_writes_the_block_once_the_last_call_is_made(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from unittest.mock import MagicMock
+
+    from malspark.pipeline import analyst_mode as analyst_mode_module
+    from malspark.pipeline import nodes
+    from malspark.pipeline.analyst_mode import ReporterMode
+    from tests.stages import paper_profile
+    from tests.unit.pipeline.test_the_reporter_follows_the_analyst_mode_decision import _Composer
+    from tests.unit.pipeline.test_what_is_served_is_the_final_report import _state
+
+    monkeypatch.setattr(
+        analyst_mode_module,
+        "resolve_reporter_mode",
+        lambda settings: ReporterMode(1, "auto", "a stated reason"),
+    )
+    monkeypatch.setattr(nodes, "environment_record", lambda container: dict(BLOCK))
+    fake = MagicMock()
+    fake.agent_registry.list_agents.return_value = ["static"]
+    fake.analyst_keys.return_value = ["static"]
+    fake.agent_role.side_effect = lambda n: n
+    fake.is_mock = False
+    fake.config.reporting.enabled = True
+    fake.config.llm.parallel_analysts = "auto"
+    fake.config.negotiation.max_iterations = 3
+    fake.active_profile.return_value = paper_profile(["static"], parallel=False)
+    fake.get_narrative_agent.return_value = None
+    fake.get_report_composer.return_value = _Composer()
+    fake.get_static_provider.return_value.capabilities.provides_evidence = False
+    stage = next(step for step in fake.active_profile().stages if step.kind == "report")
+
+    out = await nodes.make_report_node(fake, stage=stage, announces=False)(_state())  # type: ignore[arg-type]
+
+    assert out["run_summary"]["environment"] == BLOCK

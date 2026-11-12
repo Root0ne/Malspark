@@ -422,29 +422,34 @@
   "elapsed_seconds": null,
   "environment": {
     "agents": {
-      "static": {
+      "*": {
         "requests": [
           {
+            "answered": null,
             "effort": null,
             "effort_setting": null,
             "effort_statement": null,
             "model": null,
             "position": null,
             "provider": null,
-            "sampling": {
-              "temperature": null
-            },
-            "sampling_statement": null
+            "sampling": "<data-keyed map>",
+            "sampling_statement": null,
+            "thinking": "<data-keyed map>"
           }
         ],
-        "response_models": "<data-keyed map>"
+        "response_models": "<data-keyed map>",
+        "response_models_reduced": [
+          null
+        ]
       }
     },
     "host": {
       "cpu_model": null,
+      "cpus_available": null,
       "logical_cpus": null,
       "machine": null,
       "memory_bytes": null,
+      "memory_limit_bytes": null,
       "os": null,
       "os_release": null,
       "os_version": null

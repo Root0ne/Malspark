@@ -170,7 +170,11 @@ def default_profile_summary() -> dict[str, Any]:
                 "cpu_model": "Example CPU",
                 "logical_cpus": 8,
                 "memory_bytes": 17179869184,
+                "cpus_available": 4,
+                "memory_limit_bytes": 8589934592,
             },
+            # Every kind of row: sampling and a thinking switch sent, none
+            # sent, and nothing reported by the adapter.
             "agents": agents_record(
                 [
                     SentRequest(
@@ -179,6 +183,7 @@ def default_profile_summary() -> dict[str, Any]:
                         provider="openai",
                         model="qwen",
                         sampling={"temperature": 0.1},
+                        thinking={"chat_template_kwargs.enable_thinking": False},
                         effort="high",
                         effort_setting="llm.agents.static.effort",
                     ),
@@ -187,10 +192,23 @@ def default_profile_summary() -> dict[str, Any]:
                         position=1,
                         provider="anthropic",
                         model="claude",
+                        sampling={},
+                        thinking={},
                         effort_statement="unset, the provider's default",
                     ),
+                    SentRequest(
+                        agent="static",
+                        position=2,
+                        provider="plug-in",
+                        model="other",
+                        sampling=None,
+                        thinking=None,
+                        effort_statement="none for this provider",
+                    ),
                 ],
-                {"static": {"qwen-2026": 1}},
+                {"static": {"qwen-2026": 1, "model.gguf": 1}},
+                {"static": {0: 2}},
+                {"static": ["model.gguf"]},
             ),
         }
     )
@@ -716,10 +734,17 @@ DATA_KEYED = frozenset(
         # Keyed by answer state, and by the declared argument role.
         "coverage.tools[].states",
         "coverage.tools[].roles",
-        # Keyed by the model identifier the provider's answers named.
-        "environment.agents.static.response_models",
+        # Keyed by the model identifier the provider's answers named, and by
+        # the parameter names a request carried.
+        "environment.agents.*.response_models",
+        "environment.agents.*.requests[].sampling",
+        "environment.agents.*.requests[].thinking",
     }
 )
+
+# The maps keyed by data whose values are rows of one shape (one block per
+# agent), pinned as one row: the union of every value's keys under ``*``.
+KEYED_ROWS = frozenset({"environment.agents"})
 
 
 # The parts whose list items differ in shape by kind (a call row, an input
@@ -743,10 +768,14 @@ def _merged(shapes: list[Any]) -> Any:
 def key_shape(value: Any, path: str = "") -> Any:
     """Keys all the way down; a list contributes the shape of its first item.
 
-    Under :data:`UNION_LISTS` a list contributes the union of its items' shapes.
+    Under :data:`UNION_LISTS` a list contributes the union of its items' shapes;
+    a map of :data:`KEYED_ROWS` contributes the union of its values' shapes.
     """
     if path in DATA_KEYED:
         return "<data-keyed map>"
+    if path in KEYED_ROWS and isinstance(value, dict):
+        rows = [key_shape(row, f"{path}.*") for row in value.values()]
+        return {"*": _merged(rows)} if rows else {}
     if isinstance(value, dict):
         return {
             key: key_shape(value[key], f"{path}.{key}" if path else key) for key in sorted(value)
