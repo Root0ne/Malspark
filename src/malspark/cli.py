@@ -11,7 +11,7 @@ from typing import Any, cast
 
 import typer
 
-from malspark.analysis.run_summary import NOT_APPLICABLE_SENTENCE
+from malspark.analysis.run_summary import NEGOTIATION_CONFIDENCE_LABEL, NOT_APPLICABLE_SENTENCE
 from malspark.app import MalsparkApp
 from malspark.core.config import Settings
 from malspark.core.logger import logger
@@ -176,7 +176,8 @@ def _print_run_summary_inline(run_summary_dict: dict) -> None:
     else:
         shown = "not applicable"
     typer.echo(
-        f"Termination: {neg.get('termination_reason', 'unknown')} | Final confidence: {shown}"
+        f"Termination: {neg.get('termination_reason', 'unknown')} | "
+        f"{NEGOTIATION_CONFIDENCE_LABEL}: {shown}"
     )
     if neg.get("sycophancy_events", 0):
         typer.echo(f"Sycophancy events: {neg['sycophancy_events']} (forced dissent applied)")

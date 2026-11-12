@@ -257,12 +257,15 @@ def test_the_enrichment_queued_after_the_report_is_named_then_what_it_asked() ->
 # Re-pinned when the product took its new name (T-576): the HTML's generator
 # line names Malspark; with the previous name each HTML digest is the one
 # pinned before, and the Markdown did not change.
+# Re-pinned when the debate's last mean claim confidence came to be printed
+# under its own label (T-662): that one line of the run summary appendix is the
+# only change in run5, run7, local8 and haiku4's Markdown and HTML; run4 carries no debate figure.
 STORED_RENDERS = {
-    "run7": ("87ad1594f3cbc6ea", "f8c2570b24983f04"),
-    "run5": ("4fbb0b856aea7f8e", "827d5f7ebdee3768"),
+    "run7": ("acd9cde4906e7107", "3644bf10925af995"),
+    "run5": ("f532e60c002e4f97", "6f44369c58fbe604"),
     "run4": ("581eb11ec3924a68", "0d81125d321278da"),
-    "local8": ("058e0d21f925bb0e", "6016e1c49686fbb1"),
-    "haiku4": ("06a395f0432b80a2", "a56231bf54979dba"),
+    "local8": ("26d87aa32dcde250", "a21fa1436450c755"),
+    "haiku4": ("a6873372c4c2fbe2", "26132fee56318e24"),
 }
 
 

@@ -71,11 +71,15 @@ from tests.unit.reporting.test_an_entry_without_a_source_is_read_as_before impor
 # (T-621): the level's marking definition, and ``object_marking_refs`` naming
 # it on every domain object and relationship; the Markdown and HTML did not
 # change.
+# Re-pinned when the debate's last mean claim confidence came to be printed
+# under its own label (T-662): that one line of the run summary appendix is the
+# only change in run5, run7 and local8's Markdown and HTML; run4 carries no debate
+# figure and the STIX did not change.
 STORED_RENDERS = {
-    "run7": ("87ad1594f3cbc6ea", "f8c2570b24983f04", "6f5f4f1b2ed8ea58"),
-    "run5": ("4fbb0b856aea7f8e", "827d5f7ebdee3768", "b7c19ebb4cb31921"),
+    "run7": ("acd9cde4906e7107", "3644bf10925af995", "6f5f4f1b2ed8ea58"),
+    "run5": ("f532e60c002e4f97", "6f44369c58fbe604", "b7c19ebb4cb31921"),
     "run4": ("581eb11ec3924a68", "0d81125d321278da", "07a486002a8891ac"),
-    "local8": ("058e0d21f925bb0e", "6016e1c49686fbb1", "86c2fdd68be6dde0"),
+    "local8": ("26d87aa32dcde250", "a21fa1436450c755", "86c2fdd68be6dde0"),
 }
 
 _UUID = re.compile(r"--[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}")
