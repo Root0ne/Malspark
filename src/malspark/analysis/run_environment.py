@@ -140,10 +140,12 @@ def _posix_memory_bytes() -> int | None:
     return total if total > 0 else None
 
 
-# Where the control groups are mounted, and the value a v1 limit holds when
+# Where the control groups are mounted, where the hybrid layout mounts v2
+# beside v1 controllers (under the root), and the value a v1 limit holds when
 # none is set (the page counter's maximum, rounded to a page): any value at or
 # above it is no limit.
 _CGROUP_ROOT = "/sys/fs/cgroup"
+_CGROUP_UNIFIED = "unified"
 _V1_NO_LIMIT = 1 << 62
 
 
@@ -155,9 +157,19 @@ def _read_text(path: str) -> str:
         return ""
 
 
+def _up_to(mount: str, path: str) -> list[str]:
+    """``path``'s directory under ``mount``, then each parent's, the mount itself last."""
+    parts = [p for p in path.split("/") if p and p != ".."]
+    return [os.path.join(mount, *parts[:depth]) for depth in range(len(parts), -1, -1)]
+
+
 def _cgroup_dirs() -> tuple[list[str], dict[str, list[str]]]:
     """The v2 directories of this process's group, its own first, then each parent up to
-    the mount; and per v1 controller, its directory and the controller's mount root."""
+    the mount, under the v2 mount and the hybrid layout's; and per v1 controller, its
+    directory, then each parent up to the controller's mount.
+
+    Inside a namespace the path the kernel names may not exist under the mount;
+    the parents, the mount among them, are still read."""
     v2: list[str] = []
     v1: dict[str, list[str]] = {}
     for line in _read_text("/proc/self/cgroup").splitlines():
@@ -165,16 +177,11 @@ def _cgroup_dirs() -> tuple[list[str], dict[str, list[str]]]:
         controllers, _sep, path = rest.partition(":")
         path = path.strip() or "/"
         if not controllers:
-            parts = [p for p in path.split("/") if p and p != ".."]
-            while True:
-                v2.append(os.path.join(_CGROUP_ROOT, *parts))
-                if not parts:
-                    break
-                parts.pop()
+            for mount in (_CGROUP_ROOT, os.path.join(_CGROUP_ROOT, _CGROUP_UNIFIED)):
+                v2.extend(_up_to(mount, path))
             continue
         for controller in controllers.split(","):
-            mount = os.path.join(_CGROUP_ROOT, controller)
-            v1[controller] = [os.path.join(mount, *[p for p in path.split("/") if p]), mount]
+            v1[controller] = _up_to(os.path.join(_CGROUP_ROOT, controller), path)
     return v2, v1
 
 
@@ -191,7 +198,6 @@ def _cpu_quota(v2: list[str], v1: dict[str, list[str]]) -> float | None:
         p = _positive_int(_read_text(os.path.join(folder, "cpu.cfs_period_us")))
         if q and p:
             quotas.append(q / p)
-            break
     return min(quotas) if quotas else None
 
 
@@ -222,7 +228,6 @@ def _memory_limit_bytes() -> int | None:
         value = _positive_int(_read_text(os.path.join(folder, "memory.limit_in_bytes")))
         if value is not None and value < _V1_NO_LIMIT:
             limits.append(value)
-            break
     return min(limits) if limits else None
 
 

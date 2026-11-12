@@ -263,6 +263,17 @@ class TestTheAgents:
             ("fallback", 0),
         ]
 
+    def test_rows_that_share_a_place_each_carry_its_total_and_say_so(self) -> None:
+        # The model at place 0 built again with other sampling: an answer
+        # names its place, not which of the two gave it.
+        sent = [_record(), _record(sampling={"temperature": 0.2}), _record(position=1)]
+        rows = agents_record(sent, {}, {"static": {0: 3, 1: 1}})["static"]["requests"]
+        assert [(r["position"], r["answered"], r.get("answered_shared")) for r in rows] == [
+            (0, 3, True),
+            (0, 3, True),
+            (1, 1, None),
+        ]
+
     def test_without_the_ledger_s_counts_no_row_claims_a_count(self) -> None:
         (row,) = agents_record([_record()], {})["static"]["requests"]
         assert "answered" not in row
