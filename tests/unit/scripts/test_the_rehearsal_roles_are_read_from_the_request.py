@@ -41,8 +41,15 @@ from malspark.agents.judge_agent import (
 from malspark.agents.prompt_fragments import no_tool_call_question
 from malspark.agents.static_analyst import _extract_load_hint
 from malspark.agents.tool_answer_clearing import READ_EVIDENCE_TOOL
-from malspark.pipeline.validation import FEEDBACK_PREAMBLE, RetryDrops, retry_drop_question
+from malspark.pipeline.validation import (
+    FEEDBACK_PREAMBLE,
+    RetryDrops,
+    feedback_text,
+    parse_violations,
+    retry_drop_question,
+)
 from malspark.reporting import composer, narrative_agent
+from malspark.schemas.isr_models import AgentISR
 
 SAMPLE = "/w/sample_1.exe"
 PACK = (
@@ -308,6 +315,51 @@ class TestTheAnalyst:
         role, reply, _fault = Brain().answer(_request(_REVISION_ISR_FRAMING, text))
         assert role == "revision"
         assert reply.note["claims"] == claims_in(written)
+
+    @pytest.mark.parametrize(
+        ("system", "user", "role"),
+        [
+            ("You are the triage analyst.", PACK, "analyst"),
+            (
+                _REVISION_ISR_FRAMING,
+                "YOUR ORIGINAL REPORT:\n[TRIAGE ANALYST — round 0]\n"
+                "  Claim 1: It talks HTTP. (T1071.001) | Evidence: [ev_0006] iocs | "
+                "Confidence: 0.80\n\nPEER REPORTS:\n",
+                "revision",
+            ),
+        ],
+        ids=["analyst", "revision"],
+    )
+    def test_a_broken_first_answer_asked_for_the_claim_format_is_answered_with_claims(
+        self, system: str, user: str, role: str
+    ) -> None:
+        """``schema_break`` breaks the first call only: the validation turn after it gets claims.
+
+        A tools-free analyst (every tool server off) is asked about its broken
+        answer in the validation turn, not by the loop's no-tool-call question;
+        the stub answered that turn by restating the broken prose, so the
+        retry was broken too and the analyst rightly kept no claim.
+        """
+        brain = Brain(scenario="schema_break")
+        first = _request(system, user)
+        found, broken, fault = brain.answer(first)
+        assert (found, fault) == (role, "schema_break") and not claims_in(broken.text)
+        isr = AgentISR(agent_id="triage", domain="triage", claims=[])
+        isr.note_parse(unparsed_answer=broken.text)
+        question = feedback_text(parse_violations(isr))
+        retry = _request(
+            system,
+            "",
+            turns=[
+                wire.Turn(role="user", text=user),
+                wire.Turn(role="assistant", text=broken.text),
+                wire.Turn(role="user", text=question),
+            ],
+        )
+        found, answer, fault = brain.answer(retry)
+        assert (found, fault) == (role, "")
+        assert "T1071.001" in answer.text
+        assert claims_in(answer.text) and answer.note["claims"] == claims_in(answer.text)
 
 
 class TestTheJudgeAndTheReport:

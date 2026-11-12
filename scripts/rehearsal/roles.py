@@ -523,8 +523,14 @@ class Brain:
         last = request.turns[-1] if request.turns else wire.Turn(role="user")
         if markers().keep_question in last.text:
             return wire.Reply(text=_keep_every_item(last.text))
-        if markers().feedback in last.text:
+        asked = markers().feedback in last.text
+        if asked and claims_in(self._previous_or(request, "")):
             return wire.Reply(text=_corrected(self._previous_or(request, ""), last.text))
+        if asked:
+            # The answer asked about carried no claim (a broken first answer):
+            # the claims are written now, as the first answer should have.
+            text = self._isr(request, facts)
+            return wire.Reply(text=text, note={"claims": claims_in(text), "answer": "final"})
         calls_made = len(request.tool_calls_made)
         choice = request.raw.get("tool_choice")
         tools_withheld = choice == "none" or (
@@ -603,9 +609,12 @@ class Brain:
         last = request.turns[-1] if request.turns else wire.Turn(role="user")
         if markers().keep_question in last.text:
             return wire.Reply(text=_keep_every_item(last.text))
-        if markers().feedback in last.text:
+        asked = markers().feedback in last.text
+        if asked and claims_in(self._previous_or(request, "")):
             return wire.Reply(text=_corrected(self._previous_or(request, ""), last.text))
-        mine = _original_claims(request.last_user_text)
+        # Asked about an answer that carried no claim, the own report is read
+        # from the request's first turn, not from the question.
+        mine = _original_claims(request.all_text if asked else request.last_user_text)
         body = "\n".join(mine) if mine else self._isr(request, facts)
         return wire.Reply(
             text=f"{body}\nDISPUTES: NONE",
