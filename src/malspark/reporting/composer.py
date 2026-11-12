@@ -577,12 +577,31 @@ def _expected_object(schema: type[BaseModel], depth: int = 0) -> str:
     """
     fields = getattr(schema, "model_fields", {}) or {}
     body = ", ".join(
-        f'"{name}": {_field_placeholder(field.annotation, depth)}'
+        f'"{name}": {vocabulary_listing(field) or _field_placeholder(field.annotation, depth)}'
         for name, field in fields.items()
         # A field the schema hides from the model is code's (``SkipJsonSchema``).
         if not any(type(mark) is SkipJsonSchema for mark in field.metadata)
     )
     return "{" + body + "}"
+
+
+def vocabulary_listing(field: Any) -> str:
+    """A field's declared vocabulary as the answer contract lists it, or ``""``.
+
+    The one rendering of a declared vocabulary (the schema's ``enum`` that a
+    field's ``json_schema_extra`` writes, as the host-identifier kinds and
+    uses): its words joined by " or ", quoted as one JSON string, the way the
+    structured path's schema shows them. The prompt examples' guard takes
+    exactly this listing out of a contract before it reads the rest.
+    """
+    extra = getattr(field, "json_schema_extra", None)
+    schema: dict[str, Any] = {}
+    if callable(extra):
+        extra(schema)
+    elif isinstance(extra, dict):
+        schema = dict(extra)
+    words = schema.get("enum")
+    return '"' + " or ".join(str(word) for word in words) + '"' if words else ""
 
 
 def section_contract(section: str, schema: type[BaseModel]) -> str:

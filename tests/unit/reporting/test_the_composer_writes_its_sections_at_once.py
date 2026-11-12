@@ -549,7 +549,8 @@ class TestAgainstTheSequentialBase:
     and the Markdown and HTML digests when the identifier table came to print
     the publish rule's answer for each row: those are the only changes. The
     host identifier request was re-pinned again when its contract came to leave
-    out the field code writes (``held_in``): that is the only change.
+    out the field code writes (``held_in``) and to list the kind and use words
+    of the declared vocabularies: those are the only changes.
     """
 
     def test_the_requests_and_the_report_are_those_of_the_base(self) -> None:

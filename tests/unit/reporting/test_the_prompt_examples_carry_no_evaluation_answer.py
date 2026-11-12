@@ -16,6 +16,17 @@ values and technique ids the key scores. A term is matched case-insensitively
 as a substring: of any example's string values (the keys of the answer object
 are the schema's own names and are not checked), and of the whole text of the
 contract, the prompts and the instructions.
+
+A declared vocabulary is the schema's own names, as its keys are: the kinds
+and uses a host identifier is typed with are words of the closed vocabulary
+the platform defines, never a description of the sample. A contract is read
+with exactly the listing the composer renders for each such field
+(``composer.vocabulary_listing``, computed from the code when the test runs)
+taken out; any other text of the contract, a word written beside the listing
+included, is held to the rule. What the structured path sends is read too:
+each section's output schema (``model_json_schema()``) has its descriptions,
+titles, examples and defaults held to the rule, and an enum member passes only
+as a member of a declared vocabulary.
 """
 
 from __future__ import annotations
@@ -267,6 +278,7 @@ from malspark.reporting.composer import (
     SECTION_SCHEMAS,
     WHERE_QUOTED_LEAD,
     section_contract,
+    vocabulary_listing,
 )
 from malspark.reporting.evidence_bundles import sample_flow_fact
 from malspark.reporting.ledger_report import (
@@ -2822,8 +2834,87 @@ PROMPTS: dict[str, str] = {
 # write it and its example — with the object's key names taken out: a key is
 # the schema's own name, the one part of a contract a model is not writing.
 _KEY_NAME_RE = re.compile(r'"[a-z_]+":')
+
+
+def _models_in(schema: Any, seen: set[Any] | None = None) -> list[Any]:
+    """The schema and every model its fields hold, each once."""
+    from typing import get_args
+
+    seen = set() if seen is None else seen
+    if schema in seen or not hasattr(schema, "model_fields"):
+        return []
+    seen.add(schema)
+    found = [schema]
+    for field in schema.model_fields.values():
+        stack = [field.annotation]
+        while stack:
+            annotation = stack.pop()
+            if isinstance(annotation, type) and hasattr(annotation, "model_fields"):
+                found.extend(_models_in(annotation, seen))
+            stack.extend(get_args(annotation))
+    return found
+
+
+def _vocabulary_listings(schema: Any) -> list[str]:
+    """Each declared vocabulary's listing as the composer renders it, for one schema."""
+    return [
+        listing
+        for model in _models_in(schema)
+        for field in model.model_fields.values()
+        for listing in [vocabulary_listing(field)]
+        if listing
+    ]
+
+
+def _declared_vocabulary(schema: Any) -> set[str]:
+    """The members of every declared vocabulary one schema's fields hold."""
+    words: set[str] = set()
+    for model in _models_in(schema):
+        for field in model.model_fields.values():
+            extra = field.json_schema_extra
+            if callable(extra):
+                held: dict[str, Any] = {}
+                extra(held)
+                words.update(str(word) for word in held.get("enum") or ())
+    return words
+
+
+def _without_vocabulary_listings(text: str, listings: list[str]) -> str:
+    """``text`` with each exact listing of a declared vocabulary taken out, nothing else."""
+    for listing in listings:
+        text = text.replace(listing, " ")
+    return text
+
+
 CONTRACTS: dict[str, str] = {
-    name: _KEY_NAME_RE.sub(" ", section_contract(name, schema))
+    name: _KEY_NAME_RE.sub(
+        " ",
+        _without_vocabulary_listings(section_contract(name, schema), _vocabulary_listings(schema)),
+    )
+    for name, schema in SECTION_SCHEMAS.items()
+}
+
+
+def _schema_texts(node: Any, declared: set[str]) -> list[str]:
+    """What a section's output schema shows a model: descriptions, titles, examples,
+    defaults, and the enum members outside a declared vocabulary."""
+    out: list[str] = []
+    if isinstance(node, dict):
+        for key, value in node.items():
+            if key in ("description", "title", "examples", "default"):
+                out.extend(_strings(value))
+            elif key == "enum":
+                out.extend(str(word) for word in value if str(word) not in declared)
+            else:
+                out.extend(_schema_texts(value, declared))
+    elif isinstance(node, list):
+        for item in node:
+            out.extend(_schema_texts(item, declared))
+    return out
+
+
+SCHEMA_TEXTS: dict[str, str] = {
+    name: " ".join(_schema_texts(schema.model_json_schema(), _declared_vocabulary(schema))).lower()
     for name, schema in SECTION_SCHEMAS.items()
 }
 
@@ -3109,6 +3200,61 @@ def test_no_section_contract_carries_a_term_the_key_scores(name: str) -> None:
     text = CONTRACTS[name].lower()
     shared = [term for term in KEY_TERMS if term in text]
     assert not shared, f"the {name} contract carries {shared}"
+
+
+@pytest.mark.parametrize("name", sorted(SCHEMA_TEXTS))
+def test_no_section_schema_carries_a_term_the_key_scores(name: str) -> None:
+    shared = [term for term in KEY_TERMS if term in SCHEMA_TEXTS[name]]
+    assert not shared, f"the {name} output schema carries {shared}"
+
+
+class TestTheVocabularyExemptionIsExact:
+    """The guard takes out exactly the listing the composer renders, and nothing else."""
+
+    @staticmethod
+    def _scan(text: str, schema: Any) -> list[str]:
+        read = _KEY_NAME_RE.sub(
+            " ", _without_vocabulary_listings(text, _vocabulary_listings(schema))
+        )
+        return [term for term in KEY_TERMS if term in read.lower()]
+
+    def test_the_rendered_listing_passes(self) -> None:
+        schema = SECTION_SCHEMAS["host_identifiers"]
+        listings = _vocabulary_listings(schema)
+
+        assert listings and all(
+            listing in section_contract("host_identifiers", schema) for listing in listings
+        )
+        assert self._scan(section_contract("host_identifiers", schema), schema) == []
+
+    def test_a_term_outside_the_listing_fails(self) -> None:
+        schema = SECTION_SCHEMAS["host_identifiers"]
+        text = section_contract("host_identifiers", schema) + " Write the mutex first."
+
+        assert self._scan(text, schema) == ["mutex"]
+
+    def test_a_word_written_beside_the_listing_fails(self) -> None:
+        schema = SECTION_SCHEMAS["host_identifiers"]
+        (kinds, _uses) = _vocabulary_listings(schema)
+        text = section_contract("host_identifiers", schema).replace(kinds, kinds + " beacon", 1)
+
+        assert self._scan(text, schema) == ["beacon"]
+
+    def test_a_word_written_into_the_listing_fails(self) -> None:
+        schema = SECTION_SCHEMAS["host_identifiers"]
+        (kinds, _uses) = _vocabulary_listings(schema)
+        text = section_contract("host_identifiers", schema).replace(
+            kinds, kinds[:-1] + ' or beacon"', 1
+        )
+
+        # The listing no longer matches the rendered one: all of it is read.
+        assert "beacon" in self._scan(text, schema)
+        assert "mutex" in self._scan(text, schema)
+
+    def test_an_enum_outside_a_declared_vocabulary_is_read(self) -> None:
+        node = {"properties": {"x": {"enum": ["beacon", "mutex"]}}}
+
+        assert _schema_texts(node, {"mutex"}) == ["beacon"]
 
 
 def test_every_section_the_composer_asks_for_has_its_contract_read() -> None:
