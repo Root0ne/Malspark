@@ -218,19 +218,33 @@ rather than the sample:
 | `stages` | Every stage of the active team in declaration order: `key`, `kind`, `ran`, `reason`, `agents`, `duration_ms`. A stage that declined is a row saying so, not an absent row. |
 | `environment` | The environment the run ran in, recorded by code: `host` and, per agent, `requests` and `response_models` (below). |
 
-`environment.host` is the worker's host as it reads itself: `os`, `os_release`,
-`os_version`, `machine`, `cpu_model`, `logical_cpus` and `memory_bytes`. A fact
-the host does not give is left out. `environment.agents` has one block per agent.
-Its `requests` hold one row per model of the agent's list (`position` 0 is the
-first model, 1 and on its fallbacks), with `provider` and `model`. Each row's
-`sampling` holds the sampling parameters that model sends with every request,
-read off the model the provider built. An empty `sampling` comes with
-`sampling_statement`: none was sent, and the provider's default applies. `effort`
-is the effort level sent, with `effort_setting`, the setting it was read from.
-Where none is sent, `effort` is `null` and `effort_statement` says why.
-`response_models` counts each model identifier the provider's answers named,
-apart from the model the run asked for. It is empty when no answer named one.
-A summary stored without the block has no `environment` key.
+`environment.host` is the worker's host as it reads itself. `os`, `os_release`,
+`os_version`, `machine` and `cpu_model` describe the system. `logical_cpus` and
+`memory_bytes` are the kernel's counts for the whole machine; inside a container
+they are the host's. Beside them, `cpus_available` is how many processors the
+worker process may use: its CPU affinity, held to a CPU quota of its control
+groups (a fraction where the quota is one). `memory_limit_bytes` is the memory
+limit of its control groups. Both are read from cgroup v2 or v1, each only where
+it is readable, and the limit only where one is set. A fact the host does not
+give is left out.
+
+`environment.agents` has one block per agent, keyed in lowercase. Its `requests`
+hold one row per model the agent was built to send with (`position` 0 is the
+first model, 1 and on its fallbacks), with `provider` and `model`. `answered`
+counts the calls that model answered, so a fallback that was never needed reads
+0. Each row's `sampling` holds the sampling parameters its requests carry and
+`thinking` the thinking switches, keyed by their path in the request body. The
+provider adapter reads both off the request body its client would send, built
+without sending it. An empty `sampling` comes with `sampling_statement`: none was
+sent, and the provider's default applies. `sampling` and `thinking` are `null`
+when the adapter reported nothing, and `sampling_statement` says so; that is not
+a statement that nothing was sent. `effort` is the effort level sent, with
+`effort_setting`, the setting it was read from. Where none is sent, `effort` is
+`null` and `effort_statement` says why. `response_models` counts each model
+identifier the provider's answers named, which may differ from the model the run
+asked for. It is empty when no answer named one. An identifier shaped like a
+file-system path is kept by its base name and listed in
+`response_models_reduced`. A summary stored without the block has no `environment` key.
 
 ### The analysis WebSocket
 
