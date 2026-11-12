@@ -130,11 +130,18 @@ def _search_denied(root: Path) -> Path:
     return target
 
 
+@pytest.mark.parametrize("system", ["Linux", "Darwin", "Windows"])
 @pytest.mark.parametrize("command", COMMANDS, ids=lambda c: " ".join(c))
 def test_a_folder_that_cannot_be_searched_gives_the_clean_line(
-    checkout: Path, capsys: pytest.CaptureFixture[str], command: list[str]
+    checkout: Path,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+    command: list[str],
+    system: str,
 ) -> None:
     _skip_unless_modes_apply()
+    # The files a command probes depend on the host: Darwin and Windows take branches Linux skips.
+    monkeypatch.setattr(dev.platform, "system", lambda: system)
     target = _search_denied(checkout)
     try:
         status = dev.main(command, root=checkout)
@@ -146,8 +153,8 @@ def test_a_folder_that_cannot_be_searched_gives_the_clean_line(
     assert status != 0
     assert "Traceback" not in text
     failing = [line for line in text.splitlines() if "FAIL" in line]
-    assert any(str(target) in line for line in failing)
-    assert all("cannot be read" in line for line in failing)
+    assert any(str(target.parent) in line for line in failing)
+    assert all("cannot be read" in line or "cannot be examined" in line for line in failing)
 
 
 @pytest.mark.skipif(not hasattr(os, "mkfifo"), reason="a FIFO needs POSIX")
@@ -212,13 +219,18 @@ def test_doctor_goes_on_past_an_unreadable_docker_env_too(
     assert "missing  docker/.env" not in shown.out
 
 
-def _report(root: Path, in_use: Callable[[str, int], bool], system: str | None = None) -> list[str]:
+def _report(
+    root: Path,
+    in_use: Callable[[str, int], bool],
+    system: str | None = None,
+    environ: dict[str, str] | None = None,
+) -> list[str]:
     """Doctor's lines, up to the stop an unreadable file ends it with."""
     lines: list[str] = []
     try:
         for line in dev.doctor_report(
             root,
-            {"PATH": ""},
+            {"PATH": "", **(environ or {})},
             probe=lambda argv: None,
             in_use=in_use,
             filesystem=lambda p: None,
@@ -365,3 +377,121 @@ def test_a_missing_example_file_keeps_its_old_error(checkout: Path) -> None:
 
     with pytest.raises(FileNotFoundError, match=r"\.env\.example"):
         dev.main(["env", "init"], root=checkout)
+
+
+def test_what_stands_at_a_path_is_told_apart_without_raising(tmp_path: Path) -> None:
+    (tmp_path / "file").write_text("x", encoding="utf-8")
+    (tmp_path / "folder").mkdir()
+    assert dev._examine(tmp_path / "missing") == dev.ABSENT
+    assert dev._examine(tmp_path / "file" / "below") == dev.ABSENT
+    assert dev._examine(tmp_path / "file") == dev.FILE
+    assert dev._examine(tmp_path / "folder") == dev.DIRECTORY
+    if hasattr(os, "symlink"):
+        os.symlink(tmp_path / "nowhere", tmp_path / "dangling")
+        assert dev._examine(tmp_path / "dangling") == dev.ABSENT
+    if hasattr(os, "mkfifo"):
+        os.mkfifo(tmp_path / "pipe")
+        assert dev._examine(tmp_path / "pipe") == dev.OTHER
+
+
+def test_a_path_that_cannot_be_examined_is_not_taken_for_absent(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    _skip_unless_modes_apply()
+    (tmp_path / "folder").mkdir()
+    (tmp_path / "folder" / "file").write_text("x", encoding="utf-8")
+    (tmp_path / "folder").chmod(0o600)
+    try:
+        assert dev._examine(tmp_path / "folder" / "file") == dev.DENIED
+        with pytest.raises(dev.Stop):
+            dev._is_file(tmp_path / "folder" / "file")
+    finally:
+        (tmp_path / "folder").chmod(0o700)
+    assert "cannot be examined" in capsys.readouterr().err
+
+
+def test_doctor_says_what_it_could_not_examine_and_goes_on(checkout: Path) -> None:
+    _skip_unless_modes_apply()
+    shutil.copy(ROOT / "docker" / "docker-compose.named-data.yml", checkout / "docker")
+    (checkout / "external").mkdir()
+    (checkout / "external" / "x").mkdir()
+    (checkout / "external").chmod(0o600)
+    try:
+        text = "\n".join(_report(checkout, lambda host, port: False, system="Darwin"))
+    finally:
+        (checkout / "external").chmod(0o700)
+
+    assert "  tree     external/" in text and "not checked: cannot be examined" in text
+    assert "  ports    every published port is free" in text
+    assert "  machine  " in text
+
+
+def test_doctor_says_the_overlay_could_not_be_examined(checkout: Path) -> None:
+    _skip_unless_modes_apply()
+    (checkout / "docker").chmod(0o600)
+    try:
+        text = "\n".join(_report(checkout, lambda host, port: False, system="Darwin"))
+    finally:
+        (checkout / "docker").chmod(0o700)
+
+    assert (
+        "  volumes  not checked: docker/docker-compose.named-data.yml could not be examined" in text
+    )
+    assert "  tree     " in text
+
+
+@pytest.mark.parametrize("given", ["", "   ", "[]"])
+def test_an_empty_bind_address_probes_the_compose_default(checkout: Path, given: str) -> None:
+    (checkout / "docker" / ".env").write_text("BIND_ADDRESS=10.9.9.9\n", encoding="utf-8")
+    probed: list[str] = []
+
+    def in_use(host: str, port: int) -> bool:
+        probed.append(host)
+        return False
+
+    _report(checkout, in_use, environ={"BIND_ADDRESS": given})
+
+    assert probed and set(probed) == {dev.LOOPBACK}
+
+
+def test_a_bind_address_is_resolved_as_compose_does(checkout: Path) -> None:
+    (checkout / "docker" / ".env").write_text("BIND_ADDRESS=10.9.9.9\n", encoding="utf-8")
+    probed: list[str] = []
+
+    def in_use(host: str, port: int) -> bool:
+        probed.append(host)
+        return False
+
+    _report(checkout, in_use)
+    assert set(probed) == {"10.9.9.9"}
+    probed.clear()
+    _report(checkout, in_use, environ={"BIND_ADDRESS": "0.0.0.0"})
+    assert set(probed) == {dev.LOOPBACK}
+
+
+@pytest.mark.parametrize("host", ["", "[]"])
+def test_the_port_probe_never_binds_an_empty_address(
+    monkeypatch: pytest.MonkeyPatch, host: str
+) -> None:
+    bound: list[tuple[str, int]] = []
+
+    class Probe:
+        def __init__(self, *args: object) -> None:
+            pass
+
+        def __enter__(self) -> Probe:
+            return self
+
+        def __exit__(self, *args: object) -> None:
+            return None
+
+        def setsockopt(self, *args: object) -> None:
+            return None
+
+        def bind(self, address: tuple[str, int]) -> None:
+            bound.append(address)
+
+    monkeypatch.setattr(dev.socket, "socket", Probe)
+
+    assert dev.port_in_use(host, 4242) is False
+    assert bound == [(dev.LOOPBACK, 4242)]

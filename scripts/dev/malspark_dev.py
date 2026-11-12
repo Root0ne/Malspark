@@ -52,7 +52,7 @@ import tarfile
 import tempfile
 import urllib.parse
 import urllib.request
-from collections.abc import Callable, Iterator, Mapping, Sequence
+from collections.abc import Callable, Collection, Iterator, Mapping, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path, PurePosixPath
 
@@ -135,6 +135,58 @@ def _read_text(path: Path, required: bool = False) -> str | None:
     except OSError:
         problem = "cannot be read"
     raise _fail(f"  FAIL     {path} {problem}")
+
+
+ABSENT, FILE, DIRECTORY, OTHER, DENIED = "absent", "file", "directory", "other", "denied"
+
+
+def _examine(path: Path) -> str:
+    """What stands at ``path``, and never raises: ABSENT (nothing there, a dangling link
+    too), FILE, DIRECTORY, OTHER (a FIFO, a socket, a device) or DENIED (it cannot be
+    examined: a folder on the way is not searchable, a link loops, the file system fails).
+    """
+    try:
+        mode = os.stat(path).st_mode
+    except (FileNotFoundError, NotADirectoryError):
+        return ABSENT
+    except OSError:
+        return DENIED
+    if stat.S_ISREG(mode):
+        return FILE
+    return DIRECTORY if stat.S_ISDIR(mode) else OTHER
+
+
+def _is(path: Path, *kinds: str) -> bool:
+    """Whether ``path`` is one of ``kinds``; a path that cannot be examined stops the run.
+
+    The one line names the path, as the reader's do: a command that decides on
+    a file or a folder never takes "cannot tell" for "not there".
+    """
+    kind = _examine(path)
+    if kind == DENIED:
+        raise _fail(f"  FAIL     {path} cannot be examined")
+    return kind in kinds
+
+
+def _is_file(path: Path) -> bool:
+    return _is(path, FILE)
+
+
+def _is_dir(path: Path) -> bool:
+    return _is(path, DIRECTORY)
+
+
+def _present(path: Path) -> bool:
+    """Whether anything stands at ``path``, whatever it is."""
+    return _is(path, FILE, DIRECTORY, OTHER)
+
+
+def _matching(directory: Path, pattern: str) -> list[Path]:
+    """The directory's entries matching ``pattern``, sorted; a listing that fails stops the run."""
+    try:
+        return sorted(directory.glob(pattern))
+    except OSError:
+        raise _fail(f"  FAIL     {directory} cannot be listed") from None
 
 
 def read_env(path: Path) -> dict[str, str]:
@@ -241,7 +293,7 @@ def host_overlays(
     """The compose files this host adds after the shipped ones (see NAMED_DATA_OVERLAY)."""
     choice = data_volumes_choice(environ or {})
     wanted = not _linux(system) if choice is None else choice
-    if not wanted or not (root / NAMED_DATA_OVERLAY).is_file():
+    if not wanted or not _is_file(root / NAMED_DATA_OVERLAY):
         return []
     return [NAMED_DATA_OVERLAY]
 
@@ -267,7 +319,7 @@ def data_volumes_note(
 
 def dev_overlays(root: Path, system: str | None = None) -> list[str]:
     """The files the development stack adds on this host (see DEV_POLLING_OVERLAY)."""
-    if _linux(system) or not (root / DEV_POLLING_OVERLAY).is_file():
+    if _linux(system) or not _is_file(root / DEV_POLLING_OVERLAY):
         return []
     return [DEV_POLLING_OVERLAY]
 
@@ -311,7 +363,7 @@ def _production_files(root: Path, system: str | None, environ: Mapping[str, str]
     if not overlays:
         return []
     files = ["docker-compose.yml"]
-    if (root / "docker" / "docker-compose.override.yml").is_file():
+    if _is_file(root / "docker" / "docker-compose.override.yml"):
         files.append("docker-compose.override.yml")
     files += [str(PurePosixPath(path).relative_to("docker")) for path in overlays]
     return [arg for path in files for arg in ("-f", path)]
@@ -470,7 +522,7 @@ def _install_hint(program: str) -> str:
 def warn_missing_corpora(root: Path) -> None:
     """The stack mounts ./data over the image's copy, so a corpus missing here is missing there."""
     for corpus in CORPORA:
-        if not (root / corpus).is_dir():
+        if not _is_dir(root / corpus):
             print(
                 f"warning: {corpus} is missing; the stack mounts ./data over the image's copy,"
                 " so run the external command first (make external, or"
@@ -678,9 +730,9 @@ def _unpatch(layout: Layout, target: Target, dest: Path) -> None:
     and nothing else in the tree is touched.
     """
     prefix = f"{target.name}-"
-    patches = sorted(layout.patches.glob("*.patch")) if layout.patches.is_dir() else []
+    patches = _matching(layout.patches, "*.patch") if _is_dir(layout.patches) else []
     for applied in patches:
-        if not applied.name.startswith(prefix) or not applied.is_file():
+        if not applied.name.startswith(prefix) or not _is_file(applied):
             continue
         from_ref = applied.name[len(prefix) : -len(".patch")]
         at = _commit(dest, from_ref)
@@ -705,7 +757,7 @@ def _unpatch(layout: Layout, target: Target, dest: Path) -> None:
 def _fetch_tree(layout: Layout, target: Target) -> None:
     dest = layout.external / target.name
     name, ref = target.name, target.ref
-    if (dest / ".git").is_dir():
+    if _is_dir(dest / ".git"):
         have = _head(dest, "--short")
         # The pin is an exact ref: a tree merely ahead of it was not built or
         # measured against it, so only HEAD == ref counts as in place.
@@ -721,7 +773,7 @@ def _fetch_tree(layout: Layout, target: Target) -> None:
                     f"  FAIL     {name}: cannot check out {ref}; local changes in {dest} are"
                     f" in the way (see git -C {dest} status), or the ref is not there"
                 )
-    elif dest.exists():
+    elif _present(dest):
         print(f"  SKIP     {name} exists and is not a git checkout: {dest}", file=sys.stderr)
         return
     else:
@@ -736,7 +788,7 @@ def _fetch_tree(layout: Layout, target: Target) -> None:
     # The tag's own files differ in line endings by checkout (CRLF as released,
     # LF once an editor has touched them), so whitespace is not compared.
     patch = layout.patches / f"{name}-{ref}.patch"
-    if patch.is_file():
+    if _is_file(patch):
         apply = ("apply", "--ignore-whitespace")
         if _passes(dest, *apply, "--check", str(patch)):
             _git_ok(dest, *apply, str(patch))
@@ -758,7 +810,7 @@ def fetch_sigma(dest: Path, url: str = SIGMA_URL, ref: str = SIGMA_REF) -> None:
     A tree ahead of (or behind) the ref is not the corpus measured, and a ref
     that is not there never falls back to the default branch.
     """
-    if (dest / ".git").is_dir():
+    if _is_dir(dest / ".git"):
         want = _commit(dest, ref)
         if want and _head(dest) == want:
             _say(f"  ok       sigma rules at {_head(dest, '--short')}")
@@ -773,7 +825,7 @@ def fetch_sigma(dest: Path, url: str = SIGMA_URL, ref: str = SIGMA_REF) -> None:
             raise _fail(f"  FAIL     cannot fetch sigma rules {ref}")
         if _runs(*git, "checkout", "--quiet", ref) != 0:
             raise _fail(f"  FAIL     sigma rules {ref} not available")
-    elif dest.exists():
+    elif _present(dest):
         print(f"  SKIP     {dest} exists and is not a git checkout", file=sys.stderr)
     else:
         _say(f"  clone    sigma rules {ref}")
@@ -833,11 +885,11 @@ def _extract(
 def _is_pinned(directory: Path, pin: str, tag: str | None = None) -> bool:
     """It says so in its PINNED.txt, or, for the rules, it is a checkout of the pinned tag."""
     pinned = directory / "PINNED.txt"
-    if pinned.is_file():
+    if _is_file(pinned):
         lines = pinned.read_text(encoding="utf-8", errors="replace").splitlines()
         if lines and lines[0].rstrip("\r") == pin:
             return True
-    if tag and (directory / ".git").exists() and shutil.which("git"):
+    if tag and _present(directory / ".git") and shutil.which("git"):
         at = _git(directory, "rev-parse", "-q", "--verify", "HEAD", quiet=True).stdout.strip()
         tagged = _commit(directory, f"refs/tags/{tag}")
         return bool(at) and at == tagged
@@ -867,7 +919,7 @@ def fetch_capa(layout: Layout, capa: Capa | None = None) -> None:
             )
 
     try:
-        if layout.capa_rules.exists():
+        if _present(layout.capa_rules):
             say_present(layout.capa_rules, capa.rules_pin, "capa rules", f"v{capa.version}")
         else:
             _say(f"  fetch    capa rules v{capa.version}")
@@ -880,7 +932,7 @@ def fetch_capa(layout: Layout, capa: Capa | None = None) -> None:
             _write_text(rules / "PINNED.txt", capa.rules_pin + "\n")
             rules.rename(layout.capa_rules)
 
-        if layout.capa_signatures.exists():
+        if _present(layout.capa_signatures):
             say_present(layout.capa_signatures, capa.signatures_pin, "capa signatures")
         else:
             _say(f"  fetch    capa signatures from flare-capa {capa.version}")
@@ -952,7 +1004,7 @@ def _fernet_key() -> str:
     return base64.urlsafe_b64encode(secrets.token_bytes(32)).decode()
 
 
-DOCKER_SECRETS: dict[str, Callable[[], str]] = {
+DOCKER_GENERATED: dict[str, Callable[[], str]] = {
     "GHIDRA_MCP_AUTH_TOKEN": lambda: secrets.token_urlsafe(32),
     "REDIS_PASSWORD": lambda: secrets.token_urlsafe(32),
     "QDRANT_API_KEY": lambda: secrets.token_urlsafe(32),
@@ -987,12 +1039,29 @@ def port_of(
     return (published_ports(root) if defaults is None else defaults)[name]
 
 
+LOOPBACK = "127.0.0.1"
+
+
+def bind_address(environ: Mapping[str, str], docker_env: Mapping[str, str]) -> str:
+    """The address a host process reaches the published ports on; never empty.
+
+    Resolved as compose resolves ``${BIND_ADDRESS:-127.0.0.1}``: the
+    environment's value when it is set, else docker/.env's, and an empty one is
+    unset, so the default stands. A wildcard (0.0.0.0, ::) publishes on every
+    interface, and a host process reaches that on loopback, which is also where
+    a port taken by anything listening on those addresses is seen.
+    """
+    given = environ["BIND_ADDRESS"] if "BIND_ADDRESS" in environ else docker_env.get("BIND_ADDRESS")
+    address = (given or "").strip().strip("[]").strip()
+    if not address or address in ("0.0.0.0", "::"):
+        return LOOPBACK
+    return address
+
+
 def _host(environ: Mapping[str, str], docker_env: Mapping[str, str]) -> str:
-    """Where a host process reaches the published ports."""
-    bound = environ.get("BIND_ADDRESS") or docker_env.get("BIND_ADDRESS") or "127.0.0.1"
-    if bound in ("0.0.0.0", "::"):
-        return "127.0.0.1"
-    return f"[{bound}]" if ":" in bound else bound
+    """The bind address as a URL's host part."""
+    address = bind_address(environ, docker_env)
+    return f"[{address}]" if ":" in address else address
 
 
 _PLAIN_VALUE = re.compile(r"[A-Za-z0-9_./:@%+=,-]*")
@@ -1115,9 +1184,20 @@ def _derived(
     }
 
 
-def empty_secrets(docker_env: Mapping[str, str]) -> list[str]:
-    """The secrets docker/.env leaves empty or does not set; ``env init --force`` fills them."""
-    return [key for key in DOCKER_SECRETS if not docker_env.get(key)]
+GENERATED_NAMES = tuple(DOCKER_GENERATED)
+
+
+def filled_names(env: Mapping[str, str]) -> frozenset[str]:
+    """The names an env mapping gives a value; the values stay with the caller."""
+    return frozenset(name for name, held in env.items() if held)
+
+
+def unset_names(filled: Collection[str]) -> list[str]:
+    """The names ``env init`` generates that docker/.env leaves empty or does not set.
+
+    ``env init --force`` fills them; only names go in and come out.
+    """
+    return [name for name in GENERATED_NAMES if name not in filled]
 
 
 def stale_derived(
@@ -1126,25 +1206,23 @@ def stale_derived(
     """Each bootstrap.env value, with the docker/.env key, that no longer carries its source."""
     found = []
     for key, sources in DERIVED_FROM.items():
-        value = bootstrap_env.get(key, "")
-        if not value or _PLACEHOLDER.search(value):
+        text = bootstrap_env.get(key, "")
+        if not text or _PLACEHOLDER.search(text):
             continue
         for source in sources:
-            current = docker_env.get(source, "")
-            if not current:
+            held = docker_env.get(source, "")
+            if not held:
                 continue
             carried = (
-                urllib.parse.quote(current, safe="") in value
-                if key.endswith("_URL")
-                else value == current
+                urllib.parse.quote(held, safe="") in text if key.endswith("_URL") else text == held
             )
             if not carried:
                 found.append((key, source))
     return found
 
 
-def _empty_line(key: str) -> str:
-    return f"  warn     docker/.env {key} is empty or not set; run env init --force to generate it"
+def _unset_line(name: str) -> str:
+    return f"  warn     docker/.env {name} is empty or not set; run env init --force to generate it"
 
 
 def _stale_line(key: str, source: str, rewritten: bool = False) -> str:
@@ -1197,11 +1275,11 @@ def _env_init(root: Path, environ: Mapping[str, str], force: bool) -> int:
     # unless both can be, so a refusal leaves the two as they were.
     generated: dict[str, str] = {}
     docker_text: str | None = None
-    if not (docker_env_path.exists() and not force):
+    if not (_present(docker_env_path) and not force):
         kept = _set_lines(docker_env_path)
         generated = {
             key: make()
-            for key, make in DOCKER_SECRETS.items()
+            for key, make in DOCKER_GENERATED.items()
             if not parse_env(kept.get(key, "")).get(key)
         }
         kept = {key: line for key, line in kept.items() if key not in generated}
@@ -1214,7 +1292,7 @@ def _env_init(root: Path, environ: Mapping[str, str], force: bool) -> int:
     old = read_env(bootstrap_path)
     # Kept as written: say so when it no longer carries what docker/.env holds.
     drifted = [pair for pair in stale_derived(old, docker_env) if pair[0] not in stale]
-    if not (bootstrap_path.exists() and not force and not stale):
+    if not (_present(bootstrap_path) and not force and not stale):
         empty = [key for key in needed if not docker_env.get(key)]
         if empty:
             print(
@@ -1238,8 +1316,8 @@ def _env_init(root: Path, environ: Mapping[str, str], force: bool) -> int:
 
     if docker_text is None:
         _say("  ok       docker/.env is there: left as it is (--force rewrites it, values kept)")
-        for key in empty_secrets(docker_env):
-            _say(_empty_line(key))
+        for name in unset_names(filled_names(docker_env)):
+            _say(_unset_line(name))
     else:
         _write_text(docker_env_path, docker_text, private=True)
         made = ", ".join(sorted(generated)) or "none"
@@ -1279,7 +1357,8 @@ def _probe(argv: Sequence[str], timeout: float = 20) -> str | None:
 
 def port_in_use(host: str, port: int) -> bool:
     """Whether something already listens where compose would publish ``port``."""
-    family = socket.AF_INET6 if ":" in host else socket.AF_INET
+    address = host.strip("[]") or LOOPBACK
+    family = socket.AF_INET6 if ":" in address else socket.AF_INET
     with socket.socket(family, socket.SOCK_STREAM) as probe:
         # On Windows a bind can share a port another socket opened for reuse;
         # an exclusive bind is refused wherever anything holds it.
@@ -1287,7 +1366,7 @@ def port_in_use(host: str, port: int) -> bool:
         if exclusive is not None:
             probe.setsockopt(socket.SOL_SOCKET, exclusive, 1)
         try:
-            probe.bind((host.strip("[]"), port))
+            probe.bind((address, port))
         except OSError:
             return True
     return False
@@ -1313,6 +1392,16 @@ def windows_filesystem(path: Path) -> str | None:
 # Beyond this many characters a checkout's path leaves the deepest files of the
 # fetched trees little room under Windows' 260-character limit.
 LONG_CHECKOUT = 60
+
+
+def _state(directory: Path, unreadable: list[str]) -> str:
+    """A tree's or corpus's line; one that cannot be examined is said so, once, on stderr."""
+    kind = _examine(directory)
+    if kind == DENIED:
+        unreadable.append(str(directory))
+        print(f"  FAIL     {directory} cannot be examined", file=sys.stderr)
+        return "not checked: cannot be examined"
+    return "present" if kind == DIRECTORY else "missing  (run external)"
 
 
 def doctor_report(
@@ -1354,8 +1443,15 @@ def doctor_report(
         + (f" (an {emulated} host)" if emulated else "")
         + f", Python {platform.python_version()} {bits}-bit"
     )
-    named_data = bool(host_overlays(root, system, environ))
-    if named_data and docker_read is None:
+    overlay_seen = True
+    try:
+        named_data = bool(host_overlays(root, system, environ))
+    except Stop:
+        named_data, overlay_seen = False, False
+        unreadable.append(NAMED_DATA_OVERLAY)
+    if not overlay_seen:
+        yield f"  volumes  not checked: {NAMED_DATA_OVERLAY} could not be examined"
+    elif named_data and docker_read is None:
         yield "  volumes  not checked: docker/.env could not be read"
     elif named_data:
         yield f"  volumes  {data_volumes_note(root, environ, docker_env)}"
@@ -1405,21 +1501,21 @@ def doctor_report(
             yield f"  compose  {compose}{note}"
     if docker_read is None:
         yield "  secrets  not checked: docker/.env could not be read"
-    elif not (root / "docker" / ".env").is_file():
+    elif not _is_file(root / "docker" / ".env"):
         yield "  missing  docker/.env: run env init"
     else:
-        for key in empty_secrets(docker_env):
+        for name in unset_names(filled_names(docker_env)):
             yield (
-                f"  missing  docker/.env {key} is empty or not set;"
+                f"  missing  docker/.env {name} is empty or not set;"
                 " run env init --force to generate it"
             )
     if docker_read is None or bootstrap_read is None:
         names = " and ".join(n for n in unreadable if n.endswith(".env"))
         yield f"  derived  not checked: {names} could not be read"
-    elif (root / "docker" / ".env").is_file():
+    elif _is_file(root / "docker" / ".env"):
         for key, source in stale_derived(bootstrap_read, docker_env):
             yield _stale_line(key, source)
-    host = _host(environ, docker_env).strip("[]")
+    host = bind_address(environ, docker_env)
     defaults: dict[str, int] | None = None
     if docker_read is not None:
         try:
@@ -1459,11 +1555,9 @@ def doctor_report(
     else:
         yield f"  ports    every published port is free on {host}"
     for tree in [root / "external" / t.name for t in TARGETS if t.default]:
-        state = "present" if tree.is_dir() else "missing  (run external)"
-        yield f"  tree     {tree.relative_to(root).as_posix()} {state}"
+        yield f"  tree     {tree.relative_to(root).as_posix()} {_state(tree, unreadable)}"
     for corpus in CORPORA:
-        state = "present" if (root / corpus).is_dir() else "missing  (run external)"
-        yield f"  data     {corpus} {state}"
+        yield f"  data     {corpus} {_state(root / corpus, unreadable)}"
     if unreadable:
         raise Stop(1)
 
@@ -1577,7 +1671,7 @@ def _main(argv: Sequence[str] | None, root: Path) -> int:
         if status:
             return status
         status = fetch_external([], Layout.of(root, environ))
-        if status == 0 and not (root / "docker" / ".env").exists():
+        if status == 0 and not _present(root / "docker" / ".env"):
             _say("")
             _say("Next: uv run --no-project python scripts/dev/malspark_dev.py env init")
         return status
