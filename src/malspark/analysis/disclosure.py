@@ -738,12 +738,19 @@ def upload_record(
         record["launch_arguments_honoured"] = bool(launch.get("honoured"))
         if launch.get("note"):
             record["launch_arguments_note"] = str(launch["note"])
+        if launch.get("via"):
+            record["launch_arguments_via"] = str(launch["via"])
     return record
 
 
 # The keys of a submission's launch arguments (:func:`upload_record`), carried
 # to its row as they were recorded.
-_LAUNCH_KEYS = ("launch_arguments", "launch_arguments_honoured", "launch_arguments_note")
+_LAUNCH_KEYS = (
+    "launch_arguments",
+    "launch_arguments_honoured",
+    "launch_arguments_note",
+    "launch_arguments_via",
+)
 
 
 # A staging's states, as ``agents.sample_staging`` records them.
@@ -1675,13 +1682,27 @@ def _upload_line(row: Mapping[str, Any], code: Callable[[str], str]) -> str:
 
 
 def _launch_clause(row: Mapping[str, Any], code: Callable[[str], str]) -> str:
-    """What a submission row says of the job's launch arguments; ``""`` where it asked for none."""
+    """What a submission row says of the job's launch arguments; ``""`` where it asked for none.
+
+    The arguments are written out as the Sandbox sentence writes them (ids,
+    run-state markers, chat-template tokens and control characters), so one
+    report reads them one way. Where the provider answered them as honoured,
+    the line says they were sent with the submission, and how, not that the
+    program read them; a failed submission may have sent them as well.
+    """
+    from malspark.utils.written_forms import sample_written_out, template_tokens_written_out
+
     if "launch_arguments" not in row:
         return ""
-    arguments = code(str(row.get("launch_arguments") or ""))
+    written = template_tokens_written_out(
+        sample_written_out(str(row.get("launch_arguments") or ""))
+    )
+    arguments = code(written)
     note = str(row.get("launch_arguments_note") or "")
+    via = str(row.get("launch_arguments_via") or "")
     if row.get("launch_arguments_honoured"):
-        return f" The job's launch arguments {arguments} were passed with it" + (
+        through = f" through {via}" if via else ""
+        return f" The job's launch arguments {arguments} were sent with the submission{through}" + (
             f" ({note})." if note else "."
         )
     return f" The job's launch arguments {arguments} were requested and not honoured" + (

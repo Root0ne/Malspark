@@ -680,6 +680,11 @@ class ServiceContainer:
         # degradation reason (``pipeline.nodes.sandbox_degradation_reason``).
         # ``None`` where the sandbox answered or was never asked.
         self.sandbox_failure: str | None = None
+        # What became of the launch arguments the job asked the sandbox to
+        # start the sample with (``providers.submission.launch_record``), set
+        # by ``app._submit_to_sandbox``; ``None`` where the job asked for none.
+        # Read by the judge for the run's limitation, whether or not a report exists.
+        self.launch_record: dict[str, Any] | None = None
         # The artefacts the sandbox offered beside its report that could not
         # be fetched, one ``ArtefactFetchFailed.record()`` each; set by
         # ``app._submit_to_sandbox`` and carried into the run's degradation

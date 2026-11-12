@@ -51,7 +51,7 @@ class _Provider:
     def submission_address(self) -> str:
         return "lab.example"
 
-    def launch_arguments_answer(self, arguments: str) -> LaunchArgumentsAnswer:
+    def launch_arguments_answer(self, arguments: str, **_: Any) -> LaunchArgumentsAnswer:
         return LaunchArgumentsAnswer(honoured=self._passes, note=self._note)
 
     def submit(self, sample_path: str, **kwargs: Any) -> str:
@@ -116,7 +116,7 @@ class TestTheSubmission:
         assert upload["launch_arguments_honoured"] is False
         assert upload["launch_arguments_note"] == "no field for them"
         assert report[status.LAUNCH_KEY]["honoured"] is False
-        assert status.launch_arguments_reason(report) == (
+        assert status.launch_arguments_reason(app.launch_record) == (
             "launch arguments requested, not honoured by lab-box: no field for them"
         )
 
@@ -133,7 +133,7 @@ class TestTheSubmission:
         assert report is not None and status.LAUNCH_KEY not in report
         assert report == before
         assert status.sandbox_status(report).statement == ""
-        assert status.launch_arguments_reason(report) is None
+        assert status.launch_arguments_reason(app.launch_record) is None
 
     def test_the_mark_is_a_platform_mark_a_sandbox_cannot_set(self) -> None:
         assert status.LAUNCH_KEY in PLATFORM_MARKS
@@ -197,10 +197,18 @@ class TestTheStatement:
 
         assert found.status == status.OBSERVED
         assert found.statement == (
-            f"The job asked the sandbox to launch the sample with the arguments `{ARGS}`, and "
-            "the `lab-box` provider passed them: the behaviour was observed with those "
-            "arguments."
+            f"The job asked the sandbox to launch the sample with the arguments `{ARGS}`; "
+            "the `lab-box` provider sent them in its submission. Whether the started program "
+            "read them is the sandbox's, and is not established here."
         )
+
+    def test_the_statement_names_the_field_and_never_claims_the_program_read_them(self) -> None:
+        marked = _marked(True)
+        marked[status.LAUNCH_KEY]["via"] = "the multipart field 'args'"
+        statement = status.sandbox_status(marked).statement
+
+        assert "sent them in its submission through the multipart field 'args'" in statement
+        assert "was observed with those" not in statement
 
     def test_arguments_not_honoured_are_stated_with_why(self) -> None:
         statement = status.sandbox_status(_marked(False, "no field for them")).statement
@@ -264,10 +272,11 @@ class TestTheLedgerAndTheReport:
         from malspark.pipeline import nodes
 
         assert nodes.launch_arguments_reason is status.launch_arguments_reason
-        assert status.launch_arguments_reason(_marked(False, "why")) == (
+        not_honoured = _marked(False, "why")[status.LAUNCH_KEY]
+        assert status.launch_arguments_reason(not_honoured) == (
             "launch arguments requested, not honoured by lab-box: why"
         )
-        assert status.launch_arguments_reason(_marked(True)) is None
+        assert status.launch_arguments_reason(_marked(True)[status.LAUNCH_KEY]) is None
         assert status.launch_arguments_reason(None) is None
 
 
@@ -275,7 +284,7 @@ class TestTheUploadRecord:
     @pytest.mark.parametrize(
         ("honoured", "note", "said"),
         [
-            (True, "", f" The job's launch arguments `{ARGS}` were passed with it."),
+            (True, "", f" The job's launch arguments `{ARGS}` were sent with the submission."),
             (
                 False,
                 "no field for them",
@@ -300,3 +309,237 @@ class TestTheUploadRecord:
         (line,) = [line for line in disclosure_lines(record) if line.startswith("Sample upload")]
         assert "launch arguments" not in line
         assert line.endswith("sandbox at `lab.example` (outside this machine).")
+
+
+# ---------------------------------------------------------------------------
+# A request no submission carried is recorded, on the run, whatever the path
+# ---------------------------------------------------------------------------
+class _Failing(_Provider):
+    """A provider whose submission ends as asked: raises, times out or reports nothing."""
+
+    def __init__(self, how: str) -> None:
+        super().__init__(passes=True)
+        self.how = how
+
+    def submit(self, sample_path: str, **kwargs: Any) -> str:
+        if self.how == "raises":
+            raise RuntimeError("the sandbox is unreachable")
+        return super().submit(sample_path, **kwargs)
+
+    def wait_for_completion(self, task_id: str, **_: Any) -> str:
+        return "timeout" if self.how == "times out" else "reported"
+
+    def fetch(self, task_id: str) -> SandboxRun:
+        if self.how == "no report":
+            raise RuntimeError("the report could not be fetched")
+        return super().fetch(task_id)
+
+
+class _Attached(_Provider):
+    """A provider that detonates nothing and reads a report attached to the job."""
+
+    @property
+    def capabilities(self) -> Any:
+        return SandboxCapabilities(can_submit=False, accepts_uploaded_report=True)
+
+    def launch_arguments_answer(self, arguments: str, **_: Any) -> LaunchArgumentsAnswer:
+        return LaunchArgumentsAnswer(honoured=False, note="a report this platform did not start")
+
+
+def _asked(app: Any, sample: str | None) -> dict[str, Any] | None:
+    app.launch_arguments = ARGS
+    return asyncio.run(app._submit_to_sandbox(sample))
+
+
+def _not_honoured(app: Any) -> str:
+    record = app.container.launch_record
+    assert record is not None and record["honoured"] is False
+    assert record["arguments"] == ARGS
+    reason = status.launch_arguments_reason(record)
+    assert reason is not None
+    return reason
+
+
+class TestEveryPathRecordsTheRequest:
+    def test_no_sample_path(self) -> None:
+        app = _app(_Provider(passes=True))
+        assert _asked(app, None) is None
+        assert "the job has no sample file to submit" in _not_honoured(app)
+
+    def test_mock_mode(self, tmp_path: Path) -> None:
+        from malspark.app import MalsparkApp
+
+        sample = tmp_path / "s.exe"
+        sample.write_bytes(BYTES)
+        app = MalsparkApp(mock=True)
+        assert _asked(app, str(sample)) is None
+        assert "mock mode" in _not_honoured(app)
+
+    def test_a_sample_file_that_is_missing(self, tmp_path: Path) -> None:
+        app = _app(_Provider(passes=True))
+        assert _asked(app, str(tmp_path / "gone.exe")) is None
+        assert "no sandbox submission was made: the sample file to submit was not found" in (
+            _not_honoured(app)
+        )
+
+    def test_a_provider_that_cannot_be_built(self, tmp_path: Path) -> None:
+        sample = tmp_path / "s.exe"
+        sample.write_bytes(BYTES)
+        app = _app(_Provider(passes=True))
+
+        def _refuse() -> Any:
+            raise RuntimeError("no such provider")
+
+        app.container.get_sandbox_provider = _refuse
+        assert _asked(app, str(sample)) is None
+        assert "choosing the sandbox: no such provider" in _not_honoured(app)
+
+    def test_an_attached_report_carries_the_not_honoured_mark(self, tmp_path: Path) -> None:
+        sample = tmp_path / "s.exe"
+        sample.write_bytes(BYTES)
+        app = _app(_Attached(passes=False))
+        report = app._mark_the_launch(_asked(app, str(sample)))
+        assert report is not None and report[status.LAUNCH_KEY]["honoured"] is False
+        assert "a report this platform did not start" in _not_honoured(app)
+
+    @pytest.mark.parametrize("how", ["raises", "times out", "no report"])
+    def test_a_submission_that_ends_without_a_report(self, tmp_path: Path, how: str) -> None:
+        sample = tmp_path / "s.exe"
+        sample.write_bytes(BYTES)
+        app = _app(_Failing(how))
+        assert _asked(app, str(sample)) is None
+        reason = _not_honoured(app)
+        assert "the submission produced no sandbox report" in reason
+        # The upload record is the provider's answer; the run's record is what was observed.
+        (upload,) = app.container.sample_uploads
+        assert upload["launch_arguments_honoured"] is True
+
+    def test_a_run_that_asked_for_none_records_nothing(self, tmp_path: Path) -> None:
+        sample = tmp_path / "s.exe"
+        sample.write_bytes(BYTES)
+        app = _app(_Failing("raises"))
+        assert asyncio.run(app._submit_to_sandbox(str(sample))) is None
+        assert app.container.launch_record is None
+
+
+class TestTheValueIsCheckedWhereItIsUsed:
+    @pytest.mark.parametrize("value", ["a\r\nb", "a\u0085b", "a b", "a‮b", "a​b"])
+    def test_a_value_that_is_not_one_command_line_is_handed_nothing(
+        self, tmp_path: Path, value: str
+    ) -> None:
+        sample = tmp_path / "s.exe"
+        sample.write_bytes(BYTES)
+        provider = _Provider(passes=True)
+        app = _app(provider)
+        app.launch_arguments = value
+        report = asyncio.run(app._submit_to_sandbox(str(sample)))
+
+        assert report is not None  # the detonation goes ahead
+        assert provider.submitted == [{}]
+        record = app.container.launch_record
+        assert record is not None and record["honoured"] is False
+        assert record["note"].startswith("the value is not one command line: must not hold")
+
+    def test_a_value_past_the_bound_is_handed_nothing(self, tmp_path: Path) -> None:
+        sample = tmp_path / "s.exe"
+        sample.write_bytes(BYTES)
+        provider = _Provider(passes=True)
+        app = _app(provider)
+        app.launch_arguments = "x" * 5000
+        asyncio.run(app._submit_to_sandbox(str(sample)))
+
+        assert provider.submitted == [{}]
+        assert app.container.launch_record["note"].startswith("the value is not one command line")
+        assert len(app.container.launch_record["arguments"]) == 1024
+
+
+# ---------------------------------------------------------------------------
+# One written-out form, and what the lines claim
+# ---------------------------------------------------------------------------
+class TestOneWrittenOutForm:
+    def test_the_disclosure_line_writes_the_arguments_as_the_sandbox_sentence_does(self) -> None:
+        arguments = "--id [ev_0001] --t <|im_start|>"
+        launch = {"provider": "lab-box", "arguments": arguments, "honoured": True, "note": ""}
+        record = disclosure_record(
+            {},
+            uploads=[upload_record("lab-box", submitted=True, host="lab.example", launch=launch)],
+        )
+        (line,) = [line for line in disclosure_lines(record) if line.startswith("Sample upload")]
+        sentence = status.sandbox_status(
+            {**copy.deepcopy(SANDBOX_REPORT), status.LAUNCH_KEY: launch}
+        ).statement
+
+        written = status._code(arguments)
+        assert written in sentence and written in line
+        assert "[ev_0001]" not in line and "<|im_start|>" not in line
+
+    def test_after_a_failed_submission_the_arguments_were_sent_not_passed(self) -> None:
+        launch = {"provider": "lab-box", "arguments": "-x", "honoured": True, "note": ""}
+        record = disclosure_record(
+            {},
+            uploads=[upload_record("lab-box", submitted=False, host="lab.example", launch=launch)],
+        )
+        (line,) = [line for line in disclosure_lines(record) if line.startswith("Sample upload")]
+        assert "1 of the attempts failed" in line
+        assert "were sent with the submission" in line and "were passed" not in line
+
+    def test_the_provider_s_field_is_named(self) -> None:
+        launch = {"provider": "r", "arguments": "-x", "honoured": True, "via": "the field 'a'"}
+        record = disclosure_record(
+            {}, uploads=[upload_record("r", submitted=True, host="h.example", launch=launch)]
+        )
+        (line,) = [line for line in disclosure_lines(record) if line.startswith("Sample upload")]
+        assert "sent with the submission through the field 'a'" in line
+
+
+# ---------------------------------------------------------------------------
+# The degradation path through the judge node
+# ---------------------------------------------------------------------------
+class TestTheJudgeNode:
+    def _update(self, record: dict[str, Any] | None) -> dict[str, Any]:
+        from tests.unit.pipeline.test_degraded_mode_at_the_judge_node import (
+            AsyncMock,
+            Bundle,
+            EvidenceCounter,
+            JudgeVerdict,
+            _Container,
+            _state,
+            make_judge_node,
+        )
+
+        container = _Container(EvidenceCounter())
+        container.launch_record = record
+        judge = container.get_judge_agent(role="judge")
+        judge.give_verdict = AsyncMock(
+            return_value=JudgeVerdict(
+                bundle=Bundle(objects=[]), violations=[], retries=0, fed_back={}
+            )
+        )
+        # The state's report carries no mark: the run's record alone carries the request.
+        return asyncio.run(make_judge_node(container)(_state([])))
+
+    def test_a_request_not_honoured_is_a_degradation_reason_and_a_limitation(self) -> None:
+        from types import SimpleNamespace
+
+        from malspark.reporting.limitation_facts import recorded_reasons
+
+        record = {"provider": "lab-box", "arguments": ARGS, "honoured": False, "note": "why"}
+        reason = "launch arguments requested, not honoured by lab-box: why"
+        update = self._update(record)
+
+        assert reason in update["degradation_reasons"]
+        assert update["degraded_mode"] is True
+        assert reason in update["run_summary"]["degradation_reasons"]
+        _not_run, _withheld, recorded = recorded_reasons(
+            SimpleNamespace(degradation_reasons=update["degradation_reasons"])
+        )
+        assert reason in recorded
+
+    def test_a_request_honoured_or_none_degrades_nothing(self) -> None:
+        for record in (
+            None,
+            {"provider": "lab-box", "arguments": ARGS, "honoured": True, "note": ""},
+        ):
+            update = self._update(record)
+            assert not any("launch arguments" in r for r in update["degradation_reasons"])
+            assert update["degraded_mode"] is False

@@ -137,9 +137,18 @@ class MalsparkApp:
         # The launch arguments this run's job asked the sandbox to start the
         # sample with (``arun``), verbatim; empty asks for none. What became of
         # them is ``launch_record`` (``providers.submission.launch_record``),
-        # set as the sample is submitted and marked on the report.
+        # kept on the container, set as the sample is submitted and marked on
+        # the report.
         self.launch_arguments: str = ""
-        self.launch_record: dict[str, Any] | None = None
+
+    @property
+    def launch_record(self) -> dict[str, Any] | None:
+        """What became of the job's launch arguments; ``None`` where it asked for none."""
+        return self.container.launch_record
+
+    @launch_record.setter
+    def launch_record(self, record: dict[str, Any] | None) -> None:
+        self.container.launch_record = record
 
     async def aclose(self) -> None:
         """Release the container's agents, toolkits and per-job caches.
@@ -421,6 +430,50 @@ class MalsparkApp:
     async def _submit_to_sandbox(self, sample_path: str | None) -> dict[str, Any] | None:
         """Submit sample to sandbox and return the neutral report's document.
 
+        Launch arguments the job asked for that no submission carried, or that
+        ended without a report, are recorded as not honoured with the reason
+        (:meth:`_launch_not_carried`), whichever path ended the submission.
+        """
+        report = await self._submit_the_sample(sample_path)
+        self._launch_not_carried(report, sample_path)
+        return report
+
+    def _launch_not_carried(self, report: dict[str, Any] | None, sample_path: str | None) -> None:
+        """Record the job's launch arguments as not honoured where nothing observed them."""
+        from malspark.providers.submission import (
+            LaunchArgumentsAnswer,
+            launch_record,
+            unmade_record,
+        )
+
+        arguments = self.launch_arguments
+        if not arguments or report is not None:
+            return
+        failure = self.container.sandbox_failure
+        record = self.launch_record
+        if record is None:
+            if not sample_path:
+                why = "the job has no sample file to submit"
+            elif self.container.is_mock:
+                why = "the run is in mock mode and submits nothing"
+            else:
+                why = failure or "no sandbox provider could be set up"
+            self.launch_record = unmade_record(
+                "", arguments, f"no sandbox submission was made: {why}"
+            )
+        elif record.get("honoured") is True:
+            note = "the submission produced no sandbox report, so nothing was observed with them"
+            if failure:
+                note += f" ({failure})"
+            self.launch_record = launch_record(
+                str(record.get("provider") or ""),
+                str(record.get("arguments") or ""),
+                LaunchArgumentsAnswer(honoured=False, note=note),
+            )
+
+    async def _submit_the_sample(self, sample_path: str | None) -> dict[str, Any] | None:
+        """The submission itself, for :meth:`_submit_to_sandbox`.
+
         The document every consumer reads (``schemas.sandbox_document``), laid
         out from the ``SandboxReport`` the provider's registered reader filled.
         Returns None if no sample_path is provided or if submission fails.
@@ -455,7 +508,7 @@ class MalsparkApp:
             # What the provider makes of the job's launch arguments, asked
             # before anything is sent: handed over only where it passes them,
             # and recorded either way (``providers.submission``).
-            options = self._submission_options(provider)
+            options = self._submission_options(provider, path)
             if not caps.can_submit and caps.accepts_uploaded_report:
                 # No detonation: the evidence is already here.
                 stage = "reading the attached report"
@@ -678,20 +731,39 @@ class MalsparkApp:
         with fetch_budget(bounds):
             return cast("str | None", provider.fetch_pcap(task_id, dest_dir))
 
-    def _submission_options(self, provider: Any) -> Any:
+    def _submission_options(self, provider: Any, sample_path: str | Path | None = None) -> Any:
         """The options this job's submission hands ``provider``; ``None`` where it hands none.
 
         Sets :attr:`launch_record` where the job asked for launch arguments:
         the arguments verbatim, the provider, whether it passes them and its
-        note. A provider that cannot pass them is handed nothing, and the
-        record says the request was not honoured; the detonation goes ahead.
+        note. A value that is not one command line
+        (``launch_arguments_problem``) or that the provider cannot pass is
+        handed nothing, and the record says the request was not honoured; the
+        detonation goes ahead.
         """
         arguments = self.launch_arguments
         if not arguments:
             return None
-        from malspark.providers.submission import SubmissionOptions, answer_of, launch_record
+        from malspark.providers.submission import (
+            SubmissionOptions,
+            answer_of,
+            launch_arguments_problem,
+            launch_record,
+            unmade_record,
+        )
 
-        answer = answer_of(provider, arguments)
+        problem = launch_arguments_problem(arguments)
+        if problem:
+            self.launch_record = unmade_record(
+                str(provider.id), arguments, f"the value is not one command line: {problem}"
+            )
+            logger.warning(
+                "Launch arguments requested, not honoured by the %s provider: %s",
+                provider.id,
+                self.launch_record["note"],
+            )
+            return None
+        answer = answer_of(provider, arguments, sample_path)
         self.launch_record = launch_record(str(provider.id), arguments, answer)
         if not answer.honoured:
             logger.warning(

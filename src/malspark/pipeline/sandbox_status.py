@@ -102,8 +102,10 @@ def launch_statement(record: Any) -> str:
 
     ``""`` with no mark, so a job that asked for none reads as it always did.
     The arguments are the operator's run configuration and are written whole,
-    as one code span (:func:`_code`), never masked: a reader of the behaviour
-    needs the exact command line it was observed under.
+    as one code span (:func:`_code`, ids and control characters written out),
+    never masked. What is stated is what is known: the provider sent them in
+    its submission, and through which option or field; whether the started
+    program read them is the sandbox's, and is not claimed.
     """
     if not isinstance(record, Mapping) or "arguments" not in record:
         return ""
@@ -112,10 +114,12 @@ def launch_statement(record: Any) -> str:
     note = str(record.get("note") or "").strip()
     if record.get("honoured") is True:
         tail = f" ({note})" if note else ""
+        via = str(record.get("via") or "").strip()
+        through = f" through {via}" if via else ""
         return (
-            f"The job asked the sandbox to launch the sample with the arguments {arguments}, "
-            f"and the {provider} provider passed them{tail}: the behaviour was observed "
-            "with those arguments."
+            f"The job asked the sandbox to launch the sample with the arguments {arguments}; "
+            f"the {provider} provider sent them in its submission{through}{tail}. Whether the "
+            "started program read them is the sandbox's, and is not established here."
         )
     tail = f": {note}" if note else ""
     return (
@@ -177,13 +181,15 @@ def _code(text: str) -> str:
     return f"{fence} {written} {fence}"
 
 
-def launch_arguments_reason(report: Any) -> str | None:
-    """The run's limitation where its launch arguments were not passed; ``None`` otherwise."""
+def launch_arguments_reason(record: Any) -> str | None:
+    """The run's limitation where its launch arguments were not passed; ``None`` otherwise.
+
+    ``record`` is the run's own record (``container.launch_record``), which
+    exists whether or not a report does.
+    """
     from malspark.providers.submission import not_honoured_reason
 
-    if not isinstance(report, dict):
-        return None
-    return not_honoured_reason(report.get(LAUNCH_KEY))
+    return not_honoured_reason(record)
 
 
 def observed_report(report: Any) -> dict[str, Any] | None:

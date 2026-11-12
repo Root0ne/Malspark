@@ -7290,7 +7290,7 @@ def make_judge_node(
                 if reason not in _degradation_reasons
             )
             # Launch arguments the job asked for and its sandbox did not pass.
-            _launch = launch_arguments_reason(state.get("sandbox_report"))
+            _launch = launch_arguments_reason(getattr(container, "launch_record", None))
             if _launch and _launch not in _degradation_reasons:
                 _degradation_reasons.append(_launch)
             # A container we accept but cannot open. A .docm reaches here
