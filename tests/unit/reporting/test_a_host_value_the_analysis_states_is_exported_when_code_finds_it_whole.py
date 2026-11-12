@@ -168,14 +168,14 @@ class TestTheRunsRowsThatAreRefused:
             (_row("folder", "AppData"), "no: a Windows known folder"),
             (
                 _row("file path", "C:\\Windows\\System32\\cmd.exe"),
-                "no: a program Windows installs, in the folder Windows keeps it in",
+                "no: a file Windows ships, in the folder Windows keeps it in",
             ),
             (
                 _row(
                     "registry key",
                     "Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\Shell Folders",
                 ),
-                "no: a registry key every Windows installation has",
+                "no: a registry key or value every Windows installation has",
             ),
             (
                 _row("file name", "Update_%x"),
@@ -373,8 +373,8 @@ class TestWholeInAPath:
         assert held_in_cited(entries, _row("folder", "Custom_update", cites=["ev_0001"])) == [
             "ev_0001"
         ]
-        # A mutex's name is not read inside a path.
-        assert held_in_cited(entries, _row("mutex", "Custom_update", cites=["ev_0001"])) == []
+        # Only a whole component: a longer one holds nothing.
+        assert held_in_cited(entries, _row("folder", "Custom_upd", cites=["ev_0001"])) == []
 
     def test_a_longer_component_holds_no_folder(self) -> None:
         assert not component_in("custom_update", "c:\\x\\custom_update2\\y")

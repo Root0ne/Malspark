@@ -20,26 +20,31 @@ one of these holds:
   the ledger entries the row cites, when the composer applied the section
   (:func:`held_in_cited`, recorded as ``HostIdentifier.held_in``); a value only
   part of a longer one, or held only by an entry the row does not cite, is not.
-  A folder or a file name counts as whole where it is a whole component of a
-  path the entry writes.
+  A name, a folder or a file name counts only where both its ends are a value
+  delimiter (:func:`delimited_in`): never a word of running text, never a
+  URL's path; a path component and a stream after its file's name count.
 * **Not a template.** A value holding a format placeholder (``%x``, ``%s``,
   ``{0}``) is a pattern the code fills in, which no log records whole.
-* **Not every host's.** Not a known folder, a program Windows installs, a key
-  every Windows installation has or a word of a task definition
-  (``data/host_benign_locations_v1.json``, declared data about Windows itself),
-  and not the sandbox's own copy of the sample (a file named by its digest).
+* **Not every host's.** Not a known folder, a file Windows ships, a key or
+  value every installation has, Windows' own service, pipe or stream, an
+  object namespace or a word of a task definition
+  (``data/host_benign_locations_v1.json``, declared data about Windows itself,
+  each list with its criterion), and not the sample as the sandbox holds it (a
+  file named by its digest or by the name it was submitted under).
 * **A verdict that publishes.** Not Benign, and stated with a confidence, as a
   call binding's value is asked.
 
 A name ordinary software also gives its own tasks, services and files (the
 catalogue's ``generic_names``) is exported with a note that it may match
-ordinary software, and never forms a Sigma selection.
+ordinary software (:func:`listed_only`): listed, and never a matcher on its
+own.
 
 Bounds: at most :data:`MAX_STATED_ROWS` rows of a report are read, at most
 :data:`MAX_CITED` cited entries of a row, and a value longer than
 :data:`MAX_VALUE_CHARS` is refused unread. The checks are linear in the value;
 the whole-value check reads only the cited entries the run's text index says
-may hold the value, each once.
+may hold the value, each once; a URL is looked for at most
+``_URL_LOOKBACK`` characters before an occurrence.
 """
 
 from __future__ import annotations
@@ -68,10 +73,23 @@ MAX_STATED_ROWS = 256
 MAX_CITED = 16
 MAX_VALUE_CHARS = 1024
 
-# The note an exported generic name carries on every surface.
+# The note an exported generic name carries on every surface: it is listed
+# (``/iocs``, MISP with ``to_ids`` off) and never becomes a matcher on its own
+# (no YARA string, Sigma selection, Suricata content or STIX indicator).
 GENERIC_NOTE = (
-    "a name ordinary software also uses, so expect false positives; never selected on alone"
+    "a name ordinary software also uses, so expect false positives; listed, never matched on alone"
 )
+
+
+def listed_only(answer: Any) -> bool:
+    """Whether a published row is listed only: its answer carries :data:`GENERIC_NOTE`.
+
+    Every consumer that turns a published value into a matcher asks this and
+    leaves such a row out.
+    """
+    return GENERIC_NOTE in str(answer or "")
+
+
 # What an exported value of a kind STIX has no object for says.
 NO_STIX_OBJECT = "no STIX object for this kind; carried by /iocs, MISP and Sigma"
 
@@ -144,9 +162,17 @@ class Catalogue:
     environment_folders: frozenset[str]
     system_folders: frozenset[str]
     system_binaries: frozenset[str]
+    object_namespaces: frozenset[str]
+    windows_streams: frozenset[str]
+    windows_services: frozenset[str]
+    windows_pipes: frozenset[str]
     registry_keys: frozenset[str]
+    registry_values: frozenset[str]
     task_definition_words: frozenset[str]
     generic_names: frozenset[str]
+    # The 8.3 short-name stems of the known folders whose long names do not
+    # fit 8.3 (``progra`` of ``Program Files``), derived from the list above.
+    short_stems: frozenset[str]
 
 
 @lru_cache(maxsize=4)
@@ -155,17 +181,34 @@ def benign_catalogue(path: str = DEFAULT_CATALOGUE) -> Catalogue:
     document = json.loads(resolve_data(path).read_text(encoding="utf-8"))
 
     def _set(key: str) -> frozenset[str]:
-        return frozenset(str(word).lower() for word in document.get(key) or () if word)
+        # Each list is ``{"criterion", "source", "entries"}``.
+        listed = document.get(key) or {}
+        entries = listed.get("entries") if isinstance(listed, dict) else listed
+        return frozenset(str(word).lower() for word in entries or () if word)
 
+    known = _set("known_folders")
+    system = _set("system_folders")
     return Catalogue(
-        known_folders=_set("known_folders"),
+        known_folders=known,
         known_folder_prefixes=tuple(sorted(_set("known_folder_prefixes"))),
         environment_folders=_set("environment_folders"),
-        system_folders=_set("system_folders"),
+        system_folders=system,
         system_binaries=_set("system_binaries"),
+        object_namespaces=_set("object_namespaces"),
+        windows_streams=_set("windows_streams"),
+        windows_services=_set("windows_services"),
+        windows_pipes=_set("windows_pipes"),
         registry_keys=_set("registry_keys"),
+        registry_values=_set("registry_values"),
         task_definition_words=_set("task_definition_words"),
         generic_names=_set("generic_names"),
+        short_stems=frozenset(
+            squeezed[:6]
+            for name in known | system
+            if not name.startswith("%")
+            for squeezed in [name.replace(" ", "").replace(".", "")]
+            if len(squeezed) > 8 or squeezed != name
+        ),
     )
 
 
@@ -189,22 +232,31 @@ def is_template(value: Any) -> bool:
 
 
 _DRIVE_RE = re.compile(r"[a-z]:")
+# An 8.3 short name: up to six characters, a tilde and a digit.
+_SHORT_NAME_RE = re.compile(r"([^~]{1,6})~[1-9]")
 
 
 def _components(value: str) -> list[str]:
-    """A path's components, lower case, ``/`` read as ``\\`` and no empty one."""
+    """A path's components, lower case, ``/`` read as ``\\``, each trimmed as Windows trims it.
+
+    Windows ignores the dots and spaces a component ends with, so ``Windows. `` is
+    ``windows``; an empty component is dropped.
+    """
     text = value.strip().strip("\"'").replace("/", "\\")
     if text.startswith("\\\\?\\"):
         text = text[4:]
-    return [part for part in text.lower().split("\\") if part]
+    return [part for part in (raw.rstrip(". ") for raw in text.lower().split("\\")) if part]
 
 
 def _known_component(part: str, previous: str, catalogue: Catalogue) -> bool:
+    short = _SHORT_NAME_RE.fullmatch(part)
     return (
         part in catalogue.known_folders
         or part in catalogue.environment_folders
+        or part in catalogue.system_folders
         or part.startswith(catalogue.known_folder_prefixes)
         or _DRIVE_RE.fullmatch(part) is not None
+        or (short is not None and short.group(1) in catalogue.short_stems)
         # The profile's own name, which every user's folder carries.
         or previous == "users"
     )
@@ -226,7 +278,7 @@ def past_known_folders(value: str) -> str:
     """
     catalogue = benign_catalogue()
     text = value.strip().strip("\"'").replace("/", "\\")
-    parts = [part for part in text.split("\\") if part]
+    parts = [part for part in (raw.rstrip(". ") for raw in text.split("\\")) if part]
     at = 0
     while at < len(parts) and _known_component(
         parts[at].lower(), parts[at - 1].lower() if at else "", catalogue
@@ -244,30 +296,64 @@ def _sample_digests(report: Any) -> frozenset[str]:
     )
 
 
-def benign_reason(kind: HostKind, value: str, sample_digests: frozenset[str] = frozenset()) -> str:
+def _sample_name(report: Any) -> str:
+    """The name the sample was submitted under, its last component, lower case; ``""`` if none."""
+    name = str(getattr(getattr(report, "identity", None), "file_name", "") or "")
+    parts = _components(name)
+    return parts[-1] if parts else ""
+
+
+def _hiveless(value: str) -> str:
+    from malspark.reporting.detection_signatures import hiveless_key
+
+    return "\\".join(_components(hiveless_key(value, value_suffix=False)))
+
+
+def benign_reason(
+    kind: HostKind,
+    value: str,
+    sample_digests: frozenset[str] = frozenset(),
+    sample_name: str = "",
+) -> str:
     """Why a value of ``kind`` is every host's, in the rule's words, or ``""``.
 
     Read against the catalogue (:func:`benign_catalogue`) by the value's shape:
-    a word of a task definition for any bare value; a key Windows keeps for a
-    registry key or value; a known folder, or a program Windows installs that
-    is written bare or in Windows' own system folders, for a folder, a file
-    path or a file name; and the sandbox's copy of the sample, a file named by the
-    sample's own digest.
+    a key or value every installation has (a key under the Services key named
+    after a Windows service among them) for a registry key or value; an object
+    namespace, a word of a task definition, and Windows' own stream, service or
+    pipe for a name; a known folder, or a program Windows ships written bare
+    or in its system folders, for a folder, a file path or a file name; and
+    the sample itself as the sandbox holds it: a file named by the sample's
+    digest or by the name it was submitted under.
     """
     catalogue = benign_catalogue()
     if kind.shape == "key":
-        from malspark.reporting.detection_signatures import hiveless_key
-
-        if hiveless_key(value, value_suffix=False).lower() in catalogue.registry_keys:
-            return "a registry key every Windows installation has"
+        key = _hiveless(value)
+        parent, _, last = key.rpartition("\\")
+        if key in catalogue.registry_keys or key in catalogue.registry_values:
+            return "a registry key or value every Windows installation has"
+        if parent in _SERVICES_KEYS and last in catalogue.windows_services:
+            return "the registry key of a service Windows installs"
         return ""
     parts = _components(value)
     if not parts:
         return ""
-    if len(parts) == 1 and parts[0].lstrip(":") in catalogue.task_definition_words:
-        return "a word of the Task Scheduler's task definition, which every task carries"
-    if kind.shape not in ("path", "file_name", "folder"):
+    if kind.shape == "name":
+        name = _bare_name(kind, value)
+        if not name or name in catalogue.object_namespaces:
+            return "a namespace of Windows' object manager, not a name"
+        if name in catalogue.task_definition_words:
+            return "a word of the Task Scheduler's task definition, which every task carries"
+        own = {
+            "ads": catalogue.windows_streams,
+            "service": catalogue.windows_services,
+            "named_pipe": catalogue.windows_pipes,
+        }.get(kind.table_kind, frozenset())
+        if name in own:
+            return f"a {kind.label.lower()} Windows itself has on every installation"
         return ""
+    if len(parts) == 1 and parts[0] in catalogue.task_definition_words:
+        return "a word of the Task Scheduler's task definition, which every task carries"
     if _all_known(parts, catalogue):
         return "a Windows known folder"
     if kind.shape == "folder":
@@ -277,31 +363,57 @@ def benign_reason(kind: HostKind, value: str, sample_digests: frozenset[str] = f
         part in catalogue.system_folders or _DRIVE_RE.fullmatch(part) is not None
         for part in parts[:-1]
     ):
-        return "a program Windows installs, in the folder Windows keeps it in"
+        return "a file Windows ships, in the folder Windows keeps it in"
     stem = name.rsplit(".", 1)[0]
     if stem in sample_digests:
         return "the sandbox's copy of the sample itself, named by its digest"
+    if sample_name and name == sample_name:
+        return "the sample's own file name, as it was submitted"
     return ""
 
 
-def _name_of(kind: HostKind, value: str) -> str:
-    """The name a generic-name check reads: a path's last component, a stream without its colon."""
+# The Services key, under which each service has a key of its own name.
+_SERVICES_KEYS = frozenset(
+    {"system\\currentcontrolset\\services", "system\\controlset001\\services"}
+)
+
+
+def _bare_name(kind: HostKind, value: str) -> str:
+    """A name without the object namespace or pipe root it is written under, lower case.
+
+    ``Global\\x`` is ``x``, ``\\\\.\\pipe\\x`` is ``x``, a stream ``:x`` (or
+    ``:x:$DATA``) is ``x``; a name of a namespace alone is the namespace.
+    """
+    catalogue = benign_catalogue()
     parts = _components(value)
-    name = parts[-1] if parts else value.strip().lower()
-    return name.lstrip(":") if kind.shape == "name" else name
+    while len(parts) > 1 and (parts[0] in catalogue.object_namespaces or parts[0] == "."):
+        parts = parts[1:]
+    name = "\\".join(parts)
+    if kind.table_kind == "ads":
+        name = name.lstrip(":").split(":", 1)[0]
+    return name
 
 
 def is_generic(kind: HostKind, value: str) -> bool:
     """Whether a value is a name ordinary software also uses (the catalogue's ``generic_names``).
 
-    A file's name is read with and without its extension; a path or a folder
-    with a folder of its own past the known folders is not generic, whatever
-    its last name.
+    A name is read past its object namespace; a file's name with and without
+    its extension; a path or a folder with a folder of its own past the known
+    folders is not generic, whatever its last name; a registry key or value is
+    generic only when its last name is and it stands right under a key every
+    installation has (a Run key's ``Updater``), not under a vendor's own key.
     """
-    generic = benign_catalogue().generic_names
+    catalogue = benign_catalogue()
+    generic = catalogue.generic_names
+    if kind.shape == "key":
+        parent, _, last = _hiveless(value).rpartition("\\")
+        return last in generic and parent in catalogue.registry_keys
     if kind.shape in ("path", "folder") and "\\" in past_known_folders(value).strip("\\"):
         return False
-    name = _name_of(kind, value)
+    if kind.shape == "name":
+        return _bare_name(kind, value) in generic
+    parts = _components(value)
+    name = parts[-1] if parts else ""
     return name in generic or (
         kind.shape in ("path", "file_name") and name.rsplit(".", 1)[0] in generic
     )
@@ -320,8 +432,10 @@ class StatedHostValue:
     value: str
     held_in: tuple[str, ...] | None
     beyond_rows: bool = False
-    # The sample's own digests, which a file the sandbox named after it carries.
+    # The sample's own digests and the name it was submitted under, which the
+    # sandbox's copy of it carries.
     sample_digests: frozenset[str] = frozenset()
+    sample_name: str = ""
 
     @property
     def table_kind(self) -> str:
@@ -353,6 +467,7 @@ def read_stated(item: Any, report: Any = None, *, beyond_rows: bool = False) -> 
         held_in=tuple(str(ref) for ref in held) if held is not None else None,
         beyond_rows=beyond_rows,
         sample_digests=_sample_digests(report),
+        sample_name=_sample_name(report),
     )
 
 
@@ -403,30 +518,32 @@ def stated_refusal(stated: StatedHostValue, verdict: Any) -> str:
         not stated.value or "\\" in stated.value or "/" in stated.value
     ):
         return "written with a folder, it is not a file name"
-    benign = benign_reason(kind, stated.value, stated.sample_digests)
+    benign = benign_reason(kind, stated.value, stated.sample_digests, stated.sample_name)
     if benign:
         return benign
     return ""
 
 
 def stated_reason(stated: StatedHostValue) -> str:
-    """Why an exported value stands: the analysis's statement and the entries holding it."""
+    """Why an exported value stands: the analysis's statement and the entries holding it.
+
+    A value STIX has no object for (a bare folder name, a task, a service, a
+    stream, a pipe) says so; a mutex, a file, a rooted folder and a registry
+    key or value are STIX indicators.
+    """
+    from malspark.reporting.renderers.stix_renderer import indicator_pattern
+
     kind = stated.kind
     word = kind.word if kind is not None else ""
     said = (
         f"stated by the analysis ({word}, {stated.use}), "
         f"found whole in {', '.join(stated.held_in or ())}"
     )
-    if kind is not None and kind.table_kind not in _STIX_TABLE_KINDS:
+    if kind is not None and indicator_pattern(kind.table_kind, stated.value) is None:
         said += f"; {NO_STIX_OBJECT}"
     if kind is not None and is_generic(kind, stated.value):
         said += f"; {GENERIC_NOTE}"
     return said
-
-
-# The IOC-table kinds a stated value is carried in STIX under: a mutex, a file
-# (a path naming a file, or a file's name) and a registry key.
-_STIX_TABLE_KINDS = frozenset({"mutex", "path", "registry"})
 
 
 def analysis_kwargs(report: Any, item: Any, *, beyond_rows: bool = False) -> dict[str, Any]:
@@ -461,50 +578,110 @@ def identifier_answers(report: Any) -> list[tuple[StatedHostValue, str]]:
     return out
 
 
-# What continues one label of a value, and the escape letters a JSON text
-# writes after a backslash (``agents._indicator_denylists``' own reading).
-_CONTINUES_A_LABEL_RE = re.compile(r"[A-Za-z0-9._\-@+%~]")
-_ESCAPE_LETTERS = frozenset('nrt"\\/bf')
+# What a delimited value may stand between. Before it: a quote, a line break
+# (as written or as its escape), a path separator, or the ``=`` / ``:`` of a
+# key-value pair. After it: the same. Never a space, a comma or a full stop:
+# those are running text, and a word of a tool's prose is no value.
+_QUOTES = "\"'"
+_LINE_BREAKS = "\n\r\t"
+_ESCAPED_BREAKS = ("\\n", "\\r", "\\t")
 _SEPARATORS = "\\/"
+_PAIR_MARKS = "=:"
+# What ends the token a URL is written in, and how far back a token is read:
+# a URL is read only within this many characters before an occurrence, so a
+# text of many occurrences costs its length times a constant.
+_TOKEN_ENDS = " \t\n\r\"'<>()[]{},"
+_URL_LOOKBACK = 2048
 
 
-def component_in(name: str, text: str) -> bool:
-    """Whether ``name`` is a whole component of a path ``text`` writes.
+def _in_a_url(text: str, start: int) -> bool:
+    """Whether the occurrence at ``start`` stands inside a URL token (``scheme://…``)."""
+    low = max(0, start - _URL_LOOKBACK)
+    cut = max(text.rfind(end, low, start) for end in _TOKEN_ENDS)
+    return "://" in text[max(cut + 1, low) : start]
 
-    Bounded by a path separator on one side at least, and on each side by a
-    separator, a character that ends a label, or the text's end. A backslash
-    before a name opening with an escape letter is read as a separator only
-    where it is doubled (JSON writes a separator as two). One pass over the
-    occurrences of the name.
+
+def _opens(text: str, start: int, separators: bool) -> bool:
+    if start == 0:
+        return True
+    before = text[start - 1]
+    if before in _QUOTES or before in _LINE_BREAKS or (separators and before in _SEPARATORS):
+        return True
+    if before in _PAIR_MARKS:
+        return True
+    # ``key: value`` and ``key = value``: one space after the mark.
+    if before == " " and start >= 2 and text[start - 2] in _PAIR_MARKS:
+        return True
+    return text[max(0, start - 2) : start] in _ESCAPED_BREAKS
+
+
+def _closes(text: str, end: int, separators: bool) -> bool:
+    if end >= len(text):
+        return True
+    after = text[end]
+    if after in _QUOTES or after in _LINE_BREAKS or after in _PAIR_MARKS:
+        return True
+    if separators and after in _SEPARATORS:
+        return True
+    # An escaped quote or line break after it (``\\"``, ``\\n``) ends a JSON string.
+    return after == "\\" and text[end + 1 : end + 2] in ('"', "n", "r", "t")
+
+
+def delimited_in(
+    name: str, text: str, *, after_colon: bool = False, separators: bool = True
+) -> bool:
+    """Whether ``name`` stands in ``text`` as a value of its own, delimited at both ends.
+
+    Both ends must be a value delimiter: a quote or the start or end of the
+    text, a line break or its escape, a path separator, or the ``=`` / ``:`` of
+    a key-value pair — never a space, a comma or a full stop of running text,
+    so ``{"text": "updater"}`` holds ``updater`` and "installs an updater, which
+    runs" does not. A path separator delimits only with ``separators`` (a
+    folder's or a file's name is a path component; a mutex's, a task's or a
+    service's name inside a path is that path's, not the name). An occurrence
+    inside a URL is never a host value: a URL's path names no folder or file
+    on a host. ``after_colon`` asks for a stream name, which follows the ``:``
+    that ends its file's name (``a.exe:x``). One pass over the occurrences.
     """
     if not name or not text:
         return False
     start = text.find(name)
     while start != -1:
         end = start + len(name)
-        before = text[start - 1] if start else ""
-        after = text[end] if end < len(text) else ""
-        sep_before = before == "/" or (
-            before == "\\"
-            and (name[0] not in _ESCAPE_LETTERS or (start >= 2 and text[start - 2] == "\\"))
+        opened = (
+            (start > 0 and text[start - 1] == ":")
+            if after_colon
+            else _opens(text, start, separators)
         )
-        sep_after = after in _SEPARATORS and bool(after)
-        ends_before = sep_before or not before or not _CONTINUES_A_LABEL_RE.match(before)
-        ends_after = sep_after or not after or not _CONTINUES_A_LABEL_RE.match(after)
-        if (sep_before or sep_after) and ends_before and ends_after:
+        if opened and _closes(text, end, separators) and not _in_a_url(text, start):
             return True
         start = text.find(name, start + 1)
     return False
+
+
+def component_in(name: str, text: str) -> bool:
+    """Whether ``name`` is a whole component of a path ``text`` writes (:func:`delimited_in`)."""
+    return delimited_in(name, text)
+
+
+def _delimited_shape(kind: HostKind | None) -> bool:
+    """Whether a value of ``kind`` is held only where delimited: a name, a folder, a file name."""
+    return kind is not None and kind.shape in ("name", "folder", "file_name")
 
 
 def held_in_cited(entries: Any, item: Any) -> list[str]:
     """The entries a row cites that hold its value whole, as the row cites them.
 
     The value is read in every spelling a run's texts write it in
-    (:func:`encodings`) and found whole (``whole_value_in``); a folder or
-    a file name also as a whole component of a path (:func:`component_in`).
-    Only the cited entries the text index says may hold the value are read
-    (``EntryTexts.may_hold``), at most :data:`MAX_CITED` of them.
+    (:func:`encodings`). A name, a folder or a file name counts only where it
+    is delimited at both ends (:func:`delimited_in`): a quote, a line break, a
+    key-value mark or, for a folder or a file name, a path separator; never
+    running text and never a URL; a
+    file name or folder written with leading separators is also read bare, as
+    a path component; a stream is read as the name after its file's colon. A
+    file path and a registry key or value are found whole as any value is
+    (``whole_value_in``). Only the cited entries the text index says may hold
+    the value are read (``EntryTexts.may_hold``), at most :data:`MAX_CITED`.
     """
     from malspark.agents._indicator_denylists import whole_value_in
 
@@ -514,14 +691,17 @@ def held_in_cited(entries: Any, item: Any) -> list[str]:
     kind = typed_kind(getattr(item, "kind", ""))
     lowered = value.lower()
     forms = encodings(lowered)
+    stream = ""
     names: list[str] = []
-    if kind is not None and kind.shape in ("folder", "file_name"):
+    if kind is not None and kind.table_kind == "ads":
+        stream = lowered.lstrip(":")
+    elif kind is not None and kind.shape in ("folder", "file_name"):
         bare = lowered.strip("\\/")
-        if bare and "\\" not in bare and "/" not in bare:
-            names = [bare]
+        if bare and bare != lowered:
+            names = encodings(bare)
     cited = _cited(getattr(item, "evidence_refs", None) or [])
     candidates: set[str] = set()
-    for form in [*forms, *names]:
+    for form in [*forms, *names, *([stream] if stream else [])]:
         candidates |= set(entries.may_hold(form))
     out: list[str] = []
     for ref in cited:
@@ -530,9 +710,17 @@ def held_in_cited(entries: Any, item: Any) -> list[str]:
         text = entries.text_of(ref)
         if not text:
             continue
-        if any(whole_value_in(form, text) for form in forms) or any(
-            component_in(form, text) for name in names for form in encodings(name)
-        ):
+        paths = kind is not None and kind.shape in ("folder", "file_name")
+        if stream:
+            held = any(delimited_in(form, text, separators=False) for form in forms) or any(
+                delimited_in(form, text, after_colon=True, separators=False)
+                for form in encodings(stream)
+            )
+        elif _delimited_shape(kind):
+            held = any(delimited_in(form, text, separators=paths) for form in [*forms, *names])
+        else:
+            held = any(whole_value_in(form, text) for form in forms)
+        if held:
             out.append(ref)
     return out
 
