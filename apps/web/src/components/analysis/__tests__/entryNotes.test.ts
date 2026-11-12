@@ -64,6 +64,17 @@ describe("what a row says about how its answer was kept", () => {
     ]);
   });
 
+  it("says whether a repeated call ran again, and a call filed with no tool run", () => {
+    expect(entryNotes(entry({ repeated_of: "ev_0003", ran: true }))).toEqual([
+      "Ran again; the earlier identical call ev_0003 holds the same answer.",
+    ]);
+    expect(entryNotes(entry({ repeated_of: "ev_0003", ran: false }))).toEqual([
+      "Answered from the earlier identical call ev_0003, not run again.",
+    ]);
+    expect(entryNotes(entry({ ran: false }))).toEqual(["Answered with no tool run."]);
+    expect(entryNotes(entry({ ran: true }))).toEqual([]);
+  });
+
   it("names the nulls a call left out, by path", () => {
     expect(
       entryNotes(

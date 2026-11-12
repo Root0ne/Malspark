@@ -83,6 +83,31 @@ def test_it_is_sealed_when_stated_and_not_when_absent() -> None:
     assert "ran" in {c.name for c in EvidenceEntry.__table__.columns}
 
 
+def test_a_row_that_states_nothing_digests_as_it_did_before_the_column() -> None:
+    row = {
+        "entry_id": "ev_0002",
+        "seq": 2,
+        "stage": "static",
+        "agent": "static",
+        "server": "analysis",
+        "tool": "strings",
+        "ok": True,
+        "duration_ms": 12,
+        "args": {"path": "a"},
+        "output": "x",
+        "truncated": False,
+        "repeated_of": "ev_0001",
+        "started_at": 1.5,
+        "created_at": datetime(2026, 11, 12, 12, 0, 0, tzinfo=UTC),
+        "facts": {"k": 1},
+    }
+    # Computed with the module as it stood before the column existed.
+    assert (
+        ledger_chain.entry_digest(row)
+        == "7f52a72e57142e0c7888c3d57eafba253fc343ebd79f73e6f11754ebdd45d893"
+    )
+
+
 def _load() -> Any:
     spec = util.spec_from_file_location("evidence_state_whether_the_tool_ran", _REV)
     assert spec is not None and spec.loader is not None

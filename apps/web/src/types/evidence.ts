@@ -73,7 +73,7 @@ export interface EvidenceEntry {
   /** Whether the call's tool ran: false on an entry filed with no tool run,
    *  true on one that ran and whose answer an earlier entry holds. Absent on
    *  any other entry and on rows older than the column. */
-  ran?: boolean;
+  ran?: boolean | null;
   facts?: Record<string, unknown>;
   reputation?: Record<string, unknown>;
   pack_step?: Record<string, unknown>;

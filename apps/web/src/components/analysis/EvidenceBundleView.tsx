@@ -19,6 +19,7 @@ import {
   notesCiting,
   readBundle,
   resolveTarget,
+  resultWords,
   subsectionAnchors,
   type BundleIndexRow,
   type BundleNote,
@@ -254,13 +255,6 @@ export default function EvidenceBundleView({ jobId, reportId }: { jobId: string;
       </section>
     </div>
   );
-}
-
-function resultWords(row: BundleIndexRow): { text: string; tone: string } {
-  if (!row.ok) return { text: "failed", tone: "text-status-red" };
-  if (row.repeated_of !== null) return { text: `same as ${row.repeated_of}`, tone: "text-text-secondary" };
-  if (row.truncated) return { text: "ok, trimmed", tone: "text-status-orange" };
-  return { text: "ok", tone: "text-status-green" };
 }
 
 /** The evidence index: one row per tool call, searchable, each row's output one link away. */
