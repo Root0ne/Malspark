@@ -2877,7 +2877,15 @@ class ReportComposer:
         # By finding and, for a finding about sentences or values, by
         # sentence or value: a new one under a term already asked about was
         # not asked either.
-        late = [v for v in ungrounded if retries and raised_only_in_retry(v, shown)]
+        # Only where every finding is asked: in ``record_only``
+        # (``validation.feedback``) a retry asks only about an answer that
+        # could not be read, a finding beside that was not asked whichever
+        # answer it stood in, and its row is already marked not asked.
+        late = (
+            [v for v in ungrounded if retries and raised_only_in_retry(v, shown)]
+            if feeds_back()
+            else []
+        )
         self._record_ungrounded(
             section or schema.__name__, [v for v in ungrounded if v not in late]
         )

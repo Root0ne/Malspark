@@ -91,6 +91,70 @@ class TestTheComposer:
         assert report.flagged_statements == []
 
 
+def _retry_rows(mode: str) -> dict[str, list[dict[str, str]]]:
+    """The composer's and the narrative's rows for a citation an off-schema answer wrote.
+
+    The first answer breaks its schema and cites the wrong entry; the retry,
+    asked about the schema alone in ``record_only``, cites it again. The
+    citation was in the first answer, so it did not first appear in a retry.
+    """
+    import asyncio
+    from unittest.mock import AsyncMock, MagicMock, patch
+
+    from langchain_core.messages import HumanMessage
+
+    from malspark.reporting.composer import ReportComposer
+    from malspark.reporting.narrative_agent import NarrativeAgent
+    from tests.unit.reporting.test_a_kept_wrong_citation_is_marked_with_its_holder import (
+        _ProseOut,
+        _RawLLM,
+        _report,
+        _texts,
+    )
+
+    citable = ["ev_0102", "ev_0105", "ev_0107", "ev_0109"]
+    comp = ReportComposer(
+        llm=_RawLLM(  # type: ignore[arg-type]
+            json.dumps({"body": WRONG, "evidence_refs": 5}),
+            json.dumps({"body": WRONG, "evidence_refs": []}),
+        ),
+        per_section_timeout=5,
+    )
+    comp._report = _report()
+    comp._entries = _texts()
+    comp._citable = citable
+    with patch(
+        "malspark.reporting.composer.structured_output_supported_for_llm", return_value=False
+    ):
+        asyncio.run(comp._invoke([HumanMessage(content="write it")], _ProseOut, section="x"))
+
+    off_schema = json.loads(_summary(WRONG))
+    off_schema["defensive_recommendations"] = 5
+    llm = MagicMock()
+    structured = MagicMock()
+    structured.ainvoke = AsyncMock(side_effect=Exception("no schema"))
+    llm.with_structured_output.return_value = structured
+    llm.ainvoke = AsyncMock(
+        side_effect=[MagicMock(content=json.dumps(off_schema)), MagicMock(content=_summary(WRONG))]
+    )
+    narrative = NarrativeAgent(llm=llm)
+    asyncio.run(narrative.generate(_report(), citable_ids=citable, evidence=_texts()))
+    return {
+        "composer": comp.validation_tally.unresolved,
+        "narrative": narrative.validation_tally.unresolved,
+    }
+
+
+def test_no_finding_is_said_to_be_only_in_a_retry_that_was_not_asked_for_it(mode: str) -> None:
+    for stage, rows in _retry_rows(mode).items():
+        (row,) = [r for r in rows if r["code"] == CITATION_WRONG_ENTRY_CODE]
+        assert "first appeared in the answer to" not in row["message"], stage
+        if mode == "record_only":
+            assert row["asked"] == "false", stage
+        else:
+            assert "asked" not in row, stage
+
+
 class TestTheComposerStructuredPath:
     def test_an_unpublished_value_is_asked_only_in_feed_back(self, mode: str) -> None:
         from malspark.pipeline.validation import UNPUBLISHED_VALUE_CODE
