@@ -418,6 +418,11 @@ class TokenLedger:
         # rewritten.
         self._ended = False
         self._late: list[dict[str, Any]] = []
+        # Per agent, each model identifier the provider's answers carried
+        # (``response_model_of``) and how many answers carried it. Not in the
+        # snapshot, so the summary's token block reads as it always did; read
+        # by the run summary's environment block.
+        self._response_models: dict[str, dict[str, int]] = {}
 
     def end(self) -> None:
         """The run summary's figures are final: what is charged from now on landed after it.
@@ -598,6 +603,23 @@ class TokenLedger:
         self._record_late(row)
         self._tell(row)
 
+    def note_response_model(self, agent: str, model: str) -> None:
+        """One answer to ``agent`` that named ``model`` as the model that gave it."""
+        name = str(model or "").strip()
+        if not name:
+            return
+        with self._lock:
+            held = self._response_models.setdefault(str(agent), {})
+            held[name] = held.get(name, 0) + 1
+
+    def response_models(self) -> dict[str, dict[str, int]]:
+        """Per agent, each model identifier its answers carried and how often, as a plain copy."""
+        with self._lock:
+            return {
+                agent: dict(sorted(held.items()))
+                for agent, held in sorted(self._response_models.items())
+            }
+
     @property
     def input_tokens(self) -> int:
         return self._total.input_tokens
@@ -679,8 +701,30 @@ def record_response_usage(
             estimated=None if usage is not None else estimated_usage(response),
             retries=retries_of(response),
         )
+        ledger.note_response_model(agent, response_model_of(response))
     except Exception:  # noqa: BLE001 — telemetry must never break analysis
         return
+
+
+# The answer metadata keys a client library names the answering model under,
+# the standard one first.
+RESPONSE_MODEL_KEYS: tuple[str, ...] = ("model_name", "model")
+
+
+def response_model_of(response: Any) -> str:
+    """The model identifier the provider's answer carried, or ``""`` where it carried none.
+
+    Read from the answer's own metadata as the client library filed it, never
+    from the model the job asked for.
+    """
+    metadata = getattr(response, "response_metadata", None)
+    if not isinstance(metadata, dict):
+        return ""
+    for key in RESPONSE_MODEL_KEYS:
+        value = metadata.get(key)
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+    return ""
 
 
 def record_lost_retries(

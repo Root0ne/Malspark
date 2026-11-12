@@ -420,6 +420,37 @@
     "v": null
   },
   "elapsed_seconds": null,
+  "environment": {
+    "agents": {
+      "static": {
+        "requests": [
+          {
+            "effort": null,
+            "effort_setting": null,
+            "effort_statement": null,
+            "model": null,
+            "position": null,
+            "provider": null,
+            "sampling": {
+              "temperature": null
+            },
+            "sampling_statement": null
+          }
+        ],
+        "response_models": "<data-keyed map>"
+      }
+    },
+    "host": {
+      "cpu_model": null,
+      "logical_cpus": null,
+      "machine": null,
+      "memory_bytes": null,
+      "os": null,
+      "os_release": null,
+      "os_version": null
+    },
+    "v": null
+  },
   "evidence": {
     "by_tool": "<data-keyed map>",
     "entries": null,

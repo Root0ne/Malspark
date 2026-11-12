@@ -1375,6 +1375,12 @@ class RunSummary:
     # The operator's spend ceiling and what the run spent against it
     # (``core.spend.SpendMeter.snapshot``). ``None`` with no ceiling set.
     spend: dict[str, Any] | None = None
+    # The environment the run ran in (``analysis.run_environment``): the
+    # worker's host, and per agent what its models sent with every request
+    # and which models their answers named. ``None`` where nothing could be
+    # read; written to the dict only when set, so a summary without it reads
+    # as it always has.
+    environment: dict[str, Any] | None = None
     # ``dedupe`` is deliberately not a field here. What the report folded is
     # counted while the report's sections are built, which happens after this
     # object exists, so the report builder writes ``dedupe`` onto the summary
@@ -1901,6 +1907,9 @@ class RunSummary:
         if self.spend:
             result["spend"] = dict(self.spend)
 
+        if self.environment:
+            result["environment"] = dict(self.environment)
+
         if self.truncation:
             t = self.truncation
             result["truncation"] = {
@@ -2026,6 +2035,7 @@ class RunSummaryBuilder:
         self._tool_latency: dict[str, Any] | None = None
         self._models: dict[str, Any] | None = None
         self._server_rests: list[dict[str, Any]] | None = None
+        self._environment: dict[str, Any] | None = None
 
     def set_budget(self, records: dict[str, list[dict[str, Any]]] | None) -> RunSummaryBuilder:
         """What each agent spent, summed over its loops, and the caps that ended them.
@@ -2362,6 +2372,11 @@ class RunSummaryBuilder:
         """Record the spend ceiling and what the run spent against it; ``None`` leaves it unset."""
         if isinstance(snapshot, dict) and snapshot:
             self._spend = dict(snapshot)
+        return self
+
+    def set_environment(self, record: dict[str, Any] | None) -> RunSummaryBuilder:
+        """Record the environment the run ran in (``run_environment.environment_record``)."""
+        self._environment = dict(record) if isinstance(record, dict) and record else None
         return self
 
     def set_truncation(self, snapshot: dict[str, Any] | None) -> RunSummaryBuilder:
@@ -2756,6 +2771,7 @@ class RunSummaryBuilder:
             isolated_memory=self._isolated_memory,
             generation=self._generation,
             spend=self._spend,
+            environment=self._environment,
         )
 
 

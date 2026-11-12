@@ -154,6 +154,46 @@ def default_profile_summary() -> dict[str, Any]:
     rates.observe("qwen", 380, 100.0, "ollama eval_count/eval_duration")
     rates.call_timeout("judge:verdict", "qwen", 600.0, 8192)
     builder.set_generation(rates.snapshot())
+    from malspark.analysis.run_environment import ENVIRONMENT_VERSION, agents_record
+    from malspark.llm.sent_request import SentRequest
+
+    # Fixed host facts, every one the record may carry: the capture's own host
+    # would make the golden a fact about the machine it was written on.
+    builder.set_environment(
+        {
+            "v": ENVIRONMENT_VERSION,
+            "host": {
+                "os": "Linux",
+                "os_release": "6.0.0",
+                "os_version": "#1 SMP",
+                "machine": "x86_64",
+                "cpu_model": "Example CPU",
+                "logical_cpus": 8,
+                "memory_bytes": 17179869184,
+            },
+            "agents": agents_record(
+                [
+                    SentRequest(
+                        agent="static",
+                        position=0,
+                        provider="openai",
+                        model="qwen",
+                        sampling={"temperature": 0.1},
+                        effort="high",
+                        effort_setting="llm.agents.static.effort",
+                    ),
+                    SentRequest(
+                        agent="static",
+                        position=1,
+                        provider="anthropic",
+                        model="claude",
+                        effort_statement="unset, the provider's default",
+                    ),
+                ],
+                {"static": {"qwen-2026": 1}},
+            ),
+        }
+    )
     builder.set_truncation(
         {
             "tool_output_calls": 4,
@@ -676,6 +716,8 @@ DATA_KEYED = frozenset(
         # Keyed by answer state, and by the declared argument role.
         "coverage.tools[].states",
         "coverage.tools[].roles",
+        # Keyed by the model identifier the provider's answers named.
+        "environment.agents.static.response_models",
     }
 )
 
@@ -683,7 +725,7 @@ DATA_KEYED = frozenset(
 # The parts whose list items differ in shape by kind (a call row, an input
 # row, a layer row …), pinned as the union of every item's keys so that no
 # kind's keys go unpinned.
-UNION_LISTS = ("coverage",)
+UNION_LISTS = ("coverage", "environment")
 
 
 def _merged(shapes: list[Any]) -> Any:
