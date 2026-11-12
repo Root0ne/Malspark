@@ -216,7 +216,7 @@ rather than the sample:
 | `validation` | `retries`, `by_code` and `unresolved` — what the feedback loops cost and what stayed wrong, with the agent that owns each. |
 | `corroboration` | Per technique id, the sources that named it. A count of distinct sources, not a combined confidence; the judge is listed as a source but does not corroborate, because it read the analysts. |
 | `stages` | Every stage of the active team in declaration order: `key`, `kind`, `ran`, `reason`, `agents`, `duration_ms`. A stage that declined is a row saying so, not an absent row. |
-| `environment` | The environment the run ran in, recorded by code: `host` and, per agent, `requests` and `response_models` (below). |
+| `environment` | The environment the run ran in, recorded by code: `host`, per agent `requests` and `response_models`, and per tool server `tools` (below). |
 
 `environment.host` is the worker's host as it reads itself. `os`, `os_release`,
 `os_version`, `machine` and `cpu_model` describe the system. `logical_cpus` and
@@ -282,6 +282,26 @@ What a reader may conclude from `environment.agents`:
   and where rows share a place it is that place's total.
 - `response_models` is what the server said it served, not proof of the weights
   behind it.
+
+`environment.tools` has one row per tool server or provider that served the
+run. `served` says how: `offered` (one of its tools was offered to an agent),
+`called` (an agent called one) or `pack_step` (a triage pack step did). The row
+`pipeline` holds the pack steps the worker ran in its own process (`in_process`),
+with `package_version`. A server row gives `server_info`, the name and version
+the server gave when it was attached. That is the same reading as
+`efficiency.fingerprint.parts.servers`, which hashes it with the run's other
+setup. `manifest_version` is the version its capability manifest gives.
+`requirements` lists what its tools declare they need, as the manifest reports it
+from the server's own host. A `module` row gives the `distribution` that provides
+the module and its installed `version`, or `not installed`. A `data` row (a rule
+set or signature files) gives the `files` that match its `pattern`, their
+`bytes`, and one `sha256` over them, name then content in name order. Two runs
+with the same digest used the same rules. Over 20,000 files or 64 MiB no digest
+is computed, and `digest_statement` says so. A `binary` row gives the
+`version` its tool's declared version probe read, or `not reported`, with the
+reason when the probe failed. Each fact is read once per server start. A server
+that offers no manifest gives `server_info` only, and its other facts are
+`not reported`. A summary stored without `tools` reads as before.
 
 ### The analysis WebSocket
 
