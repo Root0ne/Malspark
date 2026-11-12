@@ -531,10 +531,45 @@ class TestWhatEveryWindowsHostHolds:
         assert benign_reason(typed_kind("file path"), value) == ""
 
     @pytest.mark.parametrize(
-        "name", ["telnet.exe", "tftp.exe", "bash.exe", "wsl.exe", "lsaiso.exe", "pwsh.exe"]
+        "path",
+        [
+            "C:\\Windows\\System32\\telnet.exe",
+            "C:\\Windows\\System32\\tftp.exe",
+            "C:\\Windows\\System32\\bash.exe",
+            "C:\\Windows\\System32\\wsl.exe",
+            "C:\\Windows\\System32\\lsaiso.exe",
+            "C:\\Windows\\System32\\write.exe",
+            "C:\\Windows\\System32\\mspaint.exe",
+            "C:\\Windows\\System32\\wbem\\WMIC.exe",
+            "C:\\Windows\\System32\\msdt.exe",
+        ],
     )
-    def test_a_file_not_on_every_installation_is_kept(self, name: str) -> None:
+    def test_an_optional_feature_s_file_in_its_folder_is_refused_and_kept_elsewhere(
+        self, path: str
+    ) -> None:
+        kind = typed_kind("file path")
+        name = path.rsplit("\\", 1)[1]
+
+        assert (
+            benign_reason(kind, path) == "a file Windows ships, in the folder Windows keeps it in"
+        )
+        assert benign_reason(kind, f"%TEMP%\\{name}") == ""
+
+    @pytest.mark.parametrize("name", ["pwsh.exe", "taskeng.exe"])
+    def test_a_file_no_supported_windows_ships_is_kept(self, name: str) -> None:
         assert benign_reason(typed_kind("file path"), f"C:\\Windows\\System32\\{name}") == ""
+
+    def test_every_list_states_its_criterion_and_source(self) -> None:
+        from malspark.reporting import stated_host_values as shv
+
+        document = json.loads(shv.resolve_data(shv.DEFAULT_CATALOGUE).read_text(encoding="utf-8"))
+        lists = {key: value for key, value in document.items() if isinstance(value, dict)}
+
+        assert lists
+        for key, listed in lists.items():
+            assert str(listed.get("criterion") or "").strip(), key
+            assert str(listed.get("source") or "").strip(), key
+            assert listed.get("entries"), key
 
     def test_a_dotnet_tool_is_listed_with_the_dotnet_tools(self) -> None:
         from malspark.reporting import stated_host_values as shv

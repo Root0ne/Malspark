@@ -137,8 +137,8 @@
     ]
   },
   "system_binaries": {
-    "criterion": "A program, library or data file Windows ships in the %SystemRoot% chain on every installation, its own processes included (the session manager, the logon and service processes, the shell and the hosts they start). It is refused written bare or under the system folders alone (a drive allowed); anywhere else, or misspelt, it is a copy out of place and kept.",
-    "source": "The files a clean Windows installation holds in System32, SysWOW64, their sub-folders and %SystemRoot% itself, and the processes Microsoft documents a running Windows to start from there.",
+    "criterion": "A program, library or data file Microsoft ships as part of Windows, in the base image or as an optional Windows feature, in a currently supported Windows client or server release, listed for the folder of the %SystemRoot% chain Windows installs it to; Windows' own processes are among them (the session manager, the logon and service processes, the shell and the hosts they start). It is refused written bare or under the system folders alone (a drive allowed); anywhere else, or misspelt, it is a copy out of place and kept.",
+    "source": "The files Microsoft ships in System32, SysWOW64, their sub-folders and %SystemRoot% itself in the supported Windows 10 and 11 releases (Long-Term Servicing Channel included) and Windows Server releases, with those the optional Windows features install there (Telnet and TFTP clients, Windows Subsystem for Linux, Credential Guard's isolated LSA, WMIC), as Microsoft's Windows documentation and its 'Features removed or no longer developed' lists describe them, and the processes Microsoft documents a running Windows to start from there.",
     "entries": [
       "advapi32.dll",
       "advpack.dll",
@@ -150,6 +150,7 @@
       "attrib.exe",
       "audiodg.exe",
       "backgroundtaskhost.exe",
+      "bash.exe",
       "bcdboot.exe",
       "bcdedit.exe",
       "bcrypt.dll",
@@ -229,6 +230,7 @@
       "lmhosts.sam",
       "logman.exe",
       "logonui.exe",
+      "lsaiso.exe",
       "lsass.exe",
       "magnify.exe",
       "makecab.exe",
@@ -240,10 +242,12 @@
       "mpr.dll",
       "msconfig.exe",
       "msctf.dll",
+      "msdt.exe",
       "msdtc.exe",
       "mshta.exe",
       "mshtml.dll",
       "msiexec.exe",
+      "mspaint.exe",
       "mstsc.exe",
       "msv1_0.dll",
       "msvcp_win.dll",
@@ -348,7 +352,9 @@
       "tasklist.exe",
       "taskmgr.exe",
       "taskschd.dll",
+      "telnet.exe",
       "textinputhost.exe",
+      "tftp.exe",
       "timeout.exe",
       "tiworker.exe",
       "tracert.exe",
@@ -393,10 +399,13 @@
       "wldp.dll",
       "wmiadap.exe",
       "wmiapsrv.exe",
+      "wmic.exe",
       "wmiprvse.exe",
+      "write.exe",
       "ws2_32.dll",
       "wscript.exe",
       "wshom.ocx",
+      "wsl.exe",
       "wtsapi32.dll",
       "wuauclt.exe",
       "wudfhost.exe",
@@ -430,7 +439,7 @@
     ]
   },
   "windows_services": {
-    "criterion": "A service Windows installs by default on every Windows 10 and 11 client and every Windows Server installation with the Desktop Experience, by its service (key) name; a service an edition or a role adds is not one.",
+    "criterion": "A service Microsoft ships as part of Windows, installed by default or by an optional Windows feature or role, in a currently supported Windows client or server release, by its service (key) name; a service another product adds is not one.",
     "source": "Microsoft 'System services for Windows' documentation and the Services key of a clean installation.",
     "entries": [
       "appinfo",
@@ -509,7 +518,7 @@
     ]
   },
   "windows_pipes": {
-    "criterion": "A named pipe Windows' own services open on every installation (the well-known RPC pipes).",
+    "criterion": "A named pipe Windows' own services open (the well-known RPC pipes), in a currently supported Windows client or server release, by default or with the optional Windows feature that provides the service.",
     "source": "Microsoft's protocol documentation of the well-known RPC named pipes ([MS-RPCE], [MS-SRVS], [MS-WKST], [MS-SAMR], [MS-LSAD], [MS-RRP], [MS-SCMR], [MS-TSCH], [MS-EVEN], [MS-RPRN]).",
     "entries": [
       "lsass",
