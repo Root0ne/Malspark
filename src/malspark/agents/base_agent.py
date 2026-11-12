@@ -170,12 +170,15 @@ from malspark.pipeline.validation import (
     analyst_cut_violation,
     analyst_ledger_ids,
     analyst_repeated_violation,
+    announce_unresolved,
     chunk_cut_unread_sentence,
     claim_block_indexes,
     claims_kept_under_disputes_finding,
     claims_repeated,
     count_claim_blocks,
     decompiled_functions,
+    describe_stands_alone,
+    describe_without_a_turn,
     discarded_retry_row,
     exit_branches_left_out,
     library_only_claims,
@@ -10576,6 +10579,30 @@ class BaseAnalyst(BudgetMeter, ABC):
                     self, "function_claims", checked.record()
                 )
         if not initial:
+            return _settled(isr)
+
+        # A claim whose sentence does not describe its technique opens no turn
+        # of its own (``validation.describe_stands_alone``). Standing alone, its
+        # findings are recorded as not asked and published as findings nobody
+        # was shown, the claims stand as written, and the judge's technique
+        # question asks about each technique no claim naming it describes.
+        # Beside a finding that opens the turn, it is asked there as before.
+        if describe_stands_alone(initial):
+            recorded = describe_without_a_turn(initial)
+            settle_validation_marks(isr, recorded)
+            self.validation_findings.extend(recorded)
+            announce_unresolved(
+                self._event_sink(),
+                agent=str(self.name),
+                stage=str(getattr(self, "pipeline_stage", "") or "analysis"),
+                violations=recorded,
+            )
+            self.logger.info(
+                "Validation: %d describe finding(s) for '%s' stood alone; no turn is opened, "
+                "and the judge's technique question carries them.",
+                sum(1 for v in recorded if v.code == CLAIM_DOES_NOT_DESCRIBE_CODE),
+                self.name,
+            )
             return _settled(isr)
 
         # The turn gets what the loop it follows left, and is not asked at all

@@ -2311,10 +2311,13 @@ def claim_does_not_describe_violation(
     words read for a parent ("strings XOR-encoded, decoded at run time from
     their blobs" under Obfuscated Files or Information;
     :func:`described_by_its_words`). Only a sentence that shares none of
-    them is asked about, once: "accesses the PEB to bypass sandboxing" under OS
-    Credential Dumping. What the analyst answers stands, and a technique kept
-    after the question is published as the analyst stated it. Nothing is
-    decided without the catalogue's name for the id.
+    them is a finding, once: "accesses the PEB to bypass sandboxing" under OS
+    Credential Dumping. It is asked in a validation turn another finding
+    opens, and opens none of its own (:func:`describe_stands_alone`). What
+    the analyst answers stands, and a technique kept after the question, or
+    never asked, is published as the analyst stated it unless the judge's
+    technique question drops it. Nothing is decided without the catalogue's
+    name for the id.
     """
     text = str(getattr(claim, "claim", "") or "")
     if not text.strip() or attck is None:
@@ -14618,6 +14621,55 @@ def exit_branches_left_out(violations: Sequence[Violation]) -> list[Violation]:
         elif not v.question_only:
             out.append(replace(v, shown="") if v.shown else v)
     return out
+
+
+# What a finding of the describe check says when it opened no turn: it stood
+# alone, and the judge's technique question is where the technique is asked.
+DESCRIBE_NOT_ASKED = (
+    "Not asked: this check opens no validation turn of its own and is put to the analyst "
+    "only beside another finding; the judge's technique question asks about the technique "
+    "when no claim naming it describes it."
+)
+
+
+def describe_stands_alone(violations: Sequence[Violation]) -> bool:
+    """Whether the findings about an answer are the describe check's and nothing that opens a turn.
+
+    A claim whose sentence does not describe its technique
+    (:data:`CLAIM_DOES_NOT_DESCRIBE_CODE`) opens no validation turn of its
+    own: it joins one another finding opens, as the same question with the
+    same card, and standing alone it is recorded
+    (:func:`describe_without_a_turn`) and left to the judge's technique
+    question, which asks about each technique no claim naming it describes
+    (``capability_matrix.judge_questions``). Alone means at least one such
+    finding, and beside it only what a retry may not ask about (a check that
+    could not run) or a question that is no finding (``question_only``, the
+    exit branches that joined it). One pass, by code.
+    """
+    describes = False
+    for v in _askable(violations):
+        if v.question_only:
+            continue
+        if v.code != CLAIM_DOES_NOT_DESCRIBE_CODE:
+            return False
+        describes = True
+    return describes
+
+
+def describe_without_a_turn(violations: Sequence[Violation]) -> list[Violation]:
+    """``violations`` as an answer whose describe findings stood alone records them.
+
+    Each describe finding is recorded with :data:`DESCRIBE_NOT_ASKED` after
+    its message and as not asked (``asked=False``); every other finding is
+    recorded as it is, and a question that is no finding is left out, as
+    :func:`exit_branches_left_out` leaves it.
+    """
+    return [
+        replace(v, message=f"{v.message} {DESCRIBE_NOT_ASKED}", sentence="", asked=False)
+        if v.code == CLAIM_DOES_NOT_DESCRIBE_CODE
+        else v
+        for v in exit_branches_left_out(violations)
+    ]
 
 
 def analyst_answer_checks(
