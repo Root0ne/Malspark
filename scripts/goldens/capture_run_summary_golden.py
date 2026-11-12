@@ -32,6 +32,74 @@ ROOT = Path(__file__).resolve().parents[2]
 GOLDEN = ROOT / "tests" / "fixtures" / "golden" / "run_summary_keys.json"
 
 
+# Each shape a requirement row of ``environment.tools`` takes, with fixed
+# facts: read on the capture's host, which keys a row carries (a digest or the
+# statement why none was computed) would depend on what is installed there.
+_REQUIREMENT_ROWS: list[dict[str, Any]] = [
+    {
+        "kind": "module",
+        "name": "pefile",
+        "distribution": "pefile",
+        "version": "2024.8.26",
+        "tools": ["pe_info"],
+    },
+    {
+        "kind": "data",
+        "name": "data/capa-rules",
+        "named_by": "static.capa.rules_dir",
+        "pattern": "*.yml",
+        "files": 1057,
+        "bytes": 844541,
+        "sha256": "0" * 64,
+        "tools": ["capa"],
+    },
+    {
+        "kind": "data",
+        "name": "data/sigma_rules",
+        "named_by": "the default",
+        "pattern": "*.y*ml",
+        "files": 0,
+        "digest_statement": "no file is there",
+        "tools": ["sigma_match"],
+    },
+    {"kind": "binary", "name": "floss", "version": "not reported", "tools": ["floss"]},
+]
+
+
+def _tools_part() -> dict[str, Any]:
+    """``environment.tools``: a server row as ``tools_record`` builds it, and the pipeline's."""
+    from types import SimpleNamespace
+
+    from malspark.analysis.run_environment import SERVED_IN_PROCESS, tools_record
+
+    manifest = {
+        "server": "analysis",
+        "version": "0.9.0",
+        "tools": [],
+        "requirements": _REQUIREMENT_ROWS,
+    }
+    registry = SimpleNamespace(
+        server_versions=lambda: {"analysis": {"name": "AnalysisMCP", "version": "1.27.0"}},
+        server_manifests=lambda: {"analysis": manifest},
+    )
+    container = SimpleNamespace(
+        _server_registry_cache=registry,
+        setup_tools=lambda: {
+            "static": [SimpleNamespace(name="pe_info", metadata={"malspark_server": "analysis"})]
+        },
+        setup_server_versions=dict,
+        config=None,
+    )
+    record = tools_record(container, [{"agent": "pipeline", "server": "analysis", "tool": "capa"}])
+    # The pipeline's own row reads the worker's host; its shape is fixed here.
+    record["pipeline"] = {
+        "served": [SERVED_IN_PROCESS],
+        "package_version": "0.9.0",
+        "requirements": _REQUIREMENT_ROWS[:1],
+    }
+    return record
+
+
 def _claim(technique_id: str, confidence: float) -> Any:
     from malspark.schemas.isr_models import ClaimEvidence
 
@@ -210,6 +278,7 @@ def default_profile_summary() -> dict[str, Any]:
                 {"static": {0: 2}},
                 {"static": ["model.gguf"]},
             ),
+            "tools": _tools_part(),
         }
     )
     builder.set_truncation(

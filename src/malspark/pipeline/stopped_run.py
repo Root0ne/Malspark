@@ -258,7 +258,7 @@ def stopped_run_summary(state: dict[str, Any], container: Any, *, note: str) -> 
     def _environment() -> None:
         from malspark.analysis.run_environment import environment_record
 
-        record = environment_record(container)
+        record = environment_record(container, state.get("evidence_ledger") or [])
         if record:
             summary["environment"] = record
 

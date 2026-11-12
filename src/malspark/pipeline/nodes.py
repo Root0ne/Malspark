@@ -6766,7 +6766,12 @@ def _failed_verdict_summary(
             ("server rests", lambda: builder.set_server_rests(container.server_rests())),
             ("generation", lambda: builder.set_generation(_generation_snapshot(container))),
             ("spend", lambda: builder.set_spend(_spend_snapshot(container))),
-            ("environment", lambda: builder.set_environment(environment_record(container))),
+            (
+                "environment",
+                lambda: builder.set_environment(
+                    environment_record(container, state.get("evidence_ledger") or [])
+                ),
+            ),
             ("truncation", lambda: builder.set_truncation(_truncation_snapshot(container))),
             ("triage", lambda: builder.set_triage(dict(state.get("triage_facts") or {}))),
             ("sandbox", lambda: builder.set_sandbox(state.get("sandbox_report"))),
@@ -7760,7 +7765,9 @@ def make_judge_node(
                     .set_server_rests(container.server_rests())
                     .set_generation(_generation_snapshot(container))
                     .set_spend(_spend_snapshot(container))
-                    .set_environment(environment_record(container))
+                    .set_environment(
+                        environment_record(container, state.get("evidence_ledger") or [])
+                    )
                     .set_truncation(_truncation_snapshot(container))
                     .set_triage(_triage_facts)
                     .set_sandbox(state.get("sandbox_report"))
@@ -8893,7 +8900,7 @@ def make_report_node(
         # The environment again, now that the report stage's models are built
         # and have answered: the judge's record predates them.
         if state.get("run_summary"):
-            _environment = environment_record(container)
+            _environment = environment_record(container, state.get("evidence_ledger") or [])
             if _environment and _environment != (state.get("run_summary") or {}).get("environment"):
                 _state_summary["environment"] = _environment
                 _placed = dict(report.run_summary or {})

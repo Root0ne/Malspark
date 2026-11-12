@@ -454,6 +454,52 @@
       "os_release": null,
       "os_version": null
     },
+    "tools": {
+      "analysis": {
+        "manifest_version": null,
+        "requirements": [
+          {
+            "bytes": null,
+            "digest_statement": null,
+            "distribution": null,
+            "files": null,
+            "kind": null,
+            "name": null,
+            "named_by": null,
+            "pattern": null,
+            "sha256": null,
+            "tools": [
+              null
+            ],
+            "version": null
+          }
+        ],
+        "served": [
+          null
+        ],
+        "server_info": {
+          "name": null,
+          "version": null
+        }
+      },
+      "pipeline": {
+        "package_version": null,
+        "requirements": [
+          {
+            "distribution": null,
+            "kind": null,
+            "name": null,
+            "tools": [
+              null
+            ],
+            "version": null
+          }
+        ],
+        "served": [
+          null
+        ]
+      }
+    },
     "v": null
   },
   "evidence": {

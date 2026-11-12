@@ -30,6 +30,13 @@ should happen:
   identifier shaped like a file-system path kept by its base name and listed
   in ``response_models_reduced``. An agent whose answers carried none has an
   empty map.
+* ``tools`` is, per tool server and provider that served the run, how it
+  served it and what it ran (:func:`tools_record`): the name and version it
+  gave at its attach, its manifest's version, and each requirement its tools
+  declare as its manifest reports it — a module's installed distribution and
+  version, a data path's file count and digest, a binary's version where the
+  tool declares how to ask it. The steps the pipeline runs in its own process
+  are the row ``pipeline``, read on the worker's host.
 
 Written when the judge builds the summary and again once the run's last
 model call is made (the report node, and a stopped run's summary), so the
@@ -44,14 +51,27 @@ import os
 import platform
 import subprocess
 import sys
+from collections.abc import Iterable
 from typing import Any
 
 from malspark.core.logger import logger
 
 # The record's shape version: a reader that meets a newer one reads what it
-# knows. 2: a row's ``sampling`` may be ``None`` (not reported), and rows carry
-# ``thinking`` and ``answered``.
+# knows. 2: a row's ``sampling`` may be ``None`` (not reported), rows carry
+# ``thinking`` and ``answered``, and ``tools`` is recorded.
 ENVIRONMENT_VERSION = 2
+
+# The server every entry of a step the pipeline runs in its own process is
+# recorded under (``pipeline.triage_pack.PIPELINE``), and the agent its server
+# steps' entries are recorded under.
+PIPELINE = "pipeline"
+# How a tool server served the run (``tools_record``).
+SERVED_OFFERED = "offered"
+SERVED_CALLED = "called"
+SERVED_PACK_STEP = "pack_step"
+SERVED_IN_PROCESS = "in_process"
+# A fact a server did not give.
+NOT_REPORTED = "not reported"
 
 # How long a host query (``sysctl`` on macOS) may take, in seconds.
 _QUERY_TIMEOUT_S = 2.0
@@ -352,13 +372,136 @@ def _ledger_map(ledger: Any, name: str) -> dict[str, Any] | None:
     return held if isinstance(held, dict) else None
 
 
-def environment_record(container: Any) -> dict[str, Any] | None:
-    """``run_summary.environment`` as of now, or ``None`` where nothing was read. Never raises."""
+def _field(entry: Any, name: str) -> str:
+    value = entry.get(name) if isinstance(entry, dict) else getattr(entry, name, None)
+    return _text(value)
+
+
+def _served(container: Any, entries: Iterable[Any]) -> tuple[dict[str, set[str]], list[str]]:
+    """Per server, how it served the run; and the tools the pipeline ran in its own process."""
+    served: dict[str, set[str]] = {}
+    tools_of = getattr(container, "setup_tools", None)
+    set_up = tools_of() if callable(tools_of) else {}
+    for tools in (set_up or {}).values():
+        for tool in tools or ():
+            server = _text((getattr(tool, "metadata", None) or {}).get("malspark_server"))
+            if server:
+                served.setdefault(server, set()).add(SERVED_OFFERED)
+    in_process: list[str] = []
+    for entry in entries or ():
+        server, tool = _field(entry, "server"), _field(entry, "tool")
+        if server == PIPELINE:
+            if tool and tool not in in_process:
+                in_process.append(tool)
+        elif server:
+            how = SERVED_PACK_STEP if _field(entry, "agent") == PIPELINE else SERVED_CALLED
+            served.setdefault(server, set()).add(how)
+    return served, in_process
+
+
+def _server_info(info: Any) -> dict[str, str] | str:
+    """The name and version a server gave for itself (MCP ``serverInfo``), or ``"not reported"``."""
+    held = {
+        key: str(info[key])
+        for key in ("name", "version")
+        if isinstance(info, dict) and info.get(key)
+    }
+    return held or NOT_REPORTED
+
+
+def _in_process_requirements(container: Any, tools: list[str]) -> list[dict[str, Any]]:
+    """What the shipped declarations of ``tools`` require, read on this process's host.
+
+    A step the pipeline runs in its own process calls the code a shipped
+    sidecar serves under the same tool name, so its requirements are that
+    tool's declaration (``tools.sidecar_needs``), the first that declares the
+    name, as ``sidecar_needs.without_reads`` looks one up for a pack step. A
+    data path is read as the worker reads it, the core setting first.
+    """
+    from malspark.tools.capabilities import requirement_facts
+    from malspark.tools.sidecar_needs import BY_DIRECTORY
+
+    wanted, needs = set(tools), []
+    for declared in BY_DIRECTORY.values():
+        for need in declared:
+            if need.name in wanted and need.requires:
+                needs.append(need)
+                wanted.discard(need.name)
+    return requirement_facts(needs, None, getattr(container, "config", None))
+
+
+def tools_record(container: Any, entries: Iterable[Any] = ()) -> dict[str, Any]:
+    """Per tool server and provider that served the run, what it ran. Never raises.
+
+    A server is listed when the run offered one of its tools to an agent
+    (``offered``: its tools carried the server, ``malspark_server``), an agent
+    called one (``called``) or a pack step did (``pack_step``), each read from
+    the job's setup and its ledger ``entries``; the steps the pipeline ran in
+    its own process are the row ``pipeline`` (``in_process``). Each server row
+    holds ``server_info``, the name and version the server gave at its attach
+    (the reading ``efficiency.fingerprint.parts.servers`` holds too), the
+    version its capability manifest gives (``manifest_version``) and its
+    ``requirements`` as the manifest reports them
+    (``tools.capabilities.requirement_facts``); a fact the server did not
+    give is ``"not reported"``.
+    """
+    try:
+        from malspark.tools.capabilities import package_version
+
+        served, in_process = _served(container, entries)
+        registry = getattr(container, "_server_registry_cache", None)
+        versions_of = getattr(registry, "server_versions", None)
+        versions = dict(versions_of()) if callable(versions_of) else {}
+        setup_of = getattr(container, "setup_server_versions", None)
+        if callable(setup_of):
+            versions.update(setup_of())
+        manifests_of = getattr(registry, "server_manifests", None)
+        manifests = manifests_of() if callable(manifests_of) else {}
+        out: dict[str, dict[str, Any]] = {}
+        for server, how in served.items():
+            held = manifests.get(server) if isinstance(manifests, dict) else None
+            row: dict[str, Any] = {
+                "served": sorted(how),
+                "server_info": _server_info(versions.get(server)),
+            }
+            if isinstance(held, dict):
+                row["manifest_version"] = _text(held.get("version")) or NOT_REPORTED
+                requirements = held.get("requirements")
+                row["requirements"] = (
+                    [dict(r) for r in requirements if isinstance(r, dict)]
+                    if isinstance(requirements, list)
+                    else NOT_REPORTED
+                )
+            else:
+                row["manifest_version"] = NOT_REPORTED
+                row["requirements"] = NOT_REPORTED
+            out[server] = row
+        if in_process:
+            out[PIPELINE] = {
+                "served": [SERVED_IN_PROCESS],
+                "package_version": package_version(),
+                "requirements": _in_process_requirements(container, in_process),
+            }
+        return dict(sorted(out.items()))
+    except Exception as exc:  # noqa: BLE001 — telemetry never breaks a summary
+        logger.debug("run environment: the tools were not recorded (%s).", exc)
+        return {}
+
+
+def environment_record(container: Any, entries: Iterable[Any] = ()) -> dict[str, Any] | None:
+    """``run_summary.environment`` as of now, or ``None`` where nothing was read. Never raises.
+
+    ``entries`` is the run's evidence ledger, which names the servers a pack
+    step or an agent called (``tools_record``).
+    """
     try:
         record: dict[str, Any] = {"v": ENVIRONMENT_VERSION}
         host = host_facts()
         if host:
             record["host"] = dict(host)
+        tools = tools_record(container, entries)
+        if tools:
+            record["tools"] = tools
         registry = getattr(container, "_llm_registry", None)
         sent_of = getattr(registry, "sent_requests", None)
         sent = list(sent_of()) if callable(sent_of) else []
