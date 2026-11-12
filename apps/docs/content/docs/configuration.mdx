@@ -2881,6 +2881,30 @@ provider on Ghidra the `static` analyst opens Ghidra as well. Run it by naming i
 (`tests/api/test_the_all_tools_team_document.py`) loads the document through
 the import's validation and resolves every agent against stub servers.
 
+`docs/examples/profiles/all-tools-reference-run.json` is the same document with
+a third setting, `core.llm.agents`: the model and reasoning effort of every
+agent, as the [benchmark](/docs/benchmark/) run set them. Every agent the
+team's stages name, the mediator and the summariser are on `claude-haiku-5-5` with the
+`anthropic` provider; the effort is `high` for the seven analysts and the
+judge and `medium` for the mediator, the summariser and the reporter (see
+[Reasoning effort](#reasoning-effort)). Its team is `all-tools.json` exactly.
+`core.llm.agents` is one whole map too, and its entries are named after the
+agents (`triage`, `judge`, `reporter`, …), so for an agent your own export
+already gives a model the document's entry replaces it. Merge it like the
+other two by adding a third line to the `jq` expression above:
+
+```bash
+  "core.llm.agents":         ((.[0].values["core.llm.agents"] // {})
+                              + .[1].values["core.llm.agents"])
+```
+
+The document holds no credential: the provider's key is set in Settings as for
+any other model. A test
+(`tests/api/test_the_reference_run_configuration_is_one_import_document.py`)
+checks that its team equals `all-tools.json`, that it imports through
+`POST /api/v1/settings/import` unchanged and with no secret, and that the
+models and efforts it sets are the ones the benchmark page states.
+
 ### An agent's category
 
 Every agent definition declares what the agent does in

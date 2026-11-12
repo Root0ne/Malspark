@@ -8,14 +8,19 @@ the per-group rows, the lists of missed and partly facts, the examples of facts
 beyond the key and their wording, the items that entered through the check of the
 run's facts, the reading of each fact beyond the key against the eight
 analyses, the headline totals, the cost and the pages that quote them have to
-agree.
+agree. The model and effort the page states for each agent are the ones the
+reference configuration it links (``all-tools-reference-run.json``) sets, and
+the entries the Setup's Degraded row cites are the capa and Sigma calls it says
+they are.
 """
 
 from __future__ import annotations
 
 import json
 import re
+from functools import lru_cache
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -25,6 +30,8 @@ README = ROOT / "README.md"
 DOCS_HOME = ROOT / "apps" / "docs" / "content" / "docs" / "index.mdx"
 EVIDENCE = ROOT / "apps" / "docs" / "public" / "assets" / "benchmark" / "evidence.json"
 GATE = ROOT / "apps" / "docs" / "content" / "docs" / "known-answer-gate.mdx"
+REFERENCE = ROOT / "docs" / "examples" / "profiles" / "all-tools-reference-run.json"
+REFERENCE_LINK = "/examples/profiles/all-tools-reference-run.json"
 
 _TOKEN = re.compile(r"'((?:\\.|[^'\\])*)'|(-?\d+)")
 
@@ -74,6 +81,69 @@ def _run_rows(text: str, name: str) -> list[list[str | int]]:
     return [_row(line) for line in block.splitlines() if line.startswith("    [")]
 
 
+def _run_text(text: str, name: str) -> str:
+    """The single-quoted value of ``run.<name>``."""
+    line = re.search(rf"^  {name}: '((?:\\.|[^'\\])*)',$", _run_block(text), re.M)
+    assert line, f"the run has no {name}"
+    return re.sub(r"\\(.)", r"\1", line.group(1))
+
+
+# Who each noun of ``run.effort`` names: the agents of the team's stages of a
+# kind, or a role entry of ``llm.agents`` no stage names.
+_EFFORT_NOUNS = {
+    "analysts": ("stage", "analysis"),
+    "judge": ("stage", "verdict"),
+    "reporter": ("stage", "report"),
+    "mediator": ("entry", "mediator"),
+    "summariser": ("entry", "summarizer"),
+}
+
+
+def stated_models(page: str, team: dict[str, list[str]]) -> dict[str, tuple[str, str | None]]:
+    """``{agent: (model id, effort)}`` as ``run.model`` and ``run.effort`` state them.
+
+    ``team`` maps a stage kind to the agents the team's stages of that kind
+    name. The model's id is its name in lower case with spaces and dots as
+    hyphens (Claude Haiku 5.5 is ``claude-haiku-5-5``); ``run.effort`` is
+    ``<level> for <nouns>`` clauses, one per level, separated by ``;``.
+    """
+    model = re.sub(r"[ .]+", "-", _run_text(page, "model").strip().lower())
+    out: dict[str, tuple[str, str | None]] = {}
+    for clause in _run_text(page, "effort").split(";"):
+        level, _, nouns = clause.strip().partition(" for ")
+        for noun in re.split(r",\s*|\s+and\s+", nouns):
+            kind, name = _EFFORT_NOUNS[noun.strip().removeprefix("the ")]
+            for agent in team.get(name, []) if kind == "stage" else [name]:
+                out[agent] = (model, level)
+    return out
+
+
+def _reference_problems(page: str, reference: str) -> list[str]:
+    """Where the reference configuration and the page's model and effort disagree."""
+    found: list[str] = []
+    if REFERENCE_LINK not in page[page.find("## Reproducing the run") :]:
+        found.append(f"the steps to reproduce the run do not link {REFERENCE_LINK}")
+    values = json.loads(reference)["values"]
+    team: dict[str, list[str]] = {}
+    for stage in values["core.agents.profiles"][str(_run_text(page, "team"))]["stages"]:
+        team.setdefault(stage["kind"], []).extend(stage.get("agents", []))
+    try:
+        stated = stated_models(page, team)
+    except KeyError as exc:
+        return [*found, f"run.effort names {exc}, which is no agent of the team"]
+    entries = values["core.llm.agents"]
+    for agent, (model, effort) in stated.items():
+        entry = entries.get(agent) or {}
+        if (entry.get("model"), entry.get("effort")) != (model, effort):
+            found.append(
+                f"the page gives {agent} {model} at {effort}, the reference configuration "
+                f"{entry.get('model')} at {entry.get('effort')}"
+            )
+    for agent in sorted(set(entries) - set(stated)):
+        found.append(f"the reference configuration sets {agent}, which the page does not state")
+    return found
+
+
 def _run_list(text: str, name: str) -> list[str]:
     """The single-quoted lines of ``run.<name>``, a list of sentences."""
     block = _run_block(text)
@@ -121,15 +191,43 @@ def _verdict_kind(verdict: str) -> str:
     }[verdict]
 
 
+@lru_cache(maxsize=1)
+def _evidence() -> dict[str, dict[str, Any]]:
+    """The published evidence ledger's entries, by id."""
+    ledger = json.loads(EVIDENCE.read_text(encoding="utf-8"))
+    return {entry["entry_id"]: entry for entry in ledger["items"]}
+
+
 def _evidence_ids() -> set[str]:
     """The ids of the published evidence ledger."""
-    ledger = json.loads(EVIDENCE.read_text(encoding="utf-8"))
-    return {entry["entry_id"] for entry in ledger["items"]}
+    return set(_evidence())
 
 
-def problems(page: str, readme: str, docs_home: str, gate: str) -> list[str]:
-    """Every place where the public numbers disagree; empty when they agree."""
+def _degraded_problems(page: str) -> list[str]:
+    """Where the Setup's Degraded row and the entries it cites disagree."""
+    row = re.search(r"^\| Degraded \| (.*) \|$", page, re.M)
+    cell = row.group(1) if row else ""
     found: list[str] = []
+    capa = re.search(r"capa ran \(<code>(ev_\d+)</code>\)", cell)
+    entry = _evidence().get(capa.group(1), {}) if capa else {}
+    if entry.get("tool") != "capa" or entry.get("ok") is not True:
+        found.append("the Degraded row does not cite a capa call that answered")
+    sigma = re.search(r"([\d,]+) Sigma rules loaded \(<code>(ev_\d+)</code>\)", cell)
+    entry = _evidence().get(sigma.group(2), {}) if sigma else {}
+    structured = entry.get("structured") if isinstance(entry.get("structured"), dict) else {}
+    if entry.get("tool") != "sigma_match_sandbox" or entry.get("ok") is not True:
+        found.append("the Degraded row does not cite a Sigma match that answered")
+    elif sigma and structured.get("rule_count") != int(sigma.group(1).replace(",", "")):
+        found.append(
+            f"the Degraded row says {sigma.group(1)} Sigma rules, "
+            f"{sigma.group(2)} loaded {structured.get('rule_count')}"
+        )
+    return found
+
+
+def problems(page: str, readme: str, docs_home: str, gate: str, reference: str) -> list[str]:
+    """Every place where the public numbers disagree; empty when they agree."""
+    found: list[str] = _reference_problems(page, reference) + _degraded_problems(page)
     run = _run_numbers(page)
     key = _array_rows(page, "keyItems", 2)
     beyond = _array_rows(page, "beyondFacts", 2)
@@ -300,12 +398,13 @@ def problems(page: str, readme: str, docs_home: str, gate: str) -> list[str]:
     return found
 
 
-def _texts() -> tuple[str, str, str, str]:
+def _texts() -> tuple[str, str, str, str, str]:
     return (
         PAGE.read_text(encoding="utf-8"),
         README.read_text(encoding="utf-8"),
         DOCS_HOME.read_text(encoding="utf-8"),
         GATE.read_text(encoding="utf-8"),
+        REFERENCE.read_text(encoding="utf-8"),
     )
 
 
@@ -422,13 +521,43 @@ def test_the_published_benchmark_numbers_agree_with_one_another() -> None:
             "    'K1: the file is named as x86-64, but the architecture check is not in the "
             "report body.',",
         ),
+        # The model and effort the page states and the reference configuration
+        # sets: a level, an agent or the model changed on one side only, and
+        # the link to the configuration dropped.
+        ("reference", '"effort": "medium"', '"effort": "high"'),
+        ("reference", '"model": "claude-haiku-5-5"', '"model": "claude-haiku-4-5"'),
+        (
+            "page",
+            "medium for the mediator, the summariser and the reporter",
+            "medium for the mediator and the summariser",
+        ),
+        ("page", "model: 'Claude Haiku 5.5',", "model: 'Claude Haiku 5.6',"),
+        ("page", "high for the analysts and the judge;", "high for the analysts;"),
+        (
+            "page",
+            "(/examples/profiles/all-tools-reference-run.json),\nwhich holds",
+            "(/docs/configuration/),\nwhich holds",
+        ),
+        # The Degraded row: a rule count, or an entry that is another tool's.
+        ("page", "4,241 Sigma rules loaded", "4,240 Sigma rules loaded"),
+        ("page", "capa ran (<code>ev_0008</code>)", "capa ran (<code>ev_0009</code>)"),
+        ("page", "loaded (<code>ev_0009</code>)", "loaded (<code>ev_0008</code>)"),
     ],
 )
 def test_a_number_changed_in_one_place_only_is_caught(target: str, old: str, new: str) -> None:
-    page, readme, docs_home, gate = _texts()
-    texts = {"page": page, "readme": readme, "docs": docs_home, "gate": gate}
+    page, readme, docs_home, gate, reference = _texts()
+    texts = {
+        "page": page,
+        "readme": readme,
+        "docs": docs_home,
+        "gate": gate,
+        "reference": reference,
+    }
     text = texts[target]
     assert old in text, old
     text = text.replace(old, new, 1)
     texts[target] = text
-    assert problems(texts["page"], texts["readme"], texts["docs"], texts["gate"]) != []
+    assert (
+        problems(texts["page"], texts["readme"], texts["docs"], texts["gate"], texts["reference"])
+        != []
+    )
