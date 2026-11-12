@@ -18,6 +18,7 @@ jobs:
   quality:
     name: Lint & Format
     runs-on: ubuntu-latest
+    timeout-minutes: 15
 
     steps:
       - name: Checkout
@@ -55,6 +56,7 @@ jobs:
   semgrep:
     name: Semgrep
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     needs: quality
     steps:
       - name: Checkout
@@ -88,6 +90,7 @@ jobs:
   test-shard:
     name: Tests (3.13, shard ${{ matrix.shard }}/6)
     runs-on: ubuntu-latest
+    timeout-minutes: 45
     needs: quality
 
     strategy:
@@ -141,6 +144,7 @@ jobs:
   test-shard-map:
     name: Test shard map
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     needs: quality
 
     steps:
@@ -170,6 +174,7 @@ jobs:
   test:
     name: Test Suite (Python 3.13)
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     needs: [test-shard, test-shard-map]
     # Runs whatever the shards' outcome, so a failed, cancelled or skipped
     # shard fails this check instead of leaving it skipped.
@@ -188,6 +193,7 @@ jobs:
   test-qdrant:
     name: Qdrant Live Tests
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     needs: quality
 
     services:
@@ -236,6 +242,7 @@ jobs:
   frontend:
     name: Frontend (tsc, eslint, next build)
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     needs: quality
 
     steps:
@@ -286,6 +293,7 @@ jobs:
   npm-audit:
     name: npm audit
     runs-on: ubuntu-latest
+    timeout-minutes: 10
 
     steps:
       - name: Checkout
@@ -309,6 +317,7 @@ jobs:
   e2e:
     name: E2E Tests (Playwright)
     runs-on: ubuntu-latest
+    timeout-minutes: 80
     needs: quality
 
     steps:
@@ -328,8 +337,21 @@ jobs:
         working-directory: apps/web
         run: npm ci
 
+      # A hung download holds the pull request for the job limit, so each
+      # attempt is cut at ten minutes (measured: median 1, longest 6) and a
+      # second one runs if the first fails or is cut; the job fails only if
+      # both do.
       - name: Install Playwright browsers
+        id: browsers
         working-directory: apps/web
+        timeout-minutes: 10
+        continue-on-error: true
+        run: npx playwright install --with-deps
+
+      - name: Install Playwright browsers (second attempt)
+        if: steps.browsers.outcome == 'failure'
+        working-directory: apps/web
+        timeout-minutes: 10
         run: npx playwright install --with-deps
 
       # Same entry point developers use. The wrapper strips Snap-injected env
