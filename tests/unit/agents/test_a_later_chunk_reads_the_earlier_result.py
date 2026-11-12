@@ -79,7 +79,10 @@ class TestTheEarlierResultAnswersTheCall:
         answer = _wrapped(guard, calls).invoke({"path": "0x3c7c"})
 
         assert calls == []
-        assert answer == earlier_chunk_answer("decompile_function", "ev_0003", RESULT, fresh=True)
+        # A tool nothing declares read-only: the fresh run repeats what it does.
+        assert answer == earlier_chunk_answer(
+            "decompile_function", "ev_0003", RESULT, fresh=True, reads_only=False
+        )
         assert answer.startswith(f"[ev_0003]\n{fenced('ev_0003', RESULT)}")
         assert guard.served_repeats == 0
 

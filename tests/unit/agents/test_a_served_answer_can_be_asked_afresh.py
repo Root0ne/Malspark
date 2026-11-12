@@ -8,12 +8,15 @@ arguments runs the call fresh, and the identical call after it runs the tool
 and is recorded as a call that ran. Once per call per loop: the fresh run
 counts as a run, so the call after it is refused as after any second run, and
 the refusals end the loop as before. The rule reads no tool's name and holds
-for a tool nothing declares. A call no layer serves keeps the guard's two runs
+for a tool nothing declares. The sentence tells what the fresh run does: a call
+the layers know to be read-only is read again; any other call runs again and
+repeats whatever it does. A call no layer serves keeps the guard's two runs
 before its refusal, and its answers carry no such sentence.
 """
 
 from __future__ import annotations
 
+import asyncio
 import json
 from typing import Any
 
@@ -21,6 +24,7 @@ from langchain_core.tools import StructuredTool
 from pydantic import BaseModel
 
 from malspark.agents.evidence_recorder import (
+    FRESH_RUN_REPEATS_SENTENCE,
     FRESH_RUN_SENTENCE,
     EvidenceRecorder,
     RepeatGuard,
@@ -33,7 +37,7 @@ from malspark.agents.tool_pinning import (
     SERVER_HINTS_METADATA_KEY,
     SERVER_METADATA_KEY,
 )
-from malspark.schemas.evidence import EvidenceCounter, LedgerEntry
+from malspark.schemas.evidence import EvidenceCounter, LedgerEntry, call_was_made
 
 LISTING = "\nundefined8 FUN_1360bc0ae78(void)\n\n{\n  FUN_1360bc09040(0);\n  return 0;\n}\n\n"
 REPORT = json.dumps({"status": "found", "domain": "example.test", "malicious": 3})
@@ -94,7 +98,7 @@ def _loop(agent: str, counter: EvidenceCounter, tool: Any, guard: RepeatGuard | 
 
 
 def _ran(entry: LedgerEntry) -> bool:
-    return entry.repeated_of is None
+    return call_was_made(entry)
 
 
 class TestAWholeFunctionReadTheLoopHolds:
@@ -237,9 +241,107 @@ class TestTheBound:
         assert [_ran(entry) for entry in recorder.entries] == [True, True, False]
         assert not any(FRESH_RUN_SENTENCE in answer for answer in answers)
 
+    def test_a_fresh_run_that_fails_is_a_failure_and_the_next_ask_is_refused(self) -> None:
+        counter, calls = EvidenceCounter(), []
+        triage, held, _ = _loop("triage", counter, _undeclared(calls))
+        network, recorder, guard = _loop("network", counter, _failing_once(calls))
+
+        triage.invoke({"domain": "example.test"})
+        network.invoke({"domain": "example.test"})
+        failed = network.invoke({"domain": "example.test"})
+        answers = [network.invoke({"domain": "example.test"}) for _ in range(RepeatGuard.ENDS_AT)]
+
+        _repeat, ran, *refusals = recorder.entries
+        assert calls == ["domain_report"] * 2, "the failed fresh run is the only second run"
+        assert _ran(ran) and ran.ok is False, "recorded as a call that ran and failed"
+        assert "server gone" in failed and FRESH_RUN_SENTENCE not in failed
+        assert not any(_ran(entry) for entry in refusals), "the next asks run nothing"
+        assert {entry.repeated_of for entry in refusals} == {held.entries[0].id}
+        assert not any(FRESH_RUN_SENTENCE in answer for answer in answers)
+        assert guard.refused_repeats == RepeatGuard.ENDS_AT
+        assert guard.ending_the_loop()
+
+    def test_two_identical_calls_of_one_turn_take_one_fresh_run(self) -> None:
+        counter, calls = EvidenceCounter(), []
+        triage, _held, _ = _loop("triage", counter, _undeclared(calls))
+        network, recorder, _guard = _loop("network", counter, _undeclared(calls))
+
+        triage.invoke({"domain": "example.test"})
+        network.invoke({"domain": "example.test"})
+
+        async def _turn() -> list[str]:
+            return await asyncio.gather(
+                network.ainvoke({"domain": "example.test"}),
+                network.ainvoke({"domain": "example.test"}),
+            )
+
+        asyncio.run(_turn())
+
+        assert calls == ["domain_report"] * 2, "one run for the job, one fresh run for the turn"
+        assert [_ran(entry) for entry in recorder.entries] == [False, True, False]
+
+
+def _failing_once(calls: list[str]) -> Any:
+    """The undeclared tool, raising on its first run here: the fresh run fails."""
+    runs: list[int] = []
+
+    def _run(**_kwargs: Any) -> str:
+        calls.append("domain_report")
+        runs.append(1)
+        if len(runs) == 1:
+            raise RuntimeError("server gone")
+        return REPORT
+
+    like = _undeclared([])
+    return StructuredTool.from_function(
+        func=_run,
+        name=like.name,
+        description="d",
+        args_schema=_Domain,
+        infer_schema=False,
+        metadata=like.metadata,
+    )
+
 
 class TestTheSentence:
     def test_it_names_no_tool_and_is_built_once(self) -> None:
-        assert "decompile_function" not in FRESH_RUN_SENTENCE
-        assert "domain_report" not in FRESH_RUN_SENTENCE
-        assert FRESH_RUN_SENTENCE.startswith("Asking again with the same arguments")
+        for sentence in (FRESH_RUN_SENTENCE, FRESH_RUN_REPEATS_SENTENCE):
+            assert "decompile_function" not in sentence
+            assert "domain_report" not in sentence
+            assert sentence.startswith("Asking again with the same arguments")
+
+    def test_a_read_only_call_is_read_again(self) -> None:
+        calls: list[str] = []
+        tool, _recorder, _guard = _loop("reverser", EvidenceCounter(), _declared_read(calls))
+
+        tool.invoke({"address": "0x1360bc0ae78"})
+        served = tool.invoke({"address": "0x1360bc0ae78"})
+
+        assert FRESH_RUN_SENTENCE in served and FRESH_RUN_REPEATS_SENTENCE not in served
+
+    def test_a_call_not_known_to_be_read_only_says_it_repeats_what_it_does(self) -> None:
+        calls: list[str] = []
+        # A tool nothing declares and whose server gave no hint, settled in an
+        # earlier chunk: served, and its fresh run does again what it does.
+        guard = seeded_repeat_guard(
+            [
+                LedgerEntry(
+                    id="ev_0003",
+                    tool="domain_report",
+                    args={"domain": "example.test"},
+                    output=REPORT,
+                )
+            ]
+        )
+        tool, recorder, _ = _loop(
+            "network", EvidenceCounter(), _undeclared(calls, hints=None), guard
+        )
+
+        served = tool.invoke({"domain": "example.test"})
+        tool.invoke({"domain": "example.test"})
+
+        assert served.endswith(FRESH_RUN_REPEATS_SENTENCE)
+        assert FRESH_RUN_SENTENCE not in served
+        assert recorder.entries[0].output.endswith(FRESH_RUN_REPEATS_SENTENCE)
+        assert calls == ["domain_report"], "the fresh run ran"
+        assert [_ran(entry) for entry in recorder.entries] == [False, True]

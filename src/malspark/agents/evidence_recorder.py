@@ -926,7 +926,9 @@ class RepeatGuard:
     An answer served from an earlier entry, with no tool run (a held
     whole-function read, the agent's own earlier call, an identical call of
     the job), says that asking again with the same arguments runs the call
-    fresh, and the identical call after it does run (:meth:`takes_fresh_run`).
+    once more, and what that repeats where the call is not known to be
+    read-only (:func:`with_fresh_run`); the identical call after it does run
+    (:meth:`takes_fresh_run`).
     Once per call per loop: the fresh run counts as a run, so the call after
     it is refused as before and the refusals still end the loop.
     """
@@ -1295,9 +1297,12 @@ class RepeatGuard:
         loop.
         """
         key = self._lookup_key(tool, kwargs)
-        if key not in self._fresh_owed:
+        # Taken in one step, so of two identical calls of one turn run side by
+        # side only one takes it.
+        try:
+            self._fresh_owed.remove(key)
+        except KeyError:
             return False
-        self._fresh_owed.discard(key)
         self._fresh_given.add(key)
         return True
 
@@ -1512,13 +1517,25 @@ def _function_label(text: str, key: tuple[str, Any] | None) -> str:
 
 # What every answer served from an earlier entry ends with while its fresh run
 # is open (``RepeatGuard.takes_fresh_run``): one platform sentence, the same
-# under every layer that serves and for every tool.
+# under every layer that serves, chosen by what the layers know of the call.
+# A call known to change nothing (``tool_pinning.answers_again``) is only read
+# again; any other call does again whatever it does.
 FRESH_RUN_SENTENCE = "Asking again with the same arguments runs the call fresh, once."
+FRESH_RUN_REPEATS_SENTENCE = (
+    "Asking again with the same arguments runs the call again, once, "
+    "and repeats whatever the call does."
+)
 
 
-def with_fresh_run(said: str, fresh: bool) -> str:
-    """``said`` with :data:`FRESH_RUN_SENTENCE` after it when the fresh run is open."""
-    return f"{said} {FRESH_RUN_SENTENCE}" if fresh else said
+def with_fresh_run(said: str, fresh: bool, *, reads_only: bool) -> str:
+    """``said`` with the fresh-run sentence after it when the fresh run is open.
+
+    :data:`FRESH_RUN_SENTENCE` for a call the layers know to be read-only
+    (``reads_only``), :data:`FRESH_RUN_REPEATS_SENTENCE` for any other.
+    """
+    if not fresh:
+        return said
+    return f"{said} {FRESH_RUN_SENTENCE if reads_only else FRESH_RUN_REPEATS_SENTENCE}"
 
 
 def held_answer_sentence(tool: str, entry_id: str) -> str:
@@ -1570,6 +1587,7 @@ def earlier_chunk_answer(
     cut: int = 0,
     charge: Callable[[str], str] | None = None,
     fresh: bool = False,
+    reads_only: bool = True,
 ) -> str:
     """What a later chunk's call an earlier chunk made is answered with.
 
@@ -1581,7 +1599,7 @@ def earlier_chunk_answer(
     characters the platform left out of it when it was first shown, which its
     completeness line states again; ``charge`` charges that line to the
     conversation it enters. ``fresh`` says the identical call after it runs
-    fresh (:func:`with_fresh_run`).
+    fresh, in the words ``reads_only`` chooses (:func:`with_fresh_run`).
     """
     # The notice the original answer carried when it was shortened, read off
     # the recorded text the same way (``_stamp``).
@@ -1594,7 +1612,9 @@ def earlier_chunk_answer(
     if charge is not None:
         complete = charge(complete)
     shown = fenced(entry_id, recorded)
-    said = with_fresh_run(earlier_chunk_sentence(tool, entry_id, origin=origin), fresh)
+    said = with_fresh_run(
+        earlier_chunk_sentence(tool, entry_id, origin=origin), fresh, reads_only=reads_only
+    )
     return f"[{entry_id}]\n{shown}{shortened}{complete}\n\n{said}"
 
 
@@ -1812,7 +1832,7 @@ def served_repeat_notice(
     as the first did, where what is above is a failure and so is the entry it
     points at, and the sentence says so instead of calling it an answer.
     ``fresh`` is a second call answered from the ledger, whose next identical
-    call still runs fresh once (:data:`FRESH_RUN_SENTENCE`): the refusal comes
+    call still runs fresh once (:func:`with_fresh_run`): the refusal comes
     after that run.
     """
     what_happened = (
@@ -2152,6 +2172,7 @@ def _record_tool(
                 said=with_fresh_run(
                     earlier_chunk_sentence(name, earlier, origin=repeats.origin_of(earlier)),
                     fresh,
+                    reads_only=reads_only,
                 ),
             )
             repeats.owe_fresh_run(name, kwargs)
@@ -2165,6 +2186,7 @@ def _record_tool(
                 cut=repeats.recorded_cut(earlier),
                 charge=_charged,
                 fresh=fresh,
+                reads_only=reads_only,
             )
         if not repeats.first_touch_of_seed(name, kwargs):
             repeats.note_repeat(refused=True)
@@ -2249,7 +2271,7 @@ def _record_tool(
         if not recorder.filed(holder) or recorder.entry_failed(holder):
             return None
         fresh = repeats.may_run_fresh(name, kwargs)
-        said = with_fresh_run(said, fresh)
+        said = with_fresh_run(said, fresh, reads_only=reads_only)
         shown = f"[{holder}]\n{fenced(holder, text)}\n\n{said}"
         from malspark.llm.context_window import ContextBudget
 
@@ -2318,7 +2340,7 @@ def _record_tool(
         if holder_handle != handle and not (one_view and holder_quiet):
             return None
         fresh = fresh_runs.may_run_fresh(name, kwargs)
-        said = with_fresh_run(said, fresh)
+        said = with_fresh_run(said, fresh, reads_only=reads_only)
         shown = f"[{holder}]\n{fenced(holder, text)}\n\n{said}"
         from malspark.llm.context_window import ContextBudget
 
