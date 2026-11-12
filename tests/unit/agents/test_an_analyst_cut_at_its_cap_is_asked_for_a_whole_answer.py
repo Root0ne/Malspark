@@ -215,7 +215,11 @@ class TestTheCardsAreMeasuredOnThePlainRetry:
     """An answer neither cut nor repeated: dev sends its turn unmeasured."""
 
     def _plain(self, fits: Any) -> tuple[str, list[bool]]:
-        answer = WHOLE.replace("TECHNIQUE: NONE", "TECHNIQUE: T1003")
+        # The describe question opens no turn of its own: a claim with no
+        # confidence line opens it, and the describe question joins it.
+        answer = WHOLE.replace("TECHNIQUE: NONE", "TECHNIQUE: T1003") + _block(2).replace(
+            "CONFIDENCE: 0.8\n", ""
+        )
         analyst = _Analyst([(WHOLE, 300)])
         measured: list[bool] = []
 

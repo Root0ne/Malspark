@@ -987,7 +987,9 @@ class TestTheBranchesGoFirstFromATurnThatDoesNotFit:
         # second answer's technique question carries a card, kept only where
         # the turn is measured as it is without the branches.
         entries = [_entry("ev_0003", GATE, GATE_LISTING), _entry("ev_0004", OTHER, OTHER_LISTING)]
-        technique = FIRST.replace("TECHNIQUE: NONE", "TECHNIQUE: T1082")
+        # The describe question opens no turn of its own: the claim with no
+        # confidence line opens it, and the describe question joins it.
+        technique = UNSURE.replace("TECHNIQUE: NONE", "TECHNIQUE: T1082", 1)
 
         def narrow(_self: Any, turns: list[Any], _cap: int) -> bool:
             return not any("branch(es)" in str(getattr(m, "content", m)) for m in turns)
