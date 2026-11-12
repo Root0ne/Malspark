@@ -32,9 +32,9 @@ from typing import Any
 # report whose sandbox names another target than the sample ``TARGET_KEY`` (set by the run,
 # ``app.MalsparkApp._tell_the_target``). Named here as every reader of the status
 # has always imported them.
-from malspark.schemas.sandbox_document import FIXTURE_KEY, SYNTHETIC_KEY, TARGET_KEY
+from malspark.schemas.sandbox_document import FIXTURE_KEY, LAUNCH_KEY, SYNTHETIC_KEY, TARGET_KEY
 
-__all__ = ["FIXTURE_KEY", "SYNTHETIC_KEY", "TARGET_KEY"]
+__all__ = ["FIXTURE_KEY", "LAUNCH_KEY", "SYNTHETIC_KEY", "TARGET_KEY"]
 
 # The three answers. Words rather than codes because they are written into
 # the ledger entry and the run summary, where a reader meets them as they are.
@@ -85,11 +85,44 @@ def sandbox_status(report: Any) -> SandboxStatus:
     """What ``report`` — the run's sandbox report document, or ``None`` — is."""
     if not isinstance(report, dict) or not report:
         return SandboxStatus(NOT_RUN, _NO_REPORT)
+    launch = launch_statement(report.get(LAUNCH_KEY))
     if report.get(SYNTHETIC_KEY):
-        return SandboxStatus(NOT_RUN, _STAND_IN)
+        return SandboxStatus(NOT_RUN, _joined(_STAND_IN, launch))
     if report.get(FIXTURE_KEY):
-        return SandboxStatus(RECORDED_FIXTURE, _FIXTURE)
-    return SandboxStatus(OBSERVED, _target_statement(report.get(TARGET_KEY)))
+        return SandboxStatus(RECORDED_FIXTURE, _joined(_FIXTURE, launch))
+    return SandboxStatus(OBSERVED, _joined(_target_statement(report.get(TARGET_KEY)), launch))
+
+
+def _joined(*sentences: str) -> str:
+    return " ".join(sentence for sentence in sentences if sentence)
+
+
+def launch_statement(record: Any) -> str:
+    """What a report's launch mark says: the job's launch arguments, verbatim, and their fate.
+
+    ``""`` with no mark, so a job that asked for none reads as it always did.
+    The arguments are the operator's run configuration and are written whole,
+    as one code span (:func:`_code`), never masked: a reader of the behaviour
+    needs the exact command line it was observed under.
+    """
+    if not isinstance(record, Mapping) or "arguments" not in record:
+        return ""
+    arguments = _code(str(record.get("arguments") or ""))
+    provider = _code(str(record.get("provider") or "sandbox"))
+    note = str(record.get("note") or "").strip()
+    if record.get("honoured") is True:
+        tail = f" ({note})" if note else ""
+        return (
+            f"The job asked the sandbox to launch the sample with the arguments {arguments}, "
+            f"and the {provider} provider passed them{tail}: the behaviour was observed "
+            "with those arguments."
+        )
+    tail = f": {note}" if note else ""
+    return (
+        f"The job asked the sandbox to launch the sample with the arguments {arguments}; "
+        f"they were not honoured by the {provider} provider{tail}. Nothing here was "
+        "observed with those arguments."
+    )
 
 
 def target_mark(record: Mapping[str, Any]) -> dict[str, Any]:
@@ -142,6 +175,15 @@ def _code(text: str) -> str:
         return f"`{written}`"
     fence = "`" * (longest + 1)
     return f"{fence} {written} {fence}"
+
+
+def launch_arguments_reason(report: Any) -> str | None:
+    """The run's limitation where its launch arguments were not passed; ``None`` otherwise."""
+    from malspark.providers.submission import not_honoured_reason
+
+    if not isinstance(report, dict):
+        return None
+    return not_honoured_reason(report.get(LAUNCH_KEY))
 
 
 def observed_report(report: Any) -> dict[str, Any] | None:

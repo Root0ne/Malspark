@@ -175,6 +175,7 @@ from malspark.pipeline.routing import (
 from malspark.pipeline.run_state import render_run_state
 from malspark.pipeline.sandbox_status import NOT_RUN as SANDBOX_NOT_RUN
 from malspark.pipeline.sandbox_status import (
+    launch_arguments_reason,
     names_another_target,
     sample_file_identity,
     sandbox_status,
@@ -7288,6 +7289,10 @@ def make_judge_node(
                 for reason in artefact_fetch_reasons(container)
                 if reason not in _degradation_reasons
             )
+            # Launch arguments the job asked for and its sandbox did not pass.
+            _launch = launch_arguments_reason(state.get("sandbox_report"))
+            if _launch and _launch not in _degradation_reasons:
+                _degradation_reasons.append(_launch)
             # A container we accept but cannot open. A .docm reaches here
             # legitimately — macro documents are among the commonest Windows
             # carriers, so rejecting them would be wrong — but the only analysis

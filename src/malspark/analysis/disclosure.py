@@ -712,13 +712,38 @@ def submission_host(provider: Any) -> str | None:
     return None if where is None else str(where)
 
 
-def upload_record(provider: str, *, submitted: bool, host: str = "") -> dict[str, Any]:
+def upload_record(
+    provider: str,
+    *,
+    submitted: bool,
+    host: str = "",
+    launch: Mapping[str, Any] | None = None,
+) -> dict[str, Any]:
     """One submission of the sample to the sandbox provider, as the run records it.
 
     ``host`` is the host the provider resolved its submission URL to
-    (:func:`submission_host`); empty where it does not say.
+    (:func:`submission_host`); empty where it does not say. ``launch`` is
+    what became of the job's launch arguments
+    (``providers.submission.launch_record``): the arguments verbatim and
+    whether the provider passed them. A job that asked for none records no
+    such key, and its record reads as it always did.
     """
-    return {"provider": str(provider), "submitted": bool(submitted), "host": str(host)}
+    record: dict[str, Any] = {
+        "provider": str(provider),
+        "submitted": bool(submitted),
+        "host": str(host),
+    }
+    if launch is not None:
+        record["launch_arguments"] = str(launch.get("arguments") or "")
+        record["launch_arguments_honoured"] = bool(launch.get("honoured"))
+        if launch.get("note"):
+            record["launch_arguments_note"] = str(launch["note"])
+    return record
+
+
+# The keys of a submission's launch arguments (:func:`upload_record`), carried
+# to its row as they were recorded.
+_LAUNCH_KEYS = ("launch_arguments", "launch_arguments_honoured", "launch_arguments_note")
 
 
 # A staging's states, as ``agents.sample_staging`` records them.
@@ -790,6 +815,8 @@ def _sandbox_uploads(uploads: Iterable[Mapping[str, Any]]) -> list[dict[str, Any
             )
         rows[key]["calls"] += 1
         rows[key]["failed"] += 0 if upload.get("submitted") else 1
+        if "launch_arguments" in upload:
+            rows[key].update({name: upload[name] for name in _LAUNCH_KEYS if name in upload})
     return list(rows.values())
 
 
@@ -1631,6 +1658,7 @@ def _upload_line(row: Mapping[str, Any], code: Callable[[str], str]) -> str:
         return (
             f"Sample upload: the sample was submitted {times} to the "
             f"{code(str(row.get('source') or ''))} sandbox{at}{failure}{untold}."
+            + _launch_clause(row, code)
         )
     server = _server(str(row.get("source") or ""), code)
     if by == BY_STAGING:
@@ -1643,6 +1671,21 @@ def _upload_line(row: Mapping[str, Any], code: Callable[[str], str]) -> str:
     return (
         f"Sample upload: {server} ({_how(row)}){at} was handed the sample {times}{_again(row)} "
         f"by a tool declared to send it out of the deployment{failure}{untold}."
+    )
+
+
+def _launch_clause(row: Mapping[str, Any], code: Callable[[str], str]) -> str:
+    """What a submission row says of the job's launch arguments; ``""`` where it asked for none."""
+    if "launch_arguments" not in row:
+        return ""
+    arguments = code(str(row.get("launch_arguments") or ""))
+    note = str(row.get("launch_arguments_note") or "")
+    if row.get("launch_arguments_honoured"):
+        return f" The job's launch arguments {arguments} were passed with it" + (
+            f" ({note})." if note else "."
+        )
+    return f" The job's launch arguments {arguments} were requested and not honoured" + (
+        f": {note}." if note else "."
     )
 
 

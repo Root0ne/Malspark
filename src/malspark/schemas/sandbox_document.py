@@ -223,12 +223,18 @@ FIXTURE_KEY = "recorded_fixture"
 # whose target is the sample, or that names none, carries no mark. Set after
 # intake (``app.MalsparkApp._tell_the_target``), so no reader earns it.
 TARGET_KEY = "target_not_the_sample"
+# The mark the run sets on a report of a job that asked for launch arguments:
+# the arguments verbatim, the provider, whether it passed them and its note
+# (``providers.submission.launch_record``). A job that asked for none leaves
+# no mark. Set after intake (``app.MalsparkApp._mark_the_launch``), so no
+# reader earns it.
+LAUNCH_KEY = "launched_with"
 # Every platform mark a document can carry at its top level: the one list. A
 # sandbox's own report holding a key under one of these words is not the
 # platform's mark, and a reader that does not set the mark itself never passes
 # it on (:func:`unearned_marks_removed`). A later mark joins here, and is then
 # taken out of every provider's report at intake with no code of its own.
-PLATFORM_MARKS: tuple[str, ...] = (SYNTHETIC_KEY, FIXTURE_KEY, TARGET_KEY)
+PLATFORM_MARKS: tuple[str, ...] = (SYNTHETIC_KEY, FIXTURE_KEY, TARGET_KEY, LAUNCH_KEY)
 
 
 def unearned_marks_removed(report: SandboxReport, earned: Collection[str] = ()) -> list[str]:
