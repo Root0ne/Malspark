@@ -103,6 +103,9 @@ class HostKind:
     label: str
     shape: str
     words: str
+    # The object namespaces a name of this kind is written under
+    # (``global\\`` for a mutex, ``\\\\.\\pipe\\`` for a pipe), lower case.
+    namespaces: tuple[str, ...] = ()
 
 
 @lru_cache(maxsize=4)
@@ -116,6 +119,7 @@ def host_kinds(path: str = DEFAULT_KINDS) -> dict[str, HostKind]:
             label=str(spec.get("label") or ""),
             shape=str(spec.get("shape") or ""),
             words=str(spec.get("words") or ""),
+            namespaces=tuple(str(ns).lower() for ns in spec.get("namespaces") or () if ns),
         )
         for word, spec in (document.get("kinds") or {}).items()
     }
@@ -168,6 +172,7 @@ class Catalogue:
     windows_pipes: frozenset[str]
     registry_keys: frozenset[str]
     registry_values: frozenset[str]
+    submission_roots: frozenset[str]
     task_definition_words: frozenset[str]
     generic_names: frozenset[str]
     # The 8.3 short-name stems of the known folders whose long names do not
@@ -187,19 +192,22 @@ def benign_catalogue(path: str = DEFAULT_CATALOGUE) -> Catalogue:
         return frozenset(str(word).lower() for word in entries or () if word)
 
     known = _set("known_folders")
-    system = _set("system_folders")
+    # The .NET Framework's folders and tools stand in the same chain as
+    # Windows' own, each list with its own criterion.
+    system = _set("system_folders") | _set("dotnet_framework_folders")
     return Catalogue(
         known_folders=known,
         known_folder_prefixes=tuple(sorted(_set("known_folder_prefixes"))),
         environment_folders=_set("environment_folders"),
         system_folders=system,
-        system_binaries=_set("system_binaries"),
+        system_binaries=_set("system_binaries") | _set("dotnet_framework_tools"),
         object_namespaces=_set("object_namespaces"),
         windows_streams=_set("windows_streams"),
         windows_services=_set("windows_services"),
         windows_pipes=_set("windows_pipes"),
         registry_keys=_set("registry_keys"),
         registry_values=_set("registry_values"),
+        submission_roots=_set("submission_roots"),
         task_definition_words=_set("task_definition_words"),
         generic_names=_set("generic_names"),
         short_stems=frozenset(
@@ -248,12 +256,23 @@ def _components(value: str) -> list[str]:
     return [part for part in (raw.rstrip(". ") for raw in text.lower().split("\\")) if part]
 
 
+# The roots of the %SystemRoot% chain: a system folder counts as known only
+# as one of these or right under another folder of the chain.
+_SYSTEM_ROOTS = frozenset({"windows", "%systemroot%", "%windir%"})
+
+
+def _in_the_system_chain(part: str, previous: str, catalogue: Catalogue) -> bool:
+    return part in catalogue.system_folders and (
+        part in _SYSTEM_ROOTS or previous in catalogue.system_folders
+    )
+
+
 def _known_component(part: str, previous: str, catalogue: Catalogue) -> bool:
     short = _SHORT_NAME_RE.fullmatch(part)
     return (
         part in catalogue.known_folders
         or part in catalogue.environment_folders
-        or part in catalogue.system_folders
+        or _in_the_system_chain(part, previous, catalogue)
         or part.startswith(catalogue.known_folder_prefixes)
         or _DRIVE_RE.fullmatch(part) is not None
         or (short is not None and short.group(1) in catalogue.short_stems)
@@ -350,7 +369,7 @@ def benign_reason(
             "named_pipe": catalogue.windows_pipes,
         }.get(kind.table_kind, frozenset())
         if name in own:
-            return f"a {kind.label.lower()} Windows itself has on every installation"
+            return f"{_article(kind.label.lower())} Windows itself has on every installation"
         return ""
     if len(parts) == 1 and parts[0] in catalogue.task_definition_words:
         return "a word of the Task Scheduler's task definition, which every task carries"
@@ -360,22 +379,44 @@ def benign_reason(
         return ""
     name = parts[-1]
     if name in catalogue.system_binaries and all(
-        part in catalogue.system_folders or _DRIVE_RE.fullmatch(part) is not None
-        for part in parts[:-1]
+        _DRIVE_RE.fullmatch(part) is not None
+        or _in_the_system_chain(part, parts[at - 1] if at else "", catalogue)
+        for at, part in enumerate(parts[:-1])
     ):
         return "a file Windows ships, in the folder Windows keeps it in"
     stem = name.rsplit(".", 1)[0]
     if stem in sample_digests:
         return "the sandbox's copy of the sample itself, named by its digest"
-    if sample_name and name == sample_name:
-        return "the sample's own file name, as it was submitted"
+    if sample_name and name == sample_name and _a_submission_place(parts[:-1], catalogue):
+        return "the sample's own file name, where a submitted file is placed"
     return ""
+
+
+def _a_submission_place(folders: Sequence[str], catalogue: Catalogue) -> bool:
+    """Whether a file's folders are where a submitted file is placed: none, a drive's root,
+    a declared submission root (the temporary folder, the desktop, the downloads folder) or
+    the profile folder itself (``Users\\<name>``)."""
+    if not folders:
+        return True
+    last = folders[-1]
+    return (
+        (len(folders) == 1 and _DRIVE_RE.fullmatch(last) is not None)
+        or last in catalogue.submission_roots
+        or last in catalogue.environment_folders
+        and last.strip("%") in ("temp", "tmp", "userprofile")
+        or (len(folders) >= 2 and folders[-2] == "users")
+    )
 
 
 # The Services key, under which each service has a key of its own name.
 _SERVICES_KEYS = frozenset(
     {"system\\currentcontrolset\\services", "system\\controlset001\\services"}
 )
+
+
+def _article(noun: str) -> str:
+    """``noun`` with the indefinite article its first sound takes (by its first letter)."""
+    return f"{'an' if noun[:1] in 'aeiou' else 'a'} {noun}"
 
 
 def _bare_name(kind: HostKind, value: str) -> str:
@@ -563,8 +604,19 @@ def identifier_answers(report: Any) -> list[tuple[StatedHostValue, str]]:
     The answer is :func:`~malspark.reporting.renderers.stix_renderer.publish_answer`'s,
     asked under source ``analysis``: the IOC table adds a row for each one it
     publishes, and the identifier table prints every one beside its row.
+
+    A statement adds a source where the value's other records are only weak
+    (the file's strings, an analyst's listing, a sandbox row of the sample's
+    tree the judge did not name), never where a record places the value
+    elsewhere: a value the sandbox recorded from a process it does not
+    attribute to the sample's tree, and the judge did not keep, is answered
+    with that refusal, here, so every surface reads the one answer.
     """
-    from malspark.reporting.renderers.stix_renderer import publish_answer
+    from malspark.reporting.renderers.stix_renderer import (
+        publish_answer,
+        publishes,
+        sandbox_host_kwargs,
+    )
 
     ta = getattr(report, "technical_analysis", None)
     rows = list(getattr(ta, "host_identifiers", None) or []) if ta is not None else []
@@ -572,88 +624,158 @@ def identifier_answers(report: Any) -> list[tuple[StatedHostValue, str]]:
     for index, item in enumerate(rows):
         kwargs = analysis_kwargs(report, item, beyond_rows=index >= MAX_STATED_ROWS)
         stated = kwargs["stated"]
-        out.append(
-            (stated, publish_answer(stated.table_kind, stated.value, ANALYSIS_SOURCE, **kwargs))
-        )
+        answer = publish_answer(stated.table_kind, stated.value, ANALYSIS_SOURCE, **kwargs)
+        if publishes(answer):
+            placed = sandbox_host_kwargs(report, stated.table_kind, stated.value)
+            if placed.get("unattributed"):
+                refused = publish_answer(stated.table_kind, stated.value, "sandbox", **placed)
+                if not publishes(refused):
+                    answer = refused
+        out.append((stated, answer))
     return out
 
 
-# What a delimited value may stand between. Before it: a quote, a line break
-# (as written or as its escape), a path separator, or the ``=`` / ``:`` of a
-# key-value pair. After it: the same. Never a space, a comma or a full stop:
-# those are running text, and a word of a tool's prose is no value.
+# What a delimited value may stand between. A strong delimiter at either end:
+# the text's start or end, a quote (one that a ``:`` follows closes a key, not
+# a value), a line break as written or as its escape, and for a folder's or a
+# file's name a path separator. A structural one: an opening ``(`` or ``[``, a
+# ``=`` or ``:`` written right before the value, and a closing ``)``, ``]``,
+# ``,`` or ``;``; those count only where the other end is a quote, an opening
+# bracket or such a ``=`` / ``:``. Never a space or a full stop: those are
+# running text, and a word of a tool's prose is no value.
 _QUOTES = "\"'"
 _LINE_BREAKS = "\n\r\t"
 _ESCAPED_BREAKS = ("\\n", "\\r", "\\t")
 _SEPARATORS = "\\/"
 _PAIR_MARKS = "=:"
+_OPEN_BRACKETS = "(["
+_LIST_CLOSERS = ")],;"
 # What ends the token a URL is written in, and how far back a token is read:
 # a URL is read only within this many characters before an occurrence, so a
-# text of many occurrences costs its length times a constant.
+# text of many occurrences costs its length times a constant; an occurrence
+# whose token began further back is refused, since it may be a URL's.
 _TOKEN_ENDS = " \t\n\r\"'<>()[]{},"
 _URL_LOOKBACK = 2048
 
+# The ends a value may stand between, by strength (see above).
+_STRONG = "strong"
+_QUOTE = "quote"
+_BRACKET = "bracket"
+_PAIR = "pair"
+_LIST = "list"
+_BREAK = "break"
+
 
 def _in_a_url(text: str, start: int) -> bool:
-    """Whether the occurrence at ``start`` stands inside a URL token (``scheme://…``)."""
+    """Whether the occurrence at ``start`` stands, or may stand, inside a URL token.
+
+    The token is read back to its start, at most :data:`_URL_LOOKBACK`
+    characters; a token that began further back is not read and is taken as
+    a URL's, so nothing past the window is accepted unread.
+    """
     low = max(0, start - _URL_LOOKBACK)
     cut = max(text.rfind(end, low, start) for end in _TOKEN_ENDS)
-    return "://" in text[max(cut + 1, low) : start]
+    if cut < 0 and low > 0:
+        return True
+    return "://" in text[cut + 1 : start]
 
 
-def _opens(text: str, start: int, separators: bool) -> bool:
+def _opening(text: str, start: int, separators: bool, prefixes: Sequence[str]) -> str:
+    """What stands before an occurrence, as a delimiter class, or ``""``."""
     if start == 0:
-        return True
+        return _STRONG
     before = text[start - 1]
-    if before in _QUOTES or before in _LINE_BREAKS or (separators and before in _SEPARATORS):
-        return True
+    if before in _QUOTES:
+        return _QUOTE
+    if before in _LINE_BREAKS or text[max(0, start - 2) : start] in _ESCAPED_BREAKS:
+        return _BREAK
+    if separators and before in _SEPARATORS:
+        return _STRONG
+    if any(text.endswith(prefix, 0, start) for prefix in prefixes):
+        return _STRONG
+    if before in _OPEN_BRACKETS:
+        return _BRACKET
     if before in _PAIR_MARKS:
-        return True
-    # ``key: value`` and ``key = value``: one space after the mark.
-    if before == " " and start >= 2 and text[start - 2] in _PAIR_MARKS:
-        return True
-    return text[max(0, start - 2) : start] in _ESCAPED_BREAKS
+        return _PAIR
+    return ""
 
 
-def _closes(text: str, end: int, separators: bool) -> bool:
+def _closing(text: str, end: int, separators: bool) -> str:
+    """What stands after an occurrence, as a delimiter class, or ``""``."""
     if end >= len(text):
-        return True
+        return _STRONG
     after = text[end]
-    if after in _QUOTES or after in _LINE_BREAKS or after in _PAIR_MARKS:
-        return True
+    if after in _QUOTES:
+        # A quote a ``:`` follows closes a key: ``{"explorer": 1}``.
+        rest = text[end + 1 : end + 8].lstrip(" ")
+        return "" if rest.startswith(":") else _QUOTE
+    if after in _LINE_BREAKS:
+        return _BREAK
     if separators and after in _SEPARATORS:
-        return True
-    # An escaped quote or line break after it (``\\"``, ``\\n``) ends a JSON string.
-    return after == "\\" and text[end + 1 : end + 2] in ('"', "n", "r", "t")
+        return _STRONG
+    if after == "\\" and text[end + 1 : end + 2] in ('"', "n", "r", "t"):
+        # An escaped quote or line break after it ends a JSON string; the
+        # same key test holds for an escaped quote.
+        if text[end + 1 : end + 2] == '"' and text[end + 2 : end + 9].lstrip(" ").startswith(":"):
+            return ""
+        return _QUOTE if text[end + 1 : end + 2] == '"' else _BREAK
+    if after in _LIST_CLOSERS:
+        return _LIST
+    return ""
+
+
+# Which closing class each opening class admits: a strong or a quoted end
+# takes any end but a bare list mark after a strong one; a bracket or a
+# ``=`` / ``:`` needs a structural end, never the text's end or running text.
+_ADMITS = {
+    _STRONG: frozenset({_STRONG, _QUOTE, _BREAK}),
+    _BREAK: frozenset({_STRONG, _QUOTE, _BREAK}),
+    _QUOTE: frozenset({_STRONG, _QUOTE, _BREAK, _LIST}),
+    _BRACKET: frozenset({_QUOTE, _LIST}),
+    _PAIR: frozenset({_QUOTE, _BREAK, _LIST}),
+}
 
 
 def delimited_in(
-    name: str, text: str, *, after_colon: bool = False, separators: bool = True
+    name: str,
+    text: str,
+    *,
+    after_colon: bool = False,
+    separators: bool = True,
+    prefixes: Sequence[str] = (),
 ) -> bool:
     """Whether ``name`` stands in ``text`` as a value of its own, delimited at both ends.
 
-    Both ends must be a value delimiter: a quote or the start or end of the
-    text, a line break or its escape, a path separator, or the ``=`` / ``:`` of
-    a key-value pair — never a space, a comma or a full stop of running text,
-    so ``{"text": "updater"}`` holds ``updater`` and "installs an updater, which
-    runs" does not. A path separator delimits only with ``separators`` (a
-    folder's or a file's name is a path component; a mutex's, a task's or a
-    service's name inside a path is that path's, not the name). An occurrence
-    inside a URL is never a host value: a URL's path names no folder or file
-    on a host. ``after_colon`` asks for a stream name, which follows the ``:``
-    that ends its file's name (``a.exe:x``). One pass over the occurrences.
+    Both ends must be delimiters that pair (:data:`_ADMITS`): a quote, the
+    text's start or end, a line break or its escape and, with ``separators``,
+    a path separator take each other; an opening bracket or a ``=`` / ``:``
+    right before the value takes only a quote or a closing ``)``, ``]``,
+    ``,`` or ``;``. Never a space or a full stop of running text, and never a
+    quote a ``:`` follows (a key): ``{"text": "updater"}``,
+    ``CreateMutexW(abc123)`` and ``name=abc123,`` hold their value, and
+    "installs an updater, which runs", ``{"updater": 1}``, ``updater: a task``
+    and ``target=explorer`` do not. A path separator delimits only with
+    ``separators`` (a folder's or a file's name is a path component; a
+    mutex's, a task's or a service's name inside a path is that path's).
+    ``prefixes`` are the kind's own namespaces (``global\\``), which open a
+    name written under them. An occurrence inside a URL is never a host value.
+    ``after_colon`` asks for a stream name, which follows the ``:`` that ends
+    its file's name (``a.exe:x``). One pass over the occurrences.
     """
     if not name or not text:
         return False
     start = text.find(name)
     while start != -1:
         end = start + len(name)
-        opened = (
-            (start > 0 and text[start - 1] == ":")
-            if after_colon
-            else _opens(text, start, separators)
-        )
-        if opened and _closes(text, end, separators) and not _in_a_url(text, start):
+        if after_colon:
+            opened = _STRONG if start > 0 and text[start - 1] == ":" else ""
+        else:
+            opened = _opening(text, start, separators, prefixes)
+        if (
+            opened
+            and _closing(text, end, separators) in _ADMITS[opened]
+            and not _in_a_url(text, start)
+        ):
             return True
         start = text.find(name, start + 1)
     return False
@@ -699,6 +821,12 @@ def held_in_cited(entries: Any, item: Any) -> list[str]:
         bare = lowered.strip("\\/")
         if bare and bare != lowered:
             names = encodings(bare)
+    # The kind's own namespaces, in every spelling a text writes them in.
+    prefixes = [
+        form
+        for prefix in (kind.namespaces if kind is not None else ())
+        for form in encodings(prefix)
+    ]
     cited = _cited(getattr(item, "evidence_refs", None) or [])
     candidates: set[str] = set()
     for form in [*forms, *names, *([stream] if stream else [])]:
@@ -717,7 +845,10 @@ def held_in_cited(entries: Any, item: Any) -> list[str]:
                 for form in encodings(stream)
             )
         elif _delimited_shape(kind):
-            held = any(delimited_in(form, text, separators=paths) for form in [*forms, *names])
+            held = any(
+                delimited_in(form, text, separators=paths, prefixes=prefixes)
+                for form in [*forms, *names]
+            )
         else:
             held = any(whole_value_in(form, text) for form in forms)
         if held:

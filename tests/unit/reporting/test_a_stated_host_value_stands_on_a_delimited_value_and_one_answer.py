@@ -109,9 +109,40 @@ class TestAValueIsHeldOnlyWhereDelimited:
     @pytest.mark.parametrize(
         ("kind", "value", "text"),
         [
+            # A key, not a value: a quote a colon follows, a name a mark follows.
+            ("mutex", "explorer", '{"explorer": 1}'),
+            ("service", "Updater", "updater: a task"),
+            ("mutex", "explorer", "target=explorer"),
+            ("mutex", "running", "status: running"),
+            # A bracket or a list mark needs a structural other end.
+            ("mutex", "abc123", "see abc123, then"),
+            ("mutex", "abc123", "(abc123 and more"),
+            ("mutex", "abc123", "call(abc123"),
+            ("mutex", "abc123", "abc123, then"),
+            # A task's folder is no namespace: a task is stated in full.
+            ("scheduled task", "MyTask", json.dumps({"t": "\\Folder\\MyTask"})),
+        ],
+    )
+    def test_a_key_or_an_unpaired_mark_holds_nothing(
+        self, kind: str, value: str, text: str
+    ) -> None:
+        # Read as the entry writes it, not inside a JSON string.
+        assert _held(kind, value, text) == []
+
+    @pytest.mark.parametrize(
+        ("kind", "value", "text"),
+        [
             ("scheduled task", "Updater", _decoded("Updater")),
             ("scheduled task", "Updater", "TaskName=Updater\nAuthor=x"),
-            ("service", "ExampleSvc7731", "ServiceName: ExampleSvc7731"),
+            ("service", "ExampleSvc7731", "ServiceName=ExampleSvc7731;Start=2"),
+            ("mutex", "abc123", "CreateMutexW(abc123)"),
+            ("mutex", "abc123", 'CreateMutexW("abc123")'),
+            ("mutex", "abc123", "name=abc123, next"),
+            ("named pipe", "\\\\.\\pipe\\mypipe", "CreateNamedPipeW(\\\\.\\pipe\\mypipe, 3)"),
+            # A name stated bare is held under its kind's own namespace.
+            ("mutex", "MyMtx", json.dumps({"m": "Global\\MyMtx"})),
+            ("mutex", "MyMtx", json.dumps({"m": "\\BaseNamedObjects\\MyMtx"})),
+            ("named pipe", "mypipe", json.dumps({"p": "\\\\.\\pipe\\mypipe"})),
             ("folder", "Custom_update", json.dumps("C:\\Users\\a\\AppData\\Custom_update\\x.dll")),
             ("folder", "Custom_update", "C:/Users/a/AppData/Custom_update/x.dll"),
             ("file name", "\\update_data.dat", _decoded("\\update_data.dat")),
@@ -130,6 +161,29 @@ class TestAValueIsHeldOnlyWhereDelimited:
         )
 
         assert _held(kind, value, text) == []
+
+    def test_a_url_whose_start_is_past_the_look_back_holds_nothing(self) -> None:
+        text = json.dumps({"u": "http://evil.example/" + "a" * 2100 + "/files/x"})
+
+        assert _held("folder", "files", text) == []
+
+    def test_a_token_longer_than_the_look_back_is_not_read_and_holds_nothing(self) -> None:
+        # Its start, and any scheme it has, lie past the window: refused unread.
+        text = "c:" + "\\a" * 1500 + "\\files\\x"
+
+        assert _held("folder", "files", text) == []
+        assert _held("folder", "files", "c:\\a\\files\\x") == ["ev_1"]
+
+    def test_many_occurrences_and_long_tokens_cost_their_length(self) -> None:
+        import time
+
+        from malspark.reporting.stated_host_values import delimited_in
+
+        segment = "http://x/" + "a/" * 1000 + " "
+        text = (segment * (800_000 // len(segment) + 1))[:800_000]
+        started = time.perf_counter()
+        assert not delimited_in("a", text)
+        assert time.perf_counter() - started < 5.0
 
     def test_a_stream_written_after_its_file_s_name_is_held(self) -> None:
         text = json.dumps({"path": "c:\\x\\a.exe:wtfbbq"})
@@ -204,6 +258,53 @@ class TestOneAnswerPerKindAndValue:
         assert "xyzMutex77" in analyst
 
 
+class TestAValueTheSandboxPlacesElsewhere:
+    """A statement never outweighs a record that places the value outside the sample's tree."""
+
+    def _report(self, monkeypatch: Any) -> MalwareReport:
+        import malspark.reporting.renderers.stix_renderer as stix
+        from malspark.reporting.models import DynamicBehavior
+
+        monkeypatch.setattr(
+            stix,
+            "_sandbox_host_index",
+            lambda report: {
+                ("mutex", stix._value_key("mutex", "xyzMutex77")): (
+                    "a process outside the sample's process tree made it"
+                )
+            },
+        )
+        report = _report(
+            [("mutex", "xyzMutex77")],
+            json.dumps({"mutexes": ["xyzmutex77"]}),
+            dynamic=DynamicBehavior(file_operations=[{"operation": "mutex", "name": "xyzMutex77"}]),
+        )
+        report.attribution.family = "ExampleFamily"
+        report.attribution.family_grounded = True
+        return MalwareReportBuilder.attach_detection_signatures(report)
+
+    def test_is_refused_with_that_record_on_every_surface(self, monkeypatch: Any) -> None:
+        from app.services.report_service import ioc_feed_rows
+
+        report = self._report(monkeypatch)
+
+        ((_, answer),) = identifier_answers(report)
+        assert answer == "no: a process outside the sample's process tree made it"
+        (row,) = [r for r in report.consolidated_iocs if r.value == "xyzMutex77"]
+        assert row.source == "sandbox" and not publishes(row.published)
+        feed = [
+            r for r in ioc_feed_rows(report.model_dump(mode="json")) if r["value"] == "xyzMutex77"
+        ]
+        assert feed and not any(r["published"] for r in feed)
+        bundle = ExtendedSTIXRenderer().render(report).model_dump(mode="json")
+        assert not any("xyzMutex77" in obj.get("pattern", "") for obj in bundle["objects"])
+        assert not any(
+            a["value"] == "xyzMutex77"
+            for a in build_misp_attributes(report, report.consolidated_iocs, owner="x")
+        )
+        assert not any("xyzmutex77" in rule.body.lower() for rule in report.detection_signatures)
+
+
 class TestWhatEveryWindowsHostHolds:
     @pytest.mark.parametrize(
         ("kind", "value"),
@@ -242,6 +343,54 @@ class TestWhatEveryWindowsHostHolds:
     def test_a_value_of_its_own_is_kept(self, kind: str, value: str) -> None:
         assert benign_reason(typed_kind(kind), value) == ""
 
+    @pytest.mark.parametrize(
+        "value",
+        [
+            "C:\\ProgramData\\Config",
+            "%APPDATA%\\Drivers",
+            "C:\\ExampleVendor7731\\Tasks",
+            "C:\\Data\\Spool",
+        ],
+    )
+    def test_a_system_folder_s_name_outside_the_system_chain_is_kept(self, value: str) -> None:
+        assert benign_reason(typed_kind("folder"), value) == ""
+
+    @pytest.mark.parametrize(
+        "value",
+        [
+            "C:\\Windows\\Temp\\cmd.exe",
+            "%TEMP%\\svchost.exe",
+            "C:\\Windows\\System32\\svch0st.exe",
+        ],
+    )
+    def test_a_system_binary_s_name_out_of_its_folder_is_kept(self, value: str) -> None:
+        assert benign_reason(typed_kind("file path"), value) == ""
+
+    @pytest.mark.parametrize(
+        "value",
+        [
+            "C:\\Windows\\Microsoft.NET\\Framework64\\v4.0.30319\\MSBuild.exe",
+            "C:\\Windows\\System32\\lsass.exe",
+        ],
+    )
+    def test_a_file_windows_ships_in_its_chain_is_refused(self, value: str) -> None:
+        assert benign_reason(typed_kind("file path"), value) != ""
+
+    def test_the_article_fits_the_kind(self) -> None:
+        assert benign_reason(typed_kind("alternate data stream"), ":Zone.Identifier") == (
+            "an alternate data stream Windows itself has on every installation"
+        )
+
+    def test_the_sample_s_self_copy_elsewhere_is_kept(self) -> None:
+        report = _report(
+            [("file path", "%APPDATA%\\ExampleVendor7731\\invoice_7731.exe")],
+            json.dumps("%APPDATA%\\ExampleVendor7731\\invoice_7731.exe"),
+            file_name="invoice_7731.exe",
+        )
+
+        ((_, answer),) = identifier_answers(report)
+        assert publishes(answer)
+
     def test_the_sample_s_submitted_name_is_refused(self) -> None:
         report = _report(
             [("file path", "C:\\Users\\a\\AppData\\Local\\Temp\\invoice_7731.exe")],
@@ -250,7 +399,7 @@ class TestWhatEveryWindowsHostHolds:
         )
 
         ((_, answer),) = identifier_answers(report)
-        assert answer == "no: the sample's own file name, as it was submitted"
+        assert answer == "no: the sample's own file name, where a submitted file is placed"
 
     def test_a_namespace_is_read_past_for_the_generic_check(self) -> None:
         assert is_generic(typed_kind("mutex"), "Global\\Updater")
