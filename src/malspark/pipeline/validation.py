@@ -79,6 +79,7 @@ from malspark.pipeline.events import (
     unparsed_answer_kept_sentence,
 )
 from malspark.pipeline.exit_branches import ExitSite, exits_question, uncovered_exits
+from malspark.pipeline.feedback_mode import feeds_back
 from malspark.pipeline.retry_merge import folded_title
 from malspark.schemas.evidence import ENTRY_ID_RE, answer_not_shown, entry_ids_in
 from malspark.schemas.judgement import BENIGN_VERDICT, SEVERITY_RATINGS, VERDICT_VALUES
@@ -5354,12 +5355,14 @@ def record_flagged_statements(
             default = violation.path.replace("_", " ")
             for position, sentence in enumerate(violation.quoted):
                 label = violation.labels[position] if position < len(violation.labels) else default
-                key = (sentence, violation.code, label, asked)
+                # A finding the loop recorded without asking it says so itself.
+                put = asked and violation.asked
+                key = (sentence, violation.code, label, put)
                 if key not in seen:
                     seen.add(key)
                     rows.append(
                         FlaggedStatement(
-                            sentence=sentence, code=violation.code, label=label, asked=asked
+                            sentence=sentence, code=violation.code, label=label, asked=put
                         )
                     )
     except Exception as exc:  # noqa: BLE001 — a mark is never worth a report
@@ -5767,6 +5770,28 @@ def _claim_lines(techniques: bool) -> str:
 # whole-answer question is asked of it, once, with the part written before the
 # repetition shown back.
 ANALYST_REPEATED_CODE = "isr.claims_repeated"
+
+# The findings that say an answer could not be read at all: no claim parsed,
+# cut at the output cap, not JSON, outside its schema, its claims written
+# again and again. They are asked in both ``validation.feedback`` modes
+# (``pipeline.feedback_mode``): in ``record_only`` every other finding is
+# recorded and not asked, and an answer nobody can read leaves nothing to
+# record. The codes other modules raise are written out, so the one set is
+# declared here for every stage.
+REASKED_IN_EVERY_MODE_CODES: frozenset[str] = frozenset(
+    {
+        UNPARSED_ANSWER_CODE,
+        ANALYST_CUT_CODE,
+        ANALYST_REPEATED_CODE,
+        SECTION_CUT_CODE,
+        "verdict.cut_at_output_cap",
+        "verdict.not_json",
+        "composer.schema",
+        "narrative.schema",
+        "question.schema",
+        "agreement.schema",
+    }
+)
 
 
 @dataclass(frozen=True)
@@ -12589,9 +12614,40 @@ def _collect(parsed: Any, validators: Sequence[Validator]) -> list[Violation]:
     return found
 
 
-def _askable(violations: Sequence[Violation]) -> list[Violation]:
-    """The findings a retry may ask about: every one but a check that could not run."""
-    return [v for v in violations if v.code != CHECK_FAILED_CODE]
+def _askable(violations: Sequence[Violation], *, every: bool = True) -> list[Violation]:
+    """The findings a retry may ask about: every one but a check that could not run.
+
+    ``every=False`` is ``validation.feedback`` set to ``record_only``: only a
+    finding that says the answer could not be read is asked
+    (:data:`REASKED_IN_EVERY_MODE_CODES`).
+    """
+    return [
+        v
+        for v in violations
+        if v.code != CHECK_FAILED_CODE and (every or v.code in REASKED_IN_EVERY_MODE_CODES)
+    ]
+
+
+def asked_in_this_mode(violations: Sequence[Violation]) -> list[Violation]:
+    """The findings a correction turn of this run may ask about (:func:`_askable`).
+
+    For a stage that decides on its own whether to open a turn: in
+    ``record_only`` only an answer that could not be read is asked.
+    """
+    return _askable(violations, every=feeds_back())
+
+
+def recorded_not_asked(
+    violations: Sequence[Violation], shown: Sequence[Violation]
+) -> list[Violation]:
+    """``violations`` in ``record_only``: each of a code no question asked marked not asked.
+
+    Only a finding that says the answer could not be read is ever asked in that
+    mode, so a finding of any other code was recorded and never put to the
+    producer, and its row says so (``"asked": "false"``).
+    """
+    asked = {v.code for v in shown}
+    return [v if v.code in asked else replace(v, asked=False) for v in violations]
 
 
 def _is_tool_call_block(part: Any) -> bool:
@@ -12960,6 +13016,7 @@ async def retry_with_feedback[T](
     ``keep`` before it returns the first answer.
     """
     feed = _feed(sink, agent, stage)
+    every = feeds_back()
     turns = list(messages)
     answer = await run(turns)
     parsed = parse(answer)
@@ -12967,7 +13024,7 @@ async def retry_with_feedback[T](
     violations = _collect(parsed, validators)
     retries = 0
     shown: list[Violation] = []
-    while (asking := _askable(violations)) and retries < max_retries:
+    while (asking := _askable(violations, every=every)) and retries < max_retries:
         keep_answer = not any(v.code in drop_answer_for for v in asking)
         following = _with_feedback(
             turns,
@@ -12994,6 +13051,8 @@ async def retry_with_feedback[T](
         if kept is not parsed:
             parsed = kept
             violations = _collect(parsed, validators)
+    if not every:
+        violations = recorded_not_asked(violations, shown)
     if answered is not None:
         violations = answered(violations, shown)
     if feed is not None:
@@ -13038,6 +13097,7 @@ def retry_with_feedback_sync[T](
     retry turn without technique cards (:func:`feedback_text`).
     """
     feed = _feed(sink, agent, stage)
+    every = feeds_back()
     turns = list(messages)
     answer = run(turns)
     parsed = parse(answer)
@@ -13045,7 +13105,7 @@ def retry_with_feedback_sync[T](
     violations = _collect(parsed, validators)
     retries = 0
     shown: list[Violation] = []
-    while (asking := _askable(violations)) and retries < max_retries:
+    while (asking := _askable(violations, every=every)) and retries < max_retries:
         _announce_feedback(asking, on_feedback, feed, retries + 1)
         shown.extend(asking)
         keep_answer = not any(v.code in drop_answer_for for v in asking)
@@ -13062,6 +13122,8 @@ def retry_with_feedback_sync[T](
         if kept is not parsed:
             parsed = kept
             violations = _collect(parsed, validators)
+    if not every:
+        violations = recorded_not_asked(violations, shown)
     if feed is not None:
         feed.outcome(shown, violations, retries)
     return parsed, violations, retries
