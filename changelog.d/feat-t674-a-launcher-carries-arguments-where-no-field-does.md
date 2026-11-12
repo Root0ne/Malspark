@@ -1,0 +1,11 @@
+### Added
+
+- **A launcher carries a job's launch arguments where the sandbox has no field for them (T-674).** A provider may declare that it honours launch arguments through a generated launcher (`SandboxCapabilities.launcher`: the script types it runs and how its submission names the one to run). The platform builds a deterministic archive of the sample under a neutral name and a PowerShell launcher that starts it with the arguments as one string exactly as the job gave them, and the provider submits it. Triage uses it, picking the launcher with `profiles[].pick`; `sandbox.triage.launcher_for_arguments` (default on) turns it off, and the request is then recorded as not honoured as before. Only a Windows program (not a DLL) is launched this way, and a batch launcher is not built (`%`, `^`, `&` and non-ASCII are unsafe in one). The launch record, the upload record, the ledger's sandbox entry and the report give the launcher's exact text, its member names and the SHA-256 of the archive and of the sample, and state that the process tree starts at the script host, that the archive is what the sandbox received (public on a public sandbox), and that nothing shows the launcher ran. The disclosure counts the archive as what left the machine.
+
+### Changed
+
+- **A plug-in provider's one-argument `launch_arguments_answer` is called with the arguments alone, and CAPE no longer withholds the arguments for a package the documentation is silent on (T-670).** The package is still sent them and the record notes that whether it reads them is not documented. A refused value is named by code point and position, an over-long refused value is recorded with a note that it was cut, and a submission that sent the arguments but returned no report is worded "sent ... but no sandbox report came back" in the limitations and the upload line alike.
+
+### Security
+
+- **A submission's failure text never carries the job's launch arguments or the launcher text (T-670).** Before an exception text or a response body of a submission is logged or kept as a failure reason, the submitted values are withheld where they occur, as sent and as JSON writes them; a sandbox that quotes the form it received no longer puts them in a log or a report.

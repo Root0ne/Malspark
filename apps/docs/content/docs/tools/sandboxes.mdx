@@ -1,3 +1,4 @@
+| `cape2` | CAPE's `options` string, as `arguments=<value>`. The packages CAPE documents an `arguments` option for are `archive`, `dll`, `exe`, `ollydbg`, `python`, `rar`, `regsvr`, `service`, `service_dll`, `zip` and `zip_compound`; where `package_by_format` selects any other package the arguments are still sent, and the record notes that whether that package reads them is not documented. A DLL's export is the deployment's own `function` option, not an argument. The deployment's own `submit_options["options"]` entries are kept beside it; where they set `arguments` too, the job's value replaces them and the record says which it replaced. CAPE splits the string at every comma, so a value holding a comma is not passed. |
 ---
 title: "Sandboxes"
 description: "CAPEv2, Triage, uploaded reports, a generic REST sandbox and the mock."
@@ -146,6 +147,7 @@ produces nothing, which is what `package_by_format` is for.
 | `sandbox.triage.timeout_seconds` | `900` | How long the platform waits for the report. Must be longer than `analysis_seconds`, and validation refuses one that is not. |
 | `sandbox.triage.poll_interval_seconds` | `15` | |
 | `sandbox.triage.fetch_pcap` | `true` | Fetches the capture for the network analyst. |
+| `sandbox.triage.launcher_for_arguments` | `true` | Carries a job's launch arguments through a generated launcher; see [launch arguments](#launch-arguments). Off, the arguments are not passed and the request is recorded as not honoured. |
 
 A value the account does not allow is refused by Triage, and the submission
 error quotes Triage's own words and names the setting. The run summary states
@@ -510,9 +512,47 @@ before anything is sent:
 | :-- | :-- |
 | `cape2` | CAPE's `options` string, as `arguments=<value>`. Only the packages CAPE documents an `arguments` option for read it (`archive`, `dll`, `exe`, `ollydbg`, `python`, `rar`, `regsvr`, `service`, `service_dll`, `zip`, `zip_compound`); where `package_by_format` selects another package for the sample's format the request is not honoured. A DLL's export is the deployment's own `function` option, not an argument. The deployment's own `submit_options["options"]` entries are kept beside it; where they set `arguments` too, the job's value replaces them and the record says which it replaced. CAPE splits the string at every comma, so a value holding a comma is not passed. |
 | `rest` | The value verbatim in the form field `sandbox.rest.submit.launch_arguments_field`. With no field named, the provider cannot pass them. |
-| `triage` | Nothing: Triage's submission API has no field for a command line (its `password` decrypts an archive and `pick` selects a file inside one). |
+| `triage` | Through a generated launcher (below), while `sandbox.triage.launcher_for_arguments` is on: Triage's submission API has no field for a command line (its `password` decrypts an archive and `profiles[].pick` selects a file inside one). With the setting off, nothing. |
 | `mock` | Nothing: a recorded fixture ran before the job asked. |
 | `upload` | Not applicable: the attached report comes from a run this platform did not start. |
+
+### Through a launcher
+
+A provider whose sandbox has no command-line field but runs a script picked
+from a submitted archive may declare that it carries the arguments through a
+generated launcher (`SandboxCapabilities.launcher`: the script types it runs and
+how its submission names the one to run). The platform builds an archive of two
+members, the sample under the neutral name `sample` with its own extension kept
+when it is plain, and the launcher `launch.ps1`, stored in that order,
+uncompressed, with fixed timestamps and attributes, so the same sample and
+arguments always give the same archive and SHA-256. Triage runs the launcher
+because the submission picks it (`profiles[].pick`, a path relative to the
+archive root). The launcher is one PowerShell statement that starts the
+sample from the script's own folder and hands it the arguments as one string,
+exactly as the job gave them, written into a single-quoted literal (nothing is
+expanded in one; only a quote is doubled, and PowerShell's typographic single
+quotes with it). The file is UTF-8 with a byte order mark. Nothing is executed
+or interpreted on the host.
+
+A batch launcher is not built: `cmd` expands `%` and reads `^`, `&`, `|`, `<`,
+`>` and `!` as its own syntax inside a script, and reads the file in the
+console's code page, so the arguments could not pass through it as typed. Only
+a Windows program (a PE image that is not a DLL) is launched this way; for
+another sample, a value that is not one command line or one that cannot be
+written as UTF-8 text the request is recorded as not honoured, with the reason.
+
+What a launch through a launcher changes, and the run states: the sample was
+not submitted bare; the sandbox's process tree starts at PowerShell, not at the
+sample, and the sample runs as its child, not from where it was named; the
+submitted archive, with the launcher and the arguments in it, is what was
+disclosed to the sandbox, and on a sandbox that publishes its submissions it is
+public; a sample that checks its parent process, its path or its name sees the
+launcher's. The run's launch record, the upload record, the `sandbox_status`
+ledger entry and the report give the script type, the launcher's exact text,
+the member names and the SHA-256 of the archive and of the sample in it, and
+the disclosure line names the archive, not the bare sample, as what was sent. They
+say the arguments were sent through a launcher; they do not say the launcher
+ran or the program read them, which only the sandbox's report can show.
 
 A provider that cannot pass them is never handed them, and the detonation goes
 ahead without them. The run records what became of them, with the arguments
@@ -523,7 +563,7 @@ started program read them is the sandbox's, and is not claimed), the disclosure
 block's upload line says the same, and where they were not honoured the run's
 limitations say "launch arguments requested, not honoured by" the provider, with
 why: no sample, mock mode, an attached report, a value that is not one command
-line, a submission that ends without a report. A request that is not honoured
+line, a submission that did not complete. A submission that sent them and ended without a report is worded apart ("launch arguments sent to" the provider, "but no sandbox report came back"). Failure text of a submission never carries them: before any exception text or response body is logged or kept, the submitted arguments and the launcher text are withheld where they occur. A request that is not honoured
 makes the run degraded, so its verdict is tentative. They are run configuration,
 not a credential, and are not masked in the report; they are kept out of every
 log line. A job that asks for none submits and reads as

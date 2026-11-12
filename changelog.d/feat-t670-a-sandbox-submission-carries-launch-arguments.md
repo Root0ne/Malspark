@@ -8,8 +8,9 @@
   (`SandboxCapabilities.can_pass_launch_arguments`): CAPEv2 as the `arguments` entry of its
   `options` string, kept beside the deployment's own `submit_options` entries and replacing
   only an `arguments` entry of theirs, and the REST provider in the form field named by
-  `sandbox.rest.submit.launch_arguments_field`. Triage's submission API has no such field, the
-  mock replays fixtures and the upload provider detonates nothing, so they declare they cannot.
+  `sandbox.rest.submit.launch_arguments_field`. Triage's submission API has no such field and carries them through
+  a generated launcher (T-674); the mock replays fixtures and the upload provider detonates
+  nothing, so they declare they cannot.
   A provider that cannot is not handed them and the detonation goes ahead; the run's
   limitations then say "launch arguments requested, not honoured by" the provider, with why.
   The report's sandbox sentence and the disclosure block's upload line state the arguments as
