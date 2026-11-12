@@ -8,6 +8,7 @@
  * the two tabs honest and identical.
  */
 
+import { countLabel } from "@/lib/report-utils";
 import type { EnrichTriggerResponse, EnrichmentAskRow, RunSummary } from "@/types/malware-report";
 
 export const ENRICH_BUTTON_LABEL = "Run threat-intel enrichment";
@@ -50,7 +51,7 @@ export function enrichmentAsks(
  *  one answered with an error status did, and is counted apart. */
 export function enrichmentAskSentence(row: EnrichmentAskRow): string {
   const kinds = Object.entries(row.kinds ?? {})
-    .map(([kind, n]) => `${counted(n)} ${kind}`)
+    .map(([kind, n]) => countLabel(counted(n), kind))
     .join(", ");
   const place = row.host ? row.host : "a tool server";
   const head = [`${row.source}: ${place}`, ...(kinds ? [`about ${kinds}`] : [])].join(" ");

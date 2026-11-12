@@ -1166,7 +1166,7 @@ class OpenAIProvider(LLMProvider):
     window_setting = "core.llm.openai.context_size"
     settings_model = OpenAIConfig
     choice_order = 0
-    label = "OpenAI"
+    label = "OpenAI-compatible"
     description = "Hosted OpenAI models or any OpenAI-compatible server"
     hosted = True
     legacy_credential_keys = ("openai_api_key",)

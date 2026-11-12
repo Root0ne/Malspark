@@ -24,6 +24,7 @@ import StoredValueRefusedNote from "./StoredValueRefusedNote";
 import { PACK_STEPS_KEY } from "./packStepsLeftOut";
 import { APPLIES_LABEL, SOURCE_LABEL } from "./vocabulary";
 import { Widget } from "./widgets";
+import { firstSentence } from "./firstSentence";
 
 /** Types whose control is short enough to sit beside the title. Everything
  *  else — lists, JSON, and every composite editor — drops below it. */
@@ -31,11 +32,6 @@ const NARROW_TYPES = new Set(["bool", "int", "float", "enum", "str", "secret"]);
 
 /** How long a description may be before it is folded to its first sentence. */
 const DESCRIPTION_LIMIT = 140;
-
-function firstSentence(text: string): string {
-  const m = /^.*?[.!?](?=\s|$)/.exec(text);
-  return m ? m[0] : text;
-}
 
 /** The key, as a button that copies it. The key text stays visible either way
  *  — the feedback is a separate word beside it, never a replacement. */
