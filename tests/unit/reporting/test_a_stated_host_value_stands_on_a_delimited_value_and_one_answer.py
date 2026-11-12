@@ -211,10 +211,20 @@ class TestAValueIsHeldOnlyWhereDelimited:
         from malspark.reporting.stated_host_values import delimited_in
 
         segment = "http://x/" + "a/" * 1000 + " "
-        text = (segment * (800_000 // len(segment) + 1))[:800_000]
-        started = time.perf_counter()
-        assert not delimited_in("a", text)
-        assert time.perf_counter() - started < 5.0
+
+        def cost(length: int) -> float:
+            text = (segment * (length // len(segment) + 1))[:length]
+            best = float("inf")
+            for _ in range(3):
+                started = time.process_time()
+                assert not delimited_in("a", text)
+                best = min(best, time.process_time() - started)
+            return best
+
+        # Eight times the text costs about eight times the work on any
+        # machine; a reader that looked back from every occurrence over the
+        # whole text would cost sixty-four times.
+        assert cost(800_000) < 24 * max(cost(100_000), 0.001)
 
     def test_a_stream_written_after_its_file_s_name_is_held(self) -> None:
         text = json.dumps({"path": "c:\\x\\a.exe:wtfbbq"})
