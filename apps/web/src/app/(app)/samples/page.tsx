@@ -74,6 +74,7 @@ function SamplesPageContent() {
   const [sandboxProvider, setSandboxProvider] = useState("");
   const [profile, setProfile] = useState("");
   const [questionsText, setQuestionsText] = useState("");
+  const [launchArguments, setLaunchArguments] = useState("");
   const [attachedReport, setAttachedReport] = useState<SandboxReportDTO | null>(null);
   const [reportUploading, setReportUploading] = useState(false);
   const [reportError, setReportError] = useState<string | null>(null);
@@ -82,7 +83,7 @@ function SamplesPageContent() {
   const [acceptError, setAcceptError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
-  /* Providers, profile, questions and an attached report: every choice the
+  /* Providers, profile, questions, launch arguments and an attached report: every choice the
    * dialog offers, folded under "Advanced" so the dialog reads as one
    * action. Closed each time the dialog opens. */
   const [advancedOpen, setAdvancedOpen] = useState(false);
@@ -102,6 +103,7 @@ function SamplesPageContent() {
     setSandboxProvider("");
     setProfile("");
     setQuestionsText("");
+    setLaunchArguments("");
     setAttachedReport(null);
     setReportError(null);
     setAcceptError(null);
@@ -203,6 +205,8 @@ function SamplesPageContent() {
       // What the analyst asks of the run, answered in the report; none sends nothing.
       const questions = questionsFromText(questionsText);
       if (questions.length > 0) config.questions = questions;
+      // Sent as typed, never trimmed: the sandbox starts the sample with them.
+      if (launchArguments.trim()) config.sandbox_launch_arguments = launchArguments;
       if (attachedReport) {
         config.sandbox_report_id = attachedReport.id;
         config.sandbox_provider = "upload";
@@ -230,6 +234,7 @@ function SamplesPageContent() {
     sandboxProvider,
     profile,
     questions: questionsFromText(questionsText),
+    launchArguments,
     attachedReport: attachedReport !== null,
   });
   const searchParams = useSearchParams();
@@ -612,7 +617,7 @@ function SamplesPageContent() {
                   Advanced
                   {advancedCount > 0 && <span className="font-normal text-text-muted">· {advancedCount} set</span>}
                 </button>
-                <p className="mt-0.5 pl-[18px] text-text-muted">Providers, analyst team, questions and a sandbox report.</p>
+                <p className="mt-0.5 pl-[18px] text-text-muted">Providers, analyst team, questions, launch arguments and a sandbox report.</p>
               </div>
 
               <div id="submit-advanced" hidden={!advancedOpen} className="space-y-4 border-l-2 border-border-light pl-3">
@@ -688,6 +693,27 @@ function SamplesPageContent() {
                 <p className="text-text-muted mt-1">
                   The report answers each: established, partial, limited negative, not
                   determinable from this run, or out of scope.
+                </p>
+              </div>
+
+              <div>
+                <label htmlFor="launch-arguments" className="block text-text-muted uppercase tracking-wider mb-1">
+                  Launch arguments
+                </label>
+                <input
+                  id="launch-arguments"
+                  type="text"
+                  value={launchArguments}
+                  onChange={(e) => setLaunchArguments(e.target.value)}
+                  maxLength={1024}
+                  spellCheck={false}
+                  autoComplete="off"
+                  placeholder="e.g. --password <value>"
+                  className="w-full border border-border rounded px-2 py-1.5 bg-bg-surface text-text-primary font-mono"
+                />
+                <p className="text-text-muted mt-1">
+                  What the sandbox starts the sample with, as typed after the program&apos;s name.
+                  The report says whether the sandbox could pass them.
                 </p>
               </div>
 

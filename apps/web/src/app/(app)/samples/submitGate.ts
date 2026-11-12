@@ -10,13 +10,15 @@ export function canStartAnalysis(state: { submitting: boolean; reportUploading: 
 /**
  * How many of the choices folded under "Advanced" differ from the settings'
  * defaults, so a closed section still says the run will not be the default
- * one: a provider or a profile picked, a question written, a report attached.
+ * one: a provider or a profile picked, a question written, launch arguments
+ * given, a report attached.
  */
 export function advancedChoices(state: {
   staticProvider: string;
   sandboxProvider: string;
   profile: string;
   questions: readonly string[];
+  launchArguments: string;
   attachedReport: boolean;
 }): number {
   return [
@@ -26,6 +28,7 @@ export function advancedChoices(state: {
     state.sandboxProvider !== "" && !state.attachedReport,
     state.profile !== "",
     state.questions.length > 0,
+    state.launchArguments.trim() !== "",
     state.attachedReport,
   ].filter(Boolean).length;
 }
