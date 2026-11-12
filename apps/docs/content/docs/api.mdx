@@ -230,21 +230,58 @@ give is left out.
 
 `environment.agents` has one block per agent, keyed in lowercase. Its `requests`
 hold one row per model the agent was built to send with (`position` 0 is the
-first model, 1 and on its fallbacks), with `provider` and `model`. `answered`
-counts the calls that model answered, so a fallback that was never needed reads
-0. Each row's `sampling` holds the sampling parameters its requests carry and
-`thinking` the thinking switches, keyed by their path in the request body. The
-provider adapter reads both off the request body its client would send, built
-without sending it. An empty `sampling` comes with `sampling_statement`: none was
-sent, and the provider's default applies. `sampling` and `thinking` are `null`
-when the adapter reported nothing, and `sampling_statement` says so; that is not
-a statement that nothing was sent. `effort` is the effort level sent, with
-`effort_setting`, the setting it was read from. Where none is sent, `effort` is
-`null` and `effort_statement` says why. `response_models` counts each model
-identifier the provider's answers named, which may differ from the model the run
-asked for. It is empty when no answer named one. An identifier shaped like a
-file-system path is kept by its base name and listed in
-`response_models_reduced`. A summary stored without the block has no `environment` key.
+first model, 1 and on its fallbacks), with `provider` and the configured `model`.
+A configured identifier shaped like a file-system path is kept by its base name,
+and the row carries `model_reduced: true`. `answered` counts the recorded answers
+that came from that place in the list, so a fallback that was never needed reads
+0. An answer names its place, not which model built for it gave it: where two
+rows share a place (a model built again that sends something else), each carries
+the place's total and `answered_shared: true`, and the total is counted once.
+
+Each row's `sampling` holds the sampling parameters and `thinking` the thinking
+switches that the request body built when the model was built carries. The
+provider adapter builds that body through its client library's own request
+builder, without sending it, and reads both off it, after the library's own
+drops (a model whose API refuses sampling parameters reads as sending none).
+`thinking` is keyed by the path the client library builds it under: the request
+body's own for most adapters, the library's config path (such as
+`thinking_config.thinking_budget`) for Gemini. An empty `sampling` comes with
+`sampling_statement`: none was sent, and the provider's default applies.
+`sampling` and `thinking` are `null` when no adapter read them, and
+`sampling_statement` says so; that is not a statement that nothing was sent. An
+argument a caller passes to one call is not in the record. Where the platform
+changes a request's thinking switches after its client built the body (the
+Anthropic adapter, on the request after a replayed history changed, asks that
+mismatched thinking blocks be dropped), the row counts those requests in
+`thinking_changed_requests`; `thinking` still shows the switches as built.
+`effort` is the effort level sent, with `effort_setting`, the setting it was
+read from. Where none is sent, `effort` is `null` and `effort_statement` says
+why.
+
+`response_models` counts each model identifier the provider's answers named,
+which may differ from the model the run asked for. It is empty when no answer
+named one. An identifier shaped like a file-system path (`/`, `~/`, a drive
+letter, a backslash) is kept by its base name and listed in
+`response_models_reduced`. A summary stored without the block has no
+`environment` key.
+
+What a reader may conclude from `environment.agents`:
+
+- For each agent and each place in its model list: the provider and the
+  configured model id. For the shipped adapters, the sampling parameters and
+  thinking switches the client library's own request builder put in the body
+  when the model was built; an empty `sampling` really means the library sent
+  none.
+- The effort level and the setting it came from, which models the answers named,
+  and how many recorded answers came from each place in the list.
+- A `null` `sampling` or `thinking` is not "nothing sent": nobody read it.
+- Not every request need have carried exactly those values: an argument a caller
+  binds to one call is not reflected, and the requests whose thinking switches
+  the platform changed are only counted.
+- `answered` is neither attempts nor failed calls: it counts recorded answers,
+  and where rows share a place it is that place's total.
+- `response_models` is what the server said it served, not proof of the weights
+  behind it.
 
 ### The analysis WebSocket
 
