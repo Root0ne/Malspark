@@ -40,6 +40,7 @@ from malspark.pipeline.limit_rulings import REASON_LIMIT, clean_quote, read_ruli
 from malspark.pipeline.validation import (
     EntryTexts,
     absence_holders_note,
+    citation_violations,
     ledger_absence_contradictions,
 )
 from malspark.reporting.absence_answers import (
@@ -315,6 +316,34 @@ EXITS = exit_branches(
         pytest.param(lambda t: ClaimRepeatReader(None).feed("CLAIM R1: " + t), id="streaming"),
         pytest.param(
             lambda t: ledger_absence_contradictions({"body": t}, ENTRIES), id="absence sentences"
+        ),
+        pytest.param(
+            lambda t: citation_violations({"body": "[" * len(t)}, ["ev_0001"]),
+            id="citations of a line of open brackets",
+        ),
+        pytest.param(
+            lambda t: citation_violations(
+                {"body": ("GS:[" + "0x" * 99 + "] [ev_0001] ") * (len(t) // 214)}, ["ev_0001"]
+            ),
+            id="citations beside operands of repeated radix marks",
+        ),
+        pytest.param(
+            lambda t: citation_violations(
+                {"body": ("[rax" + " +  rcx*4" * 20 + " ") * (len(t) // 185)}, ["ev_0001"]
+            ),
+            id="citations of operands never closed",
+        ),
+        pytest.param(
+            lambda t: citation_violations(
+                {"body": ("[" + "a" * 12 + "!] [ev_0001] ") * (len(t) // 27)}, ["ev_0001"]
+            ),
+            id="citations of closed groups of one name that almost fit an operand",
+        ),
+        pytest.param(
+            lambda t: citation_violations(
+                {"body": ("[" + "a+" * 6 + "!] ") * (len(t) // 16)}, ["ev_0001"]
+            ),
+            id="citations of closed groups of many sums that almost fit an operand",
         ),
         pytest.param(
             lambda t: ledger_count_facts(["[analysts: A] ev_0001 " + t], {}, LEDGER, ["a"]),
