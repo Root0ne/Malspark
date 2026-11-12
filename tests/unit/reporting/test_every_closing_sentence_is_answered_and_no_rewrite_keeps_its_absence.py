@@ -359,17 +359,13 @@ def test_a_keep_on_a_quote_that_passes_is_counted_one_on_no_source_recorded() ->
     report = _report(limitations=f"{STILL_OPEN} {SCOPE}")
     done, reporter = _ask(report, {"sentences": _settled(report, [quoted, scope])})
     assert len(reporter.asked) == 1
-    # The two, the conclusion's sentence, and section 5's held absence kept on the
-    # limitations' words (T-580).
+    # The two, the conclusion's sentence, and section 5's held absence (T-580).
     assert done.summary["held_kept"] == 4
     records = [r["message"] for r in done.tally.unresolved if r["code"] == HELD_KEPT_CODE]
     assert not any(f"{STILL_OPEN!r} stands as written" in m for m in records)
-    # Section 5's absence rests on the limitations alone: one written passage agreeing
-    # with another grounds nothing, so it is recorded (T-580).
-    assert any(
-        f"{HASHED!r} stands as written" in m and "only on another written passage" in m
-        for m in records
-    )
+    # The limitations name no address of section 5's passage a fact holds, so they do not
+    # speak of its absence: it is kept on its reason, and recorded (T-652).
+    assert any(f"{HASHED!r} stands as written" in m and "on no source" in m for m in records)
     assert any(SCOPE[:30] in m and "no passage speaks of an operator" in m for m in records)
 
 

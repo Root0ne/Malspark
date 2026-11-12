@@ -71,7 +71,15 @@ def _ledger() -> list[LedgerEntry]:
     }
     return [
         LedgerEntry(id="ev_0001", tool="image_facts", output='{"image_base": "0x2470000"}'),
-        LedgerEntry(id="ev_0002", tool="lift_routine", output="int f(void) { return 0; }"),
+        # The listing of routine 0x1400, which the conclusion names: a fact holds its address,
+        # so a passage naming it speaks of a held absence of section 5 naming it (T-652).
+        LedgerEntry(
+            id="ev_0002",
+            tool="lift_routine",
+            args={"address": "0x1400"},
+            output="int f(void) { return 0; }",
+            facts={"v": 1, "kind": "decompile", "reader": "listing"},
+        ),
         LedgerEntry(
             id="ev_0003",
             tool="guest_processes",
@@ -83,7 +91,7 @@ def _ledger() -> list[LedgerEntry]:
 
 def _report(
     *,
-    evasion: str = f"Strings are encoded [ev_0002]. {DENIED}",
+    evasion: str = f"Strings are encoded by 0x1400 [ev_0002]. {DENIED}",
     flow: str = GATES,
     limitations: str = PARENTS,
 ) -> MalwareReport:
@@ -100,7 +108,7 @@ def _report(
                 title="Evasion", body=evasion, evidence_refs=["ev_0002"]
             ),
             analyst_conclusion=TechnicalSubsection(
-                title="Conclusion", body="The file is a loader [ev_0002]."
+                title="Conclusion", body="The file is a loader started by routine 0x1400 [ev_0002]."
             ),
             analyst_limitations=TechnicalSubsection(title="Limitations", body=limitations),
         ),
@@ -244,8 +252,9 @@ def test_no_source_speaks_that_could_not_be_quoted(absence: str, flow: str) -> N
 
 def test_a_run_set_absence_is_spoken_of_by_what_a_run_saw() -> None:
     absence = "Whether the timing gate passes in the sandbox is not established."
-    saw = "In the sandbox run the timing gate passes and the beacon starts [ev_0002]."
-    report = _report(evasion=f"Strings are encoded [ev_0002]. {absence}", flow=saw)
+    # The run's sentence names the routine section 5 names, which a fact holds (T-652).
+    saw = "In the sandbox run the timing gate of 0x1400 passes and the beacon starts [ev_0002]."
+    report = _report(evasion=f"Strings are encoded by 0x1400 [ev_0002]. {absence}", flow=saw)
     found = _found(report, _row("evasion_antiforensics", absence, [], reason="nothing"))
     assert [v.code for v in found] == [KEEP_UNQUOTED_CODE]
 
@@ -349,7 +358,8 @@ def test_a_refused_body_keep_stands_after_the_retry_and_is_recorded() -> None:
 
 
 def test_a_rewrite_on_the_passage_that_states_otherwise_is_put_in() -> None:
-    # The passage written without the code names an address the sentence's passage names.
+    # The passage written without the code names an address its passage names, which a
+    # fact holds.
     report = _report(evasion=f"Strings are encoded by 0x1400 [ev_0002]. {DENIED}")
     rewrite = "Routine 0x1400 runs timing and locale checks [ev_0002]."
     row = {
@@ -363,7 +373,7 @@ def test_a_rewrite_on_the_passage_that_states_otherwise_is_put_in() -> None:
     assert done.summary["rewritten"] == 1
     assert DENIED not in report.technical_analysis.evasion_antiforensics.body
     # One sharing only words with it grounds nothing: asked again, the sentence stands.
-    untied = _report()
+    untied = _report(evasion=f"Strings are encoded [ev_0002]. {DENIED}")
     done, _ = _ask(untied, {"sentences": _rest(untied, [row])})
     assert done.summary["rewritten"] == 0
     assert DENIED in untied.technical_analysis.evasion_antiforensics.body

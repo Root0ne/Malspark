@@ -84,6 +84,9 @@ _STATES_BOTH = (
     "locale checks of its own [ev_0107]."
 )
 _ABSENT_QUOTE = "and the loader runs no timing or locale checks of its own [ev_0107]."
+# The same absence beside a claim about other files that names no address a fact holds: it
+# speaks of nothing, so a keep on the reason passes (T-652).
+_OTHER_FILES = "Other droppers of this family run timing and locale checks [ev_0107]."
 _FAILED_TWICE = (
     "The decompile of 0x5a10 failed [ev_0101], so the routine at 0x5a10 was not read, and "
     "five tool calls failed."
@@ -220,6 +223,15 @@ SUBJECTS = {
         (
             ("evasion_antiforensics", f"Routine 0x5a10 reads a host mode [ev_0107]. {_ABSENT}"),
             ("introduction", _STATES_BOTH),
+        ),
+    ),
+    "section 5 absence untied": _Subject(
+        S5_ABSENCE,
+        "evasion_antiforensics",
+        _ABSENT,
+        (
+            ("evasion_antiforensics", f"Strings are encoded [ev_0107]. {_ABSENT}"),
+            ("introduction", _OTHER_FILES),
         ),
     ),
 }
@@ -454,6 +466,7 @@ _REWRITES: dict[str, tuple[list[str], str]] = {
         ["introduction"],
         "Routine 0x5a10 runs timing and locale checks [ev_0107].",
     ),
+    "section 5 absence untied": (["string_resolution"], "Each report is encrypted [ev_0107]."),
 }
 
 
@@ -466,8 +479,10 @@ def _ends(name: str) -> dict[str, dict[str, Any]]:
     if subject.kind != S5_ABSENCE:
         # A body absence nothing but its shape holds is never left out.
         ends["drop"] = _row(subject, "drop", [], reason="the run's evidence does not bear it out")
-    if subject.kind == S5_ABSENCE:
+    if name == "section 5 absence":
         ends["keep"] = _row(subject, "keep", ["introduction"], quote=_ABSENT_QUOTE)
+    if name == "section 5 absence untied":
+        ends["keep"] = _row(subject, "keep", [], reason="no source speaks of it")
     if subject.kind in (VALUE_CELL, BULLET, CONCLUSION, LIMITATIONS) and name in _KEPT:
         ends["keep"] = _row(subject, "keep", [], reason="no source speaks of it")
     if subject.kind == HELD_BODY and name in _KEPT:
@@ -485,6 +500,7 @@ _KEPT = frozenset(
         "limitations one failed call",
         "held body",
         "section 5 absence",
+        "section 5 absence untied",
     }
 )
 
@@ -2675,6 +2691,10 @@ _DEV_UNOFFERED: dict[str, frozenset[str]] = {
     "section 5 absence | rewrite, misreading entries": frozenset({_KEEP}),
     "section 5 absence | rewrite, a count the ledger does not hold": frozenset({_KEEP}),
     "section 5 absence | rewrite, calling listed code not read": frozenset({_KEEP}),
+    "section 5 absence untied | keep, no source, no reason": frozenset({_REWRITE}),
+    "section 5 absence untied | rewrite, misreading entries": frozenset({_KEEP}),
+    "section 5 absence untied | rewrite, a count the ledger does not hold": frozenset({_KEEP}),
+    "section 5 absence untied | rewrite, calling listed code not read": frozenset({_KEEP}),
 }
 
 
@@ -2873,3 +2893,14 @@ def test_a_held_absence_of_section_5_is_offered_a_keep_on_the_words_stating_it()
         f'[introduction] "{_ABSENT_QUOTE}".'
     )
     assert _refusals(subject, _ends("section 5 absence")["keep"]) == []
+
+
+def test_a_held_absence_of_section_5_beside_an_untied_claim_is_kept_on_its_reason() -> None:
+    """A claim about other files names no address a fact holds: no source speaks of the
+    absence, a keep on the reason passes, and the claim grounds no rewrite (T-652)."""
+    subject = SUBJECTS["section 5 absence untied"]
+    assert _refusals(subject, _ends("section 5 absence untied")["keep"]) == []
+    rewrite = _row(
+        subject, "rewrite", ["introduction"], rewrite="The routine runs timing checks [ev_0107]."
+    )
+    assert agreement.UNKNOWN_SOURCE_CODE in [code for code, _p, _m in _refusals(subject, rewrite)]

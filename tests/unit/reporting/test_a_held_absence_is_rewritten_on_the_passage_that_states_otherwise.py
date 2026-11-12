@@ -97,7 +97,17 @@ CITABLE = [f"ev_{n:04d}" for n in range(1, 100)]
 def _ledger() -> list[LedgerEntry]:
     return [
         LedgerEntry(id=f"ev_{n:04d}", tool="lift_routine", output="int f(void) { return 0; }")
-        for n in (8, 19, 20, 21, 24, 25, 77, 86)
+        for n in (8, 19, 20, 21, 25, 77, 86)
+    ] + [
+        # The listing of the PEB read at 0x8690, which the limitations name: a fact holds the
+        # address the section 5 passage and the third step both name, as in haiku13 (T-652).
+        LedgerEntry(
+            id="ev_0024",
+            tool="lift_routine",
+            args={"address": "0x8690"},
+            output="int f(void) { return 0; }",
+            facts={"v": 1, "kind": "decompile", "reader": "listing"},
+        )
     ]
 
 
@@ -109,7 +119,7 @@ def _report(
     strings: str = "Routine 0xae78 decodes the strings [ev_0021].",
     channel: str = "The beacon is thread routine 0x5750 [ev_0025].",
     findings: tuple[str, ...] = (),
-    limitations: str = "The operator is not named.",
+    limitations: str = "The operator is not named. The routine at 0x8690 was decompiled [ev_0024].",
     bound: bool = False,
 ) -> MalwareReport:
     return MalwareReport(
@@ -234,11 +244,10 @@ def _speaking(report: MalwareReport, pid: str, sentence: str) -> list[str]:
 # -- haiku13's denial of the gates -----------------------------------------------------
 
 
-def test_the_passages_stating_the_gates_speak_of_the_denial() -> None:
-    assert _speaking(_report(), "evasion_antiforensics", DENIED) == [
-        "execution_flow.3",
-        "procedures.1",
-    ]
+def test_the_step_stating_the_gates_speaks_of_the_denial() -> None:
+    # The third step names 0x8690, which the section 5 passage names and a fact holds; the
+    # procedure names only routines the passage does not, so it does not speak (T-652).
+    assert _speaking(_report(), "evasion_antiforensics", DENIED) == ["execution_flow.3"]
 
 
 def test_a_keep_quoting_the_passage_that_states_the_gates_is_refused() -> None:
@@ -252,11 +261,10 @@ def test_a_keep_quoting_the_passage_that_states_the_gates_is_refused() -> None:
             "the same thing, or rewrite the sentence on the source that states otherwise. The "
             'shown sources that speak of it: [execution_flow.3] "and runs environment gates '
             "before the beacon starts: a PEB BeingDebugged read (0x8690, 0x309c, 0x3074), an "
-            'OS-version check (0x8560)"; [procedures.1] "which likely serves as an environment '
-            'check.". Rewrite it on the one that states otherwise (a section 5 sentence too: on '
-            "any of these, a passage written without the code where it names an address the "
-            "sentence's passage names); the excerpts shown state no absence, so no keep rests "
-            "on them.",
+            'OS-version check (0x8560)". Rewrite it on the one that states otherwise (a section 5 '
+            "sentence too: on any of these, a passage written without the code where it names an "
+            "address the sentence's passage names and a fact holds); the excerpts shown state no "
+            "absence, so no keep rests on them.",
         )
     ]
 
@@ -340,7 +348,9 @@ def test_haiku12_s_mutex_sentence_keeps_no_quote_of_the_finding_and_is_rewritten
 ):
     report = _report(evasion=MUTEX, findings=(MUTEX_FINDING,), bound=True)
     speaking = _speaking(report, "evasion_antiforensics", MUTEX)
-    assert "bound.1" in speaking and "key_findings.1" in speaking
+    # The finding names no address the section 5 passage names: it does not speak of it, as
+    # haiku12's key finding 11 does not (T-652); the bound value's fact does.
+    assert "bound.1" in speaking and "key_findings.1" not in speaking
     keep = _row("evasion_antiforensics", MUTEX, ["key_findings.1"], quote="the mutex name")
     assert [v.code for v in _found(report, keep)] == [KEEP_UNQUOTED_CODE]
     rewrite = _rewrite(
@@ -379,12 +389,21 @@ def test_haiku12_s_fnv_sentence_keeps_no_quote_of_the_channel_and_is_rewritten_o
 # -- what grounds a rewrite, and what a keep's quote carries ------------------------------
 
 
-def test_a_claim_sharing_only_words_with_the_absence_grounds_no_rewrite() -> None:
-    # A claim about other files speaks of the absence by its words, but names no address
-    # the sentence's passage names, so it grounds no rewrite of it.
-    other = "Other droppers of this family run environment checks and anti-debug probes [ev_0025]."
+@pytest.mark.parametrize(
+    "other",
+    [
+        "Other droppers of this family run environment checks and anti-debug probes [ev_0025].",
+        # A constant both passages write is no address a fact holds.
+        "Other droppers XOR with 0x60 and run environment checks and anti-debug probes [ev_0025].",
+    ],
+)
+def test_a_claim_sharing_only_words_with_the_absence_neither_speaks_nor_grounds(other: str) -> None:
+    # A claim about other files shares the absence's words, but names no address of the
+    # section 5 passage a fact holds: it does not speak of it, so a keep on the reason
+    # passes, and it grounds no rewrite of it.
     report = _report(flow=other, procedure="It sleeps [ev_0025].")
-    assert _speaking(report, "evasion_antiforensics", DENIED) == ["execution_flow.3"]
+    assert _speaking(report, "evasion_antiforensics", DENIED) == []
+    assert _found(report, _row("evasion_antiforensics", DENIED, [], reason="none does")) == []
     row = _rewrite(
         "evasion_antiforensics",
         DENIED,
@@ -398,7 +417,7 @@ def test_a_claim_sharing_only_words_with_the_absence_grounds_no_rewrite() -> Non
         "a section 5 passage is answered by a platform fact (bound.N, unread.N, listed.N, "
         "answered.N, ledger.N) alone; a held absence of section 5 also by a source that speaks "
         "of it, a passage written without the code where it names an address the sentence's "
-        "passage names. Name the sources by their ids."
+        "passage names and a fact holds. Name the sources by their ids."
     )
 
 
@@ -429,6 +448,12 @@ def test_a_held_absence_of_a_passage_written_without_the_code_rests_on_no_claim(
         # A negation inside a quoted value is the sample's text.
         "Routine 0x3868 runs anti-debug and environment checks at 0x8690 and compares the "
         'reply with "no" [ev_0025].',
+        "Routine 0x3868 runs anti-debug and environment checks at 0x8690 and compares the "
+        "reply with 'no' [ev_0025].",
+        "Routine 0x3868 runs anti-debug and environment checks at 0x8690 and compares the "
+        "reply with \u2018not\u2019 [ev_0025].",
+        "Routine 0x3868 runs anti-debug and environment checks at 0x8690 and compares the "
+        "reply with `no` [ev_0025].",
     ],
 )
 def test_a_quote_negating_something_else_backs_no_keep_and_none_is_offered(said: str) -> None:
@@ -475,4 +500,22 @@ def test_a_body_keep_that_passes_is_never_recorded_as_stating_no_absence() -> No
     ) == ("resting only on another written passage, not on the code or the ledger")
     assert absence_keep_reason(DENIED, GATES_QUOTE, [], by_id["evasion_antiforensics"]) == (
         "a section 5 sentence, whose every keep is recorded"
+    )
+
+
+def test_a_drop_of_an_absence_nothing_holds_is_refused_for_that_alone() -> None:
+    for sources in ([], ["execution_flow.3"], ["nowhere.9"]):
+        row = {**_row("evasion_antiforensics", DENIED, sources), "decision": "drop", "reason": "x"}
+        assert [v.code for v in _found(_report(), row)] == ["agreement.unknown_passage"], sources
+
+
+def test_a_quote_sharing_too_few_words_is_told_so_before_its_denial_is_read() -> None:
+    # The denial is read only of a quote that holds the sentence's words: one that holds too
+    # few is told that, as before (T-652).
+    said = "No function was found there [ev_0025]."
+    report = _report(flow=f"{GATES} {said}")
+    row = _row("evasion_antiforensics", DENIED, ["execution_flow.3"], quote=said[:-12])
+    (refused,) = _found(report, row)
+    assert "its quote shares too few of the words the sentence denies something of" in (
+        refused.message
     )
