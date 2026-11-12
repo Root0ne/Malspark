@@ -80,7 +80,7 @@ class _KnownJobConfig(BaseModel):
     questions: list[str] | None = None
     # The arguments the sandbox starts the sample with: one string, as the
     # operator would type it after the program's name (``--password <value>``,
-    # a DLL's export, an installer's switch). Handed to the provider verbatim
+    # an installer's switch). Handed to the provider verbatim
     # where it can pass them and recorded either way
     # (``malspark.providers.submission``); the platform never reads them.
     # Strict text, bounded, with no control character.
