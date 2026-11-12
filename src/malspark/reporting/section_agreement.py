@@ -2730,13 +2730,16 @@ def _more(listed: str, more: int) -> str:
 
 def _calls_said(called: Sequence[int], data: int, bases: Sequence[int]) -> str:
     """How the lines naming ``data`` addresses name the routines ``called``: one routine on a
-    line naming each address, or several among the lines naming them."""
+    line naming each address, or several among the lines naming them, the first
+    :data:`_CALLEES_SHOWN` and the count of the rest."""
     if not called:
         return ""
     if len(called) == 1:
         each = "" if data == 1 else ", each"
         return f"{each} on a line that calls the routine at {_offsets(list(called), bases)}"
-    return f" on one or more lines that call the routines at {_offsets(list(called), bases)}"
+    shown = list(called)[:_CALLEES_SHOWN]
+    listed = _more(_offsets(shown, bases), len(called) - len(shown))
+    return f" on one or more lines that call the routines at {listed}"
 
 
 def _text_at_fact(key: str, names: Any) -> _NameFact | None:
@@ -2761,7 +2764,7 @@ def _text_at_fact(key: str, names: Any) -> _NameFact | None:
     # The addresses by the routines the lines naming them call, in the order read.
     by_callee: dict[tuple[int, ...], list[int]] = {}
     for address in data:
-        by_callee.setdefault(tuple(ref.addresses[address])[:_CALLEES_SHOWN], []).append(address)
+        by_callee.setdefault(tuple(ref.addresses[address]), []).append(address)
     groups = list(by_callee.items())
     named = "; ".join(
         "names the data at "

@@ -287,3 +287,23 @@ def test_with_no_base_or_two_bases_nothing_is_said_of_where_no_row_holds_a_text(
     names.decoded_entries.clear()
     names.decoded_at.clear()
     assert [r.kind for r in name_readings(written, "", names)] == ["data"]
+
+
+def test_the_callees_past_the_cap_are_counted() -> None:
+    called = [BASE + 0xA000 + 16 * i for i in range(7)]
+    names = RunNames(
+        bases=(BASE,),
+        rows=frozenset({ROUTINE, *called}),
+        callees={ROUTINE: tuple(called)},
+        called=frozenset(called),
+        index_entry="ev_0025",
+    )
+    listing = "\n".join(f"  FUN_{c:x}(&DAT_{BASE + 0xF9A0:x});" for c in called)
+    hold_data(names, ROUTINE, listing, ("ev_0086",), ("DAT_",))
+    (reading,) = name_readings("The text at 0xf9a0 is not decoded.", "", names)
+    fact = _text_at_fact(reading.key, names)
+    assert fact is not None
+    assert (
+        "on one or more lines that call the routines at offsets 0xa000, 0xa010, 0xa020, 0xa030 "
+        "and 3 more (ev_0086)" in fact.text
+    )
