@@ -1527,6 +1527,11 @@ def _negated_after(text: str, start: int, end: int) -> bool:
     return bool({word.lower() for word in words} & (_NEGATIONS | _FOLLOWING_NEGATIONS))
 
 
+# A claim whose sentence shares no term with the technique it carries. It opens
+# no validation turn of its own: beside a finding that opens one it is asked
+# there, with the technique's card; standing alone it is recorded as not asked,
+# and the judge's technique question asks about each technique no claim naming
+# it describes.
 CLAIM_DOES_NOT_DESCRIBE_CODE = "attck.claim_does_not_describe"
 
 # The words of a catalogue name that name no behaviour of their own.
