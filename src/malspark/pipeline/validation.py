@@ -1671,11 +1671,12 @@ _PROCEDURE_SHAPE_RE = re.compile(r"[a-z][A-Z]|_")
 # A phrase of a card or rule that says what the technique is not: from a
 # negating word to the end of its clause.
 _NEGATED_PHRASE_RE = re.compile(r"\b(?:without|instead\s+of|not|never)\b[^,;.()]*", re.IGNORECASE)
-# A word names a technique when the vendored data writes it for one technique
-# family only: a parent technique and its sub-techniques. A word written for
-# two families or more is what they share. ``procedure_word_families`` gives
-# the measured count of every word; a test pins where the cut falls.
-PROCEDURE_WORD_MAX_FAMILIES = 1
+# A word names a technique when the vendored data writes it for at most two
+# technique families (a family is a parent technique and its sub-techniques).
+# A word written for three families or more is what they share and names none
+# of them. ``procedure_word_families`` gives the measured count of every word;
+# a test pins where the cut falls.
+PROCEDURE_WORD_MAX_FAMILIES = 2
 # The description words' threshold, beside it: a measured heuristic threshold,
 # not a cap on any data. A stem more than six technique families' vendored
 # texts write is the catalogue's shared vocabulary (fourteen families write
