@@ -26,7 +26,6 @@ from malspark.core.token_ledger import TokenLedger
 from malspark.core.truncation_ledger import TruncationLedger
 from malspark.pipeline.feedback_mode import RECORD_ONLY_CHOICE
 from malspark.pipeline.nodes import _validation_update, make_judge_node
-from malspark.pipeline.validation import CLAIM_WITHOUT_CONFIDENCE_CODE
 from malspark.schemas.evidence import EvidenceCounter, LedgerEntry
 from tests.stages import paper_profile
 from tests.unit.agents.test_record_only_the_judge import FIRST, FIXED
@@ -36,8 +35,10 @@ PLAIN = (
     "CLAIM 1: The sample reads a file.\nEVIDENCE: [ev_0003]\nCONFIDENCE: 0.8\n"
     "TECHNIQUE: NONE\n---\n"
 )
-UNSURE = PLAIN + (
-    "CLAIM 2: The sample sleeps before it starts.\nEVIDENCE: [ev_0003]\nTECHNIQUE: NONE\n---\n"
+# A second claim that cites nothing: a finding that opens a turn in feed_back.
+UNCITED = PLAIN + (
+    "CLAIM 2: The sample sleeps before it starts.\nEVIDENCE:\nCONFIDENCE: 0.7\n"
+    "TECHNIQUE: NONE\n---\n"
 )
 FIXED_ANSWER = PLAIN + (
     "CLAIM 2: The sample sleeps before it starts.\nEVIDENCE: [ev_0003]\nCONFIDENCE: 0.7\n"
@@ -103,7 +104,7 @@ def _analysis() -> tuple[_Analyst, dict[str, Any]]:
     """The analyst's validation turn, and what its node puts on the state channel."""
     analyst = _Analyst([FIXED_ANSWER])
     analyst._container = SimpleNamespace(event_sink=None)
-    isr = analyst._text_to_isr(UNSURE, 0)
+    isr = analyst._text_to_isr(UNCITED, 0)
     with (
         patch("malspark.agents.base_agent.validity_check_available", return_value=True),
         patch.object(BaseAnalyst, "_fits_the_window", lambda *_a: True),
@@ -145,8 +146,10 @@ def test_a_record_only_run_asks_nothing_and_says_so(monkeypatch: pytest.MonkeyPa
     validation = summary["validation"]
     assert validation["retries"] == 0
     assert validation["feedback"] == "record_only"
-    codes = {row["code"] for row in validation["unresolved"]}
-    assert CLAIM_WITHOUT_CONFIDENCE_CODE in codes
+    analysed = [row for row in validation["unresolved"] if row["agent"] == "static"]
+    assert [row["code"] for row in analysed] == ["isr.empty_evidence"]
+    # Crossed the state channel and still a finding nobody was asked about.
+    assert all(row.get("asked") == "false" for row in analysed)
     judged = [row for row in validation["unresolved"] if row["agent"] == "judge"]
     assert judged and all(row.get("asked") == "false" for row in judged)
     assert RECORD_ONLY_CHOICE in summary["operator_choices"]

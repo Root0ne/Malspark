@@ -792,3 +792,14 @@ class TestATechniqueFindingNamesItsTechnique:
         (rebuilt,) = _violations_from_rows([violation.to_dict()])
 
         assert rebuilt.subject == "T9999"
+
+    def test_a_row_rebuilt_from_the_state_channel_keeps_whether_it_was_asked(self) -> None:
+        from malspark.pipeline.nodes import _violations_from_rows
+
+        asked = Violation(code="isr.empty_evidence", message="m", path="claims[0]")
+        unasked = Violation(code="isr.empty_evidence", message="m", path="claims[0]", asked=False)
+
+        rebuilt = _violations_from_rows([asked.to_dict(), unasked.to_dict()])
+
+        assert [v.asked for v in rebuilt] == [True, False]
+        assert [v.to_dict() for v in rebuilt] == [asked.to_dict(), unasked.to_dict()]
