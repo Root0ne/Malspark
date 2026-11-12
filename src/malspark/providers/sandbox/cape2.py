@@ -32,6 +32,29 @@ _OPTIONS_FIELD = "options"
 _OPTION_SEPARATOR = ","
 _ARGUMENTS_OPTION = "arguments"
 
+# The CAPEv2 analysis packages whose documented options include ``arguments``
+# (CAPEv2 documentation, "Analysis Packages" page, usage/packages.html: ``exe``,
+# ``ollydbg``, ``python``, ``rar``, ``regsvr``, ``service``, ``service_dll``
+# "specify any command line argument to pass to the initial process";
+# ``archive``, ``dll``, ``zip``, ``zip_compound`` "specify arguments to pass to
+# the DLL through commandline"). Every other package documents no such option,
+# so a sample that goes to one is detonated without them. Read 2026-11-13.
+_ARGUMENT_PACKAGES = frozenset(
+    {
+        "archive",
+        "dll",
+        "exe",
+        "ollydbg",
+        "python",
+        "rar",
+        "regsvr",
+        "service",
+        "service_dll",
+        "zip",
+        "zip_compound",
+    }
+)
+
 if TYPE_CHECKING:
     from malspark.core.config import SandboxCape2Config, Settings
     from malspark.providers.servers import ServerHandle
@@ -322,8 +345,15 @@ class CAPE2SandboxProvider(SandboxProvider):
         kept.append(f"{_ARGUMENTS_OPTION}={arguments}")
         return _OPTION_SEPARATOR.join(kept), replaced
 
-    def launch_arguments_answer(self, arguments: str) -> LaunchArgumentsAnswer:
-        """Honoured as CAPE's ``arguments`` option, unless the value holds the option separator.
+    def launch_arguments_answer(
+        self, arguments: str, *, sample_path: str | Path | None = None
+    ) -> LaunchArgumentsAnswer:
+        """Honoured as CAPE's ``arguments`` option, unless the value cannot be carried or read.
+
+        Not honoured where the package this provider selects for the sample's
+        format is one CAPE documents no ``arguments`` option for
+        (:data:`_ARGUMENT_PACKAGES`); a sample whose format selects no package
+        is left to CAPE, which is not known to ignore them.
 
         CAPE splits its option string at every comma before it reads a value
         (``key=value,key=value``), so a comma inside the arguments would cut
@@ -342,6 +372,19 @@ class CAPE2SandboxProvider(SandboxProvider):
                     "passed in it; the sample was detonated without them"
                 ),
             )
+        if sample_path is not None:
+            from malspark.providers.sandbox.formats import detect_sample_format, option_for_format
+
+            file_type, _platform = detect_sample_format(sample_path)
+            package = option_for_format(self._cfg.package_by_format, file_type)
+            if package and package not in _ARGUMENT_PACKAGES:
+                return LaunchArgumentsAnswer(
+                    honoured=False,
+                    note=(
+                        f"the CAPE package {package!r} this sample's format selects documents "
+                        "no arguments option, so the sample was detonated without them"
+                    ),
+                )
         notes: list[str] = []
         _composed, replaced = self._options_with_arguments(arguments)
         if replaced:
@@ -351,7 +394,9 @@ class CAPE2SandboxProvider(SandboxProvider):
             )
         if arguments != arguments.strip():
             notes.append("CAPE trims the spaces at their start and end")
-        return LaunchArgumentsAnswer(honoured=True, note="; ".join(notes))
+        return LaunchArgumentsAnswer(
+            honoured=True, note="; ".join(notes), via="CAPE's 'arguments' option"
+        )
 
     def wait_for_completion(
         self,

@@ -49,7 +49,7 @@ if TYPE_CHECKING:
     from malspark.core.config import SandboxRestConfig, Settings
     from malspark.core.report_formats import ReportFormat, SignatureScale
     from malspark.providers.sandbox.rest_mapping import CompiledMapping
-    from malspark.providers.submission import SubmissionOptions
+    from malspark.providers.submission import LaunchArgumentsAnswer, SubmissionOptions
     from malspark.schemas.sandbox_report import SandboxRun
 
 
@@ -250,6 +250,17 @@ class RestSandboxProvider(SandboxProvider):
 
         return requested_host(self._cfg.base_url, self._cfg.submit.path)
 
+    def launch_arguments_answer(
+        self, arguments: str, *, sample_path: str | Path | None = None
+    ) -> LaunchArgumentsAnswer:
+        """Honoured where the operator named the field, which is then the way they are sent."""
+        from malspark.providers.submission import LaunchArgumentsAnswer, cannot_pass
+
+        field_name = self._cfg.submit.launch_arguments_field
+        if not field_name:
+            return cannot_pass(self.id)
+        return LaunchArgumentsAnswer(honoured=True, via=f"the multipart field {field_name!r}")
+
     def submit(self, sample_path: str | Path, *, options: SubmissionOptions | None = None) -> str:
         path = Path(sample_path)
         files: dict[str, Any] = {
@@ -263,7 +274,8 @@ class RestSandboxProvider(SandboxProvider):
         for name, value in self._cfg.submit.submit_fields.items():
             files[name] = (None, value)
         # The job's launch arguments, verbatim, under the field the operator
-        # declared for them; they win a name collision, being this job's own.
+        # declared for them (a config where it collides with another field is
+        # refused at validation, ``RestSubmitConfig``).
         field_name = self._cfg.submit.launch_arguments_field
         if options is not None and options.launch_arguments and field_name:
             files[field_name] = (None, options.launch_arguments)

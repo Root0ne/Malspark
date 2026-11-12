@@ -1,8 +1,8 @@
 """What one sandbox submission asks of the sandbox beyond the sample, and its answer.
 
 A job may carry launch arguments: one string, as the operator would type it
-after the program's name (a locker's ``--password <value>``, a DLL's export,
-an installer's switch). The platform never reads them: it checks their length
+after the program's name (a locker's ``--password <value>``, an installer's
+switch). The platform never reads them: it checks their length
 and that they hold no control character, and hands them to the provider as
 they were given. Each provider says whether it can pass them
 (``SandboxCapabilities.can_pass_launch_arguments``) and, for one value, how
@@ -15,21 +15,26 @@ submission of the same sample with other options is the same call again.
 
 from __future__ import annotations
 
+import unicodedata
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any
 
 # The longest launch arguments a job may carry, in characters: well past any
 # command line a sample needs, and short enough to state whole in the report.
 LAUNCH_ARGUMENTS_MAX_CHARS = 1024
+_REFUSED_CATEGORIES = frozenset({"Cc", "Cf", "Zl", "Zp"})
 
 
 def launch_arguments_problem(value: Any) -> str | None:
     """Why ``value`` cannot be a job's launch arguments, or ``None`` when it can.
 
     Text of at most :data:`LAUNCH_ARGUMENTS_MAX_CHARS` characters, holding
-    something besides spaces and no control character (a line break or a NUL
-    cannot be part of one command line). Nothing else is judged: the words
-    are the operator's and the sample's.
+    something besides spaces and none of the Unicode categories Cc (control),
+    Cf (format: bidi controls, zero-width characters), Zl and Zp (line and
+    paragraph separators): a line break, a NUL or a character that reorders
+    or hides what a reader sees cannot be part of one command line. Nothing
+    else is judged: the words are the operator's and the sample's.
     """
     if not isinstance(value, str):
         return "must be text"
@@ -37,8 +42,11 @@ def launch_arguments_problem(value: Any) -> str | None:
         return "must hold some text"
     if len(value) > LAUNCH_ARGUMENTS_MAX_CHARS:
         return f"must be at most {LAUNCH_ARGUMENTS_MAX_CHARS} characters (got {len(value)})"
-    if any(ord(ch) < 32 or ord(ch) == 127 for ch in value):
-        return "must not hold a control character such as a line break or a tab"
+    if any(unicodedata.category(ch) in _REFUSED_CATEGORIES for ch in value):
+        return (
+            "must not hold a control character such as a line break or a tab, nor a format "
+            "character (a bidi control, a zero-width character) or a line or paragraph separator"
+        )
     return None
 
 
@@ -58,11 +66,13 @@ class LaunchArgumentsAnswer:
 
     ``note`` is the provider's sentence: why it cannot pass them, or, where it
     does, what else it changed to do so (a deployment setting the job's value
-    replaced). Empty where there is nothing to add.
+    replaced). Empty where there is nothing to add. ``via`` names the option
+    or field the provider sends them in, where it does.
     """
 
     honoured: bool
     note: str = ""
+    via: str = ""
 
 
 def cannot_pass(provider: str) -> LaunchArgumentsAnswer:
@@ -76,12 +86,16 @@ def cannot_pass(provider: str) -> LaunchArgumentsAnswer:
     )
 
 
-def answer_of(provider: Any, arguments: str) -> LaunchArgumentsAnswer:
+def answer_of(
+    provider: Any, arguments: str, sample_path: str | Path | None = None
+) -> LaunchArgumentsAnswer:
     """What ``provider`` makes of ``arguments``, asked before anything is sent.
 
     Its own answer (``SandboxProvider.launch_arguments_answer``); a provider
     that does not implement the contract's method answers by its capability
     flag, and one whose answer raises passes nothing, with the error's type.
+    ``sample_path`` lets a provider whose launch path depends on the sample's
+    format say so.
     """
     name = str(getattr(provider, "id", "") or "sandbox")
     ask = getattr(provider, "launch_arguments_answer", None)
@@ -91,7 +105,7 @@ def answer_of(provider: Any, arguments: str) -> LaunchArgumentsAnswer:
             return LaunchArgumentsAnswer(honoured=True)
         return cannot_pass(name)
     try:
-        answer = ask(arguments)
+        answer = ask(arguments, sample_path=sample_path)
     except Exception as exc:  # noqa: BLE001 — a provider that cannot say passes nothing
         return LaunchArgumentsAnswer(
             honoured=False,
@@ -107,12 +121,24 @@ def answer_of(provider: Any, arguments: str) -> LaunchArgumentsAnswer:
 
 def launch_record(provider: str, arguments: str, answer: LaunchArgumentsAnswer) -> dict[str, Any]:
     """The run's record of the launch arguments a job asked for: verbatim, and whether honoured."""
-    return {
+    record = {
         "provider": str(provider),
         "arguments": str(arguments),
         "honoured": bool(answer.honoured),
         "note": str(answer.note or ""),
     }
+    if answer.via:
+        record["via"] = str(answer.via)
+    return record
+
+
+def unmade_record(provider: str, arguments: str, why: str) -> dict[str, Any]:
+    """The record of arguments a job asked for that no submission carried, and why."""
+    return launch_record(
+        provider,
+        arguments[:LAUNCH_ARGUMENTS_MAX_CHARS],
+        LaunchArgumentsAnswer(honoured=False, note=why),
+    )
 
 
 def not_honoured_reason(record: Any) -> str | None:

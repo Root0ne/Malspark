@@ -4556,6 +4556,23 @@ class RestSubmitConfig(BaseModel):
     launch_arguments_field: str = ""
     task_id_path: str = "$.id"
 
+    @model_validator(mode="after")
+    def _launch_field_is_its_own(self) -> "RestSubmitConfig":
+        """The launch-arguments field is no other field the submission sends.
+
+        A job's value would otherwise replace the sample part or a field the
+        operator fixed (a profile, a timeout).
+        """
+        name = self.launch_arguments_field
+        if name and (
+            name == self.file_field or name in self.extra_fields or name in self.submit_fields
+        ):
+            raise ValueError(
+                f"launch_arguments_field {name!r} is also the file field or a field fixed in "
+                "extra_fields or submit_fields; name a field of its own"
+            )
+        return self
+
 
 class RestStatusConfig(BaseModel):
     """The poll endpoint and the two terminal state sets."""

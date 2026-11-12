@@ -185,7 +185,9 @@ class CAPEv2Client:
             "CAPEv2Client: submitting '%s' to %s%s",
             path.name,
             self._base_url,
-            f" ({', '.join(f'{k}={v}' for k, v in sorted(form.items()))})" if form else "",
+            # The field names only: a value may be a job's launch arguments,
+            # which can hold a secret the sample needs.
+            f" (fields: {', '.join(sorted(form))})" if form else "",
         )
         with open(path, "rb") as f:
             try:

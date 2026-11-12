@@ -854,12 +854,15 @@ class SandboxProvider(ABC):
         """
         raise ProviderError("this sandbox does not accept job submissions")
 
-    def launch_arguments_answer(self, arguments: str) -> LaunchArgumentsAnswer:
+    def launch_arguments_answer(
+        self, arguments: str, *, sample_path: str | Path | None = None
+    ) -> LaunchArgumentsAnswer:
         """Whether this provider passes ``arguments`` to the sample, and what the record says.
 
         Read before the submission. The default answers by the capability
         flag; a provider whose request cannot carry every value (a separator
-        its option string reserves) overrides it and says which.
+        its option string reserves) or whose launch path depends on the
+        sample's format (``sample_path``) overrides it and says which.
         """
         from malspark.providers.submission import LaunchArgumentsAnswer, cannot_pass
 

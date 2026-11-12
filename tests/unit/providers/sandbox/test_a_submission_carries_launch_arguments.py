@@ -8,6 +8,7 @@ request it always sent. Synthetic bytes only; nothing is detonated.
 from __future__ import annotations
 
 import json
+import logging
 from pathlib import Path
 
 import httpx
@@ -33,6 +34,11 @@ from malspark.providers.submission import (
 )
 from tests.unit.providers.sandbox.test_submit_format_options import _form_fields
 
+CAPE_VIA = "CAPE's 'arguments' option"
+CONTROL = (
+    "must not hold a control character such as a line break or a tab, nor a format "
+    "character (a bidi control, a zero-width character) or a line or paragraph separator"
+)
 ARGS = '--password "s3cr3t value" -k=1'
 WITH = SubmissionOptions(launch_arguments=ARGS)
 
@@ -68,7 +74,9 @@ class TestCape:
     def test_it_declares_it_can_pass_them(self) -> None:
         provider = CAPE2SandboxProvider.from_settings(Settings(_env_file=None))
         assert provider.capabilities.can_pass_launch_arguments is True
-        assert provider.launch_arguments_answer(ARGS) == LaunchArgumentsAnswer(honoured=True)
+        assert provider.launch_arguments_answer(ARGS) == LaunchArgumentsAnswer(
+            honoured=True, via=CAPE_VIA
+        )
 
     def test_without_arguments_the_request_is_unchanged(self, tmp_path: Path) -> None:
         captured: list[httpx.Request] = []
@@ -97,7 +105,9 @@ class TestCape:
             "options": f"procmemdump=1,syscall=1,arguments={ARGS}",
             "route": "internet",
         }
-        assert provider.launch_arguments_answer(ARGS) == LaunchArgumentsAnswer(honoured=True)
+        assert provider.launch_arguments_answer(ARGS) == LaunchArgumentsAnswer(
+            honoured=True, via=CAPE_VIA
+        )
 
     def test_the_job_s_arguments_replace_the_deployment_s_and_say_so(self, tmp_path: Path) -> None:
         captured: list[httpx.Request] = []
@@ -254,7 +264,7 @@ class _DuckTyped:
 class _Raising(_OldPlugin):
     id = "raising"
 
-    def launch_arguments_answer(self, arguments: str) -> LaunchArgumentsAnswer:
+    def launch_arguments_answer(self, arguments: str, **_: object) -> LaunchArgumentsAnswer:
         raise RuntimeError("no")
 
 
@@ -285,6 +295,108 @@ class TestTheContract:
         assert not_honoured_reason(None) is None
 
 
+SECRET = "--password S3cr3tValue-9f2"
+
+
+def _nothing_logs(caplog: pytest.LogCaptureFixture) -> None:
+    for record in caplog.records:
+        assert "S3cr3tValue" not in record.getMessage()
+        assert "S3cr3tValue" not in str(record.args)
+
+
+class TestNoLogLineCarriesThem:
+    def test_cape(self, tmp_path: Path, caplog: pytest.LogCaptureFixture) -> None:
+        caplog.set_level(logging.DEBUG)
+        provider = _cape(tmp_path, [])
+        provider.submit(_pe(tmp_path), options=SubmissionOptions(launch_arguments=SECRET))
+        assert any(
+            "fields:" in r.getMessage() and "options" in r.getMessage() for r in caplog.records
+        )
+        _nothing_logs(caplog)
+
+    def test_rest(self, tmp_path: Path, caplog: pytest.LogCaptureFixture) -> None:
+        caplog.set_level(logging.DEBUG)
+        provider = _rest([], field="command_line")
+        provider.submit(_pe(tmp_path), options=SubmissionOptions(launch_arguments=SECRET))
+        _nothing_logs(caplog)
+
+    def test_the_providers_that_cannot_and_the_run_log_the_note_only(
+        self, tmp_path: Path, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        import asyncio
+
+        from tests.unit.pipeline.test_a_run_records_its_launch_arguments import _Provider
+        from tests.unit.pipeline.test_a_sandbox_naming_another_target_is_told import _app
+
+        caplog.set_level(logging.DEBUG)
+        for provider in (
+            TriageSandboxProvider.from_settings(Settings(_env_file=None)),
+            MockSandboxProvider(fixtures_dir="/nonexistent"),
+            UploadSandboxProvider.from_settings(Settings(_env_file=None)),
+        ):
+            assert answer_of(provider, SECRET, _pe(tmp_path)).honoured is False
+        # A provider that cannot pass them, and a value refused where it is used:
+        # the run logs the note only, and the sample goes on without them.
+        for provider, value in (
+            (_Provider(passes=False, note="no field"), SECRET),
+            (_Provider(passes=True), SECRET + "\u200b"),
+        ):
+            app = _app(provider)
+            app.launch_arguments = value
+            asyncio.run(app._submit_to_sandbox(str(_pe(tmp_path))))
+        _nothing_logs(caplog)
+        assert any("not honoured" in r.getMessage() for r in caplog.records)
+
+
+class TestCapeKnowsWhichPackagesReadThem:
+    def test_a_package_that_documents_arguments_is_honoured(self, tmp_path: Path) -> None:
+        provider = _cape(tmp_path, [], package_by_format={"*": "dll"})
+        answer = provider.launch_arguments_answer(ARGS, sample_path=_pe(tmp_path))
+        assert answer == LaunchArgumentsAnswer(honoured=True, via=CAPE_VIA)
+
+    def test_a_package_that_documents_none_is_not_honoured_with_that_reason(
+        self, tmp_path: Path
+    ) -> None:
+        provider = _cape(tmp_path, [], package_by_format={"*": "pdf"})
+        answer = provider.launch_arguments_answer(ARGS, sample_path=_pe(tmp_path))
+        assert answer.honoured is False
+        assert "the CAPE package 'pdf'" in answer.note and "documents no arguments" in answer.note
+
+    def test_no_package_selected_leaves_it_to_cape(self, tmp_path: Path) -> None:
+        provider = _cape(tmp_path, [])
+        assert provider.launch_arguments_answer(ARGS, sample_path=_pe(tmp_path)).honoured is True
+
+
+class TestARestFieldOfItsOwn:
+    @pytest.mark.parametrize(
+        "over",
+        [
+            {"file_field": "file", "launch_arguments_field": "file"},
+            {"extra_fields": {"profile": "win10"}, "launch_arguments_field": "profile"},
+            {"submit_fields": {"timeout": "60"}, "launch_arguments_field": "timeout"},
+        ],
+    )
+    def test_a_field_that_collides_is_refused(self, over: dict) -> None:
+        from pydantic import ValidationError
+
+        from malspark.core.config import RestSubmitConfig
+
+        with pytest.raises(ValidationError, match="name a field of its own"):
+            RestSubmitConfig(**over)
+
+    def test_a_field_of_its_own_and_none_are_accepted(self) -> None:
+        from malspark.core.config import RestSubmitConfig
+
+        assert RestSubmitConfig(launch_arguments_field="command_line").launch_arguments_field
+        assert RestSubmitConfig().launch_arguments_field == ""
+
+    def test_the_answer_names_the_field(self) -> None:
+        answer = _rest([], field="command_line").launch_arguments_answer(ARGS)
+        assert answer == LaunchArgumentsAnswer(
+            honoured=True, via="the multipart field 'command_line'"
+        )
+
+
 class TestTheValue:
     @pytest.mark.parametrize(
         ("value", "problem"),
@@ -293,12 +405,18 @@ class TestTheValue:
             (["-x"], "must be text"),
             ("   ", "must hold some text"),
             ("x" * (LAUNCH_ARGUMENTS_MAX_CHARS + 1), "must be at most 1024 characters (got 1025)"),
-            ("-a\n-b", "must not hold a control character such as a line break or a tab"),
-            ("-a\x00", "must not hold a control character such as a line break or a tab"),
+            ("-a\n-b", CONTROL),
+            ("-a\x00", CONTROL),
         ],
     )
     def test_a_value_that_is_not_one_command_line_is_refused(self, value, problem) -> None:
         assert launch_arguments_problem(value) == problem
+
+    @pytest.mark.parametrize(
+        "char", ["\u0085", "\u2028", "\u2029", "\u202e", "\u200b", "\x7f", "\t"]
+    )
+    def test_unicode_controls_formats_and_separators_are_refused(self, char: str) -> None:
+        assert launch_arguments_problem(f"-a{char}-b") == CONTROL
 
     @pytest.mark.parametrize(
         "value", [ARGS, "x" * LAUNCH_ARGUMENTS_MAX_CHARS, "DllRegisterServer", "/S /D=C:\\x"]

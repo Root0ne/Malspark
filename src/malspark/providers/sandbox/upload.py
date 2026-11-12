@@ -181,7 +181,9 @@ class UploadSandboxProvider(SandboxProvider):
             "The upload sandbox does not detonate samples; attach a report to the job instead."
         )
 
-    def launch_arguments_answer(self, arguments: str) -> LaunchArgumentsAnswer:
+    def launch_arguments_answer(
+        self, arguments: str, *, sample_path: str | Path | None = None
+    ) -> LaunchArgumentsAnswer:
         """Not applicable: the attached report comes from a run this platform did not start."""
         from malspark.providers.submission import LaunchArgumentsAnswer
 
