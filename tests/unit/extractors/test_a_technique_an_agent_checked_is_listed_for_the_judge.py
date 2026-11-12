@@ -114,7 +114,7 @@ def test_an_id_in_the_arguments_and_the_answer_of_one_entry_is_seen_in_both_plac
     )
 
     assert checked_techniques([entry], carried=set())["T1041"] == [
-        CheckedMention("analyst_a", "ev_0001", IN_ARGUMENTS),
+        CheckedMention("analyst_a", "ev_0001", IN_ARGUMENTS, whole=True),
         CheckedMention("analyst_a", "ev_0001", IN_ANSWER),
     ]
 

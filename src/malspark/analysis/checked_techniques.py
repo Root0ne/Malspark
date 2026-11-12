@@ -35,6 +35,9 @@ class CheckedMention(NamedTuple):
     agent: str
     entry_id: str
     place: str
+    # Whether the id is a whole argument value (``"T1041"``) rather than one
+    # found inside a longer argument string; ``False`` for an answer's id.
+    whole: bool = False
 
 
 def _strings(value: Any) -> Iterator[str]:
@@ -53,6 +56,17 @@ def _strings(value: Any) -> Iterator[str]:
 def argument_technique_ids(entry: Any) -> list[str]:
     """The technique ids an entry's call arguments write, first seen first."""
     return technique_ids_in(list(_strings(getattr(entry, "args", None))))
+
+
+def whole_argument_ids(entry: Any) -> set[str]:
+    """The technique ids an entry's call arguments give as a whole value, upper-cased."""
+    from malspark.analysis.technique_ids import is_technique_id
+
+    return {
+        value
+        for text in _strings(getattr(entry, "args", None))
+        if is_technique_id(value := text.strip().upper())
+    }
 
 
 def answer_technique_ids(entry: Any) -> list[str]:
@@ -95,6 +109,7 @@ def checked_techniques(
         if not entry_id:
             continue
         agent = str(getattr(entry, "agent", "") or "")
+        whole = whole_argument_ids(entry)
         for place, ids in (
             (IN_ARGUMENTS, argument_technique_ids(entry)),
             (IN_ANSWER, answer_technique_ids(entry)),
@@ -102,7 +117,11 @@ def checked_techniques(
             # Each reader gives an id once, so each place of each entry is listed once.
             for tid in ids:
                 if tid not in held:
-                    out.setdefault(tid, []).append(CheckedMention(agent, entry_id, place))
+                    out.setdefault(tid, []).append(
+                        CheckedMention(
+                            agent, entry_id, place, place == IN_ARGUMENTS and tid in whole
+                        )
+                    )
     return out
 
 

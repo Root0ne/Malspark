@@ -1612,7 +1612,9 @@ def _line_decision(line: str) -> tuple[str, _Decision, str] | None:
 
 # The decisions on a checked technique (``TECHNIQUE_MAP_FORM``), read as the
 # keep and drop words are: in the decision position, or standing alone.
-_MAP_DECISION_RE = re.compile(r"(?<![A-Za-z'])(map|decline)(?![A-Za-z'])", re.IGNORECASE)
+_MAP_DECISION_RE = re.compile(
+    r"(?<![A-Za-z'])(map|mapped|decline|declined)(?![A-Za-z'])", re.IGNORECASE
+)
 _MAP_DECISION_AT_RE = re.compile(
     r"^[ \t*_`>]*(?:decision[ \t*_`]*[:\-\u2013\u2014][ \t*_`]*)?"
     r"(map|mapped|decline|declined)(?![A-Za-z'])",
@@ -1675,7 +1677,9 @@ def _line_map_decision(line: str) -> tuple[str, _MapDecision, str, list[str]] | 
 
     The line's first technique id, then its decision: the word straight after
     the first separator that follows the id, and failing that the first
-    standalone map or decline on the line ("I decline to map it" declines).
+    standalone map or decline on the line ("I decline to map it" declines). A
+    map the line negates ("do not map", "not mapped", as
+    ``validation._is_negated`` reads absence) is a decline.
     A map's entries are the ledger ids written outside its reason: between the
     technique id and the decision, and in a run of ids leading what follows the
     decision. An id the reason writes is not one. The reason is what follows,
@@ -1698,6 +1702,12 @@ def _line_map_decision(line: str) -> tuple[str, _MapDecision, str, list[str]] | 
         start, end, word = first.start(1), first.end(1), first.group(1)
         in_sentence = True
     decision = _as_map_decision(word)
+    if decision == "map":
+        from malspark.pipeline.validation import _is_negated
+
+        if _is_negated(rest, start, end):
+            # "do not map", "not mapped": the judge declines, in that sentence.
+            decision, in_sentence = "decline", True
     after = rest[end:]
     leading = _LEADING_ENTRIES_RE.match(after) if decision == "map" else None
     if in_sentence:
@@ -5130,11 +5140,14 @@ class JudgeAgent(BudgetMeter):
         # the answer's schema on the structured path, where the model binds
         # it; else the question as it always was, its system text saying so.
         reads, reading = self._reading_model(ledger, [answer_model] if structured else ())
-        system = (
+        system_head = (
             TECHNIQUE_QUESTION_SYSTEM
             if reading is not None
             else TECHNIQUE_QUESTION_SYSTEM_WITHOUT_TOOLS
-        ) + (TECHNIQUE_QUESTION_CHECKED_NOTE if checked else "")
+        )
+        # Sized with the sentence about checked techniques while any is listed;
+        # said only where one is still asked once the window has had its say.
+        system = system_head + (TECHNIQUE_QUESTION_CHECKED_NOTE if checked else "")
         room = self._question_room(
             len(system) + len(empty_head) + len(bare) + _NOTICE_ROOM,
             int(cap or 0),
@@ -5222,6 +5235,7 @@ class JudgeAgent(BudgetMeter):
         left_out = sum(
             1 for why in not_asked.values() if why in (CHECKED_CAP_REASON, CHECKED_WINDOW_REASON)
         )
+        system = system_head + (TECHNIQUE_QUESTION_CHECKED_NOTE if checked else "")
         # The technique cards are reference beside the claims: they go in only
         # where the window has room left after the reports and the evidence,
         # so they never shorten either.

@@ -5018,9 +5018,9 @@ is assembled from what the run gathered rather than recomputed beside it:
   was seen in (at most three entries per agent and place, then how many more)
   and its card, and the entries the final claims of each such agent cite are
   listed once under the techniques, by id; a question with no checked
-  technique reads as it did before. The ids an agent passed in a call's
-  arguments come first, then the ones only a tool's answer named, each in the
-  order first seen; the question asks at most `MAX_CHECKED_QUESTIONS` (32,
+  technique reads as it did before. The ids a call gave as a whole argument
+  value come first, then ids found inside a longer argument string, then the
+  ones only a tool's answer named, each in the order first seen; the question asks at most `MAX_CHECKED_QUESTIONS` (32,
   twice the most a stored benchmark run listed), and the checked ones go in
   only where the judge's window has room left after the other techniques, the
   reports and the evidence, so the claimed, finding and undescribed ones keep

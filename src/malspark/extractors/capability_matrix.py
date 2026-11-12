@@ -1128,16 +1128,29 @@ def carried_technique_ids(
 # nothing, so the count is bounded here too. Twice the most any of the six
 # stored benchmark runs listed (16), so no measured run is cut, while a tool
 # answer that names hundreds of ids cannot turn the one question into hundreds
-# of answers to write.
+# of answers to write. Which ids are kept is decided by the question's order:
+# an id a call gave as a whole argument value first, so hundreds of id-shaped
+# tokens inside one argument string or one answer cannot push out an id an
+# agent looked up on its own.
 MAX_CHECKED_QUESTIONS = 32
 CHECKED_CAP_REASON = (
     f"not asked: the question asks at most {MAX_CHECKED_QUESTIONS} techniques an agent "
-    "checked, agents' calls before tools' answers, each first seen first"
+    "checked: ids a call gave as a whole argument first, then ids inside a longer "
+    "argument, then ids only a tool's answer named, each first seen first"
 )
 CHECKED_WINDOW_REASON = (
     "not asked: the judge's window had no room left for it after the other techniques, "
     "the reports and the evidence"
 )
+
+
+def _checked_rank(mentions: Sequence[Any]) -> int:
+    """Where a checked id stands in the question's order: 0, 1 or 2 (see the caller)."""
+    from malspark.analysis.checked_techniques import IN_ARGUMENTS
+
+    if any(m.whole for m in mentions):
+        return 0
+    return 1 if any(m.place == IN_ARGUMENTS for m in mentions) else 2
 
 
 def checked_technique_questions(
@@ -1156,21 +1169,18 @@ def checked_technique_questions(
     """
     if not ledger:
         return []
-    from malspark.analysis.checked_techniques import (
-        IN_ARGUMENTS,
-        checked_techniques,
-        claim_entries,
-    )
+    from malspark.analysis.checked_techniques import checked_techniques, claim_entries
 
     found = checked_techniques(ledger, carried_technique_ids(stix_output, isr_reports))
     if not found:
         return []
     cited = claim_entries(isr_reports)
     questions: list[TechniqueQuestion] = []
-    # An id an agent passed in a call's arguments first, then one only a tool's
-    # answer named; each group in the order first seen. Stable, so the order is
-    # the ledger's.
-    ordered = sorted(found.items(), key=lambda item: all(m.place != IN_ARGUMENTS for m in item[1]))
+    # First an id some call gave as a whole argument value (an agent checking
+    # it), then one found inside a longer argument string, then one only a
+    # tool's answer named; each group in the order first seen. Stable, so the
+    # order within a group is the ledger's.
+    ordered = sorted(found.items(), key=lambda item: _checked_rank(item[1]))
     for tid, mentions in ordered:
         agents = list(dict.fromkeys(m.agent for m in mentions))
         questions.append(

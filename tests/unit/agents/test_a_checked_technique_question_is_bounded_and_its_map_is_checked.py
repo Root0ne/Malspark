@@ -26,6 +26,7 @@ from malspark.agents.judge_agent import (
     CHECKED_LEFT_OUT_NOTICE,
     TECHNIQUE_MAP_FORM,
     TECHNIQUE_QUESTION_CHECKED_NOTE,
+    TECHNIQUE_QUESTION_SYSTEM_WITHOUT_TOOLS,
     JudgeAgent,
     _line_map_decision,
     technique_question_text,
@@ -155,6 +156,36 @@ class TestTheQuestionIsBounded:
         assert cut == named[MAX_CHECKED_QUESTIONS - 1 :]
         assert str(MAX_CHECKED_QUESTIONS) in CHECKED_CAP_REASON
 
+    def test_ids_inside_one_long_argument_cannot_push_out_an_id_looked_up_on_its_own(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setattr(capability_matrix, "_unknown_to_the_catalogue", lambda ids: set())
+        junk = [f"T{2000 + i // 10}.{i % 10:03d}" for i in range(500)]
+        sample_text = LedgerEntry(
+            id="ev_0001", agent="triage", tool="any_reader", args={"text": " ".join(junk)}
+        )
+        answered = LedgerEntry(
+            id="ev_0002",
+            agent="pack",
+            tool="any_scanner",
+            structured={"hits": [{"ttp": "T1999.001"}]},
+            source="mcp:operator",
+            facts=DECLARES,
+        )
+        lookup = LedgerEntry(
+            id="ev_0003", agent="triage", tool="any_lookup", args={"technique_id": CHECKED}
+        )
+
+        questions, not_asked = judge_questions(
+            _bundle().model_dump(), _isrs(), None, ledger=[answered, sample_text, lookup]
+        )
+        checked = [q.technique_id for q in questions if q.kind == "checked"]
+
+        # A whole argument value first, then ids inside a longer one, then answers.
+        assert checked == [CHECKED, *junk[: MAX_CHECKED_QUESTIONS - 1]]
+        cut = [tid for tid, why in not_asked.items() if why == CHECKED_CAP_REASON]
+        assert cut == [*junk[MAX_CHECKED_QUESTIONS - 1 :], "T1999.001"]
+
     def test_one_id_passed_in_fifty_thousand_entries_makes_a_short_line(self) -> None:
         ledger = [
             LedgerEntry(id=f"ev_{i:06d}", agent="triage", args={"ids": [CHECKED]})
@@ -204,10 +235,15 @@ class TestTheQuestionIsBounded:
         assert review.checked == {}
         text = str(llm.calls[0][1].content)
         assert CHECKED_LEFT_OUT_NOTICE.format(count=1) in text
+        # No checked technique is asked, so the system text says none is.
+        assert str(llm.calls[0][0].content) == TECHNIQUE_QUESTION_SYSTEM_WITHOUT_TOOLS
         assert f"{CHECKED} " not in text.split("TECHNIQUES TO DECIDE", 1)[1]
 
         roomy, llm = self._ask(monkeypatch, 1_000_000, claimed)
         assert roomy is not None and roomy.asked == ["T1124", CHECKED]
+        assert str(llm.calls[0][0].content) == (
+            TECHNIQUE_QUESTION_SYSTEM_WITHOUT_TOOLS + TECHNIQUE_QUESTION_CHECKED_NOTE
+        )
         assert "NOTE: " not in str(llm.calls[0][1].content)
 
     def test_the_room_the_others_get_is_sized_without_the_checked_ones(
@@ -362,6 +398,27 @@ class TestAFreeTextAnswer:
             "decline",
             "I decline to map it to anything",
             [],
+        )
+
+    @pytest.mark.parametrize(
+        "line",
+        [
+            f"{CHECKED} — do not map; the lookup is all there is",
+            f"{CHECKED}: not mapped: the lookup is all there is",
+        ],
+    )
+    def test_a_negated_map_is_the_judge_s_decline_with_its_sentence(self, line: str) -> None:
+        tid, decision, reason, entries = _line_map_decision(line) or ("", "", "", [])
+
+        assert (tid, decision, entries) == (CHECKED, "decline", [])
+        assert reason.endswith("the lookup is all there is") and "map" in reason
+
+    def test_a_map_stated_plainly_stays_a_map(self) -> None:
+        assert _line_map_decision(f"{CHECKED}: map — ev_0004: the sample posts host data") == (
+            CHECKED,
+            "map",
+            "the sample posts host data",
+            ["ev_0004"],
         )
 
     def test_entries_written_before_the_decision_are_the_map_s(self) -> None:
