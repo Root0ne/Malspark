@@ -352,3 +352,115 @@ class TestTheNarrativeProseFields:
         }
         (found,) = citation_violations(answer, CITABLE, prose=NARRATIVE_PROSE)
         assert "[BINARY FACTS] is cited" in found.message
+
+
+class TestAnOperandInASentenceIsNotACitation:
+    """``GS:[0x60]`` is the read of the PEB pointer; the composer was asked to cite it.
+
+    A citation lists ids, words or numbered references; an operand's ``0x``
+    numerals, sums and products are none of these. A wrong citation is still
+    asked about, with the sentence it was asked with before.
+    """
+
+    LEDGER = ["ev_0008", "ev_0020", "ev_0024", "ev_0064", "ev_0068"]
+    REMEDY = (
+        " Cite an entry by its evidence id in brackets — this answer may cite "
+        "ev_0008, ev_0020, ev_0024, ev_0064, ev_0068 — or write the sentence without a "
+        "bracketed citation."
+    )
+
+    # Composer sentences of stored runs, each asked about its operand.
+    MISFIRES = (
+        "The resolver at 0x869c calls GetProcAddress through slots [ev_0024], and capa "
+        "reports PEB access (GS:[0x60], at 0x8690) and export-table parsing at 0x869c "
+        "[ev_0008, ev_0024].",
+        "Routine 0x309c reads PEB+2 (BeingDebugged) through the PEB routine at 0x8690, "
+        "which reads GS:[0x60]; the branch that acts on the BeingDebugged value is not "
+        "established in the analysed sample.",
+        "The PEB is read at 0x8690 (GS:[0x60]) [ev_0024, ev_0008].",
+        "The resolver table holds 164 values across 27 DLLs [ev_0020]. The PEB read "
+        "GS:[0x60] is at 0x8690 and export-table parsing is at 0x869c [ev_0008].",
+        "The Ghidra scan of listed API calls, listed instructions and the FS:[0x30] and "
+        "FS:[0x18] accesses matched nothing that is stated as anti-analysis [ev_0020].",
+    )
+    # Composer sentences of stored runs that were rightly asked about, with what was.
+    REFUSED = (
+        (
+            "The decompilation of the decoder listing failed three times [run state], so "
+            "the decoder's key schedule is not established.",
+            "run state",
+        ),
+        (
+            "Routine 0x3808 deletes the install path through the NtDeleteFile wrapper 0x7694 "
+            "[ev_0098 (function 0x1360bc03808)][ev_0024].",
+            "ev_0098 (function 0x1360bc03808)",
+        ),
+        (
+            "Routine 0xae78 XORs each encoded byte with a key stream advanced per byte "
+            "[ev_0020][ev_0067 (function 0x1360bc0ae78)].",
+            "ev_0067 (function 0x1360bc0ae78)",
+        ),
+        (
+            "It gets the module path through the GetModuleFileNameW wrapper 0x841c, called "
+            "from 0x463c [ev_0069 (function 0x1360bc0463c)].",
+            "ev_0069 (function 0x1360bc0463c)",
+        ),
+        (
+            "Routine 0x8820 counts processes with a Toolhelp snapshot "
+            "[ev_0060 (function 0x1360bc08820)].",
+            "ev_0060 (function 0x1360bc08820)",
+        ),
+    )
+
+    def _prose(self, text: str) -> list[Any]:
+        return citation_violations({"body": text}, self.LEDGER, prose=("body",))
+
+    def _messages(self, text: str) -> list[str]:
+        return [v.message for v in self._prose(text)]
+
+    def test_a_memory_operand_in_prose_is_not_asked_about(self) -> None:
+        for operand in (
+            "GS:[0x60]",
+            "FS:[0x30]",
+            "[0x401000]",
+            "[rax+rcx*4+0x10]",
+            "[rax + rcx*4]",
+            "[rbp-0x8]",
+            "[8+4]",
+        ):
+            assert self._prose(f"The routine reads {operand} once.") == [], operand
+
+    def test_the_stored_operand_sentences_are_not_asked_about(self) -> None:
+        for sentence in self.MISFIRES:
+            assert self._prose(sentence) == [], sentence
+
+    def test_the_stored_wrong_citations_are_still_asked_about(self) -> None:
+        for sentence, item in self.REFUSED:
+            assert self._messages(sentence) == [
+                f"[{item}] is cited, and it is not an evidence id.{self.REMEDY}"
+            ]
+
+    def test_each_wrong_citation_is_asked_with_the_same_sentence(self) -> None:
+        for item in ("ev_12", "evidence 12", "E12", "see ev_0012", "ev-12", "ev+12", "E12+E13"):
+            (found,) = self._prose(f"It reads the key [{item}].")
+            assert found.code == CITATION_NOT_EVIDENCE_CODE
+            assert found.message == f"[{item}] is cited, and it is not an evidence id.{self.REMEDY}"
+        (found,) = self._prose("It reads the key [ev_9999].")
+        assert found.message == f"[ev_9999] is not an entry this answer was shown.{self.REMEDY}"
+
+    def test_a_numbered_reference_and_a_range_are_still_read(self) -> None:
+        for item in ("4", "12", "1-3", "ev_0004-ev_0006", "ev_0004+ev_0005"):
+            (found,) = self._prose(f"It reads the key [{item}].")
+            assert found.message.startswith(f"[{item}] is cited"), item
+
+    def test_an_operand_beside_a_real_citation_passes(self) -> None:
+        assert self._prose("The PEB is read through GS:[0x60] at 0x8690 [ev_0024].") == []
+        assert self._prose("The PEB is read through GS:[0x60][ev_0024].") == []
+
+    def test_beside_an_operand_only_the_wrong_citation_is_asked_about(self) -> None:
+        assert self._messages("The PEB is read through GS:[0x60] at 0x8690 [ev_9999].") == [
+            f"[ev_9999] is not an entry this answer was shown.{self.REMEDY}"
+        ]
+        assert self._messages("The PEB is read through FS:[0x30] [BINARY FACTS].") == [
+            f"[BINARY FACTS] is cited, and it is not an evidence id.{self.REMEDY}"
+        ]

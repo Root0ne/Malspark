@@ -5341,6 +5341,20 @@ _EVIDENCE_ID_RE = re.compile(r"ev_\d{3,}", re.IGNORECASE)
 # way the report's own tables print one, not a claim about where a fact came
 # from; so is a CVE.
 _IDENTIFIER_RE = re.compile(r"[A-Z]\d{4}(?:\.[A-Z]?\d{3})?|CVE-\d{4}-\d{4,}", re.IGNORECASE)
+# An operand written in a sentence — a memory address such as ``GS:[0x60]`` or
+# ``[rax+rcx*4+0x10]`` — is not a citation attempt. A citation lists ids, and
+# a writer who misses one still writes what could be one: an id, a word or a
+# heading, a numbered reference, joined by commas, semicolons, spaces or a
+# range's dash. A group whose whole content is numerals and bare names joined
+# by ``+``, ``-`` or ``*``, holding a ``0x`` numeral or a sum or a product, is
+# none of these: no id is a sum, and no note is numbered in hex. Still read: a
+# bare decimal (``[12]``) or a decimal range (``[1-3]``), a numbered
+# reference; a name with digits in it (``var_4``, ``E12``) or the evidence
+# prefix as a name (``[ev+12]``), each a mistyped id.
+_OPERAND_TERM = r"(?:0x[0-9a-f]+|\d+|[a-z_]+)"
+_OPERAND_RE = re.compile(rf"\s*{_OPERAND_TERM}(?:\s*[-+*]\s*{_OPERAND_TERM})*\s*", re.IGNORECASE)
+_OPERAND_MARK_RE = re.compile(r"0x|[+*]", re.IGNORECASE)
+_EVIDENCE_PREFIX_RE = re.compile(r"\bev\b", re.IGNORECASE)
 # How many ids the sentence names before it says how many more there are.
 _CITABLE_SHOWN = 12
 
@@ -5379,7 +5393,8 @@ def _cited_groups(text: str) -> list[str]:
     A lone group is one. A run of adjacent groups — ``[ev_0004][ev_0005]``, the
     way a model often writes two citations — is split and every group judged,
     when any group of the run holds an evidence id; a run with none, such as a
-    layout written ``[len][payload]``, is notation and is not read.
+    layout written ``[len][payload]``, is notation and is not read. An operand
+    (``_OPERAND_RE``) is never read, alone or in a run.
     """
     found: list[str] = []
     for run in _BRACKET_RUN_RE.finditer(text):
@@ -5390,8 +5405,17 @@ def _cited_groups(text: str) -> list[str]:
             for item in re.split(r"[,;]", group)
         )
         if len(groups) == 1 or cites:
-            found.extend(groups)
+            found.extend(group for group in groups if not _is_operand(group))
     return found
+
+
+def _is_operand(group: str) -> bool:
+    """Whether a bracketed group's whole content is an operand, not a citation attempt."""
+    return bool(
+        _OPERAND_RE.fullmatch(group)
+        and _OPERAND_MARK_RE.search(group)
+        and not _EVIDENCE_PREFIX_RE.search(group)
+    )
 
 
 # What a citation of a sandbox item id the run's report does not hold is told,
