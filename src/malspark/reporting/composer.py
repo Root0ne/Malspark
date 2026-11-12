@@ -150,6 +150,7 @@ from malspark.reporting.models import (
     TechnicalAnalysis,
     TechnicalSubsection,
 )
+from malspark.reporting.stated_host_values import with_held_in
 from malspark.utils.json_cleaner import safe_parse_json
 from malspark.utils.marked_cut import marked_cut
 from malspark.utils.written_forms import pack_escaped
@@ -333,13 +334,16 @@ _INSTRUCTIONS: dict[str, str] = {
         "List the identifiers a responder could search a host for — names, file and folder "
         "paths, registry keys and values, other strings the sample writes or checks — that "
         "you read in this run's evidence. Write each value once, as the entry you read it "
-        "in records it, and cite that entry. Name its kind by what the entry shows the "
-        "value is: a registry key or value only when it is written under a registry hive "
-        "or from one of its top keys (Software\\, System\\) or the entry records it as a "
-        "registry access, and 'String' when the entry does "
-        "not show what the value is. Give its purpose where the evidence or an analyst "
-        "claim above says what the sample uses the value for, in that claim's sense, and "
-        "leave the purpose empty where neither says."
+        "in records it, and cite that entry. Name its kind with one word of the schema's "
+        "list by what the entry or an analyst claim above shows the value is: a registry "
+        "key or value only when it is written under a registry hive or from one of its top "
+        "keys (Software\\, System\\) or the entry records it as a registry access, "
+        "'template' for a format string with a placeholder (%s, %x), and 'string' when "
+        "neither shows what the value is. Give its use: 'creates/writes' where the evidence "
+        "or a claim shows the sample creating or writing it, 'reads/checks' where it only "
+        "reads or checks it, 'not shown' otherwise. Give its purpose where the evidence or "
+        "an analyst claim above says what the sample uses the value for, in that claim's "
+        "sense, and leave the purpose empty where neither says."
     ),
     "commands": (
         "Extract the commands the sample accepts from its operator. Where the code you are "
@@ -469,10 +473,12 @@ _EXAMPLES: dict[str, str] = {
     ),
     "host_identifiers": (
         '{"identifiers": ['
-        '{"kind": "Note file name", "value": "RESTORE_FILES.example.txt", '
-        '"purpose": "Written to every folder it encrypts", "evidence_refs": ["ev_0014"]}, '
-        '{"kind": "Registry value", "value": "HKCU\\\\Software\\\\ExampleLocker\\\\state", '
-        '"purpose": "Marks a finished encryption pass", "evidence_refs": ["ev_0017"]}]}'
+        '{"kind": "file name", "value": "RESTORE_FILES.example.txt", '
+        '"purpose": "Written to every folder it encrypts", "use": "creates/writes", '
+        '"evidence_refs": ["ev_0014"]}, '
+        '{"kind": "registry value", "value": "HKCU\\\\Software\\\\ExampleLocker\\\\state", '
+        '"purpose": "Marks a finished encryption pass", "use": "creates/writes", '
+        '"evidence_refs": ["ev_0017"]}]}'
     ),
     "commands": (
         '{"commands": ['
@@ -1469,8 +1475,10 @@ class ReportComposer:
 
         def _identifiers(out: BaseModel | None) -> int:
             if out and isinstance(out, _HostIdentifiersOut) and out.identifiers:
-                # All of them: the section holds what the model writes.
-                ta.host_identifiers = list(out.identifiers)
+                # All of them: the section holds what the model writes, each
+                # row with the cited entries code finds its whole value in,
+                # which the export reads (``stated_host_values``).
+                ta.host_identifiers = with_held_in(list(out.identifiers), self._entries)
                 return 1
             return 0
 

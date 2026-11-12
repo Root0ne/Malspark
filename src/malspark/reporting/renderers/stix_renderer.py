@@ -84,6 +84,7 @@ from malspark.reporting.models import (
     StringIOC,
     stated_family,
 )
+from malspark.reporting.stated_host_values import ANALYSIS_SOURCE as ANALYSIS_STATED_SOURCE
 from malspark.schemas.judgement import indicator_type_for
 from malspark.schemas.sandbox_report import (
     LINEAGE_FILE,
@@ -2637,8 +2638,17 @@ def indicator_publish_reason(
     kept_address: str = "",
     url_only: str = "",
     bound: str = "",
+    stated: Any = None,
 ) -> str | None:
     """Why this run may publish one indicator of ``kind``, or ``None``.
+
+    ``stated`` is a host value the analysis states (source ``analysis``: a row
+    of the report model's identifier table, read by
+    ``stated_host_values.read_stated``). It stands on the analysis's typing
+    and on code's checks of it, value by value — a typed kind the export has
+    an object for, created or written, found whole in an entry the row cites,
+    no template, not every host's, a verdict that publishes
+    (``stated_host_values.stated_refusal``) — and on nothing else.
 
     ``bound`` is the chain that binds a decoded text to the API argument the
     code passes it to whole (``reporting.call_bindings``): such a value stands
@@ -2716,6 +2726,10 @@ def indicator_publish_reason(
     """
     if kind == "ip" and is_public_resolver(value):
         return None
+    if stated is not None:
+        from malspark.reporting.stated_host_values import stated_reason, stated_refusal
+
+        return None if stated_refusal(stated, verdict) else stated_reason(stated)
     if bound:
         # Never under a Benign verdict, nor one the judge stated no confidence
         # for, as a value only a recovering tool read (``_emulation_admits``).
@@ -4477,6 +4491,7 @@ def publish_answer(
     judge_only: str = "",
     url_only: str = "",
     bound: str = "",
+    stated: Any = None,
 ) -> str:
     """The publish rule's answer for one row, as the report prints it.
 
@@ -4510,9 +4525,14 @@ def publish_answer(
         kept_address=kept_address,
         url_only=url_only,
         bound=bound,
+        stated=stated,
     )
     if admitted:
         return yes_because(admitted)
+    if stated is not None:
+        from malspark.reporting.stated_host_values import stated_refusal
+
+        return f"no: {stated_refusal(stated, verdict)}"
     if kind == "ip" and is_public_resolver(text):
         return public_resolver_reason(unattributed, listed_by, mentioned_by)
     if kind == "url" and is_public_resolver(url_host(text).strip("[]")):
@@ -4904,7 +4924,11 @@ def exported_indicator_values(bundle: Any) -> list[ExportedValue]:
 # their own steps; the judge's values are its own indicators.
 # A value the code passes whole to an API argument (``call_bindings``) is a
 # row of the same step, a user agent among them.
-_OBSERVED_HOST_SOURCES = frozenset({"sandbox", "persistence", "static", BOUND_SOURCE})
+# A value the analysis states and code checked (``stated_host_values``) is one
+# too, under its own source.
+_OBSERVED_HOST_SOURCES = frozenset(
+    {"sandbox", "persistence", "static", BOUND_SOURCE, ANALYSIS_STATED_SOURCE}
+)
 _OBSERVED_HOST_KINDS = frozenset({"hash", "path", "registry", "mutex", "user_agent"})
 
 
