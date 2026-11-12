@@ -60,7 +60,7 @@ analyses of the family.
 
 | Reference facts recovered | Wrong | Verified facts beyond the key | Cost |
 | :-- | :-- | :-- | :-- |
-| **83 of 88** (55 found, 28 partly) | **0** | **38** | **8.24 USD** (129 model calls, 84 minutes) |
+| **84 of 89** (56 found, 28 partly) | **0** | **37** | **8.24 USD** (129 model calls, 84 minutes) |
 
 The method and the per-group scores are on the
 [benchmark page](https://malspark.com/docs/benchmark/).

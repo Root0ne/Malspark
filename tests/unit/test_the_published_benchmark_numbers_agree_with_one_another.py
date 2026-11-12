@@ -156,19 +156,20 @@ ORIGINS = {"core", "sharpened", "added", "completion"}
 _EIGHT = {"in part": "partly", "none, family": "noneFamily", "none, this file": "noneFile"}
 # The facts beyond the key that no analysis prints even in part; every other one
 # is printed in part. Pinned by id, so two readings swapped are caught too.
+# "None" requires that no reading at all found a part of the fact, and the earlier
+# adjudicated audit counts as a reading beside the later text and figure readings.
+# That is why a row may stay "in part" although the later readings found nothing:
+# it is the remainder of something an analysis prints, so the page claims less.
 _UNPRINTED = {
     ("A", "34"): "none, family",
     ("B", "30"): "none, family",
     ("B", "N9"): "none, family",
     ("B", "#39"): "none, family",
     ("B", "N1"): "none, family",
-    ("B", "N20"): "none, family",
-    ("A", "27"): "none, this file",
     ("B", "N8"): "none, this file",
     ("C", "1"): "none, this file",
     ("C", "26"): "none, this file",
     ("C", "51"): "none, this file",
-    ("C", "N10"): "none, this file",
 }
 
 
@@ -415,13 +416,18 @@ def test_the_published_benchmark_numbers_agree_with_one_another() -> None:
 @pytest.mark.parametrize(
     ("target", "old", "new"),
     [
-        ("page", "  found: 55,", "  found: 54,"),
-        ("page", "  items: 88,", "  items: 89,"),
+        ("page", "  found: 56,", "  found: 55,"),
+        ("page", "  items: 89,", "  items: 90,"),
         ("page", "  partlyBody: 23,", "  partlyBody: 22,"),
-        ("page", "  beyondKey: 38,", "  beyondKey: 39,"),
-        ("page", "  beyondKeyStrict: 37,", "  beyondKeyStrict: 38,"),
-        ("page", "  audit: { partly: 26,", "  audit: { partly: 27,"),
-        ("page", "none: 12, noneFamily: 6,", "none: 12, noneFamily: 7,"),
+        ("page", "  beyondKey: 37,", "  beyondKey: 38,"),
+        ("page", "  beyondKeyStrict: 36,", "  beyondKeyStrict: 37,"),
+        ("page", "  audit: { partly: 28,", "  audit: { partly: 29,"),
+        (
+            "page",
+            "    ['K5', 'Persistence', 5, 4, 1, 0, 0, 0],",
+            "    ['K5', 'Persistence', 4, 4, 1, 0, 0, 0],",
+        ),
+        ("page", "none: 9, noneFamily: 5,", "none: 9, noneFamily: 6,"),
         (
             "page",
             "    ['K6', 'Command and control', 10, 4, 6, 0, 0, 0],",
@@ -437,16 +443,22 @@ def test_the_published_benchmark_numbers_agree_with_one_another() -> None:
         ("page", "    'K1: the family’s other names", "    // 'K1: the family’s other names"),
         ("page", "    'K9: update_data.dat is named", "    // 'K9: update_data.dat is named"),
         ("page", "'none, family'],", "'in part'],"),
-        ("readme", "**83 of 88** (55 found, 28 partly)", "**82 of 88** (55 found, 27 partly)"),
-        ("readme", "| **38** |", "| **37** |"),
-        ("docs", "recovered 83 of 88", "recovered 84 of 88"),
-        ("docs", "stated 38 verified", "stated 37 verified"),
+        # A fact of the none class moved back to the part class, the counts unchanged.
+        (
+            "page",
+            "'ev_0018', '§3', '', 'none, this file'],",
+            "'ev_0018', '§3', '', 'in part'],",
+        ),
+        ("readme", "**84 of 89** (56 found, 28 partly)", "**83 of 89** (55 found, 28 partly)"),
+        ("readme", "| **37** |", "| **38** |"),
+        ("docs", "recovered 84 of 89", "recovered 84 of 88"),
+        ("docs", "stated 37 verified", "stated 38 verified"),
         ("docs", "got none wrong", "got 1 wrong"),
         ("readme", "**8.24 USD**", "**9.24 USD**"),
         ("readme", "(129 model calls,", "(130 model calls,"),
         ("readme", "calls, 84 minutes)", "calls, 83 minutes)"),
-        ("gate", "`55 found / 23 partly (body) /", "`54 found / 23 partly (body) /"),
-        ("gate", "credited 83 of 88`", "credited 83 of 89`"),
+        ("gate", "`56 found / 23 partly (body) /", "`55 found / 23 partly (body) /"),
+        ("gate", "credited 84 of 89`", "credited 83 of 89`"),
         # A recovered fact without its entries, a missed one with entries, and an
         # entry the published evidence does not hold.
         (
@@ -484,12 +496,19 @@ def test_the_published_benchmark_numbers_agree_with_one_another() -> None:
         # changed, and an id that is not a completion row.
         (
             "page",
-            "['K1.6', 'K1.7', 'K1.11', 'K1.12', 'K7.21']",
+            "['K1.6', 'K1.7', 'K1.11', 'K1.12', 'K7.21', 'K5.7']",
             "['K1.6', 'K1.7', 'K1.11']",
         ),
-        ("page", "Five more items", "Three more items"),
-        ("page", "five\nwhen the run’s facts", "three\nwhen the run’s facts"),
-        ("page", "'K1.12', 'K7.21']", "'K1.12', 'K7.1']"),
+        ("page", "Six more items", "Three more items"),
+        ("page", "six\nwhen the run’s facts", "three\nwhen the run’s facts"),
+        ("page", "'K7.21', 'K5.7']", "'K7.21', 'K5.8']"),
+        # The scheduled task's registration is a key item now: listed again beyond it.
+        (
+            "page",
+            "  ['B', '38', 'Task COM chain",
+            "  ['A', 'N13', 'The task definition and its registration', 'ev_0077, ev_0092', "
+            "'§5.3', '', 'in part'],\n  ['B', '38', 'Task COM chain",
+        ),
         # An example worded for another fact than the one it points at.
         (
             "page",
@@ -501,12 +520,14 @@ def test_the_published_benchmark_numbers_agree_with_one_another() -> None:
         # Two readings against the eight analyses swapped; the counts stay equal.
         (
             "page",
-            "'process-tree detection', 'none, this file'],\n"
-            "  ['A', '34', 'First beacon after 1800 × 100 ms ≈ 180 s', 'ev_0067', "
-            "'§4 step 9, §6.1', 'sandbox timeout, hunting window', 'none, family'],",
-            "'process-tree detection', 'none, family'],\n"
-            "  ['A', '34', 'First beacon after 1800 × 100 ms ≈ 180 s', 'ev_0067', "
-            "'§4 step 9, §6.1', 'sandbox timeout, hunting window', 'none, this file'],",
+            "'ev_0051', '§5.1', '', 'none, this file'],\n"
+            "  ['B', 'N9', 'The writer 0x7acc calls the NtCreateFile wrapper 0x77b0 "
+            "(disposition 3) and the NtWriteFile wrapper 0x7a54, which is decompiled', "
+            "'ev_0068, ev_0081', '§5.5', '', 'none, family'],",
+            "'ev_0051', '§5.1', '', 'none, family'],\n"
+            "  ['B', 'N9', 'The writer 0x7acc calls the NtCreateFile wrapper 0x77b0 "
+            "(disposition 3) and the NtWriteFile wrapper 0x7a54, which is decompiled', "
+            "'ev_0068, ev_0081', '§5.5', '', 'none, this file'],",
         ),
         # A missed item replaced by a second copy of another.
         (
