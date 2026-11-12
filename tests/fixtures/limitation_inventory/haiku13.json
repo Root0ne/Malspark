@@ -1,0 +1,904 @@
+{
+  "run": "haiku13",
+  "inventory": {
+    "entries": 149,
+    "trimmed": 0,
+    "image_bases": [
+      1331636994048
+    ],
+    "failed": [
+      {
+        "entry": "ev_0139",
+        "tool": "decompile_function",
+        "error": "[ERROR] Cannot find function in 0x1360bc03728",
+        "asked": [
+          1331637008168
+        ],
+        "answered": [
+          [
+            1331637008168,
+            "ev_0142"
+          ]
+        ],
+        "redone_by": []
+      }
+    ],
+    "listed": 92,
+    "unread": 42,
+    "unread_first": [
+      1331637032068,
+      1331637036444
+    ],
+    "not_offered": [
+      {
+        "tool": "check_domain_reputation",
+        "reason": "VIRUSTOTAL_API_KEY is not configured"
+      },
+      {
+        "tool": "check_hash",
+        "reason": "VIRUSTOTAL_API_KEY is not configured"
+      },
+      {
+        "tool": "check_ip_reputation",
+        "reason": "VIRUSTOTAL_API_KEY is not configured; ABUSEIPDB_API_KEY is not configured"
+      }
+    ],
+    "withheld": 16,
+    "recorded": [],
+    "sandbox_observed": true,
+    "sandbox_entry": "ev_0026",
+    "sandbox_sections": [
+      {
+        "name": "files",
+        "items": null,
+        "unavailable": false
+      },
+      {
+        "name": "alerts",
+        "items": null,
+        "unavailable": false
+      },
+      {
+        "name": "events",
+        "items": null,
+        "unavailable": true
+      },
+      {
+        "name": "dropped",
+        "items": 0,
+        "unavailable": false
+      },
+      {
+        "name": "mutexes",
+        "items": null,
+        "unavailable": false
+      },
+      {
+        "name": "network",
+        "items": 4,
+        "unavailable": false
+      },
+      {
+        "name": "apistats",
+        "items": null,
+        "unavailable": true
+      },
+      {
+        "name": "channels",
+        "items": 12,
+        "unavailable": false
+      },
+      {
+        "name": "commands",
+        "items": null,
+        "unavailable": false
+      },
+      {
+        "name": "registry",
+        "items": null,
+        "unavailable": true
+      },
+      {
+        "name": "services",
+        "items": null,
+        "unavailable": false
+      },
+      {
+        "name": "api_calls",
+        "items": null,
+        "unavailable": true
+      },
+      {
+        "name": "extracted",
+        "items": 1,
+        "unavailable": false
+      },
+      {
+        "name": "procdumps",
+        "items": null,
+        "unavailable": false
+      },
+      {
+        "name": "processes",
+        "items": 3,
+        "unavailable": false
+      },
+      {
+        "name": "signatures",
+        "items": 3,
+        "unavailable": false
+      },
+      {
+        "name": "screenshots",
+        "items": null,
+        "unavailable": true
+      },
+      {
+        "name": "resolved_apis",
+        "items": null,
+        "unavailable": false
+      }
+    ],
+    "capture": {
+      "entry": "ev_0017",
+      "duration_s": 576.0,
+      "packets": 1474,
+      "packets_read": 1474
+    },
+    "questions": [
+      {
+        "agent": "all_tools_static_r2",
+        "question": "Which command code triggers the 0x6c2c, 0x6e04 and 0x7170 download routines, and does it come from the C2 response?",
+        "reason": "needs_sandbox_run",
+        "cites": [
+          "ev_0077",
+          "ev_0081"
+        ],
+        "addresses": [
+          1331637021740,
+          1331637022212,
+          1331637023088,
+          1331637016400
+        ],
+        "listed": [
+          [
+            1331637021740,
+            [
+              "ev_0069"
+            ]
+          ],
+          [
+            1331637022212,
+            [
+              "ev_0069"
+            ]
+          ],
+          [
+            1331637023088,
+            [
+              "ev_0081"
+            ]
+          ],
+          [
+            1331637016400,
+            [
+              "ev_0067"
+            ]
+          ]
+        ],
+        "listed_after": false
+      },
+      {
+        "agent": "all_tools_static_r2",
+        "question": "Does RegisterTaskDefinition succeed, and what task name is registered?",
+        "reason": "needs_sandbox_run",
+        "cites": [
+          "ev_0021",
+          "ev_0077",
+          "ev_0092"
+        ],
+        "addresses": [
+          1331637044268
+        ],
+        "listed": [
+          [
+            1331637044268,
+            [
+              "ev_0077"
+            ]
+          ]
+        ],
+        "listed_after": false
+      },
+      {
+        "agent": "all_tools_static_r2",
+        "question": "What does 0xbcac return on a match, which decides which branch of 0x6f48 writes the file?",
+        "reason": "tool_failed",
+        "cites": [
+          "ev_0067"
+        ],
+        "addresses": [
+          1331637042348,
+          1331637022536
+        ],
+        "listed": [
+          [
+            1331637022536,
+            [
+              "ev_0067"
+            ]
+          ]
+        ],
+        "listed_after": false
+      },
+      {
+        "agent": "all_tools_static_r2",
+        "question": "Why does decompile_function fail on 0x3728, and what does 0x3728's Task Scheduler call receive?",
+        "reason": "tool_failed",
+        "cites": [
+          "ev_0139",
+          "ev_0142"
+        ],
+        "addresses": [
+          1331637008168
+        ],
+        "listed": [
+          [
+            1331637008168,
+            [
+              "ev_0090",
+              "ev_0142"
+            ]
+          ]
+        ],
+        "listed_after": false
+      },
+      {
+        "agent": "static",
+        "question": "Do the download-and-run and self-delete steps execute, and which file is run?",
+        "reason": "needs_sandbox_run",
+        "cites": [
+          "ev_0012",
+          "ev_0015",
+          "ev_0069"
+        ],
+        "addresses": [],
+        "listed": [],
+        "listed_after": false
+      },
+      {
+        "agent": "static",
+        "question": "What is the scheduled task's name and action target?",
+        "reason": "no_capable_tool",
+        "cites": [
+          "ev_0021",
+          "ev_0131",
+          "ev_0134"
+        ],
+        "addresses": [
+          1331637043612,
+          1331637008168
+        ],
+        "listed": [
+          [
+            1331637043612,
+            [
+              "ev_0092"
+            ]
+          ],
+          [
+            1331637008168,
+            [
+              "ev_0090",
+              "ev_0142"
+            ]
+          ]
+        ],
+        "listed_after": false
+      },
+      {
+        "agent": "static",
+        "question": "What does the 0x8820 value gate (0x3868) measure, and does it stop the sandbox run?",
+        "reason": "no_capable_tool",
+        "cites": [
+          "ev_0025",
+          "ev_0069"
+        ],
+        "addresses": [
+          1331637028896,
+          1331637008488
+        ],
+        "listed": [
+          [
+            1331637028896,
+            [
+              "ev_0082"
+            ]
+          ],
+          [
+            1331637008488,
+            [
+              "ev_0069"
+            ]
+          ]
+        ],
+        "listed_after": false
+      },
+      {
+        "agent": "static",
+        "question": "Is the mutex name 'runnung', and is it the argument to CreateMutexW?",
+        "reason": "obfuscated",
+        "cites": [
+          "ev_0021",
+          "ev_0069"
+        ],
+        "addresses": [
+          1331637008488
+        ],
+        "listed": [
+          [
+            1331637008488,
+            [
+              "ev_0069"
+            ]
+          ]
+        ],
+        "listed_after": false
+      },
+      {
+        "agent": "static",
+        "question": "Does the sample ever write a Run or RunOnce value?",
+        "reason": "needs_sandbox_run",
+        "cites": [
+          "ev_0020",
+          "ev_0026"
+        ],
+        "addresses": [],
+        "listed": [],
+        "listed_after": false
+      },
+      {
+        "agent": "static",
+        "question": "Which process, if any, receives injected code?",
+        "reason": "needs_sandbox_run",
+        "cites": [
+          "ev_0020",
+          "ev_0025"
+        ],
+        "addresses": [],
+        "listed": [],
+        "listed_after": false
+      },
+      {
+        "agent": "static",
+        "question": "What is the role of svchost.exe -k GPSvcGroup (pid 90)?",
+        "reason": "needs_sandbox_run",
+        "cites": [
+          "ev_0012",
+          "ev_0028"
+        ],
+        "addresses": [],
+        "listed": [],
+        "listed_after": false
+      },
+      {
+        "agent": "static",
+        "question": "What is the malware family, if any?",
+        "reason": "other",
+        "cites": [
+          "ev_0014",
+          "ev_0018"
+        ],
+        "addresses": [],
+        "listed": [],
+        "listed_after": false
+      },
+      {
+        "agent": "dynamic",
+        "question": "Did the export's gates (debugger, process count, adapter address, mutex) pass in the sandbox, so that the beacon, discovery and install ran at all?",
+        "reason": "needs_sandbox_run",
+        "cites": [
+          "ev_0077",
+          "ev_0103",
+          "ev_0111",
+          "ev_0112"
+        ],
+        "addresses": [],
+        "listed": [],
+        "listed_after": false
+      },
+      {
+        "agent": "dynamic",
+        "question": "Do the decoded C2 hosts resolve or get contacted by the sample?",
+        "reason": "other",
+        "cites": [
+          "ev_0017",
+          "ev_0103"
+        ],
+        "addresses": [],
+        "listed": [],
+        "listed_after": false
+      },
+      {
+        "agent": "dynamic",
+        "question": "Do the cmd.exe discovery commands run, and what would their output contain?",
+        "reason": "needs_sandbox_run",
+        "cites": [
+          "ev_0012",
+          "ev_0102"
+        ],
+        "addresses": [],
+        "listed": [],
+        "listed_after": false
+      },
+      {
+        "agent": "dynamic",
+        "question": "Is a Run-key or Startup-folder value written?",
+        "reason": "needs_sandbox_run",
+        "cites": [
+          "ev_0110",
+          "ev_0112"
+        ],
+        "addresses": [],
+        "listed": [],
+        "listed_after": false
+      },
+      {
+        "agent": "dynamic",
+        "question": "Is the 'Updater' task registered, and with what action and trigger?",
+        "reason": "needs_sandbox_run",
+        "cites": [
+          "ev_0026",
+          "ev_0077",
+          "ev_0092"
+        ],
+        "addresses": [
+          1331637008168,
+          1331637044268
+        ],
+        "listed": [
+          [
+            1331637008168,
+            [
+              "ev_0090",
+              "ev_0142"
+            ]
+          ],
+          [
+            1331637044268,
+            [
+              "ev_0077"
+            ]
+          ]
+        ],
+        "listed_after": false
+      },
+      {
+        "agent": "dynamic",
+        "question": "Do the CRC32 values reproduce against the export tables of the 27 DLLs? An upstream emulation of one value did not match.",
+        "reason": "no_capable_tool",
+        "cites": [
+          "ev_0020",
+          "ev_0023"
+        ],
+        "addresses": [],
+        "listed": [],
+        "listed_after": false
+      },
+      {
+        "agent": "dynamic",
+        "question": "What mutex name does the gate 0x3868 pass to CreateMutexW?",
+        "reason": "other",
+        "cites": [
+          "ev_0019",
+          "ev_0021",
+          "ev_0025"
+        ],
+        "addresses": [
+          1331637008488,
+          1331637062752
+        ],
+        "listed": [
+          [
+            1331637008488,
+            [
+              "ev_0069"
+            ]
+          ]
+        ],
+        "listed_after": false
+      },
+      {
+        "agent": "dynamic",
+        "question": "Does 0x463c open only its own PID, and does any routine write into another process?",
+        "reason": "other",
+        "cites": [
+          "ev_0025",
+          "ev_0069",
+          "ev_0107"
+        ],
+        "addresses": [
+          1331637012028
+        ],
+        "listed": [
+          [
+            1331637012028,
+            [
+              "ev_0069"
+            ]
+          ]
+        ],
+        "listed_after": false
+      },
+      {
+        "agent": "dynamic",
+        "question": "Is the body fetched by 0x6f48 written to disk through 0x7acc and then run?",
+        "reason": "other",
+        "cites": [
+          "ev_0067",
+          "ev_0112"
+        ],
+        "addresses": [
+          1331637022536,
+          1331637025484
+        ],
+        "listed": [
+          [
+            1331637022536,
+            [
+              "ev_0067"
+            ]
+          ],
+          [
+            1331637025484,
+            [
+              "ev_0068"
+            ]
+          ]
+        ],
+        "listed_after": false
+      },
+      {
+        "agent": "dynamic",
+        "question": "Which family is it, Latrodectus or an IcedID-overlapping build?",
+        "reason": "no_capable_tool",
+        "cites": [
+          "ev_0018",
+          "ev_0108",
+          "ev_0109"
+        ],
+        "addresses": [],
+        "listed": [],
+        "listed_after": false
+      },
+      {
+        "agent": "dynamic",
+        "question": "What does the RC4-encrypted URL table file (update_data.dat) hold, and what does the beacon do with it?",
+        "reason": "other",
+        "cites": [
+          "ev_0021",
+          "ev_0082"
+        ],
+        "addresses": [
+          1331637047060,
+          1331637047752,
+          1331637060696
+        ],
+        "listed": [
+          [
+            1331637047060,
+            [
+              "ev_0094"
+            ]
+          ],
+          [
+            1331637047752,
+            [
+              "ev_0098"
+            ]
+          ]
+        ],
+        "listed_after": false
+      },
+      {
+        "agent": "dynamic",
+        "question": "Did the export's environment and debugger gates pass in the sandbox, and did the beacon start at all?",
+        "reason": "needs_sandbox_run",
+        "cites": [
+          "ev_0103",
+          "ev_0111",
+          "ev_0112"
+        ],
+        "addresses": [],
+        "listed": [],
+        "listed_after": false
+      },
+      {
+        "agent": "dynamic",
+        "question": "Do the two C2 names resolve or get contacted by the sample?",
+        "reason": "other",
+        "cites": [
+          "ev_0017",
+          "ev_0103"
+        ],
+        "addresses": [],
+        "listed": [],
+        "listed_after": false
+      },
+      {
+        "agent": "dynamic",
+        "question": "Do the cmd.exe and net discovery commands run, and what does their output contain?",
+        "reason": "needs_sandbox_run",
+        "cites": [
+          "ev_0012",
+          "ev_0102"
+        ],
+        "addresses": [],
+        "listed": [],
+        "listed_after": false
+      },
+      {
+        "agent": "dynamic",
+        "question": "Is a Run key or Startup-folder write made?",
+        "reason": "needs_sandbox_run",
+        "cites": [
+          "ev_0110",
+          "ev_0112"
+        ],
+        "addresses": [],
+        "listed": [],
+        "listed_after": false
+      },
+      {
+        "agent": "dynamic",
+        "question": "Is the 'Updater' logon task actually registered, and with what action?",
+        "reason": "needs_sandbox_run",
+        "cites": [
+          "ev_0019",
+          "ev_0021",
+          "ev_0026"
+        ],
+        "addresses": [
+          1331637008168,
+          1331637039940,
+          1331637044268
+        ],
+        "listed": [
+          [
+            1331637008168,
+            [
+              "ev_0090",
+              "ev_0142"
+            ]
+          ],
+          [
+            1331637039940,
+            [
+              "ev_0092"
+            ]
+          ],
+          [
+            1331637044268,
+            [
+              "ev_0077"
+            ]
+          ]
+        ],
+        "listed_after": false
+      },
+      {
+        "agent": "dynamic",
+        "question": "Does any routine write into another process, or does 0x463c open only its own PID?",
+        "reason": "other",
+        "cites": [
+          "ev_0025",
+          "ev_0107"
+        ],
+        "addresses": [
+          1331637012028
+        ],
+        "listed": [
+          [
+            1331637012028,
+            [
+              "ev_0069"
+            ]
+          ]
+        ],
+        "listed_after": false
+      },
+      {
+        "agent": "dynamic",
+        "question": "Do the CRC32 hash values reproduce against the 27 DLL export tables?",
+        "reason": "no_capable_tool",
+        "cites": [
+          "ev_0020",
+          "ev_0023"
+        ],
+        "addresses": [],
+        "listed": [],
+        "listed_after": false
+      },
+      {
+        "agent": "dynamic",
+        "question": "What is the mutex name passed to CreateMutexW in 0x3868?",
+        "reason": "other",
+        "cites": [
+          "ev_0019",
+          "ev_0021",
+          "ev_0025"
+        ],
+        "addresses": [
+          1331637008488
+        ],
+        "listed": [
+          [
+            1331637008488,
+            [
+              "ev_0069"
+            ]
+          ]
+        ],
+        "listed_after": false
+      },
+      {
+        "agent": "dynamic",
+        "question": "Which family is it: Latrodectus or an IcedID-overlapping build?",
+        "reason": "no_capable_tool",
+        "cites": [
+          "ev_0018",
+          "ev_0108",
+          "ev_0109"
+        ],
+        "addresses": [],
+        "listed": [],
+        "listed_after": false
+      },
+      {
+        "agent": "dynamic",
+        "question": "Which process is the parent of pids 83 and 88 (56 and 82), and is svchost pid 90 spawned by anything in the sample?",
+        "reason": "other",
+        "cites": [
+          "ev_0102"
+        ],
+        "addresses": [],
+        "listed": [],
+        "listed_after": false
+      },
+      {
+        "agent": "network",
+        "question": "Did the sample ever contact titnovacrion.top or skinnyjeanso.com?",
+        "reason": "needs_sandbox_run",
+        "cites": [
+          "ev_0013",
+          "ev_0115",
+          "ev_0117"
+        ],
+        "addresses": [],
+        "listed": [],
+        "listed_after": false
+      },
+      {
+        "agent": "network",
+        "question": "Which hostnames sit behind 85.210.193.152:443, 85.210.196.11:443 and 135.232.92.97:443?",
+        "reason": "no_capable_tool",
+        "cites": [
+          "ev_0117",
+          "ev_0118",
+          "ev_0119",
+          "ev_0120"
+        ],
+        "addresses": [],
+        "listed": [],
+        "listed_after": false
+      },
+      {
+        "agent": "network",
+        "question": "Which process produced the 14 external conversations?",
+        "reason": "needs_sandbox_run",
+        "cites": [
+          "ev_0013",
+          "ev_0017",
+          "ev_0028"
+        ],
+        "addresses": [],
+        "listed": [],
+        "listed_after": false
+      },
+      {
+        "agent": "network",
+        "question": "Does the beacon pass its start-up gates and start?",
+        "reason": "needs_sandbox_run",
+        "cites": [
+          "ev_0012",
+          "ev_0077"
+        ],
+        "addresses": [],
+        "listed": [],
+        "listed_after": false
+      },
+      {
+        "agent": "network",
+        "question": "Is the download path (0x6f48) reached, and what does it fetch?",
+        "reason": "needs_sandbox_run",
+        "cites": [
+          "ev_0015",
+          "ev_0021",
+          "ev_0025"
+        ],
+        "addresses": [
+          1331637022536
+        ],
+        "listed": [
+          [
+            1331637022536,
+            [
+              "ev_0067"
+            ]
+          ]
+        ],
+        "listed_after": false
+      },
+      {
+        "agent": "network",
+        "question": "What is the plaintext of the RC4-encrypted reports?",
+        "reason": "obfuscated",
+        "cites": [
+          "ev_0008",
+          "ev_0021"
+        ],
+        "addresses": [],
+        "listed": [],
+        "listed_after": false
+      },
+      {
+        "agent": "network",
+        "question": "Do the sandbox DNS queries name anything?",
+        "reason": "needs_sandbox_run",
+        "cites": [
+          "ev_0013",
+          "ev_0115"
+        ],
+        "addresses": [],
+        "listed": [],
+        "listed_after": false
+      },
+      {
+        "agent": "network",
+        "question": "Is the download path (0x6f48) ever reached, and what does it fetch?",
+        "reason": "needs_sandbox_run",
+        "cites": [
+          "ev_0015",
+          "ev_0021",
+          "ev_0025"
+        ],
+        "addresses": [
+          1331637022536
+        ],
+        "listed": [
+          [
+            1331637022536,
+            [
+              "ev_0067"
+            ]
+          ]
+        ],
+        "listed_after": false
+      }
+    ]
+  },
+  "printed": [
+    "Tool calls: 1 of 149 failed and was not redone: decompile_function for offset 0x3728 (ev_0139; a later call for the same address: ev_0142).",
+    "Code read: 92 routines have listed code; 42 routines they call have none, first on the start path: offsets 0x9484, 0xa59c.",
+    "Tools the run could not offer: check_domain_reputation, check_hash (\"VIRUSTOTAL_API_KEY is not configured\"); check_ip_reputation (\"VIRUSTOTAL_API_KEY is not configured; ABUSEIPDB_API_KEY is not configured\").",
+    "Sandbox report [ev_0026]: events, apistats, registry, api_calls and screenshots are unavailable from the sandbox; files, alerts, mutexes, commands, services, procdumps and resolved_apis are not in the sandbox report as read.",
+    "Packet capture [ev_0017] covers 576.0 s (1,474 packets); traffic outside that window was not captured.",
+    "Open questions: 41 filed (needs a sandbox run: 20, other: 10, no capable tool: 7, obfuscated code: 2, a tool failed: 2); 14 name only routines that have listed code. All are in the bundle.",
+    "37 analyst claims in force are not discussed in this report and are printed whole in the bundle."
+  ],
+  "not_printed": [
+    "Tools withheld: 16 tools a server offers, withheld from the agents by the job's configuration (the operator's choice, listed in the bundle).",
+    "Sandbox report [ev_0026]: holds dropped (0), network (4), channels (12), extracted (1), processes (3), signatures (3).",
+    "Open questions naming only routines that have listed code: 14; the routines: offset 0x6c2c in ev_0069; offset 0x6e04 in ev_0069; offset 0x7170 in ev_0081; offset 0x5750 in ev_0067; offset 0xc42c in ev_0077; offset 0x3728 in ev_0090, ev_0142; offset 0xc19c in ev_0092; offset 0x8820 in ev_0082; offset 0x3868 in ev_0069; offset 0x463c in ev_0069; offset 0x6f48 in ev_0067; offset 0x7acc in ev_0068; and 1 more."
+  ]
+}

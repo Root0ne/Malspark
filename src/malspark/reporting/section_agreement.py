@@ -27,12 +27,15 @@ So, after every section is written, the reporter's model is shown, once:
 - the debate's mediations, in round order, as the mediator wrote them;
 - every passage written without the code, under an id naming where it stands;
   the composed conclusion and limitations paragraph among them, which sum up
-  what sections 4 to 6 state (T-554); the limitations paragraph, where a
-  sentence of it says a call failed or a reading could not be made and the
-  ledger says otherwise (a later call redid the call, or an entry lists the
-  code), with the facts it rests on: the failed calls and the later calls that
-  answered them, the tools not run, the recorded limitations and the open
-  questions (``reporting.limitation_facts``, T-526).
+  what sections 4 to 6 state (T-554); the limitations paragraph, held to the
+  failed calls where a sentence of it says a call failed or a reading could not
+  be made and the ledger says otherwise (a later call redid the call, or an
+  entry lists the code, T-526); and, wherever the paragraph stands, the rows of
+  the limitations inventory as facts (``inv.N``): the failed calls and the
+  later calls that answered them, the code read, the tools not run, the
+  recorded limitations, the sandbox's sections, the capture and the open
+  questions (``reporting.limitation_inventory``, T-601), which speak of a
+  sentence only where the paragraph is held.
 
 It lists each sentence of a passage written without the code that calls
 absent, unknown or open, or states the opposite of, what a section 5 passage,
@@ -242,6 +245,7 @@ from malspark.reporting.models import (
     FlowStep,
     HostIdentifier,
     KeyFinding,
+    LimitationInventory,
     MalwareReport,
     TechnicalSubsection,
 )
@@ -251,7 +255,7 @@ from malspark.utils.written_forms import pack_escaped, pack_reads
 
 if TYPE_CHECKING:
     from malspark.reporting.agreement_facts import LedgerFacts
-    from malspark.reporting.limitation_facts import FailedCall
+    from malspark.reporting.limitation_facts import FailedCall, LimitationFacts
 
 # The producer the round's unresolved findings are recorded under.
 AGREEMENT_PRODUCER = "agreement"
@@ -490,6 +494,11 @@ class Passage:
     # checks of a keep read it (:func:`_ledger_refuses_keep`). Each is offered a rewrite or a
     # drop alone (T-600).
     unkept: tuple[str, ...] = ()
+    # A fact that speaks of no sentence: a row of the limitations inventory shown where the
+    # paragraph is not held to the failed calls, where dev showed none of its facts. It is
+    # shown and may be named, but raises no refusal of a row that does not name it, no item a
+    # quote leaves out and no question of its own (T-601).
+    silent: bool = False
 
 
 def _ids(*sources: Any) -> frozenset[str]:
@@ -801,17 +810,18 @@ def passages_of(
     # 0x3074 and 0x8560 were not read" or "read only in part" names its routine
     # in no shape the unread reading knows.
     facts.extend(_ledger_passages(held, shown, found, also=_named_addresses(closing)))
-    # The limitations paragraph is held to the failed calls only where a
-    # sentence of it says a call failed that the ledger says otherwise of
-    # (T-526), its facts after the ledger's own, which it leaves as they were;
-    # it then stands where the paragraph alone stood.
+    # The limitations inventory's rows are shown wherever the limitations
+    # paragraph stands (``inv.N``, T-601), after the ledger's own facts, which
+    # they leave as they were. The paragraph is held to the failed calls only
+    # where a sentence of it says a call failed that the ledger says otherwise
+    # of (T-526); it then stands where the paragraph alone stood.
     limitations, limitation_facts, limited = _limitation_passages(report, held, found, facts)
     if limitations:
-        # A false failure is wrong in any section: while the limitation facts
-        # are shown, a rewrite of any other passage adds none. A section 5
-        # rewrite is the platform's own (``_qualified``), whose fact clauses
-        # write kind words ("decompiled or disassembled"): it is read by its
-        # citations alone.
+        # A false failure is wrong in any section: while the paragraph is held
+        # to the failed calls, a rewrite of any other passage adds none. A
+        # section 5 rewrite is the platform's own (``_qualified``), whose fact
+        # clauses write kind words ("decompiled or disassembled"): it is read
+        # by its citations alone.
         for passage in (*coded, *uncoded):
             if passage.id == "limitations":
                 continue
@@ -823,6 +833,11 @@ def passages_of(
                 )
         uncoded[:] = [p for p in uncoded if p.id != "limitations"]
         uncoded.extend(limitations)
+    else:
+        # Not held, the rows are shown where dev showed none of the paragraph's facts:
+        # they speak of no sentence, so every hold, end and refusal is dev's (T-601).
+        for fact in limitation_facts:
+            fact.silent = True
     facts.extend(limitation_facts)
     failed = _failed_calls(held, found)
     counts = _failure_counts(failed)
@@ -836,7 +851,7 @@ def passages_of(
             for passage in writable
             for sentence in _sentences_of(passage.text)
         )
-        if miscounted or limitation_facts:
+        if miscounted or limitations:
             facts.append(_count_fact(counts, failed))
         for passage in writable:
             passage.counts = counts
@@ -3391,22 +3406,16 @@ def _limitation_passages(
     found: LedgerFacts | None,
     shown_facts: Sequence[Passage] = (),
 ) -> tuple[list[Passage], list[Passage], list[FailedCall]]:
-    """The limitations paragraph, the facts it rests on and the failed calls, or none.
+    """The limitations paragraph where it is held to the failed calls, the limitations
+    inventory's rows as facts, and the failed calls those rows show.
 
-    Held this way only where a sentence of the composed paragraph is held to
-    the ledger (:func:`held_limitation_sentences`): a paragraph that agrees
-    with the ledger, or one written where no call failed, is shown as a closing
-    passage alone (:func:`passages_of`), with none of these facts. The facts
-    are each failed call with the later calls that redid it
-    (``redone_calls.redone_failures``), or, where none did, the ones that
-    answered for some of its addresses,
-    each tool not run, the count of tools withheld, each limitation the run
-    recorded, each open question filed on a failed call or a missing tool
-    (marked where a later call answered a failed call for an address it names
-    or an entry it cites) and the count of the others by why they are open.
-    A tool's message and a model's question are each one quoted value, cut at
-    :data:`_QUOTED_CHARS` characters with the cut marked. ``shown_facts`` are the
-    facts shown before these, which a rewrite may rest on too.
+    The rows (``inv.N``, :func:`_inventory_passages`) are shown wherever the composed
+    paragraph stands, read off the report's limitations inventory, or built from the
+    ledger for a report stored without one (T-601). The paragraph is held this way only
+    where a sentence of it is held to the ledger (:func:`held_limitation_sentences`): a
+    paragraph that agrees with the ledger, or one written where no call failed, stays the
+    closing passage it is (:func:`passages_of`), and the first list is empty. ``shown_facts``
+    are the facts shown before these, which a rewrite may rest on too.
     """
     from malspark.reporting.limitation_facts import limitation_facts
 
@@ -3416,17 +3425,24 @@ def _limitation_passages(
         return [], [], []
     bases = found.image_bases
     read = limitation_facts(report, entries, found.answered, bases, found.redone)
+    inventory = report.limitation_inventory
+    if inventory is None:
+        from malspark.reporting.limitation_inventory import build_inventory
+
+        inventory = build_inventory(report, entries)
+    facts = _inventory_passages(inventory, read, bases)
+    failed = list(read.failed)
     # A paragraph that says a call failed, or names a failed call (an address it was
     # asked for, its tool, its kind) or cites one, is read further (T-600).
     cited = entry_ids_in(sub.body)
     if not _SAYS_FAILED.search(sub.body) and not any(
         call.entry.lower() in cited or _names_call(sub.body, call, bases) for call in read.failed
     ):
-        return [], [], []
+        return [], facts, failed
     listed = [routine.address for routine in found.listed]
     held = held_limitation_sentences(sub.body, read.failed, listed, bases)
     if not held:
-        return [], [], []
+        return [], facts, failed
     # The sentences held by the redone calls they name, with the calls that redid them:
     # the entries a keep must cite (T-600).
     redone_named = []
@@ -3445,10 +3461,66 @@ def _limitation_passages(
         if says and stale:
             failure_said.append((sentence, _redo_choices(stale)))
             held_to[sentence] = (True, stale)
+    paragraph = Passage(
+        id="limitations",
+        label=(
+            "11. Limitations, the composed paragraph (each sentence saying a call failed or a "
+            "reading could not be made is held to the failed calls, the tools not run, the "
+            "recorded limitations and the open questions among the facts)"
+        ),
+        text=sub.body,
+        kind=CLAIM_LED,
+        cites=_ids(sub.evidence_refs, sub.body),
+        write=_setter(sub, "body"),
+        sourced_check=_failure_redone_check(read.failed, [*shown_facts, *facts], bases, held_to),
+        closing=True,
+        redone_named=tuple(redone_named),
+        failure_said=tuple(failure_said),
+        unredone_failed=_ids([call.entry for call in read.failed if not call.redone]),
+    )
+    return [paragraph], facts, failed
+
+
+# The label every row of the limitations inventory is shown under.
+_INVENTORY_LABEL = "limitations inventory row, measured by the platform"
+
+
+def _inventory_passages(
+    inventory: LimitationInventory, read: LimitationFacts, bases: Sequence[int]
+) -> list[Passage]:
+    """The limitations inventory's rows as the round's facts, ``inv.1`` onwards (T-601).
+
+    Each failed call with the later calls that redid it, or, where none did, the ones that
+    answered for some of its addresses (one fact each, citing the call and its redo, which
+    the paragraph's failure check reads its sources by); then every other row of the
+    inventory in its own words (``limitation_inventory.inventory_rows``), a reason the run
+    recorded one quoted value cut at :data:`_QUOTED_CHARS` characters with the cut marked;
+    after the open questions' row, each one filed on a failed call or a missing tool
+    (:func:`_open_question_facts`). Which sentence a row bears on is the model's call.
+    """
+    from malspark.reporting.limitation_inventory import (
+        FAILED,
+        QUESTIONS,
+        REDONE,
+        inventory_rows,
+    )
 
     facts: list[Passage] = []
-    for index, call in enumerate(read.failed, 1):
-        if call.redone:
+
+    def _add(label: str, text: str, cites: Iterable[str] = (), **more: Any) -> None:
+        facts.append(
+            Passage(
+                id=f"inv.{len(facts) + 1}",
+                label=label,
+                text=text,
+                kind=FACT,
+                cites=_ids(list(cites)),
+                **more,
+            )
+        )
+
+    for call in inventory.failed:
+        if call.redone_by:
             ids = ", ".join(call.redone_by)
             # A call asked for no address was redone by the same question asked again
             # (``redone_calls``): no empty address list is written (T-568).
@@ -3474,79 +3546,35 @@ def _limitation_passages(
             after = f"no later call answered for {_offsets(list(call.asked), bases)}"
         else:
             after = "it asked for no address, so no later call is read as its redo"
-        fact = Passage(
-            id=f"failed.{index}",
-            label="tool call that failed, and whether a later call redid it",
-            text=(
-                f"{call.entry} ({quoted_value(call.tool)}) failed: "
-                f"{quoted_value(_capped(call.error))}; {after}"
-            ),
-            kind=FACT,
-            cites=_ids([call.entry, *call.redone_by]),
+        _add(
+            "tool call that failed, and whether a later call redid it",
+            f"{call.entry} ({quoted_value(call.tool)}) failed: "
+            f"{quoted_value(_capped(call.error))}; {after}",
+            [call.entry, *call.redone_by],
             addresses=_spelled_both(call.asked, bases),
         )
-        facts.append(fact)
-    for index, tool in enumerate(read.not_run, 1):
-        facts.append(
-            Passage(
-                id=f"not_run.{index}",
-                label="tool the run could not offer",
-                text=f"{quoted_value(tool.tool)} was not run: {quoted_value(_capped(tool.reason))}",
-                kind=FACT,
-            )
-        )
-    if read.withheld:
-        facts.append(
-            Passage(
-                id=f"not_run.{len(read.not_run) + 1}",
-                label="tools withheld from the agents",
-                text=(
-                    f"{read.withheld} {'tool' if read.withheld == 1 else 'tools'} a server "
-                    "offers, withheld from the agents by the job, not run"
-                ),
-                kind=FACT,
-            )
-        )
-    for index, reason in enumerate(read.recorded, 1):
-        facts.append(
-            Passage(
-                id=f"recorded.{index}",
-                label="limitation the run recorded",
-                text=quoted_value(_capped(reason)),
-                kind=FACT,
-            )
-        )
-    facts.extend(_open_question_facts(read.questions, read.failed, bases))
-    paragraph = Passage(
-        id="limitations",
-        label=(
-            "11. Limitations, the composed paragraph (each sentence saying a call failed or a "
-            "reading could not be made is held to the failed calls, the tools not run, the "
-            "recorded limitations and the open questions among the facts)"
-        ),
-        text=sub.body,
-        kind=CLAIM_LED,
-        cites=_ids(sub.evidence_refs, sub.body),
-        write=_setter(sub, "body"),
-        sourced_check=_failure_redone_check(read.failed, [*shown_facts, *facts], bases, held_to),
-        closing=True,
-        redone_named=tuple(redone_named),
-        failure_said=tuple(failure_said),
-        unredone_failed=_ids([call.entry for call in read.failed if not call.redone]),
-    )
-    return [paragraph], facts, list(read.failed)
+    for row in inventory_rows(inventory, quote=lambda text: quoted_value(_capped(text))):
+        if row.part in (FAILED, REDONE):
+            continue
+        if row.part == QUESTIONS:
+            _add(_INVENTORY_LABEL, row.text, row.cites)
+            for fact in _open_question_facts(read.questions, read.failed, bases):
+                _add(fact.label, fact.text, fact.cites, addresses=fact.addresses)
+            continue
+        _add(_INVENTORY_LABEL, row.text, row.cites)
+    return facts
 
 
 def _open_question_facts(
     questions: Sequence[Any], failed: Sequence[FailedCall], bases: Sequence[int]
 ) -> list[Passage]:
-    """Each open question filed on a failed call or a missing tool, then the others counted.
+    """Each open question filed on a failed call or a missing tool.
 
     A question is marked where a later call redid a failed call for an
     address it names, or a failed call it cites: an analyst may have
     filed it on that failure, which did not stand. Whether the question is
     answered is the model's reading; the mark says only what the ledger says.
-    It is shown, never dropped.
+    It is shown, never dropped. The others are counted in the inventory's own row.
     """
     from malspark.reporting.limitation_facts import FAILURE_REASONS
 
@@ -3559,10 +3587,8 @@ def _open_question_facts(
                 redid.setdefault(spelling, (call.entry, ", ".join(call.redone_by)))
     by_entry = {call.entry.lower(): call for call in failed if call.redone}
     out: list[Passage] = []
-    others: dict[str, int] = {}
     for question in questions:
         if question.reason not in FAILURE_REASONS:
-            others[question.reason] = others.get(question.reason, 0) + 1
             continue
         marks: dict[str, tuple[str, str]] = {}
         for address in question.addresses:
@@ -3592,19 +3618,6 @@ def _open_question_facts(
                 kind=FACT,
                 cites=_ids([*question.cites, *(i for pair in marks.values() for i in pair)]),
                 addresses=_spelled_both(question.addresses, bases),
-            )
-        )
-    if others:
-        count = sum(others.values())
-        out.append(
-            Passage(
-                id=f"open.{len(out) + 1}",
-                label="the other open questions",
-                text=(
-                    f"{count} more open {'question' if count == 1 else 'questions'}, filed as "
-                    + ", ".join(f"{reason} ({n})" for reason, n in sorted(others.items()))
-                ),
-                kind=FACT,
             )
         )
     return out
@@ -5088,7 +5101,9 @@ def _could_contradict(item: frozenset[str], by_id: dict[str, Passage]) -> bool:
     return any(
         said_of(p.text).count(words) >= least
         for p in by_id.values()
-        if (p.kind == SECTION_5 or (p.kind == FACT and p.cites)) and "open question" not in p.label
+        if (p.kind == SECTION_5 or (p.kind == FACT and p.cites))
+        and "open question" not in p.label
+        and not p.silent
     )
 
 
@@ -5183,7 +5198,7 @@ def _speaking_sources(
     heads = frozenset(h for h in denied_groups(sentence) if h in subject)
     ranked: list[tuple[tuple[int, int, int, int], int, str, str]] = []
     for order, source in enumerate(by_id.values()):
-        if source.id == own_id or _not_shown_for(source, sentence):
+        if source.id == own_id or source.silent or _not_shown_for(source, sentence):
             continue
         claimed = body and source.kind == CLAIM_LED and _writable(source)
         if not claimed and (
@@ -5259,7 +5274,7 @@ def _body_speaking(
     run_set = set_in_a_run(sentence)
     ranked: list[tuple[int, int, str, str]] = []
     for order, source in enumerate(by_id.values()):
-        if source.id == passage.id:
+        if source.id == passage.id or source.silent:
             continue
         if sentence in source.speaks_to and source.row_texts:
             row = next(
@@ -7214,10 +7229,13 @@ async def _ask(
     coded = any(_writable(p) and p.kind == SECTION_5 for p in passages)
     # A fact that rests on entries: the count of routines no passage names
     # grounds no rewrite, and asks nothing on its own.
-    facts = any(p.kind == FACT and p.cites for p in passages)
+    facts = any(p.kind == FACT and p.cites and not p.silent for p in passages)
     # A passage written without the code is asked against any source; a
     # section 5 passage against a fact alone.
-    sourced = any((p.kind == FACT and p.cites) or p.kind in (SECTION_5, DEBATE) for p in passages)
+    sourced = any(
+        (p.kind == FACT and p.cites and not p.silent) or p.kind in (SECTION_5, DEBATE)
+        for p in passages
+    )
     if not (claim_led and sourced) and not (coded and facts):
         return AgreementRound(tally=tally)
     citable = list(dict.fromkeys(str(value) for value in citable_ids))

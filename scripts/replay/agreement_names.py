@@ -45,6 +45,8 @@ _KINDS = {
 }
 _PASSAGE = re.compile(r"^- \[([^\]]+)\] (.*?)(?: \(read only\))?(?: \(cites [^)]*\))?: (.*)$")
 _CLOSING = ("conclusion", "limitations")
+# The ids the limitations paragraph's facts were shown under before the inventory's rows.
+_LIMITATION_FACTS = ("failed", "not_run", "recorded", "open", "inv")
 
 
 def _request_text(log: Path) -> str:
@@ -215,22 +217,25 @@ def read_run(run: Path) -> dict[str, Any]:
                 {
                     "sentence": sentence,
                     "redone": [f"{c.entry} by {', '.join(c.redone_by)}" for c in stale],
-                    "outcome": refused if stale else "held; read against the failed.N facts",
+                    "outcome": refused if stale else "held; read against the inv.N facts",
                     # Held by the calls it names or cites: the entries a keep must cite.
                     "cite": list(_redo_choices(named)),
                     # Held before too: the sentence says a call failed in words read so.
                     "held_before": bool(_SAYS_FAILED.search(sentence)),
                 }
             )
-        if not any(p.id.startswith("failed.") for p in shown):
-            _para, limit_facts, _failed = _limitation_passages(
-                _report(run, limitations.text), ledger, found, ()
-            )
-            added_limitation = sum(len(p.text) for p in limit_facts)
-            counts = _failure_counts(failed)
-            if limit_facts and counts is not None and "calls.1" not in by_id:
-                # The ledger's count of failed calls is shown beside them.
-                added_limitation += len(_count_fact(counts, failed).text)
+        # The limitations inventory's rows (``inv.N``) are shown wherever the paragraph
+        # stands (T-601), in place of the failure facts the stored prompt held, if any.
+        _para, limit_facts, _failed = _limitation_passages(
+            _report(run, limitations.text), ledger, found, ()
+        )
+        added_limitation = sum(len(p.text) for p in limit_facts) - sum(
+            len(p.text) for p in shown if p.id.split(".", 1)[0] in _LIMITATION_FACTS
+        )
+        counts = _failure_counts(failed)
+        if limit_facts and counts is not None and "calls.1" not in by_id:
+            # The ledger's count of failed calls is shown beside them.
+            added_limitation += len(_count_fact(counts, failed).text)
     # The answered facts as the round is shown them now: the call that redid each failure.
     answered_before = sum(len(p.text) for p in shown if p.id.startswith("answered."))
     closing = [p for p in shown if p.closing]
@@ -258,33 +263,36 @@ def read_run(run: Path) -> dict[str, Any]:
 
 
 def _print(read: dict[str, Any]) -> None:
-    print(f"== {read['run']}: {read['passages']} passages shown")
+    from scripts.replay.output import terminal_safe as safe
+
+    print(f"== {safe(read['run'])}: {read['passages']} passages shown")
     print(
         f"   facts shown: {read['facts_before']} characters before, {read['facts_after']} after "
         f"(ledger.N {read['names_chars']}, limitation facts {read['limitation_chars']})"
     )
     print(
         "   answered: "
-        + ", ".join(f"{f}->{a}{' (redo)' if r else ''}" for f, a, r in read["answered"])
+        + ", ".join(f"{safe(f)}->{safe(a)}{' (redo)' if r else ''}" for f, a, r in read["answered"])
     )
     for row in read["names"]:
-        print(f" - [{row['passage']}] {row['name']}: {row['outcome']}")
-        print(f"     sentence: {_cut(row['sentence'], 220)}")
+        print(f" - [{safe(row['passage'])}] {safe(row['name'])}: {safe(row['outcome'])}")
+        print(f"     sentence: {safe(_cut(row['sentence'], 220))}")
         for fact in row["facts"]:
             print(
-                f"     {fact['id']} (cites {', '.join(fact['cites'])}): {_cut(fact['text'], 400)}"
+                f"     {safe(fact['id'])} (cites {', '.join(safe(c) for c in fact['cites'])}): "
+                f"{safe(_cut(fact['text'], 400))}"
             )
     for row in read["failed"]:
         before = "held before too" if row["held_before"] else "not held before"
         # The redone calls it is held to, each with the calls that redid it; none where
         # it is held by a failure no later call redid.
-        redone = "; ".join(row["redone"])
+        redone = "; ".join(safe(r) for r in row["redone"])
         print(
-            f" - [limitations] failed call ({before}): {row['outcome']}"
+            f" - [limitations] failed call ({before}): {safe(row['outcome'])}"
             + (f" ({redone})" if redone else "")
-            + (f"; cite {' and '.join(row['cite'])}" if row["cite"] else "")
+            + (f"; cite {' and '.join(safe(c) for c in row['cite'])}" if row["cite"] else "")
         )
-        print(f"     sentence: {_cut(row['sentence'], 220)}")
+        print(f"     sentence: {safe(_cut(row['sentence'], 220))}")
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -298,7 +306,9 @@ def main(argv: list[str] | None = None) -> int:
         _print(read)
         found.append(read)
     if args.json is not None:
-        args.json.write_text(json.dumps(found, indent=2))
+        from scripts.replay.output import write_json
+
+        write_json(args.json, found, indent=2)
     return 0
 
 

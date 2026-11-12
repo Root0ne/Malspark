@@ -208,23 +208,25 @@ def test_a_sentence_calling_a_redone_call_failed_is_asked_with_the_failed_calls(
     passages = _by_id(_report(), _ledger())
     limitations = passages["limitations"]
     assert limitations.kind == CLAIM_LED and limitations.write is not None
-    assert passages["failed.1"].kind == FACT
-    assert passages["failed.1"].text == (
+    assert passages["inv.1"].kind == FACT
+    assert passages["inv.1"].text == (
         'ev_0002 ("lift_routine") failed: "the program is not open"; the later call ev_0003 '
         "answered for every address it asked (0x401a30), so it did not fail for good"
     )
-    assert passages["failed.1"].cites == {"ev_0002", "ev_0003"}
-    assert passages["failed.2"].text.endswith(
+    assert passages["inv.1"].cites == {"ev_0002", "ev_0003"}
+    assert passages["inv.2"].text.endswith(
         "it asked for no address, so no later call is read as its redo"
     )
-    # The tool not run is read with its whole reason, brackets inside it kept.
-    assert passages["not_run.1"].text == (
-        '"check_name" was not run: "KEY is not configured (no value)"'
+    # The tool not run is read with its whole reason, brackets inside it kept (T-601: one
+    # row of the limitations inventory, after the failed calls).
+    assert passages["inv.4"].text == (
+        'Tools the run could not offer: check_name ("KEY is not configured (no value)"). 1 '
+        "other limitation the run recorded, with its reason and remedy in the bundle."
     )
-    assert passages["recorded.1"].text == '"triage.rules_failed"'
+    assert passages["inv.5"].text == 'Limitation the run recorded: "triage.rules_failed".'
     prompt = prompt_text(list(passages.values()))
     assert "[limitations] 11. Limitations, the composed paragraph" in prompt
-    assert "[failed.1] tool call that failed" in prompt
+    assert "[inv.1] tool call that failed" in prompt
 
 
 def _held(body: str, ledger: list[LedgerEntry] | None = None) -> list[str]:
@@ -317,25 +319,36 @@ def test_an_open_question_s_path_names_no_address() -> None:
     section = report.sections[0]
     section.rows[0][1] = "What does files/0x401a30.dat hold?"
     section.rows[0][3] = "a read of files/0x401a30.dat"
-    text = _by_id(report, _ledger())["open.1"].text
+    (text,) = [
+        p.text for p in _by_id(report, _ledger()).values() if p.label.startswith("open question")
+    ]
     assert "redone:" not in text
 
 
 def _plain_limitations(report: MalwareReport, ledger: list[LedgerEntry]) -> None:
-    """The paragraph is shown as a closing passage alone (T-554): every other passage is the
-    one shown without it, in its order, and none of the failure facts joins."""
+    """The paragraph is shown as a closing passage (T-554), not held to the failed calls:
+    every other passage is the one shown without it, in its order, and the limitations
+    inventory's rows join after them (``inv.N``), shown wherever the paragraph stands
+    (T-601); no failure check and no count fact joins, as on dev."""
     without = report.model_copy(deep=True)
     without.technical_analysis.analyst_limitations = None
     shown = passages_of(report, entries=ledger)
-    assert [(p.id, p.text) for p in shown if p.id != "limitations"] == [
+    inventory = [p.id for p in shown if p.id.startswith("inv.")]
+    assert inventory == [f"inv.{n}" for n in range(1, len(inventory) + 1)] and inventory
+    added = {*inventory, "limitations"}
+    assert [(p.id, p.text) for p in shown if p.id not in added] == [
         (p.id, p.text) for p in passages_of(without, entries=ledger)
     ]
     (limitations,) = [p for p in shown if p.id == "limitations"]
     assert limitations.label == "11. Limitations" and limitations.closing
-    assert limitations.sourced_check is None
+    assert limitations.redone_named == () and limitations.failure_said == ()
+    assert limitations.sourced_check is None and limitations.unredone_failed == frozenset()
+    assert [p.sourced_check is None for p in shown if p.id not in added] == [
+        p.sourced_check is None for p in passages_of(without, entries=ledger)
+    ]
 
 
-def test_a_correct_paragraph_is_shown_without_the_failure_facts() -> None:
+def test_a_correct_paragraph_is_shown_with_the_inventory_and_is_not_held() -> None:
     ledger = _ledger()
     for body in (f"{TRUE} {OTHER}", OTHER, "The decompiler failed and was redone [ev_0003]."):
         _plain_limitations(_report(body), ledger)
@@ -366,7 +379,7 @@ def test_a_rewrite_citing_the_call_that_redid_it_is_put_in(rewrite: str) -> None
     # The other sentence denies an observation no source speaks of: every closing
     # sentence is answered (T-568), and it is kept with the reason.
     kept = {"passage": "limitations", "sentence": OTHER, "sources": [], "reason": "not in a fact"}
-    rows = [_row(FALSE, ["failed.1"], rewrite), {**kept, "decision": "keep"}]
+    rows = [_row(FALSE, ["inv.1"], rewrite), {**kept, "decision": "keep"}]
     done, reporter = _ask(report, _ledger(), {"sentences": rows})
     assert len(reporter.asked) == 1
     body = report.technical_analysis.analyst_limitations.body
@@ -385,58 +398,58 @@ def test_a_rewrite_citing_the_call_that_redid_it_is_put_in(rewrite: str) -> None
         (
             "The decompiler failed, so the control flow was read from the function index "
             "[ev_0001][ev_0002].",
-            ["failed.1"],
+            ["inv.1"],
         ),
         # One failure that stands cited beside it is no cover.
         (
             "The decompiler failed, so the control flow was read from the function index "
             "[ev_0001][ev_0002][ev_0004].",
-            ["failed.1", "failed.2"],
+            ["inv.1", "inv.2"],
         ),
         (
             "The listing and emulation tools failed, so the control flow was read from the "
             "function index [ev_0001][ev_0004].",
-            ["failed.1", "failed.2"],
+            ["inv.1", "inv.2"],
         ),
         # A negated redo word is no redo, and a redo word alone is never enough.
         (
             "The decompiler failed and was never redone, so the control flow was read from "
             "the function index [ev_0001][ev_0002].",
-            ["failed.1"],
+            ["inv.1"],
         ),
         (
             "The decompiler failed and no later call answered it, so the control flow was "
             "read from the function index [ev_0001][ev_0002].",
-            ["failed.1"],
+            ["inv.1"],
         ),
         (
             "The decompiler failed and was redone, so the control flow was read from the "
             "function index [ev_0001][ev_0002].",
-            ["failed.1"],
+            ["inv.1"],
         ),
         # R1: a negated redo is no redo, even citing the call that redid it.
         (
             "The decompiler failed and was never redone, so the control flow was read from "
             "the function index [ev_0001][ev_0002][ev_0003].",
-            ["failed.1"],
+            ["inv.1"],
         ),
         # R2: naming the redone call is enough, with a standing failure the only source;
         # the check reads a bare "listing" as naming every call that lists code.
         (
             "The listing and emulation tools failed, so the control flow was read from the "
             "function index [ev_0001][ev_0004].",
-            ["failed.2"],
+            ["inv.2"],
         ),
         (
             "The decompiler and emulation tools failed, so the control flow was read from the "
             "function index [ev_0001][ev_0004].",
-            ["failed.2"],
+            ["inv.2"],
         ),
         # R3: "for good" denies the redo it cites.
         (
             "The decompiler failed for good; ev_0003 shows only the function index "
             "[ev_0001][ev_0003].",
-            ["failed.1"],
+            ["inv.1"],
         ),
     ],
 )
@@ -465,7 +478,7 @@ def test_a_bare_listing_is_not_held_by_the_gate_but_rejects_a_rewrite() -> None:
     sentence = "The listing tool failed, so the control flow came from the index [ev_0001]."
     assert _held(sentence) == []
     report = _report()
-    row = _row(FALSE, ["failed.2"], sentence)
+    row = _row(FALSE, ["inv.2"], sentence)
     done, _ = _ask(report, _ledger(), {"sentences": [row]}, {"sentences": [row]})
     assert done.summary["rewritten"] == 0
     assert FAILURE_REDONE_CODE in [r["code"] for r in done.tally.unresolved]
@@ -476,14 +489,14 @@ def test_a_quoted_message_carries_no_path_and_no_url() -> None:
     ledger[1] = ledger[1].model_copy(
         update={"error": "rules at /opt/tools/data/rules are missing on http://10.0.0.5:8089/api"}
     )
-    text = _by_id(_report(), ledger)["failed.1"].text
+    text = _by_id(_report(), ledger)["inv.1"].text
     assert "/opt/tools" not in text and "10.0.0.5" not in text and "8089" not in text
     assert '"rules at rules are missing on a URL"' in text
     # Only the first clause is quoted, a digest in it named so.
     ledger[1] = ledger[1].model_copy(
         update={"error": f"program='{'ab' * 32}' is not open; the call was not sent"}
     )
-    text = _by_id(_report(), ledger)["failed.1"].text
+    text = _by_id(_report(), ledger)["inv.1"].text
     assert "\"program='a digest' is not open\"" in text and "not sent" not in text
 
 
@@ -493,18 +506,26 @@ def test_how_an_answer_was_read_is_no_recorded_limitation() -> None:
         "The static analyst's answer (round 1) began 42 claim(s), and 40 were read; 2 could "
         "not be read as a claim and are not in its findings."
     )
-    recorded = [p.text for i, p in _by_id(report, _ledger()).items() if i.startswith("recorded.")]
-    assert recorded == ['"triage.rules_failed"']
+    recorded = [
+        p.text
+        for p in _by_id(report, _ledger()).values()
+        if p.text.startswith("Limitation the run recorded")
+    ]
+    assert recorded == ['Limitation the run recorded: "triage.rules_failed".']
 
 
 def test_a_question_filed_on_a_redone_call_is_marked_and_kept() -> None:
     passages = _by_id(_report(questions=True), _ledger())
-    assert passages["open.1"].text == (
+    assert passages["inv.8"].text == (
         '"Which key does 0x401a30 load?", filed as tool_failed; redone: the failed call '
         "ev_0002 for 0x401a30, an address it names, was answered by ev_0003"
     )
-    assert passages["open.1"].cites == {"ev_0001", "ev_0002", "ev_0003"}
-    assert passages["open.2"].text == "1 more open question, filed as needs_sandbox_run (1)"
+    assert passages["inv.8"].cites == {"ev_0001", "ev_0002", "ev_0003"}
+    # The others are counted in the inventory's open-questions row (T-601).
+    assert passages["inv.7"].text == (
+        "Open questions: 2 filed (needs_sandbox_run: 1, tool_failed: 1); 1 names only routines "
+        "that have listed code. All are in the bundle."
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -640,10 +661,14 @@ def test_the_stored_run_s_reversing_tools_sentence_is_asked() -> None:
     assert held_limitation_sentences(cited, read.failed, listed, found.image_bases) == [cited]
     # The emulation and the capa call stand: no later call redid them.
     assert {call.entry for call in read.failed if not call.redone} == {"ev_0008", "ev_0122"}
-    said = [p.text for p in passages.values() if p.id.startswith("failed.")]
+    said = [p.text for p in passages.values() if p.label.startswith("tool call that failed")]
     assert any(t.startswith('ev_0168 ("batch_decompile") failed') and "ev_0171" in t for t in said)
     # The stale questions filed as tool_failed are marked, not dropped.
-    marked = [p.text for p in passages.values() if p.id.startswith("open.") and "redone:" in p.text]
+    marked = [
+        p.text
+        for p in passages.values()
+        if p.label.startswith("open question") and "redone:" in p.text
+    ]
     assert any("Which RC4 key" in t and "ev_0187" in t and "ev_0191" in t for t in marked)
 
 
@@ -743,7 +768,7 @@ def test_a_denial_may_rest_on_a_failed_call_no_later_call_redid() -> None:
     rewrite = _citing_every_redo(
         "No later call redid the emulation by candidate names [ev_0122]" + tail
     )
-    row = _row(HAIKU8_SENTENCE, ["failed.2", "failed.3", "failed.4", "failed.5"], rewrite)
+    row = _row(HAIKU8_SENTENCE, ["inv.2", "inv.3", "inv.4", "inv.5"], rewrite)
     done, _ = _ask(report, ledger, {"sentences": [row]})
     assert done.summary["rewritten"] == 1
     assert report.technical_analysis.analyst_limitations.body == body.replace(
@@ -754,7 +779,7 @@ def test_a_denial_may_rest_on_a_failed_call_no_later_call_redid() -> None:
     rewrite = _citing_every_redo(
         "No later call redid the emulation by candidate names [ev_0168]" + tail
     )
-    row = _row(HAIKU8_SENTENCE, ["failed.2", "failed.3", "failed.4", "failed.5"], rewrite)
+    row = _row(HAIKU8_SENTENCE, ["inv.2", "inv.3", "inv.4", "inv.5"], rewrite)
     found = agreement_violations({"sentences": [row]}, passages_of(report, entries=ledger))
     assert [v.code for v in found if v.path.startswith("sentences.0")] == [
         REWRITE_UNGROUNDED_CODE,
@@ -786,9 +811,9 @@ def test_a_denial_may_rest_on_a_failed_call_no_later_call_redid() -> None:
 )
 def test_a_denial_or_a_kind_word_counts_in_its_own_clause(rewrite: str) -> None:
     report, ledger = _haiku8()
-    sources = ["failed.2", "failed.3", "failed.4", "failed.5"]
+    sources = ["inv.2", "inv.3", "inv.4", "inv.5"]
     facts = _by_id(report, ledger)
-    assert "ev_0122" in facts["failed.2"].cites and "ev_0168" in facts["failed.3"].cites
+    assert "ev_0122" in facts["inv.2"].cites and "ev_0168" in facts["inv.3"].cites
     rewrite = _citing_every_redo(rewrite)
     done, _ = _ask(report, ledger, {"sentences": [_row(HAIKU8_SENTENCE, sources, rewrite)]})
     assert done.summary["rewritten"] == 1
@@ -812,7 +837,7 @@ def test_a_denial_or_a_kind_word_counts_in_its_own_clause(rewrite: str) -> None:
 def test_a_denial_of_its_own_is_about_the_call_before_it(rewrite: str) -> None:
     report, ledger = _haiku8()
     body = report.technical_analysis.analyst_limitations.body
-    sources = ["failed.3", "failed.4", "failed.5"]
+    sources = ["inv.3", "inv.4", "inv.5"]
     row = _row(HAIKU8_SENTENCE, sources, _citing_every_redo(rewrite))
     done, _ = _ask(report, ledger, {"sentences": [row]}, {"sentences": [row]})
     _left_out_alone(report, done, body)
@@ -906,7 +931,8 @@ def test_a_limitation_fact_grounds_no_false_failure_in_another_section(source: s
     # A key finding rewritten on a limitation fact is held to the same check.
     report, ledger = _haiku8()
     facts = {p.id: p for p in passages_of(report, entries=ledger)}
-    fact = next(i for i, p in facts.items() if i.startswith(f"{source}.") and "ev_0168" in p.cites)
+    label = {"failed": "tool call that failed", "open": "open question"}[source]
+    fact = next(i for i, p in facts.items() if p.label.startswith(label) and "ev_0168" in p.cites)
     finding = facts["key_findings.1"]
     assert finding.sourced_check is not None
     sentence = _sentences_of(finding.text)[0]

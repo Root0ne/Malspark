@@ -38,7 +38,6 @@ from __future__ import annotations
 
 import argparse
 import ast
-import json
 import re
 import sys
 from collections.abc import Iterator
@@ -330,7 +329,7 @@ def remerge(run: Path) -> dict[str, Any]:
                 {n: revision_merge.claim_tokens_by_number(isr) for n, isr in kept.items()},
             )
         except Exception as exc:  # noqa: BLE001 — a line not read names no claim
-            print(f"{run.name}: the lines were not read ({exc})", file=sys.stderr)
+            print(_not_read(run.name, exc), file=sys.stderr)
             named = {}
         for name, now in after.answers.items():
             was = before.answers.get(name)
@@ -391,26 +390,36 @@ def remerge(run: Path) -> dict[str, Any]:
     return {"run": run.name, "mediations": [m.line for m in mediations], "revisions": rows}
 
 
+def _not_read(name: str, exc: Exception) -> str:
+    """The line said when the lines could not be read; the message can quote a stored line."""
+    from scripts.replay.output import terminal_safe as safe
+
+    return f"{safe(name)}: the lines were not read ({type(exc).__name__}: {safe(exc)})"
+
+
 def _print(record: dict[str, Any]) -> None:
-    print(f"== {record['run']} (mediation prompts at log lines {record['mediations']})")
+    from scripts.replay.output import terminal_safe as safe
+
+    print(f"== {safe(record['run'])} (mediation prompts at log lines {safe(record['mediations'])})")
     for row in record["revisions"]:
         old, new = row["earlier_rule"], row["this_rule"]
         print(
-            f"  round {row['round']} {row['analyst']}: {row['in_force']} in force, "
-            f"{row['revision_blocks']} revision block(s); logged: {row['logged']}"
+            f"  round {safe(row['round'])} {safe(row['analyst'])}: "
+            f"{safe(row['in_force'])} in force, "
+            f"{safe(row['revision_blocks'])} revision block(s); logged: {safe(row['logged'])}"
         )
         for label, said in (("earlier", old), ("this   ", new)):
             print(
-                f"    {label} rule: restated {len(said['restated'])}, added {said['added']}, "
+                f"    {label} rule: restated {len(said['restated'])}, added {safe(said['added'])}, "
                 f"carried {len(said['carried'])} ({len(said['beside'])} beside a "
                 f"restatement), withdrawn {len(said['withdrawn'])}, by rule "
                 f"{len(said['withdrawn_by_rule'])}, claims with dropped values "
-                f"{said['dropped_claims']} ({said['dropped_values']} value(s))"
+                f"{safe(said['dropped_claims'])} ({safe(said['dropped_values'])} value(s))"
             )
         for kept in row["kept_in_force_now"]:
             print(
-                f"    kept now (claim {kept['claim']}, {kept['now']}; nearest block "
-                f"{kept['nearest_share']:.2f}): {kept['sentence'][:110]}"
+                f"    kept now (claim {safe(kept['claim'])}, {safe(kept['now'])}; nearest block "
+                f"{kept['nearest_share']:.2f}): {safe(kept['sentence'][:110])}"
             )
 
 
@@ -425,13 +434,17 @@ def main(argv: list[str] | None = None) -> int:
     records = []
     for run in args.runs:
         if not (run / "worker.log").is_file():
-            print(f"{run}: no worker.log", file=sys.stderr)
+            from scripts.replay.output import terminal_safe
+
+            print(f"{terminal_safe(run)}: no worker.log", file=sys.stderr)
             continue
         record = remerge(run)
         records.append(record)
         _print(record)
     if args.json is not None:
-        args.json.write_text(json.dumps(records, indent=1), encoding="utf-8")
+        from scripts.replay.output import write_json
+
+        write_json(args.json, records, indent=1)
     return 0
 
 

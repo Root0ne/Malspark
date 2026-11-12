@@ -222,7 +222,7 @@ _ANSWERS: dict[str, Any] = {
     "keep, a source, no quote": lambda s: _row(s, "keep", ["string_resolution"]),
     "keep, a quote of a blank": lambda s: _row(s, "keep", ["string_resolution"], quote="   "),
     "keep, on the failed call's fact": lambda s: _row(
-        s, "keep", ["failed.1"], quote="no function there"
+        s, "keep", ["inv.1"], quote="no function there"
     ),
     "keep, a quote no source holds": lambda s: _row(
         s, "keep", ["string_resolution"], quote="a quote nowhere to be found"
@@ -247,10 +247,10 @@ _ANSWERS: dict[str, Any] = {
         ),
     ),
     "rewrite, saying a redone call failed": lambda s: _row(
-        s, "rewrite", ["failed.1"], rewrite="The decompile of 0x5a10 failed [ev_0101]."
+        s, "rewrite", ["inv.1"], rewrite="The decompile of 0x5a10 failed [ev_0101]."
     ),
     "rewrite, a count the ledger does not hold": lambda s: _row(
-        s, "rewrite", ["failed.1"], rewrite="Five tool calls failed [ev_0101] [ev_0107]."
+        s, "rewrite", ["inv.1"], rewrite="Five tool calls failed [ev_0101] [ev_0107]."
     ),
     "rewrite, calling listed code not read": lambda s: _row(
         s, "rewrite", ["listed.1"], rewrite="The routine at 0x5a10 was not read [ev_0107]."
@@ -395,34 +395,34 @@ _REWRITES: dict[str, tuple[list[str], str]] = {
     "held bullet": (["ledger.1"], _EXPORT),
     "conclusion": (["string_resolution"], "The file encrypts each report with RC4 [ev_0107]."),
     "limitations": (["string_resolution"], "The gate encrypts each report with RC4 [ev_0107]."),
-    "held limitations": (["failed.1"], _REDONE),
+    "held limitations": (["inv.1"], _REDONE),
     "held body": (["ledger.1"], _CALLED),
-    "cell failed": (["failed.1"], _REDONE),
-    "cell count": (["failed.1"], _RECOUNTED),
+    "cell failed": (["inv.1"], _REDONE),
+    "cell count": (["inv.1"], _RECOUNTED),
     "cell unread": (["listed.1"], _READ),
-    "bullet failed": (["failed.1"], _REDONE),
-    "bullet count": (["failed.1"], _RECOUNTED),
+    "bullet failed": (["inv.1"], _REDONE),
+    "bullet count": (["inv.1"], _RECOUNTED),
     "bullet unread": (["listed.1"], _READ),
-    "conclusion failed": (["failed.1"], _REDONE),
-    "conclusion count": (["failed.1"], _RECOUNTED),
+    "conclusion failed": (["inv.1"], _REDONE),
+    "conclusion count": (["inv.1"], _RECOUNTED),
     "conclusion unread": (["listed.1"], _READ),
-    "limitations count": (["failed.1"], _RECOUNTED),
+    "limitations count": (["inv.1"], _RECOUNTED),
     "limitations unread": (["listed.2"], "The routine at 0x6100 was decompiled [ev_0112]."),
     "limitations one failed call": (
-        ["failed.1"],
+        ["inv.1"],
         "A later call redid the one that failed [ev_0107].",
     ),
     "held cell twice": (
-        ["ledger.1", "failed.1"],
+        ["ledger.1", "inv.1"],
         "The export table names begin at offset 0x7700 [ev_0104]; a later call ev_0107 lifted "
         "0x5a10 [ev_0101] [ev_0107].",
     ),
     "held bullet twice": (
-        ["ledger.1", "failed.1"],
+        ["ledger.1", "inv.1"],
         "The export table names begin at offset 0x7700 [ev_0104]; a later call ev_0107 lifted "
         "0x5a10 [ev_0101] [ev_0107].",
     ),
-    "held limitations twice": (["failed.1"], _REDONE),
+    "held limitations twice": (["inv.1"], _REDONE),
     "held body twice": (["ledger.1"], _CALLED),
 }
 
@@ -930,7 +930,7 @@ TABLE: dict[str, list[str]] = {
     ],
     "held limitations | keep, no source, a reason | left out": [
         "agreement.keep_unquoted at sentences.0.sources: row 1: limitations keeps 'The "
-        "decompile of 0x5a10 failed [ev_0101].' naming no source, but answered.1, failed.1 "
+        "decompile of 0x5a10 failed [ev_0101].' naming no source, but answered.1, inv.1 "
         "speaks of what it names: it says a call failed that a later call redid: a keep of it "
         "as written is refused; rewrite it citing ev_0107 and saying what it answered, "
         f"{_DENIAL}, or drop it. {_LEFT_OUT}.",
@@ -1083,7 +1083,7 @@ TABLE: dict[str, list[str]] = {
         "out, give the reason.",
         "agreement.keep_unquoted at sentences.0.sources: row 1: communications.1.encryption "
         "keeps 'The decompile of 0x5a10 failed [ev_0101].' naming no source, but answered.1, "
-        f"failed.1 speaks of what it names: {_UNKEPT}. {_LEFT_OUT}, and {_DASH}.",
+        f"inv.1 speaks of what it names: {_UNKEPT}. {_LEFT_OUT}, and {_DASH}.",
         "agreement.failure_redone at sentences.0.decision: row 1: communications.1.encryption "
         "keeps the sentence, but it says a call failed or a reading could not be made, while a "
         "later call redid it (ev_0101 by ev_0107). Rewrite it citing ev_0107 and saying what "
@@ -1092,7 +1092,7 @@ TABLE: dict[str, list[str]] = {
     "cell failed | keep, no source, a reason | -": [
         "agreement.keep_unquoted at sentences.0.sources: row 1: communications.1.encryption "
         "keeps 'The decompile of 0x5a10 failed [ev_0101].' naming no source, but answered.1, "
-        f"failed.1 speaks of what it names: {_UNKEPT}. {_LEFT_OUT}, and {_DASH}.",
+        f"inv.1 speaks of what it names: {_UNKEPT}. {_LEFT_OUT}, and {_DASH}.",
         "agreement.failure_redone at sentences.0.decision: row 1: communications.1.encryption "
         "keeps the sentence, but it says a call failed or a reading could not be made, while a "
         "later call redid it (ev_0101 by ev_0107). Rewrite it citing ev_0107 and saying what "
@@ -1154,7 +1154,7 @@ TABLE: dict[str, list[str]] = {
         f"the sentence can still say, citing an entry that fact cites, or drop it. {_EVERY_ROW}",
         "agreement.keep_unquoted at sentences.0.sources: row 1: communications.1.encryption "
         "keeps 'The routine at 0x5a10 was not read [ev_0107].' naming no source, but listed.1, "
-        f"answered.1, failed.1 speaks of what it names: {_UNKEPT}. {_LEFT_OUT}, and {_DASH}. "
+        f"answered.1, inv.1 speaks of what it names: {_UNKEPT}. {_LEFT_OUT}, and {_DASH}. "
         f"{_CELL_IS}.",
     ],
     "cell unread | keep, no source, a reason | -": [
@@ -1165,7 +1165,7 @@ TABLE: dict[str, list[str]] = {
         f"the sentence can still say, citing an entry that fact cites, or drop it. {_EVERY_ROW}",
         "agreement.keep_unquoted at sentences.0.sources: row 1: communications.1.encryption "
         "keeps 'The routine at 0x5a10 was not read [ev_0107].' naming no source, but listed.1, "
-        f"answered.1, failed.1 speaks of what it names: {_UNKEPT}. {_LEFT_OUT}, and {_DASH}. "
+        f"answered.1, inv.1 speaks of what it names: {_UNKEPT}. {_LEFT_OUT}, and {_DASH}. "
         f"{_CELL_IS}.",
     ],
     "cell unread | drop, naming a passage as its source | -": [
@@ -1252,7 +1252,7 @@ TABLE: dict[str, list[str]] = {
         "out, give the reason.",
         "agreement.keep_unquoted at sentences.0.sources: row 1: capability_summary.1 keeps "
         "'The decompile of 0x5a10 failed [ev_0101].' naming no source, but answered.1, "
-        f"failed.1 speaks of what it names: {_UNKEPT}. {_LEFT_OUT}, and {_NOT_PRINTED}.",
+        f"inv.1 speaks of what it names: {_UNKEPT}. {_LEFT_OUT}, and {_NOT_PRINTED}.",
         "agreement.failure_redone at sentences.0.decision: row 1: capability_summary.1 keeps "
         "the sentence, but it says a call failed or a reading could not be made, while a later "
         "call redid it (ev_0101 by ev_0107). Rewrite it citing ev_0107 and saying what it "
@@ -1261,7 +1261,7 @@ TABLE: dict[str, list[str]] = {
     "bullet failed | keep, no source, a reason | not printed": [
         "agreement.keep_unquoted at sentences.0.sources: row 1: capability_summary.1 keeps "
         "'The decompile of 0x5a10 failed [ev_0101].' naming no source, but answered.1, "
-        f"failed.1 speaks of what it names: {_UNKEPT}. {_LEFT_OUT}, and {_NOT_PRINTED}.",
+        f"inv.1 speaks of what it names: {_UNKEPT}. {_LEFT_OUT}, and {_NOT_PRINTED}.",
         "agreement.failure_redone at sentences.0.decision: row 1: capability_summary.1 keeps "
         "the sentence, but it says a call failed or a reading could not be made, while a later "
         "call redid it (ev_0101 by ev_0107). Rewrite it citing ev_0107 and saying what it "
@@ -1316,7 +1316,7 @@ TABLE: dict[str, list[str]] = {
         f"the sentence can still say, citing an entry that fact cites, or drop it. {_EVERY_ROW}",
         "agreement.keep_unquoted at sentences.0.sources: row 1: capability_summary.1 keeps "
         "'The routine at 0x5a10 was not read [ev_0107].' naming no source, but listed.1, "
-        f"answered.1, failed.1 speaks of what it names: {_UNKEPT}. {_LEFT_OUT}, and "
+        f"answered.1, inv.1 speaks of what it names: {_UNKEPT}. {_LEFT_OUT}, and "
         f"{_NOT_PRINTED}. {_BULLET_IS}.",
     ],
     "bullet unread | keep, no source, a reason | not printed": [
@@ -1327,7 +1327,7 @@ TABLE: dict[str, list[str]] = {
         f"the sentence can still say, citing an entry that fact cites, or drop it. {_EVERY_ROW}",
         "agreement.keep_unquoted at sentences.0.sources: row 1: capability_summary.1 keeps "
         "'The routine at 0x5a10 was not read [ev_0107].' naming no source, but listed.1, "
-        f"answered.1, failed.1 speaks of what it names: {_UNKEPT}. {_LEFT_OUT}, and "
+        f"answered.1, inv.1 speaks of what it names: {_UNKEPT}. {_LEFT_OUT}, and "
         f"{_NOT_PRINTED}. {_BULLET_IS}.",
     ],
     "bullet unread | drop, naming a passage as its source | not printed": [
@@ -1396,7 +1396,7 @@ TABLE: dict[str, list[str]] = {
         "agreement.unknown_source at sentences.0.sources: row 1 names no source; leaving it "
         "out, give the reason.",
         "agreement.keep_unquoted at sentences.0.sources: row 1: conclusion keeps 'The "
-        "decompile of 0x5a10 failed [ev_0101].' naming no source, but answered.1, failed.1 "
+        "decompile of 0x5a10 failed [ev_0101].' naming no source, but answered.1, inv.1 "
         f"speaks of what it names: {_UNKEPT}.",
         "agreement.failure_redone at sentences.0.decision: row 1: conclusion keeps the "
         "sentence, but it says a call failed or a reading could not be made, while a later call "
@@ -1405,7 +1405,7 @@ TABLE: dict[str, list[str]] = {
     ],
     "conclusion failed | keep, no source, a reason | left out": [
         "agreement.keep_unquoted at sentences.0.sources: row 1: conclusion keeps 'The "
-        "decompile of 0x5a10 failed [ev_0101].' naming no source, but answered.1, failed.1 "
+        "decompile of 0x5a10 failed [ev_0101].' naming no source, but answered.1, inv.1 "
         f"speaks of what it names: {_UNKEPT}.",
         "agreement.failure_redone at sentences.0.decision: row 1: conclusion keeps the "
         "sentence, but it says a call failed or a reading could not be made, while a later call "
@@ -1483,7 +1483,7 @@ TABLE: dict[str, list[str]] = {
         f"whatever it names, and leaves it out of the report. {_EVERY_ROW}",
         "agreement.keep_unquoted at sentences.0.sources: row 1: conclusion keeps 'The routine "
         "at 0x5a10 was not read [ev_0107].' naming no source, but listed.1, answered.1, "
-        f"failed.1 speaks of what it names: {_UNKEPT}.",
+        f"inv.1 speaks of what it names: {_UNKEPT}.",
     ],
     "conclusion unread | keep, no source, a reason | left out": [
         "agreement.unread_standing at sentences.0.decision: conclusion: 'The routine at 0x5a10 "
@@ -1494,7 +1494,7 @@ TABLE: dict[str, list[str]] = {
         f"whatever it names, and leaves it out of the report. {_EVERY_ROW}",
         "agreement.keep_unquoted at sentences.0.sources: row 1: conclusion keeps 'The routine "
         "at 0x5a10 was not read [ev_0107].' naming no source, but listed.1, answered.1, "
-        f"failed.1 speaks of what it names: {_UNKEPT}.",
+        f"inv.1 speaks of what it names: {_UNKEPT}.",
     ],
     "conclusion unread | drop, naming a passage as its source | appended": [
         "agreement.unknown_source at sentences.0.sources: row 1 names executive_summary as what "
@@ -2090,7 +2090,7 @@ TABLE: dict[str, list[str]] = {
         f"entry that fact cites, or drop it. {_EVERY_ROW} {_LEFT_OUT}.",
         "agreement.keep_unquoted at sentences.0.sources: row 1: limitations keeps 'The "
         "decompile of 0x5a10 failed [ev_0101], so the routine at 0x5a10 was not read, and five "
-        "tool calls failed.' naming no source, but listed.1, answered.1, failed.1 speaks of "
+        "tool calls failed.' naming no source, but listed.1, answered.1, inv.1 speaks of "
         "what it names: it names a call that failed and a later call redid: a keep of it as "
         "written is refused; rewrite it in your own words on what ev_0107 answered, citing it, "
         f"{_DENIAL}, or drop it; the same words with a citation added are a keep. {_LEFT_OUT}.",
@@ -2111,7 +2111,7 @@ TABLE: dict[str, list[str]] = {
         f"entry that fact cites, or drop it. {_EVERY_ROW} {_LEFT_OUT}.",
         "agreement.keep_unquoted at sentences.0.sources: row 1: limitations keeps 'The "
         "decompile of 0x5a10 failed [ev_0101], so the routine at 0x5a10 was not read, and five "
-        "tool calls failed.' naming no source, but listed.1, answered.1, failed.1 speaks of "
+        "tool calls failed.' naming no source, but listed.1, answered.1, inv.1 speaks of "
         "what it names: it names a call that failed and a later call redid: a keep of it as "
         "written is refused; rewrite it in your own words on what ev_0107 answered, citing it, "
         f"{_DENIAL}, or drop it; the same words with a citation added are a keep. {_LEFT_OUT}.",

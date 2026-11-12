@@ -1,0 +1,688 @@
+{
+  "run": "haiku11",
+  "inventory": {
+    "entries": 158,
+    "trimmed": 0,
+    "image_bases": [
+      1331636994048
+    ],
+    "failed": [
+      {
+        "entry": "ev_0062",
+        "tool": "decompile_function",
+        "error": "[ERROR] Cannot find function in 0x0000b4cc",
+        "asked": [
+          1331637040332
+        ],
+        "answered": [
+          [
+            1331637040332,
+            "ev_0084"
+          ]
+        ],
+        "redone_by": [
+          "ev_0084"
+        ]
+      },
+      {
+        "entry": "ev_0090",
+        "tool": "emulate_hash_batch",
+        "error": "No candidates provided",
+        "asked": [],
+        "answered": [],
+        "redone_by": [
+          "ev_0093"
+        ]
+      },
+      {
+        "entry": "ev_0091",
+        "tool": "emulate_hash_batch",
+        "error": "No candidates provided",
+        "asked": [],
+        "answered": [],
+        "redone_by": [
+          "ev_0094"
+        ]
+      },
+      {
+        "entry": "ev_0130",
+        "tool": "transform_bytes",
+        "error": "the range's rva is '\"0xf000\"'",
+        "asked": [],
+        "answered": [],
+        "redone_by": [
+          "ev_0133"
+        ]
+      },
+      {
+        "entry": "ev_0131",
+        "tool": "transform_bytes",
+        "error": "the range's rva is '\"0xf006\"'",
+        "asked": [],
+        "answered": [],
+        "redone_by": [
+          "ev_0132"
+        ]
+      }
+    ],
+    "listed": 71,
+    "unread": 56,
+    "unread_first": [
+      1331637030988,
+      1331636999384
+    ],
+    "not_offered": [
+      {
+        "tool": "check_domain_reputation",
+        "reason": "VIRUSTOTAL_API_KEY is not configured"
+      },
+      {
+        "tool": "check_hash",
+        "reason": "VIRUSTOTAL_API_KEY is not configured"
+      },
+      {
+        "tool": "check_ip_reputation",
+        "reason": "VIRUSTOTAL_API_KEY is not configured; ABUSEIPDB_API_KEY is not configured"
+      }
+    ],
+    "withheld": 16,
+    "recorded": [],
+    "sandbox_observed": true,
+    "sandbox_entry": "ev_0026",
+    "sandbox_sections": [
+      {
+        "name": "files",
+        "items": null,
+        "unavailable": false
+      },
+      {
+        "name": "alerts",
+        "items": null,
+        "unavailable": false
+      },
+      {
+        "name": "events",
+        "items": null,
+        "unavailable": true
+      },
+      {
+        "name": "dropped",
+        "items": 9,
+        "unavailable": false
+      },
+      {
+        "name": "mutexes",
+        "items": null,
+        "unavailable": false
+      },
+      {
+        "name": "network",
+        "items": 6,
+        "unavailable": false
+      },
+      {
+        "name": "apistats",
+        "items": null,
+        "unavailable": true
+      },
+      {
+        "name": "channels",
+        "items": 26,
+        "unavailable": false
+      },
+      {
+        "name": "commands",
+        "items": null,
+        "unavailable": false
+      },
+      {
+        "name": "registry",
+        "items": null,
+        "unavailable": true
+      },
+      {
+        "name": "services",
+        "items": null,
+        "unavailable": false
+      },
+      {
+        "name": "api_calls",
+        "items": null,
+        "unavailable": true
+      },
+      {
+        "name": "extracted",
+        "items": 1,
+        "unavailable": false
+      },
+      {
+        "name": "procdumps",
+        "items": null,
+        "unavailable": false
+      },
+      {
+        "name": "processes",
+        "items": 7,
+        "unavailable": false
+      },
+      {
+        "name": "signatures",
+        "items": 17,
+        "unavailable": false
+      },
+      {
+        "name": "screenshots",
+        "items": null,
+        "unavailable": true
+      },
+      {
+        "name": "resolved_apis",
+        "items": null,
+        "unavailable": false
+      }
+    ],
+    "capture": {
+      "entry": "ev_0017",
+      "duration_s": 598.0,
+      "packets": 2306,
+      "packets_read": 2306
+    },
+    "questions": [
+      {
+        "agent": "all_tools_static_r2",
+        "question": "Does the sample reach its C2 and receive a command or file when the init gate passes?",
+        "reason": "needs_sandbox_run",
+        "cites": [
+          "ev_0013",
+          "ev_0017",
+          "ev_0028"
+        ],
+        "addresses": [],
+        "listed": [],
+        "listed_after": false
+      },
+      {
+        "agent": "all_tools_static_r2",
+        "question": "Which process owns 150.171.109.67:443, the largest external conversation (929 packets)?",
+        "reason": "tool_failed",
+        "cites": [
+          "ev_0017"
+        ],
+        "addresses": [],
+        "listed": [],
+        "listed_after": false
+      },
+      {
+        "agent": "all_tools_static_r2",
+        "question": "What does the 0x3728 scheduled-task registration contain beyond the name and LogonTrigger?",
+        "reason": "tool_failed",
+        "cites": [
+          "ev_0019",
+          "ev_0086"
+        ],
+        "addresses": [
+          1331637008168,
+          1331637043908
+        ],
+        "listed": [
+          [
+            1331637008168,
+            [
+              "ev_0087",
+              "ev_0144"
+            ]
+          ],
+          [
+            1331637043908,
+            [
+              "ev_0087"
+            ]
+          ]
+        ],
+        "listed_after": false
+      },
+      {
+        "agent": "all_tools_static_r2",
+        "question": "What unit does the sandbox's termination value use (9203, 9235), and did the gate fire?",
+        "reason": "needs_sandbox_run",
+        "cites": [
+          "ev_0012",
+          "ev_0084"
+        ],
+        "addresses": [],
+        "listed": [],
+        "listed_after": false
+      },
+      {
+        "agent": "all_tools_static_r2",
+        "question": "What argument does the 0x5750 wait loop pass to NtDelayExecution (units and sign)?",
+        "reason": "tool_failed",
+        "cites": [
+          "ev_0078",
+          "ev_0080"
+        ],
+        "addresses": [
+          1331637016400,
+          1331637045556
+        ],
+        "listed": [
+          [
+            1331637016400,
+            [
+              "ev_0078"
+            ]
+          ]
+        ],
+        "listed_after": false
+      },
+      {
+        "agent": "all_tools_static_r2",
+        "question": "Does 0x3868 reach 0x6250 (C2 thread start) on the install path, given 0x33ac's ExitProcess?",
+        "reason": "obfuscated",
+        "cites": [
+          "ev_0085",
+          "ev_0086"
+        ],
+        "addresses": [
+          1331637008488,
+          1331637019216,
+          1331637007276
+        ],
+        "listed": [
+          [
+            1331637008488,
+            [
+              "ev_0084",
+              "ev_0085"
+            ]
+          ],
+          [
+            1331637019216,
+            [
+              "ev_0088"
+            ]
+          ],
+          [
+            1331637007276,
+            [
+              "ev_0086"
+            ]
+          ]
+        ],
+        "listed_after": false
+      },
+      {
+        "agent": "static",
+        "question": "Body and creation disposition of 0x77b0, the file-open routine under the download path",
+        "reason": "tool_failed",
+        "cites": [
+          "ev_0110"
+        ],
+        "addresses": [
+          1331637024688
+        ],
+        "listed": [],
+        "listed_after": false
+      },
+      {
+        "agent": "static",
+        "question": "Whether the C2 replies ever carry command ids, and which ones",
+        "reason": "needs_sandbox_run",
+        "cites": [
+          "ev_0078",
+          "ev_0080"
+        ],
+        "addresses": [],
+        "listed": [],
+        "listed_after": false
+      },
+      {
+        "agent": "static",
+        "question": "Mutex name and the body of 0x309c used by the init gate",
+        "reason": "tool_failed",
+        "cites": [
+          "ev_0084",
+          "ev_0087"
+        ],
+        "addresses": [
+          1331637006492,
+          1331637008488
+        ],
+        "listed": [
+          [
+            1331637006492,
+            [
+              "ev_0143"
+            ]
+          ],
+          [
+            1331637008488,
+            [
+              "ev_0084",
+              "ev_0085"
+            ]
+          ]
+        ],
+        "listed_after": false
+      },
+      {
+        "agent": "static",
+        "question": "Target process of the OpenProcess and ReadProcessMemory calls in 0x463c",
+        "reason": "other",
+        "cites": [
+          "ev_0025"
+        ],
+        "addresses": [
+          1331637012028
+        ],
+        "listed": [
+          [
+            1331637012028,
+            [
+              "ev_0097",
+              "ev_0158"
+            ]
+          ]
+        ],
+        "listed_after": true
+      },
+      {
+        "agent": "static",
+        "question": "Does the 0x77b0 open create the file or require it to exist (disposition value 3 is passed through)?",
+        "reason": "tool_failed",
+        "cites": [
+          "ev_0025",
+          "ev_0110"
+        ],
+        "addresses": [
+          1331637024688
+        ],
+        "listed": [],
+        "listed_after": false
+      },
+      {
+        "agent": "static",
+        "question": "Which mutex name does 0x3868 create, and is it 'runnung'?",
+        "reason": "obfuscated",
+        "cites": [
+          "ev_0021",
+          "ev_0084"
+        ],
+        "addresses": [
+          1331637008488
+        ],
+        "listed": [
+          [
+            1331637008488,
+            [
+              "ev_0084",
+              "ev_0085"
+            ]
+          ]
+        ],
+        "listed_after": false
+      },
+      {
+        "agent": "static",
+        "question": "Does the sample contact its C2 when the init gate passes, and what does a live reply contain?",
+        "reason": "needs_sandbox_run",
+        "cites": [
+          "ev_0017",
+          "ev_0028",
+          "ev_0082"
+        ],
+        "addresses": [],
+        "listed": [],
+        "listed_after": false
+      },
+      {
+        "agent": "static",
+        "question": "Does the 0x3728 task registration and the 0xc2c4 LogonTrigger body match the claimed Updater task?",
+        "reason": "no_capable_tool",
+        "cites": [
+          "ev_0021",
+          "ev_0086"
+        ],
+        "addresses": [
+          1331637008168,
+          1331637043908
+        ],
+        "listed": [
+          [
+            1331637008168,
+            [
+              "ev_0087",
+              "ev_0144"
+            ]
+          ],
+          [
+            1331637043908,
+            [
+              "ev_0087"
+            ]
+          ]
+        ],
+        "listed_after": false
+      },
+      {
+        "agent": "static",
+        "question": "The 0x904c resolver body was not read; no claim here rests on it",
+        "reason": "other",
+        "cites": [
+          "ev_0020",
+          "ev_0025"
+        ],
+        "addresses": [
+          1331637030988
+        ],
+        "listed": [],
+        "listed_after": false
+      },
+      {
+        "agent": "static",
+        "question": "Whether the 'Updater' task is created and what process it runs",
+        "reason": "needs_sandbox_run",
+        "cites": [
+          "ev_0014",
+          "ev_0086"
+        ],
+        "addresses": [],
+        "listed": [],
+        "listed_after": false
+      },
+      {
+        "agent": "dynamic",
+        "question": "What unit does the 0xc934 (NtDelayExecution) wrapper use, and so how long does the C2 thread wait before its first cycle?",
+        "reason": "tool_failed",
+        "cites": [
+          "ev_0025",
+          "ev_0078",
+          "ev_0140"
+        ],
+        "addresses": [
+          1331637045556,
+          1331637016400
+        ],
+        "listed": [
+          [
+            1331637016400,
+            [
+              "ev_0078"
+            ]
+          ]
+        ],
+        "listed_after": false
+      },
+      {
+        "agent": "dynamic",
+        "question": "Did the rundll32 hosts (pids 83 and 87) end early, and at what time unit?",
+        "reason": "needs_sandbox_run",
+        "cites": [
+          "ev_0125",
+          "ev_0140"
+        ],
+        "addresses": [],
+        "listed": [],
+        "listed_after": false
+      },
+      {
+        "agent": "dynamic",
+        "question": "Does CreateMutexW receive the decoded name 'runnung' as its third argument at 0x3962?",
+        "reason": "tool_failed",
+        "cites": [
+          "ev_0021",
+          "ev_0084"
+        ],
+        "addresses": [
+          1331637008738
+        ],
+        "listed": [],
+        "listed_after": false
+      },
+      {
+        "agent": "dynamic",
+        "question": "What does routine 0x463c do with OpenProcess, ReadProcessMemory and NtQueryInformationProcess, and against which process?",
+        "reason": "tool_failed",
+        "cites": [
+          "ev_0025",
+          "ev_0084"
+        ],
+        "addresses": [
+          1331637012028
+        ],
+        "listed": [
+          [
+            1331637012028,
+            [
+              "ev_0097",
+              "ev_0158"
+            ]
+          ]
+        ],
+        "listed_after": true
+      },
+      {
+        "agent": "dynamic",
+        "question": "Does the copy launched by 0xb400 run the gate again and start the C2 thread?",
+        "reason": "needs_sandbox_run",
+        "cites": [
+          "ev_0025",
+          "ev_0086"
+        ],
+        "addresses": [
+          1331637040128
+        ],
+        "listed": [],
+        "listed_after": false
+      },
+      {
+        "agent": "dynamic",
+        "question": "Whether the C2 responds, so the dispatcher, download and rundll32 paths run",
+        "reason": "needs_sandbox_run",
+        "cites": [
+          "ev_0078",
+          "ev_0124"
+        ],
+        "addresses": [],
+        "listed": [],
+        "listed_after": false
+      },
+      {
+        "agent": "network",
+        "question": "Does the C2 respond, so that the reply parser and command dispatcher run?",
+        "reason": "needs_sandbox_run",
+        "cites": [
+          "ev_0122",
+          "ev_0128"
+        ],
+        "addresses": [],
+        "listed": [],
+        "listed_after": false
+      },
+      {
+        "agent": "network",
+        "question": "Is the mutex name \"runnung\" passed to CreateMutexW?",
+        "reason": "tool_failed",
+        "cites": [
+          "ev_0084",
+          "ev_0085"
+        ],
+        "addresses": [
+          1331637008738
+        ],
+        "listed": [],
+        "listed_after": false
+      },
+      {
+        "agent": "network",
+        "question": "What do the sandbox's 'terminated' values mean (units, reference clock)?",
+        "reason": "other",
+        "cites": [
+          "ev_0123"
+        ],
+        "addresses": [],
+        "listed": [],
+        "listed_after": false
+      },
+      {
+        "agent": "network",
+        "question": "Which process is pid 2732 (procid 47), which contacted 142.250.151.94?",
+        "reason": "other",
+        "cites": [
+          "ev_0122",
+          "ev_0123"
+        ],
+        "addresses": [],
+        "listed": [],
+        "listed_after": false
+      },
+      {
+        "agent": "network",
+        "question": "Who owns 150.171.109.67:443, the largest external conversation?",
+        "reason": "tool_failed",
+        "cites": [
+          "ev_0017",
+          "ev_0119"
+        ],
+        "addresses": [],
+        "listed": [],
+        "listed_after": false
+      },
+      {
+        "agent": "network",
+        "question": "What does the 0x7acc write target, and what bytes does it write?",
+        "reason": "tool_failed",
+        "cites": [
+          "ev_0084"
+        ],
+        "addresses": [
+          1331637025484,
+          1331637024688
+        ],
+        "listed": [
+          [
+            1331637025484,
+            [
+              "ev_0110"
+            ]
+          ]
+        ],
+        "listed_after": false
+      }
+    ]
+  },
+  "printed": [
+    "Code read: 71 routines have listed code; 56 routines they call have none, first on the start path: offsets 0x904c, 0x14d8.",
+    "Tools the run could not offer: check_domain_reputation, check_hash (\"VIRUSTOTAL_API_KEY is not configured\"); check_ip_reputation (\"VIRUSTOTAL_API_KEY is not configured; ABUSEIPDB_API_KEY is not configured\").",
+    "Sandbox report [ev_0026]: events, apistats, registry, api_calls and screenshots are unavailable from the sandbox; files, alerts, mutexes, commands, services, procdumps and resolved_apis are not in the sandbox report as read.",
+    "Packet capture [ev_0017] covers 598.0 s (2,306 packets); traffic outside that window was not captured.",
+    "Open questions: 28 filed (a tool failed: 12, needs a sandbox run: 9, other: 4, obfuscated code: 2, no capable tool: 1); 7 name only routines that have listed code, 2 of them listed after the question was filed. All are in the bundle.",
+    "53 analyst claims in force are not discussed in this report and are printed whole in the bundle."
+  ],
+  "not_printed": [
+    "Tool calls redone: 5 of 158 failed and were redone by a later call asking the same question: decompile_function for offset 0xb4cc (ev_0062) by ev_0084; emulate_hash_batch (ev_0090) by ev_0093; emulate_hash_batch (ev_0091) by ev_0094; transform_bytes (ev_0130) by ev_0133; transform_bytes (ev_0131) by ev_0132.",
+    "Tools withheld: 16 tools a server offers, withheld from the agents by the job's configuration (the operator's choice, listed in the bundle).",
+    "Sandbox report [ev_0026]: holds dropped (9), network (6), channels (26), extracted (1), processes (7), signatures (17).",
+    "Open questions naming only routines that have listed code: 7; the routines: offset 0x3728 in ev_0087, ev_0144; offset 0xc2c4 in ev_0087; offset 0x3868 in ev_0084, ev_0085; offset 0x6250 in ev_0088; offset 0x33ac in ev_0086; offset 0x309c in ev_0143; offset 0x463c in ev_0097, ev_0158 (after it was filed)."
+  ]
+}

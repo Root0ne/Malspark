@@ -1191,6 +1191,107 @@ class TechnicalAnalysis(BaseModel):
     )
 
 
+class InventoryCall(BaseModel):
+    """A call that ran and failed, as the limitations inventory holds it
+    (``reporting.limitation_inventory``): the addresses it was asked for, the later calls
+    that redid it (the run's one redo map), else each address a later call answered for."""
+
+    model_config = _STRICT_CONFIG
+
+    entry: str
+    tool: str
+    error: str = ""
+    asked: list[int] = Field(default_factory=list)
+    answered: list[tuple[int, str]] = Field(default_factory=list)
+    redone_by: list[str] = Field(default_factory=list)
+
+
+class InventoryTool(BaseModel):
+    """A tool the run could not offer, with the reason the run recorded."""
+
+    model_config = _STRICT_CONFIG
+
+    tool: str
+    reason: str
+
+
+class InventorySection(BaseModel):
+    """One section of the sandbox report's index: its item count, or why it holds none
+    (``unavailable``: the report lists it as unavailable from its sandbox; else the report
+    does not carry it)."""
+
+    model_config = _STRICT_CONFIG
+
+    name: str
+    items: int | None = None
+    unavailable: bool = False
+
+
+class InventoryCapture(BaseModel):
+    """The packet capture an entry of the declared capture kind read."""
+
+    model_config = _STRICT_CONFIG
+
+    entry: str
+    duration_s: float
+    packets: int | None = None
+    packets_read: int | None = None
+
+
+class InventoryQuestion(BaseModel):
+    """A question an analyst left open, and the listings of the routines it names: where
+    ``listed`` holds every address it names, every routine it names has listed code;
+    ``listed_after`` where each was listed after the analyst's last entry."""
+
+    model_config = _STRICT_CONFIG
+
+    agent: str = ""
+    question: str
+    reason: str
+    cites: list[str] = Field(default_factory=list)
+    addresses: list[int] = Field(default_factory=list)
+    listed: list[tuple[int, list[str]]] = Field(default_factory=list)
+    listed_after: bool = False
+
+    @property
+    def all_listed(self) -> bool:
+        """Whether it names a routine and every routine it names has listed code."""
+        return bool(self.addresses) and len(self.listed) == len(self.addresses)
+
+
+class LimitationInventory(BaseModel):
+    """What the run could not do, measured once from the ledger at report time.
+
+    Built by ``reporting.limitation_inventory.build_inventory`` and read by the
+    analyst report's section 11, the evidence bundle's limitations section, the
+    composer's limitations bundle and the agreement round: each prints or shows
+    what this record holds, from fixed templates citing entry ids, and none
+    reads it again from the ledger.
+    """
+
+    model_config = _STRICT_CONFIG
+
+    # Every ledger entry, as the run's evidence bounds count them.
+    entries: int = 0
+    # The entries trimmed to the budget, as the run's evidence bounds count them.
+    trimmed: int = 0
+    image_bases: list[int] = Field(default_factory=list)
+    failed: list[InventoryCall] = Field(default_factory=list)
+    # Routines whose code an entry lists, the routines they call that no entry lists,
+    # and the first of those on the path from a start the answers state, by rank.
+    listed: int = 0
+    unread: int = 0
+    unread_first: list[int] = Field(default_factory=list)
+    not_offered: list[InventoryTool] = Field(default_factory=list)
+    withheld: int = 0
+    recorded: list[str] = Field(default_factory=list)
+    sandbox_observed: bool = False
+    sandbox_entry: str = ""
+    sandbox_sections: list[InventorySection] = Field(default_factory=list)
+    capture: InventoryCapture | None = None
+    questions: list[InventoryQuestion] = Field(default_factory=list)
+
+
 class C2Channel(BaseModel):
     """One command-and-control channel (reference §9)."""
 
@@ -1819,6 +1920,12 @@ class MalwareReport(BaseModel):
     # after the body is composed (``reporting.claim_coverage``) and printed in
     # a section of their own; empty on a report stored before the field existed.
     claims_not_discussed: list[ClaimNotDiscussed] = Field(default_factory=list)
+    # What the run could not do, measured once from the ledger before the report's
+    # prose is written (``reporting.limitation_inventory``). ``None``, and left out of
+    # the dump, on a report stored before it existed, which renders as it did.
+    limitation_inventory: LimitationInventory | None = Field(
+        default=None, exclude_if=lambda value: value is None
+    )
     # The questions the analyst asked of the run when submitting it, each with
     # the report's answer (``QuestionAnswer``). Left out of the dump when none
     # was asked, so a report stored before the field, or of a job asked

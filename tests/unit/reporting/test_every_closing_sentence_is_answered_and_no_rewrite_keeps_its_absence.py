@@ -215,7 +215,7 @@ def _settled(report: MalwareReport, rows: list[dict[str, Any]]) -> list[dict[str
                 continue
             if sentence == FAILED:
                 redone = "One decompiler call failed, and a later call redid it [ev_0002][ev_0006]."
-                out.append(_row(passage.id, sentence, "rewrite", ["failed.1"], rewrite=redone))
+                out.append(_row(passage.id, sentence, "rewrite", ["inv.1"], rewrite=redone))
             elif sentence == GATES:
                 read = _listed_ids(report, GATE_A, GATE_B)
                 out.append(_row(passage.id, sentence, "rewrite", read, rewrite=GATES_READ))
@@ -414,7 +414,7 @@ def test_only_a_closing_sentence_is_left_out() -> None:
 
 def test_a_kept_failure_a_later_call_redid_is_left_out() -> None:
     report = _report()
-    kept = _row("limitations", FAILED, "keep", ["failed.1"], quote="no function there")
+    kept = _row("limitations", FAILED, "keep", ["inv.1"], quote="no function there")
     done, reporter = _ask(
         report, {"sentences": _settled(report, [kept])}, {"sentences": _settled(report, [kept])}
     )

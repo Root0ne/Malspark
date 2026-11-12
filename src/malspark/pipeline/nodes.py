@@ -369,6 +369,18 @@ def _empty_isr(agent_name: str, revision_round: int = 0) -> AgentISR:
     )
 
 
+def _limitations_as_recorded(report: Any) -> None:
+    """The limitations inventory's recorded reasons read again once more were recorded, so
+    section 11 and the bundle count the same ones (``limitation_inventory``). Never raises:
+    a read that fails leaves the record as built."""
+    try:
+        from malspark.reporting.limitation_inventory import with_reasons_as_recorded
+
+        with_reasons_as_recorded(report)
+    except Exception as exc:  # noqa: BLE001 — the record as built stands
+        logger.warning("report_node: the limitations inventory's reasons were not read (%s).", exc)
+
+
 def _note_unlinked_techniques(report: Any, unlinked: Sequence[tuple[str, int]]) -> None:
     """Record the judge annotations that went with a rejected technique.
 
@@ -8454,6 +8466,18 @@ def make_report_node(
                     report.degradation_reasons.append(_reason)
             hold_the_report_in_progress(container, report)
 
+        # What the run could not do, measured once from the ledger before the
+        # report's prose is written: the limitations' writer is shown it, the
+        # agreement round holds the paragraph to it and section 11 prints it
+        # (``reporting.limitation_inventory``). A read that fails leaves the
+        # report as one stored before it existed, never without its report.
+        try:
+            from malspark.reporting.limitation_inventory import build_inventory
+
+            report.limitation_inventory = await asyncio.to_thread(build_inventory, report, _ledger)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("report_node: the limitations inventory was not read (%s).", exc)
+
         # Section-wise Composer authors the professional
         # spine (background, execution flow, technical-analysis subsections by
         # capability, configuration, commands, C2 channels),
@@ -8518,6 +8542,7 @@ def make_report_node(
             for _reason in getattr(composer, "degradations", None) or []:
                 if _reason not in report.degradation_reasons:
                     report.degradation_reasons.append(str(_reason))
+            _limitations_as_recorded(report)
 
             # The passages written without the code were written beside
             # section 5, not after it: asked once whether one says otherwise
@@ -8533,6 +8558,8 @@ def make_report_node(
                 items=_items,
                 evidence_texts=_entry_texts,
             )
+            # The round's own reasons are the last the run records.
+            _limitations_as_recorded(report)
 
         # Every claim in force the composed body neither cites nor discusses,
         # listed in a section of its own rather than lost with nothing saying

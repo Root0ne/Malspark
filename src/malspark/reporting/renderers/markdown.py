@@ -106,6 +106,7 @@ from malspark.reporting.models import (
     CapabilityCell,
     ConsolidatedIOC,
     DetectionRule,
+    LimitationInventory,
     MalwareReport,
     ProcessNode,
     RegistryMod,
@@ -312,6 +313,8 @@ _UNCITED_NOTE = (
 # (``prose_forms.section_reference``): each heading and each reference read
 # the one name, and the number is the rendered heading's.
 LIMITATIONS_TITLE = "Limitations and analysis notes"
+# The heading the bundle's limitations section lists the limitations inventory under.
+INVENTORY_HEADING = "Measured limitations"
 ANALYST_LIMITATIONS_TITLE = "Limitations"
 INDICATORS_TITLE = "Indicators of compromise"
 STATIC_TITLE = "Static properties"
@@ -530,7 +533,11 @@ class MarkdownRenderer:
             failed = int(evidence.get("failed") or 0)
             said = f"\nEvidence: {entries} tool call(s)"
             said += f", {failed} failed" if failed else ""
-            said += _redone_clause(evidence, ids=False) if failed else ""
+            said += (
+                _redone_clause(evidence, ids=False, inventory=report.limitation_inventory)
+                if failed
+                else ""
+            )
             repeats = int(evidence.get("repeats") or 0)
             said += f", {repeats} answered from an earlier entry" if repeats else ""
             guarded = int(evidence.get("guard_answers") or 0)
@@ -2128,6 +2135,16 @@ class MarkdownRenderer:
             lines.append("")
         lines.append(ctx.sandbox_sentence())
         lines.append("")
+        if report.limitation_inventory is not None:
+            # Every row of the inventory the analyst report's section 11 prints
+            # from, the ones it leaves to this bundle too, in the same words.
+            from malspark.reporting.limitation_inventory import inventory_rows, reason_label
+
+            rows = inventory_rows(report.limitation_inventory, reason_as=reason_label)
+            if rows:
+                lines.extend([f"**{INVENTORY_HEADING}:**", ""])
+                lines.extend(_item(ctx.inline(row.text)) for row in rows)
+                lines.append("")
 
         if report.degradation_reasons:
             # Every reason as the run recorded it, with the operator's remedy
@@ -2151,11 +2168,11 @@ class MarkdownRenderer:
             lines.append(
                 f"**Evidence bounds:** {evidence.get('entries', 0)} ledger entries, "
                 f"{evidence.get('ok', 0)} ok, {evidence.get('failed', 0)} failed"
-                + _redone_clause(evidence, ids=True)
+                + _redone_clause(evidence, ids=True, inventory=report.limitation_inventory)
                 + ", "
                 + (f"{repeats} answered from an earlier entry without running, " if repeats else "")
                 + (f"{guarded} answered by a guard with no tool run, " if guarded else "")
-                + f"{evidence.get('trimmed', 0)} trimmed to the budget"
+                + f"{_trimmed(evidence, report.limitation_inventory)} trimmed to the budget"
                 + _guardrail_cut_clause(evidence, summary.get("truncation"))
                 + "."
             )
@@ -2679,15 +2696,12 @@ class _Context:
         self.identifier_unheld = _rows_named_in(
             self.unresolved, "report.value_not_in_cited_entry", "identifier"
         )
-        net = report.network
         # What the run knows about a sandbox, in four answers: it recorded
         # something; its tools were called and returned nothing; none was
         # called; or the report does not say (stored without its index).
-        observed = report.dynamic is not None or any(
-            getattr(row, "source", None) == "sandbox"
-            for row in [*(net.domains if net else []), *(net.ips if net else [])]
-            + list(net.urls if net else [])
-        )
+        from malspark.reporting.evidence_bundles import sandbox_recorded
+
+        observed = sandbox_recorded(report)
         # The pack's status entry is a sentence about the sandbox, not a call
         # to one, and is read as the statement it is.
         called = any(
@@ -3102,12 +3116,21 @@ class _Context:
     def partial_sentence(self) -> str:
         """What made the evidence partial, as a sentence, or ``""``."""
         evidence = (self.report.run_summary or {}).get("evidence") or {}
+        inventory = self.report.limitation_inventory
         # A failed call a later call redid left no gap: counted in the run's
-        # bounds, not here (T-494 D6).
-        redone = len(_redone_rows(evidence))
-        failed = max(0, int(evidence.get("failed") or 0) - redone)
-        trimmed = int(evidence.get("trimmed") or 0)
-        entries = int(evidence.get("entries") or 0)
+        # bounds, not here (T-494 D6). Where the report holds the limitations
+        # inventory, its failed calls are the count, as section 11 prints them.
+        if inventory is not None:
+            from malspark.reporting.limitation_inventory import failed_counts
+
+            failed, redone = failed_counts(inventory)
+            failed -= redone
+            entries = inventory.entries
+        else:
+            redone = len(_redone_rows(evidence))
+            failed = max(0, int(evidence.get("failed") or 0) - redone)
+            entries = int(evidence.get("entries") or 0)
+        trimmed = int(_trimmed(evidence, inventory) or 0)
         parts = []
         if failed:
             not_redone = " and were not redone" if redone else ""
@@ -3117,18 +3140,33 @@ class _Context:
         return f" The evidence is partial: {' and '.join(parts)}." if parts else ""
 
 
-def _redone_rows(evidence: dict[str, Any]) -> list[dict[str, Any]]:
-    """The failed calls a later call redid (``run_summary.evidence.redone``), as held."""
+def _trimmed(evidence: dict[str, Any], inventory: LimitationInventory | None) -> Any:
+    """The entries trimmed to the budget: the limitations inventory's count, where the report
+    holds one, else the run's bounds' (``run_summary.evidence.trimmed``), as held."""
+    return inventory.trimmed if inventory is not None else evidence.get("trimmed", 0)
+
+
+def _redone_rows(
+    evidence: dict[str, Any], inventory: LimitationInventory | None = None
+) -> list[dict[str, Any]]:
+    """The failed calls a later call redid: the limitations inventory's, where the report
+    holds one, else the run's bounds' (``run_summary.evidence.redone``), as held."""
+    if inventory is not None:
+        from malspark.reporting.limitation_inventory import redone_rows
+
+        return redone_rows(inventory)
     return [row for row in (evidence.get("redone") or []) if isinstance(row, dict)]
 
 
-def _redone_clause(evidence: dict[str, Any], *, ids: bool) -> str:
+def _redone_clause(
+    evidence: dict[str, Any], *, ids: bool, inventory: LimitationInventory | None = None
+) -> str:
     """``", N of them redone ..."`` after a failed count, or ``""`` when none was redone.
 
     With ``ids``, in brackets, each redone call and the later calls that
-    answered it, as the run's bounds list them.
+    answered it, as the run's bounds list them (the inventory's, where held).
     """
-    rows = _redone_rows(evidence)
+    rows = _redone_rows(evidence, inventory)
     if not rows:
         return ""
     said = f"{len(rows)} of them redone by a later call for the same address"

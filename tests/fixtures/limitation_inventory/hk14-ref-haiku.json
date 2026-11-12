@@ -1,0 +1,668 @@
+{
+  "run": "hk14-ref-haiku",
+  "inventory": {
+    "entries": 127,
+    "trimmed": 0,
+    "image_bases": [
+      1331636994048
+    ],
+    "failed": [
+      {
+        "entry": "ev_0051",
+        "tool": "decompile_function",
+        "error": "[ERROR] Cannot find function in 0x1360bc02200",
+        "asked": [
+          1331637002752
+        ],
+        "answered": [
+          [
+            1331637002752,
+            "ev_0064"
+          ]
+        ],
+        "redone_by": [
+          "ev_0064"
+        ]
+      },
+      {
+        "entry": "ev_0053",
+        "tool": "decompile_function",
+        "error": "[ERROR] Cannot find function in 0x00002200",
+        "asked": [
+          1331637002752
+        ],
+        "answered": [
+          [
+            1331637002752,
+            "ev_0064"
+          ]
+        ],
+        "redone_by": [
+          "ev_0064"
+        ]
+      },
+      {
+        "entry": "ev_0054",
+        "tool": "decompile_function",
+        "error": "[ERROR] Cannot find function in 0x00001030",
+        "asked": [
+          1331636998192
+        ],
+        "answered": [
+          [
+            1331636998192,
+            "ev_0063"
+          ]
+        ],
+        "redone_by": [
+          "ev_0063"
+        ]
+      }
+    ],
+    "listed": 61,
+    "unread": 68,
+    "unread_first": [
+      1331637036444,
+      1331637030988
+    ],
+    "not_offered": [
+      {
+        "tool": "check_domain_reputation",
+        "reason": "VIRUSTOTAL_API_KEY is not configured"
+      },
+      {
+        "tool": "check_hash",
+        "reason": "VIRUSTOTAL_API_KEY is not configured"
+      },
+      {
+        "tool": "check_ip_reputation",
+        "reason": "VIRUSTOTAL_API_KEY is not configured; ABUSEIPDB_API_KEY is not configured"
+      }
+    ],
+    "withheld": 16,
+    "recorded": [],
+    "sandbox_observed": true,
+    "sandbox_entry": "ev_0026",
+    "sandbox_sections": [
+      {
+        "name": "files",
+        "items": null,
+        "unavailable": false
+      },
+      {
+        "name": "alerts",
+        "items": null,
+        "unavailable": false
+      },
+      {
+        "name": "events",
+        "items": null,
+        "unavailable": true
+      },
+      {
+        "name": "dropped",
+        "items": 6,
+        "unavailable": false
+      },
+      {
+        "name": "mutexes",
+        "items": null,
+        "unavailable": false
+      },
+      {
+        "name": "network",
+        "items": 6,
+        "unavailable": false
+      },
+      {
+        "name": "apistats",
+        "items": null,
+        "unavailable": true
+      },
+      {
+        "name": "channels",
+        "items": 26,
+        "unavailable": false
+      },
+      {
+        "name": "commands",
+        "items": null,
+        "unavailable": false
+      },
+      {
+        "name": "registry",
+        "items": null,
+        "unavailable": true
+      },
+      {
+        "name": "services",
+        "items": null,
+        "unavailable": false
+      },
+      {
+        "name": "api_calls",
+        "items": null,
+        "unavailable": true
+      },
+      {
+        "name": "extracted",
+        "items": 1,
+        "unavailable": false
+      },
+      {
+        "name": "procdumps",
+        "items": null,
+        "unavailable": false
+      },
+      {
+        "name": "processes",
+        "items": 7,
+        "unavailable": false
+      },
+      {
+        "name": "signatures",
+        "items": 17,
+        "unavailable": false
+      },
+      {
+        "name": "screenshots",
+        "items": null,
+        "unavailable": true
+      },
+      {
+        "name": "resolved_apis",
+        "items": null,
+        "unavailable": false
+      }
+    ],
+    "capture": {
+      "entry": "ev_0017",
+      "duration_s": 600.2,
+      "packets": 1323,
+      "packets_read": 1323
+    },
+    "questions": [
+      {
+        "agent": "all_tools_static_r2",
+        "question": "Do the CreateProcessW, ReadFile, PeekNamedPipe and TerminateProcess calls in 0x1030 run the decoded cmd.exe command?",
+        "reason": "tool_failed",
+        "cites": [
+          "ev_0051",
+          "ev_0054",
+          "ev_0056"
+        ],
+        "addresses": [
+          1331636998192
+        ],
+        "listed": [
+          [
+            1331636998192,
+            [
+              "ev_0063",
+              "ev_0124",
+              "ev_0056"
+            ]
+          ]
+        ],
+        "listed_after": true
+      },
+      {
+        "agent": "all_tools_static_r2",
+        "question": "Are the function boundaries of 0x2200 and 0x1030 correct, given that the decompiler reports no function at either address?",
+        "reason": "tool_failed",
+        "cites": [
+          "ev_0052",
+          "ev_0053",
+          "ev_0054"
+        ],
+        "addresses": [
+          1331637002752,
+          1331636998192
+        ],
+        "listed": [
+          [
+            1331637002752,
+            [
+              "ev_0064",
+              "ev_0055"
+            ]
+          ],
+          [
+            1331636998192,
+            [
+              "ev_0063",
+              "ev_0124",
+              "ev_0056"
+            ]
+          ]
+        ],
+        "listed_after": true
+      },
+      {
+        "agent": "static",
+        "question": "Which export or DllMain runs the loader, and what the payload does",
+        "reason": "needs_sandbox_run",
+        "cites": [
+          "ev_0028",
+          "ev_0044"
+        ],
+        "addresses": [],
+        "listed": [],
+        "listed_after": false
+      },
+      {
+        "agent": "static",
+        "question": "Whether the C2 hosts are contacted, and what they return",
+        "reason": "needs_sandbox_run",
+        "cites": [
+          "ev_0017",
+          "ev_0021"
+        ],
+        "addresses": [],
+        "listed": [],
+        "listed_after": false
+      },
+      {
+        "agent": "static",
+        "question": "RC4 key and what the RC4 routine decrypts",
+        "reason": "obfuscated",
+        "cites": [
+          "ev_0008",
+          "ev_0023"
+        ],
+        "addresses": [
+          1331637045932
+        ],
+        "listed": [
+          [
+            1331637045932,
+            [
+              "ev_0070"
+            ]
+          ]
+        ],
+        "listed_after": true
+      },
+      {
+        "agent": "static",
+        "question": "Role of the FNV-32 routine at 0xc99c",
+        "reason": "obfuscated",
+        "cites": [
+          "ev_0008",
+          "ev_0023"
+        ],
+        "addresses": [
+          1331637045660
+        ],
+        "listed": [
+          [
+            1331637045660,
+            [
+              "ev_0068"
+            ]
+          ]
+        ],
+        "listed_after": true
+      },
+      {
+        "agent": "static",
+        "question": "Which process 0x463c's OpenProcess and ReadProcessMemory act on, and whether any remote write follows",
+        "reason": "needs_sandbox_run",
+        "cites": [
+          "ev_0020",
+          "ev_0025"
+        ],
+        "addresses": [
+          1331637012028
+        ],
+        "listed": [
+          [
+            1331637012028,
+            [
+              "ev_0066"
+            ]
+          ]
+        ],
+        "listed_after": true
+      },
+      {
+        "agent": "static",
+        "question": "Contents of the six dropped files",
+        "reason": "needs_sandbox_run",
+        "cites": [
+          "ev_0015",
+          "ev_0027"
+        ],
+        "addresses": [],
+        "listed": [],
+        "listed_after": false
+      },
+      {
+        "agent": "static",
+        "question": "Mutex name (CreateMutexW is imported; no name recovered)",
+        "reason": "other",
+        "cites": [
+          "ev_0019",
+          "ev_0044"
+        ],
+        "addresses": [],
+        "listed": [],
+        "listed_after": false
+      },
+      {
+        "agent": "static",
+        "question": "Decoding disagreement at 0x4571: FLOSS gives 'init -=' and the blob decoder gives 'init -zzzz='",
+        "reason": "tool_failed",
+        "cites": [
+          "ev_0019",
+          "ev_0021"
+        ],
+        "addresses": [
+          1331637011825
+        ],
+        "listed": [],
+        "listed_after": false
+      },
+      {
+        "agent": "static",
+        "question": "Family attribution",
+        "reason": "other",
+        "cites": [
+          "ev_0014",
+          "ev_0018",
+          "ev_0030"
+        ],
+        "addresses": [],
+        "listed": [],
+        "listed_after": false
+      },
+      {
+        "agent": "dynamic",
+        "question": "Do the decoded discovery and AV commands actually run, and what do they return?",
+        "reason": "needs_sandbox_run",
+        "cites": [
+          "ev_0026",
+          "ev_0085"
+        ],
+        "addresses": [],
+        "listed": [],
+        "listed_after": false
+      },
+      {
+        "agent": "dynamic",
+        "question": "Does the sample contact its C2 hosts, and is 93.123.17.252 related to the sample?",
+        "reason": "needs_sandbox_run",
+        "cites": [
+          "ev_0013",
+          "ev_0017",
+          "ev_0089"
+        ],
+        "addresses": [],
+        "listed": [],
+        "listed_after": false
+      },
+      {
+        "agent": "dynamic",
+        "question": "Is the Updater scheduled task registered, and does the copy under AppData\\Custom_update run?",
+        "reason": "needs_sandbox_run",
+        "cites": [
+          "ev_0086",
+          "ev_0090"
+        ],
+        "addresses": [],
+        "listed": [],
+        "listed_after": false
+      },
+      {
+        "agent": "dynamic",
+        "question": "Is any Run/RunOnce or startup-folder autostart written (T1547.001)?",
+        "reason": "needs_sandbox_run",
+        "cites": [
+          "ev_0019",
+          "ev_0088"
+        ],
+        "addresses": [],
+        "listed": [],
+        "listed_after": false
+      },
+      {
+        "agent": "dynamic",
+        "question": "Which export or DllMain the real loader calls, and whether 0x3cb4 reaches init (0x3868) or the dispatcher (0x3cf4)",
+        "reason": "tool_failed",
+        "cites": [
+          "ev_0028",
+          "ev_0044"
+        ],
+        "addresses": [
+          1331637009588,
+          1331637008488,
+          1331637009652
+        ],
+        "listed": [
+          [
+            1331637008488,
+            [
+              "ev_0069"
+            ]
+          ],
+          [
+            1331637009652,
+            [
+              "ev_0069"
+            ]
+          ]
+        ],
+        "listed_after": false
+      },
+      {
+        "agent": "dynamic",
+        "question": "Which init export name is correct: `init -=` (FLOSS, 0x4571) or `init -zzzz=` (blob 0xfac0)?",
+        "reason": "tool_failed",
+        "cites": [
+          "ev_0019",
+          "ev_0021"
+        ],
+        "addresses": [
+          1331637011825,
+          1331637058240
+        ],
+        "listed": [],
+        "listed_after": false
+      },
+      {
+        "agent": "dynamic",
+        "question": "What does the command-0xe payload contain, and does 0xb398 run it?",
+        "reason": "needs_sandbox_run",
+        "cites": [
+          "ev_0068",
+          "ev_0069"
+        ],
+        "addresses": [
+          1331637040024
+        ],
+        "listed": [
+          [
+            1331637040024,
+            [
+              "ev_0069"
+            ]
+          ]
+        ],
+        "listed_after": false
+      },
+      {
+        "agent": "dynamic",
+        "question": "What mutex name, if any, does init create (CreateMutexW in 0x3868)?",
+        "reason": "needs_sandbox_run",
+        "cites": [
+          "ev_0025",
+          "ev_0026"
+        ],
+        "addresses": [
+          1331637008488
+        ],
+        "listed": [
+          [
+            1331637008488,
+            [
+              "ev_0069"
+            ]
+          ]
+        ],
+        "listed_after": false
+      },
+      {
+        "agent": "dynamic",
+        "question": "Is the sample a Latrodectus-type loader, or is the family label from the static task only?",
+        "reason": "no_capable_tool",
+        "cites": [
+          "ev_0086",
+          "ev_0092",
+          "ev_0093"
+        ],
+        "addresses": [],
+        "listed": [],
+        "listed_after": false
+      },
+      {
+        "agent": "dynamic",
+        "question": "Does the RC4 channel with key 12345 encrypt the check-in body, and does it decrypt replies?",
+        "reason": "obfuscated",
+        "cites": [
+          "ev_0008",
+          "ev_0021",
+          "ev_0070"
+        ],
+        "addresses": [],
+        "listed": [],
+        "listed_after": false
+      },
+      {
+        "agent": "dynamic",
+        "question": "Does routine 0x1030's read loop run more than once, and does TerminateProcess follow?",
+        "reason": "tool_failed",
+        "cites": [
+          "ev_0063"
+        ],
+        "addresses": [
+          1331636998192
+        ],
+        "listed": [
+          [
+            1331636998192,
+            [
+              "ev_0063",
+              "ev_0124",
+              "ev_0056"
+            ]
+          ]
+        ],
+        "listed_after": true
+      },
+      {
+        "agent": "dynamic",
+        "question": "Does the sample inject into or write to any other process?",
+        "reason": "needs_sandbox_run",
+        "cites": [
+          "ev_0025",
+          "ev_0066"
+        ],
+        "addresses": [],
+        "listed": [],
+        "listed_after": false
+      },
+      {
+        "agent": "network",
+        "question": "Where does the 93.123.17.252:80 flow (337 packets, 283,931 bytes sent by the host) go, and what does it carry?",
+        "reason": "other",
+        "cites": [
+          "ev_0096",
+          "ev_0097",
+          "ev_0099"
+        ],
+        "addresses": [],
+        "listed": [],
+        "listed_after": false
+      },
+      {
+        "agent": "network",
+        "question": "Does the sample reach its C2 in this run, and under what conditions does the C2 thread start?",
+        "reason": "needs_sandbox_run",
+        "cites": [
+          "ev_0012",
+          "ev_0028",
+          "ev_0096"
+        ],
+        "addresses": [],
+        "listed": [],
+        "listed_after": false
+      },
+      {
+        "agent": "network",
+        "question": "Does a scheduled check-in fall inside the 600.2 s capture window?",
+        "reason": "other",
+        "cites": [
+          "ev_0017",
+          "ev_0097"
+        ],
+        "addresses": [],
+        "listed": [],
+        "listed_after": false
+      },
+      {
+        "agent": "network",
+        "question": "What is on the wire for the check-in and the reply, and is RC4 applied before the POST?",
+        "reason": "needs_sandbox_run",
+        "cites": [
+          "ev_0008",
+          "ev_0021",
+          "ev_0097"
+        ],
+        "addresses": [],
+        "listed": [],
+        "listed_after": false
+      },
+      {
+        "agent": "network",
+        "question": "Is the family label Latrodectus supported by the sample's own code?",
+        "reason": "other",
+        "cites": [
+          "ev_0007",
+          "ev_0014",
+          "ev_0018",
+          "ev_0103"
+        ],
+        "addresses": [],
+        "listed": [],
+        "listed_after": false
+      },
+      {
+        "agent": "network",
+        "question": "Do the decoded discovery commands run on a host?",
+        "reason": "needs_sandbox_run",
+        "cites": [
+          "ev_0012",
+          "ev_0019",
+          "ev_0021"
+        ],
+        "addresses": [],
+        "listed": [],
+        "listed_after": false
+      }
+    ]
+  },
+  "printed": [
+    "Code read: 61 routines have listed code; 68 routines they call have none, first on the start path: offsets 0xa59c, 0x904c.",
+    "Tools the run could not offer: check_domain_reputation, check_hash (\"VIRUSTOTAL_API_KEY is not configured\"); check_ip_reputation (\"VIRUSTOTAL_API_KEY is not configured; ABUSEIPDB_API_KEY is not configured\").",
+    "Sandbox report [ev_0026]: events, apistats, registry, api_calls and screenshots are unavailable from the sandbox; files, alerts, mutexes, commands, services, procdumps and resolved_apis are not in the sandbox report as read.",
+    "Packet capture [ev_0017] covers 600.2 s (1,323 packets); traffic outside that window was not captured.",
+    "Open questions: 29 filed (needs a sandbox run: 14, a tool failed: 6, other: 5, obfuscated code: 3, no capable tool: 1); 8 name only routines that have listed code, 6 of them listed after the question was filed. All are in the bundle.",
+    "36 analyst claims in force are not discussed in this report and are printed whole in the bundle."
+  ],
+  "not_printed": [
+    "Tool calls redone: 3 of 127 failed and were redone by a later call asking the same question: decompile_function for offset 0x2200 (ev_0051) by ev_0064; decompile_function for offset 0x2200 (ev_0053) by ev_0064; decompile_function for offset 0x1030 (ev_0054) by ev_0063.",
+    "Tools withheld: 16 tools a server offers, withheld from the agents by the job's configuration (the operator's choice, listed in the bundle).",
+    "Sandbox report [ev_0026]: holds dropped (6), network (6), channels (26), extracted (1), processes (7), signatures (17).",
+    "Open questions naming only routines that have listed code: 8; the routines: offset 0x1030 in ev_0063, ev_0124, ev_0056 (after it was filed); offset 0x2200 in ev_0064, ev_0055 (after it was filed); offset 0xcaac in ev_0070 (after it was filed); offset 0xc99c in ev_0068 (after it was filed); offset 0x463c in ev_0066 (after it was filed); offset 0xb398 in ev_0069; offset 0x3868 in ev_0069."
+  ]
+}

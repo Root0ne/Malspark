@@ -40,7 +40,6 @@ named and a temporary directory of the replay's own.
 from __future__ import annotations
 
 import argparse
-import json
 import shutil
 import sys
 import tempfile
@@ -108,9 +107,16 @@ def _parser() -> argparse.ArgumentParser:
     return parser
 
 
-def _error(message: str) -> NoReturn:
-    """Say ``message`` and end with the status an error has (2)."""
-    print(f"replay: {message}", file=sys.stderr)
+def _error(words: str, *values: object) -> NoReturn:
+    """Say ``words`` with each ``{}`` filled by a value, and end with the status an error has (2).
+
+    A value can be a path or a name from a stored run, so each is escaped on its
+    own: a mark that starts one is shown as an escape, never drawn on the words.
+    """
+    from scripts.replay.output import terminal_safe
+
+    said = terminal_safe(words).format(*(terminal_safe(value) for value in values))
+    print(f"replay: {said}", file=sys.stderr)
     raise SystemExit(2)
 
 
@@ -119,12 +125,14 @@ def _outside(path: Path, runs: list[Path]) -> None:
     target = path.resolve()
     for run in runs:
         if target == run.resolve() or run.resolve() in target.parents:
-            _error(f"refused: {path} is inside the stored run {run}")
+            _error("refused: {} is inside the stored run {}", path, run)
 
 
 def _write(path: Path | None, value: Any) -> None:
     if path is not None:
-        path.write_text(json.dumps(value, indent=1, sort_keys=True), encoding="utf-8")
+        from scripts.replay.output import write_json
+
+        write_json(path, value, indent=1, sort_keys=True)
 
 
 def _replay(runs: list[Path], show_text: bool) -> list[dict[str, Any]]:
@@ -175,9 +183,9 @@ def _compare(
                     tree, runs, base / f"{side}-replay.json", show_text=show_text, timeout=timeout
                 )
             except compare.PredatesTheReplay as exc:
-                _error(str(exc))
+                _error("{}", exc)
             except compare.RefTimedOut as exc:
-                _error(f"{ref}: {exc}")
+                _error("{}: {}", ref, exc)
         for run in runs:
             check_unchanged(before[str(run)], digests(run))
         diffs = [
@@ -214,11 +222,15 @@ def main(argv: list[str] | None = None) -> int:
                     args.job, target, database_url=args.database_url, overwrite=args.overwrite
                 )
             except StoredRunExists as exc:
-                _error(f"refused: {exc}")
+                _error("refused: {}", exc)
             for directory, cleared in exported:
                 if cleared and not args.quiet:
+                    from scripts.replay.output import terminal_safe
+
                     print(
-                        f"replay: cleared the earlier export's {', '.join(cleared)} in {directory}",
+                        "replay: cleared the earlier export's "
+                        f"{', '.join(terminal_safe(c) for c in cleared)} in "
+                        f"{terminal_safe(directory)}",
                         file=sys.stderr,
                     )
                 runs.append(directory)
@@ -226,7 +238,7 @@ def main(argv: list[str] | None = None) -> int:
             _parser().error("name a stored run or a --job")
         for run in runs:
             if not run.is_dir():
-                _error(f"no stored run at {run}")
+                _error("no stored run at {}", run)
         if args.compare:
             diffs, status = _compare(
                 runs,
@@ -241,13 +253,17 @@ def main(argv: list[str] | None = None) -> int:
             return status
         records = _replay(runs, args.show_text)
         _write(args.json, records[0] if len(records) == 1 else records)
-        if not args.quiet:
-            from scripts.replay.output import render_record
+        from scripts.replay.output import render_record, terminal_safe
 
+        if not args.quiet:
             print("\n\n".join(render_record(record) for record in records))
         raised = [(record.get("run"), row) for record in records for row in errors(record)]
         for name, row in raised:
-            print(f"replay: {name}: {row['part']} raised: {row['why']}", file=sys.stderr)
+            print(
+                f"replay: {terminal_safe(name)}: {terminal_safe(row['part'])} raised: "
+                f"{terminal_safe(row['why'])}",
+                file=sys.stderr,
+            )
         return 2 if raised else 0
     finally:
         for directory in job_dirs:

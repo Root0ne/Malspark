@@ -1,0 +1,606 @@
+{
+  "run": "haiku8",
+  "inventory": {
+    "entries": 214,
+    "trimmed": 0,
+    "image_bases": [
+      1331636994048
+    ],
+    "failed": [
+      {
+        "entry": "ev_0008",
+        "tool": "capa",
+        "error": "capa rules directory capa-rules is missing or empty",
+        "asked": [],
+        "answered": [],
+        "redone_by": []
+      },
+      {
+        "entry": "ev_0122",
+        "tool": "emulate_hash_batch",
+        "error": "No candidates provided",
+        "asked": [],
+        "answered": [],
+        "redone_by": []
+      },
+      {
+        "entry": "ev_0168",
+        "tool": "batch_decompile",
+        "error": "program='a digest' is not a program this job opened on remote a URL (backend 1)",
+        "asked": [
+          1331637022536,
+          1331637042348,
+          1331637009652
+        ],
+        "answered": [
+          [
+            1331637022536,
+            "ev_0171"
+          ],
+          [
+            1331637042348,
+            "ev_0171"
+          ],
+          [
+            1331637009652,
+            "ev_0171"
+          ]
+        ],
+        "redone_by": [
+          "ev_0171"
+        ]
+      },
+      {
+        "entry": "ev_0169",
+        "tool": "disassemble_function",
+        "error": "program='a digest' is not a program this job opened on remote a URL (backend 1)",
+        "asked": [
+          1331637008488
+        ],
+        "answered": [
+          [
+            1331637008488,
+            "ev_0170"
+          ]
+        ],
+        "redone_by": [
+          "ev_0170"
+        ]
+      },
+      {
+        "entry": "ev_0187",
+        "tool": "decompile_function",
+        "error": "program='a digest' is not a program this job opened on remote a URL (backend 1)",
+        "asked": [
+          1331637025664
+        ],
+        "answered": [
+          [
+            1331637025664,
+            "ev_0191"
+          ]
+        ],
+        "redone_by": [
+          "ev_0191"
+        ]
+      }
+    ],
+    "listed": 83,
+    "unread": 53,
+    "unread_first": [
+      1331637036444,
+      1331637030988
+    ],
+    "not_offered": [
+      {
+        "tool": "check_domain_reputation",
+        "reason": "VIRUSTOTAL_API_KEY is not configured"
+      },
+      {
+        "tool": "check_hash",
+        "reason": "VIRUSTOTAL_API_KEY is not configured"
+      },
+      {
+        "tool": "check_ip_reputation",
+        "reason": "VIRUSTOTAL_API_KEY is not configured; ABUSEIPDB_API_KEY is not configured"
+      }
+    ],
+    "withheld": 16,
+    "recorded": [
+      "triage.capa_failed"
+    ],
+    "sandbox_observed": true,
+    "sandbox_entry": "ev_0026",
+    "sandbox_sections": [
+      {
+        "name": "files",
+        "items": null,
+        "unavailable": false
+      },
+      {
+        "name": "alerts",
+        "items": null,
+        "unavailable": false
+      },
+      {
+        "name": "events",
+        "items": null,
+        "unavailable": true
+      },
+      {
+        "name": "dropped",
+        "items": 6,
+        "unavailable": false
+      },
+      {
+        "name": "mutexes",
+        "items": null,
+        "unavailable": false
+      },
+      {
+        "name": "network",
+        "items": 6,
+        "unavailable": false
+      },
+      {
+        "name": "apistats",
+        "items": null,
+        "unavailable": true
+      },
+      {
+        "name": "channels",
+        "items": 26,
+        "unavailable": false
+      },
+      {
+        "name": "commands",
+        "items": null,
+        "unavailable": false
+      },
+      {
+        "name": "registry",
+        "items": null,
+        "unavailable": true
+      },
+      {
+        "name": "services",
+        "items": null,
+        "unavailable": false
+      },
+      {
+        "name": "api_calls",
+        "items": null,
+        "unavailable": true
+      },
+      {
+        "name": "extracted",
+        "items": 1,
+        "unavailable": false
+      },
+      {
+        "name": "procdumps",
+        "items": null,
+        "unavailable": false
+      },
+      {
+        "name": "processes",
+        "items": 6,
+        "unavailable": false
+      },
+      {
+        "name": "signatures",
+        "items": 17,
+        "unavailable": false
+      },
+      {
+        "name": "screenshots",
+        "items": null,
+        "unavailable": true
+      },
+      {
+        "name": "resolved_apis",
+        "items": null,
+        "unavailable": false
+      }
+    ],
+    "capture": {
+      "entry": "ev_0017",
+      "duration_s": 590.8,
+      "packets": 1242,
+      "packets_read": 1242
+    },
+    "questions": [
+      {
+        "agent": "all_tools_static_r2",
+        "question": "Does 0xad34 allocate executable memory for the 0x72c8 heap copy?",
+        "reason": "tool_failed",
+        "cites": [
+          "ev_0025",
+          "ev_0088"
+        ],
+        "addresses": [
+          1331637038388,
+          1331637023432
+        ],
+        "listed": [
+          [
+            1331637023432,
+            [
+              "ev_0088"
+            ]
+          ]
+        ],
+        "listed_after": false
+      },
+      {
+        "agent": "all_tools_static_r2",
+        "question": "Do cmd.exe and wmic.exe run the intended command when the command text is lpCommandLine?",
+        "reason": "needs_sandbox_run",
+        "cites": [
+          "ev_0012",
+          "ev_0079"
+        ],
+        "addresses": [],
+        "listed": [],
+        "listed_after": false
+      },
+      {
+        "agent": "all_tools_static_r2",
+        "question": "Which code supplies command type 0x04 and the other dispatch types?",
+        "reason": "no_capable_tool",
+        "cites": [
+          "ev_0082",
+          "ev_0087"
+        ],
+        "addresses": [
+          1331636994052,
+          1331637015580,
+          1331637009652
+        ],
+        "listed": [
+          [
+            1331637015580,
+            [
+              "ev_0085"
+            ]
+          ],
+          [
+            1331637009652,
+            [
+              "ev_0087",
+              "ev_0171"
+            ]
+          ]
+        ],
+        "listed_after": false
+      },
+      {
+        "agent": "static",
+        "question": "Does the 0x6f48 write guard ever pass for the 0x6c2c, 0x4110 and 0x6e04 callers, given that the bcac first argument is their NULL out-pointer?",
+        "reason": "tool_failed",
+        "cites": [
+          "ev_0059",
+          "ev_0082",
+          "ev_0087",
+          "ev_0088",
+          "ev_0092"
+        ],
+        "addresses": [
+          1331637022536,
+          1331637021740,
+          1331637010704,
+          1331637022212
+        ],
+        "listed": [
+          [
+            1331637022536,
+            [
+              "ev_0059",
+              "ev_0082",
+              "ev_0171",
+              "ev_0149"
+            ]
+          ],
+          [
+            1331637021740,
+            [
+              "ev_0088"
+            ]
+          ],
+          [
+            1331637010704,
+            [
+              "ev_0088"
+            ]
+          ],
+          [
+            1331637022212,
+            [
+              "ev_0092"
+            ]
+          ]
+        ],
+        "listed_after": false
+      },
+      {
+        "agent": "static",
+        "question": "Name argument of CreateMutexW in 0x3868",
+        "reason": "obfuscated",
+        "cites": [
+          "ev_0089"
+        ],
+        "addresses": [
+          1331637008488
+        ],
+        "listed": [
+          [
+            1331637008488,
+            [
+              "ev_0089",
+              "ev_0170"
+            ]
+          ]
+        ],
+        "listed_after": true
+      },
+      {
+        "agent": "static",
+        "question": "Does the reply handler 0x541c act on COMMAND, URLS or CLEARURL from a live server?",
+        "reason": "needs_sandbox_run",
+        "cites": [
+          "ev_0082",
+          "ev_0087"
+        ],
+        "addresses": [
+          1331637015580
+        ],
+        "listed": [
+          [
+            1331637015580,
+            [
+              "ev_0085"
+            ]
+          ]
+        ],
+        "listed_after": false
+      },
+      {
+        "agent": "static",
+        "question": "Are the discovery commands and the cmd.exe child actually run?",
+        "reason": "needs_sandbox_run",
+        "cites": [
+          "ev_0087",
+          "ev_0130"
+        ],
+        "addresses": [],
+        "listed": [],
+        "listed_after": false
+      },
+      {
+        "agent": "dynamic",
+        "question": "Did init return nonzero, or did the harness stop pids 84 and 87 at about 9.2 s?",
+        "reason": "needs_sandbox_run",
+        "cites": [
+          "ev_0197",
+          "ev_0198"
+        ],
+        "addresses": [],
+        "listed": [],
+        "listed_after": false
+      },
+      {
+        "agent": "dynamic",
+        "question": "Does 0x6c2c gate on the 0x6f48 return or on the EAX from MultiByteToWideChar?",
+        "reason": "tool_failed",
+        "cites": [
+          "ev_0088"
+        ],
+        "addresses": [
+          1331637021740,
+          1331637022536
+        ],
+        "listed": [
+          [
+            1331637021740,
+            [
+              "ev_0088"
+            ]
+          ],
+          [
+            1331637022536,
+            [
+              "ev_0059",
+              "ev_0082",
+              "ev_0171",
+              "ev_0149"
+            ]
+          ]
+        ],
+        "listed_after": false
+      },
+      {
+        "agent": "dynamic",
+        "question": "Is runnung the CreateMutexW name argument?",
+        "reason": "obfuscated",
+        "cites": [
+          "ev_0021",
+          "ev_0170"
+        ],
+        "addresses": [
+          1331637008738
+        ],
+        "listed": [],
+        "listed_after": false
+      },
+      {
+        "agent": "dynamic",
+        "question": "Is the heap buffer used by 0x72c8 executable?",
+        "reason": "tool_failed",
+        "cites": [
+          "ev_0025",
+          "ev_0088"
+        ],
+        "addresses": [
+          1331637023432,
+          1331637038388
+        ],
+        "listed": [
+          [
+            1331637023432,
+            [
+              "ev_0088"
+            ]
+          ]
+        ],
+        "listed_after": false
+      },
+      {
+        "agent": "dynamic",
+        "question": "What sets DAT_109b0, the gate on the update_data.dat write?",
+        "reason": "needs_sandbox_run",
+        "cites": [
+          "ev_0021"
+        ],
+        "addresses": [
+          1331637015580
+        ],
+        "listed": [
+          [
+            1331637015580,
+            [
+              "ev_0085"
+            ]
+          ]
+        ],
+        "listed_after": false
+      },
+      {
+        "agent": "dynamic",
+        "question": "Which RC4 key does the check-in use, and which protects update_data.dat?",
+        "reason": "tool_failed",
+        "cites": [
+          "ev_0019",
+          "ev_0021"
+        ],
+        "addresses": [
+          1331637016400,
+          1331637025664
+        ],
+        "listed": [
+          [
+            1331637016400,
+            [
+              "ev_0053",
+              "ev_0082"
+            ]
+          ],
+          [
+            1331637025664,
+            [
+              "ev_0124",
+              "ev_0191"
+            ]
+          ]
+        ],
+        "listed_after": false
+      },
+      {
+        "agent": "network",
+        "question": "Whether the check-in POST and the reply exchange run in the sandbox",
+        "reason": "needs_sandbox_run",
+        "cites": [
+          "ev_0140"
+        ],
+        "addresses": [],
+        "listed": [],
+        "listed_after": false
+      },
+      {
+        "agent": "network",
+        "question": "Which process owns the 14 pcap external conversations, including the 189 KB plain-HTTP flow to 2.21.64.166:80",
+        "reason": "no_capable_tool",
+        "cites": [
+          "ev_0017",
+          "ev_0140"
+        ],
+        "addresses": [],
+        "listed": [],
+        "listed_after": false
+      },
+      {
+        "agent": "network",
+        "question": "Whether the flow to 20.67.186.184:443 is sample traffic",
+        "reason": "other",
+        "cites": [
+          "ev_0140"
+        ],
+        "addresses": [],
+        "listed": [],
+        "listed_after": false
+      },
+      {
+        "agent": "network",
+        "question": "Why the sample's own rundll32 processes (pid 84, 87) produced no network flow",
+        "reason": "needs_sandbox_run",
+        "cites": [
+          "ev_0013",
+          "ev_0140"
+        ],
+        "addresses": [],
+        "listed": [],
+        "listed_after": false
+      },
+      {
+        "agent": "network",
+        "question": "Which process owns the 14 pcap conversations, including the 189 KB plain-HTTP flow to 2.21.64.166:80",
+        "reason": "tool_failed",
+        "cites": [
+          "ev_0017",
+          "ev_0140"
+        ],
+        "addresses": [],
+        "listed": [],
+        "listed_after": false
+      },
+      {
+        "agent": "network",
+        "question": "Whether the check-in ran and was blocked by an environment gate before any traffic",
+        "reason": "needs_sandbox_run",
+        "cites": [
+          "ev_0013",
+          "ev_0017"
+        ],
+        "addresses": [],
+        "listed": [],
+        "listed_after": false
+      },
+      {
+        "agent": "network",
+        "question": "Whether the 25 to 35 minute wait cycle is real",
+        "reason": "needs_sandbox_run",
+        "cites": [
+          "ev_0017"
+        ],
+        "addresses": [],
+        "listed": [],
+        "listed_after": false
+      }
+    ]
+  },
+  "printed": [
+    "Tool calls: 2 of 214 failed and were not redone: capa (ev_0008); emulate_hash_batch (ev_0122). 3 other failed calls were redone by a later call asking the same question.",
+    "Code read: 83 routines have listed code; 53 routines they call have none, first on the start path: offsets 0xa59c, 0x904c.",
+    "Tools the run could not offer: check_domain_reputation, check_hash (\"VIRUSTOTAL_API_KEY is not configured\"); check_ip_reputation (\"VIRUSTOTAL_API_KEY is not configured; ABUSEIPDB_API_KEY is not configured\"). 1 other limitation the run recorded, with its reason and remedy in the bundle.",
+    "Sandbox report [ev_0026]: events, apistats, registry, api_calls and screenshots are unavailable from the sandbox; files, alerts, mutexes, commands, services, procdumps and resolved_apis are not in the sandbox report as read.",
+    "Packet capture [ev_0017] covers 590.8 s (1,242 packets); traffic outside that window was not captured.",
+    "Open questions: 20 filed (needs a sandbox run: 9, a tool failed: 6, no capable tool: 2, obfuscated code: 2, other: 1); 6 name only routines that have listed code, 1 of them listed after the question was filed. All are in the bundle.",
+    "34 analyst claims in force are not discussed in this report and are printed whole in the bundle."
+  ],
+  "not_printed": [
+    "Tool calls redone: 3 of 214 failed and were redone by a later call asking the same question: batch_decompile for offsets 0x6f48, 0xbcac, 0x3cf4 (ev_0168) by ev_0171; disassemble_function for offset 0x3868 (ev_0169) by ev_0170; decompile_function for offset 0x7b80 (ev_0187) by ev_0191.",
+    "Tools withheld: 16 tools a server offers, withheld from the agents by the job's configuration (the operator's choice, listed in the bundle).",
+    "Limitation the run recorded: \"triage.capa_failed\".",
+    "Sandbox report [ev_0026]: holds dropped (6), network (6), channels (26), extracted (1), processes (6), signatures (17).",
+    "Open questions naming only routines that have listed code: 6; the routines: offset 0x6f48 in ev_0059, ev_0082, ev_0171, ev_0149; offset 0x6c2c in ev_0088; offset 0x4110 in ev_0088; offset 0x6e04 in ev_0092; offset 0x3868 in ev_0089, ev_0170 (after it was filed); offset 0x541c in ev_0085; offset 0x5750 in ev_0053, ev_0082; offset 0x7b80 in ev_0124, ev_0191."
+  ]
+}

@@ -653,7 +653,7 @@ def test_the_round_is_shown_the_redo_to_cite_and_refuses_an_uncited_keep() -> No
     assert limitations.redone_named == ((_TRUE, ("ev_0107",)),)
     text = prompt_text(passages)
     assert (
-        "- [failed.1] tool call that failed, and whether a later call redid it (cites ev_0101, "
+        "- [inv.1] tool call that failed, and whether a later call redid it (cites ev_0101, "
         'ev_0107): ev_0101 ("lift_routine") failed: "no function there"; the later call ev_0107 '
         "answered for every address it asked (offset 0x5a10), so it did not fail for good"
     ) in text
@@ -679,7 +679,7 @@ def test_the_round_is_shown_the_redo_to_cite_and_refuses_an_uncited_keep() -> No
 def test_a_sentence_held_to_a_redone_call_ends_as_the_round_is_told() -> None:
     passages = passages_of(_report(_TRUE), entries=_ledger())
     # The same words with the citation added are a keep, and refused, saying what to do.
-    same = _row(_TRUE, "rewrite", ["failed.1"], rewrite=_TRUE.rstrip(".") + " [ev_0107].")
+    same = _row(_TRUE, "rewrite", ["inv.1"], rewrite=_TRUE.rstrip(".") + " [ev_0107].")
     (refused,) = agreement_violations({"sentences": [same]}, passages)
     assert refused.code == KEEP_UNQUOTED_CODE
     assert "into the same words, which keeps it" in refused.message
@@ -690,7 +690,7 @@ def test_a_sentence_held_to_a_redone_call_ends_as_the_round_is_told() -> None:
         _row(
             _TRUE,
             "rewrite",
-            ["failed.1"],
+            ["inv.1"],
             rewrite="The later decompile of 0x5a10 contains no network call [ev_0107].",
         ),
         _row(_TRUE, "drop", [], reason="a later call redid the call it names"),
@@ -889,7 +889,7 @@ _PATHS: dict[str, tuple[Any, ...]] = {
         _ledger,
         "limitations",
         _TRUE,
-        ["failed.1"],
+        ["inv.1"],
         "[ev_0107]",
         _FAILED_ROW,
         "The later decompile of 0x5a10 contains no network call [ev_0107].",
@@ -899,7 +899,7 @@ _PATHS: dict[str, tuple[Any, ...]] = {
         _ledger_two,
         "limitations",
         _TWO,
-        ["failed.1", "failed.2"],
+        ["inv.1", "inv.2"],
         "[ev_0107][ev_0112]",
         _FAILED_ROW,
         "The later decompiles of 0x5a10 and 0x6100 contain no network call [ev_0107][ev_0112].",
@@ -909,7 +909,7 @@ _PATHS: dict[str, tuple[Any, ...]] = {
         _ledger,
         "limitations",
         _SAYS_FAILED,
-        ["failed.1"],
+        ["inv.1"],
         "[ev_0107]",
         _FAILED_ROW,
         "The first decompile of 0x5a10 failed [ev_0101]; a later call [ev_0107] lifted it and "
@@ -935,7 +935,7 @@ _OWN_ROWS: dict[str, dict[str, dict[str, Any]]] = {
         "rewrite citing the failed call only": _row(
             _TRUE,
             "rewrite",
-            ["failed.1"],
+            ["inv.1"],
             rewrite="Routine 0x5a10 holds a host-mode check and returns [ev_0101].",
         ),
     },
@@ -943,7 +943,7 @@ _OWN_ROWS: dict[str, dict[str, dict[str, Any]]] = {
         "rewrite citing the failed calls only": _row(
             _TWO,
             "rewrite",
-            ["failed.1", "failed.2"],
+            ["inv.1", "inv.2"],
             rewrite=(
                 "Routines 0x5a10 [ev_0101] and 0x6100 [ev_0111] hold only a host-mode read and "
                 "a return."
@@ -952,7 +952,7 @@ _OWN_ROWS: dict[str, dict[str, dict[str, Any]]] = {
         "rewrite citing the redo of one of the two": _row(
             _TWO,
             "rewrite",
-            ["failed.1", "failed.2"],
+            ["inv.1", "inv.2"],
             rewrite="The later decompile of 0x5a10 contains no network call [ev_0107].",
         ),
     },
@@ -960,13 +960,13 @@ _OWN_ROWS: dict[str, dict[str, dict[str, Any]]] = {
         "rewrite no longer saying it failed": _row(
             _SAYS_FAILED,
             "rewrite",
-            ["failed.1"],
+            ["inv.1"],
             rewrite="Routine 0x5a10 holds a host-mode check and returns [ev_0101].",
         ),
         "rewrite denying instead": _row(
             _SAYS_FAILED,
             "rewrite",
-            ["failed.1"],
+            ["inv.1"],
             rewrite="Routine 0x5a10 holds no network call [ev_0101].",
         ),
     },
@@ -1037,10 +1037,8 @@ def _expected() -> dict[str, dict[str, list[tuple[str, str]]]]:
         f"{_KEEP_REDONE}redid (ev_0101 by ev_0107; ev_0111 by ev_0112) and cites none of the "
         f"calls that redid it. R{_TWO_REDO_ENDS[1:]}"
     )
-    one_rows = "naming no source, but answered.1, failed.1 speaks of what it names"
-    two_rows = (
-        "naming no source, but answered.1, answered.2, failed.1, 1 more speaks of what it names"
-    )
+    one_rows = "naming no source, but answered.1, inv.1 speaks of what it names"
+    two_rows = "naming no source, but answered.1, answered.2, inv.1, 1 more speaks of what it names"
     return {
         "closing held on a name": {
             "keep": [
@@ -1120,13 +1118,13 @@ def _expected() -> dict[str, dict[str, list[tuple[str, str]]]]:
             "keep quoting": [
                 (
                     KEEP_UNQUOTED_CODE,
-                    _kept("limitations", _TRUE, f"on failed.1, but its quote {_FEW}", one),
+                    _kept("limitations", _TRUE, f"on inv.1, but its quote {_FEW}", one),
                 ),
                 (FAILURE_REDONE_CODE, keep_one),
             ],
             **dict.fromkeys(
                 _SAME,
-                [(KEEP_UNQUOTED_CODE, _same_words("limitations", _TRUE, "failed.1", _FEW, one))],
+                [(KEEP_UNQUOTED_CODE, _same_words("limitations", _TRUE, "inv.1", _FEW, one))],
             ),
             "reworded rewrite citing": [],
             "drop": [],
@@ -1153,7 +1151,7 @@ def _expected() -> dict[str, dict[str, list[tuple[str, str]]]]:
             "keep quoting": [
                 (
                     KEEP_UNQUOTED_CODE,
-                    _kept("limitations", _TWO, f"on failed.1, but its quote {_FEW}", two),
+                    _kept("limitations", _TWO, f"on inv.1, but its quote {_FEW}", two),
                 ),
                 (FAILURE_REDONE_CODE, keep_two),
             ],
@@ -1162,7 +1160,7 @@ def _expected() -> dict[str, dict[str, list[tuple[str, str]]]]:
                 [
                     (
                         KEEP_UNQUOTED_CODE,
-                        _same_words("limitations", _TWO, "failed.1, failed.2", _FEW, two),
+                        _same_words("limitations", _TWO, "inv.1, inv.2", _FEW, two),
                     )
                 ],
             ),
@@ -1334,7 +1332,7 @@ def test_a_held_sentence_no_row_lists_is_told_its_own_ends(path: str, ends: str)
         (
             _TRUE,
             _ledger,
-            ["failed.1"],
+            ["inv.1"],
             "Routine 0x5a10 as first lifted [ev_0101] holds no network call at all.",
             "a call that failed and a later call redid (ev_0101 by ev_0107) and cites none of the "
             "calls that redid it",
@@ -1343,7 +1341,7 @@ def test_a_held_sentence_no_row_lists_is_told_its_own_ends(path: str, ends: str)
         (
             _TWO,
             _ledger_two,
-            ["failed.1", "failed.2"],
+            ["inv.1", "inv.2"],
             "Routines 0x5a10 [ev_0101] and 0x6100 [ev_0111] as first lifted hold no network call.",
             "calls that failed and later calls redid (ev_0101 by ev_0107; ev_0111 by ev_0112) and "
             "cites none of the calls that redid them",
@@ -1380,7 +1378,7 @@ def test_a_rewrite_adding_a_redone_failure_is_told_what_stands_in_its_passage() 
     added = _row(
         sentence,
         "rewrite",
-        ["failed.1"],
+        ["inv.1"],
         rewrite="The gate reads a host mode [ev_0109]; the decompiler failed on it [ev_0101].",
     )
     for pid, ends, stands in (
@@ -1424,7 +1422,7 @@ def test_a_rewrite_dropping_a_cited_id_of_a_held_sentence_is_told_to_drop_it() -
     row = _row(
         _SAYS_FAILED,
         "rewrite",
-        ["failed.1"],
+        ["inv.1"],
         rewrite="The decompile of 0x5a10 [ev_0107] shows a host-mode check.",
     )
     (found,) = agreement_violations({"sentences": [row]}, passages)
@@ -1465,7 +1463,7 @@ def test_a_refused_rewrite_of_a_body_sentence_held_on_a_name_is_offered_the_keep
         )
     ]
     assert rewrite(
-        ["failed.1"], f"Routine 0x5a10 calls `{CALLED}`, whose result is unset [ev_0109]."
+        ["inv.1"], f"Routine 0x5a10 calls `{CALLED}`, whose result is unset [ev_0109]."
     ) == [
         (
             REWRITE_UNGROUNDED_CODE,
@@ -1475,7 +1473,7 @@ def test_a_refused_rewrite_of_a_body_sentence_held_on_a_name_is_offered_the_keep
     ]
     # Told of two calls a later call redid, it is told to cite each.
     assert rewrite(
-        ["ledger.1", "failed.1", "failed.2"],
+        ["ledger.1", "inv.1", "inv.2"],
         _UNKNOWN_CITED.rstrip(".")
         + "; the decompiles of 0x5a10 and 0x6100 failed [ev_0101][ev_0111].",
     ) == [
