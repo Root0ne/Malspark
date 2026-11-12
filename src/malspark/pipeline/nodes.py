@@ -2165,9 +2165,12 @@ def evidence_summary(ledger: Sequence[Any]) -> dict[str, Any]:
     by_tool: dict[str, int] = {}
     for entry in ledger:
         by_tool[entry.tool] = by_tool.get(entry.tool, 0) + 1
-    # A call the repeat guard answered from an earlier entry is an entry and is
-    # counted apart: it neither worked nor failed, it was not run.
-    ran = [e for e in ledger if not getattr(e, "repeated_of", None)]
+    # A call answered from an earlier entry or by a guard is an entry and is
+    # counted apart: it neither worked nor failed, it was not run
+    # (``schemas.evidence.call_state``).
+    from malspark.schemas.evidence import SERVED, call_state
+
+    ran = [e for e in ledger if call_state(e) != SERVED]
     # An answer the tool-output guardrail cut keeps what the model read and is
     # counted as cut, not as trimmed to the budget, unless the budget then
     # blanked it too.

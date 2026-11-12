@@ -496,12 +496,12 @@ class _ToolRows:
     stayed: dict[str, dict[str, int]] = field(default_factory=dict)
 
 
-def _stayed(out: _ToolRows, source: str, made: bool) -> None:
-    """Count one call that stayed on this machine under ``source``, made or served."""
-    from malspark.schemas.evidence import MADE, SERVED
+def _stayed(out: _ToolRows, source: str, state: str) -> None:
+    """Count one call that stayed on this machine under ``source``: made, served or not run."""
+    from malspark.schemas.evidence import MADE, NOT_RUN, SERVED
 
-    tally = out.stayed.setdefault(source, {MADE: 0, SERVED: 0})
-    tally[MADE if made else SERVED] += 1
+    tally = out.stayed.setdefault(source, {MADE: 0, SERVED: 0, NOT_RUN: 0})
+    tally[state] += 1
 
 
 def _tool_rows(snapshot: Mapping[str, Any], entries: Iterable[Any]) -> _ToolRows:
@@ -509,11 +509,12 @@ def _tool_rows(snapshot: Mapping[str, Any], entries: Iterable[Any]) -> _ToolRows
 
     Each row counts the calls whose tool ran (``calls``) and, beside them, the
     ones answered without a run that would have been counted there
-    (``served``), by the one definition (``schemas.evidence.call_was_made``).
+    (``served``), by the one definition (``schemas.evidence.call_state``).
     Every other entry is a call that stayed on this machine (``stayed``): the
     platform's in-process tools, a question put to the team, a call to a tool
-    server run on this machine, and an answer without a run that no row of a
-    call made holds. Each entry is counted once.
+    server run on this machine, an answer without a run that no row of a call
+    made holds, and a step never run, which sent nothing (``not_run``). Each
+    entry is counted once.
     """
     from malspark.analysis.tool_effects import (
         DECLARED,
@@ -530,7 +531,7 @@ def _tool_rows(snapshot: Mapping[str, Any], entries: Iterable[Any]) -> _ToolRows
     )
     from malspark.core.reputation import INDICATOR_ARGUMENTS, asks_about_an_indicator
     from malspark.core.tool_declarations import NETWORK_OPERATOR_SANDBOX
-    from malspark.schemas.evidence import call_was_made
+    from malspark.schemas.evidence import MADE, NOT_RUN, SERVED, call_state
 
     in_process = _in_process_sources()
     gateways = gateway_blocks(snapshot)
@@ -541,13 +542,18 @@ def _tool_rows(snapshot: Mapping[str, Any], entries: Iterable[Any]) -> _ToolRows
     # its row, and on this machine where no call made has one.
     served: list[tuple[dict[tuple[Any, ...], dict[str, Any]] | None, tuple[Any, ...], str]] = []
     for entry in entries:
-        made = call_was_made(entry)
+        state = call_state(entry)
+        made = state == MADE
         source = str(_field(entry, "source") or "")
         if source in in_process or is_platform_internal(entry):
             # The platform's own in-process tools, or a question put to
             # another agent of the team, whose own calls are entries of their
             # own: none leaves the worker.
-            _stayed(out, source or str(_field(entry, "server") or "") or PLATFORM_SOURCE, made)
+            _stayed(out, source or str(_field(entry, "server") or "") or PLATFORM_SOURCE, state)
+            continue
+        if state == NOT_RUN:
+            # A step never run sent nothing anywhere.
+            _stayed(out, source or str(_field(entry, "server") or "") or PLATFORM_SOURCE, state)
             continue
         if not source:
             name = str(_field(entry, "server") or "")
@@ -659,7 +665,7 @@ def _tool_rows(snapshot: Mapping[str, Any], entries: Iterable[Any]) -> _ToolRows
         elif local:
             out.local_servers.setdefault(source, None)
             if route.on_this_machine:
-                _stayed(out, source, made)
+                _stayed(out, source, state)
             else:
                 row = out.servers.setdefault(key, _tool_row(source, route, place))
                 row["calls"] += 1
@@ -672,7 +678,7 @@ def _tool_rows(snapshot: Mapping[str, Any], entries: Iterable[Any]) -> _ToolRows
             held["served"] = int(held.get("served") or 0) + 1
         else:
             # Nothing was sent for it, and no row counts a call made there.
-            _stayed(out, source, False)
+            _stayed(out, source, SERVED)
     for row in out.lookups.values():
         row["kinds"] = dict(sorted(row["kinds"].items()))
     return out
@@ -1689,18 +1695,34 @@ def _stayed_name(source: str, code: Callable[[str], str]) -> str:
     return _server(source, code)
 
 
+def _stayed_count(row: Mapping[str, Any], label: Callable[[int], str]) -> str:
+    """A stayed tally: the calls made, then the answers without a run and the steps not run.
+
+    The two after the calls made are said apart, never inside them; with no
+    call made only they are said, each with ``label``.
+    """
+    made = int(row.get("made") or 0)
+    served, not_run = int(row.get("served") or 0), int(row.get("not_run") or 0)
+    if not made and (served or not_run):
+        apart = [f"{label(served)} answered without a run"] if served else []
+        apart += [f"{label(not_run)} not run"] if not_run else []
+        return ", ".join(apart)
+    apart = [f"{served} answered without a run"] if served else []
+    apart += [f"{not_run} not run"] if not_run else []
+    return label(made) + (f" (+{', '.join(apart)})" if apart else "")
+
+
 def _stayed_line(rows: list[Mapping[str, Any]], code: Callable[[str], str]) -> str:
     """The calls no row above counts, all on this machine: so the lines sum to every call."""
-    made = sum(int(row.get("made") or 0) for row in rows)
-    again = _again({"served": sum(int(row.get("served") or 0) for row in rows)})
+    total = {
+        key: sum(int(row.get(key) or 0) for row in rows) for key in ("made", "served", "not_run")
+    }
     by_source = ", ".join(
-        f"{_stayed_name(str(row.get('source') or ''), code)} {int(row.get('made') or 0)}"
-        f"{_again(row)}"
+        f"{_stayed_name(str(row.get('source') or ''), code)} {_stayed_count(row, str)}"
         for row in rows
     )
-    return (
-        f"Tool calls that stayed on this machine: {count_label(made, 'call')}{again} ({by_source})."
-    )
+    calls = _stayed_count(total, lambda count: count_label(count, "call"))
+    return f"Tool calls that stayed on this machine: {calls} ({by_source})."
 
 
 def _store_line(row: Mapping[str, Any], code: Callable[[str], str]) -> str:

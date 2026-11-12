@@ -301,6 +301,7 @@
     "stayed": [
       {
         "made": null,
+        "not_run": null,
         "served": null,
         "source": null
       }

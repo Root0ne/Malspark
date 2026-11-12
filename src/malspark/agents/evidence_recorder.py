@@ -438,6 +438,7 @@ class EvidenceRecorder:
         not_shown: int | None = None,
         cut: int | None = None,
         guard_answer: bool = False,
+        ran: bool = True,
         source: str | None = None,
         declared_name: str | None = None,
         structured_content: dict[str, Any] | None = None,
@@ -450,7 +451,9 @@ class EvidenceRecorder:
 
         ``guard_answer`` files a call a guard answered with no tool run and no
         earlier entry behind the answer: its ``repeated_of`` is its own id
-        (``schemas.evidence.is_guard_answer``).
+        (``schemas.evidence.is_guard_answer``). ``ran`` false files a call no
+        tool ran, which only :meth:`record_repeat` and
+        :meth:`record_guard_answer` do (``schemas.evidence.call_state``).
 
         ``not_shown`` is the length of an answer the conversation had no room
         for: the entry is recorded as cut (``schemas.evidence.not_shown_record``)
@@ -510,6 +513,7 @@ class EvidenceRecorder:
             waited_ms=waited_ms,
             stage=self.stage,
             repeated_of=repeated_of,
+            ran=ran,
             remediation=remediation,
             args_repaired=args_repaired,
             args_raw=args_raw,
@@ -619,7 +623,8 @@ class EvidenceRecorder:
         a chunk whose every call an earlier chunk had already answered left no
         entry and no event at all, and a reader of the ledger could not tell
         nine calls from none. ``repeated_of`` says which entry holds the
-        answer, and ``said`` is the note the model was handed in its place.
+        answer, and ``said`` is the note the model was handed in its place;
+        the entry states that no tool ran (``ran`` false).
         ``ok`` is false when the earlier entry is a failure. The model is never
         shown this entry's id: the answer it reads carries the earlier one,
         which is the one to cite.
@@ -635,6 +640,7 @@ class EvidenceRecorder:
             started_at=time.time(),
             duration_ms=0,
             repeated_of=str(first),
+            ran=False,
             source=source,
             declared_name=declared_name,
         )
@@ -659,7 +665,8 @@ class EvidenceRecorder:
         evidence byte budget and the citable texts (a chain that comes round
         to itself holds no answer, ``schemas.evidence.repeat_holders``). It is
         a failure, since nothing answered, and never a tool failure: the model
-        is never shown its id.
+        is never shown its id. The entry states that no tool ran (``ran``
+        false).
         """
         self.call_started(tool=tool, args=args, server=server)
         return self.record(
@@ -672,6 +679,7 @@ class EvidenceRecorder:
             started_at=time.time(),
             duration_ms=0,
             guard_answer=True,
+            ran=False,
             source=source,
             declared_name=declared_name,
         )

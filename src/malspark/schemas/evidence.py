@@ -305,34 +305,57 @@ def is_guard_answer(entry: Any) -> bool:
     return bool(first) and first == str(own or "").strip().lower()
 
 
-def call_was_made(entry: Any) -> bool:
-    """Whether the entry is a call whose tool ran, rather than one answered without a run.
-
-    The one definition every count of calls reads. An entry answered without
-    a run names another entry, or itself, in ``repeated_of``: an answer served
-    again from an earlier entry, a refusal that names the entry holding the
-    answer, or a guard's answer (:func:`is_guard_answer`). Each such entry is
-    still one call the model asked for and one finished event, counted as
-    served beside the calls made (:func:`call_counts`).
-    """
-    if isinstance(entry, Mapping):
-        first = entry.get("repeated_of")
-    else:
-        first = getattr(entry, "repeated_of", None)
-    return not str(first or "").strip()
-
-
-# The two totals a count of calls carries: the calls whose tool ran, and the
-# ones answered without a run (:func:`call_was_made`).
+# The three ways an entry stands as a call (:func:`call_state`): its tool ran,
+# it was answered without a run, or it records a step that was never run.
 MADE = "made"
 SERVED = "served"
+NOT_RUN = "not_run"
+
+
+def call_state(entry: Any) -> str:
+    """How the entry stands as a call: :data:`MADE`, :data:`SERVED` or :data:`NOT_RUN`.
+
+    The one definition every count of calls reads. :data:`SERVED` is an entry
+    filed without running any tool: an answer served again from an earlier
+    entry, a refusal that names the entry holding the answer, or a guard's
+    answer (:func:`is_guard_answer`). The recorder states it on the entry
+    (``ran`` false) at the only places that file one; an entry stored before
+    ``ran`` existed is read by ``repeated_of`` alone, as it was then. An entry
+    whose tool ran and whose answer an earlier entry already holds (a
+    decompile answered with a function an earlier call read) names that entry
+    in ``repeated_of`` and is :data:`MADE`: it states ``ran`` true.
+    :data:`NOT_RUN` is a failed entry that records a step the platform never
+    ran (``pipeline.triage_pack.was_not_made``): no request went out for it.
+    Every other entry is :data:`MADE`. Each entry is one call the model or the
+    pipeline asked for and one finished event.
+    """
+    if isinstance(entry, Mapping):
+        ran, first, ok = entry.get("ran"), entry.get("repeated_of"), entry.get("ok")
+    else:
+        ran = getattr(entry, "ran", None)
+        first, ok = getattr(entry, "repeated_of", None), getattr(entry, "ok", None)
+    if ran is False:
+        return SERVED
+    if ran is not True and str(first or "").strip():
+        return SERVED
+    if ran is not True and ok is False:
+        from malspark.pipeline.triage_pack import was_not_made
+
+        if was_not_made(entry):
+            return NOT_RUN
+    return MADE
+
+
+def call_was_made(entry: Any) -> bool:
+    """Whether the entry is a call whose tool ran (:func:`call_state` is :data:`MADE`)."""
+    return call_state(entry) == MADE
 
 
 def call_counts(entries: Any) -> dict[str, int]:
-    """``{"made": n, "served": m}`` over ``entries``: together, one per entry and finished event."""
-    counts = {MADE: 0, SERVED: 0}
+    """``{"made": n, "served": m, "not_run": k}`` over ``entries``: one per entry and event."""
+    counts = {MADE: 0, SERVED: 0, NOT_RUN: 0}
     for entry in entries or ():
-        counts[MADE if call_was_made(entry) else SERVED] += 1
+        counts[call_state(entry)] += 1
     return counts
 
 
@@ -439,6 +462,19 @@ class LedgerEntry(BaseModel):
         description=(
             "Id of the earlier identical call this one was answered from; the entry's own id "
             "for a call a guard answered with no tool run and no earlier entry behind it."
+        ),
+    )
+    ran: bool | None = Field(
+        default=None,
+        # Stated only where ``repeated_of`` alone would not say it, so an entry
+        # that ran and repeats nothing dumps exactly as it did, and an entry
+        # stored before the field existed reads as it did (``call_state``).
+        exclude_if=lambda value: value is None,
+        description=(
+            "Whether the call's tool ran: false on an entry filed with no tool run (an answer "
+            "served again from an earlier entry, a guard's answer), true on one that ran and "
+            "whose answer an earlier entry holds (``repeated_of``); None on any other entry, "
+            "which is read by ``repeated_of`` (schemas.evidence.call_state)."
         ),
     )
     args_repaired: bool = Field(
@@ -666,6 +702,7 @@ def build_entry(
     stage: str = "analysis",
     max_chars: int = 0,
     repeated_of: str | None = None,
+    ran: bool = True,
     remediation: str | None = None,
     args_repaired: bool = False,
     args_raw: str | None = None,
@@ -707,6 +744,10 @@ def build_entry(
     carries the note the model was given rather than a tool result, so it is
     never parsed into ``structured``: nothing downstream should read a
     reference to another entry as data.
+
+    ``ran`` false files a call no tool ran (``schemas.evidence.call_state``).
+    It is stated on the entry where ``repeated_of`` alone would not say it:
+    false always, true only beside a ``repeated_of``.
 
     ``args_repaired`` says the model's arguments were truncated and were
     closed off before the call ran (``agents.evidence_recorder``), and
@@ -801,6 +842,7 @@ def build_entry(
         chars_dropped=max(0, int(chars_dropped)),
         structured=structured,
         repeated_of=repeated_of,
+        ran=(True if repeated_of else None) if ran else False,
         args_repaired=bool(args_repaired),
         args_raw=args_raw if args_repaired else None,
         args_nulls_dropped=[[str(part) for part in path] for path in args_nulls_dropped],

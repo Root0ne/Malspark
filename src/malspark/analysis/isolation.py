@@ -486,13 +486,15 @@ def sample_readers(
     An entry without the field, every one stored before it, counts as it did.
     """
     from malspark.core.declared_reading import kind_free_facts
+    from malspark.schemas.evidence import SERVED, call_state
 
     paths = _normal_paths(sample_paths)
     blocks: dict[str, bool] = {}
     readers: dict[str, int] = {}
     unsourced = 0
     for entry in entries:
-        if _field(entry, "repeated_of"):
+        # An answer without a run read nothing (``schemas.evidence.call_state``).
+        if call_state(entry) == SERVED:
             continue
         source = str(_field(entry, "source") or "")
         if source and source not in blocks:
