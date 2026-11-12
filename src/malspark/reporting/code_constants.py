@@ -214,9 +214,17 @@ def _hashes(
         listed = ", ".join(names[:_NAMES_SAID])
         if len(names) > _NAMES_SAID:
             listed += f" and {len(names) - _NAMES_SAID} more"
-        # The set each reading was resolved in, in the tool's own word.
-        sets = sorted({_word(w) for w in select(row, set_path)} - {""})
-        said_in = f"set {', '.join(sets)}: " if sets else ""
+        # The set each reading was resolved in, in the tool's own word: a list of sets is
+        # read as its words, and they are said as the names are, the rest counted.
+        stated = select(row, set_path)
+        flat = [w for value in stated for w in (value if isinstance(value, list) else [value])]
+        sets = sorted({_word(w) for w in flat} - {""})
+        said_in = ""
+        if sets:
+            said_in = ", ".join(sets[:_NAMES_SAID])
+            if len(sets) > _NAMES_SAID:
+                said_in += f" and {len(sets) - _NAMES_SAID} more"
+            said_in = f"set {said_in}: "
         out.append(
             CodeConstant(
                 value=f"{number:#010x}",

@@ -381,6 +381,30 @@ class TestTheStoredValuesAreReadByTheAnswersKind:
         assert not any(c in meaning for c in "\r\n*/<>`|{}")
         assert meaning.startswith("a name hash (set modules")
 
+    def test_a_list_of_sets_is_read_as_its_words(self) -> None:
+        entry = _resolver(*HASHES[:2])
+        assert isinstance(entry.structured, dict)
+        for hit in entry.structured["hits"]:
+            for reading in hit["readings"]:
+                reading["set"] = ["modules", "exports"]
+
+        meaning = code_constants_from_ledger([entry])[0].meaning
+
+        assert meaning == "a name hash (set exports, modules: InternetOpenW)"
+
+    def test_more_sets_than_names_said_are_counted(self) -> None:
+        entry = _resolver(*HASHES[:2])
+        assert isinstance(entry.structured, dict)
+        for hit in entry.structured["hits"]:
+            hit["readings"] = [
+                {"set": f"set{i}", "name": "InternetOpenW", "algorithm": ALGORITHM}
+                for i in range(5)
+            ]
+
+        meaning = code_constants_from_ledger([entry])[0].meaning
+
+        assert meaning == "a name hash (set set0, set1, set2 and 2 more: InternetOpenW)"
+
     def test_a_value_is_read_as_an_int_as_hexadecimal_or_as_decimal(self) -> None:
         constants = code_constants_from_ledger(
             [_decoder(0x33629D40, entry="ev_0021"), _decoder("0x5a17c0de", entry="ev_0022")]
