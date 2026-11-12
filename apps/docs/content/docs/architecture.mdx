@@ -2139,11 +2139,11 @@ decide.
    `the wmic tool`; not a target such as "a handle opened on lsass.exe"); acronyms,
    format and platform words (`HTTP`, `XML`, `MAC`, `Win32`) and words inside a
    phrase the text negates ("without going through LoadLibrary") are not. A
-   word counts only where the data of one technique family (a parent and its
-   sub-techniques) writes it, a call of a module a family's data names counted
-   for that family too: measured, every word is one family's but
+   word counts only where the data of at most two technique families (a parent
+   and its sub-techniques) writes it, a call of a module a family's data names
+   counted for that family too: measured, every word is one family's but
    `InternetReadFile`, `LdrGetProcedureAddress`, `NtLoadDriver` and
-   `RtlGetVersion`, which are calls of WinINet or ntdll. A sentence's word
+   `RtlGetVersion`, which are calls of WinINet or ntdll and two families'. A sentence's word
    counts in the same shape: an identifier the card writes as an identifier, in
    its ANSI, wide and extended spellings; a program, a module or a call of a
    module the card writes as what is called (`calls into ntdll's …`) only where

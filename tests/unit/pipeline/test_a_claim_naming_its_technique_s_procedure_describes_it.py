@@ -7,7 +7,7 @@ catalogue name: "runs wmic" under Windows Management Instrumentation, "queries
 SecurityCenter2" under Security Software Discovery. Those words come from the
 vendored data that ties an id to its procedures (the technique cards and the
 API catalogue's rules), only where they name a call, a class or an artefact,
-and only where one technique family's data writes them; a sentence's word
+and only where at most two technique families' data write them; a sentence's word
 counts in the same shape, and a program or a module's call only where it is
 written as something run or called. An identifier written as joined words names
 each of its words. A sentence that names such a word only to say it is absent,
@@ -154,11 +154,12 @@ def test_a_procedure_word_named_as_present_is_no_absence() -> None:
 
 
 class TestTheWordsAreTheCatalogueData:
-    def test_a_word_is_kept_only_where_one_technique_family_owns_it(self) -> None:
+    def test_a_word_is_kept_where_at_most_two_technique_families_own_it(self) -> None:
         families = procedure_word_families()
 
-        # Measured: every word the cards and rules write is one family's, but for
-        # four calls of a module another family's data names (WinINet, ntdll).
+        # Measured: every word is one or two families', two for four calls of a
+        # module another family's data names (WinINet, ntdll).
+        assert max(families.values()) <= PROCEDURE_WORD_MAX_FAMILIES
         shared = {word for word, count in families.items() if count > 1}
         assert shared == {
             "internetreadfile",
@@ -166,9 +167,36 @@ class TestTheWordsAreTheCatalogueData:
             "ntloaddriver",
             "rtlgetversion",
         }
-        assert PROCEDURE_WORD_MAX_FAMILIES == 1
-        assert "internetreadfile" not in procedure_words("T1105").identifiers
-        assert "ntloaddriver" not in procedure_words("T1106").exports
+        assert PROCEDURE_WORD_MAX_FAMILIES == 2
+        assert "internetreadfile" in procedure_words("T1105").identifiers
+        assert "rtlgetversion" in procedure_words("T1082").identifiers
+        assert "ntloaddriver" in procedure_words("T1106").exports
+
+    def test_a_word_in_two_families_is_kept_and_in_three_is_cut(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        cards = {
+            "T9001": ["uses frob_solo and frob_pair and frob_trio"],
+            "T9002.001": ["uses frob_pair and frob_trio"],
+            "T9002.002": ["again frob_pair"],
+            "T9003": ["uses frob_trio"],
+        }
+        for cached in (validation._procedure_words_by_id, procedure_words):
+            cached.cache_clear()
+        monkeypatch.setattr(validation, "_procedure_sources", lambda: cards)
+        try:
+            assert procedure_word_families()["frob_solo"] == 1
+            assert procedure_word_families()["frob_pair"] == 2
+            assert procedure_word_families()["frob_trio"] == 3
+            assert "frob_solo" in procedure_words("T9001").identifiers
+            assert "frob_pair" in procedure_words("T9001").identifiers
+            assert "frob_pair" in procedure_words("T9002.001").identifiers
+            assert "frob_trio" not in procedure_words("T9001").identifiers
+            assert "frob_trio" not in procedure_words("T9003").identifiers
+        finally:
+            monkeypatch.undo()
+            for cached in (validation._procedure_words_by_id, procedure_words):
+                cached.cache_clear()
 
     def test_the_name_stem_cut_falls_between_one_family_and_several(self) -> None:
         families = name_stem_families()
