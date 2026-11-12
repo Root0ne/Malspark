@@ -2831,6 +2831,20 @@ class ServerRegistry:
                 out[handle.name] = dict(info)
         return dict(sorted(out.items()))
 
+    def server_manifests(self) -> dict[str, dict[str, Any]]:
+        """Per server this job attached that answered its ``capabilities`` tool, that manifest.
+
+        Kept after the handle closes, as ``server_versions`` is; the first
+        handle's is kept. A server that offers no manifest is not listed.
+        """
+        out: dict[str, dict[str, Any]] = {}
+        for handle in self._all_handles():
+            held = getattr(handle, "capabilities", None)
+            if handle.name in out or held is None:
+                continue
+            out[handle.name] = held.to_dict()
+        return dict(sorted(out.items()))
+
     def still_open(self) -> list[ServerHandle]:
         """Every handle still attached, per-loop ones included.
 

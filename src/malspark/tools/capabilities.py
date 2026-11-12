@@ -18,15 +18,26 @@ host would be worse than none. The registry reads it once per job through the
 sidecar's ``capabilities`` tool, the settings probe returns it to the console,
 and a stage that binds a tool the manifest marks unavailable records the
 degradation when it starts, with the reason and the remedy.
+
+The same declarations say what the server ran with: the manifest's
+``requirements`` give each declared module's installed distribution and
+version, each data path's file count and one digest over its files, and each
+binary's version where the tool declares how to ask it (``VersionProbe``), so
+a run's record states the tool versions and rule sets it used
+(``analysis.run_environment``).
 """
 
 from __future__ import annotations
 
+import functools
+import hashlib
 import importlib
 import importlib.metadata
 import importlib.util
 import os
+import re
 import shutil
+import subprocess
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -37,6 +48,184 @@ from malspark.tools.errors import MISSING_DEPENDENCY, NOT_CONFIGURED, REMEDIATIO
 # The tool a server answers this with. Named once, so the registry and the
 # probe look for the same thing every sidecar offers.
 CAPABILITIES_TOOL = "capabilities"
+
+
+# What reading what a requirement is at may cost (``Requirement.facts``). A
+# probe of a binary's version is given this long when its declaration names no
+# wall clock, and never more than the ceiling: it runs once per process, when
+# the manifest is built, and a server's start waits for it.
+VERSION_PROBE_TIMEOUT_S = 5.0
+VERSION_PROBE_MAX_TIMEOUT_S = 30.0
+# How much of a probe's output is read for the version.
+_PROBE_OUTPUT_CHARS = 64 * 1024
+# The most a data path's digest reads: beyond either bound its files are
+# counted and no digest is computed, so a corpus copied in whole by mistake
+# costs a server's start a count, not a read of it.
+DATA_DIGEST_MAX_FILES = 20_000
+DATA_DIGEST_MAX_BYTES = 64 * 1024 * 1024
+# What a fact that was not read is recorded as.
+NOT_INSTALLED = "not installed"
+NOT_REPORTED = "not reported"
+
+
+@dataclass(frozen=True)
+class VersionProbe:
+    """How a binary says its own version, for a tool that declares it.
+
+    ``command`` is run as given, never through a shell: its first word is
+    looked up on ``PATH``. The version is the first match of ``pattern`` in
+    what the command writes (its standard output, then its standard error):
+    the pattern's first group when it has one, else the whole match.
+    ``timeout_s`` bounds the run (``VERSION_PROBE_TIMEOUT_S`` when ``None``,
+    never more than ``VERSION_PROBE_MAX_TIMEOUT_S``).
+    """
+
+    command: tuple[str, ...]
+    pattern: str = r"\d+(?:\.\d+)+"
+    timeout_s: float | None = None
+
+    def read(self) -> str:
+        """The version the command reports, else ``"not reported: <reason>"``. Never raises."""
+        return _probe_version(self.command, self.pattern, self.timeout_s)
+
+
+@functools.lru_cache(maxsize=64)
+def _probe_version(command: tuple[str, ...], pattern: str, timeout_s: float | None) -> str:
+    # Once per process for each probe: a version does not change while a
+    # server runs, and the probe is a process start.
+    if not command or not str(command[0]).strip():
+        return f"{NOT_REPORTED}: the probe names no command"
+    word = str(command[0])
+    found = shutil.which(word)
+    if found is None:
+        return f"{NOT_REPORTED}: {Path(word).name} is not on PATH"
+    wall = min(
+        VERSION_PROBE_TIMEOUT_S if timeout_s is None else max(float(timeout_s), 0.1),
+        VERSION_PROBE_MAX_TIMEOUT_S,
+    )
+    try:
+        done = subprocess.run(  # noqa: S603 — a declared argument list, no shell
+            [found, *(str(arg) for arg in command[1:])],
+            capture_output=True,
+            stdin=subprocess.DEVNULL,
+            text=True,
+            errors="replace",
+            timeout=wall,
+            check=False,
+        )
+    except subprocess.TimeoutExpired:
+        return f"{NOT_REPORTED}: it did not answer within {wall:g} s"
+    except Exception as exc:  # noqa: BLE001 — a version is a label, never a failure
+        # The type alone: an exception's words may carry the host's paths.
+        return f"{NOT_REPORTED}: it could not be run ({type(exc).__name__})"
+    if done.returncode != 0:
+        return f"{NOT_REPORTED}: it exited with status {done.returncode}"
+    try:
+        compiled = re.compile(pattern)
+    except re.error:
+        return f"{NOT_REPORTED}: the probe's pattern is not a regular expression"
+    for said in (done.stdout, done.stderr):
+        match = compiled.search((said or "")[:_PROBE_OUTPUT_CHARS])
+        if match:
+            value = match.group(1) if compiled.groups else match.group(0)
+            if value and value.strip():
+                return value.strip()[:120]
+    return f"{NOT_REPORTED}: its output named no version"
+
+
+@functools.cache
+def _distributions_of() -> dict[str, list[str]]:
+    """Each top-level module and the distributions that provide it, read once per process."""
+    try:
+        return {k: list(v) for k, v in importlib.metadata.packages_distributions().items()}
+    except Exception:  # noqa: BLE001 — a version is a label, never a failure
+        return {}
+
+
+def module_version(name: str) -> dict[str, str]:
+    """``{"distribution", "version"}`` of the distribution that provides module ``name``.
+
+    Looked up, never imported: the module's top-level package is found on the
+    import path and the distribution that installed it is read from its
+    metadata. ``version`` is ``"not installed"`` when the module is not on the
+    import path, and ``"not reported: …"`` when it is there but no installed
+    distribution names it (a module vendored or copied in). Never raises.
+    """
+    top = name.split(".", 1)[0]
+    try:
+        found = importlib.util.find_spec(top)
+    except (ImportError, ValueError):
+        found = None
+    if found is None:
+        return {"version": NOT_INSTALLED}
+    for distribution in sorted(_distributions_of().get(top, ())):
+        try:
+            return {
+                "distribution": distribution,
+                "version": str(importlib.metadata.version(distribution)),
+            }
+        except Exception:  # noqa: BLE001, S112 — the next distribution may answer
+            continue
+    return {"version": f"{NOT_REPORTED}: no installed distribution provides {top}"}
+
+
+def data_files(target: Path, pattern: str) -> list[tuple[str, Path]]:
+    """The files that make up the data at ``target``, as ``(name, path)`` in name order.
+
+    A file is itself, under its own name; a directory is every file under it
+    matching ``pattern``, each named by its path relative to the directory.
+    Empty when nothing is there.
+    """
+    if target.is_file():
+        return [(target.name, target)]
+    if not target.is_dir():
+        return []
+    held = [
+        (entry.relative_to(target).as_posix(), entry)
+        for entry in target.rglob(pattern)
+        if entry.is_file()
+    ]
+    return sorted(held, key=lambda item: item[0])
+
+
+@functools.lru_cache(maxsize=32)
+def _data_digest(target: str, pattern: str) -> dict[str, Any]:
+    # Once per process for each path: a server's corpus is what it loaded at
+    # start, and the worker's does not change under a run.
+    try:
+        files = data_files(Path(target), pattern)
+    except OSError as exc:
+        return {"files": 0, "digest_statement": f"not read ({type(exc).__name__})"}
+    out: dict[str, Any] = {"files": len(files)}
+    if not files:
+        out["digest_statement"] = "no file is there"
+        return out
+    try:
+        total = sum(path.stat().st_size for _name, path in files)
+    except OSError as exc:
+        out["digest_statement"] = f"digest not computed ({type(exc).__name__})"
+        return out
+    out["bytes"] = total
+    if len(files) > DATA_DIGEST_MAX_FILES or total > DATA_DIGEST_MAX_BYTES:
+        out["digest_statement"] = (
+            f"digest not computed: over the bound ({DATA_DIGEST_MAX_FILES} files, "
+            f"{DATA_DIGEST_MAX_BYTES} bytes)"
+        )
+        return out
+    digest = hashlib.sha256()
+    try:
+        for name, path in files:
+            content = path.read_bytes()
+            encoded = name.encode("utf-8", "surrogateescape")
+            # Each part is length-prefixed, so no two different sets of names
+            # and contents feed the hash the same bytes.
+            digest.update(len(encoded).to_bytes(8, "big") + encoded)
+            digest.update(len(content).to_bytes(8, "big") + content)
+    except OSError as exc:
+        out["digest_statement"] = f"digest not computed ({type(exc).__name__})"
+        return out
+    out["sha256"] = digest.hexdigest()
+    return out
 
 
 @dataclass(frozen=True)
@@ -62,6 +251,48 @@ class Requirement:
     override: str = ""
     pattern: str = "*"
     fetched: bool = True
+    # For a binary: how it says its own version (``VersionProbe``), where the
+    # tool declares one. Without it a binary's version is not reported.
+    version_probe: VersionProbe | None = field(default=None, compare=False)
+
+    def facts(
+        self, environ: Mapping[str, str] | None = None, settings: Any = None
+    ) -> dict[str, Any] | None:
+        """What this requirement is on this host, for the record of a run. Never raises.
+
+        A module: the distribution that provides it and its installed version
+        (``module_version``). Data: the path's files matching ``pattern``
+        counted and one SHA-256 over them, name then content in name order,
+        within ``DATA_DIGEST_MAX_FILES`` and ``DATA_DIGEST_MAX_BYTES``; the
+        path is read as ``installed`` reads it and named only by what named
+        it. A binary: the version its declared probe reads, else
+        ``"not reported"``. A setting is no install and has no facts
+        (``None``): its value is the operator's, not the host's. Each is read
+        once per process.
+        """
+        try:
+            out: dict[str, Any] = {"kind": self.kind, "name": self.name}
+            if self.kind == "module":
+                out.update(module_version(self.name))
+            elif self.kind == "binary":
+                out["version"] = (
+                    self.version_probe.read() if self.version_probe is not None else NOT_REPORTED
+                )
+            elif self.kind == "data":
+                value, named_by = self._data_path(environ, settings)
+                out["named_by"] = named_by
+                out["pattern"] = self.pattern
+                if not value.strip():
+                    out.update({"files": 0, "digest_statement": f"{named_by} names no path"})
+                else:
+                    target = Path(value)
+                    target = target if target.is_absolute() else _data_root() / target
+                    out.update(_data_digest(str(target), self.pattern))
+            else:
+                return None
+            return out
+        except Exception as exc:  # noqa: BLE001 — a fact unread is recorded, never raised
+            return {"kind": self.kind, "name": self.name, "statement": type(exc).__name__}
 
     def probe(self) -> str | None:
         """``None`` when present, else the reason it is not.
@@ -142,7 +373,8 @@ class Requirement:
             return self._data_missing(environ, settings)
         return None
 
-    def _data_missing(self, environ: Mapping[str, str] | None, settings: Any) -> str | None:
+    def _data_path(self, environ: Mapping[str, str] | None, settings: Any) -> tuple[str, str]:
+        """The data path the tool reads, and what named it (``installed``)."""
         value, named_by = self.name, "the default"
         held = _setting_value(settings, self.setting) if self.setting else None
         if held is not None:
@@ -151,6 +383,10 @@ class Requirement:
             given = (os.environ if environ is None else environ).get(self.override, "")
             if given.strip():
                 value, named_by = given, self.override
+        return value, named_by
+
+    def _data_missing(self, environ: Mapping[str, str] | None, settings: Any) -> str | None:
+        value, named_by = self._data_path(environ, settings)
         if not value.strip():
             return f"{named_by} names no path"
         base = _data_root()
@@ -240,15 +476,23 @@ def module(name: str) -> Requirement:
     return Requirement("module", name)
 
 
-def binary(name: str, locate: Callable[..., str | None] | None = None) -> Requirement:
+def binary(
+    name: str,
+    locate: Callable[..., str | None] | None = None,
+    *,
+    version_probe: VersionProbe | None = None,
+) -> Requirement:
     """A tool that shells out to an executable.
 
     Found on ``PATH`` by default. ``locate`` is for an executable looked for in
     more places than that, or checked for more than presence — the analysis
     server's ``floss`` looks at a configured path and a user tools directory
     and runs only the pinned build — and answers the reason it is absent.
+    ``version_probe`` is how the executable says its version, for a run's
+    record of what it ran (``Requirement.facts``); without one its version is
+    not reported.
     """
-    return Requirement("binary", name, locate)
+    return Requirement("binary", name, locate, version_probe=version_probe)
 
 
 def env(name: str) -> Requirement:
@@ -352,12 +596,43 @@ def package_version(distribution: str = "malspark") -> str:
         return "unknown"
 
 
+def requirement_facts(
+    tools: list[ToolNeeds],
+    environ: Mapping[str, str] | None = None,
+    settings: Any = None,
+) -> list[dict[str, Any]]:
+    """What each requirement of ``tools`` is on this host, once each, with the tools needing it.
+
+    One row per requirement (``Requirement.facts``), in the order the tools
+    first declare them, each listing the tools that declare it. A setting is
+    not listed. Never raises.
+    """
+    rows: dict[tuple[str, str], dict[str, Any]] = {}
+    for tool in tools:
+        for req in tool.requires:
+            key = (req.kind, req.name)
+            if key not in rows:
+                facts = req.facts(environ, settings)
+                if facts is None:
+                    continue
+                rows[key] = {**facts, "tools": []}
+            if tool.name not in rows[key]["tools"]:
+                rows[key]["tools"].append(tool.name)
+    return list(rows.values())
+
+
 def manifest(server: str, tools: list[ToolNeeds], *, version: str | None = None) -> dict[str, Any]:
-    """The capability manifest for ``server``, probed now on this host."""
+    """The capability manifest for ``server``, probed now on this host.
+
+    ``requirements`` is what each declared module, binary and data path is
+    here (``requirement_facts``): built with the manifest, which a server
+    builds once when it starts, so no tool call pays for it.
+    """
     return {
         "server": server,
         "version": version if version is not None else package_version(),
         "tools": [_cell(tool) for tool in tools],
+        "requirements": requirement_facts(tools),
     }
 
 
@@ -411,6 +686,9 @@ class ServerCapabilities:
     server: str
     version: str = "unknown"
     tools: dict[str, dict[str, Any]] = field(default_factory=dict)
+    # What the server's declared requirements are on its host
+    # (``requirement_facts``); ``None`` for a manifest that carries none.
+    requirements: list[dict[str, Any]] | None = None
 
     @classmethod
     def from_payload(cls, server: str, payload: Any) -> ServerCapabilities | None:
@@ -428,10 +706,15 @@ class ServerCapabilities:
         for cell in payload["tools"]:
             if isinstance(cell, dict) and cell.get("name"):
                 tools[str(cell["name"])] = dict(cell)
+        held = payload.get("requirements")
+        requirements = (
+            [dict(row) for row in held if isinstance(row, dict)] if isinstance(held, list) else None
+        )
         return cls(
             server=str(payload.get("server") or server),
             version=str(payload.get("version") or "unknown"),
             tools=tools,
+            requirements=requirements,
         )
 
     def unavailable(self, names: list[str] | None = None) -> list[Unavailable]:
@@ -481,8 +764,11 @@ class ServerCapabilities:
         )
 
     def to_dict(self) -> dict[str, Any]:
-        return {
+        out: dict[str, Any] = {
             "server": self.server,
             "version": self.version,
             "tools": [dict(cell) for cell in self.tools.values()],
         }
+        if self.requirements is not None:
+            out["requirements"] = [dict(row) for row in self.requirements]
+        return out

@@ -125,6 +125,8 @@ class TestTheManifest:
                     "timeout_s": None,
                 }
             ],
+            # A tool needing nothing has no requirement to report.
+            "requirements": [],
         }
 
     def _cell_for_a_failing_import(self, monkeypatch, raised: Exception) -> dict:
