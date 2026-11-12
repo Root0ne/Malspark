@@ -35,9 +35,9 @@ from malspark.core.plugins import (
 from malspark.core.settings_overrides import redact_url
 from malspark.llm.sent_request import (
     SentRequest,
+    parameters_sent,
     record_sent_request,
     sampling_said,
-    sampling_sent,
 )
 
 # The request timeout every provider's HTTP client is built with, unless the
@@ -217,8 +217,9 @@ class LLMProviderRegistry:
         model: str,
         own_effort: str | None = None,
         own_setting: str | None = None,
+        provider_cls: Any = None,
     ) -> SentRequest:
-        """Keep on ``built`` and in :meth:`sent_requests` what it sends, read off it."""
+        """Keep on ``built`` and in :meth:`sent_requests` what it sends, read by its provider."""
         from malspark.llm.effort import effort_in_force
 
         effort, said = effort_in_force(self._config, provider, own_effort, own_setting)
@@ -231,7 +232,10 @@ class LLMProviderRegistry:
             effort_setting=self._effort_key(provider, effort, own_effort, own_setting),
             effort_statement="" if effort else said,
         )
-        record_sent_request(built, record)
+        # Read by the adapter class that built it, else by the one that
+        # answers for the provider's name.
+        hook_of = provider_cls if callable(getattr(provider_cls, "sent_parameters", None)) else None
+        record_sent_request(built, record, hook_of)
         # Kept on the instance even where it was made without ``__init__``.
         self.__dict__.setdefault("_sent", []).append(record)
         return record
@@ -292,19 +296,25 @@ class LLMProviderRegistry:
         _cap_for_provider(kwargs, provider_name)
         provider = provider_cls(config=self._config)
         built = provider.build_model(model=model_name, temperature=temp, **kwargs)
-        # The sampling is said once built: the provider decides what it sends,
-        # and a model documented to refuse sampling parameters is sent none
-        # whatever temperature it was handed.
-        logger.info(
-            "%s/%s sends sampling: %s.",
-            provider_name,
-            model_name,
-            sampling_said(sampling_sent(built)),
-        )
+        # The sampling is said once built, read off the request the client
+        # would send: a model sent no sampling parameter is said to be sent
+        # none, whatever temperature it was handed.
         if agent:
-            self._note_sent(
-                built, agent=agent, position=0, provider=provider_name, model=model_name
+            sampling = self._note_sent(
+                built,
+                agent=agent,
+                position=0,
+                provider=provider_name,
+                model=model_name,
+                provider_cls=provider_cls,
+            ).sampling
+        else:
+            hook_of = (
+                provider_cls if callable(getattr(provider_cls, "sent_parameters", None)) else None
             )
+            read = parameters_sent(hook_of or provider_name, built)
+            sampling = None if read is None else read.sampling
+        logger.info("%s/%s sends sampling: %s.", provider_name, model_name, sampling_said(sampling))
         return self._with_window(built, provider_name, model_name, kwargs.get("base_url"))
 
     def build_model_for_agent(
@@ -452,17 +462,10 @@ class LLMProviderRegistry:
             kwargs["effort"] = own_effort
             kwargs["effort_setting"] = own_setting
         built = provider.build_model(model=choice.model, temperature=temp, **kwargs)
-        # The sampling is said once built, from the model the provider handed
-        # back: the temperature handed to it is not what it sends when it
-        # sends none.
-        logger.info(
-            "LLM for agent '%s' (%s/%s) sends sampling: %s.",
-            agent_name,
-            choice.provider,
-            choice.model,
-            sampling_said(sampling_sent(built)),
-        )
-        self._note_sent(
+        # The sampling is said once built, read off the request the client
+        # would send: the temperature handed to the provider is not what it
+        # sends when it sends none.
+        record = self._note_sent(
             built,
             agent=agent_name,
             position=position,
@@ -470,6 +473,14 @@ class LLMProviderRegistry:
             model=str(choice.model),
             own_effort=own_effort,
             own_setting=own_setting,
+            provider_cls=provider_cls,
+        )
+        logger.info(
+            "LLM for agent '%s' (%s/%s) sends sampling: %s.",
+            agent_name,
+            choice.provider,
+            choice.model,
+            sampling_said(record.sampling),
         )
         return self._with_window(built, str(choice.provider), choice.model, agent_base_url)
 

@@ -124,6 +124,11 @@ def sends_llama_cpp_extras(base_url: str | None, compat: str) -> bool:
     return is_local_endpoint(base_url)
 
 
+# Where a request body carries a thinking switch: llama.cpp's chat-template
+# switch and DeepSeek's own (``add_thinking_switch``, ``add_deepseek_thinking_switch``).
+THINKING_FIELDS: tuple[str, ...] = ("chat_template_kwargs.enable_thinking", "thinking")
+
+
 def add_thinking_switch(extra: dict[str, Any], disable_thinking: bool) -> None:
     """Put ``chat_template_kwargs.enable_thinking=false`` into ``extra`` when asked.
 
@@ -1209,6 +1214,20 @@ class OpenAIProvider(LLMProvider):
         # ``openai_api_base``; only a real non-empty string counts.
         candidate = getattr(llm, "openai_api_base", None)
         return isinstance(candidate, str) and bool(candidate.strip())
+
+    @classmethod
+    def sent_parameters(cls, llm: Any) -> Any:
+        # The body ``ChatOpenAI`` builds, chat completions or the Responses
+        # API as the model decides, with ``extra_body`` merged in as the SDK
+        # merges it: the llama.cpp extras and DeepSeek's switch travel there.
+        from malspark.llm.sent_request import SentParameters, built_body, sampling_in, switches_in
+
+        body = built_body(llm, "_get_request_payload", cls.llm_types)
+        if not isinstance(body, dict):
+            return None
+        extra = body.get("extra_body")
+        merged = {**body, **(extra if isinstance(extra, dict) else {})}
+        return SentParameters(sampling_in(merged), switches_in(merged, THINKING_FIELDS))
 
     @classmethod
     def window_probes(cls, endpoint: object, model: str) -> tuple[Any, ...]:
