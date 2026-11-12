@@ -127,7 +127,7 @@ rendered as "0 processes". See [Providers](/docs/architecture/#providers).
 | `sandbox.cape2.timeout_seconds` | `300` | How long to wait for the report. |
 | `sandbox.cape2.poll_interval_seconds` | `10` | |
 | `sandbox.cape2.package_by_format` | `{}` | A file type to a CAPE analysis package, e.g. `{"apk": "apk", "elf": "generic", "pdf": "pdf", "ooxml": "doc"}`; `*` is the fallback, and a format with no entry is submitted without a package so CAPE picks one. |
-| `sandbox.cape2.submit_options` | `{}` | Sent verbatim as further form fields (`machine`, `tags`, `options`, `timeout`, anything `tasks/create/file` accepts). |
+| `sandbox.cape2.submit_options` | `{}` | Sent verbatim as further form fields (`machine`, `tags`, `options`, `timeout`, anything `tasks/create/file` accepts). A job's launch arguments join the `options` string; see [launch arguments](#launch-arguments). |
 | `sandbox.cape2.mcp` | disabled | An optional CAPE MCP server beside the REST API. |
 
 The guest platform is sent when CAPE has a name for it (`windows`, `linux`,
@@ -482,7 +482,7 @@ coding it:
 | Block | What it says |
 | :-- | :-- |
 | `sandbox.rest.auth` | The header, scheme and token the API takes. |
-| `sandbox.rest.submit` | The multipart submission (`method`, `path`, `file_field`, `extra_fields`, `submit_fields`) and the JSONPath of the task id in its answer. |
+| `sandbox.rest.submit` | The multipart submission (`method`, `path`, `file_field`, `extra_fields`, `submit_fields`, and `launch_arguments_field`, the field a job's launch arguments are sent in) and the JSONPath of the task id in its answer. |
 | `sandbox.rest.status` | The poll path, the JSONPath of the state, and the done and failed values. |
 | `sandbox.rest.report` | Where the report is, the registered reader or declared format that reads it (`cape2`, `cuckoo`, `triage`, `generic`, one an operator registers, or a format declared in `sandbox.report_formats`, read through its own `mapping` and on its own scale as an upload of it is), an optional capture path, and for a `generic` report its signature scale (`signature_scale_rungs`, `signature_scale_name`). |
 | `sandbox.rest.mapping` | For a `generic` report, an RFC 9535 JSONPath per channel: processes, calls, signatures, DNS, HTTP, TCP, UDP, hosts, domains, dropped files, registry; and per report place with no channel (`places`): `process_tree`, `resolved_apis`, `extracted`, `procdumps`, `memory`, `ids_alerts`, each match kept as the sandbox published it and read whole. Every channel and place is read whole, as a built-in reader reads its lists: no row count cuts it. A path is bounded only by the report's own size: a channel's matches never outnumber the values the report holds, and an operator channel's or a place's matches, each counted with everything nested in it, never hold more values than the report does, so a path whose matches repeat or nest (`$..children[*]` over a nested tree) is cut there, and the cut is logged and counted as truncated. A path with more than one descendant segment (`$..a..b`) walks the report again under every node the first reached, and a filter holding any absolute query (`$.a[?count($.b[*]) > 0]`, `$.a[?@.v == $.b[0]]`) runs it from the report's root for every candidate; saving one returns a warning beside it (never a refusal), so anchor it, or test the candidate (`@`), where you can. |
@@ -496,6 +496,37 @@ channel names as written); a report stored when the list said `calls` or
 anything the schema has no field for; namespace it by platform, e.g.
 `{"android.permissions": "$.apk.permissions[*]"}`. See [Format routing and the
 sandbox](/docs/configuration/#format-routing-and-the-sandbox).
+
+## Launch arguments
+
+A job may carry launch arguments (`sandbox_launch_arguments`, or
+`--sandbox-launch-arguments` on the command line; see [what a job may choose
+for itself](/docs/usage/running-an-analysis/#what-a-job-may-choose-for-itself)).
+Each provider declares whether it can pass them
+(`SandboxCapabilities.can_pass_launch_arguments`) and answers for the value
+before anything is sent:
+
+| Provider | What is sent |
+| :-- | :-- |
+| `cape2` | CAPE's `options` string, as `arguments=<value>`, which CAPE's `exe` package hands the started process and its `dll` package the DLL's command line. The deployment's own `submit_options["options"]` entries are kept beside it; where they set `arguments` too, the job's value replaces them and the record says which it replaced. CAPE splits the string at every comma, so a value holding a comma is not passed. |
+| `rest` | The value verbatim in the form field `sandbox.rest.submit.launch_arguments_field`. With no field named, the provider cannot pass them. |
+| `triage` | Nothing: Triage's submission API has no field for a command line or a DLL export (its `password` decrypts an archive and `pick` selects a file inside one). |
+| `mock` | Nothing: a recorded fixture ran before the job asked. |
+| `upload` | Not applicable: the attached report comes from a run this platform did not start. |
+
+A provider that cannot pass them is never handed them, and the detonation goes
+ahead without them. The run records what became of them, with the arguments
+written exactly as the job gave them: the report's sandbox sentence (the
+`sandbox_status` ledger entry) says whether the behaviour was observed with
+them, the disclosure block's upload line says whether they were passed, and
+where they were not the run's limitations say "launch arguments requested, not
+honoured by" the provider, with why. They are run configuration, not a
+credential, and are not masked. A job that asks for none submits and reads as
+it always did.
+
+A plugin provider's `submit(sample_path, *, options=None)` receives a
+`SubmissionOptions` only when it declares the capability; one written before
+the keyword existed keeps working and is recorded as unable to pass them.
 
 ## Connection tests
 
