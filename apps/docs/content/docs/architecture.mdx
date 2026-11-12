@@ -5499,25 +5499,36 @@ is assembled from what the run gathered rather than recomputed beside it:
   call is added. When the composer applies the section, code records the cited
   entries that hold each value whole (`HostIdentifier.held_in`, never in the
   model's schema; `stated_host_values.held_in_cited`): the value in the
-  spellings a text writes it in, never what its own escapes would spell, and a
-  folder or a file name also as a whole path component. The rule answers such
+  spellings a text writes it in, never what its own escapes would spell. A
+  name, a folder or a file name is held only where both its ends are a value
+  delimiter (a quote, the text's start or end, a line break, a path separator,
+  a key-value mark; `stated_host_values.delimited_in`), never in running text
+  or inside a URL; a stream also after its file's name. The rule answers such
   a row under source `analysis` (`indicator_publish_reason`'s `stated`): a
   typed kind with an object on some surface, created or written, held whole by
   a cited entry, no format placeholder, not in the declared catalogue of values
-  every Windows host holds (`data/host_benign_locations_v1.json`: known
-  folders, programs Windows installs in its system folders, keys every
-  installation has, task-definition words) nor the sandbox's copy of the
-  sample, and a verdict that publishes. The table adds a row for each one it
-  publishes after every tool row; section 9 prints every identifier's answer.
-  A generic name carries a false-positive note and selects nothing in Sigma;
-  a kind STIX has no object for says so, and `/iocs`, MISP and Sigma carry it.
+  every Windows host holds (`data/host_benign_locations_v1.json`, each list
+  with its criterion and source: known folders and their 8.3 short names,
+  files Windows ships in its system folders, keys and values every
+  installation has, Windows' own services, pipes and streams, object-manager
+  namespaces, task-definition words) nor the sample as the sandbox holds it
+  (named by its digest or its submitted name), and a verdict that publishes.
+  The table adds a row for each one it publishes after every tool row, or
+  turns a refused tool row of the same kind and value into it; section 9
+  prints every identifier's answer. A generic name carries a false-positive
+  note (`listed_only`): MISP lists it with `to_ids` off, and no YARA string,
+  Sigma selection, Suricata content or STIX indicator is made of it. A
+  registry value is a STIX `windows-registry-key` with its value's name, a
+  rooted folder a `directory`; a kind STIX has no object for says so, and
+  `/iocs`, MISP and Sigma carry it.
   A row under a free-text kind or without a use is refused with its reason.
   Bounds: 256 rows, 16 cited entries a row, 1024 characters a value. **A Sigma
   draft selects only whole values a log records**, one draft per log source:
   registry keys and images the table publishes or a sandbox watched, and the
   stated values in `file_event`, `create_stream_hash`, Security 4698, System
   7045 and `pipe_created` (`detection_signatures._stated_drafts`, at most 64
-  values a selection). A sandbox signature selects nothing; with no value left
+  values a selection), each value written with Sigma's wildcards escaped
+  (`sigma_literal`). A sandbox signature selects nothing; with no value left
   the report records why (`drafts_not_built`).
 * **The IOC table is the one publish rule's answer, row by row.**
   `build_consolidated_iocs` stores every indicator live with its kind, who

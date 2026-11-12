@@ -122,15 +122,22 @@ platform then checks each value in code, and exports it as source `analysis`
 
 - its kind names a host object and the sample creates or writes it;
 - the value is found whole in a ledger entry the row cites — not as part of a
-  longer value, and not only in an entry the row does not cite; a folder or a
-  file name counts where it is a whole component of a path the entry writes;
+  longer value, and not only in an entry the row does not cite. A name, a
+  folder or a file name counts only where both its ends are a value delimiter:
+  a quote or the start or end of the text, a line break, a path separator, or
+  the `=` / `:` of a key-value pair; never a word of running text, and never a
+  path component of a URL. A stream also counts after its file's name
+  (`a.exe:stream`);
 - it holds no format placeholder (`%x`, `%s`, `{0}`): a template is no value a
   log records;
-- it is not a value every Windows host holds: a known folder, a program Windows
-  installs in its system folders, a registry key every installation has, a word
-  of a task definition, or the sandbox's own copy of the sample (a file named by
-  its digest), as the declared catalogue `data/host_benign_locations_v1.json`
-  lists them;
+- it is not a value every Windows host holds: a known folder (its 8.3 short
+  name included), a file Windows ships in its system folders, a registry key or
+  value every installation has, the key of a service Windows installs, an
+  object-manager namespace (`Global`), Windows' own streams, services and named
+  pipes, a word of a task definition, or the sample itself as the sandbox holds
+  it (a file named by its digest or by the name it was submitted under). The
+  declared catalogue `data/host_benign_locations_v1.json` lists each, with the
+  criterion that admits an entry and its source;
 - the verdict is not Benign and was stated with a confidence.
 
 An exported row carries the entries that hold the value in `evidence_ids` and
@@ -138,10 +145,15 @@ its reason in `publish_answer`, for example `yes: stated by the analysis
 (folder, creates/writes), found whole in ev_0021`. A file name is exported
 without the separators written before it. A name ordinary software also gives
 its tasks, services and files (an `Updater` task) is exported with a note that
-it may match ordinary software, and never forms a Sigma selection. The kinds
-`folder`, `registry_value`, `scheduled_task`, `service`, `named_pipe` and `ads`
-(an alternate data stream) have no STIX object; their reason says so, and `/iocs`,
-MISP and the Sigma drafts carry them. A row that is not exported is not a row of
+it may match ordinary software: it is listed on `/iocs` and in MISP with
+`to_ids` off, and never becomes a matcher on its own — no YARA string, Sigma
+selection, Suricata content or STIX indicator. In STIX a registry value is a
+`windows-registry-key` with its value's name and a folder written from a drive or
+a share is a `directory`; a bare folder name, a scheduled task, a service, a named
+pipe and an alternate data stream have no STIX object, their reason says so, and
+`/iocs`, MISP and the Sigma drafts carry them. A tool's row of the same kind and
+value that the rule refused becomes the analysis's row, so every surface reads
+one answer for it. A row that is not exported is not a row of
 the IOC table: section 9 prints the rule's answer beside every identifier, with
 the reason it was refused. A report stored before the typed kinds writes its
 rows under free-text kinds and without a use, and every such row is refused with
@@ -203,7 +215,8 @@ data stream in `create_stream_hash`, a scheduled task in Security event 4698, a
 service in System event 7045, a named pipe in `pipe_created`, a registry key or
 value in `registry_event`. A mutex, which no Windows log records, gets none. With
 no value left to select on there is no Sigma draft, and the report and the
-console say why where they list the drafts. A Benign
+console say why where they list the drafts. Every Sigma value is written as the
+literal it is: `*`, `?` and a backslash before either are escaped. A Benign
 verdict publishes no malicious indicator, so it gets no draft, and the report
 says so. They are drafts: review them before deploying them.
 
