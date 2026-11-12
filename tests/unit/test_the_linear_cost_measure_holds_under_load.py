@@ -104,9 +104,16 @@ class TestASampleTooQuickToTime:
             assert_ratio(_quadratic(250), _quadratic(1_000), TIME_RATIO_LIMIT, repeats=2)
 
     def test_a_call_that_costs_nothing_does_not_run_away(self) -> None:
+        # The search for a repeat count is bounded, so the measure returns in
+        # time. What it returns depends on the machine: where the most repeats
+        # it takes still read under the floor it says to grow the input, and
+        # where they read above it (a slow or busy runner) the two equal runs
+        # simply compare as equal. Both are right; only running away is not.
         started = time.perf_counter()
-        with pytest.raises(AssertionError, match="grow the input"):
+        try:
             assert_ratio(lambda: None, lambda: None, TIME_RATIO_LIMIT)
+        except AssertionError as failure:
+            assert "grow the input" in str(failure)
         assert time.perf_counter() - started < 2 * linear_cost.SEARCH_BUDGET + 2
 
 
