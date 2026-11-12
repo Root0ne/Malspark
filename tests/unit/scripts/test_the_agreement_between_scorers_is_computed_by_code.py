@@ -145,10 +145,16 @@ def test_fleiss_kappa_matches_the_fourteen_rater_example() -> None:
     assert round(got["value"], 3) == 0.210
 
 
-# --- Krippendorff's alpha: a 4-observer, 15-unit table of the shape of his worked example, with
-# missing ratings. The table is as remembered, so only the independent derivation is asserted.
+# --- Krippendorff's alpha: the published four-observer, twelve-unit example with missing data
 
 KRIPPENDORFF = {
+    "A": "1 2 3 3 2 1 4 1 2 . . .",
+    "B": "1 2 3 3 2 2 4 1 2 5 . 3",
+    "C": ". 3 3 3 2 3 4 2 2 5 1 .",
+    "D": "1 2 3 3 2 4 4 1 2 5 1 .",
+}
+# A second table with missing ratings, checked against the independent derivation only.
+KRIPPENDORFF_LONG = {
     "A": "1 2 3 3 2 1 4 1 2 * * * 3 3 3",
     "B": "1 2 3 3 2 2 4 1 2 5 * 3 * 3 3",
     "C": "* 3 3 3 2 3 4 2 2 5 1 3 * 3 4",
@@ -156,10 +162,10 @@ KRIPPENDORFF = {
 }
 
 
-def _krip() -> dict[str, dict[str, str]]:
+def _krip(table: dict[str, str] = KRIPPENDORFF) -> dict[str, dict[str, str]]:
     return {
-        r: {f"u{i}": v for i, v in enumerate(row.split()) if v != "*"}
-        for r, row in KRIPPENDORFF.items()
+        r: {f"u{i}": v for i, v in enumerate(row.split()) if v not in ".*"}
+        for r, row in table.items()
     }
 
 
@@ -197,13 +203,15 @@ def test_krippendorff_nominal_alpha_with_missing_data() -> None:
     ratings = _krip()
     got = krippendorff_alpha(ratings, CATS5, ordinal=False)
     assert got["value"] == pytest.approx(_alpha_by_pairs(ratings, "nominal"))
-    assert got["n"] == 14  # of 15 units, the one rated by one observer only carries no pair
+    assert round(got["value"], 3) == 0.743
+    assert got["n"] == 11  # of 12 units, the one rated by one observer only carries no pair
 
 
 def test_krippendorff_ordinal_alpha_with_missing_data() -> None:
     ratings = _krip()
     got = krippendorff_alpha(ratings, CATS5, ordinal=True)
     assert got["value"] == pytest.approx(_alpha_by_pairs(ratings, "ordinal"))
+    assert round(got["value"], 3) == 0.815
 
 
 def test_two_raters_without_missing_data_alpha_matches_the_pairwise_derivation() -> None:
@@ -391,3 +399,10 @@ def test_the_command_prints_a_table_and_json(
     assert set(data) >= {"verdicts", "collapsed", "wrong_handling"}
     assert main(["agreement", str(one)]) == 2
     assert "at least two raters" in capsys.readouterr().err
+
+
+def test_a_longer_table_with_missing_ratings_matches_the_pairwise_derivation() -> None:
+    ratings = _krip(KRIPPENDORFF_LONG)
+    for ordinal, metric in ((False, "nominal"), (True, "ordinal")):
+        got = krippendorff_alpha(ratings, CATS5, ordinal=ordinal)["value"]
+        assert got == pytest.approx(_alpha_by_pairs(ratings, metric))
