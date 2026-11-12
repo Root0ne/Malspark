@@ -26,7 +26,10 @@ taken out; any other text of the contract, a word written beside the listing
 included, is held to the rule. What the structured path sends is read too:
 each section's output schema (``model_json_schema()``) has its descriptions,
 titles, examples and defaults held to the rule, and an enum member passes only
-as a member of a declared vocabulary.
+as a member of a declared vocabulary. A property's name is the schema's own,
+as a key of the answer object is, and is not checked; so is the title the
+schema generator derives from that name (``GenerateJsonSchema.get_title_from_name``),
+compared for equality. A title written by hand is held to the rule.
 """
 
 from __future__ import annotations
@@ -2895,16 +2898,29 @@ CONTRACTS: dict[str, str] = {
 }
 
 
-def _schema_texts(node: Any, declared: set[str]) -> list[str]:
+def _derived_title(name: str) -> str:
+    """The title the schema generator gives a property it was given no title for."""
+    from pydantic.json_schema import GenerateJsonSchema
+
+    return GenerateJsonSchema().get_title_from_name(name)
+
+
+def _schema_texts(node: Any, declared: set[str], name: str | None = None) -> list[str]:
     """What a section's output schema shows a model: descriptions, titles, examples,
-    defaults, and the enum members outside a declared vocabulary."""
+    defaults, and the enum members outside a declared vocabulary. ``name`` is the
+    property a node is the schema of: its derived title is the name's, not read."""
     out: list[str] = []
     if isinstance(node, dict):
         for key, value in node.items():
+            if key == "title" and name is not None and value == _derived_title(name):
+                continue
             if key in ("description", "title", "examples", "default"):
                 out.extend(_strings(value))
             elif key == "enum":
                 out.extend(str(word) for word in value if str(word) not in declared)
+            elif key == "properties" and isinstance(value, dict):
+                for prop, schema in value.items():
+                    out.extend(_schema_texts(schema, declared, prop))
             else:
                 out.extend(_schema_texts(value, declared))
     elif isinstance(node, list):
@@ -3250,6 +3266,37 @@ class TestTheVocabularyExemptionIsExact:
         # The listing no longer matches the rendered one: all of it is read.
         assert "beacon" in self._scan(text, schema)
         assert "mutex" in self._scan(text, schema)
+
+    def test_a_derived_title_is_the_generator_s_own(self) -> None:
+        from pydantic import BaseModel
+
+        class _Probe(BaseModel):
+            beacon_format: str = ""
+
+        generated = _Probe.model_json_schema()["properties"]["beacon_format"]["title"]
+        assert generated == _derived_title("beacon_format")
+
+    def test_a_title_derived_from_its_property_passes(self) -> None:
+        node = {"properties": {"beacon_format": {"title": "Beacon Format", "type": "string"}}}
+
+        assert _schema_texts(node, set()) == []
+
+    def test_a_hand_written_title_is_read(self) -> None:
+        node = {"properties": {"layout": {"title": "Beacon layout", "type": "string"}}}
+
+        assert [t for t in KEY_TERMS if t in " ".join(_schema_texts(node, set())).lower()] == [
+            "beacon"
+        ]
+
+    def test_a_title_one_word_off_its_derivation_is_read(self) -> None:
+        node = {"properties": {"beacon_format": {"title": "Beacon Format Used", "type": "string"}}}
+
+        assert _schema_texts(node, set()) == ["Beacon Format Used"]
+
+    def test_a_description_is_read_whatever_its_property(self) -> None:
+        node = {"properties": {"beacon_format": {"description": "Beacon Format"}}}
+
+        assert _schema_texts(node, set()) == ["Beacon Format"]
 
     def test_an_enum_outside_a_declared_vocabulary_is_read(self) -> None:
         node = {"properties": {"x": {"enum": ["beacon", "mutex"]}}}
