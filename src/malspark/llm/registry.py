@@ -205,7 +205,7 @@ class LLMProviderRegistry:
 
     def sent_requests(self) -> list[SentRequest]:
         """What each model this registry built for an agent sends, in build order, as built."""
-        return list(self._sent)
+        return list(self.__dict__.get("_sent") or [])
 
     def _note_sent(
         self,
@@ -232,7 +232,8 @@ class LLMProviderRegistry:
             effort_statement="" if effort else said,
         )
         record_sent_request(built, record)
-        self._sent.append(record)
+        # Kept on the instance even where it was made without ``__init__``.
+        self.__dict__.setdefault("_sent", []).append(record)
         return record
 
     @staticmethod
