@@ -1,6 +1,6 @@
 ---
 title: "Benchmark"
-description: "The benchmark run: one real sample, a key of 57 facts from public human reports, and the facts Malspark found that those reports do not hold."
+description: "The benchmark run: one real sample, a key of 89 facts from public human analyses, and the facts Malspark found beyond that key."
 ---
 
 export const run = {
@@ -13,14 +13,19 @@ export const run = {
   sha256: '6091f2589fef42e0ab3d7975806cd8a0da012b519637c03b73f702f7586b21ef',
   sandbox: 'Hatching Triage',
   memory: 'an empty long-term memory, with other runs ignored',
-  items: 57,
-  found: 46,
-  partlyBody: 9,
-  partlyDump: 1,
-  missed: 1,
+  items: 89,
+  found: 56,
+  partlyBody: 23,
+  partlyDump: 5,
+  missed: 5,
   wrong: 0,
-  beyondHuman: 58,
-  beyondHumanStrict: 57,
+  checkItems: ['K1.6', 'K1.7', 'K1.11', 'K1.12', 'K7.21', 'K5.7'],
+  beyondKey: 37,
+  beyondKeyStrict: 36,
+  /* The facts beyond the key against the full text and the figures of the eight
+   * analyses; the first two counts add up to beyondKey, and the last two split
+   * the ones of which no reading found any part. */
+  audit: { partly: 26, none: 11, noneFamily: 6, noneFile: 5 },
   calls: 129,
   seconds: 5028,
   usd: '8.24',
@@ -33,52 +38,236 @@ export const run = {
   degraded: false,
   spendNote: 'The debate is the largest single share of the spend, about a third; the reporter and the reverser come next. Prompts above 100,000 tokens are billed at the long-context rate, and 105 of the 129 calls passed that line.',
   groups: [
-    ['K1', 'Identity', 5, 3, 2, 0, 0, 0],
-    ['K2', 'Execution flow', 6, 6, 0, 0, 0, 0],
-    ['K3', 'Anti-analysis', 7, 4, 2, 1, 0, 0],
+    ['K1', 'Identity', 12, 6, 3, 2, 1, 0],
+    ['K2', 'Execution flow', 7, 5, 2, 0, 0, 0],
+    ['K3', 'Anti-analysis', 13, 5, 5, 2, 1, 0],
     ['K4', 'Identifiers', 3, 2, 1, 0, 0, 0],
-    ['K5', 'Persistence', 3, 3, 0, 0, 0, 0],
-    ['K6', 'Command and control', 7, 5, 2, 0, 0, 0],
-    ['K7', 'Commands', 11, 10, 1, 0, 0, 0],
-    ['K8', 'Discovery', 1, 1, 0, 0, 0, 0],
-    ['K9', 'Indicators of compromise', 8, 7, 1, 0, 0, 0],
-    ['K10', 'ATT&CK techniques', 6, 5, 0, 0, 1, 0],
+    ['K5', 'Persistence', 5, 4, 1, 0, 0, 0],
+    ['K6', 'Command and control', 10, 4, 6, 0, 0, 0],
+    ['K7', 'Commands', 12, 9, 3, 0, 0, 0],
+    ['K8', 'Discovery', 3, 3, 0, 0, 0, 0],
+    ['K9', 'Indicators of compromise', 12, 9, 2, 1, 0, 0],
+    ['K10', 'ATT&CK techniques', 12, 9, 0, 0, 3, 0],
   ],
   missedItems: [
+    'K1: the family’s other names (IceNova, Unidentified 111, Lotus, BLACKWIDOW). The report gives none of them.',
+    'K3: two imported functions resolved with a hash other than CRC-32. The report does not mention it.',
     'K10: process injection (T1055). Analysts claimed it; the judge dropped it, because no code or data written into another live process was shown.',
+    'K10: file and directory discovery (T1083). The desktop listing of command 2 is described, but the technique is not mapped.',
+    'K10: exfiltration over the C2 channel (T1041). It is not mapped.',
   ],
   partlyItems: [
     'K1: the link to IcedID appears only as reputation labels; the command that fetches bp.dat is not tied to IcedID.',
     'K1: the file is named as x86-64, but the architecture check is not in the report body.',
+    'K1: the four exports and their shared address 0x3ce4 are stated; the ordinal of each export is only in the evidence bundle.',
+    'K1: the entry point at RVA 0x3c7c appears only in the evidence bundle’s PE-header rows.',
+    'K1: the Windows GUI subsystem appears only in the evidence bundle’s PE-header rows.',
+    'K2: the copy is started in a new rundll32.exe process through CreateProcessW; the relaunch command line and its export are not in the body.',
+    'K2: the campaign ID and the module path are tied to routine 0x463c, but the report does not describe it as the step that stores the user name and the file and process handles once the checks pass.',
     'K3: the process-count check is named without its thresholds of 75 and 50 processes.',
     'K3: the network-adapter check is named without what it rejects.',
     'K3: the WOW64 check appears only in a reverser claim printed in the evidence bundle.',
+    'K3: the PEB walk and the CRC-32 name hashing are stated; the module list it walks (InMemoryOrderModuleList), the scan of *.dll in the system directory and the LoadLibraryW load are not in the body.',
+    'K3: the per-module hash tables that fill the API slots are named, but not the table entry layout (hash, module handle, function pointer) or that the table is filled one entry at a time.',
+    'K3: the ntdll.dll hash 0x26797e77 appears only in the evidence bundle’s copy of the hash-scan row, bound to routine 0xabd4.',
+    'K3: the kernel32.dll hash 0x2eca438c appears only in a YARA rule comment, not tied to the module lookup.',
     'K4: the routine that supplies the bot ID and its volume calls are named, but not the ID’s format or how it is derived.',
+    'K5: the task strings LogonTrigger and PT0S are stated; the Task Scheduler interface GUID is not.',
     'K6: beacon types 3, 4 and 5 are in the body; type 0x15 and the meaning of types 1 and 2 are not.',
-    'K6: three reply verbs are named; the fourth, ERROR, is only in the bundle’s decoded strings.',
-    'K7: the command that fetches bp.dat is described without naming the IcedID payload it loads.',
+    'K6: three reply verbs are named; the fourth, ERROR, is only in the bundle’s decoded strings, and the body says neither that a reply line is pipe-separated nor that the front:// placeholder is replaced with the current C2 URL.',
+    'K6: the POST to /live/ and its Content-Type header are stated; the Accept and Cache-Control headers are not.',
+    'K6: base64 in the bot’s own code is stated; that its standard alphabet is one of the encrypted strings is only in the evidence bundle.',
+    'K6: the beacon interval and its random part are stated, and so are GetCursorPos and GetTickCount, but the report does not tie them to the jitter or name RtlRandomEx.',
+    'K6: the registration fields are stated; what counter and direction carry is not, and the user name is not called ASCII.',
+    'K7: the command that fetches bp.dat is described with its init argument string, without naming the IcedID payload it loads.',
+    'K7: the EXE is saved under Local AppData with a decimal name; that the name is random and that the EXE runs as a child of the rundll32 host are not stated.',
+    'K7: the update deletes the file, starts the new copy and exits; the release of the running thread and the mutex appears only as closing stored handles.',
     'K9: update_data.dat is named with its role, but without its directory.',
+    'K9: <!DOCTYPE and html are named with their use, but not as decoded strings.',
+    'K9: the export-less rundll32 command-line template appears only in the evidence bundle’s decoded strings.',
   ],
+  /* Examples of facts beyond the key: wording, ledger entries, then the class
+   * and number of the fact in beyondFacts. */
   beyondExamples: [
-    ['The compile time stamp, 2024-03-25 15:54:25 UTC', 'ev_0004'],
-    ['The export directory’s own name, UpdaterTag.dll', 'ev_0004'],
-    ['The string cipher in full: seed 0x33629d40, length XOR the low 16 bits of the seed, first key 0x41, decoder at 0xae78', 'ev_0021, ev_0067, ev_0068'],
-    ['The Content-Type: application/x-www-form-urlencoded header on the beacon', 'ev_0021, ev_0069'],
-    ['The first beacon after 1,800 sleeps of 100 ms, about 180 s', 'ev_0067'],
-    ['The full command dispatcher at 0x3cf4, code by code', 'ev_0077'],
-    ['The scheduled task’s registration in full: principal, logon trigger, exec action and settings, then the folder object’s register call', 'ev_0077, ev_0092'],
-    ['The self-delete target is the module’s own path, filled through the GetModuleFileNameW wrapper', 'ev_0069, ev_0025'],
-    ['The registry routine picks the machine hive or the current user’s by its argument', 'ev_0086, ev_0021'],
-    ['The VirusTotal score at analysis time, 56 of 75', 'ev_0018'],
+    ['The compile time stamp, 2024-03-25 15:54:25 UTC', 'ev_0004', 'C', '1'],
+    ['The string cipher’s constants: seed 0x33629d40, first key 0x41, decoder at 0xae78', 'ev_0021, ev_0067, ev_0068', 'B', '6'],
+    ['The first beacon after 1,800 sleeps of 100 ms, about 180 s', 'ev_0067', 'A', '34'],
+    ['The scheduled task’s action is the rundll32.exe program only when one flag is nonzero', 'ev_0086', 'A', 'N14'],
+    ['The installed copy is started with CREATE_NO_WINDOW', 'ev_0086, ev_0090', 'B', '47'],
+    ['The API slots that could inject into another process have no caller', 'ev_0025', 'B', '30'],
+    ['The registry routine picks the machine hive or the current user’s by its argument', 'ev_0086, ev_0021', 'A', 'N16'],
+    ['The VirusTotal score at analysis time, 56 of 75', 'ev_0018', 'C', '26'],
   ],
 };
 
 export const partly = run.partlyBody + run.partlyDump;
 export const recovered = run.found + partly;
+/* Every scored fact: group, item, fact, verdict, ledger entries the scoring
+ * cites, report sections, origin (core, sharpened, added or completion). Every
+ * found or partly found fact lists its entries; a fact the run did not recover
+ * lists none. */
+export const keyItems = [
+  ['K1', 'K1.1a', 'Family: Latrodectus', 'found', 'ev_0014, ev_0018', 'header, §1, §7; STIX malware object', 'core'],
+  ['K1', 'K1.1b', 'Role: loader (downloader / backdoor)', 'found', 'ev_0014', 'header, §7', 'core'],
+  ['K1', 'K1.2', 'Link to IcedID', 'partly', 'ev_0018', '§1, §2, §7, §11 (labels only)', 'core'],
+  ['K1', 'K1.4', 'x86-64, with an architecture check', 'partly', 'ev_0069', '§3 (no architecture check in the body)', 'core'],
+  ['K1', 'K1.5', 'Four exports at one address: `extra`, `follower`, `run`, `scub`. The shared export address is RVA `0x3CE4`. Ordinals 1–4: `extra` 1, `follower` 2, `run` 3, `scub` 4', 'partly', 'ev_0004, ev_0080', '§3, §4 step 2 (the ordinals only in the bundle)', 'sharpened'],
+  ['K1', 'K1.6', 'The export directory names the DLL `UpdaterTag.dll`', 'found', 'ev_0004, ev_0034, ev_0056', '§3', 'completion'],
+  ['K1', 'K1.7', 'The bot DLL carries no Authenticode signature', 'found', 'ev_0003', '§1, §2, §3', 'completion'],
+  ['K1', 'K1.8', 'The entry point (`DllEntryPoint`) is at RVA `0x3C7C`, apart from the shared export address `0x3CE4`', 'partly, bundle', 'ev_0004, ev_0080', 'evidence bundle only (PE-header rows)', 'completion'],
+  ['K1', 'K1.9', 'The PE subsystem is Windows GUI', 'partly, bundle', 'ev_0004, ev_0034', 'evidence bundle only (PE-header rows)', 'completion'],
+  ['K1', 'K1.10', 'Latrodectus is also tracked as IceNova (IBM), Unidentified 111 (Malpedia `win.unidentified_111`), Lotus and BLACKWIDOW', 'missed', '', 'not stated', 'completion'],
+  ['K1', 'K1.11', 'The file has five sections', 'found', 'ev_0004, ev_0034', '§2, §3', 'completion'],
+  ['K1', 'K1.12', 'The import table holds 2 libraries and 5 imports', 'found', 'ev_0004, ev_0034, ev_0056', '§3, §5.2', 'completion'],
+  ['K2', 'K2.1', 'APIs resolved by hash', 'found', 'ev_0020, ev_0068', '§1, §5.1, §5.2', 'core'],
+  ['K2', 'K2.2', 'Abort on a failed check', 'found (detail wrong)', 'ev_0077, ev_0069', '§4 step 3, §6.1', 'core'],
+  ['K2', 'K2.3', 'Mutex, created with CreateMutexW after its name is decrypted', 'found', 'ev_0021, ev_0025, ev_0069', '§4 step 4, §8.1', 'sharpened'],
+  ['K2', 'K2.4', 'Install, then persist; the copy is started in a new `rundll32.exe` process through CreateProcessW, with `rundll32.exe` and the template `"%s", %s %s` as decrypted strings. After starting the copy, the original process shuts itself down. The relaunch command line is `rundll32.exe "<%APPDATA%\\Custom_update\\Update_<8 hex>.dll>", scub`: the copy is restarted with the same export', 'partly', 'ev_0086, ev_0090, ev_0094, ev_0019, ev_0025', '§4 steps 6–8, §5.3 (no relaunch command line)', 'sharpened'],
+  ['K2', 'K2.5', 'Register, then loop. C2 communication and command dispatch run in a thread the bot creates, after the scheduled task is set up', 'found', 'ev_0067', '§4 steps 9–11', 'sharpened'],
+  ['K2', 'K2.6', '`update_data.dat` read first', 'found', 'ev_0069, ev_0094', '§4 step 5', 'core'],
+  ['K2', 'K2.7', 'Once all checks pass, the bot initialises its campaign globals: the current user name, a handle to its own file, a handle to the current process, and the campaign ID', 'partly', 'ev_0069', '§5.1, §5.3, §6.1 (not as the step after the checks)', 'completion'],
+  ['K3', 'K3.1', 'PEB BeingDebugged check', 'found', 'ev_0086, ev_0082, ev_0069', '§4 step 3, §10 (T1622)', 'core'],
+  ['K3', 'K3.2', 'Process count 75 / 50. The OS split comes from a custom enum built from major/minor version and build number. 75 band: Windows 10, Server 2016, Windows 11; 50 band: Server 2003 R2, XP, 2000, 7, 8, Server 2012/R2', 'partly', 'ev_0069', '§4 step 3, §5.3, §10 (no thresholds)', 'sharpened'],
+  ['K3', 'K3.3', 'WOW64 check', 'partly, bundle', 'ev_0069', 'evidence bundle only (reverser claim 32)', 'core'],
+  ['K3', 'K3.4', 'Network adapter (MAC) check. Each MAC must also be of valid size (address-length check)', 'partly', 'ev_0082', '§4 step 3, §11 (what it rejects is not stated)', 'sharpened'],
+  ['K3', 'K3.5', 'PEB walk (`InMemoryOrderModuleList`) and CRC-32; other DLLs found by listing `\\*.dll` in the system directory, hashing each name with CRC-32 and loading the match with LoadLibraryW. Each module is resolved in a dedicated function (kernel32 base, ntdll base, kernel32 exports)', 'partly', 'ev_0024, ev_0068, ev_0023', '§5.1, §5.2 (no module list, *.dll scan or LoadLibraryW)', 'sharpened'],
+  ['K3', 'K3.6', 'String encryption: a 4-byte key, a 2-byte seed, then the ciphertext; length = key XOR seed; each byte XORed with the key, which grows by one per byte. The decrypt function takes two arguments: a pointer to the encrypted blob and a pointer to the output buffer. Decoded strings are a mix of UTF-16 and single-byte strings', 'found', 'ev_0021, ev_0067, ev_0068', '§5.1, §5.2', 'sharpened'],
+  ['K3', 'K3.7', 'Self-deletion (ADS): CreateFileW with DELETE on its own path, SetFileInformationByHandle (FileRenameInfo) to `:wtfbbq`, close, reopen, SetFileInformationByHandle (FileDispositionInfo, DeleteFile TRUE), close. The path to delete is the running module\'s own path, taken with GetModuleFileName', 'found', 'ev_0069, ev_0025', '§4 step 8, §5.1, §10', 'sharpened'],
+  ['K3', 'K3.8', 'The resolved-API table: entries of {function hash, module-handle pointer, function pointer}, filled one at a time at start-up', 'partly', 'ev_0020, ev_0025, ev_0082', '§4 step 3, §5.2 (no entry layout)', 'added'],
+  ['K3', 'K3.9', '`ntdll.dll` matched in the PEB walk by CRC-32 0x26797E77', 'partly, bundle', 'ev_0020', 'evidence bundle only (hash-scan row, routine 0xabd4)', 'added'],
+  ['K3', 'K3.10', '`kernel32.dll` matched in the PEB walk by CRC-32 0x2ECA438C', 'partly', 'ev_0020', 'appendix (YARA rule $h0), §5.2 (not tied to the module lookup)', 'added'],
+  ['K3', 'K3.11', 'API hashes are plain CRC-32 of the ASCII export name (NtAllocateVirtualMemory = 0xE0762FEB, RtlGetVersion = 0xB46508B5)', 'found', 'ev_0020, ev_0068, ev_0023', '§5.1, §5.2, appendix (YARA comments)', 'added'],
+  ['K3', 'K3.12', 'Two imported functions use a hash other than CRC-32', 'missed', '', 'not stated', 'added'],
+  ['K3', 'K3.13', 'Every encrypted string starts with the same 4-byte key, a marker for finding them', 'found', 'ev_0021', '§5.1, §6.2, appendix (YARA rule $d0)', 'added'],
+  ['K4', 'K4.1', 'Bot ID. The ID is built iteratively: the serial is multiplied by the constant, the result is the next DWORD, and the serial is updated for the following DWORD', 'partly', 'ev_0098', '§5.4, §6.1', 'sharpened'],
+  ['K4', 'K4.2', 'Group name hashed with FNV', 'found', 'ev_0069', '§6.1', 'core'],
+  ['K4', 'K4.4', 'Two encrypted C2s, in this order: `hxxps://titnovacrion[.]top/live/` and `hxxps://skinnyjeanso[.]com/live/`', 'found', 'ev_0021, ev_0067', '§4 step 5, §5.1, §6.1, §6.2, appendix', 'sharpened'],
+  ['K5', 'K5.1', 'Install path', 'found', 'ev_0086, ev_0077', '§4 step 6, §5.3', 'core'],
+  ['K5', 'K5.2', 'Scheduled task `Updater`, through COM, logon trigger; task strings `LogonTrigger` and `PT0S`; the Task Scheduler interface GUID (`2FABA4C7-4DA9-4013-9697-20CC3FD40F85`, ITaskService). The logon trigger is bound to the infecting user ("At log on of <HOST>\\<user>"), not any user; the task is Enabled. Task action "Start a program": `rundll32.exe "<%APPDATA%\\Custom_update\\Update_<8 hex>.dll>", <export>`', 'partly', 'ev_0077, ev_0092, ev_0021', '§4 step 7, §5.3, §8.1 (no interface GUID)', 'sharpened'],
+  ['K5', 'K5.3', '`update_data.dat` holds the C2s', 'found', 'ev_0098', '§6.1, §8.1', 'core'],
+  ['K5', 'K5.6', 'Install folder looked up through `Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\Shell Folders` (AppData, Desktop, Startup, Personal, Local AppData)', 'found', 'ev_0021, ev_0019, ev_0025', '§5.3, §5.4, §8.1', 'added'],
+  ['K5', 'K5.7', 'The task definition and its registration: a new definition through the task service, the highest-privilege principal when the sample’s flag is set, the settings, then `RegisterTaskDefinition` with the task name, the definition, flag 6, empty user and password variants and logon type 0', 'found', 'ev_0077, ev_0092', '§4 step 7, §5.3, §8.1', 'completion'],
+  ['K6', 'K6.1', 'HTTPS POST to `/live/` with `Content-Type: application/x-www-form-urlencoded`, a decrypted string. The POST carries `Accept: */*`. The POST carries `Cache-Control: no-cache`', 'partly', 'ev_0069, ev_0021', '§6.1, §6.2 (no Accept or Cache-Control header)', 'sharpened'],
+  ['K6', 'K6.2', 'User-Agent', 'found', 'ev_0021, ev_0019', '§6.1, §6.2, §8.1; STIX', 'core'],
+  ['K6', 'K6.3', 'RC4, then base64. Base64 is done in code with the standard alphabet, which is itself one of the encrypted strings', 'partly', 'ev_0021, ev_0019, ev_0025', '§4 step 11, §6.1; T1573.001 published (the alphabet only in the bundle)', 'sharpened'],
+  ['K6', 'K6.4', 'Beacon interval. The beacon timeout is jittered: a random number seeded with the cursor position multiplied by the system uptime (GetTickCount) is passed to RtlRandomEx', 'partly', 'ev_0067, ev_0025', '§4 step 9, §6.1, §6.3 (no jitter seed or RtlRandomEx)', 'sharpened'],
+  ['K6', 'K6.5', 'Data format at registration. `counter` is the number of HTTP requests, one more per callback. `username` is ASCII. `username` is the owner of the running process. `direction` is the C2 domain the request is sent to. The MACs come from GetAdaptersInfo', 'partly', 'ev_0021, ev_0067, ev_0025', '§4 step 11, §6.1, §6.2 (what counter and direction carry is not stated)', 'sharpened'],
+  ['K6', 'K6.6', 'Beacon types', 'partly', 'ev_0067', '§5.4, §6.1, appendix (types 3, 4 and 5 only)', 'core'],
+  ['K6', 'K6.7', 'Reply verbs; each reply line reads `VERB|index-or-id|argument`, and the `front://` placeholder is replaced with the current C2 URL. Before dispatch, the second-layer handler checks that the token after `COMMAND` is one of the expected IDs. A `front` placeholder becomes the active C2 with `/files/` appended (`front://sysinfo.bin` → `<C2>/files/sysinfo.bin`). The format string `URLS|%d|%s` is one of the decoded strings', 'partly', 'ev_0077, ev_0082', '§4 step 12, §6.1, §6.3 (ERROR only in the bundle)', 'sharpened'],
+  ['K6', 'K6.9', 'The RC4 key `12345` is itself an encrypted string, decrypted by the same routine', 'found', 'ev_0021, ev_0019, ev_0067', '§5.1 (encryption table), §6.2', 'added'],
+  ['K6', 'K6.10', 'WinINet transport: InternetConnectA to the C2 host, HttpSendRequestA for the POST', 'found', 'ev_0025, ev_0097, ev_0069', '§6.1', 'added'],
+  ['K6', 'K6.11', 'Failover: the same request goes to the second C2 when the first fails', 'found', 'ev_0067', '§6.1', 'added'],
+  ['K7', 'K7.2', 'Desktop links (0x2)', 'found', 'ev_0077, ev_0021, ev_0025', '§6.3', 'core'],
+  ['K7', 'K7.3', 'Process list (0x3). The process list is taken with CreateToolhelp32Snapshot. `subproc` nests recursively (children, grandchildren), so the list is a tree', 'found', 'ev_0077, ev_0021, ev_0025', '§6.3', 'sharpened'],
+  ['K7', 'K7.4', 'System information (0x4)', 'found', 'ev_0077, ev_0021, ev_0025', '§5.4, §6.3', 'core'],
+  ['K7', 'K7.12', 'Run an EXE (0xc), saved under AppData as `%s%d.exe`. The EXE is saved in `%LOCALAPPDATA%` (AppData\\Local) under a random signed-decimal name. It runs as a child of the rundll32 host', 'partly', 'ev_0021, ev_0069', '§6.3 (no random name or parent process)', 'sharpened'],
+  ['K7', 'K7.13', 'Run a DLL through rundll32 (0xd), saved under AppData as `%s%d.dll` or `%s\\%d.dll` and started with `C:\\WINDOWS\\SYSTEM32\\rundll32.exe %s,%s`. The command argument is `<URL>, <export name>`', 'found', 'ev_0021, ev_0069', '§5.5, §6.3', 'sharpened'],
+  ['K7', 'K7.14', 'Run shellcode (0xe). The shellcode is read with InternetReadFile, copied into allocated memory and started on a new thread', 'found', 'ev_0081, ev_0025, ev_0077', '§6.3', 'sharpened'],
+  ['K7', 'K7.15', 'Update (0xf). On update the running thread and the mutex are notified and released; the file is deleted, the new binary run and the old process ended', 'partly', 'ev_0077, ev_0090, ev_0025', '§6.3 (no release of the thread and the mutex)', 'sharpened'],
+  ['K7', 'K7.17', 'Uninstall (0x11)', 'found', 'ev_0077', '§6.3', 'core'],
+  ['K7', 'K7.18', '`bp.dat` (0x12): the rundll32 argument is built from `init -="%s\\%s"` (the FLOSS form) and `files/bp.dat` is downloaded. The rundll32 argument is `init -zzzz="<folder>\\<file>.dat"` (FLOSS renders the stored string without the `zzzz` run as `init -="%s\\%s"`). Both files go into a new folder under `%APPDATA%` (Roaming) named by a random signed number. The IcedID loader DLL (`test.dll` on the server) is saved as `<n>.dll`. `/files/bp.dat` is saved as `<n>.dat`. Folder and file names come from a custom random number generator. The two are launched together through CreateProcessW as `rundll32.exe <folder>\\<n>.dll,init -zzzz="<folder>\\<n>.dat"`. The `.dat` name comes from the decoded format string `%d.dat`', 'partly', 'ev_0021, ev_0019, ev_0077', '§5.2, §6.3 (IcedID not named)', 'sharpened'],
+  ['K7', 'K7.19', 'Longer interval (0x13)', 'found', 'ev_0077, ev_0067', '§6.3', 'core'],
+  ['K7', 'K7.20', 'Reset the counter (0x14)', 'found', 'ev_0077, ev_0067', '§6.3', 'core'],
+  ['K7', 'K7.21', 'Command 21 (0x15): download and execute a module; the bot downloads the module DLL and runs it in a new thread to collect data', 'found', 'ev_0077, ev_0081, ev_0086', '§6.3', 'completion'],
+  ['K8', 'K8', 'Discovery commands, run in a dedicated thread, each output sent in a named field (`&ipconfig=` … `&whoami_group=`). The commands are started through absolute paths `C:\\Windows\\System32\\cmd.exe /c …` and `C:\\Windows\\System32\\wbem\\wmic.exe …`. Both paths are decoded strings', 'found', 'ev_0025, ev_0067, ev_0021', '§5.4, §6.2', 'sharpened'],
+  ['K8', 'K8.1', 'Computer name through GetComputerNameExA', 'found', 'ev_0025, ev_0082', '§4 step 10, §5.4, §10', 'added'],
+  ['K8', 'K8.2', 'User name through GetUserNameA', 'found', 'ev_0025, ev_0090', '§4 step 10, §5.3, §5.4, §10', 'added'],
+  ['K9', 'K9', 'The sample’s own hashes', 'found', 'ev_0002, ev_0030', '§2, §3, §8.1; STIX; IOC feed', 'core'],
+  ['K9', 'K9', 'URL path `/live/`', 'found', 'ev_0021, ev_0019', 'STIX; IOC feed; Suricata rules', 'core'],
+  ['K9', 'K9', 'User-Agent', 'found', 'ev_0021, ev_0019', '§8.1; STIX; IOC feed; Suricata rule', 'core'],
+  ['K9', 'K9', 'Mutex', 'found', 'ev_0021, ev_0019', '§8.1; STIX; IOC feed; YARA rule', 'core'],
+  ['K9', 'K9', 'Folder `Custom_update\\`', 'found', 'ev_0021, ev_0019, ev_0025', '§8.1', 'core'],
+  ['K9', 'K9', 'File name `Update_<hex>.dll`', 'found', 'ev_0021, ev_0019, ev_0025', '§4 step 6, §5.3, §8.1', 'core'],
+  ['K9', 'K9', '`update_data.dat`', 'partly', 'ev_0021, ev_0019, ev_0025', '§8.1 (no directory)', 'core'],
+  ['K9', 'K9', 'Task `Updater`', 'found', 'ev_0021, ev_0019, ev_0025', '§8.1, §8.3', 'core'],
+  ['K9', 'K9', 'The decoded strings include `<!DOCTYPE` and `html`', 'partly', 'ev_0019, ev_0021, ev_0025', '§5.5, §6.3 (not as decoded strings)', 'completion'],
+  ['K9', 'K9', 'The decoded strings include `/files/`, used when the bot rewrites a C2 reply into a download URL', 'found', 'ev_0021, ev_0019, ev_0077', '§6.2, §6.3', 'completion'],
+  ['K9', 'K9', 'The decoded strings include `\\Registry\\Machine\\`, a native registry root', 'found', 'ev_0021, ev_0019, ev_0086', '§5.4', 'completion'],
+  ['K9', 'K9', 'The decoded strings include a second rundll32 command-line template without an export, `C:\\WINDOWS\\SYSTEM32\\rundll32.exe %s`, beside the `…%s,%s` template of K7.13', 'partly, bundle', 'ev_0019, ev_0021, ev_0025, ev_0069', 'evidence bundle only (decoded strings)', 'completion'],
+  ['K10', 'K10', 'T1027 Obfuscated files or information', 'found', 'ev_0021, ev_0019', '§10, published', 'core'],
+  ['K10', 'K10', 'T1218.011 Rundll32', 'found', 'ev_0021, ev_0028', '§10, published', 'core'],
+  ['K10', 'K10', 'T1055 Process injection', 'missed', '', '§10: claimed, not published (the judge dropped it)', 'core'],
+  ['K10', 'K10', 'T1053.005 Scheduled task', 'found', 'ev_0021, ev_0019, ev_0020', '§10, published', 'core'],
+  ['K10', 'K10', 'T1070.004 File deletion', 'found', 'ev_0021, ev_0019, ev_0020', '§10, published', 'core'],
+  ['K10', 'K10', 'T1059.003 Windows command shell', 'found', 'ev_0021, ev_0020', '§10, published', 'core'],
+  ['K10', 'K10', 'T1105 Ingress tool transfer', 'found', 'ev_0067, ev_0069, ev_0095', '§10, published', 'added'],
+  ['K10', 'K10', 'T1497 Virtualization/sandbox evasion', 'found', 'ev_0069, ev_0082, ev_0105', '§4 step 3, §10 (T1497.001)', 'added'],
+  ['K10', 'K10', 'T1057 Process discovery', 'found', 'ev_0077, ev_0092', '§10, published', 'added'],
+  ['K10', 'K10', 'T1082 System information discovery', 'found', 'ev_0025, ev_0021', '§5.4, §10, published', 'added'],
+  ['K10', 'K10', 'T1083 File and directory discovery', 'missed', '', '§5.4 describes the listing; not mapped', 'added'],
+  ['K10', 'K10', 'T1041 Exfiltration over C2 channel', 'missed', '', 'not listed', 'added'],
+];
+/* Every fact beyond the key: value class, number, fact, ledger entries, report
+ * sections, the use, and how much of it the eight analyses print. */
+export const beyondFacts = [
+  ['A', '16', '0x2200 runs each discovery line through 0x1030: CreatePipe, CreateProcessW, PeekNamedPipe / ReadFile, TerminateProcess; STARTUPINFO flags 0x101, hidden window', 'ev_0067, ev_0077, ev_0025', '§5.4, §10 T1059.003', 'behaviour detection (T1059.003)', 'in part'],
+  ['A', '23', '0x7fa8 writes each MAC byte with `%02x`', 'ev_0082, ev_0025', '§4 step 10, §5.4', 'network signature', 'in part'],
+  ['A', '27', 'Sandbox: two `rundll32.exe <sample>.dll,#1` processes and an unattributed svchost', 'ev_0012', '§4 step 1', 'process-tree detection', 'in part'],
+  ['A', '34', 'First beacon after 1800 × 100 ms ≈ 180 s', 'ev_0067', '§4 step 9, §6.1', 'sandbox timeout, hunting window', 'none, family'],
+  ['A', '48', '0x6e04 gets its Local AppData folder by CSIDL 0x1c, through 0x7e90', 'ev_0069', '§6.3 0xc', 'host artefact location', 'in part'],
+  ['A', 'N14', 'The task action depends on DAT_10488: only when it is nonzero is the program `rundll32.exe`; when it is zero, the program is formatted from 0xf9a0 and the arguments are the literal at 0xf9b0', 'ev_0086', '§5.3', 'persistence hunting', 'in part'],
+  ['A', 'N16', '0x88f8 chooses the hive by its argument: 1 selects the `\\Registry\\Machine\\` root, any other value the current-user path from RtlFormatCurrentUserKeyPath', 'ev_0086, ev_0021', '§5.4, appendix (T1012)', 'where to look', 'none, family'],
+  ['B', '6', 'String cipher constants: seed 0x33629d40, first key 0x41, running value via 0x9040 (x+1), decoder 0xae78', 'ev_0021, ev_0067, ev_0068', '§5.1, §5.2', 'extractor, decoder', 'in part'],
+  ['B', '9', 'FNV-32 offset basis and prime agree with the FNV routine 0xc99c', 'ev_0023, ev_0068', '§5.1', 'extractor, decoder', 'in part'],
+  ['B', '54', 'Resolver tables and their contents (0x84e4 kernel32 modules, 0x904c WinINet…, 0x9484 kernel32 process / memory / file, 0xa47c, 0xa59c ntdll, 0xac50 ole32); GetCursorPos is resolved by hash at 0x92cc', 'ev_0020', '§5.2, §5.4', 'extractor, decoder', 'in part'],
+  ['B', '10', '0x3868’s gate chain returns -1 when a gate fails', 'ev_0069', '§4 step 3, §6.1', '', 'in part'],
+  ['B', '13', '0x5030 picks POST / GET by its second argument; HttpOpenRequestA, InternetSetOptionA', 'ev_0069', '§6.1', '', 'in part'],
+  ['B', '29', 'Thread 0xb670 (started by 0x72c8) maps the body with CreateFileMappingA / MapViewOfFile and calls through the body pointer (the mapping name `12345` is not stated)', 'ev_0081, ev_0086', '§6.3 0x15', '', 'in part'],
+  ['B', '30', 'The injection-capable slots have no caller: “no routine calls WriteProcessMemory or CreateRemoteThread through a slot”', 'ev_0025', '§5.2', '', 'none, family'],
+  ['B', '38', 'Task COM chain 0x3728 → 0xb344 → 0xc5e8 / 0xc42c (CoInitializeEx, CoCreateInstance)', 'ev_0090, ev_0092, ev_0077', '§4 step 7, §5.3', '', 'in part'],
+  ['B', '40', '0x3808 builds the path through 0x30d0 / 0x3250 and deletes it through the NtDeleteFile wrapper 0x7694', 'ev_0098, ev_0025', '§5.1', '', 'in part'],
+  ['B', '41', 'Beacon thread 0x5750 created by 0x6250 through CreateThread', 'ev_0069', '§4 step 9', '', 'in part'],
+  ['B', '42', '0x8560 maps RtlGetVersion / GetVersionExW to a code 0–7', 'ev_0082', '§5.4', '', 'in part'],
+  ['B', '43', '0x378c tests the install copy (NtCreateFile through 0x77b0); a zero result → 0x33ac', 'ev_0094, ev_0069', '§4 step 6, §5.3', '', 'in part'],
+  ['B', '47', '0x33ac starts the copy through 0xb400 with CREATE_NO_WINDOW (0xb400’s second argument 1 → 0x8000000)', 'ev_0086, ev_0090', '§5.3', '', 'in part'],
+  ['B', 'N5', 'WinINet plumbing: 0x52c4 InternetCrackUrlA; 0x4c70 InternetOpenW; 0x4f58 InternetReadFile in 255-byte reads', 'ev_0082, ev_0098', '§6.1, appendix', '', 'in part'],
+  ['B', 'N6', 'The UA is argument 1 (lpszAgent) of InternetOpenW at 0x4cb0 through slot 0x10e00, loaded at 0x4db0 in 0x4d20', 'ev_0021, ev_0025, ev_0097', '§8.1', '', 'in part'],
+  ['B', 'N8', 'The packer flag is one HasRichSignature match at 0xb8', 'ev_0051', '§5.1', '', 'none, this file'],
+  ['B', 'N9', 'The writer 0x7acc calls the NtCreateFile wrapper 0x77b0 (disposition 3) and the NtWriteFile wrapper 0x7a54, which is decompiled', 'ev_0068, ev_0081', '§5.5', '', 'none, family'],
+  ['B', '#22', 'Registry read chain for the Shell Folders values: 0x7b98 → 0xb154 → 0x88f8 (RtlFormatCurrentUserKeyPath) / 0xb1d4 (NtQueryValueKey)', 'ev_0069, ev_0098, ev_0086, ev_0025', '§5.3, §5.4', '', 'in part'],
+  ['B', '#39', 'NtSetValueKey is resolved and no caller is located', 'ev_0020, ev_0025', '§5.3', '', 'none, family'],
+  ['B', '#44', 'The install copy goes through 0x7504 (0x79c8 read, 0x7acc write) with its delete flag clear', 'ev_0086, ev_0090', '§5.3, §5.5', '', 'in part'],
+  ['B', 'N12', 'The logon trigger is created as type 9', 'ev_0069', '§5.3', '', 'in part'],
+  ['B', 'N1', 'For an HTTPS URL 0x5030 sets InternetSetOptionA option 0x1f to 0x4380 (the request flags 0x4883000 are not stated)', 'ev_0069', '§6.1', '', 'none, family'],
+  ['B', 'N17', 'InternetConnectA’s arguments, from disassembly: InternetOpenW at 0x4cb0 is called with the agent and four zeros; InternetConnectA at 0x4cfa (slot 0x10e08) with port, NULL user / password, service 3 (HTTP), flags 0 and context 1', 'ev_0097', 'appendix (T1071.001)', '', 'in part'],
+  ['B', 'N20', 'The command path is a single chain: 0x3cf4’s only caller is 0x541c, and 0x541c’s only caller is 0x5750', 'ev_0078, ev_0083', 'appendix (T1071.001 / T1105)', '', 'in part'],
+  ['C', '1', 'Compile TimeDateStamp 2024-03-25 15:54:25 UTC', 'ev_0004', '§3', '', 'none, this file'],
+  ['C', '3', 'Section entropies (.text 5.42, .rdata 4.68, .data 6.48, .pdata 3.87, .reloc 0.08); no packer', 'ev_0004, ev_0051', '§3, §5.1', '', 'none, this file'],
+  ['C', '4', 'The five static imports by name: KERNEL32 PeekNamedPipe, GetLastError, CreateMutexW; USER32 MessageBeep, MessageBoxA', 'ev_0004', '§3, §5.2', '', 'in part'],
+  ['C', '26', 'VirusTotal 56 of 75, analysis 2026-10-27', 'ev_0018', '§3', '', 'none, this file'],
+  ['C', '51', '101 encoded texts in `.data`', 'ev_0021', '§5.1, §5.2', '', 'none, this file'],
+  ['C', 'N10', '0xad34 wraps NtAllocateVirtualMemory (31 callers); 0x7b40 wraps NtFreeVirtualMemory (41 callers)', 'ev_0025', '§5.2', '', 'in part'],
+];
+/* The one fact the strict reading leaves out. */
+export const outOfStrict = '10';
+export const beyondWithoutC = beyondFacts.filter(([cls]) => cls !== 'C').length;
+export const beyondWithoutCStrict = beyondFacts.filter(([cls, id]) => cls !== 'C' && id !== outOfStrict).length;
+export const origins = Object.fromEntries(
+  ['core', 'sharpened', 'added', 'completion'].map((o) => [o, keyItems.filter((row) => row[6] === o).length]),
+);
+export const valueClasses = [
+  ['A', 'Directly usable for detection and response'],
+  ['B', 'Analysis depth'],
+  ['C', 'Low-value metadata'],
+];
+/* The published evidence: file, what it holds, size. */
+export const evidenceFiles = [
+  ['report.md', 'The report, as Markdown.', '116 kB'],
+  ['report.html', 'The same report as one HTML page. Its numbered citations open the evidence bundle.', '162 kB'],
+  ['evidence-bundle.html', 'The evidence bundle: every note the report cites, with the ledger entries behind it, and the analyst claims the report body does not print.', '991 kB'],
+  ['evidence-bundle.json', 'The evidence bundle as JSON.', '911 kB'],
+  ['evidence.json', 'The evidence ledger: every entry with its ev_ id, the agent, the tool, its arguments and its answer.', '1.5 MB'],
+  ['stix-bundle.json', 'The STIX 2.1 bundle the run published.', '48 kB'],
+  ['mitre.json', 'The ATT&CK mapping: each published technique with its description.', '13 kB'],
+];
+/* A string with `code` spans, as text and <code>. */
+export function Text({ value }) {
+  return value.split('`').map((part, i) => (i % 2 ? <code key={i}>{part}</code> : part));
+}
 
 This page reports the benchmark run of {run.date}: one scored analysis of a
-real malware sample by the <code>{run.team}</code> team. It compares the report with what public human
-analyses say about the same sample, and counts the facts the report adds.
+real malware sample by the <code>{run.team}</code> team. It compares the report with what eight public human
+analyses say about the same sample, and counts the facts the report states beyond them.
 
 <Callout title="The run at a glance">
 
@@ -88,8 +277,8 @@ real sandbox ({run.sandbox}), {run.date}.
 - **{recovered} of {run.items}** reference facts recovered: {run.found} found,
   {run.partlyBody} partly, {run.partlyDump} partly from the evidence bundle
   only, {run.missed} missed, **{run.wrong} wrong**.
-- **{run.beyondHuman} verified facts** that none of the human reports holds
-  ({run.beyondHumanStrict} under a strict reading).
+- **{run.beyondKey} verified facts** beyond the key
+  ({run.beyondKeyStrict} under a strict reading).
 - **{run.calls} model calls**, {run.seconds.toLocaleString('en-GB')} s (about
   {Math.round(run.seconds / 60)} minutes), **{run.usd} USD**.
 
@@ -99,7 +288,7 @@ real sandbox ({run.sandbox}), {run.date}.
 
 The question is simple: when Malspark analyses a sample on its own, how much of
 what expert human analysts published does it find, does it get anything wrong,
-and what does it find that they did not write down?
+and what does it state beyond the key drawn from their work?
 
 ### The sample
 
@@ -108,21 +297,92 @@ The reference sample is a {run.sample} bot DLL, sha256
 [Bitsight, *Latrodectus, are you coming back?* (João Batista, 2024-06-17)](https://www.bitsight.com/blog/latrodectus-are-you-coming-back)
 lists this hash among the samples it analysed.
 
+### Evidence
+
+The run’s own output is published with this page, so each verdict and each
+fact below can be checked against it:
+
+<table>
+  <thead>
+    <tr>
+      <th>File</th>
+      <th>What it holds</th>
+      <th>Size</th>
+    </tr>
+  </thead>
+  <tbody>
+    {evidenceFiles.map(([file, holds, size]) => (
+      <tr key={file}>
+        <td><a href={`/assets/benchmark/${file}`}><code>{file}</code></a></td>
+        <td>{holds}</td>
+        <td>{size}</td>
+      </tr>
+    ))}
+  </tbody>
+</table>
+
+The sample itself is not published here. Fetch it by the SHA-256 above from a
+public malware repository, such as
+[MalwareBazaar](https://bazaar.abuse.ch/sample/6091f2589fef42e0ab3d7975806cd8a0da012b519637c03b73f702f7586b21ef/)
+or [VirusTotal](https://www.virustotal.com/gui/file/6091f2589fef42e0ab3d7975806cd8a0da012b519637c03b73f702f7586b21ef).
+
+The published copies are defanged: every URL, host name and IP address in
+them is written as <code>hxxps://host[.]example/</code> or
+<code>192[.]0[.]2[.]1</code>, and a hex dump that holds one is re-encoded from
+the defanged text, so no live address is served from this site. Only the links
+to VirusTotal, MalwareBazaar and MITRE ATT&CK, and the SVG namespace, are left
+as they are. Local file paths keep only the file name, the server’s job and sample ids read
+<code>&lt;job&gt;</code> and <code>&lt;sample&gt;</code>, internal names are
+replaced, and the ledger drops its internal row ids. A defanged copy is made
+for open publication, so the report's marking reads TLP:CLEAR, whatever
+Traffic Light Protocol marking the report kept in the platform carries;
+nothing else is changed.
+Defanging changes the bytes, so the published ledger does not verify against
+the digests it carries. To check the ledger’s seal, reproduce the run as
+[Reproducing the run](#reproducing-the-run) describes.
+
 ### The key: K1 to K11
 
-The key is a list of facts drawn from three public human analyses of the
-family: Bitsight's report above, and the analyses Elastic and Proofpoint
-published. The facts are sorted into eleven groups:
+The key is a list of {run.items} facts drawn from eight public human analyses of
+the family:
+
+- [Bitsight, *Latrodectus, are you coming back?* (João Batista, 2024-06-17)](https://www.bitsight.com/blog/latrodectus-are-you-coming-back)
+- [Elastic Security Labs, *Spring Cleaning with LATRODECTUS* (2024-05-16)](https://www.elastic.co/security-labs/spring-cleaning-with-latrodectus)
+- [Proofpoint and Team Cymru S2, *Latrodectus: This Spider Bytes Like Ice* (2024-04-04)](https://www.proofpoint.com/us/blog/threat-insight/latrodectus-spider-bytes-ice)
+- [0x0d4y, *Latrodectus [IceNova]* (2024-04-30)](https://0x0d4y.blog/latrodectus-technical-analysis-of-the-new-icedid/)
+- [Pulsedive Threat Research, *Latrodectus Loader* (2024-06-04)](https://blog.pulsedive.com/threat-research-latrodectus/)
+- [RevEng.AI, *Latrodectus Affiliate Resumes Operations Using Brute Ratel C4 Post Operation Endgame* (2024-06-24)](https://reveng.ai/blog/latrodectus-distribution-via-brc4)
+- [Krakz, *Latrodectus dropped by BR4* (Pierre Le Bourhis, 2024-08-01)](https://blog.krakz.fr/articles/latrodectus/)
+- [Cy83rTr0n, *Latredocus Exposed: Unraveling the New Cyber Threat* (undated)](https://hackmd.io/@Cy83rTr0n/rklbkdIuC)
+
+Of the {run.items} facts, {origins.core + origins.sharpened} were fixed before
+the run from the first three analyses, Bitsight, Elastic Security Labs and
+Proofpoint. The other {origins.added + origins.completion} were drawn after the run from the
+eight analyses: their full text and their figures.
+Readers who had not seen the run’s report drew {origins.added} from the five further analyses, and
+{origins.completion - run.checkItems.length} in a completion pass that read all eight end to end and listed every checkable fact
+that no item held. The same readers added specifics from the analyses to
+{origins.sharpened} of the facts fixed before the run. Six more items, the
+export-directory name, the missing signature, the section count, the import
+counts, command 21 and the scheduled task’s registration call, which a figure of
+Bitsight’s analysis prints, entered the key when the run’s own facts were checked
+against the analyses.
+
+Some analyses show a value from a sibling file of the same build. Such a value
+is an item only where this file’s own headers hold the same value; the headers
+were read statically, and the sample was not run. A specific that does not hold
+for this file, or that cannot be checked against it, is not scored. The agents
+see none of the eight analyses. The facts are sorted into eleven groups:
 
 - **K1 to K10** hold the {run.items} scored facts: identity, execution flow,
   anti-analysis, identifiers, persistence, command and control, commands,
   discovery, indicators and ATT&CK techniques.
-- **K11** holds the human reports' detection content: their YARA, Suricata and
+- **K11** holds the analyses' detection content: their YARA, Suricata and
   Sigma rules and hunting advice. It is not scored. It is used only to decide
-  what counts as beyond the human reports.
+  what counts as beyond the key.
 
 Build-specific values, such as the C2 domains, the group name and the RC4 key,
-are checked for consistency with the human reports, which describe the family
+are checked for consistency with the analyses, which describe the family
 across many builds.
 
 ### How a fact is scored
@@ -135,32 +395,41 @@ Each of the {run.items} facts gets one verdict:
 | Partly | The report body states part of the fact, or states it with the wrong purpose. |
 | Partly, from the evidence bundle | The fact appears only in the evidence bundle that ships beside the report, bound to the routine it comes from, and not in the report body. |
 | Missed | The report does not state the fact. A string that only hints at a behaviour counts as missed. |
-| Wrong | The report states the fact in a way the human reports contradict. |
+| Wrong | The report states the fact in a way the analyses contradict. |
 
-The scorer checks every verdict against the run's stored evidence ledger, not
-only against the report text.
+An item is scored whole: the key fact and the specifics added to it count as
+one fact, so a specific the report states only in part, only in the evidence
+bundle or not at all makes a found item partly. The scorer checks every verdict
+against the run's stored evidence ledger, not only against the report text.
+Every item drawn or sharpened after the run was scored by two independent
+scorers. In the completion pass their verdicts were identical on every item;
+for the items drawn before it, the lower verdict stands where they differed.
 
-### Beyond the human reports
+### Beyond the key
 
-A fact counts as **beyond human** when all three hold:
+A fact counts as **beyond the key** when all three hold:
 
-1. The report body states it.
-2. No item of K1 to K11 holds it, and no human report states it for this hash.
-3. The run's own ledger proves it: a tool answer, a decoded string, a sandbox
-   record or a decompile, cited by its `ev_` id.
+1. The report body states it, and the run's own ledger proves it: a tool
+   answer, a decoded string, a sandbox record or a decompile, cited by its
+   `ev_` id.
+2. No item of K1 to K11 holds it. Where an item holds part of it, the fact is
+   worded to what remains, and it counts only if more than addresses remains:
+   a named API, value, string, structure or step that the key does not ask for.
+3. Nothing contradicts it.
 
 A wrong claim, or one the evidence does not prove, is never counted. It is
 listed separately and left out of the total.
 
 ### Keeping the run honest
 
-- **The run is blind to the key.** The human reports are not given to the
+- **The run is blind to the key.** None of the eight analyses is given to the
   agents, and the run starts on {run.memory}, so nothing learnt from another
   run of the same sample reaches it.
-- **Nothing is tuned for the sample.** The team and its prompts are the
-  importable [all-tools team](/examples/profiles/all-tools.json), unchanged;
-  the model, effort and sandbox are the ones listed under Setup, and nothing
-  was set for this sample.
+- **Nothing is tuned for the sample.** The run used the all-tools team with
+  the model, effort and sandbox listed under Setup, and nothing was set for
+  this sample. The [reference configuration](/examples/profiles/all-tools-reference-run.json)
+  carries the all-tools team as it ships and the model and effort the run
+  gave each agent.
 - **Blind A/B scoring is available.** When two runs are compared, the
   [blind scoring](/docs/blind-scoring/) tool hides which report came from which
   run until the scorer has finished. This page scores a single run, so it has
@@ -176,7 +445,7 @@ listed separately and left out of the total.
 | Sandbox | {run.sandbox}, a real detonation |
 | Memory | {run.memory} |
 | Limits | no job timeout; no spend ceiling inside the product |
-| Degraded | {run.degraded ? 'yes' : 'no: every tool was ready, capa ran and the Sigma rules loaded'} |
+| Degraded | {run.degraded ? 'yes' : <>no: the run recorded no degradation reason and no failed analyst; the analysis, knowledge, network and VirusTotal servers, the declared MCP tool, Ghidra and radare2 answered the agents' calls; capa ran (<code>ev_0008</code>) and 4,241 Sigma rules loaded (<code>ev_0009</code>)</>} |
 
 ## Results
 
@@ -234,14 +503,66 @@ listed separately and left out of the total.
   ))}
 </ul>
 
-### Beyond the human reports
+### Every fact of the key
 
-The report states **{run.beyondHuman} facts** that pass the three tests above.
-Under a strict reading, which also leaves out a fact that another sentence of
-the report contradicts, {run.beyondHumanStrict} remain. Every example below is
+All {run.items} scored facts, with the verdict, the ledger entries the scoring
+cites and the report sections that state the fact. Sections use the report’s
+own numbering; “appendix” is its closing block of analyst statements that add
+detail. Every found or partly found fact names the ledger entries behind it,
+taken from the scoring or, where the scoring cites a report section, from the
+notes that section cites in the evidence bundle; a fact the run did not recover
+lists none.
+
+The last column tells where a fact comes from: **core** facts were fixed before
+the run from three analyses; **sharpened** facts were fixed then too, and carry
+specifics drawn after the run from the eight analyses; **added** facts were
+drawn after the run from the five further analyses; **completion** facts were
+drawn after the run to complete the key: most in the pass over all eight, six
+when the run’s facts were checked against them. Where a fact carries
+added specifics, they follow the key fact in the same cell and are scored with
+it.
+
+- **found (detail wrong):** the body states the fact, and one detail of the
+  surrounding sentence is inverted.
+
+<Accordions type="multiple">
+<Accordion title={`The key: ${run.items} facts`}>
+
+<table>
+  <thead>
+    <tr>
+      <th>Item</th>
+      <th>Fact</th>
+      <th>Verdict</th>
+      <th>Ledger entries</th>
+      <th>Report section</th>
+      <th>Origin</th>
+    </tr>
+  </thead>
+  <tbody>
+    {keyItems.map(([group, item, fact, verdict, entries, sections, origin]) => (
+      <tr key={`${item} ${fact}`}>
+        <td>{item}</td>
+        <td><Text value={fact} /></td>
+        <td>{verdict}</td>
+        <td>{entries ? <code>{entries}</code> : '—'}</td>
+        <td>{sections}</td>
+        <td>{origin}</td>
+      </tr>
+    ))}
+  </tbody>
+</table>
+
+</Accordion>
+</Accordions>
+
+### Beyond the key
+
+The report states **{run.beyondKey} facts** that pass the three tests above.
+Under a strict reading, which leaves out one fact, {run.beyondKeyStrict} remain. Every example below is
 on the strict list.
-Most come from reading the code: the reverser followed routines the human
-reports describe only by behaviour, and named them by address. A sample:
+Most come from reading the code: the reverser followed routines the analyses
+describe only by behaviour, and named them by address. A sample:
 
 <table>
   <thead>
@@ -259,6 +580,69 @@ reports describe only by behaviour, and named them by address. A sample:
     ))}
   </tbody>
 </table>
+
+#### Read against the eight analyses
+
+The {run.beyondKey} facts were also read against the full text of the eight
+analyses and their figures. None of them is printed in full in the text or in a
+figure. {run.audit.partly} are
+printed in part: an analysis describes the behaviour or shows part of it, and the run adds the
+specific value, routine or step. {run.audit.none} are such that two readings of the text and a reading of every
+figure of the eight found no part of them: {run.audit.noneFamily} of those hold for the family, and
+{run.audit.noneFile} are values of this one file. The last column of the full list below gives the
+reading for each fact.
+
+#### Every fact beyond the key, by use
+
+The full list below sorts the {run.beyondKey} facts by what a defender or an
+analyst can do with each. The classes are a judgement of use, not a measured
+score. **A, directly usable for detection and response:** host and network
+indicators, persistence artefacts, command lines and timing that a detection
+engineer or an incident responder can act on. **B, analysis depth:** code,
+cryptography and protocol structure; the facts marked “extractor, decoder”
+are what a config extractor, a traffic decoder or a code-level YARA rule
+needs. **C, low-value metadata:** facts a senior analyst may leave out on
+purpose. Without class C, {beyondWithoutC} facts remain ({beyondWithoutCStrict}
+under the strict reading).
+Fact {outOfStrict} is counted in the {run.beyondKey} but not in the strict
+{run.beyondKeyStrict}.
+
+<Accordions type="multiple">
+{valueClasses.map(([cls, label]) => {
+  const facts = beyondFacts.filter(([c]) => c === cls);
+  return (
+    <Accordion key={cls} title={`${cls}. ${label} (${facts.length})`}>
+      <table>
+        <thead>
+          <tr>
+            <th>#</th>
+            <th>Fact</th>
+            <th>Ledger entries</th>
+            <th>Report section</th>
+            {cls !== 'C' && <th>Use</th>}
+            <th>In the eight analyses</th>
+          </tr>
+        </thead>
+        <tbody>
+          {facts.map(([, id, fact, entries, sections, use, eight]) => (
+            <tr key={id}>
+              <td>{id}</td>
+              <td>
+                <Text value={fact} />
+                {id === outOfStrict && <em> Not in the strict count.</em>}
+              </td>
+              <td><code>{entries}</code></td>
+              <td>{sections}</td>
+              {cls !== 'C' && <td>{use}</td>}
+              <td>{eight}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </Accordion>
+  );
+})}
+</Accordions>
 
 ### What the run cost
 
@@ -278,9 +662,11 @@ reports describe only by behaviour, and named them by address. A sample:
 
 - **One sample, one run.** No variance is measured. A rerun can move a
   borderline fact between found and partly.
-- **One scorer.** The project scores its own runs. Every verdict quotes the
-  report sentence it rests on and is checked against the ledger, but the
-  scorer knows which run it is reading.
+- **One scorer for the plain core facts.** The project scores its own runs.
+  Every verdict quotes the report sentence it rests on and is checked against
+  the ledger, but the scorers know which run they are reading. The core facts
+  that carry no added specific, {origins.core} of them, were scored by one
+  scorer; every other fact was scored by two independent scorers.
 - **A family well described in public.** The reference reports exist because
   the family is well known. A new family has no key to score against.
 
@@ -297,9 +683,10 @@ Start a stack and connect the model and the sandbox, as in the
 
 <Step>
 
-Import the [all-tools team](/examples/profiles/all-tools.json) and give it
-the servers and providers it names, as [An all-tools
-team](/docs/configuration/#an-all-tools-team) describes.
+Import the [reference configuration](/examples/profiles/all-tools-reference-run.json),
+which holds the all-tools team and the model and effort of every agent listed
+under Setup, and give the team the servers and providers it names, as [An
+all-tools team](/docs/configuration/#an-all-tools-team) describes.
 
 </Step>
 
@@ -319,8 +706,9 @@ whose long-term memory is empty:
 
 <Step>
 
-Score the stored report against the key, fact by fact, and check each verdict
-against the ledger (`GET /api/v1/jobs/{job_id}/evidence`).
+Score the stored report against the {run.items} facts of the key, fact by fact,
+and check each verdict against the ledger
+(`GET /api/v1/jobs/{job_id}/evidence`).
 
 </Step>
 

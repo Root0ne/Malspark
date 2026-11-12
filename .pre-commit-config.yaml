@@ -7,10 +7,12 @@ repos:
     hooks:
       # Packet captures are bytes; a capture that reads as text is still one.
       # A patch's blank context lines are a single space that must stay.
+      # The published benchmark evidence is the run's output as written
+      # (scripts/benchmark/publish_evidence.py), Markdown line breaks included.
       - id: trailing-whitespace
-        exclude: ^(tests/fixtures/pcap/|scripts/dev/patches/)
+        exclude: ^(tests/fixtures/pcap/|scripts/dev/patches/|apps/docs/public/assets/benchmark/)
       - id: end-of-file-fixer
-        exclude: ^(tests/fixtures/pcap/|scripts/dev/patches/)
+        exclude: ^(tests/fixtures/pcap/|scripts/dev/patches/|apps/docs/public/assets/benchmark/)
       - id: check-yaml
       - id: check-toml
       - id: check-merge-conflict
