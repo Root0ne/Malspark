@@ -13,7 +13,7 @@
  * print it.
  */
 
-import type { DetectionRule, RuleClause, SampleString } from "@/types/malware-report";
+import type { DetectionKind, DetectionRule, DraftNotBuilt, RuleClause, SampleString } from "@/types/malware-report";
 
 /** `strings`: its strings match; `hash`: it matches by a hash clause only;
  *  `misses`: no clause held; `neutral`: not checked, or a record that does not
@@ -124,4 +124,19 @@ export function ruleStanding(rule: DetectionRule): RuleStanding | null {
     return null;
   }
   return { printed: rule.printed, sentence: rule.standing };
+}
+
+const DRAFT_LABEL: Record<DetectionKind, string> = {
+  yara: "YARA",
+  sigma: "Sigma",
+  suricata: "Suricata",
+  snort: "Snort",
+};
+
+/** The sentence the report prints for each format no draft was built in
+ *  (`detection_signatures.not_drafted_sentence`), in the record's order. */
+export function draftsNotBuilt(items: DraftNotBuilt[] | null | undefined): string[] {
+  return (items ?? [])
+    .filter((item) => typeof item?.why === "string" && item.why.trim())
+    .map((item) => `No ${DRAFT_LABEL[item.kind] ?? item.kind} draft: ${item.why.trim()}.`);
 }

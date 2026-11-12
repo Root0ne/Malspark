@@ -289,7 +289,9 @@ label the judge gave two objects maps to the list of ids it named.
 `iocs` is a feed another system acts on, and it answers accordingly. `kind`
 narrows to one of `hash`, `domain`, `ip`, `url`, `user_agent`, `ja3`, `ja3s`,
 and, for a value the exported STIX bundle carries from the judge's own
-indicators, `email`, `path`, `registry`, `mutex` or `command`.
+indicators, `email`, `path`, `registry`, `mutex` or `command`; for a host value
+the analysis states, `path`, `folder`, `registry`, `registry_value`, `mutex`,
+`scheduled_task`, `service`, `named_pipe` or `ads` (an alternate data stream).
 `include` decides what is returned:
 
 | `include` | what comes back |
@@ -302,7 +304,12 @@ Every row carries `kind`, `value`, `is_suspicious`, `notes`, **`source`** —
 `sandbox` for something the sample resolved, reached or requested, `analyst`
 for something an agent put in an artefact, `strings` for a run of bytes in the
 file that has the shape of one, `identity` for the sample's own hashes,
-`judge` for a value the judge's own indicators name — **`published`**, and
+`judge` for a value the judge's own indicators name, `call_argument` for a
+decoded text the code passes whole to an API argument of its role, `analysis`
+for a host value the report model's identifier table states that code found
+whole in a ledger entry the row cites ([Host values the analysis
+states](/docs/usage/reports-and-exports/#host-values-the-analysis-states)) —
+**`published`**, and
 **`publish_answer`**: the publish rule's answer as the report's IOC table
 prints it, `yes:` and why the row is published, or `no:` and why not.
 A domain, address or URL the sample hid also carries **`recovered_by`**: the
@@ -311,7 +318,8 @@ file's bytes), its ledger entry and where in the file, as the report's IOC
 table states it; every other row omits it (`null`). **`evidence_ids`** lists
 the ledger entries the report's record ties to the row — the entries an
 analyst's listing cites, the entry a call binding was read in, the entries of
-the tools that recovered a hidden value — only ids the run's ledger holds, and
+the tools that recovered a hidden value, the cited entries that hold a value the
+analysis states — only ids the run's ledger holds, and
 is empty when it ties none. **`tlp`** is the report's TLP level by its TLP 2.0
 name (`TLP:CLEAR`, `TLP:GREEN`, `TLP:AMBER`, `TLP:AMBER+STRICT`, `TLP:RED`).
 A judge value is asked the same publish rule as every other row, with the

@@ -186,7 +186,7 @@ class TestTheContract:
 
         assert "registry hive" in text
         assert "Software\\, System\\" in text
-        assert "'String' when the entry does not show what the value is" in text
+        assert "'string' when neither shows what the value is" in text
         assert "Write each value once" in text
 
     def test_a_list_contract_asks_for_each_item_once_and_compact(self) -> None:

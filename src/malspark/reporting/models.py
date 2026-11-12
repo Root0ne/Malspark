@@ -31,6 +31,7 @@ from pydantic import (
     SerializerFunctionWrapHandler,
     model_serializer,
 )
+from pydantic.json_schema import SkipJsonSchema
 
 from malspark.core.reputation import ReputationRecord
 from malspark.schemas.stix_models import get_utcnow
@@ -923,6 +924,19 @@ class DetectionRule(BaseModel):
     standing: str | None = Field(default=None, exclude_if=lambda value: value is None)
 
 
+class DraftNotBuilt(BaseModel):
+    """A rule format the run drafted nothing in, and why (``detection_signatures``).
+
+    Said where the drafts are listed, so a missing format is never silent.
+    ``why`` is a clause, completed by ``detection_signatures.not_drafted_sentence``.
+    """
+
+    model_config = _STRICT_CONFIG
+
+    kind: Literal["yara", "sigma", "suricata", "snort"]
+    why: str
+
+
 class DefensiveRecommendation(BaseModel):
     """One actionable blue-team recommendation."""
 
@@ -1099,6 +1113,20 @@ class ConfigItem(BaseModel):
     evidence_refs: list[str] = Field(default_factory=list)
 
 
+def _host_kind_enum(schema: dict[str, Any]) -> None:
+    """The kind words the report model types an identifier with, as the schema's enum."""
+    from malspark.reporting.stated_host_values import kind_words
+
+    schema["enum"] = list(kind_words())
+
+
+def _host_use_enum(schema: dict[str, Any]) -> None:
+    """The use words, as the schema's enum."""
+    from malspark.reporting.stated_host_values import use_words
+
+    schema["enum"] = list(use_words())
+
+
 class HostIdentifier(BaseModel):
     """One identifier the report model read that a responder can look for on a host.
 
@@ -1108,12 +1136,27 @@ class HostIdentifier(BaseModel):
     copies no string into it.
     """
 
+    # The docstring is the schema's description the model is shown: what is
+    # code's is said here. ``kind`` is one word of the closed vocabulary
+    # (``data/host_identifier_kinds_v1.json``, the schema's enum) and ``use``
+    # what the evidence shows the sample doing with the value; a kind outside
+    # the vocabulary (a report stored before it) is read as written and never
+    # exported (``reporting.stated_host_values``). ``held_in`` is code's, never
+    # the model's: the cited entries that hold the value whole, written when
+    # the composer applies the section (``stated_host_values.with_held_in``)
+    # and absent from the schema. ``None`` where no check is recorded and an
+    # empty ``use`` are left out of the dump, so a stored report reads and
+    # dumps as it did.
     model_config = _STRICT_CONFIG
 
-    kind: str
+    kind: str = Field(json_schema_extra=_host_kind_enum)
     value: str
     purpose: str = ""
+    use: str = Field(default="", json_schema_extra=_host_use_enum, exclude_if=lambda v: not v)
     evidence_refs: list[str] = Field(default_factory=list)
+    held_in: SkipJsonSchema[list[str] | None] = Field(
+        default=None, exclude_if=lambda value: value is None
+    )
 
 
 class CommandRow(BaseModel):
@@ -1901,6 +1944,11 @@ class MalwareReport(BaseModel):
 
     # --- Detection content ---
     detection_signatures: list[DetectionRule] = Field(default_factory=list)
+    # The formats a draft was not built in, each with why. Left out of the
+    # dump when empty, so a report stored before the record dumps as it did.
+    drafts_not_built: list[DraftNotBuilt] = Field(
+        default_factory=list, exclude_if=lambda value: not value
+    )
 
     # --- Pipeline observability ---
     run_summary: dict[str, Any] = Field(default_factory=dict)

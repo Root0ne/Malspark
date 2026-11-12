@@ -154,9 +154,10 @@ def _sigma(payload_published: bool) -> str:
         ],
         consolidated_iocs=iocs,
     )
-    rule = ds._build_sigma(report)
-    assert rule is not None
-    return rule.body
+    # The first draft, over registry keys and images (one draft per log source).
+    rules = ds._build_sigma(report)
+    assert rules
+    return rules[0].body
 
 
 def test_the_sigma_image_is_the_payload_that_runs() -> None:

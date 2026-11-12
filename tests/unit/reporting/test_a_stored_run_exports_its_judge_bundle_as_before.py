@@ -79,7 +79,13 @@ STORED_EXPORTS = {
 # The HTML and the STIX re-pinned when the product took its new name (T-576):
 # the generator line, the producer's name and the ``x_malspark_*`` properties;
 # with the previous name each is the digest pinned before.
-HAIKU4_RENDERS = ("06a395f0432b80a2", "a56231bf54979dba", "2bbc1e9a9eec44c6")
+# Re-pinned when the debate's last mean claim confidence came to be printed
+# under its own label (T-662): that one line of the run summary appendix is the
+# only change in haiku4's Markdown and HTML; the STIX did not change.
+# Re-pinned when the report model's host identifier table came to print the
+# publish rule's answer for each row in a Published column, its footer saying
+# so: that table's rows and footer are the only change in each run.
+HAIKU4_RENDERS = ("e4732614aa85ceb9", "7403edbaf9301caf", "2bbc1e9a9eec44c6")
 
 _UUID = re.compile(r"--[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}")
 _STAMP = re.compile(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})")

@@ -257,12 +257,18 @@ def test_the_enrichment_queued_after_the_report_is_named_then_what_it_asked() ->
 # Re-pinned when the product took its new name (T-576): the HTML's generator
 # line names Malspark; with the previous name each HTML digest is the one
 # pinned before, and the Markdown did not change.
+# Re-pinned when the debate's last mean claim confidence came to be printed
+# under its own label (T-662): that one line of the run summary appendix is the
+# only change in run5, run7, local8 and haiku4's Markdown and HTML; run4 carries no debate figure.
+# Re-pinned when the report model's host identifier table came to print the
+# publish rule's answer for each row in a Published column, its footer saying
+# so: that table's rows and footer are the only change in each run.
 STORED_RENDERS = {
-    "run7": ("87ad1594f3cbc6ea", "f8c2570b24983f04"),
-    "run5": ("4fbb0b856aea7f8e", "827d5f7ebdee3768"),
-    "run4": ("581eb11ec3924a68", "0d81125d321278da"),
-    "local8": ("058e0d21f925bb0e", "6016e1c49686fbb1"),
-    "haiku4": ("06a395f0432b80a2", "a56231bf54979dba"),
+    "run7": ("121d6fb2f21e54cd", "687dab665c364f96"),
+    "run5": ("ff615676c496f1eb", "d88ef6eb57f5fa9a"),
+    "run4": ("95cc2744a52ef0af", "4669cfe8d40d01f1"),
+    "local8": ("e1d6ec0345e42050", "9ccf9fffe48bf0bb"),
+    "haiku4": ("e4732614aa85ceb9", "7403edbaf9301caf"),
 }
 
 

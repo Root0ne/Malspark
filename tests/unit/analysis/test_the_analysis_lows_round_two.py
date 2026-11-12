@@ -89,7 +89,7 @@ def test_a_l1_the_inline_summary_says_not_recorded(capsys: Any) -> None:
         }
     )
 
-    assert "Final confidence: not recorded" in capsys.readouterr().out
+    assert "Mean analyst claim confidence (last round): not recorded" in capsys.readouterr().out
 
 
 def test_a_l2_the_report_names_a_block_that_was_not_built() -> None:

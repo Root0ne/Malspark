@@ -98,7 +98,7 @@ decides what comes back:
 | `all` | Both. |
 
 Every row carries its `kind`, its `value`, a `source` (`sandbox`, `analyst`,
-`strings`, `identity` or `judge`), whether it is `published`, and
+`strings`, `identity`, `judge`, `call_argument` or `analysis`), whether it is `published`, and
 `publish_answer`: `yes:` and why the row is published, or `no:` and why not. A
 value the sample hid carries `recovered_by`, naming the tool that recovered it
 and its ledger entry. `evidence_ids` lists the ledger entries the run's record
@@ -109,6 +109,67 @@ is the report's TLP level by its TLP 2.0 name (`TLP:AMBER`), the one its cover
 prints. The full rule — which kinds exist, when a sandbox address
 counts as the sample's — is in [Reports](/docs/api/#reports) in the REST API
 reference.
+
+### Host values the analysis states
+
+The report model's host-identifier table (section 9) types each value it read
+with one kind of a closed list — `mutex`, `file path`, `file name`, `folder`,
+`registry key`, `registry value`, `scheduled task`, `service`, `named pipe`,
+`alternate data stream`, `string`, `template` — and says what the evidence shows
+the sample doing with it: `creates/writes`, `reads/checks` or `not shown`. The
+platform then checks each value in code, and exports it as source `analysis`
+("stated by the analysis") only when all of these hold:
+
+- its kind names a host object and the sample creates or writes it;
+- the value is found whole in a ledger entry the row cites — not as part of a
+  longer value, and not only in an entry the row does not cite. A name, a
+  folder or a file name counts only where its two ends are delimiters that
+  pair: a quote, the start or end of the text, a line break and, for a folder or
+  a file name, a path separator take each other; an opening `(` or `[` written
+  right after a name (a call), or a `=` or `:` written right before the value,
+  takes only a quote or a closing `)`, `]`, `,` or `;` (`CreateMutexW(abc123)`,
+  `name=abc123,`); after a quote, such a closing mark counts only where a quote,
+  a closing bracket, a line break or the end of the text follows it. Never a
+  word of running text or of a bracket in it (`the loader (explorer) then`),
+  never a key (`{"name": 1}`, `name: value`), never a path component of a URL. A mutex or a named pipe stated bare also counts under its
+  own namespace (`Global\`, `\\.\pipe\`), and a stream after its file's name
+  (`a.exe:stream`);
+- it holds no format placeholder (`%x`, `%s`, `{0}`): a template is no value a
+  log records;
+- it is not a value every Windows host holds: a known folder (its 8.3 short
+  name included; a system folder only in the `%SystemRoot%` chain), a file
+  Windows ships in that chain (the .NET Framework's tools among them), a
+  registry key or
+  value every installation has, the key of a service Windows installs, an
+  object-manager namespace (`Global`), Windows' own streams, services and named
+  pipes, a word of a task definition, or the sample itself as the sandbox holds
+  it (a file named by its digest, or by the name it was submitted under, bare
+  or where a submitted file is placed: the temporary folder, the desktop, the
+  downloads folder, the profile, a drive's root). A value the sandbox recorded
+  from a process outside the sample's tree, and the judge did not keep, is
+  answered with that refusal whatever the analysis states. The
+  declared catalogue `data/host_benign_locations_v1.json` lists each, with the
+  criterion that admits an entry and its source;
+- the verdict is not Benign and was stated with a confidence.
+
+An exported row carries the entries that hold the value in `evidence_ids` and
+its reason in `publish_answer`, for example `yes: stated by the analysis
+(folder, creates/writes), found whole in ev_0021`. A file name is exported
+without the separators written before it. A name ordinary software also gives
+its tasks, services and files (an `Updater` task) is exported with a note that
+it may match ordinary software: it is listed on `/iocs` and in MISP with
+`to_ids` off, and never becomes a matcher on its own — no YARA string, Sigma
+selection, Suricata content or STIX indicator. In STIX a registry value is a
+`windows-registry-key` with its value's name and a folder written from a drive or
+a share is a `directory`; a bare folder name, a scheduled task, a service, a named
+pipe and an alternate data stream have no STIX object, their reason says so, and
+`/iocs`, MISP and the Sigma drafts carry them. A tool's row of the same kind and
+value that the rule refused becomes the analysis's row, so every surface reads
+one answer for it. A row that is not exported is not a row of
+the IOC table: section 9 prints the rule's answer beside every identifier, with
+the reason it was refused. A report stored before the typed kinds writes its
+rows under free-text kinds and without a use, and every such row is refused with
+that reason.
 
 ## The STIX bundle
 
@@ -156,7 +217,18 @@ beside the bare attributes.
 The YARA, Sigma and Suricata drafts are generated after the export and match
 only what the run publishes: a YARA string or a Suricata alert matches the IOC
 table's rows published `yes`, and a Sigma selection names a registry key or an
-image path only when the table publishes it or a sandbox recorded it. A Benign
+image path only when the table publishes it or a sandbox recorded it. A Sigma
+selection is a whole value a log records, never a cut one and never a sandbox
+signature's name or description, which the rule's description names instead. A
+host value the analysis states that the table publishes is selected in the log
+that records its kind, one Sigma draft per log source: a file (past its known
+folders) and a folder (a whole path component) in `file_event`, an alternate
+data stream in `create_stream_hash`, a scheduled task in Security event 4698, a
+service in System event 7045, a named pipe in `pipe_created`, a registry key or
+value in `registry_event`. A mutex, which no Windows log records, gets none. With
+no value left to select on there is no Sigma draft, and the report and the
+console say why where they list the drafts. Every Sigma value is written as the
+literal it is: `*`, `?` and a backslash before either are escaped. A Benign
 verdict publishes no malicious indicator, so it gets no draft, and the report
 says so. They are drafts: review them before deploying them.
 
@@ -169,6 +241,10 @@ line saying whether the report prints it and why. The console's Export menu
 offers the printed rules of each kind the report prints a rule of, and every
 draft of a kind where one is not printed. Suricata SIDs are numbered per sample from its SHA-256; renumber them
 before loading drafts of several samples into one ruleset.
+
+## Two confidence figures
+
+A run carries two figures that are not the same measure. The verdict's confidence (`overall_confidence`, and `confidence` on the completed event) is how sure the judge is of the verdict; the run summary's negotiation block carries `final_confidence`, printed as "Mean analyst claim confidence (last round)" in the run summary appendix, the run-summary table and the CLI, which is how confident the analysts were in their own claims in the last debate round and says nothing about the verdict.
 
 ## What left this machine
 

@@ -54,6 +54,7 @@ from malspark.analysis.efficiency import efficiency_lines
 from malspark.analysis.isolation import INTRO_SENTENCE as ISOLATION_INTRO
 from malspark.analysis.isolation import isolation_lines
 from malspark.analysis.run_summary import (
+    NEGOTIATION_CONFIDENCE_LABEL,
     NOT_APPLICABLE,
     NOT_APPLICABLE_PHRASE,
     NOT_APPLICABLE_SENTENCE,
@@ -106,6 +107,7 @@ from malspark.reporting.models import (
     CapabilityCell,
     ConsolidatedIOC,
     DetectionRule,
+    DraftNotBuilt,
     LimitationInventory,
     MalwareReport,
     ProcessNode,
@@ -1899,6 +1901,10 @@ class MarkdownRenderer:
                 fenced = _fenced(rule.body.rstrip(), fence)
                 fenced[1] = ctx.keep(fenced[1])
                 body.extend([*fenced, ""])
+            # A format left without a draft says why (``drafts_not_built``).
+            body.extend(
+                line for item in report.drafts_not_built for line in (_not_drafted(item, ctx), "")
+            )
             blocks.append("\n".join(body).rstrip())
         else:
             blocks.append(
@@ -1909,7 +1915,8 @@ class MarkdownRenderer:
                     "publishes no malicious indicator to draft a rule from."
                     if str(report.verdict or "").strip().lower() == "benign"
                     else "Nothing generated in this run: no draft rule was built from the "
-                    "indicators this report publishes.",
+                    "indicators this report publishes."
+                    + "".join(" " + _not_drafted(item, ctx) for item in report.drafts_not_built),
                 )
             )
         hunting = [rec for rec in report.defensive_recommendations if rec.detection]
@@ -2378,7 +2385,7 @@ class MarkdownRenderer:
                 lines.append(_item(f"Termination reason: {_code_span(str(reason))}"))
             if final_conf is not None:
                 try:
-                    lines.append(_item(f"Final confidence: {float(final_conf):.3f}"))
+                    lines.append(_item(f"{NEGOTIATION_CONFIDENCE_LABEL}: {float(final_conf):.3f}"))
                 except (TypeError, ValueError):
                     pass
             for sentence in negotiation.get("revision_replacements") or []:
@@ -4450,6 +4457,13 @@ def _directed_text_lines(rows: list[Any], ctx: _Context) -> list[str]:
     return lines
 
 
+def _not_drafted(item: DraftNotBuilt, ctx: _Context) -> str:
+    """The sentence for a format the run drafted nothing in (``not_drafted_sentence``)."""
+    from malspark.reporting.detection_signatures import not_drafted_sentence
+
+    return ctx.plain(_one_line(not_drafted_sentence(item)))
+
+
 def _sample_check_line(rule: DetectionRule, ctx: _Context) -> str | None:
     """What checking a drafted rule against the sample it was drafted from found.
 
@@ -5440,12 +5454,16 @@ def _host_identifier_table(identifiers: list[Any], ctx: _Context) -> list[str]:
     into it and publishes none of it. Host values are never defanged. A row
     the validator asked about and the model kept says so beside its evidence.
     A row whose whole value the IOC table publishes names the table of this
-    section that does (:func:`_published_in`).
+    section that does (:func:`_published_in`). Every row carries the one
+    rule's answer for the value it states, asked under source ``analysis``
+    (``stated_host_values.identifier_answers``): the IOC table holds a row for
+    each one it publishes.
     """
     published = _published_in(ctx)
+    answers = _identifier_answers(ctx)
     lines = [_subheading("", "Host identifiers read by the report model", REPORT_MODEL), ""]
-    lines.append(_row("Kind", "Value", "Purpose", "Evidence"))
-    lines.append(_divider(4))
+    lines.append(_row("Kind", "Value", "Purpose", "Evidence", "Published"))
+    lines.append(_divider(5))
     for index, item in enumerate(identifiers):
         cited = ", ".join(item.evidence_refs) or "no evidence cited"
         if index + 1 in ctx.identifier_findings:
@@ -5466,20 +5484,52 @@ def _host_identifier_table(identifiers: list[Any], ctx: _Context) -> list[str]:
                 if ctx.left_out(f"host_identifiers.{index + 1}")
                 else PURPOSE_NOT_STATED,
                 cited,
+                ctx.plain(_identifier_published(answers, index, where)),
             )
         )
     lines.extend(
         [
             "",
             "_Read out of this run's evidence by the report model and cited to the entries it "
-            "names. This table publishes nothing itself: a value it lists is published only "
-            "where the IOC table of this section publishes it, and such a row is marked here "
-            "with the table that does. The export and `/iocs` carry the IOC table's published "
-            "rows._",
+            "names. A value is exported only where the IOC table of this section publishes it: "
+            "a row the platform found whole in an entry it cites, of a kind the export carries, "
+            "created or written by the sample, and not a value every host holds, is published "
+            "there as stated by the analysis; Published gives the answer for each row. The "
+            "export and `/iocs` carry the IOC table's published rows._",
             "",
         ]
     )
     return lines
+
+
+def _identifier_published(answers: list[str], index: int, where: str) -> str:
+    """The Published cell of one identifier row: the rule's answer, or the table publishing it.
+
+    A value a tool's row of the IOC table already publishes is published by
+    that row, whatever the identifier row's own answer is.
+    """
+    from malspark.reporting.renderers.stix_renderer import publishes
+
+    answer = answers[index] if index < len(answers) else ""
+    if where and not publishes(answer):
+        return f"yes: published by its row in the {where} table"
+    return answer or "-"
+
+
+def _identifier_answers(ctx: _Context) -> list[str]:
+    """The rule's answer for each row of the report model's identifier table, in its order.
+
+    ``yes:`` for a row the IOC table publishes in its own row, and the
+    refusal with its reason for every other. Fails closed: a table that
+    cannot be read answers no row.
+    """
+    from malspark.reporting.stated_host_values import identifier_answers
+
+    try:
+        return [answer for _stated, answer in identifier_answers(ctx.report)]
+    except Exception as exc:  # noqa: BLE001 — the column says the answer is not known
+        logger.debug("markdown: the identifier rows' answers were not read (%s).", exc)
+        return []
 
 
 def _published_in(ctx: _Context) -> Callable[[Any], str]:

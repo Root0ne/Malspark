@@ -452,13 +452,19 @@ class MalwareReportBuilder:
         Calls into :mod:`malspark.reporting.detection_signatures` which produces
         up to three rules (YARA / Sigma / Suricata) keyed by the report's
         IOCs. Missing evidence in any of the three input domains results in
-        that format being skipped (never an empty rule). Generation is
+        that format being skipped (never an empty rule); a format skipped for
+        want of a value to match on is recorded with why
+        (``report.drafts_not_built``), which the report prints. Generation is
         deterministic — no LLM involvement. ``sample`` is the file the YARA
         draft is run against once it compiles.
         """
-        from malspark.reporting.detection_signatures import build_detection_rules
+        from malspark.reporting.detection_signatures import (
+            build_detection_rules,
+            drafts_not_built,
+        )
 
         report.detection_signatures = build_detection_rules(report, sample)
+        report.drafts_not_built = drafts_not_built(report, report.detection_signatures)
         return report
 
     @staticmethod
@@ -757,12 +763,14 @@ def _build_consolidated_iocs(report: MalwareReport) -> list[ConsolidatedIOC]:
         path_names_a_file,
         persistence_run_keys,
         publish_answer,
+        publishes,
         query_answers,
         recovered_by_words,
         recovered_entries,
         sandbox_host_kwargs,
         yes_because,
     )
+    from malspark.reporting.stated_host_values import ANALYSIS_SOURCE, identifier_answers
 
     rows: list[ConsolidatedIOC] = []
     seen: set[tuple[str, str]] = set()
@@ -1002,6 +1010,52 @@ def _build_consolidated_iocs(report: MalwareReport) -> list[ConsolidatedIOC]:
             row.published = _from_strings(row.kind or "", row.value)
         else:
             row.published = publish_answer(row.kind or "", row.value, row.source)
+
+    # The host values the analysis states (the report model's identifier
+    # table) that the one rule publishes, each under source ``analysis`` with
+    # the cited entries code found it whole in, once per (kind, value): after
+    # every tool row, so a value a tool's row publishes keeps that row; a tool's
+    # row of the same kind and value that the rule refused becomes the
+    # analysis's row, so every surface reads one answer for it. A row the rule
+    # refuses is printed with its reason in the identifier table, not here
+    # (``stated_host_values.identifier_answers``).
+    from malspark.reporting.ledger_projection import value_key
+
+    by_key = {(row.kind or "", value_key(row.kind or "", row.value)): row for row in rows}
+    by_type = {(row.type, row.value.strip().lower()): row for row in rows}
+    for stated, answer in identifier_answers(report):
+        if not publishes(answer):
+            continue
+        slot = (stated.table_kind, value_key(stated.table_kind, stated.value))
+        held_row = by_key.get(slot)
+        if held_row is not None and publishes(held_row.published):
+            continue
+        if held_row is None:
+            # A refused row printed under the same type and value (a strings
+            # sweep's named pipe is a ``path`` row) is the same row too.
+            held_row = by_type.get((stated.label, stated.value.lower()))
+            if held_row is not None and publishes(held_row.published):
+                continue
+        if held_row is not None:
+            held_row.kind = stated.table_kind
+            held_row.source = ANALYSIS_SOURCE
+            held_row.published = answer
+            held_row.context = held_row.description = "stated by the analysis"
+            held_row.evidence_ids = _in_the_index(stated.held_in or (), index)
+            by_key[slot] = held_row
+            continue
+        before = len(rows)
+        _add(
+            stated.label,
+            stated.table_kind,
+            stated.value,
+            ANALYSIS_SOURCE,
+            "stated by the analysis",
+            published=answer,
+            evidence=[*(stated.held_in or ())],
+        )
+        if len(rows) > before:
+            by_key[slot] = rows[-1]
 
     # What the analysts listed that no tool recorded: each value its own row,
     # in the analyst's name and with the rule's refusal, after every tool row
