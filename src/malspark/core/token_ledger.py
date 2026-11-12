@@ -765,16 +765,17 @@ def response_model_of(response: Any) -> str:
 def base_model_name(model: Any) -> tuple[str, bool]:
     """``(name, reduced)``: a model identifier as a record keeps it.
 
-    One shaped like a file-system path — absolute, home-relative, relative to
-    ``.``, or written with backslashes — is kept by its last component, and
+    One shaped like a file-system path — absolute, home-relative (``~/``,
+    ``~\\``), relative to ``.``, on a drive (``C:``), or written with
+    backslashes — is kept by its last component, and
     ``reduced`` says so: a server with no alias names its model by the file
     it loaded, and the folders above it are the host's, not the model's. An
-    identifier with a vendor or organisation prefix (``org/model``) is kept as
-    it is.
+    identifier with a vendor or organisation prefix (``org/model``), a router
+    alias (``~vendor/model``) among them, is kept as it is.
     """
     name = str(model or "").strip()
     path_shaped = (
-        name.startswith(("/", "~", "./", "../"))
+        name.startswith(("/", "~/", "~\\", "./", "../"))
         or "\\" in name
         or bool(re.match(r"^[A-Za-z]:[\\/]", name))
     )

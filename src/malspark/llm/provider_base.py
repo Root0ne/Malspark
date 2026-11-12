@@ -233,6 +233,12 @@ class LLMProvider:
         through to the model it wraps with its keyword arguments passed to
         the builder, as a call passes them (``sent_request.bound_of``).
 
+        What is read is the body built when the model is built: an argument
+        a caller passes to one call is not in it. An adapter that changes a
+        thinking switch of a request after its client built the body counts
+        that request on the model's record (``sent_request.note_thinking_changed``)
+        rather than reporting it here.
+
         ``None`` — the default, and the answer for a model object the hook
         cannot read — records the request as not reported; only a body the
         hook built and found empty may be recorded as sending none.

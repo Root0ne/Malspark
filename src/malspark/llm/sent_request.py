@@ -11,15 +11,27 @@ body, after the client library made its own decisions (a model whose API
 drops sampling parameters, or whose library leaves them out, is read as
 sending none).
 
+What is read is the body built once, when the model is built, with the
+keyword arguments its bindings add; an argument a caller passes to one call
+is not in it. Where the platform changes a request's thinking switches after
+its client built the body (the Anthropic adapter asks, on the request after a
+replayed history changed, that mismatched thinking blocks be dropped), the
+record counts the requests it changed (:func:`note_thinking_changed`); the
+switches themselves stay as built.
+
 Only that hook may say that no sampling parameter is sent. A provider adapter
 without the hook, a model object the hook cannot read, or a hook that fails is
 recorded as not reported (``sampling`` and ``thinking`` ``None``), never as
-sending none. Effort is the level the registry hands the provider and the
-setting it was read from (``llm.effort.effort_in_force``).
+sending none; a hook that fails is logged once per adapter. Effort is the
+level the registry hands the provider and the setting it was read from
+(``llm.effort.effort_in_force``). A configured model identifier shaped like a
+file-system path is kept by its base name, as an answer's is
+(``core.token_ledger.base_model_name``).
 """
 
 from __future__ import annotations
 
+import threading
 from collections.abc import Iterator, Mapping
 from dataclasses import dataclass, field
 from typing import Any
@@ -56,15 +68,22 @@ SAMPLING_PARAMETERS: tuple[str, ...] = (
 # parameter in it.
 NO_SAMPLING_SENT = "none sent; the provider's default applies"
 
-# What the record says where nothing could be read: no hook, a model object
-# the hook cannot read, or a hook that failed.
-NOT_REPORTED = "not reported by the provider adapter"
+# What the record says of a fact nobody reported, and, built on it, where
+# nothing could be read off a request: no hook, a model object the hook cannot
+# read, or a hook that failed.
+NOT_REPORTED = "not reported"
+NOT_REPORTED_BY_ADAPTER = f"{NOT_REPORTED}: no provider adapter read it"
 
 # The one turn a hook builds the request for. Never sent.
 PLACEHOLDER_TURN = "x"
 
 # Where a built model keeps its record, in its own ``__dict__``.
 _RECORD_ATTR = "_malspark_sent_request"
+
+# The adapters whose failing hook was logged, by class: once each.
+_WARNED: set[str] = set()
+# Guards the counts a request adds to a record from several threads.
+_COUNT_LOCK = threading.Lock()
 
 
 @dataclass(frozen=True)
@@ -146,10 +165,16 @@ def library_method(llm: Any, name: str) -> Any:
     the platform's subclasses rewrite the messages, the cache markers and the
     timeout of a request (and some keep a record of each request they build),
     never its sampling, so a hook reads the body as the library builds it and
-    leaves the platform's records untouched.
+    leaves the platform's records untouched. The one per-request change they
+    make to a thinking switch is counted where it is made
+    (:func:`note_thinking_changed`), not read here. Only this package's own
+    modules are skipped; a plug-in package whose name merely starts the same
+    is read.
     """
     for klass in type(llm).__mro__:
-        if name in vars(klass) and not str(klass.__module__).startswith("malspark"):
+        module = str(klass.__module__)
+        own = module == "malspark" or module.startswith("malspark.")
+        if name in vars(klass) and not own:
             return vars(klass)[name]
     return None
 
@@ -180,7 +205,8 @@ def parameters_sent(provider: Any, llm: Any) -> SentParameters | None:
     """What ``llm`` sends, read by ``provider``'s hook; ``None`` where it reports nothing.
 
     ``provider`` is the adapter class (``facts_of``) or a provider's name.
-    Never raises.
+    A hook that fails is logged as a warning once per adapter class, by the
+    exception's type. Never raises.
     """
     if llm is None:
         return None
@@ -192,9 +218,24 @@ def parameters_sent(provider: Any, llm: Any) -> SentParameters | None:
         hook = getattr(provider, "sent_parameters", None)
         read = hook(llm) if callable(hook) else None
     except Exception as exc:  # noqa: BLE001 — a hook that fails reports nothing
-        logger.debug("What a model sends could not be read (%s).", type(exc).__name__)
+        _warn_once(provider, exc)
         return None
     return read if isinstance(read, SentParameters) else None
+
+
+def _warn_once(provider: Any, exc: BaseException) -> None:
+    klass = provider if isinstance(provider, type) else type(provider)
+    name = f"{klass.__module__}.{klass.__qualname__}"
+    with _COUNT_LOCK:
+        if name in _WARNED:
+            return
+        _WARNED.add(name)
+    logger.warning(
+        "What %s's models send could not be read (%s); recorded as %s.",
+        name,
+        type(exc).__name__,
+        NOT_REPORTED_BY_ADAPTER,
+    )
 
 
 @dataclass
@@ -205,7 +246,10 @@ class SentRequest:
     # Its place in the agent's list: 0 the first model, 1 and on its fallbacks.
     position: int
     provider: str
+    # The configured identifier, by its base name where it is shaped like a
+    # file-system path (``model_reduced``).
     model: str
+    model_reduced: bool = False
     # The sampling parameters sent, by name; empty where the request carries
     # none; ``None`` where the provider adapter reported nothing.
     sampling: dict[str, Any] | None = field(default_factory=dict)
@@ -218,6 +262,15 @@ class SentRequest:
     effort_setting: str = ""
     # Where none is sent, why (``effort_in_force``'s phrase).
     effort_statement: str = ""
+    # The requests whose thinking switches the platform changed after the
+    # client built them (:func:`note_thinking_changed`).
+    thinking_changed: int = 0
+
+    def __post_init__(self) -> None:
+        from malspark.core.token_ledger import base_model_name
+
+        name, reduced = base_model_name(self.model)
+        self.model, self.model_reduced = name, self.model_reduced or reduced
 
     def as_dict(self) -> dict[str, Any]:
         row: dict[str, Any] = {
@@ -227,8 +280,12 @@ class SentRequest:
             "sampling": None if self.sampling is None else dict(self.sampling),
             "thinking": None if self.thinking is None else dict(self.thinking),
         }
+        if self.model_reduced:
+            row["model_reduced"] = True
+        if self.thinking_changed:
+            row["thinking_changed_requests"] = self.thinking_changed
         if self.sampling is None:
-            row["sampling_statement"] = NOT_REPORTED
+            row["sampling_statement"] = NOT_REPORTED_BY_ADAPTER
         elif not self.sampling:
             row["sampling_statement"] = NO_SAMPLING_SENT
         if self.effort:
@@ -261,6 +318,19 @@ def sent_request_of(llm: Any) -> SentRequest | None:
     return held if isinstance(held, SentRequest) else None
 
 
+def note_thinking_changed(llm: Any) -> None:
+    """Count on ``llm``'s record one request whose thinking switches the platform changed.
+
+    Called by an adapter where it changes a thinking switch of a body its
+    client already built; the record's ``thinking`` stays as built. Never raises.
+    """
+    record = sent_request_of(llm)
+    if record is None:
+        return
+    with _COUNT_LOCK:
+        record.thinking_changed += 1
+
+
 def carry_sent_request(replaced: Any, replacement: Any) -> None:
     """A rebuilt model's record: the replaced one's, what it sends read off ``replacement``.
 
@@ -275,7 +345,7 @@ def carry_sent_request(replaced: Any, replacement: Any) -> None:
 def sampling_said(sampling: Mapping[str, Any] | None) -> str:
     """The sampling parameters in words, for a log line."""
     if sampling is None:
-        return NOT_REPORTED
+        return NOT_REPORTED_BY_ADAPTER
     if not sampling:
         return NO_SAMPLING_SENT
     return ", ".join(f"{name}={value}" for name, value in sampling.items())

@@ -30,7 +30,7 @@ from malspark.analysis.run_summary import RunSummaryBuilder
 from malspark.core.config import Settings
 from malspark.core.token_ledger import TokenLedger, record_response_usage, response_model_of
 from malspark.llm.registry import LLMProviderRegistry
-from malspark.llm.sent_request import NO_SAMPLING_SENT, NOT_REPORTED, SentRequest
+from malspark.llm.sent_request import NO_SAMPLING_SENT, NOT_REPORTED_BY_ADAPTER, SentRequest
 
 
 @pytest.fixture(autouse=True)
@@ -236,7 +236,20 @@ class TestTheAgents:
     def test_nothing_reported_is_said_and_is_not_none_sent(self) -> None:
         row = _record(sampling=None, thinking=None).as_dict()
         assert row["sampling"] is None and row["thinking"] is None
-        assert row["sampling_statement"] == NOT_REPORTED
+        assert row["sampling_statement"] == NOT_REPORTED_BY_ADAPTER
+
+    def test_a_configured_path_is_kept_by_its_base_name_and_said(self) -> None:
+        # A server with no alias is configured by the file it loads.
+        row = _record(model="/home/alice/models/Qwen3.6.gguf").as_dict()
+        assert (row["model"], row["model_reduced"]) == ("Qwen3.6.gguf", True)
+        row = _record(model="~vendor/model-latest").as_dict()
+        assert row["model"] == "~vendor/model-latest" and "model_reduced" not in row
+
+    def test_a_request_whose_thinking_was_changed_is_counted(self) -> None:
+        assert "thinking_changed_requests" not in _record().as_dict()
+        row = _record(thinking={"thinking.type": "adaptive"}, thinking_changed=2).as_dict()
+        assert row["thinking"] == {"thinking.type": "adaptive"}
+        assert row["thinking_changed_requests"] == 2
 
     def test_a_thinking_switch_sent_is_listed(self) -> None:
         row = _record(thinking={"think": False}).as_dict()
@@ -328,6 +341,8 @@ class TestTheAnswersModels:
             ("C:\\Users\\someone\\m.gguf", "m.gguf", True),
             ("~/models/m.gguf", "m.gguf", True),
             ("./m.gguf", "m.gguf", True),
+            ("~\\models\\m.gguf", "m.gguf", True),
+            ("~vendor/model-latest", "~vendor/model-latest", False),
             ("x-ai/grok-4.fast", "x-ai/grok-4.fast", False),
             ("models/gemini-2.5-flash", "models/gemini-2.5-flash", False),
             ("deepseek-chat", "deepseek-chat", False),
@@ -500,6 +515,12 @@ class TestTheRegistry:
         registry.build_model_for_agent("static", max_tokens=5)
         rows = [(r.position, r.model, r.effort_setting) for r in registry.sent_requests()]
         assert rows == [(0, "m", ""), (1, "m2", "llm.agents.static.fallbacks[0].effort")]
+
+    def test_a_configured_path_is_recorded_by_its_base_name(self) -> None:
+        registry = LLMProviderRegistry(_openai_settings(expert_model="/home/alice/m/Qwen3.6.gguf"))
+        registry.build_model_for_agent("static", max_tokens=5)
+        (record,) = registry.sent_requests()
+        assert (record.model, record.model_reduced) == ("Qwen3.6.gguf", True)
 
     def test_the_build_line_says_what_is_sent(self, caplog: pytest.LogCaptureFixture) -> None:
         settings = Settings(

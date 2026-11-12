@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import re
 import threading
 from collections.abc import Iterator
@@ -35,7 +36,7 @@ from malspark.core.config import Settings
 from malspark.core.token_ledger import response_model_of
 from malspark.llm.sent_request import (
     NO_SAMPLING_SENT,
-    NOT_REPORTED,
+    NOT_REPORTED_BY_ADAPTER,
     SentRequest,
     carry_sent_request,
     parameters_sent,
@@ -638,7 +639,7 @@ def test_a_plug_in_model_with_no_hook_is_not_reported() -> None:
     record_sent_request(model, record)
     row = record.as_dict()
     assert row["sampling"] is None and row["thinking"] is None
-    assert row["sampling_statement"] == NOT_REPORTED
+    assert row["sampling_statement"] == NOT_REPORTED_BY_ADAPTER
 
 
 def test_a_model_of_another_kind_is_not_read_by_an_adapter(server: ThreadingHTTPServer) -> None:
@@ -653,6 +654,77 @@ def test_a_hook_that_fails_reports_nothing() -> None:
             raise RuntimeError("broken")
 
     assert parameters_sent(_Broken, object()) is None
+
+
+def test_a_failing_hook_is_warned_of_once_per_adapter(
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    from malspark.llm import sent_request
+
+    class _Broken:
+        @classmethod
+        def sent_parameters(cls, llm: Any) -> Any:
+            raise RuntimeError("secret detail")
+
+    monkeypatch.setattr(sent_request, "_WARNED", set())
+    with caplog.at_level(logging.WARNING, logger="malspark"):
+        assert parameters_sent(_Broken, object()) is None
+        assert parameters_sent(_Broken, object()) is None
+    warned = [r for r in caplog.records if r.levelno == logging.WARNING]
+    assert len(warned) == 1
+    assert "RuntimeError" in warned[0].getMessage()
+    assert "secret detail" not in warned[0].getMessage()
+
+
+def test_only_this_package_s_own_builders_are_skipped() -> None:
+    from malspark.llm.sent_request import library_method
+
+    class _Library:
+        def build(self) -> str:
+            return "library"
+
+    class _Own(_Library):
+        __module__ = "malspark.llm.own"
+
+        def build(self) -> str:
+            return "own"
+
+    class _PlugInPackage(_Own):
+        # A plug-in package whose name only starts like this one's.
+        __module__ = "malspark_ext.chat"
+
+        def build(self) -> str:
+            return "plug-in"
+
+    assert library_method(_Own(), "build") is vars(_Library)["build"]
+    assert library_method(_PlugInPackage(), "build") is vars(_PlugInPackage)["build"]
+
+
+def test_a_request_whose_thinking_the_platform_changed_is_counted(
+    server: ThreadingHTTPServer, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from langchain_core.messages import HumanMessage
+
+    from malspark.llm import anthropic_history
+
+    model = _anthropic(server, "claude-test-model", 1.0)
+    record = _recorded(model, "anthropic")
+    built = dict(record.thinking or {})
+    model._get_request_payload([HumanMessage(content="x")])
+    assert record.thinking_changed == 0
+    # A model that binds thinking to its prefix, on the request after a
+    # replayed history changed: the request asks that stale blocks be dropped.
+    monkeypatch.setattr(anthropic_history, "binds_thinking_to_prefix", lambda name: True)
+    monkeypatch.setattr(
+        anthropic_history,
+        "_settle_thinking",
+        lambda memory, payload, messages: (messages, True, ""),
+    )
+    payload = model._get_request_payload([HumanMessage(content="x")])
+    assert payload["thinking"]["block_binding"] == {"prefix_mismatch_behavior": "drop_block"}
+    assert record.thinking_changed == 1
+    assert record.thinking == built
+    assert record.as_dict()["thinking_changed_requests"] == 1
 
 
 def test_a_binding_is_read_through_to_its_bound_arguments(server: ThreadingHTTPServer) -> None:
