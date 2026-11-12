@@ -123,19 +123,29 @@ platform then checks each value in code, and exports it as source `analysis`
 - its kind names a host object and the sample creates or writes it;
 - the value is found whole in a ledger entry the row cites — not as part of a
   longer value, and not only in an entry the row does not cite. A name, a
-  folder or a file name counts only where both its ends are a value delimiter:
-  a quote or the start or end of the text, a line break, a path separator, or
-  the `=` / `:` of a key-value pair; never a word of running text, and never a
-  path component of a URL. A stream also counts after its file's name
+  folder or a file name counts only where its two ends are delimiters that
+  pair: a quote, the start or end of the text, a line break and, for a folder or
+  a file name, a path separator take each other; an opening `(` or `[`, or a `=`
+  or `:` written right before the value, takes only a quote or a closing `)`,
+  `]`, `,` or `;` (`CreateMutexW(abc123)`, `name=abc123,`). Never a word of
+  running text, never a key (`{"name": 1}`, `name: value`), never a path
+  component of a URL. A mutex or a named pipe stated bare also counts under its
+  own namespace (`Global\`, `\\.\pipe\`), and a stream after its file's name
   (`a.exe:stream`);
 - it holds no format placeholder (`%x`, `%s`, `{0}`): a template is no value a
   log records;
 - it is not a value every Windows host holds: a known folder (its 8.3 short
-  name included), a file Windows ships in its system folders, a registry key or
+  name included; a system folder only in the `%SystemRoot%` chain), a file
+  Windows ships in that chain (the .NET Framework's tools among them), a
+  registry key or
   value every installation has, the key of a service Windows installs, an
   object-manager namespace (`Global`), Windows' own streams, services and named
   pipes, a word of a task definition, or the sample itself as the sandbox holds
-  it (a file named by its digest or by the name it was submitted under). The
+  it (a file named by its digest, or by the name it was submitted under, bare
+  or where a submitted file is placed: the temporary folder, the desktop, the
+  downloads folder, the profile, a drive's root). A value the sandbox recorded
+  from a process outside the sample's tree, and the judge did not keep, is
+  answered with that refusal whatever the analysis states. The
   declared catalogue `data/host_benign_locations_v1.json` lists each, with the
   criterion that admits an entry and its source;
 - the verdict is not Benign and was stated with a confidence.
