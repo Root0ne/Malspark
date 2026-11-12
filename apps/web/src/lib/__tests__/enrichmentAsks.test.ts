@@ -26,7 +26,17 @@ describe("the enrichment asks a run recorded", () => {
 
 describe("one asked source in words", () => {
   it("says nothing of failures when there were none", () => {
-    expect(enrichmentAskSentence(row())).toBe("rdap: rdap.example.net about 2 ip");
+    expect(enrichmentAskSentence(row())).toBe("rdap: rdap.example.net about 2 ips");
+  });
+
+  it("makes every count agree with its noun", () => {
+    expect(enrichmentAskSentence(row({ kinds: { domain: 4 } }))).toBe("rdap: rdap.example.net about 4 domains");
+    expect(enrichmentAskSentence(row({ kinds: { domain: 1, ip: 1 } }))).toBe(
+      "rdap: rdap.example.net about 1 domain, 1 ip",
+    );
+    expect(enrichmentAskSentence(row({ kinds: { domain: 3, ip: 2, hash: 1, url: 0 } }))).toBe(
+      "rdap: rdap.example.net about 3 domains, 2 ips, 1 hash, 0 urls",
+    );
   });
 
   it("says a transport failure may have arrived, and an error status did", () => {
@@ -38,7 +48,7 @@ describe("one asked source in words", () => {
   it("reads a row stored before `errored` as it was read, and names a tool server", () => {
     const words = enrichmentAskSentence(row({ host: "", failed: 1 }));
     expect(words).toBe(
-      "rdap: a tool server about 2 ip (1 failed in transport or did not finish and may have arrived)",
+      "rdap: a tool server about 2 ips (1 failed in transport or did not finish and may have arrived)",
     );
   });
 });

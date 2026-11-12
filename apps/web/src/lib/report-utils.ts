@@ -118,6 +118,15 @@ export function truncateMiddle(value: string, max = 32): string {
   return `${value.slice(0, head)}…${value.slice(value.length - tail)}`;
 }
 
+/** The regular English plural of a noun: "domain" -> "domains", "entry" ->
+ *  "entries", "match" -> "matches"; a noun ending in a vowel and "y" keeps it
+ *  ("key" -> "keys"). A word that is not regular passes its own plural. */
+export function pluralNoun(singular: string): string {
+  if (/[^aeiou]y$/i.test(singular)) return `${singular.slice(0, -1)}ies`;
+  if (/(s|x|z|ch|sh)$/i.test(singular)) return `${singular}es`;
+  return `${singular}s`;
+}
+
 /**
  * "1 result", "2 results" — a count and its noun, agreeing.
  *
@@ -129,7 +138,7 @@ export function truncateMiddle(value: string, max = 32): string {
 export function countLabel(
   count: number,
   singular: string,
-  plural = `${singular}s`,
+  plural = pluralNoun(singular),
 ): string {
   return `${count} ${count === 1 ? singular : plural}`;
 }

@@ -202,7 +202,7 @@ export function EnumWidget(p: WidgetProps) {
     >
       {(p.entry.choices ?? []).map((c) => (
         <option key={c} value={c}>
-          {c}
+          {p.entry.choice_titles?.[c] || p.entry.choice_labels?.[c] || c}
         </option>
       ))}
     </select>

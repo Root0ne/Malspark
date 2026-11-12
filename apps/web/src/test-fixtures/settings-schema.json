@@ -423,7 +423,7 @@
       "anthropic": "Anthropic",
       "gemini": "Google Gemini",
       "ollama": "Ollama",
-      "openai": "OpenAI"
+      "openai": "OpenAI-compatible"
      },
      "choices": [
       "openai",

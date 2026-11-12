@@ -41,7 +41,7 @@ export default function EvidenceDetail({ jobId, subject }: { jobId: string; subj
             ))}
           </ul>
         ) : (
-          <p className="text-text-muted">No concrete lines were recorded for this finding.</p>
+          <p className="text-text-muted">No lines are quoted here; the records behind it, if any, are listed below.</p>
         )}
       </div>
 

@@ -84,7 +84,7 @@ describe("guideStatus", () => {
       ["core.llm.openai.api_key"]
     );
     expect(guideStatus("llm", done.effective, done.isSet, undefined, SCHEMA)).toBe(
-      "OpenAI · expert gpt-4o · judge gpt-4o-mini"
+      "OpenAI-compatible · expert gpt-4o · judge gpt-4o-mini"
     );
   });
 
