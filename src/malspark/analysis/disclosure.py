@@ -740,6 +740,8 @@ def upload_record(
             record["launch_arguments_note"] = str(launch["note"])
         if launch.get("via"):
             record["launch_arguments_via"] = str(launch["via"])
+        if isinstance(launch.get("launcher"), Mapping):
+            record["launch_launcher"] = dict(launch["launcher"])
     return record
 
 
@@ -750,6 +752,7 @@ _LAUNCH_KEYS = (
     "launch_arguments_honoured",
     "launch_arguments_note",
     "launch_arguments_via",
+    "launch_launcher",
 )
 
 
@@ -1663,7 +1666,7 @@ def _upload_line(row: Mapping[str, Any], code: Callable[[str], str]) -> str:
     by = row.get("by")
     if by == BY_SANDBOX:
         return (
-            f"Sample upload: the sample was submitted {times} to the "
+            f"Sample upload: {_submitted_subject(row, code)} was submitted {times} to the "
             f"{code(str(row.get('source') or ''))} sandbox{at}{failure}{untold}."
             + _launch_clause(row, code)
         )
@@ -1678,6 +1681,22 @@ def _upload_line(row: Mapping[str, Any], code: Callable[[str], str]) -> str:
     return (
         f"Sample upload: {server} ({_how(row)}){at} was handed the sample {times}{_again(row)} "
         f"by a tool declared to send it out of the deployment{failure}{untold}."
+    )
+
+
+def _submitted_subject(row: Mapping[str, Any], code: Callable[[str], str]) -> str:
+    """What one submission sent: the bare sample, or the archive of a launcher built for it.
+
+    An archive is what left the machine then, and its digest is named beside
+    the sample's own.
+    """
+    launcher = row.get("launch_launcher")
+    if not isinstance(launcher, Mapping) or not launcher.get("archive_sha256"):
+        return "the sample"
+    return (
+        f"an archive (SHA-256 {code(str(launcher['archive_sha256']))}) holding the sample "
+        f"(SHA-256 {code(str(launcher.get('sample_sha256') or ''))}) and a generated "
+        f"{launcher.get('script_host') or 'script'} launcher, not the bare sample,"
     )
 
 

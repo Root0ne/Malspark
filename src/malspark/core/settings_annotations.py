@@ -2329,6 +2329,21 @@ ANNOTATIONS.update(
             ),
             "applies_when": _SANDBOX_TRIAGE,
         },
+        "sandbox.triage.launcher_for_arguments": {
+            "title": "Carry launch arguments through a launcher",
+            "description": (
+                "Triage's submission has no command-line field. On, the default, a job "
+                "that asks for launch arguments submits a generated archive holding the "
+                "sample and a PowerShell launcher that starts it with them, and Triage "
+                "is told to run the launcher: the sandbox's process tree starts at "
+                "PowerShell, the archive (launcher and arguments included) is what "
+                "Triage receives, and on its public cloud that is public. The report "
+                "states the launcher's text and the archive's digest. Off, the sample "
+                "is submitted as it is and the request is recorded as not honoured. "
+                "Only a Windows program (not a DLL) can be launched this way."
+            ),
+            "applies_when": _SANDBOX_TRIAGE,
+        },
         "sandbox.upload.max_report_bytes": {
             "title": "Uploaded report size limit (bytes)",
             "description": (

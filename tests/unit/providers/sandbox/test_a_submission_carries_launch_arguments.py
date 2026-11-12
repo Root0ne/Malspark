@@ -190,14 +190,19 @@ class TestRest:
 # Triage: its submission API has no launch-argument field
 # ---------------------------------------------------------------------------
 class TestTriage:
-    def test_it_declares_it_cannot_pass_them(self) -> None:
-        provider = TriageSandboxProvider.from_settings(Settings(_env_file=None))
+    def test_with_the_launcher_off_it_declares_it_cannot_pass_them(self) -> None:
+        cfg = Settings(_env_file=None)
+        cfg.sandbox.triage.launcher_for_arguments = False
+        provider = TriageSandboxProvider.from_settings(cfg)
         assert provider.capabilities.can_pass_launch_arguments is False
+        assert provider.capabilities.launcher is None
         answer = provider.launch_arguments_answer(ARGS)
         assert answer.honoured is False
         assert answer.note.startswith("the triage provider cannot pass launch arguments")
 
-    def test_its_request_is_the_same_with_or_without_options(self, tmp_path: Path) -> None:
+    def test_with_the_launcher_off_its_request_is_the_same_with_or_without_options(
+        self, tmp_path: Path
+    ) -> None:
         bodies: list[dict] = []
 
         def handler(request: httpx.Request) -> httpx.Response:
@@ -208,6 +213,7 @@ class TestTriage:
         cfg = Settings(_env_file=None)
         cfg.sandbox.triage.api_token = SecretStr("not-a-real-token")
         cfg.sandbox.triage.profile = "win10"
+        cfg.sandbox.triage.launcher_for_arguments = False
         provider = TriageSandboxProvider.from_settings(cfg)
         provider._http = httpx.Client(
             base_url=cfg.sandbox.triage.base_url, transport=httpx.MockTransport(handler)

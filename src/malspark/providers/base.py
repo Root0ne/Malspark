@@ -25,6 +25,7 @@ if TYPE_CHECKING:
     from malspark.analysis.sink_reachability import CallGraph, SuspiciousFunction
     from malspark.core.config import Settings
     from malspark.core.report_formats import ReportFormat, SignatureScale
+    from malspark.providers.launcher import LauncherSupport
     from malspark.providers.submission import LaunchArgumentsAnswer, SubmissionOptions
     from malspark.schemas.sandbox_report import SandboxRun
 
@@ -59,6 +60,10 @@ class SandboxCapabilities:
     # (``providers.submission.SubmissionOptions``); one that cannot is never
     # handed them, and the run records the job's request as not honoured.
     can_pass_launch_arguments: bool = False
+    # Set where ``submit`` carries them through a launcher script generated into
+    # the submitted archive (``providers.launcher``): the script types its
+    # sandbox runs and how the submission names the one to run.
+    launcher: LauncherSupport | None = None
 
 
 @dataclass(frozen=True)
@@ -868,6 +873,11 @@ class SandboxProvider(ABC):
 
         if self.capabilities.can_pass_launch_arguments:
             return LaunchArgumentsAnswer(honoured=True)
+        support = self.capabilities.launcher
+        if support is not None:
+            from malspark.providers.launcher import launcher_answer
+
+            return launcher_answer(support, arguments, sample_path)
         return cannot_pass(self.id)
 
     def wait_for_completion(

@@ -64,9 +64,11 @@ sample a command line or names a DLL export. Read on 2026-11-13 from the
 ``defaults.network``, ``defaults.geolocation``) and the "Profiles" page
 (``/docs/cloud-api/profiles/``: ``id``, ``name``, ``tags``, ``network``,
 ``geolocation``, ``timeout``). ``password`` decrypts an archive and ``pick``
-selects a file inside one; neither passes arguments. So this provider
-declares it cannot pass launch arguments, and a job that asks for them is
-recorded as not honoured.
+selects a file inside one; neither passes arguments. So a job's launch
+arguments are carried by a generated launcher (``providers.launcher``): the
+archive of the sample and a PowerShell script is submitted and the script is
+picked. With ``sandbox.triage.launcher_for_arguments`` off the provider
+declares it cannot pass them, and the job's request is recorded as not honoured.
 """
 
 from __future__ import annotations
@@ -92,6 +94,11 @@ import httpx
 from malspark.core.logger import logger
 from malspark.providers.base import ProviderProbe, SandboxCapabilities, SandboxProvider
 from malspark.providers.errors import PACKET_CAPTURE, ArtefactFetchFailed, ProviderError
+from malspark.providers.launcher import (
+    BuiltLauncher,
+    LauncherRefused,
+    build_for_submission,
+)
 from malspark.providers.registry import register_sandbox_provider
 from malspark.providers.sandbox.limits import read_capped, stream_to_file_capped
 from malspark.providers.sandbox.readers import required_reader
@@ -99,6 +106,10 @@ from malspark.providers.sandbox.readers import required_reader
 # The registered report reader (``providers.sandbox.readers``) this provider's
 # reports are read by.
 _READER = "triage"
+# The submission field that names the archive member to run, and the name the
+# archive is uploaded under (neutral: nothing of the sample).
+_PICKED_BY = "the submission's profiles[].pick (a member path relative to the archive root)"
+_ARCHIVE_NAME = "submission.zip"
 
 if TYPE_CHECKING:
     from contextlib import AbstractContextManager
@@ -736,15 +747,34 @@ class TriageSandboxProvider(SandboxProvider):
 
         return requested_host(self._cfg.base_url, SUBMIT_PATH)
 
-    def _post_sample(self, path: Path, headers: dict[str, str]) -> httpx.Response:
+    def _post_sample(
+        self, path: Path, headers: dict[str, str], built: BuiltLauncher | None = None
+    ) -> httpx.Response:
+        """The submission: the sample, or the archive of a launcher built for it.
+
+        An archive is picked by the launcher's member name (``profiles[].pick``,
+        relative to the archive root); the profile is the sample's own.
+        """
         payload: dict[str, Any] = {"kind": "file", "interactive": False}
         profile = self._profile_for(path)
-        if profile:
+        if built is not None:
+            pick: dict[str, str] = {"pick": str(built.record["launcher_member"])}
+            payload["profiles"] = [{"profile": profile, **pick} if profile else pick]
+        elif profile:
             payload["profiles"] = [{"profile": profile, "pick": "default"}]
         # How long the VM runs the sample: the operator's, or nothing sent and
         # Triage's own default.
         if self._cfg.analysis_seconds is not None:
             payload["defaults"] = {"timeout": int(self._cfg.analysis_seconds)}
+        if built is not None:
+            return self._get_http().post(
+                SUBMIT_PATH,
+                files={
+                    "file": (_ARCHIVE_NAME, built.archive, "application/zip"),
+                    "_json": (None, json.dumps(payload), "application/json"),
+                },
+                headers=headers,
+            )
         with open(path, "rb") as fh:
             return self._get_http().post(
                 SUBMIT_PATH,
@@ -816,17 +846,32 @@ class TriageSandboxProvider(SandboxProvider):
             return None
         return max(candidates)[1]
 
+    def _launcher_for(self, path: Path, options: SubmissionOptions | None) -> BuiltLauncher | None:
+        """The launcher archive of a submission that carries arguments; ``None`` without."""
+        arguments = options.launch_arguments if options is not None else ""
+        support = self.capabilities.launcher
+        if not arguments or support is None:
+            return None
+        try:
+            return build_for_submission(support, path, arguments)
+        except LauncherRefused as exc:
+            raise ProviderError(
+                f"Triage submit: no launcher could carry the arguments: {exc}"
+            ) from exc
+
     def submit(self, sample_path: str | Path, *, options: SubmissionOptions | None = None) -> str:
-        # ``options`` asks nothing this API can carry (the module docstring:
-        # no launch-argument field), and the capability says so, so the run
-        # hands none.
+        # Launch arguments (``options``) have no field in this API: with the
+        # launcher setting on they are carried by a generated launcher in an
+        # archive that is submitted in place of the bare sample, and the run
+        # hands them only then.
         # Checked before the file is opened or any request is built: a
         # missing token is a configuration error, not something worth
         # burning a filesystem check or a connection on first.
         headers = self._auth_headers()
         path = Path(sample_path)
+        built = self._launcher_for(path, options)
         try:
-            response = self._post_sample(path, headers)
+            response = self._post_sample(path, headers, built)
         except httpx.TransportError as exc:
             # The upload can have been accepted in full and only the response
             # dropped — live run S6: the sample was on Triage, reported,
@@ -836,13 +881,15 @@ class TriageSandboxProvider(SandboxProvider):
             # status is a different matter and is never retried: a 401 or a
             # 400 means the request itself was refused.
             logger.warning("Triage: submit response was dropped (%s); reconciling.", exc)
-            existing = self._find_recent_owned_sample(self._sha256_of(path), headers)
+            existing = self._find_recent_owned_sample(
+                str(built.record["archive_sha256"]) if built else self._sha256_of(path), headers
+            )
             if existing:
                 logger.info("Triage: the dropped submission is sample %s; reusing it.", existing)
                 return existing
             self._sleep(_SUBMIT_RETRY_DELAY_SECONDS)
             try:
-                response = self._post_sample(path, headers)
+                response = self._post_sample(path, headers, built)
             except httpx.TransportError:
                 raise ProviderError(f"Triage submit failed: {exc}") from exc
             # Anything else the retry raises is left exactly as it is: only a

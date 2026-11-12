@@ -7,7 +7,10 @@ and that they hold no control character, and hands them to the provider as
 they were given. Each provider says whether it can pass them
 (``SandboxCapabilities.can_pass_launch_arguments``) and, for one value, how
 (``SandboxProvider.launch_arguments_answer``); a provider that cannot is never
-handed them, and the run records that it asked and was not honoured.
+handed them, and the run records that it asked and was not honoured. A
+provider whose sandbox has no such field but runs a script picked from a
+submitted archive may declare it honours them through a generated launcher
+(``providers.launcher``).
 
 ``SandboxProvider.submit`` takes these options as a keyword, so a later
 submission of the same sample with other options is the same call again.
@@ -67,12 +70,15 @@ class LaunchArgumentsAnswer:
     ``note`` is the provider's sentence: why it cannot pass them, or, where it
     does, what else it changed to do so (a deployment setting the job's value
     replaced). Empty where there is nothing to add. ``via`` names the option
-    or field the provider sends them in, where it does.
+    or field the provider sends them in, where it does. ``launcher`` is the
+    record of the generated launcher that carries them, where the provider
+    honours them through one (``providers.launcher``); never set otherwise.
     """
 
     honoured: bool
     note: str = ""
     via: str = ""
+    launcher: dict[str, Any] | None = None
 
 
 def cannot_pass(provider: str) -> LaunchArgumentsAnswer:
@@ -129,6 +135,8 @@ def launch_record(provider: str, arguments: str, answer: LaunchArgumentsAnswer) 
     }
     if answer.via:
         record["via"] = str(answer.via)
+    if answer.launcher:
+        record["launcher"] = dict(answer.launcher)
     return record
 
 

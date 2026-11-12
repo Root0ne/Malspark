@@ -120,12 +120,40 @@ def launch_statement(record: Any) -> str:
             f"The job asked the sandbox to launch the sample with the arguments {arguments}; "
             f"the {provider} provider sent them in its submission{through}{tail}. Whether the "
             "started program read them is the sandbox's, and is not established here."
+            + _launcher_statement(record.get("launcher"))
         )
     tail = f": {note}" if note else ""
     return (
         f"The job asked the sandbox to launch the sample with the arguments {arguments}; "
         f"they were not honoured by the {provider} provider{tail}. Nothing here was "
         "observed with those arguments."
+    )
+
+
+def _launcher_statement(launcher: Any) -> str:
+    """The sentences of a launch mark whose arguments were carried by a generated launcher.
+
+    ``""`` for a mark with none. They state what the reader must know: the
+    sample was started by a script, not directly; the archive is what was
+    disclosed; the process tree starts at the script host; and that nothing
+    here shows the launcher ran, which only the sandbox's report can.
+    """
+    if not isinstance(launcher, Mapping) or not launcher.get("launcher_text"):
+        return ""
+    host = str(launcher.get("script_host") or "script")
+    return (
+        f" The sample was not submitted bare: it was launched through a generated {host} "
+        f"launcher ({_code(str(launcher.get('launcher_member') or ''))}, "
+        f"{str(launcher.get('launcher_encoding') or 'text')}) that starts the sample's copy "
+        f"{_code(str(launcher.get('sample_member') or ''))} "
+        f"(SHA-256 {_code(str(launcher.get('sample_sha256') or ''))}) with the arguments; its "
+        f"exact text is {_code(str(launcher['launcher_text']))}. The submitted archive "
+        f"(SHA-256 {_code(str(launcher.get('archive_sha256') or ''))}), with the launcher and "
+        "the arguments in it, is what was disclosed to the sandbox, and on a sandbox that "
+        "publishes its submissions it is public. The sandbox was told which member to run "
+        f"by {launcher.get('picked_by') or 'the submission'}. The sandbox's process tree "
+        f"therefore starts at {host}, not at the sample. Nothing here shows the launcher ran; "
+        "that can only be read from the sandbox's report."
     )
 
 

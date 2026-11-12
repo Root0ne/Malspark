@@ -4512,6 +4512,10 @@ class SandboxTriageConfig(BaseModel):
     poll_interval_seconds: Annotated[int, Field(ge=1)] = 15
     fetch_pcap: bool = True
     analysis_seconds: Annotated[int, Field(ge=1)] | None = None
+    # Triage's submission has no command-line field: a job's launch arguments
+    # are carried by a generated launcher script in a submitted archive, or,
+    # off, not carried and recorded as not honoured.
+    launcher_for_arguments: bool = True
 
     @model_validator(mode="after")
     def _the_poll_outlasts_the_run(self) -> "SandboxTriageConfig":
