@@ -22,7 +22,7 @@ from datetime import UTC, datetime
 from typing import Any
 
 from malspark.reporting.agreement_facts import ledger_facts
-from malspark.reporting.ledger_entities import RunNames, hold_data, run_names
+from malspark.reporting.ledger_entities import RunNames, TextHeld, hold_data, run_names
 from malspark.reporting.models import (
     FileHashes,
     MalwareReport,
@@ -58,14 +58,15 @@ DENIED = (
     "recovery, so their values are not stated here."
 )
 FACT = (
-    "the routine at offset 0x33ac passes the data at offsets 0xf9a0, 0xf9b0, 0xf9d8 to the "
-    "routine at offset 0xae78 (ev_0086); the function index (ev_0025) ties to that routine the "
+    "the routine at offset 0x33ac names the data at offsets 0xf9a0, 0xf9b0, 0xf9d8, each on a "
+    "line that calls the routine at offset 0xae78 (ev_0086); the function index (ev_0025) ties "
+    "to that routine the "
     'texts "%s %s" (ev_0019), "Updater" (ev_0021); no decoded row holds a text at offsets '
     "0xf9a0, 0xf9b0, 0xf9d8 (ev_0021)"
 )
 
 
-def _index() -> LedgerEntry:
+def _index(base: int | None = BASE) -> LedgerEntry:
     rows = [
         {
             "function": hex(ROUTINE),
@@ -78,13 +79,20 @@ def _index() -> LedgerEntry:
         {"function": hex(DECODER), "callees": []},
         {"function": hex(HELPER), "callees": []},
     ]
-    data = {"image_base": hex(BASE), "rows": rows, "other_callees": {}, "resolved_slots": {}}
+    data: dict[str, Any] = {"rows": rows, "other_callees": {}, "resolved_slots": {}}
+    if base is not None:
+        data["image_base"] = hex(base)
     return LedgerEntry(
         id="ev_0025", tool="routine_table", args={}, output=json.dumps(data), facts=_INDEX
     )
 
 
-def _ledger(decoded: tuple[int, ...] = (DECODED,)) -> list[LedgerEntry]:
+def _ledger(
+    decoded: tuple[int, ...] = (DECODED,),
+    base: int | None = BASE,
+    other_base: int | None = None,
+    text: str = "Updater",
+) -> list[LedgerEntry]:
     body = "\n".join(
         [
             f"  FUN_{DECODER:x}((int *)&DAT_{DECODED:x},buf);",
@@ -94,8 +102,14 @@ def _ledger(decoded: tuple[int, ...] = (DECODED,)) -> list[LedgerEntry]:
             "  return 0;",
         ]
     )
-    blobs = {"results": [{"rva": hex(at - BASE), "text": "Updater"} for at in decoded]}
+    blobs = {"results": [{"rva": hex(at - BASE), "text": text} for at in decoded]}
+    other = (
+        [LedgerEntry(id="ev_0001", tool="image_facts", output=json.dumps(image), structured=image)]
+        if other_base is not None and (image := {"image_base": hex(other_base)})
+        else []
+    )
     return [
+        *other,
         LedgerEntry(id="ev_0019", tool="emulate_strings", output="{}"),
         LedgerEntry(
             id="ev_0021",
@@ -104,7 +118,7 @@ def _ledger(decoded: tuple[int, ...] = (DECODED,)) -> list[LedgerEntry]:
             structured=blobs,
             facts=_BLOBS,
         ),
-        _index(),
+        _index(base),
         LedgerEntry(
             id="ev_0086",
             tool="lift_routine",
@@ -192,4 +206,84 @@ def test_the_fact_stays_within_the_name_fact_budget_and_names_six_addresses_at_m
     fact = _text_at_fact(reading.key, names)
     assert fact is not None
     assert len(fact.values) == 6
+    assert fact.text.count(" and 34 more") == 2
     assert len(fact.text) < _NAMES_PER_QUESTION // 40
+
+
+def test_a_line_naming_a_datum_and_a_routine_is_said_as_that_never_as_passing() -> None:
+    names = RunNames(
+        bases=(BASE,),
+        rows=frozenset({ROUTINE, DECODER}),
+        callees={ROUTINE: (DECODER,)},
+        index_entry="ev_0025",
+    )
+    stored = BASE + 0xF9A0
+    hold_data(names, ROUTINE, f"  DAT_{stored:x} = FUN_{DECODER:x}(buf);", ("ev_0086",), ("DAT_",))
+    (reading,) = name_readings("The text at 0xf9a0 is not decoded.", "", names)
+    fact = _text_at_fact(reading.key, names)
+    assert fact is not None
+    assert fact.text == (
+        "the routine at offset 0x33ac names the data at offset 0xf9a0 on a line that calls the "
+        "routine at offset 0xae78 (ev_0086); the function index (ev_0025) ties no text to that "
+        "routine; no decoded row holds a text at offset 0xf9a0"
+    )
+
+
+def test_only_the_index_s_callees_are_said_called() -> None:
+    names = RunNames(bases=(BASE,), rows=frozenset({ROUTINE}), callees={ROUTINE: ()})
+    other = BASE + 0x7700
+    hold_data(names, ROUTINE, f"  FUN_{other:x}(&DAT_{BASE + 0xF9A0:x});", ("ev_0086",), ("DAT_",))
+    assert names.refs_of[ROUTINE].addresses == {BASE + 0xF9A0: {}}
+
+
+def test_a_routine_the_index_lists_only_as_called_is_no_data_address() -> None:
+    called = BASE + 0x7700
+    names = RunNames(bases=(BASE,), rows=frozenset({ROUTINE}), called=frozenset({called}))
+    hold_data(names, ROUTINE, f"  FUN_x(&DAT_{called:x});", ("ev_0086",), ("DAT_",))
+    assert names.routine_at(called) and called not in names.data_at
+
+
+def test_a_decoded_row_with_no_text_holds_no_text() -> None:
+    names = _names(decoded=STORED, text="  ")
+    assert not any(names.decoded(at) for at in STORED)
+    (reading,) = name_readings(DENIED, "", names)
+    assert reading.kind == "data"
+
+
+def test_the_texts_past_the_cap_are_counted() -> None:
+    names = RunNames(bases=(BASE,), rows=frozenset({ROUTINE}), index_entry="ev_0025")
+    for i in range(8):
+        key = f"text{i}"
+        names.texts[key] = TextHeld(text=key, routines={ROUTINE: None})
+        names.texts_of.setdefault(ROUTINE, []).append(key)
+    hold_data(names, ROUTINE, f"  FUN_x(&DAT_{BASE + 0xF9A0:x});", ("ev_0086",), ("DAT_",))
+    (reading,) = name_readings("The text at 0xf9a0 is not decoded.", "", names)
+    fact = _text_at_fact(reading.key, names)
+    assert fact is not None
+    assert '"text5" and 2 more; no decoded row' in fact.text
+
+
+def test_a_decoded_row_s_offset_and_a_listing_s_address_are_one_place_with_one_base() -> None:
+    # One base: the row's offset and the listing's virtual address are one spelling.
+    assert name_readings(DENIED, "", _names(decoded=STORED)) == []
+    assert _names(decoded=STORED).decoded(STORED[0])
+
+
+def test_with_no_base_or_two_bases_nothing_is_said_of_where_no_row_holds_a_text() -> None:
+    # With no base the row's offset and the listing's address cannot be told one place, so a
+    # sentence denying texts the rows do hold is not held on "no decoded row holds a text".
+    written = "The texts at " + ", ".join(hex(at) for at in STORED) + " are not decoded."
+    for kw in ({"base": None}, {"other_base": 0x10000000}):
+        names = _names(decoded=STORED, **kw)
+        assert len(names.bases) != 1, kw
+        assert STORED[0] in names.data_at, kw
+        for sentence in (DENIED, written):
+            assert name_readings(sentence, "", names) == [], (kw, sentence)
+        names = _names(**kw)
+        assert name_readings(written, "", names) == [], kw
+    # With no decoded answer at all there is nothing to reconcile: a sentence writing the
+    # listing's own addresses is held.
+    names = _names(base=None)
+    names.decoded_entries.clear()
+    names.decoded_at.clear()
+    assert [r.kind for r in name_readings(written, "", names)] == ["data"]

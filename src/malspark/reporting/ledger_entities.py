@@ -131,8 +131,8 @@ class TextHeld:
 
 @dataclass
 class DataRef:
-    """What one routine's listing does with data: the data addresses its lines name after
-    a declared data label, each with the routines the index lists it calling that a line
+    """The data one routine's listing names: the data addresses its lines name after a
+    declared data label, each with the routines the index lists it calling that a line
     naming it names, and the entries listing it."""
 
     routine: int
@@ -176,6 +176,22 @@ class RunNames:
     def routine_at(self, address: int) -> bool:
         """Whether ``address`` is a routine the index lists or lists called: no datum."""
         return address in self.rows or address in self.callees or address in self.called
+
+    def decoded(self, address: int) -> bool:
+        """Whether a decoded row holds a text at ``address`` in any of its spellings: as
+        written, and less each image base the run read (a row may write an offset where a
+        listing writes the virtual address)."""
+        return any(
+            spelled in self.decoded_at
+            for spelled in (address, *(address - base for base in self.bases if address >= base))
+        )
+
+    def decoded_reconciled(self) -> bool:
+        """Whether "no decoded row holds a text at" an address can be said: no decoded
+        answer was read, or the one image base read spells a row's offset and a listing's
+        virtual address alike. With no base, or two, a row's address and a listing's may be
+        two spellings of one place, so nothing is said (T-652)."""
+        return not self.decoded_entries or len(self.bases) == 1
 
     def api(self, name: str) -> ApiHeld | None:
         """The API the run holds under ``name`` (case aside), or ``None``."""
@@ -371,8 +387,9 @@ def hold_data(
 ) -> None:
     """Each data address a line of ``code``, the listing of ``routine``, names after one of
     the declared data labels ``prefixes``, held for the routine, with the routines the index
-    lists it calling that the same line names (where it passes the datum). A routine's own
-    address is no datum. One pass over the lines."""
+    lists it calling that the same line names: what the ledger holds is that one line names
+    both, never how the line uses the datum, which no argument list is parsed for. A
+    routine's own address is no datum. One pass over the lines."""
     label = _data_label(tuple(prefixes))
     if label is None:
         return

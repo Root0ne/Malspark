@@ -161,8 +161,9 @@ the run holds (``ledger.N``), one of the limitations naming a failed call a late
 call redid, or saying such a call failed. A negated clause writing a word a text is
 held under ("not decoded") that names a data address a routine's listing names after
 a declared data label, where no decoded row holds a text at it, holds its sentence on
-a ``ledger.N`` fact of that routine's data: the routines it passes them to, the texts
-the function index ties to it, and that no decoded row holds a text there (T-652).
+a ``ledger.N`` fact of that routine's data: the routines its lines naming them call,
+the texts the function index ties to it, and that no decoded row holds a text there,
+said only where a row's address and a listing's are spelled alike (T-652).
 Where no answer for such a sentence passes the checks after the retry, refused or
 never given, it is left out, of the body as of a closing section, and recorded with
 what holds it, unless the platform's own end (its fact qualification, a closing
@@ -2307,13 +2308,18 @@ class _Clauses:
         """``(kind, key, shown)`` of each routine whose listing names a data address
         ``sentence`` names, where a clause writing a word a text is held under names one
         such address ("The texts at 0xf9a0 and 0xf9b0 are not decoded") and no decoded row
-        holds a text at it: keyed by the routine and those addresses, shown as the sentence
-        writes them. A routine's own address is no datum (T-652)."""
+        holds a text at it in any spelling (``RunNames.decoded``): keyed by the routine and
+        those addresses, shown as the sentence writes them. A routine's own address is no
+        datum; where a decoded row's address and a listing's cannot be told one spelling
+        (``RunNames.decoded_reconciled``), nothing is held (T-652)."""
         from malspark.agents.function_map import one_spelling
+
+        if not names.decoded_reconciled():
+            return []
 
         def _held(address: int) -> int | None:
             at = one_spelling(address, names.bases)
-            if names.routine_at(at) or at in names.decoded_at or at not in names.data_at:
+            if names.routine_at(at) or names.decoded(at) or at not in names.data_at:
                 return None
             return at
 
@@ -2711,40 +2717,64 @@ def _hold_listed_data(names: Any, found: LedgerFacts, entries: dict[str, Any]) -
             hold_data(names, routine.address, code, routine.listed_in, prefixes)
 
 
+def _more(listed: str, more: int) -> str:
+    """``listed``, and the count of what a cap left out."""
+    return f"{listed} and {more} more" if more > 0 else listed
+
+
+def _calls_said(called: Sequence[int], data: int, bases: Sequence[int]) -> str:
+    """How the lines naming ``data`` addresses name the routines ``called``: one routine on a
+    line naming each address, or several among the lines naming them."""
+    if not called:
+        return ""
+    if len(called) == 1:
+        each = "" if data == 1 else ", each"
+        return f"{each} on a line that calls the routine at {_offsets(list(called), bases)}"
+    return f" on one or more lines that call the routines at {_offsets(list(called), bases)}"
+
+
 def _text_at_fact(key: str, names: Any) -> _NameFact | None:
     """What the ledger holds of data addresses a routine's listing names (``key``: the routine
-    and the addresses) that no decoded row holds a text at: the routines its lines pass each
-    to, the texts the function index ties to the routine, and that no decoded row holds a
-    text at them (T-652). It never says which text is stored where: the ledger does not hold
-    that."""
+    and the addresses) that no decoded row holds a text at: the routines its lines naming
+    each call, the texts the function index ties to the routine, and that no decoded row
+    holds a text at them (T-652). A line naming a datum and a routine is what the ledger
+    holds, never that the datum is passed to it; nor which text is stored where. Each list
+    a cap cuts counts the rest."""
     head_key, _, held_key = key.partition(":")
     routine = int(head_key, 16)
     ref = names.refs_of.get(routine)
-    if ref is None:
+    if ref is None or not names.decoded_reconciled():
         return None
     bases = names.bases
-    data = [int(a, 16) for a in held_key.split(",") if a]
-    data = [a for a in data if a in ref.addresses and a not in names.decoded_at][:_DATA_SHOWN]
+    every = [int(a, 16) for a in held_key.split(",") if a]
+    every = [a for a in every if a in ref.addresses and not names.decoded(a)]
+    data = every[:_DATA_SHOWN]
     if not data:
         return None
-    # The addresses by the routines their lines pass them to, in the order read.
+    more = len(every) - len(data)
+    # The addresses by the routines the lines naming them call, in the order read.
     by_callee: dict[tuple[int, ...], list[int]] = {}
     for address in data:
         by_callee.setdefault(tuple(ref.addresses[address])[:_CALLEES_SHOWN], []).append(address)
-    passes = "; ".join(
-        f"passes the data at {_offsets(at, bases)} to the routine at {_offsets(list(to), bases)}"
-        if to
-        else f"names the data at {_offsets(at, bases)}"
-        for to, at in by_callee.items()
+    groups = list(by_callee.items())
+    named = "; ".join(
+        "names the data at "
+        + _more(_offsets(at, bases), more if i == len(groups) - 1 else 0)
+        + _calls_said(to, len(at), bases)
+        for i, (to, at) in enumerate(groups)
     )
-    texts = [names.texts[k] for k in names.texts_of.get(routine, ())][:_TEXTS_SHOWN]
-    tied = ", ".join(
-        quoted_value(t.text)
-        + (f" ({', '.join(sorted(_ids(t.sources)))})" if _ids(t.sources) else "")
-        for t in texts
+    keys = names.texts_of.get(routine, ())
+    texts = [names.texts[k] for k in keys[:_TEXTS_SHOWN]]
+    tied = _more(
+        ", ".join(
+            quoted_value(t.text)
+            + (f" ({', '.join(sorted(_ids(t.sources)))})" if _ids(t.sources) else "")
+            for t in texts
+        ),
+        len(keys) - len(texts),
     )
     listed = ", ".join(sorted(_ids(ref.listed_in)))
-    head = f"the routine at {_offsets([routine], bases)} {passes} ({listed})"
+    head = f"the routine at {_offsets([routine], bases)} {named} ({listed})"
     index = (
         f"the function index ({names.index_entry}) ties to that routine the texts {tied}"
         if texts
@@ -2753,7 +2783,7 @@ def _text_at_fact(key: str, names: Any) -> _NameFact | None:
         else ""
     )
     decoded = ", ".join(sorted(_ids(names.decoded_entries)))
-    tail = f"no decoded row holds a text at {_offsets(data, bases)}" + (
+    tail = f"no decoded row holds a text at {_more(_offsets(data, bases), more)}" + (
         f" ({decoded})" if decoded else ""
     )
     rows = tuple(part for part in (head, index, tail) if part)
