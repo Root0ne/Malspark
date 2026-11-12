@@ -20,6 +20,8 @@ export default function DetectionContent() {
   const { report } = useReport();
   const mr = report?.malware_report;
   const generated = mr?.detection_signatures ?? [];
+  // A format no draft was built in is said in the section too.
+  const notBuilt = (mr?.drafts_not_built ?? []).length;
   const matched = hasRuleMatches(report?.agent_findings, mr?.sections);
   // A bundle with no objects in it is a bundle nobody wants to export.
   const stix = Object.keys(mr?.stix_bundle_extended ?? report?.stix_bundle ?? {}).length > 0;
@@ -43,7 +45,11 @@ export default function DetectionContent() {
       </div>
 
       <div id="generated-rules" className="scroll-mt-16">
-        <Section title="Generated detection rules" count={generated.length || null} empty={generated.length === 0}>
+        <Section
+          title="Generated detection rules"
+          count={generated.length || null}
+          empty={generated.length === 0 && notBuilt === 0}
+        >
           <div className="space-y-3">
             <p className="text-xs text-text-muted">
               Draft YARA, Sigma and Suricata rules generated from this sample&apos;s indicators, for your own

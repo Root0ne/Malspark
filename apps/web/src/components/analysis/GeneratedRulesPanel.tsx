@@ -9,7 +9,13 @@ import CodeBlock from "@/components/ui/CodeBlock";
 import Drawer from "@/components/ui/Drawer";
 import ShowMoreRows from "@/components/ui/ShowMoreRows";
 import type { DetectionKind, DetectionRule } from "@/types/malware-report";
-import { ruleStanding, sampleMatchBadge, type RuleStanding, type SampleMatchTone } from "./sampleMatch";
+import {
+  draftsNotBuilt,
+  ruleStanding,
+  sampleMatchBadge,
+  type RuleStanding,
+  type SampleMatchTone,
+} from "./sampleMatch";
 
 /* The kinds the report drafts, in the order they are drawn. A stored rule of
  * another kind is drawn after them. */
@@ -66,6 +72,7 @@ const RULES_FIRST = 10;
  * compiles and matches the sample it was drafted from, what the analyst
  * report says of it (its Precision line, or why it is not printed there), and
  * a copy and a download on each row. A rule's name opens its body in the side panel.
+ * A format no draft was built in says why, as the report does.
  */
 export default function GeneratedRulesPanel() {
   const { report, loading } = useReport();
@@ -87,10 +94,14 @@ export default function GeneratedRulesPanel() {
     [signatures],
   );
 
+  const notBuilt = draftsNotBuilt(report?.malware_report?.drafts_not_built);
+
   if (loading) {
     return <div className="p-4 text-sm text-text-secondary">Loading...</div>;
   }
-  if (signatures.length === 0) return null;
+  if (signatures.length === 0) {
+    return notBuilt.length ? <NotBuilt sentences={notBuilt} /> : null;
+  }
 
   return (
     <div className="space-y-3">
@@ -107,6 +118,7 @@ export default function GeneratedRulesPanel() {
         ))}
       </ul>
       <ShowMoreRows shown={Math.min(shown, ordered.length)} total={ordered.length} onShow={setShown} step={RULES_FIRST} />
+      {notBuilt.length > 0 && <NotBuilt sentences={notBuilt} />}
       <Drawer
         open={detail !== null}
         title={detail ? detail.rule.name : ""}
@@ -116,6 +128,16 @@ export default function GeneratedRulesPanel() {
         {detail && <RuleBody rule={detail.rule} />}
       </Drawer>
     </div>
+  );
+}
+
+function NotBuilt({ sentences }: { sentences: string[] }) {
+  return (
+    <ul className="space-y-1 text-[11px] text-text-secondary">
+      {sentences.map((sentence) => (
+        <li key={sentence}>{sentence}</li>
+      ))}
+    </ul>
   );
 }
 

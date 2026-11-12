@@ -482,16 +482,16 @@ class TestSigma:
         ]
         assert selected.lower() == "\\software\\examplevendor\\run"
 
-    def test_a_sandbox_signature_is_selected(self) -> None:
+    def test_a_sandbox_signature_alone_makes_no_draft(self) -> None:
+        # A signature's description is the sandbox's reading, a field of no
+        # log: a rule selecting on it matched no event.
         from malspark.reporting.models import DynamicBehavior, SandboxSignature
 
         dynamic = DynamicBehavior(
             sandbox_signatures=[SandboxSignature(name="AutoRun", description="Installs autorun")]
         )
 
-        rule = self._sigma(dynamic=dynamic)
-
-        assert rule is not None and "Installs autorun" in rule.body
+        assert self._sigma(dynamic=dynamic) is None
 
 
 class TestTheReader:

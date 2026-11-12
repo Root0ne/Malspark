@@ -59,7 +59,11 @@ class TestTheContract:
     def test_the_section_asks_for_what_it_needs_and_nothing_more(self) -> None:
         contract = section_contract("host_identifiers", _HostIdentifiersOut)
 
-        assert '"identifiers": [{"kind": "...", "value": "...", "purpose": "..."' in contract
+        # The kind and the use are answered with their declared words, and the
+        # field code writes is never asked for.
+        assert '"identifiers": [{"kind": "mutex or file path or file name or folder' in contract
+        assert '"use": "creates/writes or reads/checks or not shown"' in contract
+        assert "held_in" not in contract
         assert "For example" in contract
 
     def test_the_example_is_valid_against_its_schema(self) -> None:
@@ -189,9 +193,11 @@ class TestTheReportPrintsIt:
 
         assert "Host identifiers read by the report model · _Written by the report model_" in text
         row = next(line for line in text.splitlines() if VALUE in line)
-        # Five cell borders once the escaped pipe inside the kind is taken out.
-        assert "ev_0012" in row and row.replace("\\|", "").count("|") == 5
-        assert "This table publishes nothing itself" in text
+        # Six cell borders once the escaped pipe inside the kind is taken out:
+        # the last column is the publish rule's answer for the row.
+        assert "ev_0012" in row and row.replace("\\|", "").count("|") == 6
+        assert "Published gives the answer for each row" in text
+        assert "free-text kind" in row
         assert "These rows are not published" not in text
         assert "published in the" not in row
 

@@ -32,6 +32,7 @@ from collections.abc import Callable, Iterable
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
+from malspark.core.logger import logger
 from malspark.pipeline.validation import NUMERIC_CONFIDENCE_CODE, UNPUBLISHED_VALUE_CODE
 from malspark.reporting.composer_pro import (
     _NUMERIC_CONFIDENCE,
@@ -42,7 +43,11 @@ from malspark.reporting.composer_pro import (
     values_not_carried,
 )
 from malspark.reporting.defang import defang
-from malspark.reporting.detection_signatures import analyst_print_gate, rule_standing
+from malspark.reporting.detection_signatures import (
+    analyst_print_gate,
+    not_drafted_sentence,
+    rule_standing,
+)
 from malspark.reporting.judge_reasons import judge_reasons_shown
 from malspark.reporting.models import (
     LimitationInventory,
@@ -123,10 +128,21 @@ _VALUE = re.compile(
 # a capture or a strings pass. An unexported row of theirs, bound to no code and
 # named by no model, is the bundle's; every other row stays in the table.
 _OBSERVED_ONLY = frozenset({"sandbox", "strings"})
-# Why a value only the report model's identifier table holds is not exported.
-_IDENTIFIER_NOT_EXPORTED = (
-    "not exported: the report model's identifier table publishes nothing itself"
-)
+# What an identifier row the rule's answer could not be read for says.
+_IDENTIFIER_NOT_EXPORTED = "not exported: the publish rule's answer for it could not be read"
+
+
+def _identifier_answers(report: Any) -> list[str]:
+    """The rule's answer for each identifier row (``stated_host_values``), or none when unread."""
+    from malspark.reporting.stated_host_values import identifier_answers
+
+    try:
+        return [answer for _stated, answer in identifier_answers(report)]
+    except Exception as exc:  # noqa: BLE001 — each row then says its answer is unread
+        logger.debug("analyst: the identifier rows' answers were not read (%s).", exc)
+        return []
+
+
 # Where a reader of this report finds every process the sandbox recorded.
 _BUNDLE_TREE = "the evidence bundle's process tree"
 # The bundle's section that prints the category with the export's malware types.
@@ -1897,9 +1913,12 @@ class _Analyst:
                 role += f" _({_inline_safe(answer, pipes=False, plain=ctx.plain)})_"
             rows.append((ioc.type, value, role or "-"))
         identifiers = list(self.ta.host_identifiers) if self.ta is not None else []
+        answers = _identifier_answers(report)
         left = 0
         for index, item in enumerate(identifiers, start=1):
-            if item.value.strip().lower() in seen:
+            answer = answers[index - 1] if index <= len(answers) else ""
+            # A row the rule publishes is the IOC table's row above.
+            if item.value.strip().lower() in seen or publishes(answer):
                 continue
             # A row that cites nothing, or whose value none of its cited entries
             # holds whole, is the bundle's, which prints it with the finding (T-555).
@@ -1913,7 +1932,12 @@ class _Analyst:
             seen.add(item.value.strip().lower())
             role = self._line(item.purpose, item.evidence_refs) if item.purpose.strip() else "-"
             state = ctx.publish_state(item.value).strip()
-            role += f" _({_IDENTIFIER_NOT_EXPORTED}" + (f"; {state[1:-1]}" if state else "") + ")_"
+            said = ctx.plain(_one_line(answer)).strip() or _IDENTIFIER_NOT_EXPORTED
+            role += (
+                f" _({_inline_safe(said, pipes=False, plain=ctx.plain)}"
+                + (f"; {state[1:-1]}" if state else "")
+                + ")_"
+            )
             rows.append((self._cell(item.kind), ctx.plain(_one_line(item.value)), role))
         lines = ["### 8.1 Indicators of compromise", ""]
         if not rows:
@@ -1958,13 +1982,15 @@ class _Analyst:
         matched by its hash alone, was not checked, did not match or did not
         compile is named here with the reason (``analyst_print_gate``) and
         printed in the bundle. Either sentence is the one the rule's record
-        carries (``rule_standing``).
+        carries (``rule_standing``). A format left without a draft says why
+        (``drafts_not_built``).
         """
         from malspark.reporting.renderers.markdown import _RULE_SECTIONS
 
         matched = [s for s in self.report.sections if s.key in _RULE_SECTIONS]
         rules = self.report.detection_signatures
-        if not rules and not matched:
+        not_built = self.report.drafts_not_built
+        if not rules and not matched and not not_built:
             return []
         lines = ["### 8.2 Detection rules", ""]
         # The rules that matched the sample, by name, as the single-file report
@@ -1981,7 +2007,7 @@ class _Analyst:
                     + self.notes.marker(section.evidence_ids)
                 )
             )
-        if matched and rules:
+        if matched and (rules or not_built):
             lines.append("")
         for rule in rules:
             kind = _one_line(rule.kind).upper()
@@ -1997,6 +2023,9 @@ class _Analyst:
             if rule.kind == "yara":
                 said += _stored_left_out(self.report)
             lines.append(_item(said))
+        lines.extend(
+            _item(self.ctx.plain(_one_line(not_drafted_sentence(item)))) for item in not_built
+        )
         if any(self._printed(rule) for rule in rules):
             lines.extend(
                 ["", "The rule bodies are in the appendix. Test a rule before deploying it."]

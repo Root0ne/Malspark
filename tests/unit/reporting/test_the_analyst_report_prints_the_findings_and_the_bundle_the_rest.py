@@ -370,7 +370,8 @@ class TestThePlatformsCaveats:
         report.run_summary = {}
         analyst = MarkdownRenderer(layout=ANALYST).render(report)
         row = next(line for line in analyst.splitlines() if "unique-mutex-name" in line)
-        assert "not exported: the report model's identifier table publishes nothing itself" in row
+        # The publish rule's answer for the row, asked under source ``analysis``.
+        assert "_(no: " in row and "not exported" in row
 
 
 class TestTheBundle:

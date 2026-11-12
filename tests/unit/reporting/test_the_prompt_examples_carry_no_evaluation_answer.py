@@ -16,6 +16,24 @@ values and technique ids the key scores. A term is matched case-insensitively
 as a substring: of any example's string values (the keys of the answer object
 are the schema's own names and are not checked), and of the whole text of the
 contract, the prompts and the instructions.
+
+A declared vocabulary is the schema's own names, as its keys are: the kinds
+and uses a host identifier is typed with are words of the closed vocabulary
+the platform defines, never a description of the sample. A contract is read
+with exactly the listing the composer renders for each such field
+(``composer.vocabulary_listing``, computed from the code when the test runs)
+taken out; any other text of the contract, a word written beside the listing
+included, is held to the rule. What the structured path sends is read too:
+each section's output schema (``model_json_schema()``) has its descriptions,
+titles, examples and defaults held to the rule; an enum passes only when it is
+a declared vocabulary whole, and a const only as a member of one. The declared
+vocabularies are exactly ``HostIdentifier.kind`` and ``HostIdentifier.use``, with
+the members their data file declares: any other field declaring an enum, or one
+of the two listing a member the data does not, fails, and only the data's
+listings are taken out of a contract. A property's name is the schema's own,
+as a key of the answer object is, and is not checked; so is the title the
+schema generator derives from that name (``GenerateJsonSchema.get_title_from_name``),
+compared for equality. A title written by hand is held to the rule.
 """
 
 from __future__ import annotations
@@ -132,6 +150,7 @@ from malspark.analysis.run_summary import unknown_window_split_sentence
 from malspark.core.config import SampleOpenConfig
 from malspark.core.container import unknown_window_split_line
 from malspark.core.pack_steps import CALLED_API_CATALOGUE, shipped_label
+from malspark.core.paths import resolve_data
 from malspark.core.reputation import read_answer
 from malspark.extractors.capability_matrix import (
     NOT_ASKED_UNKNOWN_ID,
@@ -267,6 +286,7 @@ from malspark.reporting.composer import (
     SECTION_SCHEMAS,
     WHERE_QUOTED_LEAD,
     section_contract,
+    vocabulary_listing,
 )
 from malspark.reporting.evidence_bundles import sample_flow_fact
 from malspark.reporting.ledger_report import (
@@ -276,6 +296,7 @@ from malspark.reporting.ledger_report import (
 )
 from malspark.reporting.models import (
     FileHashes,
+    HostIdentifier,
     MalwareReport,
     NetworkDomain,
     NetworkIOCs,
@@ -317,6 +338,7 @@ from malspark.reporting.renderers.stix_renderer import (
     seen_in_reason,
     yes_because,
 )
+from malspark.reporting.stated_host_values import host_kinds
 from malspark.schemas.evidence import LedgerEntry, build_entry, not_shown_record
 from malspark.schemas.isr_models import (
     ABSENCE_TECHNIQUE_MARKER,
@@ -2822,8 +2844,207 @@ PROMPTS: dict[str, str] = {
 # write it and its example — with the object's key names taken out: a key is
 # the schema's own name, the one part of a contract a model is not writing.
 _KEY_NAME_RE = re.compile(r'"[a-z_]+":')
+
+
+def _models_in(schema: Any, seen: set[Any] | None = None) -> list[Any]:
+    """The schema and every model its fields hold, each once."""
+    from typing import get_args
+
+    seen = set() if seen is None else seen
+    if schema in seen or not hasattr(schema, "model_fields"):
+        return []
+    seen.add(schema)
+    found = [schema]
+    for field in schema.model_fields.values():
+        stack = [field.annotation]
+        while stack:
+            annotation = stack.pop()
+            if isinstance(annotation, type) and hasattr(annotation, "model_fields"):
+                found.extend(_models_in(annotation, seen))
+            stack.extend(get_args(annotation))
+    return found
+
+
+_KINDS_DATA = "data/host_identifier_kinds_v1.json"
+
+
+def _data_vocabularies(path: str = _KINDS_DATA) -> dict[tuple[Any, str], tuple[str, ...]]:
+    """The declared vocabularies, read from their data file: exactly the host-identifier
+    ``kind`` (the vocabulary's kinds) and ``use`` (its uses), keyed by model and field."""
+    document = json.loads(resolve_data(path).read_text(encoding="utf-8"))
+    return {
+        (HostIdentifier, "kind"): tuple(str(kind) for kind in document.get("kinds") or {}),
+        (HostIdentifier, "use"): tuple(str(use) for use in document.get("uses") or {}),
+    }
+
+
+DECLARED_VOCABULARIES = _data_vocabularies()
+
+# A recorded ruling: the key-scored terms the vocabularies' members may carry.
+# These three name the kinds of host object themselves (the closed list the
+# report model types a value with), never a description of the sample. Any
+# other key term in a kind or a use needs a ruling of its own before it ships.
+RULED_VOCABULARY_TERMS = frozenset({"mutex", "scheduled task", "alternate data stream"})
+
+
+def _vocabulary_term_faults(
+    declared: dict[tuple[Any, str], tuple[str, ...]] = DECLARED_VOCABULARIES,
+) -> list[str]:
+    """The key-scored terms the vocabularies' members carry beyond the ruled set, and a
+    ruled term no member carries any more, each as a fault."""
+    found = {
+        term
+        for words in declared.values()
+        for word in words
+        for term in KEY_TERMS
+        if term in word.lower()
+    }
+    faults = [
+        f"the vocabulary member carrying {term!r} needs a ruling: it is a term the key scores"
+        for term in sorted(found - RULED_VOCABULARY_TERMS)
+    ]
+    faults += [
+        f"the ruled term {term!r} is in no vocabulary member: the ruling is stale"
+        for term in sorted(RULED_VOCABULARY_TERMS - found)
+    ]
+    return faults
+
+
+def _field_enum(field: Any) -> tuple[str, ...]:
+    """The enum a field's ``json_schema_extra`` writes, as the composer reads it."""
+    extra = field.json_schema_extra
+    held: dict[str, Any] = {}
+    if callable(extra):
+        extra(held)
+    elif isinstance(extra, dict):
+        held = dict(extra)
+    return tuple(str(word) for word in held.get("enum") or ())
+
+
+def _vocabulary_faults(
+    schemas: Any, declared: dict[tuple[Any, str], tuple[str, ...]] = DECLARED_VOCABULARIES
+) -> list[str]:
+    """What breaks the rule that the enum-bearing fields are exactly the declared ones,
+    each listing the data's members, and that each declared field is asked for."""
+    found = {
+        (model, name): words
+        for schema in schemas
+        for model in _models_in(schema)
+        for name, field in model.model_fields.items()
+        for words in [_field_enum(field)]
+        if words
+    }
+    faults = [
+        f"{model.__name__}.{name} declares an enum that is no declared vocabulary"
+        for (model, name) in found
+        if (model, name) not in declared
+    ]
+    faults += [
+        f"{model.__name__}.{name} lists {found[(model, name)]}, the data declares {words}"
+        for (model, name), words in declared.items()
+        if (model, name) in found and found[(model, name)] != words
+    ]
+    faults += [
+        f"{model.__name__}.{name} is asked for by no section"
+        for (model, name) in declared
+        if (model, name) not in found
+    ]
+    return faults
+
+
+def _declared_vocabulary(
+    schema: Any, declared: dict[tuple[Any, str], tuple[str, ...]] = DECLARED_VOCABULARIES
+) -> dict[tuple[str | None, str], tuple[str, ...]]:
+    """The declared vocabularies one schema's fields hold, with the data's members, keyed
+    by the model's schema name and the field: the only nodes an exemption applies to."""
+    models = set(_models_in(schema))
+    return {
+        (model.__name__, name): words
+        for (model, name), words in declared.items()
+        if model in models
+    }
+
+
+def _vocabulary_listings(
+    schema: Any, declared: dict[tuple[Any, str], tuple[str, ...]] = DECLARED_VOCABULARIES
+) -> list[str]:
+    """Each declared vocabulary's listing as the composer renders it, for one schema,
+    built from the data's members: a field listing anything else is not taken out."""
+    return [
+        '"' + " or ".join(words) + '"' for words in _declared_vocabulary(schema, declared).values()
+    ]
+
+
+def _without_vocabulary_listings(text: str, listings: list[str]) -> str:
+    """``text`` with each exact listing of a declared vocabulary taken out, nothing else."""
+    for listing in listings:
+        text = text.replace(listing, " ")
+    return text
+
+
 CONTRACTS: dict[str, str] = {
-    name: _KEY_NAME_RE.sub(" ", section_contract(name, schema))
+    name: _KEY_NAME_RE.sub(
+        " ",
+        _without_vocabulary_listings(section_contract(name, schema), _vocabulary_listings(schema)),
+    )
+    for name, schema in SECTION_SCHEMAS.items()
+}
+
+
+def _derived_title(name: str) -> str:
+    """The title the schema generator gives a property it was given no title for."""
+    from pydantic.json_schema import GenerateJsonSchema
+
+    return GenerateJsonSchema().get_title_from_name(name)
+
+
+def _schema_texts(
+    node: Any,
+    declared: Any,
+    name: str | None = None,
+    model: str | None = None,
+    vocabulary: tuple[str, ...] | None = None,
+) -> list[str]:
+    """What a section's output schema shows a model: descriptions, titles, examples,
+    defaults, and every enum member and const, except on a declared field's own node an
+    enum that is its vocabulary whole and a const that is a member of it. ``declared``
+    maps ``(model, field)`` to the vocabulary (:func:`_declared_vocabulary`); ``model``
+    is the schema a node is in (a ``$defs`` entry, or the root's title) and
+    ``vocabulary`` the declared field's whose node it is. ``name`` is the property a
+    node is the schema of: its derived title is the name's, not read."""
+    if model is None and isinstance(node, dict) and name is None:
+        model = node.get("title")
+    out: list[str] = []
+    if isinstance(node, dict):
+        for key, value in node.items():
+            if key == "title" and name is not None and value == _derived_title(name):
+                continue
+            if key in ("description", "title", "examples", "default"):
+                out.extend(_strings(value))
+            elif key == "enum":
+                if vocabulary is None or tuple(str(word) for word in value) != vocabulary:
+                    out.extend(str(word) for word in value)
+            elif key == "const":
+                if vocabulary is None or str(value) not in vocabulary:
+                    out.append(str(value))
+            elif key == "$defs" and isinstance(value, dict):
+                for defined, schema in value.items():
+                    out.extend(_schema_texts(schema, declared, None, defined))
+            elif key == "properties" and isinstance(value, dict):
+                for prop, schema in value.items():
+                    out.extend(
+                        _schema_texts(schema, declared, prop, model, declared.get((model, prop)))
+                    )
+            else:
+                out.extend(_schema_texts(value, declared, None, model, vocabulary))
+    elif isinstance(node, list):
+        for item in node:
+            out.extend(_schema_texts(item, declared, None, model, vocabulary))
+    return out
+
+
+SCHEMA_TEXTS: dict[str, str] = {
+    name: " ".join(_schema_texts(schema.model_json_schema(), _declared_vocabulary(schema))).lower()
     for name, schema in SECTION_SCHEMAS.items()
 }
 
@@ -3109,6 +3330,181 @@ def test_no_section_contract_carries_a_term_the_key_scores(name: str) -> None:
     text = CONTRACTS[name].lower()
     shared = [term for term in KEY_TERMS if term in text]
     assert not shared, f"the {name} contract carries {shared}"
+
+
+@pytest.mark.parametrize("name", sorted(SCHEMA_TEXTS))
+def test_no_section_schema_carries_a_term_the_key_scores(name: str) -> None:
+    shared = [term for term in KEY_TERMS if term in SCHEMA_TEXTS[name]]
+    assert not shared, f"the {name} output schema carries {shared}"
+
+
+class TestTheVocabularyExemptionIsExact:
+    """The guard takes out exactly the listing the composer renders, and nothing else."""
+
+    @staticmethod
+    def _scan(text: str, schema: Any) -> list[str]:
+        read = _KEY_NAME_RE.sub(
+            " ", _without_vocabulary_listings(text, _vocabulary_listings(schema))
+        )
+        return [term for term in KEY_TERMS if term in read.lower()]
+
+    def test_the_rendered_listing_passes(self) -> None:
+        schema = SECTION_SCHEMAS["host_identifiers"]
+        listings = _vocabulary_listings(schema)
+
+        assert listings and all(
+            listing in section_contract("host_identifiers", schema) for listing in listings
+        )
+        assert self._scan(section_contract("host_identifiers", schema), schema) == []
+
+    def test_a_term_outside_the_listing_fails(self) -> None:
+        schema = SECTION_SCHEMAS["host_identifiers"]
+        text = section_contract("host_identifiers", schema) + " Write the mutex first."
+
+        assert self._scan(text, schema) == ["mutex"]
+
+    def test_a_word_written_beside_the_listing_fails(self) -> None:
+        schema = SECTION_SCHEMAS["host_identifiers"]
+        (kinds, _uses) = _vocabulary_listings(schema)
+        text = section_contract("host_identifiers", schema).replace(kinds, kinds + " beacon", 1)
+
+        assert self._scan(text, schema) == ["beacon"]
+
+    def test_a_word_written_into_the_listing_fails(self) -> None:
+        schema = SECTION_SCHEMAS["host_identifiers"]
+        (kinds, _uses) = _vocabulary_listings(schema)
+        text = section_contract("host_identifiers", schema).replace(
+            kinds, kinds[:-1] + ' or beacon"', 1
+        )
+
+        # The listing no longer matches the rendered one: all of it is read.
+        assert "beacon" in self._scan(text, schema)
+        assert "mutex" in self._scan(text, schema)
+
+    def test_a_derived_title_is_the_generator_s_own(self) -> None:
+        from pydantic import BaseModel
+
+        class _Probe(BaseModel):
+            beacon_format: str = ""
+
+        generated = _Probe.model_json_schema()["properties"]["beacon_format"]["title"]
+        assert generated == _derived_title("beacon_format")
+
+    def test_a_title_derived_from_its_property_passes(self) -> None:
+        node = {"properties": {"beacon_format": {"title": "Beacon Format", "type": "string"}}}
+
+        assert _schema_texts(node, {}) == []
+
+    def test_a_hand_written_title_is_read(self) -> None:
+        node = {"properties": {"layout": {"title": "Beacon layout", "type": "string"}}}
+
+        assert [t for t in KEY_TERMS if t in " ".join(_schema_texts(node, {})).lower()] == [
+            "beacon"
+        ]
+
+    def test_a_title_one_word_off_its_derivation_is_read(self) -> None:
+        node = {"properties": {"beacon_format": {"title": "Beacon Format Used", "type": "string"}}}
+
+        assert _schema_texts(node, {}) == ["Beacon Format Used"]
+
+    def test_a_description_is_read_whatever_its_property(self) -> None:
+        node = {"properties": {"beacon_format": {"description": "Beacon Format"}}}
+
+        assert _schema_texts(node, {}) == ["Beacon Format"]
+
+    def test_an_enum_outside_a_declared_vocabulary_is_read(self) -> None:
+        node = {"properties": {"x": {"enum": ["beacon", "mutex"]}}}
+
+        # Read whole: a member of a vocabulary passes only in the vocabulary's own enum.
+        assert _schema_texts(node, {(None, "x"): ("mutex",)}) == ["beacon", "mutex"]
+        only = {"properties": {"x": {"enum": ["mutex"]}}}
+        assert _schema_texts(only, {(None, "x"): ("mutex",)}) == []
+        # The same enum on any other field is read.
+        assert _schema_texts(only, {(None, "y"): ("mutex",)}) == ["mutex"]
+
+    def test_a_const_outside_a_declared_vocabulary_is_read(self) -> None:
+        from typing import Literal
+
+        from pydantic import BaseModel
+
+        class _Probe(BaseModel):
+            k: Literal["beacon"] = "beacon"
+
+        kinds = DECLARED_VOCABULARIES[(HostIdentifier, "kind")]
+        rendered = _Probe.model_json_schema()["properties"]["k"]
+        assert rendered["const"] == "beacon"
+        declared = {(None, "kind"): kinds}
+        assert _schema_texts({"properties": {"kind": {"const": "beacon"}}}, declared) == ["beacon"]
+        assert _schema_texts({"properties": {"kind": {"const": "mutex"}}}, declared) == []
+        # A member of a vocabulary as the const of an unrelated field is read.
+        assert _schema_texts({"properties": {"k": {"const": "mutex"}}}, declared) == ["mutex"]
+        nested = {
+            "$defs": {"Other": {"properties": {"kind": {"const": "mutex"}}}},
+            "title": "Root",
+        }
+        assert _schema_texts(nested, {("HostIdentifier", "kind"): kinds}) == ["mutex", "Root"]
+
+    def test_the_declared_vocabularies_are_the_two_host_identifier_fields_and_the_data_s(
+        self,
+    ) -> None:
+        assert _vocabulary_faults(SECTION_SCHEMAS.values()) == []
+        assert set(DECLARED_VOCABULARIES) == {(HostIdentifier, "kind"), (HostIdentifier, "use")}
+        assert DECLARED_VOCABULARIES[(HostIdentifier, "kind")] == tuple(host_kinds())
+
+    def test_the_key_terms_in_the_vocabularies_are_the_ruled_ones(self) -> None:
+        assert _vocabulary_term_faults() == []
+
+    def test_a_member_carrying_another_key_term_needs_a_ruling(self, tmp_path: Path) -> None:
+        document = json.loads(resolve_data(_KINDS_DATA).read_text(encoding="utf-8"))
+        document["kinds"]["beacon config"] = {"table_kind": "", "label": "", "shape": ""}
+        changed = tmp_path / "kinds.json"
+        changed.write_text(json.dumps(document), encoding="utf-8")
+
+        assert _vocabulary_term_faults(_data_vocabularies(str(changed))) == [
+            "the vocabulary member carrying 'beacon' needs a ruling: it is a term the key scores"
+        ]
+
+    def test_a_second_enum_field_fails_and_is_never_taken_out(self) -> None:
+        from pydantic import BaseModel, Field
+
+        class _Inner(BaseModel):
+            z: str = Field(
+                default="", json_schema_extra=lambda s: s.update(enum=["Beacon", "mutex"])
+            )
+
+        class _Outer(BaseModel):
+            rows: list[HostIdentifier] = []
+            items: list[_Inner] = []
+
+        assert _vocabulary_faults([_Outer]) == [
+            "_Inner.z declares an enum that is no declared vocabulary"
+        ]
+        assert "Beacon" in _schema_texts(_Outer.model_json_schema(), _declared_vocabulary(_Outer))
+        assert all("Beacon" not in listing for listing in _vocabulary_listings(_Outer))
+
+    def test_a_member_the_data_does_not_declare_fails(self) -> None:
+        from pydantic import BaseModel, Field
+
+        kinds = DECLARED_VOCABULARIES[(HostIdentifier, "kind")]
+
+        class _Probe(BaseModel):
+            kind: str = Field(json_schema_extra=lambda s: s.update(enum=[*kinds, "beacon"]))
+
+        declared = {(_Probe, "kind"): kinds}
+        assert _vocabulary_faults([_Probe], declared) == [
+            f"_Probe.kind lists {(*kinds, 'beacon')}, the data declares {kinds}"
+        ]
+        # The data's listing is what is taken out, so the field's own is read whole.
+        contract = vocabulary_listing(_Probe.model_fields["kind"])
+        assert {"beacon", "mutex"} <= set(self._scan_with(contract, _Probe, declared))
+        assert "beacon" in _schema_texts(
+            _Probe.model_json_schema(), _declared_vocabulary(_Probe, declared)
+        )
+
+    @staticmethod
+    def _scan_with(text: str, schema: Any, declared: Any) -> list[str]:
+        read = _without_vocabulary_listings(text, _vocabulary_listings(schema, declared))
+        return [term for term in KEY_TERMS if term in read.lower()]
 
 
 def test_every_section_the_composer_asks_for_has_its_contract_read() -> None:

@@ -75,11 +75,14 @@ from tests.unit.reporting.test_an_entry_without_a_source_is_read_as_before impor
 # under its own label (T-662): that one line of the run summary appendix is the
 # only change in run5, run7 and local8's Markdown and HTML; run4 carries no debate
 # figure and the STIX did not change.
+# Re-pinned when the report model's host identifier table came to print the
+# publish rule's answer for each row in a Published column, its footer saying
+# so: that table's rows and footer are the only change in each run.
 STORED_RENDERS = {
-    "run7": ("acd9cde4906e7107", "3644bf10925af995", "6f5f4f1b2ed8ea58"),
-    "run5": ("f532e60c002e4f97", "6f44369c58fbe604", "b7c19ebb4cb31921"),
-    "run4": ("581eb11ec3924a68", "0d81125d321278da", "07a486002a8891ac"),
-    "local8": ("26d87aa32dcde250", "a21fa1436450c755", "86c2fdd68be6dde0"),
+    "run7": ("121d6fb2f21e54cd", "687dab665c364f96", "6f5f4f1b2ed8ea58"),
+    "run5": ("ff615676c496f1eb", "d88ef6eb57f5fa9a", "b7c19ebb4cb31921"),
+    "run4": ("95cc2744a52ef0af", "4669cfe8d40d01f1", "07a486002a8891ac"),
+    "local8": ("e1d6ec0345e42050", "9ccf9fffe48bf0bb", "86c2fdd68be6dde0"),
 }
 
 _UUID = re.compile(r"--[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}")

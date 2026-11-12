@@ -109,7 +109,8 @@ class TestTheStateBesideACell:
         ):
             text = MarkdownRenderer().render(report)
 
-        for start, cells in (("| Fallback", 4), ("| Address", 4), ("| relay", 6)):
+        # The identifier table's last cell is the publish rule's answer for the row.
+        for start, cells in (("| Fallback", 4), ("| Address", 5), ("| relay", 6)):
             line = next(line for line in text.splitlines() if line.startswith(start))
             state = line.split("(no:", 1)[1]
             _clean(state)
