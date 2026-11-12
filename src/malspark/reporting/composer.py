@@ -33,6 +33,7 @@ from langchain_core.callbacks import BaseCallbackHandler
 from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import BaseMessage, HumanMessage, SystemMessage
 from pydantic import BaseModel, ConfigDict, Field
+from pydantic.json_schema import SkipJsonSchema
 
 from malspark.agents.base_agent import retry_on_connection_error
 from malspark.agents.ledger_reads import LedgerReads, StructuredReads, reading_model
@@ -576,7 +577,10 @@ def _expected_object(schema: type[BaseModel], depth: int = 0) -> str:
     """
     fields = getattr(schema, "model_fields", {}) or {}
     body = ", ".join(
-        f'"{name}": {_field_placeholder(field.annotation, depth)}' for name, field in fields.items()
+        f'"{name}": {_field_placeholder(field.annotation, depth)}'
+        for name, field in fields.items()
+        # A field the schema hides from the model is code's (``SkipJsonSchema``).
+        if not any(type(mark) is SkipJsonSchema for mark in field.metadata)
     )
     return "{" + body + "}"
 

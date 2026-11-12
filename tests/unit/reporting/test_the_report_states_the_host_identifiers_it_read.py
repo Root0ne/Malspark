@@ -59,7 +59,11 @@ class TestTheContract:
     def test_the_section_asks_for_what_it_needs_and_nothing_more(self) -> None:
         contract = section_contract("host_identifiers", _HostIdentifiersOut)
 
-        assert '"identifiers": [{"kind": "...", "value": "...", "purpose": "..."' in contract
+        # The field code writes is never asked for.
+        assert '"identifiers": [{"kind": "...", "value": "...", "purpose": "...", "use": "..."' in (
+            contract
+        )
+        assert "held_in" not in contract
         assert "For example" in contract
 
     def test_the_example_is_valid_against_its_schema(self) -> None:

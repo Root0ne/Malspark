@@ -1013,15 +1013,38 @@ def _build_consolidated_iocs(report: MalwareReport) -> list[ConsolidatedIOC]:
 
     # The host values the analysis states (the report model's identifier
     # table) that the one rule publishes, each under source ``analysis`` with
-    # the cited entries code found it whole in: after every tool row, so a value a tool
-    # recorded keeps the tool's row, and once per value. A row the rule
-    # refuses is printed with its reason in that table, not here
+    # the cited entries code found it whole in, once per (kind, value): after
+    # every tool row, so a value a tool's row publishes keeps that row; a tool's
+    # row of the same kind and value that the rule refused becomes the
+    # analysis's row, so every surface reads one answer for it. A row the rule
+    # refuses is printed with its reason in the identifier table, not here
     # (``stated_host_values.identifier_answers``).
-    held = {row.value.strip().lower() for row in rows}
+    from malspark.reporting.ledger_projection import value_key
+
+    by_key = {(row.kind or "", value_key(row.kind or "", row.value)): row for row in rows}
+    by_type = {(row.type, row.value.strip().lower()): row for row in rows}
     for stated, answer in identifier_answers(report):
-        if not publishes(answer) or stated.value.lower() in held:
+        if not publishes(answer):
             continue
-        held.add(stated.value.lower())
+        slot = (stated.table_kind, value_key(stated.table_kind, stated.value))
+        held_row = by_key.get(slot)
+        if held_row is not None and publishes(held_row.published):
+            continue
+        if held_row is None:
+            # A refused row printed under the same type and value (a strings
+            # sweep's named pipe is a ``path`` row) is the same row too.
+            held_row = by_type.get((stated.label, stated.value.lower()))
+            if held_row is not None and publishes(held_row.published):
+                continue
+        if held_row is not None:
+            held_row.kind = stated.table_kind
+            held_row.source = ANALYSIS_SOURCE
+            held_row.published = answer
+            held_row.context = held_row.description = "stated by the analysis"
+            held_row.evidence_ids = _in_the_index(stated.held_in or (), index)
+            by_key[slot] = held_row
+            continue
+        before = len(rows)
         _add(
             stated.label,
             stated.table_kind,
@@ -1031,6 +1054,8 @@ def _build_consolidated_iocs(report: MalwareReport) -> list[ConsolidatedIOC]:
             published=answer,
             evidence=[*(stated.held_in or ())],
         )
+        if len(rows) > before:
+            by_key[slot] = rows[-1]
 
     # What the analysts listed that no tool recorded: each value its own row,
     # in the analyst's name and with the rule's refusal, after every tool row

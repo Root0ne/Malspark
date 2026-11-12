@@ -409,7 +409,7 @@ def hunting_query(report: MalwareReport) -> list[str] | None:
 
     if not getattr(report, "detection_signatures", None):
         return None
-    rows = _published_rows(report)
+    rows = _matchable_rows(report)
     agents: list[str] = []
     paths: list[str] = []
     hosts: list[str] = []
@@ -487,6 +487,18 @@ def _published_rows(report: MalwareReport) -> list[Any]:
     from malspark.reporting.renderers.stix_renderer import publishes
 
     return [row for row in rows if publishes(getattr(row, "published", ""))]
+
+
+def _matchable_rows(report: MalwareReport) -> list[Any]:
+    """The published rows a draft may match on: every one but a row listed only.
+
+    A generic name the analysis states is published with a note that it may
+    match ordinary software (``stated_host_values.listed_only``): it is never a
+    YARA string, a Sigma selection, a Suricata content or a hunting value.
+    """
+    from malspark.reporting.stated_host_values import listed_only
+
+    return [row for row in _published_rows(report) if not listed_only(row.published)]
 
 
 def _why_published(row: Any) -> str:
@@ -639,7 +651,7 @@ def _build_yara(report: MalwareReport, sample: OwnSample | None = None) -> Detec
     reasons: dict[str, str] = {}  # slot -> why the value is published
     sources: list[str] = [f"sha256:{sha256}"]
 
-    eligible = [row for row in _published_rows(report) if _yara_string_eligible(row)]
+    eligible = [row for row in _matchable_rows(report) if _yara_string_eligible(row)]
     for row in eligible[:_MAX_YARA_STRINGS]:
         slot = f"$s{len(strings)}"
         strings.append((slot, row.value))
@@ -1124,6 +1136,20 @@ def _sigma_rule(
     seed = sha256 + (f":{suffix}" if suffix else "")
     rule_id = str(uuid.UUID(bytes=hashlib.sha256(seed.encode()).digest()[:16]))
 
+    # Every value is matched as the literal it is: Sigma's wildcards escaped.
+    selections = {
+        name: {
+            field_name: (
+                [sigma_literal(item) for item in values]
+                if isinstance(values, list)
+                else sigma_literal(values)
+                if isinstance(values, str)
+                else values
+            )
+            for field_name, values in selection.items()
+        }
+        for name, selection in selections.items()
+    }
     selection_keys = [key for key in selections if key.startswith("selection_")]
     condition = "1 of selection_*" if len(selection_keys) > 1 else selection_keys[0]
 
@@ -1159,6 +1185,24 @@ def _sigma_rule(
         source_evidence=sources,
         compile_error=compile_error,
     )
+
+
+def sigma_literal(value: str) -> str:
+    """``value`` as a Sigma value that matches it literally.
+
+    Sigma reads ``*`` and ``?`` as wildcards and a backslash as escaping the
+    character after it when that is a wildcard or a backslash; each is
+    written escaped, and every other character as it is. One pass.
+    """
+    out: list[str] = []
+    for at, char in enumerate(value):
+        if char in "*?":
+            out.append("\\" + char)
+        elif char == "\\" and at + 1 < len(value) and value[at + 1] in "*?\\":
+            out.append("\\\\")
+        else:
+            out.append(char)
+    return "".join(out)
 
 
 @dataclass(frozen=True)
@@ -1213,10 +1257,10 @@ def _stated_rows(report: MalwareReport) -> list[Any]:
 
 
 def _generic(row: Any) -> bool:
-    """Whether a published row is a generic name: its answer carries the note."""
-    from malspark.reporting.stated_host_values import GENERIC_NOTE
+    """Whether a published row is a generic name, listed only (``listed_only``)."""
+    from malspark.reporting.stated_host_values import listed_only
 
-    return GENERIC_NOTE in str(row.published or "")
+    return listed_only(row.published)
 
 
 def _stated_value(kind: str, value: str) -> str:
@@ -1619,7 +1663,7 @@ def _build_suricata(report: MalwareReport) -> DetectionRule | None:
     """
     published = [
         row
-        for row in _published_rows(report)
+        for row in _matchable_rows(report)
         if row.kind in _DRAFT_NETWORK_KINDS or row.kind == _USER_AGENT_KIND
     ]
     why = {(row.kind, row.value): _why_published(row) for row in published}

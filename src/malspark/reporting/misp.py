@@ -26,6 +26,7 @@ from typing import Any
 
 from malspark.core.previous_name import PREVIOUS_NAME
 from malspark.reporting.renderers.stix_renderer import digest_label, publishes
+from malspark.reporting.stated_host_values import listed_only
 from malspark.schemas.stix_models import tlp_name
 
 # The namespace each attribute's uuid is derived in, with the report's own id
@@ -236,7 +237,13 @@ def build_misp_attributes(
             )
             if part
         )
-        to_ids = publishes(answer) and kind not in _SIMILARITY_TYPES and kind != _UNTYPED
+        # A generic name is listed, never matched on alone (``listed_only``).
+        to_ids = (
+            publishes(answer)
+            and kind not in _SIMILARITY_TYPES
+            and kind != _UNTYPED
+            and not listed_only(answer)
+        )
         out.append(_attribute(kind, category, value, to_ids, comment))
 
     techniques: set[str] = set()
