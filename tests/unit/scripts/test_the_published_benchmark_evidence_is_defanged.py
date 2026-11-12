@@ -469,3 +469,32 @@ def _strings(value: object) -> list[str]:
     if isinstance(value, list):
         return [s for v in value for s in _strings(v)]
     return []
+
+
+# --- The environment block's model identifiers ------------------------------
+
+
+def test_the_environment_block_s_model_strings_are_published_as_recorded() -> None:
+    # Model names that look like a host name or a run tag: the rules for the
+    # run's text would rewrite them, and a reader stating the configuration
+    # would then quote a model that does not exist.
+    agents = {
+        "static": {
+            "requests": [{"position": 0, "provider": "openai", "model": "x-ai/grok-4.fast"}],
+            "response_models": {"hk14-model": 1, "deepseek.chat": 2},
+            "response_models_reduced": ["run7-model.gguf"],
+        }
+    }
+    copy = Sanitiser({JOB: "<job>"}).json(
+        {"run_summary": {"environment": {"agents": agents}}, "note": "see deepseek.chat"}
+    )
+    assert copy["run_summary"]["environment"]["agents"] == agents
+    # The same strings elsewhere are still the run's text.
+    assert copy["note"] == "see deepseek[.]chat"
+
+
+def test_only_the_model_paths_are_kept() -> None:
+    copy = Sanitiser({JOB: "<job>"}).json(
+        {"environment": {"agents": {"static": {"requests": [{"provider": "hk14"}]}}}}
+    )
+    assert copy["environment"]["agents"]["static"]["requests"] == [{"provider": "<run>"}]

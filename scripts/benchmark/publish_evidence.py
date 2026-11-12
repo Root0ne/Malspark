@@ -35,7 +35,12 @@ the published copies from it, and does nothing else to them:
   ``<strong>TLP:AMBER</strong>``) and every ``tlp`` field of a JSON copy read
   CLEAR; a mention of TLP in prose, in code or in decoded evidence bytes stays
   as written;
-- in an HTML copy each placeholder is written escaped (``&lt;job&gt;``).
+- in an HTML copy each placeholder is written escaped (``&lt;job&gt;``);
+- in a JSON copy, the strings at the key paths of ``KEPT_AS_RECORDED`` (the
+  model identifiers a run summary's ``environment`` block records) are
+  published as the run recorded them: they name models, and a rule meant for
+  the run's text would rewrite a model name that looks like a host or a run
+  tag. The record keeps a path-shaped identifier by its base name already.
 
 Defanging changes bytes, so a published ledger entry no longer matches the
 digest it carries; the docs say so and point at reproducing the run instead.
@@ -93,6 +98,15 @@ RULE_KEYWORDS = frozenset({"http.host"})
 INDICATOR_KINDS = ("ip", "domain", "url")
 NETWORK_RECORD_KINDS = ("sandbox_network", "pcap")
 NETWORK_KEYS = frozenset({"dst", "src", "ip", "domain", "host", "hostname", "query", "url"})
+
+# The key paths of a JSON copy whose strings are published as recorded, at any
+# depth: ``*`` is any key, ``[]`` any item of a list. A key at a path is kept
+# with its value (the model identifiers that key a count).
+KEPT_AS_RECORDED: tuple[tuple[str, ...], ...] = (
+    ("environment", "agents", "*", "requests", "[]", "model"),
+    ("environment", "agents", "*", "response_models", "*"),
+    ("environment", "agents", "*", "response_models_reduced", "[]"),
+)
 
 _UUID = r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}"
 # A path starts a word, or follows a newline escape of text quoted twice.
@@ -264,27 +278,46 @@ class Sanitiser:
         host = match.group(1)
         return host.replace(".", "[.]") if _is_host(host) else host
 
-    def json(self, value: Any) -> Any:
+    def json(self, value: Any, path: tuple[str, ...] = ()) -> Any:
         """``value`` with every key and string sanitised; a ledger entry's row id is dropped.
 
-        A ``tlp`` field that holds a marking level reads ``CLEAR``.
+        A ``tlp`` field that holds a marking level reads ``CLEAR``. ``path`` is
+        the keys leading to ``value``; a key or string at a path of
+        :data:`KEPT_AS_RECORDED` is kept as it is.
         """
+        if _kept(path) and isinstance(value, str | int | float):
+            return value
         if isinstance(value, str):
             return self.text(value)
         if isinstance(value, list):
-            return [self.json(item) for item in value]
+            return [self.json(item, (*path, "[]")) for item in value]
         if isinstance(value, dict):
             if "entry_id" in value and re.fullmatch(_UUID, str(value.get("id", ""))):
                 value = {k: v for k, v in value.items() if k != "id"}
-            return {self.text(k): self._tlp_field(k, v) for k, v in value.items()}
+            return {
+                (k if _kept((*path, k)) else self.text(k)): self._tlp_field(k, v, (*path, k))
+                for k, v in value.items()
+            }
         return value
 
-    def _tlp_field(self, key: str, value: Any) -> Any:
+    def _tlp_field(self, key: str, value: Any, path: tuple[str, ...] = ()) -> Any:
         if key.lower() == "tlp" and isinstance(value, str) and value.upper() in TLP_LEVELS:
             if value.upper() != PUBLIC_TLP:
                 self.counts[("tlp", value)] += 1
             return PUBLIC_TLP.lower() if value.islower() else PUBLIC_TLP
-        return self.json(value)
+        return self.json(value, path)
+
+
+def _kept(path: tuple[str, ...]) -> bool:
+    """Whether ``path`` ends in one of :data:`KEPT_AS_RECORDED`."""
+    for pattern in KEPT_AS_RECORDED:
+        tail = path[-len(pattern) :]
+        if len(tail) == len(pattern) and all(
+            want == got or (want == "*" and got != "[]")
+            for want, got in zip(pattern, tail, strict=True)
+        ):
+            return True
+    return False
 
 
 def server_ids(run: Path) -> dict[str, str]:
