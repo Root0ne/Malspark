@@ -325,7 +325,9 @@ def call_state(entry: Any) -> str:
     function an earlier call read) names that entry in ``repeated_of`` and is
     :data:`MADE`: it states ``ran`` true. An entry stored before ``ran``
     existed is read by ``repeated_of``: served, unless it also carries a
-    measured duration, which only such a held run stored then.
+    measured duration and names where an outside tool ran (its ``server`` or
+    ``source``), which only such a held run stored then; the platform's own
+    read of an earlier entry names neither and stays served.
     :data:`NOT_RUN` is a failed entry that records a step the platform never
     ran (``pipeline.triage_pack.was_not_made``): no request went out for it.
     Every other entry is :data:`MADE`. Each entry is one call the model or the
@@ -339,9 +341,9 @@ def call_state(entry: Any) -> str:
     if ran is False:
         return SERVED
     if ran is None and str(first or "").strip():
-        # Stored before ``ran``: a held run kept its duration, every answer
-        # without a run stored none.
-        return MADE if _measured(entry) else SERVED
+        # Stored before ``ran``: a held run kept its duration and its outside
+        # tool's place; no answer without a run stored both.
+        return MADE if _measured(entry) and _outside(entry) else SERVED
     if ran is not True and ok is False:
         from malspark.pipeline.triage_pack import was_not_made
 
@@ -359,6 +361,13 @@ def _measured(entry: Any) -> bool:
         return int(value or 0) > 0
     except (TypeError, ValueError):
         return False
+
+
+def _outside(entry: Any) -> bool:
+    """Whether the entry names where an outside tool ran: a server or a source."""
+    if isinstance(entry, Mapping):
+        return bool(entry.get("server") or entry.get("source"))
+    return bool(getattr(entry, "server", None) or getattr(entry, "source", None))
 
 
 def call_was_made(entry: Any) -> bool:

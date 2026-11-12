@@ -476,3 +476,13 @@ class TestAnOldHeldDecompile:
         row = latency["reverser"]
         assert (row["calls"], row["served"]) == (2, 1)
         assert row["total_ms"] == first.duration_ms + 1500
+
+    def test_an_old_entry_reads_made_only_where_an_outside_tool_ran(self) -> None:
+        read_again = {"id": "ev_0002", "tool": "read_again", "repeated_of": "ev_0001"}
+        held = {"id": "ev_0003", "tool": "d", "repeated_of": "ev_0001", "server": "ghidra"}
+        served = {"id": "ev_0004", "tool": "d", "repeated_of": "ev_0001", "server": "ghidra"}
+
+        assert call_state({**read_again, "duration_ms": 5}) == SERVED
+        assert call_state({**held, "duration_ms": 1500}) == MADE
+        assert call_state({**held, "source": "provider:ghidra", "duration_ms": 1500}) == MADE
+        assert call_state({**served, "duration_ms": 0}) == SERVED
