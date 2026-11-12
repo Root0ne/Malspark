@@ -42,6 +42,7 @@ from malspark.providers.sandbox.triage import (
     stop_if_cancelled,
     wait_after_poll_failure,
 )
+from malspark.providers.submission import mask_submitted, reraise_masked
 
 if TYPE_CHECKING:
     from collections.abc import Iterable
@@ -216,9 +217,13 @@ class RestSandboxProvider(SandboxProvider):
             redacted = redacted.replace(header_value, "***").replace(token, "***")
         return redacted
 
-    def _raise_for_status(self, response: httpx.Response, operation: str) -> None:
+    def _raise_for_status(
+        self, response: httpx.Response, operation: str, arguments: str = ""
+    ) -> None:
         if response.status_code >= 400:
-            body = self._redact(response.text[:200])
+            # The submitted arguments are withheld from the whole body first, so
+            # no part of them survives as the start of a cut one.
+            body = self._redact(mask_submitted(response.text, arguments)[:200])
             raise ProviderError(f"Sandbox {operation} failed (HTTP {response.status_code}): {body}")
 
     def _select_one(self, expression: str, payload: Any, what: str) -> str:
@@ -279,11 +284,15 @@ class RestSandboxProvider(SandboxProvider):
         field_name = self._cfg.submit.launch_arguments_field
         if options is not None and options.launch_arguments and field_name:
             files[field_name] = (None, options.launch_arguments)
-        response = self._get_http().request(
-            self._cfg.submit.method, self._cfg.submit.path, files=files
-        )
-        self._raise_for_status(response, "submit")
-        return self._select_one(self._cfg.submit.task_id_path, response.json(), "task id")
+        arguments = options.launch_arguments if options is not None else ""
+        try:
+            response = self._get_http().request(
+                self._cfg.submit.method, self._cfg.submit.path, files=files
+            )
+            self._raise_for_status(response, "submit", arguments)
+            return self._select_one(self._cfg.submit.task_id_path, response.json(), "task id")
+        except Exception as exc:  # noqa: BLE001 — re-raised, masked where it holds the arguments
+            reraise_masked(exc, options)
 
     def wait_for_completion(
         self,

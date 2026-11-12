@@ -444,6 +444,7 @@ class MalsparkApp:
             LaunchArgumentsAnswer,
             launch_record,
             unmade_record,
+            unobserved_record,
         )
 
         arguments = self.launch_arguments
@@ -462,14 +463,31 @@ class MalsparkApp:
                 "", arguments, f"no sandbox submission was made: {why}"
             )
         elif record.get("honoured") is True:
-            note = "the submission produced no sandbox report, so nothing was observed with them"
-            if failure:
-                note += f" ({failure})"
-            self.launch_record = launch_record(
-                str(record.get("provider") or ""),
-                str(record.get("arguments") or ""),
-                LaunchArgumentsAnswer(honoured=False, note=note),
-            )
+            # Sent, and nothing came back to observe them in: worded apart from a
+            # request that was refused, in the record, the limitation and the
+            # upload row alike.
+            uploads = self.container.sample_uploads
+            row = uploads[-1] if uploads else {}
+            if row and not row.get("submitted"):
+                note = "the submission did not complete, so they may not have been sent"
+                self.launch_record = launch_record(
+                    str(record.get("provider") or ""),
+                    str(record.get("arguments") or ""),
+                    LaunchArgumentsAnswer(
+                        honoured=False, note=note + (f" ({failure})" if failure else "")
+                    ),
+                )
+            else:
+                self.launch_record = unobserved_record(record, failure or "")
+            if row:
+                from malspark.analysis.disclosure import upload_record
+
+                uploads[-1] = upload_record(
+                    str(row.get("provider") or ""),
+                    submitted=bool(row.get("submitted")),
+                    host=str(row.get("host") or ""),
+                    launch=self.launch_record,
+                )
 
     async def _submit_the_sample(self, sample_path: str | None) -> dict[str, Any] | None:
         """The submission itself, for :meth:`_submit_to_sandbox`.
@@ -704,8 +722,11 @@ class MalsparkApp:
             self._sandbox_failed(ended)
             return None
         except Exception as exc:
-            logger.error("Sandbox submission failed: %s", exc)
-            self._sandbox_failed(f"{stage}: {str(exc) or type(exc).__name__}")
+            from malspark.providers.submission import mask_submitted, submitted_values
+
+            said = mask_submitted(str(exc), *submitted_values(self.launch_record))
+            logger.error("Sandbox submission failed: %s", said)
+            self._sandbox_failed(f"{stage}: {said or type(exc).__name__}")
             return None
 
     def _fetch_capture(
@@ -811,8 +832,12 @@ class MalsparkApp:
         (``pipeline.nodes.sandbox_degradation_reason``).
         """
         from malspark.core.settings_overrides import redact_url
+        from malspark.providers.submission import mask_submitted, submitted_values
         from malspark.utils.marked_cut import marked_cut
 
+        # A sandbox that echoes the form it was sent must not carry the job's
+        # launch arguments (or the launcher text) into the failure reason.
+        reason = mask_submitted(str(reason), *submitted_values(self.launch_record))
         one_line = " ".join(redact_url(str(reason)).splitlines())
         self.container.sandbox_failure = marked_cut(one_line, SANDBOX_FAILURE_CHARS)
 

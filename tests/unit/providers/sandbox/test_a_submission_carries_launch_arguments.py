@@ -360,13 +360,27 @@ class TestCapeKnowsWhichPackagesReadThem:
         answer = provider.launch_arguments_answer(ARGS, sample_path=_pe(tmp_path))
         assert answer == LaunchArgumentsAnswer(honoured=True, via=CAPE_VIA)
 
-    def test_a_package_that_documents_none_is_not_honoured_with_that_reason(
-        self, tmp_path: Path
+    def test_a_package_the_documentation_is_silent_on_still_gets_them(self, tmp_path: Path) -> None:
+        captured: list[httpx.Request] = []
+        provider = _cape(tmp_path, captured, package_by_format={"*": "pdf"})
+        answer = provider.launch_arguments_answer(ARGS, sample_path=_pe(tmp_path))
+        assert answer == LaunchArgumentsAnswer(
+            honoured=True,
+            note="whether the package 'pdf' reads it is not documented",
+            via=CAPE_VIA,
+        )
+        provider.submit(_pe(tmp_path), options=WITH)
+        assert f"arguments={ARGS}" in captured[0].content.decode("latin-1")
+
+    def test_a_package_the_documentation_states_takes_none_is_not_honoured(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
+        from malspark.providers.sandbox import cape2
+
+        monkeypatch.setattr(cape2, "_NO_ARGUMENT_PACKAGES", frozenset({"pdf"}))
         provider = _cape(tmp_path, [], package_by_format={"*": "pdf"})
         answer = provider.launch_arguments_answer(ARGS, sample_path=_pe(tmp_path))
-        assert answer.honoured is False
-        assert "the CAPE package 'pdf'" in answer.note and "documents no arguments" in answer.note
+        assert answer.honoured is False and "documents no arguments" in answer.note
 
     def test_no_package_selected_leaves_it_to_cape(self, tmp_path: Path) -> None:
         provider = _cape(tmp_path, [])
@@ -411,18 +425,26 @@ class TestTheValue:
             (["-x"], "must be text"),
             ("   ", "must hold some text"),
             ("x" * (LAUNCH_ARGUMENTS_MAX_CHARS + 1), "must be at most 1024 characters (got 1025)"),
-            ("-a\n-b", CONTROL),
-            ("-a\x00", CONTROL),
+            ("-a\n-b", CONTROL + ": the first is U+000A (control character) at position 3"),
+            ("-a\x00", CONTROL + ": the first is U+0000 (control character) at position 3"),
         ],
     )
     def test_a_value_that_is_not_one_command_line_is_refused(self, value, problem) -> None:
         assert launch_arguments_problem(value) == problem
 
+    def test_the_offending_character_is_named_inside_a_long_value(self) -> None:
+        value = "x" * 700 + "\u200b" + "y" * 100
+        assert launch_arguments_problem(value) == (
+            CONTROL + ": the first is U+200B (format character) at position 701"
+        )
+
     @pytest.mark.parametrize(
         "char", ["\u0085", "\u2028", "\u2029", "\u202e", "\u200b", "\x7f", "\t"]
     )
     def test_unicode_controls_formats_and_separators_are_refused(self, char: str) -> None:
-        assert launch_arguments_problem(f"-a{char}-b") == CONTROL
+        problem = launch_arguments_problem(f"-a{char}-b")
+        assert problem is not None and problem.startswith(CONTROL)
+        assert f"U+{ord(char):04X}" in problem and "at position 3" in problem
 
     @pytest.mark.parametrize(
         "value", [ARGS, "x" * LAUNCH_ARGUMENTS_MAX_CHARS, "DllRegisterServer", "/S /D=C:\\x"]

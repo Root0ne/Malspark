@@ -409,10 +409,24 @@ class TestEveryPathRecordsTheRequest:
         app = _app(_Failing(how))
         assert _asked(app, str(sample)) is None
         reason = _not_honoured(app)
-        assert "the submission produced no sandbox report" in reason
-        # The upload record is the provider's answer; the run's record is what was observed.
         (upload,) = app.container.sample_uploads
-        assert upload["launch_arguments_honoured"] is True
+        if how == "raises":
+            # The submission did not complete: they may not have been sent.
+            assert reason.startswith("launch arguments requested, not honoured by lab-box: ")
+            assert "may not have been sent" in reason
+            assert upload["launch_arguments_honoured"] is False
+            return
+        # Sent, and nothing came back: worded apart from a refusal, and the upload
+        # row and the limitation read the same.
+        assert reason.startswith(
+            "launch arguments sent to lab-box, but no sandbox report came back"
+        )
+        assert "not honoured" not in reason
+        assert upload["launch_arguments_unobserved"] is True
+        record = disclosure_record({}, uploads=[upload])
+        (line,) = [line for line in disclosure_lines(record) if line.startswith("Sample upload")]
+        assert "were sent with the submission, but no sandbox report came back" in line
+        assert "nothing was observed with them" in line
 
     def test_a_run_that_asked_for_none_records_nothing(self, tmp_path: Path) -> None:
         sample = tmp_path / "s.exe"

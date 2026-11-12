@@ -97,11 +97,13 @@ from malspark.providers.errors import PACKET_CAPTURE, ArtefactFetchFailed, Provi
 from malspark.providers.launcher import (
     BuiltLauncher,
     LauncherRefused,
+    LauncherSupport,
     build_for_submission,
 )
 from malspark.providers.registry import register_sandbox_provider
 from malspark.providers.sandbox.limits import read_capped, stream_to_file_capped
 from malspark.providers.sandbox.readers import required_reader
+from malspark.providers.submission import mask_submitted, reraise_masked
 
 # The registered report reader (``providers.sandbox.readers``) this provider's
 # reports are read by.
@@ -677,6 +679,13 @@ class TriageSandboxProvider(SandboxProvider):
             provides_tools=False,
             report_format=_READER,
             degrade_on_failure=True,
+            # No command-line field in the submission API, but a script picked
+            # from an archive runs: arguments go through a generated launcher.
+            launcher=(
+                LauncherSupport(script_types=("ps1",), picked_by=_PICKED_BY)
+                if self._cfg.launcher_for_arguments
+                else None
+            ),
         )
 
     def _require_token(self) -> str:
@@ -700,7 +709,12 @@ class TriageSandboxProvider(SandboxProvider):
         return self._http
 
     @staticmethod
-    def _raise_for_status(response: httpx.Response, operation: str, sent: str = "") -> None:
+    def _raise_for_status(
+        response: httpx.Response,
+        operation: str,
+        sent: str = "",
+        mask: Callable[[str], str] | None = None,
+    ) -> None:
         """A refusal as Triage worded it: its ``error`` and ``message`` fields, else its body.
 
         ``sent`` names what this platform chose to send, where an operator's
@@ -708,7 +722,8 @@ class TriageSandboxProvider(SandboxProvider):
         """
         if response.status_code < 400:
             return
-        said = response.text[:200]
+        text = mask(response.text) if mask else response.text
+        said = text[:200]
         try:
             body = response.json()
         except ValueError:
@@ -716,7 +731,8 @@ class TriageSandboxProvider(SandboxProvider):
         if isinstance(body, dict):
             words = [str(body[key]) for key in ("error", "message") if body.get(key)]
             if words:
-                said = ": ".join(words)[:400]
+                joined = ": ".join(words)
+                said = (mask(joined) if mask else joined)[:400]
         raise ProviderError(
             f"Triage {operation} failed (HTTP {response.status_code}): {said}"
             + (f" (sent {sent})" if sent else "")
@@ -871,6 +887,29 @@ class TriageSandboxProvider(SandboxProvider):
         path = Path(sample_path)
         built = self._launcher_for(path, options)
         try:
+            return self._submit_built(path, headers, built, options)
+        except Exception as exc:  # noqa: BLE001 — re-raised, masked where it holds the arguments
+            reraise_masked(exc, options, str(built.record["launcher_text"]) if built else "")
+
+    @staticmethod
+    def _masking(
+        options: SubmissionOptions | None, built: BuiltLauncher | None
+    ) -> Callable[[str], str] | None:
+        """What withholds the submitted arguments and launcher text from an answer's text."""
+        arguments = options.launch_arguments if options is not None else ""
+        if not arguments:
+            return None
+        text = str(built.record["launcher_text"]) if built else ""
+        return lambda said: mask_submitted(said, arguments, text)
+
+    def _submit_built(
+        self,
+        path: Path,
+        headers: dict[str, str],
+        built: BuiltLauncher | None,
+        options: SubmissionOptions | None,
+    ) -> str:
+        try:
             response = self._post_sample(path, headers, built)
         except httpx.TransportError as exc:
             # The upload can have been accepted in full and only the response
@@ -895,7 +934,9 @@ class TriageSandboxProvider(SandboxProvider):
             # Anything else the retry raises is left exactly as it is: only a
             # dropped transport is this path's business, and rewriting an
             # unrelated failure into "Triage submit failed" would hide it.
-        self._raise_for_status(response, "submit", self._submit_settings_said())
+        self._raise_for_status(
+            response, "submit", self._submit_settings_said(), mask=self._masking(options, built)
+        )
         data = response.json()
         sample_id = data.get("id")
         if not sample_id:

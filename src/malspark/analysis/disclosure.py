@@ -740,6 +740,8 @@ def upload_record(
             record["launch_arguments_note"] = str(launch["note"])
         if launch.get("via"):
             record["launch_arguments_via"] = str(launch["via"])
+        if launch.get("sent") is True:
+            record["launch_arguments_unobserved"] = True
         if isinstance(launch.get("launcher"), Mapping):
             record["launch_launcher"] = dict(launch["launcher"])
     return record
@@ -752,6 +754,7 @@ _LAUNCH_KEYS = (
     "launch_arguments_honoured",
     "launch_arguments_note",
     "launch_arguments_via",
+    "launch_arguments_unobserved",
     "launch_launcher",
 )
 
@@ -1719,6 +1722,13 @@ def _launch_clause(row: Mapping[str, Any], code: Callable[[str], str]) -> str:
     arguments = code(written)
     note = str(row.get("launch_arguments_note") or "")
     via = str(row.get("launch_arguments_via") or "")
+    if row.get("launch_arguments_unobserved"):
+        through = f" through {via}" if via else ""
+        return (
+            f" The job's launch arguments {arguments} were sent with the submission{through}, "
+            "but no sandbox report came back, so nothing was observed with them"
+            + (f" ({note})." if note else ".")
+        )
     if row.get("launch_arguments_honoured"):
         through = f" through {via}" if via else ""
         return f" The job's launch arguments {arguments} were sent with the submission{through}" + (

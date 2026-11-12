@@ -20,6 +20,7 @@ from malspark.core.settings_overrides import redact_url
 from malspark.providers.base import ProviderProbe, SandboxCapabilities, SandboxProvider
 from malspark.providers.registry import register_sandbox_provider
 from malspark.providers.sandbox.readers import required_reader
+from malspark.providers.submission import mask_submitted, reraise_masked
 
 # The registered report reader (``providers.sandbox.readers``) this provider's
 # reports are read by.
@@ -37,8 +38,9 @@ _ARGUMENTS_OPTION = "arguments"
 # ``ollydbg``, ``python``, ``rar``, ``regsvr``, ``service``, ``service_dll``
 # "specify any command line argument to pass to the initial process";
 # ``archive``, ``dll``, ``zip``, ``zip_compound`` "specify arguments to pass to
-# the DLL through commandline"). Every other package documents no such option,
-# so a sample that goes to one is detonated without them. Read 2026-11-13.
+# the DLL through commandline"). This list only says which packages are
+# documented to read the option: a package outside it still gets the arguments,
+# and the record says that whether it reads them is not documented. Read 2026-11-13.
 _ARGUMENT_PACKAGES = frozenset(
     {
         "archive",
@@ -54,6 +56,11 @@ _ARGUMENT_PACKAGES = frozenset(
         "zip_compound",
     }
 )
+
+# Packages the documentation positively states take no ``arguments`` option:
+# none is stated in so many words, so none is listed, and no package is
+# withheld the arguments on the strength of a list that is silent about it.
+_NO_ARGUMENT_PACKAGES: frozenset[str] = frozenset()
 
 if TYPE_CHECKING:
     from malspark.core.config import SandboxCape2Config, Settings
@@ -313,15 +320,19 @@ class CAPE2SandboxProvider(SandboxProvider):
             # (``submit_options["options"]``), which are kept.
             composed, _replaced = self._options_with_arguments(arguments)
             extra_fields.pop(_OPTIONS_FIELD, None)
-        return str(
-            self._get_client().submit(
-                sample_path,
-                package=package or None,
-                platform=cape_platform(platform) or None,
-                options=composed,
-                extra_fields=extra_fields,
+        try:
+            return str(
+                self._get_client().submit(
+                    sample_path,
+                    package=package or None,
+                    platform=cape_platform(platform) or None,
+                    options=composed,
+                    extra_fields=extra_fields,
+                    mask=(lambda text: mask_submitted(text, arguments)) if arguments else None,
+                )
             )
-        )
+        except Exception as exc:  # noqa: BLE001 — re-raised, masked where it holds the arguments
+            reraise_masked(exc, options)
 
     def _options_with_arguments(self, arguments: str) -> tuple[str, str]:
         """CAPE's option string carrying ``arguments``, and the deployment's arguments it replaced.
@@ -350,10 +361,12 @@ class CAPE2SandboxProvider(SandboxProvider):
     ) -> LaunchArgumentsAnswer:
         """Honoured as CAPE's ``arguments`` option, unless the value cannot be carried or read.
 
-        Not honoured where the package this provider selects for the sample's
-        format is one CAPE documents no ``arguments`` option for
-        (:data:`_ARGUMENT_PACKAGES`); a sample whose format selects no package
-        is left to CAPE, which is not known to ignore them.
+        A package documented to read the option (:data:`_ARGUMENT_PACKAGES`)
+        is honoured as it is; any other selected package still gets them, and
+        the note says whether it reads them is not documented. Not honoured
+        only for a package the documentation positively states takes no such
+        option (:data:`_NO_ARGUMENT_PACKAGES`). A sample whose format selects
+        no package is left to CAPE.
 
         CAPE splits its option string at every comma before it reads a value
         (``key=value,key=value``), so a comma inside the arguments would cut
@@ -372,12 +385,13 @@ class CAPE2SandboxProvider(SandboxProvider):
                     "passed in it; the sample was detonated without them"
                 ),
             )
+        package = ""
         if sample_path is not None:
             from malspark.providers.sandbox.formats import detect_sample_format, option_for_format
 
             file_type, _platform = detect_sample_format(sample_path)
             package = option_for_format(self._cfg.package_by_format, file_type)
-            if package and package not in _ARGUMENT_PACKAGES:
+            if package and package in _NO_ARGUMENT_PACKAGES:
                 return LaunchArgumentsAnswer(
                     honoured=False,
                     note=(
@@ -386,6 +400,8 @@ class CAPE2SandboxProvider(SandboxProvider):
                     ),
                 )
         notes: list[str] = []
+        if package and package not in _ARGUMENT_PACKAGES:
+            notes.append(f"whether the package {package!r} reads it is not documented")
         _composed, replaced = self._options_with_arguments(arguments)
         if replaced:
             notes.append(
