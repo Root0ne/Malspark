@@ -128,6 +128,8 @@ from malspark.pipeline.exit_branches import (
     resolved_slots,
     uncovered_exits,
 )
+from malspark.pipeline.feedback_mode import RECORD_ONLY, feeds_back
+from malspark.pipeline.feedback_mode import SETTING as FEEDBACK_SETTING
 from malspark.pipeline.function_claims import (
     FUNCTION_CLAIM_UNHELD_CODE,
     FunctionClaimCheck,
@@ -172,6 +174,7 @@ from malspark.pipeline.validation import (
     analyst_ledger_ids,
     analyst_repeated_violation,
     announce_unresolved,
+    asked_in_this_mode,
     chunk_cut_unread_sentence,
     claim_block_indexes,
     claims_kept_under_disputes_finding,
@@ -10387,6 +10390,9 @@ class BaseAnalyst(BudgetMeter, ABC):
         repeated_by: dict[int, ClaimsRepeated | None] = {}
         # Every question below names the claim format this agent is asked for.
         techniques = asks_for_techniques(self)
+        # Whether a finding opens this turn, or is recorded alone
+        # (``validation.feedback``).
+        feeding = feeds_back()
 
         def _repeated(candidate: AgentISR) -> ClaimsRepeated | None:
             key = id(candidate)
@@ -10618,6 +10624,40 @@ class BaseAnalyst(BudgetMeter, ABC):
         alone = _describe_alone(initial)
         if alone is not None:
             return alone
+
+        # With ``validation.feedback`` set to ``record_only`` no finding opens
+        # a turn but one that says the answer could not be read
+        # (``validation.REASKED_IN_EVERY_MODE_CODES``): what a describe finding
+        # standing alone does, for every finding. The findings are recorded as
+        # not asked and published as findings nobody was shown, the claims
+        # stand as written, and an unknown id is marked as it always is. An
+        # answer that could not be read is asked about that alone; what the
+        # retry's answer still holds is recorded by the loop, not asked.
+        if not feeding:
+            asked_here = asked_in_this_mode(_left_out(initial))
+            if not asked_here:
+                recorded = [replace(v, asked=False) for v in _left_out(initial)]
+                settle_validation_marks(isr, recorded)
+                self.validation_findings.extend(recorded)
+                announce_unresolved(
+                    self._event_sink(),
+                    agent=str(self.name),
+                    stage=str(getattr(self, "pipeline_stage", "") or "analysis"),
+                    violations=recorded,
+                )
+                self.logger.info(
+                    "Validation: %d finding(s) for '%s' recorded and not asked; %s is %s.",
+                    len(recorded),
+                    self.name,
+                    FEEDBACK_SETTING,
+                    RECORD_ONLY,
+                )
+                return _settled(isr)
+            # The branches join only a question the turn asks anyway, and the
+            # turn asks about the unreadable answer alone.
+            initial = asked_here
+            exits_state["open"] = False
+            exits_state["carried"] = False
 
         # The turn gets what the loop it follows left, and is not asked at all
         # when that cannot hold an answer at this model's pace: a question after
@@ -11381,12 +11421,14 @@ class BaseAnalyst(BudgetMeter, ABC):
                 kept is retried
                 and retried is not first_answer
                 and not any(v.code in (ANALYST_CUT_CODE, ANALYST_REPEATED_CODE) for v in initial)
+                and feeding
             ):
                 # What the kept retry no longer states of the first answer is
                 # stated to the analyst, which is asked once to keep or
                 # withdraw each item; its answer stands. An answer asked for
                 # whole, because the first was cut or repeated, is the
-                # analyst's whole answer and is not asked about again.
+                # analyst's whole answer and is not asked about again; nor,
+                # in ``record_only``, is any: no follow-on question is sent.
                 kept = BaseAnalyst._settle_retry_drops(  # type: ignore[arg-type]
                     self,
                     first_answer,
