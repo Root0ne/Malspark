@@ -156,6 +156,10 @@ ORIGINS = {"core", "sharpened", "added", "completion"}
 _EIGHT = {"in part": "partly", "none, family": "noneFamily", "none, this file": "noneFile"}
 # The facts beyond the key that no analysis prints even in part; every other one
 # is printed in part. Pinned by id, so two readings swapped are caught too.
+# "None" requires that no reading at all found a part of the fact, and the earlier
+# adjudicated audit counts as a reading beside the later text and figure readings.
+# That is why a row may stay "in part" although the later readings found nothing:
+# it is the remainder of something an analysis prints, so the page claims less.
 _UNPRINTED = {
     ("A", "34"): "none, family",
     ("B", "30"): "none, family",
