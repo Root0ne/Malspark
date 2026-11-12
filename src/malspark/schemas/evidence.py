@@ -316,14 +316,16 @@ def call_state(entry: Any) -> str:
     """How the entry stands as a call: :data:`MADE`, :data:`SERVED` or :data:`NOT_RUN`.
 
     The one definition every count of calls reads. :data:`SERVED` is an entry
-    filed without running any tool: an answer served again from an earlier
-    entry, a refusal that names the entry holding the answer, or a guard's
-    answer (:func:`is_guard_answer`). The recorder states it on the entry
-    (``ran`` false) at the only places that file one; an entry stored before
-    ``ran`` existed is read by ``repeated_of`` alone, as it was then. An entry
-    whose tool ran and whose answer an earlier entry already holds (a
-    decompile answered with a function an earlier call read) names that entry
-    in ``repeated_of`` and is :data:`MADE`: it states ``ran`` true.
+    filed without running any outside tool: an answer served again from an
+    earlier entry, a refusal that names the entry holding the answer, a
+    guard's answer (:func:`is_guard_answer`), or a read of an entry again by
+    its id. The recorder states it on the entry (``ran`` false) at the only
+    three places that file one. An entry whose outside tool ran and whose
+    answer an earlier entry already holds (a decompile answered with a
+    function an earlier call read) names that entry in ``repeated_of`` and is
+    :data:`MADE`: it states ``ran`` true. An entry stored before ``ran``
+    existed is read by ``repeated_of``: served, unless it also carries a
+    measured duration, which only such a held run stored then.
     :data:`NOT_RUN` is a failed entry that records a step the platform never
     ran (``pipeline.triage_pack.was_not_made``): no request went out for it.
     Every other entry is :data:`MADE`. Each entry is one call the model or the
@@ -336,14 +338,27 @@ def call_state(entry: Any) -> str:
         first, ok = getattr(entry, "repeated_of", None), getattr(entry, "ok", None)
     if ran is False:
         return SERVED
-    if ran is not True and str(first or "").strip():
-        return SERVED
+    if ran is None and str(first or "").strip():
+        # Stored before ``ran``: a held run kept its duration, every answer
+        # without a run stored none.
+        return MADE if _measured(entry) else SERVED
     if ran is not True and ok is False:
         from malspark.pipeline.triage_pack import was_not_made
 
         if was_not_made(entry):
             return NOT_RUN
     return MADE
+
+
+def _measured(entry: Any) -> bool:
+    """Whether the entry stored a duration above zero."""
+    value = (
+        entry.get("duration_ms") if isinstance(entry, Mapping) else getattr(entry, "duration_ms", 0)
+    )
+    try:
+        return int(value or 0) > 0
+    except (TypeError, ValueError):
+        return False
 
 
 def call_was_made(entry: Any) -> bool:

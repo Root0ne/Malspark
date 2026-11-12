@@ -452,8 +452,9 @@ class EvidenceRecorder:
         ``guard_answer`` files a call a guard answered with no tool run and no
         earlier entry behind the answer: its ``repeated_of`` is its own id
         (``schemas.evidence.is_guard_answer``). ``ran`` false files a call no
-        tool ran, which only :meth:`record_repeat` and
-        :meth:`record_guard_answer` do (``schemas.evidence.call_state``).
+        tool ran, which only :meth:`record_repeat`,
+        :meth:`record_guard_answer` and the read of an entry again by its id
+        do (``schemas.evidence.call_state``).
 
         ``not_shown`` is the length of an answer the conversation had no room
         for: the entry is recorded as cut (``schemas.evidence.not_shown_record``)
@@ -2555,6 +2556,8 @@ def _record_tool(
             started_at=wall_clock,
             duration_ms=int((time.monotonic() - started) * 1000),
             repeated_of=holder,
+            # No outside tool ran: the answer is the entry's it reads.
+            ran=False,
             cut=cut,
         )
         _note(kwargs, holder)

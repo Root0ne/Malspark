@@ -410,3 +410,69 @@ class TestTheEfficiencyRecord:
         assert calls is not None and calls["repeated"] == 1, "only the served answer"
         uncited = uncited_record([first, held, served], {})
         assert uncited is not None and uncited["entries"] == 1
+
+
+class _EvidenceId(BaseModel):
+    evidence_id: str = ""
+
+
+def _read_again_ledger() -> list[LedgerEntry]:
+    """An answer of a tool with no server, then a read of it again by its id."""
+    from malspark.agents.tool_answer_clearing import READS_EVIDENCE
+
+    recorder = EvidenceRecorder("static", counter=EvidenceCounter())
+    first = recorder.record(tool="t", args={}, server=None, output="answer")
+    reader = StructuredTool.from_function(
+        func=lambda evidence_id="": "answer",
+        name="read_again",
+        description="d",
+        args_schema=_EvidenceId,
+        infer_schema=False,
+        metadata={READS_EVIDENCE: True},
+    )
+    (wrapped,) = record_tools([reader], recorder, RepeatGuard())
+    wrapped.invoke({"evidence_id": first.id})
+    _first, read = recorder.entries
+    assert read.repeated_of == first.id
+    return list(recorder.entries)
+
+
+class TestAReadAgain:
+    def test_it_is_served_and_reads_the_same_from_an_old_ledger(self) -> None:
+        _first, read = _read_again_ledger()
+        stored = json.loads(read.model_dump_json())
+        old = {key: value for key, value in stored.items() if key != "ran"}
+
+        assert read.ran is False
+        assert call_state(read) == call_state(stored) == call_state(old) == SERVED
+
+    def test_the_evidence_summary_counts_it_a_repeat(self) -> None:
+        from malspark.pipeline.nodes import evidence_summary
+
+        summary = evidence_summary(_read_again_ledger())
+
+        assert (summary["ok"], summary.get("repeats")) == (1, 1)
+
+    def test_it_makes_no_server_stale(self) -> None:
+        from types import SimpleNamespace
+
+        from malspark.agents.base_agent import _stale_after
+
+        agent = SimpleNamespace(run_state_source={"evidence_ledger": _read_again_ledger()})
+
+        assert _stale_after(agent, set()) == set()
+
+
+class TestAnOldHeldDecompile:
+    def test_it_keeps_its_milliseconds_and_an_old_served_repeat_stays_served(self) -> None:
+        first, held = _held_decompile()
+        old_held = {k: v for k, v in json.loads(held.model_dump_json()).items() if k != "ran"}
+        old_served = {"id": "ev_0009", "agent": "reverser", "tool": first.tool}
+        old_served |= {"repeated_of": first.id, "duration_ms": 0}
+        entries = [json.loads(first.model_dump_json()), old_held, old_served]
+        latency = RunSummaryBuilder(start_time=0.0).set_tool_latency(entries)._tool_latency
+
+        assert latency is not None
+        row = latency["reverser"]
+        assert (row["calls"], row["served"]) == (2, 1)
+        assert row["total_ms"] == first.duration_ms + 1500
