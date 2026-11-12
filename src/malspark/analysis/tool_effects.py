@@ -225,13 +225,17 @@ def is_platform_internal(entry: Any) -> bool:
 
 
 def outcome(entry: Any) -> str | None:
-    """How the entry's call ended (:data:`OUTCOMES`); ``None`` for a repeat, which is no call."""
+    """How the entry's call ended (:data:`OUTCOMES`); ``None`` for an answer served again.
+
+    A guard's answer is refused; any other entry answered without a run
+    (``schemas.evidence.call_was_made``) ended no call of its own.
+    """
     from malspark.pipeline.triage_pack import was_not_made
-    from malspark.schemas.evidence import is_guard_answer
+    from malspark.schemas.evidence import call_was_made, is_guard_answer
 
     if is_guard_answer(entry):
         return REFUSED
-    if _field(entry, "repeated_of"):
+    if not call_was_made(entry):
         return None
     if _field(entry, "ok") is not False:
         return COMPLETED
@@ -290,16 +294,22 @@ def effects_part(
     isolation part, which places the sources that read the sample;
     ``partial_reason`` why the record may miss a call; ``places`` where the
     disclosure placed each ``(source, tool)`` it placed. Linear in the entries.
+
+    Each row counts the calls whose tool ran (``calls``) and the ones answered
+    without a run (``served``), by the one definition
+    (``schemas.evidence.call_was_made``): together they are the row's entries.
+    A guard's refusal is served, and counted ``refused`` too.
     """
     from malspark.analysis.isolation import ran_on_sources
     from malspark.core.declared_reading import served_statement, server_hints
+    from malspark.schemas.evidence import call_was_made
 
     placed = _read_where(isolation)
     rows: dict[tuple[str, str, str], dict[str, Any]] = {}
     for entry in entries:
-        ended = outcome(entry)
-        if ended is None or is_platform_internal(entry):
+        if is_platform_internal(entry):
             continue
+        ended = outcome(entry)
         server = str(_field(entry, "server") or "")
         source = str(_field(entry, "source") or "")
         tool = str(_field(entry, "tool") or "")
@@ -312,6 +322,7 @@ def effects_part(
                 "server": key[1],
                 "tool": tool,
                 "calls": 0,
+                "served": 0,
                 "executes": effects.executes,
                 "network": effects.network,
                 "network_by": effects.network_by,
@@ -346,8 +357,9 @@ def effects_part(
                     held.get("why") or ("" if held else "the disclosure does not place it")
                 )
             rows[key] = row
-        row["calls"] += 1
-        row[ended] += 1
+        row["calls" if call_was_made(entry) else "served"] += 1
+        if ended is not None:
+            row[ended] += 1
     return {
         "v": EFFECTS_VERSION,
         "partial_reason": str(partial_reason or ""),
@@ -513,6 +525,10 @@ def _closed(row: Mapping[str, Any]) -> bool:
 def _of_calls(state: str) -> Callable[[Mapping[str, Any]], str]:
     def _note(row: Mapping[str, Any]) -> str:
         count, calls = int(row.get(state) or 0), int(row.get("calls") or 0)
+        if state == REFUSED:
+            # A refusal is an answer without a run: out of every call asked.
+            # A row stored before ``served`` was counted holds it in ``calls``.
+            calls += int(row.get("served") or 0)
         return f"{count} of {calls} calls" if count != calls else ""
 
     return _note
@@ -534,7 +550,13 @@ def effects_lines(part: Any, code: Callable[[str], str] = _code) -> list[str]:
     """
     if not isinstance(part, Mapping) or "tools" not in part:
         return []
-    every = [row for row in part.get("tools") or [] if isinstance(row, Mapping)]
+    # A row whose every entry was answered again from an earlier one is no
+    # call of its tool: it is counted, and said nowhere here.
+    every = [
+        row
+        for row in part.get("tools") or []
+        if isinstance(row, Mapping) and (int(row.get("calls") or 0) or int(row.get(REFUSED) or 0))
+    ]
     # A row stored before calls were counted by how they ended holds only
     # ``calls``: each is read as completed, as it was then.
     rows = [row for row in every if int(row.get(COMPLETED, row.get("calls")) or 0)]

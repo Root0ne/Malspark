@@ -1179,8 +1179,10 @@ def tool_latency_lines(latency: Any) -> list[str]:
             # has neither and reads exactly as it did.
             p50, p95 = float(row["p50_ms"]) / 1000.0, float(row["p95_ms"]) / 1000.0
             spread = f", p50 {p50:.1f}s, p95 {p95:.1f}s, {int(row.get('over_10s') or 0)} over 10s"
+        served = int(row.get("served") or 0)
+        again = f" (+{served} answered without a run)" if served else ""
         rows.append(
-            f"{agent} {int(row.get('calls') or 0)} calls in {total:.1f}s, "
+            f"{agent} {int(row.get('calls') or 0)} calls{again} in {total:.1f}s, "
             f"slowest `{slowest.get('tool')}` {float(slowest.get('ms') or 0) / 1000.0:.1f}s"
             f"{spread}"
         )
@@ -1709,8 +1711,8 @@ class RunSummary:
             if trunc.any_bound_hit or _recorded_calls(self.tool_latency) != trunc.tool_output_calls:
                 lines += [
                     "Tool output calls are the answers a tool server returned through the "
-                    "guardrail. The per-call latency table counts every recorded call, so it "
-                    "also holds the ones answered in process, which no guardrail sees.",
+                    "guardrail. The per-call latency table counts every recorded call that ran, "
+                    "so it also holds the ones answered in process, which no guardrail sees.",
                     "",
                 ]
             if trunc.evidence_corpus_partial_reason:
@@ -2107,7 +2109,14 @@ class RunSummaryBuilder:
 
         A call with no measured duration contributes to the count and to
         nothing else: a zero is not a measurement.
+
+        ``calls`` counts the calls whose tool ran and ``served`` the ones
+        answered without a run, by the one definition
+        (``schemas.evidence.call_was_made``): together, one per entry. An
+        answer served again took no tool time and is no slowest call.
         """
+        from malspark.schemas.evidence import call_was_made
+
         rows: dict[str, dict[str, Any]] = {}
         timed: dict[str, list[int]] = {}
         for entry in entries or []:
@@ -2122,7 +2131,10 @@ class RunSummaryBuilder:
                 ms = int(row.get("duration_ms") or 0)
             except (TypeError, ValueError):
                 ms = 0
-            seen = rows.setdefault(agent, {"calls": 0, "total_ms": 0, "slowest": None})
+            seen = rows.setdefault(agent, {"calls": 0, "served": 0, "total_ms": 0, "slowest": None})
+            if not call_was_made(row):
+                seen["served"] += 1
+                continue
             seen["calls"] += 1
             if ms <= 0:
                 continue

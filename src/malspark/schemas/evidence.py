@@ -305,6 +305,37 @@ def is_guard_answer(entry: Any) -> bool:
     return bool(first) and first == str(own or "").strip().lower()
 
 
+def call_was_made(entry: Any) -> bool:
+    """Whether the entry is a call whose tool ran, rather than one answered without a run.
+
+    The one definition every count of calls reads. An entry answered without
+    a run names another entry, or itself, in ``repeated_of``: an answer served
+    again from an earlier entry, a refusal that names the entry holding the
+    answer, or a guard's answer (:func:`is_guard_answer`). Each such entry is
+    still one call the model asked for and one finished event, counted as
+    served beside the calls made (:func:`call_counts`).
+    """
+    if isinstance(entry, Mapping):
+        first = entry.get("repeated_of")
+    else:
+        first = getattr(entry, "repeated_of", None)
+    return not str(first or "").strip()
+
+
+# The two totals a count of calls carries: the calls whose tool ran, and the
+# ones answered without a run (:func:`call_was_made`).
+MADE = "made"
+SERVED = "served"
+
+
+def call_counts(entries: Any) -> dict[str, int]:
+    """``{"made": n, "served": m}`` over ``entries``: together, one per entry and finished event."""
+    counts = {MADE: 0, SERVED: 0}
+    for entry in entries or ():
+        counts[MADE if call_was_made(entry) else SERVED] += 1
+    return counts
+
+
 def answers_held(entries: Any) -> bool:
     """Whether any entry is a call that ran or a repeat of one: anything but a guard's answer."""
     return any(not is_guard_answer(entry) for entry in entries or ())

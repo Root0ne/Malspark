@@ -2305,7 +2305,10 @@ def emit_tool_call_finished(
     """One tool call, as it answers, with the ledger id its result is under.
 
     ``repeated_of`` is the earlier entry a call the repeat guard answered
-    without running repeats; the key is sent only for such a call.
+    without running repeats; the key is sent only for such a call. One event
+    per ledger entry, so the finished events are the calls made and the
+    answers without a run together, told apart by this key as the ledger
+    tells them (``schemas.evidence.call_was_made``).
     """
     payload: dict[str, Any] = {
         "stage": str(stage),
