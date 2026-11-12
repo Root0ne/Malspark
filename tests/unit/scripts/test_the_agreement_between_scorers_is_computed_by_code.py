@@ -169,7 +169,9 @@ def _krip(table: dict[str, str] = KRIPPENDORFF) -> dict[str, dict[str, str]]:
     }
 
 
-def _alpha_by_pairs(ratings: dict[str, dict[str, str]], metric: str) -> float:
+def _alpha_by_pairs(
+    ratings: dict[str, dict[str, str]], metric: str, order: tuple[str, ...] | None = None
+) -> float:
     """alpha = 1 - D_o / D_e from the pairable values directly, no coincidence matrix."""
     units: dict[str, list[str]] = {}
     for given in ratings.values():
@@ -179,7 +181,7 @@ def _alpha_by_pairs(ratings: dict[str, dict[str, str]], metric: str) -> float:
     values = [v for vs in units.values() for v in vs]
     n = len(values)
     count = {c: values.count(c) for c in set(values)}
-    ranks = sorted(count)
+    ranks = [c for c in order if c in count] if order else sorted(count)
 
     def d(c: str, k: str) -> float:
         if c == k:
@@ -406,3 +408,80 @@ def test_a_longer_table_with_missing_ratings_matches_the_pairwise_derivation() -
     for ordinal, metric in ((False, "nominal"), (True, "ordinal")):
         got = krippendorff_alpha(ratings, CATS5, ordinal=ordinal)["value"]
         assert got == pytest.approx(_alpha_by_pairs(ratings, metric))
+
+
+def test_leaving_out_wrong_gives_the_values_of_the_filtered_ratings() -> None:
+    ratings = {
+        "a": {
+            "1": "wrong",
+            "2": "found",
+            "3": "missed",
+            "4": "partly (body)",
+            "5": "partly (dump)",
+        },
+        "b": {"1": "missed", "2": "found", "3": "wrong", "4": "found", "5": "missed"},
+    }
+    view = agreement(ratings, leave_out_wrong=True)["verdicts"]
+    order = SCALE[1:]
+    kept = [("found", "found"), ("partly (body)", "found"), ("partly (dump)", "missed")]
+    assert view["pairs"]["a / b"]["weighted_kappa"]["value"] == pytest.approx(
+        _weighted_by_hand(kept, order, 1)
+    )
+    assert view["pairs"]["a / b"]["weighted_kappa"]["units"] == ["2", "4", "5"]
+    filtered = {r: {u: w for u, w in g.items() if w != "wrong"} for r, g in ratings.items()}
+    assert view["krippendorff_alpha_ordinal"]["value"] == pytest.approx(
+        _alpha_by_pairs(filtered, "ordinal", SCALE)
+    )
+    assert view["krippendorff_alpha_ordinal"]["left_out_wrong_ratings"] == 2
+
+
+def test_alpha_reports_the_units_it_used_and_left_out() -> None:
+    alpha = krippendorff_alpha(
+        {"a": {"x": "found", "y": "missed"}, "b": {"x": "found"}}, SCALE, ordinal=False
+    )
+    assert alpha["units"] == ["x"] and alpha["left_out_units"] == 1
+
+
+def test_a_rater_named_item_keeps_the_item_id() -> None:
+    ratings = {"item": {"1": "found"}, "b": {"1": "missed"}}
+    row = agreement(ratings)["verdicts"]["pairs"]["b / item"]["disagreements"][0]
+    assert row == {"item": "1", "verdicts": {"b": "missed", "item": "found"}}
+
+
+def _write(path: Path, rows: list[list[str]]) -> Path:
+    with path.open("w", encoding="utf-8", newline="") as handle:
+        csv.writer(handle).writerows(rows)
+    return path
+
+
+def test_an_item_scored_twice_and_a_repeated_header_are_refused(tmp_path: Path) -> None:
+    twice = _write(tmp_path / "twice.csv", [["item", "A"], ["K1.2", "found"], ["K1.2", "missed"]])
+    with pytest.raises(AgreementError, match=r"twice\.csv.*'K1\.2' is scored twice"):
+        read_raters([str(twice)])
+    header = _write(tmp_path / "header.csv", [["item", "A", "A"], ["K1.2", "found", "missed"]])
+    with pytest.raises(AgreementError, match="duplicate column header 'A'"):
+        read_raters([str(header)])
+
+
+def test_an_unfilled_sheet_is_refused(tmp_path: Path) -> None:
+    empty = _write(tmp_path / "empty.csv", [["item", "A"], ["K1.2", ""], ["beyond_human", ""]])
+    with pytest.raises(AgreementError, match=r"empty\.csv: no item is rated"):
+        read_raters([str(empty)])
+
+
+def test_raters_with_no_unit_in_common_are_refused_and_column_is_named(tmp_path: Path) -> None:
+    several = _write(tmp_path / "several.csv", [["item", "A", "B"], ["K1.2", "found", "missed"]])
+    single = _write(tmp_path / "single.csv", [["item", "A"], ["K1.2", "found"]])
+    with pytest.raises(AgreementError, match="share no item.*--column"):
+        read_raters([str(several), str(single)])
+    assert read_raters([str(several), str(single)], column="A")["several"] == {"K1.2": "found"}
+    other = _write(tmp_path / "other.csv", [["item", "A"], ["K9.9", "found"]])
+    with pytest.raises(AgreementError, match="share no item$"):
+        read_raters([str(single), str(other)])
+
+
+def test_a_json_blind_sheet_is_told_to_be_a_csv(tmp_path: Path) -> None:
+    sheet = tmp_path / "sheet.json"
+    sheet.write_text(json.dumps({"A": {"K1.2": "found"}}), encoding="utf-8")
+    with pytest.raises(AgreementError, match=r"read as \.csv"):
+        read_raters([str(sheet)])

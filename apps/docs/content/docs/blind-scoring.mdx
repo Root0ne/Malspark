@@ -101,5 +101,10 @@ printed as `n/a` with its reason.
 
 `wrong` is its own class for the nominal statistics. The ordinal ones use the
 order `wrong < missed < partly (dump) < partly (body) < found`; with
-`--leave-out-wrong` they leave every rating of `wrong` out instead, and the
-count left out is printed.
+`--leave-out-wrong` the ordinal statistics of the verdict view leave every rating
+of `wrong` out instead, and the count left out is printed; the collapsed view
+keeps `wrong` as not credited. A rater with no rating, an item scored twice in a
+sheet, a repeated column header, or two raters with no item in common are
+refused; so is a several-column sheet set against a single-column one, with a
+hint to use `--column`. `--json` also lists the items that entered each
+statistic, and the number of items left out of alpha (rated once).

@@ -92,6 +92,9 @@ def read_sheet(path: Path, column: str | None = None) -> dict[str, str]:
     if not rows or not rows[0] or rows[0][0] != "item":
         raise AgreementError(f"{path}: no header row starting with 'item'")
     columns = rows[0][1:]
+    if len(set(columns)) != len(columns):
+        repeated = sorted({c for c in columns if columns.count(c) > 1})
+        raise AgreementError(f"{path}: duplicate column header {', '.join(map(repr, repeated))}")
     if column is not None:
         if column not in columns:
             raise AgreementError(f"{path}: no column {column!r}; it has {', '.join(columns)}")
@@ -100,9 +103,14 @@ def read_sheet(path: Path, column: str | None = None) -> dict[str, str]:
         picked = columns
     prefixed = len(columns) > 1 and column is None
     out: dict[str, str] = {}
+    seen: dict[str, str] = {}
     for row in rows[1:]:
         if not row or not row[0].strip() or row[0].strip() == BEYOND_ROW:
             continue
+        label = row[0].strip()
+        if item_key(label) in seen:
+            raise AgreementError(f"{path}: item {label!r} is scored twice")
+        seen[item_key(label)] = label
         for name in picked:
             index = columns.index(name) + 1
             cell = row[index] if index < len(row) else ""
@@ -122,7 +130,8 @@ def read_rater(path: Path, column: str | None = None) -> dict[str, str]:
             return read_sheet(path, column)
         run = read_scored(path)
     except (ScoreFileError, OSError) as exc:
-        raise AgreementError(str(exc)) from exc
+        hint = "; a blind score sheet is read as .csv" if path.suffix.lower() == ".json" else ""
+        raise AgreementError(f"{exc}{hint}") from exc
     out: dict[str, str] = {}
     for key, (scale, word) in run.verdicts.items():
         if scale != KEY:
@@ -142,6 +151,18 @@ def read_raters(specs: list[str], column: str | None = None) -> Ratings:
         if name in ratings:
             raise AgreementError(f"two raters are named {name!r}; name one as NAME=path")
         ratings[name] = read_rater(path, column)
+        if not ratings[name]:
+            raise AgreementError(f"{path}: no item is rated (an unfilled template?)")
+    for first, second in combinations(ratings, 2):
+        if set(ratings[first]) & set(ratings[second]):
+            continue
+        prefixed = [all(":" in u for u in ratings[r]) for r in (first, second)]
+        hint = (
+            "; one sheet has several arm columns and the other none: use --column"
+            if (prefixed[0] != prefixed[1])
+            else ""
+        )
+        raise AgreementError(f"{first} and {second} share no item{hint}")
     return ratings
 
 
@@ -208,9 +229,9 @@ def fleiss_kappa(ratings: Ratings, categories: tuple[str, ...]) -> Stat:
     units = sorted(set.intersection(*(set(ratings[r]) for r in names)))
     dropped = len(set().union(*(set(ratings[r]) for r in names))) - len(units)
     if not units:
-        return _stat(None, "no item rated by every rater", n=0, left_out=dropped)
+        return _stat(None, "no item rated by every rater", n=0, left_out=dropped, units=[])
     if len(units) == 1:
-        return _stat(None, "a single item", n=1, left_out=dropped)
+        return _stat(None, "a single item", n=1, left_out=dropped, units=units)
     totals: Counter[str] = Counter()
     p_sum = 0.0
     for unit in units:
@@ -221,9 +242,13 @@ def fleiss_kappa(ratings: Ratings, categories: tuple[str, ...]) -> Stat:
     pe = sum((totals[c] / (len(units) * m)) ** 2 for c in categories)
     if pe >= 1.0:
         return _stat(
-            None, "one category only: chance agreement is 1", n=len(units), left_out=dropped
+            None,
+            "one category only: chance agreement is 1",
+            n=len(units),
+            left_out=dropped,
+            units=units,
         )
-    return _stat((p_bar - pe) / (1.0 - pe), n=len(units), left_out=dropped)
+    return _stat((p_bar - pe) / (1.0 - pe), n=len(units), left_out=dropped, units=units)
 
 
 def krippendorff_alpha(ratings: Ratings, categories: tuple[str, ...], *, ordinal: bool) -> Stat:
@@ -239,24 +264,25 @@ def krippendorff_alpha(ratings: Ratings, categories: tuple[str, ...], *, ordinal
         for unit, word in rater.items():
             units.setdefault(unit, []).append(word)
     coincidence: Counter[tuple[str, str]] = Counter()
-    used = 0
+    entered = sorted(u for u, v in units.items() if len(v) > 1)
+    used = len(entered)
+    extra = {"left_out_units": len(units) - used, "units": entered}
     for values in units.values():
         if len(values) < 2:
             continue
-        used += 1
         for i, a in enumerate(values):
             for j, b in enumerate(values):
                 if i != j:
                     coincidence[(a, b)] += 1.0 / (len(values) - 1)
     if used == 0:
-        return _stat(None, "no item rated by two raters", n=0)
+        return _stat(None, "no item rated by two raters", n=0, **extra)
     marginal: Counter[str] = Counter()
     for (a, _), weight in coincidence.items():
         marginal[a] += weight
     total = sum(marginal.values())
     present = [c for c in categories if marginal[c] > 0]
     if len(present) < 2:
-        return _stat(None, "one category only: no expected disagreement", n=used)
+        return _stat(None, "one category only: no expected disagreement", n=used, **extra)
 
     def delta(c: str, k: str) -> float:
         if c == k:
@@ -270,8 +296,8 @@ def krippendorff_alpha(ratings: Ratings, categories: tuple[str, ...], *, ordinal
     observed = sum(w * delta(a, b) for (a, b), w in coincidence.items())
     expected = sum(marginal[c] * marginal[k] * delta(c, k) for c in present for k in present)
     if expected == 0.0:
-        return _stat(None, "no expected disagreement", n=used)
-    return _stat(1.0 - (total - 1.0) * observed / expected, n=used)
+        return _stat(None, "no expected disagreement", n=used, **extra)
+    return _stat(1.0 - (total - 1.0) * observed / expected, n=used, **extra)
 
 
 # ---------------------------------------------------------------- one view
@@ -304,11 +330,12 @@ def analyse(
         pooled += pairs
         entry: dict[str, Any] = {
             "n": len(pairs),
+            "units": units,
             "percent_agreement": percent_agreement(pairs),
             "cohens_kappa": cohens_kappa(pairs),
             "confusion": _confusion(pairs, categories),
             "disagreements": [
-                {"item": u, first: ratings[first][u], second: ratings[second][u]}
+                {"item": u, "verdicts": {first: ratings[first][u], second: ratings[second][u]}}
                 for u in units
                 if ratings[first][u] != ratings[second][u]
             ],
@@ -318,6 +345,9 @@ def analyse(
             order = tuple(c for c in categories if not (drop and c == WRONG))
             entry["weighted_kappa"] = weighted_kappa(kept, order)
             entry["weighted_kappa"]["left_out_wrong"] = len(pairs) - len(kept)
+            entry["weighted_kappa"]["units"] = [
+                u for u, p in zip(units, pairs, strict=True) if p in kept
+            ]
         out["pairs"][f"{first} / {second}"] = entry
     out["percent_agreement_overall"] = percent_agreement(pooled)
     out["percent_agreement_overall"]["basis"] = "all pairwise comparisons pooled"
@@ -352,7 +382,7 @@ def agreement(ratings: Ratings, *, leave_out_wrong: bool = False) -> dict[str, A
         "scale": list(SCALE),
         "ordinal_order": "wrong < missed < partly (dump) < partly (body) < found",
         "wrong_handling": (
-            "ordinal statistics leave out every rating of wrong"
+            "the verdict view's ordinal statistics leave out every rating of wrong"
             if leave_out_wrong
             else "wrong is its own nominal class and the lowest ordinal rank"
         ),
@@ -406,7 +436,7 @@ def _render_view(title: str, view: dict[str, Any]) -> list[str]:
         lines.append(f"  disagreements: {len(entry['disagreements'])}")
         for row in entry["disagreements"]:
             item = row["item"]
-            rest = "; ".join(f"{k} {v}" for k, v in row.items() if k != "item")
+            rest = "; ".join(f"{k} {v}" for k, v in row["verdicts"].items())
             lines.append(f"    {item}: {rest}")
     return lines
 
