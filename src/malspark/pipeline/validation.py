@@ -5345,16 +5345,24 @@ _IDENTIFIER_RE = re.compile(r"[A-Z]\d{4}(?:\.[A-Z]?\d{3})?|CVE-\d{4}-\d{4,}", re
 # ``[rax+rcx*4+0x10]`` — is not a citation attempt. A citation lists ids, and
 # a writer who misses one still writes what could be one: an id, a word or a
 # heading, a numbered reference, joined by commas, semicolons, spaces or a
-# range's dash. A group whose whole content is numerals and bare names joined
-# by ``+``, ``-`` or ``*``, holding a ``0x`` numeral or a sum or a product, is
-# none of these: no id is a sum, and no note is numbered in hex. Still read: a
-# bare decimal (``[12]``) or a decimal range (``[1-3]``), a numbered
-# reference; a name with digits in it (``var_4``, ``E12``) or the evidence
-# prefix as a name (``[ev+12]``), each a mistyped id.
-_OPERAND_TERM = r"(?:0x[0-9a-f]+|\d+|[a-z_]+)"
-_OPERAND_RE = re.compile(rf"\s*{_OPERAND_TERM}(?:\s*[-+*]\s*{_OPERAND_TERM})*\s*", re.IGNORECASE)
-_OPERAND_MARK_RE = re.compile(r"0x|[+*]", re.IGNORECASE)
-_EVIDENCE_PREFIX_RE = re.compile(r"\bev\b", re.IGNORECASE)
+# range's dash. A group is an operand when its whole content is ASCII numerals
+# and bare names joined by ``+``, ``-`` or ``*`` and it holds a ``0x``
+# numeral, or a ``+`` or ``*`` with both a name and a numeral among its terms:
+# no note is numbered in hex, and a base register with its offset is no list
+# of ids. Still read: a bare decimal (``[12]``), a decimal range (``[1-3]``)
+# or a sum of numbers (``[12+13]``), each a numbered reference; names alone
+# (``[capa+FLOSS]``) and a name minus a decimal (``[rbp-8]``), each a list or
+# a mistyped id; a name with digits in it (``var_4``, ``E12``); and any group
+# that writes the evidence prefix or the word evidence as a name
+# (``[ev_+12]``, ``[evidence+12]``).
+_OPERAND_FLAGS = re.IGNORECASE | re.ASCII
+_OPERAND_TERM = r"(?:0x[0-9a-f]+|[0-9]+|[a-z_]+)"
+_OPERAND_RE = re.compile(rf"\s*{_OPERAND_TERM}(?:\s*[-+*]\s*{_OPERAND_TERM})*\s*", _OPERAND_FLAGS)
+_OPERAND_HEX_RE = re.compile(r"0x", _OPERAND_FLAGS)
+_OPERAND_SCALE_RE = re.compile(r"[+*]")
+_OPERAND_NAME_RE = re.compile(r"[a-z_]", _OPERAND_FLAGS)
+_OPERAND_NUMERAL_RE = re.compile(r"[0-9]")
+_EVIDENCE_PREFIX_RE = re.compile(r"(?<![a-z])_*ev(?:idence)?_*(?![a-z])", _OPERAND_FLAGS)
 # How many ids the sentence names before it says how many more there are.
 _CITABLE_SHOWN = 12
 
@@ -5411,10 +5419,17 @@ def _cited_groups(text: str) -> list[str]:
 
 def _is_operand(group: str) -> bool:
     """Whether a bracketed group's whole content is an operand, not a citation attempt."""
+    if not _OPERAND_RE.fullmatch(group) or _EVIDENCE_PREFIX_RE.search(group):
+        return False
+    # Inside the grammar ``0x`` begins only a numeral; without one, a letter
+    # is only a name's and a digit only a decimal's.
     return bool(
-        _OPERAND_RE.fullmatch(group)
-        and _OPERAND_MARK_RE.search(group)
-        and not _EVIDENCE_PREFIX_RE.search(group)
+        _OPERAND_HEX_RE.search(group)
+        or (
+            _OPERAND_SCALE_RE.search(group)
+            and _OPERAND_NAME_RE.search(group)
+            and _OPERAND_NUMERAL_RE.search(group)
+        )
     )
 
 

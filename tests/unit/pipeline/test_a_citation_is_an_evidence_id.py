@@ -426,7 +426,10 @@ class TestAnOperandInASentenceIsNotACitation:
             "[rax+rcx*4+0x10]",
             "[rax + rcx*4]",
             "[rbp-0x8]",
-            "[8+4]",
+            "[ 0x60 ]",
+            "[level+0x10]",
+            "[prev+0x8]",
+            "[event+4]",
         ):
             assert self._prose(f"The routine reads {operand} once.") == [], operand
 
@@ -441,12 +444,41 @@ class TestAnOperandInASentenceIsNotACitation:
             ]
 
     def test_each_wrong_citation_is_asked_with_the_same_sentence(self) -> None:
-        for item in ("ev_12", "evidence 12", "E12", "see ev_0012", "ev-12", "ev+12", "E12+E13"):
+        for item in (
+            "ev_12",
+            "evidence 12",
+            "E12",
+            "see ev_0012",
+            "ev-12",
+            "ev+12",
+            "E12+E13",
+            "ev_+12",
+            "ev_ + 12",
+            "Ev_+1",
+            "_ev+1",
+            "evidence+12",
+            "rbp-8",
+            "a+b",
+            "capa+FLOSS",
+            "run_state+ledger",
+            "sandbox*static",
+            "rax+rcx",
+            "12+13",
+            "8+4",
+        ):
             (found,) = self._prose(f"It reads the key [{item}].")
             assert found.code == CITATION_NOT_EVIDENCE_CODE
             assert found.message == f"[{item}] is cited, and it is not an evidence id.{self.REMEDY}"
         (found,) = self._prose("It reads the key [ev_9999].")
         assert found.message == f"[ev_9999] is not an entry this answer was shown.{self.REMEDY}"
+        assert self._messages("It reads [0x60, 0x30].") == [
+            f"[{item}] is cited, and it is not an evidence id.{self.REMEDY}"
+            for item in ("0x60", "0x30")
+        ]
+
+    def test_digits_and_letters_outside_ascii_are_not_an_operand(self) -> None:
+        for item in ("\u0661\u0662+\u0661\u0663", "\u017f+1", "\u212a+0x1"):
+            assert len(self._prose(f"It reads the key [{item}].")) == 1, item
 
     def test_a_numbered_reference_and_a_range_are_still_read(self) -> None:
         for item in ("4", "12", "1-3", "ev_0004-ev_0006", "ev_0004+ev_0005"):
