@@ -68,19 +68,45 @@ def _finds(code: str) -> Any:
 
 
 def test_every_named_code_is_one_a_stage_raises() -> None:
-    """The set names the unreadable-answer codes and nothing about content."""
+    """The set is the codes of an answer, or a block of it, that could not be read.
+
+    Each decision is the one criterion's (the set's comment); each code is one
+    the validation-code register lists as raised.
+    """
+    from pathlib import Path
+
     assert {
+        # The analysts: no claim parsed, a block that is not a claim, cut, repeated.
         UNPARSED_ANSWER_CODE,
+        "isr.claim_without_confidence",
+        "isr.technique_line_unread",
+        "isr.claims_under_disputes",
         ANALYST_CUT_CODE,
-        SECTION_CUT_CODE,
         "isr.claims_repeated",
+        # The judge: not a bundle, cut, a verdict, rating or assessment unread,
+        # an object or a reference the bundle cannot read.
         "verdict.cut_at_output_cap",
         "verdict.not_json",
+        "verdict.unrecognised",
+        "verdict.severity_enum",
+        "verdict.assessment_missing",
+        "verdict.assessment_unreadable",
+        "stix.unknown_object",
+        "stix.duplicate_label",
+        # The report stage: cut, or outside its schema.
+        SECTION_CUT_CODE,
         "composer.schema",
         "narrative.schema",
         "question.schema",
         "agreement.schema",
     } == set(REASKED_IN_EVERY_MODE_CODES)
+    page = (
+        Path(__file__).resolve().parents[3] / "apps/docs/content/docs/validation-codes.mdx"
+    ).read_text(encoding="utf-8")
+    for code in REASKED_IN_EVERY_MODE_CODES:
+        assert f"### `{code}`" in page, code
+    # A field left out of a readable answer is a finding about content.
+    assert "verdict.unstated" not in REASKED_IN_EVERY_MODE_CODES
 
 
 class TestTheSyncLoop:

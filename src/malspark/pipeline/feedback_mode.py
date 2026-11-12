@@ -4,10 +4,11 @@
 ``record_only`` every validator still runs and every finding is recorded as
 it is in ``feed_back``, marked not asked; no correction turn and no follow-on
 question is sent, and the answer stands as written. The rule is one for every
-stage. A finding that says the answer could not be read is asked in both
-modes (``validation.REASKED_IN_EVERY_MODE_CODES``): an answer nobody can read
-says nothing to record. What code does after a stage with what is left
-standing, and every integrity guard, is the same in both.
+stage. A finding that says the answer, or a block of it, could not be read,
+so that left unasked the stage would lose the agent's own content to a
+fallback, is asked in both modes (``validation.REASKED_IN_EVERY_MODE_CODES``,
+whose comment states the criterion). What code does after a stage with what is
+left standing, and every integrity guard, is the same in both.
 
 The mode is read from the run's settings where a stage asks, as every other
 ``validation.*`` value is, so a replay that installs a stored run's snapshot

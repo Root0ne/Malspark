@@ -141,6 +141,52 @@ async def test_an_answer_that_is_not_json_is_asked_again_in_both_modes(mode: str
     assert verdict.bundle.x_malspark_fallback_verdict is None
 
 
+def _unreadable(case: str) -> dict[str, Any]:
+    """FIXED with one part the bundle cannot read: what ``case`` names."""
+    bundle = json.loads(json.dumps(FIXED))
+    assessment = bundle["x_malspark_assessment"]
+    if case == "verdict.unrecognised":
+        assessment["verdict"] = "Probably malware (loader)"
+    elif case == "verdict.severity_enum":
+        assessment["severity"]["rating"] = "Severe"
+    elif case == "verdict.assessment_unreadable":
+        assessment["confidence"] = "very sure"
+    elif case == "verdict.assessment_missing":
+        del bundle["x_malspark_assessment"]
+    elif case == "stix.unknown_object":
+        bundle["objects"].append({"type": "x-loader-note", "id": "x-loader-note--1"})
+    elif case == "stix.duplicate_label":
+        bundle["objects"].append({**bundle["objects"][0], "name": "y"})
+    return bundle
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "case",
+    [
+        "verdict.unrecognised",
+        "verdict.severity_enum",
+        "verdict.assessment_unreadable",
+        "verdict.assessment_missing",
+        "stix.unknown_object",
+        "stix.duplicate_label",
+    ],
+)
+async def test_a_part_of_the_verdict_that_cannot_be_read_is_asked_in_both_modes(
+    mode: str, case: str
+) -> None:
+    llm = _Llm(json.dumps(_unreadable(case)), json.dumps(FIXED))
+
+    verdict = await _verdict(JudgeAgent(llm))  # type: ignore[arg-type]
+
+    assert len(llm.calls) == 2
+    assert verdict.retries == 1
+    assert verdict.fed_back.get(case) == 1
+    assessment = verdict.bundle.x_malspark_assessment
+    assert assessment is not None and assessment.verdict == "Malware"
+    assert assessment.severity is not None and assessment.severity.rating == "High"
+
+
 def _isrs() -> dict[str, AgentISR]:
     claims = [
         ClaimEvidence(

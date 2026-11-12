@@ -5784,21 +5784,43 @@ def _claim_lines(techniques: bool) -> str:
 # repetition shown back.
 ANALYST_REPEATED_CODE = "isr.claims_repeated"
 
-# The findings that say an answer could not be read at all: no claim parsed,
-# cut at the output cap, not JSON, outside its schema, its claims written
-# again and again. They are asked in both ``validation.feedback`` modes
-# (``pipeline.feedback_mode``): in ``record_only`` every other finding is
-# recorded and not asked, and an answer nobody can read leaves nothing to
-# record. The codes other modules raise are written out, so the one set is
-# declared here for every stage.
+# The findings asked in both ``validation.feedback`` modes
+# (``pipeline.feedback_mode``); in ``record_only`` every other finding is
+# recorded and not asked. One criterion decides membership: a code is here when,
+# left unasked, the stage loses the agent's own content to a fallback because
+# the answer, or a block of it, could not be read. So an answer that is not
+# JSON, cut at the output cap, outside its schema, with no claim parsed or its
+# claims repeated; a claim block whose confidence or technique line is not read,
+# or that stands under DISPUTES, and so is not a claim; a verdict word, a
+# severity rating or a leaf of the assessment that cannot be read, or an
+# assessment not where the bundle reads it, which the report then prints as
+# Inconclusive or not assessed; a judge object of no type the bundle reads, set
+# aside, and an id two objects share, whose references are read as neither. A
+# finding about what a readable answer says (a citation, a technique, a
+# grounding, a reference to something the round was not shown, a field left
+# out) is not here: the answer stands and the finding is recorded. The codes
+# other modules raise are written out, so the one set is declared here for
+# every stage.
 REASKED_IN_EVERY_MODE_CODES: frozenset[str] = frozenset(
     {
+        # The analysts.
         UNPARSED_ANSWER_CODE,
+        CLAIM_WITHOUT_CONFIDENCE_CODE,
+        TECHNIQUE_LINE_UNREAD_CODE,
+        CLAIMS_UNDER_DISPUTES_CODE,
         ANALYST_CUT_CODE,
         ANALYST_REPEATED_CODE,
-        SECTION_CUT_CODE,
+        # The judge's verdict.
         "verdict.cut_at_output_cap",
         "verdict.not_json",
+        "verdict.unrecognised",
+        "verdict.severity_enum",
+        "verdict.assessment_missing",
+        "verdict.assessment_unreadable",
+        "stix.unknown_object",
+        "stix.duplicate_label",
+        # The report stage.
+        SECTION_CUT_CODE,
         "composer.schema",
         "narrative.schema",
         "question.schema",
@@ -12645,7 +12667,8 @@ def asked_in_this_mode(violations: Sequence[Violation]) -> list[Violation]:
     """The findings a correction turn of this run may ask about (:func:`_askable`).
 
     For a stage that decides on its own whether to open a turn: in
-    ``record_only`` only an answer that could not be read is asked.
+    ``record_only`` only an answer, or a block of it, that could not be read
+    is asked (:data:`REASKED_IN_EVERY_MODE_CODES`).
     """
     return _askable(violations, every=feeds_back())
 

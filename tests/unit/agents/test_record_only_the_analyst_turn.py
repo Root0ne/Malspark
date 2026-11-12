@@ -32,7 +32,13 @@ PLAIN = (
     "CLAIM 1: The sample reads a file.\nEVIDENCE: [ev_0003]\nCONFIDENCE: 0.8\n"
     "TECHNIQUE: NONE\n---\n"
 )
-# A second claim with no confidence line: a finding that opens a turn in feed_back.
+# A second claim that cites nothing: a finding that opens a turn in feed_back.
+UNCITED = PLAIN + (
+    "CLAIM 2: The sample sleeps before it starts.\nEVIDENCE:\nCONFIDENCE: 0.7\n"
+    "TECHNIQUE: NONE\n---\n"
+)
+# A second claim with no confidence line: a block that is not a claim until it
+# is asked about, in both modes.
 UNSURE = PLAIN + (
     "CLAIM 2: The sample sleeps before it starts.\nEVIDENCE: [ev_0003]\nTECHNIQUE: NONE\n---\n"
 )
@@ -46,6 +52,7 @@ UNKNOWN = (
     "TECHNIQUE: T1059.099\n---\n"
 )
 PROSE = "The sample reads a file and then sleeps; nothing else was seen."
+EMPTY_EVIDENCE = "isr.empty_evidence"
 
 
 def _settings(mode: str) -> Any:
@@ -112,29 +119,41 @@ def _recorded(analyst: _Analyst, code: str) -> list[Violation]:
 def test_a_finding_opens_the_turn_only_in_feed_back(mode: str) -> None:
     analyst = _Analyst([FIXED])
 
-    result, published = _check(analyst, UNSURE)
+    result, published = _check(analyst, UNCITED)
 
     if mode == "feed_back":
         assert len(analyst.seen_turns) == 1
-        assert f"[{CLAIM_WITHOUT_CONFIDENCE_CODE}]" in str(analyst.seen_turns[0][-1].content)
+        assert f"[{EMPTY_EVIDENCE}]" in str(analyst.seen_turns[0][-1].content)
         assert analyst.validation_retries == 1
-        assert published == [
-            ("retried", CLAIM_WITHOUT_CONFIDENCE_CODE),
-            ("resolved", CLAIM_WITHOUT_CONFIDENCE_CODE),
-        ]
-        assert [c.confidence for c in result.claims] == [0.8, 0.7]
+        assert published == [("retried", EMPTY_EVIDENCE), ("resolved", EMPTY_EVIDENCE)]
+        assert [c.evidence_ref for c in result.claims] == ["[ev_0003]", "[ev_0003]"]
         return
     assert analyst.seen_turns == []
     assert analyst.validation_retries == 0
     assert analyst.validation_fed_back == {}
-    (found,) = _recorded(analyst, CLAIM_WITHOUT_CONFIDENCE_CODE)
+    (found,) = _recorded(analyst, EMPTY_EVIDENCE)
     assert found.asked is False
     assert found.to_dict()["asked"] == "false"
-    assert published == [("survived", CLAIM_WITHOUT_CONFIDENCE_CODE)]
-    # The answer stands as written: the claim with no confidence is not a claim.
-    assert [c.claim for c in result.claims] == ["The sample reads a file."]
+    assert published == [("survived", EMPTY_EVIDENCE)]
+    # The answer stands as written: the claim that cites nothing is still there.
+    assert [c.evidence_ref for c in result.claims] == ["[ev_0003]", ""]
     # A turn that was not sent is no turn that could not run.
     assert VALIDATION_TURN_NOT_RUN_CODE not in (analyst.validation_not_run or [])
+
+
+def test_a_block_that_is_not_a_claim_is_asked_in_both_modes(mode: str) -> None:
+    analyst = _Analyst([FIXED])
+
+    result, published = _check(analyst, UNSURE)
+
+    assert len(analyst.seen_turns) == 1
+    assert f"[{CLAIM_WITHOUT_CONFIDENCE_CODE}]" in str(analyst.seen_turns[0][-1].content)
+    assert analyst.validation_retries == 1
+    assert published == [
+        ("retried", CLAIM_WITHOUT_CONFIDENCE_CODE),
+        ("resolved", CLAIM_WITHOUT_CONFIDENCE_CODE),
+    ]
+    assert [c.confidence for c in result.claims] == [0.8, 0.7]
 
 
 def test_an_unknown_id_is_marked_and_kept_in_record_only(record_only: None) -> None:
@@ -164,18 +183,18 @@ def test_an_answer_that_could_not_be_read_is_asked_in_both_modes(mode: str) -> N
 
 
 def test_in_record_only_a_cut_answer_is_asked_about_the_cut_alone(record_only: None) -> None:
-    analyst = _Analyst([UNSURE])
-    analyst._last_answer_cut = (300, UNSURE)
+    analyst = _Analyst([UNCITED])
+    analyst._last_answer_cut = (300, UNCITED)
 
-    result, published = _check(analyst, UNSURE)
+    result, published = _check(analyst, UNCITED)
 
     (turns,) = analyst.seen_turns
     question = str(turns[-1].content)
     assert f"[{ANALYST_CUT_CODE}]" in question
-    assert f"[{CLAIM_WITHOUT_CONFIDENCE_CODE}]" not in question
+    assert f"[{EMPTY_EVIDENCE}]" not in question
     assert analyst.validation_fed_back == {ANALYST_CUT_CODE: 1}
     # What the whole answer still holds is recorded, and was not asked.
-    (left,) = _recorded(analyst, CLAIM_WITHOUT_CONFIDENCE_CODE)
+    (left,) = _recorded(analyst, EMPTY_EVIDENCE)
     assert left.asked is False
-    assert ("retried", CLAIM_WITHOUT_CONFIDENCE_CODE) not in published
-    assert [c.claim for c in result.claims] == ["The sample reads a file."]
+    assert ("retried", EMPTY_EVIDENCE) not in published
+    assert [c.evidence_ref for c in result.claims] == ["[ev_0003]", ""]
