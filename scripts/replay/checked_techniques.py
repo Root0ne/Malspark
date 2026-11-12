@@ -15,7 +15,7 @@ stored report's Findings table keeps them (``report.json``), the judge's bundle
 where it was seen and how many entries each agent that passed it cites in its
 final claims. An id an agent checked that a stored finding alone carries is
 named apart: the question asks it already, as a finding. Stored text is
-printed through ``scripts.replay.output.terminal_text``.
+printed through ``scripts.replay.output.terminal_safe``, each value on its own.
 
 Read-only over the runs: nothing is written beside them, no network is reached,
 no credential is read. ``--json PATH`` also writes the readings to ``PATH``.
@@ -132,28 +132,30 @@ def read_run(run: Path) -> dict[str, Any]:
 
 
 def _print(read: dict[str, Any]) -> None:
-    from scripts.replay.output import terminal_text
+    from scripts.replay.output import terminal_safe as safe
 
-    ids = [row["id"] for row in read["checked"]]
-    print(f"== {terminal_text(read['run'])}: {len(ids)} checked technique(s): {', '.join(ids)}")
+    ids = ", ".join(safe(row["id"]) for row in read["checked"])
+    print(f"== {safe(read['run'])}: {len(read['checked'])} checked technique(s): {ids}")
     if read["carried_by_a_finding"]:
         print(
             "   checked, and carried by a stored finding only (asked as a finding): "
-            + ", ".join(read["carried_by_a_finding"])
+            + ", ".join(safe(tid) for tid in read["carried_by_a_finding"])
         )
     for tid, why in read["not_asked"].items():
-        print(f"   {tid} is listed and {terminal_text(why)}")
+        print(f"   {safe(tid)} is listed and {safe(why)}")
     if read["claims_unread"]:
         print(f"   {read['claims_unread']} stored claim(s) did not read as this tree's claims")
     for row in read["checked"]:
         by_agent: dict[str, list[str]] = {}
         for seen in row["seen"]:
-            by_agent.setdefault(seen["agent"], []).append(f"{seen['entry']} ({seen['place']})")
-        print(f" - {row['id']}")
+            by_agent.setdefault(seen["agent"], []).append(
+                f"{safe(seen['entry'])} ({safe(seen['place'])})"
+            )
+        print(f" - {safe(row['id'])}")
         for agent, places in by_agent.items():
             cited = row["claim_entries"].get(agent) or []
             print(
-                f"     {terminal_text(agent)}: {terminal_text(', '.join(places))}; "
+                f"     {safe(agent)}: {', '.join(places)}; "
                 f"its final claims cite {len(cited)} entr{'y' if len(cited) == 1 else 'ies'}"
             )
 
@@ -169,7 +171,9 @@ def main(argv: list[str] | None = None) -> int:
         _print(read)
         found.append(read)
     if args.json is not None:
-        args.json.write_text(json.dumps(found, indent=2))
+        from scripts.replay.output import write_json
+
+        write_json(args.json, found, indent=2)
     return 0
 
 

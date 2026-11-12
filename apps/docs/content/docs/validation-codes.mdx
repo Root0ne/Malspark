@@ -46,7 +46,7 @@ not prove the test makes the platform raise it. The tests are not listed here:
 one nothing raises and stored runs carry; the comment on that
 name says what reads it.
 
-**128 codes in 12 families:** [agreement](#agreement) 18 · [attck](#attck) 7 · [attribution](#attribution) 1 · [composer](#composer) 4 · [isr](#isr) 15 · [narrative](#narrative) 5 · [question](#question) 9 · [report](#report) 19 · [stix](#stix) 32 · [tool](#tool) 1 · [validation](#validation) 1 · [verdict](#verdict) 16. 14 code positions the register could not resolve are [listed at the end](#unresolved-code-positions).
+**129 codes in 12 families:** [agreement](#agreement) 18 · [attck](#attck) 8 · [attribution](#attribution) 1 · [composer](#composer) 4 · [isr](#isr) 15 · [narrative](#narrative) 5 · [question](#question) 9 · [report](#report) 19 · [stix](#stix) 32 · [tool](#tool) 1 · [validation](#validation) 1 · [verdict](#verdict) 16. 14 code positions the register could not resolve are [listed at the end](#unresolved-code-positions).
 
 ## agreement
 
@@ -211,6 +211,14 @@ No comment names its meaning, and `malspark.pipeline.validation:claim_does_not_d
 - **Raised at** `malspark.pipeline.validation:claim_does_not_describe_violation`
 - **Constant** `malspark.pipeline.validation:CLAIM_DOES_NOT_DESCRIBE_CODE`
 - **Docs** [Architecture](/docs/architecture/), [Validation and feedback](/docs/concepts/validation/)
+
+### `attck.map_rests_on_its_lookup`
+
+A map that cites only entries in which the technique's id was written in a call's arguments: an agent looking the technique up, whose answer says what the technique is and nothing of what the sample does. A lookup of the technique is not evidence of the behaviour.
+
+- **Raised at** `malspark.pipeline.validation:mapped_technique_violations`
+- **Constant** `malspark.pipeline.validation:MAP_RESTS_ON_ITS_LOOKUP_CODE`
+- **Docs** [Architecture](/docs/architecture/)
 
 ### `attck.missing_id`
 

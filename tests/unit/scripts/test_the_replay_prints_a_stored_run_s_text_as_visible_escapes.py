@@ -18,7 +18,12 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-from scripts.replay import agreement_names, limitation_inventory, remerge_revisions
+from scripts.replay import (
+    agreement_names,
+    checked_techniques,
+    limitation_inventory,
+    remerge_revisions,
+)
 from scripts.replay.compare import diff_records
 from scripts.replay.output import render_diff, render_record, terminal_safe, write_json
 from scripts.replay.rules import replay_run
@@ -410,6 +415,36 @@ def test_every_value_agreement_names_prints_stays_on_its_own_line(
     assert not _bare(shown)
     assert shown.count("\n") == plain.count("\n")
     assert shown.count("\\x1b[2K") > 10
+
+
+def test_every_value_the_checked_techniques_reader_prints_stays_on_its_own_line(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    read: dict[str, Any] = {
+        "run": "r",
+        "claims_unread": 1,
+        "carried_by_a_finding": ["T1", "T2"],
+        "not_asked": {"T3": "why"},
+        "checked": [
+            {
+                "id": "T4",
+                "seen": [
+                    {"agent": "a", "entry": "e1", "place": "p1"},
+                    {"agent": "a", "entry": "e2", "place": "p2"},
+                ],
+                "claim_entries": {"a": ["c1", "c2"]},
+            }
+        ],
+    }
+
+    def printed(mark: Callable[[str], str]) -> str:
+        checked_techniques._print(_marked(read, mark))
+        return capsys.readouterr().out
+
+    shown, plain = printed(_hostile), printed(_benign)
+    assert not _bare(shown)
+    assert shown.count("\n") == plain.count("\n")
+    assert shown.count("\\x1b[2K") >= 10
 
 
 def test_the_remerge_script_prints_every_value_of_a_record_on_its_own_line(

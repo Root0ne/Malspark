@@ -145,13 +145,12 @@ def technique_ids_in(value: Any) -> list[str]:
     element; anything else names no technique. Ids come back upper-case and
     de-duplicated, in the order they were met.
     """
-    found: list[str] = []
+    # An insertion-ordered dict as an ordered set: linear in the ids met.
+    found: dict[str, None] = {}
     for text in _strings(value):
         for match in TECHNIQUE_RE.findall(text):
-            tid = match.upper()
-            if tid not in found:
-                found.append(tid)
-    return found
+            found[match.upper()] = None
+    return list(found)
 
 
 def sigma_technique_ids(row: Mapping[str, Any] | None) -> list[str]:

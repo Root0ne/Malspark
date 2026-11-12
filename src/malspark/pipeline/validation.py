@@ -2478,6 +2478,12 @@ MAPPED_TECHNIQUE_CODES = frozenset(
 # its parent (``description_phrases``), so the parent is not published beside it.
 PARENT_OF_A_PUBLISHED_SUB_TECHNIQUE_CODE = "attck.parent_of_a_published_sub_technique"
 
+# A map that cites only entries in which the technique's id was written in a
+# call's arguments: an agent looking the technique up, whose answer says what
+# the technique is and nothing of what the sample does. A lookup of the
+# technique is not evidence of the behaviour.
+MAP_RESTS_ON_ITS_LOOKUP_CODE = "attck.map_rests_on_its_lookup"
+
 
 def mapped_technique_violations(
     technique_id: str,
@@ -2487,6 +2493,7 @@ def mapped_technique_violations(
     *,
     attck: Any = None,
     sample: Mapping[str, Any] | None = None,
+    lookups: Collection[str] = (),
 ) -> list[Violation]:
     """What the analysts' technique checks find on a technique the judge mapped to entries.
 
@@ -2494,7 +2501,11 @@ def mapped_technique_violations(
     claim's sentence, its entries the claim's evidence line. It must cite at
     least one entry, and every entry it cites must be one the run's ledger
     holds (``ledger_ids``): an id the run never issued is a citation of
-    nothing. It is then asked the questions :func:`validate_isr` asks a
+    nothing. A map every entry of which is one of ``lookups`` — the entries
+    that named the id in their call's arguments alone, an agent looking it up
+    — rests on nothing but that lookup and is
+    :data:`MAP_RESTS_ON_ITS_LOOKUP_CODE`. It is then asked the questions
+    :func:`validate_isr` asks a
     claim's technique — whether the catalogue knows it, whether its sentence
     reads as absence, whether the sample can host it and whether its sentence
     describes it — by that function, keeping only those findings
@@ -2517,6 +2528,20 @@ def mapped_technique_violations(
             Violation(
                 code=UNGROUNDED_TECHNIQUE_CODE,
                 message=f"the map of {safe_finding_value(tid)} {said}",
+                subject=tid,
+            )
+        ]
+    looked_up = {str(i).strip().lower() for i in lookups}
+    if all(i in looked_up for i in cited):
+        return [
+            Violation(
+                code=MAP_RESTS_ON_ITS_LOOKUP_CODE,
+                message=(
+                    f"the map of {safe_finding_value(tid)} cites only "
+                    f"{', '.join(safe_finding_value(i) for i in cited)}, where the id was "
+                    "passed in a call's arguments: a lookup of the technique is not evidence "
+                    "of the behaviour"
+                ),
                 subject=tid,
             )
         ]

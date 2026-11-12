@@ -15,7 +15,6 @@ from typing import Any
 
 import pytest
 from scripts.replay import checked_techniques as reader
-from scripts.replay.output import terminal_text
 
 ROOT = Path(__file__).resolve().parents[3]
 RUNS = Path(".superpowers") / "sdd" / "mandate-2026-09-17" / "benchmark" / "deepseek"
@@ -117,12 +116,6 @@ def test_the_reader_writes_the_readings_as_json(tmp_path: Path) -> None:
     assert reader.main([str(run), "--json", str(out)]) == 0
 
     assert [row["id"] for row in json.loads(out.read_text())[0]["checked"]] == ["T1041", "T1999"]
-
-
-def test_stored_text_reaches_the_terminal_escaped() -> None:
-    assert terminal_text("a\x1b[31mb‮c\r\nd") == "a\\x1b[31mb\\u202ec d"
-    assert terminal_text("x" * 10, limit=5) == "xxxx…"
-    assert terminal_text(None) == ""
 
 
 def _stored_runs() -> Path | None:

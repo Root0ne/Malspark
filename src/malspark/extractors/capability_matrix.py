@@ -41,7 +41,7 @@ read.
 from __future__ import annotations
 
 import re
-from collections.abc import Sequence
+from collections.abc import Collection, Sequence
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -1121,6 +1121,25 @@ def carried_technique_ids(
     return carried
 
 
+# How many checked techniques one question asks. The question already sizes
+# what it shows to the judge's window (``JudgeAgent._question_room``), and the
+# checked ones go in only where that window has room left
+# (``JudgeAgent.decide_techniques``); a window it cannot learn measures
+# nothing, so the count is bounded here too. Twice the most any of the six
+# stored benchmark runs listed (16), so no measured run is cut, while a tool
+# answer that names hundreds of ids cannot turn the one question into hundreds
+# of answers to write.
+MAX_CHECKED_QUESTIONS = 32
+CHECKED_CAP_REASON = (
+    f"not asked: the question asks at most {MAX_CHECKED_QUESTIONS} techniques an agent "
+    "checked, agents' calls before tools' answers, each first seen first"
+)
+CHECKED_WINDOW_REASON = (
+    "not asked: the judge's window had no room left for it after the other techniques, "
+    "the reports and the evidence"
+)
+
+
 def checked_technique_questions(
     stix_output: dict[str, Any] | None,
     isr_reports: dict[str, Any] | None,
@@ -1137,14 +1156,22 @@ def checked_technique_questions(
     """
     if not ledger:
         return []
-    from malspark.analysis.checked_techniques import checked_techniques, claim_entries
+    from malspark.analysis.checked_techniques import (
+        IN_ARGUMENTS,
+        checked_techniques,
+        claim_entries,
+    )
 
     found = checked_techniques(ledger, carried_technique_ids(stix_output, isr_reports))
     if not found:
         return []
     cited = claim_entries(isr_reports)
     questions: list[TechniqueQuestion] = []
-    for tid, mentions in found.items():
+    # An id an agent passed in a call's arguments first, then one only a tool's
+    # answer named; each group in the order first seen. Stable, so the order is
+    # the ledger's.
+    ordered = sorted(found.items(), key=lambda item: all(m.place != IN_ARGUMENTS for m in item[1]))
+    for tid, mentions in ordered:
         agents = list(dict.fromkeys(m.agent for m in mentions))
         questions.append(
             TechniqueQuestion(
@@ -1284,6 +1311,13 @@ def judge_questions(
             not_asked[tid] = not_asked_unknown_id(tid)
         elif out_of_scope.get(tid):
             not_asked[tid] = f"not asked: {out_of_scope[tid]}"
+    # The checked questions past the cap, in their order (agents' calls before
+    # answers, each first seen first), are left out and recorded so.
+    checked_ids = [
+        tid for tid, q in questions.items() if q.kind == "checked" and tid not in not_asked
+    ]
+    for tid in checked_ids[MAX_CHECKED_QUESTIONS:]:
+        not_asked[tid] = CHECKED_CAP_REASON
     asked = [q for tid, q in questions.items() if tid not in not_asked]
     if ledger and asked:
         # The report row's own fact: the layers ``independent_statements``
@@ -1349,21 +1383,36 @@ def techniques_for_the_judge(
     return judge_questions(stix_output, isr_reports, sample, attck=attck)[0]
 
 
+# How many entries a checked question names per agent and place before it
+# says how many more there are. The entries name where the id was seen, and
+# a few of them say that; the review keeps every one (``TechniqueQuestion.
+# checked``), and a ledger that passed one id fifty thousand times does not
+# make a line of fifty thousand ids.
+CHECKED_ENTRIES_SHOWN = 3
+
+
 def checked_question_line(question: TechniqueQuestion) -> str:
-    """Where a ``checked`` question says its id was seen: each agent with its entries, by place."""
+    """Where a ``checked`` question says its id was seen: each agent with its entries, by place.
+
+    At most :data:`CHECKED_ENTRIES_SHOWN` entries per agent and place, then
+    how many more. Linear in the places listed.
+    """
     from malspark.analysis.checked_techniques import IN_ARGUMENTS
 
-    by_agent: dict[str, dict[str, list[str]]] = {}
+    # Insertion-ordered dicts as ordered sets: each entry once, in the order seen.
+    by_agent: dict[str, dict[str, dict[str, None]]] = {}
     for agent, entry_id, place in question.checked:
-        ids = by_agent.setdefault(agent, {}).setdefault(place, [])
-        if entry_id not in ids:
-            ids.append(entry_id)
+        by_agent.setdefault(agent, {}).setdefault(place, {})[entry_id] = None
     parts = []
     for agent, places in by_agent.items():
-        said = [
-            f"in the {'arguments' if place == IN_ARGUMENTS else 'answer'} of {', '.join(ids)}"
-            for place, ids in places.items()
-        ]
+        said = []
+        for place, held in places.items():
+            ids = list(held)
+            shown = ", ".join(ids[:CHECKED_ENTRIES_SHOWN])
+            more = len(ids) - CHECKED_ENTRIES_SHOWN
+            if more > 0:
+                shown += f" and {more} more"
+            said.append(f"in the {'arguments' if place == IN_ARGUMENTS else 'answer'} of {shown}")
         parts.append(f"{agent or 'an unnamed agent'} {' and '.join(said)}")
     return "; ".join(parts)
 
@@ -1374,9 +1423,53 @@ def mapped_decisions(review: TechniqueReview | None) -> list[Any]:
         return []
     return [
         d
-        for d in review.decisions
+        for d in review.checked_decisions
         if d.decision == "map" and d.evidence_ids and not d.declined_by_check
     ]
+
+
+def with_mapped_evidence(
+    evidence: dict[str, list[str]], review: TechniqueReview | dict[str, Any] | None
+) -> dict[str, list[str]]:
+    """``evidence`` (``{technique id: [ledger id, ...]}``) with each standing map's entries.
+
+    A technique the judge mapped is tied to the entries it mapped it to, the
+    sources its published row lists, so the export writes them on its edge as
+    it writes any technique's. Entries already tied stay first.
+    """
+    if isinstance(review, dict):
+        review = technique_review({TECHNIQUE_REVIEW_PROPERTY: review})
+    out = {tid: list(ids) for tid, ids in evidence.items()}
+    for decision in mapped_decisions(review):
+        tid = decision.technique_id.strip().upper()
+        held = out.setdefault(tid, [])
+        seen = set(held)
+        for entry_id in decision.evidence_ids:
+            if entry_id not in seen:
+                seen.add(entry_id)
+                held.append(entry_id)
+    return out
+
+
+def _lookups(ledger: Sequence[Any] | None, ids: Collection[str]) -> dict[str, set[str]]:
+    """Per technique id of ``ids``, the entries that named it in their call's arguments only.
+
+    An entry whose answer's declared technique field names the id too is not
+    one: its answer states it. Linear in the ledger.
+    """
+    from malspark.analysis.checked_techniques import answer_technique_ids, argument_technique_ids
+
+    wanted = {str(t).upper() for t in ids}
+    out: dict[str, set[str]] = {tid: set() for tid in wanted}
+    for entry in ledger or ():
+        named = wanted.intersection(argument_technique_ids(entry))
+        if not named:
+            continue
+        named -= set(answer_technique_ids(entry))
+        entry_id = str(getattr(entry, "id", "") or "").strip().lower()
+        for tid in named:
+            out[tid].add(entry_id)
+    return out
 
 
 def settle_mapped_techniques(
@@ -1392,30 +1485,41 @@ def settle_mapped_techniques(
 
     A map is asked what an analyst's claim of the technique is asked
     (``validation.mapped_technique_violations``: entries this run's ledger
-    holds, at least one; the catalogue, the absence reading, the sample's
-    scope and the describe check). Then, by the family rule, a mapped parent
-    technique one of whose sub-techniques the report publishes is declined
+    holds, at least one, not all of them entries that only looked the id up;
+    the catalogue, the absence reading, the sample's scope and the describe
+    check). Then, by the family rule, a mapped parent technique one of whose
+    sub-techniques the report publishes is declined
     (``validation.parent_beside_sub_technique_violation``): the published set
     is the matrix's own, built from the bundle with the review so far. The
     first finding names the decline; the judge's entries and reason are kept.
     Never raises: a check that cannot run declines the map, since a map is
-    published only on the checks' word.
+    published only on the checks' word, and with no catalogue (``attck``
+    ``None``) the catalogue's checks cannot run.
     """
     from malspark.pipeline.validation import (
         mapped_technique_violations,
         parent_beside_sub_technique_violation,
     )
 
-    if not any(d.decision == "map" for d in review.decisions):
+    decisions = list(review.checked_decisions)
+    if not any(d.decision == "map" for d in decisions):
         return review
-    ledger_ids = [str(getattr(e, "id", "") or "") for e in ledger or ()]
-    decisions = list(review.decisions)
 
     def _declined(index: int, code: str, finding: str) -> None:
         decisions[index] = decisions[index].model_copy(
             update={"decision": "decline", "declined_by_check": code, "check_finding": finding}
         )
 
+    def _settled() -> TechniqueReview:
+        return review.model_copy(update={"checked_decisions": decisions})
+
+    if attck is None:
+        for index, decision in enumerate(decisions):
+            if decision.decision == "map":
+                _declined(index, CHECK_NOT_RUN, NO_CATALOGUE_FINDING)
+        return _settled()
+    ledger_ids = [str(getattr(e, "id", "") or "") for e in ledger or ()]
+    lookups = _lookups(ledger, [d.technique_id for d in decisions if d.decision == "map"])
     for index, decision in enumerate(decisions):
         if decision.decision != "map":
             continue
@@ -1427,6 +1531,7 @@ def settle_mapped_techniques(
                 ledger_ids,
                 attck=attck,
                 sample=sample,
+                lookups=lookups.get(decision.technique_id.upper(), set()),
             )
         except Exception as exc:  # noqa: BLE001 — unchecked is not published
             logger.warning(
@@ -1438,11 +1543,10 @@ def settle_mapped_techniques(
             continue
         if found:
             _declined(index, found[0].code, found[0].message)
-    settled = review.model_copy(update={"decisions": decisions})
-    if not mapped_decisions(settled):
-        return settled
+    if not mapped_decisions(_settled()):
+        return _settled()
     try:
-        bundle = {**(stix_output or {}), TECHNIQUE_REVIEW_PROPERTY: settled.model_dump()}
+        bundle = {**(stix_output or {}), TECHNIQUE_REVIEW_PROPERTY: _settled().model_dump()}
         published = {
             m.technique_id.upper()
             for m in build_capability_matrix(
@@ -1454,15 +1558,17 @@ def settle_mapped_techniques(
         for index, decision in enumerate(decisions):
             if decision.decision == "map":
                 _declined(index, CHECK_NOT_RUN, f"the checks did not run ({type(exc).__name__})")
-        return review.model_copy(update={"decisions": decisions})
+        return _settled()
     for index, decision in enumerate(decisions):
         if decision.decision != "map":
             continue
         parent = parent_beside_sub_technique_violation(decision.technique_id, published)
         if parent is not None:
             _declined(index, parent.code, parent.message)
-    return review.model_copy(update={"decisions": decisions})
+    return _settled()
 
 
+# The finding on a map settled with no ATT&CK catalogue to ask.
+NO_CATALOGUE_FINDING = "the ATT&CK catalogue could not be read, so the map's checks did not run"
 # What a map's record says when its checks could not run: it is not published.
 CHECK_NOT_RUN = "not checked"

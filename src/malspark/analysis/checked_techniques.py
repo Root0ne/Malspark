@@ -70,13 +70,12 @@ def answer_technique_ids(entry: Any) -> list[str]:
     structured = getattr(entry, "structured", None)
     if structured is None:
         return []
-    found: list[str] = []
+    # An insertion-ordered dict as an ordered set: linear in the ids met.
+    found: dict[str, None] = {}
     for field in facts.techniques:
         for value in select(structured, field.path):
-            for tid in ids_in_field(value, field.format):
-                if tid not in found:
-                    found.append(tid)
-    return found
+            found.update(dict.fromkeys(ids_in_field(value, field.format)))
+    return list(found)
 
 
 def checked_techniques(

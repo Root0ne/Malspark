@@ -900,26 +900,35 @@ class FallbackVerdict(_SpecConformantModel):
 
 
 class TechniqueDecision(_SpecConformantModel):
-    """The judge's word on one technique it was asked about, and why.
+    """The judge's word on one technique it was asked about: keep or drop, and why."""
 
-    ``keep`` or ``drop`` for a technique an analyst named; ``map`` or
-    ``decline`` for one an agent checked or a tool's answer named that nothing
+    technique_id: str
+    decision: Literal["keep", "drop"]
+    # The judge's reason as it wrote it, whole.
+    reason: str = ""
+
+
+class CheckedDecision(_SpecConformantModel):
+    """The judge's word on a technique an agent checked that nothing carried: map or decline.
+
+    A technique an entry's call arguments or a tool answer's declared
+    technique field named that no final claim, finding or bundle object
     carried (``capability_matrix.checked_technique_questions``). A map names
     the ledger entries the technique rests on (``evidence_ids``) and is
     checked as an analyst's claim of it is; one that fails a check is recorded
     as ``decline`` with the check's code (``declined_by_check``) and finding
     (``check_finding``), the judge's own entries and reason kept beside them.
+    Kept apart from :class:`TechniqueDecision`, whose words an earlier reader
+    of the review knows, so such a reader still reads every keep and drop.
     """
 
     technique_id: str
-    decision: Literal["keep", "drop", "map", "decline"]
+    decision: Literal["map", "decline"]
     # The judge's reason as it wrote it, whole.
     reason: str = ""
-    # Each field below is left out of the serialised decision when empty, so a
-    # keep or a drop dumps exactly as one written before they existed.
-    evidence_ids: list[str] = Field(default_factory=list, exclude_if=lambda value: not value)
-    declined_by_check: str = Field(default="", exclude_if=lambda value: not value)
-    check_finding: str = Field(default="", exclude_if=lambda value: not value)
+    evidence_ids: list[str] = Field(default_factory=list)
+    declined_by_check: str = ""
+    check_finding: str = ""
 
 
 class TechniqueReview(_SpecConformantModel):
@@ -930,7 +939,8 @@ class TechniqueReview(_SpecConformantModel):
     keep or drop, with a reason; the ones an agent checked or a tool's answer
     named that nothing carries go in the same question, to map to the ledger
     entries they rest on or to decline. ``asked`` is every technique in that question
-    and ``decisions`` what the answer said of each; a technique it said nothing
+    and ``decisions`` (``checked_decisions`` for a checked one) what the answer
+    said of each; a technique it said nothing
     of is not decided. ``unanswered`` says why there is no answer at all — the
     question timed out, failed, was not asked, or was answered in no line the
     form names — and then nothing is withheld for it.
@@ -955,11 +965,21 @@ class TechniqueReview(_SpecConformantModel):
     # Left out of the serialised review when empty, so a review written before
     # it existed dumps as it did.
     checked: dict[str, str] = Field(default_factory=dict, exclude_if=lambda value: not value)
+    # What the answer said of each checked technique: map or decline. Left out
+    # of the serialised review when empty, and a field of its own, so a reader
+    # that predates it reads the keeps and drops and passes over it.
+    checked_decisions: list[CheckedDecision] = Field(
+        default_factory=list, exclude_if=lambda value: not value
+    )
 
-    def decision_for(self, technique_id: str) -> TechniqueDecision | None:
+    def decision_for(self, technique_id: str) -> TechniqueDecision | CheckedDecision | None:
         """What the answer said of ``technique_id``, or ``None`` when it said nothing."""
         wanted = str(technique_id or "").strip().upper()
-        return next((d for d in self.decisions if d.technique_id.upper() == wanted), None)
+        found: list[TechniqueDecision | CheckedDecision] = [
+            *self.decisions,
+            *self.checked_decisions,
+        ]
+        return next((d for d in found if d.technique_id.upper() == wanted), None)
 
 
 # The bundle property the judge's answer about those techniques is kept in.

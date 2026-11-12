@@ -48,7 +48,7 @@ from malspark.reporting.models import FileHashes, MalwareReport, SampleIdentity
 from malspark.reporting.renderers.markdown import MarkdownRenderer
 from malspark.schemas.evidence import LedgerEntry
 from malspark.schemas.isr_models import JUDGE_ONLY_TECHNIQUE_MARKER, AgentISR, ClaimEvidence
-from malspark.schemas.stix_models import Bundle, TechniqueDecision, TechniqueReview
+from malspark.schemas.stix_models import Bundle, CheckedDecision, TechniqueReview
 from malspark.tools import knowledge
 
 CHECKED = "T1041"  # Exfiltration Over C2 Channel: validated, on no claim
@@ -222,7 +222,9 @@ class TestTheAnswer:
 
         read = read_technique_answer(answer, [CHECKED, "T1083", "T1124"], {CHECKED, "T1083"})
 
-        assert [(d.technique_id, d.decision, d.reason, d.evidence_ids) for d in read] == [
+        assert [
+            (d.technique_id, d.decision, d.reason, getattr(d, "evidence_ids", [])) for d in read
+        ] == [
             (CHECKED, "map", "r1", ["ev_0004"]),
             ("T1083", "decline", "nothing lists files", []),
             ("T1124", "keep", "r3", []),
@@ -253,7 +255,7 @@ class TestTheAnswer:
         review, _llm = _ask("I would map it, probably.")
 
         assert review is not None
-        assert review.decisions == []
+        assert review.decisions == [] and review.checked_decisions == []
         assert (
             review.unanswered
             == "the answer named none of the techniques in a form that could be read"
@@ -298,7 +300,9 @@ class TestTheAnswer:
 
         assert offered == [TechniqueMapAnswer]
         assert review is not None
-        assert [(d.decision, d.evidence_ids) for d in review.decisions] == [("map", ["ev_0004"])]
+        assert [(d.decision, d.evidence_ids) for d in review.checked_decisions] == [
+            ("map", ["ev_0004"])
+        ]
 
     def test_a_structured_answer_is_read_by_kind(self) -> None:
         parsed = TechniqueMapAnswer.model_validate(
@@ -312,28 +316,28 @@ class TestTheAnswer:
 
         read = _structured_decisions(parsed, [CHECKED, "T1124"], {CHECKED})
 
-        assert [(d.technique_id, d.decision, d.evidence_ids) for d in read] == [
+        assert [(d.technique_id, d.decision, getattr(d, "evidence_ids", [])) for d in read] == [
             (CHECKED, "map", ["ev_0005"]),
             ("T1124", "drop", []),
         ]
 
 
-def _settled(decision: TechniqueDecision, **kwargs: Any) -> TechniqueDecision:
-    review = TechniqueReview(asked=[decision.technique_id], decisions=[decision])
+def _settled(decision: CheckedDecision, **kwargs: Any) -> CheckedDecision:
+    review = TechniqueReview(asked=[decision.technique_id], checked_decisions=[decision])
     settled = settle_mapped_techniques(
         review,
         kwargs.get("bundle", _bundle()).model_dump(),
         kwargs.get("isrs", _isrs()),
         kwargs.get("sample", WINDOWS),
-        ledger=_ledger(),
-        attck=knowledge,
+        ledger=kwargs.get("ledger", _ledger()),
+        attck=kwargs.get("attck", knowledge),
     )
-    (out,) = settled.decisions
+    (out,) = settled.checked_decisions
     return out
 
 
 def _mapped(reason: str = DESCRIBES, entries: list[str] | None = None, tid: str = CHECKED) -> Any:
-    return TechniqueDecision(
+    return CheckedDecision(
         technique_id=tid,
         decision="map",
         reason=reason,
@@ -406,7 +410,7 @@ class TestTheChecks:
         review, _llm = _ask(_map(entries=["ev_0042"]))
 
         assert review is not None
-        (decision,) = review.decisions
+        (decision,) = review.checked_decisions
         assert (decision.decision, decision.declined_by_check) == (
             "decline",
             UNGROUNDED_TECHNIQUE_CODE,
@@ -441,7 +445,9 @@ class TestPublishing:
         assert review is not None
         # A map with no entry, written straight onto a review, is not published either.
         bare = review.model_copy(
-            update={"decisions": [*review.decisions, _mapped(entries=[], tid="T1083")]}
+            update={
+                "checked_decisions": [*review.checked_decisions, _mapped(entries=[], tid="T1083")]
+            }
         )
 
         _cells, mappings = _matrix(bare)
@@ -496,8 +502,7 @@ class TestAnEarlierDocument:
 
         review = TechniqueReview.model_validate(stored)
 
-        assert review.checked == {}
-        assert review.decisions[0].evidence_ids == []
+        assert review.checked == {} and review.checked_decisions == []
         # Nothing the checked kind added is written for it.
         dumped = review.model_dump()
         assert "checked" not in dumped
