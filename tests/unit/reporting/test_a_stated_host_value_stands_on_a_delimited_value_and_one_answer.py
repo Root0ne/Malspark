@@ -44,6 +44,7 @@ from malspark.reporting.renderers.stix_renderer import (
 )
 from malspark.reporting.stated_host_values import (
     GENERIC_NOTE,
+    benign_catalogue,
     benign_reason,
     held_in_cited,
     identifier_answers,
@@ -101,6 +102,17 @@ class TestAValueIsHeldOnlyWhereDelimited:
             ("scheduled task", "Updater", "updater runs it"),
             # A name inside a path is the path's: a mutex is no folder.
             ("mutex", "explorer", "HKCU\\Software\\Microsoft\\Windows\\Explorer\\Advanced"),
+            # A bracket of prose opens nothing: only one written right after a name does.
+            ("mutex", "explorer", "the loader (explorer) then injects"),
+            ("mutex", "explorer", "injects into (explorer, svchost) processes"),
+            ("mutex", "explorer", "process list [explorer, svchost]"),
+            ("scheduled task", "updater", "installs (updater)"),
+            ("service", "examplesvc", "stops services (examplesvc, othersvc)"),
+            ("mutex", "explorer", "(explorer"),
+            # After a quote, a list mark of running text closes nothing.
+            ("mutex", "explorer", "Explorer, then it injects code"),
+            ("service", "examplesvc", "ExampleSvc; the service is stopped"),
+            ("scheduled task", "updater", "updater) runs at logon"),
         ],
     )
     def test_a_word_of_running_text_holds_nothing(self, kind: str, value: str, text: str) -> None:
@@ -121,6 +133,15 @@ class TestAValueIsHeldOnlyWhereDelimited:
             ("mutex", "abc123", "abc123, then"),
             # A task's folder is no namespace: a task is stated in full.
             ("scheduled task", "MyTask", json.dumps({"t": "\\Folder\\MyTask"})),
+            ("mutex", "explorer", json.dumps({"explorer": 1})),
+            ("mutex", "explorer", "'explorer':"),
+            ("mutex", "explorer", "svchost, explorer, and lsass"),
+            ("mutex", "explorer", "the loader (explorer) then injects"),
+            ("service", "examplesvc", "stops services (examplesvc, othersvc)"),
+            ("mutex", "explorer", "process list [explorer, svchost]"),
+            ("mutex", "explorer", "'explorer, then it injects'"),
+            ("service", "examplesvc", "'examplesvc; the service is stopped'"),
+            ("scheduled task", "updater", "'updater) runs at logon'"),
         ],
     )
     def test_a_key_or_an_unpaired_mark_holds_nothing(
@@ -146,6 +167,16 @@ class TestAValueIsHeldOnlyWhereDelimited:
             ("folder", "Custom_update", json.dumps("C:\\Users\\a\\AppData\\Custom_update\\x.dll")),
             ("folder", "Custom_update", "C:/Users/a/AppData/Custom_update/x.dll"),
             ("file name", "\\update_data.dat", _decoded("\\update_data.dat")),
+            ("mutex", "abc123", "name=abc123,"),
+            ("named pipe", "\\\\.\\pipe\\x", "CreateNamedPipeW(\\\\.\\pipe\\x, 3)"),
+            # A list mark after a quoted value closes it where a quote, a bracket,
+            # a line break or the end follows.
+            ("file name", "a.dat", '["a.dat", "b.dat"]'),
+            ("file name", "a.dat", json.dumps({"s": '["a.dat", "b.dat"]'})),
+            ("mutex", "abc123", "'abc123,'"),
+            ("mutex", "abc123", "['abc123]"),
+            ("mutex", "abc123", "'abc123,\nnext"),
+            ("mutex", "explorer", json.dumps(["explorer", "svchost"])),
         ],
     )
     def test_a_delimited_value_is_held(self, kind: str, value: str, text: str) -> None:
@@ -305,6 +336,92 @@ class TestAValueTheSandboxPlacesElsewhere:
         assert not any("xyzmutex77" in rule.body.lower() for rule in report.detection_signatures)
 
 
+def _load(path: str) -> Any:
+    return benign_catalogue.__wrapped__(path)
+
+
+class TestAValueTheSandboxHoldsUnderAnotherKind:
+    """The placement check asks each sandbox kind a table kind declares a value recorded under."""
+
+    VALUE = "HKCU\\Software\\ExampleVendor7731\\App\\state"
+
+    def _report(self, monkeypatch: Any, *, stated: bool = True) -> MalwareReport:
+        import malspark.reporting.renderers.stix_renderer as stix
+        from malspark.reporting.models import DynamicBehavior
+
+        monkeypatch.setattr(
+            stix,
+            "_sandbox_host_index",
+            lambda report: {
+                ("registry", stix._value_key("registry", self.VALUE)): (
+                    "the sandbox names no process that wrote it"
+                )
+            },
+        )
+        report = _report(
+            [("registry value", self.VALUE)] if stated else [],
+            json.dumps({"keys": [self.VALUE]}),
+            dynamic=DynamicBehavior(registry_mods=[{"key": self.VALUE, "operation": "modify"}]),
+        )
+        report.attribution.family = "ExampleFamily"
+        report.attribution.family_grounded = True
+        return MalwareReportBuilder.attach_detection_signatures(report)
+
+    def test_the_kinds_are_declared_in_the_data(self) -> None:
+        from malspark.reporting.stated_host_values import host_kinds
+
+        kinds = host_kinds()
+        assert kinds["registry value"].sandbox_kinds == ("registry",)
+        assert kinds["file name"].sandbox_kinds == ("path",)
+        assert kinds["file path"].sandbox_kinds == ("path",)
+        assert kinds["mutex"].sandbox_kinds == ("mutex",)
+        assert kinds["service"].sandbox_kinds == ()
+
+    def test_is_refused_with_that_record_on_every_surface(self, monkeypatch: Any) -> None:
+        from app.services.report_service import ioc_feed_rows
+
+        report = self._report(monkeypatch)
+
+        ((_, answer),) = identifier_answers(report)
+        assert answer == "no: the sandbox names no process that wrote it"
+        rows = [r for r in report.consolidated_iocs if r.value == self.VALUE]
+        assert rows and not any(publishes(r.published) for r in rows)
+        feed = [
+            r for r in ioc_feed_rows(report.model_dump(mode="json")) if r["value"] == self.VALUE
+        ]
+        assert feed and not any(r["published"] for r in feed)
+        bundle = ExtendedSTIXRenderer().render(report).model_dump(mode="json")
+        assert not any("ExampleVendor7731" in obj.get("pattern", "") for obj in bundle["objects"])
+        assert not any(
+            "ExampleVendor7731" in a["value"]
+            for a in build_misp_attributes(report, report.consolidated_iocs, owner="x")
+        )
+        # The drafts are the ones the sandbox's own record gives (a Sigma draft
+        # selects what a sandbox watched): the statement adds none.
+        unstated = self._report(monkeypatch, stated=False)
+        assert [self._detection(r) for r in report.detection_signatures] == [
+            self._detection(r) for r in unstated.detection_signatures
+        ]
+        assert not any(
+            "examplevendor7731" in rule.body.lower()
+            for rule in report.detection_signatures
+            if rule.kind != "sigma"
+        )
+        assert "no: the sandbox names no process that wrote it" in MarkdownRenderer().render(report)
+
+    @staticmethod
+    def _detection(rule: Any) -> Any:
+        if rule.kind == "sigma":
+            return yaml.safe_load(rule.body)["detection"]
+        return rule.kind
+
+    def test_without_the_record_it_is_exported(self) -> None:
+        report = _report([("registry value", self.VALUE)], json.dumps({"keys": [self.VALUE]}))
+
+        ((_, answer),) = identifier_answers(report)
+        assert publishes(answer)
+
+
 class TestWhatEveryWindowsHostHolds:
     @pytest.mark.parametrize(
         ("kind", "value"),
@@ -350,6 +467,13 @@ class TestWhatEveryWindowsHostHolds:
             "%APPDATA%\\Drivers",
             "C:\\ExampleVendor7731\\Tasks",
             "C:\\Data\\Spool",
+            # The system root's name starts the chain only at a path's start or
+            # right after a drive: elsewhere it is a folder of its own.
+            "%APPDATA%\\Windows\\System32",
+            "C:\\ProgramData\\Windows\\Tasks",
+            "%TEMP%\\Windows",
+            "C:\\ExampleVendor7731\\Windows\\System32\\Drivers",
+            "System32",
         ],
     )
     def test_a_system_folder_s_name_outside_the_system_chain_is_kept(self, value: str) -> None:
@@ -358,13 +482,73 @@ class TestWhatEveryWindowsHostHolds:
     @pytest.mark.parametrize(
         "value",
         [
+            "Windows",
+            "C:\\Windows\\Tasks",
+            "D:\\Windows\\System32\\Drivers",
+            "%SystemRoot%\\System32",
+            "%windir%\\Tasks",
+            "%SystemDrive%\\Windows\\System32\\spool",
+        ],
+    )
+    def test_the_system_chain_from_its_declared_root_is_refused(self, value: str) -> None:
+        assert benign_reason(typed_kind("folder"), value) == "a Windows known folder"
+
+    @pytest.mark.parametrize(
+        "value",
+        [
+            "%windir%\\System32\\cmd.exe",
+            "%SystemDrive%\\Windows\\System32\\cmd.exe",
+            "Windows\\System32\\cmd.exe",
+        ],
+    )
+    def test_a_file_windows_ships_under_a_declared_root_form_is_refused(self, value: str) -> None:
+        assert benign_reason(typed_kind("file path"), value) != ""
+
+    def test_the_root_forms_are_the_data_s(self, monkeypatch: Any, tmp_path: Any) -> None:
+        from malspark.reporting import stated_host_values as shv
+
+        document = json.loads(shv.resolve_data(shv.DEFAULT_CATALOGUE).read_text(encoding="utf-8"))
+        assert "%windir%" in document["system_roots"]["entries"]
+        document["system_roots"]["entries"].remove("%windir%")
+        changed = tmp_path / "catalogue.json"
+        changed.write_text(json.dumps(document), encoding="utf-8")
+        monkeypatch.setattr(shv, "benign_catalogue", lambda path=str(changed): _load(path))
+
+        assert benign_reason(typed_kind("folder"), "%windir%\\Tasks") == ""
+        assert benign_reason(typed_kind("folder"), "%SystemRoot%\\Tasks") != ""
+
+    @pytest.mark.parametrize(
+        "value",
+        [
             "C:\\Windows\\Temp\\cmd.exe",
             "%TEMP%\\svchost.exe",
             "C:\\Windows\\System32\\svch0st.exe",
+            "%APPDATA%\\Windows\\System32\\svchost.exe",
+            "C:\\ExampleVendor7731\\Windows\\System32\\svchost.exe",
         ],
     )
     def test_a_system_binary_s_name_out_of_its_folder_is_kept(self, value: str) -> None:
         assert benign_reason(typed_kind("file path"), value) == ""
+
+    @pytest.mark.parametrize(
+        "name", ["telnet.exe", "tftp.exe", "bash.exe", "wsl.exe", "lsaiso.exe", "pwsh.exe"]
+    )
+    def test_a_file_not_on_every_installation_is_kept(self, name: str) -> None:
+        assert benign_reason(typed_kind("file path"), f"C:\\Windows\\System32\\{name}") == ""
+
+    def test_a_dotnet_tool_is_listed_with_the_dotnet_tools(self) -> None:
+        from malspark.reporting import stated_host_values as shv
+
+        document = json.loads(shv.resolve_data(shv.DEFAULT_CATALOGUE).read_text(encoding="utf-8"))
+        assert "ieexec.exe" in document["dotnet_framework_tools"]["entries"]
+        assert "ieexec.exe" not in document["system_binaries"]["entries"]
+        assert (
+            benign_reason(
+                typed_kind("file path"),
+                "C:\\Windows\\Microsoft.NET\\Framework\\v2.0.50727\\IEExec.exe",
+            )
+            != ""
+        )
 
     @pytest.mark.parametrize(
         "value",
@@ -400,6 +584,42 @@ class TestWhatEveryWindowsHostHolds:
 
         ((_, answer),) = identifier_answers(report)
         assert answer == "no: the sample's own file name, where a submitted file is placed"
+
+    @pytest.mark.parametrize(
+        "value",
+        [
+            "%TEMP%\\invoice_7731.exe",
+            "%TMP%\\invoice_7731.exe",
+            "%USERPROFILE%\\invoice_7731.exe",
+            "C:\\invoice_7731.exe",
+            "invoice_7731.exe",
+        ],
+    )
+    def test_the_submitted_name_in_a_submission_root_is_refused(self, value: str) -> None:
+        assert benign_reason(typed_kind("file path"), value, frozenset(), "invoice_7731.exe") == (
+            "the sample's own file name, where a submitted file is placed"
+        )
+
+    @pytest.mark.parametrize(
+        "value", ["%APPDATA%\\ExampleVendor7731\\invoice_7731.exe", "%PUBLIC%\\invoice_7731.exe"]
+    )
+    def test_the_submitted_name_elsewhere_is_kept(self, value: str) -> None:
+        assert benign_reason(typed_kind("file path"), value, frozenset(), "invoice_7731.exe") == ""
+
+    def test_the_submission_roots_are_the_data_s(self, monkeypatch: Any, tmp_path: Any) -> None:
+        from malspark.reporting import stated_host_values as shv
+
+        document = json.loads(shv.resolve_data(shv.DEFAULT_CATALOGUE).read_text(encoding="utf-8"))
+        assert "%tmp%" in document["submission_roots"]["entries"]
+        document["submission_roots"]["entries"].remove("%tmp%")
+        changed = tmp_path / "catalogue.json"
+        changed.write_text(json.dumps(document), encoding="utf-8")
+        monkeypatch.setattr(shv, "benign_catalogue", lambda path=str(changed): _load(path))
+
+        name = "invoice_7731.exe"
+        kind = typed_kind("file path")
+        assert benign_reason(kind, f"%TMP%\\{name}", frozenset(), name) == ""
+        assert benign_reason(kind, f"%TEMP%\\{name}", frozenset(), name) != ""
 
     def test_a_namespace_is_read_past_for_the_generic_check(self) -> None:
         assert is_generic(typed_kind("mutex"), "Global\\Updater")

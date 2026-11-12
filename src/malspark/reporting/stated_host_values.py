@@ -106,6 +106,9 @@ class HostKind:
     # The object namespaces a name of this kind is written under
     # (``global\\`` for a mutex, ``\\\\.\\pipe\\`` for a pipe), lower case.
     namespaces: tuple[str, ...] = ()
+    # The kinds the sandbox records a value of this kind under (a registry
+    # value's path as a ``registry`` key's), each asked by the placement check.
+    sandbox_kinds: tuple[str, ...] = ()
 
 
 @lru_cache(maxsize=4)
@@ -120,6 +123,7 @@ def host_kinds(path: str = DEFAULT_KINDS) -> dict[str, HostKind]:
             shape=str(spec.get("shape") or ""),
             words=str(spec.get("words") or ""),
             namespaces=tuple(str(ns).lower() for ns in spec.get("namespaces") or () if ns),
+            sandbox_kinds=tuple(str(sk) for sk in spec.get("sandbox_kinds") or () if sk),
         )
         for word, spec in (document.get("kinds") or {}).items()
     }
@@ -165,6 +169,9 @@ class Catalogue:
     known_folder_prefixes: tuple[str, ...]
     environment_folders: frozenset[str]
     system_folders: frozenset[str]
+    # The forms a path names the system root by (``windows``,
+    # ``%systemdrive%\\windows``), each as its components.
+    system_roots: tuple[tuple[str, ...], ...]
     system_binaries: frozenset[str]
     object_namespaces: frozenset[str]
     windows_streams: frozenset[str]
@@ -200,6 +207,10 @@ def benign_catalogue(path: str = DEFAULT_CATALOGUE) -> Catalogue:
         known_folder_prefixes=tuple(sorted(_set("known_folder_prefixes"))),
         environment_folders=_set("environment_folders"),
         system_folders=system,
+        system_roots=tuple(
+            tuple(part for part in root.split("\\") if part)
+            for root in sorted(_set("system_roots"))
+        ),
         system_binaries=_set("system_binaries") | _set("dotnet_framework_tools"),
         object_namespaces=_set("object_namespaces"),
         windows_streams=_set("windows_streams"),
@@ -256,23 +267,33 @@ def _components(value: str) -> list[str]:
     return [part for part in (raw.rstrip(". ") for raw in text.lower().split("\\")) if part]
 
 
-# The roots of the %SystemRoot% chain: a system folder counts as known only
-# as one of these or right under another folder of the chain.
-_SYSTEM_ROOTS = frozenset({"windows", "%systemroot%", "%windir%"})
+def _system_chain(parts: Sequence[str], catalogue: Catalogue) -> list[bool]:
+    """Which of a path's components stand in the %SystemRoot% chain.
+
+    The chain starts at a declared form of the system root (the catalogue's
+    ``system_roots``) written where the path starts or right after a drive,
+    and runs on through the system folders that follow it, one under another;
+    a root's name anywhere else (``%APPDATA%\\Windows``) starts nothing.
+    """
+    flags = [False] * len(parts)
+    start = 1 if parts and _DRIVE_RE.fullmatch(parts[0]) is not None else 0
+    for root in catalogue.system_roots:
+        if tuple(parts[start : start + len(root)]) == root:
+            at = start + len(root)
+            flags[start:at] = [True] * len(root)
+            while at < len(parts) and parts[at] in catalogue.system_folders:
+                flags[at] = True
+                at += 1
+            break
+    return flags
 
 
-def _in_the_system_chain(part: str, previous: str, catalogue: Catalogue) -> bool:
-    return part in catalogue.system_folders and (
-        part in _SYSTEM_ROOTS or previous in catalogue.system_folders
-    )
-
-
-def _known_component(part: str, previous: str, catalogue: Catalogue) -> bool:
+def _known_component(part: str, previous: str, catalogue: Catalogue, chained: bool) -> bool:
     short = _SHORT_NAME_RE.fullmatch(part)
     return (
         part in catalogue.known_folders
         or part in catalogue.environment_folders
-        or _in_the_system_chain(part, previous, catalogue)
+        or chained
         or part.startswith(catalogue.known_folder_prefixes)
         or _DRIVE_RE.fullmatch(part) is not None
         or (short is not None and short.group(1) in catalogue.short_stems)
@@ -282,8 +303,9 @@ def _known_component(part: str, previous: str, catalogue: Catalogue) -> bool:
 
 
 def _all_known(parts: Sequence[str], catalogue: Catalogue) -> bool:
+    chain = _system_chain(parts, catalogue)
     return bool(parts) and all(
-        _known_component(part, parts[at - 1] if at else "", catalogue)
+        _known_component(part, parts[at - 1] if at else "", catalogue, chain[at])
         for at, part in enumerate(parts)
     )
 
@@ -298,9 +320,10 @@ def past_known_folders(value: str) -> str:
     catalogue = benign_catalogue()
     text = value.strip().strip("\"'").replace("/", "\\")
     parts = [part for part in (raw.rstrip(". ") for raw in text.split("\\")) if part]
+    chain = _system_chain([part.lower() for part in parts], catalogue)
     at = 0
     while at < len(parts) and _known_component(
-        parts[at].lower(), parts[at - 1].lower() if at else "", catalogue
+        parts[at].lower(), parts[at - 1].lower() if at else "", catalogue, chain[at]
     ):
         at += 1
     return "\\".join(parts[at:])
@@ -378,10 +401,9 @@ def benign_reason(
     if kind.shape == "folder":
         return ""
     name = parts[-1]
+    chain = _system_chain(parts[:-1], catalogue)
     if name in catalogue.system_binaries and all(
-        _DRIVE_RE.fullmatch(part) is not None
-        or _in_the_system_chain(part, parts[at - 1] if at else "", catalogue)
-        for at, part in enumerate(parts[:-1])
+        _DRIVE_RE.fullmatch(part) is not None or chain[at] for at, part in enumerate(parts[:-1])
     ):
         return "a file Windows ships, in the folder Windows keeps it in"
     stem = name.rsplit(".", 1)[0]
@@ -394,16 +416,14 @@ def benign_reason(
 
 def _a_submission_place(folders: Sequence[str], catalogue: Catalogue) -> bool:
     """Whether a file's folders are where a submitted file is placed: none, a drive's root,
-    a declared submission root (the temporary folder, the desktop, the downloads folder) or
-    the profile folder itself (``Users\\<name>``)."""
+    a declared submission root (the temporary folder, the desktop, the downloads folder, the
+    profile, by name or environment form) or the profile folder itself (``Users\\<name>``)."""
     if not folders:
         return True
     last = folders[-1]
     return (
         (len(folders) == 1 and _DRIVE_RE.fullmatch(last) is not None)
         or last in catalogue.submission_roots
-        or last in catalogue.environment_folders
-        and last.strip("%") in ("temp", "tmp", "userprofile")
         or (len(folders) >= 2 and folders[-2] == "users")
     )
 
@@ -610,7 +630,10 @@ def identifier_answers(report: Any) -> list[tuple[StatedHostValue, str]]:
     tree the judge did not name), never where a record places the value
     elsewhere: a value the sandbox recorded from a process it does not
     attribute to the sample's tree, and the judge did not keep, is answered
-    with that refusal, here, so every surface reads the one answer.
+    with that refusal, here, so every surface reads the one answer. The
+    sandbox is asked under each kind the vocabulary declares a value of the
+    row's kind recorded under (``HostKind.sandbox_kinds``): a registry value
+    the sandbox holds as a key is the same value.
     """
     from malspark.reporting.renderers.stix_renderer import (
         publish_answer,
@@ -625,10 +648,12 @@ def identifier_answers(report: Any) -> list[tuple[StatedHostValue, str]]:
         kwargs = analysis_kwargs(report, item, beyond_rows=index >= MAX_STATED_ROWS)
         stated = kwargs["stated"]
         answer = publish_answer(stated.table_kind, stated.value, ANALYSIS_SOURCE, **kwargs)
-        if publishes(answer):
-            placed = sandbox_host_kwargs(report, stated.table_kind, stated.value)
+        for sandbox_kind in stated.kind.sandbox_kinds if stated.kind is not None else ():
+            if not publishes(answer):
+                break
+            placed = sandbox_host_kwargs(report, sandbox_kind, stated.value)
             if placed.get("unattributed"):
-                refused = publish_answer(stated.table_kind, stated.value, "sandbox", **placed)
+                refused = publish_answer(sandbox_kind, stated.value, "sandbox", **placed)
                 if not publishes(refused):
                     answer = refused
         out.append((stated, answer))
@@ -638,11 +663,14 @@ def identifier_answers(report: Any) -> list[tuple[StatedHostValue, str]]:
 # What a delimited value may stand between. A strong delimiter at either end:
 # the text's start or end, a quote (one that a ``:`` follows closes a key, not
 # a value), a line break as written or as its escape, and for a folder's or a
-# file's name a path separator. A structural one: an opening ``(`` or ``[``, a
-# ``=`` or ``:`` written right before the value, and a closing ``)``, ``]``,
-# ``,`` or ``;``; those count only where the other end is a quote, an opening
-# bracket or such a ``=`` / ``:``. Never a space or a full stop: those are
-# running text, and a word of a tool's prose is no value.
+# file's name a path separator. A structural one: an opening ``(`` or ``[``
+# written right after a name (a call, ``CreateMutexW(``), a ``=`` or ``:``
+# written right before the value, and a closing ``)``, ``]``, ``,`` or ``;``;
+# those count only where the other end is a quote, such a bracket or such a
+# ``=`` / ``:``, and after a quote only where a quote, a closing bracket, a
+# line break or the text's end follows the mark (a space allowed). Never a
+# space or a full stop: those are running text, and a word of a tool's prose
+# is no value; nor a bracket of prose, "the loader (explorer) then".
 _QUOTES = "\"'"
 _LINE_BREAKS = "\n\r\t"
 _ESCAPED_BREAKS = ("\\n", "\\r", "\\t")
@@ -694,10 +722,31 @@ def _opening(text: str, start: int, separators: bool, prefixes: Sequence[str]) -
     if any(text.endswith(prefix, 0, start) for prefix in prefixes):
         return _STRONG
     if before in _OPEN_BRACKETS:
-        return _BRACKET
+        # Only a call's bracket: a name character right before it.
+        return _BRACKET if start >= 2 and _is_name_char(text[start - 2]) else ""
     if before in _PAIR_MARKS:
         return _PAIR
     return ""
+
+
+def _is_name_char(char: str) -> bool:
+    return char.isalnum() or char == "_"
+
+
+def _a_list_ends(text: str, end: int) -> bool:
+    """Whether the list mark at ``end`` closes a quoted value: what follows it, past one
+    space, is a quote (as written or escaped), a closing bracket, a line break (as
+    written or escaped) or the text's end."""
+    rest = text[end + 1 : end + 4]
+    if rest.startswith(" "):
+        rest = rest[1:]
+    return (
+        not rest
+        or rest[0] in _QUOTES
+        or rest[0] in ")]"
+        or rest[0] in _LINE_BREAKS
+        or rest[:2] in ('\\"', *_ESCAPED_BREAKS)
+    )
 
 
 def _closing(text: str, end: int, separators: bool) -> str:
@@ -748,9 +797,11 @@ def delimited_in(
 
     Both ends must be delimiters that pair (:data:`_ADMITS`): a quote, the
     text's start or end, a line break or its escape and, with ``separators``,
-    a path separator take each other; an opening bracket or a ``=`` / ``:``
-    right before the value takes only a quote or a closing ``)``, ``]``,
-    ``,`` or ``;``. Never a space or a full stop of running text, and never a
+    a path separator take each other; an opening bracket written right after
+    a name, or a ``=`` / ``:`` right before the value, takes only a quote or a
+    closing ``)``, ``]``, ``,`` or ``;``, and a quote takes such a mark only
+    where a quote, a closing bracket, a line break or the end follows it
+    (:func:`_a_list_ends`). Never a space or a full stop of running text, and never a
     quote a ``:`` follows (a key): ``{"text": "updater"}``,
     ``CreateMutexW(abc123)`` and ``name=abc123,`` hold their value, and
     "installs an updater, which runs", ``{"updater": 1}``, ``updater: a task``
@@ -771,9 +822,11 @@ def delimited_in(
             opened = _STRONG if start > 0 and text[start - 1] == ":" else ""
         else:
             opened = _opening(text, start, separators, prefixes)
+        closed = _closing(text, end, separators) if opened else ""
         if (
             opened
-            and _closing(text, end, separators) in _ADMITS[opened]
+            and closed in _ADMITS[opened]
+            and (opened != _QUOTE or closed != _LIST or _a_list_ends(text, end))
             and not _in_a_url(text, start)
         ):
             return True

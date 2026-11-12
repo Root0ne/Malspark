@@ -2,7 +2,7 @@
   "schema": "malspark-host-benign-locations/v1",
   "version": "2.0",
   "source": "Windows itself, as Microsoft documents it: the Known Folders and CSIDL references, the folders Windows Setup creates under %SystemRoot%, the files Windows ships there, the services and named pipes Windows' own components install and open, the streams Windows writes, the registry keys and values every installation holds, the object manager's namespaces, and the Task Scheduler task-definition schema. Nothing here is about one sample, family or run; each list states the criterion that admits an entry. Written for this project, not copied from a third-party table.",
-  "about": "Host values every Windows system holds or every program may use, which a value the analysis states is refused as: an indicator on one matches every host. Compared case-insensitively, a path with '/' read as '\\\\' and each component with trailing dots and spaces trimmed (Windows ignores them). A component is a known folder when it is in 'known_folders', 'environment_folders' or 'system_folders', begins with a 'known_folder_prefixes' entry, is a drive, is the profile name after 'Users', or is the 8.3 short name Windows generates for a known folder (its first six letters without spaces, a tilde and a digit). 'generic_names' are not refused: such a value is exported with a note that it may match ordinary software, and never becomes a matcher on its own.",
+  "about": "Host values every Windows system holds or every program may use, which a value the analysis states is refused as: an indicator on one matches every host. Compared case-insensitively, a path with '/' read as '\\\\' and each component with trailing dots and spaces trimmed (Windows ignores them). A component is a known folder when it is in 'known_folders' or 'environment_folders', is a form of 'system_roots' where a path starts or right after a drive, is in 'system_folders' within the chain such a form starts, begins with a 'known_folder_prefixes' entry, is a drive, is the profile name after 'Users', or is the 8.3 short name Windows generates for a known folder (its first six letters without spaces, a tilde and a digit). 'generic_names' are not refused: such a value is exported with a note that it may match ordinary software, and never becomes a matcher on its own.",
   "known_folders": {
     "criterion": "A folder Windows names as a known folder (Known Folders / CSIDL) outside %SystemRoot%, by its display or file-system name, or a folder Windows creates under one on every installation. The folders of the %SystemRoot% chain are 'system_folders'.",
     "source": "Microsoft Known Folders and CSIDL documentation.",
@@ -102,10 +102,9 @@
     ]
   },
   "system_folders": {
-    "criterion": "A folder Windows Setup creates in the %SystemRoot% chain on every installation, in which Windows keeps its own programs, drivers and data files. It counts as a known folder only in that chain: as %SystemRoot% itself (windows, %systemroot%, %windir%) or right under another folder of the chain, so a 'Drivers' or 'Tasks' folder anywhere else is a folder of its own.",
+    "criterion": "A folder Windows Setup creates in the %SystemRoot% chain on every installation, in which Windows keeps its own programs, drivers and data files. It counts as a known folder only in that chain: right under the system root ('system_roots') or under another folder of the chain, so a 'Drivers' or 'Tasks' folder anywhere else is a folder of its own.",
     "source": "The %SystemRoot% layout of a clean Windows installation as Microsoft documents it (System, System32 and SysWOW64 with the WOW64 redirector's Sysnative, and their sub-folders wbem, drivers\\\\etc, WindowsPowerShell\\\\v1.0, spool, Tasks, config, catroot, downlevel; Fonts, INF, WinSxS, servicing). A folder any user or program writes in (Temp, Logs, Debug) is not one.",
     "entries": [
-      "windows",
       "system",
       "system32",
       "syswow64",
@@ -124,9 +123,17 @@
       "config",
       "catroot",
       "catroot2",
-      "downlevel",
+      "downlevel"
+    ]
+  },
+  "system_roots": {
+    "criterion": "How a path names %SystemRoot%, the folder the system chain starts at: the folder's own name and the environment forms Windows defines for it. A form counts only at a path's start or right after a drive, so a 'Windows' folder anywhere else is a folder of its own.",
+    "source": "Microsoft 'Recognized environment variables' documentation (SystemRoot, windir, SystemDrive) and the Windows folder a clean installation creates at the system drive's root.",
+    "entries": [
+      "windows",
       "%systemroot%",
-      "%windir%"
+      "%windir%",
+      "%systemdrive%\\windows"
     ]
   },
   "system_binaries": {
@@ -143,7 +150,6 @@
       "attrib.exe",
       "audiodg.exe",
       "backgroundtaskhost.exe",
-      "bash.exe",
       "bcdboot.exe",
       "bcdedit.exe",
       "bcrypt.dll",
@@ -207,7 +213,6 @@
       "hostname.exe",
       "hosts",
       "icacls.exe",
-      "ieexec.exe",
       "ieframe.dll",
       "iertutil.dll",
       "imagehlp.dll",
@@ -224,7 +229,6 @@
       "lmhosts.sam",
       "logman.exe",
       "logonui.exe",
-      "lsaiso.exe",
       "lsass.exe",
       "magnify.exe",
       "makecab.exe",
@@ -236,12 +240,10 @@
       "mpr.dll",
       "msconfig.exe",
       "msctf.dll",
-      "msdt.exe",
       "msdtc.exe",
       "mshta.exe",
       "mshtml.dll",
       "msiexec.exe",
-      "mspaint.exe",
       "mstsc.exe",
       "msv1_0.dll",
       "msvcp_win.dll",
@@ -282,7 +284,6 @@
       "protocol",
       "psapi.dll",
       "psr.exe",
-      "pwsh.exe",
       "qprocess.exe",
       "query.exe",
       "quser.exe",
@@ -342,15 +343,12 @@
       "systeminfo.exe",
       "takeown.exe",
       "tar.exe",
-      "taskeng.exe",
       "taskhostw.exe",
       "taskkill.exe",
       "tasklist.exe",
       "taskmgr.exe",
       "taskschd.dll",
-      "telnet.exe",
       "textinputhost.exe",
-      "tftp.exe",
       "timeout.exe",
       "tiworker.exe",
       "tracert.exe",
@@ -395,13 +393,10 @@
       "wldp.dll",
       "wmiadap.exe",
       "wmiapsrv.exe",
-      "wmic.exe",
       "wmiprvse.exe",
-      "write.exe",
       "ws2_32.dll",
       "wscript.exe",
       "wshom.ocx",
-      "wsl.exe",
       "wtsapi32.dll",
       "wuauclt.exe",
       "wudfhost.exe",
@@ -755,6 +750,7 @@
     "entries": [
       "msbuild.exe",
       "csc.exe",
+      "ieexec.exe",
       "vbc.exe",
       "jsc.exe",
       "installutil.exe",
@@ -785,13 +781,16 @@
     ]
   },
   "submission_roots": {
-    "criterion": "A folder a submitted file is placed in before it runs, by a sandbox or by a user: the temporary folders, the desktop, the downloads folder, the profile folder itself and a drive's root. The sample's submitted name is refused bare or directly under one of these; under any other folder it is a copy the sample made and kept.",
-    "source": "Microsoft Known Folders (Desktop, Downloads, the profile) and the TEMP/TMP environment folders; a drive root.",
+    "criterion": "A folder a submitted file is placed in before it runs, by a sandbox or by a user: the temporary folders, the desktop, the downloads folder, the profile folder itself and a drive's root, by name and by the environment form Windows defines for it. The sample's submitted name is refused bare, directly under one of these, directly under a drive's root or directly in a profile folder ('Users\\<name>'); under any other folder it is a copy the sample made and kept.",
+    "source": "Microsoft Known Folders (Desktop, Downloads, the profile) and the TEMP, TMP and USERPROFILE environment variables; a drive root.",
     "entries": [
       "temp",
       "tmp",
       "desktop",
-      "downloads"
+      "downloads",
+      "%temp%",
+      "%tmp%",
+      "%userprofile%"
     ]
   }
 }
