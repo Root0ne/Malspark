@@ -591,8 +591,10 @@ def vocabulary_listing(field: Any) -> str:
     The one rendering of a declared vocabulary (the schema's ``enum`` that a
     field's ``json_schema_extra`` writes, as the host-identifier kinds and
     uses): its words joined by " or ", quoted as one JSON string, the way the
-    structured path's schema shows them. The prompt examples' guard takes
-    exactly this listing out of a contract before it reads the rest.
+    structured path's schema shows them. The prompt examples' guard holds the
+    fields declaring one to exactly the host identifier's ``kind`` and ``use``,
+    listing their data file's members, and takes only that listing out of a
+    contract before it reads the rest.
     """
     extra = getattr(field, "json_schema_extra", None)
     schema: dict[str, Any] = {}
