@@ -55,12 +55,12 @@ strength. Nothing is bound to Windows: the sample's own bytes decide its route.
 ## Benchmark
 
 The benchmark run of 2026-11-06: Claude Haiku 5.5 with the all-tools team on a
-Latrodectus sample, with a real sandbox, scored against public human reports
-of the family.
+Latrodectus sample, with a real sandbox, scored against eight public human
+analyses of the family.
 
-| Reference facts recovered | Wrong | Verified facts beyond the human reports | Cost |
+| Reference facts recovered | Wrong | Verified facts beyond the key | Cost |
 | :-- | :-- | :-- | :-- |
-| **56 of 57** (46 found, 10 partly) | **0** | **58** | **8.24 USD** (129 model calls, 84 minutes) |
+| **84 of 89** (56 found, 28 partly) | **0** | **37** | **8.24 USD** (129 model calls, 84 minutes) |
 
 The method and the per-group scores are on the
 [benchmark page](https://malspark.com/docs/benchmark/).
