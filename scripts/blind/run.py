@@ -2,11 +2,13 @@
 
     python scripts/blind/run.py prepare RUN RUN [RUN ...] --out DIR --items ITEMS.txt [--seed N]
     python scripts/blind/run.py reveal DIR/scorer/scores.csv --map DIR/sealed-map.json
+    python scripts/blind/run.py agreement SHEET_OR_SCORE SHEET_OR_SCORE [...] [--json]
 
 ``prepare`` copies each arm's report (Markdown, HTML), STIX bundle and IOC table under a
 shuffled anonymous id with every string that names the arm removed, checks that none survived,
 and writes the id-to-arm map to ``DIR/sealed-map.json``, outside the directory ``DIR/scorer``
 that goes to the scorer. ``reveal`` reads the filled score sheet and prints the arms.
+``agreement`` computes how far two or more scorers' verdicts agree (``scripts/blind/agreement.py``).
 """
 
 from __future__ import annotations
@@ -19,6 +21,8 @@ _ROOT = Path(__file__).resolve().parents[2]
 if str(_ROOT) not in sys.path:
     sys.path.insert(0, str(_ROOT))
 
+from scripts.blind.agreement import AgreementError  # noqa: E402
+from scripts.blind.agreement import run as agreement_run  # noqa: E402
 from scripts.blind.prepare import BlindError, prepare, read_items  # noqa: E402
 from scripts.blind.reveal import render, reveal  # noqa: E402
 from scripts.replay.stored import StoredRunChanged  # noqa: E402
@@ -48,6 +52,17 @@ def _parser() -> argparse.ArgumentParser:
     rev = sub.add_parser("reveal", help="print the per-arm scores and the differences")
     rev.add_argument("scores", type=Path, help="the filled score sheet (CSV or JSON)")
     rev.add_argument("--map", type=Path, required=True, help="the sealed map from prepare")
+    agree = sub.add_parser("agreement", help="agreement between two or more scorers")
+    agree.add_argument(
+        "raters", nargs="+", help="a filled score sheet (.csv) or score file per rater, [NAME=]path"
+    )
+    agree.add_argument("--json", action="store_true", help="print the report as JSON")
+    agree.add_argument(
+        "--leave-out-wrong",
+        action="store_true",
+        help="the ordinal statistics leave out every rating of wrong, and count them",
+    )
+    agree.add_argument("--column", default=None, help="read only this arm column of a sheet")
     return parser
 
 
@@ -68,9 +83,18 @@ def main(argv: list[str] | None = None) -> int:
             print(f"scorer directory: {done.scorer_dir}")
             print(f"score template:   {done.template}")
             print(f"sealed map:       {done.sealed} (keep it away from the scorer)")
+        elif args.command == "agreement":
+            print(
+                agreement_run(
+                    args.raters,
+                    as_json=args.json,
+                    leave_out_wrong=args.leave_out_wrong,
+                    column=args.column,
+                )
+            )
         else:
             print(render(reveal(args.scores, args.map)))
-    except (BlindError, StoredRunChanged, OSError, ValueError) as exc:
+    except (AgreementError, BlindError, StoredRunChanged, OSError, ValueError) as exc:
         print(f"blind: {exc}", file=sys.stderr)
         return 2
     return 0

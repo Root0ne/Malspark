@@ -74,3 +74,32 @@ arm's totals and every item the arms scored differently, by the arm's name. It
 refuses, with status 2, when any item or the count is left unscored, naming the
 item and the id, when a cell is not a verdict, or when the sheet names an id the
 map does not hold.
+
+## Agreement between scorers
+
+When two or more people score the same sheet, `agreement` says how far they agree,
+by code and with no model:
+
+```bash
+python scripts/blind/run.py agreement scorer-1.csv scorer-2.csv scorer-3.csv [--json] [--leave-out-wrong]
+```
+
+Each file is one rater: a filled score sheet (`.csv`) or a key score (`.md`).
+`NAME=path` names a rater, else the file name does. A blank cell is a missing
+rating, and the `beyond_human` row is not an item. A sheet with several arm
+columns gives one unit per `column:item`, so the scorers are compared cell for
+cell; `--column ID` reads one arm only.
+
+It prints, for the five verdicts and again for the collapsed view (credited,
+which is `partly (dump)` or better, against not credited): the percentage
+agreement, pairwise and pooled; Cohen's kappa and linear weighted kappa for each
+pair; Fleiss' kappa for three or more raters; Krippendorff's alpha, nominal and
+ordinal, which tolerates missing ratings; each pair's confusion matrix and the
+items the pair disagrees on. A statistic with no defined value (one category
+only, a single item, no overlap, fewer than three raters for Fleiss) is
+printed as `n/a` with its reason.
+
+`wrong` is its own class for the nominal statistics. The ordinal ones use the
+order `wrong < missed < partly (dump) < partly (body) < found`; with
+`--leave-out-wrong` they leave every rating of `wrong` out instead, and the
+count left out is printed.
