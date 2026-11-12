@@ -27,6 +27,13 @@ MODES = (FEED_BACK, RECORD_ONLY)
 # not asked in ``record_only`` (``TechniqueReview.not_asked``).
 NOT_ASKED_IN_RECORD_ONLY = f"not asked: {SETTING} is {RECORD_ONLY}"
 
+# The operator's choice a ``record_only`` run lists beside its degradations
+# (``run_summary.operator_choices``): it cost the run no evidence.
+RECORD_ONLY_CHOICE = (
+    f"{SETTING} is {RECORD_ONLY}: every check ran and every finding was recorded, "
+    "and no agent was asked to correct its answer"
+)
+
 
 def feedback_mode(settings: Any = None) -> str:
     """This run's ``validation.feedback``, the default where it is not readable.

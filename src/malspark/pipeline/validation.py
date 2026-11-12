@@ -79,7 +79,7 @@ from malspark.pipeline.events import (
     unparsed_answer_kept_sentence,
 )
 from malspark.pipeline.exit_branches import ExitSite, exits_question, uncovered_exits
-from malspark.pipeline.feedback_mode import feeds_back
+from malspark.pipeline.feedback_mode import FEED_BACK, feedback_mode, feeds_back
 from malspark.pipeline.retry_merge import folded_title
 from malspark.schemas.evidence import ENTRY_ID_RE, answer_not_shown, entry_ids_in
 from malspark.schemas.judgement import BENIGN_VERDICT, SEVERITY_RATINGS, VERDICT_VALUES
@@ -13864,6 +13864,10 @@ def validation_metrics(
     names the checks that could not run at all — the validity check on a box
     with no catalogue — which is a different fact from a check that ran and
     found nothing.
+
+    ``feedback`` names this run's ``validation.feedback`` where it is not the
+    default (``record_only``: no finding was asked, so ``by_code`` counts each
+    once); a run in the default carries no such key.
     """
     by_code: dict[str, int] = {code: int(count) for code, count in (fed_back or {}).items()}
     rows: list[dict[str, str]] = []
@@ -13937,6 +13941,9 @@ def validation_metrics(
     ]
     if withdrawn:
         out["retry_withdrawals"] = withdrawn
+    mode = feedback_mode()
+    if mode != FEED_BACK:
+        out["feedback"] = mode
     return out
 
 

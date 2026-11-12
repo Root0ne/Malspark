@@ -25,6 +25,7 @@ from malspark.pipeline.validation import (
     record_flagged_statements,
     retry_with_feedback,
     retry_with_feedback_sync,
+    validation_metrics,
 )
 
 CONTENT = "attck.unknown_id"
@@ -209,3 +210,13 @@ class TestFlaggedStatements:
         record_flagged_statements(report, [self._violation()])
         record_flagged_statements(report, [self._violation()], asked=False)
         assert [row.asked for row in report.flagged_statements] == [True, False]
+
+
+class TestTheRunRecord:
+    def test_a_record_only_run_names_its_mode(self, record_only: None) -> None:
+        block = validation_metrics(0, [("static", Violation(CONTENT, "m", asked=False))])
+        assert block["feedback"] == "record_only"
+        assert block["unresolved"][0]["asked"] == "false"
+
+    def test_a_default_run_carries_no_key(self, feed_back: None) -> None:
+        assert "feedback" not in validation_metrics(0, [])
