@@ -19,6 +19,11 @@ ledger, by the answers' own keys, never by a tool's name:
 * **The calls**: each routine's callees as the index lists them, and each
   slot's API name (``slot_calls``, ``resolved_slots``), which a listing's line
   is read by.
+* **The data**: each address a decoded row holds a text at, read by the
+  places its tool declares for a decoded kind (``RELATION_KEYS``); and, given a
+  routine's listing (:func:`hold_data`), each address a line of it names after a
+  data label a source declares (``undeclared_tools.declared_labels``), with the
+  routines the index lists it calling that the same line names (T-652).
 
 An answer's export rows and imports are read only where the answer is about the
 sample: its call read no file the run produced, and the program or path it names,
@@ -30,8 +35,10 @@ sentence says of it is the model's to answer. Linear in the ledger.
 
 from __future__ import annotations
 
+import re
 from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
+from functools import lru_cache
 from typing import Any
 
 from malspark.agents.function_map import function_artefacts, one_spelling
@@ -41,8 +48,10 @@ __all__ = [
     "ApiCall",
     "ApiHeld",
     "ExportHeld",
+    "DataRef",
     "RunNames",
     "TextHeld",
+    "hold_data",
     "run_names",
 ]
 
@@ -121,6 +130,18 @@ class TextHeld:
 
 
 @dataclass
+class DataRef:
+    """The data one routine's listing names: the data addresses its lines name after a
+    declared data label, each with the routines the index lists it calling that a line
+    naming it names, and the entries listing it."""
+
+    routine: int
+    # Each data address, with the routines a line naming it calls.
+    addresses: dict[int, dict[int, None]] = field(default_factory=dict)
+    listed_in: tuple[str, ...] = ()
+
+
+@dataclass
 class RunNames:
     """What the ledger holds by name: its APIs, exports and texts, the index's callees by
     routine and its slots by address, and the bases an address is spelled by."""
@@ -138,6 +159,39 @@ class RunNames:
     # in call nothing it lists.
     index_whole: bool = False
     bases: tuple[int, ...] = ()
+    # The text keys the index ties to each routine, in the order it lists them.
+    texts_of: dict[int, list[str]] = field(default_factory=dict)
+    # Each address a decoded row holds a text at, with the entries holding it, and every
+    # entry of a decoded kind read (T-652).
+    decoded_at: dict[int, dict[str, None]] = field(default_factory=dict)
+    decoded_entries: dict[str, None] = field(default_factory=dict)
+    # Each routine whose listing names a data address (:func:`hold_data`), and the routines
+    # naming each data address.
+    refs_of: dict[int, DataRef] = field(default_factory=dict)
+    data_at: dict[int, dict[int, None]] = field(default_factory=dict)
+
+    # Every routine the index lists called.
+    called: frozenset[int] = frozenset()
+
+    def routine_at(self, address: int) -> bool:
+        """Whether ``address`` is a routine the index lists or lists called: no datum."""
+        return address in self.rows or address in self.callees or address in self.called
+
+    def decoded(self, address: int) -> bool:
+        """Whether a decoded row holds a text at ``address`` in any of its spellings: as
+        written, and less each image base the run read (a row may write an offset where a
+        listing writes the virtual address)."""
+        return any(
+            spelled in self.decoded_at
+            for spelled in (address, *(address - base for base in self.bases if address >= base))
+        )
+
+    def decoded_reconciled(self) -> bool:
+        """Whether "no decoded row holds a text at" an address can be said: no decoded
+        answer was read, or the one image base read spells a row's offset and a listing's
+        virtual address alike. With no base, or two, a row's address and a listing's may be
+        two spellings of one place, so nothing is said (T-652)."""
+        return not self.decoded_entries or len(self.bases) == 1
 
     def api(self, name: str) -> ApiHeld | None:
         """The API the run holds under ``name`` (case aside), or ``None``."""
@@ -198,6 +252,8 @@ def _index(names: RunNames, data: Mapping[str, Any], entry_id: str) -> None:
                 if len(text.strip()) < NAME_FLOOR:
                     continue
                 found = names.texts.setdefault(text.strip().lower(), TextHeld(text=text.strip()))
+                if routine not in found.routines:
+                    names.texts_of.setdefault(routine, []).append(text.strip().lower())
                 found.routines[routine] = None
                 found.sources.update(dict.fromkeys(_sources(cell)))
                 found.held_as[key] = None
@@ -219,6 +275,7 @@ def _index(names: RunNames, data: Mapping[str, Any], entry_id: str) -> None:
                 tuple(dict.fromkeys(one_spelling(a, spell) for a in map(_hex, called) if a)),
             )
     names.rows = frozenset(rows)
+    names.called = frozenset(a for row in names.callees.values() for a in row)
     names.index_entry = entry_id
 
 
@@ -282,6 +339,77 @@ def _format_rows(names: RunNames, entry: Any, data: Mapping[str, Any]) -> None:
             api.imported[entry_id] = None
 
 
+def _decoded_rows(names: RunNames, entry: Any) -> None:
+    """The addresses an answer of a decoded kind holds a text at, read by its tool's declared
+    rows, places and ``text`` value; none where it declares none."""
+    from malspark.core.declared_reading import facts_of
+    from malspark.core.tool_declarations import select
+
+    facts = facts_of(entry)
+    data = getattr(entry, "structured", None)
+    if facts is None or facts.kind not in RELATION_KEYS["decoded"] or not facts.rows:
+        return
+    if not isinstance(data, Mapping) or not facts.places or "text" not in facts.values:
+        return
+    entry_id = str(getattr(entry, "id", "") or "")
+    names.decoded_entries[entry_id] = None
+    for row in select(data, facts.rows):
+        if not any(str(t or "").strip() for t in select(row, facts.values["text"])):
+            continue
+        for path in facts.places.values():
+            for value in select(row, path):
+                at = _hex(value)
+                if at is not None:
+                    names.decoded_at.setdefault(one_spelling(at, names.bases), {})[entry_id] = None
+
+
+# A hex run as a listing writes an address, a label's prefix aside.
+_LINE_HEX = re.compile(r"(?<![0-9A-Za-z])(?:0x)?([0-9A-Fa-f]{4,16})(?![0-9A-Za-z_])")
+
+
+@lru_cache(maxsize=16)
+def _data_label(prefixes: tuple[str, ...]) -> re.Pattern[str] | None:
+    """A datum's label as a source declares it: one of ``prefixes``, then the address."""
+    words = [re.escape(p) for p in prefixes if p]
+    if not words:
+        return None
+    return re.compile(
+        rf"(?<![0-9A-Za-z])(?:{'|'.join(words)})(?:0x)?([0-9A-Fa-f]{{4,16}})(?![0-9A-Za-z_])"
+    )
+
+
+def hold_data(
+    names: RunNames,
+    routine: int,
+    code: str,
+    listed_in: Sequence[str],
+    prefixes: Sequence[str],
+) -> None:
+    """Each data address a line of ``code``, the listing of ``routine``, names after one of
+    the declared data labels ``prefixes``, held for the routine, with the routines the index
+    lists it calling that the same line names: what the ledger holds is that one line names
+    both, never how the line uses the datum, which no argument list is parsed for. A
+    routine's own address is no datum. One pass over the lines."""
+    label = _data_label(tuple(prefixes))
+    if label is None:
+        return
+    callees = set(names.callees.get(routine, ()))
+    for line in code.splitlines():
+        found = [one_spelling(int(m.group(1), 16), names.bases) for m in label.finditer(line)]
+        found = [a for a in found if not names.routine_at(a)]
+        if not found:
+            continue
+        ref = names.refs_of.setdefault(routine, DataRef(routine, listed_in=tuple(listed_in)))
+        called = [
+            at
+            for match in _LINE_HEX.finditer(line)
+            if (at := one_spelling(int(match.group(1), 16), names.bases)) in callees
+        ]
+        for address in found:
+            ref.addresses.setdefault(address, {}).update(dict.fromkeys(called))
+            names.data_at.setdefault(address, {})[routine] = None
+
+
 def run_names(entries: Iterable[Any], bases: Sequence[int] = ()) -> RunNames:
     """What the ledger holds by name, read once: the function index's rows (the last index
     read whole), and each answer's export rows and import names where the answer is about
@@ -308,6 +436,7 @@ def run_names(entries: Iterable[Any], bases: Sequence[int] = ()) -> RunNames:
     for entry in entries:
         if not getattr(entry, "ok", True):
             continue
+        _decoded_rows(names, entry)
         data = getattr(entry, "structured", None)
         if not isinstance(data, Mapping) or ("export_rows" not in data and "imports" not in data):
             continue

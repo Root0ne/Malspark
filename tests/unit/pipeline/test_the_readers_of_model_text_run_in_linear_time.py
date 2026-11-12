@@ -55,7 +55,15 @@ from malspark.reporting.absence_answers import (
     reading_denied_in,
 )
 from malspark.reporting.composer_pro import carried_values
-from malspark.reporting.ledger_entities import ApiCall, ApiHeld, ExportHeld, RunNames, TextHeld
+from malspark.reporting.ledger_entities import (
+    ApiCall,
+    ApiHeld,
+    DataRef,
+    ExportHeld,
+    RunNames,
+    TextHeld,
+    hold_data,
+)
 from malspark.reporting.section_agreement import (
     CLAIM_LED,
     Passage,
@@ -157,6 +165,38 @@ def _names_of_many_sentences(text: str) -> object:
     )
     found = SimpleNamespace(listed=[])
     return _name_passages([passage], _MANY_EXPORTS, found, {}, frozenset())  # type: ignore[arg-type]
+
+
+def _data_listing(text: str) -> str:
+    """A listing as long as ``text`` passing as many data addresses to one callee."""
+    return "".join(f"  FUN_2000(&DAT_{0x10000 + i:x},v);\n" for i in range(len(text) // 26))
+
+
+def _reading_data(listing: str) -> object:
+    names = RunNames(rows=frozenset({0x1400, 0x2000}), callees={0x1400: (0x2000,)})
+    hold_data(names, 0x1400, listing, ("ev_0001",), ("DAT_",))
+    return names
+
+
+@lru_cache(maxsize=8)
+def _many_data(count: int) -> RunNames:
+    """A run whose one routine's listing names ``count`` data addresses no decoded row holds."""
+    addresses = [0x10000 + 16 * i for i in range(count)]
+    return RunNames(
+        rows=frozenset({0x1400}),
+        refs_of={0x1400: DataRef(0x1400, {a: {} for a in addresses}, ("ev_0001",))},
+        data_at={a: {0x1400: None} for a in addresses},
+    )
+
+
+def _data_sentence(text: str) -> str:
+    """A denial of the texts at as many data addresses as ``text`` is long."""
+    said = ", ".join(hex(0x10000 + 16 * i) for i in range(len(text) // 9))
+    return f"The texts at {said} are not decoded."
+
+
+def _denying_many_data(sentence: str) -> object:
+    return name_readings(sentence, "", _many_data(sentence.count(",") + 1))
 
 
 def _hostile(size: int) -> str:
@@ -589,6 +629,11 @@ EXITS = exit_branches(
         ),
         pytest.param(_denying_many_names, id="a denial of as many names as the line holds"),
         pytest.param(_names_of_many_sentences, id="the facts of names many sentences deny"),
+        pytest.param(_built(_data_listing, _reading_data), id="the data addresses of a listing"),
+        pytest.param(
+            _built(_data_sentence, _denying_many_data),
+            id="a denial of the texts at many data addresses",
+        ),
         pytest.param(
             lambda t: _call_lines(t.replace(" is ", "\n"), ["1400", "native"], {0x1400: "X"}, ()),
             id="the call lines of a listing",

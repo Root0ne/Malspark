@@ -77,8 +77,8 @@ LEFT_OUT_COMMENT = (
     "{rest} more published {what} are not in this draft; the report's IOC table carries every one."
 )
 # How many of the values the sample stores (``report.code_constants``) one
-# draft matches on: a decoder's seeds (``$dN``), and the function-name hashes
-# (``$hN``) that count only beside them. A function-name hash is how a program
+# draft matches on: a decoder's seeds (``$dN``), and the name hashes
+# (``$hN``) that count only beside them. A name hash is how a program
 # finds its imports, which programs resolving by the same public algorithm
 # share; a seed with no hash beside it is four bytes. So the stored group holds
 # only with every seed and enough hashes, and a run with no seed, or fewer than
@@ -214,7 +214,7 @@ def build_detection_rules(
     address — because the drafts read every row the string sweep produced.
     The YARA draft matches on one thing more: the values the sample stores in
     its own bytes that the run's tools read as a decoder's seed or a
-    function-name hash (``report.code_constants``). They are no indicator and
+    name hash (``report.code_constants``). They are no indicator and
     are published nowhere; they are what the file itself holds where it keeps
     the published values encoded.
 
@@ -610,7 +610,7 @@ def _build_yara(report: MalwareReport, sample: OwnSample | None = None) -> Detec
 
     The strings are the published rows of the IOC table (``$sN``) and the
     values the sample stores that a tool read as a decoder's seed (``$dN``) or
-    a function-name hash (``$hN``, ``report.code_constants``, chosen by
+    a name hash (``$hN``, ``report.code_constants``, chosen by
     :func:`stored_selection`), each group with a quantifier of its own, and
     nothing else. The import names the pack's
     technique rules fired on used to be strings here too, and ``8 of them``

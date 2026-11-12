@@ -71,7 +71,15 @@ def _ledger() -> list[LedgerEntry]:
     }
     return [
         LedgerEntry(id="ev_0001", tool="image_facts", output='{"image_base": "0x2470000"}'),
-        LedgerEntry(id="ev_0002", tool="lift_routine", output="int f(void) { return 0; }"),
+        # The listing of routine 0x1400, which the conclusion names: a fact holds its address,
+        # so a passage naming it speaks of a held absence of section 5 naming it (T-652).
+        LedgerEntry(
+            id="ev_0002",
+            tool="lift_routine",
+            args={"address": "0x1400"},
+            output="int f(void) { return 0; }",
+            facts={"v": 1, "kind": "decompile", "reader": "listing"},
+        ),
         LedgerEntry(
             id="ev_0003",
             tool="guest_processes",
@@ -83,7 +91,7 @@ def _ledger() -> list[LedgerEntry]:
 
 def _report(
     *,
-    evasion: str = f"Strings are encoded [ev_0002]. {DENIED}",
+    evasion: str = f"Strings are encoded by 0x1400 [ev_0002]. {DENIED}",
     flow: str = GATES,
     limitations: str = PARENTS,
 ) -> MalwareReport:
@@ -100,7 +108,7 @@ def _report(
                 title="Evasion", body=evasion, evidence_refs=["ev_0002"]
             ),
             analyst_conclusion=TechnicalSubsection(
-                title="Conclusion", body="The file is a loader [ev_0002]."
+                title="Conclusion", body="The file is a loader started by routine 0x1400 [ev_0002]."
             ),
             analyst_limitations=TechnicalSubsection(title="Limitations", body=limitations),
         ),
@@ -244,25 +252,31 @@ def test_no_source_speaks_that_could_not_be_quoted(absence: str, flow: str) -> N
 
 def test_a_run_set_absence_is_spoken_of_by_what_a_run_saw() -> None:
     absence = "Whether the timing gate passes in the sandbox is not established."
-    saw = "In the sandbox run the timing gate passes and the beacon starts [ev_0002]."
-    report = _report(evasion=f"Strings are encoded [ev_0002]. {absence}", flow=saw)
+    # The run's sentence names the routine section 5 names, which a fact holds (T-652).
+    saw = "In the sandbox run the timing gate of 0x1400 passes and the beacon starts [ev_0002]."
+    report = _report(evasion=f"Strings are encoded by 0x1400 [ev_0002]. {absence}", flow=saw)
     found = _found(report, _row("evasion_antiforensics", absence, [], reason="nothing"))
     assert [v.code for v in found] == [KEEP_UNQUOTED_CODE]
 
 
-def test_every_refusal_can_be_answered_by_quoting_what_it_names() -> None:
+def test_every_refusal_can_be_answered_by_what_it_names() -> None:
     from malspark.reporting.section_agreement import _speaking_sources
 
     family = "The family is not confirmed."
     report = _report(
-        evasion=f"Strings are encoded [ev_0002]. {family}",
-        flow="Engines label it as a loader family [ev_0002].",
+        evasion=f"Strings are encoded by 0x1400 [ev_0002]. {family}",
+        flow="Engines label routine 0x1400 as a loader family [ev_0002].",
     )
     by_id = _by_id(report)
     speaking = _speaking_sources(family, by_id, by_id["evasion_antiforensics"])
     assert [pid for pid, _excerpt in speaking] == ["execution_flow.1"]
     for pid, excerpt in speaking:
-        assert _found(report, _row("evasion_antiforensics", family, [pid], quote=excerpt)) == []
+        # Its words state no absence: a keep quoting them is refused, a rewrite on them
+        # passes (T-652).
+        keep = _row("evasion_antiforensics", family, [pid], quote=excerpt)
+        assert [v.code for v in _found(report, keep)] == [KEEP_UNQUOTED_CODE]
+        rewrite = {**keep, "decision": "rewrite", "rewrite": f"{excerpt[:1].upper()}{excerpt[1:]}"}
+        assert _found(report, rewrite) == []
 
 
 def test_a_body_keep_resting_only_on_another_written_passage_is_recorded() -> None:
@@ -307,10 +321,10 @@ def test_a_keep_quoting_a_passage_that_states_the_same_absence_passes() -> None:
     # Its own passage is never its source, and a quote stating no absence passes no keep.
     own = _row("evasion_antiforensics", DENIED, ["evasion_antiforensics"], quote=DENIED)
     assert _found(report, own)
-    # A quote stating no absence, from a source that speaks of it, passes: the model read
-    # it as not saying otherwise, and the keep is recorded (below).
+    # A quote stating no absence, from a source that speaks of it, is refused: the passage
+    # stating what the sentence denies backs no keep of it (T-652).
     present = _row("evasion_antiforensics", DENIED, ["execution_flow.1"], quote=GATES)
-    assert _found(_report(), present) == []
+    assert [v.code for v in _found(_report(), present)] == [KEEP_UNQUOTED_CODE]
     unrelated = _row("evasion_antiforensics", DENIED, ["conclusion"], quote="The file is a loader")
     assert [v.code for v in _found(_report(), unrelated)] == [KEEP_UNQUOTED_CODE]
 
@@ -318,10 +332,13 @@ def test_a_keep_quoting_a_passage_that_states_the_same_absence_passes() -> None:
 def test_a_keep_on_words_stating_no_absence_is_recorded() -> None:
     report = _report(limitations="This analysis does not establish the operator.")
     row = _row("evasion_antiforensics", DENIED, ["execution_flow.1"], quote=GATES)
-    done, reporter = _ask(report, {"sentences": _rest(report, [row])})
-    assert len(reporter.asked) == 1
+    # Refused, asked again, and kept as written on the retry: it stands, recorded (T-652).
+    rows = _rest(report, [row])
+    done, reporter = _ask(report, {"sentences": rows}, {"sentences": rows})
+    assert len(reporter.asked) == 2
+    assert DENIED in report.technical_analysis.evasion_antiforensics.body
     records = [r["message"] for r in done.tally.unresolved if r["code"] == HELD_KEPT_CODE]
-    assert any(DENIED[:30] in m and "state no absence" in m for m in records)
+    assert any(DENIED[:30] in m and "the checks refused" in m for m in records)
 
 
 def test_a_body_absence_is_never_left_out() -> None:
@@ -341,17 +358,25 @@ def test_a_refused_body_keep_stands_after_the_retry_and_is_recorded() -> None:
 
 
 def test_a_rewrite_on_the_passage_that_states_otherwise_is_put_in() -> None:
-    report = _report()
+    # The passage written without the code names an address its passage names, which a
+    # fact holds.
+    report = _report(evasion=f"Strings are encoded by 0x1400 [ev_0002]. {DENIED}")
     rewrite = "Routine 0x1400 runs timing and locale checks [ev_0002]."
     row = {
         **_row("evasion_antiforensics", DENIED, ["execution_flow.1"]),
         "decision": "rewrite",
         "rewrite": rewrite,
     }
-    # A section 5 sentence is rewritten on a fact or section 5 alone: the claim is
-    # no ground for its words, so it is asked again and stands.
+    # A held absence of section 5 is rewritten on any source that speaks of it, the
+    # claim stating the checks included (T-652).
     done, _ = _ask(report, {"sentences": _rest(report, [row])})
-    assert DENIED in report.technical_analysis.evasion_antiforensics.body
+    assert done.summary["rewritten"] == 1
+    assert DENIED not in report.technical_analysis.evasion_antiforensics.body
+    # One sharing only words with it grounds nothing: asked again, the sentence stands.
+    untied = _report(evasion=f"Strings are encoded [ev_0002]. {DENIED}")
+    done, _ = _ask(untied, {"sentences": _rest(untied, [row])})
+    assert done.summary["rewritten"] == 0
+    assert DENIED in untied.technical_analysis.evasion_antiforensics.body
     flow = _report(evasion="Strings are encoded [ev_0002].", flow=DENIED)
     row = {**row, "passage": "execution_flow.1", "sources": ["evasion_antiforensics"]}
     row["rewrite"] = "Strings are encoded, and no gate is described [ev_0002]."
@@ -583,11 +608,21 @@ def test_a_long_speaking_sentence_is_quoted_by_its_shortest_passing_beginning() 
     from malspark.reporting.section_agreement import _speaking_sources
 
     tail = ", ".join(f"then check{i} runs" for i in range(600))
-    report = _report(flow=f"{GATES[: -len(' [ev_0002].')]}, {tail} [ev_0002].")
+    report = _report(
+        evasion=f"Strings are encoded by 0x1400 [ev_0002]. {DENIED}",
+        flow=f"{GATES[: -len(' [ev_0002].')]}, {tail} [ev_0002].",
+    )
     by_id = _by_id(report)
     ((pid, excerpt),) = _speaking_sources(DENIED, by_id, by_id["evasion_antiforensics"])
     assert len(excerpt) <= FINDING_VALUE_LIMIT
-    assert _found(report, _row("evasion_antiforensics", DENIED, [pid], quote=excerpt)) == []
+    # It speaks of the sentence: a rewrite on it passes (a keep quoting words that state no
+    # absence does not, T-652).
+    rewrite = {
+        **_row("evasion_antiforensics", DENIED, [pid]),
+        "decision": "rewrite",
+        "rewrite": "Routine 0x1400 runs timing and locale checks [ev_0002].",
+    }
+    assert _found(report, rewrite) == []
     # With no beginning short enough that passes, the source does not speak.
     flat = _report(flow="Routine 0x1400 runs timing and locale checks " + "and more " * 400 + ".")
     by_id = _by_id(flat)
