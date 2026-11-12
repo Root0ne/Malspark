@@ -5341,6 +5341,7 @@ class JudgeAgent(BudgetMeter):
                             model=self._model_label(),
                             call=TECHNIQUE_QUESTION_CALL,
                             announce=self._announce_fallback,
+                            runs_on=str(getattr(self, "_runs_on", "") or ""),
                         )
                         raw = read.raw
                         # A refused object is read from the call's own
@@ -5589,6 +5590,7 @@ class JudgeAgent(BudgetMeter):
                         model=self._model_label(),
                         call="mediation extraction",
                         announce=self._announce_fallback,
+                        runs_on=str(getattr(self, "_runs_on", "") or ""),
                     )
                 finally:
                     self._spend_release(extraction_slot)

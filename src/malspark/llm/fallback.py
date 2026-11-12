@@ -42,9 +42,11 @@ from pydantic import ConfigDict, Field, PrivateAttr
 
 from malspark.core.logger import logger
 
-# The keys an answer carries about the model that gave it.
+# The keys an answer carries about the model that gave it: its label, the
+# reason the list moved, and its place in the list (0 the first model).
 MODEL_KEY = "malspark_model"
 FALLBACK_KEY = "malspark_fallback"
+POSITION_KEY = "malspark_model_position"
 # The keyword a loop's binding carries a turn's spend admission under
 # (``core.spend.Admission``); popped before any model is called.
 ADMISSION_KEY = "malspark_admission"
@@ -490,6 +492,7 @@ class FallbackChatModel(BaseChatModel):
 
             metadata[RETRIES_KEY] = [*retried, *list(metadata.get(RETRIES_KEY) or [])]
         metadata[MODEL_KEY] = self._label(index) if index < len(self.labels) else ""
+        metadata[POSITION_KEY] = index
         if failures:
             metadata[FALLBACK_KEY] = (
                 "; ".join(failures)
@@ -726,6 +729,13 @@ def turn_share_seconds(cfg: Any, agent: str) -> float:
     except Exception as exc:  # noqa: BLE001 — no deadline is the lone-model behaviour
         logger.debug("fallback turn deadline not read (%s).", exc)
         return 0.0
+
+
+def turn_position(message: Any) -> int:
+    """The place in its agent's list of the model that gave one answer; 0 for a lone model."""
+    metadata = getattr(message, "response_metadata", None)
+    held = metadata.get(POSITION_KEY) if isinstance(metadata, dict) else None
+    return held if isinstance(held, int) and not isinstance(held, bool) and held >= 0 else 0
 
 
 def turn_model(message: Any, default: str = "") -> tuple[str, str]:

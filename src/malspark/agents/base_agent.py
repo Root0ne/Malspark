@@ -5136,6 +5136,10 @@ class BudgetMeter:
             agent=str(getattr(self, "name", "") or ""),
             model=self._model_label(),
             call=call,
+            # The model entry this instance runs on where it is not its own
+            # (the mediator's instance of the judge), which the answer's model
+            # is filed under.
+            runs_on=str(getattr(self, "_runs_on", "") or ""),
         )
         # Whether this answer ended at the output cap, kept for the validation
         # turn: the last model answer recorded is the one the turn checks.
