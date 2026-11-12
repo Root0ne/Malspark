@@ -3016,7 +3016,9 @@ An answer served from an earlier entry with no tool run (the result an
 earlier chunk, round or loop of the same agent recorded, a whole-function read
 the loop already holds, or an identical call of the job by any agent) ends
 with one platform sentence: asking again with the same arguments runs the call
-fresh, once. The identical call after it runs the tool and is filed as a call
+fresh, once, and, for a call not known to be read-only (no read-only server
+hint or declaration), that the call runs again and repeats whatever it does.
+The identical call after it runs the tool and is filed as a call
 that ran, with no `repeated_of` (`RepeatGuard.takes_fresh_run`). It counts as
 a run, so the identical call after it is refused as after any second run and
 the refusals still end the loop; each call gets one fresh run per loop. The

@@ -243,9 +243,13 @@ name decides nothing.
 Each count of tool calls is the calls whose tool ran, and an answer given
 without a run (served again from an earlier entry, or a guard's answer) is
 counted beside it, never inside it: "Tool calls: … 40 calls (+1 answered
-without a run)". The stored record keeps both (`calls` and `served` on each
-row, `made` and `served` per source of the calls that stayed), and so do the
-tool-effects part and the per-agent tool latency (`calls`, `served`).
+without a run)". A triage pack step that was never run is counted apart too
+("not run"). A ledger entry filed with no tool run says so (`ran` false); an
+entry that ran and whose answer an earlier entry holds is a call whose tool
+ran. The stored record keeps the counts (`calls` and `served` on each row,
+`made`, `served` and `not_run` per source of the calls that stayed), and so do
+the tool-effects part (`calls`, `served`, `not_run`) and the per-agent tool
+latency (`calls`, `served`, `not_run`).
 
 **This machine** covers its loopback addresses, the private (RFC 1918 and
 `fc00::/7`), link-local and shared (`100.64.0.0/10`) ranges and the
