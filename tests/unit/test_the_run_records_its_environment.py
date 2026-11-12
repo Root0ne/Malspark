@@ -171,6 +171,43 @@ class TestTheHost:
         assert facts["cpus_available"] == 2
         assert "memory_limit_bytes" not in facts
 
+    def test_a_v1_parent_s_limit_is_read(
+        self, tmp_path: Any, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # The limits sit on the parent, between the worker's group and the mount.
+        self._groups(
+            tmp_path,
+            monkeypatch,
+            {
+                "/proc/self/cgroup": "4:memory:/job/worker\n3:cpu,cpuacct:/job/worker\n",
+                "memory/job/worker/memory.limit_in_bytes": "9223372036854771712",
+                "memory/job/memory.limit_in_bytes": "2147483648",
+                "cpu/job/worker/cpu.cfs_quota_us": "-1",
+                "cpu/job/worker/cpu.cfs_period_us": "100000",
+                "cpu/job/cpu.cfs_quota_us": "50000",
+                "cpu/job/cpu.cfs_period_us": "100000",
+            },
+        )
+        facts = host_facts()
+        assert facts["cpus_available"] == 0.5
+        assert facts["memory_limit_bytes"] == 2147483648
+
+    def test_the_hybrid_layout_s_unified_mount_is_read(
+        self, tmp_path: Any, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        self._groups(
+            tmp_path,
+            monkeypatch,
+            {
+                "/proc/self/cgroup": "1:name=systemd:/job\n0::/job\n",
+                "unified/job/memory.max": "1073741824",
+                "unified/job/cpu.max": "300000 100000",
+            },
+        )
+        facts = host_facts()
+        assert facts["cpus_available"] == 3
+        assert facts["memory_limit_bytes"] == 1073741824
+
     def test_no_group_limit_leaves_the_affinity_and_no_limit(
         self, tmp_path: Any, monkeypatch: pytest.MonkeyPatch
     ) -> None:

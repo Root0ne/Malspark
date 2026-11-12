@@ -14,12 +14,17 @@ should happen:
   and reading the host never fails the run.
 * ``agents`` is, per agent, one row per model of its list it was built to
   send with (``llm.sent_request``, kept by the registry as each model is
-  built): the sampling parameters and thinking switches its provider adapter
-  read off the request body the client would send, the statement that no
-  sampling parameter was sent and the provider's default applied, or the
-  statement that the adapter reported nothing; the effort level sent and the
-  setting it came from, or why none was; and how many calls that model
-  answered (``answered``; a fallback that was never needed answered none).
+  built): the configured model identifier (one shaped like a file-system
+  path kept by its base name, ``model_reduced``); the sampling parameters
+  and thinking switches its provider adapter read off the request body the
+  client built when the model was built, the statement that no sampling
+  parameter was sent and the provider's default applied, or the statement
+  that the adapter reported nothing; how many requests the platform changed
+  a thinking switch of after that (``thinking_changed_requests``, where any
+  were); the effort level sent and the setting it came from, or why none
+  was; and how many recorded answers came from its place in the list
+  (``answered``; a fallback that was never needed answered none; rows that
+  share a place each carry its total, ``answered_shared``).
   Beside the rows, each model identifier the provider's answers carried and
   how many answers carried it (``TokenLedger.response_models``), an
   identifier shaped like a file-system path kept by its base name and listed
@@ -302,8 +307,12 @@ def agents_record(
     once. ``response_models``, ``answered`` and ``reduced`` are the token
     ledger's own maps (``response_models``, ``answers_by_position``,
     ``reduced_response_models``). Where ``answered`` is given, each row
-    carries the calls the model at its place in the list answered. Agents are
-    keyed in lowercase on both sides, as the registry keys them.
+    carries the answers recorded at its place in the list. An answer names
+    its place, not which of the models built for that place gave it, so rows
+    that share a place (a model built again that sends something else) each
+    carry the place's total and say so (``answered_shared``); the total is
+    counted once. Agents are keyed in lowercase on both sides, as the
+    registry keys them.
     """
     out: dict[str, dict[str, Any]] = {}
 
@@ -325,8 +334,11 @@ def agents_record(
     if answered is not None:
         counts = {str(a).lower(): dict(by) for a, by in answered.items()}
         for agent, block in out.items():
+            places = [int(row["position"]) for row in block["requests"]]
             for row in block["requests"]:
                 row["answered"] = int(counts.get(agent, {}).get(int(row["position"]), 0))
+                if places.count(int(row["position"])) > 1:
+                    row["answered_shared"] = True
     for block in out.values():
         block["requests"].sort(key=lambda row: int(row.get("position") or 0))
         block["response_models"] = dict(sorted(block["response_models"].items()))
