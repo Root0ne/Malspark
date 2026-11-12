@@ -60,6 +60,7 @@ from malspark.core.token_ledger import read_structured_reply, say_structured_rep
 from malspark.llm.answer_text import structured_answer_text
 from malspark.llm.anthropic_history import SENT_AGAIN, SHARED_HEAD
 from malspark.llm.registry import schema_tool_worth_offering, structured_output_supported_for_llm
+from malspark.pipeline.feedback_mode import feeds_back
 from malspark.pipeline.validation import (
     CHANNEL_BINDING_CODE,
     KEPT_WITH_A_FINDING,
@@ -2539,7 +2540,13 @@ class ReportComposer:
                 for extra in validators or []:
                     found.extend(extra(answer))
                 held = _raw_with_object(read.raw)
-                if held is not None and any(v.code in ASKED_ON_A_PARSED_ANSWER for v in found):
+                # In ``record_only`` (``validation.feedback``) that question is
+                # not asked either: the answer is recorded here as it stands.
+                if (
+                    held is not None
+                    and any(v.code in ASKED_ON_A_PARSED_ANSWER for v in found)
+                    and feeds_back()
+                ):
                     kept = held
                     parsed_kept = True
                 else:
