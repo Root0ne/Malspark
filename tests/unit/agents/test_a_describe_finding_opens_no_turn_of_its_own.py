@@ -25,7 +25,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 from langchain_core.messages import AIMessage
 
-from malspark.agents.base_agent import BaseAnalyst
+from malspark.agents.base_agent import UNREAD_CALLEES_CODE, BaseAnalyst
 from malspark.agents.judge_agent import JudgeAgent
 from malspark.extractors.capability_matrix import (
     JUDGE_UNCONFIRMED_TECHNIQUE_MARKER,
@@ -33,6 +33,7 @@ from malspark.extractors.capability_matrix import (
     judge_questions,
 )
 from malspark.pipeline.validation import (
+    ANALYST_CUT_CODE,
     CHECK_FAILED_CODE,
     CLAIM_DOES_NOT_DESCRIBE_CODE,
     CLAIM_WITHOUT_CONFIDENCE_CODE,
@@ -168,14 +169,14 @@ class _Analyst(BaseAnalyst):
 
 
 def _check(
-    analyst: _Analyst, first: str, *, time_left: float | None = None
+    analyst: _Analyst, first: str, *, time_left: float | None = None, fits: bool = True
 ) -> tuple[AgentISR, list[tuple[str, str]]]:
     published: list[tuple[str, str]] = []
     analyst._container = SimpleNamespace(event_sink=object())
     isr = analyst._text_to_isr(first, 0)
     with (
         patch("malspark.agents.base_agent.validity_check_available", return_value=True),
-        patch.object(BaseAnalyst, "_fits_the_window", lambda *_a: True),
+        patch.object(BaseAnalyst, "_fits_the_window", lambda *_a: fits),
         patch.object(BaseAnalyst, "_seconds_the_last_loop_left", return_value=time_left),
         patch.object(BaseAnalyst, "seconds_an_answer_needs", return_value=60.0),
         patch(
@@ -317,6 +318,88 @@ class TestTheValidationTurn:
         assert DESCRIBE_NOT_ASKED not in found.message
         assert "Not asked: 1s of the loop's time were left" in found.message
         assert VALIDATION_TURN_NOT_RUN_CODE in analyst.validation_not_run
+
+
+class TestAFindingTakenOutBeforeTheQuestionIsSent:
+    """Where a finding that opened the turn is taken out, the rule is asked again."""
+
+    def _gate(self) -> tuple[list[LedgerEntry], str]:
+        entries = [
+            LedgerEntry(
+                id="ev_0003",
+                tool="decompile_function",
+                args={"address": hex(GATE)},
+                output=GATE_LISTING,
+            )
+        ]
+        first = (
+            f"CLAIM 1: {GATE:#x} opens a window on the desktop.\nEVIDENCE: [ev_0003]\n"
+            f"CONFIDENCE: 0.8\nTECHNIQUE: {UNDESCRIBED}\n---\n"
+        )
+        return entries, first
+
+    def test_the_callees_question_dropped_for_want_of_tools_leaves_no_turn(self) -> None:
+        entries, first = self._gate()
+        analyst = _Analyst([first], entries)
+
+        # The routine's unread callee opens the turn; the turn carries no tools.
+        with patch.object(BaseAnalyst, "_turns_carry_tools", return_value=False):
+            _result, published = _check(analyst, first)
+
+        assert analyst.seen_turns == []
+        assert analyst.validation_retries == 0
+        (found,) = _recorded(analyst)
+        assert found.asked is False and found.message.endswith(DESCRIBE_NOT_ASKED)
+        assert published == [("survived", CLAIM_DOES_NOT_DESCRIBE_CODE)]
+        # The callees question is stated as not put, as on dev, and recorded nowhere else.
+        assert analyst._callees_stated_job == "job"
+        assert _recorded(analyst, UNREAD_CALLEES_CODE) == []
+
+    def test_the_callees_question_dropped_beside_another_finding_still_asks_it(self) -> None:
+        entries, first = self._gate()
+        unsure = first + WITH_ANOTHER[len(DESCRIBE_ONLY) :]
+        analyst = _Analyst([first + RETRIED], entries)
+
+        with patch.object(BaseAnalyst, "_turns_carry_tools", return_value=False):
+            _check(analyst, unsure)
+
+        (turns,) = analyst.seen_turns
+        question = str(turns[-1].content)
+        assert f"[{CLAIM_WITHOUT_CONFIDENCE_CODE}]" in question
+        assert f"[{CLAIM_DOES_NOT_DESCRIBE_CODE}]" in question
+        assert f"[{UNREAD_CALLEES_CODE}]" not in question
+
+    def test_a_cut_question_that_does_not_fit_leaves_no_turn(self) -> None:
+        analyst = _Analyst([DESCRIBE_ONLY])
+        analyst._last_answer_cut = (300, DESCRIBE_ONLY)
+
+        _result, published = _check(analyst, DESCRIBE_ONLY, fits=False)
+
+        assert analyst.seen_turns == []
+        assert analyst.validation_retries == 0
+        (found,) = _recorded(analyst)
+        assert found.asked is False and found.message.endswith(DESCRIBE_NOT_ASKED)
+        assert published == [("survived", CLAIM_DOES_NOT_DESCRIBE_CODE)]
+        # The cut question is recorded not asked, with why, as on dev.
+        (cut,) = _recorded(analyst, ANALYST_CUT_CODE)
+        assert cut.asked is False
+        assert "do not fit this model's window" in cut.message
+
+    def test_a_cut_question_that_does_not_fit_beside_another_finding_still_asks_it(
+        self,
+    ) -> None:
+        analyst = _Analyst([RETRIED_BOTH])
+        analyst._last_answer_cut = (300, WITH_ANOTHER)
+
+        _check(analyst, WITH_ANOTHER, fits=False)
+
+        (turns,) = analyst.seen_turns
+        question = str(turns[-1].content)
+        assert f"[{CLAIM_WITHOUT_CONFIDENCE_CODE}]" in question
+        assert f"[{CLAIM_DOES_NOT_DESCRIBE_CODE}]" in question
+        assert f"[{ANALYST_CUT_CODE}]" not in question
+        (cut,) = _recorded(analyst, ANALYST_CUT_CODE)
+        assert cut.asked is False
 
 
 def _undescribed_ids(count: int) -> list[str]:

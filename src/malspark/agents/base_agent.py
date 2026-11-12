@@ -10587,8 +10587,13 @@ class BaseAnalyst(BudgetMeter, ABC):
         # was shown, the claims stand as written, and the judge's technique
         # question asks about each technique no claim naming it describes.
         # Beside a finding that opens the turn, it is asked there as before.
-        if describe_stands_alone(initial):
-            recorded = describe_without_a_turn(initial)
+        # Asked again wherever a finding that opened the turn is taken out of
+        # it before the question is sent (no tools for the callees question; a
+        # whole-answer question that does not fit the window).
+        def _describe_alone(found: Sequence[Violation]) -> AgentISR | None:
+            if not describe_stands_alone(found):
+                return None
+            recorded = describe_without_a_turn(found)
             settle_validation_marks(isr, recorded)
             self.validation_findings.extend(recorded)
             announce_unresolved(
@@ -10604,6 +10609,10 @@ class BaseAnalyst(BudgetMeter, ABC):
                 self.name,
             )
             return _settled(isr)
+
+        alone = _describe_alone(initial)
+        if alone is not None:
+            return alone
 
         # The turn gets what the loop it follows left, and is not asked at all
         # when that cannot hold an answer at this model's pace: a question after
@@ -10648,6 +10657,9 @@ class BaseAnalyst(BudgetMeter, ABC):
                 BaseAnalyst._state_callees_not_run(  # type: ignore[arg-type]
                     self, NOT_RUN_NO_TOOLS.format(why=no_tools), job
                 )
+                alone = _describe_alone(initial)
+                if alone is not None:
+                    return alone
                 if not initial:
                     return _settled(isr)
         prompt = self._system_prompt("", tools=None if tooled else ())
@@ -10822,6 +10834,13 @@ class BaseAnalyst(BudgetMeter, ABC):
             # to the answer, which is sent back whole.
             shown_repeat = None
             first[:] = [_PriorAnswer(isr)]
+            # The whole-answer questions are recorded above; what is left is
+            # asked only where it opens a turn of its own.
+            alone = _describe_alone(
+                [v for v in initial if v.code not in (ANALYST_CUT_CODE, ANALYST_REPEATED_CODE)]
+            )
+            if alone is not None:
+                return alone
 
         # The loop conversation the answer was written in, which every
         # question of this turn is asked over where the answer is the one it
