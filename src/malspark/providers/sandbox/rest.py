@@ -49,6 +49,7 @@ if TYPE_CHECKING:
     from malspark.core.config import SandboxRestConfig, Settings
     from malspark.core.report_formats import ReportFormat, SignatureScale
     from malspark.providers.sandbox.rest_mapping import CompiledMapping
+    from malspark.providers.submission import SubmissionOptions
     from malspark.schemas.sandbox_report import SandboxRun
 
 
@@ -162,6 +163,9 @@ class RestSandboxProvider(SandboxProvider):
             provides_tools=False,
             report_format=self._reader_id(),
             degrade_on_failure=True,
+            # Only where the operator named the form field the sandbox reads
+            # them from; no field named, none can be passed.
+            can_pass_launch_arguments=bool(self._cfg.submit.launch_arguments_field),
         )
 
     def _reader_id(self) -> str:
@@ -246,7 +250,7 @@ class RestSandboxProvider(SandboxProvider):
 
         return requested_host(self._cfg.base_url, self._cfg.submit.path)
 
-    def submit(self, sample_path: str | Path) -> str:
+    def submit(self, sample_path: str | Path, *, options: SubmissionOptions | None = None) -> str:
         path = Path(sample_path)
         files: dict[str, Any] = {
             self._cfg.submit.file_field: (path.name, path.read_bytes(), "application/octet-stream")
@@ -258,6 +262,11 @@ class RestSandboxProvider(SandboxProvider):
             files[name] = (None, value)
         for name, value in self._cfg.submit.submit_fields.items():
             files[name] = (None, value)
+        # The job's launch arguments, verbatim, under the field the operator
+        # declared for them; they win a name collision, being this job's own.
+        field_name = self._cfg.submit.launch_arguments_field
+        if options is not None and options.launch_arguments and field_name:
+            files[field_name] = (None, options.launch_arguments)
         response = self._get_http().request(
             self._cfg.submit.method, self._cfg.submit.path, files=files
         )

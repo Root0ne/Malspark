@@ -4550,6 +4550,10 @@ class RestSubmitConfig(BaseModel):
     # operator can keep the fields the sandbox always needs apart from the
     # per-format ones they are still tuning.
     submit_fields: dict[str, str] = Field(default_factory=dict)
+    # The multipart field the sandbox reads a job's launch arguments from,
+    # sent verbatim beside the others. Empty: the sandbox is not told how, and
+    # a job's launch arguments are recorded as not honoured.
+    launch_arguments_field: str = ""
     task_id_path: str = "$.id"
 
 

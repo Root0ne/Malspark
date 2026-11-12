@@ -25,9 +25,17 @@ from malspark.providers.sandbox.readers import required_reader
 # reports are read by.
 _READER = "cape2"
 
+# CAPE's own option string: the form field, the separator between its
+# ``key=value`` entries (CAPE splits at every comma, then at the first ``=``),
+# and the option its packages read the started process's arguments from.
+_OPTIONS_FIELD = "options"
+_OPTION_SEPARATOR = ","
+_ARGUMENTS_OPTION = "arguments"
+
 if TYPE_CHECKING:
     from malspark.core.config import SandboxCape2Config, Settings
     from malspark.providers.servers import ServerHandle
+    from malspark.providers.submission import LaunchArgumentsAnswer, SubmissionOptions
     from malspark.schemas.sandbox_report import SandboxRun
 
 
@@ -135,6 +143,7 @@ class CAPE2SandboxProvider(SandboxProvider):
             provides_tools=bool(self._cfg.mcp.enabled),
             report_format=_READER,
             degrade_on_failure=True,
+            can_pass_launch_arguments=True,
         )
 
     def dynamic_prompt_fragment(self) -> str:
@@ -252,7 +261,7 @@ class CAPE2SandboxProvider(SandboxProvider):
 
         return requested_host(self._cfg.base_url, "/apiv2/tasks/create/file/")
 
-    def submit(self, sample_path: str | Path) -> str:
+    def submit(self, sample_path: str | Path, *, options: SubmissionOptions | None = None) -> str:
         """Submit, asking for the analysis package and guest this format needs.
 
         An APK handed to CAPE's default ``exe`` package detonates nothing, and
@@ -262,19 +271,87 @@ class CAPE2SandboxProvider(SandboxProvider):
         one, only when CAPE has a name for it. Neither is guessed: an
         unconfigured format leaves both unset, which is CAPE deciding for
         itself exactly as it did before.
+
+        Launch arguments (``options.launch_arguments``) are sent as CAPE's
+        ``arguments`` option, which its analysis packages hand the started
+        process (CAPE's package documentation: ``exe`` passes them to the
+        initial process, ``dll`` to the DLL through its command line).
         """
         from malspark.providers.sandbox.formats import detect_sample_format, option_for_format
 
         file_type, platform = detect_sample_format(sample_path)
         package = option_for_format(self._cfg.package_by_format, file_type)
+        extra_fields = dict(self._cfg.submit_options)
+        composed: str | None = None
+        arguments = options.launch_arguments if options is not None else ""
+        if arguments:
+            # Launch arguments ride in CAPE's own option string, beside the
+            # options the deployment sends on every submission
+            # (``submit_options["options"]``), which are kept.
+            composed, _replaced = self._options_with_arguments(arguments)
+            extra_fields.pop(_OPTIONS_FIELD, None)
         return str(
             self._get_client().submit(
                 sample_path,
                 package=package or None,
                 platform=cape_platform(platform) or None,
-                extra_fields=dict(self._cfg.submit_options),
+                options=composed,
+                extra_fields=extra_fields,
             )
         )
+
+    def _options_with_arguments(self, arguments: str) -> tuple[str, str]:
+        """CAPE's option string carrying ``arguments``, and the deployment's arguments it replaced.
+
+        The deployment's own option string (``submit_options["options"]``) is
+        kept entry for entry, except an ``arguments=`` entry of its own, which
+        the job's value replaces; the replaced value is returned so the record
+        says so (``""`` where there was none).
+        """
+        static = str(self._cfg.submit_options.get(_OPTIONS_FIELD) or "")
+        kept: list[str] = []
+        replaced = ""
+        for entry in static.split(_OPTION_SEPARATOR):
+            if not entry.strip():
+                continue
+            key, _, value = entry.partition("=")
+            if key.strip() == _ARGUMENTS_OPTION:
+                replaced = value.strip()
+                continue
+            kept.append(entry)
+        kept.append(f"{_ARGUMENTS_OPTION}={arguments}")
+        return _OPTION_SEPARATOR.join(kept), replaced
+
+    def launch_arguments_answer(self, arguments: str) -> LaunchArgumentsAnswer:
+        """Honoured as CAPE's ``arguments`` option, unless the value holds the option separator.
+
+        CAPE splits its option string at every comma before it reads a value
+        (``key=value,key=value``), so a comma inside the arguments would cut
+        them short and start an option of the sample's words: such a value is
+        not passed. Where the deployment's own option string sets arguments
+        too, the job's value replaces them, and the note says which it replaced.
+        """
+        from malspark.providers.submission import LaunchArgumentsAnswer
+
+        if _OPTION_SEPARATOR in arguments:
+            return LaunchArgumentsAnswer(
+                honoured=False,
+                note=(
+                    "CAPE's option string separates its options with commas "
+                    "(key=value,key=value), so launch arguments holding a comma cannot be "
+                    "passed in it; the sample was detonated without them"
+                ),
+            )
+        notes: list[str] = []
+        _composed, replaced = self._options_with_arguments(arguments)
+        if replaced:
+            notes.append(
+                f"they replace the arguments {replaced!r} that sandbox.cape2.submit_options "
+                "sets on every submission"
+            )
+        if arguments != arguments.strip():
+            notes.append("CAPE trims the spaces at their start and end")
+        return LaunchArgumentsAnswer(honoured=True, note="; ".join(notes))
 
     def wait_for_completion(
         self,

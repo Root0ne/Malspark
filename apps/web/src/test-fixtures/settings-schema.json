@@ -10598,6 +10598,48 @@
      "choice_facts": null,
      "choice_labels": null,
      "choice_titles": null,
+     "choices": null,
+     "choices_from": null,
+     "data_source_choices": null,
+     "editable": true,
+     "editor": "rest_sandbox",
+     "group": "sandbox",
+     "key": "core.sandbox.rest.submit.launch_arguments_field",
+     "maximum": null,
+     "minimum": null,
+     "namespace": "core",
+     "needs_current_password": false,
+     "nullable": false,
+     "order": 0,
+     "pack_step_vocabulary": null,
+     "path": "sandbox.rest.submit.launch_arguments_field",
+     "probe": null,
+     "reason": null,
+     "required_env": null,
+     "reserved_servers": null,
+     "secret": false,
+     "subgroup": null,
+     "title": "Launch arguments field",
+     "type": "str"
+    },
+    {
+     "advanced": false,
+     "agent_category_choices": null,
+     "agent_keys": null,
+     "always_enabled_agent_keys": null,
+     "applies": "next_job",
+     "applies_when": {
+      "core.sandbox.provider": [
+       "rest"
+      ]
+     },
+     "builtin_agent_keys": null,
+     "builtin_servers": null,
+     "capability_servers": null,
+     "choice_descriptions": null,
+     "choice_facts": null,
+     "choice_labels": null,
+     "choice_titles": null,
      "choices": [
       "POST",
       "PUT"

@@ -55,6 +55,18 @@ an HTTP request — never a flat DNS/HTTP row. ``triage_overview_to_sandbox_repo
 (``schemas/sandbox_report.py``) maps both into the shapes
 ``network_extractor``/``network_parser`` actually read, not Triage's own
 field names.
+
+Launch arguments: the submission API documents no field that hands the
+sample a command line or names a DLL export. Read on 2026-11-13 from the
+"Submitting samples" page (``/docs/cloud-api/submit/``, fields ``kind``,
+``file``, ``interactive``, ``password``, ``profiles`` with ``profile`` and
+``pick``, ``url``, ``target``, ``user_tags``, ``defaults.timeout``,
+``defaults.network``, ``defaults.geolocation``) and the "Profiles" page
+(``/docs/cloud-api/profiles/``: ``id``, ``name``, ``tags``, ``network``,
+``geolocation``, ``timeout``). ``password`` decrypts an archive and ``pick``
+selects a file inside one; neither passes arguments. So this provider
+declares it cannot pass launch arguments, and a job that asks for them is
+recorded as not honoured.
 """
 
 from __future__ import annotations
@@ -92,6 +104,7 @@ if TYPE_CHECKING:
     from contextlib import AbstractContextManager
 
     from malspark.core.config import SandboxTriageConfig, Settings
+    from malspark.providers.submission import SubmissionOptions
     from malspark.schemas.sandbox_report import SandboxRun
 
 # The five calls this provider makes, as named constants so a documentation
@@ -803,7 +816,10 @@ class TriageSandboxProvider(SandboxProvider):
             return None
         return max(candidates)[1]
 
-    def submit(self, sample_path: str | Path) -> str:
+    def submit(self, sample_path: str | Path, *, options: SubmissionOptions | None = None) -> str:
+        # ``options`` asks nothing this API can carry (the module docstring:
+        # no launch-argument field), and the capability says so, so the run
+        # hands none.
         # Checked before the file is opened or any request is built: a
         # missing token is a configuration error, not something worth
         # burning a filesystem check or a connection on first.

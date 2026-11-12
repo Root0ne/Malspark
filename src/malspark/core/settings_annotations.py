@@ -2650,6 +2650,11 @@ ANNOTATIONS.update(
             "Submit fields",
             "Further multipart fields sent verbatim with the sample, as name/value pairs.",
         ),
+        "sandbox.rest.submit.launch_arguments_field": _rest(
+            "Launch arguments field",
+            "Multipart field a job's launch arguments are sent in, verbatim. Empty: the "
+            "sandbox cannot be passed them, and the run records them as not honoured.",
+        ),
         "sandbox.rest.submit.task_id_path": _rest(
             "Task id path",
             "JSONPath selecting the task identifier out of the submit response, e.g. $.id.",

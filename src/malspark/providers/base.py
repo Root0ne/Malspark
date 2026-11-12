@@ -25,6 +25,7 @@ if TYPE_CHECKING:
     from malspark.analysis.sink_reachability import CallGraph, SuspiciousFunction
     from malspark.core.config import Settings
     from malspark.core.report_formats import ReportFormat, SignatureScale
+    from malspark.providers.submission import LaunchArgumentsAnswer, SubmissionOptions
     from malspark.schemas.sandbox_report import SandboxRun
 
 
@@ -54,6 +55,10 @@ class SandboxCapabilities:
     # this provider's reports are read by.
     report_format: str = "generic"
     degrade_on_failure: bool = True
+    # Whether ``submit`` can hand the sample launch arguments
+    # (``providers.submission.SubmissionOptions``); one that cannot is never
+    # handed them, and the run records the job's request as not honoured.
+    can_pass_launch_arguments: bool = False
 
 
 @dataclass(frozen=True)
@@ -837,8 +842,30 @@ class SandboxProvider(ABC):
         """Attach to the backend for one job. Idempotent."""
         return None
 
-    def submit(self, sample_path: str) -> str:
+    def submit(self, sample_path: str, *, options: SubmissionOptions | None = None) -> str:
+        """Submit the sample; the sandbox's task id.
+
+        ``options`` is what this one submission asks beyond the sample; none
+        asks nothing, and the request is the one a submission without them
+        sends. The run hands launch arguments only to a provider that answers
+        them as honoured (:meth:`launch_arguments_answer`), so a provider that
+        declares none is never handed any. Each call is one submission: the
+        same sample submitted again with other options is the same call.
+        """
         raise ProviderError("this sandbox does not accept job submissions")
+
+    def launch_arguments_answer(self, arguments: str) -> LaunchArgumentsAnswer:
+        """Whether this provider passes ``arguments`` to the sample, and what the record says.
+
+        Read before the submission. The default answers by the capability
+        flag; a provider whose request cannot carry every value (a separator
+        its option string reserves) overrides it and says which.
+        """
+        from malspark.providers.submission import LaunchArgumentsAnswer, cannot_pass
+
+        if self.capabilities.can_pass_launch_arguments:
+            return LaunchArgumentsAnswer(honoured=True)
+        return cannot_pass(self.id)
 
     def wait_for_completion(
         self, task_id: str, timeout_seconds: int, poll_interval_seconds: int
