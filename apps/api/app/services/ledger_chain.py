@@ -91,9 +91,12 @@ DIGESTED: tuple[str, ...] = (
     "args_nulls_dropped",
     "args_nulls_withheld",
     "ran_on",
+    "ran",
 )
 # Columns the canonical form carries only when they hold something.
 _SEALED_WHEN_SET = frozenset({"waited_ms", "args_nulls_dropped", "args_nulls_withheld", "ran_on"})
+# Columns whose false is a statement: sealed whenever they hold anything but NULL.
+_SEALED_WHEN_STATED = frozenset({"ran"})
 # The JSON columns: their values are read back through the driver's ``json``.
 _JSON_COLUMNS = frozenset(
     {
@@ -177,6 +180,8 @@ def entry_fields(row: Any) -> dict[str, Any]:
     out: dict[str, Any] = {}
     for name in DIGESTED:
         value = _read(row, name)
+        if name in _SEALED_WHEN_STATED and value is None:
+            continue
         if name in _SEALED_WHEN_SET and not value:
             # Added after rows were sealed: a row with none (every row sealed
             # before the column) digests exactly as it did, and a wait is sealed.

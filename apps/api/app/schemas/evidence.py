@@ -79,6 +79,10 @@ class EvidenceEntryResponse(BaseModel):
     # sources (``malspark.tools.readers``). Left out where the row holds none:
     # every reading ran in the worker, or the row is older than the column.
     ran_on: list[str] | None = Field(default=None, exclude_if=_absent)
+    # Whether the call's tool ran, stated where ``repeated_of`` alone would not
+    # say it (``LedgerEntry.ran``). Left out where the row holds none and on an
+    # older row; false is kept.
+    ran: bool | None = Field(default=None, exclude_if=_absent)
     # Where the parts of the answer this entry does not keep whole are kept
     # whole: one reference per part the run shortened, blanked or dropped
     # (``answer``, ``structured_content``, ``output``, ``structured``), each

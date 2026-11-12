@@ -130,6 +130,11 @@ class EvidenceEntry(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     # and on every row older than the column; the chain digest seals it only
     # when set.
     ran_on: Mapped[Any | None] = mapped_column(JSONB, nullable=True)
+    # Whether the call's tool ran (``LedgerEntry.ran``): false on an entry filed
+    # with no tool run, true on one that ran and whose answer an earlier entry
+    # holds. NULL on every other row and on every row older than the column; the
+    # chain digest seals it whenever it is stated, false included.
+    ran: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
     # Where the parts of the answer this row does not keep whole are kept
     # whole in object storage (``malspark.schemas.evidence_spill``): one
     # reference per part with the object key, the byte length and the SHA-256,
