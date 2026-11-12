@@ -63,7 +63,10 @@ _PROBE_OUTPUT_CHARS = 64 * 1024
 # costs a server's start a count, not a read of it.
 DATA_DIGEST_MAX_FILES = 20_000
 DATA_DIGEST_MAX_BYTES = 64 * 1024 * 1024
-# What a fact that was not read is recorded as.
+# What a fact that was not read is recorded as. ``NOT_REPORTED`` is the one
+# phrase every part of a run's environment record says it with
+# (``analysis.run_environment``, ``llm.sent_request``), a reason following it
+# after a colon where one is known.
 NOT_INSTALLED = "not installed"
 NOT_REPORTED = "not reported"
 

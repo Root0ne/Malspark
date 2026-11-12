@@ -303,6 +303,9 @@ reason when the probe failed. Each fact is read once per server start. A server
 that offers no manifest gives `server_info` only, and its other facts are
 `not reported`. A summary stored without `tools` reads as before.
 
+The block carries `v`, its shape version (2). Throughout it, a fact nobody read
+is `not reported`, followed after a colon by the reason where one is known.
+
 ### The analysis WebSocket
 
 `/ws/analysis/{job_id}` streams one run. Alongside `status_change`,

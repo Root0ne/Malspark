@@ -55,6 +55,7 @@ from collections.abc import Iterable
 from typing import Any
 
 from malspark.core.logger import logger
+from malspark.tools.capabilities import NOT_REPORTED
 
 # The record's shape version: a reader that meets a newer one reads what it
 # knows. 2: a row's ``sampling`` may be ``None`` (not reported), rows carry
@@ -70,8 +71,6 @@ SERVED_OFFERED = "offered"
 SERVED_CALLED = "called"
 SERVED_PACK_STEP = "pack_step"
 SERVED_IN_PROCESS = "in_process"
-# A fact a server did not give.
-NOT_REPORTED = "not reported"
 
 # How long a host query (``sysctl`` on macOS) may take, in seconds.
 _QUERY_TIMEOUT_S = 2.0

@@ -242,7 +242,9 @@ def default_profile_summary() -> dict[str, Any]:
                 "memory_limit_bytes": 8589934592,
             },
             # Every kind of row: sampling and a thinking switch sent, none
-            # sent, and nothing reported by the adapter.
+            # sent (with requests whose thinking was changed after the build),
+            # nothing reported by the adapter (for a configured path, kept by
+            # its base name), and a model built again at a place it shares.
             "agents": agents_record(
                 [
                     SentRequest(
@@ -263,15 +265,26 @@ def default_profile_summary() -> dict[str, Any]:
                         sampling={},
                         thinking={},
                         effort_statement="unset, the provider's default",
+                        thinking_changed=1,
                     ),
                     SentRequest(
                         agent="static",
                         position=2,
                         provider="plug-in",
-                        model="other",
+                        model="/models/other.gguf",
                         sampling=None,
                         thinking=None,
                         effort_statement="none for this provider",
+                    ),
+                    SentRequest(
+                        agent="static",
+                        position=0,
+                        provider="openai",
+                        model="qwen",
+                        sampling={"temperature": 0.2},
+                        thinking={},
+                        effort="high",
+                        effort_setting="llm.agents.static.effort",
                     ),
                 ],
                 {"static": {"qwen-2026": 1, "model.gguf": 1}},

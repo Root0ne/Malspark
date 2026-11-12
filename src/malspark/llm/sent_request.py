@@ -37,6 +37,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from malspark.core.logger import logger
+from malspark.tools.capabilities import NOT_REPORTED
 
 # The sampling parameters a chat request may carry, under the names the
 # client libraries put them in the body by. A hook reads these names off the
@@ -68,10 +69,9 @@ SAMPLING_PARAMETERS: tuple[str, ...] = (
 # parameter in it.
 NO_SAMPLING_SENT = "none sent; the provider's default applies"
 
-# What the record says of a fact nobody reported, and, built on it, where
-# nothing could be read off a request: no hook, a model object the hook cannot
-# read, or a hook that failed.
-NOT_REPORTED = "not reported"
+# What the record says where nothing could be read off a request: no hook, a
+# model object the hook cannot read, or a hook that failed. Built on the one
+# phrase the environment record says an unread fact with.
 NOT_REPORTED_BY_ADAPTER = f"{NOT_REPORTED}: no provider adapter read it"
 
 # The one turn a hook builds the request for. Never sent.
