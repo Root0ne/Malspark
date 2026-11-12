@@ -510,7 +510,8 @@ class IOCEntry(BaseModel):
 
     # The row kind of the report's IOC table the row is: "hash" | "domain" |
     # "ip" | "url" | "email" | "user_agent" | "ja3" | "ja3s" | "path" |
-    # "registry" | "mutex" | "scheduled_task" | "service" | "command" | ...
+    # "registry" | "registry_value" | "mutex" | "folder" | "scheduled_task" |
+    # "service" | "named_pipe" | "ads" | "command" | ...
     kind: str
     value: str
     is_suspicious: bool = False
@@ -519,9 +520,11 @@ class IOCEntry(BaseModel):
     # reached or requested, ``analyst`` for something an agent put in an
     # artefact, ``strings`` for a run of bytes in the file that has the shape
     # of one, ``judge`` for a value the export publishes from the judge's own
-    # indicators. The service has always attached it and this model did not declare
-    # it, so ``response_model`` dropped it and a name only the sample's own
-    # bytes knew shipped looking exactly like one the sandbox watched.
+    # indicators, ``analysis`` for a host value the report model's identifier
+    # table states that code found whole in an entry the row cites. The
+    # service has always attached it and this model did not declare it, so
+    # ``response_model`` dropped it and a name only the sample's own bytes
+    # knew shipped looking exactly like one the sandbox watched.
     source: str | None = None
     # Whether the publish rule would publish this row — the same rule the STIX
     # bundle is built with. A feed another system consumes returns only these

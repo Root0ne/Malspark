@@ -260,12 +260,15 @@ def test_the_enrichment_queued_after_the_report_is_named_then_what_it_asked() ->
 # Re-pinned when the debate's last mean claim confidence came to be printed
 # under its own label (T-662): that one line of the run summary appendix is the
 # only change in run5, run7, local8 and haiku4's Markdown and HTML; run4 carries no debate figure.
+# Re-pinned when the report model's host identifier table came to print the
+# publish rule's answer for each row in a Published column, its footer saying
+# so: that table's rows and footer are the only change in each run.
 STORED_RENDERS = {
-    "run7": ("acd9cde4906e7107", "3644bf10925af995"),
-    "run5": ("f532e60c002e4f97", "6f44369c58fbe604"),
-    "run4": ("581eb11ec3924a68", "0d81125d321278da"),
-    "local8": ("26d87aa32dcde250", "a21fa1436450c755"),
-    "haiku4": ("a6873372c4c2fbe2", "26132fee56318e24"),
+    "run7": ("121d6fb2f21e54cd", "687dab665c364f96"),
+    "run5": ("ff615676c496f1eb", "d88ef6eb57f5fa9a"),
+    "run4": ("95cc2744a52ef0af", "4669cfe8d40d01f1"),
+    "local8": ("e1d6ec0345e42050", "9ccf9fffe48bf0bb"),
+    "haiku4": ("e4732614aa85ceb9", "7403edbaf9301caf"),
 }
 
 

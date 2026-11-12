@@ -26,6 +26,7 @@ from typing import Any
 
 from malspark.core.previous_name import PREVIOUS_NAME
 from malspark.reporting.renderers.stix_renderer import digest_label, publishes
+from malspark.reporting.stated_host_values import listed_only
 from malspark.schemas.stix_models import tlp_name
 
 # The namespace each attribute's uuid is derived in, with the report's own id
@@ -63,6 +64,11 @@ _KIND_TYPES = {
     "mutex": "mutex",
     "scheduled_task": "windows-scheduled-task",
     "service": "windows-service-name",
+    # A value the analysis states and code checked (``stated_host_values``):
+    # a registry value is a key path to MISP, and a named pipe has its type.
+    # A folder and an alternate data stream have none, and are ``text``.
+    "registry_value": "regkey",
+    "named_pipe": "named pipe",
 }
 
 # The category of a digest, by who recorded the row: the sample's own digests
@@ -140,9 +146,9 @@ def _chosen_type(row: Any) -> tuple[str, str]:
         if not name:
             return "", ""
         return name, _HASH_CATEGORIES.get(source, "Payload delivery")
-    if kind == "registry":
+    if kind in ("registry", "registry_value"):
         # A key a persistence mechanism names persists the sample; a key a
-        # sandbox or a string sweep recorded is an artifact of the run.
+        # sandbox, a string sweep or the analysis recorded is an artifact of the run.
         category = "Persistence mechanism" if source == "persistence" else "Artifacts dropped"
         return "regkey", category
     if kind == "path" and label == "Named pipe":
@@ -231,7 +237,13 @@ def build_misp_attributes(
             )
             if part
         )
-        to_ids = publishes(answer) and kind not in _SIMILARITY_TYPES and kind != _UNTYPED
+        # A generic name is listed, never matched on alone (``listed_only``).
+        to_ids = (
+            publishes(answer)
+            and kind not in _SIMILARITY_TYPES
+            and kind != _UNTYPED
+            and not listed_only(answer)
+        )
         out.append(_attribute(kind, category, value, to_ids, comment))
 
     techniques: set[str] = set()

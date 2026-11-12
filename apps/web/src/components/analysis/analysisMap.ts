@@ -57,6 +57,7 @@ export const REPORT_FIELD_PLACES: Record<keyof MalwareReport, readonly Place[]> 
   c2_channels: ["behaviour#technical-analysis"],
   defensive_recommendations: ["overview#recommendations"],
   detection_signatures: ["indicators#generated-rules"],
+  drafts_not_built: ["indicators#generated-rules"],
   run_summary: ["evidence#run-quality"],
   sections: ["evidence"],
   reputation: ["static#identity"],

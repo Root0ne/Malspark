@@ -84,6 +84,8 @@ from malspark.reporting.models import (
     StringIOC,
     stated_family,
 )
+from malspark.reporting.stated_host_values import ANALYSIS_SOURCE as ANALYSIS_STATED_SOURCE
+from malspark.reporting.stated_host_values import listed_only
 from malspark.schemas.judgement import indicator_type_for
 from malspark.schemas.sandbox_report import (
     LINEAGE_FILE,
@@ -2287,6 +2289,8 @@ STRING_IOC_KINDS: tuple[str, ...] = (
 )
 
 
+# A folder written from a drive (``C:\\``) or a share (``\\\\server\\``).
+_ROOTED_FOLDER_RE = re.compile(r"^(?:[A-Za-z]:[\\/]|\\\\[^\\]+\\)")
 # The comparison a file's directory is written under.
 _PARENT_PATH = ("file", "parent_directory_ref.path")
 # Where a user agent is compared: the request header of STIX 2.1's
@@ -2361,6 +2365,22 @@ def indicator_pattern(kind: str, value: str) -> str | None:
         return f"[mutex:name = '{quoted}']"
     if kind == "registry":
         return f"[windows-registry-key:key = '{quoted}']"
+    if kind == "registry_value":
+        # A value is named under its key (STIX ``windows-registry-key`` and
+        # its ``values``): the key and the value's name, one observation.
+        key, _, name = value.rpartition("\\")
+        if not key or not name:
+            return None
+        return (
+            f"[windows-registry-key:key = '{_escape_stix(key)}' AND "
+            f"windows-registry-key:values[*].name = '{_escape_stix(name)}']"
+        )
+    if kind == "folder":
+        # A folder rooted at a drive or a share is a STIX ``directory``; a bare
+        # folder name is no path, and has no object.
+        if not _ROOTED_FOLDER_RE.match(value):
+            return None
+        return f"[directory:path = '{quoted}']"
     if kind == "user_agent":
         # The header an HTTP request carries it in (STIX 2.1 ``http-request-ext``).
         return f"[network-traffic:{_USER_AGENT_PATH} = '{quoted}']"
@@ -2637,8 +2657,17 @@ def indicator_publish_reason(
     kept_address: str = "",
     url_only: str = "",
     bound: str = "",
+    stated: Any = None,
 ) -> str | None:
     """Why this run may publish one indicator of ``kind``, or ``None``.
+
+    ``stated`` is a host value the analysis states (source ``analysis``: a row
+    of the report model's identifier table, read by
+    ``stated_host_values.read_stated``). It stands on the analysis's typing
+    and on code's checks of it, value by value — a typed kind the export has
+    an object for, created or written, found whole in an entry the row cites,
+    no template, not every host's, a verdict that publishes
+    (``stated_host_values.stated_refusal``) — and on nothing else.
 
     ``bound`` is the chain that binds a decoded text to the API argument the
     code passes it to whole (``reporting.call_bindings``): such a value stands
@@ -2716,6 +2745,10 @@ def indicator_publish_reason(
     """
     if kind == "ip" and is_public_resolver(value):
         return None
+    if stated is not None:
+        from malspark.reporting.stated_host_values import stated_reason, stated_refusal
+
+        return None if stated_refusal(stated, verdict) else stated_reason(stated)
     if bound:
         # Never under a Benign verdict, nor one the judge stated no confidence
         # for, as a value only a recovering tool read (``_emulation_admits``).
@@ -4477,6 +4510,7 @@ def publish_answer(
     judge_only: str = "",
     url_only: str = "",
     bound: str = "",
+    stated: Any = None,
 ) -> str:
     """The publish rule's answer for one row, as the report prints it.
 
@@ -4510,9 +4544,14 @@ def publish_answer(
         kept_address=kept_address,
         url_only=url_only,
         bound=bound,
+        stated=stated,
     )
     if admitted:
         return yes_because(admitted)
+    if stated is not None:
+        from malspark.reporting.stated_host_values import stated_refusal
+
+        return f"no: {stated_refusal(stated, verdict)}"
     if kind == "ip" and is_public_resolver(text):
         return public_resolver_reason(unattributed, listed_by, mentioned_by)
     if kind == "url" and is_public_resolver(url_host(text).strip("[]")):
@@ -4757,6 +4796,9 @@ _EXPORTED_KINDS: dict[tuple[str, str], str] = {
     # other is asked the rule as the path it names.
     ("file", "parent_directory_ref.path"): "path",
     ("windows-registry-key", "key"): "registry",
+    # A value's name reads as the value under its key (:func:`_compared_values`).
+    ("windows-registry-key", "values[*].name"): "registry_value",
+    ("directory", "path"): "folder",
     ("mutex", "name"): "mutex",
     ("process", "command_line"): "command",
     ("network-traffic", _USER_AGENT_PATH.lower()): "user_agent",
@@ -4805,6 +4847,7 @@ def _compared_values(pattern: str, asked: Any) -> list[ExportedValue]:
     """
     comparisons = read_comparisons(str(pattern or ""))
     directory = _paired_directory(pattern, comparisons)
+    registry_key = _paired_registry_key(pattern, comparisons)
     found: list[ExportedValue] = []
     for comparison in comparisons:
         if not comparison.readable or not asked(comparison.operator):
@@ -4815,6 +4858,13 @@ def _compared_values(pattern: str, asked: Any) -> list[ExportedValue]:
             kind = "" if directory is not None else kind
         elif kind == "path" and directory is not None:
             value = joined_path(directory, comparison.literal).strip()
+        elif kind == "registry" and registry_key is not None:
+            kind = ""
+        elif kind == "registry_value":
+            if registry_key is None:
+                kind = ""
+            else:
+                value = f"{registry_key}\\{comparison.literal}".strip()
         if kind and value:
             found.append(ExportedValue(kind=kind, value=value, algorithm=algorithm))
     return found
@@ -4849,6 +4899,30 @@ def _paired_directory(pattern: str, comparisons: list[Any]) -> str | None:
     if _NOT_ONE_CONJUNCTION_RE.search(_QUOTED_RE.sub("''", str(pattern or ""))):
         return None
     return str(folder.literal)
+
+
+def _paired_registry_key(pattern: str, comparisons: list[Any]) -> str | None:
+    """The key a pattern names its one registry value under, as :func:`indicator_pattern` writes it.
+
+    One ``windows-registry-key:key`` and one ``values[*].name``, both ``=``,
+    readable, in a pattern joined by ``AND`` alone (one object, as STIX reads
+    comparisons joined by ``AND`` in one bracket); else
+    ``None``, and a value's name alone names nothing the table holds.
+    """
+    keys = [c for c in comparisons if (c.object_type, c.prop) == ("windows-registry-key", "key")]
+    names = [
+        c
+        for c in comparisons
+        if (c.object_type, c.prop) == ("windows-registry-key", "values[*].name")
+    ]
+    if len(keys) != 1 or len(names) != 1:
+        return None
+    key, name = keys[0], names[0]
+    if not (key.readable and name.readable) or key.operator != "=" or name.operator != "=":
+        return None
+    if _NOT_ONE_CONJUNCTION_RE.search(_QUOTED_RE.sub("''", str(pattern or ""))):
+        return None
+    return str(key.literal)
 
 
 def shape_is_asked_the_rule(comparison: Any) -> bool:
@@ -4904,8 +4978,14 @@ def exported_indicator_values(bundle: Any) -> list[ExportedValue]:
 # their own steps; the judge's values are its own indicators.
 # A value the code passes whole to an API argument (``call_bindings``) is a
 # row of the same step, a user agent among them.
-_OBSERVED_HOST_SOURCES = frozenset({"sandbox", "persistence", "static", BOUND_SOURCE})
-_OBSERVED_HOST_KINDS = frozenset({"hash", "path", "registry", "mutex", "user_agent"})
+# A value the analysis states and code checked (``stated_host_values``) is one
+# too, under its own source.
+_OBSERVED_HOST_SOURCES = frozenset(
+    {"sandbox", "persistence", "static", BOUND_SOURCE, ANALYSIS_STATED_SOURCE}
+)
+_OBSERVED_HOST_KINDS = frozenset(
+    {"hash", "path", "registry", "registry_value", "folder", "mutex", "user_agent"}
+)
 
 
 def _observed_host_indicators(
@@ -4932,6 +5012,8 @@ def _observed_host_indicators(
             source not in _OBSERVED_HOST_SOURCES
             or kind not in _OBSERVED_HOST_KINDS
             or not publishes(row.published)
+            # A generic name is listed, never matched on alone.
+            or listed_only(row.published)
         ):
             continue
         key = (kind, _value_key(kind, row.value))
