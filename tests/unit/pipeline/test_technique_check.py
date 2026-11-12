@@ -570,6 +570,34 @@ class TestTheNoteTheJudgeReads:
         assert "- attck.weak_alignment: TECHNIQUE T1547.001 aligns weakly" in note
         assert "T1055" not in note
 
+    @pytest.mark.parametrize("mode", ["feed_back", "record_only"])
+    def test_a_row_never_asked_is_listed_as_not_asked(
+        self, mode: str, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from malspark.core.settings_overrides import build_settings
+
+        built = build_settings({"validation": {"feedback": mode}})
+        monkeypatch.setattr("malspark.core.config.get_settings", lambda: built)
+        findings = {
+            "static": [
+                {"code": PLATFORM_MISMATCH_CODE, "message": "TECHNIQUE T1417 belongs to mobile"},
+                {
+                    "code": WEAK_ALIGNMENT_CODE,
+                    "message": "TECHNIQUE T1547.001 aligns weakly",
+                    "asked": "false",
+                },
+            ]
+        }
+
+        note = technique_check_note(findings)
+
+        kept, unasked = note.split("\n\n")
+        assert kept.startswith("TECHNIQUE CHECK —")
+        assert "T1417" in kept and "T1547.001" not in kept
+        assert unasked.startswith("TECHNIQUE CHECK, NOT ASKED —")
+        assert "- attck.weak_alignment: TECHNIQUE T1547.001 aligns weakly" in unasked
+        assert "T1417" not in unasked
+
     def test_nothing_questioned_is_no_note(self) -> None:
         assert technique_check_note({}) == ""
         assert technique_check_note(None) == ""

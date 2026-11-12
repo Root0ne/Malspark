@@ -2890,8 +2890,11 @@ def technique_check_note(findings: Any) -> str:
 
     The platform mismatches and weak alignments that survived their retry,
     read off the unresolved rows so the judge weighs the same messages the
-    analyst was shown — the domain, the platforms, the candidates. Empty when
-    there are none.
+    analyst was shown — the domain, the platforms, the candidates. A row the
+    analyst was never asked about (``"asked": "false"``: no turn was left, or
+    ``validation.feedback`` is ``record_only``) is listed under its own NOT
+    ASKED heading, as the function rows are, never as a claim kept when
+    questioned. Empty when there are none.
     """
     rows: list[Any] = []
     if isinstance(findings, dict):
@@ -2900,20 +2903,21 @@ def technique_check_note(findings: Any) -> str:
     else:
         rows.extend(findings or [])
     lines: list[str] = []
+    techniques_unasked: list[str] = []
     functions: list[str] = []
     unasked: list[str] = []
     for row in rows:
         data = row if isinstance(row, dict) else getattr(row, "__dict__", {}) or {}
         code = str(data.get("code") or "")
         message = " ".join(str(data.get("message") or "").split())
+        not_asked = str(data.get("asked") or "") == "false" or data.get("asked") is False
         if code == FUNCTION_CLAIM_UNHELD:
             # The facts alone: the sentence addressed to the analyst is not the judge's.
             fact = " ".join(message.replace(FUNCTION_QUESTION_ASK, " ").split())
-            not_asked = str(data.get("asked") or "") == "false" or data.get("asked") is False
             (unasked if not_asked else functions).append(f"- {code}: {fact}")
         if code not in (PLATFORM_MISMATCH_CODE, WEAK_ALIGNMENT_CODE):
             continue
-        lines.append(f"- {code}: {message}")
+        (techniques_unasked if not_asked else lines).append(f"- {code}: {message}")
     notes = []
     if lines:
         notes.append(
@@ -2921,6 +2925,8 @@ def technique_check_note(findings: Any) -> str:
             "are the analysts' own; the check names what disagrees with them and nothing here "
             "changed them.\n" + "\n".join(lines)
         )
+    if techniques_unasked:
+        notes.append(TECHNIQUE_CHECK_NOT_ASKED_HEAD + "\n" + "\n".join(techniques_unasked))
     if functions:
         notes.append(FUNCTION_CHECK_HEAD + "\n" + "\n".join(functions))
     if unasked:
@@ -2928,6 +2934,13 @@ def technique_check_note(findings: Any) -> str:
     return "\n\n".join(notes)
 
 
+# What the judge is told of the technique check's findings the analyst was
+# never asked about; the reason, where there is one, is in the row.
+TECHNIQUE_CHECK_NOT_ASKED_HEAD = (
+    "TECHNIQUE CHECK, NOT ASKED — claims the ATT&CK check found a disagreement with, which "
+    "the analyst was never asked about. The ids are the analysts' own; the check names what "
+    "disagrees with them and nothing here changed them."
+)
 # The function claim check's code (``pipeline.function_claims``), named here so
 # the judge's note reads its rows without importing the check.
 FUNCTION_CLAIM_UNHELD = "isr.function_claim_unheld"
