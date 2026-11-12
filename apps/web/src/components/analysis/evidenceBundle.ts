@@ -38,6 +38,8 @@ export interface BundleIndexRow {
   duration_ms: number;
   truncated: boolean;
   repeated_of: string | null;
+  /** Whether the tool ran; null where the entry does not say. */
+  ran: boolean | null;
 }
 
 export interface BundleSection {
@@ -111,6 +113,7 @@ export function readBundle(body: string): { bundle: EvidenceBundle } | { problem
           duration_ms: Number(r.duration_ms) || 0,
           truncated: r.truncated === true,
           repeated_of: r.repeated_of == null ? null : str(r.repeated_of),
+          ran: r.ran === true || r.ran === false ? r.ran : null,
         };
       }),
       sections: rows(doc.sections, (s) => {
@@ -120,6 +123,17 @@ export function readBundle(body: string): { bundle: EvidenceBundle } | { problem
       }),
     },
   };
+}
+
+/** How an index row's result reads, with the tone it is drawn in. */
+export function resultWords(row: BundleIndexRow): { text: string; tone: string } {
+  if (!row.ok) return { text: "failed", tone: "text-status-red" };
+  if (row.repeated_of !== null) {
+    const text = row.ran === true ? `ran, same as ${row.repeated_of}` : `same as ${row.repeated_of}`;
+    return { text, tone: "text-text-secondary" };
+  }
+  if (row.truncated) return { text: "ok, trimmed", tone: "text-status-orange" };
+  return { text: "ok", tone: "text-status-green" };
 }
 
 /* ── Anchors ──────────────────────────────────────────── */

@@ -83,10 +83,12 @@ from malspark.core.host_locality import (
 
 # The version of the stored record's shape. Version 2 adds the isolation part
 # (``analysis.isolation``), version 3 the effects part (``analysis.tool_effects``),
-# version 4 the configured model endpoints' labels (``endpoint_labels``); a
-# record of an earlier version has none of the later parts and renders as
-# before.
-DISCLOSURE_VERSION = 4
+# version 4 the configured model endpoints' labels (``endpoint_labels``),
+# version 5 the calls answered without a run beside the calls made (each
+# tool row's ``served``) and the calls that stayed on this machine
+# (``stayed``); a record of an earlier version has none of the later parts and
+# renders as before.
+DISCLOSURE_VERSION = 5
 
 # The transports a tool server is reached over at an address.
 HTTP_TRANSPORTS = frozenset({"http", "streamable-http", "sse"})
@@ -110,6 +112,10 @@ FOOTNOTE_SENTENCE = (
 
 # The order rows are listed in: what went outside first.
 _WHERE_ORDER = {REMOTE: 0, UNKNOWN: 1, LOCAL: 2}
+
+# The source the calls of the platform's own in-process tools, which record
+# none, are counted under among the calls that stayed on this machine.
+PLATFORM_SOURCE = "platform"
 
 # The agent key of the calls the token ledger filed under no agent: no agent's
 # key is empty, since the ledger keeps a tally only for a named one.
@@ -442,6 +448,7 @@ def _tool_row(source: str, route: _Route, place: _Place) -> dict[str, Any]:
         "host": place.host,
         "where": place.where,
         "calls": 0,
+        "served": 0,
         "why": place.why,
     }
 
@@ -484,10 +491,31 @@ class _ToolRows:
     # Where each ``(source, tool)`` was placed, as its row says it: read by the
     # effects part, so the two never place one call differently.
     places: dict[tuple[str, str], dict[str, str]] = field(default_factory=dict)
+    # The calls that stayed on this machine and no row above counts, by
+    # source: the made and the served of each (``schemas.evidence.call_counts``).
+    stayed: dict[str, dict[str, int]] = field(default_factory=dict)
+
+
+def _stayed(out: _ToolRows, source: str, state: str) -> None:
+    """Count one call that stayed on this machine under ``source``: made, served or not run."""
+    from malspark.schemas.evidence import MADE, NOT_RUN, SERVED
+
+    tally = out.stayed.setdefault(source, {MADE: 0, SERVED: 0, NOT_RUN: 0})
+    tally[state] += 1
 
 
 def _tool_rows(snapshot: Mapping[str, Any], entries: Iterable[Any]) -> _ToolRows:
-    """The ledger's calls, each once: lookups, uploads by a tool, servers, undeclared tools."""
+    """The ledger's calls, each once: lookups, uploads by a tool, servers, undeclared tools.
+
+    Each row counts the calls whose tool ran (``calls``) and, beside them, the
+    ones answered without a run that would have been counted there
+    (``served``), by the one definition (``schemas.evidence.call_state``).
+    Every other entry is a call that stayed on this machine (``stayed``): the
+    platform's in-process tools, a question put to the team, a call to a tool
+    server run on this machine, an answer without a run that no row of a call
+    made holds, and a step never run, which sent nothing (``not_run``). Each
+    entry is counted once.
+    """
     from malspark.analysis.tool_effects import (
         DECLARED,
         entry_effects,
@@ -503,26 +531,37 @@ def _tool_rows(snapshot: Mapping[str, Any], entries: Iterable[Any]) -> _ToolRows
     )
     from malspark.core.reputation import INDICATOR_ARGUMENTS, asks_about_an_indicator
     from malspark.core.tool_declarations import NETWORK_OPERATOR_SANDBOX
+    from malspark.schemas.evidence import MADE, NOT_RUN, SERVED, call_state
 
     in_process = _in_process_sources()
     gateways = gateway_blocks(snapshot)
     routes: dict[str, _Route] = {}
     out = _ToolRows()
+    # The entries answered without a run, each with the row its call would
+    # have been counted in: counted there as served once every call made has
+    # its row, and on this machine where no call made has one.
+    served: list[tuple[dict[tuple[Any, ...], dict[str, Any]] | None, tuple[Any, ...], str]] = []
     for entry in entries:
-        if _field(entry, "repeated_of"):
-            # Answered from an earlier entry or by a guard: no call was made.
-            continue
+        state = call_state(entry)
+        made = state == MADE
         source = str(_field(entry, "source") or "")
-        if source in in_process:
+        if source in in_process or is_platform_internal(entry):
+            # The platform's own in-process tools, or a question put to
+            # another agent of the team, whose own calls are entries of their
+            # own: none leaves the worker.
+            _stayed(out, source or str(_field(entry, "server") or "") or PLATFORM_SOURCE, state)
             continue
-        if is_platform_internal(entry):
-            # An in-process tool (no server), or a question put to another
-            # agent of the team, whose own calls are entries of their own.
+        if state == NOT_RUN:
+            # A step never run sent nothing anywhere.
+            _stayed(out, source or str(_field(entry, "server") or "") or PLATFORM_SOURCE, state)
             continue
         if not source:
             name = str(_field(entry, "server") or "")
             unrouted = _Route("", _Place(why=_NO_SOURCE))
             key: tuple[Any, ...] = (name, unrouted.place.key)
+            if not made:
+                served.append((out.servers, key, name))
+                continue
             row = out.servers.setdefault(key, _tool_row(name, unrouted, unrouted.place))
             row["calls"] += 1
             continue
@@ -568,6 +607,26 @@ def _tool_rows(snapshot: Mapping[str, Any], entries: Iterable[Any]) -> _ToolRows
             {"where": place.where, "host": place.host, "why": place.why},
         )
         key = (source, route.transport, place.key)
+        undeclared = (
+            local
+            and not _declares_a_kind(entry)
+            and not (effects.network is False and effects.network_by == DECLARED)
+        )
+        if not made:
+            if sends:
+                part: dict[tuple[Any, ...], dict[str, Any]] | None = out.uploads
+            elif lookup:
+                part = out.lookups
+            elif local and (route.gateway or outward or reaches):
+                part = out.servers
+            elif undeclared:
+                part = out.undeclared
+            elif local and route.on_this_machine:
+                part = None
+            else:
+                part = out.servers
+            served.append((part, key, source))
+            continue
         if sends:
             row = out.uploads.setdefault(
                 key, {"by": BY_TOOL, **_tool_row(source, route, place), "failed": 0}
@@ -594,11 +653,7 @@ def _tool_rows(snapshot: Mapping[str, Any], entries: Iterable[Any]) -> _ToolRows
         elif local and (route.gateway or outward or reaches):
             row = out.servers.setdefault(key, _tool_row(source, route, place))
             row["calls"] += 1
-        elif (
-            local
-            and not _declares_a_kind(entry)
-            and not (effects.network is False and effects.network_by == DECLARED)
-        ):
+        elif undeclared:
             row = out.undeclared.setdefault(key, _tool_row(source, route, place))
             row["calls"] += 1
             if server_hints(entry).get("openWorldHint") is True:
@@ -609,12 +664,21 @@ def _tool_rows(snapshot: Mapping[str, Any], entries: Iterable[Any]) -> _ToolRows
                 row["server_stated"] = int(row.get("server_stated") or 0) + 1
         elif local:
             out.local_servers.setdefault(source, None)
-            if not route.on_this_machine:
+            if route.on_this_machine:
+                _stayed(out, source, state)
+            else:
                 row = out.servers.setdefault(key, _tool_row(source, route, place))
                 row["calls"] += 1
         else:
             row = out.servers.setdefault(key, _tool_row(source, route, place))
             row["calls"] += 1
+    for part, key, source in served:
+        held = part.get(key) if part is not None else None
+        if held is not None:
+            held["served"] = int(held.get("served") or 0) + 1
+        else:
+            # Nothing was sent for it, and no row counts a call made there.
+            _stayed(out, source, SERVED)
     for row in out.lookups.values():
         row["kinds"] = dict(sorted(row["kinds"].items()))
     return out
@@ -930,6 +994,7 @@ def disclosure_record(
         "servers": _ordered(tools.servers.values()),
         "undeclared": _ordered(tools.undeclared.values()),
         "local_servers": sorted(tools.local_servers),
+        "stayed": [{"source": source, **counts} for source, counts in sorted(tools.stayed.items())],
         "stores": _stores(snapshot, memory_backends() if backends is None else backends),
         "tracing": bool(tracing) or _setting_on(snapshot.get(TRACING_SETTING)),
         "unreadable_entries": max(0, int(unreadable or 0)),
@@ -1459,6 +1524,12 @@ def _times(count: int) -> str:
     return "once" if count == 1 else f"{count} times"
 
 
+def _again(row: Mapping[str, Any]) -> str:
+    """`` (+N answered without a run)`` for a row's served calls; ``""`` for none or old rows."""
+    served = int(row.get("served") or 0)
+    return f" (+{served} answered without a run)" if served else ""
+
+
 def _server(source: str, code: Callable[[str], str]) -> str:
     kind, _, key = source.partition(":")
     if kind == "mcp" and key:
@@ -1533,7 +1604,7 @@ def _kinds(row: Mapping[str, Any]) -> str:
 def _lookup_line(row: Mapping[str, Any], code: Callable[[str], str]) -> str:
     calls = int(row.get("calls") or 0)
     server = _server(str(row.get("source") or ""), code)
-    asked = f"was asked {_times(calls)}"
+    asked = f"was asked {_times(calls)}{_again(row)}"
     kinds = _kinds(row)
     if _placed(row) and row.get("host"):
         return (
@@ -1570,13 +1641,13 @@ def _upload_line(row: Mapping[str, Any], code: Callable[[str], str]) -> str:
             f"its put_sample tools, for its tools to read{failure}{untold}."
         )
     return (
-        f"Sample upload: {server} ({_how(row)}){at} was handed the sample {times} by a tool "
-        f"declared to send it out of the deployment{failure}{untold}."
+        f"Sample upload: {server} ({_how(row)}){at} was handed the sample {times}{_again(row)} "
+        f"by a tool declared to send it out of the deployment{failure}{untold}."
     )
 
 
 def _server_line(row: Mapping[str, Any], code: Callable[[str], str]) -> str:
-    calls = count_label(int(row.get("calls") or 0), "call")
+    calls = count_label(int(row.get("calls") or 0), "call") + _again(row)
     server = _server(str(row.get("source") or ""), code)
     if _placed(row) and row.get("host"):
         return (
@@ -1588,6 +1659,7 @@ def _server_line(row: Mapping[str, Any], code: Callable[[str], str]) -> str:
 
 def _undeclared_line(rows: list[Mapping[str, Any]], code: Callable[[str], str]) -> str:
     total = sum(int(row.get("calls") or 0) for row in rows)
+    again = _again({"served": sum(int(row.get("served") or 0) for row in rows)})
     by_server = ", ".join(
         f"{_server(str(row.get('source') or ''), code)} ({_how(row)}) {int(row.get('calls') or 0)}"
         for row in rows
@@ -1606,9 +1678,51 @@ def _undeclared_line(rows: list[Mapping[str, Any]], code: Callable[[str], str]) 
             "own tools, which no declaration the operator trusts says (the tool-effects part)"
         )
     return (
-        f"Tool calls: {count_label(total, 'call')} to tools that declare no effects "
+        f"Tool calls: {count_label(total, 'call')}{again} to tools that declare no effects "
         f"({by_server}): whether they reached the network cannot be told{said}."
     )
+
+
+def _stayed_name(source: str, code: Callable[[str], str]) -> str:
+    from malspark.agents.delegation import TEAM_SERVER
+
+    if source == PLATFORM_SOURCE:
+        return "the platform's own tools"
+    if source == TEAM_SERVER:
+        return "questions put to the team"
+    if source in _in_process_sources():
+        return f"the platform's in-process source {code(source)}"
+    return _server(source, code)
+
+
+def _stayed_count(row: Mapping[str, Any], label: Callable[[int], str]) -> str:
+    """A stayed tally: the calls made, then the answers without a run and the steps not run.
+
+    The two after the calls made are said apart, never inside them; with no
+    call made only they are said, each with ``label``.
+    """
+    made = int(row.get("made") or 0)
+    served, not_run = int(row.get("served") or 0), int(row.get("not_run") or 0)
+    if not made and (served or not_run):
+        apart = [f"{label(served)} answered without a run"] if served else []
+        apart += [f"{label(not_run)} not run"] if not_run else []
+        return ", ".join(apart)
+    apart = [f"{served} answered without a run"] if served else []
+    apart += [f"{not_run} not run"] if not_run else []
+    return label(made) + (f" (+{', '.join(apart)})" if apart else "")
+
+
+def _stayed_line(rows: list[Mapping[str, Any]], code: Callable[[str], str]) -> str:
+    """The calls no row above counts, all on this machine: so the lines sum to every call."""
+    total = {
+        key: sum(int(row.get(key) or 0) for row in rows) for key in ("made", "served", "not_run")
+    }
+    by_source = ", ".join(
+        f"{_stayed_name(str(row.get('source') or ''), code)} {_stayed_count(row, str)}"
+        for row in rows
+    )
+    calls = _stayed_count(total, lambda count: count_label(count, "call"))
+    return f"Tool calls that stayed on this machine: {calls} ({by_source})."
 
 
 def _store_line(row: Mapping[str, Any], code: Callable[[str], str]) -> str:
@@ -1788,6 +1902,9 @@ def disclosure_lines(record: Any, code: Callable[[str], str] = _code) -> list[st
     undeclared = [row for row in record.get("undeclared") or [] if isinstance(row, Mapping)]
     if undeclared:
         lines.append(_undeclared_line(undeclared, code))
+    stayed = [row for row in record.get("stayed") or [] if isinstance(row, Mapping)]
+    if stayed:
+        lines.append(_stayed_line(stayed, code))
     unreadable = int(record.get("unreadable_entries") or 0)
     if unreadable:
         lines.append(_unreadable_line(unreadable))

@@ -196,8 +196,15 @@ def _entry_id(entry: Any) -> str:
 
 
 def _ran(entry: Any) -> bool:
-    """Whether the entry's tool ran: neither a repeat of another entry nor a guard's answer."""
-    return bool(_entry_id(entry)) and not str(_field(entry, "repeated_of") or "").strip()
+    """Whether the entry is a call asked of its tool rather than an answer without a run.
+
+    By the one definition (``schemas.evidence.call_state``): an answer served
+    again from an earlier entry and a guard's answer did not run; a step never
+    run is a call of its tool that failed, as it always was here.
+    """
+    from malspark.schemas.evidence import SERVED, call_state
+
+    return bool(_entry_id(entry)) and call_state(entry) != SERVED
 
 
 def _holders(entries: Sequence[Any]) -> dict[str, str]:
@@ -254,11 +261,13 @@ def uncited_record(
     ``None`` when no call ran. A failed call is not evidence: it is counted as
     ``failed`` and left out of the rest.
     """
-    called = [e for e in entries if _ran(e) and not _reads_again(e)]
+    holders = _holders(entries)
+    # A call that ran and whose answer an earlier entry holds keeps a note,
+    # not an answer: the entry that holds it is the one a citation names.
+    called = [e for e in entries if _ran(e) and not _reads_again(e) and _entry_id(e) not in holders]
     if not called:
         return None
     ran = [e for e in called if _field(e, "ok") is not False]
-    holders = _holders(entries)
     cited = {holders.get(found) or found for found in cited_ids(isr_reports)}
     uncited = [e for e in ran if _entry_id(e) not in cited]
     by_agent: dict[str, int] = {}

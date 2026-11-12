@@ -124,6 +124,9 @@ def test_a_run_that_stayed_local_says_nothing_and_what_that_rests_on() -> None:
         "was asked, and tracing is off.",
         "Model prompts: `127.0.0.1` (local) received 3 calls (static 3); it answered as a model "
         "runtime (llama.cpp /props).",
+        "Tool calls that stayed on this machine: 4 calls (tool server `analysis` 1, the "
+        "platform's in-process source `pack` 1, the platform's in-process source "
+        "`provider:capa_yara` 1, the platform's in-process source `sandbox` 1).",
     ]
 
 

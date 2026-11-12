@@ -438,6 +438,7 @@ class EvidenceRecorder:
         not_shown: int | None = None,
         cut: int | None = None,
         guard_answer: bool = False,
+        ran: bool = True,
         source: str | None = None,
         declared_name: str | None = None,
         structured_content: dict[str, Any] | None = None,
@@ -450,7 +451,10 @@ class EvidenceRecorder:
 
         ``guard_answer`` files a call a guard answered with no tool run and no
         earlier entry behind the answer: its ``repeated_of`` is its own id
-        (``schemas.evidence.is_guard_answer``).
+        (``schemas.evidence.is_guard_answer``). ``ran`` false files a call no
+        tool ran, which only :meth:`record_repeat`,
+        :meth:`record_guard_answer` and the read of an entry again by its id
+        do (``schemas.evidence.call_state``).
 
         ``not_shown`` is the length of an answer the conversation had no room
         for: the entry is recorded as cut (``schemas.evidence.not_shown_record``)
@@ -510,6 +514,7 @@ class EvidenceRecorder:
             waited_ms=waited_ms,
             stage=self.stage,
             repeated_of=repeated_of,
+            ran=ran,
             remediation=remediation,
             args_repaired=args_repaired,
             args_raw=args_raw,
@@ -619,7 +624,8 @@ class EvidenceRecorder:
         a chunk whose every call an earlier chunk had already answered left no
         entry and no event at all, and a reader of the ledger could not tell
         nine calls from none. ``repeated_of`` says which entry holds the
-        answer, and ``said`` is the note the model was handed in its place.
+        answer, and ``said`` is the note the model was handed in its place;
+        the entry states that no tool ran (``ran`` false).
         ``ok`` is false when the earlier entry is a failure. The model is never
         shown this entry's id: the answer it reads carries the earlier one,
         which is the one to cite.
@@ -635,6 +641,7 @@ class EvidenceRecorder:
             started_at=time.time(),
             duration_ms=0,
             repeated_of=str(first),
+            ran=False,
             source=source,
             declared_name=declared_name,
         )
@@ -659,7 +666,8 @@ class EvidenceRecorder:
         evidence byte budget and the citable texts (a chain that comes round
         to itself holds no answer, ``schemas.evidence.repeat_holders``). It is
         a failure, since nothing answered, and never a tool failure: the model
-        is never shown its id.
+        is never shown its id. The entry states that no tool ran (``ran``
+        false).
         """
         self.call_started(tool=tool, args=args, server=server)
         return self.record(
@@ -672,6 +680,7 @@ class EvidenceRecorder:
             started_at=time.time(),
             duration_ms=0,
             guard_answer=True,
+            ran=False,
             source=source,
             declared_name=declared_name,
         )
@@ -914,6 +923,15 @@ class RepeatGuard:
     the answer is and not what to do instead. The second call, the one that is
     still served, is where the model is told, and both messages name the
     arguments of that tool it has not used.
+
+    An answer served from an earlier entry, with no tool run (a held
+    whole-function read, the agent's own earlier call, an identical call of
+    the job), says that asking again with the same arguments runs the call
+    once more, and what that repeats where the call is not known to be
+    read-only (:func:`with_fresh_run`); the identical call after it does run
+    (:meth:`takes_fresh_run`).
+    Once per call per loop: the fresh run counts as a run, so the call after
+    it is refused as before and the refusals still end the loop.
     """
 
     # Identical calls answered before the third is refused.
@@ -985,6 +1003,15 @@ class RepeatGuard:
         # Each is kept with the server's change mark when its read started
         # (``ServerChanges``): one whose mark has moved since is not handed out.
         self._held: dict[str, dict[Any, tuple[str, str, str, Any]]] = {}
+        # The calls an answer served from an earlier entry left a fresh run
+        # owed to, by key: the next identical call runs the tool
+        # (:meth:`takes_fresh_run`).
+        self._fresh_owed: set[str] = set()
+        # The calls that have had their fresh run in this loop. One per call:
+        # the run counts as any run does, so the identical call after it is
+        # refused as before, and serving and running cannot alternate without
+        # end.
+        self._fresh_given: set[str] = set()
 
     def _seeded_count(self, key: str) -> int:
         """Where a seeded call's count starts: one served retry for a failure or an unkept result."""
@@ -1251,6 +1278,35 @@ class RepeatGuard:
         if refused:
             self.refused_repeats += 1
 
+    def may_run_fresh(self, tool: str, kwargs: dict[str, Any]) -> bool:
+        """Whether an answer served to this call now leaves a fresh run open: once per loop."""
+        return self._lookup_key(tool, kwargs) not in self._fresh_given
+
+    def owe_fresh_run(self, tool: str, kwargs: dict[str, Any]) -> None:
+        """Record that this call was served from an earlier entry: the next identical one runs."""
+        key = self._lookup_key(tool, kwargs)
+        if key not in self._fresh_given:
+            self._fresh_owed.add(key)
+
+    def takes_fresh_run(self, tool: str, kwargs: dict[str, Any]) -> bool:
+        """Whether this call is the one a served answer left owed; marks the fresh run given.
+
+        That call runs the tool whatever the guard and the held answers would
+        say, and is recorded as a call that ran. It counts as a run
+        (:meth:`note`), so the identical call after it is refused as it would
+        be after any second run, and no call gets a second fresh run in the
+        loop.
+        """
+        key = self._lookup_key(tool, kwargs)
+        # Taken in one step, so of two identical calls of one turn run side by
+        # side only one takes it.
+        try:
+            self._fresh_owed.remove(key)
+        except KeyError:
+            return False
+        self._fresh_given.add(key)
+        return True
+
     def ending_the_loop(self) -> bool:
         """Whether this loop has been refused identical calls often enough to be ended."""
         return self.refused_repeats >= self.ENDS_AT
@@ -1259,10 +1315,18 @@ class RepeatGuard:
         """Whether the notice being written is the one before the last."""
         return self.refused_repeats >= self.WARNS_AT
 
-    def note(self, tool: str, kwargs: dict[str, Any], entry_id: str) -> None:
-        """Record that the call ran, and which entry first answered it."""
+    def note(
+        self, tool: str, kwargs: dict[str, Any], entry_id: str, *, fresh: bool = False
+    ) -> None:
+        """Record that the call ran, and which entry first answered it.
+
+        ``fresh`` is a fresh run that answered: its entry answers for the call
+        from here on, and is the one a later refusal names.
+        """
         key = self._lookup_key(tool, kwargs)
         self._count[key] = self._count.get(key, 0) + 1
+        if fresh:
+            self._first[key] = entry_id
         # A retry of an earlier chunk's failure, or of a call whose result the
         # run did not keep, answers for the call from here on: its entry is
         # the one a later refusal names.
@@ -1452,6 +1516,29 @@ def _function_label(text: str, key: tuple[str, Any] | None) -> str:
     return f"the function at {key[1]:#x}" if key and key[0] == "start" else "the same function"
 
 
+# What every answer served from an earlier entry ends with while its fresh run
+# is open (``RepeatGuard.takes_fresh_run``): one platform sentence, the same
+# under every layer that serves, chosen by what the layers know of the call.
+# A call known to change nothing (``tool_pinning.answers_again``) is only read
+# again; any other call does again whatever it does.
+FRESH_RUN_SENTENCE = "Asking again with the same arguments runs the call fresh, once."
+FRESH_RUN_REPEATS_SENTENCE = (
+    "Asking again with the same arguments runs the call again, once, "
+    "and repeats whatever the call does."
+)
+
+
+def with_fresh_run(said: str, fresh: bool, *, reads_only: bool) -> str:
+    """``said`` with the fresh-run sentence after it when the fresh run is open.
+
+    :data:`FRESH_RUN_SENTENCE` for a call the layers know to be read-only
+    (``reads_only``), :data:`FRESH_RUN_REPEATS_SENTENCE` for any other.
+    """
+    if not fresh:
+        return said
+    return f"{said} {FRESH_RUN_SENTENCE if reads_only else FRESH_RUN_REPEATS_SENTENCE}"
+
+
 def held_answer_sentence(tool: str, entry_id: str) -> str:
     """The sentence under a whole-function read answered from an identical earlier call's entry."""
     return (
@@ -1500,6 +1587,8 @@ def earlier_chunk_answer(
     args: Mapping[str, Any] | None = None,
     cut: int = 0,
     charge: Callable[[str], str] | None = None,
+    fresh: bool = False,
+    reads_only: bool = True,
 ) -> str:
     """What a later chunk's call an earlier chunk made is answered with.
 
@@ -1510,7 +1599,8 @@ def earlier_chunk_answer(
     the entry that holds the result is the one to cite. ``cut`` is the
     characters the platform left out of it when it was first shown, which its
     completeness line states again; ``charge`` charges that line to the
-    conversation it enters.
+    conversation it enters. ``fresh`` says the identical call after it runs
+    fresh, in the words ``reads_only`` chooses (:func:`with_fresh_run`).
     """
     # The notice the original answer carried when it was shortened, read off
     # the recorded text the same way (``_stamp``).
@@ -1523,7 +1613,9 @@ def earlier_chunk_answer(
     if charge is not None:
         complete = charge(complete)
     shown = fenced(entry_id, recorded)
-    said = earlier_chunk_sentence(tool, entry_id, origin=origin)
+    said = with_fresh_run(
+        earlier_chunk_sentence(tool, entry_id, origin=origin), fresh, reads_only=reads_only
+    )
     return f"[{entry_id}]\n{shown}{shortened}{complete}\n\n{said}"
 
 
@@ -1726,6 +1818,7 @@ def served_repeat_notice(
     *,
     last_warning: bool = False,
     failed: bool = False,
+    fresh: bool = False,
 ) -> str:
     """The steering appended to the second identical call, which is still served.
 
@@ -1739,6 +1832,9 @@ def served_repeat_notice(
     writes its answer from what it has. ``failed`` is the second call raising
     as the first did, where what is above is a failure and so is the entry it
     points at, and the sentence says so instead of calling it an answer.
+    ``fresh`` is a second call answered from the ledger, whose next identical
+    call still runs fresh once (:func:`with_fresh_run`): the refusal comes
+    after that run.
     """
     what_happened = (
         f"This call to {tool} failed the same way before, in [{entry_id}]"
@@ -1748,8 +1844,9 @@ def served_repeat_notice(
             f"also in [{entry_id}]"
         )
     )
+    refused = "After that fresh run it will not be run" if fresh else "A third will not be run"
     return (
-        f"{what_happened}. A third will not be run: "
+        f"{what_happened}. {refused}: "
         f"{_do_something_else(tool, narrowing)}{_ENDING_SENTENCE if last_warning else ''}"
     )
 
@@ -1931,6 +2028,11 @@ def _record_tool(
 
     handle = server_handle_of(tool)
     one_view = server_changes_nothing(tool)
+    # Which calls an answer served from an earlier entry left a fresh run
+    # owed to (``RepeatGuard.takes_fresh_run``): the loop's guard, or, for a
+    # tool recorded without one, a guard of this tool's own that keeps only
+    # that.
+    fresh_runs = repeats if repeats is not None else RepeatGuard()
     # Whether a failed call is held against the loaded image's range: the tool
     # declares an address argument and that it does not run the sample's code.
     from malspark.agents.image_range import locates_in_image, out_of_image_note
@@ -2060,6 +2162,7 @@ def _record_tool(
         recorded = repeats.recorded_answer(name, kwargs)
         if recorded is not None:
             earlier, _text = recorded
+            fresh = repeats.may_run_fresh(name, kwargs)
             recorder.record_repeat(
                 tool=name,
                 args=kwargs,
@@ -2067,8 +2170,13 @@ def _record_tool(
                 source=source,
                 declared_name=declared_name,
                 first=earlier,
-                said=earlier_chunk_sentence(name, earlier, origin=repeats.origin_of(earlier)),
+                said=with_fresh_run(
+                    earlier_chunk_sentence(name, earlier, origin=repeats.origin_of(earlier)),
+                    fresh,
+                    reads_only=reads_only,
+                ),
             )
+            repeats.owe_fresh_run(name, kwargs)
             # Charged whole: this answer went through no guardrail now.
             return earlier_chunk_answer(
                 name,
@@ -2078,6 +2186,8 @@ def _record_tool(
                 args=kwargs,
                 cut=repeats.recorded_cut(earlier),
                 charge=_charged,
+                fresh=fresh,
+                reads_only=reads_only,
             )
         if not repeats.first_touch_of_seed(name, kwargs):
             repeats.note_repeat(refused=True)
@@ -2104,16 +2214,17 @@ def _record_tool(
         )
         return notice
 
-    def _note(kwargs: dict[str, Any], entry_id: str) -> None:
+    def _note(kwargs: dict[str, Any], entry_id: str, *, fresh: bool = False) -> None:
         """Count the call against the repeat budget, however it turned out.
 
         A call that raised is a call. Counting only the ones that returned left
         a tool that throws on the same arguments — an unreachable server, a
         path the sidecar will never read — free to be re-run for the whole step
-        budget, which is the one case the guard exists for.
+        budget, which is the one case the guard exists for. ``fresh`` is a
+        fresh run that answered (``RepeatGuard.note``).
         """
         if repeats is not None:
-            repeats.note(name, kwargs, entry_id)
+            repeats.note(name, kwargs, entry_id, fresh=fresh)
             # A call that may change its server's state makes every earlier
             # round's answer from that server stale.
             if not reads_only:
@@ -2160,6 +2271,8 @@ def _record_tool(
             said = held_member_sentence(name, holder, holder_tool, request[0])
         if not recorder.filed(holder) or recorder.entry_failed(holder):
             return None
+        fresh = repeats.may_run_fresh(name, kwargs)
+        said = with_fresh_run(said, fresh, reads_only=reads_only)
         shown = f"[{holder}]\n{fenced(holder, text)}\n\n{said}"
         from malspark.llm.context_window import ContextBudget
 
@@ -2178,8 +2291,9 @@ def _record_tool(
             said=said,
         )
         _note(kwargs, holder)
+        repeats.owe_fresh_run(name, kwargs)
         # Charged whole: this answer went through no guardrail now.
-        return _charged(f"{shown}{_steering(kwargs, repeated)}")
+        return _charged(f"{shown}{_steering(kwargs, repeated, fresh=fresh)}")
 
     def _from_the_job(kwargs: dict[str, Any]) -> str | None:
         """The answer an identical call of the job already holds, from its entry, if one does.
@@ -2226,6 +2340,8 @@ def _record_tool(
         # as both the handle that read it and the one asking say.
         if holder_handle != handle and not (one_view and holder_quiet):
             return None
+        fresh = fresh_runs.may_run_fresh(name, kwargs)
+        said = with_fresh_run(said, fresh, reads_only=reads_only)
         shown = f"[{holder}]\n{fenced(holder, text)}\n\n{said}"
         from malspark.llm.context_window import ContextBudget
 
@@ -2244,8 +2360,9 @@ def _record_tool(
             said=said,
         )
         _note(kwargs, holder)
+        fresh_runs.owe_fresh_run(name, kwargs)
         # Charged whole: this answer went through no guardrail now.
-        return _charged(f"{shown}{_steering(kwargs, repeated)}")
+        return _charged(f"{shown}{_steering(kwargs, repeated, fresh=fresh)}")
 
     def _hold(
         kwargs: dict[str, Any],
@@ -2362,11 +2479,14 @@ def _record_tool(
             repeats.note_repeat()
         return repeated
 
-    def _steering(kwargs: dict[str, Any], repeated: str | None, *, failed: bool = False) -> str:
+    def _steering(
+        kwargs: dict[str, Any], repeated: str | None, *, failed: bool = False, fresh: bool = False
+    ) -> str:
         """What is appended to a served repeat, and nothing for a first call.
 
         Appended to what the model reads, not to the ledger: the entry records
-        what the tool said, and the tool did not say this.
+        what the tool said, and the tool did not say this. ``fresh`` is an
+        answer from the ledger whose fresh run is open.
         """
         if repeated is None or repeats is None:
             return ""
@@ -2376,8 +2496,22 @@ def _record_tool(
             narrowing,
             last_warning=repeats.warning_of_the_end(),
             failed=failed,
+            fresh=fresh,
         )
         return f"\n\n{notice}"
+
+    def _takes_fresh_run(kwargs: dict[str, Any]) -> bool:
+        """Whether this call is the fresh run an answer served from an earlier entry left owed.
+
+        It runs past every layer that would answer it from the ledger and is
+        recorded as a call that ran. It is a repeat of the loop, never a
+        refused one: the refusals that end a loop are counted as before.
+        """
+        if not fresh_runs.takes_fresh_run(name, kwargs):
+            return False
+        if repeats is not None:
+            repeats.note_repeat()
+        return True
 
     def _was_repaired(kwargs: dict[str, Any]) -> str | None:
         """The arguments as the model wrote them, when this call was closed off."""
@@ -2422,6 +2556,8 @@ def _record_tool(
             started_at=wall_clock,
             duration_ms=int((time.monotonic() - started) * 1000),
             repeated_of=holder,
+            # No outside tool ran: the answer is the entry's it reads.
+            ran=False,
             cut=cut,
         )
         _note(kwargs, holder)
@@ -2484,6 +2620,7 @@ def _record_tool(
         line_room: bool = False,
         waited_ms: int = 0,
         mark: Any = None,
+        fresh: bool = False,
     ) -> str:
         text = result_text(value)
         raw = _was_repaired(kwargs)
@@ -2496,13 +2633,16 @@ def _record_tool(
         # read is answered with that same function, and is a repeat of it
         # whatever address it was given; a served identical call whose listing
         # the holder holds is one too. Content decides (``function_entry``).
-        # Not for an answer the conversation had no room for.
+        # Not for an answer the conversation had no room for, nor for a fresh
+        # run, which is recorded as the call that ran.
         function = (
             listed_function(text)
             if repeats is not None and decompiles(name, facts) and not_shown is None
             else None
         )
-        holder = repeats.function_entry(function, text) if repeats is not None else None
+        holder = (
+            repeats.function_entry(function, text) if repeats is not None and not fresh else None
+        )
         holder = recorder.holder_of(holder) if holder else None
         same = ""
         if holder:
@@ -2542,7 +2682,7 @@ def _record_tool(
         recorder.note_narrowing(entry.id, narrowing)
         # A repeat is noted under the entry that holds its answer, so a later
         # served or refused identical call names that entry, never the repeat.
-        _note(kwargs, entry.repeated_of or entry.id)
+        _note(kwargs, entry.repeated_of or entry.id, fresh=fresh and entry.ok)
         if same:
             # Still handed the answer: the earlier listing may be gone from
             # what the window keeps of this conversation. It is stamped with
@@ -2728,8 +2868,12 @@ def _record_tool(
             question = _names_its_own_parameter(kwargs)
             if question is not None:
                 return question
+            # The call a served answer left owed runs, whatever would answer it.
+            fresh = _takes_fresh_run(kwargs)
             answered = (
-                _already_answered(kwargs) or _from_the_ledger(kwargs) or _from_the_job(kwargs)
+                None
+                if fresh
+                else _already_answered(kwargs) or _from_the_ledger(kwargs) or _from_the_job(kwargs)
             )
             if answered is not None:
                 return answered
@@ -2738,7 +2882,7 @@ def _record_tool(
             # correlates with a log line, the monotonic one measures how long
             # it took and cannot go backwards.
             started, wall_clock = time.monotonic(), time.time()
-            repeated = _served_again(kwargs)
+            repeated = None if fresh else _served_again(kwargs)
             call_answer: CallAnswer | None = None
             mark = _starting()
             try:
@@ -2761,6 +2905,7 @@ def _record_tool(
                     call_answer.line_room,
                     waited_ms=waited,
                     mark=mark,
+                    fresh=fresh,
                 )
             except SampleNotOpened as exc:
                 ran, waited = _began(started, call_answer)
@@ -2787,14 +2932,18 @@ def _record_tool(
             question = _names_its_own_parameter(kwargs)
             if question is not None:
                 return question
+            # The call a served answer left owed runs, whatever would answer it.
+            fresh = _takes_fresh_run(kwargs)
             answered = (
-                _already_answered(kwargs) or _from_the_ledger(kwargs) or _from_the_job(kwargs)
+                None
+                if fresh
+                else _already_answered(kwargs) or _from_the_ledger(kwargs) or _from_the_job(kwargs)
             )
             if answered is not None:
                 return answered
             recorder.call_started(tool=name, args=kwargs, server=server)
             started, wall_clock = time.monotonic(), time.time()
-            repeated = _served_again(kwargs)
+            repeated = None if fresh else _served_again(kwargs)
             call_answer: CallAnswer | None = None
             mark = _starting()
             try:
@@ -2819,6 +2968,7 @@ def _record_tool(
                     call_answer.line_room,
                     waited_ms=waited,
                     mark=mark,
+                    fresh=fresh,
                 )
             except SampleNotOpened as exc:
                 ran, waited = _began(started, call_answer)

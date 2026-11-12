@@ -36,6 +36,8 @@ class TestWhatTheSummaryCarries:
         assert latency == {
             "static": {
                 "calls": 2,
+                "served": 0,
+                "not_run": 0,
                 "total_ms": 4_250,
                 "slowest": {"tool": "decompile", "ms": 4_000, "id": "ev_0001"},
                 "over_10s": 0,
@@ -44,6 +46,8 @@ class TestWhatTheSummaryCarries:
             },
             "network": {
                 "calls": 1,
+                "served": 0,
+                "not_run": 0,
                 "total_ms": 900,
                 "slowest": {"tool": "read_pcap", "ms": 900, "id": "ev_0003"},
                 "over_10s": 0,

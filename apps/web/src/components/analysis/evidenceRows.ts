@@ -340,7 +340,13 @@ export function entryNotes(entry: EvidenceEntry): string[] {
     }
   }
   if (entry.repeated_of) {
-    notes.push(`Answered from the earlier identical call ${entry.repeated_of}, not run again.`);
+    notes.push(
+      entry.ran === true
+        ? `Ran again; the earlier identical call ${entry.repeated_of} holds the same answer.`
+        : `Answered from the earlier identical call ${entry.repeated_of}, not run again.`,
+    );
+  } else if (entry.ran === false) {
+    notes.push("Answered with no tool run.");
   }
   if (entry.args_repaired) {
     notes.push("The model's arguments arrived cut off and were closed before the call ran.");

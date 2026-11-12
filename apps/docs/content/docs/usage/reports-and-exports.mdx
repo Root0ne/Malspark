@@ -287,6 +287,11 @@ says what the run sent beyond the machine it ran on:
   leaf that holds its address); tracing when it is on in the settings
   (`langchain_tracing_v2`) or in the process environment; and the ledger rows
   the report could not read.
+- **Calls that stayed on this machine**: the tool calls no line above counts,
+  each by its source: the platform's in-process tools, questions put to
+  another agent of the team, and calls to a tool server run on this machine.
+  With it the block's lines count every ledger entry once, as the run's
+  finished tool-call events do.
 - **Enrichment**: when enrichment is on, the follow-up job queued after the
   report and what it may reach — RDAP, which needs no key (from the ARIN
   bootstrap `rdap.arin.net`, whose referral to a regional registry the job's
@@ -310,6 +315,17 @@ address that source's settings block names, the token ledger's model labels
 (which carry the endpoint each call was sent to), the runtime answers the
 window probe recorded, and the sample's submissions and stagings. A tool's
 name decides nothing.
+
+Each count of tool calls is the calls whose tool ran, and an answer given
+without a run (served again from an earlier entry, or a guard's answer) is
+counted beside it, never inside it: "Tool calls: … 40 calls (+1 answered
+without a run)". A triage pack step that was never run is counted apart too
+("not run"). A ledger entry filed with no tool run says so (`ran` false); an
+entry that ran and whose answer an earlier entry holds is a call whose tool
+ran. The stored record keeps the counts (`calls` and `served` on each row,
+`made`, `served` and `not_run` per source of the calls that stayed), and so do
+the tool-effects part (`calls`, `served`, `not_run`) and the per-agent tool
+latency (`calls`, `served`, `not_run`).
 
 **This machine** covers its loopback addresses, the private (RFC 1918 and
 `fc00::/7`), link-local and shared (`100.64.0.0/10`) ranges and the

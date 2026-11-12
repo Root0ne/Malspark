@@ -4100,6 +4100,7 @@ def settled_chunk_entries(agent: Any, entries: Sequence[Any] | None) -> list[Any
     """
     from malspark.agents.evidence_recorder import entry_server, holds_a_settled_answer
     from malspark.agents.tool_pinning import answers_again, declared_source_of, server_of
+    from malspark.schemas.evidence import call_was_made
 
     rows = list(entries or ())
     try:
@@ -4125,9 +4126,7 @@ def settled_chunk_entries(agent: Any, entries: Sequence[Any] | None) -> list[Any
             pass
         else:
             kept.append(entry)
-        if not getattr(entry, "repeated_of", None) and not _entry_reads_only(
-            entry, server, repeatable
-        ):
+        if call_was_made(entry) and not _entry_reads_only(entry, server, repeatable):
             changed.add(server)
     kept.reverse()
     return kept
@@ -4162,10 +4161,12 @@ def _stale_after(
     ``later`` (calls made since, oldest first) after it: a server is marked
     changed at the first such call met, and every entry older than it on that
     server is stale. Newest is the highest ``seq``, or, when any row has none,
-    the later place in the ledger. A call answered from the record
-    (``repeated_of``) ran nothing. Linear in the ledger.
+    the later place in the ledger. Only a call whose tool ran may have
+    changed its server (``schemas.evidence.call_was_made``). Linear in the
+    ledger.
     """
     from malspark.agents.evidence_recorder import entry_server
+    from malspark.schemas.evidence import call_was_made
 
     source = getattr(agent, "run_state_source", None)
     if not isinstance(source, Mapping) and not later:
@@ -4187,7 +4188,7 @@ def _stale_after(
         )
         if server in changed:
             stale.add(str(_field(row, "id") or ""))
-        if _field(row, "repeated_of"):
+        if not call_was_made(row):
             continue
         if not _entry_reads_only(row, server, repeatable):
             changed.add(server)

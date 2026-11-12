@@ -70,6 +70,10 @@ export interface EvidenceEntry {
    *  sources (`mcp:<server key>`, `pack` for the worker beside one). Absent
    *  where every reading ran in the worker and on rows older than the column. */
   ran_on?: string[] | null;
+  /** Whether the call's tool ran: false on an entry filed with no tool run,
+   *  true on one that ran and whose answer an earlier entry holds. Absent on
+   *  any other entry and on rows older than the column. */
+  ran?: boolean | null;
   facts?: Record<string, unknown>;
   reputation?: Record<string, unknown>;
   pack_step?: Record<string, unknown>;

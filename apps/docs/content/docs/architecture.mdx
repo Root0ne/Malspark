@@ -3012,6 +3012,19 @@ answered from an earlier entry, and Appendix A marks each such row "repeat of
 ev_…". No report section, decompiled-function list, function map, later
 chunk's block or seeded guard reads a repeat: each reads the entry it names.
 
+An answer served from an earlier entry with no tool run (the result an
+earlier chunk, round or loop of the same agent recorded, a whole-function read
+the loop already holds, or an identical call of the job by any agent) ends
+with one platform sentence: asking again with the same arguments runs the call
+fresh, once, and, for a call not known to be read-only (no read-only server
+hint or declaration), that the call runs again and repeats whatever it does.
+The identical call after it runs the tool and is filed as a call
+that ran, with no `repeated_of` (`RepeatGuard.takes_fresh_run`). It counts as
+a run, so the identical call after it is refused as after any second run and
+the refusals still end the loop; each call gets one fresh run per loop. The
+rule reads no tool's name and holds for a tool nothing declares. A call no
+layer serves runs twice before its refusal and carries no such sentence.
+
 A call another guard answers with no tool run (an argument that names its own
 parameter, a call made after the conversation's room ran out) is filed the
 same way, as the guard's answer: the entry holds what the model was told, its

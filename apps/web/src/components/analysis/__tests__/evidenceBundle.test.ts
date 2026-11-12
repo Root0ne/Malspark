@@ -9,6 +9,7 @@ import {
   notesCiting,
   readBundle,
   resolveTarget,
+  resultWords,
   subsectionAnchors,
   type EvidenceBundle,
 } from "../evidenceBundle";
@@ -71,6 +72,35 @@ describe("reading the served bundle", () => {
       problem: `the server sent a bundle of format "something/2", not ${BUNDLE_FORMAT}`,
     });
     expect(readBundle("<html>")).toEqual({ problem: "the server's answer is not JSON" });
+  });
+});
+
+describe("whether an index row's tool ran", () => {
+  const row = (over: Record<string, unknown>) =>
+    readBundle(
+      JSON.stringify({
+        ...BODY,
+        evidence_index: [{ id: "ev_0009", agent: "a", tool: "t", ok: true, ...over }],
+      }),
+    );
+
+  it("reads ran as stated and null as absent or malformed", () => {
+    const ran = (over: Record<string, unknown>) => {
+      const read = row(over);
+      if (!("bundle" in read)) throw new Error(read.problem);
+      return read.bundle.evidence_index[0].ran;
+    };
+    expect(ran({ ran: true })).toBe(true);
+    expect(ran({ ran: false })).toBe(false);
+    expect(ran({})).toBeNull();
+    expect(ran({ ran: "yes" })).toBeNull();
+  });
+
+  it("words a repeated row as run when it ran, and as the earlier call otherwise", () => {
+    const base = { id: "ev_0004", agent: "a", server: null, tool: "t", ok: true, duration_ms: 1, truncated: false, repeated_of: "ev_0002" };
+    expect(resultWords({ ...base, ran: true }).text).toBe("ran, same as ev_0002");
+    expect(resultWords({ ...base, ran: false }).text).toBe("same as ev_0002");
+    expect(resultWords({ ...base, ran: null }).text).toBe("same as ev_0002");
   });
 });
 

@@ -225,17 +225,22 @@ def is_platform_internal(entry: Any) -> bool:
 
 
 def outcome(entry: Any) -> str | None:
-    """How the entry's call ended (:data:`OUTCOMES`); ``None`` for a repeat, which is no call."""
-    from malspark.pipeline.triage_pack import was_not_made
-    from malspark.schemas.evidence import is_guard_answer
+    """How the entry's call ended (:data:`OUTCOMES`); ``None`` for an answer served again.
 
-    if is_guard_answer(entry):
+    A guard's answer is refused; any other entry answered without a run
+    ended no call of its own, and a step never run is not run
+    (``schemas.evidence.call_state``).
+    """
+    from malspark.schemas import evidence
+
+    if evidence.is_guard_answer(entry):
         return REFUSED
-    if _field(entry, "repeated_of"):
+    state = evidence.call_state(entry)
+    if state == evidence.SERVED:
         return None
-    if _field(entry, "ok") is not False:
-        return COMPLETED
-    return NOT_RUN if was_not_made(entry) else FAILED
+    if state == evidence.NOT_RUN:
+        return NOT_RUN
+    return COMPLETED if _field(entry, "ok") is not False else FAILED
 
 
 def _read_where(isolation: Mapping[str, Any] | None) -> dict[str, tuple[str, bool, str]]:
@@ -290,16 +295,22 @@ def effects_part(
     isolation part, which places the sources that read the sample;
     ``partial_reason`` why the record may miss a call; ``places`` where the
     disclosure placed each ``(source, tool)`` it placed. Linear in the entries.
+
+    Each row counts the calls whose tool ran (``calls``), the ones answered
+    without a run (``served``) and the steps never run (``not_run``), by the
+    one definition (``schemas.evidence.call_state``): together they are the
+    row's entries. A guard's refusal is served, and counted ``refused`` too.
     """
     from malspark.analysis.isolation import ran_on_sources
     from malspark.core.declared_reading import served_statement, server_hints
+    from malspark.schemas.evidence import MADE, SERVED, call_state
 
     placed = _read_where(isolation)
     rows: dict[tuple[str, str, str], dict[str, Any]] = {}
     for entry in entries:
-        ended = outcome(entry)
-        if ended is None or is_platform_internal(entry):
+        if is_platform_internal(entry):
             continue
+        ended = outcome(entry)
         server = str(_field(entry, "server") or "")
         source = str(_field(entry, "source") or "")
         tool = str(_field(entry, "tool") or "")
@@ -312,6 +323,7 @@ def effects_part(
                 "server": key[1],
                 "tool": tool,
                 "calls": 0,
+                "served": 0,
                 "executes": effects.executes,
                 "network": effects.network,
                 "network_by": effects.network_by,
@@ -346,8 +358,13 @@ def effects_part(
                     held.get("why") or ("" if held else "the disclosure does not place it")
                 )
             rows[key] = row
-        row["calls"] += 1
-        row[ended] += 1
+        state = call_state(entry)
+        if state == MADE:
+            row["calls"] += 1
+        elif state == SERVED:
+            row["served"] += 1
+        if ended is not None:
+            row[ended] += 1
     return {
         "v": EFFECTS_VERSION,
         "partial_reason": str(partial_reason or ""),
@@ -513,6 +530,14 @@ def _closed(row: Mapping[str, Any]) -> bool:
 def _of_calls(state: str) -> Callable[[Mapping[str, Any]], str]:
     def _note(row: Mapping[str, Any]) -> str:
         count, calls = int(row.get(state) or 0), int(row.get("calls") or 0)
+        if "served" in row:
+            # A step never run is out of every call of the tool. A row stored
+            # before ``served`` was counted holds it in ``calls``.
+            calls += int(row.get(NOT_RUN) or 0)
+        if state == REFUSED:
+            # A refusal is an answer without a run: out of every call asked.
+            # A row stored before ``served`` was counted holds it in ``calls``.
+            calls += int(row.get("served") or 0)
         return f"{count} of {calls} calls" if count != calls else ""
 
     return _note
@@ -534,7 +559,14 @@ def effects_lines(part: Any, code: Callable[[str], str] = _code) -> list[str]:
     """
     if not isinstance(part, Mapping) or "tools" not in part:
         return []
-    every = [row for row in part.get("tools") or [] if isinstance(row, Mapping)]
+    # A row whose every entry was answered again from an earlier one is no
+    # call of its tool: it is counted, and said nowhere here.
+    every = [
+        row
+        for row in part.get("tools") or []
+        if isinstance(row, Mapping)
+        and any(int(row.get(key) or 0) for key in ("calls", REFUSED, NOT_RUN))
+    ]
     # A row stored before calls were counted by how they ended holds only
     # ``calls``: each is read as completed, as it was then.
     rows = [row for row in every if int(row.get(COMPLETED, row.get("calls")) or 0)]

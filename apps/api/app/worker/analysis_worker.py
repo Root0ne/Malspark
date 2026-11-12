@@ -1397,6 +1397,8 @@ def _evidence_row(
             if isinstance(entry.get("ran_on"), list) and entry["ran_on"]
             else None
         ),
+        # Whether the call's tool ran, where the entry states it; false is kept.
+        ran=(entry["ran"] if isinstance(entry.get("ran"), bool) else None),
         # The references to the parts of the answer kept whole, as the entry
         # carries them; absent where nothing was taken.
         spilled=(list(entry["spilled"]) if entry.get("spilled") else None),

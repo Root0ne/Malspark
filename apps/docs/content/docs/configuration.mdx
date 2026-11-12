@@ -1409,8 +1409,9 @@ maps, then the deployment's values.
 
 A loop with no limit ends when its model answers, or at one of the stops that
 are not a count: the repeat guard (a stall limit: eight refused calls, each
-identical in tool and arguments to one already answered; a served retry and a
-call that differs in any argument or page never count), the conversation's room (a tool answer that no longer fits the window),
+identical in tool and arguments to one already answered; a served retry, the
+fresh run an answer served from an earlier entry allows, and a call that
+differs in any argument or page never count), the conversation's room (a tool answer that no longer fits the window),
 and the job's spend ceiling below. The job timeout below, when you set one, is
 the last resort. A loop with no time limit has no clock of its own. Every model request still has
 a whole-call deadline Malspark enforces itself: the request timeout sized in the
