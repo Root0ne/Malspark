@@ -25,7 +25,7 @@ export const run = {
   /* The facts beyond the key against the full text and the figures of the eight
    * analyses; the first two counts add up to beyondKey, and the last two split
    * the ones of which no reading found any part. */
-  audit: { partly: 28, none: 9, noneFamily: 5, noneFile: 4 },
+  audit: { partly: 26, none: 11, noneFamily: 6, noneFile: 5 },
   calls: 129,
   seconds: 5028,
   usd: '8.24',
@@ -206,7 +206,7 @@ export const beyondFacts = [
   ['A', '34', 'First beacon after 1800 × 100 ms ≈ 180 s', 'ev_0067', '§4 step 9, §6.1', 'sandbox timeout, hunting window', 'none, family'],
   ['A', '48', '0x6e04 gets its Local AppData folder by CSIDL 0x1c, through 0x7e90', 'ev_0069', '§6.3 0xc', 'host artefact location', 'in part'],
   ['A', 'N14', 'The task action depends on DAT_10488: only when it is nonzero is the program `rundll32.exe`; when it is zero, the program is formatted from 0xf9a0 and the arguments are the literal at 0xf9b0', 'ev_0086', '§5.3', 'persistence hunting', 'in part'],
-  ['A', 'N16', '0x88f8 chooses the hive by its argument: 1 selects the `\\Registry\\Machine\\` root, any other value the current-user path from RtlFormatCurrentUserKeyPath', 'ev_0086, ev_0021', '§5.4, appendix (T1012)', 'where to look', 'in part'],
+  ['A', 'N16', '0x88f8 chooses the hive by its argument: 1 selects the `\\Registry\\Machine\\` root, any other value the current-user path from RtlFormatCurrentUserKeyPath', 'ev_0086, ev_0021', '§5.4, appendix (T1012)', 'where to look', 'none, family'],
   ['B', '6', 'String cipher constants: seed 0x33629d40, first key 0x41, running value via 0x9040 (x+1), decoder 0xae78', 'ev_0021, ev_0067, ev_0068', '§5.1, §5.2', 'extractor, decoder', 'in part'],
   ['B', '9', 'FNV-32 offset basis and prime agree with the FNV routine 0xc99c', 'ev_0023, ev_0068', '§5.1', 'extractor, decoder', 'in part'],
   ['B', '54', 'Resolver tables and their contents (0x84e4 kernel32 modules, 0x904c WinINet…, 0x9484 kernel32 process / memory / file, 0xa47c, 0xa59c ntdll, 0xac50 ole32); GetCursorPos is resolved by hash at 0x92cc', 'ev_0020', '§5.2, §5.4', 'extractor, decoder', 'in part'],
@@ -232,7 +232,7 @@ export const beyondFacts = [
   ['B', 'N17', 'InternetConnectA’s arguments, from disassembly: InternetOpenW at 0x4cb0 is called with the agent and four zeros; InternetConnectA at 0x4cfa (slot 0x10e08) with port, NULL user / password, service 3 (HTTP), flags 0 and context 1', 'ev_0097', 'appendix (T1071.001)', '', 'in part'],
   ['B', 'N20', 'The command path is a single chain: 0x3cf4’s only caller is 0x541c, and 0x541c’s only caller is 0x5750', 'ev_0078, ev_0083', 'appendix (T1071.001 / T1105)', '', 'in part'],
   ['C', '1', 'Compile TimeDateStamp 2024-03-25 15:54:25 UTC', 'ev_0004', '§3', '', 'none, this file'],
-  ['C', '3', 'Section entropies (.text 5.42, .rdata 4.68, .data 6.48, .pdata 3.87, .reloc 0.08); no packer', 'ev_0004, ev_0051', '§3, §5.1', '', 'in part'],
+  ['C', '3', 'Section entropies (.text 5.42, .rdata 4.68, .data 6.48, .pdata 3.87, .reloc 0.08); no packer', 'ev_0004, ev_0051', '§3, §5.1', '', 'none, this file'],
   ['C', '4', 'The five static imports by name: KERNEL32 PeekNamedPipe, GetLastError, CreateMutexW; USER32 MessageBeep, MessageBoxA', 'ev_0004', '§3, §5.2', '', 'in part'],
   ['C', '26', 'VirusTotal 56 of 75, analysis 2026-10-27', 'ev_0018', '§3', '', 'none, this file'],
   ['C', '51', '101 encoded texts in `.data`', 'ev_0021', '§5.1, §5.2', '', 'none, this file'],
@@ -587,8 +587,8 @@ The {run.beyondKey} facts were also read against the full text of the eight
 analyses and their figures. None of them is printed in full in the text or in a
 figure. {run.audit.partly} are
 printed in part: an analysis describes the behaviour or shows part of it, and the run adds the
-specific value, routine or step. {run.audit.none} appear in no part in the text or in a
-figure of any of the eight: {run.audit.noneFamily} of those hold for the family, and
+specific value, routine or step. {run.audit.none} are such that two readings of the text and a reading of every
+figure of the eight found no part of them: {run.audit.noneFamily} of those hold for the family, and
 {run.audit.noneFile} are values of this one file. The last column of the full list below gives the
 reading for each fact.
 
