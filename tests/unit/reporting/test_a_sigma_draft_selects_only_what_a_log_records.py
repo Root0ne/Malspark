@@ -142,7 +142,7 @@ class TestNoValueALogRecords:
         assert _sigma(report) is None
         (item,) = report.drafts_not_built
         assert item.kind == "sigma"
-        assert "no registry key or image path" in item.why
+        assert "no registry key, image path, file, folder" in item.why
         assert f"{count} the sandbox recorded are its reading of what it saw" in item.why
 
     def test_one_signature_is_said_in_the_singular(self) -> None:
@@ -154,15 +154,15 @@ class TestNoValueALogRecords:
         (item,) = _report([]).drafts_not_built
 
         assert item.why == (
-            "no registry key or image path that this run publishes or a sandbox watched is "
-            "left to select on"
+            "no registry key, image path, file, folder, stream, scheduled task, service or named "
+            "pipe that this run publishes or a sandbox watched is left to select on"
         )
 
     @pytest.mark.parametrize("layout", [BUNDLE, ANALYST])
     def test_the_report_says_why(self, layout: Any) -> None:
         text = MarkdownRenderer(layout=layout).render(_report(SHORT_SIGNATURES))
 
-        assert "No Sigma draft: no registry key or image path" in text
+        assert "No Sigma draft: no registry key, image path, file, folder" in text
         assert "selection_sandbox" not in text
 
     def test_a_benign_verdict_says_why_on_its_own(self) -> None:

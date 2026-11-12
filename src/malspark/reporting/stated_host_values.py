@@ -217,6 +217,24 @@ def _all_known(parts: Sequence[str], catalogue: Catalogue) -> bool:
     )
 
 
+def past_known_folders(value: str) -> str:
+    """The part of a path a log writes the same on every host: past its known folders.
+
+    The leading drive, environment folders, known folders and profile name
+    are dropped (``%APPDATA%\\Vendor\\run.dll`` is ``Vendor\\run.dll``), in the
+    case written, joined by ``\\``; ``""`` when nothing is left.
+    """
+    catalogue = benign_catalogue()
+    text = value.strip().strip("\"'").replace("/", "\\")
+    parts = [part for part in text.split("\\") if part]
+    at = 0
+    while at < len(parts) and _known_component(
+        parts[at].lower(), parts[at - 1].lower() if at else "", catalogue
+    ):
+        at += 1
+    return "\\".join(parts[at:])
+
+
 def _sample_digests(report: Any) -> frozenset[str]:
     hashes = getattr(getattr(report, "identity", None), "hashes", None)
     return frozenset(
@@ -276,9 +294,13 @@ def _name_of(kind: HostKind, value: str) -> str:
 def is_generic(kind: HostKind, value: str) -> bool:
     """Whether a value is a name ordinary software also uses (the catalogue's ``generic_names``).
 
-    A file's name is read with and without its extension.
+    A file's name is read with and without its extension; a path or a folder
+    with a folder of its own past the known folders is not generic, whatever
+    its last name.
     """
     generic = benign_catalogue().generic_names
+    if kind.shape in ("path", "folder") and "\\" in past_known_folders(value).strip("\\"):
+        return False
     name = _name_of(kind, value)
     return name in generic or (
         kind.shape in ("path", "file_name") and name.rsplit(".", 1)[0] in generic
