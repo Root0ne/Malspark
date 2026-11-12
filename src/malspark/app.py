@@ -13,6 +13,7 @@ The run() method returns a result dict containing:
 from __future__ import annotations
 
 import asyncio
+import functools
 import time
 from pathlib import Path
 from typing import Any, cast
@@ -133,6 +134,12 @@ class MalsparkApp:
         # the state, so a run stopped before its first graph step still prints
         # each of them (``stopped_run.stopped_state``).
         self.questions: list[str] = []
+        # The launch arguments this run's job asked the sandbox to start the
+        # sample with (``arun``), verbatim; empty asks for none. What became of
+        # them is ``launch_record`` (``providers.submission.launch_record``),
+        # set as the sample is submitted and marked on the report.
+        self.launch_arguments: str = ""
+        self.launch_record: dict[str, Any] | None = None
 
     async def aclose(self) -> None:
         """Release the container's agents, toolkits and per-job caches.
@@ -173,6 +180,7 @@ class MalsparkApp:
         static_sample_path: str | None = None,
         static_sample_paths: dict[str, str] | None = None,
         server_sample_paths: dict[str, str] | None = None,
+        launch_arguments: str | None = None,
     ) -> dict[str, Any]:
         """Execute the full analysis pipeline synchronously.
 
@@ -187,6 +195,8 @@ class MalsparkApp:
                 configured provider's entry is also ``static_sample_path``.
             server_sample_paths: The path each tool server that declares a
                 ``sample_mount`` opens the sample at, keyed by server key.
+            launch_arguments: The arguments the sandbox starts the sample with.
+                See ``arun``.
 
         Returns:
             The final state dict including:
@@ -203,6 +213,7 @@ class MalsparkApp:
                 static_sample_path,
                 static_sample_paths,
                 server_sample_paths=server_sample_paths,
+                launch_arguments=launch_arguments,
             )
         )
 
@@ -423,6 +434,7 @@ class MalsparkApp:
         self.container.artefact_fetch_failures = []
         self.container.sandbox_target_claim = None
         self.container.attached_target_claim = None
+        self.launch_record = None
         if not sample_path or self.container.is_mock:
             return None
 
@@ -440,6 +452,10 @@ class MalsparkApp:
         try:
             provider = self.container.get_sandbox_provider()
             caps = provider.capabilities
+            # What the provider makes of the job's launch arguments, asked
+            # before anything is sent: handed over only where it passes them,
+            # and recorded either way (``providers.submission``).
+            options = self._submission_options(provider)
             if not caps.can_submit and caps.accepts_uploaded_report:
                 # No detonation: the evidence is already here.
                 stage = "reading the attached report"
@@ -482,15 +498,23 @@ class MalsparkApp:
 
             stage = "preparing the submission"
             host = submission_host(provider)
+            launch = self.launch_record
             if host is not None:
                 self.container.sample_uploads.append(
-                    upload_record(provider.id, submitted=False, host=host)
+                    upload_record(provider.id, submitted=False, host=host, launch=launch)
                 )
             stage = "submitting the sample"
-            task_id = await asyncio.to_thread(provider.submit, str(path))
+            if options:
+                task_id = await asyncio.to_thread(
+                    functools.partial(provider.submit, str(path), options=options)
+                )
+            else:
+                # The call a run without launch arguments has always made, so
+                # a provider written before ``options`` existed takes it as it did.
+                task_id = await asyncio.to_thread(provider.submit, str(path))
             if host is not None:
                 self.container.sample_uploads[-1] = upload_record(
-                    provider.id, submitted=True, host=host
+                    provider.id, submitted=True, host=host, launch=launch
                 )
             # Thread the active provider's own completion timeout + poll
             # interval into the poll loop (see ``_poll_budget``). Without
@@ -654,6 +678,56 @@ class MalsparkApp:
         with fetch_budget(bounds):
             return cast("str | None", provider.fetch_pcap(task_id, dest_dir))
 
+    def _submission_options(self, provider: Any) -> Any:
+        """The options this job's submission hands ``provider``; ``None`` where it hands none.
+
+        Sets :attr:`launch_record` where the job asked for launch arguments:
+        the arguments verbatim, the provider, whether it passes them and its
+        note. A provider that cannot pass them is handed nothing, and the
+        record says the request was not honoured; the detonation goes ahead.
+        """
+        arguments = self.launch_arguments
+        if not arguments:
+            return None
+        from malspark.providers.submission import SubmissionOptions, answer_of, launch_record
+
+        answer = answer_of(provider, arguments)
+        self.launch_record = launch_record(str(provider.id), arguments, answer)
+        if not answer.honoured:
+            logger.warning(
+                "Launch arguments requested, not honoured by the %s provider: %s",
+                provider.id,
+                answer.note,
+            )
+            return None
+        return SubmissionOptions(launch_arguments=arguments)
+
+    def _mark_the_launch(self, report: dict[str, Any] | None) -> dict[str, Any] | None:
+        """``report``, marked with what became of the job's launch arguments.
+
+        The mark (``schemas.sandbox_document.LAUNCH_KEY``) is what the
+        sandbox sentence of the pack, the ledger and the report is written
+        from (``pipeline.sandbox_status.launch_statement``), and what the
+        run's limitation is read from where they were not passed. A job that
+        asked for none leaves the report as it came. A block of the
+        report's own under the mark's word is taken out with a warning, as the
+        target mark's is (:meth:`_tell_the_target`).
+        """
+        from malspark.schemas.sandbox_document import LAUNCH_KEY
+
+        if not isinstance(report, dict):
+            return report
+        if LAUNCH_KEY in report:
+            report.pop(LAUNCH_KEY)
+            logger.warning(
+                "The sandbox report carries a top-level %r block; that word is the "
+                "platform's mark for the job's launch arguments, so the block was taken out.",
+                LAUNCH_KEY,
+            )
+        if self.launch_record is not None:
+            report[LAUNCH_KEY] = dict(self.launch_record)
+        return report
+
     def _sandbox_failed(self, reason: str) -> None:
         """Keep why this job has no sandbox report, for its degradation reason.
 
@@ -680,6 +754,7 @@ class MalsparkApp:
         started_at: float | None = None,
         server_sample_paths: dict[str, str] | None = None,
         questions: list[str] | None = None,
+        launch_arguments: str | None = None,
     ) -> dict[str, Any]:
         """Execute the full analysis pipeline asynchronously.
 
@@ -713,6 +788,12 @@ class MalsparkApp:
                 report answers in a fixed vocabulary
                 (``reporting.question_round``). None or empty asks nothing,
                 and the report is the one a run without them has.
+            launch_arguments: The arguments the sandbox starts the sample with,
+                one string as the operator would type it after the program's
+                name (the job's ``sandbox_launch_arguments``), handed to the
+                provider verbatim where it can pass them and recorded either
+                way (``providers.submission``). None or empty asks for none,
+                and the submission is the one a run without them makes.
 
         This prevents the need for spinning up separate threads and manually
         managing event loops in async contexts (like ARQ workers), which
@@ -720,6 +801,7 @@ class MalsparkApp:
         """
         start = float(started_at) if started_at else time.time()
         self.questions = list(questions or [])
+        self.launch_arguments = str(launch_arguments or "")
         logger.info("=" * 60)
         logger.info("MALSPARK - Multi-Agent Malware Analysis Pipeline")
         logger.info("=" * 60)
@@ -792,8 +874,8 @@ class MalsparkApp:
     ) -> dict[str, Any]:
         """The sandbox submission and the graph, for ``arun``."""
         # Submit to sandbox if sample_path is provided
-        sandbox_report = self._tell_the_target(
-            await self._submit_to_sandbox(sample_path), file_hash
+        sandbox_report = self._mark_the_launch(
+            self._tell_the_target(await self._submit_to_sandbox(sample_path), file_hash)
         )
 
         # Compute file_type + canonical platform up front. It routes the

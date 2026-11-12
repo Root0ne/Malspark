@@ -211,6 +211,16 @@ def build_job_settings(
     return settings
 
 
+def job_launch_arguments(job_config: Mapping[str, Any] | None) -> str:
+    """The launch arguments a job was submitted with (``config.sandbox_launch_arguments``).
+
+    Verbatim, as the submit route checked and stored them; ``""`` for a job
+    with none, or a stored value that is not text (never coerced into one).
+    """
+    value = (job_config or {}).get("sandbox_launch_arguments")
+    return value if isinstance(value, str) else ""
+
+
 def job_questions(job_config: Mapping[str, Any] | None) -> list[str]:
     """The questions a job was submitted with (``config.questions``), blanks left out.
 
@@ -3468,6 +3478,9 @@ async def run_analysis(ctx: dict, job_id: str) -> dict[str, Any]:
                     # What the analyst asked of the run, answered in the
                     # report (``reporting.question_round``); none asks nothing.
                     questions=job_questions(job_config),
+                    # The arguments the sandbox starts the sample with, as the
+                    # job carries them; none asks for none.
+                    launch_arguments=job_launch_arguments(job_config),
                 )
             )
             pipeline_result = await await_the_pipeline(pipeline_task, app.container.cancellation)

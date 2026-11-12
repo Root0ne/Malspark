@@ -17,6 +17,7 @@ from malspark.core.config import Settings
 from malspark.core.logger import logger
 from malspark.core.plugins import id_refusal, install_allow_list, load_allowed, shipped_ids
 from malspark.memory.long_term_memory import MemoryStore
+from malspark.providers.submission import launch_arguments_problem
 
 app = typer.Typer(
     name="malspark",
@@ -47,6 +48,13 @@ def analyze(
     ),
     sample_path: str | None = typer.Option(
         None, "--sample", "-s", help="Path to the malware sample file for sandbox submission."
+    ),
+    launch_arguments: str | None = typer.Option(
+        None,
+        "--sandbox-launch-arguments",
+        help="Arguments the sandbox starts the sample with, as typed after the program's "
+        "name (quote them as one value). Passed verbatim where the sandbox provider can, "
+        "and recorded in the report either way.",
     ),
     provider: str | None = typer.Option(
         None,
@@ -96,6 +104,12 @@ def analyze(
         config.llm.provider = cast(Any, provider)
     if max_iterations is not None:
         config.negotiation.max_iterations = max_iterations
+    if launch_arguments is not None:
+        # The job's own check (``providers.submission``), so the command and
+        # the API refuse the same values.
+        problem = launch_arguments_problem(launch_arguments)
+        if problem:
+            raise typer.BadParameter(problem, param_hint="--sandbox-launch-arguments")
 
     # Create and run. The ``finally`` covers the whole of it — a completed
     # run, a failed one and an interrupted one alike — because what the run
@@ -108,7 +122,12 @@ def analyze(
         malspark_app = MalsparkApp(
             config=config, mock=mock, ignore_earlier_runs=ignore_earlier_runs
         )
-        result = malspark_app.run(file_hash=file_hash, file_name=file_name, sample_path=sample_path)
+        result = malspark_app.run(
+            file_hash=file_hash,
+            file_name=file_name,
+            sample_path=sample_path,
+            launch_arguments=launch_arguments,
+        )
         # The run completed: the case its judge built may now teach the next.
         malspark_app.remember_the_run()
     except Exception as e:
