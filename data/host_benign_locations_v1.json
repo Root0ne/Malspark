@@ -4,7 +4,7 @@
   "source": "Windows itself, as Microsoft documents it: the Known Folders and CSIDL references, the folders Windows Setup creates under %SystemRoot%, the files Windows ships there, the services and named pipes Windows' own components install and open, the streams Windows writes, the registry keys and values every installation holds, the object manager's namespaces, and the Task Scheduler task-definition schema. Nothing here is about one sample, family or run; each list states the criterion that admits an entry. Written for this project, not copied from a third-party table.",
   "about": "Host values every Windows system holds or every program may use, which a value the analysis states is refused as: an indicator on one matches every host. Compared case-insensitively, a path with '/' read as '\\\\' and each component with trailing dots and spaces trimmed (Windows ignores them). A component is a known folder when it is in 'known_folders' or 'environment_folders' (a multi-component entry of 'known_folders' as that sequence), is a form of 'system_roots' where a path starts or right after a drive, is in 'system_folders' within the chain such a form starts, begins with a 'known_folder_prefixes' entry, is a drive, is the profile name after 'Users', or is the 8.3 short name Windows generates for a known folder (its first six letters without spaces, a tilde and a digit). 'generic_names' are not refused: such a value is exported with a note that it may match ordinary software, and never becomes a matcher on its own.",
   "known_folders": {
-    "criterion": "A folder Windows names as a known folder (Known Folders / CSIDL) outside %SystemRoot%, by its display or file-system name, or a folder Windows creates under one on every installation. An entry of more than one component counts only as that sequence of components: 'Microsoft\\Windows', which Windows creates under the roaming and local application data and ProgramData known folders to hold the Start Menu, Programs, Startup, Templates, SendTo, Recent, Cookies, History and the Internet caches, per user and for all users. The folders of the %SystemRoot% chain are 'system_folders'.",
+    "criterion": "A folder Windows names as a known folder (Known Folders / CSIDL) outside %SystemRoot%, by its display or file-system name, or a folder Windows creates under one on every installation. An entry of more than one component counts only as that sequence of components, directly after a folder of 'known_sequence_parents': 'Microsoft\\Windows', which Windows creates under the roaming and local application data and ProgramData known folders to hold the Start Menu, Programs, Startup, Templates, SendTo, Recent, Cookies, History and the Internet caches, per user and for all users. The folders of the %SystemRoot% chain are 'system_folders'.",
     "source": "Microsoft Known Folders and CSIDL documentation.",
     "entries": [
       "appdata",
@@ -68,6 +68,20 @@
       "explorer",
       "packages",
       "microsoft\\windows"
+    ]
+  },
+  "known_sequence_parents": {
+    "criterion": "The folders a multi-component entry of 'known_folders' ('Microsoft\\Windows') must directly follow to count: the roaming and local application data folders and ProgramData, per user and for all users, by their environment form and written out. Anywhere else the sequence is a folder of its own.",
+    "source": "Microsoft Known Folders documentation (RoamingAppData, LocalAppData, ProgramData and the legacy All Users junction) and 'Recognized environment variables' (APPDATA, LOCALAPPDATA, PROGRAMDATA, ALLUSERSPROFILE).",
+    "entries": [
+      "appdata\\roaming",
+      "appdata\\local",
+      "programdata",
+      "all users",
+      "%appdata%",
+      "%localappdata%",
+      "%programdata%",
+      "%allusersprofile%"
     ]
   },
   "known_folder_prefixes": {

@@ -169,6 +169,8 @@ class Catalogue:
     # The known folders written as more than one component (``microsoft\\windows``),
     # each as its components: known only as that sequence.
     known_sequences: tuple[tuple[str, ...], ...]
+    # The folders such a sequence must directly follow, each as its components.
+    sequence_parents: tuple[tuple[str, ...], ...]
     known_folder_prefixes: tuple[str, ...]
     environment_folders: frozenset[str]
     system_folders: frozenset[str]
@@ -211,6 +213,10 @@ def benign_catalogue(path: str = DEFAULT_CATALOGUE) -> Catalogue:
         known_sequences=tuple(
             tuple(part for part in name.split("\\") if part)
             for name in sorted(listed_known - known)
+        ),
+        sequence_parents=tuple(
+            tuple(part for part in name.split("\\") if part)
+            for name in sorted(_set("known_sequence_parents"))
         ),
         known_folder_prefixes=tuple(sorted(_set("known_folder_prefixes"))),
         environment_folders=_set("environment_folders"),
@@ -297,12 +303,16 @@ def _system_chain(parts: Sequence[str], catalogue: Catalogue) -> list[bool]:
 
 
 def _known_sequences(parts: Sequence[str], catalogue: Catalogue) -> list[bool]:
-    """Which of a path's components stand in a multi-component known folder, matched whole."""
+    """Which of a path's components stand in a multi-component known folder, matched whole
+    and directly after one of the folders it is declared under (``sequence_parents``)."""
     flags = [False] * len(parts)
     for sequence in catalogue.known_sequences:
         size = len(sequence)
         for at in range(len(parts) - size + 1):
-            if tuple(parts[at : at + size]) == sequence:
+            if tuple(parts[at : at + size]) == sequence and any(
+                0 < len(parent) <= at and tuple(parts[at - len(parent) : at]) == parent
+                for parent in catalogue.sequence_parents
+            ):
                 flags[at : at + size] = [True] * size
     return flags
 

@@ -388,7 +388,14 @@ MUST_REFUSE = [
     "C:\\Windows\\Microsoft.NET\\Framework",
     "%SystemRoot%\\SysWOW64\\wbem",
 ]
-MUST_EXPORT = [f"{root}{tail}" for root in (*_KNOWN_ROOTS, "%TEMP%") for tail in _FAKE_SYSTEM]
+MUST_EXPORT = [f"{root}{tail}" for root in (*_KNOWN_ROOTS, "%TEMP%") for tail in _FAKE_SYSTEM] + [
+    # ``Microsoft\\Windows`` counts only directly under the folders it is declared under.
+    "%TEMP%\\Microsoft\\Windows",
+    "C:\\Microsoft\\Windows",
+    "C:\\Microsoft\\Windows\\Start Menu",
+    "Microsoft\\Windows",
+    "%APPDATA%\\Microsoft\\Windows\\Microsoft\\Windows",
+]
 
 
 class TestAKnownFolderAgainstAFakeSystemFolder:
