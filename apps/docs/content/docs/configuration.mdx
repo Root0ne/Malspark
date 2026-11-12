@@ -2788,20 +2788,55 @@ Ollama, DeepSeek) the same margin ends the answer while it streams.
 `feed_back` puts the findings to the agent that wrote the answer in one
 correction turn, as described in [Validation and
 feedback](/docs/concepts/validation/). `record_only` runs every check and
-records every finding exactly as `feed_back` does, marked not asked, and sends
-no correction turn and no follow-on question: the analysts', the judge's
-verdict and technique question, the composer's, the narrative's, the question
-round's and the section agreement's answers stand as written. An answer that
-could not be read (cut at the output cap, not JSON, outside its schema, no
-claim parsed, its claims repeated) is asked again in both modes. What the
-platform does afterwards with a finding left standing is the same in both: an
-ungrounded indicator stays out of the exports, an unknown technique id is
-flagged, a sentence that fails its citation check is left out of the analyst
-report and counted. A run in each mode therefore shows what the correction
-turns change, read from `run_summary.validation.unresolved`, which is recorded
-before anything is left out. A run in `record_only` says so in
-`run_summary.validation.feedback` and among its operator choices; a run in the
-default carries neither.
+records every finding exactly as `feed_back` does, marked not asked
+(`"asked": "false"` on its row), and the answer stands as written. What stops:
+the analysts' validation turn, with the questions it carries (the callees not
+read, the decompiled routines no claim describes, the exit branches) and the
+question about what a kept retry left out of the first answer; the judge's
+verdict retry; in the judge's technique question, the describe check's
+questions and the check's text on a claimed technique; and the correction turn
+of the composer, the narrative, the question round and the section agreement.
+What continues: the rest of the judge's technique question (a technique an
+analyst claimed that the bundle does not carry, one named only on a finding,
+one a call or a tool answer named), and every stage's own question, since
+these are not findings. A code is asked again in both modes when, left
+unasked, the stage would lose the agent's own content to a fallback because
+the answer or a block of it could not be read: an answer that is not JSON, is
+cut at the output cap, is outside its schema, has no claim parsed or repeats
+its claims; a claim block whose confidence or technique line is not read, or
+that stands under DISPUTES; a verdict word, a severity rating or a part of the
+assessment that cannot be read, or an assessment the bundle does not hold; a
+judge object of no type the bundle reads, and an id two objects share
+(`REASKED_IN_EVERY_MODE_CODES`, listed on the [validation codes
+page](/docs/validation-codes/)). What the platform does afterwards with a
+finding left standing is the same in both: an ungrounded indicator stays out of
+the exports, an unknown technique id is flagged, a sentence that fails its
+citation check is left out of the analyst report and counted. Two things
+`record_only` does not switch off: the judge's verdict prompt still receives
+the analysts' findings (the technique check's and the ungrounded techniques'
+notes, a finding nobody was asked about listed as not asked), and an indicator
+the sandbox attributes to no flow of the sample stays out of the exports, since
+only the judge's answer to that question publishes it and the question is not
+asked. A run in `record_only` says so in `run_summary.validation.feedback` and
+among its operator choices; a run in the default carries neither.
+
+To compare the two modes, count `run_summary.validation.unresolved` rows per
+agent and code. In the default they are the findings still standing on the
+final answer after correction; in `record_only` they are every finding on the
+uncorrected answer; the difference is what the correction turns fix. For the
+same set of findings before correction, compare the default's `by_code` less
+its unresolved rows (the findings shown) with `record_only`'s unresolved rows;
+`by_code` counts a code once per round it was shown and leaves out the
+question-only items, so the two counts are close, not equal. Do not compare
+`by_code` directly: in the default it counts the findings shown per round plus
+those left over, in `record_only` each finding once plus the codes asked again.
+`retries` in `record_only` counts only the codes asked again, so read it as
+answers that could not be read. Downstream counts differ by design, not as
+finding counts: the note on sentences left out of the report, the flagged
+statements, the section agreement's drops and the exported indicators. One gap
+is known: when an answer cut at the output cap or repeating its claims is
+replaced whole by its retry, the first answer's other findings are recorded
+nowhere in `record_only`, while in the default they count in `by_code`.
 
 `mobile` and `deep_static` are built from three seeded generic agent
 definitions — `triage`, `android_static` and `reverser` — whose prompts live in
