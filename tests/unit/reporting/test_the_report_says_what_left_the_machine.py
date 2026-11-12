@@ -257,12 +257,15 @@ def test_the_enrichment_queued_after_the_report_is_named_then_what_it_asked() ->
 # Re-pinned when the product took its new name (T-576): the HTML's generator
 # line names Malspark; with the previous name each HTML digest is the one
 # pinned before, and the Markdown did not change.
+# Re-pinned when the report model's host identifier table came to print the
+# publish rule's answer for each row in a Published column, its footer saying
+# so: that table's rows and footer are the only change in each run.
 STORED_RENDERS = {
-    "run7": ("87ad1594f3cbc6ea", "f8c2570b24983f04"),
-    "run5": ("4fbb0b856aea7f8e", "827d5f7ebdee3768"),
-    "run4": ("581eb11ec3924a68", "0d81125d321278da"),
-    "local8": ("058e0d21f925bb0e", "6016e1c49686fbb1"),
-    "haiku4": ("06a395f0432b80a2", "a56231bf54979dba"),
+    "run7": ("09c7b588718f2532", "e633209d5cdd24d9"),
+    "run5": ("35c50111c95b0847", "27ed8d4cf052ec8a"),
+    "run4": ("95cc2744a52ef0af", "4669cfe8d40d01f1"),
+    "local8": ("59bfc74f81199d4e", "cfbded2298ab38bd"),
+    "haiku4": ("37f64fc044626e30", "bede1c5c809729c2"),
 }
 
 

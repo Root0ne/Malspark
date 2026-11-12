@@ -757,12 +757,14 @@ def _build_consolidated_iocs(report: MalwareReport) -> list[ConsolidatedIOC]:
         path_names_a_file,
         persistence_run_keys,
         publish_answer,
+        publishes,
         query_answers,
         recovered_by_words,
         recovered_entries,
         sandbox_host_kwargs,
         yes_because,
     )
+    from malspark.reporting.stated_host_values import ANALYSIS_SOURCE, identifier_answers
 
     rows: list[ConsolidatedIOC] = []
     seen: set[tuple[str, str]] = set()
@@ -1002,6 +1004,27 @@ def _build_consolidated_iocs(report: MalwareReport) -> list[ConsolidatedIOC]:
             row.published = _from_strings(row.kind or "", row.value)
         else:
             row.published = publish_answer(row.kind or "", row.value, row.source)
+
+    # The host values the analysis states (the report model's identifier
+    # table) that the one rule publishes, each under source ``analysis`` with
+    # the cited entries code found it whole in: after every tool row, so a value a tool
+    # recorded keeps the tool's row, and once per value. A row the rule
+    # refuses is printed with its reason in that table, not here
+    # (``stated_host_values.identifier_answers``).
+    held = {row.value.strip().lower() for row in rows}
+    for stated, answer in identifier_answers(report):
+        if not publishes(answer) or stated.value.lower() in held:
+            continue
+        held.add(stated.value.lower())
+        _add(
+            stated.label,
+            stated.table_kind,
+            stated.value,
+            ANALYSIS_SOURCE,
+            "stated by the analysis",
+            published=answer,
+            evidence=[*(stated.held_in or ())],
+        )
 
     # What the analysts listed that no tool recorded: each value its own row,
     # in the analyst's name and with the rule's refusal, after every tool row

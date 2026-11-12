@@ -71,11 +71,14 @@ from tests.unit.reporting.test_an_entry_without_a_source_is_read_as_before impor
 # (T-621): the level's marking definition, and ``object_marking_refs`` naming
 # it on every domain object and relationship; the Markdown and HTML did not
 # change.
+# Re-pinned when the report model's host identifier table came to print the
+# publish rule's answer for each row in a Published column, its footer saying
+# so: that table's rows and footer are the only change in each run.
 STORED_RENDERS = {
-    "run7": ("87ad1594f3cbc6ea", "f8c2570b24983f04", "6f5f4f1b2ed8ea58"),
-    "run5": ("4fbb0b856aea7f8e", "827d5f7ebdee3768", "b7c19ebb4cb31921"),
-    "run4": ("581eb11ec3924a68", "0d81125d321278da", "07a486002a8891ac"),
-    "local8": ("058e0d21f925bb0e", "6016e1c49686fbb1", "86c2fdd68be6dde0"),
+    "run7": ("09c7b588718f2532", "e633209d5cdd24d9", "6f5f4f1b2ed8ea58"),
+    "run5": ("35c50111c95b0847", "27ed8d4cf052ec8a", "b7c19ebb4cb31921"),
+    "run4": ("95cc2744a52ef0af", "4669cfe8d40d01f1", "07a486002a8891ac"),
+    "local8": ("59bfc74f81199d4e", "cfbded2298ab38bd", "86c2fdd68be6dde0"),
 }
 
 _UUID = re.compile(r"--[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}")

@@ -544,7 +544,10 @@ class TestAgainstTheSequentialBase:
     refuted claim (T-560): that sentence is the only change. The HTML digest
     was recaptured when the product took its new name (T-576): the HTML's
     generator line is the only change; the report digest stays as the test
-    computes it.
+    computes it. The host identifier request (and its retry) was re-pinned when
+    its instruction came to ask for a kind of the closed vocabulary and a use,
+    and the Markdown and HTML digests when the identifier table came to print
+    the publish rule's answer for each row: those are the only changes.
     """
 
     def test_the_requests_and_the_report_are_those_of_the_base(self) -> None:

@@ -541,7 +541,8 @@ async def get_full_malware_report_iocs(
         default=None,
         description=(
             "Filter to one row kind of the report's IOC table: hash, domain, ip, url, email, "
-            "user_agent, ja3, ja3s, path, registry, mutex, scheduled_task, service, command; "
+            "user_agent, ja3, ja3s, path, registry, registry_value, mutex, folder, scheduled_task, "
+            "service, named_pipe, ads (an alternate data stream), command; "
             "and secret or crypto_wallet, which are served only when named here"
         ),
     ),

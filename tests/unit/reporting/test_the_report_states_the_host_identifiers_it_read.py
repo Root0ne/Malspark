@@ -189,9 +189,11 @@ class TestTheReportPrintsIt:
 
         assert "Host identifiers read by the report model · _Written by the report model_" in text
         row = next(line for line in text.splitlines() if VALUE in line)
-        # Five cell borders once the escaped pipe inside the kind is taken out.
-        assert "ev_0012" in row and row.replace("\\|", "").count("|") == 5
-        assert "This table publishes nothing itself" in text
+        # Six cell borders once the escaped pipe inside the kind is taken out:
+        # the last column is the publish rule's answer for the row.
+        assert "ev_0012" in row and row.replace("\\|", "").count("|") == 6
+        assert "Published gives the answer for each row" in text
+        assert "free-text kind" in row
         assert "These rows are not published" not in text
         assert "published in the" not in row
 

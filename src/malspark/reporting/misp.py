@@ -63,6 +63,11 @@ _KIND_TYPES = {
     "mutex": "mutex",
     "scheduled_task": "windows-scheduled-task",
     "service": "windows-service-name",
+    # A value the analysis states and code checked (``stated_host_values``):
+    # a registry value is a key path to MISP, and a named pipe has its type.
+    # A folder and an alternate data stream have none, and are ``text``.
+    "registry_value": "regkey",
+    "named_pipe": "named pipe",
 }
 
 # The category of a digest, by who recorded the row: the sample's own digests
@@ -140,9 +145,9 @@ def _chosen_type(row: Any) -> tuple[str, str]:
         if not name:
             return "", ""
         return name, _HASH_CATEGORIES.get(source, "Payload delivery")
-    if kind == "registry":
+    if kind in ("registry", "registry_value"):
         # A key a persistence mechanism names persists the sample; a key a
-        # sandbox or a string sweep recorded is an artifact of the run.
+        # sandbox, a string sweep or the analysis recorded is an artifact of the run.
         category = "Persistence mechanism" if source == "persistence" else "Artifacts dropped"
         return "regkey", category
     if kind == "path" and label == "Named pipe":

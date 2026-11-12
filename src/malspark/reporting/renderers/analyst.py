@@ -32,6 +32,7 @@ from collections.abc import Callable, Iterable
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
+from malspark.core.logger import logger
 from malspark.pipeline.validation import NUMERIC_CONFIDENCE_CODE, UNPUBLISHED_VALUE_CODE
 from malspark.reporting.composer_pro import (
     _NUMERIC_CONFIDENCE,
@@ -123,10 +124,21 @@ _VALUE = re.compile(
 # a capture or a strings pass. An unexported row of theirs, bound to no code and
 # named by no model, is the bundle's; every other row stays in the table.
 _OBSERVED_ONLY = frozenset({"sandbox", "strings"})
-# Why a value only the report model's identifier table holds is not exported.
-_IDENTIFIER_NOT_EXPORTED = (
-    "not exported: the report model's identifier table publishes nothing itself"
-)
+# What an identifier row the rule's answer could not be read for says.
+_IDENTIFIER_NOT_EXPORTED = "not exported: the publish rule's answer for it could not be read"
+
+
+def _identifier_answers(report: Any) -> list[str]:
+    """The rule's answer for each identifier row (``stated_host_values``), or none when unread."""
+    from malspark.reporting.stated_host_values import identifier_answers
+
+    try:
+        return [answer for _stated, answer in identifier_answers(report)]
+    except Exception as exc:  # noqa: BLE001 — each row then says its answer is unread
+        logger.debug("analyst: the identifier rows' answers were not read (%s).", exc)
+        return []
+
+
 # Where a reader of this report finds every process the sandbox recorded.
 _BUNDLE_TREE = "the evidence bundle's process tree"
 # The bundle's section that prints the category with the export's malware types.
@@ -1897,9 +1909,12 @@ class _Analyst:
                 role += f" _({_inline_safe(answer, pipes=False, plain=ctx.plain)})_"
             rows.append((ioc.type, value, role or "-"))
         identifiers = list(self.ta.host_identifiers) if self.ta is not None else []
+        answers = _identifier_answers(report)
         left = 0
         for index, item in enumerate(identifiers, start=1):
-            if item.value.strip().lower() in seen:
+            answer = answers[index - 1] if index <= len(answers) else ""
+            # A row the rule publishes is the IOC table's row above.
+            if item.value.strip().lower() in seen or publishes(answer):
                 continue
             # A row that cites nothing, or whose value none of its cited entries
             # holds whole, is the bundle's, which prints it with the finding (T-555).
@@ -1913,7 +1928,12 @@ class _Analyst:
             seen.add(item.value.strip().lower())
             role = self._line(item.purpose, item.evidence_refs) if item.purpose.strip() else "-"
             state = ctx.publish_state(item.value).strip()
-            role += f" _({_IDENTIFIER_NOT_EXPORTED}" + (f"; {state[1:-1]}" if state else "") + ")_"
+            said = ctx.plain(_one_line(answer)).strip() or _IDENTIFIER_NOT_EXPORTED
+            role += (
+                f" _({_inline_safe(said, pipes=False, plain=ctx.plain)}"
+                + (f"; {state[1:-1]}" if state else "")
+                + ")_"
+            )
             rows.append((self._cell(item.kind), ctx.plain(_one_line(item.value)), role))
         lines = ["### 8.1 Indicators of compromise", ""]
         if not rows:
