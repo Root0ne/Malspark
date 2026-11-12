@@ -1458,11 +1458,13 @@ def doctor_report(
     if (fs := filesystem(root)) and fs.upper() == "NTFS":
         yield (
             f"  warn     the checkout is on NTFS ({root}): a bind mount from it carries no"
-            " Linux owner or mode, so "
+            " Linux owner or mode"
             + (
-                "the stack keeps samples and uploads on named volumes"
+                ", and whether the stack keeps samples and uploads on named volumes was not checked"
+                if not overlay_seen
+                else ", so the stack keeps samples and uploads on named volumes"
                 if named_data
-                else "files the containers write under data/samples and data/uploads do not"
+                else ", so files the containers write under data/samples and data/uploads do not"
                 " keep the ownership a Linux host gives them"
             )
         )

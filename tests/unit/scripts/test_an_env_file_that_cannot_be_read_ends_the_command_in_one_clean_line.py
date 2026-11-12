@@ -224,6 +224,7 @@ def _report(
     in_use: Callable[[str, int], bool],
     system: str | None = None,
     environ: dict[str, str] | None = None,
+    filesystem: Callable[[Path], str | None] = lambda path: None,
 ) -> list[str]:
     """Doctor's lines, up to the stop an unreadable file ends it with."""
     lines: list[str] = []
@@ -233,7 +234,7 @@ def _report(
             {"PATH": "", **(environ or {})},
             probe=lambda argv: None,
             in_use=in_use,
-            filesystem=lambda p: None,
+            filesystem=filesystem,
             system=system,
         ):
             lines.append(line)
@@ -495,3 +496,25 @@ def test_the_port_probe_never_binds_an_empty_address(
 
     assert dev.port_in_use(host, 4242) is False
     assert bound == [(dev.LOOPBACK, 4242)]
+
+
+def test_doctor_does_not_guess_the_volumes_it_could_not_see_for_the_ntfs_warning(
+    checkout: Path,
+) -> None:
+    _skip_unless_modes_apply()
+    (checkout / "docker").chmod(0o600)
+    try:
+        lines = _report(
+            checkout, lambda host, port: False, system="Windows", filesystem=lambda p: "NTFS"
+        )
+    finally:
+        (checkout / "docker").chmod(0o700)
+    text = "\n".join(lines)
+
+    line = next(ln for ln in lines if "on NTFS" in ln)
+    assert line.endswith(
+        "carries no Linux owner or mode, and whether the stack keeps samples and uploads"
+        " on named volumes was not checked"
+    )
+    assert "do not keep the ownership" not in text
+    assert "  volumes  not checked: docker/docker-compose.named-data.yml" in text
