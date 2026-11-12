@@ -336,6 +336,77 @@ class TestAValueTheSandboxPlacesElsewhere:
         assert not any("xyzmutex77" in rule.body.lower() for rule in report.detection_signatures)
 
 
+# The application-data and ProgramData known folders, per user and for all users,
+# each in its environment form and written out.
+_KNOWN_ROOTS = (
+    "%APPDATA%",
+    "C:\\Users\\a\\AppData\\Roaming",
+    "%LOCALAPPDATA%",
+    "C:\\Users\\a\\AppData\\Local",
+    "C:\\ProgramData",
+    "%PROGRAMDATA%",
+    "%ALLUSERSPROFILE%",
+    "C:\\Users\\All Users",
+)
+# The known folders Windows keeps under ``Microsoft\\Windows`` there.
+_UNDER_MICROSOFT_WINDOWS = (
+    "",
+    "\\Start Menu",
+    "\\Start Menu\\Programs",
+    "\\Start Menu\\Programs\\Startup",
+    "\\Start Menu\\Programs\\Administrative Tools",
+    "\\Templates",
+    "\\SendTo",
+    "\\Recent",
+    "\\Cookies",
+    "\\History",
+    "\\INetCache",
+    "\\INetCookies",
+    "\\Explorer",
+    "\\Temporary Internet Files",
+)
+# A system folder's name under a ``Windows`` folder that is not the system root:
+# a fake system folder, the sample's own.
+_FAKE_SYSTEM = (
+    "\\Windows",
+    "\\Windows\\System32",
+    "\\Windows\\Tasks",
+    "\\Windows\\Start Menu",
+    "\\Microsoft\\Windows\\Tasks",
+    "\\Microsoft\\Windows\\Framework",
+    "\\Microsoft\\Windows\\Fonts",
+)
+MUST_REFUSE = [
+    f"{root}\\Microsoft\\Windows{tail}"
+    for root in _KNOWN_ROOTS
+    for tail in _UNDER_MICROSOFT_WINDOWS
+] + [
+    "C:\\Windows",
+    "C:\\Windows\\Tasks",
+    "%windir%\\Fonts",
+    "C:\\Windows\\System32\\Tasks",
+    "C:\\Windows\\Microsoft.NET\\Framework",
+    "%SystemRoot%\\SysWOW64\\wbem",
+]
+MUST_EXPORT = [f"{root}{tail}" for root in (*_KNOWN_ROOTS, "%TEMP%") for tail in _FAKE_SYSTEM]
+
+
+class TestAKnownFolderAgainstAFakeSystemFolder:
+    """Every known folder stays refused; a system folder's name outside the system root is kept."""
+
+    @pytest.mark.parametrize("value", MUST_REFUSE)
+    def test_a_known_folder_is_refused(self, value: str) -> None:
+        assert benign_reason(typed_kind("folder"), value) == "a Windows known folder"
+
+    @pytest.mark.parametrize("value", MUST_EXPORT)
+    def test_a_fake_system_folder_is_exported(self, value: str) -> None:
+        assert benign_reason(typed_kind("folder"), value) == ""
+
+    def test_a_multi_component_known_folder_counts_only_whole(self) -> None:
+        assert benign_reason(typed_kind("folder"), "%APPDATA%\\Windows\\Startup") == ""
+        assert benign_reason(typed_kind("folder"), "%APPDATA%\\Vendor\\Windows\\Startup") == ""
+
+
 def _load(path: str) -> Any:
     return benign_catalogue.__wrapped__(path)
 

@@ -166,6 +166,9 @@ class Catalogue:
     """The declared benign-location catalogue, folded to lower case."""
 
     known_folders: frozenset[str]
+    # The known folders written as more than one component (``microsoft\\windows``),
+    # each as its components: known only as that sequence.
+    known_sequences: tuple[tuple[str, ...], ...]
     known_folder_prefixes: tuple[str, ...]
     environment_folders: frozenset[str]
     system_folders: frozenset[str]
@@ -198,12 +201,17 @@ def benign_catalogue(path: str = DEFAULT_CATALOGUE) -> Catalogue:
         entries = listed.get("entries") if isinstance(listed, dict) else listed
         return frozenset(str(word).lower() for word in entries or () if word)
 
-    known = _set("known_folders")
+    listed_known = _set("known_folders")
+    known = frozenset(name for name in listed_known if "\\" not in name)
     # The .NET Framework's folders and tools stand in the same chain as
     # Windows' own, each list with its own criterion.
     system = _set("system_folders") | _set("dotnet_framework_folders")
     return Catalogue(
         known_folders=known,
+        known_sequences=tuple(
+            tuple(part for part in name.split("\\") if part)
+            for name in sorted(listed_known - known)
+        ),
         known_folder_prefixes=tuple(sorted(_set("known_folder_prefixes"))),
         environment_folders=_set("environment_folders"),
         system_folders=system,
@@ -288,6 +296,27 @@ def _system_chain(parts: Sequence[str], catalogue: Catalogue) -> list[bool]:
     return flags
 
 
+def _known_sequences(parts: Sequence[str], catalogue: Catalogue) -> list[bool]:
+    """Which of a path's components stand in a multi-component known folder, matched whole."""
+    flags = [False] * len(parts)
+    for sequence in catalogue.known_sequences:
+        size = len(sequence)
+        for at in range(len(parts) - size + 1):
+            if tuple(parts[at : at + size]) == sequence:
+                flags[at : at + size] = [True] * size
+    return flags
+
+
+def _known_chain(parts: Sequence[str], catalogue: Catalogue) -> list[bool]:
+    """The components the system chain or a multi-component known folder accounts for."""
+    return [
+        system or listed
+        for system, listed in zip(
+            _system_chain(parts, catalogue), _known_sequences(parts, catalogue), strict=True
+        )
+    ]
+
+
 def _known_component(part: str, previous: str, catalogue: Catalogue, chained: bool) -> bool:
     short = _SHORT_NAME_RE.fullmatch(part)
     return (
@@ -303,7 +332,7 @@ def _known_component(part: str, previous: str, catalogue: Catalogue, chained: bo
 
 
 def _all_known(parts: Sequence[str], catalogue: Catalogue) -> bool:
-    chain = _system_chain(parts, catalogue)
+    chain = _known_chain(parts, catalogue)
     return bool(parts) and all(
         _known_component(part, parts[at - 1] if at else "", catalogue, chain[at])
         for at, part in enumerate(parts)
@@ -320,7 +349,7 @@ def past_known_folders(value: str) -> str:
     catalogue = benign_catalogue()
     text = value.strip().strip("\"'").replace("/", "\\")
     parts = [part for part in (raw.rstrip(". ") for raw in text.split("\\")) if part]
-    chain = _system_chain([part.lower() for part in parts], catalogue)
+    chain = _known_chain([part.lower() for part in parts], catalogue)
     at = 0
     while at < len(parts) and _known_component(
         parts[at].lower(), parts[at - 1].lower() if at else "", catalogue, chain[at]
