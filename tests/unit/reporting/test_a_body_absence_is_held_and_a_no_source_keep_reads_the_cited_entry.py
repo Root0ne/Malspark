@@ -255,8 +255,8 @@ def test_every_refusal_can_be_answered_by_what_it_names() -> None:
 
     family = "The family is not confirmed."
     report = _report(
-        evasion=f"Strings are encoded [ev_0002]. {family}",
-        flow="Engines label it as a loader family [ev_0002].",
+        evasion=f"Strings are encoded by 0x1400 [ev_0002]. {family}",
+        flow="Engines label routine 0x1400 as a loader family [ev_0002].",
     )
     by_id = _by_id(report)
     speaking = _speaking_sources(family, by_id, by_id["evasion_antiforensics"])
@@ -349,7 +349,8 @@ def test_a_refused_body_keep_stands_after_the_retry_and_is_recorded() -> None:
 
 
 def test_a_rewrite_on_the_passage_that_states_otherwise_is_put_in() -> None:
-    report = _report()
+    # The passage written without the code names an address the sentence's passage names.
+    report = _report(evasion=f"Strings are encoded by 0x1400 [ev_0002]. {DENIED}")
     rewrite = "Routine 0x1400 runs timing and locale checks [ev_0002]."
     row = {
         **_row("evasion_antiforensics", DENIED, ["execution_flow.1"]),
@@ -361,6 +362,11 @@ def test_a_rewrite_on_the_passage_that_states_otherwise_is_put_in() -> None:
     done, _ = _ask(report, {"sentences": _rest(report, [row])})
     assert done.summary["rewritten"] == 1
     assert DENIED not in report.technical_analysis.evasion_antiforensics.body
+    # One sharing only words with it grounds nothing: asked again, the sentence stands.
+    untied = _report()
+    done, _ = _ask(untied, {"sentences": _rest(untied, [row])})
+    assert done.summary["rewritten"] == 0
+    assert DENIED in untied.technical_analysis.evasion_antiforensics.body
     flow = _report(evasion="Strings are encoded [ev_0002].", flow=DENIED)
     row = {**row, "passage": "execution_flow.1", "sources": ["evasion_antiforensics"]}
     row["rewrite"] = "Strings are encoded, and no gate is described [ev_0002]."
@@ -592,7 +598,10 @@ def test_a_long_speaking_sentence_is_quoted_by_its_shortest_passing_beginning() 
     from malspark.reporting.section_agreement import _speaking_sources
 
     tail = ", ".join(f"then check{i} runs" for i in range(600))
-    report = _report(flow=f"{GATES[: -len(' [ev_0002].')]}, {tail} [ev_0002].")
+    report = _report(
+        evasion=f"Strings are encoded by 0x1400 [ev_0002]. {DENIED}",
+        flow=f"{GATES[: -len(' [ev_0002].')]}, {tail} [ev_0002].",
+    )
     by_id = _by_id(report)
     ((pid, excerpt),) = _speaking_sources(DENIED, by_id, by_id["evasion_antiforensics"])
     assert len(excerpt) <= FINDING_VALUE_LIMIT

@@ -75,6 +75,15 @@ _UNKNOWN_TWICE = (
     "The runtime result of `QueryHostMode` is not known, the routine at 0x5a10 was not read "
     "and five tool calls failed [ev_0109]."
 )
+# A held absence of section 5 one passage written without the code speaks of twice: its first
+# clause states the checks (a rewrite rests on it, naming the routine section 5 names), its
+# second states the absence (a keep quotes it), T-652.
+_ABSENT = "The routine is therefore not shown to use timing or locale checks."
+_STATES_BOTH = (
+    "Routine 0x5a10 runs timing and locale checks [ev_0107], and the loader runs no timing or "
+    "locale checks of its own [ev_0107]."
+)
+_ABSENT_QUOTE = "and the loader runs no timing or locale checks of its own [ev_0107]."
 _FAILED_TWICE = (
     "The decompile of 0x5a10 failed [ev_0101], so the routine at 0x5a10 was not read, and "
     "five tool calls failed."
@@ -110,6 +119,10 @@ KINDS = (
     HELD_LIMITATIONS,
     HELD_BODY,
 )
+# A held absence of section 5 nothing but its shape holds: walked by the ends its refusals
+# offer (:func:`test_every_message_offers_exactly_the_ends_that_pass`), never left out, so
+# outside the kinds the whole-message table walks.
+S5_ABSENCE = "held absence of section 5"
 # The answer kinds: a row's decision, or no row for the sentence.
 DECISIONS = ("keep", "rewrite", "drop", "none")
 
@@ -141,6 +154,10 @@ def _report_of(subject: _Subject) -> MalwareReport:
     ta = report.technical_analysis
     assert ta is not None and ta.string_resolution is not None
     ta.string_resolution.body = _S5
+    if "evasion_antiforensics" in said:
+        ta.evasion_antiforensics = TechnicalSubsection(
+            title="Evasion", body=said["evasion_antiforensics"], evidence_refs=["ev_0107"]
+        )
     report.c2_channels = [C2Channel(name="HTTP channel", encryption=said[_CELL_ID])]
     ta.capability_summary = [
         CapabilityBullet(text=text, evidence_refs=["ev_0107"])
@@ -195,6 +212,15 @@ SUBJECTS = {
     ),
     "held body twice": _Subject(
         HELD_BODY, "introduction", _UNKNOWN_TWICE, (("introduction", _UNKNOWN_TWICE),)
+    ),
+    "section 5 absence": _Subject(
+        S5_ABSENCE,
+        "evasion_antiforensics",
+        _ABSENT,
+        (
+            ("evasion_antiforensics", f"Routine 0x5a10 reads a host mode [ev_0107]. {_ABSENT}"),
+            ("introduction", _STATES_BOTH),
+        ),
     ),
 }
 
@@ -424,6 +450,10 @@ _REWRITES: dict[str, tuple[list[str], str]] = {
     ),
     "held limitations twice": (["inv.1"], _REDONE),
     "held body twice": (["ledger.1"], _CALLED),
+    "section 5 absence": (
+        ["introduction"],
+        "Routine 0x5a10 runs timing and locale checks [ev_0107].",
+    ),
 }
 
 
@@ -432,10 +462,12 @@ def _ends(name: str) -> dict[str, dict[str, Any]]:
     where one passes, and a drop."""
     subject = SUBJECTS[name]
     sources, rewrite = _REWRITES[name]
-    ends = {
-        "rewrite": _row(subject, "rewrite", sources, rewrite=rewrite),
-        "drop": _row(subject, "drop", [], reason="the run's evidence does not bear it out"),
-    }
+    ends = {"rewrite": _row(subject, "rewrite", sources, rewrite=rewrite)}
+    if subject.kind != S5_ABSENCE:
+        # A body absence nothing but its shape holds is never left out.
+        ends["drop"] = _row(subject, "drop", [], reason="the run's evidence does not bear it out")
+    if subject.kind == S5_ABSENCE:
+        ends["keep"] = _row(subject, "keep", ["introduction"], quote=_ABSENT_QUOTE)
     if subject.kind in (VALUE_CELL, BULLET, CONCLUSION, LIMITATIONS) and name in _KEPT:
         ends["keep"] = _row(subject, "keep", [], reason="no source speaks of it")
     if subject.kind == HELD_BODY and name in _KEPT:
@@ -445,7 +477,15 @@ def _ends(name: str) -> dict[str, dict[str, Any]]:
 
 # The subjects a keep passes for: any other is one the ledger's lines hold or say otherwise of.
 _KEPT = frozenset(
-    {"cell", "bullet", "conclusion", "limitations", "limitations one failed call", "held body"}
+    {
+        "cell",
+        "bullet",
+        "conclusion",
+        "limitations",
+        "limitations one failed call",
+        "held body",
+        "section 5 absence",
+    }
 )
 
 
@@ -2389,7 +2429,7 @@ def _cannot(kind: str, code: str, decision: str) -> str:
     it can, and the table raises it."""
     if code == agreement.SCHEMA_CODE:
         return "the schema check reads the whole answer: a row that does not fit answers nothing"
-    if code == agreement.UNKNOWN_PASSAGE_CODE:
+    if code == agreement.UNKNOWN_PASSAGE_CODE and not (kind == S5_ABSENCE and decision == "drop"):
         return (
             "a row naming a passage not shown answers none; none of these kinds is shown for "
             "reading only; each may be dropped (closing, or held by the ledger), and a drop of "
@@ -2541,11 +2581,11 @@ _OFFERS: dict[str, frozenset[str]] = {
 # The report rounds' prose checks write their own findings, each mending the rewrite it reads.
 _MENDS_THE_REWRITE = _PROSE
 # The plain sentences: of the conclusion or the limitations, nothing holds them and a keep of
-# them passes.
+# them passes; and a held absence of section 5, which nothing but its shape holds.
 _PLAIN = frozenset(
     name
     for name, subject in SUBJECTS.items()
-    if subject.kind in (CONCLUSION, LIMITATIONS) and name in _KEPT
+    if subject.kind in (CONCLUSION, LIMITATIONS, S5_ABSENCE) and name in _KEPT
 )
 # Dev's own end texts: each stands verbatim in origin/dev's round. A refusal of a plain
 # sentence whose ends are only these, or a prose check's own finding, offers what dev's round
@@ -2631,6 +2671,10 @@ _DEV_UNOFFERED: dict[str, frozenset[str]] = {
     "limitations one failed call | rewrite, calling listed code not read": frozenset({_KEEP}),
     "limitations one failed call | rewrite, a denial no entry follows": frozenset({_DROP}),
     "limitations one failed call | keep, a quote too short": frozenset({_DROP}),
+    # A prose check's own finding mends the rewrite it reads, as for any plain sentence.
+    "section 5 absence | rewrite, misreading entries": frozenset({_KEEP}),
+    "section 5 absence | rewrite, a count the ledger does not hold": frozenset({_KEEP}),
+    "section 5 absence | rewrite, calling listed code not read": frozenset({_KEEP}),
 }
 
 
@@ -2815,3 +2859,17 @@ def test_the_first_turn_offers_exactly_the_ends_that_pass(name: str) -> None:
     assert asked
     for line in asked:
         assert _offered("", line, "none") == frozenset(_ends(name))
+
+
+def test_a_held_absence_of_section_5_is_offered_a_keep_on_the_words_stating_it() -> None:
+    """The excerpt that speaks states the checks; the keep offered quotes the clause of the
+    same source that states the absence, and passes (T-652)."""
+    subject = SUBJECTS["section 5 absence"]
+    found = _refusals(subject, _ANSWERS["keep, no source, a reason"](subject))
+    (message,) = [m for code, _path, m in found if code == agreement.KEEP_UNQUOTED_CODE]
+    assert 'speak of it: [introduction] "Routine 0x5a10 runs timing and locale checks' in message
+    assert message.endswith(
+        "or keep it naming the one you read, quoting its words that state the same absence: "
+        f'[introduction] "{_ABSENT_QUOTE}".'
+    )
+    assert _refusals(subject, _ends("section 5 absence")["keep"]) == []

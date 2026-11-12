@@ -22,6 +22,7 @@ import json
 from datetime import UTC, datetime
 from typing import Any
 
+import pytest
 from langchain_core.messages import AIMessage, BaseMessage
 
 from malspark.pipeline.validation import EntryTexts
@@ -253,8 +254,9 @@ def test_a_keep_quoting_the_passage_that_states_the_gates_is_refused() -> None:
             "before the beacon starts: a PEB BeingDebugged read (0x8690, 0x309c, 0x3074), an "
             'OS-version check (0x8560)"; [procedures.1] "which likely serves as an environment '
             'check.". Rewrite it on the one that states otherwise (a section 5 sentence too: on '
-            "any of these, a passage written without the code included); their words state no "
-            "absence, so no keep rests on them.",
+            "any of these, a passage written without the code where it names an address the "
+            "sentence's passage names); the excerpts shown state no absence, so no keep rests "
+            "on them.",
         )
     ]
 
@@ -372,3 +374,105 @@ def test_haiku12_s_fnv_sentence_keeps_no_quote_of_the_channel_and_is_rewritten_o
         'The FNV routine 0xc99c hashes the group value "Littlehw" [ev_0021].',
     )
     assert _found(report, rewrite) == []
+
+
+# -- what grounds a rewrite, and what a keep's quote carries ------------------------------
+
+
+def test_a_claim_sharing_only_words_with_the_absence_grounds_no_rewrite() -> None:
+    # A claim about other files speaks of the absence by its words, but names no address
+    # the sentence's passage names, so it grounds no rewrite of it.
+    other = "Other droppers of this family run environment checks and anti-debug probes [ev_0025]."
+    report = _report(flow=other, procedure="It sleeps [ev_0025].")
+    assert _speaking(report, "evasion_antiforensics", DENIED) == ["execution_flow.3"]
+    row = _rewrite(
+        "evasion_antiforensics",
+        DENIED,
+        ["execution_flow.3"],
+        "The sample runs environment checks and anti-debug probes [ev_0025].",
+    )
+    found = _found(report, row)
+    assert found[0].code == UNKNOWN_SOURCE_CODE
+    assert found[0].message == (
+        "row 1 names execution_flow.3 as what states otherwise than evasion_antiforensics, but "
+        "a section 5 passage is answered by a platform fact (bound.N, unread.N, listed.N, "
+        "answered.N, ledger.N) alone; a held absence of section 5 also by a source that speaks "
+        "of it, a passage written without the code where it names an address the sentence's "
+        "passage names. Name the sources by their ids."
+    )
+
+
+def test_a_held_absence_of_a_passage_written_without_the_code_rests_on_no_claim() -> None:
+    # Only a held absence of section 5 rests on a claim: one written without the code is
+    # rewritten on a fact, section 5 or a debate round, as before.
+    # The claim names the address its passage names, and speaks of the absence: a held
+    # absence of section 5 would rest on it.
+    report = _report(
+        evasion=PEB,
+        flow=f"Routine 0x3868 checks the debugger at 0x8690 [ev_0025]. {DENIED}",
+        procedure=(
+            "The sample reads the PEB at 0x8690 before its beacon work, which likely serves as "
+            "an anti-debug or environment check."
+        ),
+    )
+    assert "procedures.1" in _speaking(report, "execution_flow.3", DENIED)
+    row = _rewrite("execution_flow.3", DENIED, ["procedures.1"], REWRITE)
+    assert _found(report, row)[0].code == UNKNOWN_SOURCE_CODE
+
+
+@pytest.mark.parametrize(
+    "said",
+    [
+        # A negation of something else beside the words stating the checks.
+        "Routine 0x3868 runs anti-debug and environment checks at 0x8690; it does not sleep "
+        "[ev_0025].",
+        # A negation inside a quoted value is the sample's text.
+        "Routine 0x3868 runs anti-debug and environment checks at 0x8690 and compares the "
+        'reply with "no" [ev_0025].',
+    ],
+)
+def test_a_quote_negating_something_else_backs_no_keep_and_none_is_offered(said: str) -> None:
+    report = _report(flow=said)
+    quote = said.rsplit(" [", 1)[0]
+    row = _row("evasion_antiforensics", DENIED, ["execution_flow.3"], quote=quote)
+    (refused,) = _found(report, row)
+    assert refused.code == KEEP_UNQUOTED_CODE
+    assert refused.message.endswith(
+        "the excerpts shown state no absence, so no keep rests on them."
+    )
+
+
+def test_a_keep_is_offered_on_the_clause_of_a_source_that_states_the_absence() -> None:
+    # The excerpt chosen to speak states the checks; another clause of the same source
+    # states the absence, and the refusal offers a keep on that clause, which passes.
+    said = (
+        "Routine 0x3868 runs anti-debug and environment checks in the loader stage at 0x8690, "
+        "and the analysed sample runs no anti-debug or environment checks of its own [ev_0025]."
+    )
+    report = _report(flow=said, procedure="It sleeps [ev_0025].")
+    refused = _found(report, _row("evasion_antiforensics", DENIED, [], reason="none does"))
+    (message,) = [v.message for v in refused if v.code == KEEP_UNQUOTED_CODE]
+    quote = "and the analysed sample runs no anti-debug or environment checks of its own [ev_0025]."
+    assert message.endswith(
+        "or keep it naming the one you read, quoting its words that state the same absence: "
+        f'[execution_flow.3] "{quote}".'
+    )
+    keep = _row("evasion_antiforensics", DENIED, ["execution_flow.3"], quote=quote)
+    assert _found(report, keep) == []
+
+
+def test_a_body_keep_that_passes_is_never_recorded_as_stating_no_absence() -> None:
+    # No keep whose quote states no absence passes, so none is recorded for that.
+    from malspark.reporting.section_agreement import absence_keep_reason
+
+    agreeing = "No anti-debug or environment checks are shown in the code read [ev_0025]."
+    report = _report(flow=agreeing)
+    by_id = {p.id: p for p in passages_of(report, entries=_ledger())}
+    row = _row("evasion_antiforensics", DENIED, ["execution_flow.3"], quote=agreeing)
+    assert _found(report, row) == []
+    assert absence_keep_reason(
+        DENIED, agreeing, [by_id["execution_flow.3"]], by_id["evasion_antiforensics"]
+    ) == ("resting only on another written passage, not on the code or the ledger")
+    assert absence_keep_reason(DENIED, GATES_QUOTE, [], by_id["evasion_antiforensics"]) == (
+        "a section 5 sentence, whose every keep is recorded"
+    )

@@ -150,11 +150,16 @@ is shown those rows as a fact that speaks of it (``entry.N``,
 ``reporting.entry_fields``), so a keep on no source is asked again with them; a
 keep quoting them is recorded.
 
-A held absence of the body, of section 5 too, may be rewritten in the model's words on
-any source that speaks of it, a passage written without the code included: the
-passage stating the checks the absence denies is the one that says otherwise of it.
-A keep's quote states an absence where the sentence does, of the body as of a closing
-section, so a keep quoting the passage that states what it denies is refused (T-652).
+A held absence of section 5 may be rewritten in the model's words on any source that
+speaks of it, a passage written without the code included where it names an address
+the sentence's passage names: the passage stating the checks the absence denies is the
+one that says otherwise of it, and a claim sharing only words with it (another file's,
+another family's) grounds nothing. A held absence of a passage written without the code
+rests on the sources it did before. A body keep's quote states the absence: one negated
+clause of it, its quoted values left out, holds what the sentence denies something of,
+so a keep quoting the passage that states what it denies, or one negating something
+else beside it, is refused, and a refusal offers a keep only on the words of a source
+that pass that check (T-652).
 
 A sentence the ledger's own lines hold (T-600): one denying something of a name
 the run holds (``ledger.N``), one of the limitations naming a failed call a later
@@ -281,9 +286,9 @@ UNKNOWN_PASSAGE_CODE = "agreement.unknown_passage"
 # A row's sentence does not stand in its passage as copied.
 SENTENCE_NOT_FOUND_CODE = "agreement.sentence_not_found"
 # A row names a source the round was not shown, or answers a section 5
-# passage with a source that is not a platform fact (a held absence of the body
-# rests a rewrite on any source that speaks of it, a passage written without the
-# code included).
+# passage with a source that is not a platform fact (a held absence of section 5
+# rests a rewrite on any source that speaks of it too, a passage written without the
+# code where it names an address the sentence's passage names).
 UNKNOWN_SOURCE_CODE = "agreement.unknown_source"
 # A rewrite cites an id that neither its sources nor its passage cite.
 REWRITE_CITES_ELSEWHERE_CODE = "agreement.rewrite_cites_elsewhere"
@@ -355,12 +360,13 @@ UNREAD_STANDING_CODE = "agreement.unread_standing"
 ABSENCE_KEPT_CODE = "agreement.absence_kept"
 # A kept closing sentence, or a kept held absence of the body, whose row quotes no
 # words of a source it names that state the same (two or more of its own words, an
-# absence on words stating one, of the body as of a closing section, so a quote of the
-# passage stating what an absence denies backs no keep of it; never one shorter than
+# absence on words stating one, of the body as of a closing section, a body absence's on
+# a negated clause holding what it denies something of, so a quote of the passage stating
+# what an absence denies backs no keep of it; never one shorter than
 # ``absence_answers.QUOTE_FLOOR``, refused as such), or that names no source while a
 # shown one speaks of it (the rows of an entry it cites among them). The refusal of a
-# body absence names the sources that speak of it, which a rewrite of it may rest on,
-# and offers a keep quoting one only where its words state the same absence. Still so
+# body absence names the sources that speak of it, which a rewrite of a section 5 one may
+# rest on, and offers a keep on the words of each that state the same absence. Still so
 # after the retry, a closing sentence is left out and recorded (``DROPPED_CODE``); a
 # body absence stands, recorded (``HELD_KEPT_CODE``).
 KEEP_UNQUOTED_CODE = "agreement.keep_unquoted"
@@ -3963,6 +3969,23 @@ def _writable(passage: Passage) -> bool:
     return passage.write is not None and passage.kind in (CLAIM_LED, SECTION_5)
 
 
+# What else grounds a rewrite of a held absence of section 5, as the refusals say (T-652).
+_HELD_ABSENCE_GROUNDS = (
+    "; a held absence of section 5 also by a source that speaks of it, a passage written "
+    "without the code where it names an address the sentence's passage names"
+)
+
+
+def _tied(source: Passage, passage: Passage) -> bool:
+    """Whether ``source`` may ground a rewrite of a held absence of section 5 ``passage``
+    beyond the facts and section 5: any source but a passage written without the code, and
+    one of those where it names an address the passage names, so a claim about another
+    routine, file or family sharing only words grounds nothing (T-652)."""
+    if source.kind != CLAIM_LED:
+        return True
+    return not set(_addresses_named(source.text)).isdisjoint(_addresses_named(passage.text))
+
+
 def _listed_when_kept(passage: Passage) -> bool:
     """Whether a kept sentence of the passage is recorded as listed: section 5, or read only."""
     return passage.kind == SECTION_5 or not _writable(passage)
@@ -4044,17 +4067,35 @@ def _row_violations(
         if passage.kind == SECTION_5
         else (FACT, SECTION_5, DEBATE)
     )
-    # A held absence of the body rewritten rests on any source that speaks of it
-    # (:func:`_body_speaking`), a passage written without the code included: the passage
-    # stating what it denies is the one that says otherwise of it (T-652).
-    speaking = (
-        frozenset(pid for pid, _excerpt in _body_speaking(span[2], by_id, passage))
-        if row.decision == "rewrite"
+    # A held absence of section 5 rewritten rests on any source that speaks of it
+    # (:func:`_body_speaking`), a passage written without the code included where it names
+    # an address the sentence's passage names (:func:`_tied`): the passage stating what it
+    # denies is the one that says otherwise of it (T-652).
+    widened = (
+        row.decision == "rewrite"
         and span is not None
+        and passage.kind == SECTION_5
         and not passage.closing
         and span[2] in passage.absences
+    )
+    speaking = (
+        frozenset(
+            pid
+            for pid, _excerpt in _body_speaking(span[2], by_id, passage)
+            if _tied(by_id[pid], passage)
+        )
+        if widened
+        and span is not None
         and any(s is not None and s.kind not in allowed for s in sources)
         else frozenset()
+    )
+    # A drop of a body sentence nothing holds is refused for that alone
+    # (:func:`_answer_violations`): the sources it names ask nothing more.
+    unheld_drop = (
+        row.decision == "drop"
+        and not passage.closing
+        and span is not None
+        and not _held_by_the_ledger(passage, span[2])
     )
     wrong = [
         _form(name)
@@ -4067,6 +4108,8 @@ def _row_violations(
         # The count of listings left out says nothing of the code: no rewrite rests on it.
         or (row.decision == "rewrite" and source.id == LISTINGS_LEFT_ID)
     ]
+    if unheld_drop:
+        wrong = []
     if wrong:
         out.append(
             Violation(
@@ -4077,7 +4120,8 @@ def _row_violations(
                     f"states otherwise than {safe_finding_value(passage.id)}, but "
                     + (
                         "a section 5 passage is answered by a platform fact (bound.N, "
-                        "unread.N, listed.N, answered.N, ledger.N) alone."
+                        "unread.N, listed.N, answered.N, ledger.N) alone"
+                        + (f"{_HELD_ABSENCE_GROUNDS}." if widened else ".")
                         if passage.kind == SECTION_5
                         else "only the facts, the section 5 passages and the debate rounds "
                         "listed are sources."
@@ -5186,6 +5230,10 @@ def _quote_problem(
     absent = carries_negation(sentence)
     if absent and not speaking and not carries_negation(quote):
         return "states no absence, while the sentence states one"
+    if absent and body and not speaking and not _states_the_denial(sentence, quote, generic):
+        # A negation of something else ("it does not sleep") beside the words stating
+        # what the sentence denies is no statement of its absence (T-652).
+        return "states no absence of what the sentence denies something of"
     named = frozenset(_addresses_named(sentence))
     by_quote = bool(named & set(_addresses_named(quote)))
     tying = [s for s in sources if s.kind == FACT and not s.addresses.isdisjoint(named)]
@@ -5216,6 +5264,22 @@ def _quote_problem(
                 " ".join(sorted(item)) for item in contradicted
             )
     return ""
+
+
+def _states_the_denial(sentence: str, quote: str, generic: frozenset[str]) -> bool:
+    """Whether one negated clause of ``quote`` (``absence_answers.negated_clauses``), its
+    double-quoted values left out, holds what ``sentence`` denies something of, as a closing
+    keep's quote holds it (:func:`quote_overlap`: two of those words, all where fewer)."""
+    least = min(_QUOTE_SHARED, len(kept_subject(sentence, generic)))
+    # A negation inside a quoted value is the sample's text ('compares the reply with "no"').
+    bare = _DOUBLE_QUOTED.sub(" ", quote)
+    return any(
+        quote_overlap(sentence, clause, generic) >= least for clause in negated_clauses(bare)
+    )
+
+
+# A value quoted in double quotes, however short.
+_DOUBLE_QUOTED = re.compile(r"[\"\u201c][^\"\u201d\n]{0,200}[\"\u201d]")
 
 
 # How much of a sentence's own words a rewrite repeats, and the reverse, to say the same.
@@ -5329,13 +5393,12 @@ def entry_keep_reason(sentence: str, quote: str, sources: Sequence[Passage | Non
 def absence_keep_reason(
     sentence: str, quote: str, sources: Sequence[Passage | None], passage: Passage
 ) -> str:
-    """Why a kept held absence of the body is recorded, or ``""`` (T-580): its quote states
-    no absence (the source speaks of what it denies, and the keep is the model's reading
-    that it does not say otherwise); it rests only on other written passages or debate
-    rounds (one model's words agreeing with another's ground nothing); or it is a section
-    5 sentence, every keep of which is recorded, as before it could be rewritten."""
-    if carries_negation(sentence) and not carries_negation(quote):
-        return "quoting words that state no absence, read as not saying otherwise"
+    """Why a kept held absence of the body is recorded, or ``""`` (T-580): it rests only on
+    other written passages or debate rounds (one model's words agreeing with another's
+    ground nothing); or it is a section 5 sentence, every keep of which is recorded, as
+    before it could be rewritten. A keep whose quote states no absence passes no check
+    (:func:`_quote_problem`, T-652), so none is recorded for that; ``quote`` is read by the
+    caller's other readers."""
     named = [s for s in sources if s is not None]
     if named and all(s.kind in (CLAIM_LED, DEBATE) for s in named):
         return "resting only on another written passage, not on the code or the ledger"
@@ -5457,8 +5520,9 @@ def _body_speaking(
 ) -> list[tuple[str, str]]:
     """The sources that speak of a held absence of the body, each with the sentence of it
     the keep check passes as a quote but for stating an absence (:func:`_quote_problem`
-    with ``speaking``), best first. A rewrite of the absence may rest on any of them; a
-    keep quoting one passes only where its words state the same absence (T-652).
+    with ``speaking``), best first. A rewrite of a held absence of section 5 may rest on any
+    of them (:func:`_tied`); a keep quoting one passes only where its words state the same
+    absence (:func:`_keep_quotes`, T-652).
 
     Every other passage written without the code speaks as section 5 does: the body's
     claims say otherwise of an absence too (haiku13's "not shown to use anti-debug or
@@ -5591,14 +5655,10 @@ def _candidates(sentence: str, by_id: dict[str, Passage], passage: Passage | Non
     )
     more = len(found) - _SPEAKING_SHOWN
     body = passage is not None and not passage.closing
-    # A keep of a body absence quoting one of these passes only where its excerpt states
-    # the same absence (:func:`_quote_problem`); the rest are rewritten on (T-652).
-    generic = generic_words(by_id) if body else frozenset()
-    keepable = body and any(
-        not _quote_problem(sentence, excerpt, [by_id[pid]], generic, by_id, body=True)
-        for pid, excerpt in found[:_SPEAKING_SHOWN]
-        if pid in by_id
-    )
+    # A keep of a body absence quoting a source passes only where its words state the same
+    # absence (:func:`_quote_problem`): the shortest such words of each source shown, which
+    # need not be its excerpt; the rest are rewritten on (T-652).
+    keeps = _keep_quotes(sentence, found[:_SPEAKING_SHOWN], by_id) if body else []
     return (
         f" The shown sources that speak of it: {shown}"
         + (f"; and {more} more" if more > 0 else "")
@@ -5606,14 +5666,20 @@ def _candidates(sentence: str, by_id: dict[str, Passage], passage: Passage | Non
             f". {_ON_THE_ONE}"
             + (
                 " (a section 5 sentence too: on any of these, a passage written without the "
-                "code included)"
+                "code where it names an address the sentence's passage names)"
                 if (passage is not None and passage.kind == SECTION_5)
                 else ""
             )
             + (
-                f", {_OR_KEEP_NAMING} the one you read, quoting its words."
-                if keepable
-                else "; their words state no absence, so no keep rests on them."
+                f", {_OR_KEEP_NAMING} the one you read, quoting its words that state the same "
+                "absence: "
+                + "; ".join(
+                    f"[{safe_finding_value(pid)}] {quoted_value(safe_finding_value(quote))}"
+                    for pid, quote in keeps
+                )
+                + "."
+                if keeps
+                else "; the excerpts shown state no absence, so no keep rests on them."
             )
             if body
             else f". {_ON_A_CANDIDATE}"
@@ -5625,6 +5691,32 @@ def _candidates(sentence: str, by_id: dict[str, Passage], passage: Passage | Non
             )
         )
     )
+
+
+def _keep_quotes(
+    sentence: str, found: Sequence[tuple[str, str]], by_id: dict[str, Passage]
+) -> list[tuple[str, str]]:
+    """Each source of ``found`` with the shortest run of its words a keep of the held body
+    absence ``sentence`` passes every check on (:func:`_quote_problem` with ``body``): its
+    excerpt where that passes, else the shortest of its sentences' runs between clause marks
+    (:func:`_shortest_quote`); a source with none is left out (T-652)."""
+    generic = generic_words(by_id)
+    out: list[tuple[str, str]] = []
+    for pid, excerpt in found:
+        source = by_id.get(pid)
+        if source is None:
+            continue
+
+        def passes(quote: str, source: Passage = source) -> bool:
+            return not _quote_problem(sentence, quote, [source], generic, by_id, body=True)
+
+        if passes(excerpt):
+            out.append((pid, excerpt))
+            continue
+        quotes = [q for part in _sentences_of(source.text) if (q := _shortest_quote(part, passes))]
+        if quotes:
+            out.append((pid, min(quotes, key=len)))
+    return out
 
 
 def _count_violation(number: str, where: str, counts: FailureCounts | None, path: str) -> Violation:
