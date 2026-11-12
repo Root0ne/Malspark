@@ -156,18 +156,18 @@ ORIGINS = {"core", "sharpened", "added", "completion"}
 _EIGHT = {"in part": "partly", "none, family": "noneFamily", "none, this file": "noneFile"}
 # The facts beyond the key that no analysis prints even in part; every other one
 # is printed in part. Pinned by id, so two readings swapped are caught too.
-# "None" requires that no reading at all found a part of the fact, and the earlier
-# adjudicated audit counts as a reading beside the later text and figure readings.
-# That is why a row may stay "in part" although the later readings found nothing:
-# it is the remainder of something an analysis prints, so the page claims less.
+# A fact is "in none" when neither of the two readings of the text nor the
+# reading of every figure found a part of it; otherwise it is "in part".
 _UNPRINTED = {
     ("A", "34"): "none, family",
     ("B", "30"): "none, family",
     ("B", "N9"): "none, family",
     ("B", "#39"): "none, family",
+    ("A", "N16"): "none, family",
     ("B", "N1"): "none, family",
     ("B", "N8"): "none, this file",
     ("C", "1"): "none, this file",
+    ("C", "3"): "none, this file",
     ("C", "26"): "none, this file",
     ("C", "51"): "none, this file",
 }
@@ -421,13 +421,13 @@ def test_the_published_benchmark_numbers_agree_with_one_another() -> None:
         ("page", "  partlyBody: 23,", "  partlyBody: 22,"),
         ("page", "  beyondKey: 37,", "  beyondKey: 38,"),
         ("page", "  beyondKeyStrict: 36,", "  beyondKeyStrict: 37,"),
-        ("page", "  audit: { partly: 28,", "  audit: { partly: 29,"),
+        ("page", "  audit: { partly: 26,", "  audit: { partly: 27,"),
         (
             "page",
             "    ['K5', 'Persistence', 5, 4, 1, 0, 0, 0],",
             "    ['K5', 'Persistence', 4, 4, 1, 0, 0, 0],",
         ),
-        ("page", "none: 9, noneFamily: 5,", "none: 9, noneFamily: 6,"),
+        ("page", "none: 11, noneFamily: 6,", "none: 11, noneFamily: 7,"),
         (
             "page",
             "    ['K6', 'Command and control', 10, 4, 6, 0, 0, 0],",

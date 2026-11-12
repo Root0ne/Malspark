@@ -152,6 +152,7 @@ from malspark.pipeline.validation import (
     CLAIM_DOES_NOT_DESCRIBE_CODE,
     CLAIMS_UNDER_DISPUTES_CODE,
     DECOMPILED_NOT_DESCRIBED_CODE,
+    DESCRIBE_NOT_ASKED,
     LIBRARY_ONLY_CLAIMS_CODE,
     RETRY_DROP_KEPT,
     RETRY_DROP_NOT_ANSWERED,
@@ -170,12 +171,15 @@ from malspark.pipeline.validation import (
     analyst_cut_violation,
     analyst_ledger_ids,
     analyst_repeated_violation,
+    announce_unresolved,
     chunk_cut_unread_sentence,
     claim_block_indexes,
     claims_kept_under_disputes_finding,
     claims_repeated,
     count_claim_blocks,
     decompiled_functions,
+    describe_stands_alone,
+    describe_without_a_turn,
     discarded_retry_row,
     exit_branches_left_out,
     library_only_claims,
@@ -10578,6 +10582,42 @@ class BaseAnalyst(BudgetMeter, ABC):
         if not initial:
             return _settled(isr)
 
+        # A claim whose sentence does not describe its technique opens no turn
+        # of its own (``validation.describe_stands_alone``). Standing alone, its
+        # findings are recorded as not asked and published as findings nobody
+        # was shown, the claims stand as written, and the judge's technique
+        # question asks about each technique no claim naming it describes.
+        # Beside a finding that opens the turn, it is asked there as before.
+        # Asked again wherever a finding that opened the turn is taken out of
+        # it before the question is sent (no tools for the callees question; a
+        # whole-answer question that does not fit the window).
+        def _describe_alone(found: Sequence[Violation]) -> AgentISR | None:
+            if not describe_stands_alone(found):
+                return None
+            recorded = describe_without_a_turn(found)
+            settle_validation_marks(isr, recorded)
+            self.validation_findings.extend(recorded)
+            announce_unresolved(
+                self._event_sink(),
+                agent=str(self.name),
+                stage=str(getattr(self, "pipeline_stage", "") or "analysis"),
+                violations=recorded,
+            )
+            # The rows are the validator's own, marked not asked; why is said in
+            # the log beside them, never written into a row.
+            alone_count = sum(1 for v in recorded if v.code == CLAIM_DOES_NOT_DESCRIBE_CODE)
+            self.logger.info(
+                "Validation: %d describe finding(s) for '%s' stood alone; %s.",
+                alone_count,
+                self.name,
+                DESCRIBE_NOT_ASKED,
+            )
+            return _settled(isr)
+
+        alone = _describe_alone(initial)
+        if alone is not None:
+            return alone
+
         # The turn gets what the loop it follows left, and is not asked at all
         # when that cannot hold an answer at this model's pace: a question after
         # a loop that ended at its time cap used to be handed the whole budget
@@ -10621,6 +10661,9 @@ class BaseAnalyst(BudgetMeter, ABC):
                 BaseAnalyst._state_callees_not_run(  # type: ignore[arg-type]
                     self, NOT_RUN_NO_TOOLS.format(why=no_tools), job
                 )
+                alone = _describe_alone(initial)
+                if alone is not None:
+                    return alone
                 if not initial:
                     return _settled(isr)
         prompt = self._system_prompt("", tools=None if tooled else ())
@@ -10795,6 +10838,13 @@ class BaseAnalyst(BudgetMeter, ABC):
             # to the answer, which is sent back whole.
             shown_repeat = None
             first[:] = [_PriorAnswer(isr)]
+            # The whole-answer questions are recorded above; what is left is
+            # asked only where it opens a turn of its own.
+            alone = _describe_alone(
+                [v for v in initial if v.code not in (ANALYST_CUT_CODE, ANALYST_REPEATED_CODE)]
+            )
+            if alone is not None:
+                return alone
 
         # The loop conversation the answer was written in, which every
         # question of this turn is asked over where the answer is the one it

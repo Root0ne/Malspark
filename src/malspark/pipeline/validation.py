@@ -1527,6 +1527,11 @@ def _negated_after(text: str, start: int, end: int) -> bool:
     return bool({word.lower() for word in words} & (_NEGATIONS | _FOLLOWING_NEGATIONS))
 
 
+# A claim whose sentence shares no term with the technique it carries. It opens
+# no validation turn of its own: beside a finding that opens one it is asked
+# there, with the technique's card; standing alone it is recorded as not asked,
+# and the judge's technique question asks about each technique no claim naming
+# it describes.
 CLAIM_DOES_NOT_DESCRIBE_CODE = "attck.claim_does_not_describe"
 
 # The words of a catalogue name that name no behaviour of their own.
@@ -2311,10 +2316,13 @@ def claim_does_not_describe_violation(
     words read for a parent ("strings XOR-encoded, decoded at run time from
     their blobs" under Obfuscated Files or Information;
     :func:`described_by_its_words`). Only a sentence that shares none of
-    them is asked about, once: "accesses the PEB to bypass sandboxing" under OS
-    Credential Dumping. What the analyst answers stands, and a technique kept
-    after the question is published as the analyst stated it. Nothing is
-    decided without the catalogue's name for the id.
+    them is a finding, once: "accesses the PEB to bypass sandboxing" under OS
+    Credential Dumping. It is asked in a validation turn another finding
+    opens, and opens none of its own (:func:`describe_stands_alone`). What
+    the analyst answers stands, and a technique kept after the question, or
+    never asked, is published as the analyst stated it unless the judge's
+    technique question drops it. Nothing is decided without the catalogue's
+    name for the id.
     """
     text = str(getattr(claim, "claim", "") or "")
     if not text.strip() or attck is None:
@@ -14618,6 +14626,56 @@ def exit_branches_left_out(violations: Sequence[Violation]) -> list[Violation]:
         elif not v.question_only:
             out.append(replace(v, shown="") if v.shown else v)
     return out
+
+
+# Why the describe findings of an answer opened no turn: said in the log beside
+# the rows, never written into a row, which stays the validator's own
+# (:func:`describe_without_a_turn`); the row says it was not asked.
+DESCRIBE_NOT_ASKED = (
+    "not asked: this check opens no validation turn of its own and is put to the analyst "
+    "only beside another finding; the judge's technique question asks about the technique "
+    "when no claim naming it describes it"
+)
+
+
+def describe_stands_alone(violations: Sequence[Violation]) -> bool:
+    """Whether the findings about an answer are the describe check's and nothing that opens a turn.
+
+    A claim whose sentence does not describe its technique
+    (:data:`CLAIM_DOES_NOT_DESCRIBE_CODE`) opens no validation turn of its
+    own: it joins one another finding opens, as the same question with the
+    same card, and standing alone it is recorded
+    (:func:`describe_without_a_turn`) and left to the judge's technique
+    question, which asks about each technique no claim naming it describes
+    (``capability_matrix.judge_questions``). Alone means at least one such
+    finding, and beside it only what a retry may not ask about (a check that
+    could not run) or a question that is no finding (``question_only``, the
+    exit branches that joined it). One pass, by code.
+    """
+    describes = False
+    for v in _askable(violations):
+        if v.question_only:
+            continue
+        if v.code != CLAIM_DOES_NOT_DESCRIBE_CODE:
+            return False
+        describes = True
+    return describes
+
+
+def describe_without_a_turn(violations: Sequence[Violation]) -> list[Violation]:
+    """``violations`` as an answer whose describe findings stood alone records them.
+
+    Each describe finding is the validator's own row, changed only by being
+    marked not asked (``asked=False``): its message, wrapped where the check
+    wrote it, is left as it is. Every other finding is recorded as it is, and
+    a question that is no finding is left out, as
+    :func:`exit_branches_left_out` leaves it. Why no turn was asked is
+    :data:`DESCRIBE_NOT_ASKED`, which the caller logs.
+    """
+    return [
+        replace(v, asked=False) if v.code == CLAIM_DOES_NOT_DESCRIBE_CODE else v
+        for v in exit_branches_left_out(violations)
+    ]
 
 
 def analyst_answer_checks(
