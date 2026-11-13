@@ -48,11 +48,15 @@ import contextlib
 import hmac
 import json
 import logging
+import math
 import os
+import re
 import shutil
 import signal
+import subprocess
 import sys
 import tempfile
+import threading
 from collections.abc import Awaitable, Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -151,6 +155,10 @@ class Program:
     # Variables the program needs, by value; nothing else of this process's
     # environment reaches it but ``PATH``.
     env: Mapping[str, str] = field(default_factory=dict)
+    # The arguments after ``command`` that make the program print its own
+    # version, where its documentation gives them; empty for none, and its
+    # version is then the one its image pins alone (``capabilities``).
+    version_argv: tuple[str, ...] = ()
 
     def absent(self) -> str | None:
         """``None`` when the program can be started, else why it cannot."""
@@ -343,6 +351,182 @@ def json_document(text: str, program: str) -> Any:
 
 
 # ---------------------------------------------------------------------------
+# What the program says its version is
+# ---------------------------------------------------------------------------
+
+# A copy of the platform's version probe (``malspark.tools.capabilities``:
+# ``VersionProbe``, ``run_bounded`` and the helpers below), kept here because
+# this module imports nothing of the platform. The two must behave alike, and
+# one test table runs against both
+# (``tests/unit/servers/test_a_version_probe_answers_alike_on_both_sides.py``).
+VERSION_PROBE_TIMEOUT_S = 5.0
+VERSION_PROBE_MAX_TIMEOUT_S = 30.0
+_PROBE_OUTPUT_BYTES = 64 * 1024
+VERSION_PATTERN = r"\d+(?:\.\d+)+"
+NOT_REPORTED = "not reported"
+
+
+def probe_wall_clock(timeout_s: Any) -> float:
+    """The wall clock a probe is given: the declared one held to the ceiling, else the default."""
+    try:
+        wall = float(timeout_s) if timeout_s is not None else VERSION_PROBE_TIMEOUT_S
+    except (TypeError, ValueError):
+        wall = VERSION_PROBE_TIMEOUT_S
+    if not math.isfinite(wall) or wall <= 0:
+        wall = VERSION_PROBE_TIMEOUT_S
+    return min(max(wall, 0.1), VERSION_PROBE_MAX_TIMEOUT_S)
+
+
+def _kill_group(process: subprocess.Popen[bytes]) -> None:
+    """Kill ``process``'s whole group, and it; whatever is already gone is left."""
+    killpg = getattr(os, "killpg", None)
+    if killpg is not None:
+        with contextlib.suppress(OSError):
+            killpg(process.pid, signal.SIGKILL)
+    with contextlib.suppress(OSError):
+        process.kill()
+
+
+def run_bounded(
+    argv: list[str],
+    wall: float,
+    *,
+    env: Mapping[str, str] | None = None,
+    cwd: str | None = None,
+) -> tuple[int | None, bytes, bytes, str]:
+    """Run ``argv`` for at most ``wall`` seconds, reading each stream up to the bound.
+
+    Answers the exit status (``None`` when it did not exit in time), both
+    streams as far as they were read, and ``""``, ``"timeout"`` or
+    ``"flood"`` (it wrote past the bound and was stopped). The program gets a
+    session and process group of its own, closed standard input, and its
+    group is killed once it has exited or been stopped: a process it started
+    that holds the output open is gone with it, and the read ends there.
+    ``env`` and ``cwd`` are the program's environment and working directory
+    (this process's when ``None``).
+    """
+    process = subprocess.Popen(  # noqa: S603 — a declared argument list, no shell
+        argv,
+        stdin=subprocess.DEVNULL,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        start_new_session=True,
+        env=None if env is None else dict(env),
+        cwd=cwd,
+    )
+    held = {"out": bytearray(), "err": bytearray()}
+    flooded = threading.Event()
+
+    def _pump(stream: Any, into: bytearray) -> None:
+        try:
+            while True:
+                chunk = os.read(stream.fileno(), 65536)
+                if not chunk:
+                    return
+                room = _PROBE_OUTPUT_BYTES - len(into)
+                into.extend(chunk[: max(room, 0)])
+                if len(chunk) > room:
+                    flooded.set()
+                    _kill_group(process)
+                    return
+        except (OSError, ValueError):
+            return
+
+    pumps = [
+        threading.Thread(target=_pump, args=(process.stdout, held["out"]), daemon=True),
+        threading.Thread(target=_pump, args=(process.stderr, held["err"]), daemon=True),
+    ]
+    for pump in pumps:
+        pump.start()
+    ended = ""
+    status: int | None
+    try:
+        status = process.wait(timeout=wall)
+    except subprocess.TimeoutExpired:
+        status, ended = None, "timeout"
+    _kill_group(process)
+    with contextlib.suppress(subprocess.TimeoutExpired):
+        process.wait(timeout=2.0)
+    for pump in pumps:
+        pump.join(timeout=2.0)
+    for stream in (process.stdout, process.stderr):
+        with contextlib.suppress(OSError):
+            if stream is not None:
+                stream.close()
+    if flooded.is_set():
+        ended = "flood"
+    return status, bytes(held["out"]), bytes(held["err"]), ended
+
+
+def _probed_executable(word: str, search: str | None = None) -> tuple[str | None, str]:
+    """The file a probe's first word names, or ``None`` and why it is not run.
+
+    A bare name is looked up on ``search`` (this process's ``PATH`` when ``None``).
+    """
+    if not word.strip():
+        return None, "the probe names no command"
+    named = Path(word)
+    if named.is_absolute():
+        if named.is_file() and os.access(named, os.X_OK):
+            return str(named), ""
+        return None, f"{named.name} is not on PATH"
+    if os.sep in word or (os.altsep and os.altsep in word):
+        return None, f"{named.name} is named by a relative path, which a probe never runs"
+    found = shutil.which(word, path=search)
+    if found is None:
+        return None, f"{named.name} is not on PATH"
+    return found, ""
+
+
+def probe_version(
+    command: tuple[str, ...],
+    pattern: str = VERSION_PATTERN,
+    timeout_s: float | None = None,
+    *,
+    env: Mapping[str, str] | None = None,
+    cwd: str | None = None,
+) -> str:
+    """The version ``command`` reports, else ``"not reported: <reason>"``. Never raises.
+
+    The rules of the platform's version probe (``VersionProbe``): no shell,
+    an absolute path or a bare name looked up on ``PATH`` (``env``'s when
+    given), never a relative path with a separator, a wall clock held to the
+    ceiling, each stream read up to the bound, and the program's process
+    group killed whole once it has answered or run out of time.
+    """
+    if not command:
+        return f"{NOT_REPORTED}: the probe names no command"
+    found, why = _probed_executable(str(command[0]), None if env is None else env.get("PATH"))
+    if found is None:
+        return f"{NOT_REPORTED}: {why}"
+    try:
+        compiled = re.compile(pattern)
+    except re.error:
+        return f"{NOT_REPORTED}: the probe's pattern is not a regular expression"
+    wall = probe_wall_clock(timeout_s)
+    try:
+        status, out, err, ended = run_bounded([found, *command[1:]], wall, env=env, cwd=cwd)
+    except Exception as exc:  # noqa: BLE001 — a version is a label, never a failure
+        # The type alone: an exception's words may carry the host's paths.
+        return f"{NOT_REPORTED}: it could not be run ({type(exc).__name__})"
+    if ended == "timeout":
+        return f"{NOT_REPORTED}: it did not answer within {wall:g} s"
+    if ended != "flood" and status != 0:
+        return f"{NOT_REPORTED}: it exited with status {status}"
+    for said in (out, err):
+        match = compiled.search(said.decode("utf-8", "replace"))
+        if match:
+            value = match.group(1) if compiled.groups else match.group(0)
+            if value and value.strip():
+                return value.strip()[:120]
+    if ended == "flood":
+        return (
+            f"{NOT_REPORTED}: it wrote more than {_PROBE_OUTPUT_BYTES} bytes and named no version"
+        )
+    return f"{NOT_REPORTED}: its output named no version"
+
+
+# ---------------------------------------------------------------------------
 # The sample
 # ---------------------------------------------------------------------------
 
@@ -388,6 +572,38 @@ async def answering(tool: str, work: Callable[[], Awaitable[dict[str, Any]]]) ->
         return tool_error(TOOL_FAILED, f"{type(exc).__name__}: {exc}", tool=tool)
 
 
+# Each program's version as it answered, by the command that asked it: asked
+# once per process, since the program does not change under a running server.
+_VERSIONS: dict[tuple[str, ...], str] = {}
+
+
+def program_version(program: Program) -> str:
+    """What ``program`` says its version is, else ``"not reported: <reason>"``. Never raises.
+
+    Asked with its ``version_argv`` through :func:`probe_version`, with the
+    environment and a scratch directory a run of it gets; a program that
+    declares no version argument, or that is not installed, says so.
+    """
+    if not program.version_argv:
+        return f"{NOT_REPORTED}: the program declares no version argument"
+    # The program's own presence, not what a server adds to it (its rules).
+    absent = Program.absent(program)
+    if absent:
+        return f"{NOT_REPORTED}: {absent}"
+    command = (*program.command, *program.version_argv)
+    if command not in _VERSIONS:
+        env = {
+            "PATH": os.environ.get("PATH", "/usr/local/bin:/usr/bin:/bin"),
+            "LANG": "C.UTF-8",
+            **program.env,
+        }
+        with tempfile.TemporaryDirectory(prefix=f"{program.name}-version-") as scratch:
+            env.setdefault("HOME", scratch)
+            env.setdefault("TMPDIR", scratch)
+            _VERSIONS[command] = probe_version(command, env=env, cwd=scratch)
+    return _VERSIONS[command]
+
+
 def capabilities(
     server: str, program: Program, tools: Iterable[str], version: str = "unknown"
 ) -> dict[str, Any]:
@@ -395,11 +611,23 @@ def capabilities(
 
     Probed now: each of ``tools`` needs ``program``, so each is available
     exactly when the program can be started, and says why not and how to
-    install it when it cannot.
+    install it when it cannot. ``requirements`` is the one requirement they
+    share, in the shape the platform's own servers write it: the program, the
+    version its image pins (``pinned``: ``version``, which is what the server
+    was built for) and the version it says it is (``program_version``).
+    ``version`` is also the manifest's own ``version``: for these servers the
+    program's pinned version, where the platform's own servers give the
+    platform's.
     """
     absent = program.absent()
+    names = list(tools)
+    requirement: dict[str, Any] = {"kind": "binary", "name": program.name}
+    if version and version != "unknown":
+        requirement["pinned"] = version
+    requirement["version"] = program_version(program)
+    requirement["tools"] = names
     cells = []
-    for name in tools:
+    for name in names:
         cell: dict[str, Any] = {
             "name": name,
             "optional_dependency": program.name,
@@ -410,7 +638,7 @@ def capabilities(
         if absent:
             cell["remediation"] = program.install
         cells.append(cell)
-    return {"server": server, "version": version, "tools": cells}
+    return {"server": server, "version": version, "tools": cells, "requirements": [requirement]}
 
 
 # ---------------------------------------------------------------------------

@@ -40,6 +40,10 @@ _DOTNET_ENV = {
     "DOTNET_NOLOGO": "1",
     "DOTNET_SKIP_FIRST_TIME_EXPERIENCE": "1",
 }
+# How ilspycmd says its version: its README's usage text (ICSharpCode.ILSpyCmd/
+# README.md in the ILSpy repository) lists "-v|--version  Show version of
+# ICSharpCode.Decompiler used.", the library this program is a front end of.
+_VERSION_ARGV = ("--version",)
 PROGRAM = (
     sidecar.Program(
         name="ilspycmd",
@@ -47,9 +51,16 @@ PROGRAM = (
         files=(_ASSEMBLY,),
         install=_INSTALL,
         env=_DOTNET_ENV,
+        version_argv=_VERSION_ARGV,
     )
     if _ASSEMBLY
-    else sidecar.Program(name="ilspycmd", command=("ilspycmd",), install=_INSTALL, env=_DOTNET_ENV)
+    else sidecar.Program(
+        name="ilspycmd",
+        command=("ilspycmd",),
+        install=_INSTALL,
+        env=_DOTNET_ENV,
+        version_argv=_VERSION_ARGV,
+    )
 )
 
 TYPES_TOOL = "dotnet_types"

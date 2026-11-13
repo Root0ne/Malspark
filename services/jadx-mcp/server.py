@@ -57,12 +57,16 @@ _JVM_OPTIONS = (
     "-XX:-UsePerfData",
     "-Djdk.util.zip.disableZip64ExtraFieldValidation=true",
 )
+# How JADX says its version: the usage text in its README lists
+# "--version  - print jadx version".
+_VERSION_ARGV = ("--version",)
 PROGRAM = (
     sidecar.Program(
         name="jadx",
         command=("java", *_JVM_OPTIONS, "-cp", _JAR, "jadx.cli.JadxCLI"),
         files=(_JAR,),
         install=_INSTALL,
+        version_argv=_VERSION_ARGV,
     )
     if _JAR
     # JADX's launcher adds what JAVA_OPTS holds to its own options.
@@ -71,6 +75,7 @@ PROGRAM = (
         command=("jadx",),
         install=_INSTALL,
         env={"JAVA_OPTS": " ".join(_JVM_OPTIONS[1:4])},
+        version_argv=_VERSION_ARGV,
     )
 )
 
