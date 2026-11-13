@@ -311,9 +311,11 @@ CODE_OWNED: dict[tuple[str, str], frozenset[str]] = {
     ("reporting/composer_pro.py", "summary_shape_violations"): frozenset({"number"}),
     # The ATT&CK catalogue's own answers about a technique, and the router's
     # own answer about the sample. Neither quotes the producer.
-    ("pipeline/validation.py", "platform_mismatch_message"): frozenset(
+    ("pipeline/validation.py", "_platform_miss"): frozenset(
         {"platforms", "expected_platforms", "domain", "expected_domain"}
     ),
+    # The clause and the remedy ``_platform_miss`` answers, walked as a builder.
+    ("pipeline/validation.py", "platform_mismatch_message"): frozenset({"fact", "use"}),
     # The table's own nouns and row numbers, and the section's own sentence
     # numbers and states, around values each wrapped in the helper where the
     # sentence is built.
@@ -445,6 +447,10 @@ CODE_OWNED_CALLS: frozenset[str] = (
 MESSAGE_BUILDERS: frozenset[str] = frozenset(
     {
         "platform_mismatch_message",
+        "_platform_miss",
+        "platform_mismatch_fact",
+        # The two ways out of a sentence-id question, the id through the helper.
+        "sentence_id_remedy",
         "_weak_alignment",
         "_schema_message",
         "_indicator_problem",

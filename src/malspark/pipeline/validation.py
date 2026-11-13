@@ -788,6 +788,108 @@ def _cites_a_ledger_entry(
     return bool(technique and technique in cited_by_findings)
 
 
+# The words that state a technique id a claim's sentence names as absent,
+# withdrawn or retired, read on either side of the id by :func:`_stated_absent`
+# and by the sentence reading alone (:func:`sentence_technique_violations`):
+# the shared negation reader is left as it is.
+#
+# A predicate after the id, joined to it by a copula ("T1055 is not asserted",
+# "(T1547.001) reading is withdrawn"), a comma ("T1430, not asserted") or a
+# parenthesis ("T1064 (deprecated)"). One whose word also says what a sample
+# does stands only where it ends its clause: "the payload (T1105) was dropped
+# to disk" asserts the drop.
+ABSENT_ID_PREDICATES: tuple[tuple[str, bool], ...] = (
+    ("not asserted", False),
+    ("withdrawn", False),
+    ("not supported", False),
+    ("not adopted", False),
+    ("retired", False),
+    ("deprecated", False),
+    ("revoked", False),
+    ("dropped", True),
+)
+# A verb before the id whose object it is ("the report withdraws T1547.001").
+ABSENT_ID_VERBS: tuple[str, ...] = ("withdraws", "withdrew", "retracts", "retracted")
+# The copulas that join an id, or the noun it names, to its predicate.
+ABSENT_ID_COPULAS: tuple[str, ...] = (
+    "is",
+    "are",
+    "was",
+    "were",
+    "has been",
+    "have been",
+    "had been",
+    "remains",
+    "remain",
+    "stays",
+    "stay",
+)
+# An adverb a copula may carry before the predicate: "is therefore withdrawn".
+ABSENT_ID_ADVERBS: tuple[str, ...] = ("also", "therefore", "thus", "hence", "still")
+
+
+def _alternation(words: Iterable[str]) -> str:
+    """``words`` as one regex alternation, longest first, each space any run of spaces."""
+    ordered = sorted(words, key=len, reverse=True)
+    return "|".join(re.escape(w).replace(r"\ ", r"\s+") for w in ordered)
+
+
+_ABSENT_COPULA = _alternation(ABSENT_ID_COPULAS)
+# What may stand between the id and its predicate: more ids of the same list
+# ("T1055 and T1027 are"), the id's closing bracket or quote, a possessive, and
+# up to three nouns ("entry", "reading", "identifier"), none a copula or a joint.
+_ABSENT_AFTER_LEAD = (
+    rf"(?:\s*(?:,|/|\band\b|\bor\b)\s*{ID_BODY}\b)*"
+    "[)\\]\"'’”]*(?:'s)?"
+    rf"(?:\s+(?!(?:{_ABSENT_COPULA}|and|or|but|not)\b)[A-Za-z][\w-]*){{0,3}}"
+    rf"(?:\s+(?:{_ABSENT_COPULA})(?:\s+(?:{_alternation(ABSENT_ID_ADVERBS)}))?\s+"
+    r"|\s*,\s*|\s*\(\s*)"
+)
+_CLAUSE_END_AFTER = r"(?=\s*(?:[.;:,!?)\]]|$))"
+_ABSENT_AFTER_RE = re.compile(
+    _ABSENT_AFTER_LEAD
+    + "(?:"
+    + "|".join(
+        rf"{_alternation([words])}\b{_CLAUSE_END_AFTER if ends else ''}"
+        for words, ends in ABSENT_ID_PREDICATES
+    )
+    + ")",
+    re.IGNORECASE,
+)
+# The verb, then at most two words ("its earlier") and an opening bracket.
+_ABSENT_BEFORE_RE = re.compile(
+    rf"\b(?:{_alternation(ABSENT_ID_VERBS)})\s+(?:[\w'.-]+\s+){{0,2}}[(\[\"']?$",
+    re.IGNORECASE,
+)
+
+
+def _stated_absent(text: str, start: int, end: int) -> bool:
+    """Whether the sentence states the id at ``text[start:end]`` as absent, withdrawn or retired.
+
+    After the id, one of :data:`ABSENT_ID_PREDICATES`; before it, one of
+    :data:`ABSENT_ID_VERBS` whose object the id is. A sentence that asserts the
+    id ("T1055 is used, and the earlier reading is withdrawn", "T1064 is not
+    retired") states nothing of the kind.
+    """
+    if _ABSENT_AFTER_RE.match(text, end):
+        return True
+    before = text[max(0, start - _NEGATION_WINDOW) : start]
+    breaks = list(_CLAUSE_BREAK_RE.finditer(before))
+    if breaks:
+        before = before[breaks[-1].end() :]
+    return bool(_ABSENT_BEFORE_RE.search(before))
+
+
+def sentence_id_remedy(technique_id: str) -> str:
+    """The two ways out a sentence-id question names, both true to the sentence."""
+    tid = safe_finding_value(technique_id)
+    return (
+        "If the sentence asserts the technique, correct the id; if it names the id without "
+        f"asserting it (a tool's label, a catalogue association), say so plainly: \"{tid} is "
+        'not asserted".'
+    )
+
+
 def sentence_technique_violations(
     text: str,
     carried: set[str],
@@ -804,37 +906,49 @@ def sentence_technique_violations(
     sample's platform (``attck.platform_mismatch``), once per id, on a path
     that names the sentence (``<block>.text.<id>``). Whether the sentence
     describes the id is not asked: a sentence names ids it does not assert, as
-    a tool's metadata, a heading or a catalogue association. An id the
-    sentence negates is not asked either.
+    a tool's metadata, a heading or a catalogue association. Nor is an id the
+    sentence negates (:func:`_is_negated`) or states as absent, withdrawn or
+    retired, before it or after it (:func:`_stated_absent`). The question
+    names two ways out that are both true to the sentence
+    (:func:`sentence_id_remedy`): correct the id, or say plainly that the
+    technique is not asserted.
     """
     out: list[Violation] = []
     seen: set[str] = set()
     for match in TECHNIQUE_WORD_RE.finditer(text or ""):
         tid = match.group(0).upper()
-        if tid in carried or tid in seen or _is_negated(text, match.start(), match.end()):
+        if tid in carried or tid in seen:
+            continue
+        if _is_negated(text, match.start(), match.end()) or _stated_absent(
+            text, match.start(), match.end()
+        ):
             continue
         seen.add(tid)
         where = f"{path}.text.{tid}"
+        remedy = sentence_id_remedy(tid)
         if not _technique_is_known(tid, attck):
             out.append(
                 Violation(
                     code=VALIDITY_CODE,
                     message=(
                         f"The claim sentence names {safe_finding_value(tid)}, which is not in "
-                        f"the MITRE ATT&CK catalogue{_retired_note(tid, attck)}. Name a "
-                        "technique the catalogue holds, or leave the id out of the sentence."
+                        f"the MITRE ATT&CK catalogue{_retired_note(tid, attck)}. "
+                        f"{remedy}"
                     ),
                     path=where,
                     subject=tid,
                 )
             )
             continue
-        mismatch = platform_mismatch_message(tid, attck, scope)
+        mismatch = platform_mismatch_fact(tid, attck, scope)
         if mismatch:
             out.append(
                 Violation(
                     code=PLATFORM_MISMATCH_CODE,
-                    message=f"The claim sentence names {safe_finding_value(tid)}. {mismatch}",
+                    message=(
+                        f"The claim sentence names {safe_finding_value(tid)}, which {mismatch}. "
+                        f"{remedy}"
+                    ),
                     path=where,
                     subject=tid,
                 )
@@ -2845,40 +2959,63 @@ def platform_mismatch_message(
     loads nothing, which is what lets this run inside an analyst's turn.
     ``attck_lookup`` is the fallback for a knowledge object without it.
     """
+    miss = _platform_miss(technique_id, attck, scope)
+    if miss is None:
+        return ""
+    fact, use = miss
+    return f"TECHNIQUE {safe_finding_value(technique_id)} {fact}. {use}, or drop the technique id."
+
+
+def _platform_miss(
+    technique_id: str, attck: Any, scope: tuple[str | None, tuple[str, ...]]
+) -> tuple[str, str] | None:
+    """What :func:`platform_mismatch_message` finds: the clause after the id and the
+    remedy's first words, or ``None`` where the id can apply."""
     expected_domain, expected_platforms = scope
     if expected_domain is None:
-        return ""
+        return None
     lookup = getattr(attck, "attck_scope", None) or getattr(attck, "attck_lookup", None)
     if lookup is None:
-        return ""
+        return None
     try:
         answer = lookup(technique_id)
     except Exception as exc:  # noqa: BLE001 — an unanswered lookup is no mismatch
         logger.debug("validation: the ATT&CK lookup for %s failed (%s).", technique_id, exc)
-        return ""
+        return None
     if not isinstance(answer, dict):
-        return ""
+        return None
     domain = str(answer.get("domain") or "").strip().lower()
     platforms = [str(p) for p in (answer.get("platforms") or []) if str(p).strip()]
     if _pre_only(platforms):
-        return ""
+        return None
     sample_words = f"{expected_domain}-domain, {'/'.join(expected_platforms) or 'any platform'}"
     if domain and domain != expected_domain:
         return (
-            f"TECHNIQUE {safe_finding_value(technique_id)} belongs to the ATT&CK {domain} domain"
+            f"belongs to the ATT&CK {domain} domain"
             f"{f' (platforms {", ".join(platforms)})' if platforms else ''}; this sample is "
-            f"{sample_words}. Use a technique from the sample's domain, or drop the technique id."
+            f"{sample_words}",
+            "Use a technique from the sample's domain",
         )
     if expected_platforms and platforms:
         wanted = {p.lower() for p in expected_platforms}
         if not any(p.lower() in wanted for p in platforms):
             return (
-                f"TECHNIQUE {safe_finding_value(technique_id)} declares the platforms "
-                f"{', '.join(platforms)}; this "
-                f"sample is {sample_words}. Use a technique that applies to it, or drop the "
-                "technique id."
+                f"declares the platforms {', '.join(platforms)}; this sample is {sample_words}",
+                "Use a technique that applies to it",
             )
-    return ""
+    return None
+
+
+def platform_mismatch_fact(
+    technique_id: str, attck: Any, scope: tuple[str | None, tuple[str, ...]]
+) -> str:
+    """:func:`platform_mismatch_message`'s finding without its remedy, or ``""``.
+
+    The clause after the id ("belongs to the ATT&CK mobile domain …; this
+    sample is …"), for a question whose remedy is its own.
+    """
+    miss = _platform_miss(technique_id, attck, scope)
+    return miss[0] if miss else ""
 
 
 def _pre_only(platforms: Sequence[str]) -> bool:

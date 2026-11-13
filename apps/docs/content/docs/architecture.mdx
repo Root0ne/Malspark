@@ -1293,10 +1293,16 @@ Two producers use it:
   the catalogue's two questions the line's ids are asked, whether the
   catalogue holds it (`attck.unknown_id`) and whether it can apply to the
   sample's platform (`attck.platform_mismatch`), on a path that names the
-  sentence (`claims[N].text.<id>`); an id the sentence negates is not asked,
-  nor is whether the sentence describes the id, since a sentence names ids it
-  does not assert (a tool's metadata, a heading, a catalogue association). A
-  sentence id never marks the claim's own technique. Only an analyst's claim
+  sentence (`claims[N].text.<id>`). Not asked: an id the sentence negates; an
+  id it states as not asserted, withdrawn, dropped, not supported, not adopted,
+  retired, deprecated or revoked after the id ("T1055 is not asserted",
+  "(T1547.001) reading is withdrawn", "T1064 (deprecated)"; "dropped" only
+  where it ends its clause), or as withdrawn or retracted before it ("the
+  report withdraws T1547.001"); and whether the sentence describes the id,
+  since a sentence names ids it does not assert (a tool's metadata, a heading,
+  a catalogue association). The question names two ways out, both true to the
+  sentence: correct the id, or say plainly that the technique is not asserted.
+  A sentence id never marks the claim's own technique. Only an analyst's claim
   sentence is read this way: a judge's map reason is read for the mapped id
   alone, and another id it names is not asked. An id that survives the retry keeps the analyst's
   spelling and is flagged `technique_id_valid=False`; the report, the STIX

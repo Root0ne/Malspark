@@ -6,8 +6,11 @@ names beside the line is asked the same two questions, once per block and id,
 on a path that names the sentence (``claims[N].text.<id>``), where the caller
 says the text is a claim's sentence (``claim_sentences``). It is not asked
 whether the sentence describes it: a sentence names ids as metadata, headings
-and associations it does not assert. An id the sentence negates, and an id the
-block's TECHNIQUE line carries, are not asked here. A sentence id never marks
+and associations it does not assert. An id the sentence negates or states as
+absent, withdrawn or retired, before the id or after it, and an id the block's
+TECHNIQUE line carries, are not asked here. The question names two ways out
+that are both true to the sentence: correct the id, or say plainly that the
+technique is not asserted. A sentence id never marks
 the claim's own technique invalid.
 
 Every sentence and id here is made up for the test.
@@ -150,6 +153,54 @@ class TestTheSentenceIds:
         )
 
         assert _sentence(found) == []
+
+
+class TestAnIdTheSentenceStatesAbsent:
+    """An id the sentence states as absent, withdrawn or retired, before it or after
+    it, is not asked; the same id the sentence asserts is."""
+
+    STATED_ABSENT = (
+        "T1000 is not asserted because no Linux call exists.",
+        "Location tracking (T1000) is withdrawn.",
+        "Startup-folder persistence (T1000) is dropped.",
+        "The earlier Startup-folder (T1000) reading is withdrawn and is not asserted here.",
+        "The report's T1000 entry is not supported.",
+        "The report withdraws T1000.",
+        "The scanner's T1999 identifier is not adopted.",
+        "The rule's legacy tag T1999 is retired.",
+        "The rule's tag is T1999 (deprecated).",
+        "The scanner also tags T1000, not asserted.",
+        'The scanner\'s rule label "Location Tracking (T1000)" is not asserted.',
+        "T1999 and T1000 are not asserted.",
+    )
+
+    def test_each_form_is_not_asked(self) -> None:
+        for text in self.STATED_ABSENT:
+            assert _sentence(_found(_claim(text))) == [], text
+
+    ASSERTED = (
+        ("It reads its configuration (T1000), as the scanner asserts.", "T1000"),
+        ("The payload (T1000) was dropped to the temporary folder.", "T1000"),
+        ("The loader (T1000) is dropped and run.", "T1000"),
+        ("T1999 is used, and the earlier reading is withdrawn.", "T1999"),
+        ("The rule's tag T1999 is not retired.", "T1999"),
+    )
+
+    def test_the_same_id_asserted_is_asked(self) -> None:
+        for text, tid in self.ASSERTED:
+            assert [subject for _c, _p, subject in _sentence(_found(_claim(text)))] == [tid], text
+
+    def test_the_question_names_two_ways_out_both_true_to_the_sentence(self) -> None:
+        for text in ("It decodes its payload, as T1999 names.", "It reads its file (T1000)."):
+            (found,) = [v for v in _found(_claim(text)) if ".text." in v.path]
+            tid = found.subject
+
+            assert "correct the id" in found.message
+            assert f'"{tid} is not asserted"' in found.message
+            assert "leave" not in found.message and "drop" not in found.message
+            assert "remove" not in found.message
+            # The example the question gives is itself read as a statement of absence.
+            assert _sentence(_found(_claim(f"{tid} is not asserted."))) == []
 
 
 # ---------------------------------------------------------------------------
