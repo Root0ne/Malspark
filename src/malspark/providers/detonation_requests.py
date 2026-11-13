@@ -373,15 +373,23 @@ def _limits(container: Any) -> str:
     )
 
 
-def offered(container: Any) -> bool:
-    """Whether the job can ever carry a request out, so the tool is handed to agents at all.
+def offered(container: Any, agent: str | None = None) -> bool:
+    """Whether the job can ever carry ``agent``'s request out, so the tool is handed to it at all.
 
-    Not in mock mode, not without a sample file, and only where the job's
-    provider detonates and can pass launch arguments in some way (a field of
-    its own, or a generated launcher). A job whose sandbox cannot is handed
-    no tool that could only refuse.
+    Not in mock mode, not without a sample file, not where the ceiling is one
+    (the job's own detonation fills it), and only where the job's provider
+    detonates and can pass launch arguments in some way (a field of its own,
+    or a generated launcher). For a named agent, only where a step that
+    carries a request out is reachable after its own stage's steps in the
+    team (``pipeline.detonations.carrying_steps``): read from the team's
+    shape, never from the agent's name. A job whose sandbox cannot, or an
+    agent no later step could serve, is handed no tool that could only refuse.
     """
     if getattr(container, "is_mock", False) or not getattr(container, "sample_path", None):
+        return False
+    if ceiling_of(container) <= 1:
+        return False
+    if agent and not _served_after(container, agent):
         return False
     try:
         caps = container.get_sandbox_provider().capabilities
@@ -391,6 +399,24 @@ def offered(container: Any) -> bool:
         return False
     passes = getattr(caps, "can_pass_launch_arguments", False)
     return bool(passes or getattr(caps, "launcher", None))
+
+
+def _served_after(container: Any, agent: str) -> bool:
+    """Whether a step reachable after ``agent``'s own stage can carry its request out."""
+    from malspark.pipeline.detonations import carrying_steps, steps_of
+
+    try:
+        stage = stage_of(container, agent)
+        own = [s for s in steps_of(container) if s.stage == stage]
+        mine = [s for s in own if agent in s.agents] or own
+        if not mine:
+            # An agent no stage of the team lists is placed nowhere: it is
+            # served by any carrying step of the run.
+            return bool(carrying_steps(container, ""))
+        return any(carrying_steps(container, step.name) for step in mine)
+    except Exception as exc:  # noqa: BLE001 — a team that cannot be read offers nothing
+        logger.warning("No later step could be read for %s's requests (%s).", agent, exc)
+        return False
 
 
 def request_tool(container: Any) -> BaseTool:

@@ -4,8 +4,8 @@
 
 ### Changed
 
-- **What changes for every run (T-671).** Every sandbox reader tool, and the network analyst's `sandbox_items`, has an optional `detonation` field in its schema and one sentence about it in its description; the shipped declarations' digest changes (the new `request_detonation` declaration); the settings snapshot gains `sandbox.max_detonations_per_job`; the item-id pattern reads a `d2/`…`d999/` qualifier. Where the job's sandbox can pass launch arguments, agents holding the sandbox source are offered `request_detonation`. A run in which no agent asks records, reports and summarises as before.
+- **What changes for every run (T-671).** Every sandbox reader tool, and the network analyst's `sandbox_items`, has an optional `detonation` field in its schema and one sentence about it in its description; the shipped declarations' digest changes (the new `request_detonation` declaration); the settings snapshot gains `sandbox.max_detonations_per_job`; the item-id pattern reads a `d2/`…`d999/` qualifier. Where the job's sandbox can pass launch arguments, the ceiling is above one and a step that carries a request out is reachable after an agent's own stage in the team, agents holding the sandbox source are offered `request_detonation`. A run in which no agent asks records, reports and summarises as before.
 
 ### Fixed
 
-- **A family the sandbox named in a launcher run says, in the report, what the sandbox judged (T-671).** The rendered family line and the analyst report print `family_note` beside the sandbox as the family's source, and the console's report type carries the field.
+- **A family the sandbox named in a launcher run says, in the report, what the sandbox judged (T-674).** The rendered family line and the analyst report print `family_note` beside the sandbox as the family's source, and the console's report type carries the field.

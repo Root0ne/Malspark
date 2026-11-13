@@ -1170,7 +1170,7 @@ _DETONATION_ARG = (
 )
 
 
-def sandbox_tools(container: Any) -> list[BaseTool]:
+def sandbox_tools(container: Any, agent: str | None = None) -> list[BaseTool]:
     """The sandbox tools, each closed over this job's report.
 
     Built per resolution rather than once per process: the report is the job's,
@@ -1321,15 +1321,15 @@ def sandbox_tools(container: Any) -> list[BaseTool]:
             )
         ),
         items_tool(report, sizer, normalised_by, container=container),
-        *_request_tools(container),
+        *_request_tools(container, agent),
     ]
 
 
-def _request_tools(container: Any) -> list[BaseTool]:
-    """The ``request_detonation`` tool, where the job can carry a request out; none otherwise."""
+def _request_tools(container: Any, agent: str | None = None) -> list[BaseTool]:
+    """The ``request_detonation`` tool, where the job can carry ``agent``'s request out."""
     from malspark.providers.detonation_requests import offered, request_tool
 
-    return [request_tool(container)] if offered(container) else []
+    return [request_tool(container)] if offered(container, agent) else []
 
 
 def _described(func: Any) -> str:

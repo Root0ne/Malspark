@@ -6169,7 +6169,9 @@ class BaseAnalyst(BudgetMeter, ABC):
         from malspark.agents.prompt_fragments import SANDBOX_FAMILY, stamp_source
         from malspark.providers.sandbox_tools import sandbox_tools
 
-        return stamp_source(sandbox_tools(container), SANDBOX_FAMILY, declared="sandbox")
+        return stamp_source(
+            sandbox_tools(container, agent=self.name), SANDBOX_FAMILY, declared="sandbox"
+        )
 
     def _sandbox_items_tool(self) -> list[Any]:
         """The ``sandbox_items`` tool alone, for an analyst that reads the sandbox's evidence.
