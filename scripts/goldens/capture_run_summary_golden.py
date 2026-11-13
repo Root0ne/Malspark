@@ -62,7 +62,7 @@ _REQUIREMENT_ROWS: list[dict[str, Any]] = [
         "kind": "data",
         "name": "data/sigma_rules",
         "named_by": "the default",
-        "pattern": "*.y*ml",
+        "pattern": "*.yml|*.yaml",
         "files": 0,
         "digest_statement": "no file is there",
         "tools": ["sigma_match"],

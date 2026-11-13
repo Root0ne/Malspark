@@ -556,6 +556,49 @@ class TestTheManifest:
         assert row["version"] == capabilities.NOT_READ_YET
         assert time.monotonic() - started < 1.2
 
+    def test_after_the_wait_only_the_versions_are_read_again_not_the_data(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        def _quick() -> str:
+            time.sleep(0.2)
+            return "7.3"
+
+        (tmp_path / "r.yml").write_text("x", encoding="utf-8")
+        corpus = data(str(tmp_path), pattern="*.yml")
+        needs = [ToolNeeds("t", (binary("t668quick", lambda *a: None, version_of=_quick), corpus))]
+        reads: list[str] = []
+        original = capabilities.Requirement.data_facts
+
+        def _counted(self: Any, value: str, named_by: str) -> dict[str, Any]:
+            reads.append(value)
+            return original(self, value, named_by)
+
+        monkeypatch.setattr(capabilities.Requirement, "data_facts", _counted)
+        rows = capabilities.answered_manifest(manifest("x", needs, requirements=False), needs)[
+            "requirements"
+        ]
+        assert {row["kind"]: row for row in rows}["binary"]["version"] == "7.3"
+        assert len(reads) == 1
+
+    def test_another_tool_s_pending_version_does_not_hold_an_answer(self) -> None:
+        def _slow() -> str:
+            time.sleep(3)
+            return "1"
+
+        def _quick() -> str:
+            time.sleep(0.2)
+            return "7.4"
+
+        other = binary("t668other", lambda *a: None, version_of=_slow)
+        capabilities.read_versions_in_background([ToolNeeds("o", (other,))])
+        needs = [ToolNeeds("t", (binary("t668mine", lambda *a: None, version_of=_quick),))]
+        started = time.monotonic()
+        (row,) = capabilities.answered_manifest(manifest("x", needs, requirements=False), needs)[
+            "requirements"
+        ]
+        assert row["version"] == "7.4"
+        assert time.monotonic() - started < 0.7
+
     def test_a_third_party_s_requirements_are_reduced_typed_and_capped(self) -> None:
         junk = "j" * 100_000
         payload = {

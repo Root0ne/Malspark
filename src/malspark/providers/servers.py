@@ -286,8 +286,9 @@ def _run_async_result(coro: Any, label: str, hard_timeout: float) -> Any:
 # How long a server gets to answer ``capabilities``. A server of this
 # repository reads its data's counts and digests for each answer, off its
 # event loop (under a second for the shipped corpora once their digests are
-# kept), and never waits for a binary's version, which it reads in the
-# background from its start (``tools.capabilities.answered_manifest``). An
+# kept), and waits at most about a second in all for a binary's version, which
+# it reads in the background from its start
+# (``tools.capabilities.answered_manifest``). An
 # answer slower than this is a wedged server; the attach goes on without the
 # manifest and says so.
 CAPABILITIES_TIMEOUT_SECONDS = 10.0

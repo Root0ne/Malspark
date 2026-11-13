@@ -310,7 +310,7 @@ string, 256 rows and 256 tools a row; a row that lost anything says what under
 - A `module` row gives the `distribution` that provides the module and its
   installed `version`, or `not installed`.
 - A `data` row (a rule set or signature files) gives the `files` that match its
-  `pattern`, less those under a directory whose full path matches `exclude`
+  `pattern` (alternatives are separated by `|`), less those under a directory whose full path matches `exclude`
   (for capa, `*.git*`, which is exactly capa's own skip rule, so a corpus kept
   under a path such as `capa-rules.git` counts as empty, as capa loads nothing
   from it), their `bytes`, and one
@@ -325,8 +325,9 @@ string, 256 rows and 256 tools a row; a row that lost anything says what under
   never run a second time to ask. For other programs it is the answer to their
   declared version probe. The probe runs with only `PATH`, `LANG` and a
   temporary directory as home and working directory. A platform server reads
-  these versions once, in the background from its start. A manifest read
-  before that says `not reported: not read yet`. A version that could not be
+  these versions once, in the background from its start, and a manifest waits
+  up to about one second in all for those still being read; one not read by
+  then says `not reported: not read yet`. A version that could not be
   read is kept with its reason for ten minutes before it is asked again. A
   program served by a command-line sidecar also gives `pinned`, the version its
   image was built for.

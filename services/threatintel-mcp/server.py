@@ -51,7 +51,7 @@ from malspark.tools.capabilities import (
     CAPABILITIES_TOOL,
     Requirement,
     ToolNeeds,
-    answered_manifest,
+    answer_manifest,
     env,
     manifest,
 )
@@ -132,7 +132,7 @@ TOOL_NEEDS: list[ToolNeeds] = [
     ToolNeeds("get_threatintel_status"),
 ]
 # The cells, probed once at the start; the requirements are read with each
-# answer of the capabilities tool (``answered_manifest``).
+# answer of the capabilities tool (``answer_manifest``).
 CAPABILITIES = manifest("threatintel", TOOL_NEEDS, requirements=False)
 
 # What each tool declares of itself (``malspark.tools.declared_facts``). Every
@@ -212,14 +212,15 @@ _DECLARED: dict[str, dict[str, Any]] = {
 
 
 @mcp.tool(name=CAPABILITIES_TOOL, **_DECLARED["capabilities"])
-def capabilities() -> dict[str, Any]:
+async def capabilities() -> dict[str, Any]:
     """What this server can do on this host.
 
     Each tool, the setting it needs, and whether it is configured.
     """
     # The cells as probed when the server started and the requirements as
-    # they are now, in a deep copy a caller cannot reach in and change.
-    return answered_manifest(CAPABILITIES, TOOL_NEEDS)
+    # they are now, in a deep copy a caller cannot reach in and change, read
+    # off the event loop.
+    return await answer_manifest(CAPABILITIES, TOOL_NEEDS)
 
 
 # ---------------------------------------------------------------------------

@@ -30,11 +30,13 @@ then; the corpus a call ran with is in that call's own answer
 (``data_used``), which the wrapper every tool call goes through writes from
 what the call's own rule loader recorded of the corpus it loaded
 (``recording_data_used``). A binary's version is read once, in the background
-from the server's start, and an answer never waits for it.
+from the server's start, and an answer waits for one still being read for
+``VERSION_WAIT_S`` in all, then says it is not read yet.
 """
 
 from __future__ import annotations
 
+import asyncio
 import contextlib
 import contextvars
 import copy
@@ -70,7 +72,8 @@ CAPABILITIES_TOOL = "capabilities"
 # wall clock (or names one that is not a positive number), and never more than
 # the ceiling. It runs once per process for each executable: a server starts
 # reading its binaries' versions in the background when it builds its manifest,
-# and the capabilities answer never waits for it (``NOT_READ_YET``).
+# and the capabilities answer waits for it ``VERSION_WAIT_S`` in all, else
+# says ``NOT_READ_YET``.
 VERSION_PROBE_TIMEOUT_S = 5.0
 VERSION_PROBE_MAX_TIMEOUT_S = 30.0
 # How long a version that could not be read (a probe that timed out, failed or
@@ -670,8 +673,8 @@ class Requirement:
         except Exception as exc:  # noqa: BLE001 — a fact unread is recorded, never raised
             return {"kind": self.kind, "name": self.name, "statement": type(exc).__name__}
 
-    def _version(self, environ: Mapping[str, str] | None, *, wait: bool = True) -> str:
-        key = (
+    def _version_key(self, environ: Mapping[str, str] | None) -> Any:
+        return (
             "requirement",
             self,
             self.version_probe,
@@ -679,6 +682,9 @@ class Requirement:
             self.resolve,
             None if environ is None else frozenset(environ.items()),
         )
+
+    def _version(self, environ: Mapping[str, str] | None, *, wait: bool = True) -> str:
+        key = self._version_key(environ)
 
         def _read() -> str:
             return self._read_version(environ)
@@ -1138,7 +1144,8 @@ def manifest(
     (``answered_manifest``): data fetched after the start, or changed under a
     running server, is what the answer describes. Building it so also starts
     reading each declared binary's version in the background
-    (``read_versions_in_background``), which no answer waits for.
+    (``read_versions_in_background``), which an answer waits for only briefly
+    (``VERSION_WAIT_S``).
     """
     held: dict[str, Any] = {
         "server": server,
@@ -1164,14 +1171,14 @@ def read_versions_in_background(tools: list[ToolNeeds]) -> None:
 VERSION_WAIT_S = 1.0
 
 
-def _await_versions(deadline: float) -> bool:
-    """Wait until no version is being read or ``deadline`` (``time.monotonic``); whether none is."""
+def _await_versions(keys: set[Any], deadline: float) -> None:
+    """Wait until none of ``keys`` is being read, or ``deadline`` (``time.monotonic``)."""
     while True:
         with _VERSIONS_LOCK:
-            if not _VERSIONS_PENDING:
-                return True
+            if not (keys & _VERSIONS_PENDING):
+                return
         if time.monotonic() >= deadline:
-            return False
+            return
         time.sleep(0.01)
 
 
@@ -1179,20 +1186,42 @@ def answered_manifest(held: Mapping[str, Any], tools: list[ToolNeeds]) -> dict[s
     """A copy of the manifest ``held`` with its ``requirements`` read now (``manifest``).
 
     Deep, so a caller cannot reach in and change what the server says. A
-    binary's version is the one read in the background: the versions still
-    being read are waited for against one shared deadline of ``VERSION_WAIT_S``
-    in all, so the answer carries a version whenever reading it is quick, and
-    one not read by then is ``NOT_READ_YET``. The data's count and digest are
-    read here, so a server calls this off its event loop.
+    binary's version is the one read in the background: the versions of
+    ``tools`` still being read are waited for against one shared deadline of
+    ``VERSION_WAIT_S`` in all, so the answer carries a version whenever reading
+    it is quick, and one not read by then is ``NOT_READ_YET``. Only those
+    rows' versions are read again after the wait. The data's count and digest
+    are read here, so a server calls this off its event loop (``answer_manifest``).
     """
     deadline = time.monotonic() + VERSION_WAIT_S
     out = copy.deepcopy(dict(held))
     rows = requirement_facts(tools, wait=False)
-    if any(row.get("version") == NOT_READ_YET for row in rows):
-        _await_versions(deadline)
-        rows = requirement_facts(tools, wait=False)
+    unread = {
+        (str(row.get("kind")), str(row.get("name"))): row
+        for row in rows
+        if row.get("version") == NOT_READ_YET
+    }
+    if unread:
+        binaries = {
+            (req.kind, req.name): req
+            for tool in tools
+            for req in tool.requires
+            if req.kind == "binary" and (req.kind, req.name) in unread
+        }
+        _await_versions({req._version_key(None) for req in binaries.values()}, deadline)
+        for name, req in binaries.items():
+            unread[name]["version"] = req._version(None, wait=False)
     out["requirements"] = rows
     return out
+
+
+async def answer_manifest(held: Mapping[str, Any], tools: list[ToolNeeds]) -> dict[str, Any]:
+    """:func:`answered_manifest`, read in a worker thread so the event loop stays free.
+
+    Every server answers its ``capabilities`` tool through this: the data's
+    digest and the wait for a version both take time.
+    """
+    return await asyncio.to_thread(answered_manifest, held, tools)
 
 
 # The values of a corpus argument (``Requirement.argument``) that name the

@@ -369,7 +369,7 @@ class TestTheServerGuard:
         assert _sigma_row(asyncio.run(server.capabilities()))["files"] == 1
 
 
-class TestTheCapabilitiesAnswerNeverWaits:
+class TestTheCapabilitiesAnswerWaitsNoLongerThanItsBound:
     def test_it_answers_while_a_version_is_read_and_says_it_is_not_read_yet(
         self, server: Any, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
     ) -> None:
@@ -414,7 +414,7 @@ class TestTheCapabilitiesAnswerNeverWaits:
             seen.append(threading.current_thread())
             return {"server": "analysis", "tools": []}
 
-        monkeypatch.setattr(server, "answered_manifest", _answered)
+        monkeypatch.setattr(capabilities, "answered_manifest", _answered)
 
         async def _go() -> Any:
             await server.capabilities()

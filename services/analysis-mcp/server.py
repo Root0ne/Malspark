@@ -71,7 +71,7 @@ from malspark.tools.binary import carved_name_prefix
 from malspark.tools.capabilities import (
     CAPABILITIES_TOOL,
     ToolNeeds,
-    answered_manifest,
+    answer_manifest,
     data_used,
     manifest,
     recording_data_used,
@@ -104,7 +104,7 @@ YARA_TIMEOUT_S = sidecar_needs.YARA_TIMEOUT_S
 CAPA_TIMEOUT_S: int | None = sidecar_needs.CAPA_TIMEOUT_S
 FLOSS_TIMEOUT_S: int | None = sidecar_needs.FLOSS_TIMEOUT_S
 # The cells, probed once at the start; the requirements are read with each
-# answer of the capabilities tool (``answered_manifest``).
+# answer of the capabilities tool (``answer_manifest``).
 CAPABILITIES = manifest("analysis", TOOL_NEEDS, requirements=False)
 _NEEDS: dict[str, ToolNeeds] = {need.name: need for need in TOOL_NEEDS}
 
@@ -880,8 +880,8 @@ async def capabilities() -> dict[str, Any]:
     # they are now, in a deep copy a caller cannot reach in and change. The
     # data's count and digest are read in a worker thread, off the server's
     # event loop, and a binary's version is the one read in the background
-    # since the start, never waited for (``answered_manifest``).
-    return await asyncio.to_thread(answered_manifest, CAPABILITIES, TOOL_NEEDS)
+    # since the start, waited for about a second in all (``answer_manifest``).
+    return await answer_manifest(CAPABILITIES, TOOL_NEEDS)
 
 
 # ---------------------------------------------------------------------------
