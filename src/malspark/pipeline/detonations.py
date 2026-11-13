@@ -46,7 +46,7 @@ from typing import Any
 from malspark.core.logger import logger
 from malspark.pipeline.events import emit
 from malspark.providers.detonation import AGENT_ORIGIN, DetonationRecord
-from malspark.providers.detonation_requests import ACCEPTED, JOINED, REQUEST_TOOL
+from malspark.providers.detonation_requests import ACCEPTED, JOINED, REQUEST_KIND
 
 DETONATION_STARTED = "detonation_started"
 DETONATION_FINISHED = "detonation_finished"
@@ -183,11 +183,13 @@ def _fill_entry_ids(requests: list[Any], state: Any) -> None:
     """The ledger entry of the call that filed each request, located in the run's ledger."""
     import json
 
+    from malspark.core.declared_reading import kind_of
+
     wanted = {r.name: r for r in requests if not r.entry_id}
     if not wanted:
         return
     for row in (state or {}).get("evidence_ledger") or ():
-        if not isinstance(row, dict) or row.get("tool") != REQUEST_TOOL:
+        if not isinstance(row, dict) or kind_of(row) != REQUEST_KIND:
             continue
         structured = row.get("structured")
         if not isinstance(structured, dict):

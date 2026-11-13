@@ -38,6 +38,9 @@ if TYPE_CHECKING:
     from langchain_core.tools import BaseTool
 
 REQUEST_TOOL = "request_detonation"
+# The kind the tool declares (``core.builtin_declarations``): what its
+# entries are read by.
+REQUEST_KIND = "detonation_request"
 
 # A request's state as the tool answered it.
 ACCEPTED = "accepted"

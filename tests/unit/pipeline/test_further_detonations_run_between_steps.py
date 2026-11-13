@@ -24,6 +24,7 @@ from malspark.providers.detonation import DetonationRecord
 from malspark.providers.detonation_requests import (
     ACCEPTED,
     JOINED,
+    REQUEST_KIND,
     REQUEST_TOOL,
     DetonationRequest,
 )
@@ -121,8 +122,20 @@ class TestTheExecutor:
         _request(container, 3, "dynamic", "-b", "d3", ACCEPTED)
         state = {
             "evidence_ledger": [
-                {"id": "ev_0007", "tool": REQUEST_TOOL, "structured": {"request": "r1"}},
-                {"id": "ev_0008", "tool": "other", "structured": {"request": "r3"}},
+                {
+                    "id": "ev_0007",
+                    "tool": REQUEST_TOOL,
+                    "source": "sandbox",
+                    "facts": {"v": 1, "kind": REQUEST_KIND},
+                    "structured": {"request": "r1"},
+                },
+                {
+                    "id": "ev_0008",
+                    "tool": "other",
+                    "source": "sandbox",
+                    "facts": {"v": 1, "kind": "other"},
+                    "structured": {"request": "r3"},
+                },
             ]
         }
         made = asyncio.run(dt.carry_out(container, state, "negotiation"))
