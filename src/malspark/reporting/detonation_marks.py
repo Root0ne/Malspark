@@ -30,7 +30,6 @@ from malspark.reporting.ledger_projection import (
 )
 from malspark.reporting.models import (
     ConsolidatedIOC,
-    EvidenceIndexRow,
     MalwareReport,
     ObservedIn,
     TTPMapping,
@@ -81,16 +80,16 @@ def entry_marks(ids: Iterable[Any], report: MalwareReport) -> list[ObservedIn]:
 
     An id the evidence index holds is the read it indexes: a further
     detonation's read is marked on its index row (``EvidenceIndexRow.observed_in``,
-    from the entry by ``ledger_projection.observed_mark``), and a read of the
-    same declared kind as such a read among ``ids`` that is no further
-    detonation's is the job's own detonation's. A sandbox item names its
+    from the entry by ``ledger_projection.observed_mark``), and the platform's
+    read of the job's own detonation is the first detonation's
+    (``detonation_reads.own_detonation_read``). A sandbox item names its
     detonation by its qualifier (``d2/reg:3``; an item with none is the job's
     own), with the launch the index marks that detonation's reads with. Any
-    other read, a static tool's, observed no detonation. ``[]`` where no
-    further detonation is among them.
+    other read, a static tool's, and an id the index does not hold observed no
+    detonation. ``[]`` where no further detonation is among them.
     """
+    from malspark.analysis.detonation_reads import own_detonation_read
     from malspark.analysis.sandbox_sections import ITEM_ID_RE, split_qualifier
-    from malspark.reporting import tool_kinds
 
     index = {row.id: row for row in report.evidence_index or ()}
     launches: dict[str, ObservedIn] = {}
@@ -100,36 +99,21 @@ def entry_marks(ids: Iterable[Any], report: MalwareReport) -> list[ObservedIn]:
     if not launches:
         return []
     marks: list[ObservedIn] = []
-    later_kinds: set[str] = set()
-    others: list[EvidenceIndexRow] = []
     for held in ids or ():
         ref = str(held or "").strip()
         found = index.get(ref)
         if found is not None:
-            row = found
-            if row.observed_in:
-                marks.extend(row.observed_in)
-                later_kinds.add(_kind_of(row, tool_kinds))
-            else:
-                others.append(row)
+            if found.observed_in:
+                marks.extend(found.observed_in)
+            elif own_detonation_read(found):
+                marks.append(ObservedIn(detonation=FIRST_DETONATION))
         elif ITEM_ID_RE.fullmatch(ref):
             detonation, _ = split_qualifier(ref)
             if not detonation:
                 marks.append(ObservedIn(detonation=FIRST_DETONATION))
             elif detonation in launches:
                 marks.append(launches[detonation])
-    later_kinds.discard("")
-    marks.extend(
-        ObservedIn(detonation=FIRST_DETONATION)
-        for row in others
-        if _kind_of(row, tool_kinds) in later_kinds
-    )
     return stated_marks(marks)
-
-
-def _kind_of(row: EvidenceIndexRow, tool_kinds: Any) -> str:
-    facts = tool_kinds.facts_of(row)
-    return str(facts.kind or "") if facts is not None else ""
 
 
 def with_value_marks(rows: list[ConsolidatedIOC], report: MalwareReport) -> list[ConsolidatedIOC]:

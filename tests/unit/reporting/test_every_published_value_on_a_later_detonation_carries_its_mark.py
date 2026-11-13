@@ -5,10 +5,13 @@ record ties to them: the entries an analysis statement is found whole in, the
 entries an analyst's listing cites, the sources behind a technique. Where one
 of those is the platform's read of a further detonation an agent asked for
 (``detonation_reads.later_detonation_name``, recorded on its index row), the
-value is marked with that detonation and its launch, whatever its kind; a read
-of the same kind that is not a later one is the job's own detonation's, and a
-read of any other kind (a static tool's) observed no detonation. A run with one
-detonation marks nothing (T-679).
+value is marked with that detonation and its launch, whatever its kind; the
+platform's read of the job's own detonation
+(``detonation_reads.own_detonation_read``) is the first detonation's, whatever
+its kind or none, and any other read (a static tool's, an agent's call of
+another source) observed no detonation. A value's mark is the union over every
+row and every read that puts it on the table. A run with one detonation marks
+nothing (T-679).
 """
 
 from __future__ import annotations
@@ -57,24 +60,42 @@ VALUES = {
     "alternate data stream": ":example7731",
 }
 LATER, OWN, STATIC = "ev_0031", "ev_0021", "ev_0041"
+# The job's own detonation read by an agent through the platform's sandbox
+# source, of a reader that declares no kind; another kind's read of the pack;
+# an agent's call of another source's reader of the sandbox's kind.
+UNKINDED, OTHER_KIND, FOREIGN = "ev_0051", "ev_0061", "ev_0071"
 
 
 def _index(*, later: bool = True, launch: str = ARGS) -> list[EvidenceIndexRow]:
+    from malspark.core.declared_reading import facts_record
+
+    def _row(ref: str, agent: str, source: str, tool: str, **over: Any) -> EvidenceIndexRow:
+        # Each row stores the facts its entry stored, its declared kind among them.
+        facts = facts_record("sandbox" if source.startswith("mcp:") else source, tool)
+        return EvidenceIndexRow(id=ref, agent=agent, source=source, tool=tool, facts=facts, **over)
+
     return [
-        EvidenceIndexRow(id=STATIC, agent="static", tool="floss"),
-        EvidenceIndexRow(id=OWN, agent="pipeline", tool="sandbox_signatures"),
-        EvidenceIndexRow(
-            id=LATER,
-            agent="pipeline",
-            tool="sandbox_signatures",
+        # The pack's static step passes the platform's source and agent test.
+        _row(STATIC, "pipeline", "pack", "floss"),
+        _row(OWN, "pipeline", "pack", "sandbox_signatures"),
+        _row(
+            LATER,
+            "pipeline",
+            "pack",
+            "sandbox_signatures",
             observed_in=[ObservedIn(detonation="d2", launched_with=launch)] if later else [],
         ),
+        _row(UNKINDED, "dynamic", "sandbox", "sandbox_new_view"),
+        _row(OTHER_KIND, "pipeline", "pack", "sandbox_processes"),
+        _row(FOREIGN, "dynamic", "mcp:sandbox_host", "sandbox_signatures"),
     ]
 
 
 def _report(cited: list[str], *, later: bool = True, launch: str = ARGS) -> MalwareReport:
     texts = json.dumps(list(VALUES.values())).lower()
-    entries = EntryTexts(texts={ref: texts for ref in (LATER, OWN, STATIC)})
+    entries = EntryTexts(
+        texts={ref: texts for ref in (LATER, OWN, STATIC, UNKINDED, OTHER_KIND, FOREIGN)}
+    )
     identifiers = [
         HostIdentifier(kind=kind, value=value, use="creates/writes", evidence_refs=cited)
         for kind, value in VALUES.items()
@@ -114,6 +135,21 @@ class TestEveryKind:
         rows = _stated(_report([OWN, LATER]))
         assert {kind: row.observed_in for kind, row in rows.items()} == {
             kind: [D1, D2] for kind in rows
+        }
+
+    @pytest.mark.parametrize("own", [OTHER_KIND, UNKINDED], ids=["other-kind", "no-kind"])
+    def test_the_job_s_own_read_of_any_kind_or_none_is_the_first_detonation_s(
+        self, own: str
+    ) -> None:
+        rows = _stated(_report([own, LATER]))
+        assert {kind: row.observed_in for kind, row in rows.items()} == {
+            kind: [D1, D2] for kind in rows
+        }
+
+    def test_an_agent_s_call_of_another_source_observed_no_detonation(self) -> None:
+        rows = _stated(_report([FOREIGN, LATER]))
+        assert {kind: row.observed_in for kind, row in rows.items()} == {
+            kind: [D2] for kind in rows
         }
 
     def test_a_value_resting_on_no_later_read_carries_none(self) -> None:
@@ -169,11 +205,98 @@ class TestTheSurfaces:
         task = next(d for d in docs if d["logsource"].get("service") == "security")
         assert f"{VALUES['scheduled task']}: {MARK}" in task["description"]
 
-    def test_a_draft_over_a_value_the_job_s_own_read_holds_too_says_nothing(self) -> None:
-        report = MalwareReportBuilder.attach_detection_signatures(_report([OWN, LATER]))
+    @pytest.mark.parametrize("own", [OWN, OTHER_KIND, UNKINDED])
+    def test_a_draft_over_a_value_the_job_s_own_read_holds_too_says_nothing(self, own: str) -> None:
+        report = MalwareReportBuilder.attach_detection_signatures(_report([own, LATER]))
         assert not any(
             "observed in" in r.body for r in report.detection_signatures if r.kind == "sigma"
         )
+
+    def test_a_value_both_detonations_observed_names_both_on_every_surface(self) -> None:
+        from app.services.report_service import ioc_feed_rows
+        from malspark.reporting.misp import build_misp_attributes
+        from malspark.reporting.renderers import MarkdownRenderer
+
+        report = MalwareReportBuilder.attach_detection_signatures(_report([OTHER_KIND, LATER]))
+        both = f"observed in the job's own detonation and in detonation 2, launched with `{ARGS}`"
+        line = next(
+            x
+            for x in MarkdownRenderer().render(report).split("\n")
+            if x.startswith("|") and "ExampleVendor7731" in x
+        )
+        assert both in line, line
+        rows = ioc_feed_rows(report.model_dump(mode="json"))
+        registry = next(r for r in rows if r.get("value") == VALUES["registry key"])
+        assert registry["observed_in"] == [D1.model_dump(), D2.model_dump()]
+        attributes = build_misp_attributes(report, report.consolidated_iocs, owner="u")
+        regkey = next(a for a in attributes if a["value"].endswith("ExampleVendor7731"))
+        assert both in regkey["comment"]
+
+
+def _listed(report: MalwareReport, cited: list[str]) -> MalwareReport:
+    """``report`` with an analyst's listing of its mutex citing ``cited``."""
+    from malspark.reporting.models import EvidenceSection
+
+    report.sections = [
+        EvidenceSection(
+            key="artifact_iocs",
+            title="Indicators",
+            kind="table",
+            columns=["Label", "Value"],
+            rows=[["mutex", VALUES["mutex"]]],
+            source="artifact:dynamic",
+            evidence_ids=cited,
+        )
+    ]
+    return report
+
+
+class TestEveryRowAndRead:
+    """A value's mark is the union over every row and every read that puts it on the table."""
+
+    def test_a_second_adder_s_reads_join_the_first_s(self) -> None:
+        report = _listed(_report([OWN]), [LATER])
+        (row,) = [r for r in build_consolidated_iocs(report) if r.value == VALUES["mutex"]]
+        assert row.observed_in == [D1, D2]
+        # Every other field is the first adder's.
+        assert (row.source, row.evidence_ids) == ("analysis", [OWN])
+
+    def test_a_second_adder_on_one_detonation_marks_nothing(self) -> None:
+        report = _listed(_report([OWN], later=False), [LATER])
+        (row,) = [r for r in build_consolidated_iocs(report) if r.value == VALUES["mutex"]]
+        assert "observed_in" not in row.model_dump()
+
+    def test_a_row_that_replaces_a_refused_row_keeps_its_marks(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from malspark.reporting.call_bindings import BOUND_SOURCE
+        from malspark.reporting.models import BoundValue
+        from malspark.reporting.renderers import stix_renderer
+
+        # No adder before the analysis's rows both cites a read and is refused
+        # under a verdict the analysis publishes under; the refusal is set here.
+        asked = stix_renderer.publish_answer
+
+        def _answer(kind: str, value: str, source: Any = None, *args: Any, **kw: Any) -> str:
+            if source == BOUND_SOURCE:
+                return "no: refused"
+            return asked(kind, value, source, *args, **kw)
+
+        monkeypatch.setattr(stix_renderer, "publish_answer", _answer)
+        report = _report([OWN])
+        report.bound_values = [
+            BoundValue(
+                value=VALUES["mutex"],
+                kind="mutex",
+                role="r",
+                api="CreateMutexW",
+                argument=3,
+                entry=LATER,
+            )
+        ]
+        (row,) = [r for r in build_consolidated_iocs(report) if r.value == VALUES["mutex"]]
+        assert (row.source, row.evidence_ids) == ("analysis", [OWN])
+        assert row.observed_in == [D1, D2]
 
 
 class TestTechniques:
@@ -185,10 +308,18 @@ class TestTechniques:
                 TTPMapping(technique_id="T1486", technique_name="x", sources=[STATIC, LATER]),
                 TTPMapping(technique_id="T1027", technique_name="y", sources=[OWN, LATER]),
                 TTPMapping(technique_id="T1055", technique_name="z", sources=[OWN, STATIC]),
+                TTPMapping(technique_id="T1112", technique_name="w", sources=[OTHER_KIND, LATER]),
+                TTPMapping(technique_id="T1543", technique_name="v", sources=[UNKINDED, LATER]),
             ],
         )
         with_technique_marks(report.ttp_mappings, report)
-        assert [m.observed_in for m in report.ttp_mappings] == [[D2], [D1, D2], []]
+        assert [m.observed_in for m in report.ttp_mappings] == [
+            [D2],
+            [D1, D2],
+            [],
+            [D1, D2],
+            [D1, D2],
+        ]
 
 
 class TestTheIndex:
@@ -215,3 +346,33 @@ class TestTheIndex:
         assert entry_marks(["reg:3"], report) == []
         # A detonation the index states no read of has no launch to name.
         assert entry_marks(["d3/reg:3"], report) == []
+
+
+class TestTheOneRule:
+    """One module decides both questions: a read of a later detonation, a read of the job's own."""
+
+    @pytest.mark.parametrize(
+        ("entry", "own"),
+        [
+            ({"source": "pack", "agent": "pipeline", "tool": "sandbox_processes"}, True),
+            ({"source": "pack", "agent": "pipeline", "tool": "sandbox_sections"}, True),
+            ({"source": "sandbox", "agent": "dynamic", "tool": "sandbox_new_view"}, True),
+            ({"source": "pack", "agent": "pipeline", "tool": "floss"}, False),
+            ({"source": "pack", "agent": "dynamic", "tool": "sandbox_processes"}, False),
+            ({"source": "mcp:sbx", "agent": "dynamic", "tool": "sandbox_signatures"}, False),
+            ({"agent": "pipeline", "tool": "sandbox_signatures"}, False),
+            (
+                {
+                    "source": "sandbox",
+                    "agent": "dynamic",
+                    "tool": "sandbox_processes",
+                    "structured": {"detonation": "d2", "launched_with": ARGS},
+                },
+                False,
+            ),
+        ],
+    )
+    def test_a_read_of_the_job_s_own_detonation(self, entry: dict[str, Any], own: bool) -> None:
+        from malspark.analysis.detonation_reads import own_detonation_read
+
+        assert own_detonation_read(entry) is own

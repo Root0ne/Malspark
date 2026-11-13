@@ -776,6 +776,10 @@ def _build_consolidated_iocs(report: MalwareReport) -> list[ConsolidatedIOC]:
     emulated = emulation_record(report)
     # The run's ledger as the report indexes it: a row carries only ids it holds.
     index = {row.id: at for at, row in enumerate(report.evidence_index)}
+    # Each row by its key, with every read that put its value on the table:
+    # its mark is theirs as one (``detonation_marks.entry_marks``).
+    added: dict[tuple[str, str], ConsolidatedIOC] = {}
+    reads: dict[tuple[str, str], list[str]] = {}
 
     def _add(
         ioc_type: str,
@@ -792,9 +796,16 @@ def _build_consolidated_iocs(report: MalwareReport) -> list[ConsolidatedIOC]:
         if not value:
             return
         key = (ioc_type, value.lower())
+        evidence = [*evidence]
         if key in seen:
+            # The first adder's row stands; this adder's reads join its mark.
+            held = added.get(key)
+            if held is not None and evidence:
+                reads[key] = [*reads.get(key, ()), *evidence]
+                held.observed_in = entry_marks(reads[key], report)
             return
         seen.add(key)
+        reads[key] = evidence
         rows.append(
             ConsolidatedIOC(
                 type=ioc_type,
@@ -811,6 +822,7 @@ def _build_consolidated_iocs(report: MalwareReport) -> list[ConsolidatedIOC]:
                 observed_in=entry_marks(evidence, report),
             )
         )
+        added[key] = rows[-1]
 
     def _from_strings(kind: str, value: str) -> str:
         return publish_answer(
@@ -1036,7 +1048,10 @@ def _build_consolidated_iocs(report: MalwareReport) -> list[ConsolidatedIOC]:
             held_row.published = answer
             held_row.context = held_row.description = "stated by the analysis"
             held_row.evidence_ids = _in_the_index(stated.held_in or (), index)
-            held_row.observed_in = entry_marks(stated.held_in or (), report)
+            # The replaced row's reads stay behind its mark.
+            held_key = (held_row.type, held_row.value.lower())
+            reads[held_key] = [*reads.get(held_key, ()), *(stated.held_in or ())]
+            held_row.observed_in = entry_marks(reads[held_key], report)
             by_key[slot] = held_row
             continue
         before = len(rows)
