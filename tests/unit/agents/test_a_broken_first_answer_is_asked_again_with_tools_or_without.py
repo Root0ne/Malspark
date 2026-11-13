@@ -24,6 +24,7 @@ from malspark.agents.composition import ResolvedAgent
 from malspark.agents.configurable_analyst import ConfigurableAnalyst
 from malspark.agents.prompt_fragments import no_tool_call_question
 from malspark.pipeline.validation import FEEDBACK_PREAMBLE
+from malspark.schemas.evidence import EvidenceCounter
 
 BROKEN = "The sample looks interesting but I will not list findings."
 VALID = (
@@ -86,6 +87,9 @@ def test_a_valid_second_answer_is_the_analyst_s_claims(tools: list[Any], questio
         llm=llm,
     )
     analyst = ConfigurableAnalyst("triage", resolved, llm)
+    # The job's counter, which issued the entry the valid answer cites.
+    analyst.evidence_counter = EvidenceCounter()
+    analyst.evidence_counter.next_id()
 
     isr = analyst.safe_analyze_isr("Target File: sample.exe")
 

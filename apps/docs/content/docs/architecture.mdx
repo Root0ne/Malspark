@@ -1281,7 +1281,42 @@ Two producers use it:
 * **Analysts** (`agents/base_agent.py`) — `validate_isr` reports a technique id
   the ATT&CK catalogue does not have (with up to three suggestions from
   `tools.knowledge.resolve_technique`), a confidence outside `[0, 1]`, and a
-  claim citing no evidence. An id that survives the retry keeps the analyst's
+  claim citing no evidence. Every id on a claim's EVIDENCE line has to be one
+  the job issued: the job's evidence counter issues `ev_0001` up to its count
+  to every agent, and an id past that count is `isr.unissued_evidence`, asked
+  once per claim block. An id another analyst's call took is the job's and is
+  not asked about; item ids and ids the claim sentence names outside the line
+  are not read. A technique claim whose line names only such ids is asked
+  `isr.ungrounded_technique`, which says so, instead of a second question. The
+  replay of a stored run reads the count off the run's whole ledger. A
+  technique id the claim's sentence names beside its TECHNIQUE line is asked
+  the catalogue's two questions the line's ids are asked, whether the
+  catalogue holds it (`attck.unknown_id`) and whether it can apply to the
+  sample's platform (`attck.platform_mismatch`), on a path that names the
+  sentence (`claims[N].text.<id>`). Not asked: an id it states as not
+  asserted, withdrawn, dropped, not supported, not adopted, retired,
+  deprecated or revoked after the id ("T1055 is not asserted", "(T1547.001)
+  reading is withdrawn", "T1064 (deprecated)"), or as withdrawn or retracted
+  before it ("the report withdraws T1547.001"), where the sentence does
+  nothing else with it: the statement ends its clause after at most a short
+  declared tail ("by the scanner", "here", "as a label", "in favour of
+  T1059"), one more absent id or predicate after "and"/"or", and a reason
+  ("because …", "(no GPS API)"; "dropped" takes none of these), the id is the
+  predicate's subject, and a statement set off by a comma or a parenthesis
+  ends the sentence or its clause; and an id the sentence negates. Asked: an
+  id the sentence states absent and then turns from or goes on about, even
+  where it also negates it ("but", "yet", "however", "though", "then", "now",
+  or a next clause opening with "it" or "the sample", "the code" and the
+  like). The reading is lexical: it does not see an assertion inside a reason
+  or in a following clause with none of those words, and a negation before
+  the statement is read as a negation is. Nor is it asked whether the
+  sentence describes the id,
+  since a sentence names ids it does not assert (a tool's metadata, a heading,
+  a catalogue association). The question names two ways out, both true to the
+  sentence: correct the id, or say plainly that the technique is not asserted.
+  A sentence id never marks the claim's own technique. Only an analyst's claim
+  sentence is read this way: a judge's map reason is read for the mapped id
+  alone, and another id it names is not asked. An id that survives the retry keeps the analyst's
   spelling and is flagged `technique_id_valid=False`; the report, the STIX
   minting step and the FP linter read the flag. The first answer goes back into
   the retry's conversation as the model wrote it (`AgentISR.answer_text`: its
@@ -1316,7 +1351,12 @@ Two producers use it:
   signature is the usual one) and `verdict.unsupported_malware` for the entries
   that establish Malware (a reputation entry, a rule hit); either way the
   alternative offered is Suspicious with an inconclusive rationale, the judge
-  is asked once, and the second answer is kept as given. Both rules run over
+  is asked once, and the second answer is kept as given. Every entry id the
+  verdict names, in its assessment or any object, has to be one the job
+  issued: an id past the count of the job's evidence counter, read when the
+  bundle is checked as an analyst's answer reads it, is
+  `verdict.unissued_evidence`, asked once; an indicator's pattern and a code
+  span are not read. These rules run over
   the bundle that is actually reported, on every way the round can end — a
   bundle, a malformed answer the retry fixed, prose the model stood by twice,
   JSON that is not a bundle, and no answer at all. Where the loop ran them they
@@ -1331,9 +1371,17 @@ Two producers use it:
   block's heading such as `[BINARY FACTS]`, a source's name, or an `ev_` id
   the ledger never issued. The citable ids are the run's ledger ids, never ids
   read out of prompt text — a decoded string can carry any `[ev_NNNN]` — and the
-  question's sentence names them. Only prose is read — a section's `body` or
-  `text`, the narrative's summary and key findings — never a record field such
-  as a C2 channel's packet layout or a flag, and never a code span. An ATT&CK or
+  question's sentence names them. Only prose is read for brackets — a
+  section's `body` or `text`, the narrative's summary and key findings — never
+  a record field such as a C2 channel's packet layout or a flag, and never a
+  code span. A composed section is the model's own in every field, so its
+  answer is also read for entry ids: each `ev_` id written anywhere in it, a
+  citing field or a record's text, bracketed or not, that the run did not
+  issue is asked under the same code, once per id, naming the id as written
+  and the ids the answer may cite in its place. A code span and an item id are not
+  read, a configuration or identifier row that its own check asks about for
+  citing no entry is left to that question, and the narrative's key findings
+  keep their own check (`narrative.ungrounded_finding`). An ATT&CK or
   MBC id or an IPv6 literal in brackets is an identifier, not a citation; a
   markdown link and a bracket that is part of a token (`[len][payload]`,
   `[Content_Types].xml`, `[System.Convert]::`) are neither. A numbered

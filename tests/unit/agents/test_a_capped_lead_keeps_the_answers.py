@@ -60,8 +60,15 @@ def _report_for(specialist: str, n: int) -> str:
     )
 
 
-def _team(*, lead_answers: list[Any], asks: tuple[str, ...] | None = None) -> _Container:
-    """A lead that asks, then answers with whatever it was given."""
+def _team(
+    *, lead_answers: list[Any], asks: tuple[str, ...] | None = None, pack: bool = False
+) -> _Container:
+    """A lead that asks, then answers with whatever it was given.
+
+    ``pack`` issues the entry every answer cites from the job's counter before
+    the stage, as a triage pack's entry is, so a specialist's answer is not
+    asked about an id the job never issued.
+    """
     roster = asks if asks is not None else ("helper",) * ASKS
     boss_script: list[Any] = [
         _call(tool_name(specialist), {"task": f"question {n}", "context": ""}, f"ask_{n}")
@@ -95,7 +102,10 @@ def _team(*, lead_answers: list[Any], asks: tuple[str, ...] | None = None) -> _C
             }
         }
     )
-    return _Container(settings, models=models, tools={})
+    container = _Container(settings, models=models, tools={})
+    if pack:
+        container._counter.next_id()
+    return container
 
 
 def _lead(container: _Container) -> Any:
@@ -109,7 +119,7 @@ def _lead(container: _Container) -> Any:
 
 def _capped() -> Any:
     """A lead whose own turn dies after the asks are answered."""
-    container = _team(lead_answers=[TimeoutError("the loop exceeded its hard cap")])
+    container = _team(lead_answers=[TimeoutError("the loop exceeded its hard cap")], pack=True)
     return _lead(container)
 
 
@@ -221,7 +231,7 @@ class TestTheShapeTheAuditSaw:
         own, so what the loop has to be shown is this team's settings.
         """
         container = _team(
-            lead_answers=[TimeoutError("the loop exceeded its hard cap")], asks=AUDITED
+            lead_answers=[TimeoutError("the loop exceeded its hard cap")], asks=AUDITED, pack=True
         )
         monkeypatch.setattr(base_agent, "get_settings", lambda: container.config)
         return container

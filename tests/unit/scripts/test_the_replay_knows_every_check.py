@@ -111,7 +111,7 @@ def test_the_analyst_calls_the_shared_composition(module: Any, name: str, shared
 def test_the_judge_calls_the_shared_composition() -> None:
     source = inspect.getsource(judge_agent.JudgeAgent.give_verdict)
     assert "verdict_bundle_checks(" in source and "VerdictCheckInputs(" in source
-    assert "verdict_checks(bundle, inputs)" in source
+    assert "verdict_checks(bundle, _inputs_now())" in source
 
 
 class _Analyst(BaseAnalyst):

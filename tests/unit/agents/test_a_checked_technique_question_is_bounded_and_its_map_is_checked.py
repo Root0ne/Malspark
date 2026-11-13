@@ -40,6 +40,7 @@ from malspark.extractors.capability_matrix import (
     MAX_CHECKED_QUESTIONS,
     NO_CATALOGUE_FINDING,
     TechniqueQuestion,
+    build_capability_matrix,
     checked_question_line,
     judge_questions,
     settle_mapped_techniques,
@@ -52,6 +53,7 @@ from malspark.schemas.evidence import LedgerEntry
 from malspark.schemas.isr_models import AgentISR, ClaimEvidence
 from malspark.schemas.stix_models import (
     EVIDENCE_REFS_PROPERTY,
+    TECHNIQUE_REVIEW_PROPERTY,
     Bundle,
     CheckedDecision,
     TechniqueDecision,
@@ -378,6 +380,39 @@ class TestAMapRestsOnMoreThanItsLookup:
 
     def test_the_question_says_a_lookup_is_not_an_entry_it_rests_on(self) -> None:
         assert "(a lookup of it) is not an entry it rests on" in TECHNIQUE_MAP_FORM
+
+
+class TestAMapReasonIsNoClaimSentence:
+    """A map's reason is read as the claim's sentence for the absence and describe
+    questions; an id it names beside the mapped one is no claim of the judge's and
+    gets no question of its own."""
+
+    REASON = f"{DESCRIBES}; the scanner's rule metadata also tags T1430, and its legacy tag T1064"
+
+    def test_a_map_whose_reason_names_an_out_of_scope_and_a_retired_id_stands(self) -> None:
+        out = _settled(_map("ev_0004", "ev_0005", reason=self.REASON), _ledger())
+
+        assert (out.decision, out.declined_by_check, out.check_finding) == ("map", "", "")
+
+    def test_the_capability_matrix_publishes_it(self) -> None:
+        review = settle_mapped_techniques(
+            TechniqueReview(
+                asked=[CHECKED],
+                checked_decisions=[_map("ev_0004", "ev_0005", reason=self.REASON)],
+            ),
+            _bundle().model_dump(),
+            _isrs(),
+            WINDOWS,
+            ledger=_ledger(),
+            attck=knowledge,
+        )
+        bundle = {**_bundle().model_dump(), TECHNIQUE_REVIEW_PROPERTY: review.model_dump()}
+
+        _cells, mappings = build_capability_matrix(
+            stix_output=bundle, isr_reports=_isrs(), sample=WINDOWS
+        )
+
+        assert CHECKED in {m.technique_id.upper() for m in mappings}
 
 
 class TestWithNoCatalogue:

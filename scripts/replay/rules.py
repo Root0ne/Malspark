@@ -573,6 +573,23 @@ def _parse_answer(run: _Run, agent: str, domain: str, text: str, revision_round:
     return analyst._drain_findings(isr)
 
 
+def _issued(run: _Run) -> int | None:
+    """How many entry ids the job's counter issued, read off the run's whole ledger.
+
+    The counter issues ``ev_0001`` up to its count and the ledger keeps every
+    entry, so the highest id the ledger holds is the count; ``None`` for a run
+    that stored no ledger, of which nothing can be said.
+    """
+    from malspark.schemas.evidence import ENTRY_ID_RE
+
+    numbers = [
+        int(text[3:])
+        for text in (str(entry.id).strip() for entry in run.ledger)
+        if ENTRY_ID_RE.fullmatch(text)
+    ]
+    return max(numbers) if numbers else None
+
+
 def _analyst_checks(
     run: _Run, isr: Any, own: _Own, techniques: bool, *, whole: bool, agent: str = ""
 ) -> list[Any]:
@@ -631,6 +648,7 @@ def _analyst_checks(
         alignment=None,
         alignment_threshold=float(_setting("validation.alignment_threshold")),
         alignment_margin=float(_setting("validation.alignment_margin")),
+        issued=_issued(run),
     )
     callees = None
     if whole and agent and agent not in run.callees_asked:
@@ -1200,6 +1218,7 @@ def _judge(run: _Run, judged: _Judged) -> dict[str, Any]:
         sandbox_facts=judge_sandbox_facts(run.ledger, run.isrs, None, sample=dict(run.identity)),
         analyst_claims=claims,
         ledger_ids=ledger_ids,
+        issued=_issued(run),
     )
     asked = verdict_bundle_checks(
         bundle, shape, inputs, origins=where, written=written[0] if written else None
@@ -2422,7 +2441,7 @@ def _composer(run: _Run, built: _Built) -> dict[str, Any]:
                 schema, payload, code="composer.schema", answer=json.dumps(payload)
             ),
             *v.section_capability_violations(payload, grounding),
-            *v.citation_violations(payload, citable, prose=prose, items=items),
+            *v.citation_violations(payload, citable, prose=prose, items=items, records=True),
             *v.wrong_entry_citations(payload, entries, prose=prose),
             *v.misstated_entry_contents(payload, entries, prose=prose),
             *v.ledger_absence_contradictions(payload, entries),

@@ -311,9 +311,11 @@ CODE_OWNED: dict[tuple[str, str], frozenset[str]] = {
     ("reporting/composer_pro.py", "summary_shape_violations"): frozenset({"number"}),
     # The ATT&CK catalogue's own answers about a technique, and the router's
     # own answer about the sample. Neither quotes the producer.
-    ("pipeline/validation.py", "platform_mismatch_message"): frozenset(
+    ("pipeline/validation.py", "_platform_miss"): frozenset(
         {"platforms", "expected_platforms", "domain", "expected_domain"}
     ),
+    # The clause and the remedy ``_platform_miss`` answers, walked as a builder.
+    ("pipeline/validation.py", "platform_mismatch_message"): frozenset({"fact", "use"}),
     # The table's own nouns and row numbers, and the section's own sentence
     # numbers and states, around values each wrapped in the helper where the
     # sentence is built.
@@ -347,10 +349,12 @@ CODE_OWNED: dict[tuple[str, str], frozenset[str]] = {
     # The repeated values joined by ``_named_ids``, which passes each one
     # through ``safe_finding_value`` and bounds how many are named.
     ("pipeline/validation.py", "repeated_item_violations"): frozenset({"named"}),
+    # The unissued ids joined by ``_named_ids`` in the same way.
+    ("pipeline/validation.py", "unissued_sentence"): frozenset({"named"}),
     # The evidence ids the answer was shown, each one matched as ``ev_`` and
     # digits before this function joins them. The cited item itself is the
     # producer's and is wrapped where it is quoted.
-    ("pipeline/validation.py", "citation_violations"): frozenset({"remedy"}),
+    ("pipeline/validation.py", "citation_violations"): frozenset({"remedy", "in_its_place"}),
     # How many hexadecimal characters a digest of a named algorithm has, read
     # out of this codebase's own table.
     ("pipeline/validation.py", "_indicator_problem"): frozenset({"expected"}),
@@ -427,6 +431,11 @@ CODE_OWNED_CALLS: frozenset[str] = (
             # ``_claim_lines`` answers with this module's own words for the lines
             # a claim is written with, with or without its TECHNIQUE line.
             "_claim_lines",
+            # ``format_entry_id`` answers the counter's own spelling of a number.
+            "format_entry_id",
+            # ``unissued_sentence`` is walked as a message builder below: each id
+            # it names goes through the helper inside it.
+            "unissued_sentence",
         }
     )
     | BUILTIN_ANSWERS
@@ -440,6 +449,10 @@ CODE_OWNED_CALLS: frozenset[str] = (
 MESSAGE_BUILDERS: frozenset[str] = frozenset(
     {
         "platform_mismatch_message",
+        "_platform_miss",
+        "platform_mismatch_fact",
+        # The two ways out of a sentence-id question, the id through the helper.
+        "sentence_id_remedy",
         "_weak_alignment",
         "_schema_message",
         "_indicator_problem",
@@ -453,6 +466,9 @@ MESSAGE_BUILDERS: frozenset[str] = frozenset(
         # or a tool wrote goes through the helper.
         "_functions_not_described",
         "exits_question",
+        # The cited ids a job never issued, each through the helper, and the
+        # span of ids the job's own counter issued.
+        "unissued_sentence",
     }
 )
 

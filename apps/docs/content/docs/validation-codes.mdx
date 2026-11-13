@@ -46,7 +46,7 @@ not prove the test makes the platform raise it. The tests are not listed here:
 one nothing raises and stored runs carry; the comment on that
 name says what reads it.
 
-**129 codes in 12 families:** [agreement](#agreement) 18 · [attck](#attck) 8 · [attribution](#attribution) 1 · [composer](#composer) 4 · [isr](#isr) 15 · [narrative](#narrative) 5 · [question](#question) 9 · [report](#report) 19 · [stix](#stix) 32 · [tool](#tool) 1 · [validation](#validation) 1 · [verdict](#verdict) 16. 14 code positions the register could not resolve are [listed at the end](#unresolved-code-positions).
+**131 codes in 12 families:** [agreement](#agreement) 18 · [attck](#attck) 8 · [attribution](#attribution) 1 · [composer](#composer) 4 · [isr](#isr) 16 · [narrative](#narrative) 5 · [question](#question) 9 · [report](#report) 19 · [stix](#stix) 32 · [tool](#tool) 1 · [validation](#validation) 1 · [verdict](#verdict) 17. 14 code positions the register could not resolve are [listed at the end](#unresolved-code-positions).
 
 ## agreement
 
@@ -238,17 +238,17 @@ A parent technique beside its published sub-technique says nothing the sub-techn
 
 ### `attck.platform_mismatch`
 
-No comment names its meaning, and `malspark.pipeline.validation:validate_isr` passes more than one message for it: see the messages there.
+No comment names its meaning; the message at `malspark.pipeline.validation:sentence_technique_violations` reads: "The claim sentence names \<tid>, which \<mismatch>. \<remedy>"
 
-- **Raised at** `malspark.pipeline.validation:validate_isr`, `malspark.pipeline.validation:validate_verdict_bundle`
+- **Raised at** `malspark.pipeline.validation:sentence_technique_violations`, `malspark.pipeline.validation:validate_isr`, `malspark.pipeline.validation:validate_verdict_bundle`
 - **Constant** `malspark.pipeline.validation:PLATFORM_MISMATCH_CODE`
 - **Docs** [Architecture](/docs/architecture/)
 
 ### `attck.unknown_id`
 
-No comment names its meaning; the message at `malspark.pipeline.validation:validate_isr` reads: "TECHNIQUE \<tid> is not in the MITRE ATT&CK catalogue\<retired_note>.\<hint> Use one of them, or omit the technique id."
+No comment names its meaning; the message at `malspark.pipeline.validation:sentence_technique_violations` reads: "The claim sentence names \<tid>, which is not in the MITRE ATT&CK catalogue\<retired_note>. \<remedy>"
 
-- **Raised at** `malspark.pipeline.validation:validate_isr`
+- **Raised at** `malspark.pipeline.validation:sentence_technique_violations`, `malspark.pipeline.validation:validate_isr`
 - **Passes on** `malspark.agents.base_agent:BaseAnalyst._validation_turn`, `malspark.pipeline.nodes:make_judge_node.node_fn`
 - **Constant** `malspark.pipeline.validation:VALIDITY_CODE`
 - **Docs** [Architecture](/docs/architecture/), [Validation and feedback](/docs/concepts/validation/)
@@ -419,6 +419,14 @@ A technique nothing in the run establishes: a claim's technique cites no ledger 
 - **Constant** `malspark.pipeline.validation:UNGROUNDED_TECHNIQUE_CODE`
 - **Docs** [Architecture](/docs/architecture/), [Evidence ledger](/docs/concepts/ledger/)
 
+### `isr.unissued_evidence`
+
+A claim's EVIDENCE line names an entry id the job never issued: past the count of the job's evidence counter, which issues every agent's ids. An id another agent's call took is the job's and is not asked about. A technique claim whose line names only such ids is asked the ungrounded-technique question, which then says so, instead of a second one.
+
+- **Raised at** `malspark.pipeline.validation:unissued_evidence_violation`
+- **Constant** `malspark.pipeline.validation:UNISSUED_EVIDENCE_CODE`
+- **Docs** [Architecture](/docs/architecture/)
+
 ### `isr.unparsed_answer`
 
 No comment names its meaning, and `malspark.pipeline.validation:parse_violations` passes more than one message for it: see the messages there.
@@ -571,7 +579,7 @@ No comment names its meaning, and `malspark.reporting.composer_pro:channel_bindi
 
 ### `report.citation_not_evidence`
 
-No comment names its meaning, and the message at `malspark.pipeline.validation:citation_violations` is made only of values it fills in: see the message there.
+No comment names its meaning; the message at `malspark.pipeline.validation:citation_violations` reads: "\<found> is not an entry this answer was shown. \<in_its_place>"
 
 - **Raised at** `malspark.pipeline.validation:citation_violations`
 - **Constant** `malspark.pipeline.validation:CITATION_NOT_EVIDENCE_CODE`
@@ -1074,6 +1082,14 @@ What is recorded when the judge never answered at all. A retry would cost a seco
 - **Raised at** `malspark.agents.judge_agent:JudgeAgent.give_verdict`
 - **Passes on** `malspark.pipeline.nodes:make_judge_node.node_fn`
 - **Constant** `malspark.agents.judge_agent:VERDICT_TIMEOUT_CODE`
+- **Docs** [Architecture](/docs/architecture/)
+
+### `verdict.unissued_evidence`
+
+An entry id the judge's verdict names, in its assessment or any object, that the job never issued: past the count of the job's evidence counter. An indicator's pattern compares values the sample wrote and is not read, nor is a code span.
+
+- **Raised at** `malspark.pipeline.validation:unissued_verdict_citations`
+- **Constant** `malspark.pipeline.validation:UNISSUED_VERDICT_EVIDENCE_CODE`
 - **Docs** [Architecture](/docs/architecture/)
 
 ### `verdict.unrecognised`

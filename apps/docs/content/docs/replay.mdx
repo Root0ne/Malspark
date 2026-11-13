@@ -150,6 +150,10 @@ skipped in silence:
   budget, so an output the budget blanked and a structure its last pass
   dropped are read as saved; and the ledger's structured answers come back
   from the database, which keeps no key order;
+- how many entry ids the job's counter had issued when a check ran: the replay
+  reads the whole run's ledger, at least the count a live verdict saw, since
+  the report node issues entries after the verdict; an id issued after the
+  verdict is within the count the replay reads;
 - the routed file type and platform, read back from the stored report's
   identity block, because routing reads the sample;
 - the order the run's state held the analysts in, when the run summary does

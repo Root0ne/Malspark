@@ -2529,7 +2529,9 @@ class ReportComposer:
                 answer = result.model_dump()
                 found = [
                     *section_capability_violations(answer, self._grounding),
-                    *citation_violations(answer, citable, prose=prose, items=self._items),
+                    *citation_violations(
+                        answer, citable, prose=prose, items=self._items, records=True
+                    ),
                     *wrong_entry_citations(answer, entries, prose=prose),
                     *misstated_entry_contents(answer, entries, prose=prose),
                     *ledger_absence_contradictions(answer, entries),
@@ -2717,7 +2719,9 @@ class ReportComposer:
             found = [
                 *schema_violations(schema, payload, code="composer.schema", answer=answer_read),
                 *section_capability_violations(payload, self._grounding),
-                *citation_violations(payload, citable, prose=prose, items=self._items),
+                *citation_violations(
+                    payload, citable, prose=prose, items=self._items, records=True
+                ),
                 *wrong_entry_citations(payload, entries, prose=prose),
                 *misstated_entry_contents(payload, entries, prose=prose),
                 *ledger_absence_contradictions(payload, entries),
