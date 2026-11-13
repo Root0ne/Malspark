@@ -49,6 +49,21 @@ def _members(archive: bytes) -> list[tuple[str, bytes]]:
         return [(info.filename, zf.read(info)) for info in zf.infolist()]
 
 
+def _expected(literal: str) -> str:
+    """The launcher text whose argument string is ``literal``."""
+    return (
+        "$s = $MyInvocation.MyCommand.Path\r\n"
+        "if ($s) { $d = [IO.Path]::GetDirectoryName($s) } "
+        "else { $d = (Get-Location).ProviderPath }\r\n"
+        "$i = New-Object Diagnostics.ProcessStartInfo\r\n"
+        "$i.FileName = [IO.Path]::Combine($d, 'sample.exe')\r\n"
+        f"$i.Arguments = {literal}\r\n"
+        "$i.WorkingDirectory = $d\r\n"
+        "$i.UseShellExecute = $false\r\n"
+        "[void][Diagnostics.Process]::Start($i)\r\n"
+    )
+
+
 class TestTheBuilder:
     def test_the_same_inputs_give_the_same_archive(self) -> None:
         a = build_launcher_archive(PE, "Evil.EXE", "-k 1")
@@ -101,9 +116,9 @@ class TestTheBuilder:
     def test_the_archive_digest_is_golden(self) -> None:
         # Pinned bytes, so a Python or zipfile change that moved them is seen.
         built = build_launcher_archive(PE, "x.exe", "--url 'a b' -v")
-        assert built.record["archive_bytes"] == 536
+        assert built.record["archive_bytes"] == 724
         assert built.record["archive_sha256"] == (
-            "bed2b332b678f01f1d91437f254de0ec8b5d23a9f956b7cdc9edd259404daf62"
+            "19d35d45e3bf8a53dac38ecd41f410239137c1f8228032d87f73edccb6c7b247"
         )
         assert hashlib.sha256(built.archive).hexdigest() == built.record["archive_sha256"]
 
@@ -130,23 +145,42 @@ class TestTheBuilder:
     )
     def test_the_launcher_text(self, arguments: str, literal: str) -> None:
         assert powershell_literal(arguments) == literal
-        assert launcher_text("ps1", "sample.exe", arguments) == (
-            "$d = Split-Path -Parent $MyInvocation.MyCommand.Definition\r\n"
-            "Start-Process -FilePath (Join-Path $d 'sample.exe') -WorkingDirectory $d "
-            f"-ArgumentList {literal}\r\n"
-        )
+        assert launcher_text("ps1", "sample.exe", arguments) == _expected(literal)
+        # The literal is the argument string's only spelling: one line holds it.
+        (line,) = [x for x in _expected(literal).split("\r\n") if literal in x]
+        assert line == f"$i.Arguments = {literal}"
 
     def test_the_example_text(self) -> None:
         # Its own folder from the invocation (PowerShell 2.0 sets no
         # $PSScriptRoot outside a module), and that folder as the working one.
         built = build_launcher_archive(PE, "x.exe", "--url 'a b' -v")
         assert built.record["launcher_text"] == (
-            "$d = Split-Path -Parent $MyInvocation.MyCommand.Definition\r\n"
-            "Start-Process -FilePath (Join-Path $d 'sample.exe') -WorkingDirectory $d "
-            "-ArgumentList '--url ''a b'' -v'\r\n"
+            "$s = $MyInvocation.MyCommand.Path\r\n"
+            "if ($s) { $d = [IO.Path]::GetDirectoryName($s) } "
+            "else { $d = (Get-Location).ProviderPath }\r\n"
+            "$i = New-Object Diagnostics.ProcessStartInfo\r\n"
+            "$i.FileName = [IO.Path]::Combine($d, 'sample.exe')\r\n"
+            "$i.Arguments = '--url ''a b'' -v'\r\n"
+            "$i.WorkingDirectory = $d\r\n"
+            "$i.UseShellExecute = $false\r\n"
+            "[void][Diagnostics.Process]::Start($i)\r\n"
         )
-        assert "$PSScriptRoot" not in built.record["launcher_text"]
+        text = built.record["launcher_text"]
+        assert "$PSScriptRoot" not in text
+        # No cmdlet that reads a path as a wildcard pattern, and no shell.
+        for word in ("Start-Process", "Join-Path", "Split-Path", "-FilePath", "Invoke-"):
+            assert word not in text
         assert built.record["script_host_images"] == ["powershell.exe", "pwsh.exe"]
+
+    def test_the_record_holds_the_launcher_file_s_own_digest(self) -> None:
+        built = build_launcher_archive(PE, "x.exe", "-k 1")
+        _name, body = _members(built.archive)[1]
+        assert built.record["launcher_sha256"] == hashlib.sha256(body).hexdigest()
+
+    def test_the_archive_is_left_out_of_the_default_repr(self) -> None:
+        built = build_launcher_archive(PE, "x.exe", "-k 1")
+        assert "archive=" not in repr(built) and "PK" not in repr(built)
+        assert built.record["archive_sha256"] in repr(built)
 
     @pytest.mark.parametrize("arguments", ["a\nb", "a\x00b", "a​b", "   ", "x" * 1025])
     def test_a_value_that_is_not_one_command_line_is_refused(self, arguments: str) -> None:
@@ -349,7 +383,7 @@ class TestTheRecordAndTheReport:
         assert "through a generated PowerShell launcher in the submitted archive" in text
         assert "not submitted bare" in text
         assert launcher["archive_sha256"] in text and launcher["sample_sha256"] in text
-        assert "Start-Process" in text and "launch.ps1" in text and "sample.exe" in text
+        assert "ProcessStartInfo" in text and "launch.ps1" in text and "sample.exe" in text
         assert "starts at PowerShell, not at the sample" in text
         assert "is what was disclosed to the sandbox" in text and "it is public" in text
         assert "Nothing here shows the launcher ran" in text
@@ -392,4 +426,4 @@ class TestNothingLogsTheLauncher:
         answer = answer_of(provider, f"--key {marker}", sample)
         assert answer.honoured
         provider.submit(sample, options=SubmissionOptions(launch_arguments=f"--key {marker}"))
-        assert marker not in caplog.text and "Start-Process" not in caplog.text
+        assert marker not in caplog.text and "ProcessStartInfo" not in caplog.text

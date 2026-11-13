@@ -155,7 +155,7 @@ class TestAnEchoingSandbox:
             provider.submit(_pe(tmp_path), options=WITH)
         # The body shows the launcher member; the text of it is masked before the cut.
         assert "launch.ps1" in str(caught.value) and "[the" in str(caught.value)
-        assert "Start-Process" not in str(caught.value)
+        assert "ProcessStartInfo" not in str(caught.value)
 
     def test_the_run_keeps_it_out_of_its_log_and_failure_reason(
         self, tmp_path: Path, caplog: pytest.LogCaptureFixture

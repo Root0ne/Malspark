@@ -20,13 +20,17 @@ launcher text with the quoting its script type needs.
 Script types:
 
 * ``ps1`` (PowerShell). The script resolves its own folder from
-  ``$MyInvocation.MyCommand.Definition`` (set from PowerShell 2.0 on, where
-  ``$PSScriptRoot`` is not), and ``Start-Process`` is given the sample's path
-  in that folder, that folder as the working directory, and the arguments as
-  ONE string. A single
-  string is the process's argument string as it stands: it is not split or
-  re-quoted by PowerShell, so the program reads exactly what the operator typed
-  after its name. In a single-quoted literal nothing is expanded (no ``$``,
+  ``$MyInvocation.MyCommand.Path`` (set from PowerShell 2.0 on for a script
+  started from its file, where ``$PSScriptRoot`` is not); where its content is
+  run some other way there is no script path, and the folder is the current
+  location. The sample is started by ``System.Diagnostics.Process.Start``
+  with a ``ProcessStartInfo`` whose ``FileName`` is the sample's path in that
+  folder (joined by ``System.IO.Path``, never read as a wildcard pattern),
+  whose ``WorkingDirectory`` is that folder, whose ``UseShellExecute`` is off
+  (no shell association is consulted) and whose ``Arguments`` is ONE string.
+  That string is the process's argument string as it stands: it is not split
+  or re-quoted, so the program reads exactly what the operator typed after
+  its name. In a single-quoted literal nothing is expanded (no ``$``,
   backtick or ``%``); the only escape is a doubled quote, and PowerShell reads
   four typographic marks (U+2018, U+2019, U+201A, U+201B) as single quotes as
   well, so each is doubled too. The file is UTF-8 with a byte order mark, which
@@ -45,7 +49,7 @@ from __future__ import annotations
 import hashlib
 import io
 import zipfile
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
@@ -91,9 +95,12 @@ class LauncherSupport:
 
 @dataclass(frozen=True)
 class BuiltLauncher:
-    """The archive to submit and the record of what it holds."""
+    """The archive to submit and the record of what it holds.
 
-    archive: bytes
+    The archive, about the sample's size, is left out of the default repr.
+    """
+
+    archive: bytes = field(repr=False)
     record: dict[str, Any]
 
 
@@ -120,10 +127,19 @@ def launcher_text(script_type: str, sample_member: str, arguments: str) -> str:
             f"no {script_type!r} launcher is built (only {PS1}): a batch launcher would let "
             "cmd expand % and read ^, &, | and non-ASCII text as its own"
         )
-    return (
-        "$d = Split-Path -Parent $MyInvocation.MyCommand.Definition\r\n"
-        f"Start-Process -FilePath (Join-Path $d {powershell_literal(sample_member)}) "
-        f"-WorkingDirectory $d -ArgumentList {powershell_literal(arguments)}\r\n"
+    return "".join(
+        f"{line}\r\n"
+        for line in (
+            "$s = $MyInvocation.MyCommand.Path",
+            "if ($s) { $d = [IO.Path]::GetDirectoryName($s) } "
+            "else { $d = (Get-Location).ProviderPath }",
+            "$i = New-Object Diagnostics.ProcessStartInfo",
+            f"$i.FileName = [IO.Path]::Combine($d, {powershell_literal(sample_member)})",
+            f"$i.Arguments = {powershell_literal(arguments)}",
+            "$i.WorkingDirectory = $d",
+            "$i.UseShellExecute = $false",
+            "[void][Diagnostics.Process]::Start($i)",
+        )
     )
 
 
@@ -176,6 +192,7 @@ def build_launcher_archive(
             "launcher_member": launcher_member,
             "launcher_text": text,
             "launcher_encoding": "UTF-8 with a byte order mark",
+            "launcher_sha256": hashlib.sha256(body).hexdigest(),
             "sample_member": sample_member,
             "archive_sha256": hashlib.sha256(blob).hexdigest(),
             "archive_bytes": len(blob),
