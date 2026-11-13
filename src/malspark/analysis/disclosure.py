@@ -810,14 +810,20 @@ def _upload_row(by: str, source: str, transport: str, host: str, why: str) -> di
 
 
 def _sandbox_uploads(uploads: Iterable[Mapping[str, Any]]) -> list[dict[str, Any]]:
-    """One row per sandbox provider the sample was submitted to, with its host."""
-    rows: dict[tuple[str, str], dict[str, Any]] = {}
+    """One row per sandbox provider the sample was submitted to, with its host.
+
+    A further detonation an agent asked for (an upload naming its
+    ``detonation``) is a row of its own, with who asked: its launch arguments
+    are never merged into another submission's.
+    """
+    rows: dict[tuple[str, str, str], dict[str, Any]] = {}
     for upload in uploads:
         provider = str(upload.get("provider") or "")
         if not provider:
             continue
         host = normal_host(upload.get("host"))
-        key = (provider, host)
+        detonation = str(upload.get("detonation") or "")
+        key = (provider, host, detonation)
         if key not in rows:
             rows[key] = _upload_row(
                 BY_SANDBOX,
@@ -826,6 +832,9 @@ def _sandbox_uploads(uploads: Iterable[Mapping[str, Any]]) -> list[dict[str, Any
                 host,
                 f"the {provider} provider does not say where it sends the sample",
             )
+            if detonation:
+                rows[key]["detonation"] = detonation
+                rows[key]["requested_by"] = list(upload.get("requested_by") or [])
         rows[key]["calls"] += 1
         rows[key]["failed"] += 0 if upload.get("submitted") else 1
         if "launch_arguments" in upload:
@@ -1669,7 +1678,8 @@ def _upload_line(row: Mapping[str, Any], code: Callable[[str], str]) -> str:
     by = row.get("by")
     if by == BY_SANDBOX:
         return (
-            f"Sample upload: {_submitted_subject(row, code)} was submitted {times} to the "
+            f"Sample upload{_detonation_of(row)}: {_submitted_subject(row, code)} was "
+            f"submitted {times} to the "
             f"{code(str(row.get('source') or ''))} sandbox{at}{failure}{untold}."
             + _launch_clause(row, code)
         )
@@ -1685,6 +1695,16 @@ def _upload_line(row: Mapping[str, Any], code: Callable[[str], str]) -> str:
         f"Sample upload: {server} ({_how(row)}){at} was handed the sample {times}{_again(row)} "
         f"by a tool declared to send it out of the deployment{failure}{untold}."
     )
+
+
+def _detonation_of(row: Mapping[str, Any]) -> str:
+    """Which further detonation a submission row is, and who asked; ``""`` for the job's own."""
+    name = str(row.get("detonation") or "")
+    if not name:
+        return ""
+    askers = ", ".join(str(a) for a in row.get("requested_by") or () if a)
+    number = name[1:] if name.startswith("d") else name
+    return f" (detonation {number}, asked for by {askers or 'an agent'})"
 
 
 def _submitted_subject(row: Mapping[str, Any], code: Callable[[str], str]) -> str:
@@ -1720,23 +1740,29 @@ def _launch_clause(row: Mapping[str, Any], code: Callable[[str], str]) -> str:
         sample_written_out(str(row.get("launch_arguments") or ""))
     )
     arguments = code(written)
+    if row.get("detonation"):
+        # Found by an agent, not given by the job.
+        return _launch_clause_of(row, arguments, "The launch arguments an agent found")
+    return _launch_clause_of(row, arguments, "The job's launch arguments")
+
+
+def _launch_clause_of(row: Mapping[str, Any], arguments: str, whose: str) -> str:
+    """The launch clause of one submission row, its arguments already written out."""
     note = str(row.get("launch_arguments_note") or "")
     via = str(row.get("launch_arguments_via") or "")
     if row.get("launch_arguments_unobserved"):
         through = f" through {via}" if via else ""
         return (
-            f" The job's launch arguments {arguments} were sent with the submission{through}, "
+            f" {whose} {arguments} were sent with the submission{through}, "
             "but no sandbox report came back, so nothing was observed with them"
             + (f" ({note})." if note else ".")
         )
     if row.get("launch_arguments_honoured"):
         through = f" through {via}" if via else ""
-        return f" The job's launch arguments {arguments} were sent with the submission{through}" + (
+        return f" {whose} {arguments} were sent with the submission{through}" + (
             f" ({note})." if note else "."
         )
-    return f" The job's launch arguments {arguments} were requested and not honoured" + (
-        f": {note}." if note else "."
-    )
+    return f" {whose} {arguments} were requested and not honoured" + (f": {note}." if note else ".")
 
 
 def _server_line(row: Mapping[str, Any], code: Callable[[str], str]) -> str:

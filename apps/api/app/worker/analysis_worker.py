@@ -2448,7 +2448,7 @@ async def keep_the_stopped_run(
             core_settings=core_settings,
             override_keys=override_keys,
             hash_mismatch_reason=hash_mismatch_reason,
-            scale_record=recorded_signature_scale(container),
+            scale_record=_recorded(container),
             sample_integrity=await ended_record(sample_integrity),
             sandbox_target=sandbox_target_of(container),
             isolated_memory=getattr(container, "isolated_memory", False) is True,
@@ -3661,7 +3661,7 @@ async def run_analysis(ctx: dict, job_id: str) -> dict[str, Any]:
             core_settings=core_settings,
             override_keys=overrides,
             hash_mismatch_reason=_report_hash_mismatch_reason,
-            scale_record=recorded_signature_scale(getattr(app, "container", None)),
+            scale_record=_recorded(getattr(app, "container", None)),
             sample_integrity=await ended_record(_integrity),
             sandbox_target=sandbox_target_of(getattr(app, "container", None)),
             isolated_memory=getattr(getattr(app, "container", None), "isolated_memory", False)
@@ -3986,7 +3986,7 @@ async def run_analysis(ctx: dict, job_id: str) -> dict[str, Any]:
                     core_settings=core_settings,
                     override_keys=overrides,
                     hash_mismatch_reason=_report_hash_mismatch_reason,
-                    scale_record=recorded_signature_scale(getattr(app, "container", None)),
+                    scale_record=_recorded(getattr(app, "container", None)),
                     sample_integrity=_integrity,
                 )
             await mark_job_failed(db_session, job_uuid, reason=reason, error_id=error_id)
@@ -4956,6 +4956,17 @@ def _end_the_token_ledger(container: Any) -> None:
             ledger.end()
     except Exception as exc:  # noqa: BLE001 — marking never fails a stored report
         logger.debug("The usage ledger was not marked ended (%s).", type(exc).__name__)
+
+
+def _recorded(container: Any) -> dict[str, Any]:
+    """The run records the summary takes off the container: the signature scale, the detonations.
+
+    The detonations are recorded only where an agent asked for a further one
+    (``pipeline.detonations.recorded_detonations``).
+    """
+    from malspark.pipeline.detonations import recorded_detonations
+
+    return {**recorded_signature_scale(container), **recorded_detonations(container)}
 
 
 def _report_inputs(

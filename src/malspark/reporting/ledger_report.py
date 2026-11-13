@@ -30,7 +30,7 @@ every number the first occurrence carried exactly as it was written.
 from __future__ import annotations
 
 from collections import Counter
-from collections.abc import Callable, Iterable
+from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
@@ -2063,7 +2063,9 @@ def _build_sections(
         if builder is not None and isinstance(data, dict):
             if data.get("error"):
                 continue
-            builder(acc, entry, data)
+            # A later detonation's read is drawn in tables of its own.
+            target = _OneDetonation(acc, data) if data.get("detonation") else acc
+            builder(target, entry, data)
             # A purpose-built section reads its kind's answer shape (or the
             # rows a rule tool declares). An operator's own tool of the kind
             # that answers in another shape is still in the report, as the
@@ -2081,6 +2083,62 @@ def _build_sections(
     _findings_section(acc, isrs or {}, published_techniques)
     _open_questions_section(acc, isrs or {}, ledger or [])
     return acc.result()
+
+
+class _OneDetonation(_Sections):
+    """The sections of one later detonation's reads, kept apart from every other detonation's.
+
+    Shares every table of the run's sections, and opens its own: each key is
+    qualified by the detonation and each title says under which launch the
+    rows were observed, so an observation of one detonation is never drawn
+    in another's table.
+    """
+
+    def __init__(self, inner: _Sections, data: Mapping[str, Any]) -> None:
+        self.__dict__ = inner.__dict__
+        self._detonation = str(data.get("detonation") or "")
+        self._launch = launch_words(data)
+
+    def get(
+        self,
+        key: str,
+        title: str,
+        kind: str,
+        *,
+        columns: list[str] | None = None,
+        source: str = "",
+    ) -> EvidenceSection:
+        return super().get(
+            f"{key}@{self._detonation}",
+            f"{title} {self._launch}",
+            kind,
+            columns=columns,
+            source=source,
+        )
+
+
+def launch_words(data: Mapping[str, Any]) -> str:
+    """Under which launch a later detonation's reads were made, as one clause.
+
+    ``when launched with `<arguments>` (detonation 2, asked for by <agent>
+    citing <entries>)``, the arguments written out as the Sandbox sentence
+    writes them.
+    """
+    from malspark.utils.written_forms import sample_written_out, template_tokens_written_out
+
+    name = str(data.get("detonation") or "")
+    number = name[1:] if name.startswith("d") else name
+    arguments = template_tokens_written_out(
+        sample_written_out(str(data.get("launched_with") or ""))
+    )
+    askers = []
+    for asker in data.get("requested_by") or ():
+        if not isinstance(asker, Mapping):
+            continue
+        cited = ", ".join(str(i) for i in asker.get("cited_entries") or ())
+        askers.append(str(asker.get("agent") or "an agent") + (f" citing {cited}" if cited else ""))
+    by = f", asked for by {'; '.join(askers)}" if askers else ""
+    return f"when launched with `{arguments}` (detonation {number}{by})"
 
 
 def _singly_examined(ledger: list[LedgerEntry]) -> set[str]:
