@@ -31,6 +31,14 @@ from scripts.benchmark.scores import (
     read_scored,
     rules_from_dict,
 )
+from scripts.blind.agreement import (
+    AgreementError,
+    agreement,
+    read_rater,
+)
+from scripts.blind.agreement import (
+    render as render_agreement,
+)
 from scripts.blind.prepare import WORDS_FILE, BlindError, prepare
 from scripts.blind.reveal import render, reveal
 from scripts.blind.run import main as blind_main
@@ -42,6 +50,7 @@ TABLE: dict[str, Any] = {
     "credited_from": "partial",
     "outside_denominator": ["under adjudication", "does not hold for this file", "unknown"],
     "aliases": {"partly found": "partial"},
+    "annotations": ["from the evidence bundle"],
     "key_folder": "not read by the reader",
 }
 OUTSIDE = ("under adjudication", "does not hold for this file", "unknown")
@@ -59,6 +68,11 @@ VERDICTS = {
 @pytest.fixture
 def rules() -> ScoringRules:
     return rules_from_dict(TABLE)
+
+
+@pytest.fixture
+def rules3() -> ScoringRules:
+    return rules_from_dict(THREE)
 
 
 def _score(verdicts: dict[str, str], tmp_path: Path, name: str = "run1") -> Path:
@@ -79,7 +93,7 @@ def test_a_stored_score_without_a_table_reads_as_the_old_reader_read_it(name: st
     got = dataclasses.asdict(read_scored(FIXTURES / name))
     got["verdicts"] = {k: list(v) for k, v in got["verdicts"].items()}
     got["source"] = name
-    assert got.pop("rules") is None
+    assert got.pop("rules") is None and got.pop("annotations") == {}
     assert got == golden
     # the built-in rules, given explicitly, read the same
     explicit = read_scored(FIXTURES / name, KEY_RULES)
@@ -367,3 +381,165 @@ def test_a_scored_run_has_no_outside_state_on_the_old_scale() -> None:
     run: ScoredRun = read_scored(FIXTURES / "haiku3-score.md")
     assert run.outside == {} and run.denominator == len(run.verdicts) == 57
     assert sum(run.counts().values()) == 57
+
+
+# ------------------------------------------------------------- annotations
+
+BUNDLE = "from the evidence bundle"
+
+
+def test_an_annotation_after_a_verdict_is_kept_beside_the_item(
+    tmp_path: Path, rules: ScoringRules
+) -> None:
+    verdicts = {
+        "G-001": "partial from the evidence bundle",
+        "G-002": "Found (from the evidence bundle)",
+        "G-003": "partly found, from the evidence bundle",
+        "G-004": "missed from the evidence bundle",
+        "G-005": "found",
+    }
+    run = read_key_score(_score(verdicts, tmp_path), rules)
+    assert {k: v for k, (_, v) in run.verdicts.items()} == {
+        "G-001": "partial",
+        "G-002": "found",
+        "G-003": "partial",
+        "G-004": "missed",
+        "G-005": "found",
+    }
+    assert run.annotations == {k: (BUNDLE,) for k in ("G-001", "G-002", "G-003", "G-004")}
+    # only credited items count: G-004 is missed
+    assert run.annotation_counts() == {BUNDLE: 3}
+    assert read_key_score(_score({"G-001": "found"}, tmp_path, "b"), rules).annotation_counts() == {
+        BUNDLE: 0
+    }
+
+
+def test_an_undeclared_word_after_a_verdict_is_still_an_error(
+    tmp_path: Path, rules: ScoringRules
+) -> None:
+    for cell in (
+        "partial maybe",
+        "partial from the evidence bundle too",
+        "from the evidence bundle",
+    ):
+        path = _score({"G-001": "found", "G-002": cell}, tmp_path, "r")
+        with pytest.raises(ScoreFileError, match=r"G-002"):
+            read_key_score(path, rules)
+    # an outside state takes no annotation, and a table with none declares none
+    path = _score({"G-001": "found", "G-002": "unknown from the evidence bundle"}, tmp_path, "r2")
+    with pytest.raises(ScoreFileError, match="G-002"):
+        read_key_score(path, rules)
+    bare = rules_from_dict({**TABLE, "name": "bare", "annotations": []})
+    path = _score({"G-001": "found", "G-002": "partial from the evidence bundle"}, tmp_path, "r3")
+    with pytest.raises(ScoreFileError, match="G-002"):
+        read_key_score(path, bare)
+
+
+def test_a_blind_sheet_carries_annotations_too(tmp_path: Path, rules: ScoringRules) -> None:
+    runs = [_stored(tmp_path / "stored", n) for n in ("one", "two")]
+    done = prepare(runs, tmp_path / "out", ["G-001", "G-002"], seed=3, rules=rules)
+    done.template.write_text(
+        (
+            "item,A,B\nG-001,partial from the evidence bundle,found\n"
+            "G-002,found,found\nbeyond_human,1,2\n"
+        ),
+        encoding="utf-8",
+    )
+    sealed = json.loads(done.sealed.read_text(encoding="utf-8"))
+    arm = {r.name: r for r in read_blind(done.template, done.sealed)}[sealed["arms"]["A"]["name"]]
+    assert arm.annotations == {"G-001": (BUNDLE,)} and arm.annotation_counts() == {BUNDLE: 1}
+    assert arm.verdicts["G-001"] == (rules.scale_id, "partial")
+
+
+def test_annotations_must_not_be_words_of_the_rules() -> None:
+    with pytest.raises(ScoreFileError, match="annotation"):
+        rules_from_dict({**TABLE, "annotations": ["unknown"]})
+    with pytest.raises(ScoreFileError, match="annotation"):
+        rules_from_dict({**TABLE, "annotations": [BUNDLE, BUNDLE]})
+
+
+# --------------------------------------------------------------- agreement
+
+THREE = {**TABLE, "name": "three-words", "verdicts": ["missed", "partial", "found"]}
+
+# six units, two scorers; u5 and u6 hold a state that is no verdict
+R1 = {
+    "u1": "found",
+    "u2": "found",
+    "u3": "partial",
+    "u4": "missed",
+    "u5": "unknown",
+    "u6": "under adjudication",
+}
+R2 = {
+    "u1": "found",
+    "u2": "partial",
+    "u3": "partial",
+    "u4": "missed",
+    "u5": "found",
+    "u6": "unknown",
+}
+
+
+def test_a_pair_with_a_state_outside_the_denominator_is_left_out_and_counted(
+    rules3: ScoringRules,
+) -> None:
+    report = agreement({"s1": R1, "s2": R2}, rules=rules3)
+    assert report["ordinal_order"] == "missed < partial < found"
+    pair = report["verdicts"]["pairs"]["s1 / s2"]
+    # hand-computed over u1..u4: (f,f) (f,p) (p,p) (m,m)
+    assert pair["n"] == 4 and pair["units"] == ["u1", "u2", "u3", "u4"]
+    assert pair["percent_agreement"]["value"] == 75.0
+    assert round(pair["cohens_kappa"]["value"], 6) == round(0.4375 / 0.6875, 6)
+    assert round(pair["weighted_kappa"]["value"], 6) == round(1 - 0.125 / 0.4375, 6)
+    collapsed = report["collapsed"]["pairs"]["s1 / s2"]
+    assert collapsed["percent_agreement"]["value"] == 100.0
+    assert collapsed["cohens_kappa"]["value"] == 1.0
+    left = report["left_out_for_state"]
+    assert left["pairs"]["s1 / s2"] == {
+        "pairs_left_out": 2,
+        "of": 6,
+        "by_state": {"under adjudication": 1, "does not hold for this file": 0, "unknown": 2},
+    }
+    assert left["ratings_per_rater"]["s1"]["unknown"] == 1
+    assert "2 of 6 pairs left out (1 under adjudication, 2 unknown)" in render_agreement(report)
+
+
+def test_agreement_reads_sheets_and_scores_by_the_table(
+    tmp_path: Path, rules3: ScoringRules
+) -> None:
+    sheet = tmp_path / "s.csv"
+    sheet.write_text("item,A\nG-001,found\nG-002,Unknown\nbeyond_human,1\n", encoding="utf-8")
+    assert read_rater(sheet, None, rules3) == {"G-001": "found", "G-002": "unknown"}
+    with pytest.raises(AgreementError, match=r"'partly \(body\)' is not one of missed"):
+        sheet.write_text("item,A\nG-001,partly (body)\n", encoding="utf-8")
+        read_rater(sheet, None, rules3)
+    score = _score({"G-001": "found", "G-002": "under adjudication"}, tmp_path)
+    assert read_rater(score, None, rules3) == {"G-001": "found", "G-002": "under adjudication"}
+    with pytest.raises(AgreementError, match="G-002"):
+        read_rater(score)
+
+
+def test_the_agreement_without_a_table_is_what_it_was() -> None:
+    report = agreement({"a": {"u1": "found", "u2": "wrong"}, "b": {"u1": "found", "u2": "missed"}})
+    assert report["ordinal_order"] == "wrong < missed < partly (dump) < partly (body) < found"
+    assert "left_out_for_state" not in report and "scoring_rules" not in report
+    assert report["verdicts"]["pairs"]["a / b"]["percent_agreement"]["value"] == 50.0
+
+
+def test_the_agreement_command_takes_a_table(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    table = tmp_path / "rules.json"
+    table.write_text(json.dumps(THREE), encoding="utf-8")
+    sheets = []
+    for name, ratings in (("one", R1), ("two", R2)):
+        path = tmp_path / f"{name}.csv"
+        path.write_text(
+            "item,A\n" + "".join(f"{u},{w}\n" for u, w in ratings.items()), encoding="utf-8"
+        )
+        sheets.append(str(path))
+    assert blind_main(["agreement", *sheets, "--rules", str(table)]) == 0
+    out = capsys.readouterr().out
+    assert "Scale (worst first): missed < partial < found" in out and "2 of 6 pairs left out" in out
+    assert blind_main(["agreement", *sheets]) == 2

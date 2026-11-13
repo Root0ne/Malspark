@@ -4,6 +4,7 @@
         [--rules RULES.json]
     python scripts/blind/run.py reveal DIR/scorer/scores.csv --map DIR/sealed-map.json
     python scripts/blind/run.py agreement SHEET_OR_SCORE SHEET_OR_SCORE [...] [--json]
+        [--rules RULES.json]
 
 ``prepare`` copies each arm's report (Markdown, HTML), STIX bundle and IOC table under a
 shuffled anonymous id with every string that names the arm removed, checks that none survived,
@@ -73,6 +74,12 @@ def _parser() -> argparse.ArgumentParser:
         action="store_true",
         help="the ordinal statistics leave out every rating of wrong, and count them",
     )
+    agree.add_argument(
+        "--rules",
+        type=Path,
+        default=None,
+        help="a scoring-rules table (JSON): its words and order; outside states leave the pair out",
+    )
     agree.add_argument("--column", default=None, help="read only this arm column of a sheet")
     return parser
 
@@ -102,6 +109,7 @@ def main(argv: list[str] | None = None) -> int:
                     as_json=args.json,
                     leave_out_wrong=args.leave_out_wrong,
                     column=args.column,
+                    rules=None if args.rules is None else load_rules(args.rules),
                 )
             )
         else:

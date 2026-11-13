@@ -32,6 +32,8 @@ class Revealed:
     differences: dict[str, dict[str, str]] = field(default_factory=dict)
     # The verdict words the sheet was read by, and the declared rules they come from, if any.
     words: tuple[str, ...] = VERDICTS
+    # arm name -> item -> the declared annotations the item's cell carried
+    annotations: dict[str, dict[str, tuple[str, ...]]] = field(default_factory=dict)
     rules: ScoringRules | None = None
 
 
@@ -84,11 +86,13 @@ def reveal(scores_path: Path, sealed_path: Path, rules: ScoringRules | None = No
         )
     verdicts: dict[str, dict[str, str]] = {}
     beyond: dict[str, int] = {}
+    annotations: dict[str, dict[str, tuple[str, ...]]] = {}
     for anon in sorted(arms):
         if anon not in scores:
             raise BlindError(f"no scores for {anon}")
         given = scores[anon]
         verdicts[arms[anon]] = {}
+        annotations[arms[anon]] = {}
         for item in (*items, BEYOND_ROW):
             value = str(given.get(item, "")).strip() if given.get(item) is not None else ""
             if not value:
@@ -98,13 +102,23 @@ def reveal(scores_path: Path, sealed_path: Path, rules: ScoringRules | None = No
                     raise BlindError(f"{BEYOND_ROW} for {anon} is not a count: {value!r}")
                 beyond[arms[anon]] = int(value)
                 continue
-            word = value.lower() if rules is None else rules.word(value)
+            split = None if rules is None else rules.split(value)
+            word = value.lower() if split is None else split[0]
+            if split is not None and split[1]:
+                annotations[arms[anon]][item] = split[1]
             if word not in words:
                 raise BlindError(
                     f"item {item} for {anon} is not one of {', '.join(words)}: {value!r}"
                 )
             verdicts[arms[anon]][item] = word
-    result = Revealed(items=items, verdicts=verdicts, beyond=beyond, words=words, rules=rules)
+    result = Revealed(
+        items=items,
+        verdicts=verdicts,
+        beyond=beyond,
+        words=words,
+        rules=rules,
+        annotations=annotations,
+    )
     for name, given in verdicts.items():
         result.totals[name] = {word: sum(1 for v in given.values() if v == word) for word in words}
     for item in items:

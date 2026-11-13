@@ -36,9 +36,11 @@ A key may declare its own scoring rules, and `--rules RULES.json` (on `score` an
 object: `name`; `verdicts`, the verdict words from worst to best; `credited_from`,
 the lowest word the totals credit; `outside_denominator`, the states that are no
 verdict and leave the denominator (an item under adjudication, one that does not
-hold for the file); and `aliases`, spellings that mean a verdict word. Any other
-field is kept and never read. A word the table does not hold is refused, naming the
-row and the word, and is never mapped to another. A run read by a table says its
+hold for the file); `aliases`, spellings that mean a verdict word; and
+`annotations`, words that may follow a verdict in a cell (a statement found only in
+the evidence bundle), which the run keeps beside the item and counts per annotation
+over its credited items. Any other field is kept and never read. A word the table does not hold, and a word after a verdict that is not a declared
+annotation, is refused, naming the row and the word, and is never mapped to another. A run read by a table says its
 denominator and what left it, and the gate leaves an item out of its totals when
 every run left it out. Without `--rules` the scale is the one above and nothing
 else changes.

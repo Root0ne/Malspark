@@ -30,7 +30,10 @@ words from worst to best, the lowest one the totals credit, the words of the
 states that are no verdict and leave the denominator (an item under
 adjudication, one that does not hold for the file), and the spellings that mean
 a verdict word. Without a table the reader is the one the rest of this
-paragraph describes, unchanged. A word the table does not hold is refused,
+paragraph describes, unchanged. A table may also declare annotations: words that
+may follow a verdict in a cell (a statement found only in the evidence bundle). The run keeps them
+beside the item and counts, per annotation, the credited items that carry it; an undeclared word
+after a verdict is still refused. A word the table does not hold is refused,
 naming the row and the word, and never mapped to another.
 
 Every verdict sits on a **scale**, a tuple of words from worst to best, so that
@@ -91,6 +94,8 @@ _STATED_TOTALS = re.compile(
     r"\*\*Totals:\s*(\d+) found / (\d+) partly \((\d+) body \+ (\d+) dump\) / "
     r"(\d+) missed / (\d+) wrong"
 )
+# What may stand between a verdict and the annotations written after it.
+_JOINERS = " ,;:()+-"
 _CELL_SPLIT = re.compile(r"(?<!\\)\|")
 _SEPARATOR = re.compile(r"^\|[\s:|-]+\|$")
 _DOTTED_CODE = re.compile(r"^K\d+\.\w+$")
@@ -118,6 +123,8 @@ class ScoringRules:
     outside: tuple[str, ...] = ()
     # A spelling -> the verdict word it means.
     aliases: dict[str, str] = field(default_factory=dict)
+    # Words that may follow a verdict in a cell and are kept beside it, never read as a verdict.
+    annotations: tuple[str, ...] = ()
     # The rest of the table (key folder, digest, quotes): never read by the reader.
     extra: dict[str, Any] = field(default_factory=dict, compare=False)
 
@@ -132,10 +139,38 @@ class ScoringRules:
         return (*self.scale, *self.outside)
 
     def word(self, cell: str) -> str | None:
-        """A cell as one of the rules' words (an alias resolved), or None."""
-        word = _plain(cell).casefold()
-        word = self.aliases.get(word, word)
-        return word if word in self.words else None
+        """A cell as one of the rules' words (an alias resolved, annotations set aside), or None."""
+        found = self.split(cell)
+        return None if found is None else found[0]
+
+    def split(self, cell: str) -> tuple[str, tuple[str, ...]] | None:
+        """A cell as ``(word, annotations)``: a word of the rules, then declared annotations."""
+        text = _plain(cell).casefold()
+        if (whole := self.aliases.get(text, text)) in self.words:
+            return whole, ()
+        if not self.annotations:
+            return None
+        spellings = sorted((*self.scale, *self.aliases), key=len, reverse=True)
+        for spelling in spellings:
+            if not text.startswith(spelling) or text[len(spelling) :][:1].isalnum():
+                continue
+            rest, held = text[len(spelling) :].strip(_JOINERS), []
+            while rest:
+                note = next(
+                    (
+                        a
+                        for a in sorted(self.annotations, key=len, reverse=True)
+                        if rest.startswith(a) and not rest[len(a) :][:1].isalnum()
+                    ),
+                    None,
+                )
+                if note is None:
+                    break
+                held.append(note)
+                rest = rest[len(note) :].strip(_JOINERS)
+            if not rest and held:
+                return self.aliases.get(spelling, spelling), tuple(held)
+        return None
 
     def register(self) -> None:
         """Make the scale known to ``SCALES``, ``CREDITED`` and ``OUTSIDE``, once per name."""
@@ -152,6 +187,7 @@ class ScoringRules:
             "credited_from": self.credited_from,
             "outside_denominator": list(self.outside),
             "aliases": dict(self.aliases),
+            "annotations": list(self.annotations),
         }
 
 
@@ -191,13 +227,17 @@ def rules_from_dict(data: Any, where: str = "scoring rules") -> ScoringRules:
                 f"{where}: the alias {spelling!r} -> {meant!r} must name a verdict word "
                 "and may not be a word itself"
             )
-    known = {"name", "verdicts", "credited_from", "outside_denominator", "aliases"}
+    notes = _words(where, data.get("annotations", []), "'annotations'")
+    if set(notes) & set(every) or len(set(notes)) != len(notes):
+        raise ScoreFileError(f"{where}: an annotation is a word of the rules or is declared twice")
+    known = {"name", "verdicts", "credited_from", "outside_denominator", "aliases", "annotations"}
     return ScoringRules(
         data["name"],
         scale,
         credited,
         outside,
         folded,
+        notes,
         {k: v for k, v in data.items() if k not in known},
     )
 
@@ -239,6 +279,8 @@ class ScoredRun:
     earlier_runs_note: str = ""
     # The declared rules the run was read by; None for the built-in scales.
     rules: ScoringRules | None = None
+    # item key -> the declared annotations its cell carried (only items that carried any).
+    annotations: dict[str, tuple[str, ...]] = field(default_factory=dict)
 
     @property
     def outside(self) -> dict[str, str]:
@@ -250,6 +292,25 @@ class ScoredRun:
     def denominator(self) -> int:
         """The items the run is scored over: every item but those that left it."""
         return len(self.verdicts) - len(self.outside)
+
+    def annotation_counts(self) -> dict[str, int]:
+        """Per declared annotation, how many credited items carry it; empty without a table."""
+        if self.rules is None:
+            return {}
+        out = dict.fromkeys(self.rules.annotations, 0)
+        for item, notes in self.annotations.items():
+            if self.credited(item):
+                for note in notes:
+                    out[note] += 1
+        return out
+
+    def credited(self, item: str) -> bool:
+        """Whether the item's verdict is one the rules credit."""
+        word = self.verdicts[item][1]
+        rules = self.rules
+        if rules is None or rules.credited_from is None or word not in rules.scale:
+            return False
+        return rules.scale.index(word) >= rules.scale.index(rules.credited_from)
 
     def counts(self) -> dict[str, int]:
         """Items per word, in the rules' order, the words held by no item as 0."""
@@ -365,6 +426,7 @@ def read_key_score(path: Path, rules: ScoringRules | None = None) -> ScoredRun:
     verdicts: dict[str, tuple[str, str | None]] = {}
     labels: dict[str, str] = {}
     written: dict[str, str] = {}
+    noted: dict[str, tuple[str, ...]] = {}
     for row in rows:
         key = item_key(row[0])
         if key in verdicts:
@@ -372,6 +434,8 @@ def read_key_score(path: Path, rules: ScoringRules | None = None) -> ScoredRun:
                 f"{path}: item {key} is scored twice ({labels[key]!r}, {row[0]!r})"
             )
         verdicts[key] = (scale, key_verdict(row[column], rules))
+        if rules is not None and (split := rules.split(row[column])) and split[1]:
+            noted[key] = split[1]
         labels[key] = _plain(row[0])
         written[key] = " | ".join(row)
     provenance, provenance_note = attribute_all(path, written)
@@ -387,6 +451,7 @@ def read_key_score(path: Path, rules: ScoringRules | None = None) -> ScoredRun:
         earlier_runs=independence,
         earlier_runs_note=independence_note,
         rules=rules,
+        annotations=noted,
     )
     if rules is None:
         _check_totals(path, lines, run)
@@ -467,10 +532,13 @@ def read_blind(sheet: Path, sealed: Path, rules: ScoringRules | None = None) -> 
     for arm, given in revealed.verdicts.items():
         verdicts: dict[str, tuple[str, str | None]] = {}
         labels: dict[str, str] = {}
+        noted: dict[str, tuple[str, ...]] = {}
         for item, word in given.items():
             key = item_key(item)
             if key in verdicts:
                 raise ScoreFileError(f"{sheet}: items {labels[key]!r} and {item!r} are one item")
+            if revealed.annotations[arm].get(item):
+                noted[key] = revealed.annotations[arm][item]
             verdicts[key] = (scale, KEY_ALIASES.get(word, word) if declared is None else word)
             labels[key] = item
         runs.append(
@@ -483,6 +551,7 @@ def read_blind(sheet: Path, sealed: Path, rules: ScoringRules | None = None) -> 
                 beyond_note="the sheet's beyond_human row",
                 provenance_note="not read: a blind score sheet cites no evidence",
                 rules=declared,
+                annotations=noted,
             )
         )
     return runs

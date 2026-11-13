@@ -114,3 +114,12 @@ sheet, a repeated column header, or two raters with no item in common are
 refused; so is a several-column sheet set against a single-column one, with a
 hint to use `--column`. `--json` also lists the items that entered each
 statistic, and the number of items left out of alpha (rated once).
+
+With `--rules RULES.json` (a declared table of scoring rules, see the
+[known-answer gate](/docs/known-answer-gate/)) the words, the ordinal order and the
+credited threshold are the table's. A rating in a state that is no verdict (under
+adjudication, unknown, does not hold for the file) is no rating of the item: a pair
+in which either scorer's cell is such a state is left out of every statistic, and
+the output counts, per rater pair and per state, the pairs left out and, per rater,
+the ratings in each state. `--leave-out-wrong` applies when the table has a verdict
+word `wrong`. Without `--rules` the five verdicts and their order above apply.
