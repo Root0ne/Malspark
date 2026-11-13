@@ -14,12 +14,21 @@ import json
 import re
 from typing import Any
 
+import pytest
+
+from app.worker.analysis_worker import _extract_mitre
 from malspark.agents.judge_postprocess import (
     lift_misplaced_extensions,
     postprocess_judge_bundle,
 )
-from malspark.reporting.builder import MalwareReportBuilder
+from malspark.memory.attck_defense import AttckObject, TechniqueDefense
+from malspark.reporting import builder as builder_module
+from malspark.reporting.builder import MalwareReportBuilder, attck_defense_rows
+from malspark.reporting.misp import build_misp_attributes
 from malspark.reporting.models import MalwareReport, TTPMapping
+from malspark.reporting.navigator_layer import build_layer
+from malspark.reporting.renderers.layout import ANALYST
+from malspark.reporting.renderers.markdown import MarkdownRenderer
 from malspark.reporting.technique_evidence import (
     NO_LEDGER_ENTRY,
     technique_evidence_ids,
@@ -182,3 +191,65 @@ class TestTheBuilderRecordsTheSet:
         assert mapping.model_dump()["evidence_ids"] == []
         stored = TTPMapping(technique_id=CLAIMED, technique_name="x")
         assert "evidence_ids" not in stored.model_dump()
+
+
+class TestEverySurfacePrintsTheSet:
+    def test_the_markdown_attack_table(self) -> None:
+        rows = _attack_rows(MarkdownRenderer().render(_report()))
+
+        assert rows[CLAIMED][-1] == ", ".join(EXPECTED)
+        assert rows[JUDGE_ONLY][-1] == NO_LEDGER_ENTRY
+
+    def test_the_analyst_attack_table_cites_one_note_holding_the_set(self) -> None:
+        text, notes = MarkdownRenderer(layout=ANALYST).render_with_notes(_report())
+        by_number = {note.number: list(note.evidence_ids) for note in notes}
+
+        rows = {
+            cells[1]: cells
+            for line in text.splitlines()
+            if len(cells := [c.strip() for c in line.strip().strip("|").split("|")]) == 5
+            and re.fullmatch(r"T\d{4}", cells[1])
+        }
+        (number,) = re.findall(r"#cite-(\d+)", rows[CLAIMED][-1])
+        assert by_number[int(number)] == EXPECTED
+        assert rows[JUDGE_ONLY][-1] == NO_LEDGER_ENTRY
+
+    def test_the_misp_technique_attribute(self) -> None:
+        attributes = build_misp_attributes(_report(), [], owner="job")
+
+        def comment(tid: str) -> str:
+            (found,) = [a for a in attributes if str(a["value"]).startswith(tid + " ")]
+            return str(found["comment"])
+
+        assert f"evidence: {', '.join(EXPECTED)}" in comment(CLAIMED)
+        assert f"evidence: {NO_LEDGER_ENTRY}" in comment(JUDGE_ONLY)
+
+    def test_the_navigator_layer(self) -> None:
+        layer = build_layer(_report().model_dump(mode="json"))
+        comments = {t["techniqueID"]: t["comment"] for t in layer["techniques"]}
+
+        assert comments[CLAIMED] == ", ".join(EXPECTED)
+        assert comments[JUDGE_ONLY] == NO_LEDGER_ENTRY
+
+    def test_the_defence_rows(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        report = _report()
+        monkeypatch.setattr(
+            builder_module,
+            "defense_for",
+            lambda tids: {
+                tid: TechniqueDefense(mitigations=[AttckObject("M1040", "Behavior Prevention")])
+                for tid in tids
+            },
+        )
+
+        rows = {r.technique_id: r for r in attck_defense_rows(report.ttp_mappings)}
+
+        assert rows[CLAIMED].evidence_ids == EXPECTED
+        assert rows[JUDGE_ONLY].evidence_ids == []
+
+    def test_the_api_technique_list(self) -> None:
+        mitre = _extract_mitre({"malware_report": _report().model_dump(mode="json")}) or []
+        by_id = {row["technique_id"]: row for row in mitre}
+
+        assert by_id[CLAIMED]["evidence_ids"] == EXPECTED
+        assert by_id[JUDGE_ONLY]["evidence_ids"] == []

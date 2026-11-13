@@ -536,7 +536,10 @@ class TestTheReport:
         # the generation time fixed: the dump and the Markdown of a report of
         # a job asked nothing must not move by a byte. The dump re-pinned when
         # each MISP attribute came to carry the report's ``tlp:`` tag (T-621);
-        # nothing else moved, and the Markdown did not.
+        # nothing else moved, and the Markdown did not. The Markdown re-pinned
+        # when a technique's Evidence cell came to name the rules' entries it
+        # does not list as rule matches (T-597): the T1055 row's cell is the
+        # only change, and the dump did not move.
         name, build = shape
         golden = json.loads((GOLDEN / f"{name}.json").read_text(encoding="utf-8"))
         # The build stamps today's date into the report number, and the

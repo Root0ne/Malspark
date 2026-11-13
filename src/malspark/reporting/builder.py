@@ -63,6 +63,7 @@ from malspark.reporting.models import (
     VersionHistoryEntry,
 )
 from malspark.reporting.section_servers import index_of, source_server
+from malspark.reporting.technique_evidence import technique_evidence_ids, technique_sandbox_items
 from malspark.schemas.judgement import SEVERITY_RATINGS
 
 if TYPE_CHECKING:
@@ -1472,7 +1473,8 @@ def attck_defense_rows(mappings: list[Any]) -> list[AttckDefenseRow]:
                 mitigations=[AttckLink(**vars(o)) for o in defense.mitigations],
                 detection_strategies=[AttckLink(**vars(o)) for o in defense.detection_strategies],
                 data_components=[AttckLink(**vars(o)) for o in defense.data_components],
-                evidence_ids=list(mapping.sources),
+                evidence_ids=technique_evidence_ids(mapping) or [],
+                sandbox_items=technique_sandbox_items(mapping),
             )
         )
     return rows

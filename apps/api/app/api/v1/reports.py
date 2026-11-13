@@ -318,6 +318,11 @@ async def get_mitre_techniques(
 ) -> dict:
     """Get MITRE ATT&CK technique mappings.
 
+    Each technique carries ``evidence_ids``: the ledger entries behind it, the
+    set every surface of the report prints for it; ``[]`` where no ledger
+    entry stands behind it. A row stored before the set was recorded carries
+    no such key.
+
     Returns ``{"techniques": []}`` when the report exists but the pipeline
     did not map any ATT&CK techniques (mock mode, benign sample, narrative
     LLM unavailable). Only an unknown / unauthorized report id returns 404 —

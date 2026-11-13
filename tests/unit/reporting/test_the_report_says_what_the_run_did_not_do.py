@@ -328,7 +328,8 @@ class TestTheMeasuredProofSitsBesideTheProse:
         attack = _section(_render(rich_report()), "## 8. MITRE ATT&CK mapping")
         (row,) = [line for line in attack.splitlines() if "| T1055 |" in line]
         assert "rule inject code (capa)" in row
-        assert row.endswith("| ev_0010, ev_0007 |"), row
+        # The technique's evidence, then the rule's entry, named as the rule's.
+        assert row.endswith("| ev_0010; rule matches: ev_0007 |"), row
 
 
 class TestMinorLeaks:

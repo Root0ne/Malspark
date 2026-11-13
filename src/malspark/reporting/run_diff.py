@@ -539,8 +539,10 @@ def _attack_items(run: RunRecord) -> list[_Item]:
                     "corroborated": row.get("is_corroborated"),
                     "id_valid": row.get("technique_id_valid", True),
                 },
-                # The mapping's evidence is quoted prose, with no id field; the
-                # technique's ledger ids are on its STIX objects.
+                # The technique's evidence as the builder recorded it
+                # (``technique_evidence``); a mapping stored before the set
+                # was recorded holds no id field and cites none.
+                _ids(_list(row.get("evidence_ids"))),
             )
         )
     return items

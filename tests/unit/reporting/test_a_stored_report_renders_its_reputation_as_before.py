@@ -78,11 +78,16 @@ from tests.unit.reporting.test_an_entry_without_a_source_is_read_as_before impor
 # Re-pinned when the report model's host identifier table came to print the
 # publish rule's answer for each row in a Published column, its footer saying
 # so: that table's rows and footer are the only change in each run.
+# The Markdown and HTML re-pinned when every surface came to print a technique's
+# evidence as one set (T-597): the ATT&CK table's Evidence cells are the only
+# change. A rule's entry the stored mapping does not list is named "rule
+# matches", and a mapping that stores its sources (run5, run7) lists
+# the entries among them; the STIX did not change.
 STORED_RENDERS = {
-    "run7": ("121d6fb2f21e54cd", "687dab665c364f96", "6f5f4f1b2ed8ea58"),
-    "run5": ("ff615676c496f1eb", "d88ef6eb57f5fa9a", "b7c19ebb4cb31921"),
-    "run4": ("95cc2744a52ef0af", "4669cfe8d40d01f1", "07a486002a8891ac"),
-    "local8": ("e1d6ec0345e42050", "9ccf9fffe48bf0bb", "86c2fdd68be6dde0"),
+    "run7": ("0c85258e0bc3f825", "5d209181f98213e8", "6f5f4f1b2ed8ea58"),
+    "run5": ("9909cddb577caa2c", "6ed669740689348f", "b7c19ebb4cb31921"),
+    "run4": ("6645defcf074ad3d", "60cfad50c120e58b", "07a486002a8891ac"),
+    "local8": ("d59ab7b6c10001fa", "b78721cb9ba4f766", "86c2fdd68be6dde0"),
 }
 
 _UUID = re.compile(r"--[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}")

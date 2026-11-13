@@ -94,6 +94,11 @@ from malspark.reporting.renderers.markdown import (
     report_title,
     started_by_the_sample,
 )
+from malspark.reporting.technique_evidence import (
+    NO_LEDGER_ENTRY,
+    NOT_RECORDED,
+    technique_evidence_ids,
+)
 from malspark.schemas.isr_models import judge_kept_note
 from malspark.utils.sentence_cut import left_out_span
 
@@ -2140,6 +2145,7 @@ class _Analyst:
                         cell.technique_id,
                     )
                     + self._status(cell.technique_id, cell.note),
+                    self._evidence(cell),
                 )
             )
         for tid, mapping in mappings.items():
@@ -2154,10 +2160,13 @@ class _Analyst:
                     _one_line(mapping.technique_name),
                     self._procedure(claim, _EV_RE.findall(" ".join(mapping.evidence_quotes)), tid)
                     + self._status(tid, ""),
+                    self._evidence(mapping),
                 )
             )
         if rows:
-            lines.extend([_row("Tactic", "ID", "Technique", "Procedure"), _divider(4), *rows])
+            lines.extend(
+                [_row("Tactic", "ID", "Technique", "Procedure", "Evidence"), _divider(5), *rows]
+            )
         else:
             lines.append("No ATT&CK technique is published in this run.")
         if held:
@@ -2187,7 +2196,17 @@ class _Analyst:
         return _item(
             f"{cell.technique_id} {_one_line(cell.technique_name)}: {status}"
             + self._status(cell.technique_id, "")
+            + f"; evidence {self._evidence(cell)}"
         )
+
+    def _evidence(self, row: Any) -> str:
+        """A technique's evidence as this report cites: one note listing its
+        entries (``technique_evidence``), or that no ledger entry stands behind
+        it; ``-`` for a row stored before the set was recorded that names none."""
+        ids = technique_evidence_ids(row)
+        if ids is None:
+            return NOT_RECORDED
+        return self.notes.marker(ids) or NO_LEDGER_ENTRY
 
     def _status(self, technique_id: str, note: str) -> str:
         """What the single-file report says beside a published row's status, or ``""``.

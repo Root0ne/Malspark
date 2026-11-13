@@ -85,7 +85,12 @@ STORED_EXPORTS = {
 # Re-pinned when the report model's host identifier table came to print the
 # publish rule's answer for each row in a Published column, its footer saying
 # so: that table's rows and footer are the only change in each run.
-HAIKU4_RENDERS = ("e4732614aa85ceb9", "7403edbaf9301caf", "2bbc1e9a9eec44c6")
+# The Markdown and HTML re-pinned when every surface came to print a technique's
+# evidence as one set (T-597): the ATT&CK table's Evidence cells are the only
+# change. A rule's entry the stored mapping does not list is named "rule
+# matches", and a mapping that stores its sources (haiku4) lists
+# the entries among them; the STIX did not change.
+HAIKU4_RENDERS = ("f2b01c295b9813f0", "7e7c99ce92d9ede7", "2bbc1e9a9eec44c6")
 
 _UUID = re.compile(r"--[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}")
 _STAMP = re.compile(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})")
