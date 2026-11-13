@@ -567,6 +567,9 @@ def _content_of(prompt: str, first: bool) -> str:
             "".join(f"line {i}\n" for i in range(300)) + "b" * 107_406 + "\n" + "tail\n" * 20_000,
         ),
     ],
+    # Short ids: a generated id of the long text names a directory, and a
+    # Windows path holds 260 characters.
+    ids=["ghidra-one-line", "network-long-flows", "network-flows-below-room", "generic-one-line"],
 )
 def test_a_line_longer_than_the_room_never_sends_a_chunk_past_it(
     domain: str, room: int, text: str, monkeypatch: pytest.MonkeyPatch
