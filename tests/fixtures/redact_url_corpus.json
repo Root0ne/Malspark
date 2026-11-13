@@ -1,0 +1,634 @@
+[
+ {
+  "input": "RuntimeError: cannot reach redis://default:PWPLACEHOLDER{AT}redis.internal:6379/0",
+  "by_value": true,
+  "literals": [],
+  "expected": "RuntimeError: cannot reach redis://***{AT}redis.internal:6379/0"
+ },
+ {
+  "input": "Enrichment queue unavailable: arq could not connect to redis://default:PWPLACEHOLDER{AT}redis.internal:6379/0",
+  "by_value": true,
+  "literals": [],
+  "expected": "Enrichment queue unavailable: arq could not connect to redis://***{AT}redis.internal:6379/0"
+ },
+ {
+  "input": "redis://default:PWPLACEHOLDER{AT}redis.internal:6379/0",
+  "by_value": true,
+  "literals": [],
+  "expected": "redis://***{AT}redis.internal:6379/0"
+ },
+ {
+  "input": "postgresql://malspark:PWPLACEHOLDER{AT}db.internal:5432/malspark",
+  "by_value": true,
+  "literals": [],
+  "expected": "postgresql://***{AT}db.internal:5432/malspark"
+ },
+ {
+  "input": "ConnectionError: http://user:PWPLACEHOLDER{AT}qdrant.internal:6333 refused",
+  "by_value": true,
+  "literals": [],
+  "expected": "ConnectionError: http://***{AT}qdrant.internal:6333 refused"
+ },
+ {
+  "input": "MemoryStoreError: did not answer at http://u:PWPLACEHOLDER{AT}q:6333",
+  "by_value": true,
+  "literals": [],
+  "expected": "MemoryStoreError: did not answer at http://***{AT}q:6333"
+ },
+ {
+  "input": "could not connect to redis://user:PWPLACEHOLDER{AT}bad-host:6379/0",
+  "by_value": true,
+  "literals": [],
+  "expected": "could not connect to redis://***{AT}bad-host:6379/0"
+ },
+ {
+  "input": "could not connect to redis://:PWPLACEHOLDER{AT}bad-host:6379/0",
+  "by_value": true,
+  "literals": [],
+  "expected": "could not connect to redis://***{AT}bad-host:6379/0"
+ },
+ {
+  "input": "could not connect to redis://user:PWPLACEHOLDER{AT}bad-host:6379/0",
+  "by_value": true,
+  "literals": [],
+  "expected": "could not connect to redis://***{AT}bad-host:6379/0"
+ },
+ {
+  "input": "could not connect to redis://user:PWPLACEHOLDER{AT}bad-host:6379/0",
+  "by_value": true,
+  "literals": [],
+  "expected": "could not connect to redis://***{AT}bad-host:6379/0"
+ },
+ {
+  "input": "could not connect to redis://bad-host:6379/0 (mail x{AT}y.z)",
+  "by_value": true,
+  "literals": [],
+  "expected": "could not connect to redis://bad-host:6379/0 (mail x{AT}y.z)"
+ },
+ {
+  "input": "ConnectError: refused",
+  "by_value": true,
+  "literals": [],
+  "expected": "ConnectError: refused"
+ },
+ {
+  "input": "RuntimeError: could not prepare http://user:PWPLACEHOLDER{AT}cape.example:8000",
+  "by_value": true,
+  "literals": [],
+  "expected": "RuntimeError: could not prepare http://***{AT}cape.example:8000"
+ },
+ {
+  "input": "driver said: user:PWPLACEHOLDER{AT}llm.internal:8080/v1",
+  "by_value": true,
+  "literals": [],
+  "expected": "driver said: ***{AT}llm.internal:8080/v1"
+ },
+ {
+  "input": "driver said: user:PWPLACEHOLDER{AT}x{AT}llm.internal:8080/v1",
+  "by_value": true,
+  "literals": [],
+  "expected": "driver said: ***{AT}llm.internal:8080/v1"
+ },
+ {
+  "input": "driver said: user:PWPLACEHOLDER%40x{AT}llm.internal:8080",
+  "by_value": true,
+  "literals": [],
+  "expected": "driver said: ***{AT}llm.internal:8080"
+ },
+ {
+  "input": "driver said: PWPLACEHOLDER{AT}llm.internal:8080",
+  "by_value": true,
+  "literals": [],
+  "expected": "driver said: ***{AT}llm.internal:8080"
+ },
+ {
+  "input": "driver said: user:PWPLACEHOLDER{AT}[::1]:8080/v1",
+  "by_value": true,
+  "literals": [],
+  "expected": "driver said: ***{AT}[::1]:8080/v1"
+ },
+ {
+  "input": "https://h/x?clientSecret{EQ}A&accessToken{EQ}B&refreshToken{EQ}C&authToken{EQ}D",
+  "by_value": true,
+  "literals": [],
+  "expected": "https://h/x?clientSecret{EQ}***&accessToken{EQ}***&refreshToken{EQ}***&authToken{EQ}***"
+ },
+ {
+  "input": "https://h/x?design{EQ}1&keyword{EQ}2&author{EQ}3",
+  "by_value": true,
+  "literals": [],
+  "expected": "https://h/x?design{EQ}1&keyword{EQ}2&author{EQ}3"
+ },
+ {
+  "input": "driver said: C:\\x{EQ}u:PWPLACEHOLDER{AT}h:8080",
+  "by_value": true,
+  "literals": [],
+  "expected": "driver said: C:\\x{EQ}***{AT}h:8080"
+ },
+ {
+  "input": "driver said: C:\\x)u:PWPLACEHOLDER{AT}h:8080",
+  "by_value": true,
+  "literals": [],
+  "expected": "driver said: C:\\x)***{AT}h:8080"
+ },
+ {
+  "input": "driver said: [C:\\x]u:PWPLACEHOLDER{AT}h:8080",
+  "by_value": true,
+  "literals": [],
+  "expected": "driver said: [C:\\x]***{AT}h:8080"
+ },
+ {
+  "input": "driver said: u:PWPLACEHOLDER{AT}h:8080,x",
+  "by_value": true,
+  "literals": [],
+  "expected": "driver said: ***{AT}h:8080,x"
+ },
+ {
+  "input": "driver said: C:\\x,u:PWPLACEHOLDER{AT}h:8080,C:\\z",
+  "by_value": true,
+  "literals": [],
+  "expected": "driver said: C:\\x,***{AT}h:8080,C:\\z"
+ },
+ {
+  "input": "driver said: {\"a\":\"C:\\\\x,'PWPLACEHOLDER{AT}h:8080'\"}",
+  "by_value": true,
+  "literals": [],
+  "expected": "driver said: {\"a\":\"C:\\\\x,'***{AT}h:8080'\"}"
+ },
+ {
+  "input": "driver said: x;u:PWPLACEHOLDER\\q{AT}h",
+  "by_value": true,
+  "literals": [],
+  "expected": "driver said: ***{AT}h"
+ },
+ {
+  "input": "driver said: u:p\\PWPLACEHOLDER{AT}h",
+  "by_value": true,
+  "literals": [],
+  "expected": "driver said: ***{AT}h"
+ },
+ {
+  "input": "driver said: u:/PWPLACEHOLDER\\x{AT}h",
+  "by_value": true,
+  "literals": [],
+  "expected": "driver said: u:/PWPLACEHOLDER\\x{AT}h"
+ },
+ {
+  "input": "driver said: u:/PWPLACEHOLDER\\x{AT}h:8080",
+  "by_value": true,
+  "literals": [],
+  "expected": "driver said: u:/PWPLACEHOLDER\\x{AT}h:8080"
+ },
+ {
+  "input": "driver said: \\\\PWPLACEHOLDER{AT}SSL\\x{AT}h:8080",
+  "by_value": true,
+  "literals": [],
+  "expected": "driver said: \\\\PWPLACEHOLDER{AT}SSL\\x{AT}h:8080"
+ },
+ {
+  "input": "driver said: \\\\PWPLACEHOLDER{AT}1234\\x{AT}h",
+  "by_value": true,
+  "literals": [],
+  "expected": "driver said: \\\\PWPLACEHOLDER{AT}1234\\x{AT}h"
+ },
+ {
+  "input": "driver said: \\\\PWPLACEHOLDER$\\x{AT}h/y",
+  "by_value": true,
+  "literals": [],
+  "expected": "driver said: \\\\PWPLACEHOLDER$\\x{AT}h/y"
+ },
+ {
+  "input": "driver said: \\\\PWPLACEHOLDER\\x{AT}h:8080",
+  "by_value": true,
+  "literals": [],
+  "expected": "driver said: \\\\PWPLACEHOLDER\\x{AT}h:8080"
+ },
+ {
+  "input": "ConnectError: failed to connect to http://ghidra:PWPLACEHOLDER{AT}ghidra:8089/mcp/schema",
+  "by_value": true,
+  "literals": [],
+  "expected": "ConnectError: failed to connect to http://***{AT}ghidra:8089/mcp/schema"
+ },
+ {
+  "input": "x",
+  "by_value": true,
+  "literals": [],
+  "expected": "x"
+ },
+ {
+  "input": "submitting the sample: connection refused",
+  "by_value": true,
+  "literals": [],
+  "expected": "submitting the sample: connection refused"
+ },
+ {
+  "input": "fetching the report: connection refused",
+  "by_value": true,
+  "literals": [],
+  "expected": "fetching the report: connection refused"
+ },
+ {
+  "input": "failed: https://h/x?a{EQ}1&api_key{EQ}SECRET&b{EQ}2 and https://h/y?token{EQ}T",
+  "by_value": true,
+  "literals": [],
+  "expected": "failed: https://h/x?a{EQ}1&api_key{EQ}***&b{EQ}2 and https://h/y?token{EQ}***"
+ },
+ {
+  "input": "preparing the submission: no host",
+  "by_value": true,
+  "literals": [],
+  "expected": "preparing the submission: no host"
+ },
+ {
+  "input": "https://h/x?design{EQ}1&keyword{EQ}2&monkey{EQ}3&author{EQ}4",
+  "by_value": true,
+  "literals": [],
+  "expected": "https://h/x?design{EQ}1&keyword{EQ}2&monkey{EQ}3&author{EQ}4"
+ },
+ {
+  "input": "https://h/x?api_key{EQ}A&access_token{EQ}B&x-sig{EQ}C&n{EQ}1",
+  "by_value": true,
+  "literals": [],
+  "expected": "https://h/x?api_key{EQ}***&access_token{EQ}***&x-sig{EQ}***&n{EQ}1"
+ },
+ {
+  "input": "retry ;key{EQ}value and &token{EQ}1 outside a url",
+  "by_value": true,
+  "literals": [],
+  "expected": "retry ;key{EQ}value and &token{EQ}1 outside a url"
+ },
+ {
+  "input": "The quick brown fox jumps over",
+  "by_value": true,
+  "literals": [],
+  "expected": "The quick brown fox jumps over"
+ },
+ {
+  "input": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+  "by_value": true,
+  "literals": [],
+  "expected": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+ },
+ {
+  "input": "see https://user:pw{AT}example.co",
+  "by_value": true,
+  "literals": [],
+  "expected": "see https://***{AT}example.co"
+ },
+ {
+  "input": "key{EQ}value&other{EQ}thing key{EQ}valu",
+  "by_value": true,
+  "literals": [],
+  "expected": "key{EQ}value&other{EQ}thing key{EQ}valu"
+ },
+ {
+  "input": "https://h/p?a{EQ}1&b{EQ}2&token{EQ}zz&h",
+  "by_value": true,
+  "literals": [],
+  "expected": "https://h/p?a{EQ}1&b{EQ}2&token{EQ}***&h"
+ },
+ {
+  "input": "9bFlIkpYt5HfavHYMD5hzcS7hsMnEA",
+  "by_value": true,
+  "literals": [],
+  "expected": "9bFlIkpYt5HfavHYMD5hzcS7hsMnEA"
+ },
+ {
+  "input": "a{AT}b:c/d{AT}e:f/a{AT}b:c/d{AT}e:f/a{AT}b:c/",
+  "by_value": true,
+  "literals": [],
+  "expected": "a{AT}b:c/d{AT}e:f/a{AT}b:c/d{AT}e:f/a{AT}b:c/"
+ },
+ {
+  "input": "{AT}{AT}{AT}{AT}{AT}{AT}{AT}{AT}{AT}{AT}{AT}{AT}{AT}{AT}{AT}{AT}{AT}{AT}{AT}{AT}{AT}{AT}{AT}{AT}{AT}{AT}{AT}{AT}{AT}{AT}",
+  "by_value": true,
+  "literals": [],
+  "expected": "{AT}{AT}{AT}{AT}{AT}{AT}{AT}{AT}{AT}{AT}{AT}{AT}{AT}{AT}{AT}{AT}{AT}{AT}{AT}{AT}{AT}{AT}{AT}{AT}{AT}{AT}{AT}{AT}{AT}{AT}"
+ },
+ {
+  "input": "::::::::::::::::::::::::::::::",
+  "by_value": true,
+  "literals": [],
+  "expected": "::::::::::::::::::::::::::::::"
+ },
+ {
+  "input": "//////////////////////////////",
+  "by_value": true,
+  "literals": [],
+  "expected": "//////////////////////////////"
+ },
+ {
+  "input": "://://://://://://://://://://",
+  "by_value": true,
+  "literals": [],
+  "expected": "://://://://://://://://://://"
+ },
+ {
+  "input": "http://a{AT}http://a{AT}http://a{AT}htt",
+  "by_value": true,
+  "literals": [],
+  "expected": "http://***{AT}http://***{AT}http://***{AT}htt"
+ },
+ {
+  "input": "x PWPLACEHOLDER y x SECRETV",
+  "by_value": true,
+  "literals": [],
+  "expected": "x PWPLACEHOLDER y x SECRETV"
+ },
+ {
+  "input": "://{AT}a{AT}a{AT}a{AT}a{AT}a{AT}a{AT}a{AT}a{AT}a{AT}a{AT}a{AT}a{AT}a{AT}a{AT}a",
+  "by_value": true,
+  "literals": [],
+  "expected": "***{AT}a"
+ },
+ {
+  "input": "a{AT}a{AT}a{AT}a{AT}a{AT}a{AT}a{AT}a{AT}a{AT}a{AT}a{AT}a{AT}a{AT}a{AT}a{AT}",
+  "by_value": true,
+  "literals": [],
+  "expected": "a{AT}a{AT}a{AT}a{AT}a{AT}a{AT}a{AT}a{AT}a{AT}a{AT}a{AT}a{AT}a{AT}a{AT}a{AT}"
+ },
+ {
+  "input": "a:b{AT}a:b{AT}a:b{AT}a:b{AT}a:b{AT}a:b{AT}a:b{AT}",
+  "by_value": true,
+  "literals": [],
+  "expected": "a:b{AT}a:b{AT}a:b{AT}a:b{AT}a:b{AT}a:b{AT}a:b{AT}"
+ },
+ {
+  "input": "a\\b{AT}c:a\\b{AT}c:a\\b{AT}c:a\\b{AT}c:a\\b{AT}c:",
+  "by_value": true,
+  "literals": [],
+  "expected": "***{AT}c:"
+ },
+ {
+  "input": "(a{AT}(a{AT}(a{AT}(a{AT}(a{AT}(a{AT}(a{AT}(a{AT}(a{AT}(a{AT}",
+  "by_value": true,
+  "literals": [],
+  "expected": "(a{AT}(a{AT}(a{AT}(a{AT}(a{AT}(a{AT}(a{AT}(a{AT}(a{AT}(a{AT}"
+ },
+ {
+  "input": "a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.",
+  "by_value": true,
+  "literals": [],
+  "expected": "a.a.a.a.a.a.a.a.a.a.a.a.a.a.a."
+ },
+ {
+  "input": "?a?a?a?a?a?a?a?a?a?a?a?a?a?a?a",
+  "by_value": true,
+  "literals": [],
+  "expected": "?a?a?a?a?a?a?a?a?a?a?a?a?a?a?a"
+ },
+ {
+  "input": "&a{EQ}1&a{EQ}1&a{EQ}1&a{EQ}1&a{EQ}1&a{EQ}1&a{EQ}1",
+  "by_value": true,
+  "literals": [],
+  "expected": "&a{EQ}1&a{EQ}1&a{EQ}1&a{EQ}1&a{EQ}1&a{EQ}1&a{EQ}1"
+ },
+ {
+  "input": "#a{EQ}#a{EQ}#a{EQ}#a{EQ}#a{EQ}#a{EQ}#a{EQ}#a{EQ}#a{EQ}#a{EQ}",
+  "by_value": true,
+  "literals": [],
+  "expected": "#a{EQ}#a{EQ}#a{EQ}#a{EQ}#a{EQ}#a{EQ}#a{EQ}#a{EQ}#a{EQ}#a{EQ}"
+ },
+ {
+  "input": "aaaaaaaaaaaaaaa://x ",
+  "by_value": true,
+  "literals": [],
+  "expected": "aaaaaaaaaaaaaaa://x "
+ },
+ {
+  "input": "%a{AT}b%a{AT}b%a{AT}b%a{AT}b%a{AT}b%a{AT}b%a{AT}b",
+  "by_value": true,
+  "literals": [],
+  "expected": "%a{AT}b%a{AT}b%a{AT}b%a{AT}b%a{AT}b%a{AT}b%a{AT}b"
+ },
+ {
+  "input": "\u1054\u078c\u1fb6\u1cc5\u1e3a\u29b4\u184c\u0d70\u0602\u1f3a\u01d1\u18f3\u1bb3\u26e1#\u2c89\u1c82\u110c\u2e2e\u0ea5\u25d6\u068b\u1451\u01f6\u016e\u01a1\u2993\u22a7\u0097\u1866",
+  "by_value": true,
+  "literals": [],
+  "expected": "\u1054\u078c\u1fb6\u1cc5\u1e3a\u29b4\u184c\u0d70\u0602\u1f3a\u01d1\u18f3\u1bb3\u26e1#\u2c89\u1c82\u110c\u2e2e\u0ea5\u25d6\u068b\u1451\u01f6\u016e\u01a1\u2993\u22a7\u0097\u1866"
+ },
+ {
+  "input": "The quick brown fox jumps over the lazy dog. The quick brown fox jumps over the lazy dog. The quick brown fox jumps over",
+  "by_value": true,
+  "literals": [],
+  "expected": "The quick brown fox jumps over the lazy dog. The quick brown fox jumps over the lazy dog. The quick brown fox jumps over"
+ },
+ {
+  "input": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+  "by_value": true,
+  "literals": [],
+  "expected": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+ },
+ {
+  "input": "see https://user:pw{AT}example.com/p?token{EQ}abc&x{EQ}1 now see https://user:pw{AT}example.com/p?token{EQ}abc&x{EQ}1 now see https://user",
+  "by_value": true,
+  "literals": [],
+  "expected": "see https://***{AT}example.com/p?token{EQ}***&x{EQ}1 now see https://***{AT}example.com/p?token{EQ}***&x{EQ}1 now see https://user"
+ },
+ {
+  "input": "key{EQ}value&other{EQ}thing key{EQ}value&other{EQ}thing key{EQ}value&other{EQ}thing key{EQ}value&other{EQ}thing key{EQ}value&other{EQ}thing key{EQ}value&",
+  "by_value": true,
+  "literals": [],
+  "expected": "key{EQ}value&other{EQ}thing key{EQ}value&other{EQ}thing key{EQ}value&other{EQ}thing key{EQ}value&other{EQ}thing key{EQ}value&other{EQ}thing key{EQ}value&"
+ },
+ {
+  "input": "https://h/p?a{EQ}1&b{EQ}2&token{EQ}zz&https://h/p?a{EQ}1&b{EQ}2&token{EQ}zz&https://h/p?a{EQ}1&b{EQ}2&token{EQ}zz&https://h/p?a{EQ}1&b{EQ}2&token{EQ}zz&http",
+  "by_value": true,
+  "literals": [],
+  "expected": "https://h/p?a{EQ}1&b{EQ}2&token{EQ}***&https://h/p?a{EQ}1&b{EQ}2&token{EQ}***&https://h/p?a{EQ}1&b{EQ}2&token{EQ}***&https://h/p?a{EQ}1&b{EQ}2&token{EQ}***&http"
+ },
+ {
+  "input": "9bFlIkpYt5HfavHYMD5hzcS7hsPRxCcQPDRMQYnrLx571dR+RG/OwqPYEXNhEOV4G8zOppZ2LmEWxunJLZm/NYwuBxiCLOR8qMdBB+ZssOSys/TVjYLKY8lu",
+  "by_value": true,
+  "literals": [],
+  "expected": "9bFlIkpYt5HfavHYMD5hzcS7hsPRxCcQPDRMQYnrLx571dR+RG/OwqPYEXNhEOV4G8zOppZ2LmEWxunJLZm/NYwuBxiCLOR8qMdBB+ZssOSys/TVjYLKY8lu"
+ },
+ {
+  "input": "a{AT}b:c/d{AT}e:f/a{AT}b:c/d{AT}e:f/a{AT}b:c/d{AT}e:f/a{AT}b:c/d{AT}e:f/a{AT}b:c/d{AT}e:f/a{AT}b:c/d{AT}e:f/a{AT}b:c/d{AT}e:f/a{AT}b:c/d{AT}e:f/a{AT}b:c/d{AT}e:f/a{AT}b:c/d{AT}e:f/",
+  "by_value": true,
+  "literals": [],
+  "expected": "a{AT}b:c/d{AT}e:f/a{AT}b:c/d{AT}e:f/a{AT}b:c/d{AT}e:f/a{AT}b:c/d{AT}e:f/a{AT}b:c/d{AT}e:f/a{AT}b:c/d{AT}e:f/a{AT}b:c/d{AT}e:f/a{AT}b:c/d{AT}e:f/a{AT}b:c/d{AT}e:f/a{AT}b:c/d{AT}e:f/"
+ },
+ {
+  "input": "{AT}{AT}{AT}{AT}{AT}{AT}{AT}{AT}{AT}{AT}{AT}{AT}{AT}{AT}{AT}{AT}{AT}{AT}{AT}{AT}{AT}{AT}{AT}{AT}{AT}{AT}{AT}{AT}{AT}{AT}{AT}{AT}{AT}{AT}{AT}{AT}{AT}{AT}{AT}{AT}{AT}{AT}{AT}{AT}{AT}{AT}{AT}{AT}{AT}{AT}{AT}{AT}{AT}{AT}{AT}{AT}{AT}{AT}{AT}{AT}{AT}{AT}{AT}{AT}{AT}{AT}{AT}{AT}{AT}{AT}{AT}{AT}{AT}{AT}{AT}{AT}{AT}{AT}{AT}{AT}{AT}{AT}{AT}{AT}{AT}{AT}{AT}{AT}{AT}{AT}{AT}{AT}{AT}{AT}{AT}{AT}{AT}{AT}{AT}{AT}{AT}{AT}{AT}{AT}{AT}{AT}{AT}{AT}{AT}{AT}{AT}{AT}{AT}{AT}{AT}{AT}{AT}{AT}{AT}{AT}",
+  "by_value": true,
+  "literals": [],
+  "expected": "{AT}{AT}{AT}{AT}{AT}{AT}{AT}{AT}{AT}{AT}{AT}{AT}{AT}{AT}{AT}{AT}{AT}{AT}{AT}{AT}{AT}{AT}{AT}{AT}{AT}{AT}{AT}{AT}{AT}{AT}{AT}{AT}{AT}{AT}{AT}{AT}{AT}{AT}{AT}{AT}{AT}{AT}{AT}{AT}{AT}{AT}{AT}{AT}{AT}{AT}{AT}{AT}{AT}{AT}{AT}{AT}{AT}{AT}{AT}{AT}{AT}{AT}{AT}{AT}{AT}{AT}{AT}{AT}{AT}{AT}{AT}{AT}{AT}{AT}{AT}{AT}{AT}{AT}{AT}{AT}{AT}{AT}{AT}{AT}{AT}{AT}{AT}{AT}{AT}{AT}{AT}{AT}{AT}{AT}{AT}{AT}{AT}{AT}{AT}{AT}{AT}{AT}{AT}{AT}{AT}{AT}{AT}{AT}{AT}{AT}{AT}{AT}{AT}{AT}{AT}{AT}{AT}{AT}{AT}{AT}"
+ },
+ {
+  "input": "::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::",
+  "by_value": true,
+  "literals": [],
+  "expected": "::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::"
+ },
+ {
+  "input": "////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////",
+  "by_value": true,
+  "literals": [],
+  "expected": "////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////"
+ },
+ {
+  "input": "://://://://://://://://://://://://://://://://://://://://://://://://://://://://://://://://://://://://://://://://",
+  "by_value": true,
+  "literals": [],
+  "expected": "://://://://://://://://://://://://://://://://://://://://://://://://://://://://://://://://://://://://://://://://"
+ },
+ {
+  "input": "http://a{AT}http://a{AT}http://a{AT}http://a{AT}http://a{AT}http://a{AT}http://a{AT}http://a{AT}http://a{AT}http://a{AT}http://a{AT}http://a{AT}http://a{AT}htt",
+  "by_value": true,
+  "literals": [],
+  "expected": "http://***{AT}http://***{AT}http://***{AT}http://***{AT}http://***{AT}http://***{AT}http://***{AT}http://***{AT}http://***{AT}http://***{AT}http://***{AT}http://***{AT}http://***{AT}htt"
+ },
+ {
+  "input": "x PWPLACEHOLDER y x PWPLACEHOLDER y x PWPLACEHOLDER y x PWPLACEHOLDER y x PWPLACEHOLDER y x SECRETVALUE12",
+  "by_value": true,
+  "literals": [],
+  "expected": "x PWPLACEHOLDER y x PWPLACEHOLDER y x PWPLACEHOLDER y x PWPLACEHOLDER y x PWPLACEHOLDER y x SECRETVALUE12"
+ },
+ {
+  "input": "://{AT}a{AT}a{AT}a{AT}a{AT}a{AT}a{AT}a{AT}a{AT}a{AT}a{AT}a{AT}a{AT}a{AT}a{AT}a{AT}a{AT}a{AT}a{AT}a{AT}a{AT}a{AT}a{AT}a{AT}a{AT}a{AT}a{AT}a{AT}a{AT}a{AT}a{AT}a{AT}a{AT}a{AT}a{AT}a{AT}a{AT}a{AT}a{AT}a{AT}a{AT}a{AT}a{AT}a{AT}a{AT}a{AT}a{AT}a{AT}a{AT}a{AT}a{AT}a{AT}a{AT}a{AT}a{AT}a{AT}a{AT}a{AT}a{AT}a{AT}a",
+  "by_value": true,
+  "literals": [],
+  "expected": "***{AT}a"
+ },
+ {
+  "input": "a{AT}a{AT}a{AT}a{AT}a{AT}a{AT}a{AT}a{AT}a{AT}a{AT}a{AT}a{AT}a{AT}a{AT}a{AT}a{AT}a{AT}a{AT}a{AT}a{AT}a{AT}a{AT}a{AT}a{AT}a{AT}a{AT}a{AT}a{AT}a{AT}a{AT}a{AT}a{AT}a{AT}a{AT}a{AT}a{AT}a{AT}a{AT}a{AT}a{AT}a{AT}a{AT}a{AT}a{AT}a{AT}a{AT}a{AT}a{AT}a{AT}a{AT}a{AT}a{AT}a{AT}a{AT}a{AT}a{AT}a{AT}a{AT}a{AT}a{AT}",
+  "by_value": true,
+  "literals": [],
+  "expected": "a{AT}a{AT}a{AT}a{AT}a{AT}a{AT}a{AT}a{AT}a{AT}a{AT}a{AT}a{AT}a{AT}a{AT}a{AT}a{AT}a{AT}a{AT}a{AT}a{AT}a{AT}a{AT}a{AT}a{AT}a{AT}a{AT}a{AT}a{AT}a{AT}a{AT}a{AT}a{AT}a{AT}a{AT}a{AT}a{AT}a{AT}a{AT}a{AT}a{AT}a{AT}a{AT}a{AT}a{AT}a{AT}a{AT}a{AT}a{AT}a{AT}a{AT}a{AT}a{AT}a{AT}a{AT}a{AT}a{AT}a{AT}a{AT}a{AT}a{AT}"
+ },
+ {
+  "input": "a:b{AT}a:b{AT}a:b{AT}a:b{AT}a:b{AT}a:b{AT}a:b{AT}a:b{AT}a:b{AT}a:b{AT}a:b{AT}a:b{AT}a:b{AT}a:b{AT}a:b{AT}a:b{AT}a:b{AT}a:b{AT}a:b{AT}a:b{AT}a:b{AT}a:b{AT}a:b{AT}a:b{AT}a:b{AT}a:b{AT}a:b{AT}a:b{AT}a:b{AT}a:b{AT}",
+  "by_value": true,
+  "literals": [],
+  "expected": "a:b{AT}a:b{AT}a:b{AT}a:b{AT}a:b{AT}a:b{AT}a:b{AT}a:b{AT}a:b{AT}a:b{AT}a:b{AT}a:b{AT}a:b{AT}a:b{AT}a:b{AT}a:b{AT}a:b{AT}a:b{AT}a:b{AT}a:b{AT}a:b{AT}a:b{AT}a:b{AT}a:b{AT}a:b{AT}a:b{AT}a:b{AT}a:b{AT}a:b{AT}a:b{AT}"
+ },
+ {
+  "input": "a\\b{AT}c:a\\b{AT}c:a\\b{AT}c:a\\b{AT}c:a\\b{AT}c:a\\b{AT}c:a\\b{AT}c:a\\b{AT}c:a\\b{AT}c:a\\b{AT}c:a\\b{AT}c:a\\b{AT}c:a\\b{AT}c:a\\b{AT}c:a\\b{AT}c:a\\b{AT}c:a\\b{AT}c:a\\b{AT}c:a\\b{AT}c:a\\b{AT}c:",
+  "by_value": true,
+  "literals": [],
+  "expected": "***{AT}c:"
+ },
+ {
+  "input": "(a{AT}(a{AT}(a{AT}(a{AT}(a{AT}(a{AT}(a{AT}(a{AT}(a{AT}(a{AT}(a{AT}(a{AT}(a{AT}(a{AT}(a{AT}(a{AT}(a{AT}(a{AT}(a{AT}(a{AT}(a{AT}(a{AT}(a{AT}(a{AT}(a{AT}(a{AT}(a{AT}(a{AT}(a{AT}(a{AT}(a{AT}(a{AT}(a{AT}(a{AT}(a{AT}(a{AT}(a{AT}(a{AT}(a{AT}(a{AT}",
+  "by_value": true,
+  "literals": [],
+  "expected": "(a{AT}(a{AT}(a{AT}(a{AT}(a{AT}(a{AT}(a{AT}(a{AT}(a{AT}(a{AT}(a{AT}(a{AT}(a{AT}(a{AT}(a{AT}(a{AT}(a{AT}(a{AT}(a{AT}(a{AT}(a{AT}(a{AT}(a{AT}(a{AT}(a{AT}(a{AT}(a{AT}(a{AT}(a{AT}(a{AT}(a{AT}(a{AT}(a{AT}(a{AT}(a{AT}(a{AT}(a{AT}(a{AT}(a{AT}(a{AT}"
+ },
+ {
+  "input": "a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.",
+  "by_value": true,
+  "literals": [],
+  "expected": "a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a."
+ },
+ {
+  "input": "?a?a?a?a?a?a?a?a?a?a?a?a?a?a?a?a?a?a?a?a?a?a?a?a?a?a?a?a?a?a?a?a?a?a?a?a?a?a?a?a?a?a?a?a?a?a?a?a?a?a?a?a?a?a?a?a?a?a?a?a",
+  "by_value": true,
+  "literals": [],
+  "expected": "?a?a?a?a?a?a?a?a?a?a?a?a?a?a?a?a?a?a?a?a?a?a?a?a?a?a?a?a?a?a?a?a?a?a?a?a?a?a?a?a?a?a?a?a?a?a?a?a?a?a?a?a?a?a?a?a?a?a?a?a"
+ },
+ {
+  "input": "&a{EQ}1&a{EQ}1&a{EQ}1&a{EQ}1&a{EQ}1&a{EQ}1&a{EQ}1&a{EQ}1&a{EQ}1&a{EQ}1&a{EQ}1&a{EQ}1&a{EQ}1&a{EQ}1&a{EQ}1&a{EQ}1&a{EQ}1&a{EQ}1&a{EQ}1&a{EQ}1&a{EQ}1&a{EQ}1&a{EQ}1&a{EQ}1&a{EQ}1&a{EQ}1&a{EQ}1&a{EQ}1&a{EQ}1&a{EQ}1",
+  "by_value": true,
+  "literals": [],
+  "expected": "&a{EQ}1&a{EQ}1&a{EQ}1&a{EQ}1&a{EQ}1&a{EQ}1&a{EQ}1&a{EQ}1&a{EQ}1&a{EQ}1&a{EQ}1&a{EQ}1&a{EQ}1&a{EQ}1&a{EQ}1&a{EQ}1&a{EQ}1&a{EQ}1&a{EQ}1&a{EQ}1&a{EQ}1&a{EQ}1&a{EQ}1&a{EQ}1&a{EQ}1&a{EQ}1&a{EQ}1&a{EQ}1&a{EQ}1&a{EQ}1"
+ },
+ {
+  "input": "#a{EQ}#a{EQ}#a{EQ}#a{EQ}#a{EQ}#a{EQ}#a{EQ}#a{EQ}#a{EQ}#a{EQ}#a{EQ}#a{EQ}#a{EQ}#a{EQ}#a{EQ}#a{EQ}#a{EQ}#a{EQ}#a{EQ}#a{EQ}#a{EQ}#a{EQ}#a{EQ}#a{EQ}#a{EQ}#a{EQ}#a{EQ}#a{EQ}#a{EQ}#a{EQ}#a{EQ}#a{EQ}#a{EQ}#a{EQ}#a{EQ}#a{EQ}#a{EQ}#a{EQ}#a{EQ}#a{EQ}",
+  "by_value": true,
+  "literals": [],
+  "expected": "#a{EQ}#a{EQ}#a{EQ}#a{EQ}#a{EQ}#a{EQ}#a{EQ}#a{EQ}#a{EQ}#a{EQ}#a{EQ}#a{EQ}#a{EQ}#a{EQ}#a{EQ}#a{EQ}#a{EQ}#a{EQ}#a{EQ}#a{EQ}#a{EQ}#a{EQ}#a{EQ}#a{EQ}#a{EQ}#a{EQ}#a{EQ}#a{EQ}#a{EQ}#a{EQ}#a{EQ}#a{EQ}#a{EQ}#a{EQ}#a{EQ}#a{EQ}#a{EQ}#a{EQ}#a{EQ}#a{EQ}"
+ },
+ {
+  "input": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa://x ",
+  "by_value": true,
+  "literals": [],
+  "expected": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa://x "
+ },
+ {
+  "input": "%a{AT}b%a{AT}b%a{AT}b%a{AT}b%a{AT}b%a{AT}b%a{AT}b%a{AT}b%a{AT}b%a{AT}b%a{AT}b%a{AT}b%a{AT}b%a{AT}b%a{AT}b%a{AT}b%a{AT}b%a{AT}b%a{AT}b%a{AT}b%a{AT}b%a{AT}b%a{AT}b%a{AT}b%a{AT}b%a{AT}b%a{AT}b%a{AT}b%a{AT}b%a{AT}b",
+  "by_value": true,
+  "literals": [],
+  "expected": "%a{AT}b%a{AT}b%a{AT}b%a{AT}b%a{AT}b%a{AT}b%a{AT}b%a{AT}b%a{AT}b%a{AT}b%a{AT}b%a{AT}b%a{AT}b%a{AT}b%a{AT}b%a{AT}b%a{AT}b%a{AT}b%a{AT}b%a{AT}b%a{AT}b%a{AT}b%a{AT}b%a{AT}b%a{AT}b%a{AT}b%a{AT}b%a{AT}b%a{AT}b%a{AT}b"
+ },
+ {
+  "input": "\u26e1#\u2c89\u1c82\u110c\u2e2e\u0ea5\u25d6\u068b\u1451\u01f6\u016e\u01a1\u2993\u22a7\u0097\u1866\u2bf0\u0ddd\u1b04\u2e75\u01dc\u21c5\u0e31\u1c07\u1fbc\u2363\u0eeb\u1620\u0ec7\u2b52\u0e01\u1d6b\u128c\u0161\u1aa3\u239d\u291c\u0667\u0be6\u2848\u2e51\u12f9\u07bd\u2f90\u154b\u2e2d\u2d85\u200e\u1b04\u207f\u2ae7\u0c27\u136b\u1230\u259b\u1ff6\u2057\u192d\u25b3\u0236\u1ebd\u0f8a\u2f9a\u19e0\u1a85\u2a8c\u0b13\u177f\u2320\u2cff\u2b2b\u2f3f\u17fc\u0589\u1c18\u2a7c\u208b\u06e9\u0a7b\u2158\u192c\u17b7\u1f58\u2ee6\u01e5\u1e0a\u02c9\u13bf\u2d05\u275a\u25f7\u2501\u1931\u296c\u0ae8\u0acb\u2025\u0e87\u00ca\u0cc5\u228a\u2318\u0edc\u19e3\u20e2\u1602\u24fb\u169d\u1d63\u113c\u2a31\u2313\u26f9\u2eaf^\u188f\u2f65\u20cd\u0846",
+  "by_value": true,
+  "literals": [],
+  "expected": "\u26e1#\u2c89\u1c82\u110c\u2e2e\u0ea5\u25d6\u068b\u1451\u01f6\u016e\u01a1\u2993\u22a7\u0097\u1866\u2bf0\u0ddd\u1b04\u2e75\u01dc\u21c5\u0e31\u1c07\u1fbc\u2363\u0eeb\u1620\u0ec7\u2b52\u0e01\u1d6b\u128c\u0161\u1aa3\u239d\u291c\u0667\u0be6\u2848\u2e51\u12f9\u07bd\u2f90\u154b\u2e2d\u2d85\u200e\u1b04\u207f\u2ae7\u0c27\u136b\u1230\u259b\u1ff6\u2057\u192d\u25b3\u0236\u1ebd\u0f8a\u2f9a\u19e0\u1a85\u2a8c\u0b13\u177f\u2320\u2cff\u2b2b\u2f3f\u17fc\u0589\u1c18\u2a7c\u208b\u06e9\u0a7b\u2158\u192c\u17b7\u1f58\u2ee6\u01e5\u1e0a\u02c9\u13bf\u2d05\u275a\u25f7\u2501\u1931\u296c\u0ae8\u0acb\u2025\u0e87\u00ca\u0cc5\u228a\u2318\u0edc\u19e3\u20e2\u1602\u24fb\u169d\u1d63\u113c\u2a31\u2313\u26f9\u2eaf^\u188f\u2f65\u20cd\u0846"
+ },
+ {
+  "input": "1.2a://h/p?token{EQ}PWPLACEHOLDER",
+  "by_value": true,
+  "literals": [],
+  "expected": "1.2a://h/p?token{EQ}***"
+ },
+ {
+  "input": "+-x://u:PWPLACEHOLDER{AT}h",
+  "by_value": true,
+  "literals": [],
+  "expected": "***{AT}h"
+ },
+ {
+  "input": "a.b.c://h?key{EQ}PWPLACEHOLDER and 9z://h?api_key{EQ}PWPLACEHOLDER",
+  "by_value": true,
+  "literals": [],
+  "expected": "a.b.c://h?key{EQ}*** and 9z://h?api_key{EQ}***"
+ },
+ {
+  "input": "ab1://PWPLACEHOLDER{AT}h x://y",
+  "by_value": true,
+  "literals": [],
+  "expected": "ab1://***{AT}h x://y"
+ },
+ {
+  "input": "see(http://u:PWPLACEHOLDER{AT}h/?sig{EQ}PWPLACEHOLDER)",
+  "by_value": true,
+  "literals": [],
+  "expected": "see(http://***{AT}h/?sig{EQ}***"
+ },
+ {
+  "input": "word.xword.xword.xword.xword.x://h?code{EQ}PWPLACEHOLDER",
+  "by_value": true,
+  "literals": [],
+  "expected": "word.xword.xword.xword.xword.x://h?code{EQ}***"
+ },
+ {
+  "input": "0123://h?token{EQ}PWPLACEHOLDER",
+  "by_value": true,
+  "literals": [],
+  "expected": "0123://h?token{EQ}PWPLACEHOLDER"
+ },
+ {
+  "input": "--://h?token{EQ}PWPLACEHOLDER",
+  "by_value": true,
+  "literals": [],
+  "expected": "--://h?token{EQ}PWPLACEHOLDER"
+ },
+ {
+  "input": "A+b-c.d://h/p#token{EQ}PWPLACEHOLDER",
+  "by_value": true,
+  "literals": [],
+  "expected": "A+b-c.d://h/p#token{EQ}***"
+ },
+ {
+  "input": "ftp://a{AT}b ssh://c:PWPLACEHOLDER{AT}d",
+  "by_value": true,
+  "literals": [],
+  "expected": "ftp://***{AT}b ssh://***{AT}d"
+ },
+ {
+  "input": "token PWPLACEHOLDER in x://h",
+  "by_value": true,
+  "literals": [
+   "PWPLACEHOLDER"
+  ],
+  "expected": "token *** in x://h"
+ },
+ {
+  "input": "x://u:PWPLACEHOLDER{AT}h?token{EQ}1",
+  "by_value": false,
+  "literals": [],
+  "expected": "x://***{AT}h?token{EQ}***"
+ }
+]
