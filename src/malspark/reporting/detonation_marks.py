@@ -104,8 +104,15 @@ def with_technique_marks(mappings: list[TTPMapping], report: MalwareReport) -> N
 LAUNCH_TEXT_CHARS = 200
 
 # The characters a launch text may not hold as they are on any surface: one
-# that would close a code span, open a tag or end a table cell.
-_INERT = {"`": "\\x60", "<": "\\x3c", ">": "\\x3e", "|": "\\x7c"}
+# that would close a code span, open a tag or a template, or end a table cell.
+_INERT = {
+    "`": "\\x60",
+    "<": "\\x3c",
+    ">": "\\x3e",
+    "|": "\\x7c",
+    "{": "\\x7b",
+    "}": "\\x7d",
+}
 
 
 def launch_text(arguments: Any) -> str:
@@ -114,14 +121,18 @@ def launch_text(arguments: Any) -> str:
     The arguments an agent chose are text of the run, not of the platform: on
     one line, its control characters, ledger ids and template tokens written
     out (``sample_written_out``, ``template_tokens_written_out``), each
-    back-tick, angle bracket and table pipe written as its escape, and cut at
-    :data:`LAUNCH_TEXT_CHARS` with the cut mark. A surface sets the result as
-    its own escaping sets text (a Markdown code span, a JSON string).
+    back-tick, angle bracket, brace and table pipe written as its escape, the
+    colon of anything that reads as a sandbox item id (``d3/proc:1``) too, so
+    it cites no item, and cut at :data:`LAUNCH_TEXT_CHARS` with the cut mark.
+    A surface sets the result as its own escaping sets text (a Markdown code
+    span, a JSON string).
     """
+    from malspark.analysis.sandbox_sections import ITEM_ID_RE
     from malspark.utils.marked_cut import marked_cut
     from malspark.utils.written_forms import sample_written_out, template_tokens_written_out
 
     text = template_tokens_written_out(sample_written_out(str(arguments or "")))
+    text = ITEM_ID_RE.sub(lambda found: found.group(0).replace(":", "\\x3a"), text)
     return marked_cut("".join(_INERT.get(ch, ch) for ch in text), LAUNCH_TEXT_CHARS)
 
 
