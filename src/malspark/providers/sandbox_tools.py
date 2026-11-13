@@ -42,7 +42,9 @@ from malspark.schemas.sandbox_report import (
     LINEAGE_KEY,
     LINEAGE_LAUNCHER,
     LINEAGE_MARKED_STORED,
+    LINEAGE_REASON_KEY,
     LINEAGE_SAMPLE,
+    PROCESS_TASK_KEY,
 )
 from malspark.utils.marked_cut import marked_cut
 
@@ -310,12 +312,24 @@ def sandbox_processes(
             lineage = _launch_lineage(proc)
             if lineage:
                 row[LINEAGE_KEY] = lineage
+            # The task the reader listed it in, where the report holds several
+            # whose process ids are each the task's own.
+            task = _task_of(proc)
+            if task:
+                row["task"] = task
             if lineage == LINEAGE_SAMPLE or (
                 not launched and not lineage and _marked_as_the_sample(proc)
             ):
                 row["marked"] = True
             rows.append(row)
     return {"processes": rows, "total": len(processes), **meta}
+
+
+def _task_of(proc: dict[str, Any]) -> str:
+    """The task a reader listed a process in (``PROCESS_TASK_KEY``), ``""`` where it says none."""
+    extra = proc.get("extra")
+    value = extra.get(PROCESS_TASK_KEY) if isinstance(extra, dict) else None
+    return str(value) if value else ""
 
 
 def _launcher_attributed(report: dict[str, Any], processes: list[Any]) -> bool:
@@ -325,8 +339,10 @@ def _launcher_attributed(report: dict[str, Any], processes: list[Any]) -> bool:
     a platform mark no sandbox's document keeps), or a process carries the
     launch lineage the platform gave it (``sandbox_report.attribute_the_launcher``).
     """
-    from malspark.schemas.sandbox_document import LAUNCH_KEY
+    from malspark.schemas.sandbox_document import LAUNCH_KEY, LAUNCHER_ATTRIBUTION_KEY
 
+    if LAUNCHER_ATTRIBUTION_KEY in report:
+        return True
     mark = report.get(LAUNCH_KEY)
     if isinstance(mark, dict) and isinstance(mark.get("launcher"), dict):
         return True
@@ -518,6 +534,17 @@ def sandbox_dropped_files(
         or "dropped_files" not in (_fills(normalised_by) or {"dropped_files"})
     ):
         return _absent("dropped_files")
+    # The archive's members a generated launcher's run unpacked in the guest
+    # (``sandbox_report.attribute_the_launcher``): the platform's files, never
+    # files the sample wrote, listed apart with which file each is.
+    platform: list[dict[str, Any]] = []
+    written: list[Any] = []
+    for entry in dropped:
+        if isinstance(entry, dict) and entry.get(LINEAGE_KEY) == LINEAGE_LAUNCHER:
+            platform.append(entry)
+        else:
+            written.append(entry)
+    dropped = written
     rows: list[dict[str, Any]] = []
     page, meta = _page(dropped, offset, limit)
     if page:
@@ -536,8 +563,22 @@ def sandbox_dropped_files(
             pids = _writer_pids(entry)
             if pids:
                 row["pids"] = pids
+            if entry.get(LINEAGE_KEY):
+                row[LINEAGE_KEY] = entry[LINEAGE_KEY]
             rows.append(row)
-    return {"dropped": rows, "total": len(dropped), **meta}
+    answer: dict[str, Any] = {"dropped": rows, "total": len(dropped), **meta}
+    if platform:
+        answer["platform_files"] = [
+            {
+                "name": entry.get("name") or entry.get("filepath") or "",
+                "path": entry.get("filepath") or entry.get("guest_paths") or "",
+                "sha256": entry.get("sha256"),
+                LINEAGE_KEY: entry.get(LINEAGE_KEY),
+                LINEAGE_REASON_KEY: entry.get(LINEAGE_REASON_KEY) or "",
+            }
+            for entry in platform
+        ]
+    return answer
 
 
 # The fields a dropped file names the processes that wrote it under.
