@@ -6196,7 +6196,9 @@ class BaseAnalyst(BudgetMeter, ABC):
         report = observed_report(_report_of(container))
         if report is None:
             return []
-        tool = items_tool(report, _answer_sizer(container), normalised_by_of(container))
+        tool = items_tool(
+            report, _answer_sizer(container), normalised_by_of(container), container=container
+        )
         return stamp_source([tool], SANDBOX_FAMILY, declared="sandbox")
 
     def _profile_excluded_servers(self) -> str:
