@@ -92,12 +92,14 @@ export default function AttackContent({ view = "all", empty }: { view?: Behaviou
   // Columns in canonical Enterprise matrix order.
   const activeTactics = orderedTactics(parseTechniques(rawTechniques));
   const corroboration = (report?.malware_report?.run_summary?.corroboration ?? null) as Corroboration;
-  /* Each published technique a further detonation's signatures tag, with its
-   * mark (`TTPMapping.observed_in`), whichever list the techniques are drawn from. */
-  const observed = new Map<string, ObservedIn[]>();
+  /* Each published technique a further detonation observed, with its mark
+   * (`TTPMapping.observed_in`), whichever list the techniques are drawn from;
+   * both sides of the join read as the report reads a technique id. */
+  const marked = new Map<string, ObservedIn[]>();
   for (const m of report?.malware_report?.ttp_mappings ?? []) {
-    if (m?.observed_in?.length) observed.set(m.technique_id, m.observed_in);
+    if (m?.observed_in?.length) marked.set(techniqueKey(m.technique_id), m.observed_in);
   }
+  const observed = { get: (id: string) => marked.get(techniqueKey(id)) };
   const inView = view === "all" ? activeTactics : activeTactics.filter((t) => t.id === VIEW_TACTIC[view]);
   const total = inView.reduce((n, t) => n + t.techniques.length, 0);
   const q = search.toLowerCase();
@@ -245,6 +247,11 @@ export default function AttackContent({ view = "all", empty }: { view?: Behaviou
 }
 
 /** The status a technique's chip says to a screen reader, and its card prints. */
+/** A technique id as the report reads it to join one list to another: trimmed, upper case. */
+function techniqueKey(id: unknown): string {
+  return String(id ?? "").trim().toUpperCase();
+}
+
 function statusWords(tech: Technique): string {
   if (!tech.valid) return "not in catalog";
   if (tech.notPublished) return "claimed, not published";
