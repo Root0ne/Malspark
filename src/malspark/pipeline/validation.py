@@ -5788,19 +5788,22 @@ ANALYST_REPEATED_CODE = "isr.claims_repeated"
 # (``pipeline.feedback_mode``); in ``record_only`` every other finding is
 # recorded and not asked. One criterion decides membership: a code is here when,
 # left unasked, the stage loses the agent's own content to a fallback because
-# the answer, or a block of it, could not be read. So an answer that is not
-# JSON, cut at the output cap, outside its schema, with no claim parsed or its
-# claims repeated; a claim block whose confidence or technique line is not read,
-# or that stands under DISPUTES, and so is not a claim; a verdict word, a
-# severity rating or a leaf of the assessment that cannot be read, or an
-# assessment not where the bundle reads it, which the report then prints as
-# Inconclusive or not assessed; a judge object of no type the bundle reads, set
-# aside, and an id two objects share, whose references are read as neither. A
-# finding about what a readable answer says (a citation, a technique, a
-# grounding, a reference to something the round was not shown, a field left
-# out) is not here: the answer stands and the finding is recorded. The codes
-# other modules raise are written out, so the one set is declared here for
-# every stage.
+# the answer, or a part of it, could not be read, or is absent where the stage
+# then substitutes a fallback of its own. So an answer that is not JSON, cut at
+# the output cap, outside its schema, with no claim parsed or its claims
+# repeated; a claim block whose confidence or technique line is not read, or
+# that stands under DISPUTES, and so is not a claim; a verdict word, a severity
+# rating or a leaf of the assessment that cannot be read, which the report then
+# prints as Inconclusive or not assessed; an assessment absent where the bundle
+# reads it, which the report prints as not assessed, and a verdict absent from
+# it, which the run guesses from the object set; a judge object of no type the
+# bundle reads, set aside; an id two objects share, whose references are read
+# as neither; and an indicator whose pattern the STIX grammar cannot read, which
+# is lost to the export. A finding about what a readable answer says (a
+# citation, a technique, a grounding, a reference to something the round was
+# not shown, a field left out where nothing stands in for it) is not here: the
+# answer stands and the finding is recorded. The codes other modules raise are
+# written out, so the one set is declared here for every stage.
 REASKED_IN_EVERY_MODE_CODES: frozenset[str] = frozenset(
     {
         # The analysts.
@@ -5814,11 +5817,14 @@ REASKED_IN_EVERY_MODE_CODES: frozenset[str] = frozenset(
         "verdict.cut_at_output_cap",
         "verdict.not_json",
         "verdict.unrecognised",
+        "verdict.unstated",
         "verdict.severity_enum",
         "verdict.assessment_missing",
         "verdict.assessment_unreadable",
         "stix.unknown_object",
         "stix.duplicate_label",
+        "stix.pattern_refused",
+        "stix.unescaped_backslash",
         # The report stage.
         SECTION_CUT_CODE,
         "composer.schema",

@@ -4898,7 +4898,8 @@ class ValidationConfig(BaseModel):
     the findings to the agent that wrote the answer in one correction turn.
     ``record_only`` runs every check and records every finding as not asked,
     and sends no correction turn: the answer stands as written. Findings that
-    say an answer, or a block of it, could not be read are asked in both
+    say an answer, or a part of it, could not be read, or is absent where a
+    fallback stands in for it, are asked in both
     (``validation.REASKED_IN_EVERY_MODE_CODES``), and what code does after a
     stage with what is left is the same in both.
 

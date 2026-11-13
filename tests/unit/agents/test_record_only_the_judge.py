@@ -187,6 +187,57 @@ async def test_a_part_of_the_verdict_that_cannot_be_read_is_asked_in_both_modes(
     assert assessment.severity is not None and assessment.severity.rating == "High"
 
 
+def _absent_or_unread(case: str) -> dict[str, Any]:
+    """FIRST, whose indicator no evidence grounds, with one part absent or unread."""
+    bundle = json.loads(json.dumps(FIRST))
+    if case == "verdict.unstated":
+        del bundle["x_malspark_assessment"]["verdict"]
+        return bundle
+    pattern = (
+        "[domain-name:value = 'x.example'"
+        if case == "stix.pattern_refused"
+        else "[file:name = 'C:\\temp\\x.exe']"
+    )
+    bundle["objects"].append(
+        {
+            "type": "indicator",
+            "id": "indicator--2",
+            "pattern": pattern,
+            "pattern_type": "stix",
+            "indicator_types": ["malicious-activity"],
+        }
+    )
+    return bundle
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "case", ["verdict.unstated", "stix.pattern_refused", "stix.unescaped_backslash"]
+)
+async def test_an_absent_verdict_or_an_unread_pattern_is_asked_alone_in_record_only(
+    mode: str, case: str
+) -> None:
+    llm = _Llm(json.dumps(_absent_or_unread(case)), json.dumps(FIRST))
+
+    verdict = await _verdict(JudgeAgent(llm))  # type: ignore[arg-type]
+
+    assert len(llm.calls) == 2
+    assert verdict.retries == 1
+    turn = str(llm.calls[1][-1].content)
+    assert case in turn
+    assert verdict.fed_back.get(case) == 1
+    (ungrounded,) = [v for v in verdict.violations if v.code == "stix.ungrounded_indicator"]
+    if mode == "feed_back":
+        assert "stix.ungrounded_indicator" in turn
+        assert ungrounded.asked is True
+    else:
+        # The other finding of the same answer is kept out of the turn, and recorded.
+        assert "stix.ungrounded_indicator" not in turn
+        assert ungrounded.asked is False
+        assert set(verdict.fed_back) == {case}
+    assert _indicators(verdict) == []
+
+
 def _isrs() -> dict[str, AgentISR]:
     claims = [
         ClaimEvidence(

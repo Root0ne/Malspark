@@ -68,7 +68,7 @@ def _finds(code: str) -> Any:
 
 
 def test_every_named_code_is_one_a_stage_raises() -> None:
-    """The set is the codes of an answer, or a block of it, that could not be read.
+    """The set is the codes of an answer, or a part of it, unread or absent before a fallback.
 
     Each decision is the one criterion's (the set's comment); each code is one
     the validation-code register lists as raised.
@@ -83,16 +83,19 @@ def test_every_named_code_is_one_a_stage_raises() -> None:
         "isr.claims_under_disputes",
         ANALYST_CUT_CODE,
         "isr.claims_repeated",
-        # The judge: not a bundle, cut, a verdict, rating or assessment unread,
-        # an object or a reference the bundle cannot read.
+        # The judge: not a bundle, cut, a verdict, rating or assessment unread or
+        # absent, an object, a reference or a pattern the bundle cannot read.
         "verdict.cut_at_output_cap",
         "verdict.not_json",
         "verdict.unrecognised",
+        "verdict.unstated",
         "verdict.severity_enum",
         "verdict.assessment_missing",
         "verdict.assessment_unreadable",
         "stix.unknown_object",
         "stix.duplicate_label",
+        "stix.pattern_refused",
+        "stix.unescaped_backslash",
         # The report stage: cut, or outside its schema.
         SECTION_CUT_CODE,
         "composer.schema",
@@ -105,8 +108,8 @@ def test_every_named_code_is_one_a_stage_raises() -> None:
     ).read_text(encoding="utf-8")
     for code in REASKED_IN_EVERY_MODE_CODES:
         assert f"### `{code}`" in page, code
-    # A field left out of a readable answer is a finding about content.
-    assert "verdict.unstated" not in REASKED_IN_EVERY_MODE_CODES
+    # A citation that names the wrong entry is a finding about content.
+    assert "report.citation_wrong_entry" not in REASKED_IN_EVERY_MODE_CODES
 
 
 class TestTheSyncLoop:
