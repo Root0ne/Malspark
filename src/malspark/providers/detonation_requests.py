@@ -59,6 +59,12 @@ NO_LATER_STEP = (
     "it cannot be run at this point of the run: no later step of it has an agent that "
     "reads the sandbox, so nothing after this point could read the detonation"
 )
+# Said in an accepted answer only where a first negotiation, which gives the
+# further turns, is still ahead of the step the request was filed in.
+FURTHER_TURN_PROMISE = (
+    "An analyst that reads the sandbox and had its turn before the detonation returned is "
+    "given one further turn with it when the debate starts. "
+)
 REFUSED_EXISTS = (
     "detonation {name} was already launched with exactly these arguments; read it "
     "with the sandbox tools' detonation argument ({name})"
@@ -269,7 +275,7 @@ def file_request(
         else:
             cannot = _cannot_detonate(container, text)
             ceiling = ceiling_of(container)
-            later = _later_step(container)
+            later, turn = _later_step(container)
             if cannot:
                 request.answer = f"no further detonation can be made: {cannot}"
             elif not later:
@@ -286,10 +292,10 @@ def file_request(
                 request.answer = (
                     f"accepted as detonation {request.detonation}: the platform submits "
                     "the sample with these arguments on entry of the next step of the run "
-                    f"that has an agent reading the sandbox ({later}). An analyst that "
-                    "reads the sandbox and had its turn before the detonation returned is "
-                    "given one further turn with it when the debate starts. Read it with "
-                    f"the sandbox tools' detonation argument ({request.detonation})."
+                    f"that has an agent reading the sandbox ({later}). "
+                    + (FURTHER_TURN_PROMISE if turn else "")
+                    + "Read it with the sandbox tools' detonation argument "
+                    f"({request.detonation})."
                 )
     logger.info(
         "Detonation request %s by %s: %s%s",
@@ -301,15 +307,18 @@ def file_request(
     return request
 
 
-def _later_step(container: Any) -> str:
-    """The next step after the one running that can carry a request out; empty where none."""
-    from malspark.pipeline.detonations import later_reading_step
+def _later_step(container: Any) -> tuple[str, bool]:
+    """The next step after the calling one that can carry a request out, and whether a further
+    turn is still ahead of it; ``("", False)`` where none can.
+    """
+    from malspark.pipeline.detonations import current_step, further_turn_ahead, later_reading_step
 
     try:
-        return later_reading_step(container, str(getattr(container, "current_step", "") or ""))
+        here = current_step(container)
+        return later_reading_step(container, here), further_turn_ahead(container, here)
     except Exception as exc:  # noqa: BLE001 — a step that cannot be read carries nothing
         logger.warning("No later step could be read for a detonation request (%s).", exc)
-        return ""
+        return "", False
 
 
 def _limits(container: Any) -> str:

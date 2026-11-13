@@ -80,6 +80,8 @@ class Step:
     kind: str
     agents: tuple[str, ...]
     parallel: bool = False
+    # A debate's negotiation node (its revision node is the other).
+    negotiation: bool = False
 
 
 def steps_of(container: Any) -> list[Step]:
@@ -114,8 +116,96 @@ def steps_of(container: Any) -> list[Step]:
                 agents = verdict_agents if node == negotiation else ()
             else:
                 agents = tuple(stage.agents)
-            out.append(Step(node, stage.key, stage.kind, agents, parallel))
+            out.append(
+                Step(
+                    node,
+                    stage.key,
+                    stage.kind,
+                    agents,
+                    parallel,
+                    negotiation=stage.kind == "debate" and node == debate_nodes(profile, stage)[0],
+                )
+            )
     return out
+
+
+def _stages_after(container: Any, key: str) -> set[str]:
+    """The stages reachable from stage ``key`` in the graph (``depends_on``, the triage's roots)."""
+    from malspark.pipeline.topology import adopted_roots, dependents
+
+    try:
+        profile = container.active_profile()
+    except Exception:  # noqa: BLE001 — no profile read reaches nothing
+        return set()
+    triage, adopted = adopted_roots(list(profile.stages))
+    reached: set[str] = set()
+    todo = [key]
+    while todo:
+        here = todo.pop()
+        onward = [s.key for s in dependents(profile, here)]
+        if here == triage:
+            onward += adopted
+        for later in onward:
+            if later not in reached:
+                reached.add(later)
+                todo.append(later)
+    return reached
+
+
+def _analysts_read(container: Any) -> bool:
+    """Whether an analysis agent of the team reads the sandbox."""
+    return any(
+        reads_the_sandbox(container, agent)
+        for step in steps_of(container)
+        if step.kind == "analysis"
+        for agent in step.agents
+    )
+
+
+def turns_ahead(container: Any) -> bool:
+    """Whether the further turns are still to be given: no first negotiation has been entered."""
+    return not getattr(container, "_further_turns_given", False)
+
+
+def _carries(container: Any, step: Step) -> bool:
+    """Whether a pending detonation is carried out on entry of ``step``.
+
+    A step with an agent reading the sandbox; and a debate's negotiation
+    while the further turns are still to be given and an analyst reads the
+    sandbox, since a detonation carried out there is read in those turns.
+    """
+    if any(reads_the_sandbox(container, agent) for agent in step.agents):
+        return True
+    return step.negotiation and turns_ahead(container) and _analysts_read(container)
+
+
+def carrying_steps(container: Any, current: str) -> list[Step]:
+    """The steps reachable after ``current`` that carry a pending detonation out, in plan order.
+
+    "After" is reachability in the graph: the steps of the stages that
+    depend on ``current``'s stage, directly or through others; in a
+    sequential analysis stage, its own later steps; a sibling of a parallel
+    analysis stage runs beside ``current``, never after it. A revision's own
+    debate negotiates again after it. An unknown ``current`` (no step noted)
+    cannot be placed, and every carrying step of the run is answered.
+    """
+    steps = steps_of(container)
+    at = next((i for i, step in enumerate(steps) if step.name == current), None)
+    if at is None:
+        candidates = steps
+    else:
+        here = steps[at]
+        onward = _stages_after(container, here.stage)
+        candidates = [
+            step
+            for index, step in enumerate(steps)
+            if step.stage in onward
+            or (step.stage == here.stage and index > at and not here.parallel)
+        ]
+        if here.kind == "debate" and not here.negotiation:
+            # A revision: its debate's negotiation comes again after it.
+            candidates = [s for s in steps if s.stage == here.stage and s.negotiation] + candidates
+    return [step for step in candidates if _carries(container, step)]
 
 
 def reads_the_sandbox(container: Any, agent: str) -> bool:
@@ -147,31 +237,32 @@ def reads_the_sandbox(container: Any, agent: str) -> bool:
 
 
 def later_reading_step(container: Any, current: str) -> str:
-    """The first step after ``current`` that has an agent reading the sandbox; empty where none.
+    """The first step after ``current`` that carries a pending detonation out; empty where none.
 
-    A sibling of a parallel analysis stage runs beside ``current``, not after
-    it. A revision's own debate negotiates again after it. An unknown
-    ``current`` (no step noted) cannot be placed, and is answered with the
-    first reading step of the run.
+    :func:`carrying_steps`'s first.
     """
-    steps = steps_of(container)
-    at = next((i for i, step in enumerate(steps) if step.name == current), None)
-    if at is None:
-        candidates = steps
-    else:
-        here = steps[at]
-        candidates = [
-            step
-            for step in steps[at + 1 :]
-            if not (here.parallel and step.stage == here.stage and step.kind == "analysis")
-        ]
-        if here.kind == "debate" and not here.agents:
-            # A revision: its debate's negotiation comes again after it.
-            candidates = [s for s in steps if s.stage == here.stage and s.agents] + candidates
-    for step in candidates:
-        if any(reads_the_sandbox(container, agent) for agent in step.agents):
-            return step.name
-    return ""
+    found = carrying_steps(container, current)
+    return found[0].name if found else ""
+
+
+def further_turn_ahead(container: Any, current: str) -> bool:
+    """Whether a further turn will still be given after ``current``: a first negotiation ahead."""
+    return turns_ahead(container) and any(
+        step.negotiation for step in carrying_steps(container, current)
+    )
+
+
+# The step the code running now belongs to, set on each node's entry
+# (:func:`on_entry`): per context, so steps running at once never overwrite
+# each other's, and a tool call made inside a step reads its own.
+_CURRENT_STEP: contextvars.ContextVar[str] = contextvars.ContextVar(
+    "malspark_detonation_step", default=""
+)
+
+
+def current_step(container: Any) -> str:
+    """The step the calling code runs in; the container's note where no step set one here."""
+    return _CURRENT_STEP.get() or str(getattr(container, "current_step", "") or "")
 
 
 # ---------------------------------------------------------------------------
@@ -686,9 +777,13 @@ def on_entry(
     """
 
     def _wanted() -> bool:
-        if not reading_agents or not (_pending(container) or in_flight(container)):
+        if not (_pending(container) or in_flight(container)):
             return False
-        return any(reads_the_sandbox(container, agent) for agent in reading_agents)
+        if any(reads_the_sandbox(container, agent) for agent in reading_agents):
+            return True
+        # A first negotiation still to give the further turns carries one out
+        # for them, whether or not its mediator reads the sandbox.
+        return first_negotiation and turns_ahead(container) and _analysts_read(container)
 
     async def _before(state: Any) -> tuple[dict[str, Any], dict[str, Any]]:
         """What the step returns beside its own update, and what it only reads."""
@@ -724,6 +819,13 @@ def on_entry(
         @functools.wraps(fn)
         async def async_entry(state: Any, *args: Any, **kwargs: Any) -> Any:
             container.current_step = name
+            token = _CURRENT_STEP.set(name)
+            try:
+                return await _async_entry(state, *args, **kwargs)
+            finally:
+                _CURRENT_STEP.reset(token)
+
+        async def _async_entry(state: Any, *args: Any, **kwargs: Any) -> Any:
             if not (_wanted() or _owed(state)):
                 _note_seen(container, analysis_agents)
                 return await fn(state, *args, **kwargs)
@@ -739,6 +841,13 @@ def on_entry(
     @functools.wraps(fn)
     def sync_entry(state: Any, *args: Any, **kwargs: Any) -> Any:
         container.current_step = name
+        token = _CURRENT_STEP.set(name)
+        try:
+            return _sync_entry(state, *args, **kwargs)
+        finally:
+            _CURRENT_STEP.reset(token)
+
+    def _sync_entry(state: Any, *args: Any, **kwargs: Any) -> Any:
         if not (_wanted() or _owed(state)):
             _note_seen(container, analysis_agents)
             return fn(state, *args, **kwargs)
