@@ -30,14 +30,14 @@ should happen:
   identifier shaped like a file-system path kept by its base name and listed
   in ``response_models_reduced``. An agent whose answers carried none has an
   empty map.
-* ``tools`` is, per tool server the job's registry attached, how it served
-  the run and what it ran (:func:`tools_record`): the name and version it
-  gave at its attach, its manifest's version, and each requirement its tools
-  declare as its manifest reports it — a module's installed distribution and
-  version, a data path's file count and digest, a binary's version where
-  the tool declares how to ask it. The steps the pipeline runs in its own
-  process are the row ``pipeline``, read on the worker's host with the
-  environment of the server each stands in for.
+* ``tools`` is, per tool server the job's registry or one of its providers
+  attached, how it served the run and what it ran (:func:`tools_record`):
+  the name and version it gave at its attach, its manifest's version, and
+  each requirement its tools declare as its manifest reports it — a module's
+  installed distribution and version, a data path's file count and digest, a
+  binary's version where the tool declares how to ask it. The steps the
+  pipeline runs in its own process are the row ``pipeline``, read on the
+  worker's host with the environment of the server each stands in for.
 
 Written when the judge builds the summary and again once the run's last
 model call is made (the report node, and a stopped run's summary), so the
@@ -470,11 +470,34 @@ def _in_process_requirements(container: Any, tools: list[str]) -> list[dict[str,
     return list(rows.values())
 
 
+def _own_servers(container: Any) -> dict[str, dict[str, Any]]:
+    """The tool servers the job's providers drive through handles of their own, by key.
+
+    Each provider's ``own_tool_server`` (``providers.base.ServerOfItsOwn``):
+    the static providers this job built and its sandbox provider.
+    """
+    providers: list[Any] = list((getattr(container, "_static_provider_cache", None) or {}).values())
+    sandbox = getattr(container, "_sandbox_provider_cache", None)
+    if sandbox is not None:
+        providers.append(sandbox)
+    out: dict[str, dict[str, Any]] = {}
+    for provider in providers:
+        read = getattr(provider, "own_tool_server", None)
+        try:
+            held = read() if callable(read) else None
+        except Exception:  # noqa: BLE001, S112 — a provider that cannot say is left out
+            continue
+        if isinstance(held, dict) and _text(held.get("server")):
+            out.setdefault(_text(held.get("server")), held)
+    return out
+
+
 def tools_record(container: Any, entries: Iterable[Any] = ()) -> dict[str, Any]:
     """Per tool server that served the run, what it ran. Never raises.
 
-    A server is listed when the job's server registry attached it; a name a
-    tool carries that no handle backs (an agent-to-agent delegation)
+    A server is listed when the job's server registry attached it, or a
+    provider attached it through a handle of its own (``own_tool_server``);
+    a name a tool carries that no handle backs (an agent-to-agent delegation)
     is no tool server and is not listed. Each row says how the server served
     the run: the run offered one of its tools to an agent (``offered``: its
     tools carried the server, ``malspark_server``), an agent called one
@@ -487,7 +510,8 @@ def tools_record(container: Any, entries: Iterable[Any] = ()) -> dict[str, Any]:
     its capability manifest gives (``manifest_version``) and its
     ``requirements`` as the manifest reports them, reduced to the known keys
     and capped (``tools.capabilities.reported_requirements``); a fact the
-    server did not give is ``"not reported"``.
+    server did not give is ``"not reported"``. Where the registry and a
+    provider both name a server, the registry's reading is kept.
     """
     try:
         from malspark.tools.capabilities import package_version, reported_requirements
@@ -501,6 +525,11 @@ def tools_record(container: Any, entries: Iterable[Any] = ()) -> dict[str, Any]:
             versions.update(setup_of())
         manifests_of = getattr(registry, "server_manifests", None)
         manifests = dict(manifests_of()) if callable(manifests_of) else {}
+        for server, own in _own_servers(container).items():
+            if server not in versions and server not in manifests:
+                versions[server] = own.get("server_info") or {}
+                if isinstance(own.get("manifest"), dict):
+                    manifests[server] = own["manifest"]
         out: dict[str, dict[str, Any]] = {}
         for server in sorted({*versions, *manifests}):
             held = manifests.get(server)

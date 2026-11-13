@@ -186,6 +186,24 @@ class GenericMCPStaticProvider(StaticProvider):
         # registry handle's is (``ServerHandle._note_attach``).
         self._handle.server_changes = changes
 
+    def own_tool_server(self) -> dict[str, Any] | None:
+        """The server this provider's handle attached, as its attach read it (``ServerOfItsOwn``).
+
+        ``None`` until the handle has attached. A handle the job's registry
+        handed in is listed by the registry too, and the record keeps the
+        registry's reading of it.
+        """
+        handle = self._handle
+        info = dict(getattr(handle, "server_info", None) or {})
+        if not (info or handle.is_open or getattr(handle, "attached_once", False)):
+            return None
+        held = getattr(handle, "capabilities", None)
+        return {
+            "server": handle.name,
+            "server_info": info,
+            "manifest": held.to_dict() if held is not None else None,
+        }
+
     def _build_handle(self, name: str, cfg: MCPServerConfig) -> ServerHandle:
         """Wrap a directly-supplied config in a handle, honouring ``server_command``.
 

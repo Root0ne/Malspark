@@ -433,6 +433,10 @@ class GhidraStaticProvider(StaticProvider):
         # This provider's own process, for a local Ghidra's note key.
         self.note_instance = new_instance()
         self._toolkit: Any = None
+        # The name and version the server gave when the provider attached it
+        # (MCP ``serverInfo``; none over HTTP, which gives none), kept after
+        # the toolkit closes; ``None`` until it attached (``own_tool_server``).
+        self._attached_info: dict[str, str] | None = None
         self._all_tools: list[Any] = []
         self.tools: list[Any] = []
         # The tools withheld because they could not be made to carry the job's
@@ -553,6 +557,7 @@ class GhidraStaticProvider(StaticProvider):
 
             self._run_async(client.initialize())
             self._toolkit = client
+            self._attached_info = dict(getattr(client, "server_info", None) or {})
             # What the platform reads of each tool its schema lists, kept under
             # this provider's source as any listing's is; a client that serves
             # no listing reads nothing.
@@ -599,6 +604,7 @@ class GhidraStaticProvider(StaticProvider):
 
         self._run_async(toolkit.initialize())
         self._toolkit = toolkit  # type: ignore[assignment]
+        self._attached_info = dict(getattr(toolkit, "server_info", None) or {})
         # What the server declared of its tools, and what the platform read of
         # them, kept under this provider's source (``core.served_declarations``).
         held = getattr(toolkit, "served_tool_facts", None)
@@ -1390,6 +1396,15 @@ class GhidraStaticProvider(StaticProvider):
                 )
         except Exception as exc:  # noqa: BLE001 - teardown never propagates
             logger.warning("Ghidra program close failed (non-fatal): %s", exc)
+
+    def own_tool_server(self) -> dict[str, Any] | None:
+        """The Ghidra server this provider attached (``ServerOfItsOwn``), ``None`` before.
+
+        It answers no capability manifest, so ``manifest`` is ``None``.
+        """
+        if self._attached_info is None:
+            return None
+        return {"server": self.id, "server_info": dict(self._attached_info), "manifest": None}
 
     def close(self) -> None:
         self._close_job_programs()

@@ -700,6 +700,38 @@ class TestServedTheRun:
         assert sigma["named_by"] == rules.SIGMA_RULES_ENV
         assert sigma["files"] == 2
 
+    def test_a_provider_s_own_server_is_listed_as_the_registry_s_are(self) -> None:
+        class _Provider:
+            def own_tool_server(self) -> dict[str, Any]:
+                return {
+                    "server": "r2",
+                    "server_info": {"name": "r2mcp", "version": "5.9"},
+                    "manifest": None,
+                }
+
+        container = _Container(tools={"static": [_tool("r2")]})
+        container._static_provider_cache = {"r2": _Provider()}  # type: ignore[attr-defined]
+        assert tools_record(container)["r2"] == {
+            "served": ["offered"],
+            "server_info": {"name": "r2mcp", "version": "5.9"},
+            "manifest_version": NOT_REPORTED,
+            "requirements": NOT_REPORTED,
+        }
+
+    def test_the_registry_s_reading_of_a_server_comes_before_a_provider_s(self) -> None:
+        class _Provider:
+            def own_tool_server(self) -> dict[str, Any]:
+                return {"server": "analysis", "server_info": {"name": "other"}, "manifest": None}
+
+        container = _Container(
+            versions={"analysis": {"name": "AnalysisMCP", "version": "1"}},
+            manifests={"analysis": _MANIFEST},
+        )
+        container._sandbox_provider_cache = _Provider()  # type: ignore[attr-defined]
+        row = tools_record(container)["analysis"]
+        assert row["server_info"] == {"name": "AnalysisMCP", "version": "1"}
+        assert row["manifest_version"] == "0.9.0"
+
     def test_a_record_of_tools_never_raises(self) -> None:
         class _Broken:
             def setup_tools(self) -> Any:
