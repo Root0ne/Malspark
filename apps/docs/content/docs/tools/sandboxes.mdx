@@ -527,16 +527,28 @@ whatever the upload was called), and the launcher `launch.ps1`, stored in that o
 uncompressed, with fixed timestamps and attributes, so the same sample and
 arguments always give the same archive and SHA-256. Triage runs the launcher
 because the submission picks it (`profiles[].pick`, a path relative to the
-archive root). The launcher finds its own folder from its invocation, which
-works from PowerShell 2.0 on, and starts the sample in that folder, with that
-folder as its working directory, handing it the arguments as one string,
-exactly as the job gave them, written into a single-quoted literal (nothing is
-expanded in one; only a quote is doubled, and PowerShell's typographic single
-quotes with it):
+archive root). The launcher finds its own folder from the path it was started
+from (`$MyInvocation.MyCommand.Path`, set from PowerShell 2.0 on for a script
+run from its file); where its content is run another way, with no script path,
+the folder is the current location, so the sample is found only if that is the
+extraction folder. It starts the sample in that folder through
+`System.Diagnostics.Process`, not through the shell: the path is joined by
+`System.IO.Path` and never read as a wildcard pattern (a `[` or `]` in the
+folder is a character), the folder is the working directory, and the arguments
+are one string, exactly as the job gave them, written into a single-quoted
+literal (nothing is expanded in one; only a quote is doubled, and PowerShell's
+typographic single quotes with it). That string is the process's argument
+string as it stands; no other escaping applies:
 
 ```powershell
-$d = Split-Path -Parent $MyInvocation.MyCommand.Definition
-Start-Process -FilePath (Join-Path $d 'sample.exe') -WorkingDirectory $d -ArgumentList '<arguments>'
+$s = $MyInvocation.MyCommand.Path
+if ($s) { $d = [IO.Path]::GetDirectoryName($s) } else { $d = (Get-Location).ProviderPath }
+$i = New-Object Diagnostics.ProcessStartInfo
+$i.FileName = [IO.Path]::Combine($d, 'sample.exe')
+$i.Arguments = '<arguments>'
+$i.WorkingDirectory = $d
+$i.UseShellExecute = $false
+[void][Diagnostics.Process]::Start($i)
 ```
 
 The file is UTF-8 with a byte order mark. The archive is built once, when the
@@ -561,23 +573,42 @@ disclosed to the sandbox, and on a sandbox that publishes its submissions it is
 public; a sample that checks its parent process, its path or its name sees the
 launcher's. The run's launch record, the upload record, the `sandbox_status`
 ledger entry and the report give the script type, the launcher's exact text,
-the member names and the SHA-256 of the archive and of the sample in it, and
+the member names and the SHA-256 of the archive, of the launcher file and of
+the sample in it, and
 the disclosure line names the archive, not the bare sample, as what was sent. They
 say the arguments were sent through a launcher; they do not say the launcher
 ran or the program read them, which only the sandbox's report can show.
 
-The report is read with the launch record's generated names. A process whose
-image is the script host and whose command line names `launch.ps1`, and that
-the sample did not start, is the launcher's, as is what it started outside the
-sample's tree; the sample's tree is rooted at the process running `sample.exe`
-and holds everything it started, a PowerShell the sample itself starts
-included. A flow of a launcher process is marked as the launcher's and is not
-the sample's; a signature seen only in launcher processes is moved, marked, to
+The report is read with the launch record's generated names, a process being
+the pair of its task and its id (a sandbox that runs several tasks numbers each
+task's processes on its own). The sample's tree is rooted at the process running
+`sample.exe` and holds everything it started, a PowerShell the sample itself
+starts included. A process whose image is the script host and whose command
+line names `launch.ps1`, and that the sample did not start, is the launcher's;
+where the task holds the sample's tree, so is what the host started outside it.
+Where no listed process runs `sample.exe` (the sandbox renamed or copied the
+member), only the host is the launcher's: what it started, and the flows those
+processes made, are attributed to no one, as the sample may be among them under
+another name, and the report says the attribution was not established
+(`launcher_attribution`, a mark of the platform's that a sandbox's report cannot
+set: `established`, or `not established:` with the reason). A flow of a launcher
+process is marked as the launcher's and is not the sample's. A signature seen
+only in launcher processes, in every task that lists them, is moved, marked, to
 the `launcher.signatures` channel, so its techniques and indicators are never
-read as the sample's; the sandbox's own score and family are stated to be its
-analysis of the archive run from the launcher. The sandbox names the archive's
-SHA-256 as its target: that is the submitted archive holding the sample, not
-another target, and none of the archive's file facts is taken as the sample's.
+read as the sample's; one that names no process takes its processes from the
+task's own signature of that name, whose launcher rows are marked the same way,
+and one that still names none is left where it is, attributed to no one, and
+counted (`launcher_unattributed_signatures`): it may be the launcher's. A file
+the sandbox lists as written that is the launcher or the unpacked sample (by
+member name or SHA-256, in the launcher's folder where the report shows it) is
+marked as the platform's, with which of the two it is, and is not a file the
+sample wrote. The lineage of every row is held under one key of the platform's
+own (`platform_lineage`), taken out of a report at intake wherever a sandbox's
+own field carries it. The sandbox's own score and family are stated to be its
+analysis of the archive run from the launcher, and the family it names carries
+that note. The sandbox names the archive's SHA-256 as its target: that is the
+submitted archive holding the sample, not another target, and none of the
+archive's file facts is taken as the sample's.
 
 A provider that cannot pass them is never handed them, and the detonation goes
 ahead without them. The run records what became of them, with the arguments
@@ -590,11 +621,11 @@ limitations say "launch arguments requested, not honoured by" the provider, with
 why: no sample, mock mode, an attached report, a value that is not one command
 line, a submission that did not complete (a launcher's archive is still named
 then, as what may have left). A submission is said to have sent them only once
-the provider's submit call returned; one that sent them and ended without a report is worded apart ("launch arguments sent to" the provider, "but no sandbox report came back"). Before a sandbox's failure text (an exception's message, a response body) is logged or kept, the submitted arguments and the launcher text are withheld from it where they occur as sent, URL-encoded, form-encoded and JSON-escaped; other encodings (base64, a changed case, a cut copy) are not recognised. The platform's own words around that text are not masked. A value shorter than four characters is not masked (it is part of too many ordinary words), and the launch record says so. A request that is not honoured
+the provider's submit call returned; one that sent them and ended without a report is worded apart ("launch arguments sent to" the provider, "but no sandbox report came back"). Before a sandbox's failure text (an exception's message, a response body) is logged or kept, the submitted arguments and the launcher text are withheld from it where they occur as sent, JSON-escaped, or in any percent-encoding (any byte written as `%XX` in either case of hex digit, a space also as `+`); only the stretch that is or decodes to the value is replaced. Other encodings (base64, a changed case, a cut copy) are not recognised. The platform's own words around that text are not masked. A value shorter than four characters is not masked (it is part of too many ordinary words), so it may appear in a sandbox's failure text the platform logs or keeps, and the launch record says so. A request that is not honoured
 makes the run degraded, so its verdict is tentative. They are run configuration,
-not a credential, and are not masked in the report; no log line the platform
-writes holds them, and a sandbox's failure text is searched for them as said
-above. A job that asks for none submits and reads as
+not a credential, and are not masked in the report; the platform writes them
+into no log line of its own, and a sandbox's failure text is searched for them
+as said above. A job that asks for none submits and reads as
 it always did.
 
 A plugin provider's `submit(sample_path, *, options=None)` receives a
