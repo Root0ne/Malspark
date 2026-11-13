@@ -35,7 +35,7 @@ import re
 import stat
 import unicodedata
 import uuid
-from collections.abc import Callable
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import Any
@@ -51,6 +51,7 @@ from malspark.reporting.models import (
     NetworkDomain,
     NetworkIP,
     NetworkURL,
+    ObservedIn,
     PersistenceMechanism,
     RegistryMod,
     RuleClause,
@@ -1103,7 +1104,7 @@ def _build_sigma(report: MalwareReport) -> list[DetectionRule]:
     name never forms a selection. With no value left to select on there is no
     Sigma draft, and the report says why (:func:`drafts_not_built`).
     """
-    registry_targets, persistence_images = _sigma_values(report)
+    registry_targets, persistence_images, observed = _sigma_values(report)
     rules: list[DetectionRule] = []
     if registry_targets or persistence_images:
         selections: dict[str, dict[str, Any]] = {}
@@ -1127,6 +1128,7 @@ def _build_sigma(report: MalwareReport) -> list[DetectionRule]:
                 selections,
                 sources,
                 signatures=_collect_signature_names(report),
+                observed=observed,
             )
         )
     for draft in _stated_drafts(report)[0]:
@@ -1535,10 +1537,21 @@ def _collect_persistence_images(
     return out
 
 
-def _sigma_values(report: MalwareReport) -> tuple[list[str], list[str]]:
-    """The registry keys and the images a Sigma draft selects on, each admitted and whole."""
+def _sigma_values(report: MalwareReport) -> tuple[list[str], list[str], list[str]]:
+    """The registry keys and the images a Sigma draft selects on, each admitted and whole.
+
+    Third, each selected key only a further detonation observed, with its
+    detonation and launch (:func:`_observed_values`): a key the sandbox's or
+    a persistence record of the job's own detonation gives is the job's own.
+    """
+    from malspark.reporting.ledger_projection import FIRST_DETONATION, marks_of
+
     admitted = frozenset(_registry_form(item) for item in sigma_admits(report))
     targets = _collect_registry_targets(report, admitted)
+    own = [ObservedIn(detonation=FIRST_DETONATION)]
+    observed: dict[str, tuple[str, list[ObservedIn]]] = {
+        target.lower(): (target, list(own)) for target in targets
+    }
     # A registry key or value the analysis states that the run publishes,
     # unless it is a generic name; after the sandbox's and the persistence
     # records', once each.
@@ -1547,10 +1560,38 @@ def _sigma_values(report: MalwareReport) -> tuple[list[str], list[str]]:
         if row.kind not in _STATED_REGISTRY_KINDS or _generic(row):
             continue
         target = "\\" + _hiveless_key(row.value, value_suffix=False)
-        if target != "\\" and target.lower() not in held and len(held) < _MAX_STATED_VALUES * 4:
+        if target == "\\":
+            continue
+        if target.lower() in observed:
+            observed[target.lower()][1].extend(marks_of(row))
+        if target.lower() not in held and len(held) < _MAX_STATED_VALUES * 4:
             held.add(target.lower())
             targets.append(target)
-    return (targets, _collect_persistence_images(report.persistence, admitted))
+            observed[target.lower()] = (row.value, marks_of(row))
+    return (
+        targets,
+        _collect_persistence_images(report.persistence, admitted),
+        _observed_values(observed.values()),
+    )
+
+
+def _observed_values(held: Iterable[tuple[str, list[ObservedIn]]]) -> list[str]:
+    """``<value>: observed in detonation 2, …`` for each value only further detonations observed.
+
+    ``held`` is each selected value as shown, with the marks of every row
+    that reduces to it: a value is a further detonation's only where every
+    such row is (:func:`_later_only`), so one row the job's own detonation
+    observed says nothing of it.
+    """
+    from malspark.reporting.detonation_marks import later_only_words
+    from malspark.reporting.ledger_projection import stated_marks
+
+    out: list[str] = []
+    for shown, marks in held:
+        later = later_only_words(stated_marks(marks))
+        if later:
+            out.append(f"{_one_line(shown)}: {later}")
+    return out
 
 
 # Why no Sigma draft was built when nothing is left to select on; the
@@ -1586,7 +1627,7 @@ def drafts_not_built(report: MalwareReport, rules: list[DetectionRule]) -> list[
         return []
     if any(rule.kind == "sigma" for rule in rules):
         return []
-    registry_targets, persistence_images = _sigma_values(report)
+    registry_targets, persistence_images, _ = _sigma_values(report)
     stated, generic = _stated_drafts(report)
     if registry_targets or persistence_images or stated:
         return [DraftNotBuilt(kind="sigma", why=_SIGMA_DRAFT_RAISED)]

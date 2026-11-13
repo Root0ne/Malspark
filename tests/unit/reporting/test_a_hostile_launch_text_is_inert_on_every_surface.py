@@ -152,6 +152,54 @@ def _suricata_comment(_report: Any) -> str:
     return next(line for line in body.split("\n") if "launched with" in line)
 
 
+def _stated(_report: Any) -> Any:
+    """A report whose host values rest on a later detonation's read (registry, task, service…)."""
+    from malspark.reporting.builder import MalwareReportBuilder
+    from tests.unit.reporting import (
+        test_every_published_value_on_a_later_detonation_carries_its_mark as kinds,
+    )
+
+    return MalwareReportBuilder.attach_detection_signatures(
+        kinds._report([kinds.LATER], launch=HOSTILE)
+    )
+
+
+def _registry_cell(report: Any) -> str:
+    from malspark.reporting.renderers import MarkdownRenderer
+
+    text = MarkdownRenderer().render(_stated(report))
+    return next(
+        line
+        for line in text.split("\n")
+        if line.startswith("|") and "ExampleVendor7731" in line and "launched with" in line
+    )
+
+
+def _registry_misp_comment(report: Any) -> str:
+    from malspark.reporting.misp import build_misp_attributes
+
+    stated = _stated(report)
+    attributes = build_misp_attributes(stated, stated.consolidated_iocs, owner="u")
+    return next(
+        a["comment"]
+        for a in attributes
+        if a["value"].endswith("ExampleVendor7731") and "launched with" in a["comment"]
+    )
+
+
+def _first_sigma_description(report: Any) -> str:
+    import yaml
+
+    docs = [
+        yaml.safe_load(rule.body)
+        for rule in _stated(report).detection_signatures
+        if rule.kind == "sigma"
+    ]
+    return str(
+        next(d for d in docs if d["logsource"].get("category") == "registry_event")["description"]
+    )
+
+
 def _bundle_line(section: str, listed: str) -> Callable[[Any], str]:
     def _line(report: Any) -> str:
         from malspark.reporting.evidence_bundles import bundle_for
@@ -175,6 +223,9 @@ TEXT_SURFACES: dict[str, Callable[[Any], str]] = {
     "Suricata comment": _suricata_comment,
     "executive-summary bundle techniques": _bundle_line("executive_summary", "top_ttps"),
     "mitigations bundle techniques": _bundle_line("mitigations", "ttps"),
+    "Markdown cell of a stated registry key": _registry_cell,
+    "MISP comment of a stated registry key": _registry_misp_comment,
+    "first Sigma draft description": _first_sigma_description,
 }
 
 

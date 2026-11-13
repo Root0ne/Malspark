@@ -293,11 +293,6 @@ class MalwareReportBuilder:
             tool_queries=queries,
             references=references,
         )
-        # The published techniques a further detonation's sandbox signatures
-        # tag, marked with the detonations that tagged them.
-        from malspark.reporting.detonation_marks import with_technique_marks
-
-        with_technique_marks(report.ttp_mappings, report)
         # The sections the report is actually made of, and the index of the
         # calls behind them. Built last so a section builder can never affect
         # the verdict, the severity or the STIX bundle above it.
@@ -325,23 +320,13 @@ class MalwareReportBuilder:
         self.run_summary["dedupe"] = merges.as_dict(
             extra_indicators=_indicators_merged_in_the_bundle(self.run_summary)
         )
-        report.evidence_index = [
-            EvidenceIndexRow(
-                id=entry.id,
-                agent=entry.agent,
-                server=entry.server,
-                tool=entry.tool,
-                ok=entry.ok,
-                duration_ms=entry.duration_ms,
-                truncated=entry.truncated,
-                repeated_of=entry.repeated_of or None,
-                source=entry.source,
-                facts=entry.facts,
-                agent_role=entry.agent_role,
-                agent_tab=entry.agent_tab,
-            )
-            for entry in self.evidence_ledger
-        ]
+        report.evidence_index = [evidence_index_row(entry) for entry in self.evidence_ledger]
+        # The published techniques a further detonation observed, marked with
+        # the detonations that did: by the sandbox signatures that tag them and
+        # by the reads behind them, which the evidence index marks.
+        from malspark.reporting.detonation_marks import with_technique_marks
+
+        with_technique_marks(report.ttp_mappings, report)
         index = index_of(report.evidence_index)
         for section in report.sections:
             section.source_server = source_server(section, index)
@@ -755,6 +740,7 @@ def ioc_table(report: MalwareReport, *, raise_unread: bool = False) -> list[Cons
 def _build_consolidated_iocs(report: MalwareReport) -> list[ConsolidatedIOC]:
     from malspark.extractors.network_extractor import url_host
     from malspark.reporting.call_bindings import BOUND_SOURCE, binding_context
+    from malspark.reporting.detonation_marks import entry_marks
     from malspark.reporting.ledger_projection import listed_non_network_values
     from malspark.reporting.ledger_report import artifact_sections, listed_headings, listed_rows
     from malspark.reporting.renderers.stix_renderer import (
@@ -820,6 +806,9 @@ def _build_consolidated_iocs(report: MalwareReport) -> list[ConsolidatedIOC]:
                 published=published,
                 is_network=is_network,
                 evidence_ids=_in_the_index(evidence, index),
+                # The detonations the reads it rests on observed, where a
+                # further one is among them (``detonation_marks.entry_marks``).
+                observed_in=entry_marks(evidence, report),
             )
         )
 
@@ -1047,6 +1036,7 @@ def _build_consolidated_iocs(report: MalwareReport) -> list[ConsolidatedIOC]:
             held_row.published = answer
             held_row.context = held_row.description = "stated by the analysis"
             held_row.evidence_ids = _in_the_index(stated.held_in or (), index)
+            held_row.observed_in = entry_marks(stated.held_in or (), report)
             by_key[slot] = held_row
             continue
         before = len(rows)
@@ -1225,6 +1215,31 @@ def _build_consolidated_iocs(report: MalwareReport) -> list[ConsolidatedIOC]:
     from malspark.reporting.detonation_marks import with_value_marks
 
     return with_value_marks(out, report)
+
+
+def evidence_index_row(entry: Any) -> EvidenceIndexRow:
+    """One ledger entry as the report's evidence index lists it, without its output.
+
+    A further detonation's read carries the detonation and its launch
+    (``ledger_projection.observed_mark``); every other entry carries none.
+    """
+    from malspark.reporting.ledger_projection import later_detonation, observed_mark
+
+    return EvidenceIndexRow(
+        id=entry.id,
+        agent=entry.agent,
+        server=entry.server,
+        tool=entry.tool,
+        ok=entry.ok,
+        duration_ms=entry.duration_ms,
+        truncated=entry.truncated,
+        repeated_of=entry.repeated_of or None,
+        source=entry.source,
+        facts=entry.facts,
+        agent_role=entry.agent_role,
+        agent_tab=entry.agent_tab,
+        observed_in=[observed_mark(entry)] if later_detonation(entry) else [],
+    )
 
 
 def _in_the_index(ids: Iterable[str], index: Mapping[str, int]) -> list[str]:
