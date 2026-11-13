@@ -507,7 +507,8 @@ def _why_published(row: Any) -> str:
     The comment is reading text beside the rule, not the rule: the value and
     every network value in the reason are defanged by the report's own
     defanger, as on every other surface. The rule's strings and contents stay
-    as they compile.
+    as they compile. A value only a further detonation observed says so after
+    the reason (:func:`_later_only`).
     """
     from malspark.reporting.defang import defang
     from malspark.reporting.renderers.markdown import _defanged_text
@@ -518,8 +519,23 @@ def _why_published(row: Any) -> str:
     kind = str(getattr(row, "kind", "") or "")
     shown = defang(value, kind) if kind in _DRAFT_NETWORK_KINDS else value
     said = f"{_defanged_text(shown)}: published because {_defanged_text(why)}"
+    later = _later_only(row)
+    if later:
+        said += f"; {later}"
     # A comment is one line: no control character reaches it.
     return "".join(c if c >= " " else " " for c in said)
+
+
+def _later_only(row: Any) -> str:
+    """The words a draft writes beside a value only a further detonation observed; ``""`` else.
+
+    The row's own mark (``ConsolidatedIOC.observed_in``) as every surface
+    words it (``detonation_marks.later_only_words``), the launch text inert on
+    one line. A value the job's own detonation observed too carries none.
+    """
+    from malspark.reporting.detonation_marks import later_only_words
+
+    return later_only_words(getattr(row, "observed_in", None) or ())
 
 
 # Names that assert an attribution the report does not actually have. A rule
@@ -1115,7 +1131,14 @@ def _build_sigma(report: MalwareReport) -> list[DetectionRule]:
         )
     for draft in _stated_drafts(report)[0]:
         rules.append(
-            _sigma_rule(report, draft.suffix, draft.logsource, draft.selections, draft.sources)
+            _sigma_rule(
+                report,
+                draft.suffix,
+                draft.logsource,
+                draft.selections,
+                draft.sources,
+                observed=draft.observed,
+            )
         )
     return rules
 
@@ -1128,8 +1151,14 @@ def _sigma_rule(
     sources: list[str],
     *,
     signatures: list[str] | None = None,
+    observed: list[str] | None = None,
 ) -> DetectionRule:
-    """One Sigma draft over one log source; ``suffix`` names a draft after the first."""
+    """One Sigma draft over one log source; ``suffix`` names a draft after the first.
+
+    ``observed`` names each selected value only a further detonation observed,
+    with the detonation and its launch; the description says them after
+    everything else it says, and YAML sets them as it sets any text.
+    """
     sha256 = report.identity.hashes.sha256
     family = _rule_name_seed(report)
     safe_name = _rule_name_component(report)
@@ -1164,7 +1193,8 @@ def _sigma_rule(
         "id": rule_id,
         "status": "experimental",
         "description": f"Auto-generated for sha256 {sha256[:12]}"
-        + _signatures_named(signatures or []),
+        + _signatures_named(signatures or [])
+        + _observed_named(observed or []),
         "author": "Malspark Auto-Generator",
         "date": report.generated_at.strftime("%Y/%m/%d"),
         **({"references": lookups} if lookups else {}),
@@ -1213,6 +1243,9 @@ class _StatedDraft:
     logsource: dict[str, str]
     selections: dict[str, dict[str, Any]]
     sources: list[str]
+    # ``<value>: observed in detonation 2, …`` for each selected value only a
+    # further detonation observed (:func:`_later_only`).
+    observed: list[str] = field(default_factory=list)
 
 
 # Each draft's name suffix, the words its title carries, and its log source.
@@ -1316,6 +1349,9 @@ def _stated_drafts(report: MalwareReport) -> tuple[list[_StatedDraft], int]:
         seen.add((selection, value.lower()))
         values.append(value)
         draft.sources.append(f"{kind}:{row.value}")
+        later = _later_only(row)
+        if later:
+            draft.observed.append(f"{_one_line(row.value)}: {later}")
     return [drafts[s] for s in _STATED_TITLES if s in drafts], generic
 
 
@@ -1584,6 +1620,13 @@ def _signatures_named(signatures: list[str]) -> str:
         ". The sandbox recorded these signatures, which name no log field and are not "
         "selected on: " + "; ".join(signatures)
     )
+
+
+def _observed_named(observed: list[str]) -> str:
+    """The clause a Sigma draft's description names its later-detonation values in, or ``""``."""
+    if not observed:
+        return ""
+    return ". Selected values only a later detonation observed: " + "; ".join(observed)
 
 
 def _collect_signature_names(report: MalwareReport) -> list[str]:

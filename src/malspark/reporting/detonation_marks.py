@@ -174,6 +174,25 @@ def observed_words(
     return f"observed in {' and in '.join(parts)}" if parts else ""
 
 
+def later_only_words(marks: Sequence[ObservedIn] | Iterable[Any]) -> str:
+    """A row's marks in :func:`observed_words`'s words, where only further detonations observed it.
+
+    ``""`` where the job's own detonation observed the row too, or no mark is
+    stated: what a surface that names only a later detonation's rows writes
+    (the drafted rules).
+    """
+    held = list(marks or ())
+    names = {
+        detonation_named(
+            mark.get("detonation") if isinstance(mark, Mapping) else getattr(mark, "detonation", "")
+        )
+        for mark in held
+    }
+    if not held or FIRST_DETONATION in names:
+        return ""
+    return observed_words(held)
+
+
 def observed_property(marks: Sequence[ObservedIn]) -> list[dict[str, Any]] | None:
     """A row's marks as an export's property holds them; ``None`` (left out) for no mark."""
     return [mark.model_dump() for mark in marks if detonation_named(mark.detonation)] or None
