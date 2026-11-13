@@ -286,6 +286,10 @@ def sandbox_processes(
         return _absent("processes")
     rows: list[dict[str, Any]] = []
     page, meta = _page(processes, offset, limit)
+    # In a report a generated launcher's run produced, the sandbox's own
+    # "this is the sample" mark points at the picked script or a wrapper,
+    # never at the sample: it is set aside, and only the launch lineage says.
+    launched = _launcher_attributed(report, processes)
     if page:
         for proc in page:
             if not isinstance(proc, dict):
@@ -306,10 +310,27 @@ def sandbox_processes(
             lineage = _launch_lineage(proc)
             if lineage:
                 row[LINEAGE_KEY] = lineage
-            if lineage == LINEAGE_SAMPLE or (not lineage and _marked_as_the_sample(proc)):
+            if lineage == LINEAGE_SAMPLE or (
+                not launched and not lineage and _marked_as_the_sample(proc)
+            ):
                 row["marked"] = True
             rows.append(row)
     return {"processes": rows, "total": len(processes), **meta}
+
+
+def _launcher_attributed(report: dict[str, Any], processes: list[Any]) -> bool:
+    """Whether ``report`` is of a run a generated launcher started, as the platform marked it.
+
+    Its launch mark names a launcher (``schemas.sandbox_document.LAUNCH_KEY``,
+    a platform mark no sandbox's document keeps), or a process carries the
+    launch lineage the platform gave it (``sandbox_report.attribute_the_launcher``).
+    """
+    from malspark.schemas.sandbox_document import LAUNCH_KEY
+
+    mark = report.get(LAUNCH_KEY)
+    if isinstance(mark, dict) and isinstance(mark.get("launcher"), dict):
+        return True
+    return any(isinstance(proc, dict) and _launch_lineage(proc) for proc in processes)
 
 
 def _launch_lineage(proc: dict[str, Any]) -> str:
