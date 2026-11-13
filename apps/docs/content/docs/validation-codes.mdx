@@ -302,7 +302,7 @@ A report section answer that writes one item again. Every list section's contrac
 No comment names its meaning, and `malspark.pipeline.validation:schema_violations` passes more than one message for it: see the messages there.
 
 - **Raised at** `malspark.pipeline.validation:schema_violations`, `malspark.reporting.composer:ReportComposer._invoke._validate`
-- **Constant** none: the code is written as a literal
+- **Listed in** `malspark.pipeline.validation:REASKED_IN_EVERY_MODE_CODES`
 - **Docs** none
 
 ## isr
@@ -434,7 +434,7 @@ No comment names its meaning, and `malspark.pipeline.validation:parse_violations
 No comment names its meaning, and `malspark.pipeline.validation:schema_violations` passes more than one message for it: see the messages there.
 
 - **Raised at** `malspark.pipeline.validation:schema_violations`, `malspark.reporting.narrative_agent:NarrativeAgent.generate`
-- **Constant** none: the code is written as a literal
+- **Listed in** `malspark.pipeline.validation:REASKED_IN_EVERY_MODE_CODES`
 - **Docs** none
 
 ### `narrative.ungrounded_capability`
@@ -1048,7 +1048,7 @@ What is recorded when even the retry was not a bundle. The code lands in `run_su
 No comment names its meaning; the message at `malspark.agents.judge_agent:JudgeAgent.give_verdict._validate` reads: "Your previous answer was not a JSON STIX bundle. Your answer is the JSON bundle alone, with no prose around it."
 
 - **Raised at** `malspark.agents.judge_agent:JudgeAgent.give_verdict._validate`
-- **Constant** none: the code is written as a literal
+- **Listed in** `malspark.pipeline.validation:REASKED_IN_EVERY_MODE_CODES`
 - **Docs** none
 
 ### `verdict.retry_failed`
@@ -1064,7 +1064,7 @@ What is recorded when the judge's one retry failed — it timed out, answered pr
 No comment names its meaning; the message at `malspark.pipeline.validation:validate_verdict_bundle` reads: "severity.rating is \<rating>; it must be one of \<SEVERITY_RATINGS>."
 
 - **Raised at** `malspark.pipeline.validation:validate_verdict_bundle`
-- **Constant** none: the code is written as a literal
+- **Listed in** `malspark.pipeline.validation:REASKED_IN_EVERY_MODE_CODES`
 - **Docs** none
 
 ### `verdict.timeout`

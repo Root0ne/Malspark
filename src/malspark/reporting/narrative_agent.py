@@ -50,6 +50,7 @@ from malspark.core.spend import (
 from malspark.core.token_ledger import read_structured_reply, say_structured_reply
 from malspark.llm.answer_text import structured_answer_text
 from malspark.llm.registry import schema_tool_worth_offering, structured_output_supported_for_llm
+from malspark.pipeline.feedback_mode import feeds_back
 from malspark.pipeline.validation import (
     KEPT_WITH_A_FINDING,
     CapabilityGrounding,
@@ -1152,7 +1153,15 @@ class NarrativeAgent:
                 "; ".join(f"{v.path}: {v.message}" for v in broken),
             )
             return None
-        late = [v for v in ungrounded if retries and raised_only_in_retry(v, shown)]
+        # Only where every finding is asked: in ``record_only``
+        # (``validation.feedback``) a retry asks only about an answer that
+        # could not be read, a finding beside that was not asked whichever
+        # answer it stood in, and its row is already marked not asked.
+        late = (
+            [v for v in ungrounded if retries and raised_only_in_retry(v, shown)]
+            if feeds_back()
+            else []
+        )
         self._record_ungrounded([v for v in ungrounded if v not in late])
         self._record_ungrounded(
             [replace(v, message=f"{v.message} {ONLY_IN_THE_RETRY}", sentence="") for v in late],

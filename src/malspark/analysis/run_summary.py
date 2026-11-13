@@ -261,6 +261,8 @@ class ValidationMetrics:
     # answer was kept over (``discarded_retry_answers``). A key with no rows is
     # left out of the summary.
     answers: dict[str, list[dict[str, str]]] = field(default_factory=dict)
+    # ``validation.feedback`` where it is not the default; left out otherwise.
+    feedback: str = ""
 
 
 @dataclass
@@ -1894,6 +1896,7 @@ class RunSummary:
                     for key, rows in self.validation.answers.items()
                     if rows
                 },
+                **({"feedback": self.validation.feedback} if self.validation.feedback else {}),
             }
 
         if self.tokens:
@@ -2704,6 +2707,7 @@ class RunSummaryBuilder:
                 for key in VALIDATION_ANSWER_KEYS
                 if metrics.get(key)
             },
+            feedback=str(metrics.get("feedback") or ""),
         )
         return self
 

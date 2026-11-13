@@ -233,6 +233,27 @@ class TestTheExportsSentence:
         assert "the judge was not asked about it" in sentence
         assert "when asked" not in sentence
 
+    @pytest.mark.parametrize("mode", ["feed_back", "record_only"])
+    def test_why_it_was_not_asked_is_left_to_the_run_record(
+        self, mode: str, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """A stored run is exported again later: the sentence reads no live setting."""
+        from types import SimpleNamespace
+
+        from malspark.core.settings_overrides import build_settings
+        from malspark.reporting.renderers.stix_renderer import _missing_what_the_standard_requires
+
+        built = build_settings({"validation": {"feedback": mode}})
+        monkeypatch.setattr("malspark.core.config.get_settings", lambda: built)
+        malware = SimpleNamespace(type="malware", name="QuillLoader", id="m", is_family=None)
+
+        (credit,) = _export(asked=False)
+        family = _missing_what_the_standard_requires(malware, ["QuillLoader"])
+
+        for sentence in (credit, family):
+            assert "and the judge was not asked about it." in sentence
+            assert "no turn was left" not in sentence
+
     def test_it_says_the_judge_kept_it_when_asked_when_it_was(self) -> None:
         (sentence,) = _export(asked=True)
 

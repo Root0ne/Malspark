@@ -60,6 +60,7 @@ from malspark.core.token_ledger import read_structured_reply, say_structured_rep
 from malspark.llm.answer_text import structured_answer_text
 from malspark.llm.anthropic_history import SENT_AGAIN, SHARED_HEAD
 from malspark.llm.registry import schema_tool_worth_offering, structured_output_supported_for_llm
+from malspark.pipeline.feedback_mode import feeds_back
 from malspark.pipeline.validation import (
     CHANNEL_BINDING_CODE,
     KEPT_WITH_A_FINDING,
@@ -2539,7 +2540,13 @@ class ReportComposer:
                 for extra in validators or []:
                     found.extend(extra(answer))
                 held = _raw_with_object(read.raw)
-                if held is not None and any(v.code in ASKED_ON_A_PARSED_ANSWER for v in found):
+                # In ``record_only`` (``validation.feedback``) that question is
+                # not asked either: the answer is recorded here as it stands.
+                if (
+                    held is not None
+                    and any(v.code in ASKED_ON_A_PARSED_ANSWER for v in found)
+                    and feeds_back()
+                ):
                     kept = held
                     parsed_kept = True
                 else:
@@ -2870,7 +2877,15 @@ class ReportComposer:
         # By finding and, for a finding about sentences or values, by
         # sentence or value: a new one under a term already asked about was
         # not asked either.
-        late = [v for v in ungrounded if retries and raised_only_in_retry(v, shown)]
+        # Only where every finding is asked: in ``record_only``
+        # (``validation.feedback``) a retry asks only about an answer that
+        # could not be read, a finding beside that was not asked whichever
+        # answer it stood in, and its row is already marked not asked.
+        late = (
+            [v for v in ungrounded if retries and raised_only_in_retry(v, shown)]
+            if feeds_back()
+            else []
+        )
         self._record_ungrounded(
             section or schema.__name__, [v for v in ungrounded if v not in late]
         )

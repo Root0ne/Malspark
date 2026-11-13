@@ -488,7 +488,10 @@ def _without_unconfirmed_credit(
 
     ``asked`` is whether the judge was shown the credit question. The sentence
     says which: "kept the credit when asked" of a credit it was never asked
-    about is a statement the run's record does not support.
+    about is a statement the run's record does not support. Why it was not
+    asked (no turn left, or ``validation.feedback`` set to ``record_only``) is
+    the run record's to say: a stored run is exported again under other
+    settings.
     """
     from malspark.pipeline.validation import credited_agents
 
@@ -496,10 +499,7 @@ def _without_unconfirmed_credit(
     copy = crediting_only(obj, kept)
     names = ", ".join(repr(safe_finding_value(n)) for n in credit.uncredited)
     what_the_judge_did = (
-        "the judge kept the credit when asked"
-        if asked
-        else "the judge was not asked about it: the credit first appeared in an answer no "
-        "turn was left to question"
+        "the judge kept the credit when asked" if asked else "the judge was not asked about it"
     )
     return copy, Declined(
         UNPUBLISHABLE_CREDIT_CODE,
@@ -513,15 +513,15 @@ def _missing_what_the_standard_requires(obj: Any, unasked: Sequence[str] = ()) -
     """The recorded sentence for a judge object the standard refuses as written, or ``""``.
 
     ``unasked`` is the run's ``stix.is_family_missing`` findings the judge was
-    never shown; the sentence says it was asked only when it was.
+    never shown; the sentence says it was asked only when it was, and not why
+    it was not (:func:`_without_unconfirmed_credit`).
     """
     kind = str(getattr(obj, "type", "") or "")
     label = safe_finding_value(getattr(obj, "name", "") or getattr(obj, "id", ""))
     if kind == "malware" and getattr(obj, "is_family", None) is None:
         named = f"{safe_finding_value(str(getattr(obj, 'name', '') or '').strip())!r}"
         what_the_judge_did = (
-            "the judge was not asked about it: it first appeared in an answer no turn was "
-            "left to question"
+            "the judge was not asked about it"
             if any(
                 said == str(getattr(obj, "name", "") or "").strip() or named in said
                 for said in unasked
@@ -2954,10 +2954,14 @@ JUDGE_NOT_ASKED_IN_TIME = (
     "the judge wrote it in its last answer, and no turn was left to ask it with this fact"
 )
 JUDGE_QUESTION_NOT_RECORDED = "no question with this fact is recorded for this run"
+# The same keep in a run whose stored ``validation.feedback`` is ``record_only``:
+# no finding was put to the judge, so no turn was missing either.
+JUDGE_NOT_ASKED_WITH_THE_FACT = "the judge was not asked about it with this fact"
 
-# The three states the run summary gives a judge's keep of such a value.
+# The states the run summary gives a judge's keep of such a value.
 FACT_ANSWERED = "answered"
 FACT_ASKED_TOO_LATE = "last answer"
+FACT_NOT_ASKED = "not asked"
 FACT_NOT_RECORDED = ""
 
 
@@ -2972,8 +2976,11 @@ def _judge_answered_the_fact(report: Any, subject: str) -> str:
     :data:`FACT_ANSWERED` when the judge was asked with the sandbox's fact and
     kept its indicator (``validation.kept_after_the_sandbox_fact``),
     :data:`FACT_ASKED_TOO_LATE` when the question was first raised by its last
-    answer (``asked: "false"``), :data:`FACT_NOT_RECORDED` when no question
-    about it is recorded. Read from ``run_summary.validation.unresolved``.
+    answer (``asked: "false"``), :data:`FACT_NOT_ASKED` for that row in a run
+    whose stored ``validation.feedback`` is ``record_only``, where nothing was
+    asked at all, and :data:`FACT_NOT_RECORDED` when no question about it is
+    recorded. Read from the run summary being rendered, never from the live
+    settings: a stored run is exported again later.
     """
     from malspark.pipeline.validation import UNATTRIBUTED_INDICATOR_CODE
 
@@ -2992,6 +2999,10 @@ def _judge_answered_the_fact(report: Any, subject: str) -> str:
     ):
         return FACT_ANSWERED
     if any(str(row.get("asked") or "") == "false" for row in rows):
+        from malspark.pipeline.feedback_mode import RECORD_ONLY
+
+        if isinstance(validation, dict) and str(validation.get("feedback") or "") == RECORD_ONLY:
+            return FACT_NOT_ASKED
         return FACT_ASKED_TOO_LATE
     return FACT_NOT_RECORDED
 
@@ -3024,12 +3035,11 @@ def _the_judge_s_keep(
         out["kept_by"] = ", ".join([JUDGE_KEPT_WHEN_TOLD, *others])
     else:
         out["kept_by"] = ", ".join(others)
-        out["untold"] = judge_not_told(
-            JUDGE_NOT_ASKED_IN_TIME
-            if state == FACT_ASKED_TOO_LATE
-            else JUDGE_QUESTION_NOT_RECORDED,
-            what,
-        )
+        why = {
+            FACT_ASKED_TOO_LATE: JUDGE_NOT_ASKED_IN_TIME,
+            FACT_NOT_ASKED: JUDGE_NOT_ASKED_WITH_THE_FACT,
+        }.get(state, JUDGE_QUESTION_NOT_RECORDED)
+        out["untold"] = judge_not_told(why, what)
     return out
 
 

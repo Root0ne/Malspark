@@ -19,7 +19,7 @@ import re
 from pathlib import Path
 
 from malspark.core.config import _builtin_profiles
-from malspark.core.settings_annotations import GROUP_ORDER
+from malspark.core.settings_annotations import ANNOTATIONS, GROUP_ORDER
 
 ROOT = Path(__file__).resolve().parents[2]
 CONFIGURATION = ROOT / "apps" / "docs" / "content" / "docs" / "configuration.mdx"
@@ -94,3 +94,18 @@ def test_no_row_names_the_triage_agent_where_it_means_the_pack() -> None:
         keys = [stage.key for stage in profile.stages]
         bare = re.findall(r"`triage`", rows[name])
         assert bool(bare) is ("triage" in keys), name
+
+
+def test_every_validation_setting_is_documented_with_its_values() -> None:
+    """Each ``validation.*`` key of the catalogue is named on the configuration page.
+
+    ``validation.feedback`` also names both its values: a reader setting up an
+    ablation run finds the one that turns the correction turns off.
+    """
+    text = CONFIGURATION.read_text(encoding="utf-8")
+    keys = [key for key in ANNOTATIONS if key.startswith("validation.")]
+    assert "validation.feedback" in keys
+    for key in keys:
+        assert f"`{key}`" in text, key
+    for value in ("feed_back", "record_only"):
+        assert f"`{value}`" in text, value

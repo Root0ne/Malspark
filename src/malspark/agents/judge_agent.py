@@ -127,6 +127,7 @@ from malspark.pipeline.events import (
     safe_finding_value,
     scrub,
 )
+from malspark.pipeline.feedback_mode import feeds_back
 from malspark.pipeline.mediation_models import (
     CONTRADICTIONS_BLOCK_MISSING_NOTE,
     CONTRADICTIONS_BLOCK_MIXED_NOTE,
@@ -5084,8 +5085,16 @@ class JudgeAgent(BudgetMeter):
                 attck = knowledge
             except Exception:  # noqa: BLE001 — no catalogue, no describe check
                 attck = None
+            # In ``record_only`` (``validation.feedback``) the describe check's
+            # finding asks the judge nothing; the techniques it would have
+            # asked about are recorded as not asked, with why.
             questions, not_asked = judge_questions(
-                dumped, isr_reports, routed, attck=attck, ledger=ledger
+                dumped,
+                isr_reports,
+                routed,
+                attck=attck,
+                ledger=ledger,
+                ask_undescribed=feeds_back(),
             )
         except Exception as exc:  # noqa: BLE001 — a question not built is none asked
             self.logger.warning("Judge technique question not built (%s).", type(exc).__name__)

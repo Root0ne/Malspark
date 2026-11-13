@@ -79,6 +79,7 @@ from malspark.pipeline.events import (
     unparsed_answer_kept_sentence,
 )
 from malspark.pipeline.exit_branches import ExitSite, exits_question, uncovered_exits
+from malspark.pipeline.feedback_mode import FEED_BACK, feedback_mode, feeds_back
 from malspark.pipeline.retry_merge import folded_title
 from malspark.schemas.evidence import ENTRY_ID_RE, answer_not_shown, entry_ids_in
 from malspark.schemas.judgement import BENIGN_VERDICT, SEVERITY_RATINGS, VERDICT_VALUES
@@ -2889,8 +2890,11 @@ def technique_check_note(findings: Any) -> str:
 
     The platform mismatches and weak alignments that survived their retry,
     read off the unresolved rows so the judge weighs the same messages the
-    analyst was shown — the domain, the platforms, the candidates. Empty when
-    there are none.
+    analyst was shown — the domain, the platforms, the candidates. A row the
+    analyst was never asked about (``"asked": "false"``: no turn was left, or
+    ``validation.feedback`` is ``record_only``) is listed under its own NOT
+    ASKED heading, as the function rows are, never as a claim kept when
+    questioned. Empty when there are none.
     """
     rows: list[Any] = []
     if isinstance(findings, dict):
@@ -2899,20 +2903,21 @@ def technique_check_note(findings: Any) -> str:
     else:
         rows.extend(findings or [])
     lines: list[str] = []
+    techniques_unasked: list[str] = []
     functions: list[str] = []
     unasked: list[str] = []
     for row in rows:
         data = row if isinstance(row, dict) else getattr(row, "__dict__", {}) or {}
         code = str(data.get("code") or "")
         message = " ".join(str(data.get("message") or "").split())
+        not_asked = str(data.get("asked") or "") == "false" or data.get("asked") is False
         if code == FUNCTION_CLAIM_UNHELD:
             # The facts alone: the sentence addressed to the analyst is not the judge's.
             fact = " ".join(message.replace(FUNCTION_QUESTION_ASK, " ").split())
-            not_asked = str(data.get("asked") or "") == "false" or data.get("asked") is False
             (unasked if not_asked else functions).append(f"- {code}: {fact}")
         if code not in (PLATFORM_MISMATCH_CODE, WEAK_ALIGNMENT_CODE):
             continue
-        lines.append(f"- {code}: {message}")
+        (techniques_unasked if not_asked else lines).append(f"- {code}: {message}")
     notes = []
     if lines:
         notes.append(
@@ -2920,6 +2925,8 @@ def technique_check_note(findings: Any) -> str:
             "are the analysts' own; the check names what disagrees with them and nothing here "
             "changed them.\n" + "\n".join(lines)
         )
+    if techniques_unasked:
+        notes.append(TECHNIQUE_CHECK_NOT_ASKED_HEAD + "\n" + "\n".join(techniques_unasked))
     if functions:
         notes.append(FUNCTION_CHECK_HEAD + "\n" + "\n".join(functions))
     if unasked:
@@ -2927,6 +2934,13 @@ def technique_check_note(findings: Any) -> str:
     return "\n\n".join(notes)
 
 
+# What the judge is told of the technique check's findings the analyst was
+# never asked about; the reason, where there is one, is in the row.
+TECHNIQUE_CHECK_NOT_ASKED_HEAD = (
+    "TECHNIQUE CHECK, NOT ASKED — claims the ATT&CK check found a disagreement with, which "
+    "the analyst was never asked about. The ids are the analysts' own; the check names what "
+    "disagrees with them and nothing here changed them."
+)
 # The function claim check's code (``pipeline.function_claims``), named here so
 # the judge's note reads its rows without importing the check.
 FUNCTION_CLAIM_UNHELD = "isr.function_claim_unheld"
@@ -2937,8 +2951,8 @@ FUNCTION_CHECK_HEAD = (
 )
 FUNCTION_CHECK_NOT_ASKED_HEAD = (
     "FUNCTION CHECK, NOT ASKED — claims naming a call or a string for a function whose own "
-    "facts hold none of it, which the analyst was never asked about: no turn was left to ask "
-    "on, as each line says. Nothing here changed the claims."
+    "facts hold none of it, which the analyst was never asked about. Nothing here changed "
+    "the claims."
 )
 # What the function claim question asks of the analyst, after the facts it states;
 # the judge's note leaves it out.
@@ -5354,12 +5368,14 @@ def record_flagged_statements(
             default = violation.path.replace("_", " ")
             for position, sentence in enumerate(violation.quoted):
                 label = violation.labels[position] if position < len(violation.labels) else default
-                key = (sentence, violation.code, label, asked)
+                # A finding the loop recorded without asking it says so itself.
+                put = asked and violation.asked
+                key = (sentence, violation.code, label, put)
                 if key not in seen:
                     seen.add(key)
                     rows.append(
                         FlaggedStatement(
-                            sentence=sentence, code=violation.code, label=label, asked=asked
+                            sentence=sentence, code=violation.code, label=label, asked=put
                         )
                     )
     except Exception as exc:  # noqa: BLE001 — a mark is never worth a report
@@ -5767,6 +5783,56 @@ def _claim_lines(techniques: bool) -> str:
 # whole-answer question is asked of it, once, with the part written before the
 # repetition shown back.
 ANALYST_REPEATED_CODE = "isr.claims_repeated"
+
+# The findings asked in both ``validation.feedback`` modes
+# (``pipeline.feedback_mode``); in ``record_only`` every other finding is
+# recorded and not asked. One criterion decides membership: a code is here when,
+# left unasked, the stage loses the agent's own content to a fallback because
+# the answer, or a part of it, could not be read, or is absent where the stage
+# then substitutes a fallback of its own. So an answer that is not JSON, cut at
+# the output cap, outside its schema, with no claim parsed or its claims
+# repeated; a claim block whose confidence or technique line is not read, or
+# that stands under DISPUTES, and so is not a claim; a verdict word, a severity
+# rating or a leaf of the assessment that cannot be read, which the report then
+# prints as Inconclusive or not assessed; an assessment absent where the bundle
+# reads it, which the report prints as not assessed, and a verdict absent from
+# it, which the run guesses from the object set; a judge object of no type the
+# bundle reads, set aside; an id two objects share, whose references are read
+# as neither; and an indicator whose pattern the STIX grammar cannot read, which
+# is lost to the export. A finding about what a readable answer says (a
+# citation, a technique, a grounding, a reference to something the round was
+# not shown, a field left out where nothing stands in for it) is not here: the
+# answer stands and the finding is recorded. The codes other modules raise are
+# written out, so the one set is declared here for every stage.
+REASKED_IN_EVERY_MODE_CODES: frozenset[str] = frozenset(
+    {
+        # The analysts.
+        UNPARSED_ANSWER_CODE,
+        CLAIM_WITHOUT_CONFIDENCE_CODE,
+        TECHNIQUE_LINE_UNREAD_CODE,
+        CLAIMS_UNDER_DISPUTES_CODE,
+        ANALYST_CUT_CODE,
+        ANALYST_REPEATED_CODE,
+        # The judge's verdict.
+        "verdict.cut_at_output_cap",
+        "verdict.not_json",
+        "verdict.unrecognised",
+        "verdict.unstated",
+        "verdict.severity_enum",
+        "verdict.assessment_missing",
+        "verdict.assessment_unreadable",
+        "stix.unknown_object",
+        "stix.duplicate_label",
+        "stix.pattern_refused",
+        "stix.unescaped_backslash",
+        # The report stage.
+        SECTION_CUT_CODE,
+        "composer.schema",
+        "narrative.schema",
+        "question.schema",
+        "agreement.schema",
+    }
+)
 
 
 @dataclass(frozen=True)
@@ -12589,9 +12655,41 @@ def _collect(parsed: Any, validators: Sequence[Validator]) -> list[Violation]:
     return found
 
 
-def _askable(violations: Sequence[Violation]) -> list[Violation]:
-    """The findings a retry may ask about: every one but a check that could not run."""
-    return [v for v in violations if v.code != CHECK_FAILED_CODE]
+def _askable(violations: Sequence[Violation], *, every: bool = True) -> list[Violation]:
+    """The findings a retry may ask about: every one but a check that could not run.
+
+    ``every=False`` is ``validation.feedback`` set to ``record_only``: only a
+    finding that says the answer could not be read is asked
+    (:data:`REASKED_IN_EVERY_MODE_CODES`).
+    """
+    return [
+        v
+        for v in violations
+        if v.code != CHECK_FAILED_CODE and (every or v.code in REASKED_IN_EVERY_MODE_CODES)
+    ]
+
+
+def asked_in_this_mode(violations: Sequence[Violation]) -> list[Violation]:
+    """The findings a correction turn of this run may ask about (:func:`_askable`).
+
+    For a stage that decides on its own whether to open a turn: in
+    ``record_only`` only an answer, or a block of it, that could not be read
+    is asked (:data:`REASKED_IN_EVERY_MODE_CODES`).
+    """
+    return _askable(violations, every=feeds_back())
+
+
+def recorded_not_asked(
+    violations: Sequence[Violation], shown: Sequence[Violation]
+) -> list[Violation]:
+    """``violations`` in ``record_only``: each of a code no question asked marked not asked.
+
+    Only a finding that says the answer could not be read is ever asked in that
+    mode, so a finding of any other code was recorded and never put to the
+    producer, and its row says so (``"asked": "false"``).
+    """
+    asked = {v.code for v in shown}
+    return [v if v.code in asked else replace(v, asked=False) for v in violations]
 
 
 def _is_tool_call_block(part: Any) -> bool:
@@ -12960,6 +13058,7 @@ async def retry_with_feedback[T](
     ``keep`` before it returns the first answer.
     """
     feed = _feed(sink, agent, stage)
+    every = feeds_back()
     turns = list(messages)
     answer = await run(turns)
     parsed = parse(answer)
@@ -12967,7 +13066,7 @@ async def retry_with_feedback[T](
     violations = _collect(parsed, validators)
     retries = 0
     shown: list[Violation] = []
-    while (asking := _askable(violations)) and retries < max_retries:
+    while (asking := _askable(violations, every=every)) and retries < max_retries:
         keep_answer = not any(v.code in drop_answer_for for v in asking)
         following = _with_feedback(
             turns,
@@ -12994,6 +13093,8 @@ async def retry_with_feedback[T](
         if kept is not parsed:
             parsed = kept
             violations = _collect(parsed, validators)
+    if not every:
+        violations = recorded_not_asked(violations, shown)
     if answered is not None:
         violations = answered(violations, shown)
     if feed is not None:
@@ -13038,6 +13139,7 @@ def retry_with_feedback_sync[T](
     retry turn without technique cards (:func:`feedback_text`).
     """
     feed = _feed(sink, agent, stage)
+    every = feeds_back()
     turns = list(messages)
     answer = run(turns)
     parsed = parse(answer)
@@ -13045,7 +13147,7 @@ def retry_with_feedback_sync[T](
     violations = _collect(parsed, validators)
     retries = 0
     shown: list[Violation] = []
-    while (asking := _askable(violations)) and retries < max_retries:
+    while (asking := _askable(violations, every=every)) and retries < max_retries:
         _announce_feedback(asking, on_feedback, feed, retries + 1)
         shown.extend(asking)
         keep_answer = not any(v.code in drop_answer_for for v in asking)
@@ -13062,6 +13164,8 @@ def retry_with_feedback_sync[T](
         if kept is not parsed:
             parsed = kept
             violations = _collect(parsed, validators)
+    if not every:
+        violations = recorded_not_asked(violations, shown)
     if feed is not None:
         feed.outcome(shown, violations, retries)
     return parsed, violations, retries
@@ -13802,6 +13906,10 @@ def validation_metrics(
     names the checks that could not run at all — the validity check on a box
     with no catalogue — which is a different fact from a check that ran and
     found nothing.
+
+    ``feedback`` names this run's ``validation.feedback`` where it is not the
+    default (``record_only``: no finding was asked, so ``by_code`` counts each
+    once); a run in the default carries no such key.
     """
     by_code: dict[str, int] = {code: int(count) for code, count in (fed_back or {}).items()}
     rows: list[dict[str, str]] = []
@@ -13875,6 +13983,9 @@ def validation_metrics(
     ]
     if withdrawn:
         out["retry_withdrawals"] = withdrawn
+    mode = feedback_mode()
+    if mode != FEED_BACK:
+        out["feedback"] = mode
     return out
 
 
