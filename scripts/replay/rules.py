@@ -105,6 +105,7 @@ COMPOSER_CHECKS: tuple[str, ...] = (
     "configuration_citation_violations",
     "identifier_citation_violations",
     "stated_value_violations",
+    "cited_id_violations",
     "style_violations",
     "channel_binding_violations",
     "summary_shape_violations",
@@ -2400,6 +2401,7 @@ def _composer(run: _Run, built: _Built) -> dict[str, Any]:
             lambda p: v.identifier_citation_violations(p, known_ids, items),
             lambda p: v.stated_value_violations(p, entries),
         ],
+        "commands": [lambda p: v.cited_id_violations(p, entries)],
     }
     for section in c._PROSE_SECTIONS:
         extras.setdefault(section, []).append(_checks(section))
