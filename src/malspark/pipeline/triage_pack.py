@@ -3267,7 +3267,7 @@ def unread_rows_sentence(entries: Sequence[LedgerEntry]) -> str:
     )
 
 
-def render_pack(entries: list[LedgerEntry], max_chars: int) -> str:
+def render_pack(entries: list[LedgerEntry], max_chars: int, later_chars: int | None = None) -> str:
     """The pack within ``max_chars`` (``_render_entries``), ending with the unread rows' count.
 
     Where ``pack_entries`` could not read some ledger rows, the block's last
@@ -3282,12 +3282,14 @@ def render_pack(entries: list[LedgerEntry], max_chars: int) -> str:
     a line of the job's own detonation (the block is then at most twice the
     bound). Each such line says which detonation it is of and what it was
     launched with, and every item id it shows is qualified by the detonation
-    (``d2/proc:9``, :func:`_marked_line`).
+    (``d2/proc:9``, :func:`_marked_line`). ``later_chars`` is that room where
+    the caller sizes it apart (``nodes.pack_text`` takes the earlier run's
+    block off the job's own room only); ``max_chars`` where it does not.
     """
     first, later = _by_detonation(entries)
     if later:
         own = render_pack(first, max_chars)
-        rest = _later_lines(later, max_chars)
+        rest = _later_lines(later, max_chars if later_chars is None else later_chars)
         return "\n".join(part for part in (own, rest) if part)
     unread = unread_rows_sentence(entries)
     if not unread:
@@ -4027,11 +4029,15 @@ def _within_room(entry: LedgerEntry, room: int) -> str | None:
     return line if body and len(line) <= room else None
 
 
-def pack_block(entries: list[LedgerEntry], max_chars: int) -> str:
-    """The heading and the rendered pack, or ``""`` when there is no pack."""
+def pack_block(entries: list[LedgerEntry], max_chars: int, later_chars: int | None = None) -> str:
+    """The heading and the rendered pack, or ``""`` when there is no pack.
+
+    ``later_chars`` is the room of a further detonation's lines where it is
+    not ``max_chars`` (:func:`render_pack`).
+    """
     if not entries and not unread_rows_sentence(entries):
         return ""
-    return f"{PACK_HEADING}\n{render_pack(entries, max_chars)}"
+    return f"{PACK_HEADING}\n{render_pack(entries, max_chars, later_chars)}"
 
 
 def _pack_line(entry: LedgerEntry) -> str:
