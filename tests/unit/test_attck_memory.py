@@ -1,4 +1,4 @@
-"""Unit tests for ATTCKIndex, ATTCKLoader utilities, and ATTCKValidator.
+"""Unit tests for ATTCKIndex, and ATTCKLoader utilities.
 
 All tests use fixture data to avoid network calls to the MITRE CTI repository.
 """
@@ -9,7 +9,6 @@ import pytest
 
 from malspark.memory.attck_index import ATTCKIndex, SearchResult, _cosine_similarity
 from malspark.memory.attck_loader import ATTCKTechnique, _parse_bundle
-from malspark.memory.attck_validator import ATTCKValidator
 from malspark.memory.hybrid_attck_index import HybridATTCKIndex
 from malspark.memory.semantic_attck_index import SemanticATTCKIndex
 
@@ -83,11 +82,6 @@ FIXTURE_TECHNIQUES = [
 @pytest.fixture
 def index() -> ATTCKIndex:
     return ATTCKIndex.from_techniques(FIXTURE_TECHNIQUES)
-
-
-@pytest.fixture
-def validator(index: ATTCKIndex) -> ATTCKValidator:
-    return ATTCKValidator.from_index(index)
 
 
 # ---------------------------------------------------------------------------
@@ -197,6 +191,9 @@ class TestATTCKIndex:
     def test_technique_exists_false(self, index: ATTCKIndex) -> None:
         assert index.technique_exists("T9999") is False
 
+    def test_technique_exists_case_insensitive(self, index: ATTCKIndex) -> None:
+        assert index.technique_exists("t1055") is True
+
     def test_search_returns_results(self, index: ATTCKIndex) -> None:
         results = index.search("process injection WriteProcessMemory remote thread")
         assert len(results) > 0
@@ -238,37 +235,6 @@ class TestATTCKIndex:
         idx = ATTCKIndex()
         with pytest.raises(RuntimeError, match="not built"):
             idx.search("any query")
-
-
-# ---------------------------------------------------------------------------
-# ATTCKValidator
-# ---------------------------------------------------------------------------
-
-
-class TestATTCKValidator:
-    def test_validate_ttp_id_existing(self, validator: ATTCKValidator) -> None:
-        assert validator.validate_ttp_id("T1055") is True
-
-    def test_validate_ttp_id_nonexistent(self, validator: ATTCKValidator) -> None:
-        assert validator.validate_ttp_id("T9999") is False
-
-    def test_validate_ttp_id_case_insensitive(self, validator: ATTCKValidator) -> None:
-        assert validator.validate_ttp_id("t1055") is True
-
-    def test_get_technique_known(self, validator: ATTCKValidator) -> None:
-        tech = validator.get_technique("T1055")
-        assert tech is not None
-        assert tech.technique_id == "T1055"
-
-    def test_get_technique_unknown(self, validator: ATTCKValidator) -> None:
-        assert validator.get_technique("T9999") is None
-
-    def test_technique_count(self, validator: ATTCKValidator) -> None:
-        assert validator.technique_count == len(FIXTURE_TECHNIQUES)
-
-    def test_from_index_factory(self, index: ATTCKIndex) -> None:
-        v = ATTCKValidator.from_index(index)
-        assert v.technique_count == index.size
 
 
 # ---------------------------------------------------------------------------

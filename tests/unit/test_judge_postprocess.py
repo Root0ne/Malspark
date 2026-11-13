@@ -15,7 +15,6 @@ from malspark.agents.judge_postprocess import (
     enforce_bundle_integrity,
     postprocess_judge_bundle,
 )
-from malspark.memory.attck_validator import ATTCKValidator
 
 
 def _bundle_with(indicators: list[dict]) -> dict:
@@ -157,7 +156,6 @@ class TestBundleIntegrity:
 
 class TestTechniqueDisplayName:
     def test_the_name_is_the_vendored_tables_without_any_index(self) -> None:
-        ATTCKValidator.reset()
         assert _technique_display_name("T1055") == "Process Injection"
 
     def test_an_id_the_table_does_not_have_has_no_name(self) -> None:
@@ -166,7 +164,6 @@ class TestTechniqueDisplayName:
     def test_rep01_backfill_falls_back_without_index(self) -> None:
         # An uncurated technique ID with no built index must still get a valid
         # external_reference back-filled (no crash, deterministic URL).
-        ATTCKValidator.reset()
         ap = {
             "type": "attack-pattern",
             "id": "attack-pattern--00000000-0000-4000-8000-0000000000bb",

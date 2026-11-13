@@ -11,7 +11,7 @@ Design: subclass ATTCKIndex and reuse all of its non-vector machinery (technique
 lookup, tactic catalogue, the ``from_loader`` / ``from_techniques`` factories,
 ``SearchResult``). Only the three vector operations are overridden — ``_build``
 (embed every technique once), ``search``, and ``validate_and_score`` — so every
-downstream caller (``ATTCKValidator``, ``tools.knowledge``) works unchanged.
+downstream caller (``tools.knowledge``) works unchanged.
 
 NOTE: semantic cosine scores live on a different scale than TF-IDF (BGE puts even
 loosely related text around 0.3-0.5), so the alignment thresholds tuned for the
@@ -34,8 +34,8 @@ from malspark.memory.attck_loader import ATTCK_CACHE_DIR, ATTCKTechnique
 # grows to fit the largest inference it has seen and does not shrink, so
 # ``malloc_trim`` reclaims ~2 MB of it. Measured 2026-07-28 in the worker
 # container — it was the single largest term in the judge node's ~1.4 GB
-# footprint, and the judge holds the index as a process-wide singleton
-# (``ATTCKValidator.get_instance``), so every worker paid it once and kept it.
+# footprint, and ``tools.knowledge`` holds the index as a process-wide
+# singleton, so every worker pays it once and keeps it.
 #
 # The corpus is static between ATT&CK releases and the vectors are a pure
 # function of it, so the whole cost is recomputation. The cache key is a hash of
