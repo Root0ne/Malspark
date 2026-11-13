@@ -3499,6 +3499,15 @@ transport to open — the process tree, the network activity, the sandbox's own
 signatures, the files written, the registry keys touched, the API-call
 histogram, the mutexes held, the services and scheduled tasks arranged, the
 platform channels, and a bounded reader for any section the rest do not model.
+Each of them takes an optional `detonation` argument: empty (or `d1`) reads the
+job's own detonation, `d2`, `d3` and so on a further detonation an agent asked
+for, whose answers name the launch arguments it was started with and who asked,
+and whose item ids are qualified by it (`d2/proc:84`). The argument is part of
+the call, so the ledger records which detonation a read was of. Where the job's
+sandbox can pass launch arguments (a field of its own or a generated launcher),
+the same source also holds `request_detonation`, by which any agent whose
+definition holds the source asks for a further detonation with arguments it
+found; see [further detonations](/docs/tools/sandboxes/#further-detonations).
 
 A tool server reached over HTTP does not share the worker's filesystem, so it
 is handed the sample rather than a path to it; a stdio sidecar is handed the

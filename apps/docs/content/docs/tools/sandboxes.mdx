@@ -632,6 +632,74 @@ A plugin provider's `submit(sample_path, *, options=None)` receives a
 `SubmissionOptions` only when it declares the capability; one written before
 the keyword existed keeps working and is recorded as unable to pass them.
 
+## Further detonations
+
+Some samples show their behaviour only when started with an argument an analyst
+has to find: a locker's password held in the binary, an installer's switch. The
+operator hands the run nothing the agents could find themselves, so the agent
+that finds it asks for a further detonation with it.
+
+**Asking.** Where the job's sandbox can pass launch arguments (a field of its
+own, or a [launcher](#through-a-launcher)), the in-process sandbox source holds
+`request_detonation(arguments, reason, cited_entries)`, and any agent whose
+definition holds that source may call it. It detonates nothing itself: it
+records the request and answers at once, in code:
+
+| Answer | When |
+|---|---|
+| accepted, as detonation `d2`, `d3`… | the request passes every check below |
+| joined to `dN` | an identical argument set is already accepted and pending: it is one detonation, and its record names every agent that asked |
+| refused, naming `dN` | a detonation already made was launched with exactly these arguments |
+| refused | the value is not one command line; no reason; no cited entries, or entries the run had not issued before the call (named); mock mode, no sample, or a provider that detonates nothing or cannot pass the arguments (with the provider's note); the ceiling is reached; no later step of the run has an agent that reads the sandbox |
+
+The tool's description states the sandbox's physical limits: the ceiling
+(`core.sandbox.max_detonations_per_job`, default 4, the job's own detonation
+included), the provider's detonation time, that each submission sends the
+sample to the sandbox, is disclosed in the run's record and may be public on
+that service, and that the arguments are handed to the sandbox verbatim and
+never run on the worker. It also says when a request can still be carried out:
+while a step with an agent reading the sandbox is still ahead.
+
+**Carrying out.** An accepted request is carried out on entry of the next step
+of the graph that has an agent reading the sandbox (an agent whose tools come
+from the sandbox source, or whose definition holds it), before that step's own
+work, through the same submission path the job's own detonation takes. The
+graph has no node of its own for it: the detonation is recorded with the step
+it ran on entry of and its own start, end and duration, and announced with
+`detonation_started` and `detonation_finished` events, so its time can be taken
+out of the stage it ran inside. During the debate, a request filed in a revision
+turn is carried out on the next negotiation entry. A detonation the job's time
+limit (`core.job_timeout`) leaves no room for is recorded as not run, and one
+that fails is recorded with its reason; neither fails the run.
+
+**The further turn.** On the debate's first negotiation entry, each analyst
+that reads the sandbox and whose own turn began before a further detonation
+returned its report gets one further turn: its answer in force is revised with
+the new detonations named (who asked and the entries they cited), and it reads
+them with the sandbox tools' `detonation` argument. The turn is recorded with
+its step, start, end, duration and outcome, and announced with
+`further_turn_started` and `further_turn_finished`.
+
+**Each detonation apart.** Each detonation has its own report, launch record,
+target claim, failure and upload row; the reader that marks a generated
+launcher's processes, flows and signatures as the launcher's reads that
+detonation's own launch record. A later detonation's item ids are qualified by
+it (`d2/proc:84`), and the run's item index knows each detonation's ids apart.
+A read made before a detonation existed answers with an error, which is never
+handed back for a later identical call. In the report, a later detonation's
+observations are in tables of their own, titled "… when launched with `<args>`
+(detonation 2, asked for by `<agent>` citing `<entries>`)". The disclosure block
+lists each further detonation as a submission of its own, with who asked and
+"the launch arguments an agent found". The run summary lists every detonation
+(origin `job` or `agent`, who asked, at which step, the requesting and cited
+entries, timings), every request with its answer, and every further turn. A
+request that was not carried out (too late, the ceiling, a sandbox that could
+not, a detonation that returned no report, one still pending at the verdict) is
+one of the run's limitations; it does not make the verdict tentative.
+
+A job in which no agent asks for a further detonation runs, records and reports
+as before.
+
 ## Connection tests
 
 The **Connect a sandbox** setup guide walks provider choice, credentials and a
