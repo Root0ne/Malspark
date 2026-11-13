@@ -101,6 +101,9 @@ class TestAnUnknownWindowSplitIsStated:
             (ChunkingConfig(overlap_tokens=0, max_tokens_per_chunk=20_000), None, "n" * 200_000),
             (ChunkingConfig(overlap_tokens=0), _room(None), "n" * 70_000),
         ],
+        # Short ids: a generated id of the long text names a directory, and a
+        # Windows path holds 260 characters.
+        ids=["room-100k", "operator-figure", "unknown-window-70k"],
     )
     def test_no_row_where_a_window_or_a_figure_sized_it_or_nothing_was_split(
         self, config: ChunkingConfig, room: Any, text: str

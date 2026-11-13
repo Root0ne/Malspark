@@ -151,7 +151,7 @@ jobs:
           runners run Windows containers only; the Linux job validates the
           compose files."
 
-  # The host-side suites that must pass on Windows, run on Windows, in three
+  # The host-side suites that must pass on Windows, run on Windows, in five
   # shards that run side by side. A test marked posix is deselected; every
   # other test of these paths runs. Not a required check.
   windows-tests:
@@ -178,6 +178,13 @@ jobs:
           - shard: pipeline
             paths:
               - tests/unit/pipeline
+          - shard: servers-analysis
+            paths:
+              - tests/unit/servers
+              - tests/unit/analysis
+          - shard: top-level
+            paths:
+              - tests/unit/test_*.py
 
     steps:
       - name: Checkout
@@ -205,5 +212,10 @@ jobs:
           SHARD_PATHS: ${{ join(matrix.paths, ' ') }}
         run: |
           $PSNativeCommandUseErrorActionPreference = $true
-          $paths = -split $env:SHARD_PATHS
+          # PowerShell hands a native command its wildcards unexpanded.
+          # An array also when the shard names one path, which a splat would
+          # otherwise spread over its characters.
+          $paths = @(-split $env:SHARD_PATHS | ForEach-Object {
+            if ($_ -match '[*?]') { Resolve-Path -Relative $_ } else { $_ }
+          })
           uv run pytest @paths -m "not posix" -q --tb=short -o faulthandler_timeout=600

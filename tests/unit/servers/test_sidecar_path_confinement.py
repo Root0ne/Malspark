@@ -17,6 +17,7 @@ from __future__ import annotations
 import asyncio
 import importlib.util
 import json
+import os
 import sys
 from pathlib import Path
 from typing import Any
@@ -181,14 +182,14 @@ class TestAConfiguredRootIsRead:
 
         assert answer.get("error") is None, answer
 
-    def test_the_list_is_colon_separated(
+    def test_the_list_is_separated_by_the_platforms_path_separator(
         self, analysis: Any, staging: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         first = tmp_path / "one"
         second = tmp_path / "two"
         first.mkdir()
         second.mkdir()
-        monkeypatch.setenv("MALSPARK_SAMPLE_ROOTS", f"{first}:{second}")
+        monkeypatch.setenv("MALSPARK_SAMPLE_ROOTS", f"{first}{os.pathsep}{second}")
 
         assert analysis.identify_file(_pe(second / "s.bin")).get("error") is None
 

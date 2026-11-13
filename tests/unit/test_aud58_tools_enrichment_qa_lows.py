@@ -66,6 +66,7 @@ def test_tb15_a_check_that_failed_does_not_ground_the_section(
     assert "C6" in {w.rule for w in lint_report(report, "android")}
 
 
+@pytest.mark.posix
 def test_tb16_floss_is_not_started_with_a_preexec_function(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

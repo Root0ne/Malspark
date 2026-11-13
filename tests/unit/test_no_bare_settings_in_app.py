@@ -110,7 +110,7 @@ def test_no_bare_settings_construction_outside_the_allow_list() -> None:
             continue
         text = path.read_text(encoding="utf-8")
         if _constructs_bare_settings(text):
-            offenders.append(str(path.relative_to(ROOT)))
+            offenders.append(path.relative_to(ROOT).as_posix())
     assert offenders == [], (
         "bare Settings()/APISettings() construction outside the allow-list: "
         f"{offenders} -- use build_settings(...) for core settings"
@@ -134,7 +134,7 @@ def test_no_core_get_settings_outside_the_allow_list() -> None:
             continue
         text = path.read_text(encoding="utf-8")
         if _IMPORTS_CORE_GET_SETTINGS.search(text) and _BARE_GET_SETTINGS_CALL.search(text):
-            offenders.append(str(path.relative_to(ROOT)))
+            offenders.append(path.relative_to(ROOT).as_posix())
     assert offenders == [], (
         "malspark.core.config.get_settings() called outside the allow-list: "
         f"{offenders} -- it is a lazy, environment-reading singleton on a "

@@ -39,7 +39,7 @@ def test_no_scope_assigns_pytestmark_twice() -> None:
         tree = ast.parse(path.read_text(encoding="utf-8"))
         for body in _scopes(tree):
             if sum(_assigns_pytestmark(statement) for statement in body) > 1:
-                twice.append(str(path.relative_to(ROOT)))
+                twice.append(path.relative_to(ROOT).as_posix())
     assert twice == []
 
 
@@ -50,7 +50,7 @@ def _marked_whole() -> list[str]:
         tree = ast.parse(path.read_text(encoding="utf-8"))
         for statement in tree.body:
             if _assigns_pytestmark(statement) and "mark.posix" in ast.unparse(statement):
-                marked.append(str(path.relative_to(ROOT)))
+                marked.append(path.relative_to(ROOT).as_posix())
     return marked
 
 

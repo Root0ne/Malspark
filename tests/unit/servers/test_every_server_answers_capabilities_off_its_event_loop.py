@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import asyncio
 import importlib.util
-import time
+import threading
 from pathlib import Path
 from typing import Any
 
@@ -20,9 +20,12 @@ from malspark.tools.capabilities import ToolNeeds, binary
 ROOT = Path(__file__).resolve().parents[3]
 
 
-def _slow_version() -> str:
-    time.sleep(0.5)
-    return "3.1"
+# How long an answer waits for a version to be read, and how long the version
+# probe waits for the event loop to release it. Both are reached only when the
+# loop is blocked; a slow machine does not get near them. The probe outlasts
+# the answer's wait.
+ANSWER_WAIT_S = 20.0
+RELEASE_TIMEOUT_S = 30.0
 
 
 @pytest.mark.parametrize("server", ["knowledge", "network", "threatintel", "analysis"])
@@ -34,29 +37,45 @@ def test_the_loop_keeps_running_while_a_version_is_read(
     assert spec and spec.loader
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
-    needs = [ToolNeeds("t", (binary("t668loop", lambda *a: None, version_of=_slow_version),))]
+    released = threading.Event()
+    events: list[str] = []
+
+    def _version_after_the_loop_runs() -> str:
+        # Blocks in its worker thread until a task on the server's own loop has run.
+        assert released.wait(RELEASE_TIMEOUT_S), (
+            "the event loop never ran while the version was read"
+        )
+        return "3.1"
+
+    needs = [
+        ToolNeeds(
+            "t", (binary("t668loop", lambda *a: None, version_of=_version_after_the_loop_runs),)
+        )
+    ]
     monkeypatch.setattr(module, "TOOL_NEEDS", needs)
     monkeypatch.setattr(
         module, "CAPABILITIES", capabilities.manifest(server, needs, requirements=False)
     )
+    monkeypatch.setattr(capabilities, "VERSION_WAIT_S", ANSWER_WAIT_S)
     capabilities.clear_fact_caches()
-    ticks: list[float] = []
 
-    async def _tick() -> None:
-        while True:
-            ticks.append(time.monotonic())
-            await asyncio.sleep(0.02)
+    async def _release() -> None:
+        events.append("loop ran")
+        released.set()
 
     async def _run() -> Any:
-        ticker = asyncio.create_task(_tick())
+        task = asyncio.create_task(_release())
         try:
-            return await module.capabilities()
+            held = await module.capabilities()
+            events.append("answered")
+            return held
         finally:
-            ticker.cancel()
+            await task
 
     try:
         held = asyncio.run(_run())
     finally:
+        released.set()
         capabilities.clear_fact_caches()
+    assert events == ["loop ran", "answered"]
     assert held["requirements"][0]["version"] == "3.1"
-    assert len(ticks) > 10

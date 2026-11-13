@@ -208,6 +208,18 @@ def _timed_once(call: Callable[[], Any], clock: Callable[[], float]) -> float:
             gc.enable()
 
 
+def _runs_to_span_the_clock(call: Callable[[], Any], clocked: Callable[[], float]) -> int:
+    """How many runs of ``call`` it takes to span :data:`GRAINS` ticks of ``clocked``.
+
+    One where the tick is fine enough to read a single run.
+    """
+    times = 1
+    if (least := GRAINS * clock_grain(clocked)) > FLOOR_SECONDS:
+        while times < 1 << 16 and _timed_once(repeated(call, times), clocked) < least:
+            times *= 2
+    return times
+
+
 def cpu_seconds(
     call: Callable[[], Any],
     repeats: int = 5,
@@ -219,11 +231,15 @@ def cpu_seconds(
 
     The calling thread's CPU time, or the whole process's with
     ``whole_process`` for work that crosses threads. ``clock`` replaces both,
-    for work whose time is a wait (``time.perf_counter``).
+    for work whose time is a wait (``time.perf_counter``). Where the default
+    clock's tick is coarse (Windows), each timed run repeats ``call`` as often
+    as it takes to span :data:`GRAINS` ticks and the time is per call.
     """
     measure = _clock_of(clock, whole_process)
     gc.collect()
-    return min(_timed_once(call, measure) for _ in range(repeats))
+    times = 1 if clock is not None else _runs_to_span_the_clock(call, measure)
+    timed = repeated(call, times) if times > 1 else call
+    return min(_timed_once(timed, measure) for _ in range(repeats)) / times
 
 
 def _best_pair(
@@ -281,9 +297,8 @@ def assert_ratio(
     gc.collect()
     times = 1
     coarse = not self_timed and clock is None
-    if coarse and (least := GRAINS * clock_grain(clocked)) > FLOOR_SECONDS:
-        while times < 1 << 16 and _timed_once(repeated(small, times), clocked) < least:
-            times *= 2
+    if coarse:
+        times = _runs_to_span_the_clock(small, clocked)
         if times > 1:
             small, large, floor = repeated(small, times), repeated(large, times), floor * times
     first_small, first_large = _best_pair(small, large, repeats, measure)
