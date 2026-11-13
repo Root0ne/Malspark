@@ -30,13 +30,14 @@ should happen:
   identifier shaped like a file-system path kept by its base name and listed
   in ``response_models_reduced``. An agent whose answers carried none has an
   empty map.
-* ``tools`` is, per tool server and provider that served the run, how it
-  served it and what it ran (:func:`tools_record`): the name and version it
+* ``tools`` is, per tool server the job's registry attached, how it served
+  the run and what it ran (:func:`tools_record`): the name and version it
   gave at its attach, its manifest's version, and each requirement its tools
   declare as its manifest reports it — a module's installed distribution and
-  version, a data path's file count and digest, a binary's version where the
-  tool declares how to ask it. The steps the pipeline runs in its own process
-  are the row ``pipeline``, read on the worker's host.
+  version, a data path's file count and digest, a binary's version where
+  the tool declares how to ask it. The steps the pipeline runs in its own
+  process are the row ``pipeline``, read on the worker's host with the
+  environment of the server each stands in for.
 
 Written when the judge builds the summary and again once the run's last
 model call is made (the report node, and a stopped run's summary), so the
@@ -71,6 +72,7 @@ SERVED_OFFERED = "offered"
 SERVED_CALLED = "called"
 SERVED_PACK_STEP = "pack_step"
 SERVED_IN_PROCESS = "in_process"
+SERVED_ATTACHED = "attached"
 
 # How long a host query (``sysctl`` on macOS) may take, in seconds.
 _QUERY_TIMEOUT_S = 2.0
@@ -408,6 +410,31 @@ def _server_info(info: Any) -> dict[str, str] | str:
     return held or NOT_REPORTED
 
 
+def _server_environ(directory: str, config: Any) -> dict[str, str]:
+    """The environment the shipped sidecar ``directory`` is launched with, as this worker reads it.
+
+    This process's, with what the launch hands it (``sidecar_needs.handed_env``)
+    and the server block's own ``env`` over it, for the first enabled block of
+    ``config`` that launches that sidecar; this process's alone when none
+    does. The steps the pipeline runs in its own process for that server's
+    tools read the same overlay (``pipeline.nodes._server_environ``).
+    """
+    from malspark.tools.sidecar_needs import handed_env, sidecar_of
+
+    environ = dict(os.environ)
+    servers = getattr(getattr(config, "mcp", None), "servers", None) or {}
+    for block in servers.values() if isinstance(servers, dict) else ():
+        try:
+            if not getattr(block, "enabled", True) or sidecar_of(block) != directory:
+                continue
+            environ.update(handed_env(block, config))
+            environ.update({str(k): str(v) for k, v in (getattr(block, "env", None) or {}).items()})
+        except Exception:  # noqa: BLE001, S112 — an unreadable block adds nothing
+            continue
+        break
+    return environ
+
+
 def _in_process_requirements(container: Any, tools: list[str]) -> list[dict[str, Any]]:
     """What the shipped declarations of ``tools`` require, read on this process's host.
 
@@ -415,37 +442,55 @@ def _in_process_requirements(container: Any, tools: list[str]) -> list[dict[str,
     sidecar serves under the same tool name, so its requirements are that
     tool's declaration (``tools.sidecar_needs``), the first that declares the
     name, as ``sidecar_needs.without_reads`` looks one up for a pack step. A
-    data path is read as the worker reads it, the core setting first.
+    data path is read as the worker reads it, the core setting first, with
+    the environment of the server the step stands in for
+    (:func:`_server_environ`). Each step's own entry names the data it ran
+    with (``tools.capabilities.data_used``).
     """
     from malspark.tools.capabilities import requirement_facts
     from malspark.tools.sidecar_needs import BY_DIRECTORY
 
-    wanted, needs = set(tools), []
-    for declared in BY_DIRECTORY.values():
+    config = getattr(container, "config", None)
+    wanted = set(tools)
+    rows: dict[tuple[str, str], dict[str, Any]] = {}
+    for directory, declared in BY_DIRECTORY.items():
+        needs = []
         for need in declared:
             if need.name in wanted and need.requires:
                 needs.append(need)
                 wanted.discard(need.name)
-    return requirement_facts(needs, None, getattr(container, "config", None))
+        if not needs:
+            continue
+        for row in requirement_facts(needs, _server_environ(directory, config), config):
+            key = (str(row.get("kind")), str(row.get("name")))
+            if key in rows:
+                rows[key]["tools"].extend(t for t in row["tools"] if t not in rows[key]["tools"])
+            else:
+                rows[key] = row
+    return list(rows.values())
 
 
 def tools_record(container: Any, entries: Iterable[Any] = ()) -> dict[str, Any]:
-    """Per tool server and provider that served the run, what it ran. Never raises.
+    """Per tool server that served the run, what it ran. Never raises.
 
-    A server is listed when the run offered one of its tools to an agent
-    (``offered``: its tools carried the server, ``malspark_server``), an agent
-    called one (``called``) or a pack step did (``pack_step``), each read from
-    the job's setup and its ledger ``entries``; the steps the pipeline ran in
-    its own process are the row ``pipeline`` (``in_process``). Each server row
-    holds ``server_info``, the name and version the server gave at its attach
-    (the reading ``efficiency.fingerprint.parts.servers`` holds too), the
-    version its capability manifest gives (``manifest_version``) and its
-    ``requirements`` as the manifest reports them
-    (``tools.capabilities.requirement_facts``); a fact the server did not
-    give is ``"not reported"``.
+    A server is listed when the job's server registry attached it; a name a
+    tool carries that no handle backs (an agent-to-agent delegation)
+    is no tool server and is not listed. Each row says how the server served
+    the run: the run offered one of its tools to an agent (``offered``: its
+    tools carried the server, ``malspark_server``), an agent called one
+    (``called``) or a pack step did (``pack_step``), each read from the job's
+    setup and its ledger ``entries``; a server attached and neither offered
+    nor called is ``attached``. The steps the pipeline ran in its own process
+    are the row ``pipeline`` (``in_process``). Each server row holds
+    ``server_info``, the name and version the server gave at its attach (the
+    reading ``efficiency.fingerprint.parts.servers`` holds too), the version
+    its capability manifest gives (``manifest_version``) and its
+    ``requirements`` as the manifest reports them, reduced to the known keys
+    and capped (``tools.capabilities.reported_requirements``); a fact the
+    server did not give is ``"not reported"``.
     """
     try:
-        from malspark.tools.capabilities import package_version
+        from malspark.tools.capabilities import package_version, reported_requirements
 
         served, in_process = _served(container, entries)
         registry = getattr(container, "_server_registry_cache", None)
@@ -455,22 +500,18 @@ def tools_record(container: Any, entries: Iterable[Any] = ()) -> dict[str, Any]:
         if callable(setup_of):
             versions.update(setup_of())
         manifests_of = getattr(registry, "server_manifests", None)
-        manifests = manifests_of() if callable(manifests_of) else {}
+        manifests = dict(manifests_of()) if callable(manifests_of) else {}
         out: dict[str, dict[str, Any]] = {}
-        for server, how in served.items():
-            held = manifests.get(server) if isinstance(manifests, dict) else None
+        for server in sorted({*versions, *manifests}):
+            held = manifests.get(server)
             row: dict[str, Any] = {
-                "served": sorted(how),
+                "served": sorted(served.get(server) or {SERVED_ATTACHED}),
                 "server_info": _server_info(versions.get(server)),
             }
             if isinstance(held, dict):
                 row["manifest_version"] = _text(held.get("version")) or NOT_REPORTED
-                requirements = held.get("requirements")
-                row["requirements"] = (
-                    [dict(r) for r in requirements if isinstance(r, dict)]
-                    if isinstance(requirements, list)
-                    else NOT_REPORTED
-                )
+                requirements = reported_requirements(held.get("requirements"))
+                row["requirements"] = NOT_REPORTED if requirements is None else requirements
             else:
                 row["manifest_version"] = NOT_REPORTED
                 row["requirements"] = NOT_REPORTED

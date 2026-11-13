@@ -601,11 +601,32 @@ class TestServedTheRun:
             }
         }
 
-    def test_a_server_attached_but_never_offered_or_called_is_not_listed(self) -> None:
+    def test_a_server_attached_but_never_offered_or_called_is_listed_as_attached(self) -> None:
         container = _Container(
             versions={"idle": {"name": "Idle", "version": "1"}}, manifests={"idle": _MANIFEST}
         )
-        assert tools_record(container) == {}
+        assert tools_record(container)["idle"]["served"] == ["attached"]
+
+    def test_a_name_no_attached_server_backs_is_no_tool_server(self) -> None:
+        # An agent-to-agent delegation tool carries the server ``team``,
+        # which no handle backs: it is not a server that failed to report.
+        from malspark.agents.delegation import TEAM_SERVER
+
+        container = _Container(
+            tools={"lead": [_tool(TEAM_SERVER), _tool("analysis")]},
+            versions={"analysis": {"name": "AnalysisMCP", "version": "1"}},
+        )
+        entries = [{"agent": "lead", "server": TEAM_SERVER, "tool": "ask_static"}]
+        assert set(tools_record(container, entries)) == {"analysis"}
+
+    def test_a_third_party_s_requirements_enter_the_record_capped(self) -> None:
+        junk = {"kind": "binary", "name": "x" * 100_000, "named_by": "/home/alice/p", "z": 1}
+        held = {"server": "other", "version": "1", "tools": [], "requirements": [junk] * 500}
+        container = _Container(tools={"s": [_tool("other")]}, manifests={"other": held})
+        rows = tools_record(container)["other"]["requirements"]
+        assert len(rows) == capabilities.REQUIREMENT_ROWS
+        assert set(rows[0]) == {"kind", "name", "named_by", "cut"}
+        assert len(rows[0]["name"]) == capabilities.REQUIREMENT_TEXT_CHARS
 
     def test_a_server_without_a_manifest_gives_its_server_info_only(self) -> None:
         container = _Container(
@@ -635,7 +656,11 @@ class TestServedTheRun:
             {"agent": "static", "server": "analysis", "tool": "pe_info"},
             SimpleNamespace(agent="static", server="r2", tool="afl"),
         ]
-        record = tools_record(_Container(tools={"static": [_tool("analysis")]}), entries)
+        container = _Container(
+            tools={"static": [_tool("analysis")]},
+            versions={"analysis": {}, "r2": {}, "reputation": {}},
+        )
+        record = tools_record(container, entries)
         assert {key: row["served"] for key, row in record.items()} == {
             "analysis": ["called", "offered"],
             "r2": ["called"],
@@ -655,6 +680,25 @@ class TestServedTheRun:
         assert [(r["kind"], r["name"], r["tools"]) for r in row["requirements"]] == [
             ("module", "pefile", ["pe_info"])
         ]
+
+    def test_a_step_in_process_reads_the_environment_of_the_server_it_stands_in_for(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from malspark.core.config import Settings
+        from malspark.tools import rules
+
+        corpus = _corpus(tmp_path / "sigma", {"a.yml": "a", "b.yml": "b"})
+        monkeypatch.delenv(rules.SIGMA_RULES_ENV, raising=False)
+        settings = Settings()
+        # An override set only on the server's own block, which the step reads.
+        settings.mcp.servers["analysis"].env = {rules.SIGMA_RULES_ENV: str(corpus)}
+        container = _Container()
+        container.config = settings
+        entries = [{"agent": "pipeline", "server": "pipeline", "tool": "sigma_match_sandbox"}]
+        rows = tools_record(container, entries)["pipeline"]["requirements"]
+        (sigma,) = [row for row in rows if row["kind"] == "data"]
+        assert sigma["named_by"] == rules.SIGMA_RULES_ENV
+        assert sigma["files"] == 2
 
     def test_a_record_of_tools_never_raises(self) -> None:
         class _Broken:
@@ -700,7 +744,7 @@ class TestTheSummary:
 
     def test_the_tools_part_alone_is_a_record(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setattr(run_environment, "host_facts", lambda: {})
-        record = environment_record(_Container(tools={"s": [_tool("x")]}))
+        record = environment_record(_Container(tools={"s": [_tool("x")]}, versions={"x": {}}))
         assert record is not None
         assert set(record) == {"v", "tools"}
 
