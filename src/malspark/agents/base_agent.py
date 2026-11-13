@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import contextvars
 import dataclasses
 import functools
 import inspect
@@ -10003,7 +10004,12 @@ class BaseAnalyst(BudgetMeter, ABC):
             return self._text_to_isr(text, revision_round=0)
 
         with ThreadPoolExecutor(max_workers=len(specs)) as pool:
-            futures = {pool.submit(_run, spec): spec[0] for spec in specs}
+            # Each view in a copy of the caller's context, so what the caller
+            # runs under (the graph step a request is filed in, among others)
+            # holds in the view as in the caller.
+            futures = {
+                pool.submit(contextvars.copy_context().run, _run, spec): spec[0] for spec in specs
+            }
             for fut in as_completed(futures):
                 key = futures[fut]
                 try:
