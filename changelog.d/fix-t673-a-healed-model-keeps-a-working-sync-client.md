@@ -1,0 +1,3 @@
+### Fixed
+
+- **A local model rebuilt without the llama.cpp extras keeps working sync and async clients (T-673).** When an OpenAI-compatible endpoint rejects one of the llama.cpp fields, the model rebuilt without them takes over the original's synchronous httpx client as well as its async pool, and no client is closed. The synchronous client is the one the client library shares between every model for that endpoint and timeout, so a synchronous call — an analyst's tool loop — on the rebuilt model, and on any other model for the endpoint, no longer fails with "Cannot send a request, as the client has been closed". The retry still happens once per model, the endpoint is still recorded as standard-only, and the rebuild still opens no client of its own.
