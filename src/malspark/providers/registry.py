@@ -79,6 +79,15 @@ def _refuse_a_plugin_registration(kind: str, name: str, cls: type, current: Any)
     )
     if refusal:
         raise PluginRefused(refusal)
+    # A provider not built into the platform may not declare a source name
+    # only the platform writes (``core.platform_sources``).
+    if not _shipped(cls):
+        from malspark.core.platform_sources import reserved_source_refusal
+
+        stated = inspect.getattr_static(cls, "declaration_source", None)
+        refused = reserved_source_refusal(stated, name) if isinstance(stated, str) else ""
+        if refused:
+            raise PluginRefused(refused)
 
 
 def register_static_provider(name: str):  # type: ignore[no-untyped-def]

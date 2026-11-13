@@ -141,6 +141,7 @@ from malspark.analysis.anti_analysis import (
 )
 from malspark.analysis.pcap_summary import conversation_line
 from malspark.analysis.technique_ids import technique_ids_in
+from malspark.core import platform_sources
 from malspark.core.declared_reading import (
     FACTS_VERSION,
     consumer_kinds,
@@ -231,9 +232,9 @@ __all__ = [
 ]
 
 # The agent and server every in-process entry of the pack is recorded under.
-PIPELINE = "pipeline"
+PIPELINE = platform_sources.PIPELINE_AGENT
 # The source every pack entry records (``core.tool_declarations``).
-PACK_SOURCE = "pack"
+PACK_SOURCE = platform_sources.PACK_SOURCE
 
 # The shortest printable run the strings head keeps. Six characters is where
 # a run stops being an accident of the byte stream and starts being a token

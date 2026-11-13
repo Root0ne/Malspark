@@ -10,6 +10,8 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import Any
 
+from malspark.core.platform_sources import PACK_SOURCE, PIPELINE_AGENT, SANDBOX_SOURCE
+
 
 def later_detonation_name(entry: Any) -> str:
     """The further detonation (``d2``…) a ledger entry is the platform's read of; ``""`` else.
@@ -26,9 +28,7 @@ def later_detonation_name(entry: Any) -> str:
     one form the citation checks know (``sandbox_sections.QUALIFIER_RE``,
     whole); anything else is no later detonation.
     """
-    from malspark.agents.prompt_fragments import SANDBOX_FAMILY
     from malspark.analysis.sandbox_sections import QUALIFIER_RE
-    from malspark.pipeline.triage_pack import PACK_SOURCE, PIPELINE
 
     if isinstance(entry, Mapping):
         data, source, agent = entry.get("structured"), entry.get("source"), entry.get("agent")
@@ -37,7 +37,7 @@ def later_detonation_name(entry: Any) -> str:
         source, agent = getattr(entry, "source", None), getattr(entry, "agent", None)
     if not isinstance(data, Mapping) or "launched_with" not in data:
         return ""
-    if not (source == SANDBOX_FAMILY or (source == PACK_SOURCE and agent == PIPELINE)):
+    if not (source == SANDBOX_SOURCE or (source == PACK_SOURCE and agent == PIPELINE_AGENT)):
         return ""
     name = data.get("detonation")
     if not isinstance(name, str) or QUALIFIER_RE.fullmatch(f"{name}/") is None:
