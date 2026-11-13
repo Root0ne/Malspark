@@ -579,6 +579,7 @@ def _scan(path: Path) -> dict[str, Any]:
         ["node", "--input-type=module", "-e", SCAN, "scan", str(DEOBFUSCATE), str(path)],
         capture_output=True,
         text=True,
+        encoding="utf-8",
         timeout=120,
         check=True,
     )

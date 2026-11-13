@@ -678,14 +678,14 @@ def test_no_run_module_reads_a_proposal() -> None:
     imports = re.compile(r"^\s*(?:from|import)\s+malspark\.core\.declaration_proposals\b", re.M)
     root = Path(malspark.__file__).parent
     readers = sorted(
-        str(path.relative_to(root))
+        path.relative_to(root).as_posix()
         for path in root.rglob("*.py")
         if imports.search(path.read_text(encoding="utf-8"))
     )
     assert readers == []
     api = Path(__file__).resolve().parents[3] / "apps" / "api" / "app"
     api_readers = sorted(
-        str(path.relative_to(api))
+        path.relative_to(api).as_posix()
         for path in api.rglob("*.py")
         if imports.search(path.read_text(encoding="utf-8"))
     )

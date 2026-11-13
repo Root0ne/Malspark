@@ -88,7 +88,7 @@ class TestOneStrictReader:
 
         root = Path(malspark.__file__).parent
         holders = {
-            str(path.relative_to(root))
+            path.relative_to(root).as_posix()
             for path in root.rglob("*.py")
             if ID_BODY in path.read_text(encoding="utf-8")
         }

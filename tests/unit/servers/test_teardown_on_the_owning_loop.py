@@ -87,6 +87,8 @@ def _cached_judge(container: Any) -> Any:
     return judge
 
 
+# The children are read from the process table with pgrep.
+@pytest.mark.posix
 @pytest.mark.slow
 def test_a_job_shaped_attach_tears_down_inside_the_budget() -> None:
     from malspark.core.config import Settings
