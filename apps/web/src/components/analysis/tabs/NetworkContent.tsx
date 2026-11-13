@@ -147,7 +147,13 @@ export default function NetworkContent({ report }: { report: ReportDetailDTO }) 
               {domains.slice(0, shownOf("dns")).map((d, i) => (
                 <tr key={`${d.fqdn}-${i}`} className="hover:bg-bg-hover">
                   <td className="px-4 py-2 align-top font-mono text-xs text-status-blue break-all">
-                    {d.fqdn} <DetonationMark marks={d.observed_in} compact />
+                    {d.observed_in?.length ? (
+                      <>
+                        <span>{d.fqdn}</span> <DetonationMark marks={d.observed_in} compact />
+                      </>
+                    ) : (
+                      d.fqdn
+                    )}
                   </td>
                   <td className="px-4 py-2 align-top text-xs text-text-secondary break-all">
                     {d.resolved_ips.length > 0 ? d.resolved_ips.join(", ") : "-"}

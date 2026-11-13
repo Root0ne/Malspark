@@ -16,6 +16,7 @@ import { hasSection, sectionsForTab } from "@/components/analysis/reportSections
 import { dynamicAnalystClaims } from "@/components/analysis/dynamicClaims";
 import AnalystFindings from "@/components/analysis/AnalystFindings";
 import DetonationMark from "@/components/analysis/DetonationMark";
+import { observedParts } from "@/lib/detonationMarks";
 import {
   processGroups,
   seenInText,
@@ -393,9 +394,11 @@ function SeverityGroups({
                           · {row.signature.marks.length} evidence mark{row.signature.marks.length === 1 ? "" : "s"}
                         </span>
                       )}
-                      <span className="break-all">
-                        <DetonationMark marks={row.signature.observed_in} />
-                      </span>
+                      {observedParts(row.signature.observed_in) && (
+                        <span className="break-all">
+                          <DetonationMark marks={row.signature.observed_in} />
+                        </span>
+                      )}
                     </p>
                   </div>
                 </li>
@@ -412,7 +415,8 @@ function SeverityGroups({
 function Cell({ value, name }: { value: unknown; name: string }) {
   if (value === null || value === undefined || value === "") return <>-</>;
   /* The platform's mark of the detonations that observed the row, said as every tab says it. */
-  if (name.endsWith(`, ${OBSERVED_IN}`) && Array.isArray(value)) return <DetonationMark marks={value as ObservedIn[]} />;
+  if (name.endsWith(`, ${OBSERVED_IN}`) && Array.isArray(value) && observedParts(value as ObservedIn[]))
+    return <DetonationMark marks={value as ObservedIn[]} />;
   if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") return <>{String(value)}</>;
   return <StructuredCell value={value} name={name} />;
 }

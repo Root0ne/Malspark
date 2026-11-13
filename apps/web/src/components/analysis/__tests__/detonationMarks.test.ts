@@ -241,3 +241,78 @@ describe("the Network tab", () => {
     expect(marksIn(out).length).toBeGreaterThanOrEqual(4);
   });
 });
+
+describe("a name's own element on the Network tab", () => {
+  const NAME = /^host\d+\.example\.test$/;
+  const URL_NAME = /^http:\/\/host\d+\.example\.test\/gate$/;
+
+  function networkRows(marks: ObservedIn[] | undefined): Document {
+    const extra = marks ? { observed_in: marks } : {};
+    const report = {
+      malware_report: {
+        network: {
+          domains: [1, 2, 3].map((n) => ({ fqdn: `host${n}.example.test`, resolved_ips: [], queried_pids: [], ...extra })),
+          ips: [],
+          urls: [1, 2, 3].map((n) => ({ url: `http://host${n}.example.test/gate`, method: "GET", ...extra })),
+        },
+      },
+    } as unknown as ReportDetailDTO;
+    const html = renderToStaticMarkup(createElement(NetworkContent, { report }));
+    return new DOMParser().parseFromString(`<body>${html}</body>`, "text/html");
+  }
+
+  /** The elements a text query finds: those whose whole text matches and no child's does. */
+  function named(root: ParentNode, re: RegExp): Element[] {
+    return Array.from(root.querySelectorAll("*")).filter(
+      (el) => re.test(el.textContent ?? "") && !Array.from(el.children).some((c) => re.test(c.textContent ?? "")),
+    );
+  }
+
+  function section(doc: Document, heading: RegExp): Element {
+    const found = Array.from(doc.querySelectorAll("section")).find((s) =>
+      Array.from(s.querySelectorAll("h1,h2,h3,h4")).some((h) => heading.test(h.textContent ?? "")),
+    );
+    if (!found) throw new Error(`no section ${heading}`);
+    return found;
+  }
+
+  it.each([
+    ["without a mark", undefined],
+    ["with a mark", [d2(ARGS)]],
+  ])("a DNS name is the whole text of its own element, %s", (_, marks) => {
+    const doc = networkRows(marks);
+    const found = named(section(doc, /^DNS/), NAME);
+    expect(found.map((el) => el.textContent)).toEqual(["host1.example.test", "host2.example.test", "host3.example.test"]);
+    if (!marks) expect(found.every((el) => el.tagName === "TD")).toBe(true);
+    else expect(found.every((el) => el.nextElementSibling !== null || el.nextSibling !== null)).toBe(true);
+  });
+
+  it("a DNS row without a mark is its name and nothing else", () => {
+    const cells = Array.from(section(networkRows(undefined), /^DNS/).querySelectorAll("tbody tr td:first-child"));
+    expect(cells.map((c) => c.innerHTML)).toEqual(["host1.example.test", "host2.example.test", "host3.example.test"]);
+  });
+
+  it("a DNS name's mark is a sibling beside the name's element", () => {
+    const cell = section(networkRows([d2(ARGS)]), /^DNS/).querySelector("tbody tr td:first-child") as Element;
+    expect(cell.firstElementChild?.textContent).toBe("host1.example.test");
+    expect(cell.querySelector("[title^='observed in ']")?.parentElement).toBe(cell);
+  });
+
+  it.each([
+    ["without a mark", undefined],
+    ["with a mark", [d2(ARGS)]],
+  ])("a host and a request URL are the whole text of their own element, %s", (_, marks) => {
+    const doc = networkRows(marks);
+    const hosts = named(section(doc, /^(Hosts|Contacted)/i), NAME);
+    expect(hosts.length).toBeGreaterThanOrEqual(3);
+    const urls = named(doc.body, URL_NAME);
+    expect(urls.map((el) => el.textContent)).toEqual([1, 2, 3].map((n) => `http://host${n}.example.test/gate`));
+  });
+});
+
+describe("the Behaviour tab's rows without a mark", () => {
+  it("draw no empty element where a mark would stand", () => {
+    const doc = new DOMParser().parseFromString(`<body>${behaviourHtml(undefined)}</body>`, "text/html");
+    expect(Array.from(doc.querySelectorAll("span.break-all")).filter((el) => el.innerHTML === "")).toEqual([]);
+  });
+});
