@@ -48,9 +48,14 @@ _REQUIREMENT_ROWS: list[dict[str, Any]] = [
         "name": "data/capa-rules",
         "named_by": "static.capa.rules_dir",
         "pattern": "*.yml",
-        "files": 1057,
+        "exclude": [".git*"],
+        "files": 1054,
         "bytes": 844541,
         "sha256": "0" * 64,
+        "digest_of": (
+            "the files matching *.yml, leaving out .git* at the path static.capa.rules_dir "
+            "names, as they were when this was read"
+        ),
         "tools": ["capa"],
     },
     {
@@ -62,7 +67,17 @@ _REQUIREMENT_ROWS: list[dict[str, Any]] = [
         "digest_statement": "no file is there",
         "tools": ["sigma_match"],
     },
-    {"kind": "binary", "name": "floss", "version": "not reported", "tools": ["floss"]},
+    {"kind": "binary", "name": "floss", "version": "3.1.1", "tools": ["floss"]},
+    # A CLI sidecar's program: the version its image pins beside what it says.
+    {
+        "kind": "binary",
+        "name": "diec",
+        "pinned": "3.21",
+        "version": "not reported: the program declares no version argument",
+        "tools": ["die_scan"],
+    },
+    # A row a third party wrote, reduced and capped on the way in.
+    {"kind": "binary", "name": "x" * 300, "statement": "unread", "tools": ["t"], "extra": 1},
 ]
 
 
@@ -825,8 +840,9 @@ DATA_KEYED = frozenset(
 )
 
 # The maps keyed by data whose values are rows of one shape (one block per
-# agent), pinned as one row: the union of every value's keys under ``*``.
-KEYED_ROWS = frozenset({"environment.agents"})
+# agent, one per tool server), pinned as one row: the union of every value's keys
+# under ``*``, so a server's name is data and not a key of the schema.
+KEYED_ROWS = frozenset({"environment.agents", "environment.tools"})
 
 
 # The parts whose list items differ in shape by kind (a call row, an input
