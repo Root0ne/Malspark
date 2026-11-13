@@ -24,6 +24,15 @@ Three sources are read, never written:
   counts publications no manifest names, not proven facts, so it is not read as
   a beyond-human count.
 
+A key score or a blind sheet is read by the words of **scoring rules** when it
+is given a declared table of them (``ScoringRules``, ``load_rules``): the verdict
+words from worst to best, the lowest one the totals credit, the words of the
+states that are no verdict and leave the denominator (an item under
+adjudication, one that does not hold for the file), and the spellings that mean
+a verdict word. Without a table the reader is the one the rest of this
+paragraph describes, unchanged. A word the table does not hold is refused,
+naming the row and the word, and never mapped to another.
+
 Every verdict sits on a **scale**, a tuple of words from worst to best, so that
 two verdicts of one item can be ordered and nothing else is compared. An item is
 keyed by its code (``K3.2``, ``K7 17``, ``K10 T1027``), or, where the label has
@@ -39,6 +48,7 @@ from __future__ import annotations
 
 import json
 import re
+from collections import Counter
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -57,6 +67,9 @@ SCALES: dict[str, tuple[str, ...]] = {
 # absent here credits nothing.
 CREDITED: dict[str, str] = {KEY: "partly (dump)", FACT: "partial"}
 KEY_ALIASES: dict[str, str] = {"partly": "partly (body)"}
+# A scale's states that are no verdict and leave the denominator, by scale; a
+# declared table registers its own (``ScoringRules.register``).
+OUTSIDE: dict[str, tuple[str, ...]] = {}
 # A calibration trap's or absence's status, on the claim scale; None: unknown.
 CLAIM_STATUSES: dict[str, str | None] = {
     "false": "false",
@@ -92,6 +105,113 @@ class ScoreFileError(RuntimeError):
     """A scored run cannot be read; the message names the file and why."""
 
 
+@dataclass(frozen=True)
+class ScoringRules:
+    """A key's declared scoring rules: the words a scored sheet may hold and what each means."""
+
+    name: str
+    # The verdict words, worst first; a verdict's rank is its index.
+    scale: tuple[str, ...]
+    # The lowest word the totals credit; None credits nothing.
+    credited_from: str | None = None
+    # States that are no verdict: the item leaves the denominator.
+    outside: tuple[str, ...] = ()
+    # A spelling -> the verdict word it means.
+    aliases: dict[str, str] = field(default_factory=dict)
+    # The rest of the table (key folder, digest, quotes): never read by the reader.
+    extra: dict[str, Any] = field(default_factory=dict, compare=False)
+
+    @property
+    def scale_id(self) -> str:
+        """The scale's name in ``SCALES``: ``key`` for the built-in rules."""
+        return KEY if self.name == KEY else f"{KEY}:{self.name}"
+
+    @property
+    def words(self) -> tuple[str, ...]:
+        """Every word a sheet may hold, verdicts then outside states."""
+        return (*self.scale, *self.outside)
+
+    def word(self, cell: str) -> str | None:
+        """A cell as one of the rules' words (an alias resolved), or None."""
+        word = _plain(cell).casefold()
+        word = self.aliases.get(word, word)
+        return word if word in self.words else None
+
+    def register(self) -> None:
+        """Make the scale known to ``SCALES``, ``CREDITED`` and ``OUTSIDE``, once per name."""
+        held = SCALES.setdefault(self.scale_id, self.scale)
+        if held != self.scale or OUTSIDE.setdefault(self.scale_id, self.outside) != self.outside:
+            raise ScoreFileError(f"scoring rules {self.name!r} are declared twice, differently")
+        if self.credited_from is not None:
+            CREDITED.setdefault(self.scale_id, self.credited_from)
+
+    def as_dict(self) -> dict[str, Any]:
+        return {
+            "name": self.name,
+            "verdicts": list(self.scale),
+            "credited_from": self.credited_from,
+            "outside_denominator": list(self.outside),
+            "aliases": dict(self.aliases),
+        }
+
+
+KEY_RULES = ScoringRules(KEY, SCALES[KEY], CREDITED[KEY], (), KEY_ALIASES)
+
+
+def _words(where: str, value: Any, what: str) -> tuple[str, ...]:
+    if not isinstance(value, list) or not all(isinstance(w, str) and w.strip() for w in value):
+        raise ScoreFileError(f"{where}: {what} is not a list of words")
+    return tuple(_plain(w).casefold() for w in value)
+
+
+def rules_from_dict(data: Any, where: str = "scoring rules") -> ScoringRules:
+    """Scoring rules from their declared table; refused, naming ``where``, when it is not sound."""
+    if not isinstance(data, dict) or not isinstance(data.get("name"), str) or not data["name"]:
+        raise ScoreFileError(f"{where}: not a scoring-rules table (an object with a name)")
+    scale = _words(where, data.get("verdicts"), "'verdicts'")
+    outside = _words(where, data.get("outside_denominator", []), "'outside_denominator'")
+    if len(scale) < 2:
+        raise ScoreFileError(f"{where}: 'verdicts' holds fewer than two words")
+    every = (*scale, *outside)
+    if len(set(every)) != len(every):
+        twice = sorted({w for w in every if every.count(w) > 1})
+        raise ScoreFileError(f"{where}: a word is declared twice: {', '.join(twice)}")
+    credited = data.get("credited_from")
+    if credited is not None:
+        credited = _plain(str(credited)).casefold()
+        if credited not in scale:
+            raise ScoreFileError(f"{where}: 'credited_from' {credited!r} is not a verdict word")
+    aliases = data.get("aliases") or {}
+    if not isinstance(aliases, dict):
+        raise ScoreFileError(f"{where}: 'aliases' is not an object")
+    folded = {_plain(str(k)).casefold(): _plain(str(v)).casefold() for k, v in aliases.items()}
+    for spelling, meant in folded.items():
+        if meant not in scale or spelling in every:
+            raise ScoreFileError(
+                f"{where}: the alias {spelling!r} -> {meant!r} must name a verdict word "
+                "and may not be a word itself"
+            )
+    known = {"name", "verdicts", "credited_from", "outside_denominator", "aliases"}
+    return ScoringRules(
+        data["name"],
+        scale,
+        credited,
+        outside,
+        folded,
+        {k: v for k, v in data.items() if k not in known},
+    )
+
+
+def load_rules(path: Path) -> ScoringRules:
+    """The scoring rules a JSON table declares."""
+    path = Path(path)
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except ValueError as exc:
+        raise ScoreFileError(f"{path}: not JSON ({exc})") from exc
+    return rules_from_dict(data, str(path))
+
+
 @dataclass
 class ScoredRun:
     """One scored run: each item's scale and verdict, and its beyond-human count."""
@@ -117,11 +237,32 @@ class ScoredRun:
     # score with no stored run to read.
     earlier_runs: str = ""
     earlier_runs_note: str = ""
+    # The declared rules the run was read by; None for the built-in scales.
+    rules: ScoringRules | None = None
+
+    @property
+    def outside(self) -> dict[str, str]:
+        """Each item that is no verdict and leaves the denominator, with its state."""
+        states = self.rules.outside if self.rules else ()
+        return {k: v for k, (_, v) in self.verdicts.items() if v in states and v is not None}
+
+    @property
+    def denominator(self) -> int:
+        """The items the run is scored over: every item but those that left it."""
+        return len(self.verdicts) - len(self.outside)
+
+    def counts(self) -> dict[str, int]:
+        """Items per word, in the rules' order, the words held by no item as 0."""
+        held = Counter(v for _, v in self.verdicts.values() if v is not None)
+        words = self.rules.words if self.rules else SCALES[KEY]
+        return {w: held.get(w, 0) for w in words}
 
 
 def rank(scale: str, word: str | None) -> int | None:
-    """A verdict's rank on its scale; None for an unknown verdict."""
-    return None if word is None else SCALES[scale].index(word)
+    """A verdict's rank on its scale; None for an unknown verdict or a state outside it."""
+    if word is None or word in OUTSIDE.get(scale, ()):
+        return None
+    return SCALES[scale].index(word)
 
 
 def _plain(text: str) -> str:
@@ -140,8 +281,10 @@ def item_key(label: str) -> str:
     return words[0] + " " + _AROUND_SLASH.sub("/", " ".join(words[1:]).casefold())
 
 
-def key_verdict(cell: str) -> str | None:
-    """A table cell as a key-scale verdict, or None when it is not one."""
+def key_verdict(cell: str, rules: ScoringRules | None = None) -> str | None:
+    """A table cell as a verdict (or a declared outside state) of the rules, or None."""
+    if rules is not None:
+        return rules.word(cell)
     word = _plain(cell).casefold()
     word = KEY_ALIASES.get(word, word)
     return word if word in SCALES[KEY] else None
@@ -182,9 +325,17 @@ def _name(path: Path) -> str:
     return path.parent.name if path.name == SCORE_FILE else path.stem
 
 
-def read_key_score(path: Path) -> ScoredRun:
-    """A key score file's item verdicts and beyond-human count, checked against its own totals."""
+def read_key_score(path: Path, rules: ScoringRules | None = None) -> ScoredRun:
+    """A key score file's item verdicts and beyond-human count, checked against its own totals.
+
+    With ``rules`` the verdict column is the first whose cells are all words of
+    the rules, the totals line (which the rules do not describe) is not checked,
+    and the run carries the rules, so its denominator and counts follow them.
+    """
     path = Path(path)
+    if rules is not None:
+        rules.register()
+    scale = KEY if rules is None else rules.scale_id
     lines = path.read_text(encoding="utf-8").splitlines()
     body = _section(lines, ITEM_SECTION)
     if body is None:
@@ -195,13 +346,17 @@ def read_key_score(path: Path) -> ScoredRun:
         raise ScoreFileError(f"{path}: the 'Item by item' section opens with no item table")
     header, rows = table[0], table[2:]
     column = next(
-        (j for j in range(1, len(header)) if any(len(r) > j and key_verdict(r[j]) for r in rows)),
+        (
+            j
+            for j in range(1, len(header))
+            if any(len(r) > j and key_verdict(r[j], rules) for r in rows)
+        ),
         None,
     )
     if column is None:
         raise ScoreFileError(f"{path}: no column of the item table holds a verdict")
     for row in rows:
-        if len(row) <= column or not key_verdict(row[column]):
+        if len(row) <= column or not key_verdict(row[column], rules):
             cell = row[column] if len(row) > column else ""
             raise ScoreFileError(
                 f"{path}: the scored column {_plain(header[column])!r} is not a verdict "
@@ -216,7 +371,7 @@ def read_key_score(path: Path) -> ScoredRun:
             raise ScoreFileError(
                 f"{path}: item {key} is scored twice ({labels[key]!r}, {row[0]!r})"
             )
-        verdicts[key] = (KEY, key_verdict(row[column]))
+        verdicts[key] = (scale, key_verdict(row[column], rules))
         labels[key] = _plain(row[0])
         written[key] = " | ".join(row)
     provenance, provenance_note = attribute_all(path, written)
@@ -231,8 +386,12 @@ def read_key_score(path: Path) -> ScoredRun:
         provenance_note=provenance_note,
         earlier_runs=independence,
         earlier_runs_note=independence_note,
+        rules=rules,
     )
-    _check_totals(path, lines, run)
+    if rules is None:
+        _check_totals(path, lines, run)
+    else:
+        run.totals_note = "the declared rules state no Totals line: totals unchecked"
     _read_beyond(path, lines, run)
     return run
 
@@ -287,15 +446,23 @@ def _read_beyond(path: Path, lines: list[str], run: ScoredRun) -> None:
     run.beyond_note = f"{len(numbers)} listed" + ("" if stated is None else ", as stated")
 
 
-def read_blind(sheet: Path, sealed: Path) -> list[ScoredRun]:
-    """One scored run per arm of a filled blind score sheet, named by its sealed map."""
+def read_blind(sheet: Path, sealed: Path, rules: ScoringRules | None = None) -> list[ScoredRun]:
+    """One scored run per arm of a filled blind score sheet, named by its sealed map.
+
+    The sheet is read by ``rules``, else by the rules its sealed map holds, else
+    by the built-in key scale.
+    """
     from scripts.blind.prepare import BlindError
     from scripts.blind.reveal import reveal
 
     try:
-        revealed = reveal(sheet, sealed)
+        revealed = reveal(sheet, sealed, rules)
     except BlindError as exc:
         raise ScoreFileError(f"{sheet}: {exc}") from exc
+    declared = revealed.rules
+    if declared is not None:
+        declared.register()
+    scale = KEY if declared is None else declared.scale_id
     runs: list[ScoredRun] = []
     for arm, given in revealed.verdicts.items():
         verdicts: dict[str, tuple[str, str | None]] = {}
@@ -304,7 +471,7 @@ def read_blind(sheet: Path, sealed: Path) -> list[ScoredRun]:
             key = item_key(item)
             if key in verdicts:
                 raise ScoreFileError(f"{sheet}: items {labels[key]!r} and {item!r} are one item")
-            verdicts[key] = (KEY, KEY_ALIASES.get(word, word))
+            verdicts[key] = (scale, KEY_ALIASES.get(word, word) if declared is None else word)
             labels[key] = item
         runs.append(
             ScoredRun(
@@ -315,6 +482,7 @@ def read_blind(sheet: Path, sealed: Path) -> list[ScoredRun]:
                 beyond=revealed.beyond[arm],
                 beyond_note="the sheet's beyond_human row",
                 provenance_note="not read: a blind score sheet cites no evidence",
+                rules=declared,
             )
         )
     return runs
@@ -371,11 +539,11 @@ def read_calibration(path: Path) -> ScoredRun:
     )
 
 
-def read_scored(path: Path) -> ScoredRun:
-    """A key score (``.md``) or a calibration score (``.json``), by its suffix."""
+def read_scored(path: Path, rules: ScoringRules | None = None) -> ScoredRun:
+    """A key score (``.md``, read by ``rules`` when given) or a calibration score (``.json``)."""
     path = Path(path)
     if path.suffix.lower() == ".md":
-        return read_key_score(path)
+        return read_key_score(path, rules)
     if path.suffix.lower() == ".json":
         return read_calibration(path)
     raise ScoreFileError(f"{path}: neither a key score (.md) nor a calibration score (.json)")

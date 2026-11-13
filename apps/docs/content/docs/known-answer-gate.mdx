@@ -29,6 +29,20 @@ A Totals line that cannot be read is refused, naming the line, and so is a
 stated beyond-human count with no list. A file with no Totals line is read, and
 the output says its totals were unchecked.
 
+### Scoring rules of a key
+
+A key may declare its own scoring rules, and `--rules RULES.json` (on `score` and
+`gate`) reads the key scores and the blind sheet by them. The table is one JSON
+object: `name`; `verdicts`, the verdict words from worst to best; `credited_from`,
+the lowest word the totals credit; `outside_denominator`, the states that are no
+verdict and leave the denominator (an item under adjudication, one that does not
+hold for the file); and `aliases`, spellings that mean a verdict word. Any other
+field is kept and never read. A word the table does not hold is refused, naming the
+row and the word, and is never mapped to another. A run read by a table says its
+denominator and what left it, and the gate leaves an item out of its totals when
+every run left it out. Without `--rules` the scale is the one above and nothing
+else changes.
+
 An item is keyed by its code (`K3.2`, `K7 17`, `K10 T1027`). Where a label has
 no code, the key is the whole label in one case, with its runs of spaces read
 as one and the spaces around a `/` dropped. So `a / b` in one file and `a/b` in

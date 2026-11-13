@@ -33,6 +33,12 @@ The output directory must be new or empty. It gets:
 | `scorer/scores.csv` | the score template: `item` and one column per id, a row per item and a `beyond_human` row |
 | `sealed-map.json` | the id-to-arm map, outside `scorer/`; give the scorer `scorer/` and nothing else |
 
+`--rules RULES.json` names a declared table of scoring rules (see the
+[known-answer gate](/docs/known-answer-gate/)): `scorer/verdicts.txt` then lists its
+words, worst first and then the states that leave the denominator, and the sealed
+map keeps the table, so `reveal` reads the sheet by its words. Without it the
+five verdicts below are the words.
+
 `--seed N` makes the shuffle, and so the whole output, repeatable (for tests);
 without it the order is drawn with `secrets`. `prepare` never prints the map.
 
@@ -67,7 +73,7 @@ python scripts/blind/run.py reveal blind-1/scorer/scores.csv --map blind-1/seale
 ```
 
 The scorer writes one of `found`, `partly (body)`, `partly (dump)`, `missed` or
-`wrong` in each item's cell, and a count of facts beyond the human reports in the
+`wrong` (or a word of the table the sheet was prepared with) in each item's cell, and a count of facts beyond the human reports in the
 `beyond_human` row. A JSON object of one object per id (`{"A": {"K1.1a": "found",
 "beyond_human": 3}}`, bare or under `scores`) is read too. `reveal` prints each
 arm's totals and every item the arms scored differently, by the arm's name. It

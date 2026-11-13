@@ -193,9 +193,14 @@ def _side(a: Arm, item: str, scale: str, best: int | None, at_least: list[int]) 
 
 def _totals(a: Arm, scales: dict[str, str], levels: dict[str, int | None]) -> dict[str, Any]:
     by_scale: dict[str, dict[str, int]] = {}
-    counted = credit_items = unknown = 0
+    counted = credit_items = unknown = outside = 0
+    left = [run.outside for run in a.runs]
     for item, scale in scales.items():
         words = by_scale.setdefault(scale, {w: 0 for w in SCALES[scale]})
+        if all(item in gone for gone in left):
+            # every run left the item out of its denominator: it is not counted
+            outside += 1
+            continue
         level = levels[item]
         if level is None:
             unknown += 1
@@ -204,7 +209,7 @@ def _totals(a: Arm, scales: dict[str, str], levels: dict[str, int | None]) -> di
         if scale in CREDITED:
             credit_items += 1
             counted += credited(scale, level)
-    return {
+    totals: dict[str, Any] = {
         "by_scale": by_scale,
         "credited": counted,
         "credit_items": credit_items,
@@ -212,6 +217,9 @@ def _totals(a: Arm, scales: dict[str, str], levels: dict[str, int | None]) -> di
         "n": a.n,
         "m": a.m,
     }
+    if outside:
+        totals["outside"] = outside
+    return totals
 
 
 def _beyond(a: Arm) -> dict[str, Any]:
@@ -385,6 +393,8 @@ def _totals_line(name: str, totals: dict[str, Any]) -> str:
         line += f"; credited {totals['credited']} of {totals['credit_items']}"
     if totals["unknown"]:
         line += f"; {totals['unknown']} items reached in fewer than m runs"
+    if totals.get("outside"):
+        line += f"; {totals['outside']} items left out of every run's denominator"
     return line
 
 
