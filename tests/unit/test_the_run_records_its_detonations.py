@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import unicodedata
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
@@ -501,7 +502,8 @@ class TestEachBuiltInStatesItsRun:
     def test_the_rest_provider_states_the_report_as_fetched(self) -> None:
         from tests.unit.providers.sandbox.test_rest_provider import _cfg, _provider
 
-        body = b'{"procs": [], "target": {"sha256": "ab"}}'
+        # Written as a sandbox writes it, not as a parser would write it back.
+        body = b'{\n  "procs" : [ ],\n  "target" : { "sha256" : "ab" }\n}\n'
         provider = _provider(lambda request: httpx.Response(200, content=body), _cfg())
         facts = stated_by(provider, provider.fetch("T-9"))
         assert facts == {
@@ -700,6 +702,79 @@ class TestWhatIsReadFromWhere:
 
 
 # ---------------------------------------------------------------------------
+# What a row keeps of what it is given
+
+
+class TestWhatARowKeeps:
+    def test_a_start_or_an_end_stated_alone_leaves_the_other_not_reported(self) -> None:
+        facts = _facts()
+        del facts["started"]
+        (row,) = detonations_record(_held(_record(sandbox_facts=facts))) or []
+        assert row["started"] == NR and row["ended"] == "2026-08-13 13:09:06"
+        facts = _facts()
+        del facts["ended"]
+        (row,) = detonations_record(_held(_record(sandbox_facts=facts))) or []
+        assert row["ended"] == NR and row["started"] == "2026-08-13 13:06:05"
+
+    def test_hostile_text_in_every_text_fact_is_kept_inert(self) -> None:
+        hostile = HOSTILE
+        facts = _facts(
+            task_ids={hostile: hostile},
+            guest={hostile: hostile, "task": {hostile: hostile}},
+            sandbox_version=hostile,
+            sandbox_commit=hostile,
+            started=hostile,
+            ended={"task": hostile},
+            report_parts=[{"name": hostile, "sha256": "0" * 64, "bytes": 1}],
+        )
+        record = _record(sandbox_facts=facts, provider=hostile, task_id=hostile, failure=hostile)
+        (row,) = detonations_record(_held(record)) or []
+
+        def texts(value: Any) -> list[str]:
+            if isinstance(value, dict):
+                return [t for k, v in value.items() for t in [k, *texts(v)]]
+            if isinstance(value, list):
+                return [t for v in value for t in texts(v)]
+            return [value] if isinstance(value, str) else []
+
+        kept = texts({k: v for k, v in row.items() if k != "launched_with"})
+        assert kept
+        for text in kept:
+            assert len(text) <= STATED_TEXT_CHARS, text
+            assert not any(unicodedata.category(ch).startswith("C") for ch in text), text
+        assert "`|<x>{y}" in row["sandbox_commit"] and row["ended"]["task"]
+
+    def test_a_mapping_keeps_at_most_its_entry_cap(self) -> None:
+        many = {f"id{n:02}": str(n) for n in range(STATED_ENTRIES + 8)}
+        guest = {f"task{n:02}": {"os": "x"} for n in range(STATED_ENTRIES + 8)}
+        facts = _facts(task_ids=many, guest=guest)
+        (row,) = detonations_record(_held(_record(sandbox_facts=facts))) or []
+        assert list(row["task_ids"]) == list(many)[:STATED_ENTRIES]
+        assert list(row["guest"]) == list(guest)[:STATED_ENTRIES]
+
+    def test_an_agent_that_asked_twice_is_named_once(self) -> None:
+        record = _record(
+            ordinal=2,
+            origin=AGENT_ORIGIN,
+            requested_by=[{"agent": "static"}, {"agent": "network"}, {"agent": "static"}],
+        )
+        (row,) = detonations_record(_held(record)) or []
+        assert row["requested_by"] == ["static", "network"]
+
+    def test_a_guest_per_task_is_kept_per_task(self) -> None:
+        guest = {"behavioral1": {"target": "win10", "os": "windows10"}, "flat": "x"}
+        (row,) = detonations_record(_held(_record(sandbox_facts=_facts(guest=guest)))) or []
+        assert row["guest"] == guest
+
+    def test_a_launch_that_states_no_honouring_is_not_reported(self) -> None:
+        for launch in ({}, {"honoured": "yes"}, None):
+            record = _record(arguments="-k netsvcs", launch=launch)
+            (row,) = detonations_record(_held(record)) or []
+            assert row["launched_with"] == "-k netsvcs"
+            assert row["arguments_honoured"] == NR, launch
+
+
+# ---------------------------------------------------------------------------
 # Through the real path: the job's detonation, made by the app
 
 
@@ -761,6 +836,21 @@ class TestThroughTheRun:
         assert row["provider"] == "stub" and row["task_id"] == "42"
         assert row["reported"] is True
         assert row["detonated"] == NR and row["report_parts"] == NR
+
+    def test_an_attached_report_is_recorded_as_read_and_not_detonated(self, tmp_path: Path) -> None:
+        from malspark.providers.sandbox.upload import UploadSandboxProvider
+
+        blob = (FIX / "cape2_report.json").read_bytes()
+        provider = UploadSandboxProvider.from_settings(Settings(_env_file=None))
+        provider.set_pending_blob(blob, filename="r.json")
+        sample = tmp_path / "s.exe"
+        sample.write_bytes(b"payload")
+        (row,) = detonations_record(_detonated(provider, sample)) or []
+        assert row["provider"] == "upload" and row["reported"] is True
+        assert row["detonated"] is False
+        assert row["task_ids"] == {"/info/id": "19159"}
+        assert row["sandbox_commit"] == CAPE_COMMIT
+        assert row["report_parts"] == [{"name": "report", "sha256": _sha(blob), "bytes": len(blob)}]
 
     def test_a_run_in_mock_mode_records_no_detonation(self, tmp_path: Path) -> None:
         import asyncio
