@@ -8159,8 +8159,14 @@ def make_report_node(
         # ``report.technical_evidence``. Best-effort — a provider failure here
         # must never fail the report.
         _static_bundle = None
+        # Where the provider's entries are recorded: its declared source, read
+        # as every provider's is (``provider_source``).
+        _static_source = ""
         try:
+            from malspark.agents.prompt_fragments import provider_source
+
             _static_provider = container.get_static_provider()
+            _static_source = provider_source(_static_provider)
             _sample_for_evidence = state.get("sample_path")
             # When the triage pack recorded answers of the kinds the provider
             # answers, they are already in the ledger under the pipeline;
@@ -8168,7 +8174,7 @@ def make_report_node(
             # the answers twice.
             if _static_provider.capabilities.provides_evidence and rules_already_recorded(
                 state.get("evidence_ledger") or [],
-                kinds_declared_by(_static_provider.declaration_source),
+                kinds_declared_by(_static_source),
             ):
                 logger.info(
                     "report_node: the triage pack recorded the static provider's answers; it "
@@ -8224,7 +8230,7 @@ def make_report_node(
                     _static_bundle,
                     container.get_evidence_counter(),
                     stage.key if stage is not None else "analysis",
-                    source=_static_provider.declaration_source,
+                    source=_static_source,
                     agent=_static_provider.id,
                 )
             except Exception as exc:  # noqa: BLE001
