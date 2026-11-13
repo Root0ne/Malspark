@@ -1,0 +1,51 @@
+{
+ "by_code": {
+  "attck.claim_does_not_describe": 1,
+  "attck.unknown_id": 2,
+  "isr.empty_evidence": 2,
+  "report.citation_wrong_entry": 1,
+  "stix.indicator_unattributed_flow": 1,
+  "stix.ungrounded_indicator": 1
+ },
+ "not_run": [
+  "attck.unknown_id"
+ ],
+ "retries": 3,
+ "unparsed_answers": [
+  {
+   "agent": "static",
+   "answer": "prose"
+  }
+ ],
+ "unresolved": [
+  {
+   "agent": "static",
+   "code": "attck.unknown_id",
+   "message": "no such id"
+  },
+  {
+   "agent": "static",
+   "asked": "false",
+   "code": "attck.claim_does_not_describe",
+   "message": "shares no term",
+   "subject": "T1003"
+  },
+  {
+   "advisory": "true",
+   "agent": "judge",
+   "code": "stix.ungrounded_indicator",
+   "message": "never seen"
+  },
+  {
+   "agent": "judge",
+   "answered": "true",
+   "code": "stix.indicator_unattributed_flow",
+   "message": "kept"
+  },
+  {
+   "agent": "composer:x",
+   "code": "report.citation_wrong_entry",
+   "message": "not in ev_0105"
+  }
+ ]
+}

@@ -1233,6 +1233,7 @@ def judge_questions(
     *,
     attck: Any = None,
     ledger: Sequence[Any] | None = None,
+    ask_undescribed: bool = True,
 ) -> tuple[list[TechniqueQuestion], dict[str, str]]:
     """The techniques to put to the judge after its verdict, and the ones left out, with why.
 
@@ -1257,8 +1258,16 @@ def judge_questions(
     about as ``checked`` (:func:`checked_technique_questions`), to map to
     ledger entries or decline; the catalogue and the sample's scope leave one
     out as they leave out any other.
+
+    ``ask_undescribed=False`` is ``validation.feedback`` set to
+    ``record_only``: the check's finding asks nothing. A technique (c) would
+    ask about as ``undescribed`` is left out with that reason
+    (``feedback_mode.NOT_ASKED_IN_RECORD_ONLY``), and a ``claimed`` question
+    carries no finding.
     """
     in_bundle = bundle_technique_ids(stix_output)
+    # The techniques (c) asks about only for the check's finding, not asked.
+    unasked_checks: list[str] = []
     questions: dict[str, TechniqueQuestion] = {}
     claimed: set[str] = set()
     flagged: set[str] = set()
@@ -1287,6 +1296,10 @@ def judge_questions(
         for tid, rows in by_technique.items():
             check = _undescribed(tid, [claim for _agent, claim, _mention in rows], attck, sample)
             if not check:
+                continue
+            if not ask_undescribed:
+                if tid not in questions:
+                    unasked_checks.append(tid)
                 continue
             question = questions.get(tid)
             if question is None:
@@ -1321,6 +1334,11 @@ def judge_questions(
             not_asked[tid] = not_asked_unknown_id(tid)
         elif out_of_scope.get(tid):
             not_asked[tid] = f"not asked: {out_of_scope[tid]}"
+    if unasked_checks:
+        from malspark.pipeline.feedback_mode import NOT_ASKED_IN_RECORD_ONLY
+
+        for tid in unasked_checks:
+            not_asked.setdefault(tid, NOT_ASKED_IN_RECORD_ONLY)
     # The checked questions past the cap, in their order (agents' calls before
     # answers, each first seen first), are left out and recorded so.
     checked_ids = [

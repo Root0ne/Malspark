@@ -432,6 +432,41 @@ class TestTheWithheldReasonNamesItsCase:
         assert "the judge wrote it in its last answer" in answer
         assert not publishes(answer)
 
+    @pytest.mark.parametrize("feedback", ["", "record_only"])
+    def test_a_stored_record_only_run_says_only_that_nothing_was_asked(
+        self, feedback: str, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Read from the stored run's own summary, never from the live settings."""
+        from malspark.core.settings_overrides import build_settings
+        from malspark.reporting.renderers.stix_renderer import JUDGE_NOT_ASKED_WITH_THE_FACT
+
+        # The live mode is the other one, so a sentence read from it would fail.
+        live = build_settings(
+            {"validation": {"feedback": "feed_back" if feedback else "record_only"}}
+        )
+        monkeypatch.setattr("malspark.core.config.get_settings", lambda: live)
+        report = _report(told=False)
+        row = {
+            "agent": "judge",
+            "code": UNATTRIBUTED_INDICATOR_CODE,
+            "message": "m",
+            "asked": "false",
+            "subject": f"domain:{TLS_ONLY}",
+        }
+        report.run_summary = {
+            "validation": {"unresolved": [row], **({"feedback": feedback} if feedback else {})}
+        }
+
+        answer = _row(report, TLS_ONLY).published
+
+        assert not publishes(answer)
+        if feedback:
+            assert JUDGE_NOT_ASKED_WITH_THE_FACT in answer
+            assert "the judge was not asked about it with this fact" in answer
+            assert "last answer" not in answer and "no turn was left" not in answer
+        else:
+            assert JUDGE_NOT_ASKED_IN_TIME in answer
+
     def test_an_answered_row_publishes(self) -> None:
         answer = self._answer(
             answered_the_sandbox_fact(f"domain:{TLS_ONLY}")["validation"]["unresolved"]

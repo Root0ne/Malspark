@@ -1,0 +1,119 @@
+{
+ "agent_stats": [
+  {
+   "agent_id": "static",
+   "claim_count": 2,
+   "domain": "static",
+   "has_dissent": false,
+   "mean_confidence": 0.75,
+   "no_data": false,
+   "revision_round": 0,
+   "status": "",
+   "technique_ids": []
+  }
+ ],
+ "budget": null,
+ "corroboration": {},
+ "degradation_reasons": [
+  "no techniques claimed (no corroborating evidence)"
+ ],
+ "degraded_mode": true,
+ "elapsed_seconds": "<masked>",
+ "failed_analysts": [],
+ "file_hash": "",
+ "file_name": null,
+ "final_decision": "Malware",
+ "judge_stix_object_count": 1,
+ "models": null,
+ "negotiation": {
+  "confidence_history": [],
+  "max_rounds": 3,
+  "rounds_completed": 1,
+  "sycophancy_events": 0,
+  "termination_reason": "hard_limit"
+ },
+ "nudge": null,
+ "profile": {
+  "analyst_mode": {
+   "mode": "sequential",
+   "reason": "llm.parallel_analysts is auto and was not resolved for this job",
+   "setting": "auto"
+  },
+  "analysts": [
+   "static"
+  ],
+  "custom": [],
+  "name": "<MagicMock name='mock.agents.profile' id='<masked>'>"
+ },
+ "sandbox": null,
+ "server_rests": null,
+ "stages": [
+  {
+   "agents": [],
+   "duration_ms": "<masked>",
+   "failure": false,
+   "key": "triage_pack",
+   "kind": "triage",
+   "ran": false,
+   "reason": "stage did not report"
+  },
+  {
+   "agents": [
+    "static"
+   ],
+   "duration_ms": "<masked>",
+   "failure": false,
+   "key": "analysis",
+   "kind": "analysis",
+   "ran": false,
+   "reason": "stage did not report"
+  },
+  {
+   "agents": [],
+   "duration_ms": "<masked>",
+   "failure": false,
+   "key": "debate",
+   "kind": "debate",
+   "ran": false,
+   "reason": "stage did not report"
+  },
+  {
+   "agents": [
+    "judge"
+   ],
+   "duration_ms": "<masked>",
+   "failure": false,
+   "key": "verdict",
+   "kind": "verdict",
+   "ran": false,
+   "reason": "stage did not report"
+  },
+  {
+   "agents": [
+    "reporter"
+   ],
+   "duration_ms": "<masked>",
+   "failure": false,
+   "key": "report",
+   "kind": "report",
+   "ran": false,
+   "reason": "stage did not report"
+  }
+ ],
+ "stix_object_count": 1,
+ "techniques_by_layer": {},
+ "timestamp": "<masked>",
+ "tokens": null,
+ "tool_latency": null,
+ "triage": null,
+ "validation": {
+  "by_code": {
+   "isr.empty_evidence": 1,
+   "stix.ungrounded_indicator": 1
+  },
+  "not_run": [],
+  "retries": 2,
+  "unresolved": []
+ },
+ "verdict_reading": "stated"
+}
