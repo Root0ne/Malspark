@@ -3,11 +3,17 @@
 Launch arguments are text an agent chose, and may come from the sample. On
 every text surface (the pack line and its row head, the Markdown table cell
 and code span, the analyst report, the evidence-section title, the STIX
-description, the MISP comment, the ATT&CK layer metadata) the text is on one
-line, holds nothing that closes a code span, opens a tag or a template, ends a
-table cell, cites an entry or an item, or reorders the line, and is cut. On a
-JSON surface (``/iocs``, ``x_malspark_observed_in``) the text is the exact text,
-a JSON string (T-671 review r3 R4). Offline.
+description, the MISP comment, the ATT&CK layer metadata, the drafted YARA,
+Sigma and Suricata rules, the section bundles' technique lists) the text is on
+one line, holds nothing that closes a code span, opens a tag or a template,
+ends a table cell, cites an entry or an item, or reorders the line, and is cut.
+In a drafted rule it is also in that language's own place for text: a YARA
+``//`` comment that runs to the end of its line, a Sigma description that YAML
+reads back as the one string it wrote, a Suricata ``#`` comment line; each
+draft still passes its own check, and its strings, selections and alert lines
+are those of the same draft with no mark (T-679). On a JSON surface
+(``/iocs``, ``x_malspark_observed_in``) the text is the exact text, a JSON
+string (T-671 review r3 R4). Offline.
 """
 
 from __future__ import annotations
@@ -118,6 +124,43 @@ def _layer_value(report: Any) -> str:
     return values[0]
 
 
+def _rules(launch: str = HOSTILE) -> dict[str, Any]:
+    import tests.unit.reporting.test_a_rule_on_a_later_detonation_s_value_says_so as rules
+    from malspark.reporting.detection_signatures import build_detection_rules
+
+    drafted: dict[str, Any] = {}
+    for rule in build_detection_rules(rules._report(later=bool(launch), launch=launch)):
+        drafted.setdefault(rule.kind, rule)
+        if "launched with" in rule.body:
+            drafted[rule.kind] = rule
+    return drafted
+
+
+def _yara_comment(_report: Any) -> str:
+    body = _rules()["yara"].body
+    return next(line for line in body.split("\n") if "launched with" in line)
+
+
+def _sigma_description(_report: Any) -> str:
+    import yaml
+
+    return str(yaml.safe_load(_rules()["sigma"].body)["description"])
+
+
+def _suricata_comment(_report: Any) -> str:
+    body = _rules()["suricata"].body
+    return next(line for line in body.split("\n") if "launched with" in line)
+
+
+def _bundle_line(section: str, listed: str) -> Callable[[Any], str]:
+    def _line(report: Any) -> str:
+        from malspark.reporting.evidence_bundles import bundle_for
+
+        return next(t for t in bundle_for(section, report)["facts"][listed] if "launched with" in t)
+
+    return _line
+
+
 TEXT_SURFACES: dict[str, Callable[[Any], str]] = {
     "pack line": _pack_line,
     "row head": _row_head,
@@ -127,6 +170,11 @@ TEXT_SURFACES: dict[str, Callable[[Any], str]] = {
     "STIX description": _stix_description,
     "MISP comment": _misp_comment,
     "ATT&CK layer metadata": _layer_value,
+    "YARA comment": _yara_comment,
+    "Sigma description": _sigma_description,
+    "Suricata comment": _suricata_comment,
+    "executive-summary bundle techniques": _bundle_line("executive_summary", "top_ttps"),
+    "mitigations bundle techniques": _bundle_line("mitigations", "ttps"),
 }
 
 
@@ -164,3 +212,33 @@ def test_the_iocs_feed_and_the_stix_property_keep_the_exact_text(report: Any) ->
     indicator = Indicator(name="IP", pattern="[ipv4-addr:value = '198.51.100.7']")
     (marked,) = _with_the_detonations([indicator], table, report)
     assert marked.x_malspark_observed_in == [{"detonation": "d2", "launched_with": HOSTILE}]
+
+
+@pytest.mark.parametrize("kind", ["yara", "sigma", "suricata"])
+def test_a_rule_holds_the_launch_text_in_its_own_place_for_text(kind: str) -> None:
+    import yaml
+
+    from malspark.reporting import detection_signatures as drafts
+
+    marked, plain = _rules()[kind], _rules("")[kind]
+    if kind != "yara" or drafts._YARA_AVAILABLE:
+        assert marked.compile_error is None, marked.compile_error
+    if kind == "yara":
+        # Everything after ``//`` on its line is comment, and the code before it
+        # is the code the draft with no mark has.
+        line = next(line for line in marked.body.split("\n") if "launched with" in line)
+        assert line.index("  // ") < line.index("launched with")
+        assert [x.split("  // ", 1)[0] for x in marked.body.split("\n")] == [
+            x.split("  // ", 1)[0] for x in plain.body.split("\n")
+        ]
+    elif kind == "sigma":
+        doc, bare = yaml.safe_load(marked.body), yaml.safe_load(plain.body)
+        assert "launched with" in doc.pop("description")
+        bare.pop("description")
+        assert doc == bare
+    else:
+        lines = [x for x in marked.body.split("\n") if "launched with" in x]
+        assert lines and all(x.startswith("# ") for x in lines)
+        assert [x for x in marked.body.split("\n") if not x.startswith("#")] == [
+            x for x in plain.body.split("\n") if not x.startswith("#")
+        ]
