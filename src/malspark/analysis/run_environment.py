@@ -38,6 +38,14 @@ should happen:
   binary's version where the tool declares how to ask it. The steps the
   pipeline runs in its own process are the row ``pipeline``, read on the
   worker's host with the environment of the server each stands in for.
+* ``detonations`` is one row per detonation of the job's sample, the job's
+  own first and each one an agent asked for (:func:`detonations_record`):
+  which it is, who asked, the launch text it asked for, the sandbox provider,
+  how it ended, and what the provider stated of the sandbox run while the
+  report was in hand (``SandboxProvider.detonation_facts``) — its identifiers,
+  the guest, the sandbox's version, start and end, whether the sample was run,
+  and the SHA-256 and length of each raw report part as it was read. An empty
+  list is a job that made no sandbox submission and read no sandbox report.
 
 Written when the judge builds the summary and again once the run's last
 model call is made (the report node, and a stopped run's summary), so the
@@ -50,8 +58,10 @@ from __future__ import annotations
 import functools
 import os
 import platform
+import re
 import subprocess
 import sys
+import unicodedata
 from collections.abc import Iterable, Mapping
 from typing import Any
 
@@ -60,8 +70,9 @@ from malspark.tools.capabilities import NOT_REPORTED
 
 # The record's shape version: a reader that meets a newer one reads what it
 # knows. 2: a row's ``sampling`` may be ``None`` (not reported), rows carry
-# ``thinking`` and ``answered``, and ``tools`` is recorded.
-ENVIRONMENT_VERSION = 2
+# ``thinking`` and ``answered``, and ``tools`` is recorded. 3: ``detonations``
+# is recorded.
+ENVIRONMENT_VERSION = 3
 
 # The server every entry of a step the pipeline runs in its own process is
 # recorded under (``pipeline.triage_pack.PIPELINE``), and the agent its server
@@ -586,6 +597,167 @@ def tools_record(container: Any, entries: Iterable[Any] = ()) -> dict[str, Any]:
         return {}
 
 
+# How much of what a provider states a row keeps: the longest text, the most
+# entries of a mapping and the most report parts.
+STATED_TEXT_CHARS = 200
+STATED_ENTRIES = 32
+STATED_PARTS = 64
+_SHA256 = re.compile(r"[0-9a-f]{64}")
+
+
+def _scalar(value: Any) -> bool:
+    """Whether ``value`` states something as one value: a non-empty text or a number."""
+    if isinstance(value, bool):
+        return False
+    return isinstance(value, int | float) or (isinstance(value, str) and bool(value.strip()))
+
+
+def _said(value: Any) -> str:
+    """A text a provider or a sandbox wrote, fit to keep: one line, no control
+    character, no credential in a URL or a held secret value (``redact_url``),
+    no path of this host (``host_paths_masked``), and cut with the cut mark."""
+    from malspark.core.paths import host_paths_masked
+    from malspark.core.settings_overrides import redact_url
+    from malspark.utils.marked_cut import marked_cut
+
+    text = " ".join(str(value).split())
+    text = "".join(ch for ch in text if not unicodedata.category(ch).startswith("C"))
+    return marked_cut(host_paths_masked(redact_url(text)), STATED_TEXT_CHARS)
+
+
+def _named_texts(held: Any, *, nested: bool) -> dict[str, Any] | str:
+    """A provider's mapping of names to texts, kept as stated; ``"not reported"`` for none.
+
+    ``nested`` keeps one level of mappings under a name (a guest per task).
+    """
+    if not isinstance(held, Mapping):
+        return NOT_REPORTED
+    out: dict[str, Any] = {}
+    for key, value in list(held.items())[:STATED_ENTRIES]:
+        name = _said(key)
+        if not name:
+            continue
+        if _scalar(value):
+            out[name] = _said(value)
+        elif nested and isinstance(value, Mapping):
+            inner = _named_texts(value, nested=False)
+            if isinstance(inner, dict):
+                out[name] = inner
+    return out or NOT_REPORTED
+
+
+def _report_parts(held: Any) -> tuple[list[dict[str, Any]] | str, str]:
+    """The report parts a provider listed, each with a SHA-256 and a length; and what was cut.
+
+    A part without a digest of 64 hexadecimal digits or a length is left out.
+    """
+    if not isinstance(held, list):
+        return NOT_REPORTED, ""
+    rows: list[dict[str, Any]] = []
+    for part in held:
+        if not isinstance(part, Mapping):
+            continue
+        digest = str(part.get("sha256") or "").lower()
+        size = part.get("bytes")
+        if not _SHA256.fullmatch(digest) or isinstance(size, bool) or not isinstance(size, int):
+            continue
+        if size < 0:
+            continue
+        name = _said(part.get("name")) if _scalar(part.get("name")) else ""
+        rows.append({"name": name or NOT_REPORTED, "sha256": digest, "bytes": size})
+    if len(rows) > STATED_PARTS:
+        return rows[:STATED_PARTS], f"{len(rows) - STATED_PARTS} more part(s) left out"
+    return rows, ""
+
+
+def _detonation_row(record: Any) -> dict[str, Any]:
+    """One detonation as the environment records it (:func:`detonations_record`)."""
+    row: dict[str, Any] = {"detonation": record.name, "origin": str(record.origin)}
+    askers = [
+        str(asker.get("agent"))
+        for asker in record.requested_by or ()
+        if isinstance(asker, Mapping) and asker.get("agent")
+    ]
+    if askers:
+        row["requested_by"] = list(dict.fromkeys(askers))
+    if record.arguments:
+        # The exact text, as the job or the agents gave it: JSON keeps it as
+        # it is, and a surface that prints it writes it inert
+        # (``reporting.detonation_marks.launch_text``).
+        row["launched_with"] = str(record.arguments)
+        launch = record.launch if isinstance(record.launch, Mapping) else {}
+        honoured = launch.get("honoured")
+        row["arguments_honoured"] = honoured if isinstance(honoured, bool) else NOT_REPORTED
+        if launch.get("via"):
+            row["arguments_via"] = str(launch["via"])
+    row["provider"] = _said(record.provider) if record.provider else NOT_REPORTED
+    row["task_id"] = _said(record.task_id) if _scalar(record.task_id) else NOT_REPORTED
+    row["reported"] = bool(record.reported)
+    if record.failure:
+        row["failure"] = _said(record.failure)
+    facts = record.sandbox_facts if isinstance(record.sandbox_facts, dict) else None
+    stated = facts or {}
+    detonated = stated.get("detonated")
+    row["detonated"] = detonated if isinstance(detonated, bool) else NOT_REPORTED
+    row["task_ids"] = _named_texts(stated.get("task_ids"), nested=False)
+    row["guest"] = _named_texts(stated.get("guest"), nested=True)
+    for key in ("sandbox_version", "started", "ended"):
+        value = stated.get(key)
+        row[key] = _said(value) if _scalar(value) else NOT_REPORTED
+    if facts is None and not record.reported:
+        # No report was read, so no part of one was.
+        row["report_parts"] = []
+    else:
+        parts, cut = _report_parts(stated.get("report_parts"))
+        row["report_parts"] = parts
+        if cut:
+            row["report_parts_cut"] = cut
+    return row
+
+
+def detonations_record(container: Any) -> list[dict[str, Any]] | None:
+    """Per detonation of the job's sample, what the run needs to cite its dynamic evidence.
+
+    ``None`` for a container that keeps no detonations; an empty list for a
+    job that asked no sandbox for anything (no sandbox submission made and no
+    report read: no sample file, or mock mode). Each row, in the order the
+    detonations were made:
+
+    * ``detonation`` (``d1`` for the job's own, ``d2``…), ``origin`` (``job``
+      or ``agent``) and, for an agent's, ``requested_by``, the agents that asked;
+    * ``launched_with``, the launch text asked for, exactly, with
+      ``arguments_honoured`` and ``arguments_via`` from the launch record;
+      absent where none was asked for;
+    * ``provider``, the sandbox provider's declared id; ``task_id``, the task
+      its submission answered; ``reported``, whether a report came back, and
+      ``failure``, why not, where none did;
+    * what the provider stated of the run (``SandboxProvider.detonation_facts``,
+      kept on the record by ``providers.detonation.stated_by``): ``detonated``,
+      ``task_ids``, ``guest``, ``sandbox_version``, ``started``, ``ended`` and
+      ``report_parts`` (each part's name, SHA-256 and byte length as read).
+
+    A fact the provider did not state is ``"not reported"``, never a guess;
+    a detonation that read no report has no parts. What a provider or its
+    sandbox wrote is kept to known keys and capped (``STATED_TEXT_CHARS``,
+    ``STATED_ENTRIES``, ``STATED_PARTS``), with no credential and no path of
+    this host (:func:`_said`). A row that cannot be read is left out; this
+    never raises.
+    """
+    held = getattr(container, "detonations", None)
+    if not isinstance(held, list):
+        return None
+    rows: list[dict[str, Any]] = []
+    for record in held:
+        try:
+            if not (getattr(record, "provider", "") or getattr(record, "failure", None)):
+                # Nothing was asked of a sandbox for it.
+                continue
+            rows.append(_detonation_row(record))
+        except Exception as exc:  # noqa: BLE001 — telemetry never breaks a summary
+            logger.debug("run environment: a detonation was not recorded (%s).", exc)
+    return rows
+
+
 def environment_record(container: Any, entries: Iterable[Any] = ()) -> dict[str, Any] | None:
     """``run_summary.environment`` as of now, or ``None`` where nothing was read. Never raises.
 
@@ -600,6 +772,9 @@ def environment_record(container: Any, entries: Iterable[Any] = ()) -> dict[str,
         tools = tools_record(container, entries)
         if tools:
             record["tools"] = tools
+        detonations = detonations_record(container)
+        if detonations is not None:
+            record["detonations"] = detonations
         registry = getattr(container, "_llm_registry", None)
         sent_of = getattr(registry, "sent_requests", None)
         sent = list(sent_of()) if callable(sent_of) else []

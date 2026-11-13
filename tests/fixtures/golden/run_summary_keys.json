@@ -446,6 +446,36 @@
         ]
       }
     },
+    "detonations": [
+      {
+        "arguments_honoured": null,
+        "arguments_via": null,
+        "detonated": null,
+        "detonation": null,
+        "ended": null,
+        "failure": null,
+        "guest": "<data-keyed map>",
+        "launched_with": null,
+        "origin": null,
+        "provider": null,
+        "report_parts": [
+          {
+            "bytes": null,
+            "name": null,
+            "sha256": null
+          }
+        ],
+        "report_parts_cut": null,
+        "reported": null,
+        "requested_by": [
+          null
+        ],
+        "sandbox_version": null,
+        "started": null,
+        "task_id": null,
+        "task_ids": "<data-keyed map>"
+      }
+    ],
     "host": {
       "cpu_model": null,
       "cpus_available": null,
