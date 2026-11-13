@@ -40,6 +40,7 @@ WORKER_CODE = (
 HASH = "hashes or names the sample: its digest, size or leading bytes, nothing parsed"
 TRANSFER = "hands the bytes on unread: a copy, an upload, a capture written"
 NOT_THE_SAMPLE = "reads no file of the sample: the process table"
+A_STORED_REPORT = "reads no file of the sample: a stored sandbox report the stand-in replays"
 NOT_REACHED = "reached by no job: the loader is never built"
 LEFT = "left in the worker for now (T-006): a parse a later change moves behind the boundary"
 READING = (
@@ -71,6 +72,10 @@ ALLOWED = {
     ("src/malspark/providers/sandbox/triage.py", "TriageSandboxProvider._post_sample"): TRANSFER,
     ("src/malspark/providers/sandbox/triage.py", "TriageSandboxProvider._sha256_of"): HASH,
     ("src/malspark/loaders/mock_sandbox_client.py", "MockSandboxClient._sha256"): HASH,
+    # The fixture's bytes as read, so that the part's digest is of what was read.
+    ("src/malspark/loaders/mock_sandbox_client.py", "MockSandboxClient._read_fixture"): (
+        A_STORED_REPORT
+    ),
     ("src/malspark/analysis/sample_integrity.py", "_open_copy"): HASH,
     ("src/malspark/analysis/sample_integrity.py", "_open_copy_by_path"): HASH,
     ("src/malspark/reporting/ledger_projection.py", "_hashes_of"): HASH,
