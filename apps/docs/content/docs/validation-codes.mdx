@@ -238,17 +238,17 @@ A parent technique beside its published sub-technique says nothing the sub-techn
 
 ### `attck.platform_mismatch`
 
-No comment names its meaning, and `malspark.pipeline.validation:validate_isr` passes more than one message for it: see the messages there.
+No comment names its meaning; the message at `malspark.pipeline.validation:sentence_technique_violations` reads: "The claim sentence names \<tid>. \<mismatch>"
 
-- **Raised at** `malspark.pipeline.validation:validate_isr`, `malspark.pipeline.validation:validate_verdict_bundle`
+- **Raised at** `malspark.pipeline.validation:sentence_technique_violations`, `malspark.pipeline.validation:validate_isr`, `malspark.pipeline.validation:validate_verdict_bundle`
 - **Constant** `malspark.pipeline.validation:PLATFORM_MISMATCH_CODE`
 - **Docs** [Architecture](/docs/architecture/)
 
 ### `attck.unknown_id`
 
-No comment names its meaning; the message at `malspark.pipeline.validation:validate_isr` reads: "TECHNIQUE \<tid> is not in the MITRE ATT&CK catalogue\<retired_note>.\<hint> Use one of them, or omit the technique id."
+No comment names its meaning; the message at `malspark.pipeline.validation:sentence_technique_violations` reads: "The claim sentence names \<tid>, which is not in the MITRE ATT&CK catalogue\<retired_note>. Name a technique the catalogue holds, or leave the id out of the sentence."
 
-- **Raised at** `malspark.pipeline.validation:validate_isr`
+- **Raised at** `malspark.pipeline.validation:sentence_technique_violations`, `malspark.pipeline.validation:validate_isr`
 - **Passes on** `malspark.agents.base_agent:BaseAnalyst._validation_turn`, `malspark.pipeline.nodes:make_judge_node.node_fn`
 - **Constant** `malspark.pipeline.validation:VALIDITY_CODE`
 - **Docs** [Architecture](/docs/architecture/), [Validation and feedback](/docs/concepts/validation/)

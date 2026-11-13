@@ -1288,7 +1288,15 @@ Two producers use it:
   not asked about; item ids and ids the claim sentence names outside the line
   are not read. A technique claim whose line names only such ids is asked
   `isr.ungrounded_technique`, which says so, instead of a second question. The
-  replay of a stored run reads the count off the run's whole ledger. An id that survives the retry keeps the analyst's
+  replay of a stored run reads the count off the run's whole ledger. A
+  technique id the claim's sentence names beside its TECHNIQUE line is asked
+  the catalogue's two questions the line's ids are asked, whether the
+  catalogue holds it (`attck.unknown_id`) and whether it can apply to the
+  sample's platform (`attck.platform_mismatch`), on a path that names the
+  sentence (`claims[N].text.<id>`); an id the sentence negates is not asked,
+  nor is whether the sentence describes the id, since a sentence names ids it
+  does not assert (a tool's metadata, a heading, a catalogue association). A
+  sentence id never marks the claim's own technique. An id that survives the retry keeps the analyst's
   spelling and is flagged `technique_id_valid=False`; the report, the STIX
   minting step and the FP linter read the flag. The first answer goes back into
   the retry's conversation as the model wrote it (`AgentISR.answer_text`: its

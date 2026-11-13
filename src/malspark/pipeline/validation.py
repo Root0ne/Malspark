@@ -788,6 +788,60 @@ def _cites_a_ledger_entry(
     return bool(technique and technique in cited_by_findings)
 
 
+def sentence_technique_violations(
+    text: str,
+    carried: set[str],
+    attck: Any,
+    scope: tuple[str | None, tuple[str, ...]],
+    *,
+    path: str,
+) -> list[Violation]:
+    """The catalogue's questions about the technique ids a claim's sentence names.
+
+    Each id the sentence names that the block's TECHNIQUE line does not carry
+    (``carried``) is asked what the line's own ids are asked: whether the
+    catalogue holds it (``attck.unknown_id``) and whether it can apply to the
+    sample's platform (``attck.platform_mismatch``), once per id, on a path
+    that names the sentence (``<block>.text.<id>``). Whether the sentence
+    describes the id is not asked: a sentence names ids it does not assert, as
+    a tool's metadata, a heading or a catalogue association. An id the
+    sentence negates is not asked either.
+    """
+    out: list[Violation] = []
+    seen: set[str] = set()
+    for match in TECHNIQUE_WORD_RE.finditer(text or ""):
+        tid = match.group(0).upper()
+        if tid in carried or tid in seen or _is_negated(text, match.start(), match.end()):
+            continue
+        seen.add(tid)
+        where = f"{path}.text.{tid}"
+        if not _technique_is_known(tid, attck):
+            out.append(
+                Violation(
+                    code=VALIDITY_CODE,
+                    message=(
+                        f"The claim sentence names {safe_finding_value(tid)}, which is not in "
+                        f"the MITRE ATT&CK catalogue{_retired_note(tid, attck)}. Name a "
+                        "technique the catalogue holds, or leave the id out of the sentence."
+                    ),
+                    path=where,
+                    subject=tid,
+                )
+            )
+            continue
+        mismatch = platform_mismatch_message(tid, attck, scope)
+        if mismatch:
+            out.append(
+                Violation(
+                    code=PLATFORM_MISMATCH_CODE,
+                    message=f"The claim sentence names {safe_finding_value(tid)}. {mismatch}",
+                    path=where,
+                    subject=tid,
+                )
+            )
+    return out
+
+
 def _ungrounded(
     claim: Any,
     citable: Sequence[str],
@@ -928,6 +982,21 @@ def validate_isr(
                 violations.append(
                     unissued_evidence_violation(never, int(issued or 0), path=block_path)
                 )
+        if first_of_block and attck is not None:
+            carried = {
+                str(getattr(other, "technique_id", "") or "").strip().upper()
+                for other, at in zip(claims, blocks, strict=True)
+                if at == block
+            }
+            violations.extend(
+                sentence_technique_violations(
+                    str(getattr(claim, "claim", "") or ""),
+                    carried,
+                    attck,
+                    scope,
+                    path=block_path,
+                )
+            )
 
         tid = str(getattr(claim, "technique_id", "") or "").strip().upper()
         # A technique with nothing behind it. A live run on a signed PuTTY
