@@ -571,6 +571,11 @@ class MalsparkApp:
         # further ones follow it (``providers.detonation``).
         self.container.detonations = [record]
         self.container.detonation_requests = []
+        # Every other per-job record of the detonations goes with them, so a
+        # container that runs a second job starts it as the first.
+        from malspark.pipeline.detonations import reset_detonation_state
+
+        reset_detonation_state(self.container)
         try:
             return await self.detonate(sample_path, record)
         finally:

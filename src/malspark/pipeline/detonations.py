@@ -972,6 +972,21 @@ def further_detonation_reasons(container: Any) -> list[str]:
     return list(dict.fromkeys(out))
 
 
+def reset_detonation_state(container: Any) -> None:
+    """Every per-job record of the further detonations on ``container``, back to a job's start.
+
+    The detonations and requests themselves are set by the job's first
+    detonation (``MalsparkApp._submit_the_sample``); with them go the further
+    turns given and owed, what each agent's turn read, the step noted, and
+    the detonations in flight.
+    """
+    container.further_turns = []
+    container.detonations_seen = {}
+    container.current_step = ""
+    container._further_turns_given = False
+    container._detonations_in_flight = {}
+
+
 def later_sections(container: Any) -> dict[str, Any]:
     """Each later detonation's report read into sections, by its name: what a cited ``d2/…`` reads.
 
