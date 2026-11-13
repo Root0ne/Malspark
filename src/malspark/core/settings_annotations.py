@@ -2138,6 +2138,16 @@ ANNOTATIONS.update(
             "order": -1,
             "choices_from": "sandbox_providers",
         },
+        "sandbox.max_detonations_per_job": {
+            "title": "Detonations per job",
+            "description": (
+                "How many times one job may detonate its sample, its own detonation "
+                "included. An agent that finds the launch arguments a sample needs may "
+                "ask for a further detonation with them; this is the ceiling on those "
+                "requests, stated to the agents as the sandbox's limit (each "
+                "detonation takes the sandbox's time and quota, and is disclosed to it)."
+            ),
+        },
         "static.r2.binary_path": {
             "title": "radare2 MCP binary",
             "description": (

@@ -4644,6 +4644,11 @@ class SandboxConfig(BaseModel):
     triage: SandboxTriageConfig = Field(default_factory=SandboxTriageConfig)
     upload: SandboxUploadConfig = Field(default_factory=SandboxUploadConfig)
     rest: SandboxRestConfig = Field(default_factory=SandboxRestConfig)
+    # How many times one job may detonate its sample, the job's own detonation
+    # included: the ceiling on the further detonations agents ask for
+    # (``providers.detonation_requests``), stated to them as the sandbox's
+    # physical limit (its quota and the time each detonation takes).
+    max_detonations_per_job: int = Field(default=4, ge=1, le=20)
     # The operator's own report formats (``malspark.core.report_formats``): how
     # each is recognised, where its task id and target hash sit, which reader
     # reads it and its signature scale. Read by every provider and by the
