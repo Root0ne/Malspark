@@ -57,9 +57,10 @@ corrected one.
 
 With `validation.feedback` set to `record_only` the checks run and every
 finding is recorded, marked not asked, and no agent is told: the answer stands
-as written. Only a finding that says the answer, or a block of it, could not be
-read is asked again, since left unasked the stage would lose the agent's own
-content to a fallback. Everything the platform does afterwards with what is
+as written. Only a finding that says the answer, or a part of it, could not be
+read, or is absent where the stage would substitute a fallback of its own, is
+asked again, since left unasked the stage would lose the agent's own content to
+that fallback. Everything the platform does afterwards with what is
 left standing is unchanged, and the judge's verdict prompt still receives the
 analysts' findings, so a run in each mode shows what the correction turns
 change. [Configuration](/docs/configuration/) lists which questions stop, which

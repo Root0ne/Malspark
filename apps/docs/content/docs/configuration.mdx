@@ -2801,12 +2801,15 @@ analyst claimed that the bundle does not carry, one named only on a finding,
 one a call or a tool answer named), and every stage's own question, since
 these are not findings. A code is asked again in both modes when, left
 unasked, the stage would lose the agent's own content to a fallback because
-the answer or a block of it could not be read: an answer that is not JSON, is
-cut at the output cap, is outside its schema, has no claim parsed or repeats
-its claims; a claim block whose confidence or technique line is not read, or
-that stands under DISPUTES; a verdict word, a severity rating or a part of the
-assessment that cannot be read, or an assessment the bundle does not hold; a
-judge object of no type the bundle reads, and an id two objects share
+the answer or a part of it could not be read, or is absent where the stage
+then substitutes a fallback of its own: an answer that is not JSON, is cut at
+the output cap, is outside its schema, has no claim parsed or repeats its
+claims; a claim block whose confidence or technique line is not read, or that
+stands under DISPUTES; a verdict word, a severity rating or a part of the
+assessment that cannot be read; an assessment the bundle does not hold, or one
+that states no verdict, which the run would then guess from the object set; a
+judge object of no type the bundle reads, an id two objects share, and an
+indicator whose pattern the STIX grammar cannot read
 (`REASKED_IN_EVERY_MODE_CODES`, listed on the [validation codes
 page](/docs/validation-codes/)). What the platform does afterwards with a
 finding left standing is the same in both: an ungrounded indicator stays out of
