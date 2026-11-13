@@ -396,7 +396,7 @@ class TestTheBuildLine:
     def test_a_role_names_the_global_effort(self, caplog: pytest.LogCaptureFixture) -> None:
         LLMProviderRegistry(_anthropic_settings(effort="max")).build_model(role="judge")
         line = self._lines(caplog)[-1]
-        assert f"Building anthropic/{MODEL} (role=judge, temp=0.0" in line
+        assert f"Building anthropic/{MODEL} (role=judge, effort=" in line
         assert "effort=max from llm.anthropic.effort" in line
 
     def test_a_role_with_no_effort_says_so(self, caplog: pytest.LogCaptureFixture) -> None:

@@ -1,0 +1,5888 @@
+{
+ ".superpowers/sdd/mandate-2026-09-17/benchmark/deepseek/haiku10/score.md": {
+  "refused": ".superpowers/sdd/mandate-2026-09-17/benchmark/deepseek/haiku10/score.md: the scored column 'haiku10' is not a verdict for 'K2.3 mutex': 'found (contradicted)'",
+  "sha256": "f3ea15bdf5831dca342168bca4a5cbc2f55b840addc17fc24b1836de29f4114d"
+ },
+ ".superpowers/sdd/mandate-2026-09-17/benchmark/deepseek/haiku11/score.md": {
+  "refused": ".superpowers/sdd/mandate-2026-09-17/benchmark/deepseek/haiku11/score.md: the scored column 'haiku11' is not a verdict for 'K5.2 task Updater, COM, logon': 'found (hedged)'",
+  "sha256": "b780d42b2b9d619d1ee9934ee6fb679f7a83fd5f2a9883b573a0cfbe528d7260"
+ },
+ ".superpowers/sdd/mandate-2026-09-17/benchmark/deepseek/haiku12/score.md": {
+  "refused": ".superpowers/sdd/mandate-2026-09-17/benchmark/deepseek/haiku12/score.md: the scored column 'haiku12' is not a verdict for 'K2.3 mutex': 'found (contradicted)'",
+  "sha256": "7b1102022d89da8a5ebb20c3edb51a0e3a73db6ce847f1af8690c30ea9b8b0f6"
+ },
+ ".superpowers/sdd/mandate-2026-09-17/benchmark/deepseek/haiku13/score-75.md": {
+  "read": {
+   "beyond": 53,
+   "beyond_note": "53 listed, as stated",
+   "column": "Score",
+   "earlier_runs": "off",
+   "earlier_runs_note": "off: run-summary.json says earlier_runs_ignored; a fresh account's memory, as the score states",
+   "labels": {
+    "K1.1a": "K1.1a family",
+    "K1.1b": "K1.1b loader",
+    "K1.2": "K1.2 IcedID link",
+    "K1.4": "K1.4 x64 + arch check",
+    "K1.5": "K1.5 four exports, one address",
+    "K2.1": "K2.1 APIs by hash",
+    "K2.2": "K2.2 abort on failed check",
+    "K2.3": "K2.3 mutex",
+    "K2.4": "K2.4 install, then persist",
+    "K2.5": "K2.5 register, then loop",
+    "K2.6": "K2.6 update_data.dat read first",
+    "K3.1": "K3.1 PEB BeingDebugged",
+    "K3.10": "K3.10 kernel32 CRC-32 0x2eca438c",
+    "K3.11": "K3.11 plain CRC-32 of API names",
+    "K3.12": "K3.12 two non-CRC-32 API hashes",
+    "K3.13": "K3.13 shared 4-byte string key",
+    "K3.2": "K3.2 process count 75 / 50",
+    "K3.3": "K3.3 WOW64",
+    "K3.4": "K3.4 MAC",
+    "K3.5": "K3.5 PEB walk + CRC-32",
+    "K3.6": "K3.6 string encryption",
+    "K3.7": "K3.7 self-deletion (ADS)",
+    "K3.8": "K3.8 API table entries",
+    "K3.9": "K3.9 ntdll CRC-32 0x26797e77",
+    "K4.1": "K4.1 bot ID",
+    "K4.2": "K4.2 group \u2192 FNV",
+    "K4.4": "K4.4 two encrypted C2s",
+    "K5.1": "K5.1 install path",
+    "K5.2": "K5.2 task Updater, COM, logon",
+    "K5.3": "K5.3 update_data.dat holds C2s",
+    "K5.6": "K5.6 Shell Folders lookup",
+    "K6.1": "K6.1 HTTPS POST /live/",
+    "K6.10": "K6.10 WinINet transport",
+    "K6.11": "K6.11 failover to the second C2",
+    "K6.2": "K6.2 User-Agent",
+    "K6.3": "K6.3 RC4 then base64",
+    "K6.4": "K6.4 beacon interval",
+    "K6.5": "K6.5 format at registration",
+    "K6.6": "K6.6 beacon types",
+    "K6.7": "K6.7 reply verbs",
+    "K6.9": "K6.9 RC4 key is an encrypted string",
+    "K7.12": "K7.12 EXE",
+    "K7.13": "K7.13 DLL via rundll32",
+    "K7.14": "K7.14 shellcode",
+    "K7.15": "K7.15 update",
+    "K7.17": "K7.17 uninstall",
+    "K7.18": "K7.18 bp.dat",
+    "K7.19": "K7.19 longer interval",
+    "K7.2": "K7.2 desktop links",
+    "K7.20": "K7.20 reset counter",
+    "K7.3": "K7.3 process list",
+    "K7.4": "K7.4 sysinfo",
+    "K8 discovery": "K8 discovery",
+    "K8.1": "K8.1 GetComputerNameExA",
+    "K8.2": "K8.2 GetUserNameA",
+    "K9 /live/": "K9 /live/",
+    "K9 custom_update\\": "K9 Custom_update\\",
+    "K9 mutex": "K9 mutex",
+    "K9 own hashes": "K9 own hashes",
+    "K9 task updater": "K9 task Updater",
+    "K9 ua": "K9 UA",
+    "K9 update_<hex>.dll": "K9 Update_<hex>.dll",
+    "K9 update_data.dat": "K9 update_data.dat",
+    "T1027": "T1027",
+    "T1041": "T1041",
+    "T1053.005": "T1053.005",
+    "T1055": "T1055",
+    "T1057": "T1057",
+    "T1059.003": "T1059.003",
+    "T1070.004": "T1070.004",
+    "T1082": "T1082",
+    "T1083": "T1083",
+    "T1105": "T1105",
+    "T1218.011": "T1218.011",
+    "T1497": "T1497"
+   },
+   "provenance": {
+    "K1.1a": "own analysis + lookup",
+    "K1.1b": "own analysis",
+    "K1.2": "no cited entry",
+    "K1.4": "no cited entry",
+    "K1.5": "own analysis",
+    "K2.1": "own analysis",
+    "K2.2": "own analysis",
+    "K2.3": "own analysis",
+    "K2.4": "own analysis",
+    "K2.5": "own analysis",
+    "K2.6": "own analysis",
+    "K3.1": "no cited entry",
+    "K3.10": "own analysis",
+    "K3.11": "own analysis",
+    "K3.12": "own analysis",
+    "K3.13": "own analysis",
+    "K3.2": "no cited entry",
+    "K3.3": "no cited entry",
+    "K3.4": "no cited entry",
+    "K3.5": "own analysis",
+    "K3.6": "own analysis",
+    "K3.7": "own analysis",
+    "K3.8": "own analysis",
+    "K3.9": "own analysis",
+    "K4.1": "own analysis",
+    "K4.2": "own analysis",
+    "K4.4": "own analysis",
+    "K5.1": "own analysis",
+    "K5.2": "own analysis",
+    "K5.3": "own analysis",
+    "K5.6": "own analysis",
+    "K6.1": "own analysis",
+    "K6.10": "own analysis",
+    "K6.11": "own analysis",
+    "K6.2": "no cited entry",
+    "K6.3": "no cited entry",
+    "K6.4": "no cited entry",
+    "K6.5": "no cited entry",
+    "K6.6": "own analysis",
+    "K6.7": "own analysis",
+    "K6.9": "own analysis",
+    "K7.12": "own analysis",
+    "K7.13": "own analysis",
+    "K7.14": "no cited entry",
+    "K7.15": "no cited entry",
+    "K7.17": "no cited entry",
+    "K7.18": "own analysis",
+    "K7.19": "no cited entry",
+    "K7.2": "no cited entry",
+    "K7.20": "no cited entry",
+    "K7.3": "no cited entry",
+    "K7.4": "no cited entry",
+    "K8 discovery": "own analysis",
+    "K8.1": "own analysis",
+    "K8.2": "own analysis",
+    "K9 /live/": "no cited entry",
+    "K9 custom_update\\": "own analysis",
+    "K9 mutex": "no cited entry",
+    "K9 own hashes": "no cited entry",
+    "K9 task updater": "own analysis",
+    "K9 ua": "no cited entry",
+    "K9 update_<hex>.dll": "own analysis",
+    "K9 update_data.dat": "own analysis",
+    "T1027": "no cited entry",
+    "T1041": "undeclared tool",
+    "T1053.005": "no cited entry",
+    "T1055": "no cited entry",
+    "T1057": "own analysis",
+    "T1059.003": "no cited entry",
+    "T1070.004": "no cited entry",
+    "T1082": "own analysis",
+    "T1083": "no cited entry",
+    "T1105": "own analysis",
+    "T1218.011": "no cited entry",
+    "T1497": "own analysis"
+   },
+   "provenance_note": "read from evidence.json, report.md, evidence-bundle.json, mitre.json beside the score",
+   "totals_note": "Totals line checked against the table",
+   "verdicts": {
+    "K1.1a": [
+     "key",
+     "found"
+    ],
+    "K1.1b": [
+     "key",
+     "found"
+    ],
+    "K1.2": [
+     "key",
+     "partly (body)"
+    ],
+    "K1.4": [
+     "key",
+     "partly (body)"
+    ],
+    "K1.5": [
+     "key",
+     "found"
+    ],
+    "K2.1": [
+     "key",
+     "found"
+    ],
+    "K2.2": [
+     "key",
+     "found"
+    ],
+    "K2.3": [
+     "key",
+     "found"
+    ],
+    "K2.4": [
+     "key",
+     "partly (body)"
+    ],
+    "K2.5": [
+     "key",
+     "found"
+    ],
+    "K2.6": [
+     "key",
+     "found"
+    ],
+    "K3.1": [
+     "key",
+     "found"
+    ],
+    "K3.10": [
+     "key",
+     "partly (body)"
+    ],
+    "K3.11": [
+     "key",
+     "found"
+    ],
+    "K3.12": [
+     "key",
+     "missed"
+    ],
+    "K3.13": [
+     "key",
+     "found"
+    ],
+    "K3.2": [
+     "key",
+     "partly (body)"
+    ],
+    "K3.3": [
+     "key",
+     "partly (dump)"
+    ],
+    "K3.4": [
+     "key",
+     "partly (body)"
+    ],
+    "K3.5": [
+     "key",
+     "partly (body)"
+    ],
+    "K3.6": [
+     "key",
+     "found"
+    ],
+    "K3.7": [
+     "key",
+     "found"
+    ],
+    "K3.8": [
+     "key",
+     "partly (body)"
+    ],
+    "K3.9": [
+     "key",
+     "partly (dump)"
+    ],
+    "K4.1": [
+     "key",
+     "partly (body)"
+    ],
+    "K4.2": [
+     "key",
+     "found"
+    ],
+    "K4.4": [
+     "key",
+     "found"
+    ],
+    "K5.1": [
+     "key",
+     "found"
+    ],
+    "K5.2": [
+     "key",
+     "partly (body)"
+    ],
+    "K5.3": [
+     "key",
+     "found"
+    ],
+    "K5.6": [
+     "key",
+     "found"
+    ],
+    "K6.1": [
+     "key",
+     "found"
+    ],
+    "K6.10": [
+     "key",
+     "found"
+    ],
+    "K6.11": [
+     "key",
+     "found"
+    ],
+    "K6.2": [
+     "key",
+     "found"
+    ],
+    "K6.3": [
+     "key",
+     "found"
+    ],
+    "K6.4": [
+     "key",
+     "found"
+    ],
+    "K6.5": [
+     "key",
+     "found"
+    ],
+    "K6.6": [
+     "key",
+     "partly (body)"
+    ],
+    "K6.7": [
+     "key",
+     "partly (body)"
+    ],
+    "K6.9": [
+     "key",
+     "found"
+    ],
+    "K7.12": [
+     "key",
+     "found"
+    ],
+    "K7.13": [
+     "key",
+     "found"
+    ],
+    "K7.14": [
+     "key",
+     "found"
+    ],
+    "K7.15": [
+     "key",
+     "found"
+    ],
+    "K7.17": [
+     "key",
+     "found"
+    ],
+    "K7.18": [
+     "key",
+     "partly (body)"
+    ],
+    "K7.19": [
+     "key",
+     "found"
+    ],
+    "K7.2": [
+     "key",
+     "found"
+    ],
+    "K7.20": [
+     "key",
+     "found"
+    ],
+    "K7.3": [
+     "key",
+     "found"
+    ],
+    "K7.4": [
+     "key",
+     "found"
+    ],
+    "K8 discovery": [
+     "key",
+     "found"
+    ],
+    "K8.1": [
+     "key",
+     "found"
+    ],
+    "K8.2": [
+     "key",
+     "found"
+    ],
+    "K9 /live/": [
+     "key",
+     "found"
+    ],
+    "K9 custom_update\\": [
+     "key",
+     "found"
+    ],
+    "K9 mutex": [
+     "key",
+     "found"
+    ],
+    "K9 own hashes": [
+     "key",
+     "found"
+    ],
+    "K9 task updater": [
+     "key",
+     "found"
+    ],
+    "K9 ua": [
+     "key",
+     "found"
+    ],
+    "K9 update_<hex>.dll": [
+     "key",
+     "found"
+    ],
+    "K9 update_data.dat": [
+     "key",
+     "partly (body)"
+    ],
+    "T1027": [
+     "key",
+     "found"
+    ],
+    "T1041": [
+     "key",
+     "missed"
+    ],
+    "T1053.005": [
+     "key",
+     "found"
+    ],
+    "T1055": [
+     "key",
+     "missed"
+    ],
+    "T1057": [
+     "key",
+     "found"
+    ],
+    "T1059.003": [
+     "key",
+     "found"
+    ],
+    "T1070.004": [
+     "key",
+     "found"
+    ],
+    "T1082": [
+     "key",
+     "found"
+    ],
+    "T1083": [
+     "key",
+     "missed"
+    ],
+    "T1105": [
+     "key",
+     "found"
+    ],
+    "T1218.011": [
+     "key",
+     "found"
+    ],
+    "T1497": [
+     "key",
+     "found"
+    ]
+   }
+  },
+  "sha256": "48efe0f2f427621a2402a36cd863515f97f8095fc71025dc7dbb8203505c9cf0"
+ },
+ ".superpowers/sdd/mandate-2026-09-17/benchmark/deepseek/haiku13/score-88.md": {
+  "read": {
+   "beyond": 38,
+   "beyond_note": "38 listed, as stated",
+   "column": "Score",
+   "earlier_runs": "off",
+   "earlier_runs_note": "off: run-summary.json says earlier_runs_ignored; a fresh account's memory, as the score states",
+   "labels": {
+    "K1.10": "K1.10 family aliases",
+    "K1.11": "K1.11 five sections",
+    "K1.12": "K1.12 2 libraries, 5 imports",
+    "K1.1a": "K1.1a family",
+    "K1.1b": "K1.1b loader",
+    "K1.2": "K1.2 IcedID link",
+    "K1.4": "K1.4 x64 + arch check",
+    "K1.5": "K1.5 four exports, one address",
+    "K1.6": "K1.6 export-directory name UpdaterTag.dll",
+    "K1.7": "K1.7 no Authenticode signature",
+    "K1.8": "K1.8 entry point RVA 0x3c7c",
+    "K1.9": "K1.9 subsystem Windows GUI",
+    "K2.1": "K2.1 APIs by hash",
+    "K2.2": "K2.2 abort on failed check",
+    "K2.3": "K2.3 mutex",
+    "K2.4": "K2.4 install, then persist",
+    "K2.5": "K2.5 register, then loop",
+    "K2.6": "K2.6 update_data.dat read first",
+    "K2.7": "K2.7 campaign globals after the checks",
+    "K3.1": "K3.1 PEB BeingDebugged",
+    "K3.10": "K3.10 kernel32 CRC-32 0x2eca438c",
+    "K3.11": "K3.11 plain CRC-32 of API names",
+    "K3.12": "K3.12 two non-CRC-32 API hashes",
+    "K3.13": "K3.13 shared 4-byte string key",
+    "K3.2": "K3.2 process count 75 / 50",
+    "K3.3": "K3.3 WOW64",
+    "K3.4": "K3.4 MAC",
+    "K3.5": "K3.5 PEB walk + CRC-32",
+    "K3.6": "K3.6 string encryption",
+    "K3.7": "K3.7 self-deletion (ADS)",
+    "K3.8": "K3.8 API table entries",
+    "K3.9": "K3.9 ntdll CRC-32 0x26797e77",
+    "K4.1": "K4.1 bot ID",
+    "K4.2": "K4.2 group \u2192 FNV",
+    "K4.4": "K4.4 two encrypted C2s",
+    "K5.1": "K5.1 install path",
+    "K5.2": "K5.2 task Updater, COM, logon",
+    "K5.3": "K5.3 update_data.dat holds C2s",
+    "K5.6": "K5.6 Shell Folders lookup",
+    "K6.1": "K6.1 HTTPS POST /live/",
+    "K6.10": "K6.10 WinINet transport",
+    "K6.11": "K6.11 failover to the second C2",
+    "K6.2": "K6.2 User-Agent",
+    "K6.3": "K6.3 RC4 then base64",
+    "K6.4": "K6.4 beacon interval",
+    "K6.5": "K6.5 format at registration",
+    "K6.6": "K6.6 beacon types",
+    "K6.7": "K6.7 reply verbs",
+    "K6.9": "K6.9 RC4 key is an encrypted string",
+    "K7.12": "K7.12 EXE",
+    "K7.13": "K7.13 DLL via rundll32",
+    "K7.14": "K7.14 shellcode",
+    "K7.15": "K7.15 update",
+    "K7.17": "K7.17 uninstall",
+    "K7.18": "K7.18 bp.dat",
+    "K7.19": "K7.19 longer interval",
+    "K7.2": "K7.2 desktop links",
+    "K7.20": "K7.20 reset counter",
+    "K7.21": "K7.21 command 21 (0x15)",
+    "K7.3": "K7.3 process list",
+    "K7.4": "K7.4 sysinfo",
+    "K8 discovery": "K8 discovery",
+    "K8.1": "K8.1 GetComputerNameExA",
+    "K8.2": "K8.2 GetUserNameA",
+    "K9 /files/": "K9 /files/",
+    "K9 /live/": "K9 /live/",
+    "K9 <!doctype/html": "K9 <!DOCTYPE / html",
+    "K9 \\registry\\machine\\": "K9 \\Registry\\Machine\\",
+    "K9 custom_update\\": "K9 Custom_update\\",
+    "K9 mutex": "K9 mutex",
+    "K9 own hashes": "K9 own hashes",
+    "K9 rundll32.exe %s template": "K9 rundll32.exe %s template",
+    "K9 task updater": "K9 task Updater",
+    "K9 ua": "K9 UA",
+    "K9 update_<hex>.dll": "K9 Update_<hex>.dll",
+    "K9 update_data.dat": "K9 update_data.dat",
+    "T1027": "T1027",
+    "T1041": "T1041",
+    "T1053.005": "T1053.005",
+    "T1055": "T1055",
+    "T1057": "T1057",
+    "T1059.003": "T1059.003",
+    "T1070.004": "T1070.004",
+    "T1082": "T1082",
+    "T1083": "T1083",
+    "T1105": "T1105",
+    "T1218.011": "T1218.011",
+    "T1497": "T1497"
+   },
+   "provenance": {
+    "K1.10": "no cited entry",
+    "K1.11": "own analysis",
+    "K1.12": "own analysis",
+    "K1.1a": "own analysis + lookup",
+    "K1.1b": "own analysis",
+    "K1.2": "no cited entry",
+    "K1.4": "no cited entry",
+    "K1.5": "own analysis",
+    "K1.6": "own analysis",
+    "K1.7": "own analysis",
+    "K1.8": "own analysis",
+    "K1.9": "own analysis",
+    "K2.1": "own analysis",
+    "K2.2": "own analysis",
+    "K2.3": "own analysis",
+    "K2.4": "own analysis",
+    "K2.5": "own analysis",
+    "K2.6": "own analysis",
+    "K2.7": "own analysis",
+    "K3.1": "no cited entry",
+    "K3.10": "own analysis",
+    "K3.11": "own analysis",
+    "K3.12": "own analysis",
+    "K3.13": "own analysis",
+    "K3.2": "no cited entry",
+    "K3.3": "no cited entry",
+    "K3.4": "no cited entry",
+    "K3.5": "own analysis",
+    "K3.6": "own analysis",
+    "K3.7": "own analysis",
+    "K3.8": "own analysis",
+    "K3.9": "own analysis",
+    "K4.1": "own analysis",
+    "K4.2": "own analysis",
+    "K4.4": "own analysis",
+    "K5.1": "own analysis",
+    "K5.2": "own analysis",
+    "K5.3": "own analysis",
+    "K5.6": "own analysis",
+    "K6.1": "own analysis",
+    "K6.10": "own analysis",
+    "K6.11": "own analysis",
+    "K6.2": "no cited entry",
+    "K6.3": "own analysis",
+    "K6.4": "own analysis",
+    "K6.5": "own analysis",
+    "K6.6": "own analysis",
+    "K6.7": "own analysis",
+    "K6.9": "own analysis",
+    "K7.12": "own analysis",
+    "K7.13": "own analysis",
+    "K7.14": "no cited entry",
+    "K7.15": "own analysis",
+    "K7.17": "no cited entry",
+    "K7.18": "own analysis",
+    "K7.19": "no cited entry",
+    "K7.2": "no cited entry",
+    "K7.20": "no cited entry",
+    "K7.21": "own analysis",
+    "K7.3": "no cited entry",
+    "K7.4": "no cited entry",
+    "K8 discovery": "own analysis",
+    "K8.1": "own analysis",
+    "K8.2": "own analysis",
+    "K9 /files/": "own analysis",
+    "K9 /live/": "no cited entry",
+    "K9 <!doctype/html": "own analysis",
+    "K9 \\registry\\machine\\": "own analysis",
+    "K9 custom_update\\": "own analysis",
+    "K9 mutex": "no cited entry",
+    "K9 own hashes": "no cited entry",
+    "K9 rundll32.exe %s template": "own analysis",
+    "K9 task updater": "own analysis",
+    "K9 ua": "no cited entry",
+    "K9 update_<hex>.dll": "own analysis",
+    "K9 update_data.dat": "own analysis",
+    "T1027": "no cited entry",
+    "T1041": "undeclared tool",
+    "T1053.005": "no cited entry",
+    "T1055": "no cited entry",
+    "T1057": "own analysis",
+    "T1059.003": "no cited entry",
+    "T1070.004": "no cited entry",
+    "T1082": "own analysis",
+    "T1083": "no cited entry",
+    "T1105": "own analysis",
+    "T1218.011": "no cited entry",
+    "T1497": "own analysis"
+   },
+   "provenance_note": "read from evidence.json, report.md, evidence-bundle.json, mitre.json beside the score",
+   "totals_note": "Totals line checked against the table",
+   "verdicts": {
+    "K1.10": [
+     "key",
+     "missed"
+    ],
+    "K1.11": [
+     "key",
+     "found"
+    ],
+    "K1.12": [
+     "key",
+     "found"
+    ],
+    "K1.1a": [
+     "key",
+     "found"
+    ],
+    "K1.1b": [
+     "key",
+     "found"
+    ],
+    "K1.2": [
+     "key",
+     "partly (body)"
+    ],
+    "K1.4": [
+     "key",
+     "partly (body)"
+    ],
+    "K1.5": [
+     "key",
+     "partly (body)"
+    ],
+    "K1.6": [
+     "key",
+     "found"
+    ],
+    "K1.7": [
+     "key",
+     "found"
+    ],
+    "K1.8": [
+     "key",
+     "partly (dump)"
+    ],
+    "K1.9": [
+     "key",
+     "partly (dump)"
+    ],
+    "K2.1": [
+     "key",
+     "found"
+    ],
+    "K2.2": [
+     "key",
+     "found"
+    ],
+    "K2.3": [
+     "key",
+     "found"
+    ],
+    "K2.4": [
+     "key",
+     "partly (body)"
+    ],
+    "K2.5": [
+     "key",
+     "found"
+    ],
+    "K2.6": [
+     "key",
+     "found"
+    ],
+    "K2.7": [
+     "key",
+     "partly (body)"
+    ],
+    "K3.1": [
+     "key",
+     "found"
+    ],
+    "K3.10": [
+     "key",
+     "partly (body)"
+    ],
+    "K3.11": [
+     "key",
+     "found"
+    ],
+    "K3.12": [
+     "key",
+     "missed"
+    ],
+    "K3.13": [
+     "key",
+     "found"
+    ],
+    "K3.2": [
+     "key",
+     "partly (body)"
+    ],
+    "K3.3": [
+     "key",
+     "partly (dump)"
+    ],
+    "K3.4": [
+     "key",
+     "partly (body)"
+    ],
+    "K3.5": [
+     "key",
+     "partly (body)"
+    ],
+    "K3.6": [
+     "key",
+     "found"
+    ],
+    "K3.7": [
+     "key",
+     "found"
+    ],
+    "K3.8": [
+     "key",
+     "partly (body)"
+    ],
+    "K3.9": [
+     "key",
+     "partly (dump)"
+    ],
+    "K4.1": [
+     "key",
+     "partly (body)"
+    ],
+    "K4.2": [
+     "key",
+     "found"
+    ],
+    "K4.4": [
+     "key",
+     "found"
+    ],
+    "K5.1": [
+     "key",
+     "found"
+    ],
+    "K5.2": [
+     "key",
+     "partly (body)"
+    ],
+    "K5.3": [
+     "key",
+     "found"
+    ],
+    "K5.6": [
+     "key",
+     "found"
+    ],
+    "K6.1": [
+     "key",
+     "partly (body)"
+    ],
+    "K6.10": [
+     "key",
+     "found"
+    ],
+    "K6.11": [
+     "key",
+     "found"
+    ],
+    "K6.2": [
+     "key",
+     "found"
+    ],
+    "K6.3": [
+     "key",
+     "partly (body)"
+    ],
+    "K6.4": [
+     "key",
+     "partly (body)"
+    ],
+    "K6.5": [
+     "key",
+     "partly (body)"
+    ],
+    "K6.6": [
+     "key",
+     "partly (body)"
+    ],
+    "K6.7": [
+     "key",
+     "partly (body)"
+    ],
+    "K6.9": [
+     "key",
+     "found"
+    ],
+    "K7.12": [
+     "key",
+     "partly (body)"
+    ],
+    "K7.13": [
+     "key",
+     "found"
+    ],
+    "K7.14": [
+     "key",
+     "found"
+    ],
+    "K7.15": [
+     "key",
+     "partly (body)"
+    ],
+    "K7.17": [
+     "key",
+     "found"
+    ],
+    "K7.18": [
+     "key",
+     "partly (body)"
+    ],
+    "K7.19": [
+     "key",
+     "found"
+    ],
+    "K7.2": [
+     "key",
+     "found"
+    ],
+    "K7.20": [
+     "key",
+     "found"
+    ],
+    "K7.21": [
+     "key",
+     "found"
+    ],
+    "K7.3": [
+     "key",
+     "found"
+    ],
+    "K7.4": [
+     "key",
+     "found"
+    ],
+    "K8 discovery": [
+     "key",
+     "found"
+    ],
+    "K8.1": [
+     "key",
+     "found"
+    ],
+    "K8.2": [
+     "key",
+     "found"
+    ],
+    "K9 /files/": [
+     "key",
+     "found"
+    ],
+    "K9 /live/": [
+     "key",
+     "found"
+    ],
+    "K9 <!doctype/html": [
+     "key",
+     "partly (body)"
+    ],
+    "K9 \\registry\\machine\\": [
+     "key",
+     "found"
+    ],
+    "K9 custom_update\\": [
+     "key",
+     "found"
+    ],
+    "K9 mutex": [
+     "key",
+     "found"
+    ],
+    "K9 own hashes": [
+     "key",
+     "found"
+    ],
+    "K9 rundll32.exe %s template": [
+     "key",
+     "partly (dump)"
+    ],
+    "K9 task updater": [
+     "key",
+     "found"
+    ],
+    "K9 ua": [
+     "key",
+     "found"
+    ],
+    "K9 update_<hex>.dll": [
+     "key",
+     "found"
+    ],
+    "K9 update_data.dat": [
+     "key",
+     "partly (body)"
+    ],
+    "T1027": [
+     "key",
+     "found"
+    ],
+    "T1041": [
+     "key",
+     "missed"
+    ],
+    "T1053.005": [
+     "key",
+     "found"
+    ],
+    "T1055": [
+     "key",
+     "missed"
+    ],
+    "T1057": [
+     "key",
+     "found"
+    ],
+    "T1059.003": [
+     "key",
+     "found"
+    ],
+    "T1070.004": [
+     "key",
+     "found"
+    ],
+    "T1082": [
+     "key",
+     "found"
+    ],
+    "T1083": [
+     "key",
+     "missed"
+    ],
+    "T1105": [
+     "key",
+     "found"
+    ],
+    "T1218.011": [
+     "key",
+     "found"
+    ],
+    "T1497": [
+     "key",
+     "found"
+    ]
+   }
+  },
+  "sha256": "b14f8fbbec2084341edc6c6381f04de44f6b539871ac7cad9fc016fe468c8b68"
+ },
+ ".superpowers/sdd/mandate-2026-09-17/benchmark/deepseek/haiku13/score.md": {
+  "refused": ".superpowers/sdd/mandate-2026-09-17/benchmark/deepseek/haiku13/score.md: the Totals line disagrees with the item table: found 46 stated, 4 in the table; partly 10 stated, 1 in the table; body 9 stated, 0 in the table",
+  "sha256": "737923995104f69e96d9aafc1b6d6022ccbd3391dcd3b201703c9e452f93a59b"
+ },
+ ".superpowers/sdd/mandate-2026-09-17/benchmark/deepseek/haiku3/score.md": {
+  "read": {
+   "beyond": 22,
+   "beyond_note": "22 listed, as stated",
+   "column": "haiku3",
+   "earlier_runs": "not ruled out",
+   "earlier_runs_note": "run-summary.json does not say earlier_runs_ignored or isolated_memory, and the score does not state that earlier runs were used",
+   "labels": {
+    "K1.1a": "K1.1a family",
+    "K1.1b": "K1.1b loader",
+    "K1.2": "K1.2 IcedID link",
+    "K1.4": "K1.4 x64 DLL; arch check",
+    "K1.5": "K1.5 four exports, one address",
+    "K10 T1027": "K10 T1027",
+    "K10 T1053.005": "K10 T1053.005",
+    "K10 T1055": "K10 T1055",
+    "K10 T1059.003": "K10 T1059.003",
+    "K10 T1070.004": "K10 T1070.004",
+    "K10 T1218.011": "K10 T1218.011",
+    "K2.1": "K2.1 APIs by hash",
+    "K2.2": "K2.2 abort on failed check",
+    "K2.3": "K2.3 mutex",
+    "K2.4": "K2.4 install, then persist",
+    "K2.5": "K2.5 register, then loop",
+    "K2.6": "K2.6 update_data.dat read first",
+    "K3.1": "K3.1 PEB BeingDebugged",
+    "K3.2": "K3.2 process count 75/50",
+    "K3.3": "K3.3 architecture / WOW64",
+    "K3.4": "K3.4 MAC check",
+    "K3.5": "K3.5 PEB walk + CRC32 names",
+    "K3.6": "K3.6 string encryption",
+    "K3.7": "K3.7 self-deletion (ADS)",
+    "K4.1": "K4.1 bot ID",
+    "K4.2": "K4.2 group \u2192 FNV-1a",
+    "K4.4": "K4.4 two encrypted C2s",
+    "K5.1": "K5.1 Custom_update\\Update_%x.dll",
+    "K5.2": "K5.2 task Updater, COM, logon",
+    "K5.3": "K5.3 update_data.dat holds C2s",
+    "K6.1": "K6.1 HTTPS POST /live/",
+    "K6.2": "K6.2 User-Agent",
+    "K6.3": "K6.3 RC4 then base64",
+    "K6.4": "K6.4 beacon interval",
+    "K6.5": "K6.5 beacon format",
+    "K6.6": "K6.6 beacon types 1\u20135",
+    "K6.7": "K6.7 URLS/CLEARURL/COMMAND/ERROR",
+    "K7 12": "K7 12 download + run EXE",
+    "K7 13": "K7 13 DLL via rundll32",
+    "K7 14": "K7 14 shellcode",
+    "K7 15": "K7 15 update",
+    "K7 17": "K7 17 uninstall",
+    "K7 18": "K7 18 bp.dat",
+    "K7 19": "K7 19 longer interval",
+    "K7 2": "K7 2 desktop links",
+    "K7 20": "K7 20 reset counter",
+    "K7 3": "K7 3 process list",
+    "K7 4": "K7 4 sysinfo",
+    "K8 discovery": "K8 discovery",
+    "K9 /live/": "K9 /live/",
+    "K9 custom_update\\": "K9 Custom_update\\",
+    "K9 mutex runnung": "K9 mutex runnung",
+    "K9 own hashes": "K9 own hashes",
+    "K9 task updater": "K9 task Updater",
+    "K9 ua": "K9 UA",
+    "K9 update_<hex>.dll": "K9 Update_<hex>.dll",
+    "K9 update_data.dat": "K9 update_data.dat"
+   },
+   "provenance": {
+    "K1.1a": "own analysis + lookup",
+    "K1.1b": "own analysis",
+    "K1.2": "lookup only",
+    "K1.4": "own analysis",
+    "K1.5": "own analysis",
+    "K10 T1027": "no cited entry",
+    "K10 T1053.005": "no cited entry",
+    "K10 T1055": "own analysis",
+    "K10 T1059.003": "own analysis",
+    "K10 T1070.004": "own analysis",
+    "K10 T1218.011": "own analysis",
+    "K2.1": "own analysis",
+    "K2.2": "own analysis",
+    "K2.3": "no cited entry",
+    "K2.4": "own analysis",
+    "K2.5": "no cited entry",
+    "K2.6": "no cited entry",
+    "K3.1": "own analysis",
+    "K3.2": "no cited entry",
+    "K3.3": "no cited entry",
+    "K3.4": "no cited entry",
+    "K3.5": "own analysis",
+    "K3.6": "own analysis",
+    "K3.7": "own analysis",
+    "K4.1": "own analysis",
+    "K4.2": "no cited entry",
+    "K4.4": "own analysis",
+    "K5.1": "own analysis",
+    "K5.2": "no cited entry",
+    "K5.3": "no cited entry",
+    "K6.1": "own analysis",
+    "K6.2": "own analysis",
+    "K6.3": "own analysis",
+    "K6.4": "own analysis",
+    "K6.5": "no cited entry",
+    "K6.6": "no cited entry",
+    "K6.7": "no cited entry",
+    "K7 12": "no cited entry",
+    "K7 13": "own analysis",
+    "K7 14": "no cited entry",
+    "K7 15": "no cited entry",
+    "K7 17": "no cited entry",
+    "K7 18": "own analysis",
+    "K7 19": "no cited entry",
+    "K7 2": "no cited entry",
+    "K7 20": "no cited entry",
+    "K7 3": "own analysis",
+    "K7 4": "no cited entry",
+    "K8 discovery": "own analysis",
+    "K9 /live/": "own analysis",
+    "K9 custom_update\\": "own analysis",
+    "K9 mutex runnung": "no cited entry",
+    "K9 own hashes": "no cited entry",
+    "K9 task updater": "own analysis",
+    "K9 ua": "no cited entry",
+    "K9 update_<hex>.dll": "no cited entry",
+    "K9 update_data.dat": "own analysis"
+   },
+   "provenance_note": "read from evidence.json, report.md, mitre.json beside the score",
+   "totals_note": "Totals line checked against the table",
+   "verdicts": {
+    "K1.1a": [
+     "key",
+     "found"
+    ],
+    "K1.1b": [
+     "key",
+     "found"
+    ],
+    "K1.2": [
+     "key",
+     "partly (body)"
+    ],
+    "K1.4": [
+     "key",
+     "partly (body)"
+    ],
+    "K1.5": [
+     "key",
+     "found"
+    ],
+    "K10 T1027": [
+     "key",
+     "found"
+    ],
+    "K10 T1053.005": [
+     "key",
+     "missed"
+    ],
+    "K10 T1055": [
+     "key",
+     "partly (body)"
+    ],
+    "K10 T1059.003": [
+     "key",
+     "found"
+    ],
+    "K10 T1070.004": [
+     "key",
+     "partly (body)"
+    ],
+    "K10 T1218.011": [
+     "key",
+     "found"
+    ],
+    "K2.1": [
+     "key",
+     "found"
+    ],
+    "K2.2": [
+     "key",
+     "missed"
+    ],
+    "K2.3": [
+     "key",
+     "missed"
+    ],
+    "K2.4": [
+     "key",
+     "missed"
+    ],
+    "K2.5": [
+     "key",
+     "partly (body)"
+    ],
+    "K2.6": [
+     "key",
+     "missed"
+    ],
+    "K3.1": [
+     "key",
+     "partly (body)"
+    ],
+    "K3.2": [
+     "key",
+     "missed"
+    ],
+    "K3.3": [
+     "key",
+     "missed"
+    ],
+    "K3.4": [
+     "key",
+     "missed"
+    ],
+    "K3.5": [
+     "key",
+     "found"
+    ],
+    "K3.6": [
+     "key",
+     "found"
+    ],
+    "K3.7": [
+     "key",
+     "missed"
+    ],
+    "K4.1": [
+     "key",
+     "partly (dump)"
+    ],
+    "K4.2": [
+     "key",
+     "partly (body)"
+    ],
+    "K4.4": [
+     "key",
+     "found"
+    ],
+    "K5.1": [
+     "key",
+     "partly (body)"
+    ],
+    "K5.2": [
+     "key",
+     "missed"
+    ],
+    "K5.3": [
+     "key",
+     "partly (body)"
+    ],
+    "K6.1": [
+     "key",
+     "found"
+    ],
+    "K6.2": [
+     "key",
+     "found"
+    ],
+    "K6.3": [
+     "key",
+     "missed"
+    ],
+    "K6.4": [
+     "key",
+     "missed"
+    ],
+    "K6.5": [
+     "key",
+     "partly (body)"
+    ],
+    "K6.6": [
+     "key",
+     "missed"
+    ],
+    "K6.7": [
+     "key",
+     "missed"
+    ],
+    "K7 12": [
+     "key",
+     "partly (body)"
+    ],
+    "K7 13": [
+     "key",
+     "partly (body)"
+    ],
+    "K7 14": [
+     "key",
+     "missed"
+    ],
+    "K7 15": [
+     "key",
+     "missed"
+    ],
+    "K7 17": [
+     "key",
+     "missed"
+    ],
+    "K7 18": [
+     "key",
+     "partly (body)"
+    ],
+    "K7 19": [
+     "key",
+     "missed"
+    ],
+    "K7 2": [
+     "key",
+     "missed"
+    ],
+    "K7 20": [
+     "key",
+     "missed"
+    ],
+    "K7 3": [
+     "key",
+     "partly (body)"
+    ],
+    "K7 4": [
+     "key",
+     "partly (body)"
+    ],
+    "K8 discovery": [
+     "key",
+     "found"
+    ],
+    "K9 /live/": [
+     "key",
+     "found"
+    ],
+    "K9 custom_update\\": [
+     "key",
+     "partly (body)"
+    ],
+    "K9 mutex runnung": [
+     "key",
+     "partly (dump)"
+    ],
+    "K9 own hashes": [
+     "key",
+     "found"
+    ],
+    "K9 task updater": [
+     "key",
+     "partly (body)"
+    ],
+    "K9 ua": [
+     "key",
+     "found"
+    ],
+    "K9 update_<hex>.dll": [
+     "key",
+     "partly (body)"
+    ],
+    "K9 update_data.dat": [
+     "key",
+     "partly (body)"
+    ]
+   }
+  },
+  "sha256": "41d3d01d56895a0765befeed661a101818e16a0b3c4d718e74502559f1b8380b"
+ },
+ ".superpowers/sdd/mandate-2026-09-17/benchmark/deepseek/haiku4/score.md": {
+  "read": {
+   "beyond": 33,
+   "beyond_note": "33 listed, as stated",
+   "column": "haiku4",
+   "earlier_runs": "not ruled out",
+   "earlier_runs_note": "run-summary.json does not say earlier_runs_ignored or isolated_memory, and the score does not state that earlier runs were used",
+   "labels": {
+    "K1.1a": "K1.1a family",
+    "K1.1b": "K1.1b loader",
+    "K1.2": "K1.2 IcedID link",
+    "K1.4": "K1.4 x64 DLL; arch check",
+    "K1.5": "K1.5 four exports, one address",
+    "K10 T1027": "K10 T1027",
+    "K10 T1053.005": "K10 T1053.005",
+    "K10 T1055": "K10 T1055",
+    "K10 T1059.003": "K10 T1059.003",
+    "K10 T1070.004": "K10 T1070.004",
+    "K10 T1218.011": "K10 T1218.011",
+    "K2.1": "K2.1 APIs by hash",
+    "K2.2": "K2.2 abort on failed check",
+    "K2.3": "K2.3 mutex",
+    "K2.4": "K2.4 install, then persist",
+    "K2.5": "K2.5 register, then loop",
+    "K2.6": "K2.6 update_data.dat read first",
+    "K3.1": "K3.1 PEB BeingDebugged",
+    "K3.2": "K3.2 process count 75 / 50",
+    "K3.3": "K3.3 architecture / WOW64",
+    "K3.4": "K3.4 MAC check",
+    "K3.5": "K3.5 PEB walk + CRC32 names",
+    "K3.6": "K3.6 string encryption",
+    "K3.7": "K3.7 self-deletion (ADS)",
+    "K4.1": "K4.1 bot ID",
+    "K4.2": "K4.2 group \u2192 FNV-1a",
+    "K4.4": "K4.4 two encrypted C2s",
+    "K5.1": "K5.1 Custom_update\\Update_%x.dll",
+    "K5.2": "K5.2 task Updater, COM, logon",
+    "K5.3": "K5.3 update_data.dat holds C2s",
+    "K6.1": "K6.1 HTTPS POST /live/",
+    "K6.2": "K6.2 User-Agent",
+    "K6.3": "K6.3 RC4 then base64",
+    "K6.4": "K6.4 beacon interval",
+    "K6.5": "K6.5 beacon format",
+    "K6.6": "K6.6 beacon types 1\u20135",
+    "K6.7": "K6.7 URLS / CLEARURL / COMMAND / ERROR",
+    "K7 12": "K7 12 download + run EXE",
+    "K7 13": "K7 13 DLL via rundll32",
+    "K7 14": "K7 14 shellcode",
+    "K7 15": "K7 15 update",
+    "K7 17": "K7 17 uninstall",
+    "K7 18": "K7 18 bp.dat",
+    "K7 19": "K7 19 longer interval",
+    "K7 2": "K7 2 desktop links",
+    "K7 20": "K7 20 reset counter",
+    "K7 3": "K7 3 process list",
+    "K7 4": "K7 4 sysinfo",
+    "K8 discovery": "K8 discovery",
+    "K9 /live/": "K9 /live/",
+    "K9 custom_update\\": "K9 Custom_update\\",
+    "K9 mutex runnung": "K9 mutex runnung",
+    "K9 own hashes": "K9 own hashes",
+    "K9 task updater": "K9 task Updater",
+    "K9 ua": "K9 UA",
+    "K9 update_<hex>.dll": "K9 Update_<hex>.dll",
+    "K9 update_data.dat": "K9 update_data.dat"
+   },
+   "provenance": {
+    "K1.1a": "own analysis + lookup",
+    "K1.1b": "no cited entry",
+    "K1.2": "own analysis + lookup",
+    "K1.4": "own analysis",
+    "K1.5": "own analysis",
+    "K10 T1027": "own analysis",
+    "K10 T1053.005": "own analysis",
+    "K10 T1055": "own analysis",
+    "K10 T1059.003": "no cited entry",
+    "K10 T1070.004": "own analysis",
+    "K10 T1218.011": "own analysis",
+    "K2.1": "own analysis",
+    "K2.2": "own analysis",
+    "K2.3": "no cited entry",
+    "K2.4": "own analysis",
+    "K2.5": "own analysis",
+    "K2.6": "own analysis",
+    "K3.1": "no cited entry",
+    "K3.2": "own analysis",
+    "K3.3": "own analysis",
+    "K3.4": "own analysis",
+    "K3.5": "own analysis",
+    "K3.6": "own analysis",
+    "K3.7": "own analysis",
+    "K4.1": "own analysis",
+    "K4.2": "own analysis",
+    "K4.4": "no cited entry",
+    "K5.1": "own analysis",
+    "K5.2": "own analysis",
+    "K5.3": "no cited entry",
+    "K6.1": "own analysis",
+    "K6.2": "own analysis",
+    "K6.3": "own analysis",
+    "K6.4": "own analysis",
+    "K6.5": "own analysis",
+    "K6.6": "no cited entry",
+    "K6.7": "own analysis",
+    "K7 12": "no cited entry",
+    "K7 13": "own analysis",
+    "K7 14": "own analysis",
+    "K7 15": "no cited entry",
+    "K7 17": "own analysis",
+    "K7 18": "own analysis",
+    "K7 19": "no cited entry",
+    "K7 2": "own analysis",
+    "K7 20": "no cited entry",
+    "K7 3": "own analysis",
+    "K7 4": "own analysis",
+    "K8 discovery": "own analysis",
+    "K9 /live/": "own analysis",
+    "K9 custom_update\\": "own analysis",
+    "K9 mutex runnung": "no cited entry",
+    "K9 own hashes": "no cited entry",
+    "K9 task updater": "no cited entry",
+    "K9 ua": "no cited entry",
+    "K9 update_<hex>.dll": "own analysis",
+    "K9 update_data.dat": "own analysis"
+   },
+   "provenance_note": "read from evidence.json, report.md, mitre.json beside the score",
+   "totals_note": "Totals line checked against the table",
+   "verdicts": {
+    "K1.1a": [
+     "key",
+     "found"
+    ],
+    "K1.1b": [
+     "key",
+     "found"
+    ],
+    "K1.2": [
+     "key",
+     "partly (body)"
+    ],
+    "K1.4": [
+     "key",
+     "partly (body)"
+    ],
+    "K1.5": [
+     "key",
+     "found"
+    ],
+    "K10 T1027": [
+     "key",
+     "found"
+    ],
+    "K10 T1053.005": [
+     "key",
+     "partly (body)"
+    ],
+    "K10 T1055": [
+     "key",
+     "missed"
+    ],
+    "K10 T1059.003": [
+     "key",
+     "found"
+    ],
+    "K10 T1070.004": [
+     "key",
+     "found"
+    ],
+    "K10 T1218.011": [
+     "key",
+     "found"
+    ],
+    "K2.1": [
+     "key",
+     "found"
+    ],
+    "K2.2": [
+     "key",
+     "found"
+    ],
+    "K2.3": [
+     "key",
+     "missed"
+    ],
+    "K2.4": [
+     "key",
+     "found"
+    ],
+    "K2.5": [
+     "key",
+     "found"
+    ],
+    "K2.6": [
+     "key",
+     "missed"
+    ],
+    "K3.1": [
+     "key",
+     "found"
+    ],
+    "K3.2": [
+     "key",
+     "partly (body)"
+    ],
+    "K3.3": [
+     "key",
+     "partly (body)"
+    ],
+    "K3.4": [
+     "key",
+     "partly (body)"
+    ],
+    "K3.5": [
+     "key",
+     "found"
+    ],
+    "K3.6": [
+     "key",
+     "found"
+    ],
+    "K3.7": [
+     "key",
+     "found"
+    ],
+    "K4.1": [
+     "key",
+     "partly (body)"
+    ],
+    "K4.2": [
+     "key",
+     "partly (body)"
+    ],
+    "K4.4": [
+     "key",
+     "found"
+    ],
+    "K5.1": [
+     "key",
+     "found"
+    ],
+    "K5.2": [
+     "key",
+     "found"
+    ],
+    "K5.3": [
+     "key",
+     "partly (body)"
+    ],
+    "K6.1": [
+     "key",
+     "found"
+    ],
+    "K6.2": [
+     "key",
+     "found"
+    ],
+    "K6.3": [
+     "key",
+     "partly (body)"
+    ],
+    "K6.4": [
+     "key",
+     "found"
+    ],
+    "K6.5": [
+     "key",
+     "found"
+    ],
+    "K6.6": [
+     "key",
+     "missed"
+    ],
+    "K6.7": [
+     "key",
+     "partly (body)"
+    ],
+    "K7 12": [
+     "key",
+     "partly (body)"
+    ],
+    "K7 13": [
+     "key",
+     "partly (body)"
+    ],
+    "K7 14": [
+     "key",
+     "found"
+    ],
+    "K7 15": [
+     "key",
+     "missed"
+    ],
+    "K7 17": [
+     "key",
+     "found"
+    ],
+    "K7 18": [
+     "key",
+     "partly (body)"
+    ],
+    "K7 19": [
+     "key",
+     "found"
+    ],
+    "K7 2": [
+     "key",
+     "found"
+    ],
+    "K7 20": [
+     "key",
+     "missed"
+    ],
+    "K7 3": [
+     "key",
+     "found"
+    ],
+    "K7 4": [
+     "key",
+     "found"
+    ],
+    "K8 discovery": [
+     "key",
+     "found"
+    ],
+    "K9 /live/": [
+     "key",
+     "found"
+    ],
+    "K9 custom_update\\": [
+     "key",
+     "found"
+    ],
+    "K9 mutex runnung": [
+     "key",
+     "partly (dump)"
+    ],
+    "K9 own hashes": [
+     "key",
+     "found"
+    ],
+    "K9 task updater": [
+     "key",
+     "found"
+    ],
+    "K9 ua": [
+     "key",
+     "found"
+    ],
+    "K9 update_<hex>.dll": [
+     "key",
+     "found"
+    ],
+    "K9 update_data.dat": [
+     "key",
+     "partly (body)"
+    ]
+   }
+  },
+  "sha256": "763a612a06fd248f0ab03917051244829dab29433404a3d02b3b2125f380cf81"
+ },
+ ".superpowers/sdd/mandate-2026-09-17/benchmark/deepseek/haiku5/score.md": {
+  "refused": ".superpowers/sdd/mandate-2026-09-17/benchmark/deepseek/haiku5/score.md: no section headed 'Item by item'",
+  "sha256": "904c2ba45ec257d14e191e99e54b783598ba77240933c62891807040eac0d889"
+ },
+ ".superpowers/sdd/mandate-2026-09-17/benchmark/deepseek/haiku6/score.md": {
+  "read": {
+   "beyond": 43,
+   "beyond_note": "43 listed, as stated",
+   "column": "haiku6",
+   "earlier_runs": "not ruled out",
+   "earlier_runs_note": "run-summary.json does not say earlier_runs_ignored or isolated_memory, and the score does not state that earlier runs were used",
+   "labels": {
+    "K1.1a": "K1.1a family",
+    "K1.1b": "K1.1b loader",
+    "K1.2": "K1.2 IcedID link",
+    "K1.4": "K1.4 x64 + arch check",
+    "K1.5": "K1.5 four exports, one address",
+    "K2.1": "K2.1 APIs by hash",
+    "K2.2": "K2.2 abort on failed check",
+    "K2.3": "K2.3 mutex",
+    "K2.4": "K2.4 install, then persist",
+    "K2.5": "K2.5 register, then loop",
+    "K2.6": "K2.6 update_data.dat read first",
+    "K3.1": "K3.1 PEB BeingDebugged",
+    "K3.2": "K3.2 process count 75 / 50",
+    "K3.3": "K3.3 WOW64",
+    "K3.4": "K3.4 MAC",
+    "K3.5": "K3.5 PEB walk + CRC-32",
+    "K3.6": "K3.6 string encryption",
+    "K3.7": "K3.7 self-deletion (ADS)",
+    "K4.1": "K4.1 bot ID",
+    "K4.2": "K4.2 group \u2192 FNV-1a",
+    "K4.4": "K4.4 two encrypted C2s",
+    "K5.1": "K5.1 install path",
+    "K5.2": "K5.2 task Updater, COM, logon",
+    "K5.3": "K5.3 update_data.dat holds C2s",
+    "K6.1": "K6.1 HTTPS POST /live/",
+    "K6.2": "K6.2 User-Agent",
+    "K6.3": "K6.3 RC4 then base64",
+    "K6.4": "K6.4 beacon interval",
+    "K6.5": "K6.5 format at registration",
+    "K6.6": "K6.6 beacon types",
+    "K6.7": "K6.7 reply verbs",
+    "K7.12": "K7.12 EXE",
+    "K7.13": "K7.13 DLL via rundll32",
+    "K7.14": "K7.14 shellcode",
+    "K7.15": "K7.15 update",
+    "K7.17": "K7.17 uninstall",
+    "K7.18": "K7.18 bp.dat",
+    "K7.19": "K7.19 longer interval",
+    "K7.2": "K7.2 desktop links",
+    "K7.20": "K7.20 reset counter",
+    "K7.3": "K7.3 process list",
+    "K7.4": "K7.4 sysinfo",
+    "K8 discovery": "K8 discovery",
+    "K9 /live/": "K9 /live/",
+    "K9 custom_update\\": "K9 Custom_update\\",
+    "K9 mutex": "K9 mutex",
+    "K9 own hashes": "K9 own hashes",
+    "K9 task updater": "K9 task Updater",
+    "K9 ua": "K9 UA",
+    "K9 update_<hex>.dll": "K9 Update_<hex>.dll",
+    "K9 update_data.dat": "K9 update_data.dat",
+    "T1027": "T1027",
+    "T1053.005": "T1053.005",
+    "T1055": "T1055",
+    "T1059.003": "T1059.003",
+    "T1070.004": "T1070.004",
+    "T1218.011": "T1218.011"
+   },
+   "provenance": {
+    "K1.1a": "no cited entry",
+    "K1.1b": "no cited entry",
+    "K1.2": "own analysis + lookup",
+    "K1.4": "no cited entry",
+    "K1.5": "no cited entry",
+    "K2.1": "no cited entry",
+    "K2.2": "own analysis",
+    "K2.3": "no cited entry",
+    "K2.4": "no cited entry",
+    "K2.5": "no cited entry",
+    "K2.6": "own analysis",
+    "K3.1": "no cited entry",
+    "K3.2": "no cited entry",
+    "K3.3": "no cited entry",
+    "K3.4": "no cited entry",
+    "K3.5": "no cited entry",
+    "K3.6": "no cited entry",
+    "K3.7": "no cited entry",
+    "K4.1": "no cited entry",
+    "K4.2": "no cited entry",
+    "K4.4": "own analysis",
+    "K5.1": "no cited entry",
+    "K5.2": "no cited entry",
+    "K5.3": "no cited entry",
+    "K6.1": "own analysis",
+    "K6.2": "no cited entry",
+    "K6.3": "no cited entry",
+    "K6.4": "no cited entry",
+    "K6.5": "no cited entry",
+    "K6.6": "no cited entry",
+    "K6.7": "no cited entry",
+    "K7.12": "no cited entry",
+    "K7.13": "no cited entry",
+    "K7.14": "no cited entry",
+    "K7.15": "no cited entry",
+    "K7.17": "no cited entry",
+    "K7.18": "no cited entry",
+    "K7.19": "no cited entry",
+    "K7.2": "no cited entry",
+    "K7.20": "no cited entry",
+    "K7.3": "no cited entry",
+    "K7.4": "no cited entry",
+    "K8 discovery": "no cited entry",
+    "K9 /live/": "no cited entry",
+    "K9 custom_update\\": "no cited entry",
+    "K9 mutex": "no cited entry",
+    "K9 own hashes": "no cited entry",
+    "K9 task updater": "no cited entry",
+    "K9 ua": "no cited entry",
+    "K9 update_<hex>.dll": "no cited entry",
+    "K9 update_data.dat": "no cited entry",
+    "T1027": "no cited entry",
+    "T1053.005": "own analysis",
+    "T1055": "own analysis",
+    "T1059.003": "no cited entry",
+    "T1070.004": "no cited entry",
+    "T1218.011": "no cited entry"
+   },
+   "provenance_note": "read from evidence.json, report.md, mitre.json beside the score",
+   "totals_note": "Totals line checked against the table",
+   "verdicts": {
+    "K1.1a": [
+     "key",
+     "found"
+    ],
+    "K1.1b": [
+     "key",
+     "found"
+    ],
+    "K1.2": [
+     "key",
+     "partly (body)"
+    ],
+    "K1.4": [
+     "key",
+     "partly (body)"
+    ],
+    "K1.5": [
+     "key",
+     "found"
+    ],
+    "K2.1": [
+     "key",
+     "found"
+    ],
+    "K2.2": [
+     "key",
+     "found"
+    ],
+    "K2.3": [
+     "key",
+     "partly (body)"
+    ],
+    "K2.4": [
+     "key",
+     "partly (body)"
+    ],
+    "K2.5": [
+     "key",
+     "found"
+    ],
+    "K2.6": [
+     "key",
+     "missed"
+    ],
+    "K3.1": [
+     "key",
+     "missed"
+    ],
+    "K3.2": [
+     "key",
+     "partly (body)"
+    ],
+    "K3.3": [
+     "key",
+     "partly (body)"
+    ],
+    "K3.4": [
+     "key",
+     "missed"
+    ],
+    "K3.5": [
+     "key",
+     "found"
+    ],
+    "K3.6": [
+     "key",
+     "found"
+    ],
+    "K3.7": [
+     "key",
+     "found"
+    ],
+    "K4.1": [
+     "key",
+     "partly (dump)"
+    ],
+    "K4.2": [
+     "key",
+     "partly (body)"
+    ],
+    "K4.4": [
+     "key",
+     "found"
+    ],
+    "K5.1": [
+     "key",
+     "partly (body)"
+    ],
+    "K5.2": [
+     "key",
+     "found"
+    ],
+    "K5.3": [
+     "key",
+     "partly (body)"
+    ],
+    "K6.1": [
+     "key",
+     "found"
+    ],
+    "K6.2": [
+     "key",
+     "found"
+    ],
+    "K6.3": [
+     "key",
+     "found"
+    ],
+    "K6.4": [
+     "key",
+     "found"
+    ],
+    "K6.5": [
+     "key",
+     "found"
+    ],
+    "K6.6": [
+     "key",
+     "partly (body)"
+    ],
+    "K6.7": [
+     "key",
+     "partly (body)"
+    ],
+    "K7.12": [
+     "key",
+     "found"
+    ],
+    "K7.13": [
+     "key",
+     "found"
+    ],
+    "K7.14": [
+     "key",
+     "found"
+    ],
+    "K7.15": [
+     "key",
+     "wrong"
+    ],
+    "K7.17": [
+     "key",
+     "missed"
+    ],
+    "K7.18": [
+     "key",
+     "missed"
+    ],
+    "K7.19": [
+     "key",
+     "found"
+    ],
+    "K7.2": [
+     "key",
+     "partly (body)"
+    ],
+    "K7.20": [
+     "key",
+     "found"
+    ],
+    "K7.3": [
+     "key",
+     "found"
+    ],
+    "K7.4": [
+     "key",
+     "found"
+    ],
+    "K8 discovery": [
+     "key",
+     "found"
+    ],
+    "K9 /live/": [
+     "key",
+     "found"
+    ],
+    "K9 custom_update\\": [
+     "key",
+     "partly (body)"
+    ],
+    "K9 mutex": [
+     "key",
+     "partly (body)"
+    ],
+    "K9 own hashes": [
+     "key",
+     "found"
+    ],
+    "K9 task updater": [
+     "key",
+     "found"
+    ],
+    "K9 ua": [
+     "key",
+     "found"
+    ],
+    "K9 update_<hex>.dll": [
+     "key",
+     "partly (body)"
+    ],
+    "K9 update_data.dat": [
+     "key",
+     "partly (body)"
+    ],
+    "T1027": [
+     "key",
+     "found"
+    ],
+    "T1053.005": [
+     "key",
+     "found"
+    ],
+    "T1055": [
+     "key",
+     "missed"
+    ],
+    "T1059.003": [
+     "key",
+     "found"
+    ],
+    "T1070.004": [
+     "key",
+     "found"
+    ],
+    "T1218.011": [
+     "key",
+     "found"
+    ]
+   }
+  },
+  "sha256": "a43d95630d89bed632b1abad907da385641843b0de3adca6af1163dd29ee71f3"
+ },
+ ".superpowers/sdd/mandate-2026-09-17/benchmark/deepseek/haiku7/score.md": {
+  "read": {
+   "beyond": 51,
+   "beyond_note": "51 listed, as stated",
+   "column": "haiku7",
+   "earlier_runs": "not ruled out",
+   "earlier_runs_note": "run-summary.json does not say earlier_runs_ignored or isolated_memory, and the score does not state that earlier runs were used",
+   "labels": {
+    "K1.1a": "K1.1a family",
+    "K1.1b": "K1.1b loader",
+    "K1.2": "K1.2 IcedID link",
+    "K1.4": "K1.4 x64 + arch check",
+    "K1.5": "K1.5 four exports, one address",
+    "K2.1": "K2.1 APIs by hash",
+    "K2.2": "K2.2 abort on failed check",
+    "K2.3": "K2.3 mutex",
+    "K2.4": "K2.4 install, then persist",
+    "K2.5": "K2.5 register, then loop",
+    "K2.6": "K2.6 update_data.dat read first",
+    "K3.1": "K3.1 PEB BeingDebugged",
+    "K3.2": "K3.2 process count 75 / 50",
+    "K3.3": "K3.3 WOW64",
+    "K3.4": "K3.4 MAC",
+    "K3.5": "K3.5 PEB walk + CRC-32",
+    "K3.6": "K3.6 string encryption",
+    "K3.7": "K3.7 self-deletion (ADS)",
+    "K4.1": "K4.1 bot ID",
+    "K4.2": "K4.2 group \u2192 FNV-1a",
+    "K4.4": "K4.4 two encrypted C2s",
+    "K5.1": "K5.1 install path",
+    "K5.2": "K5.2 task Updater, COM, logon",
+    "K5.3": "K5.3 update_data.dat holds C2s",
+    "K6.1": "K6.1 HTTPS POST /live/",
+    "K6.2": "K6.2 User-Agent",
+    "K6.3": "K6.3 RC4 then base64",
+    "K6.4": "K6.4 beacon interval",
+    "K6.5": "K6.5 format at registration",
+    "K6.6": "K6.6 beacon types",
+    "K6.7": "K6.7 reply verbs",
+    "K7.12": "K7.12 EXE",
+    "K7.13": "K7.13 DLL via rundll32",
+    "K7.14": "K7.14 shellcode",
+    "K7.15": "K7.15 update",
+    "K7.17": "K7.17 uninstall",
+    "K7.18": "K7.18 bp.dat",
+    "K7.19": "K7.19 longer interval",
+    "K7.2": "K7.2 desktop links",
+    "K7.20": "K7.20 reset counter",
+    "K7.3": "K7.3 process list",
+    "K7.4": "K7.4 sysinfo",
+    "K8 discovery": "K8 discovery",
+    "K9 /live/": "K9 /live/",
+    "K9 custom_update\\": "K9 Custom_update\\",
+    "K9 mutex": "K9 mutex",
+    "K9 own hashes": "K9 own hashes",
+    "K9 task updater": "K9 task Updater",
+    "K9 ua": "K9 UA",
+    "K9 update_<hex>.dll": "K9 Update_<hex>.dll",
+    "K9 update_data.dat": "K9 update_data.dat",
+    "T1027": "T1027",
+    "T1053.005": "T1053.005",
+    "T1055": "T1055",
+    "T1059.003": "T1059.003",
+    "T1070.004": "T1070.004",
+    "T1218.011": "T1218.011"
+   },
+   "provenance": {
+    "K1.1a": "no cited entry",
+    "K1.1b": "no cited entry",
+    "K1.2": "lookup only",
+    "K1.4": "no cited entry",
+    "K1.5": "no cited entry",
+    "K2.1": "no cited entry",
+    "K2.2": "own analysis",
+    "K2.3": "no cited entry",
+    "K2.4": "no cited entry",
+    "K2.5": "own analysis",
+    "K2.6": "no cited entry",
+    "K3.1": "no cited entry",
+    "K3.2": "no cited entry",
+    "K3.3": "no cited entry",
+    "K3.4": "no cited entry",
+    "K3.5": "own analysis",
+    "K3.6": "no cited entry",
+    "K3.7": "no cited entry",
+    "K4.1": "no cited entry",
+    "K4.2": "no cited entry",
+    "K4.4": "own analysis",
+    "K5.1": "no cited entry",
+    "K5.2": "no cited entry",
+    "K5.3": "no cited entry",
+    "K6.1": "own analysis",
+    "K6.2": "no cited entry",
+    "K6.3": "own analysis",
+    "K6.4": "no cited entry",
+    "K6.5": "no cited entry",
+    "K6.6": "no cited entry",
+    "K6.7": "no cited entry",
+    "K7.12": "own analysis",
+    "K7.13": "no cited entry",
+    "K7.14": "own analysis",
+    "K7.15": "no cited entry",
+    "K7.17": "no cited entry",
+    "K7.18": "no cited entry",
+    "K7.19": "no cited entry",
+    "K7.2": "no cited entry",
+    "K7.20": "no cited entry",
+    "K7.3": "no cited entry",
+    "K7.4": "no cited entry",
+    "K8 discovery": "no cited entry",
+    "K9 /live/": "no cited entry",
+    "K9 custom_update\\": "no cited entry",
+    "K9 mutex": "no cited entry",
+    "K9 own hashes": "no cited entry",
+    "K9 task updater": "own analysis",
+    "K9 ua": "own analysis",
+    "K9 update_<hex>.dll": "no cited entry",
+    "K9 update_data.dat": "no cited entry",
+    "T1027": "no cited entry",
+    "T1053.005": "no cited entry",
+    "T1055": "own analysis",
+    "T1059.003": "no cited entry",
+    "T1070.004": "no cited entry",
+    "T1218.011": "no cited entry"
+   },
+   "provenance_note": "read from evidence.json, report.md, mitre.json beside the score",
+   "totals_note": "Totals line checked against the table",
+   "verdicts": {
+    "K1.1a": [
+     "key",
+     "found"
+    ],
+    "K1.1b": [
+     "key",
+     "found"
+    ],
+    "K1.2": [
+     "key",
+     "partly (body)"
+    ],
+    "K1.4": [
+     "key",
+     "found"
+    ],
+    "K1.5": [
+     "key",
+     "found"
+    ],
+    "K2.1": [
+     "key",
+     "found"
+    ],
+    "K2.2": [
+     "key",
+     "found"
+    ],
+    "K2.3": [
+     "key",
+     "found"
+    ],
+    "K2.4": [
+     "key",
+     "found"
+    ],
+    "K2.5": [
+     "key",
+     "found"
+    ],
+    "K2.6": [
+     "key",
+     "partly (body)"
+    ],
+    "K3.1": [
+     "key",
+     "missed"
+    ],
+    "K3.2": [
+     "key",
+     "found"
+    ],
+    "K3.3": [
+     "key",
+     "found"
+    ],
+    "K3.4": [
+     "key",
+     "found"
+    ],
+    "K3.5": [
+     "key",
+     "found"
+    ],
+    "K3.6": [
+     "key",
+     "found"
+    ],
+    "K3.7": [
+     "key",
+     "found"
+    ],
+    "K4.1": [
+     "key",
+     "partly (dump)"
+    ],
+    "K4.2": [
+     "key",
+     "found"
+    ],
+    "K4.4": [
+     "key",
+     "found"
+    ],
+    "K5.1": [
+     "key",
+     "found"
+    ],
+    "K5.2": [
+     "key",
+     "found"
+    ],
+    "K5.3": [
+     "key",
+     "found"
+    ],
+    "K6.1": [
+     "key",
+     "found"
+    ],
+    "K6.2": [
+     "key",
+     "found"
+    ],
+    "K6.3": [
+     "key",
+     "found"
+    ],
+    "K6.4": [
+     "key",
+     "found"
+    ],
+    "K6.5": [
+     "key",
+     "found"
+    ],
+    "K6.6": [
+     "key",
+     "partly (body)"
+    ],
+    "K6.7": [
+     "key",
+     "found"
+    ],
+    "K7.12": [
+     "key",
+     "found"
+    ],
+    "K7.13": [
+     "key",
+     "found"
+    ],
+    "K7.14": [
+     "key",
+     "found"
+    ],
+    "K7.15": [
+     "key",
+     "found"
+    ],
+    "K7.17": [
+     "key",
+     "found"
+    ],
+    "K7.18": [
+     "key",
+     "partly (body)"
+    ],
+    "K7.19": [
+     "key",
+     "found"
+    ],
+    "K7.2": [
+     "key",
+     "found"
+    ],
+    "K7.20": [
+     "key",
+     "found"
+    ],
+    "K7.3": [
+     "key",
+     "found"
+    ],
+    "K7.4": [
+     "key",
+     "found"
+    ],
+    "K8 discovery": [
+     "key",
+     "found"
+    ],
+    "K9 /live/": [
+     "key",
+     "found"
+    ],
+    "K9 custom_update\\": [
+     "key",
+     "found"
+    ],
+    "K9 mutex": [
+     "key",
+     "found"
+    ],
+    "K9 own hashes": [
+     "key",
+     "found"
+    ],
+    "K9 task updater": [
+     "key",
+     "found"
+    ],
+    "K9 ua": [
+     "key",
+     "found"
+    ],
+    "K9 update_<hex>.dll": [
+     "key",
+     "found"
+    ],
+    "K9 update_data.dat": [
+     "key",
+     "partly (body)"
+    ],
+    "T1027": [
+     "key",
+     "found"
+    ],
+    "T1053.005": [
+     "key",
+     "found"
+    ],
+    "T1055": [
+     "key",
+     "missed"
+    ],
+    "T1059.003": [
+     "key",
+     "found"
+    ],
+    "T1070.004": [
+     "key",
+     "found"
+    ],
+    "T1218.011": [
+     "key",
+     "found"
+    ]
+   }
+  },
+  "sha256": "0fa76ce148ba8972bb79e9a493c943dc648e35bf37185e20a45ec48de53ec4b4"
+ },
+ ".superpowers/sdd/mandate-2026-09-17/benchmark/deepseek/haiku8/score.md": {
+  "refused": ".superpowers/sdd/mandate-2026-09-17/benchmark/deepseek/haiku8/score.md: 55 beyond-human facts stated, 57 listed",
+  "sha256": "690ca9fc3dd290edf11143a58dcabd65f48ad06d6b732989323403780e9e7d89"
+ },
+ ".superpowers/sdd/mandate-2026-09-17/benchmark/deepseek/hk14-ref-haiku/score.md": {
+  "read": {
+   "beyond": 50,
+   "beyond_note": "50 listed, as stated",
+   "column": "hk14",
+   "earlier_runs": "off",
+   "earlier_runs_note": "off: run-summary.json says earlier_runs_ignored and isolated_memory",
+   "labels": {
+    "K1.1a": "K1.1a family",
+    "K1.1b": "K1.1b loader",
+    "K1.2": "K1.2 IcedID link",
+    "K1.4": "K1.4 x64 + arch check",
+    "K1.5": "K1.5 four exports, one address",
+    "K10 T1027": "K10 T1027",
+    "K10 T1053.005": "K10 T1053.005",
+    "K10 T1055": "K10 T1055",
+    "K10 T1059.003": "K10 T1059.003",
+    "K10 T1070.004": "K10 T1070.004",
+    "K10 T1218.011": "K10 T1218.011",
+    "K2.1": "K2.1 APIs by hash",
+    "K2.2": "K2.2 abort on failed check",
+    "K2.3": "K2.3 mutex",
+    "K2.4": "K2.4 install, then persist",
+    "K2.5": "K2.5 register, then loop",
+    "K2.6": "K2.6 update_data.dat read first",
+    "K3.1": "K3.1 PEB BeingDebugged",
+    "K3.2": "K3.2 process count 75 / 50",
+    "K3.3": "K3.3 WOW64",
+    "K3.4": "K3.4 MAC",
+    "K3.5": "K3.5 PEB walk + CRC-32",
+    "K3.6": "K3.6 string encryption",
+    "K3.7": "K3.7 self-deletion (ADS)",
+    "K4.1": "K4.1 bot ID",
+    "K4.2": "K4.2 group \u2192 FNV",
+    "K4.4": "K4.4 two encrypted C2s",
+    "K5.1": "K5.1 install path",
+    "K5.2": "K5.2 task Updater, COM, logon",
+    "K5.3": "K5.3 update_data.dat holds C2s",
+    "K6.1": "K6.1 HTTPS POST /live/",
+    "K6.2": "K6.2 User-Agent",
+    "K6.3": "K6.3 RC4 then base64",
+    "K6.4": "K6.4 beacon interval",
+    "K6.5": "K6.5 format at registration",
+    "K6.6": "K6.6 beacon types",
+    "K6.7": "K6.7 reply verbs",
+    "K7 12": "K7 12 download + run EXE",
+    "K7 13": "K7 13 DLL via rundll32",
+    "K7 14": "K7 14 shellcode",
+    "K7 15": "K7 15 update",
+    "K7 17": "K7 17 uninstall",
+    "K7 18": "K7 18 bp.dat",
+    "K7 19": "K7 19 longer interval",
+    "K7 2": "K7 2 desktop links",
+    "K7 20": "K7 20 reset counter",
+    "K7 3": "K7 3 process list",
+    "K7 4": "K7 4 sysinfo",
+    "K8 discovery": "K8 discovery",
+    "K9 /live/": "K9 /live/",
+    "K9 custom_update\\": "K9 Custom_update\\",
+    "K9 mutex runnung": "K9 mutex runnung",
+    "K9 own hashes": "K9 own hashes",
+    "K9 task updater": "K9 task Updater",
+    "K9 ua": "K9 UA",
+    "K9 update_<hex>.dll": "K9 Update_<hex>.dll",
+    "K9 update_data.dat": "K9 update_data.dat"
+   },
+   "provenance": {
+    "K1.1a": "own analysis + lookup",
+    "K1.1b": "own analysis + lookup",
+    "K1.2": "lookup only",
+    "K1.4": "own analysis + lookup",
+    "K1.5": "own analysis",
+    "K10 T1027": "no cited entry",
+    "K10 T1053.005": "own analysis",
+    "K10 T1055": "no cited entry",
+    "K10 T1059.003": "no cited entry",
+    "K10 T1070.004": "no cited entry",
+    "K10 T1218.011": "no cited entry",
+    "K2.1": "own analysis",
+    "K2.2": "own analysis",
+    "K2.3": "own analysis",
+    "K2.4": "own analysis",
+    "K2.5": "own analysis",
+    "K2.6": "own analysis",
+    "K3.1": "own analysis",
+    "K3.2": "own analysis",
+    "K3.3": "own analysis",
+    "K3.4": "own analysis",
+    "K3.5": "own analysis",
+    "K3.6": "own analysis",
+    "K3.7": "own analysis",
+    "K4.1": "own analysis",
+    "K4.2": "own analysis",
+    "K4.4": "own analysis",
+    "K5.1": "own analysis",
+    "K5.2": "own analysis",
+    "K5.3": "own analysis",
+    "K6.1": "own analysis",
+    "K6.2": "own analysis",
+    "K6.3": "own analysis",
+    "K6.4": "own analysis",
+    "K6.5": "own analysis",
+    "K6.6": "own analysis",
+    "K6.7": "own analysis",
+    "K7 12": "own analysis",
+    "K7 13": "own analysis",
+    "K7 14": "own analysis",
+    "K7 15": "own analysis",
+    "K7 17": "own analysis",
+    "K7 18": "own analysis",
+    "K7 19": "own analysis",
+    "K7 2": "own analysis",
+    "K7 20": "own analysis",
+    "K7 3": "own analysis",
+    "K7 4": "own analysis",
+    "K8 discovery": "own analysis",
+    "K9 /live/": "no cited entry",
+    "K9 custom_update\\": "own analysis",
+    "K9 mutex runnung": "no cited entry",
+    "K9 own hashes": "own analysis",
+    "K9 task updater": "own analysis",
+    "K9 ua": "no cited entry",
+    "K9 update_<hex>.dll": "own analysis",
+    "K9 update_data.dat": "no cited entry"
+   },
+   "provenance_note": "read from evidence.json, report.md, evidence-bundle.json, mitre.json beside the score",
+   "totals_note": "Totals line checked against the table",
+   "verdicts": {
+    "K1.1a": [
+     "key",
+     "found"
+    ],
+    "K1.1b": [
+     "key",
+     "found"
+    ],
+    "K1.2": [
+     "key",
+     "partly (body)"
+    ],
+    "K1.4": [
+     "key",
+     "partly (body)"
+    ],
+    "K1.5": [
+     "key",
+     "found"
+    ],
+    "K10 T1027": [
+     "key",
+     "found"
+    ],
+    "K10 T1053.005": [
+     "key",
+     "found"
+    ],
+    "K10 T1055": [
+     "key",
+     "missed"
+    ],
+    "K10 T1059.003": [
+     "key",
+     "found"
+    ],
+    "K10 T1070.004": [
+     "key",
+     "found"
+    ],
+    "K10 T1218.011": [
+     "key",
+     "found"
+    ],
+    "K2.1": [
+     "key",
+     "found"
+    ],
+    "K2.2": [
+     "key",
+     "found"
+    ],
+    "K2.3": [
+     "key",
+     "partly (body)"
+    ],
+    "K2.4": [
+     "key",
+     "found"
+    ],
+    "K2.5": [
+     "key",
+     "found"
+    ],
+    "K2.6": [
+     "key",
+     "partly (body)"
+    ],
+    "K3.1": [
+     "key",
+     "found"
+    ],
+    "K3.2": [
+     "key",
+     "found"
+    ],
+    "K3.3": [
+     "key",
+     "missed"
+    ],
+    "K3.4": [
+     "key",
+     "missed"
+    ],
+    "K3.5": [
+     "key",
+     "found"
+    ],
+    "K3.6": [
+     "key",
+     "found"
+    ],
+    "K3.7": [
+     "key",
+     "found"
+    ],
+    "K4.1": [
+     "key",
+     "partly (body)"
+    ],
+    "K4.2": [
+     "key",
+     "found"
+    ],
+    "K4.4": [
+     "key",
+     "found"
+    ],
+    "K5.1": [
+     "key",
+     "found"
+    ],
+    "K5.2": [
+     "key",
+     "found"
+    ],
+    "K5.3": [
+     "key",
+     "found"
+    ],
+    "K6.1": [
+     "key",
+     "found"
+    ],
+    "K6.2": [
+     "key",
+     "found"
+    ],
+    "K6.3": [
+     "key",
+     "found"
+    ],
+    "K6.4": [
+     "key",
+     "found"
+    ],
+    "K6.5": [
+     "key",
+     "found"
+    ],
+    "K6.6": [
+     "key",
+     "partly (body)"
+    ],
+    "K6.7": [
+     "key",
+     "found"
+    ],
+    "K7 12": [
+     "key",
+     "found"
+    ],
+    "K7 13": [
+     "key",
+     "found"
+    ],
+    "K7 14": [
+     "key",
+     "found"
+    ],
+    "K7 15": [
+     "key",
+     "found"
+    ],
+    "K7 17": [
+     "key",
+     "found"
+    ],
+    "K7 18": [
+     "key",
+     "partly (body)"
+    ],
+    "K7 19": [
+     "key",
+     "found"
+    ],
+    "K7 2": [
+     "key",
+     "found"
+    ],
+    "K7 20": [
+     "key",
+     "found"
+    ],
+    "K7 3": [
+     "key",
+     "found"
+    ],
+    "K7 4": [
+     "key",
+     "found"
+    ],
+    "K8 discovery": [
+     "key",
+     "found"
+    ],
+    "K9 /live/": [
+     "key",
+     "found"
+    ],
+    "K9 custom_update\\": [
+     "key",
+     "found"
+    ],
+    "K9 mutex runnung": [
+     "key",
+     "found"
+    ],
+    "K9 own hashes": [
+     "key",
+     "found"
+    ],
+    "K9 task updater": [
+     "key",
+     "found"
+    ],
+    "K9 ua": [
+     "key",
+     "found"
+    ],
+    "K9 update_<hex>.dll": [
+     "key",
+     "found"
+    ],
+    "K9 update_data.dat": [
+     "key",
+     "partly (body)"
+    ]
+   }
+  },
+  "sha256": "3ee8f9f3f6c147aa917f1c4e8451a59948ce55523e9c7ec8ea3992b76adb7045"
+ },
+ ".superpowers/sdd/mandate-2026-09-17/benchmark/deepseek/local3/score.md": {
+  "read": {
+   "beyond": null,
+   "beyond_note": "no section headed 'Beyond the human reports'",
+   "column": "Local 3",
+   "earlier_runs": "not ruled out",
+   "earlier_runs_note": "run-summary.json does not say earlier_runs_ignored or isolated_memory, and the score does not state that earlier runs were used",
+   "labels": {
+    "K1.1a": "K1.1a family",
+    "K1.1b": "K1.1b loader",
+    "K1.2": "K1.2 IcedID link",
+    "K1.4": "K1.4 x64 DLL; arch check",
+    "K1.5": "K1.5 four exports, one address",
+    "K10 T1027": "K10 T1027",
+    "K10 T1053.005": "K10 T1053.005",
+    "K10 T1055": "K10 T1055",
+    "K10 T1059.003": "K10 T1059.003",
+    "K10 T1070.004": "K10 T1070.004",
+    "K10 T1218.011": "K10 T1218.011",
+    "K2.1": "K2.1 APIs by hash",
+    "K2.2": "K2.2 abort on failed check",
+    "K2.3": "K2.3 mutex",
+    "K2.4": "K2.4 install, then persist",
+    "K2.5": "K2.5 register, then loop",
+    "K2.6": "K2.6 update_data.dat read first",
+    "K3.1": "K3.1 PEB BeingDebugged",
+    "K3.2": "K3.2 process count 75/50",
+    "K3.3": "K3.3 architecture / WOW64",
+    "K3.4": "K3.4 MAC check",
+    "K3.5": "K3.5 PEB walk + CRC32 names",
+    "K3.6": "K3.6 string encryption",
+    "K3.7": "K3.7 self-deletion (ADS)",
+    "K4.1": "K4.1 bot ID",
+    "K4.2": "K4.2 group \u2192 FNV-1a",
+    "K4.4": "K4.4 two encrypted C2s",
+    "K5.1": "K5.1 Custom_update\\Update_%x.dll",
+    "K5.2": "K5.2 task Updater, COM, logon",
+    "K5.3": "K5.3 update_data.dat holds C2s",
+    "K6.1": "K6.1 HTTPS POST /live/",
+    "K6.2": "K6.2 User-Agent",
+    "K6.3": "K6.3 RC4 then base64",
+    "K6.4": "K6.4 beacon interval",
+    "K6.5": "K6.5 beacon format",
+    "K6.6": "K6.6 beacon types 1\u20135",
+    "K6.7": "K6.7 URLS/CLEARURL/COMMAND/ERROR",
+    "K7 12": "K7 12 download + run EXE",
+    "K7 13": "K7 13 DLL via rundll32",
+    "K7 14": "K7 14 shellcode",
+    "K7 15": "K7 15 update",
+    "K7 17": "K7 17 uninstall",
+    "K7 18": "K7 18 bp.dat",
+    "K7 19": "K7 19 longer interval",
+    "K7 2": "K7 2 desktop links",
+    "K7 20": "K7 20 reset counter",
+    "K7 3": "K7 3 process list",
+    "K7 4": "K7 4 sysinfo",
+    "K8 discovery": "K8 discovery",
+    "K9 /live/": "K9 /live/",
+    "K9 custom_update\\": "K9 Custom_update\\",
+    "K9 mutex runnung": "K9 mutex runnung",
+    "K9 own hashes": "K9 own hashes",
+    "K9 task updater": "K9 task Updater",
+    "K9 ua": "K9 UA",
+    "K9 update_<hex>.dll": "K9 Update_<hex>.dll",
+    "K9 update_data.dat": "K9 update_data.dat"
+   },
+   "provenance": {
+    "K1.1a": "own analysis + lookup",
+    "K1.1b": "own analysis + lookup",
+    "K1.2": "no cited entry",
+    "K1.4": "own analysis",
+    "K1.5": "no cited entry",
+    "K10 T1027": "no cited entry",
+    "K10 T1053.005": "no cited entry",
+    "K10 T1055": "own analysis",
+    "K10 T1059.003": "own analysis",
+    "K10 T1070.004": "own analysis",
+    "K10 T1218.011": "no cited entry",
+    "K2.1": "own analysis",
+    "K2.2": "own analysis",
+    "K2.3": "own analysis",
+    "K2.4": "own analysis",
+    "K2.5": "own analysis",
+    "K2.6": "no cited entry",
+    "K3.1": "own analysis",
+    "K3.2": "no cited entry",
+    "K3.3": "no cited entry",
+    "K3.4": "own analysis",
+    "K3.5": "own analysis",
+    "K3.6": "own analysis",
+    "K3.7": "own analysis",
+    "K4.1": "no cited entry",
+    "K4.2": "own analysis",
+    "K4.4": "own analysis",
+    "K5.1": "no cited entry",
+    "K5.2": "no cited entry",
+    "K5.3": "no cited entry",
+    "K6.1": "own analysis",
+    "K6.2": "no cited entry",
+    "K6.3": "own analysis",
+    "K6.4": "no cited entry",
+    "K6.5": "no cited entry",
+    "K6.6": "no cited entry",
+    "K6.7": "no cited entry",
+    "K7 12": "own analysis",
+    "K7 13": "no cited entry",
+    "K7 14": "own analysis",
+    "K7 15": "own analysis",
+    "K7 17": "no cited entry",
+    "K7 18": "no cited entry",
+    "K7 19": "no cited entry",
+    "K7 2": "own analysis",
+    "K7 20": "no cited entry",
+    "K7 3": "own analysis",
+    "K7 4": "own analysis",
+    "K8 discovery": "own analysis",
+    "K9 /live/": "no cited entry",
+    "K9 custom_update\\": "own analysis",
+    "K9 mutex runnung": "no cited entry",
+    "K9 own hashes": "no cited entry",
+    "K9 task updater": "no cited entry",
+    "K9 ua": "no cited entry",
+    "K9 update_<hex>.dll": "own analysis",
+    "K9 update_data.dat": "no cited entry"
+   },
+   "provenance_note": "read from evidence.json, report.md, mitre.json beside the score",
+   "totals_note": "Totals line checked against the table",
+   "verdicts": {
+    "K1.1a": [
+     "key",
+     "found"
+    ],
+    "K1.1b": [
+     "key",
+     "found"
+    ],
+    "K1.2": [
+     "key",
+     "partly (body)"
+    ],
+    "K1.4": [
+     "key",
+     "partly (body)"
+    ],
+    "K1.5": [
+     "key",
+     "found"
+    ],
+    "K10 T1027": [
+     "key",
+     "found"
+    ],
+    "K10 T1053.005": [
+     "key",
+     "missed"
+    ],
+    "K10 T1055": [
+     "key",
+     "partly (body)"
+    ],
+    "K10 T1059.003": [
+     "key",
+     "partly (body)"
+    ],
+    "K10 T1070.004": [
+     "key",
+     "partly (body)"
+    ],
+    "K10 T1218.011": [
+     "key",
+     "found"
+    ],
+    "K2.1": [
+     "key",
+     "found"
+    ],
+    "K2.2": [
+     "key",
+     "partly (body)"
+    ],
+    "K2.3": [
+     "key",
+     "found"
+    ],
+    "K2.4": [
+     "key",
+     "missed"
+    ],
+    "K2.5": [
+     "key",
+     "partly (body)"
+    ],
+    "K2.6": [
+     "key",
+     "missed"
+    ],
+    "K3.1": [
+     "key",
+     "found"
+    ],
+    "K3.2": [
+     "key",
+     "partly (body)"
+    ],
+    "K3.3": [
+     "key",
+     "missed"
+    ],
+    "K3.4": [
+     "key",
+     "missed"
+    ],
+    "K3.5": [
+     "key",
+     "found"
+    ],
+    "K3.6": [
+     "key",
+     "found"
+    ],
+    "K3.7": [
+     "key",
+     "missed"
+    ],
+    "K4.1": [
+     "key",
+     "partly (dump)"
+    ],
+    "K4.2": [
+     "key",
+     "partly (body)"
+    ],
+    "K4.4": [
+     "key",
+     "partly (body)"
+    ],
+    "K5.1": [
+     "key",
+     "partly (body)"
+    ],
+    "K5.2": [
+     "key",
+     "missed"
+    ],
+    "K5.3": [
+     "key",
+     "missed"
+    ],
+    "K6.1": [
+     "key",
+     "found"
+    ],
+    "K6.2": [
+     "key",
+     "partly (dump)"
+    ],
+    "K6.3": [
+     "key",
+     "partly (body)"
+    ],
+    "K6.4": [
+     "key",
+     "missed"
+    ],
+    "K6.5": [
+     "key",
+     "partly (body)"
+    ],
+    "K6.6": [
+     "key",
+     "missed"
+    ],
+    "K6.7": [
+     "key",
+     "missed"
+    ],
+    "K7 12": [
+     "key",
+     "partly (body)"
+    ],
+    "K7 13": [
+     "key",
+     "missed"
+    ],
+    "K7 14": [
+     "key",
+     "missed"
+    ],
+    "K7 15": [
+     "key",
+     "missed"
+    ],
+    "K7 17": [
+     "key",
+     "missed"
+    ],
+    "K7 18": [
+     "key",
+     "missed"
+    ],
+    "K7 19": [
+     "key",
+     "missed"
+    ],
+    "K7 2": [
+     "key",
+     "partly (body)"
+    ],
+    "K7 20": [
+     "key",
+     "missed"
+    ],
+    "K7 3": [
+     "key",
+     "partly (body)"
+    ],
+    "K7 4": [
+     "key",
+     "partly (body)"
+    ],
+    "K8 discovery": [
+     "key",
+     "found"
+    ],
+    "K9 /live/": [
+     "key",
+     "found"
+    ],
+    "K9 custom_update\\": [
+     "key",
+     "partly (body)"
+    ],
+    "K9 mutex runnung": [
+     "key",
+     "wrong"
+    ],
+    "K9 own hashes": [
+     "key",
+     "found"
+    ],
+    "K9 task updater": [
+     "key",
+     "partly (body)"
+    ],
+    "K9 ua": [
+     "key",
+     "partly (dump)"
+    ],
+    "K9 update_<hex>.dll": [
+     "key",
+     "partly (body)"
+    ],
+    "K9 update_data.dat": [
+     "key",
+     "partly (dump)"
+    ]
+   }
+  },
+  "sha256": "6c773d987d0c769abaa21d3efe4238e35b4cf44cee72614b5c8033538ab4a534"
+ },
+ ".superpowers/sdd/mandate-2026-09-17/benchmark/deepseek/local4/score.md": {
+  "read": {
+   "beyond": 14,
+   "beyond_note": "14 listed, as stated",
+   "column": "Local 4",
+   "earlier_runs": "not ruled out",
+   "earlier_runs_note": "run-summary.json does not say earlier_runs_ignored or isolated_memory, and the score does not state that earlier runs were used",
+   "labels": {
+    "K1.1a": "K1.1a family",
+    "K1.1b": "K1.1b loader",
+    "K1.2": "K1.2 IcedID link",
+    "K1.4": "K1.4 x64 DLL; arch check",
+    "K1.5": "K1.5 four exports, one address",
+    "K10 T1027": "K10 T1027",
+    "K10 T1053.005": "K10 T1053.005",
+    "K10 T1055": "K10 T1055",
+    "K10 T1059.003": "K10 T1059.003",
+    "K10 T1070.004": "K10 T1070.004",
+    "K10 T1218.011": "K10 T1218.011",
+    "K2.1": "K2.1 APIs by hash",
+    "K2.2": "K2.2 abort on failed check",
+    "K2.3": "K2.3 mutex",
+    "K2.4": "K2.4 install, then persist",
+    "K2.5": "K2.5 register, then loop",
+    "K2.6": "K2.6 update_data.dat read first",
+    "K3.1": "K3.1 PEB BeingDebugged",
+    "K3.2": "K3.2 process count 75/50",
+    "K3.3": "K3.3 architecture / WOW64",
+    "K3.4": "K3.4 MAC check",
+    "K3.5": "K3.5 PEB walk + CRC32 names",
+    "K3.6": "K3.6 string encryption",
+    "K3.7": "K3.7 self-deletion (ADS)",
+    "K4.1": "K4.1 bot ID",
+    "K4.2": "K4.2 group \u2192 FNV-1a",
+    "K4.4": "K4.4 two encrypted C2s",
+    "K5.1": "K5.1 Custom_update\\Update_%x.dll",
+    "K5.2": "K5.2 task Updater, COM, logon",
+    "K5.3": "K5.3 update_data.dat holds C2s",
+    "K6.1": "K6.1 HTTPS POST /live/",
+    "K6.2": "K6.2 User-Agent",
+    "K6.3": "K6.3 RC4 then base64",
+    "K6.4": "K6.4 beacon interval",
+    "K6.5": "K6.5 beacon format",
+    "K6.6": "K6.6 beacon types 1\u20135",
+    "K6.7": "K6.7 URLS/CLEARURL/COMMAND/ERROR",
+    "K7 12": "K7 12 download + run EXE",
+    "K7 13": "K7 13 DLL via rundll32",
+    "K7 14": "K7 14 shellcode",
+    "K7 15": "K7 15 update",
+    "K7 17": "K7 17 uninstall",
+    "K7 18": "K7 18 bp.dat",
+    "K7 19": "K7 19 longer interval",
+    "K7 2": "K7 2 desktop links",
+    "K7 20": "K7 20 reset counter",
+    "K7 3": "K7 3 process list",
+    "K7 4": "K7 4 sysinfo",
+    "K8 discovery": "K8 discovery",
+    "K9 /live/": "K9 /live/",
+    "K9 custom_update\\": "K9 Custom_update\\",
+    "K9 mutex runnung": "K9 mutex runnung",
+    "K9 own hashes": "K9 own hashes",
+    "K9 task updater": "K9 task Updater",
+    "K9 ua": "K9 UA",
+    "K9 update_<hex>.dll": "K9 Update_<hex>.dll",
+    "K9 update_data.dat": "K9 update_data.dat"
+   },
+   "provenance": {
+    "K1.1a": "own analysis + lookup",
+    "K1.1b": "own analysis",
+    "K1.2": "own analysis + lookup",
+    "K1.4": "no cited entry",
+    "K1.5": "no cited entry",
+    "K10 T1027": "no cited entry",
+    "K10 T1053.005": "no cited entry",
+    "K10 T1055": "own analysis",
+    "K10 T1059.003": "own analysis",
+    "K10 T1070.004": "own analysis",
+    "K10 T1218.011": "no cited entry",
+    "K2.1": "own analysis",
+    "K2.2": "no cited entry",
+    "K2.3": "no cited entry",
+    "K2.4": "own analysis",
+    "K2.5": "own analysis",
+    "K2.6": "no cited entry",
+    "K3.1": "no cited entry",
+    "K3.2": "own analysis",
+    "K3.3": "no cited entry",
+    "K3.4": "no cited entry",
+    "K3.5": "own analysis",
+    "K3.6": "own analysis",
+    "K3.7": "own analysis",
+    "K4.1": "no cited entry",
+    "K4.2": "own analysis",
+    "K4.4": "no cited entry",
+    "K5.1": "own analysis",
+    "K5.2": "no cited entry",
+    "K5.3": "no cited entry",
+    "K6.1": "no cited entry",
+    "K6.2": "no cited entry",
+    "K6.3": "no cited entry",
+    "K6.4": "no cited entry",
+    "K6.5": "no cited entry",
+    "K6.6": "no cited entry",
+    "K6.7": "no cited entry",
+    "K7 12": "own analysis",
+    "K7 13": "no cited entry",
+    "K7 14": "no cited entry",
+    "K7 15": "own analysis",
+    "K7 17": "no cited entry",
+    "K7 18": "no cited entry",
+    "K7 19": "no cited entry",
+    "K7 2": "no cited entry",
+    "K7 20": "no cited entry",
+    "K7 3": "own analysis",
+    "K7 4": "no cited entry",
+    "K8 discovery": "own analysis",
+    "K9 /live/": "no cited entry",
+    "K9 custom_update\\": "own analysis",
+    "K9 mutex runnung": "no cited entry",
+    "K9 own hashes": "no cited entry",
+    "K9 task updater": "own analysis",
+    "K9 ua": "no cited entry",
+    "K9 update_<hex>.dll": "no cited entry",
+    "K9 update_data.dat": "no cited entry"
+   },
+   "provenance_note": "read from evidence.json, report.md, mitre.json beside the score",
+   "totals_note": "Totals line checked against the table",
+   "verdicts": {
+    "K1.1a": [
+     "key",
+     "found"
+    ],
+    "K1.1b": [
+     "key",
+     "found"
+    ],
+    "K1.2": [
+     "key",
+     "partly (body)"
+    ],
+    "K1.4": [
+     "key",
+     "partly (body)"
+    ],
+    "K1.5": [
+     "key",
+     "found"
+    ],
+    "K10 T1027": [
+     "key",
+     "found"
+    ],
+    "K10 T1053.005": [
+     "key",
+     "missed"
+    ],
+    "K10 T1055": [
+     "key",
+     "partly (body)"
+    ],
+    "K10 T1059.003": [
+     "key",
+     "partly (body)"
+    ],
+    "K10 T1070.004": [
+     "key",
+     "partly (body)"
+    ],
+    "K10 T1218.011": [
+     "key",
+     "found"
+    ],
+    "K2.1": [
+     "key",
+     "found"
+    ],
+    "K2.2": [
+     "key",
+     "missed"
+    ],
+    "K2.3": [
+     "key",
+     "partly (body)"
+    ],
+    "K2.4": [
+     "key",
+     "missed"
+    ],
+    "K2.5": [
+     "key",
+     "partly (body)"
+    ],
+    "K2.6": [
+     "key",
+     "missed"
+    ],
+    "K3.1": [
+     "key",
+     "partly (body)"
+    ],
+    "K3.2": [
+     "key",
+     "missed"
+    ],
+    "K3.3": [
+     "key",
+     "missed"
+    ],
+    "K3.4": [
+     "key",
+     "missed"
+    ],
+    "K3.5": [
+     "key",
+     "found"
+    ],
+    "K3.6": [
+     "key",
+     "found"
+    ],
+    "K3.7": [
+     "key",
+     "partly (body)"
+    ],
+    "K4.1": [
+     "key",
+     "partly (dump)"
+    ],
+    "K4.2": [
+     "key",
+     "partly (body)"
+    ],
+    "K4.4": [
+     "key",
+     "partly (body)"
+    ],
+    "K5.1": [
+     "key",
+     "partly (body)"
+    ],
+    "K5.2": [
+     "key",
+     "missed"
+    ],
+    "K5.3": [
+     "key",
+     "missed"
+    ],
+    "K6.1": [
+     "key",
+     "partly (body)"
+    ],
+    "K6.2": [
+     "key",
+     "partly (dump)"
+    ],
+    "K6.3": [
+     "key",
+     "partly (body)"
+    ],
+    "K6.4": [
+     "key",
+     "missed"
+    ],
+    "K6.5": [
+     "key",
+     "partly (body)"
+    ],
+    "K6.6": [
+     "key",
+     "missed"
+    ],
+    "K6.7": [
+     "key",
+     "missed"
+    ],
+    "K7 12": [
+     "key",
+     "partly (body)"
+    ],
+    "K7 13": [
+     "key",
+     "missed"
+    ],
+    "K7 14": [
+     "key",
+     "missed"
+    ],
+    "K7 15": [
+     "key",
+     "missed"
+    ],
+    "K7 17": [
+     "key",
+     "missed"
+    ],
+    "K7 18": [
+     "key",
+     "missed"
+    ],
+    "K7 19": [
+     "key",
+     "missed"
+    ],
+    "K7 2": [
+     "key",
+     "partly (body)"
+    ],
+    "K7 20": [
+     "key",
+     "missed"
+    ],
+    "K7 3": [
+     "key",
+     "partly (body)"
+    ],
+    "K7 4": [
+     "key",
+     "partly (body)"
+    ],
+    "K8 discovery": [
+     "key",
+     "found"
+    ],
+    "K9 /live/": [
+     "key",
+     "found"
+    ],
+    "K9 custom_update\\": [
+     "key",
+     "partly (body)"
+    ],
+    "K9 mutex runnung": [
+     "key",
+     "partly (dump)"
+    ],
+    "K9 own hashes": [
+     "key",
+     "found"
+    ],
+    "K9 task updater": [
+     "key",
+     "partly (body)"
+    ],
+    "K9 ua": [
+     "key",
+     "partly (dump)"
+    ],
+    "K9 update_<hex>.dll": [
+     "key",
+     "partly (body)"
+    ],
+    "K9 update_data.dat": [
+     "key",
+     "partly (dump)"
+    ]
+   }
+  },
+  "sha256": "a33855c2d93316361f893cc99aab681adccd7e92c82dc58a9802617da27fdf61"
+ },
+ ".superpowers/sdd/mandate-2026-09-17/benchmark/deepseek/local6/score.md": {
+  "read": {
+   "beyond": 12,
+   "beyond_note": "12 listed, as stated",
+   "column": "Local 6",
+   "earlier_runs": "not ruled out",
+   "earlier_runs_note": "run-summary.json does not say earlier_runs_ignored or isolated_memory, and the score does not state that earlier runs were used",
+   "labels": {
+    "K1.1a": "K1.1a family",
+    "K1.1b": "K1.1b loader",
+    "K1.2": "K1.2 IcedID link",
+    "K1.4": "K1.4 x64 DLL; arch check",
+    "K1.5": "K1.5 four exports, one address",
+    "K10 T1027": "K10 T1027",
+    "K10 T1053.005": "K10 T1053.005",
+    "K10 T1055": "K10 T1055",
+    "K10 T1059.003": "K10 T1059.003",
+    "K10 T1070.004": "K10 T1070.004",
+    "K10 T1218.011": "K10 T1218.011",
+    "K2.1": "K2.1 APIs by hash",
+    "K2.2": "K2.2 abort on failed check",
+    "K2.3": "K2.3 mutex",
+    "K2.4": "K2.4 install, then persist",
+    "K2.5": "K2.5 register, then loop",
+    "K2.6": "K2.6 update_data.dat read first",
+    "K3.1": "K3.1 PEB BeingDebugged",
+    "K3.2": "K3.2 process count 75/50",
+    "K3.3": "K3.3 architecture / WOW64",
+    "K3.4": "K3.4 MAC check",
+    "K3.5": "K3.5 PEB walk + CRC32 names",
+    "K3.6": "K3.6 string encryption",
+    "K3.7": "K3.7 self-deletion (ADS)",
+    "K4.1": "K4.1 bot ID",
+    "K4.2": "K4.2 group \u2192 FNV-1a",
+    "K4.4": "K4.4 two encrypted C2s",
+    "K5.1": "K5.1 Custom_update\\Update_%x.dll",
+    "K5.2": "K5.2 task Updater, COM, logon",
+    "K5.3": "K5.3 update_data.dat holds C2s",
+    "K6.1": "K6.1 HTTPS POST /live/",
+    "K6.2": "K6.2 User-Agent",
+    "K6.3": "K6.3 RC4 then base64",
+    "K6.4": "K6.4 beacon interval",
+    "K6.5": "K6.5 beacon format",
+    "K6.6": "K6.6 beacon types 1\u20135",
+    "K6.7": "K6.7 URLS/CLEARURL/COMMAND/ERROR",
+    "K7 12": "K7 12 download + run EXE",
+    "K7 13": "K7 13 DLL via rundll32",
+    "K7 14": "K7 14 shellcode",
+    "K7 15": "K7 15 update",
+    "K7 17": "K7 17 uninstall",
+    "K7 18": "K7 18 bp.dat",
+    "K7 19": "K7 19 longer interval",
+    "K7 2": "K7 2 desktop links",
+    "K7 20": "K7 20 reset counter",
+    "K7 3": "K7 3 process list",
+    "K7 4": "K7 4 sysinfo",
+    "K8 discovery": "K8 discovery",
+    "K9 /live/": "K9 /live/",
+    "K9 custom_update\\": "K9 Custom_update\\",
+    "K9 mutex runnung": "K9 mutex runnung",
+    "K9 own hashes": "K9 own hashes",
+    "K9 task updater": "K9 task Updater",
+    "K9 ua": "K9 UA",
+    "K9 update_<hex>.dll": "K9 Update_<hex>.dll",
+    "K9 update_data.dat": "K9 update_data.dat"
+   },
+   "provenance": {
+    "K1.1a": "own analysis + lookup",
+    "K1.1b": "no cited entry",
+    "K1.2": "own analysis + lookup",
+    "K1.4": "no cited entry",
+    "K1.5": "no cited entry",
+    "K10 T1027": "no cited entry",
+    "K10 T1053.005": "no cited entry",
+    "K10 T1055": "own analysis",
+    "K10 T1059.003": "no cited entry",
+    "K10 T1070.004": "own analysis",
+    "K10 T1218.011": "no cited entry",
+    "K2.1": "own analysis",
+    "K2.2": "own analysis",
+    "K2.3": "no cited entry",
+    "K2.4": "no cited entry",
+    "K2.5": "own analysis",
+    "K2.6": "no cited entry",
+    "K3.1": "own analysis",
+    "K3.2": "no cited entry",
+    "K3.3": "no cited entry",
+    "K3.4": "own analysis",
+    "K3.5": "no cited entry",
+    "K3.6": "own analysis",
+    "K3.7": "own analysis",
+    "K4.1": "no cited entry",
+    "K4.2": "own analysis",
+    "K4.4": "no cited entry",
+    "K5.1": "no cited entry",
+    "K5.2": "own analysis",
+    "K5.3": "no cited entry",
+    "K6.1": "own analysis",
+    "K6.2": "no cited entry",
+    "K6.3": "own analysis",
+    "K6.4": "own analysis",
+    "K6.5": "own analysis",
+    "K6.6": "no cited entry",
+    "K6.7": "no cited entry",
+    "K7 12": "own analysis",
+    "K7 13": "no cited entry",
+    "K7 14": "no cited entry",
+    "K7 15": "no cited entry",
+    "K7 17": "no cited entry",
+    "K7 18": "no cited entry",
+    "K7 19": "no cited entry",
+    "K7 2": "no cited entry",
+    "K7 20": "no cited entry",
+    "K7 3": "own analysis",
+    "K7 4": "no cited entry",
+    "K8 discovery": "own analysis",
+    "K9 /live/": "no cited entry",
+    "K9 custom_update\\": "no cited entry",
+    "K9 mutex runnung": "no cited entry",
+    "K9 own hashes": "no cited entry",
+    "K9 task updater": "no cited entry",
+    "K9 ua": "no cited entry",
+    "K9 update_<hex>.dll": "no cited entry",
+    "K9 update_data.dat": "no cited entry"
+   },
+   "provenance_note": "read from evidence.json, report.md, mitre.json beside the score",
+   "totals_note": "Totals line checked against the table",
+   "verdicts": {
+    "K1.1a": [
+     "key",
+     "found"
+    ],
+    "K1.1b": [
+     "key",
+     "found"
+    ],
+    "K1.2": [
+     "key",
+     "partly (body)"
+    ],
+    "K1.4": [
+     "key",
+     "partly (body)"
+    ],
+    "K1.5": [
+     "key",
+     "found"
+    ],
+    "K10 T1027": [
+     "key",
+     "found"
+    ],
+    "K10 T1053.005": [
+     "key",
+     "found"
+    ],
+    "K10 T1055": [
+     "key",
+     "partly (body)"
+    ],
+    "K10 T1059.003": [
+     "key",
+     "missed"
+    ],
+    "K10 T1070.004": [
+     "key",
+     "missed"
+    ],
+    "K10 T1218.011": [
+     "key",
+     "found"
+    ],
+    "K2.1": [
+     "key",
+     "found"
+    ],
+    "K2.2": [
+     "key",
+     "partly (body)"
+    ],
+    "K2.3": [
+     "key",
+     "missed"
+    ],
+    "K2.4": [
+     "key",
+     "missed"
+    ],
+    "K2.5": [
+     "key",
+     "partly (body)"
+    ],
+    "K2.6": [
+     "key",
+     "missed"
+    ],
+    "K3.1": [
+     "key",
+     "found"
+    ],
+    "K3.2": [
+     "key",
+     "missed"
+    ],
+    "K3.3": [
+     "key",
+     "missed"
+    ],
+    "K3.4": [
+     "key",
+     "missed"
+    ],
+    "K3.5": [
+     "key",
+     "found"
+    ],
+    "K3.6": [
+     "key",
+     "found"
+    ],
+    "K3.7": [
+     "key",
+     "missed"
+    ],
+    "K4.1": [
+     "key",
+     "partly (dump)"
+    ],
+    "K4.2": [
+     "key",
+     "partly (body)"
+    ],
+    "K4.4": [
+     "key",
+     "partly (body)"
+    ],
+    "K5.1": [
+     "key",
+     "partly (dump)"
+    ],
+    "K5.2": [
+     "key",
+     "partly (body)"
+    ],
+    "K5.3": [
+     "key",
+     "missed"
+    ],
+    "K6.1": [
+     "key",
+     "found"
+    ],
+    "K6.2": [
+     "key",
+     "found"
+    ],
+    "K6.3": [
+     "key",
+     "partly (body)"
+    ],
+    "K6.4": [
+     "key",
+     "missed"
+    ],
+    "K6.5": [
+     "key",
+     "partly (body)"
+    ],
+    "K6.6": [
+     "key",
+     "missed"
+    ],
+    "K6.7": [
+     "key",
+     "missed"
+    ],
+    "K7 12": [
+     "key",
+     "partly (body)"
+    ],
+    "K7 13": [
+     "key",
+     "missed"
+    ],
+    "K7 14": [
+     "key",
+     "missed"
+    ],
+    "K7 15": [
+     "key",
+     "missed"
+    ],
+    "K7 17": [
+     "key",
+     "missed"
+    ],
+    "K7 18": [
+     "key",
+     "missed"
+    ],
+    "K7 19": [
+     "key",
+     "missed"
+    ],
+    "K7 2": [
+     "key",
+     "missed"
+    ],
+    "K7 20": [
+     "key",
+     "missed"
+    ],
+    "K7 3": [
+     "key",
+     "partly (body)"
+    ],
+    "K7 4": [
+     "key",
+     "partly (body)"
+    ],
+    "K8 discovery": [
+     "key",
+     "found"
+    ],
+    "K9 /live/": [
+     "key",
+     "found"
+    ],
+    "K9 custom_update\\": [
+     "key",
+     "partly (dump)"
+    ],
+    "K9 mutex runnung": [
+     "key",
+     "partly (dump)"
+    ],
+    "K9 own hashes": [
+     "key",
+     "found"
+    ],
+    "K9 task updater": [
+     "key",
+     "partly (dump)"
+    ],
+    "K9 ua": [
+     "key",
+     "partly (body)"
+    ],
+    "K9 update_<hex>.dll": [
+     "key",
+     "partly (dump)"
+    ],
+    "K9 update_data.dat": [
+     "key",
+     "partly (dump)"
+    ]
+   }
+  },
+  "sha256": "761d6aac9ec833a7785e19bb312285201290ceec10eec657462d783bb6c92d4c"
+ },
+ ".superpowers/sdd/mandate-2026-09-17/benchmark/deepseek/local8/score.md": {
+  "read": {
+   "beyond": 15,
+   "beyond_note": "15 listed, as stated",
+   "column": "Local 8",
+   "earlier_runs": "not ruled out",
+   "earlier_runs_note": "run-summary.json does not say earlier_runs_ignored or isolated_memory, and the score does not state that earlier runs were used",
+   "labels": {
+    "K1.1a": "K1.1a family",
+    "K1.1b": "K1.1b loader",
+    "K1.2": "K1.2 IcedID link",
+    "K1.4": "K1.4 x64 DLL; arch check",
+    "K1.5": "K1.5 four exports, one address",
+    "K10 T1027": "K10 T1027",
+    "K10 T1053.005": "K10 T1053.005",
+    "K10 T1055": "K10 T1055",
+    "K10 T1059.003": "K10 T1059.003",
+    "K10 T1070.004": "K10 T1070.004",
+    "K10 T1218.011": "K10 T1218.011",
+    "K2.1": "K2.1 APIs by hash",
+    "K2.2": "K2.2 abort on failed check",
+    "K2.3": "K2.3 mutex",
+    "K2.4": "K2.4 install, then persist",
+    "K2.5": "K2.5 register, then loop",
+    "K2.6": "K2.6 update_data.dat read first",
+    "K3.1": "K3.1 PEB BeingDebugged",
+    "K3.2": "K3.2 process count 75/50",
+    "K3.3": "K3.3 architecture / WOW64",
+    "K3.4": "K3.4 MAC check",
+    "K3.5": "K3.5 PEB walk + CRC32 names",
+    "K3.6": "K3.6 string encryption",
+    "K3.7": "K3.7 self-deletion (ADS)",
+    "K4.1": "K4.1 bot ID",
+    "K4.2": "K4.2 group \u2192 FNV-1a",
+    "K4.4": "K4.4 two encrypted C2s",
+    "K5.1": "K5.1 Custom_update\\Update_%x.dll",
+    "K5.2": "K5.2 task Updater, COM, logon",
+    "K5.3": "K5.3 update_data.dat holds C2s",
+    "K6.1": "K6.1 HTTPS POST /live/",
+    "K6.2": "K6.2 User-Agent",
+    "K6.3": "K6.3 RC4 then base64",
+    "K6.4": "K6.4 beacon interval",
+    "K6.5": "K6.5 beacon format",
+    "K6.6": "K6.6 beacon types 1\u20135",
+    "K6.7": "K6.7 URLS/CLEARURL/COMMAND/ERROR",
+    "K7 12": "K7 12 download + run EXE",
+    "K7 13": "K7 13 DLL via rundll32",
+    "K7 14": "K7 14 shellcode",
+    "K7 15": "K7 15 update",
+    "K7 17": "K7 17 uninstall",
+    "K7 18": "K7 18 bp.dat",
+    "K7 19": "K7 19 longer interval",
+    "K7 2": "K7 2 desktop links",
+    "K7 20": "K7 20 reset counter",
+    "K7 3": "K7 3 process list",
+    "K7 4": "K7 4 sysinfo",
+    "K8 discovery": "K8 discovery",
+    "K9 /live/": "K9 /live/",
+    "K9 custom_update\\": "K9 Custom_update\\",
+    "K9 mutex runnung": "K9 mutex runnung",
+    "K9 own hashes": "K9 own hashes",
+    "K9 task updater": "K9 task Updater",
+    "K9 ua": "K9 UA",
+    "K9 update_<hex>.dll": "K9 Update_<hex>.dll",
+    "K9 update_data.dat": "K9 update_data.dat"
+   },
+   "provenance": {
+    "K1.1a": "own analysis + lookup",
+    "K1.1b": "no cited entry",
+    "K1.2": "own analysis + lookup",
+    "K1.4": "own analysis",
+    "K1.5": "own analysis",
+    "K10 T1027": "own analysis",
+    "K10 T1053.005": "no cited entry",
+    "K10 T1055": "own analysis",
+    "K10 T1059.003": "no cited entry",
+    "K10 T1070.004": "no cited entry",
+    "K10 T1218.011": "no cited entry",
+    "K2.1": "own analysis",
+    "K2.2": "own analysis",
+    "K2.3": "no cited entry",
+    "K2.4": "no cited entry",
+    "K2.5": "own analysis",
+    "K2.6": "no cited entry",
+    "K3.1": "own analysis",
+    "K3.2": "no cited entry",
+    "K3.3": "no cited entry",
+    "K3.4": "no cited entry",
+    "K3.5": "own analysis",
+    "K3.6": "own analysis",
+    "K3.7": "own analysis",
+    "K4.1": "no cited entry",
+    "K4.2": "own analysis",
+    "K4.4": "own analysis",
+    "K5.1": "no cited entry",
+    "K5.2": "own analysis",
+    "K5.3": "no cited entry",
+    "K6.1": "own analysis",
+    "K6.2": "no cited entry",
+    "K6.3": "own analysis",
+    "K6.4": "no cited entry",
+    "K6.5": "no cited entry",
+    "K6.6": "no cited entry",
+    "K6.7": "no cited entry",
+    "K7 12": "own analysis",
+    "K7 13": "own analysis",
+    "K7 14": "no cited entry",
+    "K7 15": "no cited entry",
+    "K7 17": "no cited entry",
+    "K7 18": "own analysis",
+    "K7 19": "no cited entry",
+    "K7 2": "own analysis",
+    "K7 20": "no cited entry",
+    "K7 3": "own analysis",
+    "K7 4": "own analysis",
+    "K8 discovery": "own analysis",
+    "K9 /live/": "own analysis",
+    "K9 custom_update\\": "no cited entry",
+    "K9 mutex runnung": "no cited entry",
+    "K9 own hashes": "no cited entry",
+    "K9 task updater": "no cited entry",
+    "K9 ua": "no cited entry",
+    "K9 update_<hex>.dll": "no cited entry",
+    "K9 update_data.dat": "no cited entry"
+   },
+   "provenance_note": "read from evidence.json, report.md, mitre.json beside the score",
+   "totals_note": "Totals line checked against the table",
+   "verdicts": {
+    "K1.1a": [
+     "key",
+     "found"
+    ],
+    "K1.1b": [
+     "key",
+     "found"
+    ],
+    "K1.2": [
+     "key",
+     "partly (body)"
+    ],
+    "K1.4": [
+     "key",
+     "partly (body)"
+    ],
+    "K1.5": [
+     "key",
+     "found"
+    ],
+    "K10 T1027": [
+     "key",
+     "found"
+    ],
+    "K10 T1053.005": [
+     "key",
+     "found"
+    ],
+    "K10 T1055": [
+     "key",
+     "partly (body)"
+    ],
+    "K10 T1059.003": [
+     "key",
+     "partly (body)"
+    ],
+    "K10 T1070.004": [
+     "key",
+     "missed"
+    ],
+    "K10 T1218.011": [
+     "key",
+     "found"
+    ],
+    "K2.1": [
+     "key",
+     "found"
+    ],
+    "K2.2": [
+     "key",
+     "partly (body)"
+    ],
+    "K2.3": [
+     "key",
+     "missed"
+    ],
+    "K2.4": [
+     "key",
+     "missed"
+    ],
+    "K2.5": [
+     "key",
+     "partly (body)"
+    ],
+    "K2.6": [
+     "key",
+     "missed"
+    ],
+    "K3.1": [
+     "key",
+     "partly (body)"
+    ],
+    "K3.2": [
+     "key",
+     "missed"
+    ],
+    "K3.3": [
+     "key",
+     "missed"
+    ],
+    "K3.4": [
+     "key",
+     "missed"
+    ],
+    "K3.5": [
+     "key",
+     "found"
+    ],
+    "K3.6": [
+     "key",
+     "found"
+    ],
+    "K3.7": [
+     "key",
+     "missed"
+    ],
+    "K4.1": [
+     "key",
+     "partly (dump)"
+    ],
+    "K4.2": [
+     "key",
+     "partly (body)"
+    ],
+    "K4.4": [
+     "key",
+     "partly (body)"
+    ],
+    "K5.1": [
+     "key",
+     "partly (dump)"
+    ],
+    "K5.2": [
+     "key",
+     "partly (body)"
+    ],
+    "K5.3": [
+     "key",
+     "missed"
+    ],
+    "K6.1": [
+     "key",
+     "found"
+    ],
+    "K6.2": [
+     "key",
+     "partly (dump)"
+    ],
+    "K6.3": [
+     "key",
+     "partly (body)"
+    ],
+    "K6.4": [
+     "key",
+     "missed"
+    ],
+    "K6.5": [
+     "key",
+     "partly (body)"
+    ],
+    "K6.6": [
+     "key",
+     "missed"
+    ],
+    "K6.7": [
+     "key",
+     "missed"
+    ],
+    "K7 12": [
+     "key",
+     "partly (body)"
+    ],
+    "K7 13": [
+     "key",
+     "missed"
+    ],
+    "K7 14": [
+     "key",
+     "missed"
+    ],
+    "K7 15": [
+     "key",
+     "missed"
+    ],
+    "K7 17": [
+     "key",
+     "missed"
+    ],
+    "K7 18": [
+     "key",
+     "missed"
+    ],
+    "K7 19": [
+     "key",
+     "missed"
+    ],
+    "K7 2": [
+     "key",
+     "missed"
+    ],
+    "K7 20": [
+     "key",
+     "missed"
+    ],
+    "K7 3": [
+     "key",
+     "partly (body)"
+    ],
+    "K7 4": [
+     "key",
+     "partly (body)"
+    ],
+    "K8 discovery": [
+     "key",
+     "found"
+    ],
+    "K9 /live/": [
+     "key",
+     "found"
+    ],
+    "K9 custom_update\\": [
+     "key",
+     "partly (dump)"
+    ],
+    "K9 mutex runnung": [
+     "key",
+     "partly (dump)"
+    ],
+    "K9 own hashes": [
+     "key",
+     "found"
+    ],
+    "K9 task updater": [
+     "key",
+     "partly (dump)"
+    ],
+    "K9 ua": [
+     "key",
+     "partly (dump)"
+    ],
+    "K9 update_<hex>.dll": [
+     "key",
+     "partly (dump)"
+    ],
+    "K9 update_data.dat": [
+     "key",
+     "partly (dump)"
+    ]
+   }
+  },
+  "sha256": "4bd4e00a616ba19d052a905afbdb56bc7b93561de574ecde634fad5aa4b0caf3"
+ },
+ ".superpowers/sdd/mandate-2026-09-17/benchmark/deepseek/run/score.md": {
+  "refused": ".superpowers/sdd/mandate-2026-09-17/benchmark/deepseek/run/score.md: the scored column 'Score' is not a verdict for 'K1.1b loader': '**found** (it. 6 partly)'",
+  "sha256": "b304e894903815788a1e9e8f7f232dea402399a9639a7af80e22d30e24c210a6"
+ },
+ ".superpowers/sdd/mandate-2026-09-17/benchmark/deepseek/run2/score.md": {
+  "refused": ".superpowers/sdd/mandate-2026-09-17/benchmark/deepseek/run2/score.md: the scored column 'Run 2' is not a verdict for 'K3.1 PEB BeingDebugged': 'not scorable'",
+  "sha256": "dec276f29202a0fee87df45c9d342f9e1e296fcc01754e02e4376e6fdea4ee19"
+ },
+ ".superpowers/sdd/mandate-2026-09-17/benchmark/deepseek/run3/score.md": {
+  "read": {
+   "beyond": null,
+   "beyond_note": "no section headed 'Beyond the human reports'",
+   "column": "Run 3",
+   "earlier_runs": "not ruled out",
+   "earlier_runs_note": "run-summary.json does not say earlier_runs_ignored or isolated_memory, and the score does not state that earlier runs were used",
+   "labels": {
+    "K1.1a": "K1.1a family",
+    "K1.1b": "K1.1b loader",
+    "K1.2": "K1.2 IcedID link",
+    "K1.4": "K1.4 x64 DLL; arch check",
+    "K1.5": "K1.5 four exports, one address",
+    "K10 T1027": "K10 T1027",
+    "K10 T1053.005": "K10 T1053.005",
+    "K10 T1055": "K10 T1055",
+    "K10 T1059.003": "K10 T1059.003",
+    "K10 T1070.004": "K10 T1070.004",
+    "K10 T1218.011": "K10 T1218.011",
+    "K2.1": "K2.1 APIs by hash",
+    "K2.2": "K2.2 abort on failed check",
+    "K2.3": "K2.3 mutex",
+    "K2.4": "K2.4 install, then persist",
+    "K2.5": "K2.5 register, then loop",
+    "K2.6": "K2.6 update_data.dat read first",
+    "K3.1": "K3.1 PEB BeingDebugged",
+    "K3.2": "K3.2 process count 75/50",
+    "K3.3": "K3.3 architecture / WOW64",
+    "K3.4": "K3.4 MAC check",
+    "K3.5": "K3.5 PEB walk + CRC32 names",
+    "K3.6": "K3.6 string encryption",
+    "K3.7": "K3.7 self-deletion (ADS)",
+    "K4.1": "K4.1 bot ID",
+    "K4.2": "K4.2 group \u2192 FNV-1a",
+    "K4.4": "K4.4 two encrypted C2s",
+    "K5.1": "K5.1 Custom_update\\Update_%x.dll",
+    "K5.2": "K5.2 task Updater, COM, logon",
+    "K5.3": "K5.3 update_data.dat holds C2s",
+    "K6.1": "K6.1 HTTPS POST /live/",
+    "K6.2": "K6.2 User-Agent",
+    "K6.3": "K6.3 RC4 then base64",
+    "K6.4": "K6.4 beacon interval",
+    "K6.5": "K6.5 beacon format",
+    "K6.6": "K6.6 beacon types 1\u20135",
+    "K6.7": "K6.7 URLS/CLEARURL/COMMAND/ERROR",
+    "K7 12": "K7 12 download+run EXE",
+    "K7 13": "K7 13 DLL via rundll32",
+    "K7 14": "K7 14 shellcode",
+    "K7 15": "K7 15 update",
+    "K7 17": "K7 17 uninstall / terminate",
+    "K7 18": "K7 18 bp.dat",
+    "K7 19": "K7 19 longer interval",
+    "K7 2": "K7 2 desktop links",
+    "K7 20": "K7 20 reset counter",
+    "K7 3": "K7 3 process list",
+    "K7 4": "K7 4 sysinfo",
+    "K8 discovery": "K8 discovery",
+    "K9 /live/": "K9 /live/",
+    "K9 custom_update\\": "K9 Custom_update\\",
+    "K9 mutex runnung": "K9 mutex runnung",
+    "K9 own hashes": "K9 own hashes",
+    "K9 task updater": "K9 task Updater",
+    "K9 ua": "K9 UA",
+    "K9 update_<hex>.dll": "K9 Update_<hex>.dll",
+    "K9 update_data.dat": "K9 update_data.dat"
+   },
+   "provenance": {
+    "K1.1a": "own analysis + lookup",
+    "K1.1b": "no cited entry",
+    "K1.2": "own analysis + lookup",
+    "K1.4": "no cited entry",
+    "K1.5": "no cited entry",
+    "K10 T1027": "no cited entry",
+    "K10 T1053.005": "no cited entry",
+    "K10 T1055": "own analysis",
+    "K10 T1059.003": "no cited entry",
+    "K10 T1070.004": "no cited entry",
+    "K10 T1218.011": "no cited entry",
+    "K2.1": "own analysis",
+    "K2.2": "no cited entry",
+    "K2.3": "own analysis",
+    "K2.4": "own analysis",
+    "K2.5": "no cited entry",
+    "K2.6": "own analysis",
+    "K3.1": "no cited entry",
+    "K3.2": "no cited entry",
+    "K3.3": "no cited entry",
+    "K3.4": "no cited entry",
+    "K3.5": "own analysis",
+    "K3.6": "no cited entry",
+    "K3.7": "own analysis",
+    "K4.1": "own analysis",
+    "K4.2": "own analysis",
+    "K4.4": "no cited entry",
+    "K5.1": "own analysis",
+    "K5.2": "own analysis",
+    "K5.3": "no cited entry",
+    "K6.1": "no cited entry",
+    "K6.2": "no cited entry",
+    "K6.3": "own analysis",
+    "K6.4": "own analysis",
+    "K6.5": "no cited entry",
+    "K6.6": "no cited entry",
+    "K6.7": "own analysis",
+    "K7 12": "no cited entry",
+    "K7 13": "no cited entry",
+    "K7 14": "no cited entry",
+    "K7 15": "no cited entry",
+    "K7 17": "no cited entry",
+    "K7 18": "no cited entry",
+    "K7 19": "no cited entry",
+    "K7 2": "no cited entry",
+    "K7 20": "no cited entry",
+    "K7 3": "no cited entry",
+    "K7 4": "no cited entry",
+    "K8 discovery": "no cited entry",
+    "K9 /live/": "no cited entry",
+    "K9 custom_update\\": "no cited entry",
+    "K9 mutex runnung": "no cited entry",
+    "K9 own hashes": "no cited entry",
+    "K9 task updater": "own analysis",
+    "K9 ua": "no cited entry",
+    "K9 update_<hex>.dll": "no cited entry",
+    "K9 update_data.dat": "no cited entry"
+   },
+   "provenance_note": "read from evidence.json, report.md, mitre.json beside the score",
+   "totals_note": "no Totals line: totals unchecked",
+   "verdicts": {
+    "K1.1a": [
+     "key",
+     "found"
+    ],
+    "K1.1b": [
+     "key",
+     "found"
+    ],
+    "K1.2": [
+     "key",
+     "partly (body)"
+    ],
+    "K1.4": [
+     "key",
+     "partly (body)"
+    ],
+    "K1.5": [
+     "key",
+     "found"
+    ],
+    "K10 T1027": [
+     "key",
+     "found"
+    ],
+    "K10 T1053.005": [
+     "key",
+     "found"
+    ],
+    "K10 T1055": [
+     "key",
+     "missed"
+    ],
+    "K10 T1059.003": [
+     "key",
+     "found"
+    ],
+    "K10 T1070.004": [
+     "key",
+     "missed"
+    ],
+    "K10 T1218.011": [
+     "key",
+     "found"
+    ],
+    "K2.1": [
+     "key",
+     "found"
+    ],
+    "K2.2": [
+     "key",
+     "found"
+    ],
+    "K2.3": [
+     "key",
+     "found"
+    ],
+    "K2.4": [
+     "key",
+     "partly (body)"
+    ],
+    "K2.5": [
+     "key",
+     "partly (body)"
+    ],
+    "K2.6": [
+     "key",
+     "partly (body)"
+    ],
+    "K3.1": [
+     "key",
+     "found"
+    ],
+    "K3.2": [
+     "key",
+     "found"
+    ],
+    "K3.3": [
+     "key",
+     "missed"
+    ],
+    "K3.4": [
+     "key",
+     "missed"
+    ],
+    "K3.5": [
+     "key",
+     "found"
+    ],
+    "K3.6": [
+     "key",
+     "found"
+    ],
+    "K3.7": [
+     "key",
+     "found"
+    ],
+    "K4.1": [
+     "key",
+     "partly (body)"
+    ],
+    "K4.2": [
+     "key",
+     "partly (body)"
+    ],
+    "K4.4": [
+     "key",
+     "found"
+    ],
+    "K5.1": [
+     "key",
+     "partly (body)"
+    ],
+    "K5.2": [
+     "key",
+     "found"
+    ],
+    "K5.3": [
+     "key",
+     "partly (body)"
+    ],
+    "K6.1": [
+     "key",
+     "found"
+    ],
+    "K6.2": [
+     "key",
+     "found"
+    ],
+    "K6.3": [
+     "key",
+     "found"
+    ],
+    "K6.4": [
+     "key",
+     "found"
+    ],
+    "K6.5": [
+     "key",
+     "found"
+    ],
+    "K6.6": [
+     "key",
+     "partly (body)"
+    ],
+    "K6.7": [
+     "key",
+     "found"
+    ],
+    "K7 12": [
+     "key",
+     "partly (body)"
+    ],
+    "K7 13": [
+     "key",
+     "partly (body)"
+    ],
+    "K7 14": [
+     "key",
+     "partly (body)"
+    ],
+    "K7 15": [
+     "key",
+     "partly (body)"
+    ],
+    "K7 17": [
+     "key",
+     "partly (body)"
+    ],
+    "K7 18": [
+     "key",
+     "partly (body)"
+    ],
+    "K7 19": [
+     "key",
+     "found"
+    ],
+    "K7 2": [
+     "key",
+     "partly (body)"
+    ],
+    "K7 20": [
+     "key",
+     "found"
+    ],
+    "K7 3": [
+     "key",
+     "partly (body)"
+    ],
+    "K7 4": [
+     "key",
+     "found"
+    ],
+    "K8 discovery": [
+     "key",
+     "found"
+    ],
+    "K9 /live/": [
+     "key",
+     "found"
+    ],
+    "K9 custom_update\\": [
+     "key",
+     "partly (body)"
+    ],
+    "K9 mutex runnung": [
+     "key",
+     "found"
+    ],
+    "K9 own hashes": [
+     "key",
+     "found"
+    ],
+    "K9 task updater": [
+     "key",
+     "found"
+    ],
+    "K9 ua": [
+     "key",
+     "found"
+    ],
+    "K9 update_<hex>.dll": [
+     "key",
+     "partly (body)"
+    ],
+    "K9 update_data.dat": [
+     "key",
+     "partly (body)"
+    ]
+   }
+  },
+  "sha256": "932e6defc4e907b040f6e31117be95362a39bcedb5c52c2786c9be09a147fd6f"
+ },
+ ".superpowers/sdd/mandate-2026-09-17/benchmark/deepseek/run4/score.md": {
+  "read": {
+   "beyond": null,
+   "beyond_note": "no section headed 'Beyond the human reports'",
+   "column": "Run 4",
+   "earlier_runs": "not ruled out",
+   "earlier_runs_note": "run-summary.json does not say earlier_runs_ignored or isolated_memory, and the score does not state that earlier runs were used",
+   "labels": {
+    "K1.1a": "K1.1a family",
+    "K1.1b": "K1.1b loader",
+    "K1.2": "K1.2 IcedID link",
+    "K1.4": "K1.4 x64 DLL; arch check",
+    "K1.5": "K1.5 four exports, one address",
+    "K10 T1027": "K10 T1027",
+    "K10 T1053.005": "K10 T1053.005",
+    "K10 T1055": "K10 T1055",
+    "K10 T1059.003": "K10 T1059.003",
+    "K10 T1070.004": "K10 T1070.004",
+    "K10 T1218.011": "K10 T1218.011",
+    "K2.1": "K2.1 APIs by hash",
+    "K2.2": "K2.2 abort on failed check",
+    "K2.3": "K2.3 mutex",
+    "K2.4": "K2.4 install, then persist",
+    "K2.5": "K2.5 register, then loop",
+    "K2.6": "K2.6 update_data.dat read first",
+    "K3.1": "K3.1 PEB BeingDebugged",
+    "K3.2": "K3.2 process count 75/50",
+    "K3.3": "K3.3 architecture / WOW64",
+    "K3.4": "K3.4 MAC check",
+    "K3.5": "K3.5 PEB walk + CRC32 names",
+    "K3.6": "K3.6 string encryption",
+    "K3.7": "K3.7 self-deletion (ADS)",
+    "K4.1": "K4.1 bot ID",
+    "K4.2": "K4.2 group \u2192 FNV-1a",
+    "K4.4": "K4.4 two encrypted C2s",
+    "K5.1": "K5.1 Custom_update\\Update_%x.dll",
+    "K5.2": "K5.2 task Updater, COM, logon",
+    "K5.3": "K5.3 update_data.dat holds C2s",
+    "K6.1": "K6.1 HTTPS POST /live/",
+    "K6.2": "K6.2 User-Agent",
+    "K6.3": "K6.3 RC4 then base64",
+    "K6.4": "K6.4 beacon interval",
+    "K6.5": "K6.5 beacon format",
+    "K6.6": "K6.6 beacon types 1\u20135",
+    "K6.7": "K6.7 URLS/CLEARURL/COMMAND/ERROR",
+    "K7 12": "K7 12 download + run EXE",
+    "K7 13": "K7 13 DLL via rundll32",
+    "K7 14": "K7 14 shellcode",
+    "K7 15": "K7 15 update",
+    "K7 17": "K7 17 uninstall",
+    "K7 18": "K7 18 bp.dat",
+    "K7 19": "K7 19 longer interval",
+    "K7 2": "K7 2 desktop links",
+    "K7 20": "K7 20 reset counter",
+    "K7 3": "K7 3 process list",
+    "K7 4": "K7 4 sysinfo",
+    "K8 discovery": "K8 discovery",
+    "K9 /live/": "K9 /live/",
+    "K9 custom_update\\": "K9 Custom_update\\",
+    "K9 mutex runnung": "K9 mutex runnung",
+    "K9 own hashes": "K9 own hashes",
+    "K9 task updater": "K9 task Updater",
+    "K9 ua": "K9 UA",
+    "K9 update_<hex>.dll": "K9 Update_<hex>.dll",
+    "K9 update_data.dat": "K9 update_data.dat"
+   },
+   "provenance": {
+    "K1.1a": "own analysis + lookup",
+    "K1.1b": "no cited entry",
+    "K1.2": "lookup only",
+    "K1.4": "own analysis",
+    "K1.5": "no cited entry",
+    "K10 T1027": "no cited entry",
+    "K10 T1053.005": "no cited entry",
+    "K10 T1055": "own analysis",
+    "K10 T1059.003": "no cited entry",
+    "K10 T1070.004": "no cited entry",
+    "K10 T1218.011": "no cited entry",
+    "K2.1": "own analysis",
+    "K2.2": "own analysis",
+    "K2.3": "own analysis",
+    "K2.4": "own analysis",
+    "K2.5": "own analysis",
+    "K2.6": "own analysis",
+    "K3.1": "no cited entry",
+    "K3.2": "own analysis",
+    "K3.3": "own analysis",
+    "K3.4": "no cited entry",
+    "K3.5": "own analysis",
+    "K3.6": "own analysis",
+    "K3.7": "own analysis",
+    "K4.1": "own analysis",
+    "K4.2": "no cited entry",
+    "K4.4": "no cited entry",
+    "K5.1": "no cited entry",
+    "K5.2": "own analysis",
+    "K5.3": "own analysis",
+    "K6.1": "own analysis",
+    "K6.2": "no cited entry",
+    "K6.3": "own analysis",
+    "K6.4": "own analysis",
+    "K6.5": "no cited entry",
+    "K6.6": "own analysis",
+    "K6.7": "own analysis",
+    "K7 12": "no cited entry",
+    "K7 13": "own analysis",
+    "K7 14": "own analysis",
+    "K7 15": "own analysis",
+    "K7 17": "no cited entry",
+    "K7 18": "own analysis",
+    "K7 19": "own analysis",
+    "K7 2": "own analysis",
+    "K7 20": "own analysis",
+    "K7 3": "own analysis",
+    "K7 4": "no cited entry",
+    "K8 discovery": "no cited entry",
+    "K9 /live/": "no cited entry",
+    "K9 custom_update\\": "no cited entry",
+    "K9 mutex runnung": "no cited entry",
+    "K9 own hashes": "no cited entry",
+    "K9 task updater": "own analysis",
+    "K9 ua": "no cited entry",
+    "K9 update_<hex>.dll": "no cited entry",
+    "K9 update_data.dat": "own analysis"
+   },
+   "provenance_note": "read from evidence.json, report.md, mitre.json beside the score",
+   "totals_note": "no Totals line: totals unchecked",
+   "verdicts": {
+    "K1.1a": [
+     "key",
+     "found"
+    ],
+    "K1.1b": [
+     "key",
+     "found"
+    ],
+    "K1.2": [
+     "key",
+     "partly (body)"
+    ],
+    "K1.4": [
+     "key",
+     "found"
+    ],
+    "K1.5": [
+     "key",
+     "found"
+    ],
+    "K10 T1027": [
+     "key",
+     "found"
+    ],
+    "K10 T1053.005": [
+     "key",
+     "found"
+    ],
+    "K10 T1055": [
+     "key",
+     "partly (body)"
+    ],
+    "K10 T1059.003": [
+     "key",
+     "found"
+    ],
+    "K10 T1070.004": [
+     "key",
+     "found"
+    ],
+    "K10 T1218.011": [
+     "key",
+     "found"
+    ],
+    "K2.1": [
+     "key",
+     "found"
+    ],
+    "K2.2": [
+     "key",
+     "found"
+    ],
+    "K2.3": [
+     "key",
+     "found"
+    ],
+    "K2.4": [
+     "key",
+     "found"
+    ],
+    "K2.5": [
+     "key",
+     "partly (body)"
+    ],
+    "K2.6": [
+     "key",
+     "found"
+    ],
+    "K3.1": [
+     "key",
+     "found"
+    ],
+    "K3.2": [
+     "key",
+     "found"
+    ],
+    "K3.3": [
+     "key",
+     "found"
+    ],
+    "K3.4": [
+     "key",
+     "missed"
+    ],
+    "K3.5": [
+     "key",
+     "found"
+    ],
+    "K3.6": [
+     "key",
+     "found"
+    ],
+    "K3.7": [
+     "key",
+     "found"
+    ],
+    "K4.1": [
+     "key",
+     "partly (body)"
+    ],
+    "K4.2": [
+     "key",
+     "found"
+    ],
+    "K4.4": [
+     "key",
+     "found"
+    ],
+    "K5.1": [
+     "key",
+     "found"
+    ],
+    "K5.2": [
+     "key",
+     "partly (body)"
+    ],
+    "K5.3": [
+     "key",
+     "found"
+    ],
+    "K6.1": [
+     "key",
+     "found"
+    ],
+    "K6.2": [
+     "key",
+     "found"
+    ],
+    "K6.3": [
+     "key",
+     "found"
+    ],
+    "K6.4": [
+     "key",
+     "found"
+    ],
+    "K6.5": [
+     "key",
+     "found"
+    ],
+    "K6.6": [
+     "key",
+     "partly (body)"
+    ],
+    "K6.7": [
+     "key",
+     "found"
+    ],
+    "K7 12": [
+     "key",
+     "partly (body)"
+    ],
+    "K7 13": [
+     "key",
+     "found"
+    ],
+    "K7 14": [
+     "key",
+     "found"
+    ],
+    "K7 15": [
+     "key",
+     "wrong"
+    ],
+    "K7 17": [
+     "key",
+     "missed"
+    ],
+    "K7 18": [
+     "key",
+     "partly (body)"
+    ],
+    "K7 19": [
+     "key",
+     "found"
+    ],
+    "K7 2": [
+     "key",
+     "found"
+    ],
+    "K7 20": [
+     "key",
+     "found"
+    ],
+    "K7 3": [
+     "key",
+     "found"
+    ],
+    "K7 4": [
+     "key",
+     "found"
+    ],
+    "K8 discovery": [
+     "key",
+     "found"
+    ],
+    "K9 /live/": [
+     "key",
+     "found"
+    ],
+    "K9 custom_update\\": [
+     "key",
+     "found"
+    ],
+    "K9 mutex runnung": [
+     "key",
+     "found"
+    ],
+    "K9 own hashes": [
+     "key",
+     "found"
+    ],
+    "K9 task updater": [
+     "key",
+     "partly (body)"
+    ],
+    "K9 ua": [
+     "key",
+     "found"
+    ],
+    "K9 update_<hex>.dll": [
+     "key",
+     "found"
+    ],
+    "K9 update_data.dat": [
+     "key",
+     "found"
+    ]
+   }
+  },
+  "sha256": "cb2648eb953afbbc331a02f4a3fe206c4a648a0095e8f1a3e0715bfcd5d6dd42"
+ },
+ ".superpowers/sdd/mandate-2026-09-17/benchmark/deepseek/run5/score.md": {
+  "read": {
+   "beyond": 27,
+   "beyond_note": "27 listed, as stated",
+   "column": "Run 5",
+   "earlier_runs": "not ruled out",
+   "earlier_runs_note": "run-summary.json does not say earlier_runs_ignored or isolated_memory, and the score does not state that earlier runs were used",
+   "labels": {
+    "K1.1a": "K1.1a family",
+    "K1.1b": "K1.1b loader",
+    "K1.2": "K1.2 IcedID link",
+    "K1.4": "K1.4 x64 DLL; arch check",
+    "K1.5": "K1.5 four exports, one address",
+    "K10 T1027": "K10 T1027",
+    "K10 T1053.005": "K10 T1053.005",
+    "K10 T1055": "K10 T1055",
+    "K10 T1059.003": "K10 T1059.003",
+    "K10 T1070.004": "K10 T1070.004",
+    "K10 T1218.011": "K10 T1218.011",
+    "K2.1": "K2.1 APIs by hash",
+    "K2.2": "K2.2 abort on failed check",
+    "K2.3": "K2.3 mutex",
+    "K2.4": "K2.4 install, then persist",
+    "K2.5": "K2.5 register, then loop",
+    "K2.6": "K2.6 update_data.dat read first",
+    "K3.1": "K3.1 PEB BeingDebugged",
+    "K3.2": "K3.2 process count 75/50",
+    "K3.3": "K3.3 architecture / WOW64",
+    "K3.4": "K3.4 MAC check",
+    "K3.5": "K3.5 PEB walk + CRC32 names",
+    "K3.6": "K3.6 string encryption",
+    "K3.7": "K3.7 self-deletion (ADS)",
+    "K4.1": "K4.1 bot ID",
+    "K4.2": "K4.2 group \u2192 FNV-1a",
+    "K4.4": "K4.4 two encrypted C2s",
+    "K5.1": "K5.1 Custom_update\\Update_%x.dll",
+    "K5.2": "K5.2 task Updater, COM, logon",
+    "K5.3": "K5.3 update_data.dat holds C2s",
+    "K6.1": "K6.1 HTTPS POST /live/",
+    "K6.2": "K6.2 User-Agent",
+    "K6.3": "K6.3 RC4 then base64",
+    "K6.4": "K6.4 beacon interval",
+    "K6.5": "K6.5 beacon format",
+    "K6.6": "K6.6 beacon types 1\u20135",
+    "K6.7": "K6.7 URLS/CLEARURL/COMMAND/ERROR",
+    "K7 12": "K7 12 download + run EXE",
+    "K7 13": "K7 13 DLL via rundll32",
+    "K7 14": "K7 14 shellcode",
+    "K7 15": "K7 15 update",
+    "K7 17": "K7 17 uninstall",
+    "K7 18": "K7 18 bp.dat",
+    "K7 19": "K7 19 longer interval",
+    "K7 2": "K7 2 desktop links",
+    "K7 20": "K7 20 reset counter",
+    "K7 3": "K7 3 process list",
+    "K7 4": "K7 4 sysinfo",
+    "K8 discovery": "K8 discovery",
+    "K9 /live/": "K9 /live/",
+    "K9 custom_update\\": "K9 Custom_update\\",
+    "K9 mutex runnung": "K9 mutex runnung",
+    "K9 own hashes": "K9 own hashes",
+    "K9 task updater": "K9 task Updater",
+    "K9 ua": "K9 UA",
+    "K9 update_<hex>.dll": "K9 Update_<hex>.dll",
+    "K9 update_data.dat": "K9 update_data.dat"
+   },
+   "provenance": {
+    "K1.1a": "own analysis + lookup",
+    "K1.1b": "no cited entry",
+    "K1.2": "own analysis + lookup",
+    "K1.4": "own analysis",
+    "K1.5": "no cited entry",
+    "K10 T1027": "no cited entry",
+    "K10 T1053.005": "no cited entry",
+    "K10 T1055": "own analysis + lookup",
+    "K10 T1059.003": "no cited entry",
+    "K10 T1070.004": "own analysis",
+    "K10 T1218.011": "no cited entry",
+    "K2.1": "own analysis",
+    "K2.2": "own analysis",
+    "K2.3": "own analysis",
+    "K2.4": "own analysis",
+    "K2.5": "no cited entry",
+    "K2.6": "no cited entry",
+    "K3.1": "own analysis",
+    "K3.2": "no cited entry",
+    "K3.3": "own analysis",
+    "K3.4": "own analysis",
+    "K3.5": "no cited entry",
+    "K3.6": "own analysis",
+    "K3.7": "own analysis",
+    "K4.1": "no cited entry",
+    "K4.2": "own analysis",
+    "K4.4": "own analysis",
+    "K5.1": "own analysis",
+    "K5.2": "own analysis",
+    "K5.3": "own analysis",
+    "K6.1": "own analysis",
+    "K6.2": "own analysis",
+    "K6.3": "own analysis",
+    "K6.4": "own analysis",
+    "K6.5": "no cited entry",
+    "K6.6": "no cited entry",
+    "K6.7": "own analysis",
+    "K7 12": "no cited entry",
+    "K7 13": "own analysis",
+    "K7 14": "own analysis",
+    "K7 15": "no cited entry",
+    "K7 17": "no cited entry",
+    "K7 18": "own analysis",
+    "K7 19": "no cited entry",
+    "K7 2": "own analysis",
+    "K7 20": "no cited entry",
+    "K7 3": "own analysis",
+    "K7 4": "own analysis",
+    "K8 discovery": "no cited entry",
+    "K9 /live/": "no cited entry",
+    "K9 custom_update\\": "own analysis",
+    "K9 mutex runnung": "no cited entry",
+    "K9 own hashes": "no cited entry",
+    "K9 task updater": "no cited entry",
+    "K9 ua": "no cited entry",
+    "K9 update_<hex>.dll": "own analysis",
+    "K9 update_data.dat": "own analysis"
+   },
+   "provenance_note": "read from evidence.json, report.md, mitre.json beside the score",
+   "totals_note": "Totals line checked against the table",
+   "verdicts": {
+    "K1.1a": [
+     "key",
+     "found"
+    ],
+    "K1.1b": [
+     "key",
+     "found"
+    ],
+    "K1.2": [
+     "key",
+     "partly (body)"
+    ],
+    "K1.4": [
+     "key",
+     "found"
+    ],
+    "K1.5": [
+     "key",
+     "found"
+    ],
+    "K10 T1027": [
+     "key",
+     "found"
+    ],
+    "K10 T1053.005": [
+     "key",
+     "found"
+    ],
+    "K10 T1055": [
+     "key",
+     "partly (body)"
+    ],
+    "K10 T1059.003": [
+     "key",
+     "found"
+    ],
+    "K10 T1070.004": [
+     "key",
+     "found"
+    ],
+    "K10 T1218.011": [
+     "key",
+     "found"
+    ],
+    "K2.1": [
+     "key",
+     "found"
+    ],
+    "K2.2": [
+     "key",
+     "found"
+    ],
+    "K2.3": [
+     "key",
+     "found"
+    ],
+    "K2.4": [
+     "key",
+     "partly (body)"
+    ],
+    "K2.5": [
+     "key",
+     "found"
+    ],
+    "K2.6": [
+     "key",
+     "missed"
+    ],
+    "K3.1": [
+     "key",
+     "found"
+    ],
+    "K3.2": [
+     "key",
+     "found"
+    ],
+    "K3.3": [
+     "key",
+     "found"
+    ],
+    "K3.4": [
+     "key",
+     "partly (body)"
+    ],
+    "K3.5": [
+     "key",
+     "found"
+    ],
+    "K3.6": [
+     "key",
+     "found"
+    ],
+    "K3.7": [
+     "key",
+     "found"
+    ],
+    "K4.1": [
+     "key",
+     "partly (dump)"
+    ],
+    "K4.2": [
+     "key",
+     "found"
+    ],
+    "K4.4": [
+     "key",
+     "found"
+    ],
+    "K5.1": [
+     "key",
+     "partly (body)"
+    ],
+    "K5.2": [
+     "key",
+     "found"
+    ],
+    "K5.3": [
+     "key",
+     "partly (body)"
+    ],
+    "K6.1": [
+     "key",
+     "found"
+    ],
+    "K6.2": [
+     "key",
+     "found"
+    ],
+    "K6.3": [
+     "key",
+     "found"
+    ],
+    "K6.4": [
+     "key",
+     "found"
+    ],
+    "K6.5": [
+     "key",
+     "found"
+    ],
+    "K6.6": [
+     "key",
+     "missed"
+    ],
+    "K6.7": [
+     "key",
+     "found"
+    ],
+    "K7 12": [
+     "key",
+     "found"
+    ],
+    "K7 13": [
+     "key",
+     "found"
+    ],
+    "K7 14": [
+     "key",
+     "found"
+    ],
+    "K7 15": [
+     "key",
+     "wrong"
+    ],
+    "K7 17": [
+     "key",
+     "found"
+    ],
+    "K7 18": [
+     "key",
+     "partly (body)"
+    ],
+    "K7 19": [
+     "key",
+     "found"
+    ],
+    "K7 2": [
+     "key",
+     "found"
+    ],
+    "K7 20": [
+     "key",
+     "found"
+    ],
+    "K7 3": [
+     "key",
+     "found"
+    ],
+    "K7 4": [
+     "key",
+     "found"
+    ],
+    "K8 discovery": [
+     "key",
+     "found"
+    ],
+    "K9 /live/": [
+     "key",
+     "found"
+    ],
+    "K9 custom_update\\": [
+     "key",
+     "partly (body)"
+    ],
+    "K9 mutex runnung": [
+     "key",
+     "found"
+    ],
+    "K9 own hashes": [
+     "key",
+     "found"
+    ],
+    "K9 task updater": [
+     "key",
+     "found"
+    ],
+    "K9 ua": [
+     "key",
+     "found"
+    ],
+    "K9 update_<hex>.dll": [
+     "key",
+     "partly (body)"
+    ],
+    "K9 update_data.dat": [
+     "key",
+     "partly (body)"
+    ]
+   }
+  },
+  "sha256": "576bf3c1c607728ba202660ed769a295b6b7029406c068f4233148fa8cc5af7e"
+ },
+ ".superpowers/sdd/mandate-2026-09-17/benchmark/deepseek/run7/score.md": {
+  "read": {
+   "beyond": 30,
+   "beyond_note": "30 listed, as stated",
+   "column": "Run 7",
+   "earlier_runs": "not ruled out",
+   "earlier_runs_note": "run-summary.json does not say earlier_runs_ignored or isolated_memory, and the score does not state that earlier runs were used",
+   "labels": {
+    "K1.1a": "K1.1a family",
+    "K1.1b": "K1.1b loader",
+    "K1.2": "K1.2 IcedID link",
+    "K1.4": "K1.4 x64 DLL; arch check",
+    "K1.5": "K1.5 four exports, one address",
+    "K10 T1027": "K10 T1027",
+    "K10 T1053.005": "K10 T1053.005",
+    "K10 T1055": "K10 T1055",
+    "K10 T1059.003": "K10 T1059.003",
+    "K10 T1070.004": "K10 T1070.004",
+    "K10 T1218.011": "K10 T1218.011",
+    "K2.1": "K2.1 APIs by hash",
+    "K2.2": "K2.2 abort on failed check",
+    "K2.3": "K2.3 mutex",
+    "K2.4": "K2.4 install, then persist",
+    "K2.5": "K2.5 register, then loop",
+    "K2.6": "K2.6 update_data.dat read first",
+    "K3.1": "K3.1 PEB BeingDebugged",
+    "K3.2": "K3.2 process count 75/50",
+    "K3.3": "K3.3 architecture / WOW64",
+    "K3.4": "K3.4 MAC check",
+    "K3.5": "K3.5 PEB walk + CRC32 names",
+    "K3.6": "K3.6 string encryption",
+    "K3.7": "K3.7 self-deletion (ADS)",
+    "K4.1": "K4.1 bot ID",
+    "K4.2": "K4.2 group \u2192 FNV-1a",
+    "K4.4": "K4.4 two encrypted C2s",
+    "K5.1": "K5.1 Custom_update\\Update_%x.dll",
+    "K5.2": "K5.2 task Updater, COM, logon",
+    "K5.3": "K5.3 update_data.dat holds C2s",
+    "K6.1": "K6.1 HTTPS POST /live/",
+    "K6.2": "K6.2 User-Agent",
+    "K6.3": "K6.3 RC4 then base64",
+    "K6.4": "K6.4 beacon interval",
+    "K6.5": "K6.5 beacon format",
+    "K6.6": "K6.6 beacon types 1\u20135",
+    "K6.7": "K6.7 URLS/CLEARURL/COMMAND/ERROR",
+    "K7 12": "K7 12 download + run EXE",
+    "K7 13": "K7 13 DLL via rundll32",
+    "K7 14": "K7 14 shellcode",
+    "K7 15": "K7 15 update",
+    "K7 17": "K7 17 uninstall",
+    "K7 18": "K7 18 bp.dat",
+    "K7 19": "K7 19 longer interval",
+    "K7 2": "K7 2 desktop links",
+    "K7 20": "K7 20 reset counter",
+    "K7 3": "K7 3 process list",
+    "K7 4": "K7 4 sysinfo",
+    "K8 discovery": "K8 discovery",
+    "K9 /live/": "K9 /live/",
+    "K9 custom_update\\": "K9 Custom_update\\",
+    "K9 mutex runnung": "K9 mutex runnung",
+    "K9 own hashes": "K9 own hashes",
+    "K9 task updater": "K9 task Updater",
+    "K9 ua": "K9 UA",
+    "K9 update_<hex>.dll": "K9 Update_<hex>.dll",
+    "K9 update_data.dat": "K9 update_data.dat"
+   },
+   "provenance": {
+    "K1.1a": "own analysis + lookup",
+    "K1.1b": "no cited entry",
+    "K1.2": "lookup only",
+    "K1.4": "own analysis",
+    "K1.5": "own analysis",
+    "K10 T1027": "no cited entry",
+    "K10 T1053.005": "no cited entry",
+    "K10 T1055": "own analysis",
+    "K10 T1059.003": "no cited entry",
+    "K10 T1070.004": "own analysis",
+    "K10 T1218.011": "own analysis",
+    "K2.1": "own analysis",
+    "K2.2": "own analysis",
+    "K2.3": "own analysis",
+    "K2.4": "own analysis",
+    "K2.5": "own analysis",
+    "K2.6": "own analysis",
+    "K3.1": "own analysis",
+    "K3.2": "own analysis",
+    "K3.3": "own analysis",
+    "K3.4": "own analysis",
+    "K3.5": "own analysis",
+    "K3.6": "own analysis",
+    "K3.7": "own analysis",
+    "K4.1": "no cited entry",
+    "K4.2": "own analysis",
+    "K4.4": "own analysis",
+    "K5.1": "own analysis",
+    "K5.2": "own analysis",
+    "K5.3": "own analysis",
+    "K6.1": "no cited entry",
+    "K6.2": "no cited entry",
+    "K6.3": "no cited entry",
+    "K6.4": "own analysis",
+    "K6.5": "own analysis",
+    "K6.6": "own analysis",
+    "K6.7": "no cited entry",
+    "K7 12": "no cited entry",
+    "K7 13": "own analysis",
+    "K7 14": "own analysis",
+    "K7 15": "own analysis",
+    "K7 17": "no cited entry",
+    "K7 18": "own analysis",
+    "K7 19": "own analysis",
+    "K7 2": "no cited entry",
+    "K7 20": "own analysis",
+    "K7 3": "own analysis",
+    "K7 4": "own analysis",
+    "K8 discovery": "no cited entry",
+    "K9 /live/": "own analysis",
+    "K9 custom_update\\": "own analysis",
+    "K9 mutex runnung": "no cited entry",
+    "K9 own hashes": "no cited entry",
+    "K9 task updater": "no cited entry",
+    "K9 ua": "no cited entry",
+    "K9 update_<hex>.dll": "no cited entry",
+    "K9 update_data.dat": "own analysis"
+   },
+   "provenance_note": "read from evidence.json, report.md, mitre.json beside the score",
+   "totals_note": "Totals line checked against the table",
+   "verdicts": {
+    "K1.1a": [
+     "key",
+     "found"
+    ],
+    "K1.1b": [
+     "key",
+     "found"
+    ],
+    "K1.2": [
+     "key",
+     "partly (body)"
+    ],
+    "K1.4": [
+     "key",
+     "found"
+    ],
+    "K1.5": [
+     "key",
+     "found"
+    ],
+    "K10 T1027": [
+     "key",
+     "found"
+    ],
+    "K10 T1053.005": [
+     "key",
+     "found"
+    ],
+    "K10 T1055": [
+     "key",
+     "missed"
+    ],
+    "K10 T1059.003": [
+     "key",
+     "found"
+    ],
+    "K10 T1070.004": [
+     "key",
+     "found"
+    ],
+    "K10 T1218.011": [
+     "key",
+     "found"
+    ],
+    "K2.1": [
+     "key",
+     "found"
+    ],
+    "K2.2": [
+     "key",
+     "found"
+    ],
+    "K2.3": [
+     "key",
+     "found"
+    ],
+    "K2.4": [
+     "key",
+     "found"
+    ],
+    "K2.5": [
+     "key",
+     "found"
+    ],
+    "K2.6": [
+     "key",
+     "found"
+    ],
+    "K3.1": [
+     "key",
+     "found"
+    ],
+    "K3.2": [
+     "key",
+     "found"
+    ],
+    "K3.3": [
+     "key",
+     "found"
+    ],
+    "K3.4": [
+     "key",
+     "found"
+    ],
+    "K3.5": [
+     "key",
+     "found"
+    ],
+    "K3.6": [
+     "key",
+     "found"
+    ],
+    "K3.7": [
+     "key",
+     "found"
+    ],
+    "K4.1": [
+     "key",
+     "partly (body)"
+    ],
+    "K4.2": [
+     "key",
+     "partly (body)"
+    ],
+    "K4.4": [
+     "key",
+     "found"
+    ],
+    "K5.1": [
+     "key",
+     "found"
+    ],
+    "K5.2": [
+     "key",
+     "found"
+    ],
+    "K5.3": [
+     "key",
+     "found"
+    ],
+    "K6.1": [
+     "key",
+     "found"
+    ],
+    "K6.2": [
+     "key",
+     "found"
+    ],
+    "K6.3": [
+     "key",
+     "partly (body)"
+    ],
+    "K6.4": [
+     "key",
+     "found"
+    ],
+    "K6.5": [
+     "key",
+     "found"
+    ],
+    "K6.6": [
+     "key",
+     "partly (body)"
+    ],
+    "K6.7": [
+     "key",
+     "found"
+    ],
+    "K7 12": [
+     "key",
+     "found"
+    ],
+    "K7 13": [
+     "key",
+     "found"
+    ],
+    "K7 14": [
+     "key",
+     "found"
+    ],
+    "K7 15": [
+     "key",
+     "found"
+    ],
+    "K7 17": [
+     "key",
+     "found"
+    ],
+    "K7 18": [
+     "key",
+     "partly (body)"
+    ],
+    "K7 19": [
+     "key",
+     "found"
+    ],
+    "K7 2": [
+     "key",
+     "found"
+    ],
+    "K7 20": [
+     "key",
+     "found"
+    ],
+    "K7 3": [
+     "key",
+     "found"
+    ],
+    "K7 4": [
+     "key",
+     "found"
+    ],
+    "K8 discovery": [
+     "key",
+     "found"
+    ],
+    "K9 /live/": [
+     "key",
+     "found"
+    ],
+    "K9 custom_update\\": [
+     "key",
+     "found"
+    ],
+    "K9 mutex runnung": [
+     "key",
+     "found"
+    ],
+    "K9 own hashes": [
+     "key",
+     "found"
+    ],
+    "K9 task updater": [
+     "key",
+     "found"
+    ],
+    "K9 ua": [
+     "key",
+     "found"
+    ],
+    "K9 update_<hex>.dll": [
+     "key",
+     "found"
+    ],
+    "K9 update_data.dat": [
+     "key",
+     "found"
+    ]
+   }
+  },
+  "sha256": "57a5e05c91a348e40f774968637b28a8679b300e569bcb1d7ace03a2c844cb6c"
+ },
+ ".superpowers/sdd/mandate-2026-09-17/benchmark/deepseek/score-brief.md": {
+  "refused": ".superpowers/sdd/mandate-2026-09-17/benchmark/deepseek/score-brief.md: no section headed 'Item by item'",
+  "sha256": "e9f36bf04452617052c142e2356584cbc7875853e2be6f76193405c4662b2eab"
+ },
+ ".superpowers/sdd/mandate-2026-09-17/benchmark/iteration2/runs/large-latrodectus-r2/score.md": {
+  "refused": ".superpowers/sdd/mandate-2026-09-17/benchmark/iteration2/runs/large-latrodectus-r2/score.md: the scored column 'Score' is not a verdict for 'K9': '3 / 1 / 4 / 0'",
+  "sha256": "5fd3142f63adc3596fea4ec0038ae403cdb3d946d7c8551e71e7da630f8fbe61"
+ },
+ ".superpowers/sdd/mandate-2026-09-17/benchmark/iteration2/runs/large-latrodectus/score.md": {
+  "read": {
+   "beyond": null,
+   "beyond_note": "no section headed 'Beyond the human reports'",
+   "column": "Score",
+   "earlier_runs": "not ruled out",
+   "earlier_runs_note": "run-summary.json does not say earlier_runs_ignored or isolated_memory, and the score does not state that earlier runs were used",
+   "labels": {
+    "K1.1a": "K1.1a family",
+    "K1.1b": "K1.1b loader",
+    "K1.2": "K1.2 IcedID link",
+    "K1.4": "K1.4 x64 DLL; arch check",
+    "K1.5": "K1.5 four exports, one address"
+   },
+   "provenance": {
+    "K1.1a": "lookup only",
+    "K1.1b": "own analysis + lookup",
+    "K1.2": "no cited entry",
+    "K1.4": "no cited entry",
+    "K1.5": "no cited entry"
+   },
+   "provenance_note": "read from evidence.json, report.md, mitre.json beside the score",
+   "totals_note": "no Totals line: totals unchecked",
+   "verdicts": {
+    "K1.1a": [
+     "key",
+     "found"
+    ],
+    "K1.1b": [
+     "key",
+     "found"
+    ],
+    "K1.2": [
+     "key",
+     "missed"
+    ],
+    "K1.4": [
+     "key",
+     "partly (body)"
+    ],
+    "K1.5": [
+     "key",
+     "found"
+    ]
+   }
+  },
+  "sha256": "4cb453c7ef2a93d62ec2fc9b2a3f9de5d9f8ad59811f3f7fc15a28258e8d0e20"
+ },
+ ".superpowers/sdd/mandate-2026-09-17/benchmark/iteration4/runs/large-latrodectus/score.md": {
+  "refused": ".superpowers/sdd/mandate-2026-09-17/benchmark/iteration4/runs/large-latrodectus/score.md: the scored column 'Score' is not a verdict for 'K1.1b loader': '**partly (body)** (it. 2: found)'",
+  "sha256": "9f0b1d0fcee902c3b9347c7debab0ba1f1f6220059b78f84ed611e9f4560ccd9"
+ },
+ ".superpowers/sdd/mandate-2026-09-17/benchmark/iteration5/runs/large-latrodectus/score.md": {
+  "refused": ".superpowers/sdd/mandate-2026-09-17/benchmark/iteration5/runs/large-latrodectus/score.md: the scored column 'Score' is not a verdict for 'K1.1b loader': '**found** (it. 4: partly)'",
+  "sha256": "483c90b3a27a894dcbc3e9248ffb0631fb79a65454a05a2937d1d4d4e7a15f73"
+ },
+ ".superpowers/sdd/mandate-2026-09-17/benchmark/iteration6/runs/large-latrodectus/score.md": {
+  "refused": ".superpowers/sdd/mandate-2026-09-17/benchmark/iteration6/runs/large-latrodectus/score.md: the scored column 'Score' is not a verdict for 'K1.1b loader': '**partly (body)** (it. 5: found)'",
+  "sha256": "85f4a8d32bac99bfb3ad9bc0a2d0de9445039fc843657a2efeda690128219e2b"
+ },
+ ".superpowers/sdd/mandate-2026-09-17/benchmark/runs/large-latrodectus/score.md": {
+  "read": {
+   "beyond": null,
+   "beyond_note": "no section headed 'Beyond the human reports'",
+   "column": "Score",
+   "earlier_runs": "not ruled out",
+   "earlier_runs_note": "run-summary.json does not say earlier_runs_ignored or isolated_memory, and the score does not state that earlier runs were used",
+   "labels": {
+    "K1.1a": "K1.1a family",
+    "K1.1b": "K1.1b loader",
+    "K1.2": "K1.2 IcedID link",
+    "K1.4": "K1.4 x64 DLL; host-arch check",
+    "K1.5": "K1.5 four exports, one address"
+   },
+   "provenance": {
+    "K1.1a": "lookup only",
+    "K1.1b": "no cited entry",
+    "K1.2": "no cited entry",
+    "K1.4": "no cited entry",
+    "K1.5": "no cited entry"
+   },
+   "provenance_note": "read from evidence.json, report.md, mitre.json beside the score",
+   "totals_note": "no Totals line: totals unchecked",
+   "verdicts": {
+    "K1.1a": [
+     "key",
+     "found"
+    ],
+    "K1.1b": [
+     "key",
+     "found"
+    ],
+    "K1.2": [
+     "key",
+     "missed"
+    ],
+    "K1.4": [
+     "key",
+     "partly (body)"
+    ],
+    "K1.5": [
+     "key",
+     "found"
+    ]
+   }
+  },
+  "sha256": "1c9951610834b268681d510004d8d7bdbddcf72a655431d5d8d585df46b5014d"
+ },
+ ".superpowers/sdd/mandate-2026-09-17/benchmark/runs/small-latrodectus/score.md": {
+  "refused": ".superpowers/sdd/mandate-2026-09-17/benchmark/runs/small-latrodectus/score.md: the scored column 'Score' is not a verdict for 'K9': '2 found (hashes; `/live/`), 2 partly (body) (`update_data.dat`; `Updater`), 4 partly (dump) (`runnung`, `Custom_update\\\\`, `Update_%x`, UA)'",
+  "sha256": "d09d3130b0c75f3121c0c020233fc5e8af3bbb18a6617857e8245c7e01656308"
+ },
+ ".superpowers/sdd/mandate-2026-09-17/report-spec/score-baseline.md": {
+  "refused": ".superpowers/sdd/mandate-2026-09-17/report-spec/score-baseline.md: no section headed 'Item by item'",
+  "sha256": "3353e4778c935fdbae657e895521ff837122a1bf22f9d80c66b1948c9c4e2d1a"
+ },
+ "other/docs/academic-article/paper-2026-11/analysis/ext_rescore_early_lowcost_verdicts.json": {
+  "refused": "other/docs/academic-article/paper-2026-11/analysis/ext_rescore_early_lowcost_verdicts.json: not a calibration score",
+  "sha256": "62b503f8cdfd2c97ef3c646ace5ee85a5159e94c8947bfb88c618aaafe388fce"
+ },
+ "other/docs/academic-article/paper-2026-11/data/baseline/score-claude-haiku-5-5-family.json": {
+  "refused": "other/docs/academic-article/paper-2026-11/data/baseline/score-claude-haiku-5-5-family.json: not a calibration score",
+  "sha256": "065360870b3abf33bc22b509a34c15f24fa22d212c405e1ab842d7a0efbdf016"
+ },
+ "other/docs/academic-article/paper-2026-11/data/baseline/score-claude-haiku-5-5-hash.json": {
+  "refused": "other/docs/academic-article/paper-2026-11/data/baseline/score-claude-haiku-5-5-hash.json: not a calibration score",
+  "sha256": "1ea2f794076c2b49a9f994c257a5f7028fd15cbf176465d5b63a32d051284ab5"
+ },
+ "other/docs/academic-article/paper-2026-11/data/baseline/score-deepseek-flash-family.json": {
+  "refused": "other/docs/academic-article/paper-2026-11/data/baseline/score-deepseek-flash-family.json: not a calibration score",
+  "sha256": "5ed2ee701c38a8995ce3f3475572069c44c94b4be6c30a795d62843ca46e030e"
+ },
+ "other/docs/academic-article/paper-2026-11/data/baseline/score-deepseek-flash-hash.json": {
+  "refused": "other/docs/academic-article/paper-2026-11/data/baseline/score-deepseek-flash-hash.json: not a calibration score",
+  "sha256": "795bcecacb5cc1115da4712bc21c16766cb12600cc8175a56b382494132e12dd"
+ },
+ "other/docs/academic-article/paper-2026-11/data/ext-predebate-score.json": {
+  "refused": "other/docs/academic-article/paper-2026-11/data/ext-predebate-score.json: not a calibration score",
+  "sha256": "9e089c4111c81e1afe2b0970e2e0cb53f35c14a253e9f14ec00a4a0d0d9e4699"
+ },
+ "other/docs/academic-article/paper-2026-11/data/ext-rescore-early-lowcost.json": {
+  "refused": "other/docs/academic-article/paper-2026-11/data/ext-rescore-early-lowcost.json: not a calibration score",
+  "sha256": "6cec1d81cb43857798d393fc6eb4e83cb60097df28ecbc39aed5e32a2f538556"
+ },
+ "other/docs/academic-article/paper-2026-11/data/scores.json": {
+  "refused": "other/docs/academic-article/paper-2026-11/data/scores.json: not a calibration score",
+  "sha256": "5b4fb9b6d7d7d112c585e575b8826a570c5ee6e87b422832e231527119fac835"
+ },
+ "other/paper/tests-evaluation/sink_hint_ablation_scored.json": {
+  "refused": "other/paper/tests-evaluation/sink_hint_ablation_scored.json: not a calibration score",
+  "sha256": "9dcd23d9b4eb344e071ec64329afceaea2598a4f9e2a530054acbbdc5a5327cd"
+ }
+}

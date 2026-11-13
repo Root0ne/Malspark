@@ -8,6 +8,8 @@ reason the import gave.
 
 from __future__ import annotations
 
+import asyncio
+import inspect
 import json
 import sys
 from typing import Any
@@ -125,6 +127,8 @@ class TestTheManifest:
                     "timeout_s": None,
                 }
             ],
+            # A tool needing nothing has no requirement to report.
+            "requirements": [],
         }
 
     def _cell_for_a_failing_import(self, monkeypatch, raised: Exception) -> dict:
@@ -250,6 +254,9 @@ class TestServerCapabilities:
         module = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(module)
         manifest = module.capabilities()
+        if inspect.iscoroutine(manifest):
+            # A server that reads its data off its event loop answers from a coroutine.
+            manifest = asyncio.run(manifest)
         assert manifest["server"] == server
         names = {cell["name"] for cell in manifest["tools"]}
         declared = {

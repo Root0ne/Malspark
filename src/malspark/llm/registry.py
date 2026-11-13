@@ -33,6 +33,12 @@ from malspark.core.plugins import (
     usable_list,
 )
 from malspark.core.settings_overrides import redact_url
+from malspark.llm.sent_request import (
+    SentRequest,
+    parameters_sent,
+    record_sent_request,
+    sampling_said,
+)
 
 # The request timeout every provider's HTTP client is built with, unless the
 # caller names one. It has to outlast the longest agent loop budget (the
@@ -192,12 +198,67 @@ class LLMProviderRegistry:
 
     def __init__(self, config: Settings) -> None:
         self._config = config
+        # What each model built for an agent sends, in build order
+        # (``llm.sent_request``): read by the run summary's environment block.
+        self._sent: list[SentRequest] = []
         discover_providers()
+
+    def sent_requests(self) -> list[SentRequest]:
+        """What each model this registry built for an agent sends, in build order, as built."""
+        return list(self.__dict__.get("_sent") or [])
+
+    def _note_sent(
+        self,
+        built: Any,
+        *,
+        agent: str,
+        position: int,
+        provider: str,
+        model: str,
+        own_effort: str | None = None,
+        own_setting: str | None = None,
+        provider_cls: Any = None,
+    ) -> SentRequest:
+        """Keep on ``built`` and in :meth:`sent_requests` what it sends, read by its provider."""
+        from malspark.llm.effort import effort_in_force
+
+        effort, said = effort_in_force(self._config, provider, own_effort, own_setting)
+        record = SentRequest(
+            agent=str(agent).lower(),
+            position=int(position),
+            provider=str(provider),
+            model=str(model),
+            effort=effort or None,
+            effort_setting=self._effort_key(provider, effort, own_effort, own_setting),
+            effort_statement="" if effort else said,
+        )
+        # Read by the adapter class that built it, else by the one that
+        # answers for the provider's name.
+        hook_of = provider_cls if callable(getattr(provider_cls, "sent_parameters", None)) else None
+        record_sent_request(built, record, hook_of)
+        # Kept on the instance even where it was made without ``__init__``.
+        self.__dict__.setdefault("_sent", []).append(record)
+        return record
+
+    @staticmethod
+    def _effort_key(
+        provider: str, effort: str | None, own_effort: str | None, own_setting: str | None
+    ) -> str:
+        """The setting the effort sent was read from; empty where none is sent."""
+        from malspark.llm.provider_base import facts_of
+
+        if not effort:
+            return ""
+        if own_effort:
+            return str(own_setting or "")
+        return str(facts_of(provider).effort_setting or "")
 
     def build_model(
         self,
         role: str = "expert",
         temperature: float | None = None,
+        *,
+        agent: str = "",
         **kwargs: Any,
     ) -> BaseChatModel:
         """Build a ChatModel for the configured provider and role.
@@ -205,6 +266,8 @@ class LLMProviderRegistry:
         Args:
             role: "expert" or "judge" - selects the model name.
             temperature: Override temperature. Defaults to 0.1 for expert, 0.0 for judge.
+            agent: The agent the model is built for, under which what it sends
+                is recorded (:meth:`sent_requests`); empty records nothing.
             **kwargs: Extra kwargs forwarded to the provider.
 
         Returns:
@@ -229,13 +292,29 @@ class LLMProviderRegistry:
         from malspark.llm.effort import effort_in_force
 
         _, effort_said = effort_in_force(self._config, provider_name)
-        logger.info(
-            f"Building {provider_name}/{model_name} (role={role}, temp={temp}, "
-            f"effort={effort_said})"
-        )
+        logger.info(f"Building {provider_name}/{model_name} (role={role}, effort={effort_said})")
         _cap_for_provider(kwargs, provider_name)
         provider = provider_cls(config=self._config)
         built = provider.build_model(model=model_name, temperature=temp, **kwargs)
+        # The sampling is said once built, read off the request the client
+        # would send: a model sent no sampling parameter is said to be sent
+        # none, whatever temperature it was handed.
+        if agent:
+            sampling = self._note_sent(
+                built,
+                agent=agent,
+                position=0,
+                provider=provider_name,
+                model=model_name,
+                provider_cls=provider_cls,
+            ).sampling
+        else:
+            hook_of = (
+                provider_cls if callable(getattr(provider_cls, "sent_parameters", None)) else None
+            )
+            read = parameters_sent(hook_of or provider_name, built)
+            sampling = None if read is None else read.sampling
+        logger.info("%s/%s sends sampling: %s.", provider_name, model_name, sampling_said(sampling))
         return self._with_window(built, provider_name, model_name, kwargs.get("base_url"))
 
     def build_model_for_agent(
@@ -280,7 +359,7 @@ class LLMProviderRegistry:
                 agent_name,
                 fallback_role,
             )
-            return self.build_model(role=fallback_role, **kwargs)
+            return self.build_model(role=fallback_role, agent=agent_name, **kwargs)
 
         # Per-agent override found
         provider_cls = _PROVIDER_REGISTRY.get(agent_cfg.provider)
@@ -357,11 +436,10 @@ class LLMProviderRegistry:
             self._config, str(choice.provider), own_effort, own_setting
         )
         logger.info(
-            "Building dedicated LLM for agent '%s': %s/%s (temp=%.2f, base_url=%s, effort=%s)",
+            "Building dedicated LLM for agent '%s': %s/%s (base_url=%s, effort=%s)",
             agent_name,
             choice.provider,
             choice.model,
-            temp,
             redact_url(str(agent_base_url)) if agent_base_url else "(global)",
             effort_said,
         )
@@ -384,6 +462,26 @@ class LLMProviderRegistry:
             kwargs["effort"] = own_effort
             kwargs["effort_setting"] = own_setting
         built = provider.build_model(model=choice.model, temperature=temp, **kwargs)
+        # The sampling is said once built, read off the request the client
+        # would send: the temperature handed to the provider is not what it
+        # sends when it sends none.
+        record = self._note_sent(
+            built,
+            agent=agent_name,
+            position=position,
+            provider=str(choice.provider),
+            model=str(choice.model),
+            own_effort=own_effort,
+            own_setting=own_setting,
+            provider_cls=provider_cls,
+        )
+        logger.info(
+            "LLM for agent '%s' (%s/%s) sends sampling: %s.",
+            agent_name,
+            choice.provider,
+            choice.model,
+            sampling_said(record.sampling),
+        )
         return self._with_window(built, str(choice.provider), choice.model, agent_base_url)
 
     def _with_window(

@@ -255,6 +255,13 @@ def stopped_run_summary(state: dict[str, Any], container: Any, *, note: str) -> 
         if generation and (generation.get("models") or generation.get("timeouts")):
             summary["generation"] = generation
 
+    def _environment() -> None:
+        from malspark.analysis.run_environment import environment_record
+
+        record = environment_record(container, state.get("evidence_ledger") or [])
+        if record:
+            summary["environment"] = record
+
     def _elapsed() -> None:
         started = float(state.get("run_started_at") or 0.0)
         if started:
@@ -272,6 +279,7 @@ def stopped_run_summary(state: dict[str, Any], container: Any, *, note: str) -> 
 
     _part("spend", _spent)
     _part("generation", _generation)
+    _part("environment", _environment)
     _part(
         "stages",
         lambda: summary.update(

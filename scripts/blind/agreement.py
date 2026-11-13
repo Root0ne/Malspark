@@ -27,6 +27,15 @@ The collapsed view recodes every verdict as credited (``partly (dump)`` or bette
 
 A statistic that has no defined value (one category only, a single item, no overlap between two
 raters, fewer than three raters for Fleiss) is reported as ``None`` with a reason, never as NaN.
+With ``--rules RULES.json`` (a declared scoring-rules table, ``scripts/benchmark/scores.py``)
+the words, the ordinal order and the credited threshold are the table's, not the key scale's.
+A rating in a state that is no verdict (under adjudication, unknown, ...) is no rating of the
+item: a pair in which either rater's cell is such a state is left out of every statistic, and
+the output counts, per state, the pairs left out (a pair with a different state on each side
+counts under both) and each rater's ratings in each state. ``--leave-out-wrong`` needs a
+verdict in the table's role ``wrong`` and is refused without one.
+Without a table everything is as described above.
+
 Standard library only.
 """
 
@@ -44,8 +53,10 @@ from scripts.benchmark.scores import (
     CREDITED,
     KEY,
     KEY_ALIASES,
+    KEY_RULES,
     SCALES,
     ScoreFileError,
+    ScoringRules,
     item_key,
     read_scored,
 )
@@ -53,7 +64,7 @@ from scripts.benchmark.scores import (
 SCALE: tuple[str, ...] = SCALES[KEY]
 CREDITED_FROM: int = SCALE.index(CREDITED[KEY])
 COLLAPSED: tuple[str, ...] = ("not credited", "credited")
-WRONG = SCALE[0]
+WRONG = KEY_RULES.roles["wrong"]
 BEYOND_ROW = "beyond_human"
 
 # rater -> unit -> verdict (a missing rating is absent)
@@ -75,17 +86,28 @@ def _stat(value: float | None, reason: str | None = None, **extra: Any) -> Stat:
 # ---------------------------------------------------------------- reading
 
 
-def _verdict(cell: str, where: str) -> str | None:
+def _verdict(cell: str, where: str, rules: ScoringRules | None = None) -> str | None:
     word = " ".join(cell.split()).casefold()
     if not word:
         return None
+    if rules is not None:
+        found = rules.word(cell)
+        if found is None:
+            reason = rules.why(cell)
+            raise AgreementError(
+                f"{where}: {cell!r} is not one of {', '.join(rules.words)}"
+                + (f" ({reason})" if reason else "")
+            )
+        return found
     word = KEY_ALIASES.get(word, word)
     if word not in SCALE:
         raise AgreementError(f"{where}: {cell!r} is not one of {', '.join(SCALE)}")
     return word
 
 
-def read_sheet(path: Path, column: str | None = None) -> dict[str, str]:
+def read_sheet(
+    path: Path, column: str | None = None, rules: ScoringRules | None = None
+) -> dict[str, str]:
     """A filled blind score sheet as ``unit -> verdict``; blank cells are left out."""
     with Path(path).open(encoding="utf-8", newline="") as handle:
         rows = list(csv.reader(handle))
@@ -114,7 +136,7 @@ def read_sheet(path: Path, column: str | None = None) -> dict[str, str]:
         for name in picked:
             index = columns.index(name) + 1
             cell = row[index] if index < len(row) else ""
-            word = _verdict(cell, f"{path} item {row[0].strip()} column {name}")
+            word = _verdict(cell, f"{path} item {row[0].strip()} column {name}", rules)
             if word is None:
                 continue
             key = item_key(row[0].strip())
@@ -122,26 +144,33 @@ def read_sheet(path: Path, column: str | None = None) -> dict[str, str]:
     return out
 
 
-def read_rater(path: Path, column: str | None = None) -> dict[str, str]:
+def read_rater(
+    path: Path, column: str | None = None, rules: ScoringRules | None = None
+) -> dict[str, str]:
     """One rater's ``unit -> verdict`` from a ``.csv`` sheet or a ``read_scored`` file."""
     path = Path(path)
     try:
         if path.suffix.lower() == ".csv":
-            return read_sheet(path, column)
-        run = read_scored(path)
+            return read_sheet(path, column, rules)
+        run = read_scored(path, rules) if rules is not None else read_scored(path)
     except (ScoreFileError, OSError) as exc:
         hint = "; a blind score sheet is read as .csv" if path.suffix.lower() == ".json" else ""
         raise AgreementError(f"{exc}{hint}") from exc
     out: dict[str, str] = {}
     for key, (scale, word) in run.verdicts.items():
-        if scale != KEY:
-            raise AgreementError(f"{path}: item {key} is on the {scale} scale, not the key scale")
+        expected = KEY if rules is None else rules.scale_id
+        if scale != expected:
+            raise AgreementError(
+                f"{path}: item {key} is on the {scale} scale, not the {expected} scale"
+            )
         if word is not None:
             out[key] = word
     return out
 
 
-def read_raters(specs: list[str], column: str | None = None) -> Ratings:
+def read_raters(
+    specs: list[str], column: str | None = None, rules: ScoringRules | None = None
+) -> Ratings:
     """Every ``[NAME=]path`` as a rater; two raters may not share a name."""
     ratings: Ratings = {}
     for spec in specs:
@@ -150,7 +179,7 @@ def read_raters(specs: list[str], column: str | None = None) -> Ratings:
         name = name if sep else path.stem
         if name in ratings:
             raise AgreementError(f"two raters are named {name!r}; name one as NAME=path")
-        ratings[name] = read_rater(path, column)
+        ratings[name] = read_rater(path, column, rules)
         if not ratings[name]:
             raise AgreementError(f"{path}: no item is rated (an unfilled template?)")
     for first, second in combinations(ratings, 2):
@@ -317,11 +346,16 @@ def _confusion(pairs: list[tuple[str, str]], categories: tuple[str, ...]) -> dic
 
 
 def analyse(
-    ratings: Ratings, categories: tuple[str, ...], *, ordered: bool, leave_out_wrong: bool
+    ratings: Ratings,
+    categories: tuple[str, ...],
+    *,
+    ordered: bool,
+    leave_out_wrong: bool,
+    wrong: str | None = WRONG,
 ) -> dict[str, Any]:
     """Every statistic of one view of the ratings (``categories`` worst first)."""
     names = sorted(ratings)
-    drop = leave_out_wrong and WRONG in categories
+    drop = leave_out_wrong and wrong in categories
     out: dict[str, Any] = {"categories": list(categories), "raters": names, "pairs": {}}
     pooled: list[tuple[str, str]] = []
     for first, second in combinations(names, 2):
@@ -341,8 +375,8 @@ def analyse(
             ],
         }
         if ordered:
-            kept = [p for p in pairs if not (drop and WRONG in p)]
-            order = tuple(c for c in categories if not (drop and c == WRONG))
+            kept = [p for p in pairs if not (drop and wrong in p)]
+            order = tuple(c for c in categories if not (drop and c == wrong))
             entry["weighted_kappa"] = weighted_kappa(kept, order)
             entry["weighted_kappa"]["left_out_wrong"] = len(pairs) - len(kept)
             entry["weighted_kappa"]["units"] = [
@@ -355,10 +389,10 @@ def analyse(
     out["krippendorff_alpha_nominal"] = krippendorff_alpha(ratings, categories, ordinal=False)
     if ordered:
         kept_ratings = {
-            r: {u: w for u, w in given.items() if not (drop and w == WRONG)}
+            r: {u: w for u, w in given.items() if not (drop and w == wrong)}
             for r, given in ratings.items()
         }
-        order = tuple(c for c in categories if not (drop and c == WRONG))
+        order = tuple(c for c in categories if not (drop and c == wrong))
         alpha = krippendorff_alpha(kept_ratings, order, ordinal=True)
         alpha["left_out_wrong_ratings"] = sum(map(len, ratings.values())) - sum(
             map(len, kept_ratings.values())
@@ -367,28 +401,95 @@ def analyse(
     return out
 
 
-def _collapse(ratings: Ratings) -> Ratings:
+def _collapse(
+    ratings: Ratings, scale: tuple[str, ...] = SCALE, credited_from: int = CREDITED_FROM
+) -> Ratings:
     return {
-        r: {u: COLLAPSED[SCALE.index(w) >= CREDITED_FROM] for u, w in given.items()}
+        r: {u: COLLAPSED[scale.index(w) >= credited_from] for u, w in given.items()}
         for r, given in ratings.items()
     }
 
 
-def agreement(ratings: Ratings, *, leave_out_wrong: bool = False) -> dict[str, Any]:
-    """The full report: the five-verdict view and the credited / not credited view."""
+def _left_out(ratings: Ratings, outside: tuple[str, ...]) -> dict[str, Any]:
+    """What the states that are no verdict took out: ratings per rater, pairs per state."""
+    per_rater = {
+        r: {s: sum(1 for w in given.values() if w == s) for s in outside}
+        for r, given in sorted(ratings.items())
+    }
+    pairs: dict[str, dict[str, Any]] = {}
+    for first, second in combinations(sorted(ratings), 2):
+        units = _pair_units(ratings[first], ratings[second])
+        left = [u for u in units if {ratings[first][u], ratings[second][u]} & set(outside)]
+        pairs[f"{first} / {second}"] = {
+            "pairs_left_out": len(left),
+            "of": len(units),
+            "by_state": {
+                s: sum(1 for u in left if s in (ratings[first][u], ratings[second][u]))
+                for s in outside
+            },
+        }
+    return {"ratings_per_rater": per_rater, "pairs": pairs}
+
+
+def _wrong_handling(scale: tuple[str, ...], wrong: str | None, leave_out: bool) -> str:
+    """How the verdict view treats the verdict in the role wrong, from the scale's own order."""
+    if wrong is None:
+        return "the table declares no verdict in the role wrong"
+    if leave_out:
+        return "the verdict view's ordinal statistics leave out every rating of wrong"
+    place = scale.index(wrong)
+    rank = (
+        "the lowest ordinal rank"
+        if place == 0
+        else f"ordinal rank {place + 1} of {len(scale)} (worst first)"
+    )
+    return f"wrong is its own nominal class and {rank}"
+
+
+def agreement(
+    ratings: Ratings, *, leave_out_wrong: bool = False, rules: ScoringRules | None = None
+) -> dict[str, Any]:
+    """The full report: the verdict view and the credited / not credited view.
+
+    With ``rules`` the scale, its order and the credited threshold are the table's, and a
+    rating in one of its outside states is no rating: see the module docstring.
+    """
     if len(ratings) < 2:
         raise AgreementError("name at least two raters")
+    extra: dict[str, Any] = {}
+    scale, credited_from = SCALE, CREDITED_FROM
+    wrong: str | None = WRONG
+    if rules is not None:
+        scale = rules.scale
+        wrong = rules.roles.get("wrong")
+        credited_from = scale.index(rules.credited_from) if rules.credited_from else len(scale)
+        extra = {
+            "scoring_rules": rules.name,
+            "left_out_for_state": _left_out(ratings, rules.outside),
+        }
+        kept = {
+            r: {u: w for u, w in g.items() if w not in rules.outside} for r, g in ratings.items()
+        }
+        for r, g in kept.items():
+            if not g:
+                raise AgreementError(f"{r}: every rating is in a state that is no verdict")
+        ratings = kept
+    if leave_out_wrong and wrong is None:
+        raise AgreementError(
+            "--leave-out-wrong: the scoring rules declare no verdict in the role wrong"
+        )
     return {
-        "scale": list(SCALE),
-        "ordinal_order": "wrong < missed < partly (dump) < partly (body) < found",
-        "wrong_handling": (
-            "the verdict view's ordinal statistics leave out every rating of wrong"
-            if leave_out_wrong
-            else "wrong is its own nominal class and the lowest ordinal rank"
-        ),
+        **extra,
+        "scale": list(scale),
+        "ordinal_order": " < ".join(scale),
+        "wrong_handling": _wrong_handling(scale, wrong, leave_out_wrong),
         "items_rated": {r: len(given) for r, given in sorted(ratings.items())},
-        "verdicts": analyse(ratings, SCALE, ordered=True, leave_out_wrong=leave_out_wrong),
-        "collapsed": analyse(_collapse(ratings), COLLAPSED, ordered=True, leave_out_wrong=False),
+        "verdicts": analyse(
+            ratings, scale, ordered=True, leave_out_wrong=leave_out_wrong, wrong=wrong
+        ),
+        "collapsed": analyse(
+            _collapse(ratings, scale, credited_from), COLLAPSED, ordered=True, leave_out_wrong=False
+        ),
     }
 
 
@@ -449,12 +550,30 @@ def render(report: dict[str, Any]) -> str:
         "Items rated: " + ", ".join(f"{r} {n}" for r, n in report["items_rated"].items()),
         "",
     ]
+    if "left_out_for_state" in report:
+        left = report["left_out_for_state"]
+        lines.append(f"Scoring rules: {report['scoring_rules']}")
+        for pair, entry in left["pairs"].items():
+            states = ", ".join(f"{n} {s}" for s, n in entry["by_state"].items() if n) or "none"
+            lines.append(
+                f"Pair {pair}: {entry['pairs_left_out']} of {entry['of']} pairs left out ({states})"
+            )
+        lines.append("")
     lines += _render_view("Verdicts", report["verdicts"])
     lines += ["", *_render_view("Collapsed: credited vs not credited", report["collapsed"])]
     return "\n".join(lines)
 
 
-def run(specs: list[str], *, as_json: bool, leave_out_wrong: bool, column: str | None) -> str:
+def run(
+    specs: list[str],
+    *,
+    as_json: bool,
+    leave_out_wrong: bool,
+    column: str | None,
+    rules: ScoringRules | None = None,
+) -> str:
     """Read the raters and return the report, as JSON or text."""
-    report = agreement(read_raters(specs, column), leave_out_wrong=leave_out_wrong)
+    report = agreement(
+        read_raters(specs, column, rules), leave_out_wrong=leave_out_wrong, rules=rules
+    )
     return json.dumps(report, indent=2) if as_json else render(report)

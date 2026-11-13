@@ -347,21 +347,33 @@ class TestTheSelfHeal:
         """A pool per heal is the leak the memo exists to stop.
 
         The endpoint objected to a request field, not to the connection, so
-        the rebuilt model is handed the client the original already owns.
+        the rebuilt model is handed the clients the original already holds,
+        sync and async, and neither is closed: the sync one is usually
+        langchain's cached client, which every other model for the endpoint
+        sends through too.
         """
         pools: list[Any] = []
+        sync_clients: list[Any] = []
         closed: list[str] = []
 
-        class _SyncClient:
+        class _HttpClient:
             def close(self) -> None:
                 closed.append("sync")
+
+        class _Root:
+            def __init__(self, http_client: Any) -> None:
+                self._client = http_client
+
+            def close(self) -> None:
+                closed.append("root")
 
         class _Chat:
             def __init__(self, **kwargs: Any) -> None:
                 self.extra_body = kwargs.get("extra_body")
                 self.http_async_client = kwargs.get("http_async_client") or object()
-                self.root_client = _SyncClient()
+                self.root_client = _Root(kwargs.get("http_client") or _HttpClient())
                 pools.append(self.http_async_client)
+                sync_clients.append(self.root_client._client)
 
             def invoke(self, *args: Any, **kwargs: Any) -> Any:
                 if self.extra_body:
@@ -379,7 +391,8 @@ class TestTheSelfHeal:
         assert provider.build_model("m", 0.0, max_tokens=512).invoke("hi") == "ok"
 
         assert pools[0] is pools[1], "the replacement was handed the original's pool"
-        assert closed == ["sync"], "the client the replacement does not inherit is closed"
+        assert sync_clients[0] is sync_clients[1], "and the original's sync client"
+        assert closed == [], "a client the replacement still sends through is never closed"
 
     def test_the_container_caches_the_replacement_rather_than_the_model_that_raised(
         self, monkeypatch: pytest.MonkeyPatch

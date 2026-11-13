@@ -1,13 +1,18 @@
 """Blind A/B scoring of stored runs.
 
     python scripts/blind/run.py prepare RUN RUN [RUN ...] --out DIR --items ITEMS.txt [--seed N]
+        [--rules RULES.json]
     python scripts/blind/run.py reveal DIR/scorer/scores.csv --map DIR/sealed-map.json
     python scripts/blind/run.py agreement SHEET_OR_SCORE SHEET_OR_SCORE [...] [--json]
+        [--rules RULES.json]
 
 ``prepare`` copies each arm's report (Markdown, HTML), STIX bundle and IOC table under a
 shuffled anonymous id with every string that names the arm removed, checks that none survived,
 and writes the id-to-arm map to ``DIR/sealed-map.json``, outside the directory ``DIR/scorer``
-that goes to the scorer. ``reveal`` reads the filled score sheet and prints the arms.
+that goes to the scorer. ``--rules`` names a declared scoring-rules table
+(``scripts/benchmark/scores.py``): its verdict words are listed for the scorer and kept in the
+sealed map, which ``reveal`` reads them back from. ``reveal`` reads the filled score sheet and
+prints the arms.
 ``agreement`` computes how far two or more scorers' verdicts agree (``scripts/blind/agreement.py``).
 """
 
@@ -21,6 +26,7 @@ _ROOT = Path(__file__).resolve().parents[2]
 if str(_ROOT) not in sys.path:
     sys.path.insert(0, str(_ROOT))
 
+from scripts.benchmark.scores import ScoreFileError, load_rules  # noqa: E402
 from scripts.blind.agreement import AgreementError  # noqa: E402
 from scripts.blind.agreement import run as agreement_run  # noqa: E402
 from scripts.blind.prepare import BlindError, prepare, read_items  # noqa: E402
@@ -49,6 +55,12 @@ def _parser() -> argparse.ArgumentParser:
         metavar="TEXT",
         help="one more string that names an arm (repeatable)",
     )
+    prep.add_argument(
+        "--rules",
+        type=Path,
+        default=None,
+        help="a scoring-rules table (JSON): the sheet is scored by its words",
+    )
     rev = sub.add_parser("reveal", help="print the per-arm scores and the differences")
     rev.add_argument("scores", type=Path, help="the filled score sheet (CSV or JSON)")
     rev.add_argument("--map", type=Path, required=True, help="the sealed map from prepare")
@@ -61,6 +73,12 @@ def _parser() -> argparse.ArgumentParser:
         "--leave-out-wrong",
         action="store_true",
         help="the ordinal statistics leave out every rating of wrong, and count them",
+    )
+    agree.add_argument(
+        "--rules",
+        type=Path,
+        default=None,
+        help="a scoring-rules table (JSON): its words and order; outside states leave the pair out",
     )
     agree.add_argument("--column", default=None, help="read only this arm column of a sheet")
     return parser
@@ -76,6 +94,7 @@ def main(argv: list[str] | None = None) -> int:
                 read_items(args.items),
                 seed=args.seed,
                 identify=tuple(args.identify),
+                rules=None if args.rules is None else load_rules(args.rules),
             )
             print(
                 f"blind: {len(done.ids)} arms ({', '.join(done.ids)}) prepared; self-check passed"
@@ -90,11 +109,19 @@ def main(argv: list[str] | None = None) -> int:
                     as_json=args.json,
                     leave_out_wrong=args.leave_out_wrong,
                     column=args.column,
+                    rules=None if args.rules is None else load_rules(args.rules),
                 )
             )
         else:
             print(render(reveal(args.scores, args.map)))
-    except (AgreementError, BlindError, StoredRunChanged, OSError, ValueError) as exc:
+    except (
+        AgreementError,
+        BlindError,
+        ScoreFileError,
+        StoredRunChanged,
+        OSError,
+        ValueError,
+    ) as exc:
         print(f"blind: {exc}", file=sys.stderr)
         return 2
     return 0

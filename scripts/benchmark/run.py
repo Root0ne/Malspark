@@ -1,11 +1,11 @@
 """The known-answer gate over scored runs.
 
     python scripts/benchmark/run.py score SCORED [SCORED ...] [--m M] [--sheet CSV --map JSON]
-                                     [--json OUT]
+                                     [--rules RULES.json] [--json OUT]
     python scripts/benchmark/run.py gate --baseline SCORED [SCORED ...]
                                     --candidate SCORED [SCORED ...]
                                     [--baseline-m M] [--candidate-m M]
-                                    [--sheet CSV --map JSON] [--json OUT]
+                                    [--sheet CSV --map JSON] [--rules RULES.json] [--json OUT]
     python scripts/benchmark/run.py intel-off [--settings JSON] [--profile NAME] [--json OUT]
     python scripts/benchmark/run.py job-config [--profile NAME] [--with-earlier-runs]
 
@@ -29,6 +29,9 @@ arm cannot be derived. ``job-config`` prints the config a benchmark run is
 submitted with: every run starts without an earlier run's memory of its sample
 and with memory of its own, reading nothing another run stored for any sample
 (``scripts.benchmark.jobs``), unless ``--with-earlier-runs`` says otherwise.
+``--rules`` names a declared scoring-rules table (``scripts.benchmark.scores``): the key
+scores and the sheet are then read by its words, and ``score`` also says each run's
+denominator and the items that left it. Without it the scale is the built-in one.
 Nothing here starts a run or asks a model: it reads scores already written.
 """
 
@@ -37,6 +40,7 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+from collections import Counter
 from pathlib import Path
 from typing import Any
 
@@ -50,6 +54,8 @@ from scripts.benchmark import jobs  # noqa: E402
 from scripts.benchmark.scores import (  # noqa: E402
     ScoredRun,
     ScoreFileError,
+    ScoringRules,
+    load_rules,
     read_blind,
     read_scored,
 )
@@ -57,23 +63,37 @@ from scripts.benchmark.scores import (  # noqa: E402
 BLIND_PREFIX = "blind:"
 
 
-def resolve(specs: list[str], sheet: Path | None, sealed: Path | None) -> list[ScoredRun]:
+def resolve(
+    specs: list[str], sheet: Path | None, sealed: Path | None, rules: ScoringRules | None = None
+) -> list[ScoredRun]:
     """The scored runs ``specs`` name, a blind arm read from the sheet once."""
     arms: dict[str, ScoredRun] | None = None
     runs: list[ScoredRun] = []
     for spec in specs:
         if not spec.startswith(BLIND_PREFIX):
-            runs.append(read_scored(Path(spec)))
+            runs.append(read_scored(Path(spec), rules))
             continue
         if sheet is None or sealed is None:
             raise ScoreFileError(f"{spec}: a blind arm needs --sheet and --map")
         if arms is None:
-            arms = {run.name: run for run in read_blind(sheet, sealed)}
+            arms = {run.name: run for run in read_blind(sheet, sealed, rules)}
         name = spec[len(BLIND_PREFIX) :]
         if name not in arms:
             raise ScoreFileError(f"{spec}: the sealed map names no arm {name!r}")
         runs.append(arms[name])
     return runs
+
+
+def _rules(path: Path | None) -> ScoringRules | None:
+    return None if path is None else load_rules(path)
+
+
+def _denominator_line(run: ScoredRun) -> str:
+    left = Counter(run.outside.values())
+    gone = "; ".join(f"{n} {word}" for word, n in left.items()) or "none"
+    return (
+        f"{run.name} denominator: {run.denominator} of {len(run.verdicts)} items (left out: {gone})"
+    )
 
 
 def _write(path: Path, payload: Any) -> None:
@@ -90,6 +110,12 @@ def _parser() -> argparse.ArgumentParser:
         p.add_argument("--sheet", type=Path, default=None, help="a filled blind score sheet")
         p.add_argument("--map", type=Path, default=None, help="the sheet's sealed map")
         p.add_argument("--json", type=Path, default=None, help="also write the result here")
+        p.add_argument(
+            "--rules",
+            type=Path,
+            default=None,
+            help="a scoring-rules table (JSON): key scores and sheets are read by its words",
+        )
 
     s = sub.add_parser("score", help="each scored run's totals, and theirs as one arm")
     s.add_argument("scored", nargs="+")
@@ -137,12 +163,14 @@ def main(argv: list[str] | None = None) -> int:
                 _write(args.json, derived)
             return 0
         if args.command == "score":
-            runs = resolve(args.scored, args.sheet, args.map)
+            runs = resolve(args.scored, args.sheet, args.map, _rules(args.rules))
             singles = [gating.score_arm(gating.arm([run])) for run in runs]
             for run, result in zip(runs, singles, strict=True):
                 where = f" (column {run.column!r})" if run.column else ""
                 print(f"{run.name}: {run.source}{where}")
                 print(gating.render_arm(result))
+                if run.rules is not None:
+                    print(_denominator_line(run))
             payload: dict[str, Any] = {"runs": singles}
             if len(runs) > 1:
                 together = gating.score_arm(gating.arm(runs, args.m))
@@ -152,8 +180,12 @@ def main(argv: list[str] | None = None) -> int:
             if args.json:
                 _write(args.json, payload)
             return 0
-        baseline = gating.arm(resolve(args.baseline, args.sheet, args.map), args.baseline_m)
-        candidate = gating.arm(resolve(args.candidate, args.sheet, args.map), args.candidate_m)
+        baseline = gating.arm(
+            resolve(args.baseline, args.sheet, args.map, _rules(args.rules)), args.baseline_m
+        )
+        candidate = gating.arm(
+            resolve(args.candidate, args.sheet, args.map, _rules(args.rules)), args.candidate_m
+        )
         result = gating.gate(baseline, candidate)
         print(gating.render(result))
         if args.json:

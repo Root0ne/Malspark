@@ -7,7 +7,9 @@ corrected in its retry) builds its run summary in ``feed_back``; and
 compared, byte for byte, with the fixture captured from the tree before the
 mode was added, with only what changes from run to run masked: the clock, the
 elapsed time and the id a mock prints. A default run that gained a key, lost
-one or reworded a row fails here.
+one or reworded a row fails here. The summary's ``environment`` block, which
+records the run's host, is added to the fixture with a fixed host (the one of
+the run-summary golden), so the fixture is no fact about the machine it ran on.
 
 Every sentence, value and id here is made up for the test.
 """
@@ -28,6 +30,18 @@ FIXTURES = Path(__file__).resolve().parents[2] / "fixtures"
 # The values a run gives differently every time it runs.
 VOLATILE = frozenset({"elapsed_seconds", "timestamp"})
 MOCK_ID = re.compile(r"id='\d+'")
+# The host the run records, fixed (``scripts.goldens.capture_run_summary_golden``).
+FIXED_HOST = {
+    "os": "Linux",
+    "os_release": "6.0.0",
+    "os_version": "#1 SMP",
+    "machine": "x86_64",
+    "cpu_model": "Example CPU",
+    "logical_cpus": 8,
+    "memory_bytes": 17179869184,
+    "cpus_available": 4,
+    "memory_limit_bytes": 8589934592,
+}
 
 
 def _masked(value: Any) -> Any:
@@ -50,6 +64,7 @@ def _text(value: Any) -> str:
 
 
 def test_the_stub_run_summary_is_the_one_before_the_mode(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr("malspark.analysis.run_environment.host_facts", lambda: dict(FIXED_HOST))
     summary, analyst_calls, judge_calls = _run("feed_back", monkeypatch)
 
     assert (analyst_calls, judge_calls) == (1, 2)

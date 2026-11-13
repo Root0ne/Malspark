@@ -48,17 +48,45 @@ YARA_REMEDIATION = "install yara-python on the host that runs this server: uv sy
 # server's default unless its environment names others. A rule engine declares
 # its corpus even when it is vendored: an engine that loaded no rule did not
 # run (``rules._not_loaded``), and an override can name an empty one.
+# ``exclude`` is what the engine's own loader skips, so the digest covers the
+# rules it loads (``capabilities.data_files``): capa's loader skips every
+# directory whose path, written out whole, holds ``.git`` — its own test is a
+# substring test on that path, the corpus root's included, which ``*.git*``
+# matched against each file's directory is exactly — so the fetched clone's CI
+# workflows under ``.github`` (``.yml`` files that are no rules) are left out,
+# and a corpus kept under a path such as ``capa-rules.git`` is counted as the
+# nothing capa loads from it. The YARA and Sigma loaders read the files these
+# declarations list (``tools.rules``). ``argument`` is the call argument that
+# names another corpus: the in-process capa reading is handed the setting as
+# ``rules_dir``, and a model may name a YARA or Sigma corpus as ``ruleset``.
 CAPA_RULES = data(
     rules.DEFAULT_CAPA_RULES,
     setting="static.capa.rules_dir",
     override=rules.CAPA_RULES_ENV,
     pattern="*.yml",
+    exclude=("*.git*",),
+    argument="rules_dir",
 )
-SIGMA_RULES = data(rules.DEFAULT_SIGMA_RULES, override=rules.SIGMA_RULES_ENV, pattern="*.y*ml")
+SIGMA_RULES = data(
+    rules.DEFAULT_SIGMA_RULES,
+    override=rules.SIGMA_RULES_ENV,
+    pattern="*.yml|*.yaml",
+    argument="ruleset",
+)
 # YARA's corpus is tracked, so only an override can name one that is missing.
 YARA_RULES = data(
-    rules.DEFAULT_YARA_RULES, override=rules.YARA_RULES_ENV, pattern="*.y*ml", fetched=False
+    rules.DEFAULT_YARA_RULES,
+    override=rules.YARA_RULES_ENV,
+    pattern="*.yml|*.yaml",
+    fetched=False,
+    argument="ruleset",
 )
+
+# FLOSS's version is the answer of the check its lookup already makes of the
+# pinned build it finds (``emulated_strings._does_not_run`` runs ``--version``
+# on the verified copy and reads the release from it, as the backend image's
+# build does in ``docker/Dockerfile.backend``), never a second run of the
+# build: it unpacks about 63 MB before it answers.
 
 # What each tool needs beyond the interpreter, probed once when the server
 # starts (a data path only before a job). A tool that is not listed always answers.
@@ -100,7 +128,15 @@ ANALYSIS: list[ToolNeeds] = [
     ),
     ToolNeeds(
         "floss",
-        (binary("floss", emulated_strings.floss_unavailable),),
+        (
+            # Looked up when called, not when this list is built, so a lookup
+            # replaced later (a test's) is the one the declaration calls.
+            binary(
+                "floss",
+                lambda environ=None: emulated_strings.floss_unavailable(environ),
+                version_of=lambda environ=None: emulated_strings.floss_version(environ),
+            ),
+        ),
         timeout_s=FLOSS_TIMEOUT_S,
         long_running=True,
         remediation=emulated_strings.FLOSS_REMEDIATION,
@@ -154,6 +190,15 @@ BY_DIRECTORY: dict[str, list[ToolNeeds]] = {
     "knowledge-mcp": KNOWLEDGE,
     "network-mcp": NETWORK,
 }
+
+
+def declared(tool: str) -> ToolNeeds | None:
+    """The first shipped declaration of ``tool``, in the order ``BY_DIRECTORY`` lists them."""
+    for needs in BY_DIRECTORY.values():
+        for entry in needs:
+            if entry.name == tool:
+                return entry
+    return None
 
 
 def without_reads(tool: str, server: str | None = None) -> frozenset[str] | None:

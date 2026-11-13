@@ -7,7 +7,6 @@ HTTP behind its own token, from a container of its own (``MCP_BIND_ADDRESS``,
 (``malspark.tools.readers``), which the worker then does not run itself.
 """
 
-import copy
 import json
 import os
 import re
@@ -31,7 +30,7 @@ if __name__ == "__main__":
 from malspark.analysis.capture_reader import Packet
 from malspark.analysis.pcap_summary import each_packet
 from malspark.tools import readers, sidecar_needs, staging
-from malspark.tools.capabilities import CAPABILITIES_TOOL, ToolNeeds, manifest
+from malspark.tools.capabilities import CAPABILITIES_TOOL, ToolNeeds, answer_manifest, manifest
 from malspark.tools.declared_facts import NO_EFFECT, tool_declaration
 from malspark.tools.errors import (
     CAPTURES_REMEDIATION,
@@ -117,7 +116,9 @@ _DECLARED: dict[str, dict[str, Any]] = {
 # been the platform stating something nobody looked at.
 
 TOOL_NEEDS: list[ToolNeeds] = sidecar_needs.NETWORK
-CAPABILITIES = manifest("network", TOOL_NEEDS)
+# The cells, probed once at the start; the requirements are read with each
+# answer of the capabilities tool (``answer_manifest``).
+CAPABILITIES = manifest("network", TOOL_NEEDS, requirements=False)
 
 # The one argument every tool here takes a file in. Named once, because the
 # refusal below names it and the platform's pinning hides it by this name.
@@ -221,14 +222,15 @@ def _opened(tool: str, pcap_path: str) -> Path | str:
 
 
 @mcp.tool(name=CAPABILITIES_TOOL, **_DECLARED["capabilities"])
-def capabilities() -> dict[str, Any]:
+async def capabilities() -> dict[str, Any]:
     """What this server can do on this host.
 
     Each tool, its optional dependency, and whether it is available.
     """
-    # Deep, so "computed once when the server started" also means a
-    # caller cannot reach in and change what it says.
-    return copy.deepcopy(CAPABILITIES)
+    # The cells as probed when the server started and the requirements as
+    # they are now, in a deep copy a caller cannot reach in and change, read
+    # off the event loop.
+    return await answer_manifest(CAPABILITIES, TOOL_NEEDS)
 
 
 @mcp.tool(**_DECLARED["read_pcap_summary"])

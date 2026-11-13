@@ -32,6 +32,89 @@ ROOT = Path(__file__).resolve().parents[2]
 GOLDEN = ROOT / "tests" / "fixtures" / "golden" / "run_summary_keys.json"
 
 
+# Each shape a requirement row of ``environment.tools`` takes, with fixed
+# facts: read on the capture's host, which keys a row carries (a digest or the
+# statement why none was computed) would depend on what is installed there.
+_REQUIREMENT_ROWS: list[dict[str, Any]] = [
+    {
+        "kind": "module",
+        "name": "pefile",
+        "distribution": "pefile",
+        "version": "2024.8.26",
+        "tools": ["pe_info"],
+    },
+    {
+        "kind": "data",
+        "name": "data/capa-rules",
+        "named_by": "static.capa.rules_dir",
+        "pattern": "*.yml",
+        "exclude": [".git*"],
+        "files": 1054,
+        "bytes": 844541,
+        "sha256": "0" * 64,
+        "digest_of": (
+            "the files matching *.yml, leaving out .git* at the path static.capa.rules_dir "
+            "names, as they were when this was read"
+        ),
+        "tools": ["capa"],
+    },
+    {
+        "kind": "data",
+        "name": "data/sigma_rules",
+        "named_by": "the default",
+        "pattern": "*.yml|*.yaml",
+        "files": 0,
+        "digest_statement": "no file is there",
+        "tools": ["sigma_match"],
+    },
+    {"kind": "binary", "name": "floss", "version": "3.1.1", "tools": ["floss"]},
+    # A CLI sidecar's program: the version its image pins beside what it says.
+    {
+        "kind": "binary",
+        "name": "diec",
+        "pinned": "3.21",
+        "version": "not reported: the program declares no version argument",
+        "tools": ["die_scan"],
+    },
+    # A row a third party wrote, reduced and capped on the way in.
+    {"kind": "binary", "name": "x" * 300, "statement": "unread", "tools": ["t"], "extra": 1},
+]
+
+
+def _tools_part() -> dict[str, Any]:
+    """``environment.tools``: a server row as ``tools_record`` builds it, and the pipeline's."""
+    from types import SimpleNamespace
+
+    from malspark.analysis.run_environment import SERVED_IN_PROCESS, tools_record
+
+    manifest = {
+        "server": "analysis",
+        "version": "0.9.0",
+        "tools": [],
+        "requirements": _REQUIREMENT_ROWS,
+    }
+    registry = SimpleNamespace(
+        server_versions=lambda: {"analysis": {"name": "AnalysisMCP", "version": "1.27.0"}},
+        server_manifests=lambda: {"analysis": manifest},
+    )
+    container = SimpleNamespace(
+        _server_registry_cache=registry,
+        setup_tools=lambda: {
+            "static": [SimpleNamespace(name="pe_info", metadata={"malspark_server": "analysis"})]
+        },
+        setup_server_versions=dict,
+        config=None,
+    )
+    record = tools_record(container, [{"agent": "pipeline", "server": "analysis", "tool": "capa"}])
+    # The pipeline's own row reads the worker's host; its shape is fixed here.
+    record["pipeline"] = {
+        "served": [SERVED_IN_PROCESS],
+        "package_version": "0.9.0",
+        "requirements": _REQUIREMENT_ROWS[:1],
+    }
+    return record
+
+
 def _claim(technique_id: str, confidence: float) -> Any:
     from malspark.schemas.isr_models import ClaimEvidence
 
@@ -154,6 +237,78 @@ def default_profile_summary() -> dict[str, Any]:
     rates.observe("qwen", 380, 100.0, "ollama eval_count/eval_duration")
     rates.call_timeout("judge:verdict", "qwen", 600.0, 8192)
     builder.set_generation(rates.snapshot())
+    from malspark.analysis.run_environment import ENVIRONMENT_VERSION, agents_record
+    from malspark.llm.sent_request import SentRequest
+
+    # Fixed host facts, every one the record may carry: the capture's own host
+    # would make the golden a fact about the machine it was written on.
+    builder.set_environment(
+        {
+            "v": ENVIRONMENT_VERSION,
+            "host": {
+                "os": "Linux",
+                "os_release": "6.0.0",
+                "os_version": "#1 SMP",
+                "machine": "x86_64",
+                "cpu_model": "Example CPU",
+                "logical_cpus": 8,
+                "memory_bytes": 17179869184,
+                "cpus_available": 4,
+                "memory_limit_bytes": 8589934592,
+            },
+            # Every kind of row: sampling and a thinking switch sent, none
+            # sent (with requests whose thinking was changed after the build),
+            # nothing reported by the adapter (for a configured path, kept by
+            # its base name), and a model built again at a place it shares.
+            "agents": agents_record(
+                [
+                    SentRequest(
+                        agent="static",
+                        position=0,
+                        provider="openai",
+                        model="qwen",
+                        sampling={"temperature": 0.1},
+                        thinking={"chat_template_kwargs.enable_thinking": False},
+                        effort="high",
+                        effort_setting="llm.agents.static.effort",
+                    ),
+                    SentRequest(
+                        agent="static",
+                        position=1,
+                        provider="anthropic",
+                        model="claude",
+                        sampling={},
+                        thinking={},
+                        effort_statement="unset, the provider's default",
+                        thinking_changed=1,
+                    ),
+                    SentRequest(
+                        agent="static",
+                        position=2,
+                        provider="plug-in",
+                        model="/models/other.gguf",
+                        sampling=None,
+                        thinking=None,
+                        effort_statement="none for this provider",
+                    ),
+                    SentRequest(
+                        agent="static",
+                        position=0,
+                        provider="openai",
+                        model="qwen",
+                        sampling={"temperature": 0.2},
+                        thinking={},
+                        effort="high",
+                        effort_setting="llm.agents.static.effort",
+                    ),
+                ],
+                {"static": {"qwen-2026": 1, "model.gguf": 1}},
+                {"static": {0: 2}},
+                {"static": ["model.gguf"]},
+            ),
+            "tools": _tools_part(),
+        }
+    )
     builder.set_truncation(
         {
             "tool_output_calls": 4,
@@ -676,14 +831,24 @@ DATA_KEYED = frozenset(
         # Keyed by answer state, and by the declared argument role.
         "coverage.tools[].states",
         "coverage.tools[].roles",
+        # Keyed by the model identifier the provider's answers named, and by
+        # the parameter names a request carried.
+        "environment.agents.*.response_models",
+        "environment.agents.*.requests[].sampling",
+        "environment.agents.*.requests[].thinking",
     }
 )
+
+# The maps keyed by data whose values are rows of one shape (one block per
+# agent, one per tool server), pinned as one row: the union of every value's keys
+# under ``*``, so a server's name is data and not a key of the schema.
+KEYED_ROWS = frozenset({"environment.agents", "environment.tools"})
 
 
 # The parts whose list items differ in shape by kind (a call row, an input
 # row, a layer row …), pinned as the union of every item's keys so that no
 # kind's keys go unpinned.
-UNION_LISTS = ("coverage",)
+UNION_LISTS = ("coverage", "environment")
 
 
 def _merged(shapes: list[Any]) -> Any:
@@ -701,10 +866,14 @@ def _merged(shapes: list[Any]) -> Any:
 def key_shape(value: Any, path: str = "") -> Any:
     """Keys all the way down; a list contributes the shape of its first item.
 
-    Under :data:`UNION_LISTS` a list contributes the union of its items' shapes.
+    Under :data:`UNION_LISTS` a list contributes the union of its items' shapes;
+    a map of :data:`KEYED_ROWS` contributes the union of its values' shapes.
     """
     if path in DATA_KEYED:
         return "<data-keyed map>"
+    if path in KEYED_ROWS and isinstance(value, dict):
+        rows = [key_shape(row, f"{path}.*") for row in value.values()]
+        return {"*": _merged(rows)} if rows else {}
     if isinstance(value, dict):
         return {
             key: key_shape(value[key], f"{path}.{key}" if path else key) for key in sorted(value)

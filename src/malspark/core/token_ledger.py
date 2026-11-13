@@ -32,6 +32,7 @@ answered because the first one failed as a provider — is kept with its reason.
 
 from __future__ import annotations
 
+import re
 import threading
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
@@ -418,6 +419,15 @@ class TokenLedger:
         # rewritten.
         self._ended = False
         self._late: list[dict[str, Any]] = []
+        # Per agent, each model identifier the provider's answers carried
+        # (``response_model_of``) and how many answers carried it; the
+        # identifiers that were path-shaped and are kept by their base name;
+        # and, per place in the agent's list, how many answers its model gave.
+        # Not in the snapshot, so the summary's token block reads as it always
+        # did; read by the run summary's environment block.
+        self._response_models: dict[str, dict[str, int]] = {}
+        self._reduced_models: dict[str, set[str]] = {}
+        self._answered: dict[str, dict[int, int]] = {}
 
     def end(self) -> None:
         """The run summary's figures are final: what is charged from now on landed after it.
@@ -598,6 +608,45 @@ class TokenLedger:
         self._record_late(row)
         self._tell(row)
 
+    def note_response_model(self, agent: str, model: str, position: int = 0) -> None:
+        """One answer to ``agent`` from the model at ``position`` of its list, naming ``model``.
+
+        The agent is keyed as the registry keys it (lowercase). The answer is
+        counted at its position whether or not it named a model; a name shaped
+        like a file-system path is kept by its base name (:func:`base_model_name`).
+        """
+        key = str(agent or "").strip().lower()
+        name, reduced = base_model_name(model)
+        with self._lock:
+            answered = self._answered.setdefault(key, {})
+            answered[int(position)] = answered.get(int(position), 0) + 1
+            if not name:
+                return
+            held = self._response_models.setdefault(key, {})
+            held[name] = held.get(name, 0) + 1
+            if reduced:
+                self._reduced_models.setdefault(key, set()).add(name)
+
+    def response_models(self) -> dict[str, dict[str, int]]:
+        """Per agent, each model identifier its answers carried and how often, as a plain copy."""
+        with self._lock:
+            return {
+                agent: dict(sorted(held.items()))
+                for agent, held in sorted(self._response_models.items())
+            }
+
+    def reduced_response_models(self) -> dict[str, list[str]]:
+        """Per agent, the identifiers of :meth:`response_models` kept by their base name."""
+        with self._lock:
+            return {agent: sorted(held) for agent, held in sorted(self._reduced_models.items())}
+
+    def answers_by_position(self) -> dict[str, dict[int, int]]:
+        """Per agent, how many answers the model at each place of its list gave."""
+        with self._lock:
+            return {
+                agent: dict(sorted(held.items())) for agent, held in sorted(self._answered.items())
+            }
+
     @property
     def input_tokens(self) -> int:
         return self._total.input_tokens
@@ -651,12 +700,16 @@ def record_response_usage(
     agent: str = "",
     model: str = "",
     call: str = "",
+    runs_on: str = "",
 ) -> None:
     """Add one model answer to ``ledger`` (no-op if ledger is None). Never raises.
 
     ``model`` is the label of the model the caller asked; an answer that says
     which model gave it — a fallback list stamps every answer — wins over it.
     ``call`` names what the call was, for a call that reported no usage.
+    ``runs_on`` is the model entry the agent's model was built from where it
+    is not the agent's own (the mediator's instance of the judge): the model
+    the answer named is filed under it, the spend stays under ``agent``.
     """
     if ledger is None:
         return
@@ -679,8 +732,57 @@ def record_response_usage(
             estimated=None if usage is not None else estimated_usage(response),
             retries=retries_of(response),
         )
+        from malspark.llm.fallback import turn_position
+
+        ledger.note_response_model(
+            runs_on or agent, response_model_of(response), turn_position(response)
+        )
     except Exception:  # noqa: BLE001 — telemetry must never break analysis
         return
+
+
+# The answer metadata keys a client library names the answering model under,
+# the standard one first.
+RESPONSE_MODEL_KEYS: tuple[str, ...] = ("model_name", "model")
+
+
+def response_model_of(response: Any) -> str:
+    """The model identifier the provider's answer carried, or ``""`` where it carried none.
+
+    Read from the answer's own metadata as the client library filed it, never
+    from the model the job asked for.
+    """
+    metadata = getattr(response, "response_metadata", None)
+    if not isinstance(metadata, dict):
+        return ""
+    for key in RESPONSE_MODEL_KEYS:
+        value = metadata.get(key)
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+    return ""
+
+
+def base_model_name(model: Any) -> tuple[str, bool]:
+    """``(name, reduced)``: a model identifier as a record keeps it.
+
+    One shaped like a file-system path — absolute, home-relative (``~/``,
+    ``~\\``), relative to ``.``, on a drive (``C:``), or written with
+    backslashes — is kept by its last component, and
+    ``reduced`` says so: a server with no alias names its model by the file
+    it loaded, and the folders above it are the host's, not the model's. An
+    identifier with a vendor or organisation prefix (``org/model``), a router
+    alias (``~vendor/model``) among them, is kept as it is.
+    """
+    name = str(model or "").strip()
+    path_shaped = (
+        name.startswith(("/", "~/", "~\\", "./", "../"))
+        or "\\" in name
+        or bool(re.match(r"^[A-Za-z]:[\\/]", name))
+    )
+    if not path_shaped:
+        return name, False
+    base = re.split(r"[\\/]", name.rstrip("/\\"))[-1]
+    return base, True
 
 
 def record_lost_retries(
@@ -745,6 +847,7 @@ def read_structured_reply(
     call: str = "",
     schema: Any = None,
     announce: Callable[[Any], None] | None = None,
+    runs_on: str = "",
 ) -> StructuredReply:
     """:func:`structured_answer`, keeping the raw answer a failed parse leaves behind.
 
@@ -761,7 +864,9 @@ def read_structured_reply(
     """
     raw = answer.get("raw") if isinstance(answer, dict) and "raw" in answer else None
     try:
-        parsed = structured_answer(answer, ledger, agent=agent, model=model, call=call)
+        parsed = structured_answer(
+            answer, ledger, agent=agent, model=model, call=call, runs_on=runs_on
+        )
     except Exception as exc:  # noqa: BLE001 - the raw turn is read instead
         if raw is None:
             raise
@@ -827,6 +932,7 @@ def structured_answer(
     agent: str = "",
     model: str = "",
     call: str = "",
+    runs_on: str = "",
 ) -> Any:
     """The parsed value of a ``with_structured_output(..., include_raw=True)`` answer.
 
@@ -839,7 +945,9 @@ def structured_answer(
     """
     if not (isinstance(answer, dict) and "raw" in answer and "parsed" in answer):
         return answer
-    record_response_usage(ledger, answer.get("raw"), agent=agent, model=model, call=call)
+    record_response_usage(
+        ledger, answer.get("raw"), agent=agent, model=model, call=call, runs_on=runs_on
+    )
     error = answer.get("parsing_error")
     if answer.get("parsed") is None and error is not None:
         raise error if isinstance(error, BaseException) else ValueError(str(error))

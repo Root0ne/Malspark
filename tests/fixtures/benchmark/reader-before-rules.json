@@ -1,0 +1,1290 @@
+{
+ "haiku3-score.md": {
+  "beyond": 22,
+  "beyond_note": "22 listed, as stated",
+  "column": "haiku3",
+  "earlier_runs": "not ruled out",
+  "earlier_runs_note": "not read: no run-summary.json or report-byjob.json beside the score, and the score does not state that earlier runs were used",
+  "labels": {
+   "K1.1a": "K1.1a family",
+   "K1.1b": "K1.1b loader",
+   "K1.2": "K1.2 IcedID link",
+   "K1.4": "K1.4 x64 DLL; arch check",
+   "K1.5": "K1.5 four exports, one address",
+   "K10 T1027": "K10 T1027",
+   "K10 T1053.005": "K10 T1053.005",
+   "K10 T1055": "K10 T1055",
+   "K10 T1059.003": "K10 T1059.003",
+   "K10 T1070.004": "K10 T1070.004",
+   "K10 T1218.011": "K10 T1218.011",
+   "K2.1": "K2.1 APIs by hash",
+   "K2.2": "K2.2 abort on failed check",
+   "K2.3": "K2.3 mutex",
+   "K2.4": "K2.4 install, then persist",
+   "K2.5": "K2.5 register, then loop",
+   "K2.6": "K2.6 update_data.dat read first",
+   "K3.1": "K3.1 PEB BeingDebugged",
+   "K3.2": "K3.2 process count 75/50",
+   "K3.3": "K3.3 architecture / WOW64",
+   "K3.4": "K3.4 MAC check",
+   "K3.5": "K3.5 PEB walk + CRC32 names",
+   "K3.6": "K3.6 string encryption",
+   "K3.7": "K3.7 self-deletion (ADS)",
+   "K4.1": "K4.1 bot ID",
+   "K4.2": "K4.2 group \u2192 FNV-1a",
+   "K4.4": "K4.4 two encrypted C2s",
+   "K5.1": "K5.1 Custom_update\\Update_%x.dll",
+   "K5.2": "K5.2 task Updater, COM, logon",
+   "K5.3": "K5.3 update_data.dat holds C2s",
+   "K6.1": "K6.1 HTTPS POST /live/",
+   "K6.2": "K6.2 User-Agent",
+   "K6.3": "K6.3 RC4 then base64",
+   "K6.4": "K6.4 beacon interval",
+   "K6.5": "K6.5 beacon format",
+   "K6.6": "K6.6 beacon types 1\u20135",
+   "K6.7": "K6.7 URLS/CLEARURL/COMMAND/ERROR",
+   "K7 12": "K7 12 download + run EXE",
+   "K7 13": "K7 13 DLL via rundll32",
+   "K7 14": "K7 14 shellcode",
+   "K7 15": "K7 15 update",
+   "K7 17": "K7 17 uninstall",
+   "K7 18": "K7 18 bp.dat",
+   "K7 19": "K7 19 longer interval",
+   "K7 2": "K7 2 desktop links",
+   "K7 20": "K7 20 reset counter",
+   "K7 3": "K7 3 process list",
+   "K7 4": "K7 4 sysinfo",
+   "K8 discovery": "K8 discovery",
+   "K9 /live/": "K9 /live/",
+   "K9 custom_update\\": "K9 Custom_update\\",
+   "K9 mutex runnung": "K9 mutex runnung",
+   "K9 own hashes": "K9 own hashes",
+   "K9 task updater": "K9 task Updater",
+   "K9 ua": "K9 UA",
+   "K9 update_<hex>.dll": "K9 Update_<hex>.dll",
+   "K9 update_data.dat": "K9 update_data.dat"
+  },
+  "name": "haiku3-score",
+  "provenance": {
+   "K1.1a": {
+    "entries": {},
+    "fragments": 0,
+    "located": 0,
+    "tag": "not read"
+   },
+   "K1.1b": {
+    "entries": {},
+    "fragments": 0,
+    "located": 0,
+    "tag": "not read"
+   },
+   "K1.2": {
+    "entries": {},
+    "fragments": 0,
+    "located": 0,
+    "tag": "not read"
+   },
+   "K1.4": {
+    "entries": {},
+    "fragments": 0,
+    "located": 0,
+    "tag": "not read"
+   },
+   "K1.5": {
+    "entries": {},
+    "fragments": 0,
+    "located": 0,
+    "tag": "not read"
+   },
+   "K10 T1027": {
+    "entries": {},
+    "fragments": 0,
+    "located": 0,
+    "tag": "not read"
+   },
+   "K10 T1053.005": {
+    "entries": {},
+    "fragments": 0,
+    "located": 0,
+    "tag": "not read"
+   },
+   "K10 T1055": {
+    "entries": {},
+    "fragments": 0,
+    "located": 0,
+    "tag": "not read"
+   },
+   "K10 T1059.003": {
+    "entries": {},
+    "fragments": 0,
+    "located": 0,
+    "tag": "not read"
+   },
+   "K10 T1070.004": {
+    "entries": {},
+    "fragments": 0,
+    "located": 0,
+    "tag": "not read"
+   },
+   "K10 T1218.011": {
+    "entries": {},
+    "fragments": 0,
+    "located": 0,
+    "tag": "not read"
+   },
+   "K2.1": {
+    "entries": {},
+    "fragments": 0,
+    "located": 0,
+    "tag": "not read"
+   },
+   "K2.2": {
+    "entries": {},
+    "fragments": 0,
+    "located": 0,
+    "tag": "not read"
+   },
+   "K2.3": {
+    "entries": {},
+    "fragments": 0,
+    "located": 0,
+    "tag": "not read"
+   },
+   "K2.4": {
+    "entries": {},
+    "fragments": 0,
+    "located": 0,
+    "tag": "not read"
+   },
+   "K2.5": {
+    "entries": {},
+    "fragments": 0,
+    "located": 0,
+    "tag": "not read"
+   },
+   "K2.6": {
+    "entries": {},
+    "fragments": 0,
+    "located": 0,
+    "tag": "not read"
+   },
+   "K3.1": {
+    "entries": {},
+    "fragments": 0,
+    "located": 0,
+    "tag": "not read"
+   },
+   "K3.2": {
+    "entries": {},
+    "fragments": 0,
+    "located": 0,
+    "tag": "not read"
+   },
+   "K3.3": {
+    "entries": {},
+    "fragments": 0,
+    "located": 0,
+    "tag": "not read"
+   },
+   "K3.4": {
+    "entries": {},
+    "fragments": 0,
+    "located": 0,
+    "tag": "not read"
+   },
+   "K3.5": {
+    "entries": {},
+    "fragments": 0,
+    "located": 0,
+    "tag": "not read"
+   },
+   "K3.6": {
+    "entries": {},
+    "fragments": 0,
+    "located": 0,
+    "tag": "not read"
+   },
+   "K3.7": {
+    "entries": {},
+    "fragments": 0,
+    "located": 0,
+    "tag": "not read"
+   },
+   "K4.1": {
+    "entries": {},
+    "fragments": 0,
+    "located": 0,
+    "tag": "not read"
+   },
+   "K4.2": {
+    "entries": {},
+    "fragments": 0,
+    "located": 0,
+    "tag": "not read"
+   },
+   "K4.4": {
+    "entries": {},
+    "fragments": 0,
+    "located": 0,
+    "tag": "not read"
+   },
+   "K5.1": {
+    "entries": {},
+    "fragments": 0,
+    "located": 0,
+    "tag": "not read"
+   },
+   "K5.2": {
+    "entries": {},
+    "fragments": 0,
+    "located": 0,
+    "tag": "not read"
+   },
+   "K5.3": {
+    "entries": {},
+    "fragments": 0,
+    "located": 0,
+    "tag": "not read"
+   },
+   "K6.1": {
+    "entries": {},
+    "fragments": 0,
+    "located": 0,
+    "tag": "not read"
+   },
+   "K6.2": {
+    "entries": {},
+    "fragments": 0,
+    "located": 0,
+    "tag": "not read"
+   },
+   "K6.3": {
+    "entries": {},
+    "fragments": 0,
+    "located": 0,
+    "tag": "not read"
+   },
+   "K6.4": {
+    "entries": {},
+    "fragments": 0,
+    "located": 0,
+    "tag": "not read"
+   },
+   "K6.5": {
+    "entries": {},
+    "fragments": 0,
+    "located": 0,
+    "tag": "not read"
+   },
+   "K6.6": {
+    "entries": {},
+    "fragments": 0,
+    "located": 0,
+    "tag": "not read"
+   },
+   "K6.7": {
+    "entries": {},
+    "fragments": 0,
+    "located": 0,
+    "tag": "not read"
+   },
+   "K7 12": {
+    "entries": {},
+    "fragments": 0,
+    "located": 0,
+    "tag": "not read"
+   },
+   "K7 13": {
+    "entries": {},
+    "fragments": 0,
+    "located": 0,
+    "tag": "not read"
+   },
+   "K7 14": {
+    "entries": {},
+    "fragments": 0,
+    "located": 0,
+    "tag": "not read"
+   },
+   "K7 15": {
+    "entries": {},
+    "fragments": 0,
+    "located": 0,
+    "tag": "not read"
+   },
+   "K7 17": {
+    "entries": {},
+    "fragments": 0,
+    "located": 0,
+    "tag": "not read"
+   },
+   "K7 18": {
+    "entries": {},
+    "fragments": 0,
+    "located": 0,
+    "tag": "not read"
+   },
+   "K7 19": {
+    "entries": {},
+    "fragments": 0,
+    "located": 0,
+    "tag": "not read"
+   },
+   "K7 2": {
+    "entries": {},
+    "fragments": 0,
+    "located": 0,
+    "tag": "not read"
+   },
+   "K7 20": {
+    "entries": {},
+    "fragments": 0,
+    "located": 0,
+    "tag": "not read"
+   },
+   "K7 3": {
+    "entries": {},
+    "fragments": 0,
+    "located": 0,
+    "tag": "not read"
+   },
+   "K7 4": {
+    "entries": {},
+    "fragments": 0,
+    "located": 0,
+    "tag": "not read"
+   },
+   "K8 discovery": {
+    "entries": {},
+    "fragments": 0,
+    "located": 0,
+    "tag": "not read"
+   },
+   "K9 /live/": {
+    "entries": {},
+    "fragments": 0,
+    "located": 0,
+    "tag": "not read"
+   },
+   "K9 custom_update\\": {
+    "entries": {},
+    "fragments": 0,
+    "located": 0,
+    "tag": "not read"
+   },
+   "K9 mutex runnung": {
+    "entries": {},
+    "fragments": 0,
+    "located": 0,
+    "tag": "not read"
+   },
+   "K9 own hashes": {
+    "entries": {},
+    "fragments": 0,
+    "located": 0,
+    "tag": "not read"
+   },
+   "K9 task updater": {
+    "entries": {},
+    "fragments": 0,
+    "located": 0,
+    "tag": "not read"
+   },
+   "K9 ua": {
+    "entries": {},
+    "fragments": 0,
+    "located": 0,
+    "tag": "not read"
+   },
+   "K9 update_<hex>.dll": {
+    "entries": {},
+    "fragments": 0,
+    "located": 0,
+    "tag": "not read"
+   },
+   "K9 update_data.dat": {
+    "entries": {},
+    "fragments": 0,
+    "located": 0,
+    "tag": "not read"
+   }
+  },
+  "provenance_note": "not read: no evidence.json beside the score",
+  "source": "haiku3-score.md",
+  "totals_note": "Totals line checked against the table",
+  "verdicts": {
+   "K1.1a": [
+    "key",
+    "found"
+   ],
+   "K1.1b": [
+    "key",
+    "found"
+   ],
+   "K1.2": [
+    "key",
+    "partly (body)"
+   ],
+   "K1.4": [
+    "key",
+    "partly (body)"
+   ],
+   "K1.5": [
+    "key",
+    "found"
+   ],
+   "K10 T1027": [
+    "key",
+    "found"
+   ],
+   "K10 T1053.005": [
+    "key",
+    "missed"
+   ],
+   "K10 T1055": [
+    "key",
+    "partly (body)"
+   ],
+   "K10 T1059.003": [
+    "key",
+    "found"
+   ],
+   "K10 T1070.004": [
+    "key",
+    "partly (body)"
+   ],
+   "K10 T1218.011": [
+    "key",
+    "found"
+   ],
+   "K2.1": [
+    "key",
+    "found"
+   ],
+   "K2.2": [
+    "key",
+    "missed"
+   ],
+   "K2.3": [
+    "key",
+    "missed"
+   ],
+   "K2.4": [
+    "key",
+    "missed"
+   ],
+   "K2.5": [
+    "key",
+    "partly (body)"
+   ],
+   "K2.6": [
+    "key",
+    "missed"
+   ],
+   "K3.1": [
+    "key",
+    "partly (body)"
+   ],
+   "K3.2": [
+    "key",
+    "missed"
+   ],
+   "K3.3": [
+    "key",
+    "missed"
+   ],
+   "K3.4": [
+    "key",
+    "missed"
+   ],
+   "K3.5": [
+    "key",
+    "found"
+   ],
+   "K3.6": [
+    "key",
+    "found"
+   ],
+   "K3.7": [
+    "key",
+    "missed"
+   ],
+   "K4.1": [
+    "key",
+    "partly (dump)"
+   ],
+   "K4.2": [
+    "key",
+    "partly (body)"
+   ],
+   "K4.4": [
+    "key",
+    "found"
+   ],
+   "K5.1": [
+    "key",
+    "partly (body)"
+   ],
+   "K5.2": [
+    "key",
+    "missed"
+   ],
+   "K5.3": [
+    "key",
+    "partly (body)"
+   ],
+   "K6.1": [
+    "key",
+    "found"
+   ],
+   "K6.2": [
+    "key",
+    "found"
+   ],
+   "K6.3": [
+    "key",
+    "missed"
+   ],
+   "K6.4": [
+    "key",
+    "missed"
+   ],
+   "K6.5": [
+    "key",
+    "partly (body)"
+   ],
+   "K6.6": [
+    "key",
+    "missed"
+   ],
+   "K6.7": [
+    "key",
+    "missed"
+   ],
+   "K7 12": [
+    "key",
+    "partly (body)"
+   ],
+   "K7 13": [
+    "key",
+    "partly (body)"
+   ],
+   "K7 14": [
+    "key",
+    "missed"
+   ],
+   "K7 15": [
+    "key",
+    "missed"
+   ],
+   "K7 17": [
+    "key",
+    "missed"
+   ],
+   "K7 18": [
+    "key",
+    "partly (body)"
+   ],
+   "K7 19": [
+    "key",
+    "missed"
+   ],
+   "K7 2": [
+    "key",
+    "missed"
+   ],
+   "K7 20": [
+    "key",
+    "missed"
+   ],
+   "K7 3": [
+    "key",
+    "partly (body)"
+   ],
+   "K7 4": [
+    "key",
+    "partly (body)"
+   ],
+   "K8 discovery": [
+    "key",
+    "found"
+   ],
+   "K9 /live/": [
+    "key",
+    "found"
+   ],
+   "K9 custom_update\\": [
+    "key",
+    "partly (body)"
+   ],
+   "K9 mutex runnung": [
+    "key",
+    "partly (dump)"
+   ],
+   "K9 own hashes": [
+    "key",
+    "found"
+   ],
+   "K9 task updater": [
+    "key",
+    "partly (body)"
+   ],
+   "K9 ua": [
+    "key",
+    "found"
+   ],
+   "K9 update_<hex>.dll": [
+    "key",
+    "partly (body)"
+   ],
+   "K9 update_data.dat": [
+    "key",
+    "partly (body)"
+   ]
+  }
+ },
+ "haiku4-score.md": {
+  "beyond": 33,
+  "beyond_note": "33 listed, as stated",
+  "column": "haiku4",
+  "earlier_runs": "not ruled out",
+  "earlier_runs_note": "not read: no run-summary.json or report-byjob.json beside the score, and the score does not state that earlier runs were used",
+  "labels": {
+   "K1.1a": "K1.1a family",
+   "K1.1b": "K1.1b loader",
+   "K1.2": "K1.2 IcedID link",
+   "K1.4": "K1.4 x64 DLL; arch check",
+   "K1.5": "K1.5 four exports, one address",
+   "K10 T1027": "K10 T1027",
+   "K10 T1053.005": "K10 T1053.005",
+   "K10 T1055": "K10 T1055",
+   "K10 T1059.003": "K10 T1059.003",
+   "K10 T1070.004": "K10 T1070.004",
+   "K10 T1218.011": "K10 T1218.011",
+   "K2.1": "K2.1 APIs by hash",
+   "K2.2": "K2.2 abort on failed check",
+   "K2.3": "K2.3 mutex",
+   "K2.4": "K2.4 install, then persist",
+   "K2.5": "K2.5 register, then loop",
+   "K2.6": "K2.6 update_data.dat read first",
+   "K3.1": "K3.1 PEB BeingDebugged",
+   "K3.2": "K3.2 process count 75 / 50",
+   "K3.3": "K3.3 architecture / WOW64",
+   "K3.4": "K3.4 MAC check",
+   "K3.5": "K3.5 PEB walk + CRC32 names",
+   "K3.6": "K3.6 string encryption",
+   "K3.7": "K3.7 self-deletion (ADS)",
+   "K4.1": "K4.1 bot ID",
+   "K4.2": "K4.2 group \u2192 FNV-1a",
+   "K4.4": "K4.4 two encrypted C2s",
+   "K5.1": "K5.1 Custom_update\\Update_%x.dll",
+   "K5.2": "K5.2 task Updater, COM, logon",
+   "K5.3": "K5.3 update_data.dat holds C2s",
+   "K6.1": "K6.1 HTTPS POST /live/",
+   "K6.2": "K6.2 User-Agent",
+   "K6.3": "K6.3 RC4 then base64",
+   "K6.4": "K6.4 beacon interval",
+   "K6.5": "K6.5 beacon format",
+   "K6.6": "K6.6 beacon types 1\u20135",
+   "K6.7": "K6.7 URLS / CLEARURL / COMMAND / ERROR",
+   "K7 12": "K7 12 download + run EXE",
+   "K7 13": "K7 13 DLL via rundll32",
+   "K7 14": "K7 14 shellcode",
+   "K7 15": "K7 15 update",
+   "K7 17": "K7 17 uninstall",
+   "K7 18": "K7 18 bp.dat",
+   "K7 19": "K7 19 longer interval",
+   "K7 2": "K7 2 desktop links",
+   "K7 20": "K7 20 reset counter",
+   "K7 3": "K7 3 process list",
+   "K7 4": "K7 4 sysinfo",
+   "K8 discovery": "K8 discovery",
+   "K9 /live/": "K9 /live/",
+   "K9 custom_update\\": "K9 Custom_update\\",
+   "K9 mutex runnung": "K9 mutex runnung",
+   "K9 own hashes": "K9 own hashes",
+   "K9 task updater": "K9 task Updater",
+   "K9 ua": "K9 UA",
+   "K9 update_<hex>.dll": "K9 Update_<hex>.dll",
+   "K9 update_data.dat": "K9 update_data.dat"
+  },
+  "name": "haiku4-score",
+  "provenance": {
+   "K1.1a": {
+    "entries": {},
+    "fragments": 0,
+    "located": 0,
+    "tag": "not read"
+   },
+   "K1.1b": {
+    "entries": {},
+    "fragments": 0,
+    "located": 0,
+    "tag": "not read"
+   },
+   "K1.2": {
+    "entries": {},
+    "fragments": 0,
+    "located": 0,
+    "tag": "not read"
+   },
+   "K1.4": {
+    "entries": {},
+    "fragments": 0,
+    "located": 0,
+    "tag": "not read"
+   },
+   "K1.5": {
+    "entries": {},
+    "fragments": 0,
+    "located": 0,
+    "tag": "not read"
+   },
+   "K10 T1027": {
+    "entries": {},
+    "fragments": 0,
+    "located": 0,
+    "tag": "not read"
+   },
+   "K10 T1053.005": {
+    "entries": {},
+    "fragments": 0,
+    "located": 0,
+    "tag": "not read"
+   },
+   "K10 T1055": {
+    "entries": {},
+    "fragments": 0,
+    "located": 0,
+    "tag": "not read"
+   },
+   "K10 T1059.003": {
+    "entries": {},
+    "fragments": 0,
+    "located": 0,
+    "tag": "not read"
+   },
+   "K10 T1070.004": {
+    "entries": {},
+    "fragments": 0,
+    "located": 0,
+    "tag": "not read"
+   },
+   "K10 T1218.011": {
+    "entries": {},
+    "fragments": 0,
+    "located": 0,
+    "tag": "not read"
+   },
+   "K2.1": {
+    "entries": {},
+    "fragments": 0,
+    "located": 0,
+    "tag": "not read"
+   },
+   "K2.2": {
+    "entries": {},
+    "fragments": 0,
+    "located": 0,
+    "tag": "not read"
+   },
+   "K2.3": {
+    "entries": {},
+    "fragments": 0,
+    "located": 0,
+    "tag": "not read"
+   },
+   "K2.4": {
+    "entries": {},
+    "fragments": 0,
+    "located": 0,
+    "tag": "not read"
+   },
+   "K2.5": {
+    "entries": {},
+    "fragments": 0,
+    "located": 0,
+    "tag": "not read"
+   },
+   "K2.6": {
+    "entries": {},
+    "fragments": 0,
+    "located": 0,
+    "tag": "not read"
+   },
+   "K3.1": {
+    "entries": {},
+    "fragments": 0,
+    "located": 0,
+    "tag": "not read"
+   },
+   "K3.2": {
+    "entries": {},
+    "fragments": 0,
+    "located": 0,
+    "tag": "not read"
+   },
+   "K3.3": {
+    "entries": {},
+    "fragments": 0,
+    "located": 0,
+    "tag": "not read"
+   },
+   "K3.4": {
+    "entries": {},
+    "fragments": 0,
+    "located": 0,
+    "tag": "not read"
+   },
+   "K3.5": {
+    "entries": {},
+    "fragments": 0,
+    "located": 0,
+    "tag": "not read"
+   },
+   "K3.6": {
+    "entries": {},
+    "fragments": 0,
+    "located": 0,
+    "tag": "not read"
+   },
+   "K3.7": {
+    "entries": {},
+    "fragments": 0,
+    "located": 0,
+    "tag": "not read"
+   },
+   "K4.1": {
+    "entries": {},
+    "fragments": 0,
+    "located": 0,
+    "tag": "not read"
+   },
+   "K4.2": {
+    "entries": {},
+    "fragments": 0,
+    "located": 0,
+    "tag": "not read"
+   },
+   "K4.4": {
+    "entries": {},
+    "fragments": 0,
+    "located": 0,
+    "tag": "not read"
+   },
+   "K5.1": {
+    "entries": {},
+    "fragments": 0,
+    "located": 0,
+    "tag": "not read"
+   },
+   "K5.2": {
+    "entries": {},
+    "fragments": 0,
+    "located": 0,
+    "tag": "not read"
+   },
+   "K5.3": {
+    "entries": {},
+    "fragments": 0,
+    "located": 0,
+    "tag": "not read"
+   },
+   "K6.1": {
+    "entries": {},
+    "fragments": 0,
+    "located": 0,
+    "tag": "not read"
+   },
+   "K6.2": {
+    "entries": {},
+    "fragments": 0,
+    "located": 0,
+    "tag": "not read"
+   },
+   "K6.3": {
+    "entries": {},
+    "fragments": 0,
+    "located": 0,
+    "tag": "not read"
+   },
+   "K6.4": {
+    "entries": {},
+    "fragments": 0,
+    "located": 0,
+    "tag": "not read"
+   },
+   "K6.5": {
+    "entries": {},
+    "fragments": 0,
+    "located": 0,
+    "tag": "not read"
+   },
+   "K6.6": {
+    "entries": {},
+    "fragments": 0,
+    "located": 0,
+    "tag": "not read"
+   },
+   "K6.7": {
+    "entries": {},
+    "fragments": 0,
+    "located": 0,
+    "tag": "not read"
+   },
+   "K7 12": {
+    "entries": {},
+    "fragments": 0,
+    "located": 0,
+    "tag": "not read"
+   },
+   "K7 13": {
+    "entries": {},
+    "fragments": 0,
+    "located": 0,
+    "tag": "not read"
+   },
+   "K7 14": {
+    "entries": {},
+    "fragments": 0,
+    "located": 0,
+    "tag": "not read"
+   },
+   "K7 15": {
+    "entries": {},
+    "fragments": 0,
+    "located": 0,
+    "tag": "not read"
+   },
+   "K7 17": {
+    "entries": {},
+    "fragments": 0,
+    "located": 0,
+    "tag": "not read"
+   },
+   "K7 18": {
+    "entries": {},
+    "fragments": 0,
+    "located": 0,
+    "tag": "not read"
+   },
+   "K7 19": {
+    "entries": {},
+    "fragments": 0,
+    "located": 0,
+    "tag": "not read"
+   },
+   "K7 2": {
+    "entries": {},
+    "fragments": 0,
+    "located": 0,
+    "tag": "not read"
+   },
+   "K7 20": {
+    "entries": {},
+    "fragments": 0,
+    "located": 0,
+    "tag": "not read"
+   },
+   "K7 3": {
+    "entries": {},
+    "fragments": 0,
+    "located": 0,
+    "tag": "not read"
+   },
+   "K7 4": {
+    "entries": {},
+    "fragments": 0,
+    "located": 0,
+    "tag": "not read"
+   },
+   "K8 discovery": {
+    "entries": {},
+    "fragments": 0,
+    "located": 0,
+    "tag": "not read"
+   },
+   "K9 /live/": {
+    "entries": {},
+    "fragments": 0,
+    "located": 0,
+    "tag": "not read"
+   },
+   "K9 custom_update\\": {
+    "entries": {},
+    "fragments": 0,
+    "located": 0,
+    "tag": "not read"
+   },
+   "K9 mutex runnung": {
+    "entries": {},
+    "fragments": 0,
+    "located": 0,
+    "tag": "not read"
+   },
+   "K9 own hashes": {
+    "entries": {},
+    "fragments": 0,
+    "located": 0,
+    "tag": "not read"
+   },
+   "K9 task updater": {
+    "entries": {},
+    "fragments": 0,
+    "located": 0,
+    "tag": "not read"
+   },
+   "K9 ua": {
+    "entries": {},
+    "fragments": 0,
+    "located": 0,
+    "tag": "not read"
+   },
+   "K9 update_<hex>.dll": {
+    "entries": {},
+    "fragments": 0,
+    "located": 0,
+    "tag": "not read"
+   },
+   "K9 update_data.dat": {
+    "entries": {},
+    "fragments": 0,
+    "located": 0,
+    "tag": "not read"
+   }
+  },
+  "provenance_note": "not read: no evidence.json beside the score",
+  "source": "haiku4-score.md",
+  "totals_note": "Totals line checked against the table",
+  "verdicts": {
+   "K1.1a": [
+    "key",
+    "found"
+   ],
+   "K1.1b": [
+    "key",
+    "found"
+   ],
+   "K1.2": [
+    "key",
+    "partly (body)"
+   ],
+   "K1.4": [
+    "key",
+    "partly (body)"
+   ],
+   "K1.5": [
+    "key",
+    "found"
+   ],
+   "K10 T1027": [
+    "key",
+    "found"
+   ],
+   "K10 T1053.005": [
+    "key",
+    "partly (body)"
+   ],
+   "K10 T1055": [
+    "key",
+    "missed"
+   ],
+   "K10 T1059.003": [
+    "key",
+    "found"
+   ],
+   "K10 T1070.004": [
+    "key",
+    "found"
+   ],
+   "K10 T1218.011": [
+    "key",
+    "found"
+   ],
+   "K2.1": [
+    "key",
+    "found"
+   ],
+   "K2.2": [
+    "key",
+    "found"
+   ],
+   "K2.3": [
+    "key",
+    "missed"
+   ],
+   "K2.4": [
+    "key",
+    "found"
+   ],
+   "K2.5": [
+    "key",
+    "found"
+   ],
+   "K2.6": [
+    "key",
+    "missed"
+   ],
+   "K3.1": [
+    "key",
+    "found"
+   ],
+   "K3.2": [
+    "key",
+    "partly (body)"
+   ],
+   "K3.3": [
+    "key",
+    "partly (body)"
+   ],
+   "K3.4": [
+    "key",
+    "partly (body)"
+   ],
+   "K3.5": [
+    "key",
+    "found"
+   ],
+   "K3.6": [
+    "key",
+    "found"
+   ],
+   "K3.7": [
+    "key",
+    "found"
+   ],
+   "K4.1": [
+    "key",
+    "partly (body)"
+   ],
+   "K4.2": [
+    "key",
+    "partly (body)"
+   ],
+   "K4.4": [
+    "key",
+    "found"
+   ],
+   "K5.1": [
+    "key",
+    "found"
+   ],
+   "K5.2": [
+    "key",
+    "found"
+   ],
+   "K5.3": [
+    "key",
+    "partly (body)"
+   ],
+   "K6.1": [
+    "key",
+    "found"
+   ],
+   "K6.2": [
+    "key",
+    "found"
+   ],
+   "K6.3": [
+    "key",
+    "partly (body)"
+   ],
+   "K6.4": [
+    "key",
+    "found"
+   ],
+   "K6.5": [
+    "key",
+    "found"
+   ],
+   "K6.6": [
+    "key",
+    "missed"
+   ],
+   "K6.7": [
+    "key",
+    "partly (body)"
+   ],
+   "K7 12": [
+    "key",
+    "partly (body)"
+   ],
+   "K7 13": [
+    "key",
+    "partly (body)"
+   ],
+   "K7 14": [
+    "key",
+    "found"
+   ],
+   "K7 15": [
+    "key",
+    "missed"
+   ],
+   "K7 17": [
+    "key",
+    "found"
+   ],
+   "K7 18": [
+    "key",
+    "partly (body)"
+   ],
+   "K7 19": [
+    "key",
+    "found"
+   ],
+   "K7 2": [
+    "key",
+    "found"
+   ],
+   "K7 20": [
+    "key",
+    "missed"
+   ],
+   "K7 3": [
+    "key",
+    "found"
+   ],
+   "K7 4": [
+    "key",
+    "found"
+   ],
+   "K8 discovery": [
+    "key",
+    "found"
+   ],
+   "K9 /live/": [
+    "key",
+    "found"
+   ],
+   "K9 custom_update\\": [
+    "key",
+    "found"
+   ],
+   "K9 mutex runnung": [
+    "key",
+    "partly (dump)"
+   ],
+   "K9 own hashes": [
+    "key",
+    "found"
+   ],
+   "K9 task updater": [
+    "key",
+    "found"
+   ],
+   "K9 ua": [
+    "key",
+    "found"
+   ],
+   "K9 update_<hex>.dll": [
+    "key",
+    "found"
+   ],
+   "K9 update_data.dat": [
+    "key",
+    "partly (body)"
+   ]
+  }
+ }
+}

@@ -206,7 +206,7 @@ account's job is not found.
 
 ### The run summary
 
-A finished report carries `run_summary`, and five of its keys describe the run
+A finished report carries `run_summary`, and six of its keys describe the run
 rather than the sample:
 
 | Key | What it says |
@@ -216,6 +216,164 @@ rather than the sample:
 | `validation` | `retries`, `by_code` and `unresolved` — what the feedback loops cost and what stayed wrong, with the agent that owns each. |
 | `corroboration` | Per technique id, the sources that named it. A count of distinct sources, not a combined confidence; the judge is listed as a source but does not corroborate, because it read the analysts. |
 | `stages` | Every stage of the active team in declaration order: `key`, `kind`, `ran`, `reason`, `agents`, `duration_ms`. A stage that declined is a row saying so, not an absent row. |
+| `environment` | The environment the run ran in, recorded by code: `host`, per agent `requests` and `response_models`, and per tool server `tools` (below). |
+
+`environment.host` is the worker's host as it reads itself. `os`, `os_release`,
+`os_version`, `machine` and `cpu_model` describe the system. `logical_cpus` and
+`memory_bytes` are the kernel's counts for the whole machine; inside a container
+they are the host's. Beside them, `cpus_available` is how many processors the
+worker process may use: its CPU affinity, held to a CPU quota of its control
+groups (a fraction where the quota is one). `memory_limit_bytes` is the memory
+limit of its control groups. Both are read from cgroup v2 or v1, each only where
+it is readable, and the limit only where one is set. A fact the host does not
+give is left out.
+
+`environment.agents` has one block per agent, keyed in lowercase. Its `requests`
+hold one row per model the agent was built to send with (`position` 0 is the
+first model, 1 and on its fallbacks), with `provider` and the configured `model`.
+A configured identifier shaped like a file-system path is kept by its base name,
+and the row carries `model_reduced: true`. `answered` counts the recorded answers
+that came from that place in the list, so a fallback that was never needed reads
+0. An answer names its place, not which model built for it gave it: where two
+rows share a place (a model built again that sends something else), each carries
+the place's total and `answered_shared: true`, and the total is counted once.
+
+Each row's `sampling` holds the sampling parameters and `thinking` the thinking
+switches that the request body built when the model was built carries. The
+provider adapter builds that body through its client library's own request
+builder, without sending it, and reads both off it, after the library's own
+drops (a model whose API refuses sampling parameters reads as sending none).
+`thinking` is keyed by the path the client library builds it under: the request
+body's own for most adapters, the library's config path (such as
+`thinking_config.thinking_budget`) for Gemini. An empty `sampling` comes with
+`sampling_statement`: none was sent, and the provider's default applies.
+`sampling` and `thinking` are `null` when no adapter read them, and
+`sampling_statement` says so; that is not a statement that nothing was sent. An
+argument a caller passes to one call is not in the record. Where the platform
+changes a request's thinking switches after its client built the body (the
+Anthropic adapter, on the request after a replayed history changed, asks that
+mismatched thinking blocks be dropped), the row counts those requests in
+`thinking_changed_requests`; `thinking` still shows the switches as built.
+`effort` is the effort level sent, with `effort_setting`, the setting it was
+read from. Where none is sent, `effort` is `null` and `effort_statement` says
+why.
+
+`response_models` counts each model identifier the provider's answers named,
+which may differ from the model the run asked for. It is empty when no answer
+named one. An identifier shaped like a file-system path (`/`, `~/`, a drive
+letter, a backslash) is kept by its base name and listed in
+`response_models_reduced`. A summary stored without the block has no
+`environment` key.
+
+What a reader may conclude from `environment.agents`:
+
+- For each agent and each place in its model list: the provider and the
+  configured model id. For the shipped adapters, the sampling parameters and
+  thinking switches the client library's own request builder put in the body
+  when the model was built; an empty `sampling` really means the library sent
+  none.
+- The effort level and the setting it came from, which models the answers named,
+  and how many recorded answers came from each place in the list.
+- A `null` `sampling` or `thinking` is not "nothing sent": nobody read it.
+- Not every request need have carried exactly those values: an argument a caller
+  binds to one call is not reflected, and the requests whose thinking switches
+  the platform changed are only counted.
+- `answered` is neither attempts nor failed calls: it counts recorded answers,
+  and where rows share a place it is that place's total.
+- `response_models` is what the server said it served, not proof of the weights
+  behind it.
+
+`environment.tools` has one row per tool server the job's registry attached,
+or a provider attached through a connection of its own. `served` says how:
+`offered` (one of its tools was offered to an agent), `called` (an agent called
+one), `pack_step` (a triage pack step did), or `attached` (none of these). For a
+server a provider drives itself, whose tools carry no server name, these are
+read from the names of the tools it served. A
+name that no attached server backs, such as the agent-to-agent delegation
+tools, is not listed. The row `pipeline` holds the pack steps the worker ran in
+its own process (`in_process`), with `package_version`, read on the worker's
+host with the environment of the server each step stands in for. A server row
+gives `server_info`, the name and version the server gave when it was attached.
+That is the same reading as `efficiency.fingerprint.parts.servers`, which
+hashes it with the run's other setup. `manifest_version` is the version the
+server's capability manifest gives: the platform's own version for the
+platform's servers (`analysis`, `knowledge`, `network`, `threatintel`), and the
+pinned version of the program for a server that wraps one command-line program
+(`die`, `jadx`, `yarax` and the others).
+
+`requirements` lists what the server's tools declare they need, as its manifest
+reports it from the server's own host when the manifest was read. Rows from any
+server are reduced to the known keys, typed, and capped at 200 characters a
+string, 256 rows and 256 tools a row; a row that lost anything says what under
+`cut`.
+
+- A `module` row gives the `distribution` that provides the module and its
+  installed `version`, or `not installed`.
+- A `data` row (a rule set or signature files) gives the `files` that match its
+  `pattern` (alternatives are separated by `|`), less those under a directory whose full path matches `exclude`
+  (for capa, `*.git*`, which is exactly capa's own skip rule, so a corpus kept
+  under a path such as `capa-rules.git` counts as empty, as capa loads nothing
+  from it), their `bytes`, and one
+  `sha256` over them, name then content in name order. `digest_of` says what
+  that covers: the default path, named by `named_by`, as it was when the
+  manifest was read. Two equal digests mean the same files were at that path
+  then. Over 20,000 files or 64 MiB no digest is computed, and
+  `digest_statement` says so.
+- A `binary` row gives the `version` the program reported, or `not reported`
+  with the reason. For `floss` it is the release named by the `--version` run
+  that the tool's own check of its pinned build already makes; the build is
+  never run a second time to ask. For other programs it is the answer to their
+  declared version probe. The probe runs with only `PATH`, `LANG` and a
+  temporary directory as home and working directory. A platform server reads
+  these versions once, in the background from its start, and a manifest waits
+  up to about one second in all for those still being read; one not read by
+  then says `not reported: not read yet`. A version that could not be
+  read is kept with its reason for ten minutes before it is asked again. A
+  program served by a command-line sidecar also gives `pinned`, the version its
+  image was built for.
+
+The rules a call ran with are in that call's own ledger entry. Every answer of
+`yara_scan`, `sigma_match`, `sigma_match_sandbox` and `capa` on the analysis
+server, and of a reading that stands in for one of them, starts with
+`data_used`. Each row names a corpus by its path from the project root, or by
+its base name outside the project, never by a host path. `named_by` says what
+named it: the call's argument (such as `the ruleset argument`), or else the
+setting, the server override or `the default`. An argument naming the corpus
+the tool reads anyway counts as that corpus. The row gives the file count and
+digest of the files the call's rule layer was loaded from:
+
+- A YARA or Sigma layer is kept only while every file's size and modification
+  time are as they were when it loaded. A rule edited between two calls is in
+  the second call's layer and in its digest.
+- capa loads its rules in a process of its own on each call. Its digest is of
+  the corpus as read just before that process starts.
+- Either way the files are read again once the load is done. If they changed
+  in between, `digest_statement` says so and no digest is given.
+- A call that ended before loading any rules says `not loaded`.
+
+A digest names the files by their content as read beside the load. A file
+rewritten with its size and modification time put back is not detected.
+
+Some tools report nothing today, and their facts read `not reported`:
+
+- A server that answers no capability manifest gives `server_info` only. This
+  covers most third-party servers and the disassembler and decompiler servers
+  the static providers attach themselves.
+- The sandbox providers report no server of their own.
+- The YARA-X sidecar's (`yarax`) rule corpus is neither counted nor digested,
+  and its scans carry no `data_used`.
+- The capa and YARA results of the in-process static provider carry no
+  `data_used`. Only the tools above, and the readings that stand in for them,
+  are stamped.
+- A program's version is read only where its tool declares how to ask it: the
+  string-extraction tool (`floss`), and `ilspycmd`, `jadx` and `yr` in their
+  sidecars. Every other command-line sidecar gives its pinned version alone.
+- A setting (an API key) has no row.
+
+A summary stored without `tools` reads as before.
+
+The block carries `v`, its shape version (2). Throughout it, a fact nobody read
+is `not reported`, followed after a colon by the reason where one is known.
 
 ### The analysis WebSocket
 
