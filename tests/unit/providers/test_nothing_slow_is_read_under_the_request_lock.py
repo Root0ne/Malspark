@@ -88,3 +88,24 @@ def test_an_id_issued_while_the_request_is_read_never_makes_a_false_refusal(
     request = filed(a_job())
     assert request.state == dr.ACCEPTED, request.answer
     assert request.answer != dr.NO_LATER_STEP
+
+
+def test_a_repeat_is_compared_on_the_exact_launch_text_and_the_tool_says_where_it_is(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """r3 R6: the pack shows a launch text escaped; the request tool compares the exact text."""
+    from types import SimpleNamespace
+
+    monkeypatch.setattr(dr, "_cannot_detonate", lambda container, arguments: "")
+    container = a_job()
+    made = DetonationRecord(ordinal=2, origin="agent", arguments="-p a|b", report={})
+    made.launch = {"honoured": True}
+    container.detonations.append(made)
+    assert filed(container, "-p a|b").answer == dr.REFUSED_EXISTS.format(name="d2")
+    # The text as the pack shows it is another argument set: not the one made.
+    assert filed(container, "-p a\\x7cb").answer != dr.REFUSED_EXISTS.format(name="d2")
+    container.get_sandbox_provider = lambda: SimpleNamespace(
+        capabilities=SimpleNamespace(can_submit=True, can_pass_launch_arguments=True)
+    )
+    description = dr.request_tool(container).description
+    assert "launched_with" in description and "escaped" in description

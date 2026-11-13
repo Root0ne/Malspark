@@ -456,6 +456,9 @@ def request_tool(container: Any) -> BaseTool:
         "joined to an identical pending one, or refused and why. A request is carried out "
         "on entry of the next step of the run that has an agent reading the sandbox, so it "
         "can be made while such a step is still ahead (during the analysis and the debate); "
-        "one made after the last of them began is refused as too late. " + _limits(container)
+        "one made after the last of them began is refused as too late. A detonation "
+        "already made is compared on its exact launch text: the pack shows a later "
+        "detonation's launch text escaped, and the exact text is the launched_with of any "
+        "read of that detonation. " + _limits(container)
     )
     return StructuredTool.from_function(func=_request, name=REQUEST_TOOL, description=description)
