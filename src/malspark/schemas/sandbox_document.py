@@ -223,12 +223,59 @@ FIXTURE_KEY = "recorded_fixture"
 # whose target is the sample, or that names none, carries no mark. Set after
 # intake (``app.MalsparkApp._tell_the_target``), so no reader earns it.
 TARGET_KEY = "target_not_the_sample"
+# The mark the run sets on a report of a job that asked for launch arguments:
+# the arguments verbatim, the provider, whether it passed them and its note
+# (``providers.submission.launch_record``). A job that asked for none leaves
+# no mark. Set after intake (``app.MalsparkApp._mark_the_launch``), so no
+# reader earns it.
+LAUNCH_KEY = "launched_with"
+# The marks the run sets on a report whose launch arguments a generated
+# launcher carried (``schemas.sandbox_report.attribute_the_launcher``):
+# whether the sample's own processes were told apart from the launcher's
+# (``"established"``, or ``"not established: <reason>"``), and how many of
+# the signatures left in the sample's channels name no process, so are
+# attributed to no one. Set after intake, so no reader earns them.
+LAUNCHER_ATTRIBUTION_KEY = "launcher_attribution"
+UNATTRIBUTED_SIGNATURES_KEY = "launcher_unattributed_signatures"
 # Every platform mark a document can carry at its top level: the one list. A
 # sandbox's own report holding a key under one of these words is not the
 # platform's mark, and a reader that does not set the mark itself never passes
 # it on (:func:`unearned_marks_removed`). A later mark joins here, and is then
 # taken out of every provider's report at intake with no code of its own.
-PLATFORM_MARKS: tuple[str, ...] = (SYNTHETIC_KEY, FIXTURE_KEY, TARGET_KEY)
+PLATFORM_MARKS: tuple[str, ...] = (
+    SYNTHETIC_KEY,
+    FIXTURE_KEY,
+    TARGET_KEY,
+    LAUNCH_KEY,
+    LAUNCHER_ATTRIBUTION_KEY,
+    UNATTRIBUTED_SIGNATURES_KEY,
+)
+# The key the run gives a row its launch lineage under
+# (``schemas.sandbox_report.attribute_the_launcher``): on a process's
+# ``extra``, a flow's row, a signature row, a dropped file's row. Set after
+# intake, so a row reaching intake under this key carries a sandbox's own
+# field, never the platform's lineage, and the key is taken out of it
+# (:func:`unearned_marks_removed`).
+LINEAGE_KEY = "platform_lineage"
+# The channel the run moves a signature seen only in the launcher's processes
+# to; a reader's channel of this name is no such move.
+LAUNCHER_SIGNATURES_CHANNEL = "launcher.signatures"
+
+
+def _forged_lineage_removed(report: SandboxReport) -> bool:
+    """Take :data:`LINEAGE_KEY` out of every row of ``report`` that holds it; whether any did."""
+    rows: list[Any] = [proc.extra for proc in report.processes]
+    rows += [signature.extra for signature in report.signatures]
+    rows += [*report.network.tcp, *report.network.udp, *report.dropped_files]
+    held = False
+    for row in rows:
+        if isinstance(row, dict) and LINEAGE_KEY in row:
+            del row[LINEAGE_KEY]
+            held = True
+    if LAUNCHER_SIGNATURES_CHANNEL in report.channels:
+        del report.channels[LAUNCHER_SIGNATURES_CHANNEL]
+        held = True
+    return held
 
 
 def unearned_marks_removed(report: SandboxReport, earned: Collection[str] = ()) -> list[str]:
@@ -240,8 +287,10 @@ def unearned_marks_removed(report: SandboxReport, earned: Collection[str] = ()) 
     mark a provider's document carried reaches the report three ways, and is
     taken out of each: the report's field of the same name (a reader that
     read the source's key), a part kept as the source published it, or a
-    block kept beside the parts. Each mark taken out is named in a warning; a
-    report that carries none is left as it came, byte for byte.
+    block kept beside the parts. A row's launch lineage (:data:`LINEAGE_KEY`)
+    and a channel under the launcher's signatures' name are taken out the same
+    way. Each mark taken out is named in a warning; a report that carries none
+    is left as it came, byte for byte.
     """
     fields = type(report).model_fields
     found: list[str] = []
@@ -258,6 +307,9 @@ def unearned_marks_removed(report: SandboxReport, earned: Collection[str] = ()) 
                 held = True
         if held:
             found.append(key)
+    # The launch lineage of a row is the platform's alone, like a mark.
+    if _forged_lineage_removed(report):
+        found.append(LINEAGE_KEY)
     if found:
         logger.warning(
             "sandbox report from %r carries %s, the platform's own mark%s, which the "

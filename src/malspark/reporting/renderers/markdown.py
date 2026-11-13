@@ -90,7 +90,12 @@ from malspark.reporting.judge_reasons import (
     judge_reasons_shown,
     status_shown,
 )
-from malspark.reporting.ledger_projection import cell_network_values, listing_kind
+from malspark.reporting.ledger_projection import (
+    cell_network_values,
+    listing_kind,
+    marks_of,
+    stated_marks,
+)
 from malspark.reporting.ledger_report import (
     ANALYST_SECTION_SOURCES,
     BEHAVIOUR_CODE_PLAIN_WORDS,
@@ -1258,7 +1263,14 @@ class MarkdownRenderer:
                         f"{op['size']} bytes" if op.get("size") else "not recorded",
                         _code_span(str(op.get("sha256")).lower()) if op.get("sha256") else "-",
                         op.get("type") or "-",
-                        "dropped (sandbox)",
+                        "; ".join(
+                            part
+                            for part in (
+                                "dropped (sandbox)",
+                                _observed_cell(op.get("observed_in"), ctx),
+                            )
+                            if part
+                        ),
                     )
                 )
             measured.extend(_left_out(len(carved), 10, "carved payloads"))
@@ -1420,7 +1432,22 @@ class MarkdownRenderer:
                     _divider(4),
                 ]
             )
-            lines.extend(_signature_row(sig) for sig in signatures[:30])
+            # A hit the table prints once carries every detonation it was in.
+            marks: dict[tuple[Any, ...], list[Any]] = {}
+            for sig in dyn.sandbox_signatures:
+                marks.setdefault(signature_identity_without_processes(sig), []).extend(
+                    marks_of(sig)
+                )
+            lines.extend(
+                _signature_row(
+                    sig,
+                    _observed_cell(
+                        stated_marks(marks.get(signature_identity_without_processes(sig), [])),
+                        ctx,
+                    ),
+                )
+                for sig in signatures[:30]
+            )
             lines.extend(_left_out(len(signatures), 30, "sandbox signatures"))
             lines.append("")
 
@@ -1707,7 +1734,12 @@ class MarkdownRenderer:
                     _stated(mapping.confidence, ""),
                     "published"
                     + _corroborated_words(mapping, folded)
-                    + (f"; {ctx.rule_only[tid]}" if tid in ctx.rule_only else ""),
+                    + (f"; {ctx.rule_only[tid]}" if tid in ctx.rule_only else "")
+                    + (
+                        f"; {_observed_cell(mapping.observed_in, ctx)}"
+                        if mapping.observed_in
+                        else ""
+                    ),
                     ", ".join(
                         dict.fromkeys(
                             _ids_in(mapping.evidence_quotes) + _rule_ids(folded, capability_ids)
@@ -1767,7 +1799,15 @@ class MarkdownRenderer:
                         # ("//relay.example.net/path/" read as a path) holds
                         # it defanged; any other is printed as it is.
                         _code_span(ctx.plain(row.value)),
-                        ctx.inline(row.context) if row.context else "-",
+                        "; ".join(
+                            part
+                            for part in (
+                                ctx.inline(row.context) if row.context else "",
+                                _observed_cell(row.observed_in, ctx),
+                            )
+                            if part
+                        )
+                        or "-",
                         row.source or "-",
                         ctx.plain(row.published or "-"),
                     )
@@ -1802,6 +1842,7 @@ class MarkdownRenderer:
                             # "the host of <url>": the URL is defanged too.
                             ctx.inline(row.context) if row.context else "",
                             f"recovered by {row.recovered_by}" if row.recovered_by else "",
+                            _observed_cell(row.observed_in, ctx),
                         )
                         if part
                     )
@@ -5286,7 +5327,8 @@ def _family_words(report: MalwareReport) -> str:
     if not family or family.lower() == "unknown":
         return "none attributed"
     if attr.family_source == "sandbox":
-        return f"{family} (named by the sandbox's own classification; the judge named none)"
+        note = f"; {_one_line(attr.family_note)}" if attr.family_note else ""
+        return f"{family} (named by the sandbox's own classification; the judge named none{note})"
     said = f"{family} ({confidence_phrase(attr.family_confidence, 'the judge')})"
     if attr.family_evidence_ids:
         said += f" [{_ids(attr.family_evidence_ids)}]"
@@ -5685,6 +5727,9 @@ def _attack_row(
     ]
     if notes:
         status += "; unresolved: " + ", ".join(dict.fromkeys(notes))
+    observed = _observed_cell(getattr(mapping, "observed_in", None), ctx)
+    if observed:
+        status += f"; {observed}"
     tactic = f"{cell.tactic_name} ({cell.tactic})" if cell.tactic else cell.tactic_name
     # The statement whole: a table cell wraps, it is never cut.
     procedure = ctx.cell(str(cell.evidence[0])) if cell.evidence else "-"
@@ -6730,6 +6775,20 @@ def _severity_cell(sig: SandboxSignature) -> Any:
     return "unknown" if sig.severity is None else sig.severity
 
 
-def _signature_row(sig: SandboxSignature) -> str:
+def _signature_row(sig: SandboxSignature, observed: str = "") -> str:
     ttps = ", ".join(sig.technique_ids) if sig.technique_ids else "-"
-    return _row(sig.name, _severity_cell(sig), ttps, _whole(sig.description or "-"))
+    described = _whole(sig.description or "-")
+    if observed:
+        described = f"{sig.description}; {observed}" if sig.description else observed
+    return _row(sig.name, _severity_cell(sig), ttps, described)
+
+
+def _observed_cell(marks: Any, ctx: Any) -> str:
+    """Under which detonations a row was observed, as a cell says it; ``""`` for none.
+
+    ``detonation_marks.observed_words``, a further detonation's arguments set
+    as one code span with the run's network indicators defanged.
+    """
+    from malspark.reporting.detonation_marks import observed_words
+
+    return observed_words(marks or (), lambda arguments: _code_span(ctx.plain(arguments)))

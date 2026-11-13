@@ -141,6 +141,7 @@ from malspark.analysis.anti_analysis import (
 )
 from malspark.analysis.pcap_summary import conversation_line
 from malspark.analysis.technique_ids import technique_ids_in
+from malspark.core import platform_sources
 from malspark.core.declared_reading import (
     FACTS_VERSION,
     consumer_kinds,
@@ -231,9 +232,9 @@ __all__ = [
 ]
 
 # The agent and server every in-process entry of the pack is recorded under.
-PIPELINE = "pipeline"
+PIPELINE = platform_sources.PIPELINE_AGENT
 # The source every pack entry records (``core.tool_declarations``).
-PACK_SOURCE = "pack"
+PACK_SOURCE = platform_sources.PACK_SOURCE
 
 # The shortest printable run the strings head keeps. Six characters is where
 # a run stops being an accident of the byte stream and starts being a token
@@ -3199,10 +3200,15 @@ def rules_already_recorded(rows: Any, kinds: Iterable[str] | None = None) -> boo
     names (``kinds``; the rule kinds when none is given), the pack is the
     producer, and the report reads its entries rather than paying the budget
     again. An entry's kind is its tool's declared one (``core.declared_reading``).
+    The platform's read of a further detonation (:func:`later_detonation_of`)
+    is never such an answer, whatever kinds the provider declares.
     """
     wanted = frozenset(kinds) if kinds is not None else consumer_kinds(RULE_ANSWERS)
     return any(
-        entry.ok and entry.agent == PIPELINE and kind_of(entry) in wanted
+        entry.ok
+        and entry.agent == PIPELINE
+        and kind_of(entry) in wanted
+        and later_detonation_of(entry) is None
         for entry in pack_entries(rows)
     )
 
@@ -3261,13 +3267,31 @@ def unread_rows_sentence(entries: Sequence[LedgerEntry]) -> str:
     )
 
 
-def render_pack(entries: list[LedgerEntry], max_chars: int) -> str:
+def render_pack(entries: list[LedgerEntry], max_chars: int, later_chars: int | None = None) -> str:
     """The pack within ``max_chars`` (``_render_entries``), ending with the unread rows' count.
 
     Where ``pack_entries`` could not read some ledger rows, the block's last
     line says how many and the error classes (``unread_rows_sentence``), and
     the entries take the room that line leaves.
+
+    The platform's reads of a further detonation an agent asked for
+    (``pipeline.detonations.platform_reads``) are pack entries too. The job's
+    own entries are rendered first, in the whole of ``max_chars`` as they
+    would be alone; every later detonation's lines come after them, rendered
+    together in a room of their own of the same bound, so they never displace
+    a line of the job's own detonation. Each later detonation is named on at
+    least one line even where that passes the room (:func:`_later_lines`).
+    Each such line says which detonation it is of and what it was
+    launched with, and every item id it shows is qualified by the detonation
+    (``d2/proc:9``, :func:`_marked_line`). ``later_chars`` is that room where
+    the caller sizes it apart (``nodes.pack_text`` takes the earlier run's
+    block off the job's own room only); ``max_chars`` where it does not.
     """
+    first, later = _by_detonation(entries)
+    if later:
+        own = render_pack(first, max_chars)
+        rest = _later_lines(later, max_chars if later_chars is None else later_chars)
+        return "\n".join(part for part in (own, rest) if part)
     unread = unread_rows_sentence(entries)
     if not unread:
         return _render_entries(entries, max_chars)
@@ -3278,6 +3302,192 @@ def render_pack(entries: list[LedgerEntry], max_chars: int) -> str:
     # A room too small for the entries beside the sentence: the sentence
     # alone, or nothing where even it does not fit (the rows are logged).
     return unread if len(unread) <= max_chars else ""
+
+
+def later_detonation_of(entry: Any) -> Mapping[str, Any] | None:
+    """The answer of an entry of a further detonation, which states it; ``None`` for the job's own.
+
+    Decided by the one rule the report reads too (``ledger_projection.later_detonation``):
+    the platform's own read, naming a detonation in the citation checks' form.
+    """
+    from malspark.reporting.ledger_projection import later_detonation
+
+    data = getattr(entry, "structured", None)
+    return data if isinstance(data, Mapping) and later_detonation(entry) else None
+
+
+def _by_detonation(entries: list[LedgerEntry]) -> tuple[list[LedgerEntry], list[LedgerEntry]]:
+    """The job's own entries (keeping the unread rows' count), and every later detonation's."""
+    later = [entry for entry in entries if later_detonation_of(entry) is not None]
+    if not later:
+        return entries, []
+    first = [entry for entry in entries if later_detonation_of(entry) is None]
+    unread = getattr(entries, "unread", ())
+    return PackEntries(first, unread), later
+
+
+# The id a rendered pack line begins with.
+_LINE_ID = re.compile(r"\[([^\]\s]+)\] ")
+
+
+# Said once per later detonation, on its first line: the launch text is shown
+# escaped, and where its exact text is.
+LAUNCH_SHOWN_ESCAPED = (
+    "(the launch text is shown escaped; its exact text is the launched_with of any read of {name})"
+)
+
+
+def _mark_of(entry: Any, *, first: bool = False) -> str:
+    """The mark a later detonation's line begins with after its id; ``""`` for the job's own.
+
+    ``detonation 2, launched with `<arguments>`: ``, and on the detonation's
+    first line (``first``) the sentence that the launch text is shown escaped
+    (:data:`LAUNCH_SHOWN_ESCAPED`). The detonation is the one rule's
+    (``detonation_reads.later_detonation_name``); the arguments are written as
+    every surface writes them (``detonation_marks.launch_text``: one line,
+    inert, cut).
+    """
+    from malspark.analysis.detonation_reads import later_detonation_name
+    from malspark.reporting.detonation_marks import launch_text
+
+    name = later_detonation_name(entry)
+    if not name:
+        return ""
+    arguments = launch_text(entry.structured.get("launched_with"))
+    hint = f" {LAUNCH_SHOWN_ESCAPED.format(name=name)}" if first else ""
+    return f"detonation {name[1:]}, launched with `{arguments}`{hint}: "
+
+
+def _marked_line(line: str, entry: Any, *, first: bool = False) -> str:
+    """A later detonation's entry's ``line``: its mark (:func:`_mark_of`) and its ids qualified.
+
+    ``[ev_0006] detonation 2, launched with `<arguments>`: sandbox sections: …
+    (d2/proc:9)``. The whole line goes through the pack's line guard
+    (:func:`_line_safe`) as every line does.
+    """
+    from malspark.analysis.detonation_reads import later_detonation_name
+
+    mark = _mark_of(entry, first=first)
+    found = _LINE_ID.match(line)
+    if not mark or found is None:
+        return line
+    rest = sandbox_sections.qualified_in(line[found.end() :], later_detonation_name(entry))
+    return _line_safe(f"{found.group(0)}{mark}{rest}")
+
+
+def _later_lines(entries: list[LedgerEntry], max_chars: int) -> str:
+    """Every later detonation's lines, marked, the room ``max_chars`` shared evenly among them.
+
+    Each later detonation (``d2``, ``d3``…, in the order its entries were
+    recorded) is shown apart. Within a bound, the room is divided evenly
+    among them; a detonation whose lines need less than its share leaves the
+    rest to the others, and one whose lines leave part of its room unused
+    passes that part on to the next. Each detonation's room holds its marks: they are
+    reserved per line before its lines are fitted (:func:`_detonation_lines`).
+    A detonation with entries its room does not show ends with a line of its
+    own naming it, its launch and how many. Where its room cannot hold one of
+    its marked lines beside that line, that line alone stands for it: every
+    later detonation and its launch is always named, on one line where its
+    room is too small for more, even where that line passes the room.
+    ``max_chars`` at or below zero is no bound.
+    """
+    from malspark.analysis.detonation_reads import later_detonation_name
+
+    groups: dict[str, list[LedgerEntry]] = {}
+    for entry in entries:
+        groups.setdefault(later_detonation_name(entry), []).append(entry)
+    whole = {name: _detonation_lines(group, 0) for name, group in groups.items()}
+    if max_chars <= 0 or len("\n".join(whole.values())) <= max_chars:
+        return "\n".join(whole.values())
+    # Water-filling: a detonation whose whole lines fit its share takes only
+    # what they need; the room left is shared evenly among the others.
+    room = max_chars - (len(groups) - 1)
+    rooms: dict[str, int] = {}
+    left = dict(groups)
+    while left:
+        share = max(1, room // len(left))
+        fitting = [name for name in left if len(whole[name]) <= share]
+        if not fitting:
+            for name in left:
+                rooms[name] = share
+            break
+        for name in fitting:
+            rooms[name] = len(whole[name])
+            room -= len(whole[name])
+            del left[name]
+    # A detonation whose lines leave part of its room unused (a line too
+    # long for what is left) passes that part on to the next one cut.
+    out: list[str] = []
+    carried = 0
+    for name, group in groups.items():
+        if rooms[name] >= len(whole[name]):
+            out.append(whole[name])
+            continue
+        given = rooms[name] + carried
+        text = whole[name] if given >= len(whole[name]) else _detonation_lines(group, given)
+        carried = max(0, given - len(text))
+        out.append(text)
+    return "\n".join(out)
+
+
+def _detonation_lines(entries: list[LedgerEntry], room: int) -> str:
+    """One later detonation's lines within ``room`` (``0``: whole), its marks counted per line.
+
+    The pack's own fitting renders the entries in a room the marks are first
+    taken off of (each line's mark, the first line's sentence, the trailer);
+    the room it is given is then the largest whose marked lines, trailer
+    included, still fit ``room``, so the marks never leave the room under-
+    filled nor push it over. Where not even one marked line fits with the
+    trailer, the trailer alone names the detonation, its launch and how many
+    of its entries are not shown (:func:`_detonation_trailer`): one line, even
+    where that line passes ``room``.
+    """
+    if room <= 0:
+        return _fitted_detonation(entries, 0)
+    marks = len(_mark_of(entries[0], first=True)) - len(_mark_of(entries[0]))
+    marks += sum(len(_mark_of(entry)) for entry in entries)
+    reserve = marks + len(_detonation_trailer(entries[0], len(entries))) + 1
+    # The largest room for the fitting whose marked lines fit ``room``: no
+    # larger than ``room`` less the marks, no smaller than one.
+    low, top = 1, max(1, room - reserve + marks)
+    best = _detonation_trailer(entries[0], len(entries))
+    while low <= top:
+        fit = (low + top) // 2
+        text = _fitted_detonation(entries, fit)
+        if len(text) <= room:
+            best, low = text, fit + 1
+        else:
+            top = fit - 1
+    return best
+
+
+def _fitted_detonation(entries: list[LedgerEntry], fit: int) -> str:
+    """One detonation's entries rendered in ``fit`` (``0``: whole), marked, with its trailer."""
+    by_id = {str(entry.id): entry for entry in entries}
+    shown: list[str] = []
+    for line in _render_entries(entries, fit).split("\n"):
+        found = _LINE_ID.match(line)
+        entry = by_id.get(found.group(1)) if found is not None else None
+        if entry is not None:
+            shown.append(_marked_line(line, entry, first=not shown))
+    unshown = len(entries) - len(shown)
+    if unshown:
+        shown.append(_detonation_trailer(entries[0], unshown, first=not shown))
+    return "\n".join(shown)
+
+
+def _detonation_trailer(entry: Any, count: int, *, first: bool = True) -> str:
+    """The line naming a later detonation, its launch and how many of its entries are not shown.
+
+    ``first`` where no line of the detonation is shown: the trailer then says
+    once that the launch text is shown escaped.
+    """
+    mark = _mark_of(entry, first=first)
+    noun = "pack entry" if count == 1 else "pack entries"
+    return _line_safe(
+        f"{mark}{count} more {noun} of this detonation not shown here; every entry's full "
+        "output is reachable by tool call."
+    )
 
 
 def _entries_room(entries: Sequence[LedgerEntry], max_chars: int) -> int:
@@ -3824,11 +4034,15 @@ def _within_room(entry: LedgerEntry, room: int) -> str | None:
     return line if body and len(line) <= room else None
 
 
-def pack_block(entries: list[LedgerEntry], max_chars: int) -> str:
-    """The heading and the rendered pack, or ``""`` when there is no pack."""
+def pack_block(entries: list[LedgerEntry], max_chars: int, later_chars: int | None = None) -> str:
+    """The heading and the rendered pack, or ``""`` when there is no pack.
+
+    ``later_chars`` is the room of a further detonation's lines where it is
+    not ``max_chars`` (:func:`render_pack`).
+    """
     if not entries and not unread_rows_sentence(entries):
         return ""
-    return f"{PACK_HEADING}\n{render_pack(entries, max_chars)}"
+    return f"{PACK_HEADING}\n{render_pack(entries, max_chars, later_chars)}"
 
 
 def _pack_line(entry: LedgerEntry) -> str:
@@ -6023,4 +6237,8 @@ def pack_row_heads(rows: Any) -> dict[str, str]:
         return {}
     with _viewing(entries):
         lines = _render_lines(list(entries), _HEAD_DETAIL)
-    return {str(entry.id).lower(): line for entry, line in zip(entries, lines, strict=True)}
+    # A later detonation's line says so, its ids qualified, as in the pack.
+    return {
+        str(entry.id).lower(): _marked_line(line, entry)
+        for entry, line in zip(entries, lines, strict=True)
+    }

@@ -177,6 +177,7 @@ from malspark.pipeline.routing import (
 from malspark.pipeline.run_state import render_run_state
 from malspark.pipeline.sandbox_status import NOT_RUN as SANDBOX_NOT_RUN
 from malspark.pipeline.sandbox_status import (
+    launch_arguments_reason,
     names_another_target,
     sample_file_identity,
     sandbox_status,
@@ -2975,7 +2976,9 @@ def pack_text(
     earlier = earlier_run_text(container, str(state.get("file_hash") or ""))
     if not earlier:
         return pack_block(entries, chars)
-    pack = pack_block(entries, chars if chars <= 0 else max(1, chars - len(earlier) - 2))
+    # The earlier run shares the job's own room; a further detonation's lines
+    # keep a room of the whole bound (``triage_pack.render_pack``).
+    pack = pack_block(entries, chars if chars <= 0 else max(1, chars - len(earlier) - 2), chars)
     return "\n\n".join(part for part in (pack, earlier) if part)
 
 
@@ -3042,9 +3045,11 @@ def sandbox_item_citations(state: AnalysisState, container: Any) -> Any:
 
     The pack's section index says which ids exist; the report in hand,
     read into sections once here, gives each cited item's own text. Never a
-    list of every id.
+    list of every id. A later detonation's item (``d2/…``) is read from that
+    detonation's own report (``detonations.later_sections``).
     """
     from malspark.analysis.sandbox_sections import ItemCitations, Sections, item_index_of
+    from malspark.pipeline.detonations import later_sections
     from malspark.pipeline.sandbox_status import observed_report
     from malspark.providers.sandbox_tools import normalised_by_of
 
@@ -3053,7 +3058,7 @@ def sandbox_item_citations(state: AnalysisState, container: Any) -> Any:
         return None
     report = observed_report(state.get("sandbox_report"))
     sections = Sections(report, normalised_by_of(container)) if report else None
-    return ItemCitations(index, sections)
+    return ItemCitations(index, sections, later_sections(container))
 
 
 def pack_ledger_ids(state: AnalysisState) -> list[str]:
@@ -7301,6 +7306,31 @@ def make_judge_node(
                 for reason in artefact_fetch_reasons(container)
                 if reason not in _degradation_reasons
             )
+            # Launch arguments the job asked for and its sandbox did not pass.
+            _launch = launch_arguments_reason(getattr(container, "launch_record", None))
+            if _launch and _launch not in _degradation_reasons:
+                _degradation_reasons.append(_launch)
+            # A launcher run whose launcher could not be told from the sample,
+            # in the job's own detonation or in a further one.
+            from malspark.pipeline.sandbox_status import launcher_attribution_reason
+
+            for _name, _report in [
+                ("", state.get("sandbox_report")),
+                *((r.name, r.report) for r in getattr(container, "detonations", [])[1:]),
+            ]:
+                _attribution = launcher_attribution_reason(_report)
+                if _attribution:
+                    _attribution = f"detonation {_name}: {_attribution}" if _name else _attribution
+                    if _attribution not in _degradation_reasons:
+                        _degradation_reasons.append(_attribution)
+            # Further detonations agents asked for that were not carried out:
+            # limitations, never a tentative verdict (``pipeline.detonations``).
+            from malspark.pipeline.detonations import further_detonation_reasons
+
+            _detonation_notes = further_detonation_reasons(container)
+            _degradation_reasons.extend(
+                r for r in _detonation_notes if r not in _degradation_reasons
+            )
             # A container we accept but cannot open. A .docm reaches here
             # legitimately — macro documents are among the commonest Windows
             # carriers, so rejecting them would be wrong — but the only analysis
@@ -7455,6 +7485,7 @@ def make_judge_node(
             _informational: list[str] = []
             with suppress(Exception):
                 _informational = informational_reasons_in_force(isr_reports)
+            _informational.extend(r for r in _detonation_notes if r not in _informational)
             _degraded_mode = run_is_degraded(
                 _degradation_reasons, informational=_informational, facts=_sample_facts
             )
@@ -8138,8 +8169,14 @@ def make_report_node(
         # ``report.technical_evidence``. Best-effort — a provider failure here
         # must never fail the report.
         _static_bundle = None
+        # Where the provider's entries are recorded: its declared source, read
+        # as every provider's is (``provider_source``).
+        _static_source = ""
         try:
+            from malspark.agents.prompt_fragments import provider_source
+
             _static_provider = container.get_static_provider()
+            _static_source = provider_source(_static_provider)
             _sample_for_evidence = state.get("sample_path")
             # When the triage pack recorded answers of the kinds the provider
             # answers, they are already in the ledger under the pipeline;
@@ -8147,7 +8184,7 @@ def make_report_node(
             # the answers twice.
             if _static_provider.capabilities.provides_evidence and rules_already_recorded(
                 state.get("evidence_ledger") or [],
-                kinds_declared_by(_static_provider.declaration_source),
+                kinds_declared_by(_static_source),
             ):
                 logger.info(
                     "report_node: the triage pack recorded the static provider's answers; it "
@@ -8203,7 +8240,7 @@ def make_report_node(
                     _static_bundle,
                     container.get_evidence_counter(),
                     stage.key if stage is not None else "analysis",
-                    source=_static_provider.declaration_source,
+                    source=_static_source,
                     agent=_static_provider.id,
                 )
             except Exception as exc:  # noqa: BLE001

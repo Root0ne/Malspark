@@ -108,6 +108,7 @@ def test_every_virustotal_tool_the_code_names_is_declared(declared: ToolDeclarat
 
 def test_every_sandbox_report_tool_is_declared(declared: ToolDeclarations) -> None:
     from malspark.providers import sandbox_tools
+    from malspark.providers.detonation_requests import REQUEST_TOOL
 
     names = {
         name
@@ -116,7 +117,8 @@ def test_every_sandbox_report_tool_is_declared(declared: ToolDeclarations) -> No
         and name != "sandbox_tools"
         and member.__module__ == sandbox_tools.__name__
     }
-    assert names == set(_tools(declared, "sandbox"))
+    # The request for a further detonation is the source's one tool that reads no report.
+    assert names | {REQUEST_TOOL} == set(_tools(declared, "sandbox"))
 
 
 def test_every_step_the_triage_pack_records_is_declared(declared: ToolDeclarations) -> None:

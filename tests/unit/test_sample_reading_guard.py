@@ -63,6 +63,9 @@ ALLOWED = {
     ("src/malspark/pipeline/artefacts.py", "_open_beneath_by_path"): TRANSFER,
     ("src/malspark/loaders/cape2_client.py", "CAPEv2Client.submit"): TRANSFER,
     ("src/malspark/loaders/cape2_client.py", "CAPEv2Client._write_capture"): TRANSFER,
+    # The sample's bytes stored whole in a launcher's archive for the upload;
+    # only its PE header is looked at, to refuse what a launcher cannot start.
+    ("src/malspark/providers/launcher.py", "build_for_submission"): TRANSFER,
     ("src/malspark/providers/sandbox/limits.py", "stream_to_file_capped"): TRANSFER,
     ("src/malspark/providers/sandbox/rest.py", "RestSandboxProvider.submit"): TRANSFER,
     ("src/malspark/providers/sandbox/triage.py", "TriageSandboxProvider._post_sample"): TRANSFER,

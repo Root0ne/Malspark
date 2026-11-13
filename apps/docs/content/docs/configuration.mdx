@@ -1728,7 +1728,13 @@ fits its room (the upstream bound, `core.reporting.upstream_findings_max_chars`,
 derived from the window by default); when it does not, the detail every line
 shows — names listed, characters of a text, decoded strings and detection
 labels — is derived from that room, the most at which the pack fits, and each
-line says what it left out and that the rest is a tool call away.
+line says what it left out and that the rest is a tool call away. The lines of
+further detonations an agent asked for take a room the size of the bound of
+their own after the job's own lines, shared evenly among those detonations,
+and each later detonation is named with its launch on at least one line even
+where that passes the bound (where its share holds none of its lines, one line
+names it, its launch and how many of its entries are not shown); an agent's
+input is fitted to its window with the pack as it is.
 
 **An analyst's input.** `core.max_token_limit` (was 128,000 tokens) is
 empty by default: an analyst's input text may take the room its window holds
@@ -3438,6 +3444,9 @@ have never seen each other's work before the debate. `findings` gives it each
 upstream agent's claims with their technique, confidence and evidence id.
 `full` adds each upstream agent's prose report. Both are capped by
 `core.reporting.upstream_findings_max_chars`, and a block that is cut says so.
+The triage pack is capped by it too; the further detonations' lines take a room
+the size of the cap of their own after the job's own, and each further
+detonation is named on at least one line even where that passes the cap.
 It ships at **0**, which derives the cap from the window this job's models
 serve the way a tool answer's cap is: the share one answer may take (an
 eighth) of what the window leaves after the reply room, at three characters a

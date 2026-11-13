@@ -19,6 +19,7 @@ _READER = "mock"
 
 if TYPE_CHECKING:
     from malspark.core.config import Settings
+    from malspark.providers.submission import SubmissionOptions
     from malspark.schemas.sandbox_report import SandboxRun
 
 
@@ -65,7 +66,9 @@ class MockSandboxProvider(SandboxProvider):
             self._client = MockSandboxClient(fixtures_dir=self.fixtures_dir)
         return self._client
 
-    def submit(self, sample_path: str | Path) -> str:
+    def submit(self, sample_path: str | Path, *, options: SubmissionOptions | None = None) -> str:
+        # A recorded fixture ran before this job asked anything, so it cannot
+        # have run with this job's launch arguments: the capability says so.
         return str(self._get_client().submit(sample_path))
 
     def submission_address(self) -> str | None:

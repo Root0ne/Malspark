@@ -123,6 +123,9 @@ class TestTheDigests:
         # moved when the environment names they require took the product's new
         # name (T-576); with the previous names they are still b261c17f07e13ef9
         # and 7211e6023885a063.
+        # The sandbox block's moved when it declared the tool that asks for a
+        # further detonation (``request_detonation``, T-671); without that
+        # declaration it is c2bf77971e47dfa4.
         settings = Settings(_env_file=None)
         for key in ("knowledge", "network"):
             object.__setattr__(settings.mcp.servers[key], "trusts_served_declaration", False)
@@ -130,7 +133,7 @@ class TestTheDigests:
         assert digests["mcp:knowledge"] == "30ce9bdcc7185ff8"
         assert digests["mcp:network"] == "a0714e209e262efd"
         assert digests["provider:ghidra"] == "01e22fee1043d4c4"
-        assert digests["sandbox"] == "c2bf77971e47dfa4"
+        assert digests["sandbox"] == "d842c662e01a45eb"
 
 
 class TestTheBuiltInsDeclare:

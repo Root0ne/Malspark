@@ -32,9 +32,16 @@ from typing import Any
 # report whose sandbox names another target than the sample ``TARGET_KEY`` (set by the run,
 # ``app.MalsparkApp._tell_the_target``). Named here as every reader of the status
 # has always imported them.
-from malspark.schemas.sandbox_document import FIXTURE_KEY, SYNTHETIC_KEY, TARGET_KEY
+from malspark.schemas.sandbox_document import (
+    FIXTURE_KEY,
+    LAUNCH_KEY,
+    LAUNCHER_ATTRIBUTION_KEY,
+    SYNTHETIC_KEY,
+    TARGET_KEY,
+    UNATTRIBUTED_SIGNATURES_KEY,
+)
 
-__all__ = ["FIXTURE_KEY", "SYNTHETIC_KEY", "TARGET_KEY"]
+__all__ = ["FIXTURE_KEY", "LAUNCH_KEY", "SYNTHETIC_KEY", "TARGET_KEY"]
 
 # The three answers. Words rather than codes because they are written into
 # the ledger entry and the run summary, where a reader meets them as they are.
@@ -85,11 +92,175 @@ def sandbox_status(report: Any) -> SandboxStatus:
     """What ``report`` — the run's sandbox report document, or ``None`` — is."""
     if not isinstance(report, dict) or not report:
         return SandboxStatus(NOT_RUN, _NO_REPORT)
+    launch = launch_statement(
+        report.get(LAUNCH_KEY), launcher_attribution(report), unattributed_signatures(report)
+    )
     if report.get(SYNTHETIC_KEY):
-        return SandboxStatus(NOT_RUN, _STAND_IN)
+        return SandboxStatus(NOT_RUN, _joined(_STAND_IN, launch))
     if report.get(FIXTURE_KEY):
-        return SandboxStatus(RECORDED_FIXTURE, _FIXTURE)
-    return SandboxStatus(OBSERVED, _target_statement(report.get(TARGET_KEY)))
+        return SandboxStatus(RECORDED_FIXTURE, _joined(_FIXTURE, launch))
+    return SandboxStatus(OBSERVED, _joined(_target_statement(report.get(TARGET_KEY)), launch))
+
+
+def _joined(*sentences: str) -> str:
+    return " ".join(sentence for sentence in sentences if sentence)
+
+
+def launcher_attribution(report: Any) -> str:
+    """The report's launcher attribution mark (``LAUNCHER_ATTRIBUTION_KEY``), ``""`` with none.
+
+    Set at the document's top level where a generated launcher's run was read
+    (``schemas.sandbox_report.attribute_the_launcher``): "established", or
+    "not established: <reason>".
+    """
+    if not isinstance(report, Mapping):
+        return ""
+    value = report.get(LAUNCHER_ATTRIBUTION_KEY)
+    return value.strip() if isinstance(value, str) else ""
+
+
+def unattributed_signatures(report: Any) -> int:
+    """How many signatures naming no process the launcher run's reading could not attribute."""
+    value = report.get(UNATTRIBUTED_SIGNATURES_KEY) if isinstance(report, Mapping) else None
+    return value if isinstance(value, int) and not isinstance(value, bool) and value > 0 else 0
+
+
+def _not_established_why(mark: str) -> str:
+    """The reason a "not established: <reason>" mark gives."""
+    from malspark.schemas.sandbox_report import ATTRIBUTION_NOT_ESTABLISHED
+
+    return mark.removeprefix(ATTRIBUTION_NOT_ESTABLISHED).lstrip(": ").strip()
+
+
+def _established(mark: str) -> bool:
+    from malspark.schemas.sandbox_report import ATTRIBUTION_ESTABLISHED
+
+    return mark == ATTRIBUTION_ESTABLISHED
+
+
+def launcher_attribution_reason(report: Any) -> str | None:
+    """The limitation where a launcher run's processes could not be told apart; else ``None``."""
+    mark = launcher_attribution(report)
+    if not mark or _established(mark):
+        return None
+    why = _not_established_why(mark)
+    return (
+        "the launcher's processes could not be told from the sample's in the sandbox report"
+        + (f": {why}" if why else "")
+        + "; only the script host's own processes are marked as the launcher's"
+    )
+
+
+def launch_statement(record: Any, attribution: str = "", unattributed: int = 0) -> str:
+    """What a report's launch mark says: the job's launch arguments, verbatim, and their fate.
+
+    ``""`` with no mark, so a job that asked for none reads as it always did.
+    The arguments are the operator's run configuration and are written whole,
+    as one code span (:func:`_code`, ids and control characters written out),
+    never masked. What is stated is what is known: the provider sent them in
+    its submission, and through which option or field; whether the started
+    program read them is the sandbox's, and is not claimed.
+    """
+    if not isinstance(record, Mapping) or "arguments" not in record:
+        return ""
+    arguments = _code(str(record.get("arguments") or ""))
+    provider = _code(str(record.get("provider") or "sandbox"))
+    note = str(record.get("note") or "").strip()
+    if record.get("honoured") is True:
+        tail = f" ({note})" if note else ""
+        via = str(record.get("via") or "").strip()
+        through = f" through {via}" if via else ""
+        return (
+            f"{_asked(record)} to launch the sample with the arguments {arguments}; "
+            f"the {provider} provider sent them in its submission{through}{tail}. Whether the "
+            "started program read them is the sandbox's, and is not established here."
+            + _launcher_statement(record.get("launcher"), attribution, unattributed)
+        )
+    tail = f": {note}" if note else ""
+    return (
+        f"{_asked(record)} to launch the sample with the arguments {arguments}; "
+        f"they were not honoured by the {provider} provider{tail}. Nothing here was "
+        "observed with those arguments."
+    )
+
+
+def _asked(record: Mapping[str, Any]) -> str:
+    """Who asked for the launch: the job, or the agents that asked for a further detonation."""
+    name = str(record.get("detonation") or "")
+    if not name:
+        return "The job asked the sandbox"
+    askers = ", ".join(str(a) for a in record.get("requested_by") or () if a) or "an agent"
+    number = name[1:] if name.startswith("d") else name
+    return f"For detonation {number}, {askers} asked the sandbox"
+
+
+def _launcher_statement(launcher: Any, attribution: str = "", unattributed: int = 0) -> str:
+    """The sentences of a launch mark whose arguments were carried by a generated launcher.
+
+    ``""`` for a mark with none. They state what the reader must know: the
+    sample was started by a script, not directly; the archive is what was
+    disclosed; the process tree starts at the script host; and that nothing
+    here shows the launcher ran, which only the sandbox's report can.
+    """
+    if not isinstance(launcher, Mapping) or not launcher.get("launcher_text"):
+        return ""
+    host = str(launcher.get("script_host") or "script")
+    return (
+        f" The sample was not submitted bare: it was launched through a generated {host} "
+        f"launcher ({_code(str(launcher.get('launcher_member') or ''))}, "
+        f"{str(launcher.get('launcher_encoding') or 'text')}) that starts the sample's copy "
+        f"{_code(str(launcher.get('sample_member') or ''))} "
+        f"(SHA-256 {_code(str(launcher.get('sample_sha256') or ''))}) with the arguments; its "
+        f"exact text is {_code(str(launcher['launcher_text']))}. The submitted archive "
+        f"(SHA-256 {_code(str(launcher.get('archive_sha256') or ''))}), with the launcher and "
+        "the arguments in it, is what was disclosed to the sandbox, and on a sandbox that "
+        "publishes its submissions it is public. The sandbox was told which member to run "
+        f"by {launcher.get('picked_by') or 'the submission'}. "
+        + _lineage_statement(launcher, host, attribution)
+        + _unattributed_statement(unattributed)
+        + " A target the sandbox names by "
+        "the archive's SHA-256 is the submitted archive holding the sample, not another "
+        "target, and its file facts are the archive's. The sandbox's own score and family are "
+        "its analysis of the archive run from the picked launcher script. Nothing here shows "
+        "the launcher ran; that can only be read from the sandbox's report."
+    )
+
+
+def _lineage_statement(launcher: Mapping[str, Any], host: str, attribution: str) -> str:
+    """Where the sample's processes start in a launcher run, as far as it was established.
+
+    With the attribution not established, only the script host's own
+    processes are the launcher's and nothing is said of where the sample's
+    start. A report with no mark reads as before the mark existed.
+    """
+    member = _code(str(launcher.get("sample_member") or ""))
+    if attribution and not _established(attribution):
+        why = _not_established_why(attribution)
+        return (
+            f"The sandbox's process tree starts at {host}, not at the sample, but which of "
+            "its processes are the sample's could not be established"
+            + (f" ({why})" if why else "")
+            + f": only the {host} processes themselves are marked as the launcher's, and the "
+            "processes, flows and signatures past them are not attributed either way."
+        )
+    return (
+        f"The sandbox's process tree therefore starts at {host}, not at the sample: the "
+        "processes the launcher ran, the flows they made and the signatures seen only in them "
+        "are marked as the launcher's and are not the sample's, and the sample's own start at "
+        f"the process that runs {member}."
+    )
+
+
+def _unattributed_statement(count: int) -> str:
+    """How many signatures naming no process stayed unattributed; ``""`` for none."""
+    if count <= 0:
+        return ""
+    noun = "signature" if count == 1 else "signatures"
+    verb = "names" if count == 1 else "name"
+    return (
+        f" {count} sandbox {noun} that {verb} no process could not be attributed, and may "
+        "be the launcher's as well as the sample's."
+    )
 
 
 def target_mark(record: Mapping[str, Any]) -> dict[str, Any]:
@@ -144,6 +315,17 @@ def _code(text: str) -> str:
     return f"{fence} {written} {fence}"
 
 
+def launch_arguments_reason(record: Any) -> str | None:
+    """The run's limitation where its launch arguments were not passed; ``None`` otherwise.
+
+    ``record`` is the run's own record (``container.launch_record``), which
+    exists whether or not a report does.
+    """
+    from malspark.providers.submission import not_honoured_reason
+
+    return not_honoured_reason(record)
+
+
 def observed_report(report: Any) -> dict[str, Any] | None:
     """``report`` when a sandbox produced it, ``None`` when none ran."""
     if sandbox_status(report).status == NOT_RUN:
@@ -152,12 +334,20 @@ def observed_report(report: Any) -> dict[str, Any] | None:
 
 
 def names_another_target(report: Any) -> bool:
-    """Whether ``report`` carries the run's mark: its sandbox named a target that is not the sample.
+    """Whether the target ``report`` names is not the sample.
 
-    Nothing the report says of its target's file is then the sample's: not
-    its hashes and size, nor its file type or operating system.
+    The run's mark (its sandbox named a target that is not the sample), or a
+    launch mark whose arguments a generated launcher carried: the sandbox was
+    handed the archive, so the target it names is that archive. Nothing the
+    report says of its target's file is then the sample's: not its hashes and
+    size, nor its file type or operating system.
     """
-    return isinstance(report, dict) and isinstance(report.get(TARGET_KEY), Mapping)
+    if not isinstance(report, dict):
+        return False
+    if isinstance(report.get(TARGET_KEY), Mapping):
+        return True
+    launch = report.get(LAUNCH_KEY)
+    return isinstance(launch, Mapping) and isinstance(launch.get("launcher"), Mapping)
 
 
 def sample_file_identity(report: Any, sample_path: Any, expected: str) -> dict[str, Any]:

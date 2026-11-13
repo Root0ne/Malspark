@@ -334,6 +334,29 @@ class StaticAnalysis(BaseModel):
 # ---------------------------------------------------------------------------
 
 
+class ObservedIn(BaseModel):
+    """One detonation of the sample a row was observed in, and the launch it was made with.
+
+    ``detonation`` is ``d1`` for the job's own and ``d2``, ``d3``… for each
+    further one an agent asked for (``providers.detonation``);
+    ``launched_with`` is a further detonation's launch arguments, ``None``
+    for the job's own, whose launch the report's Sandbox sentence states.
+    """
+
+    model_config = _STRICT_CONFIG
+
+    detonation: str
+    launched_with: str | None = Field(default=None, exclude_if=lambda value: value is None)
+
+
+# Which detonations a row was observed in, where a further detonation an agent
+# asked for observed it: every detonation that did, the job's own first.
+# Empty, and left out of a dump, for a row only the job's own detonation
+# observed, so a run with one detonation dumps as it always did.
+def _observed_in() -> Any:
+    return Field(default_factory=list, exclude_if=lambda value: not value)
+
+
 class ProcessNode(BaseModel):
     """A node in the process tree, recursively containing children."""
 
@@ -389,6 +412,8 @@ class SandboxSignature(BaseModel):
     # first of them (``sandbox_tools.SIGNATURE_PIDS_SHOWN``);
     # 0, and left out of the dump, where ``pids`` lists them all.
     pids_total: int = Field(default=0, exclude_if=lambda value: not value)
+    # The detonations the hit was observed in (``ObservedIn``).
+    observed_in: list[ObservedIn] = _observed_in()
 
 
 class DynamicBehavior(BaseModel):
@@ -468,6 +493,8 @@ class NetworkDomain(BaseModel):
     # of a dump where nothing was withheld, so a stored report reads as before.
     resolved_ips_partial: bool = False
     resolved_ips_withheld: int = 0
+    # The detonations the name was observed in (``ObservedIn``).
+    observed_in: list[ObservedIn] = _observed_in()
 
     @model_serializer(mode="wrap")
     def _dump(self, handler: SerializerFunctionWrapHandler) -> Any:
@@ -524,6 +551,8 @@ class NetworkIP(BaseModel):
     # Who listed the value, and who only mentioned it; see ``NetworkDomain``.
     kept_by: list[str] = Field(default_factory=list)
     mentioned_by: list[str] = Field(default_factory=list)
+    # The detonations the address was observed in (``ObservedIn``).
+    observed_in: list[ObservedIn] = _observed_in()
 
 
 class NetworkURL(BaseModel):
@@ -544,6 +573,8 @@ class NetworkURL(BaseModel):
     # the two were being published as though they were the same one.
     # ``None`` for a producer that does not record it.
     source: Literal["sandbox", "analyst", "strings"] | None = None
+    # The detonations the request was observed in (``ObservedIn``).
+    observed_in: list[ObservedIn] = _observed_in()
 
 
 class NetworkIOCs(BaseModel):
@@ -765,6 +796,9 @@ class TTPMapping(BaseModel):
     # (``validation.retry_claim_unbacked``): listed, never counted as a layer
     # that names it. Left out of the stored row when empty.
     retry_only_layers: list[str] = Field(default_factory=list, exclude_if=lambda value: not value)
+    # The detonations whose sandbox signatures tag the technique, where a
+    # further detonation's do (``ObservedIn``).
+    observed_in: list[ObservedIn] = _observed_in()
 
 
 class AttckLink(BaseModel):
@@ -843,6 +877,11 @@ class FamilyAttribution(BaseModel):
     # Empty and ``None`` on a report stored before either was recorded.
     family_evidence_ids: list[str] = Field(default_factory=list)
     family_source: Literal["judge", "sandbox"] | None = None
+    # What the family's source judged, where it was not the sample alone: a
+    # sandbox handed a generated launcher's archive named it from the archive
+    # run from its picked script. ``None`` where nothing qualifies it, and then
+    # left out of a dump, so a stored report reads as before.
+    family_note: str | None = None
     actor: str | None = None
     campaign: str | None = None
     # Filled by ``attribution.py`` from the Qdrant LTM nearest neighbours.
@@ -863,6 +902,13 @@ class FamilyAttribution(BaseModel):
     # node from the judge node's RAG pass (empty unless the RAG is enabled and a
     # fingerprint catalog is present).
     family_rag_candidates: list[dict[str, Any]] = Field(default_factory=list)
+
+    @model_serializer(mode="wrap")
+    def _dump(self, handler: SerializerFunctionWrapHandler) -> Any:
+        dumped = handler(self)
+        if isinstance(dumped, dict) and dumped.get("family_note") is None:
+            dumped.pop("family_note", None)
+        return dumped
 
 
 # ---------------------------------------------------------------------------
@@ -1635,6 +1681,9 @@ class ConsolidatedIOC(BaseModel):
     # the report's evidence index holds, in its order; absent when the record
     # ties none (``builder.ioc_table``).
     evidence_ids: list[str] = Field(default_factory=list, exclude_if=lambda value: not value)
+    # The detonations the value was observed in, where a further detonation
+    # observed it (``ObservedIn``).
+    observed_in: list[ObservedIn] = _observed_in()
 
 
 class Figure(BaseModel):

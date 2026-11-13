@@ -2,7 +2,7 @@
 
 import { Suspense, useState, useRef, useCallback, useEffect } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { ChevronRight, Upload, X } from "lucide-react";
+import { ChevronRight, Upload } from "lucide-react";
 import { questionsFromText } from "./jobQuestions";
 import { advancedChoices, canStartAnalysis } from "./submitGate";
 import { api } from "@/lib/api";
@@ -20,6 +20,7 @@ import {
   profileLabel,
   providerLabel,
 } from "@/lib/providerLabels";
+import DialogPanel from "@/components/ui/DialogPanel";
 import { useProviderChoices } from "./useProviderChoices";
 
 /* ── Display interface (maps from SampleDTO) ───────── */
@@ -74,6 +75,7 @@ function SamplesPageContent() {
   const [sandboxProvider, setSandboxProvider] = useState("");
   const [profile, setProfile] = useState("");
   const [questionsText, setQuestionsText] = useState("");
+  const [launchArguments, setLaunchArguments] = useState("");
   const [attachedReport, setAttachedReport] = useState<SandboxReportDTO | null>(null);
   const [reportUploading, setReportUploading] = useState(false);
   const [reportError, setReportError] = useState<string | null>(null);
@@ -82,7 +84,7 @@ function SamplesPageContent() {
   const [acceptError, setAcceptError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
-  /* Providers, profile, questions and an attached report: every choice the
+  /* Providers, profile, questions, launch arguments and an attached report: every choice the
    * dialog offers, folded under "Advanced" so the dialog reads as one
    * action. Closed each time the dialog opens. */
   const [advancedOpen, setAdvancedOpen] = useState(false);
@@ -102,6 +104,7 @@ function SamplesPageContent() {
     setSandboxProvider("");
     setProfile("");
     setQuestionsText("");
+    setLaunchArguments("");
     setAttachedReport(null);
     setReportError(null);
     setAcceptError(null);
@@ -203,6 +206,8 @@ function SamplesPageContent() {
       // What the analyst asks of the run, answered in the report; none sends nothing.
       const questions = questionsFromText(questionsText);
       if (questions.length > 0) config.questions = questions;
+      // Sent as typed, never trimmed: the sandbox starts the sample with them.
+      if (launchArguments.trim()) config.sandbox_launch_arguments = launchArguments;
       if (attachedReport) {
         config.sandbox_report_id = attachedReport.id;
         config.sandbox_provider = "upload";
@@ -230,6 +235,7 @@ function SamplesPageContent() {
     sandboxProvider,
     profile,
     questions: questionsFromText(questionsText),
+    launchArguments,
     attachedReport: attachedReport !== null,
   });
   const searchParams = useSearchParams();
@@ -499,284 +505,263 @@ function SamplesPageContent() {
 
       {/* Sample Detail Modal */}
       {detailSample && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50"
-          onClick={() => setDetailSample(null)}
-        >
-          <div
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="sample-detail-title"
-            className="bg-bg-surface border border-border rounded w-full max-w-lg p-5 shadow-lg"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="flex items-center justify-between mb-4">
-              <h3 id="sample-detail-title" className="text-sm font-semibold text-text-primary">Sample Details</h3>
-              <button
-                type="button"
-                aria-label="Close"
-                onClick={() => setDetailSample(null)}
-                className="flex h-6 w-6 items-center justify-center text-text-muted hover:text-text-primary"
-              >
-                <X size={16} aria-hidden="true" />
-              </button>
+        <DialogPanel titleId="sample-detail-title" title="Sample Details" onClose={() => setDetailSample(null)}>
+          <div className="space-y-3">
+            <div>
+              <span className="text-text-muted uppercase tracking-wider">Filename</span>
+              <p className="text-text-primary mt-0.5">{detailSample.original_filename}</p>
             </div>
-            <div className="space-y-3 text-xs">
+            <div>
+              <span className="text-text-muted uppercase tracking-wider">SHA-256</span>
+              <code className="block text-text-secondary font-mono mt-0.5 break-all">{detailSample.sha256}</code>
+            </div>
+            {detailSample.md5 && (
               <div>
-                <span className="text-text-muted uppercase tracking-wider">Filename</span>
-                <p className="text-text-primary mt-0.5">{detailSample.original_filename}</p>
+                <span className="text-text-muted uppercase tracking-wider">MD5</span>
+                <code className="block text-text-secondary font-mono mt-0.5 break-all">{detailSample.md5}</code>
               </div>
+            )}
+            <div className="flex gap-6">
               <div>
-                <span className="text-text-muted uppercase tracking-wider">SHA-256</span>
-                <code className="block text-text-secondary font-mono mt-0.5 break-all">{detailSample.sha256}</code>
+                <span className="text-text-muted uppercase tracking-wider">Size</span>
+                <p className="text-text-primary mt-0.5">{formatBytes(detailSample.file_size_bytes)}</p>
               </div>
-              {detailSample.md5 && (
+              {detailSample.mime_type && (
                 <div>
-                  <span className="text-text-muted uppercase tracking-wider">MD5</span>
-                  <code className="block text-text-secondary font-mono mt-0.5 break-all">{detailSample.md5}</code>
+                  <span className="text-text-muted uppercase tracking-wider">MIME Type</span>
+                  <p className="text-text-primary mt-0.5">{detailSample.mime_type}</p>
                 </div>
               )}
-              <div className="flex gap-6">
-                <div>
-                  <span className="text-text-muted uppercase tracking-wider">Size</span>
-                  <p className="text-text-primary mt-0.5">{formatBytes(detailSample.file_size_bytes)}</p>
-                </div>
-                {detailSample.mime_type && (
-                  <div>
-                    <span className="text-text-muted uppercase tracking-wider">MIME Type</span>
-                    <p className="text-text-primary mt-0.5">{detailSample.mime_type}</p>
-                  </div>
-                )}
-              </div>
-              <div>
-                <span className="text-text-muted uppercase tracking-wider">Uploaded</span>
-                <p className="text-text-primary mt-0.5">{formatDateTime(detailSample.uploaded_at)}</p>
-              </div>
+            </div>
+            <div>
+              <span className="text-text-muted uppercase tracking-wider">Uploaded</span>
+              <p className="text-text-primary mt-0.5">{formatDateTime(detailSample.uploaded_at)}</p>
             </div>
           </div>
-        </div>
+        </DialogPanel>
       )}
 
       {/* Submit-analysis dialog */}
       {submitFor && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50"
-          onClick={closeSubmitDialog}
+        <DialogPanel
+          titleId="submit-analysis-title"
+          title={`Analyze ${submitFor.filename}`}
+          onClose={closeSubmitDialog}
+          footer={
+            <>
+              <Button variant="secondary" size="sm" onClick={closeSubmitDialog}>
+                Cancel
+              </Button>
+              <button
+                ref={startRef}
+                type="button"
+                data-variant="primary"
+                disabled={!canStartAnalysis({ submitting, reportUploading })}
+                onClick={() => startAnalysis(submitFor.id)}
+                className={buttonClass("primary", "sm")}
+              >
+                Start analysis
+              </button>
+            </>
+          }
         >
-          <div
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="submit-analysis-title"
-            className="bg-bg-surface border border-border rounded w-full max-w-lg p-5 shadow-lg"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="flex items-center justify-between mb-4">
-              <h3 id="submit-analysis-title" className="text-sm font-semibold text-text-primary">
-                Analyze {submitFor.filename}
-              </h3>
+          <div className="space-y-4">
+            {submitError && (
+              <div
+                role="alert"
+                className="text-status-red bg-status-red/10 border border-status-red/20 rounded px-2 py-1.5"
+              >
+                {submitError}
+              </div>
+            )}
+
+            <p className="text-sm text-text-secondary">
+              {advancedCount === 0
+                ? "The analysis runs with the platform's default providers and analyst team."
+                : `The analysis runs with ${advancedCount === 1 ? "the choice" : `the ${advancedCount} choices`} made under Advanced.`}
+            </p>
+
+            <div>
               <button
                 type="button"
-                aria-label="Close"
-                onClick={closeSubmitDialog}
-                className="flex h-6 w-6 items-center justify-center text-text-muted hover:text-text-primary"
+                aria-expanded={advancedOpen}
+                aria-controls="submit-advanced"
+                onClick={() => setAdvancedOpen((v) => !v)}
+                className="flex items-center gap-1 text-xs font-medium text-text-primary hover:underline"
               >
-                <X size={16} aria-hidden="true" />
+                <ChevronRight aria-hidden="true" className={`h-3.5 w-3.5 ${advancedOpen ? "rotate-90" : ""}`} />
+                Advanced
+                {advancedCount > 0 && <span className="font-normal text-text-muted">· {advancedCount} set</span>}
               </button>
+              <p className="mt-0.5 pl-[18px] text-text-muted">Providers, analyst team, questions, launch arguments and a sandbox report.</p>
             </div>
 
-            <div className="space-y-4 text-xs">
-              {submitError && (
+            <div id="submit-advanced" hidden={!advancedOpen} className="space-y-4 border-l-2 border-border-light pl-3">
+            <div>
+              <label htmlFor="static-provider" className="block text-text-muted uppercase tracking-wider mb-1">
+                Static provider
+              </label>
+              <select
+                id="static-provider"
+                value={staticProvider}
+                onChange={(e) => setStaticProvider(e.target.value)}
+                className="w-full border border-border rounded px-2 py-1.5 bg-bg-surface text-text-primary"
+              >
+                <option value="">Inherit from settings</option>
+                {staticProviders.map((p) => (
+                  <option key={p} value={p}>{providerLabel(p, staticTitles)}</option>
+                ))}
+              </select>
+            </div>
+
+            <div>
+              <label htmlFor="sandbox-provider" className="block text-text-muted uppercase tracking-wider mb-1">
+                Sandbox provider
+              </label>
+              <select
+                id="sandbox-provider"
+                value={sandboxProvider}
+                onChange={(e) => setSandboxProvider(e.target.value)}
+                disabled={!!attachedReport}
+                className="w-full border border-border rounded px-2 py-1.5 bg-bg-surface text-text-primary disabled:opacity-50"
+              >
+                <option value="">Inherit from settings</option>
+                {sandboxProviders.map((p) => (
+                  <option key={p} value={p}>{providerLabel(p, sandboxTitles)}</option>
+                ))}
+              </select>
+              {attachedReport && (
+                <p className="text-text-muted mt-1">
+                  Sandbox: upload (from the attached report)
+                </p>
+              )}
+            </div>
+
+            <div>
+              <label htmlFor="agent-profile" className="block text-text-muted uppercase tracking-wider mb-1">
+                Profile
+              </label>
+              <select
+                id="agent-profile"
+                value={profile}
+                onChange={(e) => setProfile(e.target.value)}
+                className="w-full border border-border rounded px-2 py-1.5 bg-bg-surface text-text-primary"
+              >
+                <option value="">Inherit from settings</option>
+                {profiles.map((p) => (
+                  <option key={p} value={p}>{profileLabel(p)}</option>
+                ))}
+              </select>
+            </div>
+
+            <div>
+              <label htmlFor="job-questions" className="block text-text-muted uppercase tracking-wider mb-1">
+                Questions for this run
+              </label>
+              <textarea
+                id="job-questions"
+                value={questionsText}
+                onChange={(e) => setQuestionsText(e.target.value)}
+                rows={3}
+                placeholder="One question per line, e.g. What is the C2 address?"
+                className="w-full border border-border rounded px-2 py-1.5 bg-bg-surface text-text-primary"
+              />
+              <p className="text-text-muted mt-1">
+                The report answers each: established, partial, limited negative, not
+                determinable from this run, or out of scope.
+              </p>
+            </div>
+
+            <div>
+              <label htmlFor="launch-arguments" className="block text-text-muted uppercase tracking-wider mb-1">
+                Launch arguments
+              </label>
+              <input
+                id="launch-arguments"
+                type="text"
+                value={launchArguments}
+                onChange={(e) => setLaunchArguments(e.target.value)}
+                maxLength={1024}
+                spellCheck={false}
+                autoComplete="off"
+                placeholder="e.g. --password <value>"
+                className="w-full border border-border rounded px-2 py-1.5 bg-bg-surface text-text-primary font-mono"
+              />
+              <p className="text-text-muted mt-1">
+                What the sandbox starts the sample with, as typed after the program&apos;s name.
+                The report says whether the sandbox could pass them.
+              </p>
+            </div>
+
+            <div>
+              <label htmlFor="sandbox-report" className="block text-text-muted uppercase tracking-wider mb-1">
+                Attach sandbox report
+              </label>
+              <input
+                id="sandbox-report"
+                ref={reportFileRef}
+                type="file"
+                accept=".json,.json.gz"
+                onChange={handleReportChange}
+                disabled={reportUploading}
+                className="sr-only"
+              />
+              <button
+                type="button"
+                disabled={reportUploading}
+                onClick={() => reportFileRef.current?.click()}
+                className="px-2.5 py-1.5 text-xs border border-border text-text-secondary rounded hover:bg-bg-hover disabled:text-text-disabled"
+              >
+                Choose a report file
+              </button>
+              {reportUploading && (
+                <p className="text-text-muted mt-1">Uploading...</p>
+              )}
+              {reportError && (
+                <p className="text-status-red mt-1">{reportError}</p>
+              )}
+              {attachedReport && (
+                <p className="text-text-secondary mt-1">
+                  {attachedReport.format} · task {attachedReport.task_id ?? "unknown"}
+                </p>
+              )}
+              {attachedReport && isUnread(attachedReport.format) && attachedReport.warning && (
                 <div
-                  role="alert"
-                  className="text-status-red bg-status-red/10 border border-status-red/20 rounded px-2 py-1.5"
+                  role="status"
+                  data-unread-warning
+                  className="mt-2 text-status-orange bg-status-orange/10 border border-status-orange/20 rounded px-2 py-1.5"
                 >
-                  {submitError}
+                  {attachedReport.warning}
                 </div>
               )}
-
-              <p className="text-sm text-text-secondary">
-                {advancedCount === 0
-                  ? "The analysis runs with the platform's default providers and analyst team."
-                  : `The analysis runs with ${advancedCount === 1 ? "the choice" : `the ${advancedCount} choices`} made under Advanced.`}
-              </p>
-
-              <div>
-                <button
-                  type="button"
-                  aria-expanded={advancedOpen}
-                  aria-controls="submit-advanced"
-                  onClick={() => setAdvancedOpen((v) => !v)}
-                  className="flex items-center gap-1 text-xs font-medium text-text-primary hover:underline"
+              {attachedReport &&
+                !isUnread(attachedReport.format) &&
+                !attachedReport.sample_sha256_match &&
+                attachedReport.warning && (
+                <div
+                  role="alert"
+                  className="mt-2 text-status-red bg-status-red/10 border border-status-red/20 rounded px-2 py-1.5"
                 >
-                  <ChevronRight aria-hidden="true" className={`h-3.5 w-3.5 ${advancedOpen ? "rotate-90" : ""}`} />
-                  Advanced
-                  {advancedCount > 0 && <span className="font-normal text-text-muted">· {advancedCount} set</span>}
-                </button>
-                <p className="mt-0.5 pl-[18px] text-text-muted">Providers, analyst team, questions and a sandbox report.</p>
-              </div>
-
-              <div id="submit-advanced" hidden={!advancedOpen} className="space-y-4 border-l-2 border-border-light pl-3">
-              <div>
-                <label htmlFor="static-provider" className="block text-text-muted uppercase tracking-wider mb-1">
-                  Static provider
-                </label>
-                <select
-                  id="static-provider"
-                  value={staticProvider}
-                  onChange={(e) => setStaticProvider(e.target.value)}
-                  className="w-full border border-border rounded px-2 py-1.5 bg-bg-surface text-text-primary"
-                >
-                  <option value="">Inherit from settings</option>
-                  {staticProviders.map((p) => (
-                    <option key={p} value={p}>{providerLabel(p, staticTitles)}</option>
-                  ))}
-                </select>
-              </div>
-
-              <div>
-                <label htmlFor="sandbox-provider" className="block text-text-muted uppercase tracking-wider mb-1">
-                  Sandbox provider
-                </label>
-                <select
-                  id="sandbox-provider"
-                  value={sandboxProvider}
-                  onChange={(e) => setSandboxProvider(e.target.value)}
-                  disabled={!!attachedReport}
-                  className="w-full border border-border rounded px-2 py-1.5 bg-bg-surface text-text-primary disabled:opacity-50"
-                >
-                  <option value="">Inherit from settings</option>
-                  {sandboxProviders.map((p) => (
-                    <option key={p} value={p}>{providerLabel(p, sandboxTitles)}</option>
-                  ))}
-                </select>
-                {attachedReport && (
-                  <p className="text-text-muted mt-1">
-                    Sandbox: upload (from the attached report)
-                  </p>
-                )}
-              </div>
-
-              <div>
-                <label htmlFor="agent-profile" className="block text-text-muted uppercase tracking-wider mb-1">
-                  Profile
-                </label>
-                <select
-                  id="agent-profile"
-                  value={profile}
-                  onChange={(e) => setProfile(e.target.value)}
-                  className="w-full border border-border rounded px-2 py-1.5 bg-bg-surface text-text-primary"
-                >
-                  <option value="">Inherit from settings</option>
-                  {profiles.map((p) => (
-                    <option key={p} value={p}>{profileLabel(p)}</option>
-                  ))}
-                </select>
-              </div>
-
-              <div>
-                <label htmlFor="job-questions" className="block text-text-muted uppercase tracking-wider mb-1">
-                  Questions for this run
-                </label>
-                <textarea
-                  id="job-questions"
-                  value={questionsText}
-                  onChange={(e) => setQuestionsText(e.target.value)}
-                  rows={3}
-                  placeholder="One question per line, e.g. What is the C2 address?"
-                  className="w-full border border-border rounded px-2 py-1.5 bg-bg-surface text-text-primary"
-                />
-                <p className="text-text-muted mt-1">
-                  The report answers each: established, partial, limited negative, not
-                  determinable from this run, or out of scope.
-                </p>
-              </div>
-
-              <div>
-                <label htmlFor="sandbox-report" className="block text-text-muted uppercase tracking-wider mb-1">
-                  Attach sandbox report
-                </label>
-                <input
-                  id="sandbox-report"
-                  ref={reportFileRef}
-                  type="file"
-                  accept=".json,.json.gz"
-                  onChange={handleReportChange}
-                  disabled={reportUploading}
-                  className="sr-only"
-                />
-                <button
-                  type="button"
-                  disabled={reportUploading}
-                  onClick={() => reportFileRef.current?.click()}
-                  className="px-2.5 py-1.5 text-xs border border-border text-text-secondary rounded hover:bg-bg-hover disabled:text-text-disabled"
-                >
-                  Choose a report file
-                </button>
-                {reportUploading && (
-                  <p className="text-text-muted mt-1">Uploading...</p>
-                )}
-                {reportError && (
-                  <p className="text-status-red mt-1">{reportError}</p>
-                )}
-                {attachedReport && (
-                  <p className="text-text-secondary mt-1">
-                    {attachedReport.format} · task {attachedReport.task_id ?? "unknown"}
-                  </p>
-                )}
-                {attachedReport && isUnread(attachedReport.format) && attachedReport.warning && (
-                  <div
-                    role="status"
-                    data-unread-warning
-                    className="mt-2 text-status-orange bg-status-orange/10 border border-status-orange/20 rounded px-2 py-1.5"
-                  >
-                    {attachedReport.warning}
-                  </div>
-                )}
-                {attachedReport &&
-                  !isUnread(attachedReport.format) &&
-                  !attachedReport.sample_sha256_match &&
-                  attachedReport.warning && (
-                  <div
-                    role="alert"
-                    className="mt-2 text-status-red bg-status-red/10 border border-status-red/20 rounded px-2 py-1.5"
-                  >
-                    {attachedReport.warning}
-                  </div>
-                )}
-                {attachedReport && (() => {
-                  const proposal = readProposal(attachedReport.proposal);
-                  return proposal ? (
-                    <ReportFormatProposal
-                      key={attachedReport.id}
-                      proposal={proposal}
-                      busy={accepting}
-                      error={acceptError}
-                      canAccept={authUser?.role === "admin"}
-                      onAccept={acceptProposal}
-                    />
-                  ) : null;
-                })()}
-              </div>
-              </div>
-
-              <div className="flex justify-end gap-2 pt-2">
-                <Button variant="secondary" size="sm" onClick={closeSubmitDialog}>
-                  Cancel
-                </Button>
-                <button
-                  ref={startRef}
-                  type="button"
-                  data-variant="primary"
-                  disabled={!canStartAnalysis({ submitting, reportUploading })}
-                  onClick={() => startAnalysis(submitFor.id)}
-                  className={buttonClass("primary", "sm")}
-                >
-                  Start analysis
-                </button>
-              </div>
+                  {attachedReport.warning}
+                </div>
+              )}
+              {attachedReport && (() => {
+                const proposal = readProposal(attachedReport.proposal);
+                return proposal ? (
+                  <ReportFormatProposal
+                    key={attachedReport.id}
+                    proposal={proposal}
+                    busy={accepting}
+                    error={acceptError}
+                    canAccept={authUser?.role === "admin"}
+                    onAccept={acceptProposal}
+                  />
+                ) : null;
+              })()}
+            </div>
             </div>
           </div>
-        </div>
+        </DialogPanel>
       )}
     </div>
   );

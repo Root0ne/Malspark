@@ -3495,6 +3495,15 @@ transport to open — the process tree, the network activity, the sandbox's own
 signatures, the files written, the registry keys touched, the API-call
 histogram, the mutexes held, the services and scheduled tasks arranged, the
 platform channels, and a bounded reader for any section the rest do not model.
+Each of them takes an optional `detonation` argument: empty (or `d1`) reads the
+job's own detonation, `d2`, `d3` and so on a further detonation an agent asked
+for, whose answers name the launch arguments it was started with and who asked,
+and whose item ids are qualified by it (`d2/proc:84`). The argument is part of
+the call, so the ledger records which detonation a read was of. Where the job's
+sandbox can pass launch arguments (a field of its own or a generated launcher),
+the same source also holds `request_detonation`, by which any agent whose
+definition holds the source asks for a further detonation with arguments it
+found; see [further detonations](/docs/tools/sandboxes/#further-detonations).
 
 A tool server reached over HTTP does not share the worker's filesystem, so it
 is handed the sample rather than a path to it; a stdio sidecar is handed the
@@ -3931,9 +3940,11 @@ id and under the owner rule (`long_term_memory.earlier_case`, through a
 backend's optional `case_of`; the in-process and Qdrant backends offer it, and
 a backend without it shows no earlier run). Each analyst, the mediator and the
 judge are shown it once per job after the triage pack, under the heading
-"AN EARLIER RUN ON THIS SAMPLE: hypotheses, not evidence". The pack's room
-under its bound (`reporting.upstream_findings_max_chars` or the derived one)
-shrinks by the block, and the block itself is never cut, so a block longer
+"AN EARLIER RUN ON THIS SAMPLE: hypotheses, not evidence". The room of the
+job's own pack lines under its bound (`reporting.upstream_findings_max_chars`
+or the derived one) shrinks by the block (the further detonations' lines keep a
+room of the whole bound of their own, each further detonation named on at
+least one line even where that passes it), and the block itself is never cut, so a block longer
 than the bound leaves the two past it. It holds the day it was stored and the
 technique ids its case keeps, never its summary, whose evidence ids name the
 earlier run's ledger, and never its category, an earlier verdict's word no

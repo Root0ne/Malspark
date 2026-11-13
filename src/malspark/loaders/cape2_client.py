@@ -39,6 +39,7 @@ from __future__ import annotations
 import json
 import os
 import time
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
@@ -137,6 +138,7 @@ class CAPEv2Client:
         options: str | None = None,
         timeout: int | None = None,
         extra_fields: dict[str, str] | None = None,
+        mask: Callable[[str], str] | None = None,
     ) -> str:
         """Submit a sample file to CAPEv2 and return the task ID.
 
@@ -155,6 +157,8 @@ class CAPEv2Client:
             options: CAPE's own ``key=value,key=value`` option string.
             timeout: Detonation budget in seconds, in the guest.
             extra_fields: Any further form fields, sent verbatim.
+            mask: Applied to every answer text a failure quotes (a submitted value
+                it withholds).
 
         Returns:
             Task ID string.
@@ -185,7 +189,9 @@ class CAPEv2Client:
             "CAPEv2Client: submitting '%s' to %s%s",
             path.name,
             self._base_url,
-            f" ({', '.join(f'{k}={v}' for k, v in sorted(form.items()))})" if form else "",
+            # The field names only: a value may be a job's launch arguments,
+            # which can hold a secret the sample needs.
+            f" (fields: {', '.join(sorted(form))})" if form else "",
         )
         with open(path, "rb") as f:
             try:
@@ -207,10 +213,20 @@ class CAPEv2Client:
                     timeout=self._upload_timeout,
                 )
             except Exception as exc:
-                raise SandboxError(f"Submission request failed: {exc}") from exc
+                said = mask(str(exc)) if mask else str(exc)
+                # The cause is dropped only where its own text could carry a
+                # value the mask withholds.
+                raise SandboxError(f"Submission request failed: {said}") from (
+                    None if mask else exc
+                )
 
-        self._raise_for_status(response, "submit")
-        data = self._payload(response, "submit")
+        self._raise_for_status(response, "submit", mask)
+        try:
+            data = self._payload(response, "submit")
+        except SandboxError as exc:
+            if mask is None:
+                raise
+            raise SandboxError(mask(str(exc))) from None
 
         # Upstream CAPEv2 wraps the payload as
         # ``{"error": false, "data": {"task_ids": [42]}, ...}``. Older
@@ -225,7 +241,8 @@ class CAPEv2Client:
             or (inner.get("task_ids") or [None])[0]
         )
         if task_id is None:
-            raise SandboxError(f"Unexpected submit response: {data}")
+            said = mask(str(data)) if mask else str(data)
+            raise SandboxError(f"Unexpected submit response: {said}")
 
         logger.info("CAPEv2Client: task_id=%s assigned.", task_id)
         return str(task_id)
@@ -490,12 +507,18 @@ class CAPEv2Client:
     # ------------------------------------------------------------------
 
     @staticmethod
-    def _raise_for_status(response: Any, operation: str) -> None:
-        """Raise SandboxError for non-2xx responses."""
+    def _raise_for_status(
+        response: Any, operation: str, mask: Callable[[str], str] | None = None
+    ) -> None:
+        """Raise SandboxError for non-2xx responses.
+
+        ``mask`` is applied to the whole body before it is cut, so a value it
+        withholds cannot survive as the start of a cut one.
+        """
         if response.status_code >= 400:
+            body = mask(response.text) if mask else response.text
             raise SandboxError(
-                f"CAPEv2 {operation} failed (HTTP {response.status_code}): "
-                f"{response.text[:BODY_SHOWN]}"
+                f"CAPEv2 {operation} failed (HTTP {response.status_code}): {body[:BODY_SHOWN]}"
             )
 
     @classmethod

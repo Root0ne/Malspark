@@ -42,6 +42,7 @@ from malspark.providers.sandbox.triage import (
     stop_if_cancelled,
     wait_after_poll_failure,
 )
+from malspark.providers.submission import mask_submitted, reraise_masked
 
 if TYPE_CHECKING:
     from collections.abc import Iterable
@@ -49,6 +50,7 @@ if TYPE_CHECKING:
     from malspark.core.config import SandboxRestConfig, Settings
     from malspark.core.report_formats import ReportFormat, SignatureScale
     from malspark.providers.sandbox.rest_mapping import CompiledMapping
+    from malspark.providers.submission import LaunchArgumentsAnswer, SubmissionOptions
     from malspark.schemas.sandbox_report import SandboxRun
 
 
@@ -162,6 +164,9 @@ class RestSandboxProvider(SandboxProvider):
             provides_tools=False,
             report_format=self._reader_id(),
             degrade_on_failure=True,
+            # Only where the operator named the form field the sandbox reads
+            # them from; no field named, none can be passed.
+            can_pass_launch_arguments=bool(self._cfg.submit.launch_arguments_field),
         )
 
     def _reader_id(self) -> str:
@@ -212,9 +217,13 @@ class RestSandboxProvider(SandboxProvider):
             redacted = redacted.replace(header_value, "***").replace(token, "***")
         return redacted
 
-    def _raise_for_status(self, response: httpx.Response, operation: str) -> None:
+    def _raise_for_status(
+        self, response: httpx.Response, operation: str, arguments: str = ""
+    ) -> None:
         if response.status_code >= 400:
-            body = self._redact(response.text[:200])
+            # The submitted arguments are withheld from the whole body first, so
+            # no part of them survives as the start of a cut one.
+            body = self._redact(mask_submitted(response.text, arguments)[:200])
             raise ProviderError(f"Sandbox {operation} failed (HTTP {response.status_code}): {body}")
 
     def _select_one(self, expression: str, payload: Any, what: str) -> str:
@@ -246,7 +255,18 @@ class RestSandboxProvider(SandboxProvider):
 
         return requested_host(self._cfg.base_url, self._cfg.submit.path)
 
-    def submit(self, sample_path: str | Path) -> str:
+    def launch_arguments_answer(
+        self, arguments: str, *, sample_path: str | Path | None = None
+    ) -> LaunchArgumentsAnswer:
+        """Honoured where the operator named the field, which is then the way they are sent."""
+        from malspark.providers.submission import LaunchArgumentsAnswer, cannot_pass
+
+        field_name = self._cfg.submit.launch_arguments_field
+        if not field_name:
+            return cannot_pass(self.id)
+        return LaunchArgumentsAnswer(honoured=True, via=f"the multipart field {field_name!r}")
+
+    def submit(self, sample_path: str | Path, *, options: SubmissionOptions | None = None) -> str:
         path = Path(sample_path)
         files: dict[str, Any] = {
             self._cfg.submit.file_field: (path.name, path.read_bytes(), "application/octet-stream")
@@ -258,11 +278,21 @@ class RestSandboxProvider(SandboxProvider):
             files[name] = (None, value)
         for name, value in self._cfg.submit.submit_fields.items():
             files[name] = (None, value)
-        response = self._get_http().request(
-            self._cfg.submit.method, self._cfg.submit.path, files=files
-        )
-        self._raise_for_status(response, "submit")
-        return self._select_one(self._cfg.submit.task_id_path, response.json(), "task id")
+        # The job's launch arguments, verbatim, under the field the operator
+        # declared for them (a config where it collides with another field is
+        # refused at validation, ``RestSubmitConfig``).
+        field_name = self._cfg.submit.launch_arguments_field
+        if options is not None and options.launch_arguments and field_name:
+            files[field_name] = (None, options.launch_arguments)
+        arguments = options.launch_arguments if options is not None else ""
+        try:
+            response = self._get_http().request(
+                self._cfg.submit.method, self._cfg.submit.path, files=files
+            )
+            self._raise_for_status(response, "submit", arguments)
+            return self._select_one(self._cfg.submit.task_id_path, response.json(), "task id")
+        except Exception as exc:  # noqa: BLE001 — re-raised, masked where it holds the arguments
+            reraise_masked(exc, options)
 
     def wait_for_completion(
         self,

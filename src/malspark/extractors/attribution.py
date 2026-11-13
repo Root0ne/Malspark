@@ -60,6 +60,25 @@ def _extract_sandbox_family(sandbox_report: dict[str, Any] | None) -> str | None
     return None
 
 
+# The note a family the sandbox named carries in a run whose arguments a
+# generated launcher carried: the sandbox judged the archive run from its
+# picked script, the launcher's own behaviour included, not the sample alone.
+SANDBOX_FAMILY_LAUNCHER_NOTE = (
+    "named by the sandbox from the submitted archive run from its picked launcher "
+    "script, the launcher's own behaviour included, not from the sample alone"
+)
+
+
+def _sandbox_family_note(sandbox_report: dict[str, Any] | None) -> str | None:
+    """The note the sandbox's family carries, from what its ``cti`` says it analysed."""
+    from malspark.schemas.sandbox_document import place
+    from malspark.schemas.sandbox_report import CTI_ANALYSED_KEY
+
+    cti = place(sandbox_report, "cti") or {}
+    analysed = cti.get(CTI_ANALYSED_KEY) if isinstance(cti, dict) else None
+    return SANDBOX_FAMILY_LAUNCHER_NOTE if isinstance(analysed, str) and analysed else None
+
+
 def build_family_attribution(
     *,
     judge_family: Any | None,
@@ -72,6 +91,11 @@ def build_family_attribution(
     fallback for a run where the judge abstained — a real detonation naming a
     family is a fact, and the behavioural *category* is not a family and is
     never echoed here.
+
+    In a run whose arguments a generated launcher carried, the sandbox judged
+    the archive run from its picked script (``cti.analysed``): its family then
+    carries :data:`SANDBOX_FAMILY_LAUNCHER_NOTE` (``family_note``), so it is
+    never read as grounded in the sample alone.
 
     ``grounded`` is now descriptive rather than a veto: a family the judge could
     not cite evidence ids for is kept, flagged, and printed as unverified. The
@@ -104,6 +128,8 @@ def build_family_attribution(
         family_confidence=None,
         family_grounded=True,
         family_source="sandbox" if sandbox_family else None,
+        # In a launcher run the sandbox judged the archive, not the sample alone.
+        family_note=_sandbox_family_note(sandbox_report) if sandbox_family else None,
     )
 
 

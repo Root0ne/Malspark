@@ -70,6 +70,28 @@ class TestBuildFamilyAttribution:
 
         assert attr.family == "Trojan/RAT"
         assert attr.family_grounded is True
+        assert attr.family_note is None
+
+    def test_in_a_launcher_run_the_sandbox_s_family_says_what_it_judged(self) -> None:
+        from malspark.extractors.attribution import SANDBOX_FAMILY_LAUNCHER_NOTE
+        from malspark.schemas.sandbox_report import CTI_ANALYSED_KEY, CTI_ANALYSED_LAUNCHER
+
+        cti = {"family": ["Trojan/RAT"], CTI_ANALYSED_KEY: CTI_ANALYSED_LAUNCHER}
+        attr = build_family_attribution(judge_family=None, sandbox_report={"cti": cti})
+
+        assert attr.family == "Trojan/RAT" and attr.family_source == "sandbox"
+        assert attr.family_note == SANDBOX_FAMILY_LAUNCHER_NOTE
+        assert "not from the sample alone" in attr.family_note
+        # The judge's family is the judge's reading, and carries no such note.
+        judged = build_family_attribution(
+            judge_family=FamilyVerdict(name="AsyncRAT", evidence_ids=["ev_0001"]),
+            sandbox_report={"cti": cti},
+        )
+        assert judged.family_note is None
+        # Kept in the dump where set; left out where not, so a stored report
+        # dumps as before.
+        assert attr.model_dump()["family_note"] == SANDBOX_FAMILY_LAUNCHER_NOTE
+        assert "family_note" not in judged.model_dump()
 
     def test_a_behavioural_category_is_never_a_family(self) -> None:
         attr = build_family_attribution(judge_family=None, sandbox_report={"cti": {"type": "rat"}})
