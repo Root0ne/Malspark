@@ -389,6 +389,7 @@ class RestSandboxProvider(SandboxProvider):
         from malspark.providers.sandbox.readers import (
             mapping_refusal,
             required_reader,
+            run_facts_of,
             sandbox_format_named,
         )
         from malspark.schemas.sandbox_report import SandboxRun
@@ -427,7 +428,8 @@ class RestSandboxProvider(SandboxProvider):
         if refusal:
             raise ProviderConfigurationError(refusal)
         own = self._format_mappings.get(name)
-        report = required_reader(self._reader_id()).read(
+        reader = required_reader(self._reader_id())
+        report = reader.read(
             payload,
             provider=self.id,
             task_id=str(task_id),
@@ -444,6 +446,8 @@ class RestSandboxProvider(SandboxProvider):
             raw=payload,
             # The one body the report path answers, as it was read.
             report_parts=[report_part("report", body)],
+            # Read as the format this job declares, where it declares one.
+            run_facts=run_facts_of(reader, payload, fmt),
         )
 
     def detonation_facts(self, run: SandboxRun) -> dict[str, Any] | None:

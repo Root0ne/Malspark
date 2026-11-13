@@ -31,6 +31,7 @@ from malspark.providers.sandbox.readers import (
     mapping_refusal,
     named_reader_refusal,
     report_reader,
+    run_facts_of,
     sandbox_format_named,
     sandbox_formats,
 )
@@ -277,6 +278,8 @@ class UploadSandboxProvider(SandboxProvider):
             raw=payload,
             # The attached report's bytes as stored, the one part read.
             report_parts=[report_part("report", blob)],
+            # Read as the format the report was accepted as.
+            run_facts=run_facts_of(reader, payload, found),
         )
 
     def signature_scale(

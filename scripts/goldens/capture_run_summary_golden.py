@@ -133,6 +133,7 @@ def _detonations_part() -> list[dict[str, Any]]:
         "task_ids": {"/info/id": "19159"},
         "guest": {"name": "win10", "platform": "windows"},
         "sandbox_version": "2.5",
+        "sandbox_commit": "c06696cbb1254b2dd2f3f0ed3a5e726e81484345",
         "started": "2026-08-13 13:06:05",
         "ended": "2026-08-13 13:09:06",
         "report_parts": [report_part("report", b"{}")],

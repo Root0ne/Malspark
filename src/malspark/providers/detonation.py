@@ -151,16 +151,23 @@ def stated_by(provider: Any, run: Any) -> dict[str, Any] | None:
 def report_facts(run: Any, *, detonated: bool) -> dict[str, Any]:
     """A built-in provider's answer to ``detonation_facts``: the report's own facts and parts.
 
-    What the reader of the report's format reads off the raw report
-    (``ReportReader.run_facts``), the parts the provider read
-    (``SandboxRun.report_parts``) and whether it ran the sample.
+    What the report's parts state of the run: as the provider read them while
+    it held them (``SandboxRun.run_facts``), else as the reader of the
+    report's format reads them off the raw report with the shipped
+    declaration of its id (``ReportReader.run_facts``); the parts the
+    provider read (``SandboxRun.report_parts``) and whether it ran the sample.
     """
-    from malspark.providers.sandbox.readers import report_reader
+    from malspark.providers.sandbox.readers import report_reader, run_facts_of
 
-    report = getattr(run, "report", None)
-    reader = report_reader(str(getattr(report, "source_format", "") or ""))
-    raw = getattr(run, "raw", None)
-    facts = dict(reader.run_facts(raw)) if reader is not None and isinstance(raw, dict) else {}
+    held = getattr(run, "run_facts", None)
+    if isinstance(held, dict):
+        facts = dict(held)
+    else:
+        report = getattr(run, "report", None)
+        reader = report_reader(str(getattr(report, "source_format", "") or ""))
+        raw = getattr(run, "raw", None)
+        read = run_facts_of(reader, raw) if reader is not None and isinstance(raw, dict) else None
+        facts = read or {}
     facts["detonated"] = bool(detonated)
     facts["report_parts"] = [dict(part) for part in getattr(run, "report_parts", None) or ()]
     return facts

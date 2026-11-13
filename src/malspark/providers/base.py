@@ -969,12 +969,17 @@ class SandboxProvider(ServerOfItsOwn, ABC):
         * ``guest``: the machine the sample ran in as the report names it (its
           operating system, image, architecture), flat or one level of
           mappings by task;
-        * ``sandbox_version``, ``started``, ``ended``: as the report gives them;
+        * ``sandbox_version`` and ``sandbox_commit``: the sandbox's build, as
+          the report gives them;
+        * ``started``, ``ended``: this detonation's start and end as the report
+          gives them, one text or one per task by name, in the sandbox's own
+          clock (no time zone unless the report writes one); a time that
+          belongs to the whole sample is not this detonation's;
         * ``report_parts``: each raw report part as it was read, its name and
           the SHA-256 and byte length of its bytes (``SandboxRun.report_parts``).
 
-        ``None``, the default, states nothing: every fact is recorded as not
-        reported, never guessed.
+        A key outside these is not recorded. ``None``, the default, states
+        nothing: every fact is recorded as not reported, never guessed.
         """
         return None
 

@@ -102,7 +102,7 @@ from malspark.providers.launcher import (
 )
 from malspark.providers.registry import register_sandbox_provider
 from malspark.providers.sandbox.limits import read_capped, stream_to_file_capped
-from malspark.providers.sandbox.readers import required_reader
+from malspark.providers.sandbox.readers import required_reader, run_facts_of
 from malspark.providers.submission import mask_submitted, reraise_masked
 
 # The registered report reader (``providers.sandbox.readers``) this provider's
@@ -1131,7 +1131,8 @@ class TriageSandboxProvider(SandboxProvider):
                 continue
             task_reports[name] = report
 
-        report = required_reader(_READER).read(
+        reader = required_reader(_READER)
+        report = reader.read(
             overview, provider=self.id, task_id=str(task_id), task_reports=task_reports
         )
         return SandboxRun(
@@ -1142,10 +1143,12 @@ class TriageSandboxProvider(SandboxProvider):
             report=report,
             raw=overview,
             report_parts=parts,
+            # Read while the task reports are in hand: the run keeps the overview alone.
+            run_facts=run_facts_of(reader, overview, task_reports=task_reports),
         )
 
     def detonation_facts(self, run: SandboxRun) -> dict[str, Any] | None:
-        """The overview's facts, and the overview and task reports as fetched.
+        """The overview's and the task reports' facts, and each of them as fetched.
 
         Triage ran the sample.
         """

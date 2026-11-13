@@ -50,8 +50,20 @@ from tests.credential_shapes import lowercase_body, password, prefixed_key
 
 FIX = Path(__file__).resolve().parents[1] / "fixtures" / "sandbox"
 NR = NOT_REPORTED
+# The facts a provider states, each "not reported" where it does not.
+FACT_KEYS = (
+    "detonated",
+    "task_ids",
+    "guest",
+    "sandbox_version",
+    "sandbox_commit",
+    "started",
+    "ended",
+)
 # The analysis machine the CAPE fixture names.
 CAPE_GUEST = {"name": "win10", "label": "win10", "platform": "windows", "manager": "KVM"}
+# The build the CAPE fixture states (``info.CAPE_current_commit``).
+CAPE_COMMIT = "c06696cbb1254b2dd2f3f0ed3a5e726e81484345"
 
 
 def _sha(body: bytes) -> str:
@@ -64,6 +76,7 @@ def _facts(**over: Any) -> dict[str, Any]:
         "task_ids": {"/info/id": "19159"},
         "guest": {"name": "win10", "platform": "windows"},
         "sandbox_version": "2.5",
+        "sandbox_commit": CAPE_COMMIT,
         "started": "2026-08-13 13:06:05",
         "ended": "2026-08-13 13:09:06",
         "report_parts": [report_part("report", b"{}")],
@@ -105,6 +118,7 @@ class TestTheRecord:
                 "task_ids": {"/info/id": "19159"},
                 "guest": {"name": "win10", "platform": "windows"},
                 "sandbox_version": "2.5",
+                "sandbox_commit": CAPE_COMMIT,
                 "started": "2026-08-13 13:06:05",
                 "ended": "2026-08-13 13:09:06",
                 "report_parts": [{"name": "report", "sha256": _sha(b"{}"), "bytes": 2}],
@@ -166,6 +180,7 @@ class TestTheRecord:
             "task_ids": NR,
             "guest": NR,
             "sandbox_version": NR,
+            "sandbox_commit": NR,
             "started": NR,
             "ended": NR,
             "report_parts": [],
@@ -173,7 +188,7 @@ class TestTheRecord:
 
     def test_a_provider_that_states_nothing_is_not_reported_throughout(self) -> None:
         (row,) = detonations_record(_held(_record(sandbox_facts={}))) or []
-        for key in ("detonated", "task_ids", "guest", "sandbox_version", "started", "ended"):
+        for key in FACT_KEYS:
             assert row[key] == NR, key
         # A report was read, and its parts were not stated: not "none read".
         assert row["report_parts"] == NR
@@ -286,7 +301,7 @@ class TestWhatARowCarries:
             "guest": {"image": f"/var/lib/sandbox/{key}.qcow2"},
             "sandbox_version": signed,
             "started": "x" * 5000,
-            "ended": {"not": "a text"},
+            "ended": ["not", "a text"],
             "report_parts": [
                 {"name": f"{home}/report.json", "sha256": "A" * 64, "bytes": 3},
                 {"name": "no digest", "bytes": 3},
@@ -414,7 +429,7 @@ class TestTheQuestion:
         (row,) = detonations_record(_held(record)) or []
         assert row["provider"] == "plugin" and row["task_id"] == "t-1"
         assert row["reported"] is True
-        for key in ("detonated", "task_ids", "guest", "sandbox_version", "started", "ended"):
+        for key in FACT_KEYS:
             assert row[key] == NR, key
         assert row["report_parts"] == NR
 
@@ -451,6 +466,7 @@ class TestEachBuiltInStatesItsRun:
             "task_ids": {"/info/id": "19159"},
             "guest": CAPE_GUEST,
             "sandbox_version": "2.5",
+            "sandbox_commit": CAPE_COMMIT,
             "started": "2026-08-13 13:06:05",
             "ended": "2026-08-13 13:09:06",
             "detonated": True,
@@ -472,8 +488,9 @@ class TestEachBuiltInStatesItsRun:
         facts = stated_by(provider, provider.fetch("260904-abcdefgh1"))
         assert facts == {
             "task_ids": {"/sample/id": "260904-abcdefgh1"},
-            "guest": {"behavioral1": {"target": "win10"}},
-            "ended": "2026-09-04T10:09:00Z",
+            # The task report's own platform beside the overview's target; the
+            # sample's completion is not this detonation's end.
+            "guest": {"behavioral1": {"target": "win10", "platform": "windows"}},
             "detonated": True,
             "report_parts": [
                 {"name": "overview", "sha256": _sha(overview), "bytes": len(overview)},
@@ -543,6 +560,146 @@ class TestEachBuiltInStatesItsRun:
 
 
 # ---------------------------------------------------------------------------
+# What is read from where: the format declared for the job, the build, every part
+
+
+# A format an operator declares (``sandbox.report_formats``): its task id sits
+# where no shipped declaration looks.
+ACME = {
+    "name": "acme",
+    "detect": [[{"path": "/producer/name", "contains": "acme"}]],
+    "task_id_paths": ["/run/ticket"],
+    "reader": "cape2",
+}
+ACME_PAYLOAD = {
+    "producer": {"name": "ACME detonator 3"},
+    "run": {"ticket": "T-77"},
+    "info": {"id": 1, "version": "3.1"},
+    "behavior": {"processes": []},
+    "signatures": [],
+}
+
+
+class TestWhatIsReadFromWhere:
+    def test_the_upload_reads_the_task_id_where_the_declared_format_says(self) -> None:
+        from malspark.providers.sandbox.upload import UploadSandboxProvider
+
+        settings = Settings.model_validate(
+            {
+                "sandbox": {
+                    "provider": "upload",
+                    "report_formats": [ACME],
+                    "upload": {"allowed_formats": ["acme"]},
+                }
+            }
+        )
+        provider = UploadSandboxProvider.from_settings(settings)
+        provider.set_pending_blob(json.dumps(ACME_PAYLOAD).encode(), filename="r.json")
+        facts = stated_by(provider, provider.fetch("uploaded")) or {}
+        assert facts["task_ids"] == {"/run/ticket": "T-77"}
+        assert facts["sandbox_version"] == "3.1"
+
+    def test_the_rest_provider_reads_the_task_id_through_the_mapped_reader_s_format(
+        self,
+    ) -> None:
+        from tests.unit.providers.sandbox.test_rest_provider import _provider
+
+        declared = {
+            "name": "acme_box",
+            "detect": [[{"path": "/acme", "types": ["object"]}]],
+            "task_id_paths": ["/acme/ticket"],
+            "reader": "generic",
+            "mapping": {"target_sha256": "", "processes": "$.acme.procs[*]"},
+        }
+        cfg = Settings.model_validate(
+            {
+                "sandbox": {
+                    "provider": "rest",
+                    "report_formats": [declared],
+                    "rest": {
+                        "base_url": "https://xyz.example/api",
+                        "report": {"format": "acme_box"},
+                    },
+                }
+            }
+        )
+        body = json.dumps({"acme": {"ticket": "R-5", "procs": []}}).encode()
+        provider = _provider(lambda request: httpx.Response(200, content=body), cfg)
+        facts = stated_by(provider, provider.fetch("R-5")) or {}
+        assert facts["task_ids"] == {"/acme/ticket": "R-5"}
+
+    def test_a_shipped_format_is_read_where_no_format_is_declared(self) -> None:
+        from malspark.providers.sandbox.readers import report_reader
+
+        reader = report_reader("cape2")
+        assert reader is not None
+        assert reader.run_facts({"info": {"id": 9}})["task_ids"] == {"/info/id": "9"}
+
+    def test_the_cape_report_s_build_is_its_version_and_its_commit(self) -> None:
+        from malspark.providers.sandbox.readers import report_reader
+
+        reader = report_reader("cape2")
+        assert reader is not None
+        facts = reader.run_facts({"info": {"version": "2.5", "CAPE_current_commit": "abc1"}})
+        assert facts["sandbox_version"] == "2.5" and facts["sandbox_commit"] == "abc1"
+        assert "sandbox_commit" not in reader.run_facts({"info": {"version": "2.5"}})
+        (row,) = detonations_record(_held(_record())) or []
+        assert row["sandbox_commit"] == CAPE_COMMIT
+
+    def test_each_triage_task_states_its_own_guest_start_and_end(self) -> None:
+        from tests.unit.providers.sandbox.test_triage_provider import _provider
+
+        overview = json.loads((FIX / "triage_overview.json").read_text(encoding="utf-8"))
+        second = dict(overview["tasks"][0], name="behavioral2", target="win7")
+        overview["tasks"].append(second)
+        task = json.loads((FIX / "triage_report_behavioral1.json").read_text(encoding="utf-8"))
+        first_report = dict(task, task=dict(task["task"], started="10:01", completed="10:04"))
+        second_report = dict(
+            task, task=dict(task["task"], name="behavioral2", os="windows7-x64", arch="x64")
+        )
+        bodies = {
+            "overview.json": json.dumps(overview).encode(),
+            "behavioral1/report_triage.json": json.dumps(first_report).encode(),
+            "behavioral2/report_triage.json": json.dumps(second_report).encode(),
+        }
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            for tail, body in bodies.items():
+                if request.url.path.endswith(tail):
+                    return httpx.Response(200, content=body)
+            return httpx.Response(404)
+
+        provider = _provider(handler)
+        facts = stated_by(provider, provider.fetch("260904-abcdefgh1")) or {}
+        assert facts["guest"] == {
+            "behavioral1": {"target": "win10", "platform": "windows"},
+            "behavioral2": {
+                "target": "win7",
+                "platform": "windows",
+                "os": "windows7-x64",
+                "arch": "x64",
+            },
+        }
+        # Only the task whose report states them has a start and an end; the
+        # sample's own completion is no task's end.
+        assert facts["started"] == {"behavioral1": "10:01"}
+        assert facts["ended"] == {"behavioral1": "10:04"}
+        (row,) = detonations_record(_held(_record(sandbox_facts=facts))) or []
+        assert row["started"] == {"behavioral1": "10:01"}
+        assert row["ended"] == {"behavioral1": "10:04"}
+        assert row["sandbox_version"] == NR and row["sandbox_commit"] == NR
+
+    def test_a_reader_that_cannot_say_leaves_the_report_read(self) -> None:
+        from malspark.providers.sandbox.readers import run_facts_of
+
+        class _Old:
+            def run_facts(self, payload: Any) -> dict[str, Any]:
+                return {"guest": {"name": "x"}}
+
+        assert run_facts_of(_Old(), {}, None) is None  # type: ignore[arg-type]
+
+
+# ---------------------------------------------------------------------------
 # Through the real path: the job's detonation, made by the app
 
 
@@ -585,6 +742,7 @@ class TestThroughTheRun:
                 "task_ids": {"/info/id": "19159"},
                 "guest": CAPE_GUEST,
                 "sandbox_version": "2.5",
+                "sandbox_commit": CAPE_COMMIT,
                 "started": "2026-08-13 13:06:05",
                 "ended": "2026-08-13 13:09:06",
                 "report_parts": [{"name": "s.json", "sha256": _sha(body), "bytes": len(body)}],

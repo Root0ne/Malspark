@@ -43,8 +43,9 @@ should happen:
   which it is, who asked, the launch text it asked for, the sandbox provider,
   how it ended, and what the provider stated of the sandbox run while the
   report was in hand (``SandboxProvider.detonation_facts``) — its identifiers,
-  the guest, the sandbox's version, start and end, whether the sample was run,
-  and the SHA-256 and length of each raw report part as it was read. An empty
+  the guest, the sandbox's version and commit, start and end, whether the
+  sample was run, and the SHA-256 and length of each raw report part as it
+  was read. An empty
   list is a job that made no sandbox submission and read no sandbox report.
 
 Written when the judge builds the summary and again once the run's last
@@ -607,6 +608,8 @@ STATED_PARTS = 64
 # credential in it is masked.
 STATED_READ_CHARS = 2 * STATED_TEXT_CHARS
 _SHA256 = re.compile(r"[0-9a-f]{64}")
+# The facts a provider may state once for the run or per task, by the task's name.
+_BY_TASK = frozenset({"started", "ended"})
 
 
 def _scalar(value: Any) -> bool:
@@ -650,9 +653,15 @@ def _stated_text(held: Any) -> str:
     return _said(held) if _scalar(held) else NOT_REPORTED
 
 
-def _stated_fact(stated: Mapping[str, Any], key: str) -> str:
-    """The text a provider stated under ``key`` (:func:`_stated_text`)."""
-    return _stated_text(stated.get(key))
+def _stated_fact(stated: Mapping[str, Any], key: str) -> str | dict[str, Any]:
+    """The text a provider stated under ``key`` (:func:`_stated_text`).
+
+    A start or an end is one text for the run, or one per task by name.
+    """
+    held = stated.get(key)
+    if key in _BY_TASK and isinstance(held, Mapping):
+        return _named_texts(held, nested=False)
+    return _stated_text(held)
 
 
 def _named_texts(held: Any, *, nested: bool) -> dict[str, Any] | str:
@@ -770,7 +779,7 @@ def _detonation_row(record: Any) -> dict[str, Any]:
     row["detonated"] = detonated if isinstance(detonated, bool) else NOT_REPORTED
     _read(row, "task_ids", lambda: _named_texts(stated.get("task_ids"), nested=False))
     _read(row, "guest", lambda: _named_texts(stated.get("guest"), nested=True))
-    for key in ("sandbox_version", "started", "ended"):
+    for key in ("sandbox_version", "sandbox_commit", "started", "ended"):
         _read(row, key, functools.partial(_stated_fact, stated, key))
     if facts is None and reported is False:
         # No report was read, so no part of one was.
@@ -802,12 +811,17 @@ def detonations_record(container: Any) -> list[dict[str, Any]] | None:
       ``failure``, why not, where none did;
     * what the provider stated of the run (``SandboxProvider.detonation_facts``,
       kept on the record by ``providers.detonation.stated_by``): ``detonated``,
-      ``task_ids``, ``guest``, ``sandbox_version``, ``started``, ``ended`` and
-      ``report_parts`` (each part's name, SHA-256 and byte length as read).
+      ``task_ids``, ``guest``, ``sandbox_version``, ``sandbox_commit``,
+      ``started``, ``ended`` (each one text, or one per task by name, in the
+      sandbox's own clock) and ``report_parts`` (each part's name, SHA-256
+      and byte length as read).
 
-    A fact the provider did not state is ``"not reported"``, never a guess;
-    a detonation that read no report has no parts. What a provider or its
-    sandbox wrote is kept to known keys and capped (``STATED_TEXT_CHARS``,
+    A fact the provider did not state is ``"not reported"``, never a guess
+    and never a value taken from another fact. A detonation that read no
+    report has no parts (an empty list); one whose report was read keeps the
+    parts it read, also where a later step failed. What a provider or its
+    sandbox wrote is kept to the contract's keys, any other key not recorded,
+    and capped (``STATED_TEXT_CHARS``,
     ``STATED_ENTRIES``, ``STATED_PARTS``), with no credential and no path of
     this host (:func:`_said`). A field that cannot be read is ``"not
     reported"`` and the row keeps the others: no detonation is left out, and

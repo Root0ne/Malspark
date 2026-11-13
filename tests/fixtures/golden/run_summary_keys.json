@@ -470,6 +470,7 @@
         "requested_by": [
           null
         ],
+        "sandbox_commit": null,
         "sandbox_version": null,
         "started": null,
         "task_id": null,
