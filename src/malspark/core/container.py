@@ -708,6 +708,16 @@ class ServiceContainer:
         # (``analysis.disclosure.upload_record``), set by ``app.arun`` as it
         # submits and read by the run's disclosure block. Empty outside a job.
         self.sample_uploads: list[dict[str, Any]] = []
+        # Every detonation of the sample this job made, in order, one
+        # ``providers.detonation.DetonationRecord`` each: the job's first
+        # (``d1``), whose fields are also the job-level ones above, and each
+        # further one an agent asked for. Empty outside a job.
+        self.detonations: list[Any] = []
+        # The further detonations agents asked for in this job, one
+        # ``providers.detonation_requests.DetonationRequest`` each, in the
+        # order filed; each answered with what will happen and, once carried
+        # out, the detonation that did. Empty where no agent asked.
+        self.detonation_requests: list[Any] = []
         # Each upload of the sample to a tool server over its ``put_sample``
         # tools (``analysis.disclosure.staging_record``), written by
         # ``agents.sample_staging`` as it uploads; read by the same block.

@@ -571,7 +571,7 @@ class TestApiCalls:
         )
 
         fields = set(tool.args_schema.model_fields)
-        assert fields == {"process", "name", "offset", "limit"}
+        assert fields == {"process", "name", "offset", "limit", "detonation"}
         assert "api_capability" in tool.description
 
 
