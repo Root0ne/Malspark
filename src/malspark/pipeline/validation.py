@@ -7714,6 +7714,11 @@ UNCITED_IDENTIFIER_CODE = "report.identifier_uncited"
 # (``stated_value_violations``). Asked once; a row kept after it is marked
 # beside its evidence.
 STATED_VALUE_UNHELD_CODE = "report.value_not_in_cited_entry"
+# A table row whose id none of the entries it cites holds, while another entry
+# of the run does (``cited_id_violations``): a number where that entry's code
+# compares it, any other id where its text writes it whole. Asked once per set
+# of holders, naming them; a row kept after it is marked beside its evidence.
+ID_NOT_IN_CITED_ENTRY_CODE = "report.id_not_in_cited_entry"
 # Technical prose naming a network value this run does not publish without
 # that value's publish state (``unpublished_value_violations``). Asked once; a
 # sentence kept after it is marked where it stands with the state.
@@ -7739,6 +7744,7 @@ MARKED_IN_PLACE: frozenset[str] = frozenset(
         RULE_MATCH_AS_ACTION_CODE,
         UNPUBLISHED_VALUE_CODE,
         CITATION_WRONG_ENTRY_CODE,
+        ID_NOT_IN_CITED_ENTRY_CODE,
         NUMERIC_CONFIDENCE_CODE,
         PROCESS_WORDS_CODE,
     }
@@ -7746,7 +7752,7 @@ MARKED_IN_PLACE: frozenset[str] = frozenset(
 # The marked findings asked about by the value they name, not by the sentence:
 # an answer that rewrites the sentence around the same value was asked all the
 # same.
-ASKED_BY_VALUE: frozenset[str] = frozenset({CITATION_WRONG_ENTRY_CODE})
+ASKED_BY_VALUE: frozenset[str] = frozenset({CITATION_WRONG_ENTRY_CODE, ID_NOT_IN_CITED_ENTRY_CODE})
 
 
 def raised_only_in_retry(violation: Violation, shown: Sequence[Violation]) -> bool:
@@ -7779,6 +7785,7 @@ KEPT_WITH_A_FINDING: frozenset[str] = frozenset(
         ABSENCE_CONTRADICTS_LEDGER_CODE,
         UNCITED_IDENTIFIER_CODE,
         STATED_VALUE_UNHELD_CODE,
+        ID_NOT_IN_CITED_ENTRY_CODE,
         UNPUBLISHED_VALUE_CODE,
         TECHNIQUE_NAME_CODE,
         RULE_MATCH_AS_ACTION_CODE,
@@ -9057,6 +9064,12 @@ class EntryTexts:
     # What the answered entries hold by address (``_LedgerHolds``), read on the
     # first statement of absence any check of this report meets, then kept.
     _holds: list[_LedgerHolds] = field(default_factory=list, compare=False, repr=False)
+    # The whole numbers each entry's or item's code compares (:meth:`compares`),
+    # read once per text, and the entries comparing each number
+    # (:meth:`comparing`), built once over every entry on first use; its
+    # ``None`` key marks it built.
+    _compared: dict[str, frozenset[int]] = field(default_factory=dict, compare=False, repr=False)
+    _comparing: dict[int | None, list[str]] = field(default_factory=dict, compare=False, repr=False)
 
     @classmethod
     def from_ledger(cls, ledger: Iterable[Any], corpus: Any = None) -> EntryTexts:
@@ -9208,6 +9221,38 @@ class EntryTexts:
             for entry_id in sorted(candidates, key=lambda i: self._order.get(i, -1))
             if entry_id in self.texts and self.holds(entry_id, value, fields=fields)
         ]
+
+    def compares(self, cited: str) -> frozenset[int]:
+        """The whole numbers the code in a cited entry or item chooses among.
+
+        The values :func:`compared_values` reads, of every expression it reads.
+
+        Read on the text as code reads it: the escapes a JSON text writes for
+        a newline, a tab, a quote or a backslash taken out (:func:`_code_read`).
+        Read once per text.
+        """
+        key = str(cited).strip().lower()
+        if key not in self._compared:
+            self._compared[key] = frozenset(
+                value
+                for _subject, values in compared_values(_code_read(self.text_of(key)))
+                for value in values
+            )
+        return self._compared[key]
+
+    def comparing(self, value: int) -> list[str]:
+        """Every entry whose code compares ``value`` (:meth:`compares`), in ledger order.
+
+        Built once over every entry's text, so a table of many rows costs a
+        lookup per row; never a sandbox item, as :meth:`holding` offers none.
+        """
+        if not self._comparing:
+            for entry_id in self.texts:
+                for number in self.compares(entry_id):
+                    self._comparing.setdefault(number, []).append(entry_id)
+            # Built, for a ledger whose code compares nothing too.
+            self._comparing[None] = []
+        return list(self._comparing.get(value, ()))
 
     def named(self, entry_id: str) -> str:
         """``ev_0012 (floss)``: an id with the tool that answered it."""
@@ -9745,6 +9790,132 @@ def _wrong_entry_label(
         else f"{len(holders)} other entries hold {'it' if len(values) == 1 else 'them'}"
     )
     return f"{said} {'is' if len(values) == 1 else 'are'} not in {', '.join(cited)}; {held}"
+
+
+# The escapes a JSON text writes, and what each stands for: a stored answer
+# holds code as JSON, and code is read with its own line breaks and quotes.
+_JSON_ESCAPE_RE = re.compile(r'\\(["\\/nrt])')
+_JSON_ESCAPES = {'"': '"', "\\": "\\", "/": "/", "n": "\n", "r": "\r", "t": "\t"}
+
+
+def _code_read(text: str) -> str:
+    """``text`` with the escapes a JSON text writes for a newline, a tab, a quote and a
+    backslash taken out, in one pass, so an escaped backslash stays one backslash."""
+    return _JSON_ESCAPE_RE.sub(lambda m: _JSON_ESCAPES[m.group(1)], str(text or ""))
+
+
+# A list an answer writes its rows in: a field name, never a value a model chose.
+_ROW_LIST_KEY_RE = re.compile(r"[a-z][a-z_]*")
+
+
+def cited_id_violations(payload: Any, entries: EntryTexts | None) -> list[Violation]:
+    """Table rows whose ``id`` none of the entries they cite holds, while another entry does.
+
+    A row that states an id (a command's) and cites entries is held where
+    one cited entry holds the id. A number, written alone or as the id's
+    last word and read as the code's numbers are read (:data:`_CODE_INT`), is
+    held by an entry whose code compares it (:meth:`EntryTexts.compares`);
+    any other id is held by an entry whose text holds it whole
+    (:meth:`EntryTexts.holds`). Held by none of the cited entries but by
+    another entry of the run, the row is asked about once, together with the
+    other rows its holders hold, with those holders named. Found nowhere,
+    nothing is said here: whether an id no entry holds should be cited is
+    another question.
+
+    Not asked here: a row citing no entry the run holds text for, a row with
+    a cited entry known to be partial (the id may be in the part that is not
+    here), and an id no text can be said to hold (:func:`decidable`). The id
+    is never rewritten: a row kept after the question is marked beside its
+    evidence. Linear in the rows and the entries' text: each text's numbers
+    are read once, and the entries holding a value are looked up.
+    """
+    if payload is None or entries is None or not (entries.texts or entries.items is not None):
+        return []
+    data = payload if isinstance(payload, dict) else {}
+    groups: dict[tuple[str, tuple[str, ...]], list[tuple[int, str, tuple[str, ...], str]]] = {}
+    for list_key, rows in data.items():
+        if not isinstance(rows, list) or not _ROW_LIST_KEY_RE.fullmatch(str(list_key)):
+            continue
+        for index, row in enumerate(rows):
+            if not isinstance(row, dict):
+                continue
+            written = str(row.get("id") or "").strip()
+            if not written:
+                continue
+            cited = [ref for ref in _ids_in(row.get("evidence_refs")) if entries.has_text(ref)]
+            if not cited or any(ref in entries.partial for ref in cited):
+                continue
+            last = written.rsplit(None, 1)[-1]
+            try:
+                if _ROW_NUMBER_RE.fullmatch(last):
+                    number = _code_number(last)
+                    if any(number in entries.compares(ref) for ref in cited):
+                        continue
+                    holders = [ref for ref in entries.comparing(number) if ref not in cited]
+                else:
+                    if not decidable(written) or any(
+                        entries.holds(ref, written, fields=True) for ref in cited
+                    ):
+                        continue
+                    holders = [
+                        ref for ref in entries.holding(written, fields=True) if ref not in cited
+                    ]
+            except (ValueError, OverflowError, RecursionError) as exc:
+                # An id no reader can take is not decidable: nothing is said of it.
+                logger.debug("validation: a row's id was not read (%s).", type(exc).__name__)
+                continue
+            if holders:
+                groups.setdefault((str(list_key), tuple(holders)), []).append(
+                    (index + 1, written, tuple(cited), cited_row_text(written, row))
+                )
+    out: list[Violation] = []
+    for (list_key, holders), found in groups.items():
+        holding = safe_finding_value(
+            ", ".join(entries.named(ref) for ref in holders[:_MAX_NAMED_IDS])
+            + (
+                f" and {len(holders) - _MAX_NAMED_IDS} more"
+                if len(holders) > _MAX_NAMED_IDS
+                else ""
+            )
+        )
+        numbers = ", ".join(str(number) for number, _id, _cited, _where in found)
+        if len(found) == 1:
+            ((number, written, cited, _where),) = found
+            said = (
+                f"Row {number} of {list_key} states the id {safe_finding_value(written)!r}, "
+                f"which none of the entries it cites holds: "
+                f"{safe_finding_value(', '.join(entries.named(ref) for ref in cited))}. "
+                f"This run's evidence holds it in {holding}."
+            )
+        else:
+            ids = "; ".join(
+                f"{number}: {safe_finding_value(written)!r}"
+                for number, written, _cited, _where in found[:_MAX_NAMED_IDS]
+            )
+            more = len(found) - _MAX_NAMED_IDS
+            said = (
+                f"Rows {numbers} of {list_key} each state an id none of the entries the row "
+                f"cites holds: {ids}{f' and {more} more' if more > 0 else ''}. This run's "
+                f"evidence holds them in {holding}."
+            )
+        out.append(
+            Violation(
+                code=ID_NOT_IN_CITED_ENTRY_CODE,
+                message=(
+                    f"{said} A number is held where an entry's code compares it, any other id "
+                    "where an entry's text writes it whole. Cite the entry that holds each "
+                    "row's id."
+                ),
+                path=f"{list_key}.id",
+                quoted=tuple(where for _number, _id, _cited, where in found),
+                labels=tuple(
+                    _wrong_entry_label([written], cited, holders, entries)
+                    for _number, written, cited, _where in found
+                ),
+                values=tuple(dict.fromkeys(written for _number, written, _c, _w in found)),
+            )
+        )
+    return out
 
 
 # The tables whose rows state one value each, by the list a section answers

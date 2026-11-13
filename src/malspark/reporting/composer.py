@@ -79,6 +79,7 @@ from malspark.pipeline.validation import (
     absence_holders_note,
     both_bases,
     citation_violations,
+    cited_id_violations,
     command_value_violations,
     compared_values,
     configuration_citation_violations,
@@ -1664,7 +1665,8 @@ class ReportComposer:
                 [
                     lambda p: command_value_violations(
                         p, (getattr(self, "_compared", None) or {}).get("commands") or []
-                    )
+                    ),
+                    lambda p: cited_id_violations(p, self._entries),
                 ],
                 _commands,
             ),
