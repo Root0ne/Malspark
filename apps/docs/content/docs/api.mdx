@@ -456,9 +456,11 @@ commit, times, part names and keys) a URL loses its credentials and any
 secret-named query value, a secret value the platform holds is masked in any
 encoding it holds, and a path of the worker's host is shown from the project
 root or as outside it; any other string a provider states is recorded as
-stated, never guessed at from its shape. A `failure` is free text and is also
-masked where it is shaped like a credential. A key and its value are read once
-more as one text, and where that hides something neither half shows (a URL's
+stated while the worker holds its secret values registered. Where it does not,
+nothing is known, so an identifier is also masked where it is shaped like a
+credential and may read `***`. A `failure` is free text and is masked that way
+in both states; a key is masked by what is known in both. A key and its value
+are read once more as one text, and where that hides something neither half shows (a URL's
 user and password split across them), both read `***`. Task URLs are not recorded.
 
 The block carries `v`, its shape version (3). Throughout it, a fact nobody read

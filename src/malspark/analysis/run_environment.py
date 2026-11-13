@@ -617,7 +617,7 @@ def _scalar(value: Any) -> bool:
     return isinstance(value, int | float) or (isinstance(value, str) and bool(value.strip()))
 
 
-def _said(value: Any, *, prose: bool = False) -> str:
+def _said(value: Any, *, prose: bool = False, name: bool = False) -> str:
     """A text a provider or a sandbox wrote, fit to keep: one line, no control
     character, no credential in a URL or a held secret value (``redact_url``,
     in every encoding the registry holds), no value the event scrub holds
@@ -625,11 +625,15 @@ def _said(value: Any, *, prose: bool = False) -> str:
     and cut with the cut mark.
 
     That is the rule for an identifier (a task id, a guest fact, a version, a
-    time, a part name, a key): the masks act on known things and never guess a
-    credential from a string's shape, so an image name or a commit hash reads
-    as stated whether or not a worker has registered values. ``prose`` is for
-    free text (a failure's reason): it also passes the finding-row scrub
-    (``safe_finding_value``), which masks what is shaped like a credential.
+    time, a part name) while the worker's held values are registered
+    (``pipeline.events._rows_kept_as_written``): the masks act on known
+    things, so an image name or a commit hash reads as stated. Where they are
+    not registered nothing is known, and an identifier also passes the
+    finding-row scrub (``safe_finding_value``), which masks what is shaped like
+    a credential, so one that looks like a credential may read ``***``.
+    ``prose`` (free text, a failure's reason) passes the whole event scrub
+    (``scrub``: held values and credential shapes) in both states;
+    a ``name`` (a key) passes the known masks only, in both.
 
     The text is cut to ``STATED_READ_CHARS`` before anything else is done with
     it, so its length costs nothing; the masks then read at most that. Where
@@ -639,7 +643,7 @@ def _said(value: Any, *, prose: bool = False) -> str:
     emptied so reads as the cut mark.
     """
     from malspark.core.paths import host_paths_masked
-    from malspark.pipeline.events import safe_finding_value
+    from malspark.pipeline.events import _rows_kept_as_written, safe_finding_value, scrub
     from malspark.utils.marked_cut import CUT_MARK, marked_cut
 
     whole = value if isinstance(value, str) else str(value)
@@ -651,6 +655,9 @@ def _said(value: Any, *, prose: bool = False) -> str:
         text = text.rsplit(" ", 1)[0] if " " in text else ""
     kept = _known_masked(host_paths_masked(text.rstrip()))
     if prose:
+        # Free text: shaped credentials are masked whether or not values are held.
+        kept = scrub(kept)
+    elif not (name or _rows_kept_as_written()):
         kept = safe_finding_value(kept)
     if cut and len(kept) <= STATED_TEXT_CHARS:
         # Shorter than the width once read, and still a cut text.
@@ -664,6 +671,14 @@ def _known_masked(text: str) -> str:
     from malspark.pipeline.events import mask_configured_values
 
     return mask_configured_values(redact_url(text))
+
+
+def _pair_masked(text: str) -> str:
+    """``text`` as the value side of a pair is masked (:func:`_said`), without the cut."""
+    from malspark.pipeline.events import _rows_kept_as_written, safe_finding_value
+
+    known = _known_masked(text)
+    return known if _rows_kept_as_written() else safe_finding_value(known)
 
 
 # What stands for a key and a value whose joined text a mask changed.
@@ -681,9 +696,9 @@ def _pair(key: Any, value: Any) -> tuple[str, str]:
     either half. Where the masks read the two joined otherwise than each
     alone, both are ``***``.
     """
-    name, text = _said(key), _said(value)
+    name, text = _said(key, name=True), _said(value)
     front, back = f"{name[-_PAIR_SIDE:]}=", text[:_PAIR_SIDE]
-    if _known_masked(front + back) != _known_masked(front) + _known_masked(back):
+    if _pair_masked(front + back) != _pair_masked(front) + _pair_masked(back):
         return _PAIR_MASK, _PAIR_MASK
     return name, text
 
@@ -712,7 +727,7 @@ def _named_texts(held: Any, *, nested: bool) -> dict[str, Any] | str:
             if name:
                 out[name] = text
             continue
-        name = _said(key)
+        name = _said(key, name=True)
         if not name:
             continue
         if nested and isinstance(value, Mapping):
