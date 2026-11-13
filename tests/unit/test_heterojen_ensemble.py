@@ -155,14 +155,15 @@ class TestBuildModelForAgent:
         with patch.object(registry, "build_model") as mock_build:
             mock_build.return_value = MagicMock()
             registry.build_model_for_agent("static")
-            mock_build.assert_called_once_with(role="expert")
+            # The agent is named, so the sent request is recorded under it.
+            mock_build.assert_called_once_with(role="expert", agent="static")
 
     def test_no_override_fallback_for_unknown_agent(self) -> None:
         registry = self._make_registry_patched()
         with patch.object(registry, "build_model") as mock_build:
             mock_build.return_value = MagicMock()
             registry.build_model_for_agent("nonexistent_agent")
-            mock_build.assert_called_once_with(role="expert")
+            mock_build.assert_called_once_with(role="expert", agent="nonexistent_agent")
 
     def test_case_insensitive_agent_lookup(self) -> None:
         agents = {"static": AgentLLMConfig(provider="openai", model="gpt-4o")}
@@ -199,7 +200,7 @@ class TestBuildModelForAgent:
         with patch.object(registry, "build_model") as mock_build:
             mock_build.return_value = MagicMock()
             registry.build_model_for_agent("judge", fallback_role="judge")
-            mock_build.assert_called_once_with(role="judge")
+            mock_build.assert_called_once_with(role="judge", agent="judge")
 
     def test_an_unknown_agent_provider_is_refused_not_run_on_the_role(self) -> None:
         from pydantic import ValidationError
