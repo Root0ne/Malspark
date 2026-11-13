@@ -233,19 +233,30 @@ def integrity_record(expected: str, readings: Sequence[Mapping[str, Any]]) -> di
 
 
 def sandbox_target_record(
-    expected: str, claimed: Any, *, provider: str = "", task_id: str = ""
+    expected: str,
+    claimed: Any,
+    *,
+    provider: str = "",
+    task_id: str = "",
+    submitted_archive: str = "",
 ) -> dict[str, Any] | None:
     """The record of a sandbox report whose target hash is not ``expected``; else ``None``.
 
     ``claimed`` is the target SHA-256 the sandbox's report names, as the
     provider's reader put it in the neutral report. No claim, or the intake
-    digest in any case, is no record. A claim that is not a SHA-256 is the
+    digest in any case, is no record. Nor is ``submitted_archive``, the digest
+    of the archive the platform itself built and submitted in place of the bare
+    sample (a generated launcher, ``providers.launcher``): a claim equal to it
+    names the submitted archive holding the sample, never another target
+    (:func:`submitted_archive_of`). A claim that is not a SHA-256 is the
     sandbox's own text: it is kept as :func:`_shown` keeps it, marked
     ``sandbox_sha256_valid: False``; one that holds no printable character is
     kept empty, still marked, and said as such (:func:`sandbox_target_lines`).
     """
     claim = str(claimed or "").strip().lower()
     if not claim or not expected or claim == expected.lower():
+        return None
+    if submitted_archive and claim == str(submitted_archive).strip().lower():
         return None
     if _SHA256.fullmatch(claim):
         return {
@@ -261,6 +272,19 @@ def sandbox_target_record(
         "provider": provider,
         "task_id": task_id,
     }
+
+
+def submitted_archive_of(launch_record: Any) -> str:
+    """The digest of the archive a run's launch record says the platform submitted; ``""`` else.
+
+    Set where the job's launch arguments were carried by a generated launcher
+    (``providers.submission.launch_record``): the archive, not the bare
+    sample, is what the sandbox was handed, so its report names the archive
+    as its target.
+    """
+    launcher = launch_record.get("launcher") if isinstance(launch_record, Mapping) else None
+    digest = launcher.get("archive_sha256") if isinstance(launcher, Mapping) else None
+    return str(digest or "").strip().lower()
 
 
 def kept_hash(value: str) -> str:

@@ -140,6 +140,9 @@ class MalsparkApp:
         # kept on the container, set as the sample is submitted and marked on
         # the report.
         self.launch_arguments: str = ""
+        # Whether this run's ``provider.submit`` call returned: only then were
+        # the launch arguments sent (``_launch_not_carried``).
+        self._submit_returned = False
 
     @property
     def launch_record(self) -> dict[str, Any] | None:
@@ -376,7 +379,7 @@ class MalsparkApp:
         stays as a second guard for a document that reaches this step by
         another way.
         """
-        from malspark.analysis.sample_integrity import sandbox_target_record
+        from malspark.analysis.sample_integrity import sandbox_target_record, submitted_archive_of
         from malspark.pipeline.sandbox_status import TARGET_KEY, target_mark
 
         if not isinstance(report, dict):
@@ -388,6 +391,9 @@ class MalsparkApp:
                 claim.get("sha256"),
                 provider=str(claim.get("provider") or ""),
                 task_id=str(claim.get("task_id") or ""),
+                # The archive a generated launcher was submitted in names the
+                # submitted archive holding the sample, not another target.
+                submitted_archive=submitted_archive_of(self.launch_record),
             )
             if isinstance(claim, dict)
             else None
@@ -465,16 +471,21 @@ class MalsparkApp:
         elif record.get("honoured") is True:
             # Sent, and nothing came back to observe them in: worded apart from a
             # request that was refused, in the record, the limitation and the
-            # upload row alike.
+            # upload row alike. Sent only where the submit call returned.
             uploads = self.container.sample_uploads
             row = uploads[-1] if uploads else {}
-            if row and not row.get("submitted"):
+            if not self._submit_returned:
                 note = "the submission did not complete, so they may not have been sent"
+                # The archive a launcher built, and the way it was to carry
+                # them, stay: the disclosure still names what may have left.
                 self.launch_record = launch_record(
                     str(record.get("provider") or ""),
                     str(record.get("arguments") or ""),
                     LaunchArgumentsAnswer(
-                        honoured=False, note=note + (f" ({failure})" if failure else "")
+                        honoured=False,
+                        note=note + (f" ({failure})" if failure else ""),
+                        via=str(record.get("via") or ""),
+                        launcher=record.get("launcher"),
                     ),
                 )
             else:
@@ -506,6 +517,7 @@ class MalsparkApp:
         self.container.sandbox_target_claim = None
         self.container.attached_target_claim = None
         self.launch_record = None
+        self._submit_returned = False
         if not sample_path or self.container.is_mock:
             return None
 
@@ -583,6 +595,7 @@ class MalsparkApp:
                 # The call a run without launch arguments has always made, so
                 # a provider written before ``options`` existed takes it as it did.
                 task_id = await asyncio.to_thread(provider.submit, str(path))
+            self._submit_returned = True
             if host is not None:
                 self.container.sample_uploads[-1] = upload_record(
                     provider.id, submitted=True, host=host, launch=launch
@@ -610,6 +623,12 @@ class MalsparkApp:
                 run = await asyncio.to_thread(provider.fetch, task_id)
                 self._without_unearned_marks(run)
                 self._note_the_reader(provider, run)
+                # A generated launcher's processes, flows and signatures are the
+                # platform's, not the sample's (``attribute_the_launcher``).
+                from malspark.schemas.sandbox_report import attribute_the_launcher
+
+                asked = self.launch_record
+                attribute_the_launcher(run.report, asked.get("launcher") if asked else None)
                 if not (run.report.synthetic or run.report.recorded_fixture):
                     # The target the sandbox says it ran, for the worker to
                     # compare with the sample, kept once the report is used
@@ -718,7 +737,11 @@ class MalsparkApp:
             if result.status in ("reported", "partial"):
                 ended += " and no report"
             elif result.error and result.error != f"Sandbox status: {result.status}":
-                ended += f": {result.error}"
+                from malspark.providers.submission import mask_submitted, submitted_values
+
+                # The sandbox's words, with the submitted values withheld.
+                said = mask_submitted(str(result.error), *submitted_values(self.launch_record))
+                ended += f": {said}"
             self._sandbox_failed(ended)
             return None
         except Exception as exc:
@@ -793,7 +816,9 @@ class MalsparkApp:
                 answer.note,
             )
             return None
-        return SubmissionOptions(launch_arguments=arguments)
+        # A launcher's archive, built as the provider answered, is handed on so
+        # the one submitted is the one recorded.
+        return SubmissionOptions(launch_arguments=arguments, launcher=answer.built)
 
     def _mark_the_launch(self, report: dict[str, Any] | None) -> dict[str, Any] | None:
         """``report``, marked with what became of the job's launch arguments.
@@ -832,12 +857,10 @@ class MalsparkApp:
         (``pipeline.nodes.sandbox_degradation_reason``).
         """
         from malspark.core.settings_overrides import redact_url
-        from malspark.providers.submission import mask_submitted, submitted_values
         from malspark.utils.marked_cut import marked_cut
 
-        # A sandbox that echoes the form it was sent must not carry the job's
-        # launch arguments (or the launcher text) into the failure reason.
-        reason = mask_submitted(str(reason), *submitted_values(self.launch_record))
+        # The sandbox's own words in ``reason`` were masked where they entered
+        # it (``providers.submission.mask_submitted``); the platform's are kept.
         one_line = " ".join(redact_url(str(reason)).splitlines())
         self.container.sandbox_failure = marked_cut(one_line, SANDBOX_FAILURE_CHARS)
 

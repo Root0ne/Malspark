@@ -37,7 +37,12 @@ from malspark.core.logger import logger
 from malspark.pipeline.sandbox_status import NOT_RUN, sandbox_status
 from malspark.providers.call_arguments import pick_argument
 from malspark.schemas.sandbox_document import place, signature_pids
-from malspark.schemas.sandbox_report import LINEAGE_MARKED_STORED
+from malspark.schemas.sandbox_report import (
+    LINEAGE_KEY,
+    LINEAGE_LAUNCHER,
+    LINEAGE_MARKED_STORED,
+    LINEAGE_SAMPLE,
+)
 from malspark.utils.marked_cut import marked_cut
 
 if TYPE_CHECKING:
@@ -293,11 +298,24 @@ def sandbox_processes(
                 "call_count": len(proc.get("calls") or []),
             }
             # The sandbox's own mark that the process is the sample's, where
-            # the record carries one: one of the two lineage facts.
-            if _marked_as_the_sample(proc):
+            # the record carries one: one of the two lineage facts. Where the
+            # run submitted a generated launcher, the lineage the launch
+            # record gives (``sandbox_report.attribute_the_launcher``) is
+            # stated and decides it: a launcher's process is never the sample's.
+            lineage = _launch_lineage(proc)
+            if lineage:
+                row[LINEAGE_KEY] = lineage
+            if lineage == LINEAGE_SAMPLE or (not lineage and _marked_as_the_sample(proc)):
                 row["marked"] = True
             rows.append(row)
     return {"processes": rows, "total": len(processes), **meta}
+
+
+def _launch_lineage(proc: dict[str, Any]) -> str:
+    """The lineage a launch record gave a process (the launcher's or the sample's); ``""`` else."""
+    extra = proc.get("extra")
+    value = extra.get(LINEAGE_KEY) if isinstance(extra, dict) else None
+    return str(value) if value in (LINEAGE_LAUNCHER, LINEAGE_SAMPLE) else ""
 
 
 def _marked_as_the_sample(proc: dict[str, Any]) -> bool:

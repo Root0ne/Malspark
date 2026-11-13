@@ -21,9 +21,10 @@ from __future__ import annotations
 import inspect
 import json
 import unicodedata
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, NoReturn
+from urllib.parse import quote, quote_plus
 
 # The longest launch arguments a job may carry, in characters: well past any
 # command line a sample needs, and short enough to state whole in the report.
@@ -66,9 +67,15 @@ def launch_arguments_problem(value: Any) -> str | None:
 
 @dataclass(frozen=True)
 class SubmissionOptions:
-    """What one submission asks beyond the sample. Empty asks nothing."""
+    """What one submission asks beyond the sample. Empty asks nothing.
+
+    ``launcher`` is the archive built when the provider answered
+    (``LaunchArgumentsAnswer.built``), carried into the submission so the
+    archive sent is the one the record describes, built once.
+    """
 
     launch_arguments: str = ""
+    launcher: Any = field(default=None, repr=False, compare=False)
 
     def __bool__(self) -> bool:
         return bool(self.launch_arguments)
@@ -84,12 +91,15 @@ class LaunchArgumentsAnswer:
     or field the provider sends them in, where it does. ``launcher`` is the
     record of the generated launcher that carries them, where the provider
     honours them through one (``providers.launcher``); never set otherwise.
+    ``built`` is that launcher's archive (``providers.launcher.BuiltLauncher``),
+    handed on to the submission and never recorded.
     """
 
     honoured: bool
     note: str = ""
     via: str = ""
     launcher: dict[str, Any] | None = None
+    built: Any = field(default=None, repr=False, compare=False)
 
 
 def cannot_pass(provider: str) -> LaunchArgumentsAnswer:
@@ -168,6 +178,8 @@ def launch_record(provider: str, arguments: str, answer: LaunchArgumentsAnswer) 
         record["via"] = str(answer.via)
     if answer.launcher:
         record["launcher"] = dict(answer.launcher)
+    if record["arguments"] and len(str(record["arguments"])) < MASKED_MIN_CHARS:
+        record["unmasked"] = UNMASKED_NOTE
     return record
 
 
@@ -223,33 +235,55 @@ def not_honoured_reason(record: Any) -> str | None:
 
 _ARGUMENTS_MASK = "[the launch arguments, withheld]"
 _LAUNCHER_MASK = "[the launcher text, withheld]"
+# The shortest value the masking looks for: a shorter one (``1``, ``-v``) is
+# part of too many ordinary words (``HTTP 401``) to be withheld without
+# rewriting them, so it is left, and the record says so (``unmasked``).
+MASKED_MIN_CHARS = 4
+UNMASKED_NOTE = (
+    f"shorter than {MASKED_MIN_CHARS} characters, so a sandbox's failure text is not "
+    "searched for them and may quote them"
+)
 
 
 def _spellings(value: str) -> list[str]:
-    """The ways ``value`` can occur in a body that echoes it: as it is, and JSON-escaped."""
+    """The ways ``value`` can occur in a body that echoes it.
+
+    As it is, URL-encoded (spaces as ``%20``, and with ``/`` kept or not),
+    form-encoded (spaces as ``+``) and JSON-escaped (non-ASCII kept or
+    written as ``\\u`` escapes). No other encoding is recognised.
+    """
     found = [value]
-    for ascii_only in (False, True):
-        escaped = json.dumps(value, ensure_ascii=ascii_only)[1:-1]
-        if escaped not in found:
-            found.append(escaped)
+    candidates = [
+        quote(value, safe=""),
+        quote(value),
+        quote_plus(value, safe=""),
+        quote_plus(value),
+        *(json.dumps(value, ensure_ascii=ascii_only)[1:-1] for ascii_only in (False, True)),
+    ]
+    for spelling in candidates:
+        if spelling not in found:
+            found.append(spelling)
     return found
 
 
 def mask_submitted(text: str, arguments: str = "", launcher_text: str = "") -> str:
     """``text`` with the submitted launch arguments and launcher text withheld where they occur.
 
-    Applied before any exception text or response body of a submission is
-    logged or kept as a failure reason: a sandbox that echoes the form it
+    Applied to a sandbox's own answer text (a response body, an exception's
+    message) before it is logged or kept as a failure reason, never to the
+    platform's own words around it: a sandbox that echoes the form it
     received must not carry the operator's arguments into a log or a report.
-    The launcher text is masked first, as it holds the arguments. Each value is
-    matched as it was sent and as JSON writes it.
+    The launcher text is masked first, as it holds the arguments. Each value
+    is matched as it was sent, URL-encoded, form-encoded and JSON-escaped;
+    other encodings (base64, a changed case, a cut copy) are not recognised.
+    A value shorter than :data:`MASKED_MIN_CHARS` is not masked.
     """
     for value, mask in (
         (launcher_text, _LAUNCHER_MASK),
         (launcher_text.rstrip(), _LAUNCHER_MASK),
         (arguments, _ARGUMENTS_MASK),
     ):
-        if not value:
+        if len(value) < MASKED_MIN_CHARS:
             continue
         for spelling in sorted(_spellings(value), key=len, reverse=True):
             text = text.replace(spelling, mask)

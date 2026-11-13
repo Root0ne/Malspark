@@ -40,6 +40,7 @@ from malspark.schemas.sandbox_document import (
     GROUP_ROWS_KEY,
     kept_source,
     pid_of,
+    signature_pids,
 )
 from malspark.schemas.sandbox_document import (
     SUMMARY_KEYS as _DOCUMENT_SUMMARY_KEYS,
@@ -1238,6 +1239,122 @@ def _flow_attribution(
         if flow.get(key) not in (None, ""):
             out[key] = flow[key]
     return out
+
+
+# Where a run's launch arguments were carried by a generated launcher
+# (``providers.launcher``): the lineage :func:`attribute_the_launcher` gives a
+# process, under this key of its ``extra`` and of a flow's row. The launcher's
+# processes are the platform's, not the sample's; the sample's are the process
+# that runs the generated sample member and everything it started.
+LINEAGE_KEY = "lineage"
+LINEAGE_LAUNCHER = "launcher"
+LINEAGE_SAMPLE = "sample"
+# The channel a signature seen only in the launcher's processes is moved to,
+# each row marked as the launcher's: kept, never read as the sample's.
+LAUNCHER_SIGNATURES_CHANNEL = "launcher.signatures"
+# What the sandbox's own score and family judged, beside them in ``cti``.
+CTI_ANALYSED_KEY = "analysed"
+CTI_ANALYSED_LAUNCHER = (
+    "the submitted archive, run from its picked launcher script, which started the sample: "
+    "the launcher's own behaviour is part of what the sandbox scored"
+)
+
+
+def _launcher_names(launcher: Any) -> tuple[str, str, frozenset[str]] | None:
+    """The sample member, the launcher member and the script host's images a launch record names."""
+    if not isinstance(launcher, Mapping):
+        return None
+    sample = str(launcher.get("sample_member") or "").strip().lower()
+    script = str(launcher.get("launcher_member") or "").strip().lower()
+    hosts = launcher.get("script_host_images")
+    images = frozenset(
+        str(h).strip().lower() for h in (hosts if isinstance(hosts, list | tuple) else []) if h
+    )
+    if not (sample and script and images):
+        return None
+    return sample, script, images
+
+
+def attribute_the_launcher(report: SandboxReport, launcher: Any) -> None:
+    """Mark, in place, what in ``report`` is the generated launcher's and what the sample's.
+
+    ``launcher`` is the launch record's launcher block
+    (``providers.submission.launch_record``): the names the platform generated
+    for the archive it submitted. One rule for every sandbox, read from the
+    neutral report alone:
+
+    * a process whose image is one of the record's script host images and
+      whose command line names the launcher member, and that the sample did
+      not start, is the launcher's (``lineage: "launcher"``), as is every
+      process it started outside the sample's tree;
+    * the sample's tree is rooted at each process whose image's file name is
+      the sample member, and holds everything those started
+      (``lineage: "sample"``), a script host the sample itself started
+      included;
+    * a flow's attribution (``SAMPLE_TREE_KEY``) is read from that tree, and a
+      flow of the launcher's process says so;
+    * a signature every process of which is the launcher's is moved to the
+      :data:`LAUNCHER_SIGNATURES_CHANNEL` channel, marked, so its techniques
+      and indicators are never read as the sample's;
+    * the sandbox's score and family are stated to be its analysis of the
+      archive run from the launcher (:data:`CTI_ANALYSED_KEY`).
+
+    A record that names no launcher leaves the report as it came.
+    """
+    names = _launcher_names(launcher)
+    if names is None:
+        return
+    sample_member, launcher_member, host_images = names
+    parent: dict[str, str] = {}
+    images: dict[str, str] = {}
+    roots: set[str] = set()
+    hosts: set[str] = set()
+    for proc in report.processes:
+        pid = pid_text(proc.pid)
+        if not pid or pid in parent:
+            continue
+        parent[pid] = pid_text(proc.ppid)
+        image = _image_of(proc.name)
+        images[pid] = re.split(r"[\\/]", proc.name.strip().strip('"'))[-1]
+        if image == sample_member:
+            roots.add(pid)
+        elif image in host_images and launcher_member in _named_files(
+            {"image": "", "cmd": proc.command_line}
+        ):
+            hosts.add(pid)
+    sample_tree = _reach(parent, roots)
+    launcher_tree = _reach(parent, hosts - sample_tree) - sample_tree
+    for proc in report.processes:
+        pid = pid_text(proc.pid)
+        if pid in sample_tree:
+            proc.extra[LINEAGE_KEY] = LINEAGE_SAMPLE
+        elif pid in launcher_tree:
+            proc.extra[LINEAGE_KEY] = LINEAGE_LAUNCHER
+    for row in (*report.network.tcp, *report.network.udp):
+        procid = pid_text(row.get("procid")) or pid_text(row.get("pid"))
+        for key in (SAMPLE_TREE_KEY, LINEAGE_DISPUTED_KEY, LINEAGE_MARKED_BY_KEY):
+            row.pop(key, None)
+        if not procid or procid not in parent:
+            continue
+        row[SAMPLE_TREE_KEY] = procid in sample_tree
+        if procid in sample_tree:
+            row.pop(FLOW_PROCESS_KEY, None)
+            continue
+        if images.get(procid):
+            row[FLOW_PROCESS_KEY] = images[procid]
+        if procid in launcher_tree:
+            row[LINEAGE_KEY] = LINEAGE_LAUNCHER
+    kept: list[SandboxSignatureRow] = []
+    for signature in report.signatures:
+        pids = signature.pids or signature_pids({"marks": signature.marks})
+        if pids and all(pid in launcher_tree for pid in pids):
+            report.channels.setdefault(LAUNCHER_SIGNATURES_CHANNEL, []).append(
+                {**signature.model_dump(), LINEAGE_KEY: LINEAGE_LAUNCHER}
+            )
+        else:
+            kept.append(signature)
+    report.signatures = kept
+    report.cti[CTI_ANALYSED_KEY] = CTI_ANALYSED_LAUNCHER
 
 
 # What :func:`triage_overview_to_sandbox_report` can fill: the process list,
