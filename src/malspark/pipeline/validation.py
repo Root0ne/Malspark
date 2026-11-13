@@ -14717,6 +14717,65 @@ def unsupported_malware_violations(
     ]
 
 
+# An entry id the judge's verdict names, in its assessment or any object, that
+# the job never issued: past the count of the job's evidence counter. An
+# indicator's pattern compares values the sample wrote and is not read, nor is
+# a code span.
+UNISSUED_VERDICT_EVIDENCE_CODE = "verdict.unissued_evidence"
+
+
+def _verdict_strings(value: Any) -> list[str]:
+    """Every string of a bundle's dump but an indicator's pattern, at any depth."""
+    if isinstance(value, str):
+        return [value]
+    if isinstance(value, dict):
+        return [
+            text
+            for key, item in value.items()
+            if key != "pattern"
+            for text in _verdict_strings(item)
+        ]
+    if isinstance(value, list | tuple):
+        return [text for item in value for text in _verdict_strings(item)]
+    return []
+
+
+def unissued_verdict_citations(bundle: Any, issued: int | None) -> list[Violation]:
+    """The entry ids a verdict names that the job never issued, as one question.
+
+    ``issued`` is how many ids the job's evidence counter has issued, to every
+    agent of the job; ``None`` (no counter) asks nothing. The verdict's ids
+    are read wherever the bundle writes them, outside code spans and an
+    indicator's pattern, and checked by the same decision as a claim's
+    (``schemas.evidence.unissued_ids``). Nothing is removed: the judge is
+    asked once, and what it keeps is recorded.
+    """
+    if issued is None:
+        return []
+    try:
+        dumped = bundle.model_dump(mode="json")
+    except Exception as exc:  # noqa: BLE001 — an unreadable bundle names nothing
+        logger.debug("validation: the bundle could not be read for citations (%s).", exc)
+        return []
+    written = entry_ids_written(
+        " ".join(_CODE_SPAN_RE.sub(" ", text) for text in _verdict_strings(dumped))
+    )
+    never = unissued_ids(written, issued)
+    if not never:
+        return []
+    return [
+        Violation(
+            code=UNISSUED_VERDICT_EVIDENCE_CODE,
+            message=(
+                f"The verdict names {unissued_sentence(never, int(issued))}. Cite the "
+                "entries the verdict rests on by ids this run issued, or remove the id."
+            ),
+            path="objects",
+            subject=never[0],
+        )
+    ]
+
+
 # A judge indicator naming a value the sandbox recorded and attributes no flow,
 # or no process, of the sample to. The judge is asked once, with the sandbox's own fact beside
 # the value; what it answers decides whether the value is published. A keep it

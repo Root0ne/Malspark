@@ -153,6 +153,7 @@ from malspark.pipeline.validation import (
     retry_with_feedback,
     stated_verdict_violations,
     unattributed_indicator_violations,
+    unissued_verdict_citations,
     unsupported_benign_violations,
     unsupported_malware_violations,
     validate_verdict_bundle,
@@ -2426,6 +2427,14 @@ class VerdictCheckInputs:
     sandbox_facts: Any
     analyst_claims: int
     ledger_ids: Sequence[str] | None
+    # How many entry ids the job's evidence counter has issued, to every
+    # agent; ``None`` where no counter is known.
+    issued: int | None
+
+
+def _issued_by(counter: Any) -> int | None:
+    """How many entry ids ``counter`` has issued; ``None`` with no counter."""
+    return int(counter.issued) if counter is not None else None
 
 
 def verdict_checks(bundle: Bundle, inputs: VerdictCheckInputs) -> list[Violation]:
@@ -2448,6 +2457,7 @@ def verdict_checks(bundle: Bundle, inputs: VerdictCheckInputs) -> list[Violation
         *unsupported_malware_violations(
             bundle, analyst_claims=inputs.analyst_claims, ledger_ids=inputs.ledger_ids
         ),
+        *unissued_verdict_citations(bundle, inputs.issued),
     ]
 
 
@@ -4860,6 +4870,8 @@ class JudgeAgent(BudgetMeter):
             sandbox_facts=sandbox_facts,
             analyst_claims=_analyst_claims,
             ledger_ids=ledger_ids,
+            # The job's counter, which issued every agent's ids; none outside a job.
+            issued=_issued_by(getattr(self, "evidence_counter", None)),
         )
 
         def _verdict_checks(bundle: Bundle) -> list[Violation]:

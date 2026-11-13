@@ -46,7 +46,7 @@ not prove the test makes the platform raise it. The tests are not listed here:
 one nothing raises and stored runs carry; the comment on that
 name says what reads it.
 
-**130 codes in 12 families:** [agreement](#agreement) 18 · [attck](#attck) 8 · [attribution](#attribution) 1 · [composer](#composer) 4 · [isr](#isr) 16 · [narrative](#narrative) 5 · [question](#question) 9 · [report](#report) 19 · [stix](#stix) 32 · [tool](#tool) 1 · [validation](#validation) 1 · [verdict](#verdict) 16. 14 code positions the register could not resolve are [listed at the end](#unresolved-code-positions).
+**131 codes in 12 families:** [agreement](#agreement) 18 · [attck](#attck) 8 · [attribution](#attribution) 1 · [composer](#composer) 4 · [isr](#isr) 16 · [narrative](#narrative) 5 · [question](#question) 9 · [report](#report) 19 · [stix](#stix) 32 · [tool](#tool) 1 · [validation](#validation) 1 · [verdict](#verdict) 17. 14 code positions the register could not resolve are [listed at the end](#unresolved-code-positions).
 
 ## agreement
 
@@ -1082,6 +1082,14 @@ What is recorded when the judge never answered at all. A retry would cost a seco
 - **Raised at** `malspark.agents.judge_agent:JudgeAgent.give_verdict`
 - **Passes on** `malspark.pipeline.nodes:make_judge_node.node_fn`
 - **Constant** `malspark.agents.judge_agent:VERDICT_TIMEOUT_CODE`
+- **Docs** [Architecture](/docs/architecture/)
+
+### `verdict.unissued_evidence`
+
+An entry id the judge's verdict names, in its assessment or any object, that the job never issued: past the count of the job's evidence counter. An indicator's pattern compares values the sample wrote and is not read, nor is a code span.
+
+- **Raised at** `malspark.pipeline.validation:unissued_verdict_citations`
+- **Constant** `malspark.pipeline.validation:UNISSUED_VERDICT_EVIDENCE_CODE`
 - **Docs** [Architecture](/docs/architecture/)
 
 ### `verdict.unrecognised`

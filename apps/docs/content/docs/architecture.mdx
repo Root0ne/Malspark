@@ -1331,7 +1331,11 @@ Two producers use it:
   signature is the usual one) and `verdict.unsupported_malware` for the entries
   that establish Malware (a reputation entry, a rule hit); either way the
   alternative offered is Suspicious with an inconclusive rationale, the judge
-  is asked once, and the second answer is kept as given. Both rules run over
+  is asked once, and the second answer is kept as given. Every entry id the
+  verdict names, in its assessment or any object, has to be one the job
+  issued: an id past the count of the job's evidence counter is
+  `verdict.unissued_evidence`, asked once; an indicator's pattern and a code
+  span are not read. These rules run over
   the bundle that is actually reported, on every way the round can end — a
   bundle, a malformed answer the retry fixed, prose the model stood by twice,
   JSON that is not a bundle, and no answer at all. Where the loop ran them they

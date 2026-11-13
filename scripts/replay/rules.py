@@ -1218,6 +1218,7 @@ def _judge(run: _Run, judged: _Judged) -> dict[str, Any]:
         sandbox_facts=judge_sandbox_facts(run.ledger, run.isrs, None, sample=dict(run.identity)),
         analyst_claims=claims,
         ledger_ids=ledger_ids,
+        issued=_issued(run),
     )
     asked = verdict_bundle_checks(
         bundle, shape, inputs, origins=where, written=written[0] if written else None
