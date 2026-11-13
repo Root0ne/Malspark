@@ -608,8 +608,6 @@ STATED_PARTS = 64
 # credential in it is masked.
 STATED_READ_CHARS = 2 * STATED_TEXT_CHARS
 _SHA256 = re.compile(r"[0-9a-f]{64}")
-# The facts a provider may state once for the run or per task, by the task's name.
-_BY_TASK = frozenset({"started", "ended"})
 
 
 def _scalar(value: Any) -> bool:
@@ -619,19 +617,28 @@ def _scalar(value: Any) -> bool:
     return isinstance(value, int | float) or (isinstance(value, str) and bool(value.strip()))
 
 
-def _said(value: Any) -> str:
+def _said(value: Any, *, name: bool = False) -> str:
     """A text a provider or a sandbox wrote, fit to keep: one line, no control
     character, no credential in a URL or a held secret value (``redact_url``),
-    no path of this host (``host_paths_masked``), and cut with the cut mark.
+    no path of this host (``host_paths_masked``), every held value and every
+    credential shape masked (``safe_finding_value``, which the other rows that
+    carry provider- or sample-written text go through), and cut with the cut mark.
+
+    A ``name`` (a key of a recorded mapping, which may be a place in a report
+    as ``/info/id`` is) is kept from the shape rules and the path rule, and
+    masked by every held value (``mask_configured_values``), as the event
+    payloads' identity fields are.
 
     The text is cut to ``STATED_READ_CHARS`` before anything else is done with
-    it, so its length costs nothing. Where that cut falls inside a word, read
-    once whitespace is folded and control characters are gone, the word is not
-    kept, also when it is the only one: a credential or an address cut in half
-    is not one a mask recognises. A text emptied so reads as the cut mark.
+    it, so its length costs nothing; the masks then read at most that. Where
+    that cut falls inside a word, read once whitespace is folded and control
+    characters are gone, the word is not kept, also when it is the only one: a
+    credential or an address cut in half is not one a mask recognises. A text
+    emptied so reads as the cut mark.
     """
     from malspark.core.paths import host_paths_masked
     from malspark.core.settings_overrides import redact_url
+    from malspark.pipeline.events import mask_configured_values, safe_finding_value
     from malspark.utils.marked_cut import CUT_MARK, marked_cut
 
     whole = value if isinstance(value, str) else str(value)
@@ -641,11 +648,36 @@ def _said(value: Any) -> str:
     if cut and not whole[STATED_READ_CHARS].isspace() and text and not text[-1].isspace():
         # The cut is inside the last word: none of it is kept.
         text = text.rsplit(" ", 1)[0] if " " in text else ""
-    kept = host_paths_masked(redact_url(text.rstrip()))
+    masks = mask_configured_values if name else safe_finding_value
+    kept = masks(host_paths_masked(redact_url(text.rstrip())))
     if cut and len(kept) <= STATED_TEXT_CHARS:
         # Shorter than the width once read, and still a cut text.
         return kept[: STATED_TEXT_CHARS - len(CUT_MARK)].rstrip() + CUT_MARK
     return marked_cut(kept, STATED_TEXT_CHARS)
+
+
+# What stands for a key and a value whose joined text a mask changed.
+_PAIR_MASK = "***"
+# How much of each side of a recorded pair is read as the one text it makes:
+# together within what ``safe_finding_value`` reads in one piece.
+_PAIR_SIDE = 99
+
+
+def _pair(key: Any, value: Any) -> tuple[str, str]:
+    """A recorded key and its value, each kept (:func:`_said`) and read once more as one text.
+
+    A URL or a credential split across the two (``https://user:`` and
+    ``pass@host``, or ``token`` and its value) is not one a mask sees in
+    either half. Where the masks read the two joined otherwise than each
+    alone, both are ``***``.
+    """
+    from malspark.pipeline.events import safe_finding_value
+
+    name, text = _said(key, name=True), _said(value)
+    front, back = f"{name[-_PAIR_SIDE:]}=", text[:_PAIR_SIDE]
+    if safe_finding_value(front + back) != safe_finding_value(front) + safe_finding_value(back):
+        return _PAIR_MASK, _PAIR_MASK
+    return name, text
 
 
 def _stated_text(held: Any) -> str:
@@ -653,15 +685,9 @@ def _stated_text(held: Any) -> str:
     return _said(held) if _scalar(held) else NOT_REPORTED
 
 
-def _stated_fact(stated: Mapping[str, Any], key: str) -> str | dict[str, Any]:
-    """The text a provider stated under ``key`` (:func:`_stated_text`).
-
-    A start or an end is one text for the run, or one per task by name.
-    """
-    held = stated.get(key)
-    if key in _BY_TASK and isinstance(held, Mapping):
-        return _named_texts(held, nested=False)
-    return _stated_text(held)
+def _stated_text_of(stated: Mapping[str, Any], key: str) -> str:
+    """The text a provider stated under ``key`` (:func:`_stated_text`)."""
+    return _stated_text(stated.get(key))
 
 
 def _named_texts(held: Any, *, nested: bool) -> dict[str, Any] | str:
@@ -673,12 +699,15 @@ def _named_texts(held: Any, *, nested: bool) -> dict[str, Any] | str:
         return NOT_REPORTED
     out: dict[str, Any] = {}
     for key, value in list(held.items())[:STATED_ENTRIES]:
-        name = _said(key)
+        if _scalar(value):
+            name, text = _pair(key, value)
+            if name:
+                out[name] = text
+            continue
+        name = _said(key, name=True)
         if not name:
             continue
-        if _scalar(value):
-            out[name] = _said(value)
-        elif nested and isinstance(value, Mapping):
+        if nested and isinstance(value, Mapping):
             inner = _named_texts(value, nested=False)
             if isinstance(inner, dict):
                 out[name] = inner
@@ -709,13 +738,27 @@ def _report_parts(held: Any) -> tuple[list[dict[str, Any]] | str, str]:
     return rows, ""
 
 
+# The fields that name a detonation; where one cannot be read it is ``"not
+# reported"``, so the row still says which detonation and which provider it is.
+_IDENTITY = frozenset({"detonation", "origin", "provider", "task_id"})
+_UNREAD = object()
+
+
 def _read(row: dict[str, Any], key: str, read: Callable[[], Any]) -> Any:
-    """``row[key]`` set to what ``read`` gives, or ``"not reported"`` where it fails."""
+    """``row[key]`` set to what ``read`` gives; where it fails, ``_UNREAD``.
+
+    A field that cannot be read is left out of the row, an identity field
+    (``_IDENTITY``) excepted: that one is ``"not reported"``.
+    """
     try:
         row[key] = read()
-    except Exception as exc:  # noqa: BLE001 — a field that cannot be read is not reported
+    except Exception as exc:  # noqa: BLE001 — a field that cannot be read is left out
         logger.debug("run environment: %s of a detonation was not read (%s).", key, exc)
-        row[key] = NOT_REPORTED
+        if key in _IDENTITY:
+            row[key] = NOT_REPORTED
+        else:
+            row.pop(key, None)
+        return _UNREAD
     return row[key]
 
 
@@ -744,15 +787,15 @@ def _launch(row: dict[str, Any], record: Any) -> None:
 def _detonation_row(record: Any) -> dict[str, Any]:
     """One detonation as the environment records it (:func:`detonations_record`).
 
-    Each field is read on its own: one that cannot be read is ``"not
-    reported"``, and the row keeps every other field.
+    Each field is read on its own: one that cannot be read is left out of the
+    row (an identity field is ``"not reported"``), and the row keeps every
+    other field.
     """
     row: dict[str, Any] = {}
     _read(row, "detonation", lambda: record.name)
     _read(row, "origin", lambda: str(record.origin))
-    askers = _read(row, "requested_by", lambda: _askers(record))
-    if not askers:
-        del row["requested_by"]
+    if not _read(row, "requested_by", lambda: _askers(record)):
+        row.pop("requested_by", None)
     try:
         asked_for = bool(record.arguments)
     except Exception:  # noqa: BLE001 — no launch text read is none recorded
@@ -767,20 +810,20 @@ def _detonation_row(record: Any) -> dict[str, Any]:
     _read(row, "provider", lambda: _said(record.provider) if record.provider else NOT_REPORTED)
     _read(row, "task_id", lambda: _stated_text(record.task_id))
     reported = _read(row, "reported", lambda: bool(record.reported))
-    failure = _read(row, "failure", lambda: _said(record.failure) if record.failure else "")
-    if not failure:
-        del row["failure"]
+    if not _read(row, "failure", lambda: _said(record.failure) if record.failure else ""):
+        row.pop("failure", None)
     try:
         facts = record.sandbox_facts if isinstance(record.sandbox_facts, dict) else None
     except Exception:  # noqa: BLE001 — facts that cannot be read are none stated
         facts = None
     stated = facts or {}
     detonated = _read(row, "detonated", lambda: stated.get("detonated"))
-    row["detonated"] = detonated if isinstance(detonated, bool) else NOT_REPORTED
+    if detonated is not _UNREAD:
+        row["detonated"] = detonated if isinstance(detonated, bool) else NOT_REPORTED
     _read(row, "task_ids", lambda: _named_texts(stated.get("task_ids"), nested=False))
     _read(row, "guest", lambda: _named_texts(stated.get("guest"), nested=True))
     for key in ("sandbox_version", "sandbox_commit", "started", "ended"):
-        _read(row, key, functools.partial(_stated_fact, stated, key))
+        _read(row, key, functools.partial(_stated_text_of, stated, key))
     if facts is None and reported is False:
         # No report was read, so no part of one was.
         row["report_parts"] = []
@@ -812,9 +855,8 @@ def detonations_record(container: Any) -> list[dict[str, Any]] | None:
     * what the provider stated of the run (``SandboxProvider.detonation_facts``,
       kept on the record by ``providers.detonation.stated_by``): ``detonated``,
       ``task_ids``, ``guest``, ``sandbox_version``, ``sandbox_commit``,
-      ``started``, ``ended`` (each one text, or one per task by name, in the
-      sandbox's own clock) and ``report_parts`` (each part's name, SHA-256
-      and byte length as read).
+      ``started``, ``ended`` (each one text, in the sandbox's own clock) and
+      ``report_parts`` (each part's name, SHA-256 and byte length as read).
 
     A fact the provider did not state is ``"not reported"``, never a guess
     and never a value taken from another fact. A detonation that read no
@@ -823,9 +865,10 @@ def detonations_record(container: Any) -> list[dict[str, Any]] | None:
     sandbox wrote is kept to the contract's keys, any other key not recorded,
     and capped (``STATED_TEXT_CHARS``,
     ``STATED_ENTRIES``, ``STATED_PARTS``), with no credential and no path of
-    this host (:func:`_said`). A field that cannot be read is ``"not
-    reported"`` and the row keeps the others: no detonation is left out, and
-    this never raises.
+    this host (:func:`_said`). A platform field that cannot be read is left
+    out of the row, and the row keeps the others and its identity (the
+    detonation, its origin, provider and task id, each ``"not reported"``
+    where unreadable): no detonation is left out, and this never raises.
     """
     held = getattr(container, "detonations", None)
     if not isinstance(held, list):

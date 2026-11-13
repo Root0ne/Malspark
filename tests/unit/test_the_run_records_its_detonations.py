@@ -234,6 +234,44 @@ class TestTheRecord:
         assert rows[0]["reported"] is True and rows[0]["detonated"] == NR
         assert rows[1] == (detonations_record(_held(_record())) or [])[0]
 
+    def test_a_platform_field_that_cannot_be_read_is_left_out_of_the_row(self) -> None:
+        class _Raising:
+            """Every field the platform fills raises; the identity is readable."""
+
+            name = "d3"
+            origin = AGENT_ORIGIN
+            provider = "cape2"
+            task_id = "19159"
+            arguments = ""
+
+            def __getattr__(self, attr: str) -> Any:
+                raise RuntimeError(attr)
+
+            @property
+            def requested_by(self) -> Any:
+                raise RuntimeError("requested_by")
+
+            @property
+            def reported(self) -> bool:
+                raise RuntimeError("reported")
+
+            @property
+            def failure(self) -> str:
+                raise RuntimeError("failure")
+
+            @property
+            def sandbox_facts(self) -> Any:
+                raise RuntimeError("sandbox_facts")
+
+        (row,) = detonations_record(_held(_Raising())) or []
+        # No typed field holds the "not reported" string where its type does
+        # not allow it: ``requested_by`` (a list), ``reported`` (a boolean) and
+        # ``failure`` are left out.
+        assert not {"requested_by", "reported", "failure"} & set(row)
+        assert row["detonation"] == "d3" and row["provider"] == "cape2"
+        assert row["task_id"] == "19159" and row["origin"] == AGENT_ORIGIN
+        assert row["detonated"] == NR and row["guest"] == NR
+
     def test_a_fact_that_cannot_be_read_is_not_reported_beside_the_platform_s_fields(
         self,
     ) -> None:
@@ -259,7 +297,8 @@ class TestTheRecord:
             launch={"honoured": True},
         )
         (row,) = detonations_record(_held(record)) or []
-        assert row["guest"] == NR and row["task_ids"] == NR and row["report_parts"] == NR
+        # What cannot be read is left out; what was not stated is "not reported".
+        assert not {"guest", "task_ids", "report_parts"} & set(row)
         assert row["sandbox_version"] == "2.5" and row["detonated"] is True
         assert row["detonation"] == "d2" and row["requested_by"] == ["static"]
         assert row["launched_with"] == "-k netsvcs" and row["arguments_honoured"] is True
@@ -404,6 +443,66 @@ class TestAProviderTextIsCutBeforeAnyOtherWork:
         assert row["ended"] == lead + CUT_MARK
 
 
+class TestWhatTheSharedScrubMasks:
+    """Provider-stated text is masked as the other run-summary rows are: held values and shapes."""
+
+    def test_a_credential_shaped_token_as_a_fact_s_value_is_masked(self) -> None:
+        key = prefixed_key("ghs_")
+        facts = _facts(
+            sandbox_version=f"build {key}",
+            guest={"image": key, "task": {"image": key}},
+            task_ids={"id": key},
+            started=key,
+        )
+        (row,) = detonations_record(_held(_record(sandbox_facts=facts))) or []
+        text = json.dumps(row)
+        for piece in (key, key[:12], key[-12:]):
+            assert piece not in text, piece
+
+    def test_a_url_split_across_a_key_and_its_value_is_masked(self) -> None:
+        secret = password(24)
+        facts = _facts(guest={"https://operator:": f"{secret}@sandbox.example.org/r"})
+        (row,) = detonations_record(_held(_record(sandbox_facts=facts))) or []
+        text = json.dumps(row)
+        assert secret[:8] not in text and "operator" not in text
+        assert row["guest"] == {"***": "***"}
+
+    def test_a_pair_that_hides_nothing_is_kept_as_stated(self) -> None:
+        facts = _facts(guest={"/info/id": "win10v2004-20260513-en", "os": "windows10-2004-x64"})
+        (row,) = detonations_record(_held(_record(sandbox_facts=facts))) or []
+        assert row["guest"] == facts["guest"]
+
+    def test_a_held_secret_value_with_spaces_is_masked(self) -> None:
+        from malspark.pipeline.events import remember_secret_values
+
+        held = "blue harbour " + lowercase_body(10) + " quiet lantern"
+        remember_secret_values([held])
+        facts = _facts(
+            sandbox_version=f"v {held} end", guest={"image": f"x {held}"}, ended=held.upper()
+        )
+        (row,) = detonations_record(_held(_record(sandbox_facts=facts, failure=held))) or []
+        text = json.dumps(row)
+        assert held not in text and "blue harbour" not in text and "quiet lantern" not in text
+        assert row["sandbox_version"] == "v *** end"
+
+    def test_a_settings_secret_in_an_encoded_form_is_masked(self) -> None:
+        from urllib.parse import quote_plus
+
+        from malspark.core import settings_masking
+
+        held = "quiet harbour " + lowercase_body(8) + " lantern"
+        settings_masking.remember_values([held], scope="job")
+        facts = _facts(sandbox_version=f"v {quote_plus(held)}", guest={"image": held})
+        (row,) = detonations_record(_held(_record(sandbox_facts=facts))) or []
+        text = json.dumps(row)
+        assert held not in text and quote_plus(held) not in text and "harbour" not in text
+
+    def test_a_mapping_where_a_provider_states_a_start_is_not_reported(self) -> None:
+        facts = _facts(started={"behavioral1": "10:01"}, ended={"behavioral1": "10:04"})
+        (row,) = detonations_record(_held(_record(sandbox_facts=facts))) or []
+        assert row["started"] == NR and row["ended"] == NR
+
+
 class _PlugIn:
     """A plug-in provider written before the method: it states nothing."""
 
@@ -520,9 +619,10 @@ class TestEachBuiltInStatesItsRun:
         facts = stated_by(provider, provider.fetch("260904-abcdefgh1"))
         assert facts == {
             "task_ids": {"/sample/id": "260904-abcdefgh1"},
-            # The task report's own platform beside the overview's target; the
-            # sample's completion is not this detonation's end.
-            "guest": {"behavioral1": {"target": "win10", "platform": "windows"}},
+            # The task report's own platform; the overview row's ``target`` and
+            # ``backend`` are no guest fact, and the sample's completion is not
+            # this detonation's end.
+            "guest": {"behavioral1": {"platform": "windows"}},
             "detonated": True,
             "report_parts": [
                 {"name": "overview", "sha256": _sha(overview), "bytes": len(overview)},
@@ -679,21 +779,16 @@ class TestWhatIsReadFromWhere:
         (row,) = detonations_record(_held(_record())) or []
         assert row["sandbox_commit"] == CAPE_COMMIT
 
-    def test_each_triage_task_states_its_own_guest_start_and_end(self) -> None:
+    def test_each_triage_task_states_its_own_guest_and_no_start_or_end(self) -> None:
         from tests.unit.providers.sandbox.test_triage_provider import _provider
 
-        overview = json.loads((FIX / "triage_overview.json").read_text(encoding="utf-8"))
-        second = dict(overview["tasks"][0], name="behavioral2", target="win7")
-        overview["tasks"].append(second)
+        # The overview a live API answered: ``resource`` and ``os`` name the
+        # machine, ``target`` the analysed file, ``backend`` the worker.
+        overview = (FIX / "triage_overview_dict_tasks.json").read_bytes()
         task = json.loads((FIX / "triage_report_behavioral1.json").read_text(encoding="utf-8"))
-        first_report = dict(task, task=dict(task["task"], started="10:01", completed="10:04"))
-        second_report = dict(
-            task, task=dict(task["task"], name="behavioral2", os="windows7-x64", arch="x64")
-        )
         bodies = {
-            "overview.json": json.dumps(overview).encode(),
-            "behavioral1/report_triage.json": json.dumps(first_report).encode(),
-            "behavioral2/report_triage.json": json.dumps(second_report).encode(),
+            "overview.json": overview,
+            "behavioral1/report_triage.json": json.dumps(task).encode(),
         }
 
         def handler(request: httpx.Request) -> httpx.Response:
@@ -703,23 +798,31 @@ class TestWhatIsReadFromWhere:
             return httpx.Response(404)
 
         provider = _provider(handler)
-        facts = stated_by(provider, provider.fetch("260904-abcdefgh1")) or {}
+        facts = stated_by(provider, provider.fetch("260907-slyq5axxbt")) or {}
         assert facts["guest"] == {
-            "behavioral1": {"target": "win10", "platform": "windows"},
-            "behavioral2": {
-                "target": "win7",
+            # The overview row's image and system; the task report's platform.
+            "behavioral1": {
+                "resource": "win10v2004-20260513-en",
+                "os": "windows10-2004-x64",
                 "platform": "windows",
-                "os": "windows7-x64",
-                "arch": "x64",
+            },
+            "behavioral2": {
+                "resource": "win11ltsc2024-20260709-en",
+                "os": "windows11-ltsc_2024-x64",
             },
         }
-        # Only the task whose report states them has a start and an end; the
-        # sample's own completion is no task's end.
-        assert facts["started"] == {"behavioral1": "10:01"}
-        assert facts["ended"] == {"behavioral1": "10:04"}
+        text = json.dumps(facts["guest"])
+        assert ".dll" not in text and "sbx4m" not in text
+        # No part states one detonation's start or end.
+        assert "started" not in facts and "ended" not in facts
+        # With the worker's held values registered, as in a run, the row keeps
+        # each image and system name as the sandbox wrote it.
+        from malspark.pipeline.events import remember_secret_values
+
+        remember_secret_values([password(20, variant=7)])
         (row,) = detonations_record(_held(_record(sandbox_facts=facts))) or []
-        assert row["started"] == {"behavioral1": "10:01"}
-        assert row["ended"] == {"behavioral1": "10:04"}
+        assert row["guest"] == facts["guest"]
+        assert row["started"] == NR and row["ended"] == NR
         assert row["sandbox_version"] == NR and row["sandbox_commit"] == NR
 
     def test_a_reader_that_cannot_say_leaves_the_report_read(self) -> None:
@@ -755,7 +858,7 @@ class TestWhatARowKeeps:
             sandbox_version=hostile,
             sandbox_commit=hostile,
             started=hostile,
-            ended={"task": hostile},
+            ended=hostile,
             report_parts=[{"name": hostile, "sha256": "0" * 64, "bytes": 1}],
         )
         record = _record(sandbox_facts=facts, provider=hostile, task_id=hostile, failure=hostile)
@@ -773,7 +876,7 @@ class TestWhatARowKeeps:
         for text in kept:
             assert len(text) <= STATED_TEXT_CHARS, text
             assert not any(unicodedata.category(ch).startswith("C") for ch in text), text
-        assert "`|<x>{y}" in row["sandbox_commit"] and row["ended"]["task"]
+        assert "`|<x>{y}" in row["sandbox_commit"] and row["ended"]
 
     def test_a_mapping_keeps_at_most_its_entry_cap(self) -> None:
         many = {f"id{n:02}": str(n) for n in range(STATED_ENTRIES + 8)}
@@ -793,7 +896,7 @@ class TestWhatARowKeeps:
         assert row["requested_by"] == ["static", "network"]
 
     def test_a_guest_per_task_is_kept_per_task(self) -> None:
-        guest = {"behavioral1": {"target": "win10", "os": "windows10"}, "flat": "x"}
+        guest = {"behavioral1": {"resource": "win10", "os": "windows10"}, "flat": "x"}
         (row,) = detonations_record(_held(_record(sandbox_facts=_facts(guest=guest)))) or []
         assert row["guest"] == guest
 

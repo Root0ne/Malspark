@@ -407,21 +407,20 @@ a run in mock mode). Each row gives:
 - `guest`: the machine the sample ran in, as the report names it. For a CAPE
   or Cuckoo report, the analysis machine's `name`, `label`, `platform`, `arch`
   and `manager` from `info.machine`, each where the report gives it. For
-  Triage, one entry per behavioural task, keyed by the task's name, with its
-  `target` (the machine image), `platform`, `os` and `arch`: those its row in
-  the overview's `tasks` names, and those its task report's `task` block names
-  over them.
+  Triage, one entry per behavioural task, keyed by the task's name, with
+  `resource` (the machine image), `os` (its operating system) and `platform`
+  (its family), each where a part states it: the task's row in the overview's
+  `tasks`, and the task report's `task` block over it. The analysed file
+  (`target`) and the sandbox's own worker (`backend`) are not the guest.
 - `sandbox_version` and `sandbox_commit`, the sandbox's build as the report
   gives it: a CAPE or Cuckoo report's `info.version`, and a CAPE report's
   `info.CAPE_current_commit`. No Triage part gives either.
 - `started` and `ended`, this detonation's start and end as the report gives
-  them, in the sandbox's own clock: no time zone is stated unless the report
-  writes one. For a CAPE or Cuckoo report, `info.started` and `info.ended`, the
-  sandbox host's local time. For Triage, one entry per behavioural task whose
-  task report states them, keyed by the task's name: the task report's
-  `task.started` and `task.completed`. A time that belongs to the whole sample
-  (Triage's `sample.created` and `sample.completed`) is no detonation's, and
-  is not recorded.
+  them, each one text, in the sandbox's own clock: no time zone is stated
+  unless the report writes one. For a CAPE or Cuckoo report, `info.started` and
+  `info.ended`, the sandbox host's local time. No Triage part states one
+  detonation's start or end (its `sample.created` and `sample.completed` belong
+  to the whole sample), so both read `not reported`.
 - `report_parts`: each raw report part as it was read, in reading order, with
   its `name` as the provider names it, its `sha256` and its length in `bytes`.
   CAPE's report is one part, `report`. Triage's are `overview` and each
@@ -443,8 +442,9 @@ states nothing: its rows give `provider`, `task_id`, `reported` and the launch
 as the run recorded them, and every other fact reads `not reported`. A provider
 that states a fact the report does not give leaves it out, and it reads
 `not reported` too, never a guess and never a value taken from another fact.
-A fact that cannot be read reads `not reported`, and the row keeps the
-platform's own fields: no detonation is left out.
+A field that cannot be read is left out of the row, and the row keeps its
+identity (`detonation`, `origin`, `provider` and `task_id`, each `not reported`
+where unreadable) and every other field: no detonation is left out.
 
 What a provider or its sandbox wrote is kept to the keys above, and a key
 outside them is not recorded. It is capped: 200 characters a text, 32 entries
@@ -452,9 +452,12 @@ a mapping, 64 parts. A text is cut to 400 characters before anything else is
 done with it, and where that cut falls inside a word, none of the word is
 kept. Each text is put on one line
 without control characters, a URL loses its credentials and any secret-named
-query value, a secret value the worker holds is masked, and a path of the
-worker's host is shown from the project root or as outside it. Task URLs are
-not recorded.
+query value, a secret value the worker holds and a text shaped like a
+credential are masked (the masking the run summary's other rows use), and a
+path of the worker's host is shown from the project root or as outside it. A
+key and its value are read once more as one text, and where that hides
+something neither half shows (a URL's user and password split across them),
+both read `***`. Task URLs are not recorded.
 
 The block carries `v`, its shape version (3). Throughout it, a fact nobody read
 is `not reported`, followed after a colon by the reason where one is known.
