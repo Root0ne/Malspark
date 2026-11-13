@@ -675,7 +675,10 @@ sandbox, before that step's own work, through the same submission path the job's
 own detonation takes. The step claims it under the job's lock: a step entering
 while it is in flight waits for it and reads its result, so one request is
 submitted once. Its record exists from its start (running) and its upload row
-from the moment the submission is made, and a cancel of the job stops it. The
+from the moment the submission is made. A cancel of the job while a detonation
+is in flight ends the wait at once and closes its record, the cancel named as
+its failure; the provider's own poll of the sandbox ends at its own deadline,
+and its result is discarded. The
 graph has no node of its own for it: the detonation is recorded with the step
 it ran on entry of and its own start, end and duration, and announced with
 `detonation_started` and `detonation_finished` events, so its time can be taken
@@ -703,7 +706,17 @@ the platform reads it as the triage pack reads the job's own (processes,
 network, signatures, dropped files, channels and the section index), as the
 pack's entries stating the detonation and its launch, so its item ids are known
 to every citation check and what it observed reaches the report whether or not
-an agent read it. In the report, a later detonation's reads are in tables of
+an agent read it. Every agent after it and the reporter see those entries in
+the pack: the job's own lines first, in the pack's whole bound as they would
+be alone, then the later detonations' lines in a room of their own of the same
+bound (so the pack is at most twice its bound), each line beginning
+"detonation 2, launched with `<args>`" and every item id in it qualified
+(`d2/proc:9`). An entry is a later detonation's only where the platform recorded
+it (its own read of a detonation that came back, or a call of its in-process
+sandbox source) and names the detonation in the qualified form; a tool answer
+that only holds a `detonation` key is the tool's own. The launch arguments are
+written on one line on every surface, their back-ticks, angle brackets and table
+pipes written as escapes, cut at 200 characters; the record keeps them whole. In the report, a later detonation's reads are in tables of
 their own, titled "… when launched with `<args>` (detonation 2, asked for by
 `<agent>` citing `<entries>`)", and the report's composer is shown each later
 detonation apart under the same title. The job's own process tree, registry and
@@ -714,9 +727,10 @@ each). The IOC table's rows and the published techniques a later detonation's
 signatures tag carry it as well; the Markdown and analyst reports say "observed
 in detonation 2, launched with `<args>`"; the STIX export carries
 `x_malspark_observed_in` on each such indicator, with the same clause after its
-description, and on the sample's `uses` edge to such a technique; the MISP
-attributes say it in their comment, and the ATT&CK layer in an `observed in`
-metadata row. A row only the job's own detonation observed carries none of it.
+description, on the sample's `uses` edge to such a technique, on each
+cyber-observable stating such a value and on the observed-data naming one; the
+`/iocs` feed serves it as `observed_in` on each such row; the MISP attributes say
+it in their comment, and the ATT&CK layer in an `observed in` metadata row. A row only the job's own detonation observed carries none of it.
 A generated launcher's own processes, flows, signatures and files never enter
 these rows. An agent's claim citing a later detonation's entry reaches the report
 as any claim does, with its citation. The disclosure block
