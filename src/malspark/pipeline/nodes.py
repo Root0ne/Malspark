@@ -7293,6 +7293,14 @@ def make_judge_node(
             _launch = launch_arguments_reason(getattr(container, "launch_record", None))
             if _launch and _launch not in _degradation_reasons:
                 _degradation_reasons.append(_launch)
+            # Further detonations agents asked for that were not carried out:
+            # limitations, never a tentative verdict (``pipeline.detonations``).
+            from malspark.pipeline.detonations import further_detonation_reasons
+
+            _detonation_notes = further_detonation_reasons(container)
+            _degradation_reasons.extend(
+                r for r in _detonation_notes if r not in _degradation_reasons
+            )
             # A container we accept but cannot open. A .docm reaches here
             # legitimately — macro documents are among the commonest Windows
             # carriers, so rejecting them would be wrong — but the only analysis
@@ -7447,6 +7455,7 @@ def make_judge_node(
             _informational: list[str] = []
             with suppress(Exception):
                 _informational = informational_reasons_in_force(isr_reports)
+            _informational.extend(r for r in _detonation_notes if r not in _informational)
             _degraded_mode = run_is_degraded(
                 _degradation_reasons, informational=_informational, facts=_sample_facts
             )
