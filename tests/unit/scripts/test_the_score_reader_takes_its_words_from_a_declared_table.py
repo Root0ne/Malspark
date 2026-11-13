@@ -50,7 +50,8 @@ TABLE: dict[str, Any] = {
     "credited_from": "partial",
     "outside_denominator": ["under adjudication", "does not hold for this file", "unknown"],
     "aliases": {"partly found": "partial"},
-    "annotations": ["from the evidence bundle"],
+    "annotations": {"from the evidence bundle": ["partial", "found"]},
+    "roles": {"missed": "missed", "wrong": "wrong"},
     "key_folder": "not read by the reader",
 }
 OUTSIDE = ("under adjudication", "does not hold for this file", "unknown")
@@ -395,44 +396,56 @@ def test_an_annotation_after_a_verdict_is_kept_beside_the_item(
         "G-001": "partial from the evidence bundle",
         "G-002": "Found (from the evidence bundle)",
         "G-003": "partly found, from the evidence bundle",
-        "G-004": "missed from the evidence bundle",
-        "G-005": "found",
+        "G-004": "found",
     }
     run = read_key_score(_score(verdicts, tmp_path), rules)
     assert {k: v for k, (_, v) in run.verdicts.items()} == {
         "G-001": "partial",
         "G-002": "found",
         "G-003": "partial",
-        "G-004": "missed",
-        "G-005": "found",
+        "G-004": "found",
     }
-    assert run.annotations == {k: (BUNDLE,) for k in ("G-001", "G-002", "G-003", "G-004")}
-    # only credited items count: G-004 is missed
+    assert run.annotations == {k: (BUNDLE,) for k in ("G-001", "G-002", "G-003")}
     assert run.annotation_counts() == {BUNDLE: 3}
     assert read_key_score(_score({"G-001": "found"}, tmp_path, "b"), rules).annotation_counts() == {
         BUNDLE: 0
     }
 
 
-def test_an_undeclared_word_after_a_verdict_is_still_an_error(
-    tmp_path: Path, rules: ScoringRules
-) -> None:
-    for cell in (
+@pytest.mark.parametrize(
+    "cell",
+    [
+        "missed from the evidence bundle",
+        "wrong (from the evidence bundle)",
         "partial maybe",
         "partial from the evidence bundle too",
         "from the evidence bundle",
-    ):
-        path = _score({"G-001": "found", "G-002": cell}, tmp_path, "r")
-        with pytest.raises(ScoreFileError, match=r"G-002"):
-            read_key_score(path, rules)
-    # an outside state takes no annotation, and a table with none declares none
-    path = _score({"G-001": "found", "G-002": "unknown from the evidence bundle"}, tmp_path, "r2")
-    with pytest.raises(ScoreFileError, match="G-002"):
+        "unknown from the evidence bundle",
+        "found from the evidence bundle, from the evidence bundle",
+        "found from the evidence bundle from the evidence bundle",
+    ],
+)
+def test_an_annotation_where_the_table_does_not_allow_it_is_an_error(
+    tmp_path: Path, rules: ScoringRules, cell: str
+) -> None:
+    path = _score({"G-001": "found", "G-002": cell}, tmp_path, "r")
+    with pytest.raises(ScoreFileError, match=r"G-002"):
         read_key_score(path, rules)
-    bare = rules_from_dict({**TABLE, "name": "bare", "annotations": []})
-    path = _score({"G-001": "found", "G-002": "partial from the evidence bundle"}, tmp_path, "r3")
+
+
+def test_an_annotation_stands_only_after_the_verdicts_named_for_it(tmp_path: Path) -> None:
+    only_top = rules_from_dict({**TABLE, "name": "top", "annotations": {BUNDLE: ["found"]}})
+    ok = _score({"G-001": "found from the evidence bundle"}, tmp_path, "a")
+    assert read_key_score(ok, only_top).annotation_counts() == {BUNDLE: 1}
+    bad = _score({"G-001": "found", "G-002": "partial from the evidence bundle"}, tmp_path, "b")
     with pytest.raises(ScoreFileError, match="G-002"):
-        read_key_score(path, bare)
+        read_key_score(bad, only_top)
+    bare = rules_from_dict({**TABLE, "name": "bare", "annotations": {}})
+    with pytest.raises(ScoreFileError, match="G-002"):
+        read_key_score(
+            _score({"G-001": "found", "G-002": "partial from the evidence bundle"}, tmp_path, "c"),
+            bare,
+        )
 
 
 def test_a_blind_sheet_carries_annotations_too(tmp_path: Path, rules: ScoringRules) -> None:
@@ -452,15 +465,26 @@ def test_a_blind_sheet_carries_annotations_too(tmp_path: Path, rules: ScoringRul
 
 
 def test_annotations_must_not_be_words_of_the_rules() -> None:
-    with pytest.raises(ScoreFileError, match="annotation"):
-        rules_from_dict({**TABLE, "annotations": ["unknown"]})
-    with pytest.raises(ScoreFileError, match="annotation"):
-        rules_from_dict({**TABLE, "annotations": [BUNDLE, BUNDLE]})
+    for bad in (
+        {"unknown": ["found"]},
+        {BUNDLE: ["found"], " From the evidence bundle ": ["found"]},
+        {BUNDLE: []},
+        {BUNDLE: ["unknown"]},
+    ):
+        with pytest.raises(ScoreFileError, match="annotation"):
+            rules_from_dict({**TABLE, "annotations": bad})
+    with pytest.raises(ScoreFileError, match="role"):
+        rules_from_dict({**TABLE, "roles": {"wrong": "lost"}})
 
 
 # --------------------------------------------------------------- agreement
 
-THREE = {**TABLE, "name": "three-words", "verdicts": ["missed", "partial", "found"]}
+THREE = {
+    **TABLE,
+    "name": "three-words",
+    "verdicts": ["missed", "partial", "found"],
+    "roles": {"missed": "missed"},
+}
 
 # six units, two scorers; u5 and u6 hold a state that is no verdict
 R1 = {
@@ -543,3 +567,117 @@ def test_the_agreement_command_takes_a_table(
     out = capsys.readouterr().out
     assert "Scale (worst first): missed < partial < found" in out and "2 of 6 pairs left out" in out
     assert blind_main(["agreement", *sheets]) == 2
+
+
+# ------------------------------------------------------------ the registry
+
+
+def test_a_name_is_registered_with_one_content_only() -> None:
+    first = rules_from_dict({**TABLE, "name": "reg-a", "credited_from": "partial"})
+    first.register()
+    first.register()
+    for change in (
+        {"credited_from": "found"},
+        {"aliases": {}},
+        {"annotations": {}},
+        {"roles": {"missed": "missed"}},
+        {"outside_denominator": ["unknown"]},
+    ):
+        other = rules_from_dict({**TABLE, "name": "reg-a", **change})
+        with pytest.raises(ScoreFileError, match="declared twice, differently"):
+            other.register()
+
+
+def test_the_built_in_name_belongs_to_the_built_in_rules() -> None:
+    KEY_RULES.register()
+    rebuilt = rules_from_dict(KEY_RULES.as_dict())
+    rebuilt.register()
+    taken = rules_from_dict(
+        {
+            "name": KEY,
+            "verdicts": list(KEY_RULES.scale),
+            "credited_from": "partly (dump)",
+            "outside_denominator": ["unknown"],
+        }
+    )
+    with pytest.raises(ScoreFileError, match="declared twice, differently"):
+        taken.register()
+    from scripts.benchmark.scores import OUTSIDE
+
+    assert KEY not in OUTSIDE or OUTSIDE[KEY] == ()
+
+
+# ------------------------------------------------------------ roles and the agreement
+
+
+def test_leaving_out_wrong_needs_a_wrong_role(rules: ScoringRules, rules3: ScoringRules) -> None:
+    ratings = {"a": {"u1": "found", "u2": "wrong"}, "b": {"u1": "found", "u2": "missed"}}
+    assert agreement(ratings, rules=rules, leave_out_wrong=True)["verdicts"]["pairs"]["a / b"]
+    with pytest.raises(AgreementError, match="no verdict in the role wrong"):
+        agreement({"a": {"u1": "found"}, "b": {"u1": "found"}}, rules=rules3, leave_out_wrong=True)
+    assert KEY_RULES.roles == {"missed": "missed", "wrong": "wrong"}
+
+
+# --------------------------------------------------------------- the gate
+
+
+def test_an_item_left_out_of_some_runs_is_decided_over_the_runs_that_counted_it(
+    tmp_path: Path, rules: ScoringRules
+) -> None:
+    mixed = {"G-001": "found", "G-002": "found"}
+    runs = [
+        read_key_score(_score({**mixed, "G-002": "found"}, tmp_path, "a"), rules),
+        read_key_score(_score({**mixed, "G-002": "unknown"}, tmp_path, "b"), rules),
+        read_key_score(_score({**mixed, "G-002": "unknown"}, tmp_path, "c"), rules),
+    ]
+    result = gating.score_arm(gating.arm(runs))  # m is a majority: 2 of 3
+    assert result["items"]["G-001"]["verdict"] == "found"
+    assert result["items"]["G-002"]["verdict"] == "found"  # one counted run, m capped at it
+    assert result["items"]["G-002"]["outside_runs"] == 2
+    assert result["totals"]["partly_outside"] == 1 and "outside" not in result["totals"]
+    assert "1 items left out of some runs' denominators" in gating.render_arm(result)
+    # an item no run counted is not reached and is left out of the totals
+    gone = [read_key_score(_score({"G-001": "unknown"}, tmp_path, n), rules) for n in "de"]
+    assert gating.score_arm(gating.arm(gone))["totals"]["outside"] == 1
+
+
+# ------------------------------------------- stored score files, read by dev's reader
+
+
+def test_stored_score_files_read_to_what_dev_s_reader_read() -> None:
+    golden = json.loads((FIXTURES / "stored-scores-before-rules.json").read_text(encoding="utf-8"))
+    root = Path(__file__).resolve().parents[3]
+    # the stored runs live in a main checkout's ignored folders; beside this worktree or above it
+    main = next((c for c in (root, *root.parents) if (c / ".superpowers").is_dir()), None)
+    if main is None:
+        pytest.skip("the stored score files are not present")
+    import hashlib
+
+    checked = 0
+    for rel, entry in golden.items():
+        path = main / rel
+        if not path.is_file() or hashlib.sha256(path.read_bytes()).hexdigest() != entry["sha256"]:
+            continue
+        checked += 1
+        if "refused" in entry:
+            with pytest.raises(ScoreFileError) as caught:
+                read_scored(path)
+            assert str(caught.value).replace(str(path), rel) == entry["refused"], rel
+            continue
+        got = read_scored(path)
+        want = entry["read"]
+        assert {k: list(v) for k, v in got.verdicts.items()} == want["verdicts"], rel
+        assert got.labels == want["labels"] and got.beyond == want["beyond"], rel
+        assert (got.beyond_note, got.column, got.totals_note) == (
+            want["beyond_note"],
+            want["column"],
+            want["totals_note"],
+        ), rel
+        assert (got.earlier_runs, got.earlier_runs_note) == (
+            want["earlier_runs"],
+            want["earlier_runs_note"],
+        ), rel
+        assert {k: v.tag for k, v in got.provenance.items()} == want["provenance"], rel
+        assert got.provenance_note == want["provenance_note"], rel
+    if not checked:
+        pytest.skip("none of the stored score files is present")

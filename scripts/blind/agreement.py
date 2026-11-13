@@ -32,8 +32,9 @@ the words, the ordinal order and the credited threshold are the table's, not the
 A rating in a state that is no verdict (under adjudication, unknown, ...) is no rating of the
 item: a pair in which either rater's cell is such a state is left out of every statistic, and
 the output counts, per state, the pairs left out (a pair with a different state on each side
-counts under both) and each rater's ratings in each state. ``--leave-out-wrong`` applies only
-when the table has a verdict word ``wrong``. Without a table everything is as described above.
+counts under both) and each rater's ratings in each state. ``--leave-out-wrong`` needs a
+verdict in the table's role ``wrong`` and is refused without one.
+Without a table everything is as described above.
 
 Standard library only.
 """
@@ -52,6 +53,7 @@ from scripts.benchmark.scores import (
     CREDITED,
     KEY,
     KEY_ALIASES,
+    KEY_RULES,
     SCALES,
     ScoreFileError,
     ScoringRules,
@@ -62,7 +64,7 @@ from scripts.benchmark.scores import (
 SCALE: tuple[str, ...] = SCALES[KEY]
 CREDITED_FROM: int = SCALE.index(CREDITED[KEY])
 COLLAPSED: tuple[str, ...] = ("not credited", "credited")
-WRONG = SCALE[0]
+WRONG = KEY_RULES.roles["wrong"]
 BEYOND_ROW = "beyond_human"
 
 # rater -> unit -> verdict (a missing rating is absent)
@@ -340,11 +342,16 @@ def _confusion(pairs: list[tuple[str, str]], categories: tuple[str, ...]) -> dic
 
 
 def analyse(
-    ratings: Ratings, categories: tuple[str, ...], *, ordered: bool, leave_out_wrong: bool
+    ratings: Ratings,
+    categories: tuple[str, ...],
+    *,
+    ordered: bool,
+    leave_out_wrong: bool,
+    wrong: str | None = WRONG,
 ) -> dict[str, Any]:
     """Every statistic of one view of the ratings (``categories`` worst first)."""
     names = sorted(ratings)
-    drop = leave_out_wrong and WRONG in categories
+    drop = leave_out_wrong and wrong in categories
     out: dict[str, Any] = {"categories": list(categories), "raters": names, "pairs": {}}
     pooled: list[tuple[str, str]] = []
     for first, second in combinations(names, 2):
@@ -364,8 +371,8 @@ def analyse(
             ],
         }
         if ordered:
-            kept = [p for p in pairs if not (drop and WRONG in p)]
-            order = tuple(c for c in categories if not (drop and c == WRONG))
+            kept = [p for p in pairs if not (drop and wrong in p)]
+            order = tuple(c for c in categories if not (drop and c == wrong))
             entry["weighted_kappa"] = weighted_kappa(kept, order)
             entry["weighted_kappa"]["left_out_wrong"] = len(pairs) - len(kept)
             entry["weighted_kappa"]["units"] = [
@@ -378,10 +385,10 @@ def analyse(
     out["krippendorff_alpha_nominal"] = krippendorff_alpha(ratings, categories, ordinal=False)
     if ordered:
         kept_ratings = {
-            r: {u: w for u, w in given.items() if not (drop and w == WRONG)}
+            r: {u: w for u, w in given.items() if not (drop and w == wrong)}
             for r, given in ratings.items()
         }
-        order = tuple(c for c in categories if not (drop and c == WRONG))
+        order = tuple(c for c in categories if not (drop and c == wrong))
         alpha = krippendorff_alpha(kept_ratings, order, ordinal=True)
         alpha["left_out_wrong_ratings"] = sum(map(len, ratings.values())) - sum(
             map(len, kept_ratings.values())
@@ -432,8 +439,10 @@ def agreement(
         raise AgreementError("name at least two raters")
     extra: dict[str, Any] = {}
     scale, credited_from = SCALE, CREDITED_FROM
+    wrong: str | None = WRONG
     if rules is not None:
         scale = rules.scale
+        wrong = rules.roles.get("wrong")
         credited_from = scale.index(rules.credited_from) if rules.credited_from else len(scale)
         extra = {
             "scoring_rules": rules.name,
@@ -446,19 +455,25 @@ def agreement(
             if not g:
                 raise AgreementError(f"{r}: every rating is in a state that is no verdict")
         ratings = kept
+    if leave_out_wrong and wrong is None:
+        raise AgreementError(
+            "--leave-out-wrong: the scoring rules declare no verdict in the role wrong"
+        )
     return {
         **extra,
         "scale": list(scale),
         "ordinal_order": " < ".join(scale),
         "wrong_handling": (
-            "the table has no verdict word wrong"
-            if WRONG not in scale
+            "the table declares no verdict in the role wrong"
+            if wrong is None
             else "the verdict view's ordinal statistics leave out every rating of wrong"
             if leave_out_wrong
             else "wrong is its own nominal class and the lowest ordinal rank"
         ),
         "items_rated": {r: len(given) for r, given in sorted(ratings.items())},
-        "verdicts": analyse(ratings, scale, ordered=True, leave_out_wrong=leave_out_wrong),
+        "verdicts": analyse(
+            ratings, scale, ordered=True, leave_out_wrong=leave_out_wrong, wrong=wrong
+        ),
         "collapsed": analyse(
             _collapse(ratings, scale, credited_from), COLLAPSED, ordered=True, leave_out_wrong=False
         ),

@@ -53,6 +53,7 @@ import json
 import re
 from collections import Counter
 from dataclasses import dataclass, field
+from functools import cached_property
 from pathlib import Path
 from typing import Any
 
@@ -123,8 +124,12 @@ class ScoringRules:
     outside: tuple[str, ...] = ()
     # A spelling -> the verdict word it means.
     aliases: dict[str, str] = field(default_factory=dict)
-    # Words that may follow a verdict in a cell and are kept beside it, never read as a verdict.
-    annotations: tuple[str, ...] = ()
+    # Words that may follow a verdict in a cell and are kept beside it, never read as a verdict:
+    # each with the verdicts it may follow (after any other word it is refused).
+    annotations: dict[str, tuple[str, ...]] = field(default_factory=dict)
+    # The verdict words that play a role a statistic needs ("missed", "wrong"); a role the
+    # rules lack is not applicable, and no statistic names a word for it.
+    roles: dict[str, str] = field(default_factory=dict)
     # The rest of the table (key folder, digest, quotes): never read by the reader.
     extra: dict[str, Any] = field(default_factory=dict, compare=False)
 
@@ -154,6 +159,7 @@ class ScoringRules:
         for spelling in spellings:
             if not text.startswith(spelling) or text[len(spelling) :][:1].isalnum():
                 continue
+            verdict = self.aliases.get(spelling, spelling)
             rest, held = text[len(spelling) :].strip(_JOINERS), []
             while rest:
                 note = next(
@@ -164,19 +170,26 @@ class ScoringRules:
                     ),
                     None,
                 )
-                if note is None:
-                    break
+                # an annotation stands only after the verdicts the table names for it, once
+                if note is None or note in held or verdict not in self.annotations[note]:
+                    return None
                 held.append(note)
                 rest = rest[len(note) :].strip(_JOINERS)
-            if not rest and held:
-                return self.aliases.get(spelling, spelling), tuple(held)
+            if held:
+                return verdict, tuple(held)
         return None
 
     def register(self) -> None:
-        """Make the scale known to ``SCALES``, ``CREDITED`` and ``OUTSIDE``, once per name."""
-        held = SCALES.setdefault(self.scale_id, self.scale)
-        if held != self.scale or OUTSIDE.setdefault(self.scale_id, self.outside) != self.outside:
+        """Make the scale known to ``SCALES``, ``CREDITED`` and ``OUTSIDE``.
+
+        A name is registered once: the same name with any other content is refused, and the
+        name of the built-in scale belongs to the built-in rules.
+        """
+        held = _REGISTERED.setdefault(self.scale_id, self.as_dict())
+        if held != self.as_dict():
             raise ScoreFileError(f"scoring rules {self.name!r} are declared twice, differently")
+        SCALES.setdefault(self.scale_id, self.scale)
+        OUTSIDE.setdefault(self.scale_id, self.outside)
         if self.credited_from is not None:
             CREDITED.setdefault(self.scale_id, self.credited_from)
 
@@ -187,11 +200,21 @@ class ScoringRules:
             "credited_from": self.credited_from,
             "outside_denominator": list(self.outside),
             "aliases": dict(self.aliases),
-            "annotations": list(self.annotations),
+            "annotations": {a: list(v) for a, v in self.annotations.items()},
+            "roles": dict(self.roles),
         }
 
 
-KEY_RULES = ScoringRules(KEY, SCALES[KEY], CREDITED[KEY], (), KEY_ALIASES)
+KEY_RULES = ScoringRules(
+    KEY,
+    SCALES[KEY],
+    CREDITED[KEY],
+    (),
+    KEY_ALIASES,
+    roles={"missed": "missed", "wrong": "wrong"},
+)
+# The registered scales' tables by scale id; the built-in scale is registered as it stands.
+_REGISTERED: dict[str, dict[str, Any]] = {KEY: KEY_RULES.as_dict()}
 
 
 def _words(where: str, value: Any, what: str) -> tuple[str, ...]:
@@ -227,10 +250,34 @@ def rules_from_dict(data: Any, where: str = "scoring rules") -> ScoringRules:
                 f"{where}: the alias {spelling!r} -> {meant!r} must name a verdict word "
                 "and may not be a word itself"
             )
-    notes = _words(where, data.get("annotations", []), "'annotations'")
-    if set(notes) & set(every) or len(set(notes)) != len(notes):
-        raise ScoreFileError(f"{where}: an annotation is a word of the rules or is declared twice")
-    known = {"name", "verdicts", "credited_from", "outside_denominator", "aliases", "annotations"}
+    declared = data.get("annotations") or {}
+    if not isinstance(declared, dict):
+        raise ScoreFileError(f"{where}: 'annotations' is not an object of verdict lists")
+    notes: dict[str, tuple[str, ...]] = {}
+    for note, after in declared.items():
+        word = _plain(str(note)).casefold()
+        follows = _words(where, after, f"the verdicts annotation {note!r} may follow")
+        if word in every or word in notes or not follows or not set(follows) <= set(scale):
+            raise ScoreFileError(
+                f"{where}: annotation {note!r} is a word of the rules, is declared twice, or "
+                "names no verdict of the table it may follow"
+            )
+        notes[word] = follows
+    roles = data.get("roles") or {}
+    if not isinstance(roles, dict) or not set(roles) <= {"missed", "wrong"}:
+        raise ScoreFileError(f"{where}: 'roles' is an object of 'missed' and 'wrong'")
+    held = {k: _plain(str(v)).casefold() for k, v in roles.items()}
+    if not set(held.values()) <= set(scale):
+        raise ScoreFileError(f"{where}: a role names a word that is no verdict of the table")
+    known = {
+        "name",
+        "verdicts",
+        "credited_from",
+        "outside_denominator",
+        "aliases",
+        "annotations",
+        "roles",
+    }
     return ScoringRules(
         data["name"],
         scale,
@@ -238,6 +285,7 @@ def rules_from_dict(data: Any, where: str = "scoring rules") -> ScoringRules:
         outside,
         folded,
         notes,
+        held,
         {k: v for k, v in data.items() if k not in known},
     )
 
@@ -282,9 +330,9 @@ class ScoredRun:
     # item key -> the declared annotations its cell carried (only items that carried any).
     annotations: dict[str, tuple[str, ...]] = field(default_factory=dict)
 
-    @property
+    @cached_property
     def outside(self) -> dict[str, str]:
-        """Each item that is no verdict and leaves the denominator, with its state."""
+        """Each item that is no verdict and leaves the denominator, with its state (read once)."""
         states = self.rules.outside if self.rules else ()
         return {k: v for k, (_, v) in self.verdicts.items() if v in states and v is not None}
 
@@ -389,9 +437,10 @@ def _name(path: Path) -> str:
 def read_key_score(path: Path, rules: ScoringRules | None = None) -> ScoredRun:
     """A key score file's item verdicts and beyond-human count, checked against its own totals.
 
-    With ``rules`` the verdict column is the first whose cells are all words of
-    the rules, the totals line (which the rules do not describe) is not checked,
-    and the run carries the rules, so its denominator and counts follow them.
+    With ``rules`` the verdict column is the first one that holds a word of the
+    rules, every cell of which must then be one; the totals line, which the rules
+    do not describe, is not checked; and the run carries the rules, so its
+    denominator and counts follow them.
     """
     path = Path(path)
     if rules is not None:

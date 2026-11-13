@@ -36,14 +36,24 @@ A key may declare its own scoring rules, and `--rules RULES.json` (on `score` an
 object: `name`; `verdicts`, the verdict words from worst to best; `credited_from`,
 the lowest word the totals credit; `outside_denominator`, the states that are no
 verdict and leave the denominator (an item under adjudication, one that does not
-hold for the file); `aliases`, spellings that mean a verdict word; and
-`annotations`, words that may follow a verdict in a cell (a statement found only in
-the evidence bundle), which the run keeps beside the item and counts per annotation
-over its credited items. Any other field is kept and never read. A word the table does not hold, and a word after a verdict that is not a declared
-annotation, is refused, naming the row and the word, and is never mapped to another. A run read by a table says its
-denominator and what left it, and the gate leaves an item out of its totals when
-every run left it out. Without `--rules` the scale is the one above and nothing
-else changes.
+hold for the file); `aliases`, spellings that mean a verdict word; `annotations`,
+each a word that may follow a verdict in a cell (a statement found only in the
+evidence bundle) with the verdicts it may follow; and `roles`, the verdicts that
+play the part of `missed` and `wrong` for a statistic that needs one. An
+annotation is kept beside the item and counted per run over the credited items
+that carry it; it is refused after any other verdict, and when it is repeated in
+one cell. Any other field is kept and never read. A name is registered with one
+content only, and the name of the built-in scale belongs to the built-in rules.
+
+A word the table does not hold, and a word after a verdict that is not a declared
+annotation, is refused, naming the row and the word, and is never mapped to another.
+With `--rules` the Totals line of a key score is not checked, since the rules do not
+describe it. A run read by a table says its denominator and what left it. The gate
+leaves an item out of its totals when every run left it out; an item that some runs
+left out is decided over the runs that counted it (the number of runs it must reach
+is capped at their count) and is counted on its own line, "items left out of some
+runs' denominators". Without `--rules` the scale is the one above and nothing else
+changes.
 
 An item is keyed by its code (`K3.2`, `K7 17`, `K10 T1027`). Where a label has
 no code, the key is the whole label in one case, with its runs of spaces read
