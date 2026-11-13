@@ -599,6 +599,26 @@ class TestTheManifest:
         assert row["version"] == "7.4"
         assert time.monotonic() - started < 0.7
 
+    def test_two_tools_declaring_one_binary_name_are_read_by_the_first_declaration(self) -> None:
+        def _quick() -> str:
+            time.sleep(0.2)
+            return "7.5"
+
+        def _slow() -> str:
+            time.sleep(3)
+            return "9.9"
+
+        needs = [
+            ToolNeeds("a", (binary("t668twin", lambda *a: None, version_of=_quick),)),
+            ToolNeeds("b", (binary("t668twin", lambda *a: None, version_of=_slow),)),
+        ]
+        started = time.monotonic()
+        (row,) = capabilities.answered_manifest(manifest("x", needs, requirements=False), needs)[
+            "requirements"
+        ]
+        assert row["version"] == "7.5"
+        assert time.monotonic() - started < 1.2
+
     def test_a_third_party_s_requirements_are_reduced_typed_and_capped(self) -> None:
         junk = "j" * 100_000
         payload = {

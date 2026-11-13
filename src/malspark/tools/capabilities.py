@@ -1202,12 +1202,12 @@ def answered_manifest(held: Mapping[str, Any], tools: list[ToolNeeds]) -> dict[s
         if row.get("version") == NOT_READ_YET
     }
     if unread:
-        binaries = {
-            (req.kind, req.name): req
-            for tool in tools
-            for req in tool.requires
-            if req.kind == "binary" and (req.kind, req.name) in unread
-        }
+        # The first declaration of a name, the one ``requirement_facts`` read.
+        binaries: dict[tuple[str, str], Requirement] = {}
+        for tool in tools:
+            for req in tool.requires:
+                if req.kind == "binary" and (req.kind, req.name) in unread:
+                    binaries.setdefault((req.kind, req.name), req)
         _await_versions({req._version_key(None) for req in binaries.values()}, deadline)
         for name, req in binaries.items():
             unread[name]["version"] = req._version(None, wait=False)
