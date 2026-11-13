@@ -868,6 +868,7 @@ def validate_isr(
     weak_alignment_challenges: bool = False,
     items: ItemIndex | None = None,
     issued: int | None = None,
+    claim_sentences: bool = False,
 ) -> list[Violation]:
     """What is wrong with one analyst's structured answer.
 
@@ -982,7 +983,7 @@ def validate_isr(
                 violations.append(
                     unissued_evidence_violation(never, int(issued or 0), path=block_path)
                 )
-        if first_of_block and attck is not None:
+        if claim_sentences and first_of_block and attck is not None:
             carried = {
                 str(getattr(other, "technique_id", "") or "").strip().upper()
                 for other, at in zip(claims, blocks, strict=True)
@@ -2677,7 +2678,10 @@ def mapped_technique_violations(
     claim's technique — whether the catalogue knows it, whether its sentence
     reads as absence, whether the sample can host it and whether its sentence
     describes it — by that function, keeping only those findings
-    (:data:`MAPPED_TECHNIQUE_CODES`). Empty when every check passes.
+    (:data:`MAPPED_TECHNIQUE_CODES`). The reason is no claim sentence of the
+    judge's (``claim_sentences=False``): another id it names, a tool's tag or
+    a retired id quoted beside the mapped one, is not asked. Empty when every
+    check passes.
     """
     from malspark.schemas.isr_models import AgentISR, ClaimEvidence
 
@@ -2723,7 +2727,9 @@ def mapped_technique_violations(
     isr = AgentISR(agent_id="judge", domain="judge", claims=[claim], revision_round=0)
     return [
         violation
-        for violation in validate_isr(isr, attck=attck, ledger_ids=sorted(held), sample=sample)
+        for violation in validate_isr(
+            isr, attck=attck, ledger_ids=sorted(held), sample=sample, claim_sentences=False
+        )
         if violation.code in MAPPED_TECHNIQUE_CODES
     ]
 
@@ -15120,6 +15126,7 @@ def analyst_answer_checks(
             weak_alignment_challenges=weak_alignment_challenges,
             items=inputs.items,
             issued=inputs.issued,
+            claim_sentences=True,
         ),
     ]
 

@@ -3,7 +3,8 @@
 The id on a claim's TECHNIQUE line is asked whether the catalogue knows it and
 whether it can apply to the sample's platform. An id the claim's sentence
 names beside the line is asked the same two questions, once per block and id,
-on a path that names the sentence (``claims[N].text.<id>``). It is not asked
+on a path that names the sentence (``claims[N].text.<id>``), where the caller
+says the text is a claim's sentence (``claim_sentences``). It is not asked
 whether the sentence describes it: a sentence names ids as metadata, headings
 and associations it does not assert. An id the sentence negates, and an id the
 block's TECHNIQUE line carries, are not asked here. A sentence id never marks
@@ -74,6 +75,7 @@ def _found(*claims: ClaimEvidence, attck: Any = None) -> list[Any]:
         ledger_ids=["ev_0001"],
         sample=WINDOWS,
         issued=1,
+        claim_sentences=True,
     )
 
 
@@ -120,18 +122,34 @@ class TestTheSentenceIds:
         isr = AgentISR(agent_id="static", domain="static", claims=[_claim("It is T1999.")])
 
         assert (
-            _sentence(validate_isr(isr, attck=None, ledger_ids=["ev_0001"], sample=WINDOWS)) == []
+            _sentence(
+                validate_isr(
+                    isr, attck=None, ledger_ids=["ev_0001"], sample=WINDOWS, claim_sentences=True
+                )
+            )
+            == []
         )
 
     def test_a_sentence_id_never_marks_the_claim_s_own_technique(self) -> None:
         claim = _claim("It hides its strings, unlike T1999.", technique="T1027")
         isr = AgentISR(agent_id="static", domain="static", claims=[claim])
-        found = validate_isr(isr, attck=_Attck(), ledger_ids=["ev_0001"], sample=WINDOWS)
+        found = validate_isr(
+            isr, attck=_Attck(), ledger_ids=["ev_0001"], sample=WINDOWS, claim_sentences=True
+        )
 
         settle_validation_marks(isr, found)
 
         assert _sentence(found) == [(VALIDITY_CODE, "static.claims[0].text.T1999", "T1999")]
         assert claim.technique_id_valid is not False
+
+    def test_a_caller_with_no_claim_sentence_is_asked_nothing_of_one(self) -> None:
+        isr = AgentISR(agent_id="judge", domain="judge", claims=[_claim("It is T1999 (T1000).")])
+
+        found = validate_isr(
+            isr, attck=_Attck(), ledger_ids=["ev_0001"], sample=WINDOWS, claim_sentences=False
+        )
+
+        assert _sentence(found) == []
 
 
 # ---------------------------------------------------------------------------

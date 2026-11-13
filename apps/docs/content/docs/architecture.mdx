@@ -1296,7 +1296,9 @@ Two producers use it:
   sentence (`claims[N].text.<id>`); an id the sentence negates is not asked,
   nor is whether the sentence describes the id, since a sentence names ids it
   does not assert (a tool's metadata, a heading, a catalogue association). A
-  sentence id never marks the claim's own technique. An id that survives the retry keeps the analyst's
+  sentence id never marks the claim's own technique. Only an analyst's claim
+  sentence is read this way: a judge's map reason is read for the mapped id
+  alone, and another id it names is not asked. An id that survives the retry keeps the analyst's
   spelling and is flagged `technique_id_valid=False`; the report, the STIX
   minting step and the FP linter read the flag. The first answer goes back into
   the retry's conversation as the model wrote it (`AgentISR.answer_text`: its
