@@ -1,0 +1,634 @@
+[
+ {
+  "input": "RuntimeError: cannot reach redis://default:PWPLACEHOLDER@redis.internal:6379/0",
+  "by_value": true,
+  "literals": [],
+  "expected": "RuntimeError: cannot reach redis://***@redis.internal:6379/0"
+ },
+ {
+  "input": "Enrichment queue unavailable: arq could not connect to redis://default:PWPLACEHOLDER@redis.internal:6379/0",
+  "by_value": true,
+  "literals": [],
+  "expected": "Enrichment queue unavailable: arq could not connect to redis://***@redis.internal:6379/0"
+ },
+ {
+  "input": "redis://default:PWPLACEHOLDER@redis.internal:6379/0",
+  "by_value": true,
+  "literals": [],
+  "expected": "redis://***@redis.internal:6379/0"
+ },
+ {
+  "input": "postgresql://malspark:PWPLACEHOLDER@db.internal:5432/malspark",
+  "by_value": true,
+  "literals": [],
+  "expected": "postgresql://***@db.internal:5432/malspark"
+ },
+ {
+  "input": "ConnectionError: http://user:PWPLACEHOLDER@qdrant.internal:6333 refused",
+  "by_value": true,
+  "literals": [],
+  "expected": "ConnectionError: http://***@qdrant.internal:6333 refused"
+ },
+ {
+  "input": "MemoryStoreError: did not answer at http://u:PWPLACEHOLDER@q:6333",
+  "by_value": true,
+  "literals": [],
+  "expected": "MemoryStoreError: did not answer at http://***@q:6333"
+ },
+ {
+  "input": "could not connect to redis://user:PWPLACEHOLDER@bad-host:6379/0",
+  "by_value": true,
+  "literals": [],
+  "expected": "could not connect to redis://***@bad-host:6379/0"
+ },
+ {
+  "input": "could not connect to redis://:PWPLACEHOLDER@bad-host:6379/0",
+  "by_value": true,
+  "literals": [],
+  "expected": "could not connect to redis://***@bad-host:6379/0"
+ },
+ {
+  "input": "could not connect to redis://user:PWPLACEHOLDER@bad-host:6379/0",
+  "by_value": true,
+  "literals": [],
+  "expected": "could not connect to redis://***@bad-host:6379/0"
+ },
+ {
+  "input": "could not connect to redis://user:PWPLACEHOLDER@bad-host:6379/0",
+  "by_value": true,
+  "literals": [],
+  "expected": "could not connect to redis://***@bad-host:6379/0"
+ },
+ {
+  "input": "could not connect to redis://bad-host:6379/0 (mail x@y.z)",
+  "by_value": true,
+  "literals": [],
+  "expected": "could not connect to redis://bad-host:6379/0 (mail x@y.z)"
+ },
+ {
+  "input": "ConnectError: refused",
+  "by_value": true,
+  "literals": [],
+  "expected": "ConnectError: refused"
+ },
+ {
+  "input": "RuntimeError: could not prepare http://user:PWPLACEHOLDER@cape.example:8000",
+  "by_value": true,
+  "literals": [],
+  "expected": "RuntimeError: could not prepare http://***@cape.example:8000"
+ },
+ {
+  "input": "driver said: user:PWPLACEHOLDER@llm.internal:8080/v1",
+  "by_value": true,
+  "literals": [],
+  "expected": "driver said: ***@llm.internal:8080/v1"
+ },
+ {
+  "input": "driver said: user:PWPLACEHOLDER@x@llm.internal:8080/v1",
+  "by_value": true,
+  "literals": [],
+  "expected": "driver said: ***@llm.internal:8080/v1"
+ },
+ {
+  "input": "driver said: user:PWPLACEHOLDER%40x@llm.internal:8080",
+  "by_value": true,
+  "literals": [],
+  "expected": "driver said: ***@llm.internal:8080"
+ },
+ {
+  "input": "driver said: PWPLACEHOLDER@llm.internal:8080",
+  "by_value": true,
+  "literals": [],
+  "expected": "driver said: ***@llm.internal:8080"
+ },
+ {
+  "input": "driver said: user:PWPLACEHOLDER@[::1]:8080/v1",
+  "by_value": true,
+  "literals": [],
+  "expected": "driver said: ***@[::1]:8080/v1"
+ },
+ {
+  "input": "https://h/x?clientSecret=A&accessToken=B&refreshToken=C&authToken=D",
+  "by_value": true,
+  "literals": [],
+  "expected": "https://h/x?clientSecret=***&accessToken=***&refreshToken=***&authToken=***"
+ },
+ {
+  "input": "https://h/x?design=1&keyword=2&author=3",
+  "by_value": true,
+  "literals": [],
+  "expected": "https://h/x?design=1&keyword=2&author=3"
+ },
+ {
+  "input": "driver said: C:\\x=u:PWPLACEHOLDER@h:8080",
+  "by_value": true,
+  "literals": [],
+  "expected": "driver said: C:\\x=***@h:8080"
+ },
+ {
+  "input": "driver said: C:\\x)u:PWPLACEHOLDER@h:8080",
+  "by_value": true,
+  "literals": [],
+  "expected": "driver said: C:\\x)***@h:8080"
+ },
+ {
+  "input": "driver said: [C:\\x]u:PWPLACEHOLDER@h:8080",
+  "by_value": true,
+  "literals": [],
+  "expected": "driver said: [C:\\x]***@h:8080"
+ },
+ {
+  "input": "driver said: u:PWPLACEHOLDER@h:8080,x",
+  "by_value": true,
+  "literals": [],
+  "expected": "driver said: ***@h:8080,x"
+ },
+ {
+  "input": "driver said: C:\\x,u:PWPLACEHOLDER@h:8080,C:\\z",
+  "by_value": true,
+  "literals": [],
+  "expected": "driver said: C:\\x,***@h:8080,C:\\z"
+ },
+ {
+  "input": "driver said: {\"a\":\"C:\\\\x,'PWPLACEHOLDER@h:8080'\"}",
+  "by_value": true,
+  "literals": [],
+  "expected": "driver said: {\"a\":\"C:\\\\x,'***@h:8080'\"}"
+ },
+ {
+  "input": "driver said: x;u:PWPLACEHOLDER\\q@h",
+  "by_value": true,
+  "literals": [],
+  "expected": "driver said: ***@h"
+ },
+ {
+  "input": "driver said: u:p\\PWPLACEHOLDER@h",
+  "by_value": true,
+  "literals": [],
+  "expected": "driver said: ***@h"
+ },
+ {
+  "input": "driver said: u:/PWPLACEHOLDER\\x@h",
+  "by_value": true,
+  "literals": [],
+  "expected": "driver said: u:/PWPLACEHOLDER\\x@h"
+ },
+ {
+  "input": "driver said: u:/PWPLACEHOLDER\\x@h:8080",
+  "by_value": true,
+  "literals": [],
+  "expected": "driver said: u:/PWPLACEHOLDER\\x@h:8080"
+ },
+ {
+  "input": "driver said: \\\\PWPLACEHOLDER@SSL\\x@h:8080",
+  "by_value": true,
+  "literals": [],
+  "expected": "driver said: \\\\PWPLACEHOLDER@SSL\\x@h:8080"
+ },
+ {
+  "input": "driver said: \\\\PWPLACEHOLDER@1234\\x@h",
+  "by_value": true,
+  "literals": [],
+  "expected": "driver said: \\\\PWPLACEHOLDER@1234\\x@h"
+ },
+ {
+  "input": "driver said: \\\\PWPLACEHOLDER$\\x@h/y",
+  "by_value": true,
+  "literals": [],
+  "expected": "driver said: \\\\PWPLACEHOLDER$\\x@h/y"
+ },
+ {
+  "input": "driver said: \\\\PWPLACEHOLDER\\x@h:8080",
+  "by_value": true,
+  "literals": [],
+  "expected": "driver said: \\\\PWPLACEHOLDER\\x@h:8080"
+ },
+ {
+  "input": "ConnectError: failed to connect to http://ghidra:PWPLACEHOLDER@ghidra:8089/mcp/schema",
+  "by_value": true,
+  "literals": [],
+  "expected": "ConnectError: failed to connect to http://***@ghidra:8089/mcp/schema"
+ },
+ {
+  "input": "x",
+  "by_value": true,
+  "literals": [],
+  "expected": "x"
+ },
+ {
+  "input": "submitting the sample: connection refused",
+  "by_value": true,
+  "literals": [],
+  "expected": "submitting the sample: connection refused"
+ },
+ {
+  "input": "fetching the report: connection refused",
+  "by_value": true,
+  "literals": [],
+  "expected": "fetching the report: connection refused"
+ },
+ {
+  "input": "failed: https://h/x?a=1&api_key=SECRET&b=2 and https://h/y?token=T",
+  "by_value": true,
+  "literals": [],
+  "expected": "failed: https://h/x?a=1&api_key=***&b=2 and https://h/y?token=***"
+ },
+ {
+  "input": "preparing the submission: no host",
+  "by_value": true,
+  "literals": [],
+  "expected": "preparing the submission: no host"
+ },
+ {
+  "input": "https://h/x?design=1&keyword=2&monkey=3&author=4",
+  "by_value": true,
+  "literals": [],
+  "expected": "https://h/x?design=1&keyword=2&monkey=3&author=4"
+ },
+ {
+  "input": "https://h/x?api_key=A&access_token=B&x-sig=C&n=1",
+  "by_value": true,
+  "literals": [],
+  "expected": "https://h/x?api_key=***&access_token=***&x-sig=***&n=1"
+ },
+ {
+  "input": "retry ;key=value and &token=1 outside a url",
+  "by_value": true,
+  "literals": [],
+  "expected": "retry ;key=value and &token=1 outside a url"
+ },
+ {
+  "input": "The quick brown fox jumps over",
+  "by_value": true,
+  "literals": [],
+  "expected": "The quick brown fox jumps over"
+ },
+ {
+  "input": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+  "by_value": true,
+  "literals": [],
+  "expected": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+ },
+ {
+  "input": "see https://user:pw@example.co",
+  "by_value": true,
+  "literals": [],
+  "expected": "see https://***@example.co"
+ },
+ {
+  "input": "key=value&other=thing key=valu",
+  "by_value": true,
+  "literals": [],
+  "expected": "key=value&other=thing key=valu"
+ },
+ {
+  "input": "https://h/p?a=1&b=2&token=zz&h",
+  "by_value": true,
+  "literals": [],
+  "expected": "https://h/p?a=1&b=2&token=***&h"
+ },
+ {
+  "input": "9bFlIkpYt5HfavHYMD5hzcS7hsMnEA",
+  "by_value": true,
+  "literals": [],
+  "expected": "9bFlIkpYt5HfavHYMD5hzcS7hsMnEA"
+ },
+ {
+  "input": "a@b:c/d@e:f/a@b:c/d@e:f/a@b:c/",
+  "by_value": true,
+  "literals": [],
+  "expected": "a@b:c/d@e:f/a@b:c/d@e:f/a@b:c/"
+ },
+ {
+  "input": "@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@",
+  "by_value": true,
+  "literals": [],
+  "expected": "@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@"
+ },
+ {
+  "input": "::::::::::::::::::::::::::::::",
+  "by_value": true,
+  "literals": [],
+  "expected": "::::::::::::::::::::::::::::::"
+ },
+ {
+  "input": "//////////////////////////////",
+  "by_value": true,
+  "literals": [],
+  "expected": "//////////////////////////////"
+ },
+ {
+  "input": "://://://://://://://://://://",
+  "by_value": true,
+  "literals": [],
+  "expected": "://://://://://://://://://://"
+ },
+ {
+  "input": "http://a@http://a@http://a@htt",
+  "by_value": true,
+  "literals": [],
+  "expected": "http://***@http://***@http://***@htt"
+ },
+ {
+  "input": "x PWPLACEHOLDER y x SECRETV",
+  "by_value": true,
+  "literals": [],
+  "expected": "x PWPLACEHOLDER y x SECRETV"
+ },
+ {
+  "input": "://@a@a@a@a@a@a@a@a@a@a@a@a@a@a@a",
+  "by_value": true,
+  "literals": [],
+  "expected": "***@a"
+ },
+ {
+  "input": "a@a@a@a@a@a@a@a@a@a@a@a@a@a@a@",
+  "by_value": true,
+  "literals": [],
+  "expected": "a@a@a@a@a@a@a@a@a@a@a@a@a@a@a@"
+ },
+ {
+  "input": "a:b@a:b@a:b@a:b@a:b@a:b@a:b@",
+  "by_value": true,
+  "literals": [],
+  "expected": "a:b@a:b@a:b@a:b@a:b@a:b@a:b@"
+ },
+ {
+  "input": "a\\b@c:a\\b@c:a\\b@c:a\\b@c:a\\b@c:",
+  "by_value": true,
+  "literals": [],
+  "expected": "***@c:"
+ },
+ {
+  "input": "(a@(a@(a@(a@(a@(a@(a@(a@(a@(a@",
+  "by_value": true,
+  "literals": [],
+  "expected": "(a@(a@(a@(a@(a@(a@(a@(a@(a@(a@"
+ },
+ {
+  "input": "a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.",
+  "by_value": true,
+  "literals": [],
+  "expected": "a.a.a.a.a.a.a.a.a.a.a.a.a.a.a."
+ },
+ {
+  "input": "?a?a?a?a?a?a?a?a?a?a?a?a?a?a?a",
+  "by_value": true,
+  "literals": [],
+  "expected": "?a?a?a?a?a?a?a?a?a?a?a?a?a?a?a"
+ },
+ {
+  "input": "&a=1&a=1&a=1&a=1&a=1&a=1&a=1",
+  "by_value": true,
+  "literals": [],
+  "expected": "&a=1&a=1&a=1&a=1&a=1&a=1&a=1"
+ },
+ {
+  "input": "#a=#a=#a=#a=#a=#a=#a=#a=#a=#a=",
+  "by_value": true,
+  "literals": [],
+  "expected": "#a=#a=#a=#a=#a=#a=#a=#a=#a=#a="
+ },
+ {
+  "input": "aaaaaaaaaaaaaaa://x ",
+  "by_value": true,
+  "literals": [],
+  "expected": "aaaaaaaaaaaaaaa://x "
+ },
+ {
+  "input": "%a@b%a@b%a@b%a@b%a@b%a@b%a@b",
+  "by_value": true,
+  "literals": [],
+  "expected": "%a@b%a@b%a@b%a@b%a@b%a@b%a@b"
+ },
+ {
+  "input": "\u1054\u078c\u1fb6\u1cc5\u1e3a\u29b4\u184c\u0d70\u0602\u1f3a\u01d1\u18f3\u1bb3\u26e1#\u2c89\u1c82\u110c\u2e2e\u0ea5\u25d6\u068b\u1451\u01f6\u016e\u01a1\u2993\u22a7\u0097\u1866",
+  "by_value": true,
+  "literals": [],
+  "expected": "\u1054\u078c\u1fb6\u1cc5\u1e3a\u29b4\u184c\u0d70\u0602\u1f3a\u01d1\u18f3\u1bb3\u26e1#\u2c89\u1c82\u110c\u2e2e\u0ea5\u25d6\u068b\u1451\u01f6\u016e\u01a1\u2993\u22a7\u0097\u1866"
+ },
+ {
+  "input": "The quick brown fox jumps over the lazy dog. The quick brown fox jumps over the lazy dog. The quick brown fox jumps over",
+  "by_value": true,
+  "literals": [],
+  "expected": "The quick brown fox jumps over the lazy dog. The quick brown fox jumps over the lazy dog. The quick brown fox jumps over"
+ },
+ {
+  "input": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+  "by_value": true,
+  "literals": [],
+  "expected": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+ },
+ {
+  "input": "see https://user:pw@example.com/p?token=abc&x=1 now see https://user:pw@example.com/p?token=abc&x=1 now see https://user",
+  "by_value": true,
+  "literals": [],
+  "expected": "see https://***@example.com/p?token=***&x=1 now see https://***@example.com/p?token=***&x=1 now see https://user"
+ },
+ {
+  "input": "key=value&other=thing key=value&other=thing key=value&other=thing key=value&other=thing key=value&other=thing key=value&",
+  "by_value": true,
+  "literals": [],
+  "expected": "key=value&other=thing key=value&other=thing key=value&other=thing key=value&other=thing key=value&other=thing key=value&"
+ },
+ {
+  "input": "https://h/p?a=1&b=2&token=zz&https://h/p?a=1&b=2&token=zz&https://h/p?a=1&b=2&token=zz&https://h/p?a=1&b=2&token=zz&http",
+  "by_value": true,
+  "literals": [],
+  "expected": "https://h/p?a=1&b=2&token=***&https://h/p?a=1&b=2&token=***&https://h/p?a=1&b=2&token=***&https://h/p?a=1&b=2&token=***&http"
+ },
+ {
+  "input": "9bFlIkpYt5HfavHYMD5hzcS7hsPRxCcQPDRMQYnrLx571dR+RG/OwqPYEXNhEOV4G8zOppZ2LmEWxunJLZm/NYwuBxiCLOR8qMdBB+ZssOSys/TVjYLKY8lu",
+  "by_value": true,
+  "literals": [],
+  "expected": "9bFlIkpYt5HfavHYMD5hzcS7hsPRxCcQPDRMQYnrLx571dR+RG/OwqPYEXNhEOV4G8zOppZ2LmEWxunJLZm/NYwuBxiCLOR8qMdBB+ZssOSys/TVjYLKY8lu"
+ },
+ {
+  "input": "a@b:c/d@e:f/a@b:c/d@e:f/a@b:c/d@e:f/a@b:c/d@e:f/a@b:c/d@e:f/a@b:c/d@e:f/a@b:c/d@e:f/a@b:c/d@e:f/a@b:c/d@e:f/a@b:c/d@e:f/",
+  "by_value": true,
+  "literals": [],
+  "expected": "a@b:c/d@e:f/a@b:c/d@e:f/a@b:c/d@e:f/a@b:c/d@e:f/a@b:c/d@e:f/a@b:c/d@e:f/a@b:c/d@e:f/a@b:c/d@e:f/a@b:c/d@e:f/a@b:c/d@e:f/"
+ },
+ {
+  "input": "@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@",
+  "by_value": true,
+  "literals": [],
+  "expected": "@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@"
+ },
+ {
+  "input": "::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::",
+  "by_value": true,
+  "literals": [],
+  "expected": "::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::"
+ },
+ {
+  "input": "////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////",
+  "by_value": true,
+  "literals": [],
+  "expected": "////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////"
+ },
+ {
+  "input": "://://://://://://://://://://://://://://://://://://://://://://://://://://://://://://://://://://://://://://://://",
+  "by_value": true,
+  "literals": [],
+  "expected": "://://://://://://://://://://://://://://://://://://://://://://://://://://://://://://://://://://://://://://://://"
+ },
+ {
+  "input": "http://a@http://a@http://a@http://a@http://a@http://a@http://a@http://a@http://a@http://a@http://a@http://a@http://a@htt",
+  "by_value": true,
+  "literals": [],
+  "expected": "http://***@http://***@http://***@http://***@http://***@http://***@http://***@http://***@http://***@http://***@http://***@http://***@http://***@htt"
+ },
+ {
+  "input": "x PWPLACEHOLDER y x PWPLACEHOLDER y x PWPLACEHOLDER y x PWPLACEHOLDER y x PWPLACEHOLDER y x SECRETVALUE12",
+  "by_value": true,
+  "literals": [],
+  "expected": "x PWPLACEHOLDER y x PWPLACEHOLDER y x PWPLACEHOLDER y x PWPLACEHOLDER y x PWPLACEHOLDER y x SECRETVALUE12"
+ },
+ {
+  "input": "://@a@a@a@a@a@a@a@a@a@a@a@a@a@a@a@a@a@a@a@a@a@a@a@a@a@a@a@a@a@a@a@a@a@a@a@a@a@a@a@a@a@a@a@a@a@a@a@a@a@a@a@a@a@a@a@a@a@a@a@a",
+  "by_value": true,
+  "literals": [],
+  "expected": "***@a"
+ },
+ {
+  "input": "a@a@a@a@a@a@a@a@a@a@a@a@a@a@a@a@a@a@a@a@a@a@a@a@a@a@a@a@a@a@a@a@a@a@a@a@a@a@a@a@a@a@a@a@a@a@a@a@a@a@a@a@a@a@a@a@a@a@a@a@",
+  "by_value": true,
+  "literals": [],
+  "expected": "a@a@a@a@a@a@a@a@a@a@a@a@a@a@a@a@a@a@a@a@a@a@a@a@a@a@a@a@a@a@a@a@a@a@a@a@a@a@a@a@a@a@a@a@a@a@a@a@a@a@a@a@a@a@a@a@a@a@a@a@"
+ },
+ {
+  "input": "a:b@a:b@a:b@a:b@a:b@a:b@a:b@a:b@a:b@a:b@a:b@a:b@a:b@a:b@a:b@a:b@a:b@a:b@a:b@a:b@a:b@a:b@a:b@a:b@a:b@a:b@a:b@a:b@a:b@a:b@",
+  "by_value": true,
+  "literals": [],
+  "expected": "a:b@a:b@a:b@a:b@a:b@a:b@a:b@a:b@a:b@a:b@a:b@a:b@a:b@a:b@a:b@a:b@a:b@a:b@a:b@a:b@a:b@a:b@a:b@a:b@a:b@a:b@a:b@a:b@a:b@a:b@"
+ },
+ {
+  "input": "a\\b@c:a\\b@c:a\\b@c:a\\b@c:a\\b@c:a\\b@c:a\\b@c:a\\b@c:a\\b@c:a\\b@c:a\\b@c:a\\b@c:a\\b@c:a\\b@c:a\\b@c:a\\b@c:a\\b@c:a\\b@c:a\\b@c:a\\b@c:",
+  "by_value": true,
+  "literals": [],
+  "expected": "***@c:"
+ },
+ {
+  "input": "(a@(a@(a@(a@(a@(a@(a@(a@(a@(a@(a@(a@(a@(a@(a@(a@(a@(a@(a@(a@(a@(a@(a@(a@(a@(a@(a@(a@(a@(a@(a@(a@(a@(a@(a@(a@(a@(a@(a@(a@",
+  "by_value": true,
+  "literals": [],
+  "expected": "(a@(a@(a@(a@(a@(a@(a@(a@(a@(a@(a@(a@(a@(a@(a@(a@(a@(a@(a@(a@(a@(a@(a@(a@(a@(a@(a@(a@(a@(a@(a@(a@(a@(a@(a@(a@(a@(a@(a@(a@"
+ },
+ {
+  "input": "a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.",
+  "by_value": true,
+  "literals": [],
+  "expected": "a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a."
+ },
+ {
+  "input": "?a?a?a?a?a?a?a?a?a?a?a?a?a?a?a?a?a?a?a?a?a?a?a?a?a?a?a?a?a?a?a?a?a?a?a?a?a?a?a?a?a?a?a?a?a?a?a?a?a?a?a?a?a?a?a?a?a?a?a?a",
+  "by_value": true,
+  "literals": [],
+  "expected": "?a?a?a?a?a?a?a?a?a?a?a?a?a?a?a?a?a?a?a?a?a?a?a?a?a?a?a?a?a?a?a?a?a?a?a?a?a?a?a?a?a?a?a?a?a?a?a?a?a?a?a?a?a?a?a?a?a?a?a?a"
+ },
+ {
+  "input": "&a=1&a=1&a=1&a=1&a=1&a=1&a=1&a=1&a=1&a=1&a=1&a=1&a=1&a=1&a=1&a=1&a=1&a=1&a=1&a=1&a=1&a=1&a=1&a=1&a=1&a=1&a=1&a=1&a=1&a=1",
+  "by_value": true,
+  "literals": [],
+  "expected": "&a=1&a=1&a=1&a=1&a=1&a=1&a=1&a=1&a=1&a=1&a=1&a=1&a=1&a=1&a=1&a=1&a=1&a=1&a=1&a=1&a=1&a=1&a=1&a=1&a=1&a=1&a=1&a=1&a=1&a=1"
+ },
+ {
+  "input": "#a=#a=#a=#a=#a=#a=#a=#a=#a=#a=#a=#a=#a=#a=#a=#a=#a=#a=#a=#a=#a=#a=#a=#a=#a=#a=#a=#a=#a=#a=#a=#a=#a=#a=#a=#a=#a=#a=#a=#a=",
+  "by_value": true,
+  "literals": [],
+  "expected": "#a=#a=#a=#a=#a=#a=#a=#a=#a=#a=#a=#a=#a=#a=#a=#a=#a=#a=#a=#a=#a=#a=#a=#a=#a=#a=#a=#a=#a=#a=#a=#a=#a=#a=#a=#a=#a=#a=#a=#a="
+ },
+ {
+  "input": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa://x ",
+  "by_value": true,
+  "literals": [],
+  "expected": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa://x "
+ },
+ {
+  "input": "%a@b%a@b%a@b%a@b%a@b%a@b%a@b%a@b%a@b%a@b%a@b%a@b%a@b%a@b%a@b%a@b%a@b%a@b%a@b%a@b%a@b%a@b%a@b%a@b%a@b%a@b%a@b%a@b%a@b%a@b",
+  "by_value": true,
+  "literals": [],
+  "expected": "%a@b%a@b%a@b%a@b%a@b%a@b%a@b%a@b%a@b%a@b%a@b%a@b%a@b%a@b%a@b%a@b%a@b%a@b%a@b%a@b%a@b%a@b%a@b%a@b%a@b%a@b%a@b%a@b%a@b%a@b"
+ },
+ {
+  "input": "\u26e1#\u2c89\u1c82\u110c\u2e2e\u0ea5\u25d6\u068b\u1451\u01f6\u016e\u01a1\u2993\u22a7\u0097\u1866\u2bf0\u0ddd\u1b04\u2e75\u01dc\u21c5\u0e31\u1c07\u1fbc\u2363\u0eeb\u1620\u0ec7\u2b52\u0e01\u1d6b\u128c\u0161\u1aa3\u239d\u291c\u0667\u0be6\u2848\u2e51\u12f9\u07bd\u2f90\u154b\u2e2d\u2d85\u200e\u1b04\u207f\u2ae7\u0c27\u136b\u1230\u259b\u1ff6\u2057\u192d\u25b3\u0236\u1ebd\u0f8a\u2f9a\u19e0\u1a85\u2a8c\u0b13\u177f\u2320\u2cff\u2b2b\u2f3f\u17fc\u0589\u1c18\u2a7c\u208b\u06e9\u0a7b\u2158\u192c\u17b7\u1f58\u2ee6\u01e5\u1e0a\u02c9\u13bf\u2d05\u275a\u25f7\u2501\u1931\u296c\u0ae8\u0acb\u2025\u0e87\u00ca\u0cc5\u228a\u2318\u0edc\u19e3\u20e2\u1602\u24fb\u169d\u1d63\u113c\u2a31\u2313\u26f9\u2eaf^\u188f\u2f65\u20cd\u0846",
+  "by_value": true,
+  "literals": [],
+  "expected": "\u26e1#\u2c89\u1c82\u110c\u2e2e\u0ea5\u25d6\u068b\u1451\u01f6\u016e\u01a1\u2993\u22a7\u0097\u1866\u2bf0\u0ddd\u1b04\u2e75\u01dc\u21c5\u0e31\u1c07\u1fbc\u2363\u0eeb\u1620\u0ec7\u2b52\u0e01\u1d6b\u128c\u0161\u1aa3\u239d\u291c\u0667\u0be6\u2848\u2e51\u12f9\u07bd\u2f90\u154b\u2e2d\u2d85\u200e\u1b04\u207f\u2ae7\u0c27\u136b\u1230\u259b\u1ff6\u2057\u192d\u25b3\u0236\u1ebd\u0f8a\u2f9a\u19e0\u1a85\u2a8c\u0b13\u177f\u2320\u2cff\u2b2b\u2f3f\u17fc\u0589\u1c18\u2a7c\u208b\u06e9\u0a7b\u2158\u192c\u17b7\u1f58\u2ee6\u01e5\u1e0a\u02c9\u13bf\u2d05\u275a\u25f7\u2501\u1931\u296c\u0ae8\u0acb\u2025\u0e87\u00ca\u0cc5\u228a\u2318\u0edc\u19e3\u20e2\u1602\u24fb\u169d\u1d63\u113c\u2a31\u2313\u26f9\u2eaf^\u188f\u2f65\u20cd\u0846"
+ },
+ {
+  "input": "1.2a://h/p?token=PWPLACEHOLDER",
+  "by_value": true,
+  "literals": [],
+  "expected": "1.2a://h/p?token=***"
+ },
+ {
+  "input": "+-x://u:PWPLACEHOLDER@h",
+  "by_value": true,
+  "literals": [],
+  "expected": "***@h"
+ },
+ {
+  "input": "a.b.c://h?key=PWPLACEHOLDER and 9z://h?api_key=PWPLACEHOLDER",
+  "by_value": true,
+  "literals": [],
+  "expected": "a.b.c://h?key=*** and 9z://h?api_key=***"
+ },
+ {
+  "input": "ab1://PWPLACEHOLDER@h x://y",
+  "by_value": true,
+  "literals": [],
+  "expected": "ab1://***@h x://y"
+ },
+ {
+  "input": "see(http://u:PWPLACEHOLDER@h/?sig=PWPLACEHOLDER)",
+  "by_value": true,
+  "literals": [],
+  "expected": "see(http://***@h/?sig=***"
+ },
+ {
+  "input": "word.xword.xword.xword.xword.x://h?code=PWPLACEHOLDER",
+  "by_value": true,
+  "literals": [],
+  "expected": "word.xword.xword.xword.xword.x://h?code=***"
+ },
+ {
+  "input": "0123://h?token=PWPLACEHOLDER",
+  "by_value": true,
+  "literals": [],
+  "expected": "0123://h?token=PWPLACEHOLDER"
+ },
+ {
+  "input": "--://h?token=PWPLACEHOLDER",
+  "by_value": true,
+  "literals": [],
+  "expected": "--://h?token=PWPLACEHOLDER"
+ },
+ {
+  "input": "A+b-c.d://h/p#token=PWPLACEHOLDER",
+  "by_value": true,
+  "literals": [],
+  "expected": "A+b-c.d://h/p#token=***"
+ },
+ {
+  "input": "ftp://a@b ssh://c:PWPLACEHOLDER@d",
+  "by_value": true,
+  "literals": [],
+  "expected": "ftp://***@b ssh://***@d"
+ },
+ {
+  "input": "token PWPLACEHOLDER in x://h",
+  "by_value": true,
+  "literals": [
+   "PWPLACEHOLDER"
+  ],
+  "expected": "token *** in x://h"
+ },
+ {
+  "input": "x://u:PWPLACEHOLDER@h?token=1",
+  "by_value": false,
+  "literals": [],
+  "expected": "x://***@h?token=***"
+ }
+]
