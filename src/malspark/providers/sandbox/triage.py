@@ -1066,12 +1066,15 @@ class TriageSandboxProvider(SandboxProvider):
         operation: str,
         *,
         skip_errors: bool = False,
+        part: tuple[str, list[dict[str, Any]]] | None = None,
     ) -> Any:
         """One JSON body, streamed and refused past the cap.
 
         ``skip_errors`` is for the bodies a run can do without: a behavioural
         task that never reached "reported" answers 4xx, and the overview alone
-        still yields a usable, if thinner, report.
+        still yields a usable, if thinner, report. ``part``, a name and a list,
+        has the body as read appended to the list under that name
+        (``report_part``).
         """
         with http.stream("GET", url, headers=headers) as response:
             if response.status_code >= 400:
@@ -1080,6 +1083,10 @@ class TriageSandboxProvider(SandboxProvider):
                 response.read()
                 self._raise_for_status(response, operation)
             body = read_capped(response, what=f"The Triage {operation.split()[0]} body")
+        if part is not None:
+            from malspark.loaders.sandbox_client import report_part
+
+            part[1].append(report_part(part[0], body))
         from malspark.core.safe_json import loads
 
         try:
@@ -1097,8 +1104,15 @@ class TriageSandboxProvider(SandboxProvider):
         # and its behavioural reports are the bodies Triage legitimately sends
         # by the hundreds of megabytes, and their size is the remote end's
         # choice alone.
+        # Each body as read, named as Triage names it: the overview, and each
+        # behavioural task's report by the task's name.
+        parts: list[dict[str, Any]] = []
         overview = self._json_capped(
-            http, OVERVIEW_PATH.format(sample_id=task_id), headers, "overview fetch"
+            http,
+            OVERVIEW_PATH.format(sample_id=task_id),
+            headers,
+            "overview fetch",
+            part=("overview", parts),
         )
 
         task_reports: dict[str, dict[str, Any]] = {}
@@ -1111,6 +1125,7 @@ class TriageSandboxProvider(SandboxProvider):
                 # A task that never reached "reported" has no report yet; the
                 # overview alone still yields a usable, if thinner, report.
                 skip_errors=True,
+                part=(name, parts),
             )
             if report is None:
                 continue
@@ -1126,7 +1141,17 @@ class TriageSandboxProvider(SandboxProvider):
             status="reported",
             report=report,
             raw=overview,
+            report_parts=parts,
         )
+
+    def detonation_facts(self, run: SandboxRun) -> dict[str, Any] | None:
+        """The overview's facts, and the overview and task reports as fetched.
+
+        Triage ran the sample.
+        """
+        from malspark.providers.detonation import report_facts
+
+        return report_facts(run, detonated=True)
 
     def fetch_pcap(self, task_id: str, dest_dir: str | Path) -> str | None:
         if not self._cfg.fetch_pcap:

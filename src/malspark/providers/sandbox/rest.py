@@ -384,6 +384,7 @@ class RestSandboxProvider(SandboxProvider):
         return self._cfg.report.signature_scale() or run.report.signature_scale
 
     def fetch(self, task_id: str) -> SandboxRun:
+        from malspark.loaders.sandbox_client import report_part
         from malspark.providers.errors import ProviderConfigurationError
         from malspark.providers.sandbox.readers import (
             mapping_refusal,
@@ -441,7 +442,18 @@ class RestSandboxProvider(SandboxProvider):
             status="reported",
             report=report,
             raw=payload,
+            # The one body the report path answers, as it was read.
+            report_parts=[report_part("report", body)],
         )
+
+    def detonation_facts(self, run: SandboxRun) -> dict[str, Any] | None:
+        """What the report's reader reads of its run, and the report as fetched.
+
+        The sandbox ran the sample.
+        """
+        from malspark.providers.detonation import report_facts
+
+        return report_facts(run, detonated=True)
 
     def fetch_pcap(self, task_id: str, dest_dir: str | Path) -> str | None:
         if not self._cfg.report.pcap_path:

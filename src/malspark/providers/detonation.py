@@ -18,6 +18,8 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
+from malspark.core.logger import logger
+
 # Who asked for a detonation: the job (its first, with the job's own launch
 # arguments) or an agent (a further one, by the request tool).
 JOB_ORIGIN = "job"
@@ -73,6 +75,10 @@ class DetonationRecord:
     # (``pipeline.detonations.platform_reads``): what a step that waited for
     # it reads beside its claimant's update. Never stated.
     platform_rows: list[dict[str, Any]] = field(default_factory=list, repr=False)
+    # What the provider stated about the sandbox run behind the report, asked
+    # once the report was read (:func:`stated_by`); ``None`` where it stated
+    # nothing or no report was read. Read by the run's environment record.
+    sandbox_facts: dict[str, Any] | None = None
 
     @property
     def name(self) -> str:
@@ -124,6 +130,40 @@ class DetonationRecord:
             out["ended_at"] = self.ended_at
             out["duration_ms"] = self.duration_ms
         return out
+
+
+def stated_by(provider: Any, run: Any) -> dict[str, Any] | None:
+    """What ``provider`` states about the sandbox run behind ``run``, or ``None``. Never raises.
+
+    The one question every provider is asked
+    (``SandboxProvider.detonation_facts``); a provider that does not answer
+    it, answers something that is not a mapping, or fails, states nothing.
+    """
+    ask = getattr(provider, "detonation_facts", None)
+    try:
+        held = ask(run) if callable(ask) else None
+    except Exception as exc:  # noqa: BLE001 — a provider that cannot say states nothing
+        logger.debug("the sandbox provider stated nothing of its run (%s).", type(exc).__name__)
+        return None
+    return dict(held) if isinstance(held, dict) else None
+
+
+def report_facts(run: Any, *, detonated: bool) -> dict[str, Any]:
+    """A built-in provider's answer to ``detonation_facts``: the report's own facts and parts.
+
+    What the reader of the report's format reads off the raw report
+    (``ReportReader.run_facts``), the parts the provider read
+    (``SandboxRun.report_parts``) and whether it ran the sample.
+    """
+    from malspark.providers.sandbox.readers import report_reader
+
+    report = getattr(run, "report", None)
+    reader = report_reader(str(getattr(report, "source_format", "") or ""))
+    raw = getattr(run, "raw", None)
+    facts = dict(reader.run_facts(raw)) if reader is not None and isinstance(raw, dict) else {}
+    facts["detonated"] = bool(detonated)
+    facts["report_parts"] = [dict(part) for part in getattr(run, "report_parts", None) or ()]
+    return facts
 
 
 # What a sandbox reader answers for a detonation selector it cannot read.

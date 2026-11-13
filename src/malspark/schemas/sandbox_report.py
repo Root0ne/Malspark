@@ -384,6 +384,12 @@ class SandboxRun(BaseModel):
     raw: dict[str, Any]
     _validate_raw = field_validator("raw", mode="wrap")(_dict_identity_or_validate)
     error: str = ""
+    # Each raw part of the report as the provider read it, in reading order:
+    # its name as the provider names it, and the SHA-256 and byte length of
+    # its bytes (``loaders.sandbox_client.report_part``). Empty where the
+    # provider read none or does not say. Held for the run in hand and left
+    # out of a dump.
+    report_parts: list[dict[str, Any]] = Field(default_factory=list, exclude=True)
 
 
 # The behaviour summary's lists the model holds, as the document names them

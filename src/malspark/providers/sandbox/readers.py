@@ -129,6 +129,25 @@ class ReportReader(ABC):
         fmt = self.builtin_format()
         return fmt.signature_scale if fmt is not None else None
 
+    def run_facts(self, payload: Any) -> dict[str, Any]:
+        """What ``payload`` states about the sandbox run it records, as the report names it.
+
+        The keys of ``SandboxProvider.detonation_facts`` a report can give:
+        ``task_ids`` (each identifier under the place it sits), ``guest``,
+        ``sandbox_version``, ``started`` and ``ended``. Each only where the
+        report states it; a reader that knows none of them gives nothing.
+        This one gives the task id where the shipped declaration of the
+        reader's id says it sits, named by that place.
+        """
+        from malspark.core.tool_declarations import select
+
+        fmt = self.builtin_format()
+        for path in fmt.task_id_paths if fmt is not None else ():
+            for value in select(payload, path):
+                if _stated(value):
+                    return {"task_ids": {path: str(value)}}
+        return {}
+
     def name_for_text(self, fmt: Any = None) -> str:
         """The name published text gives the sandbox: the format's, else the reader's own."""
         if fmt is not None:
@@ -373,6 +392,13 @@ def sandbox_format_named(name: str, formats: Iterable[Any]) -> Any:
     return None
 
 
+def _stated(value: Any) -> bool:
+    """Whether a report's value states something: a non-empty string or a number."""
+    if isinstance(value, bool):
+        return False
+    return isinstance(value, int | float) or (isinstance(value, str) and bool(value.strip()))
+
+
 # -- the built-in readers ---------------------------------------------------
 
 
@@ -413,6 +439,37 @@ class CapeReportReader(ReportReader):
         )
 
         return Reading(CAPE_NORMALISER_FILLS, rendered=read_from == READ_FROM_MODEL)
+
+    def run_facts(self, payload: Any) -> dict[str, Any]:
+        """The report's ``info`` block: its task id, the machine, the version, start and end.
+
+        The machine is CAPE's analysis machine as the report names it (its
+        ``name``, ``label``, ``platform``, ``arch`` and ``manager``; an older
+        report names it by one string).
+        """
+        info = payload.get("info") if isinstance(payload, Mapping) else None
+        if not isinstance(info, Mapping):
+            return {}
+        facts: dict[str, Any] = {}
+        if _stated(info.get("id")):
+            facts["task_ids"] = {"/info/id": str(info["id"])}
+        machine = info.get("machine")
+        if isinstance(machine, Mapping):
+            guest = {
+                key: str(machine[key])
+                for key in ("name", "label", "platform", "arch", "manager")
+                if _stated(machine.get(key))
+            }
+        else:
+            guest = {"name": str(machine)} if _stated(machine) else {}
+        if guest:
+            facts["guest"] = guest
+        for key, place in (("sandbox_version", "version"), ("started", "started")):
+            if _stated(info.get(place)):
+                facts[key] = str(info[place])
+        if _stated(info.get("ended")):
+            facts["ended"] = str(info["ended"])
+        return facts
 
 
 @register_report_reader
@@ -494,6 +551,37 @@ class TriageReportReader(ReportReader):
         if read_from == READ_FROM_OVERVIEW:
             return Reading(TRIAGE_OVERVIEW_FILLS, partial=self.PARTIAL)
         return Reading(TRIAGE_NORMALISER_FILLS)
+
+    def run_facts(self, payload: Any) -> dict[str, Any]:
+        """The overview's sample id, each behavioural task's target and platform, and its end.
+
+        The guest is keyed by the task's name, each with the ``target`` (the
+        machine image) and ``platform``, ``os`` and ``arch`` where the task
+        names them; the end is the sample's ``completed``. The overview gives
+        no start of the run and no version of the sandbox.
+        """
+        facts = super().run_facts(payload)
+        if not isinstance(payload, Mapping):
+            return facts
+        tasks = payload.get("tasks")
+        listed = list(tasks.values()) if isinstance(tasks, Mapping) else tasks
+        guest: dict[str, dict[str, str]] = {}
+        for task in listed if isinstance(listed, list) else ():
+            if not isinstance(task, Mapping) or task.get("kind") != "behavioral":
+                continue
+            held = {
+                key: str(task[key])
+                for key in ("target", "platform", "os", "arch")
+                if _stated(task.get(key))
+            }
+            if _stated(task.get("name")) and held:
+                guest[str(task["name"])] = held
+        if guest:
+            facts["guest"] = guest
+        sample = payload.get("sample")
+        if isinstance(sample, Mapping) and _stated(sample.get("completed")):
+            facts["ended"] = str(sample["completed"])
+        return facts
 
 
 @register_report_reader

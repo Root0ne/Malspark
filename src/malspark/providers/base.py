@@ -953,6 +953,31 @@ class SandboxProvider(ServerOfItsOwn, ABC):
         # the report from its own declaration, if any.
         return run.report.signature_scale
 
+    def detonation_facts(self, run: SandboxRun) -> dict[str, Any] | None:
+        """What this provider states about the sandbox run behind ``run``, for the run's record.
+
+        Asked once per detonation, right after the report is read, while the
+        bytes it was read from are in hand (``providers.detonation.stated_by``),
+        and kept for the run's environment record
+        (``analysis.run_environment.detonations_record``). The answer is one
+        shape for every provider, each key only where the provider states it:
+
+        * ``detonated``: whether the sample was run for this report (``False``
+          for a report replayed from a recording or attached by an operator);
+        * ``task_ids``: the provider's identifiers of the analysis, each under
+          the name the provider gives it;
+        * ``guest``: the machine the sample ran in as the report names it (its
+          operating system, image, architecture), flat or one level of
+          mappings by task;
+        * ``sandbox_version``, ``started``, ``ended``: as the report gives them;
+        * ``report_parts``: each raw report part as it was read, its name and
+          the SHA-256 and byte length of its bytes (``SandboxRun.report_parts``).
+
+        ``None``, the default, states nothing: every fact is recorded as not
+        reported, never guessed.
+        """
+        return None
+
     def dynamic_tools(self) -> list[BaseTool]:
         return []
 

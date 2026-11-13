@@ -51,6 +51,10 @@ class SubmissionResult:
                        backend's own JSON.
         error:         Error message when status != "reported". Empty string
                        on success.
+        parts:         Each raw report part as it was read, in reading order:
+                       its name as the backend names it, and the SHA-256
+                       and byte length of its bytes (:func:`report_part`).
+                       Empty where the backend read none.
         normalized:    The provider's neutral ``SandboxReport`` view of this
                        same run, when the backend producing this result has
                        one. ``None`` for every caller that predates the
@@ -68,11 +72,23 @@ class SubmissionResult:
     report: dict[str, Any] = field(default_factory=dict)
     error: str = ""
     normalized: SandboxReport | None = None
+    parts: list[dict[str, Any]] = field(default_factory=list)
 
     @property
     def succeeded(self) -> bool:
         """True when the sandbox task completed with a usable report."""
         return self.status == "reported" and bool(self.report)
+
+
+def report_part(name: str, body: bytes) -> dict[str, Any]:
+    """One raw report part as it was read: its name, and the SHA-256 and length of its bytes.
+
+    Computed over the bytes in hand where the part was read, never by reading
+    it again, so two runs can be shown to rest on the same report or not.
+    """
+    import hashlib
+
+    return {"name": str(name), "sha256": hashlib.sha256(body).hexdigest(), "bytes": len(body)}
 
 
 # ---------------------------------------------------------------------------

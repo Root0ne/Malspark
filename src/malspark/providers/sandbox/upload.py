@@ -229,6 +229,7 @@ class UploadSandboxProvider(SandboxProvider):
     def attach_report(
         self, blob: bytes, *, filename: str = "report.json", report_format: str | None = None
     ) -> SandboxRun:
+        from malspark.loaders.sandbox_client import report_part
         from malspark.schemas.sandbox_report import SandboxRun
 
         payload = self._parse(blob)
@@ -274,6 +275,8 @@ class UploadSandboxProvider(SandboxProvider):
             status="reported",
             report=report,
             raw=payload,
+            # The attached report's bytes as stored, the one part read.
+            report_parts=[report_part("report", blob)],
         )
 
     def signature_scale(
@@ -281,6 +284,15 @@ class UploadSandboxProvider(SandboxProvider):
     ) -> SignatureScale | None:
         """The scale the declared format of the attached report names."""
         return self._declared.signature_scale if self._declared is not None else None
+
+    def detonation_facts(self, run: SandboxRun) -> dict[str, Any] | None:
+        """What the attached report's reader reads of its run, and the bytes read.
+
+        Nothing is detonated: the report comes from a run this platform did not start.
+        """
+        from malspark.providers.detonation import report_facts
+
+        return report_facts(run, detonated=False)
 
     def fetch(self, task_id: str) -> SandboxRun:
         if self._blob is None:
