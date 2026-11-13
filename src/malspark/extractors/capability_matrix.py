@@ -1492,29 +1492,6 @@ def mapped_decisions(review: TechniqueReview | None) -> list[Any]:
     ]
 
 
-def with_mapped_evidence(
-    evidence: dict[str, list[str]], review: TechniqueReview | dict[str, Any] | None
-) -> dict[str, list[str]]:
-    """``evidence`` (``{technique id: [ledger id, ...]}``) with each standing map's entries.
-
-    A technique the judge mapped is tied to the entries it mapped it to, the
-    sources its published row lists, so the export writes them on its edge as
-    it writes any technique's. Entries already tied stay first.
-    """
-    if isinstance(review, dict):
-        review = technique_review({TECHNIQUE_REVIEW_PROPERTY: review})
-    out = {tid: list(ids) for tid, ids in evidence.items()}
-    for decision in mapped_decisions(review):
-        tid = decision.technique_id.strip().upper()
-        held = out.setdefault(tid, [])
-        seen = set(held)
-        for entry_id in decision.evidence_ids:
-            if entry_id not in seen:
-                seen.add(entry_id)
-                held.append(entry_id)
-    return out
-
-
 def _lookups(ledger: Sequence[Any] | None, ids: Collection[str]) -> dict[str, set[str]]:
     """Per technique id of ``ids``, the entries that named it in their call's arguments only.
 

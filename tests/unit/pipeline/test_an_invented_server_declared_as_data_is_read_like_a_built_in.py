@@ -83,12 +83,11 @@ def _ledger() -> list[Any]:
 
 
 def test_the_scan_asserts_its_technique_and_the_lookalike_does_not(settings: Settings) -> None:
-    from malspark.pipeline.evidence_summary import asserting_labels, collect, technique_evidence
+    from malspark.pipeline.evidence_summary import asserting_labels, collect
 
     ledger = _ledger()
     assert ("scan", None) in collect(None, ledger)["T1055"]
     assert all(name != "capa" for name, _ in collect(None, ledger)["T1055"])
-    assert technique_evidence(None, ledger)["T1055"] == ["ev_0001", "ev_0002"]
     assert asserting_labels(ledger) == {"scan": "scanner", "yara_scan": "yara"}
 
 

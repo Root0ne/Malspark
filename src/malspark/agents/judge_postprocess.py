@@ -82,6 +82,7 @@ PROPERTY_NOT_CARRIED_CODE = _PROPERTY_NOT_CARRIED_CODE
 PLATFORM_ONLY_PROPERTIES: frozenset[str] = frozenset(
     {
         "x_malspark_evidence_refs",
+        "x_malspark_evidence_note",
         "x_malspark_support",
         "x_malspark_support_note",
         SAMPLE_TREE_PROPERTY,

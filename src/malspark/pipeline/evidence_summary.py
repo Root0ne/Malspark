@@ -13,7 +13,6 @@ is the judge's decision, which is the judge's job.
 
 from __future__ import annotations
 
-import re
 from collections.abc import Sequence
 from typing import Any
 
@@ -188,8 +187,6 @@ def collect(
     return rows
 
 
-EVIDENCE_ID_RE = re.compile(r"^ev_[0-9]+$")
-
 # The consumer tables of ``builtin_declarations.CONSUMER_KINDS`` read here: a
 # signature rule scan, whose matches carry the rule's own strings, and the API
 # catalogue, whose rows are associations.
@@ -245,70 +242,6 @@ def yara_rule_strings(ledger: Sequence[Any] | None) -> dict[str, list[dict[str, 
                 if row not in rows:
                     rows.append(row)
     return found
-
-
-def technique_evidence(
-    isrs: dict[str, Any] | None, ledger: Sequence[Any] | None = None
-) -> dict[str, list[str]]:
-    """``{technique_id: [ledger id, ...]}``: the entries the record ties to it.
-
-    Two ties are read, both as the record holds them. An analyst finding that
-    names a technique in ``technique_ids`` cites its entries in
-    ``evidence_ids``. An asserting tool's entry, such as a capa rule or a Sigma
-    match, names the technique in its structured output, and the entry's own
-    id is the evidence. Nothing is read out of text: a claim's
-    ``evidence_ref`` is a sentence, and an id in it stays in the sentence.
-
-    Each list is deduplicated and in ledger order. An id the ledger does not
-    hold is left out, because a reference nobody can follow is not evidence,
-    and an empty ledger holds none: a run with no tool calls ties nothing. A
-    technique nothing ties to an entry has no key.
-
-    A finding's ``evidence_ids`` belong to the finding as a whole, so a
-    finding naming two techniques ties each of its entries to both. The tie
-    says the finding cites the entry, not that the entry names the technique.
-    """
-    order: dict[str, int] = {}
-    for index, entry in enumerate(ledger or []):
-        eid = _entry_id(entry)
-        if eid and eid not in order:
-            order[eid] = index
-
-    found: dict[str, set[str]] = {}
-
-    def add(tid: str, eid: Any) -> None:
-        tid = str(tid or "").strip().upper()
-        eid = str(eid or "").strip()
-        if not TECHNIQUE_ID_EXACT_RE.match(tid) or not EVIDENCE_ID_RE.match(eid):
-            return
-        if eid not in order:
-            return
-        found.setdefault(tid, set()).add(eid)
-
-    invalid = invalid_technique_ids(ledger)
-    refused = refused_technique_ids(isrs, invalid)
-    for isr in (isrs or {}).values():
-        for finding in getattr(isr, "findings", None) or []:
-            cited = list(getattr(finding, "evidence_ids", None) or [])
-            for tid in getattr(finding, "technique_ids", None) or []:
-                if str(tid or "").strip().upper() in refused:
-                    continue
-                for eid in cited:
-                    add(tid, eid)
-
-    for entry in ledger or []:
-        if asserting_source(entry) is None:
-            continue
-        for tid in asserted_techniques(entry):
-            if tid not in invalid:
-                add(tid, _entry_id(entry))
-
-    return {tid: sorted(ids, key=order.__getitem__) for tid, ids in found.items()}
-
-
-def _entry_id(entry: Any) -> str:
-    """A ledger entry's own id, ``ev_0007``, under either name the entry types use."""
-    return str(getattr(entry, "id", None) or getattr(entry, "entry_id", None) or "").strip()
 
 
 def unverified_claim_ids(isr: Any) -> set[str]:

@@ -1672,7 +1672,6 @@ def _report_values(run: _Run, built: _Built, judged: _Judged) -> dict[str, Any]:
     from malspark.core.config import get_settings
     from malspark.core.truncation_ledger import TruncationLedger
     from malspark.pipeline.evidence_summary import collect as collect_technique_sources
-    from malspark.pipeline.evidence_summary import technique_evidence
     from malspark.reporting.builder import build_consolidated_iocs
     from malspark.reporting.misp import build_misp_attributes, misp_owner
     from malspark.reporting.renderers.stix_renderer import ExtendedSTIXRenderer
@@ -1694,7 +1693,6 @@ def _report_values(run: _Run, built: _Built, judged: _Judged) -> dict[str, Any]:
                 tid: [source for source, _confidence in rows]
                 for tid, rows in collect_technique_sources(run.isrs, run.ledger).items()
             },
-            technique_evidence=technique_evidence(run.isrs, run.ledger),
             ledger_ids=[str(entry.id) for entry in run.ledger],
         )
         report.stix_bundle_extended = export.model_dump(mode="json")

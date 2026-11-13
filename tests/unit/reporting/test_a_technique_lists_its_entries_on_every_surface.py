@@ -29,6 +29,7 @@ from malspark.reporting.models import MalwareReport, TTPMapping
 from malspark.reporting.navigator_layer import build_layer
 from malspark.reporting.renderers.layout import ANALYST
 from malspark.reporting.renderers.markdown import MarkdownRenderer
+from malspark.reporting.renderers.stix_renderer import ExtendedSTIXRenderer
 from malspark.reporting.technique_evidence import (
     NO_LEDGER_ENTRY,
     technique_evidence_ids,
@@ -37,7 +38,10 @@ from malspark.reporting.technique_evidence import (
 from malspark.schemas.evidence import LedgerEntry
 from malspark.schemas.isr_models import AgentISR, ClaimEvidence, Finding
 from malspark.schemas.stix_models import (
+    EVIDENCE_NOTE_PROPERTY,
+    EVIDENCE_REFS_PROPERTY,
     Bundle,
+    attack_pattern_id,
 )
 
 CLAIMED = "T1055"
@@ -213,6 +217,32 @@ class TestEverySurfacePrintsTheSet:
         (number,) = re.findall(r"#cite-(\d+)", rows[CLAIMED][-1])
         assert by_number[int(number)] == EXPECTED
         assert rows[JUDGE_ONLY][-1] == NO_LEDGER_ENTRY
+
+    def test_the_stix_uses_edge(self) -> None:
+        report = _report()
+        objects = (
+            ExtendedSTIXRenderer()
+            .render(report, _judge(), ledger_ids=LEDGER)
+            .model_dump(mode="json")["objects"]
+        )
+
+        def edge(tid: str) -> dict[str, Any]:
+            (found,) = [
+                o
+                for o in objects
+                if o["type"] == "relationship" and o["target_ref"] == attack_pattern_id(tid)
+            ]
+            return found
+
+        assert edge(CLAIMED)[EVIDENCE_REFS_PROPERTY] == EXPECTED
+        assert EVIDENCE_NOTE_PROPERTY not in edge(CLAIMED)
+        assert EVIDENCE_REFS_PROPERTY not in edge(JUDGE_ONLY)
+        assert edge(JUDGE_ONLY)[EVIDENCE_NOTE_PROPERTY] == NO_LEDGER_ENTRY
+        assert all(
+            EVIDENCE_NOTE_PROPERTY not in o
+            for o in objects
+            if o["id"] not in {edge(CLAIMED)["id"], edge(JUDGE_ONLY)["id"]}
+        )
 
     def test_the_misp_technique_attribute(self) -> None:
         attributes = build_misp_attributes(_report(), [], owner="job")

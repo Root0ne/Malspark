@@ -44,7 +44,6 @@ from malspark.extractors.capability_matrix import (
     checked_question_line,
     judge_questions,
     settle_mapped_techniques,
-    with_mapped_evidence,
 )
 from malspark.pipeline.validation import MAP_RESTS_ON_ITS_LOOKUP_CODE
 from malspark.reporting.builder import MalwareReportBuilder
@@ -535,7 +534,6 @@ def _exported(review: TechniqueReview) -> tuple[list[dict[str, Any]], list[dict[
     bundle = ExtendedSTIXRenderer().render(
         report,
         judge,
-        technique_evidence=with_mapped_evidence({}, review),
         ledger_ids=[e.id for e in _ledger()],
     )
     mitre = _extract_mitre({"malware_report": report.model_dump(mode="json")}) or []
@@ -570,4 +568,3 @@ class TestTheExport:
 
         assert attack_pattern_id(CHECKED) not in {o["id"] for o in objects}
         assert CHECKED not in [row["technique_id"] for row in mitre]
-        assert with_mapped_evidence({}, declined) == {}
