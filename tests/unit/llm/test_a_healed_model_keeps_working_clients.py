@@ -237,16 +237,29 @@ class TestWhoOwnsTheClients:
         assert not sync_before.is_closed
         assert not async_before.is_closed
 
-    def test_a_client_of_the_model_s_own_is_inherited_and_freed_with_it(
-        self, endpoint: _Endpoint, _fresh_state: list[tuple[Any, Any]]
+    def test_a_client_of_the_model_s_own_is_inherited_and_closed_with_it(
+        self,
+        endpoint: _Endpoint,
+        _fresh_state: list[tuple[Any, Any]],
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         """A timeout langchain cannot hash gives the model a client nobody else holds.
 
         That one is the model's alone. The heal hands it to the replacement
         rather than opening another, and once neither model is held any more
-        it is collected — the openai SDK's client wrapper closes itself then
-        (``SyncHttpxClientWrapper.__del__``).
+        it is collected and closed: langchain's client wrapper closes itself
+        when collected (``_SyncHttpxClientWrapper.__del__``).
         """
+        from langchain_openai.chat_models._client_utils import _SyncHttpxClientWrapper
+
+        closed: list[int] = []
+        original_close = _SyncHttpxClientWrapper.close
+
+        def recording_close(self: Any) -> None:
+            closed.append(id(self))
+            original_close(self)
+
+        monkeypatch.setattr(_SyncHttpxClientWrapper, "close", recording_close)
         model = _provider(endpoint.base_url).build_model(
             "m", 0.2, max_tokens=64, request_timeout=httpx.Timeout(30.0)
         )
@@ -260,10 +273,39 @@ class TestWhoOwnsTheClients:
         healed = _fresh_state[0][1]
         assert _sync_client(healed) is own
         assert not own.is_closed
+        assert closed == [], "the heal closes nothing"
 
+        own_id = id(own)
         freed = weakref.ref(own)
         del model, healed, own
         _fresh_state.clear()
         gc.collect()
         assert freed() is None, "nothing holds the client once its models are gone"
+        assert own_id in closed, "and it was closed as it was collected"
         _assert_answers(other)
+
+    @pytest.mark.asyncio
+    async def test_a_model_whose_sync_client_cannot_be_found_still_heals(
+        self, endpoint: _Endpoint, _fresh_state: list[tuple[Any, Any]]
+    ) -> None:
+        """No ``root_client._client`` to hand on: the rebuild takes langchain's own.
+
+        Where the openai SDK keeps its client elsewhere the helper finds none,
+        the replacement is built with whatever langchain gives it, and still
+        nothing is closed.
+        """
+        model = _provider(endpoint.base_url).build_model("m", 0.2, max_tokens=64)
+        cached = _sync_client(model)
+        # ``invoke`` sends through ``model.client``; only the lookup is hidden.
+        object.__setattr__(model, "root_client", object())
+        assert openai_provider._sync_http_client_of(model) is None
+
+        _assert_answers(model)
+        healed = _fresh_state[0][1]
+
+        await _assert_answers_async(model)
+        _assert_answers(healed)
+        await _assert_answers_async(healed)
+        assert not cached.is_closed
+        assert not model.http_async_client.is_closed
+        assert endpoint.rejected == 1
