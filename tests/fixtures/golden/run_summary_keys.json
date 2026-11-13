@@ -420,6 +420,82 @@
     "v": null
   },
   "elapsed_seconds": null,
+  "environment": {
+    "agents": {
+      "*": {
+        "requests": [
+          {
+            "answered": null,
+            "answered_shared": null,
+            "effort": null,
+            "effort_setting": null,
+            "effort_statement": null,
+            "model": null,
+            "model_reduced": null,
+            "position": null,
+            "provider": null,
+            "sampling": "<data-keyed map>",
+            "sampling_statement": null,
+            "thinking": "<data-keyed map>",
+            "thinking_changed_requests": null
+          }
+        ],
+        "response_models": "<data-keyed map>",
+        "response_models_reduced": [
+          null
+        ]
+      }
+    },
+    "host": {
+      "cpu_model": null,
+      "cpus_available": null,
+      "logical_cpus": null,
+      "machine": null,
+      "memory_bytes": null,
+      "memory_limit_bytes": null,
+      "os": null,
+      "os_release": null,
+      "os_version": null
+    },
+    "tools": {
+      "*": {
+        "manifest_version": null,
+        "package_version": null,
+        "requirements": [
+          {
+            "bytes": null,
+            "cut": null,
+            "digest_of": null,
+            "digest_statement": null,
+            "distribution": null,
+            "exclude": [
+              null
+            ],
+            "files": null,
+            "kind": null,
+            "name": null,
+            "named_by": null,
+            "pattern": null,
+            "pinned": null,
+            "sha256": null,
+            "statement": null,
+            "tools": [
+              null
+            ],
+            "version": null
+          }
+        ],
+        "served": [
+          null
+        ],
+        "server_info": {
+          "name": null,
+          "version": null
+        }
+      }
+    },
+    "v": null
+  },
   "evidence": {
     "by_tool": "<data-keyed map>",
     "entries": null,

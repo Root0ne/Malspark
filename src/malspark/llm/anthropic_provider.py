@@ -480,6 +480,20 @@ class AnthropicProvider(LLMProvider):
         return False
 
     @classmethod
+    def sent_parameters(cls, llm: Any) -> Any:
+        # The body ``ChatAnthropic`` builds, with ``extra_body`` merged in as
+        # the SDK merges it: the library moves a sampling parameter there
+        # beside some fields.
+        from malspark.llm.sent_request import SentParameters, built_body, sampling_in, switches_in
+
+        body = built_body(llm, "_get_request_payload", cls.llm_types)
+        if not isinstance(body, dict):
+            return None
+        extra = body.get("extra_body")
+        merged = {**body, **(extra if isinstance(extra, dict) else {})}
+        return SentParameters(sampling_in(merged), switches_in(merged, ("thinking",)))
+
+    @classmethod
     def schema_tool_answered_as_text(cls, llm: Any) -> bool:
         # No tool choice is ever sent for a schema (``with_unforced_structured_output``),
         # and a model that thinks by default (the vendored table's

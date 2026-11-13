@@ -357,6 +357,7 @@ def _write_markdown_report(result: dict, report_path: str) -> None:
             degradation_reasons=[str(r) for r in run_summary_dict.get("degradation_reasons") or []],
             operator_choices=[str(r) for r in run_summary_dict.get("operator_choices") or []],
             earlier_runs_ignored=run_summary_dict.get("earlier_runs_ignored") is True,
+            environment=run_summary_dict.get("environment") or None,
         )
 
         Path(report_path).write_text(summary.to_markdown(), encoding="utf-8")

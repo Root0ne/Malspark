@@ -78,6 +78,9 @@ class _YaraX(sidecar.Program):
 PROGRAM = _YaraX(
     name="yr",
     command=("yr",),
+    # How yr says its version: the command-line documentation of YARA-X
+    # (docs/cli/commands) lists "-V, --version  Print version" under Options.
+    version_argv=("--version",),
     install=(
         f"install YARA-X {YARA_X_VERSION} (its command-line program yr) on this server's PATH "
         f"and put rule files (*.yar, *.yara) under the directories {RULES_ENV} names, or run "
@@ -223,9 +226,9 @@ async def yarax_scan(
 
 
 @mcp.tool(**_DECLARED["capabilities"])
-def capabilities() -> dict[str, Any]:
+async def capabilities() -> dict[str, Any]:
     """Which of this server's tools this host can run, and how to install what is missing."""
-    return sidecar.capabilities(SERVER, PROGRAM, TOOLS, version=YARA_X_VERSION)
+    return await sidecar.answer_capabilities(SERVER, PROGRAM, TOOLS, version=YARA_X_VERSION)
 
 
 if __name__ == "__main__":

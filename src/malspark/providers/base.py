@@ -387,7 +387,26 @@ def absent_provider_fragment(
     )
 
 
-class StaticProvider(ABC):
+class ServerOfItsOwn:
+    """The one hook through which a provider shows the tool server it drives itself.
+
+    A provider that reaches its tool through a handle of its own, rather than
+    one the job's server registry attached, answers ``own_tool_server`` once
+    it has attached: ``{"server": <key>, "server_info": <the name and version
+    the server gave at its attach>, "manifest": <its capability manifest, or
+    None>, "tools": <the names of the tools it served>}``. The run's record of
+    the tools it used reads it as it reads the registry's servers
+    (``analysis.run_environment.tools_record``), and reads from ``tools``
+    whether the run offered or called one, since a provider's own tools carry
+    no server of their own. ``None``, the default, is nothing to report: no
+    server of its own, or none attached.
+    """
+
+    def own_tool_server(self) -> dict[str, Any] | None:
+        return None
+
+
+class StaticProvider(ServerOfItsOwn, ABC):
     """One static-analysis tool, as the pipeline sees it.
 
     Lifecycle: ``from_settings`` (cheap, no I/O) -> ``probe`` (optional, the
@@ -740,7 +759,7 @@ def prepare_sample(provider: StaticProvider | None, path: str, log: Any = None) 
     return hint
 
 
-class SandboxProvider(ABC):
+class SandboxProvider(ServerOfItsOwn, ABC):
     """One dynamic-analysis (sandbox) backend, as the pipeline sees it.
 
     Mirrors ``StaticProvider``: ``from_settings`` (cheap, no I/O) -> ``probe``

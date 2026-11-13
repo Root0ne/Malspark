@@ -151,9 +151,9 @@ async def js_deobfuscate(
 
 
 @mcp.tool(**_DECLARED["capabilities"])
-def capabilities() -> dict[str, Any]:
+async def capabilities() -> dict[str, Any]:
     """Which of this server's tools this host can run, and how to install what is missing."""
-    return sidecar.capabilities(SERVER, PROGRAM, TOOLS, version=WEBCRACK_VERSION)
+    return await sidecar.answer_capabilities(SERVER, PROGRAM, TOOLS, version=WEBCRACK_VERSION)
 
 
 if __name__ == "__main__":

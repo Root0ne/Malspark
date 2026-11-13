@@ -14,6 +14,7 @@ for its shape before a URL is built from it.
 
 from __future__ import annotations
 
+import asyncio
 import importlib.util
 import json
 import sys
@@ -126,10 +127,12 @@ class TestWithoutAKey:
         from malspark.tools.capabilities import ServerCapabilities
 
         server = _load(monkeypatch)
-        capabilities = ServerCapabilities.from_payload("threatintel", server.capabilities())
+        capabilities = ServerCapabilities.from_payload(
+            "threatintel", asyncio.run(server.capabilities())
+        )
         assert capabilities is not None
         assert capabilities.unusable() == frozenset(LOOKUPS)
-        for cell in server.capabilities()["tools"]:
+        for cell in asyncio.run(server.capabilities())["tools"]:
             assert "without" not in cell
         reasons = {u.tool: u.degradation_reason for u in capabilities.unavailable()}
         assert "VIRUSTOTAL_API_KEY is not configured" in reasons["check_hash"]
@@ -141,7 +144,9 @@ class TestWithoutAKey:
         from malspark.tools.capabilities import ServerCapabilities
 
         server = _load(monkeypatch, ABUSE)
-        capabilities = ServerCapabilities.from_payload("threatintel", server.capabilities())
+        capabilities = ServerCapabilities.from_payload(
+            "threatintel", asyncio.run(server.capabilities())
+        )
         assert capabilities is not None
         assert capabilities.unusable() == frozenset({"check_domain_reputation", "check_hash"})
 
@@ -156,7 +161,9 @@ class TestWithoutAKey:
         server = _load(monkeypatch)
         settings = Settings(_env_file=None)
         handle = ServerHandle("threatintel", settings.mcp.servers["threatintel"])
-        handle.capabilities = ServerCapabilities.from_payload("threatintel", server.capabilities())
+        handle.capabilities = ServerCapabilities.from_payload(
+            "threatintel", asyncio.run(server.capabilities())
+        )
         monkeypatch.setattr(handle, "tools", lambda: [])
         registry = ServerRegistry(settings)
 

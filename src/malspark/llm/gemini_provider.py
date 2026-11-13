@@ -52,6 +52,20 @@ class GeminiProvider(LLMProvider):
         return True
 
     @classmethod
+    def sent_parameters(cls, llm: Any) -> Any:
+        # The generation config the library builds for the request: a model
+        # it serves with fixed sampling is built with none.
+        from malspark.llm.sent_request import SentParameters, built_body, sampling_in, switches_in
+
+        body = built_body(llm, "_prepare_request", cls.llm_types)
+        config = body.get("config") if isinstance(body, dict) else None
+        dump = getattr(config, "model_dump", None)
+        if not callable(dump):
+            return None
+        fields = dump(exclude_none=True)
+        return SentParameters(sampling_in(fields), switches_in(fields, ("thinking_config",)))
+
+    @classmethod
     def model_listing(cls, settings: Any) -> ModelListing:
         return ModelListing(
             url=f"{GEMINI_API_ROOT}/v1beta/models",

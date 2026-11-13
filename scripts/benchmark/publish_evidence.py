@@ -35,7 +35,16 @@ the published copies from it, and does nothing else to them:
   ``<strong>TLP:AMBER</strong>``) and every ``tlp`` field of a JSON copy read
   CLEAR; a mention of TLP in prose, in code or in decoded evidence bytes stays
   as written;
-- in an HTML copy each placeholder is written escaped (``&lt;job&gt;``).
+- in an HTML copy each placeholder is written escaped (``&lt;job&gt;``);
+- in a run summary a caller sanitises with :meth:`Sanitiser.run_summary` (the
+  files :func:`publish` itself publishes carry none today), the strings
+  at the key paths of ``KEPT_AS_RECORDED``, each matched in full from the
+  summary's root (the model identifiers its ``environment`` block records),
+  are exempt from the host and run-name rules: they name models, and those
+  rules would rewrite a model name that looks like a host or a run tag. Every
+  other rule applies to them, the local-path rule first (the record keeps a
+  path-shaped identifier by its base name already). The same shape anywhere
+  else, in any other document, is the run's text.
 
 Defanging changes bytes, so a published ledger entry no longer matches the
 digest it carries; the docs say so and point at reproducing the run instead.
@@ -93,6 +102,17 @@ RULE_KEYWORDS = frozenset({"http.host"})
 INDICATOR_KINDS = ("ip", "domain", "url")
 NETWORK_RECORD_KINDS = ("sandbox_network", "pcap")
 NETWORK_KEYS = frozenset({"dst", "src", "ip", "domain", "host", "hostname", "query", "url"})
+
+# The key paths of a run summary, from its root, whose strings the host and
+# run-name rules leave as recorded: ``*`` is any key, ``[]`` any item of a
+# list. A key at a path is treated as its value is (the model identifiers that
+# key a count).
+_Paths = tuple[tuple[str, ...], ...]
+KEPT_AS_RECORDED: _Paths = (
+    ("environment", "agents", "*", "requests", "[]", "model"),
+    ("environment", "agents", "*", "response_models", "*"),
+    ("environment", "agents", "*", "response_models_reduced", "[]"),
+)
 
 _UUID = r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}"
 # A path starts a word, or follows a newline escape of text quoted twice.
@@ -200,7 +220,9 @@ class Sanitiser:
             text = _PLACEHOLDER.sub(r"&lt;\1&gt;", text)
         return text
 
-    def _text(self, text: str, decode: bool = True) -> str:
+    def _text(self, text: str, decode: bool = True, names: bool = True) -> str:
+        """``text`` with the rules applied; without ``names``, the host and run-name rules
+        are left out (:data:`KEPT_AS_RECORDED`)."""
         for value, placeholder in self.ids.items():
             if value in text:
                 self.counts[("server id", placeholder)] += text.count(value)
@@ -208,7 +230,8 @@ class Sanitiser:
         text = self._sub(
             "local path", _LOCAL_PATH, text, lambda m: m.group(0).rstrip("/").rsplit("/", 1)[-1]
         )
-        text = self._sub("run name", _RUN_NAME, text, lambda m: "<run>")
+        if names:
+            text = self._sub("run name", _RUN_NAME, text, lambda m: "<run>")
         text = self._sub("former name", _FORMER_NAME, text, _former_name)
         for pattern in _SECRETS:
             text = self._sub(
@@ -224,7 +247,8 @@ class Sanitiser:
         text = self._sub("url", _URL, text, self._defang_url)
         if self.indicators:
             text = self._sub("indicator", self.indicators, text, lambda m: _defang(m.group(0)))
-        text = self._sub("host", _DOMAIN, text, self._defang_host)
+        if names:
+            text = self._sub("host", _DOMAIN, text, self._defang_host)
         return self._sub("ipv4", _IPV4, text, lambda m: m.group(0).replace(".", "[.]"))
 
     def _defanged_bytes(self, data: bytes) -> bytes | None:
@@ -269,22 +293,52 @@ class Sanitiser:
 
         A ``tlp`` field that holds a marking level reads ``CLEAR``.
         """
+        return self._json(value, (), ())
+
+    def run_summary(self, summary: Any) -> Any:
+        """A run summary as :meth:`json` sanitises it, the strings at the key paths of
+        :data:`KEPT_AS_RECORDED` (from the summary's root) left by the host and run-name rules.
+
+        The entry point for a caller that publishes a run summary: none of the
+        files :func:`publish` writes (:data:`JSON_FILES`) carries one today.
+        """
+        return self._json(summary, (), KEPT_AS_RECORDED)
+
+    def _key_or_string(self, value: str, path: tuple[str, ...], kept: _Paths) -> str:
+        return self._text(value, names=not _kept(path, kept))
+
+    def _json(self, value: Any, path: tuple[str, ...], kept: _Paths) -> Any:
         if isinstance(value, str):
-            return self.text(value)
+            return self._key_or_string(value, path, kept)
         if isinstance(value, list):
-            return [self.json(item) for item in value]
+            return [self._json(item, (*path, "[]"), kept) for item in value]
         if isinstance(value, dict):
             if "entry_id" in value and re.fullmatch(_UUID, str(value.get("id", ""))):
                 value = {k: v for k, v in value.items() if k != "id"}
-            return {self.text(k): self._tlp_field(k, v) for k, v in value.items()}
+            return {
+                self._key_or_string(k, (*path, k), kept): self._tlp_field(k, v, (*path, k), kept)
+                for k, v in value.items()
+            }
         return value
 
-    def _tlp_field(self, key: str, value: Any) -> Any:
+    def _tlp_field(self, key: str, value: Any, path: tuple[str, ...], kept: _Paths) -> Any:
         if key.lower() == "tlp" and isinstance(value, str) and value.upper() in TLP_LEVELS:
             if value.upper() != PUBLIC_TLP:
                 self.counts[("tlp", value)] += 1
             return PUBLIC_TLP.lower() if value.islower() else PUBLIC_TLP
-        return self.json(value)
+        return self._json(value, path, kept)
+
+
+def _kept(path: tuple[str, ...], kept: _Paths) -> bool:
+    """Whether ``path``, the keys from the document's root, is one of ``kept`` in full."""
+    return any(
+        len(pattern) == len(path)
+        and all(
+            want == got or (want == "*" and got != "[]")
+            for want, got in zip(pattern, path, strict=True)
+        )
+        for pattern in kept
+    )
 
 
 def server_ids(run: Path) -> dict[str, str]:

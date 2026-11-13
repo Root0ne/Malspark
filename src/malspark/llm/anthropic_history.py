@@ -38,6 +38,8 @@ the one before it plus its new turns:
   them, written while they were gone, stay valid and the model keeps that
   reasoning. A block is kept where leaving it out would empty its turn or
   touch the latest assistant turn, and the request then asks to drop again.
+  Each request asked so is counted on the model's record for the run
+  (``llm.sent_request.note_thinking_changed``).
 
 **No empty text block** reaches the API, on any model: one that is empty or
 only whitespace, which the API refuses with a 400, is left out of every turn
@@ -108,6 +110,7 @@ from pathlib import Path
 from typing import Any
 
 from malspark.core.logger import logger
+from malspark.llm.sent_request import note_thinking_changed
 
 BINDING_BETA = "thinking-binding-controls-2026-08-01"
 
@@ -1206,7 +1209,8 @@ def with_preserved_thinking(chat_class: Any, cache_ttl: str = "5m", pack_ttl: st
         if not isinstance(payload, dict):
             return payload
         attached, loop, last = _notes_of(self, input_)
-        return prepared(
+        built = payload.get("thinking")
+        sent = prepared(
             payload,
             memory_of(self),
             bound=binds_thinking_to_prefix(getattr(self, "model", "")),
@@ -1219,6 +1223,10 @@ def with_preserved_thinking(chat_class: Any, cache_ttl: str = "5m", pack_ttl: st
             standing_marker=pack_marker,
             resent=_heads_of(self, input_, SENT_AGAIN),
         )
+        if isinstance(sent, dict) and sent.get("thinking") != built:
+            # The run's record keeps the switches as built; it counts this one.
+            note_thinking_changed(self)
+        return sent
 
     def _generate_with_cache(self: Any, *args: Any, **kwargs: Any) -> Any:
         holder: list[str] = []
