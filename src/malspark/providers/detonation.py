@@ -66,6 +66,13 @@ class DetonationRecord:
     started_at: float = 0.0
     ended_at: float = 0.0
     duration_ms: int = 0
+    # Whether a further detonation is being carried out now: set when a step
+    # claims it (``pipeline.detonations``), cleared however it ends.
+    running: bool = False
+    # The platform's reads of its report, as ledger rows
+    # (``pipeline.detonations.platform_reads``): what a step that waited for
+    # it reads beside its claimant's update. Never stated.
+    platform_rows: list[dict[str, Any]] = field(default_factory=list, repr=False)
 
     @property
     def name(self) -> str:

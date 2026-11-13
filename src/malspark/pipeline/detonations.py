@@ -20,6 +20,11 @@ reaches the report whether or not an agent reads it, its items' ids
 (``d2/proc:84``) are known to every citation check, and a stored run holds
 them.
 
+A pending detonation is claimed under the job's lock by the step that
+carries it out, and its record is kept from that moment, running; a step
+that enters while it is in flight waits for it and reads its result, so one
+request is never submitted twice.
+
 A detonation made after an analyst that reads the sandbox had its own turn
 would never be read by it. So, on the debate's first negotiation entry,
 after any request still pending was carried out, each such analyst whose own
@@ -296,38 +301,75 @@ def platform_reads(container: Any, record: DetonationRecord, step: str) -> list[
     return [entry.model_dump(mode="json") for entry in recorder.entries]
 
 
-async def carry_out(
-    container: Any, state: Any, step: str, entries: list[dict[str, Any]] | None = None
-) -> list[DetonationRecord]:
-    """Carry out every accepted detonation still pending, on the entry of ``step``.
+# One lock per container (``_claims``) guards the claim of a pending
+# detonation: whose step carries it out, and which steps wait for it.
+_CLAIM_LOCKS = threading.Lock()
 
-    Each is one record, appended to ``container.detonations`` in order, with
-    the agents that asked, the step, and its own start, end and duration. A
-    detonation the job's time limit leaves no room for, or that no detonator
-    can make, is recorded with the reason; one that fails is recorded with
-    its failure. Never raises for a detonation. The platform's reads of each
-    report that came back (:func:`platform_reads`) are added to ``entries``.
+
+def _claims(container: Any) -> tuple[threading.Lock, dict[str, threading.Event]]:
+    """The job's claim lock, and its detonations in flight by name with the event their end sets."""
+    with _CLAIM_LOCKS:
+        lock = getattr(container, "_detonation_lock", None)
+        if lock is None:
+            lock = threading.Lock()
+            container._detonation_lock = lock
+        flight = getattr(container, "_detonations_in_flight", None)
+        if flight is None:
+            flight = {}
+            container._detonations_in_flight = flight
+    return lock, flight
+
+
+def in_flight(container: Any) -> bool:
+    """Whether a detonation of the job is being carried out now, by another step."""
+    return bool(getattr(container, "_detonations_in_flight", None))
+
+
+def _claim(
+    container: Any, state: Any, step: str
+) -> tuple[list[tuple[DetonationRecord, threading.Event]], list[tuple[str, threading.Event]]]:
+    """Claim every pending detonation for ``step``, and name those another step is carrying out.
+
+    Under the job's claim lock: each pending detonation's record is made and
+    added to ``container.detonations`` at once, running, so no other step
+    finds it pending; the claimant alone submits it. A detonation already in
+    flight is waited for, never submitted again.
     """
-    made: list[DetonationRecord] = []
-    for name, requests in _pending(container):
-        _fill_entry_ids(requests, state)
-        record = DetonationRecord(
-            ordinal=int(name[1:]),
-            origin=AGENT_ORIGIN,
-            arguments=requests[0].arguments,
-            requested_by=[r.asker() for r in requests],
-        )
-        record.step = step
-        askers = list(dict.fromkeys(r.agent for r in requests if r.agent))
-        emit(
-            container.event_sink,
-            DETONATION_STARTED,
-            {"detonation": name, "step": step, "requested_by": askers},
-        )
-        record.started_at = time.time()
-        began = time.monotonic()
-        left, needs = _seconds_left(container, state), _needs_seconds(container)
-        detonator = getattr(container, "detonator", None)
+    lock, flight = _claims(container)
+    claimed: list[tuple[DetonationRecord, threading.Event]] = []
+    with lock:
+        waiting = list(flight.items())
+        for name, requests in _pending(container):
+            _fill_entry_ids(requests, state)
+            record = DetonationRecord(
+                ordinal=int(name[1:]),
+                origin=AGENT_ORIGIN,
+                arguments=requests[0].arguments,
+                requested_by=[r.asker() for r in requests],
+            )
+            record.step = step
+            record.running = True
+            done = threading.Event()
+            flight[name] = done
+            container.detonations.append(record)
+            claimed.append((record, done))
+    return claimed, waiting
+
+
+async def _detonate(container: Any, state: Any, step: str, record: DetonationRecord) -> None:
+    """Carry ``record`` out through the job's detonator, bounded by the job's time limit."""
+    name = record.name
+    askers = list(dict.fromkeys(str(a.get("agent") or "") for a in record.requested_by))
+    emit(
+        container.event_sink,
+        DETONATION_STARTED,
+        {"detonation": name, "step": step, "requested_by": [a for a in askers if a]},
+    )
+    record.started_at = time.time()
+    began = time.monotonic()
+    left, needs = _seconds_left(container, state), _needs_seconds(container)
+    detonator = getattr(container, "detonator", None)
+    try:
         if left is not None and (left <= 0 or (needs is not None and left < needs)):
             record.failure = (
                 "not run: the job's time limit leaves "
@@ -342,30 +384,69 @@ async def carry_out(
             except Exception as exc:  # noqa: BLE001 — a failed detonation never fails the run
                 logger.error("Further detonation %s failed: %s", name, type(exc).__name__)
                 record.failure = record.failure or f"it failed: {type(exc).__name__}"
+    finally:
         record.ended_at = time.time()
         record.duration_ms = int((time.monotonic() - began) * 1000)
-        container.detonations.append(record)
+        record.running = False
+    logger.info(
+        "Further detonation %s on entry of %s: %s in %d ms.",
+        name,
+        step,
+        "reported" if record.reported else "no report",
+        record.duration_ms,
+    )
+    emit(
+        container.event_sink,
+        DETONATION_FINISHED,
+        {
+            "detonation": name,
+            "step": step,
+            "reported": record.reported,
+            "duration_ms": record.duration_ms,
+            **({"failure": record.failure} if record.failure else {}),
+        },
+    )
+
+
+async def carry_out(
+    container: Any,
+    state: Any,
+    step: str,
+    entries: list[dict[str, Any]] | None = None,
+    waited: list[DetonationRecord] | None = None,
+) -> list[DetonationRecord]:
+    """Carry out every accepted detonation still pending, on the entry of ``step``.
+
+    Each is one record, added to ``container.detonations`` in order when it
+    is claimed (:func:`_claim`), with the agents that asked, the step, and
+    its own start, end and duration. A detonation the job's time limit leaves
+    no room for, or that no detonator can make, is recorded with the reason;
+    one that fails is recorded with its failure. Never raises for a
+    detonation. The platform's reads of each report that came back
+    (:func:`platform_reads`) are added to ``entries``. A detonation another
+    step is carrying out is waited for, and added to ``waited`` once it
+    ended; its claimant returns it and its reads.
+    """
+    claimed, waiting = _claim(container, state, step)
+    made: list[DetonationRecord] = []
+    lock, flight = _claims(container)
+    for record, done in claimed:
+        try:
+            await _detonate(container, state, step, record)
+            if record.reported:
+                record.platform_rows = platform_reads(container, record, step)
+        finally:
+            with lock:
+                flight.pop(record.name, None)
+            done.set()
         made.append(record)
-        if record.reported and entries is not None:
-            entries.extend(platform_reads(container, record, step))
-        logger.info(
-            "Further detonation %s on entry of %s: %s in %d ms.",
-            name,
-            step,
-            "reported" if record.reported else "no report",
-            record.duration_ms,
-        )
-        emit(
-            container.event_sink,
-            DETONATION_FINISHED,
-            {
-                "detonation": name,
-                "step": step,
-                "reported": record.reported,
-                "duration_ms": record.duration_ms,
-                **({"failure": record.failure} if record.failure else {}),
-            },
-        )
+        if entries is not None:
+            entries.extend(record.platform_rows)
+    for name, done in waiting:
+        await asyncio.to_thread(done.wait)
+        ended = next((r for r in container.detonations if r.name == name), None)
+        if ended is not None and waited is not None:
+            waited.append(ended)
     return made
 
 
@@ -605,23 +686,28 @@ def on_entry(
     """
 
     def _wanted() -> bool:
-        if not reading_agents or not _pending(container):
+        if not reading_agents or not (_pending(container) or in_flight(container)):
             return False
         return any(reads_the_sandbox(container, agent) for agent in reading_agents)
 
-    async def _before(state: Any) -> dict[str, Any]:
+    async def _before(state: Any) -> tuple[dict[str, Any], dict[str, Any]]:
+        """What the step returns beside its own update, and what it only reads."""
         entries: list[dict[str, Any]] = []
+        waited: list[DetonationRecord] = []
         if _wanted():
-            await carry_out(container, state, name, entries)
+            await carry_out(container, state, name, entries, waited)
         # The platform's reads of each detonation that came back go out with
         # the step's update, and the step's own work (and a further turn)
-        # reads the state holding them.
+        # reads the state holding them. A detonation another step carried
+        # out is read here and returned by that step alone.
         extra: dict[str, Any] = {"evidence_ledger": entries} if entries else {}
+        rows = [row for record in waited for row in record.platform_rows]
+        seen: dict[str, Any] = {"evidence_ledger": rows} if rows else {}
         if first_negotiation and not getattr(container, "_further_turns_given", False):
             container._further_turns_given = True
-            turns = await further_turns(container, _merge(dict(state or {}), extra), name)
-            extra = _merge(extra, turns)
-        return extra
+            read = _merge(_merge(dict(state or {}), seen), extra)
+            extra = _merge(extra, await further_turns(container, read, name))
+        return extra, seen
 
     def _owed(state: Any) -> bool:
         return (
@@ -629,6 +715,9 @@ def on_entry(
             and not getattr(container, "_further_turns_given", False)
             and bool(_readers_owed(container, state))
         )
+
+    def _read(state: Any, extra: dict[str, Any], seen: dict[str, Any]) -> Any:
+        return _merge(_merge(dict(state), seen), extra) if (extra or seen) else state
 
     if asyncio.iscoroutinefunction(fn):
 
@@ -638,11 +727,11 @@ def on_entry(
             if not (_wanted() or _owed(state)):
                 _note_seen(container, analysis_agents)
                 return await fn(state, *args, **kwargs)
-            extra = await _before(state)
+            extra, seen = await _before(state)
             _note_seen(container, analysis_agents)
+            out = await fn(_read(state, extra, seen), *args, **kwargs)
             if not extra:
-                return await fn(state, *args, **kwargs)
-            out = await fn(_merge(dict(state), extra), *args, **kwargs)
+                return out
             return _merge(extra, out if isinstance(out, dict) else {})
 
         return async_entry
@@ -653,11 +742,11 @@ def on_entry(
         if not (_wanted() or _owed(state)):
             _note_seen(container, analysis_agents)
             return fn(state, *args, **kwargs)
-        extra = _blocking(lambda: _before(state))
+        extra, seen = _blocking(lambda: _before(state))
         _note_seen(container, analysis_agents)
+        out = fn(_read(state, extra, seen), *args, **kwargs)
         if not extra:
-            return fn(state, *args, **kwargs)
-        out = fn(_merge(dict(state), extra), *args, **kwargs)
+            return out
         return _merge(extra, out if isinstance(out, dict) else {})
 
     return sync_entry

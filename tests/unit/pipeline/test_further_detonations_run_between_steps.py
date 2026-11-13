@@ -148,9 +148,11 @@ class TestTheExecutor:
         assert d2.ended_at >= d2.started_at > 0 and d2.duration_ms >= 0
         assert d2.public()["step"] == "negotiation"
         assert [r.name for r in container.detonations] == ["d1", "d2", "d3"]
-        kinds = [kind for kind, _ in container.events]
-        assert kinds == [dt.DETONATION_STARTED, dt.DETONATION_FINISHED] * 2
-        assert container.events[0][1]["requested_by"] == ["dynamic", "judge"]
+        own = [(kind, data) for kind, data in container.events if kind.startswith("detonation_")]
+        assert [kind for kind, _ in own] == [dt.DETONATION_STARTED, dt.DETONATION_FINISHED] * 2
+        assert own[0][1]["requested_by"] == ["dynamic", "judge"]
+        # The platform's reads of each report are fed out as the pack's are.
+        assert "tool_call_finished" in {kind for kind, _ in container.events}
         # Nothing is carried out twice.
         assert asyncio.run(dt.carry_out(container, state, "judge")) == []
 
@@ -158,7 +160,10 @@ class TestTheExecutor:
         container = _container()
         _request(container, 1, "dynamic", "-a", "d2", ACCEPTED)
         asyncio.run(dt.carry_out(container, {}, "negotiation"))
-        assert "-a" not in repr(container.events)
+        # The executor's own events and log lines; the platform's reads of the
+        # report state the launch, as any read of a later detonation does.
+        own = [event for event in container.events if event[0].startswith("detonation_")]
+        assert own and "-a" not in repr(own)
         assert "-a" not in caplog.text
 
     def test_a_failed_detonation_is_recorded_and_never_raises(self) -> None:
