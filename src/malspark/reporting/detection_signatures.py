@@ -1322,9 +1322,17 @@ def _stated_value(kind: str, value: str) -> str:
 
 
 def _stated_drafts(report: MalwareReport) -> tuple[list[_StatedDraft], int]:
-    """The drafts over the stated values, and how many generic names were left out of them."""
+    """The drafts over the stated values, and how many generic names were left out of them.
+
+    A draft names each selected value only further detonations observed
+    (:func:`_observed_values`), read over every row that reduces to it.
+    """
+    from malspark.reporting.ledger_projection import marks_of
+
     drafts: dict[str, _StatedDraft] = {}
     seen: set[tuple[str, str]] = set()
+    # Each selected value, by draft: as shown, with the marks of every row reducing to it.
+    reduced: dict[str, dict[tuple[str, str], tuple[str, list[ObservedIn]]]] = {}
     generic = 0
     for row in _stated_rows(report):
         kind = str(row.kind or "")
@@ -1336,7 +1344,12 @@ def _stated_drafts(report: MalwareReport) -> tuple[list[_StatedDraft], int]:
             continue
         suffix, selection, field_name = placed
         value = _stated_value(kind, row.value)
-        if not value or (selection, value.lower()) in seen:
+        if not value:
+            continue
+        if (selection, value.lower()) in seen:
+            held = reduced.get(suffix, {}).get((selection, value.lower()))
+            if held is not None:
+                held[1].extend(marks_of(row))
             continue
         draft = drafts.get(suffix)
         if draft is None:
@@ -1351,9 +1364,9 @@ def _stated_drafts(report: MalwareReport) -> tuple[list[_StatedDraft], int]:
         seen.add((selection, value.lower()))
         values.append(value)
         draft.sources.append(f"{kind}:{row.value}")
-        later = _later_only(row)
-        if later:
-            draft.observed.append(f"{_one_line(row.value)}: {later}")
+        reduced.setdefault(suffix, {})[(selection, value.lower())] = (row.value, marks_of(row))
+    for suffix, draft in drafts.items():
+        draft.observed.extend(_observed_values(reduced.get(suffix, {}).values()))
     return [drafts[s] for s in _STATED_TITLES if s in drafts], generic
 
 

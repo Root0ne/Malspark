@@ -174,3 +174,68 @@ def test_a_draft_with_a_mark_still_passes_its_own_check(kind: str) -> None:
     if kind == "yara" and not drafts._YARA_AVAILABLE:
         pytest.skip("yara-python is not installed")
     assert all(rule.compile_error is None for rule in rules)
+
+
+D3 = ObservedIn(detonation="d3", launched_with="--silent")
+MARK_3 = "detonation 3, launched with `--silent`"
+PATH_SAME = "c:\\users\\public\\vendor\\DROP.exe"
+
+
+def _drafted(rows: list[Any]) -> list[Any]:
+    report = _report(later=False)
+    report.consolidated_iocs = rows
+    return build_detection_rules(report)
+
+
+def _sigma_descriptions(rows: list[Any]) -> list[str]:
+    return [yaml.safe_load(r.body)["description"] for r in _drafted(rows) if r.kind == "sigma"]
+
+
+class TestEveryRowOfAValue:
+    """A selected value is a later detonation's only where every row reducing to it is."""
+
+    @pytest.mark.parametrize("first_later", [True, False])
+    def test_one_row_of_the_job_s_own_detonation_removes_the_statement(
+        self, first_later: bool
+    ) -> None:
+        later = _row("path", "Path", PATH_LATER, "analysis", [D2])
+        own = _row("path", "Path", PATH_SAME, "analysis", [])
+        rows = [later, own] if first_later else [own, later]
+        assert not any("observed in" in said for said in _sigma_descriptions(rows))
+
+    def test_rows_of_later_detonations_alone_name_each(self) -> None:
+        rows = [
+            _row("path", "Path", PATH_LATER, "analysis", [D2]),
+            _row("path", "Path", PATH_SAME, "analysis", [D3]),
+        ]
+        (said,) = [d for d in _sigma_descriptions(rows) if "observed in" in d]
+        assert said.endswith(f"{PATH_LATER}: {MARK} and in {MARK_3}")
+
+
+class TestSeveralDetonations:
+    def test_a_value_two_later_detonations_observed_names_both_launches(self) -> None:
+        rows = [_row("domain", "Domain", DOMAIN_LATER, "sandbox", [D2, D3])]
+        rules = {r.kind: r for r in _drafted(rows)}
+        both = f"{MARK} and in {MARK_3}"
+        yara = next(x for x in rules["yara"].body.splitlines() if f'"{DOMAIN_LATER}"' in x)
+        assert yara.endswith(f"; {both}")
+        suricata = next(
+            x for x in rules["suricata"].body.splitlines() if x.startswith("# ") and "pay" in x
+        )
+        assert suricata.endswith(f"; {both}")
+
+    def test_a_value_the_job_s_own_and_a_third_detonation_observed_is_no_later_only(self) -> None:
+        rows = [
+            _row("domain", "Domain", DOMAIN_LATER, "sandbox", [D1, D3]),
+            _row("path", "Path", PATH_LATER, "analysis", [D1, D3]),
+        ]
+        assert not any("observed in" in r.body for r in _drafted(rows))
+
+    def test_the_first_sigma_draft_names_a_registry_key_only_a_later_detonation_observed(
+        self,
+    ) -> None:
+        key = "HKCU\\Software\\ExampleVendor7731"
+        rows = [_row("registry", "Registry key", key, "analysis", [D3])]
+        (doc,) = [yaml.safe_load(r.body) for r in _drafted(rows) if r.kind == "sigma"]
+        assert doc["logsource"]["category"] == "registry_event"
+        assert doc["description"].endswith(f"{key}: observed in {MARK_3}")
