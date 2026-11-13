@@ -17,6 +17,7 @@ version it says it is.
 
 from __future__ import annotations
 
+import asyncio
 import importlib.util
 import os
 import sys
@@ -288,6 +289,32 @@ class TestTheSidecarsManifest:
         )
         (row,) = sidecar.capabilities("t", program, ("scan",), version="1")["requirements"]
         assert row["version"] == f"{NOT_REPORTED}: t668tool is not on PATH"
+
+    def test_the_capabilities_answer_does_not_probe_on_the_event_loop(self, bin_dir: Path) -> None:
+        path = bin_dir / "t668tool"
+        path.write_text('#!/bin/sh\nsleep 0.5\necho "t668tool 2.5"\n')
+        path.chmod(0o755)
+        program = sidecar.Program(
+            name="t668tool", command=("t668tool",), install="x", version_argv=("--version",)
+        )
+        ticks: list[float] = []
+
+        async def _loop_is_free() -> None:
+            while True:
+                ticks.append(time.monotonic())
+                await asyncio.sleep(0.02)
+
+        async def _run() -> dict[str, Any]:
+            ticker = asyncio.create_task(_loop_is_free())
+            try:
+                return await sidecar.answer_capabilities("t", program, ("scan",), version="2.5")
+            finally:
+                ticker.cancel()
+
+        held = asyncio.run(_run())
+        assert held["requirements"][0]["version"] == "2.5"
+        # The loop kept running through the half second the probe took.
+        assert len(ticks) > 10
 
     def test_the_program_is_asked_once_per_process(self, bin_dir: Path) -> None:
         _stub(bin_dir, "t668tool", "t668tool 1.0")

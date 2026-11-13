@@ -70,14 +70,14 @@ CAPA_RULES = data(
 SIGMA_RULES = data(
     rules.DEFAULT_SIGMA_RULES,
     override=rules.SIGMA_RULES_ENV,
-    pattern="*.y*ml",
+    pattern="*.yml|*.yaml",
     argument="ruleset",
 )
 # YARA's corpus is tracked, so only an override can name one that is missing.
 YARA_RULES = data(
     rules.DEFAULT_YARA_RULES,
     override=rules.YARA_RULES_ENV,
-    pattern="*.y*ml",
+    pattern="*.yml|*.yaml",
     fetched=False,
     argument="ruleset",
 )

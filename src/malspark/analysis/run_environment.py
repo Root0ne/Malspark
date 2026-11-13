@@ -387,13 +387,14 @@ def _served(
     where the job's server registry stamped it. A provider's own server
     (``own``, by key, from ``own_tool_server``) stamps nothing: a tool or entry
     that names no server is its when its name is one of the tools that server
-    served (``tools``).
+    served (``tools``); a name more than one such server served is none's.
     """
-    owners: dict[str, str] = {}
+    claimed: dict[str, set[str]] = {}
     for key, held in (own or {}).items():
         names = held.get("tools") if isinstance(held, Mapping) else None
         for name in names if isinstance(names, list | tuple) else ():
-            owners.setdefault(_text(name), key)
+            claimed.setdefault(_text(name), set()).add(key)
+    owners = {name: next(iter(keys)) for name, keys in claimed.items() if len(keys) == 1}
     served: dict[str, set[str]] = {}
     tools_of = getattr(container, "setup_tools", None)
     set_up = tools_of() if callable(tools_of) else {}

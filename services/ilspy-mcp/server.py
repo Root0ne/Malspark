@@ -323,9 +323,9 @@ async def dotnet_metadata_table(path: str, table: str, bundle_entry: str = "") -
 
 
 @mcp.tool(**_DECLARED["capabilities"])
-def capabilities() -> dict[str, Any]:
+async def capabilities() -> dict[str, Any]:
     """Which of this server's tools this host can run, and how to install what is missing."""
-    return sidecar.capabilities(SERVER, PROGRAM, TOOLS, version=ILSPYCMD_VERSION)
+    return await sidecar.answer_capabilities(SERVER, PROGRAM, TOOLS, version=ILSPYCMD_VERSION)
 
 
 if __name__ == "__main__":

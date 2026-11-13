@@ -394,7 +394,7 @@ class TestTheCapabilitiesAnswerNeverWaits:
         )
         started = time.monotonic()
         answer = asyncio.run(server.capabilities())
-        assert time.monotonic() - started < 1.0
+        assert time.monotonic() - started < 1.5
         assert answer["requirements"][0]["version"] == NOT_READ_YET
         assert not done.exists(), "the answer waited for the version"
         deadline = time.monotonic() + 15

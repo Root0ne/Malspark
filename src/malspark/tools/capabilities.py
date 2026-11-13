@@ -423,13 +423,29 @@ def module_version(name: str) -> dict[str, str]:
     return {"version": f"{NOT_REPORTED}: no installed distribution provides {top}"}
 
 
+def _globs(pattern: str) -> list[str]:
+    """The globs ``pattern`` names: alternatives are written apart by ``|``."""
+    return [one for one in pattern.split("|") if one] or ["*"]
+
+
+def _matching(target: Path, pattern: str) -> Iterator[Path]:
+    """Every entry under ``target`` matching one of the globs of ``pattern``, once."""
+    seen: set[Path] = set()
+    for glob in _globs(pattern):
+        for entry in target.rglob(glob):
+            if entry not in seen:
+                seen.add(entry)
+                yield entry
+
+
 def data_files(target: Path, pattern: str, exclude: tuple[str, ...] = ()) -> list[tuple[str, Path]]:
     """The files that make up the data at ``target``, as ``(name, path)`` in name order.
 
     A file is itself, under its own name; a directory is every file under it
-    matching ``pattern``, each named by its path relative to the directory,
-    but for a file whose directory, written out whole as this host names it
-    (the directory ``target`` itself included), matches one of ``exclude``.
+    matching ``pattern`` (alternatives apart by ``|``), each named by its path
+    relative to the directory, but for a file whose directory, written out whole as
+    this host names it (the directory ``target`` itself included), matches one of
+    ``exclude``.
     That is how a rule loader that skips directories by their path reads
     them: ``*.git*`` is capa's own rule, which skips every directory whose
     path holds ``.git`` (a clone's ``.git`` and ``.github`` trees, and every
@@ -441,7 +457,7 @@ def data_files(target: Path, pattern: str, exclude: tuple[str, ...] = ()) -> lis
     if not target.is_dir():
         return []
     held = []
-    for entry in target.rglob(pattern):
+    for entry in _matching(target, pattern):
         if exclude and any(fnmatch.fnmatchcase(str(entry.parent), rule) for rule in exclude):
             continue
         if entry.is_file():
@@ -583,9 +599,10 @@ class Requirement:
     # (``static.capa.rules_dir``), and the server environment variable that
     # overrides ``name``, the default path, where the tool reads one instead.
     # Either may be empty. ``pattern`` is what a file in a directory must match
-    # for the directory to hold the data. ``fetched`` is data kept out of
-    # version control, which a fresh clone or worktree lacks until it is
-    # fetched; otherwise the default is tracked and only an override can miss.
+    # (alternatives apart by ``|``) for the directory to hold the data.
+    # ``fetched`` is data kept out of version control, which a fresh clone or
+    # worktree lacks until it is fetched; otherwise the default is tracked and
+    # only an override can miss.
     setting: str = ""
     override: str = ""
     pattern: str = "*"
@@ -924,7 +941,7 @@ def data_held(path: str | os.PathLike[str], pattern: str = "*") -> bool:
     try:
         if target.is_file():
             return target.stat().st_size > 0
-        return target.is_dir() and any(entry.is_file() for entry in target.rglob(pattern))
+        return target.is_dir() and any(entry.is_file() for entry in _matching(target, pattern))
     except OSError:
         return False
 
@@ -1143,17 +1160,38 @@ def read_versions_in_background(tools: list[ToolNeeds]) -> None:
                 req._version(None, wait=False)
 
 
+# How long an answer waits, in all, for the versions still being read.
+VERSION_WAIT_S = 1.0
+
+
+def _await_versions(deadline: float) -> bool:
+    """Wait until no version is being read or ``deadline`` (``time.monotonic``); whether none is."""
+    while True:
+        with _VERSIONS_LOCK:
+            if not _VERSIONS_PENDING:
+                return True
+        if time.monotonic() >= deadline:
+            return False
+        time.sleep(0.01)
+
+
 def answered_manifest(held: Mapping[str, Any], tools: list[ToolNeeds]) -> dict[str, Any]:
     """A copy of the manifest ``held`` with its ``requirements`` read now (``manifest``).
 
     Deep, so a caller cannot reach in and change what the server says. A
-    binary's version is the one read in the background, ``NOT_READ_YET``
-    until it has been: this never waits for a program to answer. The data's
-    count and digest are read here, so a server calls this off its event
-    loop.
+    binary's version is the one read in the background: the versions still
+    being read are waited for against one shared deadline of ``VERSION_WAIT_S``
+    in all, so the answer carries a version whenever reading it is quick, and
+    one not read by then is ``NOT_READ_YET``. The data's count and digest are
+    read here, so a server calls this off its event loop.
     """
+    deadline = time.monotonic() + VERSION_WAIT_S
     out = copy.deepcopy(dict(held))
-    out["requirements"] = requirement_facts(tools, wait=False)
+    rows = requirement_facts(tools, wait=False)
+    if any(row.get("version") == NOT_READ_YET for row in rows):
+        _await_versions(deadline)
+        rows = requirement_facts(tools, wait=False)
+    out["requirements"] = rows
     return out
 
 

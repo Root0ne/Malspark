@@ -12,6 +12,7 @@ as it always has.
 from __future__ import annotations
 
 import sys
+import time
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
@@ -531,6 +532,30 @@ class TestTheManifest:
         answered["tools"][0]["name"] = "changed"
         assert held["tools"][0]["name"] == "t"
 
+    def test_a_version_read_quickly_is_in_the_first_answer(self) -> None:
+        def _quick() -> str:
+            time.sleep(0.2)
+            return "7.1"
+
+        needs = [ToolNeeds("t", (binary("t668quick", lambda *a: None, version_of=_quick),))]
+        held = manifest("x", needs, requirements=False)
+        started = time.monotonic()
+        (row,) = capabilities.answered_manifest(held, needs)["requirements"]
+        assert row["version"] == "7.1"
+        assert time.monotonic() - started < 1.0
+
+    def test_a_version_read_slowly_is_not_waited_for_beyond_the_deadline(self) -> None:
+        def _slow() -> str:
+            time.sleep(3)
+            return "7.2"
+
+        needs = [ToolNeeds("t", (binary("t668slow", lambda *a: None, version_of=_slow),))]
+        held = manifest("x", needs, requirements=False)
+        started = time.monotonic()
+        (row,) = capabilities.answered_manifest(held, needs)["requirements"]
+        assert row["version"] == capabilities.NOT_READ_YET
+        assert time.monotonic() - started < 1.2
+
     def test_a_third_party_s_requirements_are_reduced_typed_and_capped(self) -> None:
         junk = "j" * 100_000
         payload = {
@@ -799,6 +824,35 @@ class TestServedTheRun:
         record = tools_record(container, entries)
         assert record["ghidra"]["served"] == ["called", "offered", "pack_step"]
         assert record["analysis"]["served"] == ["called"]
+
+    def test_a_tool_name_two_provider_servers_serve_is_claimed_by_neither(self) -> None:
+        class _Provider:
+            def __init__(self, key: str) -> None:
+                self.key = key
+
+            def own_tool_server(self) -> dict[str, Any]:
+                return {
+                    "server": self.key,
+                    "server_info": {},
+                    "manifest": None,
+                    "tools": ["decompile", f"only_{self.key}"],
+                }
+
+        container = _Container(
+            tools={"static": [SimpleNamespace(name="decompile"), SimpleNamespace(name="only_b")]}
+        )
+        container._static_provider_cache = {  # type: ignore[attr-defined]
+            "a": _Provider("a"),
+            "b": _Provider("b"),
+        }
+        entries = [
+            {"agent": "static", "server": None, "tool": "decompile"},
+            {"agent": "static", "server": None, "tool": "only_a"},
+        ]
+        record = tools_record(container, entries)
+        # The shared name marks neither; a name one of them alone served is still its.
+        assert record["a"]["served"] == ["called"]
+        assert record["b"]["served"] == ["offered"]
 
     def test_a_provider_s_own_server_none_of_whose_tools_ran_is_attached(self) -> None:
         class _Provider:

@@ -210,7 +210,7 @@ class TestDetectItEasy:
         answer = _call(die.die_scan(str(roots / "sample.bin")))
         assert _error(answer) == ("missing_dependency", "diec is not on PATH")
         assert "Detect It Easy 3.21" in answer["error"]["remediation"]
-        manifest = die.capabilities()
+        manifest = asyncio.run(die.capabilities())
         (cell,) = manifest["tools"]
         assert manifest["server"] == "die" and manifest["version"] == die.DIE_VERSION
         assert cell["name"] == "die_scan" and cell["available"] is False
@@ -220,7 +220,7 @@ class TestDetectItEasy:
     @pytest.mark.posix
     def test_capabilities_says_what_this_host_runs(self, bin_dir: Path) -> None:
         _program(bin_dir, "diec")
-        (cell,) = die.capabilities()["tools"]
+        (cell,) = asyncio.run(die.capabilities())["tools"]
         assert cell["available"] is True and cell["reason"] is None
         assert "remediation" not in cell
 
@@ -550,7 +550,7 @@ class TestGoReSym:
         answer = _call(goresym.go_symbols(str(roots / "sample.bin")))
         assert _error(answer) == ("missing_dependency", "GoReSym is not on PATH")
         assert "GoReSym 3.4.1" in answer["error"]["remediation"]
-        cells = goresym.capabilities()["tools"]
+        cells = asyncio.run(goresym.capabilities())["tools"]
         assert [c["name"] for c in cells] == ["go_symbols", "go_types", "go_strings"]
         assert not any(c["available"] for c in cells)
 

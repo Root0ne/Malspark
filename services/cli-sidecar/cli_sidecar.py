@@ -673,6 +673,19 @@ def capabilities(
 # helper (``malspark.tools.declared_facts``) writes the same, and the client
 # reads it for every server alike.
 FACTS_META_KEY = "malspark/tool_facts"
+
+
+async def answer_capabilities(
+    server: str, program: Program, tools: Iterable[str], version: str = "unknown"
+) -> dict[str, Any]:
+    """:func:`capabilities`, with the version probe run off the event loop.
+
+    The probe starts a process and may take seconds; a server answers other
+    calls meanwhile. The answer is the same, and complete.
+    """
+    return await asyncio.to_thread(capabilities, server, program, list(tools), version)
+
+
 # The capabilities tool's declaration, the same on every server.
 CAPABILITIES_FACTS: dict[str, Any] = {"kind": "capabilities"}
 # A call runs nothing of the sample, reaches nothing beyond this server and
