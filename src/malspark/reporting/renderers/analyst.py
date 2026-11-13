@@ -75,6 +75,7 @@ from malspark.reporting.renderers.markdown import (
     _inline_safe,
     _item,
     _left_out,
+    _observed_cell,
     _one_line,
     _paragraph_line,
     _ransomware_block,
@@ -1907,6 +1908,7 @@ class _Analyst:
                     ctx.inline(ioc.context) if ioc.context else "",
                     origin,
                     f"recovered by {ctx.inline(ioc.recovered_by)}" if ioc.recovered_by else "",
+                    _observed_cell(ioc.observed_in, ctx),
                 )
                 if part
             )
@@ -2202,6 +2204,13 @@ class _Analyst:
         # bundle's (T-555).
         if note and not note.lower().startswith(judge_kept_note("").lower()):
             said.append(self.ctx.plain(judge_reasons_shown(note)[0]))
+        # Under which detonations a further detonation's signatures tag it.
+        mapping = next(
+            (m for m in self.report.ttp_mappings if m.technique_id == technique_id), None
+        )
+        observed = _observed_cell(mapping.observed_in if mapping else None, self.ctx)
+        if observed:
+            said.append(observed)
         return f" _({'; '.join(said)})_" if said else ""
 
     def _procedure(self, claim: str, ids: list[str], technique_id: str = "") -> str:

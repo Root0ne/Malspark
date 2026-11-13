@@ -29,6 +29,7 @@ import bisect
 import hashlib
 import json
 import re
+from collections.abc import Mapping
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal
@@ -42,7 +43,7 @@ from malspark.analysis.technique_ids import (
 from malspark.core.logger import logger
 from malspark.core.tool_declarations import first, select
 from malspark.reporting import tool_kinds
-from malspark.reporting.dedupe import distinct_signatures, process_identity
+from malspark.reporting.dedupe import distinct_signatures, process_identity, signature_identity
 from malspark.reporting.models import (
     DirectedText,
     DynamicBehavior,
@@ -53,6 +54,7 @@ from malspark.reporting.models import (
     NetworkIOCs,
     NetworkIP,
     NetworkURL,
+    ObservedIn,
     PersistenceMechanism,
     PESection,
     ProcessNode,
@@ -105,14 +107,20 @@ _STRING_KINDS = {
 
 
 def _payloads(
-    ledger: list[LedgerEntry], *kinds: str, reader: str | None = None
+    ledger: list[LedgerEntry],
+    *kinds: str,
+    reader: str | None = None,
+    detonations: bool = False,
 ) -> list[tuple[LedgerEntry, dict[str, Any]]]:
     """Every successful call of a tool of ``kinds`` whose answer was a JSON object.
 
     A tool's kind is its declaration's, by the source the entry recorded, from
     any server that declares it (``reporting.tool_kinds``); ``reader`` narrows
     to the tools whose answer is that named shape. An entry with no recorded
-    source is read as the built-in tool of its name.
+    source is read as the built-in tool of its name. A read of a further
+    detonation (:func:`later_detonation`) is left out, unless
+    ``detonations``: a block that marks each row with the detonation it was
+    observed in (:func:`observed_mark`) reads it.
     """
     out: list[tuple[LedgerEntry, dict[str, Any]]] = []
     for entry in ledger or []:
@@ -125,10 +133,11 @@ def _payloads(
             continue
         data = entry.structured
         if isinstance(data, dict) and not data.get("error"):
-            if later_detonation(data):
+            if later_detonation(data) and not detonations:
                 # A further detonation's read is not the job's own detonation:
                 # its observations are drawn apart, under the launch they were
-                # made with (``ledger_report._OneDetonation``), never merged here.
+                # made with (``ledger_report._OneDetonation``), and reach a
+                # block only marked with it.
                 continue
             out.append((entry, data))
     return out
@@ -137,6 +146,65 @@ def _payloads(
 def later_detonation(data: Any) -> bool:
     """Whether a sandbox read is of a further detonation (``DetonationRecord.stated``)."""
     return isinstance(data, dict) and bool(data.get("detonation")) and "launched_with" in data
+
+
+# The job's own detonation, as a row observed in it is marked.
+FIRST_DETONATION = "d1"
+
+
+def observed_mark(data: Any) -> ObservedIn:
+    """The detonation a sandbox read is of, with its launch: the job's own unless a later one."""
+    if later_detonation(data):
+        return ObservedIn(
+            detonation=str(data.get("detonation")), launched_with=str(data.get("launched_with"))
+        )
+    return ObservedIn(detonation=FIRST_DETONATION)
+
+
+def _ordinal(mark: ObservedIn) -> int:
+    digits = mark.detonation[1:]
+    return int(digits) if digits.isdigit() else 0
+
+
+def stated_marks(marks: Iterable[ObservedIn]) -> list[ObservedIn]:
+    """``marks`` once each, in detonation order, where a later detonation is among them, or ``[]``.
+
+    A row only the job's own detonation observed states no mark, so a run
+    with one detonation projects as it always did.
+    """
+    held: dict[str, ObservedIn] = {}
+    for mark in marks:
+        held.setdefault(mark.detonation, mark)
+    if not any(name != FIRST_DETONATION for name in held):
+        return []
+    return sorted(held.values(), key=_ordinal)
+
+
+def marks_of(row: Any) -> list[ObservedIn]:
+    """The detonations a row states it was observed in; the job's own where it states none."""
+    stated = getattr(row, "observed_in", None)
+    if stated is None and isinstance(row, Mapping):
+        stated = row.get("observed_in")
+    out: list[ObservedIn] = []
+    for mark in stated or ():
+        if isinstance(mark, ObservedIn):
+            out.append(mark)
+        elif isinstance(mark, Mapping) and mark.get("detonation"):
+            out.append(ObservedIn.model_validate(dict(mark)))
+    return out or [ObservedIn(detonation=FIRST_DETONATION)]
+
+
+def _distinct_marked(signatures: list[SandboxSignature]) -> list[SandboxSignature]:
+    """``signatures`` once each (``distinct_signatures``), each naming every detonation of it."""
+    kept = distinct_signatures(signatures)
+    if not any(signature.observed_in for signature in signatures):
+        return kept
+    marks: dict[tuple[Any, ...], list[ObservedIn]] = {}
+    for signature in signatures:
+        marks.setdefault(signature_identity(signature), []).extend(marks_of(signature))
+    for signature in kept:
+        signature.observed_in = stated_marks(marks[signature_identity(signature)])
+    return kept
 
 
 def _rows_of(artifact: Any) -> list[list[str]]:
@@ -646,16 +714,42 @@ def _names_resolved_at_runtime(ledger: list[LedgerEntry], static: StaticAnalysis
     return found
 
 
-def _not_held(rows: list[dict[str, Any]], held: set[str]) -> list[dict[str, Any]]:
+def _not_held(
+    rows: list[dict[str, Any]], held: dict[str, dict[str, Any]], mark: ObservedIn
+) -> list[dict[str, Any]]:
     """``rows`` without those an earlier entry already gave (``held``), which then holds these too.
 
     A row is its whole content, compared as canonical JSON: a row that differs
-    in any field (a size, a hash) is another row.
+    in any field (a size, a hash) is another row. Each row kept notes the
+    detonation it was observed in (``mark``), and a row given again by a read
+    of another detonation notes that one too (:func:`_state_row_marks`).
     """
-    keys = [json.dumps(row, sort_keys=True, default=str) for row in rows]
-    kept = [row for row, key in zip(rows, keys, strict=True) if key not in held]
-    held.update(keys)
+    kept: list[dict[str, Any]] = []
+    given: dict[str, dict[str, Any]] = {}
+    for row in rows:
+        key = json.dumps(row, sort_keys=True, default=str)
+        holder = held.get(key)
+        if holder is None:
+            # A row this answer lists twice is its own, and stays twice.
+            given.setdefault(key, row)
+            kept.append(row)
+            holder = row
+        holder.setdefault(_ROW_MARKS, []).append(mark)
+    for key, row in given.items():
+        held.setdefault(key, row)
     return kept
+
+
+# Where a dict row of ``file_operations`` holds its marks while the block is read.
+_ROW_MARKS = "__observed__"
+
+
+def _state_row_marks(rows: list[dict[str, Any]]) -> None:
+    """Each dict row's marks as its ``observed_in``, where a later detonation is among them."""
+    for row in rows:
+        marks = stated_marks(row.pop(_ROW_MARKS, None) or ())
+        if marks:
+            row["observed_in"] = [mark.model_dump() for mark in marks]
 
 
 def _cut_total(value: Any, listed: int) -> int:
@@ -810,7 +904,8 @@ def dynamic_from_ledger(ledger: list[LedgerEntry]) -> DynamicBehavior | None:
             processes.extend(nodes)
     dynamic.process_tree = _as_tree(_once(processes, process_identity))
 
-    for _entry, data in _payloads(ledger, "sandbox_signatures"):
+    for _entry, data in _payloads(ledger, "sandbox_signatures", detonations=True):
+        later = [observed_mark(data)] if later_detonation(data) else []
         for row in data.get("signatures") or []:
             if not isinstance(row, dict):
                 continue
@@ -829,10 +924,12 @@ def dynamic_from_ledger(ledger: list[LedgerEntry]) -> DynamicBehavior | None:
                     # Where the answer listed the first of them only, their
                     # count is kept beside them (``SandboxSignature.pids_total``).
                     pids_total=_cut_total(row.get("pids_total"), len(pids)),
+                    # The further detonation it was observed in, where it was.
+                    observed_in=list(later),
                 )
             )
 
-    dynamic.sandbox_signatures = distinct_signatures(dynamic.sandbox_signatures)
+    dynamic.sandbox_signatures = _distinct_marked(dynamic.sandbox_signatures)
 
     for _entry, data in _payloads(ledger, "sandbox_registry"):
         for row in data.get("registry") or []:
@@ -872,8 +969,8 @@ def dynamic_from_ledger(ledger: list[LedgerEntry]) -> DynamicBehavior | None:
     # The same task read by the pack and by an analyst lists the same mutexes
     # and dropped files: a row an earlier entry already gave is that row, and
     # is kept once. Rows one answer lists twice are its own, and stay.
-    held_rows: set[str] = set()
-    for _entry, data in _payloads(ledger, "sandbox_mutexes"):
+    held_rows: dict[str, dict[str, Any]] = {}
+    for _entry, data in _payloads(ledger, "sandbox_mutexes", detonations=True):
         names = [str(name) for name in data.get("mutexes") or [] if name]
         if names:
             seen = True
@@ -888,9 +985,12 @@ def dynamic_from_ledger(ledger: list[LedgerEntry]) -> DynamicBehavior | None:
                 if made_by:
                     mutex["pids"] = made_by
                 mutexes.append(mutex)
-            dynamic.file_operations.extend(_not_held(mutexes, held_rows))
+            dynamic.file_operations.extend(_not_held(mutexes, held_rows, observed_mark(data)))
 
-    for _entry, data in _payloads(ledger, "sandbox_dropped_files"):
+    # The files a further detonation saw written are rows marked with it; the
+    # archive's members a generated launcher unpacked are listed apart in the
+    # answer (``platform_files``) and are never read here.
+    for _entry, data in _payloads(ledger, "sandbox_dropped_files", detonations=True):
         dropped: list[dict[str, Any]] = [
             {"operation": "write", **row}
             for row in data.get("dropped") or []
@@ -898,7 +998,8 @@ def dynamic_from_ledger(ledger: list[LedgerEntry]) -> DynamicBehavior | None:
         ]
         if dropped:
             seen = True
-            dynamic.file_operations.extend(_not_held(dropped, held_rows))
+            dynamic.file_operations.extend(_not_held(dropped, held_rows, observed_mark(data)))
+    _state_row_marks(dynamic.file_operations)
 
     # A sandbox that cannot fill a section says so in the report's own
     # ``unavailable`` list, and that disclaimer is the difference between "the
@@ -1073,8 +1174,32 @@ def network_from_ledger(
     domains: dict[str, NetworkDomain] = {}
     ips: dict[str, NetworkIP] = {}
     urls: dict[str, NetworkURL] = {}
+    # The detonation the sandbox view being read is of, while one is read, and
+    # every detonation each value was observed in (``observed_mark``).
+    marking: list[ObservedIn | None] = [None]
+    observed: dict[tuple[str, str], list[ObservedIn]] = {}
 
     def _add(kind: str, value: str, source: _DomainSource = "strings") -> None:
+        _put(kind, value, source)
+        mark = marking[0]
+        if mark is None or not (value or "").strip():
+            return
+        text = value.strip()
+        if kind == "domain":
+            key = text.lower().rstrip(".")
+            held = key in domains
+        elif kind == "ip":
+            key = address_key(text)
+            held = key in ips
+        elif kind == "url":
+            key = _fold_url_host(text)
+            held = key in urls
+        else:
+            return
+        if held:
+            observed.setdefault((kind, key), []).append(mark)
+
+    def _put(kind: str, value: str, source: _DomainSource = "strings") -> None:
         value = (value or "").strip()
         if not value:
             return
@@ -1170,7 +1295,20 @@ def network_from_ledger(
 
     # The addresses each name already holds, so a value is added once.
     held_ips: dict[str, set[str]] = {}
-    for data, whole in _sandbox_views(ledger, sandbox_report):
+    # The job's own detonation's views, then each further detonation's: a
+    # value a further one observed is marked with it, and with every other
+    # detonation that observed it too.
+    for data, whole in [
+        *_sandbox_views(ledger, sandbox_report),
+        *_ledger_views(
+            [
+                (e, d)
+                for e, d in _payloads(ledger, "sandbox_network", detonations=True)
+                if later_detonation(d)
+            ]
+        ),
+    ]:
+        marking[0] = observed_mark(data)
         # Each DNS question reads the answers for its own name, and a request's
         # unnamed answers, within the request's own size. A ``domains`` row is
         # no DNS question: it reads its own answers, as dev read it, whatever
@@ -1275,6 +1413,8 @@ def network_from_ledger(
             if method and known_url is not None and not known_url.method:
                 known_url.method = method
 
+    # The job's own capture is of its own detonation.
+    marking[0] = ObservedIn(detonation=FIRST_DETONATION)
     for _entry, data in _payloads(ledger, "pcap"):
         for row in data.get("conversations") or []:
             # A host that only sent to the sandbox was not contacted by it.
@@ -1285,6 +1425,7 @@ def network_from_ledger(
         for name in sni if isinstance(sni, dict | list) else []:
             _add("domain", str(name), "sandbox")
             tls_names.add(value_key("domain", str(name)))
+    marking[0] = None
 
     for _entry, data in _payloads(ledger, "file_iocs", "text_iocs"):
         for row in data.get("iocs") or []:
@@ -1329,6 +1470,12 @@ def network_from_ledger(
 
     _state_sandbox_facts(network, attributed, host_facts, outside, disputed)
     _state_who_kept(network, kept, isrs)
+    for ip in network.ips:
+        ip.observed_in = stated_marks(observed.get(("ip", ip.address), ()))
+    for domain in network.domains:
+        domain.observed_in = stated_marks(observed.get(("domain", domain.fqdn), ()))
+    for request in network.urls:
+        request.observed_in = stated_marks(observed.get(("url", request.url), ()))
     return network if (network.domains or network.ips or network.urls) else None
 
 
@@ -2115,19 +2262,26 @@ def _sandbox_views(
     (``schemas.sandbox_document.without_dns_links``), so its rows read their
     own answers.
     """
-    from malspark.agents.prompt_fragments import SANDBOX_FAMILY
-    from malspark.pipeline.triage_pack import PACK_SOURCE
-    from malspark.schemas.sandbox_document import without_dns_links
-
-    platform_sources = {SANDBOX_FAMILY, PACK_SOURCE}
     if isinstance(sandbox_report, dict) and sandbox_report:
         from malspark.providers.sandbox_tools import sandbox_network
 
         view = sandbox_network(sandbox_report)
         if isinstance(view, dict) and not view.get("error"):
             return [(view, True)]
+    return _ledger_views(_payloads(ledger, "sandbox_network"))
+
+
+def _ledger_views(
+    reads: list[tuple[LedgerEntry, dict[str, Any]]],
+) -> list[tuple[dict[str, Any], bool]]:
+    """Each ``sandbox_network`` answer of ``reads``, with whether it is a whole view."""
+    from malspark.agents.prompt_fragments import SANDBOX_FAMILY
+    from malspark.pipeline.triage_pack import PACK_SOURCE
+    from malspark.schemas.sandbox_document import without_dns_links
+
+    platform_sources = {SANDBOX_FAMILY, PACK_SOURCE}
     views: list[tuple[dict[str, Any], bool]] = []
-    for entry, data in _payloads(ledger, "sandbox_network"):
+    for entry, data in reads:
         args = entry.args if isinstance(entry.args, dict) else {}
         paged = any(_as_int(args.get(k)) for k in ("offset", "limit")) or any(
             str(k).endswith("_total") or k in ("next_offset", "shortened", "truncated")

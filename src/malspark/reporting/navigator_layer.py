@@ -73,6 +73,8 @@ def build_layer(
     domain: str | None = None,
 ) -> dict[str, Any]:
     """The Navigator layer for the published techniques of one stored report."""
+    from malspark.reporting.detonation_marks import observed_words
+
     entries: list[tuple[str, Mapping[str, Any]]] = []
     for mapping in malware_report.get("ttp_mappings") or []:
         if not isinstance(mapping, Mapping):
@@ -116,6 +118,13 @@ def build_layer(
             ]
         if mapping.get("confidence") is not None:
             metadata.append({"name": "confidence", "value": str(mapping["confidence"])})
+        # Under which detonations a further detonation's sandbox signatures
+        # tag it, where they do (``detonation_marks``).
+        observed = observed_words(
+            mark for mark in mapping.get("observed_in") or () if isinstance(mark, Mapping)
+        )
+        if observed:
+            metadata.append({"name": "observed in", "value": observed.removeprefix("observed in ")})
         entry.update(
             {
                 "comment": ", ".join(str(s) for s in mapping.get("sources") or []),

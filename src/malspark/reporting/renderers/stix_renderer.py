@@ -104,6 +104,7 @@ from malspark.schemas.stix_models import (
     EVIDENCE_REFS_PROPERTY,
     KNOWN_KILL_CHAINS,
     LINEAGE_DISPUTED_PROPERTY,
+    OBSERVED_IN_PROPERTY,
     PROPERTY_NOT_CARRIED_CODE,
     SAMPLE_TREE_PROPERTY,
     STIX_ID_NAMESPACE,
@@ -1460,6 +1461,9 @@ class ExtendedSTIXRenderer:
         # Every indicator the export carries says why it is published, in the
         # words the report's IOC table prints for its values.
         objects = _with_the_publish_reason(objects, table)
+        # Under which detonations each indicator's values and each technique
+        # were observed, where a further detonation observed them.
+        objects = _with_the_detonations(objects, table, report)
         objects = enforce_bundle_integrity(objects, ledger=ledger)
         _record_indicator_cap(ledger, removed=0)
         # A note, opinion, grouping or report is about the objects it names,
@@ -5478,6 +5482,61 @@ def _with_the_publish_reason(objects: list[Any], rows: Sequence[Any]) -> list[An
         out.append(
             obj.model_copy(update={"description": f"{before} {reason}" if before else reason})
         )
+    return out
+
+
+def _with_the_detonations(objects: list[Any], rows: Sequence[Any], report: Any) -> list[Any]:
+    """Each indicator and ``uses`` edge with the detonations its values or technique were seen in.
+
+    Where a further detonation an agent asked for observed them
+    (``reporting.detonation_marks``): an indicator takes the marks the
+    report's IOC table states for the values its pattern compares, as
+    ``x_malspark_observed_in`` and a clause after its description; the
+    sample's ``uses`` edge to a technique takes the technique's. A copy is
+    written; every other object, and every object of a run with one
+    detonation, is returned as it was.
+    """
+    from malspark.reporting.detonation_marks import observed_property, observed_words
+    from malspark.reporting.ledger_projection import stated_marks
+
+    by_value: dict[tuple[str, str], list[Any]] = {}
+    for row in rows:
+        held = list(getattr(row, "observed_in", None) or [])
+        if held:
+            kind = str(row.kind or "")
+            by_value.setdefault((kind, _value_key(kind, row.value)), []).extend(held)
+    by_pattern = {
+        _pattern_id_for(str(m.technique_id).strip().upper()): list(m.observed_in)
+        for m in getattr(report, "ttp_mappings", None) or []
+        if getattr(m, "observed_in", None)
+    }
+    if not by_value and not by_pattern:
+        return objects
+    out: list[Any] = []
+    for obj in objects:
+        marks: list[Any] = []
+        if isinstance(obj, Indicator):
+            marks = stated_marks(
+                mark
+                for value in rule_values(obj.pattern or "")
+                for mark in by_value.get((value.kind, _value_key(value.kind, value.value)), ())
+            )
+        elif (
+            getattr(obj, "type", "") == "relationship"
+            and getattr(obj, "relationship_type", "") == "uses"
+            and OBSERVED_IN_PROPERTY in type(obj).model_fields
+        ):
+            marks = by_pattern.get(str(getattr(obj, "target_ref", "") or ""), [])
+        if not marks:
+            out.append(obj)
+            continue
+        update: dict[str, Any] = {OBSERVED_IN_PROPERTY: observed_property(marks)}
+        if isinstance(obj, Indicator):
+            said = observed_words(marks)
+            said = f"{said[:1].upper()}{said[1:]}."
+            before = str(obj.description or "").strip()
+            update["description"] = f"{before} {said}" if before else said
+        out.append(obj.model_copy(update=update))
     return out
 
 
