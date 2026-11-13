@@ -162,13 +162,16 @@ class _Recorder:
         self.in_flight += 1
         self.most_in_flight = max(self.most_in_flight, self.in_flight)
         try:
-            await asyncio.sleep(self.delay)
+            await self._serve()
         finally:
             self.in_flight -= 1
             self.spans.setdefault(section, []).append((began, time.monotonic()))
         if section in self.failing:
             raise RuntimeError("the stub refuses this section")
         return AIMessage(content=json.dumps(_answer(section)))
+
+    async def _serve(self) -> None:
+        await asyncio.sleep(self.delay)
 
 
 def _compose(
@@ -729,46 +732,90 @@ class TestUnderASpendCeiling:
 
 
 class _Slots(_Recorder):
-    """A local server that serves ``slots`` requests at a time and queues the rest."""
+    """A local server that serves ``slots`` requests at a time and queues the rest.
 
-    def __init__(self, slots: int, **kwargs: Any) -> None:
+    A call is served by yielding to the event loop ``turns`` times, not by a
+    clock, so every section that can reach the server has reached it before
+    the first call ends, however slow the machine is. ``abandoned`` counts the
+    calls that were cancelled while they stood in the queue; with
+    ``hold_until_abandoned`` no call is served before one has been.
+    """
+
+    def __init__(
+        self, slots: int, *, turns: int = 50, hold_until_abandoned: bool = False, **kwargs: Any
+    ) -> None:
         super().__init__(**kwargs)
         self.slots = slots
+        self.turns = turns
+        self.gave_up = asyncio.Event() if hold_until_abandoned else None
+        # Past this many seconds with no queued call given up, none will be: a
+        # correct composer gives one up after its own 0.05 s wait, so only the
+        # whole process standing still for the cap could trip it.
+        self.cap = 5.0
+        self.never_gave_up = False
         self._served: asyncio.Semaphore | None = None
         self.queued = 0
+        self.abandoned = 0
+
+    async def _serve(self) -> None:
+        if self.gave_up is not None and not self.never_gave_up:
+            # The cap only ends a run whose queued calls never gave up; from
+            # then on every call is answered at once, so that run ends fast.
+            try:
+                await asyncio.wait_for(self.gave_up.wait(), timeout=self.cap)
+            except TimeoutError:
+                self.never_gave_up = True
+        for _ in range(self.turns):
+            await asyncio.sleep(0)
 
     async def ainvoke(self, messages: list[BaseMessage], **kwargs: Any) -> AIMessage:
         if self._served is None:
             self._served = asyncio.Semaphore(self.slots)
         if self._served.locked():
             self.queued += 1
-        async with self._served:
+        try:
+            await self._served.acquire()
+        except asyncio.CancelledError:
+            self.abandoned += 1
+            if self.gave_up is not None:
+                self.gave_up.set()
+            raise
+        try:
             return await super().ainvoke(messages, **kwargs)
+        finally:
+            self._served.release()
+
+
+def _compose_on(llm: Any, timeout: float, **kwargs: Any) -> ReportComposer:
+    composer = ReportComposer(llm=llm, per_section_timeout=timeout)  # type: ignore[arg-type]
+    with patch(
+        "malspark.reporting.composer.structured_output_supported_for_llm", return_value=False
+    ):
+        asyncio.run(composer.compose(_report(), _isr(), concurrent=True, **kwargs))
+    return composer
 
 
 class TestALocalServerIsGivenWhatItServes:
     @pytest.mark.parametrize("slots", [1, 2])
     def test_every_section_is_written_on_a_server_of_few_slots(self, slots: int) -> None:
-        # One call takes 0.1 s and a section at most two calls: a wait of
-        # 0.35 s holds a section served at once, never one queued behind
-        # sixteen.
-        llm = _Slots(slots, delay=0.1)
-        report = _report()
-        composer = ReportComposer(llm=llm, per_section_timeout=0.35)  # type: ignore[arg-type]
-        with patch(
-            "malspark.reporting.composer.structured_output_supported_for_llm", return_value=False
-        ):
-            asyncio.run(composer.compose(report, _isr(), concurrent=True, at_once=slots))
+        # Told the slot count, the composer lets no more requests out than the
+        # server serves, so none stands in its queue. The wait is far beyond any
+        # stall: the property is what the server saw, not how long it took.
+        llm = _Slots(slots)
+        composer = _compose_on(llm, 600, at_once=slots)
         assert not [r for r in composer.degradations if "did not answer within" in r]
         assert set(llm.sections) == set(COMPOSED_SECTIONS)
-        assert llm.most_in_flight <= slots
+        assert llm.most_in_flight == slots, "the slots are used, and never exceeded"
         assert llm.queued == 0, "nothing waits in the server's queue"
 
     def test_without_the_slot_count_the_queued_sections_would_time_out(self) -> None:
-        llm = _Slots(2, delay=0.1)
-        composer = ReportComposer(llm=llm, per_section_timeout=0.35)  # type: ignore[arg-type]
-        with patch(
-            "malspark.reporting.composer.structured_output_supported_for_llm", return_value=False
-        ):
-            asyncio.run(composer.compose(_report(), _isr(), concurrent=True))
+        # Told nothing, the composer sends every section at once and the surplus
+        # queues in the server. The server serves nothing until a queued call
+        # has been given up, so a section's wait ends while it is still queued
+        # however fast or slow the machine is.
+        llm = _Slots(2, hold_until_abandoned=True)
+        composer = _compose_on(llm, 0.05)
+        assert not llm.never_gave_up, "a queued call was given up before the server's cap"
+        assert llm.queued > 0, "sections stand in the server's queue"
+        assert llm.abandoned > 0, "a queued call was given up"
         assert [r for r in composer.degradations if "did not answer within" in r]

@@ -261,7 +261,10 @@ penalises a token that extends a sequence already repeated in the context.
 
 An endpoint that rejects one of the extras anyway is retried once without them,
 recorded for the rest of the process, and named in a warning that says to set
-this value explicitly. `base_url` unset means api.openai.com, which never
+this value explicitly. The model rebuilt for the retry sends through the
+connections the first one held, and none of them is closed, so it and every
+other model for that endpoint answer synchronous and asynchronous calls as
+before. `base_url` unset means api.openai.com, which never
 receives them in any mode.
 
 `auto` guesses which server software answers; it is not the rule a run's
