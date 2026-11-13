@@ -542,12 +542,13 @@ their entries that way, not per row). A row has its `status`, both sides'
 fields as recorded (`a`, `b`, null where the run has no such row), `changes`
 naming each differing field with both values, and the evidence-ledger ids
 each run's record cites for that row. Ids are read only from fields that hold
-ids — `family_evidence_ids`, a key finding's `evidence_ids`, a configuration
-item's, a command's and a C2 channel's `evidence_refs`, a persistence
-mechanism's and a claim's `evidence_ref`, a STIX object's
-`x_malspark_evidence_refs` — and never out of a quote, a note, a title or a
-sample's own strings. A row whose record holds no such field cites none; that
-is every ATT&CK mapping and every indicator.
+ids — `family_evidence_ids`, a key finding's `evidence_ids`, an ATT&CK
+mapping's `evidence_ids`, a configuration item's, a command's and a C2
+channel's `evidence_refs`, a persistence mechanism's and a claim's
+`evidence_ref`, a STIX object's `x_malspark_evidence_refs` — and never out of
+a quote, a note, a title or a sample's own strings. A row whose record holds
+no such field cites none; that is every indicator, and an ATT&CK mapping
+stored before its evidence set was recorded.
 
 A `stated_by` names who stated a value only where the record shows it. A
 confidence is the judge's when the verdict reading is `stated`. A family's is

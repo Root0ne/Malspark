@@ -1830,18 +1830,20 @@ identity no object names.
 
 An exported object carries the ledger entries the run's record ties to it, as
 `x_malspark_evidence_refs`: `ev_` ids, each once, in ledger order. The sample's
-`uses` edge to a technique carries the entries an analyst finding naming that
-technique cites (`evidence_ids`) and the entries of the asserting tools (capa,
-Sigma, YARA, LOLBin, sandbox signatures) whose structured output names it
-(`pipeline/evidence_summary.technique_evidence`). A malware object the export
-mints from the family name carries the attribution's `family_evidence_ids`.
-Nothing else gets the property. An id in a claim's `evidence_ref` sentence
-stays in the sentence, and no object is matched by value.
+`uses` edge to a published technique carries that technique's evidence, the
+one set every surface prints for it (`reporting/technique_evidence`, below):
+the entries its analyst claims and findings cite, the entries of the asserting
+tools (capa, Sigma, YARA, LOLBin, sandbox signatures) whose structured output
+names it, and the entries a map the judge made rests on. An edge to a technique
+no ledger entry stands behind carries `x_malspark_evidence_note: "no ledger
+entry"` in place of the ids. A malware object the export mints from the family
+name carries the attribution's `family_evidence_ids`. Nothing else gets either
+property, and no object is matched by value.
 
 The tie from a finding is per finding, not per technique. A finding's
 `evidence_ids` belong to the finding as a whole, so a finding naming T1055 and
 T1082 and citing one entry ties that entry to both edges. The edge says a
-finding naming this technique cites the entry, not that the entry names the
+statement naming this technique cites the entry, not that the entry names the
 technique; an asserting tool's entry is the one tie that does.
 
 Every id the export writes is one the run's ledger holds, in the ledger's
@@ -5031,7 +5033,28 @@ is assembled from what the run gathered rather than recomputed beside it:
   surface is built from it: the report's ATT&CK section, its References, the
   `attack-pattern` objects of the STIX bundle — minted with ids derived from
   the technique id, so the same technique is the same object across exports —
-  and the `mitre_techniques` column behind `/reports/{id}/mitre`. What the
+  and the `mitre_techniques` column behind `/reports/{id}/mitre`.
+* **One evidence set per technique.** The matrix builder records on each row
+  (`CapabilityCell.evidence_ids`, `TTPMapping.evidence_ids`) the ledger entries
+  behind the technique: the entries among its sources, those a map the judge
+  made rests on, and those its claims and findings cite that the run issued,
+  in ledger order (without a ledger, the ids its statements cite). Every
+  surface that shows the technique prints that set, read through one function
+  (`reporting/technique_evidence.technique_evidence_ids`), and nothing is asked
+  of a model for it: the Evidence column of the Markdown ATT&CK table, a note
+  in the analyst report's ATT&CK table, the STIX `uses` edge, the MISP
+  technique attribute's comment (`evidence: …`), the Navigator layer's
+  comment, the ATT&CK defence rows and `evidence_ids` on each
+  `/reports/{id}/mitre` row. A technique no ledger entry stands behind — one
+  the judge alone names, for one — says so on each: "no ledger entry" in a
+  text cell or comment, `x_malspark_evidence_note` on the STIX edge, `[]` in
+  the API. Other ids a surface shows beside the set are named for what they
+  are: the entries of the rules that matched the technique follow it in the
+  Markdown cell as "rule matches", and the sandbox items among its sources as
+  "sandbox items" in the Navigator comment and the defence rows. A row stored
+  before the set was recorded reads as the entries among its `sources` and
+  those its statements write. The evidence bundles shown to the composer list
+  a technique by its id, name and detonation mark alone. What the
   judge said *about* a technique travels with it: its relationship, with the
   confidence, the evidence basis and the contributing agents it annotated, is
   re-linked at both ends to the rebuilt object of the same technique and
@@ -5857,7 +5880,15 @@ is assembled from what the run gathered rather than recomputed beside it:
   technique id the report's ATT&CK table does not publish; one question per
   recommendation, naming the ids), `report.configuration_uncited` (a value said to be decrypted or
   observed cites no entry), `report.identifier_uncited` (a host identifier
-  cites no entry of the run), `report.value_not_in_cited_entry` (a host
+  cites no entry of the run), `report.id_not_in_cited_entry` (a table row's
+  `id`, a command's, is held by none of the entries the row cites while another
+  entry of the run holds it: a number, alone or as the id's last word, is held
+  by an entry whose code a switch or an else-if ladder compares it in
+  (`validation.compared_values`, read on the entry's text with its JSON escapes
+  taken out), any other id by an entry whose text writes it whole; rows the
+  same entries hold are one question naming them, an id no entry holds is not
+  asked here, and a kept row is marked beside its evidence),
+  `report.value_not_in_cited_entry` (a host
   identifier's or a configuration value's whole value is in none of the entries
   it cites; a configuration number is held in decimal or hex, or by its number
   beside a known time or size unit, and a field name written with its value by
