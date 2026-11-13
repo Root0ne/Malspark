@@ -52,6 +52,9 @@ ADDED_SINCE = {
     "mcp:network::run_reader": "mcp:analysis::put_sample",
     "mcp:analysis::release_job": "mcp:analysis::put_sample",
     "mcp:network::release_job": "mcp:analysis::put_sample",
+    # The request for a further detonation answers a JSON object, as the
+    # sandbox readers do (T-671).
+    "sandbox::request_detonation": "sandbox::sandbox_items",
 }
 
 
