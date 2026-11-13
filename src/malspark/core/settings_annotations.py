@@ -1648,7 +1648,10 @@ ANNOTATIONS: dict[str, Annotation] = {
             "the served models were found to have, as the tool-output cap is; with no "
             "window learned, 6,000. A positive value is used whatever the window. Past "
             "it the block is cut and says so, so a long pipeline cannot spend a late "
-            "stage's whole context on a summary of the stages before it."
+            "stage's whole context on a summary of the stages before it. In the triage "
+            "pack, the lines of the further detonations agents asked for take a room "
+            "the size of this of their own after the job's own lines, and each "
+            "further detonation is named on at least one line even where that passes it."
         ),
         "subgroup": "Report content",
     },
@@ -2155,6 +2158,16 @@ ANNOTATIONS.update(
             "order": -1,
             "choices_from": "sandbox_providers",
         },
+        "sandbox.max_detonations_per_job": {
+            "title": "Detonations per job",
+            "description": (
+                "How many times one job may detonate its sample, its own detonation "
+                "included. An agent that finds the launch arguments a sample needs may "
+                "ask for a further detonation with them; this is the ceiling on those "
+                "requests, stated to the agents as the sandbox's limit (each "
+                "detonation takes the sandbox's time and quota, and is disclosed to it)."
+            ),
+        },
         "static.r2.binary_path": {
             "title": "radare2 MCP binary",
             "description": (
@@ -2343,6 +2356,21 @@ ANNOTATIONS.update(
             "description": (
                 "Download each task's PCAP so the network analyst can inspect the "
                 "packets rather than only the structured indicators."
+            ),
+            "applies_when": _SANDBOX_TRIAGE,
+        },
+        "sandbox.triage.launcher_for_arguments": {
+            "title": "Carry launch arguments through a launcher",
+            "description": (
+                "Triage's submission has no command-line field. On, the default, a job "
+                "that asks for launch arguments submits a generated archive holding the "
+                "sample and a PowerShell launcher that starts it with them, and Triage "
+                "is told to run the launcher: the sandbox's process tree starts at "
+                "PowerShell, the archive (launcher and arguments included) is what "
+                "Triage receives, and on its public cloud that is public. The report "
+                "states the launcher's text and the archive's digest. Off, the sample "
+                "is submitted as it is and the request is recorded as not honoured. "
+                "Only a Windows program (not a DLL) can be launched this way."
             ),
             "applies_when": _SANDBOX_TRIAGE,
         },
@@ -2666,6 +2694,11 @@ ANNOTATIONS.update(
         "sandbox.rest.submit.submit_fields": _rest(
             "Submit fields",
             "Further multipart fields sent verbatim with the sample, as name/value pairs.",
+        ),
+        "sandbox.rest.submit.launch_arguments_field": _rest(
+            "Launch arguments field",
+            "Multipart field a job's launch arguments are sent in, verbatim. Empty: the "
+            "sandbox cannot be passed them, and the run records them as not honoured.",
         ),
         "sandbox.rest.submit.task_id_path": _rest(
             "Task id path",

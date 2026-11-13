@@ -87,6 +87,7 @@ submit rather than a failed job minutes later. Unknown keys pass through.
 | `static_provider` | `ghidra`, `r2`, `capa_yara`, `generic_mcp` or `none` for this job, in place of `static.provider`. |
 | `sandbox_provider` | `mock`, `cape2`, `upload`, `triage` or `rest` for this job, in place of `sandbox.provider`. |
 | `sandbox_report_id` | An uploaded report to attach. It forces `sandbox.provider` to `upload` for this job, and only a report attached to this job's own sample is read. |
+| `sandbox_launch_arguments` | The arguments the sandbox starts the sample with: one string, as you would type it after the program's name (`--password <value>`, an installer's switch), at most 1024 characters, with no control, format (a bidi control, a zero-width character), line-separator or paragraph-separator character. The platform never reads them. A provider that can pass them gets them verbatim; one that cannot is not handed them, the detonation goes ahead without them, and the run's limitations say "launch arguments requested, not honoured by" the provider, with why. A request that is not honoured makes the run degraded, so its verdict is tentative. Either way the report's sandbox sentence, the upload line of its disclosure block and the job's stored config state the arguments as the job gave them, with ids and control characters written out. See [launch arguments](/docs/tools/sandboxes/#launch-arguments). |
 | `max_iterations` | The debate's round limit for this job (`negotiation.max_iterations`). |
 | `mock_mode` | Asks for the pipeline's mock path. It runs only when an administrator has also turned on `api.mock_mode_allowed`; a mock run cannot consume an uploaded report. |
 | `ignore_earlier_runs` | `true` starts the job without an earlier run's memory of its sample: no agent is shown the "AN EARLIER RUN ON THIS SAMPLE" block and the judge's bundle records no earlier run. Nothing stored is read for it. Once it completes, its own case is stored as any job's is, which replaces the case its owner (the account that submitted it) held for the sample. The run summary says so (`earlier_runs_ignored: true`). Off by default; the benchmark run sets it. |
@@ -197,5 +198,6 @@ uv run malspark analyze sample_1 --mock --name test.exe
 It builds the core `Settings` model directly, so it reads the process
 environment (and a `.env` in the working directory) rather than the settings
 store. `--ignore-earlier-runs` is the job option `ignore_earlier_runs` for a
-command-line run. The command line has no `isolated_memory` option: its runs
+command-line run, and `--sandbox-launch-arguments "<arguments>"` is the job
+option `sandbox_launch_arguments`, checked the same way. The command line has no `isolated_memory` option: its runs
 have no account and use the unscoped memory.

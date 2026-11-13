@@ -31,13 +31,21 @@ from __future__ import annotations
 
 import re
 from collections.abc import Mapping, Sequence
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 from malspark.core.logger import logger
 from malspark.pipeline.sandbox_status import NOT_RUN, sandbox_status
 from malspark.providers.call_arguments import pick_argument
+from malspark.providers.detonation import selected
 from malspark.schemas.sandbox_document import place, signature_pids
-from malspark.schemas.sandbox_report import LINEAGE_MARKED_STORED
+from malspark.schemas.sandbox_report import (
+    LINEAGE_KEY,
+    LINEAGE_LAUNCHER,
+    LINEAGE_MARKED_STORED,
+    LINEAGE_REASON_KEY,
+    LINEAGE_SAMPLE,
+    PROCESS_TASK_KEY,
+)
 from malspark.utils.marked_cut import marked_cut
 
 if TYPE_CHECKING:
@@ -280,6 +288,10 @@ def sandbox_processes(
         return _absent("processes")
     rows: list[dict[str, Any]] = []
     page, meta = _page(processes, offset, limit)
+    # In a report a generated launcher's run produced, the sandbox's own
+    # "this is the sample" mark points at the picked script or a wrapper,
+    # never at the sample: it is set aside, and only the launch lineage says.
+    launched = _launcher_attributed(report, processes)
     if page:
         for proc in page:
             if not isinstance(proc, dict):
@@ -293,11 +305,55 @@ def sandbox_processes(
                 "call_count": len(proc.get("calls") or []),
             }
             # The sandbox's own mark that the process is the sample's, where
-            # the record carries one: one of the two lineage facts.
-            if _marked_as_the_sample(proc):
+            # the record carries one: one of the two lineage facts. Where the
+            # run submitted a generated launcher, the lineage the launch
+            # record gives (``sandbox_report.attribute_the_launcher``) is
+            # stated and decides it: a launcher's process is never the sample's.
+            lineage = _launch_lineage(proc)
+            if lineage:
+                row[LINEAGE_KEY] = lineage
+            # The task the reader listed it in, where the report holds several
+            # whose process ids are each the task's own.
+            task = _task_of(proc)
+            if task:
+                row["task"] = task
+            if lineage == LINEAGE_SAMPLE or (
+                not launched and not lineage and _marked_as_the_sample(proc)
+            ):
                 row["marked"] = True
             rows.append(row)
     return {"processes": rows, "total": len(processes), **meta}
+
+
+def _task_of(proc: dict[str, Any]) -> str:
+    """The task a reader listed a process in (``PROCESS_TASK_KEY``), ``""`` where it says none."""
+    extra = proc.get("extra")
+    value = extra.get(PROCESS_TASK_KEY) if isinstance(extra, dict) else None
+    return str(value) if value else ""
+
+
+def _launcher_attributed(report: dict[str, Any], processes: list[Any]) -> bool:
+    """Whether ``report`` is of a run a generated launcher started, as the platform marked it.
+
+    Its launch mark names a launcher (``schemas.sandbox_document.LAUNCH_KEY``,
+    a platform mark no sandbox's document keeps), or a process carries the
+    launch lineage the platform gave it (``sandbox_report.attribute_the_launcher``).
+    """
+    from malspark.schemas.sandbox_document import LAUNCH_KEY, LAUNCHER_ATTRIBUTION_KEY
+
+    if LAUNCHER_ATTRIBUTION_KEY in report:
+        return True
+    mark = report.get(LAUNCH_KEY)
+    if isinstance(mark, dict) and isinstance(mark.get("launcher"), dict):
+        return True
+    return any(isinstance(proc, dict) and _launch_lineage(proc) for proc in processes)
+
+
+def _launch_lineage(proc: dict[str, Any]) -> str:
+    """The lineage a launch record gave a process (the launcher's or the sample's); ``""`` else."""
+    extra = proc.get("extra")
+    value = extra.get(LINEAGE_KEY) if isinstance(extra, dict) else None
+    return str(value) if value in (LINEAGE_LAUNCHER, LINEAGE_SAMPLE) else ""
 
 
 def _marked_as_the_sample(proc: dict[str, Any]) -> bool:
@@ -478,6 +534,17 @@ def sandbox_dropped_files(
         or "dropped_files" not in (_fills(normalised_by) or {"dropped_files"})
     ):
         return _absent("dropped_files")
+    # The archive's members a generated launcher's run unpacked in the guest
+    # (``sandbox_report.attribute_the_launcher``): the platform's files, never
+    # files the sample wrote, listed apart with which file each is.
+    platform: list[dict[str, Any]] = []
+    written: list[Any] = []
+    for entry in dropped:
+        if isinstance(entry, dict) and entry.get(LINEAGE_KEY) == LINEAGE_LAUNCHER:
+            platform.append(entry)
+        else:
+            written.append(entry)
+    dropped = written
     rows: list[dict[str, Any]] = []
     page, meta = _page(dropped, offset, limit)
     if page:
@@ -496,8 +563,22 @@ def sandbox_dropped_files(
             pids = _writer_pids(entry)
             if pids:
                 row["pids"] = pids
+            if entry.get(LINEAGE_KEY):
+                row[LINEAGE_KEY] = entry[LINEAGE_KEY]
             rows.append(row)
-    return {"dropped": rows, "total": len(dropped), **meta}
+    answer: dict[str, Any] = {"dropped": rows, "total": len(dropped), **meta}
+    if platform:
+        answer["platform_files"] = [
+            {
+                "name": entry.get("name") or entry.get("filepath") or "",
+                "path": entry.get("filepath") or entry.get("guest_paths") or "",
+                "sha256": entry.get("sha256"),
+                LINEAGE_KEY: entry.get(LINEAGE_KEY),
+                LINEAGE_REASON_KEY: entry.get(LINEAGE_REASON_KEY) or "",
+            }
+            for entry in platform
+        ]
+    return answer
 
 
 # The fields a dropped file names the processes that wrote it under.
@@ -1081,75 +1162,113 @@ ITEMS_SIGNATURE_SECTION = "the signature filter reads the signatures section onl
 _ITEM_FILTERS = ("pid", "contains", "signature", "ids")
 
 
-def sandbox_tools(container: Any) -> list[BaseTool]:
+# What every reader says of its ``detonation`` argument, in its description.
+_DETONATION_ARG = (
+    "``detonation`` names a later detonation of the sample to read (d2, d3 and "
+    "so on, as the pack's index and request_detonation name them); empty reads "
+    "the job's own detonation (d1)."
+)
+
+
+def sandbox_tools(container: Any, agent: str | None = None) -> list[BaseTool]:
     """The sandbox tools, each closed over this job's report.
 
     Built per resolution rather than once per process: the report is the job's,
     and a tool cached across jobs would answer the previous sample's questions.
+    Each reader takes an optional ``detonation`` selector: empty (or ``d1``)
+    reads the job's own detonation, the report this closure holds; a later
+    one (``d2``…) is read from ``container.detonations`` at the call, so a
+    detonation carried out after the agent was built is readable by it. The
+    selector is one of the call's arguments, so the ledger records which
+    detonation a read was of, and a read of one detonation is never served
+    from a read of another.
     """
     from langchain_core.tools import StructuredTool
 
     report = _report_of(container)
     normalised_by = normalised_by_of(container)
 
-    def _report_section(section: str, offset: int = 0, limit: int = 0) -> dict[str, Any]:
+    def _views(view: Any, detonation: str, *args: Any, **kwargs: Any) -> dict[str, Any]:
+        """``view`` over the report ``detonation`` selects, the later one's answer naming it."""
+        later, problem = selected(container, detonation)
+        if problem:
+            return {"error": problem, "tool": "sandbox"}
+        if later is None:
+            found = view(report, *args, normalised_by=normalised_by, **kwargs)
+            return cast("dict[str, Any]", found)
+        answer = view(later.report, *args, normalised_by=later.normalised_by, **kwargs)
+        return {**later.stated(), **answer} if isinstance(answer, dict) else answer
+
+    def _unread(view: Any) -> Any:
+        """``view`` for one that takes no ``normalised_by``."""
+
+        def _call(rep: Any, *args: Any, normalised_by: Any = None, **kwargs: Any) -> Any:
+            return view(rep, *args, **kwargs)
+
+        return _call
+
+    def _report_section(
+        section: str, offset: int = 0, limit: int = 0, detonation: str = ""
+    ) -> dict[str, Any]:
         """Read one top-level section of the sandbox report by name.
 
         ``offset`` and ``limit`` ask for one page (0 = every row); a page that
         stops short names the next offset.
         """
-        return sandbox_report_section(report, section, offset, limit)
+        return _views(_unread(sandbox_report_section), detonation, section, offset, limit)
 
-    def _processes(offset: int = 0, limit: int = 0) -> dict[str, Any]:
+    def _processes(offset: int = 0, limit: int = 0, detonation: str = "") -> dict[str, Any]:
         """List the processes the sandbox observed, with their command lines.
 
         ``offset`` and ``limit`` ask for one page (0 = every row); a page that
         stops short names the next offset.
         """
-        return sandbox_processes(report, offset, limit, normalised_by=normalised_by)
+        return _views(sandbox_processes, detonation, offset, limit)
 
-    def _network(offset: int = 0, limit: int = 0) -> dict[str, Any]:
+    def _network(offset: int = 0, limit: int = 0, detonation: str = "") -> dict[str, Any]:
         """List the DNS lookups, hosts, HTTP requests and endpoints observed.
 
         ``offset`` and ``limit`` ask for one page (0 = every row); a page that
         stops short names the next offset.
         """
-        return sandbox_network(report, offset, limit, normalised_by=normalised_by)
+        return _views(sandbox_network, detonation, offset, limit)
 
-    def _signatures(offset: int = 0, limit: int = 0) -> dict[str, Any]:
+    def _signatures(offset: int = 0, limit: int = 0, detonation: str = "") -> dict[str, Any]:
         """List the sandbox's own signature hits and their severity.
 
         ``offset`` and ``limit`` ask for one page (0 = every row); a page that
         stops short names the next offset.
         """
-        return sandbox_signatures(report, offset, limit, normalised_by=normalised_by)
+        return _views(sandbox_signatures, detonation, offset, limit)
 
-    def _dropped_files(offset: int = 0, limit: int = 0) -> dict[str, Any]:
+    def _dropped_files(offset: int = 0, limit: int = 0, detonation: str = "") -> dict[str, Any]:
         """List the files the sample wrote, with their hashes.
 
         ``offset`` and ``limit`` ask for one page (0 = every row); a page that
         stops short names the next offset.
         """
-        return sandbox_dropped_files(report, offset, limit, normalised_by=normalised_by)
+        return _views(sandbox_dropped_files, detonation, offset, limit)
 
-    def _channels(name: str = "", offset: int = 0, limit: int = 0) -> dict[str, Any]:
+    def _channels(
+        name: str = "", offset: int = 0, limit: int = 0, detonation: str = ""
+    ) -> dict[str, Any]:
         """List the platform channels, or read one of them by name.
 
         ``offset`` and ``limit`` ask for one page (0 = every row); a page that
         stops short names the next offset.
         """
-        return sandbox_channels(report, name, offset, limit)
+        return _views(_unread(sandbox_channels), detonation, name, offset, limit)
 
-    def _registry_ops(offset: int = 0, limit: int = 0) -> dict[str, Any]:
+    def _registry_ops(offset: int = 0, limit: int = 0, detonation: str = "") -> dict[str, Any]:
         """List the registry keys the sample touched, with what it did to each.
 
         ``offset`` and ``limit`` ask for one page (0 = every row); a page that
         stops short names the next offset.
         """
-        return sandbox_registry_ops(report, limit, offset, normalised_by=normalised_by)
+        return _views(sandbox_registry_ops, detonation, limit, offset)
 
     def _api_calls(
-        process: str = "", name: str = "", offset: int = 0, limit: int = 0
+        process: str = "", name: str = "", offset: int = 0, limit: int = 0, detonation: str = ""
     ) -> dict[str, Any]:
         """List the API calls observed, by frequency, with each API's first call.
 
@@ -1160,30 +1279,34 @@ def sandbox_tools(container: Any) -> list[BaseTool]:
         ``offset`` and ``limit`` ask for one page (0 = every row); a page that
         stops short names the next offset.
         """
-        return sandbox_api_calls(
-            report, process or None, name or None, limit, offset, normalised_by=normalised_by
-        )
+        return _views(sandbox_api_calls, detonation, process or None, name or None, limit, offset)
 
-    def _mutexes(offset: int = 0, limit: int = 0) -> dict[str, Any]:
+    def _mutexes(offset: int = 0, limit: int = 0, detonation: str = "") -> dict[str, Any]:
         """List the named mutexes the sample created or opened.
 
         ``offset`` and ``limit`` ask for one page (0 = every row); a page that
         stops short names the next offset.
         """
-        return sandbox_mutexes(report, offset, limit, normalised_by=normalised_by)
+        return _views(sandbox_mutexes, detonation, offset, limit)
 
-    def _services_and_tasks(offset: int = 0, limit: int = 0) -> dict[str, Any]:
+    def _services_and_tasks(
+        offset: int = 0, limit: int = 0, detonation: str = ""
+    ) -> dict[str, Any]:
         """List services installed or started, scheduled tasks, and commands run.
 
         ``offset`` and ``limit`` ask for one page (0 = every row); a page that
         stops short names the next offset.
         """
-        return sandbox_services_and_tasks(report, offset, limit, normalised_by=normalised_by)
+        return _views(sandbox_services_and_tasks, detonation, offset, limit)
 
     sizer = _answer_sizer(container)
     return [
         *(
-            StructuredTool.from_function(func=_sized(func, sizer), name=name)
+            StructuredTool.from_function(
+                func=_sized(func, sizer),
+                name=name,
+                description=f"{_described(func)}\n\n{_DETONATION_ARG}",
+            )
             for func, name in (
                 (_report_section, "sandbox_report_section"),
                 (_processes, "sandbox_processes"),
@@ -1197,8 +1320,23 @@ def sandbox_tools(container: Any) -> list[BaseTool]:
                 (_channels, "sandbox_channels"),
             )
         ),
-        items_tool(report, sizer, normalised_by),
+        items_tool(report, sizer, normalised_by, container=container),
+        *_request_tools(container, agent),
     ]
+
+
+def _request_tools(container: Any, agent: str | None = None) -> list[BaseTool]:
+    """The ``request_detonation`` tool, where the job can carry ``agent``'s request out."""
+    from malspark.providers.detonation_requests import offered, request_tool
+
+    return [request_tool(container)] if offered(container, agent) else []
+
+
+def _described(func: Any) -> str:
+    """``func``'s docstring as a tool description, read as LangChain reads one it is not given."""
+    import textwrap
+
+    return textwrap.dedent(func.__doc__ or "").strip()
 
 
 def normalised_by_of(container: Any) -> tuple[str, ...] | None:
@@ -1213,15 +1351,23 @@ def items_tool(
     report: dict[str, Any] | None,
     sizer: Any = None,
     normalised_by: tuple[str, ...] | None = None,
+    *,
+    container: Any = None,
 ) -> BaseTool:
-    """The ``sandbox_items`` tool, closed over one job's report and the reader that produced it."""
+    """The ``sandbox_items`` tool, closed over one job's report and the reader that produced it.
+
+    With ``container``, its ``detonation`` argument reads a later detonation's
+    report from ``container.detonations``, its items' ids qualified by it.
+    """
     from langchain_core.tools import StructuredTool
 
     from malspark.analysis.sandbox_sections import ITEMS_TOOL, Sections
 
     # The report read into sections once for the job, on the first call, and
-    # held by this closure only: never cached across jobs.
+    # held by this closure only: never cached across jobs. A later
+    # detonation's, once each, by its name.
     held: list[Sections] = []
+    later_held: dict[str, Sections] = {}
 
     def _sections() -> Sections | None:
         if report is None or _no_sandbox_ran(report):
@@ -1236,6 +1382,7 @@ def items_tool(
         contains: str = "",
         signature: str = "",
         ids: list[str] | str | None = None,
+        detonation: str = "",
     ) -> dict[str, Any]:
         """Read items of one section of the job's sandbox report, whole.
 
@@ -1259,9 +1406,33 @@ def items_tool(
         calls are the api_calls items whose process is its id. A claim may
         cite an item by its id.
         """
-        return sandbox_items(report, section, pid, contains, signature, ids, sections=_sections())
+        if not str(detonation or "").strip() or container is None:
+            return sandbox_items(
+                report, section, pid, contains, signature, ids, sections=_sections()
+            )
+        later, problem = selected(container, detonation)
+        if problem:
+            return {"error": problem, "tool": "sandbox"}
+        if later is None:
+            return sandbox_items(
+                report, section, pid, contains, signature, ids, sections=_sections()
+            )
+        if later.name not in later_held:
+            later_held[later.name] = Sections(later.report or {}, later.normalised_by, later.name)
+        answer = sandbox_items(
+            later.report, section, pid, contains, signature, ids, sections=later_held[later.name]
+        )
+        return {**later.stated(), **answer}
 
-    return StructuredTool.from_function(func=_sized(_items, sizer, _ITEM_FILTERS), name=ITEMS_TOOL)
+    description = _described(_items)
+    if container is not None:
+        description += (
+            "\n\n" + _DETONATION_ARG + " A later detonation's item ids are qualified "
+            "by it (d2/proc:<pid>, d2/net:<n>)."
+        )
+    return StructuredTool.from_function(
+        func=_sized(_items, sizer, _ITEM_FILTERS), name=ITEMS_TOOL, description=description
+    )
 
 
 def _answer_sizer(container: Any) -> Any:

@@ -38,6 +38,7 @@ from malspark.providers.sandbox.readers import (
 if TYPE_CHECKING:
     from malspark.core.config import RestMappingConfig, SandboxUploadConfig, Settings
     from malspark.core.report_formats import SignatureScale
+    from malspark.providers.submission import LaunchArgumentsAnswer, SubmissionOptions
     from malspark.schemas.sandbox_report import SandboxRun
 
 
@@ -175,9 +176,23 @@ class UploadSandboxProvider(SandboxProvider):
             raise AttachedReportRefused(refusal)
         return found
 
-    def submit(self, sample_path: str | Path) -> str:
+    def submit(self, sample_path: str | Path, *, options: SubmissionOptions | None = None) -> str:
         raise ProviderError(
             "The upload sandbox does not detonate samples; attach a report to the job instead."
+        )
+
+    def launch_arguments_answer(
+        self, arguments: str, *, sample_path: str | Path | None = None
+    ) -> LaunchArgumentsAnswer:
+        """Not applicable: the attached report comes from a run this platform did not start."""
+        from malspark.providers.submission import LaunchArgumentsAnswer
+
+        return LaunchArgumentsAnswer(
+            honoured=False,
+            note=(
+                "the upload provider detonates nothing; the attached report was made by a run "
+                "this platform did not start, with whatever arguments that run had"
+            ),
         )
 
     def submission_address(self) -> str | None:

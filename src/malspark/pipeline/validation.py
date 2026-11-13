@@ -13855,7 +13855,13 @@ def retry_drop_sentences(rows: Sequence[Mapping[str, Any]]) -> list[str]:
             if reason and reason not in reasons:
                 reasons.append(reason)
         rounds: list[str] = []
+        # A further turn's row (``detonations.mark_further_turn``) is named
+        # as the further turn's, never as one of round 0.
+        further = False
         for row in same:
+            if row.get("further_turn"):
+                further = True
+                continue
             number = str(row.get("round") or "0")
             if number not in rounds:
                 rounds.append(number)
@@ -13869,10 +13875,14 @@ def retry_drop_sentences(rows: Sequence[Mapping[str, Any]]) -> list[str]:
             merged=bool(first.get("merged")),
         )
         where = (
-            f"revision round {rounds[0]}"
+            ""
+            if not rounds
+            else f"revision round {rounds[0]}"
             if len(rounds) == 1
             else "revision rounds " + ", ".join(rounds)
         )
+        if further:
+            where = f"{where} and the further turn" if where else "the further turn"
         out.append(
             _defanged_text(f"{sentence} The record holds it {len(same)} times, from {where}.")
         )

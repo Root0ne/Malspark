@@ -300,6 +300,7 @@ class TestTheTool:
             "contains",
             "signature",
             "ids",
+            "detonation",
         }
         sizer = _Sizer()
         sized = sandbox_tools.items_tool(REPORT, sizer)

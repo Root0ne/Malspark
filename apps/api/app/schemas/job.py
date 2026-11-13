@@ -8,6 +8,7 @@ from pydantic import (
     BaseModel,
     Field,
     StrictBool,
+    StrictStr,
     ValidationInfo,
     field_validator,
     model_validator,
@@ -77,6 +78,23 @@ class _KnownJobConfig(BaseModel):
     # in a fixed vocabulary (``malspark.reporting.question_round``). Each must
     # hold some text; none asks nothing.
     questions: list[str] | None = None
+    # The arguments the sandbox starts the sample with: one string, as the
+    # operator would type it after the program's name (``--password <value>``,
+    # an installer's switch). Handed to the provider verbatim
+    # where it can pass them and recorded either way
+    # (``malspark.providers.submission``); the platform never reads them.
+    # Strict text, bounded, with no control character.
+    sandbox_launch_arguments: StrictStr | None = None
+
+    @field_validator("sandbox_launch_arguments")
+    @classmethod
+    def _launch_arguments_are_one_command_line(cls, value: str | None) -> str | None:
+        from malspark.providers.submission import launch_arguments_problem
+
+        problem = launch_arguments_problem(value) if value is not None else None
+        if problem:
+            raise ValueError(f"sandbox_launch_arguments: {problem}")
+        return value
 
     @field_validator("questions")
     @classmethod
@@ -547,6 +565,14 @@ class IOCEntry(BaseModel):
     # cover prints and its STIX export marks every object with. Absent when
     # the stored report holds none.
     tlp: str | None = None
+    # Under which detonations of the sample the row's value was observed,
+    # where a further detonation an agent asked for observed it: each
+    # ``{"detonation": "d2", "launched_with": "<arguments>"}``, the job's own
+    # as ``{"detonation": "d1"}`` (``ConsolidatedIOC.observed_in``). Left out
+    # where only the job's own detonation observed it.
+    observed_in: list[dict[str, str]] | None = Field(
+        default=None, exclude_if=lambda value: value is None
+    )
 
 
 class IOCListResponse(BaseModel):

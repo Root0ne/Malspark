@@ -13,6 +13,7 @@ The run() method returns a result dict containing:
 from __future__ import annotations
 
 import asyncio
+import functools
 import time
 from pathlib import Path
 from typing import Any, cast
@@ -61,6 +62,30 @@ def _remember_the_secrets_of(config: Settings) -> None:
         logger.warning(
             "The configured values were not handed to the scrub (%s).", type(exc).__name__
         )
+
+
+class _JoinedRows(list[dict[str, Any]]):
+    """A further detonation's upload rows, each also in the job's list the moment it is written.
+
+    Appending a row adds it, with ``tag`` (the detonation, who asked), to
+    ``into``; replacing one replaces its copy there.
+    """
+
+    def __init__(self, into: list[dict[str, Any]], tag: dict[str, Any]) -> None:
+        super().__init__()
+        self._into = into
+        self._tag = tag
+        self._at: list[int] = []
+
+    def append(self, row: dict[str, Any]) -> None:
+        super().append(row)
+        self._into.append({**row, **self._tag})
+        self._at.append(len(self._into) - 1)
+
+    def __setitem__(self, index: Any, row: Any) -> None:
+        super().__setitem__(index, row)
+        if isinstance(index, int):
+            self._into[self._at[index]] = {**row, **self._tag}
 
 
 class MalsparkApp:
@@ -133,6 +158,24 @@ class MalsparkApp:
         # the state, so a run stopped before its first graph step still prints
         # each of them (``stopped_run.stopped_state``).
         self.questions: list[str] = []
+        # The launch arguments this run's job asked the sandbox to start the
+        # sample with (``arun``), verbatim; empty asks for none. What became of
+        # them is ``launch_record`` (``providers.submission.launch_record``),
+        # kept on the container, set as the sample is submitted and marked on
+        # the report.
+        self.launch_arguments: str = ""
+        # Whether this run's ``provider.submit`` call returned: only then were
+        # the launch arguments sent (``_launch_not_carried``).
+        self._submit_returned = False
+
+    @property
+    def launch_record(self) -> dict[str, Any] | None:
+        """What became of the job's launch arguments; ``None`` where it asked for none."""
+        return self.container.launch_record
+
+    @launch_record.setter
+    def launch_record(self, record: dict[str, Any] | None) -> None:
+        self.container.launch_record = record
 
     async def aclose(self) -> None:
         """Release the container's agents, toolkits and per-job caches.
@@ -173,6 +216,7 @@ class MalsparkApp:
         static_sample_path: str | None = None,
         static_sample_paths: dict[str, str] | None = None,
         server_sample_paths: dict[str, str] | None = None,
+        launch_arguments: str | None = None,
     ) -> dict[str, Any]:
         """Execute the full analysis pipeline synchronously.
 
@@ -187,6 +231,8 @@ class MalsparkApp:
                 configured provider's entry is also ``static_sample_path``.
             server_sample_paths: The path each tool server that declares a
                 ``sample_mount`` opens the sample at, keyed by server key.
+            launch_arguments: The arguments the sandbox starts the sample with.
+                See ``arun``.
 
         Returns:
             The final state dict including:
@@ -203,6 +249,7 @@ class MalsparkApp:
                 static_sample_path,
                 static_sample_paths,
                 server_sample_paths=server_sample_paths,
+                launch_arguments=launch_arguments,
             )
         )
 
@@ -321,12 +368,16 @@ class MalsparkApp:
                 out[name] = int(fallback)
         return out
 
-    def _note_the_reader(self, provider: Any, run: Any) -> None:
-        """Which reader produced this job's report, and the signature scale its provider gives."""
+    def _note_the_reader(self, provider: Any, run: Any, record: Any = None) -> None:
+        """Which reader produced this job's report, and the signature scale its provider gives.
+
+        Kept on ``record`` (a ``providers.detonation.DetonationRecord``) where
+        one is given, else on the container.
+        """
         from malspark.core.report_formats import effective_formats
         from malspark.schemas.sandbox_report import reader_of
 
-        self.container.sandbox_normalised = reader_of(run.report)
+        normalised = reader_of(run.report)
         try:
             scale = provider.signature_scale(
                 run, effective_formats(self.config.sandbox.report_formats)
@@ -334,10 +385,16 @@ class MalsparkApp:
         except Exception as exc:  # noqa: BLE001 — a scale is a reading aid, never a reason to fail
             logger.warning("Sandbox signature scale unavailable: %s", exc)
             scale = None
-        self.container.sandbox_signature_scale = scale.record() if scale is not None else None
+        recorded = scale.record() if scale is not None else None
+        if record is not None:
+            record.normalised_by = normalised
+            record.signature_scale = recorded
+            return
+        self.container.sandbox_normalised = normalised
+        self.container.sandbox_signature_scale = recorded
 
     def _tell_the_target(
-        self, report: dict[str, Any] | None, file_hash: str
+        self, report: dict[str, Any] | None, file_hash: str, detonation: Any = None
     ) -> dict[str, Any] | None:
         """``report``, marked where its sandbox names a target that is not the sample.
 
@@ -354,20 +411,29 @@ class MalsparkApp:
         every provider's report (``schemas.sandbox_document.PLATFORM_MARKS``,
         :meth:`_without_unearned_marks`); the removal here, with its warning,
         stays as a second guard for a document that reaches this step by
-        another way.
+        another way. ``detonation`` is a further detonation's record, whose
+        own claim and launch are read in place of the job's.
         """
-        from malspark.analysis.sample_integrity import sandbox_target_record
+        from malspark.analysis.sample_integrity import sandbox_target_record, submitted_archive_of
         from malspark.pipeline.sandbox_status import TARGET_KEY, target_mark
 
         if not isinstance(report, dict):
             return report
-        claim = self.container.sandbox_target_claim or self.container.attached_target_claim
+        if detonation is not None:
+            claim = detonation.target_claim or detonation.attached_target_claim
+            launch = detonation.launch
+        else:
+            claim = self.container.sandbox_target_claim or self.container.attached_target_claim
+            launch = self.launch_record
         record = (
             sandbox_target_record(
                 file_hash,
                 claim.get("sha256"),
                 provider=str(claim.get("provider") or ""),
                 task_id=str(claim.get("task_id") or ""),
+                # The archive a generated launcher was submitted in names the
+                # submitted archive holding the sample, not another target.
+                submitted_archive=submitted_archive_of(launch),
             )
             if isinstance(claim, dict)
             else None
@@ -410,10 +476,81 @@ class MalsparkApp:
     async def _submit_to_sandbox(self, sample_path: str | None) -> dict[str, Any] | None:
         """Submit sample to sandbox and return the neutral report's document.
 
+        Launch arguments the job asked for that no submission carried, or that
+        ended without a report, are recorded as not honoured with the reason
+        (:meth:`_launch_not_carried`), whichever path ended the submission.
+        """
+        report = await self._submit_the_sample(sample_path)
+        self._launch_not_carried(report, sample_path)
+        return report
+
+    def _launch_not_carried(self, report: dict[str, Any] | None, sample_path: str | None) -> None:
+        """Record the job's launch arguments as not honoured where nothing observed them."""
+        from malspark.providers.submission import (
+            LaunchArgumentsAnswer,
+            launch_record,
+            unmade_record,
+            unobserved_record,
+        )
+
+        arguments = self.launch_arguments
+        if not arguments or report is not None:
+            return
+        failure = self.container.sandbox_failure
+        record = self.launch_record
+        if record is None:
+            if not sample_path:
+                why = "the job has no sample file to submit"
+            elif self.container.is_mock:
+                why = "the run is in mock mode and submits nothing"
+            else:
+                why = failure or "no sandbox provider could be set up"
+            self.launch_record = unmade_record(
+                "", arguments, f"no sandbox submission was made: {why}"
+            )
+        elif record.get("honoured") is True:
+            # Sent, and nothing came back to observe them in: worded apart from a
+            # request that was refused, in the record, the limitation and the
+            # upload row alike. Sent only where the submit call returned.
+            uploads = self.container.sample_uploads
+            row = uploads[-1] if uploads else {}
+            if not self._submit_returned:
+                note = "the submission did not complete, so they may not have been sent"
+                # The archive a launcher built, and the way it was to carry
+                # them, stay: the disclosure still names what may have left.
+                self.launch_record = launch_record(
+                    str(record.get("provider") or ""),
+                    str(record.get("arguments") or ""),
+                    LaunchArgumentsAnswer(
+                        honoured=False,
+                        note=note + (f" ({failure})" if failure else ""),
+                        via=str(record.get("via") or ""),
+                        launcher=record.get("launcher"),
+                    ),
+                )
+            else:
+                self.launch_record = unobserved_record(record, failure or "")
+            if row:
+                from malspark.analysis.disclosure import upload_record
+
+                uploads[-1] = upload_record(
+                    str(row.get("provider") or ""),
+                    submitted=bool(row.get("submitted")),
+                    host=str(row.get("host") or ""),
+                    launch=self.launch_record,
+                )
+
+    async def _submit_the_sample(self, sample_path: str | None) -> dict[str, Any] | None:
+        """The job's first detonation, for :meth:`_submit_to_sandbox`.
+
         The document every consumer reads (``schemas.sandbox_document``), laid
         out from the ``SandboxReport`` the provider's registered reader filled.
-        Returns None if no sample_path is provided or if submission fails.
+        Returns None if no sample_path is provided or if submission fails. The
+        detonation is made by :meth:`detonate`; its record's fields are the
+        job-level ones the run reads, copied once it ends, however it ends.
         """
+        from malspark.providers.detonation import DetonationRecord
+
         # Which reader produced this job's report, for the sandbox sections;
         # cleared first so a job with no report never reads the last one's.
         self.container.sandbox_normalised = None
@@ -423,13 +560,50 @@ class MalsparkApp:
         self.container.artefact_fetch_failures = []
         self.container.sandbox_target_claim = None
         self.container.attached_target_claim = None
+        self.launch_record = None
+        self._submit_returned = False
+        record = DetonationRecord(
+            arguments=self.launch_arguments,
+            uploads=self.container.sample_uploads,
+            artefact_fetch_failures=self.container.artefact_fetch_failures,
+        )
+        # The job's first detonation opens the job's list of them; an agent's
+        # further ones follow it (``providers.detonation``).
+        self.container.detonations = [record]
+        self.container.detonation_requests = []
+        # Every other per-job record of the detonations goes with them, so a
+        # container that runs a second job starts it as the first.
+        from malspark.pipeline.detonations import reset_detonation_state
+
+        reset_detonation_state(self.container)
+        try:
+            return await self.detonate(sample_path, record)
+        finally:
+            self.container.sandbox_normalised = record.normalised_by
+            self.container.sandbox_signature_scale = record.signature_scale
+            self.container.sandbox_failure = record.failure
+            self.container.sandbox_target_claim = record.target_claim
+            self.container.attached_target_claim = record.attached_target_claim
+            self.launch_record = record.launch
+            self._submit_returned = record.submit_returned
+
+    async def detonate(self, sample_path: str | None, record: Any) -> dict[str, Any] | None:
+        """Detonate the sample once, as ``record`` asks, and fill ``record`` with how it ended.
+
+        The one path every detonation of the job is made through
+        (``providers.detonation``): ``record.arguments`` are the launch
+        arguments asked for, and the record gets what became of them, the
+        upload rows, the task id, the report's document (also returned), the
+        reader, the target its report names and, where it ended without a
+        report, why. Never raises for a sandbox's failure.
+        """
         if not sample_path or self.container.is_mock:
             return None
 
         path = Path(sample_path)
         if not path.exists():
             logger.warning("Sample path does not exist: %s", sample_path)
-            self._sandbox_failed("the sample file to submit was not found")
+            self._sandbox_failed("the sample file to submit was not found", record)
             return None
 
         # Where the submission was when it failed, so a failure says which step
@@ -440,6 +614,13 @@ class MalsparkApp:
         try:
             provider = self.container.get_sandbox_provider()
             caps = provider.capabilities
+            # What the provider makes of the job's launch arguments, asked
+            # before anything is sent: handed over only where it passes them,
+            # and recorded either way (``providers.submission``).
+            record.provider = str(provider.id)
+            # Off the event loop: where a launcher carries the arguments, the
+            # answer reads, archives and hashes the sample.
+            options = await asyncio.to_thread(self._submission_options, provider, path, record)
             if not caps.can_submit and caps.accepts_uploaded_report:
                 # No detonation: the evidence is already here.
                 stage = "reading the attached report"
@@ -447,21 +628,23 @@ class MalsparkApp:
                     run = provider.fetch("uploaded")
                 except Exception as exc:  # noqa: BLE001 — same degrade contract as a failed submit
                     logger.error("Attached sandbox report unusable: %s", exc)
-                    self._sandbox_failed(f"the attached sandbox report is unusable: {exc}")
+                    self._sandbox_failed(f"the attached sandbox report is unusable: {exc}", record)
                     return None
                 self._without_unearned_marks(run)
-                self._note_the_reader(provider, run)
+                self._note_the_reader(provider, run, record)
                 attached = sandbox_document(run.report)
                 if not (run.report.synthetic or run.report.recorded_fixture):
                     # The target the attached report names, as its reader put
                     # it in the neutral report: told to the analysts and the
                     # judge (``_tell_the_target``) and recorded by the worker
                     # as a live one's is.
-                    self.container.attached_target_claim = {
+                    record.attached_target_claim = {
                         "provider": str(provider.id),
                         "task_id": str(run.task_id),
                         "sha256": str(run.report.target.sha256 or ""),
                     }
+                record.task_id = str(run.task_id)
+                record.report = attached
                 return attached
             logger.info("Submitting sample to sandbox: %s", sample_path)
 
@@ -482,15 +665,28 @@ class MalsparkApp:
 
             stage = "preparing the submission"
             host = submission_host(provider)
+            launch = record.launch
             if host is not None:
-                self.container.sample_uploads.append(
-                    upload_record(provider.id, submitted=False, host=host)
+                record.uploads.append(
+                    upload_record(provider.id, submitted=False, host=host, launch=launch)
                 )
             stage = "submitting the sample"
-            task_id = await asyncio.to_thread(provider.submit, str(path))
+            if options:
+                task_id = await asyncio.to_thread(
+                    functools.partial(provider.submit, str(path), options=options)
+                )
+            else:
+                # The call a run without launch arguments has always made, so
+                # a provider written before ``options`` existed takes it as it did.
+                task_id = await asyncio.to_thread(provider.submit, str(path))
+            record.submit_returned = True
+            # A launcher's built archive (about the sample's size) is let go
+            # once it is sent; the record keeps its digests and text.
+            options = None
+            record.task_id = str(task_id)
             if host is not None:
-                self.container.sample_uploads[-1] = upload_record(
-                    provider.id, submitted=True, host=host
+                record.uploads[-1] = upload_record(
+                    provider.id, submitted=True, host=host, launch=launch
                 )
             # Thread the active provider's own completion timeout + poll
             # interval into the poll loop (see ``_poll_budget``). Without
@@ -499,6 +695,10 @@ class MalsparkApp:
             # configured, and a real CAPE detonation (win10 guest run alone is
             # ~280s + processing) timed out before the report was ready —
             # silently degrading every run to static-only.
+            if record.ordinal > 1:
+                # A further detonation of a job cancelled while it was being
+                # submitted is not waited for (``pipeline.detonations``).
+                self.container.cancellation.check("after a further detonation was submitted")
             stage = "waiting for the analysis"
             budget = self._poll_arguments(provider, task_id)
             # The job's sandbox deadline: the poll's own budget, from when the
@@ -514,7 +714,13 @@ class MalsparkApp:
                 stage = "fetching the report"
                 run = await asyncio.to_thread(provider.fetch, task_id)
                 self._without_unearned_marks(run)
-                self._note_the_reader(provider, run)
+                self._note_the_reader(provider, run, record)
+                # A generated launcher's processes, flows and signatures are the
+                # platform's, not the sample's (``attribute_the_launcher``).
+                from malspark.schemas.sandbox_report import attribute_the_launcher
+
+                asked = record.launch
+                attribute_the_launcher(run.report, asked.get("launcher") if asked else None)
                 if not (run.report.synthetic or run.report.recorded_fixture):
                     # The target the sandbox says it ran, for the worker to
                     # compare with the sample, kept once the report is used
@@ -568,10 +774,10 @@ class MalsparkApp:
                         )
                     except ArtefactFetchFailed as exc:
                         # Logged with its cause where it failed.
-                        self.container.artefact_fetch_failures.append(exc.record())
+                        record.artefact_fetch_failures.append(exc.record())
                     except Exception as exc:
                         logger.warning("PCAP fetch failed (non-fatal): %s", type(exc).__name__)
-                        self.container.artefact_fetch_failures.append(
+                        record.artefact_fetch_failures.append(
                             ArtefactFetchFailed(PACKET_CAPTURE, type(exc).__name__).record()
                         )
                     if pcap_path:
@@ -587,7 +793,7 @@ class MalsparkApp:
                             # lost it.
                             logger.warning("PCAP attach failed (non-fatal): %s", type(exc).__name__)
                             Path(pcap_path).unlink(missing_ok=True)
-                            self.container.artefact_fetch_failures.append(
+                            record.artefact_fetch_failures.append(
                                 ArtefactFetchFailed(
                                     PACKET_CAPTURE, f"attach {type(exc).__name__}"
                                 ).record()
@@ -608,7 +814,8 @@ class MalsparkApp:
                         type(result.report).__name__,
                     )
                     self._sandbox_failed(
-                        f"the sandbox report is a {type(result.report).__name__}, not a document"
+                        f"the sandbox report is a {type(result.report).__name__}, not a document",
+                        record,
                     )
                     return None
                 logger.info(
@@ -616,19 +823,28 @@ class MalsparkApp:
                     len(result.report.get("signatures", [])),
                     len(result.report.get("ttp_tags", [])),
                 )
-                self.container.sandbox_target_claim = claim
+                record.target_claim = claim
+                record.report = result.report
                 return result.report  # type: ignore[no-any-return]
-            logger.warning("Sandbox task ended with status=%s: %s", result.status, result.error)
+            from malspark.providers.submission import mask_submitted, submitted_values
+
+            # The sandbox's words, with the submitted values withheld, in the
+            # log as in the failure reason.
+            said = mask_submitted(str(result.error or ""), *submitted_values(record.launch))
+            logger.warning("Sandbox task ended with status=%s: %s", result.status, said)
             ended = f"sandbox task {result.task_id} ended with status {result.status!r}"
             if result.status in ("reported", "partial"):
                 ended += " and no report"
             elif result.error and result.error != f"Sandbox status: {result.status}":
-                ended += f": {result.error}"
-            self._sandbox_failed(ended)
+                ended += f": {said}"
+            self._sandbox_failed(ended, record)
             return None
         except Exception as exc:
-            logger.error("Sandbox submission failed: %s", exc)
-            self._sandbox_failed(f"{stage}: {str(exc) or type(exc).__name__}")
+            from malspark.providers.submission import mask_submitted, submitted_values
+
+            said = mask_submitted(str(exc), *submitted_values(record.launch))
+            logger.error("Sandbox submission failed: %s", said)
+            self._sandbox_failed(f"{stage}: {said or type(exc).__name__}", record)
             return None
 
     def _fetch_capture(
@@ -654,7 +870,169 @@ class MalsparkApp:
         with fetch_budget(bounds):
             return cast("str | None", provider.fetch_pcap(task_id, dest_dir))
 
-    def _sandbox_failed(self, reason: str) -> None:
+    def _submission_options(
+        self, provider: Any, sample_path: str | Path | None = None, record: Any = None
+    ) -> Any:
+        """The options this job's submission hands ``provider``; ``None`` where it hands none.
+
+        Sets :attr:`launch_record` where the job asked for launch arguments:
+        the arguments verbatim, the provider, whether it passes them and its
+        note. A value that is not one command line
+        (``launch_arguments_problem``) or that the provider cannot pass is
+        handed nothing, and the record says the request was not honoured; the
+        detonation goes ahead. With ``record`` (a detonation's), its own
+        arguments are asked about and its ``launch`` is set instead.
+        """
+        arguments = record.arguments if record is not None else self.launch_arguments
+        if not arguments:
+            return None
+
+        def _keep(launch: dict[str, Any]) -> dict[str, Any]:
+            if record is not None:
+                record.launch = launch
+            else:
+                self.launch_record = launch
+            return launch
+
+        from malspark.providers.submission import (
+            SubmissionOptions,
+            answer_of,
+            launch_arguments_problem,
+            launch_record,
+            unmade_record,
+        )
+
+        problem = launch_arguments_problem(arguments)
+        if problem:
+            kept = _keep(
+                unmade_record(
+                    str(provider.id), arguments, f"the value is not one command line: {problem}"
+                )
+            )
+            logger.warning(
+                "Launch arguments requested, not honoured by the %s provider: %s",
+                provider.id,
+                kept["note"],
+            )
+            return None
+        answer = answer_of(provider, arguments, sample_path)
+        _keep(launch_record(str(provider.id), arguments, answer))
+        if not answer.honoured:
+            logger.warning(
+                "Launch arguments requested, not honoured by the %s provider: %s",
+                provider.id,
+                answer.note,
+            )
+            return None
+        # A launcher's archive, built as the provider answered, is handed on so
+        # the one submitted is the one recorded.
+        return SubmissionOptions(launch_arguments=arguments, launcher=answer.built)
+
+    def _mark_the_launch(
+        self, report: dict[str, Any] | None, detonation: Any = None
+    ) -> dict[str, Any] | None:
+        """``report``, marked with what became of the job's launch arguments.
+
+        The mark (``schemas.sandbox_document.LAUNCH_KEY``) is what the
+        sandbox sentence of the pack, the ledger and the report is written
+        from (``pipeline.sandbox_status.launch_statement``), and what the
+        run's limitation is read from where they were not passed. A job that
+        asked for none leaves the report as it came. A block of the
+        report's own under the mark's word is taken out with a warning, as the
+        target mark's is (:meth:`_tell_the_target`).
+        """
+        from malspark.schemas.sandbox_document import LAUNCH_KEY
+
+        if not isinstance(report, dict):
+            return report
+        if LAUNCH_KEY in report:
+            report.pop(LAUNCH_KEY)
+            logger.warning(
+                "The sandbox report carries a top-level %r block; that word is the "
+                "platform's mark for the job's launch arguments, so the block was taken out.",
+                LAUNCH_KEY,
+            )
+        launch = detonation.launch if detonation is not None else self.launch_record
+        if launch is not None:
+            report[LAUNCH_KEY] = dict(launch)
+            if detonation is not None:
+                # A further detonation's mark says which it is and who asked.
+                report[LAUNCH_KEY]["detonation"] = detonation.name
+                report[LAUNCH_KEY]["requested_by"] = list(
+                    dict.fromkeys(
+                        str(a.get("agent") or "") for a in detonation.requested_by if a.get("agent")
+                    )
+                )
+        return report
+
+    async def detonate_further(self, record: Any) -> None:
+        """Carry out one further detonation an agent asked for, filling ``record``.
+
+        Made through :meth:`detonate`, as the job's first is, and marked as
+        its report is: the target its sandbox names (:meth:`_tell_the_target`)
+        and what became of its launch arguments (:meth:`_mark_the_launch`),
+        both from this detonation's own record. Its upload rows join the job's
+        list, each naming the detonation; a submission that carried the
+        arguments and returned no report is recorded so, as the first's is
+        (:meth:`_launch_not_carried`). Never raises for a sandbox's failure; a
+        cancel of the job between its submission and its poll stops it there.
+        """
+        askers = list(dict.fromkeys(str(a.get("agent") or "") for a in record.requested_by))
+        # Each upload row is in the job's list the moment it is written,
+        # naming the detonation, so a job stopped while the detonation is in
+        # flight still discloses the submission.
+        record.uploads = _JoinedRows(
+            self.container.sample_uploads,
+            {"detonation": record.name, "requested_by": [a for a in askers if a]},
+        )
+        try:
+            await self._detonate_further(record)
+        finally:
+            self.container.artefact_fetch_failures.extend(
+                {**row, "detonation": record.name} for row in record.artefact_fetch_failures
+            )
+
+    async def _detonate_further(self, record: Any) -> None:
+        """:meth:`detonate_further`'s body: the detonation, and its report marked."""
+        from malspark.analysis.disclosure import upload_record
+        from malspark.providers.submission import (
+            LaunchArgumentsAnswer,
+            launch_record,
+            unobserved_record,
+        )
+
+        report = await self.detonate(self.container.sample_path, record)
+        report = self._mark_the_launch(
+            self._tell_the_target(report, str(self.container.sample_sha256 or ""), record),
+            record,
+        )
+        record.report = report
+        launch = record.launch
+        if report is None and isinstance(launch, dict) and launch.get("honoured") is True:
+            if not record.submit_returned:
+                record.launch = launch_record(
+                    str(launch.get("provider") or ""),
+                    str(launch.get("arguments") or ""),
+                    LaunchArgumentsAnswer(
+                        honoured=False,
+                        note="the submission did not complete, so they may not have been sent"
+                        + (f" ({record.failure})" if record.failure else ""),
+                        via=str(launch.get("via") or ""),
+                        launcher=launch.get("launcher"),
+                    ),
+                )
+            else:
+                record.launch = unobserved_record(launch, record.failure or "")
+            if record.uploads:
+                row = record.uploads[-1]
+                record.uploads[-1] = upload_record(
+                    str(row.get("provider") or ""),
+                    submitted=bool(row.get("submitted")),
+                    host=str(row.get("host") or ""),
+                    launch=record.launch,
+                )
+
+    def _sandbox_failed(self, reason: str, record: Any = None) -> None:
         """Keep why this job has no sandbox report, for its degradation reason.
 
         The words are the sandbox's or an exception's, and they reach the
@@ -667,8 +1045,16 @@ class MalsparkApp:
         from malspark.core.settings_overrides import redact_url
         from malspark.utils.marked_cut import marked_cut
 
+        # The sandbox's own words in ``reason`` were masked where they entered
+        # it (``providers.submission.mask_submitted``); the platform's are kept.
         one_line = " ".join(redact_url(str(reason)).splitlines())
-        self.container.sandbox_failure = marked_cut(one_line, SANDBOX_FAILURE_CHARS)
+        failure = marked_cut(one_line, SANDBOX_FAILURE_CHARS)
+        if record is not None:
+            # A detonation's own failure; the job's first's is copied to the
+            # container as it ends (``_submit_the_sample``).
+            record.failure = failure
+            return
+        self.container.sandbox_failure = failure
 
     async def arun(
         self,
@@ -680,6 +1066,7 @@ class MalsparkApp:
         started_at: float | None = None,
         server_sample_paths: dict[str, str] | None = None,
         questions: list[str] | None = None,
+        launch_arguments: str | None = None,
     ) -> dict[str, Any]:
         """Execute the full analysis pipeline asynchronously.
 
@@ -713,6 +1100,12 @@ class MalsparkApp:
                 report answers in a fixed vocabulary
                 (``reporting.question_round``). None or empty asks nothing,
                 and the report is the one a run without them has.
+            launch_arguments: The arguments the sandbox starts the sample with,
+                one string as the operator would type it after the program's
+                name (the job's ``sandbox_launch_arguments``), handed to the
+                provider verbatim where it can pass them and recorded either
+                way (``providers.submission``). None or empty asks for none,
+                and the submission is the one a run without them makes.
 
         This prevents the need for spinning up separate threads and manually
         managing event loops in async contexts (like ARQ workers), which
@@ -720,6 +1113,7 @@ class MalsparkApp:
         """
         start = float(started_at) if started_at else time.time()
         self.questions = list(questions or [])
+        self.launch_arguments = str(launch_arguments or "")
         logger.info("=" * 60)
         logger.info("MALSPARK - Multi-Agent Malware Analysis Pipeline")
         logger.info("=" * 60)
@@ -792,8 +1186,8 @@ class MalsparkApp:
     ) -> dict[str, Any]:
         """The sandbox submission and the graph, for ``arun``."""
         # Submit to sandbox if sample_path is provided
-        sandbox_report = self._tell_the_target(
-            await self._submit_to_sandbox(sample_path), file_hash
+        sandbox_report = self._mark_the_launch(
+            self._tell_the_target(await self._submit_to_sandbox(sample_path), file_hash)
         )
 
         # Compute file_type + canonical platform up front. It routes the
@@ -813,6 +1207,9 @@ class MalsparkApp:
         # Same reason, same place: ``ToolRef(kind="sandbox")`` resolves to
         # tools over this report, and resolution happens off the graph state.
         self.container.sandbox_report = sandbox_report
+        # How a further detonation an agent asked for is carried out between
+        # steps (``pipeline.detonations``): through the path the first took.
+        self.container.detonator = self.detonate_further
         self.container.sample_path = sample_path
         self.container.sample_sha256 = file_hash
         self.container.server_sample_paths = dict(server_sample_paths or {})

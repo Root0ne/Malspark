@@ -306,10 +306,19 @@ def test_fetch_maps_overview_and_task_report_into_a_sandbox_report():
             "as_num": 63949,
             "as_org": "EXAMPLE-HOSTING",
             "country": "United States",
+            # The task the flow was listed in, whose process ids are its own.
+            "platform_task": "behavioral1",
         }
     ]
     assert _bare(report.network.udp) == [
-        {"dst": "10.0.2.3", "dport": 53, "procid": 1000, "sample_process_tree": True, "pid": 2100}
+        {
+            "dst": "10.0.2.3",
+            "dport": 53,
+            "procid": 1000,
+            "sample_process_tree": True,
+            "pid": 2100,
+            "platform_task": "behavioral1",
+        }
     ]
     assert {h["ip"] for h in report.network.hosts} == {"45.33.32.23", "10.0.2.3"}
     assert _bare(report.network.http) == [

@@ -1350,7 +1350,10 @@ class TestARunWithNoJobIdEndsLikeOne:
         for how_it_ends in (RuntimeError("the pipeline failed"), KeyboardInterrupt()):
             ending.append(how_it_ends)
             with pytest.raises((typer.Exit, KeyboardInterrupt)):
-                cli.analyze(file_hash="a" * 64, mock=True)
+                # Called as a function, an option not named here holds the
+                # framework's own marker; the launch arguments are checked as
+                # text, so the call states that none were given.
+                cli.analyze(file_hash="a" * 64, mock=True, launch_arguments=None)
 
         assert len(released) == 2, "both ways out released the run"
         for app in made:

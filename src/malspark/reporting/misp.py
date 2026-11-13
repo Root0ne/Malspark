@@ -187,6 +187,7 @@ def build_misp_attributes(
     attribute's uuid is derived from.
     """
     from malspark.memory.attck_loader import technique_entry
+    from malspark.reporting.detonation_marks import observed_words
 
     table = list(rows if rows is not None else getattr(report, "consolidated_iocs", None) or [])
     out: list[dict[str, Any]] = []
@@ -234,6 +235,9 @@ def build_misp_attributes(
                 # The ledger entries the table ties to the row, which MISP has
                 # no field for: named in the comment.
                 f"evidence {', '.join(cited)}" if cited else "",
+                # Under which detonations it was observed, where a further
+                # detonation an agent asked for observed it: in the comment too.
+                observed_words(getattr(row, "observed_in", None) or ()),
             )
             if part
         )
@@ -262,7 +266,14 @@ def build_misp_attributes(
             "External analysis",
             f"{tid} {name}" if name else tid,
             False,
-            "ATT&CK technique this report publishes",
+            "; ".join(
+                part
+                for part in (
+                    "ATT&CK technique this report publishes",
+                    observed_words(getattr(mapping, "observed_in", None) or ()),
+                )
+                if part
+            ),
         )
         if canonical:
             attribute["Tag"] = [

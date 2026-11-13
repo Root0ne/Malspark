@@ -143,9 +143,10 @@ def sandbox_target_of(container: Any) -> dict[str, Any] | None:
     (``container.attached_target_claim``), whichever sandbox it was, against
     the hash the job ran the sample under. A stand-in or a recorded fixture
     ran nothing during the run and keeps no claim. A report that names no
-    target hash, or the sample's, is no record. Never raises.
+    target hash, the sample's, or the archive the platform submitted holding
+    it (a generated launcher's), is no record. Never raises.
     """
-    from malspark.analysis.sample_integrity import sandbox_target_record
+    from malspark.analysis.sample_integrity import sandbox_target_record, submitted_archive_of
 
     claim = getattr(container, "sandbox_target_claim", None) or getattr(
         container, "attached_target_claim", None
@@ -157,6 +158,7 @@ def sandbox_target_of(container: Any) -> dict[str, Any] | None:
         claim.get("sha256"),
         provider=str(claim.get("provider") or ""),
         task_id=str(claim.get("task_id") or ""),
+        submitted_archive=submitted_archive_of(getattr(container, "launch_record", None)),
     )
     if record is not None:
         logger.warning(

@@ -326,6 +326,8 @@ class Indicator(STIXObject):
     # See ``EVIDENCE_REFS_PROPERTY``: the ledger entries the report's IOC table
     # ties to the indicator's values.
     x_malspark_evidence_refs: list[str] | None = None
+    # See ``OBSERVED_IN_PROPERTY``.
+    x_malspark_observed_in: list[dict[str, str]] | None = None
 
     @field_validator("valid_from", "valid_until", mode="after")
     @classmethod
@@ -401,6 +403,13 @@ class Malware(STIXObject):
 # such a tie; an object the record ties to nothing carries no such property.
 EVIDENCE_REFS_PROPERTY = "x_malspark_evidence_refs"
 
+# The detonations of the sample an exported indicator's values, or the
+# technique a ``uses`` edge points at, were observed in, where a further
+# detonation an agent asked for observed them: each ``{"detonation": "d2",
+# "launched_with": "<arguments>"}``, the job's own as ``{"detonation": "d1"}``
+# (``reporting.detonation_marks``). Absent where only the job's own did.
+OBSERVED_IN_PROPERTY = "x_malspark_observed_in"
+
 
 class Relationship(STIXObject):
     """STIX 2.1 Relationship structure to connect SDOs (plain, no annotation)."""
@@ -418,6 +427,8 @@ class Relationship(STIXObject):
     # See ``SUPPORT_PROPERTY``.
     x_malspark_support: str | None = None
     x_malspark_support_note: str | None = None
+    # See ``OBSERVED_IN_PROPERTY``.
+    x_malspark_observed_in: list[dict[str, str]] | None = None
 
     @field_validator("start_time", "stop_time", mode="after")
     @classmethod
@@ -485,6 +496,8 @@ class ConfidenceAnnotatedRelationship(STIXObject):
     # See ``SUPPORT_PROPERTY``.
     x_malspark_support: str | None = None
     x_malspark_support_note: str | None = None
+    # See ``OBSERVED_IN_PROPERTY``.
+    x_malspark_observed_in: list[dict[str, str]] | None = None
 
     @field_validator("start_time", "stop_time", mode="after")
     @classmethod

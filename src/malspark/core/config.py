@@ -4512,6 +4512,10 @@ class SandboxTriageConfig(BaseModel):
     poll_interval_seconds: Annotated[int, Field(ge=1)] = 15
     fetch_pcap: bool = True
     analysis_seconds: Annotated[int, Field(ge=1)] | None = None
+    # Triage's submission has no command-line field: a job's launch arguments
+    # are carried by a generated launcher script in a submitted archive, or,
+    # off, not carried and recorded as not honoured.
+    launcher_for_arguments: bool = True
 
     @model_validator(mode="after")
     def _the_poll_outlasts_the_run(self) -> "SandboxTriageConfig":
@@ -4550,7 +4554,28 @@ class RestSubmitConfig(BaseModel):
     # operator can keep the fields the sandbox always needs apart from the
     # per-format ones they are still tuning.
     submit_fields: dict[str, str] = Field(default_factory=dict)
+    # The multipart field the sandbox reads a job's launch arguments from,
+    # sent verbatim beside the others. Empty: the sandbox is not told how, and
+    # a job's launch arguments are recorded as not honoured.
+    launch_arguments_field: str = ""
     task_id_path: str = "$.id"
+
+    @model_validator(mode="after")
+    def _launch_field_is_its_own(self) -> "RestSubmitConfig":
+        """The launch-arguments field is no other field the submission sends.
+
+        A job's value would otherwise replace the sample part or a field the
+        operator fixed (a profile, a timeout).
+        """
+        name = self.launch_arguments_field
+        if name and (
+            name == self.file_field or name in self.extra_fields or name in self.submit_fields
+        ):
+            raise ValueError(
+                f"launch_arguments_field {name!r} is also the file field or a field fixed in "
+                "extra_fields or submit_fields; name a field of its own"
+            )
+        return self
 
 
 class RestStatusConfig(BaseModel):
@@ -4619,6 +4644,11 @@ class SandboxConfig(BaseModel):
     triage: SandboxTriageConfig = Field(default_factory=SandboxTriageConfig)
     upload: SandboxUploadConfig = Field(default_factory=SandboxUploadConfig)
     rest: SandboxRestConfig = Field(default_factory=SandboxRestConfig)
+    # How many times one job may detonate its sample, the job's own detonation
+    # included: the ceiling on the further detonations agents ask for
+    # (``providers.detonation_requests``), stated to them as the sandbox's
+    # physical limit (its quota and the time each detonation takes).
+    max_detonations_per_job: int = Field(default=4, ge=1, le=20)
     # The operator's own report formats (``malspark.core.report_formats``): how
     # each is recognised, where its task id and target hash sit, which reader
     # reads it and its signature scale. Read by every provider and by the

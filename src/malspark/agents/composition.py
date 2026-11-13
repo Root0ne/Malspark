@@ -1042,7 +1042,7 @@ def _provider_tools(container: Any, definition: AgentDefinition, provider_id: st
     return stamp_source(tools, PROVIDER_FAMILY, declared=provider_source(provider))
 
 
-def _sandbox_tools(container: Any, definition: AgentDefinition) -> list[Any]:
+def _sandbox_tools(container: Any, definition: AgentDefinition, key: str = "") -> list[Any]:
     """The job's sandbox-report tools, for a definition that asked for them.
 
     In-process, so unlike the provider half there is nothing to open and
@@ -1059,7 +1059,9 @@ def _sandbox_tools(container: Any, definition: AgentDefinition) -> list[Any]:
     from malspark.agents.prompt_fragments import SANDBOX_FAMILY, stamp_source
     from malspark.providers.sandbox_tools import sandbox_tools
 
-    return stamp_source(sandbox_tools(container), SANDBOX_FAMILY, declared="sandbox")
+    return stamp_source(
+        sandbox_tools(container, agent=key or None), SANDBOX_FAMILY, declared="sandbox"
+    )
 
 
 def _agent_tools(
@@ -1104,7 +1106,7 @@ def in_process_tools_for(
     if definition is None:
         return tools, seen
     _claim_in_process_tools(
-        _sandbox_tools(container, definition), "in-process:sandbox", tools, seen
+        _sandbox_tools(container, definition, key), "in-process:sandbox", tools, seen
     )
     _claim_in_process_tools(
         _agent_tools(container, definition, key, caller), "in-process:team", tools, seen
@@ -1712,7 +1714,7 @@ def resolve_agent(key: str, container: Any, job_key: str = "job") -> ResolvedAge
     reasons.extend(provider_reasons)
     _claim_provider_tools(by_provider, tools, seen)
     _claim_in_process_tools(
-        _sandbox_tools(container, definition), "in-process:sandbox", tools, seen
+        _sandbox_tools(container, definition, key), "in-process:sandbox", tools, seen
     )
     _claim_in_process_tools(
         _agent_tools(container, definition, key), "in-process:team", tools, seen
@@ -1805,7 +1807,7 @@ async def aresolve_agent(key: str, container: Any, job_key: str = "job") -> Reso
     # first builder — on the caller's own loop.
     await asyncio.to_thread(container.get_context_budget)
     _claim_in_process_tools(
-        _sandbox_tools(container, definition), "in-process:sandbox", tools, seen
+        _sandbox_tools(container, definition, key), "in-process:sandbox", tools, seen
     )
     _claim_in_process_tools(
         _agent_tools(container, definition, key), "in-process:team", tools, seen

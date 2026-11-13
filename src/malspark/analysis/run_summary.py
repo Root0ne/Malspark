@@ -2785,14 +2785,26 @@ class RunSummaryBuilder:
 
 
 def _dropped_value_counts(rows: list[Any]) -> list[dict[str, Any]]:
-    """One row per analyst and round: how many values, from how many earlier claims."""
-    counted: dict[tuple[str, int], dict[str, Any]] = {}
+    """One row per analyst and round: how many values, from how many earlier claims.
+
+    A further turn's rows (marked ``further_turn``) are counted apart from
+    round 0, in a row of their own that says so.
+    """
+    counted: dict[tuple[str, int, bool], dict[str, Any]] = {}
     for row in rows:
         if not isinstance(row, dict):
             continue
-        key = (str(row.get("agent") or ""), int(row.get("round") or 0))
+        further = bool(row.get("further_turn"))
+        key = (str(row.get("agent") or ""), int(row.get("round") or 0), further)
         entry = counted.setdefault(
-            key, {"agent": key[0], "round": key[1], "values": 0, "claims": 0}
+            key,
+            {
+                "agent": key[0],
+                "round": key[1],
+                **({"further_turn": True} if further else {}),
+                "values": 0,
+                "claims": 0,
+            },
         )
         entry["values"] += len(list(row.get("missing") or []))
         entry["claims"] += 1

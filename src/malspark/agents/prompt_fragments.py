@@ -19,6 +19,7 @@ from collections.abc import Mapping, Sequence
 from typing import Any
 
 from malspark.agents.tool_fence import FENCE_STATEMENT
+from malspark.core import platform_sources
 from malspark.schemas.isr_models import OPEN_QUESTION_REASONS
 
 # Keyed by platform, since the artefacts follow the operating system rather
@@ -253,7 +254,7 @@ REPUTATION_LOOKUP_FRAGMENT = (
 # of the provider the role attaches itself (Ghidra, radare2, a sandbox's own
 # server), which carry no server key of their own.
 TEAM_FAMILY = "team"
-SANDBOX_FAMILY = "sandbox"
+SANDBOX_FAMILY = platform_sources.SANDBOX_SOURCE
 PROVIDER_FAMILY = "provider"
 
 NO_TOOLS_STATEMENT = (
@@ -274,9 +275,33 @@ DECLARED_SOURCE_METADATA_KEY = "malspark_declared_source"
 
 
 def provider_source(provider: Any) -> str:
-    """Where a provider's tools are declared: what it says, else its own block."""
-    said = getattr(provider, "declaration_source", "")
-    return str(said) if said else f"provider:{getattr(provider, 'id', '')}"
+    """Where a provider's tools are declared: what it says, else its own block.
+
+    A provider that is not built into the platform (the registry's one
+    decision, ``providers.registry.is_built_in_class``) may not declare a
+    source name only the platform writes (``core.platform_sources``): its
+    tools are then recorded under its own block, and the refusal is logged.
+    Registration refuses such a provider where its class states the name
+    outright.
+    """
+    own = f"provider:{getattr(provider, 'id', '')}"
+    said = str(getattr(provider, "declaration_source", "") or "")
+    if not said:
+        return own
+    refusal = platform_sources.reserved_source_refusal(said, str(getattr(provider, "id", "")))
+    if refusal and not _built_in(provider):
+        from malspark.core.logger import logger
+
+        logger.error("%s; its tools are recorded under %s.", refusal, own)
+        return own
+    return said
+
+
+def _built_in(provider: Any) -> bool:
+    """Whether ``provider`` is an instance of a class built into the platform."""
+    from malspark.providers.registry import is_built_in_class
+
+    return is_built_in_class(type(provider))
 
 
 def stamp_source(tools: Sequence[Any], source: str, declared: str = "") -> list[Any]:

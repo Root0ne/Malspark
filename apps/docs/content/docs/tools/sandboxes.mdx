@@ -127,7 +127,7 @@ rendered as "0 processes". See [Providers](/docs/architecture/#providers).
 | `sandbox.cape2.timeout_seconds` | `300` | How long to wait for the report. |
 | `sandbox.cape2.poll_interval_seconds` | `10` | |
 | `sandbox.cape2.package_by_format` | `{}` | A file type to a CAPE analysis package, e.g. `{"apk": "apk", "elf": "generic", "pdf": "pdf", "ooxml": "doc"}`; `*` is the fallback, and a format with no entry is submitted without a package so CAPE picks one. |
-| `sandbox.cape2.submit_options` | `{}` | Sent verbatim as further form fields (`machine`, `tags`, `options`, `timeout`, anything `tasks/create/file` accepts). |
+| `sandbox.cape2.submit_options` | `{}` | Sent verbatim as further form fields (`machine`, `tags`, `options`, `timeout`, anything `tasks/create/file` accepts). A job's launch arguments join the `options` string; see [launch arguments](#launch-arguments). |
 | `sandbox.cape2.mcp` | disabled | An optional CAPE MCP server beside the REST API. |
 
 The guest platform is sent when CAPE has a name for it (`windows`, `linux`,
@@ -146,6 +146,7 @@ produces nothing, which is what `package_by_format` is for.
 | `sandbox.triage.timeout_seconds` | `900` | How long the platform waits for the report. Must be longer than `analysis_seconds`, and validation refuses one that is not. |
 | `sandbox.triage.poll_interval_seconds` | `15` | |
 | `sandbox.triage.fetch_pcap` | `true` | Fetches the capture for the network analyst. |
+| `sandbox.triage.launcher_for_arguments` | `true` | Carries a job's launch arguments through a generated launcher; see [launch arguments](#launch-arguments). Off, the arguments are not passed and the request is recorded as not honoured. |
 
 A value the account does not allow is refused by Triage, and the submission
 error quotes Triage's own words and names the setting. The run summary states
@@ -482,7 +483,7 @@ coding it:
 | Block | What it says |
 | :-- | :-- |
 | `sandbox.rest.auth` | The header, scheme and token the API takes. |
-| `sandbox.rest.submit` | The multipart submission (`method`, `path`, `file_field`, `extra_fields`, `submit_fields`) and the JSONPath of the task id in its answer. |
+| `sandbox.rest.submit` | The multipart submission (`method`, `path`, `file_field`, `extra_fields`, `submit_fields`, and `launch_arguments_field`, the field a job's launch arguments are sent in) and the JSONPath of the task id in its answer. |
 | `sandbox.rest.status` | The poll path, the JSONPath of the state, and the done and failed values. |
 | `sandbox.rest.report` | Where the report is, the registered reader or declared format that reads it (`cape2`, `cuckoo`, `triage`, `generic`, one an operator registers, or a format declared in `sandbox.report_formats`, read through its own `mapping` and on its own scale as an upload of it is), an optional capture path, and for a `generic` report its signature scale (`signature_scale_rungs`, `signature_scale_name`). |
 | `sandbox.rest.mapping` | For a `generic` report, an RFC 9535 JSONPath per channel: processes, calls, signatures, DNS, HTTP, TCP, UDP, hosts, domains, dropped files, registry; and per report place with no channel (`places`): `process_tree`, `resolved_apis`, `extracted`, `procdumps`, `memory`, `ids_alerts`, each match kept as the sandbox published it and read whole. Every channel and place is read whole, as a built-in reader reads its lists: no row count cuts it. A path is bounded only by the report's own size: a channel's matches never outnumber the values the report holds, and an operator channel's or a place's matches, each counted with everything nested in it, never hold more values than the report does, so a path whose matches repeat or nest (`$..children[*]` over a nested tree) is cut there, and the cut is logged and counted as truncated. A path with more than one descendant segment (`$..a..b`) walks the report again under every node the first reached, and a filter holding any absolute query (`$.a[?count($.b[*]) > 0]`, `$.a[?@.v == $.b[0]]`) runs it from the report's root for every candidate; saving one returns a warning beside it (never a refusal), so anchor it, or test the candidate (`@`), where you can. |
@@ -496,6 +497,265 @@ channel names as written); a report stored when the list said `calls` or
 anything the schema has no field for; namespace it by platform, e.g.
 `{"android.permissions": "$.apk.permissions[*]"}`. See [Format routing and the
 sandbox](/docs/configuration/#format-routing-and-the-sandbox).
+
+## Launch arguments
+
+A job may carry launch arguments (`sandbox_launch_arguments`, or
+`--sandbox-launch-arguments` on the command line; see [what a job may choose
+for itself](/docs/usage/running-an-analysis/#what-a-job-may-choose-for-itself)).
+Each provider declares whether it can pass them
+(`SandboxCapabilities.can_pass_launch_arguments`) and answers for the value
+before anything is sent:
+
+| Provider | What is sent |
+| :-- | :-- |
+| `cape2` | CAPE's `options` string, as `arguments=<value>`. The packages CAPE documents an `arguments` option for are `archive`, `dll`, `exe`, `ollydbg`, `python`, `rar`, `regsvr`, `service`, `service_dll`, `zip` and `zip_compound`; where `package_by_format` selects any other package the arguments are still sent, and the record notes that whether that package reads them is not documented. A DLL's export is the deployment's own `function` option, not an argument. The deployment's own `submit_options["options"]` entries are kept beside it; where they set `arguments` too, the job's value replaces them and the record says which it replaced. CAPE splits the string at every comma, so a value holding a comma is not passed. |
+| `rest` | The value verbatim in the form field `sandbox.rest.submit.launch_arguments_field`. With no field named, the provider cannot pass them. |
+| `triage` | Through a generated launcher (below), while `sandbox.triage.launcher_for_arguments` is on: Triage's submission API has no field for a command line (its `password` decrypts an archive and `profiles[].pick` selects a file inside one). With the setting off, nothing. |
+| `mock` | Nothing: a recorded fixture ran before the job asked. |
+| `upload` | Not applicable: the attached report comes from a run this platform did not start. |
+
+### Through a launcher
+
+A provider whose sandbox has no command-line field but runs a script picked
+from a submitted archive may declare that it carries the arguments through a
+generated launcher (`SandboxCapabilities.launcher`: the script types it runs and
+how its submission names the one to run). The platform builds an archive of two
+members, the sample as `sample.exe` (the only sample launched this way is a
+Windows program, and started by its path it needs the extension Windows runs,
+whatever the upload was called), and the launcher `launch.ps1`, stored in that order,
+uncompressed, with fixed timestamps and attributes, so the same sample and
+arguments always give the same archive and SHA-256. Triage runs the launcher
+because the submission picks it (`profiles[].pick`, a path relative to the
+archive root). The launcher finds its own folder from the path it was started
+from (`$MyInvocation.MyCommand.Path`, set from PowerShell 2.0 on for a script
+run from its file); where its content is run another way, with no script path,
+the folder is the current location, so the sample is found only if that is the
+extraction folder. It starts the sample in that folder through
+`System.Diagnostics.Process`, not through the shell: the path is joined by
+`System.IO.Path` and never read as a wildcard pattern (a `[` or `]` in the
+folder is a character), the folder is the working directory, and the arguments
+are one string, exactly as the job gave them, written into a single-quoted
+literal (nothing is expanded in one; only a quote is doubled, and PowerShell's
+typographic single quotes with it). That string is the process's argument
+string as it stands; no other escaping applies:
+
+```powershell
+$s = $MyInvocation.MyCommand.Path
+if ($s) { $d = [IO.Path]::GetDirectoryName($s) } else { $d = (Get-Location).ProviderPath }
+$i = New-Object Diagnostics.ProcessStartInfo
+$i.FileName = [IO.Path]::Combine($d, 'sample.exe')
+$i.Arguments = '<arguments>'
+$i.WorkingDirectory = $d
+$i.UseShellExecute = $false
+[void][Diagnostics.Process]::Start($i)
+```
+
+The file is UTF-8 with a byte order mark. The archive is built once, when the
+provider answers for the value, and that archive is the one submitted. Nothing
+is executed or interpreted on the host.
+
+A batch launcher is not built: `cmd` expands `%` and reads `^`, `&`, `|`, `<`,
+`>` and `!` as its own syntax inside a script, and reads the file in the
+console's code page, so the arguments could not pass through it as typed. Only
+a Windows program (a PE image that is not a DLL) is launched this way. A DLL
+(which needs an export name the job does not carry), a script (JavaScript,
+VBScript, PowerShell, batch) and an installer (MSI) stay refused: for these,
+for a value that is not one command line and for one that cannot be written as
+UTF-8 text the request is recorded as not honoured, with the reason, and the
+sample is detonated without the arguments.
+
+What a launch through a launcher changes, and the run states: the sample was
+not submitted bare; the sandbox's process tree starts at PowerShell, not at the
+sample, and the sample runs as its child, not from where it was named; the
+submitted archive, with the launcher and the arguments in it, is what was
+disclosed to the sandbox, and on a sandbox that publishes its submissions it is
+public; a sample that checks its parent process, its path or its name sees the
+launcher's. The run's launch record, the upload record, the `sandbox_status`
+ledger entry and the report give the script type, the launcher's exact text,
+the member names and the SHA-256 of the archive, of the launcher file and of
+the sample in it, and
+the disclosure line names the archive, not the bare sample, as what was sent. They
+say the arguments were sent through a launcher; they do not say the launcher
+ran or the program read them, which only the sandbox's report can show.
+
+The report is read with the launch record's generated names, a process being
+the pair of its task and its id (a sandbox that runs several tasks numbers each
+task's processes on its own). The sample's tree is rooted at the process running
+`sample.exe` and holds everything it started, a PowerShell the sample itself
+starts included. A process whose image is the script host and whose command
+line names `launch.ps1`, and that the sample did not start, is the launcher's;
+where the task holds the sample's tree, so is what the host started outside it.
+Where no listed process runs `sample.exe` (the sandbox renamed or copied the
+member), only the host is the launcher's: what it started, and the flows those
+processes made, are attributed to no one, as the sample may be among them under
+another name, and the report says the attribution was not established
+(`launcher_attribution`, a mark of the platform's that a sandbox's report cannot
+set: `established`, or `not established:` with the reason). A flow of a launcher
+process is marked as the launcher's and is not the sample's. A signature seen
+only in launcher processes, in every task that lists them, is moved, marked, to
+the `launcher.signatures` channel, so its techniques and indicators are never
+read as the sample's; one that names no process takes its processes from the
+task's own signature of that name, whose launcher rows are marked the same way,
+and one that still names none is left where it is, attributed to no one, and
+counted (`launcher_unattributed_signatures`): it may be the launcher's. A file
+the sandbox lists as written that is the launcher or the unpacked sample (by
+member name or SHA-256, in the launcher's folder where the report shows it) is
+marked as the platform's, with which of the two it is, and is not a file the
+sample wrote. The lineage of every row is held under one key of the platform's
+own (`platform_lineage`), taken out of a report at intake wherever a sandbox's
+own field carries it. The sandbox's own score and family are stated to be its
+analysis of the archive run from the launcher, and the family it names carries
+that note. The sandbox names the archive's SHA-256 as its target: that is the
+submitted archive holding the sample, not another target, and none of the
+archive's file facts is taken as the sample's.
+
+A provider that cannot pass them is never handed them, and the detonation goes
+ahead without them. The run records what became of them, with the arguments
+as the job gave them, with ids and control characters written out: the
+report's sandbox sentence (the `sandbox_status` ledger entry) says the provider
+sent them in its submission and through which option or field (whether the
+started program read them is the sandbox's, and is not claimed), the disclosure
+block's upload line says the same, and where they were not honoured the run's
+limitations say "launch arguments requested, not honoured by" the provider, with
+why: no sample, mock mode, an attached report, a value that is not one command
+line, a submission that did not complete (a launcher's archive is still named
+then, as what may have left). A submission is said to have sent them only once
+the provider's submit call returned; one that sent them and ended without a report is worded apart ("launch arguments sent to" the provider, "but no sandbox report came back"). Before a sandbox's failure text (an exception's message, a response body) is logged or kept, the submitted arguments and the launcher text are withheld from it where they occur as sent, JSON-escaped, or in any percent-encoding (any byte written as `%XX` in either case of hex digit, a space also as `+`); only the stretch that is or decodes to the value is replaced. Other encodings (base64, a changed case, a cut copy) are not recognised. The platform's own words around that text are not masked. A value shorter than four characters is not masked (it is part of too many ordinary words), so it may appear in a sandbox's failure text the platform logs or keeps, and the launch record says so. A request that is not honoured
+makes the run degraded, so its verdict is tentative. They are run configuration,
+not a credential, and are not masked in the report; the platform writes them
+into no log line of its own, and a sandbox's failure text is searched for them
+as said above. A job that asks for none submits and reads as
+it always did.
+
+A plugin provider's `submit(sample_path, *, options=None)` receives a
+`SubmissionOptions` only when it declares the capability; one written before
+the keyword existed keeps working and is recorded as unable to pass them.
+
+## Further detonations
+
+Some samples show their behaviour only when started with an argument an analyst
+has to find: a locker's password held in the binary, an installer's switch. The
+operator hands the run nothing the agents could find themselves, so the agent
+that finds it asks for a further detonation with it.
+
+**Asking.** Where the job's sandbox can pass launch arguments (a field of its
+own, or a [launcher](#through-a-launcher)), the in-process sandbox source holds
+`request_detonation(arguments, reason, cited_entries)`. It is offered to an
+agent whose definition holds that source where the ceiling is above one and a
+step that carries a request out is reachable after the agent's own stage in the
+team (read from the team's shape, never from the agent's name), so no agent is
+handed a tool that could only refuse. It detonates nothing itself: it records
+the request and answers at once, in code:
+
+| Answer | When |
+|---|---|
+| accepted, as detonation `d2`, `d3`… | the request passes every check below |
+| joined to `dN` | an identical argument set is already accepted and pending: it is one detonation, and its record names every agent that asked |
+| refused, naming `dN` | a detonation already made was launched with exactly these arguments: read it if it reported, read it once it returns if it is running, and it is not launched again if it returned no report |
+| refused | the value is not one command line; no reason; no cited entries, or entries the run had not issued before the call (named); mock mode, no sample, or a provider that detonates nothing or cannot pass the arguments (with the provider's note); the ceiling is reached; no later step of the run has an agent that reads the sandbox |
+
+The tool's description states the sandbox's physical limits: the ceiling
+(`core.sandbox.max_detonations_per_job`, default 4, the job's own detonation
+included), the provider's detonation time, that each submission sends the
+sample to the sandbox, is disclosed in the run's record and may be public on
+that service, and that the arguments are handed to the sandbox verbatim and
+never run on the worker. It also says when a request can still be carried out:
+while a step with an agent reading the sandbox is still ahead. "Ahead" is
+reachability in the graph from the step the request is filed in (held per
+step, so steps running at once never read each other's): a stage running beside
+the asker's is not after it. An accepted answer promises a further turn only
+where the debate's first negotiation is still ahead.
+
+**Carrying out.** An accepted request is carried out on entry of the next step
+of the graph that has an agent reading the sandbox (an agent whose tools come
+from the sandbox source, or whose definition holds it), or of the debate's first
+negotiation while it is still to give the further turns and an analyst reads the
+sandbox, before that step's own work, through the same submission path the job's
+own detonation takes. The step claims it under the job's lock: a step entering
+while it is in flight waits for it and reads its result, so one request is
+submitted once. Its record exists from its start (running) and its upload row
+from the moment the submission is made. A cancel of the job while a detonation
+is in flight ends the wait at once and closes its record, the cancel named as
+its failure; the provider's own poll of the sandbox ends at its own deadline,
+and its result is discarded. The
+graph has no node of its own for it: the detonation is recorded with the step
+it ran on entry of and its own start, end and duration, and announced with
+`detonation_started` and `detonation_finished` events, so its time can be taken
+out of the stage it ran inside. During the debate, a request filed in a revision
+turn is carried out on the next negotiation entry. A detonation the job's time
+limit (`core.job_timeout`) leaves no room for is recorded as not run, and one
+that fails is recorded with its reason; neither fails the run.
+
+**The further turn.** On the debate's first negotiation entry, each analyst
+that reads the sandbox and whose own turn began before a further detonation
+returned its report gets one further turn: its answer in force is revised with
+the new detonations named (who asked and the entries they cited), and it reads
+them with the sandbox tools' `detonation` argument. The turn is recorded with
+its step, start, end, duration and outcome, and announced with
+`further_turn_started` and `further_turn_finished`.
+
+**Each detonation apart.** Each detonation has its own report, launch record,
+target claim, failure and upload row; the reader that marks a generated
+launcher's processes, flows and signatures as the launcher's reads that
+detonation's own launch record. A later detonation's item ids are qualified by
+it (`d2/proc:84`), and the run's item index knows each detonation's ids apart.
+A read made before a detonation existed answers with an error, which is never
+handed back for a later identical call. When a detonation's report comes back,
+the platform reads it as the triage pack reads the job's own (processes,
+network, signatures, dropped files, channels and the section index), as the
+pack's entries stating the detonation and its launch, so its item ids are known
+to every citation check and what it observed reaches the report whether or not
+an agent read it. Every agent after it and the reporter see those entries in
+the pack: the job's own lines first, in the pack's whole bound as they would
+be alone, then the later detonations' lines in a room of their own of the same
+bound, each line beginning "detonation 2, launched with `<args>`" and every
+item id in it qualified (`d2/proc:9`). That room is shared evenly among the
+later detonations: one whose lines need less leaves the rest to the others,
+and the marks are counted per line before the lines are fitted. Every later
+detonation keeps at least one line naming it and its launch, even where that
+passes the bound; one whose entries are not all shown ends with a line naming
+it and how many are not shown, and one whose share holds none of its lines
+beside that line is that line alone. Each detonation's first line says once
+that its launch text is shown escaped and that the exact text is the
+`launched_with` of any read of it; `request_detonation` compares a repeat on
+that exact text. An entry is a later detonation's only where the platform
+recorded it (its own read of a detonation that came back, or a call of its
+in-process sandbox source) and names the detonation in the qualified form; a
+tool answer that only holds a `detonation` key is the tool's own, and the
+citation index reads it by the same rule. The source names `pack` and `sandbox`
+are the platform's own: a provider that is not built into the platform cannot
+declare them. The launch arguments are written on one line on every surface,
+their back-ticks, angle brackets, braces, table pipes and the colon of anything
+that reads as an item id written as escapes, cut at 200 characters; the record,
+the `/iocs` feed and the STIX property keep them whole. In the report, a later detonation's reads are in tables of
+their own, titled "… when launched with `<args>` (detonation 2, asked for by
+`<agent>` citing `<entries>`)", and the report's composer is shown each later
+detonation apart under the same title. The job's own process tree, registry and
+API calls stay its own; its network, signature, dropped-file and mutex rows hold
+a later detonation's rows too, each carrying `observed_in`: every detonation
+that observed it, with its launch (a value seen in several detonations names
+each). The IOC table's rows and the published techniques a later detonation's
+signatures tag carry it as well; the Markdown and analyst reports say "observed
+in detonation 2, launched with `<args>`"; the STIX export carries
+`x_malspark_observed_in` on each such indicator, with the same clause after its
+description, on the sample's `uses` edge to such a technique, on each
+cyber-observable stating such a value and on the observed-data naming one; the
+`/iocs` feed serves it as `observed_in` on each such row; the MISP attributes say
+it in their comment, and the ATT&CK layer in an `observed in` metadata row. A row only the job's own detonation observed carries none of it.
+A generated launcher's own processes, flows, signatures and files never enter
+these rows. An agent's claim citing a later detonation's entry reaches the report
+as any claim does, with its citation. The disclosure block
+lists each further detonation as a submission of its own, with who asked and
+"the launch arguments an agent found". The run summary lists every detonation
+(origin `job` or `agent`, who asked, at which step, the requesting and cited
+entries, timings), every request with its answer, and every further turn. A
+request that was not carried out (too late, the ceiling, a sandbox that could
+not, a detonation that returned no report, one still pending at the verdict) is
+one of the run's limitations; it does not make the verdict tentative.
+
+A job in which no agent asks for a further detonation runs, records and reports
+as before.
 
 ## Connection tests
 

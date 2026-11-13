@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import contextvars
 import dataclasses
 import functools
 import inspect
@@ -6173,7 +6174,9 @@ class BaseAnalyst(BudgetMeter, ABC):
         from malspark.agents.prompt_fragments import SANDBOX_FAMILY, stamp_source
         from malspark.providers.sandbox_tools import sandbox_tools
 
-        return stamp_source(sandbox_tools(container), SANDBOX_FAMILY, declared="sandbox")
+        return stamp_source(
+            sandbox_tools(container, agent=self.name), SANDBOX_FAMILY, declared="sandbox"
+        )
 
     def _sandbox_items_tool(self) -> list[Any]:
         """The ``sandbox_items`` tool alone, for an analyst that reads the sandbox's evidence.
@@ -6203,7 +6206,9 @@ class BaseAnalyst(BudgetMeter, ABC):
         report = observed_report(_report_of(container))
         if report is None:
             return []
-        tool = items_tool(report, _answer_sizer(container), normalised_by_of(container))
+        tool = items_tool(
+            report, _answer_sizer(container), normalised_by_of(container), container=container
+        )
         return stamp_source([tool], SANDBOX_FAMILY, declared="sandbox")
 
     def _profile_excluded_servers(self) -> str:
@@ -10003,7 +10008,12 @@ class BaseAnalyst(BudgetMeter, ABC):
             return self._text_to_isr(text, revision_round=0)
 
         with ThreadPoolExecutor(max_workers=len(specs)) as pool:
-            futures = {pool.submit(_run, spec): spec[0] for spec in specs}
+            # Each view in a copy of the caller's context, so what the caller
+            # runs under (the graph step a request is filed in, among others)
+            # holds in the view as in the caller.
+            futures = {
+                pool.submit(contextvars.copy_context().run, _run, spec): spec[0] for spec in specs
+            }
             for fut in as_completed(futures):
                 key = futures[fut]
                 try:

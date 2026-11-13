@@ -293,6 +293,11 @@ class MalwareReportBuilder:
             tool_queries=queries,
             references=references,
         )
+        # The published techniques a further detonation's sandbox signatures
+        # tag, marked with the detonations that tagged them.
+        from malspark.reporting.detonation_marks import with_technique_marks
+
+        with_technique_marks(report.ttp_mappings, report)
         # The sections the report is actually made of, and the index of the
         # calls behind them. Built last so a section builder can never affect
         # the verdict, the severity or the STIX bundle above it.
@@ -1215,7 +1220,11 @@ def _build_consolidated_iocs(report: MalwareReport) -> list[ConsolidatedIOC]:
                 }
             )
         out.append(row)
-    return out
+    # Each value a further detonation an agent asked for observed, marked with
+    # every detonation that observed it (``detonation_marks``).
+    from malspark.reporting.detonation_marks import with_value_marks
+
+    return with_value_marks(out, report)
 
 
 def _in_the_index(ids: Iterable[str], index: Mapping[str, int]) -> list[str]:
