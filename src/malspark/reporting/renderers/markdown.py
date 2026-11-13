@@ -5286,7 +5286,8 @@ def _family_words(report: MalwareReport) -> str:
     if not family or family.lower() == "unknown":
         return "none attributed"
     if attr.family_source == "sandbox":
-        return f"{family} (named by the sandbox's own classification; the judge named none)"
+        note = f"; {_one_line(attr.family_note)}" if attr.family_note else ""
+        return f"{family} (named by the sandbox's own classification; the judge named none{note})"
     said = f"{family} ({confidence_phrase(attr.family_confidence, 'the judge')})"
     if attr.family_evidence_ids:
         said += f" [{_ids(attr.family_evidence_ids)}]"

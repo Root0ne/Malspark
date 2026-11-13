@@ -1121,7 +1121,9 @@ class _Analyst:
         if not family or family.lower() == "unknown":
             return "none attributed"
         if attr.family_source == "sandbox":
-            return f"{family} (named by the sandbox's classification)"
+            # What the sandbox judged, where it was not the sample alone.
+            note = f"; {_one_line(attr.family_note)}" if attr.family_note else ""
+            return f"{family} (named by the sandbox's classification{note})"
         said = _confidence_words(attr.family_confidence)
         family += f" ({said})" if said else ""
         # Grounded as the single-file report grounds it (``_family_words``):

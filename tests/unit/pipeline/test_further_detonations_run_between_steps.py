@@ -576,3 +576,106 @@ class TestTheSubmissionPath:
         assert "Sandbox task ended with status=failed" in caplog.text
         assert ARGS not in caplog.text
         assert ARGS not in (record.failure or "")
+
+
+class TestTheBaseMarksAreRead:
+    """The launcher round's platform marks, read where this branch's readers stand."""
+
+    def test_a_report_carrying_the_attribution_mark_sets_the_sandbox_s_sample_mark_aside(
+        self,
+    ) -> None:
+        from malspark.providers.sandbox_tools import sandbox_processes
+        from malspark.schemas.sandbox_document import LAUNCHER_ATTRIBUTION_KEY
+        from malspark.schemas.sandbox_report import (
+            LINEAGE_MARKED_STORED,
+            PROCESS_TASK_KEY,
+            attribution_not_established,
+        )
+
+        report = {
+            LAUNCHER_ATTRIBUTION_KEY: attribution_not_established("no listed process runs x"),
+            "behavior": {
+                "processes": [
+                    {
+                        "pid": 9,
+                        "process_name": "cmd.exe",
+                        "extra": {LINEAGE_MARKED_STORED: True, PROCESS_TASK_KEY: "behavioral2"},
+                    }
+                ]
+            },
+        }
+        (row,) = sandbox_processes(report)["processes"]
+        assert "marked" not in row
+        assert row["task"] == "behavioral2"
+
+    def test_the_archive_s_members_are_listed_apart_from_the_files_the_sample_wrote(
+        self,
+    ) -> None:
+        from malspark.providers.sandbox_tools import sandbox_dropped_files
+        from malspark.schemas.sandbox_report import (
+            DROPPED_LAUNCHER,
+            LINEAGE_KEY,
+            LINEAGE_LAUNCHER,
+            LINEAGE_REASON_KEY,
+        )
+
+        report = {
+            "behavior": {"processes": []},
+            "dropped": [
+                {
+                    "name": "launch.ps1",
+                    "sha256": "a" * 64,
+                    LINEAGE_KEY: LINEAGE_LAUNCHER,
+                    LINEAGE_REASON_KEY: DROPPED_LAUNCHER,
+                },
+                {"name": "ransom.txt", "sha256": "b" * 64},
+            ],
+        }
+        answer = sandbox_dropped_files(report)
+        assert [row["name"] for row in answer["dropped"]] == ["ransom.txt"]
+        assert answer["total"] == 1
+        (apart,) = answer["platform_files"]
+        assert apart["name"] == "launch.ps1"
+        assert apart[LINEAGE_KEY] == LINEAGE_LAUNCHER
+        assert apart[LINEAGE_REASON_KEY] == DROPPED_LAUNCHER
+
+    def test_the_statement_reads_the_top_level_marks(self) -> None:
+        from malspark.pipeline import sandbox_status as status
+        from malspark.schemas.sandbox_document import (
+            LAUNCH_KEY,
+            LAUNCHER_ATTRIBUTION_KEY,
+            UNATTRIBUTED_SIGNATURES_KEY,
+        )
+        from malspark.schemas.sandbox_report import ATTRIBUTION_ESTABLISHED
+
+        launched = TestTheLauncherAttributionIsReadPerDetonation.LAUNCHED
+        report = {
+            "behavior": {"processes": [{"pid": 1}]},
+            LAUNCH_KEY: launched,
+            LAUNCHER_ATTRIBUTION_KEY: ATTRIBUTION_ESTABLISHED,
+            UNATTRIBUTED_SIGNATURES_KEY: 2,
+        }
+        said = status.sandbox_status(report).statement
+        assert "the sample's own start at the process that runs `sample.exe`" in said
+        assert "2 sandbox signatures that name no process could not be attributed" in said
+        assert status.launcher_attribution_reason(report) is None
+        report[UNATTRIBUTED_SIGNATURES_KEY] = 0
+        assert "could not be attributed" not in status.sandbox_status(report).statement
+
+
+def test_the_family_note_is_printed_where_the_family_s_source_is_worded() -> None:
+    from malspark.extractors.attribution import SANDBOX_FAMILY_LAUNCHER_NOTE
+    from malspark.reporting.renderers.markdown import _family_words
+
+    report = SimpleNamespace(
+        attribution=SimpleNamespace(
+            family="somefam", family_source="sandbox", family_note=SANDBOX_FAMILY_LAUNCHER_NOTE
+        )
+    )
+    said = _family_words(report)  # type: ignore[arg-type]
+    assert said.startswith("somefam (named by the sandbox's own classification")
+    assert SANDBOX_FAMILY_LAUNCHER_NOTE in said
+    report.attribution.family_note = None
+    assert _family_words(report) == (  # type: ignore[arg-type]
+        "somefam (named by the sandbox's own classification; the judge named none)"
+    )
