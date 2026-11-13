@@ -748,14 +748,23 @@ class _Slots(_Recorder):
         self.slots = slots
         self.turns = turns
         self.gave_up = asyncio.Event() if hold_until_abandoned else None
+        # Past this many seconds with no queued call given up, none will be: a
+        # correct composer gives one up after its own 0.05 s wait, so only the
+        # whole process standing still for the cap could trip it.
+        self.cap = 5.0
+        self.never_gave_up = False
         self._served: asyncio.Semaphore | None = None
         self.queued = 0
         self.abandoned = 0
 
     async def _serve(self) -> None:
-        if self.gave_up is not None:
-            # The cap only ends a run whose queued calls never gave up.
-            await asyncio.wait_for(self.gave_up.wait(), timeout=30)
+        if self.gave_up is not None and not self.never_gave_up:
+            # The cap only ends a run whose queued calls never gave up; from
+            # then on every call is answered at once, so that run ends fast.
+            try:
+                await asyncio.wait_for(self.gave_up.wait(), timeout=self.cap)
+            except TimeoutError:
+                self.never_gave_up = True
         for _ in range(self.turns):
             await asyncio.sleep(0)
 
@@ -806,6 +815,7 @@ class TestALocalServerIsGivenWhatItServes:
         # however fast or slow the machine is.
         llm = _Slots(2, hold_until_abandoned=True)
         composer = _compose_on(llm, 0.05)
+        assert not llm.never_gave_up, "a queued call was given up before the server's cap"
         assert llm.queued > 0, "sections stand in the server's queue"
         assert llm.abandoned > 0, "a queued call was given up"
         assert [r for r in composer.degradations if "did not answer within" in r]
