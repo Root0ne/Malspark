@@ -565,6 +565,14 @@ class IOCEntry(BaseModel):
     # cover prints and its STIX export marks every object with. Absent when
     # the stored report holds none.
     tlp: str | None = None
+    # Under which detonations of the sample the row's value was observed,
+    # where a further detonation an agent asked for observed it: each
+    # ``{"detonation": "d2", "launched_with": "<arguments>"}``, the job's own
+    # as ``{"detonation": "d1"}`` (``ConsolidatedIOC.observed_in``). Left out
+    # where only the job's own detonation observed it.
+    observed_in: list[dict[str, str]] | None = Field(
+        default=None, exclude_if=lambda value: value is None
+    )
 
 
 class IOCListResponse(BaseModel):

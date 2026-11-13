@@ -198,9 +198,20 @@ def ioc_feed_rows(mr: dict, kind: str | None = None) -> list[dict]:
                 "recovered_by": row.recovered_by or None,
                 "evidence_ids": list(row.evidence_ids),
                 "tlp": tlp,
+                # Under which detonations a further detonation observed it
+                # (``reporting.detonation_marks``); absent for the job's own alone.
+                **_observed_in(row),
             }
         )
     return out
+
+
+def _observed_in(row: Any) -> dict[str, Any]:
+    """A feed row's ``observed_in``, where a further detonation observed it; ``{}`` else."""
+    from malspark.reporting.detonation_marks import observed_property
+
+    marks = observed_property(list(getattr(row, "observed_in", None) or []))
+    return {"observed_in": marks} if marks else {}
 
 
 # The line comment of each rule kind's own syntax: the download's name and
