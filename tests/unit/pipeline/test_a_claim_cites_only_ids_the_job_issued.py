@@ -61,6 +61,16 @@ class TestTheSharedDecision:
         assert unissued_ids(["ev_12", "proc:9", "d2/proc:84", "ev_0005x", ""], 1) == []
 
 
+class TestTheMessage:
+    def test_it_names_at_most_six_ids(self) -> None:
+        cited = ", ".join(f"[ev_{n:04d}]" for n in range(11, 19))
+
+        (found,) = _unissued(_found(_claim(cited)))
+
+        assert "ev_0011, ev_0012, ev_0013, ev_0014, ev_0015, ev_0016 and 2 more" in found.message
+        assert "ev_0017" not in found.message
+
+
 class TestTheClaimCheck:
     def test_a_claim_with_no_technique_citing_an_unissued_id_is_asked(self) -> None:
         (found,) = _unissued(_found(_claim("[ev_9999]")))

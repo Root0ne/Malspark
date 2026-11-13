@@ -39,7 +39,7 @@ ISSUED = ["ev_0001", "ev_0002", "ev_0003"]
 def _asked(payload: Any, citable: list[str] = ISSUED, **kw: Any) -> list[str]:
     found = citation_violations(payload, citable, records=True, **kw)
     assert {v.code for v in found} <= {CITATION_NOT_EVIDENCE_CODE}
-    return [v.message.split("]", 1)[0].lstrip("[") for v in found]
+    return [v.message.split(" ", 1)[0].strip("[]") for v in found]
 
 
 class TestTheRecordReading:
@@ -57,6 +57,19 @@ class TestTheRecordReading:
         assert _asked({"body": "The loader decodes it, as ev_0077 holds."}, prose=("body",)) == [
             "ev_0077"
         ]
+
+    def test_the_message_writes_the_id_as_it_stands_with_a_remedy_for_a_citing_field(
+        self,
+    ) -> None:
+        payload = {"commands": [{"command": "0x01", "evidence_refs": ["ev_0099"]}]}
+
+        (found,) = citation_violations(payload, ISSUED, prose=(), records=True)
+
+        assert found.message.startswith("ev_0099 is not an entry this answer was shown.")
+        assert "[ev_0099]" not in found.message
+        assert "in brackets" not in found.message and "sentence" not in found.message
+        assert "in its place" in found.message
+        assert "ev_0001, ev_0002, ev_0003" in found.message
 
     def test_an_issued_id_of_any_agent_is_not_asked(self) -> None:
         assert _asked({"flags": [{"flag": "-k", "evidence_ref": "ev_0003"}]}) == []
@@ -176,3 +189,27 @@ def test_the_composer_asks_about_an_unissued_id_its_section_writes() -> None:
     assert "ev_0099" in retry
     assert composer.validation_tally.by_code.get(CITATION_NOT_EVIDENCE_CODE) == 1
     assert report.intro_background == "A Windows DLL [ev_0004]."
+
+
+def test_the_structured_path_reads_every_id_its_section_writes() -> None:
+    from langchain_core.messages import HumanMessage
+
+    from malspark.reporting.composer import _ProseOut
+    from tests.unit.reporting.test_a_structured_section_is_asked_about_an_unpublished_value import (
+        _Model,
+    )
+
+    llm = _Model(json.dumps({"body": "It decodes its configuration, as ev_0099 holds."}))
+    report = MalwareReport(identity=SampleIdentity(hashes=FileHashes(sha256="a" * 64)))
+    composer = ReportComposer(llm=llm, per_section_timeout=5)  # type: ignore[arg-type]
+    composer._report = report
+    composer._citable = list(ISSUED)
+    with patch(
+        "malspark.reporting.composer.structured_output_supported_for_llm", return_value=True
+    ):
+        result = asyncio.run(
+            composer._invoke([HumanMessage(content="write it")], _ProseOut, section="packing")
+        )
+
+    assert result is not None and "ev_0099" in result.body
+    assert composer.validation_tally.by_code.get(CITATION_NOT_EVIDENCE_CODE) == 1

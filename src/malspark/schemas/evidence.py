@@ -256,6 +256,16 @@ class EvidenceCounter:
             return self._seq
 
 
+def issued_by(counter: Any) -> int | None:
+    """How many entry ids the job's ``counter`` has issued, read at the moment it is asked.
+
+    Every agent of the job draws from one counter, so a check reads it when it
+    runs, after the agent's own calls and any a concurrent agent made. ``None``
+    with no counter (an agent outside a job), of which nothing can be said.
+    """
+    return int(counter.issued) if counter is not None else None
+
+
 # What the ledger holds for a call whose answer the conversation had no room
 # for: the call was made and answered, and none of the answer reached the
 # model. A statement of the cut in place of a tool result, on an entry marked

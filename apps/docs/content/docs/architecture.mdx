@@ -1341,7 +1341,8 @@ Two producers use it:
   alternative offered is Suspicious with an inconclusive rationale, the judge
   is asked once, and the second answer is kept as given. Every entry id the
   verdict names, in its assessment or any object, has to be one the job
-  issued: an id past the count of the job's evidence counter is
+  issued: an id past the count of the job's evidence counter, read when the
+  bundle is checked as an analyst's answer reads it, is
   `verdict.unissued_evidence`, asked once; an indicator's pattern and a code
   span are not read. These rules run over
   the bundle that is actually reported, on every way the round can end — a
@@ -1364,7 +1365,8 @@ Two producers use it:
   code span. A composed section is the model's own in every field, so its
   answer is also read for entry ids: each `ev_` id written anywhere in it, a
   citing field or a record's text, bracketed or not, that the run did not
-  issue is the same question, once per id. A code span and an item id are not
+  issue is asked under the same code, once per id, naming the id as written
+  and the ids the answer may cite in its place. A code span and an item id are not
   read, a configuration or identifier row that its own check asks about for
   citing no entry is left to that question, and the narrative's key findings
   keep their own check (`narrative.ungrounded_finding`). An ATT&CK or

@@ -737,8 +737,11 @@ def entry_ids_written(text: str) -> list[str]:
 
 
 def unissued_sentence(ids: Sequence[str], issued: int) -> str:
-    """What a question says of cited ids the job never issued, and the ids it did issue."""
-    named = ", ".join(safe_finding_value(i) for i in ids)
+    """What a question says of cited ids the job never issued, and the ids it did issue.
+
+    At most six ids are named (:func:`_named_ids`), and how many more there are.
+    """
+    named = _named_ids(ids)
     span = (
         f"its ids run from {format_entry_id(1)} to {format_entry_id(issued)}"
         if issued > 0
@@ -5942,7 +5945,9 @@ def citation_violations(
     every field it writes is its own (a composed section): each entry id
     written anywhere in it, bracketed or not and in any field, a citing field
     included, that is not one of ``citable`` is one violation of the same
-    kind, once however often it appears. Code spans are not read, and only
+    kind, once however often it appears. Its message names the id as written,
+    with no brackets added, and asks for an id it may cite in its place, which
+    fits a citing field as well as a sentence. Code spans are not read, and only
     the ``ev_`` shape is, so a bracket of notation is not. A row the
     configuration or identifier check already asks about for citing no entry
     of the run (:func:`configuration_citation_violations`,
@@ -6009,6 +6014,12 @@ def citation_violations(
                 )
     if not records or not known:
         return violations
+    # The id stands in a citing field or a record's text as written, so it is
+    # named as written and the remedy is the id in its place.
+    in_its_place = (
+        "Write the id of the entry the value was read from in its place — this answer may "
+        f"cite {offered} — or leave that id out."
+    )
     for text in _record_strings(whole, citable, items):
         for found in ENTRY_ID_RE.findall(_CODE_SPAN_RE.sub(" ", text)):
             if found.lower() in allowed or found.lower() in seen:
@@ -6018,8 +6029,8 @@ def citation_violations(
                 Violation(
                     code=CITATION_NOT_EVIDENCE_CODE,
                     message=(
-                        f"[{safe_finding_value(found)}] is not an entry this answer was shown. "
-                        f"{remedy}"
+                        f"{safe_finding_value(found)} is not an entry this answer was shown. "
+                        f"{in_its_place}"
                     ),
                     path="citation",
                 )

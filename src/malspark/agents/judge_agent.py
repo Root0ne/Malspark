@@ -158,7 +158,7 @@ from malspark.pipeline.validation import (
     unsupported_malware_violations,
     validate_verdict_bundle,
 )
-from malspark.schemas.evidence import EvidenceCounter, LedgerEntry, answers_held
+from malspark.schemas.evidence import EvidenceCounter, LedgerEntry, answers_held, issued_by
 from malspark.schemas.isr_models import AgentISR, retry_added_marker
 from malspark.schemas.stix_models import Bundle
 
@@ -2430,11 +2430,6 @@ class VerdictCheckInputs:
     # How many entry ids the job's evidence counter has issued, to every
     # agent; ``None`` where no counter is known.
     issued: int | None
-
-
-def _issued_by(counter: Any) -> int | None:
-    """How many entry ids ``counter`` has issued; ``None`` with no counter."""
-    return int(counter.issued) if counter is not None else None
 
 
 def verdict_checks(bundle: Bundle, inputs: VerdictCheckInputs) -> list[Violation]:
@@ -4870,12 +4865,17 @@ class JudgeAgent(BudgetMeter):
             sandbox_facts=sandbox_facts,
             analyst_claims=_analyst_claims,
             ledger_ids=ledger_ids,
-            # The job's counter, which issued every agent's ids; none outside a job.
-            issued=_issued_by(getattr(self, "evidence_counter", None)),
+            # Read again at each check (``_inputs_now``).
+            issued=None,
         )
 
+        def _inputs_now() -> VerdictCheckInputs:
+            # The job's counter, which issued every agent's ids, read when the
+            # bundle is checked; none outside a job.
+            return replace(inputs, issued=issued_by(getattr(self, "evidence_counter", None)))
+
         def _verdict_checks(bundle: Bundle) -> list[Violation]:
-            return verdict_checks(bundle, inputs)
+            return verdict_checks(bundle, _inputs_now())
 
         def _validate(bundle: Bundle) -> list[Violation]:
             # A timeout produced no answer, so there is nothing to give
@@ -4892,7 +4892,7 @@ class JudgeAgent(BudgetMeter):
             return verdict_bundle_checks(
                 bundle,
                 shape,
-                inputs,
+                _inputs_now(),
                 origins=where,
                 written=as_written[0] if as_written else None,
             )

@@ -181,3 +181,52 @@ async def test_a_judge_without_a_counter_is_not_asked() -> None:
     )
 
     assert not [v for v in verdict.violations if v.code == UNISSUED_VERDICT_EVIDENCE_CODE]
+
+
+class _IssuingLlm(_Llm):
+    """A judge model during whose answer the job's counter issues more ids."""
+
+    def __init__(self, counter: EvidenceCounter, more: int, *answers: str) -> None:
+        super().__init__(*answers)
+        self._counter = counter
+        self._more = more
+
+    async def ainvoke(self, messages: list[Any], **_: Any) -> Any:
+        for _ in range(self._more):
+            self._counter.next_id()
+        self._more = 0
+        return await super().ainvoke(messages)
+
+
+@pytest.mark.asyncio
+async def test_the_count_is_read_when_the_verdict_is_checked(mode: str) -> None:
+    counter = EvidenceCounter()
+    for _ in range(3):
+        counter.next_id()
+    llm = _IssuingLlm(counter, 3, json.dumps(_bundle("injects code [ev_0005]")))
+    judge = JudgeAgent(llm)  # type: ignore[arg-type]
+    judge.evidence_counter = counter
+
+    verdict = await judge.give_verdict(
+        {"static": "loader injecting"},
+        [],
+        evidence_corpus={"nothing"},
+        ledger_ids=["ev_0001", "ev_0005"],
+    )
+
+    assert len(llm.calls) == 1
+    assert not [v for v in verdict.violations if v.code == UNISSUED_VERDICT_EVIDENCE_CODE]
+
+
+def test_the_judge_and_the_analysts_read_the_count_through_one_helper() -> None:
+    import inspect
+
+    from malspark.agents import base_agent, judge_agent
+    from malspark.schemas.evidence import issued_by
+
+    counter = EvidenceCounter()
+    counter.next_id()
+    assert (issued_by(counter), issued_by(None)) == (1, None)
+    assert "issued_by(" in inspect.getsource(judge_agent)
+    assert "issued_by(" in inspect.getsource(base_agent)
+    assert not hasattr(judge_agent, "_issued_by")

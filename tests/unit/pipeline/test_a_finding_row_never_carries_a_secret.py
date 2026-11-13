@@ -349,10 +349,12 @@ CODE_OWNED: dict[tuple[str, str], frozenset[str]] = {
     # The repeated values joined by ``_named_ids``, which passes each one
     # through ``safe_finding_value`` and bounds how many are named.
     ("pipeline/validation.py", "repeated_item_violations"): frozenset({"named"}),
+    # The unissued ids joined by ``_named_ids`` in the same way.
+    ("pipeline/validation.py", "unissued_sentence"): frozenset({"named"}),
     # The evidence ids the answer was shown, each one matched as ``ev_`` and
     # digits before this function joins them. The cited item itself is the
     # producer's and is wrapped where it is quoted.
-    ("pipeline/validation.py", "citation_violations"): frozenset({"remedy"}),
+    ("pipeline/validation.py", "citation_violations"): frozenset({"remedy", "in_its_place"}),
     # How many hexadecimal characters a digest of a named algorithm has, read
     # out of this codebase's own table.
     ("pipeline/validation.py", "_indicator_problem"): frozenset({"expected"}),
