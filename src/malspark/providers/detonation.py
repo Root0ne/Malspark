@@ -55,6 +55,9 @@ class DetonationRecord:
     signature_scale: dict[str, Any] | None = None
     target_claim: dict[str, str] | None = None
     attached_target_claim: dict[str, str] | None = None
+    # Whether the provider's submit call returned: only then were the launch
+    # arguments sent.
+    submit_returned: bool = False
 
     @property
     def name(self) -> str:
