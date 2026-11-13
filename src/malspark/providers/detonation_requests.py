@@ -70,6 +70,15 @@ REFUSED_EXISTS = (
     "with the sandbox tools' detonation argument ({name})"
 )
 
+REFUSED_RUNNING = (
+    "detonation {name} is being carried out now with exactly these arguments; read it with "
+    "the sandbox tools' detonation argument ({name}) once it returns"
+)
+REFUSED_NO_REPORT = (
+    "detonation {name} was already launched with exactly these arguments and returned no "
+    "sandbox report, so it is not launched again"
+)
+
 _CITATION_RE = re.compile(r"ev_(\d{1,9})", re.IGNORECASE)
 
 # One lock for every job's requests: a request is filed in microseconds, and
@@ -236,21 +245,29 @@ def file_request(
     text = arguments if isinstance(arguments, str) else str(arguments or "")
     why = str(reason or "").strip()
     cited = _cited(cited_entries)
+    problem = launch_arguments_problem(text)
+    # What takes time is read before the lock: whether the provider can pass
+    # the arguments (a launcher builds and hashes the sample's archive), the
+    # stage, the later step. What other requests change (the detonations
+    # held, the ceiling) is read under it.
+    stage = stage_of(container, str(agent or ""))
+    checked = not (problem or not why or not cited or _unissued(container, cited))
+    cannot = _cannot_detonate(container, text) if checked else ""
+    later, turn = _later_step(container) if checked else ("", False)
     with _LOCK:
         requests: list[DetonationRequest] = container.detonation_requests
         request = DetonationRequest(
             number=len(requests) + 1,
             agent=str(agent or ""),
-            stage=stage_of(container, str(agent or "")),
+            stage=stage,
             arguments=text,
             reason=why,
             cited_entries=cited,
         )
         requests.append(request)
-        problem = launch_arguments_problem(text)
         unissued = _unissued(container, cited)
         held = _detonations_held(container)
-        made = {r.name for r in getattr(container, "detonations", ()) or ()}
+        records = {r.name: r for r in getattr(container, "detonations", ()) or ()}
         same = next((name for name, args in held if args == text), "")
         if problem:
             request.answer = REFUSED_NOT_ONE_LINE.format(problem=problem)
@@ -260,9 +277,9 @@ def file_request(
             request.answer = REFUSED_NO_CITATIONS
         elif unissued:
             request.answer = REFUSED_UNISSUED.format(ids=", ".join(unissued))
-        elif same and same in made:
+        elif same and same in records:
             request.detonation = same
-            request.answer = REFUSED_EXISTS.format(name=same)
+            request.answer = _made_answer(records[same])
         elif same:
             pending = next(r for r in requests if r.state == ACCEPTED and r.detonation == same)
             request.state = JOINED
@@ -273,9 +290,7 @@ def file_request(
                 "it is one detonation, and its record names every agent that asked"
             )
         else:
-            cannot = _cannot_detonate(container, text)
             ceiling = ceiling_of(container)
-            later, turn = _later_step(container)
             if cannot:
                 request.answer = f"no further detonation can be made: {cannot}"
             elif not later:
@@ -305,6 +320,22 @@ def file_request(
         f" ({request.detonation})" if request.detonation else "",
     )
     return request
+
+
+def _made_answer(record: Any) -> str:
+    """The answer to a request for a detonation already made with exactly its arguments.
+
+    Worded by how that detonation stands: it returned a report (read it),
+    it is being carried out now (read it once it returns), or it returned
+    none (it is not launched again).
+    """
+    name = str(record.name)
+    if getattr(record, "reported", False):
+        return REFUSED_EXISTS.format(name=name)
+    if getattr(record, "running", False):
+        return REFUSED_RUNNING.format(name=name)
+    failure = str(getattr(record, "failure", "") or "")
+    return REFUSED_NO_REPORT.format(name=name) + (f": {failure}" if failure else "")
 
 
 def _later_step(container: Any) -> tuple[str, bool]:
