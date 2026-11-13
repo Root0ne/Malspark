@@ -688,7 +688,11 @@ it (`d2/proc:84`), and the run's item index knows each detonation's ids apart.
 A read made before a detonation existed answers with an error, which is never
 handed back for a later identical call. In the report, a later detonation's
 observations are in tables of their own, titled "… when launched with `<args>`
-(detonation 2, asked for by `<agent>` citing `<entries>`)". The disclosure block
+(detonation 2, asked for by `<agent>` citing `<entries>`)"; they are never merged
+into the job's own dynamic block (its process tree, signatures, registry, mutexes and
+dropped files), and the report's composer is shown each later detonation apart under
+the same title. An agent's claim citing a later detonation's entry reaches the report
+as any claim does, with its citation. The disclosure block
 lists each further detonation as a submission of its own, with who asked and
 "the launch arguments an agent found". The run summary lists every detonation
 (origin `job` or `agent`, who asked, at which step, the requesting and cited
