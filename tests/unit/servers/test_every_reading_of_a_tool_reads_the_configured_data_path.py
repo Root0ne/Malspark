@@ -23,6 +23,7 @@ import pytest
 
 from app.services.tool_availability import as_rows, unavailable_tools
 from malspark.core.config import Settings
+from malspark.core.paths import resolve_data
 from malspark.providers.servers import ServerHandle
 from malspark.tools import capabilities, emulated_strings, rules, sidecar_needs
 from malspark.tools.capabilities import ToolNeeds, data, module
@@ -66,10 +67,12 @@ class TestWhatTheLaunchIsHanded:
         settings = Settings()
         settings.static.capa.rules_dir = "/srv/rules/capa"
         block = settings.mcp.servers["analysis"]
-        assert sidecar_needs.handed_env(block, settings) == {OVERRIDE: "/srv/rules/capa"}
+        # A path on the host the platform resolves: a drive is added on Windows.
+        assert sidecar_needs.handed_env(block, settings) == {
+            OVERRIDE: str(resolve_data("/srv/rules/capa"))
+        }
 
     def test_a_relative_setting_is_handed_absolute_and_stripped(self) -> None:
-        from malspark.core.paths import resolve_data
 
         settings = Settings()
         settings.static.capa.rules_dir = "  rules/capa  "
@@ -79,7 +82,6 @@ class TestWhatTheLaunchIsHanded:
         }
 
     def test_the_default_spelt_otherwise_hands_nothing(self) -> None:
-        from malspark.core.paths import resolve_data
 
         settings = Settings()
         block = settings.mcp.servers["analysis"]
@@ -146,7 +148,7 @@ class TestTheServerProcess:
     ) -> None:
         settings = Settings()
         settings.static.capa.rules_dir = "/srv/rules/capa"
-        assert _launch_env(monkeypatch, settings)[OVERRIDE] == "/srv/rules/capa"
+        assert _launch_env(monkeypatch, settings)[OVERRIDE] == str(resolve_data("/srv/rules/capa"))
 
     def test_its_environment_is_unchanged_under_the_default(
         self, monkeypatch: pytest.MonkeyPatch
@@ -178,7 +180,7 @@ class TestTheServerProcess:
         assert replica is not handle
         for each in (handle, replica):
             env = each._build_toolkit(None, 0, None).params.env
-            assert env[OVERRIDE] == "/srv/rules/capa"
+            assert env[OVERRIDE] == str(resolve_data("/srv/rules/capa"))
 
     def test_a_providers_handle_carries_the_settings_it_was_built_from(self) -> None:
         """The generic static provider and the CAPE provider hand their launch the job's."""
