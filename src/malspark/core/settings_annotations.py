@@ -1650,8 +1650,8 @@ ANNOTATIONS: dict[str, Annotation] = {
             "it the block is cut and says so, so a long pipeline cannot spend a late "
             "stage's whole context on a summary of the stages before it. In the triage "
             "pack, the lines of the further detonations agents asked for take a room "
-            "of the same size of their own after the job's own lines, so a job with "
-            "more than one detonation may show a pack of up to twice this."
+            "the size of this of their own after the job's own lines, and each "
+            "further detonation is named on at least one line even where that passes it."
         ),
         "subgroup": "Report content",
     },

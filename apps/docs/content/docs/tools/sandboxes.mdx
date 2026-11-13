@@ -709,13 +709,14 @@ to every citation check and what it observed reaches the report whether or not
 an agent read it. Every agent after it and the reporter see those entries in
 the pack: the job's own lines first, in the pack's whole bound as they would
 be alone, then the later detonations' lines in a room of their own of the same
-bound (so the pack is at most twice its bound), each line beginning
-"detonation 2, launched with `<args>`" and every item id in it qualified
-(`d2/proc:9`). That room is shared evenly among the later detonations: one whose
-lines need less leaves the rest to the others, and the marks are counted per
-line before the lines are fitted. Every later detonation keeps at least one line
-naming it and its launch; one whose entries are not all shown ends with a line
-naming it and how many are not shown. Each detonation's first line says once
+bound, each line beginning "detonation 2, launched with `<args>`" and every
+item id in it qualified (`d2/proc:9`). That room is shared evenly among the
+later detonations: one whose lines need less leaves the rest to the others,
+and the marks are counted per line before the lines are fitted. Every later
+detonation keeps at least one line naming it and its launch, even where that
+passes the bound; one whose entries are not all shown ends with a line naming
+it and how many are not shown, and one whose share holds none of its lines
+beside that line is that line alone. Each detonation's first line says once
 that its launch text is shown escaped and that the exact text is the
 `launched_with` of any read of it; `request_detonation` compares a repeat on
 that exact text. An entry is a later detonation's only where the platform

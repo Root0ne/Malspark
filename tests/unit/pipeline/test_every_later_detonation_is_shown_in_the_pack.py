@@ -86,11 +86,16 @@ def test_a_cut_detonation_has_its_own_trailer(bound: int) -> None:
     for line in trailers:
         assert re.match(r"detonation \d+, launched with `", line), line
         assert re.search(r": \d+ more pack entr(y|ies) of this detonation not shown here", line)
-    # Each detonation shows at least one line of its own entries.
+    # Each detonation shows a line of its own entries where its room holds one
+    # beside its trailer (every one at 2000); where it does not, its trailer
+    # alone names it, on one line (T-671 review r4 F2).
     for name in LAUNCHES:
-        assert any(
-            line.startswith("[ev_") and f"detonation {name[1:]}, launched" in line for line in lines
-        ), name
+        own = [line for line in lines if f"detonation {name[1:]}, launched" in line]
+        assert own, name
+        if bound == 2000 or own[0].startswith("[ev_"):
+            assert own[0].startswith("[ev_"), name
+        else:
+            assert own == [own[0]] and LAUNCH_SHOWN_ESCAPED.format(name=name) in own[0], name
 
 
 def _by_detonation(later: str) -> dict[str, str]:

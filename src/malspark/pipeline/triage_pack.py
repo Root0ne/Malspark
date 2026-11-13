@@ -3279,8 +3279,9 @@ def render_pack(entries: list[LedgerEntry], max_chars: int, later_chars: int | N
     own entries are rendered first, in the whole of ``max_chars`` as they
     would be alone; every later detonation's lines come after them, rendered
     together in a room of their own of the same bound, so they never displace
-    a line of the job's own detonation (the block is then at most twice the
-    bound). Each such line says which detonation it is of and what it was
+    a line of the job's own detonation. Each later detonation is named on at
+    least one line even where that passes the room (:func:`_later_lines`).
+    Each such line says which detonation it is of and what it was
     launched with, and every item id it shows is qualified by the detonation
     (``d2/proc:9``, :func:`_marked_line`). ``later_chars`` is that room where
     the caller sizes it apart (``nodes.pack_text`` takes the earlier run's
@@ -3384,8 +3385,10 @@ def _later_lines(entries: list[LedgerEntry], max_chars: int) -> str:
     passes that part on to the next. Each detonation's room holds its marks: they are
     reserved per line before its lines are fitted (:func:`_detonation_lines`).
     A detonation with entries its room does not show ends with a line of its
-    own naming it, its launch and how many; one whose room shows none still
-    has that line, so every later detonation and its launch is always named.
+    own naming it, its launch and how many. Where its room cannot hold one of
+    its marked lines beside that line, that line alone stands for it: every
+    later detonation and its launch is always named, on one line where its
+    room is too small for more, even where that line passes the room.
     ``max_chars`` at or below zero is no bound.
     """
     from malspark.analysis.detonation_reads import later_detonation_name
@@ -3434,8 +3437,10 @@ def _detonation_lines(entries: list[LedgerEntry], room: int) -> str:
     taken off of (each line's mark, the first line's sentence, the trailer);
     the room it is given is then the largest whose marked lines, trailer
     included, still fit ``room``, so the marks never leave the room under-
-    filled nor push it over. Where not even one line fits, the detonation's
-    trailer alone names it (:func:`_fitted_detonation`).
+    filled nor push it over. Where not even one marked line fits with the
+    trailer, the trailer alone names the detonation, its launch and how many
+    of its entries are not shown (:func:`_detonation_trailer`): one line, even
+    where that line passes ``room``.
     """
     if room <= 0:
         return _fitted_detonation(entries, 0)
@@ -3445,7 +3450,7 @@ def _detonation_lines(entries: list[LedgerEntry], room: int) -> str:
     # The largest room for the fitting whose marked lines fit ``room``: no
     # larger than ``room`` less the marks, no smaller than one.
     low, top = 1, max(1, room - reserve + marks)
-    best = _fitted_detonation(entries, low)
+    best = _detonation_trailer(entries[0], len(entries))
     while low <= top:
         fit = (low + top) // 2
         text = _fitted_detonation(entries, fit)
