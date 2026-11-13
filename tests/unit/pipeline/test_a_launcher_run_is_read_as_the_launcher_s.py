@@ -664,3 +664,26 @@ class TestThroughTheRun:
         assert record.get("sent") is not True
         reason = status.launch_arguments_reason(record) or ""
         assert "may not have been sent" in reason and "sent to" not in reason
+
+
+class TestTheReviewOfTheLauncherRound:
+    """A1 and A2 of the review of the whole branch (T-674)."""
+
+    def test_a_same_named_task_row_naming_no_process_keeps_the_signature(self) -> None:
+        launcher_row = {
+            "name": "Command and Scripting Interpreter: PowerShell",
+            "indicators": [{"procid": 1}],
+        }
+        # The same signature in another row that names no process: it may be
+        # the sample's, so the signature is not moved to the launcher's channel.
+        nameless_row = {
+            "name": "Command and Scripting Interpreter: PowerShell",
+            "indicators": [{"ioc": "powershell.exe"}],
+        }
+        report = TestASignatureNamingNoProcess()._report(launcher_row, nameless_row)
+        assert "Command and Scripting Interpreter: PowerShell" in [
+            s.name for s in report.signatures
+        ]
+        assert "T1059.001" in _techniques(sandbox_document(report))
+        moved = report.channels.get(LAUNCHER_SIGNATURES_CHANNEL) or []
+        assert "Command and Scripting Interpreter: PowerShell" not in [s["name"] for s in moved]

@@ -1495,8 +1495,9 @@ def attribute_the_launcher(report: SandboxReport, launcher: Any) -> None:
             plain = {k: v for k, v in signature.items() if k != LINEAGE_KEY}
             pids = _triage_indicator_pids(plain.get("indicators"))
             nodes = _signature_nodes(pids, by_pid, task) if pids else set()
-            if pids:
-                by_name.setdefault(str(plain.get("name") or ""), []).append(nodes)
+            # A row naming no process may be the sample's: it keeps a
+            # same-named signature from the launcher's channel.
+            by_name.setdefault(str(plain.get("name") or ""), []).append(nodes if pids else None)
             if nodes and nodes <= launcher_nodes:
                 marked.append({**plain, LINEAGE_KEY: LINEAGE_LAUNCHER})
             else:
