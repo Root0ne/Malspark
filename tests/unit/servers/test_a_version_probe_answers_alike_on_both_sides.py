@@ -4,9 +4,11 @@ The CLI sidecar base imports nothing of the platform, so it keeps its own copy
 of the platform's version probe (``malspark.tools.capabilities``). One table
 runs against both: no shell, a relative path with a separator never run, a
 wall clock held to its ceiling and a bad one read as the default, each stream
-read up to a bound and a flood stopped there, and the program's process group
+read up to a bound and a flood stopped there, the program's process group
 killed whole once it has answered, so a process it left holding the output
-neither delays the answer nor outlives it.
+neither delays the answer nor outlives it, and none of the asking process's
+environment reaching the program but ``PATH``: it runs with a temporary
+directory of its own as its home, temporary directory and working directory.
 
 A sidecar's manifest then answers ``requirements`` for its program: the
 version its image pins and, where the program declares how to ask it, the
@@ -46,8 +48,8 @@ DEFAULT = capabilities.VersionProbe(()).pattern
 
 
 def _platform(command: tuple[str, ...], pattern: str = DEFAULT, timeout_s: Any = None) -> str:
-    # Past the once-per-process cache, so every row asks afresh.
-    return str(capabilities._probe_version.__wrapped__(command, pattern, timeout_s))  # type: ignore[attr-defined]
+    # Past the once-per-process memory, so every row asks afresh.
+    return str(capabilities._read_version(command, pattern, timeout_s))
 
 
 def _sidecar(command: tuple[str, ...], pattern: str = DEFAULT, timeout_s: Any = None) -> str:
@@ -62,7 +64,12 @@ def _python(code: str) -> tuple[str, ...]:
 
 
 def test_the_two_copies_share_their_bounds() -> None:
-    for name in ("VERSION_PROBE_TIMEOUT_S", "VERSION_PROBE_MAX_TIMEOUT_S", "_PROBE_OUTPUT_BYTES"):
+    for name in (
+        "VERSION_PROBE_TIMEOUT_S",
+        "VERSION_PROBE_MAX_TIMEOUT_S",
+        "_PROBE_OUTPUT_BYTES",
+        "_PUMP_JOIN_S",
+    ):
         assert getattr(sidecar, name) == getattr(capabilities, name)
     assert sidecar.VERSION_PATTERN == DEFAULT
     assert sidecar.NOT_REPORTED == NOT_REPORTED
@@ -168,6 +175,62 @@ def test_a_grandchild_holding_the_output_is_killed_with_the_group(
             return
         time.sleep(0.05)
     pytest.fail("the probe's grandchild outlived it")
+
+
+@pytest.mark.posix
+@pytest.mark.parametrize("side", sorted(SIDES))
+def test_a_grandchild_in_a_session_of_its_own_delays_the_answer_by_one_short_deadline(
+    side: str,
+) -> None:
+    # It escapes the group kill and holds the output open: both readers are
+    # waited for together, once, not each for a deadline of its own.
+    code = (
+        "import subprocess, sys\n"
+        "subprocess.Popen([sys.executable, '-c', 'import os, time; os.setsid(); time.sleep(6)'])\n"
+        "print('2.3.4')\n"
+    )
+    started = time.monotonic()
+    assert SIDES[side](_python(code), DEFAULT, 3) == "2.3.4"
+    assert time.monotonic() - started < 1.5
+
+
+@pytest.mark.posix
+@pytest.mark.parametrize("side", sorted(SIDES))
+def test_the_program_sees_only_path_lang_and_a_home_of_its_own(
+    side: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import json
+
+    seen = tmp_path / "seen.json"
+    monkeypatch.setenv("T668_PROVIDER_API_KEY", "sk-must-not-reach-the-program")
+    code = (
+        "import json, os\n"
+        f"json.dump({{'env': dict(os.environ), 'cwd': os.getcwd()}}, open({str(seen)!r}, 'w'))\n"
+        "print('1.0')\n"
+    )
+    assert SIDES[side](_python(code), DEFAULT, 10) == "1.0"
+    held = json.loads(seen.read_text())
+    env, cwd = held["env"], held["cwd"]
+    assert "T668_PROVIDER_API_KEY" not in env
+    assert "sk-must-not-reach-the-program" not in json.dumps(env)
+    # What the interpreter adds of its own (a locale variable) aside.
+    assert (
+        {"PATH", "LANG", "HOME", "TMPDIR"}
+        <= set(env)
+        <= {
+            "PATH",
+            "LANG",
+            "HOME",
+            "TMPDIR",
+            "LC_CTYPE",
+        }
+    )
+    assert env["PATH"] == os.environ["PATH"]
+    assert env["LANG"] == "C.UTF-8"
+    assert env["HOME"] == env["TMPDIR"] == cwd
+    assert Path(cwd).name.startswith("version-probe-")
+    # The temporary directory goes with the probe.
+    assert not Path(cwd).exists()
 
 
 # ---------------------------------------------------------------------------

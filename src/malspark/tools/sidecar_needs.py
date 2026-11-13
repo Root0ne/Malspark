@@ -19,14 +19,7 @@ from pathlib import Path
 from typing import Any
 
 from malspark.tools import crypto_constants, emulated_strings, readers, rules, transforms, upx
-from malspark.tools.capabilities import (
-    VERSION_PROBE_MAX_TIMEOUT_S,
-    ToolNeeds,
-    VersionProbe,
-    binary,
-    data,
-    module,
-)
+from malspark.tools.capabilities import ToolNeeds, binary, data, module
 
 # The wall clock each rule engine is given. Named once so the tool's own
 # default and the manifest that declares it cannot drift: a model told
@@ -56,17 +49,22 @@ YARA_REMEDIATION = "install yara-python on the host that runs this server: uv sy
 # its corpus even when it is vendored: an engine that loaded no rule did not
 # run (``rules._not_loaded``), and an override can name an empty one.
 # ``exclude`` is what the engine's own loader skips, so the digest covers the
-# rules it loads: capa skips every directory with ``.git`` in its name, and the
-# fetched clone's CI workflows under ``.github`` are ``.yml`` files that are no
-# rules. ``argument`` is the call argument that names another corpus: the
-# in-process capa reading is handed the setting as ``rules_dir``, and a model
-# may name a YARA or Sigma corpus as ``ruleset``.
+# rules it loads (``capabilities.data_files``): capa's loader skips every
+# directory whose path, written out whole, holds ``.git`` — its own test is a
+# substring test on that path, the corpus root's included, which ``*.git*``
+# matched against each file's directory is exactly — so the fetched clone's CI
+# workflows under ``.github`` (``.yml`` files that are no rules) are left out,
+# and a corpus kept under a path such as ``capa-rules.git`` is counted as the
+# nothing capa loads from it. The YARA and Sigma loaders read the files these
+# declarations list (``tools.rules``). ``argument`` is the call argument that
+# names another corpus: the in-process capa reading is handed the setting as
+# ``rules_dir``, and a model may name a YARA or Sigma corpus as ``ruleset``.
 CAPA_RULES = data(
     rules.DEFAULT_CAPA_RULES,
     setting="static.capa.rules_dir",
     override=rules.CAPA_RULES_ENV,
     pattern="*.yml",
-    exclude=(".git*",),
+    exclude=("*.git*",),
     argument="rules_dir",
 )
 SIGMA_RULES = data(
@@ -84,16 +82,11 @@ YARA_RULES = data(
     argument="ruleset",
 )
 
-# How FLOSS says its version, asked of the pinned build its own lookup finds
-# (``emulated_strings.floss_path``), never of whatever ``PATH`` names first.
-# FLOSS's usage document (doc/usage.md in its repository) lists no version
-# option and defers to ``floss -h`` for the rest; ``--version`` is the one the
-# pinned-build check already runs, reading the release from its answer
-# (``emulated_strings._does_not_run``), as the backend image's build does
-# (``docker/Dockerfile.backend``). The standalone build answers
-# ``floss v3.1.1-0-g…``, read by the default pattern as ``3.1.1``. The build
-# unpacks itself before it answers, so it is given the probe's ceiling.
-FLOSS_VERSION_PROBE = VersionProbe(("floss", "--version"), timeout_s=VERSION_PROBE_MAX_TIMEOUT_S)
+# FLOSS's version is the answer of the check its lookup already makes of the
+# pinned build it finds (``emulated_strings._does_not_run`` runs ``--version``
+# on the verified copy and reads the release from it, as the backend image's
+# build does in ``docker/Dockerfile.backend``), never a second run of the
+# build: it unpacks about 63 MB before it answers.
 
 # What each tool needs beyond the interpreter, probed once when the server
 # starts (a data path only before a job). A tool that is not listed always answers.
@@ -136,11 +129,12 @@ ANALYSIS: list[ToolNeeds] = [
     ToolNeeds(
         "floss",
         (
+            # Looked up when called, not when this list is built, so a lookup
+            # replaced later (a test's) is the one the declaration calls.
             binary(
                 "floss",
-                emulated_strings.floss_unavailable,
-                version_probe=FLOSS_VERSION_PROBE,
-                resolve=emulated_strings.floss_path,
+                lambda environ=None: emulated_strings.floss_unavailable(environ),
+                version_of=lambda environ=None: emulated_strings.floss_version(environ),
             ),
         ),
         timeout_s=FLOSS_TIMEOUT_S,

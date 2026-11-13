@@ -57,6 +57,7 @@ import subprocess
 import sys
 import tempfile
 import threading
+import time
 from collections.abc import Awaitable, Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -364,6 +365,7 @@ VERSION_PROBE_MAX_TIMEOUT_S = 30.0
 _PROBE_OUTPUT_BYTES = 64 * 1024
 VERSION_PATTERN = r"\d+(?:\.\d+)+"
 NOT_REPORTED = "not reported"
+_PUMP_JOIN_S = 0.5
 
 
 def probe_wall_clock(timeout_s: Any) -> float:
@@ -403,7 +405,8 @@ def run_bounded(
     group is killed once it has exited or been stopped: a process it started
     that holds the output open is gone with it, and the read ends there.
     ``env`` and ``cwd`` are the program's environment and working directory
-    (this process's when ``None``).
+    (this process's when ``None``). Both readers are waited for against one
+    short deadline once the program has exited (``_PUMP_JOIN_S``).
     """
     process = subprocess.Popen(  # noqa: S603 — a declared argument list, no shell
         argv,
@@ -447,8 +450,11 @@ def run_bounded(
     _kill_group(process)
     with contextlib.suppress(subprocess.TimeoutExpired):
         process.wait(timeout=2.0)
+    # One deadline for both readers: a process the program started in a
+    # session of its own may hold the output open, and is not waited for.
+    deadline = time.monotonic() + _PUMP_JOIN_S
     for pump in pumps:
-        pump.join(timeout=2.0)
+        pump.join(timeout=max(0.0, deadline - time.monotonic()))
     for stream in (process.stdout, process.stderr):
         with contextlib.suppress(OSError):
             if stream is not None:
@@ -478,25 +484,47 @@ def _probed_executable(word: str, search: str | None = None) -> tuple[str | None
     return found, ""
 
 
+def probe_environment(scratch: str, extra: Mapping[str, str] | None = None) -> dict[str, str]:
+    """The whole environment a probed program gets: ``PATH``, ``LANG``, ``extra``, a home.
+
+    ``PATH`` is this process's, so a bare name runs what it names here, and
+    nothing else of this process's environment reaches the program: a
+    worker's or server's variables (provider keys among them) are not the
+    program's to read. ``HOME`` and ``TMPDIR`` are ``scratch``, a temporary
+    directory the probe also runs in, unless ``extra`` names them. A copy of
+    the platform's (``capabilities.probe_environment``).
+    """
+    env = {
+        "PATH": os.environ.get("PATH", "/usr/local/bin:/usr/bin:/bin"),
+        "LANG": "C.UTF-8",
+        **dict(extra or {}),
+    }
+    env.setdefault("HOME", scratch)
+    env.setdefault("TMPDIR", scratch)
+    return env
+
+
 def probe_version(
     command: tuple[str, ...],
     pattern: str = VERSION_PATTERN,
     timeout_s: float | None = None,
     *,
     env: Mapping[str, str] | None = None,
-    cwd: str | None = None,
 ) -> str:
     """The version ``command`` reports, else ``"not reported: <reason>"``. Never raises.
 
     The rules of the platform's version probe (``VersionProbe``): no shell,
-    an absolute path or a bare name looked up on ``PATH`` (``env``'s when
-    given), never a relative path with a separator, a wall clock held to the
-    ceiling, each stream read up to the bound, and the program's process
-    group killed whole once it has answered or run out of time.
+    an absolute path or a bare name looked up on ``PATH``, never a relative
+    path with a separator, a wall clock held to the ceiling, each stream read
+    up to the bound, the program's process group killed whole once it has
+    answered or run out of time, and none of this process's environment but
+    ``PATH``: the program gets ``probe_environment`` with ``env``'s variables,
+    and a temporary directory of its own as its home, temporary directory and
+    working directory.
     """
     if not command:
         return f"{NOT_REPORTED}: the probe names no command"
-    found, why = _probed_executable(str(command[0]), None if env is None else env.get("PATH"))
+    found, why = _probed_executable(str(command[0]), (env or {}).get("PATH"))
     if found is None:
         return f"{NOT_REPORTED}: {why}"
     try:
@@ -505,7 +533,10 @@ def probe_version(
         return f"{NOT_REPORTED}: the probe's pattern is not a regular expression"
     wall = probe_wall_clock(timeout_s)
     try:
-        status, out, err, ended = run_bounded([found, *command[1:]], wall, env=env, cwd=cwd)
+        with tempfile.TemporaryDirectory(prefix="version-probe-") as scratch:
+            status, out, err, ended = run_bounded(
+                [found, *command[1:]], wall, env=probe_environment(scratch, env), cwd=scratch
+            )
     except Exception as exc:  # noqa: BLE001 — a version is a label, never a failure
         # The type alone: an exception's words may carry the host's paths.
         return f"{NOT_REPORTED}: it could not be run ({type(exc).__name__})"
@@ -581,8 +612,8 @@ def program_version(program: Program) -> str:
     """What ``program`` says its version is, else ``"not reported: <reason>"``. Never raises.
 
     Asked with its ``version_argv`` through :func:`probe_version`, with the
-    environment and a scratch directory a run of it gets; a program that
-    declares no version argument, or that is not installed, says so.
+    variables a run of it gets (``Program.env``); a program that declares no
+    version argument, or that is not installed, says so.
     """
     if not program.version_argv:
         return f"{NOT_REPORTED}: the program declares no version argument"
@@ -592,15 +623,7 @@ def program_version(program: Program) -> str:
         return f"{NOT_REPORTED}: {absent}"
     command = (*program.command, *program.version_argv)
     if command not in _VERSIONS:
-        env = {
-            "PATH": os.environ.get("PATH", "/usr/local/bin:/usr/bin:/bin"),
-            "LANG": "C.UTF-8",
-            **program.env,
-        }
-        with tempfile.TemporaryDirectory(prefix=f"{program.name}-version-") as scratch:
-            env.setdefault("HOME", scratch)
-            env.setdefault("TMPDIR", scratch)
-            _VERSIONS[command] = probe_version(command, env=env, cwd=scratch)
+        _VERSIONS[command] = probe_version(command, env=program.env)
     return _VERSIONS[command]
 
 

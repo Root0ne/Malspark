@@ -74,6 +74,7 @@ from malspark.tools.capabilities import (
     answered_manifest,
     data_used,
     manifest,
+    recording_data_used,
     stamped,
 )
 from malspark.tools.declared_facts import NO_EFFECT, tool_declaration
@@ -815,13 +816,14 @@ def _guard(tool: str, call: Any, **kwargs: Any) -> dict[str, Any]:
         # ``carved_path``: "null" between quotes is still no filter.
         searched = read_unquoted(kwargs, SEARCH_ARGUMENTS)
         asked = _confined(_read_absent_words(call, searched.values))
-        answer = dict(normalise_error(dict(call(**asked))))
+        with recording_data_used() as loaded:
+            answer = dict(normalise_error(dict(call(**asked))))
         # The data the call ran with, for a tool that declares a rule corpus or
-        # a signature set: the corpus its own argument named, else the one this
-        # server reads, counted and digested as it is now. Every tool's answer
-        # goes through here, so each call's entry names the rules it matched
-        # against, read from its declaration (``capabilities.data_used``).
-        answer = stamped(answer, data_used(_NEEDS.get(tool), asked))
+        # a signature set: the files the layer the call used was loaded from,
+        # as its rule loader recorded them, counted and digested. Every tool's
+        # answer goes through here, so each call's entry names the rules it
+        # matched against, read from its declaration (``capabilities.data_used``).
+        answer = stamped(answer, data_used(_NEEDS.get(tool), asked, loaded=loaded))
         # Which file was read, when it was not the sample. The ledger stores
         # the answer, so a run that analysed a carved payload says which one
         # rather than leaving a reader to infer it from the arguments.
@@ -869,14 +871,17 @@ def _guard(tool: str, call: Any, **kwargs: Any) -> dict[str, Any]:
 
 
 @mcp.tool(name=CAPABILITIES_TOOL, **_DECLARED["capabilities"])
-def capabilities() -> dict[str, Any]:
+async def capabilities() -> dict[str, Any]:
     """What this server can do on this host.
 
     Each tool, its optional dependency, and whether it is available.
     """
     # The cells as probed when the server started and the requirements as
-    # they are now, in a deep copy a caller cannot reach in and change.
-    return answered_manifest(CAPABILITIES, TOOL_NEEDS)
+    # they are now, in a deep copy a caller cannot reach in and change. The
+    # data's count and digest are read in a worker thread, off the server's
+    # event loop, and a binary's version is the one read in the background
+    # since the start, never waited for (``answered_manifest``).
+    return await asyncio.to_thread(answered_manifest, CAPABILITIES, TOOL_NEEDS)
 
 
 # ---------------------------------------------------------------------------

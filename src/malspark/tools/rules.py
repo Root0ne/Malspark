@@ -6,9 +6,12 @@ conversion of every hit into a claim of its own. A tool has no need of any of
 it: an agent asking "what fired" wants every rule that fired, on its own terms,
 and gets to decide what a Windows-only rule hitting a Linux sample means.
 
-Rule corpora are loaded once per path and kept for the process lifetime — a
-sidecar answers many calls and recompiling a few hundred YARA rules per call
-is the difference between a tool that is usable in a loop and one that is not.
+Rule corpora are loaded once per path and kept while their files are as they
+were loaded — a sidecar answers many calls and recompiling a few hundred YARA
+rules per call is the difference between a tool that is usable in a loop and
+one that is not. Each call records the files the layer it used was loaded
+from (``capabilities.note_data_used``), so its answer names the rules it ran
+with.
 """
 
 from __future__ import annotations
@@ -17,11 +20,20 @@ import os
 import re
 import threading
 from collections.abc import Callable
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
 from malspark.core.logger import logger
 from malspark.core.paths import get_project_root, host_paths_masked, resolve_data
+from malspark.tools.capabilities import (
+    CorpusRead,
+    Requirement,
+    corpus_signature,
+    data_files,
+    note_data_used,
+    read_corpus,
+)
 
 # The corpora the pipeline itself ships. ``ruleset="default"`` means these; any
 # other value is taken as a path, resolved against the repository root the same
@@ -37,50 +49,62 @@ DEFAULT_CAPA_SIGNATURES = "data/capa-signatures"
 _MAX_MATCH_BYTES = 64
 
 _CACHE_LOCK = threading.Lock()
-# By path: the layer and the corpus's stamp when it was read (``_stamp``).
-_YARA_CACHE: dict[str, tuple[int | None, Any]] = {}
-_SIGMA_CACHE: dict[str, tuple[int | None, Any]] = {}
 
 
-def _stamp(path: Path) -> int | None:
-    """When the corpus at ``path`` last changed, ``None`` while there is none."""
-    try:
-        return path.stat().st_mtime_ns
-    except OSError:
-        return None
+@dataclass(frozen=True)
+class _Kept:
+    """A loaded layer and the reading of the files it was loaded from."""
+
+    layer: Any
+    read: CorpusRead
+    # The data changed while the layer loaded: its digest is not stated, and
+    # the next call loads it again.
+    changed: bool
 
 
-def _cached(
-    cache: dict[str, tuple[int | None, Any]], path: Path, count: Callable[[Any], int]
+# By path: the layer kept and the reading it was loaded from (``_layer``).
+_YARA_CACHE: dict[str, _Kept] = {}
+_SIGMA_CACHE: dict[str, _Kept] = {}
+
+
+def _layer(
+    cache: dict[str, _Kept],
+    need: Requirement,
+    ruleset: str,
+    load: Callable[[Path, CorpusRead], Any],
 ) -> Any:
-    """The layer kept for ``path``, or ``None`` when it has to be read (again).
+    """The layer for the corpus a call with ``ruleset`` reads, loaded again when its files changed.
 
-    A layer that loaded rules is kept for the process's lifetime, as before.
-    One that loaded none is kept only while the corpus is as it was read, so
-    the warning its load logs is said once per change of the corpus, and one
-    put in place later is read without a restart. ``count`` counts a layer's
-    rules.
-
-    "As it was read" is the corpus path's own modification time (``_stamp``),
-    following a link: it changes when the path appears or goes, when a file
-    corpus is rewritten, and when an entry is added to or removed from a
-    directory corpus's top level. A file added or edited only inside a
-    subdirectory of an existing directory leaves it as it was, so that corpus
-    is read again only after a restart or ``reset_rule_caches``.
+    The corpus is the one the data declaration ``need`` resolves
+    (``Requirement.corpus``). Its files are listed, and their sizes and
+    modification times read, on every call (``capabilities.read_corpus``,
+    whose stat signature is the one the digest is kept on): a layer is kept
+    while that signature is the one it was loaded from, so a rule edited in
+    place, added or removed anywhere under the corpus is loaded by the next
+    call, and a layer that loaded no rule warns once per change. ``load``
+    builds the layer from the path and that reading; the signature is read
+    again after it, and one that changed during the load leaves the digest
+    unstated and the layer to be loaded again. The call under way records the
+    reading its layer was loaded from (``capabilities.note_data_used``), so
+    its answer names exactly the files it ran with.
     """
+    path, named_by = need.corpus(ruleset)
+    now = read_corpus(str(path), need.pattern, need.exclude)
     with _CACHE_LOCK:
         held = cache.get(str(path))
-    if held is None:
-        return None
-    stamp, layer = held
-    return layer if count(layer) or stamp == _stamp(path) else None
-
-
-def _keep(
-    cache: dict[str, tuple[int | None, Any]], path: Path, stamp: int | None, layer: Any
-) -> None:
-    with _CACHE_LOCK:
-        cache[str(path)] = (stamp, layer)
+    if (
+        held is None
+        or held.changed
+        or now.signature is None
+        or held.read.signature != now.signature
+    ):
+        layer = load(path, now)
+        after = corpus_signature(str(path), need.pattern, need.exclude)
+        held = _Kept(layer, now, now.signature is None or after != now.signature)
+        with _CACHE_LOCK:
+            cache[str(path)] = held
+    note_data_used(need, path, named_by, held.read, changed=held.changed)
+    return held.layer
 
 
 # The environment names that override where "default" points. This is the whole
@@ -175,17 +199,18 @@ def _not_loaded(
     return answer
 
 
-def _resolve_ruleset(ruleset: str, default: str, env_var: str = "") -> Path:
-    """The corpus path for a ``ruleset`` argument.
+def _resolve_ruleset(ruleset: str, corpus: str) -> Path:
+    """The corpus path for a ``ruleset`` argument, as the data declaration ``corpus`` reads it.
 
     ``"default"`` means the environment's corpus when one is set, otherwise the
     one the pipeline ships. Any other value is a path, resolved against the
-    repository root the same way every other data path is.
+    repository root the same way every other data path is
+    (``capabilities.Requirement.corpus``).
     """
-    if ruleset not in ("", "default"):
-        return resolve_data(ruleset)
-    override = os.environ.get(env_var, "").strip() if env_var else ""
-    return resolve_data(override or default)
+    from malspark.tools import sidecar_needs
+
+    need: Requirement = getattr(sidecar_needs, corpus)
+    return need.corpus(ruleset)[0]
 
 
 # ---------------------------------------------------------------------------
@@ -194,29 +219,31 @@ def _resolve_ruleset(ruleset: str, default: str, env_var: str = "") -> Path:
 
 
 def _yara_layer(ruleset: str) -> Any:
-    """The compiled layer for one corpus, built once per path (``_cached``).
+    """The compiled layer for one corpus, loaded again when its files change (``_layer``).
 
-    A corpus is one rule file, or a directory whose ``*.yml`` and ``*.yaml``
-    files are read in name order, as the override's name says it may be: each
-    file's rules are parsed, joined and compiled once. A file of a directory
+    A corpus is one rule file, or a directory whose files its data declaration
+    lists (``sidecar_needs.YARA_RULES``: ``*.yml`` and ``*.yaml`` files) read
+    in name order, as the override's name says it may be: each file's rules
+    are parsed, joined and compiled once. A file of a directory
     that cannot be read is skipped with a warning naming it, and named in the
     scan's answer (``files_not_loaded``): an operator's one malformed file
     costs that file's rules, not every other file's, and is never silent. A
     lone file that cannot be read raises, as before, and the scan says so.
     """
-    path = _resolve_ruleset(ruleset, DEFAULT_YARA_RULES, YARA_RULES_ENV)
-    cached = _cached(_YARA_CACHE, path, lambda layer: len(layer._rules))
-    if cached is not None:
-        return cached
+    from malspark.tools import sidecar_needs
+
+    return _layer(_YARA_CACHE, sidecar_needs.YARA_RULES, ruleset, _load_yara)
+
+
+def _load_yara(path: Path, read: CorpusRead) -> Any:
     from malspark.analysis.yara_layer import YaraLayer
 
-    stamp = _stamp(path)
     skipped: list[dict[str, str]] = []
     if path.is_file():
         layer = YaraLayer.from_yaml(path)
     elif path.is_dir():
         parsed = []
-        for rule_file in _rule_files(path):
+        for _name, rule_file in read.files:
             try:
                 parsed.extend(YaraLayer.rules_from_yaml(rule_file))
             except Exception as exc:  # noqa: BLE001 — one bad file costs that file only
@@ -227,15 +254,17 @@ def _yara_layer(ruleset: str) -> Any:
     else:
         layer = YaraLayer(rules=[])
     layer.files_not_loaded = skipped
-    _keep(_YARA_CACHE, path, stamp, layer)
     return layer
 
 
 def _rule_files(path: Path) -> list[Path]:
-    """The rule files of a directory corpus, in name order; none for anything else."""
+    """The rule files of a directory YARA corpus, in name order; none for anything else."""
+    from malspark.tools import sidecar_needs
+
     if not path.is_dir():
         return []
-    return sorted([*path.rglob("*.yml"), *path.rglob("*.yaml")])
+    need = sidecar_needs.YARA_RULES
+    return [file for _name, file in data_files(path, need.pattern, need.exclude)]
 
 
 def reset_rule_caches() -> None:
@@ -277,7 +306,7 @@ def yara_scan(
         }
     rule_count = len(getattr(layer, "_rules", []) or [])
     if not rule_count:
-        corpus = _resolve_ruleset(ruleset, DEFAULT_YARA_RULES, YARA_RULES_ENV)
+        corpus = _resolve_ruleset(ruleset, "YARA_RULES")
         unread = list(getattr(layer, "files_not_loaded", None) or [])
         return _not_loaded(
             "yara_scan",
@@ -429,24 +458,26 @@ def _yara_regex_matches(layer: Any, data: bytes) -> list[dict[str, Any]]:
 
 
 def _sigma_layer(ruleset: str) -> Any:
-    """The layer for one corpus, built once per path (``_cached``)."""
-    path = _resolve_ruleset(ruleset, DEFAULT_SIGMA_RULES, SIGMA_RULES_ENV)
-    cached = _cached(_SIGMA_CACHE, path, lambda layer: int(layer.rule_count))
-    if cached is not None:
-        return cached
+    """The layer for one corpus, loaded again when its files change (``_layer``).
+
+    Loaded from the files its data declaration lists (``sidecar_needs.SIGMA_RULES``).
+    """
+    from malspark.tools import sidecar_needs
+
+    return _layer(_SIGMA_CACHE, sidecar_needs.SIGMA_RULES, ruleset, _load_sigma)
+
+
+def _load_sigma(path: Path, read: CorpusRead) -> Any:
     from malspark.analysis.sigma_layer import SigmaLayer
 
-    stamp = _stamp(path)
-    layer = SigmaLayer.from_rules_dir(path)
-    _keep(_SIGMA_CACHE, path, stamp, layer)
-    return layer
+    return SigmaLayer.from_rules_dir(path, files=[file for _name, file in read.files])
 
 
 def _sigma_not_loaded(layer: Any, ruleset: str, tool: str) -> dict[str, Any] | None:
     """The answer for a Sigma corpus that loaded no rule, else ``None`` (``_not_loaded``)."""
     if int(getattr(layer, "rule_count", 0)):
         return None
-    path = _resolve_ruleset(ruleset, DEFAULT_SIGMA_RULES, SIGMA_RULES_ENV)
+    path = _resolve_ruleset(ruleset, "SIGMA_RULES")
     return _not_loaded(tool, path, "SIGMA_RULES", chosen=ruleset not in ("", "default"))
 
 
@@ -630,8 +661,16 @@ def capa(
         return {"error": f"no such file: {path}", "tool": "capa"}
     if not rules_dir.strip():
         return {"error": "no capa rules directory is named", "tool": "capa"}
-    rules = _resolve_ruleset(rules_dir, DEFAULT_CAPA_RULES, CAPA_RULES_ENV)
-    if not rules.is_dir() or not any(rules.rglob("*.yml")):
+    from malspark.tools import sidecar_needs
+
+    need = sidecar_needs.CAPA_RULES
+    rules, named_by = need.corpus(rules_dir)
+    # capa loads the rules in a process of its own: what the call ran with is
+    # the corpus read just before it starts, and read again once it is done
+    # (``capabilities.note_data_used``).
+    read = read_corpus(str(rules), need.pattern, need.exclude)
+    if not rules.is_dir() or not read.files:
+        note_data_used(need, rules, named_by, read)
         return _not_loaded("capa", rules, "CAPA_RULES")
 
     from malspark.providers.static.capa_yara import (
@@ -648,6 +687,10 @@ def capa(
         backend_name=backend_name,
         timeout_seconds=None if timeout_s is None else max(1, int(timeout_s)),
         scratch=scratch,
+    )
+    after = corpus_signature(str(rules), need.pattern, need.exclude)
+    note_data_used(
+        need, rules, named_by, read, changed=read.signature is None or after != read.signature
     )
     if document is None:
         return {

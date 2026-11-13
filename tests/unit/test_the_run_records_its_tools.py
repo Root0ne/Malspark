@@ -60,6 +60,14 @@ def _python(code: str) -> tuple[str, ...]:
     return (sys.executable, "-c", code)
 
 
+def _capa_rule_paths(capa_rules: Any, root: Path) -> list[Any]:
+    """The rule files capa's own loader reads from ``root``."""
+    collect = getattr(capa_rules, "collect_rule_file_paths", None)
+    if collect is None:
+        pytest.skip("this capa has no rule-file collector to compare with")
+    return list(collect([root]))
+
+
 # ---------------------------------------------------------------------------
 # A module: the installed distribution's version
 
@@ -229,28 +237,57 @@ class TestData:
             tmp_path / "rules",
             {"a.yml": "a", ".github/workflows/tests.yml": "ci", ".git/x.yml": "g"},
         )
-        req = data(str(root), pattern="*.yml", exclude=(".git*",))
+        req = data(str(root), pattern="*.yml", exclude=("*.git*",))
         facts = req.facts()
         assert facts is not None
         assert facts["files"] == 1
-        assert facts["exclude"] == [".git*"]
+        assert facts["exclude"] == ["*.git*"]
         # A change to the CI files alone leaves the digest as it was.
         (root / ".github" / "workflows" / "tests.yml").write_text("changed", encoding="utf-8")
         assert req.facts()["sha256"] == facts["sha256"]  # type: ignore[index]
 
     def test_the_row_says_what_its_digest_covers(self, tmp_path: Path) -> None:
         root = _corpus(tmp_path / "rules", {"a.yml": "a"})
-        facts = data(str(root), pattern="*.yml", exclude=(".git*",)).facts()
+        facts = data(str(root), pattern="*.yml", exclude=("*.git*",)).facts()
         assert facts is not None
         assert facts["digest_of"] == (
-            "the files matching *.yml, leaving out .git* at the path the default names, "
-            "as they were when this was read"
+            "the files matching *.yml, but those under a directory whose path matches "
+            "*.git*, at the path the default names, as they were when this was read"
         )
 
     def test_the_shipped_capa_corpus_leaves_out_what_capa_skips(self) -> None:
         from malspark.tools import sidecar_needs
 
-        assert sidecar_needs.CAPA_RULES.exclude == (".git*",)
+        assert sidecar_needs.CAPA_RULES.exclude == ("*.git*",)
+
+    @pytest.mark.parametrize(
+        ("root_name", "files", "counted"),
+        [
+            # The clone's own trees, at any depth.
+            ("rules", {"a.yml": "a", ".github/w.yml": "c", ".git/x.yml": "g"}, ["a.yml"]),
+            # A directory whose name merely holds ".git" is skipped by capa too.
+            ("rules", {"a.yml": "a", "x.github/b.yml": "b"}, ["a.yml"]),
+            # A corpus kept under a path holding ".git" loads nothing in capa.
+            ("capa-rules.git", {"a.yml": "a", "sub/b.yml": "b"}, []),
+            # A file whose own name starts with ".git" is a rule file to capa.
+            ("rules", {".gitkeep.yml": "k", "a.yml": "a"}, [".gitkeep.yml", "a.yml"]),
+        ],
+    )
+    def test_the_capa_corpus_counts_the_files_capa_s_own_loader_reads(
+        self, tmp_path: Path, root_name: str, files: dict[str, str], counted: list[str]
+    ) -> None:
+        from malspark.tools import sidecar_needs
+
+        root = _corpus(tmp_path / root_name, files)
+        need = sidecar_needs.CAPA_RULES
+        listed = [name for name, _path in capabilities.data_files(root, need.pattern, need.exclude)]
+        assert listed == counted
+        capa_rules = pytest.importorskip("capa.rules")
+        # capa's own collector, where it is installed, reads the same files.
+        read = sorted(
+            Path(p).relative_to(root).as_posix() for p in _capa_rule_paths(capa_rules, root)
+        )
+        assert read == counted
 
     def test_the_override_names_the_path_and_the_record_names_only_what_named_it(
         self, tmp_path: Path
@@ -417,11 +454,28 @@ class TestABinary:
             f"{NOT_REPORTED}: tool is not installed: none in the tools directory"
         )
 
-    def test_a_probe_runs_once_per_process(self) -> None:
-        probe = VersionProbe(_python("print('2.0')"))
-        probe.read()
-        probe.read()
-        assert capabilities._probe_version.cache_info().hits == 1
+    def test_a_probe_runs_once_per_process(self, tmp_path: Path) -> None:
+        runs = tmp_path / "runs"
+        probe = VersionProbe(_python(f"open({str(runs)!r}, 'a').write('x'); print('2.0')"))
+        assert probe.read() == "2.0"
+        assert probe.read() == "2.0"
+        assert runs.read_text() == "x"
+
+    def test_a_probe_that_failed_is_remembered_with_its_reason_and_asked_again_later(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        runs = tmp_path / "runs"
+        probe = VersionProbe(
+            _python(f"import sys; open({str(runs)!r}, 'a').write('x'); sys.exit(2)")
+        )
+        said = f"{NOT_REPORTED}: it exited with status 2"
+        assert probe.read() == said
+        assert probe.read() == said
+        assert runs.read_text() == "x"
+        # Once the stated time has passed it is asked again.
+        monkeypatch.setattr(capabilities, "VERSION_RETRY_S", 0.0)
+        assert probe.read() == said
+        assert runs.read_text() == "xx"
 
 
 # ---------------------------------------------------------------------------
@@ -791,22 +845,72 @@ class TestTheSummary:
 
 
 class TestTheStringExtractionToolSaysItsVersion:
+    @pytest.fixture(autouse=True)
+    def _forget(self) -> Any:
+        # The lookup's verdicts and the version each build answered are
+        # remembered per process; each test reads them afresh.
+        from malspark.tools import emulated_strings
+
+        emulated_strings.forget_documents()
+        yield
+        emulated_strings.forget_documents()
+
     @pytest.mark.posix
-    def test_the_pinned_build_its_lookup_finds_is_asked(
+    def test_the_version_is_the_answer_of_the_pinned_build_check_never_a_second_run(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
+        import subprocess
+
         from malspark.tools import emulated_strings, sidecar_needs
 
         stub = tmp_path / "tools" / "floss"
         stub.parent.mkdir()
-        stub.write_text(
-            '#!/bin/sh\n[ "$1" = "--version" ] && echo "floss v3.1.1-0-gabcdef0"\n',
-            encoding="utf-8",
-        )
+        stub.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
         stub.chmod(0o755)
-        monkeypatch.setattr(emulated_strings, "find_floss", lambda environ=None: (stub, ""))
-        rows = requirement_facts([n for n in sidecar_needs.ANALYSIS if n.name == "floss"])
+        runs: list[list[str]] = []
+
+        def _run(argv: Any, timeout: Any, pinned: Any = None, scratch: Any = None) -> Any:
+            runs.append(list(argv))
+            return subprocess.CompletedProcess(argv, 0, "floss v3.1.1-0-gabcdef0\n", "")
+
+        monkeypatch.setenv(emulated_strings.FLOSS_PATH_ENV, str(stub))
+        monkeypatch.setattr(emulated_strings, "_is_pinned_build", lambda path: True)
+        monkeypatch.setattr(emulated_strings, "_run", _run)
+        floss = [n for n in sidecar_needs.ANALYSIS if n.name == "floss"]
+        # The server's start: the cell's check runs the build once.
+        assert manifest("analysis", floss, requirements=False)["tools"][0]["available"]
+        rows = requirement_facts(floss)
         assert rows == [{"kind": "binary", "name": "floss", "version": "3.1.1", "tools": ["floss"]}]
+        assert runs == [[str(stub), "--version"]]
+
+    def test_a_check_that_timed_out_is_not_run_on_every_answer(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        import subprocess
+
+        from malspark.tools import emulated_strings, sidecar_needs
+
+        stub = tmp_path / "floss"
+        stub.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+        stub.chmod(0o755)
+        runs: list[Any] = []
+
+        def _run(argv: Any, timeout: Any, pinned: Any = None, scratch: Any = None) -> Any:
+            runs.append(argv)
+            raise subprocess.TimeoutExpired(argv, timeout)
+
+        monkeypatch.setenv(emulated_strings.FLOSS_PATH_ENV, str(stub))
+        monkeypatch.setattr(emulated_strings, "_is_pinned_build", lambda path: True)
+        monkeypatch.setattr(emulated_strings, "_run", _run)
+        floss = [n for n in sidecar_needs.ANALYSIS if n.name == "floss"]
+        # The server's start: the cell's check times out once.
+        assert not manifest("analysis", floss, requirements=False)["tools"][0]["available"]
+        first = requirement_facts(floss)[0]["version"]
+        assert first.startswith(f"{NOT_REPORTED}: floss cannot be executed on this host")
+        for _ in range(3):
+            assert requirement_facts(floss)[0]["version"] == first
+        # The record read the check's own answer and never ran the build.
+        assert len(runs) == 1
 
     def test_with_no_pinned_build_the_lookup_s_reason_is_recorded(
         self, monkeypatch: pytest.MonkeyPatch
@@ -817,3 +921,17 @@ class TestTheStringExtractionToolSaysItsVersion:
         monkeypatch.setattr(emulated_strings, "find_floss", lambda environ=None: (None, why))
         (row,) = requirement_facts([n for n in sidecar_needs.ANALYSIS if n.name == "floss"])
         assert row["version"] == f"{NOT_REPORTED}: {why}"
+
+    def test_the_declaration_calls_the_lookup_that_is_in_place_when_it_is_called(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # Bound when the list was built, a lookup a test had replaced while the
+        # declarations were first imported stayed in them for every later test.
+        from malspark.tools import emulated_strings, sidecar_needs
+
+        (floss,) = [n for n in sidecar_needs.ANALYSIS if n.name == "floss"]
+        (req,) = floss.requires
+        monkeypatch.setattr(emulated_strings, "floss_unavailable", lambda environ=None: "here now")
+        monkeypatch.setattr(emulated_strings, "floss_version", lambda environ=None: "9.9.9")
+        assert req.locate() == "here now"  # type: ignore[misc]
+        assert req.facts() == {"kind": "binary", "name": "floss", "version": "9.9.9"}

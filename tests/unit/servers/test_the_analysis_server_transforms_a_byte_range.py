@@ -6,6 +6,7 @@ text the test encrypted with a key the test chose.
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import importlib.util
 import sys
@@ -92,7 +93,9 @@ def test_an_error_names_the_step(server: Any, tmp_path: Path) -> None:
 
 
 def test_the_capabilities_answer_states_the_operations(server: Any) -> None:
-    cell = next(c for c in server.capabilities()["tools"] if c["name"] == transforms.TOOL)
+    cell = next(
+        c for c in asyncio.run(server.capabilities())["tools"] if c["name"] == transforms.TOOL
+    )
     assert cell["available"] is True
     assert cell["facts"] == transforms.CAPABILITY_FACTS
     for op in transforms.OPERATIONS:

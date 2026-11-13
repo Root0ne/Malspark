@@ -576,14 +576,15 @@ def _ran(spec: Reader, environ: Environ, arguments: Mapping[str, Any]) -> Any:
 
     A reading that stands in for a tool declaring a rule corpus or a
     signature set answers it as that tool's server does
-    (``capabilities.data_used``): read here, where the reading reads it, with
-    the environment it reads.
+    (``capabilities.data_used``): read here, where the reading reads it, from
+    what its rule loader recorded of the files it loaded.
     """
-    from malspark.tools.capabilities import data_used, stamped
+    from malspark.tools.capabilities import data_used, recording_data_used, stamped
     from malspark.tools.sidecar_needs import declared
 
-    answer = spec.fn(environ, **arguments)
-    return stamped(answer, data_used(declared(spec.stands_for), arguments, environ))
+    with recording_data_used() as loaded:
+        answer = spec.fn(environ, **arguments)
+    return stamped(answer, data_used(declared(spec.stands_for), arguments, environ, loaded=loaded))
 
 
 # ---------------------------------------------------------------------------
