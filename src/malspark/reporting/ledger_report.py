@@ -2085,6 +2085,16 @@ def _build_sections(
     return acc.result()
 
 
+# What qualifies the key of a section drawn from a further detonation's reads.
+DETONATION_SECTION_MARK = "@"
+
+
+def detonation_of_section(key: str) -> str:
+    """The further detonation qualifying a section's key (``d2``…); ``""`` for the job's own."""
+    _, mark, detonation = str(key or "").rpartition(DETONATION_SECTION_MARK)
+    return detonation if mark else ""
+
+
 class _OneDetonation(_Sections):
     """The sections of one later detonation's reads, kept apart from every other detonation's.
 
@@ -2109,7 +2119,7 @@ class _OneDetonation(_Sections):
         source: str = "",
     ) -> EvidenceSection:
         return super().get(
-            f"{key}@{self._detonation}",
+            f"{key}{DETONATION_SECTION_MARK}{self._detonation}",
             f"{title} {self._launch}",
             kind,
             columns=columns,

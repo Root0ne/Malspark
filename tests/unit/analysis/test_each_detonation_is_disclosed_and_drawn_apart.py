@@ -96,3 +96,48 @@ class TestTheReport:
     def test_the_launch_words_write_the_arguments_out(self) -> None:
         said = launch_words({**LATER, "launched_with": "[ev_0001]"})
         assert "[ev_0001]" not in said
+
+
+class TestTheJobsOwnDynamicBlock:
+    def test_a_later_detonation_s_processes_never_join_the_job_s_tree(self) -> None:
+        from malspark.reporting.ledger_projection import dynamic_from_ledger
+
+        dynamic = dynamic_from_ledger(
+            [
+                _entry(1, {"processes": [{"pid": 100, "name": "locker.exe"}]}),
+                _entry(2, {**LATER, "processes": [{"pid": 200, "name": "vssadmin.exe"}]}),
+            ]
+        )
+        assert dynamic is not None
+        assert [node.pid for node in dynamic.process_tree] == [100]
+
+    def test_the_composer_is_shown_each_later_detonation_apart(self) -> None:
+        from datetime import UTC, datetime
+
+        from malspark.reporting.evidence_bundles import bundle_for
+        from malspark.reporting.ledger_report import detonation_of_section
+        from malspark.reporting.models import FileHashes, MalwareReport, SampleIdentity
+
+        sections = build_sections(
+            [
+                _entry(1, {"processes": [{"pid": 100, "name": "locker.exe"}]}),
+                _entry(2, {**LATER, "processes": [{"pid": 200, "name": "vssadmin.exe"}]}),
+            ]
+        )
+        report = MalwareReport(
+            identity=SampleIdentity(hashes=FileHashes(sha256="a" * 64)),
+            verdict="Malware",
+            generated_at=datetime(2026, 1, 1, tzinfo=UTC),
+            sections=sections,
+        )
+        facts = bundle_for("execution_flow", report)["facts"]
+        (later,) = facts["later_detonations"]
+        assert later["observed"].startswith("Processes observed when launched with `--password x`")
+        assert later["entries"] == ["ev_0002"] and later["rows"][0].startswith("200")
+        assert detonation_of_section("sandbox_processes@d2") == "d2"
+        assert detonation_of_section("sandbox_processes") == ""
+        # A run with no further detonation is shown nothing more.
+        plain = report.model_copy(
+            update={"sections": build_sections([_entry(1, {"processes": []})])}
+        )
+        assert "later_detonations" not in bundle_for("execution_flow", plain)["facts"]

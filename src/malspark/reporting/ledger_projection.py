@@ -125,8 +125,18 @@ def _payloads(
             continue
         data = entry.structured
         if isinstance(data, dict) and not data.get("error"):
+            if later_detonation(data):
+                # A further detonation's read is not the job's own detonation:
+                # its observations are drawn apart, under the launch they were
+                # made with (``ledger_report._OneDetonation``), never merged here.
+                continue
             out.append((entry, data))
     return out
+
+
+def later_detonation(data: Any) -> bool:
+    """Whether a sandbox read is of a further detonation (``DetonationRecord.stated``)."""
+    return isinstance(data, dict) and bool(data.get("detonation")) and "launched_with" in data
 
 
 def _rows_of(artifact: Any) -> list[list[str]]:

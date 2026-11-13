@@ -942,6 +942,19 @@ def _bundle_for(
         tree: list[str] = []
         for root in distinct_processes(dynamic.process_tree if dynamic else []):
             tree.extend(_process_lines(root, 0))
+        # Further detonations an agent asked for, each apart, under the launch
+        # it was made with: the same tables the evidence appendix draws.
+        from malspark.reporting.ledger_report import detonation_of_section
+
+        later = [
+            {
+                "observed": section.title,
+                "rows": [" | ".join(row) for row in section.rows],
+                "entries": list(section.evidence_ids),
+            }
+            for section in report.sections
+            if detonation_of_section(section.key)
+        ]
         return {
             "claims": all_claims,
             "tool_outputs": [],
@@ -954,6 +967,7 @@ def _bundle_for(
                     if row.id in sandbox_ids
                 ],
                 "exports": list(report.static.exports) if report.static else [],
+                **({"later_detonations": later} if later else {}),
                 # An Android package's manifest permissions, never its exports.
                 **(
                     {"declared_permissions": list(report.static.permissions)}
