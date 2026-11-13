@@ -272,6 +272,24 @@ class TestTheRecord:
         assert row["task_id"] == "19159" and row["origin"] == AGENT_ORIGIN
         assert row["detonated"] == NR and row["guest"] == NR
 
+    def test_an_unreadable_launch_leaves_both_launch_fields_out(self) -> None:
+        class _Launch:
+            name = "d2"
+            origin = AGENT_ORIGIN
+            provider = "cape2"
+            task_id = "19159"
+            reported = True
+            arguments = "-k netsvcs"
+            sandbox_facts = None
+
+            @property
+            def launch(self) -> Any:
+                raise RuntimeError("launch")
+
+        (row,) = detonations_record(_held(_Launch())) or []
+        assert not {"launched_with", "arguments_honoured", "arguments_via"} & set(row)
+        assert row["detonation"] == "d2" and row["provider"] == "cape2"
+
     def test_a_fact_that_cannot_be_read_is_not_reported_beside_the_platform_s_fields(
         self,
     ) -> None:
@@ -497,7 +515,7 @@ class TestWhatTheSharedScrubMasks:
                 _held(_record(sandbox_facts=_facts(guest={"image": "win11ltsc2024-20260709-en"})))
             )
             or [{}]
-        )[0]["guest"] == {"image": "***"}
+        )[0]["guest"] == {"***": "***"}
 
     def test_a_registered_value_is_masked_in_an_identity_fact_in_each_encoding(self) -> None:
         from urllib.parse import quote, quote_plus
@@ -521,6 +539,75 @@ class TestWhatTheSharedScrubMasks:
         for form in forms:
             assert form not in text, form
         assert "tidal" not in text
+
+    @staticmethod
+    def _state(name: str) -> None:
+        from malspark.pipeline.events import remember_secret_values, secret_registration_failed
+
+        if name == "failed":
+            remember_secret_values([password(20, variant=7)])
+            secret_registration_failed("process")
+
+    @pytest.mark.parametrize("state", ["unpopulated", "failed"])
+    def test_a_credential_shape_a_provider_returns_as_a_key_is_masked_without_a_registry(
+        self, state: str
+    ) -> None:
+        self._state(state)
+        key = prefixed_key("ghp_")
+        facts = _facts(
+            task_ids={key: "x", "/info/id": "19159"},
+            guest={key: {"os": "w"}, "image": "win10"},
+        )
+        (row,) = detonations_record(_held(_record(sandbox_facts=facts))) or []
+        text = json.dumps(row)
+        for piece in (key, key[:12], key[-12:]):
+            assert piece not in text, piece
+        # The declared place a task id was read at is the platform's own text.
+        assert row["task_ids"]["/info/id"] == "19159"
+
+    @pytest.mark.parametrize("state", ["unpopulated", "failed"])
+    def test_a_credential_split_across_a_key_and_its_value_is_masked_without_a_registry(
+        self, state: str
+    ) -> None:
+        self._state(state)
+        key = prefixed_key("ghp_")
+        facts = _facts(task_ids={key[:20]: key[20:]}, guest={"token": key})
+        (row,) = detonations_record(_held(_record(sandbox_facts=facts))) or []
+        text = json.dumps(row)
+        for piece in (key[:20], key[20:], key[-12:], key[10:26]):
+            assert piece not in text, piece
+        assert row["task_ids"] == {"***": "***"}
+
+    def test_with_the_registry_populated_a_registered_value_as_a_key_is_masked(self) -> None:
+        from malspark.pipeline.events import remember_secret_values
+
+        held = "tidal pool " + lowercase_body(9) + " beacon"
+        remember_secret_values([held])
+        facts = _facts(task_ids={held: "x"}, guest={held: {"os": "w"}})
+        (row,) = detonations_record(_held(_record(sandbox_facts=facts))) or []
+        assert "tidal" not in json.dumps(row)
+
+    @pytest.mark.parametrize("state", ["unpopulated", "populated", "failed"])
+    def test_the_platform_s_own_keys_read_as_stated_in_every_state(self, state: str) -> None:
+        from malspark.pipeline.events import remember_secret_values
+
+        self._state(state)
+        if state == "populated":
+            remember_secret_values([password(20, variant=7)])
+        facts = _facts(
+            task_ids={"/info/id": "19159", "/sample/id": "260904-abcdefgh1"},
+            report_parts=[
+                {"name": name, "sha256": "1" * 64, "bytes": 1}
+                for name in ("report", "overview", "behavioral1")
+            ],
+        )
+        (row,) = detonations_record(_held(_record(sandbox_facts=facts))) or []
+        assert list(row["task_ids"]) == ["/info/id", "/sample/id"]
+        assert [part["name"] for part in row["report_parts"]] == [
+            "report",
+            "overview",
+            "behavioral1",
+        ]
 
     def test_a_url_split_across_a_key_and_its_value_is_masked(self) -> None:
         secret = password(24)

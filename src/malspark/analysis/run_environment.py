@@ -617,6 +617,18 @@ def _scalar(value: Any) -> bool:
     return isinstance(value, int | float) or (isinstance(value, str) and bool(value.strip()))
 
 
+def _readable(value: Any) -> tuple[str, bool]:
+    """The part of a stated text that is read (:func:`_said`), and whether it was cut."""
+    whole = value if isinstance(value, str) else str(value)
+    cut = len(whole) > STATED_READ_CHARS
+    text = " ".join(whole[:STATED_READ_CHARS].split())
+    text = "".join(ch for ch in text if not unicodedata.category(ch).startswith("C"))
+    if cut and not whole[STATED_READ_CHARS].isspace() and text and not text[-1].isspace():
+        # The cut is inside the last word: none of it is kept.
+        text = text.rsplit(" ", 1)[0] if " " in text else ""
+    return text, cut
+
+
 def _said(value: Any, *, prose: bool = False, name: bool = False) -> str:
     """A text a provider or a sandbox wrote, fit to keep: one line, no control
     character, no credential in a URL or a held secret value (``redact_url``,
@@ -632,8 +644,9 @@ def _said(value: Any, *, prose: bool = False, name: bool = False) -> str:
     finding-row scrub (``safe_finding_value``), which masks what is shaped like
     a credential, so one that looks like a credential may read ``***``.
     ``prose`` (free text, a failure's reason) passes the whole event scrub
-    (``scrub``: held values and credential shapes) in both states;
-    a ``name`` (a key) passes the known masks only, in both.
+    (``scrub``: held values and credential shapes) in both states. A ``name``
+    (a key a provider stated) is treated as its values are, with the finding-row
+    scrub applied to each piece between ``/``.
 
     The text is cut to ``STATED_READ_CHARS`` before anything else is done with
     it, so its length costs nothing; the masks then read at most that. Where
@@ -646,19 +659,19 @@ def _said(value: Any, *, prose: bool = False, name: bool = False) -> str:
     from malspark.pipeline.events import _rows_kept_as_written, safe_finding_value, scrub
     from malspark.utils.marked_cut import CUT_MARK, marked_cut
 
-    whole = value if isinstance(value, str) else str(value)
-    cut = len(whole) > STATED_READ_CHARS
-    text = " ".join(whole[:STATED_READ_CHARS].split())
-    text = "".join(ch for ch in text if not unicodedata.category(ch).startswith("C"))
-    if cut and not whole[STATED_READ_CHARS].isspace() and text and not text[-1].isspace():
-        # The cut is inside the last word: none of it is kept.
-        text = text.rsplit(" ", 1)[0] if " " in text else ""
+    text, cut = _readable(value)
     kept = _known_masked(host_paths_masked(text.rstrip()))
     if prose:
         # Free text: shaped credentials are masked whether or not values are held.
         kept = scrub(kept)
-    elif not (name or _rows_kept_as_written()):
-        kept = safe_finding_value(kept)
+    elif not _rows_kept_as_written():
+        # A key is read piece by piece between ``/``, so a declared place
+        # (``/info/id``) is not cut down to its last segment by the path rule.
+        kept = (
+            "/".join(safe_finding_value(piece) for piece in kept.split("/"))
+            if name
+            else (safe_finding_value(kept))
+        )
     if cut and len(kept) <= STATED_TEXT_CHARS:
         # Shorter than the width once read, and still a cut text.
         return kept[: STATED_TEXT_CHARS - len(CUT_MARK)].rstrip() + CUT_MARK
@@ -697,9 +710,18 @@ def _pair(key: Any, value: Any) -> tuple[str, str]:
     alone, both are ``***``.
     """
     name, text = _said(key, name=True), _said(value)
-    front, back = f"{name[-_PAIR_SIDE:]}=", text[:_PAIR_SIDE]
-    if _pair_masked(front + back) != _pair_masked(front) + _pair_masked(back):
-        return _PAIR_MASK, _PAIR_MASK
+    # What a reader could put back together, read before either half is
+    # masked: the two joined as a pair is printed, and the two run together.
+    from malspark.core.paths import host_paths_masked
+
+    raw_key = host_paths_masked(_readable(key)[0])
+    raw_value = host_paths_masked(_readable(value)[0])
+    # A key written as a place (``/info/id``) is run together with nothing: a
+    # path rule would join its last segment to the value.
+    for sep in ("=",) if raw_key.startswith("/") else ("=", ""):
+        front, back = f"{raw_key[-_PAIR_SIDE:]}{sep}", raw_value[:_PAIR_SIDE]
+        if _pair_masked(front + back) != _pair_masked(front) + _pair_masked(back):
+            return _PAIR_MASK, _PAIR_MASK
     return name, text
 
 
@@ -828,8 +850,8 @@ def _detonation_row(record: Any) -> dict[str, Any]:
             _launch(row, record)
         except Exception as exc:  # noqa: BLE001 — what is not read is not reported
             logger.debug("run environment: a detonation's launch was not read (%s).", exc)
-            row.setdefault("launched_with", NOT_REPORTED)
-            row["arguments_honoured"] = NOT_REPORTED
+            for key in ("launched_with", "arguments_honoured", "arguments_via"):
+                row.pop(key, None)
     _read(row, "provider", lambda: _said(record.provider) if record.provider else NOT_REPORTED)
     _read(row, "task_id", lambda: _stated_text(record.task_id))
     reported = _read(row, "reported", lambda: bool(record.reported))
