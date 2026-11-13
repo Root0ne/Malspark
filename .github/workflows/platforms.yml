@@ -213,7 +213,9 @@ jobs:
         run: |
           $PSNativeCommandUseErrorActionPreference = $true
           # PowerShell hands a native command its wildcards unexpanded.
-          $paths = -split $env:SHARD_PATHS | ForEach-Object {
+          # An array also when the shard names one path, which a splat would
+          # otherwise spread over its characters.
+          $paths = @(-split $env:SHARD_PATHS | ForEach-Object {
             if ($_ -match '[*?]') { Resolve-Path -Relative $_ } else { $_ }
-          }
+          })
           uv run pytest @paths -m "not posix" -q --tb=short -o faulthandler_timeout=600
