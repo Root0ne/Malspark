@@ -116,3 +116,90 @@ class TestOneSubmissionPerRequest:
         _two_steps_at_once(container)
         assert container.detonated == ["d2", "d3"]
         assert [r.name for r in container.detonations] == ["d1", "d2", "d3"]
+
+
+class TestADetonationNeverOutlivesItsJob:
+    """B5: a cancel after the sandbox accepted the submission."""
+
+    def test_a_cancel_after_the_submission_keeps_its_disclosure_and_is_not_waited_for(
+        self, tmp_path: Any
+    ) -> None:
+        import pytest
+
+        from malspark.core.cancellation import JobCancelled
+        from tests.unit.pipeline.test_a_launcher_run_is_read_as_the_launcher_s import (
+            ARGS,
+            _LauncherBox,
+            _sample,
+        )
+        from tests.unit.pipeline.test_a_sandbox_naming_another_target_is_told import _app
+
+        polled: list[str] = []
+
+        class _Box(_LauncherBox):
+            def submit(self, sample_path: str, **kwargs: Any) -> str:
+                task = super().submit(sample_path, **kwargs)
+                # The operator cancels the job once the sandbox has accepted it.
+                app.container.cancellation.cancel("the operator cancelled the job")
+                return task
+
+            def wait_for_completion(self, task_id: str, **_: Any) -> str:
+                polled.append(task_id)
+                return "reported"
+
+        app = _app(_Box())
+        app.container.sample_path = _sample(tmp_path)
+        record = DetonationRecord(
+            ordinal=2, origin="agent", arguments=ARGS, requested_by=[{"agent": "reversing"}]
+        )
+        with pytest.raises(JobCancelled):
+            asyncio.run(app.detonate_further(record))
+        assert polled == []
+        (row,) = app.container.sample_uploads
+        assert row["detonation"] == "d2" and row["requested_by"] == ["reversing"]
+        assert row["submitted"] is True
+        assert record.submit_returned and record.task_id == "s1"
+
+    def test_a_cancel_reaches_a_detonation_in_flight_and_closes_its_record(self) -> None:
+        import time
+
+        import pytest
+
+        from malspark.core.cancellation import Cancellation, JobCancelled
+
+        container = container_with_a_pending_request()
+        container.cancellation = Cancellation()
+        stopped: list[str] = []
+
+        async def _forever(record: DetonationRecord) -> None:
+            try:
+                await asyncio.sleep(60)
+            except asyncio.CancelledError:
+                stopped.append(record.name)
+                raise
+
+        container.detonator = _forever
+        threading.Timer(0.3, container.cancellation.cancel, args=("cancelled",)).start()
+        began = time.monotonic()
+        with pytest.raises(JobCancelled):
+            asyncio.run(dt.carry_out(container, {}, "judge"))
+        assert time.monotonic() - began < 5
+        assert stopped == ["d2"]
+        record = container.detonations[-1]
+        assert record.name == "d2" and record.running is False
+        assert record.failure == "the job was cancelled while it was in flight"
+        assert record.ended_at >= record.started_at > 0
+        assert dt.in_flight(container) is False
+
+    def test_a_record_exists_from_the_start_running(self) -> None:
+        container = container_with_a_pending_request()
+        seen: list[tuple[list[str], bool]] = []
+
+        async def _look(record: DetonationRecord) -> None:
+            seen.append(([r.name for r in container.detonations], record.running))
+            record.report = D2_REPORT
+
+        container.detonator = _look
+        asyncio.run(dt.carry_out(container, {}, "judge"))
+        assert seen == [(["d1", "d2"], True)]
+        assert container.detonations[-1].running is False

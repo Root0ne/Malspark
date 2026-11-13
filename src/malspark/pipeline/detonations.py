@@ -447,6 +447,40 @@ def _claim(
     return claimed, waiting
 
 
+async def _unless_cancelled(container: Any, work: Any) -> None:
+    """Await ``work`` until it ends, or until the job is cancelled, which stops it.
+
+    The job's cancellation (``core.cancellation``) is watched beside it: a
+    cancel ends the wait at once, ``work`` is cancelled with it, and
+    ``JobCancelled`` is raised, so a detonation never outlives its job.
+    """
+    cancellation = getattr(container, "cancellation", None)
+    if cancellation is None:
+        await work
+        return
+    task = asyncio.ensure_future(work)
+    stop = asyncio.Event()
+
+    async def _watch() -> None:
+        while not stop.is_set():
+            if await asyncio.to_thread(cancellation.wait, 0.5):
+                return
+
+    watcher = asyncio.ensure_future(_watch())
+    try:
+        done, _ = await asyncio.wait({task, watcher}, return_when=asyncio.FIRST_COMPLETED)
+    except BaseException:
+        task.cancel()
+        raise
+    finally:
+        stop.set()
+        watcher.cancel()
+    if task not in done:
+        task.cancel()
+        cancellation.check("while a further detonation was in flight")
+    await task
+
+
 async def _detonate(container: Any, state: Any, step: str, record: DetonationRecord) -> None:
     """Carry ``record`` out through the job's detonator, bounded by the job's time limit."""
     name = record.name
@@ -471,10 +505,15 @@ async def _detonate(container: Any, state: Any, step: str, record: DetonationRec
             record.failure = "not run: this run has no way to submit the sample again"
         else:
             try:
-                await detonator(record)
+                await _unless_cancelled(container, detonator(record))
             except Exception as exc:  # noqa: BLE001 — a failed detonation never fails the run
                 logger.error("Further detonation %s failed: %s", name, type(exc).__name__)
                 record.failure = record.failure or f"it failed: {type(exc).__name__}"
+    except BaseException:
+        # The job was cancelled while the detonation was in flight: its
+        # record says so, and the cancellation goes on to stop the step.
+        record.failure = record.failure or "the job was cancelled while it was in flight"
+        raise
     finally:
         record.ended_at = time.time()
         record.duration_ms = int((time.monotonic() - began) * 1000)

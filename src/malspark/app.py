@@ -64,6 +64,30 @@ def _remember_the_secrets_of(config: Settings) -> None:
         )
 
 
+class _JoinedRows(list[dict[str, Any]]):
+    """A further detonation's upload rows, each also in the job's list the moment it is written.
+
+    Appending a row adds it, with ``tag`` (the detonation, who asked), to
+    ``into``; replacing one replaces its copy there.
+    """
+
+    def __init__(self, into: list[dict[str, Any]], tag: dict[str, Any]) -> None:
+        super().__init__()
+        self._into = into
+        self._tag = tag
+        self._at: list[int] = []
+
+    def append(self, row: dict[str, Any]) -> None:
+        super().append(row)
+        self._into.append({**row, **self._tag})
+        self._at.append(len(self._into) - 1)
+
+    def __setitem__(self, index: Any, row: Any) -> None:
+        super().__setitem__(index, row)
+        if isinstance(index, int):
+            self._into[self._at[index]] = {**row, **self._tag}
+
+
 class MalsparkApp:
     """High-level application facade.
 
@@ -666,6 +690,10 @@ class MalsparkApp:
             # configured, and a real CAPE detonation (win10 guest run alone is
             # ~280s + processing) timed out before the report was ready —
             # silently degrading every run to static-only.
+            if record.ordinal > 1:
+                # A further detonation of a job cancelled while it was being
+                # submitted is not waited for (``pipeline.detonations``).
+                self.container.cancellation.check("after a further detonation was submitted")
             stage = "waiting for the analysis"
             budget = self._poll_arguments(provider, task_id)
             # The job's sandbox deadline: the poll's own budget, from when the
@@ -941,8 +969,26 @@ class MalsparkApp:
         both from this detonation's own record. Its upload rows join the job's
         list, each naming the detonation; a submission that carried the
         arguments and returned no report is recorded so, as the first's is
-        (:meth:`_launch_not_carried`). Never raises for a sandbox's failure.
+        (:meth:`_launch_not_carried`). Never raises for a sandbox's failure; a
+        cancel of the job between its submission and its poll stops it there.
         """
+        askers = list(dict.fromkeys(str(a.get("agent") or "") for a in record.requested_by))
+        # Each upload row is in the job's list the moment it is written,
+        # naming the detonation, so a job stopped while the detonation is in
+        # flight still discloses the submission.
+        record.uploads = _JoinedRows(
+            self.container.sample_uploads,
+            {"detonation": record.name, "requested_by": [a for a in askers if a]},
+        )
+        try:
+            await self._detonate_further(record)
+        finally:
+            self.container.artefact_fetch_failures.extend(
+                {**row, "detonation": record.name} for row in record.artefact_fetch_failures
+            )
+
+    async def _detonate_further(self, record: Any) -> None:
+        """:meth:`detonate_further`'s body: the detonation, and its report marked."""
         from malspark.analysis.disclosure import upload_record
         from malspark.providers.submission import (
             LaunchArgumentsAnswer,
@@ -980,14 +1026,6 @@ class MalsparkApp:
                     host=str(row.get("host") or ""),
                     launch=record.launch,
                 )
-        askers = list(dict.fromkeys(str(a.get("agent") or "") for a in record.requested_by))
-        self.container.sample_uploads.extend(
-            {**row, "detonation": record.name, "requested_by": [a for a in askers if a]}
-            for row in record.uploads
-        )
-        self.container.artefact_fetch_failures.extend(
-            {**row, "detonation": record.name} for row in record.artefact_fetch_failures
-        )
 
     def _sandbox_failed(self, reason: str, record: Any = None) -> None:
         """Keep why this job has no sandbox report, for its degradation reason.
