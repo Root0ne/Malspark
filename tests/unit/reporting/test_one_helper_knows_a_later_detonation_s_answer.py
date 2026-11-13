@@ -21,10 +21,13 @@ def test_a_third_party_answer_with_a_detonation_key_is_drawn_as_the_job_s_own() 
             agent="dynamic",
             structured={"detonation": "my-run", **rows},
         ),
+        # The platform's in-process sandbox source, as the recorder filed it.
         LedgerEntry(
             id="ev_0002",
             tool="sandbox_processes",
             agent="dynamic",
+            source="sandbox",
+            facts={"v": 1, "kind": "sandbox_processes"},
             structured={"detonation": "d2", "launched_with": "-p x", **rows},
         ),
     ]

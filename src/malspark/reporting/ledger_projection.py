@@ -133,7 +133,7 @@ def _payloads(
             continue
         data = entry.structured
         if isinstance(data, dict) and not data.get("error"):
-            if later_detonation(data) and not detonations:
+            if later_detonation(entry) and not detonations:
                 # A further detonation's read is not the job's own detonation:
                 # its observations are drawn apart, under the launch they were
                 # made with (``ledger_report._OneDetonation``), and reach a
@@ -143,21 +143,58 @@ def _payloads(
     return out
 
 
-def later_detonation(data: Any) -> bool:
-    """Whether a sandbox read is of a further detonation (``DetonationRecord.stated``)."""
-    return isinstance(data, dict) and bool(data.get("detonation")) and "launched_with" in data
+def later_detonation(entry: Any) -> bool:
+    """Whether a ledger entry is the platform's read of a further detonation.
+
+    :func:`later_detonation_name`'s answer is a detonation's name.
+    """
+    return bool(later_detonation_name(entry))
+
+
+def later_detonation_name(entry: Any) -> str:
+    """The further detonation (``d2``…) a ledger entry is the platform's read of; ``""`` else.
+
+    The one rule every reader of such an entry asks (the pack, the report's
+    sections, this projection). Only the platform writes such a read: the
+    pack's own read of a detonation that came back (agent ``pipeline``,
+    source ``pack``; ``pipeline.detonations.platform_reads``) or a call of the
+    platform's in-process sandbox source (``providers.sandbox_tools``), whose
+    answer states the detonation and its launch (``DetonationRecord.stated``).
+    The source is the one the recorder filed, never read from the answer; a
+    tool answer of any other source that carries a ``detonation`` key is the
+    tool's own. The name is taken only where it is a detonation's name in the
+    one form the citation checks know (``sandbox_sections.QUALIFIER_RE``,
+    whole); anything else is no later detonation.
+    """
+    from malspark.agents.prompt_fragments import SANDBOX_FAMILY
+    from malspark.analysis.sandbox_sections import QUALIFIER_RE
+    from malspark.pipeline.triage_pack import PACK_SOURCE, PIPELINE
+
+    if isinstance(entry, Mapping):
+        data, source, agent = entry.get("structured"), entry.get("source"), entry.get("agent")
+    else:
+        data = getattr(entry, "structured", None)
+        source, agent = getattr(entry, "source", None), getattr(entry, "agent", None)
+    if not isinstance(data, Mapping) or "launched_with" not in data:
+        return ""
+    if not (source == SANDBOX_FAMILY or (source == PACK_SOURCE and agent == PIPELINE)):
+        return ""
+    name = data.get("detonation")
+    if not isinstance(name, str) or QUALIFIER_RE.fullmatch(f"{name}/") is None:
+        return ""
+    return name.lower()
 
 
 # The job's own detonation, as a row observed in it is marked.
 FIRST_DETONATION = "d1"
 
 
-def observed_mark(data: Any) -> ObservedIn:
+def observed_mark(entry: Any) -> ObservedIn:
     """The detonation a sandbox read is of, with its launch: the job's own unless a later one."""
-    if later_detonation(data):
-        return ObservedIn(
-            detonation=str(data.get("detonation")), launched_with=str(data.get("launched_with"))
-        )
+    name = later_detonation_name(entry)
+    if name:
+        data = entry.structured
+        return ObservedIn(detonation=name, launched_with=str(data.get("launched_with") or ""))
     return ObservedIn(detonation=FIRST_DETONATION)
 
 
@@ -904,8 +941,8 @@ def dynamic_from_ledger(ledger: list[LedgerEntry]) -> DynamicBehavior | None:
             processes.extend(nodes)
     dynamic.process_tree = _as_tree(_once(processes, process_identity))
 
-    for _entry, data in _payloads(ledger, "sandbox_signatures", detonations=True):
-        later = [observed_mark(data)] if later_detonation(data) else []
+    for entry, data in _payloads(ledger, "sandbox_signatures", detonations=True):
+        later = [observed_mark(entry)] if later_detonation(entry) else []
         for row in data.get("signatures") or []:
             if not isinstance(row, dict):
                 continue
@@ -970,7 +1007,7 @@ def dynamic_from_ledger(ledger: list[LedgerEntry]) -> DynamicBehavior | None:
     # and dropped files: a row an earlier entry already gave is that row, and
     # is kept once. Rows one answer lists twice are its own, and stay.
     held_rows: dict[str, dict[str, Any]] = {}
-    for _entry, data in _payloads(ledger, "sandbox_mutexes", detonations=True):
+    for mutex_entry, data in _payloads(ledger, "sandbox_mutexes", detonations=True):
         names = [str(name) for name in data.get("mutexes") or [] if name]
         if names:
             seen = True
@@ -985,12 +1022,14 @@ def dynamic_from_ledger(ledger: list[LedgerEntry]) -> DynamicBehavior | None:
                 if made_by:
                     mutex["pids"] = made_by
                 mutexes.append(mutex)
-            dynamic.file_operations.extend(_not_held(mutexes, held_rows, observed_mark(data)))
+            dynamic.file_operations.extend(
+                _not_held(mutexes, held_rows, observed_mark(mutex_entry))
+            )
 
     # The files a further detonation saw written are rows marked with it; the
     # archive's members a generated launcher unpacked are listed apart in the
     # answer (``platform_files``) and are never read here.
-    for _entry, data in _payloads(ledger, "sandbox_dropped_files", detonations=True):
+    for dropped_entry, data in _payloads(ledger, "sandbox_dropped_files", detonations=True):
         dropped: list[dict[str, Any]] = [
             {"operation": "write", **row}
             for row in data.get("dropped") or []
@@ -998,7 +1037,9 @@ def dynamic_from_ledger(ledger: list[LedgerEntry]) -> DynamicBehavior | None:
         ]
         if dropped:
             seen = True
-            dynamic.file_operations.extend(_not_held(dropped, held_rows, observed_mark(data)))
+            dynamic.file_operations.extend(
+                _not_held(dropped, held_rows, observed_mark(dropped_entry))
+            )
     _state_row_marks(dynamic.file_operations)
 
     # A sandbox that cannot fill a section says so in the report's own
@@ -1298,17 +1339,23 @@ def network_from_ledger(
     # The job's own detonation's views, then each further detonation's: a
     # value a further one observed is marked with it, and with every other
     # detonation that observed it too.
-    for data, whole in [
-        *_sandbox_views(ledger, sandbox_report),
-        *_ledger_views(
-            [
-                (e, d)
-                for e, d in _payloads(ledger, "sandbox_network", detonations=True)
-                if later_detonation(d)
-            ]
+    later_reads = [
+        (e, d)
+        for e, d in _payloads(ledger, "sandbox_network", detonations=True)
+        if later_detonation(e)
+    ]
+    views = [
+        *(
+            (d, w, ObservedIn(detonation=FIRST_DETONATION))
+            for d, w in _sandbox_views(ledger, sandbox_report)
         ),
-    ]:
-        marking[0] = observed_mark(data)
+        *(
+            (d, w, observed_mark(e))
+            for (d, w), (e, _) in zip(_ledger_views(later_reads), later_reads, strict=True)
+        ),
+    ]
+    for data, whole, mark in views:
+        marking[0] = mark
         # Each DNS question reads the answers for its own name, and a request's
         # unnamed answers, within the request's own size. A ``domains`` row is
         # no DNS question: it reads its own answers, as dev read it, whatever

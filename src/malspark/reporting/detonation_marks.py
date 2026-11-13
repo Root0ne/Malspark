@@ -100,6 +100,41 @@ def with_technique_marks(mappings: list[TTPMapping], report: MalwareReport) -> N
         mapping.observed_in = stated_marks(marks)
 
 
+# The longest launch text a surface writes; the record keeps the whole.
+LAUNCH_TEXT_CHARS = 200
+
+# The characters a launch text may not hold as they are on any surface: one
+# that would close a code span, open a tag or end a table cell.
+_INERT = {"`": "\\x60", "<": "\\x3c", ">": "\\x3e", "|": "\\x7c"}
+
+
+def launch_text(arguments: Any) -> str:
+    """A further detonation's launch arguments as every surface writes them.
+
+    The arguments an agent chose are text of the run, not of the platform: on
+    one line, its control characters, ledger ids and template tokens written
+    out (``sample_written_out``, ``template_tokens_written_out``), each
+    back-tick, angle bracket and table pipe written as its escape, and cut at
+    :data:`LAUNCH_TEXT_CHARS` with the cut mark. A surface sets the result as
+    its own escaping sets text (a Markdown code span, a JSON string).
+    """
+    from malspark.utils.marked_cut import marked_cut
+    from malspark.utils.written_forms import sample_written_out, template_tokens_written_out
+
+    text = template_tokens_written_out(sample_written_out(str(arguments or "")))
+    return marked_cut("".join(_INERT.get(ch, ch) for ch in text), LAUNCH_TEXT_CHARS)
+
+
+def detonation_named(name: Any) -> str:
+    """``name`` where it is a detonation's (``d1``, or a later one in the citation checks' form)."""
+    from malspark.analysis.sandbox_sections import QUALIFIER_RE
+
+    text = str(name or "")
+    if text == FIRST_DETONATION or QUALIFIER_RE.fullmatch(f"{text}/") is not None:
+        return text.lower()
+    return ""
+
+
 def observed_words(
     marks: Sequence[ObservedIn] | Iterable[Any], code: Callable[[str], str] | None = None
 ) -> str:
@@ -110,21 +145,18 @@ def observed_words(
     writes them, set as ``code`` sets them (a one-backtick span where none is
     given). ``""`` for no mark.
     """
-    from malspark.utils.written_forms import sample_written_out, template_tokens_written_out
-
     parts: list[str] = []
     for held in marks:
         # A dict row of the dynamic block holds its marks dumped.
         mark = ObservedIn.model_validate(dict(held)) if isinstance(held, Mapping) else held
-        name = str(getattr(mark, "detonation", "") or "")
+        # A stored row's mark is read only where it names a detonation.
+        name = detonation_named(getattr(mark, "detonation", ""))
         if not name:
             continue
         if name == FIRST_DETONATION:
             parts.append("the job's own detonation")
             continue
-        arguments = template_tokens_written_out(
-            sample_written_out(str(getattr(mark, "launched_with", "") or ""))
-        )
+        arguments = launch_text(getattr(mark, "launched_with", ""))
         number = name[1:] if name.startswith("d") else name
         said = code(arguments) if code is not None else f"`{arguments}`"
         parts.append(f"detonation {number}, launched with {said}")
@@ -133,4 +165,4 @@ def observed_words(
 
 def observed_property(marks: Sequence[ObservedIn]) -> list[dict[str, Any]] | None:
     """A row's marks as an export's property holds them; ``None`` (left out) for no mark."""
-    return [mark.model_dump() for mark in marks] or None
+    return [mark.model_dump() for mark in marks if detonation_named(mark.detonation)] or None

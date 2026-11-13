@@ -2065,7 +2065,7 @@ def _build_sections(
             if data.get("error"):
                 continue
             # A later detonation's read is drawn in tables of its own.
-            target = _OneDetonation(acc, data) if later_detonation(data) else acc
+            target = _OneDetonation(acc, entry) if later_detonation(entry) else acc
             builder(target, entry, data)
             # A purpose-built section reads its kind's answer shape (or the
             # rows a rule tool declares). An operator's own tool of the kind
@@ -2105,10 +2105,12 @@ class _OneDetonation(_Sections):
     in another's table.
     """
 
-    def __init__(self, inner: _Sections, data: Mapping[str, Any]) -> None:
+    def __init__(self, inner: _Sections, entry: Any) -> None:
+        from malspark.reporting.ledger_projection import later_detonation_name
+
         self.__dict__ = inner.__dict__
-        self._detonation = str(data.get("detonation") or "")
-        self._launch = launch_words(data)
+        self._detonation = later_detonation_name(entry)
+        self._launch = launch_words(entry.structured, self._detonation)
 
     def get(
         self,
@@ -2128,20 +2130,18 @@ class _OneDetonation(_Sections):
         )
 
 
-def launch_words(data: Mapping[str, Any]) -> str:
+def launch_words(data: Mapping[str, Any], name: str) -> str:
     """Under which launch a later detonation's reads were made, as one clause.
 
     ``when launched with `<arguments>` (detonation 2, asked for by <agent>
-    citing <entries>)``, the arguments written out as the Sandbox sentence
-    writes them.
+    citing <entries>)``: ``name`` is the detonation as
+    ``ledger_projection.later_detonation_name`` read it, and the arguments are
+    written as every surface writes them (``detonation_marks.launch_text``).
     """
-    from malspark.utils.written_forms import sample_written_out, template_tokens_written_out
+    from malspark.reporting.detonation_marks import launch_text
 
-    name = str(data.get("detonation") or "")
     number = name[1:] if name.startswith("d") else name
-    arguments = template_tokens_written_out(
-        sample_written_out(str(data.get("launched_with") or ""))
-    )
+    arguments = launch_text(data.get("launched_with"))
     askers = []
     for asker in data.get("requested_by") or ():
         if not isinstance(asker, Mapping):

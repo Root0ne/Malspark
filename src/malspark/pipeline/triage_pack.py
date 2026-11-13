@@ -3298,12 +3298,13 @@ def render_pack(entries: list[LedgerEntry], max_chars: int) -> str:
 def later_detonation_of(entry: Any) -> Mapping[str, Any] | None:
     """The answer of an entry of a further detonation, which states it; ``None`` for the job's own.
 
-    Decided by the one rule the report reads too (``ledger_projection.later_detonation``).
+    Decided by the one rule the report reads too (``ledger_projection.later_detonation``):
+    the platform's own read, naming a detonation in the citation checks' form.
     """
     from malspark.reporting.ledger_projection import later_detonation
 
     data = getattr(entry, "structured", None)
-    return data if isinstance(data, Mapping) and later_detonation(data) else None
+    return data if isinstance(data, Mapping) and later_detonation(entry) else None
 
 
 def _by_detonation(entries: list[LedgerEntry]) -> tuple[list[LedgerEntry], list[LedgerEntry]]:
@@ -3324,17 +3325,21 @@ def _marked_line(line: str, entry: Any) -> str:
     """A later detonation's entry's ``line``: its detonation and launch named, its ids qualified.
 
     ``[ev_0006] detonation 2, launched with `<arguments>`: sandbox sections: …
-    (d2/proc:9)``. The arguments are written as any sample text the pack holds.
+    (d2/proc:9)``. The detonation is the one rule's (``later_detonation_name``);
+    the arguments are written as every surface writes them
+    (``detonation_marks.launch_text``: one line, inert, cut), and the whole
+    line goes through the pack's line guard (:func:`_line_safe`) as every line does.
     """
-    data = later_detonation_of(entry)
+    from malspark.reporting.detonation_marks import launch_text
+    from malspark.reporting.ledger_projection import later_detonation_name
+
+    name = later_detonation_name(entry)
     found = _LINE_ID.match(line)
-    if data is None or found is None:
+    if not name or found is None:
         return line
-    name = str(data.get("detonation") or "")
-    number = name[1:] if name.startswith("d") else name
-    arguments = _sample_text(str(data.get("launched_with") or ""), None)
-    rest = sandbox_sections.qualified_in(line[found.end() :], name.lower())
-    return f"{found.group(0)}detonation {number}, launched with `{arguments}`: {rest}"
+    arguments = launch_text(entry.structured.get("launched_with"))
+    rest = sandbox_sections.qualified_in(line[found.end() :], name)
+    return _line_safe(f"{found.group(0)}detonation {name[1:]}, launched with `{arguments}`: {rest}")
 
 
 def _later_lines(entries: list[LedgerEntry], max_chars: int) -> str:

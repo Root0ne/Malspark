@@ -94,7 +94,7 @@ class TestTheReport:
         assert tables["sandbox_processes@d2"].evidence_ids == ["ev_0002"]
 
     def test_the_launch_words_write_the_arguments_out(self) -> None:
-        said = launch_words({**LATER, "launched_with": "[ev_0001]"})
+        said = launch_words({**LATER, "launched_with": "[ev_0001]"}, "d2")
         assert "[ev_0001]" not in said
 
 
