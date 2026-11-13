@@ -18,3 +18,10 @@
   them in its submission, not that the program read them. A request that is not honoured makes
   the run degraded. A job without them submits and reads as before, unchanged apart from the
   new setting in the settings snapshot.
+
+### Fixed
+
+- **A dialog taller than the window scrolls inside it and keeps its actions in reach.** The
+  console's submit dialog and sample-details dialog share one panel that never exceeds the
+  window's height; only its body scrolls, and the header and the Cancel / Start analysis row
+  stay visible.
