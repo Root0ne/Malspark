@@ -9,8 +9,8 @@ name, the arguments and a script type to the archive's bytes and a record of
 what was built. A provider declares that it honours arguments this way
 (:class:`LauncherSupport`) and sends the archive; nothing here knows a product.
 
-The build is deterministic: member names are generated (the sample under a
-neutral name that keeps its own extension, the launcher under a neutral name),
+The build is deterministic: member names are generated (the sample as
+``sample.exe``, the launcher under a neutral name),
 members are stored in a fixed order, uncompressed, with fixed timestamps,
 attributes and creating system, so the same inputs give the same archive and
 digest on any platform. Standard library only; no shell and no subprocess: the
@@ -19,8 +19,11 @@ launcher text with the quoting its script type needs.
 
 Script types:
 
-* ``ps1`` (PowerShell). ``Start-Process`` is given the sample's path (resolved
-  from the script's own folder) and the arguments as ONE string. A single
+* ``ps1`` (PowerShell). The script resolves its own folder from
+  ``$MyInvocation.MyCommand.Definition`` (set from PowerShell 2.0 on, where
+  ``$PSScriptRoot`` is not), and ``Start-Process`` is given the sample's path
+  in that folder, that folder as the working directory, and the arguments as
+  ONE string. A single
   string is the process's argument string as it stands: it is not split or
   re-quoted by PowerShell, so the program reads exactly what the operator typed
   after its name. In a single-quoted literal nothing is expanded (no ``$``,
@@ -41,7 +44,6 @@ from __future__ import annotations
 
 import hashlib
 import io
-import re
 import zipfile
 from dataclasses import dataclass
 from pathlib import Path
@@ -55,12 +57,17 @@ PS1 = "ps1"
 _PS_QUOTES = "'‘’‚‛"
 _BOM = b"\xef\xbb\xbf"
 _LAUNCHER_STEM = "launch"
-_SAMPLE_STEM = "sample"
-_EXTENSION = re.compile(r"\.[A-Za-z0-9]{1,8}")
+# The sample's generated name: the builder starts only a PE program that is
+# not a DLL, and a program started by its path needs the extension Windows
+# runs it by, whatever the upload was called.
+SAMPLE_MEMBER = "sample.exe"
 # 1980-01-01 is the earliest time a zip member can carry.
 _FIXED_TIME = (1980, 1, 1, 0, 0, 0)
 
 SCRIPT_HOSTS = {PS1: "PowerShell"}
+# The image names of each script type's host, as a sandbox's process list names
+# the process that runs the launcher (``schemas.sandbox_report.attribute_the_launcher``).
+SCRIPT_HOST_IMAGES = {PS1: ("powershell.exe", "pwsh.exe")}
 # How the record and the report name the launcher, by script type.
 LAUNCHER_PHRASES = {PS1: "a generated PowerShell launcher in the submitted archive"}
 
@@ -90,14 +97,6 @@ class BuiltLauncher:
     record: dict[str, Any]
 
 
-def _sample_member(sample_name: str) -> str:
-    """The generated name of the sample: neutral, its own extension kept when plain."""
-    tail = sample_name.replace("\\", "/").rsplit("/", 1)[-1]
-    dot = tail.rfind(".")
-    suffix = tail[dot:] if dot > 0 else ""
-    return _SAMPLE_STEM + (suffix.lower() if _EXTENSION.fullmatch(suffix) else "")
-
-
 def _is_pe_program(sample: bytes) -> bool:
     """Whether ``sample`` is a PE image that is not a DLL: a program a launcher starts."""
     if sample[:2] != b"MZ" or len(sample) < 0x40:
@@ -122,8 +121,9 @@ def launcher_text(script_type: str, sample_member: str, arguments: str) -> str:
             "cmd expand % and read ^, &, | and non-ASCII text as its own"
         )
     return (
-        f'Start-Process -FilePath "$PSScriptRoot\\{sample_member}" '
-        f"-ArgumentList {powershell_literal(arguments)}\r\n"
+        "$d = Split-Path -Parent $MyInvocation.MyCommand.Definition\r\n"
+        f"Start-Process -FilePath (Join-Path $d {powershell_literal(sample_member)}) "
+        f"-WorkingDirectory $d -ArgumentList {powershell_literal(arguments)}\r\n"
     )
 
 
@@ -131,6 +131,9 @@ def build_launcher_archive(
     sample: bytes, sample_name: str, arguments: str, script_type: str = PS1
 ) -> BuiltLauncher:
     """The archive holding ``sample`` and a launcher that starts it with ``arguments``.
+
+    ``sample_name`` is the upload's own name, which the archive never carries:
+    the sample's member is always :data:`SAMPLE_MEMBER`.
 
     Raises :class:`LauncherRefused` with the reason for a value the script type
     cannot carry faithfully: arguments that are not one command line
@@ -142,7 +145,7 @@ def build_launcher_archive(
     if problem:
         raise LauncherRefused(f"the arguments {problem}")
     try:
-        text = launcher_text(script_type, _sample_member(sample_name), arguments)
+        text = launcher_text(script_type, SAMPLE_MEMBER, arguments)
         body = _BOM + text.encode("utf-8")
     except UnicodeEncodeError as exc:
         raise LauncherRefused(
@@ -153,7 +156,7 @@ def build_launcher_archive(
             "the sample is not a Windows program (a PE image that is not a DLL), "
             "which is all a launcher starts"
         )
-    sample_member = _sample_member(sample_name)
+    sample_member = SAMPLE_MEMBER
     launcher_member = f"{_LAUNCHER_STEM}.{script_type}"
     buffer = io.BytesIO()
     with zipfile.ZipFile(buffer, "w", zipfile.ZIP_STORED) as archive:
@@ -169,6 +172,7 @@ def build_launcher_archive(
         record={
             "script_type": script_type,
             "script_host": SCRIPT_HOSTS[script_type],
+            "script_host_images": list(SCRIPT_HOST_IMAGES[script_type]),
             "launcher_member": launcher_member,
             "launcher_text": text,
             "launcher_encoding": "UTF-8 with a byte order mark",
@@ -230,4 +234,5 @@ def launcher_answer(
         honoured=True,
         via=LAUNCHER_PHRASES[str(built.record["script_type"])],
         launcher=built.record,
+        built=built,
     )

@@ -76,16 +76,36 @@ class TestTheBuilder:
         assert built.record["launcher_member"] == "launch.ps1"
 
     @pytest.mark.parametrize(
-        ("name", "member"),
+        "name",
         [
-            ("a.exe", "sample.exe"),
-            ("a", "sample"),
-            ("a.b c", "sample"),
-            ("../../x.scr", "sample.scr"),
+            "a.exe",
+            "a",
+            "a.b c",
+            "../../x.scr",
+            "x.exe_",
+            "x.bin",
+            "x.txt",
+            "x.ps1",
+            "x.lnk",
+            "X.EXE",
         ],
     )
-    def test_the_sample_keeps_a_plain_extension_only(self, name: str, member: str) -> None:
-        assert build_launcher_archive(PE, name, "-k").record["sample_member"] == member
+    def test_the_sample_is_always_sample_exe(self, name: str) -> None:
+        # The builder starts only a PE program; started by its path through
+        # ShellExecute it needs the extension Windows runs, whatever the upload's.
+        built = build_launcher_archive(PE, name, "-k")
+        assert built.record["sample_member"] == "sample.exe"
+        assert [n for n, _ in _members(built.archive)] == ["sample.exe", "launch.ps1"]
+        assert "'sample.exe'" in built.record["launcher_text"]
+
+    def test_the_archive_digest_is_golden(self) -> None:
+        # Pinned bytes, so a Python or zipfile change that moved them is seen.
+        built = build_launcher_archive(PE, "x.exe", "--url 'a b' -v")
+        assert built.record["archive_bytes"] == 536
+        assert built.record["archive_sha256"] == (
+            "bed2b332b678f01f1d91437f254de0ec8b5d23a9f956b7cdc9edd259404daf62"
+        )
+        assert hashlib.sha256(built.archive).hexdigest() == built.record["archive_sha256"]
 
     def test_the_launcher_file_is_utf8_with_a_bom_and_its_text_is_recorded_whole(self) -> None:
         built = build_launcher_archive(PE, "x.exe", "é -k")
@@ -111,15 +131,22 @@ class TestTheBuilder:
     def test_the_launcher_text(self, arguments: str, literal: str) -> None:
         assert powershell_literal(arguments) == literal
         assert launcher_text("ps1", "sample.exe", arguments) == (
-            f'Start-Process -FilePath "$PSScriptRoot\\sample.exe" -ArgumentList {literal}\r\n'
+            "$d = Split-Path -Parent $MyInvocation.MyCommand.Definition\r\n"
+            "Start-Process -FilePath (Join-Path $d 'sample.exe') -WorkingDirectory $d "
+            f"-ArgumentList {literal}\r\n"
         )
 
     def test_the_example_text(self) -> None:
+        # Its own folder from the invocation (PowerShell 2.0 sets no
+        # $PSScriptRoot outside a module), and that folder as the working one.
         built = build_launcher_archive(PE, "x.exe", "--url 'a b' -v")
         assert built.record["launcher_text"] == (
-            'Start-Process -FilePath "$PSScriptRoot\\sample.exe" '
+            "$d = Split-Path -Parent $MyInvocation.MyCommand.Definition\r\n"
+            "Start-Process -FilePath (Join-Path $d 'sample.exe') -WorkingDirectory $d "
             "-ArgumentList '--url ''a b'' -v'\r\n"
         )
+        assert "$PSScriptRoot" not in built.record["launcher_text"]
+        assert built.record["script_host_images"] == ["powershell.exe", "pwsh.exe"]
 
     @pytest.mark.parametrize("arguments", ["a\nb", "a\x00b", "a​b", "   ", "x" * 1025])
     def test_a_value_that_is_not_one_command_line_is_refused(self, arguments: str) -> None:
@@ -135,6 +162,13 @@ class TestTheBuilder:
             build_launcher_archive(_pe_bytes(dll=True), "x.dll", "-k")
         with pytest.raises(LauncherRefused, match="not a Windows program"):
             build_launcher_archive(b"#!/bin/sh\n", "x.sh", "-k")
+        # A script or an installer is no PE program either, and stays refused.
+        for body, name in (
+            (b"WScript.Echo 1", "x.vbs"),
+            (b"\xd0\xcf\x11\xe0" + b"\0" * 60, "x.msi"),
+        ):
+            with pytest.raises(LauncherRefused, match="not a Windows program"):
+                build_launcher_archive(body, name, "-k")
 
     @pytest.mark.parametrize("kind", ["bat", "cmd", "lnk", ""])
     def test_a_batch_launcher_is_not_built(self, kind: str) -> None:
@@ -151,6 +185,7 @@ class TestTheAnswer:
         sample.write_bytes(PE)
         answer = launcher_answer(SUPPORT, "-k 1", sample)
         assert answer.honoured is True
+        assert answer.built is not None and answer.built.record is answer.launcher
         assert answer.via == "a generated PowerShell launcher in the submitted archive"
         assert answer.launcher is not None and answer.launcher["picked_by"] == "the pick field"
 
@@ -212,6 +247,38 @@ class TestTheTriageRequest:
         start = raw.index(b"PK\x03\x04")
         end = raw.index(b"PK\x05\x06") + 22
         assert [n for n, _ in _members(raw[start:end])] == ["sample.exe", "launch.ps1"]
+
+    def test_the_archive_built_when_asked_is_the_one_sent(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        sample = tmp_path / "s.exe"
+        sample.write_bytes(PE)
+        built = launcher_answer(SUPPORT, "-k 1", sample).built
+        assert built is not None
+        # Not built again: a sample changed in between cannot make the archive
+        # sent differ from the one recorded.
+        sample.write_bytes(_pe_bytes() + b"changed")
+        import malspark.providers.sandbox.triage as triage_module
+
+        def _no_second_build(*_a: object, **_k: object) -> None:
+            raise AssertionError("built twice")
+
+        monkeypatch.setattr(triage_module, "build_for_submission", _no_second_build)
+        seen: list[httpx.Request] = []
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            seen.append(request)
+            return httpx.Response(200, json={"id": "s1"})
+
+        provider = _triage(handler)
+        options = SubmissionOptions(launch_arguments="-k 1", launcher=built)
+        assert provider.submit(sample, options=options) == "s1"
+        raw = seen[0].content
+        start = raw.index(b"PK\x03\x04")
+        end = raw.index(b"PK\x05\x06") + 22
+        assert raw[start:end] == built.archive
+        # The archive's bytes never reach a repr (a log line).
+        assert "PK" not in repr(options)
 
     def test_without_a_profile_only_the_pick_is_sent(self, tmp_path: Path) -> None:
         body, _ = self._capture(tmp_path, SubmissionOptions(launch_arguments="-k"))

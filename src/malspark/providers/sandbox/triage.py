@@ -863,11 +863,19 @@ class TriageSandboxProvider(SandboxProvider):
         return max(candidates)[1]
 
     def _launcher_for(self, path: Path, options: SubmissionOptions | None) -> BuiltLauncher | None:
-        """The launcher archive of a submission that carries arguments; ``None`` without."""
+        """The launcher archive of a submission that carries arguments; ``None`` without.
+
+        The archive built when the run asked (``SubmissionOptions.launcher``), so
+        the one sent is the one recorded; built here only for a caller that
+        carried none.
+        """
         arguments = options.launch_arguments if options is not None else ""
         support = self.capabilities.launcher
         if not arguments or support is None:
             return None
+        carried = options.launcher if options is not None else None
+        if isinstance(carried, BuiltLauncher):
+            return carried
         try:
             return build_for_submission(support, path, arguments)
         except LauncherRefused as exc:

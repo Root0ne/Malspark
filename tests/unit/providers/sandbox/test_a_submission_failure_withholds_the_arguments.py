@@ -177,3 +177,87 @@ class TestAnEchoingSandbox:
         assert "hunter2" not in caplog.text
         assert "hunter2" not in (app.container.sandbox_failure or "")
         assert "withheld" in (app.container.sandbox_failure or "")
+
+
+class TestWhatTheMaskRecognises:
+    @pytest.mark.parametrize(
+        "spelling",
+        [
+            SECRET,
+            "--password%20hunter2-zq81",
+            "--password+hunter2-zq81",
+            json.dumps(SECRET)[1:-1],
+        ],
+    )
+    def test_as_sent_url_form_and_json_spellings_are_withheld(self, spelling: str) -> None:
+        assert "hunter2" not in mask_submitted(f"echo: {spelling} end", SECRET)
+
+    def test_a_slash_kept_or_encoded_is_withheld_either_way(self) -> None:
+        value = "--url https://c2.example/x"
+        for spelling in ("--url%20https%3A%2F%2Fc2.example%2Fx", "--url%20https%3A//c2.example/x"):
+            assert "c2.example" not in mask_submitted(spelling, value)
+
+    def test_other_encodings_are_not_recognised(self) -> None:
+        import base64
+
+        # Stated as the guarantee's edge, not hidden: these pass through.
+        encoded = base64.b64encode(SECRET.encode()).decode()
+        assert mask_submitted(encoded, SECRET) == encoded
+        assert mask_submitted(SECRET.upper(), SECRET) == SECRET.upper()
+
+    @pytest.mark.parametrize("short", ["1", "-v", "/s "])
+    def test_a_value_too_short_is_left_and_the_record_says_so(self, short: str) -> None:
+        from malspark.providers.submission import UNMASKED_NOTE, launch_record
+
+        assert mask_submitted("HTTP 401 for -v /s 1", short) == "HTTP 401 for -v /s 1"
+        record = launch_record("triage", short, LaunchArgumentsAnswer(honoured=True))
+        assert record["unmasked"] == UNMASKED_NOTE
+        assert "unmasked" not in launch_record("t", SECRET, LaunchArgumentsAnswer(honoured=True))
+
+    def test_the_run_keeps_its_own_words_and_masks_the_sandbox_s(self, tmp_path: Path) -> None:
+        import asyncio
+
+        from tests.unit.pipeline.test_a_run_records_its_launch_arguments import _Provider
+        from tests.unit.pipeline.test_a_sandbox_naming_another_target_is_told import _app
+
+        class Refusing(_Provider):
+            def submit(self, sample_path: str, **kwargs: Any) -> str:
+                raise RuntimeError(f"HTTP 401: {kwargs['options'].launch_arguments}")
+
+        for arguments, kept in (("1", "HTTP 401: 1"), ("submitting", "HTTP 401: [the")):
+            app = _app(Refusing(passes=True))
+            app.launch_arguments = arguments
+            assert asyncio.run(app._submit_to_sandbox(str(_pe(tmp_path)))) is None
+            failure = app.container.sandbox_failure or ""
+            # The platform's stage words are its own, never masked.
+            assert failure.startswith("submitting the sample: ")
+            assert kept in failure
+
+
+class TestTheCapeChain:
+    def _client(self, exc: Exception) -> CAPEv2Client:
+        def handler(request: httpx.Request) -> httpx.Response:
+            raise exc
+
+        client = CAPEv2Client(base_url="https://cape.example")
+        client._http = httpx.Client(
+            base_url="https://cape.example", transport=httpx.MockTransport(handler)
+        )
+        return client
+
+    def test_without_a_mask_the_cause_is_kept(self, tmp_path: Path) -> None:
+        from malspark.loaders.cape2_client import SandboxError
+
+        cause = httpx.ConnectError("refused")
+        with pytest.raises(SandboxError) as caught:
+            self._client(cause).submit(str(_pe(tmp_path)))
+        assert caught.value.__cause__ is cause
+
+    def test_with_a_mask_the_cause_is_dropped(self, tmp_path: Path) -> None:
+        from malspark.loaders.cape2_client import SandboxError
+
+        with pytest.raises(SandboxError) as caught:
+            self._client(httpx.ConnectError(f"refused {SECRET}")).submit(
+                str(_pe(tmp_path)), mask=lambda t: mask_submitted(t, SECRET)
+            )
+        assert caught.value.__cause__ is None and "hunter2" not in str(caught.value)

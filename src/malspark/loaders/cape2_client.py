@@ -214,7 +214,11 @@ class CAPEv2Client:
                 )
             except Exception as exc:
                 said = mask(str(exc)) if mask else str(exc)
-                raise SandboxError(f"Submission request failed: {said}") from None
+                # The cause is dropped only where its own text could carry a
+                # value the mask withholds.
+                raise SandboxError(f"Submission request failed: {said}") from (
+                    None if mask else exc
+                )
 
         self._raise_for_status(response, "submit", mask)
         try:
