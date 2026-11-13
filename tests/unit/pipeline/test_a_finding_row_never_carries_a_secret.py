@@ -427,6 +427,11 @@ CODE_OWNED_CALLS: frozenset[str] = (
             # ``_claim_lines`` answers with this module's own words for the lines
             # a claim is written with, with or without its TECHNIQUE line.
             "_claim_lines",
+            # ``format_entry_id`` answers the counter's own spelling of a number.
+            "format_entry_id",
+            # ``unissued_sentence`` is walked as a message builder below: each id
+            # it names goes through the helper inside it.
+            "unissued_sentence",
         }
     )
     | BUILTIN_ANSWERS
@@ -453,6 +458,9 @@ MESSAGE_BUILDERS: frozenset[str] = frozenset(
         # or a tool wrote goes through the helper.
         "_functions_not_described",
         "exits_question",
+        # The cited ids a job never issued, each through the helper, and the
+        # span of ids the job's own counter issued.
+        "unissued_sentence",
     }
 )
 
