@@ -589,7 +589,9 @@ class MalsparkApp:
             # before anything is sent: handed over only where it passes them,
             # and recorded either way (``providers.submission``).
             record.provider = str(provider.id)
-            options = self._submission_options(provider, path, record)
+            # Off the event loop: where a launcher carries the arguments, the
+            # answer reads, archives and hashes the sample.
+            options = await asyncio.to_thread(self._submission_options, provider, path, record)
             if not caps.can_submit and caps.accepts_uploaded_report:
                 # No detonation: the evidence is already here.
                 stage = "reading the attached report"
@@ -649,6 +651,9 @@ class MalsparkApp:
                 # a provider written before ``options`` existed takes it as it did.
                 task_id = await asyncio.to_thread(provider.submit, str(path))
             record.submit_returned = True
+            # A launcher's built archive (about the sample's size) is let go
+            # once it is sent; the record keeps its digests and text.
+            options = None
             record.task_id = str(task_id)
             if host is not None:
                 record.uploads[-1] = upload_record(
@@ -788,15 +793,16 @@ class MalsparkApp:
                 record.target_claim = claim
                 record.report = result.report
                 return result.report  # type: ignore[no-any-return]
-            logger.warning("Sandbox task ended with status=%s: %s", result.status, result.error)
+            from malspark.providers.submission import mask_submitted, submitted_values
+
+            # The sandbox's words, with the submitted values withheld, in the
+            # log as in the failure reason.
+            said = mask_submitted(str(result.error or ""), *submitted_values(record.launch))
+            logger.warning("Sandbox task ended with status=%s: %s", result.status, said)
             ended = f"sandbox task {result.task_id} ended with status {result.status!r}"
             if result.status in ("reported", "partial"):
                 ended += " and no report"
             elif result.error and result.error != f"Sandbox status: {result.status}":
-                from malspark.providers.submission import mask_submitted, submitted_values
-
-                # The sandbox's words, with the submitted values withheld.
-                said = mask_submitted(str(result.error), *submitted_values(record.launch))
                 ended += f": {said}"
             self._sandbox_failed(ended, record)
             return None
@@ -916,6 +922,14 @@ class MalsparkApp:
         launch = detonation.launch if detonation is not None else self.launch_record
         if launch is not None:
             report[LAUNCH_KEY] = dict(launch)
+            if detonation is not None:
+                # A further detonation's mark says which it is and who asked.
+                report[LAUNCH_KEY]["detonation"] = detonation.name
+                report[LAUNCH_KEY]["requested_by"] = list(
+                    dict.fromkeys(
+                        str(a.get("agent") or "") for a in detonation.requested_by if a.get("agent")
+                    )
+                )
         return report
 
     async def detonate_further(self, record: Any) -> None:
