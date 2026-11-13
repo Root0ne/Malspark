@@ -197,6 +197,31 @@ class TestWhatTheMaskRecognises:
         for spelling in ("--url%20https%3A%2F%2Fc2.example%2Fx", "--url%20https%3A//c2.example/x"):
             assert "c2.example" not in mask_submitted(spelling, value)
 
+    @pytest.mark.parametrize(
+        "spelling",
+        [
+            # Any byte percent-encoded, in either case of hex digit.
+            "--password%20hunter2%2Dzq81",
+            "%2d%2dpassword%20hunter2-zq81",
+            "".join(f"%{b:02X}" for b in SECRET.encode()),
+            "".join(f"%{b:02x}" for b in SECRET.encode()),
+            "--password+hunter2%2dzq81",
+        ],
+    )
+    def test_any_percent_encoding_is_withheld_and_only_it(self, spelling: str) -> None:
+        out = mask_submitted(f"HTTP 400 %FF+{spelling}&next=1 caf%C3%A9", SECRET)
+        assert out == "HTTP 400 %FF+[the launch arguments, withheld]&next=1 caf%C3%A9"
+
+    def test_a_percent_encoded_non_ascii_value_is_withheld(self) -> None:
+        value = "--name café-zq81"
+        assert mask_submitted("q=--name%20caf%C3%A9-zq81!", value) == (
+            "q=[the launch arguments, withheld]!"
+        )
+        # A run of bytes that is not UTF-8 stays as written around the value.
+        assert mask_submitted("%C3%2D%2Dname caf%c3%a9-zq81", value) == (
+            "%C3[the launch arguments, withheld]"
+        )
+
     def test_other_encodings_are_not_recognised(self) -> None:
         import base64
 

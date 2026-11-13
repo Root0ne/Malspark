@@ -18,8 +18,10 @@ submission of the same sample with other options is the same call again.
 
 from __future__ import annotations
 
+import codecs
 import inspect
 import json
+import re
 import unicodedata
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -246,11 +248,12 @@ UNMASKED_NOTE = (
 
 
 def _spellings(value: str) -> list[str]:
-    """The ways ``value`` can occur in a body that echoes it.
+    """The ways ``value`` can occur in a body that echoes it, read as written.
 
     As it is, URL-encoded (spaces as ``%20``, and with ``/`` kept or not),
     form-encoded (spaces as ``+``) and JSON-escaped (non-ASCII kept or
-    written as ``\\u`` escapes). No other encoding is recognised.
+    written as ``\\u`` escapes). Any other percent-encoding is found in the
+    text percent-decoded (:func:`_decoded_spans`).
     """
     found = [value]
     candidates = [
@@ -266,6 +269,83 @@ def _spellings(value: str) -> list[str]:
     return found
 
 
+_PERCENT = re.compile(r"%[0-9A-Fa-f]{2}")
+
+
+def _decoded_spans(text: str, plus_is_space: bool) -> tuple[str, list[tuple[int, int]]]:
+    """``text`` percent-decoded, and for each decoded character the span of ``text`` it came from.
+
+    Every ``%XX`` (either case of hex digit) is a byte, and a run of them is
+    read as UTF-8; a byte that does not start or continue a character there
+    stays as written. With ``plus_is_space``, ``+`` reads as a space, as a
+    form body writes one.
+    """
+    out: list[str] = []
+    spans: list[tuple[int, int]] = []
+    position = 0
+    while position < len(text):
+        run = _PERCENT.match(text, position)
+        if run is None:
+            ch = text[position]
+            out.append(" " if plus_is_space and ch == "+" else ch)
+            spans.append((position, position + 1))
+            position += 1
+            continue
+        decoder = codecs.getincrementaldecoder("utf-8")()
+        start = position
+        while run is not None:
+            try:
+                decoded = decoder.decode(bytes([int(run.group()[1:], 16)]))
+            except UnicodeDecodeError:
+                # Not UTF-8 from ``start`` on: that byte stays as written.
+                decoder.reset()
+                out.extend(text[start : start + 3])
+                spans.extend((i, i + 1) for i in range(start, start + 3))
+                position = start = start + 3
+                run = _PERCENT.match(text, position)
+                continue
+            position = run.end()
+            for ch in decoded:
+                out.append(ch)
+                spans.append((start, position))
+            if decoded:
+                start = position
+            run = _PERCENT.match(text, position)
+        # Bytes left mid-character at the run's end stay as written.
+        out.extend(text[start:position])
+        spans.extend((i, i + 1) for i in range(start, position))
+    return "".join(out), spans
+
+
+def _mask_decoded(text: str, value: str, mask: str) -> str:
+    """``text`` with each stretch that percent-decodes to ``value`` replaced by ``mask``.
+
+    Only the stretch of the text that decodes to the value is replaced; the
+    text around it is kept as written.
+    """
+    if "%" not in text and "+" not in text:
+        return text
+    found: list[tuple[int, int]] = []
+    for plus_is_space in (False, True):
+        decoded, spans = _decoded_spans(text, plus_is_space)
+        for spelling in _spellings(value):
+            at = decoded.find(spelling)
+            while at != -1:
+                found.append((spans[at][0], spans[at + len(spelling) - 1][1]))
+                at = decoded.find(spelling, at + len(spelling))
+    if not found:
+        return text
+    merged: list[list[int]] = []
+    for start, end in sorted(found):
+        if merged and start <= merged[-1][1]:
+            merged[-1][1] = max(merged[-1][1], end)
+        else:
+            merged.append([start, end])
+    for start, end in reversed(merged):
+        text = text[:start] + mask + text[end:]
+    return text
+
+
 def mask_submitted(text: str, arguments: str = "", launcher_text: str = "") -> str:
     """``text`` with the submitted launch arguments and launcher text withheld where they occur.
 
@@ -274,9 +354,11 @@ def mask_submitted(text: str, arguments: str = "", launcher_text: str = "") -> s
     platform's own words around it: a sandbox that echoes the form it
     received must not carry the operator's arguments into a log or a report.
     The launcher text is masked first, as it holds the arguments. Each value
-    is matched as it was sent, URL-encoded, form-encoded and JSON-escaped;
-    other encodings (base64, a changed case, a cut copy) are not recognised.
-    A value shorter than :data:`MASKED_MIN_CHARS` is not masked.
+    is matched as it was sent, JSON-escaped, and in any percent-encoding (any
+    of its bytes written as ``%XX`` in either case, a space also as ``+``), the
+    stretch that decodes to it being what is replaced; other encodings
+    (base64, a changed case, a cut copy) are not recognised. A value shorter
+    than :data:`MASKED_MIN_CHARS` is not masked.
     """
     for value, mask in (
         (launcher_text, _LAUNCHER_MASK),
@@ -287,6 +369,7 @@ def mask_submitted(text: str, arguments: str = "", launcher_text: str = "") -> s
             continue
         for spelling in sorted(_spellings(value), key=len, reverse=True):
             text = text.replace(spelling, mask)
+        text = _mask_decoded(text, value, mask)
     return text
 
 
