@@ -41,7 +41,7 @@ import json
 import re
 import sys
 import threading
-from collections.abc import Mapping, Sequence
+from collections.abc import Iterable, Mapping, Sequence
 from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field, PrivateAttr
@@ -96,6 +96,24 @@ def entry_ids_in(text: str) -> set[str]:
 def format_entry_id(seq: int) -> str:
     """The citation id for the ``seq``-th tool call of a job (1-based)."""
     return f"ev_{max(1, int(seq)):0{_ID_DIGITS}d}"
+
+
+def unissued_ids(ids: Iterable[str], issued: int) -> list[str]:
+    """The ids of ``ids`` a job's counter that handed out ``issued`` ids never issued, in order.
+
+    One decision for every reader that asks whether a cited id is a job's: a
+    counter issues ``ev_0001`` up to its count and nothing else, so an id is
+    the job's exactly when its number lies in that range, whichever agent the
+    call that took it belonged to. A value that is no entry id is not read.
+    """
+    out: list[str] = []
+    for value in ids:
+        text = str(value).strip()
+        if not ENTRY_ID_RE.fullmatch(text):
+            continue
+        if not 1 <= int(text[3:]) <= int(issued):
+            out.append(text)
+    return out
 
 
 class ServerChanges:
@@ -236,6 +254,16 @@ class EvidenceCounter:
         """How many ids this counter has handed out."""
         with self._lock:
             return self._seq
+
+
+def issued_by(counter: Any) -> int | None:
+    """How many entry ids the job's ``counter`` has issued, read at the moment it is asked.
+
+    Every agent of the job draws from one counter, so a check reads it when it
+    runs, after the agent's own calls and any a concurrent agent made. ``None``
+    with no counter (an agent outside a job), of which nothing can be said.
+    """
+    return int(counter.issued) if counter is not None else None
 
 
 # What the ledger holds for a call whose answer the conversation had no room

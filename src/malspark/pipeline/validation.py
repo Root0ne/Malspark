@@ -21,6 +21,7 @@ and the drop of an indicator that named a value no tool ever saw.
 from __future__ import annotations
 
 import bisect
+import enum
 import ipaddress
 import json
 import re
@@ -45,6 +46,7 @@ from malspark.analysis.sandbox_sections import ItemIndex, cited_item_ids, is_ite
 from malspark.analysis.technique_ids import (
     ID_BODY,
     TECHNIQUE_ID_EXACT_RE,
+    TECHNIQUE_RE,
     TECHNIQUE_WORD_RE,
     declared_technique_id,
     is_technique_id,
@@ -81,7 +83,13 @@ from malspark.pipeline.events import (
 from malspark.pipeline.exit_branches import ExitSite, exits_question, uncovered_exits
 from malspark.pipeline.feedback_mode import FEED_BACK, feedback_mode, feeds_back
 from malspark.pipeline.retry_merge import folded_title
-from malspark.schemas.evidence import ENTRY_ID_RE, answer_not_shown, entry_ids_in
+from malspark.schemas.evidence import (
+    ENTRY_ID_RE,
+    answer_not_shown,
+    entry_ids_in,
+    format_entry_id,
+    unissued_ids,
+)
 from malspark.schemas.judgement import BENIGN_VERDICT, SEVERITY_RATINGS, VERDICT_VALUES
 from malspark.schemas.stix_pattern import read_comparisons
 from malspark.utils.marked_cut import marked_cut
@@ -519,6 +527,13 @@ def technique_facts_note(violations: Sequence[Violation], claims: Iterable[Any],
 # or one the run never recorded.
 UNGROUNDED_TECHNIQUE_CODE = "isr.ungrounded_technique"
 
+# A claim's EVIDENCE line names an entry id the job never issued: past the
+# count of the job's evidence counter, which issues every agent's ids. An id
+# another agent's call took is the job's and is not asked about. A technique
+# claim whose line names only such ids is asked the ungrounded-technique
+# question, which then says so, instead of a second one.
+UNISSUED_EVIDENCE_CODE = "isr.unissued_evidence"
+
 # A check that raised on an answer. Its findings are missing from the run, and
 # the run says so: an advisory row naming the check and the exception's class,
 # never shown to the producer (it cannot fix the check), never a reason to drop
@@ -718,6 +733,38 @@ def _cited_items(claim: Any) -> list[str]:
     return item_ids_in(str(getattr(claim, "evidence_ref", "") or ""))
 
 
+def entry_ids_written(text: str) -> list[str]:
+    """The entry ids ``text`` writes, lower-cased, once each, in the order written."""
+    return list(dict.fromkeys(found.lower() for found in ENTRY_ID_RE.findall(text or "")))
+
+
+def unissued_sentence(ids: Sequence[str], issued: int) -> str:
+    """What a question says of cited ids the job never issued, and the ids it did issue.
+
+    At most six ids are named (:func:`_named_ids`), and how many more there are.
+    """
+    named = _named_ids(ids)
+    span = (
+        f"its ids run from {format_entry_id(1)} to {format_entry_id(issued)}"
+        if issued > 0
+        else "it has issued none"
+    )
+    return f"{named}, which this run never issued ({span})"
+
+
+def unissued_evidence_violation(ids: Sequence[str], issued: int, *, path: str) -> Violation:
+    """The question for a claim block whose EVIDENCE line names ids the job never issued."""
+    return Violation(
+        code=UNISSUED_EVIDENCE_CODE,
+        message=(
+            f"EVIDENCE names {unissued_sentence(ids, issued)}. Cite the entry the claim was "
+            "read from, or remove the id."
+        ),
+        path=path,
+        subject=str(ids[0]) if ids else "",
+    )
+
+
 def _cites_a_ledger_entry(
     claim: Any, cited_by_findings: set[str], citable: set[str], items: ItemIndex | None = None
 ) -> bool:
@@ -746,6 +793,385 @@ def _cites_a_ledger_entry(
     return bool(technique and technique in cited_by_findings)
 
 
+# The words that state a technique id a claim's sentence names as absent,
+# withdrawn or retired, read on either side of the id by :func:`_stated_absent`
+# and by the sentence reading alone (:func:`sentence_technique_violations`):
+# the shared negation reader is left as it is. An id counts as stated absent
+# only where the sentence does nothing else with it; in doubt it is asked.
+#
+# A predicate after the id, joined to it by a copula ("T1055 is not asserted",
+# "(T1547.001) reading is withdrawn"), a comma ("T1430, not asserted") or a
+# parenthesis ("T1064 (deprecated)"). One whose word also says what a sample
+# does takes no tail and stands only where it ends its clause: "the payload
+# (T1105) was dropped to disk" asserts the drop.
+ABSENT_ID_PREDICATES: tuple[tuple[str, bool], ...] = (
+    ("not asserted", False),
+    ("withdrawn", False),
+    ("not supported", False),
+    ("not adopted", False),
+    ("retired", False),
+    ("deprecated", False),
+    ("revoked", False),
+    ("dropped", True),
+)
+# A verb before the id whose object it is ("the report withdraws T1547.001").
+ABSENT_ID_VERBS: tuple[str, ...] = ("withdraws", "withdrew", "retracts", "retracted")
+# The copulas that join an id, or the noun it names, to its predicate.
+ABSENT_ID_COPULAS: tuple[str, ...] = (
+    "is",
+    "are",
+    "was",
+    "were",
+    "has been",
+    "have been",
+    "had been",
+    "remains",
+    "remain",
+    "stays",
+    "stay",
+)
+# An adverb a copula may carry before the predicate: "is therefore withdrawn".
+ABSENT_ID_ADVERBS: tuple[str, ...] = ("also", "therefore", "thus", "hence", "still")
+# The short tails the statement may end on, at most two: an agent ("by the
+# scanner"), a place ("here"), a role ("as a label") or the id that replaces
+# it ("in favour of T1059"). ``{agent}`` is one word, after an article or not;
+# ``{id}`` is a technique id.
+ABSENT_ID_TAILS: tuple[str, ...] = (
+    "by {agent}",
+    "here",
+    "as a label",
+    "as a tag",
+    "as a technique",
+    "in this report",
+    "in this claim",
+    "for this sample",
+    "in favour of {id}",
+    "in favor of {id}",
+)
+# A reason that may follow the statement: "T1430 is not asserted because no
+# GPS call exists".
+ABSENT_ID_REASONS: tuple[str, ...] = ("because", "since", "given that")
+# What joins one more absent id or predicate to the statement: "T1055 and
+# T1027 are withdrawn", "is withdrawn and is not asserted here". Anything
+# else after a joint goes on about the id.
+ABSENT_ID_JOINTS: tuple[str, ...] = ("and", "or")
+# A contrast or continuation anywhere later in the same sentence: the sentence
+# goes on about the id or the behaviour, so the id is asked.
+ABSENT_ID_TURNS: tuple[str, ...] = (
+    "but",
+    "yet",
+    "however",
+    "though",
+    "although",
+    "whereas",
+    "nevertheless",
+    "nonetheless",
+    "instead",
+    "now",
+    "then",
+)
+# The subject a next clause opens with when it goes on about the id or the
+# behaviour: "T1430 is not asserted, the sample reads the GPS fix".
+ABSENT_ID_CONTINUATIONS: tuple[str, ...] = (
+    "it",
+    "its",
+    "this",
+    "they",
+    "the sample",
+    "the code",
+    "the binary",
+    "the malware",
+    "the payload",
+    "the loader",
+)
+
+
+def _alternation(words: Iterable[str]) -> str:
+    """``words`` as one regex alternation, longest first, each space any run of spaces."""
+    ordered = sorted(words, key=len, reverse=True)
+    return "|".join(re.escape(w).replace(r"\ ", r"\s+") for w in ordered)
+
+
+_ABSENT_COPULA = _alternation(ABSENT_ID_COPULAS)
+_ABSENT_PREDICATE = _alternation(words for words, _ends in ABSENT_ID_PREDICATES)
+_ABSENT_PLAIN_END = {" ".join(words.split()) for words, ends in ABSENT_ID_PREDICATES if ends}
+# What joins two ids of one list ("T1055 and T1027 are", "T1055, T1027"):
+# the list is read once per text (:class:`_AbsenceIndex`), never per id.
+_ABSENT_LIST_LINK_RE = re.compile(r"\s*(?:,|/|\band\b|\bor\b)\s*", re.IGNORECASE)
+# What may stand between the id's list and its predicate: the id's closing
+# bracket or quote, a possessive, and up to three nouns ("entry", "reading",
+# "identifier"), none a copula or a joint.
+_ABSENT_AFTER_RE = re.compile(
+    "[)\\]\"'’”]*(?:'s)?"
+    rf"(?:\s+(?!(?:{_ABSENT_COPULA}|and|or|but|not)\b)[A-Za-z][\w-]*){{0,3}}"
+    rf"(?:\s+(?:{_ABSENT_COPULA})(?:\s+(?:{_alternation(ABSENT_ID_ADVERBS)}))?\s+"
+    r"|\s*(?P<comma>,)\s*|\s*(?P<paren>\()\s*)"
+    rf"(?P<predicate>{_ABSENT_PREDICATE})\b",
+    re.IGNORECASE,
+)
+# The verb, then at most two words ("its earlier") and an opening bracket.
+_ABSENT_BEFORE_RE = re.compile(
+    rf"\b(?:{_alternation(ABSENT_ID_VERBS)})\s+(?:[\w'.-]+\s+){{0,2}}[(\[\"']?$",
+    re.IGNORECASE,
+)
+_ABSENT_TAIL_RE = re.compile(
+    r"(?:\s+(?:"
+    + "|".join(
+        _alternation([tail])
+        .replace(r"\{agent\}", r"(?:(?:the|a|an|its|this)\s+)?\w[\w-]*")
+        .replace(r"\{id\}", ID_BODY)
+        for tail in ABSENT_ID_TAILS
+    )
+    + r")\b){0,2}",
+    re.IGNORECASE,
+)
+_ABSENT_SENTENCE_END_RE = re.compile(r"\s*[)\]\"'’”]*\s*(?:$|[.!?](?!\w))")
+_ABSENT_BOUNDARY_RE = re.compile(r"\s*([;:,)\]])\s*")
+_ABSENT_CLOSING_RE = re.compile(r"\s*\)")
+# A reason in brackets after the predicate: "T1430 is not asserted (no GPS API)".
+_ABSENT_BRACKET_REASON_RE = re.compile(r"\s*\([^()\n]*\)")
+_ABSENT_REASON_RE = re.compile(rf"\s+(?:{_alternation(ABSENT_ID_REASONS)})\b", re.IGNORECASE)
+_ABSENT_JOINT_RE = re.compile(
+    rf"\s*,?\s+(?:{_alternation(ABSENT_ID_JOINTS)})\s+"
+    rf"(?:(?:{_ABSENT_COPULA})\s+(?:(?:{_alternation(ABSENT_ID_ADVERBS)})\s+)?)?"
+    rf"(?:(?:{_ABSENT_PREDICATE})\b|[(\[\"']?{ID_BODY}\b[)\]\"']?)",
+    re.IGNORECASE,
+)
+_ABSENT_CONTINUATION_RE = re.compile(
+    rf"(?:\s*,?\s+(?:{_alternation(ABSENT_ID_JOINTS)})\s+)?"
+    rf"(?:{_alternation(ABSENT_ID_CONTINUATIONS)})\b",
+    re.IGNORECASE,
+)
+_ABSENT_TURN_RE = re.compile(rf"\b(?:{_alternation(ABSENT_ID_TURNS)})\b", re.IGNORECASE)
+# Where a sentence ends, for the contrast or continuation read after the statement.
+_SENTENCE_END_RE = re.compile(r"[.!?](?=\s|$)|\n")
+
+
+class _IdAbsence(enum.Enum):
+    """What :func:`_stated_absent` reads of one id."""
+
+    STATED = "the sentence states the id absent and does nothing else with it"
+    GOES_ON = "the sentence states the id absent, then turns or goes on about it"
+    NONE = "the sentence makes no absence statement of its own about the id"
+
+
+class _AbsenceIndex:
+    """What :func:`_stated_absent` reads of one text once: its contrast words,
+    its sentence ends, where each id's list ends, and the reading after each
+    list already made."""
+
+    def __init__(self, text: str) -> None:
+        self.turns = [m.start() for m in _ABSENT_TURN_RE.finditer(text)]
+        self.ends = [m.start() for m in _SENTENCE_END_RE.finditer(text)]
+        # Each id's end mapped to the end of the last id its list joins on.
+        self.list_end: dict[int, int] = {}
+        later: re.Match[str] | None = None
+        for match in reversed(list(TECHNIQUE_RE.finditer(text))):
+            joined = later is not None and _ABSENT_LIST_LINK_RE.fullmatch(
+                text, match.end(), later.start()
+            )
+            self.list_end[match.end()] = (
+                self.list_end[later.end()] if joined and later else match.end()
+            )
+            later = match
+        self.after_list: dict[int, _IdAbsence] = {}
+
+    def before_the_sentence_ends(self, pos: int) -> bool:
+        """Whether a contrast word stands at or after ``pos`` within the same sentence."""
+        turn = bisect.bisect_left(self.turns, pos)
+        if turn == len(self.turns):
+            return False
+        end = bisect.bisect_left(self.ends, pos)
+        return end == len(self.ends) or self.turns[turn] < self.ends[end]
+
+
+def _stated_absent(
+    text: str, start: int, end: int, index: _AbsenceIndex | None = None
+) -> _IdAbsence:
+    """What the sentence states of the id at ``text[start:end]``: absent, absent and more, or no.
+
+    The statement is one of :data:`ABSENT_ID_PREDICATES` after the id, its
+    list or a noun it names, of which the id is the subject; or one of
+    :data:`ABSENT_ID_VERBS` before it, whose object the id is. It is
+    :attr:`_IdAbsence.STATED` when the statement ends its clause: after at most
+    two of :data:`ABSENT_ID_TAILS`, one more absent id or predicate after a
+    joint (:data:`ABSENT_ID_JOINTS`), and a reason, in brackets or after one
+    of :data:`ABSENT_ID_REASONS` (a predicate that also names a sample's
+    action takes no tail or reason), the sentence or the clause ends, and a
+    statement set off by a comma or a parenthesis ("T1430, not asserted",
+    "T1064 (deprecated)") ends with its sentence or clause. It is
+    :attr:`_IdAbsence.GOES_ON` when a word of :data:`ABSENT_ID_TURNS` follows
+    in the same sentence, or the next clause opens with one of
+    :data:`ABSENT_ID_CONTINUATIONS`: the sentence asserts more of the id, and
+    the id is asked. Anything else is :attr:`_IdAbsence.NONE`, and the shared
+    negation reader decides.
+
+    The reading is lexical. It does not see an assertion hidden in a reason
+    ("T1430 is not asserted because the code performs it under another name")
+    or in a following clause with no turn or continuation word ("T1430 is not
+    asserted; location capture runs at 0x401000"), and a negation before the
+    statement is the shared reader's to read: "it is not the case that T1430
+    is not asserted" is read as the absence it ends on.
+
+    ``index`` is the text's :class:`_AbsenceIndex`, built once per text by
+    the caller. Every id of a list reads the same statement after the list's
+    last id, and that reading is made once, so the cost is linear in the
+    sentence: each search starts at a fixed point and the list is walked once.
+    """
+    index = index or _AbsenceIndex(text)
+    list_end = index.list_end.get(end, end)
+    stated = _ABSENT_AFTER_RE.match(text, list_end)
+    if stated:
+        if list_end not in index.after_list:
+            index.after_list[list_end] = _after_the_statement(text, stated, stated.end(), index)
+        return index.after_list[list_end]
+    verb_clause = text[max(0, start - _NEGATION_WINDOW) : start]
+    verb_breaks = list(_CLAUSE_BREAK_RE.finditer(verb_clause))
+    if verb_breaks:
+        verb_clause = verb_clause[verb_breaks[-1].end() :]
+    if not _ABSENT_BEFORE_RE.search(verb_clause):
+        return _IdAbsence.NONE
+    return _after_the_statement(text, None, end, index)
+
+
+def _after_the_statement(
+    text: str, stated: re.Match[str] | None, pos: int, index: _AbsenceIndex
+) -> _IdAbsence:
+    """The part of :func:`_stated_absent` read after its statement, from ``pos``."""
+    appositive = bool(stated and (stated.group("comma") or stated.group("paren")))
+    plain = bool(
+        stated and " ".join(stated.group("predicate").lower().split()) in _ABSENT_PLAIN_END
+    )
+    while True:
+        if not plain:
+            tail = _ABSENT_TAIL_RE.match(text, pos)
+            pos = tail.end() if tail else pos
+        joint = _ABSENT_JOINT_RE.match(text, pos)
+        if joint is None:
+            break
+        pos = joint.end()
+    if stated and stated.group("paren"):
+        closing = _ABSENT_CLOSING_RE.match(text, pos)
+        if closing is None:
+            return _IdAbsence.NONE
+        pos = closing.end()
+    if index.before_the_sentence_ends(pos):
+        return _IdAbsence.GOES_ON
+    if not plain:
+        bracket = _ABSENT_BRACKET_REASON_RE.match(text, pos)
+        pos = bracket.end() if bracket else pos
+    if _ABSENT_SENTENCE_END_RE.match(text, pos):
+        return _IdAbsence.STATED
+    if not plain and _ABSENT_REASON_RE.match(text, pos):
+        return _IdAbsence.STATED
+    if _ABSENT_CONTINUATION_RE.match(text, pos):
+        return _IdAbsence.GOES_ON
+    boundary = _ABSENT_BOUNDARY_RE.match(text, pos)
+    if boundary is None or (appositive and boundary.group(1) == ","):
+        return _IdAbsence.NONE
+    if _ABSENT_CONTINUATION_RE.match(text, boundary.end()):
+        return _IdAbsence.GOES_ON
+    return _IdAbsence.STATED
+
+
+def sentence_id_remedy(technique_id: str) -> str:
+    """The two ways out a sentence-id question names, both true to the sentence."""
+    tid = safe_finding_value(technique_id)
+    return (
+        "If the sentence asserts the technique, correct the id; if it names the id without "
+        f"asserting it (a tool's label, a catalogue association), say so plainly: \"{tid} is "
+        'not asserted".'
+    )
+
+
+def sentence_technique_violations(
+    text: str,
+    carried: set[str],
+    attck: Any,
+    scope: tuple[str | None, tuple[str, ...]],
+    *,
+    path: str,
+) -> list[Violation]:
+    """The catalogue's questions about the technique ids a claim's sentence names.
+
+    Each id the sentence names that the block's TECHNIQUE line does not carry
+    (``carried``) is asked what the line's own ids are asked: whether the
+    catalogue holds it (``attck.unknown_id``) and whether it can apply to the
+    sample's platform (``attck.platform_mismatch``), once per id, on a path
+    that names the sentence (``<block>.text.<id>``). Whether the sentence
+    describes the id is not asked: a sentence names ids it does not assert, as
+    a tool's metadata, a heading or a catalogue association. Nor is an id the
+    sentence states as absent, withdrawn or retired, before it or after it,
+    and does nothing else with (:func:`_stated_absent`), nor one it negates
+    (:func:`_is_negated`), unless it states the id absent and then turns or
+    goes on about it: that id is asked. The question
+    names two ways out that are both true to the sentence
+    (:func:`sentence_id_remedy`): correct the id, or say plainly that the
+    technique is not asserted.
+    """
+    out: list[Violation] = []
+    seen: set[str] = set()
+    index = _AbsenceIndex(text or "")
+    for match in TECHNIQUE_WORD_RE.finditer(text or ""):
+        tid = match.group(0).upper()
+        if tid in carried or tid in seen:
+            continue
+        # A statement the sentence turns from or goes on about is asked even
+        # where the shared reader reads an absence: "T1430 was not supported by
+        # evidence but is performed". Without a statement of its own, the
+        # shared reader decides.
+        absence = _stated_absent(text, match.start(), match.end(), index)
+        if absence is _IdAbsence.STATED or (
+            absence is _IdAbsence.NONE and _is_negated(text, match.start(), match.end())
+        ):
+            continue
+        seen.add(tid)
+        where = f"{path}.text.{tid}"
+        remedy = sentence_id_remedy(tid)
+        if not _technique_is_known(tid, attck):
+            out.append(
+                Violation(
+                    code=VALIDITY_CODE,
+                    message=(
+                        f"The claim sentence names {safe_finding_value(tid)}, which is not in "
+                        f"the MITRE ATT&CK catalogue{_retired_note(tid, attck)}. "
+                        f"{remedy}"
+                    ),
+                    path=where,
+                    subject=tid,
+                )
+            )
+            continue
+        mismatch = platform_mismatch_fact(tid, attck, scope)
+        if mismatch:
+            out.append(
+                Violation(
+                    code=PLATFORM_MISMATCH_CODE,
+                    message=(
+                        f"The claim sentence names {safe_finding_value(tid)}, which {mismatch}. "
+                        f"{remedy}"
+                    ),
+                    path=where,
+                    subject=tid,
+                )
+            )
+    return out
+
+
+def _ungrounded(
+    claim: Any,
+    citable: Sequence[str],
+    cited_by_findings: set[str],
+    known: set[str],
+    items: ItemIndex | None,
+) -> bool:
+    """Whether a technique claim is asked for a citation: nothing it cites is the run's."""
+    tid = str(getattr(claim, "technique_id", "") or "").strip().upper()
+    return bool(
+        tid and citable and not _cites_a_ledger_entry(claim, cited_by_findings, known, items)
+    )
+
+
 def validate_isr(
     isr: Any,
     *,
@@ -757,6 +1183,8 @@ def validate_isr(
     alignment_margin: float = ALIGNMENT_MARGIN,
     weak_alignment_challenges: bool = False,
     items: ItemIndex | None = None,
+    issued: int | None = None,
+    claim_sentences: bool = False,
 ) -> list[Violation]:
     """What is wrong with one analyst's structured answer.
 
@@ -776,6 +1204,13 @@ def validate_isr(
     the run never issued is no citation. An analyst with nothing citable at
     all — a measurement profile, which has no tools and no pack — is exempt,
     because it has nothing it could cite.
+
+    ``issued`` is how many entry ids the job's evidence counter has issued, to
+    every agent of the job. Each id a claim block's EVIDENCE line names past
+    that count is ``isr.unissued_evidence``, asked once per block; an id
+    another agent's call took is within it. A technique claim whose line names
+    only such ids is asked the ungrounded-technique question, which says so,
+    instead. ``None`` (no counter) asks nothing about it.
 
     ``sample`` carries the routed ``platform`` and ``file_type``; a known
     technique whose catalogue domain or platforms cannot apply to them is
@@ -801,6 +1236,10 @@ def validate_isr(
     # several ids is one claim per id, and the analyst wrote one block.
     blocks = claim_block_indexes(claims)
     block_sizes = {block: blocks.count(block) for block in set(blocks)}
+    # The ids the current block's EVIDENCE line names that the job never
+    # issued, and whether its ungrounded-technique question says so.
+    never: list[str] = []
+    folded = False
 
     for index, claim in enumerate(claims):
         block = blocks[index]
@@ -841,6 +1280,40 @@ def validate_isr(
                     path=block_path,
                 )
             )
+        if first_of_block:
+            written = entry_ids_written(evidence)
+            never = unissued_ids(written, issued) if issued is not None else []
+            # A line naming only ids the job never issued is said once, in the
+            # ungrounded-technique question, when that question is asked of
+            # any claim of the block.
+            folded = (
+                bool(never)
+                and len(never) == len(written)
+                and any(
+                    _ungrounded(other, citable, cited_by_findings, known, items)
+                    for other, at in zip(claims, blocks, strict=True)
+                    if at == block
+                )
+            )
+            if never and not folded:
+                violations.append(
+                    unissued_evidence_violation(never, int(issued or 0), path=block_path)
+                )
+        if claim_sentences and first_of_block and attck is not None:
+            carried = {
+                str(getattr(other, "technique_id", "") or "").strip().upper()
+                for other, at in zip(claims, blocks, strict=True)
+                if at == block
+            }
+            violations.extend(
+                sentence_technique_violations(
+                    str(getattr(claim, "claim", "") or ""),
+                    carried,
+                    attck,
+                    scope,
+                    path=block_path,
+                )
+            )
 
         tid = str(getattr(claim, "technique_id", "") or "").strip().upper()
         # A technique with nothing behind it. A live run on a signed PuTTY
@@ -849,7 +1322,7 @@ def validate_isr(
         # speculative" — and the judge read them as sixteen techniques and said
         # Malware. The analyst is asked to cite the entry it read the technique
         # from or to drop it; nothing here removes the claim or the id.
-        if tid and citable and not _cites_a_ledger_entry(claim, cited_by_findings, known, items):
+        if _ungrounded(claim, citable, cited_by_findings, known, items):
             shown = ", ".join(citable[:3])
             # Named only in a run whose report has items to cite.
             unheld = (
@@ -862,6 +1335,8 @@ def validate_isr(
                 if unheld
                 else ""
             )
+            if folded:
+                said += f" EVIDENCE names {unissued_sentence(never, int(issued or 0))}."
             violations.append(
                 Violation(
                     code=UNGROUNDED_TECHNIQUE_CODE,
@@ -2519,7 +2994,10 @@ def mapped_technique_violations(
     claim's technique — whether the catalogue knows it, whether its sentence
     reads as absence, whether the sample can host it and whether its sentence
     describes it — by that function, keeping only those findings
-    (:data:`MAPPED_TECHNIQUE_CODES`). Empty when every check passes.
+    (:data:`MAPPED_TECHNIQUE_CODES`). The reason is no claim sentence of the
+    judge's (``claim_sentences=False``): another id it names, a tool's tag or
+    a retired id quoted beside the mapped one, is not asked. Empty when every
+    check passes.
     """
     from malspark.schemas.isr_models import AgentISR, ClaimEvidence
 
@@ -2565,7 +3043,9 @@ def mapped_technique_violations(
     isr = AgentISR(agent_id="judge", domain="judge", claims=[claim], revision_round=0)
     return [
         violation
-        for violation in validate_isr(isr, attck=attck, ledger_ids=sorted(held), sample=sample)
+        for violation in validate_isr(
+            isr, attck=attck, ledger_ids=sorted(held), sample=sample, claim_sentences=False
+        )
         if violation.code in MAPPED_TECHNIQUE_CODES
     ]
 
@@ -2681,40 +3161,63 @@ def platform_mismatch_message(
     loads nothing, which is what lets this run inside an analyst's turn.
     ``attck_lookup`` is the fallback for a knowledge object without it.
     """
+    miss = _platform_miss(technique_id, attck, scope)
+    if miss is None:
+        return ""
+    fact, use = miss
+    return f"TECHNIQUE {safe_finding_value(technique_id)} {fact}. {use}, or drop the technique id."
+
+
+def _platform_miss(
+    technique_id: str, attck: Any, scope: tuple[str | None, tuple[str, ...]]
+) -> tuple[str, str] | None:
+    """What :func:`platform_mismatch_message` finds: the clause after the id and the
+    remedy's first words, or ``None`` where the id can apply."""
     expected_domain, expected_platforms = scope
     if expected_domain is None:
-        return ""
+        return None
     lookup = getattr(attck, "attck_scope", None) or getattr(attck, "attck_lookup", None)
     if lookup is None:
-        return ""
+        return None
     try:
         answer = lookup(technique_id)
     except Exception as exc:  # noqa: BLE001 — an unanswered lookup is no mismatch
         logger.debug("validation: the ATT&CK lookup for %s failed (%s).", technique_id, exc)
-        return ""
+        return None
     if not isinstance(answer, dict):
-        return ""
+        return None
     domain = str(answer.get("domain") or "").strip().lower()
     platforms = [str(p) for p in (answer.get("platforms") or []) if str(p).strip()]
     if _pre_only(platforms):
-        return ""
+        return None
     sample_words = f"{expected_domain}-domain, {'/'.join(expected_platforms) or 'any platform'}"
     if domain and domain != expected_domain:
         return (
-            f"TECHNIQUE {safe_finding_value(technique_id)} belongs to the ATT&CK {domain} domain"
+            f"belongs to the ATT&CK {domain} domain"
             f"{f' (platforms {", ".join(platforms)})' if platforms else ''}; this sample is "
-            f"{sample_words}. Use a technique from the sample's domain, or drop the technique id."
+            f"{sample_words}",
+            "Use a technique from the sample's domain",
         )
     if expected_platforms and platforms:
         wanted = {p.lower() for p in expected_platforms}
         if not any(p.lower() in wanted for p in platforms):
             return (
-                f"TECHNIQUE {safe_finding_value(technique_id)} declares the platforms "
-                f"{', '.join(platforms)}; this "
-                f"sample is {sample_words}. Use a technique that applies to it, or drop the "
-                "technique id."
+                f"declares the platforms {', '.join(platforms)}; this sample is {sample_words}",
+                "Use a technique that applies to it",
             )
-    return ""
+    return None
+
+
+def platform_mismatch_fact(
+    technique_id: str, attck: Any, scope: tuple[str | None, tuple[str, ...]]
+) -> str:
+    """:func:`platform_mismatch_message`'s finding without its remedy, or ``""``.
+
+    The clause after the id ("belongs to the ATT&CK mobile domain …; this
+    sample is …"), for a question whose remedy is its own.
+    """
+    miss = _platform_miss(technique_id, attck, scope)
+    return miss[0] if miss else ""
 
 
 def _pre_only(platforms: Sequence[str]) -> bool:
@@ -5615,6 +6118,7 @@ def citation_violations(
     *,
     prose: Sequence[str] | None = None,
     items: ItemIndex | None = None,
+    records: bool = False,
 ) -> list[Violation]:
     """Each bracketed citation item in ``payload``'s prose that is not an id it may cite.
 
@@ -5635,9 +6139,24 @@ def citation_violations(
     often it appears, with a sentence naming the ids it may cite. The prose is
     never edited: a citation the retry does not fix prints as written, and the
     unresolved row is what tells a reader.
+
+    ``records`` reads the whole answer a second way, for a producer whose
+    every field it writes is its own (a composed section): each entry id
+    written anywhere in it, bracketed or not and in any field, a citing field
+    included, that is not one of ``citable`` is one violation of the same
+    kind, once however often it appears. Its message names the id as written,
+    with no brackets added, and asks for an id it may cite in its place, which
+    fits a citing field as well as a sentence. Code spans are not read, and only
+    the ``ev_`` shape is, so a bracket of notation is not. A row the
+    configuration or identifier check already asks about for citing no entry
+    of the run (:func:`configuration_citation_violations`,
+    :func:`identifier_citation_violations`) is left to that question. With no
+    ``citable`` ids there is nothing to read the ids against and this reading
+    asks nothing.
     """
     if payload is None:
         return []
+    whole = payload
     if prose is not None:
         data = payload if isinstance(payload, dict) else getattr(payload, "__dict__", {}) or {}
         payload = {key: data.get(key) for key in prose if key in data}
@@ -5692,7 +6211,53 @@ def citation_violations(
                         path="citation",
                     )
                 )
+    if not records or not known:
+        return violations
+    # The id stands in a citing field or a record's text as written, so it is
+    # named as written and the remedy is the id in its place.
+    in_its_place = (
+        "Write the id of the entry the value was read from in its place — this answer may "
+        f"cite {offered} — or leave that id out."
+    )
+    for text in _record_strings(whole, citable, items):
+        for found in ENTRY_ID_RE.findall(_CODE_SPAN_RE.sub(" ", text)):
+            if found.lower() in allowed or found.lower() in seen:
+                continue
+            seen.add(found.lower())
+            violations.append(
+                Violation(
+                    code=CITATION_NOT_EVIDENCE_CODE,
+                    message=(
+                        f"{safe_finding_value(found)} is not an entry this answer was shown. "
+                        f"{in_its_place}"
+                    ),
+                    path="citation",
+                )
+            )
     return violations
+
+
+def _record_strings(payload: Any, citable: Sequence[str], items: ItemIndex | None) -> list[str]:
+    """Every string of a composed answer but the rows another check asks about for no citation."""
+    data = payload if isinstance(payload, dict) else getattr(payload, "__dict__", {}) or {}
+    if not isinstance(data, dict):
+        return _strings_of(payload)
+    asked = {
+        violation.path.removesuffix(".evidence_refs")
+        for violation in [
+            *configuration_citation_violations(data, citable, items),
+            *identifier_citation_violations(data, citable, items),
+        ]
+    }
+    out: list[str] = []
+    for key, value in data.items():
+        if isinstance(value, list | tuple):
+            for index, row in enumerate(value):
+                if f"{key}.{index}" not in asked:
+                    out.extend(_strings_of(row, 1))
+        else:
+            out.extend(_strings_of(value))
+    return out
 
 
 # The report's own citations. Each of these is shown to the model once and,
@@ -14505,6 +15070,65 @@ def unsupported_malware_violations(
     ]
 
 
+# An entry id the judge's verdict names, in its assessment or any object, that
+# the job never issued: past the count of the job's evidence counter. An
+# indicator's pattern compares values the sample wrote and is not read, nor is
+# a code span.
+UNISSUED_VERDICT_EVIDENCE_CODE = "verdict.unissued_evidence"
+
+
+def _verdict_strings(value: Any) -> list[str]:
+    """Every string of a bundle's dump but an indicator's pattern, at any depth."""
+    if isinstance(value, str):
+        return [value]
+    if isinstance(value, dict):
+        return [
+            text
+            for key, item in value.items()
+            if key != "pattern"
+            for text in _verdict_strings(item)
+        ]
+    if isinstance(value, list | tuple):
+        return [text for item in value for text in _verdict_strings(item)]
+    return []
+
+
+def unissued_verdict_citations(bundle: Any, issued: int | None) -> list[Violation]:
+    """The entry ids a verdict names that the job never issued, as one question.
+
+    ``issued`` is how many ids the job's evidence counter has issued, to every
+    agent of the job; ``None`` (no counter) asks nothing. The verdict's ids
+    are read wherever the bundle writes them, outside code spans and an
+    indicator's pattern, and checked by the same decision as a claim's
+    (``schemas.evidence.unissued_ids``). Nothing is removed: the judge is
+    asked once, and what it keeps is recorded.
+    """
+    if issued is None:
+        return []
+    try:
+        dumped = bundle.model_dump(mode="json")
+    except Exception as exc:  # noqa: BLE001 — an unreadable bundle names nothing
+        logger.debug("validation: the bundle could not be read for citations (%s).", exc)
+        return []
+    written = entry_ids_written(
+        " ".join(_CODE_SPAN_RE.sub(" ", text) for text in _verdict_strings(dumped))
+    )
+    never = unissued_ids(written, issued)
+    if not never:
+        return []
+    return [
+        Violation(
+            code=UNISSUED_VERDICT_EVIDENCE_CODE,
+            message=(
+                f"The verdict names {unissued_sentence(never, int(issued))}. Cite the "
+                "entries the verdict rests on by ids this run issued, or remove the id."
+            ),
+            path="objects",
+            subject=never[0],
+        )
+    ]
+
+
 # A judge indicator naming a value the sandbox recorded and attributes no flow,
 # or no process, of the sample to. The judge is asked once, with the sandbox's own fact beside
 # the value; what it answers decides whether the value is published. A keep it
@@ -14657,6 +15281,9 @@ class AnswerCheckInputs:
     alignment: Any
     alignment_threshold: float
     alignment_margin: float
+    # How many entry ids the job's evidence counter has issued, to every
+    # agent; ``None`` where no counter is known (``validate_isr``).
+    issued: int | None
 
 
 def analyst_ledger_ids(
@@ -14845,6 +15472,8 @@ def analyst_answer_checks(
             alignment_margin=inputs.alignment_margin,
             weak_alignment_challenges=weak_alignment_challenges,
             items=inputs.items,
+            issued=inputs.issued,
+            claim_sentences=True,
         ),
     ]
 

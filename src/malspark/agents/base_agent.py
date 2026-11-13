@@ -214,6 +214,7 @@ from malspark.schemas.evidence import (
     apply_budget,
     beside_bytes,
     is_guard_answer,
+    issued_by,
 )
 from malspark.schemas.isr_models import AgentISR, Artifact, ClaimEvidence, Finding, OpenQuestion
 from malspark.schemas.tool_evidence import CapturedToolOutput
@@ -10442,6 +10443,8 @@ class BaseAnalyst(BudgetMeter, ABC):
                 alignment=gate,
                 alignment_threshold=threshold,
                 alignment_margin=margin,
+                # What the job's counter has issued when the answer is checked.
+                issued=issued_by(getattr(self, "evidence_counter", None)),
             )
 
         # The unread callees of what the answer describes are asked once per
