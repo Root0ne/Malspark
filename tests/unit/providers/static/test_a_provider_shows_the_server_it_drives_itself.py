@@ -4,8 +4,9 @@ The disassembler and decompiler providers reach their tool servers through
 their own connections, which the job's server registry never sees, so a run's
 record of its tools listed none of them. One hook on the provider base,
 ``own_tool_server``, answers what such a provider attached — the server's key,
-the name and version it gave at its attach, and its capability manifest where
-it has one — and the record reads it as it reads the registry's servers.
+the name and version it gave at its attach, its capability manifest where
+it has one, and the names of the tools it served — and the record reads it as
+it reads the registry's servers.
 """
 
 from __future__ import annotations
@@ -52,6 +53,7 @@ class TestAProviderOnItsOwnHandle:
             "server": handle.name,
             "server_info": {"name": "r2mcp", "version": "1.2.0"},
             "manifest": handle.capabilities.to_dict(),  # type: ignore[union-attr]
+            "tools": [],
         }
 
     def test_a_server_without_a_manifest_reports_its_name_and_version(self) -> None:
@@ -62,8 +64,17 @@ class TestAProviderOnItsOwnHandle:
         assert held["manifest"] is None
 
 
+def _named_tool(name: str) -> Any:
+    from langchain_core.tools import StructuredTool
+
+    def _answer() -> str:
+        return ""
+
+    return StructuredTool.from_function(_answer, name=name, description=name)
+
+
 class _Client:
-    """A stand-in for the decompiler's HTTP client: it attaches and lists no tool."""
+    """A stand-in for the decompiler's HTTP client: it attaches and lists two tools."""
 
     server_info: dict[str, str] = {}
 
@@ -74,7 +85,7 @@ class _Client:
         return None
 
     def get_tools(self) -> list[Any]:
-        return []
+        return [_named_tool("list_functions"), _named_tool("decompile_function")]
 
     async def aclose(self) -> None:
         return None
@@ -96,6 +107,10 @@ class TestTheDecompilerProvider:
             "server": provider.id,
             "server_info": {},
             "manifest": None,
+            "tools": ["decompile_function", "list_functions"],
         }
         provider.close()
-        assert provider.own_tool_server() is not None
+        # The names it served are kept once its tools are let go.
+        held = provider.own_tool_server()
+        assert held is not None
+        assert held["tools"] == ["decompile_function", "list_functions"]
