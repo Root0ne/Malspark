@@ -120,6 +120,7 @@ from malspark.schemas.stix_models import (
     Relationship,
     Report,
     STIXObject,
+    _Observable,
     attack_pattern_id,
     crediting_only,
     produced_by,
@@ -5492,9 +5493,11 @@ def _with_the_detonations(objects: list[Any], rows: Sequence[Any], report: Any) 
     (``reporting.detonation_marks``): an indicator takes the marks the
     report's IOC table states for the values its pattern compares, as
     ``x_malspark_observed_in`` and a clause after its description; the
-    sample's ``uses`` edge to a technique takes the technique's. A copy is
-    written; every other object, and every object of a run with one
-    detonation, is returned as it was.
+    sample's ``uses`` edge to a technique takes the technique's; a
+    cyber-observable stating such a value (:data:`_OBSERVABLE_VALUES`) takes
+    the value's, and an observed-data object naming a marked observable takes
+    the marks of every one it names. A copy is written; every other object,
+    and every object of a run with one detonation, is returned as it was.
     """
     from malspark.reporting.detonation_marks import observed_property, observed_words
     from malspark.reporting.ledger_projection import stated_marks
@@ -5513,6 +5516,7 @@ def _with_the_detonations(objects: list[Any], rows: Sequence[Any], report: Any) 
     if not by_value and not by_pattern:
         return objects
     out: list[Any] = []
+    observed: dict[str, list[Any]] = {}
     for obj in objects:
         marks: list[Any] = []
         if isinstance(obj, Indicator):
@@ -5527,6 +5531,14 @@ def _with_the_detonations(objects: list[Any], rows: Sequence[Any], report: Any) 
             and OBSERVED_IN_PROPERTY in type(obj).model_fields
         ):
             marks = by_pattern.get(str(getattr(obj, "target_ref", "") or ""), [])
+        elif isinstance(obj, _Observable):
+            marks = stated_marks(
+                mark
+                for kind, value in _observable_values(obj)
+                for mark in by_value.get((kind, _value_key(kind, value)), ())
+            )
+            if marks:
+                observed[str(obj.id)] = marks
         if not marks:
             out.append(obj)
             continue
@@ -5537,7 +5549,50 @@ def _with_the_detonations(objects: list[Any], rows: Sequence[Any], report: Any) 
             before = str(obj.description or "").strip()
             update["description"] = f"{before} {said}" if before else said
         out.append(obj.model_copy(update=update))
-    return out
+    if not observed:
+        return out
+    # An observed-data object names observables by reference: it carries the
+    # marks of every marked one it names.
+    return [
+        obj.model_copy(update={OBSERVED_IN_PROPERTY: observed_property(marks)})
+        if isinstance(obj, ObservedData)
+        and (
+            marks := stated_marks(
+                mark for ref in obj.object_refs for mark in observed.get(str(ref), ())
+            )
+        )
+        else obj
+        for obj in out
+    ]
+
+
+# The IOC-table kind of the value each cyber-observable type states, by the
+# property that states it; a ``file`` states its digests.
+_OBSERVABLE_VALUES: dict[str, tuple[str, str]] = {
+    "domain-name": ("domain", "value"),
+    "ipv4-addr": ("ip", "value"),
+    "ipv6-addr": ("ip", "value"),
+    "url": ("url", "value"),
+    "email-addr": ("email", "value"),
+    "mutex": ("mutex", "name"),
+    "windows-registry-key": ("registry", "key"),
+}
+
+
+def _observable_values(obj: Any) -> list[tuple[str, str]]:
+    """``(kind, value)`` of each value a cyber-observable states."""
+    kind_type = str(getattr(obj, "type", "") or "")
+    if kind_type == "file":
+        hashes = getattr(obj, "hashes", None) or {}
+        return [("hash", str(v)) for v in hashes.values() if v]
+    held = _OBSERVABLE_VALUES.get(kind_type)
+    if held is None:
+        return []
+    kind, field = held
+    value = getattr(obj, field, None)
+    if value is None:
+        value = (getattr(obj, "model_extra", None) or {}).get(field)
+    return [(kind, str(value))] if value else []
 
 
 def _host_reputation(report: Any, host: str) -> dict[str, Any] | None:

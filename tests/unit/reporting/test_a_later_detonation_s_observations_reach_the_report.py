@@ -251,3 +251,27 @@ class TestOneDetonationReadsAsBefore:
         assert "x_malspark_observed_in" not in bundle
         comments = [a["comment"] for a in build_misp_attributes(report, table, owner="unit")]
         assert not any("observed in" in c for c in comments)
+
+
+class TestTheStixObjectsStatingAValueCarryTheMark:
+    """An object stating a value a later detonation observed carries its indicator's mark."""
+
+    def test_an_observable_and_the_observed_data_naming_it_are_marked(self) -> None:
+        from malspark.reporting.renderers.stix_renderer import _with_the_detonations
+        from malspark.schemas.stix_models import File, ObservedData, _Observable
+
+        report = _report(_ledger())
+        table = build_consolidated_iocs(report)
+        domain = _Observable(type="domain-name", id="domain-name--1", value="pay.example.org")
+        address = _Observable(type="ipv4-addr", id="ipv4-addr--2", value="192.0.2.10")
+        dropped = File(hashes={"SHA-256": "b" * 64})
+        seen = ObservedData(object_refs=[domain.id])
+        quiet = ObservedData(object_refs=[address.id])
+        out = _with_the_detonations([domain, address, dropped, seen, quiet], table, report)
+        marked = {getattr(o, "id", ""): getattr(o, "x_malspark_observed_in", None) for o in out}
+        mark = [{"detonation": "d2", "launched_with": ARGS}]
+        assert marked[domain.id] == mark
+        assert marked[dropped.id] == mark
+        assert marked[seen.id] == mark
+        # A value only the job's own detonation saw, and what names only it, carry none.
+        assert marked[address.id] is None and marked[quiet.id] is None
