@@ -399,17 +399,29 @@ a run in mock mode). Each row gives:
   report the mock sandbox replayed from a recorded fixture or an operator
   attached (the `upload` provider).
 - `task_ids`: the provider's identifiers of the analysis, each under the place
-  the report holds it (`/info/id` in a CAPE or Cuckoo report, `/sample/id` in a
-  Triage overview).
+  the report holds it, read where the report format the provider read it as
+  for this job says the task id sits: an operator's declared format
+  (`sandbox.report_formats`, its `task_id_paths`) where the job's report was
+  read as one, else the shipped declaration of the reader's id (`/info/id` in
+  a CAPE or Cuckoo report, `/sample/id` in a Triage overview).
 - `guest`: the machine the sample ran in, as the report names it. For a CAPE
   or Cuckoo report, the analysis machine's `name`, `label`, `platform`, `arch`
-  and `manager`, each where the report gives it. For Triage, one entry per
-  behavioural task, keyed by the task's name, with its `target` (the machine
-  image) and its `platform`, `os` and `arch` where the overview names them.
-- `sandbox_version`, `started` and `ended`, as the report gives them: a CAPE
-  or Cuckoo report's `info.version`, `info.started` and `info.ended`; for
-  Triage, `ended` is the sample's `completed` time, and the overview gives no
-  start and no version.
+  and `manager` from `info.machine`, each where the report gives it. For
+  Triage, one entry per behavioural task, keyed by the task's name, with its
+  `target` (the machine image), `platform`, `os` and `arch`: those its row in
+  the overview's `tasks` names, and those its task report's `task` block names
+  over them.
+- `sandbox_version` and `sandbox_commit`, the sandbox's build as the report
+  gives it: a CAPE or Cuckoo report's `info.version`, and a CAPE report's
+  `info.CAPE_current_commit`. No Triage part gives either.
+- `started` and `ended`, this detonation's start and end as the report gives
+  them, in the sandbox's own clock: no time zone is stated unless the report
+  writes one. For a CAPE or Cuckoo report, `info.started` and `info.ended`, the
+  sandbox host's local time. For Triage, one entry per behavioural task whose
+  task report states them, keyed by the task's name: the task report's
+  `task.started` and `task.completed`. A time that belongs to the whole sample
+  (Triage's `sample.created` and `sample.completed`) is no detonation's, and
+  is not recorded.
 - `report_parts`: each raw report part as it was read, in reading order, with
   its `name` as the provider names it, its `sha256` and its length in `bytes`.
   CAPE's report is one part, `report`. Triage's are `overview` and each
@@ -422,17 +434,23 @@ a run in mock mode). Each row gives:
   the same sandbox report. A row lists at most 64 parts; `report_parts_cut`
   says how many more were left out.
 
-A detonation that returned no report has an empty `report_parts`, and every
-fact its provider would have stated reads `not reported`. The provider is asked
+A detonation that read no report has no parts, an empty `report_parts`, and
+every fact its provider would have stated reads `not reported`. One whose
+report was read keeps the parts it read, also where a later step failed. The provider is asked
 through one method every provider answers, `SandboxProvider.detonation_facts`.
 A provider that does not implement it, such as a plug-in written without it,
 states nothing: its rows give `provider`, `task_id`, `reported` and the launch
 as the run recorded them, and every other fact reads `not reported`. A provider
 that states a fact the report does not give leaves it out, and it reads
-`not reported` too, never a guess.
+`not reported` too, never a guess and never a value taken from another fact.
+A fact that cannot be read reads `not reported`, and the row keeps the
+platform's own fields: no detonation is left out.
 
-What a provider or its sandbox wrote is kept to the keys above and capped: 200
-characters a text, 32 entries a mapping, 64 parts. Each text is put on one line
+What a provider or its sandbox wrote is kept to the keys above, and a key
+outside them is not recorded. It is capped: 200 characters a text, 32 entries
+a mapping, 64 parts. A text is cut to 400 characters before anything else is
+done with it, and where that cut falls inside a word, none of the word is
+kept. Each text is put on one line
 without control characters, a URL loses its credentials and any secret-named
 query value, a secret value the worker holds is masked, and a path of the
 worker's host is shown from the project root or as outside it. Task URLs are

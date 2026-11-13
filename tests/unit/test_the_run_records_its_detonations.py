@@ -434,14 +434,41 @@ class TestTheQuestion:
             assert row[key] == NR, key
         assert row["report_parts"] == NR
 
-    def test_no_provider_is_named_outside_its_own_module(self) -> None:
-        """The recorder and the question name no provider: each states its own facts."""
+    def test_no_sandbox_provider_id_is_written_outside_its_module_its_reader_or_the_registry(
+        self,
+    ) -> None:
+        """Covers every module of the packages the record passes through: the
+        recorder (``malspark.analysis``'s ``run_environment``), the providers
+        (``malspark.providers``, every subpackage), the sandbox clients
+        (``malspark.loaders``), the report schemas (``malspark.schemas``) and
+        the app's detonation path (``malspark.app``). Left out: each provider's
+        own module (``providers/sandbox/<id>.py``, ``loaders/<id>_client.py``,
+        ``loaders/<id>_sandbox_client.py``), the format readers
+        (``providers/sandbox/readers.py``) and the registry that lists every
+        provider's module (``providers/registry.py``). The ids are the
+        registry's own list, each written as a quoted literal.
+        """
+        from malspark.providers import registry
+
+        ids = registry._SANDBOX_MODULES
         root = Path(run_environment.__file__).resolve().parents[1]
-        modules = (root / "analysis" / "run_environment.py", root / "providers" / "detonation.py")
-        for module in modules:
+        own = {root / "providers" / "sandbox" / f"{name}.py" for name in ids}
+        own |= {root / "loaders" / f"{name}_client.py" for name in ids}
+        own |= {root / "loaders" / f"{name}_sandbox_client.py" for name in ids}
+        left_out = own | {
+            root / "providers" / "sandbox" / "readers.py",
+            root / "providers" / "registry.py",
+        }
+        walked = [root / "analysis" / "run_environment.py", root / "app.py"]
+        for package in ("providers", "loaders", "schemas"):
+            walked += sorted((root / package).rglob("*.py"))
+        checked = [module for module in walked if module not in left_out]
+        assert len(checked) > 20, len(checked)
+        for module in checked:
             text = module.read_text(encoding="utf-8")
-            for name in ('"triage"', '"cape2"', '"mock"', '"upload"', '"rest"'):
-                assert name not in text, (module.name, name)
+            for name in ids:
+                for quote in ('"', "'"):
+                    assert f"{quote}{name}{quote}" not in text, (str(module), name)
 
 
 # ---------------------------------------------------------------------------
