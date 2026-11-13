@@ -118,6 +118,9 @@ class GenericMCPStaticProvider(StaticProvider):
         self._prompt_lead_text = prompt_lead_text
         self._job = StaticJobContext()
         self.tools: list[Any] = []
+        # The names of the tools the server served at any attach, kept after
+        # the handle closes (``own_tool_server``).
+        self._served_names: set[str] = set()
         # A declared error's remediation may name the path the server can open
         # for the job's sample: the job's mirror.
         self._handle.error_sample_path = self._mirror_path
@@ -185,6 +188,33 @@ class GenericMCPStaticProvider(StaticProvider):
         # Each attach of this provider's server is a change of it, as a
         # registry handle's is (``ServerHandle._note_attach``).
         self._handle.server_changes = changes
+
+    def own_tool_server(self) -> dict[str, Any] | None:
+        """The server this provider's handle attached, as its attach read it (``ServerOfItsOwn``).
+
+        ``None`` until the handle has attached. A handle the job's registry
+        handed in is listed by the registry too, and the record keeps the
+        registry's reading of it. ``tools`` are the names of the tools the
+        server advertised at any attach.
+        """
+        handle = self._handle
+        info = dict(getattr(handle, "server_info", None) or {})
+        if not (info or handle.is_open or getattr(handle, "attached_once", False)):
+            return None
+        held = getattr(handle, "capabilities", None)
+        self._note_served()
+        return {
+            "server": handle.name,
+            "server_info": info,
+            "manifest": held.to_dict() if held is not None else None,
+            "tools": sorted(self._served_names),
+        }
+
+    def _note_served(self) -> None:
+        """Keep the names of the tools the attached server advertises (``own_tool_server``)."""
+        names = getattr(self._handle, "all_tool_names", None)
+        if callable(names):
+            self._served_names.update(str(name) for name in names() if name)
 
     def _build_handle(self, name: str, cfg: MCPServerConfig) -> ServerHandle:
         """Wrap a directly-supplied config in a handle, honouring ``server_command``.
@@ -350,6 +380,7 @@ class GenericMCPStaticProvider(StaticProvider):
         self.tools = self.get_tools()
 
     def get_tools(self) -> list[BaseTool]:
+        self._note_served()
         return self._with_aggregate_notes(self._handle.tools())
 
     def _with_aggregate_notes(self, tools: list[BaseTool]) -> list[BaseTool]:
@@ -381,6 +412,7 @@ class GenericMCPStaticProvider(StaticProvider):
             yield False, False
             return
         self._handle.open(key or "static")
+        self._note_served()
         try:
             yield self._handle.is_open, True
         finally:

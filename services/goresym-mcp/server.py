@@ -232,9 +232,9 @@ async def go_strings(path: str, go_version: str = "") -> dict[str, Any]:
 
 
 @mcp.tool(**_DECLARED["capabilities"])
-def capabilities() -> dict[str, Any]:
+async def capabilities() -> dict[str, Any]:
     """Which of this server's tools this host can run, and how to install what is missing."""
-    return sidecar.capabilities(SERVER, PROGRAM, TOOLS, version=GORESYM_VERSION)
+    return await sidecar.answer_capabilities(SERVER, PROGRAM, TOOLS, version=GORESYM_VERSION)
 
 
 if __name__ == "__main__":

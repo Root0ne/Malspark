@@ -217,7 +217,7 @@ class TestYaraX:
         assert "/data/rules" in answer["error"]["remediation"]
         assert not (bin_dir / "yr.args").exists()
         monkeypatch.delenv(yarax.RULES_ENV)
-        (cell,) = yarax.capabilities()["tools"]
+        (cell,) = asyncio.run(yarax.capabilities())["tools"]
         assert cell["available"] is False
         assert cell["reason"] == "no YARA rule file (*.yar, *.yara) under YARA_X_RULES (unset)"
 
@@ -228,7 +228,7 @@ class TestYaraX:
         assert _error(answer) == ("missing_dependency", "yr is not on PATH")
         assert "YARA-X 1.21.0" in answer["error"]["remediation"]
         _program(bin_dir, "yr")
-        (cell,) = yarax.capabilities()["tools"]
+        (cell,) = asyncio.run(yarax.capabilities())["tools"]
         assert (cell["name"], cell["available"]) == ("yarax_scan", True)
 
     def test_a_path_outside_the_roots_is_refused(
@@ -392,7 +392,7 @@ class TestOletools:
         answer = _call(oletools.ole_indicators(str(roots / "sample.bin")))
         assert _error(answer) == ("missing_dependency", "oletools is not installed")
         assert "oletools 0.60.2" in answer["error"]["remediation"]
-        cells = oletools.capabilities()["tools"]
+        cells = asyncio.run(oletools.capabilities())["tools"]
         assert [c["name"] for c in cells] == list(oletools.TOOLS)
         assert not any(c["available"] for c in cells)
 

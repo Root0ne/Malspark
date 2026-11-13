@@ -19,6 +19,20 @@
  ],
  "degraded_mode": true,
  "elapsed_seconds": "<masked>",
+ "environment": {
+  "host": {
+   "cpu_model": "Example CPU",
+   "cpus_available": 4,
+   "logical_cpus": 8,
+   "machine": "x86_64",
+   "memory_bytes": 17179869184,
+   "memory_limit_bytes": 8589934592,
+   "os": "Linux",
+   "os_release": "6.0.0",
+   "os_version": "#1 SMP"
+  },
+  "v": 2
+ },
  "failed_analysts": [],
  "file_hash": "",
  "file_name": null,

@@ -974,7 +974,10 @@ class SigmaLayer:
         )
 
     @classmethod
-    def from_rules_dir(cls, rules_dir: Path) -> SigmaLayer:
+    def from_rules_dir(cls, rules_dir: Path, files: list[Path] | None = None) -> SigmaLayer:
+        # ``files``, when given, are the corpus's files as its caller listed
+        # them (``tools.rules``): those are read, and the directory is not
+        # listed again.
         if not rules_dir.exists():
             logger.warning(
                 "SigmaLayer: rules directory not found: %s — running without Sigma rules.",
@@ -983,7 +986,11 @@ class SigmaLayer:
             return cls(SigmaCollection(init_rules=[]))
 
         all_rules = []
-        yaml_files = list(rules_dir.rglob("*.yml")) + list(rules_dir.rglob("*.yaml"))
+        yaml_files = (
+            list(files)
+            if files is not None
+            else list(rules_dir.rglob("*.yml")) + list(rules_dir.rglob("*.yaml"))
+        )
         loaded = 0
         for yf in yaml_files:
             try:

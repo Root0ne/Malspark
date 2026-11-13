@@ -50,6 +50,7 @@ from malspark.agents.run_evidence_corpus import (
     state_of,
 )
 from malspark.analysis.corroboration import corroborated, corroboration_row
+from malspark.analysis.run_environment import environment_record
 from malspark.analysis.run_summary import RunSummaryBuilder, summary_counts_line, tool_asks_of
 from malspark.core.config import BUILTIN_AGENTS, JUDGE_AGENT_KEY, MEDIATOR_AGENT_NAME, PROMPT_ROLES
 from malspark.core.container import ServiceContainer
@@ -6769,6 +6770,12 @@ def _failed_verdict_summary(
             ("server rests", lambda: builder.set_server_rests(container.server_rests())),
             ("generation", lambda: builder.set_generation(_generation_snapshot(container))),
             ("spend", lambda: builder.set_spend(_spend_snapshot(container))),
+            (
+                "environment",
+                lambda: builder.set_environment(
+                    environment_record(container, state.get("evidence_ledger") or [])
+                ),
+            ),
             ("truncation", lambda: builder.set_truncation(_truncation_snapshot(container))),
             ("triage", lambda: builder.set_triage(dict(state.get("triage_facts") or {}))),
             ("sandbox", lambda: builder.set_sandbox(state.get("sandbox_report"))),
@@ -7767,6 +7774,9 @@ def make_judge_node(
                     .set_server_rests(container.server_rests())
                     .set_generation(_generation_snapshot(container))
                     .set_spend(_spend_snapshot(container))
+                    .set_environment(
+                        environment_record(container, state.get("evidence_ledger") or [])
+                    )
                     .set_truncation(_truncation_snapshot(container))
                     .set_triage(_triage_facts)
                     .set_sandbox(state.get("sandbox_report"))
@@ -8896,6 +8906,16 @@ def make_report_node(
             if _rated_summary:
                 _rated_summary["generation"] = _generation
                 report.run_summary = _rated_summary
+        # The environment again, now that the report stage's models are built
+        # and have answered: the judge's record predates them.
+        if state.get("run_summary"):
+            _environment = environment_record(container, state.get("evidence_ledger") or [])
+            if _environment and _environment != (state.get("run_summary") or {}).get("environment"):
+                _state_summary["environment"] = _environment
+                _placed = dict(report.run_summary or {})
+                if _placed:
+                    _placed["environment"] = _environment
+                    report.run_summary = _placed
         # What left the machine, read once the run's last model call and last
         # tool call are made: the summary's closing token counts and stage
         # rollup, the whole ledger, the job's settings and the sample's

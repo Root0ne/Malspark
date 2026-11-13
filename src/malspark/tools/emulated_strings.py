@@ -148,6 +148,15 @@ _VERIFIED: dict[tuple[str, int, int, int, int], bool] = {}
 # Whether each verified executable ran when asked its version, keyed as
 # ``_VERIFIED`` is: ``None`` when it answered, else the reason it did not.
 _RUNS: dict[tuple[str, int, int, int, int], str | None] = {}
+# The version each executable that ran answered, keyed as ``_RUNS`` is: the
+# release its ``--version`` named, which a run's record states
+# (``floss_version``) without asking the build a second time.
+_ANSWERED: dict[tuple[str, int, int, int, int], str] = {}
+# What the last lookup found for each reading of the two variables it reads
+# (``MALSPARK_FLOSS_PATH``, ``PATH``): the build and the reason there is none.
+# ``floss_version`` answers from it, so the record of a run never starts a
+# check of its own once the tool has made one.
+_LAST_FOUND: dict[tuple[str, str | None], tuple[Path | None, str]] = {}
 # The pinned version as ``--version`` writes it: the standalone build answers
 # ``floss v3.1.1-0-g…``, the PyPI release ``floss 3.1.1``; 3.1.10 is not 3.1.1.
 _VERSION_WORD = re.compile(rf"(?<![\d.]){re.escape(FLOSS_VERSION)}(?![\d.])")
@@ -272,6 +281,13 @@ def find_floss(environ: Mapping[str, str] | None = None) -> tuple[Path | None, s
     passes the analysis server's, so the pack and the server find one build.
     """
     source = os.environ if environ is None else environ
+    looked = (str(source.get(FLOSS_PATH_ENV, "")).strip(), source.get("PATH"))
+    found = _LAST_FOUND[looked] = _find_floss(source)
+    return found
+
+
+def _find_floss(source: Mapping[str, str]) -> tuple[Path | None, str]:
+    """``find_floss``'s lookup, in the variables of ``source``."""
     configured = str(source.get(FLOSS_PATH_ENV, "")).strip()
     if configured:
         candidates = [configured]
@@ -354,10 +370,13 @@ def _does_not_run(path: Path) -> str | None:
         lasting = False
         reason = f"floss cannot be executed on this host: {type(exc).__name__}"
     else:
-        if done.returncode == 0 and not _VERSION_WORD.search(done.stdout):
+        said = _VERSION_WORD.search(done.stdout)
+        if done.returncode == 0 and said is None:
             # The right digest and an exit of 0 are still not the pinned
             # release unless the build says so.
             reason = f"floss is not installed: floss --version did not report {FLOSS_VERSION}"
+        elif done.returncode == 0 and said is not None:
+            _ANSWERED[key] = said.group(0)
         elif done.returncode != 0:
             tail = done.stderr
             for where in (str(done.args[0]), str(path)):
@@ -370,6 +389,32 @@ def _does_not_run(path: Path) -> str | None:
     if lasting:
         _RUNS[key] = reason
     return reason
+
+
+def floss_version(environ: Mapping[str, str] | None = None) -> str:
+    """The version the pinned build ``find_floss`` finds answered its check, else why not.
+
+    The answer of the ``--version`` run that check already makes
+    (``_does_not_run``), never a second run of the build: a run's record of
+    the tools it used states it (``tools.sidecar_needs``). Read from the last
+    lookup made with the same two variables (``_LAST_FOUND``), so a check that
+    timed out is not made again for the record; only when none has been made
+    is the lookup made here. ``"not reported: <reason>"`` when no pinned build
+    runs here, in the lookup's own words.
+    """
+    from malspark.tools.capabilities import NOT_REPORTED
+
+    source = os.environ if environ is None else environ
+    held = _LAST_FOUND.get((str(source.get(FLOSS_PATH_ENV, "")).strip(), source.get("PATH")))
+    path, reason = held if held is not None else find_floss(environ)
+    if path is None:
+        return f"{NOT_REPORTED}: {reason}"
+    try:
+        info = path.stat()
+    except OSError as exc:
+        return f"{NOT_REPORTED}: {exc.strerror or type(exc).__name__}"
+    key = (str(path), info.st_size, info.st_mtime_ns, info.st_ino, info.st_ctime_ns)
+    return _ANSWERED.get(key) or f"{NOT_REPORTED}: its check named no version"
 
 
 def floss_unavailable(environ: Mapping[str, str] | None = None) -> str | None:
@@ -819,6 +864,8 @@ def forget_documents() -> None:
         _IN_FLIGHT.clear()
     _VERIFIED.clear()
     _RUNS.clear()
+    _ANSWERED.clear()
+    _LAST_FOUND.clear()
 
 
 def _refused(target: Path, path: str) -> dict[str, Any] | None:
