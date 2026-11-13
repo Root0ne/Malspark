@@ -887,6 +887,22 @@ def bundle_for(
         return _bundle_for(section, report, technical_evidence, isr_reports)
 
 
+def technique_line(mapping: Any) -> str:
+    """``<id> <name>``, a published technique as a bundle lists it, with its detonations' mark.
+
+    A technique a further detonation's signatures tag says so in brackets,
+    in the words every surface writes a mark in
+    (``detonation_marks.observed_words``): the later detonation and its
+    launch, and the job's own detonation too where its signatures tag it.
+    One with no mark is its id and name alone.
+    """
+    from malspark.reporting.detonation_marks import observed_words
+
+    line = f"{mapping.technique_id} {mapping.technique_name}"
+    said = observed_words(getattr(mapping, "observed_in", None) or ())
+    return f"{line} ({said})" if said else line
+
+
 def _bundle_for(
     section: str,
     report: MalwareReport,
@@ -914,7 +930,7 @@ def _bundle_for(
                 ),
                 "category": report.malware_category,
                 "severity": report.severity.rating if report.severity else None,
-                "top_ttps": [f"{m.technique_id} {m.technique_name}" for m in report.ttp_mappings],
+                "top_ttps": [technique_line(m) for m in report.ttp_mappings],
             },
         }
     if section == "introduction":
@@ -982,7 +998,7 @@ def _bundle_for(
             "tool_outputs": [],
             "binary": base,
             "facts": {
-                "ttps": [f"{m.technique_id} {m.technique_name}" for m in report.ttp_mappings],
+                "ttps": [technique_line(m) for m in report.ttp_mappings],
                 "persistence": [p.kind for p in report.persistence],
                 "persistence_assessed": _assessed_persistence(report),
                 "has_network": bool(

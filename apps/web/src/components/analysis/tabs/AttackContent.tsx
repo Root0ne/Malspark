@@ -4,12 +4,13 @@ import { useEffect, useState } from "react";
 
 import { useReport } from "@/components/analysis/AnalysisContext";
 import BasisMark from "@/components/analysis/BasisMark";
+import DetonationMark from "@/components/analysis/DetonationMark";
 import { VOICE_BASIS, VOICE_TEXT, techniqueVoices, type Voice } from "@/components/analysis/overview";
 import { api } from "@/lib/api";
 import { getErrorMessage } from "@/lib/errors";
 import Drawer from "@/components/ui/Drawer";
 import Section from "@/components/ui/Section";
-import type { CorroborationRow } from "@/types/malware-report";
+import type { CorroborationRow, ObservedIn } from "@/types/malware-report";
 import { VIEW_TACTIC, type BehaviourView } from "@/components/analysis/behaviourView";
 import {
   associatedBy,
@@ -91,6 +92,14 @@ export default function AttackContent({ view = "all", empty }: { view?: Behaviou
   // Columns in canonical Enterprise matrix order.
   const activeTactics = orderedTactics(parseTechniques(rawTechniques));
   const corroboration = (report?.malware_report?.run_summary?.corroboration ?? null) as Corroboration;
+  /* Each published technique a further detonation observed, with its mark
+   * (`TTPMapping.observed_in`), whichever list the techniques are drawn from;
+   * both sides of the join read as the report reads a technique id. */
+  const marked = new Map<string, ObservedIn[]>();
+  for (const m of report?.malware_report?.ttp_mappings ?? []) {
+    if (m?.observed_in?.length) marked.set(techniqueKey(m.technique_id), m.observed_in);
+  }
+  const observed = { get: (id: string) => marked.get(techniqueKey(id)) };
   const inView = view === "all" ? activeTactics : activeTactics.filter((t) => t.id === VIEW_TACTIC[view]);
   const total = inView.reduce((n, t) => n + t.techniques.length, 0);
   const q = search.toLowerCase();
@@ -173,6 +182,7 @@ export default function AttackContent({ view = "all", empty }: { view?: Behaviou
                         <span className="font-mono text-[11px] text-status-blue">{tech.id}</span>
                         <span className="text-text-primary">{tech.name}</span>
                         <span className="text-[11px] text-text-muted">×{tech.matches}</span>
+                        <DetonationMark marks={observed.get(tech.id)} compact />
                         <span className="sr-only">: {statusWords(tech)}</span>
                       </button>
                     ))}
@@ -198,7 +208,12 @@ export default function AttackContent({ view = "all", empty }: { view?: Behaviou
                         className="border border-border bg-bg-elevated px-3 py-2.5 hover:bg-bg-active"
                       >
                         <p className="mb-1 text-xs font-medium leading-tight text-text-primary">{tech.name}</p>
-                        <TechniqueFacts tech={tech} corroboration={corroboration} voice={voices.get(tech.id)} />
+                        <TechniqueFacts
+                          tech={tech}
+                          corroboration={corroboration}
+                          voice={voices.get(tech.id)}
+                          observed={observed.get(tech.id)}
+                        />
                       </div>
                     ))}
                   </div>
@@ -217,12 +232,23 @@ export default function AttackContent({ view = "all", empty }: { view?: Behaviou
         {detail && (
           <div className="space-y-3 text-sm">
             <p className="text-text-secondary">Tactic: {detail.tactic}</p>
-            <TechniqueFacts tech={detail.tech} corroboration={corroboration} voice={voices.get(detail.tech.id)} open />
+            <TechniqueFacts
+              tech={detail.tech}
+              corroboration={corroboration}
+              voice={voices.get(detail.tech.id)}
+              observed={observed.get(detail.tech.id)}
+              open
+            />
           </div>
         )}
       </Drawer>
     </Section>
   );
+}
+
+/** A technique id as the report reads it to join one list to another: trimmed, upper case. */
+function techniqueKey(id: unknown): string {
+  return String(id ?? "").trim().toUpperCase();
 }
 
 /** The status a technique's chip says to a screen reader, and its card prints. */
@@ -238,12 +264,15 @@ function TechniqueFacts({
   corroboration,
   open = false,
   voice,
+  observed,
 }: {
   tech: Technique;
   corroboration: Corroboration;
   open?: boolean;
   /** How the report knows this technique; absent when it does not map it. */
   voice?: Voice;
+  /** The detonations whose signatures tag it, where a further one's do. */
+  observed?: ObservedIn[];
 }) {
   const lists = corroborationLists(corroboration, tech.id);
   return (
@@ -269,6 +298,11 @@ function TechniqueFacts({
             claimed, not published
           </span>
           <p className="mt-0.5 text-[11px] leading-snug text-text-muted">{tech.notPublished}</p>
+        </div>
+      )}
+      {observed && (
+        <div className="mb-1 break-all">
+          <DetonationMark marks={observed} />
         </div>
       )}
       {tech.note && (

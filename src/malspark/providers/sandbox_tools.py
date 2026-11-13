@@ -33,6 +33,7 @@ import re
 from collections.abc import Mapping, Sequence
 from typing import TYPE_CHECKING, Any, cast
 
+from malspark.analysis.sandbox_sections import ITEMS_TOOL
 from malspark.core.logger import logger
 from malspark.pipeline.sandbox_status import NOT_RUN, sandbox_status
 from malspark.providers.call_arguments import pick_argument
@@ -1162,6 +1163,25 @@ ITEMS_SIGNATURE_SECTION = "the signature filter reads the signatures section onl
 _ITEM_FILTERS = ("pid", "contains", "signature", "ids")
 
 
+# The readers of a detonation's report the source offers beside the item
+# reader, by name, in the order :func:`sandbox_tools` builds them.
+_VIEW_READERS: tuple[str, ...] = (
+    "sandbox_report_section",
+    "sandbox_processes",
+    "sandbox_network",
+    "sandbox_signatures",
+    "sandbox_dropped_files",
+    "sandbox_registry_ops",
+    "sandbox_api_calls",
+    "sandbox_mutexes",
+    "sandbox_services_and_tasks",
+    "sandbox_channels",
+)
+
+# Every tool of this source that reads a detonation, each taking the
+# ``detonation`` selector; ``request_detonation`` asks for one and reads none.
+DETONATION_READERS: tuple[str, ...] = (*_VIEW_READERS, ITEMS_TOOL)
+
 # What every reader says of its ``detonation`` argument, in its description.
 _DETONATION_ARG = (
     "``detonation`` names a later detonation of the sample to read (d2, d3 and "
@@ -1307,17 +1327,21 @@ def sandbox_tools(container: Any, agent: str | None = None) -> list[BaseTool]:
                 name=name,
                 description=f"{_described(func)}\n\n{_DETONATION_ARG}",
             )
-            for func, name in (
-                (_report_section, "sandbox_report_section"),
-                (_processes, "sandbox_processes"),
-                (_network, "sandbox_network"),
-                (_signatures, "sandbox_signatures"),
-                (_dropped_files, "sandbox_dropped_files"),
-                (_registry_ops, "sandbox_registry_ops"),
-                (_api_calls, "sandbox_api_calls"),
-                (_mutexes, "sandbox_mutexes"),
-                (_services_and_tasks, "sandbox_services_and_tasks"),
-                (_channels, "sandbox_channels"),
+            for func, name in zip(
+                (
+                    _report_section,
+                    _processes,
+                    _network,
+                    _signatures,
+                    _dropped_files,
+                    _registry_ops,
+                    _api_calls,
+                    _mutexes,
+                    _services_and_tasks,
+                    _channels,
+                ),
+                _VIEW_READERS,
+                strict=True,
             )
         ),
         items_tool(report, sizer, normalised_by, container=container),

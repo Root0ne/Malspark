@@ -17,7 +17,7 @@
  * line, a signature's evidence mark, a configuration item, a key finding.
  */
 
-import type { MalwareReport, ProcessNode } from "@/types/malware-report";
+import type { MalwareReport, ObservedIn, ProcessNode } from "@/types/malware-report";
 import { decisionOf, type Decision } from "./indicators";
 
 /** How many rows the browser draws before offering more. */
@@ -39,6 +39,9 @@ export interface IocRow {
   algorithm: string;
   /** Every entry the verdict names this value with, in the verdict's order. */
   verdictEntries: { kind: string; algorithm: string }[];
+  /** The table row's `observed_in`: every detonation that observed the value,
+   *  where a further one did. Absent otherwise. */
+  observedIn?: ObservedIn[];
 }
 
 /**
@@ -110,6 +113,7 @@ export function iocRows(mr: MalwareReport | null | undefined): IocRow[] {
       inVerdict: entries.length > 0,
       algorithm: entries[0]?.algorithm ?? "",
       verdictEntries: entries.map((e) => ({ kind: e.kind ?? "", algorithm: e.algorithm ?? "" })),
+      ...(row.observed_in?.length ? { observedIn: row.observed_in } : {}),
     };
   });
   unmatched.forEach((ind, k) => {
