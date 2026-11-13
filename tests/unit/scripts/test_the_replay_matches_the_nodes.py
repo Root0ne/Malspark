@@ -207,6 +207,9 @@ def _oracle(run_dir: Path, monkeypatch: pytest.MonkeyPatch) -> tuple[Any, Any, d
         answer = json.dumps((stored.judge or {}).get("bundle") or {})
         judge = JudgeAgent(llm=_Stored(answer_for=lambda _messages: answer))
         judge.evidence_counter = EvidenceCounter()
+        # The job's counter issued every id of the run's ledger before the verdict.
+        for _ in range(rules._issued(run) or 0):
+            judge.evidence_counter.next_id()
         judge.decide_techniques = AsyncMock(return_value=rules._stored_review(run))
         report = stored.report or {}
         narrative_answer = json.dumps(
