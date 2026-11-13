@@ -1281,7 +1281,14 @@ Two producers use it:
 * **Analysts** (`agents/base_agent.py`) — `validate_isr` reports a technique id
   the ATT&CK catalogue does not have (with up to three suggestions from
   `tools.knowledge.resolve_technique`), a confidence outside `[0, 1]`, and a
-  claim citing no evidence. An id that survives the retry keeps the analyst's
+  claim citing no evidence. Every id on a claim's EVIDENCE line has to be one
+  the job issued: the job's evidence counter issues `ev_0001` up to its count
+  to every agent, and an id past that count is `isr.unissued_evidence`, asked
+  once per claim block. An id another analyst's call took is the job's and is
+  not asked about; item ids and ids the claim sentence names outside the line
+  are not read. A technique claim whose line names only such ids is asked
+  `isr.ungrounded_technique`, which says so, instead of a second question. The
+  replay of a stored run reads the count off the run's whole ledger. An id that survives the retry keeps the analyst's
   spelling and is flagged `technique_id_valid=False`; the report, the STIX
   minting step and the FP linter read the flag. The first answer goes back into
   the retry's conversation as the model wrote it (`AgentISR.answer_text`: its

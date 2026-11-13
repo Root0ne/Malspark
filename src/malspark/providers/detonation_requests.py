@@ -33,6 +33,7 @@ from typing import TYPE_CHECKING, Any
 
 from malspark.core.logger import logger
 from malspark.providers.detonation import detonation_name
+from malspark.schemas.evidence import unissued_ids
 
 if TYPE_CHECKING:
     from langchain_core.tools import BaseTool
@@ -155,8 +156,7 @@ def _issued(container: Any) -> int:
 
 def _unissued(container: Any, cited: list[str]) -> list[str]:
     """The cited ids the job never issued before this call."""
-    issued = _issued(container)
-    return [i for i in cited if not 1 <= int(i.removeprefix("ev_")) <= issued]
+    return unissued_ids(cited, _issued(container))
 
 
 def stage_of(container: Any, agent: str) -> str:

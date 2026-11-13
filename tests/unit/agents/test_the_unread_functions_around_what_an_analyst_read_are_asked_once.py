@@ -644,6 +644,7 @@ def _inputs() -> AnswerCheckInputs:
         alignment=None,
         alignment_threshold=0.3,
         alignment_margin=0.4,
+        issued=None,
     )
 
 

@@ -81,7 +81,13 @@ from malspark.pipeline.events import (
 from malspark.pipeline.exit_branches import ExitSite, exits_question, uncovered_exits
 from malspark.pipeline.feedback_mode import FEED_BACK, feedback_mode, feeds_back
 from malspark.pipeline.retry_merge import folded_title
-from malspark.schemas.evidence import ENTRY_ID_RE, answer_not_shown, entry_ids_in
+from malspark.schemas.evidence import (
+    ENTRY_ID_RE,
+    answer_not_shown,
+    entry_ids_in,
+    format_entry_id,
+    unissued_ids,
+)
 from malspark.schemas.judgement import BENIGN_VERDICT, SEVERITY_RATINGS, VERDICT_VALUES
 from malspark.schemas.stix_pattern import read_comparisons
 from malspark.utils.marked_cut import marked_cut
@@ -519,6 +525,13 @@ def technique_facts_note(violations: Sequence[Violation], claims: Iterable[Any],
 # or one the run never recorded.
 UNGROUNDED_TECHNIQUE_CODE = "isr.ungrounded_technique"
 
+# A claim's EVIDENCE line names an entry id the job never issued: past the
+# count of the job's evidence counter, which issues every agent's ids. An id
+# another agent's call took is the job's and is not asked about. A technique
+# claim whose line names only such ids is asked the ungrounded-technique
+# question, which then says so, instead of a second one.
+UNISSUED_EVIDENCE_CODE = "isr.unissued_evidence"
+
 # A check that raised on an answer. Its findings are missing from the run, and
 # the run says so: an advisory row naming the check and the exception's class,
 # never shown to the producer (it cannot fix the check), never a reason to drop
@@ -718,6 +731,35 @@ def _cited_items(claim: Any) -> list[str]:
     return item_ids_in(str(getattr(claim, "evidence_ref", "") or ""))
 
 
+def entry_ids_written(text: str) -> list[str]:
+    """The entry ids ``text`` writes, lower-cased, once each, in the order written."""
+    return list(dict.fromkeys(found.lower() for found in ENTRY_ID_RE.findall(text or "")))
+
+
+def unissued_sentence(ids: Sequence[str], issued: int) -> str:
+    """What a question says of cited ids the job never issued, and the ids it did issue."""
+    named = ", ".join(safe_finding_value(i) for i in ids)
+    span = (
+        f"its ids run from {format_entry_id(1)} to {format_entry_id(issued)}"
+        if issued > 0
+        else "it has issued none"
+    )
+    return f"{named}, which this run never issued ({span})"
+
+
+def unissued_evidence_violation(ids: Sequence[str], issued: int, *, path: str) -> Violation:
+    """The question for a claim block whose EVIDENCE line names ids the job never issued."""
+    return Violation(
+        code=UNISSUED_EVIDENCE_CODE,
+        message=(
+            f"EVIDENCE names {unissued_sentence(ids, issued)}. Cite the entry the claim was "
+            "read from, or remove the id."
+        ),
+        path=path,
+        subject=str(ids[0]) if ids else "",
+    )
+
+
 def _cites_a_ledger_entry(
     claim: Any, cited_by_findings: set[str], citable: set[str], items: ItemIndex | None = None
 ) -> bool:
@@ -746,6 +788,20 @@ def _cites_a_ledger_entry(
     return bool(technique and technique in cited_by_findings)
 
 
+def _ungrounded(
+    claim: Any,
+    citable: Sequence[str],
+    cited_by_findings: set[str],
+    known: set[str],
+    items: ItemIndex | None,
+) -> bool:
+    """Whether a technique claim is asked for a citation: nothing it cites is the run's."""
+    tid = str(getattr(claim, "technique_id", "") or "").strip().upper()
+    return bool(
+        tid and citable and not _cites_a_ledger_entry(claim, cited_by_findings, known, items)
+    )
+
+
 def validate_isr(
     isr: Any,
     *,
@@ -757,6 +813,7 @@ def validate_isr(
     alignment_margin: float = ALIGNMENT_MARGIN,
     weak_alignment_challenges: bool = False,
     items: ItemIndex | None = None,
+    issued: int | None = None,
 ) -> list[Violation]:
     """What is wrong with one analyst's structured answer.
 
@@ -776,6 +833,13 @@ def validate_isr(
     the run never issued is no citation. An analyst with nothing citable at
     all — a measurement profile, which has no tools and no pack — is exempt,
     because it has nothing it could cite.
+
+    ``issued`` is how many entry ids the job's evidence counter has issued, to
+    every agent of the job. Each id a claim block's EVIDENCE line names past
+    that count is ``isr.unissued_evidence``, asked once per block; an id
+    another agent's call took is within it. A technique claim whose line names
+    only such ids is asked the ungrounded-technique question, which says so,
+    instead. ``None`` (no counter) asks nothing about it.
 
     ``sample`` carries the routed ``platform`` and ``file_type``; a known
     technique whose catalogue domain or platforms cannot apply to them is
@@ -801,6 +865,10 @@ def validate_isr(
     # several ids is one claim per id, and the analyst wrote one block.
     blocks = claim_block_indexes(claims)
     block_sizes = {block: blocks.count(block) for block in set(blocks)}
+    # The ids the current block's EVIDENCE line names that the job never
+    # issued, and whether its ungrounded-technique question says so.
+    never: list[str] = []
+    folded = False
 
     for index, claim in enumerate(claims):
         block = blocks[index]
@@ -841,6 +909,25 @@ def validate_isr(
                     path=block_path,
                 )
             )
+        if first_of_block:
+            written = entry_ids_written(evidence)
+            never = unissued_ids(written, issued) if issued is not None else []
+            # A line naming only ids the job never issued is said once, in the
+            # ungrounded-technique question, when that question is asked of
+            # any claim of the block.
+            folded = (
+                bool(never)
+                and len(never) == len(written)
+                and any(
+                    _ungrounded(other, citable, cited_by_findings, known, items)
+                    for other, at in zip(claims, blocks, strict=True)
+                    if at == block
+                )
+            )
+            if never and not folded:
+                violations.append(
+                    unissued_evidence_violation(never, int(issued or 0), path=block_path)
+                )
 
         tid = str(getattr(claim, "technique_id", "") or "").strip().upper()
         # A technique with nothing behind it. A live run on a signed PuTTY
@@ -849,7 +936,7 @@ def validate_isr(
         # speculative" — and the judge read them as sixteen techniques and said
         # Malware. The analyst is asked to cite the entry it read the technique
         # from or to drop it; nothing here removes the claim or the id.
-        if tid and citable and not _cites_a_ledger_entry(claim, cited_by_findings, known, items):
+        if _ungrounded(claim, citable, cited_by_findings, known, items):
             shown = ", ".join(citable[:3])
             # Named only in a run whose report has items to cite.
             unheld = (
@@ -862,6 +949,8 @@ def validate_isr(
                 if unheld
                 else ""
             )
+            if folded:
+                said += f" EVIDENCE names {unissued_sentence(never, int(issued or 0))}."
             violations.append(
                 Violation(
                     code=UNGROUNDED_TECHNIQUE_CODE,
@@ -5635,6 +5724,7 @@ def citation_violations(
     often it appears, with a sentence naming the ids it may cite. The prose is
     never edited: a citation the retry does not fix prints as written, and the
     unresolved row is what tells a reader.
+
     """
     if payload is None:
         return []
@@ -14657,6 +14747,9 @@ class AnswerCheckInputs:
     alignment: Any
     alignment_threshold: float
     alignment_margin: float
+    # How many entry ids the job's evidence counter has issued, to every
+    # agent; ``None`` where no counter is known (``validate_isr``).
+    issued: int | None
 
 
 def analyst_ledger_ids(
@@ -14845,6 +14938,7 @@ def analyst_answer_checks(
             alignment_margin=inputs.alignment_margin,
             weak_alignment_challenges=weak_alignment_challenges,
             items=inputs.items,
+            issued=inputs.issued,
         ),
     ]
 

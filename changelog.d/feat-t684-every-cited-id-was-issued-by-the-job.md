@@ -1,0 +1,3 @@
+### Added
+
+- **A claim's cited entry ids are checked against the ids the job issued (T-684).** Every id on an analyst claim's EVIDENCE line has to lie within the count of the job's evidence counter, which issues ids to every agent; one past it is asked about once per claim block (`isr.unissued_evidence`), whether or not the claim names a technique. An id another analyst's call took is the job's and is not asked about, and item ids are not read. A technique claim citing only such ids is asked the existing ungrounded-technique question, which names them. The finding follows `validation.feedback` like every other claim finding, and the replay of a stored run reads the count off the run's ledger. The further-detonation request reads the same decision.

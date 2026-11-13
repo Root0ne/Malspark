@@ -573,6 +573,23 @@ def _parse_answer(run: _Run, agent: str, domain: str, text: str, revision_round:
     return analyst._drain_findings(isr)
 
 
+def _issued(run: _Run) -> int | None:
+    """How many entry ids the job's counter issued, read off the run's whole ledger.
+
+    The counter issues ``ev_0001`` up to its count and the ledger keeps every
+    entry, so the highest id the ledger holds is the count; ``None`` for a run
+    that stored no ledger, of which nothing can be said.
+    """
+    from malspark.schemas.evidence import ENTRY_ID_RE
+
+    numbers = [
+        int(text[3:])
+        for text in (str(entry.id).strip() for entry in run.ledger)
+        if ENTRY_ID_RE.fullmatch(text)
+    ]
+    return max(numbers) if numbers else None
+
+
 def _analyst_checks(
     run: _Run, isr: Any, own: _Own, techniques: bool, *, whole: bool, agent: str = ""
 ) -> list[Any]:
@@ -631,6 +648,7 @@ def _analyst_checks(
         alignment=None,
         alignment_threshold=float(_setting("validation.alignment_threshold")),
         alignment_margin=float(_setting("validation.alignment_margin")),
+        issued=_issued(run),
     )
     callees = None
     if whole and agent and agent not in run.callees_asked:
