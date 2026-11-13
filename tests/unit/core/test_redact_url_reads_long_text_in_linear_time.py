@@ -1,12 +1,16 @@
-"""``redact_url`` costs time linear in its text, and its output is the one it always had (T-688).
+"""``redact_url`` costs time linear in its text, and its output equals the reference's (T-688).
 
 A URL's scheme starts at the first letter of a run of scheme characters, so a
-long run that is no scheme (a token, a dotted name, one long line) must be
-read once, not from each of its characters. The corpus under
-``tests/fixtures/redact_url_corpus.json`` holds inputs and the output the
-function gave for each before the scheme pattern was anchored to a run's
-start; the credential in every case is written ``PWPLACEHOLDER`` there and
-built here (``tests/credential_shapes.py``).
+long run that is no scheme (a token, a dotted name, one long line) is read
+once, not from each of its characters. The reference is the per-character
+scheme pattern (``_REFERENCE_URL_SPAN``): ``redact_url`` returns what it
+returns on every input. The corpus under ``tests/fixtures/redact_url_corpus.json``
+holds inputs and the reference's outputs; the credential in every case is
+written ``PWPLACEHOLDER`` there and built here (``tests/credential_shapes.py``).
+
+Two tests hold the cost. ``test_a_long_run_is_read_within_a_second`` is the one
+that fails fast: a quadratic pattern takes seconds on its one run. The ratio
+test compares growth and fails slowly on a quadratic pattern.
 """
 
 from __future__ import annotations
@@ -18,7 +22,7 @@ from pathlib import Path
 
 import pytest
 from tests.credential_shapes import password
-from tests.linear_cost import assert_scales
+from tests.linear_cost import assert_scales, assert_under
 
 from malspark.core import settings_masking as sm
 from malspark.core import settings_overrides as ov
@@ -26,8 +30,8 @@ from malspark.core import settings_overrides as ov
 CORPUS = Path(__file__).resolve().parents[2] / "fixtures" / "redact_url_corpus.json"
 PLACEHOLDER = "PWPLACEHOLDER"
 
-# The scheme pattern as it was written before it was anchored to a run's start.
-_OLD_URL_SPAN = re.compile(r"[a-zA-Z][a-zA-Z0-9+.-]*://[^\s\"'<>]*")
+# The reference: the scheme pattern tried from every character of a run.
+_REFERENCE_URL_SPAN = re.compile(r"[a-zA-Z][a-zA-Z0-9+.-]*://[^\s\"'<>]*")
 
 
 @pytest.fixture(autouse=True)
@@ -40,7 +44,7 @@ def _cases() -> list[dict[str, object]]:
     return cases
 
 
-def test_the_corpus_is_redacted_as_before() -> None:
+def test_the_corpus_is_redacted_as_the_reference_redacts_it() -> None:
     cred = password()
     cases = _cases()
     assert len(cases) > 50
@@ -51,12 +55,12 @@ def test_the_corpus_is_redacted_as_before() -> None:
         assert got.replace(cred, PLACEHOLDER) == case["expected"], case["input"]
 
 
-def test_redact_url_matches_the_unanchored_scheme_pattern() -> None:
+def test_redact_url_equals_the_reference_on_generated_text() -> None:
     alphabet = list("aZ9+.-:/@?&#= \n\"'<>_") + ["://", "http", "x://", "1.", "token="]
     rnd = random.Random(688)
     for _ in range(4000):
         text = "".join(rnd.choice(alphabet) for _ in range(rnd.choice((4, 12, 60, 200))))
-        assert ov.redact_url(text) == _redact_with(_OLD_URL_SPAN, text), text
+        assert ov.redact_url(text) == _redact_with(_REFERENCE_URL_SPAN, text), text
 
 
 def _redact_with(pattern: re.Pattern[str], text: str) -> str:
@@ -81,10 +85,16 @@ def _redact_with(pattern: re.Pattern[str], text: str) -> str:
     ],
 )
 def test_the_cost_grows_with_the_text_not_its_square(unit: str) -> None:
-    # Four calls to a call, so the small run is long enough to read a ratio from.
+    # Eight calls to a call, so the small run clears the helper's 2 ms floor.
     assert_scales(
         lambda size: unit * (size // len(unit)),
-        100_000,
-        lambda text: [ov.redact_url(text) for _ in range(4)],
+        50_000,
+        lambda text: [ov.redact_url(text) for _ in range(8)],
         factor=4,
     )
+
+
+@pytest.mark.parametrize("text", ["A" * 100_000, "a." * 50_000])
+def test_a_long_run_is_read_within_a_second(text: str) -> None:
+    # Linear: about 1 ms. A quadratic pattern: seconds, so one run is enough to fail.
+    assert_under(lambda: ov.redact_url(text), 1.0, what="redact_url", repeats=1)
