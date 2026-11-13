@@ -3042,9 +3042,11 @@ def sandbox_item_citations(state: AnalysisState, container: Any) -> Any:
 
     The pack's section index says which ids exist; the report in hand,
     read into sections once here, gives each cited item's own text. Never a
-    list of every id.
+    list of every id. A later detonation's item (``d2/…``) is read from that
+    detonation's own report (``detonations.later_sections``).
     """
     from malspark.analysis.sandbox_sections import ItemCitations, Sections, item_index_of
+    from malspark.pipeline.detonations import later_sections
     from malspark.pipeline.sandbox_status import observed_report
     from malspark.providers.sandbox_tools import normalised_by_of
 
@@ -3053,7 +3055,7 @@ def sandbox_item_citations(state: AnalysisState, container: Any) -> Any:
         return None
     report = observed_report(state.get("sandbox_report"))
     sections = Sections(report, normalised_by_of(container)) if report else None
-    return ItemCitations(index, sections)
+    return ItemCitations(index, sections, later_sections(container))
 
 
 def pack_ledger_ids(state: AnalysisState) -> list[str]:
