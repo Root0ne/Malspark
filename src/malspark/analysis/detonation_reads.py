@@ -46,16 +46,17 @@ def later_detonation_name(entry: Any) -> str:
 def own_detonation_read(entry: Any) -> bool:
     """Whether a ledger entry, or its index row, is the platform's read of the job's own detonation.
 
-    The same source and agent test as :func:`later_detonation_name`'s, and no
-    later detonation's name: a call of the platform's in-process sandbox
-    source, or the pack's read of a tool that source declares or of the
-    sandbox report's section index (the tools a detonation is read with,
-    ``pipeline.detonations.platform_reads``), so a pack's static step observed
-    no detonation. The tool's declared kind, or its lack of one, plays no part.
+    The same source and agent test as :func:`later_detonation_name`'s, no
+    later detonation's name, and a tool the platform reads a detonation with:
+    a reader of the in-process sandbox source
+    (``providers.sandbox_tools.DETONATION_READERS``) or the sandbox report's
+    section index, the tools ``pipeline.detonations.platform_reads`` reads a
+    later one with. So a pack's static step and a request for a detonation
+    observed none. The tool's declared kind, or its lack of one, plays no part.
     """
     if later_detonation_name(entry) or not _platform_source(entry):
         return False
-    return _field(entry, "source") == SANDBOX_SOURCE or _field(entry, "tool") in _detonation_tools()
+    return _field(entry, "tool") in _detonation_tools()
 
 
 def _field(entry: Any, name: str) -> Any:
@@ -70,10 +71,8 @@ def _platform_source(entry: Any) -> bool:
 
 @cache
 def _detonation_tools() -> frozenset[str]:
-    """The tools the platform's sandbox source declares, and a sandbox report's section index."""
+    """The sandbox source's readers of a detonation, and a sandbox report's section index."""
     from malspark.analysis.sandbox_sections import SECTIONS_TOOL
-    from malspark.core.builtin_declarations import in_process_declarations
-    from malspark.core.tool_declarations import SourceRef
+    from malspark.providers.sandbox_tools import DETONATION_READERS
 
-    block = in_process_declarations().get(SourceRef.parse(SANDBOX_SOURCE))
-    return frozenset([*(block.tool_facts if block is not None else ()), SECTIONS_TOOL])
+    return frozenset([*DETONATION_READERS, SECTIONS_TOOL])

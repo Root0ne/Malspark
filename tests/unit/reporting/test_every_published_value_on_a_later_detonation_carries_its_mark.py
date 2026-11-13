@@ -61,9 +61,10 @@ VALUES = {
 }
 LATER, OWN, STATIC = "ev_0031", "ev_0021", "ev_0041"
 # The job's own detonation read by an agent through the platform's sandbox
-# source, of a reader that declares no kind; another kind's read of the pack;
-# an agent's call of another source's reader of the sandbox's kind.
-UNKINDED, OTHER_KIND, FOREIGN = "ev_0051", "ev_0061", "ev_0071"
+# source, its entry storing no kind; another kind's read of the pack; an
+# agent's call of another source's reader of the sandbox's kind; an agent's
+# request for a detonation, through the platform's sandbox source.
+UNKINDED, OTHER_KIND, FOREIGN, REQUEST = "ev_0051", "ev_0061", "ev_0071", "ev_0081"
 
 
 def _index(*, later: bool = True, launch: str = ARGS) -> list[EvidenceIndexRow]:
@@ -71,7 +72,7 @@ def _index(*, later: bool = True, launch: str = ARGS) -> list[EvidenceIndexRow]:
 
     def _row(ref: str, agent: str, source: str, tool: str, **over: Any) -> EvidenceIndexRow:
         # Each row stores the facts its entry stored, its declared kind among them.
-        facts = facts_record("sandbox" if source.startswith("mcp:") else source, tool)
+        facts = over.pop("facts", facts_record("sandbox" if ":" in source else source, tool))
         return EvidenceIndexRow(id=ref, agent=agent, source=source, tool=tool, facts=facts, **over)
 
     return [
@@ -85,16 +86,17 @@ def _index(*, later: bool = True, launch: str = ARGS) -> list[EvidenceIndexRow]:
             "sandbox_signatures",
             observed_in=[ObservedIn(detonation="d2", launched_with=launch)] if later else [],
         ),
-        _row(UNKINDED, "dynamic", "sandbox", "sandbox_new_view"),
+        _row(UNKINDED, "dynamic", "sandbox", "sandbox_registry_ops", facts={"v": 1}),
         _row(OTHER_KIND, "pipeline", "pack", "sandbox_processes"),
         _row(FOREIGN, "dynamic", "mcp:sandbox_host", "sandbox_signatures"),
+        _row(REQUEST, "dynamic", "sandbox", "request_detonation"),
     ]
 
 
 def _report(cited: list[str], *, later: bool = True, launch: str = ARGS) -> MalwareReport:
     texts = json.dumps(list(VALUES.values())).lower()
     entries = EntryTexts(
-        texts={ref: texts for ref in (LATER, OWN, STATIC, UNKINDED, OTHER_KIND, FOREIGN)}
+        texts={ref: texts for ref in (LATER, OWN, STATIC, UNKINDED, OTHER_KIND, FOREIGN, REQUEST)}
     )
     identifiers = [
         HostIdentifier(kind=kind, value=value, use="creates/writes", evidence_refs=cited)
@@ -146,8 +148,9 @@ class TestEveryKind:
             kind: [D1, D2] for kind in rows
         }
 
-    def test_an_agent_s_call_of_another_source_observed_no_detonation(self) -> None:
-        rows = _stated(_report([FOREIGN, LATER]))
+    @pytest.mark.parametrize("other", [FOREIGN, REQUEST], ids=["other-source", "request"])
+    def test_an_entry_that_read_no_detonation_of_the_job_observed_none(self, other: str) -> None:
+        rows = _stated(_report([other, LATER]))
         assert {kind: row.observed_in for kind, row in rows.items()} == {
             kind: [D2] for kind in rows
         }
@@ -356,7 +359,9 @@ class TestTheOneRule:
         [
             ({"source": "pack", "agent": "pipeline", "tool": "sandbox_processes"}, True),
             ({"source": "pack", "agent": "pipeline", "tool": "sandbox_sections"}, True),
-            ({"source": "sandbox", "agent": "dynamic", "tool": "sandbox_new_view"}, True),
+            ({"source": "sandbox", "agent": "dynamic", "tool": "sandbox_registry_ops"}, True),
+            ({"source": "sandbox", "agent": "dynamic", "tool": "request_detonation"}, False),
+            ({"source": "pack", "agent": "pipeline", "tool": "capa"}, False),
             ({"source": "pack", "agent": "pipeline", "tool": "floss"}, False),
             ({"source": "pack", "agent": "dynamic", "tool": "sandbox_processes"}, False),
             ({"source": "mcp:sbx", "agent": "dynamic", "tool": "sandbox_signatures"}, False),
@@ -376,3 +381,16 @@ class TestTheOneRule:
         from malspark.analysis.detonation_reads import own_detonation_read
 
         assert own_detonation_read(entry) is own
+
+    def test_a_request_beside_a_later_read_gives_the_later_detonation_only(self) -> None:
+        report = MalwareReport(
+            identity=SampleIdentity(hashes=FileHashes(sha256="6" * 64)), evidence_index=_index()
+        )
+        assert entry_marks([REQUEST, LATER], report) == [D2]
+        assert entry_marks([REQUEST], report) == []
+
+    def test_every_tool_the_pack_reads_a_detonation_with_is_a_reader(self) -> None:
+        from malspark.pipeline.triage_pack import _SANDBOX_VIEWS
+        from malspark.providers.sandbox_tools import DETONATION_READERS
+
+        assert set(_SANDBOX_VIEWS) <= set(DETONATION_READERS)
