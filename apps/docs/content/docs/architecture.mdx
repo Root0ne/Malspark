@@ -1839,11 +1839,7 @@ Four parts, all in `pipeline/validation.py` and `tools/knowledge.py`, none of
 them a rewrite: the check produces violations and annotations, and the id an
 analyst wrote stays the id in the report.
 
-This is a change of method from the tree of 2026-09-12 (commit `bd511d81d`). That tree carried a re-grounding pass,
-`ATTCKValidator.correct_isr_reports`, which replaced an analyst's technique id
-with the alignment index's best candidate whenever the gate disagreed, so the
-identifiers in a report were valid because the pass had made them so. Here
-what holds by construction is that no invalid id goes unflagged: every id is
+What holds by construction is that no invalid id goes unflagged: every id is
 checked against the vendored catalogue, and one the catalogue lacks is
 reported, flagged `technique_id_valid=False` and kept as written — an invalid
 id can be kept, and then it is kept marked. The technique choice is the
