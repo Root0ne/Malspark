@@ -667,6 +667,44 @@ class TestWhatTheSharedScrubMasks:
         assert not {"launched_with", "arguments_honoured", "arguments_via"} & set(row)
         assert row["detonation"] == "d2"
 
+    @pytest.mark.parametrize("registered", [False, True])
+    def test_a_value_under_a_secret_named_key_is_masked_in_every_state(
+        self, registered: bool
+    ) -> None:
+        from malspark.pipeline.events import remember_secret_values
+
+        if registered:
+            remember_secret_values([password(20, variant=7)])
+        facts = _facts(
+            task_ids={"api_token": "abc123", "id": "19159"},
+            guest={
+                "password": "plainone",
+                "clientSecret": "plaintwo",
+                "auth": {"user": "plainthree", "os": "w"},
+                "credentials": {"user": "kept"},
+                "keyword": "word",
+                "resource": "win10",
+                "os": "windows10",
+                "platform": "windows",
+                "name": "n",
+                "label": "l",
+                "manager": "KVM",
+            },
+        )
+        (row,) = detonations_record(_held(_record(sandbox_facts=facts))) or []
+        text = json.dumps(row)
+        for plain in ("abc123", "plainone", "plaintwo", "plainthree"):
+            assert plain not in text, plain
+        assert row["task_ids"] == {"api_token": "***", "id": "19159"}
+        guest = row["guest"]
+        assert guest["password"] == "***" and guest["clientSecret"] == "***"
+        # Every text under a secret-named key, the key kept.
+        assert guest["auth"] == {"user": "***", "os": "***"}
+        # ``credentials`` is not a word of the rule (``credential`` is); ``keyword`` is not ``key``.
+        assert guest["credentials"] == {"user": "kept"} and guest["keyword"] == "word"
+        for name in ("resource", "os", "platform", "name", "label", "manager"):
+            assert guest[name] == facts["guest"][name], name
+
     def test_a_pair_that_hides_nothing_is_kept_as_stated(self) -> None:
         facts = _facts(guest={"/info/id": "win10v2004-20260513-en", "os": "windows10-2004-x64"})
         (row,) = detonations_record(_held(_record(sandbox_facts=facts))) or []

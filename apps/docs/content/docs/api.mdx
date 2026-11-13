@@ -463,7 +463,10 @@ key is also masked where it is shaped like a credential and may read `***`
 (a key written as a place, such as `/info/id`, keeps its segments unless the
 whole key reads as a credential, and then it reads `***`; two masked keys of
 one mapping merge into one entry). A `failure` is free text and is masked that
-way in both states. The masking protects against a secret that a provider's
+way in both states. A value in a mapping whose key names a secret (`password`,
+`token`, `key`, `secret`, `auth`, `credential`, `sig`, `code` as a word of the
+key, the rule applied to secret-named query parameters) reads `***` in every
+state, as does each value of a mapping under such a key; the key is kept. The masking protects against a secret that a provider's
 code or its sandbox echoes into a fact whole, in a value or a key; it does not
 defend against code that splits a secret across several places on purpose, as
 such code holds the secret and has other ways to leak it. Task URLs are not recorded.

@@ -706,11 +706,17 @@ def _stated_text_of(stated: Mapping[str, Any], key: str) -> str:
     return _stated_text(stated.get(key))
 
 
-def _named_texts(held: Any, *, nested: bool) -> dict[str, Any] | str:
+def _named_texts(held: Any, *, nested: bool, secret: bool = False) -> dict[str, Any] | str:
     """A provider's mapping of names to texts, kept as stated; ``"not reported"`` for none.
 
-    ``nested`` keeps one level of mappings under a name (a guest per task).
+    ``nested`` keeps one level of mappings under a name (a guest per task). A
+    value whose name is a secret's (``settings_overrides._secret_name``, the
+    rule ``redact_url`` applies to a query parameter) is ``***``, and so is
+    each text of a mapping under such a name (``secret``); the name itself is
+    kept as stated.
     """
+    from malspark.core.settings_overrides import _secret_name
+
     if not isinstance(held, Mapping):
         return NOT_REPORTED
     out: dict[str, Any] = {}
@@ -718,10 +724,11 @@ def _named_texts(held: Any, *, nested: bool) -> dict[str, Any] | str:
         name = _said(key, name=True)
         if not name:
             continue
+        hides = secret or _secret_name(str(key))
         if _scalar(value):
-            out[name] = _said(value)
+            out[name] = _MASKED_KEY if hides else _said(value)
         elif nested and isinstance(value, Mapping):
-            inner = _named_texts(value, nested=False)
+            inner = _named_texts(value, nested=False, secret=hides)
             if isinstance(inner, dict):
                 out[name] = inner
     return out or NOT_REPORTED
