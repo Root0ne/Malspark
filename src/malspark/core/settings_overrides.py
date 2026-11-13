@@ -842,8 +842,13 @@ _SECRET_WORDS = frozenset(
     }
 )  # fmt: skip
 _QUERY_PARAM = re.compile(r"([?&#])([\w.-]+)=([^\s&#\"'<>]*)")
-# A URL: from its scheme to the next space or quote.
-_URL_SPAN = re.compile(r"[a-zA-Z][a-zA-Z0-9+.-]*://[^\s\"'<>]*")
+# A URL: from its scheme to the next space or quote. A scheme starts at the
+# first letter of a run of scheme characters and is tried once per run: a
+# match may only begin where the run begins (the lookbehind), with any leading
+# digits, ``+``, ``.`` and ``-`` before that first letter, so a long run that
+# is no scheme (a token, a dotted name) is read once, not from each of its
+# characters.
+_URL_SPAN = re.compile(r"(?<![a-zA-Z0-9+.-])[0-9+.-]*[a-zA-Z][a-zA-Z0-9+.-]*://[^\s\"'<>]*")
 
 
 def _secret_name(name: str) -> bool:
