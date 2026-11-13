@@ -46,7 +46,7 @@ from malspark.providers.detonation import (
 )
 from malspark.tools.capabilities import NOT_REPORTED
 from malspark.utils.marked_cut import CUT_MARK
-from tests.credential_shapes import prefixed_key
+from tests.credential_shapes import lowercase_body, password, prefixed_key
 
 FIX = Path(__file__).resolve().parents[1] / "fixtures" / "sandbox"
 NR = NOT_REPORTED
@@ -314,6 +314,38 @@ class TestAProviderTextIsCutBeforeAnyOtherWork:
         said = run_environment._said(f"lead {spaces}{secret}")
         assert said == "lead" + CUT_MARK
         assert run_environment._said("word " * 20) == ("word " * 20).strip()
+
+    def test_no_part_of_a_credential_behind_control_characters_survives_the_cut(self) -> None:
+        key = prefixed_key("ghs_", 64)
+        controls = "\x00" * (STATED_READ_CHARS - len(key) // 2)
+        value = controls + key + " tail"
+        facts = _facts(sandbox_version=value, guest={value: value}, task_ids={"id": value})
+        (row,) = detonations_record(_held(_record(sandbox_facts=facts))) or []
+        text = json.dumps(row)
+        for piece in (key[:8], key[4:12], key[-8:]):
+            assert piece not in text, piece
+        assert row["sandbox_version"] == CUT_MARK
+
+    def test_no_part_of_one_long_word_survives_the_cut(self) -> None:
+        word = lowercase_body(3 * STATED_READ_CHARS)
+        assert " " not in word
+        (row,) = (
+            detonations_record(_held(_record(sandbox_facts=_facts(started=word, guest={word: 1}))))
+            or []
+        )
+        assert word[:16] not in json.dumps(row)
+        assert row["started"] == CUT_MARK
+
+    def test_no_part_of_an_address_with_user_info_straddling_the_bound_survives(self) -> None:
+        secret = password(40)
+        address = f"https://operator:{secret}@sandbox.example.org/report"
+        lead = "run at"
+        value = lead + " " + "\x07" * (STATED_READ_CHARS - len(lead) - 10) + address
+        assert value.index(address) < STATED_READ_CHARS < value.index(address) + len(address)
+        (row,) = detonations_record(_held(_record(sandbox_facts=_facts(ended=value)))) or []
+        text = json.dumps(row)
+        assert secret[:6] not in text and "operator" not in text and "https" not in text
+        assert row["ended"] == lead + CUT_MARK
 
 
 class _PlugIn:

@@ -622,8 +622,10 @@ def _said(value: Any) -> str:
     no path of this host (``host_paths_masked``), and cut with the cut mark.
 
     The text is cut to ``STATED_READ_CHARS`` before anything else is done with
-    it, so its length costs nothing; where that cut falls inside a word, the
-    word is not kept (a credential cut in half is not one a mask recognises).
+    it, so its length costs nothing. Where that cut falls inside a word, read
+    once whitespace is folded and control characters are gone, the word is not
+    kept, also when it is the only one: a credential or an address cut in half
+    is not one a mask recognises. A text emptied so reads as the cut mark.
     """
     from malspark.core.paths import host_paths_masked
     from malspark.core.settings_overrides import redact_url
@@ -631,14 +633,12 @@ def _said(value: Any) -> str:
 
     whole = value if isinstance(value, str) else str(value)
     cut = len(whole) > STATED_READ_CHARS
-    in_word = cut and not any(
-        ch.isspace() for ch in whole[STATED_READ_CHARS - 1 : STATED_READ_CHARS + 1]
-    )
     text = " ".join(whole[:STATED_READ_CHARS].split())
     text = "".join(ch for ch in text if not unicodedata.category(ch).startswith("C"))
-    if in_word and " " in text:
-        text = text.rsplit(" ", 1)[0]
-    kept = host_paths_masked(redact_url(text))
+    if cut and not whole[STATED_READ_CHARS].isspace() and text and not text[-1].isspace():
+        # The cut is inside the last word: none of it is kept.
+        text = text.rsplit(" ", 1)[0] if " " in text else ""
+    kept = host_paths_masked(redact_url(text.rstrip()))
     if cut and len(kept) <= STATED_TEXT_CHARS:
         # Shorter than the width once read, and still a cut text.
         return kept[: STATED_TEXT_CHARS - len(CUT_MARK)].rstrip() + CUT_MARK
