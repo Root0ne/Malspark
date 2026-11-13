@@ -641,15 +641,18 @@ that finds it asks for a further detonation with it.
 
 **Asking.** Where the job's sandbox can pass launch arguments (a field of its
 own, or a [launcher](#through-a-launcher)), the in-process sandbox source holds
-`request_detonation(arguments, reason, cited_entries)`, and any agent whose
-definition holds that source may call it. It detonates nothing itself: it
-records the request and answers at once, in code:
+`request_detonation(arguments, reason, cited_entries)`. It is offered to an
+agent whose definition holds that source where the ceiling is above one and a
+step that carries a request out is reachable after the agent's own stage in the
+team (read from the team's shape, never from the agent's name), so no agent is
+handed a tool that could only refuse. It detonates nothing itself: it records
+the request and answers at once, in code:
 
 | Answer | When |
 |---|---|
 | accepted, as detonation `d2`, `d3`… | the request passes every check below |
 | joined to `dN` | an identical argument set is already accepted and pending: it is one detonation, and its record names every agent that asked |
-| refused, naming `dN` | a detonation already made was launched with exactly these arguments |
+| refused, naming `dN` | a detonation already made was launched with exactly these arguments: read it if it reported, read it once it returns if it is running, and it is not launched again if it returned no report |
 | refused | the value is not one command line; no reason; no cited entries, or entries the run had not issued before the call (named); mock mode, no sample, or a provider that detonates nothing or cannot pass the arguments (with the provider's note); the ceiling is reached; no later step of the run has an agent that reads the sandbox |
 
 The tool's description states the sandbox's physical limits: the ceiling
@@ -658,12 +661,21 @@ included), the provider's detonation time, that each submission sends the
 sample to the sandbox, is disclosed in the run's record and may be public on
 that service, and that the arguments are handed to the sandbox verbatim and
 never run on the worker. It also says when a request can still be carried out:
-while a step with an agent reading the sandbox is still ahead.
+while a step with an agent reading the sandbox is still ahead. "Ahead" is
+reachability in the graph from the step the request is filed in (held per
+step, so steps running at once never read each other's): a stage running beside
+the asker's is not after it. An accepted answer promises a further turn only
+where the debate's first negotiation is still ahead.
 
 **Carrying out.** An accepted request is carried out on entry of the next step
 of the graph that has an agent reading the sandbox (an agent whose tools come
-from the sandbox source, or whose definition holds it), before that step's own
-work, through the same submission path the job's own detonation takes. The
+from the sandbox source, or whose definition holds it), or of the debate's first
+negotiation while it is still to give the further turns and an analyst reads the
+sandbox, before that step's own work, through the same submission path the job's
+own detonation takes. The step claims it under the job's lock: a step entering
+while it is in flight waits for it and reads its result, so one request is
+submitted once. Its record exists from its start (running) and its upload row
+from the moment the submission is made, and a cancel of the job stops it. The
 graph has no node of its own for it: the detonation is recorded with the step
 it ran on entry of and its own start, end and duration, and announced with
 `detonation_started` and `detonation_finished` events, so its time can be taken
@@ -686,12 +698,27 @@ launcher's processes, flows and signatures as the launcher's reads that
 detonation's own launch record. A later detonation's item ids are qualified by
 it (`d2/proc:84`), and the run's item index knows each detonation's ids apart.
 A read made before a detonation existed answers with an error, which is never
-handed back for a later identical call. In the report, a later detonation's
-observations are in tables of their own, titled "… when launched with `<args>`
-(detonation 2, asked for by `<agent>` citing `<entries>`)"; they are never merged
-into the job's own dynamic block (its process tree, signatures, registry, mutexes and
-dropped files), and the report's composer is shown each later detonation apart under
-the same title. An agent's claim citing a later detonation's entry reaches the report
+handed back for a later identical call. When a detonation's report comes back,
+the platform reads it as the triage pack reads the job's own (processes,
+network, signatures, dropped files, channels and the section index), as the
+pack's entries stating the detonation and its launch, so its item ids are known
+to every citation check and what it observed reaches the report whether or not
+an agent read it. In the report, a later detonation's reads are in tables of
+their own, titled "… when launched with `<args>` (detonation 2, asked for by
+`<agent>` citing `<entries>`)", and the report's composer is shown each later
+detonation apart under the same title. The job's own process tree, registry and
+API calls stay its own; its network, signature, dropped-file and mutex rows hold
+a later detonation's rows too, each carrying `observed_in`: every detonation
+that observed it, with its launch (a value seen in several detonations names
+each). The IOC table's rows and the published techniques a later detonation's
+signatures tag carry it as well; the Markdown and analyst reports say "observed
+in detonation 2, launched with `<args>`"; the STIX export carries
+`x_malspark_observed_in` on each such indicator, with the same clause after its
+description, and on the sample's `uses` edge to such a technique; the MISP
+attributes say it in their comment, and the ATT&CK layer in an `observed in`
+metadata row. A row only the job's own detonation observed carries none of it.
+A generated launcher's own processes, flows, signatures and files never enter
+these rows. An agent's claim citing a later detonation's entry reaches the report
 as any claim does, with its citation. The disclosure block
 lists each further detonation as a submission of its own, with who asked and
 "the launch arguments an agent found". The run summary lists every detonation

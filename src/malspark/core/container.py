@@ -722,9 +722,10 @@ class ServiceContainer:
         # its record, set by ``app.arun`` (``MalsparkApp.detonate_further``);
         # ``None`` outside a job, where nothing can be detonated again.
         self.detonator: Any = None
-        # The step of the graph now running, by node name, set on each node's
-        # entry (``pipeline.detonations``): where a request is filed, and so
-        # whether a later step can still carry it out.
+        # The step of the graph last entered, by node name, set on each node's
+        # entry (``pipeline.detonations``). The step a request is filed in is
+        # read per context (``detonations.current_step``); this note is read
+        # only where no step set one there.
         self.current_step: str = ""
         # Each further turn an analyst was given to read detonations made
         # after its own turn (``pipeline.detonations.further_turns``).

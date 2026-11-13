@@ -36,9 +36,9 @@ is recorded (``container.further_turns``) and announced
 
 A job without a request runs exactly as it did: no request is pending on
 any entry, so nothing here runs and nothing is recorded or announced. The
-step currently running is noted on the container on each entry
-(``current_step``), which no output reads; the request tool reads it to say
-whether a later step can still carry a request out.
+step currently running is held per context on each entry (:func:`current_step`),
+which no output reads; the request tool reads it to say whether a step
+reachable after it can still carry a request out (:func:`carrying_steps`).
 
 A detonation is bounded by the job's time limit (``job_timeout``) and the
 ceiling the tool already applied; one that fails or cannot run is recorded
@@ -828,9 +828,11 @@ def on_entry(
 ) -> Any:
     """``fn``, entered through the detonation steps that belong before it.
 
-    On every entry: the step is noted (``current_step``). Where the step has
-    an agent reading the sandbox (``reading_agents``) and a request is
-    pending, the pending detonations are carried out first (:func:`carry_out`).
+    On every entry: the step is held for the code it runs (:func:`current_step`)
+    and noted on the container. Where the step has an agent reading the
+    sandbox (``reading_agents``), or is a first negotiation still to give the
+    further turns, and a request is pending or in flight, the pending
+    detonations are carried out, or waited for, first (:func:`carry_out`).
     An analysis step notes what its agents can read. On the debate's first
     negotiation entry, after that, the further turns run (:func:`further_turns`)
     and the step's own work reads the state they updated; their update is
