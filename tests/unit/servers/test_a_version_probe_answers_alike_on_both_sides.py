@@ -239,7 +239,11 @@ def test_the_program_sees_only_path_lang_and_a_home_of_its_own(
     assert not any(name.startswith("T668_") for name in env)
     assert env["PATH"] == os.environ["PATH"]
     assert env["LANG"] == "C.UTF-8"
-    assert env["HOME"] == env["TMPDIR"] == cwd
+    # The program's home is the directory it runs in: the same directory, however
+    # the system spells it (macOS reports a temporary directory under
+    # ``/private/var`` that was made under ``/var``).
+    assert env["HOME"] == env["TMPDIR"]
+    assert os.path.realpath(env["HOME"]) == os.path.realpath(cwd)
     assert Path(cwd).name.startswith("version-probe-")
     # The temporary directory goes with the probe.
     assert not Path(cwd).exists()
