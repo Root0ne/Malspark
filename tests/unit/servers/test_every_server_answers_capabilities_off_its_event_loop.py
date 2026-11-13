@@ -20,8 +20,11 @@ from malspark.tools.capabilities import ToolNeeds, binary
 ROOT = Path(__file__).resolve().parents[3]
 
 
-# How long the version probe waits for the event loop to release it. Reached
-# only when the loop is blocked; a slow machine does not get near it.
+# How long an answer waits for a version to be read, and how long the version
+# probe waits for the event loop to release it. Both are reached only when the
+# loop is blocked; a slow machine does not get near them. The probe outlasts
+# the answer's wait.
+ANSWER_WAIT_S = 20.0
 RELEASE_TIMEOUT_S = 30.0
 
 
@@ -53,6 +56,7 @@ def test_the_loop_keeps_running_while_a_version_is_read(
     monkeypatch.setattr(
         module, "CAPABILITIES", capabilities.manifest(server, needs, requirements=False)
     )
+    monkeypatch.setattr(capabilities, "VERSION_WAIT_S", ANSWER_WAIT_S)
     capabilities.clear_fact_caches()
 
     async def _release() -> None:
