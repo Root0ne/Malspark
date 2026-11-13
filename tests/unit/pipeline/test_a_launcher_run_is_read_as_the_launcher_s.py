@@ -687,3 +687,23 @@ class TestTheReviewOfTheLauncherRound:
         assert "T1059.001" in _techniques(sandbox_document(report))
         moved = report.channels.get(LAUNCHER_SIGNATURES_CHANNEL) or []
         assert "Command and Scripting Interpreter: PowerShell" not in [s["name"] for s in moved]
+
+    def test_with_no_launcher_folder_a_digest_alone_marks_no_file(self) -> None:
+        task = _task()
+        # No process names a folder: the launcher's folder is not known.
+        task["processes"] = [
+            {"procid": 1, "procid_parent": 0, "image": "powershell.exe", "cmd": "powershell.exe"},
+            {"procid": 2, "procid_parent": 1, "image": "sample.exe", "cmd": f"sample.exe {ARGS}"},
+        ]
+        task["dumped"] = [
+            # The sample's own persistence copy, under another name: its own doing.
+            {"name": "C:\\Users\\admin\\AppData\\Roaming\\svc.exe", "sha256": INTAKE},
+            # The archive's member by its name.
+            {"name": "C:\\Users\\admin\\AppData\\Local\\Temp\\x\\sample.exe", "sha256": INTAKE},
+        ]
+        report = _attributed(task=task)
+        reasons = {
+            row["name"].rsplit("\\", 1)[-1]: row.get(LINEAGE_REASON_KEY)
+            for row in report.dropped_files
+        }
+        assert reasons == {"svc.exe": None, "sample.exe": DROPPED_SAMPLE}

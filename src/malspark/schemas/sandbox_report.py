@@ -1362,6 +1362,21 @@ def _signature_nodes(
     return nodes
 
 
+def _the_member(name: str, sha256: str, files: set[str], digest: str, folder_known: bool) -> bool:
+    """Whether a written file is the archive's member ``name``, by its name or its digest.
+
+    Where the launcher's folder is known, either says it. With no folder
+    known a digest alone is not enough (the sample's own copy of itself has
+    the sample's digest): the member's name must match too, and the digest,
+    where both are known.
+    """
+    named = name in files
+    same = bool(sha256) and digest == sha256
+    if folder_known:
+        return named or same
+    return named and (same or not sha256 or not digest)
+
+
 def attribute_the_launcher(report: SandboxReport, launcher: Any) -> None:
     """Mark, in place, what in ``report`` is the generated launcher's and what the sample's.
 
@@ -1532,9 +1547,9 @@ def attribute_the_launcher(report: SandboxReport, launcher: Any) -> None:
         # A copy elsewhere in the guest, where the report shows the launcher's
         # folder, is the sample's own doing (a copy of itself it wrote).
         if not (folders and where and not where & folders):
-            if names.script in files or (names.script_sha256 and digest == names.script_sha256):
+            if _the_member(names.script, names.script_sha256, files, digest, bool(folders)):
                 reason = DROPPED_LAUNCHER
-            elif names.sample in files or (names.sample_sha256 and digest == names.sample_sha256):
+            elif _the_member(names.sample, names.sample_sha256, files, digest, bool(folders)):
                 reason = DROPPED_SAMPLE
         if reason:
             report.dropped_files[index] = {
