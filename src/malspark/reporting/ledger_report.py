@@ -58,6 +58,7 @@ from malspark.reporting.dedupe import (
     indicator_fingerprint,
     merge_cell,
 )
+from malspark.reporting.ledger_projection import later_detonation
 from malspark.reporting.models import OPEN_QUESTION_SOURCE, EvidenceSection
 from malspark.schemas.evidence import answer_not_shown
 from malspark.schemas.isr_models import would_answer_text
@@ -2064,7 +2065,7 @@ def _build_sections(
             if data.get("error"):
                 continue
             # A later detonation's read is drawn in tables of its own.
-            target = _OneDetonation(acc, data) if data.get("detonation") else acc
+            target = _OneDetonation(acc, data) if later_detonation(data) else acc
             builder(target, entry, data)
             # A purpose-built section reads its kind's answer shape (or the
             # rows a rule tool declares). An operator's own tool of the kind
