@@ -36,3 +36,21 @@ def test_the_sentence_names_the_further_turn() -> None:
 def test_rows_without_the_mark_read_as_before() -> None:
     (first,) = retry_drop_sentences([_row(0), _row(1)])
     assert first.endswith("from revision rounds 0, 1.")
+
+
+def test_the_run_summary_counts_further_turn_rows_apart_from_round_0() -> None:
+    from malspark.analysis.run_summary import _dropped_value_counts
+
+    rows = [
+        {"agent": "dynamic", "round": 0, "missing": ["a"]},
+        {"agent": "dynamic", "round": 0, "missing": ["b", "c"], FURTHER_TURN_KEY: "true"},
+    ]
+    counted = _dropped_value_counts(rows)
+    assert counted == [
+        {"agent": "dynamic", "round": 0, "values": 1, "claims": 1},
+        {"agent": "dynamic", "round": 0, "further_turn": True, "values": 2, "claims": 1},
+    ]
+    # Rows without the mark count as they did.
+    assert _dropped_value_counts(rows[:1]) == [
+        {"agent": "dynamic", "round": 0, "values": 1, "claims": 1}
+    ]
