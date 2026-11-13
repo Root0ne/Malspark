@@ -14,6 +14,7 @@ group; it is loaded only while the plugin allow-list names it
 
 from __future__ import annotations
 
+import importlib
 import inspect
 import threading
 from collections.abc import Callable
@@ -45,6 +46,11 @@ _VERSION = [0]
 _NAMES_HELD: list[object] = [None, frozenset()]
 # The ids the built-in adapters registered, by kind, once they are imported.
 _BUILT_IN: dict[str, frozenset[str]] = {}
+# The classes the built-in adapters registered, each by identity (``id`` to the
+# class itself), once they are imported (:func:`is_built_in_class`).
+_BUILT_IN_CLASSES: dict[int, type] = {}
+# The built-in sandbox adapters' modules, each registering its provider on import.
+_SANDBOX_MODULES: tuple[str, ...] = ("cape2", "mock", "rest", "triage", "upload")
 
 
 def _declare(name: str, cls: type) -> None:
@@ -80,8 +86,10 @@ def _refuse_a_plugin_registration(kind: str, name: str, cls: type, current: Any)
     if refusal:
         raise PluginRefused(refusal)
     # A provider not built into the platform may not declare a source name
-    # only the platform writes (``core.platform_sources``).
-    if not _shipped(cls):
+    # only the platform writes (``core.platform_sources``). A class registered
+    # before the built-ins are recorded is checked as any other: the built-in
+    # adapters state no such name.
+    if not _held_built_in(cls):
         from malspark.core.platform_sources import reserved_source_refusal
 
         stated = inspect.getattr_static(cls, "declaration_source", None)
@@ -124,29 +132,53 @@ def register_sandbox_provider(name: str):  # type: ignore[no-untyped-def]
     return decorator
 
 
-def _shipped(cls: object) -> bool:
-    return str(getattr(cls, "__module__", "")).startswith("malspark.")
+def is_built_in_class(cls: object) -> bool:
+    """Whether ``cls`` is a provider class built into the platform.
+
+    A fact the registry records, not something a class says of itself: the
+    exact class objects the built-in adapters' modules registered, recorded
+    by identity once the registry imported them (:func:`_import_built_ins`).
+    A subclass of one defined elsewhere is not built in, and neither is a
+    class whose ``__module__`` names the platform.
+    """
+    _import_built_ins()
+    return _held_built_in(cls)
+
+
+def _held_built_in(cls: object) -> bool:
+    """Whether ``cls`` is one of the built-in classes recorded so far, by identity."""
+    return _BUILT_IN_CLASSES.get(id(cls)) is cls
+
+
+def _record_built_in_classes(modules: list[Any]) -> None:
+    """Record each registered class one of the built-in adapters' ``modules`` holds, by identity."""
+    held = {id(value): value for module in modules for value in vars(module).values()}
+    for cls in (*_STATIC_REGISTRY.values(), *_SANDBOX_REGISTRY.values()):
+        if held.get(id(cls)) is cls:
+            _BUILT_IN_CLASSES[id(cls)] = cls
 
 
 def _import_built_ins() -> None:
-    """Import the built-in adapters once to trigger their decorators."""
+    """Import the built-in adapters once to trigger their decorators, and record their classes."""
     global _DISCOVERY_DONE
     if _DISCOVERY_DONE:
         return
     with _LOCK:
         if _DISCOVERY_DONE:
             return
-        import malspark.providers.sandbox.cape2  # noqa: F401
-        import malspark.providers.sandbox.mock  # noqa: F401
-        import malspark.providers.sandbox.rest  # noqa: F401
-        import malspark.providers.sandbox.triage  # noqa: F401
-        import malspark.providers.sandbox.upload  # noqa: F401
         from malspark.providers.static import import_built_ins
 
-        import_built_ins()
+        modules = [
+            importlib.import_module(f"malspark.providers.sandbox.{name}")
+            for name in _SANDBOX_MODULES
+        ]
+        modules += import_built_ins()
+        _record_built_in_classes(modules)
 
-        _BUILT_IN["static"] = frozenset(k for k, c in _STATIC_REGISTRY.items() if _shipped(c))
-        _BUILT_IN["sandbox"] = frozenset(k for k, c in _SANDBOX_REGISTRY.items() if _shipped(c))
+        _BUILT_IN["static"] = frozenset(k for k, c in _STATIC_REGISTRY.items() if _held_built_in(c))
+        _BUILT_IN["sandbox"] = frozenset(
+            k for k, c in _SANDBOX_REGISTRY.items() if _held_built_in(c)
+        )
         _DISCOVERY_DONE = True
 
 
