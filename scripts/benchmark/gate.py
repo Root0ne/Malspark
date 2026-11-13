@@ -9,6 +9,14 @@ a run did not score) reaches no word, so it can only lower the arm's verdict.
 ``m`` is the arm's own argument or, by default, a strict majority of its runs
 (``n // 2 + 1``: 1 of 1, 2 of 3, 3 of 4), never a fixed number.
 
+Runs read by a declared scoring-rules table can leave an item out of their
+denominators (under adjudication, not holding for the file). An item that some
+runs left out is decided over the runs that counted it: the number of runs it
+must reach is ``m`` capped at their count, and the item is counted on its own
+line of the totals ("items left out of some runs' denominators"). An item every
+run left out is not reached and is left out of the totals. Without such a table
+no run leaves an item out and ``m`` is never capped.
+
 An item **drops** when the candidate's verdict ranks below the baseline's, or
 when the candidate has none; it **improves** when it ranks above. An item the
 baseline itself reaches in fewer than ``m`` runs is **not gated** and named. The
@@ -45,7 +53,7 @@ from typing import Any
 
 from scripts.benchmark import earlier_runs
 from scripts.benchmark import provenance as prov
-from scripts.benchmark.scores import CREDITED, SCALES, ScoredRun, rank
+from scripts.benchmark.scores import CREDITED, OUTSIDE, SCALES, ScoredRun, rank
 
 DROPPED, IMPROVED, HELD, NOT_GATED = "dropped", "improved", "held", "not gated"
 
@@ -100,18 +108,23 @@ def reached(a: Arm, item: str, scale: str) -> tuple[int | None, list[int]]:
     """The best rank ``m`` of the arm's runs reach, and how many runs reach each rank."""
     size = len(SCALES[scale])
     counts = [0] * size
+    left = 0
     for run in a.runs:
         verdict = run.verdicts.get(item)
         got = None if verdict is None else rank(scale, verdict[1])
         if got is not None:
             counts[got] += 1
+        elif verdict is not None and verdict[1] in OUTSIDE.get(scale, ()):
+            left += 1
+    # an item some runs left out of their denominator is decided over the runs that counted it
+    needed = a.m if not left else min(a.m, a.n - left)
     at_least = [0] * size
     total = 0
     best: int | None = None
     for r in range(size - 1, -1, -1):
         total += counts[r]
         at_least[r] = total
-        if best is None and total >= a.m:
+        if best is None and needed > 0 and total >= needed:
             best = r
     return best, at_least
 
@@ -182,20 +195,31 @@ def _provenance_totals(a: Arm, tags: dict[str, dict[str, Any] | None]) -> dict[s
 
 def _side(a: Arm, item: str, scale: str, best: int | None, at_least: list[int]) -> dict[str, Any]:
     scored = sum(1 for run in a.runs if run.verdicts.get(item, (scale, None))[1] is not None)
-    return {
+    side = {
         "verdict": None if best is None else SCALES[scale][best],
         "runs_at_or_above": None if best is None else at_least[best],
         "n": a.n,
         "m": a.m,
         "unknown": a.n - scored,
     }
+    left = sum(1 for run in a.runs if item in run.outside)
+    if left:
+        side["outside_runs"] = left
+    return side
 
 
 def _totals(a: Arm, scales: dict[str, str], levels: dict[str, int | None]) -> dict[str, Any]:
     by_scale: dict[str, dict[str, int]] = {}
-    counted = credit_items = unknown = 0
+    counted = credit_items = unknown = outside = some = 0
+    left = [run.outside for run in a.runs]
     for item, scale in scales.items():
         words = by_scale.setdefault(scale, {w: 0 for w in SCALES[scale]})
+        if all(item in gone for gone in left):
+            # every run left the item out of its denominator: it is not counted
+            outside += 1
+            continue
+        if any(item in gone for gone in left):
+            some += 1
         level = levels[item]
         if level is None:
             unknown += 1
@@ -204,7 +228,7 @@ def _totals(a: Arm, scales: dict[str, str], levels: dict[str, int | None]) -> di
         if scale in CREDITED:
             credit_items += 1
             counted += credited(scale, level)
-    return {
+    totals: dict[str, Any] = {
         "by_scale": by_scale,
         "credited": counted,
         "credit_items": credit_items,
@@ -212,6 +236,11 @@ def _totals(a: Arm, scales: dict[str, str], levels: dict[str, int | None]) -> di
         "n": a.n,
         "m": a.m,
     }
+    if outside:
+        totals["outside"] = outside
+    if some:
+        totals["partly_outside"] = some
+    return totals
 
 
 def _beyond(a: Arm) -> dict[str, Any]:
@@ -385,6 +414,13 @@ def _totals_line(name: str, totals: dict[str, Any]) -> str:
         line += f"; credited {totals['credited']} of {totals['credit_items']}"
     if totals["unknown"]:
         line += f"; {totals['unknown']} items reached in fewer than m runs"
+    if totals.get("partly_outside"):
+        line += (
+            f"; {totals['partly_outside']} items left out of some runs' denominators "
+            "(decided over the runs that counted them)"
+        )
+    if totals.get("outside"):
+        line += f"; {totals['outside']} items left out of every run's denominator"
     return line
 
 

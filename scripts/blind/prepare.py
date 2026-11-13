@@ -21,6 +21,7 @@ import string
 from dataclasses import dataclass
 from pathlib import Path
 
+from scripts.benchmark.scores import ScoringRules
 from scripts.blind.identity import identifiers, leaks, redact
 from scripts.replay.stored import check_unchanged, digests
 
@@ -29,6 +30,8 @@ ARTEFACTS: tuple[str, ...] = ("report.md", "report.html", "stix-bundle.json", "i
 SCORER_DIR = "scorer"
 SEALED_FILE = "sealed-map.json"
 TEMPLATE_FILE = "scores.csv"
+# The verdict words of a declared table, for the scorer (written only with one).
+WORDS_FILE = "verdicts.txt"
 # The score-sheet rows that are not items of the answer list.
 BEYOND_ROW = "beyond_human"
 VERDICTS: tuple[str, ...] = ("found", "partly (body)", "partly (dump)", "missed", "wrong")
@@ -78,6 +81,7 @@ def prepare(
     *,
     seed: int | None = None,
     identify: tuple[str, ...] = (),
+    rules: ScoringRules | None = None,
 ) -> Prepared:
     """Write the scorer's directory, the score template and the sealed map under ``out``."""
     if len(runs) < 2:
@@ -129,35 +133,43 @@ def prepare(
         for item in (*items, BEYOND_ROW):
             writer.writerow([item, *[""] * len(arms)])
 
-    problems = self_check(scorer, everything, ids)
+    if rules is not None:
+        (scorer / WORDS_FILE).write_text(words_text(rules), encoding="utf-8")
+
+    problems = self_check(scorer, everything, ids, WORDS_FILE if rules is not None else None)
     if problems:
         shutil.rmtree(out, ignore_errors=True)
         raise BlindError("the copies still name an arm: " + "; ".join(problems))
 
+    held: dict[str, object] = {
+        "version": 1,
+        "seed": seed,
+        "items": items,
+        "arms": {
+            anon: {"name": root.name, "path": str(root)} for anon, root in sorted(arms.items())
+        },
+    }
+    if rules is not None:
+        held["scoring_rules"] = rules.as_dict()
     sealed = out / SEALED_FILE
-    sealed.write_text(
-        json.dumps(
-            {
-                "version": 1,
-                "seed": seed,
-                "items": items,
-                "arms": {
-                    anon: {"name": root.name, "path": str(root)}
-                    for anon, root in sorted(arms.items())
-                },
-            },
-            indent=2,
-        )
-        + "\n",
-        encoding="utf-8",
-    )
+    sealed.write_text(json.dumps(held, indent=2) + "\n", encoding="utf-8")
 
     for root in resolved:
         check_unchanged(before[root], digests(root))
     return Prepared(scorer, sealed, template, sorted(arms))
 
 
-def self_check(scorer: Path, strings: set[str], ids: list[str]) -> list[str]:
+def words_text(rules: ScoringRules) -> str:
+    """The words a scorer may write, worst first, then the states that leave the denominator."""
+    lines = ["# Verdicts, worst first", *rules.scale]
+    if rules.outside:
+        lines += ["", "# Not a verdict: the item leaves the denominator", *rules.outside]
+    return "\n".join(lines) + "\n"
+
+
+def self_check(
+    scorer: Path, strings: set[str], ids: list[str], words_file: str | None = None
+) -> list[str]:
     """What still names an arm anywhere under the scorer's directory, file names included."""
     problems: list[str] = []
     for path in sorted(p for p in scorer.rglob("*") if p.is_file()):
@@ -167,6 +179,6 @@ def self_check(scorer: Path, strings: set[str], ids: list[str]) -> list[str]:
         if left:
             problems.append(f"{relative}: {', '.join(sorted(set(left)))}")
     names = {p.name for p in scorer.iterdir()}
-    if names != {*ids, TEMPLATE_FILE}:
+    if names != {*ids, TEMPLATE_FILE, *([words_file] if words_file else [])}:
         problems.append("the scorer's directory holds more than the arms and the template")
     return problems

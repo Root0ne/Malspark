@@ -3,7 +3,10 @@
 The score file is the CSV that ``prepare`` wrote (``item`` and one column per
 anonymous id), or a JSON object ``{id: {item: score}}`` (under ``scores`` or
 bare). Each item takes a verdict word and the ``beyond_human`` row a count. An
-item left unscored refuses the reveal, naming the item.
+item left unscored refuses the reveal, naming the item. The words are the key
+scale's, or those of the scoring rules the caller declares or the sealed map
+holds (``prepare`` writes them there); a word outside them refuses the reveal,
+naming the item and the word.
 """
 
 from __future__ import annotations
@@ -14,6 +17,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from scripts.benchmark.scores import ScoreFileError, ScoringRules, rules_from_dict
 from scripts.blind.prepare import BEYOND_ROW, VERDICTS, BlindError
 
 
@@ -26,6 +30,11 @@ class Revealed:
     totals: dict[str, dict[str, int]] = field(default_factory=dict)
     # item -> arm name -> verdict, for the items on which the arms differ
     differences: dict[str, dict[str, str]] = field(default_factory=dict)
+    # The verdict words the sheet was read by, and the declared rules they come from, if any.
+    words: tuple[str, ...] = VERDICTS
+    # arm name -> item -> the declared annotations the item's cell carried
+    annotations: dict[str, dict[str, tuple[str, ...]]] = field(default_factory=dict)
+    rules: ScoringRules | None = None
 
 
 def _load_scores(path: Path) -> dict[str, dict[str, Any]]:
@@ -53,9 +62,20 @@ def _load_scores(path: Path) -> dict[str, dict[str, Any]]:
     return scores
 
 
-def reveal(scores_path: Path, sealed_path: Path) -> Revealed:
+def reveal(scores_path: Path, sealed_path: Path, rules: ScoringRules | None = None) -> Revealed:
     """The per-arm scores, named, or a :class:`BlindError` when anything is unscored."""
     sealed = json.loads(Path(sealed_path).read_text(encoding="utf-8"))
+    if sealed.get("scoring_rules") is not None:
+        try:
+            held = rules_from_dict(sealed["scoring_rules"], f"{sealed_path} scoring_rules")
+        except ScoreFileError as exc:
+            raise BlindError(str(exc)) from exc
+        if rules is not None and rules.as_dict() != held.as_dict():
+            raise BlindError(
+                f"the sealed map holds the scoring rules {held.name!r}, not {rules.name!r}"
+            )
+        rules = held
+    words = VERDICTS if rules is None else rules.words
     items: list[str] = list(sealed["items"])
     arms = {anon: str(arm["name"]) for anon, arm in sealed["arms"].items()}
     scores = _load_scores(scores_path)
@@ -66,11 +86,13 @@ def reveal(scores_path: Path, sealed_path: Path) -> Revealed:
         )
     verdicts: dict[str, dict[str, str]] = {}
     beyond: dict[str, int] = {}
+    annotations: dict[str, dict[str, tuple[str, ...]]] = {}
     for anon in sorted(arms):
         if anon not in scores:
             raise BlindError(f"no scores for {anon}")
         given = scores[anon]
         verdicts[arms[anon]] = {}
+        annotations[arms[anon]] = {}
         for item in (*items, BEYOND_ROW):
             value = str(given.get(item, "")).strip() if given.get(item) is not None else ""
             if not value:
@@ -80,17 +102,27 @@ def reveal(scores_path: Path, sealed_path: Path) -> Revealed:
                     raise BlindError(f"{BEYOND_ROW} for {anon} is not a count: {value!r}")
                 beyond[arms[anon]] = int(value)
                 continue
-            word = value.lower()
-            if word not in VERDICTS:
+            split = None if rules is None else rules.split(value)
+            word = value.lower() if split is None else split[0]
+            if split is not None and split[1]:
+                annotations[arms[anon]][item] = split[1]
+            if word not in words:
+                reason = rules.why(value) if rules is not None else ""
                 raise BlindError(
-                    f"item {item} for {anon} is not one of {', '.join(VERDICTS)}: {value!r}"
+                    f"item {item} for {anon} is not one of {', '.join(words)}: {value!r}"
+                    + (f" ({reason})" if reason else "")
                 )
             verdicts[arms[anon]][item] = word
-    result = Revealed(items=items, verdicts=verdicts, beyond=beyond)
+    result = Revealed(
+        items=items,
+        verdicts=verdicts,
+        beyond=beyond,
+        words=words,
+        rules=rules,
+        annotations=annotations,
+    )
     for name, given in verdicts.items():
-        result.totals[name] = {
-            word: sum(1 for v in given.values() if v == word) for word in VERDICTS
-        }
+        result.totals[name] = {word: sum(1 for v in given.values() if v == word) for word in words}
     for item in items:
         row = {name: verdicts[name][item] for name in verdicts}
         if len(set(row.values())) > 1:
@@ -103,9 +135,9 @@ def render(result: Revealed) -> str:
     names = list(result.verdicts)
     lines = ["Per arm", ""]
     width = max(len(n) for n in names)
-    lines.append(f"{'arm'.ljust(width)}  " + "  ".join(VERDICTS) + "  beyond_human")
+    lines.append(f"{'arm'.ljust(width)}  " + "  ".join(result.words) + "  beyond_human")
     for name in names:
-        counts = "  ".join(str(result.totals[name][w]).rjust(len(w)) for w in VERDICTS)
+        counts = "  ".join(str(result.totals[name][w]).rjust(len(w)) for w in result.words)
         lines.append(f"{name.ljust(width)}  {counts}  {result.beyond[name]}".rstrip())
     lines += [
         "",
