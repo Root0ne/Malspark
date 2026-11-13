@@ -58,6 +58,14 @@ class DetonationRecord:
     # Whether the provider's submit call returned: only then were the launch
     # arguments sent.
     submit_returned: bool = False
+    # The step of the graph a further detonation was carried out on entry of,
+    # and when: its own start and end (Unix time) and duration, so a reader can
+    # take its time out of the stage it ran inside. Empty and zero for the
+    # job's first, made before the graph.
+    step: str = ""
+    started_at: float = 0.0
+    ended_at: float = 0.0
+    duration_ms: int = 0
 
     @property
     def name(self) -> str:
@@ -68,6 +76,24 @@ class DetonationRecord:
     def reported(self) -> bool:
         """Whether this detonation returned a report."""
         return isinstance(self.report, dict)
+
+    def stated(self) -> dict[str, Any]:
+        """What a read of this detonation answers beside its rows: which, launched how, by whom.
+
+        Carried on every sandbox read of a later detonation, so the entry alone
+        says under which launch its observations were made.
+        """
+        return {
+            "detonation": self.name,
+            "launched_with": self.arguments,
+            "requested_by": [
+                {
+                    "agent": str(a.get("agent") or ""),
+                    "cited_entries": list(a.get("cited_entries") or []),
+                }
+                for a in self.requested_by
+            ],
+        }
 
     def public(self) -> dict[str, Any]:
         """The record as the run states it: everything but the report itself."""
@@ -85,6 +111,11 @@ class DetonationRecord:
             out["launch"] = dict(self.launch)
         if self.failure:
             out["failure"] = self.failure
+        if self.step:
+            out["step"] = self.step
+            out["started_at"] = self.started_at
+            out["ended_at"] = self.ended_at
+            out["duration_ms"] = self.duration_ms
         return out
 
 

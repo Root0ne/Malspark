@@ -1135,7 +1135,7 @@ def sandbox_tools(container: Any) -> list[BaseTool]:
             found = view(report, *args, normalised_by=normalised_by, **kwargs)
             return cast("dict[str, Any]", found)
         answer = view(later.report, *args, normalised_by=later.normalised_by, **kwargs)
-        return {"detonation": later.name, **answer} if isinstance(answer, dict) else answer
+        return {**later.stated(), **answer} if isinstance(answer, dict) else answer
 
     def _unread(view: Any) -> Any:
         """``view`` for one that takes no ``normalised_by``."""
@@ -1259,7 +1259,15 @@ def sandbox_tools(container: Any) -> list[BaseTool]:
             )
         ),
         items_tool(report, sizer, normalised_by, container=container),
+        *_request_tools(container),
     ]
+
+
+def _request_tools(container: Any) -> list[BaseTool]:
+    """The ``request_detonation`` tool, where the job can carry a request out; none otherwise."""
+    from malspark.providers.detonation_requests import offered, request_tool
+
+    return [request_tool(container)] if offered(container) else []
 
 
 def _described(func: Any) -> str:
@@ -1352,7 +1360,7 @@ def items_tool(
         answer = sandbox_items(
             later.report, section, pid, contains, signature, ids, sections=later_held[later.name]
         )
-        return {"detonation": later.name, **answer}
+        return {**later.stated(), **answer}
 
     description = _described(_items)
     if container is not None:

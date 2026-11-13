@@ -25,6 +25,14 @@ from malspark.providers.detonation_requests import (
 from malspark.providers.submission import LaunchArgumentsAnswer, cannot_pass
 
 
+@pytest.fixture(autouse=True)
+def _a_later_step_reads_the_sandbox(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Every request here is filed with a step that reads the sandbox still ahead."""
+    from malspark.pipeline import detonations
+
+    monkeypatch.setattr(detonations, "later_reading_step", lambda container, current: "judge")
+
+
 class _Provider:
     id = "cape2"
 
@@ -86,7 +94,8 @@ class TestAccepted:
         assert request.detonation == "d2"
         assert request.stage == "reversing"
         assert container.detonation_requests == [request]
-        assert "d2" in request.answer and "before the next stage" in request.answer
+        assert "d2" in request.answer and "on entry of the next step" in request.answer
+        assert "(judge)" in request.answer
         assert request.asker()["cited_entries"] == ["ev_0004"]
 
     def test_each_distinct_request_is_its_own_detonation(self) -> None:
@@ -170,6 +179,18 @@ class TestRefused:
         first = DetonationRecord(arguments="--password x", launch={"honoured": False})
         assert _ask(_container(first=first)).state == ACCEPTED
 
+    def test_a_request_no_later_step_could_read_is_refused_as_too_late(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from malspark.pipeline import detonations
+
+        monkeypatch.setattr(detonations, "later_reading_step", lambda container, current: "")
+        container = _container()
+        request = _ask(container)
+        assert request.state == REFUSED
+        assert request.answer.startswith("it cannot be run at this point of the run")
+        assert container.detonation_requests == [request]
+
 
 class TestJoined:
     def test_an_identical_pending_request_is_one_detonation(self) -> None:
@@ -202,3 +223,4 @@ class TestTheTool:
         assert "600 seconds of the cape2 sandbox's time" in description
         assert "may be public" in description
         assert "never run on this machine" in description
+        assert "refused as too late" in description

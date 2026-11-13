@@ -81,6 +81,35 @@ def _node(name: str, fn: Any) -> Any:
     return instrument_node(name, stops_when_cancelled(name, _names_its_failure(name, fn)))
 
 
+def _entered(
+    container: ServiceContainer,
+    name: str,
+    fn: Any,
+    *,
+    reading: tuple[str, ...] = (),
+    analysis: tuple[str, ...] = (),
+    first_negotiation: bool = False,
+) -> Any:
+    """``fn``, entered through the detonation steps (``pipeline.detonations.on_entry``).
+
+    ``reading`` are the agents the node runs, for whether a further detonation
+    still pending is carried out on its entry; ``analysis`` the analysis
+    agents whose turn begins with it; ``first_negotiation`` a debate's
+    negotiation, where analysts owed one get their further turn. A run with no
+    request for a further detonation enters every node as it always did.
+    """
+    from malspark.pipeline.detonations import on_entry
+
+    return on_entry(
+        container,
+        name,
+        fn,
+        reading_agents=reading,
+        analysis_agents=analysis,
+        first_negotiation=first_negotiation,
+    )
+
+
 def _names_its_failure(name: str, fn: Any) -> Any:
     """``fn``, with any exception it raises marked with the node it came from.
 
@@ -229,11 +258,15 @@ def _add_stage(
             node,
             _node(
                 node,
-                make_triage_node(
+                _entered(
                     container,
-                    stage=stage,
-                    announces=entry.starter == node,
-                    finishes=closes.get(node, ()),
+                    node,
+                    make_triage_node(
+                        container,
+                        stage=stage,
+                        announces=entry.starter == node,
+                        finishes=closes.get(node, ()),
+                    ),
                 ),
             ),
         )
@@ -246,11 +279,16 @@ def _add_stage(
             JUDGE_NODE,
             _node(
                 JUDGE_NODE,
-                make_judge_node(
+                _entered(
                     container,
-                    stage=stage,
-                    announces=entry.starter == JUDGE_NODE,
-                    finishes=closes.get(JUDGE_NODE, ()),
+                    JUDGE_NODE,
+                    make_judge_node(
+                        container,
+                        stage=stage,
+                        announces=entry.starter == JUDGE_NODE,
+                        finishes=closes.get(JUDGE_NODE, ()),
+                    ),
+                    reading=tuple(stage.agents),
                 ),
             ),
         )
@@ -259,11 +297,16 @@ def _add_stage(
             REPORT_NODE,
             _node(
                 REPORT_NODE,
-                make_report_node(
+                _entered(
                     container,
-                    stage=stage,
-                    announces=entry.starter == REPORT_NODE,
-                    finishes=closes.get(REPORT_NODE, ()),
+                    REPORT_NODE,
+                    make_report_node(
+                        container,
+                        stage=stage,
+                        announces=entry.starter == REPORT_NODE,
+                        finishes=closes.get(REPORT_NODE, ()),
+                    ),
+                    reading=tuple(stage.agents),
                 ),
             ),
         )
@@ -282,12 +325,18 @@ def _add_analysis_stage(
             name,
             _node(
                 name,
-                make_stage_agent_node(
-                    stage,
-                    agent,
+                _entered(
                     container,
-                    announces=name == entry.starter,
-                    finishes=closes.get(name, ()),
+                    name,
+                    make_stage_agent_node(
+                        stage,
+                        agent,
+                        container,
+                        announces=name == entry.starter,
+                        finishes=closes.get(name, ()),
+                    ),
+                    reading=(agent,),
+                    analysis=(agent,),
                 ),
             ),
         )
@@ -299,7 +348,12 @@ def _add_analysis_stage(
     for barrier in barriers:
         builder.add_node(
             barrier,
-            _node(barrier, make_join_node(stage, container, closes.get(barrier, ()))),
+            _node(
+                barrier,
+                _entered(
+                    container, barrier, make_join_node(stage, container, closes.get(barrier, ()))
+                ),
+            ),
         )
         _add_dependency_edge(builder, [analyst_node(agent) for agent in stage.agents], barrier)
 
@@ -323,19 +377,32 @@ def _add_debate_stage(
     """
     stage = entry.stage
     negotiation, revision = debate_nodes(profile, stage)
+    # The debate's mediator is the verdict stage's agent.
+    mediators = tuple(
+        agent for other in profile.stages if other.kind == "verdict" for agent in other.agents
+    )
     builder.add_node(
         negotiation,
         _node(
             negotiation,
-            make_negotiation_node(
+            _entered(
                 container,
-                stage=stage,
-                announces=entry.starter == negotiation,
-                finishes=closes.get(negotiation, ()),
+                negotiation,
+                make_negotiation_node(
+                    container,
+                    stage=stage,
+                    announces=entry.starter == negotiation,
+                    finishes=closes.get(negotiation, ()),
+                ),
+                reading=mediators,
+                first_negotiation=True,
             ),
         ),
     )
-    builder.add_node(revision, _node(revision, make_revision_node(container, stage=stage)))
+    builder.add_node(
+        revision,
+        _node(revision, _entered(container, revision, make_revision_node(container, stage=stage))),
+    )
 
     heads: list[str] = []
     for dependent in dependents(profile, stage.key):
@@ -355,7 +422,12 @@ def _add_debate_stage(
         barrier = entry.exit[0]
         builder.add_node(
             barrier,
-            _node(barrier, make_join_node(stage, container, closes.get(barrier, ()))),
+            _node(
+                barrier,
+                _entered(
+                    container, barrier, make_join_node(stage, container, closes.get(barrier, ()))
+                ),
+            ),
         )
         onward = barrier
     else:

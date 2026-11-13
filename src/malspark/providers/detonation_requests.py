@@ -52,6 +52,10 @@ REFUSED_NO_CITATIONS = (
 REFUSED_UNISSUED = "these cited entries were not issued earlier in this run: {ids}"
 REFUSED_NOT_ONE_LINE = "the arguments are not one command line: {problem}"
 REFUSED_CEILING = "the job's ceiling of {ceiling} detonations (its own included) is reached: {held}"
+NO_LATER_STEP = (
+    "it cannot be run at this point of the run: no later step of it has an agent that "
+    "reads the sandbox, so nothing after this point could read the detonation"
+)
 REFUSED_EXISTS = (
     "detonation {name} was already launched with exactly these arguments; read it "
     "with the sandbox tools' detonation argument ({name})"
@@ -262,8 +266,11 @@ def file_request(
         else:
             cannot = _cannot_detonate(container, text)
             ceiling = ceiling_of(container)
+            later = _later_step(container)
             if cannot:
                 request.answer = f"no further detonation can be made: {cannot}"
+            elif not later:
+                request.answer = NO_LATER_STEP
             elif len(held) >= ceiling:
                 listed = ", ".join(
                     f"{name} ({'with ' + repr(args) if args else 'without arguments'})"
@@ -275,11 +282,11 @@ def file_request(
                 request.detonation = detonation_name(len(held) + 1)
                 request.answer = (
                     f"accepted as detonation {request.detonation}: the platform submits "
-                    "the sample with these arguments once this stage's agents have "
-                    "finished, before the next stage that reads the sandbox (where no "
-                    "later stage reads it, the dynamic and network analysts get one "
-                    "further turn with it before the debate). Read it then with the "
-                    f"sandbox tools' detonation argument ({request.detonation})."
+                    "the sample with these arguments on entry of the next step of the run "
+                    f"that has an agent reading the sandbox ({later}). An analyst that "
+                    "reads the sandbox and had its turn before the detonation returned is "
+                    "given one further turn with it when the debate starts. Read it with "
+                    f"the sandbox tools' detonation argument ({request.detonation})."
                 )
     logger.info(
         "Detonation request %s by %s: %s%s",
@@ -289,6 +296,17 @@ def file_request(
         f" ({request.detonation})" if request.detonation else "",
     )
     return request
+
+
+def _later_step(container: Any) -> str:
+    """The next step after the one running that can carry a request out; empty where none."""
+    from malspark.pipeline.detonations import later_reading_step
+
+    try:
+        return later_reading_step(container, str(getattr(container, "current_step", "") or ""))
+    except Exception as exc:  # noqa: BLE001 — a step that cannot be read carries nothing
+        logger.warning("No later step could be read for a detonation request (%s).", exc)
+        return ""
 
 
 def _limits(container: Any) -> str:
@@ -310,6 +328,26 @@ def _limits(container: Any) -> str:
         "The arguments are handed to the sandbox verbatim as the program's command "
         "line and are never run on this machine."
     )
+
+
+def offered(container: Any) -> bool:
+    """Whether the job can ever carry a request out, so the tool is handed to agents at all.
+
+    Not in mock mode, not without a sample file, and only where the job's
+    provider detonates and can pass launch arguments in some way (a field of
+    its own, or a generated launcher). A job whose sandbox cannot is handed
+    no tool that could only refuse.
+    """
+    if getattr(container, "is_mock", False) or not getattr(container, "sample_path", None):
+        return False
+    try:
+        caps = container.get_sandbox_provider().capabilities
+    except Exception:  # noqa: BLE001 — no provider offers nothing
+        return False
+    if not getattr(caps, "can_submit", False):
+        return False
+    passes = getattr(caps, "can_pass_launch_arguments", False)
+    return bool(passes or getattr(caps, "launcher", None))
 
 
 def request_tool(container: Any) -> BaseTool:
@@ -344,6 +382,9 @@ def request_tool(container: Any) -> BaseTool:
         "``reason`` says why; ``cited_entries`` are the ledger entries (ev_…) that led "
         "you to the arguments. The tool detonates nothing itself: it answers whether the "
         "request is accepted, as which detonation (d2, d3…) and when it will be run, "
-        "joined to an identical pending one, or refused and why. " + _limits(container)
+        "joined to an identical pending one, or refused and why. A request is carried out "
+        "on entry of the next step of the run that has an agent reading the sandbox, so it "
+        "can be made while such a step is still ahead (during the analysis and the debate); "
+        "one made after the last of them began is refused as too late. " + _limits(container)
     )
     return StructuredTool.from_function(func=_request, name=REQUEST_TOOL, description=description)
