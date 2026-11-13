@@ -140,6 +140,18 @@ def qualified(detonation: str, item_id: str) -> str:
     return f"{detonation}/{item_id}" if detonation else item_id
 
 
+def qualified_in(text: str, detonation: str) -> str:
+    """``text`` with every unqualified item id in it qualified by ``detonation``."""
+    if not detonation:
+        return text
+
+    def _one(found: re.Match[str]) -> str:
+        said = found.group(0)
+        return said if QUALIFIER_RE.match(said) else qualified(detonation, said)
+
+    return ITEM_ID_RE.sub(_one, text)
+
+
 # The behaviour summary's parts each summary-read section is read from, in order.
 _SUMMARY_LISTS: dict[str, tuple[str, ...]] = {
     "files": (
