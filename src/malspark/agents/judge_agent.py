@@ -2509,7 +2509,7 @@ class JudgeAgent(BudgetMeter):
     Usage:
         judge = JudgeAgent(llm=some_llm)
         argument, is_consensus = judge.mediate(reports, history)
-        bundle = judge.give_verdict(reports, history, attck_validator=validator)
+        bundle = judge.give_verdict(reports, history)
     """
 
     # With no entry of its own the judge runs on the judge model.
