@@ -38,6 +38,10 @@ from malspark.core.legacy_tool_tables import STORED_LINEAGE_MARKER_FORMAT
 from malspark.core.report_formats import SignatureScale, reader_display_name
 from malspark.schemas.sandbox_document import (
     GROUP_ROWS_KEY,
+    LAUNCHER_ATTRIBUTION_KEY,
+    LAUNCHER_SIGNATURES_CHANNEL,
+    LINEAGE_KEY,
+    UNATTRIBUTED_SIGNATURES_KEY,
     kept_source,
     pid_of,
     signature_pids,
@@ -1243,25 +1247,65 @@ def _flow_attribution(
 
 # Where a run's launch arguments were carried by a generated launcher
 # (``providers.launcher``): the lineage :func:`attribute_the_launcher` gives a
-# process, under this key of its ``extra`` and of a flow's row. The launcher's
-# processes are the platform's, not the sample's; the sample's are the process
-# that runs the generated sample member and everything it started.
-LINEAGE_KEY = "lineage"
+# process, under :data:`LINEAGE_KEY` of its ``extra`` and of a flow's row. The
+# launcher's processes are the platform's, not the sample's; the sample's are
+# the process that runs the generated sample member and everything it started.
+# The key is the platform's own: a sandbox's field of that name is taken out
+# at intake (``schemas.sandbox_document.unearned_marks_removed``).
 LINEAGE_LAUNCHER = "launcher"
 LINEAGE_SAMPLE = "sample"
-# The channel a signature seen only in the launcher's processes is moved to,
-# each row marked as the launcher's: kept, never read as the sample's.
-LAUNCHER_SIGNATURES_CHANNEL = "launcher.signatures"
-# What the sandbox's own score and family judged, beside them in ``cti``.
+# The task a reader listed a process or a flow in, on the process's ``extra``
+# and on the flow's row, where the report holds several tasks whose process
+# ids are each the task's own (Triage's behavioural tasks): a process is the
+# pair of its task and its id, never its id alone.
+PROCESS_TASK_KEY = "platform_task"
+# Beside a dropped file's lineage: which of the platform's files it is. The
+# archive's members are unpacked in the guest, and a sandbox may list them
+# among the files written: neither is a file the sample wrote.
+LINEAGE_REASON_KEY = "platform_lineage_reason"
+DROPPED_LAUNCHER = "the generated launcher"
+DROPPED_SAMPLE = "the submitted sample, unpacked"
+# The values of the report's ``LAUNCHER_ATTRIBUTION_KEY`` mark: the sample's
+# own processes were told apart from the launcher's in every task that lists
+# a process, or they were not, and why (:func:`attribution_not_established`).
+ATTRIBUTION_ESTABLISHED = "established"
+ATTRIBUTION_NOT_ESTABLISHED = "not established"
+# The per-task signatures a reader keeps whole (``task.signatures``), whose
+# rows name the processes an overview's signature of the same name may not.
+TASK_SIGNATURES_CHANNEL = "task.signatures"
+# What the sandbox's own score and family judged, beside them in ``cti``: the
+# archive run from the launcher, which was seen to start the sample, or which
+# was not.
 CTI_ANALYSED_KEY = "analysed"
 CTI_ANALYSED_LAUNCHER = (
     "the submitted archive, run from its picked launcher script, which started the sample: "
     "the launcher's own behaviour is part of what the sandbox scored"
 )
+CTI_ANALYSED_LAUNCHER_UNSEEN = (
+    "the submitted archive, run from its picked launcher script; the report does not show "
+    "the script starting the sample: the launcher's own behaviour is part of what the "
+    "sandbox scored"
+)
 
 
-def _launcher_names(launcher: Any) -> tuple[str, str, frozenset[str]] | None:
-    """The sample member, the launcher member and the script host's images a launch record names."""
+def attribution_not_established(reason: str) -> str:
+    """The ``LAUNCHER_ATTRIBUTION_KEY`` mark of a report whose sample was not told apart."""
+    return f"{ATTRIBUTION_NOT_ESTABLISHED}: {reason}"
+
+
+@dataclass(frozen=True)
+class _LauncherNames:
+    """What a launch record's launcher block names: the generated members, hosts and digests."""
+
+    sample: str
+    script: str
+    hosts: frozenset[str]
+    script_sha256: str
+    sample_sha256: str
+
+
+def _launcher_names(launcher: Any) -> _LauncherNames | None:
+    """The generated names a launch record's launcher block holds; ``None`` without all three."""
     if not isinstance(launcher, Mapping):
         return None
     sample = str(launcher.get("sample_member") or "").strip().lower()
@@ -1272,89 +1316,249 @@ def _launcher_names(launcher: Any) -> tuple[str, str, frozenset[str]] | None:
     )
     if not (sample and script and images):
         return None
-    return sample, script, images
+    return _LauncherNames(
+        sample,
+        script,
+        images,
+        str(launcher.get("launcher_sha256") or "").strip().lower(),
+        str(launcher.get("sample_sha256") or "").strip().lower(),
+    )
+
+
+_Node = tuple[str, str]
+
+
+def _folder(path: str) -> str:
+    """The folder of a guest path, lower case with forward slashes; ``""`` for a bare name."""
+    text = path.strip().strip('"').strip("'").replace("\\", "/")
+    return text.rsplit("/", 1)[0].rstrip("/").lower() if "/" in text else ""
+
+
+def _dropped_paths(row: Mapping[str, Any]) -> list[str]:
+    """The guest paths and names a dropped-file row gives its file under."""
+    out: list[str] = []
+    for key in ("name", "filepath", "path", "guest_paths"):
+        value = row.get(key)
+        for one in value if isinstance(value, list) else [value]:
+            if isinstance(one, str) and one.strip():
+                out.append(one)
+    return out
+
+
+def _signature_nodes(
+    pids: list[str], by_pid: Mapping[str, set[_Node]], task: str | None = None
+) -> set[_Node] | None:
+    """The listed processes a signature's pids name; ``None`` where a pid names none.
+
+    With ``task``, the pids are that task's; without, a pid names the process
+    of that id in every task that lists one.
+    """
+    nodes: set[_Node] = set()
+    for pid in pids:
+        found = {node for node in by_pid.get(pid, set()) if task is None or node[0] == task}
+        if not found:
+            return None
+        nodes |= found
+    return nodes
 
 
 def attribute_the_launcher(report: SandboxReport, launcher: Any) -> None:
     """Mark, in place, what in ``report`` is the generated launcher's and what the sample's.
 
     ``launcher`` is the launch record's launcher block
-    (``providers.submission.launch_record``): the names the platform generated
-    for the archive it submitted. One rule for every sandbox, read from the
-    neutral report alone:
+    (``providers.submission.launch_record``): the names and digests the
+    platform generated for the archive it submitted. One rule for every
+    sandbox, read from the neutral report alone, a process being the pair of
+    its task (:data:`PROCESS_TASK_KEY`) and its id:
 
-    * a process whose image is one of the record's script host images and
-      whose command line names the launcher member, and that the sample did
-      not start, is the launcher's (``lineage: "launcher"``), as is every
-      process it started outside the sample's tree;
     * the sample's tree is rooted at each process whose image's file name is
       the sample member, and holds everything those started
       (``lineage: "sample"``), a script host the sample itself started
       included;
-    * a flow's attribution (``SAMPLE_TREE_KEY``) is read from that tree, and a
-      flow of the launcher's process says so;
-    * a signature every process of which is the launcher's is moved to the
-      :data:`LAUNCHER_SIGNATURES_CHANNEL` channel, marked, so its techniques
-      and indicators are never read as the sample's;
-    * the sandbox's score and family are stated to be its analysis of the
-      archive run from the launcher (:data:`CTI_ANALYSED_KEY`).
+    * a process whose image is one of the record's script host images and
+      whose command line names the launcher member, and that the sample did
+      not start, is the launcher's (``lineage: "launcher"``); in a task where
+      the sample's tree is rooted, so is every process it started outside
+      that tree, and in a task where it is not, the host alone: what it
+      started is attributed to no one, since the sample may be among it
+      under another name;
+    * a flow's attribution (``SAMPLE_TREE_KEY``) is read from that tree, a
+      flow of the launcher's process says so, and a flow of a process
+      attributed to no one states nothing;
+    * a signature every process of which is the launcher's, in every task
+      that lists it, is moved to the :data:`LAUNCHER_SIGNATURES_CHANNEL`
+      channel, marked, so its techniques and indicators are never read as
+      the sample's; one that names no process takes its processes from the
+      per-task signatures of the same name (:data:`TASK_SIGNATURES_CHANNEL`),
+      whose launcher rows are marked the same way, and one that still names
+      none stays, counted (``UNATTRIBUTED_SIGNATURES_KEY``);
+    * a dropped file that is the launcher script or the unpacked sample, by
+      member name or digest, in the launcher's folder where the report shows
+      it, is marked as the platform's with its reason
+      (:data:`LINEAGE_REASON_KEY`), never a file the sample wrote;
+    * the report says whether the sample's processes were told apart
+      (``LAUNCHER_ATTRIBUTION_KEY``), and the sandbox's score and family are
+      stated to be its analysis of the archive run from the launcher
+      (:data:`CTI_ANALYSED_KEY`).
 
-    A record that names no launcher leaves the report as it came.
+    Run again on the same report, it gives the same report. A record that
+    names no launcher leaves the report as it came.
     """
     names = _launcher_names(launcher)
     if names is None:
         return
-    sample_member, launcher_member, host_images = names
-    parent: dict[str, str] = {}
-    images: dict[str, str] = {}
-    roots: set[str] = set()
-    hosts: set[str] = set()
+    parent: dict[_Node, _Node | None] = {}
+    images: dict[_Node, str] = {}
+    by_pid: dict[str, set[_Node]] = {}
+    roots: set[_Node] = set()
+    hosts: set[_Node] = set()
+    folders: set[str] = set()
     for proc in report.processes:
+        proc.extra.pop(LINEAGE_KEY, None)
         pid = pid_text(proc.pid)
-        if not pid or pid in parent:
+        if not pid:
             continue
-        parent[pid] = pid_text(proc.ppid)
+        task = str(proc.extra.get(PROCESS_TASK_KEY) or "")
+        node = (task, pid)
+        if node in parent:
+            continue
+        ppid = pid_text(proc.ppid)
+        parent[node] = (task, ppid) if ppid else None
+        by_pid.setdefault(pid, set()).add(node)
         image = _image_of(proc.name)
-        images[pid] = re.split(r"[\\/]", proc.name.strip().strip('"'))[-1]
-        if image == sample_member:
-            roots.add(pid)
-        elif image in host_images and launcher_member in _named_files(
-            {"image": "", "cmd": proc.command_line}
-        ):
-            hosts.add(pid)
+        images[node] = re.split(r"[\\/]", proc.name.strip().strip('"'))[-1]
+        if image == names.sample:
+            roots.add(node)
+            quoted = _QUOTED.search(proc.name)
+            folders.add(_folder(quoted.group(1) if quoted else proc.name.split("(", 1)[0]))
+        elif image in names.hosts:
+            # A quoted path keeps its spaces; an unquoted one is a word.
+            scripts = [
+                word
+                for word in _QUOTED.findall(proc.command_line)
+                if _basename(word) == names.script
+            ] or [
+                word
+                for word in re.split(r"[\s,]+", proc.command_line)
+                if _basename(word) == names.script
+            ]
+            if scripts:
+                hosts.add(node)
+                folders.update(_folder(token) for token in scripts)
+    folders.discard("")
+    rooted = {node[0] for node in roots}
     sample_tree = _reach(parent, roots)
-    launcher_tree = _reach(parent, hosts - sample_tree) - sample_tree
+    reached = _reach(parent, hosts - sample_tree) - sample_tree
+    launcher_nodes = {n for n in reached if n[0] in rooted} | {
+        n for n in hosts if n[0] not in rooted
+    }
     for proc in report.processes:
-        pid = pid_text(proc.pid)
-        if pid in sample_tree:
+        node = (str(proc.extra.get(PROCESS_TASK_KEY) or ""), pid_text(proc.pid))
+        if node in sample_tree:
             proc.extra[LINEAGE_KEY] = LINEAGE_SAMPLE
-        elif pid in launcher_tree:
+        elif node in launcher_nodes:
             proc.extra[LINEAGE_KEY] = LINEAGE_LAUNCHER
     for row in (*report.network.tcp, *report.network.udp):
         procid = pid_text(row.get("procid")) or pid_text(row.get("pid"))
-        for key in (SAMPLE_TREE_KEY, LINEAGE_DISPUTED_KEY, LINEAGE_MARKED_BY_KEY):
+        for key in (SAMPLE_TREE_KEY, LINEAGE_DISPUTED_KEY, LINEAGE_MARKED_BY_KEY, LINEAGE_KEY):
             row.pop(key, None)
-        if not procid or procid not in parent:
+        node = (str(row.get(PROCESS_TASK_KEY) or ""), procid)
+        if not procid or node not in parent:
             continue
-        row[SAMPLE_TREE_KEY] = procid in sample_tree
-        if procid in sample_tree:
+        if node in sample_tree:
+            row[SAMPLE_TREE_KEY] = True
             row.pop(FLOW_PROCESS_KEY, None)
             continue
-        if images.get(procid):
-            row[FLOW_PROCESS_KEY] = images[procid]
-        if procid in launcher_tree:
+        if node[0] not in rooted and node not in launcher_nodes:
+            # Started by the launcher where the sample's tree is not found:
+            # the sample's or not, the report does not say.
+            row.pop(FLOW_PROCESS_KEY, None)
+            continue
+        row[SAMPLE_TREE_KEY] = False
+        if images.get(node):
+            row[FLOW_PROCESS_KEY] = images[node]
+        if node in launcher_nodes:
             row[LINEAGE_KEY] = LINEAGE_LAUNCHER
+    # The per-task signatures: each row's processes are its task's.
+    by_name: dict[str, list[set[_Node] | None]] = {}
+    for channel_row in report.channels.get(TASK_SIGNATURES_CHANNEL) or []:
+        if not isinstance(channel_row, dict) or not isinstance(
+            channel_row.get(TASK_ROWS_KEY), list
+        ):
+            continue
+        task = str(channel_row.get(TASK_KEY) or "")
+        marked: list[Any] = []
+        for signature in channel_row[TASK_ROWS_KEY]:
+            if not isinstance(signature, dict):
+                marked.append(signature)
+                continue
+            plain = {k: v for k, v in signature.items() if k != LINEAGE_KEY}
+            pids = _triage_indicator_pids(plain.get("indicators"))
+            nodes = _signature_nodes(pids, by_pid, task) if pids else set()
+            if pids:
+                by_name.setdefault(str(plain.get("name") or ""), []).append(nodes)
+            if nodes and nodes <= launcher_nodes:
+                marked.append({**plain, LINEAGE_KEY: LINEAGE_LAUNCHER})
+            else:
+                marked.append(plain if LINEAGE_KEY in signature else signature)
+        channel_row[TASK_ROWS_KEY] = marked
     kept: list[SandboxSignatureRow] = []
+    unattributed = 0
     for signature in report.signatures:
+        signature.extra.pop(LINEAGE_KEY, None)
         pids = signature.pids or signature_pids({"marks": signature.marks})
-        if pids and all(pid in launcher_tree for pid in pids):
+        found: list[set[_Node] | None] = (
+            [_signature_nodes(pids, by_pid)] if pids else by_name.get(signature.name, [])
+        )
+        if found and all(nodes and nodes <= launcher_nodes for nodes in found):
             report.channels.setdefault(LAUNCHER_SIGNATURES_CHANNEL, []).append(
                 {**signature.model_dump(), LINEAGE_KEY: LINEAGE_LAUNCHER}
             )
-        else:
-            kept.append(signature)
+            continue
+        if not found:
+            unattributed += 1
+        kept.append(signature)
     report.signatures = kept
-    report.cti[CTI_ANALYSED_KEY] = CTI_ANALYSED_LAUNCHER
+    for index, dropped in enumerate(report.dropped_files):
+        if not isinstance(dropped, dict):
+            continue
+        plain = {k: v for k, v in dropped.items() if k not in (LINEAGE_KEY, LINEAGE_REASON_KEY)}
+        paths = _dropped_paths(plain)
+        files = {_basename(path) for path in paths}
+        digest = str(plain.get("sha256") or "").strip().lower()
+        where = {_folder(path) for path in paths} - {""}
+        reason = ""
+        # A copy elsewhere in the guest, where the report shows the launcher's
+        # folder, is the sample's own doing (a copy of itself it wrote).
+        if not (folders and where and not where & folders):
+            if names.script in files or (names.script_sha256 and digest == names.script_sha256):
+                reason = DROPPED_LAUNCHER
+            elif names.sample in files or (names.sample_sha256 and digest == names.sample_sha256):
+                reason = DROPPED_SAMPLE
+        if reason:
+            report.dropped_files[index] = {
+                **plain,
+                LINEAGE_KEY: LINEAGE_LAUNCHER,
+                LINEAGE_REASON_KEY: reason,
+            }
+        elif len(plain) != len(dropped):
+            report.dropped_files[index] = plain
+    tasks = {node[0] for node in parent}
+    if not tasks:
+        said = attribution_not_established("the report lists no process with an id")
+    elif not rooted:
+        said = attribution_not_established(f"no listed process runs {names.sample}")
+    elif tasks - rooted:
+        said = attribution_not_established(
+            f"no listed process runs {names.sample} in task " + ", ".join(sorted(tasks - rooted))
+        )
+    else:
+        said = ATTRIBUTION_ESTABLISHED
+    report.extras[LAUNCHER_ATTRIBUTION_KEY] = said
+    report.extras[UNATTRIBUTED_SIGNATURES_KEY] = unattributed
+    report.cti[CTI_ANALYSED_KEY] = (
+        CTI_ANALYSED_LAUNCHER if said == ATTRIBUTION_ESTABLISHED else CTI_ANALYSED_LAUNCHER_UNSEEN
+    )
 
 
 # What :func:`triage_overview_to_sandbox_report` can fill: the process list,
@@ -1507,8 +1711,12 @@ def triage_overview_to_sandbox_report(
                     calls=[],
                     # What the task report says of the process beyond those
                     # (the guest's own pid and parent, the sample mark, when
-                    # it ended), under its own names.
-                    extra={k: v for k, v in proc.items() if k not in read},
+                    # it ended), under its own names, and the task that lists
+                    # it, whose process ids are its own.
+                    extra={
+                        **{k: v for k, v in proc.items() if k not in read},
+                        PROCESS_TASK_KEY: str(task_name),
+                    },
                 )
             )
         dumped_field = task.get("dumped")
@@ -1527,6 +1735,7 @@ def triage_overview_to_sandbox_report(
                 continue
             row: dict[str, Any] = {"dst": dst_host, "dport": dst_port}
             row.update(_flow_attribution(flow, lineage, marker))
+            row[PROCESS_TASK_KEY] = str(task_name)
             # The flow's other fields (its source, times, bytes, protocols,
             # the name and TLS facts the sandbox recorded), under their own names.
             flow_extra = {k: v for k, v in flow.items() if k not in _TRIAGE_FLOW_READ}

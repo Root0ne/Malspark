@@ -31,13 +31,23 @@ from malspark.providers.launcher import (
 )
 from malspark.providers.sandbox.readers import required_reader
 from malspark.providers.sandbox_tools import sandbox_processes, sandbox_signatures
-from malspark.schemas.sandbox_document import place, sandbox_document
+from malspark.schemas.sandbox_document import place, sandbox_document, unearned_marks_removed
 from malspark.schemas.sandbox_report import (
+    ATTRIBUTION_ESTABLISHED,
     CTI_ANALYSED_KEY,
+    CTI_ANALYSED_LAUNCHER,
+    CTI_ANALYSED_LAUNCHER_UNSEEN,
+    DROPPED_LAUNCHER,
+    DROPPED_SAMPLE,
     FLOW_PROCESS_KEY,
+    LAUNCHER_ATTRIBUTION_KEY,
     LAUNCHER_SIGNATURES_CHANNEL,
     LINEAGE_KEY,
+    LINEAGE_REASON_KEY,
+    PROCESS_TASK_KEY,
     SAMPLE_TREE_KEY,
+    TASK_SIGNATURES_CHANNEL,
+    UNATTRIBUTED_SIGNATURES_KEY,
     SandboxReport,
     SandboxRun,
     attribute_the_launcher,
@@ -241,12 +251,33 @@ class TestTheReaderKeepsTheLauncherApart:
         task = _task()
         task["processes"] = task["processes"][:2]
         report = _attributed(task=task)
-        assert _lineage(report) == {1: "launcher", 4: "launcher"}
+        # The host alone is the launcher's: what it started is no one's.
+        assert _lineage(report) == {1: "launcher", 4: ""}
         by_dst = {row["dst"]: row for row in (*report.network.tcp, *report.network.udp)}
         assert by_dst["198.51.100.7"][SAMPLE_TREE_KEY] is False
         # A flow of a process the listing does not hold is attributed to no one.
         assert SAMPLE_TREE_KEY not in by_dst["203.0.113.5"]
         assert not any(row.get(SAMPLE_TREE_KEY) for row in by_dst.values())
+        document = sandbox_document(report)
+        assert (
+            document[LAUNCHER_ATTRIBUTION_KEY]
+            == "not established: no listed process runs sample.exe"
+        )
+        assert document["cti"][CTI_ANALYSED_KEY] == CTI_ANALYSED_LAUNCHER_UNSEEN
+
+    def test_the_report_says_the_attribution_was_established(self) -> None:
+        document = sandbox_document(_attributed())
+        assert document[LAUNCHER_ATTRIBUTION_KEY] == ATTRIBUTION_ESTABLISHED == "established"
+        assert document[UNATTRIBUTED_SIGNATURES_KEY] == 0
+        assert document["cti"][CTI_ANALYSED_KEY] == CTI_ANALYSED_LAUNCHER
+        assert "which started the sample" in CTI_ANALYSED_LAUNCHER
+        assert "started the sample" not in CTI_ANALYSED_LAUNCHER_UNSEEN
+
+    def test_attributed_twice_the_report_is_the_same(self) -> None:
+        report = _attributed(task=_dropping_task())
+        once = copy.deepcopy(sandbox_document(report))
+        attribute_the_launcher(report, LAUNCHER)
+        assert sandbox_document(report) == once
 
     @pytest.mark.parametrize(
         "launcher",
@@ -257,6 +288,267 @@ class TestTheReaderKeepsTheLauncherApart:
         before = copy.deepcopy(sandbox_document(report))
         attribute_the_launcher(report, launcher)
         assert sandbox_document(report) == before
+
+
+def _dropping_task() -> dict[str, Any]:
+    task = _task()
+    task["dumped"] = [
+        {"name": f"{TEMP}\\launch.ps1", "sha256": LAUNCHER["launcher_sha256"]},
+        {"name": f"{TEMP}\\sample.exe"},
+        # The archive's members under other names, known by their digests.
+        {"name": f"{TEMP}\\renamed.bin", "sha256": INTAKE.upper()},
+        # A copy the sample wrote of itself elsewhere is the sample's own doing.
+        {"name": "C:\\Users\\admin\\AppData\\Roaming\\sample.exe", "sha256": INTAKE},
+        {"name": f"{TEMP}\\payload.dll", "sha256": "e" * 64},
+    ]
+    return task
+
+
+def _second_task() -> dict[str, Any]:
+    """Another behavioural task: the same ids, given to other processes in another order."""
+    return {
+        "processes": [
+            {
+                "procid": 1,
+                "procid_parent": 0,
+                "image": PS,
+                "cmd": f'powershell.exe -File "{TEMP}\\launch.ps1"',
+                "orig": True,
+            },
+            {"procid": 2, "procid_parent": 1, "image": "C:\\Windows\\System32\\conhost.exe"},
+            {
+                "procid": 3,
+                "procid_parent": 1,
+                "image": f"{TEMP}\\sample.exe",
+                "cmd": f'"{TEMP}\\sample.exe" {ARGS}',
+            },
+            {
+                "procid": 4,
+                "procid_parent": 3,
+                "image": "C:\\Windows\\System32\\rundll32.exe",
+                "cmd": "rundll32 evil.dll,Run",
+            },
+        ],
+        "network": {"flows": [{"proto": "tcp", "dst": "203.0.113.99:443", "procid": 4}]},
+    }
+
+
+def _two_tasks(overview: dict[str, Any] | None = None) -> SandboxReport:
+    report = required_reader("triage").read(
+        overview or _overview(),
+        provider="lab-box",
+        task_id="s1",
+        task_reports={"behavioral1": _task(), "behavioral2": _second_task()},
+    )
+    attribute_the_launcher(report, LAUNCHER)
+    return report
+
+
+class TestEachTaskIsReadByItself:
+    def test_the_reader_names_each_process_s_and_flow_s_task(self) -> None:
+        report = _two_tasks()
+        assert {p.extra[PROCESS_TASK_KEY] for p in report.processes} == {
+            "behavioral1",
+            "behavioral2",
+        }
+        assert {row[PROCESS_TASK_KEY] for row in report.network.tcp} == {
+            "behavioral1",
+            "behavioral2",
+        }
+
+    def test_overlapping_ids_take_the_lineage_of_their_own_task(self) -> None:
+        report = _two_tasks()
+        lineage = {
+            (p.extra[PROCESS_TASK_KEY], p.pid): p.extra.get(LINEAGE_KEY) for p in report.processes
+        }
+        assert lineage == {
+            ("behavioral1", 1): "launcher",
+            ("behavioral1", 4): "launcher",
+            ("behavioral1", 2): "sample",
+            ("behavioral1", 3): "sample",
+            ("behavioral2", 1): "launcher",
+            ("behavioral2", 2): "launcher",
+            ("behavioral2", 3): "sample",
+            ("behavioral2", 4): "sample",
+        }
+        flow = next(row for row in report.network.tcp if row["dst"] == "203.0.113.99")
+        assert flow[SAMPLE_TREE_KEY] is True and LINEAGE_KEY not in flow
+        assert FLOW_PROCESS_KEY not in flow
+
+    def test_a_signature_naming_no_task_is_the_launcher_s_only_in_every_task(self) -> None:
+        # pid 4 is the launcher's conhost in one task and the sample's rundll32
+        # in the other; pid 1 is the launcher's host in both.
+        either = {
+            "name": "Seen in pid 4",
+            "score": 6,
+            "ttp": ["T1218.011"],
+            "indicators": [{"procid": 4}],
+        }
+        report = _two_tasks(_overview(either))
+        moved = [s["name"] for s in report.channels[LAUNCHER_SIGNATURES_CHANNEL]]
+        assert moved == ["Command and Scripting Interpreter: PowerShell"]
+        assert "Seen in pid 4" in [s.name for s in report.signatures]
+
+
+def _renamed_task() -> dict[str, Any]:
+    """The sandbox ran the sample member under another name: no process runs sample.exe."""
+    task = _task()
+    task["processes"][2]["image"] = f"{TEMP}\\8f3a.exe"
+    task["processes"][2]["cmd"] = f'"{TEMP}\\8f3a.exe" {ARGS}'
+    return task
+
+
+class TestWithoutTheSampleSTree:
+    def test_only_the_script_host_is_the_launcher_s(self) -> None:
+        signature = {
+            "name": "Seen in the renamed sample",
+            "score": 8,
+            "ttp": ["T1547.001"],
+            "indicators": [{"procid": 2}, {"procid": 3}],
+        }
+        report = _attributed(overview=_overview(signature), task=_renamed_task())
+        assert _lineage(report) == {1: "launcher", 4: "", 2: "", 3: ""}
+        by_dst = {row["dst"]: row for row in (*report.network.tcp, *report.network.udp)}
+        # The host's own flow is the launcher's; the others are no one's.
+        assert by_dst["198.51.100.7"][LINEAGE_KEY] == "launcher"
+        for dst in ("203.0.113.5", "192.0.2.9"):
+            assert SAMPLE_TREE_KEY not in by_dst[dst] and LINEAGE_KEY not in by_dst[dst]
+            assert FLOW_PROCESS_KEY not in by_dst[dst]
+        # Only what was seen in the host alone leaves the sample's channels.
+        document = sandbox_document(report)
+        names = [s["name"] for s in sandbox_signatures(document)["signatures"]]
+        assert "Seen in the renamed sample" in names and "Modifies a Run key" in names
+        assert "Reads the system information" in names
+        assert [s["name"] for s in document["channels"][LAUNCHER_SIGNATURES_CHANNEL]] == [
+            "Command and Scripting Interpreter: PowerShell"
+        ]
+        assert document[LAUNCHER_ATTRIBUTION_KEY] == (
+            "not established: no listed process runs sample.exe"
+        )
+        assert "started the sample" not in document["cti"][CTI_ANALYSED_KEY]
+
+    def test_one_task_without_the_tree_is_named(self) -> None:
+        report = required_reader("triage").read(
+            _overview(),
+            provider="lab-box",
+            task_id="s1",
+            task_reports={"behavioral1": _task(), "behavioral2": _renamed_task()},
+        )
+        attribute_the_launcher(report, LAUNCHER)
+        assert report.extras[LAUNCHER_ATTRIBUTION_KEY] == (
+            "not established: no listed process runs sample.exe in task behavioral2"
+        )
+
+    def test_a_report_with_no_process_ids_is_not_established(self) -> None:
+        task = _task()
+        for proc in task["processes"]:
+            proc.pop("procid")
+            proc.pop("procid_parent")
+        report = _attributed(task=task)
+        assert report.extras[LAUNCHER_ATTRIBUTION_KEY] == (
+            "not established: the report lists no process with an id"
+        )
+
+
+class TestASignatureNamingNoProcess:
+    def _report(self, *task_signatures: dict[str, Any]) -> SandboxReport:
+        bare = {
+            "name": "Command and Scripting Interpreter: PowerShell",
+            "score": 5,
+            "ttp": ["T1059.001"],
+            "indicators": [{"ioc": "powershell.exe -File launch.ps1"}],
+        }
+        nowhere = {
+            "name": "Queries the locale",
+            "score": 1,
+            "ttp": ["T1614.001"],
+            "indicators": [{"ioc": "GetLocaleInfo"}],
+        }
+        overview = _overview()
+        overview["signatures"] = [bare, nowhere, overview["signatures"][1]]
+        task = _task()
+        task["signatures"] = list(task_signatures)
+        return _attributed(overview=overview, task=task)
+
+    def test_takes_its_processes_from_the_task_s_signature_of_that_name(self) -> None:
+        row = {
+            "name": "Command and Scripting Interpreter: PowerShell",
+            "indicators": [{"procid": 1, "ioc": "powershell.exe -File launch.ps1"}],
+        }
+        sample_row = {"name": "Modifies a Run key", "indicators": [{"procid": 2}]}
+        report = self._report(row, sample_row)
+        document = sandbox_document(report)
+        assert "T1059.001" not in _techniques(document)
+        assert [s["name"] for s in document["channels"][LAUNCHER_SIGNATURES_CHANNEL]] == [
+            "Command and Scripting Interpreter: PowerShell"
+        ]
+        # The task's own rows: the launcher's marked, the sample's left as they were.
+        (block,) = report.channels[TASK_SIGNATURES_CHANNEL]
+        marked, kept = block["block_rows"]
+        assert marked[LINEAGE_KEY] == "launcher" and LINEAGE_KEY not in kept
+        assert LINEAGE_KEY not in row
+        # One that no row names a process for stays, and is counted.
+        assert "Queries the locale" in [
+            s["name"] for s in sandbox_signatures(document)["signatures"]
+        ]
+        assert document[UNATTRIBUTED_SIGNATURES_KEY] == 1
+
+    def test_a_task_row_in_the_sample_s_tree_keeps_it(self) -> None:
+        row = {
+            "name": "Command and Scripting Interpreter: PowerShell",
+            "indicators": [{"procid": 1}, {"procid": 3}],
+        }
+        report = self._report(row)
+        assert "Command and Scripting Interpreter: PowerShell" in [
+            s.name for s in report.signatures
+        ]
+        assert report.extras[UNATTRIBUTED_SIGNATURES_KEY] == 1
+
+    def test_without_task_rows_it_stays_and_is_counted(self) -> None:
+        report = self._report()
+        assert report.extras[UNATTRIBUTED_SIGNATURES_KEY] == 2
+        assert LAUNCHER_SIGNATURES_CHANNEL not in report.channels
+
+
+class TestTheArchiveSMembersAreNotTheSampleSFiles:
+    def test_the_launcher_and_the_unpacked_sample_are_marked(self) -> None:
+        report = _attributed(task=_dropping_task())
+        reasons = {
+            row["name"].rsplit("\\", 1)[-1]
+            + ("@roaming" if "Roaming" in row["name"] else ""): row.get(LINEAGE_REASON_KEY)
+            for row in report.dropped_files
+        }
+        assert reasons == {
+            "launch.ps1": DROPPED_LAUNCHER,
+            "sample.exe": DROPPED_SAMPLE,
+            "renamed.bin": DROPPED_SAMPLE,
+            "sample.exe@roaming": None,
+            "payload.dll": None,
+        }
+        assert all(
+            row[LINEAGE_KEY] == "launcher"
+            for row in report.dropped_files
+            if row.get(LINEAGE_REASON_KEY)
+        )
+        assert DROPPED_LAUNCHER == "the generated launcher"
+        assert DROPPED_SAMPLE == "the submitted sample, unpacked"
+
+
+class TestTheLineageIsThePlatformS:
+    def test_the_key_is_the_platform_s_own(self) -> None:
+        assert LINEAGE_KEY == "platform_lineage"
+
+    def test_a_sandbox_s_field_of_that_name_is_taken_out_at_intake(self) -> None:
+        task = _task()
+        task["processes"][0][LINEAGE_KEY] = "sample"
+        task["dumped"] = [{"name": "x.bin", LINEAGE_KEY: "launcher"}]
+        report = _report(task=task)
+        assert report.processes[0].extra[LINEAGE_KEY] == "sample"
+        assert LINEAGE_KEY in unearned_marks_removed(report)
+        assert LINEAGE_KEY not in report.processes[0].extra
+        assert LINEAGE_KEY not in report.dropped_files[0]
+        rows = sandbox_processes(sandbox_document(report))["processes"]
+        assert all(LINEAGE_KEY not in row for row in rows)
 
 
 # ---------------------------------------------------------------------------
