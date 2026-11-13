@@ -927,6 +927,47 @@ class TestALiveJobKeepsItsDirectory:
         assert staging.touch_job_staging("live") is True
         assert directory.lstat().st_mtime > long_ago + 3000
 
+    def test_the_directory_is_kept_current_where_utime_cannot_skip_a_link(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Windows' ``os.utime`` has no ``follow_symlinks``; the marker still lands."""
+        real_utime = os.utime
+
+        def utime(path: Any, times: Any = None, **kwargs: Any) -> None:
+            if "follow_symlinks" in kwargs:
+                raise NotImplementedError("utime: follow_symlinks unavailable on this platform")
+            real_utime(path, times)
+
+        monkeypatch.setattr(os, "utime", utime)
+        monkeypatch.setattr(os, "supports_follow_symlinks", set())
+        monkeypatch.setenv(staging.STAGING_DIR_ENV, str(tmp_path / "staging"))
+        directory = staging.job_staging_dir(tmp_path / "staging", "live")
+        directory.mkdir(parents=True)
+        staging.note_job_directory("live", directory)
+        long_ago = time.time() - 7200
+        real_utime(directory, (long_ago, long_ago))
+
+        assert staging.touch_job_staging("live") is True
+        assert directory.stat().st_mtime > long_ago + 3000
+
+    @pytest.mark.posix
+    def test_a_link_is_not_touched_where_utime_cannot_skip_it(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        elsewhere = tmp_path / "elsewhere"
+        elsewhere.mkdir()
+        long_ago = time.time() - 7200
+        os.utime(elsewhere, (long_ago, long_ago))
+        link = tmp_path / "link"
+        link.symlink_to(elsewhere, target_is_directory=True)
+        monkeypatch.setattr(os, "supports_follow_symlinks", set())
+        monkeypatch.setenv(staging.STAGING_DIR_ENV, str(tmp_path / "staging"))
+        staging.note_job_directory("linked", link)
+
+        staging.touch_job_staging("linked")
+
+        assert elsewhere.stat().st_mtime < long_ago + 60
+
     def test_a_job_that_staged_nothing_has_nothing_to_touch(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
