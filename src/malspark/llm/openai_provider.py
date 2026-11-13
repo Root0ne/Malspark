@@ -1554,24 +1554,20 @@ def _announce_healed(replaced: Any, healed: Any) -> None:
             logger.debug("openai provider: a heal listener raised (%s).", exc)
 
 
-def _close_sync_client(model_obj: Any) -> None:
-    """Close the synchronous httpx client of a model that is being replaced.
+def _sync_http_client_of(model_obj: Any) -> Any | None:
+    """The httpx client a model sends its synchronous requests through, or ``None``.
 
-    Only the sync one: the healed model is built with the original's *async*
-    pool, so closing that would break the model the caller is about to use.
-    Best-effort, because the shape of these attributes belongs to the openai
-    SDK and a client that will not close is a smaller problem than a request
-    that does not happen.
+    The one the model was given, else the one its openai client was built
+    with. Read only to hand it on, never to close it: ``langchain_openai``
+    hands every model for one endpoint and timeout the same cached client
+    (``_cached_sync_httpx_client``), so the model holding it is never its only
+    user. ``None`` where the openai SDK keeps it elsewhere, and the rebuild
+    then takes whatever langchain gives it.
     """
-    for attribute in ("root_client", "client"):
-        client = getattr(model_obj, attribute, None)
-        close = getattr(getattr(client, "_client", client), "close", None)
-        if callable(close):
-            try:
-                close()
-            except Exception as exc:  # noqa: BLE001 — best-effort teardown
-                logger.debug("openai provider: the replaced sync client did not close (%s).", exc)
-            return
+    given = getattr(model_obj, "http_client", None)
+    if given is not None:
+        return given
+    return getattr(getattr(model_obj, "root_client", None), "_client", None)
 
 
 def _with_standard_retry(
@@ -1634,15 +1630,23 @@ def _with_standard_retry(
                     parameter,
                     declared,
                 )
-            # The rebuilt model inherits this one's connection pool rather than
-            # opening a second: the pool is not what the endpoint objected to,
-            # and a pool per heal is the leak this whole cell exists to stop.
-            # What the original keeps to itself is its *sync* client, which the
-            # rebuild does replace and which is closed below.
+            # The rebuilt model inherits this one's clients, sync and async,
+            # rather than opening new ones: the connection is not what the
+            # endpoint objected to, and a pool per heal is the leak this whole
+            # cell exists to stop. Nothing is closed here. The sync client is
+            # usually langchain's cached one, which every other model for this
+            # endpoint sends through too, and the replaced model still answers
+            # through the replacement; each client is closed by whatever owns
+            # it — the async pool with its event loop, langchain's cached
+            # client once its cache has let it go and the last model holding
+            # it is collected.
             rebuild_kwargs = dict(kwargs)
             pool = getattr(model_obj, "http_async_client", None)
             if pool is not None:
                 rebuild_kwargs.setdefault("http_async_client", pool)
+            sync_client = _sync_http_client_of(model_obj)
+            if sync_client is not None:
+                rebuild_kwargs.setdefault("http_client", sync_client)
             replacement = provider._build(
                 model, temperature, base_url, rebuild_kwargs, force_standard=True
             )
@@ -1661,7 +1665,6 @@ def _with_standard_retry(
 
             carry_agent_ceiling(model_obj, replacement)
             healed.append(replacement)
-        _close_sync_client(model_obj)
         _announce_healed(model_obj, replacement)
         return replacement
 
