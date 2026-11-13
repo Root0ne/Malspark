@@ -598,6 +598,24 @@ class TestTheNoteTheJudgeReads:
         assert "- attck.weak_alignment: TECHNIQUE T1547.001 aligns weakly" in unasked
         assert "T1417" not in unasked
 
+    @pytest.mark.parametrize("mode", ["feed_back", "record_only"])
+    def test_a_function_row_never_asked_gives_no_reason_of_its_own(
+        self, mode: str, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from malspark.core.settings_overrides import build_settings
+        from malspark.pipeline.validation import FUNCTION_CLAIM_UNHELD
+
+        built = build_settings({"validation": {"feedback": mode}})
+        monkeypatch.setattr("malspark.core.config.get_settings", lambda: built)
+        row = {"code": FUNCTION_CLAIM_UNHELD, "message": "sub_401000 holds no SleepEx"}
+
+        note = technique_check_note({"reverser": [{**row, "asked": "false"}]})
+
+        assert note.startswith("FUNCTION CHECK, NOT ASKED —")
+        assert "never asked about" in note
+        assert "no turn was left" not in note
+        assert "- isr.function_claim_unheld: sub_401000 holds no SleepEx" in note
+
     def test_nothing_questioned_is_no_note(self) -> None:
         assert technique_check_note({}) == ""
         assert technique_check_note(None) == ""

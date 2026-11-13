@@ -2951,8 +2951,8 @@ FUNCTION_CHECK_HEAD = (
 )
 FUNCTION_CHECK_NOT_ASKED_HEAD = (
     "FUNCTION CHECK, NOT ASKED — claims naming a call or a string for a function whose own "
-    "facts hold none of it, which the analyst was never asked about: no turn was left to ask "
-    "on, as each line says. Nothing here changed the claims."
+    "facts hold none of it, which the analyst was never asked about. Nothing here changed "
+    "the claims."
 )
 # What the function claim question asks of the analyst, after the facts it states;
 # the judge's note leaves it out.
