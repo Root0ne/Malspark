@@ -216,7 +216,7 @@ rather than the sample:
 | `validation` | `retries`, `by_code` and `unresolved` — what the feedback loops cost and what stayed wrong, with the agent that owns each. |
 | `corroboration` | Per technique id, the sources that named it. A count of distinct sources, not a combined confidence; the judge is listed as a source but does not corroborate, because it read the analysts. |
 | `stages` | Every stage of the active team in declaration order: `key`, `kind`, `ran`, `reason`, `agents`, `duration_ms`. A stage that declined is a row saying so, not an absent row. |
-| `environment` | The environment the run ran in, recorded by code: `host`, per agent `requests` and `response_models`, and per tool server `tools` (below). |
+| `environment` | The environment the run ran in, recorded by code: `host`, per agent `requests` and `response_models`, per tool server `tools`, and per detonation `detonations` (below). |
 
 `environment.host` is the worker's host as it reads itself. `os`, `os_release`,
 `os_version`, `machine` and `cpu_model` describe the system. `logical_cpus` and
@@ -372,7 +372,73 @@ Some tools report nothing today, and their facts read `not reported`:
 
 A summary stored without `tools` reads as before.
 
-The block carries `v`, its shape version (2). Throughout it, a fact nobody read
+`environment.detonations` has one row per detonation of the job's sample: the
+job's own first (`d1`) and each further one an agent asked for (`d2`, `d3`…),
+in the order they were made. It is what a reader needs to cite the dynamic
+evidence: which sandbox run each observation rests on. An empty list is a job
+that made no sandbox submission and read no sandbox report (no sample file, or
+a run in mock mode). Each row gives:
+
+- `detonation`, the name the readers select it by (`d1`, `d2`…).
+- `origin`, `job` for the job's own detonation and `agent` for one an agent
+  asked for, with `requested_by`, the agents that asked (one detonation can
+  answer several identical requests).
+- `launched_with`, the launch text the detonation asked for, exactly as the job
+  or the agents gave it, control characters and all; absent when none was
+  asked for. Beside it, `arguments_honoured` says whether the provider passed
+  the text to the sample (`true` or `false`, from the run's launch record), and
+  `arguments_via`, where present, how it was carried (a declared form field,
+  CAPE's option string, a generated launcher). A surface that prints a launch
+  text writes it inert, on one line with its markup escaped; the JSON keeps it
+  whole.
+- `provider`, the sandbox provider's declared id, and `task_id`, the task id
+  its submission answered.
+- `reported`, whether a sandbox report came back, and `failure`, why not, where
+  none did.
+- `detonated`: `true` when the sample was run for this report, `false` for a
+  report the mock sandbox replayed from a recorded fixture or an operator
+  attached (the `upload` provider).
+- `task_ids`: the provider's identifiers of the analysis, each under the place
+  the report holds it (`/info/id` in a CAPE or Cuckoo report, `/sample/id` in a
+  Triage overview).
+- `guest`: the machine the sample ran in, as the report names it. For a CAPE
+  or Cuckoo report, the analysis machine's `name`, `label`, `platform`, `arch`
+  and `manager`, each where the report gives it. For Triage, one entry per
+  behavioural task, keyed by the task's name, with its `target` (the machine
+  image) and its `platform`, `os` and `arch` where the overview names them.
+- `sandbox_version`, `started` and `ended`, as the report gives them: a CAPE
+  or Cuckoo report's `info.version`, `info.started` and `info.ended`; for
+  Triage, `ended` is the sample's `completed` time, and the overview gives no
+  start and no version.
+- `report_parts`: each raw report part as it was read, in reading order, with
+  its `name` as the provider names it, its `sha256` and its length in `bytes`.
+  CAPE's report is one part, `report`. Triage's are `overview` and each
+  behavioural task's report under the task's name. The REST provider's is
+  `report`, the body of its report path. The upload provider's is `report`, the
+  attached bytes as stored. The mock sandbox's part is named by the fixture
+  file it replayed; its stand-in, used where no fixture matches, was read from
+  no file and has none. The digest is taken over the bytes where they were
+  read, never by fetching them again, so two runs with equal digests rest on
+  the same sandbox report. A row lists at most 64 parts; `report_parts_cut`
+  says how many more were left out.
+
+A detonation that returned no report has an empty `report_parts`, and every
+fact its provider would have stated reads `not reported`. The provider is asked
+through one method every provider answers, `SandboxProvider.detonation_facts`.
+A provider that does not implement it, such as a plug-in written without it,
+states nothing: its rows give `provider`, `task_id`, `reported` and the launch
+as the run recorded them, and every other fact reads `not reported`. A provider
+that states a fact the report does not give leaves it out, and it reads
+`not reported` too, never a guess.
+
+What a provider or its sandbox wrote is kept to the keys above and capped: 200
+characters a text, 32 entries a mapping, 64 parts. Each text is put on one line
+without control characters, a URL loses its credentials and any secret-named
+query value, a secret value the worker holds is masked, and a path of the
+worker's host is shown from the project root or as outside it. Task URLs are
+not recorded.
+
+The block carries `v`, its shape version (3). Throughout it, a fact nobody read
 is `not reported`, followed after a colon by the reason where one is known.
 
 ### The analysis WebSocket
