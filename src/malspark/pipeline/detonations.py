@@ -632,6 +632,29 @@ def _directive(records: list[DetonationRecord]) -> str:
     )
 
 
+# What marks a validation row a further turn made (:func:`mark_further_turn`).
+FURTHER_TURN_KEY = "further_turn"
+
+
+def mark_further_turn(update: dict[str, Any]) -> dict[str, Any]:
+    """A further turn's validation update with each of its rows marked as the further turn's.
+
+    The turn revises the analyst's first answer before the debate's first
+    round, as round 0 does; each row it records (a finding, an answer no
+    claim could be read from, a retry's dropped claim) carries
+    ``further_turn: "true"`` (rows hold text), so a row keyed by round is never taken for one of the
+    first answer's.
+    """
+    for row in update.get("validation_unparsed_answers") or ():
+        if isinstance(row, dict):
+            row[FURTHER_TURN_KEY] = "true"
+    for rows in (update.get("validation_findings") or {}).values():
+        for row in rows or ():
+            if isinstance(row, dict):
+                row[FURTHER_TURN_KEY] = "true"
+    return update
+
+
 def _merge(left: dict[str, Any], right: dict[str, Any]) -> dict[str, Any]:
     """Two updates of the state as one, each key by its channel's own reducer."""
     from malspark.pipeline.state import AnalysisState
@@ -712,7 +735,7 @@ async def further_turns(container: Any, state: Any, step: str) -> dict[str, Any]
                     own.update(budget)
                 validation: dict[str, Any] = {}
                 _merge_validation_update(validation, _validation_update(agent, agent_name))
-                own.update(validation)
+                own.update(mark_further_turn(validation))
                 mode = _nudge_mode(agent)
                 if mode:
                     own["nudge_retry_modes"] = {agent_name: mode}
