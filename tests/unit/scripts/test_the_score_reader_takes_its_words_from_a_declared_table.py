@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import dataclasses
 import json
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
@@ -644,7 +645,9 @@ def test_an_item_left_out_of_some_runs_is_decided_over_the_runs_that_counted_it(
 # ------------------------------------------- stored score files, read by dev's reader
 
 
-def test_stored_score_files_read_to_what_dev_s_reader_read() -> None:
+def test_stored_score_files_read_to_what_dev_s_reader_read(
+    record_property: Callable[[str, Any], None],
+) -> None:
     golden = json.loads((FIXTURES / "stored-scores-before-rules.json").read_text(encoding="utf-8"))
     root = Path(__file__).resolve().parents[3]
     # the stored runs live in a main checkout's ignored folders; beside this worktree or above it
@@ -656,8 +659,11 @@ def test_stored_score_files_read_to_what_dev_s_reader_read() -> None:
     checked = 0
     for rel, entry in golden.items():
         path = main / rel
-        if not path.is_file() or hashlib.sha256(path.read_bytes()).hexdigest() != entry["sha256"]:
+        if not path.is_file():
             continue
+        digest = hashlib.sha256(path.read_bytes()).hexdigest()
+        if digest != entry["sha256"]:
+            pytest.fail(f"{rel} is present but is not the file the golden was captured from")
         checked += 1
         if "refused" in entry:
             with pytest.raises(ScoreFileError) as caught:
@@ -679,5 +685,65 @@ def test_stored_score_files_read_to_what_dev_s_reader_read() -> None:
         ), rel
         assert {k: v.tag for k, v in got.provenance.items()} == want["provenance"], rel
         assert got.provenance_note == want["provenance_note"], rel
+    record_property("stored_files_checked", checked)
+    print(f"stored score files checked against dev's reader: {checked} of {len(golden)}")
     if not checked:
         pytest.skip("none of the stored score files is present")
+
+
+def test_score_files_dev_s_reader_refuses_are_refused_alike_without_a_table() -> None:
+    """Tracked synthetic files, so that a run without the stored runs proves refusals too."""
+    golden = json.loads((FIXTURES / "refusals-before-rules.json").read_text(encoding="utf-8"))
+    files = sorted((FIXTURES / "refused").iterdir())
+    assert [f.name for f in files] == sorted(golden) and len(files) >= 6
+    reasons = set()
+    for path in files:
+        entry = golden[path.name]
+        assert "refused" in entry, "every synthetic file is one dev's reader refuses"
+        with pytest.raises(ScoreFileError) as caught:
+            read_scored(path)
+        assert str(caught.value).replace(str(path), path.name) == entry["refused"]
+        reasons.add(entry["refused"].split(": ", 1)[1].split("'")[0][:25])
+    assert len(reasons) == len(files), "each file is refused for its own reason"
+
+
+def test_the_refusal_of_an_annotation_says_why(tmp_path: Path, rules: ScoringRules) -> None:
+    after_missed = _score({"G-001": "found", "G-002": "missed from the evidence bundle"}, tmp_path)
+    with pytest.raises(ScoreFileError) as caught:
+        read_key_score(after_missed, rules)
+    message = str(caught.value)
+    assert "'G-002'" in message and "'missed from the evidence bundle'" in message
+    assert (
+        "the annotation 'from the evidence bundle' may follow only partial, found, not 'missed'"
+        in message
+    )
+    repeated = _score(
+        {"G-000": "found", "G-001": "found from the evidence bundle, from the evidence bundle"},
+        tmp_path,
+        "b",
+    )
+    with pytest.raises(
+        ScoreFileError, match="the annotation 'from the evidence bundle' is repeated"
+    ):
+        read_key_score(repeated, rules)
+    assert rules.why("found") == "" and rules.why("partial maybe") == ""
+
+
+def test_the_wrong_handling_text_states_the_wrongs_actual_place(
+    rules: ScoringRules, rules3: ScoringRules
+) -> None:
+    ratings = {"a": {"u1": "found", "u2": "wrong"}, "b": {"u1": "found", "u2": "missed"}}
+    assert agreement(ratings, rules=rules)["wrong_handling"].endswith("the lowest ordinal rank")
+    raised = rules_from_dict(
+        {**TABLE, "name": "wrong-second", "verdicts": ["missed", "wrong", "partial", "found"]}
+    )
+    text = agreement(ratings, rules=raised)["wrong_handling"]
+    assert text == "wrong is its own nominal class and ordinal rank 2 of 4 (worst first)"
+    assert "lowest" not in text
+    assert agreement(ratings, rules=raised, leave_out_wrong=True)["wrong_handling"].startswith(
+        "the verdict view's ordinal statistics leave out"
+    )
+    assert (
+        "declares no verdict"
+        in agreement({"a": {"u1": "found"}, "b": {"u1": "found"}}, rules=rules3)["wrong_handling"]
+    )

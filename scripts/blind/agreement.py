@@ -93,7 +93,11 @@ def _verdict(cell: str, where: str, rules: ScoringRules | None = None) -> str | 
     if rules is not None:
         found = rules.word(cell)
         if found is None:
-            raise AgreementError(f"{where}: {cell!r} is not one of {', '.join(rules.words)}")
+            reason = rules.why(cell)
+            raise AgreementError(
+                f"{where}: {cell!r} is not one of {', '.join(rules.words)}"
+                + (f" ({reason})" if reason else "")
+            )
         return found
     word = KEY_ALIASES.get(word, word)
     if word not in SCALE:
@@ -427,6 +431,21 @@ def _left_out(ratings: Ratings, outside: tuple[str, ...]) -> dict[str, Any]:
     return {"ratings_per_rater": per_rater, "pairs": pairs}
 
 
+def _wrong_handling(scale: tuple[str, ...], wrong: str | None, leave_out: bool) -> str:
+    """How the verdict view treats the verdict in the role wrong, from the scale's own order."""
+    if wrong is None:
+        return "the table declares no verdict in the role wrong"
+    if leave_out:
+        return "the verdict view's ordinal statistics leave out every rating of wrong"
+    place = scale.index(wrong)
+    rank = (
+        "the lowest ordinal rank"
+        if place == 0
+        else f"ordinal rank {place + 1} of {len(scale)} (worst first)"
+    )
+    return f"wrong is its own nominal class and {rank}"
+
+
 def agreement(
     ratings: Ratings, *, leave_out_wrong: bool = False, rules: ScoringRules | None = None
 ) -> dict[str, Any]:
@@ -463,13 +482,7 @@ def agreement(
         **extra,
         "scale": list(scale),
         "ordinal_order": " < ".join(scale),
-        "wrong_handling": (
-            "the table declares no verdict in the role wrong"
-            if wrong is None
-            else "the verdict view's ordinal statistics leave out every rating of wrong"
-            if leave_out_wrong
-            else "wrong is its own nominal class and the lowest ordinal rank"
-        ),
+        "wrong_handling": _wrong_handling(scale, wrong, leave_out_wrong),
         "items_rated": {r: len(given) for r, given in sorted(ratings.items())},
         "verdicts": analyse(
             ratings, scale, ordered=True, leave_out_wrong=leave_out_wrong, wrong=wrong

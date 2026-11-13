@@ -1,0 +1,20 @@
+{
+ "beyond-count-mismatch.md": {
+  "refused": "beyond-count-mismatch.md: 5 beyond-human facts stated, 2 listed"
+ },
+ "missing-verdict-column.md": {
+  "refused": "missing-verdict-column.md: no column of the item table holds a verdict"
+ },
+ "no-item-section.md": {
+  "refused": "no-item-section.md: no section headed 'Item by item'"
+ },
+ "not-a-score.json": {
+  "refused": "not-a-score.json: not a calibration score"
+ },
+ "totals-do-not-add-up.md": {
+  "refused": "totals-do-not-add-up.md: the Totals line disagrees with the item table: found 3 stated, 1 in the table; partly 0 stated, 1 in the table; body 0 stated, 1 in the table; missed 0 stated, 1 in the table"
+ },
+ "unknown-verdict-word.md": {
+  "refused": "unknown-verdict-word.md: the scored column 'arm X' is not a verdict for 'K2.3 mutex': 'half found'"
+ }
+}

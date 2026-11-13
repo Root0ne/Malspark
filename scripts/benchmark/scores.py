@@ -179,6 +179,36 @@ class ScoringRules:
                 return verdict, tuple(held)
         return None
 
+    def why(self, cell: str) -> str:
+        """Why a cell is refused when a verdict is followed by a declared annotation, else ''."""
+        text = _plain(cell).casefold()
+        for spelling in sorted((*self.scale, *self.aliases), key=len, reverse=True):
+            if not text.startswith(spelling) or text[len(spelling) :][:1].isalnum():
+                continue
+            verdict = self.aliases.get(spelling, spelling)
+            rest, held = text[len(spelling) :].strip(_JOINERS), []
+            while rest:
+                note = next(
+                    (
+                        a
+                        for a in sorted(self.annotations, key=len, reverse=True)
+                        if rest.startswith(a) and not rest[len(a) :][:1].isalnum()
+                    ),
+                    None,
+                )
+                if note is None:
+                    return ""
+                if note in held:
+                    return f"the annotation {note!r} is repeated"
+                if verdict not in self.annotations[note]:
+                    return (
+                        f"the annotation {note!r} may follow only "
+                        f"{', '.join(self.annotations[note])}, not {verdict!r}"
+                    )
+                held.append(note)
+                rest = rest[len(note) :].strip(_JOINERS)
+        return ""
+
     def register(self) -> None:
         """Make the scale known to ``SCALES``, ``CREDITED`` and ``OUTSIDE``.
 
@@ -468,9 +498,10 @@ def read_key_score(path: Path, rules: ScoringRules | None = None) -> ScoredRun:
     for row in rows:
         if len(row) <= column or not key_verdict(row[column], rules):
             cell = row[column] if len(row) > column else ""
+            reason = rules.why(cell) if rules is not None else ""
             raise ScoreFileError(
                 f"{path}: the scored column {_plain(header[column])!r} is not a verdict "
-                f"for {_plain(row[0])!r}: {cell!r}"
+                f"for {_plain(row[0])!r}: {cell!r}" + (f" ({reason})" if reason else "")
             )
     verdicts: dict[str, tuple[str, str | None]] = {}
     labels: dict[str, str] = {}

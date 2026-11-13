@@ -107,8 +107,10 @@ def reveal(scores_path: Path, sealed_path: Path, rules: ScoringRules | None = No
             if split is not None and split[1]:
                 annotations[arms[anon]][item] = split[1]
             if word not in words:
+                reason = rules.why(value) if rules is not None else ""
                 raise BlindError(
                     f"item {item} for {anon} is not one of {', '.join(words)}: {value!r}"
+                    + (f" ({reason})" if reason else "")
                 )
             verdicts[arms[anon]][item] = word
     result = Revealed(

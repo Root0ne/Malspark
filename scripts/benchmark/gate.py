@@ -9,6 +9,14 @@ a run did not score) reaches no word, so it can only lower the arm's verdict.
 ``m`` is the arm's own argument or, by default, a strict majority of its runs
 (``n // 2 + 1``: 1 of 1, 2 of 3, 3 of 4), never a fixed number.
 
+Runs read by a declared scoring-rules table can leave an item out of their
+denominators (under adjudication, not holding for the file). An item that some
+runs left out is decided over the runs that counted it: the number of runs it
+must reach is ``m`` capped at their count, and the item is counted on its own
+line of the totals ("items left out of some runs' denominators"). An item every
+run left out is not reached and is left out of the totals. Without such a table
+no run leaves an item out and ``m`` is never capped.
+
 An item **drops** when the candidate's verdict ranks below the baseline's, or
 when the candidate has none; it **improves** when it ranks above. An item the
 baseline itself reaches in fewer than ``m`` runs is **not gated** and named. The
