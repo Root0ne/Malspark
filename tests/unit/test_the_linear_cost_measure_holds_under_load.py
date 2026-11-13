@@ -83,33 +83,6 @@ class TestOnTheCpuClock:
         assert peak_bytes(lambda: line.startswith("CLAIM")) < 4096
 
 
-class TestASampleTooQuickToTime:
-    """A small call of well under a millisecond is repeated until it can be read."""
-
-    def test_linear_work_with_a_sub_millisecond_small_sample_passes_every_time(self) -> None:
-        counted = [0]
-        work = _linear(1_500)
-
-        def small() -> int:
-            counted[0] += 1
-            return work()
-
-        for _ in range(5):
-            low, high = assert_ratio(small, _linear(6_000), TIME_RATIO_LIMIT)
-            assert 0 < low < linear_cost.TARGET_SECONDS and high > low
-        assert counted[0] > 5 * (2 * 3 + 1), "each timed run repeats the small call"
-
-    def test_quadratic_work_with_a_sub_millisecond_small_sample_still_fails(self) -> None:
-        with pytest.raises(AssertionError, match="times as long"):
-            assert_ratio(_quadratic(250), _quadratic(1_000), TIME_RATIO_LIMIT, repeats=2)
-
-    def test_a_call_that_costs_nothing_does_not_run_away(self) -> None:
-        started = time.perf_counter()
-        with pytest.raises(AssertionError, match="grow the input"):
-            assert_ratio(lambda: None, lambda: None, TIME_RATIO_LIMIT)
-        assert time.perf_counter() - started < 2 * linear_cost.SEARCH_BUDGET + 2
-
-
 class TestOnACoarseClock:
     """Windows' CPU clocks move in steps of about 15.6 ms."""
 

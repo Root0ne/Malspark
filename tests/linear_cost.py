@@ -95,17 +95,6 @@ SCALING_SLACK = 3.0
 # the measure fails rather than read it.
 FLOOR_SECONDS = 0.002
 
-# The CPU time a timed run of the small call should span: a run of a fraction
-# of a millisecond moves with one cache miss or a neighbour's burst, a run of
-# a few milliseconds does not. A small call under it is repeated, the large
-# call as often, until the small run reaches it.
-TARGET_SECONDS = 0.005
-
-# The most repeats a timed run takes, and the most wall-clock time the search
-# for that count may spend, so a slow or a vanishing call cannot run away.
-MAX_TIMES = 1 << 16
-SEARCH_BUDGET = 0.5
-
 # The fewest of the clock's ticks a timed run spans where a tick is coarse:
 # Windows' thread and process clocks move in steps of about 15.6 ms, so a run
 # of one or two steps is read as up to half or twice what it took.
@@ -277,13 +266,9 @@ def assert_ratio(
     small run is measurable.
     With ``self_timed`` each call returns the seconds it measured itself (a
     child process timing its own work), and the clock is not read.
-    On the default clock each timed run repeats both calls as often as it
-    takes the small one to span :data:`TARGET_SECONDS` (and :data:`GRAINS`
-    ticks where the clock's tick is coarse, as on Windows): the same count
-    for both inputs, so a small call too quick to time is read over a run
-    long enough, and a quadratic one still reads four times worse per
-    factor. The count is bounded by :data:`MAX_TIMES` and
-    :data:`SEARCH_BUDGET`; the times and the floor are per call all the same.
+    Where the default clock's tick is coarse (Windows), each timed run
+    repeats both calls as often as it takes the small one to span
+    :data:`GRAINS` ticks; the times and the floor are per call all the same.
     Returns the best small and large times, per call.
     """
     clocked = _clock_of(clock, whole_process)
@@ -295,14 +280,9 @@ def assert_ratio(
         small()
     gc.collect()
     times = 1
-    if not self_timed and clock is None:
-        least = max(TARGET_SECONDS, GRAINS * clock_grain(clocked))
-        searched = time.perf_counter()
-        while (
-            times < MAX_TIMES
-            and time.perf_counter() - searched < SEARCH_BUDGET
-            and _timed_once(repeated(small, times), clocked) < least
-        ):
+    coarse = not self_timed and clock is None
+    if coarse and (least := GRAINS * clock_grain(clocked)) > FLOOR_SECONDS:
+        while times < 1 << 16 and _timed_once(repeated(small, times), clocked) < least:
             times *= 2
         if times > 1:
             small, large, floor = repeated(small, times), repeated(large, times), floor * times
