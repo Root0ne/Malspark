@@ -25,7 +25,6 @@ from __future__ import annotations
 import asyncio
 import base64
 import contextlib
-import copy
 import hashlib
 import os
 import stat
@@ -69,7 +68,14 @@ from malspark.tools import rules as rule_tools
 from malspark.tools import strings as string_tools
 from malspark.tools.arguments import SURROUNDING_QUOTES, read_unquoted, says_unquoted, with_read_as
 from malspark.tools.binary import carved_name_prefix
-from malspark.tools.capabilities import CAPABILITIES_TOOL, ToolNeeds, manifest
+from malspark.tools.capabilities import (
+    CAPABILITIES_TOOL,
+    ToolNeeds,
+    answered_manifest,
+    data_used,
+    manifest,
+    stamped,
+)
 from malspark.tools.declared_facts import NO_EFFECT, tool_declaration
 from malspark.tools.errors import (
     BAD_ARGUMENT,
@@ -96,7 +102,10 @@ TOOL_NEEDS: list[ToolNeeds] = sidecar_needs.ANALYSIS
 YARA_TIMEOUT_S = sidecar_needs.YARA_TIMEOUT_S
 CAPA_TIMEOUT_S: int | None = sidecar_needs.CAPA_TIMEOUT_S
 FLOSS_TIMEOUT_S: int | None = sidecar_needs.FLOSS_TIMEOUT_S
-CAPABILITIES = manifest("analysis", TOOL_NEEDS)
+# The cells, probed once at the start; the requirements are read with each
+# answer of the capabilities tool (``answered_manifest``).
+CAPABILITIES = manifest("analysis", TOOL_NEEDS, requirements=False)
+_NEEDS: dict[str, ToolNeeds] = {need.name: need for need in TOOL_NEEDS}
 
 # ---------------------------------------------------------------------------
 # What each tool declares of itself (``malspark.tools.declared_facts``)
@@ -807,6 +816,12 @@ def _guard(tool: str, call: Any, **kwargs: Any) -> dict[str, Any]:
         searched = read_unquoted(kwargs, SEARCH_ARGUMENTS)
         asked = _confined(_read_absent_words(call, searched.values))
         answer = dict(normalise_error(dict(call(**asked))))
+        # The data the call ran with, for a tool that declares a rule corpus or
+        # a signature set: the corpus its own argument named, else the one this
+        # server reads, counted and digested as it is now. Every tool's answer
+        # goes through here, so each call's entry names the rules it matched
+        # against, read from its declaration (``capabilities.data_used``).
+        answer = stamped(answer, data_used(_NEEDS.get(tool), asked))
         # Which file was read, when it was not the sample. The ledger stores
         # the answer, so a run that analysed a carved payload says which one
         # rather than leaving a reader to infer it from the arguments.
@@ -859,9 +874,9 @@ def capabilities() -> dict[str, Any]:
 
     Each tool, its optional dependency, and whether it is available.
     """
-    # Deep, so "computed once when the server started" also means a
-    # caller cannot reach in and change what it says.
-    return copy.deepcopy(CAPABILITIES)
+    # The cells as probed when the server started and the requirements as
+    # they are now, in a deep copy a caller cannot reach in and change.
+    return answered_manifest(CAPABILITIES, TOOL_NEEDS)
 
 
 # ---------------------------------------------------------------------------

@@ -566,9 +566,24 @@ def serve_reader(
                 )
         if "job" in given:
             given["job"] = str(job or "")
-        return {"value": _json(spec.fn(os.environ, **given))}
+        return {"value": _json(_ran(spec, os.environ, given))}
     except Exception as exc:  # noqa: BLE001 — a reading that raised is answered, not raised
         return {"raised": {"type": type(exc).__name__, "message": str(exc)}}
+
+
+def _ran(spec: Reader, environ: Environ, arguments: Mapping[str, Any]) -> Any:
+    """``spec``'s answer to ``arguments``, naming the data it ran with, on the side that runs it.
+
+    A reading that stands in for a tool declaring a rule corpus or a
+    signature set answers it as that tool's server does
+    (``capabilities.data_used``): read here, where the reading reads it, with
+    the environment it reads.
+    """
+    from malspark.tools.capabilities import data_used, stamped
+    from malspark.tools.sidecar_needs import declared
+
+    answer = spec.fn(environ, **arguments)
+    return stamped(answer, data_used(declared(spec.stands_for), arguments, environ))
 
 
 # ---------------------------------------------------------------------------
@@ -692,7 +707,7 @@ class SampleReaders:
         place = self.place_of(reader)
         if place is None:
             self._ran(None)
-            return spec.fn(environ, **arguments)
+            return _ran(spec, environ, arguments)
         sent = {k: v for k, v in arguments.items() if k not in spec.local_only}
         for name in spec.files:
             value = sent.get(name)

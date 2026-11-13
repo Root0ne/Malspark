@@ -44,12 +44,9 @@ from malspark.tools.capabilities import (
 
 
 def _clear() -> None:
-    # Each fact is read once per process; a test reads it afresh. A cache a
-    # test patched over is restored by its own fixture.
-    for name in ("_probe_version", "_data_digest", "_distributions_of"):
-        clear = getattr(getattr(capabilities, name), "cache_clear", None)
-        if clear is not None:
-            clear()
+    # Versions are read once per process and digests kept while their files
+    # are unchanged; a test reads each afresh.
+    capabilities.clear_fact_caches()
 
 
 @pytest.fixture(autouse=True)
@@ -180,7 +177,7 @@ class TestData:
         assert facts["files"] == 1
         assert "sha256" not in facts
 
-    def test_the_digest_is_computed_once_per_process(
+    def test_the_digest_is_kept_while_no_file_changes(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         root = _corpus(tmp_path / "rules", {"a.yml": "a"})
@@ -195,6 +192,65 @@ class TestData:
         monkeypatch.setattr(Path, "read_bytes", counted)
         assert data(str(root)).facts() == first
         assert reads == []
+
+    def test_data_fetched_after_the_first_read_is_read_when_asked_again(
+        self, tmp_path: Path
+    ) -> None:
+        # A server started before its rules were fetched: the first answer
+        # finds nothing, a later one the rules a call now runs with.
+        root = tmp_path / "rules"
+        req = data(str(root), pattern="*.yml")
+        assert req.facts()["files"] == 0  # type: ignore[index]
+        _corpus(root, {"a.yml": "a", "b.yml": "b"})
+        later = req.facts()
+        assert later is not None
+        assert later["files"] == 2
+        assert len(later["sha256"]) == 64
+
+    def test_a_file_rewritten_under_a_long_lived_reader_changes_the_digest(
+        self, tmp_path: Path
+    ) -> None:
+        import os
+
+        root = _corpus(tmp_path / "rules", {"a.yml": "one"})
+        req = data(str(root), pattern="*.yml")
+        first = req.facts()["sha256"]  # type: ignore[index]
+        target = root / "a.yml"
+        target.write_text("two", encoding="utf-8")
+        # The same size; only the modification time tells the rewrite apart.
+        stat = target.stat()
+        os.utime(target, ns=(stat.st_atime_ns, stat.st_mtime_ns + 1_000_000_000))
+        assert req.facts()["sha256"] != first  # type: ignore[index]
+
+    def test_what_the_loader_leaves_out_is_neither_counted_nor_digested(
+        self, tmp_path: Path
+    ) -> None:
+        root = _corpus(
+            tmp_path / "rules",
+            {"a.yml": "a", ".github/workflows/tests.yml": "ci", ".git/x.yml": "g"},
+        )
+        req = data(str(root), pattern="*.yml", exclude=(".git*",))
+        facts = req.facts()
+        assert facts is not None
+        assert facts["files"] == 1
+        assert facts["exclude"] == [".git*"]
+        # A change to the CI files alone leaves the digest as it was.
+        (root / ".github" / "workflows" / "tests.yml").write_text("changed", encoding="utf-8")
+        assert req.facts()["sha256"] == facts["sha256"]  # type: ignore[index]
+
+    def test_the_row_says_what_its_digest_covers(self, tmp_path: Path) -> None:
+        root = _corpus(tmp_path / "rules", {"a.yml": "a"})
+        facts = data(str(root), pattern="*.yml", exclude=(".git*",)).facts()
+        assert facts is not None
+        assert facts["digest_of"] == (
+            "the files matching *.yml, leaving out .git* at the path the default names, "
+            "as they were when this was read"
+        )
+
+    def test_the_shipped_capa_corpus_leaves_out_what_capa_skips(self) -> None:
+        from malspark.tools import sidecar_needs
+
+        assert sidecar_needs.CAPA_RULES.exclude == (".git*",)
 
     def test_the_override_names_the_path_and_the_record_names_only_what_named_it(
         self, tmp_path: Path
@@ -268,6 +324,98 @@ class TestABinary:
         monkeypatch.setattr(capabilities, "VERSION_PROBE_MAX_TIMEOUT_S", 0.3)
         probe = VersionProbe(_python("import time; time.sleep(5)"), timeout_s=600)
         assert probe.read() == f"{NOT_REPORTED}: it did not answer within 0.3 s"
+
+    def test_a_flood_of_output_is_read_up_to_the_bound_and_stopped(self) -> None:
+        import time
+
+        # Far more than the bound, forever: the probe stops it at the bound.
+        probe = VersionProbe(
+            _python(
+                "import sys\nsys.stdout.write('v9.8.7 ')\nwhile True: sys.stdout.write('x' * 65536)"
+            ),
+            timeout_s=20,
+        )
+        started = time.monotonic()
+        assert probe.read() == "9.8.7"
+        assert time.monotonic() - started < 15
+        flood = VersionProbe(
+            _python("import sys\nwhile True: sys.stdout.write('x' * 65536)"), timeout_s=20
+        )
+        assert flood.read() == (
+            f"{NOT_REPORTED}: it wrote more than {capabilities._PROBE_OUTPUT_BYTES} bytes "
+            "and named no version"
+        )
+
+    @pytest.mark.posix
+    def test_a_grandchild_holding_the_output_neither_delays_the_answer_nor_outlives_it(
+        self, tmp_path: Path
+    ) -> None:
+        import os
+        import time
+
+        marker = tmp_path / "grandchild.pid"
+        # The program prints its version and exits at once, leaving a process
+        # of its own that holds the output open for a minute.
+        code = (
+            "import subprocess, sys\n"
+            f"child = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(60)'])\n"
+            f"open({str(marker)!r}, 'w').write(str(child.pid))\n"
+            "print('tool 4.5.6')\n"
+        )
+        started = time.monotonic()
+        assert VersionProbe(_python(code), timeout_s=10).read() == "4.5.6"
+        assert time.monotonic() - started < 8
+        pid = int(marker.read_text())
+        deadline = time.monotonic() + 5
+        while time.monotonic() < deadline:
+            try:
+                os.kill(pid, 0)
+            except ProcessLookupError:
+                break
+            time.sleep(0.05)
+        else:
+            pytest.fail("the probe's grandchild outlived it")
+
+    def test_a_hang_is_stopped_at_its_wall_clock(self) -> None:
+        probe = VersionProbe(_python("import time; time.sleep(60)"), timeout_s=0.5)
+        assert probe.read() == f"{NOT_REPORTED}: it did not answer within 0.5 s"
+
+    @pytest.mark.parametrize("bad", [float("nan"), float("inf"), -1.0, 0.0, "soon"])
+    def test_a_wall_clock_that_is_no_positive_number_is_the_default(self, bad: Any) -> None:
+        assert capabilities.probe_wall_clock(bad) == capabilities.VERSION_PROBE_TIMEOUT_S
+        assert VersionProbe(_python("print('1.2')"), timeout_s=bad).read() == "1.2"
+
+    def test_a_relative_path_with_a_separator_is_never_run(self, tmp_path: Path) -> None:
+        probe = VersionProbe(("./tool", "--version"))
+        assert probe.read() == (
+            f"{NOT_REPORTED}: tool is named by a relative path, which a probe never runs"
+        )
+
+    @pytest.mark.posix
+    def test_a_probe_runs_the_file_the_tool_s_own_lookup_finds(self, tmp_path: Path) -> None:
+        pinned = tmp_path / "pinned" / "tool"
+        pinned.parent.mkdir()
+        pinned.write_text("#!/bin/sh\necho 'tool v2.0.1'\n", encoding="utf-8")
+        pinned.chmod(0o755)
+        # Another build on PATH answers another version; the probe never asks it.
+        req = binary(
+            "tool",
+            lambda environ=None: None,
+            version_probe=VersionProbe(("tool", "--version")),
+            resolve=lambda environ=None: pinned,
+        )
+        assert req.facts()["version"] == "2.0.1"  # type: ignore[index]
+
+    def test_a_tool_whose_lookup_finds_nothing_says_why(self) -> None:
+        req = binary(
+            "tool",
+            lambda environ=None: "tool is not installed: none in the tools directory",
+            version_probe=VersionProbe(("tool", "--version")),
+            resolve=lambda environ=None: None,
+        )
+        assert req.facts()["version"] == (  # type: ignore[index]
+            f"{NOT_REPORTED}: tool is not installed: none in the tools directory"
+        )
 
     def test_a_probe_runs_once_per_process(self) -> None:
         probe = VersionProbe(_python("print('2.0')"))

@@ -24,7 +24,6 @@ is never where a count is read.
 
 from __future__ import annotations
 
-import copy
 import hashlib
 import ipaddress
 import json
@@ -52,6 +51,7 @@ from malspark.tools.capabilities import (
     CAPABILITIES_TOOL,
     Requirement,
     ToolNeeds,
+    answered_manifest,
     env,
     manifest,
 )
@@ -131,7 +131,9 @@ TOOL_NEEDS: list[ToolNeeds] = [
     ToolNeeds("check_hash", (env("VIRUSTOTAL_API_KEY"),), timeout_s=HTTP_TIMEOUT_S),
     ToolNeeds("get_threatintel_status"),
 ]
-CAPABILITIES = manifest("threatintel", TOOL_NEEDS)
+# The cells, probed once at the start; the requirements are read with each
+# answer of the capabilities tool (``answered_manifest``).
+CAPABILITIES = manifest("threatintel", TOOL_NEEDS, requirements=False)
 
 # What each tool declares of itself (``malspark.tools.declared_facts``). Every
 # lookup asks an outside service whose answer moves, so none is read-only. The
@@ -215,9 +217,9 @@ def capabilities() -> dict[str, Any]:
 
     Each tool, the setting it needs, and whether it is configured.
     """
-    # Deep, so "computed once when the server started" also means a
-    # caller cannot reach in and change what it says.
-    return copy.deepcopy(CAPABILITIES)
+    # The cells as probed when the server started and the requirements as
+    # they are now, in a deep copy a caller cannot reach in and change.
+    return answered_manifest(CAPABILITIES, TOOL_NEEDS)
 
 
 # ---------------------------------------------------------------------------

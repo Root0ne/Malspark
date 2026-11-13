@@ -436,7 +436,9 @@ def test_capa_reads_a_rule_directory_inside_the_data_root(
         offered=EVERY_TOOL,
         confine=lambda p, j: p,
     )
-    assert said == {"value": {"ok": 1}}
+    # The answer, and first the capa rules it ran with (``capabilities.data_used``).
+    assert said["value"]["ok"] == 1
+    assert list(said["value"]) == ["data_used", "ok"]
     data = (get_project_root() / "data").resolve()
     assert seen[0]["rules_dir"] == str(data / "yara-x-rules")
     assert seen[0]["signatures_dir"] == ""
@@ -496,7 +498,9 @@ def test_an_empty_signature_directory_is_the_optional_one_left_out(
     said = readers.serve_reader(
         "capa", _capa_arguments(signatures_dir=""), JOB, offered=EVERY_TOOL, confine=lambda p, j: p
     )
-    assert said == {"value": {"ok": 1}}
+    # The answer, and first the capa rules it ran with (``capabilities.data_used``).
+    assert said["value"]["ok"] == 1
+    assert list(said["value"]) == ["data_used", "ok"]
     assert seen[0]["signatures_dir"] == ""
     assert READERS["capa"].optional_dirs == ("signatures_dir",)
 

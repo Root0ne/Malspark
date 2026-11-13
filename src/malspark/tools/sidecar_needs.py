@@ -48,16 +48,33 @@ YARA_REMEDIATION = "install yara-python on the host that runs this server: uv sy
 # server's default unless its environment names others. A rule engine declares
 # its corpus even when it is vendored: an engine that loaded no rule did not
 # run (``rules._not_loaded``), and an override can name an empty one.
+# ``exclude`` is what the engine's own loader skips, so the digest covers the
+# rules it loads: capa skips every directory with ``.git`` in its name, and the
+# fetched clone's CI workflows under ``.github`` are ``.yml`` files that are no
+# rules. ``argument`` is the call argument that names another corpus: the
+# in-process capa reading is handed the setting as ``rules_dir``, and a model
+# may name a YARA or Sigma corpus as ``ruleset``.
 CAPA_RULES = data(
     rules.DEFAULT_CAPA_RULES,
     setting="static.capa.rules_dir",
     override=rules.CAPA_RULES_ENV,
     pattern="*.yml",
+    exclude=(".git*",),
+    argument="rules_dir",
 )
-SIGMA_RULES = data(rules.DEFAULT_SIGMA_RULES, override=rules.SIGMA_RULES_ENV, pattern="*.y*ml")
+SIGMA_RULES = data(
+    rules.DEFAULT_SIGMA_RULES,
+    override=rules.SIGMA_RULES_ENV,
+    pattern="*.y*ml",
+    argument="ruleset",
+)
 # YARA's corpus is tracked, so only an override can name one that is missing.
 YARA_RULES = data(
-    rules.DEFAULT_YARA_RULES, override=rules.YARA_RULES_ENV, pattern="*.y*ml", fetched=False
+    rules.DEFAULT_YARA_RULES,
+    override=rules.YARA_RULES_ENV,
+    pattern="*.y*ml",
+    fetched=False,
+    argument="ruleset",
 )
 
 # What each tool needs beyond the interpreter, probed once when the server
@@ -154,6 +171,15 @@ BY_DIRECTORY: dict[str, list[ToolNeeds]] = {
     "knowledge-mcp": KNOWLEDGE,
     "network-mcp": NETWORK,
 }
+
+
+def declared(tool: str) -> ToolNeeds | None:
+    """The first shipped declaration of ``tool``, in the order ``BY_DIRECTORY`` lists them."""
+    for needs in BY_DIRECTORY.values():
+        for entry in needs:
+            if entry.name == tool:
+                return entry
+    return None
 
 
 def without_reads(tool: str, server: str | None = None) -> frozenset[str] | None:

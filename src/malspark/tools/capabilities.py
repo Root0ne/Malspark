@@ -24,20 +24,29 @@ The same declarations say what the server ran with: the manifest's
 version, each data path's file count and one digest over its files, and each
 binary's version where the tool declares how to ask it (``VersionProbe``), so
 a run's record states the tool versions and rule sets it used
-(``analysis.run_environment``).
+(``analysis.run_environment``). They are read each time the manifest is
+answered (``answered_manifest``), and a data row is the default path as it was
+then; the corpus a call ran with is in that call's own answer
+(``data_used``), which the wrapper every tool call goes through writes.
 """
 
 from __future__ import annotations
 
+import contextlib
+import copy
+import fnmatch
 import functools
 import hashlib
 import importlib
 import importlib.metadata
 import importlib.util
+import math
 import os
 import re
 import shutil
+import signal
 import subprocess
+import threading
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -52,15 +61,17 @@ CAPABILITIES_TOOL = "capabilities"
 
 # What reading what a requirement is at may cost (``Requirement.facts``). A
 # probe of a binary's version is given this long when its declaration names no
-# wall clock, and never more than the ceiling: it runs once per process, when
-# the manifest is built, and a server's start waits for it.
+# wall clock (or names one that is not a positive number), and never more than
+# the ceiling: it runs once per process for each executable, when the manifest
+# is first answered, and that answer waits for it.
 VERSION_PROBE_TIMEOUT_S = 5.0
 VERSION_PROBE_MAX_TIMEOUT_S = 30.0
-# How much of a probe's output is read for the version.
-_PROBE_OUTPUT_CHARS = 64 * 1024
+# How much of a probe's output is read for the version, per stream: a program
+# that writes more is stopped there, and what it wrote up to the bound is read.
+_PROBE_OUTPUT_BYTES = 64 * 1024
 # The most a data path's digest reads: beyond either bound its files are
 # counted and no digest is computed, so a corpus copied in whole by mistake
-# costs a server's start a count, not a read of it.
+# costs a count, not a read of it.
 DATA_DIGEST_MAX_FILES = 20_000
 DATA_DIGEST_MAX_BYTES = 64 * 1024 * 1024
 # What a fact that was not read is recorded as. ``NOT_REPORTED`` is the one
@@ -75,64 +86,182 @@ NOT_REPORTED = "not reported"
 class VersionProbe:
     """How a binary says its own version, for a tool that declares it.
 
-    ``command`` is run as given, never through a shell: its first word is
-    looked up on ``PATH``. The version is the first match of ``pattern`` in
-    what the command writes (its standard output, then its standard error):
-    the pattern's first group when it has one, else the whole match.
-    ``timeout_s`` bounds the run (``VERSION_PROBE_TIMEOUT_S`` when ``None``,
-    never more than ``VERSION_PROBE_MAX_TIMEOUT_S``).
+    ``command`` is run as given, never through a shell. Its first word is the
+    executable: an absolute path, or a bare name looked up on ``PATH``; a
+    relative path with a separator in it (``./tool``) is never run, since it
+    would name whatever the working directory holds. A requirement that
+    declares where its tool finds the executable (``Requirement.resolve``)
+    runs the probe on that file instead, so the probe asks the binary the tool
+    runs. The version is the first match of ``pattern`` in what the command
+    writes (its standard output, then its standard error, each read up to
+    ``_PROBE_OUTPUT_BYTES``): the pattern's first group when it has one, else
+    the whole match. ``timeout_s`` bounds the run (``VERSION_PROBE_TIMEOUT_S``
+    when ``None`` or not a positive number, never more than
+    ``VERSION_PROBE_MAX_TIMEOUT_S``). The program runs in a process group of
+    its own, which is killed whole once it has answered or run out of time,
+    so no process it started outlives the probe or holds its output open.
     """
 
     command: tuple[str, ...]
     pattern: str = r"\d+(?:\.\d+)+"
     timeout_s: float | None = None
 
-    def read(self) -> str:
-        """The version the command reports, else ``"not reported: <reason>"``. Never raises."""
-        return _probe_version(self.command, self.pattern, self.timeout_s)
+    def read(self, executable: str | None = None) -> str:
+        """The version the command reports, else ``"not reported: <reason>"``. Never raises.
+
+        ``executable`` replaces the command's first word where the caller
+        found the file the tool runs (``Requirement.resolve``).
+        """
+        command = self.command if executable is None else (executable, *self.command[1:])
+        return _probe_version(tuple(str(word) for word in command), self.pattern, self.timeout_s)
+
+
+def probe_wall_clock(timeout_s: Any) -> float:
+    """The wall clock a probe is given: the declared one held to the ceiling, else the default."""
+    try:
+        wall = float(timeout_s) if timeout_s is not None else VERSION_PROBE_TIMEOUT_S
+    except (TypeError, ValueError):
+        wall = VERSION_PROBE_TIMEOUT_S
+    if not math.isfinite(wall) or wall <= 0:
+        wall = VERSION_PROBE_TIMEOUT_S
+    return min(max(wall, 0.1), VERSION_PROBE_MAX_TIMEOUT_S)
+
+
+def _kill_group(process: subprocess.Popen[bytes]) -> None:
+    """Kill ``process``'s whole group, and it; whatever is already gone is left."""
+    killpg = getattr(os, "killpg", None)
+    if killpg is not None:
+        with contextlib.suppress(OSError):
+            killpg(process.pid, signal.SIGKILL)
+    with contextlib.suppress(OSError):
+        process.kill()
+
+
+def run_bounded(
+    argv: list[str],
+    wall: float,
+    *,
+    env: Mapping[str, str] | None = None,
+    cwd: str | None = None,
+) -> tuple[int | None, bytes, bytes, str]:
+    """Run ``argv`` for at most ``wall`` seconds, reading each stream up to the bound.
+
+    Answers the exit status (``None`` when it did not exit in time), both
+    streams as far as they were read, and ``""``, ``"timeout"`` or
+    ``"flood"`` (it wrote past the bound and was stopped). The program gets a
+    session and process group of its own, closed standard input, and its
+    group is killed once it has exited or been stopped: a process it started
+    that holds the output open is gone with it, and the read ends there.
+    ``env`` and ``cwd`` are the program's environment and working directory
+    (this process's when ``None``). The CLI sidecar base keeps a copy of this
+    (``services/cli-sidecar/cli_sidecar.py``), and both answer one test table.
+    """
+    process = subprocess.Popen(  # noqa: S603 — a declared argument list, no shell
+        argv,
+        stdin=subprocess.DEVNULL,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        start_new_session=True,
+        env=None if env is None else dict(env),
+        cwd=cwd,
+    )
+    held = {"out": bytearray(), "err": bytearray()}
+    flooded = threading.Event()
+
+    def _pump(stream: Any, into: bytearray) -> None:
+        try:
+            while True:
+                chunk = os.read(stream.fileno(), 65536)
+                if not chunk:
+                    return
+                room = _PROBE_OUTPUT_BYTES - len(into)
+                into.extend(chunk[: max(room, 0)])
+                if len(chunk) > room:
+                    flooded.set()
+                    _kill_group(process)
+                    return
+        except (OSError, ValueError):
+            return
+
+    pumps = [
+        threading.Thread(target=_pump, args=(process.stdout, held["out"]), daemon=True),
+        threading.Thread(target=_pump, args=(process.stderr, held["err"]), daemon=True),
+    ]
+    for pump in pumps:
+        pump.start()
+    ended = ""
+    status: int | None
+    try:
+        status = process.wait(timeout=wall)
+    except subprocess.TimeoutExpired:
+        status, ended = None, "timeout"
+    _kill_group(process)
+    with contextlib.suppress(subprocess.TimeoutExpired):
+        process.wait(timeout=2.0)
+    for pump in pumps:
+        pump.join(timeout=2.0)
+    for stream in (process.stdout, process.stderr):
+        with contextlib.suppress(OSError):
+            if stream is not None:
+                stream.close()
+    if flooded.is_set():
+        ended = "flood"
+    return status, bytes(held["out"]), bytes(held["err"]), ended
+
+
+def _probed_executable(word: str, search: str | None = None) -> tuple[str | None, str]:
+    """The file a probe's first word names, or ``None`` and why it is not run.
+
+    A bare name is looked up on ``search`` (this process's ``PATH`` when ``None``).
+    """
+    if not word.strip():
+        return None, "the probe names no command"
+    named = Path(word)
+    if named.is_absolute():
+        if named.is_file() and os.access(named, os.X_OK):
+            return str(named), ""
+        return None, f"{named.name} is not on PATH"
+    if os.sep in word or (os.altsep and os.altsep in word):
+        return None, f"{named.name} is named by a relative path, which a probe never runs"
+    found = shutil.which(word, path=search)
+    if found is None:
+        return None, f"{named.name} is not on PATH"
+    return found, ""
 
 
 @functools.lru_cache(maxsize=64)
 def _probe_version(command: tuple[str, ...], pattern: str, timeout_s: float | None) -> str:
-    # Once per process for each probe: a version does not change while a
-    # server runs, and the probe is a process start.
-    if not command or not str(command[0]).strip():
+    # Once per process for each probe of each executable: a version does not
+    # change while a server runs, and the probe is a process start.
+    if not command:
         return f"{NOT_REPORTED}: the probe names no command"
-    word = str(command[0])
-    found = shutil.which(word)
+    found, why = _probed_executable(str(command[0]))
     if found is None:
-        return f"{NOT_REPORTED}: {Path(word).name} is not on PATH"
-    wall = min(
-        VERSION_PROBE_TIMEOUT_S if timeout_s is None else max(float(timeout_s), 0.1),
-        VERSION_PROBE_MAX_TIMEOUT_S,
-    )
-    try:
-        done = subprocess.run(  # noqa: S603 — a declared argument list, no shell
-            [found, *(str(arg) for arg in command[1:])],
-            capture_output=True,
-            stdin=subprocess.DEVNULL,
-            text=True,
-            errors="replace",
-            timeout=wall,
-            check=False,
-        )
-    except subprocess.TimeoutExpired:
-        return f"{NOT_REPORTED}: it did not answer within {wall:g} s"
-    except Exception as exc:  # noqa: BLE001 — a version is a label, never a failure
-        # The type alone: an exception's words may carry the host's paths.
-        return f"{NOT_REPORTED}: it could not be run ({type(exc).__name__})"
-    if done.returncode != 0:
-        return f"{NOT_REPORTED}: it exited with status {done.returncode}"
+        return f"{NOT_REPORTED}: {why}"
     try:
         compiled = re.compile(pattern)
     except re.error:
         return f"{NOT_REPORTED}: the probe's pattern is not a regular expression"
-    for said in (done.stdout, done.stderr):
-        match = compiled.search((said or "")[:_PROBE_OUTPUT_CHARS])
+    wall = probe_wall_clock(timeout_s)
+    try:
+        status, out, err, ended = run_bounded([found, *command[1:]], wall)
+    except Exception as exc:  # noqa: BLE001 — a version is a label, never a failure
+        # The type alone: an exception's words may carry the host's paths.
+        return f"{NOT_REPORTED}: it could not be run ({type(exc).__name__})"
+    if ended == "timeout":
+        return f"{NOT_REPORTED}: it did not answer within {wall:g} s"
+    if ended != "flood" and status != 0:
+        return f"{NOT_REPORTED}: it exited with status {status}"
+    for said in (out, err):
+        match = compiled.search(said.decode("utf-8", "replace"))
         if match:
             value = match.group(1) if compiled.groups else match.group(0)
             if value and value.strip():
                 return value.strip()[:120]
+    if ended == "flood":
+        return (
+            f"{NOT_REPORTED}: it wrote more than {_PROBE_OUTPUT_BYTES} bytes and named no version"
+        )
     return f"{NOT_REPORTED}: its output named no version"
 
 
@@ -172,31 +301,46 @@ def module_version(name: str) -> dict[str, str]:
     return {"version": f"{NOT_REPORTED}: no installed distribution provides {top}"}
 
 
-def data_files(target: Path, pattern: str) -> list[tuple[str, Path]]:
+def data_files(target: Path, pattern: str, exclude: tuple[str, ...] = ()) -> list[tuple[str, Path]]:
     """The files that make up the data at ``target``, as ``(name, path)`` in name order.
 
     A file is itself, under its own name; a directory is every file under it
-    matching ``pattern``, each named by its path relative to the directory.
-    Empty when nothing is there.
+    matching ``pattern``, each named by its path relative to the directory,
+    but for a file any part of whose relative name matches one of
+    ``exclude`` (``.git*`` leaves out a clone's ``.git`` and ``.github``
+    trees, which a rule loader skips). Empty when nothing is there.
     """
     if target.is_file():
         return [(target.name, target)]
     if not target.is_dir():
         return []
-    held = [
-        (entry.relative_to(target).as_posix(), entry)
-        for entry in target.rglob(pattern)
-        if entry.is_file()
-    ]
+    held = []
+    for entry in target.rglob(pattern):
+        name = entry.relative_to(target).as_posix()
+        if exclude and any(
+            fnmatch.fnmatchcase(part, rule) for part in name.split("/") for rule in exclude
+        ):
+            continue
+        if entry.is_file():
+            held.append((name, entry))
     return sorted(held, key=lambda item: item[0])
 
 
-@functools.lru_cache(maxsize=32)
-def _data_digest(target: str, pattern: str) -> dict[str, Any]:
-    # Once per process for each path: a server's corpus is what it loaded at
-    # start, and the worker's does not change under a run.
+# Each data path's last digest, by path, pattern and exclusions, with the stat
+# signature of the files it was computed over: the digest is computed again
+# only when a file is added, removed, renamed, resized or rewritten.
+_DIGESTS: dict[tuple[str, str, tuple[str, ...]], tuple[Any, dict[str, Any]]] = {}
+_DIGESTS_LOCK = threading.Lock()
+_MAX_DIGESTS = 32
+
+
+def _data_digest(target: str, pattern: str, exclude: tuple[str, ...] = ()) -> dict[str, Any]:
+    # Read as the data is now: a server started before its corpus was fetched,
+    # or a worker whose operator updated it, digests what is there when asked.
+    # The files are listed and their sizes and modification times read every
+    # time; their contents only when that signature changed.
     try:
-        files = data_files(Path(target), pattern)
+        files = data_files(Path(target), pattern, exclude)
     except OSError as exc:
         return {"files": 0, "digest_statement": f"not read ({type(exc).__name__})"}
     out: dict[str, Any] = {"files": len(files)}
@@ -204,10 +348,17 @@ def _data_digest(target: str, pattern: str) -> dict[str, Any]:
         out["digest_statement"] = "no file is there"
         return out
     try:
-        total = sum(path.stat().st_size for _name, path in files)
+        stats = [(name, path.stat()) for name, path in files]
     except OSError as exc:
         out["digest_statement"] = f"digest not computed ({type(exc).__name__})"
         return out
+    signature = tuple((name, st.st_size, st.st_mtime_ns) for name, st in stats)
+    key = (target, pattern, exclude)
+    with _DIGESTS_LOCK:
+        kept = _DIGESTS.get(key)
+    if kept is not None and kept[0] == signature:
+        return dict(kept[1])
+    total = sum(st.st_size for _name, st in stats)
     out["bytes"] = total
     if len(files) > DATA_DIGEST_MAX_FILES or total > DATA_DIGEST_MAX_BYTES:
         out["digest_statement"] = (
@@ -228,7 +379,21 @@ def _data_digest(target: str, pattern: str) -> dict[str, Any]:
         out["digest_statement"] = f"digest not computed ({type(exc).__name__})"
         return out
     out["sha256"] = digest.hexdigest()
+    with _DIGESTS_LOCK:
+        if len(_DIGESTS) >= _MAX_DIGESTS:
+            _DIGESTS.clear()
+        _DIGESTS[key] = (signature, dict(out))
     return out
+
+
+def clear_fact_caches() -> None:
+    """Forget every digest and version read. For tests."""
+    with _DIGESTS_LOCK:
+        _DIGESTS.clear()
+    for cached in (_probe_version, _distributions_of):
+        clear = getattr(cached, "cache_clear", None)
+        if clear is not None:
+            clear()
 
 
 @dataclass(frozen=True)
@@ -257,6 +422,19 @@ class Requirement:
     # For a binary: how it says its own version (``VersionProbe``), where the
     # tool declares one. Without it a binary's version is not reported.
     version_probe: VersionProbe | None = field(default=None, compare=False)
+    # For a binary found by ``locate``: the file the tool runs, as the same
+    # lookup finds it (called as ``locate`` is), or ``None`` when there is
+    # none. A version probe runs on that file, not on what ``PATH`` names.
+    resolve: Callable[..., str | os.PathLike[str] | None] | None = field(
+        default=None, compare=False
+    )
+    # For data: what of the directory the tool's loader leaves out
+    # (``data_files``), so the count and the digest cover what it loads; and
+    # the call argument that names another corpus in place of this one (any
+    # value but ``CORPUS_DEFAULT_WORDS``), so a call's answer names the data
+    # it ran with (``data_used``).
+    exclude: tuple[str, ...] = ()
+    argument: str = ""
 
     def facts(
         self, environ: Mapping[str, str] | None = None, settings: Any = None
@@ -264,38 +442,63 @@ class Requirement:
         """What this requirement is on this host, for the record of a run. Never raises.
 
         A module: the distribution that provides it and its installed version
-        (``module_version``). Data: the path's files matching ``pattern``
-        counted and one SHA-256 over them, name then content in name order,
-        within ``DATA_DIGEST_MAX_FILES`` and ``DATA_DIGEST_MAX_BYTES``; the
-        path is read as ``installed`` reads it and named only by what named
-        it. A binary: the version its declared probe reads, else
-        ``"not reported"``. A setting is no install and has no facts
-        (``None``): its value is the operator's, not the host's. Each is read
-        once per process.
+        (``module_version``). Data: the path's files matching ``pattern`` (but
+        ``exclude``) counted and one SHA-256 over them, name then content in
+        name order, within ``DATA_DIGEST_MAX_FILES`` and
+        ``DATA_DIGEST_MAX_BYTES``, as they are when this is read; the path is
+        read as ``installed`` reads it and named only by what named it, and
+        ``digest_of`` says in words what the digest covers. A binary: the
+        version its declared probe reads, on the file ``resolve`` finds where
+        it is declared, else ``"not reported"``. A setting is no install and
+        has no facts (``None``): its value is the operator's, not the host's.
+        A module's version and a binary's are read once per process; data
+        is listed each time and read again only when a file of it changed.
         """
         try:
             out: dict[str, Any] = {"kind": self.kind, "name": self.name}
             if self.kind == "module":
                 out.update(module_version(self.name))
             elif self.kind == "binary":
-                out["version"] = (
-                    self.version_probe.read() if self.version_probe is not None else NOT_REPORTED
-                )
+                out["version"] = self._version(environ)
             elif self.kind == "data":
                 value, named_by = self._data_path(environ, settings)
-                out["named_by"] = named_by
-                out["pattern"] = self.pattern
-                if not value.strip():
-                    out.update({"files": 0, "digest_statement": f"{named_by} names no path"})
-                else:
-                    target = Path(value)
-                    target = target if target.is_absolute() else _data_root() / target
-                    out.update(_data_digest(str(target), self.pattern))
+                out.update(self.data_facts(value, named_by))
             else:
                 return None
             return out
         except Exception as exc:  # noqa: BLE001 — a fact unread is recorded, never raised
             return {"kind": self.kind, "name": self.name, "statement": type(exc).__name__}
+
+    def _version(self, environ: Mapping[str, str] | None) -> str:
+        if self.version_probe is None:
+            return NOT_REPORTED
+        if self.resolve is None:
+            return self.version_probe.read()
+        found = self.resolve() if environ is None else self.resolve(environ)
+        if found is None:
+            why = None
+            if self.locate is not None:
+                why = self.locate() if environ is None else self.locate(environ)
+            return f"{NOT_REPORTED}: {why or f'{self.name} is not where its tool looks'}"
+        return self.version_probe.read(os.fspath(found))
+
+    def data_facts(self, value: str, named_by: str) -> dict[str, Any]:
+        """The count and digest of the data at ``value``, named by ``named_by``. Never raises."""
+        out: dict[str, Any] = {"named_by": named_by, "pattern": self.pattern}
+        if self.exclude:
+            out["exclude"] = list(self.exclude)
+        if not value.strip():
+            out.update({"files": 0, "digest_statement": f"{named_by} names no path"})
+            return out
+        target = Path(value)
+        target = target if target.is_absolute() else _data_root() / target
+        out.update(_data_digest(str(target), self.pattern, self.exclude))
+        left_out = f", leaving out {', '.join(self.exclude)}" if self.exclude else ""
+        out["digest_of"] = (
+            f"the files matching {self.pattern}{left_out} at the path {named_by} names, "
+            "as they were when this was read"
+        )
+        return out
 
     def probe(self) -> str | None:
         """``None`` when present, else the reason it is not.
@@ -484,6 +687,7 @@ def binary(
     locate: Callable[..., str | None] | None = None,
     *,
     version_probe: VersionProbe | None = None,
+    resolve: Callable[..., str | os.PathLike[str] | None] | None = None,
 ) -> Requirement:
     """A tool that shells out to an executable.
 
@@ -493,9 +697,10 @@ def binary(
     and runs only the pinned build — and answers the reason it is absent.
     ``version_probe`` is how the executable says its version, for a run's
     record of what it ran (``Requirement.facts``); without one its version is
-    not reported.
+    not reported. ``resolve`` is the file ``locate``'s lookup finds, which the
+    probe then runs, so it asks the build the tool runs.
     """
-    return Requirement("binary", name, locate, version_probe=version_probe)
+    return Requirement("binary", name, locate, version_probe=version_probe, resolve=resolve)
 
 
 def env(name: str) -> Requirement:
@@ -509,6 +714,8 @@ def data(
     override: str = "",
     pattern: str = "*",
     fetched: bool = True,
+    exclude: tuple[str, ...] = (),
+    argument: str = "",
 ) -> Requirement:
     """A file or directory the tool reads its rules or signatures from.
 
@@ -522,10 +729,20 @@ def data(
     that is missing or holds nothing is named before a job (``installed``)
     with what named it: a tool reading an empty corpus answers nothing, and
     says so only once the run has paid for it. ``fetched`` is ``False`` for a
-    default that version control keeps (``Requirement.remedy``).
+    default that version control keeps (``Requirement.remedy``). ``exclude``
+    is what of a directory the tool's loader leaves out, and ``argument`` the
+    call argument that names another corpus in place of this one
+    (``data_used``).
     """
     return Requirement(
-        "data", default, setting=setting, override=override, pattern=pattern, fetched=fetched
+        "data",
+        default,
+        setting=setting,
+        override=override,
+        pattern=pattern,
+        fetched=fetched,
+        exclude=tuple(exclude),
+        argument=argument,
     )
 
 
@@ -624,19 +841,92 @@ def requirement_facts(
     return list(rows.values())
 
 
-def manifest(server: str, tools: list[ToolNeeds], *, version: str | None = None) -> dict[str, Any]:
+def manifest(
+    server: str,
+    tools: list[ToolNeeds],
+    *,
+    version: str | None = None,
+    requirements: bool = True,
+) -> dict[str, Any]:
     """The capability manifest for ``server``, probed now on this host.
 
     ``requirements`` is what each declared module, binary and data path is
-    here (``requirement_facts``): built with the manifest, which a server
-    builds once when it starts, so no tool call pays for it.
+    here (``requirement_facts``). A server builds its manifest's cells once
+    when it starts and leaves them out there (``requirements=False``), then
+    reads them each time its ``capabilities`` tool is answered
+    (``answered_manifest``): data fetched after the start, or changed under a
+    running server, is what the answer describes.
     """
-    return {
+    held: dict[str, Any] = {
         "server": server,
         "version": version if version is not None else package_version(),
         "tools": [_cell(tool) for tool in tools],
-        "requirements": requirement_facts(tools),
     }
+    if requirements:
+        held["requirements"] = requirement_facts(tools)
+    return held
+
+
+def answered_manifest(held: Mapping[str, Any], tools: list[ToolNeeds]) -> dict[str, Any]:
+    """A copy of the manifest ``held`` with its ``requirements`` read now (``manifest``).
+
+    Deep, so a caller cannot reach in and change what the server says.
+    """
+    out = copy.deepcopy(dict(held))
+    out["requirements"] = requirement_facts(tools)
+    return out
+
+
+# The values of a corpus argument (``Requirement.argument``) that name the
+# default corpus rather than a path.
+CORPUS_DEFAULT_WORDS = ("", "default")
+# The key a tool's answer names the data it ran with under (``data_used``).
+DATA_USED_KEY = "data_used"
+
+
+def data_used(
+    needs: ToolNeeds | None,
+    arguments: Mapping[str, Any],
+    environ: Mapping[str, str] | None = None,
+    settings: Any = None,
+) -> list[dict[str, Any]]:
+    """Per data path ``needs`` declares, the data a call with ``arguments`` ran with. Never raises.
+
+    The corpus the call's own argument names (``Requirement.argument``) when
+    it names one, else the path the tool reads by default, read as
+    ``Requirement.facts`` reads it (``environ`` is the environment of the
+    process that runs the tool): its name, what named it, its file count and
+    its digest, as they are now. Empty for a tool that declares no data.
+    Read by the wrapper every tool call goes through, the same for every
+    tool, so the record of each call that matched rules names the rules.
+    """
+    rows: list[dict[str, Any]] = []
+    for req in needs.requires if needs is not None else ():
+        if req.kind != "data":
+            continue
+        given = arguments.get(req.argument) if req.argument else None
+        try:
+            if isinstance(given, str) and given.strip() not in CORPUS_DEFAULT_WORDS:
+                facts = req.data_facts(given.strip(), f"the {req.argument} argument")
+            else:
+                value, named_by = req._data_path(environ, settings)
+                facts = req.data_facts(value, named_by)
+        except Exception as exc:  # noqa: BLE001 — a fact unread is recorded, never raised
+            facts = {"statement": type(exc).__name__}
+        facts.pop("digest_of", None)
+        rows.append({"name": req.name, **facts})
+    return rows
+
+
+def stamped(answer: Any, rows: list[dict[str, Any]]) -> Any:
+    """``answer`` with ``rows`` (``data_used``) first, where it is a dict and there are any.
+
+    First, as a carved file's ``read_path`` is: an answer wider than the
+    caller's output bound is cut from the end before anything records it.
+    """
+    if not rows or not isinstance(answer, dict):
+        return answer
+    return {DATA_USED_KEY: rows, **{k: v for k, v in answer.items() if k != DATA_USED_KEY}}
 
 
 def remedy_for(tool: ToolNeeds, missing: list[Requirement]) -> str:
