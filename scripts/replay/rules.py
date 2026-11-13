@@ -2440,7 +2440,7 @@ def _composer(run: _Run, built: _Built) -> dict[str, Any]:
                 schema, payload, code="composer.schema", answer=json.dumps(payload)
             ),
             *v.section_capability_violations(payload, grounding),
-            *v.citation_violations(payload, citable, prose=prose, items=items),
+            *v.citation_violations(payload, citable, prose=prose, items=items, records=True),
             *v.wrong_entry_citations(payload, entries, prose=prose),
             *v.misstated_entry_contents(payload, entries, prose=prose),
             *v.ledger_absence_contradictions(payload, entries),

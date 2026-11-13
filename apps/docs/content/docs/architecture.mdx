@@ -1338,9 +1338,16 @@ Two producers use it:
   block's heading such as `[BINARY FACTS]`, a source's name, or an `ev_` id
   the ledger never issued. The citable ids are the run's ledger ids, never ids
   read out of prompt text — a decoded string can carry any `[ev_NNNN]` — and the
-  question's sentence names them. Only prose is read — a section's `body` or
-  `text`, the narrative's summary and key findings — never a record field such
-  as a C2 channel's packet layout or a flag, and never a code span. An ATT&CK or
+  question's sentence names them. Only prose is read for brackets — a
+  section's `body` or `text`, the narrative's summary and key findings — never
+  a record field such as a C2 channel's packet layout or a flag, and never a
+  code span. A composed section is the model's own in every field, so its
+  answer is also read for entry ids: each `ev_` id written anywhere in it, a
+  citing field or a record's text, bracketed or not, that the run did not
+  issue is the same question, once per id. A code span and an item id are not
+  read, a configuration or identifier row that its own check asks about for
+  citing no entry is left to that question, and the narrative's key findings
+  keep their own check (`narrative.ungrounded_finding`). An ATT&CK or
   MBC id or an IPv6 literal in brackets is an identifier, not a citation; a
   markdown link and a bracket that is part of a token (`[len][payload]`,
   `[Content_Types].xml`, `[System.Convert]::`) are neither. A numbered

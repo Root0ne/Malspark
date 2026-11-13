@@ -5704,6 +5704,7 @@ def citation_violations(
     *,
     prose: Sequence[str] | None = None,
     items: ItemIndex | None = None,
+    records: bool = False,
 ) -> list[Violation]:
     """Each bracketed citation item in ``payload``'s prose that is not an id it may cite.
 
@@ -5725,9 +5726,21 @@ def citation_violations(
     never edited: a citation the retry does not fix prints as written, and the
     unresolved row is what tells a reader.
 
+    ``records`` reads the whole answer a second way, for a producer whose
+    every field it writes is its own (a composed section): each entry id
+    written anywhere in it, bracketed or not and in any field, a citing field
+    included, that is not one of ``citable`` is one violation of the same
+    kind, once however often it appears. Code spans are not read, and only
+    the ``ev_`` shape is, so a bracket of notation is not. A row the
+    configuration or identifier check already asks about for citing no entry
+    of the run (:func:`configuration_citation_violations`,
+    :func:`identifier_citation_violations`) is left to that question. With no
+    ``citable`` ids there is nothing to read the ids against and this reading
+    asks nothing.
     """
     if payload is None:
         return []
+    whole = payload
     if prose is not None:
         data = payload if isinstance(payload, dict) else getattr(payload, "__dict__", {}) or {}
         payload = {key: data.get(key) for key in prose if key in data}
@@ -5782,7 +5795,47 @@ def citation_violations(
                         path="citation",
                     )
                 )
+    if not records or not known:
+        return violations
+    for text in _record_strings(whole, citable, items):
+        for found in ENTRY_ID_RE.findall(_CODE_SPAN_RE.sub(" ", text)):
+            if found.lower() in allowed or found.lower() in seen:
+                continue
+            seen.add(found.lower())
+            violations.append(
+                Violation(
+                    code=CITATION_NOT_EVIDENCE_CODE,
+                    message=(
+                        f"[{safe_finding_value(found)}] is not an entry this answer was shown. "
+                        f"{remedy}"
+                    ),
+                    path="citation",
+                )
+            )
     return violations
+
+
+def _record_strings(payload: Any, citable: Sequence[str], items: ItemIndex | None) -> list[str]:
+    """Every string of a composed answer but the rows another check asks about for no citation."""
+    data = payload if isinstance(payload, dict) else getattr(payload, "__dict__", {}) or {}
+    if not isinstance(data, dict):
+        return _strings_of(payload)
+    asked = {
+        violation.path.removesuffix(".evidence_refs")
+        for violation in [
+            *configuration_citation_violations(data, citable, items),
+            *identifier_citation_violations(data, citable, items),
+        ]
+    }
+    out: list[str] = []
+    for key, value in data.items():
+        if isinstance(value, list | tuple):
+            for index, row in enumerate(value):
+                if f"{key}.{index}" not in asked:
+                    out.extend(_strings_of(row, 1))
+        else:
+            out.extend(_strings_of(value))
+    return out
 
 
 # The report's own citations. Each of these is shown to the model once and,
