@@ -25,6 +25,11 @@ Each item has an id that is stable for one report:
   the TCP and UDP endpoints, the domains, the ICMP and the TLS rows: the order
   the ``sandbox_network`` view lists them in, so its rows and the items agree).
 
+A later detonation of the sample (``providers.detonation``: ``d2``, ``d3``…)
+has its own report, read into its own sections, and its items' ids are
+qualified by it (``d2/proc:84``, ``d2/net:3``) so they never name an item of
+the job's first detonation, whose ids stay unqualified.
+
 A section the report does not carry has no count but a ``no:`` sentence
 saying why: the report lists it as unavailable from its sandbox (a sandbox
 that records no registry timeline or no API calls says so), or the report
@@ -99,20 +104,40 @@ SECTION_OF_PREFIX: dict[str, str] = {
     **{prefix: name for name, prefix in SECTION_PREFIXES.items()},
 }
 
+# What qualifies the id of an item of a later detonation: ``d<ordinal>/``,
+# from ``d2`` up; the job's first detonation's ids carry none.
+QUALIFIER_RE = re.compile(r"(d(?:[2-9]|[1-9]\d{1,2}))/", re.IGNORECASE)
+
 # An item id as a claim writes it. The process form takes the pid, a repeat's
-# ``.k`` and the positional ``p<n>`` of a process with no pid.
+# ``.k`` and the positional ``p<n>`` of a process with no pid; a later
+# detonation's item is qualified by it (:data:`QUALIFIER_RE`).
 # Nothing that continues a name, a path, a URL's query or fragment may stand
 # before it (a word character, ``.``, ``/``, ``\``, ``@``, ``-``, ``:``, ``?``,
 # ``#``, ``&``, ``=`` or ``%``), and no word character, ``:`` or ``.<digit>``
 # after it: ``http://h/?a=net:4`` and ``C:\Users\x\file:3`` hold no item.
 ITEM_ID_RE = re.compile(
-    r"(?<![\w./\\@:\-?#&=%])(?:proc:(?:\d{1,20}(?:\.\d{1,9})?|p\d{1,9})"
+    r"(?<![\w./\\@:\-?#&=%])(?:d(?:[2-9]|[1-9]\d{1,2})/)?"
+    r"(?:proc:(?:\d{1,20}(?:\.\d{1,9})?|p\d{1,9})"
     r"|(?:"
     + "|".join(p for p in (*SECTION_PREFIXES.values(), *LEGACY_PREFIXES) if p != "proc")
     + r"):\d{1,12})"
     r"(?![\w:]|\.\d)",
     re.IGNORECASE,
 )
+
+
+def split_qualifier(item_id: str) -> tuple[str, str]:
+    """``(detonation, id)`` of an item id: ``("d2", "proc:84")``; ``("", "net:3")`` unqualified."""
+    text = str(item_id or "").strip().lower()
+    found = QUALIFIER_RE.match(text)
+    if found is None:
+        return "", text
+    return found.group(1), text[found.end() :]
+
+
+def qualified(detonation: str, item_id: str) -> str:
+    """``item_id`` as an item of ``detonation`` names it; unchanged for the job's first."""
+    return f"{detonation}/{item_id}" if detonation else item_id
 
 
 # The behaviour summary's parts each summary-read section is read from, in order.
@@ -325,12 +350,20 @@ class Sections:
     .normaliser_reading``) is not carried, whatever the dict holds: the reader
     writes those lists empty for every report, so a count of them would read
     as an observed absence. ``None`` reads the dict as it stands.
+
+    ``detonation`` is the later detonation the report is of (``d2``…), whose
+    name qualifies every id the items are answered with; empty for the job's
+    first. An id is looked up qualified by it, or unqualified.
     """
 
     def __init__(
-        self, report: Mapping[str, Any], normalised_by: Sequence[str] | None = None
+        self,
+        report: Mapping[str, Any],
+        normalised_by: Sequence[str] | None = None,
+        detonation: str = "",
     ) -> None:
         self.report = report
+        self.detonation = str(detonation or "").lower()
         self._reading = _reader(normalised_by)
         unavailable = place(report, "unavailable")
         # By the platform's section ids; a report stored before they were
@@ -602,7 +635,11 @@ class Sections:
             source = f"channels.{part.kind}[{index}]"
         else:
             source = f"{part.path}[{index}]"
-        item: dict[str, Any] = {"id": item_id, "kind": part.kind, "source": source}
+        item: dict[str, Any] = {
+            "id": qualified(self.detonation, item_id),
+            "kind": part.kind,
+            "source": source,
+        }
         if isinstance(row, Mapping):
             fields = dict(row)
             if section.name == "processes":
@@ -612,10 +649,17 @@ class Sections:
         else:
             item["fields"] = {"value": row}
         if part.process:
-            item["process"] = part.process
+            item["process"] = qualified(self.detonation, part.process)
         if section.name == "processes" and index in self._parent:
-            item["parent"] = self._parent[index]
+            item["parent"] = qualified(self.detonation, self._parent[index])
         return item
+
+    def _own(self, item_id: str) -> str | None:
+        """``item_id`` without this report's qualifier; ``None`` where another detonation's."""
+        detonation, rest = split_qualifier(item_id)
+        if detonation and detonation != self.detonation:
+            return None
+        return rest
 
     def _at(self, section: Section, number: int) -> dict[str, Any] | None:
         placed = section.place(number)
@@ -686,6 +730,10 @@ class Sections:
 
     def _number_of(self, section: Section, item_id: str) -> int | None:
         """The item number ``item_id`` names in ``section``, or ``None``."""
+        own = self._own(item_id)
+        if own is None:
+            return None
+        item_id = own
         prefix, _, rest = item_id.partition(":")
         # A prefix an earlier index wrote for this section (``LEGACY_PREFIXES``)
         # names the same item as the section's own.
@@ -748,6 +796,8 @@ class Sections:
             held = self._numbers_of_pid(name).get(pid, [])
             candidates = held if candidates is None else [n for n in held if n in candidates]
         mark = signature.strip().lower()
+        if mark and self.detonation:
+            mark = self._own(mark) or ""
         if mark:
             held = self._numbers_of_signature(mark)
             if candidates is None:
@@ -769,7 +819,7 @@ class Sections:
 
     def item(self, item_id: str) -> dict[str, Any] | None:
         """The item ``item_id`` names in this report, or ``None``."""
-        text = str(item_id or "").strip().lower()
+        text = self._own(str(item_id or "")) or ""
         name = SECTION_OF_PREFIX.get(text.partition(":")[0])
         if name is None:
             return None
@@ -822,10 +872,16 @@ def pid_of(value: Any) -> str | None:
 
 
 def section_index(
-    report: Mapping[str, Any], normalised_by: Sequence[str] | None = None
+    report: Mapping[str, Any],
+    normalised_by: Sequence[str] | None = None,
+    detonation: str = "",
 ) -> dict[str, Any]:
-    """The index the pack records: each section's count, or its ``no:``, and the process ids."""
-    found = Sections(report, normalised_by)
+    """The index the pack records: each section's count, or its ``no:``, and the process ids.
+
+    A later detonation's index names it (``detonation``), and its items' ids
+    are qualified by that name; the job's first's index is as it always was.
+    """
+    found = Sections(report, normalised_by, detonation)
     sections: dict[str, Any] = {}
     for name, section in found.sections.items():
         if section.no:
@@ -835,7 +891,10 @@ def section_index(
         if name == "processes":
             row.update(_compact_process_ids(section.ids))
         sections[name] = row
-    return {"sections": sections, "tool": ITEMS_TOOL}
+    answer: dict[str, Any] = {"sections": sections, "tool": ITEMS_TOOL}
+    if found.detonation:
+        answer["detonation"] = found.detonation
+    return answer
 
 
 def _ranges(numbers: Iterable[int]) -> list[list[int]]:
@@ -949,6 +1008,9 @@ class ItemIndex:
     pid_runs: tuple[tuple[int, int], ...] = ()
     repeats: dict[int, int] = field(default_factory=dict)
     unstated_runs: tuple[tuple[int, int], ...] = ()
+    # The index of each later detonation's report, by its name (``d2``…):
+    # a qualified id is known by it alone.
+    later: dict[str, ItemIndex] = field(default_factory=dict)
 
     @classmethod
     def from_answer(cls, data: Any) -> ItemIndex | None:
@@ -988,8 +1050,11 @@ class ItemIndex:
         return repeat.isdigit() and 2 <= int(repeat) <= self.repeats.get(int(pid), 1)
 
     def known(self, item_id: str) -> bool:
-        """Whether ``item_id`` names an item of the run's report."""
-        text = str(item_id or "").strip().lower()
+        """Whether ``item_id`` names an item of the run (a qualified id: of its detonation)."""
+        detonation, text = split_qualifier(str(item_id or ""))
+        if detonation:
+            index = self.later.get(detonation)
+            return index is not None and index.known(text)
         prefix, _, rest = text.partition(":")
         name = SECTION_OF_PREFIX.get(prefix)
         if name is None:
@@ -1003,7 +1068,7 @@ class ItemIndex:
     @property
     def holds_items(self) -> bool:
         """Whether the report has any item to cite."""
-        return any(self.counts.values())
+        return any(self.counts.values()) or any(i.holds_items for i in self.later.values())
 
     def ids(self) -> Iterator[str]:
         """Every item id the index states, section by section, the processes by pid."""
@@ -1020,14 +1085,17 @@ class ItemIndex:
                 continue
             for number in range(1, self.counts.get(name, 0) + 1):
                 yield f"{prefix}:{number}"
+        for detonation, index in self.later.items():
+            for item_id in index.ids():
+                yield qualified(detonation, item_id)
 
 
 # The declared kind of the triage pack's section index entry (``core.builtin_declarations``).
 SECTIONS_KIND = "sandbox_sections"
 
 
-def index_entry(entries: Iterable[Any]) -> Any | None:
-    """The run's readable section index entry (declared kind ``sandbox_sections``), or ``None``."""
+def _index_entries(entries: Iterable[Any]) -> Iterator[Any]:
+    """Every readable section index entry (declared kind ``sandbox_sections``), in order."""
     from malspark.core.declared_reading import kind_of
 
     for entry in entries or ():
@@ -1036,14 +1104,42 @@ def index_entry(entries: Iterable[Any]) -> Any | None:
         if getattr(entry, "ok", True) is False:
             continue
         if isinstance(getattr(entry, "structured", None), Mapping):
-            return entry
-    return None
+            yield entry
+
+
+def _detonation_of(entry: Any) -> str:
+    """The later detonation an index entry is of (``d2``…), empty for the job's first."""
+    named = entry.structured.get("detonation")
+    return str(named).strip().lower() if isinstance(named, str) else ""
+
+
+def index_entry(entries: Iterable[Any]) -> Any | None:
+    """The run's readable section index entry of its first detonation, or ``None``."""
+    return next((e for e in _index_entries(entries) if not _detonation_of(e)), None)
 
 
 def item_index_of(entries: Iterable[Any]) -> ItemIndex | None:
-    """The run's item index, read off its ledger, or ``None`` where it holds none."""
-    entry = index_entry(entries)
-    return ItemIndex.from_answer(entry.structured) if entry is not None else None
+    """The run's item index, read off its ledger, or ``None`` where it holds none.
+
+    Each later detonation's index entry is held under its name
+    (:attr:`ItemIndex.later`); the first one read of each name is kept.
+    """
+    first: ItemIndex | None = None
+    later: dict[str, ItemIndex] = {}
+    for entry in _index_entries(entries):
+        detonation = _detonation_of(entry)
+        if not detonation:
+            if first is None:
+                first = ItemIndex.from_answer(entry.structured)
+            continue
+        if QUALIFIER_RE.fullmatch(f"{detonation}/") and detonation not in later:
+            index = ItemIndex.from_answer(entry.structured)
+            if index is not None:
+                later[detonation] = index
+    if later:
+        first = first if first is not None else ItemIndex()
+        first.later = later
+    return first
 
 
 class ItemCitations:
@@ -1055,9 +1151,16 @@ class ItemCitations:
     read for the ids cited, once each.
     """
 
-    def __init__(self, index: ItemIndex, sections: Sections | None) -> None:
+    def __init__(
+        self,
+        index: ItemIndex,
+        sections: Sections | None,
+        later: Mapping[str, Sections] | None = None,
+    ) -> None:
         self.index = index
         self.sections = sections
+        # Each later detonation's report read into sections, by its name.
+        self.later = dict(later or {})
         self._texts: dict[str, str | None] = {}
 
     @property
@@ -1066,9 +1169,11 @@ class ItemCitations:
 
     def item(self, item_id: str) -> dict[str, Any] | None:
         text = str(item_id or "").strip().lower()
-        if self.sections is None or not self.index.known(text):
+        if not self.index.known(text):
             return None
-        return self.sections.item(text)
+        detonation, _ = split_qualifier(text)
+        sections = self.later.get(detonation) if detonation else self.sections
+        return sections.item(text) if sections is not None else None
 
     def text(self, item_id: str) -> str | None:
         """The item's own text, lower-cased, as an entry's is held; ``None`` when unread."""
