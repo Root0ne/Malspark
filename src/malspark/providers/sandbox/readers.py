@@ -580,21 +580,21 @@ class TriageReportReader(ReportReader):
             return Reading(TRIAGE_OVERVIEW_FILLS, partial=self.PARTIAL)
         return Reading(TRIAGE_NORMALISER_FILLS)
 
-    # The places a behavioural task's guest is named, in the overview's task
-    # row and in the task report's ``task`` block.
-    GUEST_KEYS = ("target", "platform", "os", "arch")
+    # What a behavioural task's row in the overview, and its task report's
+    # ``task`` block, say of the machine the task ran in: ``resource`` is the
+    # machine image, ``os`` its operating system, ``platform`` its family.
+    # ``target`` is the analysed file and ``backend`` the sandbox's own worker.
+    GUEST_KEYS = ("resource", "os", "platform")
 
     def run_facts(self, payload: Any, fmt: Any = None, **context: Any) -> dict[str, Any]:
-        """The sample id, and per behavioural task its guest, start and end.
+        """The sample id, and per behavioural task its guest.
 
         Each behavioural task is keyed by its name. Its guest is the
-        ``target`` (the machine image), ``platform``, ``os`` and ``arch`` its
-        overview row names, and those its task report's ``task`` block names
-        over them (``task_reports`` in ``context``, by task name). Its start
-        and end are the task report's ``task.started`` and ``task.completed``,
-        where it states them. The sample's own times (``created``,
-        ``completed``) are not one detonation's, and no part gives the
-        sandbox's version.
+        ``resource`` (the machine image), ``os`` and ``platform`` its overview
+        row names, and those its task report's ``task`` block names over them
+        (``task_reports`` in ``context``, by task name). No part states one
+        detonation's start or end, nor the sandbox's version: the sample's own
+        times (``created``, ``completed``) are not a detonation's.
         """
         facts = super().run_facts(payload, fmt)
         if not isinstance(payload, Mapping):
@@ -604,7 +604,6 @@ class TriageReportReader(ReportReader):
         reports = context.get("task_reports")
         reports = reports if isinstance(reports, Mapping) else {}
         guest: dict[str, dict[str, str]] = {}
-        times: dict[str, dict[str, str]] = {"started": {}, "ended": {}}
         for task in listed if isinstance(listed, list) else ():
             if not isinstance(task, Mapping) or task.get("kind") != "behavioral":
                 continue
@@ -618,12 +617,8 @@ class TriageReportReader(ReportReader):
             held.update({key: str(own[key]) for key in self.GUEST_KEYS if _stated(own.get(key))})
             if held:
                 guest[name] = held
-            for key, place in (("started", "started"), ("ended", "completed")):
-                if _stated(own.get(place)):
-                    times[key][name] = str(own[place])
         if guest:
             facts["guest"] = guest
-        facts.update({key: by_task for key, by_task in times.items() if by_task})
         return facts
 
 
