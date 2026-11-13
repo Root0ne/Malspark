@@ -87,10 +87,30 @@ def test_refused_and_too_late_requests_have_their_entry_id(
     assert [r["entry_id"] for r in record["detonation_requests"]] == ["ev_0005", "ev_0006"]
 
 
-def test_the_command_line_summary_carries_the_record() -> None:
-    import inspect
+def test_the_command_line_summary_carries_the_record(monkeypatch: pytest.MonkeyPatch) -> None:
+    from typer.testing import CliRunner
 
     from malspark import cli
 
-    source = inspect.getsource(cli.analyze)
-    assert "recorded_detonations(malspark_app.container, result)" in source
+    container = a_job()
+    filed(container, "")
+    printed: list[dict[str, Any]] = []
+
+    class _App:
+        def __init__(self, **_kwargs: Any) -> None:
+            self.container = container
+
+        def run(self, **_kwargs: Any) -> dict[str, Any]:
+            return {"stix_output": {}, "run_summary": {"negotiation": {}}}
+
+        def remember_the_run(self) -> bool:
+            return False
+
+    monkeypatch.setattr(cli, "MalsparkApp", _App)
+    monkeypatch.setattr(cli, "_release", lambda _app: None)
+    monkeypatch.setattr(cli, "_print_run_summary_inline", printed.append)
+    result = CliRunner().invoke(cli.app, ["analyze", "sample_1", "--mock"])
+    assert result.exit_code == 0, result.output
+    (summary,) = printed
+    assert [r["request"] for r in summary["detonation_requests"]] == ["r1"]
+    assert summary["detonations"][0]["detonation"] == "d1"

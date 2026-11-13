@@ -133,7 +133,7 @@ def analyze(
         # no agent asked.
         from malspark.pipeline.detonations import recorded_detonations
 
-        recorded = recorded_detonations(malspark_app.container, result)
+        recorded = recorded_detonations(getattr(malspark_app, "container", None), result)
         if recorded and isinstance(result.get("run_summary"), dict):
             result["run_summary"] = {**result["run_summary"], **recorded}
         # The run completed: the case its judge built may now teach the next.
