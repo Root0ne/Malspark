@@ -620,7 +620,9 @@ def test_a_stopped_run_writes_the_block(monkeypatch: pytest.MonkeyPatch) -> None
     from malspark.core.container import ServiceContainer
     from malspark.pipeline.stopped_run import stopped_run_summary
 
-    monkeypatch.setattr(run_environment, "environment_record", lambda container: dict(BLOCK))
+    monkeypatch.setattr(
+        run_environment, "environment_record", lambda container, entries=(): dict(BLOCK)
+    )
     container = ServiceContainer(Settings(_env_file=None), mock=True)
     state = {
         "file_hash": "b" * 64,
@@ -639,7 +641,7 @@ def test_a_failed_verdict_writes_the_block(monkeypatch: pytest.MonkeyPatch) -> N
     from malspark.core.container import ServiceContainer
     from malspark.pipeline import nodes
 
-    monkeypatch.setattr(nodes, "environment_record", lambda container: dict(BLOCK))
+    monkeypatch.setattr(nodes, "environment_record", lambda container, entries=(): dict(BLOCK))
     container = ServiceContainer(Settings(_env_file=None), mock=True)
     state: dict[str, Any] = {
         "file_hash": "b" * 64,
@@ -672,7 +674,7 @@ async def test_the_report_node_writes_the_block_once_the_last_call_is_made(
         "resolve_reporter_mode",
         lambda settings: ReporterMode(1, "auto", "a stated reason"),
     )
-    monkeypatch.setattr(nodes, "environment_record", lambda container: dict(BLOCK))
+    monkeypatch.setattr(nodes, "environment_record", lambda container, entries=(): dict(BLOCK))
     fake = MagicMock()
     fake.agent_registry.list_agents.return_value = ["static"]
     fake.analyst_keys.return_value = ["static"]
