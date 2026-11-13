@@ -54,7 +54,7 @@ def _line(entry: LedgerEntry) -> str:
 
 def test_the_platform_s_read_is_marked() -> None:
     line = _line(_read())
-    assert line.startswith("[ev_0001] detonation 2, launched with `-p x`: ")
+    assert line.startswith("[ev_0001] detonation 2, launched with `-p x` (the launch text is ")
 
 
 @pytest.mark.parametrize(
