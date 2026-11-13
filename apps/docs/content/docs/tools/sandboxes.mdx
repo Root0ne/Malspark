@@ -735,8 +735,14 @@ detonation apart under the same title. The job's own process tree, registry and
 API calls stay its own; its network, signature, dropped-file and mutex rows hold
 a later detonation's rows too, each carrying `observed_in`: every detonation
 that observed it, with its launch (a value seen in several detonations names
-each). The IOC table's rows and the published techniques a later detonation's
-signatures tag carry it as well; the Markdown and analyst reports say "observed
+each). Every value the report publishes that rests on a later detonation's read
+carries it as well, whatever its kind: an IOC-table row by the rows of its value
+and by the reads its record ties to it (the entries an analysis statement is
+found whole in, the entries or sandbox items an analyst's listing cites), a
+published technique by the signatures that tag it and by the reads behind it.
+The evidence index marks each later detonation's read; a read of the same kind
+that is not a later one is the job's own detonation's, and a static tool's read
+observed no detonation; the Markdown and analyst reports say "observed
 in detonation 2, launched with `<args>`"; the STIX export carries
 `x_malspark_observed_in` on each such indicator, with the same clause after its
 description, on the sample's `uses` edge to such a technique, on each
@@ -745,15 +751,19 @@ cyber-observable stating such a value and on the observed-data naming one; the
 it in their comment, and the ATT&CK layer in an `observed in` metadata row. A
 drafted rule built on a value only a later detonation observed names that
 detonation and its launch beside the value: in the YARA string's `//` comment,
-in the Suricata rule's `#` comment line and in the Sigma draft's description; a
-value the job's own detonation observed too carries no mark, and no string,
-condition, selection or alert line differs. The section bundles the report's
+in the Suricata rule's `#` comment line and in each Sigma draft's description,
+the first draft's registry keys included; a value is a later detonation's only
+where every row that reduces to it is, so one row the job's own detonation
+observed removes the statement, and no string, condition, selection or alert
+line differs. The section bundles the report's
 composer is shown list each technique a later detonation's signatures tag with
 the same clause in brackets, naming the job's own detonation as well where its
 signatures tag it. In the console, the Indicators table and its side panel, the
-ATT&CK technique chips, cards and panel, and the Behaviour tab's signatures and
-file operations show the mark as a tag beside the value, each launch text cut at
-200 characters and the whole mark on hover. A row only the job's own detonation observed carries none of it.
+ATT&CK technique chips, cards and panel, the Behaviour tab's signatures and file
+operations, and the Network tab's hosts, DNS names, requests and their panels
+show the mark as a tag beside the value: each detonation drawn as its own part,
+each launch text in its own isolated code element, written out and cut as the
+report writes it, and the mark in the report's words on hover. A row only the job's own detonation observed carries none of it.
 A generated launcher's own processes, flows, signatures and files never enter
 these rows. An agent's claim citing a later detonation's entry reaches the report
 as any claim does, with its citation. The disclosure block
