@@ -240,7 +240,14 @@ class TestEveryAgentButTheReportWriterIsShownIt:
         store.store(_case())
         seen: list[int] = []
         monkeypatch.setattr(nodes, "upstream_chars", lambda *_a, **_k: bound)
-        monkeypatch.setattr(nodes, "pack_block", lambda _entries, chars: seen.append(chars) or "")
+        later: list[int | None] = []
+        monkeypatch.setattr(
+            nodes,
+            "pack_block",
+            lambda _entries, chars, later_chars=None: (
+                seen.append(chars) or later.append(later_chars) or ""
+            ),
+        )
 
         nodes.pack_text(self._state(), self._container(store))
         nodes.pack_text(self._state(), self._container(store), for_reporter=True)
@@ -250,6 +257,8 @@ class TestEveryAgentButTheReportWriterIsShownIt:
         # the pack's smallest room is 1. The reporter's pack keeps the whole bound.
         expected = bound - len(earlier) - 2 if room is None else room
         assert seen == [expected, bound]
+        # A further detonation's lines keep the whole bound beside the earlier run.
+        assert later == [bound, None]
 
 
 def _pattern(tid: str) -> dict[str, Any]:

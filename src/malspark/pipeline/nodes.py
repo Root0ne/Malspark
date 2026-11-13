@@ -2975,7 +2975,9 @@ def pack_text(
     earlier = earlier_run_text(container, str(state.get("file_hash") or ""))
     if not earlier:
         return pack_block(entries, chars)
-    pack = pack_block(entries, chars if chars <= 0 else max(1, chars - len(earlier) - 2))
+    # The earlier run shares the job's own room; a further detonation's lines
+    # keep a room of the whole bound (``triage_pack.render_pack``).
+    pack = pack_block(entries, chars if chars <= 0 else max(1, chars - len(earlier) - 2), chars)
     return "\n\n".join(part for part in (pack, earlier) if part)
 
 
