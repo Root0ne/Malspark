@@ -1648,7 +1648,10 @@ ANNOTATIONS: dict[str, Annotation] = {
             "the served models were found to have, as the tool-output cap is; with no "
             "window learned, 6,000. A positive value is used whatever the window. Past "
             "it the block is cut and says so, so a long pipeline cannot spend a late "
-            "stage's whole context on a summary of the stages before it."
+            "stage's whole context on a summary of the stages before it. In the triage "
+            "pack, the lines of the further detonations agents asked for take a room "
+            "of the same size of their own after the job's own lines, so a job with "
+            "more than one detonation may show a pack of up to twice this."
         ),
         "subgroup": "Report content",
     },

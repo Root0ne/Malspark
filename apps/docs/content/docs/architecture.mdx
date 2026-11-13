@@ -3940,9 +3940,10 @@ id and under the owner rule (`long_term_memory.earlier_case`, through a
 backend's optional `case_of`; the in-process and Qdrant backends offer it, and
 a backend without it shows no earlier run). Each analyst, the mediator and the
 judge are shown it once per job after the triage pack, under the heading
-"AN EARLIER RUN ON THIS SAMPLE: hypotheses, not evidence". The pack's room
-under its bound (`reporting.upstream_findings_max_chars` or the derived one)
-shrinks by the block, and the block itself is never cut, so a block longer
+"AN EARLIER RUN ON THIS SAMPLE: hypotheses, not evidence". The room of the
+job's own pack lines under its bound (`reporting.upstream_findings_max_chars`
+or the derived one) shrinks by the block (a further detonation's lines keep a
+room of the whole bound of their own), and the block itself is never cut, so a block longer
 than the bound leaves the two past it. It holds the day it was stored and the
 technique ids its case keeps, never its summary, whose evidence ids name the
 earlier run's ledger, and never its category, an earlier verdict's word no
