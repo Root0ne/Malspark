@@ -2448,7 +2448,7 @@ async def keep_the_stopped_run(
             core_settings=core_settings,
             override_keys=override_keys,
             hash_mismatch_reason=hash_mismatch_reason,
-            scale_record=_recorded(container),
+            scale_record=_recorded(container, state),
             sample_integrity=await ended_record(sample_integrity),
             sandbox_target=sandbox_target_of(container),
             isolated_memory=getattr(container, "isolated_memory", False) is True,
@@ -3661,7 +3661,7 @@ async def run_analysis(ctx: dict, job_id: str) -> dict[str, Any]:
             core_settings=core_settings,
             override_keys=overrides,
             hash_mismatch_reason=_report_hash_mismatch_reason,
-            scale_record=_recorded(getattr(app, "container", None)),
+            scale_record=_recorded(getattr(app, "container", None), pipeline_result),
             sample_integrity=await ended_record(_integrity),
             sandbox_target=sandbox_target_of(getattr(app, "container", None)),
             isolated_memory=getattr(getattr(app, "container", None), "isolated_memory", False)
@@ -4958,15 +4958,16 @@ def _end_the_token_ledger(container: Any) -> None:
         logger.debug("The usage ledger was not marked ended (%s).", type(exc).__name__)
 
 
-def _recorded(container: Any) -> dict[str, Any]:
+def _recorded(container: Any, state: Any = None) -> dict[str, Any]:
     """The run records the summary takes off the container: the signature scale, the detonations.
 
     The detonations are recorded only where an agent asked for a further one
-    (``pipeline.detonations.recorded_detonations``).
+    (``pipeline.detonations.recorded_detonations``); each request's ledger
+    entry is located in ``state``'s ledger, where given.
     """
     from malspark.pipeline.detonations import recorded_detonations
 
-    return {**recorded_signature_scale(container), **recorded_detonations(container)}
+    return {**recorded_signature_scale(container), **recorded_detonations(container, state)}
 
 
 def _report_inputs(

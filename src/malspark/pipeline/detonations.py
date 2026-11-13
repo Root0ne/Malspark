@@ -986,17 +986,25 @@ def later_sections(container: Any) -> dict[str, Any]:
     }
 
 
-def recorded_detonations(container: Any) -> dict[str, Any]:
+def recorded_detonations(container: Any, state: Any = None) -> dict[str, Any]:
     """What the run summary records of the job's further detonations; ``{}`` where none was asked.
 
     Every detonation (the job's own first, then each further one with who
     asked, at which step, citing what, and its start, end and duration),
     every request with its answer, and every further turn. A job in which no
-    agent asked records nothing here, so its summary is the one it was.
+    agent asked records nothing here, so its summary is the one it was. Each
+    request's ledger entry is located in ``state``'s ledger, where given,
+    whatever the tool answered it (accepted, joined, refused or too late).
     """
     requests = list(getattr(container, "detonation_requests", None) or ())
     if not requests:
         return {}
+    _fill_entry_ids(requests, state)
+    for record in getattr(container, "detonations", None) or ():
+        for asker in record.requested_by:
+            found = next((r for r in requests if r.name == asker.get("request")), None)
+            if found is not None and found.entry_id and not asker.get("entry_id"):
+                asker["entry_id"] = found.entry_id
     return {
         "detonations": [r.public() for r in getattr(container, "detonations", None) or ()],
         "detonation_requests": [r.public() for r in requests],

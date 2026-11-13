@@ -128,6 +128,14 @@ def analyze(
             sample_path=sample_path,
             launch_arguments=launch_arguments,
         )
+        # The further detonations agents asked for, recorded on the summary as
+        # the worker records them (``pipeline.detonations``); nothing where
+        # no agent asked.
+        from malspark.pipeline.detonations import recorded_detonations
+
+        recorded = recorded_detonations(malspark_app.container, result)
+        if recorded and isinstance(result.get("run_summary"), dict):
+            result["run_summary"] = {**result["run_summary"], **recorded}
         # The run completed: the case its judge built may now teach the next.
         malspark_app.remember_the_run()
     except Exception as e:
