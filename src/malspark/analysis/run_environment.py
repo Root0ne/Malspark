@@ -602,6 +602,10 @@ def tools_record(container: Any, entries: Iterable[Any] = ()) -> dict[str, Any]:
 STATED_TEXT_CHARS = 200
 STATED_ENTRIES = 32
 STATED_PARTS = 64
+# How much of a provider's text is read at all, before any other work is done
+# on it: room for the kept width once its whitespace is folded and a
+# credential in it is masked.
+STATED_READ_CHARS = 2 * STATED_TEXT_CHARS
 _SHA256 = re.compile(r"[0-9a-f]{64}")
 
 
@@ -615,14 +619,30 @@ def _scalar(value: Any) -> bool:
 def _said(value: Any) -> str:
     """A text a provider or a sandbox wrote, fit to keep: one line, no control
     character, no credential in a URL or a held secret value (``redact_url``),
-    no path of this host (``host_paths_masked``), and cut with the cut mark."""
+    no path of this host (``host_paths_masked``), and cut with the cut mark.
+
+    The text is cut to ``STATED_READ_CHARS`` before anything else is done with
+    it, so its length costs nothing; where that cut falls inside a word, the
+    word is not kept (a credential cut in half is not one a mask recognises).
+    """
     from malspark.core.paths import host_paths_masked
     from malspark.core.settings_overrides import redact_url
-    from malspark.utils.marked_cut import marked_cut
+    from malspark.utils.marked_cut import CUT_MARK, marked_cut
 
-    text = " ".join(str(value).split())
+    whole = value if isinstance(value, str) else str(value)
+    cut = len(whole) > STATED_READ_CHARS
+    in_word = cut and not any(
+        ch.isspace() for ch in whole[STATED_READ_CHARS - 1 : STATED_READ_CHARS + 1]
+    )
+    text = " ".join(whole[:STATED_READ_CHARS].split())
     text = "".join(ch for ch in text if not unicodedata.category(ch).startswith("C"))
-    return marked_cut(host_paths_masked(redact_url(text)), STATED_TEXT_CHARS)
+    if in_word and " " in text:
+        text = text.rsplit(" ", 1)[0]
+    kept = host_paths_masked(redact_url(text))
+    if cut and len(kept) <= STATED_TEXT_CHARS:
+        # Shorter than the width once read, and still a cut text.
+        return kept[: STATED_TEXT_CHARS - len(CUT_MARK)].rstrip() + CUT_MARK
+    return marked_cut(kept, STATED_TEXT_CHARS)
 
 
 def _named_texts(held: Any, *, nested: bool) -> dict[str, Any] | str:

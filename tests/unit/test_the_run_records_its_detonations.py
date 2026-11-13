@@ -27,7 +27,9 @@ import pytest
 from malspark.analysis import run_environment
 from malspark.analysis.run_environment import (
     ENVIRONMENT_VERSION,
+    STATED_ENTRIES,
     STATED_PARTS,
+    STATED_READ_CHARS,
     STATED_TEXT_CHARS,
     detonations_record,
     environment_record,
@@ -43,6 +45,7 @@ from malspark.providers.detonation import (
     stated_by,
 )
 from malspark.tools.capabilities import NOT_REPORTED
+from malspark.utils.marked_cut import CUT_MARK
 from tests.credential_shapes import prefixed_key
 
 FIX = Path(__file__).resolve().parents[1] / "fixtures" / "sandbox"
@@ -272,8 +275,45 @@ class TestWhatARowCarries:
         assert row["report_parts_cut"] == "1 more part(s) left out"
 
 
-# ---------------------------------------------------------------------------
-# The provider is asked through one method
+class TestAProviderTextIsCutBeforeAnyOtherWork:
+    """A long text from a provider costs no more than a short one: it is cut first."""
+
+    def test_a_megabyte_value_and_a_mapping_of_long_values_are_recorded_at_once(self) -> None:
+        import time
+
+        big = "A" * 1_000_000
+        spaced = "/x " * 333_334
+        guest = {
+            f"task{n}": {f"key{i}": big for i in range(STATED_ENTRIES)}
+            for n in range(STATED_ENTRIES)
+        }
+        guest[big] = big
+        facts = _facts(
+            task_ids={f"id{i}": spaced for i in range(STATED_ENTRIES)},
+            guest=guest,
+            sandbox_version=big,
+            started=spaced,
+            ended=big,
+        )
+        record = _record(sandbox_facts=facts, failure=big, provider=big)
+        began = time.perf_counter()
+        (row,) = detonations_record(_held(record)) or []
+        took = time.perf_counter() - began
+        # The text read whole took minutes; cut first, it takes milliseconds.
+        assert took < 2.0, f"{took:.2f}s"
+        for key in ("sandbox_version", "started", "ended", "failure", "provider"):
+            assert row[key].endswith(CUT_MARK), key
+            assert len(row[key]) <= STATED_TEXT_CHARS, key
+        assert len(row["guest"]) == STATED_ENTRIES
+
+    def test_a_word_the_read_ends_inside_is_not_kept(self) -> None:
+        # Folded whitespace brings the word the read ends inside into the
+        # kept width: half a credential is not one a mask recognises.
+        secret = "s3cr3t-value-" * 6
+        spaces = "\t" * (STATED_READ_CHARS - 20)
+        said = run_environment._said(f"lead {spaces}{secret}")
+        assert said == "lead" + CUT_MARK
+        assert run_environment._said("word " * 20) == ("word " * 20).strip()
 
 
 class _PlugIn:
