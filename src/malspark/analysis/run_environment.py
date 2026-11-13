@@ -52,7 +52,7 @@ import os
 import platform
 import subprocess
 import sys
-from collections.abc import Iterable
+from collections.abc import Iterable, Mapping
 from typing import Any
 
 from malspark.core.logger import logger
@@ -378,19 +378,35 @@ def _field(entry: Any, name: str) -> str:
     return _text(value)
 
 
-def _served(container: Any, entries: Iterable[Any]) -> tuple[dict[str, set[str]], list[str]]:
-    """Per server, how it served the run; and the tools the pipeline ran in its own process."""
+def _served(
+    container: Any, entries: Iterable[Any], own: Mapping[str, Mapping[str, Any]] | None = None
+) -> tuple[dict[str, set[str]], list[str]]:
+    """Per server, how it served the run; and the tools the pipeline ran in its own process.
+
+    A tool or ledger entry names its server (``malspark_server``, ``server``)
+    where the job's server registry stamped it. A provider's own server
+    (``own``, by key, from ``own_tool_server``) stamps nothing: a tool or entry
+    that names no server is its when its name is one of the tools that server
+    served (``tools``).
+    """
+    owners: dict[str, str] = {}
+    for key, held in (own or {}).items():
+        names = held.get("tools") if isinstance(held, Mapping) else None
+        for name in names if isinstance(names, list | tuple) else ():
+            owners.setdefault(_text(name), key)
     served: dict[str, set[str]] = {}
     tools_of = getattr(container, "setup_tools", None)
     set_up = tools_of() if callable(tools_of) else {}
     for tools in (set_up or {}).values():
         for tool in tools or ():
             server = _text((getattr(tool, "metadata", None) or {}).get("malspark_server"))
+            server = server or owners.get(_text(getattr(tool, "name", None)), "")
             if server:
                 served.setdefault(server, set()).add(SERVED_OFFERED)
     in_process: list[str] = []
     for entry in entries or ():
         server, tool = _field(entry, "server"), _field(entry, "tool")
+        server = server or owners.get(tool, "")
         if server == PIPELINE:
             if tool and tool not in in_process:
                 in_process.append(tool)
@@ -502,8 +518,10 @@ def tools_record(container: Any, entries: Iterable[Any] = ()) -> dict[str, Any]:
     the run: the run offered one of its tools to an agent (``offered``: its
     tools carried the server, ``malspark_server``), an agent called one
     (``called``) or a pack step did (``pack_step``), each read from the job's
-    setup and its ledger ``entries``; a server attached and neither offered
-    nor called is ``attached``. The steps the pipeline ran in its own process
+    setup and its ledger ``entries``; a provider's own server is read from
+    the names of the tools it served (``own_tool_server``), since its tools
+    and entries carry no server. A server attached and neither offered nor
+    called is ``attached``. The steps the pipeline ran in its own process
     are the row ``pipeline`` (``in_process``). Each server row holds
     ``server_info``, the name and version the server gave at its attach (the
     reading ``efficiency.fingerprint.parts.servers`` holds too), the version
@@ -516,7 +534,8 @@ def tools_record(container: Any, entries: Iterable[Any] = ()) -> dict[str, Any]:
     try:
         from malspark.tools.capabilities import package_version, reported_requirements
 
-        served, in_process = _served(container, entries)
+        own_servers = _own_servers(container)
+        served, in_process = _served(container, entries, own_servers)
         registry = getattr(container, "_server_registry_cache", None)
         versions_of = getattr(registry, "server_versions", None)
         versions = dict(versions_of()) if callable(versions_of) else {}
@@ -525,7 +544,7 @@ def tools_record(container: Any, entries: Iterable[Any] = ()) -> dict[str, Any]:
             versions.update(setup_of())
         manifests_of = getattr(registry, "server_manifests", None)
         manifests = dict(manifests_of()) if callable(manifests_of) else {}
-        for server, own in _own_servers(container).items():
+        for server, own in own_servers.items():
             if server not in versions and server not in manifests:
                 versions[server] = own.get("server_info") or {}
                 if isinstance(own.get("manifest"), dict):

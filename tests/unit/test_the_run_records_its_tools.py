@@ -761,9 +761,11 @@ class TestServedTheRun:
                     "server": "r2",
                     "server_info": {"name": "r2mcp", "version": "5.9"},
                     "manifest": None,
+                    "tools": ["afl", "pdf"],
                 }
 
-        container = _Container(tools={"static": [_tool("r2")]})
+        # A provider's own tools carry no server: the names it served say whose they are.
+        container = _Container(tools={"static": [SimpleNamespace(name="afl", metadata={})]})
         container._static_provider_cache = {"r2": _Provider()}  # type: ignore[attr-defined]
         assert tools_record(container)["r2"] == {
             "served": ["offered"],
@@ -771,6 +773,42 @@ class TestServedTheRun:
             "manifest_version": NOT_REPORTED,
             "requirements": NOT_REPORTED,
         }
+
+    def test_a_provider_s_own_server_whose_tools_an_agent_called_is_called(self) -> None:
+        class _Provider:
+            def own_tool_server(self) -> dict[str, Any]:
+                return {
+                    "server": "ghidra",
+                    "server_info": {"name": "G", "version": "11"},
+                    "manifest": None,
+                    "tools": ["decompile_function", "list_functions"],
+                }
+
+        container = _Container(
+            tools={"static": [SimpleNamespace(name="decompile_function")]},
+            versions={"analysis": {}},
+        )
+        container._static_provider_cache = {"ghidra": _Provider()}  # type: ignore[attr-defined]
+        entries = [
+            # Recorded with no server, as a provider's own call is.
+            {"agent": "static", "server": None, "tool": "decompile_function"},
+            {"agent": "pipeline", "tool": "list_functions"},
+            # A tool of the same name another server stamped stays that server's.
+            {"agent": "static", "server": "analysis", "tool": "list_functions"},
+        ]
+        record = tools_record(container, entries)
+        assert record["ghidra"]["served"] == ["called", "offered", "pack_step"]
+        assert record["analysis"]["served"] == ["called"]
+
+    def test_a_provider_s_own_server_none_of_whose_tools_ran_is_attached(self) -> None:
+        class _Provider:
+            def own_tool_server(self) -> dict[str, Any]:
+                return {"server": "ghidra", "server_info": {}, "manifest": None, "tools": ["x"]}
+
+        container = _Container()
+        container._static_provider_cache = {"ghidra": _Provider()}  # type: ignore[attr-defined]
+        entries = [{"agent": "static", "tool": "other"}]
+        assert tools_record(container, entries)["ghidra"]["served"] == ["attached"]
 
     def test_the_registry_s_reading_of_a_server_comes_before_a_provider_s(self) -> None:
         class _Provider:
