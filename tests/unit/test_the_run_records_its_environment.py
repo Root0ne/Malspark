@@ -614,46 +614,81 @@ def test_the_mediator_s_answers_are_filed_under_the_mediator_through_the_contain
 BLOCK = {"v": ENVIRONMENT_VERSION, "host": {"os": "Linux"}}
 
 
+class _Recorded:
+    """A stand-in for ``environment_record`` that keeps the ledger each call was handed."""
+
+    def __init__(self) -> None:
+        self.entries: list[Any] = []
+
+    def __call__(self, container: Any, entries: Any = ()) -> dict[str, Any]:
+        self.entries.append(entries)
+        return dict(BLOCK)
+
+
+def _ledger() -> list[Any]:
+    """A run's evidence ledger of one entry: the servers a record names are read from it."""
+    from malspark.schemas.evidence import LedgerEntry
+
+    return [LedgerEntry(id="ev_0001", agent="static", server="analysis", tool="pe_info")]
+
+
 def test_a_stopped_run_writes_the_block(monkeypatch: pytest.MonkeyPatch) -> None:
     import time
 
     from malspark.core.container import ServiceContainer
     from malspark.pipeline.stopped_run import stopped_run_summary
 
-    monkeypatch.setattr(
-        run_environment, "environment_record", lambda container, entries=(): dict(BLOCK)
-    )
+    recorded = _Recorded()
+    monkeypatch.setattr(run_environment, "environment_record", recorded)
     container = ServiceContainer(Settings(_env_file=None), mock=True)
     state = {
         "file_hash": "b" * 64,
         "run_started_at": time.time() - 5,
         "reports": {},
         "isr_reports": {},
-        "evidence_ledger": [],
+        "evidence_ledger": _ledger(),
         "degradation_reasons": [],
         "stage_results": {},
     }
     summary = stopped_run_summary(state, container, note="stopped")
     assert summary["environment"] == BLOCK
+    assert recorded.entries == [state["evidence_ledger"]]
+    assert recorded.entries[0] is state["evidence_ledger"]
 
 
 def test_a_failed_verdict_writes_the_block(monkeypatch: pytest.MonkeyPatch) -> None:
     from malspark.core.container import ServiceContainer
     from malspark.pipeline import nodes
 
-    monkeypatch.setattr(nodes, "environment_record", lambda container, entries=(): dict(BLOCK))
+    recorded = _Recorded()
+    monkeypatch.setattr(nodes, "environment_record", recorded)
     container = ServiceContainer(Settings(_env_file=None), mock=True)
     state: dict[str, Any] = {
         "file_hash": "b" * 64,
         "reports": {},
         "isr_reports": {},
-        "evidence_ledger": [],
+        "evidence_ledger": _ledger(),
         "degradation_reasons": [],
         "stage_results": {},
     }
     summary = nodes._failed_verdict_summary(container, state, None, ["the judge failed"])  # type: ignore[arg-type]
     assert summary is not None
     assert summary["environment"] == BLOCK
+    assert recorded.entries and all(e is state["evidence_ledger"] for e in recorded.entries)
+
+
+def test_the_judge_writes_the_block_with_the_run_s_ledger(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from malspark.pipeline import nodes
+    from tests.unit.pipeline.test_degraded_mode_at_the_judge_node import _run, _state
+
+    recorded = _Recorded()
+    monkeypatch.setattr(nodes, "environment_record", recorded)
+    state = _state([])
+    update = _run(state)
+    assert update["run_summary"]["environment"] == BLOCK
+    assert recorded.entries and all(e is state["evidence_ledger"] for e in recorded.entries)
 
 
 @pytest.mark.asyncio
@@ -674,7 +709,8 @@ async def test_the_report_node_writes_the_block_once_the_last_call_is_made(
         "resolve_reporter_mode",
         lambda settings: ReporterMode(1, "auto", "a stated reason"),
     )
-    monkeypatch.setattr(nodes, "environment_record", lambda container, entries=(): dict(BLOCK))
+    recorded = _Recorded()
+    monkeypatch.setattr(nodes, "environment_record", recorded)
     fake = MagicMock()
     fake.agent_registry.list_agents.return_value = ["static"]
     fake.analyst_keys.return_value = ["static"]
@@ -689,6 +725,8 @@ async def test_the_report_node_writes_the_block_once_the_last_call_is_made(
     fake.get_static_provider.return_value.capabilities.provides_evidence = False
     stage = next(step for step in fake.active_profile().stages if step.kind == "report")
 
-    out = await nodes.make_report_node(fake, stage=stage, announces=False)(_state())  # type: ignore[arg-type]
+    state = {**_state(), "evidence_ledger": _ledger()}
+    out = await nodes.make_report_node(fake, stage=stage, announces=False)(state)  # type: ignore[arg-type]
 
     assert out["run_summary"]["environment"] == BLOCK
+    assert recorded.entries and all(e is state["evidence_ledger"] for e in recorded.entries)
