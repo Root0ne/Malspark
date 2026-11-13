@@ -3199,10 +3199,15 @@ def rules_already_recorded(rows: Any, kinds: Iterable[str] | None = None) -> boo
     names (``kinds``; the rule kinds when none is given), the pack is the
     producer, and the report reads its entries rather than paying the budget
     again. An entry's kind is its tool's declared one (``core.declared_reading``).
+    The platform's read of a further detonation (:func:`later_detonation_of`)
+    is never such an answer, whatever kinds the provider declares.
     """
     wanted = frozenset(kinds) if kinds is not None else consumer_kinds(RULE_ANSWERS)
     return any(
-        entry.ok and entry.agent == PIPELINE and kind_of(entry) in wanted
+        entry.ok
+        and entry.agent == PIPELINE
+        and kind_of(entry) in wanted
+        and later_detonation_of(entry) is None
         for entry in pack_entries(rows)
     )
 
