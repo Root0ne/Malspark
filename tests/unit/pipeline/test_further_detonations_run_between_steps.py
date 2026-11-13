@@ -448,3 +448,118 @@ class TestTheRunsRecord:
             "further detonation d2 asked for by dynamic returned no sandbox report: "
             "it failed: RuntimeError",
         ]
+
+
+class TestTheLauncherAttributionIsReadPerDetonation:
+    """The launcher review's reading side, on this branch's files (T-674 review round 2)."""
+
+    LAUNCHED = {
+        "arguments": "-a",
+        "honoured": True,
+        "provider": "lab-box",
+        "launcher": {
+            "launcher_text": "x",
+            "script_host": "powershell",
+            "sample_member": "sample.exe",
+        },
+    }
+
+    def _report(self, *, launched: bool) -> dict[str, Any]:
+        from malspark.schemas.sandbox_document import LAUNCH_KEY
+        from malspark.schemas.sandbox_report import LINEAGE_MARKED_STORED
+
+        report: dict[str, Any] = {
+            "behavior": {
+                "processes": [
+                    # A wrapper the sandbox marked as the sample's.
+                    {"pid": 9, "process_name": "cmd.exe", "extra": {LINEAGE_MARKED_STORED: True}},
+                    {"pid": 2, "process_name": "sample.exe"},
+                ]
+            }
+        }
+        if launched:
+            report[LAUNCH_KEY] = dict(self.LAUNCHED)
+        return report
+
+    def test_the_sandbox_s_sample_mark_is_set_aside_in_a_launcher_run(self) -> None:
+        from malspark.providers.sandbox_tools import sandbox_processes
+
+        rows = sandbox_processes(self._report(launched=True))["processes"]
+        assert not any(row.get("marked") for row in rows)
+
+    def test_a_bare_run_keeps_the_sandbox_s_sample_mark(self) -> None:
+        from malspark.providers.sandbox_tools import sandbox_processes
+
+        rows = sandbox_processes(self._report(launched=False))["processes"]
+        assert [row.get("marked") for row in rows] == [True, None]
+
+    def test_the_statement_follows_the_attribution_mark(self) -> None:
+        from malspark.pipeline import sandbox_status as status
+
+        established = status.launch_statement(self.LAUNCHED, "established")
+        assert "the sample's own start at the process that runs `sample.exe`" in established
+        assert established == status.launch_statement(self.LAUNCHED)
+        failed = status.launch_statement(
+            self.LAUNCHED, "not established: no listed process runs sample.exe"
+        )
+        assert "the sample's own start" not in failed
+        assert "could not be established (no listed process runs sample.exe)" in failed
+        report = {status.LAUNCHER_ATTRIBUTION_KEY: "not established: no listed process runs x"}
+        assert status.launcher_attribution_reason(report) == (
+            "the launcher's processes could not be told from the sample's in the sandbox "
+            "report: no listed process runs x; only the script host's own processes are "
+            "marked as the launcher's"
+        )
+        assert (
+            status.launcher_attribution_reason({status.LAUNCHER_ATTRIBUTION_KEY: "established"})
+            is None
+        )
+        assert status.launcher_attribution_reason({}) is None
+
+    def test_a_further_detonation_s_launch_is_said_to_be_asked_by_its_agents(self) -> None:
+        from malspark.pipeline import sandbox_status as status
+
+        said = status.launch_statement(
+            {**self.LAUNCHED, "detonation": "d2", "requested_by": ["reverser"]}
+        )
+        assert said.startswith("For detonation 2, reverser asked the sandbox to launch")
+        assert status.launch_statement(self.LAUNCHED).startswith("The job asked the sandbox")
+
+
+class TestTheSubmissionPath:
+    """B8 and B9 of the launcher review, per detonation."""
+
+    def test_the_launch_answer_is_built_off_the_event_loop_and_errors_are_logged_masked(
+        self, tmp_path: Any, caplog: Any
+    ) -> None:
+        import threading
+
+        from tests.unit.pipeline.test_a_launcher_run_is_read_as_the_launcher_s import (
+            ARGS,
+            _LauncherBox,
+            _sample,
+        )
+        from tests.unit.pipeline.test_a_sandbox_naming_another_target_is_told import _app
+
+        threads: list[str] = []
+
+        class _Box(_LauncherBox):
+            def launch_arguments_answer(self, arguments: str, *, sample_path: Any = None) -> Any:
+                threads.append(threading.current_thread().name)
+                return super().launch_arguments_answer(arguments, sample_path=sample_path)
+
+            def fetch(self, task_id: str) -> Any:
+                run = super().fetch(task_id)
+                # A sandbox that echoes what it was sent in its error.
+                return run.model_copy(update={"status": "failed", "error": f"bad: {ARGS}"})
+
+        app = _app(_Box())
+        app.container.sample_path = _sample(tmp_path)
+        record = DetonationRecord(ordinal=2, origin="agent", arguments=ARGS)
+        with caplog.at_level("WARNING"):
+            asyncio.run(app.detonate_further(record))
+        assert threads and threads[0] != threading.main_thread().name
+        assert record.submit_returned and record.report is None
+        assert "Sandbox task ended with status=failed" in caplog.text
+        assert ARGS not in caplog.text
+        assert ARGS not in (record.failure or "")

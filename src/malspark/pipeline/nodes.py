@@ -7293,6 +7293,19 @@ def make_judge_node(
             _launch = launch_arguments_reason(getattr(container, "launch_record", None))
             if _launch and _launch not in _degradation_reasons:
                 _degradation_reasons.append(_launch)
+            # A launcher run whose launcher could not be told from the sample,
+            # in the job's own detonation or in a further one.
+            from malspark.pipeline.sandbox_status import launcher_attribution_reason
+
+            for _name, _report in [
+                ("", state.get("sandbox_report")),
+                *((r.name, r.report) for r in getattr(container, "detonations", [])[1:]),
+            ]:
+                _attribution = launcher_attribution_reason(_report)
+                if _attribution:
+                    _attribution = f"detonation {_name}: {_attribution}" if _name else _attribution
+                    if _attribution not in _degradation_reasons:
+                        _degradation_reasons.append(_attribution)
             # Further detonations agents asked for that were not carried out:
             # limitations, never a tentative verdict (``pipeline.detonations``).
             from malspark.pipeline.detonations import further_detonation_reasons

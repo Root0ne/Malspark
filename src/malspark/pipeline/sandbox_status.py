@@ -85,7 +85,7 @@ def sandbox_status(report: Any) -> SandboxStatus:
     """What ``report`` — the run's sandbox report document, or ``None`` — is."""
     if not isinstance(report, dict) or not report:
         return SandboxStatus(NOT_RUN, _NO_REPORT)
-    launch = launch_statement(report.get(LAUNCH_KEY))
+    launch = launch_statement(report.get(LAUNCH_KEY), launcher_attribution(report))
     if report.get(SYNTHETIC_KEY):
         return SandboxStatus(NOT_RUN, _joined(_STAND_IN, launch))
     if report.get(FIXTURE_KEY):
@@ -97,7 +97,41 @@ def _joined(*sentences: str) -> str:
     return " ".join(sentence for sentence in sentences if sentence)
 
 
-def launch_statement(record: Any) -> str:
+# The platform's mark on a report a generated launcher's run produced: whether
+# the launcher's processes could be told from the sample's ("established", or
+# "not established: <reason>"), set where the report is read
+# (``schemas.sandbox_report.attribute_the_launcher``).
+LAUNCHER_ATTRIBUTION_KEY = "launcher_attribution"
+ATTRIBUTION_ESTABLISHED = "established"
+
+
+def launcher_attribution(report: Any) -> str:
+    """The report's launcher attribution mark, ``""`` where it carries none.
+
+    Read at the document's top level, or in its ``cti`` block.
+    """
+    if not isinstance(report, Mapping):
+        return ""
+    value = report.get(LAUNCHER_ATTRIBUTION_KEY)
+    if value is None and isinstance(report.get("cti"), Mapping):
+        value = report["cti"].get(LAUNCHER_ATTRIBUTION_KEY)
+    return value.strip() if isinstance(value, str) else ""
+
+
+def launcher_attribution_reason(report: Any) -> str | None:
+    """The limitation where a launcher run's processes could not be told apart; else ``None``."""
+    mark = launcher_attribution(report)
+    if not mark or mark == ATTRIBUTION_ESTABLISHED:
+        return None
+    why = mark.removeprefix("not established").lstrip(": ").strip()
+    return (
+        "the launcher's processes could not be told from the sample's in the sandbox report"
+        + (f": {why}" if why else "")
+        + "; only the script host's own processes are marked as the launcher's"
+    )
+
+
+def launch_statement(record: Any, attribution: str = "") -> str:
     """What a report's launch mark says: the job's launch arguments, verbatim, and their fate.
 
     ``""`` with no mark, so a job that asked for none reads as it always did.
@@ -117,20 +151,30 @@ def launch_statement(record: Any) -> str:
         via = str(record.get("via") or "").strip()
         through = f" through {via}" if via else ""
         return (
-            f"The job asked the sandbox to launch the sample with the arguments {arguments}; "
+            f"{_asked(record)} to launch the sample with the arguments {arguments}; "
             f"the {provider} provider sent them in its submission{through}{tail}. Whether the "
             "started program read them is the sandbox's, and is not established here."
-            + _launcher_statement(record.get("launcher"))
+            + _launcher_statement(record.get("launcher"), attribution)
         )
     tail = f": {note}" if note else ""
     return (
-        f"The job asked the sandbox to launch the sample with the arguments {arguments}; "
+        f"{_asked(record)} to launch the sample with the arguments {arguments}; "
         f"they were not honoured by the {provider} provider{tail}. Nothing here was "
         "observed with those arguments."
     )
 
 
-def _launcher_statement(launcher: Any) -> str:
+def _asked(record: Mapping[str, Any]) -> str:
+    """Who asked for the launch: the job, or the agents that asked for a further detonation."""
+    name = str(record.get("detonation") or "")
+    if not name:
+        return "The job asked the sandbox"
+    askers = ", ".join(str(a) for a in record.get("requested_by") or () if a) or "an agent"
+    number = name[1:] if name.startswith("d") else name
+    return f"For detonation {number}, {askers} asked the sandbox"
+
+
+def _launcher_statement(launcher: Any, attribution: str = "") -> str:
     """The sentences of a launch mark whose arguments were carried by a generated launcher.
 
     ``""`` for a mark with none. They state what the reader must know: the
@@ -151,15 +195,38 @@ def _launcher_statement(launcher: Any) -> str:
         f"(SHA-256 {_code(str(launcher.get('archive_sha256') or ''))}), with the launcher and "
         "the arguments in it, is what was disclosed to the sandbox, and on a sandbox that "
         "publishes its submissions it is public. The sandbox was told which member to run "
-        f"by {launcher.get('picked_by') or 'the submission'}. The sandbox's process tree "
-        f"therefore starts at {host}, not at the sample: the processes the launcher ran, the "
-        "flows they made and the signatures seen only in them are marked as the launcher's "
-        "and are not the sample's, and the sample's own start at the process that runs "
-        f"{_code(str(launcher.get('sample_member') or ''))}. A target the sandbox names by "
+        f"by {launcher.get('picked_by') or 'the submission'}. "
+        + _lineage_statement(launcher, host, attribution)
+        + " A target the sandbox names by "
         "the archive's SHA-256 is the submitted archive holding the sample, not another "
         "target, and its file facts are the archive's. The sandbox's own score and family are "
         "its analysis of the archive run from the picked launcher script. Nothing here shows "
         "the launcher ran; that can only be read from the sandbox's report."
+    )
+
+
+def _lineage_statement(launcher: Mapping[str, Any], host: str, attribution: str) -> str:
+    """Where the sample's processes start in a launcher run, as far as it was established.
+
+    With the attribution not established, only the script host's own
+    processes are the launcher's and nothing is said of where the sample's
+    start. A report with no mark reads as before the mark existed.
+    """
+    member = _code(str(launcher.get("sample_member") or ""))
+    if attribution and attribution != ATTRIBUTION_ESTABLISHED:
+        why = attribution.removeprefix("not established").lstrip(": ").strip()
+        return (
+            f"The sandbox's process tree starts at {host}, not at the sample, but which of "
+            "its processes are the sample's could not be established"
+            + (f" ({why})" if why else "")
+            + f": only the {host} processes themselves are marked as the launcher's, and the "
+            "processes, flows and signatures past them are not attributed either way."
+        )
+    return (
+        f"The sandbox's process tree therefore starts at {host}, not at the sample: the "
+        "processes the launcher ran, the flows they made and the signatures seen only in them "
+        "are marked as the launcher's and are not the sample's, and the sample's own start at "
+        f"the process that runs {member}."
     )
 
 
