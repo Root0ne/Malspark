@@ -130,10 +130,14 @@ class TestQualifiedItems:
 
 
 class _Entry:
+    """A section index entry as the pack records it (agent ``pipeline``, source ``pack``)."""
+
     def __init__(self, structured: dict[str, Any]) -> None:
         self.structured = structured
         self.ok = True
         self.declared_kind = ss.SECTIONS_KIND
+        self.agent = "pipeline"
+        self.source = "pack"
 
 
 class TestTheIndex:
@@ -147,7 +151,8 @@ class TestTheIndex:
         monkeypatch.setattr(declared_reading, "kind_of", lambda entry: entry.declared_kind)
         entries = [
             _Entry(ss.section_index(FIRST)),
-            _Entry(ss.section_index(SECOND, None, "d2")),
+            # The platform's read of d2 states its launch (``DetonationRecord.stated``).
+            _Entry({**ss.section_index(SECOND, None, "d2"), "launched_with": "-p x"}),
         ]
         assert ss.index_entry(entries) is entries[0]
         index = ss.item_index_of(entries)

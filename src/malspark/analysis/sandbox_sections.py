@@ -1120,9 +1120,15 @@ def _index_entries(entries: Iterable[Any]) -> Iterator[Any]:
 
 
 def _detonation_of(entry: Any) -> str:
-    """The later detonation an index entry is of (``d2``…), empty for the job's first."""
-    named = entry.structured.get("detonation")
-    return str(named).strip().lower() if isinstance(named, str) else ""
+    """The later detonation an index entry is of (``d2``…), empty for the job's first.
+
+    The one rule (``detonation_reads.later_detonation_name``): only the
+    platform's own read names a later detonation; any other entry is an
+    index of the job's own.
+    """
+    from malspark.analysis.detonation_reads import later_detonation_name
+
+    return later_detonation_name(entry)
 
 
 def index_entry(entries: Iterable[Any]) -> Any | None:
@@ -1144,7 +1150,7 @@ def item_index_of(entries: Iterable[Any]) -> ItemIndex | None:
             if first is None:
                 first = ItemIndex.from_answer(entry.structured)
             continue
-        if QUALIFIER_RE.fullmatch(f"{detonation}/") and detonation not in later:
+        if detonation not in later:
             index = ItemIndex.from_answer(entry.structured)
             if index is not None:
                 later[detonation] = index
