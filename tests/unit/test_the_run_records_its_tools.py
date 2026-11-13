@@ -468,6 +468,58 @@ class TestTheManifest:
         assert parsed.requirements is None
         assert parsed.to_dict() == old
 
+    def test_a_server_leaves_the_requirements_to_each_answer(self) -> None:
+        needs = [ToolNeeds("t", (module("pytest"),))]
+        held = manifest("x", needs, version="1", requirements=False)
+        assert "requirements" not in held
+        answered = capabilities.answered_manifest(held, needs)
+        assert answered["requirements"][0]["name"] == "pytest"
+        answered["tools"][0]["name"] = "changed"
+        assert held["tools"][0]["name"] == "t"
+
+    def test_a_third_party_s_requirements_are_reduced_typed_and_capped(self) -> None:
+        junk = "j" * 100_000
+        payload = {
+            "server": "thirdparty",
+            "tools": [],
+            "requirements": [
+                {
+                    "kind": "binary",
+                    "name": junk,
+                    "version": 3,
+                    "files": "many",
+                    "bytes": -1,
+                    "tools": [junk] * 500,
+                    "named_by": {"a": "b"},
+                    "anything": junk,
+                }
+            ]
+            * 500,
+        }
+        parsed = ServerCapabilities.from_payload("thirdparty", payload)
+        assert parsed is not None and parsed.requirements is not None
+        rows = parsed.requirements
+        assert len(rows) == capabilities.REQUIREMENT_ROWS
+        first = rows[0]
+        assert set(first) == {"kind", "name", "version", "tools", "cut"}
+        assert first["version"] == "3"
+        assert len(first["name"]) == capabilities.REQUIREMENT_TEXT_CHARS
+        assert len(first["tools"]) == capabilities.REQUIREMENT_LIST_ITEMS
+        assert first["cut"] == (
+            "name cut at 200 characters; tools cut at 256 of 500; 1 unknown key(s) left out"
+        )
+        assert rows[-1]["cut"].endswith("244 more row(s) left out after this one")
+        import json
+
+        assert len(json.dumps(rows)) < 20_000_000
+
+    def test_a_shipped_manifest_s_rows_pass_unchanged(self, tmp_path: Path) -> None:
+        shared = data(str(_corpus(tmp_path / "r", {"a.yml": "a"})), exclude=(".git*",))
+        held = manifest("x", [ToolNeeds("t", (module("pytest"), shared, binary("nowhere")))])
+        parsed = ServerCapabilities.from_payload("x", held)
+        assert parsed is not None
+        assert parsed.requirements == held["requirements"]
+
     def test_the_shipped_sidecars_declare_through_the_same_mechanism(self) -> None:
         from malspark.tools import sidecar_needs
 

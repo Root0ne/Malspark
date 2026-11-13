@@ -972,6 +972,94 @@ class Unavailable:
         return text
 
 
+# What a manifest's ``requirements`` may hold once read (``reported_requirements``):
+# the keys ``requirement_facts`` and the CLI sidecars write, each of one type,
+# a string cut at ``REQUIREMENT_TEXT_CHARS``, at most ``REQUIREMENT_ROWS`` rows
+# and ``REQUIREMENT_LIST_ITEMS`` items in a row's list. A manifest comes from
+# any server a run attaches, a third party's among them, and what it says is
+# stored with every run summary.
+_REQUIREMENT_TEXT_KEYS = (
+    "kind",
+    "name",
+    "distribution",
+    "version",
+    "pinned",
+    "named_by",
+    "pattern",
+    "sha256",
+    "digest_statement",
+    "digest_of",
+    "statement",
+)
+_REQUIREMENT_COUNT_KEYS = ("files", "bytes")
+_REQUIREMENT_LIST_KEYS = ("tools", "exclude")
+REQUIREMENT_TEXT_CHARS = 200
+REQUIREMENT_ROWS = 256
+REQUIREMENT_LIST_ITEMS = 256
+# The key a row or the list's last row says what was cut under.
+REQUIREMENT_CUT_KEY = "cut"
+
+
+def _clipped(value: Any) -> tuple[str, bool]:
+    text = str(value)
+    return text[:REQUIREMENT_TEXT_CHARS], len(text) > REQUIREMENT_TEXT_CHARS
+
+
+def _requirement_row(row: Mapping[str, Any]) -> dict[str, Any]:
+    """One row reduced to the known keys, typed and capped; what was cut is said."""
+    out: dict[str, Any] = {}
+    cut: list[str] = []
+    for key in _REQUIREMENT_TEXT_KEYS:
+        value = row.get(key)
+        if value is None or isinstance(value, dict | list):
+            continue
+        out[key], clipped = _clipped(value)
+        if clipped:
+            cut.append(f"{key} cut at {REQUIREMENT_TEXT_CHARS} characters")
+    for key in _REQUIREMENT_COUNT_KEYS:
+        value = row.get(key)
+        if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+            continue
+        out[key] = value
+    for key in _REQUIREMENT_LIST_KEYS:
+        value = row.get(key)
+        if not isinstance(value, list):
+            continue
+        items = [_clipped(item)[0] for item in value if isinstance(item, str | int | float)]
+        if len(items) > REQUIREMENT_LIST_ITEMS:
+            cut.append(f"{key} cut at {REQUIREMENT_LIST_ITEMS} of {len(items)}")
+        out[key] = items[:REQUIREMENT_LIST_ITEMS]
+    dropped = sorted(
+        str(key)[:40]
+        for key in row
+        if key not in (*_REQUIREMENT_TEXT_KEYS, *_REQUIREMENT_COUNT_KEYS, *_REQUIREMENT_LIST_KEYS)
+    )
+    if dropped:
+        cut.append(f"{len(dropped)} unknown key(s) left out")
+    if cut:
+        out[REQUIREMENT_CUT_KEY] = "; ".join(cut)
+    return out
+
+
+def reported_requirements(held: Any) -> list[dict[str, Any]] | None:
+    """A manifest's ``requirements`` as a run keeps them: known keys, typed, capped.
+
+    ``None`` when the manifest carries no list. Rows that are not objects are
+    left out; beyond ``REQUIREMENT_ROWS`` the rest are, and the last row kept
+    says how many were (``cut``), as a row says what of it was cut.
+    """
+    if not isinstance(held, list):
+        return None
+    rows = [_requirement_row(row) for row in held if isinstance(row, Mapping)]
+    if len(rows) > REQUIREMENT_ROWS:
+        dropped = len(rows) - REQUIREMENT_ROWS
+        rows = rows[:REQUIREMENT_ROWS]
+        said = rows[-1].get(REQUIREMENT_CUT_KEY)
+        note = f"{dropped} more row(s) left out after this one"
+        rows[-1][REQUIREMENT_CUT_KEY] = f"{said}; {note}" if said else note
+    return rows
+
+
 @dataclass
 class ServerCapabilities:
     """A manifest as the registry keeps it, indexed by tool."""
@@ -999,10 +1087,7 @@ class ServerCapabilities:
         for cell in payload["tools"]:
             if isinstance(cell, dict) and cell.get("name"):
                 tools[str(cell["name"])] = dict(cell)
-        held = payload.get("requirements")
-        requirements = (
-            [dict(row) for row in held if isinstance(row, dict)] if isinstance(held, list) else None
-        )
+        requirements = reported_requirements(payload.get("requirements"))
         return cls(
             server=str(payload.get("server") or server),
             version=str(payload.get("version") or "unknown"),
