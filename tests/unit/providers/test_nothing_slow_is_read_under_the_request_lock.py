@@ -74,3 +74,17 @@ def test_a_made_detonation_s_arguments_are_answered_by_how_it_stands(
     running.launch, running.running = {"honoured": True}, True
     container.detonations.append(running)
     assert filed(container, "-r").answer == dr.REFUSED_RUNNING.format(name="d2")
+
+
+def test_an_id_issued_while_the_request_is_read_never_makes_a_false_refusal(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The cited id is issued between the read before the lock and the check under it (r2 N4)."""
+    monkeypatch.setattr(dr, "_cannot_detonate", lambda container, arguments: "")
+    # Not issued yet while the request is read; issued by the time the lock is taken.
+    monkeypatch.setattr(
+        dr, "_unissued", lambda container, cited: [] if dr._LOCK.locked() else list(cited)
+    )
+    request = filed(a_job())
+    assert request.state == dr.ACCEPTED, request.answer
+    assert request.answer != dr.NO_LATER_STEP

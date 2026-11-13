@@ -251,7 +251,9 @@ def file_request(
     # stage, the later step. What other requests change (the detonations
     # held, the ceiling) is read under it.
     stage = stage_of(container, str(agent or ""))
-    checked = not (problem or not why or not cited or _unissued(container, cited))
+    # Whether the cited ids were issued is decided under the lock alone: an id
+    # issued while this request is read must not leave these unread.
+    checked = not (problem or not why or not cited)
     cannot = _cannot_detonate(container, text) if checked else ""
     later, turn = _later_step(container) if checked else ("", False)
     with _LOCK:
