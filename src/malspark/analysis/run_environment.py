@@ -617,17 +617,19 @@ def _scalar(value: Any) -> bool:
     return isinstance(value, int | float) or (isinstance(value, str) and bool(value.strip()))
 
 
-def _said(value: Any, *, name: bool = False) -> str:
+def _said(value: Any, *, prose: bool = False) -> str:
     """A text a provider or a sandbox wrote, fit to keep: one line, no control
-    character, no credential in a URL or a held secret value (``redact_url``),
-    no path of this host (``host_paths_masked``), every held value and every
-    credential shape masked (``safe_finding_value``, which the other rows that
-    carry provider- or sample-written text go through), and cut with the cut mark.
+    character, no credential in a URL or a held secret value (``redact_url``,
+    in every encoding the registry holds), no value the event scrub holds
+    (``mask_configured_values``), no path of this host (``host_paths_masked``),
+    and cut with the cut mark.
 
-    A ``name`` (a key of a recorded mapping, which may be a place in a report
-    as ``/info/id`` is) is kept from the shape rules and the path rule, and
-    masked by every held value (``mask_configured_values``), as the event
-    payloads' identity fields are.
+    That is the rule for an identifier (a task id, a guest fact, a version, a
+    time, a part name, a key): the masks act on known things and never guess a
+    credential from a string's shape, so an image name or a commit hash reads
+    as stated whether or not a worker has registered values. ``prose`` is for
+    free text (a failure's reason): it also passes the finding-row scrub
+    (``safe_finding_value``), which masks what is shaped like a credential.
 
     The text is cut to ``STATED_READ_CHARS`` before anything else is done with
     it, so its length costs nothing; the masks then read at most that. Where
@@ -637,8 +639,7 @@ def _said(value: Any, *, name: bool = False) -> str:
     emptied so reads as the cut mark.
     """
     from malspark.core.paths import host_paths_masked
-    from malspark.core.settings_overrides import redact_url
-    from malspark.pipeline.events import mask_configured_values, safe_finding_value
+    from malspark.pipeline.events import safe_finding_value
     from malspark.utils.marked_cut import CUT_MARK, marked_cut
 
     whole = value if isinstance(value, str) else str(value)
@@ -648,12 +649,21 @@ def _said(value: Any, *, name: bool = False) -> str:
     if cut and not whole[STATED_READ_CHARS].isspace() and text and not text[-1].isspace():
         # The cut is inside the last word: none of it is kept.
         text = text.rsplit(" ", 1)[0] if " " in text else ""
-    masks = mask_configured_values if name else safe_finding_value
-    kept = masks(host_paths_masked(redact_url(text.rstrip())))
+    kept = _known_masked(host_paths_masked(text.rstrip()))
+    if prose:
+        kept = safe_finding_value(kept)
     if cut and len(kept) <= STATED_TEXT_CHARS:
         # Shorter than the width once read, and still a cut text.
         return kept[: STATED_TEXT_CHARS - len(CUT_MARK)].rstrip() + CUT_MARK
     return marked_cut(kept, STATED_TEXT_CHARS)
+
+
+def _known_masked(text: str) -> str:
+    """``text`` with every credential in a URL and every held value masked; no shape guess."""
+    from malspark.core.settings_overrides import redact_url
+    from malspark.pipeline.events import mask_configured_values
+
+    return mask_configured_values(redact_url(text))
 
 
 # What stands for a key and a value whose joined text a mask changed.
@@ -671,11 +681,9 @@ def _pair(key: Any, value: Any) -> tuple[str, str]:
     either half. Where the masks read the two joined otherwise than each
     alone, both are ``***``.
     """
-    from malspark.pipeline.events import safe_finding_value
-
-    name, text = _said(key, name=True), _said(value)
+    name, text = _said(key), _said(value)
     front, back = f"{name[-_PAIR_SIDE:]}=", text[:_PAIR_SIDE]
-    if safe_finding_value(front + back) != safe_finding_value(front) + safe_finding_value(back):
+    if _known_masked(front + back) != _known_masked(front) + _known_masked(back):
         return _PAIR_MASK, _PAIR_MASK
     return name, text
 
@@ -704,7 +712,7 @@ def _named_texts(held: Any, *, nested: bool) -> dict[str, Any] | str:
             if name:
                 out[name] = text
             continue
-        name = _said(key, name=True)
+        name = _said(key)
         if not name:
             continue
         if nested and isinstance(value, Mapping):
@@ -810,7 +818,9 @@ def _detonation_row(record: Any) -> dict[str, Any]:
     _read(row, "provider", lambda: _said(record.provider) if record.provider else NOT_REPORTED)
     _read(row, "task_id", lambda: _stated_text(record.task_id))
     reported = _read(row, "reported", lambda: bool(record.reported))
-    if not _read(row, "failure", lambda: _said(record.failure) if record.failure else ""):
+    if not _read(
+        row, "failure", lambda: _said(record.failure, prose=True) if record.failure else ""
+    ):
         row.pop("failure", None)
     try:
         facts = record.sandbox_facts if isinstance(record.sandbox_facts, dict) else None

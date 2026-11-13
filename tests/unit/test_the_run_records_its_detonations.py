@@ -446,18 +446,48 @@ class TestAProviderTextIsCutBeforeAnyOtherWork:
 class TestWhatTheSharedScrubMasks:
     """Provider-stated text is masked as the other run-summary rows are: held values and shapes."""
 
-    def test_a_credential_shaped_token_as_a_fact_s_value_is_masked(self) -> None:
+    def test_a_credential_shaped_token_in_a_failure_s_prose_is_masked(self) -> None:
         key = prefixed_key("ghs_")
+        record = _record(failure=f"the sandbox refused {key} as a token")
+        (row,) = detonations_record(_held(record)) or []
+        for piece in (key, key[:12], key[-12:]):
+            assert piece not in json.dumps(row), piece
+
+    def test_an_identifier_reads_as_stated_with_no_value_registered(self) -> None:
+        # The live-shaped overview's second task, CAPE's commit and a long id.
+        long_id = lowercase_body(48)
+        image = "win11ltsc2024-20260709-en"
         facts = _facts(
-            sandbox_version=f"build {key}",
-            guest={"image": key, "task": {"image": key}},
-            task_ids={"id": key},
-            started=key,
+            guest={"behavioral2": {"resource": image, "os": "windows11-ltsc_2024-x64"}},
+            task_ids={"/info/id": long_id},
+        )
+        (row,) = detonations_record(_held(_record(sandbox_facts=facts))) or []
+        assert row["guest"] == facts["guest"]
+        assert row["sandbox_commit"] == CAPE_COMMIT
+        assert row["task_ids"] == {"/info/id": long_id}
+
+    def test_a_registered_value_is_masked_in_an_identity_fact_in_each_encoding(self) -> None:
+        from urllib.parse import quote, quote_plus
+
+        from malspark.core import settings_masking
+        from malspark.pipeline.events import remember_secret_values
+
+        held = "tidal pool " + lowercase_body(9) + " beacon"
+        settings_masking.remember_values([held], scope="job")
+        remember_secret_values([held])
+        forms = [held, quote_plus(held), quote(held)]
+        facts = _facts(
+            sandbox_version=f"v {forms[1]}",
+            sandbox_commit=forms[2],
+            started=forms[0],
+            guest={"image": forms[0], forms[1]: "x"},
+            task_ids={"id": f"a {forms[0]} b"},
         )
         (row,) = detonations_record(_held(_record(sandbox_facts=facts))) or []
         text = json.dumps(row)
-        for piece in (key, key[:12], key[-12:]):
-            assert piece not in text, piece
+        for form in forms:
+            assert form not in text, form
+        assert "tidal" not in text
 
     def test_a_url_split_across_a_key_and_its_value_is_masked(self) -> None:
         secret = password(24)
@@ -815,11 +845,7 @@ class TestWhatIsReadFromWhere:
         assert ".dll" not in text and "sbx4m" not in text
         # No part states one detonation's start or end.
         assert "started" not in facts and "ended" not in facts
-        # With the worker's held values registered, as in a run, the row keeps
-        # each image and system name as the sandbox wrote it.
-        from malspark.pipeline.events import remember_secret_values
-
-        remember_secret_values([password(20, variant=7)])
+        # The row keeps each image and system name as the sandbox wrote it.
         (row,) = detonations_record(_held(_record(sandbox_facts=facts))) or []
         assert row["guest"] == facts["guest"]
         assert row["started"] == NR and row["ended"] == NR
