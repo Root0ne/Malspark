@@ -283,25 +283,60 @@ What a reader may conclude from `environment.agents`:
 - `response_models` is what the server said it served, not proof of the weights
   behind it.
 
-`environment.tools` has one row per tool server or provider that served the
-run. `served` says how: `offered` (one of its tools was offered to an agent),
-`called` (an agent called one) or `pack_step` (a triage pack step did). The row
-`pipeline` holds the pack steps the worker ran in its own process (`in_process`),
-with `package_version`. A server row gives `server_info`, the name and version
-the server gave when it was attached. That is the same reading as
-`efficiency.fingerprint.parts.servers`, which hashes it with the run's other
-setup. `manifest_version` is the version its capability manifest gives.
-`requirements` lists what its tools declare they need, as the manifest reports it
-from the server's own host. A `module` row gives the `distribution` that provides
-the module and its installed `version`, or `not installed`. A `data` row (a rule
-set or signature files) gives the `files` that match its `pattern`, their
-`bytes`, and one `sha256` over them, name then content in name order. Two runs
-with the same digest used the same rules. Over 20,000 files or 64 MiB no digest
-is computed, and `digest_statement` says so. A `binary` row gives the
-`version` its tool's declared version probe read, or `not reported`, with the
-reason when the probe failed. Each fact is read once per server start. A server
-that offers no manifest gives `server_info` only, and its other facts are
-`not reported`. A summary stored without `tools` reads as before.
+`environment.tools` has one row per tool server the job's registry attached,
+or a provider attached through a connection of its own. `served` says how:
+`offered` (one of its tools was offered to an agent), `called` (an agent called
+one), `pack_step` (a triage pack step did), or `attached` (none of these). A
+name that no attached server backs, such as the agent-to-agent delegation
+tools, is not listed. The row `pipeline` holds the pack steps the worker ran in
+its own process (`in_process`), with `package_version`, read on the worker's
+host with the environment of the server each step stands in for. A server row
+gives `server_info`, the name and version the server gave when it was attached.
+That is the same reading as `efficiency.fingerprint.parts.servers`, which
+hashes it with the run's other setup. `manifest_version` is the version the
+server's capability manifest gives: the platform's own version for the
+platform's servers (`analysis`, `knowledge`, `network`, `threatintel`), and the
+pinned version of the program for a server that wraps one command-line program
+(`die`, `jadx`, `yarax` and the others).
+
+`requirements` lists what the server's tools declare they need, as its manifest
+reports it from the server's own host when the manifest was read. Rows from any
+server are reduced to the known keys, typed, and capped at 200 characters a
+string, 256 rows and 256 tools a row; a row that lost anything says what under
+`cut`.
+
+- A `module` row gives the `distribution` that provides the module and its
+  installed `version`, or `not installed`.
+- A `data` row (a rule set or signature files) gives the `files` that match its
+  `pattern`, less what its loader skips (`exclude`), their `bytes`, and one
+  `sha256` over them, name then content in name order. `digest_of` says what
+  that covers: the default path, named by `named_by`, as it was when the
+  manifest was read. Two equal digests mean the same files were at that path
+  then. Over 20,000 files or 64 MiB no digest is computed, and
+  `digest_statement` says so.
+- A `binary` row gives the `version` the program reported to its declared
+  version probe, or `not reported` with the reason. A program served by a
+  command-line sidecar also gives `pinned`, the version its image was built
+  for.
+
+The rules a call ran with are in that call's own ledger entry: every answer of
+a tool that declares a rule set or signature files starts with `data_used`, the
+corpus the call named (`named_by` is then the argument, such as
+`the ruleset argument`) or else the tool's default, with its file count and
+digest as they were when the call ran.
+
+Some tools report nothing today, and their facts read `not reported`:
+
+- A server that answers no capability manifest gives `server_info` only. This
+  covers most third-party servers and the disassembler and decompiler servers
+  the static providers attach themselves.
+- The sandbox providers report no server of their own.
+- A program's version is read only where its tool declares how to ask it: the
+  string-extraction tool (`floss`), and `ilspycmd`, `jadx` and `yr` in their
+  sidecars. Every other command-line sidecar gives its pinned version alone.
+- A setting (an API key) has no row.
+
+A summary stored without `tools` reads as before.
 
 The block carries `v`, its shape version (2). Throughout it, a fact nobody read
 is `not reported`, followed after a colon by the reason where one is known.

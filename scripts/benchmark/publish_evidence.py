@@ -36,7 +36,8 @@ the published copies from it, and does nothing else to them:
   CLEAR; a mention of TLP in prose, in code or in decoded evidence bytes stays
   as written;
 - in an HTML copy each placeholder is written escaped (``&lt;job&gt;``);
-- in a run summary (sanitised by :meth:`Sanitiser.run_summary`), the strings
+- in a run summary a caller sanitises with :meth:`Sanitiser.run_summary` (the
+  files :func:`publish` itself publishes carry none today), the strings
   at the key paths of ``KEPT_AS_RECORDED``, each matched in full from the
   summary's root (the model identifiers its ``environment`` block records),
   are exempt from the host and run-name rules: they name models, and those
@@ -297,6 +298,9 @@ class Sanitiser:
     def run_summary(self, summary: Any) -> Any:
         """A run summary as :meth:`json` sanitises it, the strings at the key paths of
         :data:`KEPT_AS_RECORDED` (from the summary's root) left by the host and run-name rules.
+
+        The entry point for a caller that publishes a run summary: none of the
+        files :func:`publish` writes (:data:`JSON_FILES`) carries one today.
         """
         return self._json(summary, (), KEPT_AS_RECORDED)
 
