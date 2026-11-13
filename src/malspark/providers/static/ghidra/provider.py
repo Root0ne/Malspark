@@ -433,6 +433,13 @@ class GhidraStaticProvider(StaticProvider):
         # This provider's own process, for a local Ghidra's note key.
         self.note_instance = new_instance()
         self._toolkit: Any = None
+        # The name and version the server gave when the provider attached it
+        # (MCP ``serverInfo``; none over HTTP, which gives none), kept after
+        # the toolkit closes; ``None`` until it attached (``own_tool_server``).
+        self._attached_info: dict[str, str] | None = None
+        # The names of the tools the attached server served, kept as its info
+        # is, so the run's record can tell its tools' calls (``own_tool_server``).
+        self._served_names: list[str] = []
         self._all_tools: list[Any] = []
         self.tools: list[Any] = []
         # The tools withheld because they could not be made to carry the job's
@@ -553,6 +560,7 @@ class GhidraStaticProvider(StaticProvider):
 
             self._run_async(client.initialize())
             self._toolkit = client
+            self._attached_info = dict(getattr(client, "server_info", None) or {})
             # What the platform reads of each tool its schema lists, kept under
             # this provider's source as any listing's is; a client that serves
             # no listing reads nothing.
@@ -563,6 +571,7 @@ class GhidraStaticProvider(StaticProvider):
                 self._pin_load_program_path(self._reading_errors(client.get_tools()))
             )
             self.tools = list(self._all_tools)
+            self._served_names = sorted({*self._served_names, *(t.name for t in self.tools)})
             logger.info("Initialized Ghidra HTTP tools: %d.", len(self.tools))
             return
 
@@ -599,6 +608,7 @@ class GhidraStaticProvider(StaticProvider):
 
         self._run_async(toolkit.initialize())
         self._toolkit = toolkit  # type: ignore[assignment]
+        self._attached_info = dict(getattr(toolkit, "server_info", None) or {})
         # What the server declared of its tools, and what the platform read of
         # them, kept under this provider's source (``core.served_declarations``).
         held = getattr(toolkit, "served_tool_facts", None)
@@ -615,6 +625,7 @@ class GhidraStaticProvider(StaticProvider):
             self._pin_load_program_path(self._reading_errors(toolkit.get_tools()))
         )
         self.tools = list(self._all_tools)
+        self._served_names = sorted({*self._served_names, *(t.name for t in self.tools)})
         logger.info("Initialized Ghidra MCP tools: %d.", len(self.tools))
 
     def _register_listing(
@@ -1390,6 +1401,21 @@ class GhidraStaticProvider(StaticProvider):
                 )
         except Exception as exc:  # noqa: BLE001 - teardown never propagates
             logger.warning("Ghidra program close failed (non-fatal): %s", exc)
+
+    def own_tool_server(self) -> dict[str, Any] | None:
+        """The Ghidra server this provider attached (``ServerOfItsOwn``), ``None`` before.
+
+        It answers no capability manifest, so ``manifest`` is ``None``;
+        ``tools`` are the names of the tools it served.
+        """
+        if self._attached_info is None:
+            return None
+        return {
+            "server": self.id,
+            "server_info": dict(self._attached_info),
+            "manifest": None,
+            "tools": list(self._served_names),
+        }
 
     def close(self) -> None:
         self._close_job_programs()

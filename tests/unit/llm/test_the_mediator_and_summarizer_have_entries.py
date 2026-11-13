@@ -120,7 +120,7 @@ class TestTheMediatorsEntry:
         mediator_model(deepseek_settings())
 
         built = [line for line in lines() if "Building" in line]
-        assert built[-1].startswith("Building openai/deepseek-flash (role=expert, temp=0.1")
+        assert built[-1].startswith("Building openai/deepseek-flash (role=expert, effort=")
 
 
 class TestTheRunsWindow:

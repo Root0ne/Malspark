@@ -216,6 +216,35 @@ class LLMProvider:
         """
         return False
 
+    # ── What a request sends ──────────────────────────────────────────────
+
+    @classmethod
+    def sent_parameters(cls, llm: Any) -> Any:
+        """The sampling parameters and thinking switches ``llm``'s requests carry, or ``None``.
+
+        The contract: build the request body the client library would send
+        for ``llm`` with one placeholder turn (``sent_request.PLACEHOLDER_TURN``),
+        through the library's own builder (``sent_request.library_method``),
+        with no network call and no change to ``llm`` or any record it keeps;
+        read the sampling parameters (``sent_request.sampling_in``) and the
+        thinking switches (``sent_request.switches_in``) off that body, every
+        channel the client merges into it included; and return them as a
+        ``sent_request.SentParameters``. A binding (``llm.bind(...)``) is read
+        through to the model it wraps with its keyword arguments passed to
+        the builder, as a call passes them (``sent_request.bound_of``).
+
+        What is read is the body built when the model is built: an argument
+        a caller passes to one call is not in it. An adapter that changes a
+        thinking switch of a request after its client built the body counts
+        that request on the model's record (``sent_request.note_thinking_changed``)
+        rather than reporting it here.
+
+        ``None`` — the default, and the answer for a model object the hook
+        cannot read — records the request as not reported; only a body the
+        hook built and found empty may be recorded as sending none.
+        """
+        return None
+
     # ── Context window ────────────────────────────────────────────────────
 
     @classmethod

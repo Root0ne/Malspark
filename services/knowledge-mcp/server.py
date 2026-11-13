@@ -13,7 +13,6 @@ reason this is a long-lived server and not a script.
 
 from __future__ import annotations
 
-import copy
 import os
 from collections.abc import Mapping
 from typing import Any
@@ -33,7 +32,7 @@ if __name__ == "__main__":
 from malspark.tools import knowledge as knowledge_tools
 from malspark.tools import sidecar_needs
 from malspark.tools.arguments import read_unquoted, says_unquoted, with_read_as
-from malspark.tools.capabilities import CAPABILITIES_TOOL, ToolNeeds, manifest
+from malspark.tools.capabilities import CAPABILITIES_TOOL, ToolNeeds, answer_manifest, manifest
 from malspark.tools.declared_facts import NO_EFFECT, tool_declaration
 from malspark.tools.errors import code_for_exception, normalise_error, tool_error
 
@@ -63,7 +62,9 @@ _apply_index_retry()
 # The two retrievals over a vector store need its client; every other lookup
 # reads the vendored catalogues (``malspark.tools.sidecar_needs``).
 TOOL_NEEDS: list[ToolNeeds] = sidecar_needs.KNOWLEDGE
-CAPABILITIES = manifest("knowledge", TOOL_NEEDS)
+# The cells, probed once at the start; the requirements are read with each
+# answer of the capabilities tool (``answer_manifest``).
+CAPABILITIES = manifest("knowledge", TOOL_NEEDS, requirements=False)
 
 # What each tool declares of itself (``malspark.tools.declared_facts``). Each
 # reads the platform's own reference tables, so an identical call answers the
@@ -151,14 +152,15 @@ def _guard(
 
 
 @mcp.tool(name=CAPABILITIES_TOOL, **_DECLARED["capabilities"])
-def capabilities() -> dict[str, Any]:
+async def capabilities() -> dict[str, Any]:
     """What this server can do on this host.
 
     Each tool, its optional dependency, and whether it is available.
     """
-    # Deep, so "computed once when the server started" also means a
-    # caller cannot reach in and change what it says.
-    return copy.deepcopy(CAPABILITIES)
+    # The cells as probed when the server started and the requirements as
+    # they are now, in a deep copy a caller cannot reach in and change, read
+    # off the event loop.
+    return await answer_manifest(CAPABILITIES, TOOL_NEEDS)
 
 
 @mcp.tool(**_DECLARED["resolve_technique"])

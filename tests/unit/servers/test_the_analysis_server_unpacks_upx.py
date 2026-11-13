@@ -7,6 +7,7 @@ the other file tools through the ``carved_path`` the answer gives.
 
 from __future__ import annotations
 
+import asyncio
 import importlib.util
 import stat
 import sys
@@ -131,7 +132,7 @@ def test_the_carved_note_names_both_tools_that_give_a_carved_path(server: Any) -
 
 
 def test_the_capabilities_answer_states_what_is_read(server: Any) -> None:
-    cell = next(c for c in server.capabilities()["tools"] if c["name"] == upx.TOOL)
+    cell = next(c for c in asyncio.run(server.capabilities())["tools"] if c["name"] == upx.TOOL)
     assert cell["available"] is True
     assert cell["facts"] == upx.CAPABILITY_FACTS
     for name, _kind, _width in upx.METHODS.values():

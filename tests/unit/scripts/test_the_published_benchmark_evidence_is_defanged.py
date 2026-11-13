@@ -469,3 +469,80 @@ def _strings(value: object) -> list[str]:
     if isinstance(value, list):
         return [s for v in value for s in _strings(v)]
     return []
+
+
+# --- The environment block's model identifiers ------------------------------
+
+
+def test_a_run_summary_s_model_strings_skip_the_host_and_run_name_rules() -> None:
+    # Model names that look like a host name or a run tag: those rules would
+    # rewrite them, and a reader stating the configuration would then quote a
+    # model that does not exist.
+    agents = {
+        "static": {
+            "requests": [{"position": 0, "provider": "openai", "model": "x-ai/grok-4.fast"}],
+            "response_models": {"hk14-model": 1, "deepseek.chat": 2},
+            "response_models_reduced": ["run7-model.gguf"],
+        }
+    }
+    summary = {"environment": {"agents": agents}, "note": "see deepseek.chat"}
+    copy = Sanitiser({JOB: "<job>"}).run_summary(summary)
+    assert copy["environment"]["agents"] == agents
+    # The same strings elsewhere in the summary are still the run's text.
+    assert copy["note"] == "see deepseek[.]chat"
+
+
+def test_the_local_path_rule_applies_at_a_kept_path() -> None:
+    # A server with no alias, configured by the file it loads, in the user's home.
+    summary = {
+        "environment": {
+            "agents": {
+                "static": {
+                    "requests": [{"model": "/home/alice/models/Qwen3.6.gguf"}],
+                    "response_models": {"/home/alice/models/Qwen3.6.gguf": 1},
+                }
+            }
+        }
+    }
+    copy = Sanitiser({}).run_summary(summary)["environment"]["agents"]["static"]
+    assert copy == {"requests": [{"model": "Qwen3.6.gguf"}], "response_models": {"Qwen3.6.gguf": 1}}
+
+
+def test_an_address_at_a_kept_path_is_still_defanged() -> None:
+    summary = {
+        "environment": {"agents": {"x": {"response_models": {"http://evil.example.com/c2": 1}}}}
+    }
+    copy = Sanitiser({}).run_summary(summary)["environment"]["agents"]["x"]
+    assert copy["response_models"] == {"hxxp://evil[.]example[.]com/c2": 1}
+
+
+def test_the_same_shape_in_evidence_or_deeper_is_the_run_s_text() -> None:
+    # The kept paths are matched from a run summary's root, and only in one.
+    environment = {
+        "agents": {
+            "x": {
+                "response_models": {"http://evil.example.com/c2": 1, "evil.example.com": 1},
+                "requests": [{"model": "185.1.2.3"}],
+            }
+        }
+    }
+    evidence = {"entries": [{"tool": "strings", "output": {"environment": environment}}]}
+    for copy in (
+        Sanitiser({}).json(evidence)["entries"][0]["output"]["environment"],
+        Sanitiser({}).json({"environment": environment})["environment"],
+        Sanitiser({}).run_summary({"output": {"environment": environment}})["output"][
+            "environment"
+        ],
+    ):
+        assert copy["agents"]["x"]["response_models"] == {
+            "hxxp://evil[.]example[.]com/c2": 1,
+            "evil[.]example[.]com": 1,
+        }
+        assert copy["agents"]["x"]["requests"] == [{"model": "185[.]1[.]2[.]3"}]
+
+
+def test_only_the_model_paths_are_kept() -> None:
+    copy = Sanitiser({JOB: "<job>"}).run_summary(
+        {"environment": {"agents": {"static": {"requests": [{"provider": "hk14"}]}}}}
+    )
+    assert copy["environment"]["agents"]["static"]["requests"] == [{"provider": "<run>"}]

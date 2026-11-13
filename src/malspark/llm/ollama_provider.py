@@ -291,6 +291,24 @@ class OllamaProvider(LLMProvider):
     )
 
     @classmethod
+    def sent_parameters(cls, llm: Any) -> Any:
+        # The chat request ``ChatOllama`` builds: the sampling travels in its
+        # ``options``, the thinking switch as ``think``.
+        from malspark.llm.sent_request import SentParameters, built_body, sampling_in, switches_in
+
+        body = built_body(llm, "_chat_params", cls.llm_types)
+        if not isinstance(body, dict):
+            return None
+        options = body.get("options")
+        dump = getattr(options, "model_dump", None)
+        if callable(dump):
+            options = dump(exclude_none=True)
+        return SentParameters(
+            sampling_in(options if isinstance(options, dict) else {}),
+            switches_in(body, ("think",)),
+        )
+
+    @classmethod
     def window_probes(cls, endpoint: object, model: str) -> tuple[Any, ...]:
         from malspark.llm import context_window as cw
 
