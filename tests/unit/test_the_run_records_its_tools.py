@@ -784,3 +784,36 @@ class TestTheSummary:
         stored = {"v": 1, "host": {"os": "Linux"}}
         summary = RunSummaryBuilder(start_time=0.0).set_environment(stored).build().to_dict()
         assert summary["environment"] == stored
+
+
+# ---------------------------------------------------------------------------
+# The string-extraction tool's binary says its version
+
+
+class TestTheStringExtractionToolSaysItsVersion:
+    @pytest.mark.posix
+    def test_the_pinned_build_its_lookup_finds_is_asked(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from malspark.tools import emulated_strings, sidecar_needs
+
+        stub = tmp_path / "tools" / "floss"
+        stub.parent.mkdir()
+        stub.write_text(
+            '#!/bin/sh\n[ "$1" = "--version" ] && echo "floss v3.1.1-0-gabcdef0"\n',
+            encoding="utf-8",
+        )
+        stub.chmod(0o755)
+        monkeypatch.setattr(emulated_strings, "find_floss", lambda environ=None: (stub, ""))
+        rows = requirement_facts([n for n in sidecar_needs.ANALYSIS if n.name == "floss"])
+        assert rows == [{"kind": "binary", "name": "floss", "version": "3.1.1", "tools": ["floss"]}]
+
+    def test_with_no_pinned_build_the_lookup_s_reason_is_recorded(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from malspark.tools import emulated_strings, sidecar_needs
+
+        why = "floss is not installed: no floss executable in the user tools directory or on PATH"
+        monkeypatch.setattr(emulated_strings, "find_floss", lambda environ=None: (None, why))
+        (row,) = requirement_facts([n for n in sidecar_needs.ANALYSIS if n.name == "floss"])
+        assert row["version"] == f"{NOT_REPORTED}: {why}"

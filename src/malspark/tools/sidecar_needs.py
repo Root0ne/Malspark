@@ -19,7 +19,14 @@ from pathlib import Path
 from typing import Any
 
 from malspark.tools import crypto_constants, emulated_strings, readers, rules, transforms, upx
-from malspark.tools.capabilities import ToolNeeds, binary, data, module
+from malspark.tools.capabilities import (
+    VERSION_PROBE_MAX_TIMEOUT_S,
+    ToolNeeds,
+    VersionProbe,
+    binary,
+    data,
+    module,
+)
 
 # The wall clock each rule engine is given. Named once so the tool's own
 # default and the manifest that declares it cannot drift: a model told
@@ -77,6 +84,17 @@ YARA_RULES = data(
     argument="ruleset",
 )
 
+# How FLOSS says its version, asked of the pinned build its own lookup finds
+# (``emulated_strings.floss_path``), never of whatever ``PATH`` names first.
+# FLOSS's usage document (doc/usage.md in its repository) lists no version
+# option and defers to ``floss -h`` for the rest; ``--version`` is the one the
+# pinned-build check already runs, reading the release from its answer
+# (``emulated_strings._does_not_run``), as the backend image's build does
+# (``docker/Dockerfile.backend``). The standalone build answers
+# ``floss v3.1.1-0-g…``, read by the default pattern as ``3.1.1``. The build
+# unpacks itself before it answers, so it is given the probe's ceiling.
+FLOSS_VERSION_PROBE = VersionProbe(("floss", "--version"), timeout_s=VERSION_PROBE_MAX_TIMEOUT_S)
+
 # What each tool needs beyond the interpreter, probed once when the server
 # starts (a data path only before a job). A tool that is not listed always answers.
 ANALYSIS: list[ToolNeeds] = [
@@ -117,7 +135,14 @@ ANALYSIS: list[ToolNeeds] = [
     ),
     ToolNeeds(
         "floss",
-        (binary("floss", emulated_strings.floss_unavailable),),
+        (
+            binary(
+                "floss",
+                emulated_strings.floss_unavailable,
+                version_probe=FLOSS_VERSION_PROBE,
+                resolve=emulated_strings.floss_path,
+            ),
+        ),
         timeout_s=FLOSS_TIMEOUT_S,
         long_running=True,
         remediation=emulated_strings.FLOSS_REMEDIATION,

@@ -372,6 +372,11 @@ def _does_not_run(path: Path) -> str | None:
     return reason
 
 
+def floss_path(environ: Mapping[str, str] | None = None) -> Path | None:
+    """The pinned build ``find_floss`` finds, or ``None``: the file a version probe asks."""
+    return find_floss(environ)[0]
+
+
 def floss_unavailable(environ: Mapping[str, str] | None = None) -> str | None:
     """The capability manifest's probe: ``None`` when the pinned build is here and runs."""
     path, reason = find_floss(environ)
