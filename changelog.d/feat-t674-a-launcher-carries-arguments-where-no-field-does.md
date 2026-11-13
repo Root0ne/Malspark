@@ -4,6 +4,7 @@
 
 ### Changed
 
+- **Every process and flow row of a sandbox that reports tasks carries its task (T-674).** A Triage report's process and flow rows now carry `platform_task` and `task`, whether or not the job asked for launch arguments, and the process view states each process's task. Stored runs are unaffected.
 - **A plug-in provider's one-argument `launch_arguments_answer` is called with the arguments alone, and CAPE no longer withholds the arguments for a package the documentation is silent on (T-670).** The package is still sent them and the record notes that whether it reads them is not documented. A refused value is named by code point and position, an over-long refused value is recorded with a note that it was cut, and a submission that sent the arguments but returned no report is worded "sent ... but no sandbox report came back" in the limitations and the upload line alike.
 
 ### Security
