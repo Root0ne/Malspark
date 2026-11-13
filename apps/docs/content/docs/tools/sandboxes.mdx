@@ -711,12 +711,23 @@ the pack: the job's own lines first, in the pack's whole bound as they would
 be alone, then the later detonations' lines in a room of their own of the same
 bound (so the pack is at most twice its bound), each line beginning
 "detonation 2, launched with `<args>`" and every item id in it qualified
-(`d2/proc:9`). An entry is a later detonation's only where the platform recorded
-it (its own read of a detonation that came back, or a call of its in-process
-sandbox source) and names the detonation in the qualified form; a tool answer
-that only holds a `detonation` key is the tool's own. The launch arguments are
-written on one line on every surface, their back-ticks, angle brackets and table
-pipes written as escapes, cut at 200 characters; the record keeps them whole. In the report, a later detonation's reads are in tables of
+(`d2/proc:9`). That room is shared evenly among the later detonations: one whose
+lines need less leaves the rest to the others, and the marks are counted per
+line before the lines are fitted. Every later detonation keeps at least one line
+naming it and its launch; one whose entries are not all shown ends with a line
+naming it and how many are not shown. Each detonation's first line says once
+that its launch text is shown escaped and that the exact text is the
+`launched_with` of any read of it; `request_detonation` compares a repeat on
+that exact text. An entry is a later detonation's only where the platform
+recorded it (its own read of a detonation that came back, or a call of its
+in-process sandbox source) and names the detonation in the qualified form; a
+tool answer that only holds a `detonation` key is the tool's own, and the
+citation index reads it by the same rule. The source names `pack` and `sandbox`
+are the platform's own: a provider that is not built into the platform cannot
+declare them. The launch arguments are written on one line on every surface,
+their back-ticks, angle brackets, braces, table pipes and the colon of anything
+that reads as an item id written as escapes, cut at 200 characters; the record,
+the `/iocs` feed and the STIX property keep them whole. In the report, a later detonation's reads are in tables of
 their own, titled "… when launched with `<args>` (detonation 2, asked for by
 `<agent>` citing `<entries>`)", and the report's composer is shown each later
 detonation apart under the same title. The job's own process tree, registry and
