@@ -62,7 +62,7 @@ import re
 import subprocess
 import sys
 import unicodedata
-from collections.abc import Iterable, Mapping
+from collections.abc import Callable, Iterable, Mapping
 from typing import Any
 
 from malspark.core.logger import logger
@@ -645,6 +645,16 @@ def _said(value: Any) -> str:
     return marked_cut(kept, STATED_TEXT_CHARS)
 
 
+def _stated_text(held: Any) -> str:
+    """A text a provider stated as one value, kept (:func:`_said`); ``"not reported"`` for none."""
+    return _said(held) if _scalar(held) else NOT_REPORTED
+
+
+def _stated_fact(stated: Mapping[str, Any], key: str) -> str:
+    """The text a provider stated under ``key`` (:func:`_stated_text`)."""
+    return _stated_text(stated.get(key))
+
+
 def _named_texts(held: Any, *, nested: bool) -> dict[str, Any] | str:
     """A provider's mapping of names to texts, kept as stated; ``"not reported"`` for none.
 
@@ -690,48 +700,87 @@ def _report_parts(held: Any) -> tuple[list[dict[str, Any]] | str, str]:
     return rows, ""
 
 
-def _detonation_row(record: Any) -> dict[str, Any]:
-    """One detonation as the environment records it (:func:`detonations_record`)."""
-    row: dict[str, Any] = {"detonation": record.name, "origin": str(record.origin)}
+def _read(row: dict[str, Any], key: str, read: Callable[[], Any]) -> Any:
+    """``row[key]`` set to what ``read`` gives, or ``"not reported"`` where it fails."""
+    try:
+        row[key] = read()
+    except Exception as exc:  # noqa: BLE001 — a field that cannot be read is not reported
+        logger.debug("run environment: %s of a detonation was not read (%s).", key, exc)
+        row[key] = NOT_REPORTED
+    return row[key]
+
+
+def _askers(record: Any) -> list[str]:
     askers = [
         str(asker.get("agent"))
         for asker in record.requested_by or ()
         if isinstance(asker, Mapping) and asker.get("agent")
     ]
-    if askers:
-        row["requested_by"] = list(dict.fromkeys(askers))
-    if record.arguments:
-        # The exact text, as the job or the agents gave it: JSON keeps it as
-        # it is, and a surface that prints it writes it inert
-        # (``reporting.detonation_marks.launch_text``).
-        row["launched_with"] = str(record.arguments)
-        launch = record.launch if isinstance(record.launch, Mapping) else {}
-        honoured = launch.get("honoured")
-        row["arguments_honoured"] = honoured if isinstance(honoured, bool) else NOT_REPORTED
-        if launch.get("via"):
-            row["arguments_via"] = str(launch["via"])
-    row["provider"] = _said(record.provider) if record.provider else NOT_REPORTED
-    row["task_id"] = _said(record.task_id) if _scalar(record.task_id) else NOT_REPORTED
-    row["reported"] = bool(record.reported)
-    if record.failure:
-        row["failure"] = _said(record.failure)
-    facts = record.sandbox_facts if isinstance(record.sandbox_facts, dict) else None
+    return list(dict.fromkeys(askers))
+
+
+def _launch(row: dict[str, Any], record: Any) -> None:
+    """The launch text asked for, exactly, and what the launch record says became of it."""
+    # The exact text, as the job or the agents gave it: JSON keeps it as
+    # it is, and a surface that prints it writes it inert
+    # (``reporting.detonation_marks.launch_text``).
+    row["launched_with"] = str(record.arguments)
+    launch = record.launch if isinstance(record.launch, Mapping) else {}
+    honoured = launch.get("honoured")
+    row["arguments_honoured"] = honoured if isinstance(honoured, bool) else NOT_REPORTED
+    if launch.get("via"):
+        row["arguments_via"] = str(launch["via"])
+
+
+def _detonation_row(record: Any) -> dict[str, Any]:
+    """One detonation as the environment records it (:func:`detonations_record`).
+
+    Each field is read on its own: one that cannot be read is ``"not
+    reported"``, and the row keeps every other field.
+    """
+    row: dict[str, Any] = {}
+    _read(row, "detonation", lambda: record.name)
+    _read(row, "origin", lambda: str(record.origin))
+    askers = _read(row, "requested_by", lambda: _askers(record))
+    if not askers:
+        del row["requested_by"]
+    try:
+        asked_for = bool(record.arguments)
+    except Exception:  # noqa: BLE001 — no launch text read is none recorded
+        asked_for = False
+    if asked_for:
+        try:
+            _launch(row, record)
+        except Exception as exc:  # noqa: BLE001 — what is not read is not reported
+            logger.debug("run environment: a detonation's launch was not read (%s).", exc)
+            row.setdefault("launched_with", NOT_REPORTED)
+            row["arguments_honoured"] = NOT_REPORTED
+    _read(row, "provider", lambda: _said(record.provider) if record.provider else NOT_REPORTED)
+    _read(row, "task_id", lambda: _stated_text(record.task_id))
+    reported = _read(row, "reported", lambda: bool(record.reported))
+    failure = _read(row, "failure", lambda: _said(record.failure) if record.failure else "")
+    if not failure:
+        del row["failure"]
+    try:
+        facts = record.sandbox_facts if isinstance(record.sandbox_facts, dict) else None
+    except Exception:  # noqa: BLE001 — facts that cannot be read are none stated
+        facts = None
     stated = facts or {}
-    detonated = stated.get("detonated")
+    detonated = _read(row, "detonated", lambda: stated.get("detonated"))
     row["detonated"] = detonated if isinstance(detonated, bool) else NOT_REPORTED
-    row["task_ids"] = _named_texts(stated.get("task_ids"), nested=False)
-    row["guest"] = _named_texts(stated.get("guest"), nested=True)
+    _read(row, "task_ids", lambda: _named_texts(stated.get("task_ids"), nested=False))
+    _read(row, "guest", lambda: _named_texts(stated.get("guest"), nested=True))
     for key in ("sandbox_version", "started", "ended"):
-        value = stated.get(key)
-        row[key] = _said(value) if _scalar(value) else NOT_REPORTED
-    if facts is None and not record.reported:
+        _read(row, key, functools.partial(_stated_fact, stated, key))
+    if facts is None and reported is False:
         # No report was read, so no part of one was.
         row["report_parts"] = []
     else:
-        parts, cut = _report_parts(stated.get("report_parts"))
-        row["report_parts"] = parts
-        if cut:
-            row["report_parts_cut"] = cut
+        parts = _read(row, "report_parts", lambda: _report_parts(stated.get("report_parts")))
+        if isinstance(parts, tuple):
+            row["report_parts"], cut = parts
+            if cut:
+                row["report_parts_cut"] = cut
     return row
 
 
@@ -760,8 +809,9 @@ def detonations_record(container: Any) -> list[dict[str, Any]] | None:
     a detonation that read no report has no parts. What a provider or its
     sandbox wrote is kept to known keys and capped (``STATED_TEXT_CHARS``,
     ``STATED_ENTRIES``, ``STATED_PARTS``), with no credential and no path of
-    this host (:func:`_said`). A row that cannot be read is left out; this
-    never raises.
+    this host (:func:`_said`). A field that cannot be read is ``"not
+    reported"`` and the row keeps the others: no detonation is left out, and
+    this never raises.
     """
     held = getattr(container, "detonations", None)
     if not isinstance(held, list):
@@ -769,12 +819,11 @@ def detonations_record(container: Any) -> list[dict[str, Any]] | None:
     rows: list[dict[str, Any]] = []
     for record in held:
         try:
-            if not (getattr(record, "provider", "") or getattr(record, "failure", None)):
-                # Nothing was asked of a sandbox for it.
-                continue
+            asked = bool(getattr(record, "provider", "") or getattr(record, "failure", None))
+        except Exception:  # noqa: BLE001 — a record that cannot say is recorded
+            asked = True
+        if asked:
             rows.append(_detonation_row(record))
-        except Exception as exc:  # noqa: BLE001 — telemetry never breaks a summary
-            logger.debug("run environment: a detonation was not recorded (%s).", exc)
     return rows
 
 

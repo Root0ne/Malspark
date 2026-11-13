@@ -201,17 +201,53 @@ class TestTheRecord:
         assert record == {"v": 3, "detonations": detonations_record(_held(_record()))}
         assert environment_record(_held()) == {"v": 3, "detonations": []}
 
-    def test_an_unreadable_row_is_left_out_and_never_raises(self) -> None:
+    def test_a_field_that_cannot_be_read_is_not_reported_and_the_row_stays(self) -> None:
         class _Broken:
             provider = "cape2"
+            task_id = "19159"
+            reported = True
 
             @property
             def name(self) -> str:
                 raise RuntimeError("broken")
 
-        assert detonations_record(_held(_Broken(), _record())) == detonations_record(
-            _held(_record())
+        rows = detonations_record(_held(_Broken(), _record())) or []
+        assert len(rows) == 2
+        assert rows[0]["detonation"] == NR and rows[0]["origin"] == NR
+        assert rows[0]["provider"] == "cape2" and rows[0]["task_id"] == "19159"
+        assert rows[0]["reported"] is True and rows[0]["detonated"] == NR
+        assert rows[1] == (detonations_record(_held(_record())) or [])[0]
+
+    def test_a_fact_that_cannot_be_read_is_not_reported_beside_the_platform_s_fields(
+        self,
+    ) -> None:
+        class _Unwritable:
+            def __str__(self) -> str:
+                raise RuntimeError("no text")
+
+        class _UnreadablePart(dict):  # type: ignore[type-arg]
+            def get(self, *_: Any) -> Any:
+                raise RuntimeError("no part")
+
+        facts = _facts(
+            guest={_Unwritable(): "win10"},
+            task_ids={_Unwritable(): "19159"},
+            report_parts=[_UnreadablePart()],
         )
+        record = _record(
+            sandbox_facts=facts,
+            ordinal=2,
+            origin=AGENT_ORIGIN,
+            arguments="-k netsvcs",
+            requested_by=[{"agent": "static"}],
+            launch={"honoured": True},
+        )
+        (row,) = detonations_record(_held(record)) or []
+        assert row["guest"] == NR and row["task_ids"] == NR and row["report_parts"] == NR
+        assert row["sandbox_version"] == "2.5" and row["detonated"] is True
+        assert row["detonation"] == "d2" and row["requested_by"] == ["static"]
+        assert row["launched_with"] == "-k netsvcs" and row["arguments_honoured"] is True
+        assert row["provider"] == "cape2" and row["task_id"] == "19159"
 
 
 # ---------------------------------------------------------------------------
