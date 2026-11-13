@@ -794,13 +794,14 @@ def _cites_a_ledger_entry(
 # The words that state a technique id a claim's sentence names as absent,
 # withdrawn or retired, read on either side of the id by :func:`_stated_absent`
 # and by the sentence reading alone (:func:`sentence_technique_violations`):
-# the shared negation reader is left as it is.
+# the shared negation reader is left as it is. An id counts as stated absent
+# only where the sentence does nothing else with it; in doubt it is asked.
 #
 # A predicate after the id, joined to it by a copula ("T1055 is not asserted",
 # "(T1547.001) reading is withdrawn"), a comma ("T1430, not asserted") or a
 # parenthesis ("T1064 (deprecated)"). One whose word also says what a sample
-# does stands only where it ends its clause: "the payload (T1105) was dropped
-# to disk" asserts the drop.
+# does takes no tail and stands only where it ends its clause: "the payload
+# (T1105) was dropped to disk" asserts the drop.
 ABSENT_ID_PREDICATES: tuple[tuple[str, bool], ...] = (
     ("not asserted", False),
     ("withdrawn", False),
@@ -829,6 +830,71 @@ ABSENT_ID_COPULAS: tuple[str, ...] = (
 )
 # An adverb a copula may carry before the predicate: "is therefore withdrawn".
 ABSENT_ID_ADVERBS: tuple[str, ...] = ("also", "therefore", "thus", "hence", "still")
+# The short tails the statement may end on, at most two: an agent ("by the
+# scanner"), a place ("here"), a role ("as a label") or the id that replaces
+# it ("in favour of T1059"). ``{agent}`` is one word, after an article or not;
+# ``{id}`` is a technique id.
+ABSENT_ID_TAILS: tuple[str, ...] = (
+    "by {agent}",
+    "here",
+    "as a label",
+    "as a tag",
+    "as a technique",
+    "in this report",
+    "in this claim",
+    "for this sample",
+    "in favour of {id}",
+    "in favor of {id}",
+)
+# A reason that may follow the statement: "T1430 is not asserted because no
+# GPS call exists".
+ABSENT_ID_REASONS: tuple[str, ...] = ("because", "since", "given that")
+# What joins one more absent id or predicate to the statement: "T1055 and
+# T1027 are withdrawn", "is withdrawn and is not asserted here". Anything
+# else after a joint goes on about the id.
+ABSENT_ID_JOINTS: tuple[str, ...] = ("and", "or")
+# A contrast or continuation anywhere later in the same sentence: the sentence
+# goes on about the id or the behaviour, so the id is asked.
+ABSENT_ID_TURNS: tuple[str, ...] = (
+    "but",
+    "yet",
+    "however",
+    "though",
+    "although",
+    "whereas",
+    "nevertheless",
+    "nonetheless",
+    "instead",
+    "now",
+    "then",
+)
+# The subject a next clause opens with when it goes on about the id or the
+# behaviour: "T1430 is not asserted, the sample reads the GPS fix".
+ABSENT_ID_CONTINUATIONS: tuple[str, ...] = (
+    "it",
+    "its",
+    "this",
+    "they",
+    "the sample",
+    "the code",
+    "the binary",
+    "the malware",
+    "the payload",
+    "the loader",
+)
+# A negation before the id in its clause wraps the statement: "it is not the
+# case that T1430 is not asserted". A word with an apostrophe is a suffix.
+ABSENT_ID_NEGATIONS: tuple[str, ...] = (
+    "not",
+    "never",
+    "no",
+    "nor",
+    "neither",
+    "false",
+    "untrue",
+    "n't",
+    "n’t",
+)
 
 
 def _alternation(words: Iterable[str]) -> str:
@@ -838,25 +904,18 @@ def _alternation(words: Iterable[str]) -> str:
 
 
 _ABSENT_COPULA = _alternation(ABSENT_ID_COPULAS)
+_ABSENT_PREDICATE = _alternation(words for words, _ends in ABSENT_ID_PREDICATES)
+_ABSENT_PLAIN_END = {" ".join(words.split()) for words, ends in ABSENT_ID_PREDICATES if ends}
 # What may stand between the id and its predicate: more ids of the same list
 # ("T1055 and T1027 are"), the id's closing bracket or quote, a possessive, and
 # up to three nouns ("entry", "reading", "identifier"), none a copula or a joint.
-_ABSENT_AFTER_LEAD = (
+_ABSENT_AFTER_RE = re.compile(
     rf"(?:\s*(?:,|/|\band\b|\bor\b)\s*{ID_BODY}\b)*"
     "[)\\]\"'’”]*(?:'s)?"
     rf"(?:\s+(?!(?:{_ABSENT_COPULA}|and|or|but|not)\b)[A-Za-z][\w-]*){{0,3}}"
     rf"(?:\s+(?:{_ABSENT_COPULA})(?:\s+(?:{_alternation(ABSENT_ID_ADVERBS)}))?\s+"
-    r"|\s*,\s*|\s*\(\s*)"
-)
-_CLAUSE_END_AFTER = r"(?=\s*(?:[.;:,!?)\]]|$))"
-_ABSENT_AFTER_RE = re.compile(
-    _ABSENT_AFTER_LEAD
-    + "(?:"
-    + "|".join(
-        rf"{_alternation([words])}\b{_CLAUSE_END_AFTER if ends else ''}"
-        for words, ends in ABSENT_ID_PREDICATES
-    )
-    + ")",
+    r"|\s*(?P<comma>,)\s*|\s*(?P<paren>\()\s*)"
+    rf"(?P<predicate>{_ABSENT_PREDICATE})\b",
     re.IGNORECASE,
 )
 # The verb, then at most two words ("its earlier") and an opening bracket.
@@ -864,23 +923,127 @@ _ABSENT_BEFORE_RE = re.compile(
     rf"\b(?:{_alternation(ABSENT_ID_VERBS)})\s+(?:[\w'.-]+\s+){{0,2}}[(\[\"']?$",
     re.IGNORECASE,
 )
+_ABSENT_TAIL_RE = re.compile(
+    r"(?:\s+(?:"
+    + "|".join(
+        _alternation([tail])
+        .replace(r"\{agent\}", r"(?:(?:the|a|an|its|this)\s+)?\w[\w-]*")
+        .replace(r"\{id\}", ID_BODY)
+        for tail in ABSENT_ID_TAILS
+    )
+    + r")\b){0,2}",
+    re.IGNORECASE,
+)
+_ABSENT_SENTENCE_END_RE = re.compile(r"\s*[)\]\"'’”]*\s*(?:$|[.!?](?!\w))")
+_ABSENT_BOUNDARY_RE = re.compile(r"\s*([;:,)\]])\s*")
+_ABSENT_CLOSING_RE = re.compile(r"\s*\)")
+_ABSENT_REASON_RE = re.compile(rf"\s+(?:{_alternation(ABSENT_ID_REASONS)})\b", re.IGNORECASE)
+_ABSENT_JOINT_RE = re.compile(
+    rf"\s*,?\s+(?:{_alternation(ABSENT_ID_JOINTS)})\s+"
+    rf"(?:(?:{_ABSENT_COPULA})\s+(?:(?:{_alternation(ABSENT_ID_ADVERBS)})\s+)?)?"
+    rf"(?:(?:{_ABSENT_PREDICATE})\b|[(\[\"']?{ID_BODY}\b[)\]\"']?)",
+    re.IGNORECASE,
+)
+_ABSENT_CONTINUATION_RE = re.compile(
+    rf"(?:{_alternation(ABSENT_ID_CONTINUATIONS)})\b", re.IGNORECASE
+)
+_ABSENT_TURN_RE = re.compile(rf"\b(?:{_alternation(ABSENT_ID_TURNS)})\b", re.IGNORECASE)
+_ABSENT_NEGATION_RE = re.compile(
+    "|".join(
+        rf"{re.escape(w)}\b"
+        if not w[0].isalpha() or "'" in w or "’" in w
+        else rf"\b{re.escape(w)}\b"
+        for w in ABSENT_ID_NEGATIONS
+    ),
+    re.IGNORECASE,
+)
+# What ends the clause a wrapping negation is looked for in, before the id.
+_ABSENT_PREFIX_BREAK_RE = re.compile(
+    rf"[.;:!?,\n]|\b(?:{_alternation(ABSENT_ID_TURNS)})\b",
+    re.IGNORECASE,
+)
+# Where a sentence ends, for the contrast or continuation read after the statement.
+_SENTENCE_END_RE = re.compile(r"[.!?](?=\s|$)|\n")
 
 
-def _stated_absent(text: str, start: int, end: int) -> bool:
-    """Whether the sentence states the id at ``text[start:end]`` as absent, withdrawn or retired.
+class _AbsenceTurns:
+    """The contrast words and sentence ends of one text, found once and searched by position."""
 
-    After the id, one of :data:`ABSENT_ID_PREDICATES`; before it, one of
-    :data:`ABSENT_ID_VERBS` whose object the id is. A sentence that asserts the
-    id ("T1055 is used, and the earlier reading is withdrawn", "T1064 is not
-    retired") states nothing of the kind.
+    def __init__(self, text: str) -> None:
+        self.turns = [m.start() for m in _ABSENT_TURN_RE.finditer(text)]
+        self.ends = [m.start() for m in _SENTENCE_END_RE.finditer(text)]
+
+    def before_the_sentence_ends(self, pos: int) -> bool:
+        """Whether a contrast word stands at or after ``pos`` within the same sentence."""
+        turn = bisect.bisect_left(self.turns, pos)
+        if turn == len(self.turns):
+            return False
+        end = bisect.bisect_left(self.ends, pos)
+        return end == len(self.ends) or self.turns[turn] < self.ends[end]
+
+
+def _stated_absent(text: str, start: int, end: int, turns: _AbsenceTurns | None = None) -> bool:
+    """Whether the sentence states the id at ``text[start:end]`` absent and nothing more of it.
+
+    After the id, one of :data:`ABSENT_ID_PREDICATES` of which the id (or its
+    list or noun) is the subject; before it, one of :data:`ABSENT_ID_VERBS`
+    whose object the id is. Then four conditions, each a reason to ask
+    otherwise. The statement ends its clause, after at most two of
+    :data:`ABSENT_ID_TAILS`, one more absent id or predicate after a joint
+    (:data:`ABSENT_ID_JOINTS`) or a reason (:data:`ABSENT_ID_REASONS`); a
+    predicate that also names a sample's action takes no tail or reason. A
+    statement set off by a comma or a parenthesis ("T1430, not asserted",
+    "T1064 (deprecated)") is followed by no more of its sentence than a new
+    clause. No negation (:data:`ABSENT_ID_NEGATIONS`) stands before the id in
+    its clause. No later clause of the sentence turns or goes on: no word of
+    :data:`ABSENT_ID_TURNS` follows in the same sentence, and the next clause
+    opens with no word of :data:`ABSENT_ID_CONTINUATIONS`. Each search starts
+    at a fixed point and reads a bounded stretch, so the reading is linear in
+    the sentence; ``turns`` is the text's contrast index, built once per text
+    by the caller.
     """
-    if _ABSENT_AFTER_RE.match(text, end):
-        return True
     before = text[max(0, start - _NEGATION_WINDOW) : start]
-    breaks = list(_CLAUSE_BREAK_RE.finditer(before))
-    if breaks:
-        before = before[breaks[-1].end() :]
-    return bool(_ABSENT_BEFORE_RE.search(before))
+    breaks = list(_ABSENT_PREFIX_BREAK_RE.finditer(before))
+    clause = before[breaks[-1].end() :] if breaks else before
+    if _ABSENT_NEGATION_RE.search(clause):
+        return False
+    stated = _ABSENT_AFTER_RE.match(text, end)
+    appositive = plain = False
+    if stated:
+        pos = stated.end()
+        appositive = bool(stated.group("comma") or stated.group("paren"))
+        plain = " ".join(stated.group("predicate").lower().split()) in _ABSENT_PLAIN_END
+    else:
+        verb_clause = text[max(0, start - _NEGATION_WINDOW) : start]
+        verb_breaks = list(_CLAUSE_BREAK_RE.finditer(verb_clause))
+        if verb_breaks:
+            verb_clause = verb_clause[verb_breaks[-1].end() :]
+        if not _ABSENT_BEFORE_RE.search(verb_clause):
+            return False
+        pos = end
+    while True:
+        if not plain:
+            tail = _ABSENT_TAIL_RE.match(text, pos)
+            pos = tail.end() if tail else pos
+        joint = _ABSENT_JOINT_RE.match(text, pos)
+        if joint is None:
+            break
+        pos = joint.end()
+    if stated and stated.group("paren"):
+        closing = _ABSENT_CLOSING_RE.match(text, pos)
+        if closing is None:
+            return False
+        pos = closing.end()
+    if (turns or _AbsenceTurns(text)).before_the_sentence_ends(pos):
+        return False
+    if _ABSENT_SENTENCE_END_RE.match(text, pos):
+        return True
+    if not plain and _ABSENT_REASON_RE.match(text, pos):
+        return True
+    boundary = _ABSENT_BOUNDARY_RE.match(text, pos)
+    if boundary is None or (appositive and boundary.group(1) == ","):
+        return False
+    return not _ABSENT_CONTINUATION_RE.match(text, boundary.end())
 
 
 def sentence_id_remedy(technique_id: str) -> str:
@@ -910,20 +1073,28 @@ def sentence_technique_violations(
     that names the sentence (``<block>.text.<id>``). Whether the sentence
     describes the id is not asked: a sentence names ids it does not assert, as
     a tool's metadata, a heading or a catalogue association. Nor is an id the
-    sentence negates (:func:`_is_negated`) or states as absent, withdrawn or
-    retired, before it or after it (:func:`_stated_absent`). The question
+    sentence states as absent, withdrawn or retired, before it or after it,
+    and does nothing else with (:func:`_stated_absent`), nor one it negates
+    (:func:`_is_negated`) without one of the declared predicates after it: an
+    id such a predicate follows is read by :func:`_stated_absent` alone. The question
     names two ways out that are both true to the sentence
     (:func:`sentence_id_remedy`): correct the id, or say plainly that the
     technique is not asserted.
     """
     out: list[Violation] = []
     seen: set[str] = set()
+    turns = _AbsenceTurns(text or "")
     for match in TECHNIQUE_WORD_RE.finditer(text or ""):
         tid = match.group(0).upper()
         if tid in carried or tid in seen:
             continue
-        if _is_negated(text, match.start(), match.end()) or _stated_absent(
-            text, match.start(), match.end()
+        # An id one of the declared predicates follows is read by the declared
+        # reading alone: "T1430 was not supported by evidence but is performed"
+        # is the shared reader's absence, and the sentence goes on about it.
+        absent = _stated_absent(text, match.start(), match.end(), turns)
+        if absent or (
+            not _ABSENT_AFTER_RE.match(text, match.end())
+            and _is_negated(text, match.start(), match.end())
         ):
             continue
         seen.add(tid)
