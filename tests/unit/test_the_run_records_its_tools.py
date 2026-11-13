@@ -11,6 +11,7 @@ as it always has.
 
 from __future__ import annotations
 
+import os
 import sys
 import time
 from pathlib import Path
@@ -343,7 +344,10 @@ class TestABinary:
         assert probe.read() == f"{NOT_REPORTED}: it exited with status 3"
 
     def test_a_probe_of_a_program_not_there_names_only_its_name(self) -> None:
-        probe = VersionProbe(("/nowhere/t668-no-such-program", "--version"))
+        # An absolute path in this platform's own form: on Windows a path
+        # without a drive is a relative one, which a probe answers otherwise.
+        not_there = os.path.abspath(os.path.join(os.sep, "nowhere", "t668-no-such-program"))
+        probe = VersionProbe((not_there, "--version"))
         assert probe.read() == f"{NOT_REPORTED}: t668-no-such-program is not on PATH"
 
     def test_output_naming_no_version_is_not_reported(self) -> None:

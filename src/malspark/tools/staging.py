@@ -893,6 +893,22 @@ def staging_root(environ: Mapping[str, str] | None = None) -> Path:
     return base / leaf if is_job_directory_name(leaf) else base
 
 
+def _touch_not_through_a_link(directory: Path | str) -> None:
+    """Set the directory's own mtime to now, never the mtime of what a link names.
+
+    What a link names is never touched. Where ``os.utime`` takes
+    ``follow_symlinks`` it is passed ``False``, so the link's own time is set.
+    Where it does not (Windows), the platform cannot touch the link itself: a
+    link, a junction too (``is_link``), is looked for first and left alone. The
+    window between the look and the touch is the one a directory this project
+    made itself leaves open.
+    """
+    if os.utime in os.supports_follow_symlinks:
+        os.utime(directory, None, follow_symlinks=False)
+    elif not is_link(Path(directory)):
+        os.utime(directory, None)
+
+
 def touch_job_staging(job_id: str) -> bool:
     """Say this job is still running, where another process's sweep can read it.
 
@@ -920,7 +936,7 @@ def touch_job_staging(job_id: str) -> bool:
     touched = False
     for directory in job_directories(job_id):
         try:
-            os.utime(directory, None, follow_symlinks=False)
+            _touch_not_through_a_link(directory)
         except OSError:  # nothing staged yet, or a directory somebody else owns
             continue
         touched = True

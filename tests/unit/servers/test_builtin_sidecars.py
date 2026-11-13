@@ -345,6 +345,6 @@ def test_the_container_is_the_one_place_that_announces_the_retry_interval() -> N
                     and target.value.attr == "environ"
                     and "INDEX_RETRY_ENV" in ast.unparse(target.slice)
                 ):
-                    writers.append(str(path.relative_to(root)))
+                    writers.append(path.relative_to(root).as_posix())
 
     assert writers == ["core/container.py"], writers
