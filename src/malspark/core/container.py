@@ -718,6 +718,20 @@ class ServiceContainer:
         # order filed; each answered with what will happen and, once carried
         # out, the detonation that did. Empty where no agent asked.
         self.detonation_requests: list[Any] = []
+        # How a further detonation is carried out: an async callable taking
+        # its record, set by ``app.arun`` (``MalsparkApp.detonate_further``);
+        # ``None`` outside a job, where nothing can be detonated again.
+        self.detonator: Any = None
+        # The step of the graph now running, by node name, set on each node's
+        # entry (``pipeline.detonations``): where a request is filed, and so
+        # whether a later step can still carry it out.
+        self.current_step: str = ""
+        # Each further turn an analyst was given to read detonations made
+        # after its own turn (``pipeline.detonations.further_turns``).
+        self.further_turns: list[dict[str, Any]] = []
+        # The detonations each agent's own turn could read, by agent: those
+        # that had returned a report when its step began.
+        self.detonations_seen: dict[str, set[str]] = {}
         # Each upload of the sample to a tool server over its ``put_sample``
         # tools (``analysis.disclosure.staging_record``), written by
         # ``agents.sample_staging`` as it uploads; read by the same block.
