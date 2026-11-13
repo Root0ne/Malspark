@@ -19,13 +19,12 @@ from __future__ import annotations
 
 import re
 import shutil
-import subprocess
 from pathlib import Path
 
 import pytest
 import yaml
 
-from tests.unit._docker_cli import docker_env
+from tests.unit._docker_cli import compose_stdout, docker_env
 
 ROOT = Path(__file__).resolve().parents[2]
 PRODUCTION = ROOT / "docker" / "docker-compose.yml"
@@ -116,13 +115,10 @@ def test_the_overlay_replaces_the_read_only_mounts_when_compose_merges_them(
 
     def render(*files: Path) -> dict:
         flags = [arg for path in files for arg in ("-f", str(path))]
-        out = subprocess.run(
+        out = compose_stdout(
             ["docker", "compose", "--env-file", str(empty_env), *flags, "config"],
             env=docker_env(REQUIRED_ENV),
-            capture_output=True,
-            text=True,
-            check=True,
-        ).stdout
+        )
         return dict(yaml.safe_load(out)["services"])
 
     def read_only(service: dict) -> dict[str, bool]:

@@ -111,6 +111,7 @@ def test_tb14_one_entry_per_given_string_unresolved_only_when_no_reading_resolve
 # TB-16 -----------------------------------------------------------------------
 
 
+@pytest.mark.posix
 @pytest.mark.parametrize("failure", ["missing", "refused"])
 def test_tb16_a_cap_that_cannot_be_set_still_tracks_the_child_and_says_so(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, failure: str

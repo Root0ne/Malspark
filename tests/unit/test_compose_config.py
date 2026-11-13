@@ -8,7 +8,7 @@ from pathlib import Path
 import pytest
 import yaml
 
-from tests.unit._docker_cli import docker_env
+from tests.unit._docker_cli import compose_stdout, docker_env
 
 ROOT = Path(__file__).resolve().parents[2]
 
@@ -106,13 +106,10 @@ def test_compose_binds_loopback_and_requires_the_secrets(tmp_path):
     empty_env = tmp_path / ".env"
     empty_env.write_text("")
 
-    out = subprocess.run(
+    out = compose_stdout(
         ["docker", "compose", "--env-file", str(empty_env), "-f", str(copy), "config"],
         env=env,
-        capture_output=True,
-        text=True,
-        check=True,
-    ).stdout
+    )
     assert "malspark_ghidra_secret_2026" not in out
     config = yaml.safe_load(out)
     found_a_published_port = False
@@ -176,13 +173,10 @@ def test_migrations_run_once_before_the_api_and_the_worker(tmp_path):
     empty_env = tmp_path / ".env"
     empty_env.write_text("")
 
-    out = subprocess.run(
+    out = compose_stdout(
         ["docker", "compose", "--env-file", str(empty_env), "-f", str(copy), "config"],
         env=docker_env(REQUIRED_ENV),
-        capture_output=True,
-        text=True,
-        check=True,
-    ).stdout
+    )
     config = yaml.safe_load(out)
 
     migrate = config["services"]["migrate"]
@@ -421,7 +415,7 @@ def _render_ghidra(tmp_path: Path, **extra: str) -> dict:
     shutil.copy(ROOT / "docker" / "docker-compose.yml", copy)
     empty_env = tmp_path / ".env"
     empty_env.write_text("")
-    out = subprocess.run(
+    out = compose_stdout(
         [
             "docker",
             "compose",
@@ -434,10 +428,7 @@ def _render_ghidra(tmp_path: Path, **extra: str) -> dict:
             "config",
         ],
         env=docker_env({**REQUIRED_ENV, **OPTIONAL_ENV, **extra}),
-        capture_output=True,
-        text=True,
-        check=True,
-    ).stdout
+    )
     return yaml.safe_load(out)["services"]["ghidra-mcp"]
 
 
@@ -477,13 +468,10 @@ def _render(tmp_path: Path, *profiles: str, env: dict[str, str] | None = None) -
     empty_env = tmp_path / ".env"
     empty_env.write_text("")
     flags = [arg for profile in profiles for arg in ("--profile", profile)]
-    out = subprocess.run(
+    out = compose_stdout(
         ["docker", "compose", "--env-file", str(empty_env), "-f", str(copy), *flags, "config"],
         env=docker_env(REQUIRED_ENV if env is None else env),
-        capture_output=True,
-        text=True,
-        check=True,
-    ).stdout
+    )
     return yaml.safe_load(out)
 
 
@@ -557,7 +545,7 @@ def test_the_shipped_env_file_runs_ghidra_and_qdrant_as_before(tmp_path):
     compose_dir.mkdir()
     copy = compose_dir / "docker-compose.yml"
     shutil.copy(ROOT / "docker" / "docker-compose.yml", copy)
-    out = subprocess.run(
+    out = compose_stdout(
         [
             "docker",
             "compose",
@@ -568,10 +556,7 @@ def test_the_shipped_env_file_runs_ghidra_and_qdrant_as_before(tmp_path):
             "config",
         ],
         env=docker_env({**REQUIRED_ENV, **OPTIONAL_ENV}),
-        capture_output=True,
-        text=True,
-        check=True,
-    ).stdout
+    )
     services = yaml.safe_load(out)["services"]
     assert {"ghidra-mcp", "qdrant"} <= set(services)
 
@@ -626,7 +611,7 @@ def _render_with(
         flags += ["-f", str(compose_dir / name)]
     empty_env = tmp_path / ".env"
     empty_env.write_text("")
-    out = subprocess.run(
+    out = compose_stdout(
         [
             "docker",
             "compose",
@@ -637,10 +622,7 @@ def _render_with(
             "config",
         ],
         env=docker_env({**REQUIRED_ENV, **OPTIONAL_ENV, **(env or {})}),
-        capture_output=True,
-        text=True,
-        check=True,
-    ).stdout
+    )
     return yaml.safe_load(out)
 
 

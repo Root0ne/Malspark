@@ -12,6 +12,7 @@ Every value is synthetic.
 from __future__ import annotations
 
 from collections.abc import Callable
+from typing import Any
 
 import pytest
 
@@ -78,15 +79,24 @@ class TestJoining:
         assert joined_when_it_fits(chunks, ChunkingConfig(), _room(room)) is chunks
 
     def test_ten_times_the_sources_take_about_ten_times_as_long(self) -> None:
+        taken = {"calls": 0, "inputs": 0}
+
         def joining(count: int, runs: int) -> Callable[[], object]:
-            # Chunks of their own for every run, made before the measure.
-            made = iter([[_chunk("s" * 50) for _ in range(count)] for _ in range(runs)])
+            # Chunks of their own for every run: the first ``runs`` are made
+            # before the measure; a coarse clock asks for more runs than that,
+            # and each of those is made fresh, so no chunks are joined twice.
+            def make() -> list[Any]:
+                return [_chunk("s" * 50) for _ in range(count)]
+
+            ready = [make() for _ in range(runs)]
 
             def join() -> None:
                 # A join leaves the chunks it is given as they came: each
                 # run's chunks are joined fourteen times so the small run is
                 # measurable without millions of chunks.
-                chunks = next(made)
+                taken["calls"] += 1
+                taken["inputs"] += 1
+                chunks = ready.pop() if ready else make()
                 for _ in range(14):
                     joined_when_it_fits(chunks, ChunkingConfig(), lambda text: len(text) // 7 + 60)
 
@@ -94,6 +104,7 @@ class TestJoining:
 
         # The small call runs once more than the large one, to warm up.
         assert_ratio(joining(2_000, 7), joining(20_000, 6), 20, what="20,000 sources")
+        assert taken["inputs"] == taken["calls"] > 0, "every run had chunks of its own"
 
 
 def test_a_join_near_the_room_leaves_room_for_its_header_and_no_sliver() -> None:

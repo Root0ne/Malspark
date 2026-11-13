@@ -36,9 +36,10 @@ from pathlib import Path
 from malspark.tools.errors import PATH_OUTSIDE_ROOTS, REMEDIATIONS
 
 # The environment list, and the character between its entries. ``os.pathsep``
-# is ``:`` on every platform this runs on and is what a reader of ``PATH``
-# expects; naming it rather than writing the colon keeps a Windows host from
-# reading a drive letter as a separator.
+# is what a reader of ``PATH`` expects: ``:`` on POSIX and ``;`` on Windows,
+# where a drive letter holds a colon. The list names host paths and is read on
+# the host that wrote it; a value handed into a Linux container is one root
+# and carries no separator.
 SAMPLE_ROOTS_ENV = "MALSPARK_SAMPLE_ROOTS"
 ROOT_SEPARATOR = os.pathsep
 

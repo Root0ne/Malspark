@@ -77,6 +77,10 @@ def test_the_two_copies_share_their_bounds() -> None:
 
 
 FLOOD = "import sys\nwhile True: sys.stdout.write('x' * 65536)"
+# A program that is not there, named by an absolute path in this platform's own
+# form: on Windows a path without a drive is a relative one, which a probe
+# answers otherwise.
+NOT_THERE = os.path.abspath(os.path.join(os.sep, "nowhere", "t668-no-such-program"))
 TABLE: list[tuple[str, tuple[str, ...], str, Any, str]] = [
     ("stdout", _python("print('tool v1.2.3 (build 9)')"), DEFAULT, None, "1.2.3"),
     (
@@ -126,7 +130,7 @@ TABLE: list[tuple[str, tuple[str, ...], str, Any, str]] = [
     ),
     (
         "a program not there",
-        ("/nowhere/t668-no-such-program", "--version"),
+        (NOT_THERE, "--version"),
         DEFAULT,
         None,
         f"{NOT_REPORTED}: t668-no-such-program is not on PATH",

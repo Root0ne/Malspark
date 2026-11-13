@@ -69,7 +69,7 @@ def offenders(source: str, where: str = "<source>") -> list[str]:
 def test_no_tool_is_rebuilt_around_another_as_a_plain_structured_tool() -> None:
     found: list[str] = []
     for path in sorted(SRC.rglob("*.py")):
-        found += offenders(path.read_text(encoding="utf-8"), str(path.relative_to(SRC)))
+        found += offenders(path.read_text(encoding="utf-8"), path.relative_to(SRC).as_posix())
     assert found == [], (
         "rebuild these with agents.server_names.ServerNamedTool, which offers "
         f"the server's argument names: {found}"
