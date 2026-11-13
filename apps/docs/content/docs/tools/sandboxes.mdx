@@ -740,9 +740,12 @@ carries it as well, whatever its kind: an IOC-table row by the rows of its value
 and by the reads its record ties to it (the entries an analysis statement is
 found whole in, the entries or sandbox items an analyst's listing cites), a
 published technique by the signatures that tag it and by the reads behind it.
-The evidence index marks each later detonation's read; a read of the same kind
-that is not a later one is the job's own detonation's, and a static tool's read
-observed no detonation; the Markdown and analyst reports say "observed
+The evidence index marks each later detonation's read; the platform's read of
+the job's own detonation (a call of its sandbox source, or the pack's read of
+the sandbox report) is the first detonation's, whatever its declared kind or
+none, and any other read, a static tool's among them, observed no detonation. A
+value's mark joins every row and every read that puts the value on the table;
+the Markdown and analyst reports say "observed
 in detonation 2, launched with `<args>`"; the STIX export carries
 `x_malspark_observed_in` on each such indicator, with the same clause after its
 description, on the sample's `uses` edge to such a technique, on each
@@ -756,9 +759,9 @@ the first draft's registry keys included; a value is a later detonation's only
 where every row that reduces to it is, so one row the job's own detonation
 observed removes the statement, and no string, condition, selection or alert
 line differs. The section bundles the report's
-composer is shown list each technique a later detonation's signatures tag with
-the same clause in brackets, naming the job's own detonation as well where its
-signatures tag it. In the console, the Indicators table and its side panel, the
+composer is shown list each technique a further detonation observed with the
+same clause in brackets, naming the job's own detonation as well where it
+observed the technique too. In the console, the Indicators table and its side panel, the
 ATT&CK technique chips, cards and panel, the Behaviour tab's signatures and file
 operations, and the Network tab's hosts, DNS names, requests and their panels
 show the mark as a tag beside the value: each detonation drawn as its own part,

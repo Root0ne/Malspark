@@ -246,12 +246,12 @@ export default function AttackContent({ view = "all", empty }: { view?: Behaviou
   );
 }
 
-/** The status a technique's chip says to a screen reader, and its card prints. */
 /** A technique id as the report reads it to join one list to another: trimmed, upper case. */
 function techniqueKey(id: unknown): string {
   return String(id ?? "").trim().toUpperCase();
 }
 
+/** The status a technique's chip says to a screen reader, and its card prints. */
 function statusWords(tech: Technique): string {
   if (!tech.valid) return "not in catalog";
   if (tech.notPublished) return "claimed, not published";
