@@ -198,7 +198,7 @@ def test_the_worker_opens_bytes_only_where_the_register_says() -> None:
     found: dict[tuple[str, str], int] = {}
     for path in _files():
         for owner, line in _sites(path):
-            found.setdefault((str(path.relative_to(ROOT)), owner), line)
+            found.setdefault((path.relative_to(ROOT).as_posix(), owner), line)
     unlisted = sorted(
         f"{file}:{line} {owner}"
         for (file, owner), line in found.items()

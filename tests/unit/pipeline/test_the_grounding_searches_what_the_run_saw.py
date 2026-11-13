@@ -358,7 +358,7 @@ def _runs_of_code(tree: ast.AST) -> list[tuple[str, list[ast.stmt]]]:
 def _decides_without_asking(root: pathlib.Path) -> list[str]:
     """The scan over the tree, with the code resolved through every module."""
     sources = {
-        str(path.relative_to(root)): path.read_text(encoding="utf-8")
+        path.relative_to(root).as_posix(): path.read_text(encoding="utf-8")
         for path in sorted(root.rglob("*.py"))
     }
     return _decides_without_asking_in(sources)
