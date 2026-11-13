@@ -227,13 +227,22 @@ def _cpu_quota(v2: list[str], v1: dict[str, list[str]]) -> float | None:
     return min(quotas) if quotas else None
 
 
+def _affinity() -> int | None:
+    """How many processors the system lets this process run on, or ``None`` where it does not say.
+
+    The call exists only where the system has CPU affinity (Linux, not macOS
+    or Windows); where it is missing nothing is guessed, and the count the
+    kernel gives for the whole machine stays the ``logical_cpus`` fact.
+    """
+    try:
+        return len(os.sched_getaffinity(0)) or None  # type: ignore[attr-defined]
+    except (AttributeError, OSError):
+        return None
+
+
 def _cpus_available() -> int | float | None:
     """The processors this process may use: its CPU affinity, held to its groups' quota."""
-    affinity: int | None = None
-    try:
-        affinity = len(os.sched_getaffinity(0)) or None  # type: ignore[attr-defined]
-    except (AttributeError, OSError):
-        affinity = None
+    affinity = _affinity()
     quota = _cpu_quota(*_cgroup_dirs())
     if quota is None:
         return affinity

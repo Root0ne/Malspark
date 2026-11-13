@@ -114,7 +114,28 @@ class TestTheHost:
             "_read_text",
             lambda path: proc if path == "/proc/self/cgroup" else real(path),
         )
-        monkeypatch.setattr(run_environment.os, "sched_getaffinity", lambda pid: set(range(16)))
+        monkeypatch.setattr(run_environment, "_affinity", lambda: 16)
+
+    def test_a_system_without_cpu_affinity_reports_none_of_it_and_never_raises(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # macOS and Windows have no ``os.sched_getaffinity``.
+        monkeypatch.delattr(run_environment.os, "sched_getaffinity", raising=False)
+        monkeypatch.setattr(run_environment, "_cgroup_dirs", lambda: ([], {}))
+        assert run_environment._affinity() is None
+        assert run_environment._cpus_available() is None
+        assert "cpus_available" not in host_facts()
+
+    def test_a_group_quota_is_read_where_the_system_has_no_cpu_affinity(
+        self, tmp_path: Any, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        self._groups(
+            tmp_path,
+            monkeypatch,
+            {"/proc/self/cgroup": "0::/w\n", "w/cpu.max": "200000 100000"},
+        )
+        monkeypatch.setattr(run_environment, "_affinity", lambda: None)
+        assert host_facts()["cpus_available"] == 2
 
     def test_a_v2_quota_and_limit_beside_the_kernel_s_counts(
         self, tmp_path: Any, monkeypatch: pytest.MonkeyPatch

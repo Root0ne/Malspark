@@ -195,6 +195,22 @@ def test_a_grandchild_in_a_session_of_its_own_delays_the_answer_by_one_short_dea
     assert time.monotonic() - started < 1.5
 
 
+def _added_to_an_empty_environment(scratch: Path) -> set[str]:
+    """The variables a child gets with none given: what the system itself adds."""
+    import subprocess
+
+    done = subprocess.run(  # noqa: S603 — the test's own interpreter
+        [sys.executable, "-c", "import os; print('\\n'.join(os.environ))"],
+        env={},
+        cwd=scratch,
+        capture_output=True,
+        text=True,
+        timeout=30,
+        check=True,
+    )
+    return set(done.stdout.split())
+
+
 @pytest.mark.posix
 @pytest.mark.parametrize("side", sorted(SIDES))
 def test_the_program_sees_only_path_lang_and_a_home_of_its_own(
@@ -214,18 +230,13 @@ def test_the_program_sees_only_path_lang_and_a_home_of_its_own(
     env, cwd = held["env"], held["cwd"]
     assert "T668_PROVIDER_API_KEY" not in env
     assert "sk-must-not-reach-the-program" not in json.dumps(env)
-    # What the interpreter adds of its own (a locale variable) aside.
-    assert (
-        {"PATH", "LANG", "HOME", "TMPDIR"}
-        <= set(env)
-        <= {
-            "PATH",
-            "LANG",
-            "HOME",
-            "TMPDIR",
-            "LC_CTYPE",
-        }
-    )
+    # Within the stated variables and what the system and the interpreter add to
+    # every process of their own, measured: a child started with an empty
+    # environment through the same spawning call.
+    stated = {"PATH", "LANG", "HOME", "TMPDIR"}
+    assert stated <= set(env) <= stated | _added_to_an_empty_environment(tmp_path)
+    # The marker set in this process's environment is no part of the program's.
+    assert not any(name.startswith("T668_") for name in env)
     assert env["PATH"] == os.environ["PATH"]
     assert env["LANG"] == "C.UTF-8"
     assert env["HOME"] == env["TMPDIR"] == cwd
