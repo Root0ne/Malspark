@@ -136,6 +136,14 @@ def build_capability_matrix(
         return [], []
     roots_of = run_roots(ledger) if ledger else None
     rows = _corroboration_rows(isr_reports, ledger)
+    # The run's entries in ledger order, the order a technique's evidence is
+    # listed in; ``None`` without a ledger.
+    entry_order: dict[str, int] | None = None
+    if ledger:
+        entry_order = {}
+        for entry in ledger:
+            eid = str(getattr(entry, "id", None) or getattr(entry, "entry_id", None) or "")
+            entry_order.setdefault(eid.strip().lower(), len(entry_order))
 
     out_of_scope = _out_of_scope(list(techniques), sample)
     review = technique_review(stix_output)
@@ -185,6 +193,7 @@ def build_capability_matrix(
         row = corroboration_row(rows.get(tid.upper())) if rows else {}
         # A technique the judge mapped rests on the entries it mapped it to.
         held = list(row.get("sources") or []) or list(info.get("mapped_entries") or [])
+        evidence_ids = _technique_evidence(info, held, entry_order)
         support = str(row.get("support") or "")
         # Corroboration is two sayers (analyst layers in statements of their
         # own, and the rules that assert it) and, where the ledger was read,
@@ -321,6 +330,7 @@ def build_capability_matrix(
                 evidence_roots=list(counted.roots),
                 roots_not_read=list(counted.not_read),
                 sources=held,
+                evidence_ids=evidence_ids,
                 independent_sources=int(row.get("independent_sources", 0) or 0),
                 is_corroborated=corroborated,
                 source_kinds=dict(row.get("source_kinds") or {}),
@@ -351,6 +361,7 @@ def build_capability_matrix(
                 evidence_roots=list(counted.roots),
                 roots_not_read=list(counted.not_read),
                 sources=held,
+                evidence_ids=evidence_ids,
                 independent_sources=int(row.get("independent_sources", 0) or 0),
                 source_kinds=dict(row.get("source_kinds") or {}),
                 support=support,
@@ -859,6 +870,31 @@ def _collect_techniques(
         techniques[tid]["valid"] = False
 
     return techniques
+
+
+def _technique_evidence(
+    info: dict[str, Any], held: Sequence[str], entry_order: dict[str, int] | None
+) -> list[str]:
+    """The ledger entries behind one technique: the evidence every surface prints.
+
+    The entries among its sources (``held``), those a map the judge made
+    rests on, and those its statements cite, each once. With a ledger, only
+    the entries the run issued, in ledger order; without one, the ids as the
+    statements cite them, in that order.
+    """
+    wanted = [
+        *held,
+        *(info.get("mapped_entries") or ()),
+        *(eid for _text, ids in info.get("cited") or () for eid in ids),
+    ]
+    ids = list(
+        dict.fromkeys(
+            str(raw).strip().lower() for raw in wanted if ENTRY_ID_RE.fullmatch(str(raw).strip())
+        )
+    )
+    if entry_order is None:
+        return ids
+    return sorted((eid for eid in ids if eid in entry_order), key=entry_order.__getitem__)
 
 
 def _claim_statement(layer: str, claim: Any) -> tuple[tuple[str, str], tuple[str, list[str]]]:

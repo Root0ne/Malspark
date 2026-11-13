@@ -745,6 +745,14 @@ class CapabilityCell(BaseModel):
     # is one source however many agents cite it. Empty on rows built without
     # the ledger.
     sources: list[str] = Field(default_factory=list)
+    # The technique's evidence: the ledger entries behind it, the one set every
+    # surface that shows the technique prints
+    # (``reporting.technique_evidence``). The entries of ``sources``, those a
+    # map the judge made rests on, and those its statements cite that the run
+    # issued, in ledger order; without a ledger, the ids its statements cite.
+    # ``[]`` is a technique no entry stands behind; ``None`` is a row stored
+    # before the set was recorded, and is left out of the stored row.
+    evidence_ids: list[str] | None = Field(default=None, exclude_if=lambda value: value is None)
     # How many of ``sources`` are independent: sources whose roots overlap
     # (two tools reading one place) count once.
     independent_sources: int = 0
@@ -788,6 +796,8 @@ class TTPMapping(BaseModel):
     # See ``CapabilityCell.sources``, ``independent_sources``, ``source_kinds``
     # and ``support``.
     sources: list[str] = Field(default_factory=list)
+    # See ``CapabilityCell.evidence_ids``.
+    evidence_ids: list[str] | None = Field(default=None, exclude_if=lambda value: value is None)
     independent_sources: int = 0
     source_kinds: dict[str, int] = Field(default_factory=dict)
     support: str = ""
