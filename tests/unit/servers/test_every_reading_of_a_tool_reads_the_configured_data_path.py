@@ -68,18 +68,18 @@ class TestWhatTheLaunchIsHanded:
         settings.static.capa.rules_dir = "/srv/rules/capa"
         block = settings.mcp.servers["analysis"]
         # A path on the host the platform resolves: a drive is added on Windows.
-        assert sidecar_needs.handed_env(block, settings) == {
-            OVERRIDE: str(resolve_data("/srv/rules/capa"))
-        }
+        handed = sidecar_needs.handed_env(block, settings)
+        assert handed == {OVERRIDE: str(resolve_data("/srv/rules/capa"))}
+        assert Path(handed[OVERRIDE]).is_absolute()
 
     def test_a_relative_setting_is_handed_absolute_and_stripped(self) -> None:
 
         settings = Settings()
         settings.static.capa.rules_dir = "  rules/capa  "
         block = settings.mcp.servers["analysis"]
-        assert sidecar_needs.handed_env(block, settings) == {
-            OVERRIDE: str(resolve_data("rules/capa"))
-        }
+        handed = sidecar_needs.handed_env(block, settings)
+        assert handed == {OVERRIDE: str(resolve_data("rules/capa"))}
+        assert Path(handed[OVERRIDE]).is_absolute()
 
     def test_the_default_spelt_otherwise_hands_nothing(self) -> None:
 

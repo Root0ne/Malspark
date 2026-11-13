@@ -968,6 +968,23 @@ class TestALiveJobKeepsItsDirectory:
 
         assert elsewhere.stat().st_mtime < long_ago + 60
 
+    def test_a_junction_is_not_touched_where_utime_cannot_skip_it(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """A junction ``os.path.islink`` does not report is a link by the module's own test."""
+        directory = tmp_path / "junctioned"
+        directory.mkdir()
+        long_ago = time.time() - 7200
+        os.utime(directory, (long_ago, long_ago))
+        monkeypatch.setattr(os, "supports_follow_symlinks", set())
+        monkeypatch.setattr(staging, "is_link", lambda path: Path(path) == directory)
+        monkeypatch.setenv(staging.STAGING_DIR_ENV, str(tmp_path / "staging"))
+        staging.note_job_directory("junctioned", directory)
+
+        staging.touch_job_staging("junctioned")
+
+        assert directory.stat().st_mtime < long_ago + 60
+
     def test_a_job_that_staged_nothing_has_nothing_to_touch(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:

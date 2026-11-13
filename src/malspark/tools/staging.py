@@ -896,14 +896,16 @@ def staging_root(environ: Mapping[str, str] | None = None) -> Path:
 def _touch_not_through_a_link(directory: Path | str) -> None:
     """Set the directory's own mtime to now, never the mtime of what a link names.
 
-    Where ``os.utime`` takes ``follow_symlinks`` it is passed ``False``. Where it
-    does not (Windows), a link is left alone by looking first: the answer is the
-    same one, a link is not touched, and the window between the look and the
-    touch is the one a directory this project made itself leaves open.
+    What a link names is never touched. Where ``os.utime`` takes
+    ``follow_symlinks`` it is passed ``False``, so the link's own time is set.
+    Where it does not (Windows), the platform cannot touch the link itself: a
+    link, a junction too (``is_link``), is looked for first and left alone. The
+    window between the look and the touch is the one a directory this project
+    made itself leaves open.
     """
     if os.utime in os.supports_follow_symlinks:
         os.utime(directory, None, follow_symlinks=False)
-    elif not os.path.islink(directory):
+    elif not is_link(Path(directory)):
         os.utime(directory, None)
 
 
