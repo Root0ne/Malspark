@@ -234,7 +234,10 @@ class TestTheEntryOfAStep:
         async def main() -> Any:
             return entered({})
 
-        assert asyncio.run(main()) == {"n": 2}
+        out = asyncio.run(main())
+        assert out["n"] == 2
+        # The platform's reads of d2 go out with the step's update.
+        assert {row["structured"]["detonation"] for row in out["evidence_ledger"]} == {"d2"}
         # The analyst's own turn can read d2.
         assert container.detonations_seen["dynamic"] == {"d1", "d2"}
 

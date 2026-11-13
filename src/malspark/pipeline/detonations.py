@@ -12,6 +12,14 @@ and announced with events of its own (``detonation_started`` and
 ``detonation_finished``), so a reader can take the detonation's time out of
 the stage it ran inside.
 
+When a detonation's report comes back, the platform reads it as the triage
+pack reads the job's first (:func:`platform_reads`): the sandbox views and
+the section index, recorded as the pack's entries that state the detonation
+and its launch, and returned with the step's update, so what it observed
+reaches the report whether or not an agent reads it, its items' ids
+(``d2/proc:84``) are known to every citation check, and a stored run holds
+them.
+
 A detonation made after an analyst that reads the sandbox had its own turn
 would never be read by it. So, on the debate's first negotiation entry,
 after any request still pending was carried out, each such analyst whose own
@@ -221,14 +229,84 @@ def _needs_seconds(container: Any) -> float | None:
     return None
 
 
-async def carry_out(container: Any, state: Any, step: str) -> list[DetonationRecord]:
+def _stage_of_step(container: Any, step: str) -> str:
+    """The key of the stage ``step`` belongs to; empty where no step of the run is named so."""
+    return next((s.stage for s in steps_of(container) if s.name == step), "")
+
+
+def platform_reads(container: Any, record: DetonationRecord, step: str) -> list[dict[str, Any]]:
+    """The reads the triage pack makes of the job's first detonation, made of ``record``'s report.
+
+    The pack's own sandbox views (processes, network, signatures, dropped
+    files, channels) and the report's section index, each recorded as the
+    pack's entry (agent ``pipeline``, so every agent may cite it and the
+    report reads it as the pack's), its answer carrying the detonation, the
+    launch and who asked (``DetonationRecord.stated``). Returned as ledger
+    rows for the step's update, so a stored run holds them. ``[]`` for a
+    detonation that returned no report.
+    """
+    from functools import partial
+
+    from malspark.agents.evidence_recorder import EvidenceRecorder, result_text
+    from malspark.analysis.sandbox_sections import SECTIONS_TOOL, section_index
+    from malspark.pipeline.triage_pack import _SANDBOX_VIEWS, PACK_SOURCE, PIPELINE
+
+    report = record.report
+    if not isinstance(report, dict):
+        return []
+
+    def _held(getter: str) -> Any:
+        try:
+            return getattr(container, getter)()
+        except Exception:  # noqa: BLE001 — a container that holds none records without it
+            return None
+
+    recorder = EvidenceRecorder(
+        PIPELINE,
+        counter=_held("get_evidence_counter"),
+        stage=_stage_of_step(container, step),
+        sink=getattr(container, "event_sink", None),
+        corpus=_held("get_evidence_corpus"),
+        spill=_held("get_evidence_spill"),
+    )
+    reads: list[tuple[str, Any]] = [
+        *((tool, partial(view, report)) for tool, view in _SANDBOX_VIEWS.items()),
+        (SECTIONS_TOOL, partial(section_index, report, record.normalised_by, record.name)),
+    ]
+    stated = record.stated()
+    for tool, call in reads:
+        started, wall_clock = time.monotonic(), time.time()
+        try:
+            value = call()
+        except Exception as exc:  # noqa: BLE001 — a failed read is an entry, never a crash
+            value = {"error": f"{type(exc).__name__}: {exc}"}
+        answer = {**stated, **value} if isinstance(value, dict) else value
+        error = answer.get("error") if isinstance(answer, dict) else None
+        recorder.record(
+            tool=tool,
+            args={"detonation": record.name},
+            server=PIPELINE,
+            source=PACK_SOURCE,
+            output=result_text(answer),
+            ok=not error,
+            error=str(error) if error else None,
+            started_at=wall_clock,
+            duration_ms=int((time.monotonic() - started) * 1000),
+        )
+    return [entry.model_dump(mode="json") for entry in recorder.entries]
+
+
+async def carry_out(
+    container: Any, state: Any, step: str, entries: list[dict[str, Any]] | None = None
+) -> list[DetonationRecord]:
     """Carry out every accepted detonation still pending, on the entry of ``step``.
 
     Each is one record, appended to ``container.detonations`` in order, with
     the agents that asked, the step, and its own start, end and duration. A
     detonation the job's time limit leaves no room for, or that no detonator
     can make, is recorded with the reason; one that fails is recorded with
-    its failure. Never raises for a detonation.
+    its failure. Never raises for a detonation. The platform's reads of each
+    report that came back (:func:`platform_reads`) are added to ``entries``.
     """
     made: list[DetonationRecord] = []
     for name, requests in _pending(container):
@@ -268,6 +346,8 @@ async def carry_out(container: Any, state: Any, step: str) -> list[DetonationRec
         record.duration_ms = int((time.monotonic() - began) * 1000)
         container.detonations.append(record)
         made.append(record)
+        if record.reported and entries is not None:
+            entries.extend(platform_reads(container, record, step))
         logger.info(
             "Further detonation %s on entry of %s: %s in %d ms.",
             name,
@@ -530,12 +610,18 @@ def on_entry(
         return any(reads_the_sandbox(container, agent) for agent in reading_agents)
 
     async def _before(state: Any) -> dict[str, Any]:
+        entries: list[dict[str, Any]] = []
         if _wanted():
-            await carry_out(container, state, name)
+            await carry_out(container, state, name, entries)
+        # The platform's reads of each detonation that came back go out with
+        # the step's update, and the step's own work (and a further turn)
+        # reads the state holding them.
+        extra: dict[str, Any] = {"evidence_ledger": entries} if entries else {}
         if first_negotiation and not getattr(container, "_further_turns_given", False):
             container._further_turns_given = True
-            return await further_turns(container, state, name)
-        return {}
+            turns = await further_turns(container, _merge(dict(state or {}), extra), name)
+            extra = _merge(extra, turns)
+        return extra
 
     def _owed(state: Any) -> bool:
         return (
@@ -624,6 +710,20 @@ def further_detonation_reasons(container: Any) -> list[str]:
             "no sandbox report" + (f": {record.failure}" if record.failure else "")
         )
     return list(dict.fromkeys(out))
+
+
+def later_sections(container: Any) -> dict[str, Any]:
+    """Each later detonation's report read into sections, by its name: what a cited ``d2/…`` reads.
+
+    A detonation that returned no report has none. ``{}`` for a job with only its own.
+    """
+    from malspark.analysis.sandbox_sections import Sections
+
+    return {
+        record.name: Sections(record.report, record.normalised_by, record.name)
+        for record in getattr(container, "detonations", None) or ()
+        if record.ordinal > 1 and record.reported
+    }
 
 
 def recorded_detonations(container: Any) -> dict[str, Any]:
