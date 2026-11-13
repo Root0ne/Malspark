@@ -371,7 +371,11 @@ class TestAProviderTextIsCutBeforeAnyOtherWork:
         key = prefixed_key("ghs_", 64)
         controls = "\x00" * (STATED_READ_CHARS - len(key) // 2)
         value = controls + key + " tail"
-        facts = _facts(sandbox_version=value, guest={value: value}, task_ids={"id": value})
+        # Past the read bound whole, behind 600 of them: none of it is read.
+        beyond = "\x00" * 600 + key
+        facts = _facts(
+            sandbox_version=value, guest={value: value}, task_ids={"id": value, "far": beyond}
+        )
         (row,) = detonations_record(_held(_record(sandbox_facts=facts))) or []
         text = json.dumps(row)
         for piece in (key[:8], key[4:12], key[-8:]):
