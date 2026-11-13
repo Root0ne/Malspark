@@ -9,8 +9,8 @@ whether the sentence describes it: a sentence names ids as metadata, headings
 and associations it does not assert. An id the sentence negates or states as
 absent, withdrawn or retired, before the id or after it, and does nothing
 else with, and an id the block's TECHNIQUE line carries, are not asked here; a
-sentence that goes on about the id, wraps the statement in a negation or
-makes it a parenthetical remark is asked. The question names two ways out
+sentence that goes on about the id or makes it a parenthetical remark is
+asked. A long list of ids costs in proportion to its length. The question names two ways out
 that are both true to the sentence: correct the id, or say plainly that the
 technique is not asserted. A sentence id never marks
 the claim's own technique invalid.
@@ -29,11 +29,14 @@ from malspark.pipeline.validation import (
     CLAIM_DOES_NOT_DESCRIBE_CODE,
     PLATFORM_MISMATCH_CODE,
     VALIDITY_CODE,
+    expected_technique_scope,
+    sentence_technique_violations,
     settle_validation_marks,
     validate_isr,
 )
 from malspark.schemas.evidence import LedgerEntry
 from malspark.schemas.isr_models import AgentISR, ClaimEvidence
+from tests.linear_cost import assert_scales, assert_under
 
 CATALOGUE: dict[str, dict[str, Any]] = {
     "T1027": {"domain": "enterprise", "platforms": ["Windows", "Linux"]},
@@ -194,7 +197,7 @@ class TestAnIdTheSentenceStatesAbsent:
 
     # A sentence that does more with the id than state it absent: the predicate
     # does not end its clause, the id is a parenthetical remark's subject only,
-    # a negation wraps the statement, or a later clause turns or goes on.
+    # or a later clause turns or goes on.
     DOES_MORE = (
         ("T1000 is not asserted by the scanner but is shown by the code at 0x401000", "T1000"),
         ("T1000 is not asserted by the scanner, but the code at 0x401000 performs it", "T1000"),
@@ -207,7 +210,6 @@ class TestAnIdTheSentenceStatesAbsent:
         ),
         ("T1000 (deprecated name) tracks the device location", "T1000"),
         ("T1999 is deprecated in favour of T1027 and the sample uses it", "T1999"),
-        ("it is not the case that T1000 is not asserted", "T1000"),
         ("T1000, not asserted, but it tracks location", "T1000"),
         # Hard cases of the same reading.
         ("T1000 is withdrawn; however, the code at 0x401000 performs it.", "T1000"),
@@ -215,7 +217,7 @@ class TestAnIdTheSentenceStatesAbsent:
         ("The report withdraws T1000 but the code performs it.", "T1000"),
         ("T1000 is withdrawn and the sample uses it.", "T1000"),
         ("The payload (T1000) is dropped, then run.", "T1000"),
-        ("It is false that T1000 is not supported.", "T1000"),
+        ("No evidence of T1000 is retired, but the code at 0x401000 performs it.", "T1000"),
         ("T1000 is not asserted though the code reads the GPS fix.", "T1000"),
         ("T1000, not asserted, is what the code at 0x401000 does.", "T1000"),
         ("T1000 (deprecated) is used by the sample.", "T1000"),
@@ -254,11 +256,32 @@ class TestAnIdTheSentenceStatesAbsent:
         ("T1000 is not asserted because the scanner reads only a string.", []),
         ("T1000 is not asserted. The code at 0x401000 hides a window.", []),
         ("T1000 (deprecated); T1027 is used.", []),
+        ("T1000 is not asserted (no GPS API).", []),
+        # A negation before the statement is the shared reader's to read.
+        ("no evidence of T1000 is retired", []),
+        ("neither T1000 nor T1998 is retired", []),
+        ("No T1000 activity was withdrawn", []),
+        ("no sign of T1000 is withdrawn either", []),
+        ("it is not the case that T1000 is not asserted", []),
     )
 
     def test_a_sentence_that_only_states_the_id_absent_is_read_as_before(self) -> None:
         for text, asked in self.STAYS:
             assert [subject for _c, _p, subject in _sentence(_found(_claim(text)))] == asked, text
+
+    @staticmethod
+    def _id_list(size: int) -> str:
+        return "T1000" + ", T1998" * size + " are not asserted"
+
+    def test_a_long_id_list_costs_in_proportion_to_its_length(self) -> None:
+        scope = expected_technique_scope(WINDOWS)
+
+        def read(text: str) -> None:
+            assert sentence_technique_violations(text, set(), _Attck(), scope, path="c") == []
+
+        assert_scales(self._id_list, 4000, read, factor=4)
+        text = self._id_list(16000)
+        assert_under(lambda: read(text), 1.0, what="a list of 16,000 ids")
 
     def test_the_question_names_two_ways_out_both_true_to_the_sentence(self) -> None:
         for text in ("It decodes its payload, as T1999 names.", "It reads its file (T1000)."):

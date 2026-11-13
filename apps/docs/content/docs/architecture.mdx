@@ -1293,22 +1293,24 @@ Two producers use it:
   the catalogue's two questions the line's ids are asked, whether the
   catalogue holds it (`attck.unknown_id`) and whether it can apply to the
   sample's platform (`attck.platform_mismatch`), on a path that names the
-  sentence (`claims[N].text.<id>`). Not asked: an id the sentence negates
-  with no absence word below after it; an id it states as not asserted,
-  withdrawn, dropped, not supported, not adopted, retired, deprecated or
-  revoked after the id ("T1055 is not asserted", "(T1547.001) reading is
-  withdrawn", "T1064 (deprecated)"), or as withdrawn or retracted before it
-  ("the report withdraws T1547.001"), where the sentence does nothing else
-  with it: the statement ends its clause after at most a short declared tail
-  ("by the scanner", "here", "as a label", "in favour of T1059"), one more
-  absent id or predicate after "and"/"or", or a reason ("because …";
-  "dropped" takes none of these); the id is the predicate's subject, and a
-  statement set off by a comma or a parenthesis ends the sentence or its
-  clause; no negation stands before the id in its clause ("it is not the case
-  that T1055 is not asserted" is asked); and no later clause of the sentence
-  turns or goes on ("but", "yet", "however", "though", "then", "now", or a
-  next clause opening with "it" or "the sample", "the code" and the like). In
-  doubt the id is asked. Nor is it asked whether the sentence describes the id,
+  sentence (`claims[N].text.<id>`). Not asked: an id it states as not
+  asserted, withdrawn, dropped, not supported, not adopted, retired,
+  deprecated or revoked after the id ("T1055 is not asserted", "(T1547.001)
+  reading is withdrawn", "T1064 (deprecated)"), or as withdrawn or retracted
+  before it ("the report withdraws T1547.001"), where the sentence does
+  nothing else with it: the statement ends its clause after at most a short
+  declared tail ("by the scanner", "here", "as a label", "in favour of
+  T1059"), one more absent id or predicate after "and"/"or", and a reason
+  ("because …", "(no GPS API)"; "dropped" takes none of these), the id is the
+  predicate's subject, and a statement set off by a comma or a parenthesis
+  ends the sentence or its clause; and an id the sentence negates. Asked: an
+  id the sentence states absent and then turns from or goes on about, even
+  where it also negates it ("but", "yet", "however", "though", "then", "now",
+  or a next clause opening with "it" or "the sample", "the code" and the
+  like). The reading is lexical: it does not see an assertion inside a reason
+  or in a following clause with none of those words, and a negation before
+  the statement is read as a negation is. Nor is it asked whether the
+  sentence describes the id,
   since a sentence names ids it does not assert (a tool's metadata, a heading,
   a catalogue association). The question names two ways out, both true to the
   sentence: correct the id, or say plainly that the technique is not asserted.
