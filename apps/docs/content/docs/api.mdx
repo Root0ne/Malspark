@@ -452,7 +452,7 @@ a mapping, 64 parts. A text is cut to 400 characters before anything else is
 done with it, and where that cut falls inside a word, none of the word is
 kept. Each text is put on one line
 without control characters. In an identifier (task ids, the guest, version,
-commit, times and part names, and the keys a provider states) a URL loses its
+commit, times and part names, the launch `arguments_via` and the keys a provider states) a URL loses its
 credentials and any secret-named query value, a secret value the platform holds
 (of at least eight characters) is masked as written, URL-encoded, JSON-escaped
 (once or twice) and base64-encoded (standard or URL-safe), and a path of the
@@ -460,10 +460,13 @@ worker's host is shown from the project root or as outside it. While the worker
 holds its secret values registered, any other string a provider states is
 recorded as stated. Where it does not, nothing is known, so an identifier or a
 key is also masked where it is shaped like a credential and may read `***`
-(the declared place a task id was read at, such as `/info/id`, keeps its
-segments). A `failure` is free text and is masked that way in both states. A key
-and its value are also read as one text, as a pair is printed and run together;
-where that is masked otherwise than each half alone, both read `***`. Task URLs are not recorded.
+(a key written as a place, such as `/info/id`, keeps its segments unless the
+whole key reads as a credential, and then it reads `***`; two masked keys of
+one mapping merge into one entry). A `failure` is free text and is masked that
+way in both states. The masking protects against a secret that a provider's
+code or its sandbox echoes into a fact whole, in a value or a key; it does not
+defend against code that splits a secret across several places on purpose, as
+such code holds the secret and has other ways to leak it. Task URLs are not recorded.
 
 The block carries `v`, its shape version (3). Throughout it, a fact nobody read
 is `not reported`, followed after a colon by the reason where one is known.

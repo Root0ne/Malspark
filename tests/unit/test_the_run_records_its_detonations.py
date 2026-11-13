@@ -510,12 +510,6 @@ class TestWhatTheSharedScrubMasks:
             assert piece not in text, piece
         # A key stays as stated in both states.
         assert list(row["task_ids"]) == ["/info/id"]
-        assert (
-            detonations_record(
-                _held(_record(sandbox_facts=_facts(guest={"image": "win11ltsc2024-20260709-en"})))
-            )
-            or [{}]
-        )[0]["guest"] == {"***": "***"}
 
     def test_a_registered_value_is_masked_in_an_identity_fact_in_each_encoding(self) -> None:
         from urllib.parse import quote, quote_plus
@@ -565,19 +559,6 @@ class TestWhatTheSharedScrubMasks:
         # The declared place a task id was read at is the platform's own text.
         assert row["task_ids"]["/info/id"] == "19159"
 
-    @pytest.mark.parametrize("state", ["unpopulated", "failed"])
-    def test_a_credential_split_across_a_key_and_its_value_is_masked_without_a_registry(
-        self, state: str
-    ) -> None:
-        self._state(state)
-        key = prefixed_key("ghp_")
-        facts = _facts(task_ids={key[:20]: key[20:]}, guest={"token": key})
-        (row,) = detonations_record(_held(_record(sandbox_facts=facts))) or []
-        text = json.dumps(row)
-        for piece in (key[:20], key[20:], key[-12:], key[10:26]):
-            assert piece not in text, piece
-        assert row["task_ids"] == {"***": "***"}
-
     def test_with_the_registry_populated_a_registered_value_as_a_key_is_masked(self) -> None:
         from malspark.pipeline.events import remember_secret_values
 
@@ -609,13 +590,82 @@ class TestWhatTheSharedScrubMasks:
             "behavioral1",
         ]
 
-    def test_a_url_split_across_a_key_and_its_value_is_masked(self) -> None:
-        secret = password(24)
-        facts = _facts(guest={"https://operator:": f"{secret}@sandbox.example.org/r"})
+    @pytest.mark.parametrize("state", ["unpopulated", "populated", "failed"])
+    def test_the_live_shaped_pair_keeps_its_key_in_every_state(self, state: str) -> None:
+        from malspark.pipeline.events import remember_secret_values
+
+        self._state(state)
+        if state == "populated":
+            remember_secret_values([password(20, variant=7)])
+        facts = _facts(guest={"behavioral2": {"resource": "win11ltsc2024-20260709-en"}})
+        (row,) = detonations_record(_held(_record(sandbox_facts=facts))) or []
+        assert list(row["guest"]) == ["behavioral2"]
+        assert list(row["guest"]["behavioral2"]) == ["resource"]
+        assert row["guest"]["behavioral2"]["resource"] == (
+            "win11ltsc2024-20260709-en" if state == "populated" else "***"
+        )
+
+    @pytest.mark.parametrize("state", ["unpopulated", "failed"])
+    def test_a_token_that_holds_a_slash_as_a_key_leaves_no_part_of_itself(self, state: str) -> None:
+        self._state(state)
+        key = prefixed_key("ghp_")
+        slashed = "a" + key[:10] + "/" + key[10:]
+        facts = _facts(task_ids={"/" + slashed: "x", slashed: "y"}, guest={"/" + slashed: {}})
         (row,) = detonations_record(_held(_record(sandbox_facts=facts))) or []
         text = json.dumps(row)
-        assert secret[:8] not in text and "operator" not in text
-        assert row["guest"] == {"***": "***"}
+        for piece in (key[:8], key[4:14], key[-10:], slashed[:12]):
+            assert piece not in text, piece
+        assert set(row["task_ids"]) == {"***"}
+
+    def test_an_outer_key_written_as_a_place_keeps_its_segments_when_nothing_is_registered(
+        self,
+    ) -> None:
+        facts = _facts(guest={"/info/id": {"os": "w"}})
+        (row,) = detonations_record(_held(_record(sandbox_facts=facts))) or []
+        assert row["guest"] == {"/info/id": {"os": "w"}}
+
+    def test_a_cut_that_falls_on_a_space_keeps_the_last_whole_word(self) -> None:
+        value = "a b" + "\t" * (STATED_READ_CHARS - 3) + " tail"
+        assert run_environment._said(value) == "a b" + CUT_MARK
+
+    def test_the_launch_via_is_provider_text_masked_and_cut(self) -> None:
+        secret = password(24)
+        record = _record(
+            ordinal=2,
+            origin=AGENT_ORIGIN,
+            arguments="-k netsvcs",
+            requested_by=[{"agent": "static"}],
+            launch={"honoured": True, "via": f"https://operator:{secret}@launcher.example/r"},
+        )
+        (row,) = detonations_record(_held(record)) or []
+        assert secret not in json.dumps(row) and "operator" not in row["arguments_via"]
+        record = _record(
+            ordinal=2,
+            origin=AGENT_ORIGIN,
+            arguments="-k netsvcs",
+            launch={"honoured": True, "via": "v" * 5000},
+        )
+        (row,) = detonations_record(_held(record)) or []
+        assert len(row["arguments_via"]) <= STATED_TEXT_CHARS
+        assert row["arguments_via"].endswith(CUT_MARK)
+
+    def test_a_via_that_cannot_be_written_leaves_all_three_launch_fields_out(self) -> None:
+        class _Via:
+            def __bool__(self) -> bool:
+                return True
+
+            def __str__(self) -> str:
+                raise RuntimeError("no text")
+
+        record = _record(
+            ordinal=2,
+            origin=AGENT_ORIGIN,
+            arguments="-k netsvcs",
+            launch={"honoured": True, "via": _Via()},
+        )
+        (row,) = detonations_record(_held(record)) or []
+        assert not {"launched_with", "arguments_honoured", "arguments_via"} & set(row)
+        assert row["detonation"] == "d2"
 
     def test_a_pair_that_hides_nothing_is_kept_as_stated(self) -> None:
         facts = _facts(guest={"/info/id": "win10v2004-20260513-en", "os": "windows10-2004-x64"})

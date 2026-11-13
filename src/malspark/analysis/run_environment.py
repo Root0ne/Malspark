@@ -629,12 +629,20 @@ def _readable(value: Any) -> tuple[str, bool]:
     return text, cut
 
 
+_MASKED_KEY = "***"
+
+
 def _said(value: Any, *, prose: bool = False, name: bool = False) -> str:
     """A text a provider or a sandbox wrote, fit to keep: one line, no control
     character, no credential in a URL or a held secret value (``redact_url``,
     in every encoding the registry holds), no value the event scrub holds
     (``mask_configured_values``), no path of this host (``host_paths_masked``),
     and cut with the cut mark.
+
+    The masking protects against a secret that the code behind a provider, or
+    its sandbox, echoes into a fact whole, in a value or in a key. It does
+    not defend against code that splits a secret across several places on
+    purpose: such code holds the secret and has other ways to leak it.
 
     That is the rule for an identifier (a task id, a guest fact, a version, a
     time, a part name) while the worker's held values are registered
@@ -645,8 +653,10 @@ def _said(value: Any, *, prose: bool = False, name: bool = False) -> str:
     a credential, so one that looks like a credential may read ``***``.
     ``prose`` (free text, a failure's reason) passes the whole event scrub
     (``scrub``: held values and credential shapes) in both states. A ``name``
-    (a key a provider stated) is treated as its values are, with the finding-row
-    scrub applied to each piece between ``/``.
+    (a key a provider stated) is masked as a value is; where nothing is
+    registered it is read whole, and if that masks anything the key reads
+    ``***``, and else piece by piece between ``/`` so a place such as
+    ``/info/id`` keeps its segments.
 
     The text is cut to ``STATED_READ_CHARS`` before anything else is done with
     it, so its length costs nothing; the masks then read at most that. Where
@@ -665,13 +675,13 @@ def _said(value: Any, *, prose: bool = False, name: bool = False) -> str:
         # Free text: shaped credentials are masked whether or not values are held.
         kept = scrub(kept)
     elif not _rows_kept_as_written():
-        # A key is read piece by piece between ``/``, so a declared place
-        # (``/info/id``) is not cut down to its last segment by the path rule.
-        kept = (
-            "/".join(safe_finding_value(piece) for piece in kept.split("/"))
-            if name
-            else (safe_finding_value(kept))
-        )
+        if not name:
+            kept = safe_finding_value(kept)
+        elif safe_finding_value(kept.replace("/", "A")) != kept.replace("/", "A"):
+            # A ``/`` stands for a letter, so a token that holds one is read whole.
+            kept = _MASKED_KEY
+        else:
+            kept = "/".join(safe_finding_value(piece) for piece in kept.split("/"))
     if cut and len(kept) <= STATED_TEXT_CHARS:
         # Shorter than the width once read, and still a cut text.
         return kept[: STATED_TEXT_CHARS - len(CUT_MARK)].rstrip() + CUT_MARK
@@ -684,45 +694,6 @@ def _known_masked(text: str) -> str:
     from malspark.pipeline.events import mask_configured_values
 
     return mask_configured_values(redact_url(text))
-
-
-def _pair_masked(text: str) -> str:
-    """``text`` as the value side of a pair is masked (:func:`_said`), without the cut."""
-    from malspark.pipeline.events import _rows_kept_as_written, safe_finding_value
-
-    known = _known_masked(text)
-    return known if _rows_kept_as_written() else safe_finding_value(known)
-
-
-# What stands for a key and a value whose joined text a mask changed.
-_PAIR_MASK = "***"
-# How much of each side of a recorded pair is read as the one text it makes:
-# together within what ``safe_finding_value`` reads in one piece.
-_PAIR_SIDE = 99
-
-
-def _pair(key: Any, value: Any) -> tuple[str, str]:
-    """A recorded key and its value, each kept (:func:`_said`) and read once more as one text.
-
-    A URL or a credential split across the two (``https://user:`` and
-    ``pass@host``, or ``token`` and its value) is not one a mask sees in
-    either half. Where the masks read the two joined otherwise than each
-    alone, both are ``***``.
-    """
-    name, text = _said(key, name=True), _said(value)
-    # What a reader could put back together, read before either half is
-    # masked: the two joined as a pair is printed, and the two run together.
-    from malspark.core.paths import host_paths_masked
-
-    raw_key = host_paths_masked(_readable(key)[0])
-    raw_value = host_paths_masked(_readable(value)[0])
-    # A key written as a place (``/info/id``) is run together with nothing: a
-    # path rule would join its last segment to the value.
-    for sep in ("=",) if raw_key.startswith("/") else ("=", ""):
-        front, back = f"{raw_key[-_PAIR_SIDE:]}{sep}", raw_value[:_PAIR_SIDE]
-        if _pair_masked(front + back) != _pair_masked(front) + _pair_masked(back):
-            return _PAIR_MASK, _PAIR_MASK
-    return name, text
 
 
 def _stated_text(held: Any) -> str:
@@ -744,15 +715,12 @@ def _named_texts(held: Any, *, nested: bool) -> dict[str, Any] | str:
         return NOT_REPORTED
     out: dict[str, Any] = {}
     for key, value in list(held.items())[:STATED_ENTRIES]:
-        if _scalar(value):
-            name, text = _pair(key, value)
-            if name:
-                out[name] = text
-            continue
         name = _said(key, name=True)
         if not name:
             continue
-        if nested and isinstance(value, Mapping):
+        if _scalar(value):
+            out[name] = _said(value)
+        elif nested and isinstance(value, Mapping):
             inner = _named_texts(value, nested=False)
             if isinstance(inner, dict):
                 out[name] = inner
@@ -826,7 +794,7 @@ def _launch(row: dict[str, Any], record: Any) -> None:
     honoured = launch.get("honoured")
     row["arguments_honoured"] = honoured if isinstance(honoured, bool) else NOT_REPORTED
     if launch.get("via"):
-        row["arguments_via"] = str(launch["via"])
+        row["arguments_via"] = _said(launch["via"])
 
 
 def _detonation_row(record: Any) -> dict[str, Any]:
