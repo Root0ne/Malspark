@@ -52,6 +52,26 @@ UNKNOWN = (
     "TECHNIQUE: T1059.099\n---\n"
 )
 PROSE = "The sample reads a file and then sleeps; nothing else was seen."
+SLEEPS_UNCITED = "CLAIM 3: The sample sleeps.\nEVIDENCE:\nCONFIDENCE: 0.6\nTECHNIQUE: NONE\n---\n"
+SCRIPT = "CLAIM 2: The sample runs a script.\nEVIDENCE: [ev_0003]\nCONFIDENCE: 0.7\n"
+# A TECHNIQUE line that is more than ids, beside a claim that cites nothing.
+LINE_UNREAD = (
+    PLAIN + SCRIPT + "TECHNIQUE: probably a script interpreter, maybe T1059\n---\n" + SLEEPS_UNCITED
+)
+LINE_READ = PLAIN + SCRIPT + "TECHNIQUE: T1059\n---\n" + SLEEPS_UNCITED
+# A claim heading under DISPUTES, beside a claim that cites nothing.
+UNDER_DISPUTES = (
+    PLAIN
+    + SLEEPS_UNCITED
+    + "DISPUTES:\nCLAIM 4: The sample runs a script.\nEVIDENCE: [ev_0003]\nCONFIDENCE: 0.7\n"
+    "TECHNIQUE: NONE\n---\n"
+)
+ABOVE_DISPUTES = (
+    PLAIN
+    + SLEEPS_UNCITED
+    + "CLAIM 4: The sample runs a script.\nEVIDENCE: [ev_0003]\nCONFIDENCE: 0.7\n"
+    "TECHNIQUE: NONE\n---\n"
+)
 EMPTY_EVIDENCE = "isr.empty_evidence"
 
 
@@ -198,3 +218,36 @@ def test_in_record_only_a_cut_answer_is_asked_about_the_cut_alone(record_only: N
     assert left.asked is False
     assert ("retried", EMPTY_EVIDENCE) not in published
     assert [c.evidence_ref for c in result.claims] == ["[ev_0003]", ""]
+
+
+@pytest.mark.parametrize(
+    ("first", "fixed", "code"),
+    [
+        (LINE_UNREAD, LINE_READ, "isr.technique_line_unread"),
+        (UNDER_DISPUTES, ABOVE_DISPUTES, "isr.claims_under_disputes"),
+    ],
+    ids=["technique_line", "disputes"],
+)
+def test_a_block_read_as_no_claim_is_asked_in_both_modes_and_alone_in_record_only(
+    mode: str, first: str, fixed: str, code: str
+) -> None:
+    analyst = _Analyst([fixed])
+
+    result, published = _check(analyst, first)
+
+    (turns,) = analyst.seen_turns
+    question = str(turns[-1].content)
+    assert f"[{code}]" in question
+    assert ("retried", code) in published and ("resolved", code) in published
+    assert analyst.validation_retries == 1
+    (left,) = _recorded(analyst, EMPTY_EVIDENCE)
+    if mode == "feed_back":
+        # Every finding of the answer is in the one turn.
+        assert f"[{EMPTY_EVIDENCE}]" in question
+        assert left.asked is True
+    else:
+        # The other finding is kept out of the turn and recorded, not asked.
+        assert f"[{EMPTY_EVIDENCE}]" not in question
+        assert left.asked is False
+        assert ("retried", EMPTY_EVIDENCE) not in published
+    assert "The sample runs a script." in [c.claim for c in result.claims]
