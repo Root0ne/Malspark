@@ -439,6 +439,11 @@ _SANDBOX_TOOLS: dict[str, dict[str, Any]] = {
     "sandbox_services_and_tasks": {"kind": "sandbox_services"},
     "sandbox_channels": {"kind": "sandbox_channels"},
     "sandbox_items": {"kind": "sandbox_items", "reader": "report_items"},
+    # An agent's request for a further detonation
+    # (``providers.detonation_requests``): it records the request and
+    # detonates nothing itself; the detonation it leads to is a submission of
+    # its own, recorded and disclosed as the job's first is.
+    "request_detonation": {"kind": "detonation_request"},
 }
 
 # The triage pack's steps (``pipeline.triage_pack``), each recorded under the
@@ -544,6 +549,7 @@ MOVING_KINDS: dict[str, str] = {
     "submission": "hands a service something new to analyse with each call",
     "submission_status": "says how a submission is going, which changes as it runs",
     "sandbox_status": "says how the sandbox run stands now",
+    "detonation_request": "answers by the requests and detonations the job already holds",
 }
 
 # Each name table the core reads tools by, as the set of kinds that is exactly
