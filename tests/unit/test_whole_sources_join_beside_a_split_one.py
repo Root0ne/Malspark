@@ -11,6 +11,7 @@ Every value is synthetic.
 
 from __future__ import annotations
 
+import itertools
 from collections.abc import Callable
 
 import pytest
@@ -79,8 +80,10 @@ class TestJoining:
 
     def test_ten_times_the_sources_take_about_ten_times_as_long(self) -> None:
         def joining(count: int, runs: int) -> Callable[[], object]:
-            # Chunks of their own for every run, made before the measure.
-            made = iter([[_chunk("s" * 50) for _ in range(count)] for _ in range(runs)])
+            # Chunks of their own for every run, made before the measure; a
+            # coarse clock asks for more runs than that, and they take the
+            # chunks round again.
+            made = itertools.cycle([[_chunk("s" * 50) for _ in range(count)] for _ in range(runs)])
 
             def join() -> None:
                 # A join leaves the chunks it is given as they came: each

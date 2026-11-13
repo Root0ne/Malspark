@@ -15,6 +15,7 @@ document, without the indentation.
 
 from __future__ import annotations
 
+import itertools
 import json
 from collections.abc import Callable
 from pathlib import Path
@@ -509,8 +510,10 @@ class TestAnUpstreamBlockNearTheRoomAddsAtMostOneChunk:
         block = "U" * HOSTILE_ROOM
 
         def running(parsed: str, runs: int) -> Callable[[], None]:
-            # A node of its own for every run, built before the measure.
-            built = iter([_hostile_node(parsed, block) for _ in range(runs)])
+            # A node of its own for every run, built before the measure; a
+            # coarse clock asks for more runs than that, and they take the nodes
+            # round again.
+            built = itertools.cycle([_hostile_node(parsed, block) for _ in range(runs)])
 
             def run() -> None:
                 _agent_, node, state, _container_ = next(built)
