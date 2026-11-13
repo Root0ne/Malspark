@@ -843,6 +843,11 @@ class FamilyAttribution(BaseModel):
     # Empty and ``None`` on a report stored before either was recorded.
     family_evidence_ids: list[str] = Field(default_factory=list)
     family_source: Literal["judge", "sandbox"] | None = None
+    # What the family's source judged, where it was not the sample alone: a
+    # sandbox handed a generated launcher's archive named it from the archive
+    # run from its picked script. ``None`` where nothing qualifies it, and then
+    # left out of a dump, so a stored report reads as before.
+    family_note: str | None = None
     actor: str | None = None
     campaign: str | None = None
     # Filled by ``attribution.py`` from the Qdrant LTM nearest neighbours.
@@ -863,6 +868,13 @@ class FamilyAttribution(BaseModel):
     # node from the judge node's RAG pass (empty unless the RAG is enabled and a
     # fingerprint catalog is present).
     family_rag_candidates: list[dict[str, Any]] = Field(default_factory=list)
+
+    @model_serializer(mode="wrap")
+    def _dump(self, handler: SerializerFunctionWrapHandler) -> Any:
+        dumped = handler(self)
+        if isinstance(dumped, dict) and dumped.get("family_note") is None:
+            dumped.pop("family_note", None)
+        return dumped
 
 
 # ---------------------------------------------------------------------------
