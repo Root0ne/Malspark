@@ -9,6 +9,7 @@ import Section from "@/components/ui/Section";
 import ShowMoreRows from "@/components/ui/ShowMoreRows";
 import Th from "@/components/ui/Th";
 import type { MalwareReport } from "@/types/malware-report";
+import DetonationMark from "./DetonationMark";
 import { CitedText } from "./EvidenceChips";
 import type { Decision } from "./indicators";
 import {
@@ -133,6 +134,11 @@ export default function IocBrowser({ mr }: { mr: MalwareReport | null | undefine
                         <CopyButton value={row.value} what={`indicator ${row.value}`} />
                       </span>
                       {row.context && <div className="mt-0.5 text-[11px] text-text-muted break-words">{row.context}</div>}
+                      {row.observedIn && (
+                        <div className="mt-0.5 break-all">
+                          <DetonationMark marks={row.observedIn} />
+                        </div>
+                      )}
                     </td>
                     <td className="whitespace-nowrap px-4 py-2 text-xs text-text-secondary">{row.source || "-"}</td>
                     <td className="px-4 py-2">
@@ -177,6 +183,13 @@ export function IocDetail({ row, mr }: { row: IocRow; mr: MalwareReport | null |
         </Pair>
         {row.source && <Pair label="Source">{row.source}</Pair>}
         {row.context && <Pair label="Context">{row.context}</Pair>}
+        {row.observedIn && (
+          <Pair label="Observed in">
+            <span className="break-all">
+              <DetonationMark marks={row.observedIn} />
+            </span>
+          </Pair>
+        )}
         {row.recoveredBy && (
           <Pair label="Recovered by">
             <CitedText text={row.recoveredBy} />

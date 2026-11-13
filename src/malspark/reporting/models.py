@@ -1830,6 +1830,11 @@ class EvidenceIndexRow(BaseModel):
     # (``LedgerEntry.agent_tab``), which places a section of an operator's
     # tool when its kind places none. ``None`` where none was, and left out.
     agent_tab: str | None = Field(default=None, exclude_if=lambda value: value is None)
+    # The further detonation the entry is the platform's read of, with its
+    # launch (``ledger_projection.observed_mark``), which a value resting on
+    # the entry is marked with (``detonation_marks.entry_marks``). Empty, and
+    # left out, for every other entry.
+    observed_in: list[ObservedIn] = _observed_in()
 
 
 class ReputationAnswer(ReputationRecord):

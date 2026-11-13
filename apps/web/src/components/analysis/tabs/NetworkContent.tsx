@@ -9,6 +9,7 @@ import Section from "@/components/ui/Section";
 import ShowMoreRows from "@/components/ui/ShowMoreRows";
 import Th from "@/components/ui/Th";
 import { ArtifactSections } from "@/components/analysis/ArtifactTable";
+import DetonationMark from "@/components/analysis/DetonationMark";
 import { isCoveredBySection, sectionsForTab } from "@/components/analysis/reportSections";
 import { endpointReputation, reputationTooltip, verdictWords } from "@/components/analysis/reputation";
 import { domainFacts, ipFacts } from "@/components/analysis/networkFacts";
@@ -23,7 +24,7 @@ import {
   urlHost,
   type HostRow,
 } from "@/components/analysis/networkView";
-import type { NetworkURL, StringIOC } from "@/types/malware-report";
+import type { NetworkURL, ObservedIn, StringIOC } from "@/types/malware-report";
 
 type Detail =
   | { kind: "host"; row: HostRow; opener: HTMLElement }
@@ -97,6 +98,7 @@ export default function NetworkContent({ report }: { report: ReportDetailDTO }) 
                         )}
                       </button>
                       {hostSuspicious(row) && <Flag tone="red">Suspicious</Flag>}
+                      <DetonationMark marks={hostMarks(row)} compact />
                       {row.kind === "domain" && row.domain.is_punycode && (
                         /* A punycode label is registered precisely so it reads
                            as a brand it is not, so the badge names the brand. */
@@ -144,7 +146,15 @@ export default function NetworkContent({ report }: { report: ReportDetailDTO }) 
             <tbody className="divide-y divide-border-light">
               {domains.slice(0, shownOf("dns")).map((d, i) => (
                 <tr key={`${d.fqdn}-${i}`} className="hover:bg-bg-hover">
-                  <td className="px-4 py-2 align-top font-mono text-xs text-status-blue break-all">{d.fqdn}</td>
+                  <td className="px-4 py-2 align-top font-mono text-xs text-status-blue break-all">
+                    {d.observed_in?.length ? (
+                      <>
+                        <span>{d.fqdn}</span> <DetonationMark marks={d.observed_in} compact />
+                      </>
+                    ) : (
+                      d.fqdn
+                    )}
+                  </td>
                   <td className="px-4 py-2 align-top text-xs text-text-secondary break-all">
                     {d.resolved_ips.length > 0 ? d.resolved_ips.join(", ") : "-"}
                     {d.resolved_ips_partial && (
@@ -300,6 +310,7 @@ function RequestTable({
               ) : (
                 <code className="font-mono text-xs text-status-blue break-all">{u.url}</code>
               )}
+              <DetonationMark marks={u.observed_in} compact />
             </td>
             <td className="max-w-[14rem] truncate px-4 py-2 align-top text-xs text-text-muted" title={u.user_agent || undefined}>
               {u.user_agent || "-"}
@@ -323,6 +334,15 @@ function HostDetail({ row }: { row: HostRow }) {
         <ReputationPill rep={rep} />
         <SourceWord source={source} />
       </div>
+      {hostMarks(row) && (
+        <dl>
+          <Pair label="Observed in">
+            <span className="break-all">
+              <DetonationMark marks={hostMarks(row)} />
+            </span>
+          </Pair>
+        </dl>
+      )}
       {row.kind === "domain" ? (
         <dl className="space-y-2">
           {row.domain.reason && <Pair label="Why it stands out">{row.domain.reason}</Pair>}
@@ -391,12 +411,25 @@ function RequestDetail({ url, hosts }: { url: NetworkURL; hosts: HostRow[] }) {
           {url.source} — {sourceExplanation(url.source)}
         </Pair>
       )}
+      {url.observed_in?.length ? (
+        <Pair label="Observed in">
+          <span className="break-all">
+            <DetonationMark marks={url.observed_in} />
+          </span>
+        </Pair>
+      ) : null}
       <Pair label="Host">
         {host || "Not recorded"}
         {known && hostSuspicious(known) && <span className="ml-2 text-status-red">suspicious</span>}
       </Pair>
     </dl>
   );
+}
+
+/** The detonations that observed a host, where a further one did (`ObservedIn`); absent otherwise. */
+function hostMarks(row: HostRow): ObservedIn[] | undefined {
+  const marks = row.kind === "domain" ? row.domain.observed_in : row.ip.observed_in;
+  return marks?.length ? marks : undefined;
 }
 
 function Pair({ label, children }: { label: string; children: React.ReactNode }) {

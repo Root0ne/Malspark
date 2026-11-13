@@ -5,7 +5,7 @@ import { useState } from "react";
 
 import { useReport } from "@/components/analysis/AnalysisContext";
 import type { ReportDetailDTO } from "@/lib/api";
-import type { EvidenceSection, SandboxSignature } from "@/types/malware-report";
+import type { EvidenceSection, ObservedIn, SandboxSignature } from "@/types/malware-report";
 import { runSignatureScale } from "@/lib/severity";
 import Section from "@/components/ui/Section";
 import ShowMoreRows from "@/components/ui/ShowMoreRows";
@@ -15,6 +15,8 @@ import { ArtifactSections } from "@/components/analysis/ArtifactTable";
 import { hasSection, sectionsForTab } from "@/components/analysis/reportSections";
 import { dynamicAnalystClaims } from "@/components/analysis/dynamicClaims";
 import AnalystFindings from "@/components/analysis/AnalystFindings";
+import DetonationMark from "@/components/analysis/DetonationMark";
+import { observedParts } from "@/lib/detonationMarks";
 import {
   processGroups,
   seenInText,
@@ -29,6 +31,9 @@ import { StructuredCell } from "@/components/analysis/StructuredValue";
 import ProcessTree from "./ProcessTree";
 import PersistenceList from "./PersistenceContent";
 import type { JobRoster } from "@/types";
+
+/** The key a record a further detonation observed carries its mark under (`ObservedIn`). */
+const OBSERVED_IN = "observed_in";
 
 /** How many rows the registry, file and API tables draw before offering more. */
 const STEP = 10;
@@ -389,6 +394,11 @@ function SeverityGroups({
                           · {row.signature.marks.length} evidence mark{row.signature.marks.length === 1 ? "" : "s"}
                         </span>
                       )}
+                      {observedParts(row.signature.observed_in) && (
+                        <span className="break-all">
+                          <DetonationMark marks={row.signature.observed_in} />
+                        </span>
+                      )}
                     </p>
                   </div>
                 </li>
@@ -404,6 +414,9 @@ function SeverityGroups({
 /** A cell: a plain value as it is, a nested one laid out (`StructuredCell`), an empty one as a dash. */
 function Cell({ value, name }: { value: unknown; name: string }) {
   if (value === null || value === undefined || value === "") return <>-</>;
+  /* The platform's mark of the detonations that observed the row, said as every tab says it. */
+  if (name.endsWith(`, ${OBSERVED_IN}`) && Array.isArray(value) && observedParts(value as ObservedIn[]))
+    return <DetonationMark marks={value as ObservedIn[]} />;
   if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") return <>{String(value)}</>;
   return <StructuredCell value={value} name={name} />;
 }

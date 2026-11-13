@@ -7,6 +7,7 @@ import type {
   FollowUp,
   FollowUpList,
   MalwareReport,
+  ObservedIn,
   RunSummary,
 } from "@/types/malware-report";
 import { ApiError, detailMessage, getErrorMessage, parseRetryAfter } from "@/lib/errors";
@@ -397,6 +398,9 @@ export interface IOCRow {
    *  why the row is published, or `no:` and why not. */
   publish_answer?: string | null;
   recovered_by?: string | null;
+  /** Every detonation that observed the value, where a further detonation an
+   *  agent asked for did, each launch text whole; absent otherwise. */
+  observed_in?: ObservedIn[];
 }
 
 export interface IOCListResponse {
@@ -413,6 +417,7 @@ const _IOC_ROW_SCHEMA: Record<string, ExpectedShape> = {
   published: "boolean?",
   publish_answer: "string?",
   recovered_by: "string?",
+  observed_in: "array?",
 };
 
 const _SYSTEM_STATUS_SCHEMA: Record<string, ExpectedShape> = {
