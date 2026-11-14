@@ -893,6 +893,22 @@ def _speaking_lines(
     )
 
 
+# The consecutive words of a claim's sentence a line must write to speak to
+# a claim that shares no ledger id or value with it: a quotation of the
+# claim, not words any two claims share.
+SPEAKING_RUN_WORDS = 4
+# A word, for the runs of words a line and a claim's sentence share.
+_RUN_WORD_RE = re.compile(r"[\w'’]++")
+
+
+def _runs(text: str) -> set[tuple[str, ...]]:
+    """Every run of :data:`SPEAKING_RUN_WORDS` consecutive words of ``text``, folded."""
+    words = [w.lower() for w in _RUN_WORD_RE.findall(text)]
+    return {
+        tuple(words[i : i + SPEAKING_RUN_WORDS]) for i in range(len(words) - SPEAKING_RUN_WORDS + 1)
+    }
+
+
 # A line's ``[analysts: ...]`` field: names, never what the line says.
 _ANALYSTS_FIELD_RE = re.compile(r"\[\s*+analysts?\s*+:[^\[\]]*+\]", re.IGNORECASE)
 
@@ -911,9 +927,12 @@ def anchored_lines(
     (:func:`_counted_values`, stated as :func:`_restated` reads values: an
     address, a number). Content words take no part. A line is listed for
     every analyst it names a claim of, as soon as one claim of any analyst
-    anchors it; a line no claim anchors is listed for none. Each line is
-    read once and each claim's values once, so the cost is the lines' and
-    the references' length.
+    anchors it; a line no claim anchors is listed for none. On a line so
+    listed, a claim that writes no shared id or value is still spoken to
+    when the line writes a run of :data:`SPEAKING_RUN_WORDS` consecutive
+    words of its sentence: the line quotes it. Each line is read once and
+    each claim's values and runs once, so the cost is the lines' and the
+    references' length.
     """
     blocks: dict[str, dict[int, _Block]] = {}
     for name, isr in in_force.items():
@@ -926,6 +945,7 @@ def anchored_lines(
             for line, _blocks_it in naming:
                 by_line.setdefault(int(line), []).append((name, int(number)))
     values: dict[tuple[str, int], tuple[frozenset[str], frozenset[str]]] = {}
+    runs: dict[tuple[str, int], set[tuple[str, ...]]] = {}
     out: dict[str, dict[int, frozenset[int]]] = {}
     for line, refs in by_line.items():
         if not 0 < line <= len(lines):
@@ -945,6 +965,15 @@ def anchored_lines(
                 anchors.add(ref)
         if not anchors:
             continue
+        written = _runs(text)
+        for ref in dict.fromkeys(refs):
+            block = blocks.get(ref[0], {}).get(ref[1])
+            if block is None or ref in anchors:
+                continue
+            if ref not in runs:
+                runs[ref] = _runs(block.sentence)
+            if not written.isdisjoint(runs[ref]):
+                anchors.add(ref)
         for name in {name for name, _n in refs}:
             out.setdefault(name, {})[line] = frozenset(n for who, n in anchors if who == name)
     return out

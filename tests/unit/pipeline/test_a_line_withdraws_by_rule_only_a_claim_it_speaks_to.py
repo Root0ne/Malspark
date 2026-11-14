@@ -105,6 +105,30 @@ class TestALineAnchoredByTheClaimItIsAbout:
         assert [n for n, *_rest in merge.not_spoken_to] == [2]
 
 
+class TestALineThatQuotesAClaimSpeaksToIt:
+    def test_a_run_of_four_words_of_its_sentence_speaks_to_it(self) -> None:
+        line = (
+            f"{BOTH} DYNAMIC claim 1 puts 2240 writing into 3704, and STATIC claim 2 says the "
+            f"gate returns 1 only when a table resolves. {BLOCKS}"
+        )
+
+        merge = _merge(line, _block(ADDED, "ev_0020"))
+
+        assert [n for n, _s, _r in merge.withdrawn_by_rule] == [2]
+        assert merge.not_spoken_to == ()
+
+    def test_a_run_of_three_words_does_not(self) -> None:
+        line = (
+            f"{BOTH} DYNAMIC claim 1 puts 2240 writing into 3704, and STATIC claim 2 says the "
+            f"gate returns 1 only if a table resolves. {BLOCKS}"
+        )
+
+        merge = _merge(line, _block(ADDED, "ev_0020"))
+
+        assert merge.withdrawn_by_rule == ()
+        assert [n for n, *_rest in merge.not_spoken_to] == [2]
+
+
 class TestALineNoClaimAnchors:
     def test_it_speaks_to_every_claim_it_names(self) -> None:
         line = f"{STATIC} STATIC claims 1 and 2 overstate what the listing shows. {BLOCKS}"
@@ -143,6 +167,18 @@ class TestALineThatParaphrasesItsClaim:
 
 
 class TestTheAnchorsCostTheLinesLength:
+    def test_a_long_line_against_a_long_claim(self) -> None:
+        def build(size: int) -> Any:
+            words = " ".join(f"word{i}" for i in range(size))
+            in_force = {
+                "static": _isr(_block(f"0x401000 {words}.", "ev_0001") + _block(GATE, "ev_0012")),
+            }
+            line = f"{STATIC} STATIC claims 1 and 2 hold ev_0012 and {words} again. {BLOCKS}"
+            named = claims_named_in_force([line], ["static"], in_force)
+            return lambda: anchored_lines([line], named, in_force)
+
+        assert_scales(build, 4_000)
+
     def test_a_line_naming_many_claims(self) -> None:
         def build(size: int) -> Any:
             in_force = {
