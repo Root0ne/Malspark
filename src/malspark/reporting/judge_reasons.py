@@ -103,9 +103,11 @@ def word_cut(text: str, width: int) -> str:
 def judge_reason_spans(text: str) -> list[tuple[int, int, int]]:
     """Where each judge's reason stands in ``text``, a status or a note as
     :func:`judge_reasons_shown` prints it: for each, where the judge's words start and end
-    (the bracket after "the judge dropped it" or "kept by the judge when asked", without the
-    cut mark a reason cut to its width ends in) and where its bracket closes (the end of
-    ``text`` where it never does). Every word around them is the platform's."""
+    (the bracket after "the judge dropped it" or "kept by the judge when asked", up to the cut
+    mark a reason cut to its width ends in, wherever it stands: at the bracket's end, or
+    before the closing bracket of one the judge opened that the cut fell inside) and where its
+    bracket closes (the end of ``text`` where it never does). Every word around them, the cut
+    mark among them, is the platform's."""
     out: list[tuple[int, int, int]] = []
     at = 0
     lowered = text.lower()
@@ -125,8 +127,10 @@ def judge_reason_spans(text: str) -> list[tuple[int, int, int]]:
             end += 1
         inner = end - 1 if depth == 0 else len(text)
         words = text[open_at:inner].rstrip()
-        if words.endswith(CUT_MARK):
-            words = words[: -len(CUT_MARK)].rstrip()
+        # The cut mark ends the reason as printed: only closing brackets follow it.
+        cut = words.rfind(CUT_MARK)
+        if cut >= 0 and not words[cut + len(CUT_MARK) :].strip(") "):
+            words = words[:cut].rstrip()
         lead = len(words) - len(words.lstrip())
         if words.strip():
             out.append((open_at + lead, open_at + len(words), end))
