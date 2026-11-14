@@ -86,14 +86,25 @@ cannot be one is not stated. A request row names no process: an HTTP row
 takes the process facts of the flow it rode on (joined by the flow's id
 within its task; where the task lists several flows under that id, each
 flow's facts, `platform_flows`, and the request is the sample's when any of
-them is), and a flow whose process the task does not list says so
+them is; worked out once per id, a request carries up to 16 flows of each
+answer, with how many of each were left out, `platform_flows_left_out`, so
+many flows and requests on one id cost their sum, and where the launcher's
+reading meets flows left out of an answer it may change, the request also
+answers as naming no process, `platform_flows_unsettled`), and a flow whose
+process the task does not list says so
 (`process_not_listed`). A DNS row takes none: its flow is the guest's
 resolver, never the program that asked. A name is decided from its HTTP
 requests, the DNS requests that name their own process and the flows to the
 addresses it resolved to: the sample's when a flow of its tree reached one of
 them, another lineage's only when every such record and flow names a process
 of another lineage (a record naming none leaves the name as decided without
-one), and with none of either as without a process. A dropped file's guest path is shown where the reader declares the field its
+one), and with none of either as without a process. A view read in pages, or
+shortened, can only show that a record is the sample's: there a record naming
+another lineage counts as naming none, for an address, a name and a URL
+alike, and `unlisted_processes` is set from whole views only; a name the
+report gives part of its resolved addresses (`resolved_ips_partial`) reads the
+flows to those addresses the same way. A flow to an address several names
+resolved to counts for each of them, which errs toward hiding nothing. A dropped file's guest path is shown where the reader declares the field its
 source writes it under (`Reading.guest_path_fields`: a Triage task report's
 `path`); a field of that name a reader does not declare, such as CAPE's host
 storage path, is not shown. The document holds each such block once per
@@ -629,7 +640,10 @@ process it lists, the host must also be an ancestor of a process of the
 sample's tree, so a script host the sample started outside its own tree is
 not the launcher's; where it states no such parent, the identification rests
 on those three facts alone (the host's image, its command line naming the
-generated launcher member, its not being in the sample's tree). Where the
+generated launcher member, its not being in the sample's tree), and so it does
+where it states one but no such host is an ancestor of the sample's tree: the
+report then names those tasks with the facts the identification rests on
+(`launcher_identified_by`, a mark of the platform's). Where the
 task holds the sample's tree, what the launcher's host started outside it is
 the launcher's too.
 Where no listed process runs `sample.exe` (the sandbox renamed or copied the

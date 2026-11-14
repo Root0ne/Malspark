@@ -5508,8 +5508,10 @@ is assembled from what the run gathered rather than recomputed beside it:
   any process, its tree is the answer. A flow outside the tree or disputed
   carries the image of the process that made it (`process`); the address's
   row states those processes (`outside_processes`, `marked_only_processes`,
-  `file_only_processes`, as `<image> (procid N)`), and the publish rule's
-  `no:` and the IOC table's context name them with both facts. Each reader
+  `file_only_processes`, as `<image> (procid N)` by the one key below, a
+  stored row by its `procid`, and as `<image>` where no id is stated), and
+  the publish rule's `no:` and the IOC table's context name them with both
+  facts. Each reader
   writes the process a flow or a request names, by the id the report's
   process list gives it, under one key (`platform_process`) in one text form,
   read from the field its format states it under; the rule reads that key
@@ -5518,8 +5520,13 @@ is assembled from what the run gathered rather than recomputed beside it:
   (`process_not_listed`). An HTTP request names no process: it takes the
   process facts of the flow it rode on, joined by the flow's id within its
   task (each flow's facts, `platform_flows`, where the task lists several
-  under that id). A DNS request takes none: its flow is the guest's
-  resolver, never the program that asked, and only a process a DNS row itself
+  under that id: worked out once per id, up to 16 flows of each answer, with
+  how many of each were left out, `platform_flows_left_out`, so a report's
+  many flows and requests on one id cost their sum; where the launcher's
+  reading meets flows left out of an answer it may change, the request also
+  answers as naming no process, `platform_flows_unsettled`). A DNS request
+  takes none: its flow is the guest's resolver, never the program that
+  asked, and only a process a DNS row itself
   names is its maker. One rule decides an address, a name and a URL from
   their records: a URL's are its HTTP requests; a name's are its HTTP
   requests, the DNS requests that name their own process and the flows to
@@ -5530,6 +5537,13 @@ is assembled from what the run gathered rather than recomputed beside it:
   (outside its tree, the launcher's, not listed, or disputed) only when every
   record names a process of another lineage; a record naming none leaves the
   value as decided without one, and so does a value with no record at all.
+  A view read in pages, or shortened, can only show that a record is the
+  sample's: there a record naming another lineage counts as naming none, for
+  the three kinds alike, and `unlisted_processes` is set from whole views
+  only; a name the report gives part of its resolved addresses
+  (`resolved_ips_partial`) reads the flows to those addresses the same way.
+  A flow to an address several names resolved to counts for each of them,
+  which errs toward hiding nothing.
   A value of another lineage is not published as observed from the sample,
   its row says whose it is (`made_by`, with `sample_process_tree: false`; an
   address's own fields as above, and `unlisted_processes` where every flow
