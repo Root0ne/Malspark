@@ -51,7 +51,10 @@ docs page, reached the same way as the pages above, gives the real shape:
 string (no separate port field) plus per-flow ``proto``/``country``/
 ``as_num``/``as_org``; ``network.requests[]`` is a discriminated union —
 ``domain_req``/``domain_resp`` for a DNS lookup, ``web_req``/``web_resp`` for
-an HTTP request — never a flat DNS/HTTP row. ``triage_overview_to_sandbox_report``
+an HTTP request — never a flat DNS/HTTP row. A live task report (``version``
+0.3.1) writes each part on a row of its own instead, as ``dns_request``/
+``dns_response`` and ``http_request``/``http_response`` naming the flow and
+the exchange's index; the reader reads both. ``triage_overview_to_sandbox_report``
 (``schemas/sandbox_report.py``) maps both into the shapes
 ``network_extractor``/``network_parser`` actually read, not Triage's own
 field names.

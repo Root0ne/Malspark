@@ -1,0 +1,3 @@
+### Fixed
+
+- **A Triage task report's DNS and HTTP requests are read under every name the report writes them under (T-693).** A question and its answer on one row (`domain_req`/`domain_resp`, `web_req`/`web_resp`) and each on a row of its own, paired by flow and index (`dns_request`/`dns_response`, `http_request`/`http_response`), fill the same DNS, HTTP and domain rows; headers are read as a mapping or as `Name: value` lines. A request row of a kind the reader does not read is kept whole in a `task.network.requests.<kind>` channel, counted by its rows. A request row names no process and is credited to none.

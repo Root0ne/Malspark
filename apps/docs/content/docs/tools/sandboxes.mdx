@@ -57,7 +57,18 @@ the overview's analysis, task and target blocks, each flow's and request's
 other fields under `extra` (source, times, bytes, the name and TLS facts, every
 header), and each task report's blocks with no part of their own (its
 signatures with their per-process indicators, the task, its other network
-logs) as `task.<block>` channels. The document holds each such block once per
+logs) as `task.<block>` channels. A Triage task report's DNS and HTTP requests
+are read under each name the report writes them under: a question and its
+answer on one row (`domain_req` and `domain_resp`, `web_req` and `web_resp`),
+or each on a row of its own naming the flow and the exchange's index
+(`dns_request` and `dns_response`, `http_request` and `http_response`), paired
+by that flow and index. Both fill the same DNS, HTTP and domain rows; an HTTP
+message's headers are read as a mapping or as `Name: value` lines, and a
+status written as digits is its number. A request row with no part the reader
+reads is kept whole in the `task.network.requests.<kind>` channel, `<kind>`
+being its first field that holds an object, so each such kind is counted by its
+channel's rows. A request row names no process: a DNS or HTTP row is credited
+to no process, and the flow it rode on carries the process the flow names. The document holds each such block once per
 task, by reference (`{"task_report": ..., "block_rows": <block>}`), and every
 reader reads it as the block's items: each signature, flow or other item is its
 own row naming its task, built when it is read, so `offset` and `limit` page

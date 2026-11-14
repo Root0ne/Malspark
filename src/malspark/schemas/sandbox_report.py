@@ -1607,13 +1607,109 @@ _TRIAGE_TASK_READ: frozenset[str] = frozenset({"processes", "dumped", "network"}
 _TRIAGE_FLOW_READ: frozenset[str] = frozenset(
     {"proto", "dst", "procid", "pid", "as_num", "as_org", "country"}
 )
-_TRIAGE_REQUEST_READ: frozenset[str] = frozenset(
-    {"domain_req", "domain_resp", "web_req", "web_resp"}
-)
+# A request row's parts, by every name the task report writes each under: the
+# DNS question and its answer, the HTTP request and its answer. One generation
+# writes a question and its answer on one row (``domain_req``/``domain_resp``,
+# ``web_req``/``web_resp``), another writes each on a row of its own
+# (``dns_request``/``dns_response``, ``http_request``/``http_response``),
+# naming the flow and the exchange's index on that flow; the parts' own fields
+# are the same in both, apart from an HTTP message's headers (a mapping, or
+# ``Name: value`` lines) and its status (a number, or its digits).
+_DNS_QUESTION, _DNS_ANSWER, _HTTP_REQUEST, _HTTP_RESPONSE = "dnsq", "dnsa", "httpq", "httpa"
+_TRIAGE_REQUEST_PARTS: Mapping[str, str] = {
+    "domain_req": _DNS_QUESTION,
+    "dns_request": _DNS_QUESTION,
+    "domain_resp": _DNS_ANSWER,
+    "dns_response": _DNS_ANSWER,
+    "web_req": _HTTP_REQUEST,
+    "http_request": _HTTP_REQUEST,
+    "web_resp": _HTTP_RESPONSE,
+    "http_response": _HTTP_RESPONSE,
+}
+_TRIAGE_REQUEST_READ: frozenset[str] = frozenset(_TRIAGE_REQUEST_PARTS)
+# A request row with no part the reader reads is kept whole, per task, in the
+# channel of its kind (the name of its first field that holds an object, or
+# none): ``task.network.requests.<kind>``, so each such kind is counted by
+# its channel's rows.
+TRIAGE_UNREAD_REQUESTS_CHANNEL = "task.network.requests"
 # The key a kept task block's row names its task by; the block itself is held
 # under the document's grouped-rows key (``schemas.sandbox_document``).
 TASK_KEY = "task_report"
 TASK_ROWS_KEY = GROUP_ROWS_KEY
+
+
+def _triage_exchanges(
+    rows: list[dict[str, Any]],
+) -> tuple[list[tuple[dict[str, dict[str, Any]], dict[str, Any]]], list[dict[str, Any]]]:
+    """A task's request rows as exchanges, each its parts and its own fields; and the rows unread.
+
+    A row's parts are read under every name :data:`_TRIAGE_REQUEST_PARTS`
+    gives them, each part once (a second part of one kind on a row stays among
+    the row's own fields). Rows naming the same flow and index are one
+    exchange, a question and its answer written on rows of their own, as long
+    as no part repeats; a row naming no flow or no index is an exchange by
+    itself. A row with no part read is returned apart, whole. Linear in the
+    rows.
+    """
+    exchanges: list[tuple[dict[str, dict[str, Any]], dict[str, Any]]] = []
+    unread: list[dict[str, Any]] = []
+    open_at: dict[tuple[str, str], int] = {}
+    for req in rows:
+        parts: dict[str, dict[str, Any]] = {}
+        own: dict[str, Any] = {}
+        for key, value in req.items():
+            kind = _TRIAGE_REQUEST_PARTS.get(key)
+            if kind and isinstance(value, dict) and kind not in parts:
+                parts[kind] = value
+            else:
+                own[key] = value
+        if not parts:
+            unread.append(req)
+            continue
+        flow, index = req.get("flow"), req.get("index")
+        where = (str(flow), str(index)) if _scalar_id(flow) and _scalar_id(index) else None
+        held = open_at.get(where) if where is not None else None
+        if held is not None and not parts.keys() & exchanges[held][0].keys():
+            exchanges[held][0].update(parts)
+            for key, value in own.items():
+                exchanges[held][1].setdefault(key, value)
+            continue
+        exchanges.append((parts, own))
+        if where is not None:
+            open_at[where] = len(exchanges) - 1
+    return exchanges, unread
+
+
+def _scalar_id(value: Any) -> bool:
+    """Whether ``value`` names a flow or an index: a number or non-empty text, never a bool."""
+    if isinstance(value, bool):
+        return False
+    return isinstance(value, int) or (isinstance(value, str) and bool(value.strip()))
+
+
+def _header(headers: Any, name: str) -> str:
+    """The value of the header ``name`` (any case), held as a mapping or ``Name: value`` lines."""
+    wanted = name.lower()
+    if isinstance(headers, dict):
+        if headers.get(name) not in (None, ""):
+            return str(headers[name])
+        for key, value in headers.items():
+            if str(key).lower() == wanted and value not in (None, ""):
+                return str(value)
+        return ""
+    for line in headers if isinstance(headers, list) else []:
+        if isinstance(line, str) and ":" in line:
+            key, _, value = line.partition(":")
+            if key.strip().lower() == wanted and value.strip():
+                return value.strip()
+    return ""
+
+
+def _status(value: Any) -> Any:
+    """An HTTP status as the answer gives it, a status written as its digits read as its number."""
+    if isinstance(value, str) and value.strip().isascii() and value.strip().isdigit():
+        return int(value.strip())
+    return value
 
 
 def _keep_task_block(channels: dict[str, Any], name: str, task: str, value: Any) -> None:
@@ -1674,9 +1770,11 @@ def triage_overview_to_sandbox_report(
     fixture shape confirmed against Triage's "Dynamic Report" docs page on
     2026-09-04: each task's ``network.flows`` (tcp/udp, split by ``proto``,
     plus a synthesised ``network.hosts`` row per destination carrying that
-    flow's ASN/country) and ``network.requests`` (``domain_req``/
-    ``domain_resp`` pairs for DNS, ``web_req``/``web_resp`` pairs for HTTP),
-    and each task's ``dumped`` files for ``dropped_files``. Every one of these
+    flow's ASN/country) and ``network.requests`` (DNS and HTTP exchanges,
+    each part read under every name the task report writes it under,
+    :data:`_TRIAGE_REQUEST_PARTS`; a row with no part read is kept whole in a
+    channel of its kind, :data:`TRIAGE_UNREAD_REQUESTS_CHANNEL`), and each
+    task's ``dumped`` files for ``dropped_files``. Every one of these
     is mapped into the *consumer* shape (``network.dns`` rows as
     ``{request, type, answers: [{data}]}``, ``network.tcp``/``udp`` rows as
     ``{dst, dport}``) rather than passed through in Triage's own shape, so
@@ -1780,18 +1878,22 @@ def triage_overview_to_sandbox_report(
             if flow.get("country"):
                 host_row["country_name"] = str(flow["country"])
 
-        for req in _rows(net.get("requests")):
-            domain_req_field = req.get("domain_req")
-            domain_req = domain_req_field if isinstance(domain_req_field, dict) else None
-            domain_resp_field = req.get("domain_resp")
-            domain_resp = domain_resp_field if isinstance(domain_resp_field, dict) else None
-            web_req_field = req.get("web_req")
-            web_req = web_req_field if isinstance(web_req_field, dict) else None
-            web_resp_field = req.get("web_resp")
-            web_resp = web_resp_field if isinstance(web_resp_field, dict) else None
-            # The request's own fields beside the four it is read from (the flow
-            # it rode on, its time), kept on each row it gives.
-            req_extra = {k: v for k, v in req.items() if k not in _TRIAGE_REQUEST_READ}
+        exchanges, unread = _triage_exchanges(_rows(net.get("requests")))
+        unread_kinds: dict[str, list[dict[str, Any]]] = {}
+        for req in unread:
+            kind = next((str(k) for k, v in req.items() if isinstance(v, dict)), "")
+            unread_kinds.setdefault(kind, []).append(req)
+        for kind, kept in unread_kinds.items():
+            channel = TRIAGE_UNREAD_REQUESTS_CHANNEL + (f".{kind}" if kind else "")
+            _keep_task_block(channels, channel, str(task_name), kept)
+
+        for parts, req_extra in exchanges:
+            domain_req = parts.get(_DNS_QUESTION)
+            domain_resp = parts.get(_DNS_ANSWER)
+            web_req = parts.get(_HTTP_REQUEST)
+            web_resp = parts.get(_HTTP_RESPONSE)
+            # ``req_extra``: the exchange's own fields beside its parts (the flow
+            # it rode on, its index, its time), kept on each row it gives.
 
             if domain_req is not None:
                 answers = [
@@ -1836,16 +1938,14 @@ def triage_overview_to_sandbox_report(
 
             if web_req is not None:
                 parsed_url = urlsplit(str(web_req.get("url") or ""))
-                headers_field = web_req.get("headers")
-                headers = headers_field if isinstance(headers_field, dict) else {}
                 http_row: dict[str, Any] = {
                     "host": parsed_url.hostname or "",
                     "uri": parsed_url.path or "/",
                     "method": str(web_req.get("method") or ""),
-                    "status": (web_resp or {}).get("status"),
+                    "status": _status((web_resp or {}).get("status")),
                     "port": parsed_url.port,
                     "encrypted": parsed_url.scheme == "https",
-                    "user_agent": str(headers.get("User-Agent") or ""),
+                    "user_agent": _header(web_req.get("headers"), "User-Agent"),
                 }
                 # The whole request and answer beyond those fields (the URL with
                 # its query, every header, the answer's own fields).
