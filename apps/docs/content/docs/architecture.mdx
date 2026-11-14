@@ -1836,9 +1836,11 @@ the entries cited by the statements that name the technique — its analyst
 claims and findings, a map the judge made, and the entry of an asserting tool
 (capa, Sigma, YARA, LOLBin, sandbox signatures) whose structured output names
 it. An entry that only looked the catalogue up, for any technique, is in no
-technique's set. An edge to a technique whose statements cite no ledger entry
-carries `x_malspark_evidence_note: "no ledger entry"` in place of the ids. A malware object the export mints from the family
-name carries the attribution's `family_evidence_ids`. Nothing else gets either
+technique's set. The sandbox items among the technique's sources go beside
+the ids in `x_malspark_evidence_note` (`"sandbox items: proc:85"`); an edge to
+a technique whose statements cite no ledger entry and that has no item carries
+`x_malspark_evidence_note: "no ledger entry"` in place of the ids. A malware
+object the export mints from the family name carries the attribution's `family_evidence_ids`. Nothing else gets either
 property, and no object is matched by value.
 
 The tie from a finding is per finding, not per technique. A finding's
@@ -5047,13 +5049,14 @@ is assembled from what the run gathered rather than recomputed beside it:
   in the analyst report's ATT&CK table, the STIX `uses` edge, the MISP
   technique attribute's comment (`evidence: …`), the Navigator layer's
   comment, the ATT&CK defence rows and `evidence_ids` on each
-  `/reports/{id}/mitre` row. A technique whose statements cite no ledger entry
-  — one the judge alone names, for one — says so on each: "no ledger entry" in a
-  text cell or comment, `x_malspark_evidence_note` on the STIX edge, `[]` in
-  the API. Other ids a surface shows beside the set are named for what they
-  are: the entries of the rules that matched the technique follow it in the
-  Markdown cell as "rule matches", and the sandbox items among its sources as
-  "sandbox items" in the Navigator comment and the defence rows. A row stored
+  `/reports/{id}/mitre` row. Every one of them prints the sandbox items among
+  the technique's sources beside the set, named apart: "sandbox items: …" in a
+  text cell or comment and in `x_malspark_evidence_note` on the STIX edge,
+  `sandbox_items` in the API. A technique whose statements cite no ledger
+  entry and that has no item — one the judge alone names, for one — says so on
+  each: "no ledger entry" in a text cell or comment, `x_malspark_evidence_note`
+  on the STIX edge, `[]` in the API. The entries of the rules that matched the
+  technique follow the set in the Markdown cell as "rule matches". A row stored
   before the set was recorded reads as the entries among its `sources` and
   those its statements write. The evidence bundles shown to the composer list
   a technique by its id, name and detonation mark alone. What the

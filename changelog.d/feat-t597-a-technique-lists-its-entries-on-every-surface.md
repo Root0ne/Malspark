@@ -9,11 +9,11 @@
   STIX `uses` edge (`x_malspark_evidence_refs`), the MISP technique attribute's comment, the
   ATT&CK Navigator layer's comment, the ATT&CK defence rows and each `/reports/{id}/mitre` row
   (`evidence_ids`) print that set, read through one function; nothing is asked of a model for
-  it. A technique whose statements cite no ledger entry says so on each surface: "no ledger entry" in
-  a cell or comment, `x_malspark_evidence_note` on the STIX edge and `[]` in the API. The
-  entries of the rules that matched a technique follow the set in the Markdown cell as "rule
-  matches", and the sandbox items among its sources are named as such in the Navigator
-  comment and the defence rows. A report stored before the set was recorded reads as the
+  it. Each prints the sandbox items among the technique's sources beside the set, named
+  apart ("sandbox items: …"; `sandbox_items` in the API). A technique whose statements cite no
+  ledger entry and that has no item says so on each surface: "no ledger entry" in a cell or
+  comment, `x_malspark_evidence_note` on the STIX edge and `[]` in the API. The entries of the
+  rules that matched a technique follow the set in the Markdown cell as "rule matches". A report stored before the set was recorded reads as the
   entries among a technique's sources and those its statements write.
 - **A table row's id is checked against the entries the row cites (T-597).** A composed row
   that states an `id` (a command's) and cites entries is held where one cited entry holds

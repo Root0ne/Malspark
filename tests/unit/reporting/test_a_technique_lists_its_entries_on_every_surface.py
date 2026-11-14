@@ -324,3 +324,90 @@ class TestEverySurfacePrintsTheSet:
 
         assert by_id[CLAIMED]["evidence_ids"] == EXPECTED
         assert by_id[JUDGE_ONLY]["evidence_ids"] == []
+
+
+def _with_items() -> MalwareReport:
+    """The report with a sandbox item beside the claimed technique's entries, and the
+    judge-only technique resting on sandbox items alone."""
+    report = _report()
+    _mapping(report, CLAIMED).sources.append("net:3")
+    _mapping(report, JUDGE_ONLY).sources.extend(["proc:85", "sig:2"])
+    for cell in report.capability_matrix:
+        if cell.technique_id == CLAIMED:
+            cell.sources.append("net:3")
+        if cell.technique_id == JUDGE_ONLY:
+            cell.sources.extend(["proc:85", "sig:2"])
+    return report
+
+
+class TestEverySurfacePrintsTheSandboxItemsBesideTheSet:
+    WITH_ITEM = f"{', '.join(EXPECTED)}; sandbox items: net:3"
+    ITEMS_ONLY = "sandbox items: proc:85, sig:2"
+
+    def test_the_words(self) -> None:
+        assert technique_evidence_words({"evidence_ids": [], "sources": ["proc:85"]}) == (
+            "sandbox items: proc:85"
+        )
+
+    def test_the_markdown_attack_table(self) -> None:
+        rows = _attack_rows(MarkdownRenderer().render(_with_items()))
+
+        assert rows[CLAIMED][-1] == self.WITH_ITEM
+        assert rows[JUDGE_ONLY][-1] == self.ITEMS_ONLY
+
+    def test_the_analyst_attack_table(self) -> None:
+        text = MarkdownRenderer(layout=ANALYST).render(_with_items())
+
+        rows = {
+            cells[1]: cells
+            for line in text.splitlines()
+            if len(cells := [c.strip() for c in line.strip().strip("|").split("|")]) == 5
+            and re.fullmatch(r"T\d{4}", cells[1])
+        }
+        assert rows[CLAIMED][-1].endswith("; sandbox items: net:3")
+        assert re.search(r"#cite-\d+", rows[CLAIMED][-1])
+        assert rows[JUDGE_ONLY][-1] == self.ITEMS_ONLY
+
+    def test_the_misp_attribute_and_the_navigator_layer(self) -> None:
+        report = _with_items()
+        attributes = build_misp_attributes(report, [], owner="job")
+        (judged,) = [a for a in attributes if str(a["value"]).startswith(JUDGE_ONLY + " ")]
+        layer = build_layer(report.model_dump(mode="json"))
+        comments = {t["techniqueID"]: t["comment"] for t in layer["techniques"]}
+
+        assert f"evidence: {self.ITEMS_ONLY}" in str(judged["comment"])
+        assert comments[CLAIMED] == self.WITH_ITEM
+        assert comments[JUDGE_ONLY] == self.ITEMS_ONLY
+
+    def test_the_stix_uses_edge(self) -> None:
+        report = _with_items()
+        objects = (
+            ExtendedSTIXRenderer()
+            .render(report, _judge(), ledger_ids=LEDGER)
+            .model_dump(mode="json")["objects"]
+        )
+        edges = {
+            o["target_ref"]: o
+            for o in objects
+            if o["type"] == "relationship" and o["relationship_type"] == "uses"
+        }
+
+        claimed = edges[attack_pattern_id(CLAIMED)]
+        judged = edges[attack_pattern_id(JUDGE_ONLY)]
+        assert claimed[EVIDENCE_REFS_PROPERTY] == EXPECTED
+        assert claimed[EVIDENCE_NOTE_PROPERTY] == "sandbox items: net:3"
+        assert EVIDENCE_REFS_PROPERTY not in judged
+        assert judged[EVIDENCE_NOTE_PROPERTY] == self.ITEMS_ONLY
+
+    def test_the_api_technique_list(self) -> None:
+        mitre = _extract_mitre({"malware_report": _with_items().model_dump(mode="json")}) or []
+        by_id = {row["technique_id"]: row for row in mitre}
+
+        assert by_id[CLAIMED]["sandbox_items"] == ["net:3"]
+        assert by_id[JUDGE_ONLY]["evidence_ids"] == []
+        assert by_id[JUDGE_ONLY]["sandbox_items"] == ["proc:85", "sig:2"]
+        assert "sandbox_items" not in {
+            k
+            for row in _extract_mitre({"malware_report": _report().model_dump(mode="json")}) or []
+            for k in row
+        }
