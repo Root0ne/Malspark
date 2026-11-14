@@ -350,7 +350,14 @@ class TestTheOperandReader:
         assert held <= compared_operands(code)
 
     @pytest.mark.parametrize(
-        "code", ["cmp eax, ebx", "cmpl %eax,%ebx", "x = arr[4];", "if (c == 4 + k) {}"]
+        "code",
+        [
+            "cmp eax, ebx",
+            "cmpl %eax,%ebx",
+            "x = arr[4];",
+            "if (c == 4 + k) {}",
+            "cmp x0, [x1, #4, lsl #3]",
+        ],
     )
     def test_a_compare_without_a_number_or_a_sum_holds_none(self, code: str) -> None:
         assert 4 not in compared_operands(code)
@@ -537,6 +544,7 @@ class TestAnInstructionPlaceIsReadByItsCharacters:
             "add a cmp loop, x",
             "a cmp byte patterns, x",
             '{"summary": "uses cmp eax, foo+4 and returns"}',
+            'the note says "cmp eax, foo+4" twice',
         ],
     )
     def test_prose_stays_prose(self, line: str) -> None:
@@ -582,6 +590,13 @@ class TestAnInstructionPlaceIsReadByItsCharacters:
 
         assert cited_id_violations(payload, texts) == []
 
+    def test_a_prefix_read_two_ways_is_read_once(self) -> None:
+        # ``ab:`` is a label and a byte with a colon: each token is taken once.
+        line = "ab: " * 38 + "x cmp eax, foo+4"
+
+        assert _read_compared_operands(line) == (frozenset(), False)
+        assert_under(lambda: _read_compared_operands(line), 0.5, what="a prefix of labels")
+
     def test_a_long_prefix_is_read_in_linear_time(self) -> None:
         # Lines of listing marks, then compares after a prefix longer than an
         # instruction's place: none is read back past its own line.
@@ -600,6 +615,7 @@ class TestAnInstructionIsReadToItsEnd:
             ("0x401000: cmp eax, 4                    ; switch 5 cases", {4}),
             ("0x401000: cmp eax, 4", {4}),
             ('{"opcode": "cmp eax, 4"}', {4}),
+            ("0x401000: repe cmpsb ; compare\n0x401002: cmp eax, 4", {4}),
         ],
     )
     def test_an_instruction_ends_at_a_comment_a_quote_or_its_line(
@@ -617,9 +633,11 @@ class TestAnInstructionIsReadToItsEnd:
             "0x401000: cmp dword ptr [rbp + " + "x" * 120 + "], 4",
             "0x401000: cmp eax, " + "S" * 210 + "+4",
             "0x401000: cmp eax, " + "S" * 210,
+            "0x401000: cmp eax,",
+            '["0x401000: cmp [eax]",4]',
         ],
     )
-    def test_an_operand_past_the_bound_is_a_compare_not_taken(self, line: str) -> None:
+    def test_operands_not_taken_to_the_end_are_a_compare_not_taken(self, line: str) -> None:
         assert _read_compared_operands(line) == (frozenset(), True)
 
     def test_an_operand_past_the_bound_in_prose_is_no_compare(self) -> None:

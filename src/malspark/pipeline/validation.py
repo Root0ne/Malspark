@@ -9937,16 +9937,15 @@ _OPERAND_NAME_RE = re.compile(r"%?[A-Za-z_.][\w.$@]*", re.ASCII)
 _INSTRUCTION_PREFIXES = (
     "lock", "rep", "repe", "repz", "repne", "repnz", "notrack", "bnd", "xacquire", "xrelease",
 )  # fmt: skip
-# What may stand before an instruction on its line, after the opening of a
-# JSON string that holds it: characters that are not word characters (a
-# listing's columns and flow marks), number tokens (an address, its bytes:
-# hex digits with a decimal one, or two hex letters), a ``label:``, a
-# ``<symbol+offset>`` and an instruction prefix. A ``cmp`` after other
+# What may stand before an instruction, from its line's start or from the
+# opening of a JSON string that holds it: characters that are not word
+# characters (a listing's columns and flow marks), number tokens (an address,
+# its bytes: hex digits with a decimal one, or two hex letters), a
+# ``label:``, a ``<symbol+offset>`` and an instruction prefix. A ``cmp`` after other
 # words is prose: its numbers are read where every operand is taken, and an
 # operand not taken there is no doubt about the code. Each token is taken
 # whole and never read again (``*+``), so the place is read in linear time.
 _INSTRUCTION_PLACE_RE = re.compile(
-    r"(?:[\[{,\s]*(?:\"[\w.-]*\"\s*:\s*)?\")?"
     r"(?:<[\w.$@]*(?:[+-]\w+)?>"
     rf"|\b(?:{'|'.join(_INSTRUCTION_PREFIXES)})\b"
     r"|\b[a-z_][\w.$@]*:"
