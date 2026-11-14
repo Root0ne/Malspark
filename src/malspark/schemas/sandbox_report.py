@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import json
 import re
+from collections import deque
 from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any, cast
@@ -2009,6 +2010,14 @@ _TRIAGE_REQUEST_READ: frozenset[str] = frozenset(_TRIAGE_REQUEST_PARTS)
 # none): ``task.network.requests.<kind>``, so each such kind is counted by
 # its channel's rows.
 TRIAGE_UNREAD_REQUESTS_CHANNEL = "task.network.requests"
+# How many kinds of unread request rows a task keeps a channel each, and the
+# longest name such a kind's channel takes: the rows of every further kind,
+# or of a kind with a longer name, join the channel of rows of no kind, each
+# labelled with how many kinds the task folded into it. No row is cut, and a
+# kind the reader reads is never among them.
+TRIAGE_UNREAD_KINDS = 16
+TRIAGE_UNREAD_KIND_NAME = 64
+TRIAGE_UNREAD_KINDS_FOLDED_KEY = "request_kinds_folded"
 # The key a kept task block's row names its task by; the block itself is held
 # under the document's grouped-rows key (``schemas.sandbox_document``).
 TASK_KEY = "task_report"
@@ -2023,15 +2032,19 @@ def _triage_exchanges(
     A row's parts are read under every name :data:`_TRIAGE_REQUEST_PARTS`
     gives them, each part once (a second part of one kind on a row stays among
     the row's own fields). Rows naming the same flow and index are one
-    exchange, a question and its answer written on rows of their own, as long
-    as no part repeats; a row naming no flow or no index is an exchange by
-    itself. A row with no part read, and the rows of an exchange that holds an
-    answer with no question or request, are returned apart, whole. Linear in
-    the rows.
+    exchange, a question and its answer written on rows of their own: a part
+    joins the first exchange of its flow and index still waiting for it (an
+    answer the first open question, a question the first answer written
+    before it), in the order the rows come; a row naming no flow or no index
+    is an exchange by itself. A row with no part read, and the rows of an
+    exchange that holds an answer with no question or request, are returned
+    apart, whole. Linear in the rows.
     """
     held: list[tuple[dict[str, dict[str, Any]], dict[str, Any], list[dict[str, Any]]]] = []
     unread: list[dict[str, Any]] = []
-    open_at: dict[tuple[str, str], int] = {}
+    # The exchanges of each flow and index waiting for a part, by that part,
+    # in the order they were opened.
+    waiting: dict[tuple[str, str, str], deque[int]] = {}
     for req in rows:
         parts: dict[str, dict[str, Any]] = {}
         own: dict[str, Any] = {}
@@ -2046,16 +2059,21 @@ def _triage_exchanges(
             continue
         flow, index = req.get("flow"), req.get("index")
         where = (str(flow), str(index)) if _scalar_id(flow) and _scalar_id(index) else None
-        at = open_at.get(where) if where is not None else None
-        if at is not None and not parts.keys() & held[at][0].keys():
+        at = _waiting_for(waiting, where, parts, held) if where is not None else None
+        if at is not None:
             held[at][0].update(parts)
             for key, value in own.items():
                 held[at][1].setdefault(key, value)
             held[at][2].append(req)
-            continue
-        held.append((parts, own, [req]))
+        else:
+            held.append((parts, own, [req]))
+            at = len(held) - 1
         if where is not None:
-            open_at[where] = len(held) - 1
+            # What the exchange still waits for: each part's partner it lacks.
+            for kind in held[at][0]:
+                partner = _PART_PARTNER[kind]
+                if partner not in held[at][0]:
+                    waiting.setdefault((*where, partner), deque()).append(at)
     exchanges: list[tuple[dict[str, dict[str, Any]], dict[str, Any]]] = []
     for parts, own, kept in held:
         if _DNS_QUESTION in parts or _HTTP_REQUEST in parts:
@@ -2086,6 +2104,40 @@ def _request_process(flows: list[dict[str, Any]] | None, task: str) -> dict[str,
     if len(distinct) == 1:
         return {**distinct[0], PROCESS_TASK_KEY: task}
     return {TRAFFIC_FLOWS_KEY: [{**f, PROCESS_TASK_KEY: task} for f in distinct]}
+
+
+# Each part and the part that completes its exchange: a question and its answer.
+_PART_PARTNER: Mapping[str, str] = {
+    _DNS_QUESTION: _DNS_ANSWER,
+    _DNS_ANSWER: _DNS_QUESTION,
+    _HTTP_REQUEST: _HTTP_RESPONSE,
+    _HTTP_RESPONSE: _HTTP_REQUEST,
+}
+
+
+def _waiting_for(
+    waiting: dict[tuple[str, str, str], deque[int]],
+    where: tuple[str, str],
+    parts: Mapping[str, Any],
+    held: list[tuple[dict[str, dict[str, Any]], dict[str, Any], list[dict[str, Any]]]],
+) -> int | None:
+    """The first exchange of ``where`` waiting for the row's parts and holding none of them.
+
+    Exchanges that took the part since are dropped from the front as they are
+    met, so each is passed over once: linear in the rows.
+    """
+    first = next(iter(parts))
+    queue = waiting.get((*where, first))
+    while queue:
+        at = queue[0]
+        if first in held[at][0]:
+            queue.popleft()
+            continue
+        if parts.keys() & held[at][0].keys():
+            return None
+        queue.popleft()
+        return at
+    return None
 
 
 def _scalar_id(value: Any) -> bool:
@@ -2120,16 +2172,23 @@ def _status(value: Any) -> Any:
     return value
 
 
-def _keep_task_block(channels: dict[str, Any], name: str, task: str, value: Any) -> None:
+def _keep_task_block(
+    channels: dict[str, Any],
+    name: str,
+    task: str,
+    value: Any,
+    labels: Mapping[str, Any] | None = None,
+) -> None:
     """One task report's block, kept whole in the channel ``name`` as one row naming its task.
 
     The block is held by reference, as the task report holds it (``rows``):
     nothing of it is copied or wrapped, so a block costs one small row
-    whatever its size. Nothing with no value is kept.
+    whatever its size. ``labels`` join the task on the row, each item of the
+    block read with them. Nothing with no value is kept.
     """
     if value in (None, "", [], {}):
         return
-    channels.setdefault(name, []).append({TASK_KEY: task, TASK_ROWS_KEY: value})
+    channels.setdefault(name, []).append({TASK_KEY: task, **(labels or {}), TASK_ROWS_KEY: value})
 
 
 TRIAGE_NORMALISER_FILLS: frozenset[str] = frozenset(
@@ -2300,12 +2359,23 @@ def triage_overview_to_sandbox_report(
 
         exchanges, unread = _triage_exchanges(_rows(net.get("requests")))
         unread_kinds: dict[str, list[dict[str, Any]]] = {}
+        folded: set[str] = set()
         for req in unread:
             kind = next((str(k) for k, v in req.items() if isinstance(v, dict)), "")
+            if kind and kind not in unread_kinds:
+                named = len(unread_kinds) - ("" in unread_kinds)
+                if (
+                    kind in folded
+                    or named >= TRIAGE_UNREAD_KINDS
+                    or (len(kind) > TRIAGE_UNREAD_KIND_NAME)
+                ):
+                    folded.add(kind)
+                    kind = ""
             unread_kinds.setdefault(kind, []).append(req)
         for kind, kept in unread_kinds.items():
             channel = TRIAGE_UNREAD_REQUESTS_CHANNEL + (f".{kind}" if kind else "")
-            _keep_task_block(channels, channel, str(task_name), kept)
+            labels = {TRIAGE_UNREAD_KINDS_FOLDED_KEY: len(folded)} if folded and not kind else {}
+            _keep_task_block(channels, channel, str(task_name), kept, labels)
 
         for parts, req_extra in exchanges:
             domain_req = parts.get(_DNS_QUESTION)
