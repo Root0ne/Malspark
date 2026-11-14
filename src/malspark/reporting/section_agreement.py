@@ -539,6 +539,10 @@ class Passage:
     # Where such a passage's sentence the round leaves out is recorded, the sentence given:
     # never its text, which stays whole for the bundle (T-613).
     leave_out: Callable[[str], None] | None = None
+    # The label of the field a value cell fills ("channel encryption", "encryption scheme
+    # library"): a sentence of the cell with no subject of its own ("Not established.") is read
+    # against it, so a keep quotes a source about that field (T-613); ``""`` for any other.
+    field: str = ""
 
 
 def _ids(*sources: Any) -> frozenset[str]:
@@ -580,9 +584,18 @@ _BULLET_EMPTIED = "a bullet left with no sentence is not printed"
 
 
 def _record_passages(
-    prefix: str, label: str, rows: Sequence[Any], kind: str, *, number: bool = True
+    prefix: str,
+    label: str,
+    rows: Sequence[Any],
+    kind: str,
+    *,
+    number: bool = True,
+    record: str = "",
 ) -> list[Passage]:
-    """The written fields of each record of a list, one passage each, numbered from 1."""
+    """The written fields of each record of a list, one passage each, numbered from 1.
+
+    ``record`` names what one record is ("channel"): a value cell's field label is it and the
+    field's name (``Passage.field``)."""
     out: list[Passage] = []
     for index, row in enumerate(rows, 1):
         prose = _PROSE_FIELDS.get(type(row), ())
@@ -612,6 +625,7 @@ def _record_passages(
                     closing=cell,
                     whole=_CELL_WHOLE if cell else "",
                     emptied=_CELL_EMPTIED if cell else "",
+                    field=f"{record} {name.replace('_', ' ')}".strip() if cell else "",
                 )
             )
     return out
@@ -858,6 +872,7 @@ def passages_of(
                     [ta.encryption_scheme],
                     CLAIM_LED,
                     number=False,
+                    record="encryption scheme",
                 )
             )
     if not reads_code("communications"):
@@ -867,6 +882,7 @@ def passages_of(
                 "5. Technical analysis, channel row",
                 report.c2_channels,
                 CLAIM_LED,
+                record="channel",
             )
         )
     if ta is not None and ta.technique_procedures:
@@ -5063,6 +5079,7 @@ def _answer_violations(
             generic_words(by_id or {}),
             by_id or {},
             body=body,
+            field=passage.field,
         )
         if problem:
             out.append(
@@ -5334,8 +5351,14 @@ def _quote_problem(
     *,
     body: bool = False,
     speaking: bool = False,
+    field: str = "",
 ) -> str:
     """What is wrong with a kept closing sentence's quote, or ``""``.
+
+    ``field``: the label of the field a value cell fills (``Passage.field``). A sentence of
+    it with no subject of its own ("Not established.", "None.") is read with that label as
+    its subject, so its quote holds two (all, where fewer) of the label's words: "the request
+    path … is not established" backs no "Not established." of a channel's encryption (T-613).
 
     ``body``: a held absence of the body, left out only where the ledger's own lines hold
     it (:func:`_held_by_the_ledger`), which may be kept on the rows of an entry it cites:
@@ -5395,7 +5418,11 @@ def _quote_problem(
     ):
         return ""
     subject = kept_subject(sentence, generic)
-    if quote_overlap(sentence, quote, generic) < min(_QUOTE_SHARED, len(subject)):
+    labelled = _field_subject(field, generic) if not subject else frozenset()
+    if labelled:
+        if said_of(quote).count(labelled) < min(_QUOTE_SHARED, len(labelled)):
+            return f"shares too few of the words of the field the cell fills ({field})"
+    elif quote_overlap(sentence, quote, generic) < min(_QUOTE_SHARED, len(subject)):
         return "shares too few of the words the sentence denies something of"
     # What an item denied is ("protocol" of "The C2 protocol beyond the request keys in
     # the decoded strings"): a quote holding only its modifiers ("decoded strings") is
@@ -5416,6 +5443,14 @@ def _quote_problem(
                 " ".join(sorted(item)) for item in contradicted
             )
     return ""
+
+
+def _field_subject(field: str, generic: frozenset[str]) -> frozenset[str]:
+    """The words of a value cell's field label (``Passage.field``) a quote of a sentence with no
+    subject of its own holds: its content words, but the words saying what is denied and the
+    report's generic words, where others remain."""
+    own = frozenset(w for w in content_words(field) if w not in _ABSENCE_PREDICATES)
+    return (own - generic) or own
 
 
 def _states_the_denial(sentence: str, quote: str, generic: frozenset[str]) -> bool:
