@@ -320,6 +320,9 @@ CODE_OWNED: dict[tuple[str, str], frozenset[str]] = {
     # numbers and states, around values each wrapped in the helper where the
     # sentence is built.
     ("pipeline/validation.py", "stated_value_violations"): frozenset({"said"}),
+    # The table's row numbers and its list's field name, around each row's id
+    # and the entries named, each wrapped in the helper where written.
+    ("pipeline/validation.py", "cited_id_violations"): frozenset({"said"}),
     # The command table's row numbers and counts, and the values the platform
     # read from the code as whole numbers, around the code's place, its
     # expression and each row's id, each wrapped in the helper where written.
