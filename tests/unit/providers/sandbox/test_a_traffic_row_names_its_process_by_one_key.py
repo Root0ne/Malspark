@@ -186,6 +186,29 @@ class TestAFormatNamingItsProcessUnderAnotherKey:
         assert flows["203.0.113.5"][SAMPLE_TREE_KEY] is True
         assert requests["sample.example"][SAMPLE_TREE_KEY] is True
 
+    def test_a_dns_request_naming_its_own_process_is_marked_by_it(self) -> None:
+        payload = _mapped_payload()
+        payload["net"]["dns"] = [
+            {"request": "launcher.example", "type": "A", "answers": [], "proc": 10},
+            {"request": "sample.example", "type": "A", "answers": [], "proc": 11},
+        ]
+        mapping = MAPPED.model_copy(
+            update={
+                "dns": "$.net.dns[*]",
+                "field_names": {**MAPPED.field_names, "dns.platform_process": "proc"},
+            }
+        )
+        report = required_reader("generic").read(payload, provider="upload", mapping=mapping)
+        attribute_the_launcher(report, LAUNCHER)
+        rows = {row["request"]: row for row in report.network.dns}
+        assert rows["launcher.example"][LINEAGE_KEY] == LINEAGE_LAUNCHER
+        assert rows["sample.example"][SAMPLE_TREE_KEY] is True
+        network = _network(report)
+        names = {d.fqdn: d for d in network.domains}
+        assert names["launcher.example"].made_by is not None
+        assert names["launcher.example"].made_by.launcher == ["powershell.exe (procid 10)"]
+        assert names["sample.example"].sample_process_tree is True
+
     def test_a_mapping_declaring_no_such_field_names_no_process(self) -> None:
         mapping = MAPPED.model_copy(update={"field_names": {}})
         report = required_reader("generic").read(

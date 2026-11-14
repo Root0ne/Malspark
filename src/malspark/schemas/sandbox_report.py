@@ -1825,7 +1825,7 @@ def attribute_the_launcher(report: SandboxReport, launcher: Any) -> None:
     traffic: list[dict[str, Any]] = [
         row for row in (*report.network.tcp, *report.network.udp) if isinstance(row, dict)
     ]
-    traffic += [row for row in report.network.http if isinstance(row, dict)]
+    traffic += [row for row in (*report.network.http, *report.network.dns) if isinstance(row, dict)]
     traffic += [r.extra for r in report.network.dns_requests]
     traffic += [
         facts
