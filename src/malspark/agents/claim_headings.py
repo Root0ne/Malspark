@@ -50,7 +50,8 @@ CLAIM_HEAD_RE = re.compile(
 
 # A line begun as a numbered claim heading and ended by a dot with no note
 # before it, after the emphasis that closes the label or not (``CLAIM 3. …``,
-# ``**CLAIM 3.** …``, ``**CLAIM 3**. …``): ``CLAIM_HEAD_RE`` does not read it.
+# ``**CLAIM 3.** …``, ``**CLAIM 3**. …``): ``CLAIM_HEAD_RE`` never reads such
+# a line, a dot after a number with no note being no delimiter of its own.
 # A dot followed by a digit ends no heading (``CLAIM 3.5 …``). Each part is
 # read possessively, so a line costs time linear in its length.
 BEGUN_HEAD_RE = re.compile(
@@ -360,7 +361,7 @@ def _begun_unread(lines: list[str]) -> int:
             continue
         if begun and _CLAIM_FIELD_RE.match(line):
             count += 1
-        begun = BEGUN_HEAD_RE.match(line) is not None and CLAIM_HEAD_RE.match(line) is None
+        begun = BEGUN_HEAD_RE.match(line) is not None
     return count
 
 

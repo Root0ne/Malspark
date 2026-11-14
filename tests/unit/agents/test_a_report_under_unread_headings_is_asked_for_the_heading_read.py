@@ -226,8 +226,14 @@ class TestTheOneTurn:
 
     @pytest.mark.parametrize(
         "answer",
-        [_REPORT, _READ_IN_PART, "", _INTENTION],
-        ids=["fewer-claims", "read-in-part-again", "empty", "intention"],
+        [
+            _REPORT,
+            _READ_IN_PART,
+            _READ_WHOLE.replace("CLAIM 2 (revised). ", "CLAIM 2. "),
+            "",
+            _INTENTION,
+        ],
+        ids=["fewer-claims", "read-in-part-again", "another-claim-unread", "empty", "intention"],
     )
     def test_a_partly_read_answer_stands_when_the_reply_reads_no_better(self, answer: str) -> None:
         llm, analyst, kept = self._settle(_READ_IN_PART, [answer])

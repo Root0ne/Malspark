@@ -513,11 +513,12 @@ def _states_inside(label: str, opening: str) -> frozenset[int]:
 
 # The heading automaton's states inside an open note, by the bracket that
 # closes it: a character other than that bracket leaves them as they are. One
-# set for each way a note is reached: after a label with no number, after a
-# number, and after the emphasis that closes a numbered label.
+# set for each way a note is reached: after a label with no number, and after
+# a number, the emphasis that closes a numbered label or not (one note of the
+# automaton follows both).
 _NOTE_INSIDE = {
     _states_inside(label, opening): closer
-    for label in ("CLAIM ", "CLAIM 1 ", "CLAIM 1** ")
+    for label in ("CLAIM ", "CLAIM 1 ")
     for opening, closer in _NOTE_CLOSERS.items()
 }
 
