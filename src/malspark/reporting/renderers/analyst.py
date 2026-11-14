@@ -524,7 +524,10 @@ class VerbatimText:
     only. ``text`` is ``""`` where the place prints none of it. ``stored`` is the text as its
     place stores it and the bundle prints it (a claim with its citations, a note with the
     platform's words), ``""`` where that is ``text``: a sentence of it is recorded as it
-    stands there (:func:`as_stored`, T-613)."""
+    stands there (:func:`as_stored`, T-613). ``readings`` pairs each sentence ``text`` prints
+    with the sentence of ``stored`` it is printed from, where the place prints it with more
+    taken out than its citations and a claim's numbering (an analyst's statement without what
+    the debate wrote of a claim)."""
 
     id: str
     label: str
@@ -534,19 +537,25 @@ class VerbatimText:
     subject: tuple[str, ...] = ()
     whole: str = ""
     stored: str = ""
+    readings: tuple[tuple[str, str], ...] = ()
 
 
-def as_stored(sentence: str, stored: str) -> str:
+def as_stored(sentence: str, stored: str, readings: Iterable[tuple[str, str]] = ()) -> str:
     """The sentence of ``stored``, a text as its place stores it, that ``sentence`` of the
-    text the analyst report prints from it reads as: the same words, or those words with
-    the citations and the claim number the report takes out; ``sentence`` where none does
-    (T-613)."""
+    text the analyst report prints from it reads as: the one ``readings`` pairs with it
+    (``VerbatimText.readings``), the same words, or those words with the citations and the
+    claim number the report takes out, whatever the white space between them; ``sentence``
+    where none does (T-613)."""
     from malspark.reporting.section_agreement import _sentences_of
 
+    words = " ".join(sentence.split())
+    for printed, said in readings:
+        if " ".join(printed.split()) == words:
+            return said.strip()
     for found in _sentences_of(stored):
         said = found.strip()
-        if said == sentence or (
-            _CLAIM_NUMBER.sub("", _one_line(_CITATION_RUN.sub("", said)).strip()) == sentence
+        if " ".join(said.split()) == words or (
+            " ".join(_CLAIM_NUMBER.sub("", _one_line(_CITATION_RUN.sub("", said))).split()) == words
         ):
             return said
     return sentence
@@ -1055,8 +1064,9 @@ class _Analyst:
         a number stands with the confidence in words; any other is left out,
         with the spaces ``left_out_span`` takes, and counted where ``count``.
         A sentence is found as written and with its citations taken out, as
-        a procedure's first sentence is printed. One pass over the flagged
-        sentences, the longest first.
+        a procedure's first sentence is printed, wherever it stands
+        (``_Context.places``). One pass over the flagged sentences, the
+        longest first.
         """
         edits: list[tuple[int, int, str | None]] = []
         for sentence, _mark in self.ctx.flagged:
@@ -1064,12 +1074,9 @@ class _Analyst:
                 continue
             codes = self.ctx.flag_codes.get(sentence, [])
             for form in dict.fromkeys((sentence, _CITATION_RUN.sub("", sentence).strip())):
-                start = text.find(form) if form else -1
-                while start != -1:
-                    end = start + len(form)
+                for start, end in self.ctx.places(form, text, sentence) if form else []:
                     if not any(a < end and start < b for a, b, _ in edits):
                         edits.append((start, end, self._flag_rewrite(form, codes)))
-                    start = text.find(form, start + 1)
         for start, end, rewrite in sorted(edits, reverse=True):
             if rewrite is None:
                 start, end = left_out_span(text, start, end)
@@ -1106,11 +1113,13 @@ class _Analyst:
         subject: Iterable[str] = (),
         whole: str = "",
         stored: str = "",
+        readings: Iterable[tuple[str, str]] = (),
     ) -> tuple[str, int]:
         """``text``, which this report prints in its writer's own words under ``pid``, without
         each sentence of it the agreement question left out (``_Context.verbatim_left``), and
         how many were; recorded as shown (:class:`VerbatimText`), with its writer's ``whole``
-        text where it is part of one and the text as its place ``stored`` it. Never reworded:
+        text where it is part of one, the text as its place ``stored`` it and the ``readings``
+        of its sentences printed with more taken out. Never reworded:
         a sentence stands as written or is left out, and the bundle prints it whole (T-613)."""
         from malspark.reporting.section_agreement import left_out_of
 
@@ -1123,6 +1132,7 @@ class _Analyst:
             tuple(subject),
             whole,
             stored,
+            tuple(readings),
         )
         return left_out_of(text, self.ctx.verbatim_left.get(pid, ()))
 
@@ -2768,6 +2778,13 @@ class _Analyst:
                     (),
                     self._technique(cell.technique_id),
                     stored=str(statement),
+                    # Each sentence as the appendix prints it, beside the sentence of the
+                    # statement it is printed from.
+                    readings=[
+                        (printed, said)
+                        for said in sentences(written)
+                        if (printed := self._without_markers(said, named)[0]) and printed != said
+                    ],
                 )
                 left += cut
                 # Only what prints counts as printed: a statement left out whole counts none.

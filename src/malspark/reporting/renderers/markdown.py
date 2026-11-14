@@ -2523,6 +2523,10 @@ class MarkdownRenderer:
                     asserted_by, claimed_by = "—", ", ".join(str(s) for s in row) or "—"
                     associated = "—"
                 label = technique_label(str(tid), row if isinstance(row, dict) else None)
+                # The reason an id was not published, a judge's words among them: each
+                # sentence a check left standing marked as every other place marks it.
+                if ctx is not None:
+                    label = ctx.marked(label)
                 lines.append(_row(label, asserted_by, claimed_by, associated))
         # What the run sent beyond this machine, where its summary records it
         # (``analysis.disclosure``); a summary stored without the record shows
@@ -2859,6 +2863,13 @@ class _Context:
             ((sentence, " ".join(found)) for sentence, found in marks.items()),
             key=lambda pair: -len(pair[0]),
         )
+        # The sentences printed in their writer's own words left standing, each found by its
+        # words (:meth:`places`, T-613).
+        from malspark.reporting.section_agreement import LISTED_CODE
+
+        self._by_words = {
+            sentence for sentence, codes in self.flag_codes.items() if LISTED_CODE in codes
+        }
 
     def source_of(self, evidence_id: str) -> str:
         """Who recorded one ledger entry: its agent and its tool, or that it is unknown."""
@@ -2971,17 +2982,28 @@ class _Context:
         claimed: list[tuple[int, int]] = []
         inserts: list[tuple[int, str]] = []
         for sentence, mark in self.flagged:
-            start = text.find(sentence)
-            while start != -1:
-                end = start + len(sentence)
+            for start, end in self.places(sentence, text):
                 inside = any(a <= start and end <= b for a, b in claimed)
                 if not inside and not text.startswith(f" {mark}", end):
                     claimed.append((start, end))
                     inserts.append((end, mark))
-                start = text.find(sentence, start + 1)
         for end, mark in sorted(inserts, reverse=True):
             text = f"{text[:end]} {mark}{text[end:]}"
         return text
+
+    def places(self, form: str, text: str, sentence: str | None = None) -> list[tuple[int, int]]:
+        """Where ``form`` of the flagged ``sentence`` (``form`` itself where not given) stands
+        in ``text``, every place: as written, or, for a sentence printed in its writer's own
+        words left standing, by its words, whatever the white space between them (T-613)."""
+        if (form if sentence is None else sentence) in self._by_words:
+            words = r"\s+".join(re.escape(word) for word in form.split())
+            return [(found.start(), found.end()) for found in re.finditer(words, text)]
+        out: list[tuple[int, int]] = []
+        start = text.find(form)
+        while start != -1:
+            out.append((start, start + len(form)))
+            start = text.find(form, start + 1)
+        return out
 
     def publish_state(self, text: Any) -> str:
         """`` (no: <why>)`` for each value of a table cell this run does not publish, or ``""``.
@@ -3146,7 +3168,9 @@ class _Context:
         whole = self._defang(raw)
         if self.cell_citations is not None:
             whole = self.cell_citations(whole)
-        marks = list(dict.fromkeys(mark for sentence, mark in self.flagged if sentence in raw))
+        marks = list(
+            dict.fromkeys(mark for sentence, mark in self.flagged if self.places(sentence, raw))
+        )
         return f"{whole} {' '.join(marks)}" if marks else whole
 
     def sandbox_sentence(self) -> str:
@@ -4613,13 +4637,23 @@ def _joined_marks(rows: Sequence[Any]) -> list[Any]:
     return out
 
 
+# The words of the mark a sentence printed in its writer's own words carries where the
+# agreement round dropped it naming no source it is read against
+# (``section_agreement.LISTED_CODE``): asked about and left standing (T-613).
+_LEFT_STANDING_WORDS = "asked about and left standing"
+
+
 def _flag_mark(code: str, label: str, *, asked: bool = True) -> str:
     """The mark printed after a sentence a check left standing, in the platform's voice.
 
     ``asked=False`` for an answer that came by a path with no turn to ask on:
     the mark says the model was not asked.
     """
-    words = _FLAG_WORDS.get(code, "asked about and kept")
+    from malspark.reporting.section_agreement import LISTED_CODE
+
+    words = _FLAG_WORDS.get(code) or (
+        _LEFT_STANDING_WORDS if code == LISTED_CODE else "asked about and kept"
+    )
     said = f"{words}: {label}" if label else words
     return f"**[{said}; not asked]**" if not asked else f"**[{said}]**"
 
@@ -5715,7 +5749,7 @@ def _attack_row(
         # A judge's reason is shortened by its own rule and never cut into;
         # what follows it, and any other reason, keeps the cell's cut.
         status = "claimed, not published: " + status_shown(
-            cell.not_published, JUDGE_REASON_WIDTH, ctx.plain
+            cell.not_published, JUDGE_REASON_WIDTH, lambda text: ctx.plain(ctx.marked(text))
         )
     else:
         status = "published" + _corroborated_words(mapping, rules)
@@ -5723,7 +5757,7 @@ def _attack_row(
         if rule_only:
             status += f"; {rule_only}"
         if cell.note:
-            status += f"; {ctx.plain(judge_reasons_shown(cell.note)[0])}"
+            status += f"; {ctx.plain(ctx.marked(judge_reasons_shown(cell.note)[0]))}"
     # The platform's unresolved findings about this technique, beside its
     # row: the ATT&CK checks, and the judge crediting a source that never
     # named it. Matched on what the finding is about (``subject``), because
@@ -6603,8 +6637,9 @@ def _not_published_lines(report: MalwareReport, ctx: _Context | None = None) -> 
         return []
     lines = ["", _plain_heading("Claims that were not published as techniques"), ""]
     # The reason by the table's own rule, a judge's reason sentence by
-    # sentence, and every network value in it defanged.
-    plain = ctx.plain if ctx is not None else _defanged_text
+    # sentence, each sentence a check left standing marked as every other place marks it,
+    # and every network value in it defanged.
+    plain = (lambda text: ctx.plain(ctx.marked(text))) if ctx is not None else _defanged_text
     lines.extend(
         _item(
             f"{cell.technique_id} {cell.technique_name}: "

@@ -88,7 +88,7 @@ def _passages(prompt: str, rebuilt: Mapping[str, Any] | None = None) -> list[Any
     prompt shows neither a place label nor who wrote a verbatim text: each is rebuilt from
     the passage's identity, its id among the passages the stored report gives
     (``rebuilt``, ``section_agreement.passages_of``), a verbatim passage it gives none
-    reading with the live round's default writer (T-613)."""
+    reading with the live round's default writer and its place label offering none (T-613)."""
     from malspark.reporting.section_agreement import VERBATIM_DEFAULT, Passage
 
     kind = ""
@@ -120,7 +120,7 @@ def _passages(prompt: str, rebuilt: Mapping[str, Any] | None = None) -> list[Any
                 write=(lambda _text: None) if writable else None,
                 closing=pid in _CLOSING,
                 verbatim=verbatim,
-                place_label=getattr(same, "place_label", None),
+                place_label=getattr(same, "place_label", () if verbatim else None),
                 source_only=source_only,
             )
         )

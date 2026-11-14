@@ -73,3 +73,13 @@ def test_a_source_only_passage_is_read_as_a_source_with_its_text_whole() -> None
     )
     assert source.text == "The loader checks for a debugger [ev_0103]."
     assert source.source_only and source.verbatim and source.write is None
+
+
+def test_a_verbatim_passage_the_rebuilt_report_lacks_offers_no_place_label_as_live() -> None:
+    # The round gives a text printed in its writer's own words a place label, ``()`` where its
+    # place offers none; only a passage of any other kind reads with ``None``.
+    shown = {p.id: p for p in _passages(_PROMPT, {})}
+
+    assert shown["statements.T1057.1"].place_label == ()
+    assert shown["conclusion"].place_label is None
+    assert shown["string_resolution"].place_label is None

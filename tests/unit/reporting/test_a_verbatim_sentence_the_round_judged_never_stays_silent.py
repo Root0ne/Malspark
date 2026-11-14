@@ -80,7 +80,7 @@ def test_the_bundle_marks_it_where_its_place_s_copy_stands() -> None:
     bundle = MarkdownRenderer(layout=BUNDLE).render(report)
 
     (row,) = [line for line in bundle.splitlines() if "| T1622 | Debugger Evasion |" in line]
-    assert f"{_STORED} It then exits. **[asked about and kept: {_PID}]**" in row
+    assert f"{_STORED} It then exits. **[asked about and left standing: {_PID}]**" in row
     # The analyst report treats it as any sentence a check left standing: the bundle's.
     assert not _printed(report)
 

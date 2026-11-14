@@ -317,7 +317,8 @@ REWRITTEN_CODE = "agreement.rewritten"
 # round dropped naming none of the sources such a sentence is read against: recorded
 # as a flagged statement naming the passage, asked about and left standing, as the
 # text its place stores holds it. The analyst report treats it as any sentence a check
-# left standing, the bundle marking it where that text prints (T-613).
+# left standing, the bundle marking it as asked about and left standing wherever that text
+# prints, at every copy whatever the white space between its words (T-613).
 LISTED_CODE = "agreement.listed"
 # A rewrite of a limitations sentence that still says a call failed, or a
 # reading could not be made, where a later call redid it.
@@ -725,7 +726,7 @@ def _verbatim_passages(
             dict.fromkeys(
                 text.id
                 for said, where in places.items()
-                if cut[said].span(sentence) is not None
+                if cut[said].every(sentence)
                 for text in where
             )
         )
@@ -743,7 +744,7 @@ def _verbatim_passages(
                 cites=_ids(*(text.cites for text in where), said),
                 verbatim=_VERBATIM_WRITERS.get(first.writer, VERBATIM_DEFAULT),
                 leave_out=_flagged_out(report, first.id, _printed_at),
-                left_standing=_flagged_out(report, first.id, None, first.stored),
+                left_standing=_flagged_out(report, first.id, None, first.stored, first.readings),
                 place_label=(subject,) if subject else (),
             )
         )
@@ -781,6 +782,7 @@ def _flagged_out(
     pid: str,
     printed_at: Callable[[str], list[str]] | None,
     stored: str = "",
+    readings: Sequence[tuple[str, str]] = (),
 ) -> Callable[[str], None]:
     """Record a sentence of the passage ``pid`` printed in its writer's own words as a flagged
     statement naming the passage. Given ``printed_at``, one the round left out, under the
@@ -788,9 +790,9 @@ def _flagged_out(
     whichever text it stands in there (``models.FlaggedStatement.left_out``): that report
     leaves it out at each, and the bundle prints it whole beside the round's record. Else one
     a drop named no source for, recorded as listed: asked about and left standing, as it
-    stands in the text its place ``stored`` (``renderers.analyst.as_stored``), so the bundle
-    marks it where that text prints and the analyst report treats it as any sentence a check
-    left standing (T-613)."""
+    stands in the text its place ``stored`` (``renderers.analyst.as_stored``, read through the
+    ``readings`` of its sentences), so the bundle marks it where that text prints and the
+    analyst report treats it as any sentence a check left standing (T-613)."""
     from malspark.reporting.models import FlaggedStatement
     from malspark.reporting.renderers.analyst import as_stored
 
@@ -800,7 +802,7 @@ def _flagged_out(
             return
         row = (
             FlaggedStatement(
-                sentence=as_stored(sentence, stored) if stored else sentence,
+                sentence=as_stored(sentence, stored, readings) if stored else sentence,
                 code=LISTED_CODE,
                 label=pid,
             )
@@ -819,16 +821,16 @@ def _flagged_out(
 
 
 def left_out_of(text: str, sentences: Iterable[str]) -> tuple[str, int]:
-    """``text`` without each of ``sentences`` that stands in it whole and once
-    (:class:`_Sentences`), with the spaces ``left_out_span`` takes, and how many were left out:
-    how the analyst report leaves out a sentence of a passage printed in its writer's own
-    words that the round left out (T-613)."""
+    """``text`` without each of ``sentences`` at every place it stands in it whole, by its
+    words whatever the white space between them (``_Sentences.every``), with the spaces
+    ``left_out_span`` takes, and how many were left out: how the analyst report leaves out a
+    sentence of a passage printed in its writer's own words that the round left out (T-613)."""
     cut = _Sentences(text)
     spans = sorted(
         {
             left_out_span(text, found[0], found[1])
             for sentence in dict.fromkeys(sentences)
-            if (found := cut.span(sentence)) is not None
+            for found in cut.every(sentence)
         },
         reverse=True,
     )
@@ -4174,29 +4176,61 @@ def _sentence_units(text: str) -> tuple[dict[str, list[int]], set[int]]:
 
 
 class _Sentences:
-    """One passage's sentences, cut once, for every row about the passage."""
+    """One passage's sentences, cut once, for every row about the passage. ``by_words`` for a
+    text printed in its writer's own words, whose sentence is found by :meth:`every` (T-613)."""
 
-    def __init__(self, text: str) -> None:
+    def __init__(self, text: str, *, by_words: bool = False) -> None:
         self.text = text
         self.starts, self.ends = _sentence_units(text)
+        self.by_words = by_words
+        self._words: dict[str, list[tuple[int, int]]] | None = None
+
+    def every(self, sentence: str) -> list[tuple[int, int, str, int]]:
+        """Every place the sentence copied stands, in order, as :meth:`span` gives one: by its
+        words, whatever the white space between them, as copied or with the escapes a quoted
+        value is shown with read back, the first reading that stands. A sentence is the same
+        sentence however often the text holds it (T-613)."""
+        if self._words is None:
+            self._words = {}
+            for said, starts in self.starts.items():
+                for start in starts:
+                    self._words.setdefault(" ".join(said.split()), []).append(
+                        (start, start + len(said))
+                    )
+        for reading, form in enumerate((sentence, *pack_reads(sentence)), -1):
+            words = " ".join(form.split())
+            found = sorted(self._words.get(words, [])) if words else []
+            if found:
+                return [(start, end, self.text[start:end], reading) for start, end in found]
+        return []
 
     def span(self, sentence: str) -> tuple[int, int, str, int] | None:
-        """Where the one sentence copied stands, once, or ``None``.
+        """Where the one sentence copied stands, once, or ``None``; for a text cut
+        ``by_words``, the first place :meth:`every` gives.
 
         As copied, or with the escapes a quoted value is shown with read back
         (``written_forms.pack_reads``): the model was shown each passage quoted.
         The last item says which: ``-1`` as copied, else the reading's place in
         ``pack_reads``, so a rewrite is read back the same way. It has to be
-        exactly one sentence of the passage, standing there exactly once; a
-        fragment, a word, a run of sentences or a sentence the passage writes
-        twice is not one.
+        exactly one sentence of the passage; cut otherwise than ``by_words``, one
+        standing there exactly once: a fragment, a word, a run of sentences or a
+        sentence the passage writes twice is not one.
         """
+        if self.by_words:
+            places = self.every(sentence)
+            return places[0] if places else None
         for reading, form in enumerate((sentence, *pack_reads(sentence)), -1):
             copied = form.strip()
             found = self.starts.get(copied, []) if copied else []
             if len(found) == 1:
                 return found[0], found[0] + len(copied), copied, reading
         return None
+
+
+def _cut(passage: Passage) -> _Sentences:
+    """A passage's sentences, those of a text printed in its writer's own words found by
+    their words (``_Sentences.every``, T-613)."""
+    return _Sentences(passage.text, by_words=bool(passage.verbatim))
 
 
 def located(text: str, sentence: str) -> str | None:
@@ -6675,7 +6709,7 @@ def agreement_violations(
 
     def _sentences(passage: Passage) -> _Sentences:
         if passage.id not in cut:
-            cut[passage.id] = _Sentences(passage.text)
+            cut[passage.id] = _cut(passage)
         return cut[passage.id]
 
     out: list[Violation] = []
@@ -6891,7 +6925,7 @@ def rewrites_violations(
 
     def _sentences(passage: Passage) -> _Sentences:
         if passage.id not in cut:
-            cut[passage.id] = _Sentences(passage.text)
+            cut[passage.id] = _cut(passage)
         return cut[passage.id]
 
     out: list[Violation] = []
@@ -7346,7 +7380,7 @@ def apply_rows(
 
     def _sentences(passage: Passage) -> _Sentences:
         if passage.id not in cut:
-            cut[passage.id] = _Sentences(passage.text)
+            cut[passage.id] = _cut(passage)
         return cut[passage.id]
 
     counts = {
@@ -8050,7 +8084,7 @@ async def _ask(
         if passage is None:
             return None
         if passage.id not in located_in:
-            located_in[passage.id] = _Sentences(passage.text)
+            located_in[passage.id] = _cut(passage)
         span = located_in[passage.id].span(str(_field(row, "sentence") or ""))
         return (passage, span) if span is not None else None
 
@@ -8080,7 +8114,7 @@ async def _ask(
 
         def _sentences(passage: Passage) -> _Sentences:
             if passage.id not in cut:
-                cut[passage.id] = _Sentences(passage.text)
+                cut[passage.id] = _cut(passage)
             return cut[passage.id]
 
         shown = AgreementRow.model_validate(payload["sentences"][0])
