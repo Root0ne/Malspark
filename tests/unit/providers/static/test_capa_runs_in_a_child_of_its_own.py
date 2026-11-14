@@ -508,7 +508,6 @@ class TestTheRunDirectoryGoesWithTheJob:
         assert run.parent == _scratch_in_tmp / leaf / staging.CAPA_DIRECTORY
         assert not run.exists()
 
-    @pytest.mark.posix
     def test_with_no_job_directory_a_run_has_a_temporary_directory_of_its_own(
         self, tmp_path: Path, _scratch_in_tmp: Path
     ) -> None:
@@ -520,7 +519,9 @@ class TestTheRunDirectoryGoesWithTheJob:
         run = Path(seen["cwd"])
         assert run.parent == Path(tempfile.gettempdir())
         assert run.name.startswith("malspark-capa-")
-        assert seen["mode"] == "0o700"
+        # Windows has no mode bits to read; its directory is private by its owner's ACL.
+        if os.name != "nt":
+            assert seen["mode"] == "0o700"
         assert not run.exists()
         # Nothing under the staging base, where no job's teardown would look.
         assert not _scratch_in_tmp.exists()
