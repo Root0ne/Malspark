@@ -921,6 +921,45 @@ class TestServedTheRun:
         assert record["a"]["served"] == ["called"]
         assert record["b"]["served"] == ["offered"]
 
+    def test_each_of_an_agent_s_providers_is_read_by_the_source_its_entries_carry(
+        self,
+    ) -> None:
+        """Two providers serving one name, the second's offered prefixed: each is its own."""
+        from malspark.agents.composition import PROVIDER_ID_METADATA_KEY
+        from malspark.agents.tool_pinning import DECLARED_NAME_METADATA_KEY
+
+        class _Provider:
+            def __init__(self, key: str) -> None:
+                self.key = key
+
+            def own_tool_server(self) -> dict[str, Any]:
+                return {
+                    "server": f"{self.key}_server",
+                    "server_info": {},
+                    "manifest": None,
+                    "tools": ["decompile"],
+                }
+
+        offered = [
+            SimpleNamespace(name="decompile", metadata={PROVIDER_ID_METADATA_KEY: "a"}),
+            SimpleNamespace(
+                name="b__decompile",
+                metadata={PROVIDER_ID_METADATA_KEY: "b", DECLARED_NAME_METADATA_KEY: "decompile"},
+            ),
+        ]
+        container = _Container(tools={"reader": offered})
+        container._static_provider_cache = {  # type: ignore[attr-defined]
+            "a": _Provider("a"),
+            "b": _Provider("b"),
+        }
+        entries = [
+            {"agent": "reader", "server": None, "tool": "decompile", "source": "provider:a"},
+            {"agent": "reader", "server": None, "tool": "b__decompile", "source": "provider:b"},
+        ]
+        record = tools_record(container, entries)
+        assert record["a_server"]["served"] == ["called", "offered"]
+        assert record["b_server"]["served"] == ["called", "offered"]
+
     def test_a_provider_s_own_server_none_of_whose_tools_ran_is_attached(self) -> None:
         class _Provider:
             def own_tool_server(self) -> dict[str, Any]:
