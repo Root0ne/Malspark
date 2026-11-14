@@ -76,8 +76,10 @@ from malspark.tools.capabilities import NOT_REPORTED
 # The record's shape version: a reader that meets a newer one reads what it
 # knows. 2: a row's ``sampling`` may be ``None`` (not reported), rows carry
 # ``thinking`` and ``answered``, and ``tools`` is recorded. 3: ``detonations``
-# is recorded.
-ENVIRONMENT_VERSION = 3
+# is recorded. 4: an agent holding several static providers records them as
+# ``static_providers``, and a call whose entry names no server is credited to
+# the server of its ``provider:<id>`` source, for every agent.
+ENVIRONMENT_VERSION = 4
 
 # The server every entry of a step the pipeline runs in its own process is
 # recorded under (``pipeline.triage_pack.PIPELINE``), and the agent its server

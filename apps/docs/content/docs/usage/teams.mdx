@@ -54,19 +54,25 @@ beside Ghidra's `decompile_function` when Ghidra is listed first). The
 agent's prompt carries each provider's own text, with its renamed tools
 named as offered, and one sentence naming all of them.
 
-Each provider reads its own mirror of the sample. The agent is told one path
-(its first provider's); each provider's tools are given that provider's own
-mirror, and each provider opens the sample on its own mirror before the loop.
+Each provider reads the sample at its own path: its own mirror, or the host's
+path for a provider that needs no mirror. The agent is told one path (its first
+provider's); each provider's tools are given that provider's own path, and each
+provider opens the sample on its own path before the loop. A provider that needs
+a mirror and has none is never pointed at another provider's: its tools answer
+as they do for a sample that is not mirrored.
 A provider that does not open, or cannot open the sample while another one
-did, leaves the agent working with the others: the agent is told so, that
-provider's calls answer with its failure, and the run's limitations name it.
+did, leaves the agent working with the others: the agent is told the
+cause in one sentence, that provider's calls answer with its failure, and the
+run's limitations name it with the operator's remedy.
 
 What is recorded: each call's ledger entry carries the name the tool was
 called by and its provider's source (`provider:<id>`), and the tool's
-declaration is read by the name its provider gives it; the run summary's `environment.agents.<agent>.static_providers` lists every
-provider whose tools the agent was offered, in reference order; and the
-agent probe in the console lists every provider the agent holds, with the
-names its tools are offered under.
+declaration is read by the name its provider gives it; the run summary's
+`environment.agents.<agent>.static_providers` lists, for an agent holding
+several, every provider whose tools the agent was offered, in reference order,
+while an agent holding one provider is read through its entries' `provider:<id>`
+source; and the agent probe's answer carries `details.static_providers`, one
+row per provider the agent holds, with the names its tools are offered under.
 
 ```json
 "one_analyst": {

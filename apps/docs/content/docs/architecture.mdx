@@ -3710,22 +3710,32 @@ servers' collision rule: the first provider keeps its tools' names, a later
 provider's tool whose name is taken is offered as `<provider id>__<tool>`
 (`provider__<provider id>__<tool>` where that name is taken too), its declared
 name kept beside it, and each tool is marked with the provider it came from.
-Each provider's tools are given that provider's own mirror of the sample
-(`composition.provider_sample_paths`, read by `tool_pinning.pin_paths`): the
-agent is told its first provider's mirror, and that path and the sample's bare
-name are corrected to the mirror of the provider whose tool is called. Each
-provider opens the sample on its own mirror before the loop. A provider that
+Each provider's tools are given that provider's own path to the sample
+(`composition.provider_sample_paths`, read by `tool_pinning.pin_paths`): its
+own mirror, the host's path for a provider that needs no mirror
+(`capabilities.needs_sample_mirror`), and for one that needs a mirror and has
+none, no path: its tools keep what the model gave and answer as they do for a
+sample that is not mirrored, never with another provider's mirror. The agent is
+told its first provider's mirror, and that path and the sample's bare name are
+corrected to the path of the provider whose tool is called. Each provider opens
+the sample on its own path before the loop; one with no path is not asked to. A provider that
 does not open is left out of the agent's tools and named in the run's
 degradation reasons as `static provider '<id>' did not open`; one that cannot
-open the sample while another could is told to the agent in its hint, its
-calls answer with its failure as failed calls, and the run's limitations
-carry `agent '<agent>': static provider '<id>' could not open the sample`.
+open the sample while another could is told to the agent in its hint as the
+failure's cause (`SampleNotOpened.cause`, one sentence, without the operator's
+remedy), its calls answer with its failure as failed calls, and the run's
+limitations carry `agent '<agent>': static provider '<id>' could not open the
+sample` followed by the cause and the operator's remedy (`SampleNotOpened.fix`)
+in brackets.
 Only when every provider fails to open the sample is the loop not started.
 Each call's ledger entry carries its provider's source, `provider:<id>`; the
-run summary's `environment.agents.<agent>.static_providers` lists each
-provider whose tools the agent was offered, in reference order, and the
-`tools` part reads a provider's own server for each call by that source; the
-agent probe returns one `static_providers` row per provider. Everything that depends on the provider follows
+run summary's `environment.agents.<agent>.static_providers` lists, for an agent
+holding several, each provider whose tools the agent was offered, in reference
+order (an agent holding one provider is read through its entries' `provider:<id>`
+source); and the `tools` part credits a call of a provider's own server to that
+server by its entry's `provider:<id>` source, for every agent, when the entry
+names no server itself. The agent probe's answer carries `details.static_providers`,
+one row per provider. Everything that depends on the provider follows
 the agent rather than `core.static.provider`: the worker mirrors the sample
 once per provider any such agent of the team (or any agent they or the
 mediator can ask) opens, so a reverser on Ghidra under another global provider has a path the
