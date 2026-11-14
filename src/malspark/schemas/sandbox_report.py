@@ -42,7 +42,6 @@ from malspark.schemas.sandbox_document import (
     GROUP_ROWS_KEY,
     LAUNCHER_ATTRIBUTION_KEY,
     LAUNCHER_FILES_KEY,
-    LAUNCHER_IDENTIFIED_KEY,
     LAUNCHER_SIGNATURES_CHANNEL,
     LINEAGE_KEY,
     MEMBER_FACT_KEY,
@@ -1392,13 +1391,13 @@ DROPPED_BY_LAUNCHER_REACHED = (
     "in that task: the launcher's attribution is not established"
 )
 LINEAGE_LAUNCHER_UNSETTLED = "launcher, not established"
-# What the launcher's identification rests on in a task that states the parent
-# of the process running the sample where no script host naming the launcher
-# is an ancestor of the sample's tree (``LAUNCHER_IDENTIFIED_KEY``).
-LAUNCHER_IDENTIFIED_WITHOUT_PARENTS = (
-    "the script host's image, its command line naming the generated launcher member and its "
-    "not being in the sample's tree; no such host is an ancestor of the sample's process in "
-    "this task, so the parent chain the task states does not confirm it"
+# A file a script host naming the launcher wrote in a task that states the
+# parent of the process running the sample, where no such host is an ancestor
+# of the sample's tree: it stays among the sample's files, marked with the
+# launcher's lineage as not established.
+DROPPED_BY_UNCONFIRMED_HOST = (
+    "written by a script host naming the generated launcher that is an ancestor of no "
+    "process of the sample's tree: the launcher's attribution is not established"
 )
 # The platform's keys on a dropped file's row, set again on each reading.
 _DROPPED_PLATFORM_KEYS = frozenset({LINEAGE_KEY, LINEAGE_REASON_KEY, MEMBER_FACT_KEY})
@@ -1733,9 +1732,11 @@ def attribute_the_launcher(report: SandboxReport, launcher: Any) -> None:
       whose command line names the launcher member, and that the sample did
       not start, is the launcher's (``lineage: "launcher"``), where the task
       states the parent of a process running the sample as a process it
-      lists, only as an ancestor of a process of the sample's tree, unless no
-      such host is one there: then the rule without the parent chain holds,
-      and the report says so for that task (``LAUNCHER_IDENTIFIED_KEY``); in a
+      lists, only as an ancestor of a process of the sample's tree; where no
+      such host is one there, no host is the launcher's: the hosts outside the
+      sample's tree, their flows and the files they alone wrote are marked
+      :data:`LINEAGE_LAUNCHER_UNSETTLED` and stay in the sample's view, and
+      the report says the attribution was not established; in a
       task where the sample's tree is rooted, so is every process it started
       outside that tree, and in a task where it is not, the host alone: what
       it started is attributed to no one, since the sample may be among it
@@ -1835,14 +1836,18 @@ def attribute_the_launcher(report: SandboxReport, launcher: Any) -> None:
     # process it lists, the launcher's process is also an ancestor of a
     # process of the sample's tree: a script host the sample started outside
     # its own tree is not the launcher's. A task that states no such parent,
-    # or in which no process runs the sample, keeps the rule above alone, and
-    # so does a task with hosts none of which is such an ancestor: the
-    # report then says the identification rests on the rule alone there.
+    # or in which no process runs the sample, keeps the rule above alone. In
+    # a task where no host is such an ancestor, no host is the launcher's:
+    # the hosts outside the sample's tree are marked with the launcher's
+    # lineage as not established, nothing of theirs leaves the sample's
+    # view, and the report says the attribution was not established there.
     parented = {root[0] for root in roots if parent.get(root) in parent}
     ancestors = _ancestors(parent, sample_tree)
     chained = {h[0] for h in hosts if h in ancestors}
-    unchained = {h[0] for h in hosts} & rooted & parented - chained
-    hosts = {h for h in hosts if h[0] not in chained or h in ancestors}
+    unconfirmed = {
+        h for h in hosts - sample_tree if h[0] in rooted & parented and h[0] not in chained
+    }
+    hosts = {h for h in hosts if h[0] not in rooted & parented or h in ancestors}
     reached = _reach(parent, hosts - sample_tree) - sample_tree
     launcher_nodes = {n for n in reached if n[0] in rooted} | {
         n for n in hosts if n[0] not in rooted
@@ -1853,6 +1858,8 @@ def attribute_the_launcher(report: SandboxReport, launcher: Any) -> None:
             proc.extra[LINEAGE_KEY] = LINEAGE_SAMPLE
         elif node in launcher_nodes:
             proc.extra[LINEAGE_KEY] = LINEAGE_LAUNCHER
+        elif node in unconfirmed:
+            proc.extra[LINEAGE_KEY] = LINEAGE_LAUNCHER_UNSETTLED
     # A flow's row, and a request's that names its process (its own, or its
     # flow's), each flow's facts of a request on a shared flow id included.
     traffic: list[dict[str, Any]] = [
@@ -1881,6 +1888,12 @@ def attribute_the_launcher(report: SandboxReport, launcher: Any) -> None:
             continue
         if node in sample_tree:
             row[SAMPLE_TREE_KEY] = True
+            row.pop(FLOW_PROCESS_KEY, None)
+            continue
+        if node in unconfirmed:
+            # A host naming the launcher above no process of the sample's
+            # tree: whose its traffic is, the report does not settle.
+            row[LINEAGE_KEY] = LINEAGE_LAUNCHER_UNSETTLED
             row.pop(FLOW_PROCESS_KEY, None)
             continue
         if node[0] not in rooted and node not in launcher_nodes:
@@ -1955,7 +1968,10 @@ def attribute_the_launcher(report: SandboxReport, launcher: Any) -> None:
         if writers and not reason:
             # Written by the launcher's own process.
             if task or not tasked:
-                if nodes <= launcher_nodes:
+                if nodes <= unconfirmed:
+                    lineage, reason = LINEAGE_LAUNCHER_UNSETTLED, DROPPED_BY_UNCONFIRMED_HOST
+                    unsettled += 1
+                elif nodes <= launcher_nodes:
                     if task in reached:
                         # The started program reached the launcher's process:
                         # what it wrote may be the sample's doing, so it stays
@@ -1989,14 +2005,16 @@ def attribute_the_launcher(report: SandboxReport, launcher: Any) -> None:
         said = attribution_not_established(
             f"no listed process runs {names.sample} in task " + ", ".join(sorted(tasks - rooted))
         )
+    elif unconfirmed:
+        said = attribution_not_established(
+            f"parents are stated, and no host naming {names.script} is an ancestor of the "
+            "process running "
+            + f"{names.sample} in task "
+            + ", ".join(sorted({node[0] for node in unconfirmed}))
+        )
     else:
         said = ATTRIBUTION_ESTABLISHED
     report.extras[LAUNCHER_ATTRIBUTION_KEY] = said
-    report.extras.pop(LAUNCHER_IDENTIFIED_KEY, None)
-    if unchained:
-        report.extras[LAUNCHER_IDENTIFIED_KEY] = {
-            task: LAUNCHER_IDENTIFIED_WITHOUT_PARENTS for task in sorted(unchained)
-        }
     report.extras[UNATTRIBUTED_SIGNATURES_KEY] = unattributed
     report.extras[UNPLACED_MEMBER_FILES_KEY] = unplaced
     report.extras[LAUNCHER_FILES_KEY] = credited

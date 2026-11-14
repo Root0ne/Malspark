@@ -487,10 +487,11 @@ def _lineages(report: SandboxReport) -> dict[int, Any]:
 
 
 class TestNoHostAboveTheSampleSProcess:
-    """Parents stated and no host an ancestor of the tree: the rule without them holds."""
+    """Parents stated and no host an ancestor of the tree: no host is the launcher's."""
 
     def _reversed(self) -> dict[str, Any]:
-        # The started program's listed parent is a desktop process, not the host.
+        # The started program's listed parent is a desktop process, not the host;
+        # the host reaches an address of its own.
         task = _json("behavioral1.json")
         task["processes"].append(
             {"procid": 50, "procid_parent": 0, "pid": 500, "image": "C:\\Windows\\explorer.exe"}
@@ -498,29 +499,45 @@ class TestNoHostAboveTheSampleSProcess:
         for proc in task["processes"]:
             if proc["procid"] == 86:
                 proc["procid_parent"] = 50
+        task["network"]["flows"].append(
+            {"id": 60, "proto": "tcp", "dst": "203.0.113.60:443", "procid": 84}
+        )
         return task
 
-    def test_the_launcher_s_signatures_move_off_the_sample_as_without_parents(self) -> None:
-        live = _one_task(_json("behavioral1.json"))
+    def test_the_attribution_is_not_established_with_the_reason(self) -> None:
         report = _one_task(self._reversed())
-        assert _lineages(report)[84] == "launcher" and _lineages(report)[86] == "sample"
-        moved = report.channels.get("launcher.signatures") or []
-        assert moved and len(moved) == len(live.channels.get("launcher.signatures") or [])
-        assert [s.name for s in report.signatures] == [s.name for s in live.signatures]
+        mark = sandbox_document(report)["launcher_attribution"]
+        assert mark.startswith("not established: ")
+        assert "no host naming launch.ps1 is an ancestor" in mark and "behavioral1" in mark
+        assert "parents are stated" in mark
+        assert (
+            sandbox_status(
+                {**sandbox_document(report), LAUNCH_KEY: _launch_mark(FIRST)}
+            ).statement.count("could not be established")
+            == 1
+        )
 
-    def test_the_report_says_what_the_identification_rests_on_in_that_task(self) -> None:
-        from malspark.schemas import sandbox_document as document
-        from malspark.schemas import sandbox_report as reading
-
+    def test_nothing_is_moved_off_the_sample(self) -> None:
+        unread = _read("overview.json", {"behavioral1": self._reversed()})
         report = _one_task(self._reversed())
-        assert report.extras[document.LAUNCHER_IDENTIFIED_KEY] == {
-            "behavioral1": reading.LAUNCHER_IDENTIFIED_WITHOUT_PARENTS
-        }
-        assert document.LAUNCHER_IDENTIFIED_KEY in document.PLATFORM_MARKS
-        # Where the host is an ancestor of the tree, the report says nothing more.
-        live = _one_task(_json("behavioral1.json"))
-        assert document.LAUNCHER_IDENTIFIED_KEY not in live.extras
-        # Read again, the report is the same.
+        assert not report.channels.get("launcher.signatures")
+        assert [s.name for s in report.signatures] == [s.name for s in unread.signatures]
+        dropped, platform = _listed(report)
+        assert platform == [] and len(dropped) == len(unread.dropped_files)
+
+    def test_the_host_s_rows_stay_in_the_sample_s_view_marked_disputed(self) -> None:
+        report = _one_task(self._reversed())
+        lineages = _lineages(report)
+        assert lineages[84] == LINEAGE_LAUNCHER_UNSETTLED and lineages[86] == "sample"
+        (flow,) = [f for f in report.network.tcp if f["dst"] == "203.0.113.60"]
+        assert flow[LINEAGE_KEY] == LINEAGE_LAUNCHER_UNSETTLED and SAMPLE_TREE_KEY not in flow
+        written = [r for r in report.dropped_files if r.get("procid") == 84]
+        assert written and all(r[LINEAGE_KEY] == LINEAGE_LAUNCHER_UNSETTLED for r in written)
+        dropped, _platform = _listed(report)
+        assert {r[LINEAGE_KEY] for r in dropped} == {LINEAGE_LAUNCHER_UNSETTLED}
+
+    def test_read_again_the_report_is_the_same(self) -> None:
+        report = _one_task(self._reversed())
         before = report.model_dump()
         attribute_the_launcher(report, FIRST)
         assert report.model_dump() == before
@@ -538,7 +555,7 @@ class TestNoHostAboveTheSampleSProcess:
         lineages = _lineages(report)
         assert lineages[84] == "launcher" and lineages[86] == "sample"
         assert lineages[91] is None
-        assert "launcher_identified_by" not in report.extras
+        assert sandbox_document(report)["launcher_attribution"] == "established"
 
 
 class TestTheCostIsLinear:

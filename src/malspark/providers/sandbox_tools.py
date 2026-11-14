@@ -42,6 +42,7 @@ from malspark.schemas.sandbox_document import MEMBER_FACT_KEY, place, signature_
 from malspark.schemas.sandbox_report import (
     LINEAGE_KEY,
     LINEAGE_LAUNCHER,
+    LINEAGE_LAUNCHER_UNSETTLED,
     LINEAGE_MARKED_STORED,
     LINEAGE_REASON_KEY,
     LINEAGE_SAMPLE,
@@ -362,10 +363,15 @@ def _launcher_attributed(report: dict[str, Any], processes: list[Any]) -> bool:
 
 
 def _launch_lineage(proc: dict[str, Any]) -> str:
-    """The lineage a launch record gave a process (the launcher's or the sample's); ``""`` else."""
+    """The lineage a launch record gave a process (the launcher's, not established, or the
+    sample's); ``""`` else."""
     extra = proc.get("extra")
     value = extra.get(LINEAGE_KEY) if isinstance(extra, dict) else None
-    return str(value) if value in (LINEAGE_LAUNCHER, LINEAGE_SAMPLE) else ""
+    return (
+        str(value)
+        if value in (LINEAGE_LAUNCHER, LINEAGE_LAUNCHER_UNSETTLED, LINEAGE_SAMPLE)
+        else ""
+    )
 
 
 def _marked_as_the_sample(proc: dict[str, Any]) -> bool:

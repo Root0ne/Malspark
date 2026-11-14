@@ -640,10 +640,12 @@ process it lists, the host must also be an ancestor of a process of the
 sample's tree, so a script host the sample started outside its own tree is
 not the launcher's; where it states no such parent, the identification rests
 on those three facts alone (the host's image, its command line naming the
-generated launcher member, its not being in the sample's tree), and so it does
-where it states one but no such host is an ancestor of the sample's tree: the
-report then names those tasks with the facts the identification rests on
-(`launcher_identified_by`, a mark of the platform's). Where the
+generated launcher member, its not being in the sample's tree). Where it
+states such a parent and no such host is an ancestor of the sample's tree, no
+host is the launcher's: the hosts, their flows and the files they alone wrote
+stay in the sample's view marked `launcher, not established`, nothing is moved
+to the launcher's, and the report says the attribution was not established in
+that task. Where the
 task holds the sample's tree, what the launcher's host started outside it is
 the launcher's too.
 Where no listed process runs `sample.exe` (the sandbox renamed or copied the
