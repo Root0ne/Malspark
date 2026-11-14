@@ -315,15 +315,14 @@ def _sentence_of(ends: Sequence[int], low: int, high: int, size: int) -> tuple[i
 class OwnWithdrawals:
     """What a revision's disputes withdraw of its own claims.
 
-    ``claims`` is ``(first, last, item, round written)`` per number or range
-    read as a withdrawal, as digits, the dispute item as the reason and
-    whether the reference wrote the round of the answer in force; ``items``
+    ``claims`` is ``(first, last, item)`` per number or range read as a
+    withdrawal, as digits, the dispute item as the reason; ``items``
     the items read so; ``spoken`` ``(first, last)`` per number or range of
     every other reference of its own an item writes: the item speaks for
     that claim, and withdraws nothing of it.
     """
 
-    claims: tuple[tuple[str, str, str, bool], ...] = ()
+    claims: tuple[tuple[str, str, str], ...] = ()
     items: tuple[str, ...] = ()
     spoken: tuple[tuple[str, str], ...] = ()
 
@@ -370,7 +369,7 @@ def read_own_withdrawals(items: Sequence[str], round_in_force: int | None) -> Ow
     :data:`OWN_LIST_WINDOW`; every other word is found in one pass over the
     item, so an item costs its length whatever the number of its references.
     """
-    claims: list[tuple[str, str, str, bool]] = []
+    claims: list[tuple[str, str, str]] = []
     read: list[str] = []
     spoken: list[tuple[str, str]] = []
     in_force = None if round_in_force is None else str(int(round_in_force))
@@ -445,7 +444,7 @@ def read_own_withdrawals(items: Sequence[str], round_in_force: int | None) -> Ow
                 spoken.extend(ranges)
                 continue
             found = True
-            claims.extend((first, last, item, written_round is not None) for first, last in ranges)
+            claims.extend((first, last, item) for first, last in ranges)
         if found:
             read.append(str(raw))
     return OwnWithdrawals(claims=tuple(claims), items=tuple(read), spoken=tuple(spoken))

@@ -924,23 +924,14 @@ def merge_revision(
     unread = read.unread
     disputes = [str(item) for item in getattr(revision, "dissent_items", None) or [] if item]
     # A dispute that rejects a claim of the analyst's own answer in force
-    # withdraws it, the item as its reason, where the item speaks to that
-    # claim: it shares a ledger id or an address with it, as a blocking line
-    # must, or its reference writes the round of the answer in force. Every
-    # other reference of its own speaks for the claim (``defended``).
+    # withdraws it, the item as its reason, read under the numbering of the
+    # answer in force. Every other reference of its own speaks for the claim
+    # (``defended``).
     own = read_own_withdrawals(disputes, getattr(in_force, "revision_round", None))
-    by_number = {block.number: block for block in first}
     defended: set[int] = set()
-    item_tokens: dict[str, frozenset[str]] = {}
     withdrew: set[str] = set()
-    for low, high, reason, round_written in own.claims:
+    for low, high, reason in own.claims:
         for number in _known_in(low, high, ordered):
-            if not round_written:
-                if reason not in item_tokens:
-                    item_tokens[reason] = line_tokens(reason)
-                if not item_tokens[reason] & _tokens_of(by_number[number]):
-                    defended.add(number)
-                    continue
             withdrawn.setdefault(number, reason)
             withdrew.add(reason)
     for low, high in own.spoken:
