@@ -39,9 +39,13 @@ from malspark.core.report_formats import SignatureScale, reader_display_name
 from malspark.schemas.sandbox_document import (
     GROUP_ROWS_KEY,
     LAUNCHER_ATTRIBUTION_KEY,
+    LAUNCHER_FILES_KEY,
     LAUNCHER_SIGNATURES_CHANNEL,
     LINEAGE_KEY,
+    MEMBER_FACT_KEY,
     UNATTRIBUTED_SIGNATURES_KEY,
+    UNPLACED_MEMBER_FILES_KEY,
+    UNSETTLED_LAUNCHER_FILES_KEY,
     kept_source,
     pid_of,
     signature_pids,
@@ -1277,6 +1281,19 @@ PROCESS_TASK_KEY = "platform_task"
 LINEAGE_REASON_KEY = "platform_lineage_reason"
 DROPPED_LAUNCHER = "the generated launcher"
 DROPPED_SAMPLE = "the submitted sample, unpacked"
+# A file the launcher's own process wrote or dumped (its memory regions, a
+# file its script host writes on start): the launcher's, by the writer's
+# lineage in the row's own task, where the started program did not reach the
+# launcher's process in that task. Where it did, the row stays among the
+# sample's files, marked with the launcher's lineage as not established.
+DROPPED_BY_LAUNCHER = "written by the generated launcher's process"
+DROPPED_BY_LAUNCHER_REACHED = (
+    "written by the generated launcher's process, which the started program reached "
+    "in that task: the launcher's attribution is not established"
+)
+LINEAGE_LAUNCHER_UNSETTLED = "launcher, not established"
+# The platform's keys on a dropped file's row, set again on each reading.
+_DROPPED_PLATFORM_KEYS = frozenset({LINEAGE_KEY, LINEAGE_REASON_KEY, MEMBER_FACT_KEY})
 # The values of the report's ``LAUNCHER_ATTRIBUTION_KEY`` mark: the sample's
 # own processes were told apart from the launcher's in every task that lists
 # a process, or they were not, and why (:func:`attribution_not_established`).
@@ -1309,31 +1326,42 @@ def attribution_not_established(reason: str) -> str:
 class _LauncherNames:
     """What a launch record's launcher block names: the generated members, hosts and digests."""
 
+    # Each member's file name, and its path inside the archive (lower case,
+    # forward slashes): the two are one for a member at the archive's root.
     sample: str
     script: str
     hosts: frozenset[str]
     script_sha256: str
     sample_sha256: str
+    sample_path: str = ""
+    script_path: str = ""
+
+
+def _member_path(value: Any) -> str:
+    """An archive member's path inside the archive, lower case with forward slashes."""
+    return "/".join(p for p in str(value or "").strip().lower().replace("\\", "/").split("/") if p)
 
 
 def _launcher_names(launcher: Any) -> _LauncherNames | None:
     """The generated names a launch record's launcher block holds; ``None`` without all three."""
     if not isinstance(launcher, Mapping):
         return None
-    sample = str(launcher.get("sample_member") or "").strip().lower()
-    script = str(launcher.get("launcher_member") or "").strip().lower()
+    sample_path = _member_path(launcher.get("sample_member"))
+    script_path = _member_path(launcher.get("launcher_member"))
     hosts = launcher.get("script_host_images")
     images = frozenset(
         str(h).strip().lower() for h in (hosts if isinstance(hosts, list | tuple) else []) if h
     )
-    if not (sample and script and images):
+    if not (sample_path and script_path and images):
         return None
     return _LauncherNames(
-        sample,
-        script,
+        sample_path.rsplit("/", 1)[-1],
+        script_path.rsplit("/", 1)[-1],
         images,
         str(launcher.get("launcher_sha256") or "").strip().lower(),
         str(launcher.get("sample_sha256") or "").strip().lower(),
+        sample_path,
+        script_path,
     )
 
 
@@ -1344,6 +1372,30 @@ def _folder(path: str) -> str:
     """The folder of a guest path, lower case with forward slashes; ``""`` for a bare name."""
     text = path.strip().strip('"').strip("'").replace("\\", "/")
     return text.rsplit("/", 1)[0].rstrip("/").lower() if "/" in text else ""
+
+
+def _archive_root(folder: str, member_path: str) -> str:
+    """The folder the archive was unpacked into, from the folder its member ``member_path`` is in.
+
+    ``""`` where the folder does not end in the member's own folder inside the archive.
+    """
+    inner = member_path.rsplit("/", 1)[0] if "/" in member_path else ""
+    if not inner:
+        return folder
+    return folder[: -len(inner) - 1] if folder.endswith("/" + inner) else ""
+
+
+# A guest path that names its place whole: a drive's, a share's or a root's.
+_PLACED_PATH = re.compile(r"^(?:[a-z]:/|/)")
+
+
+def _guest_place(path: str) -> str:
+    """A written file's guest path, lower case with forward slashes; ``""`` for one not whole.
+
+    The guest a launcher runs in is Windows, whose paths are read without case.
+    """
+    text = path.strip().strip('"').strip("'").replace("\\", "/").lower()
+    return text if _PLACED_PATH.match(text) else ""
 
 
 def _dropped_paths(row: Mapping[str, Any]) -> list[str]:
@@ -1372,6 +1424,140 @@ def _signature_nodes(
             return None
         nodes |= found
     return nodes
+
+
+# The fields a written file names the processes that wrote it under, the
+# process list's own id first: a sandbox that lists its processes by an id of
+# its own names the writer by that id too, beside the guest's pid.
+_WRITER_KEYS: tuple[str, ...] = ("procid", "pids", "pid", "process_id")
+
+
+def _writer_pids(row: Mapping[str, Any]) -> list[str]:
+    """The processes a written file's row names as its writer, by the first field naming one."""
+    for key in _WRITER_KEYS:
+        value = row.get(key)
+        pids = [
+            text.strip()
+            for one in (value if isinstance(value, list) else [value])
+            if one not in (None, "") and not isinstance(one, bool)
+            for text in str(one).split(",")
+            if pid_text(text.strip())
+        ]
+        if pids:
+            return pids
+    return []
+
+
+# What becomes of a written file the sample wrote that a member's facts touch
+# (:data:`MEMBER_FACT_KEY`): it holds the member's digest away from the
+# member's place, or it sits at the member's place with another digest.
+MEMBER_COPIED = "a copy of the archive member, away from the member's place"
+MEMBER_CHANGED = "at the archive member's place, with another digest"
+
+
+# The fields a signature's indicator names its source process and the process
+# it acted on under: the process list's own id first, then the guest's pid.
+_INDICATOR_SOURCE_KEYS: tuple[str, ...] = ("procid", "pid", "process_id")
+_INDICATOR_TARGET_KEYS: tuple[str, ...] = ("procid_target", "pid_target", "target_pid")
+
+
+def _indicator_pid(indicator: Mapping[str, Any], keys: tuple[str, ...]) -> str:
+    for key in keys:
+        pid = pid_of(indicator.get(key))
+        if pid:
+            return pid
+    return ""
+
+
+def _reached_launcher_tasks(
+    report: SandboxReport, by_pid: Mapping[str, set[_Node]], launcher_nodes: set[_Node]
+) -> set[str]:
+    """The tasks in which a process not of the launcher's acted on a launcher process.
+
+    Read from the signatures' indicators that name the process acted on (a
+    write into its memory, a thread created in it, a handle opened on it):
+    one whose target is a launcher process and whose source is not, or names
+    none, reaches the launcher in that task. The per-task signatures
+    (:data:`TASK_SIGNATURES_CHANNEL`) are read in their own task; a
+    signature's marks naming no task are read in each task that lists the
+    target's id. Linear in the indicators.
+    """
+    out: set[str] = set()
+    sources: list[tuple[str | None, Any]] = [
+        (None, signature.marks) for signature in report.signatures
+    ]
+    for row in report.channels.get(TASK_SIGNATURES_CHANNEL) or []:
+        if isinstance(row, dict) and isinstance(row.get(TASK_ROWS_KEY), list):
+            listed_in = str(row.get(TASK_KEY) or "")
+            sources.extend(
+                (listed_in, signature.get("indicators"))
+                for signature in row[TASK_ROWS_KEY]
+                if isinstance(signature, dict)
+            )
+    for task, indicators in sources:
+        for indicator in indicators if isinstance(indicators, list) else []:
+            if not isinstance(indicator, Mapping):
+                continue
+            target = _indicator_pid(indicator, _INDICATOR_TARGET_KEYS)
+            if not target:
+                continue
+            source = _indicator_pid(indicator, _INDICATOR_SOURCE_KEYS)
+            for node in by_pid.get(target, ()):
+                if task is not None and node[0] != task:
+                    continue
+                from_launcher = bool(source) and (node[0], source) in launcher_nodes
+                if node in launcher_nodes and not from_launcher:
+                    out.add(node[0])
+    return out
+
+
+def _member_reading(
+    row: Mapping[str, Any], names: _LauncherNames, roots: set[str]
+) -> tuple[str, dict[str, Any] | None, bool]:
+    """Whether a written file is the platform's copy of an archive member, and what it says else.
+
+    ``(reason, fact, unplaced)``. A file is a member's copy only at the
+    member's place, the folder the archive was unpacked into joined with the
+    member's path inside it, holding the member's digest where the row
+    states one. Elsewhere, a file with a member's digest is the sample's,
+    stated as a copy of the member, and one at the member's place with
+    another digest is the sample's, stated as changed (``fact``). A row that
+    states no whole guest path, or a report whose launcher folder is not
+    known, is read by its names and digest (:func:`_the_member`), and a
+    member found so is ``unplaced``.
+    """
+    paths = _dropped_paths(row)
+    digest = str(row.get("sha256") or "").strip().lower()
+    members = (
+        (names.script_path, names.script, names.script_sha256, DROPPED_LAUNCHER),
+        (names.sample_path, names.sample, names.sample_sha256, DROPPED_SAMPLE),
+    )
+    placed = {_guest_place(path) for path in paths} - {""}
+    if not roots or not placed:
+        files = {_basename(path) for path in paths}
+        where = {_folder(path) for path in paths} - {""}
+        # A copy elsewhere in the guest, where the report shows the launcher's
+        # folder, is the sample's own doing (a copy of itself it wrote).
+        if not (roots and where and not where & roots):
+            for _path, name, sha256, reason in members:
+                if _the_member(name, sha256, files, digest, bool(roots)):
+                    return reason, None, True
+        return "", None, False
+    places = [{f"{root}/{path}" for root in roots} for path, _n, _s, _r in members]
+    for (_path, _name, sha256, reason), at in zip(members, places, strict=True):
+        if placed & at and (not digest or not sha256 or digest == sha256):
+            return reason, None, False
+    for (path, _name, sha256, _reason), at in zip(members, places, strict=True):
+        if not sha256 or not digest:
+            continue
+        fact = ""
+        if placed & at and digest != sha256:
+            fact = MEMBER_CHANGED
+        elif digest == sha256 and not placed & at:
+            fact = MEMBER_COPIED
+        if fact:
+            return "", {"fact": fact, "member": path, "member_at": sorted(at), "at": paths}, False
+    return "", None, False
 
 
 def _the_member(name: str, sha256: str, files: set[str], digest: str, folder_known: bool) -> bool:
@@ -1419,10 +1605,27 @@ def attribute_the_launcher(report: SandboxReport, launcher: Any) -> None:
       per-task signatures of the same name (:data:`TASK_SIGNATURES_CHANNEL`),
       whose launcher rows are marked the same way, and one that still names
       none stays, counted (``UNATTRIBUTED_SIGNATURES_KEY``);
-    * a dropped file that is the launcher script or the unpacked sample, by
-      member name or digest, in the launcher's folder where the report shows
-      it, is marked as the platform's with its reason
-      (:data:`LINEAGE_REASON_KEY`), never a file the sample wrote;
+    * a dropped file that is the launcher script or the unpacked sample at
+      the member's own place (the folder the archive was unpacked into,
+      joined with the member's path inside it, compared without case) and
+      holding the member's digest where the row states one, is marked as the
+      platform's with its reason (:data:`LINEAGE_REASON_KEY`), never a file
+      the sample wrote; a file with a member's digest elsewhere, or at the
+      member's place with another digest, is the sample's, with that stated
+      (:data:`MEMBER_FACT_KEY`); a row that states no whole guest path, or a
+      report whose launcher folder is not known, is read by member name or
+      digest and each member found so is counted
+      (``UNPLACED_MEMBER_FILES_KEY``);
+    * a dropped file every writing process of which is the launcher's, read
+      in the row's own task (the process list's own id first), is marked as
+      the platform's, :data:`DROPPED_BY_LAUNCHER`, where no signature of that
+      task shows another process acting on the launcher's process
+      (:func:`_reached_launcher_tasks`); where one does, it stays the
+      sample's, marked :data:`LINEAGE_LAUNCHER_UNSETTLED`; a row naming no
+      task in a report listing processes by task is credited to no one by its
+      writer; both are counted (``UNSETTLED_LAUNCHER_FILES_KEY``), the rows
+      credited too (``LAUNCHER_FILES_KEY``); a row that names no writer keeps
+      the reading above, and no row is taken out;
     * the report says whether the sample's processes were told apart
       (``LAUNCHER_ATTRIBUTION_KEY``), and the sandbox's score and family are
       stated to be its analysis of the archive run from the launcher
@@ -1439,6 +1642,8 @@ def attribute_the_launcher(report: SandboxReport, launcher: Any) -> None:
     by_pid: dict[str, set[_Node]] = {}
     roots: set[_Node] = set()
     hosts: set[_Node] = set()
+    # The folders the archive was unpacked into, as the launcher's and the
+    # sample's processes show them (:func:`_archive_root`).
     folders: set[str] = set()
     for proc in report.processes:
         proc.extra.pop(LINEAGE_KEY, None)
@@ -1457,7 +1662,8 @@ def attribute_the_launcher(report: SandboxReport, launcher: Any) -> None:
         if image == names.sample:
             roots.add(node)
             quoted = _QUOTED.search(proc.name)
-            folders.add(_folder(quoted.group(1) if quoted else proc.name.split("(", 1)[0]))
+            folder = _folder(quoted.group(1) if quoted else proc.name.split("(", 1)[0])
+            folders.add(_archive_root(folder, names.sample_path))
         elif image in names.hosts:
             # A quoted path keeps its spaces; an unquoted one is a word.
             scripts = [
@@ -1471,7 +1677,7 @@ def attribute_the_launcher(report: SandboxReport, launcher: Any) -> None:
             ]
             if scripts:
                 hosts.add(node)
-                folders.update(_folder(token) for token in scripts)
+                folders.update(_archive_root(_folder(t), names.script_path) for t in scripts)
     folders.discard("")
     rooted = {node[0] for node in roots}
     sample_tree = _reach(parent, roots)
@@ -1547,28 +1753,46 @@ def attribute_the_launcher(report: SandboxReport, launcher: Any) -> None:
             unattributed += 1
         kept.append(signature)
     report.signatures = kept
+    reached = _reached_launcher_tasks(report, by_pid, launcher_nodes)
+    tasked = any(node[0] for node in parent)
+    unplaced = credited = unsettled = 0
     for index, dropped in enumerate(report.dropped_files):
         if not isinstance(dropped, dict):
             continue
-        plain = {k: v for k, v in dropped.items() if k not in (LINEAGE_KEY, LINEAGE_REASON_KEY)}
-        paths = _dropped_paths(plain)
-        files = {_basename(path) for path in paths}
-        digest = str(plain.get("sha256") or "").strip().lower()
-        where = {_folder(path) for path in paths} - {""}
-        reason = ""
-        # A copy elsewhere in the guest, where the report shows the launcher's
-        # folder, is the sample's own doing (a copy of itself it wrote).
-        if not (folders and where and not where & folders):
-            if _the_member(names.script, names.script_sha256, files, digest, bool(folders)):
-                reason = DROPPED_LAUNCHER
-            elif _the_member(names.sample, names.sample_sha256, files, digest, bool(folders)):
-                reason = DROPPED_SAMPLE
+        plain = {k: v for k, v in dropped.items() if k not in _DROPPED_PLATFORM_KEYS}
+        reason, fact, at_no_place = _member_reading(plain, names, folders)
+        unplaced += at_no_place
+        lineage = LINEAGE_LAUNCHER
+        writers = _writer_pids(plain) if not reason else []
+        if writers:
+            # Written by the launcher's own process, read within the row's own
+            # task, as a process is the pair of its task and its id.
+            task = str(plain.get(PROCESS_TASK_KEY) or "")
+            if task or not tasked:
+                nodes = {(task, pid) for pid in writers}
+                if nodes <= launcher_nodes:
+                    if task in reached:
+                        # The started program reached the launcher's process:
+                        # what it wrote may be the sample's doing, so it stays
+                        # among the sample's files, marked.
+                        lineage, reason = LINEAGE_LAUNCHER_UNSETTLED, DROPPED_BY_LAUNCHER_REACHED
+                        unsettled += 1
+                    else:
+                        reason = DROPPED_BY_LAUNCHER
+                        credited += 1
+            elif any(n in launcher_nodes for pid in writers for n in by_pid.get(pid, ())):
+                # A row whose task is not known is credited to no one by its
+                # writer, and counted.
+                unsettled += 1
         if reason:
             report.dropped_files[index] = {
                 **plain,
-                LINEAGE_KEY: LINEAGE_LAUNCHER,
+                LINEAGE_KEY: lineage,
                 LINEAGE_REASON_KEY: reason,
+                **({MEMBER_FACT_KEY: fact} if fact else {}),
             }
+        elif fact:
+            report.dropped_files[index] = {**plain, MEMBER_FACT_KEY: fact}
         elif len(plain) != len(dropped):
             report.dropped_files[index] = plain
     tasks = {node[0] for node in parent}
@@ -1584,6 +1808,9 @@ def attribute_the_launcher(report: SandboxReport, launcher: Any) -> None:
         said = ATTRIBUTION_ESTABLISHED
     report.extras[LAUNCHER_ATTRIBUTION_KEY] = said
     report.extras[UNATTRIBUTED_SIGNATURES_KEY] = unattributed
+    report.extras[UNPLACED_MEMBER_FILES_KEY] = unplaced
+    report.extras[LAUNCHER_FILES_KEY] = credited
+    report.extras[UNSETTLED_LAUNCHER_FILES_KEY] = unsettled
     report.cti[CTI_ANALYSED_KEY] = (
         CTI_ANALYSED_LAUNCHER if said == ATTRIBUTION_ESTABLISHED else CTI_ANALYSED_LAUNCHER_UNSEEN
     )
@@ -1846,7 +2073,10 @@ def triage_overview_to_sandbox_report(
                 )
             )
         dumped_field = task.get("dumped")
-        dropped_files.extend(_rows(dumped_field))
+        # Each row names its task, whose process ids its writer is read by.
+        dropped_files.extend(
+            {**row, PROCESS_TASK_KEY: str(task_name)} for row in _rows(dumped_field)
+        )
 
         net_field = task.get("network")
         net = net_field if isinstance(net_field, dict) else {}

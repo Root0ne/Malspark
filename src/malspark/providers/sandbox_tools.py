@@ -38,7 +38,7 @@ from malspark.core.logger import logger
 from malspark.pipeline.sandbox_status import NOT_RUN, sandbox_status
 from malspark.providers.call_arguments import pick_argument
 from malspark.providers.detonation import selected
-from malspark.schemas.sandbox_document import place, signature_pids
+from malspark.schemas.sandbox_document import MEMBER_FACT_KEY, place, signature_pids
 from malspark.schemas.sandbox_report import (
     LINEAGE_KEY,
     LINEAGE_LAUNCHER,
@@ -535,9 +535,11 @@ def sandbox_dropped_files(
         or "dropped_files" not in (_fills(normalised_by) or {"dropped_files"})
     ):
         return _absent("dropped_files")
-    # The archive's members a generated launcher's run unpacked in the guest
+    # The archive's members a generated launcher's run unpacked in the guest,
+    # and the files the launcher's own process wrote or dumped
     # (``sandbox_report.attribute_the_launcher``): the platform's files, never
-    # files the sample wrote, listed apart with which file each is.
+    # files the sample wrote, listed apart with which file each is. Every row
+    # is in one of the two lists.
     platform: list[dict[str, Any]] = []
     written: list[Any] = []
     for entry in dropped:
@@ -566,6 +568,12 @@ def sandbox_dropped_files(
                 row["pids"] = pids
             if entry.get(LINEAGE_KEY):
                 row[LINEAGE_KEY] = entry[LINEAGE_KEY]
+                if entry.get(LINEAGE_REASON_KEY):
+                    row[LINEAGE_REASON_KEY] = entry[LINEAGE_REASON_KEY]
+            # A file the sample wrote that holds an archive member's digest
+            # away from its place, or sits at its place changed: said so.
+            if isinstance(entry.get(MEMBER_FACT_KEY), dict):
+                row[MEMBER_FACT_KEY] = entry[MEMBER_FACT_KEY]
             rows.append(row)
     answer: dict[str, Any] = {"dropped": rows, "total": len(dropped), **meta}
     if platform:
@@ -576,6 +584,9 @@ def sandbox_dropped_files(
                 "sha256": entry.get("sha256"),
                 LINEAGE_KEY: entry.get(LINEAGE_KEY),
                 LINEAGE_REASON_KEY: entry.get(LINEAGE_REASON_KEY) or "",
+                # The process that wrote it, where the sandbox names one: a
+                # file the launcher's process wrote is listed with its writer.
+                **({"pids": pids} if (pids := _writer_pids(entry)) else {}),
             }
             for entry in platform
         ]

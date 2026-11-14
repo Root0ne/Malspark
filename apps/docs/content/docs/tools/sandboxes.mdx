@@ -610,10 +610,34 @@ read as the sample's; one that names no process takes its processes from the
 task's own signature of that name, whose launcher rows are marked the same way,
 and one that still names none is left where it is, attributed to no one, and
 counted (`launcher_unattributed_signatures`): it may be the launcher's. A file
-the sandbox lists as written that is the launcher or the unpacked sample (by
-member name or SHA-256, in the launcher's folder where the report shows it) is
-marked as the platform's, with which of the two it is, and is not a file the
-sample wrote. The lineage of every row is held under one key of the platform's
+the sandbox lists as written or dumped that is the launcher or the unpacked
+sample at the member's own place (the folder the archive was unpacked into,
+as the script host's command line and the sample's image show it, joined with
+the member's path inside the archive, compared without case) and holds the
+member's SHA-256 where the row states one, is marked as the platform's, with
+which of the two it is, and is not a file the sample wrote. A file with a
+member's SHA-256 at any other path or under any other name is the sample's,
+stated as a copy of that member with the member's place and the file's paths
+(`platform_member_fact`); a file at the member's place with another SHA-256 is
+the sample's too, stated as the member changed. A row that states no whole
+guest path, or a report that shows no launcher folder, is read by member name
+or SHA-256, and each member found so is counted
+(`launcher_unplaced_member_files`). A written file or a memory region dumped
+names its task, and its writer is read among that task's processes. One every
+writing process of which is the launcher's (the script host running
+`launch.ps1`, not the program it started nor what that started) is listed with
+the launcher's facts, with its path, digest and writer, as written by the
+launcher's process, and not among the sample's files, where no signature of
+that task shows a process other than the launcher's acting on the launcher's
+process (an indicator naming it as the process acted on, with another source
+or none). Where one does, the started program may have acted through the
+launcher's process: the row stays among the sample's files, marked with the
+launcher's lineage as not established. A row that names no task in a report
+whose processes are listed by task is credited to no one by its writer. Both
+are counted (`launcher_unsettled_written_files`, beside
+`launcher_written_files`), and the launch statement says how many of each
+there are. A row that names no writer keeps the reading by the members. No row
+is taken out of the report: each is in the sample's files or the launcher's. The lineage of every row is held under one key of the platform's
 own (`platform_lineage`), taken out of a report at intake wherever a sandbox's
 own field carries it. The sandbox's own score and family are stated to be its
 analysis of the archive run from the launcher, and the family it names carries

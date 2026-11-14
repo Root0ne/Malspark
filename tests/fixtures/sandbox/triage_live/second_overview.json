@@ -1,0 +1,218 @@
+{
+  "analysis": {
+    "score": 3,
+    "tags": [
+      "discovery",
+      "execution"
+    ]
+  },
+  "build": "d0cc0f9b0",
+  "sample": {
+    "completed": "2026-11-14T19:32:06Z",
+    "created": "2026-11-14T19:29:32Z",
+    "id": "261114-x7g3qacy8x",
+    "md5": "89df50baed182c18d2cf8307dbc0d56b",
+    "score": 3,
+    "sha1": "dac62f3c4698209450cb546cb306f21dc94fd5a4",
+    "sha256": "f7e2f01f33b124088fe13dc1abef3e8f4d42dd9dab70cd74f41c4390f286698e",
+    "sha512": "5c2c3025826a086f638cb160f645eabfcc91a0cd84b1d1b95c84b55f8c84277ede37c139252d96b507568fec5042e1a0abb7fcd33e98938489860b9ec3760499",
+    "size": 1111,
+    "target": "submission.zip",
+    "tlsh": "T15D21123501BE2C03C5DA633DE876CFD3E4D913C6604EB82615A4A1E9546B84787534B5"
+  },
+  "signatures": [
+    {
+      "desc": "Using powershell.exe command.",
+      "label": "powershell",
+      "name": "Command and Scripting Interpreter: PowerShell",
+      "score": 3,
+      "tags": [
+        "execution"
+      ],
+      "ttp": [
+        "T1059.001"
+      ]
+    },
+    {
+      "desc": "Execution of a cmd.exe one-liner (/c \"close\" or /k \"keep\") is a common script/loader stage.",
+      "label": "cmd_shell_generic",
+      "name": "Executes a command shell one-liner",
+      "score": 3,
+      "tags": [
+        "execution"
+      ],
+      "ttp": [
+        "T1059.003"
+      ]
+    },
+    {
+      "desc": "Adversaries may check for Internet connectivity on compromised systems.",
+      "label": "internet_connection_discovery",
+      "name": "System Network Configuration Discovery: Internet Connection Discovery",
+      "score": 3,
+      "tags": [
+        "discovery"
+      ],
+      "ttp": [
+        "T1016.001"
+      ]
+    },
+    {
+      "desc": "Adversary may gather the system time and/or time zone settings from a local or remote system.",
+      "label": "system_time_discovery",
+      "name": "System Time Discovery",
+      "score": 3,
+      "tags": [
+        "discovery"
+      ],
+      "ttp": [
+        "T1124"
+      ]
+    },
+    {
+      "name": "Suspicious behavior: EnumeratesProcesses"
+    },
+    {
+      "name": "Suspicious use of AdjustPrivilegeToken"
+    },
+    {
+      "name": "Suspicious use of WriteProcessMemory"
+    }
+  ],
+  "targets": [
+    {
+      "iocs": {
+        "domains": [
+          "c.pki.goog"
+        ],
+        "ips": [
+          "8.8.8.8",
+          "172.217.76.94"
+        ],
+        "urls": [
+          "http://c.pki.goog/r/r1.crl",
+          "http://c.pki.goog/wr2/oBFYYahzgVI.crl"
+        ]
+      },
+      "md5": "698ab73b941e99b26ba2b557db6e9330",
+      "pick": "unpack001/launch.ps1",
+      "score": 3,
+      "sha1": "bd2e2d40ba7e4e6d8c11cd65805439e5f92715bb",
+      "sha256": "0e60aa6a890ae2419eae133ba99e941fb80bca4fac6bf721c68f8362b3c3f82f",
+      "sha512": "012a268b80071da61fe1ee63b4a7cc2184e14da458be59c9155d27106029e982bd09a32fe5243e6a3f847f4e7d2239e51dbd2e62590b53a72dcc01eea6d34e37",
+      "signatures": [
+        {
+          "desc": "Using powershell.exe command.",
+          "label": "powershell",
+          "name": "Command and Scripting Interpreter: PowerShell",
+          "score": 3,
+          "tags": [
+            "execution"
+          ],
+          "ttp": [
+            "T1059.001"
+          ]
+        },
+        {
+          "desc": "Execution of a cmd.exe one-liner (/c \"close\" or /k \"keep\") is a common script/loader stage.",
+          "label": "cmd_shell_generic",
+          "name": "Executes a command shell one-liner",
+          "score": 3,
+          "tags": [
+            "execution"
+          ],
+          "ttp": [
+            "T1059.003"
+          ]
+        },
+        {
+          "desc": "Adversaries may check for Internet connectivity on compromised systems.",
+          "label": "internet_connection_discovery",
+          "name": "System Network Configuration Discovery: Internet Connection Discovery",
+          "score": 3,
+          "tags": [
+            "discovery"
+          ],
+          "ttp": [
+            "T1016.001"
+          ]
+        },
+        {
+          "desc": "Adversary may gather the system time and/or time zone settings from a local or remote system.",
+          "label": "system_time_discovery",
+          "name": "System Time Discovery",
+          "score": 3,
+          "tags": [
+            "discovery"
+          ],
+          "ttp": [
+            "T1124"
+          ]
+        },
+        {
+          "name": "Suspicious behavior: EnumeratesProcesses"
+        },
+        {
+          "name": "Suspicious use of AdjustPrivilegeToken"
+        },
+        {
+          "name": "Suspicious use of WriteProcessMemory"
+        }
+      ],
+      "size": 778,
+      "tags": [
+        "discovery",
+        "execution"
+      ],
+      "target": "launch.ps1",
+      "tasks": [
+        "behavioral1",
+        "behavioral2"
+      ],
+      "tlsh": "T1FD012076029E381352DF7745BDA4CEC3F8D602DAA0AFAC205559E7C9A09EC0643974F7"
+    }
+  ],
+  "tasks": {
+    "261114-x7g3qacy8x-behavioral1": {
+      "backend": "sbx4m64",
+      "kind": "behavioral",
+      "name": "behavioral1",
+      "os": "windows10-2004-x64",
+      "pick": "static1/unpack001/launch.ps1",
+      "resource": "win10v2004-20260911-en",
+      "score": 3,
+      "sigs": 7,
+      "status": "reported",
+      "tags": [
+        "discovery",
+        "execution"
+      ],
+      "target": "launch.ps1",
+      "timeout": 150
+    },
+    "261114-x7g3qacy8x-behavioral2": {
+      "backend": "sbx4m175",
+      "kind": "behavioral",
+      "name": "behavioral2",
+      "os": "windows11-ltsc_2024-x64",
+      "pick": "static1/unpack001/launch.ps1",
+      "resource": "win11ltsc2024-20260911-en",
+      "score": 3,
+      "sigs": 6,
+      "status": "reported",
+      "tags": [
+        "discovery",
+        "execution"
+      ],
+      "target": "launch.ps1",
+      "timeout": 150
+    },
+    "261114-x7g3qacy8x-static1": {
+      "kind": "static",
+      "name": "static1",
+      "score": 1,
+      "status": "reported"
+    }
+  },
+  "version": "0.3.1"
+}
