@@ -433,7 +433,8 @@ def read_own_withdrawals(items: Sequence[str], round_in_force: int | None) -> Ow
     such a verb takes one of :data:`OWN_WITHDRAWN_PRONOUNS` or a word of
     :data:`OWN_WITHDRAWN_WORDS` stands after a word of
     :data:`OWN_PASSIVE_WORDS`, a mark or the item's start. A "round-<n>"
-    reference is read only where ``n`` is ``round_in_force``.
+    reference is read only where ``n`` is ``round_in_force``; any other names
+    no claim of the answer in force, neither withdrawn nor ``spoken``.
 
     Read whole, the item must say nothing against the withdrawal, so it reads
     as nothing where a word of :data:`OWN_NEGATING_WORDS` governs the
@@ -489,7 +490,7 @@ def read_own_withdrawals(items: Sequence[str], round_in_force: int | None) -> Ow
             ranges = _ranges(match.group("numbers"))
             written_round = match.group("round")
             if written_round is not None and (written_round.lstrip("0") or "0") != in_force:
-                spoken.extend(ranges)
+                # Another answer's numbers: no claim of the answer in force.
                 continue
             start, end = match.span()
             window = max(0, start - OWN_CLAIM_BEFORE_WINDOW)

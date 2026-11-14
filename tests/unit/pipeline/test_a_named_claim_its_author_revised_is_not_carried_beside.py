@@ -441,6 +441,19 @@ class TestANamedClaimItsAuthorDefendsKeepsTheSubjectTest:
         assert kept.carried_contested_by == ["L1 (round 2)"]
         assert [n for n, *_rest in merge.beside] == [1]
 
+    def test_a_reference_to_another_rounds_claim_leaves_it_answered(self) -> None:
+        dispute = "My round-0 claim 1 stands: ev_0001 shows the RC4 key 'k3y' at 0x406000."
+
+        merge = merge_revision(
+            _isr(self.IN_FORCE, revision_round=2),
+            _isr(self.ANSWER, (dispute,), revision_round=3),
+            self.ANSWER,
+            3,
+            {1: [(1, True)]},
+        )
+
+        assert merge.replaced == (1, 2) and merge.beside == ()
+
     def test_a_dispute_that_names_the_number_with_no_owner_leaves_it_answered(self) -> None:
         dispute = "The peer's reading (claim 1) misses the hash loop at 0x402000."
 
