@@ -7255,9 +7255,11 @@ def repeated_item_violations(
 # compares the command value with, or name a value that code compares it with
 # nowhere. A row whose id was converted between bases by hand can name another
 # case's value, and a case the table leaves out is a command the reader never
-# learns of. Asked once with the values the
-# platform read from the code; the model decides which branch is a command and
-# what it does, and the table is kept as written with the finding beside it.
+# learns of. A table whose numbered ids are a plain count (1 to N or 0 to
+# N-1), which row numbers would be too, is not checked. Asked once with the
+# values the platform read from the code; the model decides which branch is a
+# command and what it does, and the table is kept as written with the finding
+# beside it.
 COMMAND_VALUES_CODE = "composer.command_values"
 
 # The parts of C-like code that are not code: comments, and string and
@@ -9290,7 +9292,8 @@ class EntryTexts:
         is returned, in ledger order (one function read twice is two such
         entries), with that expression's values; where the expressions holding
         as many hold different value sets, the entries do not agree on what
-        the code chooses by and none is returned. An entry whose code merely
+        the code chooses by and none is returned, also where those
+        expressions are two of one entry's. An entry whose code merely
         compares some of ``ids`` is not returned, nor an entry whose call
         failed (:attr:`failed`). Empty where no expression holds enough. Never
         a sandbox item, as :meth:`holding` offers none.
@@ -9331,8 +9334,9 @@ class EntryTexts:
         """Whether a cited entry is code in a form the operand reader does not read.
 
         An entry whose text writes a compare the reader does not take — a
-        compare instruction with an operand in no form it reads, or a case
-        range wider than it expands — whatever its tool; or one whose tool
+        compare instruction at an instruction's place with an operand in no
+        form it reads or not taken to the instruction's end, or a case range
+        it does not expand — whatever its tool; or one whose tool
         lists code (its declared kind, else its name) and whose text is
         neither pseudo-C nor disassembly lines (:func:`holds_code`) and writes
         no compared operand. A number absent from either may be written there
@@ -9907,32 +9911,51 @@ _OPERAND_INT_RE = re.compile(_OPERAND_INT, re.ASCII)
 # A number written as the whole of one side of a test: an equality or
 # inequality test (either side, each side ending where the test does, or at
 # the ``*`` or ``"`` that closes a comment or a string), or a case label,
-# one value or a ``case A ... B:`` range.
+# one value or a ``case A ... B:`` range. A range with an end in no form read
+# here (``case 'a' ... 'z':``, ``case MIN ... MAX:``) is matched apart.
 _COMPARED_OPERAND_RE = re.compile(
     rf"[!=]=[ \t]*(?P<right>{_OPERAND_INT})[ \t]*(?=$|[)|&,?:;}}*\"])"
     rf"|(?:^|[(|&,?:;{{*\"])[ \t]*(?P<left>{_OPERAND_INT})[ \t]*[!=]="
-    rf"|\bcase[ \t]+(?P<case>{_OPERAND_INT})[ \t]*(?:\.\.\.[ \t]*(?P<last>{_OPERAND_INT})[ \t]*)?:",
+    rf"|\bcase[ \t]+(?P<case>{_OPERAND_INT})[ \t]*(?:\.\.\.[ \t]*(?P<last>{_OPERAND_INT})[ \t]*)?:"
+    r"|\bcase[ \t]+(?P<range>[^\n:]{0,120}\.\.\.)",
     re.ASCII | re.IGNORECASE | re.MULTILINE,
 )
 # A compare instruction, read by its shape rather than by an architecture's
-# list: a mnemonic that begins with ``cmp`` (any suffix: ``cmpl``, ``cmp.w``)
-# and two or more operands, up to the line's end or a ``;`` or ``//`` comment
-# (bounded, so a line of many mnemonics is read in linear time).
-_COMPARE_INSTRUCTION_RE = re.compile(
-    r"\bcmp[a-z0-9.]*[ \t]+(?P<operands>(?:(?!//)[^\n;,]){1,120},(?:(?!//)[^\n;]){0,200})",
-    re.ASCII | re.IGNORECASE | re.MULTILINE,
+# list: a mnemonic that begins with ``cmp`` (any suffix: ``cmpl``, ``cmp.w``),
+# then its operands.
+_COMPARE_MNEMONIC_RE = re.compile(r"\bcmp[a-z0-9.]*[ \t]+", re.ASCII | re.IGNORECASE)
+# The operands: two or more, each ending where its text does, at the line's
+# end, a ``;`` or ``//`` comment or a closing quote (bounded, so a line of
+# many mnemonics is read in linear time).
+_INSTRUCTION_OPERANDS_RE = re.compile(
+    r"(?:(?!//)[^\n;,\"]){1,120},(?:(?!//)[^\n;\"]){0,200}", re.ASCII
 )
 # An instruction operand that is a name: a register or a symbol, ``%`` marked
 # or not (``eax``, ``%eax``, ``r0``, ``DAT_00401000``).
 _OPERAND_NAME_RE = re.compile(r"%?[A-Za-z_.][\w.$@]*", re.ASCII)
-# What may stand before an instruction on its line: the opening of a JSON
-# string field that holds the listing, a label, then an address, its bytes
-# and a listing's flow marks. A ``cmp`` after other words
-# is prose: its numbers are read where every operand is taken, and an
-# operand not taken there is no doubt about the code.
+# The words that stand before a mnemonic as part of its instruction.
+_INSTRUCTION_PREFIXES = (
+    "lock", "rep", "repe", "repz", "repne", "repnz", "notrack", "bnd", "xacquire", "xrelease",
+)  # fmt: skip
+# What may stand before an instruction on its line, after the opening of a
+# JSON string that holds it: characters that are not word characters (a
+# listing's columns and flow marks), number tokens (an address, its bytes:
+# hex digits with a decimal one, or two hex letters), a ``label:``, a
+# ``<symbol+offset>`` and an instruction prefix. A ``cmp`` after other
+# words is prose: its numbers are read where every operand is taken, and an
+# operand not taken there is no doubt about the code. Each token is taken
+# whole and never read again (``*+``), so the place is read in linear time.
 _INSTRUCTION_PLACE_RE = re.compile(
     r"(?:[\[{,\s]*(?:\"[\w.-]*\"\s*:\s*)?\")?"
-    r"(?:[A-Za-z_.$@][\w.$@]*:)?[\s0-9a-fA-FxX:|│┃┆┊┌└├┐┘─═<>+.\-\"]*"
+    r"(?:<[\w.$@]*(?:[+-]\w+)?>"
+    rf"|\b(?:{'|'.join(_INSTRUCTION_PREFIXES)})\b"
+    r"|\b[a-z_][\w.$@]*:"
+    r"|\b0x[0-9a-f]+\b"
+    r"|\b(?=[0-9a-f]*[0-9])[0-9a-f]+h?\b"
+    r"|\b[a-f]{2}\b"
+    r"|\W"
+    r")*+",
+    re.ASCII | re.IGNORECASE,
 )
 # How far back on its line an instruction's place is read: a longer prefix
 # is not a listing's columns.
@@ -9999,11 +10022,27 @@ def _instruction_operand_values(operand: str) -> set[int] | None:
 
 
 def _at_instruction_place(text: str, start: int) -> bool:
-    """Whether what stands before ``start`` on its line is a listing's columns."""
+    """Whether what stands before ``start`` on its line is a listing's columns,
+    from the line's start or from the JSON string that holds the instruction."""
     line = text.rfind("\n", max(0, start - _INSTRUCTION_PLACE_SPAN), start)
     if line < 0 and start > _INSTRUCTION_PLACE_SPAN:
         return False
-    return bool(_INSTRUCTION_PLACE_RE.fullmatch(text, line + 1, start))
+    if _INSTRUCTION_PLACE_RE.fullmatch(text, line + 1, start):
+        return True
+    # A JSON string opens with a quote after a bracket, a brace, a comma or
+    # a key's colon.
+    quote = text.rfind('"', line + 1, start)
+    return (
+        quote >= 0
+        and text[line + 1 : quote].rstrip(" \t")[-1:] in ("[", "{", ",", ":")
+        and bool(_INSTRUCTION_PLACE_RE.fullmatch(text, quote + 1, start))
+    )
+
+
+def _instruction_ends(text: str, at: int) -> bool:
+    """Whether an instruction's text ends at ``at``: the line's end, a ``;`` or
+    ``//`` comment, or the quote that closes the string holding it."""
+    return at == len(text) or text[at] in '\n;"' or text.startswith("//", at)
 
 
 def _read_compared_operands(text: str) -> tuple[frozenset[int], bool]:
@@ -10012,6 +10051,9 @@ def _read_compared_operands(text: str) -> tuple[frozenset[int], bool]:
     untaken = False
     budget = _WIDEST_CASE_RANGE
     for match in _COMPARED_OPERAND_RE.finditer(text):
+        if match.group("range") is not None:
+            untaken = True
+            continue
         written = match.group("right") or match.group("left") or match.group("case")
         last = match.group("last")
         try:
@@ -10033,19 +10075,30 @@ def _read_compared_operands(text: str) -> tuple[frozenset[int], bool]:
             continue
         budget -= high - low + 1
         found.update(range(low, high + 1))
-    for match in _COMPARE_INSTRUCTION_RE.finditer(text):
+    at = 0
+    while mnemonic := _COMPARE_MNEMONIC_RE.search(text, at):
+        operands = _INSTRUCTION_OPERANDS_RE.match(text, mnemonic.end())
+        if operands is None and _instruction_ends(text, mnemonic.end()):
+            # A mnemonic with no operands (``repe cmpsb``) compares no number.
+            at = mnemonic.end()
+            continue
+        at = operands.end() if operands is not None else mnemonic.end()
         read: set[int] = set()
-        for operand in _instruction_operands(match.group("operands")):
+        # Operands not taken to the instruction's end are not read.
+        whole = operands is not None and _instruction_ends(text, operands.end())
+        for operand in _instruction_operands(operands.group()) if whole and operands else ():
             try:
                 taken = _instruction_operand_values(operand)
             except ValueError:
                 taken = None
             if taken is None:
-                untaken = untaken or _at_instruction_place(text, match.start())
+                whole = False
                 break
             read |= taken
-        else:
+        if whole:
             found |= read
+        else:
+            untaken = untaken or _at_instruction_place(text, mnemonic.start())
     return frozenset(found), untaken
 
 
@@ -10065,11 +10118,17 @@ def compared_operands(text: str) -> frozenset[int]:
     (``/* c == 4 */``, ``"c == 4"``) holds its number, and so does a product
     (``c == 4 * k``), the reading that keeps a question back. Never read where
     the number is part of a longer number or of a sum. A leading zero is read
-    both as octal and as decimal (``010`` holds 8 and 10). An instruction with
-    an operand in no form read here holds none of its numbers; one at an
-    instruction's place on its line (after nothing but a label, an address,
-    its bytes and flow marks) is a compare not taken, as is a range that
-    would pass the text's budget; see :meth:`EntryTexts.code_not_read`.
+    both as octal and as decimal (``010`` holds 8 and 10). An instruction's
+    operands end where its text does: at the line's end, a ``;`` or ``//``
+    comment, or the quote that closes the string holding it. An instruction
+    with an operand in no form read here, or whose operands are not taken to
+    that end (one longer than the reader's bound), holds none of its numbers;
+    one at an instruction's place on its line (after nothing but characters
+    that are not word characters, number tokens, a ``label:``, a
+    ``<symbol+offset>`` and an instruction prefix, from the line's start or
+    from the JSON string that holds it) is a compare not taken, as is a range
+    whose end is not read (``case 'a' ... 'z':``), a reversed range or one
+    that would pass the text's budget; see :meth:`EntryTexts.code_not_read`.
     Linear in the length of ``text``.
     """
     return _read_compared_operands(text)[0]

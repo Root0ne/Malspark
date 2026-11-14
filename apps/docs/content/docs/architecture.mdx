@@ -5892,9 +5892,16 @@ is assembled from what the run gathered rather than recomputed beside it:
   by a cited entry whose text writes it as a compared operand in any base and
   form the reader knows (an equality test, a case label or a `case A ... B:`
   range, a compare instruction read by its shape: a mnemonic that begins with
-  `cmp`, the number in either operand place, with or without `$` or `#`;
-  `validation.compared_operands`), and a row citing code in a form the reader
-  does not read, or a compare it does not take, is not asked; a table with
+  `cmp`, the number in either operand place, with or without `$` or `#`,
+  each operand ending where its text does, at the line's end, a comment or a
+  closing quote; `validation.compared_operands`), and a row citing code in a
+  form the reader does not read, or a compare it does not take, is not asked
+  (an instruction at an instruction's place with an operand in no form read
+  or not taken to the instruction's end, the place read by its characters:
+  before the mnemonic only characters that are not word characters, number
+  tokens, a `label:`, a `<symbol+offset>` and an instruction prefix such as
+  `lock` or `repe`; a case range with an end not read, a reversed range, or
+  ranges past 4096 values in one text); a table with
   fewer than four numbered ids, or whose numbered ids are a plain count (1 to
   N or 0 to N-1, the guard `composer.command_values` uses), is not checked for
   its numbers; the entry offered for a number is only the one whose single

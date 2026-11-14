@@ -122,7 +122,8 @@ class TestANumberedId:
 
         (found,) = cited_id_violations(payload, _texts())
 
-        # 21 is 0x15, compared by ev_0010; 012 is octal 10, compared by none.
+        # 21 is 0x15, which ev_0010 compares and the cited ev_0011 does not;
+        # 012 reads as octal 10 and as decimal 12, and ev_0010 compares 12.
         assert found.message.startswith("Row 1 of commands")
 
     def test_rows_one_entry_holds_are_asked_together(self) -> None:
@@ -445,6 +446,202 @@ class TestTheCaseRangesOfOneTextHaveOneBudget:
     def test_the_cost_of_many_ranges_grows_with_the_text(self) -> None:
         assert_scales(self._ranges, 4000, _read_compared_operands)
 
+    def test_the_budget_holds_exactly_its_values(self) -> None:
+        read, untaken = _read_compared_operands("case 0 ... 4095:\n")
+        assert not untaken
+        assert read == set(range(4096))
+
+        assert _read_compared_operands("case 0 ... 4096:\n") == (frozenset(), True)
+
+    def test_two_ranges_past_the_budget_together_are_not_taken(self) -> None:
+        read, untaken = _read_compared_operands("case 0 ... 2047:\ncase 2048 ... 4096:\n")
+
+        assert untaken
+        assert read == set(range(2048))
+
+    def test_a_reversed_range_is_not_taken(self) -> None:
+        assert _read_compared_operands("case 5 ... 1:\n") == (frozenset(), True)
+
+    def test_a_range_end_in_two_readings_spans_both(self) -> None:
+        assert _read_compared_operands("case 010 ... 012:\n") == (frozenset(range(8, 13)), False)
+
+    @pytest.mark.parametrize("ranges", ["case 'a' ... 'z':\n", "case MIN ... MAX:\n"])
+    def test_a_range_whose_ends_are_not_numbers_is_not_taken(self, ranges: str) -> None:
+        assert _read_compared_operands(ranges) == (frozenset(), True)
+
+    def test_a_range_of_characters_is_never_asked_about(self) -> None:
+        code = "void handler(char c) {\n  switch (c) {\n  case 'a' ... 'z':\n    run();\n  }\n}\n"
+
+        assert cited_id_violations(_rows("4"), _ledger(code)) == []
+
+
+class TestACompareInAJsonStringHoldsItsNumber:
+    """An operand ends where its text ends, at a closing quote too."""
+
+    LISTINGS = {
+        "a code string of lines": {
+            "code": "0x401000: cmp ecx, 5\n0x401002: jz 0x401100\n0x401004: cmp eax, 0xc"
+        },
+        "a listing beside decompiled code": {
+            "decompiled": "if (c == 5) x();",
+            "listing": "0x401004: cmp eax, 0xc",
+        },
+        "a list of instruction strings": {
+            "code": "if (c == 5) x();",
+            "instructions": ["mov eax, 1", "cmp eax, 0xc", "je 0x401000"],
+        },
+        "an opcode field": {
+            "pseudo": "if (c == 5) x();",
+            "ops": [{"offset": 4198400, "opcode": "cmp eax, 0xc"}],
+        },
+    }
+
+    @pytest.mark.parametrize("shape", list(LISTINGS))
+    def test_the_compared_number_is_held(self, shape: str) -> None:
+        texts = EntryTexts.from_ledger(
+            [
+                _entry("ev_0010", "batch_decompile", json.dumps({"code": DISPATCHER})),
+                _entry("ev_0020", "disassemble_function", json.dumps(self.LISTINGS[shape])),
+            ]
+        )
+
+        assert {5, 12} <= texts.operands("ev_0020")
+        assert cited_id_violations(_table(("0xc", ["ev_0020"])), texts) == []
+
+
+class TestAnInstructionPlaceIsReadByItsCharacters:
+    """Before the mnemonic: marks, numbers, a label, a ``<symbol+offset>``, a prefix word."""
+
+    @pytest.mark.parametrize(
+        "line",
+        [
+            "│      ╎   0x00401000      3b0500200000   cmp eax, foo+4",
+            "|       ,=< 0x00401000      3b0500200000   cmp eax, foo+4",
+            "|       `-> 0x00401000      3b0500200000   cmp eax, foo+4",
+            "=> 0x0000000000401136 <+4>:\tcmp    eax,foo+4",
+            "   0x0000000000401136 <main+4>:\tcmp    eax,foo+4",
+            "00007ff6`12341000 3b0500200000    cmp     eax,foo+4",
+            "0x401004: lock cmpxchg [rbx], foo+4",
+            "0x401004: repe cmpsb foo+4, x",
+            "  401000:\tff 15 eb fe   \tcmp    eax,foo+4",
+            '["0x401000: mov eax, 1", "0x401004: cmp eax, foo+4"]',
+        ],
+    )
+    def test_a_compare_not_taken_there_is_a_compare_not_taken(self, line: str) -> None:
+        assert _read_compared_operands(line)[1] is True
+
+    @pytest.mark.parametrize(
+        "line",
+        [
+            "the code runs cmp eax, foo+4 to test",
+            "add a cmp loop, x",
+            "a cmp byte patterns, x",
+            '{"summary": "uses cmp eax, foo+4 and returns"}',
+        ],
+    )
+    def test_prose_stays_prose(self, line: str) -> None:
+        assert _read_compared_operands(line) == (frozenset(), False)
+
+    # A table compared by characters; the listing cited for two rows writes
+    # one of them as a character, in the marks of one layout.
+    CHARACTERS = (
+        "void dispatch(int c) {\n switch (c) {\n case 0x41: a(); break;\n"
+        " case 0x42: b(); break;\n case 0x47: c(); break;\n case 0x49: d(); break;\n }\n}\n"
+    )
+
+    @pytest.mark.parametrize(
+        "marks",
+        [
+            ("│     ┌─< ", "│     └─> "),
+            ("│      ╎  ", "│      ╎  "),
+            ("|     ,=< ", "|     `-> "),
+            ("=> ", "   "),
+        ],
+    )
+    def test_a_row_citing_a_listing_of_any_layout_is_not_asked(
+        self, marks: tuple[str, str]
+    ) -> None:
+        listing = (
+            f"{marks[0]}0x00401000      3c41   cmp al, 'A'\n"
+            f"{marks[1]}0x00401002      3c42   cmp al, 0x42\n"
+        )
+        texts = EntryTexts.from_ledger(
+            [
+                _entry("ev_0010", "batch_decompile", json.dumps({"code": self.CHARACTERS})),
+                _entry(
+                    "ev_0020",
+                    "disassemble_function",
+                    json.dumps({"code": listing}, ensure_ascii=False),
+                ),
+            ]
+        )
+        payload = _commands(
+            ("0x41", ["ev_0020"]), ("0x42", ["ev_0020"]),
+            ("0x47", ["ev_0010"]), ("0x49", ["ev_0010"]),
+        )  # fmt: skip
+
+        assert cited_id_violations(payload, texts) == []
+
+    def test_a_long_prefix_is_read_in_linear_time(self) -> None:
+        # Lines of listing marks, then compares after a prefix longer than an
+        # instruction's place: none is read back past its own line.
+        def build(size: int) -> str:
+            return "| 0x1\n" * size + ("| " * 90 + "cmp eax, foo+4\n") * size
+
+        assert _read_compared_operands(build(10))[1] is False
+        assert_scales(build, 1500, _read_compared_operands)
+
+
+class TestAnInstructionIsReadToItsEnd:
+    @pytest.mark.parametrize(
+        ("line", "held"),
+        [
+            ("0x401000: cmp eax, 4 // c", {4}),
+            ("0x401000: cmp eax, 4                    ; switch 5 cases", {4}),
+            ("0x401000: cmp eax, 4", {4}),
+            ('{"opcode": "cmp eax, 4"}', {4}),
+        ],
+    )
+    def test_an_instruction_ends_at_a_comment_a_quote_or_its_line(
+        self, line: str, held: set[int]
+    ) -> None:
+        assert _read_compared_operands(line) == (frozenset(held), False)
+
+    @pytest.mark.parametrize("line", ["0x1000: cmp r0, #SYM", "0x1000: cmp r0, #foo+4"])
+    def test_a_marked_name_is_not_taken(self, line: str) -> None:
+        assert _read_compared_operands(line) == (frozenset(), True)
+
+    @pytest.mark.parametrize(
+        "line",
+        [
+            "0x401000: cmp dword ptr [rbp + " + "x" * 120 + "], 4",
+            "0x401000: cmp eax, " + "S" * 210 + "+4",
+            "0x401000: cmp eax, " + "S" * 210,
+        ],
+    )
+    def test_an_operand_past_the_bound_is_a_compare_not_taken(self, line: str) -> None:
+        assert _read_compared_operands(line) == (frozenset(), True)
+
+    def test_an_operand_past_the_bound_in_prose_is_no_compare(self) -> None:
+        line = "the reader runs cmp eax, " + "S" * 210
+        assert _read_compared_operands(line) == (frozenset(), False)
+
+    def test_a_row_citing_an_operand_past_the_bound_is_not_asked(self) -> None:
+        listing = "0x401000: cmp dword ptr [rbp + " + "x" * 120 + "], 4\n0x401004: cmp eax, 9\n"
+
+        assert cited_id_violations(_rows("4"), _ledger(listing, tool="disassemble_function")) == []
+
+    @pytest.mark.parametrize(
+        "unit",
+        [
+            "0x1: cmp eax, " + "S" * 210 + "\n",
+            "0x1: cmp " + "a" * 130 + ", 4\n",
+            "x cmp eax, " + "S" * 210 + " ",
+        ],
+    )
+    def test_operands_past_the_bound_are_read_in_linear_time(self, unit: str) -> None:
+        assert_scales(lambda size: unit * size, 400, _read_compared_operands)
+
 
 class TestARowIdIsCheckedOnlyWhereACoincidenceIsImplausible:
     HANDLER = "void handler(void) {\n  download();\n}\n"
@@ -468,6 +665,19 @@ class TestARowIdIsCheckedOnlyWhereACoincidenceIsImplausible:
         payload = _commands(*((i, ["ev_0001"]) for i in ids))
 
         assert cited_id_violations(payload, self._ledger(self.SWITCH_0_TO_4)) == []
+
+    @pytest.mark.parametrize("ids", [(1, 2, 3, 5), (0, 1, 2, 5)])
+    def test_a_count_with_a_gap_is_checked(self, ids: tuple[int, ...]) -> None:
+        switch = (
+            "void dispatch(int c) {\n  switch (c) {\n"
+            + "".join(f"  case {n}: f{n}(); break;\n" for n in ids)
+            + "  }\n}\n"
+        )
+        payload = _commands(*((str(n), ["ev_0001"]) for n in ids))
+
+        (found,) = cited_id_violations(payload, self._ledger(switch))
+
+        assert "ev_0002 (decompile_function)" in found.message
 
     def test_the_command_value_check_shares_the_count_guard(self) -> None:
         payload = _commands(("0", ["ev_0001"]), ("1", ["ev_0001"]), ("2", ["ev_0001"]))
