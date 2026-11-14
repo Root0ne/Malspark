@@ -39,16 +39,20 @@ from malspark.schemas.sandbox_document import (
 from malspark.schemas.sandbox_report import (
     DROPPED_BY_LAUNCHER,
     DROPPED_BY_LAUNCHER_REACHED,
+    DROPPED_LAUNCHER,
     DROPPED_SAMPLE,
     LINEAGE_KEY,
     LINEAGE_LAUNCHER_UNSETTLED,
     LINEAGE_REASON_KEY,
     MEMBER_CHANGED,
     MEMBER_COPIED,
+    MEMBER_WRITTEN,
     PROCESS_TASK_KEY,
+    SAMPLE_TREE_KEY,
     SandboxReport,
     attribute_the_launcher,
 )
+from tests.linear_cost import assert_scales
 
 LIVE = Path(__file__).resolve().parents[2] / "fixtures" / "sandbox" / "triage_live"
 TEMP = "C:\\Users\\Admin\\AppData\\Local\\Temp"
@@ -368,3 +372,132 @@ class TestTheGuestPathIsShownWhereTheReaderDeclaresIt:
         (row,) = answer["dropped"]
         # CAPE's ``path`` is where the sandbox's own host stored the file.
         assert row["name"] == "second.exe" and row["path"] == ""
+
+
+class TestAFileTheSampleWritesIsNeverTheMemberSCopy:
+    """A row one of whose writers is the sample's process is the sample's, the member stated."""
+
+    def test_the_sample_writing_at_the_launcher_member_s_place_is_the_sample_s(self) -> None:
+        row = {"procid": 86, "path": f"{TEMP}\\launch.ps1", "name": "files/a.dat"}
+        report = _first(row)
+        attribute_the_launcher(report, FIRST)
+        (written,) = [r for r in report.dropped_files if r.get("procid") == 86]
+        assert LINEAGE_KEY not in written and LINEAGE_REASON_KEY not in written
+        assert written[MEMBER_FACT_KEY]["fact"] == MEMBER_WRITTEN
+        assert written[MEMBER_FACT_KEY]["member"] == "launch.ps1"
+        dropped, platform = _listed(report)
+        assert [r["name"] for r in dropped] == ["files/a.dat"]
+        assert all(r["name"] != "files/a.dat" for r in platform)
+
+    def test_the_sample_writing_at_the_sample_member_s_place_is_the_sample_s(self) -> None:
+        # The record states no digest for the sample member; the row states one.
+        row = {"procid": 86, "pid": 3444, "path": f"{TEMP}\\cmd.exe", "sha256": "e" * 64}
+        report = _first(row)
+        attribute_the_launcher(report, FIRST)
+        (written,) = [r for r in report.dropped_files if r.get("procid") == 86]
+        assert LINEAGE_KEY not in written
+        assert written[MEMBER_FACT_KEY]["fact"] == MEMBER_WRITTEN
+        assert written[MEMBER_FACT_KEY]["member"] == "cmd.exe"
+        dropped, _platform = _listed(report)
+        assert [r["sha256"] for r in dropped] == ["e" * 64]
+
+    def test_the_sample_writing_another_digest_at_the_place_is_stated_changed(self) -> None:
+        launcher_digest = FIRST["launcher_sha256"]
+        row = {"procid": 86, "path": f"{TEMP}\\launch.ps1", "sha256": "f" * 64}
+        report = _first(row)
+        attribute_the_launcher(report, FIRST)
+        (written,) = [r for r in report.dropped_files if r.get("procid") == 86]
+        assert written[MEMBER_FACT_KEY]["fact"] == MEMBER_CHANGED
+        assert launcher_digest != "f" * 64
+
+    def test_a_row_naming_no_writer_at_the_place_stays_the_platform_s(self) -> None:
+        row = {"path": f"{TEMP}\\launch.ps1", "sha256": FIRST["launcher_sha256"]}
+        report = _first(row)
+        attribute_the_launcher(report, FIRST)
+        assert _reasons(report)[f"{TEMP}\\launch.ps1"] == DROPPED_LAUNCHER
+
+
+HOST_OUTSIDE = {
+    "procid": 90,
+    "procid_parent": 95,
+    "pid": 4000,
+    "image": "C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe",
+    "cmd": f"powershell.exe -ExecutionPolicy bypass -File {TEMP}\\launch.ps1",
+}
+
+
+class TestTheLauncherIsAnAncestorOfTheSampleSProcess:
+    """Where parents are stated, a script host above no process of the tree is not the launcher."""
+
+    def _report(self, *, parents: bool = True) -> SandboxReport:
+        one, two = _json("behavioral1.json"), _json("behavioral2.json")
+        one["processes"].append(dict(HOST_OUTSIDE))
+        one["dumped"].append({"procid": 90, "path": f"{TEMP}\\dropped.ps1", "name": "files/b.dat"})
+        one["network"]["flows"].append(
+            {"id": 50, "proto": "tcp", "dst": "203.0.113.9:443", "procid": 90}
+        )
+        if not parents:
+            for task in (one, two):
+                for proc in task["processes"]:
+                    proc.pop("procid_parent", None)
+        return _read("overview.json", {"behavioral1": one, "behavioral2": two})
+
+    def test_the_live_launcher_is_the_parent_of_the_started_program(self) -> None:
+        report = self._report()
+        attribute_the_launcher(report, FIRST)
+        lineage = {
+            (p.extra[PROCESS_TASK_KEY], p.pid): p.extra.get(LINEAGE_KEY) for p in report.processes
+        }
+        assert lineage[("behavioral1", 84)] == "launcher"
+        assert lineage[("behavioral1", 86)] == "sample"
+
+    def test_a_host_the_sample_started_outside_its_tree_is_not_the_launcher_s(self) -> None:
+        report = self._report()
+        attribute_the_launcher(report, FIRST)
+        (host,) = [p for p in report.processes if p.pid == 90]
+        assert host.extra.get(LINEAGE_KEY) is None
+        assert _reasons(report)[f"{TEMP}\\dropped.ps1"] is None
+        dropped, _platform = _listed(report)
+        assert "files/b.dat" in {r["name"] for r in dropped}
+        (flow,) = [f for f in report.network.tcp if f["dst"] == "203.0.113.9"]
+        assert LINEAGE_KEY not in flow and flow[SAMPLE_TREE_KEY] is False
+
+    def test_where_no_parent_is_stated_the_host_is_the_launcher_s_as_before(self) -> None:
+        report = self._report(parents=False)
+        attribute_the_launcher(report, FIRST)
+        (host,) = [p for p in report.processes if p.pid == 90]
+        assert host.extra.get(LINEAGE_KEY) == "launcher"
+        assert _reasons(report)[f"{TEMP}\\dropped.ps1"] == DROPPED_BY_LAUNCHER
+
+
+class TestTheCostIsLinear:
+    def test_many_sample_folders_and_many_written_files(self) -> None:
+        # The members' places are built once per report, not once per row.
+        def make(n: int) -> SandboxReport:
+            one = _json("behavioral1.json")
+            one["processes"] += [
+                {"procid": 1000 + i, "procid_parent": 84, "image": f"C:\\d{i}\\cmd.exe"}
+                for i in range(n)
+            ]
+            one["dumped"] = [
+                {"procid": 1000 + i, "path": f"C:\\x{i}\\f.bin", "sha256": "d" * 64}
+                for i in range(n)
+            ]
+            return _read("overview.json", {"behavioral1": one})
+
+        assert_scales(make, 400, lambda report: attribute_the_launcher(report, FIRST), factor=8)
+
+    def test_a_long_parent_chain_above_many_sample_processes(self) -> None:
+        # Each chain is walked up only to a process already reached.
+        def make(n: int) -> SandboxReport:
+            one = _json("behavioral1.json")
+            one["processes"] = [
+                {"procid": 1 + i, "procid_parent": i, "image": f"C:\\p{i}.exe"} for i in range(n)
+            ] + [
+                {"procid": 10**6 + i, "procid_parent": n, "image": "C:\\u\\cmd.exe"}
+                for i in range(n)
+            ]
+            one["dumped"] = []
+            return _read("overview.json", {"behavioral1": one})
+
+        assert_scales(make, 1000, lambda report: attribute_the_launcher(report, FIRST), factor=8)

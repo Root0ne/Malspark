@@ -1196,6 +1196,21 @@ TRAFFIC_PROCESS_KEYS: tuple[str, ...] = (
 LINEAGE_MARKED_STORED = "orig"
 
 
+def _ancestors(parent: Mapping[Any, Any], nodes: set[Any]) -> set[Any]:
+    """Every listed process up the parent chains of ``nodes``, ``nodes`` left out.
+
+    Each chain is walked only up to a process already reached, so the walk
+    costs time linear in the list.
+    """
+    out: set[Any] = set()
+    for node in nodes:
+        current = parent.get(node)
+        while current is not None and current in parent and current not in out:
+            out.add(current)
+            current = parent.get(current)
+    return out - nodes
+
+
 def _reach(parent: dict[Any, Any], roots: set[Any]) -> set[Any]:
     """Every listed process whose parent chain reaches one of ``roots``, the roots included.
 
@@ -1520,6 +1535,10 @@ def _writer_pids(row: Mapping[str, Any]) -> list[str]:
 # member's place, or it sits at the member's place with another digest.
 MEMBER_COPIED = "a copy of the archive member, away from the member's place"
 MEMBER_CHANGED = "at the archive member's place, with another digest"
+# A file a process of the sample's tree wrote at a member's place, or under a
+# member's name, whose digest does not show it changed: the sample's, never
+# the member's copy.
+MEMBER_WRITTEN = "at the archive member's place or under its name, written by the sample's process"
 
 
 # The fields a signature's indicator names its source process and the process
@@ -1578,41 +1597,70 @@ def _reached_launcher_tasks(
     return out
 
 
+def _members(names: _LauncherNames) -> tuple[tuple[str, str, str, str], ...]:
+    """Each archive member: its path inside the archive, its file name, its digest, its reason."""
+    return (
+        (names.script_path, names.script, names.script_sha256, DROPPED_LAUNCHER),
+        (names.sample_path, names.sample, names.sample_sha256, DROPPED_SAMPLE),
+    )
+
+
+def _member_places(names: _LauncherNames, roots: set[str]) -> list[set[str]]:
+    """Each member's places in the guest, one per folder the archive was unpacked into.
+
+    Built once per report: a hostile report's many folders and many rows
+    cost their sum, never their product.
+    """
+    return [{f"{root}/{path}" for root in roots} for path, _n, _s, _r in _members(names)]
+
+
 def _member_reading(
-    row: Mapping[str, Any], names: _LauncherNames, roots: set[str]
+    row: Mapping[str, Any],
+    names: _LauncherNames,
+    roots: set[str],
+    places: list[set[str]],
+    by_sample: bool = False,
 ) -> tuple[str, dict[str, Any] | None, bool]:
     """Whether a written file is the platform's copy of an archive member, and what it says else.
 
     ``(reason, fact, unplaced)``. A file is a member's copy only at the
-    member's place, the folder the archive was unpacked into joined with the
-    member's path inside it, holding the member's digest where the row
-    states one. Elsewhere, a file with a member's digest is the sample's,
-    stated as a copy of the member, and one at the member's place with
-    another digest is the sample's, stated as changed (``fact``). A row that
-    states no whole guest path, or a report whose launcher folder is not
-    known, is read by its names and digest (:func:`_the_member`), and a
-    member found so is ``unplaced``.
+    member's place (``places``, :func:`_member_places`), the folder the
+    archive was unpacked into joined with the member's path inside it,
+    holding the member's digest where the row states one. Elsewhere, a file
+    with a member's digest is the sample's, stated as a copy of the member,
+    and one at the member's place with another digest is the sample's,
+    stated as changed (``fact``). A row that states no whole guest path, or
+    a report whose launcher folder is not known, is read by its names and
+    digest (:func:`_the_member`), and a member found so is ``unplaced``. A
+    row one of whose writers is a process of the sample's tree
+    (``by_sample``) is never a member's copy: where it would be one, it is
+    the sample's, stated as written there (:data:`MEMBER_WRITTEN`).
     """
     paths = _dropped_paths(row)
     digest = str(row.get("sha256") or "").strip().lower()
-    members = (
-        (names.script_path, names.script, names.script_sha256, DROPPED_LAUNCHER),
-        (names.sample_path, names.sample, names.sample_sha256, DROPPED_SAMPLE),
-    )
+    members = _members(names)
     placed = {_guest_place(path) for path in paths} - {""}
+
+    def written(path: str, sha256: str, at: set[str]) -> dict[str, Any]:
+        fact = MEMBER_COPIED if digest and digest == sha256 and not placed & at else MEMBER_WRITTEN
+        return {"fact": fact, "member": path, "member_at": sorted(at), "at": paths}
+
     if not roots or not placed:
         files = {_basename(path) for path in paths}
         where = {_folder(path) for path in paths} - {""}
         # A copy elsewhere in the guest, where the report shows the launcher's
         # folder, is the sample's own doing (a copy of itself it wrote).
         if not (roots and where and not where & roots):
-            for _path, name, sha256, reason in members:
+            for (path, name, sha256, reason), at in zip(members, places, strict=True):
                 if _the_member(name, sha256, files, digest, bool(roots)):
+                    if by_sample:
+                        return "", written(path, sha256, at), False
                     return reason, None, True
         return "", None, False
-    places = [{f"{root}/{path}" for root in roots} for path, _n, _s, _r in members]
-    for (_path, _name, sha256, reason), at in zip(members, places, strict=True):
+    for (path, _name, sha256, reason), at in zip(members, places, strict=True):
         if placed & at and (not digest or not sha256 or digest == sha256):
+            if by_sample:
+                return "", written(path, sha256, at), False
             return reason, None, False
     for (path, _name, sha256, _reason), at in zip(members, places, strict=True):
         if not sha256 or not digest:
@@ -1657,10 +1705,12 @@ def attribute_the_launcher(report: SandboxReport, launcher: Any) -> None:
       included;
     * a process whose image is one of the record's script host images and
       whose command line names the launcher member, and that the sample did
-      not start, is the launcher's (``lineage: "launcher"``); in a task where
-      the sample's tree is rooted, so is every process it started outside
-      that tree, and in a task where it is not, the host alone: what it
-      started is attributed to no one, since the sample may be among it
+      not start, is the launcher's (``lineage: "launcher"``), where the task
+      states the parent of a process running the sample as a process it
+      lists, only as an ancestor of a process of the sample's tree; in a
+      task where the sample's tree is rooted, so is every process it started
+      outside that tree, and in a task where it is not, the host alone: what
+      it started is attributed to no one, since the sample may be among it
       under another name;
     * a flow's attribution (``SAMPLE_TREE_KEY``) is read from that tree, a
       flow of the launcher's process says so, and a flow of a process
@@ -1682,7 +1732,10 @@ def attribute_the_launcher(report: SandboxReport, launcher: Any) -> None:
       (:data:`MEMBER_FACT_KEY`); a row that states no whole guest path, or a
       report whose launcher folder is not known, is read by member name or
       digest and each member found so is counted
-      (``UNPLACED_MEMBER_FILES_KEY``);
+      (``UNPLACED_MEMBER_FILES_KEY``); a row one of whose writers is a
+      process of the sample's tree in its task is never a member's copy: it
+      is the sample's, with the member stated (:data:`MEMBER_WRITTEN`,
+      :data:`MEMBER_CHANGED` or :data:`MEMBER_COPIED`);
     * a dropped file every writing process of which is the launcher's, read
       in the row's own task (the process list's own id first), is marked as
       the platform's, :data:`DROPPED_BY_LAUNCHER`, where no signature of that
@@ -1748,6 +1801,14 @@ def attribute_the_launcher(report: SandboxReport, launcher: Any) -> None:
     folders.discard("")
     rooted = {node[0] for node in roots}
     sample_tree = _reach(parent, roots)
+    # Where a task states the parent of a process running the sample as a
+    # process it lists, the launcher's process is also an ancestor of a
+    # process of the sample's tree: a script host the sample started outside
+    # its own tree is not the launcher's. A task that states no such parent,
+    # or in which no process runs the sample, keeps the rule above alone.
+    parented = {root[0] for root in roots if parent.get(root) in parent}
+    ancestors = _ancestors(parent, sample_tree)
+    hosts = {h for h in hosts if h[0] not in rooted & parented or h in ancestors}
     reached = _reach(parent, hosts - sample_tree) - sample_tree
     launcher_nodes = {n for n in reached if n[0] in rooted} | {
         n for n in hosts if n[0] not in rooted
@@ -1836,21 +1897,25 @@ def attribute_the_launcher(report: SandboxReport, launcher: Any) -> None:
     report.signatures = kept
     reached = _reached_launcher_tasks(report, by_pid, launcher_nodes)
     tasked = any(node[0] for node in parent)
+    places = _member_places(names, folders)
     unplaced = credited = unsettled = 0
     for index, dropped in enumerate(report.dropped_files):
         if not isinstance(dropped, dict):
             continue
         plain = {k: v for k, v in dropped.items() if k not in _DROPPED_PLATFORM_KEYS}
-        reason, fact, at_no_place = _member_reading(plain, names, folders)
+        # The row's writers, read within its own task, as a process is the
+        # pair of its task and its id.
+        writers = _writer_pids(plain)
+        task = str(plain.get(PROCESS_TASK_KEY) or "")
+        nodes = {(task, pid) for pid in writers} if task or not tasked else set()
+        reason, fact, at_no_place = _member_reading(
+            plain, names, folders, places, by_sample=bool(nodes & sample_tree)
+        )
         unplaced += at_no_place
         lineage = LINEAGE_LAUNCHER
-        writers = _writer_pids(plain) if not reason else []
-        if writers:
-            # Written by the launcher's own process, read within the row's own
-            # task, as a process is the pair of its task and its id.
-            task = str(plain.get(PROCESS_TASK_KEY) or "")
+        if writers and not reason:
+            # Written by the launcher's own process.
             if task or not tasked:
-                nodes = {(task, pid) for pid in writers}
                 if nodes <= launcher_nodes:
                     if task in reached:
                         # The started program reached the launcher's process:
