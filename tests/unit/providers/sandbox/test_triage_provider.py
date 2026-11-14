@@ -330,6 +330,11 @@ def test_fetch_maps_overview_and_task_report_into_a_sandbox_report():
             "port": None,
             "encrypted": True,
             "user_agent": "Mozilla/5.0 (compatible)",
+            # The process facts of the flow it rode on (flow 1, the sample's).
+            "procid": 1000,
+            "pid": 2100,
+            "sample_process_tree": True,
+            "platform_task": "behavioral1",
         }
     ]
     assert [d["sha256"] for d in report.dropped_files] == [d["sha256"] for d in task["dumped"]]

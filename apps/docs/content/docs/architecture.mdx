@@ -5509,7 +5509,19 @@ is assembled from what the run gathered rather than recomputed beside it:
   carries the image of the process that made it (`process`); the address's
   row states those processes (`outside_processes`, `marked_only_processes`,
   `file_only_processes`, as `<image> (procid N)`), and the publish rule's
-  `no:` and the IOC table's context name them with both facts. A disputed
+  `no:` and the IOC table's context name them with both facts. A flow whose
+  process the task does not list among its processes says so
+  (`process_not_listed`). A DNS or HTTP request names no process: it takes the
+  process facts of the flow it rode on, joined by the flow's id within its
+  task. One rule decides an address, a name and a URL: where the records that
+  name a process name one of another lineage than the sample's (outside its
+  tree, the launcher's, not listed, or disputed), the value is not published
+  as observed from the sample, its row says whose it is (`made_by`, with
+  `sample_process_tree: false`; an address's own fields as above, and
+  `unlisted_processes`), and the `no:` names it ("made by a process the report
+  does not list", "made by the launcher's process", …); the row stays in the
+  sandbox document and the ledger as recorded. Where no record names a
+  process, the value is decided as without one. A disputed
   row, like any unattributed one, is published only when the judge keeps it
   after being asked once with the sandbox's fact: the verdict's own question
   names each judge indicator on such a value with the fact beside it

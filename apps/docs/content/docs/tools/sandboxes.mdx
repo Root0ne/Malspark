@@ -67,8 +67,14 @@ message's headers are read as a mapping or as `Name: value` lines, and a
 status written as digits is its number. A request row with no part the reader
 reads is kept whole in the `task.network.requests.<kind>` channel, `<kind>`
 being its first field that holds an object, so each such kind is counted by its
-channel's rows. A request row names no process: a DNS or HTTP row is credited
-to no process, and the flow it rode on carries the process the flow names. The document holds each such block once per
+channel's rows, and so is an answer with no question or request it answers.
+A request row names no process: a DNS or HTTP row takes the process facts of
+the flow it rode on (joined by the flow's id within its task), and a flow
+whose process the task does not list says so (`process_not_listed`). A
+dropped file's guest path is shown where the reader declares the field its
+source writes it under (`Reading.guest_path_fields`: a Triage task report's
+`path`); a field of that name a reader does not declare, such as CAPE's host
+storage path, is not shown. The document holds each such block once per
 task, by reference (`{"task_report": ..., "block_rows": <block>}`), and every
 reader reads it as the block's items: each signature, flow or other item is its
 own row naming its task, built when it is read, so `offset` and `limit` page

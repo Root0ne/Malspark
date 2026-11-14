@@ -83,7 +83,15 @@ class TestATriageTaskReportKeepsItsBlocks:
         assert http["extra"]["request"]["url"] == "https://update-relay-c9f2.net/gate.php"
         assert http["extra"]["flow"] == 1
         (dns,) = view["dns"]
-        assert dns["request"] == "update-relay-c9f2.net" and dns["extra"] == {"flow": 2}
+        assert dns["request"] == "update-relay-c9f2.net"
+        # The request's own field, and the process facts of the flow it rode on.
+        assert dns["extra"] == {
+            "flow": 2,
+            "procid": 1000,
+            "pid": 2100,
+            "sample_process_tree": True,
+            "platform_task": "behavioral1",
+        }
 
 
 def _mapped(payload: dict[str, Any], mapping: RestMappingConfig) -> dict[str, Any]:

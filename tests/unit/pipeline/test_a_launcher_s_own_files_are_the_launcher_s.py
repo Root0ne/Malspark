@@ -343,3 +343,28 @@ class TestWhatTheSampleCouldHaveCausedStaysInView:
         report = _first()
         attribute_the_launcher(report, FIRST)
         assert report.extras[UNSETTLED_LAUNCHER_FILES_KEY] == 0
+
+
+class TestTheGuestPathIsShownWhereTheReaderDeclaresIt:
+    def test_a_triage_row_shows_its_guest_path(self) -> None:
+        report = _first({"procid": 86, "path": f"{TEMP}\\argtest.txt", "name": "files/0x1.dat"})
+        document = sandbox_document(report)
+        answer = sandbox_dropped_files(document, normalised_by=("triage", "triage", "tasks"))
+        paths = {row["name"]: row["path"] for row in answer["dropped"]}
+        assert paths["files/0x1.dat"] == f"{TEMP}\\argtest.txt"
+        attribute_the_launcher(report, FIRST)
+        answer = sandbox_dropped_files(
+            sandbox_document(report), normalised_by=("triage", "triage", "tasks")
+        )
+        assert f"{TEMP}\\__PSScriptPolicyTest_j03iwqiu.gcj.ps1" in {
+            row["path"] for row in answer["platform_files"]
+        }
+
+    def test_a_cape_row_s_path_stays_hidden(self) -> None:
+        fixture = LIVE.parent / "cape2_synthetic.json"
+        raw = json.loads(fixture.read_text(encoding="utf-8"))
+        report = required_reader("cape2").read(raw, provider="cape2", task_id="1")
+        answer = sandbox_dropped_files(sandbox_document(report), normalised_by=("cape2", "cape2"))
+        (row,) = answer["dropped"]
+        # CAPE's ``path`` is where the sandbox's own host stored the file.
+        assert row["name"] == "second.exe" and row["path"] == ""

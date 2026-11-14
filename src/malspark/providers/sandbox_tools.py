@@ -176,6 +176,17 @@ def _fills(normalised_by: Sequence[str] | None) -> frozenset[str] | None:
     return reading.fills if reading is not None else None
 
 
+def _guest_path_fields(normalised_by: Sequence[str] | None) -> tuple[str, ...]:
+    """The dropped-file fields the job's reader declares hold a guest path (``Reading``)."""
+    if not normalised_by or len(normalised_by) not in (2, 3):
+        return ()
+    from malspark.schemas.sandbox_report import normaliser_reading
+
+    provider, source_format, *rest = (str(part or "").strip() for part in normalised_by)
+    reading = normaliser_reading(source_format, provider, rest[0] if rest else "")
+    return reading.guest_path_fields if reading is not None else ()
+
+
 # A view's source under the reader's word for it, where the two differ
 # (``schemas.sandbox_report.REPORT_LIST_FIELDS``); every other source is its own.
 _FILL_NAMES: dict[str, str] = {"calls": "processes.calls"}
@@ -549,6 +560,13 @@ def sandbox_dropped_files(
             written.append(entry)
     dropped = written
     rows: list[dict[str, Any]] = []
+    guest = _guest_path_fields(normalised_by)
+
+    def _path(entry: dict[str, Any]) -> Any:
+        # A path field the reader declares the guest's; never one it does not.
+        declared = next((entry[f] for f in guest if entry.get(f)), "")
+        return entry.get("filepath") or entry.get("guest_paths") or declared
+
     page, meta = _page(dropped, offset, limit)
     if page:
         for entry in page:
@@ -556,7 +574,7 @@ def sandbox_dropped_files(
                 continue
             row = {
                 "name": entry.get("name") or entry.get("filepath") or "",
-                "path": entry.get("filepath") or entry.get("guest_paths") or "",
+                "path": _path(entry),
                 "size": entry.get("size"),
                 "sha256": entry.get("sha256"),
                 "type": entry.get("type"),
@@ -580,7 +598,7 @@ def sandbox_dropped_files(
         answer["platform_files"] = [
             {
                 "name": entry.get("name") or entry.get("filepath") or "",
-                "path": entry.get("filepath") or entry.get("guest_paths") or "",
+                "path": _path(entry),
                 "sha256": entry.get("sha256"),
                 LINEAGE_KEY: entry.get(LINEAGE_KEY),
                 LINEAGE_REASON_KEY: entry.get(LINEAGE_REASON_KEY) or "",

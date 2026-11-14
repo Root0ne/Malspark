@@ -67,6 +67,10 @@ def _bare(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return [{k: v for k, v in row.items() if k != "extra"} for row in rows]
 
 
+# The process facts of the live report's HTTP flow (32): procid 46, not listed.
+FLOW_32 = {"procid": 46, "pid": 2572, "process_not_listed": True, "platform_task": "behavioral1"}
+
+
 def _task(*requests: dict[str, Any]) -> dict[str, Any]:
     return {"processes": [], "network": {"requests": list(requests)}}
 
@@ -93,8 +97,16 @@ class TestTheLiveGeneration:
         (request,) = report.network.dns_requests
         assert request.questions == [{"request": "c.pki.goog", "type": "IN A"}]
         assert request.answers == [{"data": "pki-goog.l.google.com"}, {"data": "172.217.76.94"}]
-        # The exchange's own fields, as each of its rows names them.
-        assert request.extra == {"flow": 31, "index": 1}
+        # The exchange's own fields, as each of its rows names them, and the
+        # process facts of the flow it rode on: a process the task does not list.
+        assert request.extra == {
+            "flow": 31,
+            "index": 1,
+            "procid": 36,
+            "pid": 1120,
+            "process_not_listed": True,
+            "platform_task": "behavioral1",
+        }
         assert report.network.domains == ["c.pki.goog"]
         dns = sandbox_document(report)["network"]["dns"]
         assert _bare(dns) == [
@@ -116,6 +128,7 @@ class TestTheLiveGeneration:
                 "port": None,
                 "encrypted": False,
                 "user_agent": "Microsoft-CryptoAPI/10.0",
+                **FLOW_32,
             },
             {
                 "host": "c.pki.goog",
@@ -125,6 +138,7 @@ class TestTheLiveGeneration:
                 "port": None,
                 "encrypted": False,
                 "user_agent": "Microsoft-CryptoAPI/10.0",
+                **FLOW_32,
             },
         ]
         first, second = (row["extra"] for row in report.network.http)
@@ -138,14 +152,29 @@ class TestTheLiveGeneration:
         report = _live()
         assert not _unread_channels(report)
 
-    def test_a_request_row_credits_no_process(self) -> None:
+    def test_a_request_takes_the_process_facts_of_its_flow(self) -> None:
         # The rows name no process; the flows they rode on name processes the
         # task does not list (the guest's own services), so no row is the
-        # sample's by this reading.
+        # sample's and each says its process is not listed.
         report = _live()
         assert all(SAMPLE_TREE_KEY not in row for row in report.network.http)
-        assert all(SAMPLE_TREE_KEY not in row for row in (*report.network.tcp, *report.network.udp))
-        assert {row["procid"] for row in (*report.network.tcp, *report.network.udp)} == {36, 46}
+        flows = (*report.network.tcp, *report.network.udp)
+        assert all(SAMPLE_TREE_KEY not in row for row in flows)
+        assert {row["procid"] for row in flows} == {36, 46}
+        assert all(row["process_not_listed"] is True for row in (*flows, *report.network.http))
+
+    def test_a_request_on_a_flow_of_another_task_takes_nothing_from_it(self) -> None:
+        one = _json(LIVE / "behavioral1.json")
+        two = _json(LIVE / "behavioral2.json")
+        # The second task's requests name flow 32, which only the first task holds.
+        two["network"]["requests"] = [r for r in one["network"]["requests"] if r["flow"] == 32]
+        report = _read(
+            {
+                "behavioral1": {**one, "network": {**one["network"], "requests": []}},
+                "behavioral2": two,
+            }
+        )
+        assert report.network.http and all("procid" not in r for r in report.network.http)
 
 
 class TestTheStoredGeneration:
@@ -219,6 +248,21 @@ class TestARowOfAnotherKind:
         assert sandbox_channels(document, TRIAGE_UNREAD_REQUESTS_CHANNEL)["total"] == 1
         # The rows read are read as without them.
         assert len(report.network.http) == 2 and len(report.network.dns_requests) == 1
+
+    def test_an_answer_with_no_request_is_kept_and_counted(self) -> None:
+        live = _json(LIVE / "behavioral1.json")
+        orphan_dns = {"flow": 40, "index": 1, "dns_response": {"answers": [{"value": "192.0.2.4"}]}}
+        orphan_http = {"flow": 41, "index": 3, "http_response": {"status": "404"}}
+        old_orphan = {"flow": 42, "domain_resp": {"answers": [{"value": "192.0.2.5"}]}}
+        live["network"]["requests"] += [orphan_dns, orphan_http, old_orphan]
+        document = sandbox_document(_read({"behavioral1": live}))
+        dns = sandbox_channels(document, f"{TRIAGE_UNREAD_REQUESTS_CHANNEL}.dns_response")
+        http = sandbox_channels(document, f"{TRIAGE_UNREAD_REQUESTS_CHANNEL}.http_response")
+        old = sandbox_channels(document, f"{TRIAGE_UNREAD_REQUESTS_CHANNEL}.domain_resp")
+        assert (dns["total"], http["total"], old["total"]) == (1, 1, 1)
+        assert dns["rows"][0]["dns_response"] == orphan_dns["dns_response"]
+        # No answer is read as a request of its own.
+        assert len(document["network"]["http"]) == 2
 
     def test_a_part_of_an_unread_kind_beside_a_read_one_stays_on_the_row(self) -> None:
         row = {

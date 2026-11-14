@@ -571,6 +571,11 @@ class Reading:
     # a pid or parent of 0 is the form's "not stated", rather than as the
     # source published its rows.
     rendered: bool = True
+    # The fields of a dropped file's row that hold the file's path in the
+    # guest, as the reader's source declares them; empty where the source
+    # names no such field (a field of the same name may hold a path on the
+    # sandbox's own host, which is never shown).
+    guest_path_fields: tuple[str, ...] = ()
 
 
 # What a report read by a reader that keeps its source's arrangement reached
@@ -845,6 +850,11 @@ SAMPLE_TREE_KEY = "sample_process_tree"
 # The image of the process outside the sample's tree that made a flow, on
 # the flow's row: which process reached the address, as the report names it.
 FLOW_PROCESS_KEY = "process"
+# Beside a flow's ``procid``: the report names the process that made the flow
+# and does not list it among the task's processes (a guest service the
+# sandbox does not follow), so the traffic is not the sample's. Set only where
+# the task lists processes at all.
+PROCESS_UNLISTED_KEY = "process_not_listed"
 
 
 def _basename(path: str) -> str:
@@ -1133,6 +1143,17 @@ LINEAGE_FILE = "file"
 # it is, the display name its report format declares
 # (``core.report_formats.reader_display_name``).
 LINEAGE_MARKED_BY_KEY = "lineage_marked_by"
+# The keys a flow's row states the process that made it under, which a DNS or
+# HTTP request riding on that flow takes from it (``triage_overview_to_sandbox_report``).
+TRAFFIC_PROCESS_KEYS: tuple[str, ...] = (
+    "procid",
+    "pid",
+    SAMPLE_TREE_KEY,
+    LINEAGE_DISPUTED_KEY,
+    LINEAGE_MARKED_BY_KEY,
+    FLOW_PROCESS_KEY,
+    PROCESS_UNLISTED_KEY,
+)
 # The value a row stored before the normalisation gives a marked process, and
 # the sandbox such a row, which names no marker, was marked by: the one
 # reader that wrote one (the triage format's declared name).
@@ -1253,6 +1274,8 @@ def _flow_attribution(
             out[SAMPLE_TREE_KEY] = False
             if lineage.images.get(procid):
                 out[FLOW_PROCESS_KEY] = lineage.images[procid]
+        elif lineage.images and procid not in lineage.images:
+            out[PROCESS_UNLISTED_KEY] = True
     if flow.get("pid") not in (None, ""):
         out["pid"] = flow.get("pid")
     for key in ("as_num", "as_org", "country"):
@@ -1691,7 +1714,11 @@ def attribute_the_launcher(report: SandboxReport, launcher: Any) -> None:
             proc.extra[LINEAGE_KEY] = LINEAGE_SAMPLE
         elif node in launcher_nodes:
             proc.extra[LINEAGE_KEY] = LINEAGE_LAUNCHER
-    for row in (*report.network.tcp, *report.network.udp):
+    # A flow's row, and a request's that took its flow's process facts.
+    traffic: list[dict[str, Any]] = [*report.network.tcp, *report.network.udp]
+    traffic += [row for row in report.network.http if isinstance(row, dict) and "procid" in row]
+    traffic += [r.extra for r in report.network.dns_requests if "procid" in r.extra]
+    for row in traffic:
         procid = pid_text(row.get("procid")) or pid_text(row.get("pid"))
         for key in (SAMPLE_TREE_KEY, LINEAGE_DISPUTED_KEY, LINEAGE_MARKED_BY_KEY, LINEAGE_KEY):
             row.pop(key, None)
@@ -1875,10 +1902,11 @@ def _triage_exchanges(
     the row's own fields). Rows naming the same flow and index are one
     exchange, a question and its answer written on rows of their own, as long
     as no part repeats; a row naming no flow or no index is an exchange by
-    itself. A row with no part read is returned apart, whole. Linear in the
-    rows.
+    itself. A row with no part read, and the rows of an exchange that holds an
+    answer with no question or request, are returned apart, whole. Linear in
+    the rows.
     """
-    exchanges: list[tuple[dict[str, dict[str, Any]], dict[str, Any]]] = []
+    held: list[tuple[dict[str, dict[str, Any]], dict[str, Any], list[dict[str, Any]]]] = []
     unread: list[dict[str, Any]] = []
     open_at: dict[tuple[str, str], int] = {}
     for req in rows:
@@ -1895,15 +1923,23 @@ def _triage_exchanges(
             continue
         flow, index = req.get("flow"), req.get("index")
         where = (str(flow), str(index)) if _scalar_id(flow) and _scalar_id(index) else None
-        held = open_at.get(where) if where is not None else None
-        if held is not None and not parts.keys() & exchanges[held][0].keys():
-            exchanges[held][0].update(parts)
+        at = open_at.get(where) if where is not None else None
+        if at is not None and not parts.keys() & held[at][0].keys():
+            held[at][0].update(parts)
             for key, value in own.items():
-                exchanges[held][1].setdefault(key, value)
+                held[at][1].setdefault(key, value)
+            held[at][2].append(req)
             continue
-        exchanges.append((parts, own))
+        held.append((parts, own, [req]))
         if where is not None:
-            open_at[where] = len(exchanges) - 1
+            open_at[where] = len(held) - 1
+    exchanges: list[tuple[dict[str, dict[str, Any]], dict[str, Any]]] = []
+    for parts, own, kept in held:
+        if _DNS_QUESTION in parts or _HTTP_REQUEST in parts:
+            exchanges.append((parts, own))
+        else:
+            # An answer with nothing it answers: kept whole, never read as a request.
+            unread.extend(kept)
     return exchanges, unread
 
 
@@ -2084,6 +2120,14 @@ def triage_overview_to_sandbox_report(
             if block not in ("flows", "requests"):
                 _keep_task_block(channels, f"task.network.{block}", str(task_name), value)
 
+        # Each flow's process facts by its id, which a request riding on it takes.
+        flow_process: dict[str, dict[str, Any]] = {}
+        for flow in _rows(net.get("flows")):
+            if _scalar_id(flow.get("id")):
+                attribution = _flow_attribution(flow, lineage, marker)
+                flow_process[str(flow["id"])] = {
+                    k: attribution[k] for k in TRAFFIC_PROCESS_KEYS if k in attribution
+                }
         for flow in _rows(net.get("flows")):
             proto = str(flow.get("proto") or "").lower()
             dst_host, dst_port = _split_host_port(str(flow.get("dst") or ""))
@@ -2123,7 +2167,12 @@ def triage_overview_to_sandbox_report(
             web_req = parts.get(_HTTP_REQUEST)
             web_resp = parts.get(_HTTP_RESPONSE)
             # ``req_extra``: the exchange's own fields beside its parts (the flow
-            # it rode on, its index, its time), kept on each row it gives.
+            # it rode on, its index, its time), kept on each row it gives. The
+            # request names no process: it takes the process facts of the flow
+            # it rode on, in its own task (``made``).
+            ridden = req_extra.get("flow")
+            made = flow_process.get(str(ridden)) if _scalar_id(ridden) else None
+            made = {**made, PROCESS_TASK_KEY: str(task_name)} if made else {}
 
             if domain_req is not None:
                 answers = [
@@ -2161,7 +2210,7 @@ def triage_overview_to_sandbox_report(
                                 for q in questions
                             ],
                             answers=answers,
-                            extra=req_extra,
+                            extra={**req_extra, **made},
                         )
                     )
                 network.domains.extend(str(q.get("name") or "") for q in questions)
@@ -2176,6 +2225,7 @@ def triage_overview_to_sandbox_report(
                     "port": parsed_url.port,
                     "encrypted": parsed_url.scheme == "https",
                     "user_agent": _header(web_req.get("headers"), "User-Agent"),
+                    **made,
                 }
                 # The whole request and answer beyond those fields (the URL with
                 # its query, every header, the answer's own fields).

@@ -578,7 +578,8 @@ class TriageReportReader(ReportReader):
             read_from = READ_FROM_TASKS if fetches_task_reports(provider) else READ_FROM_OVERVIEW
         if read_from == READ_FROM_OVERVIEW:
             return Reading(TRIAGE_OVERVIEW_FILLS, partial=self.PARTIAL)
-        return Reading(TRIAGE_NORMALISER_FILLS)
+        # A task report's dumped file names its guest path under ``path``.
+        return Reading(TRIAGE_NORMALISER_FILLS, guest_path_fields=("path",))
 
     # What a behavioural task's row in the overview, and its task report's
     # ``task`` block, say of the machine the task ran in: ``resource`` is the
