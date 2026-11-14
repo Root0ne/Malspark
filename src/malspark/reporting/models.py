@@ -745,13 +745,14 @@ class CapabilityCell(BaseModel):
     # is one source however many agents cite it. Empty on rows built without
     # the ledger.
     sources: list[str] = Field(default_factory=list)
-    # The technique's evidence: the ledger entries behind it, the one set every
-    # surface that shows the technique prints
-    # (``reporting.technique_evidence``). The entries of ``sources``, those a
-    # map the judge made rests on, and those its statements cite that the run
-    # issued, in ledger order; without a ledger, the ids its statements cite.
-    # ``[]`` is a technique no entry stands behind; ``None`` is a row stored
-    # before the set was recorded, and is left out of the stored row.
+    # The technique's evidence, the one set every surface that shows the
+    # technique prints (``reporting.technique_evidence``): the entries cited by
+    # the statements that name it (its claims and findings, a map the judge
+    # made, an asserting tool's own entry) that the run issued, in ledger
+    # order, an entry that only looked the catalogue up left out; without a
+    # ledger, the ids its statements cite. ``[]`` is a technique whose
+    # statements cite no entry; ``None`` is a row stored before the set was
+    # recorded, and is left out of the stored row.
     evidence_ids: list[str] | None = Field(default=None, exclude_if=lambda value: value is None)
     # How many of ``sources`` are independent: sources whose roots overlap
     # (two tools reading one place) count once.

@@ -137,13 +137,16 @@ def build_capability_matrix(
     roots_of = run_roots(ledger) if ledger else None
     rows = _corroboration_rows(isr_reports, ledger)
     # The run's entries in ledger order, the order a technique's evidence is
-    # listed in; ``None`` without a ledger.
+    # listed in, less the entries that only looked the catalogue up, which are
+    # in no technique's evidence; ``None`` without a ledger.
     entry_order: dict[str, int] | None = None
     if ledger:
         entry_order = {}
+        looked_up = _catalogue_lookups(ledger)
         for entry in ledger:
             eid = str(getattr(entry, "id", None) or getattr(entry, "entry_id", None) or "")
-            entry_order.setdefault(eid.strip().lower(), len(entry_order))
+            if eid.strip().lower() not in looked_up:
+                entry_order.setdefault(eid.strip().lower(), len(entry_order))
 
     out_of_scope = _out_of_scope(list(techniques), sample)
     review = technique_review(stix_output)
@@ -875,12 +878,15 @@ def _collect_techniques(
 def _technique_evidence(
     info: dict[str, Any], held: Sequence[str], entry_order: dict[str, int] | None
 ) -> list[str]:
-    """The ledger entries behind one technique: the evidence every surface prints.
+    """The technique's evidence every surface prints: the entries its statements cite.
 
-    The entries among its sources (``held``), those a map the judge made
-    rests on, and those its statements cite, each once. With a ledger, only
-    the entries the run issued, in ledger order; without one, the ids as the
-    statements cite them, in that order.
+    The statements that name the technique are the analysts' claims and
+    findings, a map the judge made, and an asserting tool's own entry; their
+    entries are its sources (``held``), the map's entries and those the
+    statements cite, each once. With a ledger, only the entries the run issued
+    (``entry_order``, which leaves out an entry that only looked the catalogue
+    up), in ledger order; without one, the ids as the statements cite them, in
+    that order.
     """
     wanted = [
         *held,
@@ -1490,6 +1496,24 @@ def mapped_decisions(review: TechniqueReview | None) -> list[Any]:
         for d in review.checked_decisions
         if d.decision == "map" and d.evidence_ids and not d.declined_by_check
     ]
+
+
+def _catalogue_lookups(ledger: Sequence[Any] | None) -> set[str]:
+    """The entries that only looked the catalogue up, for any technique.
+
+    An entry whose call's arguments name a technique id its answer's declared
+    technique field does not (:func:`_lookups`, for every id): its answer
+    describes the technique asked about and says nothing of the sample.
+    Linear in the ledger.
+    """
+    from malspark.analysis.checked_techniques import answer_technique_ids, argument_technique_ids
+
+    found: set[str] = set()
+    for entry in ledger or ():
+        named = set(argument_technique_ids(entry))
+        if named and named - set(answer_technique_ids(entry)):
+            found.add(str(getattr(entry, "id", "") or "").strip().lower())
+    return found
 
 
 def _lookups(ledger: Sequence[Any] | None, ids: Collection[str]) -> dict[str, set[str]]:

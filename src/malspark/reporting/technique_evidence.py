@@ -1,12 +1,13 @@
 """The evidence of a published technique: one set, read once, for every surface.
 
-The capability matrix builder records, per technique, the ledger entries
-behind it (``CapabilityCell.evidence_ids`` and ``TTPMapping.evidence_ids``).
+The capability matrix builder records, per technique, the entries cited by
+the statements that name it (``CapabilityCell.evidence_ids`` and
+``TTPMapping.evidence_ids``).
 Every surface that shows a technique prints that set and nothing in its place:
 the Markdown and analyst ATT&CK tables, the STIX ``uses`` edge, the MISP
 technique attribute, the ATT&CK Navigator layer, the ATT&CK defence rows and
-the API's technique list. A technique no entry stands behind says so in each
-surface's own form, worded here once (:data:`NO_LEDGER_ENTRY`); a row stored
+the API's technique list. A technique whose statements cite no entry says so
+in each surface's own form, worded here once (:data:`NO_LEDGER_ENTRY`); a row stored
 before the set was recorded, whose sources and statements name no entry,
 says nothing either way. Other ids a
 surface shows beside it, such as the entries of the rules that matched it or
@@ -24,7 +25,7 @@ from typing import Any
 
 from malspark.schemas.evidence import ENTRY_ID_RE
 
-# What a surface states for a technique no ledger entry stands behind.
+# What a surface states for a technique whose statements cite no ledger entry.
 NO_LEDGER_ENTRY = "no ledger entry"
 
 # How a surface names the sandbox items among a technique's sources.
@@ -50,14 +51,14 @@ def _entries(ids: Iterable[Any]) -> list[str]:
 
 
 def technique_evidence_ids(row: Any) -> list[str] | None:
-    """The ledger entries behind one technique row, a model or its dump.
+    """The entries cited by the statements that name one technique, read off its row or dump.
 
-    The row's recorded ``evidence_ids``; ``[]`` is a technique no entry
-    stands behind. A row stored before the set was recorded carries none,
-    and reads as the entries among its ``sources`` and then those its
-    statements write (``evidence_quotes`` on a published technique,
+    The row's recorded ``evidence_ids``; ``[]`` is a technique whose
+    statements cite no entry. A row stored before the set was recorded
+    carries none, and reads as the entries among its ``sources`` and then
+    those its statements write (``evidence_quotes`` on a published technique,
     ``evidence`` on a matrix cell), once each; ``None`` where those name no
-    entry, since such a row does not say that none stands behind it.
+    entry, since such a row does not say that its statements cite none.
     """
     recorded = _field(row, "evidence_ids")
     if recorded is not None:

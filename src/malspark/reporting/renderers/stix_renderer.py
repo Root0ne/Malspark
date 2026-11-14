@@ -884,10 +884,10 @@ class ExtendedSTIXRenderer:
         Each published technique's evidence, the set the report's technique
         list carries and every surface prints (``technique_evidence``), is
         written on the sample's ``uses`` edge to that technique as
-        ``x_malspark_evidence_refs``; an edge to a technique no ledger entry
-        stands behind says so in ``x_malspark_evidence_note``. The set holds
-        the ids the technique's statements cite, read by the matrix builder
-        from the run's claims and findings, each one an id the run issued. The
+        ``x_malspark_evidence_refs``; an edge to a technique whose statements
+        cite no ledger entry says so in ``x_malspark_evidence_note``. The set
+        holds the entries cited by the statements that name the technique,
+        read by the matrix builder, each one an id the run issued. The
         attribution's family ids go on a malware object this export mints from
         the family name. An indicator gets the ids the report's IOC table ties
         to its values. Nothing else gets the property.

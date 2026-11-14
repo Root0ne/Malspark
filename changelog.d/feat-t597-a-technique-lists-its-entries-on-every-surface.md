@@ -2,13 +2,14 @@
 
 - **A published technique lists the same ledger entries on every surface (T-597).** The
   capability matrix records each technique's evidence (`evidence_ids` on a matrix cell and a
-  published mapping): the entries among its sources, the entries a map the judge made rests
-  on, and the entries its claims and findings cite that the run issued, in ledger order. The
+  published mapping): the entries cited by the statements that name the technique (its claims
+  and findings, a map the judge made, an asserting tool's own entry) that the run issued, in
+  ledger order; an entry that only looked the catalogue up is in no technique's set. The
   Markdown ATT&CK table's Evidence column, a note in the analyst report's ATT&CK table, the
   STIX `uses` edge (`x_malspark_evidence_refs`), the MISP technique attribute's comment, the
   ATT&CK Navigator layer's comment, the ATT&CK defence rows and each `/reports/{id}/mitre` row
   (`evidence_ids`) print that set, read through one function; nothing is asked of a model for
-  it. A technique no ledger entry stands behind says so on each surface: "no ledger entry" in
+  it. A technique whose statements cite no ledger entry says so on each surface: "no ledger entry" in
   a cell or comment, `x_malspark_evidence_note` on the STIX edge and `[]` in the API. The
   entries of the rules that matched a technique follow the set in the Markdown cell as "rule
   matches", and the sandbox items among its sources are named as such in the Navigator

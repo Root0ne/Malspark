@@ -162,6 +162,47 @@ class TestTheBuilderRecordsTheSet:
         cell = next(c for c in report.capability_matrix if c.technique_id == CLAIMED)
         assert cell.evidence_ids == EXPECTED
 
+    def test_an_asserting_entry_is_its_own_evidence_and_a_catalogue_lookup_is_none(
+        self,
+    ) -> None:
+        # ev_0006 asserts the technique in its own answer; ev_0007 looks the
+        # technique up, ev_0008 another technique. The finding cites all three.
+        ledger = [
+            *_ledger(),
+            LedgerEntry(
+                id="ev_0006", tool="capa", structured={"rules": [{"attck": [CLAIMED]}]}, seq=6
+            ),
+            LedgerEntry(
+                id="ev_0007", tool="attck_lookup", args={"technique_id": CLAIMED},
+                structured={"name": "Process Injection"}, seq=7,
+            ),
+            LedgerEntry(
+                id="ev_0008", tool="attck_lookup", args={"technique_id": "T1071"},
+                structured={"name": "Application Layer Protocol"}, seq=8,
+            ),
+        ]  # fmt: skip
+        isrs = _isrs()
+        isrs["static"].findings[0].evidence_ids = ["ev_0004", "ev_0006", "ev_0007", "ev_0008"]
+
+        report = MalwareReportBuilder(
+            file_hash="a" * 64,
+            file_name="sample.exe",
+            sample_path=None,
+            sandbox_report={},
+            reports={},
+            isr_reports=isrs,
+            stix_output=_judge().model_dump(mode="json"),
+            run_summary={},
+            discussion_history=[],
+            final_decision="Malware",
+            overall_confidence=0.9,
+            judge_assessment=None,
+            malware_category="loader",
+            evidence_ledger=ledger,
+        ).build_deterministic()
+
+        assert _mapping(report, CLAIMED).evidence_ids == [*EXPECTED, "ev_0006"]
+
     def test_a_technique_only_the_judge_names_has_none(self) -> None:
         assert _mapping(_report(), JUDGE_ONLY).evidence_ids == []
 

@@ -5747,8 +5747,9 @@ def _technique_evidence_cell(
 ) -> str:
     """A technique's Evidence cell: its evidence, then the entries of the rules that matched it.
 
-    The evidence is the set every surface prints (``technique_evidence``), or
-    that no ledger entry stands behind it. A rule's entries it does not
+    The evidence is the set every surface prints (``technique_evidence``),
+    the entries cited by the statements that name the technique, or that they
+    cite no ledger entry. A rule's entries it does not
     already list follow it, named as the rules'. A row stored before the set
     was recorded that names no entry prints the rules' entries alone, or
     ``-``.

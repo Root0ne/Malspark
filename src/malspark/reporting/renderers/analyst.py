@@ -2200,9 +2200,10 @@ class _Analyst:
         )
 
     def _evidence(self, row: Any) -> str:
-        """A technique's evidence as this report cites: one note listing its
-        entries (``technique_evidence``), or that no ledger entry stands behind
-        it; ``-`` for a row stored before the set was recorded that names none."""
+        """A technique's evidence as this report cites: one note listing the
+        entries its statements cite (``technique_evidence``), or that they cite
+        no ledger entry; ``-`` for a row stored before the set was recorded that
+        names none."""
         ids = technique_evidence_ids(row)
         if ids is None:
             return NOT_RECORDED

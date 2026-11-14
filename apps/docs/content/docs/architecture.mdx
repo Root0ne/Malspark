@@ -1832,11 +1832,12 @@ An exported object carries the ledger entries the run's record ties to it, as
 `x_malspark_evidence_refs`: `ev_` ids, each once, in ledger order. The sample's
 `uses` edge to a published technique carries that technique's evidence, the
 one set every surface prints for it (`reporting/technique_evidence`, below):
-the entries its analyst claims and findings cite, the entries of the asserting
-tools (capa, Sigma, YARA, LOLBin, sandbox signatures) whose structured output
-names it, and the entries a map the judge made rests on. An edge to a technique
-no ledger entry stands behind carries `x_malspark_evidence_note: "no ledger
-entry"` in place of the ids. A malware object the export mints from the family
+the entries cited by the statements that name the technique — its analyst
+claims and findings, a map the judge made, and the entry of an asserting tool
+(capa, Sigma, YARA, LOLBin, sandbox signatures) whose structured output names
+it. An entry that only looked the catalogue up, for any technique, is in no
+technique's set. An edge to a technique whose statements cite no ledger entry
+carries `x_malspark_evidence_note: "no ledger entry"` in place of the ids. A malware object the export mints from the family
 name carries the attribution's `family_evidence_ids`. Nothing else gets either
 property, and no object is matched by value.
 
@@ -5035,18 +5036,19 @@ is assembled from what the run gathered rather than recomputed beside it:
   the technique id, so the same technique is the same object across exports —
   and the `mitre_techniques` column behind `/reports/{id}/mitre`.
 * **One evidence set per technique.** The matrix builder records on each row
-  (`CapabilityCell.evidence_ids`, `TTPMapping.evidence_ids`) the ledger entries
-  behind the technique: the entries among its sources, those a map the judge
-  made rests on, and those its claims and findings cite that the run issued,
-  in ledger order (without a ledger, the ids its statements cite). Every
+  (`CapabilityCell.evidence_ids`, `TTPMapping.evidence_ids`) the entries cited
+  by the statements that name the technique — its analyst claims and findings,
+  a map the judge made, an asserting tool's own entry — that the run issued, in
+  ledger order (without a ledger, the ids its statements cite). An entry that
+  only looked the catalogue up, for any technique, is in no technique's set. Every
   surface that shows the technique prints that set, read through one function
   (`reporting/technique_evidence.technique_evidence_ids`), and nothing is asked
   of a model for it: the Evidence column of the Markdown ATT&CK table, a note
   in the analyst report's ATT&CK table, the STIX `uses` edge, the MISP
   technique attribute's comment (`evidence: …`), the Navigator layer's
   comment, the ATT&CK defence rows and `evidence_ids` on each
-  `/reports/{id}/mitre` row. A technique no ledger entry stands behind — one
-  the judge alone names, for one — says so on each: "no ledger entry" in a
+  `/reports/{id}/mitre` row. A technique whose statements cite no ledger entry
+  — one the judge alone names, for one — says so on each: "no ledger entry" in a
   text cell or comment, `x_malspark_evidence_note` on the STIX edge, `[]` in
   the API. Other ids a surface shows beside the set are named for what they
   are: the entries of the rules that matched the technique follow it in the

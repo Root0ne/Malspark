@@ -4264,9 +4264,9 @@ def _extract_mitre(result: dict) -> list | None:
         from malspark.reporting.technique_evidence import technique_evidence_ids
 
         # ``evidence_ids`` is the technique's evidence as every surface prints
-        # it (``technique_evidence``); ``[]`` where no ledger entry stands
-        # behind it. A mapping stored before the set was recorded, naming no
-        # entry, carries no such key.
+        # it (``technique_evidence``), the entries cited by the statements that
+        # name it; ``[]`` where they cite no ledger entry. A mapping stored
+        # before the set was recorded, naming no entry, carries no such key.
         rows: list[dict[str, Any]] = []
         for m in mappings:
             if not m.get("technique_id"):

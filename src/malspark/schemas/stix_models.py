@@ -403,8 +403,8 @@ class Malware(STIXObject):
 # such a tie; an object the record ties to nothing carries no such property.
 EVIDENCE_REFS_PROPERTY = "x_malspark_evidence_refs"
 
-# On the sample's ``uses`` edge to a published technique no ledger entry stands
-# behind, in place of ``x_malspark_evidence_refs``: the words every surface
+# On the sample's ``uses`` edge to a published technique whose statements cite
+# no ledger entry, in place of ``x_malspark_evidence_refs``: the words every surface
 # states it in (``reporting.technique_evidence.NO_LEDGER_ENTRY``). Absent on
 # every other object.
 EVIDENCE_NOTE_PROPERTY = "x_malspark_evidence_note"
