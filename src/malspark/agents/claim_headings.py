@@ -38,6 +38,14 @@ CLAIM_HEAD_RE = re.compile(
 )
 
 
+# The heading a model is told to write when its claims open with headings the
+# rule above does not read: the form, and one heading of that form. Both are
+# read by ``CLAIM_HEAD_RE`` (the form once its ``<n>`` is a number), so what a
+# model is asked to write is what is read.
+CLAIM_HEADING_FORM = "CLAIM <n>: <sentence>"
+CLAIM_HEADING_EXAMPLE = "CLAIM 1: The routine at 0x1400 reads the key."
+
+
 def heading_sentence(line: str, heading: re.Match[str]) -> str:
     """The claim sentence a heading's line starts: what follows its delimiter, or its note alone."""
     if heading.group("delim") is None:
@@ -303,6 +311,20 @@ _SEPARATOR_RE = re.compile(r"^[ \t]*-{3,}[ \t]*$")
 _FIELD_LABEL_RE = re.compile(
     r"^" + LINE_PREFIX + r"(?:EVIDENCE|CONFIDENCE|TECHNIQUE|DISSENT)\b", re.IGNORECASE
 )
+
+
+# A claim's field line as a model writes it: its label (``_FIELD_LABEL_RE``)
+# and its colon, emphasis marks between them aside.
+_FIELD_LINE_RE = re.compile(_FIELD_LABEL_RE.pattern + r"[ \t*_]*+:", re.IGNORECASE)
+
+
+def writes_claim_fields(text: str) -> bool:
+    """Whether ``text`` holds a claim's field line (``EVIDENCE:``, ``CONFIDENCE:`` …) anywhere.
+
+    An answer that writes them wrote claims, whatever its headings; one that
+    writes none wrote no claim block at all. Each line is read once.
+    """
+    return any(_FIELD_LINE_RE.match(line) for line in (text or "").splitlines())
 
 
 def _block_key(lines: list[str]) -> str:

@@ -2447,7 +2447,13 @@ open — and sets its own confidence; the report header states the same reasons.
 
 One more repair belongs here because it decides whether an analyst's answer
 exists at all. A tool loop that ends on a turn that is not a report is asked
-once more for one (the final-answer nudge). A loop can end on an assistant
+once more for one (the final-answer nudge). When that turn writes claim field
+lines (`EVIDENCE:`, `CONFIDENCE:`, `TECHNIQUE:`) under headings the claim
+reader does not read, the nudge's words say so and state the heading it reads,
+`CLAIM <n>: <sentence>` (`base_agent.FINAL_ANSWER_HEADING_NUDGE`, built from
+`claim_headings.CLAIM_HEADING_FORM`); otherwise they only ask for the final
+report. Either way it is the same one turn, and the log line that says the
+nudge is sent names which words it carries. A loop can end on an assistant
 turn whose tool call carries arguments that never parsed; no tool ran, and
 sending that turn back makes a server fail rendering it ("Failed to parse
 tool call arguments as JSON", HTTP 500). The nudge and the forced synthesis
