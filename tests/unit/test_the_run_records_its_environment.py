@@ -457,6 +457,32 @@ class TestTheRecord:
         assert record["host"] == host_facts()
         assert record["agents"]["static"]["response_models"] == {"m-2026": 1}
 
+    def test_an_agent_holding_several_static_providers_lists_each_in_order(self) -> None:
+        from types import SimpleNamespace
+
+        from malspark.agents.composition import PROVIDER_ID_METADATA_KEY
+
+        def marked(name: str, provider: str) -> Any:
+            return SimpleNamespace(name=name, metadata={PROVIDER_ID_METADATA_KEY: provider})
+
+        container = _Container([_record()], TokenLedger())
+        container.setup_tools = lambda: {  # type: ignore[attr-defined]
+            "Reader": [
+                marked("decompile", "second"),
+                SimpleNamespace(name="pe_info", metadata={"malspark_server": "analysis"}),
+                marked("first__decompile", "first"),
+                marked("third__decompile", "third"),
+                marked("disassemble", "second"),
+            ],
+            # One provider: its tools carry no mark and the agent lists none.
+            "static": [SimpleNamespace(name="decompile", metadata={})],
+        }
+        record = environment_record(container)
+        assert record is not None
+        assert record["agents"]["reader"]["static_providers"] == ["second", "first", "third"]
+        assert record["agents"]["reader"]["requests"] == []
+        assert "static_providers" not in record["agents"]["static"]
+
     def test_nothing_read_is_no_record(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setattr(run_environment, "host_facts", lambda: {})
         assert environment_record(object()) is None

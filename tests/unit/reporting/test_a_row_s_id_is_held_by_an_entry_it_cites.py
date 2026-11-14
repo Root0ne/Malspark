@@ -2,11 +2,15 @@
 
 A command row states the id the operator sends and cites entries, and nothing
 compared that id with what the cited entries hold. The rule: a number is held
-by an entry whose code compares it, any other id by an entry whose text writes
-it whole. A row whose id none of its cited entries holds, while another entry
-of the run holds it, is asked about once with that entry named; an id no entry
-holds is not asked about here. A row kept after the question is marked beside
-its evidence.
+by a cited entry whose text writes it as a compared operand (an equality test,
+a case label, a compare instruction), any other id by a cited entry whose text
+writes it whole; a failed call holds nothing. A number none of its cited
+entries holds is asked about only with the entry whose one compared expression
+holds the most of the table's numbers, where the entries holding as many agree
+on its values, and not when a cited entry is code the reader cannot read; any
+other id with every entry that writes it. A table of fewer than four numbered
+ids, or of ids that are a plain count, is not checked for its numbers. A row
+kept after the question is marked beside its evidence.
 """
 
 from __future__ import annotations
@@ -17,13 +21,21 @@ from types import SimpleNamespace
 from typing import Any
 from unittest.mock import patch
 
+import pytest
+
 from malspark.pipeline.validation import (
     ASKED_BY_VALUE,
     ID_NOT_IN_CITED_ENTRY_CODE,
     KEPT_WITH_A_FINDING,
     MARKED_IN_PLACE,
+    ComparedValues,
     EntryTexts,
+    _code_read,
+    _instruction_operand_values,
+    _read_compared_operands,
     cited_id_violations,
+    command_value_violations,
+    compared_operands,
     record_flagged_statements,
 )
 from malspark.reporting.composer import ReportComposer, _CommandsOut
@@ -37,13 +49,14 @@ from malspark.reporting.models import (
 from malspark.reporting.renderers.markdown import MarkdownRenderer
 from malspark.schemas.evidence import LedgerEntry
 from tests.credential_shapes import prefixed_key
-from tests.linear_cost import assert_scales
+from tests.linear_cost import assert_scales, assert_under, peak_bytes
 
 DISPATCHER = (
     "void dispatch(int param_2) {\n"
     "  switch (param_2) {\n"
     "  case 2: run_shell(); break;\n"
     "  case 0xc: upload(); break;\n"
+    "  case 0x13: sleep_for(); break;\n"
     "  case 0x15: uninstall(); break;\n"
     "  }\n"
     "}\n"
@@ -65,7 +78,12 @@ def _texts(*, partial: bool = False) -> EntryTexts:
             _entry("ev_0010", "batch_decompile", json.dumps({"code": DISPATCHER})),
             _entry("ev_0011", "decompile_function", json.dumps({"code": HANDLER})),
             _entry("ev_0012", "strings", json.dumps({"strings": ["ERROR", "OK"]})),
-            _entry("ev_0013", "decompile_function", "int x = 1;", truncated=partial),
+            _entry(
+                "ev_0013",
+                "decompile_function",
+                json.dumps({"code": "int f(void) {\n  return g(1);\n}\n"}),
+                truncated=partial,
+            ),
         ]
     )
 
@@ -79,12 +97,17 @@ def _commands(*rows: tuple[str, list[str]]) -> dict[str, Any]:
     }
 
 
+def _table(first: tuple[str, list[str]]) -> dict[str, Any]:
+    """``first`` as row 1 of a table whose other rows the dispatcher holds."""
+    return _commands(first, ("2", ["ev_0010"]), ("0x13", ["ev_0010"]), ("0x15", ["ev_0010"]))
+
+
 class TestANumberedId:
     def test_an_id_the_cited_code_compares_stands(self) -> None:
         assert cited_id_violations(_commands(("0xc", ["ev_0010"])), _texts()) == []
 
     def test_an_id_only_another_entry_s_code_compares_is_asked_naming_it(self) -> None:
-        (found,) = cited_id_violations(_commands(("0xc", ["ev_0011"])), _texts())
+        (found,) = cited_id_violations(_table(("0xc", ["ev_0011"])), _texts())
 
         assert found.code == ID_NOT_IN_CITED_ENTRY_CODE == "report.id_not_in_cited_entry"
         assert "Row 1 of commands" in found.message
@@ -92,15 +115,23 @@ class TestANumberedId:
         assert found.path == "commands.id"
 
     def test_an_id_read_as_its_last_word_and_in_any_base(self) -> None:
-        payload = _commands(("COMMAND 21", ["ev_0011"]), ("012", ["ev_0010"]))
+        payload = _commands(
+            ("COMMAND 21", ["ev_0011"]),
+            ("COMMAND 012", ["ev_0010"]),
+            ("COMMAND 2", ["ev_0010"]),
+            ("COMMAND 19", ["ev_0010"]),
+        )
 
         (found,) = cited_id_violations(payload, _texts())
 
-        # 21 is 0x15, compared by ev_0010; 012 is octal 10, compared by none.
+        # 21 is 0x15, which ev_0010 compares and the cited ev_0011 does not;
+        # 012 reads as octal 10 and as decimal 12, and ev_0010 compares 12.
         assert found.message.startswith("Row 1 of commands")
 
     def test_rows_one_entry_holds_are_asked_together(self) -> None:
-        payload = _commands(("2", ["ev_0011"]), ("0xc", ["ev_0012"]), ("0x15", ["ev_0010"]))
+        payload = _commands(
+            ("2", ["ev_0011"]), ("0xc", ["ev_0012"]), ("0x13", ["ev_0010"]), ("0x15", ["ev_0010"])
+        )
 
         (found,) = cited_id_violations(payload, _texts())
 
@@ -118,7 +149,13 @@ class TestANumberedId:
             ]
         )
 
-        (found,) = cited_id_violations(_commands(("12", ["ev_0001"])), texts)
+        (found,) = cited_id_violations(
+            _commands(
+                ("12", ["ev_0001"]), ("2", ["ev_0002"]), ("0x13", ["ev_0002"]),
+                ("0x15", ["ev_0002"]),
+            ),
+            texts,
+        )  # fmt: skip
 
         assert "ev_0002" in found.message
 
@@ -136,6 +173,743 @@ class TestAnyOtherId:
         assert cited_id_violations(_commands(("net_view", ["ev_0011"])), _texts()) == []
 
 
+# A dispatcher on the command (4, 5, 6, 7), and a runtime function whose small
+# switch also has a case 4: it merely contains the number.
+COMMAND_SWITCH = (
+    "void on_command(int cmd) {\n"
+    "  switch (cmd) {\n"
+    "  case 4: download(); break;\n"
+    "  case 5: upload(); break;\n"
+    "  case 6: run(); break;\n"
+    "  case 7: stop(); break;\n"
+    "  }\n"
+    "}\n"
+)
+RUNTIME_SWITCH = (
+    "int _setmode(int fd, int m) {\n"
+    "  switch (m) {\n"
+    "  case 0: a(); break;\n"
+    "  case 1: b(); break;\n"
+    "  case 2: c(); break;\n"
+    "  case 4: d(); break;\n"
+    "  }\n"
+    "  return 0;\n"
+    "}\n"
+)
+
+
+def _ledger(cited: str, *, tool: str = "decompile_function", dispatcher: bool = True) -> EntryTexts:
+    entries = [
+        _entry("ev_0001", tool, json.dumps({"code": cited})),
+        _entry("ev_0002", "decompile_function", json.dumps({"code": RUNTIME_SWITCH})),
+    ]
+    if dispatcher:
+        entries.append(
+            _entry("ev_0003", "decompile_function", json.dumps({"code": COMMAND_SWITCH}))
+        )
+    return EntryTexts.from_ledger(entries)
+
+
+def _rows(first: str, label: str = "") -> dict[str, Any]:
+    return _commands(
+        (first, ["ev_0001"]),
+        *((f"{label}{n}", ["ev_0003"]) for n in (5, 6, 7)),
+    )
+
+
+class TestACitedEntryHoldsANumberItComparesInAnyForm:
+    @pytest.mark.parametrize(
+        "code",
+        [
+            "void handler(int cmd) {\n  if (cmd == 4) {\n    download();\n  }\n}\n",
+            "void handler(int cmd) {\n  if (cmd == 0x4) {\n    download();\n  }\n}\n",
+            "void handler(int cmd) {\n  if (4 == cmd) {\n    download();\n  }\n}\n",
+            "void handler(int cmd) {\n  if (cmd != 4) {\n    return;\n  }\n  download();\n}\n",
+            "void handler(int cmd) {\n  switch (cmd >> 1) {\n  case 4:\n    download();\n  }\n}\n",
+            "cmp eax, 4\njz 0x401000\ncmp eax, 9\njz 0x401100",
+            "CMP dword ptr [EBP + -0x8],0x4\nJZ LAB_00401000",
+            "0040100a  83 f8 04  cmp eax, 4h\n0040100d  74 10     je 0x40101f",
+        ],
+    )
+    @pytest.mark.parametrize(
+        ("written", "label"), [("4", ""), ("0x4", ""), ("04", ""), ("COMMAND 4", "COMMAND ")]
+    )
+    def test_the_row_stands(self, code: str, written: str, label: str) -> None:
+        assert cited_id_violations(_rows(written, label), _ledger(code)) == []
+
+    @pytest.mark.parametrize(
+        "code",
+        [
+            "void handler(int cmd) {\n  if (cmd == 14) {\n    download();\n  }\n}\n",
+            "void handler(int cmd) {\n  if (cmd == 0x40) {\n    download();\n  }\n}\n",
+            "void handler(int cmd) {\n  if (cmd == 4096) {\n    download();\n  }\n}\n",
+            "void handler(int cmd) {\n  if (cmd == -4) {\n    download();\n  }\n}\n",
+            "void handler(int cmd) {\n  if (cmd == 4 + base) {\n    download();\n  }\n}\n",
+            "cmp eax, 40h\njz 0x401000\ncmp eax, 9\njz 0x401100",
+        ],
+    )
+    def test_a_number_that_is_not_the_whole_operand_is_not_held(self, code: str) -> None:
+        (found,) = cited_id_violations(_rows("4"), _ledger(code))
+
+        assert "ev_0003 (decompile_function)" in found.message
+
+    def test_readable_code_comparing_other_values_is_asked(self) -> None:
+        code = "void handler(int cmd) {\n  if (cmd == 9) {\n    download();\n  }\n}\n"
+
+        (found,) = cited_id_violations(_rows("4"), _ledger(code))
+
+        assert found.message.startswith("Row 1 of commands states the id '4'")
+
+    def test_code_the_reader_cannot_read_is_never_asked_about(self) -> None:
+        # Declared code, in no form the reader knows: a doubt is silence.
+        code = "MATCH cmd WITH\n| 4 -> download\n| 5 -> upload"
+
+        assert cited_id_violations(_rows("4"), _ledger(code)) == []
+        assert cited_id_violations(_rows("4"), _ledger(code, tool="disassemble_function")) == []
+
+
+class TestTheEntryOfferedForANumber:
+    HANDLER_9 = "void handler(int cmd) {\n  if (cmd == 9) {\n    download();\n  }\n}\n"
+
+    def test_only_the_expression_holding_most_of_the_table_s_numbers(self) -> None:
+        (found,) = cited_id_violations(_rows("4"), _ledger(self.HANDLER_9))
+
+        assert "ev_0003 (decompile_function)" in found.message
+        assert "ev_0002" not in found.message
+        assert found.labels == ('"4" is not in ev_0001; ev_0003 (decompile_function) holds it',)
+
+    def test_an_entry_that_merely_contains_the_number_is_never_offered(self) -> None:
+        texts = _ledger(self.HANDLER_9, dispatcher=False)
+
+        assert cited_id_violations(_rows("4"), texts) == []
+
+    def test_entries_tied_on_the_most_are_all_offered(self) -> None:
+        texts = EntryTexts.from_ledger(
+            [
+                _entry("ev_0001", "decompile_function", json.dumps({"code": self.HANDLER_9})),
+                _entry("ev_0003", "decompile_function", json.dumps({"code": COMMAND_SWITCH})),
+                _entry("ev_0004", "decompile_function", json.dumps({"code": COMMAND_SWITCH})),
+            ]
+        )
+
+        (found,) = cited_id_violations(_rows("4"), texts)
+
+        assert "ev_0003 (decompile_function), ev_0004 (decompile_function)" in found.message
+
+    def test_one_number_picks_no_expression(self) -> None:
+        texts = _ledger(self.HANDLER_9, dispatcher=False)
+
+        assert texts.choosing({4}) == {}
+        assert texts.choosing({0, 1, 2}) != {}
+
+
+class TestAFailedCallHoldsNothing:
+    def _texts(self) -> EntryTexts:
+        return EntryTexts.from_ledger(
+            [
+                _entry("ev_0001", "strings", json.dumps({"strings": ["ERROR", "OK"]})),
+                _entry("ev_0002", "decompile_function", json.dumps({"code": HANDLER})),
+                LedgerEntry(
+                    id="ev_0003", agent="a", server="s", tool="yara_scan", ok=False,
+                    error="ERROR: rules not loaded", output="ERROR: rules not loaded",
+                ),
+                _entry("ev_0004", "list_imports", json.dumps({"error": "ERROR: no program"})),
+                _entry("ev_0005", "get_info", "Error: binary not loaded"),
+            ]
+        )  # fmt: skip
+
+    def test_a_failed_call_or_an_error_envelope_is_not_offered(self) -> None:
+        (found,) = cited_id_violations(_commands(("ERROR", ["ev_0002"])), self._texts())
+
+        assert "holds it in ev_0001 (strings)." in found.message
+        for failed in ("ev_0003", "ev_0004", "ev_0005"):
+            assert failed not in found.message
+
+    @pytest.mark.parametrize("cited", ["ev_0003", "ev_0004", "ev_0005"])
+    def test_citing_one_does_not_hold_the_id(self, cited: str) -> None:
+        (found,) = cited_id_violations(_commands(("ERROR", [cited])), self._texts())
+
+        assert "ev_0001 (strings)" in found.message
+
+
+class TestTheOperandReader:
+    @pytest.mark.parametrize(
+        ("code", "held"),
+        [
+            ("cmp eax, 4h", {4}),
+            ("if (c == 010) {\n  a();\n}\n", {8, 10}),
+            ("cmpl $0x4,%eax", {4}),
+            ("cmpq $4, -0x8(%rbp)", {4}),
+            ("cmp r0, #4", {4}),
+            ("cmp w0, #0x4", {4}),
+            ("CMP dword ptr [EBP + -0x8],0x4", {4}),
+            ("/* c == 4 */ x();", {4}),
+            ('s = "c == 4";', {4}),
+            ("switch (c) {\n  case 1 ... 5: a();\n}\n", {1, 2, 3, 4, 5}),
+        ],
+    )
+    def test_a_compared_number_in_any_written_form(self, code: str, held: set[int]) -> None:
+        assert held <= compared_operands(code)
+
+    @pytest.mark.parametrize(
+        "code",
+        [
+            "cmp eax, ebx",
+            "cmpl %eax,%ebx",
+            "x = arr[4];",
+            "if (c == 4 + k) {}",
+            "cmp x0, [x1, #4, lsl #3]",
+        ],
+    )
+    def test_a_compare_without_a_number_or_a_sum_holds_none(self, code: str) -> None:
+        assert 4 not in compared_operands(code)
+
+
+class TestACompareTheReaderCannotTakeIsNotAsked:
+    @pytest.mark.parametrize(
+        "listing",
+        [
+            "  401000:\t83 f8 04             \tcmpl   $0x4,%eax\n"
+            "  401003:\t74 10   \tje     401015\n",
+            "0x00010000      cmp r0, #4\n0x00010004      beq 0x10020\n",
+        ],
+    )
+    def test_a_compare_instruction_in_another_syntax_holds_its_number(self, listing: str) -> None:
+        texts = EntryTexts.from_ledger(
+            [
+                _entry("ev_0001", "disassemble_function", listing),
+                _entry("ev_0003", "decompile_function", json.dumps({"code": COMMAND_SWITCH})),
+            ]
+        )
+
+        assert not texts.code_not_read("ev_0001")
+        assert cited_id_violations(_rows("4"), texts) == []
+
+    @pytest.mark.parametrize(
+        "code",
+        [
+            "0x1000  cmp w0, #4, lsl #12\n0x1004  b.eq 0x1020\n",
+            "0x1000  cmp eax, 0b100\n0x1004  je 0x1020\n",
+            "void handler(int cmd) {\n  switch (cmd) {\n  case 0 ... 9000:\n    run();\n  }\n}\n",
+        ],
+    )
+    @pytest.mark.parametrize("tool", ["disassemble_function", "an_undeclared_tool"])
+    def test_a_compare_whose_operands_are_not_taken_is_code_not_read(
+        self, code: str, tool: str
+    ) -> None:
+        assert cited_id_violations(_rows("4"), _ledger(code, tool=tool)) == []
+
+
+class TestACompareInstructionIsOneWhereAnInstructionStands:
+    PROSE = (
+        '{"how": "32-bit immediates of push, mov and cmp byte patterns in executable '
+        'sections, and every aligned value in the other sections"}'
+    )
+
+    def test_the_word_in_prose_is_no_compare_not_taken(self) -> None:
+        assert _read_compared_operands(self.PROSE) == (frozenset(), False)
+
+    def test_a_row_citing_the_prose_is_still_asked(self) -> None:
+        texts = EntryTexts.from_ledger(
+            [
+                _entry("ev_0001", "resolve_api_hashes", self.PROSE),
+                _entry("ev_0003", "decompile_function", json.dumps({"code": COMMAND_SWITCH})),
+            ]
+        )
+
+        (found,) = cited_id_violations(_rows("4"), texts)
+
+        assert "ev_0003 (decompile_function)" in found.message
+
+    @pytest.mark.parametrize(
+        "listing",
+        [
+            "cmp w0, #4, lsl #12",
+            "loc_401000: cmp eax, 0b100",
+            ".text:00401000                 cmp     eax, 0b100",
+            "│      0x00401000      83f804         cmp eax, 0b100",
+        ],
+    )
+    def test_an_instruction_at_its_place_on_the_line_is_read(self, listing: str) -> None:
+        assert _read_compared_operands(listing)[1] is True
+
+
+class TestTheCaseRangesOfOneTextHaveOneBudget:
+    @staticmethod
+    def _ranges(count: int) -> str:
+        return "".join(f"  case {n * 5000} ... {n * 5000 + 4000}:\n" for n in range(count))
+
+    def test_many_ranges_are_a_compare_not_taken_read_fast_and_small(self) -> None:
+        text = self._ranges(300)
+
+        assert _read_compared_operands(text)[1] is True
+        assert_under(lambda: _read_compared_operands(text), 1.0, what="300 wide ranges")
+        assert peak_bytes(lambda: _read_compared_operands(text)) < 4_000_000
+
+    def test_ranges_within_the_budget_hold_every_value(self) -> None:
+        read, untaken = _read_compared_operands("case 1 ... 5:\ncase 0x100 ... 0x110:\n")
+
+        assert not untaken
+        assert read == {*range(1, 6), *range(0x100, 0x111)}
+
+    def test_the_cost_of_many_ranges_grows_with_the_text(self) -> None:
+        assert_scales(self._ranges, 4000, _read_compared_operands)
+
+    def test_the_budget_holds_exactly_its_values(self) -> None:
+        read, untaken = _read_compared_operands("case 0 ... 4095:\n")
+        assert not untaken
+        assert read == set(range(4096))
+
+        assert _read_compared_operands("case 0 ... 4096:\n") == (frozenset(), True)
+
+    def test_two_ranges_past_the_budget_together_are_not_taken(self) -> None:
+        read, untaken = _read_compared_operands("case 0 ... 2047:\ncase 2048 ... 4096:\n")
+
+        assert untaken
+        assert read == set(range(2048))
+
+    def test_a_reversed_range_is_not_taken(self) -> None:
+        assert _read_compared_operands("case 5 ... 1:\n") == (frozenset(), True)
+
+    def test_a_range_end_in_two_readings_spans_both(self) -> None:
+        assert _read_compared_operands("case 010 ... 012:\n") == (frozenset(range(8, 13)), False)
+
+    @pytest.mark.parametrize("ranges", ["case 'a' ... 'z':\n", "case MIN ... MAX:\n"])
+    def test_a_range_whose_ends_are_not_numbers_is_not_taken(self, ranges: str) -> None:
+        assert _read_compared_operands(ranges) == (frozenset(), True)
+
+    def test_a_range_of_characters_is_never_asked_about(self) -> None:
+        code = "void handler(char c) {\n  switch (c) {\n  case 'a' ... 'z':\n    run();\n  }\n}\n"
+
+        assert cited_id_violations(_rows("4"), _ledger(code)) == []
+
+    def test_a_line_beginning_with_case_and_no_ellipsis_is_not_a_compare_not_taken(self) -> None:
+        assert _read_compared_operands("case closed, the handler returns: 4\n") == (
+            frozenset(),
+            False,
+        )
+
+
+class TestALedgerTextIsReadAsWritten:
+    @pytest.mark.parametrize(
+        ("written", "read"),
+        [
+            ('"\\u2502 cmp al, 0x42\\n"', '"│ cmp al, 0x42\n"'),
+            ("\\ud83d\\ude00", "\U0001f600"),
+            ("\\uD83D\\uDE00\\u00E9", "\U0001f600é"),
+            ("\\ud83d x \\ude00", "\\ud83d x \\ude00"),
+            ("\\u00e9\\u0041", "éA"),
+            ("\\\\u2502", "\\u2502"),
+            ("\\u25", "\\u25"),
+            ("\\U2502", "\\U2502"),
+        ],
+    )
+    def test_json_escapes_are_turned_back_and_an_undecodable_one_stands(
+        self, written: str, read: str
+    ) -> None:
+        assert _code_read(written) == read
+
+    def test_many_escapes_are_read_in_linear_time(self) -> None:
+        assert_scales(lambda size: "\\u2502\\ud83d\\ude00\\n " * size, 20000, _code_read)
+
+
+class TestACompareInAJsonStringHoldsItsNumber:
+    """An operand ends where its text ends, at a closing quote too."""
+
+    LISTINGS = {
+        "a code string of lines": {
+            "code": "0x401000: cmp ecx, 5\n0x401002: jz 0x401100\n0x401004: cmp eax, 0xc"
+        },
+        "a listing beside decompiled code": {
+            "decompiled": "if (c == 5) x();",
+            "listing": "0x401004: cmp eax, 0xc",
+        },
+        "a list of instruction strings": {
+            "code": "if (c == 5) x();",
+            "instructions": ["mov eax, 1", "cmp eax, 0xc", "je 0x401000"],
+        },
+        "an opcode field": {
+            "pseudo": "if (c == 5) x();",
+            "ops": [{"offset": 4198400, "opcode": "cmp eax, 0xc"}],
+        },
+    }
+
+    @pytest.mark.parametrize("shape", list(LISTINGS))
+    def test_the_compared_number_is_held(self, shape: str) -> None:
+        texts = EntryTexts.from_ledger(
+            [
+                _entry("ev_0010", "batch_decompile", json.dumps({"code": DISPATCHER})),
+                _entry("ev_0020", "disassemble_function", json.dumps(self.LISTINGS[shape])),
+            ]
+        )
+
+        assert {5, 12} <= texts.operands("ev_0020")
+        assert cited_id_violations(_table(("0xc", ["ev_0020"])), texts) == []
+
+
+class TestAnInstructionPlaceIsReadByItsCharacters:
+    """Before the mnemonic: marks, numbers, a label, a ``<symbol+offset>``, a prefix word."""
+
+    @pytest.mark.parametrize(
+        "line",
+        [
+            "│      ╎   0x00401000      3b0500200000   cmp eax, foo+4",
+            "|       ,=< 0x00401000      3b0500200000   cmp eax, foo+4",
+            "|       `-> 0x00401000      3b0500200000   cmp eax, foo+4",
+            "=> 0x0000000000401136 <+4>:\tcmp    eax,foo+4",
+            "   0x0000000000401136 <main+4>:\tcmp    eax,foo+4",
+            "00007ff6`12341000 3b0500200000    cmp     eax,foo+4",
+            "0x401004: lock cmpxchg [rbx], foo+4",
+            "0x401004: repe cmpsb foo+4, x",
+            "  401000:\tff 15 eb fe   \tcmp    eax,foo+4",
+            '["0x401000: mov eax, 1", "0x401004: cmp eax, foo+4"]',
+        ],
+    )
+    def test_a_compare_not_taken_there_is_a_compare_not_taken(self, line: str) -> None:
+        assert _read_compared_operands(line)[1] is True
+
+    @pytest.mark.parametrize(
+        "line",
+        [
+            "the code runs cmp eax, foo+4 to test",
+            "add a cmp loop, x",
+            "a cmp byte patterns, x",
+            "bad cmp eax, foo+4",
+            '{"summary": "uses cmp eax, foo+4 and returns"}',
+            'the note says "cmp eax, foo+4" twice',
+        ],
+    )
+    def test_prose_stays_prose(self, line: str) -> None:
+        assert _read_compared_operands(line) == (frozenset(), False)
+
+    # A table compared by characters; the listing cited for two rows writes
+    # one of them as a character, in the marks of one layout.
+    CHARACTERS = (
+        "void dispatch(int c) {\n switch (c) {\n case 0x41: a(); break;\n"
+        " case 0x42: b(); break;\n case 0x47: c(); break;\n case 0x49: d(); break;\n }\n}\n"
+    )
+
+    @pytest.mark.parametrize(
+        "marks",
+        [
+            ("│     ┌─< ", "│     └─> "),
+            ("│      ╎  ", "│      ╎  "),
+            ("|     ,=< ", "|     `-> "),
+            ("=> ", "   "),
+        ],
+    )
+    def test_a_row_citing_a_listing_of_any_layout_is_not_asked(
+        self, marks: tuple[str, str]
+    ) -> None:
+        listing = (
+            f"{marks[0]}0x00401000      3c41   cmp al, 'A'\n"
+            f"{marks[1]}0x00401002      3c42   cmp al, 0x42\n"
+        )
+        texts = EntryTexts.from_ledger(
+            [
+                _entry("ev_0010", "batch_decompile", json.dumps({"code": self.CHARACTERS})),
+                _entry(
+                    "ev_0020",
+                    "disassemble_function",
+                    json.dumps({"code": listing}, ensure_ascii=False),
+                ),
+            ]
+        )
+        payload = _commands(
+            ("0x41", ["ev_0020"]), ("0x42", ["ev_0020"]),
+            ("0x47", ["ev_0010"]), ("0x49", ["ev_0010"]),
+        )  # fmt: skip
+
+        assert cited_id_violations(payload, texts) == []
+
+    def _asked(self, listing: str) -> list[Any]:
+        texts = EntryTexts.from_ledger(
+            [
+                _entry("ev_0010", "batch_decompile", json.dumps({"code": self.CHARACTERS})),
+                _entry("ev_0020", "disassemble_function", listing),
+            ]
+        )
+        payload = _commands(
+            ("0x41", ["ev_0020"]), ("0x42", ["ev_0020"]),
+            ("0x47", ["ev_0010"]), ("0x49", ["ev_0010"]),
+        )  # fmt: skip
+        return cited_id_violations(payload, texts)
+
+    def test_a_listing_written_with_ascii_escapes_is_read_as_written(self) -> None:
+        listing = (
+            "│     ┌─< 0x00401000      3c41   cmp al, 'A'\n"
+            "│     └─> 0x00401002      3c42   cmp al, 0x42\n"
+        )
+        escaped = json.dumps({"code": listing})
+
+        assert "\\u2502" in escaped
+        assert self._asked(escaped) == []
+
+    # A listing written as one JSON line: the compares stand past an
+    # instruction's place from the line's start, at the strings that hold them.
+    PADDING = [{"offset": 4198400 + n, "opcode": "mov eax, 1", "size": 5} for n in range(6)]
+
+    def test_a_compare_late_in_a_one_line_list_is_read_at_its_string(self) -> None:
+        late = json.dumps([*self.PADDING, {"offset": 1, "opcode": "cmp al, 'A'"}])
+
+        assert late.index("cmp") > 160
+        assert _read_compared_operands(late) == (frozenset(), True)
+        listing = json.dumps(
+            [
+                *self.PADDING,
+                {"offset": 1, "opcode": "cmp al, 'A'"},
+                {"offset": 3, "opcode": "cmp al, 0x42"},
+            ]
+        )
+        assert self._asked(listing) == []
+
+    def test_a_number_late_in_a_one_line_list_is_held(self) -> None:
+        late = json.dumps([*self.PADDING, {"offset": 3, "opcode": "cmp al, 0x42"}])
+
+        assert late.index("cmp") > 160
+        assert _read_compared_operands(late) == (frozenset({0x42}), False)
+
+    def test_an_operand_holding_a_quote_or_a_brace_is_not_taken(self) -> None:
+        # A Python-written string: the number stands at its closing quote.
+        listing = str({"code": "0x1: cmp al, 0x41\n0x3: cmp al, 0x42"})
+
+        assert _read_compared_operands(_code_read(listing)) == (frozenset({0x41}), True)
+        assert self._asked(listing) == []
+
+    @pytest.mark.parametrize(
+        "operand", ["0x42'", "0x42']", "'A'", '0x42"x', '0x42"]', "{0x42}", "0x42}"]
+    )
+    def test_a_quote_or_a_brace_makes_an_operand_not_taken(self, operand: str) -> None:
+        assert _instruction_operand_values(operand) is None
+
+    def test_a_string_opened_before_the_window_is_no_place(self) -> None:
+        line = '["' + "| " * 100 + 'cmp eax, foo+4"]'
+
+        assert _read_compared_operands(line) == (frozenset(), False)
+
+    def test_a_compare_after_a_closing_quote_is_read(self) -> None:
+        # The first compare's operands end at the key's closing quote.
+        assert _read_compared_operands('{"0x1: cmp eax": "0x3: cmp ebx, 5"}') == (
+            frozenset({5}),
+            True,
+        )
+
+    def test_a_prefix_read_two_ways_is_read_once(self) -> None:
+        # ``ab:`` is a label and a byte with a colon: each token is taken once.
+        line = "ab: " * 38 + "x cmp eax, foo+4"
+
+        assert _read_compared_operands(line) == (frozenset(), False)
+        assert_under(lambda: _read_compared_operands(line), 0.5, what="a prefix of labels")
+
+    def test_a_long_prefix_is_read_in_linear_time(self) -> None:
+        # Lines of listing marks, then compares after a prefix longer than an
+        # instruction's place: none is read back past its own line.
+        def build(size: int) -> str:
+            return "| 0x1\n" * size + ("| " * 90 + "cmp eax, foo+4\n") * size
+
+        assert _read_compared_operands(build(10))[1] is False
+        assert_scales(build, 1500, _read_compared_operands)
+
+
+class TestAnInstructionIsReadToItsEnd:
+    @pytest.mark.parametrize(
+        ("line", "held"),
+        [
+            ("0x401000: cmp eax, 4 // c", {4}),
+            ("0x401000: cmp eax, 4                    ; switch 5 cases", {4}),
+            ("0x401000: cmp eax, 4", {4}),
+            ('{"opcode": "cmp eax, 4"}', {4}),
+            ("0x401000: repe cmpsb ; compare\n0x401002: cmp eax, 4", {4}),
+        ],
+    )
+    def test_an_instruction_ends_at_a_comment_a_quote_or_its_line(
+        self, line: str, held: set[int]
+    ) -> None:
+        assert _read_compared_operands(line) == (frozenset(held), False)
+
+    @pytest.mark.parametrize("line", ["0x1000: cmp r0, #SYM", "0x1000: cmp r0, #foo+4"])
+    def test_a_marked_name_is_not_taken(self, line: str) -> None:
+        assert _read_compared_operands(line) == (frozenset(), True)
+
+    @pytest.mark.parametrize(
+        "line",
+        [
+            "0x401000: cmp dword ptr [rbp + " + "x" * 120 + "], 4",
+            "0x401000: cmp eax, " + "S" * 210 + "+4",
+            "0x401000: cmp eax, " + "S" * 210,
+            "0x401000: cmp eax,",
+            '["0x401000: cmp [eax]",4]',
+        ],
+    )
+    def test_operands_not_taken_to_the_end_are_a_compare_not_taken(self, line: str) -> None:
+        assert _read_compared_operands(line) == (frozenset(), True)
+
+    def test_an_operand_past_the_bound_in_prose_is_no_compare(self) -> None:
+        line = "the reader runs cmp eax, " + "S" * 210
+        assert _read_compared_operands(line) == (frozenset(), False)
+
+    def test_a_row_citing_an_operand_past_the_bound_is_not_asked(self) -> None:
+        listing = "0x401000: cmp dword ptr [rbp + " + "x" * 120 + "], 4\n0x401004: cmp eax, 9\n"
+
+        assert cited_id_violations(_rows("4"), _ledger(listing, tool="disassemble_function")) == []
+
+    @pytest.mark.parametrize(
+        "unit",
+        [
+            "0x1: cmp eax, " + "S" * 210 + "\n",
+            "0x1: cmp " + "a" * 130 + ", 4\n",
+            "x cmp eax, " + "S" * 210 + " ",
+        ],
+    )
+    def test_operands_past_the_bound_are_read_in_linear_time(self, unit: str) -> None:
+        assert_scales(lambda size: unit * size, 400, _read_compared_operands)
+
+
+class TestARowIdIsCheckedOnlyWhereACoincidenceIsImplausible:
+    HANDLER = "void handler(void) {\n  download();\n}\n"
+    SWITCH_0_TO_4 = (
+        "int _setmode(int m) {\n  switch (m) {\n"
+        + "".join(f"  case {n}: f{n}(); break;\n" for n in range(5))
+        + "  }\n}\n"
+    )
+
+    def _ledger(self, *codes: str) -> EntryTexts:
+        return EntryTexts.from_ledger(
+            [_entry("ev_0001", "decompile_function", json.dumps({"code": self.HANDLER}))]
+            + [
+                _entry(f"ev_{n + 2:04d}", "decompile_function", json.dumps({"code": code}))
+                for n, code in enumerate(codes)
+            ]
+        )
+
+    @pytest.mark.parametrize("ids", [("1", "2", "3", "4"), ("0", "1", "2", "3")])
+    def test_a_table_whose_ids_are_a_plain_count_is_not_checked(self, ids: tuple[str]) -> None:
+        payload = _commands(*((i, ["ev_0001"]) for i in ids))
+
+        assert cited_id_violations(payload, self._ledger(self.SWITCH_0_TO_4)) == []
+
+    @pytest.mark.parametrize("ids", [(1, 2, 3, 5), (0, 1, 2, 5)])
+    def test_a_count_with_a_gap_is_checked(self, ids: tuple[int, ...]) -> None:
+        switch = (
+            "void dispatch(int c) {\n  switch (c) {\n"
+            + "".join(f"  case {n}: f{n}(); break;\n" for n in ids)
+            + "  }\n}\n"
+        )
+        payload = _commands(*((str(n), ["ev_0001"]) for n in ids))
+
+        (found,) = cited_id_violations(payload, self._ledger(switch))
+
+        assert "ev_0002 (decompile_function)" in found.message
+
+    def test_the_command_value_check_shares_the_count_guard(self) -> None:
+        payload = _commands(("0", ["ev_0001"]), ("1", ["ev_0001"]), ("2", ["ev_0001"]))
+        compared = [ComparedValues(where="ev_0002", subject="m", values=(0, 1, 2, 3))]
+
+        assert command_value_violations(payload, compared) == []
+
+    def test_fewer_than_four_numbered_ids_are_not_checked_its_text_ids_are(self) -> None:
+        texts = EntryTexts.from_ledger(
+            [
+                _entry("ev_0001", "decompile_function", json.dumps({"code": self.HANDLER})),
+                _entry("ev_0002", "decompile_function", json.dumps({"code": COMMAND_SWITCH})),
+                _entry("ev_0003", "strings", json.dumps({"strings": ["PING"]})),
+            ]
+        )
+        payload = _commands(
+            ("4", ["ev_0001"]), ("5", ["ev_0001"]), ("6", ["ev_0001"]), ("PING", ["ev_0001"])
+        )
+
+        (found,) = cited_id_violations(payload, texts)
+
+        assert found.message.startswith("Row 4 of commands states the id 'PING'")
+
+    def test_a_labelled_number_of_a_small_table_is_not_read_as_text(self) -> None:
+        texts = EntryTexts.from_ledger(
+            [
+                _entry("ev_0001", "decompile_function", json.dumps({"code": self.HANDLER})),
+                _entry("ev_0002", "strings", json.dumps({"strings": ["COMMAND 4"]})),
+            ]
+        )
+        payload = _commands(*((f"COMMAND {n}", ["ev_0001"]) for n in (4, 5, 6)))
+
+        assert cited_id_violations(payload, texts) == []
+
+    def test_entries_whose_expressions_hold_different_sets_offer_nothing(self) -> None:
+        other = COMMAND_SWITCH.replace("case 7:", "case 9:").replace("on_command", "on_other")
+
+        texts = self._ledger(COMMAND_SWITCH.replace("case 7:", "case 8:"), other)
+        payload = _commands(*((str(n), ["ev_0001"]) for n in (4, 5, 6, 7)))
+
+        assert cited_id_violations(payload, texts) == []
+
+    def test_one_expression_read_in_two_entries_offers_both(self) -> None:
+        texts = self._ledger(COMMAND_SWITCH, COMMAND_SWITCH)
+        payload = _commands(("4", ["ev_0001"]), *((str(n), ["ev_0002"]) for n in (5, 6, 7)))
+
+        (found,) = cited_id_violations(payload, texts)
+
+        assert "ev_0002 (decompile_function), ev_0003 (decompile_function)" in found.message
+
+    def test_an_expression_holding_two_of_five_ids_is_not_offered(self) -> None:
+        two = "void f(int c) {\n  switch (c) {\n  case 4: a(); break;\n  case 5: b();\n  }\n}\n"
+        payload = _commands(*((str(n), ["ev_0001"]) for n in (4, 5, 9, 11, 13)))
+
+        assert cited_id_violations(payload, self._ledger(two)) == []
+
+
+class TestAFailedEntryInTheNumberCheck:
+    HANDLER_4 = "void handler(int cmd) {\n  if (cmd == 4) {\n    download();\n  }\n}\n"
+
+    def test_an_entry_filed_as_failed_holds_nothing_even_with_a_plain_answer(self) -> None:
+        texts = EntryTexts.from_ledger(
+            [
+                LedgerEntry(
+                    id="ev_0001", agent="a", server="s", tool="decompile_function", ok=False,
+                    output=json.dumps({"code": self.HANDLER_4}),
+                ),
+                _entry("ev_0003", "decompile_function", json.dumps({"code": COMMAND_SWITCH})),
+            ]
+        )  # fmt: skip
+
+        (found,) = cited_id_violations(_rows("4"), texts)
+
+        assert "ev_0003 (decompile_function)" in found.message
+
+    @pytest.mark.parametrize("failed", [True, False])
+    def test_a_failed_entry_whose_code_holds_the_switch_is_never_offered(
+        self, failed: bool
+    ) -> None:
+        handler = "void handler(void) {\n  download();\n}\n"
+        texts = EntryTexts.from_ledger(
+            [
+                _entry("ev_0001", "decompile_function", json.dumps({"code": handler})),
+                LedgerEntry(
+                    id="ev_0003", agent="a", server="s", tool="decompile_function",
+                    ok=not failed, output=json.dumps({"code": COMMAND_SWITCH}),
+                ),
+            ]
+        )  # fmt: skip
+
+        found = cited_id_violations(_rows("4"), texts)
+
+        assert (found == []) is failed
+
+
+class TestWhenAnIdIsANumber:
+    def test_a_common_label_before_the_number(self) -> None:
+        code = "void handler(int cmd) {\n  if (cmd == 9) {\n    download();\n  }\n}\n"
+
+        (found,) = cited_id_violations(_rows("COMMAND 4", "COMMAND "), _ledger(code))
+
+        assert "ev_0003 (decompile_function)" in found.message
+
+    def test_a_label_the_other_numbered_rows_do_not_share_is_text(self) -> None:
+        code = "void handler(int cmd) {\n  if (cmd == 9) {\n    download();\n  }\n}\n"
+
+        assert cited_id_violations(_rows("HTTP 4"), _ledger(code)) == []
+        assert cited_id_violations(_rows("HTTP 4", "COMMAND "), _ledger(code)) == []
+
+
 class TestWhatIsNotAsked:
     def test_a_row_citing_no_entry_with_text_or_nothing(self) -> None:
         payload = _commands(("0xc", ["ev_0999"]), ("0xc", []), ("", ["ev_0011"]))
@@ -143,7 +917,7 @@ class TestWhatIsNotAsked:
         assert cited_id_violations(payload, _texts()) == []
 
     def test_a_row_citing_a_partial_entry(self) -> None:
-        payload = _commands(("0xc", ["ev_0011", "ev_0013"]))
+        payload = _table(("0xc", ["ev_0011", "ev_0013"]))
 
         assert cited_id_violations(payload, _texts(partial=True)) == []
         assert cited_id_violations(payload, _texts()) != []
@@ -185,6 +959,8 @@ class TestTheFindingIsKeptAndMarked:
         rows = [
             CommandRow(id="0xc", name="upload", evidence_refs=["ev_0011"]),
             CommandRow(id="0x15", name="uninstall", evidence_refs=["ev_0010"]),
+            CommandRow(id="2", name="shell", evidence_refs=["ev_0010"]),
+            CommandRow(id="0x13", name="sleep", evidence_refs=["ev_0010"]),
         ]
         report = MalwareReport(
             identity=SampleIdentity(hashes=FileHashes(sha256="a" * 64)),
@@ -230,14 +1006,14 @@ class TestTheComposer:
         with patch.object(ReportComposer, "_author", _author):
             asyncio.run(comp.compose(report, evidence=_texts()))
 
-        found = [v for check in seen["commands"] for v in check(_commands(("0xc", ["ev_0011"])))]
+        found = [v for check in seen["commands"] for v in check(_table(("0xc", ["ev_0011"])))]
         assert ID_NOT_IN_CITED_ENTRY_CODE in [v.code for v in found]
 
     def test_a_row_the_model_fixes_is_taken(self) -> None:
         from langchain_core.messages import HumanMessage
 
-        wrong = json.dumps(_commands(("0xc", ["ev_0011"])))
-        right = json.dumps(_commands(("0xc", ["ev_0010", "ev_0011"])))
+        wrong = json.dumps(_table(("0xc", ["ev_0011"])))
+        right = json.dumps(_table(("0xc", ["ev_0010", "ev_0011"])))
         llm = _RawLLM(wrong, right)
         comp = ReportComposer(llm=llm, per_section_timeout=5)  # type: ignore[arg-type]
         comp._entries = _texts()

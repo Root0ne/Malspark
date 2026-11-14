@@ -4,8 +4,9 @@ Built from the report's stored ``ttp_mappings`` (the published technique list)
 and nothing else: a draft, a rejected id or a technique the report left out is
 not in the layer. Each technique is scored and coloured by the support the
 report itself states for it, and its comment is its evidence as every surface
-prints it (``technique_evidence``): its ledger entries, or that none stands
-behind it, and the sandbox items among its sources, named. Deterministic, no
+prints it (``technique_evidence``): the entries cited by the statements that
+name it, or that they cite none, and the sandbox items among its sources,
+named. Deterministic, no
 model call.
 
 Support, from the mapping's own fields (``support``, ``is_corroborated``):

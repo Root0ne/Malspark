@@ -318,10 +318,12 @@ async def get_mitre_techniques(
 ) -> dict:
     """Get MITRE ATT&CK technique mappings.
 
-    Each technique carries ``evidence_ids``: the ledger entries behind it, the
-    set every surface of the report prints for it; ``[]`` where no ledger
-    entry stands behind it. A row stored before the set was recorded carries
-    no such key.
+    Each technique carries ``evidence_ids``: the entries cited by the
+    statements that name it, the set every surface of the report prints for
+    it; ``[]`` where those statements cite no ledger entry. A row stored
+    before the set was recorded carries no such key. ``sandbox_items`` names
+    the sandbox items among the technique's sources, apart from the entries;
+    absent where it has none.
 
     Returns ``{"techniques": []}`` when the report exists but the pipeline
     did not map any ATT&CK techniques (mock mode, benign sample, narrative

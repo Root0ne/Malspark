@@ -17,7 +17,10 @@ import re
 import pytest
 
 from malspark.reporting.models import MalwareReport
-from tests.unit.reporting.test_an_entry_without_a_source_is_read_as_before import _benchmark
+from tests.unit.reporting.test_an_entry_without_a_source_is_read_as_before import (
+    _benchmark,
+    stored_ledger_ids,
+)
 
 # ``(markdown, html with the nonce "fixed", normalised STIX)`` as dev 2c2522b2 renders them.
 # The Markdown and HTML were re-pinned when a sample's, a tool's or a finding's
@@ -82,12 +85,22 @@ from tests.unit.reporting.test_an_entry_without_a_source_is_read_as_before impor
 # evidence as one set (T-597): the ATT&CK table's Evidence cells are the only
 # change. A rule's entry the stored mapping does not list is named "rule
 # matches", and a mapping that stores its sources (run5, run7) lists
-# the entries among them; the STIX did not change.
+# the entries among them.
+# The STIX is rendered with the stored ledger's ids, as the report node renders
+# it, and re-pinned for each technique's evidence on its ``uses`` edge (T-597).
+# Against dev 74618ab38 rendering with the same ids and the evidence it read
+# from the ledger, only ``x_malspark_evidence_refs`` and
+# ``x_malspark_evidence_note`` on the ``uses`` edges differ: an edge carries
+# the entries among the sources its stored mapping lists (run5 eleven edges,
+# run7 twenty-three, run4 one, local8 none), and an asserting tool's entry
+# the stored mapping does not list is not on the edge (run7 T1036.005 and
+# T1218.011, run5 and run4 T1027 and T1218.011, local8 T1027, T1027.005 and
+# T1218.011). A stored mapping records no set, so no edge carries a note.
 STORED_RENDERS = {
-    "run7": ("0c85258e0bc3f825", "5d209181f98213e8", "6f5f4f1b2ed8ea58"),
-    "run5": ("9909cddb577caa2c", "6ed669740689348f", "b7c19ebb4cb31921"),
-    "run4": ("6645defcf074ad3d", "60cfad50c120e58b", "07a486002a8891ac"),
-    "local8": ("d59ab7b6c10001fa", "b78721cb9ba4f766", "86c2fdd68be6dde0"),
+    "run7": ("0c85258e0bc3f825", "5d209181f98213e8", "7c44bdac869da068"),
+    "run5": ("9909cddb577caa2c", "6ed669740689348f", "dc0e6cbb57f1ec13"),
+    "run4": ("6645defcf074ad3d", "60cfad50c120e58b", "f6a60e13df655e75"),
+    "local8": ("d59ab7b6c10001fa", "b78721cb9ba4f766", "dd7785fc7f53b528"),
 }
 
 _UUID = re.compile(r"--[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}")
@@ -114,7 +127,7 @@ def test_a_stored_run_renders_as_dev_rendered_it(run: str) -> None:
 
     markdown = MarkdownRenderer().render(report)
     html = HtmlRenderer().render(report, nonce="fixed")
-    bundle = ExtendedSTIXRenderer().render(report)
+    bundle = ExtendedSTIXRenderer().render(report, ledger_ids=stored_ledger_ids(run))
     stix = json.dumps(json.loads(bundle.model_dump_json()), indent=1, sort_keys=True)
     stix = _STAMP.sub("TS", _UUID.sub("--ID", stix))
 

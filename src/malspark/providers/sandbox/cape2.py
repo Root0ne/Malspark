@@ -443,7 +443,14 @@ class CAPE2SandboxProvider(SandboxProvider):
             report=report,
             raw=result.report,
             error=result.error,
+            report_parts=list(getattr(result, "parts", None) or ()),
         )
+
+    def detonation_facts(self, run: SandboxRun) -> dict[str, Any] | None:
+        """The CAPE report's ``info`` facts, and the report as fetched: CAPE ran the sample."""
+        from malspark.providers.detonation import report_facts
+
+        return report_facts(run, detonated=True)
 
     def fetch_pcap(self, task_id: str, dest_dir: str | Path) -> str | None:
         result = self._get_client().fetch_pcap(

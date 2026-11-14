@@ -96,9 +96,9 @@ from malspark.reporting.renderers.markdown import (
     started_by_the_sample,
 )
 from malspark.reporting.technique_evidence import (
-    NO_LEDGER_ENTRY,
-    NOT_RECORDED,
+    evidence_words,
     technique_evidence_ids,
+    technique_sandbox_items,
 )
 from malspark.schemas.evidence import entry_ids_in
 from malspark.schemas.isr_models import judge_kept_note
@@ -2425,13 +2425,14 @@ class _Analyst:
         )
 
     def _evidence(self, row: Any) -> str:
-        """A technique's evidence as this report cites: one note listing its
-        entries (``technique_evidence``), or that no ledger entry stands behind
-        it; ``-`` for a row stored before the set was recorded that names none."""
+        """A technique's evidence as this report cites: one note listing the
+        entries its statements cite (``technique_evidence``), the sandbox items
+        among its sources beside it, named apart, or that it has neither; ``-``
+        for a row stored before the set was recorded that names neither."""
         ids = technique_evidence_ids(row)
-        if ids is None:
-            return NOT_RECORDED
-        return self.notes.marker(ids) or NO_LEDGER_ENTRY
+        marker = self.notes.marker(ids) if ids else ""
+        cited = [marker] if marker else (None if ids is None else [])
+        return evidence_words(cited, technique_sandbox_items(row))
 
     def _status(self, technique_id: str, note: str) -> str:
         """What the single-file report says beside a published row's status, or ``""``.

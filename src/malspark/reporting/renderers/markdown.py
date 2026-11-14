@@ -136,7 +136,11 @@ from malspark.reporting.renderers.prose_forms import (
     references_for_render,
     section_reference,
 )
-from malspark.reporting.technique_evidence import evidence_words, technique_evidence_ids
+from malspark.reporting.technique_evidence import (
+    evidence_words,
+    technique_evidence_ids,
+    technique_sandbox_items,
+)
 from malspark.schemas.evidence import is_guard_answer
 from malspark.schemas.isr_models import ABSENCE_TECHNIQUE_MARKER, UNVERIFIED_TECHNIQUE_MARKER
 from malspark.utils.marked_cut import CUT_MARK
@@ -5756,18 +5760,20 @@ def _technique_evidence_cell(
 ) -> str:
     """A technique's Evidence cell: its evidence, then the entries of the rules that matched it.
 
-    The evidence is the set every surface prints (``technique_evidence``), or
-    that no ledger entry stands behind it. A rule's entries it does not
-    already list follow it, named as the rules'. A row stored before the set
-    was recorded that names no entry prints the rules' entries alone, or
-    ``-``.
+    The evidence is the set every surface prints (``technique_evidence``),
+    the entries cited by the statements that name the technique, with the
+    sandbox items among its sources beside it, or that they cite no ledger
+    entry. A rule's entries it does not already list follow it, named as the
+    rules'. A row stored before the set was recorded that names no entry and
+    no item prints the rules' entries alone, or ``-``.
     """
     ids = technique_evidence_ids(row)
+    items = technique_sandbox_items(row)
     ruled = [eid for eid in _rule_ids(rules, capability_ids) if eid not in (ids or ())]
     rule_words = f"rule matches: {', '.join(ruled)}"
-    if ids is None and ruled:
+    if ids is None and not items and ruled:
         return rule_words
-    words = evidence_words(ids)
+    words = evidence_words(ids, items)
     return f"{words}; {rule_words}" if ruled else words
 
 

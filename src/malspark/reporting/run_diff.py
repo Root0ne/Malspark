@@ -223,8 +223,9 @@ class _Item:
     # fact another row already compares; comparing them again would count one
     # difference in the record twice.
     derived: frozenset[str] = frozenset()
-    # Said on the row when a derived field differs between the two runs.
-    derived_note: str | None = None
+    # Said on the row when a derived field differs between the two runs: one
+    # note, or a note by field (a field without one is said by no note).
+    derived_note: str | Mapping[str, str] | None = None
 
 
 # An indicator row's reason is shown and not compared: the decision is.
@@ -336,10 +337,14 @@ def _changes(a: _Item, b: _Item) -> list[dict[str, Any]]:
 
 def _derived_note(a: _Item, b: _Item) -> str | None:
     """The note a paired row carries when a field it does not compare differs."""
-    names = a.derived | b.derived
-    if any(a.fields.get(name) != b.fields.get(name) for name in names):
-        return a.derived_note or b.derived_note
-    return None
+    names = [name for name in {**a.fields, **b.fields} if name in a.derived | b.derived]
+    differing = [name for name in names if a.fields.get(name) != b.fields.get(name)]
+    note = a.derived_note or b.derived_note
+    if not differing or not note:
+        return None
+    if isinstance(note, str):
+        return note
+    return "; ".join(note[name] for name in differing if name in note) or None
 
 
 def _pair_key(
@@ -513,6 +518,11 @@ def _verdict_items(run: RunRecord) -> list[_Item]:
 
 
 def _attack_items(run: RunRecord) -> list[_Item]:
+    from malspark.reporting.technique_evidence import (
+        technique_evidence_ids,
+        technique_sandbox_items,
+    )
+
     mr = _map(run.malware_report)
     cells: dict[str, Mapping[str, Any]] = {}
     for cell in _list(mr.get("capability_matrix")):
@@ -527,6 +537,12 @@ def _attack_items(run: RunRecord) -> list[_Item]:
             continue
         cell = cells.get(tid, {})
         name = _text(row.get("technique_name"))
+        # The technique's evidence as every surface reads it
+        # (``technique_evidence_ids``): the recorded set, or for a mapping
+        # stored before it was recorded, the entries among its sources and
+        # those its statements write; ``None`` where neither says.
+        recorded = technique_evidence_ids(row)
+        entries = _ids(recorded or [])
         items.append(
             _Item(
                 tid,
@@ -538,11 +554,16 @@ def _attack_items(run: RunRecord) -> list[_Item]:
                     "confidence_source": _text(cell.get("confidence_source")) or None,
                     "corroborated": row.get("is_corroborated"),
                     "id_valid": row.get("technique_id_valid", True),
+                    "sandbox_items": technique_sandbox_items(row),
+                    # The set as a field too, so a set not recorded (``None``,
+                    # shown as not recorded) stands apart from an empty one.
+                    "ledger_entries": None if recorded is None else entries,
                 },
-                # The technique's evidence as the builder recorded it
-                # (``technique_evidence``); a mapping stored before the set
-                # was recorded holds no id field and cites none.
-                _ids(_list(row.get("evidence_ids"))),
+                entries,
+                # The set and the sandbox items are shown and not counted as a
+                # change; the set's own difference is in its evidence column.
+                derived=frozenset({"sandbox_items", "ledger_entries"}),
+                derived_note={"sandbox_items": "the sandbox items it cites differ"},
             )
         )
     return items

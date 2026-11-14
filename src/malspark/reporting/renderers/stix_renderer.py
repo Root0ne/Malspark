@@ -86,7 +86,12 @@ from malspark.reporting.models import (
 )
 from malspark.reporting.stated_host_values import ANALYSIS_SOURCE as ANALYSIS_STATED_SOURCE
 from malspark.reporting.stated_host_values import listed_only
-from malspark.reporting.technique_evidence import NO_LEDGER_ENTRY, technique_evidence_ids
+from malspark.reporting.technique_evidence import (
+    NO_LEDGER_ENTRY,
+    evidence_words,
+    technique_evidence_ids,
+    technique_sandbox_items,
+)
 from malspark.schemas.judgement import indicator_type_for
 from malspark.schemas.sandbox_report import (
     LINEAGE_FILE,
@@ -884,10 +889,12 @@ class ExtendedSTIXRenderer:
         Each published technique's evidence, the set the report's technique
         list carries and every surface prints (``technique_evidence``), is
         written on the sample's ``uses`` edge to that technique as
-        ``x_malspark_evidence_refs``; an edge to a technique no ledger entry
-        stands behind says so in ``x_malspark_evidence_note``. The set holds
-        the ids the technique's statements cite, read by the matrix builder
-        from the run's claims and findings, each one an id the run issued. The
+        ``x_malspark_evidence_refs``, and the sandbox items among its sources
+        beside it, named, in ``x_malspark_evidence_note``; an edge to a
+        technique whose statements cite no ledger entry and that has no item
+        says so in that note. The set
+        holds the entries cited by the statements that name the technique,
+        read by the matrix builder, each one an id the run issued. The
         attribution's family ids go on a malware object this export mints from
         the family name. An indicator gets the ids the report's IOC table ties
         to its values. Nothing else gets the property.
@@ -2158,8 +2165,9 @@ def _with_record_evidence(
     """``objects`` with the property on each object exactly as the record gives it.
 
     The sample's ``uses`` edge to a published technique gets that technique's
-    evidence (``technique_evidence``) as the ledger holds it, or, where no
-    ledger entry stands behind the technique, the note saying so. The malware
+    evidence (``technique_evidence``) as the ledger holds it, with a note
+    naming the sandbox items among its sources, or, where its statements cite
+    no ledger entry and it has no item, the note saying so. The malware
     object this export minted keeps the family ids it was minted with (already
     checked against the ledger). An indicator gets the ids the
     report's IOC table ties to the values its pattern compares
@@ -2168,7 +2176,9 @@ def _with_record_evidence(
     object changed, because the judge's objects are the judge's own bundle's too.
     """
     by_pattern: dict[str, list[str]] = {}
-    no_entry: set[str] = set()
+    # The note on an edge: the sandbox items beside the set, named apart, or,
+    # with neither entry nor item, that no ledger entry is cited.
+    notes: dict[str, str] = {}
     for mapping in getattr(report, "ttp_mappings", None) or []:
         tid = str(getattr(mapping, "technique_id", "") or "").strip().upper()
         if not tid:
@@ -2179,10 +2189,13 @@ def _with_record_evidence(
             # is said either way.
             continue
         refs = _evidence_refs(ids, ledger_order)
+        items = technique_sandbox_items(mapping)
         if refs:
             by_pattern[_pattern_id_for(tid)] = refs
+        if items:
+            notes[_pattern_id_for(tid)] = evidence_words((), items)
         elif not ids:
-            no_entry.add(_pattern_id_for(tid))
+            notes[_pattern_id_for(tid)] = NO_LEDGER_ENTRY
     out: list[Any] = []
     for obj in objects:
         if EVIDENCE_REFS_PROPERTY not in type(obj).model_fields:
@@ -2220,11 +2233,7 @@ def _with_record_evidence(
                 and getattr(obj, "relationship_type", "") == "uses"
                 and getattr(obj, "source_ref", None) == malware_id
             )
-            note = (
-                NO_LEDGER_ENTRY
-                if uses_edge and str(getattr(obj, "target_ref", "") or "") in no_entry
-                else None
-            )
+            note = notes.get(str(getattr(obj, "target_ref", "") or "")) if uses_edge else None
             if getattr(obj, EVIDENCE_NOTE_PROPERTY, None) != note:
                 obj = obj.model_copy(update={EVIDENCE_NOTE_PROPERTY: note})
         if "x_malspark_support" in type(obj).model_fields:

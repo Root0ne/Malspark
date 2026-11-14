@@ -345,6 +345,15 @@ def _benchmark() -> Path | None:
     return None
 
 
+def stored_ledger_ids(run: str) -> list[str]:
+    """A stored run's ledger ids, in its order, as the report node hands them to the export."""
+    root = _benchmark()
+    if root is None or not (root / run / "evidence.json").is_file():
+        pytest.skip("the stored benchmark runs are not on this machine")
+    items = json.loads((root / run / "evidence.json").read_text())["items"]
+    return [str(item["entry_id"]) for item in items]
+
+
 @pytest.mark.parametrize("run", sorted(STORED_REBUILDS))
 def test_a_stored_run_s_ledger_rebuilds_the_sections_dev_drew(run: str) -> None:
     from malspark.schemas.evidence import LedgerEntry

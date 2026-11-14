@@ -5779,6 +5779,10 @@ class BaseAnalyst(BudgetMeter, ABC):
         # in a test or a script exactly what it was.
         self._analysis_file_path: str | None = None
         self._path_by_server: dict[str, str] = {}
+        # For an agent holding several static providers, each provider's own
+        # mirror by provider id (``composition.provider_sample_paths``), the
+        # path that provider's tools are given; empty otherwise.
+        self._path_by_provider: dict[str, str] = {}
         # The job's packet captures, host paths the tool layer fills in and no
         # prompt names. Assigned per sample by ``pipeline.nodes.brief_agent``.
         self._captures: tuple[str, ...] = ()
@@ -6304,6 +6308,7 @@ class BaseAnalyst(BudgetMeter, ABC):
             list(self.tools),
             default_path=self._analysis_file_path,
             path_by_server=self._path_by_server,
+            path_by_provider=getattr(self, "_path_by_provider", None),
             agent_name=self.name,
             captures=tuple(getattr(self, "_captures", ()) or ()),
             staged_path=(getattr(self, "sample_path_choices", None) or {}).get("host"),

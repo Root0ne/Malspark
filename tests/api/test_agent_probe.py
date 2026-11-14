@@ -133,6 +133,59 @@ async def test_a_generic_agent_resolves_to_the_prompt_the_operator_typed():
 
 
 @pytest.mark.asyncio
+async def test_every_static_provider_an_agent_holds_is_reported_with_its_own_tools():
+    from tests.stub_static_providers import TOOL, registered
+
+    with registered("stub_first", "stub_second", "stub_third"):
+        staged = {
+            "agents.definitions": {
+                "reader": {
+                    "role": "generic",
+                    "prompt": "read",
+                    "tools": [
+                        {"kind": "provider", "provider": "stub_first"},
+                        {"kind": "provider", "provider": "stub_second"},
+                        {"kind": "provider", "provider": "stub_third"},
+                    ],
+                }
+            },
+            "agents.profiles": {"one": {"analysts": ["reader"]}},
+            "agents.profile": "one",
+        }
+        result = await probe_agent({"name": "reader", "settings": staged})
+    assert result.ok is True
+    assert result.details["static_provider"] == "stub_first"
+    assert result.details["static_providers"] == [
+        {"key": "stub_first", "tools": [TOOL], "status": "ok"},
+        {"key": "stub_second", "tools": [f"stub_second__{TOOL}"], "status": "ok"},
+        {"key": "stub_third", "tools": [f"stub_third__{TOOL}"], "status": "ok"},
+    ]
+
+
+@pytest.mark.asyncio
+async def test_an_agent_with_one_static_provider_reports_that_one_row():
+    from tests.stub_static_providers import TOOL, registered
+
+    with registered("stub_only"):
+        staged = {
+            "agents.definitions": {
+                "reader": {
+                    "role": "generic",
+                    "prompt": "read",
+                    "static_provider": "stub_only",
+                    "tools": [{"kind": "provider"}],
+                }
+            },
+            "agents.profiles": {"one": {"analysts": ["reader"]}},
+            "agents.profile": "one",
+        }
+        result = await probe_agent({"name": "reader", "settings": staged})
+    assert result.details["static_providers"] == [
+        {"key": "stub_only", "tools": [TOOL], "status": "ok"}
+    ]
+
+
+@pytest.mark.asyncio
 async def test_every_model_the_agent_falls_back_to_is_asked_and_filed(monkeypatch):
     asked: list[tuple[str, str]] = []
 

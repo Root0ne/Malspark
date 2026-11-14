@@ -1832,12 +1832,15 @@ An exported object carries the ledger entries the run's record ties to it, as
 `x_malspark_evidence_refs`: `ev_` ids, each once, in ledger order. The sample's
 `uses` edge to a published technique carries that technique's evidence, the
 one set every surface prints for it (`reporting/technique_evidence`, below):
-the entries its analyst claims and findings cite, the entries of the asserting
-tools (capa, Sigma, YARA, LOLBin, sandbox signatures) whose structured output
-names it, and the entries a map the judge made rests on. An edge to a technique
-no ledger entry stands behind carries `x_malspark_evidence_note: "no ledger
-entry"` in place of the ids. A malware object the export mints from the family
-name carries the attribution's `family_evidence_ids`. Nothing else gets either
+the entries cited by the statements that name the technique — its analyst
+claims and findings, a map the judge made, and the entry of an asserting tool
+(capa, Sigma, YARA, LOLBin, sandbox signatures) whose structured output names
+it. An entry that only looked the catalogue up, for any technique, is in no
+technique's set. The sandbox items among the technique's sources go beside
+the ids in `x_malspark_evidence_note` (`"sandbox items: proc:85"`); an edge to
+a technique whose statements cite no ledger entry and that has no item carries
+`x_malspark_evidence_note: "no ledger entry"` in place of the ids. A malware
+object the export mints from the family name carries the attribution's `family_evidence_ids`. Nothing else gets either
 property, and no object is matched by value.
 
 The tie from a finding is per finding, not per technique. A finding's
@@ -3697,11 +3700,47 @@ button in the console; see [Configuration](/docs/configuration/).
 ### Which agents open a static provider
 
 Two kinds, and only two (`composition.reads_static_provider`): the `static`
-role, whose class opens its provider when it runs, and a `generic` agent whose
-tool list holds a `provider` reference, whose provider is opened when it is
-resolved. Each reads its own provider — the team's forced one, else its
-definition's `static_provider`, else the global one — and the container keeps
-one provider object per id. Everything that depends on the provider follows
+role, whose class opens its provider when it runs, and a `generic` or `lead`
+agent whose tool list holds a `provider` reference, whose providers are opened
+when it is resolved. A reference with no `provider` stands for the agent's own
+provider — the team's forced one, else its definition's `static_provider`,
+else the global one; a reference with `provider: "<id>"` stands for that
+provider, so a `generic` or `lead` agent may hold several, in reference order
+(`composition.static_provider_ids_for`; a team that forces a provider forces
+it on every reference). The `static` role reads its own provider only. The
+container keeps one provider object per id.
+
+An agent holding several providers is offered each one's tools under the
+servers' collision rule: the first provider keeps its tools' names, a later
+provider's tool whose name is taken is offered as `<provider id>__<tool>`
+(`provider__<provider id>__<tool>` where that name is taken too), its declared
+name kept beside it, and each tool is marked with the provider it came from.
+Each provider's tools are given that provider's own path to the sample
+(`composition.provider_sample_paths`, read by `tool_pinning.pin_paths`): its
+own mirror, the host's path for a provider that needs no mirror
+(`capabilities.needs_sample_mirror`), and for one that needs a mirror and has
+none, no path: its tools keep what the model gave and answer as they do for a
+sample that is not mirrored, never with another provider's mirror. The agent is
+told its first provider's mirror, and that path and the sample's bare name are
+corrected to the path of the provider whose tool is called. Each provider opens
+the sample on its own path before the loop; one with no path is not asked to. A provider that
+does not open is left out of the agent's tools and named in the run's
+degradation reasons as `static provider '<id>' did not open`; one that cannot
+open the sample while another could is told to the agent in its hint as the
+failure's cause (`SampleNotOpened.cause`, one sentence, without the operator's
+remedy), its calls answer with its failure as failed calls, and the run's
+limitations carry `agent '<agent>': static provider '<id>' could not open the
+sample` followed by the cause and the operator's remedy (`SampleNotOpened.fix`)
+in brackets.
+Only when every provider fails to open the sample is the loop not started.
+Each call's ledger entry carries its provider's source, `provider:<id>`; the
+run summary's `environment.agents.<agent>.static_providers` lists, for an agent
+holding several, each provider whose tools the agent was offered, in reference
+order (an agent holding one provider is read through its entries' `provider:<id>`
+source); and the `tools` part credits a call of a provider's own server to that
+server by its entry's `provider:<id>` source, for every agent, when the entry
+names no server itself. The agent probe's answer carries `details.static_providers`,
+one row per provider. Everything that depends on the provider follows
 the agent rather than `core.static.provider`: the worker mirrors the sample
 once per provider any such agent of the team (or any agent they or the
 mediator can ask) opens, so a reverser on Ghidra under another global provider has a path the
@@ -5035,23 +5074,25 @@ is assembled from what the run gathered rather than recomputed beside it:
   the technique id, so the same technique is the same object across exports —
   and the `mitre_techniques` column behind `/reports/{id}/mitre`.
 * **One evidence set per technique.** The matrix builder records on each row
-  (`CapabilityCell.evidence_ids`, `TTPMapping.evidence_ids`) the ledger entries
-  behind the technique: the entries among its sources, those a map the judge
-  made rests on, and those its claims and findings cite that the run issued,
-  in ledger order (without a ledger, the ids its statements cite). Every
+  (`CapabilityCell.evidence_ids`, `TTPMapping.evidence_ids`) the entries cited
+  by the statements that name the technique — its analyst claims and findings,
+  a map the judge made, an asserting tool's own entry — that the run issued, in
+  ledger order (without a ledger, the ids its statements cite). An entry that
+  only looked the catalogue up, for any technique, is in no technique's set. Every
   surface that shows the technique prints that set, read through one function
   (`reporting/technique_evidence.technique_evidence_ids`), and nothing is asked
   of a model for it: the Evidence column of the Markdown ATT&CK table, a note
   in the analyst report's ATT&CK table, the STIX `uses` edge, the MISP
   technique attribute's comment (`evidence: …`), the Navigator layer's
   comment, the ATT&CK defence rows and `evidence_ids` on each
-  `/reports/{id}/mitre` row. A technique no ledger entry stands behind — one
-  the judge alone names, for one — says so on each: "no ledger entry" in a
-  text cell or comment, `x_malspark_evidence_note` on the STIX edge, `[]` in
-  the API. Other ids a surface shows beside the set are named for what they
-  are: the entries of the rules that matched the technique follow it in the
-  Markdown cell as "rule matches", and the sandbox items among its sources as
-  "sandbox items" in the Navigator comment and the defence rows. A row stored
+  `/reports/{id}/mitre` row. Every one of them prints the sandbox items among
+  the technique's sources beside the set, named apart: "sandbox items: …" in a
+  text cell or comment and in `x_malspark_evidence_note` on the STIX edge,
+  `sandbox_items` in the API. A technique whose statements cite no ledger
+  entry and that has no item — one the judge alone names, for one — says so on
+  each: "no ledger entry" in a text cell or comment, `x_malspark_evidence_note`
+  on the STIX edge, `[]` in the API. The entries of the rules that matched the
+  technique follow the set in the Markdown cell as "rule matches". A row stored
   before the set was recorded reads as the entries among its `sources` and
   those its statements write. The evidence bundles shown to the composer list
   a technique by its id, name and detonation mark alone. What the
@@ -5882,12 +5923,32 @@ is assembled from what the run gathered rather than recomputed beside it:
   observed cites no entry), `report.identifier_uncited` (a host identifier
   cites no entry of the run), `report.id_not_in_cited_entry` (a table row's
   `id`, a command's, is held by none of the entries the row cites while another
-  entry of the run holds it: a number, alone or as the id's last word, is held
-  by an entry whose code a switch or an else-if ladder compares it in
-  (`validation.compared_values`, read on the entry's text with its JSON escapes
-  taken out), any other id by an entry whose text writes it whole; rows the
-  same entries hold are one question naming them, an id no entry holds is not
-  asked here, and a kept row is marked beside its evidence),
+  entry of the run holds it: a number, alone or as the id's last word after a
+  label every numbered row of the table shares (any other id is text), is held
+  by a cited entry whose text writes it as a compared operand in any base and
+  form the reader knows (an equality test, a case label or a `case A ... B:`
+  range, a compare instruction read by its shape: a mnemonic that begins with
+  `cmp`, the number in either operand place, with or without `$` or `#`,
+  each operand ending where its text does, at the line's end, a comment or a
+  closing quote; `validation.compared_operands`), and a row citing code in a
+  form the reader does not read, or a compare it does not take, is not asked
+  (an instruction at an instruction's place with an operand in no form read
+  or not taken to the instruction's end, the place read by its characters:
+  before the mnemonic only characters that are not word characters, number
+  tokens, a `label:`, a `<symbol+offset>` and an instruction prefix such as
+  `lock` or `repe`; a case range with an end not read, a reversed range, or
+  ranges past 4096 values in one text); a table with
+  fewer than four numbered ids, or whose numbered ids are a plain count (1 to
+  N or 0 to N-1, the guard `composer.command_values` uses), is not checked for
+  its numbers; the entry offered for a number is only the one whose single
+  compared expression holds the most of the table's numbers
+  (`validation.compared_values`, picked as for `composer.command_values`),
+  and only where the entries holding as many agree on its values, never one
+  that merely compares it; any other id is held by an entry whose
+  text writes it whole; an entry whose call failed, or whose answer is an error
+  envelope, holds nothing; rows the same entries hold are one question naming
+  them, an id no entry holds is not asked here, and a kept row is marked beside
+  its evidence),
   `report.value_not_in_cited_entry` (a host
   identifier's or a configuration value's whole value is in none of the entries
   it cites; a configuration number is held in decimal or hex, or by its number

@@ -557,6 +557,10 @@ export interface AgentProbeDetails {
   authored_prompt?: string;
   llm: { provider: string; model: string };
   static_provider: string;
+  /** Every static provider the agent holds, in reference order: the tools
+   *  each is offered under and "ok" or the reason it did not open. Absent
+   *  from a probe taken before the field existed. */
+  static_providers?: { key: string; tools: string[]; status: string }[];
   servers: { key: string; tools: string[]; status: string }[];
 }
 
