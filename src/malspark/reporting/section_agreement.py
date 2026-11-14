@@ -314,9 +314,10 @@ REWRITTEN_CODE = "agreement.rewritten"
 # of the configuration, command or flag tables), listed as saying otherwise than
 # its sources and kept as written: the model's answer, recorded where a reader
 # finds it. Also a sentence of a passage printed in its writer's own words that the
-# round dropped naming none of the sources such a sentence is read against: left as
-# written, and recorded as a flagged statement naming the passage, asked about and
-# left standing (T-613).
+# round dropped naming none of the sources such a sentence is read against: recorded
+# as a flagged statement naming the passage, asked about and left standing, as the
+# text its place stores holds it. The analyst report treats it as any sentence a check
+# left standing, the bundle marking it where that text prints (T-613).
 LISTED_CODE = "agreement.listed"
 # A rewrite of a limitations sentence that still says a call failed, or a
 # reading could not be made, where a later call redid it.
@@ -541,7 +542,8 @@ class Passage:
     # record of a sentence of it left out; ``""`` for any other passage. Such a passage is
     # shown to be listed and is never rewritten: a sentence of it listed is kept on a quote
     # that passes, or left out of the analyst report, the bundle printing it whole, but where a
-    # drop of it names no source it is read against, which leaves it as written (T-613).
+    # drop of it names no source it is read against, which records it as asked about and left
+    # standing (T-613).
     verbatim: str = ""
     # Where such a passage's sentence the round leaves out is recorded, the sentence given:
     # never its text, which stays whole for the bundle; and where one a drop names no source
@@ -741,7 +743,7 @@ def _verbatim_passages(
                 cites=_ids(*(text.cites for text in where), said),
                 verbatim=_VERBATIM_WRITERS.get(first.writer, VERBATIM_DEFAULT),
                 leave_out=_flagged_out(report, first.id, _printed_at),
-                left_standing=_flagged_out(report, first.id, None),
+                left_standing=_flagged_out(report, first.id, None, first.stored),
                 place_label=(subject,) if subject else (),
             )
         )
@@ -775,22 +777,33 @@ def _places_stand_under(where: Sequence[Any]) -> tuple[str, ...]:
 
 
 def _flagged_out(
-    report: MalwareReport, pid: str, printed_at: Callable[[str], list[str]] | None
+    report: MalwareReport,
+    pid: str,
+    printed_at: Callable[[str], list[str]] | None,
+    stored: str = "",
 ) -> Callable[[str], None]:
     """Record a sentence of the passage ``pid`` printed in its writer's own words as a flagged
     statement naming the passage. Given ``printed_at``, one the round left out, under the
     round's code and left out of every place of the analyst report the sentence prints at,
     whichever text it stands in there (``models.FlaggedStatement.left_out``): that report
     leaves it out at each, and the bundle prints it whole beside the round's record. Else one
-    a drop named no source for, recorded as listed: asked about and left standing (T-613)."""
+    a drop named no source for, recorded as listed: asked about and left standing, as it
+    stands in the text its place ``stored`` (``renderers.analyst.as_stored``), so the bundle
+    marks it where that text prints and the analyst report treats it as any sentence a check
+    left standing (T-613)."""
     from malspark.reporting.models import FlaggedStatement
+    from malspark.reporting.renderers.analyst import as_stored
 
     def _record(sentence: str) -> None:
         rows = getattr(report, "flagged_statements", None)
         if not isinstance(rows, list) or not sentence.strip():
             return
         row = (
-            FlaggedStatement(sentence=sentence, code=LISTED_CODE, label=pid)
+            FlaggedStatement(
+                sentence=as_stored(sentence, stored) if stored else sentence,
+                code=LISTED_CODE,
+                label=pid,
+            )
             if printed_at is None
             else FlaggedStatement(
                 sentence=sentence,
@@ -4857,11 +4870,12 @@ _VERBATIM_ENDS = (
 _VERBATIM_DROP = 'name in "sources" the source it contradicts: only that leaves it out'
 # What becomes of such a sentence where its answer does not pass (``apply_rows``): left out of
 # the analyst report, which the bundle prints whole, on a keep or on a drop naming one of those
-# sources; left as written and recorded as asked on a drop naming none (T-613).
+# sources; recorded as asked about and left standing on a drop naming none, which the analyst
+# report treats as any sentence a check left standing (T-613).
 _VERBATIM_LEFT_OUT = (
-    "a keep no check passes, or a drop naming such a source that another check refuses, "
-    "leaves it out of the analyst report, which the bundle prints whole; a drop naming no "
-    "such source leaves it as written, recorded as asked"
+    "a keep no check passes, or a refused drop naming such a source, leaves it out of the "
+    "analyst report, which the bundle prints whole; a drop naming no such source is recorded "
+    "as asked about and left standing"
 )
 
 
@@ -7323,8 +7337,8 @@ def apply_rows(
     failed; nothing else is changed then), each such sentence is left out for that one
     reason. A sentence of a passage printed in its writer's own words whose answer does not
     pass is left out, but where its drop names no source such a sentence is read against
-    (:func:`_names_a_source`): left as written, and recorded as asked and left standing
-    (T-613). Every other answer ends by the rules above.
+    (:func:`_names_a_source`): recorded as asked about and left standing, as the text its
+    place stores holds it (T-613). Every other answer ends by the rules above.
     """
     by_id = {passage.id: passage for passage in passages}
     payload = _platform_rewrites(payload, by_id)
@@ -7383,8 +7397,8 @@ def apply_rows(
         if refused and passage is not None and span is not None:
             if passage.verbatim and row.decision == "drop" and not _names_a_source(row, by_id):
                 # A verbatim sentence is left out only on a source it contradicts: a drop
-                # naming none leaves it as written, recorded as asked and left standing; one
-                # naming one that another check refused leaves it out below (T-613).
+                # naming none records it as asked about and left standing; one naming one
+                # that another check refused leaves it out below (T-613).
                 counts["not_applied"] += 1
                 if passage.left_standing is not None:
                     passage.left_standing(span[2])

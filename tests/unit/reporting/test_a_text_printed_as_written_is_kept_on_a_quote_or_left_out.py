@@ -103,10 +103,10 @@ def test_a_keep_on_no_passing_quote_leaves_it_out_and_records_it() -> None:
         'keep it naming the source you read and found agreeing, with "quote": its words that '
         'state the same thing, copied exactly, or drop it naming in "sources" the source it '
         "contradicts (a fact, a section 5 passage, a debate round or a passage marked "
-        '(verbatim, a source only)), with "reason". A keep no check passes, or a drop naming '
-        "such a source that another check refuses, leaves it out of the analyst report, which "
-        "the bundle prints whole; a drop naming no such source leaves it as written, recorded "
-        "as asked."
+        '(verbatim, a source only)), with "reason". A keep no check passes, or a refused '
+        "drop naming such a source, leaves it out of the analyst report, which the bundle "
+        "prints whole; a drop naming no such source is recorded as asked about and left "
+        "standing."
     )
     assert "rewrite" not in asked[0].message.split(" but ", 1)[1]
     assert counts["dropped"] == 1 and counts["kept"] == 0
@@ -159,10 +159,10 @@ def test_a_rewrite_is_refused_offering_a_keep_or_a_drop_and_is_no_keep() -> None
         'never rewritten: keep it naming the source you read and found agreeing, with "quote": '
         'its words that state the same thing, copied exactly, or drop it naming in "sources" the '
         "source it contradicts (a fact, a section 5 passage, a debate round or a passage marked "
-        '(verbatim, a source only)), with "reason". A keep no check passes, or a drop naming '
-        "such a source that another check refuses, leaves it out of the analyst report, which "
-        "the bundle prints whole; a drop naming no such source leaves it as written, recorded "
-        "as asked."
+        '(verbatim, a source only)), with "reason". A keep no check passes, or a refused '
+        "drop naming such a source, leaves it out of the analyst report, which the bundle "
+        "prints whole; a drop naming no such source is recorded as asked about and left "
+        "standing."
     )
     assert counts["rewritten"] == 0 and counts["dropped"] == 1
     assert [(v.code, v.subject) for v in found] == [(DROPPED_CODE, "judge.business_impact")]

@@ -178,10 +178,10 @@ def test_the_question_marks_each_and_says_its_ends_once() -> None:
         'it naming the source you read and found agreeing, with "quote": its words that state '
         'the same thing, copied exactly, or drop it naming in "sources" the source it '
         "contradicts (a fact, a section 5 passage, a debate round or a passage marked "
-        '(verbatim, a source only)), with "reason". A keep no check passes, or a drop naming '
-        "such a source that another check refuses, leaves it out of the analyst report, which "
-        "the bundle prints whole; a drop naming no such source leaves it as written, recorded "
-        "as asked."
+        '(verbatim, a source only)), with "reason". A keep no check passes, or a refused '
+        "drop naming such a source, leaves it out of the analyst report, which the bundle "
+        "prints whole; a drop naming no such source is recorded as asked about and left "
+        "standing."
     ) in text
     assert "(read only)" not in text
 

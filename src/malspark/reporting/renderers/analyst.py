@@ -521,7 +521,10 @@ class VerbatimText:
     ``whole`` is its writer's whole text where this place prints part of it (a claim's first
     sentence, a reason cut to its width, the judge's sentences section 7 keeps), ``""`` where
     it prints the whole: what of it the report prints nowhere the round is shown as a source
-    only. ``text`` is ``""`` where the place prints none of it (T-613)."""
+    only. ``text`` is ``""`` where the place prints none of it. ``stored`` is the text as its
+    place stores it and the bundle prints it (a claim with its citations, a note with the
+    platform's words), ``""`` where that is ``text``: a sentence of it is recorded as it
+    stands there (:func:`as_stored`, T-613)."""
 
     id: str
     label: str
@@ -530,6 +533,23 @@ class VerbatimText:
     cites: tuple[str, ...] = ()
     subject: tuple[str, ...] = ()
     whole: str = ""
+    stored: str = ""
+
+
+def as_stored(sentence: str, stored: str) -> str:
+    """The sentence of ``stored``, a text as its place stores it, that ``sentence`` of the
+    text the analyst report prints from it reads as: the same words, or those words with
+    the citations and the claim number the report takes out; ``sentence`` where none does
+    (T-613)."""
+    from malspark.reporting.section_agreement import _sentences_of
+
+    for found in _sentences_of(stored):
+        said = found.strip()
+        if said == sentence or (
+            _CLAIM_NUMBER.sub("", _one_line(_CITATION_RUN.sub("", said)).strip()) == sentence
+        ):
+            return said
+    return sentence
 
 
 # The layouts of the renders :func:`verbatim_texts` reads, while it reads them.
@@ -1085,16 +1105,24 @@ class _Analyst:
         cites: Iterable[Any] = (),
         subject: Iterable[str] = (),
         whole: str = "",
+        stored: str = "",
     ) -> tuple[str, int]:
         """``text``, which this report prints in its writer's own words under ``pid``, without
         each sentence of it the agreement question left out (``_Context.verbatim_left``), and
         how many were; recorded as shown (:class:`VerbatimText`), with its writer's ``whole``
-        text where it is part of one. Never reworded: a sentence stands as written or is left
-        out, and the bundle prints it whole (T-613)."""
+        text where it is part of one and the text as its place ``stored`` it. Never reworded:
+        a sentence stands as written or is left out, and the bundle prints it whole (T-613)."""
         from malspark.reporting.section_agreement import left_out_of
 
         self.shown.setdefault(self.notes.section, {})[pid] = VerbatimText(
-            pid, label, text, writer, tuple(str(i) for i in cites), tuple(subject), whole
+            pid,
+            label,
+            text,
+            writer,
+            tuple(str(i) for i in cites),
+            tuple(subject),
+            whole,
+            stored,
         )
         return left_out_of(text, self.ctx.verbatim_left.get(pid, ()))
 
@@ -1138,6 +1166,7 @@ class _Analyst:
             sorted(entry_ids_in(words)),
             self._technique(technique_id),
             whole if whole != words else "",
+            written,
         )
         left = self.ctx.verbatim_left.get(pid, ())
         if not left:
@@ -2465,6 +2494,7 @@ class _Analyst:
             self._technique(technique_id),
             # The claim the table prints the first sentence of.
             _CLAIM_NUMBER.sub("", _one_line(_CITATION_RUN.sub("", claim)).strip()),
+            claim,
         )
         if cut:
             # Left out by the agreement question: the written procedure stands, or nothing,
@@ -2736,6 +2766,7 @@ class _Analyst:
                     ANALYST_WRITER,
                     (),
                     self._technique(cell.technique_id),
+                    stored=str(statement),
                 )
                 left += cut
                 # Only what prints counts as printed: a statement left out whole counts none.

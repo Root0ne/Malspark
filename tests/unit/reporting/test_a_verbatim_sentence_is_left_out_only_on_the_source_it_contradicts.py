@@ -3,7 +3,7 @@
 Where a text printed in its writer's own words and a passage the round may rewrite disagree,
 the question says to list and mend the rewritable one. A verbatim sentence is left out only on
 a named source it contradicts: a drop naming none is refused, as a keep naming no quote is,
-and leaves the sentence as written, recorded as asked and left standing; a drop resting on a
+and records the sentence as asked about and left standing; a drop resting on a
 passage the round may rewrite is refused too (T-613). Every address,
 entry and name here is a neutral synthetic value.
 """
@@ -52,8 +52,8 @@ def test_a_drop_naming_no_source_is_refused_and_leaves_nothing_out() -> None:
     )
     report = report_of()
     counts, _found = apply_rows({"sentences": [_drop()]}, passages_of(report))
-    # No source it contradicts is named: the sentence stands as written, recorded as asked
-    # and left standing (T-613).
+    # No source it contradicts is named: the sentence is recorded as asked about and left
+    # standing (T-613).
     assert counts["dropped"] == 0 and counts["not_applied"] == 1
     assert [(r.code, r.left_out) for r in report.flagged_statements] == [(LISTED_CODE, [])]
 
