@@ -1,0 +1,3 @@
+### Added
+
+- **A nightly Windows workflow runs the remaining platform-independent unit suites (T-683).** The Windows nightly workflow runs `tests/unit/agents`, `tests/unit/api`, `tests/unit/core`, `tests/unit/providers` with `tests/api`, and the small suites (`llm`, `memory`, `extractors`, `enrichment`, `loaders`, `schemas`, `parsers`, `utils`) on Windows with Python 3.13 in five shards that run side by side, every night against `dev` and on demand. A test marked `posix` is deselected, as in the per-pull-request Windows job. Reporting, which needs Pango, and the integration suite, which needs services, stay out. The workflow does not run on pull requests and is not a required check.
