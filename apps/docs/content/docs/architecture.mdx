@@ -2501,9 +2501,14 @@ Every path that reads claims reads them through one reader,
 `base_agent.read_claim_blocks`: it splits an answer at every claim heading
 (`CLAIM:`, `CLAIM 3:`, `CLAIM R3:` with a label of letters before its number,
 `**CLAIM 4 (REVISED):**`, `CLAIM 2 [REVISED — retracts
-claim 5]:`, `CLAIM 5 -`, and a heading whose round- or square-bracketed note is
-its whole line, its fields on the lines after it; the rule is
-`agents/claim_headings.py`) where a block can begin, and at the model's own
+claim 5]:`, `CLAIM 5 -`, a numbered heading's note after the emphasis that
+closes its label (`**CLAIM 6** (revises claim 2): …`), a dot as the delimiter
+after a numbered heading's note, the note before or after the emphasis
+(`**CLAIM 7 (revised).** …`, `**CLAIM 7** (revised). …`, `CLAIM 7 (revised).
+…`), and a heading whose round- or square-bracketed note is its whole line, its
+fields on the lines after it; a dot after a heading with no note or no number
+(`CLAIM 7. …`) and a label other than `CLAIM` (`C1`, `R1`) open no claim; the
+rule is `agents/claim_headings.py`) where a block can begin, and at the model's own
 `---` lines, so claims written one after another with blank lines between them
 are each read. A note written before a heading's delimiter is the model's own
 words on what the claim is to the debate (a revision, a retraction): it is kept

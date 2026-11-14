@@ -22,7 +22,14 @@ LINE_PREFIX = r"[ \t>*_#]*+(?:(?:[-+]|\d++[.)])[ \t]++)?[ \t>*_#]*+"
 # number, after a space or ``#``), ``CLAIM 3 —``, ``**CLAIM 4 (REVISED):**``,
 # ``CLAIM 2 [REVISED — retracts claim 5]:``, ``- CLAIM:``, ``1. CLAIM:``, and a
 # heading whose note is all its line holds (``CLAIM 1 (REVISED — not
-# observed)``, fields on the lines after it). Each one opens a block of its
+# observed)``, fields on the lines after it). A numbered heading's note may
+# also stand after the emphasis that closes the label (``**CLAIM 1**
+# (revises claim 2): …``), and a dot ends a numbered heading that writes a
+# note, the note before or after the emphasis (``**CLAIM 1 (revised).** …``,
+# ``**CLAIM 1** (revised). …``, ``CLAIM 1 (revised). …``); a heading with no
+# number, or with no note, is never ended by a dot (``CLAIM 1. …`` is prose),
+# and a label other than ``CLAIM`` is never a heading (``**C1 …**``,
+# ``**R1. …**``). Each one opens a block of its
 # own, so claims written one after another with no ``---`` between them are
 # read as the claims they are, not as the first one. The note, in round or
 # square brackets, is the model's own words: before a delimiter it is kept
@@ -33,8 +40,10 @@ LINE_PREFIX = r"[ \t>*_#]*+(?:(?:[-+]|\d++[.)])[ \t]++)?[ \t>*_#]*+"
 # possessively, so a line costs time linear in its length.
 CLAIM_HEAD_RE = re.compile(
     r"^" + LINE_PREFIX + r"CLAIM(?:(?:[ \t]++#?(?P<label>[A-Za-z]++)|[ \t]*+#?)(?P<number>\d++))?"
-    r"(?:[ \t]*+(?P<note>\([^)\n]*+\)|\[[^\]\n]*+\]))?[ \t]*+(?:\*\*)?[ \t]*+"
-    r"(?:(?P<delim>:|—|–|-(?=\s))[ \t]*+(?:\*\*)?[ \t]*+|(?(note)$|(?!)))"
+    r"(?:[ \t]*+(?(number)(?:\*\*[ \t]*+)?)(?P<note>\([^)\n]*+\)|\[[^\]\n]*+\]))?"
+    r"[ \t]*+(?:\*\*)?[ \t]*+"
+    r"(?:(?P<delim>:|—|–|-(?=\s)|(?(number)(?(note)\.|(?!))|(?!)))[ \t]*+(?:\*\*)?[ \t]*+"
+    r"|(?(note)$|(?!)))"
 )
 
 

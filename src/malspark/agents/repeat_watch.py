@@ -361,60 +361,61 @@ _LINE_PREFIX = _seq(
 _STARS = _opt(_seq(_one("*"), _one("*")))
 
 # A claim heading's label and number, and its note in round or square brackets.
-_HEAD_LABEL = _seq(
-    _LINE_PREFIX,
-    _word("CLAIM"),
-    _opt(
-        _seq(
-            (
-                "alt",
-                [
-                    _seq(_star(_SPACE_OR_TAB), _opt(_one("#"))),
-                    _seq(
-                        ("plus", _SPACE_OR_TAB),
-                        _opt(_one("#")),
-                        ("plus", ("char", _LETTER)),
-                    ),
-                ],
-            ),
-            ("plus", ("char", _DIGIT)),
-        )
-    ),
-)
-_HEAD_NOTE = _seq(
-    _star(_SPACE_OR_TAB),
+_HEAD_START = _seq(_LINE_PREFIX, _word("CLAIM"))
+_HEAD_NUMBER = _seq(
     (
         "alt",
         [
-            _seq(_one("("), _star(("char", lambda c: c not in ")\n")), _one(")")),
-            _seq(_one("["), _star(("char", lambda c: c not in "]\n")), _one("]")),
+            _seq(_star(_SPACE_OR_TAB), _opt(_one("#"))),
+            _seq(
+                ("plus", _SPACE_OR_TAB),
+                _opt(_one("#")),
+                ("plus", ("char", _LETTER)),
+            ),
         ],
     ),
+    ("plus", ("char", _DIGIT)),
 )
+_HEAD_LABEL = _seq(_HEAD_START, _opt(_HEAD_NUMBER))
+_NOTE_BRACKET = (
+    "alt",
+    [
+        _seq(_one("("), _star(("char", lambda c: c not in ")\n")), _one(")")),
+        _seq(_one("["), _star(("char", lambda c: c not in "]\n")), _one("]")),
+    ],
+)
+_HEAD_NOTE = _seq(_star(_SPACE_OR_TAB), _NOTE_BRACKET)
+# A numbered heading's note, after the emphasis that closes its label or not.
+_NUMBERED_NOTE = _seq(
+    _HEAD_START,
+    _HEAD_NUMBER,
+    _star(_SPACE_OR_TAB),
+    _opt(_seq(_one("*"), _one("*"), _star(_SPACE_OR_TAB))),
+    _NOTE_BRACKET,
+)
+_AFTER_NOTE = _seq(_star(_SPACE_OR_TAB), _STARS, _star(_SPACE_OR_TAB))
 # ``claim_headings.CLAIM_HEAD_RE`` up to its delimiter. ``-(?=\s)`` reads the
 # whitespace after the dash too: the heading's text after the delimiter is
-# read as words, and that whitespace adds none. Its other form, a heading
-# whose note is all its line holds, is the second accepting state
-# (``also_accept``): a heading only where the line ends, with no text after it.
+# read as words, and that whitespace adds none. A dot is a delimiter only
+# after a numbered heading's note. Its other form, a heading whose note is all
+# its line holds, is the second accepting state (``also_accept``): a heading
+# only where the line ends, with no text after it.
 # The bracket that closes each bracket a heading's note opens with.
 _NOTE_CLOSERS = {"(": ")", "[": "]"}
 _DELIMITER = ("alt", [_one(":"), _one("—"), _one("–"), _seq(_one("-"), ("char", _SPACE))])
 _HEAD = _Automaton(
-    _seq(
-        _HEAD_LABEL,
-        (
-            "alt",
-            [
-                _seq(_star(_SPACE_OR_TAB), _STARS, _star(_SPACE_OR_TAB), _DELIMITER),
-                _seq(
-                    _HEAD_NOTE,
-                    _star(_SPACE_OR_TAB),
-                    _STARS,
-                    _star(_SPACE_OR_TAB),
-                    ("alt", [_DELIMITER, ("mark",)]),
-                ),
-            ],
-        ),
+    (
+        "alt",
+        [
+            _seq(_HEAD_LABEL, _star(_SPACE_OR_TAB), _STARS, _star(_SPACE_OR_TAB), _DELIMITER),
+            _seq(_HEAD_LABEL, _HEAD_NOTE, _AFTER_NOTE, _DELIMITER),
+            _seq(_NUMBERED_NOTE, _AFTER_NOTE, ("alt", [_DELIMITER, _one(".")])),
+            _seq(
+                ("alt", [_seq(_HEAD_LABEL, _HEAD_NOTE), _NUMBERED_NOTE]),
+                _AFTER_NOTE,
+                ("mark",),
+            ),
+        ],
     )
 )
 # ``claim_headings._SEPARATOR_RE``, read to the end of the line.
@@ -487,16 +488,22 @@ _NO_DISPUTE = _Automaton(
 )
 
 
-def _states_inside(opening: str) -> frozenset[int]:
+def _states_inside(label: str, opening: str) -> frozenset[int]:
     states = _HEAD.start
-    for ch in "CLAIM " + opening + "x":
+    for ch in label + opening + "x":
         states = _HEAD.step(states, ch)
     return states
 
 
 # The heading automaton's states inside an open note, by the bracket that
-# closes it: a character other than that bracket leaves them as they are.
-_NOTE_INSIDE = {_states_inside(opening): closer for opening, closer in _NOTE_CLOSERS.items()}
+# closes it: a character other than that bracket leaves them as they are. One
+# set for each way a note is reached: after a label with no number, after a
+# number, and after the emphasis that closes a numbered label.
+_NOTE_INSIDE = {
+    _states_inside(label, opening): closer
+    for label in ("CLAIM ", "CLAIM 1 ", "CLAIM 1** ")
+    for opening, closer in _NOTE_CLOSERS.items()
+}
 
 
 class _Reading:
