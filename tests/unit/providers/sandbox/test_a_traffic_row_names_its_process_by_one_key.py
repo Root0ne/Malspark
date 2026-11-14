@@ -28,6 +28,7 @@ from malspark.schemas.sandbox_document import sandbox_document
 from malspark.schemas.sandbox_report import (
     LINEAGE_KEY,
     LINEAGE_LAUNCHER,
+    PROCESS_TASK_KEY,
     PROCESS_UNLISTED_KEY,
     SAMPLE_TREE_KEY,
     TRAFFIC_PROCESS_KEY,
@@ -302,6 +303,19 @@ class TestAFormatNamingItsProcessUnderAnotherKey:
         assert names["launcher.example"].made_by is not None
         assert names["launcher.example"].made_by.launcher == ["powershell.exe (procid 10)"]
         assert names["sample.example"].sample_process_tree is True
+
+    def test_a_structured_dns_request_naming_its_own_process_is_marked_by_it(self) -> None:
+        # A DNS request kept in its structural form (its questions and
+        # answers), whose own fields name the process that asked.
+        report = _read(_json("behavioral1.json"))
+        (request,) = report.network.dns_requests
+        request.extra.update({TRAFFIC_PROCESS_KEY: "84", PROCESS_TASK_KEY: "behavioral1"})
+        attribute_the_launcher(report, LAUNCHER)
+        assert request.extra[LINEAGE_KEY] == LINEAGE_LAUNCHER
+        assert request.extra[SAMPLE_TREE_KEY] is False
+        name = next(d for d in _network(report).domains if d.fqdn == "c.pki.goog")
+        assert name.made_by is not None
+        assert name.made_by.launcher == ["powershell.exe (procid 84)"]
 
     def test_a_mapping_declaring_no_such_field_names_no_process(self) -> None:
         mapping = MAPPED.model_copy(update={"field_names": {}})

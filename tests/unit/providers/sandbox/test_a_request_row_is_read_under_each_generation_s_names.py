@@ -403,3 +403,18 @@ class TestALongKindName:
         assert _unread_channels(report) == [TRIAGE_UNREAD_REQUESTS_CHANNEL]
         bare = sandbox_channels(sandbox_document(report), TRIAGE_UNREAD_REQUESTS_CHANNEL)
         assert bare["total"] == 1 and bare["rows"][0][TRIAGE_UNREAD_KINDS_FOLDED_KEY] == 1
+
+    def test_the_name_bound_alone_folds_a_kind(self) -> None:
+        # Two kinds, far under the bound on their number: a name of 65
+        # characters is folded, one of 64 keeps its channel.
+        assert TRIAGE_UNREAD_KIND_NAME == 64
+        longer, longest_kept = "k" * 65, "m" * 64
+        rows = (
+            {"flow": 9, "index": 1, longer: {"n": 0}},
+            {"flow": 9, "index": 2, longest_kept: {}},
+        )
+        report = _read({"behavioral1": _task(*rows)})
+        assert sorted(_unread_channels(report)) == [
+            TRIAGE_UNREAD_REQUESTS_CHANNEL,
+            f"{TRIAGE_UNREAD_REQUESTS_CHANNEL}.{longest_kept}",
+        ]

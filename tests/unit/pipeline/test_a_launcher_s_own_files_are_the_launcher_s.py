@@ -165,6 +165,12 @@ class TestTheLauncherSOwnProcess:
         attribute_the_launcher(report, FIRST)
         assert _reasons(report)[f"{TEMP}\\shared.txt"] is None
 
+    def test_a_writer_field_holding_a_list_inside_its_list_names_no_writer(self) -> None:
+        # Read as text, the inner list's middle item would be the launcher's id.
+        report = _first({"procid": [[1, 84, 1]], "path": f"{TEMP}\\nested.txt"})
+        attribute_the_launcher(report, FIRST)
+        assert _reasons(report)[f"{TEMP}\\nested.txt"] is None
+
     def test_a_row_naming_no_writer_keeps_the_member_reading(self) -> None:
         report = _first({"path": f"{TEMP}\\notes.txt", "sha256": "d" * 64})
         attribute_the_launcher(report, FIRST)
