@@ -122,9 +122,53 @@ OWN_WITHDRAWN_PRONOUNS = ("it", "this", "that", "them", "these", "those", "both"
 # - the words that say it withdrawn, after the reference ("My claims 1 and 2
 #   are superseded by ...", "My claim 2 (...). Withdrawn as stated.");
 OWN_WITHDRAWN_WORDS = ("withdrawn", "retracted", "rejected", "superseded")
-# - the words that keep it: one between the reference and the withdrawing
-#   word makes the item a doubt, and a doubt withdraws nothing;
-OWN_KEEPING_WORDS = ("stand", "stands", "keep", "kept", "hold", "holds", "maintain", "remains")
+# - the words that keep it, and the words that contrast with a withdrawal:
+#   one anywhere in the item after the reference makes the item a doubt, and
+#   a doubt withdraws nothing ("I withdraw my claim 4 — no, I keep it", "My
+#   claims 3-5: TRIAGE says they are superseded; I disagree");
+OWN_KEEPING_WORDS = (
+    "stand", "stands", "keep", "kept", "hold", "holds", "maintain", "maintained", "remains",
+    "uphold", "upholds", "defend", "defends", "retain", "retains",
+)  # fmt: skip
+OWN_CONTRASTING_WORDS = (
+    "but", "however", "though", "although", "yet", "nevertheless", "disagree", "disagrees",
+    "wrong", "wrongly", "confirm", "confirms", "confirmed", "support", "supports", "supported",
+    "correct", "right", "valid", "contrary",
+)  # fmt: skip
+# - the words that negate: one between the reference and the withdrawing word
+#   makes the item a doubt ("My claim 4 is not withdrawn"), and so does a
+#   word ending in one of the endings ("isn't");
+OWN_NEGATING_WORDS = ("not", "never", "no", "nothing", "none", "neither", "nor", "cannot")
+OWN_NEGATING_ENDINGS = ("n't", "n’t")
+# - the word that names an agent after a word that says it withdrawn, within
+#   a few words: someone else's rejection is not the analyst's ("My claim 4
+#   was rejected by the mediator");
+OWN_AGENT_WORDS = ("by",)
+OWN_AGENT_REACH = 4
+# - what may stand right before a word that says it withdrawn: a word of the
+#   passive or an adverb, a mark or the item's start ("is withdrawn", "...).
+#   Withdrawn as stated"). After any other word ("Peers rejected it") the
+#   word is another's act, and the item a doubt;
+OWN_PASSIVE_WORDS = (
+    "is", "are", "was", "be", "been", "being", "now", "hereby", "both", "all", "also", "thus",
+    "therefore", "fully", "entirely",
+)  # fmt: skip
+# - the words that make a sentence conditional: one in the sentence of the
+#   reference or of the withdrawing word makes the item a doubt ("If ev_0012
+#   is wrong, I withdraw my claim 4"), and so does a question mark there;
+OWN_CONDITIONAL_WORDS = ("if", "unless", "would", "should", "were", "whether", "could", "might")
+OWN_QUESTION_MARKS = ("?",)
+# - the quotation marks, opening and closing: a reference or a withdrawing
+#   word inside a quotation is another's text ("STATIC wrote: \"my claim 3 is
+#   wrong. I reject this.\""). A mark between two letters is an apostrophe,
+#   an opening mark never follows a letter and a closing mark never precedes
+#   one; a quotation left open runs to the item's end;
+OWN_QUOTE_MARKS = (
+    ('"', '"'), ("“", "”"), ("‘", "’"), ("«", "»"), ("`", "`"), ("'", "'"),
+)  # fmt: skip
+# - the endings that make the reference a possessive: what follows is about
+#   something of the claim, not the claim ("I reject my claim 4's critics");
+OWN_POSSESSIVE_ENDINGS = ("'s", "’s")
 # - what may follow the reference right after a verb that names it, or a
 #   pronoun: a mark, or one of these words. Anything else ("I reject that
 #   wording") withdraws a part of the claim, not the claim;
@@ -163,7 +207,7 @@ _OWN_CLAIM_PART_RE = re.compile(rf"[\s*_`]*+(?:{'|'.join(OWN_CLAIM_PARTS)})\b", 
 # A verb with a pronoun after the reference, or a word that says it withdrawn.
 _OWN_WITHDRAWN_AFTER_RE = re.compile(
     rf"{_OWN_VERB}\s++(?:{'|'.join(OWN_WITHDRAWN_PRONOUNS)})(?={_OWN_END})"
-    rf"|\b(?:{'|'.join(OWN_WITHDRAWN_WORDS)})\b",
+    rf"|(?P<word>\b(?:{'|'.join(OWN_WITHDRAWN_WORDS)})\b)",
     re.IGNORECASE,
 )
 # Other claims of the list the reference stands in, right after it ("my claim
@@ -174,7 +218,38 @@ _OWN_LIST_GOES_ON_RE = re.compile(
     r"(?:\s*+(?:,|&|\band\b|/|-|–|\bto\b)\s*+#?\d++)*+)*+",
     re.IGNORECASE,
 )
-_OWN_KEEPING_RE = re.compile(rf"\b(?:{'|'.join(OWN_KEEPING_WORDS)})\b", re.IGNORECASE)
+_OWN_KEEPING_RE = re.compile(
+    rf"\b(?:{'|'.join((*OWN_KEEPING_WORDS, *OWN_CONTRASTING_WORDS))})\b", re.IGNORECASE
+)
+_OWN_NEGATING_RE = re.compile(
+    rf"\b(?:{'|'.join(OWN_NEGATING_WORDS)})\b"
+    rf"|(?:{'|'.join(map(re.escape, OWN_NEGATING_ENDINGS))})\b",
+    re.IGNORECASE,
+)
+_OWN_AGENT = "|".join(OWN_AGENT_WORDS)
+# An agent within a few words after a word that says it withdrawn, in its sentence.
+_OWN_AGENT_AFTER_RE = re.compile(
+    rf"(?:[\s,*_`]++(?!(?:{_OWN_AGENT})\b)[^\s.!?;:]++){{0,{OWN_AGENT_REACH}}}+"
+    rf"[\s,*_`]++(?:{_OWN_AGENT})\b",
+    re.IGNORECASE,
+)
+_OWN_PASSIVE_BEFORE_RE = re.compile(
+    rf"(?:^|[.!?:;,()\[\]\"'“”—–-]|\b(?:{'|'.join(OWN_PASSIVE_WORDS)})\b)[\s*_`]*+$",
+    re.IGNORECASE,
+)
+_OWN_CONDITIONAL_RE = re.compile(
+    rf"\b(?:{'|'.join(OWN_CONDITIONAL_WORDS)})\b"
+    rf"|(?:{'|'.join(map(re.escape, OWN_QUESTION_MARKS))})",
+    re.IGNORECASE,
+)
+_OWN_POSSESSIVE_RE = re.compile(
+    rf"(?:{'|'.join(map(re.escape, OWN_POSSESSIVE_ENDINGS))})\b", re.IGNORECASE
+)
+_QUOTE_MARK_RE = re.compile(
+    "[" + re.escape("".join(dict.fromkeys(c for pair in OWN_QUOTE_MARKS for c in pair))) + "]"
+)
+# Where a sentence ends: a mark of its end before a space or the item's end.
+_SENTENCE_END_RE = re.compile(r"[.!?](?=\s|$)")
 # What the reference may stand after to be the subject of what follows: the
 # item's or a sentence's start, or a list it closes ("(STATIC claim 23, my own
 # earlier claim 17)").
@@ -196,16 +271,71 @@ def _any_between(positions: Sequence[int], low: int, high: int) -> bool:
     return at < len(positions) and positions[at] < high
 
 
+def _quoted_spans(item: str) -> list[tuple[int, int]]:
+    """The quotations of ``item`` (:data:`OWN_QUOTE_MARKS`), sorted and apart, in one pass.
+
+    A mark between two word characters is an apostrophe; an opening mark
+    never follows a word character, a closing one never precedes one; a
+    quotation left open runs to the item's end.
+    """
+    closing_of = dict(OWN_QUOTE_MARKS)
+    found: list[tuple[int, int]] = []
+    opened: str | None = None
+    start = 0
+    for match in _QUOTE_MARK_RE.finditer(item):
+        at = match.start()
+        mark = item[at]
+        before = item[at - 1] if at else " "
+        after = item[at + 1] if at + 1 < len(item) else " "
+        word_before = before.isalnum() or before == "_"
+        word_after = after.isalnum() or after == "_"
+        if word_before and word_after:
+            continue
+        if opened is not None:
+            if mark == closing_of[opened] and not word_after:
+                found.append((start, at + 1))
+                opened = None
+            continue
+        if mark in closing_of and not word_before:
+            opened, start = mark, at
+    if opened is not None:
+        found.append((start, len(item)))
+    return found
+
+
+def _sentence_of(ends: Sequence[int], low: int, high: int, size: int) -> tuple[int, int]:
+    """``[start, end]`` of the sentences that hold ``low`` to ``high``, its end mark included."""
+    before = bisect.bisect_left(ends, low)
+    start = ends[before - 1] + 1 if before else 0
+    after = bisect.bisect_left(ends, high)
+    return start, ends[after] + 1 if after < len(ends) else size
+
+
 @dataclass(frozen=True)
 class OwnWithdrawals:
     """What a revision's disputes withdraw of its own claims.
 
-    ``claims`` is ``(first, last, item)`` per number or range, as digits, the
-    dispute item as the reason; ``items`` the items read so.
+    ``claims`` is ``(first, last, item, round written)`` per number or range
+    read as a withdrawal, as digits, the dispute item as the reason and
+    whether the reference wrote the round of the answer in force; ``items``
+    the items read so; ``spoken`` ``(first, last)`` per number or range of
+    every other reference of its own an item writes: the item speaks for
+    that claim, and withdraws nothing of it.
     """
 
-    claims: tuple[tuple[str, str, str], ...] = ()
+    claims: tuple[tuple[str, str, str, bool], ...] = ()
     items: tuple[str, ...] = ()
+    spoken: tuple[tuple[str, str], ...] = ()
+
+
+def _ranges(numbers: str) -> list[tuple[str, str]]:
+    """``(first, last)`` per number or range of a reference's numbers, as digits."""
+    out: list[tuple[str, str]] = []
+    for part in _RANGE_SPLIT_RE.split(numbers):
+        ends = _NUMBER_RE.findall(part)
+        if ends:
+            out.append((_number(ends[0]), _number(ends[-1])))
+    return out
 
 
 def read_own_withdrawals(items: Sequence[str], round_in_force: int | None) -> OwnWithdrawals:
@@ -216,64 +346,109 @@ def read_own_withdrawals(items: Sequence[str], round_in_force: int | None) -> Ow
     first-person verb of :data:`OWN_WITHDRAWING_VERBS` stands right before
     that reference, nothing but a mark or one of :data:`OWN_CLAIM_ENDS` after
     it; or the reference opens the item or a sentence, or closes a list of
-    claims, and later in the item, with no other claim named and no word of
-    :data:`OWN_KEEPING_WORDS` in between, such a verb takes one of
-    :data:`OWN_WITHDRAWN_PRONOUNS` or a word of :data:`OWN_WITHDRAWN_WORDS`
-    stands. A "round-<n>" reference is read only where ``n`` is
-    ``round_in_force``. A rejection of another analyst's claim names no claim
-    of its own, and is a dispute; anything else is a doubt and withdraws
-    nothing. What stands before a reference is read within
+    claims, and later in the item, with no other claim named in between,
+    such a verb takes one of :data:`OWN_WITHDRAWN_PRONOUNS` or a word of
+    :data:`OWN_WITHDRAWN_WORDS` stands after a word of
+    :data:`OWN_PASSIVE_WORDS`, a mark or the item's start. A "round-<n>"
+    reference is read only where ``n`` is ``round_in_force``.
+
+    Read whole, the item must say nothing against the withdrawal, so it reads
+    as nothing where a word of :data:`OWN_NEGATING_WORDS` stands between the
+    reference and the withdrawing word; a word of :data:`OWN_AGENT_WORDS`
+    follows the withdrawing word within :data:`OWN_AGENT_REACH` words; a word
+    of :data:`OWN_KEEPING_WORDS` or :data:`OWN_CONTRASTING_WORDS` stands
+    anywhere after the reference; a word of :data:`OWN_CONDITIONAL_WORDS` or a
+    question mark stands in the sentences that hold the reference and the
+    withdrawing word; the reference or the withdrawing word stands inside a
+    quotation (:data:`OWN_QUOTE_MARKS`); the reference is a possessive
+    (:data:`OWN_POSSESSIVE_ENDINGS`) or is followed by a part of the claim
+    (:data:`OWN_CLAIM_PARTS`). A rejection of another analyst's claim names
+    no claim of its own, and is a dispute; anything else is a doubt and
+    withdraws nothing, and every reference of its own read so is ``spoken``.
+    What stands before a reference is read within
     :data:`OWN_CLAIM_BEFORE_WINDOW` characters and its list within
     :data:`OWN_LIST_WINDOW`; every other word is found in one pass over the
     item, so an item costs its length whatever the number of its references.
     """
-    claims: list[tuple[str, str, str]] = []
+    claims: list[tuple[str, str, str, bool]] = []
     read: list[str] = []
+    spoken: list[tuple[str, str]] = []
     in_force = None if round_in_force is None else str(int(round_in_force))
     for raw in items:
         item = " ".join(str(raw or "").split())
+        size = len(item)
         # Read once per item: every reference of its own, every other claim
-        # named, every word that withdraws and every word that keeps.
+        # named, every word that withdraws, keeps, negates or makes a
+        # condition, every quotation and every sentence's end.
         own = list(_OWN_CLAIM_RE.finditer(item))
         spans = [(m.start(), m.end()) for m in own]
         others = [m.start() for m in _ANY_CLAIM_RE.finditer(item) if not _inside(spans, m.start())]
-        said_at = [m.start() for m in _OWN_WITHDRAWN_AFTER_RE.finditer(item)]
+        said = [
+            (m.start(), m.end(), m.group("word") is not None)
+            for m in _OWN_WITHDRAWN_AFTER_RE.finditer(item)
+        ]
+        said_at = [at for at, _end, _word in said]
         kept_at = [m.start() for m in _OWN_KEEPING_RE.finditer(item)]
+        negated_at = [m.start() for m in _OWN_NEGATING_RE.finditer(item)]
+        conditional_at = [m.start() for m in _OWN_CONDITIONAL_RE.finditer(item)]
+        quoted = _quoted_spans(item)
+        ends = [m.start() for m in _SENTENCE_END_RE.finditer(item)]
         found = False
         for match in own:
+            ranges = _ranges(match.group("numbers"))
             written_round = match.group("round")
             if written_round is not None and (written_round.lstrip("0") or "0") != in_force:
+                spoken.extend(ranges)
                 continue
             start, end = match.span()
             window = max(0, start - OWN_CLAIM_BEFORE_WINDOW)
-            if _OWN_CLAIM_PART_RE.match(item, end):
-                withdraws = False
-            elif _OWN_VERB_BEFORE_RE.search(item, window, start):
-                withdraws = bool(_OWN_CLAIM_END_RE.match(item, end))
+            # Where the withdrawing word stands, and where it ends.
+            word: tuple[int, int] | None = None
+            if (
+                _OWN_POSSESSIVE_RE.match(item, end)
+                or _OWN_CLAIM_PART_RE.match(item, end)
+                or _inside(quoted, start)
+            ):
+                word = None
+            elif verb := _OWN_VERB_BEFORE_RE.search(item, window, start):
+                if _OWN_CLAIM_END_RE.match(item, end):
+                    word = (verb.start(), verb.end())
             elif _OWN_SUBJECT_BEFORE_RE.search(item, window, start):
                 at = bisect.bisect_left(said_at, end)
-                said = said_at[at] if at < len(said_at) else None
-                listed = _OWN_LIST_GOES_ON_RE.match(
-                    item, end, min(len(item), end + OWN_LIST_WINDOW)
-                )
+                listed = _OWN_LIST_GOES_ON_RE.match(item, end, min(size, end + OWN_LIST_WINDOW))
                 list_end = listed.end() if listed is not None else end
-                withdraws = (
-                    said is not None
-                    and not _any_between(others, list_end, said)
-                    and not _any_between(kept_at, end, said)
-                )
-            else:
-                withdraws = False
-            if not withdraws:
+                if at < len(said):
+                    word_at, word_end, passive = said[at]
+                    if (
+                        not _any_between(others, list_end, word_at)
+                        and not _any_between(negated_at, end, word_at)
+                        and not (
+                            passive
+                            and (
+                                _OWN_AGENT_AFTER_RE.match(item, word_end)
+                                or not _OWN_PASSIVE_BEFORE_RE.search(
+                                    item, max(0, word_at - OWN_CLAIM_BEFORE_WINDOW), word_at
+                                )
+                            )
+                        )
+                    ):
+                        word = (word_at, word_end)
+            if word is not None:
+                low, high = _sentence_of(ends, min(start, word[0]), max(end, word[1]), size)
+                if (
+                    _inside(quoted, word[0])
+                    or _any_between(kept_at, end, size + 1)
+                    or _any_between(conditional_at, low, high)
+                ):
+                    word = None
+            if word is None:
+                spoken.extend(ranges)
                 continue
             found = True
-            for part in _RANGE_SPLIT_RE.split(match.group("numbers")):
-                ends = _NUMBER_RE.findall(part)
-                if ends:
-                    claims.append((_number(ends[0]), _number(ends[-1]), item))
+            claims.extend((first, last, item, written_round is not None) for first, last in ranges)
         if found:
             read.append(str(raw))
-    return OwnWithdrawals(claims=tuple(claims), items=tuple(read))
+    return OwnWithdrawals(claims=tuple(claims), items=tuple(read), spoken=tuple(spoken))
 
 
 # Where a flag names the claim block it is about: ``static.claims[5].T1041``.
@@ -309,12 +484,15 @@ class Withdrawals:
 
     ``claims`` is ``(first, last, reason)`` per number or range, as digits;
     ``findings`` is ``(folded title, title as written, reason)``; ``unread``
-    counts the lines that begin with the word and were not read exactly.
+    counts the lines that begin with the word and were not read exactly, or
+    that hold a withdrawing word and a claim number in other words, and
+    ``unread_lines`` holds each of them as written.
     """
 
     claims: tuple[tuple[str, str, str], ...] = ()
     findings: tuple[tuple[str, str, str], ...] = ()
     unread: int = 0
+    unread_lines: tuple[str, ...] = ()
 
     def __bool__(self) -> bool:
         return bool(self.claims or self.findings)
@@ -324,7 +502,7 @@ def read_withdrawals(text: str) -> Withdrawals:
     """The ``WITHDRAW`` lines of ``text``, in order, each read once from its start."""
     claims: list[tuple[str, str, str]] = []
     findings: list[tuple[str, str, str]] = []
-    unread = 0
+    unread: list[str] = []
     for line in str(text or "").splitlines():
         if _WITHDRAW_LINE_RE.match(line) is None:
             heading = CLAIM_HEAD_RE.match(line)
@@ -337,10 +515,10 @@ def read_withdrawals(text: str) -> Withdrawals:
                     or _WITHDRAW_OR_RETRACT_RE.search(sentence)
                     or _WITHDRAWING_OPENER_RE.match(sentence)
                 ):
-                    unread += 1
+                    unread.append(line)
                     continue
             if _WITHDRAW_WORD_RE.search(rest) and _CLAIM_NUMBER_RE.search(rest):
-                unread += 1
+                unread.append(line)
             continue
         found = _WITHDRAW_CLAIM_RE.match(line)
         if found is not None:
@@ -355,10 +533,25 @@ def read_withdrawals(text: str) -> Withdrawals:
         if titled is not None:
             written = _said(titled.group("quoted") or titled.group("title"))
         if titled is None or not folded_title(written):
-            unread += 1
+            unread.append(line)
             continue
         findings.append((folded_title(written), written, _said(titled.group("reason"))))
-    return Withdrawals(claims=tuple(claims), findings=tuple(findings), unread=unread)
+    return Withdrawals(
+        claims=tuple(claims),
+        findings=tuple(findings),
+        unread=len(unread),
+        unread_lines=tuple(unread),
+    )
+
+
+_LINE_PREFIX_RE = re.compile(LINE_PREFIX)
+
+
+def line_key(text: str) -> str:
+    """A line as a dispute item holds it: no list marker or marks before it, spaces folded."""
+    written = str(text or "")
+    prefix = _LINE_PREFIX_RE.match(written)
+    return " ".join(written[prefix.end() if prefix else 0 :].split())
 
 
 @dataclass

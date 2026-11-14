@@ -84,6 +84,7 @@ stand, and :class:`RevisionMerge` records every choice.
 from __future__ import annotations
 
 import bisect
+import collections
 import re
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
@@ -111,10 +112,10 @@ from malspark.pipeline.debate_facts import (
     read_claim_numbers,
 )
 from malspark.pipeline.retry_merge import (
-    _CLAIM_NUMBER_RE,
     _WITHDRAW_OR_RETRACT_RE,
     _WITHDRAW_WORD_RE,
     _WITHDRAWING_OPENER_RE,
+    line_key,
     read_own_withdrawals,
     read_withdrawals,
 )
@@ -350,6 +351,34 @@ def _restated(earlier: _Block, readings: Sequence[_Reading]) -> int | None:
     return None
 
 
+def _share(earlier: _Block, reading: _Reading) -> float:
+    """How much of ``earlier`` one block states, the larger of two shares.
+
+    The share of its content words and the share of its values, the two
+    measures :func:`_block_restates` reads, values as it counts them.
+    """
+    words = content_words(earlier.sentence)
+    worded = len(words & reading.words) / len(words) if words else 0.0
+    values = _counted_values(earlier)
+    valued = len(_stated(values, reading)) / len(values) if values else 0.0
+    return max(worded, valued)
+
+
+def _restated_best(earlier: _Block, readings: Sequence[_Reading]) -> int | None:
+    """The revision block that restates ``earlier`` best (:func:`_share`), or ``None``.
+
+    The first such block on a tie.
+    """
+    best: tuple[float, int] | None = None
+    for index, reading in enumerate(readings):
+        if not _block_restates(earlier, reading):
+            continue
+        share = _share(earlier, reading)
+        if best is None or share > best[0]:
+            best = (share, index)
+    return None if best is None else best[1]
+
+
 _OWN_CLAIM_NUMBERS = re.compile(
     r"\bclaims?\s*+#?\s*+(\d++(?:\s*+(?:/|,|&|and|\+)\s*+#?\d++)*+)", re.IGNORECASE
 )
@@ -444,7 +473,10 @@ class RevisionMerge:
     (:func:`_numbering`, :func:`numbering_key`); ``beside`` ``(number,
     sentence, its number in the merged answer of the block that states it
     again, the addresses that block leaves out)`` per claim carried only
-    because the one block that restates it states an address of it nowhere.
+    because the one block that restates it states an address of it nowhere;
+    ``restated_by`` ``(number, its number in the answer that stands of the
+    block that replaces it)`` per claim in ``replaced``, also where that
+    block stands at another claim's place (:func:`_restated_best`).
     """
 
     merged: Any | None = None
@@ -463,6 +495,7 @@ class RevisionMerge:
     owned: tuple[OwnedClaim, ...] = ()
     numbering: tuple[tuple[int, int], ...] = ()
     beside: tuple[tuple[int, str, int, tuple[str, ...]], ...] = ()
+    restated_by: tuple[tuple[int, int], ...] = ()
 
     def sentences(self, name: str, revision_round: int) -> list[str]:
         """The run summary's sentences: the merge, each withdrawal, each unplaced reference."""
@@ -737,8 +770,8 @@ def _by_statement(
     readings: list[_Reading],
     stated: frozenset[int],
     answered: frozenset[int] = frozenset(),
-) -> tuple[set[int], dict[int, int], dict[int, tuple[int, tuple[int, ...]]]]:
-    """``(numbers restated, {revision block index: claim in force number}, beside)``.
+) -> tuple[set[int], dict[int, int], dict[int, tuple[int, tuple[int, ...]]], dict[int, int]]:
+    """``(numbers restated, {revision block index: claim in force number}, beside, by)``.
 
     Each revision block stands at the first claim in force it restates by
     itself (:func:`_restated`) with every address of the claim stated by
@@ -747,23 +780,31 @@ def _by_statement(
     states)}`` for each claim a block restates while an address of it is
     stated nowhere: it is carried, beside that block. A claim of
     ``answered`` (one a blocking line of the round's mediation named) is
-    asked no address: the block that restates it is the revision's answer to
-    the line, and replaces it.
+    asked no address: the block that restates it best (:func:`_restated_best`)
+    is the revision's answer to the line, and replaces it. ``by`` is ``{claim
+    in force number restated: the index of the block that replaces it}``,
+    also where that block stands at another claim's place.
     """
     restated: set[int] = set()
     target: dict[int, int] = {}
     beside: dict[int, tuple[int, tuple[int, ...]]] = {}
+    by: dict[int, int] = {}
     for earlier in first:
-        index = _restated(earlier, readings)
+        if earlier.number in answered:
+            index = _restated_best(earlier, readings)
+            left_out: tuple[int, ...] = ()
+        else:
+            index = _restated(earlier, readings)
+            left_out = () if index is None else _subject_left_out(earlier, stated)
         if index is None:
             continue
-        left_out = () if earlier.number in answered else _subject_left_out(earlier, stated)
         if left_out:
             beside[earlier.number] = (index, left_out)
             continue
         restated.add(earlier.number)
+        by[earlier.number] = index
         target.setdefault(index, earlier.number)
-    return restated, target, beside
+    return restated, target, beside, by
 
 
 # Digits past this many name no claim of any answer: the number is read as
@@ -883,25 +924,45 @@ def merge_revision(
     unread = read.unread
     disputes = [str(item) for item in getattr(revision, "dissent_items", None) or [] if item]
     # A dispute that rejects a claim of the analyst's own answer in force
-    # withdraws it, the item as its reason. A line of it the reader above
-    # counted as a withdrawal not read exactly is read now.
+    # withdraws it, the item as its reason, where the item speaks to that
+    # claim: it shares a ledger id or an address with it, as a blocking line
+    # must, or its reference writes the round of the answer in force. Every
+    # other reference of its own speaks for the claim (``defended``).
     own = read_own_withdrawals(disputes, getattr(in_force, "revision_round", None))
-    for low, high, reason in own.claims:
+    by_number = {block.number: block for block in first}
+    defended: set[int] = set()
+    item_tokens: dict[str, frozenset[str]] = {}
+    withdrew: set[str] = set()
+    for low, high, reason, round_written in own.claims:
         for number in _known_in(low, high, ordered):
+            if not round_written:
+                if reason not in item_tokens:
+                    item_tokens[reason] = line_tokens(reason)
+                if not item_tokens[reason] & _tokens_of(by_number[number]):
+                    defended.add(number)
+                    continue
             withdrawn.setdefault(number, reason)
-    unread = max(
-        0,
-        unread
-        - sum(
-            1
-            for item in own.items
-            if item in answer and _WITHDRAW_WORD_RE.search(item) and _CLAIM_NUMBER_RE.search(item)
-        ),
-    )
+            withdrew.add(reason)
+    for low, high in own.spoken:
+        defended.update(_known_in(low, high, ordered))
+    # A line the reader above counted as a withdrawal not read exactly, that
+    # is an item read here as one, is read now.
+    left_unread = collections.Counter(line_key(line) for line in read.unread_lines)
+    for item in own.items:
+        if " ".join(item.split()) not in withdrew:
+            continue
+        for part in item.splitlines():
+            key = line_key(part)
+            if left_unread[key] > 0:
+                left_unread[key] -= 1
+                unread -= 1
     # Per claim in force, the lines of the round's mediation that named it and
-    # the blocking ones that speak to it (:func:`_speaking_lines`).
+    # the blocking ones that speak to it (:func:`_speaking_lines`). A claim a
+    # dispute of its own speaks for is answered there, not by a block.
     speaking = {block.number: _speaking_lines(block, named, expanded, clauses) for block in first}
-    answered = frozenset(number for number, (_l, _u, spoken) in speaking.items() if spoken)
+    answered = frozenset(
+        number for number, (_l, _u, spoken) in speaking.items() if spoken and number not in defended
+    )
 
     readings = [_read(block) for block in revised]
     numbered = _by_number(first, revised, readings)
@@ -911,6 +972,8 @@ def merge_revision(
     target: dict[int, int] = {}
     written_again: set[int] = set()
     beside: dict[int, tuple[int, tuple[int, ...]]] = {}
+    # Per claim in force written again, the index of the block that does.
+    replaced_by: dict[int, int] = {}
     if numbered is not None:
         placed_by = "number"
         declared = 0
@@ -927,9 +990,10 @@ def merge_revision(
                 target[index] = numbered[index]
         unread = max(0, unread - declared)
         written_again = set(target.values())
+        replaced_by = {number: index for index, number in target.items()}
     else:
         placed_by = "statement"
-        written_again, target, beside = _by_statement(
+        written_again, target, beside, replaced_by = _by_statement(
             first, readings, _stated_addresses(revised), answered
         )
     # A claim written again stands as written, whatever a line withdrew.
@@ -949,7 +1013,7 @@ def merge_revision(
         # A blocking line that does not speak to the claim is no line of it:
         # it withdraws nothing, leaves no mark, and the reference is stated.
         not_spoken_to.extend((block.number, block.sentence, n, ref) for n, ref in unspoken)
-        if spoken and _disputed(block, disputes):
+        if spoken and (block.number in defended or _disputed(block, disputes)):
             # The revision did not restate it but argued for it in its
             # disputes: an answer, carried with the line that contested it.
             contested[block.number] = sorted({line for line, _b in lines})
@@ -993,6 +1057,9 @@ def merge_revision(
             unplaced=unplaced,
             not_spoken_to=tuple(not_spoken_to),
             owned=owned,
+            restated_by=tuple(
+                sorted((n, revised[i].number) for n, i in replaced_by.items() if n in replaced)
+            ),
         )
 
     # In the order of the answer in force: each claim carried where it stood,
@@ -1046,6 +1113,13 @@ def merge_revision(
             copy.carried_beside = carried_beside_marker(revision_round, number, addresses)
     merged = revision.model_copy(update={"claims": claims})
     return RevisionMerge(
+        restated_by=tuple(
+            sorted(
+                (n, now[id(revised[i].claims[0])])
+                for n, i in replaced_by.items()
+                if n in replaced and id(revised[i].claims[0]) in now
+            )
+        ),
         beside=tuple(beside_rows),
         numbering=_numbering(placed_by, revised, kept_blocks, claims, carried_ids),
         merged=merged,
