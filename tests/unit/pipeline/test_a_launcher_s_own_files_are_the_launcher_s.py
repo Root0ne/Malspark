@@ -26,7 +26,7 @@ from typing import Any
 
 from malspark.pipeline.sandbox_status import sandbox_status
 from malspark.providers.sandbox.readers import required_reader
-from malspark.providers.sandbox_tools import sandbox_dropped_files
+from malspark.providers.sandbox_tools import sandbox_dropped_files, sandbox_processes
 from malspark.schemas.sandbox_document import (
     LAUNCH_KEY,
     LAUNCHER_FILES_KEY,
@@ -535,6 +535,10 @@ class TestNoHostAboveTheSampleSProcess:
         assert written and all(r[LINEAGE_KEY] == LINEAGE_LAUNCHER_UNSETTLED for r in written)
         dropped, _platform = _listed(report)
         assert {r[LINEAGE_KEY] for r in dropped} == {LINEAGE_LAUNCHER_UNSETTLED}
+        # The process view states the host's lineage as not established.
+        rows = sandbox_processes(sandbox_document(report))["processes"]
+        (host,) = [row for row in rows if row["pid"] == 84]
+        assert host[LINEAGE_KEY] == LINEAGE_LAUNCHER_UNSETTLED
 
     def test_read_again_the_report_is_the_same(self) -> None:
         report = _one_task(self._reversed())
