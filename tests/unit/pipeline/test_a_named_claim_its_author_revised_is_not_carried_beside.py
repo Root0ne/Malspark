@@ -312,6 +312,7 @@ class TestTheAuthorsOwnWithdrawalIsRead:
         # A negation far from the word, or inside the claim's description.
         "My claim 2 (0x403962) does not read the call; it is withdrawn.",
         "My claim 2 (the name at 0x403962 is not recovered). Withdrawn as stated.",
+        "My claim 2 (name at 0x403962 not read) is withdrawn.",
         # What took the claim's place, and the author as the agent.
         "My claim 2 (0x403962) is superseded by claim 3 above.",
         "My claim 2 (0x403962) is replaced by claim 3 above.",
