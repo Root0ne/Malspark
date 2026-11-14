@@ -18,8 +18,10 @@ from typing import Any
 
 from malspark.agents.base_agent import read_claim_blocks
 from malspark.pipeline.claim_drops import dropped_values
+from malspark.pipeline.retry_merge import read_own_withdrawals
 from malspark.pipeline.revision_merge import merge_revision
 from malspark.schemas.isr_models import AgentISR
+from tests.linear_cost import assert_scales, assert_under
 
 
 def _block(sentence: str, technique: str = "NONE") -> str:
@@ -245,3 +247,64 @@ class TestNoClaimStandsBesideTheBlockThatReplacedIt:
                 assert number not in _carried(merge)
             for number, _s, _now, _a in merge.beside:
                 assert not any(blocks for _line, blocks in named.get(number, ()))
+
+
+class TestAHostileDisputeCostsItsLength:
+    # A dispute is model text and can carry what a sample planted in a tool's
+    # answer: a range is read against the claims that exist, and the reader
+    # reads each item in one pass.
+    IN_FORCE = _block(LOADER) + _block(MUTEX) + _block(GATE)
+
+    def _merge(self, dispute: str) -> Any:
+        answer = _block(GATE_AGAIN) + _block(ADDED)
+        return merge_revision(
+            _isr(self.IN_FORCE, revision_round=1),
+            _isr(answer, (dispute,), revision_round=2),
+            answer,
+            2,
+        )
+
+    def test_a_range_with_a_nine_digit_end_withdraws_only_the_claims_there_are(self) -> None:
+        dispute = "My claims 2-999999999 are withdrawn."
+
+        merge = assert_under(lambda: self._merge(dispute), 0.5, what="the merge")
+        merge = self._merge(dispute)
+
+        # Claim 3 is written again by a block, and stands as written.
+        assert [n for n, _s, _r in merge.withdrawn] == [2] and 3 in merge.replaced
+
+    def test_a_range_with_an_end_too_long_to_convert_is_read(self) -> None:
+        merge = self._merge(f"My claims 2-{'9' * 5000} are withdrawn.")
+
+        # Claim 3 is written again by a block, and stands as written.
+        assert [n for n, _s, _r in merge.withdrawn] == [2] and 3 in merge.replaced
+
+    def test_a_withdraw_line_with_a_nine_digit_range_is_read_the_same(self) -> None:
+        answer = _block(GATE_AGAIN) + _block(ADDED) + "WITHDRAW CLAIMS 2-999999999: gone.\n"
+
+        merge = assert_under(
+            lambda: merge_revision(_isr(self.IN_FORCE), _isr(answer), answer, 2),
+            0.5,
+            what="the merge",
+        )
+        merge = merge_revision(_isr(self.IN_FORCE), _isr(answer), answer, 2)
+
+        # Claim 3 is written again by a block, and stands as written.
+        assert [n for n, _s, _r in merge.withdrawn] == [2] and 3 in merge.replaced
+
+    def test_a_reversed_range_withdraws_nothing(self) -> None:
+        assert self._merge("My claims 3-2 are withdrawn.").withdrawn == ()
+
+    def test_an_item_of_many_claim_mentions_is_read_in_linear_time(self) -> None:
+        def build(size: int) -> Any:
+            item = "my claim 1, " * size + "and my own earlier claim 2. I reject this."
+            return lambda: read_own_withdrawals([item], None)
+
+        assert_scales(build, 2_000)
+
+    def test_an_item_of_many_mentions_with_no_withdrawal_is_read_in_linear_time(self) -> None:
+        def build(size: int) -> Any:
+            item = "Static claim 4 and my claim 1 says (" * size + "x"
+            return lambda: read_own_withdrawals([item], None)
+
+        assert_scales(build, 2_000)

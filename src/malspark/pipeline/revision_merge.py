@@ -83,6 +83,7 @@ stand, and :class:`RevisionMerge` records every choice.
 
 from __future__ import annotations
 
+import bisect
 import re
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
@@ -762,6 +763,29 @@ def _by_statement(
     return restated, target, beside
 
 
+# Digits past this many name no claim of any answer: the number is read as
+# lying past the last claim, never converted.
+_CLAIM_NUMBER_DIGITS = 6
+
+
+def _known_in(low: str, high: str, ordered: Sequence[int]) -> Sequence[int]:
+    """The claim numbers of ``ordered`` (sorted) a withdrawn range ``low``-``high`` holds.
+
+    A range is read against the claims there are, so its cost is theirs, never
+    its width; a reversed range holds none, and an end too long to be a claim
+    number lies past the last claim.
+    """
+
+    def bound(digits: str) -> int:
+        kept = digits.lstrip("0") or "0"
+        return int(kept) if len(kept) <= _CLAIM_NUMBER_DIGITS else 10**_CLAIM_NUMBER_DIGITS
+
+    a, b = bound(low), bound(high)
+    if a > b:
+        return ()
+    return ordered[bisect.bisect_left(ordered, a) : bisect.bisect_right(ordered, b)]
+
+
 def _speaking_lines(
     block: _Block,
     named: Mapping[int, Sequence[NamingLine]],
@@ -831,11 +855,10 @@ def merge_revision(
     known = {block.number for block in first}
     read = read_withdrawals(answer)
     withdrawn: dict[int, str] = {}
+    ordered = sorted(known)
     for low, high, reason in read.claims:
-        a, b = int(low), int(high)
-        for number in range(a, b + 1) if a <= b else ():
-            if number in known:
-                withdrawn.setdefault(number, reason)
+        for number in _known_in(low, high, ordered):
+            withdrawn.setdefault(number, reason)
     unread = read.unread
     disputes = [str(item) for item in getattr(revision, "dissent_items", None) or [] if item]
     # A dispute that rejects a claim of the analyst's own answer in force
@@ -843,10 +866,8 @@ def merge_revision(
     # counted as a withdrawal not read exactly is read now.
     own = read_own_withdrawals(disputes, getattr(in_force, "revision_round", None))
     for low, high, reason in own.claims:
-        a, b = int(low), int(high)
-        for number in range(a, b + 1) if a <= b else ():
-            if number in known:
-                withdrawn.setdefault(number, reason)
+        for number in _known_in(low, high, ordered):
+            withdrawn.setdefault(number, reason)
     unread = max(
         0,
         unread

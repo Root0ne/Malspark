@@ -46,6 +46,7 @@ about neither written nor withdrawn.
 
 from __future__ import annotations
 
+import bisect
 import re
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass, field
@@ -137,6 +138,15 @@ OWN_CLAIM_PARTS = (
     "techniques", "wording",
 )  # fmt: skip
 
+# How far before a reference the words that withdraw it or make it a subject
+# are read, in characters: a first-person verb with an adverb ("I hereby
+# withdraw ") or the marks after a sentence's end stand within a few words of
+# it. A bound, so an item of many references costs its length.
+OWN_CLAIM_BEFORE_WINDOW = 80
+# How far after a reference the other claims of its list are read: a list
+# longer than this is no list of the reference's, and the item a doubt.
+OWN_LIST_WINDOW = 400
+
 _OWN_WORDS = "|".join(OWN_CLAIM_EARLIER_WORDS)
 _OWN_CLAIM_RE = re.compile(
     rf"\b(?:{'|'.join(OWN_CLAIM_OPENERS)})(?:\s++(?:{_OWN_WORDS}))*+"
@@ -174,6 +184,18 @@ _OWN_SUBJECT_BEFORE_RE = re.compile(
 _ANY_CLAIM_RE = re.compile(r"\bclaims?+\s*+#?\d", re.IGNORECASE)
 
 
+def _inside(spans: Sequence[tuple[int, int]], at: int) -> bool:
+    """Whether ``at`` lies inside one of ``spans`` (sorted, apart)."""
+    index = bisect.bisect_left(spans, (at + 1,)) - 1
+    return index >= 0 and spans[index][0] <= at < spans[index][1]
+
+
+def _any_between(positions: Sequence[int], low: int, high: int) -> bool:
+    """Whether a position of ``positions`` (sorted) lies in ``[low, high)``."""
+    at = bisect.bisect_left(positions, low)
+    return at < len(positions) and positions[at] < high
+
+
 @dataclass(frozen=True)
 class OwnWithdrawals:
     """What a revision's disputes withdraw of its own claims.
@@ -200,35 +222,45 @@ def read_own_withdrawals(items: Sequence[str], round_in_force: int | None) -> Ow
     stands. A "round-<n>" reference is read only where ``n`` is
     ``round_in_force``. A rejection of another analyst's claim names no claim
     of its own, and is a dispute; anything else is a doubt and withdraws
-    nothing. Linear in the items.
+    nothing. What stands before a reference is read within
+    :data:`OWN_CLAIM_BEFORE_WINDOW` characters and its list within
+    :data:`OWN_LIST_WINDOW`; every other word is found in one pass over the
+    item, so an item costs its length whatever the number of its references.
     """
     claims: list[tuple[str, str, str]] = []
     read: list[str] = []
+    in_force = None if round_in_force is None else str(int(round_in_force))
     for raw in items:
         item = " ".join(str(raw or "").split())
+        # Read once per item: every reference of its own, every other claim
+        # named, every word that withdraws and every word that keeps.
+        own = list(_OWN_CLAIM_RE.finditer(item))
+        spans = [(m.start(), m.end()) for m in own]
+        others = [m.start() for m in _ANY_CLAIM_RE.finditer(item) if not _inside(spans, m.start())]
+        said_at = [m.start() for m in _OWN_WITHDRAWN_AFTER_RE.finditer(item)]
+        kept_at = [m.start() for m in _OWN_KEEPING_RE.finditer(item)]
         found = False
-        for match in _OWN_CLAIM_RE.finditer(item):
+        for match in own:
             written_round = match.group("round")
-            if written_round is not None and (
-                round_in_force is None or int(written_round) != int(round_in_force)
-            ):
+            if written_round is not None and (written_round.lstrip("0") or "0") != in_force:
                 continue
-            before = item[: match.start()]
-            if _OWN_CLAIM_PART_RE.match(item, match.end()):
+            start, end = match.span()
+            window = max(0, start - OWN_CLAIM_BEFORE_WINDOW)
+            if _OWN_CLAIM_PART_RE.match(item, end):
                 withdraws = False
-            elif _OWN_VERB_BEFORE_RE.search(before):
-                withdraws = bool(_OWN_CLAIM_END_RE.match(item, match.end()))
-            elif _OWN_SUBJECT_BEFORE_RE.search(before):
-                after = item[match.end() :]
-                said = _OWN_WITHDRAWN_AFTER_RE.search(after)
-                between = after[: said.start()] if said is not None else ""
-                between = _OWN_CLAIM_RE.sub(" ", between)
-                listed = _OWN_LIST_GOES_ON_RE.match(between)
-                between = between[listed.end() :] if listed is not None else between
+            elif _OWN_VERB_BEFORE_RE.search(item, window, start):
+                withdraws = bool(_OWN_CLAIM_END_RE.match(item, end))
+            elif _OWN_SUBJECT_BEFORE_RE.search(item, window, start):
+                at = bisect.bisect_left(said_at, end)
+                said = said_at[at] if at < len(said_at) else None
+                listed = _OWN_LIST_GOES_ON_RE.match(
+                    item, end, min(len(item), end + OWN_LIST_WINDOW)
+                )
+                list_end = listed.end() if listed is not None else end
                 withdraws = (
                     said is not None
-                    and not _ANY_CLAIM_RE.search(between)
-                    and not _OWN_KEEPING_RE.search(between)
+                    and not _any_between(others, list_end, said)
+                    and not _any_between(kept_at, end, said)
                 )
             else:
                 withdraws = False
