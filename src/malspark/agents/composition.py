@@ -380,6 +380,23 @@ def pin_provider_sample(agent: Any, mirrored: Mapping[str, str] | None) -> None:
         _pin_one_provider(agent, container, resolved, str(provider_id), mirrored)
 
 
+def provider_sample_paths(resolved: Any, mirrored: Mapping[str, str] | None) -> dict[str, str]:
+    """Each of an agent's several providers' own mirror of the sample, by provider id.
+
+    The path each provider's tools are given (``tool_pinning.pin_paths``) and
+    each provider opens the sample on before the loop: a provider's mirror
+    lies where that provider reads, and another provider's mirror is not one
+    it can open. Empty for an agent with one provider or none, whose tools
+    keep the agent's one pinned path; a provider with no mirror is left out
+    and its tools keep that path too.
+    """
+    provider_ids = getattr(resolved, "provider_ids", None)
+    if not isinstance(provider_ids, tuple) or len(provider_ids) < 2:
+        return {}
+    held = dict(mirrored or {})
+    return {str(pid): str(held[pid]) for pid in provider_ids if held.get(pid)}
+
+
 def _pin_one_provider(
     agent: Any, container: Any, resolved: Any, provider_id: str, mirrored: Mapping[str, str] | None
 ) -> None:

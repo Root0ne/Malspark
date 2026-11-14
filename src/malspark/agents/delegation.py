@@ -768,8 +768,10 @@ def _brief_callee(caller: Any, callee: Any, *, stage: str, round_index: int) -> 
         or None
     )
     callee._path_by_server = dict(getattr(resolved, "path_by_server", {}) or {})
-    from malspark.agents.composition import pin_provider_sample
+    from malspark.agents.composition import pin_provider_sample, provider_sample_paths
 
+    # A callee holding several providers: each one's tools get its own mirror.
+    callee._path_by_provider = provider_sample_paths(resolved, choices.get("by_provider") or {})
     pin_provider_sample(callee, choices.get("by_provider") or {})
     # The job's captures are the job's, whoever is asked: a callee's capture
     # tools read the same file its caller's would.
@@ -790,6 +792,7 @@ _BRIEFED_STATE = (
     "sample_format",
     "_analysis_file_path",
     "_path_by_server",
+    "_path_by_provider",
     "_captures",
     "withheld_by_the_chain",
 )

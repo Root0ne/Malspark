@@ -151,6 +151,18 @@ def server_of(tool: Any) -> str:
     return str(metadata.get(SERVER_METADATA_KEY, "") or "")
 
 
+def provider_of(tool: Any) -> str:
+    """The static provider a tool of an agent holding several came from, or ``""``.
+
+    Read from the mark ``composition._claim_provider_tools`` puts on each such
+    tool; a tool of an agent with one provider carries none.
+    """
+    from malspark.agents.composition import PROVIDER_ID_METADATA_KEY
+
+    metadata = getattr(tool, "metadata", None) or {}
+    return str(metadata.get(PROVIDER_ID_METADATA_KEY, "") or "")
+
+
 def declared_source_of(tool: Any) -> str | None:
     """Where a tool's declaration lives (``core.tool_declarations``), as the tool was built.
 
@@ -278,6 +290,7 @@ def pin_paths(
     agent_name: str = "",
     captures: tuple[str, ...] | list[str] = (),
     staged_path: str | None = None,
+    path_by_provider: dict[str, str] | None = None,
 ) -> list[BaseTool]:
     """Every tool, each guarded against a path argument this sample's own name.
 
@@ -292,20 +305,27 @@ def pin_paths(
     ``staged_path`` is the worker's copy of the sample, which can only mean
     this sample and is replaced with the path each tool's server opens.
 
+    ``path_by_provider`` is, for an agent holding several static providers,
+    each provider's own mirror by provider id: a tool marked with the
+    provider it came from (``composition.PROVIDER_ID_METADATA_KEY``) is given
+    its provider's mirror, and the agent's own path (``default_path``, the
+    first provider's) is one more spelling of the sample it corrects.
+
     With no pinned path, no per-server map and no single capture the tools are
     returned exactly as they are, unwrapped: the guard costs nothing when there
     is nothing to correct, and an unwrapped tool is one less thing between the
     model and the server.
     """
     per_server = dict(path_by_server or {})
+    per_provider = dict(path_by_provider or {})
     capture = captures[0] if len(captures) == 1 else ""
     offered = [tool for tool in tools if getattr(tool, "name", "") not in DELIVERY_TOOLS]
-    if not default_path and not per_server and not capture:
+    if not default_path and not per_server and not per_provider and not capture:
         return list(offered)
     out: list[Any] = []
     for tool in offered:
         server = server_of(tool)
-        target = per_server.get(server) or default_path or ""
+        target = per_provider.get(provider_of(tool)) or per_server.get(server) or default_path or ""
         pinned_server = reads_staged_sample(tool)
         hidden = _sample_arguments(tool) if pinned_server and target else ()
         filled = (
