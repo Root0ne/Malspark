@@ -97,16 +97,9 @@ class TestTheLiveGeneration:
         (request,) = report.network.dns_requests
         assert request.questions == [{"request": "c.pki.goog", "type": "IN A"}]
         assert request.answers == [{"data": "pki-goog.l.google.com"}, {"data": "172.217.76.94"}]
-        # The exchange's own fields, as each of its rows names them, and the
-        # process facts of the flow it rode on: a process the task does not list.
-        assert request.extra == {
-            "flow": 31,
-            "index": 1,
-            "procid": 36,
-            "pid": 1120,
-            "process_not_listed": True,
-            "platform_task": "behavioral1",
-        }
+        # The exchange's own fields, as each of its rows names them; no process
+        # facts: the flow it rode on is the guest's resolver.
+        assert request.extra == {"flow": 31, "index": 1}
         assert report.network.domains == ["c.pki.goog"]
         dns = sandbox_document(report)["network"]["dns"]
         assert _bare(dns) == [
@@ -152,9 +145,9 @@ class TestTheLiveGeneration:
         report = _live()
         assert not _unread_channels(report)
 
-    def test_a_request_takes_the_process_facts_of_its_flow(self) -> None:
+    def test_an_http_request_takes_the_process_facts_of_its_flow(self) -> None:
         # The rows name no process; the flows they rode on name processes the
-        # task does not list (the guest's own services), so no row is the
+        # task does not list (the guest's own services), so no HTTP row is the
         # sample's and each says its process is not listed.
         report = _live()
         assert all(SAMPLE_TREE_KEY not in row for row in report.network.http)

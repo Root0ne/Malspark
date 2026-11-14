@@ -130,29 +130,74 @@ def traffic_maker(row: Any) -> bool | tuple[str, str] | None:
     return None
 
 
-def _state_traffic_makers(
-    row: NetworkDomain | NetworkURL, answers: list[bool | tuple[str, str] | None]
-) -> None:
-    """A name's or a URL's attribution from its records' answers (:func:`traffic_maker`).
+def _states_a_process(row: Any) -> bool:
+    """Whether a DNS request's record itself names the process that made it."""
+    if not isinstance(row, dict):
+        return False
+    extra = row.get("extra")
+    held: dict[str, Any] = extra if isinstance(extra, dict) else {}
+    return any(key in place for place in (row, held) for key in ("procid", SAMPLE_TREE_KEY))
 
-    The sample's when any record came from its tree. Another lineage's only
-    when every record names a process and none is the sample's: a record that
-    names no process leaves the value as the records left it before any named one.
+
+# How many processes of each kind a name takes from the flows to one address
+# it resolved to (the address's own row names every one): a hostile report's
+# many names resolving to one address many processes reached cost names plus
+# flows, never their product.
+_ADDRESS_MAKERS_NAMED = 16
+
+
+class _MakerTally:
+    """What the records of one value's traffic say of the processes that made it.
+
+    Each record's answer (:func:`traffic_maker`) is added once; a value's
+    attribution is read off the whole (:meth:`state`).
     """
-    if any(answer is True for answer in answers):
-        row.sample_process_tree = True
-        return
-    if not answers or any(not isinstance(answer, tuple) for answer in answers):
-        return
-    makers = TrafficMakers()
-    for answer in answers:
-        if isinstance(answer, tuple):
-            kind, named = answer
-            listed = getattr(makers, kind)
-            if named not in listed:
-                listed.append(named)
-    row.sample_process_tree = False
-    row.made_by = makers
+
+    __slots__ = ("named", "more", "sample", "seen", "unstated")
+
+    def __init__(self) -> None:
+        self.sample = False
+        # A record that names no process, or one whose lineage it does not state.
+        self.unstated = False
+        self.named: dict[str, list[str]] = {}
+        self.seen: set[tuple[str, str]] = set()
+        # Processes of the addresses' flows left unnamed here (``_ADDRESS_MAKERS_NAMED``).
+        self.more = False
+
+    def add(self, answer: bool | tuple[str, str] | None) -> None:
+        if answer is True:
+            self.sample = True
+        elif isinstance(answer, tuple):
+            if answer not in self.seen:
+                self.seen.add(answer)
+                self.named.setdefault(answer[0], []).append(answer[1])
+        else:
+            self.unstated = True
+
+    def take(self, other: _MakerTally, limit: int | None = None) -> None:
+        """Add another tally's facts, and its names, up to ``limit`` per kind where one is given."""
+        self.sample |= other.sample
+        self.unstated |= other.unstated
+        for kind, names in other.named.items():
+            for named in names[:limit]:
+                self.add((kind, named))
+            self.more |= limit is not None and len(names) > limit
+        self.more |= other.more
+
+    def state(self, row: NetworkDomain | NetworkURL) -> None:
+        """The value's attribution: the sample's when any record came from its tree.
+
+        Another lineage's only when every record names a process and none is
+        the sample's: a record that names no process leaves the value as it is
+        decided without one, and so does a value with no record at all.
+        """
+        if self.sample:
+            row.sample_process_tree = True
+            return
+        if self.unstated or not self.named:
+            return
+        row.sample_process_tree = False
+        row.made_by = TrafficMakers(**self.named, more=self.more)
 
 
 _STRING_KINDS = {
@@ -1358,6 +1403,11 @@ def network_from_ledger(
     # What each record of a name's, a URL's and an address's traffic says of
     # the process that made it (:func:`traffic_maker`).
     makers: dict[tuple[str, str], list[bool | tuple[str, str] | None]] = {}
+    tallies: dict[tuple[str, str], _MakerTally] = {}
+
+    def _made(kind: str, key: str, answer: bool | tuple[str, str] | None) -> None:
+        makers.setdefault((kind, key), []).append(answer)
+        tallies.setdefault((kind, key), _MakerTally()).add(answer)
 
     # The names a DNS or HTTP view named, and the names only the capture's TLS
     # list recorded: a TLS name says nothing about which process made the
@@ -1401,10 +1451,11 @@ def network_from_ledger(
                 name = row if isinstance(row, str) else dns_row_name(row)
                 _add("domain", name, "sandbox")
                 resolved.add(value_key("domain", name))
-                if key == "dns" and name:
-                    makers.setdefault(("domain", value_key("domain", name)), []).append(
-                        traffic_maker(row)
-                    )
+                # A DNS request rides on the guest resolver's flow, never the
+                # asking program's: only a process the record itself names is
+                # its maker, and a record naming none says nothing of the name.
+                if key == "dns" and name and _states_a_process(row):
+                    _made("domain", value_key("domain", name), traffic_maker(row))
                 # The addresses the answer gave for it, as the record states them.
                 known_name = domains.get(value_key("domain", name)) if name else None
                 if known_name is None:
@@ -1456,7 +1507,7 @@ def network_from_ledger(
                 address = address_key(_first_str(row, "dst", "ip", "address"))
                 _add("ip", address, "sandbox")
                 if isinstance(row, dict) and address:
-                    makers.setdefault(("ip", address), []).append(traffic_maker(row))
+                    _made("ip", address, traffic_maker(row))
                     stated = row.get(SAMPLE_TREE_KEY)
                     # A page of a view cannot say that no flow to an address
                     # came from the tree: the one that did may be on another.
@@ -1493,9 +1544,9 @@ def network_from_ledger(
             _add("url", url, "sandbox")
             made = traffic_maker(row)
             if host:
-                makers.setdefault(("domain", value_key("domain", host)), []).append(made)
+                _made("domain", value_key("domain", host), made)
             if url:
-                makers.setdefault(("url", _fold_url_host(url)), []).append(made)
+                _made("url", _fold_url_host(url), made)
             # The method the request record states, and none where it states
             # none: the first record of the URL that names one.
             method = _first_str(row, "method").upper() if isinstance(row, dict) else ""
@@ -1561,12 +1612,20 @@ def network_from_ledger(
     _state_sandbox_facts(network, attributed, host_facts, outside, disputed)
     for domain in network.domains:
         if domain.source == "sandbox":
-            _state_traffic_makers(
-                domain, makers.get(("domain", value_key("domain", domain.fqdn)), [])
-            )
+            # A name's own HTTP records, the DNS records that name their own
+            # process, and the flows to every address it resolved to.
+            tally = _MakerTally()
+            own = tallies.get(("domain", value_key("domain", domain.fqdn)))
+            if own is not None:
+                tally.take(own)
+            for address in domain.resolved_ips:
+                flows = tallies.get(("ip", address_key(address)))
+                if flows is not None:
+                    tally.take(flows, _ADDRESS_MAKERS_NAMED)
+            tally.state(domain)
     for request in network.urls:
         if request.source == "sandbox":
-            _state_traffic_makers(request, makers.get(("url", _fold_url_host(request.url)), []))
+            tallies.get(("url", _fold_url_host(request.url)), _MakerTally()).state(request)
     for ip in network.ips:
         answers = makers.get(("ip", ip.address), [])
         if (

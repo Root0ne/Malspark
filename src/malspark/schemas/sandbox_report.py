@@ -1143,8 +1143,8 @@ LINEAGE_FILE = "file"
 # it is, the display name its report format declares
 # (``core.report_formats.reader_display_name``).
 LINEAGE_MARKED_BY_KEY = "lineage_marked_by"
-# The keys a flow's row states the process that made it under, which a DNS or
-# HTTP request riding on that flow takes from it (``triage_overview_to_sandbox_report``).
+# The keys a flow's row states the process that made it under, which an HTTP
+# request riding on that flow takes from it (``triage_overview_to_sandbox_report``).
 TRAFFIC_PROCESS_KEYS: tuple[str, ...] = (
     "procid",
     "pid",
@@ -2168,8 +2168,10 @@ def triage_overview_to_sandbox_report(
             web_resp = parts.get(_HTTP_RESPONSE)
             # ``req_extra``: the exchange's own fields beside its parts (the flow
             # it rode on, its index, its time), kept on each row it gives. The
-            # request names no process: it takes the process facts of the flow
-            # it rode on, in its own task (``made``).
+            # request names no process: an HTTP request takes the process facts
+            # of the flow it rode on, in its own task (``made``). A DNS request
+            # takes none: its flow is the guest's resolver, never the program
+            # that asked.
             ridden = req_extra.get("flow")
             made = flow_process.get(str(ridden)) if _scalar_id(ridden) else None
             made = {**made, PROCESS_TASK_KEY: str(task_name)} if made else {}
@@ -2210,7 +2212,7 @@ def triage_overview_to_sandbox_report(
                                 for q in questions
                             ],
                             answers=answers,
-                            extra={**req_extra, **made},
+                            extra=dict(req_extra),
                         )
                     )
                 network.domains.extend(str(q.get("name") or "") for q in questions)

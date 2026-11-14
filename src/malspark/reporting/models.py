@@ -454,7 +454,10 @@ class TrafficMakers(BaseModel):
     image: ``outside``, listed processes outside the sample's process tree;
     ``launcher``, the generated launcher's processes; ``unlisted``, processes
     the report does not list among the task's processes; ``disputed``,
-    processes the two lineage facts disagree about.
+    processes the two lineage facts disagree about. ``more``: a name's
+    addresses were reached by more processes of a kind than the name lists
+    (``ledger_projection._ADDRESS_MAKERS_NAMED``); each address's row names
+    its own. Left out of a dump where it is not set.
     """
 
     model_config = _STRICT_CONFIG
@@ -463,6 +466,7 @@ class TrafficMakers(BaseModel):
     launcher: list[str] = Field(default_factory=list)
     unlisted: list[str] = Field(default_factory=list)
     disputed: list[str] = Field(default_factory=list)
+    more: bool = Field(default=False, exclude_if=lambda value: not value)
 
 
 class NetworkDomain(BaseModel):
@@ -512,11 +516,13 @@ class NetworkDomain(BaseModel):
     resolved_ips_partial: bool = False
     resolved_ips_withheld: int = 0
     # Whose traffic it is where the sandbox's records name the process that
-    # made it (``ledger_projection.traffic_makers``): ``True`` when a record of
-    # it came from the sample's process tree; and, where every record that
-    # names a process names one of another lineage, those processes by what
-    # they are (``TrafficMakers``). Left out of a dump where the records name
-    # none, so a stored report reads as it was written.
+    # made it (``ledger_projection.traffic_maker``), read from the name's HTTP
+    # requests, the DNS requests that name their own process and the flows to
+    # the addresses it resolved to: ``True`` when one of them came from the
+    # sample's process tree; and, where every one names a process of another
+    # lineage, those processes by what they are (``TrafficMakers``). Left out
+    # of a dump where none names a process, so a stored report reads as it
+    # was written.
     sample_process_tree: bool | None = Field(default=None, exclude_if=lambda value: value is None)
     made_by: TrafficMakers | None = Field(default=None, exclude_if=lambda value: value is None)
     # The detonations the name was observed in (``ObservedIn``).
@@ -604,7 +610,7 @@ class NetworkURL(BaseModel):
     # ``None`` for a producer that does not record it.
     source: Literal["sandbox", "analyst", "strings"] | None = None
     # Whose traffic it is where the sandbox's records name the process that
-    # made it (``ledger_projection.traffic_makers``): ``True`` when a record of
+    # made it (``ledger_projection.traffic_maker``): ``True`` when a record of
     # it came from the sample's process tree; and, where every record that
     # names a process names one of another lineage, those processes by what
     # they are (``TrafficMakers``). Left out of a dump where the records name

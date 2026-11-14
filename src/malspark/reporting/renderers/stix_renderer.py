@@ -3594,6 +3594,9 @@ MADE_BY_WHOM: dict[str, str] = {
     "unlisted": "a process the report does not list",
     "disputed": "a process whose lineage the report's two facts dispute",
 }
+# Beside a name whose addresses more processes reached than it names
+# (``TrafficMakers.more``).
+MADE_BY_MORE = "; and by further processes each address it resolved to names"
 
 
 def made_by_reason(makers: Any) -> str:
@@ -3603,7 +3606,10 @@ def made_by_reason(makers: Any) -> str:
         named = [str(p) for p in (_field(makers, kind) or []) if str(p)]
         if named:
             parts.append(f"{whose} ({', '.join(named)})")
-    return MADE_BY.format(whose="; and by ".join(parts)) if parts else ""
+    if not parts:
+        return ""
+    more = MADE_BY_MORE if _field(makers, "more") else ""
+    return MADE_BY.format(whose="; and by ".join(parts)) + more
 
 
 BENIGN_NAME_RESOLVED = "a well-known benign name the sandbox's guest resolved"
