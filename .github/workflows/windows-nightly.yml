@@ -5,6 +5,9 @@ name: Windows nightly
 # demand. Reporting renders PDFs through Pango, which the Windows runner does
 # not have, and the integration suite needs services; both stay out. Not a
 # required check: a failure shows in the Actions tab and nowhere else.
+# A schedule runs, and a dispatch can be started, only for a workflow file on
+# the default branch: the nightly first runs after the promotion that brings
+# this file there.
 on:
   schedule:
     - cron: "17 1 * * *"
@@ -14,15 +17,18 @@ on:
 permissions:
   contents: read
 
-# A run dispatched while another runs on the same ref waits for it.
+# A run waits for another on the same tree: dev for the schedule, the
+# dispatched ref otherwise.
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
+  group: ${{ github.workflow }}-${{ github.event_name == 'schedule' && 'refs/heads/dev' || github.ref }}
   cancel-in-progress: false
 
 jobs:
-  # Five shards that run side by side, each sized under the longest shard of
-  # the per-pull-request job. A test marked posix is deselected; every other
-  # test of these paths runs.
+  # Five shards that run side by side, sized by the rule that each shard's
+  # Linux CI weight (scripts/ci/shard_map.py: 228 to 438 s) is under that of
+  # the longest shard of the per-pull-request job (pipeline, 883 s); their
+  # Windows time is not yet measured. A test marked posix is deselected;
+  # every other test of these paths runs.
   windows-tests:
     name: Tests (Windows nightly, Python 3.13, ${{ matrix.shard }})
     runs-on: windows-latest
