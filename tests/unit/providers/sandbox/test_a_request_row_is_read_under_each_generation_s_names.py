@@ -68,7 +68,13 @@ def _bare(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
 
 
 # The process facts of the live report's HTTP flow (32): procid 46, not listed.
-FLOW_32 = {"procid": 46, "pid": 2572, "process_not_listed": True, "platform_task": "behavioral1"}
+FLOW_32 = {
+    "procid": 46,
+    "pid": 2572,
+    "platform_process": "46",
+    "process_not_listed": True,
+    "platform_task": "behavioral1",
+}
 
 
 def _task(*requests: dict[str, Any]) -> dict[str, Any]:

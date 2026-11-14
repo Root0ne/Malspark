@@ -68,7 +68,7 @@ from malspark.reporting.models import (
     TrafficMakers,
 )
 from malspark.schemas.evidence import build_entry, format_entry_id
-from malspark.schemas.sandbox_document import LINEAGE_KEY, signature_pids
+from malspark.schemas.sandbox_document import LINEAGE_KEY, pid_of, signature_pids
 from malspark.schemas.sandbox_report import (
     FLOW_PROCESS_KEY,
     LINEAGE_DISPUTED_KEY,
@@ -79,6 +79,8 @@ from malspark.schemas.sandbox_report import (
     LINEAGE_MARKED_STORED,
     PROCESS_UNLISTED_KEY,
     SAMPLE_TREE_KEY,
+    TRAFFIC_FLOWS_KEY,
+    TRAFFIC_PROCESS_KEY,
 )
 
 if TYPE_CHECKING:
@@ -105,17 +107,19 @@ def traffic_maker(row: Any) -> bool | tuple[str, str] | None:
     (procid N)`` or ``procid N``; ``None`` where the record names no process
     or names one whose lineage it does not state. A flow's or an HTTP
     request's row states these on itself, a DNS request's under its
-    ``extra``.
+    ``extra``; the process by the one key every reader writes it under
+    (``TRAFFIC_PROCESS_KEY``).
     """
     if not isinstance(row, dict):
         return None
     held = row
-    if "procid" not in row and SAMPLE_TREE_KEY not in row and isinstance(row.get("extra"), dict):
-        held = row["extra"]
+    extra = row.get("extra")
+    if TRAFFIC_PROCESS_KEY not in row and SAMPLE_TREE_KEY not in row and isinstance(extra, dict):
+        held = extra
     if held.get(SAMPLE_TREE_KEY) is True:
         return True
-    procid = held.get("procid")
-    if procid in (None, "") or isinstance(procid, bool):
+    procid = pid_of(held.get(TRAFFIC_PROCESS_KEY))
+    if not procid:
         return None
     image = str(held.get(FLOW_PROCESS_KEY) or "").strip()
     named = f"{image} (procid {procid})" if image else f"procid {procid}"
@@ -130,13 +134,28 @@ def traffic_maker(row: Any) -> bool | tuple[str, str] | None:
     return None
 
 
+def traffic_makers(row: Any) -> list[bool | tuple[str, str] | None]:
+    """Each answer a traffic record gives (:func:`traffic_maker`).
+
+    A request riding on a flow id several flows share answers once per flow
+    (``TRAFFIC_FLOWS_KEY``), so it is the sample's when any of them is and
+    another lineage's only when all name one; any other record answers once.
+    """
+    flows = row.get(TRAFFIC_FLOWS_KEY) if isinstance(row, dict) else None
+    if isinstance(flows, list):
+        return [traffic_maker(facts) for facts in flows if isinstance(facts, dict)] or [None]
+    return [traffic_maker(row)]
+
+
 def _states_a_process(row: Any) -> bool:
     """Whether a DNS request's record itself names the process that made it."""
     if not isinstance(row, dict):
         return False
     extra = row.get("extra")
     held: dict[str, Any] = extra if isinstance(extra, dict) else {}
-    return any(key in place for place in (row, held) for key in ("procid", SAMPLE_TREE_KEY))
+    return any(
+        key in place for place in (row, held) for key in (TRAFFIC_PROCESS_KEY, SAMPLE_TREE_KEY)
+    )
 
 
 # How many processes of each kind a name takes from the flows to one address
@@ -1542,11 +1561,11 @@ def network_from_ledger(
             # though it had been read out of the file's bytes.
             url = _http_url(row, host)
             _add("url", url, "sandbox")
-            made = traffic_maker(row)
-            if host:
-                _made("domain", value_key("domain", host), made)
-            if url:
-                _made("url", _fold_url_host(url), made)
+            for made in traffic_makers(row):
+                if host:
+                    _made("domain", value_key("domain", host), made)
+                if url:
+                    _made("url", _fold_url_host(url), made)
             # The method the request record states, and none where it states
             # none: the first record of the URL that names one.
             method = _first_str(row, "method").upper() if isinstance(row, dict) else ""

@@ -18,6 +18,7 @@ consumer can iterate a fresh ``SandboxReport()`` without a null check.
 
 from __future__ import annotations
 
+import json
 import re
 from collections.abc import Mapping
 from dataclasses import dataclass
@@ -688,6 +689,22 @@ def _extracted(value: Any) -> list[Any] | dict[str, Any]:
     return list(value) if isinstance(value, list) else []
 
 
+def _traffic_process_stated(
+    rows: list[dict[str, Any]], fields: tuple[str, ...]
+) -> list[dict[str, Any]]:
+    """``rows``, each naming its process under one of ``fields`` given :data:`TRAFFIC_PROCESS_KEY`.
+
+    In place: the rows are the report's own, which the document holds by
+    reference. A row naming none, or under a value that cannot be an id, is
+    left as it is.
+    """
+    for row in rows if fields else []:
+        procid = next((pid for field in fields if (pid := pid_of(row.get(field)))), "")
+        if procid:
+            row[TRAFFIC_PROCESS_KEY] = procid
+    return rows
+
+
 def cape_report_to_sandbox_report(
     raw: dict[str, Any],
     *,
@@ -696,8 +713,14 @@ def cape_report_to_sandbox_report(
     task_id: str = "",
     keep_arrangement: bool = True,
     renames: Mapping[str, str] | None = None,
+    traffic_process_fields: tuple[str, ...] = (),
 ) -> SandboxReport:
     """Read a CAPE/Cuckoo-shaped report into the neutral form.
+
+    ``traffic_process_fields`` are the fields a flow's or an HTTP request's
+    row names its process under, as the reader declares them: the first one
+    holding an id is written beside them under :data:`TRAFFIC_PROCESS_KEY`,
+    on the row itself, which the document keeps by reference.
 
     ``source_format`` is the id of the registered reader that read it, which
     the report records (``SandboxReport.source_format``); never assumed.
@@ -782,9 +805,9 @@ def cape_report_to_sandbox_report(
         signatures=signatures,
         network=SandboxNetwork(
             dns=_rows(net.get("dns")),
-            http=_rows(net.get("http")),
-            tcp=_rows(net.get("tcp")),
-            udp=_rows(net.get("udp")),
+            http=_traffic_process_stated(_rows(net.get("http")), traffic_process_fields),
+            tcp=_traffic_process_stated(_rows(net.get("tcp")), traffic_process_fields),
+            udp=_traffic_process_stated(_rows(net.get("udp")), traffic_process_fields),
             hosts=_rows(net.get("hosts")),
             domains=[d for d in _list(net.get("domains")) if isinstance(d, str | dict)],
             tls=_rows(net.get("tls")),
@@ -855,6 +878,18 @@ FLOW_PROCESS_KEY = "process"
 # sandbox does not follow), so the traffic is not the sample's. Set only where
 # the task lists processes at all.
 PROCESS_UNLISTED_KEY = "process_not_listed"
+# On a flow's or a request's row: the id the report's process list gives the
+# process that made it, in one text form (``pid_of``), as the row's reader
+# read it under the field its format states it under
+# (``ReportReader.traffic_process_fields``). The one key the launcher's
+# reading and the publish rule read a row's process by; a row naming no
+# process, or one under a value that cannot be an id, carries none.
+TRAFFIC_PROCESS_KEY = "platform_process"
+# On a request riding on a flow id several flows of its task share: each
+# flow's process facts, the request being the sample's when any of them is
+# (``ledger_projection.traffic_makers``). Where they all agree, the request
+# carries their facts on itself instead.
+TRAFFIC_FLOWS_KEY = "platform_flows"
 
 
 def _basename(path: str) -> str:
@@ -1148,6 +1183,7 @@ LINEAGE_MARKED_BY_KEY = "lineage_marked_by"
 TRAFFIC_PROCESS_KEYS: tuple[str, ...] = (
     "procid",
     "pid",
+    TRAFFIC_PROCESS_KEY,
     SAMPLE_TREE_KEY,
     LINEAGE_DISPUTED_KEY,
     LINEAGE_MARKED_BY_KEY,
@@ -1222,16 +1258,20 @@ def _sample_process_tree(task: dict[str, Any], sample: dict[str, Any]) -> _Linea
     reached published as the sample's. Where only one fact names any process,
     its tree is the answer; where neither does, nothing is stated.
     """
-    processes = [p for p in task.get("processes") or [] if isinstance(p, dict)]
-    parent = {p.get("procid"): p.get("procid_parent") for p in processes if p.get("procid")}
+    # Each process by its id in one text form (``pid_of``): an id of a type
+    # that cannot be one is not stated, and the process is not keyed.
+    processes = [
+        (pid_of(p.get("procid")), p) for p in task.get("processes") or [] if isinstance(p, dict)
+    ]
+    listed = [(procid, p) for procid, p in processes if procid]
+    parent = {procid: pid_of(p.get("procid_parent")) for procid, p in listed}
     # As the report writes them, for a reader: the case is the file's own.
     images = {
-        p.get("procid"): re.split(r"[\\/]", str(p.get("image") or p.get("name") or "").strip())[-1]
-        for p in processes
-        if p.get("procid")
+        procid: re.split(r"[\\/]", str(p.get("image") or p.get("name") or "").strip())[-1]
+        for procid, p in listed
     }
-    marked = {p.get("procid") for p in processes if p.get("procid") and p.get("orig") is True}
-    named = {p.get("procid") for p in processes if p.get("procid") and _is_the_sample(p, sample)}
+    marked = {procid for procid, p in listed if p.get("orig") is True}
+    named = {procid for procid, p in listed if _is_the_sample(p, sample)}
     by_mark, by_file = _reach(parent, marked), _reach(parent, named)
     if marked and named:
         disputed = {procid: LINEAGE_MARKED for procid in by_mark - by_file}
@@ -1259,9 +1299,13 @@ def _flow_attribution(
     number, AS organisation and country where Triage recorded them.
     """
     out: dict[str, Any] = {}
-    procid = flow.get("procid")
-    if procid not in (None, ""):
-        out["procid"] = procid
+    stated = flow.get(_TRIAGE_TRAFFIC_PROCESS_FIELD)
+    procid = pid_of(stated)
+    if stated not in (None, ""):
+        out["procid"] = stated
+    if procid:
+        # The id in the text form the process list is keyed by, on both sides.
+        out[TRAFFIC_PROCESS_KEY] = procid
         if procid in lineage.tree:
             out[SAMPLE_TREE_KEY] = True
         elif procid in lineage.disputed:
@@ -1460,11 +1504,11 @@ def _writer_pids(row: Mapping[str, Any]) -> list[str]:
     for key in _WRITER_KEYS:
         value = row.get(key)
         pids = [
-            text.strip()
+            pid
             for one in (value if isinstance(value, list) else [value])
-            if one not in (None, "") and not isinstance(one, bool)
+            if isinstance(one, int | str) and not isinstance(one, bool)
             for text in str(one).split(",")
-            if pid_text(text.strip())
+            if (pid := pid_of(text))
         ]
         if pids:
             return pids
@@ -1714,12 +1758,22 @@ def attribute_the_launcher(report: SandboxReport, launcher: Any) -> None:
             proc.extra[LINEAGE_KEY] = LINEAGE_SAMPLE
         elif node in launcher_nodes:
             proc.extra[LINEAGE_KEY] = LINEAGE_LAUNCHER
-    # A flow's row, and a request's that took its flow's process facts.
-    traffic: list[dict[str, Any]] = [*report.network.tcp, *report.network.udp]
-    traffic += [row for row in report.network.http if isinstance(row, dict) and "procid" in row]
-    traffic += [r.extra for r in report.network.dns_requests if "procid" in r.extra]
+    # A flow's row, and a request's that names its process (its own, or its
+    # flow's), each flow's facts of a request on a shared flow id included.
+    traffic: list[dict[str, Any]] = [
+        row for row in (*report.network.tcp, *report.network.udp) if isinstance(row, dict)
+    ]
+    traffic += [row for row in report.network.http if isinstance(row, dict)]
+    traffic += [r.extra for r in report.network.dns_requests]
+    traffic += [
+        facts
+        for row in list(traffic)
+        if isinstance(row.get(TRAFFIC_FLOWS_KEY), list)
+        for facts in row[TRAFFIC_FLOWS_KEY]
+        if isinstance(facts, dict)
+    ]
     for row in traffic:
-        procid = pid_text(row.get("procid")) or pid_text(row.get("pid"))
+        procid = pid_of(row.get(TRAFFIC_PROCESS_KEY))
         for key in (SAMPLE_TREE_KEY, LINEAGE_DISPUTED_KEY, LINEAGE_MARKED_BY_KEY, LINEAGE_KEY):
             row.pop(key, None)
         node = (str(row.get(PROCESS_TASK_KEY) or ""), procid)
@@ -1858,6 +1912,10 @@ _TRIAGE_SIGNATURE_READ: frozenset[str] = frozenset({"name", "desc", "score", "in
 # A task report's blocks the reader reads into places of their own, and the
 # fields of a flow and of a request it reads; every other one is kept.
 _TRIAGE_TASK_READ: frozenset[str] = frozenset({"processes", "dumped", "network"})
+# The field a task report's flow names its process under, by the process
+# list's own id (``ReportReader.traffic_process_fields``).
+TRIAGE_TRAFFIC_PROCESS_FIELDS: tuple[str, ...] = ("procid",)
+_TRIAGE_TRAFFIC_PROCESS_FIELD = TRIAGE_TRAFFIC_PROCESS_FIELDS[0]
 _TRIAGE_FLOW_READ: frozenset[str] = frozenset(
     {"proto", "dst", "procid", "pid", "as_num", "as_org", "country"}
 )
@@ -1941,6 +1999,28 @@ def _triage_exchanges(
             # An answer with nothing it answers: kept whole, never read as a request.
             unread.extend(kept)
     return exchanges, unread
+
+
+def _flow_id(value: Any) -> str:
+    """A flow's id as a request names it and as the flow lists it: one text form."""
+    return str(value).strip()
+
+
+def _request_process(flows: list[dict[str, Any]] | None, task: str) -> dict[str, Any]:
+    """The process facts an HTTP request takes from the flows of the id it rode on.
+
+    One flow, or several stating the same facts: those facts, flat on the
+    request. Several stating different ones: each flow's facts under
+    :data:`TRAFFIC_FLOWS_KEY`, so the request is the sample's when any of them
+    is and another lineage's only when all name one, whatever their order.
+    """
+    if not flows:
+        return {}
+    by_facts = {json.dumps(f, sort_keys=True, default=str): f for f in flows}
+    distinct = [by_facts[key] for key in sorted(by_facts)]
+    if len(distinct) == 1:
+        return {**distinct[0], PROCESS_TASK_KEY: task}
+    return {TRAFFIC_FLOWS_KEY: [{**f, PROCESS_TASK_KEY: task} for f in distinct]}
 
 
 def _scalar_id(value: Any) -> bool:
@@ -2120,14 +2200,15 @@ def triage_overview_to_sandbox_report(
             if block not in ("flows", "requests"):
                 _keep_task_block(channels, f"task.network.{block}", str(task_name), value)
 
-        # Each flow's process facts by its id, which a request riding on it takes.
-        flow_process: dict[str, dict[str, Any]] = {}
+        # Each flow's process facts by its id, which an HTTP request riding on
+        # it takes; every flow of an id the task lists twice is kept.
+        flow_process: dict[str, list[dict[str, Any]]] = {}
         for flow in _rows(net.get("flows")):
             if _scalar_id(flow.get("id")):
                 attribution = _flow_attribution(flow, lineage, marker)
-                flow_process[str(flow["id"])] = {
-                    k: attribution[k] for k in TRAFFIC_PROCESS_KEYS if k in attribution
-                }
+                flow_process.setdefault(_flow_id(flow["id"]), []).append(
+                    {k: attribution[k] for k in TRAFFIC_PROCESS_KEYS if k in attribution}
+                )
         for flow in _rows(net.get("flows")):
             proto = str(flow.get("proto") or "").lower()
             dst_host, dst_port = _split_host_port(str(flow.get("dst") or ""))
@@ -2173,8 +2254,10 @@ def triage_overview_to_sandbox_report(
             # takes none: its flow is the guest's resolver, never the program
             # that asked.
             ridden = req_extra.get("flow")
-            made = flow_process.get(str(ridden)) if _scalar_id(ridden) else None
-            made = {**made, PROCESS_TASK_KEY: str(task_name)} if made else {}
+            made = _request_process(
+                flow_process.get(_flow_id(ridden)) if _scalar_id(ridden) else None,
+                str(task_name),
+            )
 
             if domain_req is not None:
                 answers = [

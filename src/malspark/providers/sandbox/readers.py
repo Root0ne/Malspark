@@ -33,7 +33,7 @@ from malspark.core.report_formats import (
     format_named,
 )
 from malspark.schemas.sandbox_document import FIXTURE_KEY, SYNTHETIC_KEY
-from malspark.schemas.sandbox_report import CAPE_RENAMES
+from malspark.schemas.sandbox_report import CAPE_RENAMES, TRIAGE_TRAFFIC_PROCESS_FIELDS
 
 if TYPE_CHECKING:
     from malspark.schemas.sandbox_report import Reading, SandboxReport
@@ -77,6 +77,14 @@ class ReportReader(ABC):
     # (``app.MalsparkApp``). Honoured for the built-in readers alone
     # (:func:`earned_marks`): a plug-in that declares marks earns none.
     platform_marks: ClassVar[frozenset[str]] = frozenset()
+    # The fields a flow's or a request's row names the process that made it
+    # under, by the id the report's process list gives it, as the reader's
+    # source states it: the reader writes it under the one key the launcher's
+    # reading and the publish rule read
+    # (``schemas.sandbox_report.TRAFFIC_PROCESS_KEY``). Empty where the source
+    # names no such field; a mapped format declares its own through the
+    # mapping's ``field_names`` (``<channel>.platform_process``).
+    traffic_process_fields: ClassVar[tuple[str, ...]] = ()
 
     def builtin_format(self) -> ReportFormat | None:
         """The shipped format declaration under this reader's id, if any."""
@@ -429,6 +437,7 @@ class CapeReportReader(ReportReader):
     id = "cape2"
     keeps_source_arrangement = True
     renames = CAPE_RENAMES
+    traffic_process_fields = ("procid", "pid")
 
     def read(
         self,
@@ -448,6 +457,7 @@ class CapeReportReader(ReportReader):
             task_id=task_id,
             keep_arrangement=self.keeps_source_arrangement,
             renames=self.renames,
+            traffic_process_fields=self.traffic_process_fields,
         )
         return self._scaled(report, fmt)
 
@@ -540,6 +550,7 @@ class TriageReportReader(ReportReader):
 
     id = "triage"
     PARTIAL = "read from its overview alone"
+    traffic_process_fields = TRIAGE_TRAFFIC_PROCESS_FIELDS
 
     def read(
         self,

@@ -301,6 +301,8 @@ def test_fetch_maps_overview_and_task_report_into_a_sandbox_report():
             "dst": "45.33.32.23",
             "dport": 443,
             "procid": 1000,
+            # The process in the one form every reader writes it under.
+            "platform_process": "1000",
             "sample_process_tree": True,
             "pid": 2100,
             "as_num": 63949,
@@ -315,6 +317,7 @@ def test_fetch_maps_overview_and_task_report_into_a_sandbox_report():
             "dst": "10.0.2.3",
             "dport": 53,
             "procid": 1000,
+            "platform_process": "1000",
             "sample_process_tree": True,
             "pid": 2100,
             "platform_task": "behavioral1",
@@ -333,6 +336,7 @@ def test_fetch_maps_overview_and_task_report_into_a_sandbox_report():
             # The process facts of the flow it rode on (flow 1, the sample's).
             "procid": 1000,
             "pid": 2100,
+            "platform_process": "1000",
             "sample_process_tree": True,
             "platform_task": "behavioral1",
         }

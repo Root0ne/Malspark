@@ -53,7 +53,12 @@ from malspark.reporting.renderers.stix_renderer import (
 )
 from malspark.schemas.evidence import build_entry
 from malspark.schemas.sandbox_document import sandbox_document
-from malspark.schemas.sandbox_report import SandboxReport, attribute_the_launcher
+from malspark.schemas.sandbox_report import (
+    PROCESS_UNLISTED_KEY,
+    TRAFFIC_PROCESS_KEY,
+    SandboxReport,
+    attribute_the_launcher,
+)
 from tests.linear_cost import assert_scales
 
 LIVE = Path(__file__).resolve().parents[2] / "fixtures" / "sandbox" / "triage_live"
@@ -272,7 +277,11 @@ class TestTheCostIsLinear:
                     for i in range(n)
                 ],
                 "tcp": [
-                    {"dst": C2_ADDRESS, "procid": 1000 + i, "process_not_listed": True}
+                    {
+                        "dst": C2_ADDRESS,
+                        TRAFFIC_PROCESS_KEY: str(1000 + i),
+                        PROCESS_UNLISTED_KEY: True,
+                    }
                     for i in range(n)
                 ],
             }
