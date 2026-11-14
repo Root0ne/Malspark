@@ -2820,6 +2820,17 @@ class _Context:
         # The IOC table's answers, read on first use by ``publish_state``.
         self._answers: Any = None
         stored = list(getattr(report, "flagged_statements", None) or [])
+        from malspark.reporting.section_agreement import DROPPED_CODE
+
+        # The sentences printed in their writer's own words that the agreement question left
+        # out (``section_agreement.apply_rows``), by the passage the label names: the analyst
+        # report leaves each out where that passage prints, and no render marks it, so the
+        # bundle prints it whole beside the round's record (T-613).
+        self.verbatim_left: dict[str, list[str]] = {}
+        for row in stored:
+            if row.code == DROPPED_CODE:
+                self.verbatim_left.setdefault(row.label, []).append(row.sentence)
+        stored = [row for row in stored if row.code != DROPPED_CODE]
         for statement in _joined_marks(with_decided_statements(stored, report)):
             if statement.code == "report.unpublished_value" and self._all_stated(
                 statement.sentence

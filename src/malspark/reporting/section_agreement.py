@@ -525,6 +525,12 @@ class Passage:
     # shown and may be named, but raises no refusal of a row that does not name it, no item a
     # quote leaves out and no question of its own (T-601).
     silent: bool = False
+    # A text the analyst report prints in its writer's own words (an analyst's statement or
+    # claim sentence, the judge's note, reason or sentences): who wrote it, in the words of the
+    # record of a sentence of it left out; ``""`` for any other passage. Such a passage is
+    # shown to be listed and is never rewritten: a sentence of it listed is kept on a quote
+    # that passes, or left out of the analyst report, and the bundle prints it whole (T-613).
+    verbatim: str = ""
 
 
 def _ids(*sources: Any) -> frozenset[str]:
@@ -603,6 +609,58 @@ def _record_passages(
     return out
 
 
+# Who wrote a passage printed in its writer's own words, as the record of a sentence of it
+# left out says (``Passage.verbatim``), by the writer the analyst report names (T-613).
+_VERBATIM_WRITERS = {
+    "analyst": "an analyst's own words, printed as written",
+    "judge": "the judge's own words, printed as written",
+}
+
+
+def _verbatim_passages(report: MalwareReport) -> list[Passage]:
+    """The texts the analyst report prints in their writer's own words
+    (``renderers.analyst.verbatim_texts``), one passage each, in the order it prints them:
+    shown to be listed, never rewritten (T-613). None where the report is not rendered."""
+    from malspark.reporting.renderers.analyst import verbatim_texts
+
+    try:
+        shown = verbatim_texts(report)
+    except Exception as exc:  # noqa: BLE001 — the round asks of every other passage as before
+        logger.warning("section agreement: the verbatim texts were not read (%s).", exc)
+        return []
+    return [
+        Passage(
+            id=text.id,
+            label=text.label,
+            text=text.text,
+            kind=CLAIM_LED,
+            cites=_ids(text.cites, text.text),
+            verbatim=_VERBATIM_WRITERS.get(text.writer, _VERBATIM_WRITERS["analyst"]),
+        )
+        for text in shown
+        if text.text.strip()
+    ]
+
+
+def left_out_of(text: str, sentences: Iterable[str]) -> tuple[str, int]:
+    """``text`` without each of ``sentences`` that stands in it whole and once
+    (:class:`_Sentences`), with the spaces ``left_out_span`` takes, and how many were left out:
+    how the analyst report leaves out a sentence of a passage printed in its writer's own
+    words that the round left out (T-613)."""
+    cut = _Sentences(text)
+    spans = sorted(
+        {
+            left_out_span(text, found[0], found[1])
+            for sentence in dict.fromkeys(sentences)
+            if (found := cut.span(sentence)) is not None
+        },
+        reverse=True,
+    )
+    for start, end in spans:
+        text = text[:start] + text[end:]
+    return text, len(spans)
+
+
 def passages_of(
     report: MalwareReport,
     *,
@@ -613,7 +671,8 @@ def passages_of(
     """Every passage the round is shown, in the order the prompt lists them.
 
     The facts first, then section 5's passages written from the code, then
-    the debate's mediations, then the passages written without the code. The
+    the debate's mediations, then the passages written without the code, the texts
+    the analyst report prints in their writer's own words last. The
     key findings and the summary are asked about only when the narrative round
     wrote them (``narrative_written``): the platform's own fallback is not the
     report model's to rewrite. ``entries`` is the run's ledger, in its order,
@@ -969,7 +1028,9 @@ def passages_of(
                 {str(_field(e, "id") or "").lower(): e for e in held},
             )
         )
-    every = [*facts, *coded, *debate, *uncoded]
+    # The texts the analyst report prints in their writer's own words, last: listed only where
+    # a source says otherwise, so no fact is read off them (T-613).
+    every = [*facts, *coded, *debate, *uncoded, *_verbatim_passages(report)]
     by_id = {passage.id: passage for passage in every}
     for passage in (*coded, *uncoded):
         if _writable(passage):
@@ -4555,7 +4616,10 @@ def _sentence_start(text: str) -> str:
 
 def _left_out_end(passage: Passage) -> str:
     """:data:`_LEFT_OUT_END` as a sentence of its own, saying, for a field answered whole,
-    what it prints once every sentence of it is left out (``Passage.emptied``)."""
+    what it prints once every sentence of it is left out (``Passage.emptied``), and for a
+    passage printed in its writer's own words that the bundle prints it whole."""
+    if passage.verbatim:
+        return _sentence_start(_VERBATIM_LEFT_OUT)
     return _sentence_start(
         f"{_LEFT_OUT_END}, and {passage.emptied}" if passage.whole else _LEFT_OUT_END
     )
@@ -4569,6 +4633,17 @@ _WHOLE_ENDS = (
     'the same thing, copied exactly, or with "sources": [] and "reason" where no source '
     'speaks of it; or drop it with "reason"'
 )
+
+
+# What a sentence of a passage printed in its writer's own words (``Passage.verbatim``) may end
+# as, as the question and every refusal of an answer for it say: a keep on a source's words, or
+# a drop; never a rewrite. Where none passes it is left out of the analyst report, and the
+# bundle prints it whole (T-613).
+_VERBATIM_ENDS = (
+    'keep it naming the source you read and found agreeing, with "quote": its words that state '
+    'the same thing, copied exactly, or drop it with "reason"'
+)
+_VERBATIM_LEFT_OUT = f"{_LEFT_OUT_END}, and the bundle prints it whole"
 
 
 def _whole_ends(passage: Passage, sentence: str) -> str:
@@ -6623,7 +6698,9 @@ def prompt_text(passages: Sequence[Passage]) -> str:
             # Model-written text and the sample's own: one quoted value each.
             text = passage.text if passage.kind == FACT else quoted_value(passage.text)
             shown = (
-                " (read only)"
+                _VERBATIM_MARK
+                if passage.verbatim
+                else " (read only)"
                 if passage.kind in (CLAIM_LED, SECTION_5) and passage.write is None
                 else ""
             )
@@ -6780,6 +6857,8 @@ def prompt_text(passages: Sequence[Passage]) -> str:
     closing = [p.id for p in passages if p.closing and _writable(p)]
     if closing:
         lines.append(_CLOSING_TASK.format(ids=", ".join(f"[{pid}]" for pid in closing)))
+    if any(p.verbatim for p in passages):
+        lines.append(_VERBATIM_TASK)
     whole = [p for p in passages if p.whole and _writable(p)]
     if whole:
         # Said once for every field answered whole, not per passage (T-600).
@@ -6790,6 +6869,16 @@ def prompt_text(passages: Sequence[Passage]) -> str:
             + "."
         )
     return "\n".join(lines)
+
+
+# How the question marks a passage printed in its writer's own words, and what the TASK says
+# of every such passage once (T-613).
+_VERBATIM_MARK = " (verbatim)"
+_VERBATIM_TASK = (
+    "A passage marked (verbatim) prints an analyst's or the judge's own words: list a sentence "
+    f"of it only where a source states otherwise; never rewrite it: {_VERBATIM_ENDS}. "
+    + _sentence_start(_VERBATIM_LEFT_OUT)
+)
 
 
 # What the round asks of the conclusion and the limitations, every sentence of which
