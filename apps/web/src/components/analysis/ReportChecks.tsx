@@ -9,14 +9,15 @@ import {
   leftOutStatements,
 } from "./reportProse";
 
-/* ── What the report's own checks left standing ──────────────────────
+/* ── What the report's own checks recorded ───────────────────────────
  *
- * The lists the report carries: the report model's sentences a capability or
- * rule-match check asked about and the retry left standing, the sentences the
- * agreement round left out of the analyst report (its own state: never listed
- * as standing; the evidence bundle prints them whole), and the analyst claims
- * in force the body neither cites nor discusses. Nothing is drawn for a report
- * that carries none, or that was stored before the fields existed.
+ * The lists the report carries, each under a heading saying what it is: the
+ * report model's sentences a check asked about and the retry left standing,
+ * the sentences the agreement round left out of the analyst report (its own
+ * state: never listed as standing; the evidence bundle prints them whole), and
+ * the analyst claims in force the body neither cites nor discusses. Nothing is
+ * drawn for a report that carries none, or that was stored before the fields
+ * existed.
  */
 export default function ReportChecks({ mr }: { mr: MalwareReport }) {
   const flagged = flaggedStatements(mr);
@@ -27,16 +28,14 @@ export default function ReportChecks({ mr }: { mr: MalwareReport }) {
     <div className="bg-bg-surface border border-border rounded">
       <div className="px-4 py-3 border-b border-border">
         <h2 className="text-xs font-medium text-text-primary">
-          {flagged.length > 0 || undiscussed.length > 0
-            ? "What the report's checks left standing"
-            : "What the report's checks left out"}
+          What the report&apos;s checks recorded
         </h2>
       </div>
       <div className="p-4 space-y-4">
         {flagged.length > 0 && (
           <section>
             <h3 className="text-[11px] text-text-muted mb-1.5">
-              Flagged statements
+              Flagged statements, asked about and left standing
             </h3>
             <ul className="space-y-1.5">
               {flagged.map((statement, i) => (

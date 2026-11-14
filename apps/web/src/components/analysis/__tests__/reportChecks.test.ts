@@ -106,4 +106,31 @@ describe("a sentence the agreement round left out (T-613)", () => {
     expect(html).not.toContain("Flagged statements");
     expect(html).not.toContain("left standing");
   });
+
+  it("keeps each list under a heading saying what that list is, both lists drawn", () => {
+    const html = renderToStaticMarkup(
+      createElement(ReportChecks, {
+        mr: {
+          flagged_statements: [
+            { sentence: "The loader steals credentials.", code: "narrative.ungrounded_capability" },
+            {
+              sentence: "It reaches 0x5c30 first.",
+              code: "agreement.dropped",
+              label: "judge.business_impact",
+              left_out: ["judge.business_impact"],
+            },
+          ],
+        } as MalwareReport,
+      }),
+    );
+
+    const headings = [...html.matchAll(/<h[23][^>]*>([^<]*)<\/h[23]>/g)].map((m) =>
+      m[1].replace(/\s+/g, " ").trim(),
+    );
+    expect(headings).toEqual([
+      "What the report&#x27;s checks recorded",
+      "Flagged statements, asked about and left standing",
+      "Left out of the analyst report",
+    ]);
+  });
 });
