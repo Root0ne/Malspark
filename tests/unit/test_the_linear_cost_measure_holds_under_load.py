@@ -17,6 +17,7 @@ import pytest
 
 from tests import linear_cost
 from tests.linear_cost import (
+    ROUND_DRIFT,
     ROUNDS,
     TIME_RATIO_LIMIT,
     assert_ratio,
@@ -24,6 +25,7 @@ from tests.linear_cost import (
     assert_under,
     calls,
     cpu_seconds,
+    held_over_rounds,
     peak_bytes,
 )
 
@@ -342,6 +344,163 @@ class TestOnANoisyRunner:
             assert 0.01 <= small < 0.0125 and 0.1 <= large < 0.125
             with pytest.raises(AssertionError, match="each run 16 calls"):
                 assert_ratio(machine.work(0.01), machine.work(0.16), 8)
+
+
+def _stalled(at: int, slower: float) -> Callable[[int], float]:
+    """The small runs of round ``at`` (0 the first) ``slower`` times their cost: a stall."""
+    return _by_round(
+        [(slower, 1.0) if index == at else (1.0, 1.0) for index in range(ROUNDS)], [1.0]
+    )
+
+
+def _pooled_over_two_rounds(
+    small: Callable[[], None], large: Callable[[], None], limit: float, clock: Callable[[], float]
+) -> bool:
+    """The rule later rounds read alone are held to: a second round, pooled with the first."""
+
+    def best_pair() -> tuple[float, float]:
+        best_small = best_large = float("inf")
+        for _ in range(3):
+            for call, which in ((small, 0), (large, 1)):
+                started = clock()
+                call()
+                took = clock() - started
+                if which == 0:
+                    best_small = min(best_small, took)
+                else:
+                    best_large = min(best_large, took)
+        return best_small, best_large
+
+    small()
+    first = best_pair()
+    if first[1] < limit * first[0]:
+        return True
+    again = best_pair()
+    return min(first[1], again[1]) < limit * min(first[0], again[0])
+
+
+def _one_round_s_smalls_slowed(seed: int) -> Callable[[int], float]:
+    # One round's small runs, drawn at random, slowed by up to a half, and
+    # each run by a one-sided noise of five per cent on average.
+    rng = random.Random(seed)
+    at, slower = rng.randrange(ROUNDS), rng.uniform(1.0, 1.5)
+    noise = [1.0 + rng.expovariate(20.0) for _ in range(64)]
+    return _by_round(
+        [(slower, 1.0) if index == at else (1.0, 1.0) for index in range(ROUNDS)], noise
+    )
+
+
+class TestTheDriftARoundIsForgivenIsBounded:
+    """A later round judged on its own times never reaches a quadratic call."""
+
+    def test_a_quadratic_whose_later_small_runs_stall_fails(self) -> None:
+        # Sixteen times the cost against a limit of eight, one later round's
+        # small runs 2.1 times slower: that round alone reads 7.6 times.
+        for at in (1, 2):
+            machine = _Machine(_stalled(at, 2.1))
+            with pytest.raises(AssertionError, match="took 16.0 times as long"):
+                assert_ratio(machine.work(0.01), machine.work(0.16), 8, clock=machine.clock)
+
+    def test_a_quadratic_at_the_tightest_margin_fails_whatever_its_small_runs_stall(
+        self,
+    ) -> None:
+        # Sixteen against twelve, the least margin a test states: a round
+        # whose small runs are a third or more slower reads under twelve.
+        for slower in (1.34, 1.5, 2.0, 3.0):
+            for at in (1, 2):
+                machine = _Machine(_stalled(at, slower))
+                with pytest.raises(AssertionError, match="not read alone"):
+                    assert_ratio(machine.work(0.01), machine.work(0.16), 12, clock=machine.clock)
+
+    def test_a_round_is_judged_on_its_own_only_within_the_drift(self) -> None:
+        # Ten times the cost against twelve, every large run slowed by a
+        # quarter or more, so the best of all reads 12.5 times; the second
+        # round's small runs drifted too, and its own pairs read under ten.
+        def drifted(by: float) -> _Machine:
+            return _Machine(_by_round([(1.0, 1.3), (by, 1.25), (1.0, 1.3)], [1.0]))
+
+        within = drifted(ROUND_DRIFT - 0.01)
+        small, large = assert_ratio(within.work(0.01), within.work(0.1), 12, clock=within.clock)
+        assert (small, large) == pytest.approx((0.01 * (ROUND_DRIFT - 0.01), 0.125))
+        past = drifted(ROUND_DRIFT + 0.01)
+        with pytest.raises(AssertionError, match="took 12.5 times as long"):
+            assert_ratio(past.work(0.01), past.work(0.1), 12, clock=past.clock)
+
+    def test_quadratic_work_at_the_tightest_margin_fails_whatever_the_seed(self) -> None:
+        for seed in range(500):
+            machine = _Machine(_noisy(seed))
+            with pytest.raises(AssertionError):
+                assert_ratio(machine.work(0.01), machine.work(0.16), 12, clock=machine.clock)
+
+    def test_a_borderline_quadratic_passes_hardly_more_often_than_on_two_pooled_rounds(
+        self,
+    ) -> None:
+        # Sixteen against twelve, one round's small runs slowed by up to a
+        # half: a slowed first round passes on either rule. The later rounds
+        # judged alone add at most one pass in a hundred over a second round
+        # pooled with the first (on these seeds 112 against 112 of 1000).
+        margin = 0.01
+        passed = pooled = 0
+        for seed in range(1000):
+            machine = _Machine(_one_round_s_smalls_slowed(seed))
+            try:
+                assert_ratio(machine.work(0.01), machine.work(0.16), 12, clock=machine.clock)
+                passed += 1
+            except AssertionError:
+                pass
+            machine = _Machine(_one_round_s_smalls_slowed(seed))
+            pooled += _pooled_over_two_rounds(
+                machine.work(0.01), machine.work(0.16), 12, machine.clock
+            )
+        assert pooled > 50, "the slowed first rounds pass on both rules"
+        assert passed <= pooled + margin * 1000, (passed, pooled)
+
+    def test_no_round_past_the_declared_number_is_taken(self) -> None:
+        # A quadratic whose fourth round would pass on its own pairs (its
+        # large runs at their quickest, its small runs drifted within the
+        # bound) fails after three rounds; linear work that only its third
+        # round holds passes.
+        machine = _Machine(_by_round([(1.0, 1.25)] * 3 + [(1.29, 0.95)], [1.0]))
+        with pytest.raises(AssertionError):
+            assert_ratio(machine.work(0.01), machine.work(0.16), 12, clock=machine.clock)
+        assert machine.runs == 19
+        linear = _Machine(_by_round([(1.0, 1.5), (1.0, 1.5), (1.0, 1.0)], [1.0]))
+        assert_ratio(linear.work(0.01), linear.work(0.1), 12, clock=linear.clock)
+        assert linear.runs == 19
+
+    def test_fewer_than_two_rounds_are_refused(self) -> None:
+        with pytest.raises(AssertionError, match="at least a second round"):
+            held_over_rounds(lambda: {"small": 1.0}, lambda _times: True, ["small"], rounds=1)
+
+    def test_a_round_one_of_whose_small_times_drifted_is_read_only_in_the_best_of_all(
+        self,
+    ) -> None:
+        # Two small times; the second round's cut drifted, and its own times
+        # hold: within the bound they are read, past it only the best of all.
+        def rounds_with(cut: float) -> Callable[[], dict[str, float]]:
+            taken = iter(
+                [
+                    {"read": 1.0, "cut": 1.0, "large": 20.0},
+                    {"read": 1.0, "cut": cut, "large": 13.0},
+                    {"read": 1.0, "cut": 1.0, "large": 30.0},
+                ]
+            )
+            return lambda: next(taken)
+
+        def holds(times: dict[str, float]) -> bool:
+            return times["large"] < 12 * times["cut"]
+
+        held, rounds, best = held_over_rounds(rounds_with(1.29), holds, ["read", "cut"])
+        assert held == {"read": 1.0, "cut": 1.29, "large": 13.0} and len(rounds) == 2
+        held, rounds, best = held_over_rounds(rounds_with(1.31), holds, ["read", "cut"])
+        assert held is None and len(rounds) == 3
+        assert best == {"read": 1.0, "cut": 1.0, "large": 13.0}
+
+    def test_assert_scales_refuses_a_limit_a_quadratic_is_not_far_enough_over(self) -> None:
+        with pytest.raises(AssertionError, match="within 1.3 of a quadratic call's 16"):
+            assert_scales(_linear, 1_000, factor=4, limit=13)
+        with pytest.raises(AssertionError, match="a quadratic call's 9"):
+            assert_scales(_linear, 1_000, factor=3)
 
 
 def test_on_macos_the_clock_is_the_process_s_user_time(monkeypatch: pytest.MonkeyPatch) -> None:
