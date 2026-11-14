@@ -431,46 +431,43 @@ class TestAHostileDeepBody:
         lists, which differs from one system to the next, is in both sides.
         The cut alone is also held to the body's growth, with no
         ``json.loads`` in its bound. A measure that fails is taken again by
-        the rounds every ratio here is read over (``held_over_rounds``), the
-        smaller body's times bounding a round read on its own.
+        the rounds every ratio here is read over (``held_over_rounds``), every
+        time whose slowing makes the verdict easier bounding a round read on
+        its own.
         """
-        size = 10_000_000
-        plain_bytes = _chunked_read("json", 500, size)
-        held_bytes = _chunked_read("safe", 500, size)
+        plain_bytes = _chunked_read("json", 500, _STATED_BODY)
+        held_bytes = _chunked_read("safe", 500, _STATED_BODY)
         assert held_bytes <= 1.2 * plain_bytes + 8 * 2**20, (plain_bytes, held_bytes)
 
-        small, large = 1_000_000, 5_000_000
-
-        def verdict(times: dict[str, float]) -> tuple[float, float, bool]:
-            plain_growth = times[f"json {large}"] / times[f"json {small}"]
-            held_growth = times[f"safe {large}"] / times[f"safe {small}"]
-            # Half a second on ten megabytes, scaled to the body measured.
-            near = times[f"safe {large}"] < 4 * times[f"json {large}"] + 0.5 * large / size
-            # The cut alone, held to the body's own growth: a json.loads that
-            # grows faster on some machine cannot widen this bound. The cut is
-            # a walk in the interpreter and grows 5.0 times for five times the
-            # body; a quarter more is the bound.
-            cut_growth = times[f"safe {large} cut part"] / times[f"safe {small} cut part"]
-            cut_linear = cut_growth < 1.25 * large / small
-            return (
-                plain_growth,
-                held_growth,
-                held_growth < 1.5 * plain_growth and near and cut_linear,
-            )
-
-        held, attempts, best = held_over_rounds(
-            lambda: _chunked_times(500, small, large),
-            lambda times: verdict(times)[2],
-            [f"json {small}", f"safe {small}", f"safe {small} cut part"],
+        held, attempts, best = _cut_in_place_held(
+            lambda: _chunked_times(500, _SMALL_BODY, _LARGE_BODY)
         )
-        plain_growth, held_growth, _ = verdict(best if held is None else held)
+        plain_growth, held_growth, _ = _cut_in_place_verdict(best if held is None else held)
         assert held is not None, (
             f"five times the body: json.loads {plain_growth:.1f} times, the guarded read "
             f"{held_growth:.1f} times (limit 1.5 times json.loads's), its cut at most "
-            f"{1.25 * large / small:g} times; each attempt's CPU "
+            f"{1.25 * _LARGE_BODY / _SMALL_BODY:g} times; each attempt's CPU "
             f"seconds with their user and system parts, and the guarded read's cut "
             f"alone, then the best of all: {[*attempts, best]}"
         )
+
+    def test_a_round_whose_larger_json_loads_run_slowed_is_not_read_alone(self) -> None:
+        # The guarded read grows ten times for five times the body against an
+        # allowed 7.5; a second round whose larger json.loads run is 1.4 times
+        # slower allows 10.5 on its own times.
+        clean = {
+            f"json {_SMALL_BODY}": 0.10,
+            f"json {_LARGE_BODY}": 0.50,
+            f"safe {_SMALL_BODY}": 0.12,
+            f"safe {_LARGE_BODY}": 1.20,
+            f"safe {_SMALL_BODY} cut part": 0.02,
+            f"safe {_LARGE_BODY} cut part": 0.10,
+        }
+        slowed = {**clean, f"json {_LARGE_BODY}": 0.50 * 1.4}
+        assert _cut_in_place_verdict(slowed)[2] and not _cut_in_place_verdict(clean)[2]
+        taken = iter([dict(clean), slowed, dict(clean)])
+        held, rounds, _best = _cut_in_place_held(lambda: next(taken))
+        assert held is None and len(rounds) == 3
 
     def test_a_cut_body_reads_as_the_marked_copy_would(self) -> None:
         chunk = "[" * 500 + "]" * 500
@@ -558,6 +555,48 @@ def _chunked_times(depth: int, small: int, large: int) -> dict[str, float]:
     )
     times: dict[str, float] = json.loads(done.stdout.strip().splitlines()[-1])
     return times
+
+
+# The two bodies the deep-body reads are timed on, and the body their time
+# allowance and their memory are stated on.
+_SMALL_BODY, _LARGE_BODY, _STATED_BODY = 1_000_000, 5_000_000, 10_000_000
+
+
+def _cut_in_place_verdict(times: dict[str, float]) -> tuple[float, float, bool]:
+    """``json.loads``'s growth over five times the body, the guarded read's, and the verdict."""
+    small, large = _SMALL_BODY, _LARGE_BODY
+    plain_growth = times[f"json {large}"] / times[f"json {small}"]
+    held_growth = times[f"safe {large}"] / times[f"safe {small}"]
+    # Half a second on ten megabytes, scaled to the body measured.
+    near = times[f"safe {large}"] < 4 * times[f"json {large}"] + 0.5 * large / _STATED_BODY
+    # The cut alone, held to the body's own growth: a json.loads that grows
+    # faster on some machine cannot widen this bound. The cut is a walk in the
+    # interpreter and grows 5.0 times for five times the body; a quarter more
+    # is the bound.
+    cut_growth = times[f"safe {large} cut part"] / times[f"safe {small} cut part"]
+    cut_linear = cut_growth < 1.25 * large / small
+    return plain_growth, held_growth, held_growth < 1.5 * plain_growth and near and cut_linear
+
+
+# Every time whose slowing makes the verdict easier, which a round read on its
+# own may have slowed only within the round rule's drift: json.loads on the
+# larger body, over which the guarded read's growth and time are held, and the
+# guarded read and its cut on the smaller body, by which their growth is divided.
+# A slower json.loads on the smaller body makes the verdict harder.
+_CUT_IN_PLACE_EASED_BY = (
+    f"json {_LARGE_BODY}",
+    f"safe {_SMALL_BODY}",
+    f"safe {_SMALL_BODY} cut part",
+)
+
+
+def _cut_in_place_held(
+    measure: Callable[[], dict[str, float]],
+) -> tuple[dict[str, float] | None, list[dict[str, float]], dict[str, float]]:
+    """The deep-body verdict over the rounds of :func:`held_over_rounds`."""
+    return held_over_rounds(
+        measure, lambda times: _cut_in_place_verdict(times)[2], _CUT_IN_PLACE_EASED_BY
+    )
 
 
 def _chunked_read(mode: str, depth: int, size: int) -> int:
