@@ -1,7 +1,7 @@
 """A sentence printed in its writer's own words that the round lists is kept or left out.
 
 A text the analyst report prints as an analyst or the judge wrote it is never rewritten: a
-rewrite would no longer be the writer's words. Listed, a sentence of it is kept on a quote of a
+rewrite would not be the writer's words. Listed, a sentence of it is kept on a quote of a
 source that passes the keep checks, or left out of the analyst report: dropped on its reason,
 or kept on no passing quote, or answered with a rewrite, which is refused and no keep. A
 sentence left out is recorded naming its passage, under the round's own code for a sentence

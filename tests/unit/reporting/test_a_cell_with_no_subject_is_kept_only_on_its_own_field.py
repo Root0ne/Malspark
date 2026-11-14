@@ -1,9 +1,9 @@
 """A value cell's sentence with no subject of its own is kept only on a quote about its field.
 
 A cell's sentence may say nothing of what it denies ("Not established.", "None."): the cell's
-field is its subject. Read alone, any negated quote of the right length passed for it: a
-channel's "Encryption: Not established." was kept on a sentence about the request path. Such
-a sentence is read with the cell's own field label as its subject ("channel encryption"), so
+field is its subject. Read alone, any negated quote of the right length would pass for it: a
+channel's "Encryption: Not established." kept on a sentence about the request path. Such a
+sentence is read with the cell's own field label as its subject ("channel encryption"), so
 a keep's quote holds two of the label's words; a cell sentence with a subject of its own is
 read as before (T-613). Every address, entry and name here is a neutral synthetic value.
 """

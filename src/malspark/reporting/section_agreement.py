@@ -4143,7 +4143,7 @@ def _row_violations(
         ]
     out: list[Violation] = []
     if row.decision == "rewrite" and passage.verbatim:
-        # Its writer's own words: a rewrite would no longer be them (T-613).
+        # Its writer's own words: a rewrite would not be them (T-613).
         out.append(
             Violation(
                 code=UNKNOWN_PASSAGE_CODE,
