@@ -17,7 +17,7 @@ from typing import Any
 
 import pytest
 from pydantic import BaseModel
-from tests.linear_cost import assert_scales
+from tests.linear_cost import assert_scales, held_over_rounds
 
 from malspark.core import safe_json
 from malspark.core.safe_json import (
@@ -430,7 +430,9 @@ class TestAHostileDeepBody:
         same machine, the memory and kernel cost of building millions of
         lists, which differs from one system to the next, is in both sides.
         The cut alone is also held to the body's growth, with no
-        ``json.loads`` in its bound.
+        ``json.loads`` in its bound. A measure that fails is taken again by
+        the rounds every ratio here is read over (``held_over_rounds``), the
+        smaller body's times bounding a round read on its own.
         """
         size = 10_000_000
         plain_bytes = _chunked_read("json", 500, size)
@@ -438,7 +440,6 @@ class TestAHostileDeepBody:
         assert held_bytes <= 1.2 * plain_bytes + 8 * 2**20, (plain_bytes, held_bytes)
 
         small, large = 1_000_000, 5_000_000
-        attempts = [_chunked_times(500, small, large)]
 
         def verdict(times: dict[str, float]) -> tuple[float, float, bool]:
             plain_growth = times[f"json {large}"] / times[f"json {small}"]
@@ -457,17 +458,18 @@ class TestAHostileDeepBody:
                 held_growth < 1.5 * plain_growth and near and cut_linear,
             )
 
-        if not verdict(attempts[0])[2]:
-            again = _chunked_times(500, small, large)
-            attempts.append(again)
-            attempts.append({key: min(attempts[0][key], again[key]) for key in again})
-        plain_growth, held_growth, held = verdict(attempts[-1])
-        assert held, (
+        held, attempts, best = held_over_rounds(
+            lambda: _chunked_times(500, small, large),
+            lambda times: verdict(times)[2],
+            [f"json {small}", f"safe {small}", f"safe {small} cut part"],
+        )
+        plain_growth, held_growth, _ = verdict(best if held is None else held)
+        assert held is not None, (
             f"five times the body: json.loads {plain_growth:.1f} times, the guarded read "
             f"{held_growth:.1f} times (limit 1.5 times json.loads's), its cut at most "
             f"{1.25 * large / small:g} times; each attempt's CPU "
             f"seconds with their user and system parts, and the guarded read's cut "
-            f"alone: {attempts}"
+            f"alone, then the best of all: {[*attempts, best]}"
         )
 
     def test_a_cut_body_reads_as_the_marked_copy_would(self) -> None:
