@@ -84,7 +84,7 @@ _PATH_HEADER = (
 # the failure's cause (``SampleNotOpened.cause``, never the operator's fix, which
 # stays in the run's limitations), and that its tools answer with that failure.
 UNOPENED_PROVIDER_LINE = (
-    "Static provider '{provider}': {cause}. "
+    "Static provider '{provider}': {cause} "
     "Its tools answer with that failure; the other static providers' tools read the sample."
 )
 
@@ -92,6 +92,19 @@ UNOPENED_PROVIDER_LINE = (
 def _one_sentence(text: str) -> str:
     """``text`` on one line without the punctuation it may end on, so a sentence can close it."""
     return " ".join(str(text or "").split()).rstrip(" .;:,")
+
+
+def _told_cause(text: str) -> str:
+    """A provider's failure cause as one closed sentence of the width a quoted failure has.
+
+    The text is the provider's own: cut to ``SERVER_WORDS_LIMIT`` and marked
+    where it is cut, as every cut text is, else closed with a period.
+    """
+    from malspark.tools.errors import SERVER_WORDS_LIMIT
+    from malspark.utils.marked_cut import CUT_MARK, marked_cut
+
+    cause = marked_cut(_one_sentence(text) or "it gave no reason", SERVER_WORDS_LIMIT)
+    return cause if cause.endswith(CUT_MARK) else cause + "."
 
 
 def _analysis_path_in(data: str) -> str | None:
@@ -272,13 +285,20 @@ class ConfigurableAnalyst(BaseAnalyst):
                     hint, _renamed_tools(getattr(self, "tools", None) or [], provider_id)
                 )
             )
+        if held and not tried:
+            # No provider has a path of its own: the pinning said so on the run
+            # (``composition.pin_provider_sample``), and the loop is not started.
+            from malspark.agents.composition import NOT_MIRRORED_REASON
+
+            said = "; ".join(NOT_MIRRORED_REASON.format(provider=pid) for pid, _ in held)
+            raise SampleNotOpened(said, provider=held[0][0])
         if failures and len(failures) == tried:
             raise failures[0][1]
         for provider_id, failure in failures:
             self._note_unopened(provider_id, failure)
             hints.append(
                 UNOPENED_PROVIDER_LINE.format(
-                    provider=provider_id, cause=_one_sentence(failure.cause) or "it gave no reason"
+                    provider=provider_id, cause=_told_cause(failure.cause)
                 )
             )
         return "\n".join(hint for hint in hints if hint)

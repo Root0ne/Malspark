@@ -846,6 +846,56 @@ def test_a_provider_with_no_mirror_is_never_pointed_at_another_providers_mirror(
     assert not any("could not open" in reason for reason in analyst.degradation_reasons)
 
 
+def test_the_agent_is_stopped_when_every_provider_that_could_be_tried_failed():
+    from malspark.core.exceptions import SampleNotOpened
+
+    failure = SampleNotOpened("R cannot read it.", provider=SECOND)
+    providers = {FIRST: _Opening(FIRST), SECOND: _Opening(SECOND, failure)}
+    analyst = _analyst(providers, (FIRST, SECOND))
+    analyst._path_by_provider = {FIRST: "", SECOND: MIRRORS[SECOND]}
+    analyst.tools = []
+    with pytest.raises(SampleNotOpened) as exc:
+        analyst._prepare_on_each(analyst._held_providers(), MIRRORS[FIRST])
+    assert exc.value is failure
+    assert providers[FIRST].opened_paths == []
+
+
+def test_an_agent_none_of_whose_providers_has_a_mirror_is_stopped_with_the_reason_once():
+    from malspark.agents.composition import NOT_MIRRORED_REASON
+    from malspark.core.exceptions import SampleNotOpened
+
+    providers = {FIRST: _ReadingAndOpening(FIRST), SECOND: _ReadingAndOpening(SECOND)}
+    container = _Container(_two(), providers)
+    analyst = _staged_analyst(container, resolve_agent("reader", container), {})
+    assert analyst._path_by_provider == {FIRST: "", SECOND: ""}
+    with pytest.raises(SampleNotOpened) as exc:
+        analyst._prepare_on_each(analyst._held_providers(), analyst._analysis_file_path)
+    reasons = [NOT_MIRRORED_REASON.format(provider=pid) for pid in (FIRST, SECOND)]
+    said = "; ".join(reasons)
+    assert exc.value.cause == said and str(exc.value) == said
+    assert providers[FIRST].opened_paths == providers[SECOND].opened_paths == []
+    # The pinning wrote each reason once, on the agent and on the run; this path wrote none.
+    assert analyst.degradation_reasons == reasons
+    assert container._registry.degradation_reasons == reasons
+
+
+def test_a_long_cause_is_told_on_one_line_within_the_quote_width_and_marked_as_cut():
+    from malspark.core.exceptions import SampleNotOpened
+    from malspark.tools.errors import SERVER_WORDS_LIMIT
+    from malspark.utils.marked_cut import CUT_MARK
+
+    cause = "\n".join(f"line {n} of what the provider said" for n in range(200))
+    assert len(cause) > 5000
+    failure = SampleNotOpened(cause, provider=FIRST)
+    providers = {FIRST: _Opening(FIRST, failure), SECOND: _Opening(SECOND)}
+    analyst = _analyst(providers, (FIRST, SECOND))
+    told = analyst._prepare_on_each(analyst._held_providers(), "/m/s")
+    assert "\n" not in told.split(" Its tools answer")[0]
+    head = told.split(": ", 1)[1].split(CUT_MARK + " Its tools")[0] + CUT_MARK
+    assert len(head) <= SERVER_WORDS_LIMIT and head.endswith(CUT_MARK)
+    assert "\n" not in told
+
+
 def test_an_agent_with_one_provider_has_no_path_per_provider():
     cfg = _settings([{"kind": "provider"}], static_provider=SECOND)
     container = _Container(cfg, _reading_providers())
