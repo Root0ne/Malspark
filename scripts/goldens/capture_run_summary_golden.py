@@ -115,6 +115,53 @@ def _tools_part() -> dict[str, Any]:
     return record
 
 
+def _detonations_part() -> list[dict[str, Any]]:
+    """``environment.detonations``: every kind of row, as ``detonations_record`` builds it.
+
+    The job's own detonation with every fact a provider states; an agent's,
+    with its launch, that ended without a report; and one whose provider
+    listed more report parts than a row keeps.
+    """
+    from types import SimpleNamespace
+
+    from malspark.analysis.run_environment import STATED_PARTS, detonations_record
+    from malspark.loaders.sandbox_client import report_part
+    from malspark.providers.detonation import AGENT_ORIGIN, DetonationRecord
+
+    facts = {
+        "detonated": True,
+        "task_ids": {"/info/id": "19159"},
+        "guest": {"name": "win10", "platform": "windows"},
+        "sandbox_version": "2.5",
+        "sandbox_commit": "c06696cbb1254b2dd2f3f0ed3a5e726e81484345",
+        "started": "2026-08-13 13:06:05",
+        "ended": "2026-08-13 13:09:06",
+        "report_parts": [report_part("report", b"{}")],
+    }
+    many = [report_part(f"part{n}", b"{}") for n in range(STATED_PARTS + 1)]
+    records = [
+        DetonationRecord(provider="cape2", task_id="19159", report={}, sandbox_facts=facts),
+        DetonationRecord(
+            ordinal=2,
+            origin=AGENT_ORIGIN,
+            arguments="--install /quiet",
+            requested_by=[{"agent": "static", "cited_entries": ["ev_0003"]}],
+            launch={"arguments": "--install /quiet", "honoured": False, "via": "options"},
+            provider="cape2",
+            task_id="19160",
+            failure="sandbox task 19160 ended with status 'failed_analysis'",
+        ),
+        DetonationRecord(
+            ordinal=3,
+            provider="cape2",
+            task_id="19161",
+            report={},
+            sandbox_facts={**facts, "report_parts": many},
+        ),
+    ]
+    return detonations_record(SimpleNamespace(detonations=records)) or []
+
+
 def _claim(technique_id: str, confidence: float) -> Any:
     from malspark.schemas.isr_models import ClaimEvidence
 
@@ -307,6 +354,7 @@ def default_profile_summary() -> dict[str, Any]:
                 {"static": ["model.gguf"]},
             ),
             "tools": _tools_part(),
+            "detonations": _detonations_part(),
         }
     )
     builder.set_truncation(
@@ -836,6 +884,10 @@ DATA_KEYED = frozenset(
         "environment.agents.*.response_models",
         "environment.agents.*.requests[].sampling",
         "environment.agents.*.requests[].thinking",
+        # Keyed by the names a sandbox provider gives its identifiers and its
+        # guest's facts.
+        "environment.detonations[].task_ids",
+        "environment.detonations[].guest",
     }
 )
 

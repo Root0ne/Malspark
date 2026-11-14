@@ -594,11 +594,14 @@ class MalsparkApp:
         (``providers.detonation``): ``record.arguments`` are the launch
         arguments asked for, and the record gets what became of them, the
         upload rows, the task id, the report's document (also returned), the
-        reader, the target its report names and, where it ended without a
-        report, why. Never raises for a sandbox's failure.
+        reader, what the provider states of the sandbox run
+        (``providers.detonation.stated_by``), the target its report names and,
+        where it ended without a report, why. Never raises for a sandbox's
+        failure.
         """
         if not sample_path or self.container.is_mock:
             return None
+        from malspark.providers.detonation import stated_by
 
         path = Path(sample_path)
         if not path.exists():
@@ -632,6 +635,7 @@ class MalsparkApp:
                     return None
                 self._without_unearned_marks(run)
                 self._note_the_reader(provider, run, record)
+                record.sandbox_facts = stated_by(provider, run)
                 attached = sandbox_document(run.report)
                 if not (run.report.synthetic or run.report.recorded_fixture):
                     # The target the attached report names, as its reader put
@@ -715,6 +719,9 @@ class MalsparkApp:
                 run = await asyncio.to_thread(provider.fetch, task_id)
                 self._without_unearned_marks(run)
                 self._note_the_reader(provider, run, record)
+                # What the provider states of the run behind the report, asked
+                # while the bytes it was read from are in hand.
+                record.sandbox_facts = stated_by(provider, run)
                 # A generated launcher's processes, flows and signatures are the
                 # platform's, not the sample's (``attribute_the_launcher``).
                 from malspark.schemas.sandbox_report import attribute_the_launcher
