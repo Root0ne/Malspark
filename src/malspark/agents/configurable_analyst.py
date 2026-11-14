@@ -79,6 +79,33 @@ _PATH_HEADER = (
     "resolves a bare name against its own working directory, not ours.\n\n"
 )
 
+# What an agent holding several static providers is told of one that could not
+# open the sample while another could (``ConfigurableAnalyst._prepare_on_each``):
+# the failure's cause (``SampleNotOpened.cause``, never the operator's fix, which
+# stays in the run's limitations), and that its tools answer with that failure.
+UNOPENED_PROVIDER_LINE = (
+    "Static provider '{provider}': {cause} "
+    "Its tools answer with that failure; the other static providers' tools read the sample."
+)
+
+
+def _one_sentence(text: str) -> str:
+    """``text`` on one line without the punctuation it may end on, so a sentence can close it."""
+    return " ".join(str(text or "").split()).rstrip(" .;:,")
+
+
+def _told_cause(text: str) -> str:
+    """A provider's failure cause as one closed sentence of the width a quoted failure has.
+
+    The text is the provider's own: cut to ``SERVER_WORDS_LIMIT`` and marked
+    where it is cut, as every cut text is, else closed with a period.
+    """
+    from malspark.tools.errors import SERVER_WORDS_LIMIT
+    from malspark.utils.marked_cut import CUT_MARK, marked_cut
+
+    cause = marked_cut(_one_sentence(text) or "it gave no reason", SERVER_WORDS_LIMIT)
+    return cause if cause.endswith(CUT_MARK) else cause + "."
+
 
 def _analysis_path_in(data: str) -> str | None:
     """The ``analysis_file_path`` spliced into a head chunk, when there is one.
@@ -201,27 +228,53 @@ class ConfigurableAnalyst(BaseAnalyst):
         return out
 
     def _note_unopened(self, provider_id: str, failure: SampleNotOpened) -> None:
-        """Say that one of the agent's several providers could not open the sample; the loop goes on."""
+        """Say that one of the agent's several providers could not open the sample; the loop goes on.
+
+        The reason goes on the agent and on the job's server registry, whose
+        reasons the run's limitations are read from, once each.
+        """
+        cause = _one_sentence(failure.cause)
         reason = f"agent '{self.name}': static provider '{provider_id}' could not open the sample"
-        self.logger.warning("%s: %s; its other providers go on.", reason, failure)
-        if reason not in self.degradation_reasons:
-            self.degradation_reasons.append(reason)
+        if cause:
+            fix = _one_sentence(failure.fix)
+            reason += f" ({cause}; {fix})" if fix else f" ({cause})"
+        own = list(getattr(self, "degradation_reasons", None) or [])
+        if reason not in own:
+            self.logger.warning("%s: %s; its other providers go on.", reason, failure)
+            self.degradation_reasons = [*own, reason]
+        try:
+            registry = self._server_registry()
+        except Exception:  # noqa: BLE001 — the reason is still on the agent
+            return
+        reasons = getattr(registry, "degradation_reasons", None)
+        if isinstance(reasons, list) and reason not in reasons:
+            reasons.append(reason)
 
     def _prepare_on_each(self, held: list[tuple[str, Any]], path: str) -> str:
         """``prepare_sample`` on each of the agent's providers, their hints in reference order.
 
+        Each provider opens the sample on its own path
+        (``composition.provider_sample_paths``), ``path`` for one the agent
+        holds no map for; one the map gives no path is not asked to open one.
         A provider that cannot open the sample is said (``_note_unopened``)
-        while another one could; only when none could is the first failure
+        while another one could, and the agent is told so in the hint, with
+        the provider's own sentence; only when none could is the first failure
         raised, which ends the loop as it does for an agent with one provider.
         """
         from malspark.agents.composition import _renamed_tools, _with_offered_names
         from malspark.providers.base import prepare_sample
 
+        own_paths = dict(getattr(self, "_path_by_provider", None) or {})
         hints: list[str] = []
         failures: list[tuple[str, SampleNotOpened]] = []
+        tried = 0
         for provider_id, provider in held:
+            own = own_paths.get(provider_id, path)
+            if not own:
+                continue
+            tried += 1
             try:
-                hint = prepare_sample(provider, path, self.logger)
+                hint = prepare_sample(provider, own, self.logger)
             except SampleNotOpened as exc:
                 failures.append((provider_id, exc))
                 continue
@@ -232,10 +285,22 @@ class ConfigurableAnalyst(BaseAnalyst):
                     hint, _renamed_tools(getattr(self, "tools", None) or [], provider_id)
                 )
             )
-        if failures and len(failures) == len(held):
+        if held and not tried:
+            # No provider has a path of its own: the pinning said so on the run
+            # (``composition.pin_provider_sample``), and the loop is not started.
+            from malspark.agents.composition import NOT_MIRRORED_REASON
+
+            said = "; ".join(NOT_MIRRORED_REASON.format(provider=pid) for pid, _ in held)
+            raise SampleNotOpened(said, provider=held[0][0])
+        if failures and len(failures) == tried:
             raise failures[0][1]
         for provider_id, failure in failures:
             self._note_unopened(provider_id, failure)
+            hints.append(
+                UNOPENED_PROVIDER_LINE.format(
+                    provider=provider_id, cause=_told_cause(failure.cause)
+                )
+            )
         return "\n".join(hint for hint in hints if hint)
 
     def _stop_if_the_sample_did_not_open(self) -> None:

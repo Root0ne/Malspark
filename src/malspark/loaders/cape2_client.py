@@ -50,6 +50,7 @@ from malspark.loaders.sandbox_client import (
     SandboxNotAvailableError,
     SandboxTimeoutError,
     SubmissionResult,
+    report_part,
 )
 
 # How much of a response body an error message quotes.
@@ -391,7 +392,8 @@ class CAPEv2Client:
                     raise SandboxError(
                         f"CAPEv2 fetch_report failed (HTTP {response.status_code}): {said}"
                     )
-                report: dict[str, Any] = self._spooled_payload(response, "fetch_report")
+                body = self._spooled_body(response)
+            report: dict[str, Any] = self._body_payload(body, "fetch_report")
         except SandboxError:
             raise
         except Exception as exc:
@@ -415,6 +417,8 @@ class CAPEv2Client:
             sample_name=file_block.get("name") or target.get("name", ""),
             status="reported",
             report=report,
+            # The one part CAPE's report endpoint answers, as it was read.
+            parts=[report_part("report", body)],
         )
 
     def fetch_pcap(
@@ -541,9 +545,9 @@ class CAPEv2Client:
                 break
         return bytes(head[:BODY_SHOWN]).decode("utf-8", errors="replace")
 
-    @classmethod
-    def _spooled_payload(cls, response: Any, operation: str) -> dict[str, Any]:
-        """A streamed JSON body, written to a temporary file and parsed from it.
+    @staticmethod
+    def _spooled_body(response: Any) -> bytes:
+        """A streamed body, written to a temporary file and read back from it.
 
         The file is unnamed and owner-only (``tempfile.TemporaryFile``: created
         0o600 with ``O_EXCL`` and ``O_NOFOLLOW``, gone when closed), so no
@@ -556,7 +560,7 @@ class CAPEv2Client:
             for chunk in response.iter_bytes(65536):
                 spool.write(chunk)
             spool.seek(0)
-            return cls._body_payload(spool.read(), operation)
+            return spool.read()
 
     @classmethod
     def _body_payload(cls, body: bytes, operation: str) -> dict[str, Any]:

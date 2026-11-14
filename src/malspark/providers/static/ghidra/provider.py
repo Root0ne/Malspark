@@ -63,19 +63,21 @@ GHIDRA_PROMPT_FRAGMENT = GHIDRA_LEAD + GHIDRA_GUIDANCE + "\n\n" + GHIDRA_WORKFLO
 # What an agent on Ghidra is stopped with when Ghidra answered that it could
 # not load the job's sample. The server's own words go in the middle; the check
 # names the two things that decide whether the container can see the file.
-SAMPLE_NOT_OPENED: str = (
-    "Ghidra could not open the job's sample: {words}; "
-    "check core.static.ghidra.sample_mount / the container mount"
-)
+SAMPLE_NOT_OPENED_CAUSE: str = "Ghidra could not open the job's sample: {words}"
+SAMPLE_NOT_OPENED_FIX: str = "check core.static.ghidra.sample_mount / the container mount"
+SAMPLE_NOT_OPENED: str = SAMPLE_NOT_OPENED_CAUSE + "; " + SAMPLE_NOT_OPENED_FIX
 
 # And when the load got no answer from Ghidra at all: the connection failed,
 # the server failed, or it refused the token. The samples path is not the
 # remedy for any of those, so it is not named.
-GHIDRA_NOT_ANSWERING: str = (
-    "Ghidra at {address} did not answer the load of the job's sample ({what}); "
+GHIDRA_NOT_ANSWERING_CAUSE: str = (
+    "Ghidra at {address} did not answer the load of the job's sample ({what})"
+)
+GHIDRA_NOT_ANSWERING_FIX: str = (
     "check the Ghidra container is running at that address and "
     "core.static.ghidra.auth_token matches its GHIDRA_MCP_AUTH_TOKEN"
 )
+GHIDRA_NOT_ANSWERING: str = GHIDRA_NOT_ANSWERING_CAUSE + "; " + GHIDRA_NOT_ANSWERING_FIX
 
 
 def _one_line(words: str) -> str:
@@ -84,7 +86,13 @@ def _one_line(words: str) -> str:
 
 def sample_not_opened(words: str) -> SampleNotOpened:
     """The failure for a load of the job's sample that Ghidra answered with an error."""
-    return SampleNotOpened(SAMPLE_NOT_OPENED.format(words=_one_line(words)), provider="ghidra")
+    words = _one_line(words)
+    return SampleNotOpened(
+        SAMPLE_NOT_OPENED.format(words=words),
+        provider="ghidra",
+        cause=SAMPLE_NOT_OPENED_CAUSE.format(words=words),
+        fix=SAMPLE_NOT_OPENED_FIX,
+    )
 
 
 # And when Ghidra loaded the sample but refused to make it the current
@@ -162,9 +170,12 @@ def ghidra_resting(words: str, name: str | None) -> SampleNotOpened:
 
 def ghidra_not_answering(address: str, what: str) -> SampleNotOpened:
     """The failure for a load of the job's sample that Ghidra gave no answer to."""
+    said = {"address": address or "its address", "what": _one_line(what)}
     return SampleNotOpened(
-        GHIDRA_NOT_ANSWERING.format(address=address or "its address", what=_one_line(what)),
+        GHIDRA_NOT_ANSWERING.format(**said),
         provider="ghidra",
+        cause=GHIDRA_NOT_ANSWERING_CAUSE.format(**said),
+        fix=GHIDRA_NOT_ANSWERING_FIX,
     )
 
 
@@ -423,7 +434,7 @@ class GhidraStaticProvider(StaticProvider):
         self._pinned_path: str | None = None
         # The sentence each path this provider could not open was stopped
         # with, so a later loop of the job is stopped before it calls Ghidra.
-        self._sample_failures: dict[str, str] = {}
+        self._sample_failures: dict[str, SampleNotOpened] = {}
         # The job's note of the paths it opened (``providers.sample_open``);
         # the container puts its own job-wide note here, shared with the
         # deterministic passes.
@@ -805,14 +816,16 @@ class GhidraStaticProvider(StaticProvider):
         """
         wanted = path or self._held_path()
         said = getattr(self, "_sample_failures", {}).get(wanted) if wanted else None
-        return SampleNotOpened(said, provider="ghidra") if said else None
+        if said is None:
+            return None
+        return SampleNotOpened(str(said), provider="ghidra", cause=said.cause, fix=said.fix)
 
     def note_sample_failure(self, path: str, failure: SampleNotOpened) -> None:
         """Remember that ``path`` did not open, and the sentence that says so."""
         if path:
             if not hasattr(self, "_sample_failures"):
                 self._sample_failures = {}
-            self._sample_failures[path] = str(failure)
+            self._sample_failures[path] = failure
 
     def _pin_load_program_path(self, tools: list[Any]) -> list[Any]:
         """Wrap ``load_program`` so a hallucinated ``file`` arg is overridden.

@@ -104,7 +104,18 @@ class MockSandboxProvider(SandboxProvider):
             report=report,
             raw=result.report,
             error=result.error,
+            report_parts=list(getattr(result, "parts", None) or ()),
         )
+
+    def detonation_facts(self, run: SandboxRun) -> dict[str, Any] | None:
+        """The fixture's facts and the file it was read from; nothing is detonated.
+
+        The stand-in built when no fixture is found was read from no file, so
+        it has no part.
+        """
+        from malspark.providers.detonation import report_facts
+
+        return report_facts(run, detonated=False)
 
     async def probe(self) -> ProviderProbe:
         return ProviderProbe(ok=True, detail="mock sandbox: fixtures only, no connection to test")

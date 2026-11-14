@@ -29,7 +29,11 @@ should happen:
   how many answers carried it (``TokenLedger.response_models``), an
   identifier shaped like a file-system path kept by its base name and listed
   in ``response_models_reduced``. An agent whose answers carried none has an
-  empty map.
+  empty map. An agent holding several static providers (named ``provider``
+  references) lists, in ``static_providers``, each provider whose tools it
+  was offered, in reference order (:func:`held_providers`); an agent with one
+  provider or none has no such list, its provider being the source of its
+  tools' entries.
 * ``tools`` is, per tool server the job's registry or one of its providers
   attached, how it served the run and what it ran (:func:`tools_record`):
   the name and version it gave at its attach, its manifest's version, and
@@ -38,6 +42,15 @@ should happen:
   binary's version where the tool declares how to ask it. The steps the
   pipeline runs in its own process are the row ``pipeline``, read on the
   worker's host with the environment of the server each stands in for.
+* ``detonations`` is one row per detonation of the job's sample, the job's
+  own first and each one an agent asked for (:func:`detonations_record`):
+  which it is, who asked, the launch text it asked for, the sandbox provider,
+  how it ended, and what the provider stated of the sandbox run while the
+  report was in hand (``SandboxProvider.detonation_facts``) — its identifiers,
+  the guest, the sandbox's version and commit, start and end, whether the
+  sample was run, and the SHA-256 and length of each raw report part as it
+  was read. An empty
+  list is a job that made no sandbox submission and read no sandbox report.
 
 Written when the judge builds the summary and again once the run's last
 model call is made (the report node, and a stopped run's summary), so the
@@ -50,9 +63,11 @@ from __future__ import annotations
 import functools
 import os
 import platform
+import re
 import subprocess
 import sys
-from collections.abc import Iterable, Mapping
+import unicodedata
+from collections.abc import Callable, Iterable, Mapping
 from typing import Any
 
 from malspark.core.logger import logger
@@ -60,8 +75,11 @@ from malspark.tools.capabilities import NOT_REPORTED
 
 # The record's shape version: a reader that meets a newer one reads what it
 # knows. 2: a row's ``sampling`` may be ``None`` (not reported), rows carry
-# ``thinking`` and ``answered``, and ``tools`` is recorded.
-ENVIRONMENT_VERSION = 2
+# ``thinking`` and ``answered``, and ``tools`` is recorded. 3: ``detonations``
+# is recorded. 4: an agent holding several static providers records them as
+# ``static_providers``, and a call whose entry names no server is credited to
+# the server of its ``provider:<id>`` source, for every agent.
+ENVIRONMENT_VERSION = 4
 
 # The server every entry of a step the pipeline runs in its own process is
 # recorded under (``pipeline.triage_pack.PIPELINE``), and the agent its server
@@ -387,8 +405,18 @@ def _field(entry: Any, name: str) -> str:
     return _text(value)
 
 
+def _provider_of(tool: Any) -> str:
+    """The provider a tool of an agent holding several static providers came from, or ``""``."""
+    from malspark.agents.composition import PROVIDER_ID_METADATA_KEY
+
+    return _text((getattr(tool, "metadata", None) or {}).get(PROVIDER_ID_METADATA_KEY))
+
+
 def _served(
-    container: Any, entries: Iterable[Any], own: Mapping[str, Mapping[str, Any]] | None = None
+    container: Any,
+    entries: Iterable[Any],
+    own: Mapping[str, Mapping[str, Any]] | None = None,
+    by_provider: Mapping[str, str] | None = None,
 ) -> tuple[dict[str, set[str]], list[str]]:
     """Per server, how it served the run; and the tools the pipeline ran in its own process.
 
@@ -396,7 +424,11 @@ def _served(
     where the job's server registry stamped it. A provider's own server
     (``own``, by key, from ``own_tool_server``) stamps nothing: a tool or entry
     that names no server is its when its name is one of the tools that server
-    served (``tools``); a name more than one such server served is none's.
+    served (``tools``). A name more than one such server served, or a name
+    offered prefixed, is the server of the provider the tool came from
+    (``by_provider``, provider id to its own server's key): read off the
+    tool's provider mark and off the entry's declared source
+    (``provider:<id>``); otherwise it is none's.
     """
     claimed: dict[str, set[str]] = {}
     for key, held in (own or {}).items():
@@ -404,6 +436,7 @@ def _served(
         for name in names if isinstance(names, list | tuple) else ():
             claimed.setdefault(_text(name), set()).add(key)
     owners = {name: next(iter(keys)) for name, keys in claimed.items() if len(keys) == 1}
+    providers = dict(by_provider or {})
     served: dict[str, set[str]] = {}
     tools_of = getattr(container, "setup_tools", None)
     set_up = tools_of() if callable(tools_of) else {}
@@ -411,12 +444,16 @@ def _served(
         for tool in tools or ():
             server = _text((getattr(tool, "metadata", None) or {}).get("malspark_server"))
             server = server or owners.get(_text(getattr(tool, "name", None)), "")
+            server = server or providers.get(_provider_of(tool), "")
             if server:
                 served.setdefault(server, set()).add(SERVED_OFFERED)
     in_process: list[str] = []
     for entry in entries or ():
         server, tool = _field(entry, "server"), _field(entry, "tool")
         server = server or owners.get(tool, "")
+        source = _field(entry, "source")
+        if not server and source.startswith("provider:"):
+            server = providers.get(source[len("provider:") :], "")
         if server == PIPELINE:
             if tool and tool not in in_process:
                 in_process.append(tool)
@@ -496,18 +533,21 @@ def _in_process_requirements(container: Any, tools: list[str]) -> list[dict[str,
     return list(rows.values())
 
 
-def _own_servers(container: Any) -> dict[str, dict[str, Any]]:
+def _own_servers(container: Any) -> tuple[dict[str, dict[str, Any]], dict[str, str]]:
     """The tool servers the job's providers drive through handles of their own, by key.
 
     Each provider's ``own_tool_server`` (``providers.base.ServerOfItsOwn``):
-    the static providers this job built and its sandbox provider.
+    the static providers this job built and its sandbox provider. Beside them,
+    each static provider's id with its own server's key.
     """
-    providers: list[Any] = list((getattr(container, "_static_provider_cache", None) or {}).values())
+    static = dict(getattr(container, "_static_provider_cache", None) or {})
+    providers: list[tuple[str, Any]] = [(_text(key), p) for key, p in static.items()]
     sandbox = getattr(container, "_sandbox_provider_cache", None)
     if sandbox is not None:
-        providers.append(sandbox)
+        providers.append(("", sandbox))
     out: dict[str, dict[str, Any]] = {}
-    for provider in providers:
+    by_provider: dict[str, str] = {}
+    for provider_id, provider in providers:
         read = getattr(provider, "own_tool_server", None)
         try:
             held = read() if callable(read) else None
@@ -515,6 +555,26 @@ def _own_servers(container: Any) -> dict[str, dict[str, Any]]:
             continue
         if isinstance(held, dict) and _text(held.get("server")):
             out.setdefault(_text(held.get("server")), held)
+            if provider_id:
+                by_provider.setdefault(provider_id, _text(held.get("server")))
+    return out, by_provider
+
+
+def held_providers(container: Any) -> dict[str, list[str]]:
+    """Per agent (lowercase key), each static provider whose tools it was offered, in order.
+
+    Read from the job's setup (``setup_tools``): a tool of an agent holding
+    several providers carries the provider it came from
+    (``composition.PROVIDER_ID_METADATA_KEY``), in reference order. An agent
+    with one provider or none carries no such mark and is not listed.
+    """
+    tools_of = getattr(container, "setup_tools", None)
+    set_up = tools_of() if callable(tools_of) else {}
+    out: dict[str, list[str]] = {}
+    for agent, tools in (set_up or {}).items():
+        ids = list(dict.fromkeys(p for p in (_provider_of(t) for t in tools or ()) if p))
+        if ids:
+            out[_text(agent).lower()] = ids
     return out
 
 
@@ -544,8 +604,8 @@ def tools_record(container: Any, entries: Iterable[Any] = ()) -> dict[str, Any]:
     try:
         from malspark.tools.capabilities import package_version, reported_requirements
 
-        own_servers = _own_servers(container)
-        served, in_process = _served(container, entries, own_servers)
+        own_servers, by_provider = _own_servers(container)
+        served, in_process = _served(container, entries, own_servers, by_provider)
         registry = getattr(container, "_server_registry_cache", None)
         versions_of = getattr(registry, "server_versions", None)
         versions = dict(versions_of()) if callable(versions_of) else {}
@@ -586,6 +646,314 @@ def tools_record(container: Any, entries: Iterable[Any] = ()) -> dict[str, Any]:
         return {}
 
 
+# How much of what a provider states a row keeps: the longest text, the most
+# entries of a mapping and the most report parts.
+STATED_TEXT_CHARS = 200
+STATED_ENTRIES = 32
+STATED_PARTS = 64
+# How much of a provider's text is read at all, before any other work is done
+# on it: room for the kept width once its whitespace is folded and a
+# credential in it is masked.
+STATED_READ_CHARS = 2 * STATED_TEXT_CHARS
+_SHA256 = re.compile(r"[0-9a-f]{64}")
+
+
+def _scalar(value: Any) -> bool:
+    """Whether ``value`` states something as one value: a non-empty text or a number."""
+    if isinstance(value, bool):
+        return False
+    return isinstance(value, int | float) or (isinstance(value, str) and bool(value.strip()))
+
+
+def _readable(value: Any) -> tuple[str, bool]:
+    """The part of a stated text that is read (:func:`_said`), and whether it was cut."""
+    whole = value if isinstance(value, str) else str(value)
+    cut = len(whole) > STATED_READ_CHARS
+    text = " ".join(whole[:STATED_READ_CHARS].split())
+    text = "".join(ch for ch in text if not unicodedata.category(ch).startswith("C"))
+    if cut and not whole[STATED_READ_CHARS].isspace() and text and not text[-1].isspace():
+        # The cut is inside the last word: none of it is kept.
+        text = text.rsplit(" ", 1)[0] if " " in text else ""
+    return text, cut
+
+
+_MASKED_KEY = "***"
+
+
+def _said(value: Any, *, prose: bool = False, name: bool = False) -> str:
+    """A text a provider or a sandbox wrote, fit to keep: one line, no control
+    character, no credential in a URL or a held secret value (``redact_url``,
+    in every encoding the registry holds), no value the event scrub holds
+    (``mask_configured_values``), no path of this host (``host_paths_masked``),
+    and cut with the cut mark.
+
+    The masking protects against a secret that the code behind a provider, or
+    its sandbox, echoes into a fact whole, in a value or in a key. It does
+    not defend against code that splits a secret across several places on
+    purpose: such code holds the secret and has other ways to leak it.
+
+    That is the rule for an identifier (a task id, a guest fact, a version, a
+    time, a part name) while the worker's held values are registered
+    (``pipeline.events._rows_kept_as_written``): the masks act on known
+    things, so an image name or a commit hash reads as stated. Where they are
+    not registered nothing is known, and an identifier also passes the
+    finding-row scrub (``safe_finding_value``), which masks what is shaped like
+    a credential, so one that looks like a credential may read ``***``.
+    ``prose`` (free text, a failure's reason) passes the whole event scrub
+    (``scrub``: held values and credential shapes) in both states. A ``name``
+    (a key a provider stated) is masked as a value is; where nothing is
+    registered it is read whole, and if that masks anything the key reads
+    ``***``, and else piece by piece between ``/`` so a place such as
+    ``/info/id`` keeps its segments.
+
+    The text is cut to ``STATED_READ_CHARS`` before anything else is done with
+    it, so its length costs nothing; the masks then read at most that. Where
+    that cut falls inside a word, read once whitespace is folded and control
+    characters are gone, the word is not kept, also when it is the only one: a
+    credential or an address cut in half is not one a mask recognises. A text
+    emptied so reads as the cut mark.
+    """
+    from malspark.core.paths import host_paths_masked
+    from malspark.pipeline.events import _rows_kept_as_written, safe_finding_value, scrub
+    from malspark.utils.marked_cut import CUT_MARK, marked_cut
+
+    text, cut = _readable(value)
+    kept = _known_masked(host_paths_masked(text.rstrip()))
+    if prose:
+        # Free text: shaped credentials are masked whether or not values are held.
+        kept = scrub(kept)
+    elif not _rows_kept_as_written():
+        if not name:
+            kept = safe_finding_value(kept)
+        elif safe_finding_value(kept.replace("/", "A")) != kept.replace("/", "A"):
+            # A ``/`` stands for a letter, so a token that holds one is read whole.
+            kept = _MASKED_KEY
+        else:
+            kept = "/".join(safe_finding_value(piece) for piece in kept.split("/"))
+    if cut and len(kept) <= STATED_TEXT_CHARS:
+        # Shorter than the width once read, and still a cut text.
+        return kept[: STATED_TEXT_CHARS - len(CUT_MARK)].rstrip() + CUT_MARK
+    return marked_cut(kept, STATED_TEXT_CHARS)
+
+
+def _known_masked(text: str) -> str:
+    """``text`` with every credential in a URL and every held value masked; no shape guess."""
+    from malspark.core.settings_overrides import redact_url
+    from malspark.pipeline.events import mask_configured_values
+
+    return mask_configured_values(redact_url(text))
+
+
+def _stated_text(held: Any) -> str:
+    """A text a provider stated as one value, kept (:func:`_said`); ``"not reported"`` for none."""
+    return _said(held) if _scalar(held) else NOT_REPORTED
+
+
+def _stated_text_of(stated: Mapping[str, Any], key: str) -> str:
+    """The text a provider stated under ``key`` (:func:`_stated_text`)."""
+    return _stated_text(stated.get(key))
+
+
+def _named_texts(held: Any, *, nested: bool, secret: bool = False) -> dict[str, Any] | str:
+    """A provider's mapping of names to texts, kept as stated; ``"not reported"`` for none.
+
+    ``nested`` keeps one level of mappings under a name (a guest per task). A
+    value whose name is a secret's (``settings_overrides._secret_name``, the
+    rule ``redact_url`` applies to a query parameter) is ``***``, and so is
+    each text of a mapping under such a name (``secret``); the name itself is
+    kept as stated.
+    """
+    from malspark.core.settings_overrides import _secret_name
+
+    if not isinstance(held, Mapping):
+        return NOT_REPORTED
+    out: dict[str, Any] = {}
+    for key, value in list(held.items())[:STATED_ENTRIES]:
+        name = _said(key, name=True)
+        if not name:
+            continue
+        hides = secret or _secret_name(str(key))
+        if _scalar(value):
+            out[name] = _MASKED_KEY if hides else _said(value)
+        elif nested and isinstance(value, Mapping):
+            inner = _named_texts(value, nested=False, secret=hides)
+            if isinstance(inner, dict):
+                out[name] = inner
+    return out or NOT_REPORTED
+
+
+def _report_parts(held: Any) -> tuple[list[dict[str, Any]] | str, str]:
+    """The report parts a provider listed, each with a SHA-256 and a length; and what was cut.
+
+    A part without a digest of 64 hexadecimal digits or a length is left out.
+    """
+    if not isinstance(held, list):
+        return NOT_REPORTED, ""
+    rows: list[dict[str, Any]] = []
+    for part in held:
+        if not isinstance(part, Mapping):
+            continue
+        digest = str(part.get("sha256") or "").lower()
+        size = part.get("bytes")
+        if not _SHA256.fullmatch(digest) or isinstance(size, bool) or not isinstance(size, int):
+            continue
+        if size < 0:
+            continue
+        name = _said(part.get("name")) if _scalar(part.get("name")) else ""
+        rows.append({"name": name or NOT_REPORTED, "sha256": digest, "bytes": size})
+    if len(rows) > STATED_PARTS:
+        return rows[:STATED_PARTS], f"{len(rows) - STATED_PARTS} more part(s) left out"
+    return rows, ""
+
+
+# The fields that name a detonation; where one cannot be read it is ``"not
+# reported"``, so the row still says which detonation and which provider it is.
+_IDENTITY = frozenset({"detonation", "origin", "provider", "task_id"})
+_UNREAD = object()
+
+
+def _read(row: dict[str, Any], key: str, read: Callable[[], Any]) -> Any:
+    """``row[key]`` set to what ``read`` gives; where it fails, ``_UNREAD``.
+
+    A field that cannot be read is left out of the row, an identity field
+    (``_IDENTITY``) excepted: that one is ``"not reported"``.
+    """
+    try:
+        row[key] = read()
+    except Exception as exc:  # noqa: BLE001 — a field that cannot be read is left out
+        logger.debug("run environment: %s of a detonation was not read (%s).", key, exc)
+        if key in _IDENTITY:
+            row[key] = NOT_REPORTED
+        else:
+            row.pop(key, None)
+        return _UNREAD
+    return row[key]
+
+
+def _askers(record: Any) -> list[str]:
+    askers = [
+        str(asker.get("agent"))
+        for asker in record.requested_by or ()
+        if isinstance(asker, Mapping) and asker.get("agent")
+    ]
+    return list(dict.fromkeys(askers))
+
+
+def _launch(row: dict[str, Any], record: Any) -> None:
+    """The launch text asked for, exactly, and what the launch record says became of it."""
+    # The exact text, as the job or the agents gave it: JSON keeps it as
+    # it is, and a surface that prints it writes it inert
+    # (``reporting.detonation_marks.launch_text``).
+    row["launched_with"] = str(record.arguments)
+    launch = record.launch if isinstance(record.launch, Mapping) else {}
+    honoured = launch.get("honoured")
+    row["arguments_honoured"] = honoured if isinstance(honoured, bool) else NOT_REPORTED
+    if launch.get("via"):
+        row["arguments_via"] = _said(launch["via"])
+
+
+def _detonation_row(record: Any) -> dict[str, Any]:
+    """One detonation as the environment records it (:func:`detonations_record`).
+
+    Each field is read on its own: one that cannot be read is left out of the
+    row (an identity field is ``"not reported"``), and the row keeps every
+    other field.
+    """
+    row: dict[str, Any] = {}
+    _read(row, "detonation", lambda: record.name)
+    _read(row, "origin", lambda: str(record.origin))
+    if not _read(row, "requested_by", lambda: _askers(record)):
+        row.pop("requested_by", None)
+    try:
+        asked_for = bool(record.arguments)
+    except Exception:  # noqa: BLE001 — no launch text read is none recorded
+        asked_for = False
+    if asked_for:
+        try:
+            _launch(row, record)
+        except Exception as exc:  # noqa: BLE001 — what is not read is not reported
+            logger.debug("run environment: a detonation's launch was not read (%s).", exc)
+            for key in ("launched_with", "arguments_honoured", "arguments_via"):
+                row.pop(key, None)
+    _read(row, "provider", lambda: _said(record.provider) if record.provider else NOT_REPORTED)
+    _read(row, "task_id", lambda: _stated_text(record.task_id))
+    reported = _read(row, "reported", lambda: bool(record.reported))
+    if not _read(
+        row, "failure", lambda: _said(record.failure, prose=True) if record.failure else ""
+    ):
+        row.pop("failure", None)
+    try:
+        facts = record.sandbox_facts if isinstance(record.sandbox_facts, dict) else None
+    except Exception:  # noqa: BLE001 — facts that cannot be read are none stated
+        facts = None
+    stated = facts or {}
+    detonated = _read(row, "detonated", lambda: stated.get("detonated"))
+    if detonated is not _UNREAD:
+        row["detonated"] = detonated if isinstance(detonated, bool) else NOT_REPORTED
+    _read(row, "task_ids", lambda: _named_texts(stated.get("task_ids"), nested=False))
+    _read(row, "guest", lambda: _named_texts(stated.get("guest"), nested=True))
+    for key in ("sandbox_version", "sandbox_commit", "started", "ended"):
+        _read(row, key, functools.partial(_stated_text_of, stated, key))
+    if facts is None and reported is False:
+        # No report was read, so no part of one was.
+        row["report_parts"] = []
+    else:
+        parts = _read(row, "report_parts", lambda: _report_parts(stated.get("report_parts")))
+        if isinstance(parts, tuple):
+            row["report_parts"], cut = parts
+            if cut:
+                row["report_parts_cut"] = cut
+    return row
+
+
+def detonations_record(container: Any) -> list[dict[str, Any]] | None:
+    """Per detonation of the job's sample, what the run needs to cite its dynamic evidence.
+
+    ``None`` for a container that keeps no detonations; an empty list for a
+    job that asked no sandbox for anything (no sandbox submission made and no
+    report read: no sample file, or mock mode). Each row, in the order the
+    detonations were made:
+
+    * ``detonation`` (``d1`` for the job's own, ``d2``…), ``origin`` (``job``
+      or ``agent``) and, for an agent's, ``requested_by``, the agents that asked;
+    * ``launched_with``, the launch text asked for, exactly, with
+      ``arguments_honoured`` and ``arguments_via`` from the launch record;
+      absent where none was asked for;
+    * ``provider``, the sandbox provider's declared id; ``task_id``, the task
+      its submission answered; ``reported``, whether a report came back, and
+      ``failure``, why not, where none did;
+    * what the provider stated of the run (``SandboxProvider.detonation_facts``,
+      kept on the record by ``providers.detonation.stated_by``): ``detonated``,
+      ``task_ids``, ``guest``, ``sandbox_version``, ``sandbox_commit``,
+      ``started``, ``ended`` (each one text, in the sandbox's own clock) and
+      ``report_parts`` (each part's name, SHA-256 and byte length as read).
+
+    A fact the provider did not state is ``"not reported"``, never a guess
+    and never a value taken from another fact. A detonation that read no
+    report has no parts (an empty list); one whose report was read keeps the
+    parts it read, also where a later step failed. What a provider or its
+    sandbox wrote is kept to the contract's keys, any other key not recorded,
+    and capped (``STATED_TEXT_CHARS``,
+    ``STATED_ENTRIES``, ``STATED_PARTS``), with no credential and no path of
+    this host (:func:`_said`). A platform field that cannot be read is left
+    out of the row, and the row keeps the others and its identity (the
+    detonation, its origin, provider and task id, each ``"not reported"``
+    where unreadable): no detonation is left out, and this never raises.
+    """
+    held = getattr(container, "detonations", None)
+    if not isinstance(held, list):
+        return None
+    rows: list[dict[str, Any]] = []
+    for record in held:
+        try:
+            asked = bool(getattr(record, "provider", "") or getattr(record, "failure", None))
+        except Exception:  # noqa: BLE001 — a record that cannot say is recorded
+            asked = True
+        if asked:
+            rows.append(_detonation_row(record))
+    return rows
+
+
 def environment_record(container: Any, entries: Iterable[Any] = ()) -> dict[str, Any] | None:
     """``run_summary.environment`` as of now, or ``None`` where nothing was read. Never raises.
 
@@ -600,6 +968,9 @@ def environment_record(container: Any, entries: Iterable[Any] = ()) -> dict[str,
         tools = tools_record(container, entries)
         if tools:
             record["tools"] = tools
+        detonations = detonations_record(container)
+        if detonations is not None:
+            record["detonations"] = detonations
         registry = getattr(container, "_llm_registry", None)
         sent_of = getattr(registry, "sent_requests", None)
         sent = list(sent_of()) if callable(sent_of) else []
@@ -611,8 +982,11 @@ def environment_record(container: Any, entries: Iterable[Any] = ()) -> dict[str,
             _ledger_map(ledger, "answers_by_position"),
             _ledger_map(ledger, "reduced_response_models"),
         )
+        for agent, provider_ids in held_providers(container).items():
+            block = agents.setdefault(agent, {"requests": [], "response_models": {}})
+            block["static_providers"] = provider_ids
         if agents:
-            record["agents"] = agents
+            record["agents"] = dict(sorted(agents.items()))
         return record if len(record) > 1 else None
     except Exception as exc:  # noqa: BLE001 — telemetry never breaks a summary
         logger.debug("run environment: not recorded (%s).", exc)

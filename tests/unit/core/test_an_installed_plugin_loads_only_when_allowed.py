@@ -675,6 +675,31 @@ class TestADroppedPluginStillSelectedIsNamed:
         }
         assert "drops from the plugin allow-list" in errors["core.static.provider"]
 
+    def test_a_provider_named_only_on_a_tool_reference_is_named_too(
+        self, installed: dict[str, list[FakePoint]]
+    ) -> None:
+        installed["static"].append(FakePoint("acme", AcmeStatic))
+        core = {
+            "agents.definitions": {
+                "reader": {
+                    "role": "generic",
+                    "tools": [
+                        {"kind": "mcp", "server": "knowledge"},
+                        {"kind": "provider"},
+                        {"kind": "provider", "provider": "acme"},
+                    ],
+                }
+            },
+        }
+        assert ("core.agents.definitions.reader.tools.2.provider", "static", "acme") in (
+            plugins.selections(core)
+        )
+        errors = plugins.dropped_selections(["static:acme"], [], core)
+        assert set(errors) == {
+            "core.agents.definitions.reader.tools.2.provider",
+            "core.plugins.allowed",
+        }
+
     def test_a_drop_nothing_selects_and_a_shipped_id_pass(self) -> None:
         core = {"static.provider": "ghidra", "memory.backend": "qdrant"}
         assert plugins.dropped_selections(["static:ghidra", "static:acme"], [], core) == {}

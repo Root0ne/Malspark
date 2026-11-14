@@ -576,14 +576,14 @@ def test_one_provider_that_did_not_open_the_sample_leaves_the_loop_to_the_other(
     analyst = _analyst(providers, (FIRST, SECOND))
     analyst._stop_if_the_sample_did_not_open()
     assert analyst.degradation_reasons == [
-        f"agent 'reader': static provider '{FIRST}' could not open the sample"
+        f"agent 'reader': static provider '{FIRST}' could not open the sample (G cannot)"
     ]
     # The other way round: the second fails, the first carries the loop.
     providers = {FIRST: _Opening(FIRST), SECOND: _Opening(SECOND, SampleNotOpened("R."))}
     analyst = _analyst(providers, (FIRST, SECOND))
     analyst._stop_if_the_sample_did_not_open()
     assert analyst.degradation_reasons == [
-        f"agent 'reader': static provider '{SECOND}' could not open the sample"
+        f"agent 'reader': static provider '{SECOND}' could not open the sample (R)"
     ]
 
 
@@ -607,13 +607,45 @@ def test_the_pre_pass_opens_the_sample_on_each_provider_and_goes_on_past_one_tha
         SECOND: _Opening(SECOND),
     }
     analyst = _analyst(providers, (FIRST, SECOND))
-    assert analyst._prepare_on_each(analyst._held_providers(), "/m/s") == ""
+    # The one that could not is told to the agent; the other gave no hint.
+    assert analyst._prepare_on_each(analyst._held_providers(), "/m/s") == (
+        f"Static provider '{FIRST}': G cannot. Its tools answer "
+        "with that failure; the other static providers' tools read the sample."
+    )
     assert providers[SECOND].opened_paths == ["/m/s"]
     assert len(analyst.degradation_reasons) == 1
 
     providers[SECOND].failure = SampleNotOpened("R.", provider=SECOND)
     with pytest.raises(SampleNotOpened):
         analyst._prepare_on_each(analyst._held_providers(), "/m/s")
+
+
+def test_the_agent_is_told_the_cause_once_and_the_limitation_holds_the_fix_too():
+    from malspark.core.exceptions import SampleNotOpened
+
+    # The shape a real provider raises: no closing period, an operator's fix after the cause.
+    cause = "Ghidra could not open the job's sample: file not found"
+    fix = "check core.static.ghidra.sample_mount / the container mount"
+    failure = SampleNotOpened(f"{cause}; {fix}", provider=FIRST, cause=cause, fix=fix)
+    providers = {FIRST: _Opening(FIRST, failure), SECOND: _Opening(SECOND)}
+    analyst = _analyst(providers, (FIRST, SECOND))
+    told = analyst._prepare_on_each(analyst._held_providers(), "/m/s")
+    assert told == (
+        f"Static provider '{FIRST}': {cause}. Its tools answer with that failure; "
+        "the other static providers' tools read the sample."
+    )
+    assert told.count("could not open") == 1
+    assert "sample_mount" not in told and "mount" not in told
+    assert analyst.degradation_reasons == [
+        f"agent 'reader': static provider '{FIRST}' could not open the sample ({cause}; {fix})"
+    ]
+
+
+def test_a_failure_given_no_parts_is_all_cause():
+    from malspark.core.exceptions import SampleNotOpened
+
+    failure = SampleNotOpened("whole sentence", provider=FIRST)
+    assert (failure.cause, failure.fix, str(failure)) == ("whole sentence", "", "whole sentence")
 
 
 def test_an_agent_with_one_provider_keeps_the_base_check():
@@ -677,3 +709,253 @@ def test_aggregate_notes_name_a_tool_by_its_fully_qualified_fallback():
         "open_file": "mcp__box__open_file",
         "list": "list",
     }
+
+
+# --- each provider's tools are given that provider's own mirror ------------
+
+
+class _Reading(_Provider):
+    """A provider whose one tool reads the path it is given and says whose it was."""
+
+    def get_tools(self) -> list[Any]:
+        owner = self.id
+
+        def read(path: str) -> str:
+            return f"{owner}:{path}"
+
+        return [StructuredTool.from_function(func=read, name="read", description="read")]
+
+
+MIRRORS = {FIRST: "/mirrors/first/sample.bin", SECOND: "/mirrors/second/sample.bin"}
+
+
+def _staged_analyst(container: Any, resolved: Any, mirrors: dict[str, str] | None = None) -> Any:
+    """A generic analyst on ``resolved``, its sample pinned as the analyst node pins it."""
+    import logging
+
+    from malspark.agents.configurable_analyst import ConfigurableAnalyst
+    from malspark.pipeline.nodes import _pin_sample_path
+
+    analyst = object.__new__(ConfigurableAnalyst)
+    analyst.name = "reader"
+    analyst.logger = logging.getLogger("test.reader")
+    analyst.degradation_reasons = []
+    analyst._container = container
+    analyst._resolved = resolved
+    analyst.tools = list(resolved.tools)
+    analyst._captures = ()
+    _pin_sample_path(
+        analyst,
+        {
+            "static_sample_paths": dict(MIRRORS if mirrors is None else mirrors),
+            "static_sample_path": "/mirrors/global/sample.bin",
+            "sample_path": "/host/sample.bin",
+        },
+    )
+    return analyst
+
+
+def _reading_providers() -> dict[str, _Provider]:
+    return {FIRST: _Reading(FIRST, []), SECOND: _Reading(SECOND, [])}
+
+
+def test_the_second_providers_tool_is_given_the_second_providers_mirror():
+    """The path the agent is told is its first provider's; each tool gets its own provider's."""
+    container = _Container(_two(), _reading_providers())
+    resolved = resolve_agent("reader", container)
+    analyst = _staged_analyst(container, resolved)
+    assert analyst._analysis_file_path == MIRRORS[FIRST]
+
+    by_name = {t.name: t for t in analyst.pinned_tools()}
+    told = analyst._analysis_file_path
+    assert by_name["read"].invoke({"path": told}) == f"{FIRST}:{MIRRORS[FIRST]}"
+    assert by_name[f"{SECOND}__read"].invoke({"path": told}) == f"{SECOND}:{MIRRORS[SECOND]}"
+    # The bare file name means the sample on either provider, each its own copy.
+    assert by_name[f"{SECOND}__read"].invoke({"path": "sample.bin"}) == (
+        f"{SECOND}:{MIRRORS[SECOND]}"
+    )
+    # A path the model names that is no spelling of the sample is its own choice.
+    assert by_name[f"{SECOND}__read"].invoke({"path": "/elsewhere/rules.yar"}) == (
+        f"{SECOND}:/elsewhere/rules.yar"
+    )
+
+
+class _ReadingAndOpening(_Reading):
+    """A reading provider that also records the sample it was asked to open."""
+
+    def __init__(self, provider_id: str, *, needs_mirror: bool = True, failure: Any = None) -> None:
+        super().__init__(provider_id, [])
+        self.failure = failure
+        self.opened_paths: list[str] = []
+        self.capabilities = type(  # type: ignore[assignment,misc]
+            "caps", (), {"provides_tools": True, "needs_sample_mirror": needs_mirror}
+        )
+
+    def sample_failure(self, path: str | None = None) -> Any:
+        return self.failure
+
+    def open_sample(self, path: str | None = None) -> bool:
+        if self.failure is not None:
+            raise self.failure
+        self.opened_paths.append(str(path))
+        return True
+
+
+def test_a_provider_that_needs_no_mirror_is_given_the_host_path():
+    providers = {
+        FIRST: _ReadingAndOpening(FIRST),
+        SECOND: _ReadingAndOpening(SECOND, needs_mirror=False),
+    }
+    container = _Container(_two(), providers)
+    analyst = _staged_analyst(
+        container, resolve_agent("reader", container), {FIRST: MIRRORS[FIRST]}
+    )
+    assert analyst._path_by_provider == {FIRST: MIRRORS[FIRST], SECOND: "/host/sample.bin"}
+    by_name = {t.name: t for t in analyst.pinned_tools()}
+    told = analyst._analysis_file_path
+    assert by_name["read"].invoke({"path": told}) == f"{FIRST}:{MIRRORS[FIRST]}"
+    assert by_name[f"{SECOND}__read"].invoke({"path": told}) == f"{SECOND}:/host/sample.bin"
+    analyst._prepare_on_each(analyst._held_providers(), told)
+    assert providers[FIRST].opened_paths == [MIRRORS[FIRST]]
+    assert providers[SECOND].opened_paths == ["/host/sample.bin"]
+
+
+def test_a_provider_with_no_mirror_is_never_pointed_at_another_providers_mirror():
+    from malspark.core.exceptions import SampleNotOpened
+
+    failure = SampleNotOpened("R cannot read it.", provider=SECOND)
+    providers = {
+        FIRST: _ReadingAndOpening(FIRST),
+        SECOND: _ReadingAndOpening(SECOND, failure=failure),
+    }
+    container = _Container(_two(), providers)
+    analyst = _staged_analyst(
+        container, resolve_agent("reader", container), {FIRST: MIRRORS[FIRST]}
+    )
+    by_name = {t.name: t for t in analyst.pinned_tools()}
+    told = analyst._analysis_file_path
+    assert told == MIRRORS[FIRST]
+    assert by_name["read"].invoke({"path": "sample.bin"}) == f"{FIRST}:{MIRRORS[FIRST]}"
+    # The second provider's tool keeps what the model gave; the provider's own guard answers.
+    assert by_name[f"{SECOND}__read"].invoke({"path": "sample.bin"}) == f"{SECOND}:sample.bin"
+    # It is not asked to open a path that was never its own, so it is not told it could not.
+    hint = analyst._prepare_on_each(analyst._held_providers(), told)
+    assert providers[SECOND].opened_paths == []
+    assert providers[FIRST].opened_paths == [MIRRORS[FIRST]]
+    assert "could not open" not in hint and "Static provider" not in hint
+    assert not any("could not open" in reason for reason in analyst.degradation_reasons)
+
+
+def test_the_agent_is_stopped_when_every_provider_that_could_be_tried_failed():
+    from malspark.core.exceptions import SampleNotOpened
+
+    failure = SampleNotOpened("R cannot read it.", provider=SECOND)
+    providers = {FIRST: _Opening(FIRST), SECOND: _Opening(SECOND, failure)}
+    analyst = _analyst(providers, (FIRST, SECOND))
+    analyst._path_by_provider = {FIRST: "", SECOND: MIRRORS[SECOND]}
+    analyst.tools = []
+    with pytest.raises(SampleNotOpened) as exc:
+        analyst._prepare_on_each(analyst._held_providers(), MIRRORS[FIRST])
+    assert exc.value is failure
+    assert providers[FIRST].opened_paths == []
+
+
+def test_an_agent_none_of_whose_providers_has_a_mirror_is_stopped_with_the_reason_once():
+    from malspark.agents.composition import NOT_MIRRORED_REASON
+    from malspark.core.exceptions import SampleNotOpened
+
+    providers = {FIRST: _ReadingAndOpening(FIRST), SECOND: _ReadingAndOpening(SECOND)}
+    container = _Container(_two(), providers)
+    analyst = _staged_analyst(container, resolve_agent("reader", container), {})
+    assert analyst._path_by_provider == {FIRST: "", SECOND: ""}
+    with pytest.raises(SampleNotOpened) as exc:
+        analyst._prepare_on_each(analyst._held_providers(), analyst._analysis_file_path)
+    reasons = [NOT_MIRRORED_REASON.format(provider=pid) for pid in (FIRST, SECOND)]
+    said = "; ".join(reasons)
+    assert exc.value.cause == said and str(exc.value) == said
+    assert providers[FIRST].opened_paths == providers[SECOND].opened_paths == []
+    # The pinning wrote each reason once, on the agent and on the run; this path wrote none.
+    assert analyst.degradation_reasons == reasons
+    assert container._registry.degradation_reasons == reasons
+
+
+def test_a_long_cause_is_told_on_one_line_within_the_quote_width_and_marked_as_cut():
+    from malspark.core.exceptions import SampleNotOpened
+    from malspark.tools.errors import SERVER_WORDS_LIMIT
+    from malspark.utils.marked_cut import CUT_MARK
+
+    cause = "\n".join(f"line {n} of what the provider said" for n in range(200))
+    assert len(cause) > 5000
+    failure = SampleNotOpened(cause, provider=FIRST)
+    providers = {FIRST: _Opening(FIRST, failure), SECOND: _Opening(SECOND)}
+    analyst = _analyst(providers, (FIRST, SECOND))
+    told = analyst._prepare_on_each(analyst._held_providers(), "/m/s")
+    assert "\n" not in told.split(" Its tools answer")[0]
+    head = told.split(": ", 1)[1].split(CUT_MARK + " Its tools")[0] + CUT_MARK
+    assert len(head) <= SERVER_WORDS_LIMIT and head.endswith(CUT_MARK)
+    assert "\n" not in told
+
+
+def test_an_agent_with_one_provider_has_no_path_per_provider():
+    cfg = _settings([{"kind": "provider"}], static_provider=SECOND)
+    container = _Container(cfg, _reading_providers())
+    analyst = _staged_analyst(container, resolve_agent("reader", container))
+    assert analyst._path_by_provider == {}
+    (tool,) = analyst.pinned_tools()
+    assert tool.invoke({"path": "sample.bin"}) == f"{SECOND}:{MIRRORS[SECOND]}"
+
+
+def test_the_pre_pass_opens_each_provider_on_its_own_mirror():
+    providers = {FIRST: _Opening(FIRST), SECOND: _Opening(SECOND)}
+    analyst = _analyst(providers, (FIRST, SECOND))
+    analyst._path_by_provider = dict(MIRRORS)
+    analyst.tools = []
+    analyst._prepare_on_each(analyst._held_providers(), MIRRORS[FIRST])
+    assert providers[FIRST].opened_paths == [MIRRORS[FIRST]]
+    assert providers[SECOND].opened_paths == [MIRRORS[SECOND]]
+
+
+def test_a_callee_with_two_providers_is_briefed_with_each_providers_mirror():
+    from types import SimpleNamespace
+
+    from malspark.agents.delegation import _brief_callee
+
+    container = _Container(_two(), _reading_providers())
+    resolved = resolve_agent("reader", container)
+    callee = _staged_analyst(container, resolved)
+    callee._path_by_provider = {}
+    caller = SimpleNamespace(
+        name="lead",
+        sample_path_choices={"by_provider": dict(MIRRORS), "static": None, "host": None},
+        _analysis_file_path="/mirrors/global/sample.bin",
+    )
+    _brief_callee(caller, callee, stage="analysis", round_index=0)
+    by_name = {t.name: t for t in callee.pinned_tools()}
+    told = callee._analysis_file_path
+    assert told == MIRRORS[FIRST]
+    assert by_name[f"{SECOND}__read"].invoke({"path": told}) == f"{SECOND}:{MIRRORS[SECOND]}"
+
+
+def test_a_provider_that_did_not_open_is_told_to_the_agent_and_kept_on_the_run():
+    from malspark.core.exceptions import SampleNotOpened
+
+    registry = _Registry()
+    providers = {
+        FIRST: _Opening(FIRST),
+        SECOND: _Opening(SECOND, SampleNotOpened("R cannot read it.", provider=SECOND)),
+    }
+    analyst = _analyst(providers, (FIRST, SECOND))
+    analyst._container.get_server_registry = lambda: registry
+    analyst.tools = []
+    hint = analyst._prepare_on_each(analyst._held_providers(), "/m/s")
+    reason = (
+        f"agent 'reader': static provider '{SECOND}' could not open the sample (R cannot read it)"
+    )
+    assert analyst.degradation_reasons == [reason]
+    assert registry.degradation_reasons == [reason]
+    assert f"Static provider '{SECOND}': R cannot read it." in hint
+    assert providers[FIRST].opened_paths == ["/m/s"]
+
+    # A later loop of the job reads the remembered failure and records it once.
+    analyst._stop_if_the_sample_did_not_open()
+    assert registry.degradation_reasons == [reason]

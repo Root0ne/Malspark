@@ -124,6 +124,27 @@ class TestWhatATeamSelectsIsSelectedForRuns:
             "static:acme_static"
         ]
 
+    def test_the_agent_probe_loads_a_plugin_an_agent_names_only_on_a_reference(
+        self, installed: dict[str, list[FakePoint]]
+    ) -> None:
+        from app.services import plugins as api_plugins
+
+        installed["static"].append(FakePoint("acme_static", AcmeStatic))
+        core = {
+            "agents.definitions": {
+                "reader": {
+                    "role": "generic",
+                    "tools": [{"kind": "provider", "provider": "acme_static"}],
+                },
+                "other": {"role": "generic", "tools": []},
+            }
+        }
+        allowed = ["static:acme_static"]
+        assert api_plugins.selected_plugins(core, allowed, ("static",), "reader") == [
+            "static:acme_static"
+        ]
+        assert api_plugins.selected_plugins(core, allowed, ("static",), "other") == []
+
     def test_the_mirrored_work_dirs_count_a_team_s_static_provider(self) -> None:
         from malspark.core.tool_declarations import selected_static_providers
 

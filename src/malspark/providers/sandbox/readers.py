@@ -129,6 +129,29 @@ class ReportReader(ABC):
         fmt = self.builtin_format()
         return fmt.signature_scale if fmt is not None else None
 
+    def run_facts(self, payload: Any, fmt: Any = None, **context: Any) -> dict[str, Any]:
+        """What ``payload`` states about the sandbox run it records, as the report names it.
+
+        The keys of ``SandboxProvider.detonation_facts`` a report can give:
+        ``task_ids`` (each identifier under the place it sits), ``guest``,
+        ``sandbox_version``, ``sandbox_commit``, ``started`` and ``ended``.
+        Each only where the report states it; a reader that knows none of
+        them gives nothing. ``fmt`` is the format declaration the provider
+        read the report as for this job, shipped or the operator's;
+        ``context`` carries the other parts the provider read beside it (as
+        :meth:`read` takes them). This one gives the task id where ``fmt``
+        says it sits, else where the shipped declaration of the reader's id
+        does, named by that place.
+        """
+        from malspark.core.tool_declarations import select
+
+        fmt = fmt if fmt is not None else self.builtin_format()
+        for path in getattr(fmt, "task_id_paths", None) or ():
+            for value in select(payload, path):
+                if _stated(value):
+                    return {"task_ids": {path: str(value)}}
+        return {}
+
     def name_for_text(self, fmt: Any = None) -> str:
         """The name published text gives the sandbox: the format's, else the reader's own."""
         if fmt is not None:
@@ -242,6 +265,22 @@ def report_reader(reader_id: str) -> ReportReader | None:
     """The reader registered under ``reader_id``, or ``None``."""
     _read_entry_points()
     return _READERS.get(str(reader_id or ""))
+
+
+def run_facts_of(
+    reader: ReportReader, payload: Any, fmt: Any = None, **context: Any
+) -> dict[str, Any] | None:
+    """What ``reader`` reads of the run ``payload`` records (``ReportReader.run_facts``).
+
+    ``None`` where it cannot say (a reader that fails, or answers something
+    that is not a mapping): reading a report never fails for it.
+    """
+    try:
+        held = reader.run_facts(payload, fmt, **context)
+    except Exception as exc:  # noqa: BLE001 — a reader that cannot say states nothing
+        logger.debug("the report reader stated nothing of its run (%s).", type(exc).__name__)
+        return None
+    return dict(held) if isinstance(held, Mapping) else None
 
 
 def required_reader(reader_id: str) -> ReportReader:
@@ -373,6 +412,13 @@ def sandbox_format_named(name: str, formats: Iterable[Any]) -> Any:
     return None
 
 
+def _stated(value: Any) -> bool:
+    """Whether a report's value states something: a non-empty string or a number."""
+    if isinstance(value, bool):
+        return False
+    return isinstance(value, int | float) or (isinstance(value, str) and bool(value.strip()))
+
+
 # -- the built-in readers ---------------------------------------------------
 
 
@@ -413,6 +459,45 @@ class CapeReportReader(ReportReader):
         )
 
         return Reading(CAPE_NORMALISER_FILLS, rendered=read_from == READ_FROM_MODEL)
+
+    def run_facts(self, payload: Any, fmt: Any = None, **context: Any) -> dict[str, Any]:
+        """The task id where the format says it sits, and the report's ``info`` block.
+
+        From ``info``: the machine, CAPE's analysis machine as the report
+        names it (its ``name``, ``label``, ``platform``, ``arch`` and
+        ``manager``; an older report names it by one string); ``version``
+        and ``CAPE_current_commit``, the sandbox's build; ``started`` and
+        ``ended``, as the sandbox host's clock wrote them. A reader of this
+        shape with no shipped declaration of its own (the mock's fixture)
+        reads the task id where CAPE's says it sits.
+        """
+        if fmt is None and self.builtin_format() is None:
+            fmt = format_named(CapeReportReader.id)
+        facts = super().run_facts(payload, fmt)
+        info = payload.get("info") if isinstance(payload, Mapping) else None
+        if not isinstance(info, Mapping):
+            return facts
+        machine = info.get("machine")
+        if isinstance(machine, Mapping):
+            guest = {
+                key: str(machine[key])
+                for key in ("name", "label", "platform", "arch", "manager")
+                if _stated(machine.get(key))
+            }
+        else:
+            guest = {"name": str(machine)} if _stated(machine) else {}
+        if guest:
+            facts["guest"] = guest
+        for key, place in (
+            ("sandbox_version", "version"),
+            ("sandbox_commit", "CAPE_current_commit"),
+            ("started", "started"),
+        ):
+            if _stated(info.get(place)):
+                facts[key] = str(info[place])
+        if _stated(info.get("ended")):
+            facts["ended"] = str(info["ended"])
+        return facts
 
 
 @register_report_reader
@@ -494,6 +579,47 @@ class TriageReportReader(ReportReader):
         if read_from == READ_FROM_OVERVIEW:
             return Reading(TRIAGE_OVERVIEW_FILLS, partial=self.PARTIAL)
         return Reading(TRIAGE_NORMALISER_FILLS)
+
+    # What a behavioural task's row in the overview, and its task report's
+    # ``task`` block, say of the machine the task ran in: ``resource`` is the
+    # machine image, ``os`` its operating system, ``platform`` its family.
+    # ``target`` is the analysed file and ``backend`` the sandbox's own worker.
+    GUEST_KEYS = ("resource", "os", "platform")
+
+    def run_facts(self, payload: Any, fmt: Any = None, **context: Any) -> dict[str, Any]:
+        """The sample id, and per behavioural task its guest.
+
+        Each behavioural task is keyed by its name. Its guest is the
+        ``resource`` (the machine image), ``os`` and ``platform`` its overview
+        row names, and those its task report's ``task`` block names over them
+        (``task_reports`` in ``context``, by task name). No part states one
+        detonation's start or end, nor the sandbox's version: the sample's own
+        times (``created``, ``completed``) are not a detonation's.
+        """
+        facts = super().run_facts(payload, fmt)
+        if not isinstance(payload, Mapping):
+            return facts
+        tasks = payload.get("tasks")
+        listed = list(tasks.values()) if isinstance(tasks, Mapping) else tasks
+        reports = context.get("task_reports")
+        reports = reports if isinstance(reports, Mapping) else {}
+        guest: dict[str, dict[str, str]] = {}
+        for task in listed if isinstance(listed, list) else ():
+            if not isinstance(task, Mapping) or task.get("kind") != "behavioral":
+                continue
+            if not _stated(task.get("name")):
+                continue
+            name = str(task["name"])
+            report = reports.get(name)
+            own = report.get("task") if isinstance(report, Mapping) else None
+            own = own if isinstance(own, Mapping) else {}
+            held = {key: str(task[key]) for key in self.GUEST_KEYS if _stated(task.get(key))}
+            held.update({key: str(own[key]) for key in self.GUEST_KEYS if _stated(own.get(key))})
+            if held:
+                guest[name] = held
+        if guest:
+            facts["guest"] = guest
+        return facts
 
 
 @register_report_reader

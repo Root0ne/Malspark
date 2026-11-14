@@ -25,7 +25,7 @@ from pathlib import Path
 from typing import Any
 
 from malspark.core.logger import logger
-from malspark.loaders.sandbox_client import SandboxError, SubmissionResult
+from malspark.loaders.sandbox_client import SandboxError, SubmissionResult, report_part
 
 
 class MockSandboxClient:
@@ -118,7 +118,7 @@ class MockSandboxClient:
         sha256 = meta["sha256"]
         name = meta["name"]
 
-        report = self._load_fixture(sha256, name)
+        report, parts = self._read_fixture(sha256, name)
 
         return SubmissionResult(
             task_id=task_id,
@@ -126,14 +126,19 @@ class MockSandboxClient:
             sample_name=name,
             status="reported",
             report=report,
+            parts=parts,
         )
 
     # ------------------------------------------------------------------
     # Internal helpers
     # ------------------------------------------------------------------
 
-    def _load_fixture(self, sha256: str, name: str) -> dict[str, Any]:
-        """Attempt to load a fixture in priority order."""
+    def _read_fixture(self, sha256: str, name: str) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+        """The fixture, in priority order, and the part it was read from.
+
+        The part is named by the fixture's file name and carries the digest of
+        the bytes read (``report_part``); the stand-in read from no file has none.
+        """
         candidates: list[Path] = [
             self._fixtures_dir / "dynamic" / f"{sha256}.json",
             self._fixtures_dir / "dynamic" / f"{Path(name).stem}.json",
@@ -144,9 +149,9 @@ class MockSandboxClient:
         for candidate in candidates:
             if candidate.exists():
                 logger.info("MockSandboxClient: loading fixture '%s'.", candidate)
-                with open(candidate, encoding="utf-8") as f:
-                    loaded: dict[str, Any] = json.load(f)
-                    return loaded
+                body = candidate.read_bytes()
+                loaded: dict[str, Any] = json.loads(body.decode("utf-8"))
+                return loaded, [report_part(candidate.name, body)]
 
         logger.warning(
             "MockSandboxClient: no fixture found for sha256=%s name=%s. "
@@ -154,7 +159,7 @@ class MockSandboxClient:
             sha256[:12],
             name,
         )
-        return self._minimal_report(sha256, name)
+        return self._minimal_report(sha256, name), []
 
     @staticmethod
     def _minimal_report(sha256: str, name: str) -> dict[str, Any]:
