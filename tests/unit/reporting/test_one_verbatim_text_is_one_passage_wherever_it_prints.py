@@ -48,7 +48,7 @@ def _twice() -> MalwareReport:
 
 
 def _verbatim(report: MalwareReport) -> dict[str, object]:
-    return {p.id: p for p in passages_of(report) if p.verbatim}
+    return {p.id: p for p in passages_of(report) if p.verbatim and not p.source_only}
 
 
 def _dropped(report: MalwareReport, pid: str, sentence: str) -> MalwareReport:

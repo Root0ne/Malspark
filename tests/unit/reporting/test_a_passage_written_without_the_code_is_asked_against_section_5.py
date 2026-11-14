@@ -561,9 +561,10 @@ def test_nothing_is_asked_without_a_source_or_a_reporter() -> None:
         intro_background="Only background.",
     )
     reporter = _Reporter()
-    assert asyncio.run(ask_section_agreement(reporter, report)).summary == {}
+    # Nothing asked: the round's record says it was shown no verbatim text (T-613).
+    assert asyncio.run(ask_section_agreement(reporter, report)).summary == {"verbatim_shown": {}}
     assert reporter.asked == []
-    assert asyncio.run(ask_section_agreement(None, _report())).summary == {}
+    assert asyncio.run(ask_section_agreement(None, _report())).summary == {"verbatim_shown": {}}
 
 
 def test_a_failed_round_leaves_the_report_as_written_and_says_so() -> None:

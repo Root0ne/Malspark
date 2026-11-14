@@ -3,7 +3,8 @@
 Where a text printed in its writer's own words and a passage the round may rewrite disagree,
 the question says to list and mend the rewritable one. A verbatim sentence is left out only on
 a named source it contradicts: a drop naming none is refused, as a keep naming no quote is,
-and a drop resting on a passage the round may rewrite is refused too (T-613). Every address,
+and leaves the sentence as written, recorded as asked and left standing; a drop resting on a
+passage the round may rewrite is refused too (T-613). Every address,
 entry and name here is a neutral synthetic value.
 """
 
@@ -12,6 +13,7 @@ from __future__ import annotations
 from typing import Any
 
 from malspark.reporting.section_agreement import (
+    LISTED_CODE,
     UNKNOWN_SOURCE_CODE,
     agreement_violations,
     apply_rows,
@@ -50,9 +52,10 @@ def test_a_drop_naming_no_source_is_refused_and_leaves_nothing_out() -> None:
     )
     report = report_of()
     counts, _found = apply_rows({"sentences": [_drop()]}, passages_of(report))
-    # No source it contradicts is named: the sentence stands as written.
+    # No source it contradicts is named: the sentence stands as written, recorded as asked
+    # and left standing (T-613).
     assert counts["dropped"] == 0 and counts["not_applied"] == 1
-    assert report.flagged_statements == []
+    assert [(r.code, r.left_out) for r in report.flagged_statements] == [(LISTED_CODE, [])]
 
 
 def test_a_drop_naming_the_source_it_contradicts_passes() -> None:
@@ -69,4 +72,4 @@ def test_the_question_states_the_order_of_ends_once() -> None:
     text = prompt_text(passages_of(report_of()))
 
     assert text.count("where it and a passage you may rewrite disagree, list and mend that ") == 1
-    assert 'or drop it naming in "sources" the source it contradicts, with "reason"' in text
+    assert 'or drop it naming in "sources" the source it contradicts (a fact, a section 5' in text

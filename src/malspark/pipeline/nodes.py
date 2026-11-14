@@ -8784,6 +8784,12 @@ def make_report_node(
             record_verbatim_unseen(report)
         except Exception as exc:  # noqa: BLE001 — a count never costs the report
             logger.warning("report_node: the unseen verbatim texts were not counted (%s).", exc)
+            said = (
+                "The verbatim texts the analyst report prints were not counted against those "
+                f"the section agreement question was shown ({type(exc).__name__})."
+            )
+            if said not in report.degradation_reasons:
+                report.degradation_reasons.append(said)
 
         # Post-pipeline FP linter. Run after every other
         # mutation has happened (narrative + detection sigs + STIX dump)

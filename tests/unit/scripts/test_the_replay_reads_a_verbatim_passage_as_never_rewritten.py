@@ -37,7 +37,7 @@ def test_a_verbatim_passage_is_read_with_no_writer_and_its_text_whole() -> None:
 
 
 def test_a_cell_s_place_label_is_rebuilt_from_its_identity() -> None:
-    from malspark.reporting.section_agreement import place_labels
+    from malspark.reporting.section_agreement import passages_of
     from tests.unit.reporting.test_a_cell_with_no_subject_is_kept_only_on_its_own_field import (
         _report,
     )
@@ -50,7 +50,7 @@ def test_a_cell_s_place_label_is_rebuilt_from_its_identity() -> None:
             '"Not established."',
         ]
     )
-    (cell,) = _passages(prompt, place_labels(_report()))
+    (cell,) = _passages(prompt, {p.id: p for p in passages_of(_report())})
 
     assert cell.place_label == (("encryption",), ("DNS channel", "channel 2"))
     assert _passages(prompt)[0].place_label is None

@@ -49,8 +49,6 @@ _PASSAGE = re.compile(
     r"(?: \(cites [^)]*\))?: (.*)$"
 )
 _CLOSING = ("conclusion", "limitations")
-# Who wrote a passage the prompt marks (verbatim), as far as the prompt says (T-613).
-_VERBATIM = "its writer's own words, printed as written"
 # The ids the limitations paragraph's facts were shown under before the inventory's rows.
 _LIMITATION_FACTS = ("failed", "not_run", "recorded", "open", "inv")
 
@@ -84,12 +82,14 @@ def _unquoted(text: str) -> str:
     return read[0] if read else text
 
 
-def _passages(prompt: str, labels: Mapping[str, Any] | None = None) -> list[Any]:
+def _passages(prompt: str, rebuilt: Mapping[str, Any] | None = None) -> list[Any]:
     """The passages the prompt shows, each as the round built it: its id, label, text,
     kind, and whether it may be rewritten (a writable one carries a no-op writer). The
-    prompt shows no place label: each is rebuilt from the passage's identity, its id in the
-    stored report (``labels``, ``section_agreement.place_labels``, T-613)."""
-    from malspark.reporting.section_agreement import Passage
+    prompt shows neither a place label nor who wrote a verbatim text: each is rebuilt from
+    the passage's identity, its id among the passages the stored report gives
+    (``rebuilt``, ``section_agreement.passages_of``), a verbatim passage it gives none
+    reading with the live round's default writer (T-613)."""
+    from malspark.reporting.section_agreement import VERBATIM_DEFAULT, Passage
 
     kind = ""
     out: list[Any] = []
@@ -103,8 +103,11 @@ def _passages(prompt: str, labels: Mapping[str, Any] | None = None) -> list[Any]
         pid, label, text = found.groups()
         head = line.split(": ", 1)[0]
         read_only = "(read only)" in head
+        same = (rebuilt or {}).get(pid)
         # A text printed in its writer's own words is listed, never rewritten (T-613).
-        verbatim = _VERBATIM if "(verbatim" in head else ""
+        verbatim = (
+            (getattr(same, "verbatim", "") or VERBATIM_DEFAULT) if "(verbatim" in head else ""
+        )
         # An agent's words the analyst report does not print: a source only (T-613).
         source_only = "(verbatim, a source only)" in head
         writable = kind in ("claim-led", "section 5") and not read_only and not verbatim
@@ -117,7 +120,7 @@ def _passages(prompt: str, labels: Mapping[str, Any] | None = None) -> list[Any]
                 write=(lambda _text: None) if writable else None,
                 closing=pid in _CLOSING,
                 verbatim=verbatim,
-                place_label=(labels or {}).get(pid),
+                place_label=getattr(same, "place_label", None),
                 source_only=source_only,
             )
         )
@@ -150,6 +153,15 @@ def _cut(text: str, limit: int = 160) -> str:
     return line if len(line) <= limit else line[: limit - 1] + "…"
 
 
+def shown_passages(run: Path) -> list[Any]:
+    """The passages one stored run's first agreement request showed, as :func:`_passages`
+    reads them, each rebuilt from its identity in the run's stored report."""
+    from malspark.reporting.section_agreement import passages_of
+
+    rebuilt = {p.id: p for p in passages_of(_report(run, ""))}
+    return _passages(_request_text(run / "worker.log"), rebuilt)
+
+
 def read_run(run: Path) -> dict[str, Any]:
     """Each held name in one stored run with the fact shown for it, and the facts' sizes."""
     from malspark.reporting.agreement_facts import ledger_facts
@@ -169,12 +181,10 @@ def read_run(run: Path) -> dict[str, Any]:
         _stale_calls,
         generic_words,
         held_limitation_sentences,
-        place_labels,
         redone_calls_named,
     )
 
-    prompt = _request_text(run / "worker.log")
-    shown = _passages(prompt, place_labels(_report(run, "")))
+    shown = shown_passages(run)
     ledger = _ledger(run)
     found = ledger_facts(ledger)
     names = run_names(ledger, found.image_bases)

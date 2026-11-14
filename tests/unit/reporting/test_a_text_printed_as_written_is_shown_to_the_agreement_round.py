@@ -102,7 +102,7 @@ def report_of() -> MalwareReport:
 
 
 def _verbatim(report: MalwareReport) -> dict[str, object]:
-    return {p.id: p for p in passages_of(report) if p.verbatim}
+    return {p.id: p for p in passages_of(report) if p.verbatim and not p.source_only}
 
 
 def test_each_text_printed_as_written_is_a_passage_carrying_its_writer() -> None:
@@ -177,8 +177,11 @@ def test_the_question_marks_each_and_says_its_ends_once() -> None:
         "rewrite disagree, list and mend that passage. Never rewrite a verbatim sentence: keep "
         'it naming the source you read and found agreeing, with "quote": its words that state '
         'the same thing, copied exactly, or drop it naming in "sources" the source it '
-        'contradicts, with "reason". If no answer for it passes the checks, it is left out of '
-        "the report, and the bundle prints it whole."
+        "contradicts (a fact, a section 5 passage, a debate round or a passage marked "
+        '(verbatim, a source only)), with "reason". A keep no check passes, or a drop naming '
+        "such a source that another check refuses, leaves it out of the analyst report, which "
+        "the bundle prints whole; a drop naming no such source leaves it as written, recorded "
+        "as asked."
     ) in text
     assert "(read only)" not in text
 
