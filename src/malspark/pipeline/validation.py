@@ -7724,9 +7724,10 @@ UNCITED_IDENTIFIER_CODE = "report.identifier_uncited"
 STATED_VALUE_UNHELD_CODE = "report.value_not_in_cited_entry"
 # A table row whose id none of the entries it cites holds, while another entry
 # of the run does (``cited_id_violations``): a number where that entry's one
-# compared expression holds the most of the table's numbers, any other id
-# where its text writes it whole. Asked once per set of holders, naming them;
-# a row kept after it is marked beside its evidence.
+# compared expression holds the most of the table's numbers, in a table of
+# four or more numbered ids that are not a plain count, any other id where its
+# text writes it whole. Asked once per set of holders, naming them; a row kept
+# after it is marked beside its evidence.
 ID_NOT_IN_CITED_ENTRY_CODE = "report.id_not_in_cited_entry"
 # Technical prose naming a network value this run does not publish without
 # that value's publish state (``unpublished_value_violations``). Asked once; a

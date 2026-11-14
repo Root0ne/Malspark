@@ -5890,12 +5890,18 @@ is assembled from what the run gathered rather than recomputed beside it:
   entry of the run holds it: a number, alone or as the id's last word after a
   label every numbered row of the table shares (any other id is text), is held
   by a cited entry whose text writes it as a compared operand in any base and
-  form the reader knows (an equality test, a case label, a compare instruction,
+  form the reader knows (an equality test, a case label or a `case A ... B:`
+  range, a compare instruction read by its shape: a mnemonic that begins with
+  `cmp`, the number in either operand place, with or without `$` or `#`;
   `validation.compared_operands`), and a row citing code in a form the reader
-  does not read is not asked; the entry offered for a number is only the one
-  whose single compared expression holds the most of the table's numbers
+  does not read, or a compare it does not take, is not asked; a table with
+  fewer than four numbered ids, or whose numbered ids are a plain count (1 to
+  N or 0 to N-1, the guard `composer.command_values` uses), is not checked for
+  its numbers; the entry offered for a number is only the one whose single
+  compared expression holds the most of the table's numbers
   (`validation.compared_values`, picked as for `composer.command_values`),
-  never one that merely compares it; any other id is held by an entry whose
+  and only where the entries holding as many agree on its values, never one
+  that merely compares it; any other id is held by an entry whose
   text writes it whole; an entry whose call failed, or whose answer is an error
   envelope, holds nothing; rows the same entries hold are one question naming
   them, an id no entry holds is not asked here, and a kept row is marked beside
