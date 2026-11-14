@@ -229,6 +229,27 @@ class TestAttack:
         tid = stored["document"]["ttp_mappings"][0]["technique_id"]
         assert _row(diff, "attack", tid)["evidence"]["b"] == ["ev_0007"]
 
+    def test_a_set_not_recorded_is_shown_apart_from_a_recorded_empty_set(self, stored) -> None:
+        def edit(doc: dict[str, Any]) -> None:
+            doc["ttp_mappings"][0]["evidence_ids"] = []
+            mapping = doc["ttp_mappings"][1]
+            mapping.pop("evidence_ids", None)
+            mapping["evidence_quotes"] = ["Writes the Run key for its copy"]
+            mapping["sources"] = []
+
+        diff = _pair(stored, edit)
+
+        first, second = (m["technique_id"] for m in stored["document"]["ttp_mappings"][:2])
+        recorded, unrecorded = _row(diff, "attack", first), _row(diff, "attack", second)
+        assert recorded["b"]["ledger_entries"] == []
+        # ``None`` reads "not recorded" where the diff is shown.
+        assert unrecorded["b"]["ledger_entries"] is None
+        assert unrecorded["evidence"]["b"] == []
+        assert unrecorded["a"]["ledger_entries"] == unrecorded["evidence"]["a"] != []
+        # Shown beside the set and, as the set, not counted as a change.
+        assert all(c["field"] != "ledger_entries" for c in unrecorded["changes"])
+        assert unrecorded["note"] is None
+
     def test_the_technique_id_is_the_key_whatever_its_case(self, stored) -> None:
         def edit(doc: dict[str, Any]) -> None:
             for mapping in doc["ttp_mappings"]:

@@ -16,16 +16,20 @@
   rules that matched a technique follow the set in the Markdown cell as "rule matches". A
   report stored before the set was recorded reads as the entries among a technique's sources
   and those its statements write, on every surface and in the run diff, which shows the
-  sandbox items beside the set.
+  sandbox items beside the set and a set not recorded apart from a recorded empty one.
 - **A table row's id is checked against the entries the row cites (T-597).** A composed row
   that states an `id` (a command's) and cites entries is held where one cited entry holds
   the id. A number, alone or as the id's last word after a label every numbered row shares,
   is held where a cited entry writes it as a compared operand in any base and form the reader
   knows: an equality test (also inside a comment or a string), a case label or a
   `case A ... B:` range, or a compare instruction read by its shape (a mnemonic that begins
-  with `cmp`, the number in either operand place, with or without `$` or `#`). A row citing
-  code in a form the reader does not read, or a compare it does not take (an instruction
-  operand in no form it reads, or case ranges past 4096 values in one text), is not asked.
+  with `cmp`, the number in either operand place, with or without `$` or `#`, each operand
+  ending at the line's end, a comment or a closing quote). A row citing code in a form the
+  reader does not read, or a compare it does not take, is not asked: an instruction at an
+  instruction's place (before the mnemonic only characters that are not word characters,
+  number tokens, a `label:`, a `<symbol+offset>` and a prefix such as `lock`) with an
+  operand in no form it reads or not taken to the instruction's end, a case range with an
+  end it does not read, a reversed range, or ranges past 4096 values in one text.
   A table with fewer than four numbered ids, or whose numbered ids are a plain count (1 to N
   or 0 to N-1, the guard the command-value check uses as well), is not checked for its
   numbers. Any other id is held where the entry's text writes it whole. A failed call or an
