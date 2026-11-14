@@ -16,6 +16,7 @@ which one.
 from __future__ import annotations
 
 import logging
+import re
 from typing import Any
 
 import pytest
@@ -59,6 +60,18 @@ _REPORT = (
     "TECHNIQUE: T1027\n"
 )
 
+# Two claims read and a third written whole under a heading ended by a dot
+# with no note; then the same three claims under headings that are read.
+_READ_IN_PART = (
+    "CLAIM 1 (kept). Routine 0x1400 decodes the string table.\n"
+    "EVIDENCE: [ev_0001]\nCONFIDENCE: 0.9\nTECHNIQUE: T1140\n\n"
+    "CLAIM 2 (revised). Routine 0x1800 downloads a file.\n"
+    "EVIDENCE: [ev_0002]\nCONFIDENCE: 0.85\nTECHNIQUE: T1105\n\n"
+    "CLAIM 3. Routine 0x2000 opens a mutex.\n"
+    "EVIDENCE: [ev_0003]\nCONFIDENCE: 0.8\nTECHNIQUE: NONE\n"
+)
+_READ_WHOLE = _READ_IN_PART.replace("CLAIM 3. ", "CLAIM 3: ")
+
 
 class _FakeLLM:
     def __init__(self, answers: list[str]) -> None:
@@ -100,6 +113,12 @@ class TestTheHeadingTheNudgeStatesIsTheOneRead:
         assert heading is not None
         assert heading_number(heading) == "1"
         assert heading_sentence(CLAIM_HEADING_EXAMPLE, heading).strip()
+
+    def test_the_example_writes_a_placeholder_and_no_claim(self) -> None:
+        heading = CLAIM_HEAD_RE.match(CLAIM_HEADING_EXAMPLE)
+
+        assert heading is not None
+        assert re.fullmatch(r"<[^<>]+>", heading_sentence(CLAIM_HEADING_EXAMPLE, heading).strip())
 
     @pytest.mark.parametrize("number", ["1", "7", "42"])
     def test_the_form_with_a_number_is_read(self, number: str) -> None:
@@ -189,6 +208,40 @@ class TestTheOneTurn:
         assert llm.seen[0][-1].content == FINAL_ANSWER_NUDGE
         assert "asking once for one." in caplog.text
         assert "claim heading" not in caplog.text
+
+    def test_a_partly_read_answer_is_asked_once_with_the_heading_stated(
+        self, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        with caplog.at_level(logging.WARNING, logger="test.heading_nudge"):
+            llm, analyst, kept = self._settle(_READ_IN_PART, [_READ_WHOLE])
+
+        assert answer_is_isr(_READ_IN_PART)
+        assert final_answer_nudge(_READ_IN_PART) == FINAL_ANSWER_HEADING_NUDGE
+        assert len(llm.seen) == 1
+        # The turn's words open the question; the run state may follow them.
+        assert llm.seen[0][-1].content.startswith(FINAL_ANSWER_HEADING_NUDGE)
+        assert kept == _READ_WHOLE
+        assert analyst._answer_unstructured is False
+        assert "stating the claim heading the platform reads" in caplog.text
+
+    @pytest.mark.parametrize(
+        "answer",
+        [_REPORT, _READ_IN_PART, "", _INTENTION],
+        ids=["fewer-claims", "read-in-part-again", "empty", "intention"],
+    )
+    def test_a_partly_read_answer_stands_when_the_reply_reads_no_better(self, answer: str) -> None:
+        llm, analyst, kept = self._settle(_READ_IN_PART, [answer])
+
+        assert len(llm.seen) == 1
+        assert kept == _READ_IN_PART
+        assert analyst._answer_unstructured is False
+
+    def test_an_answer_read_whole_is_not_asked(self) -> None:
+        llm, analyst, kept = self._settle(_READ_WHOLE, [_REPORT])
+
+        assert llm.seen == []
+        assert kept == _READ_WHOLE
+        assert analyst._answer_unstructured is False
 
     def test_a_second_unread_answer_is_not_asked_again(self) -> None:
         llm, analyst, kept = self._settle(_UNREAD_HEADINGS, [_UNREAD_HEADINGS])

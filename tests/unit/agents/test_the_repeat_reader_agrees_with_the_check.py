@@ -19,6 +19,7 @@ from collections.abc import Callable
 import pytest
 
 from malspark.agents.base_agent import strip_tool_call_scaffolding
+from malspark.agents.claim_headings import count_claims_begun
 from malspark.agents.repeat_watch import ClaimRepeatReader
 from malspark.pipeline.validation import claims_repeated
 from tests.claim_block_counts import begun_and_distinct
@@ -382,7 +383,9 @@ class TestWhatTheReaderKeeps:
         ("CLAIM 1: it reads a key\nCLAIM 2: it reads a key\nCLAIM 3: it reads a key\n", 3, 1),
         # Claims written one after another on one line are one block to the check.
         ("CLAIM: it reads a key CLAIM: it reads a key CLAIM: it reads a key\n", 1, 1),
-        # A label in lowercase, or ended with a dot, heads no claim for the check.
+        # A label in lowercase, or ended with a dot after its number, heads no
+        # claim for the check (one with a field line beneath it is a claim
+        # begun and not read: see the test after this one).
         ("claim: it reads a key\nclaim: it reads a key\n", 0, 0),
         ("CLAIM 1. it reads a key\nCLAIM 2. it reads a key\n", 0, 0),
         # A different evidence line makes a different claim.
@@ -406,6 +409,16 @@ def test_varied_repeats_count_as_the_check_counts_them(
 ) -> None:
     assert _expected(text, None)[:2] == (begun, distinct)
     _agree_in_pieces_of(text, 3, None)
+
+
+def test_a_dot_label_over_field_lines_is_begun_and_not_read_and_no_block_for_the_check() -> None:
+    text = (
+        "CLAIM 1. it reads a key\nEVIDENCE: ev_0001\nCLAIM 2. it reads a key\nEVIDENCE: ev_0001\n"
+    )
+
+    assert _expected(text, None)[:2] == (0, 0)
+    _agree_in_pieces_of(text, 3, None)
+    assert count_claims_begun(text) == 2
 
 
 def test_the_automata_are_built_from_the_patterns_the_check_reads() -> None:

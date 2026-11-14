@@ -53,6 +53,8 @@ from malspark.agents.claim_headings import (
     claims_headed_with_notes,
     count_claims_after_disputes,
     count_claims_begun,
+    count_claims_begun_unread,
+    count_claims_headed,
     writes_claim_fields,
 )
 from malspark.agents.prompt_fragments import (
@@ -1496,9 +1498,10 @@ FINAL_ANSWER_NUDGE = (
 )
 
 # The same one turn, for a last message that writes claim field lines
-# (EVIDENCE:, CONFIDENCE: ...) under headings the claim reader does not read:
-# its claims are there and their headings are not, so the turn states the
-# heading the platform reads (``claim_headings.CLAIM_HEADING_FORM``).
+# (EVIDENCE:, CONFIDENCE: ...) under headings the claim reader does not read,
+# beside headings it reads or with none: its claims are there and their
+# headings are not, so the turn states the heading the platform reads
+# (``claim_headings.CLAIM_HEADING_FORM``).
 FINAL_ANSWER_HEADING_NUDGE = (
     "Your last message was not a final report the platform can read: its claims open with "
     "headings the platform does not read. No tool can be called in this turn. Return your "
@@ -1561,13 +1564,15 @@ def answer_is_isr(text: str) -> bool:
     The two shapes an analyst may answer in: the ``CLAIM:`` block every ISR
     prompt asks for, and the optional fenced ``malspark-findings`` channel. Prose
     that is neither is not a report — it may be a fine paragraph, but nothing
-    downstream can read a finding out of it without inventing one.
+    downstream can read a finding out of it without inventing one. A claim
+    begun under a heading the reader does not read heads no block, so it makes
+    no report (``claim_headings.count_claims_headed``).
     """
     from malspark.agents.findings_block import has_findings_block
 
     if not text or not text.strip():
         return False
-    return "CLAIM:" in text or count_claims_begun(text) > 0 or has_findings_block(text)
+    return "CLAIM:" in text or count_claims_headed(text) > 0 or has_findings_block(text)
 
 
 def nudge_turns(msgs: list) -> tuple[list, bool]:
@@ -8259,13 +8264,30 @@ class BaseAnalyst(BudgetMeter, ABC):
         Sets ``_answer_unstructured``, which is what makes the analyst report
         ``no_claims`` rather than an empty ISR that reads like an analyst with
         nothing to say.
+
+        A report read in part, a claim of it begun under a heading the reader
+        does not read (``claim_headings.count_claims_begun_unread``), is asked
+        the same one turn. Its reply replaces it only when it is a report that
+        begins at least as many claims and leaves none of them unread;
+        otherwise the report stands as written, its shortfall recorded where
+        it is read.
         """
         self._answer_unstructured = False
-        if answer_is_isr(content):
+        read_in_part = answer_is_isr(content)
+        if read_in_part and not count_claims_begun_unread(content):
             return content
         nudged = self._nudge_for_final_answer(
             msgs, timeout, elapsed, max_steps, question=final_answer_nudge(content)
         )
+        if read_in_part:
+            if (
+                nudged is not None
+                and answer_is_isr(nudged)
+                and not count_claims_begun_unread(nudged)
+                and count_claims_begun(nudged) >= count_claims_begun(content)
+            ):
+                return nudged
+            return content
         # Only when the nudge answered the question. Taking any non-empty text
         # would let a second non-report — often shorter than the first —
         # replace what the loop actually produced.
@@ -12784,13 +12806,16 @@ class BaseAnalyst(BudgetMeter, ABC):
             # itself wrote none and so decided nothing about the claims in force.
             # A claim block the parser could not read (no confidence, or one
             # it cannot read) is a claim the revision wrote: only a revision
-            # that began none is one that decided nothing.
+            # that heads none is one that decided nothing. A claim begun under
+            # a heading the reader does not read heads no block, so a revision
+            # of only such claims decided nothing the platform reads, and the
+            # claims in force stand.
             wrote_no_claim = (
                 not isr.claims
                 and str(isr.status or "") == NO_STRUCTURED_REPORT_STATUS
                 and not isr.blocks_without_confidence
                 and not isr.confidence_unreadable
-                and count_claims_begun(str(text or "")) == 0
+                and count_claims_headed(str(text or "")) == 0
             )
             gated = self._apply_consistency_gate(isr, grounds)
             # The revision's own answer as the validation turn is given it,

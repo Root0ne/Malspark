@@ -12,9 +12,13 @@ its delimiter, as a colon is.
 What stays unread: a heading with no number or no note before the dot
 (``CLAIM 1. …``, ``**CLAIM** (new). …``), labels other than ``CLAIM``
 (``**C1 [KEPT] …**``, ``**R1. …**``, ``**U1. …**``), prose that names a claim,
-and lines that quote one inside a DISPUTES section or a mediator's line. Every
-answer the rule read before reads exactly as it did, and a line costs time
-linear in its length however its marks and brackets are written.
+and lines that quote one inside a DISPUTES section or a mediator's line. A
+numbered heading ended by a dot with no note, its next written line a claim
+field line, is a claim begun and not read: counted as begun, so the shortfall
+sentence and the cut-answer question name it. A heading ended by a dot under
+a DISPUTES section opens no claim block there and does not end the section.
+Every answer the rule read before reads exactly as it did, and a line costs
+time linear in its length however its marks and brackets are written.
 """
 
 from __future__ import annotations
@@ -27,7 +31,7 @@ from typing import Any
 import pytest
 
 from malspark.agents import claim_headings
-from malspark.agents.base_agent import answer_is_isr, read_claim_blocks
+from malspark.agents.base_agent import answer_is_isr, claims_unread_sentence, read_claim_blocks
 from malspark.agents.claim_headings import (
     CLAIM_HEAD_RE,
     LINE_PREFIX,
@@ -42,6 +46,7 @@ from malspark.agents.claim_headings import (
 )
 from malspark.agents.repeat_watch import ClaimRepeatReader
 from malspark.pipeline.retry_merge import read_withdrawals
+from malspark.pipeline.validation import analyst_cut_violation
 from tests.claim_block_counts import begun_and_distinct
 from tests.linear_cost import assert_scales, assert_under, cpu_seconds
 
@@ -114,9 +119,7 @@ class TestTheLinesThatStayUnread:
     @pytest.mark.parametrize(
         "line",
         [
-            # No note before the dot, or no number.
-            "CLAIM 1. It reads a key.",
-            "**CLAIM 1.** It reads a key.",
+            # No number before the dot.
             "**CLAIM** (new). It reads a key.",
             "CLAIM (a). It reads a key.",
             # Labels other than CLAIM.
@@ -139,6 +142,102 @@ class TestTheLinesThatStayUnread:
     def test_the_line_is_no_heading(self, line: str) -> None:
         assert CLAIM_HEAD_RE.match(line) is None
         assert count_claims_begun(line + "\nEVIDENCE: [ev_0001]\nCONFIDENCE: 0.5") == 0
+
+
+# A revision read in part: two headings read, and a third claim written whole
+# under a heading ended by a dot with no note.
+_READ_IN_PART = """CLAIM 1 (kept). Routine 0x3ae78 decodes the string table with a rolling XOR key.
+EVIDENCE: [ev_0001]
+CONFIDENCE: 0.9
+TECHNIQUE: T1140
+
+CLAIM 2 (revised). Routine 0x46f48 downloads a file over WinINet and writes it to disk.
+EVIDENCE: [ev_0002]
+CONFIDENCE: 0.85
+TECHNIQUE: T1105
+
+---
+
+CLAIM 3. Routine 0x43868 passes the decoded name to CreateMutexW, so the mutex is named.
+EVIDENCE: [ev_0003], [ev_0138]
+CONFIDENCE: 0.8
+TECHNIQUE: NONE
+"""
+
+
+class TestALineBegunAsAHeadingAndNotRead:
+    @pytest.mark.parametrize(
+        "line",
+        [
+            "CLAIM 3. Routine 0x1400 opens a mutex.",
+            "**CLAIM 3.** Routine 0x1400 opens a mutex.",
+            "**CLAIM 3**. Routine 0x1400 opens a mutex.",
+            "- CLAIM 3. Routine 0x1400 opens a mutex.",
+            "### CLAIM R3. Routine 0x1400 opens a mutex.",
+            "CLAIM #3 . Routine 0x1400 opens a mutex.",
+        ],
+    )
+    @pytest.mark.parametrize("between", ["\n", "\n\n"], ids=["next-line", "after-a-blank"])
+    def test_a_field_line_beneath_makes_it_a_claim_begun_and_not_read(
+        self, line: str, between: str
+    ) -> None:
+        text = line + between + "EVIDENCE: [ev_0003]\nCONFIDENCE: 0.8\nTECHNIQUE: NONE\n"
+        read = read_claim_blocks(text)
+
+        assert CLAIM_HEAD_RE.match(line) is None
+        assert count_claims_begun(text) == read.begun == 1
+        assert read.claims == [] and read.unread == 1
+        assert not answer_is_isr(text)
+
+    @pytest.mark.parametrize(
+        "text",
+        [
+            "CLAIM 3. Routine 0x1400 opens a mutex.",
+            "CLAIM 3. Routine 0x1400 opens a mutex.\nIt does so twice.\nEVIDENCE: [ev_0003]",
+            "**CLAIM 3.** The routine is prose.\n\nThe next paragraph is prose too.",
+            "CLAIM 3. Routine 0x1400 opens a mutex.\n---\nEVIDENCE: [ev_0003]",
+            # No number, or a note before the dot (read as a heading).
+            "CLAIM. Routine 0x1400 opens a mutex.\nEVIDENCE: [ev_0003]",
+            "Claim 3. Routine 0x1400 opens a mutex.\nEVIDENCE: [ev_0003]",
+            "CLAIM 3: is read.\nCLAIM 3.5 of the spec.\nCONFIDENCE: 0.5",
+        ],
+        ids=["alone", "prose-beneath", "paragraphs", "separator", "no-number", "lowercase", "read"],
+    )
+    def test_with_no_field_line_beneath_it_counts_nothing(self, text: str) -> None:
+        read = read_claim_blocks(text)
+
+        assert (
+            count_claims_begun(text)
+            == read.begun
+            == len([line for line in text.splitlines() if CLAIM_HEAD_RE.match(line)])
+        )
+        assert not read.unread
+
+    def test_a_revision_read_in_part_names_the_claim_not_read(self) -> None:
+        read = read_claim_blocks(_READ_IN_PART, require_evidence=True)
+
+        assert [c.number for c in read.claims] == ["1", "2"]
+        assert (read.begun, read.read, read.unread) == (3, 2, 1)
+        assert answer_is_isr(_READ_IN_PART)
+        sentence = claims_unread_sentence("reverser", read, 2)
+        assert "began 3 claim(s), and 2 were read; 1 could not be read as a claim" in sentence
+        question = analyst_cut_violation(4096, _READ_IN_PART)
+        assert "began 3 CLAIM block(s)" in question.message
+        # Not read as a claim: the repeat check keys the two blocks read.
+        assert begun_and_distinct(_READ_IN_PART) == (2, 2)
+        streamed = _streamed(_READ_IN_PART)
+        assert (streamed.begun, streamed.distinct) == (2, 2)
+
+    def test_under_a_disputes_section_it_is_not_counted(self) -> None:
+        text = (
+            "CLAIM 1: The sample is a DLL.\nEVIDENCE: [ev_0001]\nCONFIDENCE: 0.9\n\n"
+            "DISPUTES:\nCLAIM 3. The packer flag rests on a Rich header.\nEVIDENCE: [ev_0004]\n"
+        )
+        read = read_claim_blocks(text)
+
+        assert count_claims_begun(text) == read.begun == 1
+        assert count_claims_after_disputes(text) == read.after_disputes == 0
+        assert not read.unread
 
 
 # A revision answer in the shapes above: the emphasis before the note, then a
@@ -191,6 +290,7 @@ class TestWholeAnswers:
 
         assert answer_is_isr(_EMPHASIS_THEN_NOTE)
         assert read.begun == count_claims_begun(_EMPHASIS_THEN_NOTE) == 2
+        assert read.after_disputes == count_claims_after_disputes(_EMPHASIS_THEN_NOTE) == 0
         assert read.blocks_read == 2 and not read.unread
         assert [(c.number, c.heading_note, c.claim) for c in read.claims] == [
             ("1", "(confirms round-0 claims 1 and 4)", "The sample is an unsigned 64-bit DLL."),
@@ -201,6 +301,28 @@ class TestWholeAnswers:
         assert "**CLAIM 9** (network analyst)" in disputes_section(_EMPHASIS_THEN_NOTE)
         assert "packer flag" in besides_claims(_EMPHASIS_THEN_NOTE)
         assert "unsigned 64-bit DLL" not in besides_claims(_EMPHASIS_THEN_NOTE)
+
+    def test_a_dot_heading_with_a_field_line_under_disputes_leaves_the_section_whole(
+        self,
+    ) -> None:
+        text = (
+            "CLAIM 1: The sample is an unsigned 64-bit DLL.\nEVIDENCE: [ev_0003]\n"
+            "CONFIDENCE: 0.95\n\nDISPUTES:\n"
+            "- **CLAIM 3** (static analyst). The packer flag rests on a Rich header alone.\n"
+            "CLAIM 4 (STATIC's). I reject the reading; the bytes show otherwise.\n"
+            "EVIDENCE: [ev_0009] shows the bytes.\n"
+            "I also dispute the network analyst's interval.\n"
+            "SUMMARY: done.\n"
+        )
+        read = read_claim_blocks(text)
+        section = disputes_section(text)
+
+        assert [c.number for c in read.claims] == ["1"]
+        assert count_claims_after_disputes(text) == read.after_disputes == 0
+        assert section is not None
+        assert "CLAIM 4 (STATIC's). I reject the reading" in section
+        assert "I also dispute the network analyst's interval." in section
+        assert "SUMMARY" not in section
 
     def test_the_note_inside_the_emphasis_reads_each_claim(self) -> None:
         read = read_claim_blocks(_NOTE_THEN_EMPHASIS, require_evidence=True)

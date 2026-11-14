@@ -260,7 +260,8 @@ class _Automaton:
     """A pattern compiled to states, read one character at a time; a state set is immutable.
 
     A ``("mark",)`` leaf is a second accepting state (``also_accept``) that
-    leads nowhere: a path ends there or is read on past it, never both.
+    leads nowhere: a path ends there or is read on past it, never both. Every
+    mark leaf of a pattern is that one state.
     """
 
     def __init__(self, tree: Any) -> None:
@@ -278,7 +279,8 @@ class _Automaton:
     def _build(self, tree: Any) -> tuple[int, int]:
         kind = tree[0]
         if kind == "mark":
-            self.also_accept = self._state()
+            if self.also_accept < 0:
+                self.also_accept = self._state()
             return self.also_accept, self._state()
         if kind == "char":
             begin, end = self._state(), self._state()
@@ -376,7 +378,6 @@ _HEAD_NUMBER = _seq(
     ),
     ("plus", ("char", _DIGIT)),
 )
-_HEAD_LABEL = _seq(_HEAD_START, _opt(_HEAD_NUMBER))
 _NOTE_BRACKET = (
     "alt",
     [
@@ -384,38 +385,53 @@ _NOTE_BRACKET = (
         _seq(_one("["), _star(("char", lambda c: c not in "]\n")), _one("]")),
     ],
 )
-_HEAD_NOTE = _seq(_star(_SPACE_OR_TAB), _NOTE_BRACKET)
-# A numbered heading's note, after the emphasis that closes its label or not.
-_NUMBERED_NOTE = _seq(
-    _HEAD_START,
-    _HEAD_NUMBER,
-    _star(_SPACE_OR_TAB),
-    _opt(_seq(_one("*"), _one("*"), _star(_SPACE_OR_TAB))),
-    _NOTE_BRACKET,
-)
 _AFTER_NOTE = _seq(_star(_SPACE_OR_TAB), _STARS, _star(_SPACE_OR_TAB))
-# ``claim_headings.CLAIM_HEAD_RE`` up to its delimiter. ``-(?=\s)`` reads the
-# whitespace after the dash too: the heading's text after the delimiter is
-# read as words, and that whitespace adds none. A dot is a delimiter only
-# after a numbered heading's note. Its other form, a heading whose note is all
-# its line holds, is the second accepting state (``also_accept``): a heading
-# only where the line ends, with no text after it.
+# ``claim_headings.CLAIM_HEAD_RE`` up to its delimiter: its start once, then
+# one alternation over what may follow it. ``-(?=\s)`` reads the whitespace
+# after the dash too: the heading's text after the delimiter is read as words,
+# and that whitespace adds none. A numbered heading's note may follow the
+# emphasis that closes its label, and a dot is a delimiter only after a
+# numbered heading's note. Its other form, a heading whose note is all its line
+# holds, is the second accepting state (``also_accept``): a heading only where
+# the line ends, with no text after it.
 # The bracket that closes each bracket a heading's note opens with.
 _NOTE_CLOSERS = {"(": ")", "[": "]"}
 _DELIMITER = ("alt", [_one(":"), _one("—"), _one("–"), _seq(_one("-"), ("char", _SPACE))])
+_NO_NOTE = _seq(_star(_SPACE_OR_TAB), _STARS, _star(_SPACE_OR_TAB), _DELIMITER)
 _HEAD = _Automaton(
-    (
-        "alt",
-        [
-            _seq(_HEAD_LABEL, _star(_SPACE_OR_TAB), _STARS, _star(_SPACE_OR_TAB), _DELIMITER),
-            _seq(_HEAD_LABEL, _HEAD_NOTE, _AFTER_NOTE, _DELIMITER),
-            _seq(_NUMBERED_NOTE, _AFTER_NOTE, ("alt", [_DELIMITER, _one(".")])),
-            _seq(
-                ("alt", [_seq(_HEAD_LABEL, _HEAD_NOTE), _NUMBERED_NOTE]),
-                _AFTER_NOTE,
-                ("mark",),
-            ),
-        ],
+    _seq(
+        _HEAD_START,
+        (
+            "alt",
+            [
+                # No number: a delimiter, or a note and then a delimiter or the line's end.
+                _NO_NOTE,
+                _seq(
+                    _star(_SPACE_OR_TAB),
+                    _NOTE_BRACKET,
+                    _AFTER_NOTE,
+                    ("alt", [_DELIMITER, ("mark",)]),
+                ),
+                # A number: the same, its note after the emphasis or not, and a dot
+                # after its note.
+                _seq(
+                    _HEAD_NUMBER,
+                    (
+                        "alt",
+                        [
+                            _NO_NOTE,
+                            _seq(
+                                _star(_SPACE_OR_TAB),
+                                _opt(_seq(_one("*"), _one("*"), _star(_SPACE_OR_TAB))),
+                                _NOTE_BRACKET,
+                                _AFTER_NOTE,
+                                ("alt", [_DELIMITER, _one("."), ("mark",)]),
+                            ),
+                        ],
+                    ),
+                ),
+            ],
+        ),
     )
 )
 # ``claim_headings._SEPARATOR_RE``, read to the end of the line.
