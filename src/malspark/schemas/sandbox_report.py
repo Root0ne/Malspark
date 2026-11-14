@@ -886,6 +886,9 @@ PROCESS_UNLISTED_KEY = "process_not_listed"
 # reading and the publish rule read a row's process by; a row naming no
 # process, or one under a value that cannot be an id, carries none.
 TRAFFIC_PROCESS_KEY = "platform_process"
+# The field a flow's row stored before rows carried that key named its process
+# by: a stored row holding only this field is named by it in published text.
+STORED_TRAFFIC_PROCESS_FIELD = "procid"
 # On a request riding on a flow id several flows of its task share: each
 # flow's process facts, the request being the sample's when any of them is
 # (``ledger_projection.traffic_makers``). Where they all agree, the request

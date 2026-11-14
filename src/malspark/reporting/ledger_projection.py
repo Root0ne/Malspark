@@ -79,6 +79,7 @@ from malspark.schemas.sandbox_report import (
     LINEAGE_MARKED_STORED,
     PROCESS_UNLISTED_KEY,
     SAMPLE_TREE_KEY,
+    STORED_TRAFFIC_PROCESS_FIELD,
     TRAFFIC_FLOWS_KEY,
     TRAFFIC_FLOWS_LEFT_OUT_KEY,
     TRAFFIC_FLOWS_UNSETTLED_KEY,
@@ -155,6 +156,18 @@ def traffic_makers(row: Any) -> list[bool | tuple[str, str] | None]:
     return [traffic_maker(row)]
 
 
+def _flow_process_named(row: Mapping[str, Any], image: str) -> str:
+    """A flow's process as an address's reason names it: ``<image> (procid N)``, or its image alone.
+
+    The id is read under the one key every reader writes it under
+    (``TRAFFIC_PROCESS_KEY``), else under the field a row stored before that
+    key named it by (``STORED_TRAFFIC_PROCESS_FIELD``); an id that is not
+    stated is never printed.
+    """
+    procid = pid_of(row.get(TRAFFIC_PROCESS_KEY)) or pid_of(row.get(STORED_TRAFFIC_PROCESS_FIELD))
+    return f"{image} (procid {procid})" if procid else image
+
+
 def _flows_left_out(row: Any) -> bool:
     """Whether a request carries part of its flow id's flows (``TRAFFIC_FLOWS_LEFT_OUT_KEY``)."""
     return isinstance(row, dict) and bool(row.get(TRAFFIC_FLOWS_LEFT_OUT_KEY))
@@ -206,9 +219,17 @@ class _MakerTally:
         else:
             self.unstated = True
 
-    def take(self, other: _MakerTally, limit: int | None = None) -> None:
-        """Add another tally's facts, and its names, up to ``limit`` per kind where one is given."""
+    def take(self, other: _MakerTally, limit: int | None = None, *, in_part: bool = False) -> None:
+        """Add another tally's facts, and its names, up to ``limit`` per kind where one is given.
+
+        ``in_part``: the other tally is read as a page's, which can only show
+        that a record is the sample's; its records of another lineage count
+        as naming no process.
+        """
         self.sample |= other.sample
+        if in_part:
+            self.unstated |= other.unstated or bool(other.named)
+            return
         self.unstated |= other.unstated
         for kind, names in other.named.items():
             for named in names[:limit]:
@@ -1437,7 +1458,12 @@ def network_from_ledger(
     makers: dict[tuple[str, str], list[bool | tuple[str, str] | None]] = {}
     tallies: dict[tuple[str, str], _MakerTally] = {}
 
-    def _made(kind: str, key: str, answer: bool | tuple[str, str] | None) -> None:
+    def _made(kind: str, key: str, answer: bool | tuple[str, str] | None, whole: bool) -> None:
+        # A page of a view can only show that a record is the sample's: one
+        # naming another lineage counts as naming none, as the sample's may
+        # be on another page. One rule for the three kinds.
+        if not whole and isinstance(answer, tuple):
+            answer = None
         makers.setdefault((kind, key), []).append(answer)
         tallies.setdefault((kind, key), _MakerTally()).add(answer)
 
@@ -1487,7 +1513,7 @@ def network_from_ledger(
                 # asking program's: only a process the record itself names is
                 # its maker, and a record naming none says nothing of the name.
                 if key == "dns" and name and _states_a_process(row):
-                    _made("domain", value_key("domain", name), traffic_maker(row))
+                    _made("domain", value_key("domain", name), traffic_maker(row), whole)
                 # The addresses the answer gave for it, as the record states them.
                 known_name = domains.get(value_key("domain", name)) if name else None
                 if known_name is None:
@@ -1539,7 +1565,7 @@ def network_from_ledger(
                 address = address_key(_first_str(row, "dst", "ip", "address"))
                 _add("ip", address, "sandbox")
                 if isinstance(row, dict) and address:
-                    _made("ip", address, traffic_maker(row))
+                    _made("ip", address, traffic_maker(row), whole)
                     stated = row.get(SAMPLE_TREE_KEY)
                     # A page of a view cannot say that no flow to an address
                     # came from the tree: the one that did may be on another.
@@ -1548,14 +1574,14 @@ def network_from_ledger(
                     )
                     image = str(row.get(FLOW_PROCESS_KEY) or "").strip()
                     if stated is False and image:
-                        named = f"{image} (procid {row.get('procid')})"
+                        named = _flow_process_named(row, image)
                         if named not in outside.setdefault(address, []):
                             outside[address].append(named)
                     which = str(row.get(LINEAGE_DISPUTED_KEY) or "")
                     if which == LINEAGE_MARKED_STORED:
                         which = LINEAGE_MARKED
                     if which in (LINEAGE_MARKED, LINEAGE_FILE) and image:
-                        named = f"{image} (procid {row.get('procid')})"
+                        named = _flow_process_named(row, image)
                         held = disputed.setdefault(address, {})
                         facts = held.setdefault(which, [])
                         if named not in facts:
@@ -1576,9 +1602,9 @@ def network_from_ledger(
             _add("url", url, "sandbox")
             for made in traffic_makers(row):
                 if host:
-                    _made("domain", value_key("domain", host), made)
+                    _made("domain", value_key("domain", host), made, whole)
                 if url:
-                    _made("url", _fold_url_host(url), made)
+                    _made("url", _fold_url_host(url), made, whole)
             if _flows_left_out(row):
                 # The request names part of its flow id's processes.
                 for part in (("domain", value_key("domain", host)), ("url", _fold_url_host(url))):
@@ -1650,7 +1676,10 @@ def network_from_ledger(
     for domain in network.domains:
         if domain.source == "sandbox":
             # A name's own HTTP records, the DNS records that name their own
-            # process, and the flows to every address it resolved to.
+            # process, and the flows to every address it resolved to. A name
+            # the report gives part of its addresses (``resolved_ips_partial``)
+            # reads those flows as a page's: a flow to an address withheld may
+            # be the sample's.
             tally = _MakerTally()
             own = tallies.get(("domain", value_key("domain", domain.fqdn)))
             if own is not None:
@@ -1658,7 +1687,7 @@ def network_from_ledger(
             for address in domain.resolved_ips:
                 flows = tallies.get(("ip", address_key(address)))
                 if flows is not None:
-                    tally.take(flows, _ADDRESS_MAKERS_NAMED)
+                    tally.take(flows, _ADDRESS_MAKERS_NAMED, in_part=domain.resolved_ips_partial)
             tally.state(domain)
     for request in network.urls:
         if request.source == "sandbox":

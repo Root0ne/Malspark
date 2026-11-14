@@ -529,3 +529,149 @@ class TestALauncherFlowSharingAnId:
         assert url.made_by is not None
         assert url.made_by.launcher == ["powershell.exe (procid 84)"]
         assert url.made_by.unlisted == ["procid 46"]
+
+
+PAGE_NAME = "c2-gate.example.net"
+PAGE_ADDRESS = "93.184.7.7"
+PAGE_URL = f"http://{PAGE_NAME}/g"
+UNSTATED_ADDRESS = "no: the sandbox report does not say which process made the flows to it"
+
+
+def _view_of(facts: dict[str, Any], *, page: bool) -> MalwareReport:
+    """A name, its address and a URL on it, each record of the process ``facts`` give.
+
+    ``page`` reads the view as one page of a longer one, as a paged call returns it.
+    """
+    view = {
+        "dns": [{"request": PAGE_NAME, "type": "A", "answers": [{"data": PAGE_ADDRESS}]}],
+        "http": [{"host": PAGE_NAME, "uri": "/g", "method": "GET", "port": 80, **facts}],
+        "tcp": [{"dst": PAGE_ADDRESS, "dport": 80, **facts}],
+        **({"next_offset": 1, "http_total": 2, "tcp_total": 2} if page else {}),
+    }
+    entry = build_entry(
+        entry_id="ev_0001",
+        seq=1,
+        agent="dynamic",
+        tool="sandbox_network",
+        args={"offset": 0, "limit": 1} if page else {},
+        server=None,
+        output=json.dumps(view),
+    )
+    return MalwareReport(
+        identity=SampleIdentity(hashes=FileHashes(sha256=SHA256)),
+        verdict="Malware",
+        overall_confidence=0.9,
+        network=network_from_ledger([entry]),
+    )
+
+
+class TestAPageShowsOnlyThatARecordIsTheSampleS:
+    """A page cannot show that no record of a value is the sample's: it may be on another."""
+
+    @pytest.mark.parametrize("facts", [LAUNCHER_ROW, UNLISTED_ROW], ids=["launcher", "unlisted"])
+    def test_another_lineage_s_records_leave_the_three_kinds_as_without_them(
+        self, facts: dict[str, Any]
+    ) -> None:
+        report = _view_of(facts, page=True)
+        assert _url_answer(report, PAGE_URL) == publish_answer("url", PAGE_URL, "sandbox", None)
+        domain = publish_answer(
+            "domain", PAGE_NAME, "sandbox", None, **sandbox_row_kwargs(report, "domain", PAGE_NAME)
+        )
+        assert domain == publish_answer("domain", PAGE_NAME, "sandbox", None)
+        address = publish_answer(
+            "ip", PAGE_ADDRESS, "sandbox", None, **sandbox_row_kwargs(report, "ip", PAGE_ADDRESS)
+        )
+        assert address.startswith(UNSTATED_ADDRESS)
+        (ip,) = report.network.ips
+        assert ip.unlisted_processes == [] and ip.sample_process_tree is None
+
+    @pytest.mark.parametrize("facts", [LAUNCHER_ROW, UNLISTED_ROW], ids=["launcher", "unlisted"])
+    def test_a_whole_view_still_withholds_them(self, facts: dict[str, Any]) -> None:
+        report = _view_of(facts, page=False)
+        assert _url_answer(report, PAGE_URL).startswith("no: the sandbox report says it was made")
+
+    def test_the_sample_s_record_on_a_page_publishes_them(self) -> None:
+        report = _view_of(SAMPLE_ROW, page=True)
+        assert publishes(_url_answer(report, PAGE_URL))
+        for kind, value in (("domain", PAGE_NAME), ("ip", PAGE_ADDRESS)):
+            kwargs = sandbox_row_kwargs(report, kind, value)
+            assert publishes(publish_answer(kind, value, "sandbox", None, **kwargs))
+
+
+class TestAnAddressNamesItsProcessByTheNeutralKey:
+    """The address's reason names a process by the one key, an older stored row by its field."""
+
+    def _reason(self, row: dict[str, Any]) -> str:
+        report = _mixed(tcp=(row,))
+        kwargs = sandbox_row_kwargs(report, "ip", MIXED_ADDRESS)
+        return publish_answer("ip", MIXED_ADDRESS, "sandbox", None, **kwargs)
+
+    def test_a_flow_naming_its_process_by_another_field_is_named_by_its_id(self) -> None:
+        row = {"pid": 1234, TRAFFIC_PROCESS_KEY: "1234", SAMPLE_TREE_KEY: False}
+        answer = self._reason({**row, "process": "powershell.exe"})
+        assert "(powershell.exe (procid 1234))" in answer and "None" not in answer
+
+    def test_a_stored_row_naming_its_process_by_the_older_field_is_named_by_it(self) -> None:
+        answer = self._reason({"procid": 84, SAMPLE_TREE_KEY: False, "process": "powershell.exe"})
+        assert "(powershell.exe (procid 84))" in answer
+
+    def test_a_row_naming_no_id_is_named_by_its_image_alone(self) -> None:
+        answer = self._reason({SAMPLE_TREE_KEY: False, "process": "powershell.exe"})
+        assert "(powershell.exe)" in answer and "procid" not in answer
+
+    def test_a_disputed_process_is_named_by_the_neutral_key(self) -> None:
+        answer = self._reason({**DISPUTED_ROW, "pid": 77})
+        assert "x.exe (procid 5)" in answer and "None" not in answer
+
+
+PARTIAL_NAMES = [f"q{i}.example.net" for i in range(12)]
+PARTIAL_ADDRESSES = [f"198.51.100.{i + 1}" for i in range(12)]
+
+
+def _resolved_in_part(procid: int, launcher: dict[str, Any] | None = None) -> Any:
+    """One request of twelve names sharing twelve answers that name no name, read whole.
+
+    The request's size bounds what its questions are given together: the
+    sixth name is given part of its addresses, the bound spent. Every address
+    is reached by a flow of ``procid``.
+    """
+    task = _json("behavioral1.json")
+    task["network"]["requests"] = [
+        {
+            "flow": 31,
+            "index": 1,
+            "dns_request": {"questions": [{"name": n, "type": "A"} for n in PARTIAL_NAMES]},
+        },
+        {
+            "flow": 31,
+            "index": 1,
+            "dns_response": {"answers": [{"type": "A", "value": a} for a in PARTIAL_ADDRESSES]},
+        },
+    ]
+    task["network"]["flows"] += [
+        {"id": 90 + i, "proto": "tcp", "dst": f"{a}:443", "procid": procid}
+        for i, a in enumerate(PARTIAL_ADDRESSES)
+    ]
+    network = network_from_ledger([], sandbox_report=sandbox_document(_sandbox(task, launcher)))
+    assert network is not None
+    return {d.fqdn: d for d in network.domains}
+
+
+class TestANameResolvedInPart:
+    """A name given part of its addresses reads their flows as a page's: the sample's count."""
+
+    @pytest.mark.parametrize(("procid", "launcher"), [(46, None), (84, LAUNCHER)])
+    def test_another_lineage_s_flows_to_its_addresses_leave_it_as_without_them(
+        self, procid: int, launcher: dict[str, Any] | None
+    ) -> None:
+        names = _resolved_in_part(procid, launcher)
+        partial = names["q5.example.net"]
+        assert partial.resolved_ips_partial and partial.resolved_ips
+        assert partial.sample_process_tree is None and partial.made_by is None
+        # A name given all its addresses is decided by their flows.
+        whole = names["q0.example.net"]
+        assert not whole.resolved_ips_partial and whole.sample_process_tree is False
+
+    def test_the_sample_s_flow_to_one_of_its_addresses_publishes_it(self) -> None:
+        partial = _resolved_in_part(86)["q5.example.net"]
+        assert partial.resolved_ips_partial and partial.sample_process_tree is True
