@@ -30,6 +30,7 @@ from malspark.pipeline.validation import (
     MARKED_IN_PLACE,
     ComparedValues,
     EntryTexts,
+    _read_compared_operands,
     cited_id_violations,
     command_value_violations,
     compared_operands,
@@ -46,7 +47,7 @@ from malspark.reporting.models import (
 from malspark.reporting.renderers.markdown import MarkdownRenderer
 from malspark.schemas.evidence import LedgerEntry
 from tests.credential_shapes import prefixed_key
-from tests.linear_cost import assert_scales
+from tests.linear_cost import assert_scales, assert_under, peak_bytes
 
 DISPATCHER = (
     "void dispatch(int param_2) {\n"
@@ -385,6 +386,62 @@ class TestACompareTheReaderCannotTakeIsNotAsked:
         self, code: str, tool: str
     ) -> None:
         assert cited_id_violations(_rows("4"), _ledger(code, tool=tool)) == []
+
+
+class TestACompareInstructionIsOneWhereAnInstructionStands:
+    PROSE = (
+        '{"how": "32-bit immediates of push, mov and cmp byte patterns in executable '
+        'sections, and every aligned value in the other sections"}'
+    )
+
+    def test_the_word_in_prose_is_no_compare_not_taken(self) -> None:
+        assert _read_compared_operands(self.PROSE) == (frozenset(), False)
+
+    def test_a_row_citing_the_prose_is_still_asked(self) -> None:
+        texts = EntryTexts.from_ledger(
+            [
+                _entry("ev_0001", "resolve_api_hashes", self.PROSE),
+                _entry("ev_0003", "decompile_function", json.dumps({"code": COMMAND_SWITCH})),
+            ]
+        )
+
+        (found,) = cited_id_violations(_rows("4"), texts)
+
+        assert "ev_0003 (decompile_function)" in found.message
+
+    @pytest.mark.parametrize(
+        "listing",
+        [
+            "cmp w0, #4, lsl #12",
+            "loc_401000: cmp eax, 0b100",
+            ".text:00401000                 cmp     eax, 0b100",
+            "│      0x00401000      83f804         cmp eax, 0b100",
+        ],
+    )
+    def test_an_instruction_at_its_place_on_the_line_is_read(self, listing: str) -> None:
+        assert _read_compared_operands(listing)[1] is True
+
+
+class TestTheCaseRangesOfOneTextHaveOneBudget:
+    @staticmethod
+    def _ranges(count: int) -> str:
+        return "".join(f"  case {n * 5000} ... {n * 5000 + 4000}:\n" for n in range(count))
+
+    def test_many_ranges_are_a_compare_not_taken_read_fast_and_small(self) -> None:
+        text = self._ranges(300)
+
+        assert _read_compared_operands(text)[1] is True
+        assert_under(lambda: _read_compared_operands(text), 1.0, what="300 wide ranges")
+        assert peak_bytes(lambda: _read_compared_operands(text)) < 4_000_000
+
+    def test_ranges_within_the_budget_hold_every_value(self) -> None:
+        read, untaken = _read_compared_operands("case 1 ... 5:\ncase 0x100 ... 0x110:\n")
+
+        assert not untaken
+        assert read == {*range(1, 6), *range(0x100, 0x111)}
+
+    def test_the_cost_of_many_ranges_grows_with_the_text(self) -> None:
+        assert_scales(self._ranges, 4000, _read_compared_operands)
 
 
 class TestARowIdIsCheckedOnlyWhereACoincidenceIsImplausible:

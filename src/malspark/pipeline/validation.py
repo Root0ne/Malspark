@@ -9924,8 +9924,22 @@ _COMPARE_INSTRUCTION_RE = re.compile(
 # An instruction operand that is a name: a register or a symbol, ``%`` marked
 # or not (``eax``, ``%eax``, ``r0``, ``DAT_00401000``).
 _OPERAND_NAME_RE = re.compile(r"%?[A-Za-z_.][\w.$@]*", re.ASCII)
-# The widest ``case A ... B:`` range read value by value. A wider one is a
-# compare the reader does not take, so no question rests on it.
+# What may stand before an instruction on its line: the opening of a JSON
+# string field that holds the listing, a label, then an address, its bytes
+# and a listing's flow marks. A ``cmp`` after other words
+# is prose: its numbers are read where every operand is taken, and an
+# operand not taken there is no doubt about the code.
+_INSTRUCTION_PLACE_RE = re.compile(
+    r"(?:[\[{,\s]*(?:\"[\w.-]*\"\s*:\s*)?\")?"
+    r"(?:[A-Za-z_.$@][\w.$@]*:)?[\s0-9a-fA-FxX:|│┃┆┊┌└├┐┘─═<>+.\-\"]*"
+)
+# How far back on its line an instruction's place is read: a longer prefix
+# is not a listing's columns.
+_INSTRUCTION_PLACE_SPAN = 160
+# The most values the ``case A ... B:`` ranges of one text are read as, in
+# all. A range that would take the text past it is a compare the reader does
+# not take, so no question rests on it, and the reading stays linear in the
+# text's length.
 _WIDEST_CASE_RANGE = 4096
 
 
@@ -9983,10 +9997,19 @@ def _instruction_operand_values(operand: str) -> set[int] | None:
     return None
 
 
+def _at_instruction_place(text: str, start: int) -> bool:
+    """Whether what stands before ``start`` on its line is a listing's columns."""
+    line = text.rfind("\n", max(0, start - _INSTRUCTION_PLACE_SPAN), start)
+    if line < 0 and start > _INSTRUCTION_PLACE_SPAN:
+        return False
+    return bool(_INSTRUCTION_PLACE_RE.fullmatch(text, line + 1, start))
+
+
 def _read_compared_operands(text: str) -> tuple[frozenset[int], bool]:
     """:func:`compared_operands`, and whether ``text`` writes a compare not taken."""
     found: set[int] = set()
     untaken = False
+    budget = _WIDEST_CASE_RANGE
     for match in _COMPARED_OPERAND_RE.finditer(text):
         written = match.group("right") or match.group("left") or match.group("case")
         last = match.group("last")
@@ -9996,25 +10019,30 @@ def _read_compared_operands(text: str) -> tuple[frozenset[int], bool]:
                 found |= values
                 continue
             ends = _operand_values(last)
-            pairs = [(low, high) for low in values for high in ends]
-            if not pairs or any(not 0 <= high - low < _WIDEST_CASE_RANGE for low, high in pairs):
-                untaken = True
-                continue
-            for low, high in pairs:
-                found.update(range(low, high + 1))
         except ValueError:
             untaken = True
+            continue
+        if untaken or not values or not ends:
+            untaken = True
+            continue
+        # Every reading of either end: from the lowest to the highest.
+        low, high = min(values), max(ends)
+        if not 0 <= high - low < budget:
+            untaken = True
+            continue
+        budget -= high - low + 1
+        found.update(range(low, high + 1))
     for match in _COMPARE_INSTRUCTION_RE.finditer(text):
         read: set[int] = set()
         for operand in _instruction_operands(match.group("operands")):
             try:
-                values = _instruction_operand_values(operand)
+                taken = _instruction_operand_values(operand)
             except ValueError:
-                values = None
-            if values is None:
-                untaken = True
+                taken = None
+            if taken is None:
+                untaken = untaken or _at_instruction_place(text, match.start())
                 break
-            read |= values
+            read |= taken
         else:
             found |= read
     return frozenset(found), untaken
@@ -10025,8 +10053,9 @@ def compared_operands(text: str) -> frozenset[int]:
 
     A number is read where it is the whole of one side of an equality or
     inequality test (``cmd == 4``, ``4 == cmd``, ``cmd != 0x4``), a case label
-    (``case 4:``, and every value of a ``case 1 ... 5:`` range no wider than
-    :data:`_WIDEST_CASE_RANGE` values), or an operand of a compare instruction:
+    (``case 4:``, and every value of a ``case 1 ... 5:`` range while the ranges
+    of the text hold no more than :data:`_WIDEST_CASE_RANGE` values in all), or
+    an operand of a compare instruction:
     a mnemonic that begins with ``cmp``, any suffix, the number in either
     operand place, with or without an immediate marker (``cmp eax, 4h``,
     ``CMP EAX,0x4``, ``cmpl $0x4,%eax``, ``cmp r0, #4``). A side of a test
@@ -10036,8 +10065,11 @@ def compared_operands(text: str) -> frozenset[int]:
     (``c == 4 * k``), the reading that keeps a question back. Never read where
     the number is part of a longer number or of a sum. A leading zero is read
     both as octal and as decimal (``010`` holds 8 and 10). An instruction with
-    an operand in no form read here holds none of its numbers; see
-    :meth:`EntryTexts.code_not_read`. Linear in the length of ``text``.
+    an operand in no form read here holds none of its numbers; one at an
+    instruction's place on its line (after nothing but a label, an address,
+    its bytes and flow marks) is a compare not taken, as is a range that
+    would pass the text's budget; see :meth:`EntryTexts.code_not_read`.
+    Linear in the length of ``text``.
     """
     return _read_compared_operands(text)[0]
 
@@ -10119,11 +10151,13 @@ def cited_id_violations(payload: Any, entries: EntryTexts | None) -> list[Violat
         if not isinstance(rows, list) or not _ROW_LIST_KEY_RE.fullmatch(str(list_key)):
             continue
         numbered = _numbered_ids(rows)
-        numbers = set(numbered.values())
+        table_numbers = set(numbered.values())
         # A few numbers, or a plain count, match some expression of almost any
         # code by chance: such a table's numbered rows are not checked.
-        counted = len(numbers) >= _FEWEST_CHECKED_NUMBERS and not _a_plain_count(numbers)
-        chosen = entries.choosing(numbers) if counted else {}
+        counted = len(table_numbers) >= _FEWEST_CHECKED_NUMBERS and not _a_plain_count(
+            table_numbers
+        )
+        chosen = entries.choosing(table_numbers) if counted else {}
         for index, row in enumerate(rows):
             if not isinstance(row, dict):
                 continue
