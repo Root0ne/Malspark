@@ -237,6 +237,12 @@ LAUNCH_KEY = "launched_with"
 # attributed to no one. Set after intake, so no reader earns them.
 LAUNCHER_ATTRIBUTION_KEY = "launcher_attribution"
 UNATTRIBUTED_SIGNATURES_KEY = "launcher_unattributed_signatures"
+# Where a task states the parent of the process running the sample and no
+# script host naming the launcher is an ancestor of the sample's tree there:
+# the facts the launcher's identification rests on in those tasks, by task.
+# Set after intake, so no reader earns it; absent where every task's
+# identification rests on the facts the report states.
+LAUNCHER_IDENTIFIED_KEY = "launcher_identified_by"
 # How many files the sandbox lists as written were read as an archive member
 # without the member's place in the guest settling it (the row states no
 # guest path, or the launcher's folder is not known): set after intake, so
@@ -261,6 +267,7 @@ PLATFORM_MARKS: tuple[str, ...] = (
     LAUNCH_KEY,
     LAUNCHER_ATTRIBUTION_KEY,
     UNATTRIBUTED_SIGNATURES_KEY,
+    LAUNCHER_IDENTIFIED_KEY,
     UNPLACED_MEMBER_FILES_KEY,
     LAUNCHER_FILES_KEY,
     UNSETTLED_LAUNCHER_FILES_KEY,

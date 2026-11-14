@@ -470,6 +470,71 @@ class TestTheLauncherIsAnAncestorOfTheSampleSProcess:
         assert _reasons(report)[f"{TEMP}\\dropped.ps1"] == DROPPED_BY_LAUNCHER
 
 
+def _one_task(task: dict[str, Any]) -> SandboxReport:
+    report = _read("overview.json", {"behavioral1": task})
+    attribute_the_launcher(report, FIRST)
+    return report
+
+
+def _lineages(report: SandboxReport) -> dict[int, Any]:
+    return {p.pid: p.extra.get(LINEAGE_KEY) for p in report.processes}
+
+
+class TestNoHostAboveTheSampleSProcess:
+    """Parents stated and no host an ancestor of the tree: the rule without them holds."""
+
+    def _reversed(self) -> dict[str, Any]:
+        # The started program's listed parent is a desktop process, not the host.
+        task = _json("behavioral1.json")
+        task["processes"].append(
+            {"procid": 50, "procid_parent": 0, "pid": 500, "image": "C:\\Windows\\explorer.exe"}
+        )
+        for proc in task["processes"]:
+            if proc["procid"] == 86:
+                proc["procid_parent"] = 50
+        return task
+
+    def test_the_launcher_s_signatures_move_off_the_sample_as_without_parents(self) -> None:
+        live = _one_task(_json("behavioral1.json"))
+        report = _one_task(self._reversed())
+        assert _lineages(report)[84] == "launcher" and _lineages(report)[86] == "sample"
+        moved = report.channels.get("launcher.signatures") or []
+        assert moved and len(moved) == len(live.channels.get("launcher.signatures") or [])
+        assert [s.name for s in report.signatures] == [s.name for s in live.signatures]
+
+    def test_the_report_says_what_the_identification_rests_on_in_that_task(self) -> None:
+        from malspark.schemas import sandbox_document as document
+        from malspark.schemas import sandbox_report as reading
+
+        report = _one_task(self._reversed())
+        assert report.extras[document.LAUNCHER_IDENTIFIED_KEY] == {
+            "behavioral1": reading.LAUNCHER_IDENTIFIED_WITHOUT_PARENTS
+        }
+        assert document.LAUNCHER_IDENTIFIED_KEY in document.PLATFORM_MARKS
+        # Where the host is an ancestor of the tree, the report says nothing more.
+        live = _one_task(_json("behavioral1.json"))
+        assert document.LAUNCHER_IDENTIFIED_KEY not in live.extras
+        # Read again, the report is the same.
+        before = report.model_dump()
+        attribute_the_launcher(report, FIRST)
+        assert report.model_dump() == before
+
+    def test_a_host_the_sample_started_beside_the_real_launcher_stays_outside_it(self) -> None:
+        # The sample's tree starts under the live launcher (84); a second host
+        # naming the launcher runs under a service outside the tree.
+        task = _json("behavioral1.json")
+        task["processes"] += [
+            {"procid": 60, "procid_parent": 0, "pid": 600, "image": "C:\\w\\svchost.exe"},
+            {"procid": 90, "procid_parent": 60, "pid": 900, "image": "C:\\w\\WmiPrvSE.exe"},
+            {**HOST_OUTSIDE, "procid": 91, "procid_parent": 90},
+        ]
+        report = _one_task(task)
+        lineages = _lineages(report)
+        assert lineages[84] == "launcher" and lineages[86] == "sample"
+        assert lineages[91] is None
+        assert "launcher_identified_by" not in report.extras
+
+
 class TestTheCostIsLinear:
     def test_many_sample_folders_and_many_written_files(self) -> None:
         # The members' places are built once per report, not once per row.
