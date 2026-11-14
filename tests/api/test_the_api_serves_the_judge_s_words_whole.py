@@ -36,4 +36,5 @@ def test_the_full_report_carries_the_judge_s_text_whole() -> None:
         "code": DROPPED_CODE,
         "label": "judge.business_impact",
         "asked": True,
+        "left_out": ["judge.business_impact"],
     } in served["flagged_statements"]

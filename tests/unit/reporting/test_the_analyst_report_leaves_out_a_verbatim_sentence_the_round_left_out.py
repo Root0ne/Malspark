@@ -17,8 +17,8 @@ from malspark.reporting.renderers.layout import ANALYST, BUNDLE
 from malspark.reporting.section_agreement import AGREEMENT_PRODUCER, apply_rows, passages_of
 from tests.unit.reporting.test_a_text_printed_as_written_is_shown_to_the_agreement_round import (
     IMPACT,
-    NOTE,
-    REASON,
+    NOTE_WORDS,
+    REASON_WORDS,
     STATEMENT,
     report_of,
 )
@@ -87,7 +87,7 @@ def test_a_claim_sentence_left_out_prints_a_dash_and_the_section_counts_it() -> 
 
 
 def test_a_judge_note_left_out_is_not_printed_and_is_counted() -> None:
-    markdown, html, bundle = _printed(_dropped("attack_note.T1622", NOTE))
+    markdown, html, bundle = _printed(_dropped("attack_note.T1622", NOTE_WORDS))
     attack = _section(markdown, "## 10. MITRE ATT&CK mapping")
 
     assert "The judge read only the flag check" not in attack
@@ -99,10 +99,13 @@ def test_a_judge_note_left_out_is_not_printed_and_is_counted() -> None:
 
 
 def test_a_reason_left_out_leaves_the_technique_claimed_and_not_published() -> None:
-    markdown, html, bundle = _printed(_dropped("attack_note.T1055", REASON))
+    markdown, html, bundle = _printed(_dropped("attack_note.T1055", REASON_WORDS))
     attack = _section(markdown, "## 10. MITRE ATT&CK mapping")
 
-    assert "- T1055 Process Injection: claimed, not published; evidence -" in attack
+    assert (
+        "- T1055 Process Injection: claimed, not published: the judge dropped it; evidence -"
+        in attack
+    )
     assert "No write into another process" not in attack
     assert "No write into another process" not in html
     assert "_1 sentence of this section was left out; the bundle lists each with the reason._" in (

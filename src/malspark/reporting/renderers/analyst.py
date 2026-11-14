@@ -1082,6 +1082,35 @@ class _Analyst:
         )
         return left_out_of(text, self.ctx.verbatim_left.get(pid, ()))
 
+    def _judge_words(self, pid: str, label: str, printed: str) -> tuple[str, int]:
+        """``printed``, a status or a note the platform writes around the judge's reasons
+        (``judge_reasons.judge_reason_spans``), without each sentence of those reasons the
+        agreement question left out, and how many were. Only the judge's own words are its
+        passage: the platform's words around them are none, and a bracket every word of which
+        is left out goes with them (T-613)."""
+        from malspark.reporting.judge_reasons import judge_reason_spans
+        from malspark.reporting.section_agreement import left_out_of
+
+        spans = judge_reason_spans(printed)
+        if not spans:
+            return printed, 0
+        words = " ".join(printed[start:end] for start, end, _close in spans)
+        self._as_said(pid, label, words, JUDGE_WRITER, sorted(entry_ids_in(words)))
+        left = self.ctx.verbatim_left.get(pid, ())
+        if not left:
+            return printed, 0
+        out, cut = printed, 0
+        for start, end, close in reversed(spans):
+            kept, count = left_out_of(out[start:end], left)
+            cut += count
+            if not count:
+                continue
+            if kept.strip():
+                out = out[:start] + kept + out[end:]
+            else:
+                out = out[: out.rfind("(", 0, start)].rstrip() + out[close:]
+        return out, cut
+
     def counted(self, key: str, section: str) -> str:
         """``section`` with the line saying how many of its sentences were left out, before
         the line linking the bundle; the count starts over for the next section.
@@ -2297,12 +2326,10 @@ class _Analyst:
         else:
             # The judge's reason as printed: a sentence the agreement question left out is
             # counted, and the reason printed without it (T-613).
-            reason, cut = self._as_said(
+            reason, cut = self._judge_words(
                 f"attack_note.{cell.technique_id.strip().upper()}",
                 f"ATT&CK table, the reason {cell.technique_id} is not published",
                 status_shown(cell.not_published, JUDGE_REASON_WIDTH),
-                JUDGE_WRITER,
-                sorted(entry_ids_in(cell.not_published)),
             )
             self.left += cut
             shown = (
@@ -2341,12 +2368,10 @@ class _Analyst:
         # bundle's (T-555).
         if note and not note.lower().startswith(judge_kept_note("").lower()):
             # The judge's words: a sentence the agreement question left out is counted (T-613).
-            shown, cut = self._as_said(
+            shown, cut = self._judge_words(
                 f"attack_note.{technique_id.strip().upper()}",
                 f"ATT&CK table, the judge's note on {technique_id}",
                 judge_reasons_shown(note)[0],
-                JUDGE_WRITER,
-                sorted(entry_ids_in(note)),
             )
             self.left += cut
             if shown.strip():

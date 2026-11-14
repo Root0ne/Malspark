@@ -31,8 +31,14 @@ STATEMENT = (
     "It compares each name with HOST_MODE [ev_0102]."
 )
 CLAIM = "Routine 0x5b20 returns -1 when the BeingDebugged byte is set [ev_0103]. It then exits."
-NOTE = "The judge read only the flag check [ev_0103]."
-REASON = "the judge dropped it (No write into another process is shown [ev_0104].)"
+# The judge's words, and the note and the reason the platform writes around them.
+NOTE_WORDS = "The judge read only the flag check [ev_0103]."
+NOTE = (
+    "carried forward: the round-2 revision neither wrote it again nor withdrew it; kept by "
+    f"the judge when asked ({NOTE_WORDS})"
+)
+REASON_WORDS = "No write into another process is shown [ev_0104]."
+REASON = f"the judge dropped it ({REASON_WORDS})"
 IMPACT = "The loader checks for a debugger at 0x5b20 [ev_0103]. It reaches 0x5c30 first."
 # The section 5 passage the round reads every other passage against.
 BODY = "Routine 0x5b20 reads the BeingDebugged byte and returns -1 when it is set [ev_0103]."
@@ -122,8 +128,8 @@ def test_each_text_printed_as_written_is_a_passage_carrying_its_writer() -> None
         "Routine 0x5b20 returns -1 when the BeingDebugged byte is set."
     )
     assert shown["attack_claim.T1622"].cites == frozenset({"ev_0103"})  # type: ignore[attr-defined]
-    assert shown["attack_note.T1622"].text == NOTE  # type: ignore[attr-defined]
-    assert shown["attack_note.T1055"].text == REASON  # type: ignore[attr-defined]
+    assert shown["attack_note.T1622"].text == NOTE_WORDS  # type: ignore[attr-defined]
+    assert shown["attack_note.T1055"].text == REASON_WORDS  # type: ignore[attr-defined]
     assert shown["judge.business_impact"].text == IMPACT  # type: ignore[attr-defined]
     writers = {pid: p.verbatim for pid, p in shown.items()}  # type: ignore[attr-defined]
     assert writers == {

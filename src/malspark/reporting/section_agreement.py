@@ -641,42 +641,53 @@ _VERBATIM_WRITERS = {
 
 def _verbatim_passages(report: MalwareReport) -> list[Passage]:
     """The texts the analyst report prints in their writer's own words
-    (``renderers.analyst.verbatim_texts``), one passage each, in the order it prints them:
-    shown to be listed, never rewritten (T-613). None where the report is not rendered."""
+    (``renderers.analyst.verbatim_texts``), in the order it prints them: one passage for each
+    distinct text, naming every place it prints, shown to be listed and never rewritten; a
+    sentence of it left out is left out at every one of those places (T-613). None where the
+    report is not rendered."""
     from malspark.reporting.renderers.analyst import verbatim_texts
 
     try:
         shown = verbatim_texts(report)
-    except Exception as exc:  # noqa: BLE001 — the round asks of every other passage as before
+    except Exception as exc:  # noqa: BLE001 — the round asks of every other passage
         logger.warning("section agreement: the verbatim texts were not read (%s).", exc)
         return []
-    return [
-        Passage(
-            id=text.id,
-            label=text.label,
-            text=text.text,
-            kind=CLAIM_LED,
-            cites=_ids(text.cites, text.text),
-            verbatim=_VERBATIM_WRITERS.get(text.writer, _VERBATIM_WRITERS["analyst"]),
-            leave_out=_flagged_out(report, text.id),
+    places: dict[str, list[Any]] = {}
+    for text in shown:
+        if text.text.strip():
+            places.setdefault(text.text.strip(), []).append(text)
+    out: list[Passage] = []
+    for said, where in places.items():
+        first = where[0]
+        ids = list(dict.fromkeys(text.id for text in where))
+        out.append(
+            Passage(
+                id=first.id,
+                label="; ".join(dict.fromkeys(text.label for text in where)),
+                text=said,
+                kind=CLAIM_LED,
+                cites=_ids(*(text.cites for text in where), said),
+                verbatim=_VERBATIM_WRITERS.get(first.writer, _VERBATIM_WRITERS["analyst"]),
+                leave_out=_flagged_out(report, first.id, ids),
+            )
         )
-        for text in shown
-        if text.text.strip()
-    ]
+    return out
 
 
-def _flagged_out(report: MalwareReport, pid: str) -> Callable[[str], None]:
+def _flagged_out(report: MalwareReport, pid: str, places: Sequence[str]) -> Callable[[str], None]:
     """Record a sentence of the passage ``pid`` printed in its writer's own words that the round
-    left out, as a flagged statement under the round's code naming the passage
-    (``models.FlaggedStatement``): the analyst report leaves it out where that passage
-    prints, and the bundle prints it whole beside the round's record (T-613)."""
+    left out, as a flagged statement under the round's code naming the passage and left out of
+    each of its ``places`` (``models.FlaggedStatement.left_out``): the analyst report leaves it
+    out at each, and the bundle prints it whole beside the round's record (T-613)."""
     from malspark.reporting.models import FlaggedStatement
 
     def _record(sentence: str) -> None:
         rows = getattr(report, "flagged_statements", None)
         if not isinstance(rows, list) or not sentence.strip():
             return
-        row = FlaggedStatement(sentence=sentence, code=DROPPED_CODE, label=pid)
+        row = FlaggedStatement(
+            sentence=sentence, code=DROPPED_CODE, label=pid, left_out=list(places)
+        )
         if row not in rows:
             rows.append(row)
 

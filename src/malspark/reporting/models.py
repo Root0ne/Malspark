@@ -1593,6 +1593,11 @@ class FlaggedStatement(BaseModel):
     # False where the answer came by a path with no turn to ask on (structured
     # output): the mark then says the model was not asked.
     asked: bool = True
+    # A sentence the agreement round left out of the analyst report, a state of its own: the
+    # places of that report it is left out of (``section_agreement.passages_of``), each that
+    # prints the text in its writer's own words; empty for a sentence left standing. The
+    # bundle prints the text whole (T-613).
+    left_out: list[str] = Field(default_factory=list, exclude_if=lambda value: not value)
 
 
 # What the report says of a question the analyst asked of the run, in a fixed

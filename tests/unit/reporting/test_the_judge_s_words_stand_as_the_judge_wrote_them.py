@@ -19,8 +19,9 @@ from malspark.reporting.renderers.layout import BUNDLE
 from malspark.reporting.section_agreement import apply_rows, passages_of
 from tests.unit.reporting.test_a_text_printed_as_written_is_shown_to_the_agreement_round import (
     IMPACT,
-    NOTE,
+    NOTE_WORDS,
     REASON,
+    REASON_WORDS,
     report_of,
 )
 
@@ -54,10 +55,15 @@ def test_no_answer_rewrites_a_judge_text_or_touches_the_verdict() -> None:
             "sources": ["string_resolution"],
             "rewrite": "It reaches 0x5b20 first [ev_0103].",
         },
-        {"passage": "attack_note.T1622", "sentence": NOTE, "decision": "drop", "reason": "No."},
+        {
+            "passage": "attack_note.T1622",
+            "sentence": NOTE_WORDS,
+            "decision": "drop",
+            "reason": "No.",
+        },
         {
             "passage": "attack_note.T1055",
-            "sentence": REASON,
+            "sentence": REASON_WORDS,
             "decision": "rewrite",
             "sources": ["string_resolution"],
             "rewrite": "The judge kept it [ev_0104].",
@@ -79,7 +85,12 @@ def test_the_bundle_and_the_stored_report_keep_the_judge_s_words_whole() -> None
             "decision": "drop",
             "reason": "No.",
         },
-        {"passage": "attack_note.T1055", "sentence": REASON, "decision": "drop", "reason": "No."},
+        {
+            "passage": "attack_note.T1055",
+            "sentence": REASON_WORDS,
+            "decision": "drop",
+            "reason": "No.",
+        },
     ]
     apply_rows({"sentences": rows}, passages_of(report))
     stored = MalwareReport.model_validate(report.model_dump(mode="json"))
