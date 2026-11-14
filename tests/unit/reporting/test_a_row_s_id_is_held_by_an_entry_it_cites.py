@@ -30,6 +30,8 @@ from malspark.pipeline.validation import (
     MARKED_IN_PLACE,
     ComparedValues,
     EntryTexts,
+    _code_read,
+    _instruction_operand_values,
     _read_compared_operands,
     cited_id_violations,
     command_value_violations,
@@ -481,6 +483,34 @@ class TestTheCaseRangesOfOneTextHaveOneBudget:
 
         assert cited_id_violations(_rows("4"), _ledger(code)) == []
 
+    def test_a_line_beginning_with_case_and_no_ellipsis_is_not_a_compare_not_taken(self) -> None:
+        assert _read_compared_operands("case closed, the handler returns: 4\n") == (
+            frozenset(),
+            False,
+        )
+
+
+class TestALedgerTextIsReadAsWritten:
+    @pytest.mark.parametrize(
+        ("written", "read"),
+        [
+            ('"\\u2502 cmp al, 0x42\\n"', '"│ cmp al, 0x42\n"'),
+            ("\\ud83d\\ude00", "\U0001f600"),
+            ("\\ud83d x \\ude00", "\\ud83d x \\ude00"),
+            ("\\u00e9\\u0041", "éA"),
+            ("\\\\u2502", "\\u2502"),
+            ("\\u25", "\\u25"),
+            ("\\U2502", "\\U2502"),
+        ],
+    )
+    def test_json_escapes_are_turned_back_and_an_undecodable_one_stands(
+        self, written: str, read: str
+    ) -> None:
+        assert _code_read(written) == read
+
+    def test_many_escapes_are_read_in_linear_time(self) -> None:
+        assert_scales(lambda size: "\\u2502\\ud83d\\ude00\\n " * size, 20000, _code_read)
+
 
 class TestACompareInAJsonStringHoldsItsNumber:
     """An operand ends where its text ends, at a closing quote too."""
@@ -543,6 +573,7 @@ class TestAnInstructionPlaceIsReadByItsCharacters:
             "the code runs cmp eax, foo+4 to test",
             "add a cmp loop, x",
             "a cmp byte patterns, x",
+            "bad cmp eax, foo+4",
             '{"summary": "uses cmp eax, foo+4 and returns"}',
             'the note says "cmp eax, foo+4" twice',
         ],
@@ -589,6 +620,64 @@ class TestAnInstructionPlaceIsReadByItsCharacters:
         )  # fmt: skip
 
         assert cited_id_violations(payload, texts) == []
+
+    def _asked(self, listing: str) -> list[Any]:
+        texts = EntryTexts.from_ledger(
+            [
+                _entry("ev_0010", "batch_decompile", json.dumps({"code": self.CHARACTERS})),
+                _entry("ev_0020", "disassemble_function", listing),
+            ]
+        )
+        payload = _commands(
+            ("0x41", ["ev_0020"]), ("0x42", ["ev_0020"]),
+            ("0x47", ["ev_0010"]), ("0x49", ["ev_0010"]),
+        )  # fmt: skip
+        return cited_id_violations(payload, texts)
+
+    def test_a_listing_written_with_ascii_escapes_is_read_as_written(self) -> None:
+        listing = (
+            "│     ┌─< 0x00401000      3c41   cmp al, 'A'\n"
+            "│     └─> 0x00401002      3c42   cmp al, 0x42\n"
+        )
+        escaped = json.dumps({"code": listing})
+
+        assert "\\u2502" in escaped
+        assert self._asked(escaped) == []
+
+    # A listing written as one JSON line: the compares stand past an
+    # instruction's place from the line's start, at the strings that hold them.
+    PADDING = [{"offset": 4198400 + n, "opcode": "mov eax, 1", "size": 5} for n in range(6)]
+
+    def test_a_compare_late_in_a_one_line_list_is_read_at_its_string(self) -> None:
+        late = json.dumps([*self.PADDING, {"offset": 1, "opcode": "cmp al, 'A'"}])
+
+        assert late.index("cmp") > 160
+        assert _read_compared_operands(late) == (frozenset(), True)
+        listing = json.dumps(
+            [
+                *self.PADDING,
+                {"offset": 1, "opcode": "cmp al, 'A'"},
+                {"offset": 3, "opcode": "cmp al, 0x42"},
+            ]
+        )
+        assert self._asked(listing) == []
+
+    def test_a_number_late_in_a_one_line_list_is_held(self) -> None:
+        late = json.dumps([*self.PADDING, {"offset": 3, "opcode": "cmp al, 0x42"}])
+
+        assert late.index("cmp") > 160
+        assert _read_compared_operands(late) == (frozenset({0x42}), False)
+
+    def test_an_operand_holding_a_quote_or_a_brace_is_not_taken(self) -> None:
+        # A Python-written string: the number stands at its closing quote.
+        listing = str({"code": "0x1: cmp al, 0x41\n0x3: cmp al, 0x42"})
+
+        assert _read_compared_operands(_code_read(listing)) == (frozenset({0x41}), True)
+        assert self._asked(listing) == []
+
+    @pytest.mark.parametrize("operand", ["0x42'", "'A'", '0x42"x', "{0x42}", "0x42}"])
+    def test_a_quote_or_a_brace_makes_an_operand_not_taken(self, operand: str) -> None:
+        assert _instruction_operand_values(operand) is None
 
     def test_a_prefix_read_two_ways_is_read_once(self) -> None:
         # ``ab:`` is a label and a byte with a colon: each token is taken once.

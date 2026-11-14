@@ -9893,15 +9893,32 @@ def _wrong_entry_label(
 
 
 # The escapes a JSON text writes, and what each stands for: a stored answer
-# holds code as JSON, and code is read with its own line breaks and quotes.
-_JSON_ESCAPE_RE = re.compile(r'\\(["\\/nrt])')
+# holds code as JSON, and code is read with its own line breaks, quotes and
+# characters. A ``\uXXXX`` escape is a character, a surrogate pair one
+# character; a lone surrogate is no character and stands as written.
+_JSON_ESCAPE_RE = re.compile(
+    r'\\(?:(["\\/nrt])'
+    r"|u(?P<pair>[dD][89abAB][0-9a-fA-F]{2}\\u[dD][c-fC-F][0-9a-fA-F]{2})"
+    r"|u(?P<unit>(?![dD][89a-fA-F])[0-9a-fA-F]{4}))"
+)
 _JSON_ESCAPES = {'"': '"', "\\": "\\", "/": "/", "n": "\n", "r": "\r", "t": "\t"}
 
 
+def _json_escaped(match: re.Match[str]) -> str:
+    """The character one JSON escape stands for."""
+    if match.group("unit"):
+        return chr(int(match.group("unit"), 16))
+    if match.group("pair"):
+        high, low = int(match.group("pair")[:4], 16), int(match.group("pair")[6:], 16)
+        return chr(0x10000 + ((high - 0xD800) << 10) + (low - 0xDC00))
+    return _JSON_ESCAPES[match.group(1)]
+
+
 def _code_read(text: str) -> str:
-    """``text`` with the escapes a JSON text writes for a newline, a tab, a quote and a
-    backslash taken out, in one pass, so an escaped backslash stays one backslash."""
-    return _JSON_ESCAPE_RE.sub(lambda m: _JSON_ESCAPES[m.group(1)], str(text or ""))
+    """``text`` with the escapes a JSON text writes for a newline, a tab, a quote, a
+    backslash and a character (``\\u2502``) taken out, in one pass, so an escaped
+    backslash stays one backslash. Linear in the length of ``text``."""
+    return _JSON_ESCAPE_RE.sub(_json_escaped, str(text or ""))
 
 
 # A whole number as code writes one compared: C's forms (``0x4``, ``04``,
@@ -9956,8 +9973,8 @@ _INSTRUCTION_PLACE_RE = re.compile(
     r")*+",
     re.ASCII | re.IGNORECASE,
 )
-# How far back on its line an instruction's place is read: a longer prefix
-# is not a listing's columns.
+# How far back an instruction's place is read, from its line's start or from
+# the JSON string that holds it: a longer prefix is not a listing's columns.
 _INSTRUCTION_PLACE_SPAN = 160
 # The most values the ``case A ... B:`` ranges of one text are read as, in
 # all. A range that would take the text past it is a compare the reader does
@@ -10006,10 +10023,11 @@ def _instruction_operands(written: str) -> list[str]:
 
 def _instruction_operand_values(operand: str) -> set[int] | None:
     """The values one instruction operand is: its number's, none for a name or a
-    memory reference, ``None`` for an operand in no form the reader takes."""
-    if not operand:
+    memory reference, ``None`` for an operand in no form the reader takes, as one
+    holding a quote or a brace is (a character, the end of a quoted text)."""
+    if not operand or any(char in operand for char in "'\"{}"):
         return None
-    if any(char in operand for char in "[](){}"):
+    if any(char in operand for char in "[]()"):
         return set()
     marked = operand[0] in "$#"
     bare = operand[1:].strip() if marked else operand
@@ -10023,11 +10041,15 @@ def _instruction_operand_values(operand: str) -> set[int] | None:
 def _at_instruction_place(text: str, start: int) -> bool:
     """Whether what stands before ``start`` on its line is a listing's columns,
     from the line's start or from the JSON string that holds the instruction."""
-    line = text.rfind("\n", max(0, start - _INSTRUCTION_PLACE_SPAN), start)
-    if line < 0 and start > _INSTRUCTION_PLACE_SPAN:
-        return False
-    if _INSTRUCTION_PLACE_RE.fullmatch(text, line + 1, start):
+    floor = max(0, start - _INSTRUCTION_PLACE_SPAN)
+    line = text.rfind("\n", floor, start)
+    # A line that starts before the window is no listing's columns; a JSON
+    # string within the window may still hold the instruction.
+    if not (line < 0 and start > _INSTRUCTION_PLACE_SPAN) and _INSTRUCTION_PLACE_RE.fullmatch(
+        text, line + 1, start
+    ):
         return True
+    line = max(line, floor - 1)
     # A JSON string opens with a quote after a bracket, a brace, a comma or
     # a key's colon.
     quote = text.rfind('"', line + 1, start)
@@ -10120,8 +10142,9 @@ def compared_operands(text: str) -> frozenset[int]:
     both as octal and as decimal (``010`` holds 8 and 10). An instruction's
     operands end where its text does: at the line's end, a ``;`` or ``//``
     comment, or the quote that closes the string holding it. An instruction
-    with an operand in no form read here, or whose operands are not taken to
-    that end (one longer than the reader's bound), holds none of its numbers;
+    with an operand in no form read here (one holding a quote or a brace among
+    them), or whose operands are not taken to that end (one longer than the
+    reader's bound), holds none of its numbers;
     one at an instruction's place on its line (after nothing but characters
     that are not word characters, number tokens, a ``label:``, a
     ``<symbol+offset>`` and an instruction prefix, from the line's start or
