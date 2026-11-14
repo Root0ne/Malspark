@@ -328,7 +328,12 @@ FAILURE_REDONE_CODE = "agreement.failure_redone"
 # record's value cell or a capability bullet of the summary, that no answer passing
 # the checks answers after the retry (refused, never answered, or standing twice in
 # its passage), or that the round dropped: left out with what holds it, a cell left
-# with no sentence printing "-" and a bullet left with none not printed (T-600).
+# with no sentence printing "-" and a bullet left with none not printed (T-600). Also a
+# sentence of a passage printed in its writer's own words (an analyst's statement or claim
+# sentence, the judge's note, reason or sentences) that the round dropped, or listed and no
+# keep passing the checks answers: left out of the analyst report where it prints and
+# counted there, its passage's text and the bundle keeping it whole, and recorded naming the
+# passage (T-613).
 DROPPED_CODE = "agreement.dropped"
 # A held sentence (any sentence of the conclusion or the limitations, of a
 # record's value cell or of a capability bullet; one calling open an address or a
@@ -531,6 +536,9 @@ class Passage:
     # shown to be listed and is never rewritten: a sentence of it listed is kept on a quote
     # that passes, or left out of the analyst report, and the bundle prints it whole (T-613).
     verbatim: str = ""
+    # Where such a passage's sentence the round leaves out is recorded, the sentence given:
+    # never its text, which stays whole for the bundle (T-613).
+    leave_out: Callable[[str], None] | None = None
 
 
 def _ids(*sources: Any) -> frozenset[str]:
@@ -636,10 +644,29 @@ def _verbatim_passages(report: MalwareReport) -> list[Passage]:
             kind=CLAIM_LED,
             cites=_ids(text.cites, text.text),
             verbatim=_VERBATIM_WRITERS.get(text.writer, _VERBATIM_WRITERS["analyst"]),
+            leave_out=_flagged_out(report, text.id),
         )
         for text in shown
         if text.text.strip()
     ]
+
+
+def _flagged_out(report: MalwareReport, pid: str) -> Callable[[str], None]:
+    """Record a sentence of the passage ``pid`` printed in its writer's own words that the round
+    left out, as a flagged statement under the round's code naming the passage
+    (``models.FlaggedStatement``): the analyst report leaves it out where that passage
+    prints, and the bundle prints it whole beside the round's record (T-613)."""
+    from malspark.reporting.models import FlaggedStatement
+
+    def _record(sentence: str) -> None:
+        rows = getattr(report, "flagged_statements", None)
+        if not isinstance(rows, list) or not sentence.strip():
+            return
+        row = FlaggedStatement(sentence=sentence, code=DROPPED_CODE, label=pid)
+        if row not in rows:
+            rows.append(row)
+
+    return _record
 
 
 def left_out_of(text: str, sentences: Iterable[str]) -> tuple[str, int]:
@@ -4071,8 +4098,9 @@ def _tied(source: Passage, held: frozenset[int]) -> bool:
 
 
 def _listed_when_kept(passage: Passage) -> bool:
-    """Whether a kept sentence of the passage is recorded as listed: section 5, or read only."""
-    return passage.kind == SECTION_5 or not _writable(passage)
+    """Whether a kept sentence of the passage is recorded as listed: section 5, or read only; a
+    passage printed in its writer's own words is counted, as a closing keep is (T-613)."""
+    return (passage.kind == SECTION_5 or not _writable(passage)) and not passage.verbatim
 
 
 def _row_violations(
@@ -4098,7 +4126,20 @@ def _row_violations(
             )
         ]
     out: list[Violation] = []
-    if row.decision == "rewrite" and not _writable(passage):
+    if row.decision == "rewrite" and passage.verbatim:
+        # Its writer's own words: a rewrite would no longer be them (T-613).
+        out.append(
+            Violation(
+                code=UNKNOWN_PASSAGE_CODE,
+                message=(
+                    f"row {safe_finding_value(index + 1)}: {safe_finding_value(passage.id)} "
+                    f"prints {safe_finding_value(passage.verbatim)} and is never rewritten: "
+                    f"{_VERBATIM_ENDS}."
+                ),
+                path=f"{path}.decision",
+            )
+        )
+    elif row.decision == "rewrite" and not _writable(passage):
         out.append(
             Violation(
                 code=UNKNOWN_PASSAGE_CODE,
@@ -4416,9 +4457,10 @@ def _held_by_the_ledger(passage: Passage, sentence: str) -> str:
 def _ends_on_answer(passage: Passage, sentence: str) -> str:
     """What leaves ``sentence`` of ``passage`` out where no answer for it passes the checks,
     in the words of its record: the ledger's lines that hold it (:func:`_held_by_the_ledger`),
-    or the kind of field answered whole it stands in (``Passage.whole``); ``""`` for any
-    other sentence, which ends as before."""
-    return _held_by_the_ledger(passage, sentence) or passage.whole
+    or the kind of field answered whole it stands in (``Passage.whole``), or who wrote the
+    passage printed in its writer's own words it stands in (``Passage.verbatim``, T-613);
+    ``""`` for any other sentence, which ends as before."""
+    return _held_by_the_ledger(passage, sentence) or passage.whole or passage.verbatim
 
 
 def _shown_entries(passage: Passage, sentence: str, by_id: Mapping[str, Passage]) -> frozenset[str]:
@@ -4883,9 +4925,18 @@ def _answer_violations(
     # A sentence the ledger's own lines hold is left out where no answer for it passes
     # (:data:`_LEFT_OUT_END`): a drop of it is an answer, in the body as in a closing passage.
     held = span is not None and bool(_held_by_the_ledger(passage, span[2]))
+    # A passage printed in its writer's own words: a sentence of it is kept on a source's words
+    # or dropped on its reason, never rewritten (T-613).
+    verbatim = bool(passage.verbatim)
     # A row whose sentence does not stand in its passage is refused for that alone: which
     # sentence it drops is not known.
-    unheld_drop = row.decision == "drop" and not passage.closing and not held and span is not None
+    unheld_drop = (
+        row.decision == "drop"
+        and not passage.closing
+        and not held
+        and not verbatim
+        and span is not None
+    )
     if unheld_drop:
         out.append(
             Violation(
@@ -4907,7 +4958,7 @@ def _answer_violations(
         and row.decision == "keep"
     )
     reasoned = (
-        (passage.closing or absent or (held and row.decision == "drop"))
+        (passage.closing or absent or ((held or verbatim) and row.decision == "drop"))
         and row.decision != "rewrite"
         and bool(row.reason.strip())
     )
@@ -4916,6 +4967,7 @@ def _answer_violations(
     # is kept on a reason.
     closing_ends = _closing_ends(passage, span[2]) if span is not None else ""
     body_ends = _named_body_ends(passage, span[2]) if span is not None else ""
+    verbatim_ends = f"{_VERBATIM_ENDS}." if verbatim else ""
     # A drop of the body naming no sentence of its passage is refused for that alone: which
     # sentence it drops is not known, so no source it names is asked for (T-600).
     unknown_drop = row.decision == "drop" and not passage.closing and span is None
@@ -4934,7 +4986,7 @@ def _answer_violations(
                     else f"row {number} names no source. {_NAME_THE_SOURCES_READ} {where}"
                     + (
                         f", {_REASON_LEAVING}"
-                        if closing_ends or body_ends
+                        if closing_ends or body_ends or verbatim_ends
                         else f", {_REASON_KEEPING}"
                         if passage.closing
                         else f", {_REASON_ABSENCE}"
@@ -4960,8 +5012,8 @@ def _answer_violations(
         and (passage.kind != SECTION_5 or _in_own_words(passage, sentence, sources))
         and repeats_sentence(sentence, row.rewrite)
     )
-    keeping = row.decision == "keep" and (passage.closing or absent)
-    held_ends = closing_ends or body_ends
+    keeping = row.decision == "keep" and (passage.closing or absent or verbatim)
+    held_ends = closing_ends or body_ends or verbatim_ends
     if row.decision == "rewrite" and passage.closing and repeats_sentence(sentence, row.rewrite):
         # A rewrite saying what the sentence says is a keep on the sources it names,
         # quoting the one of their sentences that matches it best (T-568).
@@ -5056,7 +5108,11 @@ def _answer_violations(
                 path=f"{path}.decision",
             )
         )
-    speaking = _speaking_of(sentence, by_id or {}, passage) if keeping and not row.sources else []
+    speaking = (
+        _speaking_of(sentence, by_id or {}, passage)
+        if keeping and not row.sources and not verbatim
+        else []
+    )
     if speaking:
         # "No source speaks of it" while a fact about a routine it names, or a
         # passage or fact about what it denies something of, is shown: the model
@@ -7348,6 +7404,12 @@ def apply_rows(
         if not rewrites:
             continue
         passage = by_id[pid]
+        if passage.leave_out is not None:
+            # A passage printed in its writer's own words keeps its text: each sentence left
+            # out is recorded where the renderers read it (T-613).
+            for start, end, rewrite in sorted(rewrites):
+                if not rewrite:
+                    passage.leave_out(passage.text[start:end].strip())
         text = passage.text
         for start, end, rewrite in sorted(rewrites, reverse=True):
             text = text[:start] + rewrite + text[end:]
@@ -7413,11 +7475,17 @@ def _left_out(
             if every_code or v.code in _LEDGER_CODES or v.code == KEEP_UNQUOTED_CODE
         )
     )
+    where = (
+        f" ({safe_finding_value(passage.id)}) out of the analyst report, which the bundle "
+        "prints whole "
+        if passage.verbatim
+        else " out of the section "
+    )
     return Violation(
         code=DROPPED_CODE,
         message=(
             "The agreement question leaves a sentence of "
-            f"{safe_finding_value(passage.label)} out of the section "
+            f"{safe_finding_value(passage.label)}{where}"
             f"({safe_finding_value(_capped(why))}"
             + (f": {safe_finding_value(codes)}" if codes else "")
             + f"): {safe_finding_value(sentence)!r}."
