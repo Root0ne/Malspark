@@ -7717,9 +7717,10 @@ UNCITED_IDENTIFIER_CODE = "report.identifier_uncited"
 # beside its evidence.
 STATED_VALUE_UNHELD_CODE = "report.value_not_in_cited_entry"
 # A table row whose id none of the entries it cites holds, while another entry
-# of the run does (``cited_id_violations``): a number where that entry's code
-# compares it, any other id where its text writes it whole. Asked once per set
-# of holders, naming them; a row kept after it is marked beside its evidence.
+# of the run does (``cited_id_violations``): a number where that entry's one
+# compared expression holds the most of the table's numbers, any other id
+# where its text writes it whole. Asked once per set of holders, naming them;
+# a row kept after it is marked beside its evidence.
 ID_NOT_IN_CITED_ENTRY_CODE = "report.id_not_in_cited_entry"
 # Technical prose naming a network value this run does not publish without
 # that value's publish state (``unpublished_value_violations``). Asked once; a
@@ -9066,12 +9067,11 @@ class EntryTexts:
     # What the answered entries hold by address (``_LedgerHolds``), read on the
     # first statement of absence any check of this report meets, then kept.
     _holds: list[_LedgerHolds] = field(default_factory=list, compare=False, repr=False)
-    # The whole numbers each entry's or item's code compares (:meth:`compares`),
-    # read once per text, and the entries comparing each number
-    # (:meth:`comparing`), built once over every entry on first use; its
-    # ``None`` key marks it built.
-    _compared: dict[str, frozenset[int]] = field(default_factory=dict, compare=False, repr=False)
-    _comparing: dict[int | None, list[str]] = field(default_factory=dict, compare=False, repr=False)
+    # The value sets each entry's code compares (:meth:`compares`), read once
+    # per text.
+    _compared: dict[str, tuple[frozenset[int], ...]] = field(
+        default_factory=dict, compare=False, repr=False
+    )
     # The numbers each cited text writes as a compared operand (:meth:`operands`).
     _operands: dict[str, frozenset[int]] = field(default_factory=dict, compare=False, repr=False)
 
@@ -9226,23 +9226,45 @@ class EntryTexts:
             if entry_id in self.texts and self.holds(entry_id, value, fields=fields)
         ]
 
-    def compares(self, cited: str) -> frozenset[int]:
-        """The whole numbers the code in a cited entry or item chooses among.
+    def compares(self, entry_id: str) -> tuple[frozenset[int], ...]:
+        """The value sets the code in an entry chooses among, one per expression.
 
-        The values :func:`compared_values` reads, of every expression it reads.
-
-        Read on the text as code reads it: the escapes a JSON text writes for
-        a newline, a tab, a quote or a backslash taken out (:func:`_code_read`).
-        Read once per text.
+        The expressions :func:`compared_values` reads, read on the text as code
+        reads it: the escapes a JSON text writes for a newline, a tab, a quote
+        or a backslash taken out (:func:`_code_read`). Read once per text.
         """
-        key = str(cited).strip().lower()
+        key = str(entry_id).strip().lower()
         if key not in self._compared:
-            self._compared[key] = frozenset(
-                value
+            self._compared[key] = tuple(
+                frozenset(values)
                 for _subject, values in compared_values(_code_read(self.text_of(key)))
-                for value in values
             )
         return self._compared[key]
+
+    def choosing(self, ids: Collection[int]) -> dict[str, frozenset[int]]:
+        """The entries whose one compared expression holds the most of ``ids``, with its values.
+
+        The expression is picked as :func:`command_value_violations` picks it:
+        the one holding the most of the distinct ``ids``, more than half of
+        them and at least two. Every entry with an expression holding as many
+        is returned, in ledger order (a repeat of one call is another such
+        entry), with the values of its expressions that do; an entry whose
+        code merely compares some of ``ids`` is not. Empty where no expression
+        holds enough. Never a sandbox item, as :meth:`holding` offers none.
+        """
+        wanted = set(ids)
+        best = 0
+        found: dict[str, frozenset[int]] = {}
+        for entry_id in self.texts:
+            for values in self.compares(entry_id):
+                held = len(wanted.intersection(values))
+                if held > best:
+                    best, found = held, {}
+                if held and held == best:
+                    found[entry_id] = found.get(entry_id, frozenset()) | values
+        if best < 2 or best * 2 <= len(wanted):
+            return {}
+        return found
 
     def operands(self, cited: str) -> frozenset[int]:
         """The whole numbers a cited entry's or item's text writes as a compared operand.
@@ -9271,20 +9293,6 @@ class EntryTexts:
             and not self.operands(key)
             and not holds_code(_code_read(self.text_of(key)))
         )
-
-    def comparing(self, value: int) -> list[str]:
-        """Every entry whose code compares ``value`` (:meth:`compares`), in ledger order.
-
-        Built once over every entry's text, so a table of many rows costs a
-        lookup per row; never a sandbox item, as :meth:`holding` offers none.
-        """
-        if not self._comparing:
-            for entry_id in self.texts:
-                for number in self.compares(entry_id):
-                    self._comparing.setdefault(number, []).append(entry_id)
-            # Built, for a ledger whose code compares nothing too.
-            self._comparing[None] = []
-        return list(self._comparing.get(value, ()))
 
     def named(self, entry_id: str) -> str:
         """``ev_0012 (floss)``: an id with the tool that answered it."""
@@ -9898,6 +9906,24 @@ def compared_operands(text: str) -> frozenset[int]:
 _ROW_LIST_KEY_RE = re.compile(r"[a-z][a-z_]*")
 
 
+def _numbered_ids(rows: Sequence[Any]) -> dict[int, int]:
+    """The rows of a table whose id is read as a number, by index, each with its number.
+
+    An id that is a number as the code's numbers are read (:data:`_CODE_INT`),
+    alone or as its last word.
+    """
+    numbered: dict[int, int] = {}
+    for index, row in enumerate(rows):
+        written = str(row.get("id") or "").strip() if isinstance(row, dict) else ""
+        last = written.rsplit(None, 1)[-1] if written else ""
+        if _ROW_NUMBER_RE.fullmatch(last):
+            try:
+                numbered[index] = _code_number(last)
+            except (ValueError, OverflowError):
+                continue
+    return numbered
+
+
 def cited_id_violations(payload: Any, entries: EntryTexts | None) -> list[Violation]:
     """Table rows whose ``id`` none of the entries they cite holds, while another entry does.
 
@@ -9908,9 +9934,12 @@ def cited_id_violations(payload: Any, entries: EntryTexts | None) -> list[Violat
     form it reads (:meth:`EntryTexts.operands`), and not asked about where a
     cited entry is code in a form not read (:meth:`EntryTexts.code_not_read`):
     a doubt keeps the question back. Any other id is held by an entry whose
-    text holds it whole (:meth:`EntryTexts.holds`). Held by none of the cited entries but by
-    another entry of the run, the row is asked about once, together with the
-    other rows its holders hold, with those holders named. Found nowhere,
+    text holds it whole (:meth:`EntryTexts.holds`). Held by none of the cited
+    entries, the row is asked about once, together with the other rows its
+    holders hold, with those holders named: for a number, the entries whose one
+    compared expression holds the most of the table's numbers
+    (:meth:`EntryTexts.choosing`), never an entry that merely compares it; for
+    any other id, every other entry whose text holds it. With no holder,
     nothing is said here: whether an id no entry holds should be cited is
     another question.
 
@@ -9919,7 +9948,8 @@ def cited_id_violations(payload: Any, entries: EntryTexts | None) -> list[Violat
     here), and an id no text can be said to hold (:func:`decidable`). The id
     is never rewritten: a row kept after the question is marked beside its
     evidence. Linear in the rows and the entries' text: each text's numbers
-    are read once, and the entries holding a value are looked up.
+    are read once, each table's expression is picked once, and the entries
+    holding any other id are looked up.
     """
     if payload is None or entries is None or not (entries.texts or entries.items is not None):
         return []
@@ -9928,6 +9958,8 @@ def cited_id_violations(payload: Any, entries: EntryTexts | None) -> list[Violat
     for list_key, rows in data.items():
         if not isinstance(rows, list) or not _ROW_LIST_KEY_RE.fullmatch(str(list_key)):
             continue
+        numbered = _numbered_ids(rows)
+        chosen = entries.choosing(set(numbered.values())) if numbered else {}
         for index, row in enumerate(rows):
             if not isinstance(row, dict):
                 continue
@@ -9937,16 +9969,19 @@ def cited_id_violations(payload: Any, entries: EntryTexts | None) -> list[Violat
             cited = [ref for ref in _ids_in(row.get("evidence_refs")) if entries.has_text(ref)]
             if not cited or any(ref in entries.partial for ref in cited):
                 continue
-            last = written.rsplit(None, 1)[-1]
             try:
-                if _ROW_NUMBER_RE.fullmatch(last):
-                    number = _code_number(last)
+                if index in numbered:
+                    number = numbered[index]
                     if any(
                         number in entries.operands(ref) or entries.code_not_read(ref)
                         for ref in cited
                     ):
                         continue
-                    holders = [ref for ref in entries.comparing(number) if ref not in cited]
+                    holders = [
+                        ref
+                        for ref, values in chosen.items()
+                        if number in values and ref not in cited
+                    ]
                 else:
                     if not decidable(written) or any(
                         entries.holds(ref, written, fields=True) for ref in cited
@@ -9997,9 +10032,9 @@ def cited_id_violations(payload: Any, entries: EntryTexts | None) -> list[Violat
             Violation(
                 code=ID_NOT_IN_CITED_ENTRY_CODE,
                 message=(
-                    f"{said} A number is held where an entry's code compares it, any other id "
-                    "where an entry's text writes it whole. Cite the entry that holds each "
-                    "row's id."
+                    f"{said} A number is held where an entry's code compares it with the "
+                    "value it chooses by, any other id where an entry's text writes it whole. "
+                    "Cite the entry that holds each row's id."
                 ),
                 path=f"{list_key}.id",
                 quoted=tuple(where for _number, _id, _cited, where in found),

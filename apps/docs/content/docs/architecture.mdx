@@ -5883,11 +5883,16 @@ is assembled from what the run gathered rather than recomputed beside it:
   cites no entry of the run), `report.id_not_in_cited_entry` (a table row's
   `id`, a command's, is held by none of the entries the row cites while another
   entry of the run holds it: a number, alone or as the id's last word, is held
-  by an entry whose code a switch or an else-if ladder compares it in
-  (`validation.compared_values`, read on the entry's text with its JSON escapes
-  taken out), any other id by an entry whose text writes it whole; rows the
-  same entries hold are one question naming them, an id no entry holds is not
-  asked here, and a kept row is marked beside its evidence),
+  by a cited entry whose text writes it as a compared operand in any base and
+  form the reader knows (an equality test, a case label, a compare instruction,
+  `validation.compared_operands`), and a row citing code in a form the reader
+  does not read is not asked; the entry offered for a number is only the one
+  whose single compared expression holds the most of the table's numbers
+  (`validation.compared_values`, picked as for `composer.command_values`),
+  never one that merely compares it; any other id is held by an entry whose
+  text writes it whole; rows the same entries hold are one question naming
+  them, an id no entry holds is not asked here, and a kept row is marked beside
+  its evidence),
   `report.value_not_in_cited_entry` (a host
   identifier's or a configuration value's whole value is in none of the entries
   it cites; a configuration number is held in decimal or hex, or by its number

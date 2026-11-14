@@ -245,6 +245,40 @@ class TestACitedEntryHoldsANumberItComparesInAnyForm:
         assert cited_id_violations(_rows("4"), _ledger(code, tool="disassemble_function")) == []
 
 
+class TestTheEntryOfferedForANumber:
+    HANDLER_9 = "void handler(int cmd) {\n  if (cmd == 9) {\n    download();\n  }\n}\n"
+
+    def test_only_the_expression_holding_most_of_the_table_s_numbers(self) -> None:
+        (found,) = cited_id_violations(_rows("4"), _ledger(self.HANDLER_9))
+
+        assert "ev_0003 (decompile_function)" in found.message
+        assert "ev_0002" not in found.message
+        assert found.labels == ('"4" is not in ev_0001; ev_0003 (decompile_function) holds it',)
+
+    def test_an_entry_that_merely_contains_the_number_is_never_offered(self) -> None:
+        texts = _ledger(self.HANDLER_9, dispatcher=False)
+
+        assert cited_id_violations(_rows("4"), texts) == []
+
+    def test_entries_tied_on_the_most_are_all_offered(self) -> None:
+        texts = EntryTexts.from_ledger(
+            [
+                _entry("ev_0001", "decompile_function", json.dumps({"code": self.HANDLER_9})),
+                _entry("ev_0003", "decompile_function", json.dumps({"code": COMMAND_SWITCH})),
+                _entry("ev_0004", "decompile_function", json.dumps({"code": COMMAND_SWITCH})),
+            ]
+        )
+
+        (found,) = cited_id_violations(_rows("4"), texts)
+
+        assert "ev_0003 (decompile_function), ev_0004 (decompile_function)" in found.message
+
+    def test_a_table_of_one_number_picks_no_expression(self) -> None:
+        payload = _commands(("4", ["ev_0001"]), ("download", ["ev_0001"]))
+
+        assert cited_id_violations(payload, _ledger(self.HANDLER_9)) == []
+
+
 class TestWhatIsNotAsked:
     def test_a_row_citing_no_entry_with_text_or_nothing(self) -> None:
         payload = _commands(("0xc", ["ev_0999"]), ("0xc", []), ("", ["ev_0011"]))
