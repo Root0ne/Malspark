@@ -68,6 +68,8 @@ from malspark.core.undeclared_tools import (
     declared_auto_name_pattern,
     entry_address_arguments,
     entry_decompiles,
+    entry_lists_any_code,
+    holds_code,
 )
 from malspark.pipeline.events import (
     VALIDATION_ANSWERED,
@@ -9070,6 +9072,8 @@ class EntryTexts:
     # ``None`` key marks it built.
     _compared: dict[str, frozenset[int]] = field(default_factory=dict, compare=False, repr=False)
     _comparing: dict[int | None, list[str]] = field(default_factory=dict, compare=False, repr=False)
+    # The numbers each cited text writes as a compared operand (:meth:`operands`).
+    _operands: dict[str, frozenset[int]] = field(default_factory=dict, compare=False, repr=False)
 
     @classmethod
     def from_ledger(cls, ledger: Iterable[Any], corpus: Any = None) -> EntryTexts:
@@ -9239,6 +9243,34 @@ class EntryTexts:
                 for value in values
             )
         return self._compared[key]
+
+    def operands(self, cited: str) -> frozenset[int]:
+        """The whole numbers a cited entry's or item's text writes as a compared operand.
+
+        :func:`compared_operands`, read on the text as code reads it
+        (:func:`_code_read`), once per text.
+        """
+        key = str(cited).strip().lower()
+        if key not in self._operands:
+            self._operands[key] = compared_operands(_code_read(self.text_of(key)))
+        return self._operands[key]
+
+    def code_not_read(self, cited: str) -> bool:
+        """Whether a cited entry is code in a form the operand reader does not read.
+
+        An entry whose tool lists code (its declared kind, else its name) and
+        whose text is neither pseudo-C nor disassembly lines
+        (:func:`holds_code`) and writes no compared operand: a number absent
+        from it may be written there in a form not read.
+        """
+        key = str(cited).strip().lower()
+        entry = self.entries.get(key)
+        return (
+            entry is not None
+            and entry_lists_any_code(entry)
+            and not self.operands(key)
+            and not holds_code(_code_read(self.text_of(key)))
+        )
 
     def comparing(self, value: int) -> list[str]:
         """Every entry whose code compares ``value`` (:meth:`compares`), in ledger order.
@@ -9804,6 +9836,64 @@ def _code_read(text: str) -> str:
     return _JSON_ESCAPE_RE.sub(lambda m: _JSON_ESCAPES[m.group(1)], str(text or ""))
 
 
+# A whole number as code writes one compared: C's forms (``0x4``, ``04``,
+# ``4``, a ``u``/``l`` suffix) and a disassembler's (``4h``, ``0x4``).
+_OPERAND_INT = r"-?(?:0[xX][0-9a-fA-F]{1,16}|[0-9][0-9a-fA-F]{0,16}[hH]|[0-9]{1,20})[uUlL]{0,3}"
+# A number written as the whole of one side of a compare: an equality or
+# inequality test (either side), a case label, or a compare instruction's
+# last operand.
+_COMPARED_OPERAND_RE = re.compile(
+    rf"[!=]=[ \t]*({_OPERAND_INT})[ \t]*(?=$|[)|&,?:;}}])"
+    rf"|(?:^|[(|&,?:;{{])[ \t]*({_OPERAND_INT})[ \t]*[!=]="
+    rf"|\bcase[ \t]+({_OPERAND_INT})[ \t]*:"
+    rf"|\bcmp[ \t]+[^,\n]{{1,80}},[ \t]*({_OPERAND_INT})(?![\w.])",
+    re.ASCII | re.IGNORECASE | re.MULTILINE,
+)
+
+
+def _operand_values(written: str) -> set[int]:
+    """Every value ``written`` reads as in the forms :data:`_OPERAND_INT` takes.
+
+    A leading zero is octal to C and decimal to a disassembler: both are
+    read, so a number either reader would take is held.
+    """
+    digits = written.rstrip("uUlL")
+    negative = digits.startswith("-")
+    digits = digits.lstrip("-")
+    if digits[:2].lower() == "0x":
+        values = {int(digits, 16)}
+    elif digits[-1:] in ("h", "H"):
+        values = {int(digits[:-1], 16)}
+    elif not digits.isdigit():
+        return set()
+    else:
+        values = {int(digits, 10)}
+        if len(digits) > 1 and digits[0] == "0" and set(digits) <= set("01234567"):
+            values.add(int(digits, 8))
+    return {-value for value in values} if negative else values
+
+
+def compared_operands(text: str) -> frozenset[int]:
+    """The whole numbers ``text`` writes as a compared operand, in any form it reads.
+
+    A number is read where it is the whole of one side of an equality or
+    inequality test (``cmd == 4``, ``4 == cmd``, ``cmd != 0x4``), a case label
+    (``case 4:``), or the last operand of a compare instruction (``cmp eax,
+    4``, ``cmp eax, 4h``, ``CMP EAX,0x4``); never where it is part of a longer
+    number or of a sum. Comments and strings are not told apart from code: a
+    number one of them writes as compared is read too, the reading that keeps
+    a question back. Linear in the length of ``text``.
+    """
+    found: set[int] = set()
+    for match in _COMPARED_OPERAND_RE.finditer(text):
+        written = next(group for group in match.groups() if group)
+        try:
+            found |= _operand_values(written)
+        except ValueError:
+            continue
+    return frozenset(found)
+
+
 # A list an answer writes its rows in: a field name, never a value a model chose.
 _ROW_LIST_KEY_RE = re.compile(r"[a-z][a-z_]*")
 
@@ -9814,9 +9904,11 @@ def cited_id_violations(payload: Any, entries: EntryTexts | None) -> list[Violat
     A row that states an id (a command's) and cites entries is held where
     one cited entry holds the id. A number, written alone or as the id's
     last word and read as the code's numbers are read (:data:`_CODE_INT`), is
-    held by an entry whose code compares it (:meth:`EntryTexts.compares`);
-    any other id is held by an entry whose text holds it whole
-    (:meth:`EntryTexts.holds`). Held by none of the cited entries but by
+    held by a cited entry whose text writes it as a compared operand in any
+    form it reads (:meth:`EntryTexts.operands`), and not asked about where a
+    cited entry is code in a form not read (:meth:`EntryTexts.code_not_read`):
+    a doubt keeps the question back. Any other id is held by an entry whose
+    text holds it whole (:meth:`EntryTexts.holds`). Held by none of the cited entries but by
     another entry of the run, the row is asked about once, together with the
     other rows its holders hold, with those holders named. Found nowhere,
     nothing is said here: whether an id no entry holds should be cited is
@@ -9849,7 +9941,10 @@ def cited_id_violations(payload: Any, entries: EntryTexts | None) -> list[Violat
             try:
                 if _ROW_NUMBER_RE.fullmatch(last):
                     number = _code_number(last)
-                    if any(number in entries.compares(ref) for ref in cited):
+                    if any(
+                        number in entries.operands(ref) or entries.code_not_read(ref)
+                        for ref in cited
+                    ):
                         continue
                     holders = [ref for ref in entries.comparing(number) if ref not in cited]
                 else:
