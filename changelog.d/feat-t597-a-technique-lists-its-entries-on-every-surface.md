@@ -17,10 +17,14 @@
   entries among a technique's sources and those its statements write.
 - **A table row's id is checked against the entries the row cites (T-597).** A composed row
   that states an `id` (a command's) and cites entries is held where one cited entry holds
-  the id: a number, alone or as the id's last word, where the entry's code compares it in a
-  switch or an else-if ladder, any other id where the entry's text writes it whole. A row
-  held by none of its cited entries while another entry of the run holds it is asked about
-  once, with the rows the same entries hold, naming those entries
-  (`report.id_not_in_cited_entry`); an id no entry holds is not asked here. The finding
+  the id. A number, alone or as the id's last word after a label every numbered row shares,
+  is held where a cited entry writes it as a compared operand in any base and form the reader
+  knows (an equality test, a case label, a compare instruction); a row citing code in a form
+  the reader does not read is not asked. Any other id is held where the entry's text writes
+  it whole. A failed call or an error envelope holds nothing. A row held by none of its cited
+  entries is asked about once, with the rows the same entries hold, naming those entries
+  (`report.id_not_in_cited_entry`): for a number, only the entry whose one compared
+  expression holds the most of the table's numbers, never one that merely compares it; for
+  any other id, every entry whose text writes it. An id no entry holds is not asked here. The finding
   follows `validation.feedback`, a row kept after it is marked beside its evidence, and the
   replay of a stored run runs the same check.
