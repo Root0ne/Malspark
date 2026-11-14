@@ -802,7 +802,9 @@ def selections(core: Mapping[str, Any]) -> list[tuple[str, str, str]]:
 
     ``(settings key, kind, id)`` for ``llm.provider``, ``static.provider``,
     ``sandbox.provider``, ``memory.backend``, each agent definition's and
-    each team's ``static_provider`` and each per-agent model entry's provider and its
+    each team's ``static_provider``, each provider a definition's tool
+    reference names (``{"kind": "provider", "provider": "<id>"}``, under its
+    reference's own key) and each per-agent model entry's provider and its
     fallbacks' providers. A key not stored selects its shipped default, which
     no plugin is.
     """
@@ -825,6 +827,13 @@ def selections(core: Mapping[str, Any]) -> list[tuple[str, str, str]]:
             if isinstance(entry, Mapping) and isinstance(entry.get("static_provider"), str):
                 key = f"core.{path}.{name}.static_provider"
                 out.append((key, "static", str(entry["static_provider"])))
+            refs = entry.get("tools") if isinstance(entry, Mapping) else None
+            for index, ref in enumerate(refs if isinstance(refs, list) else []):
+                if not isinstance(ref, Mapping) or ref.get("kind") != "provider":
+                    continue
+                if isinstance(ref.get("provider"), str) and ref["provider"]:
+                    key = f"core.{path}.{name}.tools.{index}.provider"
+                    out.append((key, "static", str(ref["provider"])))
     entries = core.get("llm.agents")
     if isinstance(entries, Mapping):
         for agent, entry in entries.items():
