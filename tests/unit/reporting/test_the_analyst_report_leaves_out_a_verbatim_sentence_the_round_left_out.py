@@ -68,3 +68,16 @@ def test_an_appendix_statement_prints_without_it_and_the_appendix_counts_it() ->
     assert "1 sentence of them was left out; the bundle prints every statement whole." in appendix
     _bundle_keeps(bundle, "statements.T1057.1", "It compares each name with HOST_MODE")
     assert STATEMENT.split(": ", 1)[1].split(" [ev_0101]")[0] in bundle
+
+
+def test_a_claim_sentence_left_out_prints_a_dash_and_the_section_counts_it() -> None:
+    sentence = "Routine 0x5b20 returns -1 when the BeingDebugged byte is set."
+    markdown, html, bundle = _printed(_dropped("attack_claim.T1622", sentence))
+    attack = _section(markdown, "## 10. MITRE ATT&CK mapping")
+
+    assert sentence not in attack and sentence not in html
+    assert "| Defense Evasion | T1622 | Debugger Evasion | - _(" in attack
+    assert "_1 sentence of this section was left out; the bundle lists each with the reason._" in (
+        attack
+    )
+    _bundle_keeps(bundle, "attack_claim.T1622", "returns -1 when the BeingDebugged byte is set")
