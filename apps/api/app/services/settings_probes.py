@@ -1088,6 +1088,37 @@ async def _ask_each_model(
     return bool(answered), detail, completions, llm
 
 
+def _static_provider_rows(resolved: Any) -> list[dict[str, Any]]:
+    """One row per static provider the resolved agent holds, in the servers' row form.
+
+    ``key`` is the provider id, ``tools`` the names its tools are offered
+    under (a later provider's clashing name prefixed), and ``status`` ``"ok"``
+    or the reason it did not open. An agent holding one provider has its
+    provider tools in that one row; one holding none has no row.
+    """
+    from malspark.agents.composition import PROVIDER_NOT_OPENED_REASON
+    from malspark.agents.prompt_fragments import PROVIDER_FAMILY, tool_family
+    from malspark.agents.tool_pinning import provider_of
+
+    provider_ids = [str(p) for p in getattr(resolved, "provider_ids", ()) or ()]
+    reasons = set(getattr(resolved, "degradation_reasons", ()) or ())
+    rows: list[dict[str, Any]] = []
+    for provider_id in provider_ids:
+        if len(provider_ids) > 1:
+            held = [t for t in resolved.tools if provider_of(t) == provider_id]
+        else:
+            held = [t for t in resolved.tools if tool_family(t) == PROVIDER_FAMILY]
+        not_opened = PROVIDER_NOT_OPENED_REASON.format(provider=provider_id)
+        rows.append(
+            {
+                "key": provider_id,
+                "tools": [str(getattr(t, "name", "")) for t in held],
+                "status": not_opened if not_opened in reasons else "ok",
+            }
+        )
+    return rows
+
+
 async def probe_agent(v: dict[str, Any]) -> ProbeResult:
     """Resolve one agent definition against the given settings, without running it.
 
@@ -1243,6 +1274,9 @@ async def probe_agent(v: dict[str, Any]) -> ProbeResult:
                 # pair it was taken against.
                 "llm": llm,
                 "static_provider": resolved.static_provider_id,
+                # Every static provider the agent holds, in reference order,
+                # each with the tools it is offered under and whether it opened.
+                "static_providers": _static_provider_rows(resolved),
                 "servers": servers,
             },
         )

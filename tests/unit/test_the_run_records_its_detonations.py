@@ -213,9 +213,9 @@ class TestTheRecord:
     ) -> None:
         monkeypatch.setattr(run_environment, "host_facts", lambda: {})
         record = environment_record(_held(_record()))
-        assert ENVIRONMENT_VERSION == 3
-        assert record == {"v": 3, "detonations": detonations_record(_held(_record()))}
-        assert environment_record(_held()) == {"v": 3, "detonations": []}
+        assert ENVIRONMENT_VERSION == 4
+        assert record == {"v": 4, "detonations": detonations_record(_held(_record()))}
+        assert environment_record(_held()) == {"v": 4, "detonations": []}
 
     def test_a_field_that_cannot_be_read_is_not_reported_and_the_row_stays(self) -> None:
         class _Broken:

@@ -29,7 +29,11 @@ should happen:
   how many answers carried it (``TokenLedger.response_models``), an
   identifier shaped like a file-system path kept by its base name and listed
   in ``response_models_reduced``. An agent whose answers carried none has an
-  empty map.
+  empty map. An agent holding several static providers (named ``provider``
+  references) lists, in ``static_providers``, each provider whose tools it
+  was offered, in reference order (:func:`held_providers`); an agent with one
+  provider or none has no such list, its provider being the source of its
+  tools' entries.
 * ``tools`` is, per tool server the job's registry or one of its providers
   attached, how it served the run and what it ran (:func:`tools_record`):
   the name and version it gave at its attach, its manifest's version, and
@@ -72,8 +76,10 @@ from malspark.tools.capabilities import NOT_REPORTED
 # The record's shape version: a reader that meets a newer one reads what it
 # knows. 2: a row's ``sampling`` may be ``None`` (not reported), rows carry
 # ``thinking`` and ``answered``, and ``tools`` is recorded. 3: ``detonations``
-# is recorded.
-ENVIRONMENT_VERSION = 3
+# is recorded. 4: an agent holding several static providers records them as
+# ``static_providers``, and a call whose entry names no server is credited to
+# the server of its ``provider:<id>`` source, for every agent.
+ENVIRONMENT_VERSION = 4
 
 # The server every entry of a step the pipeline runs in its own process is
 # recorded under (``pipeline.triage_pack.PIPELINE``), and the agent its server
@@ -399,8 +405,18 @@ def _field(entry: Any, name: str) -> str:
     return _text(value)
 
 
+def _provider_of(tool: Any) -> str:
+    """The provider a tool of an agent holding several static providers came from, or ``""``."""
+    from malspark.agents.composition import PROVIDER_ID_METADATA_KEY
+
+    return _text((getattr(tool, "metadata", None) or {}).get(PROVIDER_ID_METADATA_KEY))
+
+
 def _served(
-    container: Any, entries: Iterable[Any], own: Mapping[str, Mapping[str, Any]] | None = None
+    container: Any,
+    entries: Iterable[Any],
+    own: Mapping[str, Mapping[str, Any]] | None = None,
+    by_provider: Mapping[str, str] | None = None,
 ) -> tuple[dict[str, set[str]], list[str]]:
     """Per server, how it served the run; and the tools the pipeline ran in its own process.
 
@@ -408,7 +424,11 @@ def _served(
     where the job's server registry stamped it. A provider's own server
     (``own``, by key, from ``own_tool_server``) stamps nothing: a tool or entry
     that names no server is its when its name is one of the tools that server
-    served (``tools``); a name more than one such server served is none's.
+    served (``tools``). A name more than one such server served, or a name
+    offered prefixed, is the server of the provider the tool came from
+    (``by_provider``, provider id to its own server's key): read off the
+    tool's provider mark and off the entry's declared source
+    (``provider:<id>``); otherwise it is none's.
     """
     claimed: dict[str, set[str]] = {}
     for key, held in (own or {}).items():
@@ -416,6 +436,7 @@ def _served(
         for name in names if isinstance(names, list | tuple) else ():
             claimed.setdefault(_text(name), set()).add(key)
     owners = {name: next(iter(keys)) for name, keys in claimed.items() if len(keys) == 1}
+    providers = dict(by_provider or {})
     served: dict[str, set[str]] = {}
     tools_of = getattr(container, "setup_tools", None)
     set_up = tools_of() if callable(tools_of) else {}
@@ -423,12 +444,16 @@ def _served(
         for tool in tools or ():
             server = _text((getattr(tool, "metadata", None) or {}).get("malspark_server"))
             server = server or owners.get(_text(getattr(tool, "name", None)), "")
+            server = server or providers.get(_provider_of(tool), "")
             if server:
                 served.setdefault(server, set()).add(SERVED_OFFERED)
     in_process: list[str] = []
     for entry in entries or ():
         server, tool = _field(entry, "server"), _field(entry, "tool")
         server = server or owners.get(tool, "")
+        source = _field(entry, "source")
+        if not server and source.startswith("provider:"):
+            server = providers.get(source[len("provider:") :], "")
         if server == PIPELINE:
             if tool and tool not in in_process:
                 in_process.append(tool)
@@ -508,18 +533,21 @@ def _in_process_requirements(container: Any, tools: list[str]) -> list[dict[str,
     return list(rows.values())
 
 
-def _own_servers(container: Any) -> dict[str, dict[str, Any]]:
+def _own_servers(container: Any) -> tuple[dict[str, dict[str, Any]], dict[str, str]]:
     """The tool servers the job's providers drive through handles of their own, by key.
 
     Each provider's ``own_tool_server`` (``providers.base.ServerOfItsOwn``):
-    the static providers this job built and its sandbox provider.
+    the static providers this job built and its sandbox provider. Beside them,
+    each static provider's id with its own server's key.
     """
-    providers: list[Any] = list((getattr(container, "_static_provider_cache", None) or {}).values())
+    static = dict(getattr(container, "_static_provider_cache", None) or {})
+    providers: list[tuple[str, Any]] = [(_text(key), p) for key, p in static.items()]
     sandbox = getattr(container, "_sandbox_provider_cache", None)
     if sandbox is not None:
-        providers.append(sandbox)
+        providers.append(("", sandbox))
     out: dict[str, dict[str, Any]] = {}
-    for provider in providers:
+    by_provider: dict[str, str] = {}
+    for provider_id, provider in providers:
         read = getattr(provider, "own_tool_server", None)
         try:
             held = read() if callable(read) else None
@@ -527,6 +555,26 @@ def _own_servers(container: Any) -> dict[str, dict[str, Any]]:
             continue
         if isinstance(held, dict) and _text(held.get("server")):
             out.setdefault(_text(held.get("server")), held)
+            if provider_id:
+                by_provider.setdefault(provider_id, _text(held.get("server")))
+    return out, by_provider
+
+
+def held_providers(container: Any) -> dict[str, list[str]]:
+    """Per agent (lowercase key), each static provider whose tools it was offered, in order.
+
+    Read from the job's setup (``setup_tools``): a tool of an agent holding
+    several providers carries the provider it came from
+    (``composition.PROVIDER_ID_METADATA_KEY``), in reference order. An agent
+    with one provider or none carries no such mark and is not listed.
+    """
+    tools_of = getattr(container, "setup_tools", None)
+    set_up = tools_of() if callable(tools_of) else {}
+    out: dict[str, list[str]] = {}
+    for agent, tools in (set_up or {}).items():
+        ids = list(dict.fromkeys(p for p in (_provider_of(t) for t in tools or ()) if p))
+        if ids:
+            out[_text(agent).lower()] = ids
     return out
 
 
@@ -556,8 +604,8 @@ def tools_record(container: Any, entries: Iterable[Any] = ()) -> dict[str, Any]:
     try:
         from malspark.tools.capabilities import package_version, reported_requirements
 
-        own_servers = _own_servers(container)
-        served, in_process = _served(container, entries, own_servers)
+        own_servers, by_provider = _own_servers(container)
+        served, in_process = _served(container, entries, own_servers, by_provider)
         registry = getattr(container, "_server_registry_cache", None)
         versions_of = getattr(registry, "server_versions", None)
         versions = dict(versions_of()) if callable(versions_of) else {}
@@ -934,8 +982,11 @@ def environment_record(container: Any, entries: Iterable[Any] = ()) -> dict[str,
             _ledger_map(ledger, "answers_by_position"),
             _ledger_map(ledger, "reduced_response_models"),
         )
+        for agent, provider_ids in held_providers(container).items():
+            block = agents.setdefault(agent, {"requests": [], "response_models": {}})
+            block["static_providers"] = provider_ids
         if agents:
-            record["agents"] = agents
+            record["agents"] = dict(sorted(agents.items()))
         return record if len(record) > 1 else None
     except Exception as exc:  # noqa: BLE001 — telemetry never breaks a summary
         logger.debug("run environment: not recorded (%s).", exc)

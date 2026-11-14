@@ -1363,8 +1363,16 @@ def _pin_sample_path(agent: Any, state: AnalysisState) -> None:
     # And the agent's own provider, for a generic agent that reads one: its
     # attach came before this path existed, and its guard on the path a model
     # sends reads it from here.
-    from malspark.agents.composition import pin_provider_sample
+    from malspark.agents.composition import pin_provider_sample, provider_sample_paths
 
+    # An agent holding several providers: each provider's tools are given
+    # that provider's own mirror, the path above being the first one's.
+    agent._path_by_provider = provider_sample_paths(
+        agent._resolved,
+        state.get("static_sample_paths") or {},
+        host=_absolute_host_sample_path(state) or None,
+        container=getattr(agent, "_container", None),
+    )
     pin_provider_sample(agent, state.get("static_sample_paths") or {})
 
 
