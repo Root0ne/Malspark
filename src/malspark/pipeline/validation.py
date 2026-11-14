@@ -9091,8 +9091,11 @@ class EntryTexts:
     _compared: dict[str, tuple[frozenset[int], ...]] = field(
         default_factory=dict, compare=False, repr=False
     )
-    # The numbers each cited text writes as a compared operand (:meth:`operands`).
-    _operands: dict[str, frozenset[int]] = field(default_factory=dict, compare=False, repr=False)
+    # The numbers each cited text writes as a compared operand (:meth:`operands`),
+    # and whether it writes a compare the reader does not take.
+    _operands: dict[str, tuple[frozenset[int], bool]] = field(
+        default_factory=dict, compare=False, repr=False
+    )
 
     @classmethod
     def from_ledger(cls, ledger: Iterable[Any], corpus: Any = None) -> EntryTexts:
@@ -9302,25 +9305,34 @@ class EntryTexts:
         :func:`compared_operands`, read on the text as code reads it
         (:func:`_code_read`), once per text.
         """
+        return self._operand_reading(cited)[0]
+
+    def _operand_reading(self, cited: str) -> tuple[frozenset[int], bool]:
         key = str(cited).strip().lower()
         if key not in self._operands:
-            self._operands[key] = compared_operands(_code_read(self.text_of(key)))
+            self._operands[key] = _read_compared_operands(_code_read(self.text_of(key)))
         return self._operands[key]
 
     def code_not_read(self, cited: str) -> bool:
         """Whether a cited entry is code in a form the operand reader does not read.
 
-        An entry whose tool lists code (its declared kind, else its name) and
-        whose text is neither pseudo-C nor disassembly lines
-        (:func:`holds_code`) and writes no compared operand: a number absent
-        from it may be written there in a form not read.
+        An entry whose text writes a compare the reader does not take — a
+        compare instruction with an operand in no form it reads, or a case
+        range wider than it expands — whatever its tool; or one whose tool
+        lists code (its declared kind, else its name) and whose text is
+        neither pseudo-C nor disassembly lines (:func:`holds_code`) and writes
+        no compared operand. A number absent from either may be written there
+        in a form not read.
         """
         key = str(cited).strip().lower()
+        read, untaken = self._operand_reading(key)
+        if untaken:
+            return True
         entry = self.entries.get(key)
         return (
             entry is not None
             and entry_lists_any_code(entry)
-            and not self.operands(key)
+            and not read
             and not holds_code(_code_read(self.text_of(key)))
         )
 
@@ -9877,16 +9889,31 @@ def _code_read(text: str) -> str:
 # A whole number as code writes one compared: C's forms (``0x4``, ``04``,
 # ``4``, a ``u``/``l`` suffix) and a disassembler's (``4h``, ``0x4``).
 _OPERAND_INT = r"-?(?:0[xX][0-9a-fA-F]{1,16}|[0-9][0-9a-fA-F]{0,16}[hH]|[0-9]{1,20})[uUlL]{0,3}"
-# A number written as the whole of one side of a compare: an equality or
-# inequality test (either side), a case label, or a compare instruction's
-# last operand.
+_OPERAND_INT_RE = re.compile(_OPERAND_INT, re.ASCII)
+# A number written as the whole of one side of a test: an equality or
+# inequality test (either side, each side ending where the test does, or at
+# the ``*`` or ``"`` that closes a comment or a string), or a case label,
+# one value or a ``case A ... B:`` range.
 _COMPARED_OPERAND_RE = re.compile(
-    rf"[!=]=[ \t]*({_OPERAND_INT})[ \t]*(?=$|[)|&,?:;}}])"
-    rf"|(?:^|[(|&,?:;{{])[ \t]*({_OPERAND_INT})[ \t]*[!=]="
-    rf"|\bcase[ \t]+({_OPERAND_INT})[ \t]*:"
-    rf"|\bcmp[ \t]+[^,\n]{{1,80}},[ \t]*({_OPERAND_INT})(?![\w.])",
+    rf"[!=]=[ \t]*(?P<right>{_OPERAND_INT})[ \t]*(?=$|[)|&,?:;}}*\"])"
+    rf"|(?:^|[(|&,?:;{{*\"])[ \t]*(?P<left>{_OPERAND_INT})[ \t]*[!=]="
+    rf"|\bcase[ \t]+(?P<case>{_OPERAND_INT})[ \t]*(?:\.\.\.[ \t]*(?P<last>{_OPERAND_INT})[ \t]*)?:",
     re.ASCII | re.IGNORECASE | re.MULTILINE,
 )
+# A compare instruction, read by its shape rather than by an architecture's
+# list: a mnemonic that begins with ``cmp`` (any suffix: ``cmpl``, ``cmp.w``)
+# and two or more operands, up to the line's end or a ``;`` or ``//`` comment
+# (bounded, so a line of many mnemonics is read in linear time).
+_COMPARE_INSTRUCTION_RE = re.compile(
+    r"\bcmp[a-z0-9.]*[ \t]+(?P<operands>(?:(?!//)[^\n;,]){1,120},(?:(?!//)[^\n;]){0,200})",
+    re.ASCII | re.IGNORECASE | re.MULTILINE,
+)
+# An instruction operand that is a name: a register or a symbol, ``%`` marked
+# or not (``eax``, ``%eax``, ``r0``, ``DAT_00401000``).
+_OPERAND_NAME_RE = re.compile(r"%?[A-Za-z_.][\w.$@]*", re.ASCII)
+# The widest ``case A ... B:`` range read value by value. A wider one is a
+# compare the reader does not take, so no question rests on it.
+_WIDEST_CASE_RANGE = 4096
 
 
 def _operand_values(written: str) -> set[int]:
@@ -9911,25 +9938,95 @@ def _operand_values(written: str) -> set[int]:
     return {-value for value in values} if negative else values
 
 
+def _instruction_operands(written: str) -> list[str]:
+    """A compare instruction's operands, split at the commas no bracket encloses."""
+    parts: list[str] = []
+    depth, start = 0, 0
+    for at, char in enumerate(written):
+        if char in "[({":
+            depth += 1
+        elif char in "])}":
+            depth = max(depth - 1, 0)
+        elif char == "," and not depth:
+            parts.append(written[start:at])
+            start = at + 1
+    parts.append(written[start:])
+    return [part.strip() for part in parts]
+
+
+def _instruction_operand_values(operand: str) -> set[int] | None:
+    """The values one instruction operand is: its number's, none for a name or a
+    memory reference, ``None`` for an operand in no form the reader takes."""
+    if not operand:
+        return None
+    if any(char in operand for char in "[](){}"):
+        return set()
+    marked = operand[0] in "$#"
+    bare = operand[1:].strip() if marked else operand
+    if _OPERAND_INT_RE.fullmatch(bare):
+        return _operand_values(bare)
+    if not marked and _OPERAND_NAME_RE.fullmatch(operand):
+        return set()
+    return None
+
+
+def _read_compared_operands(text: str) -> tuple[frozenset[int], bool]:
+    """:func:`compared_operands`, and whether ``text`` writes a compare not taken."""
+    found: set[int] = set()
+    untaken = False
+    for match in _COMPARED_OPERAND_RE.finditer(text):
+        written = match.group("right") or match.group("left") or match.group("case")
+        last = match.group("last")
+        try:
+            values = _operand_values(written)
+            if last is None:
+                found |= values
+                continue
+            ends = _operand_values(last)
+            pairs = [(low, high) for low in values for high in ends]
+            if not pairs or any(not 0 <= high - low < _WIDEST_CASE_RANGE for low, high in pairs):
+                untaken = True
+                continue
+            for low, high in pairs:
+                found.update(range(low, high + 1))
+        except ValueError:
+            untaken = True
+    for match in _COMPARE_INSTRUCTION_RE.finditer(text):
+        read: set[int] = set()
+        for operand in _instruction_operands(match.group("operands")):
+            try:
+                values = _instruction_operand_values(operand)
+            except ValueError:
+                values = None
+            if values is None:
+                untaken = True
+                break
+            read |= values
+        else:
+            found |= read
+    return frozenset(found), untaken
+
+
 def compared_operands(text: str) -> frozenset[int]:
     """The whole numbers ``text`` writes as a compared operand, in any form it reads.
 
     A number is read where it is the whole of one side of an equality or
     inequality test (``cmd == 4``, ``4 == cmd``, ``cmd != 0x4``), a case label
-    (``case 4:``), or the last operand of a compare instruction (``cmp eax,
-    4``, ``cmp eax, 4h``, ``CMP EAX,0x4``); never where it is part of a longer
-    number or of a sum. Comments and strings are not told apart from code: a
-    number one of them writes as compared is read too, the reading that keeps
-    a question back. Linear in the length of ``text``.
+    (``case 4:``, and every value of a ``case 1 ... 5:`` range no wider than
+    :data:`_WIDEST_CASE_RANGE` values), or an operand of a compare instruction:
+    a mnemonic that begins with ``cmp``, any suffix, the number in either
+    operand place, with or without an immediate marker (``cmp eax, 4h``,
+    ``CMP EAX,0x4``, ``cmpl $0x4,%eax``, ``cmp r0, #4``). A side of a test
+    ends where the test does, or at a ``*`` or a ``"``: comments and strings
+    are not told apart from code, so a test a comment or a string writes
+    (``/* c == 4 */``, ``"c == 4"``) holds its number, and so does a product
+    (``c == 4 * k``), the reading that keeps a question back. Never read where
+    the number is part of a longer number or of a sum. A leading zero is read
+    both as octal and as decimal (``010`` holds 8 and 10). An instruction with
+    an operand in no form read here holds none of its numbers; see
+    :meth:`EntryTexts.code_not_read`. Linear in the length of ``text``.
     """
-    found: set[int] = set()
-    for match in _COMPARED_OPERAND_RE.finditer(text):
-        written = next(group for group in match.groups() if group)
-        try:
-            found |= _operand_values(written)
-        except ValueError:
-            continue
-    return frozenset(found)
+    return _read_compared_operands(text)[0]
 
 
 # A list an answer writes its rows in: a field name, never a value a model chose.
