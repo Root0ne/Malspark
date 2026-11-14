@@ -946,7 +946,7 @@ def merge_revision(
     for low, high in own.spoken:
         defended.update(_known_in(low, high, ordered))
     # A line the reader above counted as a withdrawal not read exactly, that
-    # is an item read here as one, is read now.
+    # is an item read here as one, is not counted.
     left_unread = collections.Counter(line_key(line) for line in read.unread_lines)
     for item in own.items:
         if " ".join(item.split()) not in withdrew:
