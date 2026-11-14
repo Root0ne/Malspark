@@ -198,8 +198,36 @@ class TestAttack:
         assert changed["changes"] == [{"field": "confidence", "a": 0.92, "b": 0.5}]
         # The capability cell's own record of who stated the number.
         assert changed["a"]["confidence_source"] == "the judge"
-        # The quotes hold ids in their prose; prose is not an id field.
-        assert changed["evidence"] == {"a": [], "b": []}
+        # A mapping stored without the set reads as every surface reads it
+        # (``technique_evidence_ids``): the entries its statements cite.
+        assert changed["evidence"] == {"a": ["ev_0012"], "b": ["ev_0012"]}
+
+    def test_a_technique_diffs_as_the_surfaces_print_it(self, stored) -> None:
+        def edit(doc: dict[str, Any]) -> None:
+            for mapping in doc["ttp_mappings"]:
+                mapping.pop("evidence_ids", None)
+                mapping["evidence_quotes"] = ["Injects into a suspended process"]
+                mapping["sources"] = ["ev_0003", "proc:1234", "ev_0003"]
+
+        diff = _pair(stored, edit)
+
+        row = _row(diff, "attack", "T1055")
+        assert row["evidence"]["b"] == ["ev_0003"]
+        assert row["b"]["sandbox_items"] == ["proc:1234"]
+        assert row["a"]["sandbox_items"] == []
+        # Shown beside the set and, as the set, not counted as a change.
+        assert all(c["field"] != "sandbox_items" for c in row["changes"])
+        assert row["note"] == "the sandbox items it cites differ"
+
+    def test_a_recorded_set_is_the_set(self, stored) -> None:
+        def edit(doc: dict[str, Any]) -> None:
+            doc["ttp_mappings"][0]["evidence_ids"] = ["ev_0007"]
+            doc["ttp_mappings"][0]["sources"] = ["ev_0001"]
+
+        diff = _pair(stored, edit)
+
+        tid = stored["document"]["ttp_mappings"][0]["technique_id"]
+        assert _row(diff, "attack", tid)["evidence"]["b"] == ["ev_0007"]
 
     def test_the_technique_id_is_the_key_whatever_its_case(self, stored) -> None:
         def edit(doc: dict[str, Any]) -> None:
@@ -579,6 +607,9 @@ class TestARecordComparedWithItself:
 class TestEvidenceComesOnlyFromIdFields:
     def test_an_id_inside_a_quote_or_a_sample_string_yields_no_chip(self, stored) -> None:
         def edit(doc: dict[str, Any]) -> None:
+            # A recorded set is what a technique cites, whatever its quotes write.
+            for mapping in doc["ttp_mappings"]:
+                mapping["evidence_ids"] = []
             doc["ttp_mappings"][0]["evidence_quotes"] = ["Unlike ev_0004 this shows no injection"]
             doc["capability_matrix"][0]["evidence"] = ["Unlike ev_0004 this shows no injection"]
             doc["consolidated_iocs"].append(
@@ -595,9 +626,10 @@ class TestEvidenceComesOnlyFromIdFields:
 
         diff = _pair(stored, edit)
 
-        for key in ("attack", "indicators"):
-            for row in _section(diff, key)["rows"]:
-                assert row["evidence"] == {"a": [], "b": []}, (key, row["key"])
+        for row in _section(diff, "attack")["rows"]:
+            assert row["evidence"]["b"] == [], row["key"]
+        for row in _section(diff, "indicators")["rows"]:
+            assert row["evidence"] == {"a": [], "b": []}, row["key"]
         task = _row(diff, "indicators", "scheduled_task|Updater")
         assert task["status"] == ADDED
         assert "ev_20231" not in str(task["evidence"])

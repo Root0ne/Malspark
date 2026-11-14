@@ -513,6 +513,11 @@ def _verdict_items(run: RunRecord) -> list[_Item]:
 
 
 def _attack_items(run: RunRecord) -> list[_Item]:
+    from malspark.reporting.technique_evidence import (
+        technique_evidence_ids,
+        technique_sandbox_items,
+    )
+
     mr = _map(run.malware_report)
     cells: dict[str, Mapping[str, Any]] = {}
     for cell in _list(mr.get("capability_matrix")):
@@ -538,11 +543,17 @@ def _attack_items(run: RunRecord) -> list[_Item]:
                     "confidence_source": _text(cell.get("confidence_source")) or None,
                     "corroborated": row.get("is_corroborated"),
                     "id_valid": row.get("technique_id_valid", True),
+                    "sandbox_items": technique_sandbox_items(row),
                 },
-                # The technique's evidence as the builder recorded it
-                # (``technique_evidence``); a mapping stored before the set
-                # was recorded holds no id field and cites none.
-                _ids(_list(row.get("evidence_ids"))),
+                # The technique's evidence as every surface reads it
+                # (``technique_evidence_ids``): the recorded set, or for a
+                # mapping stored before it was recorded, the entries among its
+                # sources and those its statements write.
+                _ids(technique_evidence_ids(row) or []),
+                # The sandbox items are shown beside the set and, as the set,
+                # not counted as a change.
+                derived=frozenset({"sandbox_items"}),
+                derived_note="the sandbox items it cites differ",
             )
         )
     return items
