@@ -6,6 +6,7 @@ import {
   flaggedMark,
   flaggedStatements,
   hasTechnicalAnalysis,
+  leftOutStatements,
   technicalSubsections,
 } from "../reportProse";
 
@@ -69,6 +70,26 @@ describe("what the report's own checks left standing", () => {
     expect(flagged).toHaveLength(2);
     expect(flaggedMark(flagged[0])).toBe("credential theft — asked about and left standing");
     expect(flaggedMark(flagged[1])).toBe("rule_only — the model was not asked about it");
+  });
+
+  it("lists a sentence the agreement round left out as left out, never as standing (T-613)", () => {
+    const mr = report({
+      flagged_statements: [
+        { sentence: "It steals credentials.", code: "capability_unsupported", label: "credential theft" },
+        {
+          sentence: "It reaches 0x5c30 first.",
+          code: "agreement.dropped",
+          label: "judge.business_impact",
+          left_out: ["judge.business_impact"],
+        },
+      ],
+    });
+    expect(flaggedStatements(mr).map((f) => f.sentence)).toEqual(["It steals credentials."]);
+    const left = leftOutStatements(mr);
+    expect(left.map((f) => f.sentence)).toEqual(["It reaches 0x5c30 first."]);
+    expect(flaggedMark(left[0])).toBe(
+      "judge.business_impact — left out of the analyst report; the evidence bundle prints it whole",
+    );
   });
 
   it("lists the claims the body does not discuss", () => {

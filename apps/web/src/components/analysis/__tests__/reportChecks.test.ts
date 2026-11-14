@@ -83,3 +83,27 @@ describe("a claim's techniques in the claims the report does not discuss (T-424)
     expect(html).toContain("static #2");
   });
 });
+
+describe("a sentence the agreement round left out (T-613)", () => {
+  it("is listed under its own heading, never under what the checks left standing", () => {
+    const html = renderToStaticMarkup(
+      createElement(ReportChecks, {
+        mr: {
+          flagged_statements: [
+            {
+              sentence: "It reaches 0x5c30 first.",
+              code: "agreement.dropped",
+              label: "judge.business_impact",
+              left_out: ["judge.business_impact"],
+            },
+          ],
+        } as MalwareReport,
+      }),
+    );
+
+    expect(html).toContain("Left out of the analyst report");
+    expect(html).toContain("It reaches 0x5c30 first.");
+    expect(html).not.toContain("Flagged statements");
+    expect(html).not.toContain("left standing");
+  });
+});
