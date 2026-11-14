@@ -14,6 +14,7 @@ from __future__ import annotations
 from typing import Any
 
 from malspark.reporting.section_agreement import (
+    KEEP_UNQUOTED_CODE,
     UNKNOWN_SOURCE_CODE,
     _sentences_of,
     agreement_violations,
@@ -68,7 +69,7 @@ def test_a_rewrite_repeating_its_sentence_is_no_keep_on_it() -> None:
         }
     )
 
-    assert refusals
+    assert KEEP_UNQUOTED_CODE in {v.code for v in refusals}
     assert counts["kept"] == 0
 
 
@@ -99,3 +100,24 @@ def test_it_may_be_named_as_what_a_rewritable_passage_is_rewritten_against() -> 
     )
 
     assert UNKNOWN_SOURCE_CODE not in {v.code for v in refusals}
+
+
+def test_a_keep_of_a_held_absence_of_the_body_on_its_quote_is_refused() -> None:
+    absence = "No anti-debug check appears in the analysed code."
+    report = _composed()
+    assert report.severity is not None
+    # The judge's sentence section 7 does not print, beside a composed conclusion.
+    report.severity.business_impact = f"{absence} It reaches 0x5c30 first."
+    report.intro_background = absence
+    passages = passages_of(report)
+    row = {
+        "passage": "introduction",
+        "sentence": absence,
+        "decision": "keep",
+        "sources": [_SOURCE],
+        "quote": "No anti-debug check appears in the analysed code",
+    }
+    found = agreement_violations({"sentences": [row]}, passages)
+
+    assert {p.id: p.text for p in passages}[_SOURCE] == absence
+    assert [v.code for v in found if v.path.startswith("sentences.")] == [KEEP_UNQUOTED_CODE]

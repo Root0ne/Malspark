@@ -12,7 +12,7 @@ value.
 
 from __future__ import annotations
 
-from malspark.reporting.models import MalwareReport
+from malspark.reporting.models import MalwareReport, TechnicalSubsection
 from malspark.reporting.section_agreement import agreement_violations, passages_of
 from tests.unit.reporting.test_a_text_printed_as_written_is_shown_to_the_agreement_round import (
     report_of,
@@ -94,3 +94,20 @@ def test_the_rest_is_a_source_a_verbatim_sentence_is_left_out_on() -> None:
     found = agreement_violations({"sentences": [row]}, passages_of(report))
 
     assert [v for v in found if v.path.startswith("sentences.")] == []
+
+
+def test_a_judge_s_text_of_which_section_7_prints_nothing_is_a_source_only_whole() -> None:
+    report = report_of()
+    assert report.severity is not None and report.technical_analysis is not None
+    # Beside a composed conclusion, section 7 keeps no judge sentence whose values the
+    # report prints elsewhere.
+    report.severity.business_impact = "The loader checks for a debugger at 0x5b20 [ev_0103]."
+    report.technical_analysis.analyst_conclusion = TechnicalSubsection(
+        title="Conclusion", body="The file is a loader that checks for a debugger [ev_0103]."
+    )
+    shown = _shown(report)
+
+    assert "judge.business_impact" not in shown
+    rest = shown["judge.business_impact.unprinted"]
+    assert rest.text == "The loader checks for a debugger at 0x5b20 [ev_0103]."  # type: ignore[attr-defined]
+    assert rest.source_only  # type: ignore[attr-defined]
