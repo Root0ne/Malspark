@@ -6,9 +6,11 @@ by a cited entry whose text writes it as a compared operand (an equality test,
 a case label, a compare instruction), any other id by a cited entry whose text
 writes it whole; a failed call holds nothing. A number none of its cited
 entries holds is asked about only with the entry whose one compared expression
-holds the most of the table's numbers, and not when a cited entry is code the
-reader cannot read; any other id with every entry that writes it. A row kept
-after the question is marked beside its evidence.
+holds the most of the table's numbers, where the entries holding as many agree
+on its values, and not when a cited entry is code the reader cannot read; any
+other id with every entry that writes it. A table of fewer than four numbered
+ids, or of ids that are a plain count, is not checked for its numbers. A row
+kept after the question is marked beside its evidence.
 """
 
 from __future__ import annotations
@@ -26,8 +28,10 @@ from malspark.pipeline.validation import (
     ID_NOT_IN_CITED_ENTRY_CODE,
     KEPT_WITH_A_FINDING,
     MARKED_IN_PLACE,
+    ComparedValues,
     EntryTexts,
     cited_id_violations,
+    command_value_violations,
     compared_operands,
     record_flagged_statements,
 )
@@ -288,10 +292,9 @@ class TestTheEntryOfferedForANumber:
 
         assert "ev_0003 (decompile_function), ev_0004 (decompile_function)" in found.message
 
-    def test_a_table_of_one_number_picks_no_expression(self) -> None:
-        payload = _commands(("4", ["ev_0001"]), ("download", ["ev_0001"]))
-
-        assert cited_id_violations(payload, _ledger(self.HANDLER_9)) == []
+    def test_one_number_picks_no_expression(self) -> None:
+        assert _ledger(self.HANDLER_9).choosing({4}) == {}
+        assert _ledger(self.HANDLER_9).choosing({4, 5, 6}) != {}
 
 
 class TestAFailedCallHoldsNothing:
@@ -382,6 +385,74 @@ class TestACompareTheReaderCannotTakeIsNotAsked:
         self, code: str, tool: str
     ) -> None:
         assert cited_id_violations(_rows("4"), _ledger(code, tool=tool)) == []
+
+
+class TestARowIdIsCheckedOnlyWhereACoincidenceIsImplausible:
+    HANDLER = "void handler(void) {\n  download();\n}\n"
+    SWITCH_0_TO_4 = (
+        "int _setmode(int m) {\n  switch (m) {\n"
+        + "".join(f"  case {n}: f{n}(); break;\n" for n in range(5))
+        + "  }\n}\n"
+    )
+
+    def _ledger(self, *codes: str) -> EntryTexts:
+        return EntryTexts.from_ledger(
+            [_entry("ev_0001", "decompile_function", json.dumps({"code": self.HANDLER}))]
+            + [
+                _entry(f"ev_{n + 2:04d}", "decompile_function", json.dumps({"code": code}))
+                for n, code in enumerate(codes)
+            ]
+        )
+
+    @pytest.mark.parametrize("ids", [("1", "2", "3", "4"), ("0", "1", "2", "3")])
+    def test_a_table_whose_ids_are_a_plain_count_is_not_checked(self, ids: tuple[str]) -> None:
+        payload = _commands(*((i, ["ev_0001"]) for i in ids))
+
+        assert cited_id_violations(payload, self._ledger(self.SWITCH_0_TO_4)) == []
+
+    def test_the_command_value_check_shares_the_count_guard(self) -> None:
+        payload = _commands(("0", ["ev_0001"]), ("1", ["ev_0001"]), ("2", ["ev_0001"]))
+        compared = [ComparedValues(where="ev_0002", subject="m", values=(0, 1, 2, 3))]
+
+        assert command_value_violations(payload, compared) == []
+
+    def test_fewer_than_four_numbered_ids_are_not_checked_its_text_ids_are(self) -> None:
+        texts = EntryTexts.from_ledger(
+            [
+                _entry("ev_0001", "decompile_function", json.dumps({"code": self.HANDLER})),
+                _entry("ev_0002", "decompile_function", json.dumps({"code": COMMAND_SWITCH})),
+                _entry("ev_0003", "strings", json.dumps({"strings": ["PING"]})),
+            ]
+        )
+        payload = _commands(
+            ("4", ["ev_0001"]), ("5", ["ev_0001"]), ("6", ["ev_0001"]), ("PING", ["ev_0001"])
+        )
+
+        (found,) = cited_id_violations(payload, texts)
+
+        assert found.message.startswith("Row 4 of commands states the id 'PING'")
+
+    def test_entries_whose_expressions_hold_different_sets_offer_nothing(self) -> None:
+        other = COMMAND_SWITCH.replace("case 7:", "case 9:").replace("on_command", "on_other")
+
+        texts = self._ledger(COMMAND_SWITCH.replace("case 7:", "case 8:"), other)
+        payload = _commands(*((str(n), ["ev_0001"]) for n in (4, 5, 6, 7)))
+
+        assert cited_id_violations(payload, texts) == []
+
+    def test_one_expression_read_in_two_entries_offers_both(self) -> None:
+        texts = self._ledger(COMMAND_SWITCH, COMMAND_SWITCH)
+        payload = _commands(("4", ["ev_0001"]), *((str(n), ["ev_0002"]) for n in (5, 6, 7)))
+
+        (found,) = cited_id_violations(payload, texts)
+
+        assert "ev_0002 (decompile_function), ev_0003 (decompile_function)" in found.message
+
+    def test_an_expression_holding_two_of_five_ids_is_not_offered(self) -> None:
+        two = "void f(int c) {\n  switch (c) {\n  case 4: a(); break;\n  case 5: b();\n  }\n}\n"
+        payload = _commands(*((str(n), ["ev_0001"]) for n in (4, 5, 9, 11, 13)))
+
+        assert cited_id_violations(payload, self._ledger(two)) == []
 
 
 class TestAFailedEntryInTheNumberCheck:

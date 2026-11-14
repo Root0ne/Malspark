@@ -7632,13 +7632,20 @@ def both_bases(value: int) -> str:
     return f"{hex(value)} ({value})"
 
 
+def _a_plain_count(ids: Collection[int]) -> bool:
+    """Whether ``ids`` are 1 to N or 0 to N-1: numbers a table's row numbers would be too."""
+    ordered = sorted(set(ids))
+    return ordered in (list(range(1, len(ordered) + 1)), list(range(len(ordered))))
+
+
 def command_value_violations(payload: Any, compared: Sequence[ComparedValues]) -> list[Violation]:
     """A command table whose ids and the values its code compares disagree, as one question.
 
     Each row's id is read as a number as written, alone or as its last word
     (``0x15``, ``COMMAND 21``), as the code's numbers are read
     (:data:`_CODE_INT`); any other id is not read. A table whose ids are 1 to
-    N, which row numbers would be too, is not checked. The code the table is
+    N or 0 to N-1, which row numbers would be too, is not checked
+    (:func:`_a_plain_count`). The code the table is
     checked against is the one expression whose values hold the most of the
     table's distinct numbered ids, more than half of them and at least two;
     with two different value sets holding as many, the table is not checked.
@@ -7656,8 +7663,7 @@ def command_value_violations(payload: Any, compared: Sequence[ComparedValues]) -
     ids = {value for _number, _written, value in numbered}
     if len(ids) < 2 or not compared:
         return []
-    if sorted(ids) == list(range(1, len(ids) + 1)):
-        # Ids 1 to N cannot be told from row numbers.
+    if _a_plain_count(ids):
         return []
     best = max(len(ids.intersection(c.values)) for c in compared)
     if best * 2 <= len(ids):
@@ -9280,24 +9286,31 @@ class EntryTexts:
         The expression is picked as :func:`command_value_violations` picks it:
         the one holding the most of the distinct ``ids``, more than half of
         them and at least two. Every entry with an expression holding as many
-        is returned, in ledger order (a repeat of one call is another such
-        entry), with the values of its expressions that do; an entry whose
-        code merely compares some of ``ids`` is not. Empty where no expression
-        holds enough. Never a sandbox item, as :meth:`holding` offers none.
+        is returned, in ledger order (one function read twice is two such
+        entries), with that expression's values; where the expressions holding
+        as many hold different value sets, the entries do not agree on what
+        the code chooses by and none is returned. An entry whose code merely
+        compares some of ``ids`` is not returned, nor an entry whose call
+        failed (:attr:`failed`). Empty where no expression holds enough. Never
+        a sandbox item, as :meth:`holding` offers none.
         """
         wanted = set(ids)
         best = 0
-        found: dict[str, frozenset[int]] = {}
+        found: list[tuple[str, frozenset[int]]] = []
         for entry_id in self.texts:
+            if entry_id in self.failed:
+                continue
             for values in self.compares(entry_id):
                 held = len(wanted.intersection(values))
                 if held > best:
-                    best, found = held, {}
+                    best, found = held, []
                 if held and held == best:
-                    found[entry_id] = found.get(entry_id, frozenset()) | values
+                    found.append((entry_id, values))
         if best < 2 or best * 2 <= len(wanted):
             return {}
-        return found
+        if len({values for _entry_id, values in found}) > 1:
+            return {}
+        return dict(found)
 
     def operands(self, cited: str) -> frozenset[int]:
         """The whole numbers a cited entry's or item's text writes as a compared operand.
@@ -10029,6 +10042,12 @@ def compared_operands(text: str) -> frozenset[int]:
     return _read_compared_operands(text)[0]
 
 
+# The fewest distinct numbered ids a table's numbers are checked with. A
+# handful of small numbers is compared somewhere in almost any program, so
+# with fewer an expression holding them is as likely a coincidence as the
+# table's own dispatcher.
+_FEWEST_CHECKED_NUMBERS = 4
+
 # A list an answer writes its rows in: a field name, never a value a model chose.
 _ROW_LIST_KEY_RE = re.compile(r"[a-z][a-z_]*")
 
@@ -10069,11 +10088,16 @@ def cited_id_violations(payload: Any, entries: EntryTexts | None) -> list[Violat
     text holds it whole (:meth:`EntryTexts.holds`). Held by none of the cited
     entries, the row is asked about once, together with the other rows its
     holders hold, with those holders named: for a number, the entries whose one
-    compared expression holds the most of the table's numbers
-    (:meth:`EntryTexts.choosing`), never an entry that merely compares it; for
-    any other id, every other entry whose text holds it. With no holder,
-    nothing is said here: whether an id no entry holds should be cited is
-    another question.
+    compared expression holds the most of the table's numbers, where the
+    entries holding as many agree on its values (:meth:`EntryTexts.choosing`),
+    never an entry that merely compares it; for any other id, every other
+    entry whose text holds it. With no holder, nothing is said here: whether
+    an id no entry holds should be cited is another question.
+
+    A number is asked about only where a coincidence is implausible: a table
+    with fewer than :data:`_FEWEST_CHECKED_NUMBERS` distinct numbered ids, or
+    whose numbered ids are a plain count (:func:`_a_plain_count`), is not
+    checked for its numbers; its other ids are checked as they are.
 
     An entry whose call failed, or whose answer is an error envelope, holds
     nothing here (:attr:`EntryTexts.failed`): it is never offered, and citing
@@ -10095,7 +10119,11 @@ def cited_id_violations(payload: Any, entries: EntryTexts | None) -> list[Violat
         if not isinstance(rows, list) or not _ROW_LIST_KEY_RE.fullmatch(str(list_key)):
             continue
         numbered = _numbered_ids(rows)
-        chosen = entries.choosing(set(numbered.values())) if numbered else {}
+        numbers = set(numbered.values())
+        # A few numbers, or a plain count, match some expression of almost any
+        # code by chance: such a table's numbered rows are not checked.
+        counted = len(numbers) >= _FEWEST_CHECKED_NUMBERS and not _a_plain_count(numbers)
+        chosen = entries.choosing(numbers) if counted else {}
         for index, row in enumerate(rows):
             if not isinstance(row, dict):
                 continue
@@ -10109,6 +10137,8 @@ def cited_id_violations(payload: Any, entries: EntryTexts | None) -> list[Violat
             answered = [ref for ref in cited if ref not in entries.failed]
             try:
                 if index in numbered:
+                    if not counted:
+                        continue
                     number = numbered[index]
                     if any(
                         number in entries.operands(ref) or entries.code_not_read(ref)
@@ -10118,7 +10148,7 @@ def cited_id_violations(payload: Any, entries: EntryTexts | None) -> list[Violat
                     holders = [
                         ref
                         for ref, values in chosen.items()
-                        if number in values and ref not in cited and ref not in entries.failed
+                        if number in values and ref not in cited
                     ]
                 else:
                     if not decidable(written) or any(
