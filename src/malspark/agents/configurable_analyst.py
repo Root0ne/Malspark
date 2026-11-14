@@ -81,11 +81,17 @@ _PATH_HEADER = (
 
 # What an agent holding several static providers is told of one that could not
 # open the sample while another could (``ConfigurableAnalyst._prepare_on_each``):
-# the provider's own sentence, and that its tools answer with that failure.
+# the failure's cause (``SampleNotOpened.cause``, never the operator's fix, which
+# stays in the run's limitations), and that its tools answer with that failure.
 UNOPENED_PROVIDER_LINE = (
-    "The static provider '{provider}' could not open the sample: {failure} "
+    "Static provider '{provider}': {cause}. "
     "Its tools answer with that failure; the other static providers' tools read the sample."
 )
+
+
+def _one_sentence(text: str) -> str:
+    """``text`` on one line without the punctuation it may end on, so a sentence can close it."""
+    return " ".join(str(text or "").split()).rstrip(" .;:,")
 
 
 def _analysis_path_in(data: str) -> str | None:
@@ -214,7 +220,11 @@ class ConfigurableAnalyst(BaseAnalyst):
         The reason goes on the agent and on the job's server registry, whose
         reasons the run's limitations are read from, once each.
         """
+        cause = _one_sentence(failure.cause)
         reason = f"agent '{self.name}': static provider '{provider_id}' could not open the sample"
+        if cause:
+            fix = _one_sentence(failure.fix)
+            reason += f" ({cause}; {fix})" if fix else f" ({cause})"
         own = list(getattr(self, "degradation_reasons", None) or [])
         if reason not in own:
             self.logger.warning("%s: %s; its other providers go on.", reason, failure)
@@ -260,7 +270,11 @@ class ConfigurableAnalyst(BaseAnalyst):
             raise failures[0][1]
         for provider_id, failure in failures:
             self._note_unopened(provider_id, failure)
-            hints.append(UNOPENED_PROVIDER_LINE.format(provider=provider_id, failure=failure))
+            hints.append(
+                UNOPENED_PROVIDER_LINE.format(
+                    provider=provider_id, cause=_one_sentence(failure.cause) or "it gave no reason"
+                )
+            )
         return "\n".join(hint for hint in hints if hint)
 
     def _stop_if_the_sample_did_not_open(self) -> None:

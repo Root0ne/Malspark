@@ -576,14 +576,14 @@ def test_one_provider_that_did_not_open_the_sample_leaves_the_loop_to_the_other(
     analyst = _analyst(providers, (FIRST, SECOND))
     analyst._stop_if_the_sample_did_not_open()
     assert analyst.degradation_reasons == [
-        f"agent 'reader': static provider '{FIRST}' could not open the sample"
+        f"agent 'reader': static provider '{FIRST}' could not open the sample (G cannot)"
     ]
     # The other way round: the second fails, the first carries the loop.
     providers = {FIRST: _Opening(FIRST), SECOND: _Opening(SECOND, SampleNotOpened("R."))}
     analyst = _analyst(providers, (FIRST, SECOND))
     analyst._stop_if_the_sample_did_not_open()
     assert analyst.degradation_reasons == [
-        f"agent 'reader': static provider '{SECOND}' could not open the sample"
+        f"agent 'reader': static provider '{SECOND}' could not open the sample (R)"
     ]
 
 
@@ -609,7 +609,7 @@ def test_the_pre_pass_opens_the_sample_on_each_provider_and_goes_on_past_one_tha
     analyst = _analyst(providers, (FIRST, SECOND))
     # The one that could not is told to the agent; the other gave no hint.
     assert analyst._prepare_on_each(analyst._held_providers(), "/m/s") == (
-        f"The static provider '{FIRST}' could not open the sample: G cannot. Its tools answer "
+        f"Static provider '{FIRST}': G cannot. Its tools answer "
         "with that failure; the other static providers' tools read the sample."
     )
     assert providers[SECOND].opened_paths == ["/m/s"]
@@ -618,6 +618,34 @@ def test_the_pre_pass_opens_the_sample_on_each_provider_and_goes_on_past_one_tha
     providers[SECOND].failure = SampleNotOpened("R.", provider=SECOND)
     with pytest.raises(SampleNotOpened):
         analyst._prepare_on_each(analyst._held_providers(), "/m/s")
+
+
+def test_the_agent_is_told_the_cause_once_and_the_limitation_holds_the_fix_too():
+    from malspark.core.exceptions import SampleNotOpened
+
+    # The shape a real provider raises: no closing period, an operator's fix after the cause.
+    cause = "Ghidra could not open the job's sample: file not found"
+    fix = "check core.static.ghidra.sample_mount / the container mount"
+    failure = SampleNotOpened(f"{cause}; {fix}", provider=FIRST, cause=cause, fix=fix)
+    providers = {FIRST: _Opening(FIRST, failure), SECOND: _Opening(SECOND)}
+    analyst = _analyst(providers, (FIRST, SECOND))
+    told = analyst._prepare_on_each(analyst._held_providers(), "/m/s")
+    assert told == (
+        f"Static provider '{FIRST}': {cause}. Its tools answer with that failure; "
+        "the other static providers' tools read the sample."
+    )
+    assert told.count("could not open") == 1
+    assert "sample_mount" not in told and "mount" not in told
+    assert analyst.degradation_reasons == [
+        f"agent 'reader': static provider '{FIRST}' could not open the sample ({cause}; {fix})"
+    ]
+
+
+def test_a_failure_given_no_parts_is_all_cause():
+    from malspark.core.exceptions import SampleNotOpened
+
+    failure = SampleNotOpened("whole sentence", provider=FIRST)
+    assert (failure.cause, failure.fix, str(failure)) == ("whole sentence", "", "whole sentence")
 
 
 def test_an_agent_with_one_provider_keeps_the_base_check():
@@ -804,10 +832,12 @@ def test_a_provider_that_did_not_open_is_told_to_the_agent_and_kept_on_the_run()
     analyst._container.get_server_registry = lambda: registry
     analyst.tools = []
     hint = analyst._prepare_on_each(analyst._held_providers(), "/m/s")
-    reason = f"agent 'reader': static provider '{SECOND}' could not open the sample"
+    reason = (
+        f"agent 'reader': static provider '{SECOND}' could not open the sample (R cannot read it)"
+    )
     assert analyst.degradation_reasons == [reason]
     assert registry.degradation_reasons == [reason]
-    assert f"static provider '{SECOND}' could not open the sample: R cannot read it." in hint
+    assert f"Static provider '{SECOND}': R cannot read it." in hint
     assert providers[FIRST].opened_paths == ["/m/s"]
 
     # A later loop of the job reads the remembered failure and records it once.

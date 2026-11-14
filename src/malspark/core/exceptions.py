@@ -57,12 +57,22 @@ class SampleNotOpened(AnalystError):
     arguments the failed call was actually sent with, when the platform held
     them to a path the model did not give, so the ledger records the call
     that was made.
+
+    The sentence is made of two parts a provider may hand over apart:
+    ``cause`` is what went wrong, ``fix`` what an operator does about it
+    (a settings key, a mount). Without them the whole sentence is the cause
+    and there is no fix. An agent is told the cause; the fix stays in the
+    run's limitations, where an operator reads it.
     """
 
-    def __init__(self, sentence: str, *, provider: str = "") -> None:
+    def __init__(
+        self, sentence: str, *, provider: str = "", cause: str | None = None, fix: str = ""
+    ) -> None:
         super().__init__(sentence)
         self.provider = provider
         self.remediation = sentence
+        self.cause = sentence if cause is None else cause
+        self.fix = fix
         self.stopped_agent: str | None = None
         self.sent_args: dict[str, object] | None = None
 
