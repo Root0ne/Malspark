@@ -10,9 +10,11 @@ decision, and a comment naming why the row is published and the ledger
 entries the table ties to it. An imphash, an ssdeep or a TLSH also matches
 files that are not the sample, so it is
 published unflagged for IDS. A technique is a ``text`` attribute, tagged with
-its ATT&CK galaxy cluster when the vendored ATT&CK table names it; it
-describes the sample rather than matching anything, so it is not flagged for
-IDS either. Every attribute carries the report's TLP level as a ``tlp:`` tag.
+its ATT&CK galaxy cluster when the vendored ATT&CK table names it, and its
+comment names the technique's evidence as every surface prints it
+(``technique_evidence``); it describes the sample rather than matching
+anything, so it is not flagged for IDS either. Every attribute carries the
+report's TLP level as a ``tlp:`` tag.
 
 One pass over the table and one over the techniques; no per-sample value is
 written here. ``build_misp_event`` wraps the attributes in one MISP event.
@@ -188,6 +190,10 @@ def build_misp_attributes(
     """
     from malspark.memory.attck_loader import technique_entry
     from malspark.reporting.detonation_marks import observed_words
+    from malspark.reporting.technique_evidence import (
+        technique_evidence_ids,
+        technique_evidence_words,
+    )
 
     table = list(rows if rows is not None else getattr(report, "consolidated_iocs", None) or [])
     out: list[dict[str, Any]] = []
@@ -270,6 +276,11 @@ def build_misp_attributes(
                 part
                 for part in (
                     "ATT&CK technique this report publishes",
+                    # A mapping stored before its evidence was recorded, and
+                    # naming no entry, says nothing either way.
+                    f"evidence: {technique_evidence_words(mapping)}"
+                    if technique_evidence_ids(mapping) is not None
+                    else "",
                     observed_words(getattr(mapping, "observed_in", None) or ()),
                 )
                 if part

@@ -745,6 +745,15 @@ class CapabilityCell(BaseModel):
     # is one source however many agents cite it. Empty on rows built without
     # the ledger.
     sources: list[str] = Field(default_factory=list)
+    # The technique's evidence, the one set every surface that shows the
+    # technique prints (``reporting.technique_evidence``): the entries cited by
+    # the statements that name it (its claims and findings, a map the judge
+    # made, an asserting tool's own entry) that the run issued, in ledger
+    # order, an entry that only looked the catalogue up left out; without a
+    # ledger, the ids its statements cite. ``[]`` is a technique whose
+    # statements cite no entry; ``None`` is a row stored before the set was
+    # recorded, and is left out of the stored row.
+    evidence_ids: list[str] | None = Field(default=None, exclude_if=lambda value: value is None)
     # How many of ``sources`` are independent: sources whose roots overlap
     # (two tools reading one place) count once.
     independent_sources: int = 0
@@ -788,6 +797,8 @@ class TTPMapping(BaseModel):
     # See ``CapabilityCell.sources``, ``independent_sources``, ``source_kinds``
     # and ``support``.
     sources: list[str] = Field(default_factory=list)
+    # See ``CapabilityCell.evidence_ids``.
+    evidence_ids: list[str] | None = Field(default=None, exclude_if=lambda value: value is None)
     independent_sources: int = 0
     source_kinds: dict[str, int] = Field(default_factory=dict)
     support: str = ""
@@ -817,8 +828,9 @@ class AttckDefenseRow(BaseModel):
     """What ATT&CK itself lists against one published technique.
 
     Read from the cached ATT&CK bundles with no model call
-    (``memory.attck_defense``); ``evidence_ids`` are the technique's own
-    sources, so the row cites what the technique rests on.
+    (``memory.attck_defense``); ``evidence_ids`` are the technique's evidence
+    (``reporting.technique_evidence``), so the row cites what the technique
+    rests on, and ``sandbox_items`` the sandbox items among its sources.
     """
 
     model_config = _STRICT_CONFIG
@@ -829,6 +841,7 @@ class AttckDefenseRow(BaseModel):
     detection_strategies: list[AttckLink] = Field(default_factory=list)
     data_components: list[AttckLink] = Field(default_factory=list)
     evidence_ids: list[str] = Field(default_factory=list)
+    sandbox_items: list[str] = Field(default_factory=list, exclude_if=lambda value: not value)
 
 
 # ---------------------------------------------------------------------------
@@ -1581,6 +1594,11 @@ class FlaggedStatement(BaseModel):
     # False where the answer came by a path with no turn to ask on (structured
     # output): the mark then says the model was not asked.
     asked: bool = True
+    # A sentence the agreement round left out of the analyst report, a state of its own: the
+    # places of that report it is left out of (``section_agreement.passages_of``), each that
+    # prints the text in its writer's own words; empty for a sentence left standing. The
+    # bundle prints the text whole (T-613).
+    left_out: list[str] = Field(default_factory=list, exclude_if=lambda value: not value)
 
 
 # What the report says of a question the analyst asked of the run, in a fixed

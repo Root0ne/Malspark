@@ -2,14 +2,13 @@
 
 A graph of the bundle had nothing to link a reader to: no exported object held
 a ledger id in a property, so every node said it carried none. The record
-already holds the ties. An analyst finding names its techniques and cites its
-entries, an asserting tool's entry names a technique in its own structured
-output, and the attribution cites the entries its family name was read from.
-The export writes those, as ``x_malspark_evidence_refs``, on the sample's
-``uses`` edge to each technique and on a malware object it mints from the
-family. It writes nothing it would have to infer: no id read out of a
-sentence, no object matched by value, and no property where the record ties
-nothing.
+already holds the ties. A published technique's evidence is the set the
+report's technique list carries (``reporting.technique_evidence``), and the
+attribution cites the entries its family name was read from. The export writes
+those, as ``x_malspark_evidence_refs``, on the sample's ``uses`` edge to each
+technique and on a malware object it mints from the family. It writes no
+object matched by value, no id the ledger does not hold, and no property where
+the record ties nothing.
 """
 
 from __future__ import annotations
@@ -25,7 +24,6 @@ from malspark.agents.judge_postprocess import (
     lift_misplaced_extensions,
     postprocess_judge_bundle,
 )
-from malspark.pipeline.evidence_summary import technique_evidence
 from malspark.reporting.builder import MalwareReportBuilder
 from malspark.reporting.models import MalwareReport
 from malspark.reporting.renderers.stix_renderer import (
@@ -34,7 +32,12 @@ from malspark.reporting.renderers.stix_renderer import (
 )
 from malspark.schemas.evidence import LedgerEntry
 from malspark.schemas.isr_models import AgentISR, ClaimEvidence, Finding
-from malspark.schemas.stix_models import EVIDENCE_REFS_PROPERTY, Bundle, attack_pattern_id
+from malspark.schemas.stix_models import (
+    EVIDENCE_NOTE_PROPERTY,
+    EVIDENCE_REFS_PROPERTY,
+    Bundle,
+    attack_pattern_id,
+)
 
 SHA256 = "36dabc40fa8983ce900a90b8156d2c754875fe1b5413a997843c4a0ef3908220"
 
@@ -61,73 +64,6 @@ def _isr(*, findings: list[Finding] = (), claims: list[ClaimEvidence] = ()) -> A
     return AgentISR(
         agent_id="static", domain="static", claims=list(claims), findings=list(findings)
     )
-
-
-class TestTheRecordReader:
-    def test_a_finding_ties_its_techniques_to_the_entries_it_cites(self) -> None:
-        isr = _isr(
-            findings=[
-                Finding(
-                    title="injects", technique_ids=["t1055"], evidence_ids=["ev_0003", "ev_0001"]
-                )
-            ]
-        )
-
-        assert technique_evidence({"static": isr}, _ledger())["T1055"] == [
-            "ev_0001",
-            "ev_0002",
-            "ev_0003",
-        ]
-
-    def test_an_asserting_tool_entry_is_its_own_evidence_and_a_lookup_is_not(self) -> None:
-        ties = technique_evidence({}, _ledger())
-
-        assert ties == {"T1055": ["ev_0002"]}
-
-    def test_an_id_in_a_claims_sentence_stays_in_the_sentence(self) -> None:
-        isr = _isr(
-            claims=[
-                ClaimEvidence(
-                    claim="Uses HTTP for C2",
-                    evidence_ref="PCAP frame 42: dst=198.51.100.5:443 [ev_0010]",
-                    confidence=0.8,
-                    technique_id="T1071",
-                )
-            ]
-        )
-
-        assert "T1071" not in technique_evidence({"static": isr}, _ledger())
-
-    def test_an_id_the_ledger_does_not_hold_is_left_out_and_repeats_are_one(self) -> None:
-        isr = _isr(
-            findings=[
-                Finding(title="a", technique_ids=["T1082"], evidence_ids=["ev_0010", "ev_0099"]),
-                Finding(title="b", technique_ids=["T1082"], evidence_ids=["ev_0010", "note"]),
-            ]
-        )
-
-        assert technique_evidence({"static": isr}, _ledger())["T1082"] == ["ev_0010"]
-
-    def test_a_finding_that_cites_nothing_ties_nothing(self) -> None:
-        isr = _isr(findings=[Finding(title="a", technique_ids=["T1082"])])
-
-        assert "T1082" not in technique_evidence({"static": isr}, _ledger())
-
-    def test_a_run_with_no_ledger_ties_nothing(self) -> None:
-        isr = _isr(findings=[Finding(title="a", technique_ids=["T1082"], evidence_ids=["ev_0003"])])
-
-        assert technique_evidence({"static": isr}, []) == {}
-        assert technique_evidence({"static": isr}, None) == {}
-
-    def test_a_finding_ties_its_entries_to_every_technique_it_names(self) -> None:
-        isr = _isr(
-            findings=[
-                Finding(title="a", technique_ids=["T1082", "T1012"], evidence_ids=["ev_0003"])
-            ]
-        )
-
-        ties = technique_evidence({"static": isr}, _ledger())
-        assert ties["T1082"] == ties["T1012"] == ["ev_0003"]
 
 
 def _report(verdict: str, judge: Bundle | None, **attribution: Any) -> MalwareReport:
@@ -206,12 +142,14 @@ def _render(
     renderer: ExtendedSTIXRenderer | None = None,
     **attribution: Any,
 ):
+    """The export of a report whose published techniques carry ``ties`` as their evidence."""
     judge = _judge() if judge is None else judge
     report = _report("Malware", judge, **attribution)
+    for mapping in report.ttp_mappings:
+        mapping.evidence_ids = list((ties or {}).get(mapping.technique_id, []))
     return (renderer or ExtendedSTIXRenderer()).render(
         report,
         judge,
-        technique_evidence=ties,
         ledger_ids=LEDGER_IDS if ledger is None else ledger,
     )
 
@@ -384,6 +322,25 @@ class TestTheJudgesCopyIsNotCarried:
         assert _carrying(objects) == []
 
 
+def _built_with(isr: AgentISR, ledger: list[LedgerEntry]) -> MalwareReport:
+    return MalwareReportBuilder(
+        file_hash=SHA256,
+        file_name="sample.exe",
+        sample_path=None,
+        sandbox_report={},
+        reports={},
+        isr_reports={"static": isr},
+        stix_output=_judge().model_dump(mode="json"),
+        run_summary={},
+        discussion_history=[],
+        final_decision="Malware",
+        overall_confidence=0.9,
+        judge_assessment=None,
+        malware_category="loader",
+        evidence_ledger=ledger,
+    ).build_deterministic()
+
+
 def test_no_id_the_ledger_does_not_hold_reaches_the_export() -> None:
     """Every source of ids, fed ids the ledger does not hold: none is exported."""
     rng = random.Random(7)
@@ -398,8 +355,12 @@ def test_no_id_the_ledger_does_not_hold_reaches_the_export() -> None:
                 Finding(title="f", technique_ids=["T1055", "T1071"], evidence_ids=list(mixed))
             ]
         )
-        ties = technique_evidence({"static": isr}, ledger)
-        # The ties a caller could hand the renderer directly, unfiltered.
+        ties = {
+            m.technique_id: m.evidence_ids or []
+            for m in _built_with(isr, ledger).ttp_mappings
+            if m.technique_id in ("T1055", "T1071")
+        }
+        # The ties a report could carry, unfiltered.
         raw_ties = {"T1055": list(mixed), "T1071": list(absent)}
         judge_answer = TestTheJudgesCopyIsNotCarried()._answer()
         judge_answer["objects"][2][EVIDENCE_REFS_PROPERTY] = list(mixed)
@@ -435,6 +396,9 @@ def test_the_official_validator_finds_no_error_and_no_new_kind_of_warning() -> N
     else the validator says about the bundle is unchanged.
     """
     note = f"Custom property '{EVIDENCE_REFS_PROPERTY}' should be implemented using an extension"
+    # The edge to a technique with no ledger entry carries the note saying so,
+    # which draws the same best-practice note.
+    no_entry = f"Custom property '{EVIDENCE_NOTE_PROPERTY}' should be implemented"
     empty = Bundle(objects=[])
     pairs = [
         (_render(None), _render({"T1055": ["ev_0002"], "T1071": ["ev_0004"]}), 2),
@@ -450,7 +414,9 @@ def test_the_official_validator_finds_no_error_and_no_new_kind_of_warning() -> N
 
         assert errors == bare_errors == []
         assert len([w for w in warnings if note in w]) == carrying
-        assert _without_ids([w for w in warnings if note not in w]) == _without_ids(bare_warnings)
+        assert _without_ids(
+            [w for w in warnings if note not in w and no_entry not in w]
+        ) == _without_ids([w for w in bare_warnings if no_entry not in w])
 
 
 def _without_ids(warnings: list[str]) -> list[str]:
@@ -471,11 +437,7 @@ class TestTheSupportMarkOnTheJudgesEdge:
         mapping.source_kinds = {"artefact": 1}
         mapping.support = "capability"
 
-        objects = _dumped(
-            ExtendedSTIXRenderer().render(
-                report, judge, technique_evidence={}, ledger_ids=LEDGER_IDS
-            )
-        )
+        objects = _dumped(ExtendedSTIXRenderer().render(report, judge, ledger_ids=LEDGER_IDS))
 
         edge = _uses(objects, "T1055")
         assert edge["x_malspark_confidence"] == 0.9  # the judge's own edge

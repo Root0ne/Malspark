@@ -384,7 +384,8 @@ def test_a_procedure_left_out_prints_a_dash_and_no_analyst_claim() -> None:
 
     analyst = MarkdownRenderer(layout=ANALYST).render(_with_record(_made(), "procedures.1"))
     row = next(line for line in analyst.splitlines() if "T1027" in line and line.startswith("|"))
-    assert row.rstrip().endswith("| - |")
+    # The Procedure cell; the Evidence cell after it cites the technique's entries.
+    assert row.split(" | ")[3] == "-"
     assert "rolling XOR key" not in row
     # With no record, the claim's first sentence still stands in for a procedure never written.
     analyst = MarkdownRenderer(layout=ANALYST).render(_made())
@@ -624,7 +625,7 @@ def test_a_record_of_procedure_10_leaves_procedure_1_as_before() -> None:
 
     # The record names procedure 10 alone: procedure 1 is no left-out one.
     assert "rolling XOR key" in _row_of("T1001")
-    assert _row_of("T1010").rstrip().endswith("| - |")
+    assert _row_of("T1010").split(" | ")[3] == "-"
 
 
 # What the last refusal of a row answering a cell or a bullet ends with: what the field is,

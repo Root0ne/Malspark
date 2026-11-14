@@ -6,39 +6,59 @@ import {
   claimsNotDiscussed,
   flaggedMark,
   flaggedStatements,
+  leftOutStatements,
 } from "./reportProse";
 
-/* ── What the report's own checks left standing ──────────────────────
+/* ── What the report's own checks recorded ───────────────────────────
  *
- * Two lists the report carries and the console never drew: the report
- * model's sentences a capability or rule-match check asked about and the
- * retry left standing, and the analyst claims in force the body neither cites
- * nor discusses. The exported report prints both; a reader of the console saw
- * the body without either caveat. Nothing is drawn for a report that carries
- * neither, or that was stored before the fields existed.
+ * The lists the report carries, each under a heading saying what it is: the
+ * report model's sentences a check asked about and the retry left standing,
+ * the sentences the agreement round left out of the analyst report (its own
+ * state: never listed as standing; the evidence bundle prints them whole), and
+ * the analyst claims in force the body neither cites nor discusses. Nothing is
+ * drawn for a report that carries none, or that was stored before the fields
+ * existed.
  */
 export default function ReportChecks({ mr }: { mr: MalwareReport }) {
   const flagged = flaggedStatements(mr);
+  const left = leftOutStatements(mr);
   const undiscussed = claimsNotDiscussed(mr);
-  if (flagged.length === 0 && undiscussed.length === 0) return null;
+  if (flagged.length === 0 && left.length === 0 && undiscussed.length === 0) return null;
   return (
     <div className="bg-bg-surface border border-border rounded">
       <div className="px-4 py-3 border-b border-border">
         <h2 className="text-xs font-medium text-text-primary">
-          What the report&apos;s checks left standing
+          What the report&apos;s checks recorded
         </h2>
       </div>
       <div className="p-4 space-y-4">
         {flagged.length > 0 && (
           <section>
             <h3 className="text-[11px] text-text-muted mb-1.5">
-              Flagged statements
+              Flagged statements, asked about and left standing
             </h3>
             <ul className="space-y-1.5">
               {flagged.map((statement, i) => (
                 <li key={`${statement.code}-${i}`} className="text-sm text-text-secondary">
                   &ldquo;{statement.sentence}&rdquo;
                   <span className="ml-2 text-[10px] italic text-status-orange">
+                    ({flaggedMark(statement)})
+                  </span>
+                </li>
+              ))}
+            </ul>
+          </section>
+        )}
+        {left.length > 0 && (
+          <section>
+            <h3 className="text-[11px] text-text-muted mb-1.5">
+              Left out of the analyst report
+            </h3>
+            <ul className="space-y-1.5">
+              {left.map((statement, i) => (
+                <li key={`${statement.code}-left-${i}`} className="text-sm text-text-secondary">
+                  &ldquo;{statement.sentence}&rdquo;
+                  <span className="ml-2 text-[10px] italic text-text-muted">
                     ({flaggedMark(statement)})
                   </span>
                 </li>

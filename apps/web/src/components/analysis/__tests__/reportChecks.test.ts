@@ -83,3 +83,54 @@ describe("a claim's techniques in the claims the report does not discuss (T-424)
     expect(html).toContain("static #2");
   });
 });
+
+describe("a sentence the agreement round left out (T-613)", () => {
+  it("is listed under its own heading, never under what the checks left standing", () => {
+    const html = renderToStaticMarkup(
+      createElement(ReportChecks, {
+        mr: {
+          flagged_statements: [
+            {
+              sentence: "It reaches 0x5c30 first.",
+              code: "agreement.dropped",
+              label: "judge.business_impact",
+              left_out: ["judge.business_impact"],
+            },
+          ],
+        } as MalwareReport,
+      }),
+    );
+
+    expect(html).toContain("Left out of the analyst report");
+    expect(html).toContain("It reaches 0x5c30 first.");
+    expect(html).not.toContain("Flagged statements");
+    expect(html).not.toContain("left standing");
+  });
+
+  it("keeps each list under a heading saying what that list is, both lists drawn", () => {
+    const html = renderToStaticMarkup(
+      createElement(ReportChecks, {
+        mr: {
+          flagged_statements: [
+            { sentence: "The loader steals credentials.", code: "narrative.ungrounded_capability" },
+            {
+              sentence: "It reaches 0x5c30 first.",
+              code: "agreement.dropped",
+              label: "judge.business_impact",
+              left_out: ["judge.business_impact"],
+            },
+          ],
+        } as MalwareReport,
+      }),
+    );
+
+    const headings = [...html.matchAll(/<h[23][^>]*>([^<]*)<\/h[23]>/g)].map((m) =>
+      m[1].replace(/\s+/g, " ").trim(),
+    );
+    expect(headings).toEqual([
+      "What the report&#x27;s checks recorded",
+      "Flagged statements, asked about and left standing",
+      "Left out of the analyst report",
+    ]);
+  });
+});

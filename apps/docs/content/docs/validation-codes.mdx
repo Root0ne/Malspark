@@ -46,7 +46,7 @@ not prove the test makes the platform raise it. The tests are not listed here:
 one nothing raises and stored runs carry; the comment on that
 name says what reads it.
 
-**131 codes in 12 families:** [agreement](#agreement) 18 · [attck](#attck) 8 · [attribution](#attribution) 1 · [composer](#composer) 4 · [isr](#isr) 16 · [narrative](#narrative) 5 · [question](#question) 9 · [report](#report) 19 · [stix](#stix) 32 · [tool](#tool) 1 · [validation](#validation) 1 · [verdict](#verdict) 17. 14 code positions the register could not resolve are [listed at the end](#unresolved-code-positions).
+**132 codes in 12 families:** [agreement](#agreement) 18 · [attck](#attck) 8 · [attribution](#attribution) 1 · [composer](#composer) 4 · [isr](#isr) 16 · [narrative](#narrative) 5 · [question](#question) 9 · [report](#report) 20 · [stix](#stix) 32 · [tool](#tool) 1 · [validation](#validation) 1 · [verdict](#verdict) 17. 14 code positions the register could not resolve are [listed at the end](#unresolved-code-positions).
 
 ## agreement
 
@@ -60,9 +60,9 @@ A rewrite resting on a fact that states again the absence of the sentence the fa
 
 ### `agreement.dropped`
 
-A sentence of the conclusion or the limitations paragraph listed as saying otherwise than a section 5 passage, a fact or a closed debate line, whose rewrite passed no check: left out of the section, which only sums up what sections 4 to 6 state, and recorded here with what stood; one the answer leaves out with its reason, keeps while the ledger says otherwise (a failed call a later call redid), or keeps on no source or a quote the checks refused, the same way, with the refused keep's sources, quote or reason. Also a sentence the ledger's own lines hold, in the body as in a closing section, and a sentence of a record's value cell or a capability bullet of the summary, that no answer passing the checks answers after the retry (refused, never answered, or standing twice in its passage), or that the round dropped: left out with what holds it, a cell left with no sentence printing "-" and a bullet left with none not printed (T-600).
+A sentence of the conclusion or the limitations paragraph listed as saying otherwise than a section 5 passage, a fact or a closed debate line, whose rewrite passed no check: left out of the section, which only sums up what sections 4 to 6 state, and recorded here with what stood; one the answer leaves out with its reason, keeps while the ledger says otherwise (a failed call a later call redid), or keeps on no source or a quote the checks refused, the same way, with the refused keep's sources, quote or reason. Also a sentence the ledger's own lines hold, in the body as in a closing section, and a sentence of a record's value cell or a capability bullet of the summary, that no answer passing the checks answers after the retry (refused, never answered, or standing twice in its passage), or that the round dropped: left out with what holds it, a cell left with no sentence printing "-" and a bullet left with none not printed (T-600). Also a sentence of a passage printed in its writer's own words (an analyst's statement or claim sentence, the judge's words in its note, reason or sentences) that the round dropped naming a source it contradicts (a fact, a section 5 passage, a debate round or a passage shown as a source only), whether or not another check refused that drop, or listed and no keep passing the checks answers: left out of the analyst report at every place the sentence prints, whichever text it stands in there, and counted there, its passage's text and the bundle keeping it whole, and recorded naming the passage, as left out (T-613).
 
-- **Raised at** `malspark.reporting.section_agreement:_left_out`, `malspark.reporting.section_agreement:apply_rows`
+- **Raised at** `malspark.reporting.section_agreement:_flagged_out._record`, `malspark.reporting.section_agreement:_left_out`, `malspark.reporting.section_agreement:apply_rows`
 - **Constant** `malspark.reporting.section_agreement:DROPPED_CODE`
 - **Docs** none
 
@@ -108,9 +108,9 @@ A kept closing sentence, or a kept held absence of the body, whose row quotes no
 
 ### `agreement.listed`
 
-A sentence of a passage shown for reading only (a section 5 passage, a row of the configuration, command or flag tables), listed as saying otherwise than its sources and kept as written: the model's answer, recorded where a reader finds it.
+A sentence of a passage shown for reading only (a section 5 passage, a row of the configuration, command or flag tables), listed as saying otherwise than its sources and kept as written: the model's answer, recorded where a reader finds it. Also a sentence of a passage printed in its writer's own words that the round dropped naming none of the sources such a sentence is read against: recorded as a flagged statement naming the passage, asked about and left standing, as the text its place stores holds it. The analyst report treats it as any sentence a check left standing, the bundle marking it as asked about and left standing wherever that text prints, at every copy whatever the white space between its words (T-613).
 
-- **Raised at** `malspark.reporting.section_agreement:apply_rows`
+- **Raised at** `malspark.reporting.section_agreement:_flagged_out._record`, `malspark.reporting.section_agreement:apply_rows`
 - **Constant** `malspark.reporting.section_agreement:LISTED_CODE`
 - **Docs** none
 
@@ -275,11 +275,11 @@ No comment names its meaning; the message at `malspark.pipeline.validation:valid
 
 ### `composer.command_values`
 
-A command table whose numbered ids leave out a value the code it was shown compares the command value with, or name a value that code compares it with nowhere. A row whose id was converted between bases by hand can name another case's value, and a case the table leaves out is a command the reader never learns of. Asked once with the values the platform read from the code; the model decides which branch is a command and what it does, and the table is kept as written with the finding beside it.
+A command table whose numbered ids leave out a value the code it was shown compares the command value with, or name a value that code compares it with nowhere. A row whose id was converted between bases by hand can name another case's value, and a case the table leaves out is a command the reader never learns of. A table whose numbered ids are a plain count (1 to N or 0 to N-1), which row numbers would be too, is not checked. Asked once with the values the platform read from the code; the model decides which branch is a command and what it does, and the table is kept as written with the finding beside it.
 
 - **Raised at** `malspark.pipeline.validation:command_value_violations`
 - **Constant** `malspark.pipeline.validation:COMMAND_VALUES_CODE`
-- **Docs** none
+- **Docs** [Architecture](/docs/architecture/)
 
 ### `composer.cut_at_output_cap`
 
@@ -616,6 +616,14 @@ No comment names its meaning, and `malspark.pipeline.validation:flow_voice_viola
 - **Raised at** `malspark.pipeline.validation:flow_voice_violations`, `malspark.pipeline.validation:persistence_not_observed_violations`
 - **Constant** `malspark.pipeline.validation:FLOW_VOICE_CODE`
 - **Docs** [Architecture](/docs/architecture/), [The console](/docs/console/)
+
+### `report.id_not_in_cited_entry`
+
+A table row whose id none of the entries it cites holds, while another entry of the run does (`cited_id_violations`): a number where that entry's one compared expression holds the most of the table's numbers, in a table of four or more numbered ids that are not a plain count, any other id where its text writes it whole. Asked once per set of holders, naming them; a row kept after it is marked beside its evidence.
+
+- **Raised at** `malspark.pipeline.validation:cited_id_violations`
+- **Constant** `malspark.pipeline.validation:ID_NOT_IN_CITED_ENTRY_CODE`
+- **Docs** [Architecture](/docs/architecture/)
 
 ### `report.identifier_uncited`
 

@@ -486,7 +486,10 @@ guess. A changed row's badge names what changed ("Changed: level", "Changed:
 who stated it") and the row lists every field, marking those equal in both
 runs "(same in both)", so the value that did not change stays in view; the
 evidence column links each run's cited ledger ids into that run's Evidence → Records
-tab, and shows none where the record holds no id for the row. Ids a record
+tab, and shows none where the record holds no id for the row. An ATT&CK row
+also lists its ledger entries as a field, shown and not counted as a change,
+so a technique whose set is not recorded reads "not recorded" and one whose
+recorded set is empty reads "none". Ids a record
 cites for a whole section, as the rule-match sections do, are listed under
 the section heading as section evidence. Differences come first; "Show
 unchanged rows" lists the rest, and a section longer than 200 rows offers

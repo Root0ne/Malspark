@@ -29,6 +29,7 @@ from __future__ import annotations
 import re
 from bisect import bisect_right
 from collections.abc import Callable, Iterable
+from contextvars import ContextVar
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
@@ -94,6 +95,12 @@ from malspark.reporting.renderers.markdown import (
     report_title,
     started_by_the_sample,
 )
+from malspark.reporting.technique_evidence import (
+    evidence_words,
+    technique_evidence_ids,
+    technique_sandbox_items,
+)
+from malspark.schemas.evidence import entry_ids_in
 from malspark.schemas.isr_models import judge_kept_note
 from malspark.utils.sentence_cut import left_out_span
 
@@ -498,11 +505,92 @@ class CitationNotes:
         return text
 
 
+# Who wrote a text the analyst report prints in its writer's own words (``VerbatimText``).
+ANALYST_WRITER = "analyst"
+JUDGE_WRITER = "judge"
+
+
+@dataclass(frozen=True)
+class VerbatimText:
+    """A text the analyst report prints in its writer's own words, under the id the
+    agreement round shows it by (``section_agreement.passages_of``): an analyst's statement
+    or claim sentence, the judge's note, reason or sentences. ``writer`` is
+    :data:`ANALYST_WRITER` or :data:`JUDGE_WRITER`; ``cites`` the ids printed with it;
+    ``subject`` what its place stands under, each a choice (the technique's id and name, the
+    judge's field), which a quote keeping a sentence of it with no subject of its own names.
+    ``whole`` is its writer's whole text where this place prints part of it (a claim's first
+    sentence, a reason cut to its width, the judge's sentences section 7 keeps), ``""`` where
+    it prints the whole: what of it the report prints nowhere the round is shown as a source
+    only. ``text`` is ``""`` where the place prints none of it. ``stored`` is the text as its
+    place stores it and the bundle prints it (a claim with its citations, a note with the
+    platform's words), ``""`` where that is ``text``: a sentence of it is recorded as it
+    stands there (:func:`as_stored`, T-613). ``readings`` pairs each sentence ``text`` prints
+    with the sentence of ``stored`` it is printed from, where the place prints it with more
+    taken out than its citations and a claim's numbering (an analyst's statement without what
+    the debate wrote of a claim)."""
+
+    id: str
+    label: str
+    text: str
+    writer: str
+    cites: tuple[str, ...] = ()
+    subject: tuple[str, ...] = ()
+    whole: str = ""
+    stored: str = ""
+    readings: tuple[tuple[str, str], ...] = ()
+
+
+def as_stored(sentence: str, stored: str, readings: Iterable[tuple[str, str]] = ()) -> str:
+    """The sentence of ``stored``, a text as its place stores it, that ``sentence`` of the
+    text the analyst report prints from it reads as: the one ``readings`` pairs with it
+    (``VerbatimText.readings``), the same words, or those words with the citations and the
+    claim number the report takes out, whatever the white space between them; ``sentence``
+    where none does (T-613)."""
+    from malspark.reporting.section_agreement import _sentences_of
+
+    words = " ".join(sentence.split())
+    for printed, said in readings:
+        if " ".join(printed.split()) == words:
+            return said.strip()
+    for found in _sentences_of(stored):
+        said = found.strip()
+        if " ".join(said.split()) == words or (
+            " ".join(_CLAIM_NUMBER.sub("", _one_line(_CITATION_RUN.sub("", said))).split()) == words
+        ):
+            return said
+    return sentence
+
+
+# The layouts of the renders :func:`verbatim_texts` reads, while it reads them.
+_READING: ContextVar[list[_Analyst] | None] = ContextVar("analyst_verbatim_reading", default=None)
+
+
+def verbatim_texts(report: MalwareReport) -> list[VerbatimText]:
+    """Every text the analyst report of ``report`` prints in its writer's own words, in the
+    order it prints them, as its last writing of each section prints them. Read off a render
+    of a copy of the report, so nothing of the report changes."""
+    from malspark.reporting.renderers.layout import ANALYST
+    from malspark.reporting.renderers.markdown import MarkdownRenderer
+
+    read: list[_Analyst] = []
+    token = _READING.set(read)
+    try:
+        MarkdownRenderer(layout=ANALYST).render(report.model_copy(deep=True))
+    finally:
+        _READING.reset(token)
+    if not read:
+        return []
+    return [text for section in read[-1].shown.values() for text in section.values()]
+
+
 def analyst_sections(
     renderer: MarkdownRenderer, report: MalwareReport, ctx: _Context
 ) -> tuple[list[str], list[CitationNote]]:
     """The analyst report's sections in their fixed order, and the notes they cite."""
     layout = _Analyst(report, ctx)
+    reading = _READING.get()
+    if reading is not None:
+        reading.append(layout)
     plan: list[tuple[str, Callable[[], str]]] = [
         ("title", layout.title),
         ("summary", layout.summary),
@@ -521,6 +609,7 @@ def analyst_sections(
     sections: list[str] = []
     for key, build in plan:
         layout.notes.section = key
+        layout.shown[key] = {}
         sections.append(layout.counted(key, renderer._safe_section(f"analyst_{key}", build)))
         layout.written.append(sections[-1])
     if layout.composed():
@@ -534,6 +623,7 @@ def analyst_sections(
         for index, (key, build) in enumerate(plan):
             if key in _REPLACING:
                 layout.notes.section = key
+                layout.shown[key] = {}
                 sections[index] = layout.counted(
                     key, renderer._safe_section(f"analyst_{key}", build)
                 )
@@ -955,6 +1045,9 @@ class _Analyst:
         self.measured_list: list[str] = []
         # How many sentences the section being written left out (``counted``).
         self.left = 0
+        # The texts printed in their writer's own words, by section, then by id, as each
+        # section last wrote them (:meth:`_as_said`).
+        self.shown: dict[str, dict[str, VerbatimText]] = {}
 
     # -- shared writing ---------------------------------------------------
 
@@ -971,8 +1064,9 @@ class _Analyst:
         a number stands with the confidence in words; any other is left out,
         with the spaces ``left_out_span`` takes, and counted where ``count``.
         A sentence is found as written and with its citations taken out, as
-        a procedure's first sentence is printed. One pass over the flagged
-        sentences, the longest first.
+        a procedure's first sentence is printed, wherever it stands
+        (``_Context.places``). One pass over the flagged sentences, the
+        longest first.
         """
         edits: list[tuple[int, int, str | None]] = []
         for sentence, _mark in self.ctx.flagged:
@@ -980,12 +1074,9 @@ class _Analyst:
                 continue
             codes = self.ctx.flag_codes.get(sentence, [])
             for form in dict.fromkeys((sentence, _CITATION_RUN.sub("", sentence).strip())):
-                start = text.find(form) if form else -1
-                while start != -1:
-                    end = start + len(form)
+                for start, end in self.ctx.places(form, text, sentence) if form else []:
                     if not any(a < end and start < b for a, b, _ in edits):
                         edits.append((start, end, self._flag_rewrite(form, codes)))
-                    start = text.find(form, start + 1)
         for start, end, rewrite in sorted(edits, reverse=True):
             if rewrite is None:
                 start, end = left_out_span(text, start, end)
@@ -1011,6 +1102,96 @@ class _Analyst:
         if codes == [NUMERIC_CONFIDENCE_CODE]:
             return _worded_confidence(sentence)
         return None
+
+    def _as_said(
+        self,
+        pid: str,
+        label: str,
+        text: str,
+        writer: str,
+        cites: Iterable[Any] = (),
+        subject: Iterable[str] = (),
+        whole: str = "",
+        stored: str = "",
+        readings: Iterable[tuple[str, str]] = (),
+    ) -> tuple[str, int]:
+        """``text``, which this report prints in its writer's own words under ``pid``, without
+        each sentence of it the agreement question left out (``_Context.verbatim_left``), and
+        how many were; recorded as shown (:class:`VerbatimText`), with its writer's ``whole``
+        text where it is part of one, the text as its place ``stored`` it and the ``readings``
+        of its sentences printed with more taken out. Never reworded:
+        a sentence stands as written or is left out, and the bundle prints it whole (T-613)."""
+        from malspark.reporting.section_agreement import left_out_of
+
+        self.shown.setdefault(self.notes.section, {})[pid] = VerbatimText(
+            pid,
+            label,
+            text,
+            writer,
+            tuple(str(i) for i in cites),
+            tuple(subject),
+            whole,
+            stored,
+            tuple(readings),
+        )
+        return left_out_of(text, self.ctx.verbatim_left.get(pid, ()))
+
+    def _technique(self, technique_id: str) -> tuple[str, ...]:
+        """What a text printed under ``technique_id`` stands under: its id and its name."""
+        name = next(
+            (
+                str(cell.technique_name or "").strip()
+                for cell in self.report.capability_matrix
+                if cell.technique_id == technique_id
+            ),
+            "",
+        )
+        return tuple(word for word in (technique_id.strip(), name) if word)
+
+    def _judge_words(
+        self, pid: str, label: str, printed: str, technique_id: str, written: str
+    ) -> tuple[str, int]:
+        """``printed``, a status or a note the platform writes around the judge's reasons
+        (``judge_reasons.judge_reason_spans``), without each sentence of those reasons the
+        agreement question left out, and how many were. Only the judge's own words are its
+        passage: the platform's words around them are none, and a bracket every word of which
+        is left out goes with them. ``written`` is the status or note as stored, whose reasons
+        are the judge's whole words (T-613)."""
+        from malspark.reporting.judge_reasons import judge_reason_spans
+        from malspark.reporting.section_agreement import left_out_of
+
+        spans = judge_reason_spans(printed)
+        if not spans:
+            return printed, 0
+        words = " ".join(printed[start:end] for start, end, _close in spans)
+        whole = " ".join(
+            " ".join(written[start:end].split())
+            for start, end, _close in judge_reason_spans(written)
+        )
+        self._as_said(
+            pid,
+            label,
+            words,
+            JUDGE_WRITER,
+            sorted(entry_ids_in(words)),
+            self._technique(technique_id),
+            whole if whole != words else "",
+            written,
+        )
+        left = self.ctx.verbatim_left.get(pid, ())
+        if not left:
+            return printed, 0
+        out, cut = printed, 0
+        for start, end, close in reversed(spans):
+            kept, count = left_out_of(out[start:end], left)
+            cut += count
+            if not count:
+                continue
+            if kept.strip():
+                out = out[:start] + kept + out[end:]
+            else:
+                out = out[: out.rfind("(", 0, start)].rstrip() + out[close:]
+        return out, cut
 
     def counted(self, key: str, section: str) -> str:
         """``section`` with the line saying how many of its sentences were left out, before
@@ -1808,9 +1989,9 @@ class _Analyst:
                 )
                 if text and text.strip()
             )
-            kept = self._kept_sentences(replaced)
+            kept = self._judge_kept(self._kept_sentences(replaced), severity, stored)
             if kept:
-                lines.extend([self._prose(" ".join(kept)), ""])
+                lines.extend([self._prose(kept), ""])
             # The platform's own fields stay beside them.
             if severity is not None and severity.likely_targets:
                 targets = ", ".join(_one_line(t) for t in severity.likely_targets)
@@ -1821,7 +2002,9 @@ class _Analyst:
                 lines.extend([*self._findings(self.ctx.verdict_findings), ""])
             return "\n".join([*lines, _behind("conclusion")])
         if severity is not None and severity.business_impact.strip():
-            lines.extend(["", self._prose(severity.business_impact)])
+            impact = self._judge_said("business_impact", severity.business_impact)
+            if impact.strip():
+                lines.extend(["", self._prose(impact)])
         if severity is not None and severity.likely_targets:
             targets = ", ".join(_one_line(t) for t in severity.likely_targets)
             lines.extend(["", f"Likely targets: {targets}."])
@@ -1829,10 +2012,54 @@ class _Analyst:
         if stored is not None and stored.sophistication_rating:
             lines.extend(["", f"Sophistication: {_one_line(stored.sophistication_rating)}."])
         if stored is not None and stored.text.strip():
-            lines.extend(["", self._prose(stored.text)])
+            text = self._judge_said("conclusion", stored.text)
+            if text.strip():
+                lines.extend(["", self._prose(text)])
         if self.ctx.verdict_findings:
             lines.extend(["", *self._findings(self.ctx.verdict_findings)])
         return "\n".join([*lines, "", _behind("conclusion")])
+
+    # The judge's texts section 7 prints, by field, as the agreement round labels them, and
+    # the field's own name, which a text of it stands under.
+    _JUDGE_TEXTS = {
+        "business_impact": ("7. Conclusion, the judge's severity rationale", "business impact"),
+        "conclusion": ("7. Conclusion, the judge's conclusion", "conclusion"),
+    }
+
+    def _judge_said(self, name: str, text: str, whole: str = "") -> str:
+        """``text``, the judge's field ``name`` as section 7 prints it, without each sentence
+        the agreement question left out, each counted; ``whole`` the field where section 7
+        prints part of it (T-613)."""
+        label, field_name = self._JUDGE_TEXTS[name]
+        said, cut = self._as_said(
+            f"judge.{name}",
+            label,
+            text,
+            JUDGE_WRITER,
+            sorted(entry_ids_in(text)),
+            (field_name,),
+            whole,
+        )
+        self.left += cut
+        return said
+
+    def _judge_kept(self, kept: list[str], severity: Any, stored: Any) -> str:
+        """The judge's sentences section 7 keeps beside a composed conclusion, in their order,
+        each under the field it stands in (:meth:`_judge_said`, the field its writer's whole
+        text), without each one the agreement question left out."""
+        fields = {
+            "business_impact": severity.business_impact if severity is not None else "",
+            "conclusion": stored.text if stored is not None else "",
+        }
+        impact = fields["business_impact"]
+        by_field = {"business_impact": [s for s in kept if impact and s in impact]}
+        by_field["conclusion"] = [s for s in kept if s not in by_field["business_impact"]]
+        standing: set[str] = set()
+        for name, found in by_field.items():
+            if str(fields[name] or "").strip():
+                said = self._judge_said(name, " ".join(found), str(fields[name]))
+                standing.update(sentence for sentence in found if sentence in said)
+        return " ".join(sentence for sentence in kept if sentence in standing)
 
     # -- 8. detection ------------------------------------------------------
 
@@ -2140,6 +2367,7 @@ class _Analyst:
                         cell.technique_id,
                     )
                     + self._status(cell.technique_id, cell.note),
+                    self._evidence(cell),
                 )
             )
         for tid, mapping in mappings.items():
@@ -2154,10 +2382,13 @@ class _Analyst:
                     _one_line(mapping.technique_name),
                     self._procedure(claim, _EV_RE.findall(" ".join(mapping.evidence_quotes)), tid)
                     + self._status(tid, ""),
+                    self._evidence(mapping),
                 )
             )
         if rows:
-            lines.extend([_row("Tactic", "ID", "Technique", "Procedure"), _divider(4), *rows])
+            lines.extend(
+                [_row("Tactic", "ID", "Technique", "Procedure", "Evidence"), _divider(5), *rows]
+            )
         else:
             lines.append("No ATT&CK technique is published in this run.")
         if held:
@@ -2181,13 +2412,37 @@ class _Analyst:
         if not cell.technique_id_valid:
             status = f"unverified id ({UNVERIFIED_TECHNIQUE_MARKER})"
         else:
-            status = "claimed, not published: " + status_shown(
-                cell.not_published, JUDGE_REASON_WIDTH, self.ctx.plain
+            # The judge's reason as printed: a sentence the agreement question left out is
+            # counted, and the reason printed without it (T-613).
+            reason, cut = self._judge_words(
+                f"attack_note.{cell.technique_id.strip().upper()}",
+                f"ATT&CK table, the reason {cell.technique_id} is not published",
+                status_shown(cell.not_published, JUDGE_REASON_WIDTH),
+                cell.technique_id,
+                cell.not_published,
             )
+            self.left += cut
+            shown = (
+                self.ctx.plain(reason)
+                if cut
+                else status_shown(cell.not_published, JUDGE_REASON_WIDTH, self.ctx.plain)
+            )
+            status = "claimed, not published" + (f": {shown}" if shown.strip() else "")
         return _item(
             f"{cell.technique_id} {_one_line(cell.technique_name)}: {status}"
             + self._status(cell.technique_id, "")
+            + f"; evidence {self._evidence(cell)}"
         )
+
+    def _evidence(self, row: Any) -> str:
+        """A technique's evidence as this report cites: one note listing the
+        entries its statements cite (``technique_evidence``), the sandbox items
+        among its sources beside it, named apart, or that it has neither; ``-``
+        for a row stored before the set was recorded that names neither."""
+        ids = technique_evidence_ids(row)
+        marker = self.notes.marker(ids) if ids else ""
+        cited = [marker] if marker else (None if ids is None else [])
+        return evidence_words(cited, technique_sandbox_items(row))
 
     def _status(self, technique_id: str, note: str) -> str:
         """What the single-file report says beside a published row's status, or ``""``.
@@ -2203,7 +2458,17 @@ class _Analyst:
         # The judge's answer when asked is how the row was decided, the
         # bundle's (T-555).
         if note and not note.lower().startswith(judge_kept_note("").lower()):
-            said.append(self.ctx.plain(judge_reasons_shown(note)[0]))
+            # The judge's words: a sentence the agreement question left out is counted (T-613).
+            shown, cut = self._judge_words(
+                f"attack_note.{technique_id.strip().upper()}",
+                f"ATT&CK table, the judge's note on {technique_id}",
+                judge_reasons_shown(note)[0],
+                technique_id,
+                note,
+            )
+            self.left += cut
+            if shown.strip():
+                said.append(self.ctx.plain(shown))
         # Under which detonations a further detonation's signatures tag it.
         mapping = next(
             (m for m in self.report.ttp_mappings if m.technique_id == technique_id), None
@@ -2231,7 +2496,25 @@ class _Analyst:
             return self._line(written.procedure, written.evidence_refs)
         if not sentence:
             return "-" + self.notes.marker(ids)
-        return self._line(sentence, ids)
+        said, cut = self._as_said(
+            f"attack_claim.{technique_id.strip().upper()}",
+            f"ATT&CK table, the claim sentence printed for {technique_id}",
+            sentence,
+            ANALYST_WRITER,
+            ids,
+            self._technique(technique_id),
+            # The claim the table prints the first sentence of.
+            _CLAIM_NUMBER.sub("", _one_line(_CITATION_RUN.sub("", claim)).strip()),
+            claim,
+        )
+        if cut:
+            # Left out by the agreement question: the written procedure stands, or nothing,
+            # and the sentence is counted (T-613).
+            self.left += cut
+            if written is not None:
+                return self._line(written.procedure, written.evidence_refs)
+            return "-"
+        return self._line(said, ids)
 
     # -- 11. limitations ---------------------------------------------------
 
@@ -2473,7 +2756,7 @@ class _Analyst:
             # the single-file report did not print.
             if not all(_resolved_only(hit) for hit in rules):
                 continue
-            for statement in cell.statements:
+            for number, statement in enumerate(cell.statements, 1):
                 written = _LAYER_LABEL.sub("", str(statement), count=1)
                 # The statement's facts: a claim number, an outcome or a name is none.
                 facts = _OUTCOME_WORD.sub("", _CLAIM.sub("", written))
@@ -2485,7 +2768,29 @@ class _Analyst:
                 new = [v for v in dict.fromkeys(_VALUE.findall(text)) if v not in have]
                 if len(new) < _NEW_VALUES:
                     continue
-                have.update(new)
+                # Each sentence of it the agreement question left out is counted with the
+                # rest (T-613).
+                text, cut = self._as_said(
+                    f"statements.{cell.technique_id}.{number}",
+                    f"Appendix, an analyst's statement on {cell.technique_id}",
+                    text,
+                    ANALYST_WRITER,
+                    (),
+                    self._technique(cell.technique_id),
+                    stored=str(statement),
+                    # Each sentence as the appendix prints it, beside the sentence of the
+                    # statement it is printed from.
+                    readings=[
+                        (printed, said)
+                        for said in sentences(written)
+                        if (printed := self._without_markers(said, named)[0]) and printed != said
+                    ],
+                )
+                left += cut
+                # Only what prints counts as printed: a statement left out whole counts none.
+                have.update(value for value in new if value in text)
+                if not text.strip():
+                    continue
                 out.append(
                     _item(
                         f"{cell.technique_id} {_one_line(cell.technique_name)}: {self._line(text)}"

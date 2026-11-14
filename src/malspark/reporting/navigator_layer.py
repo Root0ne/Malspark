@@ -3,8 +3,11 @@
 Built from the report's stored ``ttp_mappings`` (the published technique list)
 and nothing else: a draft, a rejected id or a technique the report left out is
 not in the layer. Each technique is scored and coloured by the support the
-report itself states for it, and its comment is its evidence ids. Deterministic,
-no model call.
+report itself states for it, and its comment is its evidence as every surface
+prints it (``technique_evidence``): the entries cited by the statements that
+name it, or that they cite none, and the sandbox items among its sources,
+named. Deterministic, no
+model call.
 
 Support, from the mapping's own fields (``support``, ``is_corroborated``):
 
@@ -74,6 +77,10 @@ def build_layer(
 ) -> dict[str, Any]:
     """The Navigator layer for the published techniques of one stored report."""
     from malspark.reporting.detonation_marks import observed_words
+    from malspark.reporting.technique_evidence import (
+        technique_evidence_ids,
+        technique_evidence_words,
+    )
 
     entries: list[tuple[str, Mapping[str, Any]]] = []
     for mapping in malware_report.get("ttp_mappings") or []:
@@ -127,7 +134,12 @@ def build_layer(
             metadata.append({"name": "observed in", "value": observed.removeprefix("observed in ")})
         entry.update(
             {
-                "comment": ", ".join(str(s) for s in mapping.get("sources") or []),
+                # The technique's evidence, as every surface prints it; a
+                # mapping stored before it was recorded, naming no entry, its
+                # sources as stored.
+                "comment": technique_evidence_words(mapping)
+                if technique_evidence_ids(mapping) is not None
+                else ", ".join(str(s) for s in mapping.get("sources") or []),
                 "enabled": True,
                 "metadata": metadata,
                 "links": [],

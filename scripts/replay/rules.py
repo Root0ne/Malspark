@@ -105,6 +105,7 @@ COMPOSER_CHECKS: tuple[str, ...] = (
     "configuration_citation_violations",
     "identifier_citation_violations",
     "stated_value_violations",
+    "cited_id_violations",
     "style_violations",
     "channel_binding_violations",
     "summary_shape_violations",
@@ -1672,7 +1673,6 @@ def _report_values(run: _Run, built: _Built, judged: _Judged) -> dict[str, Any]:
     from malspark.core.config import get_settings
     from malspark.core.truncation_ledger import TruncationLedger
     from malspark.pipeline.evidence_summary import collect as collect_technique_sources
-    from malspark.pipeline.evidence_summary import technique_evidence
     from malspark.reporting.builder import build_consolidated_iocs
     from malspark.reporting.misp import build_misp_attributes, misp_owner
     from malspark.reporting.renderers.stix_renderer import ExtendedSTIXRenderer
@@ -1694,7 +1694,6 @@ def _report_values(run: _Run, built: _Built, judged: _Judged) -> dict[str, Any]:
                 tid: [source for source, _confidence in rows]
                 for tid, rows in collect_technique_sources(run.isrs, run.ledger).items()
             },
-            technique_evidence=technique_evidence(run.isrs, run.ledger),
             ledger_ids=[str(entry.id) for entry in run.ledger],
         )
         report.stix_bundle_extended = export.model_dump(mode="json")
@@ -2402,6 +2401,7 @@ def _composer(run: _Run, built: _Built) -> dict[str, Any]:
             lambda p: v.identifier_citation_violations(p, known_ids, items),
             lambda p: v.stated_value_violations(p, entries),
         ],
+        "commands": [lambda p: v.cited_id_violations(p, entries)],
     }
     for section in c._PROSE_SECTIONS:
         extras.setdefault(section, []).append(_checks(section))

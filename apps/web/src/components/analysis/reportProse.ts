@@ -298,14 +298,26 @@ export function technicalSubsections(mr: MalwareReport | null | undefined): Tech
   return blocks;
 }
 
+/** Whether the agreement round left a flagged sentence out of the analyst report. */
+const leftOut = (f: FlaggedStatement | null | undefined): boolean => (f?.left_out ?? []).length > 0;
+
 /** The sentences a check flagged and the retry left standing. */
 export function flaggedStatements(mr: MalwareReport | null | undefined): FlaggedStatement[] {
-  return (mr?.flagged_statements ?? []).filter((f) => said(f?.sentence));
+  return (mr?.flagged_statements ?? []).filter((f) => said(f?.sentence) && !leftOut(f));
+}
+
+/** The sentences the agreement round left out of the analyst report; the bundle prints them
+ *  whole (T-613). */
+export function leftOutStatements(mr: MalwareReport | null | undefined): FlaggedStatement[] {
+  return (mr?.flagged_statements ?? []).filter((f) => said(f?.sentence) && leftOut(f));
 }
 
 /** What a flagged sentence's mark says, as the exported report says it. */
 export function flaggedMark(statement: FlaggedStatement): string {
   const found = said(statement.label) || statement.code;
+  if (leftOut(statement)) {
+    return `${found} — left out of the analyst report; the evidence bundle prints it whole`;
+  }
   return statement.asked === false
     ? `${found} — the model was not asked about it`
     : `${found} — asked about and left standing`;

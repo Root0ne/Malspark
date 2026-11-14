@@ -4261,15 +4261,34 @@ def _extract_mitre(result: dict) -> list | None:
     mr = result.get("malware_report") or {}
     mappings = mr.get("ttp_mappings") or []
     if mappings:
-        return [
-            {
+        from malspark.reporting.technique_evidence import (
+            technique_evidence_ids,
+            technique_sandbox_items,
+        )
+
+        # ``evidence_ids`` is the technique's evidence as every surface prints
+        # it (``technique_evidence``), the entries cited by the statements that
+        # name it; ``[]`` where they cite no ledger entry. A mapping stored
+        # before the set was recorded, naming no entry, carries no such key.
+        # ``sandbox_items`` names the sandbox items among its sources, apart
+        # from the entries; absent where it has none.
+        rows: list[dict[str, Any]] = []
+        for m in mappings:
+            if not m.get("technique_id"):
+                continue
+            row: dict[str, Any] = {
                 "technique_id": m.get("technique_id", ""),
                 "name": m.get("technique_name") or m.get("name", ""),
                 "description": " | ".join(m.get("evidence_quotes") or [])[:512],
             }
-            for m in mappings
-            if m.get("technique_id")
-        ] or None
+            evidence = technique_evidence_ids(m)
+            if evidence is not None:
+                row["evidence_ids"] = evidence
+            items = technique_sandbox_items(m)
+            if items:
+                row["sandbox_items"] = items
+            rows.append(row)
+        return rows or None
 
     stix = result.get("stix_bundle_extended") or result.get("stix_output")
     if not stix or not isinstance(stix, dict):

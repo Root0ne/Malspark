@@ -68,6 +68,8 @@ from malspark.core.undeclared_tools import (
     declared_auto_name_pattern,
     entry_address_arguments,
     entry_decompiles,
+    entry_lists_any_code,
+    holds_code,
 )
 from malspark.pipeline.events import (
     VALIDATION_ANSWERED,
@@ -7253,9 +7255,11 @@ def repeated_item_violations(
 # compares the command value with, or name a value that code compares it with
 # nowhere. A row whose id was converted between bases by hand can name another
 # case's value, and a case the table leaves out is a command the reader never
-# learns of. Asked once with the values the
-# platform read from the code; the model decides which branch is a command and
-# what it does, and the table is kept as written with the finding beside it.
+# learns of. A table whose numbered ids are a plain count (1 to N or 0 to
+# N-1), which row numbers would be too, is not checked. Asked once with the
+# values the platform read from the code; the model decides which branch is a
+# command and what it does, and the table is kept as written with the finding
+# beside it.
 COMMAND_VALUES_CODE = "composer.command_values"
 
 # The parts of C-like code that are not code: comments, and string and
@@ -7630,13 +7634,20 @@ def both_bases(value: int) -> str:
     return f"{hex(value)} ({value})"
 
 
+def _a_plain_count(ids: Collection[int]) -> bool:
+    """Whether ``ids`` are 1 to N or 0 to N-1: numbers a table's row numbers would be too."""
+    ordered = sorted(set(ids))
+    return ordered in (list(range(1, len(ordered) + 1)), list(range(len(ordered))))
+
+
 def command_value_violations(payload: Any, compared: Sequence[ComparedValues]) -> list[Violation]:
     """A command table whose ids and the values its code compares disagree, as one question.
 
     Each row's id is read as a number as written, alone or as its last word
     (``0x15``, ``COMMAND 21``), as the code's numbers are read
     (:data:`_CODE_INT`); any other id is not read. A table whose ids are 1 to
-    N, which row numbers would be too, is not checked. The code the table is
+    N or 0 to N-1, which row numbers would be too, is not checked
+    (:func:`_a_plain_count`). The code the table is
     checked against is the one expression whose values hold the most of the
     table's distinct numbered ids, more than half of them and at least two;
     with two different value sets holding as many, the table is not checked.
@@ -7654,8 +7665,7 @@ def command_value_violations(payload: Any, compared: Sequence[ComparedValues]) -
     ids = {value for _number, _written, value in numbered}
     if len(ids) < 2 or not compared:
         return []
-    if sorted(ids) == list(range(1, len(ids) + 1)):
-        # Ids 1 to N cannot be told from row numbers.
+    if _a_plain_count(ids):
         return []
     best = max(len(ids.intersection(c.values)) for c in compared)
     if best * 2 <= len(ids):
@@ -7714,6 +7724,13 @@ UNCITED_IDENTIFIER_CODE = "report.identifier_uncited"
 # (``stated_value_violations``). Asked once; a row kept after it is marked
 # beside its evidence.
 STATED_VALUE_UNHELD_CODE = "report.value_not_in_cited_entry"
+# A table row whose id none of the entries it cites holds, while another entry
+# of the run does (``cited_id_violations``): a number where that entry's one
+# compared expression holds the most of the table's numbers, in a table of
+# four or more numbered ids that are not a plain count, any other id where its
+# text writes it whole. Asked once per set of holders, naming them; a row kept
+# after it is marked beside its evidence.
+ID_NOT_IN_CITED_ENTRY_CODE = "report.id_not_in_cited_entry"
 # Technical prose naming a network value this run does not publish without
 # that value's publish state (``unpublished_value_violations``). Asked once; a
 # sentence kept after it is marked where it stands with the state.
@@ -7739,6 +7756,7 @@ MARKED_IN_PLACE: frozenset[str] = frozenset(
         RULE_MATCH_AS_ACTION_CODE,
         UNPUBLISHED_VALUE_CODE,
         CITATION_WRONG_ENTRY_CODE,
+        ID_NOT_IN_CITED_ENTRY_CODE,
         NUMERIC_CONFIDENCE_CODE,
         PROCESS_WORDS_CODE,
     }
@@ -7746,7 +7764,7 @@ MARKED_IN_PLACE: frozenset[str] = frozenset(
 # The marked findings asked about by the value they name, not by the sentence:
 # an answer that rewrites the sentence around the same value was asked all the
 # same.
-ASKED_BY_VALUE: frozenset[str] = frozenset({CITATION_WRONG_ENTRY_CODE})
+ASKED_BY_VALUE: frozenset[str] = frozenset({CITATION_WRONG_ENTRY_CODE, ID_NOT_IN_CITED_ENTRY_CODE})
 
 
 def raised_only_in_retry(violation: Violation, shown: Sequence[Violation]) -> bool:
@@ -7779,6 +7797,7 @@ KEPT_WITH_A_FINDING: frozenset[str] = frozenset(
         ABSENCE_CONTRADICTS_LEDGER_CODE,
         UNCITED_IDENTIFIER_CODE,
         STATED_VALUE_UNHELD_CODE,
+        ID_NOT_IN_CITED_ENTRY_CODE,
         UNPUBLISHED_VALUE_CODE,
         TECHNIQUE_NAME_CODE,
         RULE_MATCH_AS_ACTION_CODE,
@@ -9025,6 +9044,22 @@ _VERBATIM_FIELDS = frozenset({"value", "endpoints"})
 _CITING_FIELDS = ("evidence_refs", "evidence_ids", "evidence_ref")
 
 
+def _answer_failed(entry: Any) -> bool:
+    """Whether a ledger entry's call failed, or its answer only carries a failure.
+
+    A call the ledger filed as failed, or an answer that is an error envelope
+    in any shape a tool writes one (``tools.errors.error_parts``) or a line of
+    prose that only says the call failed (``core.undeclared_tools.prose_error``).
+    """
+    from malspark.core.undeclared_tools import prose_error
+    from malspark.tools.errors import error_parts
+
+    if not getattr(entry, "ok", True):
+        return True
+    output = str(getattr(entry, "output", "") or "")
+    return error_parts(output) is not None or prose_error(output) is not None
+
+
 @dataclass(frozen=True)
 class EntryTexts:
     """Each ledger entry's text as this run holds it, lower-cased, and the tool behind it.
@@ -9045,6 +9080,9 @@ class EntryTexts:
     # for the model or trimmed by the byte budget. A value absent from one of
     # them may be in the part that is not here, so no absence is read off it.
     partial: frozenset[str] = frozenset()
+    # The entries whose call failed or whose answer is an error envelope
+    # (:func:`_answer_failed`): what they hold is the failure's text.
+    failed: frozenset[str] = frozenset()
     # The run's sandbox items (``analysis.sandbox_sections.ItemCitations``): a
     # cited item is read through its own text, as an entry is through its
     # answer. Never in :meth:`holding` or :meth:`may_hold`, which offer entries.
@@ -9057,6 +9095,16 @@ class EntryTexts:
     # What the answered entries hold by address (``_LedgerHolds``), read on the
     # first statement of absence any check of this report meets, then kept.
     _holds: list[_LedgerHolds] = field(default_factory=list, compare=False, repr=False)
+    # The value sets each entry's code compares (:meth:`compares`), read once
+    # per text.
+    _compared: dict[str, tuple[frozenset[int], ...]] = field(
+        default_factory=dict, compare=False, repr=False
+    )
+    # The numbers each cited text writes as a compared operand (:meth:`operands`),
+    # and whether it writes a compare the reader does not take.
+    _operands: dict[str, tuple[frozenset[int], bool]] = field(
+        default_factory=dict, compare=False, repr=False
+    )
 
     @classmethod
     def from_ledger(cls, ledger: Iterable[Any], corpus: Any = None) -> EntryTexts:
@@ -9074,6 +9122,7 @@ class EntryTexts:
         words: dict[str, frozenset[str]] = {}
         entries: dict[str, Any] = {}
         partial: set[str] = set()
+        failed: set[str] = set()
         for entry in ledger:
             written = str(getattr(entry, "id", "") or "").strip()
             entry_id = written.lower()
@@ -9091,6 +9140,8 @@ class EntryTexts:
             text = text or str(getattr(entry, "output", "") or "").lower()
             if getattr(entry, "truncated", False):
                 partial.add(entry_id)
+            if _answer_failed(entry):
+                failed.add(entry_id)
             if text:
                 texts[entry_id] = text
                 tools[entry_id] = str(getattr(entry, "tool", "") or "")
@@ -9101,6 +9152,7 @@ class EntryTexts:
             tools.pop(repeat, None)
             words.pop(repeat, None)
             partial.discard(repeat)
+            failed.discard(repeat)
         for repeat, holder in holders.items():
             if holder and holder in texts:
                 texts[repeat] = texts[holder]
@@ -9108,8 +9160,15 @@ class EntryTexts:
                 words[repeat] = words[holder]
             if holder in partial:
                 partial.add(repeat)
+            if holder in failed:
+                failed.add(repeat)
         return cls(
-            texts=texts, tools=tools, words=words, entries=entries, partial=frozenset(partial)
+            texts=texts,
+            tools=tools,
+            words=words,
+            entries=entries,
+            partial=frozenset(partial),
+            failed=frozenset(failed),
         )
 
     def words_of(self, entry_id: str) -> frozenset[str]:
@@ -9208,6 +9267,92 @@ class EntryTexts:
             for entry_id in sorted(candidates, key=lambda i: self._order.get(i, -1))
             if entry_id in self.texts and self.holds(entry_id, value, fields=fields)
         ]
+
+    def compares(self, entry_id: str) -> tuple[frozenset[int], ...]:
+        """The value sets the code in an entry chooses among, one per expression.
+
+        The expressions :func:`compared_values` reads, read on the text as code
+        reads it: the escapes a JSON text writes for a newline, a tab, a quote
+        or a backslash taken out (:func:`_code_read`). Read once per text.
+        """
+        key = str(entry_id).strip().lower()
+        if key not in self._compared:
+            self._compared[key] = tuple(
+                frozenset(values)
+                for _subject, values in compared_values(_code_read(self.text_of(key)))
+            )
+        return self._compared[key]
+
+    def choosing(self, ids: Collection[int]) -> dict[str, frozenset[int]]:
+        """The entries whose one compared expression holds the most of ``ids``, with its values.
+
+        The expression is picked as :func:`command_value_violations` picks it:
+        the one holding the most of the distinct ``ids``, more than half of
+        them and at least two. Every entry with an expression holding as many
+        is returned, in ledger order (one function read twice is two such
+        entries), with that expression's values; where the expressions holding
+        as many hold different value sets, the entries do not agree on what
+        the code chooses by and none is returned, also where those
+        expressions are two of one entry's. An entry whose code merely
+        compares some of ``ids`` is not returned, nor an entry whose call
+        failed (:attr:`failed`). Empty where no expression holds enough. Never
+        a sandbox item, as :meth:`holding` offers none.
+        """
+        wanted = set(ids)
+        best = 0
+        found: list[tuple[str, frozenset[int]]] = []
+        for entry_id in self.texts:
+            if entry_id in self.failed:
+                continue
+            for values in self.compares(entry_id):
+                held = len(wanted.intersection(values))
+                if held > best:
+                    best, found = held, []
+                if held and held == best:
+                    found.append((entry_id, values))
+        if best < 2 or best * 2 <= len(wanted):
+            return {}
+        if len({values for _entry_id, values in found}) > 1:
+            return {}
+        return dict(found)
+
+    def operands(self, cited: str) -> frozenset[int]:
+        """The whole numbers a cited entry's or item's text writes as a compared operand.
+
+        :func:`compared_operands`, read on the text as code reads it
+        (:func:`_code_read`), once per text.
+        """
+        return self._operand_reading(cited)[0]
+
+    def _operand_reading(self, cited: str) -> tuple[frozenset[int], bool]:
+        key = str(cited).strip().lower()
+        if key not in self._operands:
+            self._operands[key] = _read_compared_operands(_code_read(self.text_of(key)))
+        return self._operands[key]
+
+    def code_not_read(self, cited: str) -> bool:
+        """Whether a cited entry is code in a form the operand reader does not read.
+
+        An entry whose text writes a compare the reader does not take — a
+        compare instruction at an instruction's place with an operand in no
+        form it reads or not taken to the instruction's end, or a case range
+        it does not expand — whatever its tool; or one whose tool
+        lists code (its declared kind, else its name) and whose text is
+        neither pseudo-C nor disassembly lines (:func:`holds_code`) and writes
+        no compared operand. A number absent from either may be written there
+        in a form not read.
+        """
+        key = str(cited).strip().lower()
+        read, untaken = self._operand_reading(key)
+        if untaken:
+            return True
+        entry = self.entries.get(key)
+        return (
+            entry is not None
+            and entry_lists_any_code(entry)
+            and not read
+            and not holds_code(_code_read(self.text_of(key)))
+        )
 
     def named(self, entry_id: str) -> str:
         """``ev_0012 (floss)``: an id with the tool that answered it."""
@@ -9745,6 +9890,448 @@ def _wrong_entry_label(
         else f"{len(holders)} other entries hold {'it' if len(values) == 1 else 'them'}"
     )
     return f"{said} {'is' if len(values) == 1 else 'are'} not in {', '.join(cited)}; {held}"
+
+
+# The escapes a JSON text writes, and what each stands for: a stored answer
+# holds code as JSON, and code is read with its own line breaks, quotes and
+# characters. A ``\uXXXX`` escape is a character, a surrogate pair one
+# character; a lone surrogate is no character and stands as written.
+_JSON_ESCAPE_RE = re.compile(
+    r'\\(?:(["\\/nrt])'
+    r"|u(?P<pair>[dD][89abAB][0-9a-fA-F]{2}\\u[dD][c-fC-F][0-9a-fA-F]{2})"
+    r"|u(?P<unit>(?![dD][89a-fA-F])[0-9a-fA-F]{4}))"
+)
+_JSON_ESCAPES = {'"': '"', "\\": "\\", "/": "/", "n": "\n", "r": "\r", "t": "\t"}
+
+
+def _json_escaped(match: re.Match[str]) -> str:
+    """The character one JSON escape stands for."""
+    if match.group("unit"):
+        return chr(int(match.group("unit"), 16))
+    if match.group("pair"):
+        high, low = int(match.group("pair")[:4], 16), int(match.group("pair")[6:], 16)
+        return chr(0x10000 + ((high - 0xD800) << 10) + (low - 0xDC00))
+    return _JSON_ESCAPES[match.group(1)]
+
+
+def _code_read(text: str) -> str:
+    """``text`` with the escapes a JSON text writes for a newline, a tab, a quote, a
+    backslash and a character (``\\u2502``) taken out, in one pass, so an escaped
+    backslash stays one backslash. Linear in the length of ``text``."""
+    return _JSON_ESCAPE_RE.sub(_json_escaped, str(text or ""))
+
+
+# A whole number as code writes one compared: C's forms (``0x4``, ``04``,
+# ``4``, a ``u``/``l`` suffix) and a disassembler's (``4h``, ``0x4``).
+_OPERAND_INT = r"-?(?:0[xX][0-9a-fA-F]{1,16}|[0-9][0-9a-fA-F]{0,16}[hH]|[0-9]{1,20})[uUlL]{0,3}"
+_OPERAND_INT_RE = re.compile(_OPERAND_INT, re.ASCII)
+# A number written as the whole of one side of a test: an equality or
+# inequality test (either side, each side ending where the test does, or at
+# the ``*`` or ``"`` that closes a comment or a string), or a case label,
+# one value or a ``case A ... B:`` range. A range with an end in no form read
+# here (``case 'a' ... 'z':``, ``case MIN ... MAX:``) is matched apart.
+_COMPARED_OPERAND_RE = re.compile(
+    rf"[!=]=[ \t]*(?P<right>{_OPERAND_INT})[ \t]*(?=$|[)|&,?:;}}*\"])"
+    rf"|(?:^|[(|&,?:;{{*\"])[ \t]*(?P<left>{_OPERAND_INT})[ \t]*[!=]="
+    rf"|\bcase[ \t]+(?P<case>{_OPERAND_INT})[ \t]*(?:\.\.\.[ \t]*(?P<last>{_OPERAND_INT})[ \t]*)?:"
+    r"|\bcase[ \t]+(?P<range>[^\n:]{0,120}\.\.\.)",
+    re.ASCII | re.IGNORECASE | re.MULTILINE,
+)
+# A compare instruction, read by its shape rather than by an architecture's
+# list: a mnemonic that begins with ``cmp`` (any suffix: ``cmpl``, ``cmp.w``),
+# then its operands.
+_COMPARE_MNEMONIC_RE = re.compile(r"\bcmp[a-z0-9.]*[ \t]+", re.ASCII | re.IGNORECASE)
+# The operands: two or more, each ending where its text does, at the line's
+# end, a ``;`` or ``//`` comment or a closing quote (bounded, so a line of
+# many mnemonics is read in linear time).
+_INSTRUCTION_OPERANDS_RE = re.compile(
+    r"(?:(?!//)[^\n;,\"]){1,120},(?:(?!//)[^\n;\"]){0,200}", re.ASCII
+)
+# An instruction operand that is a name: a register or a symbol, ``%`` marked
+# or not (``eax``, ``%eax``, ``r0``, ``DAT_00401000``).
+_OPERAND_NAME_RE = re.compile(r"%?[A-Za-z_.][\w.$@]*", re.ASCII)
+# The words that stand before a mnemonic as part of its instruction.
+_INSTRUCTION_PREFIXES = (
+    "lock", "rep", "repe", "repz", "repne", "repnz", "notrack", "bnd", "xacquire", "xrelease",
+)  # fmt: skip
+# What may stand before an instruction, from its line's start or from the
+# opening of a JSON string that holds it: characters that are not word
+# characters (a listing's columns and flow marks), number tokens (an address,
+# its bytes: hex digits with a decimal one, or two hex letters), a
+# ``label:``, a ``<symbol+offset>`` and an instruction prefix. A ``cmp`` after other
+# words is prose: its numbers are read where every operand is taken, and an
+# operand not taken there is no doubt about the code. Each token is taken
+# whole and never read again (``*+``), so the place is read in linear time.
+_INSTRUCTION_PLACE_RE = re.compile(
+    r"(?:<[\w.$@]*(?:[+-]\w+)?>"
+    rf"|\b(?:{'|'.join(_INSTRUCTION_PREFIXES)})\b"
+    r"|\b[a-z_][\w.$@]*:"
+    r"|\b0x[0-9a-f]+\b"
+    r"|\b(?=[0-9a-f]*[0-9])[0-9a-f]+h?\b"
+    r"|\b[a-f]{2}\b"
+    r"|\W"
+    r")*+",
+    re.ASCII | re.IGNORECASE,
+)
+# How far back an instruction's place is read, from its line's start or from
+# the JSON string that holds it: a longer prefix is not a listing's columns.
+_INSTRUCTION_PLACE_SPAN = 160
+# The most values the ``case A ... B:`` ranges of one text are read as, in
+# all. A range that would take the text past it is a compare the reader does
+# not take, so no question rests on it, and the reading stays linear in the
+# text's length.
+_WIDEST_CASE_RANGE = 4096
+
+
+def _operand_values(written: str) -> set[int]:
+    """Every value ``written`` reads as in the forms :data:`_OPERAND_INT` takes.
+
+    A leading zero is octal to C and decimal to a disassembler: both are
+    read, so a number either reader would take is held.
+    """
+    digits = written.rstrip("uUlL")
+    negative = digits.startswith("-")
+    digits = digits.lstrip("-")
+    if digits[:2].lower() == "0x":
+        values = {int(digits, 16)}
+    elif digits[-1:] in ("h", "H"):
+        values = {int(digits[:-1], 16)}
+    elif not digits.isdigit():
+        return set()
+    else:
+        values = {int(digits, 10)}
+        if len(digits) > 1 and digits[0] == "0" and set(digits) <= set("01234567"):
+            values.add(int(digits, 8))
+    return {-value for value in values} if negative else values
+
+
+def _instruction_operands(written: str) -> list[str]:
+    """A compare instruction's operands, split at the commas no bracket encloses."""
+    parts: list[str] = []
+    depth, start = 0, 0
+    for at, char in enumerate(written):
+        if char in "[({":
+            depth += 1
+        elif char in "])}":
+            depth = max(depth - 1, 0)
+        elif char == "," and not depth:
+            parts.append(written[start:at])
+            start = at + 1
+    parts.append(written[start:])
+    return [part.strip() for part in parts]
+
+
+def _instruction_operand_values(operand: str) -> set[int] | None:
+    """The values one instruction operand is: its number's, none for a name or a
+    memory reference, ``None`` for an operand in no form the reader takes, as one
+    holding a quote or a brace is (a character, the end of a quoted text)."""
+    if not operand or any(char in operand for char in "'\"{}"):
+        return None
+    if any(char in operand for char in "[]()"):
+        return set()
+    marked = operand[0] in "$#"
+    bare = operand[1:].strip() if marked else operand
+    if _OPERAND_INT_RE.fullmatch(bare):
+        return _operand_values(bare)
+    if not marked and _OPERAND_NAME_RE.fullmatch(operand):
+        return set()
+    return None
+
+
+def _at_instruction_place(text: str, start: int) -> bool:
+    """Whether what stands before ``start`` on its line is a listing's columns,
+    from the line's start or from the JSON string that holds the instruction."""
+    floor = max(0, start - _INSTRUCTION_PLACE_SPAN)
+    line = text.rfind("\n", floor, start)
+    # A line that starts before the window is no listing's columns; a JSON
+    # string within the window may still hold the instruction.
+    if not (line < 0 and start > _INSTRUCTION_PLACE_SPAN) and _INSTRUCTION_PLACE_RE.fullmatch(
+        text, line + 1, start
+    ):
+        return True
+    line = max(line, floor - 1)
+    # A JSON string opens with a quote after a bracket, a brace, a comma or
+    # a key's colon.
+    quote = text.rfind('"', line + 1, start)
+    return (
+        quote >= 0
+        and text[line + 1 : quote].rstrip(" \t")[-1:] in ("[", "{", ",", ":")
+        and bool(_INSTRUCTION_PLACE_RE.fullmatch(text, quote + 1, start))
+    )
+
+
+def _instruction_ends(text: str, at: int) -> bool:
+    """Whether an instruction's text ends at ``at``: the line's end, a ``;`` or
+    ``//`` comment, or the quote that closes the string holding it."""
+    return at == len(text) or text[at] in '\n;"' or text.startswith("//", at)
+
+
+def _read_compared_operands(text: str) -> tuple[frozenset[int], bool]:
+    """:func:`compared_operands`, and whether ``text`` writes a compare not taken."""
+    found: set[int] = set()
+    untaken = False
+    budget = _WIDEST_CASE_RANGE
+    for match in _COMPARED_OPERAND_RE.finditer(text):
+        if match.group("range") is not None:
+            untaken = True
+            continue
+        written = match.group("right") or match.group("left") or match.group("case")
+        last = match.group("last")
+        try:
+            values = _operand_values(written)
+            if last is None:
+                found |= values
+                continue
+            ends = _operand_values(last)
+        except ValueError:
+            untaken = True
+            continue
+        if untaken or not values or not ends:
+            untaken = True
+            continue
+        # Every reading of either end: from the lowest to the highest.
+        low, high = min(values), max(ends)
+        if not 0 <= high - low < budget:
+            untaken = True
+            continue
+        budget -= high - low + 1
+        found.update(range(low, high + 1))
+    at = 0
+    while mnemonic := _COMPARE_MNEMONIC_RE.search(text, at):
+        operands = _INSTRUCTION_OPERANDS_RE.match(text, mnemonic.end())
+        if operands is None and _instruction_ends(text, mnemonic.end()):
+            # A mnemonic with no operands (``repe cmpsb``) compares no number.
+            at = mnemonic.end()
+            continue
+        at = operands.end() if operands is not None else mnemonic.end()
+        read: set[int] = set()
+        # Operands not taken to the instruction's end are not read.
+        whole = operands is not None and _instruction_ends(text, operands.end())
+        for operand in _instruction_operands(operands.group()) if whole and operands else ():
+            try:
+                taken = _instruction_operand_values(operand)
+            except ValueError:
+                taken = None
+            if taken is None:
+                whole = False
+                break
+            read |= taken
+        if whole:
+            found |= read
+        else:
+            untaken = untaken or _at_instruction_place(text, mnemonic.start())
+    return frozenset(found), untaken
+
+
+def compared_operands(text: str) -> frozenset[int]:
+    """The whole numbers ``text`` writes as a compared operand, in any form it reads.
+
+    A number is read where it is the whole of one side of an equality or
+    inequality test (``cmd == 4``, ``4 == cmd``, ``cmd != 0x4``), a case label
+    (``case 4:``, and every value of a ``case 1 ... 5:`` range while the ranges
+    of the text hold no more than :data:`_WIDEST_CASE_RANGE` values in all), or
+    an operand of a compare instruction:
+    a mnemonic that begins with ``cmp``, any suffix, the number in either
+    operand place, with or without an immediate marker (``cmp eax, 4h``,
+    ``CMP EAX,0x4``, ``cmpl $0x4,%eax``, ``cmp r0, #4``). A side of a test
+    ends where the test does, or at a ``*`` or a ``"``: comments and strings
+    are not told apart from code, so a test a comment or a string writes
+    (``/* c == 4 */``, ``"c == 4"``) holds its number, and so does a product
+    (``c == 4 * k``), the reading that keeps a question back. Never read where
+    the number is part of a longer number or of a sum. A leading zero is read
+    both as octal and as decimal (``010`` holds 8 and 10). An instruction's
+    operands end where its text does: at the line's end, a ``;`` or ``//``
+    comment, or the quote that closes the string holding it. An instruction
+    with an operand in no form read here (one holding a quote or a brace among
+    them), or whose operands are not taken to that end (one longer than the
+    reader's bound), holds none of its numbers;
+    one at an instruction's place on its line (after nothing but characters
+    that are not word characters, number tokens, a ``label:``, a
+    ``<symbol+offset>`` and an instruction prefix, from the line's start or
+    from the JSON string that holds it) is a compare not taken, as is a range
+    whose end is not read (``case 'a' ... 'z':``), a reversed range or one
+    that would pass the text's budget; see :meth:`EntryTexts.code_not_read`.
+    Linear in the length of ``text``.
+    """
+    return _read_compared_operands(text)[0]
+
+
+# The fewest distinct numbered ids a table's numbers are checked with. A
+# handful of small numbers is compared somewhere in almost any program, so
+# with fewer an expression holding them is as likely a coincidence as the
+# table's own dispatcher.
+_FEWEST_CHECKED_NUMBERS = 4
+
+# A list an answer writes its rows in: a field name, never a value a model chose.
+_ROW_LIST_KEY_RE = re.compile(r"[a-z][a-z_]*")
+
+
+def _numbered_ids(rows: Sequence[Any]) -> dict[int, int]:
+    """The rows of a table whose id is read as a number, by index, each with its number.
+
+    An id that is a number as the code's numbers are read (:data:`_CODE_INT`),
+    or whose last word is one while the words before it are the same on every
+    row whose id ends in a number (a common label, ``COMMAND 21``). Any other
+    id is read as text: ``HTTP 200`` beside ``COMMAND 4`` is no number.
+    """
+    ending: list[tuple[int, str, int]] = []
+    for index, row in enumerate(rows):
+        written = str(row.get("id") or "").strip() if isinstance(row, dict) else ""
+        words = written.split()
+        if not words or not _ROW_NUMBER_RE.fullmatch(words[-1]):
+            continue
+        try:
+            ending.append((index, " ".join(words[:-1]).lower(), _code_number(words[-1])))
+        except (ValueError, OverflowError):
+            continue
+    labels = {label for _index, label, _number in ending}
+    return {index: number for index, label, number in ending if not label or len(labels) == 1}
+
+
+def cited_id_violations(payload: Any, entries: EntryTexts | None) -> list[Violation]:
+    """Table rows whose ``id`` none of the entries they cite holds, while another entry does.
+
+    A row that states an id (a command's) and cites entries is held where
+    one cited entry holds the id. A number, written alone or as the id's
+    last word after a label every numbered row shares (:func:`_numbered_ids`)
+    and read as the code's numbers are read (:data:`_CODE_INT`), is held by a
+    cited entry whose text writes it as a compared operand in any form it
+    reads (:meth:`EntryTexts.operands`), and not asked about where a
+    cited entry is code in a form not read (:meth:`EntryTexts.code_not_read`):
+    a doubt keeps the question back. Any other id is held by an entry whose
+    text holds it whole (:meth:`EntryTexts.holds`). Held by none of the cited
+    entries, the row is asked about once, together with the other rows its
+    holders hold, with those holders named: for a number, the entries whose one
+    compared expression holds the most of the table's numbers, where the
+    entries holding as many agree on its values (:meth:`EntryTexts.choosing`),
+    never an entry that merely compares it; for any other id, every other
+    entry whose text holds it. With no holder, nothing is said here: whether
+    an id no entry holds should be cited is another question.
+
+    A number is asked about only where a coincidence is implausible: a table
+    with fewer than :data:`_FEWEST_CHECKED_NUMBERS` distinct numbered ids, or
+    whose numbered ids are a plain count (:func:`_a_plain_count`), is not
+    checked for its numbers; its other ids are checked as they are.
+
+    An entry whose call failed, or whose answer is an error envelope, holds
+    nothing here (:attr:`EntryTexts.failed`): it is never offered, and citing
+    it holds no id.
+
+    Not asked here: a row citing no entry the run holds text for, a row with
+    a cited entry known to be partial (the id may be in the part that is not
+    here), and an id no text can be said to hold (:func:`decidable`). The id
+    is never rewritten: a row kept after the question is marked beside its
+    evidence. Linear in the rows and the entries' text: each text's numbers
+    are read once, each table's expression is picked once, and the entries
+    holding any other id are looked up.
+    """
+    if payload is None or entries is None or not (entries.texts or entries.items is not None):
+        return []
+    data = payload if isinstance(payload, dict) else {}
+    groups: dict[tuple[str, tuple[str, ...]], list[tuple[int, str, tuple[str, ...], str]]] = {}
+    for list_key, rows in data.items():
+        if not isinstance(rows, list) or not _ROW_LIST_KEY_RE.fullmatch(str(list_key)):
+            continue
+        numbered = _numbered_ids(rows)
+        table_numbers = set(numbered.values())
+        # A few numbers, or a plain count, match some expression of almost any
+        # code by chance: such a table's numbered rows are not checked.
+        counted = len(table_numbers) >= _FEWEST_CHECKED_NUMBERS and not _a_plain_count(
+            table_numbers
+        )
+        chosen = entries.choosing(table_numbers) if counted else {}
+        for index, row in enumerate(rows):
+            if not isinstance(row, dict):
+                continue
+            written = str(row.get("id") or "").strip()
+            if not written:
+                continue
+            cited = [ref for ref in _ids_in(row.get("evidence_refs")) if entries.has_text(ref)]
+            if not cited or any(ref in entries.partial for ref in cited):
+                continue
+            # A failed call holds nothing: its text is the failure's.
+            answered = [ref for ref in cited if ref not in entries.failed]
+            try:
+                # A numbered row of a table not checked for its numbers has
+                # no expression chosen, so no holder: it is never read as text.
+                if index in numbered:
+                    number = numbered[index]
+                    if any(
+                        number in entries.operands(ref) or entries.code_not_read(ref)
+                        for ref in answered
+                    ):
+                        continue
+                    holders = [
+                        ref
+                        for ref, values in chosen.items()
+                        if number in values and ref not in cited
+                    ]
+                else:
+                    if not decidable(written) or any(
+                        entries.holds(ref, written, fields=True) for ref in answered
+                    ):
+                        continue
+                    holders = [
+                        ref
+                        for ref in entries.holding(written, fields=True)
+                        if ref not in cited and ref not in entries.failed
+                    ]
+            except (ValueError, OverflowError, RecursionError) as exc:
+                # An id no reader can take is not decidable: nothing is said of it.
+                logger.debug("validation: a row's id was not read (%s).", type(exc).__name__)
+                continue
+            if holders:
+                groups.setdefault((str(list_key), tuple(holders)), []).append(
+                    (index + 1, written, tuple(cited), cited_row_text(written, row))
+                )
+    out: list[Violation] = []
+    for (list_key, held_by), found in groups.items():
+        holding = safe_finding_value(
+            ", ".join(entries.named(ref) for ref in held_by[:_MAX_NAMED_IDS])
+            + (
+                f" and {len(held_by) - _MAX_NAMED_IDS} more"
+                if len(held_by) > _MAX_NAMED_IDS
+                else ""
+            )
+        )
+        numbers = ", ".join(str(number) for number, _id, _cited, _where in found)
+        if len(found) == 1:
+            ((number, written, cites, _where),) = found
+            said = (
+                f"Row {number} of {list_key} states the id {safe_finding_value(written)!r}, "
+                f"which none of the entries it cites holds: "
+                f"{safe_finding_value(', '.join(entries.named(ref) for ref in cites))}. "
+                f"This run's evidence holds it in {holding}."
+            )
+        else:
+            ids = "; ".join(
+                f"{number}: {safe_finding_value(written)!r}"
+                for number, written, _cited, _where in found[:_MAX_NAMED_IDS]
+            )
+            more = len(found) - _MAX_NAMED_IDS
+            said = (
+                f"Rows {numbers} of {list_key} each state an id none of the entries the row "
+                f"cites holds: {ids}{f' and {more} more' if more > 0 else ''}. This run's "
+                f"evidence holds them in {holding}."
+            )
+        out.append(
+            Violation(
+                code=ID_NOT_IN_CITED_ENTRY_CODE,
+                message=(
+                    f"{said} A number is held where an entry's code compares it with the "
+                    "value it chooses by, any other id where an entry's text writes it whole. "
+                    "Cite the entry that holds each row's id."
+                ),
+                path=f"{list_key}.id",
+                quoted=tuple(where for _number, _id, _cited, where in found),
+                labels=tuple(
+                    _wrong_entry_label([written], list(cites), list(held_by), entries)
+                    for _number, written, cites, _where in found
+                ),
+                values=tuple(dict.fromkeys(written for _number, written, _c, _w in found)),
+            )
+        )
+    return out
 
 
 # The tables whose rows state one value each, by the list a section answers

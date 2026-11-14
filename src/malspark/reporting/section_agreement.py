@@ -200,6 +200,7 @@ from __future__ import annotations
 import bisect
 import math
 import re
+from collections import Counter
 from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass, field, replace
 from functools import cached_property, lru_cache, partial
@@ -312,7 +313,12 @@ REWRITTEN_CODE = "agreement.rewritten"
 # A sentence of a passage shown for reading only (a section 5 passage, a row
 # of the configuration, command or flag tables), listed as saying otherwise than
 # its sources and kept as written: the model's answer, recorded where a reader
-# finds it.
+# finds it. Also a sentence of a passage printed in its writer's own words that the
+# round dropped naming none of the sources such a sentence is read against: recorded
+# as a flagged statement naming the passage, asked about and left standing, as the
+# text its place stores holds it. The analyst report treats it as any sentence a check
+# left standing, the bundle marking it as asked about and left standing wherever that text
+# prints, at every copy whatever the white space between its words (T-613).
 LISTED_CODE = "agreement.listed"
 # A rewrite of a limitations sentence that still says a call failed, or a
 # reading could not be made, where a later call redid it.
@@ -328,7 +334,14 @@ FAILURE_REDONE_CODE = "agreement.failure_redone"
 # record's value cell or a capability bullet of the summary, that no answer passing
 # the checks answers after the retry (refused, never answered, or standing twice in
 # its passage), or that the round dropped: left out with what holds it, a cell left
-# with no sentence printing "-" and a bullet left with none not printed (T-600).
+# with no sentence printing "-" and a bullet left with none not printed (T-600). Also a
+# sentence of a passage printed in its writer's own words (an analyst's statement or claim
+# sentence, the judge's words in its note, reason or sentences) that the round dropped naming
+# a source it contradicts (a fact, a section 5 passage, a debate round or a passage shown as a
+# source only), whether or not another check refused that drop, or listed and no keep passing
+# the checks answers: left out of the analyst report at every place the sentence prints,
+# whichever text it stands in there, and counted there, its passage's text and the bundle
+# keeping it whole, and recorded naming the passage, as left out (T-613).
 DROPPED_CODE = "agreement.dropped"
 # A held sentence (any sentence of the conclusion or the limitations, of a
 # record's value cell or of a capability bullet; one calling open an address or a
@@ -525,6 +538,32 @@ class Passage:
     # shown and may be named, but raises no refusal of a row that does not name it, no item a
     # quote leaves out and no question of its own (T-601).
     silent: bool = False
+    # A text the analyst report prints in its writer's own words (an analyst's statement or
+    # claim sentence, the judge's note, reason or sentences): who wrote it, in the words of the
+    # record of a sentence of it left out; ``""`` for any other passage. Such a passage is
+    # shown to be listed and is never rewritten: a sentence of it listed is kept on a quote
+    # that passes, or left out of the analyst report, the bundle printing it whole, but where a
+    # drop of it names no source it is read against, which records it as asked about and left
+    # standing (T-613).
+    verbatim: str = ""
+    # Where such a passage's sentence the round leaves out is recorded, the sentence given:
+    # never its text, which stays whole for the bundle; and where one a drop names no source
+    # for is recorded as asked and left standing (T-613).
+    leave_out: Callable[[str], None] | None = None
+    left_standing: Callable[[str], None] | None = None
+    # The label of the place a sentence with no subject of its own ("Not established.",
+    # "None.") stands in, which a keep's quote names: groups of words, the quote holding every
+    # word of one choice of each group (:func:`_names_place`). A value cell's is its field's
+    # own name and what names its record (:func:`_cell_label`); a text printed in its writer's
+    # own words, the technique it stands under or the judge's field it is. ``()`` for a place
+    # offering none, where such a sentence is kept on no quote; ``None`` for any other passage,
+    # whose sentence is read by its own words alone (T-613).
+    place_label: tuple[tuple[str, ...], ...] | None = None
+    # An agent's own words the analyst report does not print, the rest of a text it prints in
+    # part (``renderers.analyst.VerbatimText.whole``; the bundle prints them whole): shown as a
+    # source only, named by another row, taking no row and no end of its own, and supplying no
+    # keep's quote (T-613).
+    source_only: bool = False
 
 
 def _ids(*sources: Any) -> frozenset[str]:
@@ -566,10 +605,20 @@ _BULLET_EMPTIED = "a bullet left with no sentence is not printed"
 
 
 def _record_passages(
-    prefix: str, label: str, rows: Sequence[Any], kind: str, *, number: bool = True
+    prefix: str,
+    label: str,
+    rows: Sequence[Any],
+    kind: str,
+    *,
+    number: bool = True,
+    record: str = "",
 ) -> list[Passage]:
-    """The written fields of each record of a list, one passage each, numbered from 1."""
+    """The written fields of each record of a list, one passage each, numbered from 1.
+
+    ``record`` names what one record is ("channel"): a value cell's place label holds it
+    (``Passage.place_label``, :func:`_cell_label`)."""
     out: list[Passage] = []
+    names = Counter(_own_name(row) for row in rows)
     for index, row in enumerate(rows, 1):
         prose = _PROSE_FIELDS.get(type(row), ())
         fields = (*prose, *_VALUE_FIELDS.get(type(row), ()))
@@ -598,9 +647,196 @@ def _record_passages(
                     closing=cell,
                     whole=_CELL_WHOLE if cell else "",
                     emptied=_CELL_EMPTIED if cell else "",
+                    place_label=(
+                        _cell_label(
+                            record,
+                            index if number else None,
+                            _own_name(row) if names[_own_name(row)] == 1 else "",
+                            name,
+                        )
+                        if cell
+                        else None
+                    ),
                 )
             )
     return out
+
+
+def _own_name(row: Any) -> str:
+    """A record's own name, ``""`` where it has none."""
+    return str(getattr(row, "name", "") or "").strip()
+
+
+def _cell_label(record: str, index: int | None, own: str, name: str) -> tuple[tuple[str, ...], ...]:
+    """The label of a value cell's place (``Passage.place_label``): its field's own name, and
+    what names its record: its index in its list ("channel 1"), so two records of one kind
+    differ, and its ``own`` name, given only where no other record of its list shares it; or
+    what the record is ("encryption scheme") where it stands alone (T-613)."""
+    if index is None:
+        names: tuple[str, ...] = (record,) if record else ()
+    else:
+        names = tuple(n for n in (own, f"{record} {index}".strip()) if n)
+    return ((name.replace("_", " "),), *((names,) if names else ()))
+
+
+# Who wrote a passage printed in its writer's own words, as the record of a sentence of it
+# left out says (``Passage.verbatim``), by the writer the analyst report names; any other
+# writer reads as an analyst (:data:`VERBATIM_DEFAULT`, T-613).
+_VERBATIM_WRITERS = {
+    "analyst": "an analyst's own words, printed as written",
+    "judge": "the judge's own words, printed as written",
+}
+VERBATIM_DEFAULT = _VERBATIM_WRITERS["analyst"]
+
+
+def _verbatim_passages(
+    report: MalwareReport, degradations: list[str] | None = None
+) -> list[Passage]:
+    """The texts the analyst report prints in their writer's own words
+    (``renderers.analyst.verbatim_texts``), in the order it prints them: one passage for each
+    distinct text, naming every place it prints, shown to be listed and never rewritten; a
+    sentence of it left out is left out at every place that sentence prints, whichever text it
+    stands in there. After them, what of a writer's whole text that a text prints part of
+    (``VerbatimText.whole``) no printed text holds, one passage shown as a source only for each
+    distinct rest (T-613). None where the report is not rendered, which is said on
+    ``degradations``."""
+    from malspark.reporting.renderers.analyst import verbatim_texts
+
+    try:
+        shown = verbatim_texts(report)
+    except Exception as exc:  # noqa: BLE001 — the round asks of every other passage
+        logger.warning("section agreement: the verbatim texts were not read (%s).", exc)
+        if degradations is not None:
+            degradations.append(
+                "The section agreement question was shown none of the texts the analyst "
+                "report prints in their writer's own words: they were not read "
+                f"({type(exc).__name__})."
+            )
+        return []
+    places: dict[str, list[Any]] = {}
+    for text in shown:
+        if text.text.strip():
+            places.setdefault(text.text.strip(), []).append(text)
+    # Every sentence of every printed text, indexed to the places it prints at, whichever
+    # text it stands in: one sentence wherever it prints.
+    cut = {said: _Sentences(said) for said in places}
+
+    def _printed_at(sentence: str) -> list[str]:
+        return list(
+            dict.fromkeys(
+                text.id
+                for said, where in places.items()
+                if cut[said].every(sentence)
+                for text in where
+            )
+        )
+
+    out: list[Passage] = []
+    for said, where in places.items():
+        first = where[0]
+        subject = _places_stand_under(where)
+        out.append(
+            Passage(
+                id=first.id,
+                label="; ".join(dict.fromkeys(text.label for text in where)),
+                text=said,
+                kind=CLAIM_LED,
+                cites=_ids(*(text.cites for text in where), said),
+                verbatim=_VERBATIM_WRITERS.get(first.writer, VERBATIM_DEFAULT),
+                leave_out=_flagged_out(report, first.id, _printed_at),
+                left_standing=_flagged_out(report, first.id, None, first.stored, first.readings),
+                place_label=(subject,) if subject else (),
+            )
+        )
+    # What of a writer's whole text no printed text holds: a source only (T-613).
+    rests: dict[str, list[Any]] = {}
+    for text in shown:
+        rest = [s for s in _sentences_of(text.whole) if not _printed_at(s)]
+        if rest:
+            rests.setdefault(" ".join(rest), []).append(text)
+    for said, where in rests.items():
+        first = where[0]
+        out.append(
+            Passage(
+                id=f"{first.id}.unprinted",
+                label=f"{'; '.join(dict.fromkeys(t.label for t in where))}, not printed in "
+                "the analyst report",
+                text=said,
+                kind=CLAIM_LED,
+                cites=_ids(*(text.cites for text in where), said),
+                verbatim=_VERBATIM_WRITERS.get(first.writer, VERBATIM_DEFAULT),
+                source_only=True,
+            )
+        )
+    return out
+
+
+def _places_stand_under(where: Sequence[Any]) -> tuple[str, ...]:
+    """What the places of one text printed in its writer's own words stand under, each choice
+    once: the technique, or the judge's field (``VerbatimText.subject``)."""
+    return tuple(dict.fromkeys(word for text in where for word in text.subject if word))
+
+
+def _flagged_out(
+    report: MalwareReport,
+    pid: str,
+    printed_at: Callable[[str], list[str]] | None,
+    stored: str = "",
+    readings: Sequence[tuple[str, str]] = (),
+) -> Callable[[str], None]:
+    """Record a sentence of the passage ``pid`` printed in its writer's own words as a flagged
+    statement naming the passage. Given ``printed_at``, one the round left out, under the
+    round's code and left out of every place of the analyst report the sentence prints at,
+    whichever text it stands in there (``models.FlaggedStatement.left_out``): that report
+    leaves it out at each, and the bundle prints it whole beside the round's record. Else one
+    a drop named no source for, recorded as listed: asked about and left standing, as it
+    stands in the text its place ``stored`` (``renderers.analyst.as_stored``, read through the
+    ``readings`` of its sentences), so the bundle marks it where that text prints and the
+    analyst report treats it as any sentence a check left standing (T-613)."""
+    from malspark.reporting.models import FlaggedStatement
+    from malspark.reporting.renderers.analyst import as_stored
+
+    def _record(sentence: str) -> None:
+        rows = getattr(report, "flagged_statements", None)
+        if not isinstance(rows, list) or not sentence.strip():
+            return
+        row = (
+            FlaggedStatement(
+                sentence=as_stored(sentence, stored, readings) if stored else sentence,
+                code=LISTED_CODE,
+                label=pid,
+            )
+            if printed_at is None
+            else FlaggedStatement(
+                sentence=sentence,
+                code=DROPPED_CODE,
+                label=pid,
+                left_out=printed_at(sentence) or [pid],
+            )
+        )
+        if row not in rows:
+            rows.append(row)
+
+    return _record
+
+
+def left_out_of(text: str, sentences: Iterable[str]) -> tuple[str, int]:
+    """``text`` without each of ``sentences`` at every place it stands in it whole, by its
+    words whatever the white space between them (``_Sentences.every``), with the spaces
+    ``left_out_span`` takes, and how many were left out: how the analyst report leaves out a
+    sentence of a passage printed in its writer's own words that the round left out (T-613)."""
+    cut = _Sentences(text)
+    spans = sorted(
+        {
+            left_out_span(text, found[0], found[1])
+            for sentence in dict.fromkeys(sentences)
+            for found in cut.every(sentence)
+        },
+        reverse=True,
+    )
+    for start, end in spans:
+        text = text[:start] + text[end:]
+    return text, len(spans)
 
 
 def passages_of(
@@ -609,15 +845,18 @@ def passages_of(
     narrative_written: bool = True,
     discussion: Iterable[Any] = (),
     entries: Iterable[Any] = (),
+    degradations: list[str] | None = None,
 ) -> list[Passage]:
     """Every passage the round is shown, in the order the prompt lists them.
 
     The facts first, then section 5's passages written from the code, then
-    the debate's mediations, then the passages written without the code. The
+    the debate's mediations, then the passages written without the code, the texts
+    the analyst report prints in their writer's own words last. The
     key findings and the summary are asked about only when the narrative round
     wrote them (``narrative_written``): the platform's own fallback is not the
     report model's to rewrite. ``entries`` is the run's ledger, in its order,
-    which the facts after the bound values are read off.
+    which the facts after the bound values are read off. What could not be read is
+    said on ``degradations`` where given.
     """
     from malspark.reporting.call_bindings import binding_words
     from malspark.reporting.composer import COMPOSED_SECTIONS
@@ -772,6 +1011,7 @@ def passages_of(
                     [ta.encryption_scheme],
                     CLAIM_LED,
                     number=False,
+                    record="encryption scheme",
                 )
             )
     if not reads_code("communications"):
@@ -781,6 +1021,7 @@ def passages_of(
                 "5. Technical analysis, channel row",
                 report.c2_channels,
                 CLAIM_LED,
+                record="channel",
             )
         )
     if ta is not None and ta.technique_procedures:
@@ -969,7 +1210,9 @@ def passages_of(
                 {str(_field(e, "id") or "").lower(): e for e in held},
             )
         )
-    every = [*facts, *coded, *debate, *uncoded]
+    # The texts the analyst report prints in their writer's own words, last: listed only where
+    # a source says otherwise, so no fact is read off them (T-613).
+    every = [*facts, *coded, *debate, *uncoded, *_verbatim_passages(report, degradations)]
     by_id = {passage.id: passage for passage in every}
     for passage in (*coded, *uncoded):
         if _writable(passage):
@@ -3933,29 +4176,61 @@ def _sentence_units(text: str) -> tuple[dict[str, list[int]], set[int]]:
 
 
 class _Sentences:
-    """One passage's sentences, cut once, for every row about the passage."""
+    """One passage's sentences, cut once, for every row about the passage. ``by_words`` for a
+    text printed in its writer's own words, whose sentence is found by :meth:`every` (T-613)."""
 
-    def __init__(self, text: str) -> None:
+    def __init__(self, text: str, *, by_words: bool = False) -> None:
         self.text = text
         self.starts, self.ends = _sentence_units(text)
+        self.by_words = by_words
+        self._words: dict[str, list[tuple[int, int]]] | None = None
+
+    def every(self, sentence: str) -> list[tuple[int, int, str, int]]:
+        """Every place the sentence copied stands, in order, as :meth:`span` gives one: by its
+        words, whatever the white space between them, as copied or with the escapes a quoted
+        value is shown with read back, the first reading that stands. A sentence is the same
+        sentence however often the text holds it (T-613)."""
+        if self._words is None:
+            self._words = {}
+            for said, starts in self.starts.items():
+                for start in starts:
+                    self._words.setdefault(" ".join(said.split()), []).append(
+                        (start, start + len(said))
+                    )
+        for reading, form in enumerate((sentence, *pack_reads(sentence)), -1):
+            words = " ".join(form.split())
+            found = sorted(self._words.get(words, [])) if words else []
+            if found:
+                return [(start, end, self.text[start:end], reading) for start, end in found]
+        return []
 
     def span(self, sentence: str) -> tuple[int, int, str, int] | None:
-        """Where the one sentence copied stands, once, or ``None``.
+        """Where the one sentence copied stands, once, or ``None``; for a text cut
+        ``by_words``, the first place :meth:`every` gives.
 
         As copied, or with the escapes a quoted value is shown with read back
         (``written_forms.pack_reads``): the model was shown each passage quoted.
         The last item says which: ``-1`` as copied, else the reading's place in
         ``pack_reads``, so a rewrite is read back the same way. It has to be
-        exactly one sentence of the passage, standing there exactly once; a
-        fragment, a word, a run of sentences or a sentence the passage writes
-        twice is not one.
+        exactly one sentence of the passage; cut otherwise than ``by_words``, one
+        standing there exactly once: a fragment, a word, a run of sentences or a
+        sentence the passage writes twice is not one.
         """
+        if self.by_words:
+            places = self.every(sentence)
+            return places[0] if places else None
         for reading, form in enumerate((sentence, *pack_reads(sentence)), -1):
             copied = form.strip()
             found = self.starts.get(copied, []) if copied else []
             if len(found) == 1:
                 return found[0], found[0] + len(copied), copied, reading
         return None
+
+
+def _cut(passage: Passage) -> _Sentences:
+    """A passage's sentences, those of a text printed in its writer's own words found by
+    their words (``_Sentences.every``, T-613)."""
+    return _Sentences(passage.text, by_words=bool(passage.verbatim))
 
 
 def located(text: str, sentence: str) -> str | None:
@@ -4010,8 +4285,9 @@ def _tied(source: Passage, held: frozenset[int]) -> bool:
 
 
 def _listed_when_kept(passage: Passage) -> bool:
-    """Whether a kept sentence of the passage is recorded as listed: section 5, or read only."""
-    return passage.kind == SECTION_5 or not _writable(passage)
+    """Whether a kept sentence of the passage is recorded as listed: section 5, or read only; a
+    passage printed in its writer's own words is counted, as a closing keep is (T-613)."""
+    return (passage.kind == SECTION_5 or not _writable(passage)) and not passage.verbatim
 
 
 def _row_violations(
@@ -4036,8 +4312,35 @@ def _row_violations(
                 path=f"{path}.passage",
             )
         ]
+    if passage.source_only:
+        # The words the analyst report does not print: a source only (T-613).
+        return [
+            Violation(
+                code=UNKNOWN_PASSAGE_CODE,
+                message=(
+                    f"row {safe_finding_value(index + 1)} names "
+                    f"{safe_finding_value(passage.id)}, which is shown as a source only: name "
+                    'it in "sources" of the row whose passage it states otherwise than; it '
+                    "takes no row of its own."
+                ),
+                path=f"{path}.passage",
+            )
+        ]
     out: list[Violation] = []
-    if row.decision == "rewrite" and not _writable(passage):
+    if row.decision == "rewrite" and passage.verbatim:
+        # Its writer's own words: a rewrite would not be them (T-613).
+        out.append(
+            Violation(
+                code=UNKNOWN_PASSAGE_CODE,
+                message=(
+                    f"row {safe_finding_value(index + 1)}: {safe_finding_value(passage.id)} "
+                    f"prints {safe_finding_value(passage.verbatim)} and is never rewritten: "
+                    f"{_VERBATIM_ENDS}."
+                ),
+                path=f"{path}.decision",
+            )
+        )
+    elif row.decision == "rewrite" and not _writable(passage):
         out.append(
             Violation(
                 code=UNKNOWN_PASSAGE_CODE,
@@ -4113,6 +4416,7 @@ def _row_violations(
     unheld_drop = (
         row.decision == "drop"
         and not passage.closing
+        and not passage.verbatim
         and span is not None
         and not _held_by_the_ledger(passage, span[2])
     )
@@ -4120,7 +4424,13 @@ def _row_violations(
         _form(name)
         for name, source in zip(row.sources, sources, strict=True)
         if source is None
-        or (source.kind not in allowed and source.id not in speaking)
+        or (
+            source.kind not in allowed
+            and source.id not in speaking
+            # An agent's words the analyst report does not print stand where a debate round
+            # does (T-613).
+            and not (source.source_only and DEBATE in allowed)
+        )
         # A sentence answered in the model's words never rests on its own
         # passage: that would state what the passage says otherwise of.
         or ((in_words or absent_keep) and source.id == passage.id)
@@ -4355,9 +4665,14 @@ def _held_by_the_ledger(passage: Passage, sentence: str) -> str:
 def _ends_on_answer(passage: Passage, sentence: str) -> str:
     """What leaves ``sentence`` of ``passage`` out where no answer for it passes the checks,
     in the words of its record: the ledger's lines that hold it (:func:`_held_by_the_ledger`),
-    or the kind of field answered whole it stands in (``Passage.whole``); ``""`` for any
-    other sentence, which ends as before."""
-    return _held_by_the_ledger(passage, sentence) or passage.whole
+    or the kind of field answered whole it stands in (``Passage.whole``), or who wrote the
+    passage printed in its writer's own words it stands in (``Passage.verbatim``, T-613);
+    ``""`` for any other sentence, which ends by the other rules."""
+    return (
+        _held_by_the_ledger(passage, sentence)
+        or passage.whole
+        or ("" if passage.source_only else passage.verbatim)
+    )
 
 
 def _shown_entries(passage: Passage, sentence: str, by_id: Mapping[str, Passage]) -> frozenset[str]:
@@ -4555,7 +4870,10 @@ def _sentence_start(text: str) -> str:
 
 def _left_out_end(passage: Passage) -> str:
     """:data:`_LEFT_OUT_END` as a sentence of its own, saying, for a field answered whole,
-    what it prints once every sentence of it is left out (``Passage.emptied``)."""
+    what it prints once every sentence of it is left out (``Passage.emptied``), and for a
+    passage printed in its writer's own words that the bundle prints it whole."""
+    if passage.verbatim:
+        return _sentence_start(_VERBATIM_LEFT_OUT)
     return _sentence_start(
         f"{_LEFT_OUT_END}, and {passage.emptied}" if passage.whole else _LEFT_OUT_END
     )
@@ -4568,6 +4886,30 @@ _WHOLE_ENDS = (
     'it naming the source you read and found agreeing, with "quote": its words that state '
     'the same thing, copied exactly, or with "sources": [] and "reason" where no source '
     'speaks of it; or drop it with "reason"'
+)
+
+
+# What a sentence of a passage printed in its writer's own words (``Passage.verbatim``) may end
+# as, as the question and every refusal of an answer for it say: a keep on a source's words, or
+# a drop naming one of the round's own sources (:func:`_names_a_source`); never a rewrite
+# (T-613).
+_VERBATIM_ENDS = (
+    'keep it naming the source you read and found agreeing, with "quote": its words that state '
+    'the same thing, copied exactly, or drop it naming in "sources" the source it contradicts '
+    "(a fact, a section 5 passage, a debate round or a passage marked (verbatim, a source "
+    'only)), with "reason"'
+)
+# What a drop of such a sentence naming no source is told: it is left out only on the source
+# it contradicts, as a keep stands only on its quote (T-613).
+_VERBATIM_DROP = 'name in "sources" the source it contradicts: only that leaves it out'
+# What becomes of such a sentence where its answer does not pass (``apply_rows``): left out of
+# the analyst report, which the bundle prints whole, on a keep or on a drop naming one of those
+# sources; recorded as asked about and left standing on a drop naming none, which the analyst
+# report treats as any sentence a check left standing (T-613).
+_VERBATIM_LEFT_OUT = (
+    "a keep no check passes, or a refused drop naming such a source, leaves it out of the "
+    "analyst report, which the bundle prints whole; a drop naming no such source is recorded "
+    "as asked about and left standing"
 )
 
 
@@ -4808,9 +5150,18 @@ def _answer_violations(
     # A sentence the ledger's own lines hold is left out where no answer for it passes
     # (:data:`_LEFT_OUT_END`): a drop of it is an answer, in the body as in a closing passage.
     held = span is not None and bool(_held_by_the_ledger(passage, span[2]))
+    # A passage printed in its writer's own words: a sentence of it is kept on a source's words
+    # or dropped on its reason, never rewritten (T-613).
+    verbatim = bool(passage.verbatim)
     # A row whose sentence does not stand in its passage is refused for that alone: which
     # sentence it drops is not known.
-    unheld_drop = row.decision == "drop" and not passage.closing and not held and span is not None
+    unheld_drop = (
+        row.decision == "drop"
+        and not passage.closing
+        and not held
+        and not verbatim
+        and span is not None
+    )
     if unheld_drop:
         out.append(
             Violation(
@@ -4832,7 +5183,13 @@ def _answer_violations(
         and row.decision == "keep"
     )
     reasoned = (
-        (passage.closing or absent or (held and row.decision == "drop"))
+        (
+            passage.closing
+            or absent
+            or (held and row.decision == "drop")
+            # A verbatim sentence is left out only on the source it contradicts (T-613).
+            or (verbatim and row.decision == "drop" and bool(row.sources))
+        )
         and row.decision != "rewrite"
         and bool(row.reason.strip())
     )
@@ -4841,6 +5198,7 @@ def _answer_violations(
     # is kept on a reason.
     closing_ends = _closing_ends(passage, span[2]) if span is not None else ""
     body_ends = _named_body_ends(passage, span[2]) if span is not None else ""
+    verbatim_ends = f"{_VERBATIM_ENDS}." if verbatim else ""
     # A drop of the body naming no sentence of its passage is refused for that alone: which
     # sentence it drops is not known, so no source it names is asked for (T-600).
     unknown_drop = row.decision == "drop" and not passage.closing and span is None
@@ -4852,13 +5210,17 @@ def _answer_violations(
                 message=(
                     # A keep of a sentence every keep of which is refused is asked for no
                     # source: only its drop's reason (T-600).
-                    f"row {number} names no source; {_LEAVING_REASON}."
+                    f"row {number} drops a sentence of {where} naming no source; {_VERBATIM_DROP}."
+                    if verbatim and row.decision == "drop"
+                    else f"row {number} names no source; {_LEAVING_REASON}."
                     if row.decision == "keep"
                     and span is not None
                     and _keep_refused(passage, span[2])
                     else f"row {number} names no source. {_NAME_THE_SOURCES_READ} {where}"
                     + (
-                        f", {_REASON_LEAVING}"
+                        f", or, leaving it out, {_VERBATIM_DROP}"
+                        if verbatim_ends
+                        else f", {_REASON_LEAVING}"
                         if closing_ends or body_ends
                         else f", {_REASON_KEEPING}"
                         if passage.closing
@@ -4885,8 +5247,8 @@ def _answer_violations(
         and (passage.kind != SECTION_5 or _in_own_words(passage, sentence, sources))
         and repeats_sentence(sentence, row.rewrite)
     )
-    keeping = row.decision == "keep" and (passage.closing or absent)
-    held_ends = closing_ends or body_ends
+    keeping = row.decision == "keep" and (passage.closing or absent or verbatim)
+    held_ends = closing_ends or body_ends or verbatim_ends
     if row.decision == "rewrite" and passage.closing and repeats_sentence(sentence, row.rewrite):
         # A rewrite saying what the sentence says is a keep on the sources it names,
         # quoting the one of their sentences that matches it best (T-568).
@@ -4927,7 +5289,9 @@ def _answer_violations(
             s
             for s in sources
             if s is not None
+            # A passage shown as a source only supplies no keep's quote (T-613).
             and (s.kind in (FACT, SECTION_5, DEBATE) or (body and s.kind == CLAIM_LED))
+            and not s.source_only
         ]
         problem = _quote_problem(
             sentence,
@@ -4936,6 +5300,7 @@ def _answer_violations(
             generic_words(by_id or {}),
             by_id or {},
             body=body,
+            place=passage.place_label,
         )
         if problem:
             out.append(
@@ -4981,7 +5346,11 @@ def _answer_violations(
                 path=f"{path}.decision",
             )
         )
-    speaking = _speaking_of(sentence, by_id or {}, passage) if keeping and not row.sources else []
+    speaking = (
+        _speaking_of(sentence, by_id or {}, passage)
+        if keeping and not row.sources and not verbatim
+        else []
+    )
     if speaking:
         # "No source speaks of it" while a fact about a routine it names, or a
         # passage or fact about what it denies something of, is shown: the model
@@ -5203,8 +5572,16 @@ def _quote_problem(
     *,
     body: bool = False,
     speaking: bool = False,
+    place: tuple[tuple[str, ...], ...] | None = None,
 ) -> str:
     """What is wrong with a kept closing sentence's quote, or ``""``.
+
+    ``place``: the label of the place the sentence stands in (``Passage.place_label``). A
+    sentence with no subject of its own ("Not established.", "None.", one whose only content
+    words are generic, "Not established for this sample.") is read against it, so
+    its quote names that place (:func:`_names_place`): "the request path … is not
+    established" backs no "Not established." of a channel's encryption, and a place offering
+    no label keeps no such sentence on a quote (T-613).
 
     ``body``: a held absence of the body, left out only where the ledger's own lines hold
     it (:func:`_held_by_the_ledger`), which may be kept on the rows of an entry it cites:
@@ -5264,7 +5641,17 @@ def _quote_problem(
     ):
         return ""
     subject = kept_subject(sentence, generic)
-    if quote_overlap(sentence, quote, generic) < min(_QUOTE_SHARED, len(subject)):
+    # A sentence with no subject of its own: no word but what an absence denies, or words
+    # generic to the run.
+    if place is not None and not (
+        content_words(sentence) - _ABSENCE_PREDICATES - PREPOSITIONS - generic
+    ):
+        if not place:
+            return "backs no sentence with no subject of its own where its place names none"
+        if not _names_place(quote, place):
+            said = "; ".join(" or ".join(choices) for choices in place)
+            return f"does not name the place the sentence stands in ({said})"
+    elif quote_overlap(sentence, quote, generic) < min(_QUOTE_SHARED, len(subject)):
         return "shares too few of the words the sentence denies something of"
     # What an item denied is ("protocol" of "The C2 protocol beyond the request keys in
     # the decoded strings"): a quote holding only its modifiers ("decoded strings") is
@@ -5285,6 +5672,28 @@ def _quote_problem(
                 " ".join(sorted(item)) for item in contradicted
             )
     return ""
+
+
+def _names_place(quote: str, place: tuple[tuple[str, ...], ...]) -> bool:
+    """Whether ``quote`` names the place ``place`` labels (``Passage.place_label``): for each
+    group of it, every word of one choice, a content word as the absence checks read one
+    (``said_of``) and any other (a number, an id, a short word) whole: "T1059" is named by
+    "T1059" alone, never by "T1059.001" (T-613)."""
+    said = said_of(quote)
+    lowered = quote.lower()
+
+    def _holds(word: str) -> bool:
+        if not any(c.isdigit() for c in word) and word in content_words(word):
+            return said.holds(word)
+        return re.search(rf"(?<![\w.]){re.escape(word)}(?!\w|\.\w)", lowered) is not None
+
+    return all(
+        any(
+            all(_holds(w.lower().strip(".")) for w in re.findall(r"[\w.]+", choice))
+            for choice in choices
+        )
+        for choices in place
+    )
 
 
 def _states_the_denial(sentence: str, quote: str, generic: frozenset[str]) -> bool:
@@ -6300,7 +6709,7 @@ def agreement_violations(
 
     def _sentences(passage: Passage) -> _Sentences:
         if passage.id not in cut:
-            cut[passage.id] = _Sentences(passage.text)
+            cut[passage.id] = _cut(passage)
         return cut[passage.id]
 
     out: list[Violation] = []
@@ -6516,7 +6925,7 @@ def rewrites_violations(
 
     def _sentences(passage: Passage) -> _Sentences:
         if passage.id not in cut:
-            cut[passage.id] = _Sentences(passage.text)
+            cut[passage.id] = _cut(passage)
         return cut[passage.id]
 
     out: list[Violation] = []
@@ -6623,7 +7032,11 @@ def prompt_text(passages: Sequence[Passage]) -> str:
             # Model-written text and the sample's own: one quoted value each.
             text = passage.text if passage.kind == FACT else quoted_value(passage.text)
             shown = (
-                " (read only)"
+                _SOURCE_MARK
+                if passage.source_only
+                else _VERBATIM_MARK
+                if passage.verbatim
+                else " (read only)"
                 if passage.kind in (CLAIM_LED, SECTION_5) and passage.write is None
                 else ""
             )
@@ -6780,6 +7193,10 @@ def prompt_text(passages: Sequence[Passage]) -> str:
     closing = [p.id for p in passages if p.closing and _writable(p)]
     if closing:
         lines.append(_CLOSING_TASK.format(ids=", ".join(f"[{pid}]" for pid in closing)))
+    if any(p.verbatim and not p.source_only for p in passages):
+        lines.append(_VERBATIM_TASK)
+    if any(p.source_only for p in passages):
+        lines.append(_SOURCE_TASK)
     whole = [p for p in passages if p.whole and _writable(p)]
     if whole:
         # Said once for every field answered whole, not per passage (T-600).
@@ -6790,6 +7207,25 @@ def prompt_text(passages: Sequence[Passage]) -> str:
             + "."
         )
     return "\n".join(lines)
+
+
+# How the question marks a passage printed in its writer's own words, and what the TASK says
+# of every such passage once (T-613).
+_VERBATIM_MARK = " (verbatim)"
+# How the question marks an agent's words the analyst report does not print, a source only,
+# and what the TASK says of every such passage once (T-613).
+_SOURCE_MARK = " (verbatim, a source only)"
+_SOURCE_TASK = (
+    "A passage marked (verbatim, a source only) is not printed in the analyst report: name it "
+    "as a source a sentence says otherwise than; never quote it for a keep, and list no "
+    "sentence of it."
+)
+_VERBATIM_TASK = (
+    "A passage marked (verbatim) prints an analyst's or the judge's own words: list a sentence "
+    "of it only where a source states otherwise; where it and a passage you may rewrite "
+    "disagree, list and mend that passage. Never rewrite a verbatim sentence: "
+    f"{_VERBATIM_ENDS}. " + _sentence_start(_VERBATIM_LEFT_OUT)
+)
 
 
 # What the round asks of the conclusion and the limitations, every sentence of which
@@ -6830,16 +7266,27 @@ def build_messages(passages: Sequence[Passage]) -> list[BaseMessage]:
 class AgreementRound:
     """What the round did: its counts, what it was told, and what it could not do."""
 
-    summary: dict[str, int] = field(default_factory=dict)
+    summary: dict[str, Any] = field(default_factory=dict)
     tally: ValidationTally = field(default_factory=ValidationTally)
     degradations: list[str] = field(default_factory=list)
+
+
+def _names_a_source(row: AgreementRow, by_id: dict[str, Passage]) -> bool:
+    """Whether a row names at least one source a verbatim sentence is read against: a fact,
+    a section 5 passage, a debate round, or a passage shown as a source only (T-613)."""
+    return any(
+        (source := by_id.get(_form(name))) is not None
+        and (source.kind in (FACT, SECTION_5, DEBATE) or source.source_only)
+        for name in row.sources
+    )
 
 
 def _rests_on_a_source(row: AgreementRow, by_id: dict[str, Passage]) -> bool:
     """Whether every source a row names is one a passage written without the code is
     answered by: a fact, a section 5 passage or a debate round it was shown."""
     return bool(row.sources) and all(
-        (source := by_id.get(_form(name))) is not None and source.kind in (FACT, SECTION_5, DEBATE)
+        (source := by_id.get(_form(name))) is not None
+        and (source.kind in (FACT, SECTION_5, DEBATE) or source.source_only)
         for name in row.sources
     )
 
@@ -6922,7 +7369,10 @@ def apply_rows(
     time it stands. Where
     no row at all can be read, or the question got no answer (``asked`` false: the call
     failed; nothing else is changed then), each such sentence is left out for that one
-    reason. Every other answer ends as before.
+    reason. A sentence of a passage printed in its writer's own words whose answer does not
+    pass is left out, but where its drop names no source such a sentence is read against
+    (:func:`_names_a_source`): recorded as asked about and left standing, as the text its
+    place stores holds it (T-613). Every other answer ends by the rules above.
     """
     by_id = {passage.id: passage for passage in passages}
     payload = _platform_rewrites(payload, by_id)
@@ -6930,7 +7380,7 @@ def apply_rows(
 
     def _sentences(passage: Passage) -> _Sentences:
         if passage.id not in cut:
-            cut[passage.id] = _Sentences(passage.text)
+            cut[passage.id] = _cut(passage)
         return cut[passage.id]
 
     counts = {
@@ -6979,6 +7429,14 @@ def apply_rows(
             else ""
         )
         if refused and passage is not None and span is not None:
+            if passage.verbatim and row.decision == "drop" and not _names_a_source(row, by_id):
+                # A verbatim sentence is left out only on a source it contradicts: a drop
+                # naming none records it as asked about and left standing; one naming one
+                # that another check refused leaves it out below (T-613).
+                counts["not_applied"] += 1
+                if passage.left_standing is not None:
+                    passage.left_standing(span[2])
+                continue
             if row.decision == "drop" or (
                 row.decision == "keep"
                 and not (passage.closing and (_ledger_says_otherwise(found) or _unbacked(found)))
@@ -7259,6 +7717,12 @@ def apply_rows(
         if not rewrites:
             continue
         passage = by_id[pid]
+        if passage.leave_out is not None:
+            # A passage printed in its writer's own words keeps its text: each sentence left
+            # out is recorded where the renderers read it (T-613).
+            for start, end, rewrite in sorted(rewrites):
+                if not rewrite:
+                    passage.leave_out(passage.text[start:end].strip())
         text = passage.text
         for start, end, rewrite in sorted(rewrites, reverse=True):
             text = text[:start] + rewrite + text[end:]
@@ -7324,11 +7788,17 @@ def _left_out(
             if every_code or v.code in _LEDGER_CODES or v.code == KEEP_UNQUOTED_CODE
         )
     )
+    where = (
+        f" ({safe_finding_value(passage.id)}) out of the analyst report, which the bundle "
+        "prints whole "
+        if passage.verbatim
+        else " out of the section "
+    )
     return Violation(
         code=DROPPED_CODE,
         message=(
             "The agreement question leaves a sentence of "
-            f"{safe_finding_value(passage.label)} out of the section "
+            f"{safe_finding_value(passage.label)}{where}"
             f"({safe_finding_value(_capped(why))}"
             + (f": {safe_finding_value(codes)}" if codes else "")
             + f"): {safe_finding_value(sentence)!r}."
@@ -7529,11 +7999,11 @@ async def ask_section_agreement(
     except SpendCeilingStop as stop:
         said = f"The section agreement question was not asked: {stop}."
         logger.warning("section agreement: %s", said)
-        return AgreementRound(tally=tally, degradations=[*_said(), said])
+        return AgreementRound(summary=_shown_none(), tally=tally, degradations=[*_said(), said])
     except Exception as exc:  # noqa: BLE001 — a failed round leaves the report as written
         logger.error("section agreement: the round failed (%s).", exc)
         said = f"The section agreement question was not answered ({type(exc).__name__})."
-        return AgreementRound(tally=tally, degradations=[*_said(), said])
+        return AgreementRound(summary=_shown_none(), tally=tally, degradations=[*_said(), said])
 
 
 async def _ask(
@@ -7555,15 +8025,20 @@ async def _ask(
     from malspark.utils.json_cleaner import safe_parse_json
 
     if reporter is None:
-        return AgreementRound(tally=tally)
+        return AgreementRound(summary=_shown_none(), tally=tally)
+    unread: list[str] = []
     passages = passages_of(
         report,
         narrative_written=narrative_written,
         discussion=discussion,
         entries=(evidence_texts.entries.values() if evidence_texts is not None else ()),
+        degradations=unread,
     )
     left = next((p for p in passages if p.id == LISTINGS_LEFT_ID), None)
     held_by = getattr(reporter, "degradations", None)
+    if isinstance(held_by, list):
+        # Said where the report says what it is missing (``AgreementRound.degradations``).
+        held_by.extend(reason for reason in unread if reason not in held_by)
     if left is not None and isinstance(held_by, list):
         # Said where the report says what it is missing (``AgreementRound.degradations``).
         held_by.append(f"The section agreement question: {left.text}.")
@@ -7579,7 +8054,7 @@ async def _ask(
         for p in passages
     )
     if not (claim_led and sourced) and not (coded and facts):
-        return AgreementRound(tally=tally)
+        return AgreementRound(summary=_shown_none(), tally=tally)
     citable = list(dict.fromkeys(str(value) for value in citable_ids))
     by_id = {passage.id: passage for passage in passages}
     answer_read = [""]
@@ -7609,7 +8084,7 @@ async def _ask(
         if passage is None:
             return None
         if passage.id not in located_in:
-            located_in[passage.id] = _Sentences(passage.text)
+            located_in[passage.id] = _cut(passage)
         span = located_in[passage.id].span(str(_field(row, "sentence") or ""))
         return (passage, span) if span is not None else None
 
@@ -7639,7 +8114,7 @@ async def _ask(
 
         def _sentences(passage: Passage) -> _Sentences:
             if passage.id not in cut:
-                cut[passage.id] = _Sentences(passage.text)
+                cut[passage.id] = _cut(passage)
             return cut[passage.id]
 
         shown = AgreementRow.model_validate(payload["sentences"][0])
@@ -7689,6 +8164,15 @@ async def _ask(
     if listed:
         tally.count(listed)
         tally.record_unresolved(AGREEMENT_PRODUCER, listed)
+    summary: dict[str, Any] = dict(counts)
+    # Which texts printed in their writer's own words the round was shown, by passage, none
+    # where the call failed: the final render counts those it prints outside them
+    # (:func:`record_verbatim_unseen`, T-613).
+    summary[VERBATIM_SHOWN] = (
+        {}
+        if failed
+        else {p.id: text_digest(p.text) for p in passages if p.verbatim and not p.source_only}
+    )
     logger.info(
         "section agreement: %d passage(s) asked about; %d sentence(s) listed, %d rewritten, "
         "%d kept, %d listed for reading, %d not applied, %d left out, %d qualified on the "
@@ -7703,5 +8187,56 @@ async def _ask(
         counts["qualified"],
     )
     return AgreementRound(
-        summary=counts, tally=tally, degradations=[*said(), *([failed] if failed else [])]
+        summary=summary, tally=tally, degradations=[*said(), *([failed] if failed else [])]
     )
+
+
+# The run summary's record of the round (``section_agreement``): the texts printed in their
+# writer's own words it was shown, by passage, each as :func:`text_digest` reads it, none
+# where the question failed or was not asked; and how many the final render prints outside
+# them (T-613).
+VERBATIM_SHOWN = "verbatim_shown"
+VERBATIM_UNSEEN = "verbatim_unseen"
+
+
+def _shown_none() -> dict[str, Any]:
+    """The round's record where the model read no passage: no verbatim text shown."""
+    return {VERBATIM_SHOWN: {}}
+
+
+def text_digest(text: str) -> str:
+    """A text as the round's record names it: the first 16 hex digits of its SHA-256."""
+    import hashlib
+
+    return hashlib.sha256(text.strip().encode("utf-8")).hexdigest()[:16]
+
+
+def record_verbatim_unseen(report: MalwareReport) -> None:
+    """Count, on the round's record in the run summary, the texts the finished report's
+    analyst render prints in their writer's own words that the round was not shown
+    (:data:`VERBATIM_UNSEEN`): a text read only after the round's rewrites, the limitations
+    recorded or the indicator table rebuilt; every one, where the round failed or was not
+    asked. Nothing printed changes. A run whose round recorded no such set is left as it is.
+    An error while counting is said on the report's degradation reasons. Never raises
+    (T-613)."""
+    from malspark.reporting.renderers.analyst import verbatim_texts
+
+    summary = (report.run_summary or {}).get("section_agreement")
+    if not isinstance(summary, dict) or not isinstance(summary.get(VERBATIM_SHOWN), dict):
+        return
+    try:
+        printed = {text_digest(t.text) for t in verbatim_texts(report) if t.text.strip()}
+    except Exception as exc:  # noqa: BLE001 — a count never costs the report
+        logger.warning("section agreement: the printed verbatim texts were not read (%s).", exc)
+        said = (
+            "The verbatim texts the analyst report prints were not counted against those the "
+            f"section agreement question was shown ({type(exc).__name__})."
+        )
+        if said not in report.degradation_reasons:
+            report.degradation_reasons.append(said)
+        return
+    shown = set(summary[VERBATIM_SHOWN].values())
+    report.run_summary = {
+        **(report.run_summary or {}),
+        "section_agreement": {**summary, VERBATIM_UNSEEN: len(printed - shown)},
+    }

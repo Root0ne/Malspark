@@ -86,6 +86,12 @@ from malspark.reporting.models import (
 )
 from malspark.reporting.stated_host_values import ANALYSIS_SOURCE as ANALYSIS_STATED_SOURCE
 from malspark.reporting.stated_host_values import listed_only
+from malspark.reporting.technique_evidence import (
+    NO_LEDGER_ENTRY,
+    evidence_words,
+    technique_evidence_ids,
+    technique_sandbox_items,
+)
 from malspark.schemas.judgement import indicator_type_for
 from malspark.schemas.sandbox_report import (
     LINEAGE_FILE,
@@ -101,6 +107,7 @@ from malspark.schemas.sandbox_report import (
 )
 from malspark.schemas.stix_models import (
     ATTACK_PATTERN_NAMESPACE,
+    EVIDENCE_NOTE_PROPERTY,
     EVIDENCE_REFS_PROPERTY,
     KNOWN_KILL_CHAINS,
     LINEAGE_DISPUTED_PROPERTY,
@@ -868,7 +875,6 @@ class ExtendedSTIXRenderer:
         ledger: Any | None = None,
         corpus: Any = None,
         technique_sources: Any = None,
-        technique_evidence: Mapping[str, Sequence[str]] | None = None,
         ledger_ids: Sequence[str] | None = None,
     ) -> Bundle:
         """Render the extended bundle.
@@ -880,12 +886,18 @@ class ExtendedSTIXRenderer:
         own post-process is the first — so both must report or the aggregate
         undercounts.
 
-        ``technique_evidence`` is ``{technique id: [ledger id, ...]}`` as the
-        run's record ties them (``pipeline.evidence_summary.technique_evidence``).
-        The ids are written on the sample's ``uses`` edge to that technique,
-        and the attribution's family ids on a malware object this export mints
-        from the family name, as ``x_malspark_evidence_refs``. Nothing else gets
-        the property, and nothing is matched by value or read out of text.
+        Each published technique's evidence, the set the report's technique
+        list carries and every surface prints (``technique_evidence``), is
+        written on the sample's ``uses`` edge to that technique as
+        ``x_malspark_evidence_refs``, and the sandbox items among its sources
+        beside it, named, in ``x_malspark_evidence_note``; an edge to a
+        technique whose statements cite no ledger entry and that has no item
+        says so in that note. The set
+        holds the entries cited by the statements that name the technique,
+        read by the matrix builder, each one an id the run issued. The
+        attribution's family ids go on a malware object this export mints from
+        the family name. An indicator gets the ids the report's IOC table ties
+        to its values. Nothing else gets the property.
 
         ``ledger_ids`` is the run's ledger, in its order. Every id the export
         writes is one it holds, in that order; with no ledger no id is written.
@@ -899,7 +911,6 @@ class ExtendedSTIXRenderer:
                 ledger=ledger,
                 corpus=corpus,
                 technique_sources=technique_sources,
-                technique_evidence=technique_evidence,
                 ledger_ids=ledger_ids,
             )
 
@@ -911,7 +922,6 @@ class ExtendedSTIXRenderer:
         ledger: Any | None = None,
         corpus: Any = None,
         technique_sources: Any = None,
-        technique_evidence: Mapping[str, Sequence[str]] | None = None,
         ledger_ids: Sequence[str] | None = None,
     ) -> Bundle:
         objects: list[Any] = []
@@ -1398,8 +1408,8 @@ class ExtendedSTIXRenderer:
             )
             objects.append(note)
 
-        # 8.5) The ledger entries the record ties to each technique, on the
-        #      sample's ``uses`` edge to it. On the edge and not on the
+        # 8.5) Each published technique's evidence, on the sample's ``uses``
+        #      edge to it. On the edge and not on the
         #      attack-pattern: the attack-pattern's id is the same in every
         #      export, and one run's evidence written on it would make two
         #      bundles disagree about one object. The edge is this run's claim.
@@ -1410,7 +1420,7 @@ class ExtendedSTIXRenderer:
         objects = _with_record_evidence(
             objects,
             malware_id,
-            technique_evidence or {},
+            report,
             ledger_order,
             minted_family_id,
             support=_support_by_pattern(report),
@@ -2146,7 +2156,7 @@ def _support_by_pattern(report: Any) -> dict[str, tuple[str, str]]:
 def _with_record_evidence(
     objects: list[Any],
     malware_id: str | None,
-    technique_evidence: Mapping[str, Sequence[str]],
+    report: Any,
     ledger_order: Mapping[str, int],
     minted_id: str | None = None,
     support: Mapping[str, tuple[str, str]] | None = None,
@@ -2154,19 +2164,38 @@ def _with_record_evidence(
 ) -> list[Any]:
     """``objects`` with the property on each object exactly as the record gives it.
 
-    The sample's ``uses`` edge to a technique gets that technique's ledger ids.
-    The malware object this export minted keeps the family ids it was minted
-    with (already checked against the ledger). An indicator gets the ids the
+    The sample's ``uses`` edge to a published technique gets that technique's
+    evidence (``technique_evidence``) as the ledger holds it, with a note
+    naming the sandbox items among its sources, or, where its statements cite
+    no ledger entry and it has no item, the note saying so. The malware
+    object this export minted keeps the family ids it was minted with (already
+    checked against the ledger). An indicator gets the ids the
     report's IOC table ties to the values its pattern compares
     (``value_evidence``, :func:`_value_evidence`). Every other object that
     could carry the property carries none. A copy is written rather than the
     object changed, because the judge's objects are the judge's own bundle's too.
     """
     by_pattern: dict[str, list[str]] = {}
-    for tid, ids in technique_evidence.items():
+    # The note on an edge: the sandbox items beside the set, named apart, or,
+    # with neither entry nor item, that no ledger entry is cited.
+    notes: dict[str, str] = {}
+    for mapping in getattr(report, "ttp_mappings", None) or []:
+        tid = str(getattr(mapping, "technique_id", "") or "").strip().upper()
+        if not tid:
+            continue
+        ids = technique_evidence_ids(mapping)
+        if ids is None:
+            # Stored before the set was recorded, naming no entry: nothing
+            # is said either way.
+            continue
         refs = _evidence_refs(ids, ledger_order)
+        items = technique_sandbox_items(mapping)
         if refs:
-            by_pattern[_pattern_id_for(str(tid).strip().upper())] = refs
+            by_pattern[_pattern_id_for(tid)] = refs
+        if items:
+            notes[_pattern_id_for(tid)] = evidence_words((), items)
+        elif not ids:
+            notes[_pattern_id_for(tid)] = NO_LEDGER_ENTRY
     out: list[Any] = []
     for obj in objects:
         if EVIDENCE_REFS_PROPERTY not in type(obj).model_fields:
@@ -2197,6 +2226,16 @@ def _with_record_evidence(
             wanted = None
         if wanted != current:
             obj = obj.model_copy(update={EVIDENCE_REFS_PROPERTY: wanted})
+        if EVIDENCE_NOTE_PROPERTY in type(obj).model_fields:
+            uses_edge = (
+                malware_id is not None
+                and getattr(obj, "type", "") == "relationship"
+                and getattr(obj, "relationship_type", "") == "uses"
+                and getattr(obj, "source_ref", None) == malware_id
+            )
+            note = notes.get(str(getattr(obj, "target_ref", "") or "")) if uses_edge else None
+            if getattr(obj, EVIDENCE_NOTE_PROPERTY, None) != note:
+                obj = obj.model_copy(update={EVIDENCE_NOTE_PROPERTY: note})
         if "x_malspark_support" in type(obj).model_fields:
             uses = (
                 malware_id is not None

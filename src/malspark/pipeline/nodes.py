@@ -129,7 +129,7 @@ from malspark.pipeline.events import (
     summarize_claims,
 )
 from malspark.pipeline.evidence_summary import collect as collect_technique_sources
-from malspark.pipeline.evidence_summary import summarise, technique_evidence
+from malspark.pipeline.evidence_summary import summarise
 from malspark.pipeline.feedback_mode import RECORD_ONLY_CHOICE, feeds_back
 from malspark.pipeline.limit_rulings import (
     LimitRulings,
@@ -8675,8 +8675,6 @@ def make_report_node(
                 )
                 base = None
             try:
-                from malspark.extractors.capability_matrix import with_mapped_evidence
-
                 _renderer = ExtendedSTIXRenderer()
                 extended_bundle = _renderer.render(
                     report,
@@ -8693,15 +8691,6 @@ def make_report_node(
                         tid: [source for source, _confidence in rows]
                         for tid, rows in collect_technique_sources(isr_reports, _ledger).items()
                     },
-                    # The ledger entries the record ties to each technique:
-                    # the ids a finding naming it cites, and the entries of the
-                    # tools that asserted it. Written on the export's edges.
-                    # A technique the judge mapped is tied to the entries it
-                    # mapped it to.
-                    technique_evidence=with_mapped_evidence(
-                        technique_evidence(isr_reports, _ledger),
-                        getattr(base, "x_malspark_technique_review", None),
-                    ),
                     # The run's ledger, in its order: the export writes no id
                     # it does not hold.
                     ledger_ids=[entry.id for entry in _ledger],
@@ -8794,6 +8783,21 @@ def make_report_node(
                 )
             except Exception as exc:  # noqa: BLE001
                 logger.warning("report_node: detection rule generation failed (%s).", exc)
+
+        # The texts the finished analyst report prints in their writer's own words that the
+        # agreement round was not shown, counted on its record (T-613).
+        try:
+            from malspark.reporting.section_agreement import record_verbatim_unseen
+
+            record_verbatim_unseen(report)
+        except Exception as exc:  # noqa: BLE001 — a count never costs the report
+            logger.warning("report_node: the unseen verbatim texts were not counted (%s).", exc)
+            said = (
+                "The verbatim texts the analyst report prints were not counted against those "
+                f"the section agreement question was shown ({type(exc).__name__})."
+            )
+            if said not in report.degradation_reasons:
+                report.degradation_reasons.append(said)
 
         # Post-pipeline FP linter. Run after every other
         # mutation has happened (narrative + detection sigs + STIX dump)

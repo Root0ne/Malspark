@@ -312,4 +312,5 @@ def test_a_flagged_first_sentence_with_its_citations_is_found_and_left_out() -> 
         FlaggedStatement(sentence=claim, code="report.process_words", label="x")
     ]
     row = next(line for line in _analyst(report).splitlines() if "| T1486 |" in line)
-    assert "ChaCha20" not in row and row.endswith("| - |")
+    # The Procedure cell; the Evidence cell after it cites the technique's entries.
+    assert "ChaCha20" not in row and row.split(" | ")[3] == "-"

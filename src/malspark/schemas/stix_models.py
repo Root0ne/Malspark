@@ -403,6 +403,14 @@ class Malware(STIXObject):
 # such a tie; an object the record ties to nothing carries no such property.
 EVIDENCE_REFS_PROPERTY = "x_malspark_evidence_refs"
 
+# On the sample's ``uses`` edge to a published technique, the words every
+# surface states its evidence in beside the entries
+# (``reporting.technique_evidence``): the sandbox items among its sources,
+# named apart from ``x_malspark_evidence_refs``, or, where its statements cite
+# no ledger entry and it has no item, ``NO_LEDGER_ENTRY`` in place of those.
+# Absent on every other object and every other edge.
+EVIDENCE_NOTE_PROPERTY = "x_malspark_evidence_note"
+
 # The detonations of the sample an exported indicator's values, or the
 # technique a ``uses`` edge points at, were observed in, where a further
 # detonation an agent asked for observed them: each ``{"detonation": "d2",
@@ -422,8 +430,9 @@ class Relationship(STIXObject):
     description: str | None = None
     start_time: datetime | None = None
     stop_time: datetime | None = None
-    # See ``EVIDENCE_REFS_PROPERTY``.
+    # See ``EVIDENCE_REFS_PROPERTY`` and ``EVIDENCE_NOTE_PROPERTY``.
     x_malspark_evidence_refs: list[str] | None = None
+    x_malspark_evidence_note: str | None = None
     # See ``SUPPORT_PROPERTY``.
     x_malspark_support: str | None = None
     x_malspark_support_note: str | None = None
@@ -491,8 +500,9 @@ class ConfidenceAnnotatedRelationship(STIXObject):
     x_malspark_evidence_basis: str | None = None
     x_malspark_contributing_agents: list[str] | str = Field(default_factory=list)
     x_malspark_technique_id: str | None = None
-    # See ``EVIDENCE_REFS_PROPERTY``.
+    # See ``EVIDENCE_REFS_PROPERTY`` and ``EVIDENCE_NOTE_PROPERTY``.
     x_malspark_evidence_refs: list[str] | None = None
+    x_malspark_evidence_note: str | None = None
     # See ``SUPPORT_PROPERTY``.
     x_malspark_support: str | None = None
     x_malspark_support_note: str | None = None

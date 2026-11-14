@@ -136,6 +136,11 @@ from malspark.reporting.renderers.prose_forms import (
     references_for_render,
     section_reference,
 )
+from malspark.reporting.technique_evidence import (
+    evidence_words,
+    technique_evidence_ids,
+    technique_sandbox_items,
+)
 from malspark.schemas.evidence import is_guard_answer
 from malspark.schemas.isr_models import ABSENCE_TECHNIQUE_MARKER, UNVERIFIED_TECHNIQUE_MARKER
 from malspark.utils.marked_cut import CUT_MARK
@@ -1740,12 +1745,7 @@ class MarkdownRenderer:
                         if mapping.observed_in
                         else ""
                     ),
-                    ", ".join(
-                        dict.fromkeys(
-                            _ids_in(mapping.evidence_quotes) + _rule_ids(folded, capability_ids)
-                        )
-                    )
-                    or "-",
+                    _technique_evidence_cell(mapping, folded, capability_ids),
                 )
             )
         # The rules whose technique no row holds, one row per technique.
@@ -2523,6 +2523,10 @@ class MarkdownRenderer:
                     asserted_by, claimed_by = "—", ", ".join(str(s) for s in row) or "—"
                     associated = "—"
                 label = technique_label(str(tid), row if isinstance(row, dict) else None)
+                # The reason an id was not published, a judge's words among them: each
+                # sentence a check left standing marked as every other place marks it.
+                if ctx is not None:
+                    label = ctx.marked(label)
                 lines.append(_row(label, asserted_by, claimed_by, associated))
         # What the run sent beyond this machine, where its summary records it
         # (``analysis.disclosure``); a summary stored without the record shows
@@ -2824,6 +2828,15 @@ class _Context:
         # The IOC table's answers, read on first use by ``publish_state``.
         self._answers: Any = None
         stored = list(getattr(report, "flagged_statements", None) or [])
+        # The sentences printed in their writer's own words that the agreement question left
+        # out (``FlaggedStatement.left_out``), by each place of the analyst report it is left
+        # out of: that report leaves it out there, and no render marks it as standing, so the
+        # bundle prints it whole beside the round's record (T-613).
+        self.verbatim_left: dict[str, list[str]] = {}
+        for row in stored:
+            for place in row.left_out:
+                self.verbatim_left.setdefault(place, []).append(row.sentence)
+        stored = [row for row in stored if not row.left_out]
         for statement in _joined_marks(with_decided_statements(stored, report)):
             if statement.code == "report.unpublished_value" and self._all_stated(
                 statement.sentence
@@ -2850,6 +2863,13 @@ class _Context:
             ((sentence, " ".join(found)) for sentence, found in marks.items()),
             key=lambda pair: -len(pair[0]),
         )
+        # The sentences printed in their writer's own words left standing, each found by its
+        # words (:meth:`places`, T-613).
+        from malspark.reporting.section_agreement import LISTED_CODE
+
+        self._by_words = {
+            sentence for sentence, codes in self.flag_codes.items() if LISTED_CODE in codes
+        }
 
     def source_of(self, evidence_id: str) -> str:
         """Who recorded one ledger entry: its agent and its tool, or that it is unknown."""
@@ -2962,17 +2982,28 @@ class _Context:
         claimed: list[tuple[int, int]] = []
         inserts: list[tuple[int, str]] = []
         for sentence, mark in self.flagged:
-            start = text.find(sentence)
-            while start != -1:
-                end = start + len(sentence)
+            for start, end in self.places(sentence, text):
                 inside = any(a <= start and end <= b for a, b in claimed)
                 if not inside and not text.startswith(f" {mark}", end):
                     claimed.append((start, end))
                     inserts.append((end, mark))
-                start = text.find(sentence, start + 1)
         for end, mark in sorted(inserts, reverse=True):
             text = f"{text[:end]} {mark}{text[end:]}"
         return text
+
+    def places(self, form: str, text: str, sentence: str | None = None) -> list[tuple[int, int]]:
+        """Where ``form`` of the flagged ``sentence`` (``form`` itself where not given) stands
+        in ``text``, every place: as written, or, for a sentence printed in its writer's own
+        words left standing, by its words, whatever the white space between them (T-613)."""
+        if (form if sentence is None else sentence) in self._by_words:
+            words = r"\s+".join(re.escape(word) for word in form.split())
+            return [(found.start(), found.end()) for found in re.finditer(words, text)]
+        out: list[tuple[int, int]] = []
+        start = text.find(form)
+        while start != -1:
+            out.append((start, start + len(form)))
+            start = text.find(form, start + 1)
+        return out
 
     def publish_state(self, text: Any) -> str:
         """`` (no: <why>)`` for each value of a table cell this run does not publish, or ``""``.
@@ -3137,7 +3168,9 @@ class _Context:
         whole = self._defang(raw)
         if self.cell_citations is not None:
             whole = self.cell_citations(whole)
-        marks = list(dict.fromkeys(mark for sentence, mark in self.flagged if sentence in raw))
+        marks = list(
+            dict.fromkeys(mark for sentence, mark in self.flagged if self.places(sentence, raw))
+        )
         return f"{whole} {' '.join(marks)}" if marks else whole
 
     def sandbox_sentence(self) -> str:
@@ -3508,6 +3541,7 @@ _FLAG_WORDS = {
     "report.rule_match_as_action": "a rule match only, stated as an action",
     "report.unpublished_value": "not published by this run",
     "report.citation_wrong_entry": "cited to an entry that does not hold it",
+    "report.id_not_in_cited_entry": "an id none of its cited entries holds",
     "report.numeric_confidence": "a confidence written as a number",
     "report.process_words": "names how the report was made",
     PUBLISHED_TECHNIQUE_DOUBTED_CODE: "published by this run",
@@ -4603,13 +4637,23 @@ def _joined_marks(rows: Sequence[Any]) -> list[Any]:
     return out
 
 
+# The words of the mark a sentence printed in its writer's own words carries where the
+# agreement round dropped it naming no source it is read against
+# (``section_agreement.LISTED_CODE``): asked about and left standing (T-613).
+_LEFT_STANDING_WORDS = "asked about and left standing"
+
+
 def _flag_mark(code: str, label: str, *, asked: bool = True) -> str:
     """The mark printed after a sentence a check left standing, in the platform's voice.
 
     ``asked=False`` for an answer that came by a path with no turn to ask on:
     the mark says the model was not asked.
     """
-    words = _FLAG_WORDS.get(code, "asked about and kept")
+    from malspark.reporting.section_agreement import LISTED_CODE
+
+    words = _FLAG_WORDS.get(code) or (
+        _LEFT_STANDING_WORDS if code == LISTED_CODE else "asked about and kept"
+    )
     said = f"{words}: {label}" if label else words
     return f"**[{said}; not asked]**" if not asked else f"**[{said}]**"
 
@@ -4799,7 +4843,7 @@ def _attck_detection_block(report: MalwareReport) -> str:
                 _technique_cell(row),
                 _links_cell(row.detection_strategies),
                 _links_cell(row.data_components),
-                _ids(row.evidence_ids) or "-",
+                evidence_words(row.evidence_ids, row.sandbox_items),
             )
         )
     return "\n".join(lines)
@@ -4826,7 +4870,7 @@ def _attck_mitigation_block(report: MalwareReport) -> str:
                     _technique_cell(row),
                     _link_label(link),
                     link.text or "-",
-                    _ids(row.evidence_ids) or "-",
+                    evidence_words(row.evidence_ids, row.sandbox_items),
                 )
             )
     return "\n".join(lines)
@@ -5705,7 +5749,7 @@ def _attack_row(
         # A judge's reason is shortened by its own rule and never cut into;
         # what follows it, and any other reason, keeps the cell's cut.
         status = "claimed, not published: " + status_shown(
-            cell.not_published, JUDGE_REASON_WIDTH, ctx.plain
+            cell.not_published, JUDGE_REASON_WIDTH, lambda text: ctx.plain(ctx.marked(text))
         )
     else:
         status = "published" + _corroborated_words(mapping, rules)
@@ -5713,7 +5757,7 @@ def _attack_row(
         if rule_only:
             status += f"; {rule_only}"
         if cell.note:
-            status += f"; {ctx.plain(judge_reasons_shown(cell.note)[0])}"
+            status += f"; {ctx.plain(ctx.marked(judge_reasons_shown(cell.note)[0]))}"
     # The platform's unresolved findings about this technique, beside its
     # row: the ATT&CK checks, and the judge crediting a source that never
     # named it. Matched on what the finding is about (``subject``), because
@@ -5733,7 +5777,6 @@ def _attack_row(
     tactic = f"{cell.tactic_name} ({cell.tactic})" if cell.tactic else cell.tactic_name
     # The statement whole: a table cell wraps, it is never cut.
     procedure = ctx.cell(str(cell.evidence[0])) if cell.evidence else "-"
-    evidence = list(dict.fromkeys(_ids_in(cell.evidence) + _rule_ids(rules, capability_ids)))
     return _row(
         tactic,
         cell.technique_id,
@@ -5742,8 +5785,30 @@ def _attack_row(
         source,
         confidence,
         status,
-        ", ".join(evidence) or "-",
+        _technique_evidence_cell(cell, rules, capability_ids),
     )
+
+
+def _technique_evidence_cell(
+    row: Any, rules: list[dict[str, Any]], capability_ids: list[str]
+) -> str:
+    """A technique's Evidence cell: its evidence, then the entries of the rules that matched it.
+
+    The evidence is the set every surface prints (``technique_evidence``),
+    the entries cited by the statements that name the technique, with the
+    sandbox items among its sources beside it, or that they cite no ledger
+    entry. A rule's entries it does not already list follow it, named as the
+    rules'. A row stored before the set was recorded that names no entry and
+    no item prints the rules' entries alone, or ``-``.
+    """
+    ids = technique_evidence_ids(row)
+    items = technique_sandbox_items(row)
+    ruled = [eid for eid in _rule_ids(rules, capability_ids) if eid not in (ids or ())]
+    rule_words = f"rule matches: {', '.join(ruled)}"
+    if ids is None and not items and ruled:
+        return rule_words
+    words = evidence_words(ids, items)
+    return f"{words}; {rule_words}" if ruled else words
 
 
 def _rule_words(hit: dict[str, Any]) -> str:
@@ -6572,8 +6637,9 @@ def _not_published_lines(report: MalwareReport, ctx: _Context | None = None) -> 
         return []
     lines = ["", _plain_heading("Claims that were not published as techniques"), ""]
     # The reason by the table's own rule, a judge's reason sentence by
-    # sentence, and every network value in it defanged.
-    plain = ctx.plain if ctx is not None else _defanged_text
+    # sentence, each sentence a check left standing marked as every other place marks it,
+    # and every network value in it defanged.
+    plain = (lambda text: ctx.plain(ctx.marked(text))) if ctx is not None else _defanged_text
     lines.extend(
         _item(
             f"{cell.technique_id} {cell.technique_name}: "
