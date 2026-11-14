@@ -9940,18 +9940,22 @@ def _numbered_ids(rows: Sequence[Any]) -> dict[int, int]:
     """The rows of a table whose id is read as a number, by index, each with its number.
 
     An id that is a number as the code's numbers are read (:data:`_CODE_INT`),
-    alone or as its last word.
+    or whose last word is one while the words before it are the same on every
+    row whose id ends in a number (a common label, ``COMMAND 21``). Any other
+    id is read as text: ``HTTP 200`` beside ``COMMAND 4`` is no number.
     """
-    numbered: dict[int, int] = {}
+    ending: list[tuple[int, str, int]] = []
     for index, row in enumerate(rows):
         written = str(row.get("id") or "").strip() if isinstance(row, dict) else ""
-        last = written.rsplit(None, 1)[-1] if written else ""
-        if _ROW_NUMBER_RE.fullmatch(last):
-            try:
-                numbered[index] = _code_number(last)
-            except (ValueError, OverflowError):
-                continue
-    return numbered
+        words = written.split()
+        if not words or not _ROW_NUMBER_RE.fullmatch(words[-1]):
+            continue
+        try:
+            ending.append((index, " ".join(words[:-1]).lower(), _code_number(words[-1])))
+        except (ValueError, OverflowError):
+            continue
+    labels = {label for _index, label, _number in ending}
+    return {index: number for index, label, number in ending if not label or len(labels) == 1}
 
 
 def cited_id_violations(payload: Any, entries: EntryTexts | None) -> list[Violation]:
@@ -9959,9 +9963,10 @@ def cited_id_violations(payload: Any, entries: EntryTexts | None) -> list[Violat
 
     A row that states an id (a command's) and cites entries is held where
     one cited entry holds the id. A number, written alone or as the id's
-    last word and read as the code's numbers are read (:data:`_CODE_INT`), is
-    held by a cited entry whose text writes it as a compared operand in any
-    form it reads (:meth:`EntryTexts.operands`), and not asked about where a
+    last word after a label every numbered row shares (:func:`_numbered_ids`)
+    and read as the code's numbers are read (:data:`_CODE_INT`), is held by a
+    cited entry whose text writes it as a compared operand in any form it
+    reads (:meth:`EntryTexts.operands`), and not asked about where a
     cited entry is code in a form not read (:meth:`EntryTexts.code_not_read`):
     a doubt keeps the question back. Any other id is held by an entry whose
     text holds it whole (:meth:`EntryTexts.holds`). Held by none of the cited

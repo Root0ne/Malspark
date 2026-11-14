@@ -308,6 +308,21 @@ class TestAFailedCallHoldsNothing:
         assert "ev_0001 (strings)" in found.message
 
 
+class TestWhenAnIdIsANumber:
+    def test_a_common_label_before_the_number(self) -> None:
+        code = "void handler(int cmd) {\n  if (cmd == 9) {\n    download();\n  }\n}\n"
+
+        (found,) = cited_id_violations(_rows("COMMAND 4", "COMMAND "), _ledger(code))
+
+        assert "ev_0003 (decompile_function)" in found.message
+
+    def test_a_label_the_other_numbered_rows_do_not_share_is_text(self) -> None:
+        code = "void handler(int cmd) {\n  if (cmd == 9) {\n    download();\n  }\n}\n"
+
+        assert cited_id_violations(_rows("HTTP 4"), _ledger(code)) == []
+        assert cited_id_violations(_rows("HTTP 4", "COMMAND "), _ledger(code)) == []
+
+
 class TestWhatIsNotAsked:
     def test_a_row_citing_no_entry_with_text_or_nothing(self) -> None:
         payload = _commands(("0xc", ["ev_0999"]), ("0xc", []), ("", ["ev_0011"]))
