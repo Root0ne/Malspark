@@ -3051,6 +3051,22 @@ def _judge_answered_the_fact(report: Any, subject: str) -> str:
     return FACT_NOT_RECORDED
 
 
+def question_subject(kind: str, key: str) -> str:
+    """The subject validation asks the judge about a value under, the keep read the same way.
+
+    A URL is asked under its host, an address or a name
+    (``validation.unattributed_indicator_violations``); every other value
+    under itself.
+    """
+    if kind != "url":
+        return f"{kind}:{key}"
+    host = url_host(key).strip("[]")
+    if not host:
+        return f"{kind}:{key}"
+    host_kind = "ip" if _parses_as_an_address(host) else "domain"
+    return f"{host_kind}:{_value_key(host_kind, host)}"
+
+
 def _the_judge_s_keep(
     report: Any, kind: str, key: str, said: dict[str, str], *, what: str = "it"
 ) -> dict[str, str]:
@@ -3060,7 +3076,9 @@ def _the_judge_s_keep(
     it only when the judge was asked with that fact and kept the indicator; the
     keep is then named as such. A keep it was never asked about is taken out of
     ``kept_by`` and stated (``untold``), naming ``what`` the judge's indicator
-    names. Every other keep passes through.
+    names. Every other keep passes through. The answer is read under the
+    subject the question named (:func:`question_subject`): a URL's is its
+    host's, and a URL kept so is named as kept with its host's fact.
     """
     if not said.get("unattributed") or said.get("untold"):
         # No fact to ask about, or the row already carries the answer (a URL
@@ -3074,9 +3092,12 @@ def _the_judge_s_keep(
         return said
     others = [by for by in kept if not by.startswith("the judge")]
     out = dict(said)
-    state = _judge_answered_the_fact(report, f"{kind}:{key}")
+    subject = question_subject(kind, key)
+    state = _judge_answered_the_fact(report, subject)
     if state == FACT_ANSWERED:
-        out["kept_by"] = ", ".join([JUDGE_KEPT_WHEN_TOLD, *others])
+        own = subject == f"{kind}:{key}"
+        told = JUDGE_KEPT_WHEN_TOLD if own else JUDGE_KEPT_WHEN_TOLD_OF_ITS_HOST
+        out["kept_by"] = ", ".join([told, *others])
     else:
         out["kept_by"] = ", ".join(others)
         why = {

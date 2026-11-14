@@ -21,18 +21,35 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 
+from malspark.pipeline.validation import (
+    UNATTRIBUTED_INDICATOR_CODE,
+    unattributed_indicator_violations,
+)
 from malspark.providers.sandbox.readers import required_reader
 from malspark.providers.sandbox_tools import sandbox_network
 from malspark.reporting.builder import MalwareReportBuilder, build_consolidated_iocs
 from malspark.reporting.ledger_projection import network_from_ledger
-from malspark.reporting.models import MalwareReport
+from malspark.reporting.models import (
+    FileHashes,
+    JudgeIndicator,
+    MalwareReport,
+    NetworkDomain,
+    NetworkIOCs,
+    NetworkIP,
+    NetworkURL,
+    SampleIdentity,
+    TrafficMakers,
+)
 from malspark.reporting.renderers.stix_renderer import (
     ExtendedSTIXRenderer,
     emulation_kwargs,
     publish_answer,
     publishes,
+    sandbox_facts_for_the_judge,
+    sandbox_row_kwargs,
 )
 from malspark.schemas.evidence import build_entry
 from malspark.schemas.sandbox_document import sandbox_document
@@ -276,3 +293,82 @@ class TestTheCostIsLinear:
         made = {d.fqdn: d.made_by for d in network.domains}["n0.example.net"]
         assert made is not None and len(made.unlisted) == 16 and made.more
         assert_scales(make, 400, network_from_ledger, factor=8)
+
+
+SVCHOST = TrafficMakers(outside=["svchost.exe (procid 9)"])
+NAME = "evil.example.net"
+ADDRESS = "185.199.111.20"
+
+
+def _judged(url: str, *, told: bool) -> MalwareReport:
+    """A report whose judge kept ``url``, asked or not with its host's fact as validation asks."""
+    network = NetworkIOCs(
+        ips=[
+            NetworkIP(
+                address=ADDRESS,
+                source="sandbox",
+                sample_process_tree=False,
+                outside_processes=["svchost.exe (procid 9)"],
+            )
+        ],
+        domains=[
+            NetworkDomain(fqdn=NAME, source="sandbox", sample_process_tree=False, made_by=SVCHOST)
+        ],
+        urls=[NetworkURL(url=url, source="sandbox", sample_process_tree=False, made_by=SVCHOST)],
+    )
+    facts = sandbox_facts_for_the_judge(network, None, None, {"file_name": "s.exe"})
+    bundle = SimpleNamespace(
+        objects=[SimpleNamespace(type="indicator", name="u", pattern=f"[url:value = '{url}']")]
+    )
+    asked = [
+        {
+            "agent": "judge",
+            "code": UNATTRIBUTED_INDICATOR_CODE,
+            "message": "kept",
+            "answered": "true",
+            "subject": v.subject,
+        }
+        for v in unattributed_indicator_violations(bundle, facts)
+    ]
+    return MalwareReport(
+        identity=SampleIdentity(hashes=FileHashes(sha256=SHA256)),
+        verdict="Malware",
+        overall_confidence=0.9,
+        network=network,
+        judge_indicators=[JudgeIndicator(kind="url", value=url)],
+        run_summary={"validation": {"unresolved": asked}} if told else {},
+    )
+
+
+def _url_answer(report: MalwareReport, url: str) -> str:
+    return publish_answer("url", url, "sandbox", None, **sandbox_row_kwargs(report, "url", url))
+
+
+class TestTheJudgeKeepsAWithheldUrlByItsHost:
+    """Validation asks a URL indicator under its host; the keep is read under the same subject."""
+
+    def test_a_url_on_a_name_kept_with_its_host_s_fact_is_published(self) -> None:
+        url = f"http://{NAME}/gate"
+        answer = _url_answer(_judged(url, told=True), url)
+        assert publishes(answer)
+        assert "the judge when asked with its host's fact" in answer
+        # The URL's own wording: whose traffic its own records say it is.
+        assert "made by a process outside the sample's process tree" in answer
+
+    def test_a_url_on_a_name_with_no_question_recorded_stays_withheld(self) -> None:
+        url = f"http://{NAME}/gate"
+        answer = _url_answer(_judged(url, told=False), url)
+        assert answer.startswith("no: the sandbox report says it was made by a process outside")
+        assert "no question with this fact is recorded" in answer
+
+    def test_a_url_on_an_address_kept_with_its_host_s_fact_is_published(self) -> None:
+        url = f"http://{ADDRESS}/gate"
+        answer = _url_answer(_judged(url, told=True), url)
+        assert publishes(answer)
+        assert "the judge when asked with its host's fact" in answer
+
+    def test_a_url_on_an_address_with_no_question_recorded_stays_withheld(self) -> None:
+        url = f"http://{ADDRESS}/gate"
+        answer = _url_answer(_judged(url, told=False), url)
+        assert answer.startswith("no: ")
+        assert "no question with this fact is recorded" in answer
