@@ -114,8 +114,10 @@ ROUNDS = 3
 # How much slower a later round's small runs may be than the best small runs
 # of every round, for that round to be judged on its own times. The CI records
 # a later round held showed its small time 1.22 and 1.28 times the first
-# round's; a quadratic call over its limit by this factor or more is never
-# passed by a round, so a limit must leave a quadratic further over it.
+# round's. A round read on its own holds the best large time over the best
+# small time under this factor times the limit; a slowdown common to every
+# small run of every round is not seen by the rule, so a limit must leave a
+# quadratic call further over it than this factor.
 ROUND_DRIFT = 1.3
 
 # The least a small run may take: under it the clock's grain is the ratio, and
@@ -292,17 +294,22 @@ def held_over_rounds(
     """Measure up to ``rounds`` rounds (:data:`ROUNDS`) until one holds: every ratio's rule.
 
     ``measure()`` takes one round, the best time of each named run in it;
-    ``holds(times)`` is the test's verdict on a set of times; ``small`` names
-    the times of the smaller input. A first round that holds is the whole
-    measure. After each later round the best of every round so far, name by
-    name, is judged, and so is the round itself if each of its small times is
-    within :data:`ROUND_DRIFT` of the best one; the round is judged first.
-    Returns the times that held (``None`` if none did), every round, and the
-    best of every round.
+    ``holds(times)`` is the test's verdict on a set of times, and reads only
+    the times it is handed; ``small`` names every time whose slowing makes
+    ``holds`` easier (the smaller input's in a plain ratio). A first round
+    that holds is the whole measure. After each later round the best of
+    every round so far, name by name, is judged, and so is the round itself
+    if each of its ``small`` times is within :data:`ROUND_DRIFT` of the best
+    one; the round is judged first. An empty ``small``, or a name the first
+    round did not return, is refused. Returns the times that held (``None``
+    if none did), every round, and the best of every round.
     """
     count = ROUNDS if rounds is None else rounds
     assert count >= 2, f"{count} rounds: a ratio is read again on at least a second round"
     taken = [measure()]
+    assert small, "no time is named whose slowing makes the verdict easier: name every one"
+    for name in small:
+        assert name in taken[0], f"{name!r} is not a time the measure returned: {sorted(taken[0])}"
     pooled = taken[0]
     judged = [pooled]
     while True:
@@ -421,11 +428,14 @@ def assert_scales(
     milliseconds. ``limit`` replaces the default bound where the test states
     its own, and ``floor`` its additive allowance, as in :func:`assert_ratio`.
     A limit is refused unless ``factor`` squared, a quadratic call's ratio, is
-    over :data:`ROUND_DRIFT` times it: a later round forgives up to that much
-    drift, and must not reach a quadratic. A limit under ``factor`` (a cost
-    that does not grow) is always further from ``factor`` squared than that.
+    over :data:`ROUND_DRIFT` times it: a later round read on its own holds
+    the best times' ratio under that many times the limit. A limit under
+    ``factor`` (a cost that does not grow) is always further from ``factor``
+    squared than that.
     """
     bound = SCALING_SLACK * factor if limit is None else limit
+    # The refusal line is ROUND_DRIFT times the limit: a call at factor 4 with
+    # the default limit of 12 sits just above it, 16 against 15.6.
     assert factor**2 > ROUND_DRIFT * bound, (
         f"a limit of {bound:g} on {factor} times the input is within {ROUND_DRIFT:g} of "
         f"a quadratic call's {factor**2}, which a later round's drift may pass: "

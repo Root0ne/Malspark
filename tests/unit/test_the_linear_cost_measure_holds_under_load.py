@@ -391,7 +391,12 @@ def _one_round_s_smalls_slowed(seed: int) -> Callable[[int], float]:
 
 
 class TestTheDriftARoundIsForgivenIsBounded:
-    """A later round judged on its own times never reaches a quadratic call."""
+    """A later round read on its own holds the best times under ``ROUND_DRIFT`` times the limit.
+
+    The bound is on the best large time over the best small time of every
+    round; what the rule does not see is a slowdown common to every small
+    run of every round.
+    """
 
     def test_a_quadratic_whose_later_small_runs_stall_fails(self) -> None:
         # Sixteen times the cost against a limit of eight, one later round's
@@ -401,7 +406,7 @@ class TestTheDriftARoundIsForgivenIsBounded:
             with pytest.raises(AssertionError, match="took 16.0 times as long"):
                 assert_ratio(machine.work(0.01), machine.work(0.16), 8, clock=machine.clock)
 
-    def test_a_quadratic_at_the_tightest_margin_fails_whatever_its_small_runs_stall(
+    def test_a_quadratic_at_the_tightest_margin_fails_when_one_round_s_small_runs_stall(
         self,
     ) -> None:
         # Sixteen against twelve, the least margin a test states: a round
@@ -495,6 +500,34 @@ class TestTheDriftARoundIsForgivenIsBounded:
         held, rounds, best = held_over_rounds(rounds_with(1.31), holds, ["read", "cut"])
         assert held is None and len(rounds) == 3
         assert best == {"read": 1.0, "cut": 1.0, "large": 13.0}
+
+    def test_a_round_s_drift_is_read_against_the_best_small_time_of_every_round(self) -> None:
+        # Sixteen times the cost against twelve: the first round's small run
+        # 1.25 times slower, the second clean, the third 1.6 times slower. The
+        # third round reads ten times on its own and is 1.28 times the first
+        # round's small run, but 1.6 times the best one.
+        taken = iter(
+            [
+                {"small": 1.25, "large": 16.0},
+                {"small": 1.0, "large": 16.0},
+                {"small": 1.6, "large": 16.0},
+            ]
+        )
+        held, rounds, best = held_over_rounds(
+            lambda: next(taken), lambda times: times["large"] < 12 * times["small"], ["small"]
+        )
+        assert held is None and len(rounds) == 3
+        assert best == {"small": 1.0, "large": 16.0}
+
+    def test_an_empty_list_of_small_times_is_refused(self) -> None:
+        with pytest.raises(AssertionError, match="no time is named"):
+            held_over_rounds(lambda: {"small": 1.0, "large": 16.0}, lambda _times: False, [])
+
+    def test_a_small_time_the_measure_does_not_return_is_refused_by_its_name(self) -> None:
+        with pytest.raises(AssertionError, match="'smal' is not a time the measure returned"):
+            held_over_rounds(
+                lambda: {"small": 1.0, "large": 16.0}, lambda _times: False, ["large", "smal"]
+            )
 
     def test_assert_scales_refuses_a_limit_a_quadratic_is_not_far_enough_over(self) -> None:
         with pytest.raises(AssertionError, match="within 1.3 of a quadratic call's 16"):
