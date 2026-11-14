@@ -8,7 +8,10 @@ before and after. Here a revision changes only what it states:
 - a claim it withdraws is removed, with the reason it gives: a
   ``WITHDRAW CLAIM <n>: <reason>`` line (``retry_merge.read_withdrawals``),
   or a claim block under the number of a claim in force whose heading or
-  sentence declares the withdrawal ("CLAIM 5 (withdrawn): ...");
+  sentence declares the withdrawal ("CLAIM 5 (withdrawn): ..."), or a
+  dispute in which the analyst rejects a claim of its own answer in force
+  ("my own earlier claim 17 ... I reject this",
+  ``retry_merge.read_own_withdrawals``), the item as its reason;
 - a claim in force that a blocking line of the round's mediation named, and
   that the revision neither wrote again nor withdrew, is withdrawn by rule,
   with the line as its reason: a challenged claim left unanswered never
@@ -59,7 +62,11 @@ block, and the merge says so, naming the addresses
 restates a claim, or none does: values and words are never pooled over
 blocks, since a claim's helpers recurring across other claims of the
 revision say nothing of the claim itself. A claim that names no address is
-restated by one block on its words or values alone. A revision placed by
+restated by one block on its words or values alone. A claim a blocking line
+of the round's mediation named is asked no address either: the revision
+answers the line, so the one block that restates it replaces it, and with
+no block restating it the line rule below withdraws it unless the
+revision's disputes defend it; it is never carried beside a block. A revision placed by
 its numbers asks no block for the subject: the number names the claim.
 A revision that writes again or withdraws every claim in force merges
 nothing: it stands as written, as it always did.
@@ -102,9 +109,11 @@ from malspark.pipeline.debate_facts import (
     read_claim_numbers,
 )
 from malspark.pipeline.retry_merge import (
+    _CLAIM_NUMBER_RE,
     _WITHDRAW_OR_RETRACT_RE,
     _WITHDRAW_WORD_RE,
     _WITHDRAWING_OPENER_RE,
+    read_own_withdrawals,
     read_withdrawals,
 )
 from malspark.schemas.isr_models import carried_beside_marker
@@ -720,7 +729,10 @@ def _by_number(
 
 
 def _by_statement(
-    first: list[_Block], readings: list[_Reading], stated: frozenset[int]
+    first: list[_Block],
+    readings: list[_Reading],
+    stated: frozenset[int],
+    answered: frozenset[int] = frozenset(),
 ) -> tuple[set[int], dict[int, int], dict[int, tuple[int, tuple[int, ...]]]]:
     """``(numbers restated, {revision block index: claim in force number}, beside)``.
 
@@ -729,7 +741,10 @@ def _by_statement(
     some block (:func:`_subject_left_out`). ``beside`` is ``{claim in force
     number: (the first block that restates it, the addresses no block
     states)}`` for each claim a block restates while an address of it is
-    stated nowhere: it is carried, beside that block.
+    stated nowhere: it is carried, beside that block. A claim of
+    ``answered`` (one a blocking line of the round's mediation named) is
+    asked no address: the block that restates it is the revision's answer to
+    the line, and replaces it.
     """
     restated: set[int] = set()
     target: dict[int, int] = {}
@@ -738,13 +753,35 @@ def _by_statement(
         index = _restated(earlier, readings)
         if index is None:
             continue
-        left_out = _subject_left_out(earlier, stated)
+        left_out = () if earlier.number in answered else _subject_left_out(earlier, stated)
         if left_out:
             beside[earlier.number] = (index, left_out)
             continue
         restated.add(earlier.number)
         target.setdefault(index, earlier.number)
     return restated, target, beside
+
+
+def _speaking_lines(
+    block: _Block,
+    named: Mapping[int, Sequence[NamingLine]],
+    expanded: Mapping[int, Sequence[ExpandedNaming]],
+) -> tuple[list[NamingLine], list[int], list[int]]:
+    """``(the lines that named the claim, blocking ones that do not speak to it, ones that do)``.
+
+    A blocking line that reaches the claim only through a range or a list,
+    and shares no ledger id or address with it, does not speak to it: it
+    never withdraws it by rule, and asks no block to answer it.
+    """
+    lines = list(named.get(block.number, ()))
+    blocking = sorted({line for line, blocks in lines if blocks})
+    reaching = {e.line: e for e in expanded.get(block.number, ())}
+    unspoken = (
+        [n for n in blocking if n in reaching and not reaching[n].tokens & _tokens_of(block)]
+        if reaching
+        else []
+    )
+    return lines, unspoken, [n for n in blocking if n not in unspoken]
 
 
 def merge_revision(
@@ -800,6 +837,29 @@ def merge_revision(
             if number in known:
                 withdrawn.setdefault(number, reason)
     unread = read.unread
+    disputes = [str(item) for item in getattr(revision, "dissent_items", None) or [] if item]
+    # A dispute that rejects a claim of the analyst's own answer in force
+    # withdraws it, the item as its reason. A line of it the reader above
+    # counted as a withdrawal not read exactly is read now.
+    own = read_own_withdrawals(disputes, getattr(in_force, "revision_round", None))
+    for low, high, reason in own.claims:
+        a, b = int(low), int(high)
+        for number in range(a, b + 1) if a <= b else ():
+            if number in known:
+                withdrawn.setdefault(number, reason)
+    unread = max(
+        0,
+        unread
+        - sum(
+            1
+            for item in own.items
+            if item in answer and _WITHDRAW_WORD_RE.search(item) and _CLAIM_NUMBER_RE.search(item)
+        ),
+    )
+    # Per claim in force, the lines of the round's mediation that named it and
+    # the blocking ones that speak to it (:func:`_speaking_lines`).
+    speaking = {block.number: _speaking_lines(block, named, expanded) for block in first}
+    answered = frozenset(number for number, (_l, _u, spoken) in speaking.items() if spoken)
 
     readings = [_read(block) for block in revised]
     numbered = _by_number(first, revised, readings)
@@ -827,12 +887,13 @@ def merge_revision(
         written_again = set(target.values())
     else:
         placed_by = "statement"
-        written_again, target, beside = _by_statement(first, readings, _stated_addresses(revised))
+        written_again, target, beside = _by_statement(
+            first, readings, _stated_addresses(revised), answered
+        )
     # A claim written again stands as written, whatever a line withdrew.
     for number in written_again:
         withdrawn.pop(number, None)
 
-    disputes = [str(item) for item in getattr(revision, "dissent_items", None) or [] if item]
     # What the revision left unanswered: withdrawn by rule where a blocking
     # line named it and the revision's disputes do not argue it, carried
     # forward otherwise.
@@ -842,18 +903,9 @@ def merge_revision(
     for block in first:
         if block.number in written_again or block.number in withdrawn:
             continue
-        lines = list(named.get(block.number, ()))
-        blocking = sorted({line for line, blocks in lines if blocks})
-        # A blocking line that reaches the claim only through a range or a
-        # list, and shares no ledger id or address with it, does not speak
-        # to it: it never withdraws it by rule.
+        lines, unspoken, spoken = speaking[block.number]
         reaching = {e.line: e for e in expanded.get(block.number, ())}
-        unspoken = (
-            [n for n in blocking if n in reaching and not reaching[n].tokens & _tokens_of(block)]
-            if reaching
-            else []
-        )
-        spoken = [n for n in blocking if n not in unspoken]
+        blocking = sorted({line for line, blocks in lines if blocks})
         if blocking and _disputed(block, disputes):
             # The revision did not restate it but argued for it in its
             # disputes: an answer, carried with the line that contested it.

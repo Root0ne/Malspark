@@ -2542,8 +2542,9 @@ A revision round's answer passes the same consistency gate and validation turn
 a first answer passes, with the first answer's loop deadline and nudge flag
 cleared before it is made. A revision is merged into the answer in force by
 claim (`pipeline.revision_merge`): a claim it writes again replaces its
-predecessor; a claim it withdraws (a `WITHDRAW CLAIM <n>: <reason>` line, or a
-block under the claim's number that declares the withdrawal) is removed with
+predecessor; a claim it withdraws (a `WITHDRAW CLAIM <n>: <reason>` line, a
+block under the claim's number that declares the withdrawal, or a dispute in
+which the analyst rejects a claim of its own answer in force) is removed with
 its reason; a claim a blocking line of the round's mediation named that the
 revision neither writes again, withdraws nor argues in its disputes is
 withdrawn by rule, the line being its reason (only the mediation right before
@@ -2596,15 +2597,30 @@ correction that changes or leaves out an address)
 stays in force beside that block, and the merge says so: the claim's note reads
 "carried forward beside claim K of the answer the round-N revision left in
 force, which states it again without 0x…", and
-`revision_replacements` states the pair with the same addresses (a blocking
-line that named the claim still withdraws it by rule). A claim that names no
+`revision_replacements` states the pair with the same addresses. A claim a
+blocking line of the round's mediation named is asked no address: the revision
+answers the line, so the one block that restates it replaces it, its values no
+block states recorded as dropped; with no block restating it, the line rule
+withdraws it unless the revision's disputes defend it. Such a claim is never
+carried beside a block. A claim that names no
 address is restated by one block on its words or values. A revision that
 restates or withdraws every claim in force stands as written.
 `run_summary.negotiation.revision_replacements` states each merge that carried
 claims, with their numbers, and each withdrawal with its reason (a withdrawal by
 rule also among `dropped_claims`, with the claim's values); a revision with
 fewer claims that carried nothing is still stated ("The X analyst's round-N
-revision replaced N claim(s) with M."). The DISPUTES section opens at its label,
+revision replaced N claim(s) with M."). A dispute withdraws a claim of
+the analyst's own answer in force where it names the claim as its own ("my own
+earlier claim 17", "my claims 3 and 4", with a round only where that round is
+the answer in force's) and either a first-person withdrawing verb ("withdraw",
+"retract", "reject") stands right before the reference, or the reference opens
+the item or a sentence, or closes a list of claims, and later, with no other
+claim named and nothing that keeps it in between, such a verb takes a pronoun
+("I reject this.") or the reference is said "withdrawn", "retracted",
+"rejected" or "superseded" (`retry_merge.read_own_withdrawals`, the wordings
+declared there). A reference followed by a part of the claim ("my claim 3
+confidence", "my claim 6 detail") and a rejection of another analyst's claim
+withdraw nothing; anything else read is a doubt and withdraws nothing. The DISPUTES section opens at its label,
 case-sensitive, with its colon (`DISPUTES:`) or as a Markdown heading; a label
 that says there is none on its own line (`DISPUTES: NONE`, `N/A`, a dash)
 opens no section, and prose beginning "Disputes …" is prose. Claims under the

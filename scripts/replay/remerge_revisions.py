@@ -248,7 +248,7 @@ def _earlier_rule() -> Iterator[None]:
             return True, None
         return False, None
 
-    def by_statement(first: Any, readings: Any, _stated: Any = None) -> Any:
+    def by_statement(first: Any, readings: Any, _stated: Any = None, _answered: Any = None) -> Any:
         found: set[int] = set()
         target: dict[int, int] = {}
         for earlier in first:

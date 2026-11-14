@@ -103,6 +103,147 @@ _WITHDRAWING_OPENER_RE = re.compile(
 )
 _NUMBER_RE = re.compile(r"\d++")
 _RANGE_SPLIT_RE = re.compile(r"(?:,|&|\band\b)", re.IGNORECASE)
+
+# A debate revision's dispute that rejects a claim of the analyst's own answer
+# in force withdraws it (``read_own_withdrawals``). The wordings, as data:
+#
+# - the reference to its own claim: a first-person word, any of the words of
+#   an earlier answer, an optional "round-<n>" (read only for the round of the
+#   answer in force: another round's numbers index another answer), then
+#   "claim(s)" and its numbers ("my own earlier claim 17", "my claims 3 and 4");
+OWN_CLAIM_OPENERS = ("my", "our")
+OWN_CLAIM_EARLIER_WORDS = ("own", "earlier", "previous", "prior", "original", "former")
+# - the first-person verbs that withdraw it, followed by the reference ("I
+#   retract my earlier claim 2: ...") or, after it, by one of the pronouns
+#   ("... my own earlier claim 17). I reject this.");
+OWN_WITHDRAWING_VERBS = ("withdraw", "retract", "reject")
+OWN_WITHDRAWN_PRONOUNS = ("it", "this", "that", "them", "these", "those", "both")
+# - the words that say it withdrawn, after the reference ("My claims 1 and 2
+#   are superseded by ...", "My claim 2 (...). Withdrawn as stated.");
+OWN_WITHDRAWN_WORDS = ("withdrawn", "retracted", "rejected", "superseded")
+# - the words that keep it: one between the reference and the withdrawing
+#   word makes the item a doubt, and a doubt withdraws nothing;
+OWN_KEEPING_WORDS = ("stand", "stands", "keep", "kept", "hold", "holds", "maintain", "remains")
+# - what may follow the reference right after a verb that names it, or a
+#   pronoun: a mark, or one of these words. Anything else ("I reject that
+#   wording") withdraws a part of the claim, not the claim;
+OWN_CLAIM_ENDS = ("as", "because", "since", "outright", "entirely", "in", "too", "also")
+# - the words that, right after the reference, name a part of the claim ("my
+#   earlier claim 3 confidence of 0.60", "my claim 6 detail that ..."): a
+#   doubt.
+OWN_CLAIM_PARTS = (
+    "attribution", "characterisation", "characterization", "confidence", "detail", "details",
+    "figure", "framing", "label", "part", "parts", "score", "tag", "tags", "technique",
+    "techniques", "wording",
+)  # fmt: skip
+
+_OWN_WORDS = "|".join(OWN_CLAIM_EARLIER_WORDS)
+_OWN_CLAIM_RE = re.compile(
+    rf"\b(?:{'|'.join(OWN_CLAIM_OPENERS)})(?:\s++(?:{_OWN_WORDS}))*+"
+    r"(?:\s++round[-\s]*+(?P<round>\d++))?+\s++claims?+\s*+"
+    rf"(?P<numbers>{_NUMBER_OR_RANGE}(?:\s*+(?:,|&|\band\b)\s*+{_NUMBER_OR_RANGE})*+)",
+    re.IGNORECASE,
+)
+_OWN_VERB = rf"\b(?:I|we)\s++(?:now\s++|also\s++|hereby\s++)?(?:{'|'.join(OWN_WITHDRAWING_VERBS)})"
+# A verb right before the reference.
+_OWN_VERB_BEFORE_RE = re.compile(rf"{_OWN_VERB}\s*+$", re.IGNORECASE)
+_OWN_END = rf"[\s*_`]*+(?:$|[.,;:()\[\]\"'“”—–-]|(?:{'|'.join(OWN_CLAIM_ENDS)})\b)"
+_OWN_CLAIM_END_RE = re.compile(_OWN_END, re.IGNORECASE)
+_OWN_CLAIM_PART_RE = re.compile(rf"[\s*_`]*+(?:{'|'.join(OWN_CLAIM_PARTS)})\b", re.IGNORECASE)
+# A verb with a pronoun after the reference, or a word that says it withdrawn.
+_OWN_WITHDRAWN_AFTER_RE = re.compile(
+    rf"{_OWN_VERB}\s++(?:{'|'.join(OWN_WITHDRAWN_PRONOUNS)})(?={_OWN_END})"
+    rf"|\b(?:{'|'.join(OWN_WITHDRAWN_WORDS)})\b",
+    re.IGNORECASE,
+)
+# Other claims of the list the reference stands in, right after it ("my claim
+# 20, QU1CKSC0PE claim 36 and DYNAMIC claim 42"): one list, not another claim.
+_OWN_LIST_GOES_ON_RE = re.compile(
+    r"(?:\s*+(?:\([^()]*+\))?[\s*_`]*+(?:,|;|&|\band\b)\s*+(?:and\s++)?"
+    r"(?:[A-Za-z0-9_'’-]++\s++){0,4}claims?+\s*+#?\d++"
+    r"(?:\s*+(?:,|&|\band\b|/|-|–|\bto\b)\s*+#?\d++)*+)*+",
+    re.IGNORECASE,
+)
+_OWN_KEEPING_RE = re.compile(rf"\b(?:{'|'.join(OWN_KEEPING_WORDS)})\b", re.IGNORECASE)
+# What the reference may stand after to be the subject of what follows: the
+# item's or a sentence's start, or a list it closes ("(STATIC claim 23, my own
+# earlier claim 17)").
+_OWN_SUBJECT_BEFORE_RE = re.compile(
+    r"(?:^|[.!?:;]|\(|,|&|\band\b)[\s*_`\"'“”(\[]*+$", re.IGNORECASE
+)
+_ANY_CLAIM_RE = re.compile(r"\bclaims?+\s*+#?\d", re.IGNORECASE)
+
+
+@dataclass(frozen=True)
+class OwnWithdrawals:
+    """What a revision's disputes withdraw of its own claims.
+
+    ``claims`` is ``(first, last, item)`` per number or range, as digits, the
+    dispute item as the reason; ``items`` the items read so.
+    """
+
+    claims: tuple[tuple[str, str, str], ...] = ()
+    items: tuple[str, ...] = ()
+
+
+def read_own_withdrawals(items: Sequence[str], round_in_force: int | None) -> OwnWithdrawals:
+    """The claims of its own answer in force the dispute ``items`` reject, in order.
+
+    An item withdraws a claim where it names it as its own
+    (:data:`OWN_CLAIM_OPENERS`, :data:`OWN_CLAIM_EARLIER_WORDS`) and either a
+    first-person verb of :data:`OWN_WITHDRAWING_VERBS` stands right before
+    that reference, nothing but a mark or one of :data:`OWN_CLAIM_ENDS` after
+    it; or the reference opens the item or a sentence, or closes a list of
+    claims, and later in the item, with no other claim named and no word of
+    :data:`OWN_KEEPING_WORDS` in between, such a verb takes one of
+    :data:`OWN_WITHDRAWN_PRONOUNS` or a word of :data:`OWN_WITHDRAWN_WORDS`
+    stands. A "round-<n>" reference is read only where ``n`` is
+    ``round_in_force``. A rejection of another analyst's claim names no claim
+    of its own, and is a dispute; anything else is a doubt and withdraws
+    nothing. Linear in the items.
+    """
+    claims: list[tuple[str, str, str]] = []
+    read: list[str] = []
+    for raw in items:
+        item = " ".join(str(raw or "").split())
+        found = False
+        for match in _OWN_CLAIM_RE.finditer(item):
+            written_round = match.group("round")
+            if written_round is not None and (
+                round_in_force is None or int(written_round) != int(round_in_force)
+            ):
+                continue
+            before = item[: match.start()]
+            if _OWN_CLAIM_PART_RE.match(item, match.end()):
+                withdraws = False
+            elif _OWN_VERB_BEFORE_RE.search(before):
+                withdraws = bool(_OWN_CLAIM_END_RE.match(item, match.end()))
+            elif _OWN_SUBJECT_BEFORE_RE.search(before):
+                after = item[match.end() :]
+                said = _OWN_WITHDRAWN_AFTER_RE.search(after)
+                between = after[: said.start()] if said is not None else ""
+                between = _OWN_CLAIM_RE.sub(" ", between)
+                listed = _OWN_LIST_GOES_ON_RE.match(between)
+                between = between[listed.end() :] if listed is not None else between
+                withdraws = (
+                    said is not None
+                    and not _ANY_CLAIM_RE.search(between)
+                    and not _OWN_KEEPING_RE.search(between)
+                )
+            else:
+                withdraws = False
+            if not withdraws:
+                continue
+            found = True
+            for part in _RANGE_SPLIT_RE.split(match.group("numbers")):
+                ends = _NUMBER_RE.findall(part)
+                if ends:
+                    claims.append((_number(ends[0]), _number(ends[-1]), item))
+        if found:
+            read.append(str(raw))
+    return OwnWithdrawals(claims=tuple(claims), items=tuple(read))
+
+
 # Where a flag names the claim block it is about: ``static.claims[5].T1041``.
 _CLAIM_PATH_RE = re.compile(r"claims\[(\d++)\]")
 

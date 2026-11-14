@@ -243,9 +243,10 @@ class TestAWithdrawalStaysExplicit:
         # again without its subject.
         assert merge.beside == ((1, LOADER, 3, ("0x40cf14",)),)
 
-    def test_a_blocking_line_withdraws_the_claim_a_correction_omitted_the_subject_of(
+    def test_a_blocking_line_lets_the_correction_omitting_the_subject_replace_the_claim(
         self,
     ) -> None:
+        # The block answers the line that named the claim: no address is asked.
         corrected = (
             "0x40cea4 reads the URL list from the file at 0x4103b8 and 0x40c964 decrypts it."
         )
@@ -253,15 +254,8 @@ class TestAWithdrawalStaysExplicit:
 
         merge = merge_revision(_isr(IN_FORCE), _isr(answer), answer, 2, {1: [(3, True)]})
 
-        assert merge.withdrawn_by_rule == (
-            (
-                1,
-                LOADER,
-                "named by blocking line L3 of the round-2 mediation; the revision did not "
-                "restate it",
-            ),
-        )
-        assert merge.merged is None
+        assert merge.replaced == (1, 2) and merge.withdrawn_by_rule == ()
+        assert merge.beside == () and merge.merged is None
 
 
 class TestAClaimCarriedBesideItsRestatementIsMarked:
