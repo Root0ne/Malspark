@@ -294,8 +294,10 @@ class TestTheEntryOfferedForANumber:
         assert "ev_0003 (decompile_function), ev_0004 (decompile_function)" in found.message
 
     def test_one_number_picks_no_expression(self) -> None:
-        assert _ledger(self.HANDLER_9).choosing({4}) == {}
-        assert _ledger(self.HANDLER_9).choosing({4, 5, 6}) != {}
+        texts = _ledger(self.HANDLER_9, dispatcher=False)
+
+        assert texts.choosing({4}) == {}
+        assert texts.choosing({0, 1, 2}) != {}
 
 
 class TestAFailedCallHoldsNothing:
@@ -488,6 +490,17 @@ class TestARowIdIsCheckedOnlyWhereACoincidenceIsImplausible:
         (found,) = cited_id_violations(payload, texts)
 
         assert found.message.startswith("Row 4 of commands states the id 'PING'")
+
+    def test_a_labelled_number_of_a_small_table_is_not_read_as_text(self) -> None:
+        texts = EntryTexts.from_ledger(
+            [
+                _entry("ev_0001", "decompile_function", json.dumps({"code": self.HANDLER})),
+                _entry("ev_0002", "strings", json.dumps({"strings": ["COMMAND 4"]})),
+            ]
+        )
+        payload = _commands(*((f"COMMAND {n}", ["ev_0001"]) for n in (4, 5, 6)))
+
+        assert cited_id_violations(payload, texts) == []
 
     def test_entries_whose_expressions_hold_different_sets_offer_nothing(self) -> None:
         other = COMMAND_SWITCH.replace("case 7:", "case 9:").replace("on_command", "on_other")

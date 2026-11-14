@@ -10171,9 +10171,9 @@ def cited_id_violations(payload: Any, entries: EntryTexts | None) -> list[Violat
             # A failed call holds nothing: its text is the failure's.
             answered = [ref for ref in cited if ref not in entries.failed]
             try:
+                # A numbered row of a table not checked for its numbers has
+                # no expression chosen, so no holder: it is never read as text.
                 if index in numbered:
-                    if not counted:
-                        continue
                     number = numbered[index]
                     if any(
                         number in entries.operands(ref) or entries.code_not_read(ref)
