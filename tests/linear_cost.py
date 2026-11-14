@@ -12,13 +12,26 @@ that such a run is not the one the assertion reads.
   large call in turn (small, large, small, large, ...) so a slow stretch of
   the machine lands on both sizes rather than on one, keeps the best time of
   each size with the collector off, and holds the ratio of the best times
-  under the test's limit. Only when that ratio fails does it measure the
-  same pairs once more, keeps the best of every run, and fails only if the
-  ratio still does; the message gives both attempts. A quadratic reader is
-  over its limit on every pair, so a second attempt never passes it.
+  under the test's limit. Only when that ratio fails does it measure up to
+  :data:`ROUNDS` rounds of the same pairs in all, by the rule of
+  :func:`held_over_rounds`, and the message gives every round.
+* :func:`held_over_rounds` is that rule, for a test that takes its own
+  measurements (in a child process, for one): a first round that holds is
+  the whole measure; a later round passes when the best of every round taken
+  together holds, or when its own times hold and its small times are within
+  :data:`ROUND_DRIFT` of the best small times of every round. A round is
+  judged on its own because a runner's speed drifts between rounds: the best
+  small time of a quick stretch over the best large time of a slow one reads
+  a ratio no pair of runs had. The drift it forgives is bounded: a round's
+  large time is never under the best large time, and its small time is at
+  most :data:`ROUND_DRIFT` times the best small time, so no round passes a
+  call whose best times read a ratio :data:`ROUND_DRIFT` times its limit or
+  more.
 * :func:`assert_scales` builds the two inputs from one size and a factor and
   holds them to :func:`assert_ratio` with a limit of :data:`SCALING_SLACK`
-  times the factor (a quadratic reader takes ``factor`` times more).
+  times the factor (a quadratic reader takes ``factor`` times more). It
+  refuses a limit a quadratic's ``factor`` squared is not over
+  :data:`ROUND_DRIFT` times, which that bound would not keep failing.
 * :func:`assert_under` holds one call under an absolute CPU-time bound, for
   a hostile input whose cost the test bounds rather than compares. It runs
   the call again only when a run is over the bound, so a passing call is
@@ -59,7 +72,7 @@ import os
 import sys
 import time
 import tracemalloc
-from collections.abc import Callable
+from collections.abc import Callable, Collection
 from typing import Any
 
 try:
@@ -70,6 +83,8 @@ except ImportError:  # Windows, whose default clock is the thread's anyway
 __all__ = [
     "FLOOR_SECONDS",
     "GRAINS",
+    "ROUNDS",
+    "ROUND_DRIFT",
     "SCALING_SLACK",
     "TIME_RATIO_LIMIT",
     "assert_ratio",
@@ -79,6 +94,7 @@ __all__ = [
     "clock_grain",
     "cpu_seconds",
     "default_clock",
+    "held_over_rounds",
     "peak_bytes",
     "repeated",
 ]
@@ -90,6 +106,19 @@ TIME_RATIO_LIMIT = 8
 # A linear call on k times the input takes k times as long; up to this many
 # times that is noise and cache effects, a quadratic call takes k times more.
 SCALING_SLACK = 3.0
+
+# The rounds of pairs a ratio is read from before it fails: a passing first
+# round is the only one, a later round runs only when every one before failed.
+ROUNDS = 3
+
+# How much slower a later round's small runs may be than the best small runs
+# of every round, for that round to be judged on its own times. The CI records
+# a later round held showed its small time 1.22 and 1.28 times the first
+# round's. A round read on its own holds the best large time over the best
+# small time under this factor times the limit; a slowdown common to every
+# small run of every round is not seen by the rule, so a limit must leave a
+# quadratic call further over it than this factor.
+ROUND_DRIFT = 1.3
 
 # The least a small run may take: under it the clock's grain is the ratio, and
 # the measure fails rather than read it.
@@ -256,6 +285,45 @@ def _best_pair(
     return best_small, best_large
 
 
+def held_over_rounds(
+    measure: Callable[[], dict[str, float]],
+    holds: Callable[[dict[str, float]], bool],
+    small: Collection[str],
+    rounds: int | None = None,
+) -> tuple[dict[str, float] | None, list[dict[str, float]], dict[str, float]]:
+    """Measure up to ``rounds`` rounds (:data:`ROUNDS`) until one holds: every ratio's rule.
+
+    ``measure()`` takes one round, the best time of each named run in it;
+    ``holds(times)`` is the test's verdict on a set of times, and reads only
+    the times it is handed; ``small`` names every time whose slowing makes
+    ``holds`` easier (the smaller input's in a plain ratio). A first round
+    that holds is the whole measure. After each later round the best of
+    every round so far, name by name, is judged, and so is the round itself
+    if each of its ``small`` times is within :data:`ROUND_DRIFT` of the best
+    one; the round is judged first. An empty ``small``, or a name the first
+    round did not return, is refused. Returns the times that held (``None``
+    if none did), every round, and the best of every round.
+    """
+    count = ROUNDS if rounds is None else rounds
+    assert count >= 2, f"{count} rounds: a ratio is read again on at least a second round"
+    taken = [measure()]
+    assert small, "no time is named whose slowing makes the verdict easier: name every one"
+    for name in small:
+        assert name in taken[0], f"{name!r} is not a time the measure returned: {sorted(taken[0])}"
+    pooled = taken[0]
+    judged = [pooled]
+    while True:
+        for times in judged:
+            if holds(times):
+                return times, taken, pooled
+        if len(taken) == count:
+            return None, taken, pooled
+        taken.append(measure())
+        pooled = {name: min(times[name] for times in taken) for name in taken[0]}
+        drifted = any(taken[-1][name] > ROUND_DRIFT * pooled[name] for name in small)
+        judged = [pooled] if drifted else [taken[-1], pooled]
+
+
 def assert_ratio(
     small: Callable[[], Any],
     large: Callable[[], Any],
@@ -285,7 +353,9 @@ def assert_ratio(
     Where the default clock's tick is coarse (Windows), each timed run
     repeats both calls as often as it takes the small one to span
     :data:`GRAINS` ticks; the times and the floor are per call all the same.
-    Returns the best small and large times, per call.
+    Each round is ``repeats`` pairs, judged by :func:`held_over_rounds`.
+    Returns the best small and large times that held, per call: the first
+    round's, a later round's own, or the best of every round, in that order.
     """
     clocked = _clock_of(clock, whole_process)
 
@@ -301,26 +371,42 @@ def assert_ratio(
         times = _runs_to_span_the_clock(small, clocked)
         if times > 1:
             small, large, floor = repeated(small, times), repeated(large, times), floor * times
-    first_small, first_large = _best_pair(small, large, repeats, measure)
-    assert first_small >= FLOOR_SECONDS, (
-        f"the small run of {what} took {first_small * 1000:.2f} ms, under the "
+
+    def one_round() -> dict[str, float]:
+        best_small, best_large = _best_pair(small, large, repeats, measure)
+        return {"small": best_small, "large": best_large}
+
+    first = one_round()
+    assert first["small"] >= FLOOR_SECONDS, (
+        f"the small run of {what} took {first['small'] * 1000:.2f} ms, under the "
         f"{FLOOR_SECONDS * 1000:g} ms a ratio can be read from: grow the input"
     )
-    first_ratio = first_large / first_small
-    if first_large < limit * (first_small + floor):
-        return first_small / times, first_large / times
-    again_small, again_large = _best_pair(small, large, repeats, measure)
-    best_small, best_large = min(first_small, again_small), min(first_large, again_large)
-    ratio = best_large / best_small
+    unread = [first]
+    held, taken, best = held_over_rounds(
+        lambda: unread.pop() if unread else one_round(),
+        lambda t: t["large"] < limit * (t["small"] + floor),
+        ["small"],
+    )
+    if held is not None:
+        return held["small"] / times, held["large"] / times
+    rounds = [(t["small"], t["large"]) for t in taken]
+    pooled = (best["small"], best["large"])
     allowed = f"limit {limit:g}" + (f" plus {limit * floor * 1000:.1f} ms" if floor else "")
-    assert best_large < limit * (best_small + floor), (
-        f"{what} took {ratio:.1f} times as long, {allowed}: "
-        f"{first_small * 1000:.1f} ms to {first_large * 1000:.1f} ms "
-        f"({first_ratio:.1f} times) on the first {repeats} pairs, "
-        f"{again_small * 1000:.1f} ms to {again_large * 1000:.1f} ms on the next {repeats}"
+    named = ["on the first", *["on the next"] * (len(rounds) - 2), "on the last"]
+    # A later round whose small runs drifted past ROUND_DRIFT was read only in the best of all.
+    drift = [s / min(r[0] for r in rounds[: at + 1]) for at, (s, _) in enumerate(rounds)]
+    read = [
+        f"{s * 1000:.1f} ms to {t * 1000:.1f} ms ({t / s:.1f} times) {name} {repeats}"
+        + (f" (its small runs {d:.2f} times the best, not read alone)" if d > ROUND_DRIFT else "")
+        for name, (s, t), d in zip(named, rounds, drift, strict=True)
+    ]
+    alone = [t / s for (s, t), d in zip(rounds, drift, strict=True) if d <= ROUND_DRIFT]
+    raise AssertionError(
+        f"{what} took {min([*alone, pooled[1] / pooled[0]]):.1f} times as long, "
+        f"{allowed}: {read[0]} pairs, {', '.join(read[1:])}, "
+        f"{pooled[1] / pooled[0]:.1f} times on the best of all {len(rounds) * repeats}"
         + (f" (each run {times} calls)" if times > 1 else "")
     )
-    return best_small / times, best_large / times
 
 
 def assert_scales(
@@ -341,7 +427,20 @@ def assert_scales(
     the zero-argument call itself. Size ``small`` so its call takes a few
     milliseconds. ``limit`` replaces the default bound where the test states
     its own, and ``floor`` its additive allowance, as in :func:`assert_ratio`.
+    A limit is refused unless ``factor`` squared, a quadratic call's ratio, is
+    over :data:`ROUND_DRIFT` times it: a later round read on its own holds
+    the best times' ratio under that many times the limit. A limit under
+    ``factor`` (a cost that does not grow) is always further from ``factor``
+    squared than that.
     """
+    bound = SCALING_SLACK * factor if limit is None else limit
+    # The refusal line is ROUND_DRIFT times the limit: a call at factor 4 with
+    # the default limit of 12 sits just above it, 16 against 15.6.
+    assert factor**2 > ROUND_DRIFT * bound, (
+        f"a limit of {bound:g} on {factor} times the input is within {ROUND_DRIFT:g} of "
+        f"a quadratic call's {factor**2}, which a later round's drift may pass: "
+        f"state a limit under {factor**2 / ROUND_DRIFT:.1f} or a larger factor"
+    )
 
     def timed(size: int) -> Callable[[], Any]:
         made = build(size)
@@ -350,7 +449,7 @@ def assert_scales(
     return assert_ratio(
         timed(small),
         timed(small * factor),
-        SCALING_SLACK * factor if limit is None else limit,
+        bound,
         what=f"{factor} times the input",
         repeats=repeats,
         floor=floor,
