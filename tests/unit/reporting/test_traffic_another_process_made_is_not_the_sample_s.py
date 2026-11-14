@@ -494,3 +494,38 @@ class TestATaskListingNoProcess:
         rows = (*sandbox.network.tcp, *sandbox.network.udp, *sandbox.network.http)
         assert rows and all(PROCESS_UNLISTED_KEY not in row for row in rows)
         assert all(row[TRAFFIC_PROCESS_KEY] in ("36", "46") for row in rows)
+
+
+class TestANameSAddressFlows:
+    def test_an_address_flow_naming_no_process_leaves_the_name_as_without_one(self) -> None:
+        view = {
+            "dns": [
+                {"request": "mixed.example.net", "type": "A", "answers": [{"data": MIXED_ADDRESS}]}
+            ],
+            "tcp": [{"dst": MIXED_ADDRESS, **UNLISTED_ROW}, {"dst": MIXED_ADDRESS}],
+        }
+        entry = build_entry(
+            entry_id="ev_0001",
+            seq=1,
+            agent="dynamic",
+            tool="sandbox_network",
+            args={},
+            server=None,
+            output=json.dumps(view),
+        )
+        network = network_from_ledger([entry])
+        assert network is not None
+        (domain,) = network.domains
+        assert domain.sample_process_tree is None and domain.made_by is None
+
+
+class TestALauncherFlowSharingAnId:
+    def test_the_launcher_s_facts_on_a_shared_flow_id_are_marked(self) -> None:
+        task = _json("behavioral1.json")
+        (flow_32,) = [f for f in task["network"]["flows"] if f["id"] == 32]
+        task["network"]["flows"].append({**flow_32, "procid": 84})
+        report = _report(_sandbox(task, LAUNCHER))
+        url = next(u for u in report.network.urls if u.url == CRL)
+        assert url.made_by is not None
+        assert url.made_by.launcher == ["powershell.exe (procid 84)"]
+        assert url.made_by.unlisted == ["procid 46"]

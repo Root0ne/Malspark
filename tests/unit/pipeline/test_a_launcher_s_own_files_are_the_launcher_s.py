@@ -501,3 +501,12 @@ class TestTheCostIsLinear:
             return _read("overview.json", {"behavioral1": one})
 
         assert_scales(make, 1000, lambda report: attribute_the_launcher(report, FIRST), factor=8)
+
+
+class TestAFileTheSampleWritesUnderAMemberSName:
+    def test_a_row_stating_no_whole_path_is_the_sample_s_with_the_member_stated(self) -> None:
+        report = _first({"procid": 86, "name": "launch.ps1"})
+        attribute_the_launcher(report, FIRST)
+        (written,) = [r for r in report.dropped_files if r.get("procid") == 86]
+        assert LINEAGE_KEY not in written
+        assert written[MEMBER_FACT_KEY]["fact"] == MEMBER_WRITTEN

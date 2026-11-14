@@ -394,3 +394,12 @@ class TestTheCostIsLinear:
             return _task(*({"flow": 1, "index": i, f"{i}{'k' * 80}": {"n": i}} for i in range(n)))
 
         assert_scales(make, 20000, lambda task: _read({"behavioral1": task}), factor=8)
+
+
+class TestALongKindName:
+    def test_a_kind_with_a_longer_name_joins_the_bare_channel(self) -> None:
+        row = {"flow": 9, "index": 1, "k" * (TRIAGE_UNREAD_KIND_NAME + 1): {"n": 0}}
+        report = _read({"behavioral1": _task(row)})
+        assert _unread_channels(report) == [TRIAGE_UNREAD_REQUESTS_CHANNEL]
+        bare = sandbox_channels(sandbox_document(report), TRIAGE_UNREAD_REQUESTS_CHANNEL)
+        assert bare["total"] == 1 and bare["rows"][0][TRIAGE_UNREAD_KINDS_FOLDED_KEY] == 1
