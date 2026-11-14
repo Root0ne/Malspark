@@ -2576,11 +2576,15 @@ the analyst whose name it is ("STATIC" the `static` analyst beside
 out, while its answer in force holds no claim of that number, it names the one
 analyst of the field the form fits whose answer holds the claim, and a form
 that fits several analysts and is none of their names names no one; a blocking
-line withdraws by rule only a claim it speaks to, one that shares a ledger id or
-an address with the clause of a reference naming it, whatever the reference's
-form (a number, a list or a range), and a claim it names without speaking to
-it stands as a claim no line named, with no mark from that line, the
-reference stated as not placed on it); and any other claim it neither writes again nor
+line withdraws by rule only a claim it speaks to: where a claim the line names,
+of any analyst, shares a ledger id or a value (an address, a number, as the
+restatement test counts values) with the whole line, its field left out, the
+line speaks only to the claims that share one, and where none does it speaks
+to every claim it names, a claim it reaches only through a range keeping the
+test of the range's clause; content words take no part
+(`revision_merge.claims_named_in_force`), and a claim it names without
+speaking to it stands, for that line, as a claim no line named, with no mark
+from that line, the reference stated as not placed on it); and any other claim it neither writes again nor
 withdraws stands unchanged, marked carried forward from that round
 (`ClaimEvidence.carried_since_round`, with `carried_contested_by` when a line
 that does not block named it, and `carried_beside` when a block of the revision
@@ -2630,20 +2634,28 @@ the answer in force's) and either a first-person withdrawing verb ("withdraw",
 "retract", "reject") stands right before the reference, or the reference opens
 the item or a sentence, or closes a list of claims, and later, with no other
 claim named in between, such a verb takes a pronoun ("I reject this.") or the
-reference is said "withdrawn", "retracted", "rejected" or "superseded" after a
-word of the passive, a mark or the item's start (`retry_merge.read_own_withdrawals`,
-the wordings declared there). Only an item that is unmistakably a withdrawal
-withdraws: it reads as nothing where a negation stands between the reference
-and the withdrawing word ("My claim 4 is not withdrawn"), an agent follows the
-withdrawing word ("rejected by the mediator"), a keeping or contrasting word
-stands anywhere after the reference ("I keep it", "but", "I disagree"), a
-conditional or a question mark stands in the sentences of the reference and
-the word ("If ev_0012 is wrong, I withdraw my claim 4"), the reference or the
-word stands inside a quotation or a code span, or the reference is a
-possessive ("my claim 4's critics") or followed by a part of the claim ("my
-claim 3 confidence"). The item must also speak to the claim, sharing a ledger
-id or an address with it as a blocking line must, unless the reference writes
-the round of the answer in force. A rejection of another analyst's claim
+reference is said "withdrawn", "retracted", "rejected", "superseded" or
+"replaced" after a word of the passive, a mark or the item's start
+(`retry_merge.read_own_withdrawals`, the wordings declared there). The
+reference is read under the numbering of the answer in force, the numbering
+the analyst was shown; one that states another round names no claim of it.
+Only an item that is unmistakably a withdrawal withdraws: it reads as nothing
+where a negation governs the withdrawing word (within three words before it,
+in its sentence, outside brackets and quotations: "My claim 4 is not
+withdrawn", while "My claim 2 (the name is not recovered). Withdrawn as
+stated." withdraws); a word of another's act has an agent other than the
+author after it ("rejected by the mediator", while "superseded by claim 7"
+and "rejected by me" withdraw); a word of reported speech stands between the
+reference and a withdrawn word ("TRIAGE says it is superseded"); a keeping or
+contrasting word ("I keep it", "but", "I disagree"; never a word of evidence
+or judgement such as "right" or "confirms") stands anywhere after the
+reference, except that the author's own verb on a pronoun in a later sentence
+("… my claim 17 says X, but ev_0109 shows Y. I reject this.") still
+withdraws; a conditional or a question mark stands in the sentences of the
+reference and the word, or, for that verb on a pronoun, in its own sentence;
+the reference or the word stands inside a quotation or a code span; or the
+reference is a possessive ("my claim 4's critics") or followed by a part of
+the claim ("my claim 3 confidence"). A rejection of another analyst's claim
 withdraws nothing, and every other item read is a doubt and withdraws nothing.
 A line that would count as a withdrawal not read exactly is not counted where
 it is a dispute item read here as one. The DISPUTES section opens at its label,
