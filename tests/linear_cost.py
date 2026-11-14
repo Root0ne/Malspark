@@ -12,10 +12,14 @@ that such a run is not the one the assertion reads.
   large call in turn (small, large, small, large, ...) so a slow stretch of
   the machine lands on both sizes rather than on one, keeps the best time of
   each size with the collector off, and holds the ratio of the best times
-  under the test's limit. Only when that ratio fails does it measure the
-  same pairs once more, keeps the best of every run, and fails only if the
-  ratio still does; the message gives both attempts. A quadratic reader is
-  over its limit on every pair, so a second attempt never passes it.
+  under the test's limit. Only when that ratio fails does it measure up to
+  :data:`ROUNDS` rounds of the same pairs in all, and passes as soon as one
+  round's own pairs are under the limit, or the best of every round taken
+  together is; the message gives every round. A round is judged on its own
+  pairs because a runner's speed drifts between rounds: the best small time
+  of a quick stretch over the best large time of a slow one reads a ratio no
+  pair of runs had. A quadratic reader is over its limit on every pair, so a
+  later round never passes it.
 * :func:`assert_scales` builds the two inputs from one size and a factor and
   holds them to :func:`assert_ratio` with a limit of :data:`SCALING_SLACK`
   times the factor (a quadratic reader takes ``factor`` times more).
@@ -70,6 +74,7 @@ except ImportError:  # Windows, whose default clock is the thread's anyway
 __all__ = [
     "FLOOR_SECONDS",
     "GRAINS",
+    "ROUNDS",
     "SCALING_SLACK",
     "TIME_RATIO_LIMIT",
     "assert_ratio",
@@ -90,6 +95,10 @@ TIME_RATIO_LIMIT = 8
 # A linear call on k times the input takes k times as long; up to this many
 # times that is noise and cache effects, a quadratic call takes k times more.
 SCALING_SLACK = 3.0
+
+# The rounds of pairs a ratio is read from before it fails: a passing first
+# round is the only one, a later round runs only when every one before failed.
+ROUNDS = 3
 
 # The least a small run may take: under it the clock's grain is the ratio, and
 # the measure fails rather than read it.
@@ -285,7 +294,10 @@ def assert_ratio(
     Where the default clock's tick is coarse (Windows), each timed run
     repeats both calls as often as it takes the small one to span
     :data:`GRAINS` ticks; the times and the floor are per call all the same.
-    Returns the best small and large times, per call.
+    A first round of ``repeats`` pairs that holds is the whole measure; one
+    that fails is followed by up to :data:`ROUNDS` rounds in all, each held
+    on its own pairs and on the best of every round so far.
+    Returns the best small and large times of the round that held, per call.
     """
     clocked = _clock_of(clock, whole_process)
 
@@ -301,26 +313,34 @@ def assert_ratio(
         times = _runs_to_span_the_clock(small, clocked)
         if times > 1:
             small, large, floor = repeated(small, times), repeated(large, times), floor * times
-    first_small, first_large = _best_pair(small, large, repeats, measure)
-    assert first_small >= FLOOR_SECONDS, (
-        f"the small run of {what} took {first_small * 1000:.2f} ms, under the "
+    rounds = [_best_pair(small, large, repeats, measure)]
+    assert rounds[0][0] >= FLOOR_SECONDS, (
+        f"the small run of {what} took {rounds[0][0] * 1000:.2f} ms, under the "
         f"{FLOOR_SECONDS * 1000:g} ms a ratio can be read from: grow the input"
     )
-    first_ratio = first_large / first_small
-    if first_large < limit * (first_small + floor):
-        return first_small / times, first_large / times
-    again_small, again_large = _best_pair(small, large, repeats, measure)
-    best_small, best_large = min(first_small, again_small), min(first_large, again_large)
-    ratio = best_large / best_small
+    pooled = rounds[0]
+    judged = [pooled]
+    while True:
+        for best_small, best_large in judged:
+            if best_large < limit * (best_small + floor):
+                return best_small / times, best_large / times
+        if len(rounds) == ROUNDS:
+            break
+        rounds.append(_best_pair(small, large, repeats, measure))
+        pooled = (min(s for s, _ in rounds), min(t for _, t in rounds))
+        judged = [rounds[-1], pooled]
     allowed = f"limit {limit:g}" + (f" plus {limit * floor * 1000:.1f} ms" if floor else "")
-    assert best_large < limit * (best_small + floor), (
-        f"{what} took {ratio:.1f} times as long, {allowed}: "
-        f"{first_small * 1000:.1f} ms to {first_large * 1000:.1f} ms "
-        f"({first_ratio:.1f} times) on the first {repeats} pairs, "
-        f"{again_small * 1000:.1f} ms to {again_large * 1000:.1f} ms on the next {repeats}"
+    named = ["on the first", *["on the next"] * (ROUNDS - 2), "on the last"]
+    read = [
+        f"{s * 1000:.1f} ms to {t * 1000:.1f} ms ({t / s:.1f} times) {name} {repeats}"
+        for name, (s, t) in zip(named, rounds, strict=True)
+    ]
+    raise AssertionError(
+        f"{what} took {min(t / s for s, t in [*rounds, pooled]):.1f} times as long, "
+        f"{allowed}: {read[0]} pairs, {', '.join(read[1:])}, "
+        f"{pooled[1] / pooled[0]:.1f} times on the best of all {ROUNDS * repeats}"
         + (f" (each run {times} calls)" if times > 1 else "")
     )
-    return best_small / times, best_large / times
 
 
 def assert_scales(

@@ -9,6 +9,7 @@ shared runner adds, written down, and the measure must read through it.
 
 from __future__ import annotations
 
+import random
 import time
 from collections.abc import Callable
 
@@ -16,6 +17,7 @@ import pytest
 
 from tests import linear_cost
 from tests.linear_cost import (
+    ROUNDS,
     TIME_RATIO_LIMIT,
     assert_ratio,
     assert_scales,
@@ -53,11 +55,12 @@ class TestOnTheCpuClock:
         small, large = assert_ratio(_linear(500_000), _linear(2_000_000), TIME_RATIO_LIMIT)
         assert small > 0.002 and large > small
 
-    def test_quadratic_work_four_times_larger_fails_and_says_both_attempts(self) -> None:
+    def test_quadratic_work_four_times_larger_fails_and_says_every_round(self) -> None:
         with pytest.raises(AssertionError) as failed:
             assert_ratio(_quadratic(2_300), _quadratic(9_200), TIME_RATIO_LIMIT)
         message = str(failed.value)
         assert "on the first 3 pairs" in message and "on the next 3" in message
+        assert "on the last 3" in message and "on the best of all 9" in message
 
     def test_assert_scales_passes_linear_and_fails_quadratic(self) -> None:
         assert_scales(_linear, 500_000, factor=8)
@@ -226,6 +229,14 @@ class TestUnderSimulatedLoad:
                 clock=over.clock,
             )
 
+    def test_quadratic_work_fails_after_every_round(self) -> None:
+        machine = _Machine(lambda run: 1.0)
+        with pytest.raises(AssertionError, match="on the best of all 9"):
+            assert_ratio(
+                machine.work(0.01), machine.work(0.16), TIME_RATIO_LIMIT, clock=machine.clock
+            )
+        assert machine.runs == 1 + 2 * 3 * ROUNDS
+
     def test_a_passing_ratio_takes_one_attempt(self) -> None:
         machine = _Machine(lambda run: 1.0)
         assert_ratio(machine.work(0.01), machine.work(0.04), TIME_RATIO_LIMIT, clock=machine.clock)
@@ -238,6 +249,99 @@ class TestUnderSimulatedLoad:
         busy = _Machine(lambda run: 3.0 if run == 0 else 1.0)
         assert assert_under(busy.work(0.5), 1.0, clock=busy.clock) == pytest.approx(0.5)
         assert busy.runs == 2
+
+
+def _by_round(drift: list[tuple[float, float]], jitter: list[float]) -> Callable[[int], float]:
+    """A load set per round of three pairs and per size, times a load of each run its own.
+
+    Run 0 is the warm-up; then each round is small, large, small, large ...,
+    and a round past the listed ones keeps the last one's drift.
+    """
+
+    def load(run: int) -> float:
+        if run == 0:
+            return 1.0
+        slowed = drift[min((run - 1) // 6, len(drift) - 1)][(run - 1) % 2]
+        return slowed * jitter[run % len(jitter)]
+
+    return load
+
+
+def _noisy(seed: int) -> Callable[[int], float]:
+    # A shared runner's speed, drawn once per seed: each round slows each size
+    # by up to a quarter (the CI record moved a best time by 22 per cent from
+    # one round to the next), and each run by up to a tenth more.
+    rng = random.Random(seed)
+    drift = [(rng.uniform(1.0, 1.25), rng.uniform(1.0, 1.25)) for _ in range(ROUNDS)]
+    return _by_round(drift, [rng.uniform(1.0, 1.1) for _ in range(64)])
+
+
+class TestOnANoisyRunner:
+    """The jitter a shared CI runner showed, laid on the runs by a clock the calls advance."""
+
+    def test_the_macos_record_of_a_ratio_its_second_round_held_passes(self) -> None:
+        # 43.9 ms to 541.2 ms on the first round (12.3 times), 53.7 ms to
+        # 529.5 ms on the next (9.9 times), limit 12: the best of both rounds
+        # taken together, 43.9 ms to 529.5 ms, reads 12.1 times, a ratio no
+        # round had, and failed the job.
+        machine = _Machine(_by_round([(1.0, 541.2 / 529.5), (53.7 / 43.9, 1.0)], [1.0]))
+        small, large = assert_ratio(
+            machine.work(0.0439), machine.work(0.5295), 12, clock=machine.clock
+        )
+        assert (small, large) == pytest.approx((0.0537, 0.5295))
+        assert machine.runs == 13
+
+    def test_the_macos_record_of_an_allowance_its_second_round_held_passes(self) -> None:
+        # Limit 15 plus 50 ms: 13.8 ms to 289.5 ms on the first round, 17.7 ms
+        # to 273.2 ms on the next, which holds on its own (under 315.5 ms);
+        # the best of both, 13.8 ms to 273.2 ms, is over its 257 ms.
+        machine = _Machine(_by_round([(1.0, 289.5 / 273.2), (17.7 / 13.8, 1.0)], [1.0]))
+        assert_ratio(
+            machine.work(0.0138), machine.work(0.2732), 15, floor=0.05 / 15, clock=machine.clock
+        )
+
+    def test_the_same_jitter_on_quadratic_work_fails(self) -> None:
+        for drift in ([(1.0, 541.2 / 529.5), (53.7 / 43.9, 1.0)], [(1.0, 1.06), (1.28, 1.0)]):
+            machine = _Machine(_by_round(drift, [1.0]))
+            with pytest.raises(AssertionError, match="on the best of all 9"):
+                assert_ratio(machine.work(0.01), machine.work(0.16), 8, clock=machine.clock)
+
+    def test_linear_work_near_its_limit_passes_whatever_the_seed(self) -> None:
+        # Ten times the cost against a limit of twelve: a quarter's drift on
+        # the large runs alone fails a round, so some seeds need a later one.
+        later = 0
+        for seed in range(500):
+            machine = _Machine(_noisy(seed))
+            assert_ratio(machine.work(0.01), machine.work(0.10), 12, clock=machine.clock)
+            later += machine.runs > 7
+        assert later >= 10, "the jitter fails a first round now and then"
+
+    def test_quadratic_work_fails_whatever_the_seed(self) -> None:
+        for seed in range(500):
+            machine = _Machine(_noisy(seed))
+            with pytest.raises(AssertionError):
+                assert_ratio(machine.work(0.01), machine.work(0.16), 8, clock=machine.clock)
+            assert machine.runs == 1 + 2 * 3 * ROUNDS
+
+    def test_on_a_coarse_clock_linear_work_passes_and_quadratic_work_fails(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # Windows' 15.6 ms tick over the simulated runner: each timed run
+        # repeats its call until it spans the ticks, every call jittered.
+        step = 0.015625
+        for seed in range(20):
+            rng = random.Random(seed)
+            machine = _Machine(lambda _run, rng=rng: rng.uniform(1.0, 1.25))
+
+            def coarse(machine: _Machine = machine) -> float:
+                return int(machine.clock() / step) * step
+
+            monkeypatch.setattr(linear_cost, "_clock_of", lambda _clock, _whole, c=coarse: c)
+            monkeypatch.setitem(linear_cost._GRAIN, coarse, step)
+            small, large = assert_ratio(machine.work(0.01), machine.work(0.10), 12)
+            assert 0.01 <= small < 0.0125 and 0.1 <= large < 0.125
+            with pytest.raises(AssertionError, match="each run 16 calls"):
+                assert_ratio(machine.work(0.01), machine.work(0.16), 8)
 
 
 def test_on_macos_the_clock_is_the_process_s_user_time(monkeypatch: pytest.MonkeyPatch) -> None:
