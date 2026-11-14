@@ -233,7 +233,7 @@ class TestAnItemThatSaysAnythingAgainstTheWithdrawalReadsAsNothing:
     )
     # Each item holds one reason alone to read it as nothing.
     ONE_REASON = (
-        ("a negation between", "My claim 2 (0x403962) is not withdrawn."),
+        ("a negation between", "My claim 2 (0x403962) does not read the call; it is withdrawn."),
         ("an agent", "My claim 2 (0x403962) is rejected by the mediator."),
         ("a keeping word after the word", "My claim 2 (0x403962) is superseded; I keep the name."),
         ("a contrasting word", "My claim 2 (0x403962) is withdrawn, yet the name is read."),
@@ -244,7 +244,12 @@ class TestAnItemThatSaysAnythingAgainstTheWithdrawalReadsAsNothing:
         ("a quoted verb", 'My claim 2 (0x403962): STATIC wrote "I reject this".'),
         ("a possessive", "I reject my claim 2's address 0x403962."),
         ("another's act", "My claim 2 (0x403962): peers rejected it."),
-        ("another claim between", "My claim 2 (0x403962) holds X. Static claim 9 is withdrawn."),
+        ("another claim between", "My claim 2 (0x403962) names X. Static claim 9 is withdrawn."),
+        ("a part of the claim", "My claim 2 detail (0x403962) is withdrawn."),
+        (
+            "an object, not a subject",
+            "Peer claim 9 contradicts my claim 2 (0x403962). I reject this.",
+        ),
         ("a word after the verb's reference", "I reject my claim 2 interpretation of 0x403962."),
     )
 
@@ -531,7 +536,7 @@ class TestAHostileDisputeCostsItsLength:
         assert [n for n, _s, _r in merge.withdrawn] == [2] and 3 in merge.replaced
 
     def test_a_reversed_range_withdraws_nothing(self) -> None:
-        assert self._merge("My claims 3-2 are withdrawn.").withdrawn == ()
+        assert self._merge("My claims 3-2 are withdrawn (0x403962).").withdrawn == ()
 
     def test_an_item_of_many_claim_mentions_is_read_in_linear_time(self) -> None:
         def build(size: int) -> Any:
