@@ -1106,7 +1106,7 @@ def merge_revision(
     not_spoken_to: list[tuple[int, str, int, str]] = []
     # Why the revision's reading left a claim it began unread, or "": then
     # nothing is withdrawn by rule (``held_unread``).
-    left_unread = _parse_left_unread(revision)
+    begun_unread = _parse_left_unread(revision)
     held_unread: list[tuple[int, str, tuple[int, ...], str]] = []
     for block in first:
         if block.number in written_again or block.number in withdrawn:
@@ -1119,11 +1119,11 @@ def merge_revision(
             # The revision did not restate it but argued for it in its
             # disputes: an answer, carried with the line that contested it.
             contested[block.number] = sorted({line for line, _b in lines})
-        elif spoken and left_unread:
+        elif spoken and begun_unread:
             # The revision began a claim the platform did not read: it may be
             # this one restated, so the line rule withdraws nothing.
             contested[block.number] = sorted({line for line, _b in lines})
-            held_unread.append((block.number, block.sentence, tuple(spoken), left_unread))
+            held_unread.append((block.number, block.sentence, tuple(spoken), begun_unread))
         elif spoken:
             ruled[block.number] = (
                 f"named by blocking line {_lines(spoken)} of the round-{int(revision_round)} "
