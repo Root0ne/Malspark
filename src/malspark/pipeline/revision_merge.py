@@ -120,6 +120,7 @@ from malspark.pipeline.retry_merge import (
     _WITHDRAW_OR_RETRACT_RE,
     _WITHDRAW_WORD_RE,
     _WITHDRAWING_OPENER_RE,
+    _parse_left_unread,
     line_key,
     read_own_withdrawals,
     read_withdrawals,
@@ -481,7 +482,11 @@ class RevisionMerge:
     because the one block that restates it states an address of it nowhere;
     ``restated_by`` ``(number, its number in the answer that stands of the
     block that replaces it)`` per claim in ``replaced``, also where that
-    block stands at another claim's place (:func:`_restated_best`).
+    block stands at another claim's place (:func:`_restated_best`);
+    ``held_unread`` ``(number, sentence, blocking lines, why)`` per claim the
+    line rule would have withdrawn, carried with its lines because the
+    revision began a claim the platform did not read
+    (``retry_merge._parse_left_unread``).
     """
 
     merged: Any | None = None
@@ -501,6 +506,7 @@ class RevisionMerge:
     numbering: tuple[tuple[int, int], ...] = ()
     beside: tuple[tuple[int, str, int, tuple[str, ...]], ...] = ()
     restated_by: tuple[tuple[int, int], ...] = ()
+    held_unread: tuple[tuple[int, str, tuple[int, ...], str], ...] = ()
 
     def sentences(self, name: str, revision_round: int) -> list[str]:
         """The run summary's sentences: the merge, each withdrawal, each unplaced reference."""
@@ -537,6 +543,8 @@ class RevisionMerge:
             )
         for number, sentence, reason in self.withdrawn_by_rule:
             out.append(rule_sentence(name, r, number, sentence, reason))
+        for number, sentence, lines, why in self.held_unread:
+            out.append(held_unread_sentence(name, r, number, sentence, lines, why))
         for number, sentence, line, reference in self.not_spoken_to:
             out.append(not_spoken_sentence(name, r, number, sentence, line, reference))
         for number, sentence, now, addresses in self.beside:
@@ -546,6 +554,17 @@ class RevisionMerge:
         for unread_reference in self.unplaced:
             out.append(unplaced_sentence(name, r, unread_reference))
         return out
+
+
+def held_unread_sentence(
+    name: str, revision_round: int, number: int, sentence: str, lines: Sequence[int], why: str
+) -> str:
+    """The sentence for a claim kept from the line rule by a claim the revision left unread."""
+    return defanged(
+        f'Claim {int(number)} of the {name} analyst\'s answer in force ("{sentence}") is carried '
+        f"with blocking line {_lines(lines)}: the round-{int(revision_round)} revision began a "
+        f"claim the platform did not read ({why}), so nothing is withdrawn by rule."
+    )
 
 
 def not_spoken_sentence(
@@ -1085,6 +1104,10 @@ def merge_revision(
     ruled: dict[int, str] = {}
     contested: dict[int, list[int]] = {}
     not_spoken_to: list[tuple[int, str, int, str]] = []
+    # Why the revision's reading left a claim it began unread, or "": then
+    # nothing is withdrawn by rule (``held_unread``).
+    left_unread = _parse_left_unread(revision)
+    held_unread: list[tuple[int, str, tuple[int, ...], str]] = []
     for block in first:
         if block.number in written_again or block.number in withdrawn:
             continue
@@ -1096,6 +1119,11 @@ def merge_revision(
             # The revision did not restate it but argued for it in its
             # disputes: an answer, carried with the line that contested it.
             contested[block.number] = sorted({line for line, _b in lines})
+        elif spoken and left_unread:
+            # The revision began a claim the platform did not read: it may be
+            # this one restated, so the line rule withdraws nothing.
+            contested[block.number] = sorted({line for line, _b in lines})
+            held_unread.append((block.number, block.sentence, tuple(spoken), left_unread))
         elif spoken:
             ruled[block.number] = (
                 f"named by blocking line {_lines(spoken)} of the round-{int(revision_round)} "
@@ -1135,6 +1163,7 @@ def merge_revision(
             after=len(kept_blocks),
             unplaced=unplaced,
             not_spoken_to=tuple(not_spoken_to),
+            held_unread=tuple(held_unread),
             owned=owned,
             restated_by=tuple(
                 sorted((n, revised[i].number) for n, i in replaced_by.items() if n in replaced)
@@ -1214,5 +1243,6 @@ def merge_revision(
         after=len(kept_blocks) + len(carried_blocks),
         unplaced=unplaced,
         not_spoken_to=tuple(not_spoken_to),
+        held_unread=tuple(held_unread),
         owned=owned,
     )
