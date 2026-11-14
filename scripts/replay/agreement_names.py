@@ -43,8 +43,12 @@ _KINDS = {
     "THE DEBATE'S MEDIATIONS, IN ROUND ORDER": "debate",
     "PASSAGES WRITTEN WITHOUT THE CODE": "claim-led",
 }
-_PASSAGE = re.compile(r"^- \[([^\]]+)\] (.*?)(?: \(read only\))?(?: \(cites [^)]*\))?: (.*)$")
+_PASSAGE = re.compile(
+    r"^- \[([^\]]+)\] (.*?)(?: \((?:read only|verbatim)\))?(?: \(cites [^)]*\))?: (.*)$"
+)
 _CLOSING = ("conclusion", "limitations")
+# Who wrote a passage the prompt marks (verbatim), as far as the prompt says (T-613).
+_VERBATIM = "its writer's own words, printed as written"
 # The ids the limitations paragraph's facts were shown under before the inventory's rows.
 _LIMITATION_FACTS = ("failed", "not_run", "recorded", "open", "inv")
 
@@ -93,8 +97,11 @@ def _passages(prompt: str) -> list[Any]:
         if not found or not kind:
             continue
         pid, label, text = found.groups()
-        read_only = "(read only)" in line.split(": ", 1)[0]
-        writable = kind in ("claim-led", "section 5") and not read_only
+        head = line.split(": ", 1)[0]
+        read_only = "(read only)" in head
+        # A text printed in its writer's own words is listed, never rewritten (T-613).
+        verbatim = _VERBATIM if "(verbatim)" in head else ""
+        writable = kind in ("claim-led", "section 5") and not read_only and not verbatim
         out.append(
             Passage(
                 id=pid,
@@ -103,6 +110,7 @@ def _passages(prompt: str) -> list[Any]:
                 kind=kind,
                 write=(lambda _text: None) if writable else None,
                 closing=pid in _CLOSING,
+                verbatim=verbatim,
             )
         )
     return out
