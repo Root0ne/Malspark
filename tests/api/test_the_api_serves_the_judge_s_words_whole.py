@@ -22,6 +22,7 @@ def test_the_full_report_carries_the_judge_s_text_whole() -> None:
         "passage": "judge.business_impact",
         "sentence": "It reaches 0x5c30 first.",
         "decision": "drop",
+        "sources": ["string_resolution"],
         "reason": "No source states it.",
     }
     apply_rows({"sentences": [row]}, passages_of(report))

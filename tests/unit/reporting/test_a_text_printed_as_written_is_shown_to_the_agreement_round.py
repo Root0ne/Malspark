@@ -173,10 +173,12 @@ def test_the_question_marks_each_and_says_its_ends_once() -> None:
     assert text.count("A passage marked (verbatim) prints") == 1
     assert (
         "A passage marked (verbatim) prints an analyst's or the judge's own words: list a "
-        "sentence of it only where a source states otherwise; never rewrite it: keep it naming "
-        'the source you read and found agreeing, with "quote": its words that state the same '
-        'thing, copied exactly, or drop it with "reason". If no answer for it passes the '
-        "checks, it is left out of the report, and the bundle prints it whole."
+        "sentence of it only where a source states otherwise; where it and a passage you may "
+        "rewrite disagree, list and mend that passage. Never rewrite a verbatim sentence: keep "
+        'it naming the source you read and found agreeing, with "quote": its words that state '
+        'the same thing, copied exactly, or drop it naming in "sources" the source it '
+        'contradicts, with "reason". If no answer for it passes the checks, it is left out of '
+        "the report, and the bundle prints it whole."
     ) in text
     assert "(read only)" not in text
 

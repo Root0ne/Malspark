@@ -515,13 +515,19 @@ class VerbatimText:
     """A text the analyst report prints in its writer's own words, under the id the
     agreement round shows it by (``section_agreement.passages_of``): an analyst's statement
     or claim sentence, the judge's note, reason or sentences. ``writer`` is
-    :data:`ANALYST_WRITER` or :data:`JUDGE_WRITER`; ``cites`` the ids printed with it."""
+    :data:`ANALYST_WRITER` or :data:`JUDGE_WRITER`; ``cites`` the ids printed with it;
+    ``subject`` what its place stands under, each a choice (the technique's id and name, the
+    judge's field), which a quote keeping a sentence of it with no subject of its own names.
+    ``ends`` is false for an agent's words the analyst report does not print, which the round
+    is shown as a source only, taking no end of its own (T-613)."""
 
     id: str
     label: str
     text: str
     writer: str
     cites: tuple[str, ...] = ()
+    subject: tuple[str, ...] = ()
+    ends: bool = True
 
 
 # The layouts of the renders :func:`verbatim_texts` reads, while it reads them.
@@ -1069,7 +1075,13 @@ class _Analyst:
         return None
 
     def _as_said(
-        self, pid: str, label: str, text: str, writer: str, cites: Iterable[Any] = ()
+        self,
+        pid: str,
+        label: str,
+        text: str,
+        writer: str,
+        cites: Iterable[Any] = (),
+        subject: Iterable[str] = (),
     ) -> tuple[str, int]:
         """``text``, which this report prints in its writer's own words under ``pid``, without
         each sentence of it the agreement question left out (``_Context.verbatim_left``), and
@@ -1078,11 +1090,25 @@ class _Analyst:
         from malspark.reporting.section_agreement import left_out_of
 
         self.shown.setdefault(self.notes.section, {})[pid] = VerbatimText(
-            pid, label, text, writer, tuple(str(i) for i in cites)
+            pid, label, text, writer, tuple(str(i) for i in cites), tuple(subject)
         )
         return left_out_of(text, self.ctx.verbatim_left.get(pid, ()))
 
-    def _judge_words(self, pid: str, label: str, printed: str) -> tuple[str, int]:
+    def _technique(self, technique_id: str) -> tuple[str, ...]:
+        """What a text printed under ``technique_id`` stands under: its id and its name."""
+        name = next(
+            (
+                str(cell.technique_name or "").strip()
+                for cell in self.report.capability_matrix
+                if cell.technique_id == technique_id
+            ),
+            "",
+        )
+        return tuple(word for word in (technique_id.strip(), name) if word)
+
+    def _judge_words(
+        self, pid: str, label: str, printed: str, technique_id: str
+    ) -> tuple[str, int]:
         """``printed``, a status or a note the platform writes around the judge's reasons
         (``judge_reasons.judge_reason_spans``), without each sentence of those reasons the
         agreement question left out, and how many were. Only the judge's own words are its
@@ -1095,7 +1121,14 @@ class _Analyst:
         if not spans:
             return printed, 0
         words = " ".join(printed[start:end] for start, end, _close in spans)
-        self._as_said(pid, label, words, JUDGE_WRITER, sorted(entry_ids_in(words)))
+        self._as_said(
+            pid,
+            label,
+            words,
+            JUDGE_WRITER,
+            sorted(entry_ids_in(words)),
+            self._technique(technique_id),
+        )
         left = self.ctx.verbatim_left.get(pid, ())
         if not left:
             return printed, 0
@@ -1937,41 +1970,61 @@ class _Analyst:
             lines.extend(["", *self._findings(self.ctx.verdict_findings)])
         return "\n".join([*lines, "", _behind("conclusion")])
 
-    # The judge's texts section 7 prints, by field, as the agreement round labels them.
+    # The judge's texts section 7 prints, by field, as the agreement round labels them, and
+    # the field's own name, which a text of it stands under.
     _JUDGE_TEXTS = {
-        "business_impact": "7. Conclusion, the judge's severity rationale",
-        "conclusion": "7. Conclusion, the judge's conclusion",
+        "business_impact": ("7. Conclusion, the judge's severity rationale", "business impact"),
+        "conclusion": ("7. Conclusion, the judge's conclusion", "conclusion"),
     }
 
     def _judge_said(self, name: str, text: str) -> str:
         """``text``, the judge's field ``name`` as section 7 prints it, without each sentence
         the agreement question left out, each counted (T-613)."""
+        label, field_name = self._JUDGE_TEXTS[name]
         said, cut = self._as_said(
-            f"judge.{name}",
-            self._JUDGE_TEXTS[name],
-            text,
-            JUDGE_WRITER,
-            sorted(entry_ids_in(text)),
+            f"judge.{name}", label, text, JUDGE_WRITER, sorted(entry_ids_in(text)), (field_name,)
         )
         self.left += cut
         return said
 
     def _judge_kept(self, kept: list[str], severity: Any, stored: Any) -> str:
-        """The judge's sentences section 7 keeps beside a composed conclusion, in order, each
-        under the field it stands in (:meth:`_judge_said`)."""
-        if not kept:
-            return ""
-        impact = severity.business_impact if severity is not None else ""
-        by_field = {
-            "business_impact": [s for s in kept if impact and s in impact],
+        """The judge's sentences section 7 keeps beside a composed conclusion, in their order,
+        each under the field it stands in (:meth:`_judge_said`), without each one the agreement
+        question left out. What of each field it does not print is shown to the round as a
+        source only (:meth:`_judge_unprinted`)."""
+        fields = {
+            "business_impact": severity.business_impact if severity is not None else "",
+            "conclusion": stored.text if stored is not None else "",
         }
+        impact = fields["business_impact"]
+        by_field = {"business_impact": [s for s in kept if impact and s in impact]}
         by_field["conclusion"] = [s for s in kept if s not in by_field["business_impact"]]
-        said = [
-            self._judge_said(name, " ".join(found)) for name, found in by_field.items() if found
-        ]
-        if said == [" ".join(found) for found in by_field.values() if found]:
-            return " ".join(kept)
-        return " ".join(part for part in said if part.strip())
+        standing: set[str] = set()
+        for name, found in by_field.items():
+            if found:
+                said = self._judge_said(name, " ".join(found))
+                standing.update(sentence for sentence in found if sentence in said)
+            self._judge_unprinted(name, fields[name], found)
+        return " ".join(sentence for sentence in kept if sentence in standing)
+
+    def _judge_unprinted(self, name: str, text: str, printed: list[str]) -> None:
+        """The sentences of the judge's field ``name`` that section 7 does not print, recorded
+        as a text the round is shown as a source only, which takes no end (T-613)."""
+        rest = [sentence for sentence in sentences(str(text or "")) if sentence not in printed]
+        if not rest:
+            return
+        label, field_name = self._JUDGE_TEXTS[name]
+        words = " ".join(rest)
+        pid = f"judge.{name}.unprinted"
+        self.shown.setdefault(self.notes.section, {})[pid] = VerbatimText(
+            pid,
+            f"{label}, not printed in the analyst report",
+            words,
+            JUDGE_WRITER,
+            tuple(sorted(entry_ids_in(words))),
+            (field_name,),
+            ends=False,
+        )
 
     # -- 8. detection ------------------------------------------------------
 
@@ -2330,6 +2383,7 @@ class _Analyst:
                 f"attack_note.{cell.technique_id.strip().upper()}",
                 f"ATT&CK table, the reason {cell.technique_id} is not published",
                 status_shown(cell.not_published, JUDGE_REASON_WIDTH),
+                cell.technique_id,
             )
             self.left += cut
             shown = (
@@ -2372,6 +2426,7 @@ class _Analyst:
                 f"attack_note.{technique_id.strip().upper()}",
                 f"ATT&CK table, the judge's note on {technique_id}",
                 judge_reasons_shown(note)[0],
+                technique_id,
             )
             self.left += cut
             if shown.strip():
@@ -2409,6 +2464,7 @@ class _Analyst:
             sentence,
             ANALYST_WRITER,
             ids,
+            self._technique(technique_id),
         )
         if cut:
             # Left out by the agreement question: the written procedure stands, or nothing,
@@ -2671,7 +2727,6 @@ class _Analyst:
                 new = [v for v in dict.fromkeys(_VALUE.findall(text)) if v not in have]
                 if len(new) < _NEW_VALUES:
                     continue
-                have.update(new)
                 # Each sentence of it the agreement question left out is counted with the
                 # rest (T-613).
                 text, cut = self._as_said(
@@ -2679,8 +2734,12 @@ class _Analyst:
                     f"Appendix, an analyst's statement on {cell.technique_id}",
                     text,
                     ANALYST_WRITER,
+                    (),
+                    self._technique(cell.technique_id),
                 )
                 left += cut
+                # Only what prints counts as printed: a statement left out whole counts none.
+                have.update(value for value in new if value in text)
                 if not text.strip():
                     continue
                 out.append(

@@ -4,7 +4,7 @@ Where the agreement round leaves out a sentence of a text printed in its writer'
 the analyst report, in Markdown and in HTML, prints the text without that sentence where it
 would have printed and counts it where it already counts what it leaves out: the appendix's
 own line for a statement, the section's line elsewhere. The bundle prints the text whole, and
-the round's record names the passage. Every other text prints as before (T-613). Every
+the round's record names the passage. Every other text prints as written (T-613). Every
 address, entry and name here is a neutral synthetic value.
 """
 
@@ -27,7 +27,13 @@ from tests.unit.reporting.test_a_text_printed_as_written_is_shown_to_the_agreeme
 def _dropped(pid: str, sentence: str) -> MalwareReport:
     """The report after a round that dropped ``sentence`` of ``pid``, its record stored."""
     report = report_of()
-    row = {"passage": pid, "sentence": sentence, "decision": "drop", "reason": "Not so."}
+    row = {
+        "passage": pid,
+        "sentence": sentence,
+        "decision": "drop",
+        "sources": ["string_resolution"],
+        "reason": "Not so.",
+    }
     _counts, found = apply_rows({"sentences": [row]}, passages_of(report))
     tally = ValidationTally()
     tally.record_unresolved(AGREEMENT_PRODUCER, found)
@@ -126,7 +132,7 @@ def test_a_judge_sentence_of_section_7_left_out_is_not_printed_and_is_counted() 
     _bundle_keeps(bundle, "judge.business_impact", IMPACT.split(" [ev_0103]")[0], "0x5c30 first")
 
 
-def test_a_round_that_lists_none_prints_every_text_as_before() -> None:
+def test_a_round_that_lists_none_prints_every_text_as_written() -> None:
     report = report_of()
     before = _printed(report)
     apply_rows({"sentences": []}, passages_of(report))

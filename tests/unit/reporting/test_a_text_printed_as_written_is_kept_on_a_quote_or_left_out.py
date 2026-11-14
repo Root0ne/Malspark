@@ -101,8 +101,9 @@ def test_a_keep_on_no_passing_quote_leaves_it_out_and_records_it() -> None:
     assert [v.code for v in asked] == [KEEP_UNQUOTED_CODE]
     assert asked[0].message.endswith(
         'keep it naming the source you read and found agreeing, with "quote": its words that '
-        'state the same thing, copied exactly, or drop it with "reason". If no answer for it '
-        "passes the checks, it is left out of the report, and the bundle prints it whole."
+        'state the same thing, copied exactly, or drop it naming in "sources" the source it '
+        'contradicts, with "reason". If no answer for it passes the checks, it is left out of '
+        "the report, and the bundle prints it whole."
     )
     assert "rewrite" not in asked[0].message.split(" but ", 1)[1]
     assert counts["dropped"] == 1 and counts["kept"] == 0
@@ -121,7 +122,13 @@ def test_a_drop_leaves_the_one_sentence_out_and_the_text_stays_whole() -> None:
     report = report_of()
     counts, found = _answer(
         report,
-        _row("statements.T1057.1", _SECOND, "drop", reason="Section 5 names no such compare."),
+        _row(
+            "statements.T1057.1",
+            _SECOND,
+            "drop",
+            sources=["string_resolution"],
+            reason="Section 5 names no such compare.",
+        ),
     )
 
     assert counts["dropped"] == 1
@@ -147,9 +154,9 @@ def test_a_rewrite_is_refused_offering_a_keep_or_a_drop_and_is_no_keep() -> None
     assert asked[0].message == (
         "row 1: judge.business_impact prints the judge's own words, printed as written and is "
         'never rewritten: keep it naming the source you read and found agreeing, with "quote": '
-        'its words that state the same thing, copied exactly, or drop it with "reason". If no '
-        "answer for it passes the checks, it is left out of the report, and the bundle prints "
-        "it whole."
+        'its words that state the same thing, copied exactly, or drop it naming in "sources" the '
+        'source it contradicts, with "reason". If no answer for it passes the checks, it is left '
+        "out of the report, and the bundle prints it whole."
     )
     assert counts["rewritten"] == 0 and counts["dropped"] == 1
     assert [(v.code, v.subject) for v in found] == [(DROPPED_CODE, "judge.business_impact")]
@@ -166,7 +173,8 @@ def test_a_keep_naming_no_source_is_refused_and_leaves_it_out() -> None:
     assert [v.code for v in asked] == [UNKNOWN_SOURCE_CODE]
     assert asked[0].message.startswith(
         "row 1 names no source. Name the ids of the sources you read for the sentence of "
-        "statements.T1057.1, or, leaving it out, give the reason."
+        'statements.T1057.1, or, leaving it out, name in "sources" the source it contradicts: '
+        "only that leaves it out."
     )
     assert counts["dropped"] == 1
     assert _left(report) == [(DROPPED_CODE, "statements.T1057.1", _SECOND)]

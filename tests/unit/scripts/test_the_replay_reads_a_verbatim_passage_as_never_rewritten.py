@@ -2,7 +2,7 @@
 
 A stored prompt shows a text printed in its writer's own words marked (verbatim): the
 replay's reading of the prompt keeps its label and text, and gives it no writer, as the round
-does (T-613). A stored prompt written before the mark reads as before. Every value here is a
+does (T-613). A stored prompt with no mark reads with no such passage. Every value here is a
 neutral synthetic one.
 """
 
@@ -34,3 +34,42 @@ def test_a_verbatim_passage_is_read_with_no_writer_and_its_text_whole() -> None:
     assert statement.write is None and statement.verbatim
     assert shown["conclusion"].write is not None and not shown["conclusion"].verbatim
     assert shown["string_resolution"].write is not None
+
+
+def test_a_cell_s_place_label_is_rebuilt_from_its_identity() -> None:
+    from malspark.reporting.section_agreement import place_labels
+    from tests.unit.reporting.test_a_cell_with_no_subject_is_kept_only_on_its_own_field import (
+        _report,
+    )
+
+    prompt = "\n".join(
+        [
+            "PASSAGES WRITTEN WITHOUT THE CODE",
+            "---------------------------------",
+            "- [communications.2.encryption] 5. Technical analysis, channel row 2, encryption: "
+            '"Not established."',
+        ]
+    )
+    (cell,) = _passages(prompt, place_labels(_report()))
+
+    assert cell.place_label == (("encryption",), ("DNS channel", "channel 2"))
+    assert _passages(prompt)[0].place_label is None
+
+
+def test_a_source_only_passage_is_read_as_a_source_with_its_text_whole() -> None:
+    prompt = "\n".join(
+        [
+            "PASSAGES WRITTEN WITHOUT THE CODE",
+            "---------------------------------",
+            "- [judge.business_impact.unprinted] 7. Conclusion, the judge's severity rationale, "
+            "not printed in the analyst report (verbatim, a source only) (cites ev_0103): "
+            '"The loader checks for a debugger [ev_0103]."',
+        ]
+    )
+    (source,) = _passages(prompt)
+
+    assert source.label == (
+        "7. Conclusion, the judge's severity rationale, not printed in the analyst report"
+    )
+    assert source.text == "The loader checks for a debugger [ev_0103]."
+    assert source.source_only and source.verbatim and source.write is None

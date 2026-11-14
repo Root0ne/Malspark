@@ -8776,6 +8776,15 @@ def make_report_node(
             except Exception as exc:  # noqa: BLE001
                 logger.warning("report_node: detection rule generation failed (%s).", exc)
 
+        # The texts the finished analyst report prints in their writer's own words that the
+        # agreement round was not shown, counted on its record (T-613).
+        try:
+            from malspark.reporting.section_agreement import record_verbatim_unseen
+
+            record_verbatim_unseen(report)
+        except Exception as exc:  # noqa: BLE001 — a count never costs the report
+            logger.warning("report_node: the unseen verbatim texts were not counted (%s).", exc)
+
         # Post-pipeline FP linter. Run after every other
         # mutation has happened (narrative + detection sigs + STIX dump)
         # so the linter sees the exact payload a downstream consumer

@@ -29,6 +29,7 @@ import ast
 import json
 import re
 import sys
+from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
 
@@ -44,7 +45,8 @@ _KINDS = {
     "PASSAGES WRITTEN WITHOUT THE CODE": "claim-led",
 }
 _PASSAGE = re.compile(
-    r"^- \[([^\]]+)\] (.*?)(?: \((?:read only|verbatim)\))?(?: \(cites [^)]*\))?: (.*)$"
+    r"^- \[([^\]]+)\] (.*?)(?: \((?:read only|verbatim|verbatim, a source only)\))?"
+    r"(?: \(cites [^)]*\))?: (.*)$"
 )
 _CLOSING = ("conclusion", "limitations")
 # Who wrote a passage the prompt marks (verbatim), as far as the prompt says (T-613).
@@ -82,9 +84,11 @@ def _unquoted(text: str) -> str:
     return read[0] if read else text
 
 
-def _passages(prompt: str) -> list[Any]:
+def _passages(prompt: str, labels: Mapping[str, Any] | None = None) -> list[Any]:
     """The passages the prompt shows, each as the round built it: its id, label, text,
-    kind, and whether it may be rewritten (a writable one carries a no-op writer)."""
+    kind, and whether it may be rewritten (a writable one carries a no-op writer). The
+    prompt shows no place label: each is rebuilt from the passage's identity, its id in the
+    stored report (``labels``, ``section_agreement.place_labels``, T-613)."""
     from malspark.reporting.section_agreement import Passage
 
     kind = ""
@@ -100,7 +104,9 @@ def _passages(prompt: str) -> list[Any]:
         head = line.split(": ", 1)[0]
         read_only = "(read only)" in head
         # A text printed in its writer's own words is listed, never rewritten (T-613).
-        verbatim = _VERBATIM if "(verbatim)" in head else ""
+        verbatim = _VERBATIM if "(verbatim" in head else ""
+        # An agent's words the analyst report does not print: a source only (T-613).
+        source_only = "(verbatim, a source only)" in head
         writable = kind in ("claim-led", "section 5") and not read_only and not verbatim
         out.append(
             Passage(
@@ -111,6 +117,8 @@ def _passages(prompt: str) -> list[Any]:
                 write=(lambda _text: None) if writable else None,
                 closing=pid in _CLOSING,
                 verbatim=verbatim,
+                place_label=(labels or {}).get(pid),
+                source_only=source_only,
             )
         )
     return out
@@ -161,11 +169,12 @@ def read_run(run: Path) -> dict[str, Any]:
         _stale_calls,
         generic_words,
         held_limitation_sentences,
+        place_labels,
         redone_calls_named,
     )
 
     prompt = _request_text(run / "worker.log")
-    shown = _passages(prompt)
+    shown = _passages(prompt, place_labels(_report(run, "")))
     ledger = _ledger(run)
     found = ledger_facts(ledger)
     names = run_names(ledger, found.image_bases)

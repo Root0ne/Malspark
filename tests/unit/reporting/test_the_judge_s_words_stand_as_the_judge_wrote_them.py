@@ -59,6 +59,7 @@ def test_no_answer_rewrites_a_judge_text_or_touches_the_verdict() -> None:
             "passage": "attack_note.T1622",
             "sentence": NOTE_WORDS,
             "decision": "drop",
+            "sources": ["string_resolution"],
             "reason": "No.",
         },
         {
@@ -83,12 +84,14 @@ def test_the_bundle_and_the_stored_report_keep_the_judge_s_words_whole() -> None
             "passage": "judge.business_impact",
             "sentence": "It reaches 0x5c30 first.",
             "decision": "drop",
+            "sources": ["string_resolution"],
             "reason": "No.",
         },
         {
             "passage": "attack_note.T1055",
             "sentence": REASON_WORDS,
             "decision": "drop",
+            "sources": ["string_resolution"],
             "reason": "No.",
         },
     ]
