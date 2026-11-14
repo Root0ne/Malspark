@@ -9035,6 +9035,22 @@ _VERBATIM_FIELDS = frozenset({"value", "endpoints"})
 _CITING_FIELDS = ("evidence_refs", "evidence_ids", "evidence_ref")
 
 
+def _answer_failed(entry: Any) -> bool:
+    """Whether a ledger entry's call failed, or its answer only carries a failure.
+
+    A call the ledger filed as failed, or an answer that is an error envelope
+    in any shape a tool writes one (``tools.errors.error_parts``) or a line of
+    prose that only says the call failed (``core.undeclared_tools.prose_error``).
+    """
+    from malspark.core.undeclared_tools import prose_error
+    from malspark.tools.errors import error_parts
+
+    if not getattr(entry, "ok", True):
+        return True
+    output = str(getattr(entry, "output", "") or "")
+    return error_parts(output) is not None or prose_error(output) is not None
+
+
 @dataclass(frozen=True)
 class EntryTexts:
     """Each ledger entry's text as this run holds it, lower-cased, and the tool behind it.
@@ -9055,6 +9071,9 @@ class EntryTexts:
     # for the model or trimmed by the byte budget. A value absent from one of
     # them may be in the part that is not here, so no absence is read off it.
     partial: frozenset[str] = frozenset()
+    # The entries whose call failed or whose answer is an error envelope
+    # (:func:`_answer_failed`): what they hold is the failure's text.
+    failed: frozenset[str] = frozenset()
     # The run's sandbox items (``analysis.sandbox_sections.ItemCitations``): a
     # cited item is read through its own text, as an entry is through its
     # answer. Never in :meth:`holding` or :meth:`may_hold`, which offer entries.
@@ -9091,6 +9110,7 @@ class EntryTexts:
         words: dict[str, frozenset[str]] = {}
         entries: dict[str, Any] = {}
         partial: set[str] = set()
+        failed: set[str] = set()
         for entry in ledger:
             written = str(getattr(entry, "id", "") or "").strip()
             entry_id = written.lower()
@@ -9108,6 +9128,8 @@ class EntryTexts:
             text = text or str(getattr(entry, "output", "") or "").lower()
             if getattr(entry, "truncated", False):
                 partial.add(entry_id)
+            if _answer_failed(entry):
+                failed.add(entry_id)
             if text:
                 texts[entry_id] = text
                 tools[entry_id] = str(getattr(entry, "tool", "") or "")
@@ -9118,6 +9140,7 @@ class EntryTexts:
             tools.pop(repeat, None)
             words.pop(repeat, None)
             partial.discard(repeat)
+            failed.discard(repeat)
         for repeat, holder in holders.items():
             if holder and holder in texts:
                 texts[repeat] = texts[holder]
@@ -9125,8 +9148,15 @@ class EntryTexts:
                 words[repeat] = words[holder]
             if holder in partial:
                 partial.add(repeat)
+            if holder in failed:
+                failed.add(repeat)
         return cls(
-            texts=texts, tools=tools, words=words, entries=entries, partial=frozenset(partial)
+            texts=texts,
+            tools=tools,
+            words=words,
+            entries=entries,
+            partial=frozenset(partial),
+            failed=frozenset(failed),
         )
 
     def words_of(self, entry_id: str) -> frozenset[str]:
@@ -9943,6 +9973,10 @@ def cited_id_violations(payload: Any, entries: EntryTexts | None) -> list[Violat
     nothing is said here: whether an id no entry holds should be cited is
     another question.
 
+    An entry whose call failed, or whose answer is an error envelope, holds
+    nothing here (:attr:`EntryTexts.failed`): it is never offered, and citing
+    it holds no id.
+
     Not asked here: a row citing no entry the run holds text for, a row with
     a cited entry known to be partial (the id may be in the part that is not
     here), and an id no text can be said to hold (:func:`decidable`). The id
@@ -9969,26 +10003,30 @@ def cited_id_violations(payload: Any, entries: EntryTexts | None) -> list[Violat
             cited = [ref for ref in _ids_in(row.get("evidence_refs")) if entries.has_text(ref)]
             if not cited or any(ref in entries.partial for ref in cited):
                 continue
+            # A failed call holds nothing: its text is the failure's.
+            answered = [ref for ref in cited if ref not in entries.failed]
             try:
                 if index in numbered:
                     number = numbered[index]
                     if any(
                         number in entries.operands(ref) or entries.code_not_read(ref)
-                        for ref in cited
+                        for ref in answered
                     ):
                         continue
                     holders = [
                         ref
                         for ref, values in chosen.items()
-                        if number in values and ref not in cited
+                        if number in values and ref not in cited and ref not in entries.failed
                     ]
                 else:
                     if not decidable(written) or any(
-                        entries.holds(ref, written, fields=True) for ref in cited
+                        entries.holds(ref, written, fields=True) for ref in answered
                     ):
                         continue
                     holders = [
-                        ref for ref in entries.holding(written, fields=True) if ref not in cited
+                        ref
+                        for ref in entries.holding(written, fields=True)
+                        if ref not in cited and ref not in entries.failed
                     ]
             except (ValueError, OverflowError, RecursionError) as exc:
                 # An id no reader can take is not decidable: nothing is said of it.

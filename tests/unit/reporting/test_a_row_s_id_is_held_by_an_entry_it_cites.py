@@ -4,7 +4,7 @@ A command row states the id the operator sends and cites entries, and nothing
 compared that id with what the cited entries hold. The rule: a number is held
 by a cited entry whose text writes it as a compared operand (an equality test,
 a case label, a compare instruction), any other id by a cited entry whose text
-writes it whole. A number none of its cited
+writes it whole; a failed call holds nothing. A number none of its cited
 entries holds is asked about only with the entry whose one compared expression
 holds the most of the table's numbers, and not when a cited entry is code the
 reader cannot read; any other id with every entry that writes it. A row kept
@@ -277,6 +277,35 @@ class TestTheEntryOfferedForANumber:
         payload = _commands(("4", ["ev_0001"]), ("download", ["ev_0001"]))
 
         assert cited_id_violations(payload, _ledger(self.HANDLER_9)) == []
+
+
+class TestAFailedCallHoldsNothing:
+    def _texts(self) -> EntryTexts:
+        return EntryTexts.from_ledger(
+            [
+                _entry("ev_0001", "strings", json.dumps({"strings": ["ERROR", "OK"]})),
+                _entry("ev_0002", "decompile_function", json.dumps({"code": HANDLER})),
+                LedgerEntry(
+                    id="ev_0003", agent="a", server="s", tool="yara_scan", ok=False,
+                    error="ERROR: rules not loaded", output="ERROR: rules not loaded",
+                ),
+                _entry("ev_0004", "list_imports", json.dumps({"error": "ERROR: no program"})),
+                _entry("ev_0005", "get_info", "Error: binary not loaded"),
+            ]
+        )  # fmt: skip
+
+    def test_a_failed_call_or_an_error_envelope_is_not_offered(self) -> None:
+        (found,) = cited_id_violations(_commands(("ERROR", ["ev_0002"])), self._texts())
+
+        assert "holds it in ev_0001 (strings)." in found.message
+        for failed in ("ev_0003", "ev_0004", "ev_0005"):
+            assert failed not in found.message
+
+    @pytest.mark.parametrize("cited", ["ev_0003", "ev_0004", "ev_0005"])
+    def test_citing_one_does_not_hold_the_id(self, cited: str) -> None:
+        (found,) = cited_id_violations(_commands(("ERROR", [cited])), self._texts())
+
+        assert "ev_0001 (strings)" in found.message
 
 
 class TestWhatIsNotAsked:
