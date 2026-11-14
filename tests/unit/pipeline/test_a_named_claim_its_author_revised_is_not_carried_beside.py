@@ -237,7 +237,7 @@ class TestAnItemThatSaysAnythingAgainstTheWithdrawalReadsAsNothing:
     # Each item holds one reason alone to read it as nothing.
     ONE_REASON = (
         ("a negation right before the word", "My claim 2 (0x403962) is not now withdrawn."),
-        ("a negation before the verb", "My claim 2 (0x403962) holds X. No, I reject this."),
+        ("a negation before the verb", "My claim 2 (0x403962) holds X. Not that I reject this."),
         ("a reported word", "My claim 2 (0x403962): TRIAGE says it is superseded."),
         (
             "another's act by an agent",
@@ -331,6 +331,55 @@ class TestTheAuthorsOwnWithdrawalIsRead:
             assert [c[:2] for c in read_own_withdrawals([dispute], 2).claims] == [("2", "2")], (
                 dispute
             )
+
+
+class TestADefenceNeverReadsAsAWithdrawal:
+    DEFENCES = (
+        # A withdrawn word with no mark or end word after it: an adjective.
+        "My claim 4 is correct. Rejected readings: STATIC's.",
+        "My claim 2 (0x403962). Rejected readings of ev_0109 are the peers'.",
+        # A word that affirms the claim, right before or after the reference.
+        "My claim 2 (0x403962) is correct; the line's reading is superseded.",
+        "ev_0109 supports my claim 2 (0x403962); the old reading is withdrawn.",
+        "My claim 2 (0x403962) remains valid. Withdrawn readings are the peers'.",
+    )
+
+    def test_each_reads_as_nothing(self) -> None:
+        for dispute in self.DEFENCES:
+            assert read_own_withdrawals([dispute], 2).claims == (), dispute
+
+    def test_an_affirming_word_on_something_else_blocks_nothing(self) -> None:
+        for dispute in (
+            "TRIAGE is right; my claim 2 (0x403962) is withdrawn.",
+            "My claim 2 (0x403962) is withdrawn: the peers' reading is correct.",
+            "My claims 1 and 2 are withdrawn and replaced by claims 3 and 4 above.",
+        ):
+            assert read_own_withdrawals([dispute], 2).claims != (), dispute
+
+
+class TestAWithdrawalTheReaderMustRead:
+    def test_a_negation_in_another_clause_governs_nothing(self) -> None:
+        dispute = "My own claim 2 said the write step was not shown, and I withdraw it."
+
+        assert [c[:2] for c in read_own_withdrawals([dispute], 2).claims] == [("2", "2")]
+
+    def test_a_negation_in_the_words_own_clause_still_governs(self) -> None:
+        dispute = "My claim 2 (0x403962), as written, is not now withdrawn."
+
+        assert read_own_withdrawals([dispute], 2).claims == ()
+
+    def test_a_reporting_word_whose_subject_is_the_reference_blocks_nothing(self) -> None:
+        dispute = (
+            "TRIAGE claim 12 and my own claim 2 say the sample launches its own DLL. Rejected. "
+            "The only callers pass AppData paths."
+        )
+
+        assert [c[:2] for c in read_own_withdrawals([dispute], 2).claims] == [("2", "2")]
+
+    def test_anothers_reported_speech_still_blocks(self) -> None:
+        dispute = "My claim 2 (0x403962): TRIAGE says it is superseded."
+
+        assert read_own_withdrawals([dispute], 2).claims == ()
 
 
 class TestAnOwnReferenceIsReadUnderTheNumberingInForce:
@@ -608,6 +657,8 @@ class TestAHostileDisputeCostsItsLength:
             "My claim 1 was rejected x by y, ",
             "My claim 1, STATIC says, is superseded. I reject it. ",
             "No, not never my claim 1 is withdrawn ",
+            "my claim 1 is correct, ev_1 supports my claim 1 ",
+            "my claim 1 says x, not y, z: ",
         )
         for unit in units:
 

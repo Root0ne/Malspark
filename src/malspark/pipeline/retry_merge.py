@@ -154,6 +154,9 @@ OWN_REPORTING_WORDS = (
 OWN_NEGATING_WORDS = ("not", "never", "no", "nothing", "none", "neither", "nor", "cannot")
 OWN_NEGATING_ENDINGS = ("n't", "n’t")
 OWN_NEGATION_REACH = 3
+# - the marks that end a clause: a negation before one governs nothing after
+#   it ("... was not shown, and I withdraw it");
+OWN_CLAUSE_MARKS = (",", ";", ":")
 OWN_BRACKETS = (("(", ")"), ("[", "]"))
 # - the words of another's act, and the word that names its agent within a
 #   few words after one: someone else's act on the claim is not the
@@ -196,6 +199,23 @@ OWN_POSSESSIVE_ENDINGS = ("'s", "’s")
 #   pronoun: a mark, or one of these words. Anything else ("I reject that
 #   wording") withdraws a part of the claim, not the claim;
 OWN_CLAIM_ENDS = ("as", "because", "since", "outright", "entirely", "in", "too", "also")
+# - what may follow a word that says it withdrawn: a mark, a word of
+#   :data:`OWN_CLAIM_ENDS` or one of these words ("withdrawn as stated",
+#   "superseded by claim 7", "withdrawn and replaced"). Any other word makes
+#   it an adjective before a noun ("Rejected readings: ..."), and withdraws
+#   nothing;
+OWN_WITHDRAWN_ENDS = ("by", "and", "for")
+# - the words that affirm the claim, and the copulas that may stand between
+#   one and the reference: one right before or right after the reference,
+#   with nothing else between, makes the item a defence, and a defence
+#   withdraws nothing ("my claim 4 is correct", "ev_0012 supports my claim
+#   4"). The same word said of something else ("TRIAGE is right") blocks
+#   nothing;
+OWN_AFFIRMING_WORDS = (
+    "correct", "right", "valid", "accurate", "sound", "true", "confirmed", "supported", "upheld",
+    "confirms", "supports", "upholds", "confirm", "support", "uphold",
+)  # fmt: skip
+OWN_COPULAS = ("is", "are", "was", "were", "be", "been", "remains", "stays", "still")
 # - the words that, right after the reference, name a part of the claim ("my
 #   earlier claim 3 confidence of 0.60", "my claim 6 detail that ..."): a
 #   doubt.
@@ -226,6 +246,19 @@ _OWN_VERB = rf"\b(?:I|we)\s++(?:now\s++|also\s++|hereby\s++)?(?:{'|'.join(OWN_WI
 _OWN_VERB_BEFORE_RE = re.compile(rf"{_OWN_VERB}\s*+$", re.IGNORECASE)
 _OWN_END = rf"[\s*_`]*+(?:$|[.,;:()\[\]\"'“”—–-]|(?:{'|'.join(OWN_CLAIM_ENDS)})\b)"
 _OWN_CLAIM_END_RE = re.compile(_OWN_END, re.IGNORECASE)
+_OWN_WITHDRAWN_ENDS_ALL = "|".join((*OWN_CLAIM_ENDS, *OWN_WITHDRAWN_ENDS))
+_OWN_WITHDRAWN_END_RE = re.compile(
+    rf"[\s*_`]*+(?:$|[.,;:()\[\]\"'“”—–-]|(?:{_OWN_WITHDRAWN_ENDS_ALL})\b)", re.IGNORECASE
+)
+_OWN_COPULA = rf"(?:(?:{'|'.join(OWN_COPULAS)})[\s*_`]++)*+"
+_OWN_AFFIRMING = rf"(?:{'|'.join(OWN_AFFIRMING_WORDS)})\b"
+# An affirming word right after the reference, a bracket and copulas between.
+_OWN_AFFIRMED_AFTER_RE = re.compile(
+    rf"[\s*_`]*+(?:\([^()]{{0,{OWN_LIST_WINDOW}}}+\)[\s*_`]*+)?{_OWN_COPULA}{_OWN_AFFIRMING}",
+    re.IGNORECASE,
+)
+# An affirming word right before the reference, copulas between.
+_OWN_AFFIRMED_BEFORE_RE = re.compile(rf"\b{_OWN_AFFIRMING}[\s*_`]++{_OWN_COPULA}$", re.IGNORECASE)
 _OWN_CLAIM_PART_RE = re.compile(rf"[\s*_`]*+(?:{'|'.join(OWN_CLAIM_PARTS)})\b", re.IGNORECASE)
 # A verb with a pronoun after the reference, or a word that says it withdrawn.
 _OWN_WITHDRAWN_AFTER_RE = re.compile(
@@ -248,6 +281,12 @@ _OWN_REPORTING_RE = re.compile(rf"\b(?:{'|'.join(OWN_REPORTING_WORDS)})\b", re.I
 _OWN_NEGATING_WORD_RE = re.compile(
     rf"(?:{'|'.join(OWN_NEGATING_WORDS)})"
     rf"|[\w'’]*(?:{'|'.join(map(re.escape, OWN_NEGATING_ENDINGS))})",
+    re.IGNORECASE,
+)
+# A reporting word right after the reference or its list: its subject is the claim.
+_OWN_SELF_REPORT_RE = re.compile(
+    rf"[\s*_`]*+(?:\([^()]{{0,{OWN_LIST_WINDOW}}}+\)[\s*_`]*+)?"
+    rf"(?:{'|'.join(OWN_REPORTING_WORDS)})\b",
     re.IGNORECASE,
 )
 # A word, for the few words before the withdrawing word a negation is read in.
@@ -376,10 +415,13 @@ def _negation_governs(
 ) -> bool:
     """Whether a negation stands among the few words right before ``at``.
 
-    Within :data:`OWN_NEGATION_REACH` words, in the sentence that starts at
-    ``sentence_start``, and outside ``aside`` (brackets and quotations).
+    Within :data:`OWN_NEGATION_REACH` words, in the clause that holds ``at``
+    (the sentence that starts at ``sentence_start``, cut at the last mark of
+    :data:`OWN_CLAUSE_MARKS` before ``at``), and outside ``aside`` (brackets
+    and quotations).
     """
     low = max(sentence_start, at - _OWN_NEGATION_WINDOW)
+    low = max(low, *(item.rfind(mark, low, at) + 1 for mark in OWN_CLAUSE_MARKS))
     words = list(_WORD_RE.finditer(item, low, at))[-OWN_NEGATION_REACH:]
     return any(
         _OWN_NEGATING_WORD_RE.fullmatch(word.group()) and not _inside(aside, word.start())
@@ -503,6 +545,8 @@ def read_own_withdrawals(items: Sequence[str], round_in_force: int | None) -> Ow
                 _OWN_POSSESSIVE_RE.match(item, end)
                 or _OWN_CLAIM_PART_RE.match(item, end)
                 or _inside(quoted, start)
+                or _OWN_AFFIRMED_AFTER_RE.match(item, end)
+                or _OWN_AFFIRMED_BEFORE_RE.search(item, window, start)
             ):
                 word = None
             elif verb := _OWN_VERB_BEFORE_RE.search(item, window, start):
@@ -512,13 +556,19 @@ def read_own_withdrawals(items: Sequence[str], round_in_force: int | None) -> Ow
                 at = bisect.bisect_left(said_at, end)
                 listed = _OWN_LIST_GOES_ON_RE.match(item, end, min(size, end + OWN_LIST_WINDOW))
                 list_end = listed.end() if listed is not None else end
+                # A reporting word whose subject is the reference itself, or
+                # the list it ends ("my claim 16 say ..."), describes the
+                # claim: reported speech is read after it.
+                described = _OWN_SELF_REPORT_RE.match(item, list_end)
+                reported_from = described.end() if described is not None else end
                 if at < len(said):
                     word_at, word_end, passive = said[at]
                     if not _any_between(others, list_end, word_at) and not (
                         passive
                         and (
                             _any_between(acted_at, end, word_end)
-                            or _any_between(reported_at, end, word_at)
+                            or _any_between(reported_at, reported_from, word_at)
+                            or not _OWN_WITHDRAWN_END_RE.match(item, word_end)
                             or not _OWN_PASSIVE_BEFORE_RE.search(
                                 item, max(0, word_at - OWN_CLAIM_BEFORE_WINDOW), word_at
                             )
