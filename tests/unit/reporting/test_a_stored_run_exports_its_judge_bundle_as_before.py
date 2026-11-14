@@ -18,7 +18,10 @@ import re
 import pytest
 
 from malspark.reporting.models import MalwareReport
-from tests.unit.reporting.test_an_entry_without_a_source_is_read_as_before import _benchmark
+from tests.unit.reporting.test_an_entry_without_a_source_is_read_as_before import (
+    _benchmark,
+    stored_ledger_ids,
+)
 
 # Normalised STIX over the judge's bundle, as dev 5cd25b75 renders it.
 # Re-pinned when every IOC-table row came to carry a publish answer and the
@@ -41,12 +44,23 @@ from tests.unit.reporting.test_an_entry_without_a_source_is_read_as_before impor
 # export, here and in ``HAIKU4_RENDERS``, gains the level's marking definition
 # and ``object_marking_refs`` naming it on every domain object and
 # relationship, and nothing else; the Markdown and HTML did not change.
+# Rendered with the stored ledger's ids, as the report node renders it, and
+# re-pinned here and in ``HAIKU4_RENDERS`` for each technique's evidence on its
+# ``uses`` edge (T-597). Against dev 74618ab38 rendering with the same ids and
+# the evidence it read from the ledger, only ``x_malspark_evidence_refs`` and
+# ``x_malspark_evidence_note`` on the ``uses`` edges differ: an edge carries the
+# entries among the sources its stored mapping lists (haiku4 nineteen edges,
+# run5 eleven, run7 twenty-three, run4 one, local8 none), and an asserting
+# tool's entry the stored mapping does not list is not on the edge (run7
+# T1036.005 and T1218.011, run5 and run4 T1027 and T1218.011, local8 T1027,
+# T1027.005 and T1218.011). A stored mapping records no set, so no edge
+# carries a note.
 STORED_EXPORTS = {
-    "run7": "ea6974f900ddabbe",
-    "run5": "677740f6b195cec8",
-    "run4": "52b7d9f99d8e7122",
-    "local8": "bcd9ef067839c344",
-    "haiku4": "8ca0ad2fc5d8e4c9",
+    "run7": "93aadaacf5823ca7",
+    "run5": "093a129ea2278b97",
+    "run4": "be010e06e4e54675",
+    "local8": "905a7b97d39427d6",
+    "haiku4": "0ce8403d7201e643",
 }
 # ``(markdown, html with the nonce "fixed", normalised STIX)`` for haiku4. The
 # Markdown and HTML were re-pinned when a sample's, a tool's or a finding's text
@@ -89,8 +103,9 @@ STORED_EXPORTS = {
 # evidence as one set (T-597): the ATT&CK table's Evidence cells are the only
 # change. A rule's entry the stored mapping does not list is named "rule
 # matches", and a mapping that stores its sources (haiku4) lists
-# the entries among them; the STIX did not change.
-HAIKU4_RENDERS = ("f2b01c295b9813f0", "7e7c99ce92d9ede7", "2bbc1e9a9eec44c6")
+# the entries among them. The STIX is rendered with the stored ledger's ids
+# (see ``STORED_EXPORTS``).
+HAIKU4_RENDERS = ("f2b01c295b9813f0", "7e7c99ce92d9ede7", "4d4d287aa6a3d02d")
 
 _UUID = re.compile(r"--[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}")
 _STAMP = re.compile(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})")
@@ -123,9 +138,9 @@ def test_the_export_over_the_judge_s_bundle_keeps_its_bytes(run: str) -> None:
     stored = json.loads((root / run / "stix-judge.json").read_text())
     base = Bundle.model_validate(stored["bundle"])
 
-    assert (
-        _digest(_normalised(ExtendedSTIXRenderer().render(report, base))) == (STORED_EXPORTS[run])
-    )
+    rendered = ExtendedSTIXRenderer().render(report, base, ledger_ids=stored_ledger_ids(run))
+
+    assert _digest(_normalised(rendered)) == STORED_EXPORTS[run]
 
 
 def test_haiku4_renders_as_dev_rendered_it() -> None:
@@ -135,6 +150,8 @@ def test_haiku4_renders_as_dev_rendered_it() -> None:
     report = _report("haiku4")
     markdown = MarkdownRenderer().render(report)
     html = HtmlRenderer().render(report, nonce="fixed")
-    stix = _normalised(ExtendedSTIXRenderer().render(report))
+    stix = _normalised(
+        ExtendedSTIXRenderer().render(report, ledger_ids=stored_ledger_ids("haiku4"))
+    )
 
     assert (_digest(markdown), _digest(html), _digest(stix)) == HAIKU4_RENDERS
