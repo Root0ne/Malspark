@@ -308,8 +308,9 @@ def pin_paths(
     ``path_by_provider`` is, for an agent holding several static providers,
     each provider's own mirror by provider id: a tool marked with the
     provider it came from (``composition.PROVIDER_ID_METADATA_KEY``) is given
-    its provider's mirror, and the agent's own path (``default_path``, the
-    first provider's) is one more spelling of the sample it corrects.
+    its provider's path, ``""`` (the tool left as the model gave it) for one
+    with none, and the agent's own path (``default_path``, the first
+    provider's) is one more spelling of the sample it corrects.
 
     With no pinned path, no per-server map and no single capture the tools are
     returned exactly as they are, unwrapped: the guard costs nothing when there
@@ -325,7 +326,12 @@ def pin_paths(
     out: list[Any] = []
     for tool in offered:
         server = server_of(tool)
-        target = per_provider.get(provider_of(tool)) or per_server.get(server) or default_path or ""
+        owner = provider_of(tool)
+        if owner in per_provider:
+            # The provider's own path, or none: never another provider's.
+            target = per_provider[owner]
+        else:
+            target = per_server.get(server) or default_path or ""
         pinned_server = reads_staged_sample(tool)
         hidden = _sample_arguments(tool) if pinned_server and target else ()
         filled = (

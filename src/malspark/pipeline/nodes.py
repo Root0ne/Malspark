@@ -1368,7 +1368,10 @@ def _pin_sample_path(agent: Any, state: AnalysisState) -> None:
     # An agent holding several providers: each provider's tools are given
     # that provider's own mirror, the path above being the first one's.
     agent._path_by_provider = provider_sample_paths(
-        agent._resolved, state.get("static_sample_paths") or {}
+        agent._resolved,
+        state.get("static_sample_paths") or {},
+        host=_absolute_host_sample_path(state) or None,
+        container=getattr(agent, "_container", None),
     )
     pin_provider_sample(agent, state.get("static_sample_paths") or {})
 

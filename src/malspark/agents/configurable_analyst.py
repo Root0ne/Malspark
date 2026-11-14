@@ -240,8 +240,9 @@ class ConfigurableAnalyst(BaseAnalyst):
     def _prepare_on_each(self, held: list[tuple[str, Any]], path: str) -> str:
         """``prepare_sample`` on each of the agent's providers, their hints in reference order.
 
-        Each provider opens the sample on its own mirror
-        (``composition.provider_sample_paths``), ``path`` for one with none.
+        Each provider opens the sample on its own path
+        (``composition.provider_sample_paths``), ``path`` for one the agent
+        holds no map for; one the map gives no path is not asked to open one.
         A provider that cannot open the sample is said (``_note_unopened``)
         while another one could, and the agent is told so in the hint, with
         the provider's own sentence; only when none could is the first failure
@@ -253,9 +254,14 @@ class ConfigurableAnalyst(BaseAnalyst):
         own_paths = dict(getattr(self, "_path_by_provider", None) or {})
         hints: list[str] = []
         failures: list[tuple[str, SampleNotOpened]] = []
+        tried = 0
         for provider_id, provider in held:
+            own = own_paths.get(provider_id, path)
+            if not own:
+                continue
+            tried += 1
             try:
-                hint = prepare_sample(provider, own_paths.get(provider_id) or path, self.logger)
+                hint = prepare_sample(provider, own, self.logger)
             except SampleNotOpened as exc:
                 failures.append((provider_id, exc))
                 continue
@@ -266,7 +272,7 @@ class ConfigurableAnalyst(BaseAnalyst):
                     hint, _renamed_tools(getattr(self, "tools", None) or [], provider_id)
                 )
             )
-        if failures and len(failures) == len(held):
+        if failures and len(failures) == tried:
             raise failures[0][1]
         for provider_id, failure in failures:
             self._note_unopened(provider_id, failure)

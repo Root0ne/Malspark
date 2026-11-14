@@ -771,7 +771,12 @@ def _brief_callee(caller: Any, callee: Any, *, stage: str, round_index: int) -> 
     from malspark.agents.composition import pin_provider_sample, provider_sample_paths
 
     # A callee holding several providers: each one's tools get its own mirror.
-    callee._path_by_provider = provider_sample_paths(resolved, choices.get("by_provider") or {})
+    callee._path_by_provider = provider_sample_paths(
+        resolved,
+        choices.get("by_provider") or {},
+        host=choices.get("host") or None,
+        container=getattr(callee, "_container", None),
+    )
     pin_provider_sample(callee, choices.get("by_provider") or {})
     # The job's captures are the job's, whoever is asked: a callee's capture
     # tools read the same file its caller's would.

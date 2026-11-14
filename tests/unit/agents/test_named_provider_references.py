@@ -729,7 +729,7 @@ class _Reading(_Provider):
 MIRRORS = {FIRST: "/mirrors/first/sample.bin", SECOND: "/mirrors/second/sample.bin"}
 
 
-def _staged_analyst(container: Any, resolved: Any) -> Any:
+def _staged_analyst(container: Any, resolved: Any, mirrors: dict[str, str] | None = None) -> Any:
     """A generic analyst on ``resolved``, its sample pinned as the analyst node pins it."""
     import logging
 
@@ -747,7 +747,7 @@ def _staged_analyst(container: Any, resolved: Any) -> Any:
     _pin_sample_path(
         analyst,
         {
-            "static_sample_paths": dict(MIRRORS),
+            "static_sample_paths": dict(MIRRORS if mirrors is None else mirrors),
             "static_sample_path": "/mirrors/global/sample.bin",
             "sample_path": "/host/sample.bin",
         },
@@ -778,6 +778,72 @@ def test_the_second_providers_tool_is_given_the_second_providers_mirror():
     assert by_name[f"{SECOND}__read"].invoke({"path": "/elsewhere/rules.yar"}) == (
         f"{SECOND}:/elsewhere/rules.yar"
     )
+
+
+class _ReadingAndOpening(_Reading):
+    """A reading provider that also records the sample it was asked to open."""
+
+    def __init__(self, provider_id: str, *, needs_mirror: bool = True, failure: Any = None) -> None:
+        super().__init__(provider_id, [])
+        self.failure = failure
+        self.opened_paths: list[str] = []
+        self.capabilities = type(  # type: ignore[assignment,misc]
+            "caps", (), {"provides_tools": True, "needs_sample_mirror": needs_mirror}
+        )
+
+    def sample_failure(self, path: str | None = None) -> Any:
+        return self.failure
+
+    def open_sample(self, path: str | None = None) -> bool:
+        if self.failure is not None:
+            raise self.failure
+        self.opened_paths.append(str(path))
+        return True
+
+
+def test_a_provider_that_needs_no_mirror_is_given_the_host_path():
+    providers = {
+        FIRST: _ReadingAndOpening(FIRST),
+        SECOND: _ReadingAndOpening(SECOND, needs_mirror=False),
+    }
+    container = _Container(_two(), providers)
+    analyst = _staged_analyst(
+        container, resolve_agent("reader", container), {FIRST: MIRRORS[FIRST]}
+    )
+    assert analyst._path_by_provider == {FIRST: MIRRORS[FIRST], SECOND: "/host/sample.bin"}
+    by_name = {t.name: t for t in analyst.pinned_tools()}
+    told = analyst._analysis_file_path
+    assert by_name["read"].invoke({"path": told}) == f"{FIRST}:{MIRRORS[FIRST]}"
+    assert by_name[f"{SECOND}__read"].invoke({"path": told}) == f"{SECOND}:/host/sample.bin"
+    analyst._prepare_on_each(analyst._held_providers(), told)
+    assert providers[FIRST].opened_paths == [MIRRORS[FIRST]]
+    assert providers[SECOND].opened_paths == ["/host/sample.bin"]
+
+
+def test_a_provider_with_no_mirror_is_never_pointed_at_another_providers_mirror():
+    from malspark.core.exceptions import SampleNotOpened
+
+    failure = SampleNotOpened("R cannot read it.", provider=SECOND)
+    providers = {
+        FIRST: _ReadingAndOpening(FIRST),
+        SECOND: _ReadingAndOpening(SECOND, failure=failure),
+    }
+    container = _Container(_two(), providers)
+    analyst = _staged_analyst(
+        container, resolve_agent("reader", container), {FIRST: MIRRORS[FIRST]}
+    )
+    by_name = {t.name: t for t in analyst.pinned_tools()}
+    told = analyst._analysis_file_path
+    assert told == MIRRORS[FIRST]
+    assert by_name["read"].invoke({"path": "sample.bin"}) == f"{FIRST}:{MIRRORS[FIRST]}"
+    # The second provider's tool keeps what the model gave; the provider's own guard answers.
+    assert by_name[f"{SECOND}__read"].invoke({"path": "sample.bin"}) == f"{SECOND}:sample.bin"
+    # It is not asked to open a path that was never its own, so it is not told it could not.
+    hint = analyst._prepare_on_each(analyst._held_providers(), told)
+    assert providers[SECOND].opened_paths == []
+    assert providers[FIRST].opened_paths == [MIRRORS[FIRST]]
+    assert "could not open" not in hint and "Static provider" not in hint
+    assert not any("could not open" in reason for reason in analyst.degradation_reasons)
 
 
 def test_an_agent_with_one_provider_has_no_path_per_provider():

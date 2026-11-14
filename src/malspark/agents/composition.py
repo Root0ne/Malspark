@@ -380,21 +380,48 @@ def pin_provider_sample(agent: Any, mirrored: Mapping[str, str] | None) -> None:
         _pin_one_provider(agent, container, resolved, str(provider_id), mirrored)
 
 
-def provider_sample_paths(resolved: Any, mirrored: Mapping[str, str] | None) -> dict[str, str]:
-    """Each of an agent's several providers' own mirror of the sample, by provider id.
+def provider_sample_paths(
+    resolved: Any,
+    mirrored: Mapping[str, str] | None,
+    *,
+    host: str | None = None,
+    container: Any = None,
+) -> dict[str, str]:
+    """Each of an agent's several providers' own path to the sample, by provider id.
 
     The path each provider's tools are given (``tool_pinning.pin_paths``) and
     each provider opens the sample on before the loop: a provider's mirror
     lies where that provider reads, and another provider's mirror is not one
-    it can open. Empty for an agent with one provider or none, whose tools
-    keep the agent's one pinned path; a provider with no mirror is left out
-    and its tools keep that path too.
+    it can open. A provider with a mirror gets it; one that needs no mirror
+    (``capabilities.needs_sample_mirror``) reads the sample where the host
+    holds it, ``host``; one that needs a mirror and has none maps to ``""``:
+    no path is its own, so its tools are left as the model gave them and it
+    is not asked to open one. Empty for an agent with one provider or none,
+    whose tools keep the agent's one pinned path.
     """
     provider_ids = getattr(resolved, "provider_ids", None)
     if not isinstance(provider_ids, tuple) or len(provider_ids) < 2:
         return {}
     held = dict(mirrored or {})
-    return {str(pid): str(held[pid]) for pid in provider_ids if held.get(pid)}
+    out: dict[str, str] = {}
+    for pid in provider_ids:
+        pid = str(pid)
+        if held.get(pid):
+            out[pid] = str(held[pid])
+        elif host and not _needs_a_mirror(container, pid):
+            out[pid] = host
+        else:
+            out[pid] = ""
+    return out
+
+
+def _needs_a_mirror(container: Any, provider_id: str) -> bool:
+    """Whether ``provider_id`` reads the sample only on a mirror; true when that is unknown."""
+    try:
+        provider = container.get_static_provider(provider_id)
+    except Exception:  # noqa: BLE001 — a provider that cannot be looked up is not given the host's file
+        return True
+    return bool(getattr(getattr(provider, "capabilities", None), "needs_sample_mirror", True))
 
 
 def _pin_one_provider(
