@@ -101,7 +101,6 @@ from malspark.pipeline.debate_facts import (
     BLOCK_NOT_READ_NOTE,
     analysts_to_revise,
     carried_marks,
-    claims_named_by_lines,
     contested_input,
     facts_naming,
     ledger_count_facts,
@@ -163,7 +162,7 @@ from malspark.pipeline.outcome import (
 )
 from malspark.pipeline.revision_merge import (
     RevisionMerge,
-    claim_tokens_by_number,
+    claims_named_in_force,
     merge_revision,
     rule_sentence,
     with_numbering_key,
@@ -6354,10 +6353,10 @@ def make_revision_node(container: ServiceContainer, *, stage: Any = None) -> Any
         # written for no analyst is read for the one whose claim in force
         # shares an id or an address with it (``debate_facts.OwnedClaim``).
         try:
-            named_by_lines = claims_named_by_lines(
+            named_by_lines = claims_named_in_force(
                 contested,
                 list(agent_names),
-                {name: claim_tokens_by_number(kept_isrs.get(name)) for name in agent_names},
+                {name: kept_isrs.get(name) for name in agent_names},
             )
         except Exception as exc:  # noqa: BLE001 — no lines read is no claim named
             logger.debug("revision: the lines' claim numbers were not read (%s).", exc)

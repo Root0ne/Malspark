@@ -2092,21 +2092,16 @@ class ExpandedNaming:
 
 @dataclass(frozen=True)
 class NamingClause:
-    """A line that names a claim, in any form, with what the reference's clause writes.
+    """A line that names a claim, in any form, and how it names it.
 
     ``line`` counts from 1, ``reference`` is the platform's rendering of the
-    reference's numbers ("claim 7", "claims 32-34"), ``tokens`` the ledger
-    ids and addresses its own clause writes (:func:`clause_tokens`), joined
-    over every reference of the line that names the claim. A blocking line
-    withdraws a claim by rule only when the claim shares one of them
-    (``revision_merge``): a line names a claim it speaks to, whatever form
-    its reference takes, and a number it writes beside that claim's is no
-    question put to another.
+    first reference of the line that names the claim ("claim 7", "claims
+    32-34"): the merge states it for a claim the line names without speaking
+    to it (``revision_merge.anchored_lines``).
     """
 
     line: int
     reference: str
-    tokens: frozenset[str]
 
 
 @dataclass(frozen=True)
@@ -2120,7 +2115,7 @@ class ClaimReferences:
     newer reading (:class:`ExpandedNaming`); ``owned`` each claim number no
     analyst is written for that is read for its owner (:class:`OwnedClaim`),
     in line order; ``clauses`` per analyst and claim every line that names
-    it, with its reference's clause (:class:`NamingClause`).
+    it (:class:`NamingClause`).
     """
 
     named: dict[str, dict[int, list[tuple[int, bool]]]]
@@ -2156,8 +2151,10 @@ class NamedClaims(dict[int, list[tuple[int, bool]]]):
     It carries, for the merge (``revision_merge.merge_revision``), the
     references its merge states (``unplaced``) and the claims the lines
     reach only by the newer reading (``expanded``), the claim numbers read
-    for it as their owner (``owned``) and every line that names a claim of
-    it, with its reference's clause (``clauses``).
+    for it as their owner (``owned``), every line that names a claim of it
+    (``clauses``) and, where the answers in force were read for it
+    (``revision_merge.anchored_lines``), per line anchored by a claim of
+    any analyst, the claims of this analyst that anchor it (``anchored``).
     """
 
     def __init__(
@@ -2174,6 +2171,7 @@ class NamedClaims(dict[int, list[tuple[int, bool]]]):
         self.expanded: dict[int, tuple[ExpandedNaming, ...]] = dict(expanded or {})
         self.owned: tuple[OwnedClaim, ...] = tuple(owned)
         self.clauses: dict[int, tuple[NamingClause, ...]] = dict(clauses or {})
+        self.anchored: dict[int, frozenset[int]] = {}
 
 
 class NamedByLines(dict[str, dict[int, list[tuple[int, bool]]]]):
@@ -2609,12 +2607,8 @@ def read_claim_references(
                 if row not in rows:
                     rows.append(row)
                 spoken = clauses.setdefault(name, {}).setdefault(claim, [])
-                if spoken and spoken[-1].line == number:
-                    spoken[-1] = NamingClause(
-                        number, spoken[-1].reference, spoken[-1].tokens | tokens
-                    )
-                else:
-                    spoken.append(NamingClause(number, rendering, tokens))
+                if not spoken or spoken[-1].line != number:
+                    spoken.append(NamingClause(number, rendering))
                 if newly:
                     reached = expanded.setdefault(name, {}).setdefault(claim, [])
                     if reached and reached[-1].line == number:

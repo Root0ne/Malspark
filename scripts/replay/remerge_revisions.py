@@ -27,7 +27,7 @@ What a log holds, and what is read from it:
   replayed by what it states, since a summary shows the merged numbers only;
 - the lines of the round's mediation, from the next mediation's account of
   them (``(standing: ...)``), read as the merge reads them
-  (``debate_facts.claims_named_by_lines``).
+  (``revision_merge.claims_named_in_force``).
 
 The earlier rule's merge, as the run's log said it, is printed beside each
 replay so a reading that differs from what the run did is seen. The stored
@@ -54,7 +54,6 @@ for _path in (str(_ROOT / "src"), str(_ROOT)):
 
 from malspark.pipeline import revision_merge  # noqa: E402
 from malspark.pipeline.claim_drops import content_words, dropped_values  # noqa: E402
-from malspark.pipeline.debate_facts import claims_named_by_lines  # noqa: E402
 from malspark.schemas.isr_models import AgentISR, ClaimEvidence  # noqa: E402
 
 _REQUEST = b"Request options: "
@@ -323,11 +322,7 @@ def remerge(run: Path) -> dict[str, Any]:
         names = list(before.answers)
         kept = {n: _isr(a, a.claims, a.disputes) for n, a in before.answers.items()}
         try:
-            named = claims_named_by_lines(
-                after.earlier_lines,
-                names,
-                {n: revision_merge.claim_tokens_by_number(isr) for n, isr in kept.items()},
-            )
+            named = revision_merge.claims_named_in_force(after.earlier_lines, names, kept)
         except Exception as exc:  # noqa: BLE001 — a line not read names no claim
             print(_not_read(run.name, exc), file=sys.stderr)
             named = {}

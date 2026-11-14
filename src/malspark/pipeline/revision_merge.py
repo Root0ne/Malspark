@@ -25,11 +25,14 @@ before and after. Here a revision changes only what it states:
   reference's clause a ledger id or an address no other claim of its answer
   writes; it is carried with the line, never withdrawn by rule, and that is
   stated (``owned_sentence``). A blocking line withdraws by rule only a
-  claim it speaks to: one that shares a ledger id or an address with the
-  clause of a reference naming it, whatever its form (a number, a list, a
-  range). A claim it names without speaking to it stands as a claim no line
-  named, and the reference is stated as not placed on it
-  (``not_spoken_sentence``);
+  claim it speaks to. Where a claim the line names, of any analyst, shares
+  a ledger id or a value with the whole line, the line speaks only to the
+  claims that share one (:func:`anchored_lines`); where none does, it
+  speaks to every claim it names, except one it reaches only through a
+  range or a list that shares no ledger id or address with the reference's
+  clause. A claim it names without speaking to it stands, for that line,
+  as a claim no line named, and the reference is stated as not placed on
+  it (``not_spoken_sentence``);
 - a claim it writes under a new number, or one that writes again no claim in
   force, is added;
 - every other claim in force stays as the answer in force wrote it, marked
@@ -108,8 +111,10 @@ from malspark.pipeline.debate_facts import (
     NamingClause,
     OwnedClaim,
     UnplacedClaims,
+    claims_named_by_lines,
     line_tokens,
     read_claim_numbers,
+    without_line_mark,
 )
 from malspark.pipeline.retry_merge import (
     _WITHDRAW_OR_RETRACT_RE,
@@ -835,36 +840,116 @@ def _speaking_lines(
     named: Mapping[int, Sequence[NamingLine]],
     expanded: Mapping[int, Sequence[ExpandedNaming]],
     clauses: Mapping[int, Sequence[NamingClause]],
+    anchored: Mapping[int, frozenset[int]],
 ) -> tuple[list[NamingLine], list[tuple[int, str]], list[int]]:
     """``(lines that name the claim and count, silent blocking lines, speaking ones)``.
 
     The silent blocking lines are ``(line, reference)`` per blocking line
     that does not speak to the claim; the speaking ones their numbers.
 
-    A blocking line whose references naming the claim, in any form, share
-    no ledger id or address with it in their clauses
-    (``debate_facts.NamingClause``, or ``ExpandedNaming`` where only that is
-    given) does not speak to it: it never withdraws it by rule, asks no
-    block to answer it and leaves no mark on it; the claim stands as one no
-    line named. A line whose clause is not given speaks to every claim it
-    names.
+    A blocking line anchored by a claim it names (``anchored``,
+    :func:`anchored_lines`) speaks only to the claims that anchor it. A line
+    no claim anchors speaks to every claim it names, except one it reaches
+    only through a range or a list (``expanded``) that shares no ledger id or
+    address with the reference's clause. A line that does not speak to the
+    claim never withdraws it by rule, asks no block to answer it and leaves
+    no mark on it: the claim stands, for that line, as one no line named.
     """
     rows = list(named.get(block.number, ()))
     blocking = sorted({line for line, blocks in rows if blocks})
-    tokens = _tokens_of(block)
-    said: dict[int, NamingClause | ExpandedNaming] = {
-        e.line: e for e in expanded.get(block.number, ())
-    }
-    said.update((c.line, c) for c in clauses.get(block.number, ()))
-    unspoken = [
-        (n, said[n].reference) for n in blocking if n in said and not said[n].tokens & tokens
-    ]
+    references = {c.line: c.reference for c in clauses.get(block.number, ())}
+    reaching = {e.line: e for e in expanded.get(block.number, ())}
+    unspoken: list[tuple[int, str]] = []
+    for n in blocking:
+        if n in anchored:
+            if block.number not in anchored[n]:
+                unspoken.append((n, references.get(n, f"claim {block.number}")))
+        elif n in reaching and not reaching[n].tokens & _tokens_of(block):
+            unspoken.append((n, reaching[n].reference))
     silent = {n for n, _r in unspoken}
     return (
         [row for row in rows if row[0] not in silent],
         unspoken,
         [n for n in blocking if n not in silent],
     )
+
+
+# A line's ``[analysts: ...]`` field: names, never what the line says.
+_ANALYSTS_FIELD_RE = re.compile(r"\[\s*+analysts?\s*+:[^\[\]]*+\]", re.IGNORECASE)
+
+
+def anchored_lines(
+    lines: Sequence[str],
+    named: Mapping[str, Mapping[int, Sequence[NamingLine]]],
+    in_force: Mapping[str, Any],
+) -> dict[str, dict[int, frozenset[int]]]:
+    """Per analyst, per line a claim anchors, the claims of that analyst that anchor it.
+
+    ``named`` is ``{analyst: {claim number: [(line, blocking), ...]}}``
+    (``debate_facts.claims_named_by_lines``) and ``in_force`` each analyst's
+    answer in force. A claim anchors a line it is named by when it shares
+    with the whole line, its field left out, a ledger id or a value
+    (:func:`_counted_values`, stated as :func:`_restated` reads values: an
+    address, a number). Content words take no part. A line is listed for
+    every analyst it names a claim of, as soon as one claim of any analyst
+    anchors it; a line no claim anchors is listed for none. Each line is
+    read once and each claim's values once, so the cost is the lines' and
+    the references' length.
+    """
+    blocks: dict[str, dict[int, _Block]] = {}
+    for name, isr in in_force.items():
+        claims = list(getattr(isr, "claims", None) or [])
+        if claims:
+            blocks[name] = {block.number: block for block in _blocks(claims)}
+    by_line: dict[int, list[tuple[str, int]]] = {}
+    for name, rows in named.items():
+        for number, refs in rows.items():
+            for line, _blocks_it in refs:
+                by_line.setdefault(int(line), []).append((name, int(number)))
+    values: dict[tuple[str, int], tuple[frozenset[str], frozenset[str]]] = {}
+    out: dict[str, dict[int, frozenset[int]]] = {}
+    for line, refs in by_line.items():
+        if not 0 < line <= len(lines):
+            continue
+        text = _ANALYSTS_FIELD_RE.sub(" ", without_line_mark(str(lines[line - 1])))
+        reading = _reading(_searched(text), frozenset(), frozenset())
+        ids = _entry_ids(text)
+        anchors: set[tuple[str, int]] = set()
+        for ref in dict.fromkeys(refs):
+            block = blocks.get(ref[0], {}).get(ref[1])
+            if block is None:
+                continue
+            if ref not in values:
+                values[ref] = (_entry_ids(_text_of(block)), _counted_values(block))
+            own_ids, own_values = values[ref]
+            if own_ids & ids or _stated(own_values, reading):
+                anchors.add(ref)
+        if not anchors:
+            continue
+        for name in {name for name, _n in refs}:
+            out.setdefault(name, {})[line] = frozenset(n for who, n in anchors if who == name)
+    return out
+
+
+def claims_named_in_force(
+    lines: Sequence[str], participants: Sequence[str], in_force: Mapping[str, Any]
+) -> Any:
+    """``debate_facts.claims_named_by_lines`` read against the answers in force, with its anchors.
+
+    The claim numbers each line names per analyst (the owners read from
+    ``in_force``), each analyst's rows carrying the lines its claims anchor
+    or leave silent (``NamedClaims.anchored``, :func:`anchored_lines`).
+    """
+    named = claims_named_by_lines(
+        lines,
+        participants,
+        {name: claim_tokens_by_number(isr) for name, isr in in_force.items()},
+    )
+    for name, lines_of in anchored_lines(lines, named, in_force).items():
+        rows = named.get(name)
+        if rows is not None and hasattr(rows, "anchored"):
+            rows.anchored = lines_of
+    return named
 
 
 def merge_revision(
@@ -884,14 +969,14 @@ def merge_revision(
     round's mediation that named it (``debate_facts.claims_named_by_lines``),
     and ``unplaced`` each reference of those lines that names no claim and
     that this merge states (``ClaimReferences.unplaced_for``): it withdraws
-    nothing. A blocking line counts for a claim only where the clause of a
-    reference naming it shares a ledger id or an address with the claim:
-    the clauses are read from ``named`` (``NamedClaims.clauses``), or from
-    ``expanded``, per claim number each line that reaches it only by the
-    newer reading (``ClaimReferences.expanded_for``); a line whose clause
-    neither gives counts as before. A blocking line that does not speak to
-    a claim withdraws nothing of it, leaves no mark on it, and that is
-    stated. ``owned`` is each claim number written for no
+    nothing. A blocking line that a claim it names anchors
+    (``NamedClaims.anchored``, :func:`claims_named_in_force`) speaks only to
+    the claims that anchor it; one no claim anchors speaks to every claim it
+    names, except one it reaches only by the newer reading, a range or a
+    list going on (``expanded``, ``ClaimReferences.expanded_for``), that
+    shares no ledger id or address with the reference's clause. A blocking
+    line that does not speak to a claim withdraws nothing of it, leaves no
+    mark on it, and that is stated. ``owned`` is each claim number written for no
     analyst that the lines' reading read as this analyst's: it is stated.
     Where ``unplaced``, ``expanded`` or ``owned`` is not given, it is read
     from ``named`` (``debate_facts.NamedClaims``). ``in_force`` is not
@@ -903,6 +988,7 @@ def merge_revision(
     if expanded is None:
         expanded = dict(getattr(named, "expanded", {}) or {})
     clauses = dict(getattr(named, "clauses", {}) or {})
+    anchored = dict(getattr(named, "anchored", {}) or {})
     first_claims = list(getattr(in_force, "claims", None) or [])
     revision_claims = list(getattr(revision, "claims", None) or [])
     first = _blocks(first_claims)
@@ -950,7 +1036,9 @@ def merge_revision(
     # Per claim in force, the lines of the round's mediation that named it and
     # the blocking ones that speak to it (:func:`_speaking_lines`). A claim a
     # dispute of its own speaks for is answered there, not by a block.
-    speaking = {block.number: _speaking_lines(block, named, expanded, clauses) for block in first}
+    speaking = {
+        block.number: _speaking_lines(block, named, expanded, clauses, anchored) for block in first
+    }
     answered = frozenset(
         number for number, (_l, _u, spoken) in speaking.items() if spoken and number not in defended
     )

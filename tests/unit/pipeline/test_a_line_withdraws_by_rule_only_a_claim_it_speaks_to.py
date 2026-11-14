@@ -1,10 +1,12 @@
-"""A blocking line withdraws by rule only a claim it speaks to, whatever form names it.
+"""A blocking line withdraws by rule only a claim it speaks to.
 
-A line speaks to a claim when the clause of a reference naming it shares a
-ledger id or an address with the claim, as a range is read: a single number,
-a list and a range alike. A claim the line names without speaking to it is
-left as a claim no line named: never withdrawn by rule, no mark from that
-line, and the reference is stated as not placed on it.
+The test is relative, within one line. Where a claim the line names, of any
+analyst, shares a ledger id or a value with the whole line, the line speaks
+only to the claims that share one; a named claim that shares neither is left,
+for that line, as a claim no line named: never withdrawn by rule, no mark from
+that line, and the reference is stated as not placed on it. Where no named
+claim shares one, the line speaks to every claim it names. Content words take
+no part.
 
 Every address, name and sentence here is made up for the test.
 """
@@ -14,12 +16,13 @@ from __future__ import annotations
 from typing import Any
 
 from malspark.agents.base_agent import read_claim_blocks
-from malspark.pipeline.debate_facts import claims_named_by_lines
-from malspark.pipeline.revision_merge import claim_tokens_by_number, merge_revision
+from malspark.pipeline.revision_merge import anchored_lines, claims_named_in_force, merge_revision
 from malspark.schemas.isr_models import AgentISR
+from tests.linear_cost import assert_scales
 
 PARTICIPANTS = ["static", "dynamic"]
 STATIC = "[analysts: STATIC ANALYST]"
+BOTH = "[analysts: STATIC ANALYST, DYNAMIC ANALYST]"
 BLOCKS = "[blocking: the listing shows another call.]"
 
 
@@ -32,24 +35,24 @@ GATE = "0x406328 returns 1 only when the tables at 0x4084e4 and 0x40abd4 resolve
 MUTEX = "The mutex name at 0x403962 is not recovered."
 ADDED = "0x409000 enumerates the running processes with a snapshot."
 IN_FORCE = _block(LOADER, "ev_0011") + _block(GATE, "ev_0012") + _block(MUTEX, "ev_0013")
+WRITE = "Process 2240 writes into process 3704 through WriteProcessMemory."
+DYNAMIC_IN_FORCE = _block(WRITE, "ev_0031")
 
 
-def _isr(text: str) -> AgentISR:
-    isr = AgentISR(agent_id="static", domain="static", claims=read_claim_blocks(text).claims)
+def _isr(text: str, agent: str = "static") -> AgentISR:
+    isr = AgentISR(agent_id=agent, domain=agent, claims=read_claim_blocks(text).claims)
     isr.note_answer_text(text)
     return isr
 
 
 def _merge(line: str, answer: str) -> Any:
-    in_force = _isr(IN_FORCE)
-    named = claims_named_by_lines(
-        [line], PARTICIPANTS, {"static": claim_tokens_by_number(in_force)}
-    )
-    return merge_revision(in_force, _isr(answer), answer, 2, named.get("static"))
+    in_force = {"static": _isr(IN_FORCE), "dynamic": _isr(DYNAMIC_IN_FORCE, "dynamic")}
+    named = claims_named_in_force([line], PARTICIPANTS, in_force)
+    return merge_revision(in_force["static"], _isr(answer), answer, 2, named.get("static"))
 
 
-class TestALineAboutOneClaim:
-    def test_a_number_it_also_names_withdraws_nothing_of_that_claim(self) -> None:
+class TestALineAnchoredByTheClaimItIsAbout:
+    def test_another_number_it_names_withdraws_nothing_of_that_claim(self) -> None:
         line = (
             f"{STATIC} STATIC claims 1 and 2 say 0x40cf14 loads the URL list; the listing "
             f"shows it reads the config. {BLOCKS}"
@@ -70,17 +73,7 @@ class TestALineAboutOneClaim:
             for s in said
         )
 
-    def test_a_single_number_whose_clause_is_about_another_claim_withdraws_nothing(self) -> None:
-        line = f"{STATIC} STATIC claim 3 says the beacon at 0x40cf14 sleeps 60 s. {BLOCKS}"
-
-        merge = _merge(line, _block(ADDED, "ev_0020"))
-
-        assert merge.withdrawn_by_rule == ()
-        assert [n for n, _s in merge.carried] == [1, 2, 3]
-
-    def test_the_unrelated_claim_keeps_the_subject_test_of_an_unnamed_claim(self) -> None:
-        # The block restates the gate without 0x40abd4: an unnamed claim stays
-        # beside it, and so does the claim the line names without speaking to.
+    def test_the_claim_left_out_keeps_the_subject_test_of_an_unnamed_claim(self) -> None:
         line = f"{STATIC} STATIC claims 1 and 2 say 0x40cf14 loads the URL list. {BLOCKS}"
         again = "0x406328 returns 1 only when the table at 0x4084e4 resolves."
 
@@ -88,6 +81,52 @@ class TestALineAboutOneClaim:
 
         assert 2 not in merge.replaced
         assert [n for n, *_rest in merge.beside] == [2]
+
+    def test_a_ledger_id_anywhere_on_the_line_anchors(self) -> None:
+        line = (
+            f"{STATIC} STATIC claims 2 and 3 overstate the gate. [blocking: ev_0013 shows a name.]"
+        )
+
+        merge = _merge(line, _block(ADDED, "ev_0020"))
+
+        assert [n for n, _s, _r in merge.withdrawn_by_rule] == [3]
+        assert [n for n, *_rest in merge.not_spoken_to] == [2]
+
+    def test_another_analysts_claim_anchors_the_line_for_every_analyst(self) -> None:
+        line = (
+            f"{BOTH} DYNAMIC claim 1 and STATIC claim 2 put process 2240 writing into 3704; "
+            f"the record names no pid. {BLOCKS}"
+        )
+
+        merge = _merge(line, _block(ADDED, "ev_0020"))
+
+        # The dynamic analyst's claim shares 2240 and 3704; the static claim shares nothing.
+        assert merge.withdrawn_by_rule == ()
+        assert [n for n, *_rest in merge.not_spoken_to] == [2]
+
+
+class TestALineNoClaimAnchors:
+    def test_it_speaks_to_every_claim_it_names(self) -> None:
+        line = f"{STATIC} STATIC claims 1 and 2 overstate what the listing shows. {BLOCKS}"
+
+        merge = _merge(line, _block(ADDED, "ev_0020"))
+
+        assert [n for n, _s, _r in merge.withdrawn_by_rule] == [1, 2]
+        assert merge.not_spoken_to == ()
+
+    def test_one_claim_named_and_anchored_nowhere_is_spoken_to(self) -> None:
+        line = f"{STATIC} STATIC claim 3 says the beacon at 0x40cf14 sleeps 60 s. {BLOCKS}"
+
+        merge = _merge(line, _block(ADDED, "ev_0020"))
+
+        assert [n for n, _s, _r in merge.withdrawn_by_rule] == [3]
+
+    def test_shared_words_alone_anchor_nothing(self) -> None:
+        line = f"{STATIC} STATIC claims 1 and 3 say the mutex name is not recovered. {BLOCKS}"
+
+        merge = _merge(line, _block(ADDED, "ev_0020"))
+
+        assert [n for n, _s, _r in merge.withdrawn_by_rule] == [1, 3]
 
 
 class TestALineThatParaphrasesItsClaim:
@@ -102,9 +141,21 @@ class TestALineThatParaphrasesItsClaim:
         assert [n for n, _s, _r in merge.withdrawn_by_rule] == [2]
         assert merge.not_spoken_to == ()
 
-    def test_a_shared_ledger_id_alone_speaks_to_it(self) -> None:
-        line = f"{STATIC} STATIC claim 3 rests on ev_0013 alone. {BLOCKS}"
 
-        merge = _merge(line, _block(ADDED, "ev_0020"))
+class TestTheAnchorsCostTheLinesLength:
+    def test_a_line_naming_many_claims(self) -> None:
+        def build(size: int) -> Any:
+            in_force = {
+                "static": _isr(
+                    "".join(
+                        _block(f"0x{0x401000 + i:x} reads table {i}.", "ev_0001")
+                        for i in range(size)
+                    )
+                )
+            }
+            refs = ", ".join(f"claim {i + 1}" for i in range(size))
+            line = f"{STATIC} STATIC {refs} say 0x401000 reads the table. {BLOCKS}"
+            named = claims_named_in_force([line], ["static"], in_force)
+            return lambda: anchored_lines([line], named, in_force)
 
-        assert [n for n, _s, _r in merge.withdrawn_by_rule] == [3]
+        assert_scales(build, 800)
