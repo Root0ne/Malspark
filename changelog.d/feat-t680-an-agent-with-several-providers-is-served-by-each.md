@@ -1,0 +1,7 @@
+### Fixed
+
+- **Each static provider of an agent holding several is given its own mirror of the sample (T-680).** A `generic` or `lead` agent naming several static providers through `provider` references is told its first provider's mirror; each provider's tools are given that provider's own mirror, with the first provider's path and the sample's bare name corrected to it, and each provider opens the sample on its own mirror before the loop, also for an agent asked by another. A provider that cannot open the sample while another could is told to the agent with its own sentence and kept in the run's limitations. An agent with one provider or none is unchanged.
+
+### Added
+
+- **The run and the console name every static provider an agent holds (T-680).** The agent probe returns `static_providers`, one row per provider with the names its tools are offered under and whether it opened; the run summary's `environment.agents.<agent>.static_providers` lists, for an agent holding several, each provider whose tools it was offered, in reference order, and the `tools` part reads each call of a provider's own server by the provider the call's tool came from. A plug-in provider named only on an agent's tool reference is one of the plug-in selections a save that drops it from the allow-list names, and the agent probe loads it. The team and architecture pages state the rule for an agent holding several providers.

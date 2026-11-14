@@ -34,13 +34,53 @@ An agent's tools are references:
 | Reference | Gives the agent |
 | :-- | :-- |
 | `{"kind": "mcp", "server": "<key>"}` | Every exposed tool of that MCP server. |
-| `{"kind": "provider"}` | The tools of the static provider the agent opens. Only on a `generic` or `lead` agent. |
+| `{"kind": "provider"}` | The tools of the agent's own static provider. Only on a `generic` or `lead` agent. |
+| `{"kind": "provider", "provider": "<id>"}` | The tools of that static provider. Only on a `generic` or `lead` agent, which may name several. |
 | `{"kind": "sandbox"}` | Tools over the job's sandbox report. |
 | `{"kind": "agent", "agent": "<key>"}` | An `ask_<key>` tool that hands a task to another agent. |
 | `{"kind": "capability", "capability": "reputation"}` | Every built-in server that serves that kind of tool. |
 
 The agent decides which tools to call, in what order and when to stop. Every
 call goes to the [evidence ledger](/docs/concepts/ledger/).
+
+### One agent, several static providers
+
+A `generic` or `lead` agent may hold any number of static providers, one
+`provider` reference each; the `static` role reads one provider only. The
+references' order decides the names: the first provider's tools keep their
+own names, and a later provider's tool whose name an earlier one holds is
+offered as `<provider id>__<tool>` (for example `r2__decompile_function`
+beside Ghidra's `decompile_function` when Ghidra is listed first). The
+agent's prompt carries each provider's own text, with its renamed tools
+named as offered, and one sentence naming all of them.
+
+Each provider reads its own mirror of the sample. The agent is told one path
+(its first provider's); each provider's tools are given that provider's own
+mirror, and each provider opens the sample on its own mirror before the loop.
+A provider that does not open, or cannot open the sample while another one
+did, leaves the agent working with the others: the agent is told so, that
+provider's calls answer with its failure, and the run's limitations name it.
+
+What is recorded: each call's ledger entry carries the name the tool was
+called by and its provider's source (`provider:<id>`), and the tool's
+declaration is read by the name its provider gives it; the run summary's `environment.agents.<agent>.static_providers` lists every
+provider whose tools the agent was offered, in reference order; and the
+agent probe in the console lists every provider the agent holds, with the
+names its tools are offered under.
+
+```json
+"one_analyst": {
+  "role": "generic",
+  "label": "One analyst",
+  "category": "code_reader",
+  "prompt": "...",
+  "tools": [
+    {"kind": "provider", "provider": "r2"},
+    {"kind": "provider", "provider": "ghidra"},
+    {"kind": "mcp", "server": "knowledge"}
+  ]
+}
+```
 
 ## A team, written out
 

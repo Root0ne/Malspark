@@ -3695,11 +3695,37 @@ button in the console; see [Configuration](/docs/configuration/).
 ### Which agents open a static provider
 
 Two kinds, and only two (`composition.reads_static_provider`): the `static`
-role, whose class opens its provider when it runs, and a `generic` agent whose
-tool list holds a `provider` reference, whose provider is opened when it is
-resolved. Each reads its own provider — the team's forced one, else its
-definition's `static_provider`, else the global one — and the container keeps
-one provider object per id. Everything that depends on the provider follows
+role, whose class opens its provider when it runs, and a `generic` or `lead`
+agent whose tool list holds a `provider` reference, whose providers are opened
+when it is resolved. A reference with no `provider` stands for the agent's own
+provider — the team's forced one, else its definition's `static_provider`,
+else the global one; a reference with `provider: "<id>"` stands for that
+provider, so a `generic` or `lead` agent may hold several, in reference order
+(`composition.static_provider_ids_for`; a team that forces a provider forces
+it on every reference). The `static` role reads its own provider only. The
+container keeps one provider object per id.
+
+An agent holding several providers is offered each one's tools under the
+servers' collision rule: the first provider keeps its tools' names, a later
+provider's tool whose name is taken is offered as `<provider id>__<tool>`
+(`provider__<provider id>__<tool>` where that name is taken too), its declared
+name kept beside it, and each tool is marked with the provider it came from.
+Each provider's tools are given that provider's own mirror of the sample
+(`composition.provider_sample_paths`, read by `tool_pinning.pin_paths`): the
+agent is told its first provider's mirror, and that path and the sample's bare
+name are corrected to the mirror of the provider whose tool is called. Each
+provider opens the sample on its own mirror before the loop. A provider that
+does not open is left out of the agent's tools and named in the run's
+degradation reasons as `static provider '<id>' did not open`; one that cannot
+open the sample while another could is told to the agent in its hint, its
+calls answer with its failure as failed calls, and the run's limitations
+carry `agent '<agent>': static provider '<id>' could not open the sample`.
+Only when every provider fails to open the sample is the loop not started.
+Each call's ledger entry carries its provider's source, `provider:<id>`; the
+run summary's `environment.agents.<agent>.static_providers` lists each
+provider whose tools the agent was offered, in reference order, and the
+`tools` part reads a provider's own server for each call by that source; the
+agent probe returns one `static_providers` row per provider. Everything that depends on the provider follows
 the agent rather than `core.static.provider`: the worker mirrors the sample
 once per provider any such agent of the team (or any agent they or the
 mediator can ask) opens, so a reverser on Ghidra under another global provider has a path the
