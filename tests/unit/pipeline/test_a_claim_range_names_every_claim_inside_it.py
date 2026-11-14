@@ -4,7 +4,8 @@
 of the analyst the first number is written for. A claim a blocking line
 reaches only so is withdrawn by rule when its reference's clause shares a
 ledger id or an address with it, exactly as a single cited claim is
-(``revision_merge``), and is carried and stated otherwise. Every number the
+(``revision_merge``), and otherwise stands as a claim no line named, the
+reference stated as not placed on it. Every number the
 earlier reading read is named as it was. The rest of a range longer than the
 cap and a claim number no analyst is read for are never guessed onto a claim:
 they withdraw nothing, and one merge says so, once per reference, where the
@@ -379,10 +380,10 @@ def _merge(line: str, answer: str) -> Any:
 
 class TestTheMergeReadsARangeAsItReadsASingleClaim:
     def test_a_blocked_claim_inside_a_range_is_withdrawn_by_rule_as_a_single_one_is(self) -> None:
-        # Claim 3 is reached only through the range, and shares 0x403000 with the line.
+        # Claim 3 is reached only through the range; both share an address with the line.
         answer = _block(MUTEX)
-        ranged = _merge(f"{STATIC} Claims 2-3 say X of 0x403000. {BLOCKS}", answer)
-        single = _merge(f"{STATIC} Claims 2 and 3 say X of 0x403000. {BLOCKS}", answer)
+        ranged = _merge(f"{STATIC} Claims 2-3 say X of 0x402000 and 0x403000. {BLOCKS}", answer)
+        single = _merge(f"{STATIC} Claims 2 and 3 say X of 0x402000 and 0x403000. {BLOCKS}", answer)
 
         assert ranged.withdrawn_by_rule == single.withdrawn_by_rule
         assert [n for n, _s, _r in ranged.withdrawn_by_rule] == [2, 3]
@@ -390,7 +391,7 @@ class TestTheMergeReadsARangeAsItReadsASingleClaim:
         assert ranged.merged is not None
         assert [c.claim for c in ranged.merged.claims] == [MUTEX, PERSIST]
         assert ranged.sentences("static", 3) == single.sentences("static", 3)
-        assert ranged.range_carried == ()
+        assert ranged.not_spoken_to == ()
 
     def test_a_ledger_id_shared_with_the_line_withdraws_a_claim_inside_a_range(self) -> None:
         # Every claim of FOUR cites ev_0001.
@@ -398,19 +399,19 @@ class TestTheMergeReadsARangeAsItReadsASingleClaim:
 
         assert [n for n, _s, _r in merge.withdrawn_by_rule] == [2, 3, 4]
 
-    def test_a_claim_inside_a_range_sharing_nothing_with_the_line_is_carried_and_stated(
+    def test_a_claim_inside_a_range_sharing_nothing_with_the_line_is_unnamed_and_stated(
         self,
     ) -> None:
         merge = _merge(f"{STATIC} Claims 2-4 say X of 0x402000. {BLOCKS}", _block(MUTEX))
 
-        # Claim 2 is cited by its own number, as dev read it; claim 3 and 4
-        # are reached through the range and share no id or address with it.
+        # Claim 2 shares 0x402000 with the range's clause; claims 3 and 4
+        # share no id or address with it.
         assert [n for n, _s, _r in merge.withdrawn_by_rule] == [2]
         assert merge.merged is not None
         assert [c.claim for c in merge.merged.claims] == [MUTEX, CRYPTO, PERSIST]
         crypto = merge.merged.claims[1]
-        assert crypto.carried_contested_by == ["L1 (round 3)"]
-        assert [(n, line, ref) for n, _s, line, ref in merge.range_carried] == [
+        assert not crypto.carried_contested_by
+        assert [(n, line, ref) for n, _s, line, ref in merge.not_spoken_to] == [
             (3, 1, "claims 2-4"),
             (4, 1, "claims 2-4"),
         ]
@@ -419,51 +420,64 @@ class TestTheMergeReadsARangeAsItReadsASingleClaim:
             "Blocking line L1 of the round-3 mediation names claims 2-4 of the static analyst; "
             "claim 3 of its answer in force (" in said[-2]
         )
-        assert said[-2].endswith("shares no ledger id or address with it, so it is carried.")
+        assert said[-2].endswith(
+            "shares no ledger id or address with it, so the reference is not placed on it and "
+            "withdraws nothing of it."
+        )
 
     def test_a_list_going_on_is_guarded_as_a_range_is(self) -> None:
         # The earlier reading read "2, 3" and stopped at ", and 4".
-        merge = _merge(f"{STATIC} Claims 2, 3, and 4 say X. {BLOCKS}", _block(MUTEX))
+        merge = _merge(
+            f"{STATIC} Claims 2, 3, and 4 say X of 0x402000 and 0x403000. {BLOCKS}", _block(MUTEX)
+        )
 
         assert [n for n, _s, _r in merge.withdrawn_by_rule] == [2, 3]
-        assert [n for n, *_rest in merge.range_carried] == [4]
+        assert [n for n, *_rest in merge.not_spoken_to] == [4]
 
-    def test_a_claim_the_line_also_cites_by_its_own_number_is_not_guarded(self) -> None:
+    def test_a_claim_the_line_also_cites_by_its_own_number_is_read_by_both_clauses(
+        self,
+    ) -> None:
         merge = _merge(
-            f"{STATIC} Claims 2-4 say X, STATIC ANALYST claim 4 most. {BLOCKS}", _block(MUTEX)
+            f"{STATIC} Claims 2-4 say X of 0x402000, STATIC ANALYST claim 4 most at 0x404000. "
+            f"{BLOCKS}",
+            _block(MUTEX),
         )
 
         assert [n for n, _s, _r in merge.withdrawn_by_rule] == [2, 4]
-        assert [n for n, *_rest in merge.range_carried] == [3]
+        assert [n for n, *_rest in merge.not_spoken_to] == [3]
 
     def test_a_token_in_another_analysts_clause_is_not_the_ranges(self) -> None:
         line = (
             "[analysts: STATIC ANALYST, TRIAGE ANALYST] STATIC ANALYST claims 2-3 repeat one "
-            f"technique, while TRIAGE claim 9 places the decoder at 0x403000. {BLOCKS}"
+            f"technique at 0x402000, while TRIAGE claim 9 places the decoder at 0x403000. {BLOCKS}"
         )
 
         merge = _merge(line, _block(MUTEX))
 
         assert [n for n, _s, _r in merge.withdrawn_by_rule] == [2]
-        assert [n for n, *_rest in merge.range_carried] == [3]
+        assert [n for n, *_rest in merge.not_spoken_to] == [3]
 
     def test_a_token_in_a_marks_reason_is_not_the_ranges(self) -> None:
-        line = f"{STATIC} Claims 2-3 say X. [blocking: the listing at 0x403000 shows more.]"
+        line = (
+            f"{STATIC} Claims 2-3 say X of 0x402000. [blocking: the listing at 0x403000 shows "
+            "more.]"
+        )
 
         merge = _merge(line, _block(MUTEX))
 
-        assert [n for n, *_rest in merge.range_carried] == [3]
+        assert [n for n, *_rest in merge.not_spoken_to] == [3]
 
     def test_a_sentence_opening_with_a_ledger_id_is_not_the_ranges_clause(self) -> None:
         # Every claim of FOUR cites ev_0001; the range's own sentence does not.
         line = (
-            f"{STATIC} STATIC claims 2-4 repeat one technique. ev_0001 shows the decoder. {BLOCKS}"
+            f"{STATIC} STATIC claims 2-4 repeat one technique at 0x402000. ev_0001 shows the "
+            f"decoder. {BLOCKS}"
         )
 
         merge = _merge(line, _block(MUTEX))
 
         assert [n for n, _s, _r in merge.withdrawn_by_rule] == [2]
-        assert [n for n, *_rest in merge.range_carried] == [3, 4]
+        assert [n for n, *_rest in merge.not_spoken_to] == [3, 4]
 
     def test_a_range_the_disputes_argue_answers_the_line(self) -> None:
         answer = _block(MUTEX)
@@ -530,9 +544,9 @@ class TestTheMergeReadsARangeAsItReadsASingleClaim:
             agent_name=MEDIATOR_AGENT_NAME,
             finding="revise",
             contradictions=[
-                "[analysts: STATIC ANALYST] Claims 2 to 3 say the beacon waits 600 s and the "
-                "key 0x403000 uses is 0x5a, versus the listing. [blocking: the listing shows "
-                "900 s.]",
+                "[analysts: STATIC ANALYST] Claims 2 to 3 say the beacon at 0x402000 waits 600 s "
+                "and the key 0x403000 uses is 0x5a, versus the listing. [blocking: the listing "
+                "shows 900 s.]",
                 "[analysts: STATIC ANALYST] The analyst's own claim 4 names the key loosely. "
                 "[blocking: the listing names another value.]",
             ],

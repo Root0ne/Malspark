@@ -2091,6 +2091,25 @@ class ExpandedNaming:
 
 
 @dataclass(frozen=True)
+class NamingClause:
+    """A line that names a claim, in any form, with what the reference's clause writes.
+
+    ``line`` counts from 1, ``reference`` is the platform's rendering of the
+    reference's numbers ("claim 7", "claims 32-34"), ``tokens`` the ledger
+    ids and addresses its own clause writes (:func:`clause_tokens`), joined
+    over every reference of the line that names the claim. A blocking line
+    withdraws a claim by rule only when the claim shares one of them
+    (``revision_merge``): a line names a claim it speaks to, whatever form
+    its reference takes, and a number it writes beside that claim's is no
+    question put to another.
+    """
+
+    line: int
+    reference: str
+    tokens: frozenset[str]
+
+
+@dataclass(frozen=True)
 class ClaimReferences:
     """What the lines of a mediation name by claim number.
 
@@ -2100,13 +2119,15 @@ class ClaimReferences:
     ``expanded`` per analyst and claim the lines that reach it only by the
     newer reading (:class:`ExpandedNaming`); ``owned`` each claim number no
     analyst is written for that is read for its owner (:class:`OwnedClaim`),
-    in line order.
+    in line order; ``clauses`` per analyst and claim every line that names
+    it, with its reference's clause (:class:`NamingClause`).
     """
 
     named: dict[str, dict[int, list[tuple[int, bool]]]]
     unplaced: tuple[UnplacedClaims, ...] = ()
     expanded: dict[str, dict[int, tuple[ExpandedNaming, ...]]] = field(default_factory=dict)
     owned: tuple[OwnedClaim, ...] = ()
+    clauses: dict[str, dict[int, tuple[NamingClause, ...]]] = field(default_factory=dict)
 
     def owned_for(self, analyst: str) -> tuple[OwnedClaim, ...]:
         """The claim numbers read for ``analyst`` as their owner, in line order."""
@@ -2124,14 +2145,19 @@ class ClaimReferences:
         """Per claim number of ``analyst``, the lines that reach it only by the newer reading."""
         return dict(self.expanded.get(analyst, {}))
 
+    def clauses_for(self, analyst: str) -> dict[int, tuple[NamingClause, ...]]:
+        """Per claim number of ``analyst``, every line that names it, with its clause."""
+        return dict(self.clauses.get(analyst, {}))
+
 
 class NamedClaims(dict[int, list[tuple[int, bool]]]):
     """One analyst's ``{claim number: [(line number, blocking), ...]}``, as a plain dict.
 
     It carries, for the merge (``revision_merge.merge_revision``), the
     references its merge states (``unplaced``) and the claims the lines
-    reach only by the newer reading (``expanded``) and the claim numbers read
-    for it as their owner (``owned``).
+    reach only by the newer reading (``expanded``), the claim numbers read
+    for it as their owner (``owned``) and every line that names a claim of
+    it, with its reference's clause (``clauses``).
     """
 
     def __init__(
@@ -2141,11 +2167,13 @@ class NamedClaims(dict[int, list[tuple[int, bool]]]):
         unplaced: Sequence[UnplacedClaims] = (),
         expanded: Mapping[int, tuple[ExpandedNaming, ...]] | None = None,
         owned: Sequence[OwnedClaim] = (),
+        clauses: Mapping[int, tuple[NamingClause, ...]] | None = None,
     ) -> None:
         super().__init__(rows or {})
         self.unplaced: tuple[UnplacedClaims, ...] = tuple(unplaced)
         self.expanded: dict[int, tuple[ExpandedNaming, ...]] = dict(expanded or {})
         self.owned: tuple[OwnedClaim, ...] = tuple(owned)
+        self.clauses: dict[int, tuple[NamingClause, ...]] = dict(clauses or {})
 
 
 class NamedByLines(dict[str, dict[int, list[tuple[int, bool]]]]):
@@ -2164,6 +2192,7 @@ class NamedByLines(dict[str, dict[int, list[tuple[int, bool]]]]):
                     unplaced=references.unplaced_for(name),
                     expanded=references.expanded_for(name),
                     owned=references.owned_for(name),
+                    clauses=references.clauses_for(name),
                 )
                 for name, rows in references.named.items()
             }
@@ -2518,6 +2547,7 @@ def read_claim_references(
     unplaced: dict[UnplacedClaims, None] = {}
     owned: dict[OwnedClaim, None] = {}
     expanded: dict[str, dict[int, list[ExpandedNaming]]] = {}
+    clauses: dict[str, dict[int, list[NamingClause]]] = {}
     for number, (line, mark) in enumerate(zip(lines, read_marks(lines), strict=True), 1):
         text = without_line_mark(str(line))
         field_names = _named_in(text, names)
@@ -2574,6 +2604,13 @@ def read_claim_references(
                 rows = claims.setdefault(claim, [])
                 if row not in rows:
                     rows.append(row)
+                spoken = clauses.setdefault(name, {}).setdefault(claim, [])
+                if spoken and spoken[-1].line == number:
+                    spoken[-1] = NamingClause(
+                        number, spoken[-1].reference, spoken[-1].tokens | tokens
+                    )
+                else:
+                    spoken.append(NamingClause(number, rendering, tokens))
                 if newly:
                     reached = expanded.setdefault(name, {}).setdefault(claim, [])
                     if reached and reached[-1].line == number:
@@ -2636,6 +2673,7 @@ def read_claim_references(
         unplaced=tuple(unplaced),
         expanded={k: {n: tuple(v) for n, v in c.items()} for k, c in expanded.items()},
         owned=tuple(owned),
+        clauses={k: {n: tuple(v) for n, v in c.items()} for k, c in clauses.items()},
     )
 
 
