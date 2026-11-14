@@ -344,7 +344,8 @@ def test_without_a_ledger_no_fact_is_shown_and_section_5_alone_asks_nothing() ->
     assert not [p for p in passages_of(report) if p.kind == FACT]
     reporter = _Reporter()
     done = asyncio.run(ask_section_agreement(reporter, report))
-    assert reporter.asked == [] and done.summary == {}
+    # Not asked: the round's record says it was shown no verbatim text (T-613).
+    assert reporter.asked == [] and done.summary == {"verbatim_shown": {}}
 
 
 def test_a_callee_a_passage_names_is_a_fact_of_its_own_and_the_rest_are_counted() -> None:
@@ -507,7 +508,8 @@ def test_a_fact_citing_nothing_asks_no_passage_written_without_the_code() -> Non
     assert [p.cites for p in passages_of(report, entries=ledger) if p.kind == FACT] == [frozenset()]
     reporter = _Reporter()
     done = _ask(report, reporter, ledger)
-    assert reporter.asked == [] and done.summary == {}
+    # Not asked: the round's record says it was shown no verbatim text (T-613).
+    assert reporter.asked == [] and done.summary == {"verbatim_shown": {}}
 
 
 @pytest.mark.parametrize(
