@@ -2472,6 +2472,10 @@ def _owner_of(
 
 # "claim(s)" right before a reference's numbers.
 _CLAIM_WORD_BEFORE = re.compile(r"\bclaims?\s*+#?\s*+$", re.IGNORECASE)
+# How far before a reference's numbers "claim(s)" is looked for, in
+# characters: the word, a "#" and the spaces around them. A bound, so a line
+# of many references costs its length.
+_CLAIM_WORD_WINDOW = 24
 
 
 def _held_in_the_field(
@@ -2496,7 +2500,7 @@ def _held_in_the_field(
     held = owners.get(name)
     if not counted or held is None or any(n in held for n in counted):
         return name
-    word = _CLAIM_WORD_BEFORE.search(text, 0, at)
+    word = _CLAIM_WORD_BEFORE.search(text, max(0, at - _CLAIM_WORD_WINDOW), at)
     if word is None:
         return name
     fits = _short_named(text, word.start(), list(field_names))

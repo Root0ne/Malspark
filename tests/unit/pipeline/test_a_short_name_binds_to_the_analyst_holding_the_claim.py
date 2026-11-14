@@ -11,7 +11,10 @@ Every name and sentence here is made up for the test.
 
 from __future__ import annotations
 
+from typing import Any
+
 from malspark.pipeline.debate_facts import claims_named_by_lines
+from tests.linear_cost import assert_scales
 
 TEAM = ["static", "all_tools_static_r2", "all_tools_qu1cksc0pe", "dynamic"]
 
@@ -86,3 +89,15 @@ class TestAFormThatFitsSeveral:
 
         assert _rows(named) == {}
         assert [u.claims for u in named.references.unplaced] == ["claim 5"]
+
+
+class TestALineOfManyReferencesCostsItsLength:
+    def test_a_line_of_thousands_of_short_forms(self) -> None:
+        owners = _owners(static=4, all_tools_static_r2=30, all_tools_qu1cksc0pe=30, dynamic=20)
+
+        def build(size: int) -> Any:
+            refs = " ".join(f"STATIC claim {17 + i % 3}," for i in range(size))
+            line = f"[analysts: ALL_TOOLS_STATIC_R2 ANALYST] {refs} [blocking: the reads differ]"
+            return lambda: claims_named_by_lines([line], TEAM, owners)
+
+        assert_scales(build, 1_000)
