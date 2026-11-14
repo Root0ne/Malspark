@@ -65,3 +65,45 @@ class TestTheLastBlockStillCounts:
         answer = _answer("CONTRADICTIONS:", *LINES, "", "CONTRADICTIONS:", LINES[0])
 
         assert read_contradictions_block(answer).items == [LINES[0]]
+
+
+class TestARemarkAdoptsTheBlockAboveOnlyRightAfterIt:
+    def test_prose_between_the_block_and_the_remark_leaves_the_remark_read(self) -> None:
+        answer = _answer("CONTRADICTIONS:", *LINES, "", "On reading ev_0109 again:", "", REMARK)
+
+        assert read_contradictions_block(answer).items == [REMARK.removeprefix("CONTRADICTIONS: ")]
+
+    def test_the_stored_layout_with_a_blank_line_between_is_read_as_the_block(self) -> None:
+        answer = _answer("The reasoning ends.", "", "CONTRADICTIONS:", *LINES, "", "", REMARK)
+
+        assert read_contradictions_block(answer).items == LINES
+
+
+class TestARemarkThatSaysNoneStandsNeverBringsADraftBack:
+    def test_each_wording_of_none(self) -> None:
+        for remark in (
+            "nothing stands",
+            "no contradiction stands after the revisions",
+            "none of the lines above survives the revisions",
+            "all of the above were resolved by the revisions",
+            "every line above is settled",
+        ):
+            answer = _answer("CONTRADICTIONS:", *LINES, "", f"CONTRADICTIONS: {remark}")
+
+            assert read_contradictions_block(answer).items != LINES, remark
+
+    def test_a_draft_then_a_final_none_reads_none(self) -> None:
+        answer = _answer("CONTRADICTIONS:", *LINES, "", "CONTRADICTIONS: NONE")
+
+        assert read_contradictions_block(answer).items == []
+
+
+class TestAFinalOneLineBlockThatNamesAClaimOrAnEntryIsTheBlock:
+    def test_without_a_field(self) -> None:
+        for line in (
+            "DYNAMIC claim 2 contradicts the sandbox's process list.",
+            "The process list in ev_0005 contradicts the dynamic analyst.",
+        ):
+            answer = _answer("CONTRADICTIONS:", *LINES, "", f"CONTRADICTIONS: {line}")
+
+            assert read_contradictions_block(answer).items == [line], line
