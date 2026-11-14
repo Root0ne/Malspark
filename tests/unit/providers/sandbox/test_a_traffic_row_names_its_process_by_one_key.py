@@ -22,7 +22,7 @@ import pytest
 from malspark.core.config import RestMappingConfig
 from malspark.providers.sandbox.readers import required_reader
 from malspark.providers.sandbox_tools import sandbox_dropped_files, sandbox_network
-from malspark.reporting.ledger_projection import network_from_ledger
+from malspark.reporting.ledger_projection import network_from_ledger, traffic_makers
 from malspark.schemas.evidence import build_entry
 from malspark.schemas.sandbox_document import sandbox_document
 from malspark.schemas.sandbox_report import (
@@ -34,6 +34,7 @@ from malspark.schemas.sandbox_report import (
     SandboxReport,
     attribute_the_launcher,
 )
+from tests.linear_cost import assert_scales
 
 LIVE = Path(__file__).resolve().parents[3] / "fixtures" / "sandbox" / "triage_live"
 CRL = "http://c.pki.goog/r/r1.crl"
@@ -138,6 +139,99 @@ class TestEveryFlowOfAnIdIsKept:
     ) -> None:
         url = _url(_read(_with_flow_32(*order)))
         assert url.sample_process_tree is None and url.made_by is None
+
+
+def _one_id(procids: list[Any], requests: int = 3) -> dict[str, Any]:
+    """The live task with one flow per procid, all of id 1, and ``requests`` HTTP requests on it."""
+    task = _json("behavioral1.json")
+    task["network"]["flows"] = [
+        {"id": 1, "proto": "tcp", "dst": "10.1.1.1:80", **({"procid": p} if p else {})}
+        for p in procids
+    ]
+    task["network"]["requests"] = [
+        {"flow": 1, "index": i, "http_request": {"method": "GET", "url": f"http://a{i}.example/"}}
+        for i in range(requests)
+    ]
+    return task
+
+
+def _url_of(report: SandboxReport, index: int = 0) -> Any:
+    return next(u for u in _network(report).urls if u.url == f"http://a{index}.example/")
+
+
+UNLISTED_40 = [1000 + i for i in range(40)]
+
+
+class TestAnIdManyFlowsShare:
+    """An id's flows are worked out once; a request carries a bounded part, every answer kept."""
+
+    def test_a_request_carries_a_bounded_part_of_the_id_s_flows(self) -> None:
+        report = _read(_one_id(UNLISTED_40))
+        for row in report.network.http:
+            assert len(row["platform_flows"]) == 16
+        url = _url_of(report)
+        assert url.sample_process_tree is False and url.made_by is not None
+        assert len(url.made_by.unlisted) == 16 and url.made_by.more
+
+    @pytest.mark.parametrize("first", [True, False])
+    def test_the_sample_s_flow_among_many_is_carried(self, first: bool) -> None:
+        procids = [86, *UNLISTED_40] if first else [*UNLISTED_40, 86]
+        url = _url_of(_read(_one_id(procids)))
+        assert url.sample_process_tree is True and url.made_by is None
+
+    @pytest.mark.parametrize("first", [True, False])
+    def test_a_flow_naming_no_process_among_many_is_carried(self, first: bool) -> None:
+        procids = [None, *UNLISTED_40] if first else [*UNLISTED_40, None]
+        url = _url_of(_read(_one_id(procids)))
+        assert url.sample_process_tree is None and url.made_by is None
+
+    def test_a_flow_left_out_the_launcher_s_reading_may_read_otherwise_leaves_it_unstated(
+        self,
+    ) -> None:
+        # Forty processes the launcher's host started and one the started
+        # program did, all on one id: the sandbox's mark puts all of them in
+        # one tree, the launcher's reading tells them apart.
+        task = _one_id([*(2000 + i for i in range(40)), 3000])
+        task["processes"] += [
+            {"procid": 2000 + i, "procid_parent": 84, "image": f"C:\\t\\h{i}.exe"}
+            for i in range(40)
+        ]
+        task["processes"].append({"procid": 3000, "procid_parent": 86, "image": "C:\\t\\s.exe"})
+        report = _read(task)
+        attribute_the_launcher(report, LAUNCHER)
+        url = _url_of(report)
+        # Never withheld as the launcher's: the sample's flow may be among those left out.
+        assert url.sample_process_tree is not False and url.made_by is None
+
+    def test_an_unlisted_flow_left_out_in_a_launcher_run_still_withholds_it(self) -> None:
+        report = _read(_one_id(UNLISTED_40))
+        attribute_the_launcher(report, LAUNCHER)
+        url = _url_of(report)
+        assert url.sample_process_tree is False and url.made_by is not None
+        assert url.made_by.more
+
+
+class TestTheCostOfAnIdManyFlowsShareIsLinear:
+    """Flows and requests under one id cost their sum: the read, the answers, the network view."""
+
+    @staticmethod
+    def _task(n: int) -> dict[str, Any]:
+        return _one_id([1000 + i for i in range(n)], requests=n)
+
+    def test_the_read(self) -> None:
+        assert_scales(self._task, 300, _read, factor=8)
+
+    def test_the_answers_of_its_requests(self) -> None:
+        def make(n: int) -> list[dict[str, Any]]:
+            return list(_read(self._task(n)).network.http)
+
+        assert_scales(make, 2000, lambda rows: [traffic_makers(row) for row in rows], factor=8)
+
+    def test_the_network_view(self) -> None:
+        def make(n: int) -> SandboxReport:
+            return _read(self._task(n))
+
+        assert_scales(make, 200, _network, factor=8)
 
 
 MAPPED = RestMappingConfig(

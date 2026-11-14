@@ -891,6 +891,19 @@ TRAFFIC_PROCESS_KEY = "platform_process"
 # (``ledger_projection.traffic_makers``). Where they all agree, the request
 # carries their facts on itself instead.
 TRAFFIC_FLOWS_KEY = "platform_flows"
+# How many of those flows of each answer a request carries (the sample's, one
+# naming no process or no lineage, and each other lineage's), in the manner of
+# the names an address lends a name (``ledger_projection``): a hostile report's
+# many flows and requests on one id cost their sum, never their product. Every
+# answer the id's flows give is carried, so the request is decided as with all
+# of them; beside the flows, how many of each answer were left out.
+TRAFFIC_FLOWS_NAMED = 16
+TRAFFIC_FLOWS_LEFT_OUT_KEY = "platform_flows_left_out"
+# Beside those: the launcher's reading met flows left out, which it cannot
+# read again, of an answer it may change (:data:`TRAFFIC_FLOWS_SETTLED_ANSWERS`
+# names the ones it never does); the request then also answers as one naming
+# no process.
+TRAFFIC_FLOWS_UNSETTLED_KEY = "platform_flows_unsettled"
 
 
 def _basename(path: str) -> str:
@@ -1715,7 +1728,9 @@ def attribute_the_launcher(report: SandboxReport, launcher: Any) -> None:
       under another name;
     * a flow's attribution (``SAMPLE_TREE_KEY``) is read from that tree, a
       flow of the launcher's process says so, and a flow of a process
-      attributed to no one states nothing;
+      attributed to no one states nothing; a request that carries part of
+      its shared flow id's flows, the rest of an answer this reading may
+      change, is marked as such (:data:`TRAFFIC_FLOWS_UNSETTLED_KEY`);
     * a signature every process of which is the launcher's, in every task
       that lists it, is moved to the :data:`LAUNCHER_SIGNATURES_CHANNEL`
       channel, marked, so its techniques and indicators are never read as
@@ -1835,6 +1850,11 @@ def attribute_the_launcher(report: SandboxReport, launcher: Any) -> None:
         if isinstance(facts, dict)
     ]
     for row in traffic:
+        # Flows of a shared id left out of a request, of an answer this
+        # reading may change: it cannot read them again (``TRAFFIC_FLOWS_NAMED``).
+        left_out = row.get(TRAFFIC_FLOWS_LEFT_OUT_KEY)
+        if isinstance(left_out, dict) and set(left_out) - TRAFFIC_FLOWS_SETTLED_ANSWERS:
+            row[TRAFFIC_FLOWS_UNSETTLED_KEY] = True
         procid = pid_of(row.get(TRAFFIC_PROCESS_KEY))
         for key in (SAMPLE_TREE_KEY, LINEAGE_DISPUTED_KEY, LINEAGE_MARKED_BY_KEY, LINEAGE_KEY):
             row.pop(key, None)
@@ -2089,21 +2109,70 @@ def _flow_id(value: Any) -> str:
     return str(value).strip()
 
 
+def _flow_answer(facts: Mapping[str, Any]) -> str:
+    """What one flow's process facts answer, as the reader states them: one word."""
+    if facts.get(SAMPLE_TREE_KEY) is True:
+        return "sample"
+    if TRAFFIC_PROCESS_KEY not in facts:
+        return "none"
+    if facts.get(LINEAGE_DISPUTED_KEY):
+        return "disputed"
+    if facts.get(SAMPLE_TREE_KEY) is False:
+        return "outside"
+    if facts.get(PROCESS_UNLISTED_KEY) is True:
+        return "unlisted"
+    return "unstated"
+
+
+# The answers of flows left out of a request that the launcher's reading never
+# changes: a flow naming no process, and one naming a process its task does not
+# list (``attribute_the_launcher`` reads a listed process only).
+TRAFFIC_FLOWS_SETTLED_ANSWERS: frozenset[str] = frozenset({"none", "unlisted"})
+
+
 def _request_process(flows: list[dict[str, Any]] | None, task: str) -> dict[str, Any]:
     """The process facts an HTTP request takes from the flows of the id it rode on.
 
     One flow, or several stating the same facts: those facts, flat on the
     request. Several stating different ones: each flow's facts under
     :data:`TRAFFIC_FLOWS_KEY`, so the request is the sample's when any of them
-    is and another lineage's only when all name one, whatever their order.
+    is and another lineage's only when all name one, whatever their order; up
+    to :data:`TRAFFIC_FLOWS_NAMED` flows of each answer, and how many of each
+    were left out (:data:`TRAFFIC_FLOWS_LEFT_OUT_KEY`). Worked out once per
+    flow id; linear in its flows.
     """
     if not flows:
         return {}
-    by_facts = {json.dumps(f, sort_keys=True, default=str): f for f in flows}
+    by_facts: dict[str, dict[str, Any]] = {}
+    for facts in flows:
+        by_facts.setdefault(json.dumps(facts, sort_keys=True, default=str), facts)
     distinct = [by_facts[key] for key in sorted(by_facts)]
     if len(distinct) == 1:
         return {**distinct[0], PROCESS_TASK_KEY: task}
-    return {TRAFFIC_FLOWS_KEY: [{**f, PROCESS_TASK_KEY: task} for f in distinct]}
+    carried: list[dict[str, Any]] = []
+    seen: dict[str, int] = {}
+    left_out: dict[str, int] = {}
+    for facts in distinct:
+        answer = _flow_answer(facts)
+        seen[answer] = seen.get(answer, 0) + 1
+        if seen[answer] <= TRAFFIC_FLOWS_NAMED:
+            carried.append({**facts, PROCESS_TASK_KEY: task})
+        else:
+            left_out[answer] = left_out.get(answer, 0) + 1
+    made: dict[str, Any] = {TRAFFIC_FLOWS_KEY: carried}
+    if left_out:
+        made[TRAFFIC_FLOWS_LEFT_OUT_KEY] = dict(sorted(left_out.items()))
+    return made
+
+
+def _copied(made: Mapping[str, Any]) -> dict[str, Any]:
+    """A request's own copy of its flow id's facts (:func:`_request_process`), which are bounded."""
+    out = dict(made)
+    if isinstance(out.get(TRAFFIC_FLOWS_KEY), list):
+        out[TRAFFIC_FLOWS_KEY] = [dict(facts) for facts in out[TRAFFIC_FLOWS_KEY]]
+    if isinstance(out.get(TRAFFIC_FLOWS_LEFT_OUT_KEY), dict):
+        out[TRAFFIC_FLOWS_LEFT_OUT_KEY] = dict(out[TRAFFIC_FLOWS_LEFT_OUT_KEY])
+    return out
 
 
 # Each part and the part that completes its exchange: a question and its answer.
@@ -2325,8 +2394,11 @@ def triage_overview_to_sandbox_report(
                 _keep_task_block(channels, f"task.network.{block}", str(task_name), value)
 
         # Each flow's process facts by its id, which an HTTP request riding on
-        # it takes; every flow of an id the task lists twice is kept.
+        # it takes; every flow of an id the task lists twice is kept. What an
+        # id's flows give a request is worked out once per id (``id_made``),
+        # each request taking a copy of that bounded result.
         flow_process: dict[str, list[dict[str, Any]]] = {}
+        id_made: dict[str, dict[str, Any]] = {}
         for flow in _rows(net.get("flows")):
             if _scalar_id(flow.get("id")):
                 attribution = _flow_attribution(flow, lineage, marker)
@@ -2389,10 +2461,12 @@ def triage_overview_to_sandbox_report(
             # takes none: its flow is the guest's resolver, never the program
             # that asked.
             ridden = req_extra.get("flow")
-            made = _request_process(
-                flow_process.get(_flow_id(ridden)) if _scalar_id(ridden) else None,
-                str(task_name),
-            )
+            made: dict[str, Any] = {}
+            if web_req is not None and _scalar_id(ridden):
+                flow_key = _flow_id(ridden)
+                if flow_key not in id_made:
+                    id_made[flow_key] = _request_process(flow_process.get(flow_key), str(task_name))
+                made = _copied(id_made[flow_key])
 
             if domain_req is not None:
                 answers = [

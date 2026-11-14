@@ -80,6 +80,8 @@ from malspark.schemas.sandbox_report import (
     PROCESS_UNLISTED_KEY,
     SAMPLE_TREE_KEY,
     TRAFFIC_FLOWS_KEY,
+    TRAFFIC_FLOWS_LEFT_OUT_KEY,
+    TRAFFIC_FLOWS_UNSETTLED_KEY,
     TRAFFIC_PROCESS_KEY,
 )
 
@@ -138,13 +140,24 @@ def traffic_makers(row: Any) -> list[bool | tuple[str, str] | None]:
     """Each answer a traffic record gives (:func:`traffic_maker`).
 
     A request riding on a flow id several flows share answers once per flow
-    (``TRAFFIC_FLOWS_KEY``), so it is the sample's when any of them is and
-    another lineage's only when all name one; any other record answers once.
+    it carries (``TRAFFIC_FLOWS_KEY``), so it is the sample's when any of them
+    is and another lineage's only when all name one; where the launcher's
+    reading met flows left out of it that it may have read otherwise
+    (``TRAFFIC_FLOWS_UNSETTLED_KEY``), it also answers as naming no process.
+    Any other record answers once.
     """
     flows = row.get(TRAFFIC_FLOWS_KEY) if isinstance(row, dict) else None
     if isinstance(flows, list):
-        return [traffic_maker(facts) for facts in flows if isinstance(facts, dict)] or [None]
+        answers = [traffic_maker(facts) for facts in flows if isinstance(facts, dict)] or [None]
+        if row.get(TRAFFIC_FLOWS_UNSETTLED_KEY) is True:
+            answers.append(None)
+        return answers
     return [traffic_maker(row)]
+
+
+def _flows_left_out(row: Any) -> bool:
+    """Whether a request carries part of its flow id's flows (``TRAFFIC_FLOWS_LEFT_OUT_KEY``)."""
+    return isinstance(row, dict) and bool(row.get(TRAFFIC_FLOWS_LEFT_OUT_KEY))
 
 
 def _states_a_process(row: Any) -> bool:
@@ -1566,6 +1579,11 @@ def network_from_ledger(
                     _made("domain", value_key("domain", host), made)
                 if url:
                     _made("url", _fold_url_host(url), made)
+            if _flows_left_out(row):
+                # The request names part of its flow id's processes.
+                for part in (("domain", value_key("domain", host)), ("url", _fold_url_host(url))):
+                    if part[1]:
+                        tallies.setdefault(part, _MakerTally()).more = True
             # The method the request record states, and none where it states
             # none: the first record of the URL that names one.
             method = _first_str(row, "method").upper() if isinstance(row, dict) else ""
