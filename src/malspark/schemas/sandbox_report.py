@@ -2367,7 +2367,7 @@ def triage_overview_to_sandbox_report(
                 if (
                     kind in folded
                     or named >= TRIAGE_UNREAD_KINDS
-                    or (len(kind) > TRIAGE_UNREAD_KIND_NAME)
+                    or len(kind) > TRIAGE_UNREAD_KIND_NAME
                 ):
                     folded.add(kind)
                     kind = ""
