@@ -344,7 +344,11 @@ claim or a ledger entry id), or `CONTRADICTIONS: NONE`, then its
 `agreement_confidence` line. A contradiction includes a claim an evidence
 ledger entry contradicts. Only that last block is read into the verdict's
 contradictions, on the text path and the structured one alike; contradictions
-the reasoning drafted and then resolved are not counted. A non-empty block is
+the reasoning drafted and then resolved are not counted. A block ends at the
+next label. A last label whose one line is a remark on the label line itself,
+holding no field of the block's lines ("CONTRADICTIONS: standing blocking lines
+are listed above; …"), is no block of its own: the block above it is read,
+where a line of that block holds the fields. A non-empty block is
 not consensus whatever number the mediator wrote: the number is kept and shown
 beside the list, and the router sends the analysts to revise, each told the
 block's lines. The block is one contradiction per line, bulleted, numbered or
@@ -2558,7 +2562,13 @@ the owner's merge (`debate_facts.OwnedClaim`); on a line whose field names one
 analyst, "its claim N" with no other participant named before it is that
 analyst's claim, read as the newer reading reads one, and a bare "claim N"
 written again for a number the line already names for that analyst is the same
-claim and no unplaced reference; a claim a blocking line reaches only by
+claim and no unplaced reference; a name or short form before "claim N" names
+the analyst whose name it is ("STATIC" the `static` analyst beside
+`all_tools_static_r2`), except that on a line whose field leaves that analyst
+out, while its answer in force holds no claim of that number, it names the one
+analyst of the field the form fits whose answer holds the claim, and a form
+that fits several analysts and is none of their names names no one; a claim a
+blocking line reaches only by
 the newer reading is withdrawn by rule only when its reference's clause shares a
 ledger id or an address with it, and is otherwise carried with the line and
 stated); and any other claim it neither writes again nor

@@ -756,7 +756,11 @@ def read_contradictions_block(text: str) -> ContradictionsBlock:
     """The answer's last ``CONTRADICTIONS:`` block, read (:class:`ContradictionsBlock`).
 
     Only the last block counts: one drafted earlier and then argued away is not
-    the mediator's word. The label is matched in capitals, as the prompt spells
+    the mediator's word. A last label whose one line is a remark on the label
+    line itself, holding no field of the block's lines ("CONTRADICTIONS:
+    standing blocking lines are listed above; ..."), is no block of its own:
+    the block above it is read, where a line of that block holds the fields.
+    A block ends at the next label. The label is matched in capitals, as the prompt spells
     it, so a prose heading such as "Contradictions:" in the reasoning is not
     taken for it. The block runs to the agreement line, the end of the answer,
     or a blank line followed by a line that is neither a list line nor one
@@ -782,15 +786,35 @@ def read_contradictions_block(text: str) -> ContradictionsBlock:
     closed wording.
     """
     lines = (text or "").splitlines()
-    start = None
-    for index in range(len(lines) - 1, -1, -1):
-        if _CONTRADICTIONS_LINE_RE.match(lines[index]):
-            start = index
-            break
-    if start is None:
+    starts = [index for index, line in enumerate(lines) if _CONTRADICTIONS_LINE_RE.match(line)]
+    if not starts:
         return ContradictionsBlock(None)
+    reading, remark = _block_at(lines, starts[-1])
+    # A last label whose only line is a remark on its own label line (no
+    # field of the block's lines on it) stands after the block it remarks
+    # on: the block above, where a line of it holds the fields, is read.
+    for start in reversed(starts[:-1]):
+        if not remark:
+            break
+        above, remark_above = _block_at(lines, start)
+        if any(carries_line_field(item) for item in above.items or ()):
+            return above
+        remark = remark_above
+    return reading
+
+
+def _block_at(lines: list[str], start: int) -> tuple[ContradictionsBlock, bool]:
+    """The block whose label stands at ``start``, read, and whether it is a remark only.
+
+    A remark only is a block that holds one line, written on its label line,
+    with no field of the block's lines on it (``debate_facts.carries_line_field``),
+    no NONE and no phrase opening with "none".
+    """
     match = _CONTRADICTIONS_LINE_RE.match(lines[start])
     rest = (match.group(1) if match else "").strip()
+    # The line written on the label line, where one is: a remark only when
+    # it is the block's one line (above).
+    label_item = ""
     found: list[str] = []
     listed_items = 0
     said_none = False
@@ -804,12 +828,13 @@ def read_contradictions_block(text: str) -> ContradictionsBlock:
             pass
         else:
             none_phrase = bool(_NONE_OPENING_RE.match(rest))
-            found.append(rest.strip("*_`").strip())
+            label_item = rest.strip("*_`").strip()
+            found.append(label_item)
     after_blank = False
     ended_at_heading = False
     for index in range(start + 1, len(lines)):
         line = lines[index]
-        if _AGREEMENT_LINE_RE.match(line):
+        if _AGREEMENT_LINE_RE.match(line) or _CONTRADICTIONS_LINE_RE.match(line):
             break
         if not line.strip():
             after_blank = True
@@ -861,15 +886,24 @@ def read_contradictions_block(text: str) -> ContradictionsBlock:
         listed_items += 1
     if found:
         if said_none and not listed_items:
-            return ContradictionsBlock(found, mixed=True, ambiguous="none_beside_plain_lines")
+            return (
+                ContradictionsBlock(found, mixed=True, ambiguous="none_beside_plain_lines"),
+                False,
+            )
         if none_phrase and len(found) == 1 and not said_none:
-            return ContradictionsBlock(found, ambiguous="none_phrase")
-        return ContradictionsBlock(found, mixed=said_none)
+            return ContradictionsBlock(found, ambiguous="none_phrase"), False
+        remark = (
+            found == [label_item]
+            and not said_none
+            and not table_rows
+            and not carries_line_field(label_item)
+        )
+        return ContradictionsBlock(found, mixed=said_none), remark
     if (table_rows or ended_at_heading) and not said_none:
         # Only table rows, or a heading the block ended at before any line:
         # nothing says what stands, and the mediator is asked once.
-        return ContradictionsBlock(None)
-    return ContradictionsBlock([])
+        return ContradictionsBlock(None), False
+    return ContradictionsBlock([]), False
 
 
 def final_contradictions(text: str) -> list[str] | None:

@@ -2441,6 +2441,41 @@ def _owner_of(
     return found[0] if len(found) == 1 else None
 
 
+# "claim(s)" right before a reference's numbers.
+_CLAIM_WORD_BEFORE = re.compile(r"\bclaims?\s*+#?\s*+$", re.IGNORECASE)
+
+
+def _held_in_the_field(
+    text: str,
+    at: int,
+    numbers: ClaimNumbers,
+    name: str,
+    field_names: Sequence[str],
+    owners: Mapping[str, Mapping[int, frozenset[str]]],
+) -> str:
+    """The analyst a reference read for ``name`` names on a line whose field leaves ``name`` out.
+
+    A name or short form is read for the analyst whose name it is
+    (:func:`_short_named`). Where that analyst's answer in force holds none of
+    the reference's claims, and the words before "claim(s)" fit exactly one
+    analyst the line's field names, whose answer holds every one of them,
+    the reference is that analyst's: "STATIC claim 17" on a line whose field
+    names the analyst ``all_tools_static_r2`` alone, while the ``static``
+    analyst holds 16 claims. Otherwise ``name``.
+    """
+    counted = [n for n in map(_as_claim_number, numbers.numbers) if n is not None]
+    held = owners.get(name)
+    if not counted or held is None or any(n in held for n in counted):
+        return name
+    word = _CLAIM_WORD_BEFORE.search(text, 0, at)
+    if word is None:
+        return name
+    fits = _short_named(text, word.start(), list(field_names))
+    if fits is None or not all(n in (owners.get(fits) or {}) for n in counted):
+        return name
+    return fits
+
+
 def read_claim_references(
     lines: Sequence[str],
     participants: Sequence[str],
@@ -2452,7 +2487,11 @@ def read_claim_references(
     reads on it, for the analysts its ``[analysts: ...]`` field names (a
     line whose field names analysts counts only for them: a claim number it
     writes for another is no question put to that one), or for any analyst
-    on a line without a field, as the earlier reading named them there. The
+    on a line without a field, as the earlier reading named them there. Given
+    ``owners``, a reference read for an analyst the field leaves out, whose
+    answer in force holds none of its claims, is read for the one analyst of
+    the field its words fit and whose answer holds them
+    (:func:`_held_in_the_field`). The
     line number counts from 1 in the order given; ``blocking`` is the
     mediator's mark (``read_marks``), except that a line whose mark is not
     read blocks with no claim only the newer reading reaches (``expanded``).
@@ -2491,6 +2530,8 @@ def read_claim_references(
         kept: list[tuple[str, ClaimNumbers, frozenset[str]]] = []
         cited: dict[str, set[int]] = {}
         for name, at, numbers, old, _in_mark in references:
+            if field_names and name not in field_names and owners is not None:
+                name = _held_in_the_field(text, at, numbers, name, field_names, owners)
             if field_names is not None and name not in field_names:
                 continue
             if not field_names and not old:
