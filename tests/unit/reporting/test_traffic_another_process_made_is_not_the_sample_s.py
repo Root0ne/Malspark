@@ -24,6 +24,8 @@ from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
 
+import pytest
+
 from malspark.pipeline.validation import (
     UNATTRIBUTED_INDICATOR_CODE,
     unattributed_indicator_violations,
@@ -54,7 +56,11 @@ from malspark.reporting.renderers.stix_renderer import (
 from malspark.schemas.evidence import build_entry
 from malspark.schemas.sandbox_document import sandbox_document
 from malspark.schemas.sandbox_report import (
+    LINEAGE_DISPUTED_KEY,
+    LINEAGE_KEY,
+    LINEAGE_LAUNCHER,
     PROCESS_UNLISTED_KEY,
+    SAMPLE_TREE_KEY,
     TRAFFIC_PROCESS_KEY,
     SandboxReport,
     attribute_the_launcher,
@@ -381,3 +387,110 @@ class TestTheJudgeKeepsAWithheldUrlByItsHost:
         answer = _url_answer(_judged(url, told=False), url)
         assert answer.startswith("no: ")
         assert "no question with this fact is recorded" in answer
+
+
+LAUNCHER_ROW = {
+    TRAFFIC_PROCESS_KEY: "84",
+    SAMPLE_TREE_KEY: False,
+    LINEAGE_KEY: LINEAGE_LAUNCHER,
+    "process": "powershell.exe",
+}
+UNLISTED_ROW = {TRAFFIC_PROCESS_KEY: "46", PROCESS_UNLISTED_KEY: True}
+SAMPLE_ROW = {TRAFFIC_PROCESS_KEY: "86", SAMPLE_TREE_KEY: True}
+DISPUTED_ROW = {TRAFFIC_PROCESS_KEY: "5", LINEAGE_DISPUTED_KEY: "marked", "process": "x.exe"}
+NO_PROCESS_ROW: dict[str, Any] = {}
+MIXED_URL = "http://mixed.example.net/a"
+MIXED_ADDRESS = "185.199.108.33"
+
+
+def _mixed(*, http: tuple[dict[str, Any], ...] = (), tcp: tuple[dict[str, Any], ...] = ()) -> Any:
+    """A report of HTTP records on one URL and flows to one address, each with the facts given."""
+    view = {
+        "http": [{"host": "mixed.example.net", "uri": "/a", **facts} for facts in http],
+        "tcp": [{"dst": MIXED_ADDRESS, "dport": 443, **facts} for facts in tcp],
+    }
+    entry = build_entry(
+        entry_id="ev_0001",
+        seq=1,
+        agent="dynamic",
+        tool="sandbox_network",
+        args={},
+        server=None,
+        output=json.dumps(view),
+    )
+    network = network_from_ledger([entry])
+    return MalwareReport(
+        identity=SampleIdentity(hashes=FileHashes(sha256=SHA256)),
+        verdict="Malware",
+        overall_confidence=0.9,
+        network=network,
+    )
+
+
+class TestMixedRecords:
+    """One value's records naming processes of different lineages, or none."""
+
+    @pytest.mark.parametrize("order", [0, 1])
+    def test_the_launcher_and_an_unlisted_process_withhold_it_naming_both(self, order: int) -> None:
+        rows = (LAUNCHER_ROW, UNLISTED_ROW)[:: 1 if order == 0 else -1]
+        report = _mixed(http=rows)
+        (url,) = report.network.urls
+        assert url.sample_process_tree is False and url.made_by is not None
+        assert url.made_by.launcher == ["powershell.exe (procid 84)"]
+        assert url.made_by.unlisted == ["procid 46"]
+        answer = _url_answer(report, MIXED_URL)
+        assert answer.startswith("no: the sandbox report says it was made by ")
+        assert "the launcher's process" in answer and "does not list" in answer
+
+    @pytest.mark.parametrize("order", [0, 1])
+    def test_the_sample_and_a_disputed_process_publish_it(self, order: int) -> None:
+        rows = (SAMPLE_ROW, DISPUTED_ROW)[:: 1 if order == 0 else -1]
+        report = _mixed(http=rows)
+        (url,) = report.network.urls
+        assert url.sample_process_tree is True and url.made_by is None
+        assert publishes(_url_answer(report, MIXED_URL))
+
+    @pytest.mark.parametrize("order", [0, 1])
+    def test_another_lineage_and_a_record_naming_no_process_decide_it_as_without_one(
+        self, order: int
+    ) -> None:
+        rows = (LAUNCHER_ROW, NO_PROCESS_ROW)[:: 1 if order == 0 else -1]
+        report = _mixed(http=rows)
+        (url,) = report.network.urls
+        assert url.sample_process_tree is None and url.made_by is None
+        assert _url_answer(report, MIXED_URL) == publish_answer("url", MIXED_URL, "sandbox", None)
+
+    def test_an_address_some_of_whose_flows_name_no_process_names_no_unlisted_one(self) -> None:
+        report = _mixed(tcp=(UNLISTED_ROW, NO_PROCESS_ROW))
+        (ip,) = report.network.ips
+        assert ip.unlisted_processes == []
+        assert "does not list" not in _answer(report, "ip", MIXED_ADDRESS)
+
+    def test_an_address_every_flow_of_which_is_unlisted_names_them(self) -> None:
+        report = _mixed(tcp=(UNLISTED_ROW, {**UNLISTED_ROW, TRAFFIC_PROCESS_KEY: "47"}))
+        (ip,) = report.network.ips
+        assert ip.unlisted_processes == ["procid 46", "procid 47"]
+        assert _answer(report, "ip", MIXED_ADDRESS).startswith(
+            "no: the sandbox report says it was made by a process the report does not list "
+            "(procid 46, procid 47)"
+        )
+
+    def test_an_address_the_launcher_and_an_unlisted_process_reached(self) -> None:
+        # Not every flow is unlisted, nor every flow outside the tree: the
+        # address is withheld as no flow of the tree reached it, as without
+        # the listing.
+        report = _mixed(tcp=(LAUNCHER_ROW, UNLISTED_ROW))
+        (ip,) = report.network.ips
+        assert ip.sample_process_tree is None and ip.unlisted_processes == []
+        answer = _answer(report, "ip", MIXED_ADDRESS)
+        assert answer.startswith("no: ") and "does not list" not in answer
+
+
+class TestATaskListingNoProcess:
+    def test_a_flow_naming_an_id_says_nothing_of_its_listing(self) -> None:
+        task = _json("behavioral1.json")
+        task["processes"] = []
+        sandbox = _sandbox(task)
+        rows = (*sandbox.network.tcp, *sandbox.network.udp, *sandbox.network.http)
+        assert rows and all(PROCESS_UNLISTED_KEY not in row for row in rows)
+        assert all(row[TRAFFIC_PROCESS_KEY] in ("36", "46") for row in rows)
