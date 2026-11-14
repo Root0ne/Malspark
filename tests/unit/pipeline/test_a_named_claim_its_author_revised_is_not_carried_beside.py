@@ -173,6 +173,9 @@ class TestTheAnalystRejectsItsOwnClaim:
             "My claim 2 (the mutex name at 0x403962 unread). Withdrawn as stated; see the new "
             "claim.",
             "My claims 1 and 2 (0x40cf14, 0x403962) are superseded; the claims above replace them.",
+            "My claims 1 and 2 (0x40cf14, 0x403962) are superseded by the claims above.",
+            "My claim 2 (the mutex name is not recovered). Withdrawn as stated.",
+            "My claim 2 is replaced by claim 3 above.",
             "I retract my earlier claim 2: ev_0109 shows the third argument at 0x403962.",
             "I reject my own claim 2 (0x403962); ev_0109 shows the buffer passed as R8.",
         ):
@@ -200,7 +203,7 @@ class TestTheAnalystRejectsItsOwnClaim:
             # Another answer's numbers.
             "My round-0 claim 2 (name at 0x403962 unread). Withdrawn as stated.",
             # Another's act on it.
-            "My claims 1 and 2 (0x40cf14, 0x403962) are superseded by the claims above.",
+            "My claim 2 (0x403962) was rejected by the mediator.",
         ):
             merge = self._merge(dispute)
             assert self._withdrawn(merge) == [], dispute
@@ -233,7 +236,17 @@ class TestAnItemThatSaysAnythingAgainstTheWithdrawalReadsAsNothing:
     )
     # Each item holds one reason alone to read it as nothing.
     ONE_REASON = (
-        ("a negation between", "My claim 2 (0x403962) does not read the call; it is withdrawn."),
+        ("a negation right before the word", "My claim 2 (0x403962) is not now withdrawn."),
+        ("a negation before the verb", "My claim 2 (0x403962) holds X. No, I reject this."),
+        ("a reported word", "My claim 2 (0x403962): TRIAGE says it is superseded."),
+        (
+            "another's act by an agent",
+            "My claim 2 (0x403962) was disputed by STATIC and is withdrawn.",
+        ),
+        (
+            "a condition in the verb's sentence",
+            "My claim 2 (0x403962). If peers are right, I reject this.",
+        ),
         ("an agent", "My claim 2 (0x403962) is rejected by the mediator."),
         ("a keeping word after the word", "My claim 2 (0x403962) is superseded; I keep the name."),
         ("a contrasting word", "My claim 2 (0x403962) is withdrawn, yet the name is read."),
@@ -290,6 +303,33 @@ class TestAnItemThatSaysAnythingAgainstTheWithdrawalReadsAsNothing:
             assert named.merged is not None
             carried = next(c for c in named.merged.claims if c.claim == MUTEX)
             assert carried.carried_contested_by == ["L1 (round 3)"], dispute
+
+
+class TestTheAuthorsOwnWithdrawalIsRead:
+    """What reads as a withdrawal though it holds a word that stops another form."""
+
+    WITHDRAWALS = (
+        # A negation far from the word, or inside the claim's description.
+        "My claim 2 (0x403962) does not read the call; it is withdrawn.",
+        "My claim 2 (the name at 0x403962 is not recovered). Withdrawn as stated.",
+        # What took the claim's place, and the author as the agent.
+        "My claim 2 (0x403962) is superseded by claim 3 above.",
+        "My claim 2 (0x403962) is replaced by claim 3 above.",
+        "My claim 2 (0x403962) is rejected by me.",
+        # A word of evidence or judgement on the claim.
+        "My claim 2 (0x403962) is withdrawn; ev_0109 confirms the third argument.",
+        "My claim 2 (0x403962) is withdrawn: the peers are right about the buffer.",
+        # The author's own act on a pronoun, in a later sentence.
+        "My claim 2 (0x403962) says the name is unread, but ev_0109 shows it. I reject this.",
+        "If asked, my claim 2 (0x403962) put the name aside. I withdraw it.",
+        "My claim 2 (0x403962), STATIC says, holds no buffer. I reject this.",
+    )
+
+    def test_each_reads_as_a_withdrawal(self) -> None:
+        for dispute in self.WITHDRAWALS:
+            assert [c[:2] for c in read_own_withdrawals([dispute], 2).claims] == [("2", "2")], (
+                dispute
+            )
 
 
 class TestAnOwnReferenceIsReadUnderTheNumberingInForce:
@@ -550,6 +590,10 @@ class TestAHostileDisputeCostsItsLength:
             "My claim 1. ",
             "I reject my claim 1's x, but ",
             "my claims 1-3 (0x403962), ",
+            "(my claim 1 [is not ",
+            "My claim 1 was rejected x by y, ",
+            "My claim 1, STATIC says, is superseded. I reject it. ",
+            "No, not never my claim 1 is withdrawn ",
         )
         for unit in units:
 
