@@ -9869,22 +9869,22 @@ def cited_id_violations(payload: Any, entries: EntryTexts | None) -> list[Violat
                     (index + 1, written, tuple(cited), cited_row_text(written, row))
                 )
     out: list[Violation] = []
-    for (list_key, holders), found in groups.items():
+    for (list_key, held_by), found in groups.items():
         holding = safe_finding_value(
-            ", ".join(entries.named(ref) for ref in holders[:_MAX_NAMED_IDS])
+            ", ".join(entries.named(ref) for ref in held_by[:_MAX_NAMED_IDS])
             + (
-                f" and {len(holders) - _MAX_NAMED_IDS} more"
-                if len(holders) > _MAX_NAMED_IDS
+                f" and {len(held_by) - _MAX_NAMED_IDS} more"
+                if len(held_by) > _MAX_NAMED_IDS
                 else ""
             )
         )
         numbers = ", ".join(str(number) for number, _id, _cited, _where in found)
         if len(found) == 1:
-            ((number, written, cited, _where),) = found
+            ((number, written, cites, _where),) = found
             said = (
                 f"Row {number} of {list_key} states the id {safe_finding_value(written)!r}, "
                 f"which none of the entries it cites holds: "
-                f"{safe_finding_value(', '.join(entries.named(ref) for ref in cited))}. "
+                f"{safe_finding_value(', '.join(entries.named(ref) for ref in cites))}. "
                 f"This run's evidence holds it in {holding}."
             )
         else:
@@ -9909,8 +9909,8 @@ def cited_id_violations(payload: Any, entries: EntryTexts | None) -> list[Violat
                 path=f"{list_key}.id",
                 quoted=tuple(where for _number, _id, _cited, where in found),
                 labels=tuple(
-                    _wrong_entry_label([written], cited, holders, entries)
-                    for _number, written, cited, _where in found
+                    _wrong_entry_label([written], list(cites), list(held_by), entries)
+                    for _number, written, cites, _where in found
                 ),
                 values=tuple(dict.fromkeys(written for _number, written, _c, _w in found)),
             )
