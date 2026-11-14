@@ -903,8 +903,8 @@ def anchored_lines(
             blocks[name] = {block.number: block for block in _blocks(claims)}
     by_line: dict[int, list[tuple[str, int]]] = {}
     for name, rows in named.items():
-        for number, refs in rows.items():
-            for line, _blocks_it in refs:
+        for number, naming in rows.items():
+            for line, _blocks_it in naming:
                 by_line.setdefault(int(line), []).append((name, int(number)))
     values: dict[tuple[str, int], tuple[frozenset[str], frozenset[str]]] = {}
     out: dict[str, dict[int, frozenset[int]]] = {}
