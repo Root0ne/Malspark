@@ -496,6 +496,7 @@ class TestALedgerTextIsReadAsWritten:
         [
             ('"\\u2502 cmp al, 0x42\\n"', '"│ cmp al, 0x42\n"'),
             ("\\ud83d\\ude00", "\U0001f600"),
+            ("\\uD83D\\uDE00\\u00E9", "\U0001f600é"),
             ("\\ud83d x \\ude00", "\\ud83d x \\ude00"),
             ("\\u00e9\\u0041", "éA"),
             ("\\\\u2502", "\\u2502"),
@@ -675,9 +676,23 @@ class TestAnInstructionPlaceIsReadByItsCharacters:
         assert _read_compared_operands(_code_read(listing)) == (frozenset({0x41}), True)
         assert self._asked(listing) == []
 
-    @pytest.mark.parametrize("operand", ["0x42'", "'A'", '0x42"x', "{0x42}", "0x42}"])
+    @pytest.mark.parametrize(
+        "operand", ["0x42'", "0x42']", "'A'", '0x42"x', '0x42"]', "{0x42}", "0x42}"]
+    )
     def test_a_quote_or_a_brace_makes_an_operand_not_taken(self, operand: str) -> None:
         assert _instruction_operand_values(operand) is None
+
+    def test_a_string_opened_before_the_window_is_no_place(self) -> None:
+        line = '["' + "| " * 100 + 'cmp eax, foo+4"]'
+
+        assert _read_compared_operands(line) == (frozenset(), False)
+
+    def test_a_compare_after_a_closing_quote_is_read(self) -> None:
+        # The first compare's operands end at the key's closing quote.
+        assert _read_compared_operands('{"0x1: cmp eax": "0x3: cmp ebx, 5"}') == (
+            frozenset({5}),
+            True,
+        )
 
     def test_a_prefix_read_two_ways_is_read_once(self) -> None:
         # ``ab:`` is a label and a byte with a colon: each token is taken once.
