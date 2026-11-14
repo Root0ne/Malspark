@@ -508,6 +508,7 @@ class TestTheRunDirectoryGoesWithTheJob:
         assert run.parent == _scratch_in_tmp / leaf / staging.CAPA_DIRECTORY
         assert not run.exists()
 
+    @pytest.mark.posix
     def test_with_no_job_directory_a_run_has_a_temporary_directory_of_its_own(
         self, tmp_path: Path, _scratch_in_tmp: Path
     ) -> None:

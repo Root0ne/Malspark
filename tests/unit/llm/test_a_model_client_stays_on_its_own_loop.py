@@ -344,6 +344,7 @@ class TestTheAnthropicModel:
 
         assert _on_both(agent_loop, call) == ["answered"] * 3
 
+    @pytest.mark.posix
     def test_many_loops_leave_no_socket_open(self, server: ThreadingHTTPServer) -> None:
         model = _anthropic(server)
 
@@ -359,6 +360,7 @@ class TestTheAnthropicModel:
         # Each loop's client was closed with its loop, and none is held for it.
         assert len(model._async_client._client._loop_bound_clients) == 0
 
+    @pytest.mark.posix
     def test_a_loop_closed_without_its_shutdown_leaves_no_socket_open(
         self, server: ThreadingHTTPServer
     ) -> None:
@@ -466,6 +468,7 @@ class TestTheOpenAIModel:
 
         assert _on_both(agent_loop, call) == ["answered"] * 3
 
+    @pytest.mark.posix
     def test_many_loops_leave_no_socket_open(self, server: ThreadingHTTPServer) -> None:
         model = _openai(server)
 
