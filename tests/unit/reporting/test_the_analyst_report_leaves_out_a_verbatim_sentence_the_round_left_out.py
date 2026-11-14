@@ -16,6 +16,7 @@ from malspark.reporting.renderers import HtmlRenderer, MarkdownRenderer
 from malspark.reporting.renderers.layout import ANALYST, BUNDLE
 from malspark.reporting.section_agreement import AGREEMENT_PRODUCER, apply_rows, passages_of
 from tests.unit.reporting.test_a_text_printed_as_written_is_shown_to_the_agreement_round import (
+    IMPACT,
     NOTE,
     REASON,
     STATEMENT,
@@ -108,3 +109,25 @@ def test_a_reason_left_out_leaves_the_technique_claimed_and_not_published() -> N
         attack
     )
     _bundle_keeps(bundle, "attack_note.T1055", "No write into another process is shown")
+
+
+def test_a_judge_sentence_of_section_7_left_out_is_not_printed_and_is_counted() -> None:
+    markdown, html, bundle = _printed(_dropped("judge.business_impact", "It reaches 0x5c30 first."))
+    conclusion = _section(markdown, "## 7. Conclusion")
+
+    assert "The loader checks for a debugger at 0x5b20" in conclusion
+    assert "0x5c30" not in conclusion and "0x5c30" not in html
+    assert "_1 sentence of this section was left out; the bundle lists each with the reason._" in (
+        conclusion
+    )
+    _bundle_keeps(bundle, "judge.business_impact", IMPACT.split(" [ev_0103]")[0], "0x5c30 first")
+
+
+def test_a_round_that_lists_none_prints_every_text_as_before() -> None:
+    report = report_of()
+    before = _printed(report)
+    apply_rows({"sentences": []}, passages_of(report))
+
+    after = _printed(report)
+    assert report.flagged_statements == []
+    assert after[0] == before[0] and after[2] == before[2]
