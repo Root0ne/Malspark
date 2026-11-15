@@ -40,6 +40,25 @@ class TestOnePublicReplay:
         assert digests(run) == before
         assert sorted(p.name for p in tmp_path.iterdir()) == ["tiny"]
 
+    def test_it_leaves_no_temporary_directory_of_its_own_behind(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        import tempfile
+
+        made: list[Path] = []
+        real = tempfile.mkdtemp
+
+        def _recording(*args: Any, **kwargs: Any) -> str:
+            path = real(*args, **kwargs)
+            made.append(Path(path))
+            return path
+
+        monkeypatch.setattr(tempfile, "mkdtemp", _recording)
+
+        replay_cli.replay_run(_copy(tmp_path))
+
+        assert made and not any(path.exists() for path in made)
+
     def test_the_command_line_and_the_private_name_use_it(
         self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
     ) -> None:
