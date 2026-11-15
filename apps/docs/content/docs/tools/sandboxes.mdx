@@ -278,7 +278,7 @@ produces nothing, which is what `package_by_format` is for.
 | `sandbox.triage.api_token` | empty | Stored encrypted. |
 | `sandbox.triage.profile` | empty | The VM profile; empty means the account default. |
 | `sandbox.triage.profile_by_format` | `{}` | A file type to a VM profile, with `*` as its fallback and `profile` behind that, so an APK reaches an Android profile. |
-| `sandbox.triage.analysis_seconds` | unset | How long the VM runs the sample, sent as `defaults.timeout`; unset leaves Triage's own default. |
+| `sandbox.triage.analysis_seconds` | unset | How long the VM runs the sample, sent where the path taken reads it (see below); with a profile configured, that stored profile's own time applies; unset leaves Triage's own default. |
 | `sandbox.triage.timeout_seconds` | `900` | How long the platform waits for the report. Must be longer than `analysis_seconds`, and validation refuses one that is not. |
 | `sandbox.triage.poll_interval_seconds` | `15` | |
 | `sandbox.triage.fetch_pcap` | `true` | Fetches the capture for the network analyst. |
