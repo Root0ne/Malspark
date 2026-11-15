@@ -237,6 +237,18 @@ LAUNCH_KEY = "launched_with"
 # attributed to no one. Set after intake, so no reader earns them.
 LAUNCHER_ATTRIBUTION_KEY = "launcher_attribution"
 UNATTRIBUTED_SIGNATURES_KEY = "launcher_unattributed_signatures"
+# How many files the sandbox lists as written were read as an archive member
+# without the member's place in the guest settling it (the row states no
+# guest path, or the launcher's folder is not known): set after intake, so
+# no reader earns it.
+UNPLACED_MEMBER_FILES_KEY = "launcher_unplaced_member_files"
+# How many files the sandbox lists as written or dumped are the launcher's by
+# their writer, listed with the launcher's facts; and how many a launcher
+# process wrote that stay among the sample's files, the launcher's attribution
+# not established (the started program reached that process, or the row
+# names no task). Set after intake, so no reader earns them.
+LAUNCHER_FILES_KEY = "launcher_written_files"
+UNSETTLED_LAUNCHER_FILES_KEY = "launcher_unsettled_written_files"
 # Every platform mark a document can carry at its top level: the one list. A
 # sandbox's own report holding a key under one of these words is not the
 # platform's mark, and a reader that does not set the mark itself never passes
@@ -249,6 +261,9 @@ PLATFORM_MARKS: tuple[str, ...] = (
     LAUNCH_KEY,
     LAUNCHER_ATTRIBUTION_KEY,
     UNATTRIBUTED_SIGNATURES_KEY,
+    UNPLACED_MEMBER_FILES_KEY,
+    LAUNCHER_FILES_KEY,
+    UNSETTLED_LAUNCHER_FILES_KEY,
 )
 # The key the run gives a row its launch lineage under
 # (``schemas.sandbox_report.attribute_the_launcher``): on a process's
@@ -257,6 +272,12 @@ PLATFORM_MARKS: tuple[str, ...] = (
 # field, never the platform's lineage, and the key is taken out of it
 # (:func:`unearned_marks_removed`).
 LINEAGE_KEY = "platform_lineage"
+# Beside a dropped file the sample wrote that holds an archive member's digest
+# away from the member's place, or sits at the member's place with another
+# digest: which member, where the member sits, and where the file is
+# (``schemas.sandbox_report.attribute_the_launcher``). Set after intake and
+# taken out of a row that reaches intake under it, like the lineage.
+MEMBER_FACT_KEY = "platform_member_fact"
 # The channel the run moves a signature seen only in the launcher's processes
 # to; a reader's channel of this name is no such move.
 LAUNCHER_SIGNATURES_CHANNEL = "launcher.signatures"
@@ -278,6 +299,16 @@ def _forged_lineage_removed(report: SandboxReport) -> bool:
     return held
 
 
+def _forged_member_facts_removed(report: SandboxReport) -> bool:
+    """Take :data:`MEMBER_FACT_KEY` out of every dropped file's row; whether any held it."""
+    held = False
+    for row in report.dropped_files:
+        if isinstance(row, dict) and MEMBER_FACT_KEY in row:
+            del row[MEMBER_FACT_KEY]
+            held = True
+    return held
+
+
 def unearned_marks_removed(report: SandboxReport, earned: Collection[str] = ()) -> list[str]:
     """Take every platform mark out of ``report`` that is not in ``earned``; the ones taken out.
 
@@ -289,7 +320,8 @@ def unearned_marks_removed(report: SandboxReport, earned: Collection[str] = ()) 
     read the source's key), a part kept as the source published it, or a
     block kept beside the parts. A row's launch lineage (:data:`LINEAGE_KEY`)
     and a channel under the launcher's signatures' name are taken out the same
-    way. Each mark taken out is named in a warning; a report that carries none
+    way, and so is a dropped file's member fact (:data:`MEMBER_FACT_KEY`).
+    Each mark taken out is named in a warning; a report that carries none
     is left as it came, byte for byte.
     """
     fields = type(report).model_fields
@@ -310,6 +342,8 @@ def unearned_marks_removed(report: SandboxReport, earned: Collection[str] = ()) 
     # The launch lineage of a row is the platform's alone, like a mark.
     if _forged_lineage_removed(report):
         found.append(LINEAGE_KEY)
+    if _forged_member_facts_removed(report):
+        found.append(MEMBER_FACT_KEY)
     if found:
         logger.warning(
             "sandbox report from %r carries %s, the platform's own mark%s, which the "

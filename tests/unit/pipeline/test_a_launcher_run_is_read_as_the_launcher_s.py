@@ -31,7 +31,12 @@ from malspark.providers.launcher import (
 )
 from malspark.providers.sandbox.readers import required_reader
 from malspark.providers.sandbox_tools import sandbox_processes, sandbox_signatures
-from malspark.schemas.sandbox_document import place, sandbox_document, unearned_marks_removed
+from malspark.schemas.sandbox_document import (
+    MEMBER_FACT_KEY,
+    place,
+    sandbox_document,
+    unearned_marks_removed,
+)
 from malspark.schemas.sandbox_report import (
     ATTRIBUTION_ESTABLISHED,
     CTI_ANALYSED_KEY,
@@ -44,6 +49,7 @@ from malspark.schemas.sandbox_report import (
     LAUNCHER_SIGNATURES_CHANNEL,
     LINEAGE_KEY,
     LINEAGE_REASON_KEY,
+    MEMBER_COPIED,
     PROCESS_TASK_KEY,
     SAMPLE_TREE_KEY,
     TASK_SIGNATURES_CHANNEL,
@@ -295,7 +301,7 @@ def _dropping_task() -> dict[str, Any]:
     task["dumped"] = [
         {"name": f"{TEMP}\\launch.ps1", "sha256": LAUNCHER["launcher_sha256"]},
         {"name": f"{TEMP}\\sample.exe"},
-        # The archive's members under other names, known by their digests.
+        # The sample's digest under another name: a copy, not the member.
         {"name": f"{TEMP}\\renamed.bin", "sha256": INTAKE.upper()},
         # A copy the sample wrote of itself elsewhere is the sample's own doing.
         {"name": "C:\\Users\\admin\\AppData\\Roaming\\sample.exe", "sha256": INTAKE},
@@ -521,10 +527,18 @@ class TestTheArchiveSMembersAreNotTheSampleSFiles:
         assert reasons == {
             "launch.ps1": DROPPED_LAUNCHER,
             "sample.exe": DROPPED_SAMPLE,
-            "renamed.bin": DROPPED_SAMPLE,
+            # The sample's digest under another name, beside the members: a
+            # copy the sample made, never the platform's.
+            "renamed.bin": None,
             "sample.exe@roaming": None,
             "payload.dll": None,
         }
+        copies = {
+            row["name"].rsplit("\\", 1)[-1]: row[MEMBER_FACT_KEY]["fact"]
+            for row in report.dropped_files
+            if MEMBER_FACT_KEY in row
+        }
+        assert copies == {"renamed.bin": MEMBER_COPIED, "sample.exe": MEMBER_COPIED}
         assert all(
             row[LINEAGE_KEY] == "launcher"
             for row in report.dropped_files

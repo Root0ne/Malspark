@@ -1,0 +1,216 @@
+{
+  "version": "0.3.1",
+  "build": "d0cc0f9b0",
+  "sample": {
+    "id": "261114-x2ds4scy5t",
+    "score": 3,
+    "submitted": "2026-11-14T19:20:37Z",
+    "target": "submission.zip",
+    "size": 519,
+    "md5": "7353b2c3f1ad368f18a10e1f7c62779d",
+    "sha1": "38363c2865c8c79bef1cb180d7d75f842731183a",
+    "sha256": "aba6bd87cb5e4c8d594551ce5194d6a120ca721d85d766c0317598e0b5754a6e",
+    "sha512": "183587544edb955e941677b59400891662b499f7718e27b94b7f02e341094087e36817a06b2dd629c97776bd15d044b38af0785092565c8bfc6913326e8ded6f",
+    "tlsh": "T1BEF0202B010CE903464E1520FE6A8C51B8EA914A2053F8061389E3C12C51A5887AE2F3",
+    "static_tags": [
+      "polyglot"
+    ]
+  },
+  "task": {
+    "target": "launch.ps1",
+    "pick": "static1/unpack001/launch.ps1",
+    "size": 519,
+    "md5": "7353b2c3f1ad368f18a10e1f7c62779d",
+    "sha1": "38363c2865c8c79bef1cb180d7d75f842731183a",
+    "sha256": "aba6bd87cb5e4c8d594551ce5194d6a120ca721d85d766c0317598e0b5754a6e",
+    "sha512": "183587544edb955e941677b59400891662b499f7718e27b94b7f02e341094087e36817a06b2dd629c97776bd15d044b38af0785092565c8bfc6913326e8ded6f",
+    "tlsh": "T1BEF0202B010CE903464E1520FE6A8C51B8EA914A2053F8061389E3C12C51A5887AE2F3"
+  },
+  "analysis": {
+    "score": 3,
+    "tags": [
+      "execution"
+    ],
+    "ttp": [
+      "T1059.001",
+      "T1059.003"
+    ],
+    "features": [
+      "analog",
+      "overview"
+    ],
+    "submitted": "2026-11-14T19:20:37Z",
+    "reported": "2026-11-14T19:23:11Z",
+    "max_time_network": 132554,
+    "max_time_kernel": 150031,
+    "backend": "sbx4m183",
+    "resource": "win11ltsc2024-20260911-en",
+    "resource_tags": [
+      "arch:x64",
+      "arch:x86",
+      "image:win11ltsc2024-20260911-en",
+      "locale:en-us",
+      "os:windows11-ltsc_2024-x64",
+      "system",
+      "windows"
+    ],
+    "platform": "windows11-ltsc_2024_x64"
+  },
+  "processes": [
+    {
+      "procid": 87,
+      "procid_parent": 80,
+      "pid": 4316,
+      "ppid": 1016,
+      "cmd": "powershell.exe -ExecutionPolicy bypass -File C:\\Users\\Admin\\AppData\\Local\\Temp\\launch.ps1",
+      "image": "C:\\Windows\\system32\\WindowsPowerShell\\v1.0\\PowerShell.exe",
+      "orig": true,
+      "started": 172,
+      "terminated": 1172
+    },
+    {
+      "procid": 89,
+      "procid_parent": 87,
+      "pid": 3840,
+      "ppid": 4316,
+      "cmd": "\"C:\\Windows\\System32\\cmd.exe\" /c echo ARGTEST \"a b\" 100% ^ & ; | $x `n it's > \"%TEMP%\\argtest.txt\" & cd > \"%TEMP%\\cwd.txt\" & dir > \"%TEMP%\\layout.txt\" & echo %CD% > \"%TEMP%\\scriptdir.txt\"",
+      "image": "C:\\Windows\\System32\\cmd.exe",
+      "orig": true,
+      "started": 1094,
+      "terminated": 1719
+    }
+  ],
+  "signatures": [
+    {
+      "label": "powershell",
+      "name": "Command and Scripting Interpreter: PowerShell",
+      "score": 3,
+      "ttp": [
+        "T1059.001"
+      ],
+      "tags": [
+        "execution"
+      ],
+      "indicators": [
+        {
+          "pid": 4316,
+          "procid": 87
+        }
+      ],
+      "desc": "Using powershell.exe command."
+    },
+    {
+      "label": "cmd_shell_generic",
+      "name": "Executes a command shell one-liner",
+      "score": 3,
+      "ttp": [
+        "T1059.003"
+      ],
+      "tags": [
+        "execution"
+      ],
+      "indicators": [
+        {
+          "pid": 3840,
+          "procid": 89
+        }
+      ],
+      "desc": "Execution of a cmd.exe one-liner (/c \"close\" or /k \"keep\") is a common script/loader stage."
+    },
+    {
+      "name": "Suspicious behavior: EnumeratesProcesses",
+      "indicators": [
+        {
+          "pid": 4316,
+          "procid": 87
+        },
+        {
+          "pid": 4316,
+          "procid": 87
+        }
+      ]
+    },
+    {
+      "name": "Suspicious use of AdjustPrivilegeToken",
+      "indicators": [
+        {
+          "description": "Token: SeDebugPrivilege",
+          "pid": 4316,
+          "procid": 87
+        }
+      ]
+    },
+    {
+      "name": "Suspicious use of WriteProcessMemory",
+      "indicators": [
+        {
+          "description": "PID 4316 wrote to memory of 3840",
+          "pid": 4316,
+          "procid": 87,
+          "procid_target": 89
+        }
+      ]
+    }
+  ],
+  "tags": null,
+  "network": {
+    "ips": {
+      "150.171.110.149": {
+        "cc": "US",
+        "asn": "AS8075"
+      },
+      "2.21.64.187": {
+        "cc": "GB",
+        "asn": "AS20940"
+      },
+      "20.190.160.22": {
+        "cc": "NL",
+        "asn": "AS8075"
+      },
+      "23.11.40.157": {
+        "cc": "DE",
+        "asn": "AS33905"
+      },
+      "48.211.4.16": {
+        "cc": "US",
+        "asn": "AS8075"
+      },
+      "8.8.8.8": {
+        "cc": "US",
+        "asn": "AS15169"
+      }
+    }
+  },
+  "dumped": [
+    {
+      "at": 391,
+      "pid": 4316,
+      "procid": 87,
+      "name": "memory/4316-0-0x00007FF8A3C6F000-0x00007FF8A3C70000-memory.dmp",
+      "kind": "region",
+      "origin": "exception",
+      "addr": 140705876340736,
+      "length": 4096
+    },
+    {
+      "at": 594,
+      "pid": 4316,
+      "procid": 87,
+      "name": "memory/4316-2-0x000002AAB6BA0000-0x000002AAB6BC2000-memory.dmp",
+      "kind": "region",
+      "origin": "dotnet64",
+      "addr": 2932233338880,
+      "length": 139264
+    },
+    {
+      "at": 625,
+      "pid": 4316,
+      "procid": 87,
+      "name": "memory/4316-1-0x00007FF8A3AE0000-0x00007FF8A4484000-memory.dmp",
+      "kind": "region",
+      "origin": "exception",
+      "addr": 140705874706432,
+      "length": 10108928
+    }
+  ]
+}

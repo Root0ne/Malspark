@@ -447,6 +447,28 @@ class DynamicBehavior(BaseModel):
 # ---------------------------------------------------------------------------
 
 
+class TrafficMakers(BaseModel):
+    """The processes of another lineage than the sample's that a sandbox names for some traffic.
+
+    Each as ``<image> (procid N)``, or ``procid N`` where the report gives no
+    image: ``outside``, listed processes outside the sample's process tree;
+    ``launcher``, the generated launcher's processes; ``unlisted``, processes
+    the report does not list among the task's processes; ``disputed``,
+    processes the two lineage facts disagree about. ``more``: a name's
+    addresses were reached by more processes of a kind than the name lists
+    (``ledger_projection._ADDRESS_MAKERS_NAMED``); each address's row names
+    its own. Left out of a dump where it is not set.
+    """
+
+    model_config = _STRICT_CONFIG
+
+    outside: list[str] = Field(default_factory=list)
+    launcher: list[str] = Field(default_factory=list)
+    unlisted: list[str] = Field(default_factory=list)
+    disputed: list[str] = Field(default_factory=list)
+    more: bool = Field(default=False, exclude_if=lambda value: not value)
+
+
 class NetworkDomain(BaseModel):
     """Observed FQDN (DNS query / HTTP host / SNI)."""
 
@@ -493,6 +515,16 @@ class NetworkDomain(BaseModel):
     # of a dump where nothing was withheld, so a stored report reads as before.
     resolved_ips_partial: bool = False
     resolved_ips_withheld: int = 0
+    # Whose traffic it is where the sandbox's records name the process that
+    # made it (``ledger_projection.traffic_maker``), read from the name's HTTP
+    # requests, the DNS requests that name their own process and the flows to
+    # the addresses it resolved to: ``True`` when one of them came from the
+    # sample's process tree; and, where every one names a process of another
+    # lineage, those processes by what they are (``TrafficMakers``). Left out
+    # of a dump where none names a process, so a stored report reads as it
+    # was written.
+    sample_process_tree: bool | None = Field(default=None, exclude_if=lambda value: value is None)
+    made_by: TrafficMakers | None = Field(default=None, exclude_if=lambda value: value is None)
     # The detonations the name was observed in (``ObservedIn``).
     observed_in: list[ObservedIn] = _observed_in()
 
@@ -545,6 +577,10 @@ class NetworkIP(BaseModel):
     # was recorded, and then left out of the dump; the publish rule then
     # names the one sandbox whose mark such a row could be.
     marked_by: str | None = Field(default=None, exclude_if=lambda value: value is None)
+    # The processes the report names for its flows that it does not list
+    # among the task's processes, where every flow to it names such a one
+    # (``TrafficMakers.unlisted``); left out of a dump where none is.
+    unlisted_processes: list[str] = Field(default_factory=list, exclude_if=lambda value: not value)
     # Whether the address is a public DNS resolver's, which a sandbox guest
     # reaches whatever the sample does.
     public_resolver: bool = False
@@ -573,6 +609,14 @@ class NetworkURL(BaseModel):
     # the two were being published as though they were the same one.
     # ``None`` for a producer that does not record it.
     source: Literal["sandbox", "analyst", "strings"] | None = None
+    # Whose traffic it is where the sandbox's records name the process that
+    # made it (``ledger_projection.traffic_maker``): ``True`` when a record of
+    # it came from the sample's process tree; and, where every record that
+    # names a process names one of another lineage, those processes by what
+    # they are (``TrafficMakers``). Left out of a dump where the records name
+    # none, so a stored report reads as it was written.
+    sample_process_tree: bool | None = Field(default=None, exclude_if=lambda value: value is None)
+    made_by: TrafficMakers | None = Field(default=None, exclude_if=lambda value: value is None)
     # The detonations the request was observed in (``ObservedIn``).
     observed_in: list[ObservedIn] = _observed_in()
 
