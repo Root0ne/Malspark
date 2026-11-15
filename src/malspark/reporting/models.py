@@ -581,6 +581,13 @@ class NetworkIP(BaseModel):
     # among the task's processes, where every flow to it names such a one
     # (``TrafficMakers.unlisted``); left out of a dump where none is.
     unlisted_processes: list[str] = Field(default_factory=list, exclude_if=lambda value: not value)
+    # The script hosts naming a generated launcher whose attribution the report
+    # does not establish (no such host is an ancestor of the sample's process)
+    # that made flows to it, as ``<image> (procid N)``, where every flow to it
+    # names such a host; left out of a dump where none is.
+    launcher_unsettled_processes: list[str] = Field(
+        default_factory=list, exclude_if=lambda value: not value
+    )
     # Whether the address is a public DNS resolver's, which a sandbox guest
     # reaches whatever the sample does.
     public_resolver: bool = False

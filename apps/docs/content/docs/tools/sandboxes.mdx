@@ -143,6 +143,92 @@ nothing is concluded from them for the analyst. A kept block is held once, by
 reference to the parsed report, never copied or wrapped row by row, and the
 document writes each value out once.
 
+A signature's ledger entry (the `sandbox_signatures` answer, the pack's entry
+among them) carries its indicators: which process did what to which. Each
+reader declares where its format states them
+(`ReportReader.signature_indicators`, given on the reader's `Reading`): a
+CAPE, Cuckoo or mock signature's marks (`marks`, or `data` in the report's own
+arrangement), each naming its process by `pid` or `process_id`, an API call's
+API under `call.api` and an indicator's `category`; a Triage overview
+signature's marks and the indicators of every task report's signature of the
+same name, each read in its task, naming the process that acted by `procid`
+and the one acted on by `procid_target`. A Triage indicator's `pid` and
+`pid_target` are the guest's pids, never the report's process id: they stay
+among its values and name no process. A mapped format declares its own
+through `field_names`: `signatures.platform_indicators` names the field of a
+signature holding its indicators, and
+`signatures.platform_indicators.process`, `.target`, `.event` and
+`.description` the fields of each; the reader writes them on the row in the
+neutral form under `platform_indicators`. A format that states none, the
+unread format among them, answers as before. Each indicator states the process
+that acted and the one acted on, each resolved to the process row of the same
+report and task with the facts the process view gives it: its `id` (the
+report's process id), the guest's pid (`guest_pid`) where the reader declares
+where a process row holds it and it is another number (Triage: the row's
+`extra.pid`, so an entry reads `cmd.exe`, process id 86, pid 3444), its
+`image`, its `platform_lineage` in a launcher run, or `marked` where the
+sandbox marks it as the sample's; an id the task does not list is stated
+`not_listed`, one listed more than once, or in more than one task by an
+indicator naming none, `not_settled`, and a field holding a value that cannot
+be an id states no process and is kept among the values. Beside them, the
+event or API, the sandbox's description, and every other field the indicator
+states, under its own name, a nested value as its compact JSON (`values`).
+Equal indicators of one task are listed once with how many times the report
+states them (`times`); a text is cut at 256 characters and a name at 64, at
+most 8 values are kept, and what was cut is counted on the indicator
+(`chars_left_out`, `values_left_out`). Every text is the report's and is
+written out: control and direction characters as escapes, a ledger id so that
+it cites nothing; the signature's name, the task and the image too.
+
+The answer's rows are the rows an answer without indicators gives, byte for
+byte, so the model's copy never shows fewer signatures for them at any call
+limit. Everything the indicators add comes after every row, in the room the
+rows leave within one budget for the whole answer (`SIGNATURE_ANSWER_CHARS`,
+24,000 characters, and never more than the model's copy of the answer holds
+whole under the job's limit for the call); where the rows alone do not leave
+room for the counts, the answer is the one without indicators. First
+`indicators_stated` maps each signature that states indicators to their
+count; then `indicators` lists them, each with its signature's name: every
+indicator naming a process pairing (the acting and the target process), then
+those naming one process, then the rest, each group by signature and in the
+report's order, stopping at the first that does not fit, so what a signature
+lists is the head of its own order. `indicators_left_out` counts, per
+signature, what the budget leaves out and the offset from which the rest are
+listed; where no indicator is listed, each signature's count is what is left
+out. The tool's description, which the model reads at every call limit, says
+how the indicators are read, and `indicators_read` repeats it where some are
+left out: the same view called with `signature` (a name, as the answer
+writes it or as the report does), `process` (the report's process id, acting
+or acted on) or `contains` (a text, case not counted) answers the matching
+indicators in the same resolved form, at most
+`SIGNATURE_INDICATORS_PAGE` (20) from `offset` within the same budget, with
+`matched` and `next_offset`, so every indicator the report states is reachable
+resolved; that answer is its own ledger entry. A call naming a process that
+lists none says why: no indicator names that report's process id, or the
+number is the guest's pid of a listed process, with the report's process id
+to ask with. A signature only a task report lists has no row: on the page that
+ends the rows it is announced after the overview's own, in the counts and, as
+the room allows, the indicators and `indicators_left_out`. The item reader's signature items carry the head of the same order
+(at most 16) with `indicators_stated`, `indicators_left_out` (the count and
+the offset) and `indicators_read`; its substring and pid filters read every
+indicator the report states, and a claim citing such an item is checked
+against what it carries. The pack's signatures line, which begins with its
+entry's id, lists each signature's indicators as the entry holds them, after
+the pack is rendered and fitted as it would be without them: they take only
+the room it leaves, each signature's whole or not at all, and the line counts
+the signatures whose indicators it does not show, held by that entry, and how
+many more indicators the report states than the entry lists. The reading is
+linear in the report: each name's indicators are gathered and resolved once,
+however many rows and calls read them. A value an analyst lists that an
+answer holds only in its resolved indicators keeps the analyst's standing:
+those parts are a structured record, and each view's kind declares where it
+answers them (`RECORD_PARTS_OF_KIND`, dotted paths: the signature view's and
+its paged call's `indicators`, the item reader's `items.*.indicators`), so the
+value is decided as one no answer holds (published where the judge keeps it),
+and a refusal names the entry that holds it. Any other text of a sandbox answer — a
+signature's description, a command line, the sample's strings a section
+re-serves — gives a value the string sweep's standing.
+
 | Provider | Detonates | Reached at |
 | :-- | :-- | :-- |
 | `mock` (default) | nothing | — |
@@ -645,7 +731,11 @@ states such a parent and no such host is an ancestor of the sample's tree, no
 host is the launcher's: the hosts, their flows and the files they alone wrote
 stay in the sample's view marked `launcher, not established`, nothing is moved
 to the launcher's, and the report says the attribution was not established in
-that task. Where the
+that task. A host's flow keeps the host's image, and an address only such hosts
+reached (every flow to it one of theirs, read from the whole report) says it
+was made by a script host naming the launcher, whose attribution is not
+established, naming each (`<image> (procid N)`); it is decided as an address
+no flow of the sample's tree reached. Where the
 task holds the sample's tree, what the launcher's host started outside it is
 the launcher's too.
 Where no listed process runs `sample.exe` (the sandbox renamed or copied the

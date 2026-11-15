@@ -3614,6 +3614,9 @@ MADE_BY_WHOM: dict[str, str] = {
     "launcher": "the launcher's process",
     "unlisted": "a process the report does not list",
     "disputed": "a process whose lineage the report's two facts dispute",
+    "launcher_unsettled": (
+        "a script host naming the launcher, whose attribution is not established"
+    ),
 }
 # Beside a name whose addresses more processes reached than it names
 # (``TrafficMakers.more``).
@@ -3771,6 +3774,16 @@ def sandbox_row_kwargs(report: Any, kind: str, value: str, *, what: str = "it") 
             and not (marked_only or file_only)
         ):
             why = made_by_reason({"unlisted": unlisted})
+        # The report names the process: a script host naming the launcher
+        # whose attribution it does not establish. The decision is the
+        # unattributed one; the reason names the host.
+        unsettled = [str(p) for p in (_field(row, "launcher_unsettled_processes") or []) if str(p)]
+        if (
+            _field(row, "sample_process_tree") is None
+            and unsettled
+            and not (marked_only or file_only or unlisted)
+        ):
+            why = made_by_reason({"launcher_unsettled": unsettled})
         if _field(row, "asn"):
             why += f"; AS {_field(row, 'asn')}"
     else:

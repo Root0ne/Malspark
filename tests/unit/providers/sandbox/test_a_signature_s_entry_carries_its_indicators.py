@@ -1,0 +1,512 @@
+"""A sandbox signature's ledger entry carries its indicators: which process did what to which.
+
+The signature view (``sandbox_signatures``), whose answer is the signature's
+ledger entry, lists each signature's indicators where the job's reader declares
+its source states them: a signature row's own, and, where the source lists its
+signatures again per task, those of every task row of the same name, each read
+in its task. Every process an indicator names is resolved to the process row
+of the same report and task (its image, its launch lineage or the sandbox's
+mark); an id the task does not list is stated as not listed, never dropped.
+Equal indicators are listed once with their count, and the answer states how
+many the report states for each signature (``indicators_stated``); every text is cut to its bound
+with what was cut counted, and written out. A report read
+with no declaration, and a stored document read without its reader, answer as
+before.
+
+The reports under ``fixtures/sandbox/triage_live`` are a public sandbox's
+output for a harmless submission: an archive whose launcher (powershell.exe,
+procid 84) starts cmd.exe (procid 86).
+"""
+
+from __future__ import annotations
+
+import copy
+import json
+from pathlib import Path
+from typing import Any
+
+import pytest
+
+from malspark.providers.sandbox.readers import required_reader
+from malspark.providers.sandbox_tools import (
+    INDICATORS_GUEST_PID,
+    INDICATORS_NO_PROCESS,
+    INDICATORS_READ,
+    sandbox_signatures,
+)
+from malspark.schemas.sandbox_document import sandbox_document
+from malspark.schemas.sandbox_report import (
+    LINEAGE_KEY,
+    LINEAGE_LAUNCHER_UNSETTLED,
+    LINEAGE_SAMPLE,
+    SandboxReport,
+    attribute_the_launcher,
+)
+from malspark.schemas.signature_indicators import (
+    INDICATOR_TEXT_CHARS,
+    INDICATOR_VALUES_SHOWN,
+    SIGNATURE_INDICATORS_SHOWN,
+)
+from tests.linear_cost import assert_scales
+
+LIVE = Path(__file__).resolve().parents[3] / "fixtures" / "sandbox" / "triage_live"
+TRIAGE = ("triage", "triage", "tasks")
+WPM = "Suspicious use of WriteProcessMemory"
+LAUNCHER = {
+    "sample_member": "cmd.exe",
+    "launcher_member": "launch.ps1",
+    "script_host_images": ["powershell.exe", "pwsh.exe"],
+    "launcher_sha256": "aba6bd87cb5e4c8d594551ce5194d6a120ca721d85d766c0317598e0b5754a6e",
+    "sample_sha256": "",
+}
+
+
+def _json(name: str) -> Any:
+    return json.loads((LIVE / name).read_text(encoding="utf-8"))
+
+
+def _read(task: dict[str, Any] | None = None, overview: dict[str, Any] | None = None) -> Any:
+    return required_reader("triage").read(
+        overview or _json("overview.json"),
+        provider="triage",
+        task_id="s1",
+        task_reports={"behavioral1": task or _json("behavioral1.json")},
+    )
+
+
+def _rows(report: SandboxReport, normalised_by: Any = TRIAGE) -> dict[str, dict[str, Any]]:
+    """Each row of the view by name, with its count and the indicators listed after the rows."""
+    answer = sandbox_signatures(sandbox_document(report), normalised_by=normalised_by)
+    rows = {row["name"]: dict(row) for row in answer["signatures"]}
+    for name, count in (answer.get("indicators_stated") or {}).items():
+        if name in rows:
+            rows[name]["indicators_stated"] = count
+    for listed in answer.get("indicators") or []:
+        one = dict(listed)
+        name = one.pop("signature")
+        if name in rows:
+            rows[name].setdefault("indicators", []).append(one)
+    return rows
+
+
+def _with_signature(indicators: list[Any], name: str = WPM) -> dict[str, Any]:
+    """The live task with the task row of ``name`` holding ``indicators``."""
+    task = _json("behavioral1.json")
+    (row,) = [s for s in task["signatures"] if s["name"] == name]
+    row["indicators"] = indicators
+    return task
+
+
+class TestTheLiveReport:
+    def test_the_write_into_another_process_names_both_processes(self) -> None:
+        (indicator,) = _rows(_read())[WPM]["indicators"]
+        assert indicator == {
+            "task": "behavioral1",
+            "process": {
+                "id": "84",
+                "guest_pid": "1756",
+                "image": "powershell.exe",
+                "marked": True,
+            },
+            "target": {"id": "86", "guest_pid": "3444", "image": "cmd.exe", "marked": True},
+            "description": "PID 1756 wrote to memory of 3444",
+            "values": {"pid": "1756"},
+        }
+
+    def test_equal_indicators_are_listed_once_with_their_count(self) -> None:
+        (indicator,) = _rows(_read())["Suspicious behavior: EnumeratesProcesses"]["indicators"]
+        assert indicator["times"] == 2 and indicator["process"]["id"] == "84"
+
+    def test_each_task_s_indicators_are_read_in_that_task(self) -> None:
+        report = required_reader("triage").read(
+            _json("overview.json"),
+            provider="triage",
+            task_id="s1",
+            task_reports={
+                "behavioral1": _json("behavioral1.json"),
+                "behavioral2": _json("behavioral2.json"),
+            },
+        )
+        indicators = _rows(report)[WPM]["indicators"]
+        assert [(i["task"], i["process"]["id"], i["target"]["id"]) for i in indicators] == [
+            ("behavioral1", "84", "86"),
+            ("behavioral2", "87", "89"),
+        ]
+        assert indicators[1]["process"]["image"] == "PowerShell.exe"
+
+    def test_a_signature_whose_task_rows_state_none_carries_none(self) -> None:
+        rows = _rows(_read())
+        held = [name for name, row in rows.items() if "indicators" in row]
+        task = {s["name"] for s in _json("behavioral1.json")["signatures"] if s.get("indicators")}
+        assert set(held) == task & set(rows)
+
+
+class TestTheReportsProcessId:
+    """Triage names a process by the report's process id; the guest's pid is a value."""
+
+    @pytest.mark.parametrize("pid", [1756, 86], ids=["listed guest pid", "another's id"])
+    def test_a_guest_pid_with_no_process_id_names_no_process(self, pid: int) -> None:
+        task = _with_signature([{"pid": pid, "description": "x"}])
+        (indicator,) = _rows(_read(task))[WPM]["indicators"]
+        assert "process" not in indicator and "target" not in indicator
+        assert indicator["values"] == {"pid": str(pid)}
+
+    def test_a_target_s_guest_pid_alone_names_no_target(self) -> None:
+        task = _with_signature([{"procid": 84, "pid_target": 3444}])
+        (indicator,) = _rows(_read(task))[WPM]["indicators"]
+        assert indicator["process"]["id"] == "84" and "target" not in indicator
+        assert indicator["values"] == {"pid_target": "3444"}
+
+    def test_a_resolved_process_states_its_guest_pid_beside_the_report_s_id(self) -> None:
+        (indicator,) = _rows(_read())[WPM]["indicators"]
+        assert (indicator["target"]["id"], indicator["target"]["guest_pid"]) == ("86", "3444")
+
+
+class TestTheLaunchLineage:
+    def test_a_launcher_run_states_each_process_s_lineage_as_the_process_view_does(self) -> None:
+        report = _read()
+        attribute_the_launcher(report, LAUNCHER)
+        (indicator,) = _rows(report)["Executes a command shell one-liner"]["indicators"]
+        assert indicator["process"] == {
+            "id": "86",
+            "guest_pid": "3444",
+            "image": "cmd.exe",
+            LINEAGE_KEY: LINEAGE_SAMPLE,
+            "marked": True,
+        }
+
+    def test_a_host_whose_attribution_is_not_established_says_so(self) -> None:
+        task = _json("behavioral1.json")
+        task["processes"].append(
+            {"procid": 50, "procid_parent": 0, "pid": 500, "image": "C:\\Windows\\explorer.exe"}
+        )
+        for proc in task["processes"]:
+            if proc["procid"] == 86:
+                proc["procid_parent"] = 50
+        report = _read(task)
+        attribute_the_launcher(report, LAUNCHER)
+        (indicator,) = _rows(report)[WPM]["indicators"]
+        assert indicator["process"][LINEAGE_KEY] == LINEAGE_LAUNCHER_UNSETTLED
+        assert "marked" not in indicator["process"]
+        assert indicator["target"][LINEAGE_KEY] == LINEAGE_SAMPLE
+
+
+class TestEveryIdIsStated:
+    def test_an_id_the_task_does_not_list_is_stated_as_not_listed(self) -> None:
+        task = _with_signature([{"procid": 84, "procid_target": 999, "description": "x"}])
+        (indicator,) = _rows(_read(task))[WPM]["indicators"]
+        assert indicator["target"] == {"id": "999", "not_listed": True}
+
+    def test_an_id_listed_twice_in_its_task_is_stated_as_such(self) -> None:
+        task = _with_signature([{"procid": 84, "procid_target": 86}])
+        task["processes"].append({"procid": 86, "procid_parent": 84, "image": "C:\\x\\other.exe"})
+        (indicator,) = _rows(_read(task))[WPM]["indicators"]
+        assert indicator["target"]["id"] == "86" and "image" not in indicator["target"]
+        assert "2 processes" in indicator["target"]["not_settled"]
+
+    @pytest.mark.parametrize("value", [True, 1.5, [86], {"a": 86}, 10**30, "x", -3], ids=repr)
+    def test_an_id_of_a_type_that_cannot_be_one_is_not_stated_and_kept_as_a_value(
+        self, value: Any
+    ) -> None:
+        task = _with_signature([{"procid": 84, "procid_target": value}])
+        (indicator,) = _rows(_read(task))[WPM]["indicators"]
+        assert "target" not in indicator
+        assert "procid_target" in indicator["values"]
+
+    def test_an_indicator_naming_no_task_is_read_in_the_one_task_listing_its_id(self) -> None:
+        overview = _json("overview.json")
+        overview["signatures"].append(
+            {"name": "own marks", "score": 1, "indicators": [{"procid": 86, "ioc": "a"}]}
+        )
+        (indicator,) = _rows(_read(overview=overview))["own marks"]["indicators"]
+        assert "task" not in indicator
+        assert indicator["process"] == {
+            "id": "86",
+            "guest_pid": "3444",
+            "image": "cmd.exe",
+            "marked": True,
+        }
+        assert indicator["values"] == {"ioc": "a"}
+
+
+class TestTheBounds:
+    def test_every_one_the_answer_holds_is_listed_and_the_count_stated(self) -> None:
+        count = SIGNATURE_INDICATORS_SHOWN + 24
+        task = _with_signature([{"procid": 84, "description": f"d{i}"} for i in range(count)])
+        row = _rows(_read(task))[WPM]
+        assert len(row["indicators"]) == count and row["indicators_stated"] == count
+
+    def test_repeats_of_a_shown_indicator_are_counted_on_it(self) -> None:
+        task = _with_signature([{"procid": 84}] * 40)
+        row = _rows(_read(task))[WPM]
+        assert row["indicators"] == [
+            {
+                "task": "behavioral1",
+                "process": {
+                    "id": "84",
+                    "guest_pid": "1756",
+                    "image": "powershell.exe",
+                    "marked": True,
+                },
+                "times": 40,
+            }
+        ]
+        assert "indicators_left_out" not in row
+
+    def test_a_long_text_is_cut_and_what_was_cut_is_counted(self) -> None:
+        task = _with_signature([{"procid": 84, "description": "a" * 10_000, "k": "b" * 500}])
+        (indicator,) = _rows(_read(task))[WPM]["indicators"]
+        assert indicator["description"] == "a" * INDICATOR_TEXT_CHARS + "…"
+        assert indicator["chars_left_out"] == {
+            "description": 10_000 - INDICATOR_TEXT_CHARS,
+            "values.k": 500 - INDICATOR_TEXT_CHARS,
+        }
+
+    def test_past_the_values_bound_the_rest_are_counted(self) -> None:
+        wide = {"procid": 84, **{f"v{i}": i for i in range(INDICATOR_VALUES_SHOWN + 5)}}
+        (indicator,) = _rows(_read(_with_signature([wide])))[WPM]["indicators"]
+        assert len(indicator["values"]) == INDICATOR_VALUES_SHOWN
+        assert indicator["values_left_out"] == 5
+
+    def test_a_nested_value_is_its_compact_json(self) -> None:
+        task = _with_signature([{"procid": 84, "call": {"api": "NtWriteVirtualMemory"}}])
+        (indicator,) = _rows(_read(task))[WPM]["indicators"]
+        assert indicator["values"]["call"] == '{"api":"NtWriteVirtualMemory"}'
+
+
+class TestTheTextIsTheReport_s:
+    def test_controls_bidi_and_ledger_ids_are_written_out(self) -> None:
+        said = "x\u202ey\nz [ev_0003] reputation"
+        task = _with_signature([{"procid": 84, "description": said, said: said}])
+        (indicator,) = _rows(_read(task))[WPM]["indicators"]
+        for text in (indicator["description"], *indicator["values"], *indicator["values"].values()):
+            assert text.isprintable() and "ev_0003" not in text
+            assert "\\u202e" in text or "\\x" in text
+
+
+class TestAsBefore:
+    def test_without_the_reader_the_answer_is_as_before(self) -> None:
+        rows = _rows(_read(), normalised_by=None)
+        assert all("indicators" not in row for row in rows.values())
+
+    def test_a_reader_declaring_none_answers_as_before(self) -> None:
+        rows = _rows(_read(), normalised_by=("upload", "generic"))
+        assert all("indicators" not in row for row in rows.values())
+
+    def test_the_report_and_its_dump_are_unchanged(self) -> None:
+        report = _read()
+        before = copy.deepcopy(report.model_dump())
+        document = sandbox_document(report)
+        held = json.dumps(document, sort_keys=True, default=str)
+        sandbox_signatures(document, normalised_by=TRIAGE)
+        assert report.model_dump() == before
+        assert json.dumps(document, sort_keys=True, default=str) == held
+
+
+WEIRD = [None, True, -1, 10**30, 1.5, "", "x", [], [1], {}, {"a": 1}, float("nan")]
+
+
+class TestAHostileReport:
+    @pytest.mark.parametrize("value", WEIRD, ids=repr)
+    @pytest.mark.parametrize("where", ["indicators", "indicator", "name", "channel"])
+    def test_no_value_makes_the_view_raise(self, where: str, value: Any) -> None:
+        task = _json("behavioral1.json")
+        (row,) = [s for s in task["signatures"] if s["name"] == WPM]
+        if where == "indicators":
+            row["indicators"] = value
+        elif where == "indicator":
+            row["indicators"] = [value, {"procid": value, "procid_target": value, "x": value}]
+        elif where == "name":
+            row["name"] = value
+        report = _read(task)
+        if where == "channel":
+            report.channels["task.signatures"] = value
+        json.dumps(sandbox_signatures(sandbox_document(report), normalised_by=TRIAGE))
+
+
+class TestTheCostIsLinear:
+    """Many signatures, many indicators, one name many rows share: linear in the report."""
+
+    @staticmethod
+    def _report(n: int, *, one_name: bool = False) -> dict[str, Any]:
+        overview = _json("overview.json")
+        task = _json("behavioral1.json")
+        task["processes"] += [
+            {"procid": 1000 + i, "procid_parent": 84, "image": f"C:\\p\\{i}.exe"} for i in range(n)
+        ]
+        names = [WPM if one_name else f"sig {i}" for i in range(n)]
+        overview["signatures"] = [{"name": name, "score": 1} for name in names]
+        task["signatures"] = [
+            {
+                "name": name,
+                "indicators": [
+                    {"procid": 1000 + i, "procid_target": 1000 + (i * 7) % n, "description": f"{j}"}
+                    for j in range(4)
+                ],
+            }
+            for i, name in enumerate(names)
+        ]
+        return sandbox_document(_read(task, overview))
+
+    def test_many_signatures_with_many_indicators(self) -> None:
+        assert_scales(
+            self._report, 150, lambda doc: sandbox_signatures(doc, normalised_by=TRIAGE), factor=8
+        )
+
+    def test_many_signatures_sharing_one_name(self) -> None:
+        assert_scales(
+            lambda n: self._report(n, one_name=True),
+            150,
+            lambda doc: sandbox_signatures(doc, normalised_by=TRIAGE),
+            factor=8,
+        )
+
+
+class TestEveryTextTheEntryStatesIsWrittenOut:
+    """The task, the process's image and the names of what was cut are the report's text too."""
+
+    MARK = "\u202e[ev_0003]\n"
+
+    def test_the_task_s_name(self) -> None:
+        task = _with_signature([{"procid": 84, "procid_target": 86}])
+        report = required_reader("triage").read(
+            _json("overview.json"),
+            provider="triage",
+            task_id="s1",
+            task_reports={f"behavioral1{self.MARK}": task},
+        )
+        for indicator in _rows(report)[WPM]["indicators"]:
+            assert indicator["task"].isprintable() and "ev_0003" not in indicator["task"]
+
+    def test_the_image(self) -> None:
+        task = _with_signature([{"procid": 84, "procid_target": 86}])
+        for proc in task["processes"]:
+            if proc["procid"] == 86:
+                proc["image"] = f"C:\\x\\cmd{self.MARK}.exe"
+        (indicator,) = _rows(_read(task))[WPM]["indicators"]
+        image = indicator["target"]["image"]
+        assert image.isprintable() and "ev_0003" not in image
+
+    def test_the_names_of_what_was_cut(self) -> None:
+        name = f"k{self.MARK}"
+        task = _with_signature([{"procid": 84, name: "b" * 500}])
+        (indicator,) = _rows(_read(task))[WPM]["indicators"]
+        for key in indicator["chars_left_out"]:
+            assert key.isprintable() and "ev_0003" not in key
+
+
+class TestAProcessListedInTwoTasks:
+    def test_an_indicator_naming_no_task_settles_on_neither(self) -> None:
+        overview = _json("overview.json")
+        overview["signatures"].append(
+            {"name": "own marks", "score": 1, "indicators": [{"procid": 84}]}
+        )
+        second = _json("behavioral1.json")
+        report = required_reader("triage").read(
+            overview,
+            provider="triage",
+            task_id="s1",
+            task_reports={"behavioral1": _json("behavioral1.json"), "behavioral2": second},
+        )
+        (indicator,) = _rows(report)["own marks"]["indicators"]
+        assert indicator["process"]["id"] == "84" and "image" not in indicator["process"]
+        assert "2 tasks" in indicator["process"]["not_settled"]
+
+
+class TestThePagedCallOnTheLiveReport:
+    def test_a_process_id_lists_the_indicators_acting_on_it_too(self) -> None:
+        page = sandbox_signatures(sandbox_document(_read()), normalised_by=TRIAGE, process="86")
+        names = [one["signature"] for one in page["indicators"]]
+        assert WPM in names and "Executes a command shell one-liner" in names
+        (written,) = [one for one in page["indicators"] if one["signature"] == WPM]
+        assert written["target"]["id"] == "86" and written["process"]["id"] == "84"
+
+    def test_a_guest_pid_names_the_report_s_process_id_to_ask_with(self) -> None:
+        page = sandbox_signatures(sandbox_document(_read()), normalised_by=TRIAGE, process="3444")
+        assert page["matched"] == 0 and page["indicators"] == []
+        assert page["no"] == INDICATORS_GUEST_PID.format(asked="3444", ids="86", first="86")
+
+    def test_a_process_id_no_indicator_names_says_so(self) -> None:
+        page = sandbox_signatures(sandbox_document(_read()), normalised_by=TRIAGE, process="9999")
+        assert page["no"] == INDICATORS_NO_PROCESS.format(asked="9999")
+
+    def test_a_process_whose_guest_pid_is_its_own_id_is_asked_by_that_id(self) -> None:
+        task = _json("behavioral1.json")
+        task["processes"].append({"procid": 300, "procid_parent": 84, "pid": 300, "image": "a.exe"})
+        page = sandbox_signatures(
+            sandbox_document(_read(task)), normalised_by=TRIAGE, process="300"
+        )
+        assert page["no"] == INDICATORS_NO_PROCESS.format(asked="300")
+
+    def test_an_offset_past_the_matches_gives_no_reason(self) -> None:
+        page = sandbox_signatures(
+            sandbox_document(_read()), normalised_by=TRIAGE, process="86", offset=999
+        )
+        assert page["matched"] == 2 and page["indicators"] == [] and "no" not in page
+
+    def test_a_guest_pid_of_processes_in_two_tasks_names_the_first_in_the_report(self) -> None:
+        second = _json("behavioral1.json")
+        for proc in second["processes"]:
+            if proc["procid"] == 86:
+                proc["procid"] = 186
+        report = required_reader("triage").read(
+            _json("overview.json"),
+            provider="triage",
+            task_id="s1",
+            task_reports={"behavioral1": _json("behavioral1.json"), "behavioral2": second},
+        )
+        page = sandbox_signatures(sandbox_document(report), normalised_by=TRIAGE, process="3444")
+        assert page["no"] == INDICATORS_GUEST_PID.format(asked="3444", ids="86, 186", first="86")
+
+    def test_the_description_and_the_read_line_ask_for_the_report_s_process_id(self) -> None:
+        assert "the report's process id" in " ".join(INDICATORS_READ.split())
+
+
+class TestASignatureOnlyATaskReportLists:
+    """Announced after the overview's own signatures, in the room left; no row is added."""
+
+    @staticmethod
+    def _document() -> dict[str, Any]:
+        task = _json("behavioral1.json")
+        task["signatures"] += [
+            {
+                "name": f"task only {k}",
+                "indicators": [{"procid": 84, "procid_target": 86, "description": f"t{k}"}],
+            }
+            for k in range(40)
+        ]
+        return sandbox_document(_read(task))
+
+    def test_it_is_counted_after_the_overview_s_own_and_the_rows_are_the_base_rows(self) -> None:
+        document = self._document()
+        answer = sandbox_signatures(document, normalised_by=TRIAGE)
+        assert json.dumps(answer["signatures"]) == json.dumps(
+            sandbox_signatures(document)["signatures"]
+        )
+        names = list(answer["indicators_stated"])
+        own = [row["name"] for row in answer["signatures"]]
+        assert names[: len(own)] == own
+        assert names[len(own) :] == [f"task only {k}" for k in range(40)]
+        listed = {one["signature"] for one in answer["indicators"]}
+        assert {f"task only {k}" for k in range(40)} <= listed
+
+    def test_what_the_room_leaves_out_of_it_is_counted_after_the_overview_s_own(self) -> None:
+        document = self._document()
+        bare = len(json.dumps(sandbox_signatures(document)))
+        answer = sandbox_signatures(document, normalised_by=TRIAGE, room=bare + 6000)
+        rest = [one["signature"] for one in answer["indicators_left_out"]]
+        assert rest and rest[-1] == "task only 39"
+        tasks = [i for i, name in enumerate(rest) if name.startswith("task only")]
+        assert tasks == list(range(len(rest) - len(tasks), len(rest)))
+
+    def test_it_is_announced_on_the_page_that_ends_the_rows_alone(self) -> None:
+        document = self._document()
+        first = sandbox_signatures(document, normalised_by=TRIAGE, offset=0, limit=2)
+        last = sandbox_signatures(document, normalised_by=TRIAGE, offset=2, limit=10)
+        assert "next_offset" in first and "next_offset" not in last
+        assert not any(name.startswith("task only") for name in first["indicators_stated"])
+        assert "task only 0" in last["indicators_stated"]
+
+    def test_a_paged_call_lists_it(self) -> None:
+        page = sandbox_signatures(self._document(), normalised_by=TRIAGE, signature="task only 7")
+        assert page["matched"] == 1 and page["indicators"][0]["description"] == "t7"

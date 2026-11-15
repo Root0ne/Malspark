@@ -949,7 +949,10 @@ call; a pid and a signature name are looked up in indexes built once per
 section, an id is found by its position, a list of asked ids is read only up
 to the section's own size and the rest counted, and only the substring filter
 reads rows, once each. A pid filter on a section whose rows name no process
-answers a `no:` saying so. The `dynamic` analyst has the tool in its sandbox
+answers a `no:` saying so. A signature item carries the indicators its
+ledger entry states (the head of the signature view's order, below, with
+where the rest are read), and the substring and pid filters find a signature
+by any indicator the report states for it. The `dynamic` analyst has the tool in its sandbox
 set. The `network` analyst has it alone wherever a sandbox produced a report,
 and the whole sandbox set where its definition asks for
 `ToolRef(kind="sandbox")`; no prompt text changed, and the sentence about
@@ -5667,7 +5670,31 @@ is assembled from what the run gathered rather than recomputed beside it:
   answers as naming no process, `platform_flows_unsettled`). A DNS request
   takes none: its flow is the guest's resolver, never the program that
   asked, and only a process a DNS row itself
-  names is its maker. One rule decides an address, a name and a URL from
+  names is its maker. A signature's ledger entry carries its indicators,
+  read where each reader declares its format states them
+  (`ReportReader.signature_indicators`; a mapped format through
+  `field_names`, written on the row in the neutral form,
+  `platform_indicators`): each process an indicator names resolved to the
+  process row of the same report and task with the facts the process view
+  gives it (the report's process id, and the guest's pid where the reader
+  declares where a process row holds it), an id the task does not list
+  stated as not listed, equal indicators listed once with their count, every
+  text cut to its bound with what was cut counted and written out. The view's
+  rows are the rows an answer without indicators gives, byte for byte; only
+  in the room every row leaves within one budget for the whole answer
+  (`SIGNATURE_ANSWER_CHARS`, never more than the model's copy of the answer
+  holds whole) follow the counts per signature (`indicators_stated`), then
+  the indicators: process pairings first, then one process, then the rest; `indicators_left_out` counts per signature what the
+  budget leaves out with the offset from which the view, called with
+  `signature`, `process` or `contains`, lists the rest, a page
+  (`SIGNATURE_INDICATORS_PAGE`) at a time. A generic module reads no format's
+  own field: the declarations are the readers' data. The pack's signatures line shows
+  them after its entry's id in the room the fitted pack leaves. In a task
+  whose launcher chain is not established, a flow of a script host naming the
+  launcher keeps the host's image, and an address only such hosts reached
+  (every flow to it one of theirs, as for `unlisted_processes`) names them
+  (`launcher_unsettled_processes`) in its `no:`, the decision being the
+  unattributed one. One rule decides an address, a name and a URL from
   their records: a URL's are its HTTP requests; a name's are its HTTP
   requests, the DNS requests that name their own process and the flows to
   the addresses it resolved to (at most 16 processes of a kind from each
@@ -5790,9 +5817,17 @@ is assembled from what the run gathered rather than recomputed beside it:
   artifact created and some answer's text holds takes the string sweep's
   standing (`strings`), whichever tool printed the text — a sandbox
   signature's description, a command line and the sample's strings a sandbox
-  re-serves are text, not observations; only a structured network record (a
-  flow, a DNS query, an HTTP request, a capture conversation) makes a sandbox
-  row. A URL's HTTP method is the one its request record states and is absent
+  re-serves are text, not observations. The one exception is a part of an
+  answer its kind declares a structured record
+  (`core.builtin_declarations.RECORD_PARTS_OF_KIND`, dotted paths with `*`
+  for each element of a list: the resolved indicators the signature view and
+  its paged call answer under `indicators` and the item reader under
+  `items.*.indicators`): a row an answer holds only there keeps the analyst's
+  standing and the decision a row no answer holds has (published where the
+  judge keeps it), and a refusal still names the entry that holds it. The
+  declaration names the part by the entry's kind, never by its tool's name.
+  Only a structured network record (a flow, a DNS query, an HTTP request, a
+  capture conversation) makes a sandbox row. A URL's HTTP method is the one its request record states and is absent
   on a URL no request carries (`NetworkURL.method`, `null`): no URL defaults to
   `GET`, which could contradict a POST beacon decoded from the file.
   A name's DNS answers are its `resolved_ips`. Such a value, with no second source, reads `no: seen only in the text

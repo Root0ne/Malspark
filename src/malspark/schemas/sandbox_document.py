@@ -927,6 +927,11 @@ def _signature_row(signature: Any) -> dict[str, Any]:
     # Left out where the reader named no process, as before the field existed.
     if signature.pids:
         row[SIGNATURE_PIDS_KEY] = list(signature.pids)
+    # Left out where the reader wrote none, as before the field existed.
+    if getattr(signature, "indicators", None):
+        from malspark.schemas.signature_indicators import SIGNATURE_INDICATORS_KEY
+
+        row[SIGNATURE_INDICATORS_KEY] = list(signature.indicators)
     if signature.extra:
         row["extra"] = dict(signature.extra)
     return row

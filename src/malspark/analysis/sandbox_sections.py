@@ -377,6 +377,9 @@ class Sections:
         self.report = report
         self.detonation = str(detonation or "").lower()
         self._reading = _reader(normalised_by)
+        self._normalised_by = normalised_by
+        # A signature's indicators as its entry states them, read on first use.
+        self._indicators: Any = None
         unavailable = place(report, "unavailable")
         # By the platform's section ids; a report stored before they were
         # normalised is read through the legacy words (``section_id``).
@@ -664,7 +667,38 @@ class Sections:
             item["process"] = qualified(self.detonation, part.process)
         if section.name == "processes" and index in self._parent:
             item["parent"] = qualified(self.detonation, self._parent[index])
+        if section.name == "signatures":
+            # Which process did what to which, as the signature view states it.
+            item.update(self._indicators_of(row))
         return item
+
+    def _signature_indicators(self) -> Any:
+        """The report's signature indicators (``SignatureIndicators``), read on first use."""
+        if self._indicators is None:
+            from malspark.providers.sandbox_tools import SignatureIndicators
+
+            self._indicators = SignatureIndicators(dict(self.report), self._normalised_by)
+        return self._indicators
+
+    def _indicators_of(self, row: Any) -> dict[str, Any]:
+        """A signature item's indicators: the head of its order and where the rest are read."""
+        held: dict[str, Any] = self._signature_indicators().of_item(row)
+        return held
+
+    def _indicators_hold(self, row: Any, needle: str) -> bool:
+        """Whether any indicator the report states for a signature row holds ``needle``."""
+        from malspark.providers.sandbox_tools import _signature_name
+
+        if not isinstance(row, Mapping):
+            return False
+        held: bool = self._signature_indicators().holds_text(_signature_name(row), needle)
+        return held
+
+    def names_processes(self, name: str) -> bool:
+        """Whether the pid filter reads ``name``: its rows name a process, or its indicators do."""
+        if names_processes(name):
+            return True
+        return name == "signatures" and self._signature_indicators().fields is not None
 
     def _own(self, item_id: str) -> str | None:
         """``item_id`` without this report's qualifier; ``None`` where another detonation's."""
@@ -710,6 +744,11 @@ class Sections:
                             found = self._stated(one)
                             if found is not None:
                                 pids.add(found)
+                if name == "signatures" and isinstance(row, Mapping):
+                    # And by the processes its indicators name, acting or acted on.
+                    from malspark.providers.sandbox_tools import _signature_name
+
+                    pids |= self._signature_indicators().process_ids(_signature_name(row))
                 for pid in pids:
                     index.setdefault(pid, []).append(number)
         self._pid_index[name] = index
@@ -825,7 +864,9 @@ class Sections:
             part, index = placed
             row = section.parts[part].rows[index]
             if needle and not _holds_text(_searched(section.name, row), needle):
-                continue
+                # A signature is also found by what any of its indicators says.
+                if section.name != "signatures" or not self._indicators_hold(row, needle):
+                    continue
             found.items.append(self._item(section, section.parts[part], index, number))
         return found
 
@@ -1200,10 +1241,11 @@ class ItemCitations:
             from malspark.core.safe_json import dumps
 
             found = self.item(key)
-            # The row's own fields and the process and parent it names; not the
-            # platform's id, kind and source, which no value is read from.
+            # The row's own fields, the process and parent it names and a
+            # signature's indicators; not the platform's id, kind and source,
+            # which no value is read from.
             said = (
-                {k: found[k] for k in ("fields", "process", "parent") if k in found}
+                {k: found[k] for k in ("fields", "process", "parent", "indicators") if k in found}
                 if found
                 else None
             )
