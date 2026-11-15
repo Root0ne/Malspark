@@ -95,6 +95,7 @@ stand, and :class:`RevisionMerge` records every choice.
 from __future__ import annotations
 
 import bisect
+import functools
 import re
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
@@ -414,20 +415,26 @@ _REVERSED_RANGE_RE = re.compile(
 )
 
 
-@dataclass(frozen=True)
+@dataclass
 class _DisputesRead:
     """The revision's dispute items, each read once per merge.
 
     ``numbers`` are the claims in force they refer to by number: every
     "claim N" an item writes, each claim of a bounded range
     (``debate_facts.read_claim_numbers``), both ends of a range written
-    backwards, and every own reference however it reads (``own``); and
+    backwards, and every own reference however it reads (``own``);
     ``readings`` each item as a block's statement is read
-    (:func:`_block_restates`).
+    (:func:`_block_restates`), read at the first question.
     """
 
     numbers: frozenset[int]
-    readings: tuple[_Reading, ...]
+    items: tuple[str, ...]
+
+    @functools.cached_property
+    def readings(self) -> tuple[_Reading, ...]:
+        return tuple(
+            _reading(_searched(item), content_words(item), frozenset()) for item in self.items
+        )
 
     def refer_to(self, block: _Block) -> bool:
         """Whether an item writes the claim's number or restates it."""
@@ -456,10 +463,7 @@ def _disputes_read(
         numbers.update(_known_in(low, high, ordered))
     for low, high in own.spoken:
         numbers.update(_known_in(low, high, ordered))
-    readings = tuple(
-        _reading(_searched(item), content_words(item), frozenset()) for item in disputes
-    )
-    return _DisputesRead(frozenset(numbers), readings)
+    return _DisputesRead(frozenset(numbers), tuple(disputes))
 
 
 def _answered_by_a_block(
@@ -1214,25 +1218,32 @@ def merge_revision(
             withdrawn.setdefault(number, reason)
     unread = read.unread
     disputes = [str(item) for item in getattr(revision, "dissent_items", None) or [] if item]
-    # The analyst's own references in its disputes, read under the numbering
-    # of the answer in force (``retry_merge.read_own_withdrawals``).
-    own = read_own_withdrawals(
-        disputes,
-        getattr(in_force, "revision_round", None),
-        tuple(getattr(named, "participants", ()) or ()),
-    )
     # Per claim in force, the lines of the round's mediation that named it and
     # the blocking ones that speak to it (:func:`_speaking_lines`).
     speaking = {
         block.number: _speaking_lines(block, named, expanded, clauses, anchored) for block in first
     }
+    # The analyst's own references in its disputes, read under the numbering
+    # of the answer in force (``retry_merge.read_own_withdrawals``). The
+    # disputes are read only where a blocking line reaches a claim: no other
+    # merge asks what they say.
+    asked = any(lines.ruling for lines in speaking.values())
+    own = (
+        read_own_withdrawals(
+            disputes,
+            getattr(in_force, "revision_round", None),
+            tuple(getattr(named, "participants", ()) or ()),
+        )
+        if asked
+        else OwnWithdrawals()
+    )
     # The one place the own-withdrawal reading counts (:func:`_answered_by_a_block`).
     answered = _answered_by_a_block(
         {number: lines.itself for number, lines in speaking.items()}, own, ordered
     )
     # The disputes, read once: the line rule never withdraws a claim they
     # refer to, however the item reads (:func:`_disputes_read`).
-    referred = _disputes_read(disputes, own, ordered)
+    referred = _disputes_read(disputes if asked else [], own, ordered)
 
     readings = [_read(block) for block in revised]
     numbered = _by_number(first, revised, readings)
