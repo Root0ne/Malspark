@@ -744,12 +744,18 @@ class TriageSandboxProvider(SandboxProvider):
             + (f" (sent {sent})" if sent else "")
         )
 
-    def _submit_settings_said(self) -> str:
-        """The operator's settings the submission carries, for a refusal to name."""
+    def _submit_settings_said(self, payload: dict[str, Any]) -> str:
+        """The operator's settings the submission carries, for a refusal to name: the
+        analysis time under each field the path taken sends it in."""
         seconds = self._cfg.analysis_seconds
         if seconds is None:
             return ""
-        return f"defaults.timeout={seconds} from sandbox.triage.analysis_seconds"
+        fields = ["defaults.timeout"]
+        entry = (payload.get("profiles") or [{}])[0]
+        if isinstance(entry.get("profile"), dict):
+            fields.insert(0, "profiles[0].profile.timeout")
+        said = " and ".join(f"{field}={seconds}" for field in fields)
+        return f"{said} from sandbox.triage.analysis_seconds"
 
     def _profile_for(self, path: Path) -> str:
         """The VM profile this sample's format asks for, else the plain default.
@@ -769,25 +775,42 @@ class TriageSandboxProvider(SandboxProvider):
 
         return requested_host(self._cfg.base_url, SUBMIT_PATH)
 
-    def _post_sample(
-        self, path: Path, headers: dict[str, str], built: BuiltLauncher | None = None
-    ) -> httpx.Response:
-        """The submission: the sample, or the archive of a launcher built for it.
+    def _submission_json(self, path: Path, built: BuiltLauncher | None) -> dict[str, Any]:
+        """The submission's JSON part: the sample's own profile, the launcher's pick and
+        the analysis time where the path taken reads it.
 
         An archive is picked by the launcher's member name (``profiles[].pick``,
-        relative to the archive root); the profile is the sample's own.
+        relative to the archive root). How long the VM runs the sample is the
+        operator's, or nothing is sent and Triage's own default applies. A
+        submission that names a ``profiles`` entry is not run for
+        ``defaults.timeout`` but for a ``timeout`` in a profile object embedded
+        in that entry (checked live on the launcher path, 2026-11-15), so with
+        no profile configured the launcher's entry embeds the time, and
+        ``defaults`` is kept beside it. An entry that names a configured profile
+        cannot also embed one: the stored profile's own time applies there and
+        the request is sent as before (not checked live).
         """
         payload: dict[str, Any] = {"kind": "file", "interactive": False}
         profile = self._profile_for(path)
+        seconds = self._cfg.analysis_seconds
         if built is not None:
-            pick: dict[str, str] = {"pick": str(built.record["launcher_member"])}
-            payload["profiles"] = [{"profile": profile, **pick} if profile else pick]
+            pick: dict[str, Any] = {"pick": str(built.record["launcher_member"])}
+            if profile:
+                pick = {"profile": profile, **pick}
+            elif seconds is not None:
+                pick["profile"] = {"timeout": int(seconds)}
+            payload["profiles"] = [pick]
         elif profile:
             payload["profiles"] = [{"profile": profile, "pick": "default"}]
-        # How long the VM runs the sample: the operator's, or nothing sent and
-        # Triage's own default.
-        if self._cfg.analysis_seconds is not None:
-            payload["defaults"] = {"timeout": int(self._cfg.analysis_seconds)}
+        if seconds is not None:
+            payload["defaults"] = {"timeout": int(seconds)}
+        return payload
+
+    def _post_sample(
+        self, path: Path, headers: dict[str, str], built: BuiltLauncher | None = None
+    ) -> httpx.Response:
+        """The submission: the sample, or the archive of a launcher built for it."""
+        payload = self._submission_json(path, built)
         if built is not None:
             return self._get_http().post(
                 SUBMIT_PATH,
@@ -949,7 +972,10 @@ class TriageSandboxProvider(SandboxProvider):
             # dropped transport is this path's business, and rewriting an
             # unrelated failure into "Triage submit failed" would hide it.
         self._raise_for_status(
-            response, "submit", self._submit_settings_said(), mask=self._masking(options, built)
+            response,
+            "submit",
+            self._submit_settings_said(self._submission_json(path, built)),
+            mask=self._masking(options, built),
         )
         data = response.json()
         sample_id = data.get("id")
@@ -1158,8 +1184,8 @@ class TriageSandboxProvider(SandboxProvider):
         """The overview's and the task reports' facts, and each of them as fetched.
 
         Triage ran the sample. The analysis time asked is the one the
-        submission carried (``defaults.timeout``, from
-        ``sandbox.triage.analysis_seconds``), stated only for a sample this
+        submission carried (``sandbox.triage.analysis_seconds``, sent where the
+        path taken reads it: ``_submission_json``), stated only for a sample this
         provider posted itself; none is stated where the submission carried
         none and Triage's own default applied, nor for a sample the account
         already held (a dropped answer reconciled, or a report fetched by id),

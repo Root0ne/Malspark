@@ -2336,9 +2336,12 @@ ANNOTATIONS.update(
             "title": "Triage run time (s)",
             "description": (
                 "How long the Triage VM runs the sample, sent with the submission as "
-                "defaults.timeout. Empty, the default, sends nothing and Triage's own "
-                "default applies. A value the account does not allow is refused by Triage, "
-                "and the submission error quotes its words. The run summary states the "
+                "defaults.timeout and, where a generated launcher is picked and no profile "
+                "is configured, also as the timeout of the profile the pick entry embeds. "
+                "With a profile configured, that stored profile's own time applies. Empty, "
+                "the default, sends nothing and Triage's own default applies. A value the "
+                "account does not allow is refused by Triage, and the submission error "
+                "quotes its words. The run summary states the "
                 "run-time limit Triage set for the task."
             ),
             "applies_when": _SANDBOX_TRIAGE,

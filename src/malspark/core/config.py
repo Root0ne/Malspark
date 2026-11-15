@@ -4499,8 +4499,10 @@ class SandboxTriageConfig(BaseModel):
     Triage run queues behind other tenants' work.
 
     ``analysis_seconds`` is how long the Triage VM runs the sample, sent as
-    the submission's ``defaults.timeout``; unset, nothing is sent and Triage's
-    own default applies. ``timeout_seconds`` is how long this platform polls
+    the submission's ``defaults.timeout`` and, on a launcher's submission with
+    no profile configured, also in the pick entry's embedded profile (with a
+    profile configured, the stored profile's own time applies); unset, nothing
+    is sent and Triage's own default applies. ``timeout_seconds`` is how long this platform polls
     for the finished report, so it must be longer than the run it waits for.
     """
 
