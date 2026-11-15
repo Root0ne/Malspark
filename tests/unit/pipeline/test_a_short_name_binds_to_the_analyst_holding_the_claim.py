@@ -48,6 +48,14 @@ class TestTheFieldsAnalystHoldsTheClaim:
 
         assert _rows(named) == {"extra_static_deep": {17: [(1, True)]}}
 
+    def test_a_number_sign_and_spaces_after_claim_are_read_too(self) -> None:
+        owners = _owners(static=16, extra_static_deep=40, extra_strings_scan=30, dynamic=20)
+        line = R2_LINE.replace("STATIC claim 17", "STATIC claims  #  17")
+
+        named = claims_named_by_lines([line], TEAM, owners)
+
+        assert _rows(named) == {"extra_static_deep": {17: [(1, True)]}}
+
     def test_where_static_holds_the_claim_it_is_static_s(self) -> None:
         owners = _owners(static=20, extra_static_deep=40, extra_strings_scan=30, dynamic=20)
 
