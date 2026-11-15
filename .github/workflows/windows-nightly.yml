@@ -1,0 +1,100 @@
+name: Windows nightly
+
+# The platform-independent unit suites the per-pull-request Windows job
+# (platforms.yml) does not run, run on Windows once a night against dev and on
+# demand. Reporting renders PDFs through Pango, which the Windows runner does
+# not have, and the integration suite needs services; both stay out. Not a
+# required check: a failure shows in the Actions tab and nowhere else.
+# A schedule runs, and a dispatch can be started, only for a workflow file on
+# the default branch: the nightly first runs after the promotion that brings
+# this file there.
+on:
+  schedule:
+    - cron: "17 1 * * *"
+  workflow_dispatch:
+
+# The workflow reads the repository and nothing else; it references no secrets.
+permissions:
+  contents: read
+
+# A run waits for another on the same tree: dev for the schedule, the
+# dispatched ref otherwise.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event_name == 'schedule' && 'refs/heads/dev' || github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  # Five shards that run side by side, sized by the rule that each shard's
+  # Linux CI weight (scripts/ci/shard_map.py: 228 to 438 s) is under that of
+  # the longest shard of the per-pull-request job (pipeline, 883 s); their
+  # Windows time is not yet measured. A test marked posix is deselected;
+  # every other test of these paths runs.
+  windows-tests:
+    name: Tests (Windows nightly, Python 3.13, ${{ matrix.shard }})
+    runs-on: windows-latest
+    timeout-minutes: 60
+    defaults:
+      run:
+        shell: pwsh
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - shard: agents
+            paths:
+              - tests/unit/agents
+          - shard: api
+            paths:
+              - tests/unit/api
+          - shard: core
+            paths:
+              - tests/unit/core
+          - shard: providers
+            paths:
+              - tests/unit/providers
+              - tests/api
+          - shard: small
+            paths:
+              - tests/unit/llm
+              - tests/unit/memory
+              - tests/unit/extractors
+              - tests/unit/enrichment
+              - tests/unit/loaders
+              - tests/unit/schemas
+              - tests/unit/parsers
+              - tests/unit/utils
+
+    steps:
+      # A scheduled run starts on the default branch; it tests dev, where
+      # changes land first. A dispatched run tests the branch it was given.
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event_name == 'schedule' && 'dev' || '' }}
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.13"
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+        with:
+          enable-cache: true
+
+      - name: Install dependencies
+        run: uv sync --frozen --all-packages
+
+      # A test still running after ten minutes has every thread's stack
+      # written to the log, so a hang names its test however the job ends.
+      - name: Run the shard's suites
+        env:
+          SHARD_PATHS: ${{ join(matrix.paths, ' ') }}
+        run: |
+          $PSNativeCommandUseErrorActionPreference = $true
+          # An array also when the shard names one path, which a splat would
+          # otherwise spread over its characters.
+          $paths = @(-split $env:SHARD_PATHS)
+          uv run pytest @paths -m "not posix" -q --tb=short -o faulthandler_timeout=600
