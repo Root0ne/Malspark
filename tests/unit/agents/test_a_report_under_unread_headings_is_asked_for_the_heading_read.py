@@ -71,6 +71,16 @@ _READ_IN_PART = (
     "EVIDENCE: [ev_0003]\nCONFIDENCE: 0.8\nTECHNIQUE: NONE\n"
 )
 _READ_WHOLE = _READ_IN_PART.replace("CLAIM 3. ", "CLAIM 3: ")
+# The same, with a DISPUTES section after the claims.
+_DISPUTE = "\nDISPUTES:\n- Static claim 7 is wrong: [ev_0019] shows no stack string.\n"
+_READ_IN_PART_DISPUTING = _READ_IN_PART + _DISPUTE
+_READ_WHOLE_DISPUTING = _READ_WHOLE + _DISPUTE
+# Three claims numbered as the report's, none of them its claims, and no DISPUTES.
+_UNRELATED = (
+    "CLAIM 1: The sample is a DLL.\nEVIDENCE: [ev_0003]\nCONFIDENCE: 0.5\n"
+    "CLAIM 2: The sample is packed.\nEVIDENCE: [ev_0004]\nCONFIDENCE: 0.5\n"
+    "CLAIM 3: The sample beacons.\nEVIDENCE: [ev_0005]\nCONFIDENCE: 0.5\n"
+)
 
 
 class _FakeLLM:
@@ -240,6 +250,36 @@ class TestTheOneTurn:
 
         assert len(llm.seen) == 1
         assert kept == _READ_IN_PART
+        assert analyst._answer_unstructured is False
+
+    def test_a_reply_that_loses_the_disputes_section_leaves_the_report_standing(self) -> None:
+        llm, analyst, kept = self._settle(_READ_IN_PART_DISPUTING, [_UNRELATED])
+
+        assert len(llm.seen) == 1
+        assert kept == _READ_IN_PART_DISPUTING
+        assert analyst._answer_unstructured is False
+
+    def test_a_reply_that_drops_a_claim_number_leaves_the_report_standing(self) -> None:
+        dropped = _READ_WHOLE.replace("CLAIM 2 (revised). ", "CLAIM 4 (revised). ")
+        llm, _analyst, kept = self._settle(_READ_IN_PART, [dropped])
+
+        assert len(llm.seen) == 1
+        assert kept == _READ_IN_PART
+
+    def test_a_reply_that_keeps_every_number_and_the_disputes_replaces_the_report(self) -> None:
+        llm, _analyst, kept = self._settle(_READ_IN_PART_DISPUTING, [_READ_WHOLE_DISPUTING])
+
+        assert len(llm.seen) == 1
+        assert kept == _READ_WHOLE_DISPUTING
+
+    def test_a_line_begun_under_the_disputes_section_is_not_asked(self) -> None:
+        text = _READ_WHOLE + (
+            "\nDISPUTES:\nCLAIM 3. The static reading is wrong.\nEVIDENCE: [ev_0019]\n"
+        )
+        llm, analyst, kept = self._settle(text, [_REPORT])
+
+        assert llm.seen == []
+        assert kept == text
         assert analyst._answer_unstructured is False
 
     def test_an_answer_read_whole_is_not_asked(self) -> None:

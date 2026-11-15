@@ -2456,8 +2456,9 @@ reader does not read, the nudge's words say so and state the heading it reads,
 report. A report read in part — a claim of it begun under a numbered heading
 ended by a dot with no note, its field line beneath — is asked the same turn
 in the heading words; the reply replaces it only when it is a report that
-begins at least as many claims and leaves none unread, and otherwise the
-report stands with its shortfall recorded. Either way it is the same one
+begins at least as many claims, leaves none unread, writes every claim number
+the report wrote, read or begun, and keeps a DISPUTES section where the report
+wrote one; otherwise the report stands with its shortfall recorded. Either way it is the same one
 turn, and the log line that says the nudge is sent names which words it
 carries. A loop can end on an assistant
 turn whose tool call carries arguments that never parsed; no tool ran, and
@@ -2530,7 +2531,8 @@ unsourced. Each read counts the claims the answer began before its DISPUTES
 section — its claim headings, and each line begun as a numbered heading and
 ended by a dot with no note (`CLAIM 7. …`, `**CLAIM 7.** …`) whose next
 written line is a claim field line (`claim_headings.BEGUN_HEAD_RE`; with prose
-beneath it, it is prose) — against the claims it read and the blocks that
+beneath it, it is prose, and inside a claim that is read, before that claim's
+first field line, it is that claim's text) — against the claims it read and the blocks that
 stated no confidence; what is left is claims begun and not read, which is logged and
 kept on the answer it was read from (`AgentISR.claims_unread_reason`),
 naming the analyst, the round and both numbers. The judge node carries it as a

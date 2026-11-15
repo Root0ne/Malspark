@@ -39,6 +39,7 @@ from malspark.agents.claim_headings import (
     claim_blocks,
     count_claims_after_disputes,
     count_claims_begun,
+    count_claims_begun_unread,
     disputes_section,
     heading_note,
     heading_number,
@@ -212,6 +213,38 @@ class TestALineBegunAsAHeadingAndNotRead:
             == len([line for line in text.splitlines() if CLAIM_HEAD_RE.match(line)])
         )
         assert not read.unread
+
+    @pytest.mark.parametrize(
+        "text",
+        [
+            "CLAIM 2: The loader decodes strings.\nCLAIM 3. above shows the key comes from 0x1400."
+            "\nEVIDENCE: [ev_0001]\nCONFIDENCE: 0.8\n",
+            "CLAIM 2: The loader decodes strings.\n> CLAIM 3. The static analyst says the key is"
+            " fixed.\nEVIDENCE: [ev_0001]\nCONFIDENCE: 0.8\n",
+            "CLAIM 2: The loader runs three steps.\n1. CLAIM 3. is restated here.\n"
+            "EVIDENCE: [ev_0001]\nCONFIDENCE: 0.8\n",
+        ],
+        ids=["body-line", "quoted-peer", "list-item"],
+    )
+    def test_inside_a_read_claim_before_its_fields_it_counts_nothing(self, text: str) -> None:
+        read = read_claim_blocks(text)
+
+        assert count_claims_begun(text) == read.begun == 1
+        assert count_claims_begun_unread(text) == 0
+        assert [c.number for c in read.claims] == ["2"] and not read.unread
+
+    @pytest.mark.parametrize("closer", ["", "\n", "\n---\n"], ids=["field", "blank", "rule"])
+    def test_after_a_read_claim_s_fields_it_counts(self, closer: str) -> None:
+        text = (
+            "CLAIM 2: The loader decodes strings.\nEVIDENCE: [ev_0001]\nCONFIDENCE: 0.8\n"
+            + closer
+            + "CLAIM 3. Routine 0x1400 opens a mutex.\nEVIDENCE: [ev_0003]\nCONFIDENCE: 0.8\n"
+        )
+        read = read_claim_blocks(text)
+
+        assert count_claims_begun(text) == read.begun == 2
+        assert count_claims_begun_unread(text) == 1
+        assert read.unread == 1
 
     def test_a_revision_read_in_part_names_the_claim_not_read(self) -> None:
         read = read_claim_blocks(_READ_IN_PART, require_evidence=True)

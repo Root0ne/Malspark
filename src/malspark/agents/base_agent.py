@@ -50,11 +50,13 @@ from malspark.agents.claim_headings import (
     CLAIM_HEADING_EXAMPLE,
     CLAIM_HEADING_FORM,
     LINE_PREFIX,
+    claim_numbers_written,
     claims_headed_with_notes,
     count_claims_after_disputes,
     count_claims_begun,
     count_claims_begun_unread,
     count_claims_headed,
+    disputes_section,
     writes_claim_fields,
 )
 from malspark.agents.prompt_fragments import (
@@ -1513,6 +1515,24 @@ FINAL_ANSWER_HEADING_NUDGE = (
 def final_answer_nudge(content: str) -> str:
     """The nudge a loop whose last message is ``content`` is sent: the heading one when it wrote fields."""
     return FINAL_ANSWER_HEADING_NUDGE if writes_claim_fields(content) else FINAL_ANSWER_NUDGE
+
+
+def _replaces_read_in_part(report: str, reply: str) -> bool:
+    """Whether ``reply`` to the nudge replaces ``report``, a report read in part.
+
+    Only a report read whole that loses nothing the report wrote: it begins
+    at least as many claims, leaves none begun and unread, writes every
+    claim number the report wrote, read or begun
+    (``claim_headings.claim_numbers_written``), and keeps a DISPUTES section
+    where the report wrote one.
+    """
+    return (
+        answer_is_isr(reply)
+        and not count_claims_begun_unread(reply)
+        and count_claims_begun(reply) >= count_claims_begun(report)
+        and claim_numbers_written(report) <= claim_numbers_written(reply)
+        and (disputes_section(report) is None or disputes_section(reply) is not None)
+    )
 
 
 # What the analyst reports for itself when even the nudge produced no report.
@@ -8268,7 +8288,9 @@ class BaseAnalyst(BudgetMeter, ABC):
         A report read in part, a claim of it begun under a heading the reader
         does not read (``claim_headings.count_claims_begun_unread``), is asked
         the same one turn. Its reply replaces it only when it is a report that
-        begins at least as many claims and leaves none of them unread;
+        begins at least as many claims, leaves none of them unread, writes
+        every claim number the report wrote, read or begun, and keeps a
+        DISPUTES section where the report wrote one (:func:`_replaces_read_in_part`);
         otherwise the report stands as written, its shortfall recorded where
         it is read.
         """
@@ -8280,12 +8302,7 @@ class BaseAnalyst(BudgetMeter, ABC):
             msgs, timeout, elapsed, max_steps, question=final_answer_nudge(content)
         )
         if read_in_part:
-            if (
-                nudged is not None
-                and answer_is_isr(nudged)
-                and not count_claims_begun_unread(nudged)
-                and count_claims_begun(nudged) >= count_claims_begun(content)
-            ):
+            if nudged is not None and _replaces_read_in_part(content, nudged):
                 return nudged
             return content
         # Only when the nudge answered the question. Taking any non-empty text

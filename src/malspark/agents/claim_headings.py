@@ -55,7 +55,7 @@ CLAIM_HEAD_RE = re.compile(
 # A dot followed by a digit ends no heading (``CLAIM 3.5 …``). Each part is
 # read possessively, so a line costs time linear in its length.
 BEGUN_HEAD_RE = re.compile(
-    r"^" + LINE_PREFIX + r"CLAIM(?:[ \t]++#?[A-Za-z]++|[ \t]*+#?)\d++"
+    r"^" + LINE_PREFIX + r"CLAIM(?:[ \t]++#?(?P<label>[A-Za-z]++)|[ \t]*+#?)(?P<number>\d++)"
     r"[ \t]*+(?:\*\*)?[ \t]*+\.(?!\d)"
 )
 
@@ -348,21 +348,30 @@ def _headings_in(
     return sum(1 for line in lines if head(line)) - len(_sentence_lines(lines, head))
 
 
-def _begun_unread(lines: list[str]) -> int:
-    """How many of ``lines`` are a ``BEGUN_HEAD_RE`` line whose next written line is a field.
+def _begun_unread(lines: list[str]) -> list[re.Match[str]]:
+    """Each of ``lines`` that is a ``BEGUN_HEAD_RE`` line whose next written line is a field.
 
     Such a line is a claim written whole under a heading the rule does not
-    read; with prose under it, it is prose. Each line is read once.
+    read; with prose under it, it is prose. Inside a claim the rule reads,
+    between its heading and its first field line, it is that claim's text (a
+    sentence line, a peer's claim quoted, a list item) and counts nothing: a
+    read heading opens its block, and its first field line or a ``---`` line
+    closes it. Each line is read once.
     """
-    count = 0
-    begun = False
+    found: list[re.Match[str]] = []
+    begun: re.Match[str] | None = None
+    open_block = False
     for line in lines:
         if not line.strip():
             continue
-        if begun and _CLAIM_FIELD_RE.match(line):
-            count += 1
-        begun = BEGUN_HEAD_RE.match(line) is not None
-    return count
+        if begun is not None and _CLAIM_FIELD_RE.match(line):
+            found.append(begun)
+        if CLAIM_HEAD_RE.match(line):
+            open_block = True
+        elif _FIELD_LABEL_RE.match(line) or _SEPARATOR_RE.match(line):
+            open_block = False
+        begun = None if open_block else BEGUN_HEAD_RE.match(line)
+    return found
 
 
 def count_claims_headed(text: str) -> int:
@@ -377,7 +386,23 @@ def count_claims_begun_unread(text: str) -> int:
     line (:func:`_begun_unread`). It is no claim block: the claim is begun,
     and not read.
     """
-    return _begun_unread(before_disputes(text).splitlines())
+    return len(_begun_unread(before_disputes(text).splitlines()))
+
+
+def claim_numbers_written(text: str) -> set[str]:
+    """The numbers ``text`` writes on its claims before its DISPUTES section, read or begun.
+
+    Each claim heading's number (:func:`heading_number`) and each number of a
+    claim begun under a heading the rule does not read
+    (:func:`count_claims_begun_unread`); a heading with no number adds none.
+    """
+    lines = before_disputes(text).splitlines()
+    heads = [CLAIM_HEAD_RE.match(line) for line in lines]
+    return {
+        number
+        for heading in [*(h for h in heads if h is not None), *_begun_unread(lines)]
+        if (number := heading_number(heading)) is not None
+    }
 
 
 def count_claims_begun(text: str) -> int:
@@ -389,7 +414,7 @@ def count_claims_begun(text: str) -> int:
     counted against what it read, never dropped in silence.
     """
     lines = before_disputes(text).splitlines()
-    return _headings_in(lines) + _begun_unread(lines)
+    return _headings_in(lines) + len(_begun_unread(lines))
 
 
 # A line that ends a claim's block: a ``---`` separator.
