@@ -38,7 +38,7 @@ from malspark.schemas.sandbox_report import (
     TASK_SIGNATURES_CHANNEL,
     TRIAGE_TRAFFIC_PROCESS_FIELDS,
 )
-from malspark.schemas.signature_indicators import IndicatorFields
+from malspark.schemas.signature_indicators import NEUTRAL_FIELDS, IndicatorFields
 
 if TYPE_CHECKING:
     from malspark.schemas.sandbox_report import Reading, SandboxReport
@@ -449,6 +449,16 @@ class CapeReportReader(ReportReader):
     keeps_source_arrangement = True
     renames = CAPE_RENAMES
     traffic_process_fields = ("procid", "pid")
+    # A signature's marks (``data`` in the report's own arrangement): a mark
+    # names the process it was seen in by the process list's id, an API call's
+    # mark its call (the API under ``call.api``), an indicator's mark its
+    # category and the indicator itself.
+    signature_indicators = IndicatorFields(
+        lists=("marks", "data"),
+        process=("pid", "process_id"),
+        event=("call.api", "category"),
+        description=("description",),
+    )
 
     def read(
         self,
@@ -479,7 +489,11 @@ class CapeReportReader(ReportReader):
             Reading,
         )
 
-        return Reading(CAPE_NORMALISER_FILLS, rendered=read_from == READ_FROM_MODEL)
+        return Reading(
+            CAPE_NORMALISER_FILLS,
+            rendered=read_from == READ_FROM_MODEL,
+            signature_indicators=self.signature_indicators,
+        )
 
     def run_facts(self, payload: Any, fmt: Any = None, **context: Any) -> dict[str, Any]:
         """The task id where the format says it sits, and the report's ``info`` block.
@@ -673,6 +687,11 @@ class MappedReportReader(ReportReader):
     id = "generic"
     sniffs = False
     reads_mapping = True
+    # The mapping's ``field_names`` declare where a signature states its
+    # indicators (``signatures.platform_indicators`` and the fields of each,
+    # ``signatures.platform_indicators.<process|target|event|description>``):
+    # the reader writes them on the row in the neutral form.
+    signature_indicators = NEUTRAL_FIELDS
 
     def read(
         self,
@@ -708,7 +727,7 @@ class MappedReportReader(ReportReader):
         from malspark.providers.sandbox.rest_mapping import REST_MAPPING_FILLS
         from malspark.schemas.sandbox_report import Reading
 
-        return Reading(REST_MAPPING_FILLS)
+        return Reading(REST_MAPPING_FILLS, signature_indicators=self.signature_indicators)
 
 
 @register_report_reader

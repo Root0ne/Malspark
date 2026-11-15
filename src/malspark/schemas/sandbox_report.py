@@ -174,12 +174,16 @@ class SandboxSignatureRow(BaseModel):
     # (``schemas.sandbox_document.signature_pids`` reads those). Empty where
     # it names none, and then left out of the dump.
     pids: list[str] = Field(default_factory=list)
+    # The hit's indicators in the neutral form
+    # (``schemas.signature_indicators``), where a reader that reads a mapping
+    # read them; empty for every other reader, and then left out of the dump.
+    indicators: list[dict[str, Any]] = Field(default_factory=list)
     # The signature's other fields, under the sandbox's own names.
     extra: dict[str, Any] = Field(default_factory=dict)
 
     @model_serializer(mode="wrap")
     def _dump(self, handler: SerializerFunctionWrapHandler) -> Any:
-        return _without_empty(self, handler, ("pids", "extra"))
+        return _without_empty(self, handler, ("pids", "indicators", "extra"))
 
 
 class SandboxDnsRequest(BaseModel):
