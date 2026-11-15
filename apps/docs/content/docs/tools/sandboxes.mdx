@@ -219,11 +219,13 @@ the room it leaves, each signature's whole or not at all, and the line counts
 the signatures whose indicators it does not show, held by that entry, and how
 many more indicators the report states than the entry lists. The reading is
 linear in the report: each name's indicators are gathered and resolved once,
-however many rows and calls read them. A value an analyst lists that a
-signature answer holds only in its `indicators` keeps the analyst's standing:
-that part is a structured record (its kind declares it so), so the value is
-decided as one no answer holds (published where the judge keeps it), and a
-refusal names the entry that holds it. Any other text of a sandbox answer — a
+however many rows and calls read them. A value an analyst lists that an
+answer holds only in its resolved indicators keeps the analyst's standing:
+those parts are a structured record, and each view's kind declares where it
+answers them (`RECORD_PARTS_OF_KIND`, dotted paths: the signature view's and
+its paged call's `indicators`, the item reader's `items.*.indicators`), so the
+value is decided as one no answer holds (published where the judge keeps it),
+and a refusal names the entry that holds it. Any other text of a sandbox answer — a
 signature's description, a command line, the sample's strings a section
 re-serves — gives a value the string sweep's standing.
 
