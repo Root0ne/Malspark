@@ -20,7 +20,7 @@ from typing import Any
 from malspark.agents.base_agent import read_claim_blocks
 from malspark.pipeline.claim_drops import dropped_values
 from malspark.pipeline.retry_merge import read_own_withdrawals
-from malspark.pipeline.revision_merge import merge_revision
+from malspark.pipeline.revision_merge import claims_named_in_force, merge_revision
 from malspark.schemas.isr_models import AgentISR
 from tests.linear_cost import assert_scales, assert_under
 
@@ -56,13 +56,26 @@ MUTEX = "The mutex name at 0x403962 is not recovered; the call shows only (0,0).
 ADDED = "0x409000 enumerates the running processes with a snapshot."
 IN_FORCE = _block(LOADER) + _block(GATE)
 BLOCKING_L3 = {1: [(3, True)]}
+STATIC = "[analysts: STATIC ANALYST]"
+BLOCKS = "[blocking: the listing shows another call.]"
+
+
+def _speaking(in_force: str, line: str, at: int = 1) -> Any:
+    """The naming of a blocking line, written as line ``at``, read against ``in_force``."""
+    lines = [""] * (at - 1) + [f"{STATIC} {line} {BLOCKS}"]
+    return claims_named_in_force(lines, ["static"], {"static": _isr(in_force)}).get("static")
+
+
+# A blocking line, L3, that speaks to claim 1 itself: it writes its routine.
+ON_LOADER = "STATIC claim 1 says 0x40cf14 loads the URL list."
 
 
 class TestANamedClaimRestatedWithoutAnAddress:
     def test_the_block_replaces_it(self) -> None:
         answer = _block(CORRECTED) + _block(GATE_AGAIN)
+        named = _speaking(IN_FORCE, ON_LOADER, 3)
 
-        merge = merge_revision(_isr(IN_FORCE), _isr(answer), answer, 2, BLOCKING_L3)
+        merge = merge_revision(_isr(IN_FORCE), _isr(answer), answer, 2, named)
 
         assert merge.replaced == (1, 2)
         assert merge.beside == () and merge.withdrawn_by_rule == ()
@@ -71,8 +84,9 @@ class TestANamedClaimRestatedWithoutAnAddress:
 
     def test_beside_a_carried_claim_the_block_stands_once_in_its_place(self) -> None:
         answer = _block(CORRECTED) + _block(ADDED)
+        named = _speaking(IN_FORCE, ON_LOADER, 3)
 
-        merge = merge_revision(_isr(IN_FORCE), _isr(answer), answer, 2, BLOCKING_L3)
+        merge = merge_revision(_isr(IN_FORCE), _isr(answer), answer, 2, named)
 
         assert merge.merged is not None
         assert merge.replaced == (1,) and _carried(merge) == [2] and merge.beside == ()
@@ -80,7 +94,8 @@ class TestANamedClaimRestatedWithoutAnAddress:
 
     def test_the_value_no_block_states_is_still_recorded_as_dropped(self) -> None:
         answer = _block(CORRECTED) + _block(ADDED)
-        merge = merge_revision(_isr(IN_FORCE), _isr(answer), answer, 2, BLOCKING_L3)
+        named = _speaking(IN_FORCE, ON_LOADER, 3)
+        merge = merge_revision(_isr(IN_FORCE), _isr(answer), answer, 2, named)
 
         dropped = dropped_values(_isr(IN_FORCE), merge.merged, answer, 2)
 
@@ -467,6 +482,8 @@ RUN_KEY = "Routine 0x407000 writes the Run key value 'upd' through 0x408000 (T15
 class TestANamedClaimItsAuthorDefendsKeepsTheSubjectTest:
     IN_FORCE = _block(RC4, "T1027") + _block(RUN_KEY, "T1547.001")
     ANSWER = _block(HASHES, "T1027") + _block(RUN_KEY, "T1547.001")
+    # L1 speaks to claim 1 itself: it writes the config's address.
+    ON_RC4 = "STATIC claim 1 says 0x405000 is RC4-decrypted; nothing shows it."
 
     def test_a_block_about_another_routine_does_not_replace_it(self) -> None:
         dispute = (
@@ -474,7 +491,11 @@ class TestANamedClaimItsAuthorDefendsKeepsTheSubjectTest:
         )
 
         merge = merge_revision(
-            _isr(self.IN_FORCE), _isr(self.ANSWER, (dispute,)), self.ANSWER, 2, {1: [(1, True)]}
+            _isr(self.IN_FORCE),
+            _isr(self.ANSWER, (dispute,)),
+            self.ANSWER,
+            2,
+            _speaking(self.IN_FORCE, self.ON_RC4),
         )
 
         assert 1 not in merge.replaced and merge.withdrawn == ()
@@ -491,7 +512,7 @@ class TestANamedClaimItsAuthorDefendsKeepsTheSubjectTest:
             _isr(self.ANSWER, (dispute,), revision_round=3),
             self.ANSWER,
             3,
-            {1: [(1, True)]},
+            _speaking(self.IN_FORCE, self.ON_RC4),
         )
 
         assert merge.replaced == (1, 2) and merge.beside == ()
@@ -500,7 +521,11 @@ class TestANamedClaimItsAuthorDefendsKeepsTheSubjectTest:
         dispute = "The peer's reading (claim 1) misses the hash loop at 0x402000."
 
         merge = merge_revision(
-            _isr(self.IN_FORCE), _isr(self.ANSWER, (dispute,)), self.ANSWER, 2, {1: [(1, True)]}
+            _isr(self.IN_FORCE),
+            _isr(self.ANSWER, (dispute,)),
+            self.ANSWER,
+            2,
+            _speaking(self.IN_FORCE, self.ON_RC4),
         )
 
         assert merge.replaced == (1, 2) and merge.beside == ()
@@ -522,9 +547,9 @@ class TestAnAnsweredClaimIsReplacedByTheBlockThatRestatesItBest:
     ANSWER = _block(TABLE_AGAIN, "T1027") + _block(DECODER_AGAIN, "T1027")
 
     def test_the_best_block_stands_in_its_place_and_is_named_for_it(self) -> None:
-        merge = merge_revision(
-            _isr(self.IN_FORCE), _isr(self.ANSWER), self.ANSWER, 2, {2: [(1, True)]}
-        )
+        named = _speaking(self.IN_FORCE, "STATIC claim 2 says 0x405000 decodes the strings.")
+
+        merge = merge_revision(_isr(self.IN_FORCE), _isr(self.ANSWER), self.ANSWER, 2, named)
 
         assert merge.replaced == (1, 2) and _carried(merge) == [3]
         assert merge.merged is not None
@@ -547,30 +572,34 @@ class TestAnAnsweredClaimIsReplacedByTheBlockThatRestatesItBest:
 class TestNoClaimStandsBesideTheBlockThatReplacedIt:
     def test_over_random_revisions(self) -> None:
         # Claims in force, each with a subject address and a helper; revision
-        # blocks restate some, with or without the subject, or add new ones.
+        # blocks restate some, with or without the subject, or add new ones;
+        # blocking lines name some, writing the subject of one or nothing.
         rng = random.Random(696)
+        beside_seen = replaced_seen = 0
         for _case in range(150):
             count = rng.randint(1, 5)
             subjects = [0x401000 + 0x100 * i for i in range(count)]
             in_force = "".join(
-                _block(f"0x{s:x} decodes the string table at 0x{s + 0x10000:x} with key k{i}x.")
+                _block(f"0x{s:x} decodes the string table at 0x{s + 0x8000:x} with key k{i}x.")
                 for i, s in enumerate(subjects)
             )
             answer = ""
             for i, s in enumerate(subjects):
                 kind = rng.choice(("same", "without", "skip"))
                 if kind == "same":
-                    answer += _block(f"0x{s:x} decodes the table at 0x{s + 0x10000:x} with k{i}x.")
+                    answer += _block(f"0x{s:x} decodes the table at 0x{s + 0x8000:x} with k{i}x.")
                 elif kind == "without":
-                    answer += _block(
-                        f"The string table at 0x{s + 0x10000:x} is decoded with k{i}x."
-                    )
+                    answer += _block(f"The string table at 0x{s + 0x8000:x} is decoded with k{i}x.")
             answer += _block(ADDED)
-            named = {
-                n: [(1, rng.random() < 0.7)] for n in range(1, count + 1) if rng.random() < 0.5
-            }
+            lines = []
+            for n in range(1, count + 1):
+                if rng.random() < 0.5:
+                    said = f"0x{subjects[n - 1]:x}" if rng.random() < 0.5 else "the table"
+                    lines.append(f"{STATIC} STATIC claim {n} says {said} is read. {BLOCKS}")
+            named = claims_named_in_force(lines, ["static"], {"static": _isr(in_force)})
+            rows = named.get("static") or {}
 
-            merge = merge_revision(_isr(in_force), _isr(answer), answer, 2, named)
+            merge = merge_revision(_isr(in_force), _isr(answer), answer, 2, rows)
 
             first = read_claim_blocks(in_force).claims
             stands = merge.merged.claims if merge.merged is not None else _isr(answer).claims
@@ -578,8 +607,12 @@ class TestNoClaimStandsBesideTheBlockThatReplacedIt:
             for number in merge.replaced:
                 assert first[number - 1].claim not in sentences
                 assert number not in _carried(merge)
+                replaced_seen += 1
+            anchored = getattr(rows, "anchored", {})
             for number, _s, _now, _a in merge.beside:
-                assert not any(blocks for _line, blocks in named.get(number, ()))
+                assert not any(number in claims for claims in anchored.values())
+                beside_seen += 1
+        assert beside_seen and replaced_seen
 
 
 # A blocking line that names claim 2.
