@@ -110,7 +110,8 @@ class TestAFinalOneLineBlockThatNamesAClaimOrAnEntryIsTheBlock:
 
 
 class TestARemarkAdoptsTheBlockOnlyWhereItPointsAtItAndEndsNothing:
-    # Each remark ends the block, negates, counts zero or points nowhere.
+    # Each remark ends the block, negates or counts zero in the clause that
+    # points at it, or points nowhere.
     def test_none_of_these_adopts_the_block(self) -> None:
         for remark in (
             "the line above is resolved by the revision.",
@@ -119,9 +120,9 @@ class TestARemarkAdoptsTheBlockOnlyWhereItPointsAtItAndEndsNothing:
             "after review, zero remain.",
             "0 open.",
             "STATIC withdrew it, so the line is settled.",
-            "standing blocking lines are listed above; the other differences do not hold up "
-            "agreement.",
             "the standing lines are the ones the reasoning gives",
+            "the lines listed above, but none blocks",
+            "0 of the above remain.",
         ):
             answer = _answer("CONTRADICTIONS:", *LINES, "", f"CONTRADICTIONS: {remark}")
 
@@ -133,7 +134,24 @@ class TestARemarkAdoptsTheBlockOnlyWhereItPointsAtItAndEndsNothing:
             "the standing lines are listed above",
             "as in the preceding block",
             "the foregoing lines stand",
+            "the above stand; nothing else blocks.",
+            "standing blocking lines are listed above; the non-blocking differences noted in the "
+            "reasoning do not hold up agreement.",
         ):
             answer = _answer("CONTRADICTIONS:", *LINES, "", f"CONTRADICTIONS: {remark}")
 
             assert read_contradictions_block(answer).items == LINES, remark
+
+
+class TestTheTwoLabelAnswerThroughTheMediatorsReader:
+    def test_its_block_is_read(self) -> None:
+        from malspark.agents.judge_agent import final_contradictions
+
+        answer = _answer(
+            "CONTRADICTIONS:",
+            *LINES,
+            "CONTRADICTIONS: standing blocking lines are listed above; the non-blocking "
+            "differences noted in the reasoning do not hold up agreement.",
+        )
+
+        assert final_contradictions(answer) == LINES

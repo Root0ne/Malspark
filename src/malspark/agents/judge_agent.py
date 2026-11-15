@@ -711,10 +711,11 @@ _NONE_RE = re.compile(
 _NONE_OPENING_RE = re.compile(r"^[\s*_`(]*none\b", re.IGNORECASE)
 # A closing remark on a label line adopts the block above it only where it
 # points at that block with one of the pointing words ("CONTRADICTIONS: the
-# standing lines are listed above") and holds, anywhere, no word of an end
-# ("... is resolved"), no negating word ("do not", "no longer", "none") and no
-# zero ("zero remain", "0 open"). Any other remark never adopts the block
-# above it: a draft the mediator argued away stays argued away.
+# standing lines are listed above") and the clause that holds the pointing
+# word holds no word of an end ("... is resolved"), no negating word ("no
+# longer", "none") and no zero ("0 of the above remain"). A clause ends at one
+# of the clause marks; a comma ends none. Any other remark never adopts the
+# block above it: a draft the mediator argued away stays argued away.
 REMARK_POINTING_WORDS = ("above", "listed", "preceding", "foregoing")
 REMARK_ENDED_WORDS = (
     "resolved", "settled", "answered", "withdrawn", "withdrew", "addressed", "cleared", "closed",
@@ -723,6 +724,8 @@ REMARK_ENDED_WORDS = (
 REMARK_NEGATING_WORDS = ("no", "not", "nothing", "none", "neither", "nor", "never", "cannot")
 REMARK_NEGATING_ENDINGS = ("n't", "n’t")
 REMARK_ZERO_WORDS = ("zero", "0")
+REMARK_CLAUSE_MARKS = (".", ";", "!", "?")
+_REMARK_CLAUSE_RE = re.compile("[" + re.escape("".join(REMARK_CLAUSE_MARKS)) + "]")
 _REMARK_POINTS_RE = re.compile(rf"\b(?:{'|'.join(REMARK_POINTING_WORDS)})\b", re.IGNORECASE)
 _REMARK_ENDS_RE = re.compile(
     rf"\b(?:{'|'.join((*REMARK_ENDED_WORDS, *REMARK_NEGATING_WORDS, *REMARK_ZERO_WORDS))})\b"
@@ -793,9 +796,10 @@ def read_contradictions_block(text: str) -> ContradictionsBlock:
     last line and the remark's label; a line of that block holds the fields;
     the remark holds no field of the block's lines, no claim reference and no
     ledger id; it points at the block with a word of
-    :data:`REMARK_POINTING_WORDS`; and it holds, anywhere, no word of
-    :data:`REMARK_ENDED_WORDS`, :data:`REMARK_NEGATING_WORDS` (or one ending
-    in :data:`REMARK_NEGATING_ENDINGS`) or :data:`REMARK_ZERO_WORDS`.
+    :data:`REMARK_POINTING_WORDS`; and the clause that holds that word (a
+    clause ends at :data:`REMARK_CLAUSE_MARKS`, never at a comma) holds no
+    word of :data:`REMARK_ENDED_WORDS`, :data:`REMARK_NEGATING_WORDS` (or one
+    ending in :data:`REMARK_NEGATING_ENDINGS`) or :data:`REMARK_ZERO_WORDS`.
     Otherwise the last block is read as written. A block ends at the next
     label. The label is matched in capitals, as the prompt spells it, so a
     prose heading such as "Contradictions:" in the reasoning is not
@@ -847,17 +851,25 @@ def _closing_remark(item: str) -> bool:
     """Whether a label line's one line can be a closing remark on the block above it.
 
     It holds no field of the block's lines (``debate_facts.carries_line_field``),
-    no claim reference and no ledger id, points at the block above
-    (:data:`REMARK_POINTING_WORDS`) and holds no word of an end, no negation
-    and no zero anywhere (:data:`REMARK_ENDED_WORDS`,
-    :data:`REMARK_NEGATING_WORDS`, :data:`REMARK_ZERO_WORDS`).
+    no claim reference and no ledger id, and points at the block above
+    (:func:`_points_and_ends_nothing`).
     """
     return (
         not carries_line_field(item)
         and not _REMARK_NAMES_RE.search(item)
-        and bool(_REMARK_POINTS_RE.search(item))
-        and not _REMARK_ENDS_RE.search(item)
+        and _points_and_ends_nothing(item)
     )
+
+
+def _points_and_ends_nothing(item: str) -> bool:
+    """Whether a clause of ``item`` points at the block above and none that does ends it.
+
+    Clauses end at :data:`REMARK_CLAUSE_MARKS`; each clause holding a word of
+    :data:`REMARK_POINTING_WORDS` must hold no word of an end, no negation
+    and no zero. One pass over the remark.
+    """
+    pointing = [c for c in _REMARK_CLAUSE_RE.split(item) if _REMARK_POINTS_RE.search(c)]
+    return bool(pointing) and not any(_REMARK_ENDS_RE.search(c) for c in pointing)
 
 
 def _block_at(lines: list[str], start: int) -> tuple[ContradictionsBlock, bool, int]:

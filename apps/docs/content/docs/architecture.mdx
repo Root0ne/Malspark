@@ -351,7 +351,8 @@ its own, and the block above it is read, only when nothing but blank lines
 stands between that block's last line and the remark's label, a line of that
 block holds the fields, the remark holds no field, no claim reference and no
 ledger id, it points at the block with a pointing word ("above", "listed",
-"preceding", "foregoing"), and it holds, anywhere, no word of an end
+"preceding", "foregoing"), and the clause that holds that word (a clause
+ends at ".", ";", "!" or "?", never at a comma) holds no word of an end
 ("resolved", "settled", "withdrawn", …), no negation ("not", "no longer",
 "none", "n't", …) and no zero ("zero", "0"), all declared in
 `agents.judge_agent`; otherwise the last block is read as written, so a
