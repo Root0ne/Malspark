@@ -15,7 +15,7 @@ from typing import Any
 import pytest
 from scripts.replay import compare
 from scripts.replay import run as replay_cli
-from scripts.replay.output import render_record
+from scripts.replay.output import render_record, terminal_safe
 from scripts.replay.record import errors
 
 from tests.unit.scripts._replay_tiny import EXPECTED_TOTALS, FIXTURE
@@ -89,7 +89,8 @@ class TestTheStatementOfAFinding:
 
 
 def _printed(record: dict[str, Any]) -> str:
-    rules = f"rules from: {record['rules']['tree']}"
+    """The rendered record with the tree's path, as the renderer writes it, replaced."""
+    rules = f"rules from: {terminal_safe(record['rules']['tree'])}"
     return render_record(record).replace(rules, "rules from: <tree>") + "\n"
 
 
