@@ -2276,20 +2276,21 @@ def _narrative(run: _Run, built: _Built) -> dict[str, Any]:
     citable = [str(entry.id) for entry in run.ledger]
     items = built.items
     entries = built.entries
-    found = [
-        *v.schema_violations(
-            NarrativeOutput, payload, code="narrative.schema", answer=json.dumps(payload)
-        ),
-        *v.narrative_capability_violations(payload, grounding),
-        *v.key_finding_citation_violations(payload, known_ids, items),
-        *v.citation_violations(payload, citable, prose=NARRATIVE_PROSE, items=items),
-        *v.wrong_entry_citations(payload, entries, prose=NARRATIVE_PROSE),
-        *v.misstated_entry_contents(payload, entries, prose=NARRATIVE_PROSE),
-        *v.ledger_absence_contradictions(payload, entries),
-        *v.technique_name_violations(payload),
-        *(v.recommendation_indicator_violations(payload, answers) if answers else []),
-        *v.recommendation_technique_violations(payload, published),
-    ]
+    with v.answer_of(NarrativeOutput):
+        found = [
+            *v.schema_violations(
+                NarrativeOutput, payload, code="narrative.schema", answer=json.dumps(payload)
+            ),
+            *v.narrative_capability_violations(payload, grounding),
+            *v.key_finding_citation_violations(payload, known_ids, items),
+            *v.citation_violations(payload, citable, prose=NARRATIVE_PROSE, items=items),
+            *v.wrong_entry_citations(payload, entries, prose=NARRATIVE_PROSE),
+            *v.misstated_entry_contents(payload, entries, prose=NARRATIVE_PROSE),
+            *v.ledger_absence_contradictions(payload, entries),
+            *v.technique_name_violations(payload),
+            *(v.recommendation_indicator_violations(payload, answers) if answers else []),
+            *v.recommendation_technique_violations(payload, published),
+        ]
     # What the round does with what its retry left: a summary that over-claims
     # or cites a stray id is kept with the finding recorded; a broken one is
     # none, and the report says why where the summary would have been. The
@@ -2440,22 +2441,23 @@ def _composer(run: _Run, built: _Built) -> dict[str, Any]:
         else:
             payload = {key: value}
         prose = c._PROSE_FIELDS.get(schema, ())
-        found = [
-            *v.schema_violations(
-                schema, payload, code="composer.schema", answer=json.dumps(payload)
-            ),
-            *v.section_capability_violations(payload, grounding),
-            *v.citation_violations(payload, citable, prose=prose, items=items, records=True),
-            *v.wrong_entry_citations(payload, entries, prose=prose),
-            *v.misstated_entry_contents(payload, entries, prose=prose),
-            *v.ledger_absence_contradictions(payload, entries),
-            *v.technique_name_violations(payload),
-            *v.repeated_item_violations(payload, c._ITEM_IDENTITY.get(schema, {})),
-            *(v.unpublished_value_violations(payload, answers) if answers else []),
-        ]
-        for extra in extras.get(section, []):
-            found.extend(extra(payload))
-        found.extend(pro.style_violations(payload, names))
+        with v.answer_of(schema):
+            found = [
+                *v.schema_violations(
+                    schema, payload, code="composer.schema", answer=json.dumps(payload)
+                ),
+                *v.section_capability_violations(payload, grounding),
+                *v.citation_violations(payload, citable, prose=prose, items=items, records=True),
+                *v.wrong_entry_citations(payload, entries, prose=prose),
+                *v.misstated_entry_contents(payload, entries, prose=prose),
+                *v.ledger_absence_contradictions(payload, entries),
+                *v.technique_name_violations(payload),
+                *v.repeated_item_violations(payload, c._ITEM_IDENTITY.get(schema, {})),
+                *(v.unpublished_value_violations(payload, answers) if answers else []),
+            ]
+            for extra in extras.get(section, []):
+                found.extend(extra(payload))
+            found.extend(pro.style_violations(payload, names))
         flags = [_flag(f, show_text=run.show_text) for f in found]
         sections[section] = {"codes": _tally(flags), "flags": flags}
     codes: Counter[str] = Counter()

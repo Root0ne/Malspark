@@ -27,6 +27,8 @@ import json
 import re
 import types
 from collections.abc import Awaitable, Callable, Collection, Iterable, Iterator, Mapping, Sequence
+from contextlib import contextmanager
+from contextvars import ContextVar
 from dataclasses import dataclass, field, replace
 from fractions import Fraction
 from functools import cache, cached_property, lru_cache, wraps
@@ -237,18 +239,20 @@ class Violation:
     # recorded. Never stored on the channel.
     question_only: bool = False
     # Where in the checked answer the statements this finding is about stand,
-    # as :func:`locate_statements` writes them: the walk ``path`` already uses
+    # as :func:`locate_statements` writes them: the walk ``path`` uses
     # (``key_findings.1``, ``channels.0.note``) with the sentence's number
-    # after ``#`` where a string holds several; ``*`` is the whole answer.
-    # Only places, never a sentence or a value. Empty where a check does not
-    # locate its finding. Carried by the run summary's rows, stored and
-    # printed; a row stored without it loads as before.
-    statements: tuple[str, ...] = ()
-    # The sentences or strings of the checked text this finding is about, as
-    # written, for :func:`locate_statements` to find the places of where the
-    # check does not quote them in ``quoted``. Never shown to the producer,
-    # marked in no report and never stored on the channel.
-    about: tuple[str, ...] = ()
+    # after ``#`` where a string holds several; ``*`` is the whole answer. Only
+    # places, never a sentence or a value: a field name the schema declares, a
+    # list position, ``#n``, ``*``, ``?`` for any other key. Empty where a check
+    # does not locate its finding. Carried by the run summary's rows, stored and
+    # printed; a row stored without it loads as before. Not part of what makes
+    # two findings equal, and not shown by ``repr``.
+    statements: tuple[str, ...] = field(default=(), compare=False, repr=False)
+    # The strings of the checked text this finding is about, each with the
+    # offsets of the match the check held in it, for :func:`locate_statements`
+    # to read the places from. Never shown to the producer, marked in no report,
+    # never stored on the channel, and like ``statements`` no part of equality.
+    about: tuple[Span, ...] = field(default=(), compare=False, repr=False)
 
     def __post_init__(self) -> None:
         # A row written by a validator has no route, and its message is its
@@ -4072,7 +4076,7 @@ def schema_violations(
                 code=code,
                 message=_schema_message(model, error),
                 path=".".join(str(part) for part in error.get("loc") or ()),
-                statements=(locator_path(error.get("loc") or ()) or WHOLE_ANSWER,),
+                statements=(locator_path(error.get("loc") or (), model) or WHOLE_ANSWER,),
             )
             # Every complaint: a count cap here hid the seventh broken field,
             # and the retry then came back with it still broken.
@@ -5638,14 +5642,22 @@ def _claiming_sentences(
     ``masked`` is ``text`` with the words to leave unread blanked
     (:func:`masked_values`); the sentences are quoted from ``text``.
     """
+    return list(
+        dict.fromkeys(sentence for sentence, _b, _e in _claiming_spans(pattern, text, masked))
+    )
+
+
+def _claiming_spans(
+    pattern: re.Pattern[str], text: str, masked: str | None = None
+) -> list[tuple[str, int, int]]:
+    """:func:`_claiming_sentences` with where each begins and ends in ``text``, every one."""
     read = text if masked is None or len(masked) != len(text) else masked
     reader = _NegationReader(read)
     # Where each sentence ends, read once (:func:`_sentence_around` per match
     # read the text from its start again).
     ends = [found.span() for found in _STATEMENT_END_RE.finditer(text)]
     end_starts = [begin for begin, _end in ends]
-    found: list[str] = []
-    seen: set[str] = set()
+    found: list[tuple[str, int, int]] = []
     read_sentences: set[int] = set()
     for match in pattern.finditer(read):
         if reader.is_negated(match.start(), match.end()):
@@ -5655,10 +5667,11 @@ def _claiming_sentences(
             continue
         read_sentences.add(k)
         begin = ends[k - 1][1] if k > 0 else 0
-        sentence = text[begin : end_starts[k] if k < len(ends) else len(text)].strip()
-        if sentence and sentence not in seen:
-            seen.add(sentence)
-            found.append(sentence)
+        stop = end_starts[k] if k < len(ends) else len(text)
+        sentence = text[begin:stop].strip()
+        if sentence:
+            first, last = _stripped(text, begin, stop)
+            found.append((sentence, first, last))
     return found
 
 
@@ -5772,11 +5785,12 @@ def ungrounded_capabilities(
         # communication was observed" is the prose a thin run should produce,
         # and flagging it spends the one retry arguing against the honest
         # sentence this validator exists to encourage.
-        sentences = [
-            sentence
-            for sentence in _claiming_sentences(pattern, text, masked)
-            if not _says_only_that_a_rule_matched(sentence, grounding.matchers)
+        claims = [
+            claim
+            for claim in _claiming_spans(pattern, text, masked)
+            if not _says_only_that_a_rule_matched(claim[0], grounding.matchers)
         ]
+        sentences = list(dict.fromkeys(claim[0] for claim in claims))
         if not sentences:
             continue
         if grounding.grounds(techniques, keys, pattern):
@@ -5804,6 +5818,7 @@ def ungrounded_capabilities(
                 ),
                 path=label.replace(" ", "_"),
                 quoted=tuple(sentences),
+                about=tuple((text, begin, end) for _s, begin, end in claims),
             )
         )
     return violations
@@ -5853,14 +5868,15 @@ def rule_match_statement_violations(text: str, grounding: CapabilityGrounding) -
         if len(name.strip()) >= 4:
             spellings.append(r"\s+".join(re.escape(word) for word in name.split()))
         pattern = re.compile(r"(?<![\w.])(?:" + "|".join(spellings) + r")(?![\w])", re.I)
-        sentences = [
-            sentence
-            for sentence in _claiming_sentences(pattern, text)
-            if not _rule_or_estimate_re(grounding.matchers).search(sentence)
-            and not _ABOUT_NOT_ACTION_RE.search(sentence)
+        claims = [
+            claim
+            for claim in _claiming_spans(pattern, text)
+            if not _rule_or_estimate_re(grounding.matchers).search(claim[0])
+            and not _ABOUT_NOT_ACTION_RE.search(claim[0])
             # A field holding the id or the name alone states nothing.
-            and sentence.strip(" .").lower() not in {tid.lower(), name.strip().lower()}
+            and claim[0].strip(" .").lower() not in {tid.lower(), name.strip().lower()}
         ]
+        sentences = list(dict.fromkeys(claim[0] for claim in claims))
         if not sentences:
             continue
         violations.append(
@@ -5874,6 +5890,7 @@ def rule_match_statement_violations(text: str, grounding: CapabilityGrounding) -
                 ),
                 path=tid,
                 quoted=tuple(sentences),
+                about=tuple((text, begin, end) for _s, begin, end in claims),
             )
         )
     return violations
@@ -5942,168 +5959,339 @@ def prose_of(payload: Any) -> str:
 # Where a finding's statements stand
 # ---------------------------------------------------------------------------
 
-# A finding about the whole answer, and a key of the answer that is not a field
-# name (the answer is the producer's own, so a key can be any string): neither
-# writes a word of the answer.
+# A finding about the whole answer, a key the answer's schema does not declare
+# (the answer is the producer's own, so a key can be any string), and what a
+# finding leaves out when it names more places than it carries: none writes a
+# word of the answer.
 WHOLE_ANSWER = "*"
 UNNAMED_KEY = "?"
-_LOCATOR_SEGMENT_RE = re.compile(r"[A-Za-z_][A-Za-z0-9_]{0,63}|[0-9]{1,6}")
+# A place the answer's text stands at: the string, and where in it the check's
+# match begins and ends. A finding carries these (``Violation.about``); the
+# places are read from them.
+Span = tuple[str, int, int]
+# How many places one finding names; what is left out is counted (``+12``).
+PLACES_AT_MOST = 64
 _LOCATOR_DEPTH = 6
-# How many places one quoted text is looked for in when no sentence of the
-# answer is it whole (a sentence another reader cut differently).
-_LOCATOR_FOUND_AT_MOST = 64
-_TRAILING_CITATION_RE = re.compile(r"^(.*) \[[^\[\]]*\]$", re.DOTALL)
 
 
-def locator_segment(part: Any) -> str:
-    """One step of a place: a field name or a number as written, any other key as ``?``."""
-    text = str(part)
-    return text if _LOCATOR_SEGMENT_RE.fullmatch(text) else UNNAMED_KEY
+@dataclass(frozen=True)
+class _Declared:
+    """The field names a schema declares, each with the schema of what it holds."""
+
+    names: Mapping[str, _Declared | None]
 
 
-def locator_path(parts: Iterable[Any]) -> str:
-    """A place in an answer from its steps, as ``path`` writes one (``key_findings.1.text``)."""
-    return ".".join(locator_segment(part) for part in parts)
+_NO_FIELDS = _Declared({})
+
+
+@lru_cache(maxsize=64)
+def declared_fields(model: Any, _depth: int = 0) -> _Declared:
+    """The field names of ``model`` and of the models its fields hold, as a tree."""
+    fields = getattr(model, "model_fields", None)
+    if not isinstance(fields, dict) or _depth > _LOCATOR_DEPTH:
+        return _NO_FIELDS
+    names: dict[str, _Declared | None] = {}
+    for name, info in fields.items():
+        held = _NO_FIELDS
+        for member in _annotation_models(info.annotation):
+            held = declared_fields(member, _depth + 1)
+            break
+        for spelling in (name, getattr(info, "alias", None)):
+            if isinstance(spelling, str):
+                names[spelling] = held
+    return _Declared(names)
+
+
+def _annotation_models(annotation: Any, depth: int = 0) -> list[Any]:
+    """The pydantic models an annotation holds, through lists, unions and optionals."""
+    if depth > 4:
+        return []
+    if hasattr(annotation, "model_fields"):
+        return [annotation]
+    found: list[Any] = []
+    for argument in get_args(annotation):
+        found.extend(_annotation_models(argument, depth + 1))
+    return found
+
+
+_DECLARED_BY: ContextVar[Any] = ContextVar("validation_declared_by", default=None)
+
+
+@contextmanager
+def answer_of(model: Any) -> Iterator[None]:
+    """Inside, the findings' places spell the field names ``model`` declares.
+
+    The answer a round checks is a plain mapping; the schema it is validated
+    against is what says which of its keys are fields. A key no schema declares
+    is the producer's own and is never written into a place.
+    """
+    token = _DECLARED_BY.set(model)
+    try:
+        yield
+    finally:
+        _DECLARED_BY.reset(token)
+
+
+def declaring[**P](model: Any, check: Callable[P, list[Violation]]) -> Callable[P, list[Violation]]:
+    """``check`` run inside :func:`answer_of` ``model``."""
+
+    @wraps(check)
+    def declared(*args: P.args, **kwargs: P.kwargs) -> list[Violation]:
+        with answer_of(model):
+            return check(*args, **kwargs)
+
+    return declared
+
+
+def locator_path(parts: Iterable[Any], model: Any = None, named: Collection[str] = ()) -> str:
+    """A place from the steps that walk to it (a key, or a list position as an int).
+
+    A key is written only where ``model`` (a schema, or the one :func:`answer_of`
+    names) declares it as a field of what the steps so far reach, or where it is
+    one of ``named``, the fields the check itself reads. Any other key is
+    ``?``, whatever it looks like. A list position is a number.
+    """
+    tree = declared_fields(model if model is not None else _DECLARED_BY.get())
+    out: list[str] = []
+    node: _Declared | None = tree if tree.names else None
+    for part in parts:
+        if isinstance(part, int):
+            out.append(str(part))
+        elif node is not None and part in node.names:
+            out.append(part)
+            node = node.names[part]
+        elif part in named:
+            out.append(part)
+            node = node.names.get(part) if node is not None else None
+        else:
+            out.append(UNNAMED_KEY)
+            node = None
+    return ".".join(out)
+
+
+def _sentence_pieces(text: str) -> list[tuple[str, int, int]]:
+    """Each sentence piece of ``text`` as the checks cut it, with where it begins and ends."""
+    pieces: list[tuple[str, int, int]] = []
+    begin = 0
+    for found in _SENTENCE_END_RE.finditer(text):
+        pieces.append((text[begin : found.start()], begin, found.start()))
+        begin = found.end()
+    pieces.append((text[begin:], begin, len(text)))
+    return pieces
 
 
 def _sentence_spans(text: str) -> list[tuple[int, int]]:
     """Where each non-empty sentence of ``text`` begins and ends, in the reading the checks use."""
-    spans: list[tuple[int, int]] = []
-    begin = 0
-    for found in [*_SENTENCE_END_RE.finditer(text), None]:
-        end = len(text) if found is None else found.start()
-        if text[begin:end].strip():
-            spans.append((begin, end))
-        if found is not None:
-            begin = found.end()
-    return spans
+    return [(begin, end) for piece, begin, end in _sentence_pieces(text) if piece.strip()]
 
 
-def _sentence_with(text: str, needle: str) -> str:
-    """The sentence of ``text`` that holds ``needle``, or ``text`` where none is found whole."""
-    at = text.find(needle) if needle else -1
-    if at >= 0:
-        for begin, end in _sentence_spans(text):
-            if begin <= at < end:
-                return text[begin:end].strip()
-    return text
+def _stripped(text: str, begin: int, end: int) -> tuple[int, int]:
+    """``begin`` and ``end`` moved in over the white space of ``text[begin:end]``."""
+    piece = text[begin:end]
+    lead = len(piece) - len(piece.lstrip())
+    return begin + lead, begin + lead + len(piece.strip())
 
 
-class _StatementIndex:
+def _outside_code(text: str) -> tuple[str, list[tuple[int, int]]]:
+    """``text`` with each code span one space, and where each kept stretch stood in ``text``.
+
+    The checks read citations outside code; a match's offset in the masked text
+    is mapped back to ``text`` by :func:`_unmasked`.
+    """
+    parts: list[str] = []
+    stretches: list[tuple[int, int]] = []  # (offset in the masked text, offset in text)
+    masked_at = 0
+    last = 0
+    for span in _CODE_SPAN_RE.finditer(text):
+        parts.append(text[last : span.start()])
+        stretches.append((masked_at, last))
+        masked_at += span.start() - last
+        parts.append(" ")
+        masked_at += 1
+        last = span.end()
+    parts.append(text[last:])
+    stretches.append((masked_at, last))
+    return "".join(parts), stretches
+
+
+def _unmasked(stretches: Sequence[tuple[int, int]], masked_at: int) -> int:
+    """Where an offset of the masked text stood in the text."""
+    at = bisect.bisect_right([m for m, _o in stretches], masked_at) - 1
+    masked_start, original_start = stretches[max(at, 0)]
+    return original_start + (masked_at - masked_start)
+
+
+class _Answer:
     """The strings of an answer with their places, read once: linear in the answer."""
 
-    def __init__(self, payload: Any) -> None:
-        self.paths: list[str] = []
+    def __init__(self, payload: Any, reads: _Reads, model: Any) -> None:
+        self.reads = reads
+        self.model = model
+        self.parts: list[list[Any]] = []
         self.texts: list[str] = []
-        self._spans: dict[int, list[tuple[int, int]]] = {}
-        self._by_sentence: dict[str, list[tuple[int, int]]] = {}
-        self._by_text: dict[str, list[int]] = {}
+        self._ends: dict[int, tuple[list[int], list[int]]] = {}
         data = payload if isinstance(payload, dict) else getattr(payload, "__dict__", {}) or {}
         self._walk(data, [], 0)
-        for at, text in enumerate(self.texts):
-            self._by_text.setdefault(text.strip(), []).append(at)
-            spans = self._spans_of(at)
-            for number, (begin, end) in enumerate(spans):
-                self._by_sentence.setdefault(text[begin:end].strip(), []).append((at, number))
+        self.at: dict[str, list[int]] = {}
+        for leaf, text in enumerate(self.texts):
+            self.at.setdefault(text, []).append(leaf)
 
-    def _walk(self, node: Any, path: list[str], depth: int) -> None:
+    def _walk(self, node: Any, parts: list[Any], depth: int) -> None:
         if depth > _LOCATOR_DEPTH:
             return
         if hasattr(node, "model_dump") and not isinstance(node, type):
             node = node.model_dump()
         if isinstance(node, str):
-            self.paths.append(locator_path(path))
-            self.texts.append(node)
+            if self.reads.leaf is None or self.reads.leaf(parts):
+                self.parts.append(parts)
+                self.texts.append(node)
         elif isinstance(node, dict):
             for key, value in node.items():
-                self._walk(value, [*path, str(key)], depth + 1)
+                if depth == 0 and self.reads.top is not None and key not in self.reads.top:
+                    continue
+                self._walk(value, [*parts, str(key)], depth + 1)
         elif isinstance(node, list | tuple):
             for number, value in enumerate(node):
-                self._walk(value, [*path, str(number)], depth + 1)
+                self._walk(value, [*parts, number], depth + 1)
 
-    def _spans_of(self, at: int) -> list[tuple[int, int]]:
-        if at not in self._spans:
-            self._spans[at] = _sentence_spans(self.texts[at])
-        return self._spans[at]
+    def _sentences(self, leaf: int) -> tuple[list[int], list[int]]:
+        if leaf not in self._ends:
+            spans = _sentence_spans(self.texts[leaf])
+            self._ends[leaf] = ([b for b, _e in spans], [e for _b, e in spans])
+        return self._ends[leaf]
 
-    def _place(self, at: int, number: int | None) -> str:
-        path = self.paths[at]
-        if number is None or len(self._spans_of(at)) < 2:
-            return path
-        return f"{path}#{number}"
-
-    def places(self, needle: str) -> list[tuple[int, int, str]]:
-        """Where a quoted text stands: ``(string, sentence, place)``, in the answer's order."""
-        needle = needle.strip()
-        if not needle:
-            return []
-        found = [(at, number) for at, number in self._by_sentence.get(needle, [])]
-        if found:
-            return [(at, number, self._place(at, number)) for at, number in found]
-        whole = self._by_text.get(needle, [])
-        if whole:
-            return [(at, 0, self._place(at, None)) for at in whole]
-        out: list[tuple[int, int, str]] = []
-        for at, text in enumerate(self.texts):
-            begin = text.find(needle)
-            while begin >= 0 and len(out) < _LOCATOR_FOUND_AT_MOST:
-                end = begin + len(needle)
-                for number, (start, stop) in enumerate(self._spans_of(at)):
-                    if start < end and begin < stop:
-                        out.append((at, number, self._place(at, number)))
-                begin = text.find(needle, end)
-        if out:
-            return out
-        # A table row's text under its citations (``cited_row_text``): the row's
-        # own string stands before the brackets that were added to it.
-        base = _TRAILING_CITATION_RE.match(needle)
-        return self.places(base.group(1)) if base and base.group(1).strip() != needle else []
+    def places(self, spans: Iterable[Span]) -> list[str]:
+        """The places of the sentences each span stands in, in the answer's order."""
+        found: dict[tuple[int, int], str] = {}
+        for text, begin, end in spans:
+            for leaf in self.at.get(text, ()):
+                starts, ends = self._sentences(leaf)
+                path = locator_path(self.parts[leaf], self.model, self.reads.names)
+                first = bisect.bisect_right(ends, begin)
+                last = first
+                while last < len(starts) and starts[last] < max(end, begin + 1):
+                    last += 1
+                if first == last and starts:
+                    # A match in white space between sentences, or an empty one.
+                    last = first = min(first, len(starts) - 1)
+                    last += 1
+                for number in range(first, last):
+                    found.setdefault(
+                        (leaf, number), f"{path}#{number}" if len(starts) > 1 else path
+                    )
+        return [found[key] for key in sorted(found)]
 
 
-def locate_statements(payload: Any, violations: Sequence[Violation]) -> list[Violation]:
+@dataclass(frozen=True)
+class _Reads:
+    """What a check reads of its answer: the top-level fields (all when ``None``), which
+    strings of them, and the field names the check itself spells."""
+
+    top: frozenset[str] | None = None
+    leaf: Callable[[Sequence[Any]], bool] | None = None
+    names: frozenset[str] = frozenset()
+
+
+def locate_statements(
+    payload: Any, violations: Sequence[Violation], reads: _Reads | None = None
+) -> list[Violation]:
     """``violations`` with the places of the statements each is about, found in ``payload``.
 
-    A finding is about the sentences it quotes (``quoted``) or names
-    (``about``), and each is looked up among the strings of the answer: a
-    sentence by its own text, a table row's text under its citations by the
-    row's string, and a text another reader cut differently by where it is
-    written. A finding that already has its places, or that holds no text to
-    look up, is returned as it is. The decision of no check is read from the
-    places, and no check's finding is gained or lost by them.
+    A finding is about the spans of text it carries (``about``): the string and
+    the offsets of the match the check held. Each is looked up among the strings
+    the check read (``reads``) and named by the sentences it stands in, at most
+    :data:`PLACES_AT_MOST` of them with the rest counted. A finding that already
+    has its places, or that carries no span, is returned as it is. No check's
+    decision is read from the places, and no finding is gained or lost by them.
     """
-    wanting = [v for v in violations if not v.statements and (v.quoted or v.about)]
+    wanting = [v for v in violations if not v.statements and v.about]
     if not wanting:
         return list(violations)
-    index = _StatementIndex(payload)
+    answer = _Answer(payload, reads or _Reads(), _DECLARED_BY.get())
     located: dict[int, tuple[str, ...]] = {}
     for violation in wanting:
-        found: dict[tuple[int, int], str] = {}
-        for text in violation.quoted or violation.about:
-            for at, number, place in index.places(text):
-                found.setdefault((at, number), place)
-        if found:
-            located[id(violation)] = tuple(dict.fromkeys(found[key] for key in sorted(found)))
+        places = answer.places(violation.about)
+        if places:
+            left = len(places) - PLACES_AT_MOST
+            located[id(violation)] = tuple(places[:PLACES_AT_MOST]) + (
+                (f"+{left}",) if left > 0 else ()
+            )
     return [replace(v, statements=located[id(v)]) if id(v) in located else v for v in violations]
 
 
-def _locating[**P](check: Callable[P, list[Violation]]) -> Callable[P, list[Violation]]:
+def _locating[**P](
+    reads: Callable[..., _Reads] | _Reads | None = None,
+) -> Callable[[Callable[P, list[Violation]]], Callable[P, list[Violation]]]:
     """A check whose findings carry the places of their statements (:func:`locate_statements`).
 
     The answer the check reads is its first argument; the findings, their
-    codes, their words and their number are the check's own.
+    codes, their words, their order and their number are the check's own. A
+    place that cannot be worked out costs the finding nothing: it is returned
+    as the check made it, and a line at warning level counts the findings left
+    without one.
     """
 
-    @wraps(check)
-    def checked(*args: P.args, **kwargs: P.kwargs) -> list[Violation]:
-        found = check(*args, **kwargs)
-        if not found:
-            return found
-        return locate_statements(args[0] if args else kwargs.get("payload"), found)
+    def decorate(check: Callable[P, list[Violation]]) -> Callable[P, list[Violation]]:
+        @wraps(check)
+        def checked(*args: P.args, **kwargs: P.kwargs) -> list[Violation]:
+            found = check(*args, **kwargs)
+            if not found:
+                return found
+            try:
+                read = reads(*args, **kwargs) if callable(reads) else reads or _Reads()
+                return locate_statements(args[0] if args else kwargs.get("payload"), found, read)
+            except Exception as exc:  # noqa: BLE001 — a place is never worth a finding
+                logger.warning(
+                    "validation: %s's %d finding(s) carry no places (%s).",
+                    check.__name__,
+                    len(found),
+                    type(exc).__name__,
+                )
+                return found
 
-    return checked
+        return checked
+
+    return decorate
 
 
-@_locating
+def _in_parts(found: list[Violation], parts: Sequence[str]) -> list[Violation]:
+    """``found`` over the text that joins ``parts`` by a line break, its spans put in the parts.
+
+    A finding of :func:`ungrounded_capabilities` or :func:`rule_match_statement_violations`
+    holds offsets in the joined text; each span is cut at the parts it crosses and
+    given in the part's own text, where the answer's strings are looked up.
+    """
+    starts: list[int] = []
+    at = 0
+    for part in parts:
+        starts.append(at)
+        at += len(part) + 1
+    out: list[Violation] = []
+    for violation in found:
+        spans: list[Span] = []
+        for _text, begin, end in violation.about:
+            number = max(bisect.bisect_right(starts, begin) - 1, 0)
+            while number < len(parts) and starts[number] < max(end, begin + 1):
+                start = starts[number]
+                spans.append(
+                    (
+                        parts[number],
+                        max(begin - start, 0),
+                        min(end - start, len(parts[number])),
+                    )
+                )
+                number += 1
+        out.append(replace(violation, about=tuple(spans)))
+    return out
+
+
+@_locating(
+    _Reads(
+        top=frozenset({"executive_summary", "key_findings"}),
+        leaf=lambda parts: len(parts) == 1 or parts[-1] == "text" or len(parts) == 2,
+        names=frozenset({"executive_summary", "key_findings", "text"}),
+    )
+)
 def narrative_capability_violations(
     payload: Any, grounding: CapabilityGrounding
 ) -> list[Violation]:
@@ -6115,10 +6303,13 @@ def narrative_capability_violations(
     for item in data.get("key_findings") or []:
         parts.append(str(item.get("text") or "") if isinstance(item, dict) else str(item))
     text = "\n".join(parts)
-    return [
-        *ungrounded_capabilities(text, grounding),
-        *rule_match_statement_violations(text, grounding),
-    ]
+    return _in_parts(
+        [
+            *ungrounded_capabilities(text, grounding),
+            *rule_match_statement_violations(text, grounding),
+        ],
+        parts,
+    )
 
 
 # The fields of a section answer that name its topic rather than state a finding.
@@ -6126,7 +6317,13 @@ _TOPIC_FIELDS = frozenset({"title", "heading"})
 
 
 def _prose_and_masked(payload: Any) -> tuple[str, str]:
-    """:func:`prose_of` and the same text with every value blanked, line for line.
+    """:func:`prose_of` and the same text with every value blanked, line for line."""
+    texts, masked = _prose_parts(payload)
+    return "\n".join(texts), "\n".join(masked)
+
+
+def _prose_parts(payload: Any) -> tuple[list[str], list[str]]:
+    """The strings of :func:`_prose_and_masked`, each with its masked reading, one by one.
 
     A record's verbatim field (``value``, ``endpoints``) is a value the sample
     holds and is blanked whole; its other fields are blanked where they restate
@@ -6168,19 +6365,25 @@ def _prose_and_masked(payload: Any) -> tuple[str, str]:
                 _walk(item, depth + 1)
 
     _walk(payload)
-    return "\n".join(texts), "\n".join(masked)
+    return texts, masked
 
 
-@_locating
+@_locating()
 def section_capability_violations(payload: Any, grounding: CapabilityGrounding) -> list[Violation]:
     """:func:`ungrounded_capabilities` and the rule-match check over a section answer's strings."""
     if payload is None:
         return []
-    text, masked = _prose_and_masked(payload)
-    return [
-        *ungrounded_capabilities(text, grounding, code=UNGROUNDED_CAPABILITY_CODE, masked=masked),
-        *rule_match_statement_violations(text, grounding),
-    ]
+    texts, masked_texts = _prose_parts(payload)
+    text, masked = "\n".join(texts), "\n".join(masked_texts)
+    return _in_parts(
+        [
+            *ungrounded_capabilities(
+                text, grounding, code=UNGROUNDED_CAPABILITY_CODE, masked=masked
+            ),
+            *rule_match_statement_violations(text, grounding),
+        ],
+        texts,
+    )
 
 
 CITATION_NOT_EVIDENCE_CODE = "report.citation_not_evidence"
@@ -6264,16 +6467,25 @@ def _cited_groups(text: str) -> list[str]:
     layout written ``[len][payload]``, is notation and is not read. An operand
     (``_OPERAND_RE``) is never read, alone or in a run.
     """
-    found: list[str] = []
+    return [group for group, _begin, _end in _cited_group_spans(text)]
+
+
+def _cited_group_spans(text: str) -> list[tuple[str, int, int]]:
+    """:func:`_cited_groups` with where each group, brackets included, stands in ``text``."""
+    found: list[tuple[str, int, int]] = []
     for run in _BRACKET_RUN_RE.finditer(text):
-        groups = _BRACKET_GROUP_RE.findall(run.group(0))
+        groups = list(_BRACKET_GROUP_RE.finditer(run.group(0)))
         cites = any(
             _EVIDENCE_ID_RE.fullmatch(item.strip())
             for group in groups
-            for item in re.split(r"[,;]", group)
+            for item in re.split(r"[,;]", group.group(1))
         )
         if len(groups) == 1 or cites:
-            found.extend(group for group in groups if not _is_operand(group))
+            found.extend(
+                (group.group(1), run.start() + group.start(), run.start() + group.end())
+                for group in groups
+                if not _is_operand(group.group(1))
+            )
     return found
 
 
@@ -6312,7 +6524,12 @@ def _item_read(items: Any, item_id: str) -> bool:
     return items is not None and callable(read) and read(item_id) is not None
 
 
-@_locating
+@_locating(
+    lambda payload, citable, *, prose=None, items=None, records=False: _Reads(
+        top=None if records or prose is None else frozenset(prose),
+        names=frozenset(prose or ()),
+    )
+)
 def citation_violations(
     payload: Any,
     citable: Sequence[str],
@@ -6380,10 +6597,22 @@ def citation_violations(
     )
     seen: set[str] = set()
     violations: list[Violation] = []
+    # Where each cited item is written, in every sentence it stands in, and its finding.
+    written_at: dict[str, list[Span]] = {}
+    found_at: dict[str, int] = {}
     for text in _strings_of(payload):
-        for group in _cited_groups(_CODE_SPAN_RE.sub(" ", text)):
+        masked, stretches = _outside_code(text)
+        for group, group_begin, group_end in _cited_group_spans(masked):
             for raw in re.split(r"[,;]", group):
                 item = raw.strip()
+                if item and item.lower() in seen:
+                    written_at[item.lower()].append(
+                        (
+                            text,
+                            _unmasked(stretches, group_begin),
+                            _unmasked(stretches, group_end - 1) + 1,
+                        )
+                    )
                 if not item or item.lower() in seen:
                     continue
                 if _EVIDENCE_ID_RE.fullmatch(item):
@@ -6405,16 +6634,21 @@ def citation_violations(
                 else:
                     why = f"[{safe_finding_value(item)}] is cited, and it is not an evidence id."
                 seen.add(item.lower())
+                written_at[item.lower()] = [
+                    (
+                        text,
+                        _unmasked(stretches, group_begin),
+                        _unmasked(stretches, group_end - 1) + 1,
+                    )
+                ]
+                found_at[item.lower()] = len(violations)
                 violations.append(
                     Violation(
-                        code=CITATION_NOT_EVIDENCE_CODE,
-                        message=f"{why} {remedy}",
-                        path="citation",
-                        about=(_sentence_with(text, item),),
+                        code=CITATION_NOT_EVIDENCE_CODE, message=f"{why} {remedy}", path="citation"
                     )
                 )
     if not records or not known:
-        return violations
+        return _written_at(violations, found_at, written_at)
     # The id stands in a citing field or a record's text as written, so it is
     # named as written and the remedy is the id in its place.
     in_its_place = (
@@ -6422,10 +6656,21 @@ def citation_violations(
         f"cite {offered} — or leave that id out."
     )
     for text in _record_strings(whole, citable, items):
-        for found in ENTRY_ID_RE.findall(_CODE_SPAN_RE.sub(" ", text)):
+        masked, stretches = _outside_code(text)
+        for match in ENTRY_ID_RE.finditer(masked):
+            found = match.group(0)
+            span = (
+                text,
+                _unmasked(stretches, match.start()),
+                _unmasked(stretches, match.end() - 1) + 1,
+            )
+            if found.lower() in seen:
+                written_at.setdefault(found.lower(), []).append(span)
             if found.lower() in allowed or found.lower() in seen:
                 continue
             seen.add(found.lower())
+            written_at[found.lower()] = [span]
+            found_at[found.lower()] = len(violations)
             violations.append(
                 Violation(
                     code=CITATION_NOT_EVIDENCE_CODE,
@@ -6434,9 +6679,17 @@ def citation_violations(
                         f"{in_its_place}"
                     ),
                     path="citation",
-                    about=(_sentence_with(text, found),),
                 )
             )
+    return _written_at(violations, found_at, written_at)
+
+
+def _written_at(
+    violations: list[Violation], found_at: Mapping[str, int], written_at: Mapping[str, list[Span]]
+) -> list[Violation]:
+    """``violations`` with the spans each cited item is written at (``about``)."""
+    for item, at in found_at.items():
+        violations[at] = replace(violations[at], about=tuple(written_at[item]))
     return violations
 
 
@@ -7450,7 +7703,7 @@ def repeated_item_violations(
                     "apart."
                 ),
                 path=list_key,
-                statements=tuple(f"{locator_segment(list_key)}.{at}" for at in again),
+                statements=tuple(locator_path((list_key, at), named=(list_key,)) for at in again),
             )
         )
     return found
@@ -8035,8 +8288,17 @@ def _named_ids(ids: Iterable[str]) -> str:
 
 
 def _rows_of(payload: Any, key: str) -> list[dict[str, Any]]:
+    return [row for _at, row in _placed_rows(payload, key)]
+
+
+def _placed_rows(payload: Any, key: str) -> list[tuple[int, dict[str, Any]]]:
+    """The dict rows of a list, each with its position in the list as written.
+
+    A finding's words number the rows that are read (``_rows_of``); its place is
+    the row's position in the answer, which a row that is no dict does not move.
+    """
     data = payload if isinstance(payload, dict) else {}
-    return [row for row in (data.get(key) or []) if isinstance(row, dict)]
+    return [(at, row) for at, row in enumerate(data.get(key) or []) if isinstance(row, dict)]
 
 
 def _cited(row: dict[str, Any], key: str) -> list[str]:
@@ -8070,7 +8332,7 @@ def key_finding_citation_violations(
     if not known:
         return []
     out: list[Violation] = []
-    for index, row in enumerate(_rows_of(payload, "key_findings")):
+    for index, (at, row) in enumerate(_placed_rows(payload, "key_findings")):
         unknown = [
             value
             for value in _cited(row, "evidence_ids")
@@ -8089,7 +8351,7 @@ def key_finding_citation_violations(
                         "finding stands on, or leave evidence_ids empty."
                     ),
                     path=f"key_findings.{index}.evidence_ids",
-                    statements=(f"key_findings.{index}",),
+                    statements=(f"key_findings.{at}",),
                 )
             )
     return out
@@ -8339,7 +8601,7 @@ def recommendation_indicator_violations(
     from malspark.reporting.renderers.stix_renderer import publishes
 
     out: list[Violation] = []
-    for index, row in enumerate(_rows_of(payload, "defensive_recommendations")):
+    for index, (at, row) in enumerate(_placed_rows(payload, "defensive_recommendations")):
         text = " ".join(str(row.get(key) or "") for key in ("action", "rationale", "detection"))
         refused: list[str] = []
         named, gated = _values_and_gated(text)
@@ -8371,7 +8633,7 @@ def recommendation_indicator_violations(
                     "publishes. Write it over the published indicators, or without the value."
                 ),
                 path=f"defensive_recommendations.{index}",
-                statements=(f"defensive_recommendations.{index}",),
+                statements=(f"defensive_recommendations.{at}",),
             )
         )
     return out
@@ -8395,7 +8657,7 @@ def recommendation_technique_violations(
         return []
     known = {str(tid).strip().upper() for tid in published if str(tid).strip()}
     out: list[Violation] = []
-    for index, row in enumerate(_rows_of(payload, "defensive_recommendations")):
+    for index, (at, row) in enumerate(_placed_rows(payload, "defensive_recommendations")):
         text = " ".join(
             str(row.get(key) or "") for key in ("action", "rationale", "detection", "technique_id")
         )
@@ -8415,7 +8677,7 @@ def recommendation_technique_violations(
                 ),
                 path=f"defensive_recommendations.{index}",
                 subject=unpublished[0],
-                statements=(f"defensive_recommendations.{index}",),
+                statements=(f"defensive_recommendations.{at}",),
             )
         )
     return out
@@ -8802,7 +9064,15 @@ def _unstated_values(
     return out
 
 
-@_locating
+@_locating(
+    _Reads(
+        leaf=lambda parts: (
+            (len(parts) == 1 and parts[0] in ("body", "text"))
+            or (len(parts) == 3 and parts[0] == "steps" and parts[2] == "action")
+        ),
+        names=frozenset({"body", "text", "steps", "action"}),
+    )
+)
 def unpublished_value_violations(
     payload: Any, answers: Callable[[str, str], str]
 ) -> list[Violation]:
@@ -8828,8 +9098,9 @@ def unpublished_value_violations(
     # Each sentence by its number, to name it by its start in the question.
     written_as: dict[int, str] = {}
     number = 0
+    stated_at: list[Span] = []
     for text in _prose_of_a_section(payload):
-        for sentence in _SENTENCE_END_RE.split(text):
+        for sentence, piece_begin, piece_end in _sentence_pieces(text):
             written = sentence.strip()
             if not written:
                 continue
@@ -8844,6 +9115,7 @@ def unpublished_value_violations(
                 # As written: the renderer escapes and defangs the label.
                 if value not in by_state.setdefault(state, []):
                     by_state[state].append(value)
+            stated_at.append((text, *_stripped(text, piece_begin, piece_end)))
             if written not in quoted:
                 quoted.append(written)
                 labels.append(
@@ -8879,6 +9151,7 @@ def unpublished_value_violations(
             path="unpublished values",
             quoted=tuple(quoted),
             labels=tuple(labels),
+            about=tuple(stated_at),
         )
     ]
 
@@ -9114,7 +9387,7 @@ def configuration_citation_violations(
     """
     known = {str(value) for value in known_ids}
     out: list[Violation] = []
-    for index, row in enumerate(_rows_of(payload, "items")):
+    for index, (at, row) in enumerate(_placed_rows(payload, "items")):
         how = str(row.get("how_obtained") or "").strip().lower()
         if how not in ("decrypted", "observed"):
             continue
@@ -9131,7 +9404,7 @@ def configuration_citation_violations(
                     "the value was read from, or mark how it was obtained as inferred."
                 ),
                 path=f"items.{index}.evidence_refs",
-                statements=(f"items.{index}",),
+                statements=(f"items.{at}",),
             )
         )
     return out
@@ -9150,7 +9423,7 @@ def identifier_citation_violations(
     """
     known = {str(value).strip().lower() for value in known_ids}
     out: list[Violation] = []
-    for index, row in enumerate(_rows_of(payload, "identifiers")):
+    for index, (at, row) in enumerate(_placed_rows(payload, "identifiers")):
         cited = [value.lower() for value in _cited(row, "evidence_refs")]
         if cited and (not known or any(_held(value, known, items) for value in cited)):
             continue
@@ -9164,7 +9437,7 @@ def identifier_citation_violations(
                     "the identifier out."
                 ),
                 path=f"identifiers.{index}.evidence_refs",
-                statements=(f"identifiers.{index}",),
+                statements=(f"identifiers.{at}",),
             )
         )
     return out
@@ -9176,7 +9449,7 @@ def identifier_citation_violations(
 _ID_THEN_NAME_RE = re.compile(rf"\b({ID_BODY})\s*\(([A-Za-z][A-Za-z0-9 ,:/&'\-]{{2,80}})\)")
 
 
-@_locating
+@_locating()
 def technique_name_violations(payload: Any) -> list[Violation]:
     """Technique ids written with a name the ATT&CK catalogue gives another technique.
 
@@ -9198,9 +9471,14 @@ def technique_name_violations(payload: Any) -> list[Violation]:
 
     seen: set[tuple[str, str]] = set()
     out: list[Violation] = []
+    # Where each id and name is written, with its finding.
+    written_at: dict[tuple[str, str], list[Span]] = {}
+    found_at: dict[tuple[str, str], int] = {}
     for text in _strings_of(payload):
         for match in _ID_THEN_NAME_RE.finditer(text):
             tid, written = match.group(1).upper(), match.group(2).strip()
+            if (tid, _fold(written)) in seen:
+                written_at[(tid, _fold(written))].append((text, match.start(), match.end()))
             entry = technique_entry(tid)
             if entry is None or (tid, _fold(written)) in seen:
                 continue
@@ -9212,6 +9490,8 @@ def technique_name_violations(payload: Any) -> list[Violation]:
             if _fold(written) in accepted:
                 continue
             seen.add((tid, _fold(written)))
+            written_at[(tid, _fold(written))] = [(text, match.start(), match.end())]
+            found_at[(tid, _fold(written))] = len(out)
             owners = [owner for owner in technique_ids_named(written) if owner != tid]
             belongs = (
                 f" The name {safe_finding_value(written)!r} is "
@@ -9228,9 +9508,10 @@ def technique_name_violations(payload: Any) -> list[Violation]:
                         "the catalogue's name beside the id, or the id the name belongs to."
                     ),
                     path="technique_name",
-                    about=(_sentence_with(text, match.group(0)),),
                 )
             )
+    for key, at in found_at.items():
+        out[at] = replace(out[at], about=tuple(written_at[key]))
     return out
 
 
@@ -9919,8 +10200,13 @@ def _ids_in(value: Any) -> list[str]:
 
 def _sentences_with_citations(text: str) -> list[tuple[str, list[str]]]:
     """Each sentence of ``text`` with the evidence ids it cites in brackets."""
-    out: list[tuple[str, list[str]]] = []
-    for sentence in _SENTENCE_END_RE.split(str(text or "")):
+    return [(sentence, cited) for sentence, cited, _b, _e in _cited_sentences(str(text or ""))]
+
+
+def _cited_sentences(text: str) -> list[tuple[str, list[str], int, int]]:
+    """:func:`_sentences_with_citations` with where each sentence begins and ends in ``text``."""
+    out: list[tuple[str, list[str], int, int]] = []
+    for sentence, begin, end in _sentence_pieces(text):
         cited: list[str] = []
         for group in _cited_groups(_CODE_SPAN_RE.sub(" ", sentence)):
             for raw in re.split(r"[,;]", group):
@@ -9928,11 +10214,16 @@ def _sentences_with_citations(text: str) -> list[tuple[str, list[str]]]:
                 if (_EVIDENCE_ID_RE.fullmatch(item) or is_item_id(item)) and item not in cited:
                     cited.append(item)
         if cited:
-            out.append((sentence, cited))
+            out.append((sentence, cited, *_stripped(text, begin, end)))
     return out
 
 
-@_locating
+@_locating(
+    lambda payload, entries, *, prose=(): _Reads(
+        leaf=lambda parts: not any(part in _CITING_FIELDS for part in parts),
+        names=frozenset(prose) | _VERBATIM_FIELDS,
+    )
+)
 def wrong_entry_citations(
     payload: Any, entries: EntryTexts | None, *, prose: Sequence[str] = ()
 ) -> list[Violation]:
@@ -9965,8 +10256,10 @@ def wrong_entry_citations(
     # row's own text under its citations (:func:`cited_row_text`), each with
     # the values found there.
     written: dict[tuple[tuple[str, ...], tuple[str, ...]], dict[str, list[str]]] = {}
+    # Where in the answer each group is written: the sentence, or the row's own string.
+    spans: dict[tuple[tuple[str, ...], tuple[str, ...]], list[Span]] = {}
 
-    def _ask(value: str, cited: Sequence[str], where: str) -> None:
+    def _ask(value: str, cited: Sequence[str], where: str, span: Span) -> None:
         value = str(value or "").strip()
         known = [entry_id for entry_id in cited if entries.has_text(entry_id)]
         if not decidable(value) or not known:
@@ -9987,11 +10280,13 @@ def wrong_entry_citations(
         found = written.setdefault(group, {}).setdefault(where, [])
         if value not in found:
             found.append(value)
+        spans.setdefault(group, []).append(span)
 
     def _read_prose(text: Any) -> None:
-        for sentence, cited in _sentences_with_citations(str(text or "")):
+        read = str(text or "")
+        for sentence, cited, begin, end in _cited_sentences(read):
             for value in [*quoted_values(sentence), *literal_values(sentence)]:
-                _ask(value, cited, sentence.strip())
+                _ask(value, cited, sentence.strip(), (read, begin, end))
 
     def _walk(node: Any, depth: int = 0) -> None:
         if depth > 4:
@@ -10013,14 +10308,15 @@ def wrong_entry_citations(
                     _read_prose(value)
                 elif refs:
                     where = cited_row_text(value, node)
+                    whole = (value, 0, len(value))
                     if key in _VERBATIM_FIELDS:
-                        _ask(value, refs, where)
+                        _ask(value, refs, where, whole)
                     for stated in [*quoted_values(value), *literal_values(value)]:
-                        _ask(stated, refs, where)
+                        _ask(stated, refs, where, whole)
             elif key in _VERBATIM_FIELDS and isinstance(value, list | tuple) and refs:
                 for item in value:
                     if isinstance(item, str):
-                        _ask(item, refs, cited_row_text(item, node))
+                        _ask(item, refs, cited_row_text(item, node), (item, 0, len(item)))
             else:
                 _walk(value, depth + 1)
 
@@ -10066,6 +10362,7 @@ def wrong_entry_citations(
                     for stated in places.values()
                 ),
                 values=tuple(values),
+                about=tuple(dict.fromkeys(spans.get((cited, holders), []))),
             )
         )
     return violations
@@ -10402,7 +10699,7 @@ def _numbered_ids(rows: Sequence[Any]) -> dict[int, int]:
     return {index: number for index, label, number in ending if not label or len(labels) == 1}
 
 
-@_locating
+@_locating(_Reads(leaf=lambda parts: parts[-1] == "id", names=frozenset({"id"})))
 def cited_id_violations(payload: Any, entries: EntryTexts | None) -> list[Violation]:
     """Table rows whose ``id`` none of the entries they cite holds, while another entry does.
 
@@ -10444,6 +10741,8 @@ def cited_id_violations(payload: Any, entries: EntryTexts | None) -> list[Violat
         return []
     data = payload if isinstance(payload, dict) else {}
     groups: dict[tuple[str, tuple[str, ...]], list[tuple[int, str, tuple[str, ...], str]]] = {}
+    # The strings of the rows asked about, to name them in the answer.
+    where: dict[tuple[str, tuple[str, ...]], list[Span]] = {}
     for list_key, rows in data.items():
         if not isinstance(rows, list) or not _ROW_LIST_KEY_RE.fullmatch(str(list_key)):
             continue
@@ -10496,9 +10795,13 @@ def cited_id_violations(payload: Any, entries: EntryTexts | None) -> list[Violat
                 logger.debug("validation: a row's id was not read (%s).", type(exc).__name__)
                 continue
             if holders:
-                groups.setdefault((str(list_key), tuple(holders)), []).append(
+                group = (str(list_key), tuple(holders))
+                groups.setdefault(group, []).append(
                     (index + 1, written, tuple(cited), cited_row_text(written, row))
                 )
+                raw = row.get("id")
+                if isinstance(raw, str):
+                    where.setdefault(group, []).append((raw, 0, len(raw)))
     out: list[Violation] = []
     for (list_key, held_by), found in groups.items():
         holding = safe_finding_value(
@@ -10538,7 +10841,8 @@ def cited_id_violations(payload: Any, entries: EntryTexts | None) -> list[Violat
                     "Cite the entry that holds each row's id."
                 ),
                 path=f"{list_key}.id",
-                quoted=tuple(where for _number, _id, _cited, where in found),
+                quoted=tuple(row_text for _number, _id, _cited, row_text in found),
+                about=tuple(where.get((list_key, held_by), ())),
                 labels=tuple(
                     _wrong_entry_label([written], list(cites), list(held_by), entries)
                     for _number, written, cites, _where in found
@@ -10647,7 +10951,8 @@ def stated_value_violations(payload: Any, entries: EntryTexts | None) -> list[Vi
 
     for list_key, (noun, nouns) in _STATED_VALUE_ROWS.items():
         unheld: dict[tuple[str, ...], list[tuple[int, str, str]]] = {}
-        for index, row in enumerate(_rows_of(payload, list_key)):
+        unheld_at: dict[tuple[str, ...], list[int]] = {}
+        for index, (at, row) in enumerate(_placed_rows(payload, list_key)):
             value = str(row.get("value") or "").strip()
             if not value or str(row.get("how_obtained") or "").strip().lower() == "inferred":
                 continue
@@ -10682,6 +10987,7 @@ def stated_value_violations(payload: Any, entries: EntryTexts | None) -> list[Vi
                 continue
             label = str(row.get("key") or row.get("kind") or "").strip()
             unheld.setdefault(tuple(cited), []).append((index + 1, label, value))
+            unheld_at.setdefault(tuple(cited), []).append(at)
         for refs, rows in unheld.items():
             named = safe_finding_value(", ".join(entries.named(ref) for ref in refs))
             if len(rows) == 1:
@@ -10710,7 +11016,7 @@ def stated_value_violations(payload: Any, entries: EntryTexts | None) -> list[Vi
                         "entry records it, or leave the row out."
                     ),
                     path=f"{list_key}.value:{','.join(refs)}",
-                    statements=tuple(f"{list_key}.{number - 1}.value" for number, _l, _v in rows),
+                    statements=tuple(f"{list_key}.{row_at}.value" for row_at in unheld_at[refs]),
                 )
             )
     return out
@@ -10854,7 +11160,7 @@ def _statement_subject(
 _ENTRY_NOUNS = frozenset({"entry", "output", "result", "summary", "view", "answer", "capture"})
 
 
-@_locating
+@_locating()
 def misstated_entry_contents(
     payload: Any, entries: EntryTexts | None, *, prose: Sequence[str] = ()
 ) -> list[Violation]:
@@ -10870,10 +11176,11 @@ def misstated_entry_contents(
     """
     if payload is None or entries is None or not entries.texts:
         return []
-    found: list[tuple[str, str, int, str]] = []
+    found: list[tuple[str, str, int, str, Span]] = []
 
     def _read(text: Any) -> None:
-        for sentence, cited in _sentences_with_citations(str(text or "")):
+        read = str(text or "")
+        for sentence, cited, begin, end in _cited_sentences(read):
             for pattern, most, said in (
                 (_HOLDS_NOTHING_RE, 0, "holds nothing"),
                 (_HOLDS_ONE_LINE_RE, 1, "holds one line and no more"),
@@ -10887,7 +11194,7 @@ def misstated_entry_contents(
                         continue
                     held = _held_values(entries.texts[entry_id], _call_echoes(entries, entry_id))
                     if held > most:
-                        found.append((entry_id, said, held, sentence.strip()))
+                        found.append((entry_id, said, held, sentence.strip(), (read, begin, end)))
                 break
 
     def _walk(node: Any, depth: int = 0) -> None:
@@ -10908,7 +11215,10 @@ def misstated_entry_contents(
 
     violations: list[Violation] = []
     seen: set[str] = set()
-    for entry_id, said, held, sentence in found:
+    stated_at: dict[str, list[Span]] = {}
+    for entry_id, _said, _held, _sentence, span in found:
+        stated_at.setdefault(entry_id, []).append(span)
+    for entry_id, said, held, sentence, _span in found:
         if entry_id in seen:
             continue
         seen.add(entry_id)
@@ -10924,7 +11234,7 @@ def misstated_entry_contents(
                     "about."
                 ),
                 path="citation",
-                about=(sentence,),
+                about=tuple(dict.fromkeys(stated_at[entry_id])),
             )
         )
     return violations
@@ -11641,6 +11951,8 @@ class _Absence:
     # The answered entries that hold it.
     holders: tuple[str, ...]
     sentence: str
+    # The string the sentence was cut from and where, for the finding's places.
+    about: tuple[Span, ...] = ()
 
 
 def _ledger_holds(entries: EntryTexts) -> _LedgerHolds:
@@ -11650,7 +11962,7 @@ def _ledger_holds(entries: EntryTexts) -> _LedgerHolds:
     return entries._holds[0]
 
 
-@_locating
+@_locating()
 def ledger_absence_contradictions(payload: Any, entries: EntryTexts | None) -> list[Violation]:
     """Sentences that say the ledger lacks what an answered entry of this run holds.
 
@@ -11687,7 +11999,7 @@ def ledger_absence_contradictions(payload: Any, entries: EntryTexts | None) -> l
                 ),
                 path="prose",
                 shown=" ".join(f"{text}." for text in _held_texts(found, entries)),
-                about=(found.sentence,),
+                about=found.about,
             )
         )
     return out
@@ -11810,7 +12122,8 @@ def ledger_absences(payload: Any, entries: EntryTexts | None) -> list[_Absence]:
         return _ledger_holds(entries)
 
     def _read(text: str) -> None:
-        sentences = _SENTENCE_END_RE.split(text)
+        pieces = _sentence_pieces(text)
+        sentences = [piece for piece, _b, _e in pieces]
         for index, sentence in enumerate(sentences):
             statements = list(_ABSENCE_RE.finditer(sentence))
             if not statements:
@@ -11907,7 +12220,15 @@ def ledger_absences(payload: Any, entries: EntryTexts | None) -> list[_Absence]:
                         whats.append(what)
                         held.extend(i for i in holders if i not in held)
                 if whats:
-                    found.append(_Absence(kind, tuple(whats), tuple(held), sentence.strip()))
+                    found.append(
+                        _Absence(
+                            kind,
+                            tuple(whats),
+                            tuple(held),
+                            sentence.strip(),
+                            ((text, *_stripped(text, pieces[index][1], pieces[index][2])),),
+                        )
+                    )
 
     def _contradicted(
         kind: str, tokens: list[str], cited: list[str]

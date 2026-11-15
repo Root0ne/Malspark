@@ -77,6 +77,7 @@ from malspark.pipeline.validation import (
     Validator,
     Violation,
     absence_holders_note,
+    answer_of,
     both_bases,
     citation_violations,
     cited_id_violations,
@@ -2529,20 +2530,21 @@ class ReportComposer:
                 # only checked: a section that over-claims is no better for
                 # having come from the path that usually works.
                 answer = result.model_dump()
-                found = [
-                    *section_capability_violations(answer, self._grounding),
-                    *citation_violations(
-                        answer, citable, prose=prose, items=self._items, records=True
-                    ),
-                    *wrong_entry_citations(answer, entries, prose=prose),
-                    *misstated_entry_contents(answer, entries, prose=prose),
-                    *ledger_absence_contradictions(answer, entries),
-                    *technique_name_violations(answer),
-                    *repeated_item_violations(answer, _ITEM_IDENTITY.get(schema, {})),
-                    *(unpublished_value_violations(answer, answers) if answers else []),
-                ]
-                for extra in validators or []:
-                    found.extend(extra(answer))
+                with answer_of(schema):
+                    found = [
+                        *section_capability_violations(answer, self._grounding),
+                        *citation_violations(
+                            answer, citable, prose=prose, items=self._items, records=True
+                        ),
+                        *wrong_entry_citations(answer, entries, prose=prose),
+                        *misstated_entry_contents(answer, entries, prose=prose),
+                        *ledger_absence_contradictions(answer, entries),
+                        *technique_name_violations(answer),
+                        *repeated_item_violations(answer, _ITEM_IDENTITY.get(schema, {})),
+                        *(unpublished_value_violations(answer, answers) if answers else []),
+                    ]
+                    for extra in validators or []:
+                        found.extend(extra(answer))
                 held = _raw_with_object(read.raw)
                 # In ``record_only`` (``validation.feedback``) that question is
                 # not asked either: the answer is recorded here as it stands.
@@ -2718,21 +2720,22 @@ class ReportComposer:
                         cut_at, chars=chars, begun=begun, head=cut_text.strip(), distinct=distinct
                     )
                 ]
-            found = [
-                *schema_violations(schema, payload, code="composer.schema", answer=answer_read),
-                *section_capability_violations(payload, self._grounding),
-                *citation_violations(
-                    payload, citable, prose=prose, items=self._items, records=True
-                ),
-                *wrong_entry_citations(payload, entries, prose=prose),
-                *misstated_entry_contents(payload, entries, prose=prose),
-                *ledger_absence_contradictions(payload, entries),
-                *technique_name_violations(payload),
-                *repeated_item_violations(payload, _ITEM_IDENTITY.get(schema, {})),
-                *(unpublished_value_violations(payload, answers) if answers else []),
-            ]
-            for extra in validators or []:
-                found.extend(extra(payload))
+            with answer_of(schema):
+                found = [
+                    *schema_violations(schema, payload, code="composer.schema", answer=answer_read),
+                    *section_capability_violations(payload, self._grounding),
+                    *citation_violations(
+                        payload, citable, prose=prose, items=self._items, records=True
+                    ),
+                    *wrong_entry_citations(payload, entries, prose=prose),
+                    *misstated_entry_contents(payload, entries, prose=prose),
+                    *ledger_absence_contradictions(payload, entries),
+                    *technique_name_violations(payload),
+                    *repeated_item_violations(payload, _ITEM_IDENTITY.get(schema, {})),
+                    *(unpublished_value_violations(payload, answers) if answers else []),
+                ]
+                for extra in validators or []:
+                    found.extend(extra(payload))
             return found
 
         def _fits(turns: list[BaseMessage]) -> bool:

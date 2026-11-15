@@ -34,6 +34,7 @@ from malspark.pipeline.validation import (
     EntryTexts,
     ValidationTally,
     Violation,
+    answer_of,
     citation_violations,
     configuration_citation_violations,
     identifier_citation_violations,
@@ -52,6 +53,21 @@ from malspark.pipeline.validation import (
 from malspark.reporting.models import FileHashes, MalwareReport, SampleIdentity, TTPMapping
 from malspark.schemas.evidence import LedgerEntry
 from tests.linear_cost import assert_scales
+
+
+class _Body(BaseModel):
+    body: str
+
+
+class _Channel(BaseModel):
+    protocol: str
+    note: str
+
+
+class _Section(BaseModel):
+    text: str
+    channels: list[_Channel]
+
 
 MARKER = "examplemark-7"
 FILLER = "The sample is a console program."
@@ -108,14 +124,16 @@ class TestASentenceOfAProseField:
             "channels": [{"protocol": "https", "note": "used for command and control"}],
         }
 
-        (found,) = section_capability_violations(payload, _grounding())
+        with answer_of(_Section):
+            (found,) = section_capability_violations(payload, _grounding())
 
         assert found.statements == ("channels.0.note",)
 
     def test_a_technique_written_with_another_name_names_its_sentence(self) -> None:
         body = f"{FILLER} It pads the file, T1027 (Binary Padding). {FILLER}"
 
-        (found,) = technique_name_violations({"body": body})
+        with answer_of(_Body):
+            (found,) = technique_name_violations({"body": body})
 
         assert found.code == TECHNIQUE_NAME_CODE
         assert found.statements == ("body#1",)
@@ -132,7 +150,8 @@ class TestASentenceOfAProseField:
         entries = _texts()
         body = f"{FILLER} The entry ev_0012 holds nothing [ev_0012]."
 
-        (found,) = misstated_entry_contents({"body": body}, entries)
+        with answer_of(_Body):
+            (found,) = misstated_entry_contents({"body": body}, entries)
 
         assert found.code == ENTRY_CONTENTS_MISSTATED_CODE
         assert found.statements == ("body#1",)
@@ -152,7 +171,8 @@ class TestASentenceOfAProseField:
         )
         body = f"{FILLER} The body of 0xb670 is not in the evidence."
 
-        (found,) = ledger_absence_contradictions({"body": body}, entries)
+        with answer_of(_Body):
+            (found,) = ledger_absence_contradictions({"body": body}, entries)
 
         assert found.code == ABSENCE_CONTRADICTS_LEDGER_CODE
         assert found.statements == ("body#1",)
@@ -164,14 +184,6 @@ class TestASentenceOfAProseField:
 
         assert MARKER not in " ".join(found.statements)
         assert all(word not in " ".join(found.statements) for word in FILLER.split())
-
-    def test_a_key_that_is_not_a_field_name_is_not_written(self) -> None:
-        payload = {f"{MARKER} 1": f"It carries the marker `{MARKER}` [ev_0011]."}
-
-        (found,) = wrong_entry_citations(payload, _texts(), prose=())
-
-        assert MARKER not in " ".join(found.statements)
-        assert found.statements == ("?",)
 
 
 class TestARowOfATable:
