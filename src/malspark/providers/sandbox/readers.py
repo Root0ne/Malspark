@@ -578,12 +578,13 @@ class TriageReportReader(ReportReader):
     traffic_process_fields = TRIAGE_TRAFFIC_PROCESS_FIELDS
     # An overview signature's indicators are its marks; a task report lists
     # each signature again with the indicators seen in that task, each naming
-    # the process that acted (and the one acted on) by the task's process ids,
-    # and the guest's pid beside it.
+    # the process that acted (and the one acted on) by the task's process ids.
+    # The guest's pid beside them (``pid``, ``pid_target``) is another number,
+    # never the report's process id: it stays among the indicator's values.
     signature_indicators = IndicatorFields(
         lists=("marks",),
-        process=("procid", "pid"),
-        target=("procid_target", "pid_target"),
+        process=("procid",),
+        target=("procid_target",),
         description=("description",),
         task_channel=TASK_SIGNATURES_CHANNEL,
         task_name="name",

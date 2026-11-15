@@ -126,6 +126,23 @@ class TestTheLiveReport:
         assert set(held) == task & set(rows)
 
 
+class TestTheReportsProcessId:
+    """Triage names a process by the report's process id; the guest's pid is a value."""
+
+    @pytest.mark.parametrize("pid", [1756, 86], ids=["listed guest pid", "another's id"])
+    def test_a_guest_pid_with_no_process_id_names_no_process(self, pid: int) -> None:
+        task = _with_signature([{"pid": pid, "description": "x"}])
+        (indicator,) = _rows(_read(task))[WPM]["indicators"]
+        assert "process" not in indicator and "target" not in indicator
+        assert indicator["values"] == {"pid": str(pid)}
+
+    def test_a_target_s_guest_pid_alone_names_no_target(self) -> None:
+        task = _with_signature([{"procid": 84, "pid_target": 3444}])
+        (indicator,) = _rows(_read(task))[WPM]["indicators"]
+        assert indicator["process"]["id"] == "84" and "target" not in indicator
+        assert indicator["values"] == {"pid_target": "3444"}
+
+
 class TestTheLaunchLineage:
     def test_a_launcher_run_states_each_process_s_lineage_as_the_process_view_does(self) -> None:
         report = _read()
