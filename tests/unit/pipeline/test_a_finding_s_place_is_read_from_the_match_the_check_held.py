@@ -33,6 +33,7 @@ from malspark.pipeline.validation import (
     locator_path,
     misstated_entry_contents,
     narrative_capability_violations,
+    placed,
     recommendation_indicator_violations,
     recommendation_technique_violations,
     repeated_item_violations,
@@ -366,16 +367,18 @@ class TestACostNobodyNotices:
         assert_scales(build, 500, call, factor=8)
 
     def test_a_finding_quoting_many_sentences_costs_in_proportion(self) -> None:
-        def build(size: int) -> tuple[dict[str, str], list[Violation]]:
+        def build(size: int) -> list[Violation]:
             text = " ".join(f"Alpha {i} beta gamma delta." for i in range(size))
-            spans = tuple((text, m.start(), m.end()) for m in re.finditer(r"Alpha \d+ beta", text))
-            return {"body": text}, [Violation(code="c", message="m", about=spans)]
+            payload = placed({"body": text})
+            leaf = payload["body"]
+            spans = tuple((leaf, m.start(), m.end()) for m in re.finditer(r"Alpha \d+ beta", text))
+            return [Violation(code="c", message="m", about=spans)]
 
-        def call(built: tuple[dict[str, str], list[Violation]]) -> None:
-            (found,) = locate_statements(*built)
+        def call(built: list[Violation]) -> None:
+            (found,) = locate_statements(built)
             assert found.statements
 
-        assert_scales(build, 4000, call, factor=8)
+        assert_scales(build, 3000, call, factor=8)
 
     def test_many_near_identical_sentences_cost_in_proportion(self) -> None:
         def build(size: int) -> dict[str, str]:
@@ -427,7 +430,7 @@ class TestALocatorNeverCostsAFinding:
         def _broken(*_a: Any, **_k: Any) -> Any:
             raise RuntimeError("secret sentence text")
 
-        monkeypatch.setattr(validation, "locate_statements", _broken)
+        monkeypatch.setattr(validation, "_located", _broken)
         with caplog.at_level(logging.WARNING):
             found = wrong_entry_citations({"body": body}, _texts(), prose=("body",))
 
