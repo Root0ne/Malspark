@@ -1791,13 +1791,14 @@ def _held_outside_records(
     if entry.id not in outside:
         rest = without_record_parts(entry.structured, _record_parts(entry))
         outside[entry.id] = " ".join(_strings_in(rest)).lower()
-    if isinstance(row, NetworkIP):
-        kind, value = "ip", row.address
-    elif isinstance(row, NetworkDomain):
-        kind, value = "domain", row.fqdn
-    else:
-        kind, value = "url", row.url
-    return whole_value_in(searched_spelling(kind, value).lower(), outside[entry.id])
+    # The row's value is already in its canonical spelling, and the search
+    # reads both sides lower-cased.
+    value = (
+        row.address
+        if isinstance(row, NetworkIP)
+        else (row.fqdn if isinstance(row, NetworkDomain) else row.url)
+    )
+    return whole_value_in(value, outside[entry.id])
 
 
 def _listed_key(row: NetworkIP | NetworkDomain | NetworkURL) -> str:
