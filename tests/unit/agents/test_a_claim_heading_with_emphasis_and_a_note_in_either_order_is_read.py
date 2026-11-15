@@ -246,6 +246,15 @@ class TestALineBegunAsAHeadingAndNotRead:
         assert count_claims_begun_unread(text) == 1
         assert read.unread == 1
 
+    def test_a_rule_line_closes_a_read_heading_that_wrote_no_field(self) -> None:
+        text = (
+            "CLAIM 2: The loader decodes strings.\n---\n"
+            "CLAIM 3. Routine 0x1400 opens a mutex.\nEVIDENCE: [ev_0003]\nCONFIDENCE: 0.8\n"
+        )
+
+        assert count_claims_begun_unread(text) == 1
+        assert count_claims_begun(text) == 2
+
     def test_a_revision_read_in_part_names_the_claim_not_read(self) -> None:
         read = read_claim_blocks(_READ_IN_PART, require_evidence=True)
 

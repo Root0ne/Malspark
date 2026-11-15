@@ -259,8 +259,15 @@ class TestTheOneTurn:
         assert kept == _READ_IN_PART_DISPUTING
         assert analyst._answer_unstructured is False
 
-    def test_a_reply_that_drops_a_claim_number_leaves_the_report_standing(self) -> None:
-        dropped = _READ_WHOLE.replace("CLAIM 2 (revised). ", "CLAIM 4 (revised). ")
+    @pytest.mark.parametrize(
+        ("written", "instead"),
+        [("CLAIM 2 (revised). ", "CLAIM 4 (revised). "), ("CLAIM 3: ", "CLAIM 4: ")],
+        ids=["a-number-read", "a-number-begun"],
+    )
+    def test_a_reply_that_drops_a_claim_number_leaves_the_report_standing(
+        self, written: str, instead: str
+    ) -> None:
+        dropped = _READ_WHOLE.replace(written, instead)
         llm, _analyst, kept = self._settle(_READ_IN_PART, [dropped])
 
         assert len(llm.seen) == 1
