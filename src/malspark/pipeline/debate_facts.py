@@ -1658,10 +1658,21 @@ ROUND_FACTS_HEAD = (
     "The run's record of the last revision round, for each blocking line of the last mediation "
     "(numbered as below):"
 )
+# What the round note on a claim's line says (``isr_models.written_round_note``),
+# and the question asked of a [new] line on a claim whose text an earlier
+# mediation read. A question only: no line is dropped, downgraded or re-marked
+# on it, and the block is read as before.
+UNCHANGED_CLAIM_QUESTION = (
+    "A claim whose text an earlier mediation already read states on its line the round that "
+    "text was last written ('written in round N', 'unchanged since round N'); a claim with no "
+    "such note was written in the last revision round. For a line you mark [new] on a claim "
+    "with such a note: what do you read on it that is new (an entry, an answer of another "
+    "analyst)? Name it on the line."
+)
 LINE_MARK_RULE = (
     "On each blocking line you list, write [carried: L<number>] right after its "
     "[analysts: ...] field when it raises again the point of that line of the last mediation, "
-    "or [new] when it raises a point none of those lines raised."
+    "or [new] when it raises a point none of those lines raised. " + UNCHANGED_CLAIM_QUESTION
 )
 
 
@@ -2091,6 +2102,20 @@ class ExpandedNaming:
 
 
 @dataclass(frozen=True)
+class NamingClause:
+    """A line that names a claim, in any form, and how it names it.
+
+    ``line`` counts from 1, ``reference`` is the platform's rendering of the
+    first reference of the line that names the claim ("claim 7", "claims
+    32-34"): the merge states it for a claim the line names without speaking
+    to it (``revision_merge.anchored_lines``).
+    """
+
+    line: int
+    reference: str
+
+
+@dataclass(frozen=True)
 class ClaimReferences:
     """What the lines of a mediation name by claim number.
 
@@ -2100,13 +2125,15 @@ class ClaimReferences:
     ``expanded`` per analyst and claim the lines that reach it only by the
     newer reading (:class:`ExpandedNaming`); ``owned`` each claim number no
     analyst is written for that is read for its owner (:class:`OwnedClaim`),
-    in line order.
+    in line order; ``clauses`` per analyst and claim every line that names
+    it (:class:`NamingClause`).
     """
 
     named: dict[str, dict[int, list[tuple[int, bool]]]]
     unplaced: tuple[UnplacedClaims, ...] = ()
     expanded: dict[str, dict[int, tuple[ExpandedNaming, ...]]] = field(default_factory=dict)
     owned: tuple[OwnedClaim, ...] = ()
+    clauses: dict[str, dict[int, tuple[NamingClause, ...]]] = field(default_factory=dict)
 
     def owned_for(self, analyst: str) -> tuple[OwnedClaim, ...]:
         """The claim numbers read for ``analyst`` as their owner, in line order."""
@@ -2124,14 +2151,22 @@ class ClaimReferences:
         """Per claim number of ``analyst``, the lines that reach it only by the newer reading."""
         return dict(self.expanded.get(analyst, {}))
 
+    def clauses_for(self, analyst: str) -> dict[int, tuple[NamingClause, ...]]:
+        """Per claim number of ``analyst``, every line that names it, with its clause."""
+        return dict(self.clauses.get(analyst, {}))
+
 
 class NamedClaims(dict[int, list[tuple[int, bool]]]):
     """One analyst's ``{claim number: [(line number, blocking), ...]}``, as a plain dict.
 
     It carries, for the merge (``revision_merge.merge_revision``), the
     references its merge states (``unplaced``) and the claims the lines
-    reach only by the newer reading (``expanded``) and the claim numbers read
-    for it as their owner (``owned``).
+    reach only by the newer reading (``expanded``), the claim numbers read
+    for it as their owner (``owned``), every line that names a claim of it
+    (``clauses``), where the answers in force were read for it
+    (``revision_merge.anchored_lines``), per line anchored by a claim of
+    any analyst, the claims of this analyst that anchor it (``anchored``),
+    and the participants the lines were read for (``participants``).
     """
 
     def __init__(
@@ -2141,11 +2176,15 @@ class NamedClaims(dict[int, list[tuple[int, bool]]]):
         unplaced: Sequence[UnplacedClaims] = (),
         expanded: Mapping[int, tuple[ExpandedNaming, ...]] | None = None,
         owned: Sequence[OwnedClaim] = (),
+        clauses: Mapping[int, tuple[NamingClause, ...]] | None = None,
     ) -> None:
         super().__init__(rows or {})
         self.unplaced: tuple[UnplacedClaims, ...] = tuple(unplaced)
         self.expanded: dict[int, tuple[ExpandedNaming, ...]] = dict(expanded or {})
         self.owned: tuple[OwnedClaim, ...] = tuple(owned)
+        self.clauses: dict[int, tuple[NamingClause, ...]] = dict(clauses or {})
+        self.anchored: dict[int, frozenset[int]] = {}
+        self.participants: tuple[str, ...] = ()
 
 
 class NamedByLines(dict[str, dict[int, list[tuple[int, bool]]]]):
@@ -2156,7 +2195,7 @@ class NamedByLines(dict[str, dict[int, list[tuple[int, bool]]]]):
     its merge states, as an empty :class:`NamedClaims`, where there are any.
     """
 
-    def __init__(self, references: ClaimReferences) -> None:
+    def __init__(self, references: ClaimReferences, participants: Sequence[str] = ()) -> None:
         super().__init__(
             {
                 name: NamedClaims(
@@ -2164,18 +2203,27 @@ class NamedByLines(dict[str, dict[int, list[tuple[int, bool]]]]):
                     unplaced=references.unplaced_for(name),
                     expanded=references.expanded_for(name),
                     owned=references.owned_for(name),
+                    clauses=references.clauses_for(name),
                 )
                 for name, rows in references.named.items()
             }
         )
         self.references = references
+        self.participants = tuple(str(p) for p in participants)
+        for rows in self.values():
+            if isinstance(rows, NamedClaims):
+                rows.participants = self.participants
 
     def get(self, key: str, default: Any = None) -> Any:  # type: ignore[override]
         found = super().get(key)
         if found is not None:
             return found
         stated = self.references.unplaced_for(key)
-        return NamedClaims(unplaced=stated) if stated else default
+        if not stated:
+            return default
+        rows = NamedClaims(unplaced=stated)
+        rows.participants = self.participants
+        return rows
 
 
 def _range_rendering(first: str, last: str) -> str:
@@ -2441,6 +2489,64 @@ def _owner_of(
     return found[0] if len(found) == 1 else None
 
 
+# "claim(s)" right before a reference's numbers.
+_CLAIM_WORD_BEFORE = re.compile(r"\bclaims?\s*+#?\s*+$", re.IGNORECASE)
+# How far before a reference's numbers "claim(s)" is looked for, in
+# characters: the word, a "#" and the spaces around them. A bound, so a line
+# of many references costs its length.
+_CLAIM_WORD_WINDOW = 24
+
+
+def _held_in_the_field(
+    text: str,
+    at: int,
+    numbers: ClaimNumbers,
+    name: str,
+    field_names: Sequence[str],
+    owners: Mapping[str, Mapping[int, frozenset[str]]],
+) -> str:
+    """The analyst a reference read for ``name`` names on a line whose field leaves ``name`` out.
+
+    A name or short form is read for the analyst whose name it is
+    (:func:`_short_named`). Where that analyst's answer in force holds none of
+    the reference's claims, and the words before "claim(s)" fit exactly one
+    analyst the line's field names, whose answer holds every one of them,
+    the reference is that analyst's: "STATIC claim 17" on a line whose field
+    names the analyst ``static_deep`` alone, while the ``static``
+    analyst holds 16 claims. Otherwise ``name``.
+    """
+    counted = [n for n in map(_as_claim_number, numbers.numbers) if n is not None]
+    held = owners.get(name)
+    if not counted or held is None or any(n in held for n in counted):
+        return name
+    word = _CLAIM_WORD_BEFORE.search(text, max(0, at - _CLAIM_WORD_WINDOW), at)
+    if word is None:
+        return name
+    fits = _short_named(text, word.start(), list(field_names))
+    if fits is None or not all(n in (owners.get(fits) or {}) for n in counted):
+        return name
+    return fits
+
+
+def _has_row_of(rows: Sequence[tuple[int, bool]], line: int) -> bool:
+    """Whether ``rows`` hold a row of ``line``.
+
+    Rows are added line by line, in order, so a line's rows are the last
+    ones: only those are looked at, whatever the rows of earlier lines.
+    """
+    return bool(rows) and rows[-1][0] == line
+
+
+def _add_row(rows: list[tuple[int, bool]], row: tuple[int, bool]) -> None:
+    """``row`` added to ``rows`` unless its line already holds it (:func:`_has_row_of`)."""
+    for held in reversed(rows):
+        if held[0] != row[0]:
+            break
+        if held == row:
+            return
+    rows.append(row)
+
+
 def read_claim_references(
     lines: Sequence[str],
     participants: Sequence[str],
@@ -2452,7 +2558,11 @@ def read_claim_references(
     reads on it, for the analysts its ``[analysts: ...]`` field names (a
     line whose field names analysts counts only for them: a claim number it
     writes for another is no question put to that one), or for any analyst
-    on a line without a field, as the earlier reading named them there. The
+    on a line without a field, as the earlier reading named them there. Given
+    ``owners``, a reference read for an analyst the field leaves out, whose
+    answer in force holds none of its claims, is read for the one analyst of
+    the field its words fit and whose answer holds them
+    (:func:`_held_in_the_field`). The
     line number counts from 1 in the order given; ``blocking`` is the
     mediator's mark (``read_marks``), except that a line whose mark is not
     read blocks with no claim only the newer reading reaches (``expanded``).
@@ -2479,6 +2589,7 @@ def read_claim_references(
     unplaced: dict[UnplacedClaims, None] = {}
     owned: dict[OwnedClaim, None] = {}
     expanded: dict[str, dict[int, list[ExpandedNaming]]] = {}
+    clauses: dict[str, dict[int, list[NamingClause]]] = {}
     for number, (line, mark) in enumerate(zip(lines, read_marks(lines), strict=True), 1):
         text = without_line_mark(str(line))
         field_names = _named_in(text, names)
@@ -2491,6 +2602,8 @@ def read_claim_references(
         kept: list[tuple[str, ClaimNumbers, frozenset[str]]] = []
         cited: dict[str, set[int]] = {}
         for name, at, numbers, old, _in_mark in references:
+            if field_names and name not in field_names and owners is not None:
+                name = _held_in_the_field(text, at, numbers, name, field_names, owners)
             if field_names is not None and name not in field_names:
                 continue
             if not field_names and not old:
@@ -2530,9 +2643,10 @@ def read_claim_references(
                 # A line whose mark is not read blocks only with what the
                 # earlier reading read on it.
                 row = (number, mark.blocking and not (newly and mark.unread))
-                rows = claims.setdefault(claim, [])
-                if row not in rows:
-                    rows.append(row)
+                _add_row(claims.setdefault(claim, []), row)
+                spoken = clauses.setdefault(name, {}).setdefault(claim, [])
+                if not spoken or spoken[-1].line != number:
+                    spoken.append(NamingClause(number, rendering))
                 if newly:
                     reached = expanded.setdefault(name, {}).setdefault(claim, [])
                     if reached and reached[-1].line == number:
@@ -2554,9 +2668,7 @@ def read_claim_references(
                 # A number the line already names for its one analyst is that
                 # claim written again ("... lower claim 27"), no other one.
                 again = out.get(candidates[0], {})
-                counted = [
-                    n for n in counted if not any(row[0] == number for row in again.get(n, []))
-                ]
+                counted = [n for n in counted if not _has_row_of(again.get(n, []), number)]
             if owners and counted:
                 tokens = clause_tokens(text, masked, start, numbers.end, clause_starts)
                 left: list[int] = []
@@ -2567,9 +2679,7 @@ def read_claim_references(
                         continue
                     # Read, never withdrawn by rule: the claim is carried
                     # with the line as one a line contests without blocking.
-                    rows = out.setdefault(owner[0], {}).setdefault(claim, [])
-                    if (number, False) not in rows:
-                        rows.append((number, False))
+                    _add_row(out.setdefault(owner[0], {}).setdefault(claim, []), (number, False))
                     owned.setdefault(
                         OwnedClaim(number, mark.marked, owner[0], claim, owner[1]), None
                     )
@@ -2595,6 +2705,7 @@ def read_claim_references(
         unplaced=tuple(unplaced),
         expanded={k: {n: tuple(v) for n, v in c.items()} for k, c in expanded.items()},
         owned=tuple(owned),
+        clauses={k: {n: tuple(v) for n, v in c.items()} for k, c in clauses.items()},
     )
 
 
@@ -2610,7 +2721,7 @@ def claims_named_by_lines(
     given), each analyst's carrying what its merge reads besides
     (:class:`NamedClaims`). Linear in the lines.
     """
-    return NamedByLines(read_claim_references(lines, participants, owners))
+    return NamedByLines(read_claim_references(lines, participants, owners), participants)
 
 
 @dataclass(frozen=True)

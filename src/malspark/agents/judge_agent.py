@@ -661,6 +661,13 @@ MEDIATION_ENTRY_CHECK = (
     "entry's text is in this conversation already; rule on what the entries show, not on "
     "what a report says they show."
 )
+# Said before the closing line of a debate's first mediation only: a point
+# first raised in a later mediation costs the debate a revision round. It asks;
+# what the mediator lists and how it marks each line stay its own decision.
+FIRST_MEDIATION_QUESTION = (
+    "List every contradiction the answers and the ledger establish now: a point first raised "
+    "in a later mediation costs the debate a revision round."
+)
 
 # The question asked once, in the mediation's own conversation, when the round
 # limit ends the debate on blocking lines no revision will answer
@@ -702,6 +709,32 @@ _NONE_RE = re.compile(
 )
 # A phrase that opens with "none" but says more than the closed wording does.
 _NONE_OPENING_RE = re.compile(r"^[\s*_`(]*none\b", re.IGNORECASE)
+# A closing remark on a label line adopts the block above it only where it
+# points at that block with one of the pointing words ("CONTRADICTIONS: the
+# standing lines are listed above") and the clause that holds the pointing
+# word holds no word of an end ("... is resolved"), no negating word ("no
+# longer", "none") and no zero ("0 of the above remain"). A clause ends at one
+# of the clause marks; a comma ends none. Any other remark never adopts the
+# block above it: a draft the mediator argued away stays argued away.
+REMARK_POINTING_WORDS = ("above", "listed", "preceding", "foregoing")
+REMARK_ENDED_WORDS = (
+    "resolved", "settled", "answered", "withdrawn", "withdrew", "addressed", "cleared", "closed",
+    "dropped", "superseded", "moot",
+)  # fmt: skip
+REMARK_NEGATING_WORDS = ("no", "not", "nothing", "none", "neither", "nor", "never", "cannot")
+REMARK_NEGATING_ENDINGS = ("n't", "n’t")
+REMARK_ZERO_WORDS = ("zero", "0")
+REMARK_CLAUSE_MARKS = (".", ";", "!", "?")
+_REMARK_CLAUSE_RE = re.compile("[" + re.escape("".join(REMARK_CLAUSE_MARKS)) + "]")
+_REMARK_POINTS_RE = re.compile(rf"\b(?:{'|'.join(REMARK_POINTING_WORDS)})\b", re.IGNORECASE)
+_REMARK_ENDS_RE = re.compile(
+    rf"\b(?:{'|'.join((*REMARK_ENDED_WORDS, *REMARK_NEGATING_WORDS, *REMARK_ZERO_WORDS))})\b"
+    rf"|(?:{'|'.join(map(re.escape, REMARK_NEGATING_ENDINGS))})",
+    re.IGNORECASE,
+)
+# What a closing remark never writes: a claim reference or a ledger id. A
+# label line that does is a block of its own, with or without a field.
+_REMARK_NAMES_RE = re.compile(r"\bclaims?\s*+#?\s*+\d|\bev_\d", re.IGNORECASE)
 # A line that sums the block up rather than stating a contradiction.
 _SUMMARY_LINE_RE = re.compile(r"^[\s*_`]*(?:summary|in summary|overall|in total)\b", re.I)
 
@@ -756,8 +789,20 @@ def read_contradictions_block(text: str) -> ContradictionsBlock:
     """The answer's last ``CONTRADICTIONS:`` block, read (:class:`ContradictionsBlock`).
 
     Only the last block counts: one drafted earlier and then argued away is not
-    the mediator's word. The label is matched in capitals, as the prompt spells
-    it, so a prose heading such as "Contradictions:" in the reasoning is not
+    the mediator's word. A last label whose one line is a remark on the label
+    line itself ("CONTRADICTIONS: standing blocking lines are listed above;
+    ...") is no block of its own, and the block above it is read, only when
+    all of these hold: nothing but blank lines stands between that block's
+    last line and the remark's label; a line of that block holds the fields;
+    the remark holds no field of the block's lines, no claim reference and no
+    ledger id; it points at the block with a word of
+    :data:`REMARK_POINTING_WORDS`; and the clause that holds that word (a
+    clause ends at :data:`REMARK_CLAUSE_MARKS`, never at a comma) holds no
+    word of :data:`REMARK_ENDED_WORDS`, :data:`REMARK_NEGATING_WORDS` (or one
+    ending in :data:`REMARK_NEGATING_ENDINGS`) or :data:`REMARK_ZERO_WORDS`.
+    Otherwise the last block is read as written. A block ends at the next
+    label. The label is matched in capitals, as the prompt spells it, so a
+    prose heading such as "Contradictions:" in the reasoning is not
     taken for it. The block runs to the agreement line, the end of the answer,
     or a blank line followed by a line that is neither a list line nor one
     holding a field every line is asked for (opening with ``[analysts: ...]``
@@ -782,15 +827,64 @@ def read_contradictions_block(text: str) -> ContradictionsBlock:
     closed wording.
     """
     lines = (text or "").splitlines()
-    start = None
-    for index in range(len(lines) - 1, -1, -1):
-        if _CONTRADICTIONS_LINE_RE.match(lines[index]):
-            start = index
-            break
-    if start is None:
+    starts = [index for index, line in enumerate(lines) if _CONTRADICTIONS_LINE_RE.match(line)]
+    if not starts:
         return ContradictionsBlock(None)
+    reading, remark, _last = _block_at(lines, starts[-1])
+    label_at = starts[-1]
+    # A last label whose only line is a remark on its own label line stands
+    # after the block it remarks on: the block right above it, with only
+    # blank lines between, is read where a line of it holds the fields.
+    for start in reversed(starts[:-1]):
+        if not remark:
+            break
+        above, remark_above, last = _block_at(lines, start)
+        if any(lines[index].strip() for index in range(last + 1, label_at)):
+            break
+        if any(carries_line_field(item) for item in above.items or ()):
+            return above
+        remark, label_at = remark_above, start
+    return reading
+
+
+def _closing_remark(item: str) -> bool:
+    """Whether a label line's one line can be a closing remark on the block above it.
+
+    It holds no field of the block's lines (``debate_facts.carries_line_field``),
+    no claim reference and no ledger id, and points at the block above
+    (:func:`_points_and_ends_nothing`).
+    """
+    return (
+        not carries_line_field(item)
+        and not _REMARK_NAMES_RE.search(item)
+        and _points_and_ends_nothing(item)
+    )
+
+
+def _points_and_ends_nothing(item: str) -> bool:
+    """Whether a clause of ``item`` points at the block above and none that does ends it.
+
+    Clauses end at :data:`REMARK_CLAUSE_MARKS`; each clause holding a word of
+    :data:`REMARK_POINTING_WORDS` must hold no word of an end, no negation
+    and no zero. One pass over the remark.
+    """
+    pointing = [c for c in _REMARK_CLAUSE_RE.split(item) if _REMARK_POINTS_RE.search(c)]
+    return bool(pointing) and not any(_REMARK_ENDS_RE.search(c) for c in pointing)
+
+
+def _block_at(lines: list[str], start: int) -> tuple[ContradictionsBlock, bool, int]:
+    """The block whose label stands at ``start``, read, whether it is a remark only, and its last line.
+
+    A remark only is a block that holds one line, written on its label line,
+    that can be a closing remark (:func:`_closing_remark`), with no NONE and
+    no phrase opening with "none". The last line is the index of the last
+    line the block read, its label's where it read none below it.
+    """
     match = _CONTRADICTIONS_LINE_RE.match(lines[start])
     rest = (match.group(1) if match else "").strip()
+    # The line written on the label line, where one is: a remark only when
+    # it is the block's one line (above).
+    label_item = ""
     found: list[str] = []
     listed_items = 0
     said_none = False
@@ -804,12 +898,14 @@ def read_contradictions_block(text: str) -> ContradictionsBlock:
             pass
         else:
             none_phrase = bool(_NONE_OPENING_RE.match(rest))
-            found.append(rest.strip("*_`").strip())
+            label_item = rest.strip("*_`").strip()
+            found.append(label_item)
     after_blank = False
     ended_at_heading = False
+    last = start
     for index in range(start + 1, len(lines)):
         line = lines[index]
-        if _AGREEMENT_LINE_RE.match(line):
+        if _AGREEMENT_LINE_RE.match(line) or _CONTRADICTIONS_LINE_RE.match(line):
             break
         if not line.strip():
             after_blank = True
@@ -826,6 +922,7 @@ def read_contradictions_block(text: str) -> ContradictionsBlock:
             if not _next_line_continues(lines, index + 1):
                 break
             after_blank = False
+            last = index
             continue
         if not listed and not fielded and _HEADING_RE.match(line):
             # A heading with no blank line above it is no item. Inside the
@@ -835,7 +932,9 @@ def read_contradictions_block(text: str) -> ContradictionsBlock:
             if not found and not _next_line_continues(lines, index + 1, listed=True):
                 ended_at_heading = True
                 break
+            last = index
             continue
+        last = index
         new_paragraph = after_blank
         after_blank = False
         stripped = line.strip()
@@ -861,15 +960,25 @@ def read_contradictions_block(text: str) -> ContradictionsBlock:
         listed_items += 1
     if found:
         if said_none and not listed_items:
-            return ContradictionsBlock(found, mixed=True, ambiguous="none_beside_plain_lines")
+            return (
+                ContradictionsBlock(found, mixed=True, ambiguous="none_beside_plain_lines"),
+                False,
+                last,
+            )
         if none_phrase and len(found) == 1 and not said_none:
-            return ContradictionsBlock(found, ambiguous="none_phrase")
-        return ContradictionsBlock(found, mixed=said_none)
+            return ContradictionsBlock(found, ambiguous="none_phrase"), False, last
+        remark = (
+            found == [label_item]
+            and not said_none
+            and not table_rows
+            and _closing_remark(label_item)
+        )
+        return ContradictionsBlock(found, mixed=said_none), remark, last
     if (table_rows or ended_at_heading) and not said_none:
         # Only table rows, or a heading the block ended at before any line:
         # nothing says what stands, and the mediator is asked once.
-        return ContradictionsBlock(None)
-    return ContradictionsBlock([])
+        return ContradictionsBlock(None), False, last
+    return ContradictionsBlock([]), False, last
 
 
 def final_contradictions(text: str) -> list[str] | None:
@@ -2113,7 +2222,9 @@ def _standing_blocks(run_state: str, facts_block: str) -> str:
 
 
 def mediation_reports_text(
-    reports: dict[str, str], isr_reports: dict[str, AgentISR] | None = None
+    reports: dict[str, str],
+    isr_reports: dict[str, AgentISR] | None = None,
+    last_round: int | None = None,
 ) -> str:
     """The analysts' reports as the mediator reads them, each analyst's claims once.
 
@@ -2123,6 +2234,12 @@ def mediation_reports_text(
     mediation every report was sent a second time; a revised report is the
     analyst's own words and its ISR the claims in force, which differ and are
     both kept. Empty ISRs are left out, as before.
+
+    ``last_round`` is the revision round held right before a debate's later
+    mediation: each claim summary, at a report's head or in the ISR block,
+    states for each claim an earlier mediation read the round its text was
+    last written (``AgentISR.to_text_summary``). ``None``, a first
+    mediation, shows the reports as they are.
     """
     from malspark.agents.base_agent import report_rendered_again
     from malspark.utils.written_forms import markers_written_out
@@ -2130,9 +2247,19 @@ def mediation_reports_text(
     # A report that is an answer's claims summary is rendered again from its
     # ISR, so a mark set since cannot make the two differ and show it twice.
     isrs = isr_reports or {}
-    reports = {
-        name: report_rendered_again(report, isrs.get(name)) for name, report in reports.items()
-    }
+
+    def _noted(report: str, isr: AgentISR | None) -> str:
+        # The summary at the report's head, rendered again, with each claim's
+        # round where a later mediation is told it.
+        report = report_rendered_again(report, isr)
+        if last_round is None or isr is None or not isr.claims:
+            return report
+        plain = isr.to_text_summary()
+        if not report.startswith(plain):
+            return report
+        return isr.to_text_summary(last_round) + report[len(plain) :]
+
+    reports = {name: _noted(report, isrs.get(name)) for name, report in reports.items()}
     # A report and a claim's words are what a model wrote: a run-state marker
     # in them is written out, so the mediator never reads one as the
     # platform's block.
@@ -2153,7 +2280,9 @@ def mediation_reports_text(
     isr_block = "\n\n".join(
         f"[ISR] {markers_written_out(summary)}"
         for name, summary in (
-            (name, isr.to_text_summary()) for name, isr in isr_reports.items() if isr.claims
+            (name, isr.to_text_summary(last_round))
+            for name, isr in isr_reports.items()
+            if isr.claims
         )
         if not _shown(name, summary)
     )
@@ -3761,6 +3890,7 @@ class JudgeAgent(BudgetMeter):
         round_facts: str = "",
         cited_entries: Mapping[str, str] | None = None,
         ledger: Sequence[Any] | None = None,
+        last_revision_round: int | None = None,
     ) -> tuple[AgentArgument, bool | None]:
         """One mediation round (:meth:`_mediate_round`), or the round the mediator's ceiling ends.
 
@@ -3772,6 +3902,9 @@ class JudgeAgent(BudgetMeter):
         ``ledger`` is the run's ledger: the round's ``read_evidence`` (in its
         loop and in the block question) reads every entry of it by id, not
         only the loop's own (``agents.ledger_reads``).
+
+        ``last_revision_round`` is the revision round held right before this
+        mediation in its debate, ``None`` for the debate's first mediation.
         """
         self._mediation_ledger = list(ledger) if ledger else None
         self._mediation_turns = None
@@ -3787,6 +3920,7 @@ class JudgeAgent(BudgetMeter):
                 run_state=run_state,
                 round_facts=round_facts,
                 cited_entries=cited_entries,
+                last_revision_round=last_revision_round,
             )
         except AgentCeilingStop as stop:
             self.logger.warning("Mediator: %s; the round is not mediated.", stop)
@@ -3815,6 +3949,7 @@ class JudgeAgent(BudgetMeter):
         run_state: str = "",
         round_facts: str = "",
         cited_entries: Mapping[str, str] | None = None,
+        last_revision_round: int | None = None,
     ) -> tuple[AgentArgument, bool | None]:
         """Find contradictions between expert reports and determine consensus.
 
@@ -3840,6 +3975,10 @@ class JudgeAgent(BudgetMeter):
             cited_entries: The stored texts of the entries those lines cite,
                 by id, shown after them whole, as many as the room the
                 reports and the history leave (``debate_facts.fit_entries``).
+            last_revision_round: The revision round held right before this
+                mediation in its debate, or ``None`` for the debate's first
+                mediation, whose question asks for every contradiction now
+                (``FIRST_MEDIATION_QUESTION``).
 
         Returns:
             Tuple of (AgentArgument with mediator findings, bool indicating
@@ -3868,7 +4007,7 @@ class JudgeAgent(BudgetMeter):
 
         # The reports, then the ISR summaries that are not one of them word
         # for word: per-claim confidence and dissent, each analyst's once.
-        reports_text = mediation_reports_text(reports, isr_reports)
+        reports_text = mediation_reports_text(reports, isr_reports, last_revision_round)
 
         # The mediator is NOT allowed to state a
         # verdict or describe the sample as "clean". Its only job is to
@@ -3909,6 +4048,10 @@ class JudgeAgent(BudgetMeter):
             if self._mediation_ledger
             else MEDIATOR_HUMAN_CLOSING
         )
+        # A debate's first mediation is told that a point it leaves for a
+        # later one costs a round; a later mediation is asked as before.
+        if last_revision_round is None:
+            closing = f"{FIRST_MEDIATION_QUESTION} {closing}"
 
         def _mediation_human(
             reports_shown: str, history_shown: str, notice: str, entries_shown: str = ""

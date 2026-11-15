@@ -12,6 +12,7 @@ Literature basis:
 
 from __future__ import annotations
 
+import re
 from collections.abc import Sequence
 from typing import Any, Literal, get_args
 
@@ -104,6 +105,57 @@ def carried_note(claim: Any) -> str:
     )
     ruled = [str(r) for r in getattr(claim, "limit_rulings", None) or [] if str(r)]
     return "; ".join([said, *ruled] if said else ruled)
+
+
+# The round note on a claim's line in a later mediation's claim list: what it
+# says, a space, the round, in round brackets (``(written in round 2)``,
+# ``(unchanged since round 1)``). One declaration: the claim list
+# writes the note by it, and a WITHDRAW line that copies the note after the
+# claim number is read through it by the same shape (``retry_merge``), the
+# round's value never asked. The shape is the writer's exactly: its case and
+# ASCII digits, whatever flag the pattern it stands in carries.
+WRITTEN_IN_ROUND = "written in round"
+UNCHANGED_SINCE_ROUND = "unchanged since round"
+ROUND_NOTE_BRACKETS = ("(", ")")
+ROUND_NOTE_PATTERN = (
+    "(?-i:"
+    + re.escape(ROUND_NOTE_BRACKETS[0])
+    + "(?:"
+    + "|".join(re.escape(said) for said in (WRITTEN_IN_ROUND, UNCHANGED_SINCE_ROUND))
+    + r") [0-9]++"
+    + re.escape(ROUND_NOTE_BRACKETS[1])
+    + ")"
+)
+
+
+def round_note_on_line(note: str) -> str:
+    """``note`` (:func:`written_round_note`) as the claim's line carries it."""
+    return f"{ROUND_NOTE_BRACKETS[0]}{note}{ROUND_NOTE_BRACKETS[1]}"
+
+
+def written_round_note(
+    claim: Any, answer_round: int, last_round: int, retried: bool = False
+) -> str:
+    """The round ``claim``'s text was last written, as a later mediation reads it, or ``""``.
+
+    Read from what the merge records. A claim a revision neither wrote again
+    nor withdrew stood in the answer the first such revision read, so it is
+    unchanged since the round before (``ClaimEvidence.carried_since_round``).
+    In an answer that holds claims a validation retry of its own round added
+    (``retried``, :func:`retry_added_marker`), every other claim stood in force
+    before that round. Any other claim was written in its answer's round
+    (``answer_round``). Said only of a text older than ``last_round``, the
+    revision round held right before the mediation: an earlier mediation
+    read it. A claim written in that round carries none.
+    """
+    since = getattr(claim, "carried_since_round", None)
+    if isinstance(since, int) and not isinstance(since, bool):
+        written, said = max(since - 1, 0), UNCHANGED_SINCE_ROUND
+    elif retried and getattr(claim, "added_by_retry_in_round", None) != answer_round:
+        written, said = max(int(answer_round) - 1, 0), UNCHANGED_SINCE_ROUND
+    else:
+        written, said = int(answer_round), WRITTEN_IN_ROUND
+    return f"{said} {written}" if written < int(last_round) else ""
 
 
 # The note on a technique the judge named in its bundle and no analyst claimed.
@@ -524,7 +576,7 @@ def _technique_written(claim: ClaimEvidence) -> str:
 
 
 def claim_summary_line(
-    number: int, claim: ClaimEvidence, block: Sequence[ClaimEvidence] = ()
+    number: int, claim: ClaimEvidence, block: Sequence[ClaimEvidence] = (), written: str = ""
 ) -> str:
     """One claim as an ISR summary shows it to a model (``AgentISR.to_text_summary``).
 
@@ -533,9 +585,11 @@ def claim_summary_line(
     that it does not resolve. ``block`` is every claim read from the claim's
     block (``validation.claim_block_indexes``): a block whose TECHNIQUE line
     listed several ids is one claim, shown once with all of its ids.
+    ``written`` is the round its text was last written, as a later mediation
+    is told it (:func:`written_round_note`), shown last among the notes.
     """
-    written = list(dict.fromkeys(w for c in (block or (claim,)) if (w := _technique_written(c))))
-    tech = f" ({', '.join(written)})" if written else ""
+    ids = list(dict.fromkeys(w for c in (block or (claim,)) if (w := _technique_written(c))))
+    tech = f" ({', '.join(ids)})" if ids else ""
     noted = f" {claim.heading_note}" if claim.heading_note else ""
     failed = f" ({FAILED_CALLS_MARKER})" if claim.cites_only_failed_calls else ""
     retried = (
@@ -545,6 +599,8 @@ def claim_summary_line(
     )
     note = carried_note(claim)
     carried = f" ({note})" if note else ""
+    if written:
+        carried += f" {round_note_on_line(written)}"
     return (
         f"Claim {number}{noted}: {claim.claim}{tech}"
         f" | Evidence: {claim.evidence_ref}{failed}{retried}{carried}"
@@ -800,11 +856,15 @@ class AgentISR(BaseModel):
             blocks[index].append(claim)
         return blocks
 
-    def to_text_summary(self) -> str:
+    def to_text_summary(self, last_round: int | None = None) -> str:
         """Render this ISR as a concise human-readable text block.
 
         Used when the ISR must be passed to an LLM prompt as context.
-        The format is compact to minimise token consumption.
+        The format is compact to minimise token consumption. ``last_round``
+        is the revision round held right before a debate's later mediation:
+        each claim whose text an earlier mediation read then states the round
+        it was last written (:func:`written_round_note`). ``None``, every
+        other surface, renders no such note.
         """
         lines: list[str] = [
             f"[{self.agent_id.upper()} ANALYST — round {self.revision_round}]",
@@ -813,8 +873,14 @@ class AgentISR(BaseModel):
 
         # Numbered by claim block, the number every other surface names a
         # claim by: a claim mapped to several techniques is one line.
+        retried = any(c.added_by_retry_in_round == self.revision_round for c in self.claims)
         for i, block in enumerate(self.claim_blocks(), 1):
-            lines.append(f"  {claim_summary_line(i, block[0], block)}")
+            written = (
+                written_round_note(block[0], self.revision_round, last_round, retried)
+                if last_round is not None
+                else ""
+            )
+            lines.append(f"  {claim_summary_line(i, block[0], block, written)}")
 
         # An unknown the analyst names, for a peer, the mediator, the judge
         # or the lead that asked to route: never an absence, and absent from

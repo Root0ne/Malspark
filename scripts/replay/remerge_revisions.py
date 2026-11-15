@@ -21,13 +21,14 @@ What a log holds, and what is read from it:
 
 - the answer in force of each analyst, as the round's mediation was shown it:
   the summary of its claims (``AgentISR.to_text_summary``), its disputes and
-  what it wrote besides its claims;
+  what it wrote besides its claims; the round a later mediation is told each
+  claim was last written is a note, not part of the claim's evidence;
 - the revision's own blocks: the claims of the next answer in force that no
   carried-forward note marks; a revision placed by its written numbers is
   replayed by what it states, since a summary shows the merged numbers only;
 - the lines of the round's mediation, from the next mediation's account of
   them (``(standing: ...)``), read as the merge reads them
-  (``debate_facts.claims_named_by_lines``).
+  (``revision_merge.claims_named_in_force``).
 
 The earlier rule's merge, as the run's log said it, is printed beside each
 replay so a reading that differs from what the run did is seen. The stored
@@ -54,8 +55,11 @@ for _path in (str(_ROOT / "src"), str(_ROOT)):
 
 from malspark.pipeline import revision_merge  # noqa: E402
 from malspark.pipeline.claim_drops import content_words, dropped_values  # noqa: E402
-from malspark.pipeline.debate_facts import claims_named_by_lines  # noqa: E402
-from malspark.schemas.isr_models import AgentISR, ClaimEvidence  # noqa: E402
+from malspark.schemas.isr_models import (  # noqa: E402
+    ROUND_NOTE_PATTERN,
+    AgentISR,
+    ClaimEvidence,
+)
 
 _REQUEST = b"Request options: "
 _SECTION = re.compile(r"(?m)^--- (.+?) ANALYST ---\n")
@@ -71,9 +75,10 @@ _ENDS = (
 _BESIDES = "\nWritten in this answer besides its claims:\n"
 _TECHNIQUES = re.compile(r" \(((?:T\d{4}(?:\.\d{3})?(?: — [^,()]*)?(?:, )?)+)\)$")
 _MARKER = re.compile(
-    r" \((?:the claim cites only tool calls that failed"
+    r" (?:\((?:the claim cites only tool calls that failed"
     r"|added by a tool-less retry, round \d+"
-    r"|carried forward[: ][^\n]*?)\)$"
+    r"|carried forward[: ][^\n]*?)\)"
+    rf"|{ROUND_NOTE_PATTERN})$"
 )
 _STANDING = re.compile(r"(?m)^- \(standing: [^)]*\) (.+)$")
 _MERGE_SAID = re.compile(
@@ -248,17 +253,21 @@ def _earlier_rule() -> Iterator[None]:
             return True, None
         return False, None
 
-    def by_statement(first: Any, readings: Any, _stated: Any = None) -> Any:
+    def by_statement(
+        first: Any, readings: Any, _stated: Any = None, _answered: Any = None
+    ) -> revision_merge.StatementPlacement:
         found: set[int] = set()
         target: dict[int, int] = {}
+        by: dict[int, int] = {}
         for earlier in first:
             ok, index = restated(earlier, readings)
             if not ok:
                 continue
             found.add(earlier.number)
-            if index is not None and index not in target:
-                target[index] = earlier.number
-        return found, target, {}
+            if index is not None:
+                by[earlier.number] = index
+                target.setdefault(index, earlier.number)
+        return rm.StatementPlacement(found, target, {}, by)
 
     with patch.object(rm, "_by_statement", by_statement):
         yield
@@ -323,11 +332,7 @@ def remerge(run: Path) -> dict[str, Any]:
         names = list(before.answers)
         kept = {n: _isr(a, a.claims, a.disputes) for n, a in before.answers.items()}
         try:
-            named = claims_named_by_lines(
-                after.earlier_lines,
-                names,
-                {n: revision_merge.claim_tokens_by_number(isr) for n, isr in kept.items()},
-            )
+            named = revision_merge.claims_named_in_force(after.earlier_lines, names, kept)
         except Exception as exc:  # noqa: BLE001 — a line not read names no claim
             print(_not_read(run.name, exc), file=sys.stderr)
             named = {}

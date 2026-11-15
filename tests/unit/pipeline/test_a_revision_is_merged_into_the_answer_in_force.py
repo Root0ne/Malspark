@@ -493,8 +493,8 @@ class TestAContestedClaimLeftUnansweredIsNamed:
             agent_name=MEDIATOR_AGENT_NAME,
             finding="revise",
             contradictions=[
-                "[analysts: STATIC ANALYST] Claim 2 says the beacon waits 600 s, versus the "
-                "listing. [blocking: the listing shows 900 s.]",
+                "[analysts: STATIC ANALYST] Claim 2 says the beacon at 0x402000 waits 600 s, "
+                "versus the listing. [blocking: the listing shows 900 s.]",
                 "[analysts: STATIC ANALYST] Claim 3 names the key loosely. "
                 "[not blocking: the reading is the same.]",
             ],

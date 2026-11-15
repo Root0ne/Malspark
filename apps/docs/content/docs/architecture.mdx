@@ -344,7 +344,20 @@ claim or a ledger entry id), or `CONTRADICTIONS: NONE`, then its
 `agreement_confidence` line. A contradiction includes a claim an evidence
 ledger entry contradicts. Only that last block is read into the verdict's
 contradictions, on the text path and the structured one alike; contradictions
-the reasoning drafted and then resolved are not counted. A non-empty block is
+the reasoning drafted and then resolved are not counted. A block ends at the
+next label. A last label whose one line is a remark on the label line itself
+("CONTRADICTIONS: standing blocking lines are listed above.") is no block of
+its own, and the block above it is read, only when nothing but blank lines
+stands between that block's last line and the remark's label, a line of that
+block holds the fields, the remark holds no field, no claim reference and no
+ledger id, it points at the block with a pointing word ("above", "listed",
+"preceding", "foregoing"), and the clause that holds that word (a clause
+ends at ".", ";", "!" or "?", never at a comma) holds no word of an end
+("resolved", "settled", "withdrawn", …), no negation ("not", "no longer",
+"none", "n't", …) and no zero ("zero", "0"), all declared in
+`agents.judge_agent`; otherwise the last block is read as written, so a
+draft the mediator argued away stays argued away and a last one-line block
+that names a claim or a ledger id is the block. A non-empty block is
 not consensus whatever number the mediator wrote: the number is kept and shown
 beside the list, and the router sends the analysts to revise, each told the
 block's lines. The block is one contradiction per line, bulleted, numbered or
@@ -375,6 +388,7 @@ no analyst was asked to revise.
 The debate ends when nothing is left to settle (`pipeline/debate_facts.py`,
 `pipeline/claim_drops.py`, `pipeline/routing.py`):
 
+- A debate's first mediation is asked, before its closing line, to list every contradiction the answers and the ledger establish now, because a point first raised in a later mediation costs the debate a revision round (`judge_agent.FIRST_MEDIATION_QUESTION`). A later mediation, which the negotiation node names by the revision round held before it (`JudgeAgent.mediate(last_revision_round=...)`), is not asked it. The sentence asks and decides nothing: what the mediator lists and how it marks each line stay its own.
 - The mediator ends each line of its block with `[blocking: <reason>]` or `[not blocking: <reason>]`; consensus is its confidence at the threshold with no line marked blocking, an unmarked line blocks, and the platform overrides a mark in neither direction. The reason may hold one level of brackets (`[not blocking: see [ev_0021]]`); a `[not blocking]` mark with no reason, conflicting marks and a mark that cannot be read block and go to `negotiation.unread_marks`, and a `[blocking]` mark with no reason blocks as it asks.
 - For a listed line whose cited entries (cited by the line or by a claim it names) hold, in a field named for a count or a total, a number the line itself states, every such value is stated; the length of a list field (a match list: `matches = 0 items`) only where its key names the noun the line counts with that number ("0 hits" for `matches`, a hit being a match; "3 domains" for `domains`). A size or a time is not a count. No call is made for them: they ride on the revision directive of the analysts the line names and on the next mediation's prompt, and a debate that ends at this mediation spends nothing on them.
 - A blocking line the ledger states, told before, is recorded and shown, never taken away (`debate_facts.ledger_stated`). Its dispute must be about a count itself: two sides of the line (split at "while", "whereas", "but", "against", "versus", "although", "however" or a semicolon) each write one number, in digits or a number word, directly before one noun (at most one word between), and the numbers differ ("three matches" against "0 hits"). Two numbers on one side ("31 rules loaded, 3 matched") are two quantities, and a partitive or a ratio ("one of the rules", "0 hits of 31 rules", "3 out of 31", "3/31") is no count of its noun. "Hit" and "match" are one noun, a closed and deliberately minimal vocabulary; a line whose sides read counts both accept differently ("0 matches as benign" against "31 rules as malicious") is a dispute about meaning and is never stated. Every count it states (a number before a plural noun, "0 hits", "31 rules") is stated by a cited entry in a key naming that noun, the cited entries agree (every cited field of a counted noun holds one value) and are one record (an entry naming one of the line's nouns names all of them, so "0 connections" in one entry against "2 domains" in another is a dispute about meaning, not a count), and every fact stating one of its counts was stated by an earlier mediation of the debate. The line stays among the blocking lines, so the mediator, the judge and the report see it; it is said to the room, recorded in `AgentArgument.ledger_stated` and `run_summary.negotiation.ledger_stated`, and shown to the next mediation, which decides whether it still blocks. When every blocking line of a mediation is such a line, the debate ends as `ledger_stated`, with no consensus claimed. A line with a count no entry states, or with no count, is never stated, and a fact not yet told keeps the line out for the one round that tells it.
@@ -382,7 +396,7 @@ The debate ends when nothing is left to settle (`pipeline/debate_facts.py`,
 - Sycophancy is a rise in likeness beyond shared sources, told and never enforced (`pipeline/sycophancy_detector.py`, `convergence_flags`). After each revision round, for each analyst revised that made no tool call and whose revision cites nothing its answer before the round did not (an entry the platform showed it in the round, a peer's tool result among them, is no citation of its own, and that entry's words are left out like a shared entry's: agreeing with what it states is no move, agreeing beyond it still is), the words of every ledger entry or sandbox item it and a peer both cite are left out of both, and its answer before the round and its revision are each compared with the peer's answer in force (bag-of-words cosine); a revision above the threshold and above its answer before the round is flagged and recorded on the round (`revision_rounds[].converged`). Two answers alike because they restate the same rows, or alike before the round, are not flagged. A flag is put to the next mediation as a sentence beside the facts block (`convergence_sentence`) and kept on the mediation (`AgentArgument.converged`); no analyst's prompt carries it, it never overrides the mediator's consensus or a block with no contested point, opens no round and never widens a round that asks only the analysts the mediator named. A stage with `sycophancy_check` off is told nothing. A stored round record with no `converged` field is read by whole-answer likeness and decides no route either.
 - For a blocking line naming a function the run knows (an address the line writes, or one a claim it names writes, that is a row of the function index or a function a decompile or disassembly call listed; an offset and its virtual address are one function where an image base the run read joins them), the platform states whether the ledger holds a listing of it and which entries hold it (`debate_facts.place_facts`, `AgentArgument.place_facts`, said to the room as a notice). The analysts the line names in its field (every analyst, for a line with no field) are told it in their revision. An analyst with a tool whose declared arguments take an address (`undeclared_tools.address_arguments`, read from each tool's own schema) is also told it can read a function the ledger never listed in this round. Every revision carries the analyst's own tools wherever its model binds them: a configurable analyst's revision is its tool loop already, and a built-in analyst's revision runs its tool loop in place of the one tools-free call it was (`BaseAnalyst.revision_answer`, `safe_revise_isr`), which it is still where the analyst has no tools or its model cannot bind them, with a degradation reason saying so. A tool-carrying revision is a full loop: its own time and steps, the no-tool-call question (asked at most once per analyst per job), and a validation turn held to what the revision's loop left. The model decides whether to read; nothing is adopted or rejected for it, and no call is made for the facts.
 - A named analyst's revision is also shown, after the feedback, the stored text of the ledger entries the lines naming it cite and of one listing of each function their place facts name (`debate_facts.line_entry_ids`), each whole as it had it in view and shown through the one view of a tool answer, fenced, so a run-state block or a heading the sample wrote stays data (`base_agent.cited_entry_texts`, `tool_fence.fenced`; the validation retry and its drops question read entries the same way): a peer's tool result is in no input of its own, so the entries a line turns on are put in front of the analysts it names. An entry its brief or its raw data already holds is left out. The entries take what the input room leaves beside the raw data, which they never shorten; one that does not fit is named by id (`debate_facts.fit_entries`, `safe_revise_isr(cited_entries=...)`), and the entries shown are grounds for the revision's checks as its raw data is. The next mediation is shown the same entries for the last mediation's blocking lines, in the room its reports and history leave. The mediation's entries also leave room for the turns after its first: one tool answer's share of the window (`context_window.ANSWER_SHARE`), the first answer at the output cap and the question for a missing block. Showing an entry raises no corroboration count: a technique's sources are ledger entries, each counted once however many analysts cite it, and a revised claim citing only entries of other agents the debate showed its analyst (in this round or an earlier one, `revision_rounds[].shown`) is marked (`ClaimEvidence.rests_on_shown_entries`) and counts as no sayer of its own unless it also cites an entry its analyst filed (`validation.shown_claim_unbacked`, read where `tool_backed_answers` reads a retry's claims).
-- After a revision round the next mediation is told, for each blocking line of the last mediation, numbered, who it named, who revised, the entries of the line each was shown, and who changed a claim anywhere in its answer (`claim_drops.changed_anywhere`, read by the `reworded` route's own key `claim_substance`, claim for claim with counts: a claim added or removed, or one whose values, cited entries, technique, negators, confidence step, technical terms or content words differ, whatever it cites; reordering, punctuation and stopwords are no change, any other rewording is, by design, so the stop rule errs towards another round; an answer whose claims cannot be read is a change; an analyst that filed entries in the round changed), then the entries the round filed by agent (`debate_facts.round_facts_text`, `revision_rounds[].lines` and `filed`). It is asked once to write `[carried: L<n>]` after the field of each blocking line that raises line n again, or `[new]`; the mark is no part of the point (`debate_facts.carried_marks`, `AgentArgument.carried`).
+- After a revision round the next mediation is told, for each blocking line of the last mediation, numbered, who it named, who revised, the entries of the line each was shown, and who changed a claim anywhere in its answer (`claim_drops.changed_anywhere`, read by the `reworded` route's own key `claim_substance`, claim for claim with counts: a claim added or removed, or one whose values, cited entries, technique, negators, confidence step, technical terms or content words differ, whatever it cites; reordering, punctuation and stopwords are no change, any other rewording is, by design, so the stop rule errs towards another round; an answer whose claims cannot be read is a change; an analyst that filed entries in the round changed), then the entries the round filed by agent (`debate_facts.round_facts_text`, `revision_rounds[].lines` and `filed`). It is asked once to write `[carried: L<n>]` after the field of each blocking line that raises line n again, or `[new]`; the mark is no part of the point (`debate_facts.carried_marks`, `AgentArgument.carried`). From a debate's second mediation on, each claim whose text an earlier mediation read states on its line, as a fact, the round that text was last written: "unchanged since round N" for a claim a merge carried (the round before `ClaimEvidence.carried_since_round`) or one kept beside the additions of a validation retry of its answer's round (the round before it), and "written in round N" for any other claim of an answer of an earlier round (`isr_models.written_round_note`, `AgentISR.to_text_summary(last_round=...)`). A claim written in the last revision round carries no note, and every other surface renders the summary without one. The same question then asks, for a line marked `[new]` on a claim with such a note, what is new that the mediator reads on it (an entry, an answer of another analyst) (`debate_facts.UNCHANGED_CLAIM_QUESTION`). It is a question: no line is dropped, downgraded or re-marked on it, and the block is read as before.
 - A revision round whose every revision is the answer in force again, whitespace aside, ends the debate as `converged`; the router reads only the record of the round right before the mediation it routes.
 - A revision round whose every revision states the claims in force again, wording aside, ends the debate as `reworded`, with no consensus claimed: another round would argue over words. Nothing factual may change: each claim's values (numbers, hex addresses, technique ids, quoted values), the entry ids its evidence line cites, its technique, its negators ("not", "no", "never", "without", a word ending "n't"), its confidence in steps of 0.05, its technical terms (acronyms, identifiers and names holding a digit, folded: RC4 against XOR is a change) and its content words (every word but articles, prepositions, "and", "so", pronouns and forms of be, have and do, read before the plural fold; "or", "nor" and "but" count; case and plural folded: "three" against "four", "explorer" against "svchost", "packed" against "unpacked" is a change) are the same, claim for claim; a reordering, punctuation or a stopword is wording (`claim_drops.unchanged_in_substance`, recorded as `reworded` in the round's record). A claim that cannot be read so, or any difference, leaves the round not reworded, and the debate goes on.
 - A revision's tool loop is seeded with the calls the analyst made in the run's earlier rounds to a tool that changes nothing and answers an identical call the same: one its server marks read-only (MCP `readOnlyHint`) or its declaration marks `read_only` (`base_agent.repeatable_earlier_entries`, `tool_pinning.answers_again`). A call of any other tool (a rename, a status poll, a submission) runs again, and so does a call whose earlier answer was a failure, carried a reason, an error or a message, or a status other than a word of completion such as "pending" (`evidence_recorder.holds_a_settled_answer`); an empty answer that nothing explains, alone or beside a status "ok", is settled and seeded. A tool is matched by its server and its name together, never by its name alone. A seed holds only while no call that is not read-only has run on the same server (its server key, else its source) since its entry was recorded, by any agent in any earlier round (`base_agent._stale_after`, newest first by `seq`, or by ledger order where a row has none) or in the current loop (`RepeatGuard.forget_round_seeds`): a rename or a patch makes a later decompile of that server a new call. An identical call (same tool, same arguments; an argument named for an address in the binary compared by its value where it is written with `0x`, and a bare spelling holding a decimal digit and a hex letter, for an argument whose name has no `name` word, answered from an entry a `0x` call made, never the other way) is answered with the result its entry recorded, stamped with that entry's id and a sentence saying it was made in an earlier round, and no tool runs; the call is filed as a repeat of that entry. A failed call, and one whose result the run did not keep whole, is served once more, as for a chunked analysis.
@@ -2092,7 +2106,11 @@ decide.
    or adds, `WITHDRAW FINDING "<title>": <reason>` taking one out
    (`ANALYST_FEEDBACK_CLOSING_BY_NUMBER`). WITHDRAW lines are read in any case,
    with lists and ranges (`WITHDRAW CLAIMS 3, 5 and 7-9`), each block taking
-   the reason of the first line that names it with one and no other; any
+   the reason of the first line that names it with one and no other. The
+   round note the claim list writes beside a claim, copied after the number
+   (`WITHDRAW CLAIM 2 (unchanged since round 1): …`), is read through by the
+   one shape that writes it (`isr_models.ROUND_NOTE_PATTERN`), whatever round
+   it states; any other bracket after the number makes the line a doubt. Any
    other line that holds both a claim number and a withdrawing word (withdraw,
    retract, remove, drop, delete), in either order ("I withdraw claim 2",
    "Claim 5 is withdrawn", "CLAIM 2 is withdrawn", "Drop claim 2"), is a
@@ -2563,9 +2581,9 @@ cleared before it is made. A revision is merged into the answer in force by
 claim (`pipeline.revision_merge`): a claim it writes again replaces its
 predecessor; a claim it withdraws (a `WITHDRAW CLAIM <n>: <reason>` line, or a
 block under the claim's number that declares the withdrawal) is removed with
-its reason; a claim a blocking line of the round's mediation named that the
-revision neither writes again, withdraws nor argues in its disputes is
-withdrawn by rule, the line being its reason (only the mediation right before
+its reason, and no reading of free prose removes a claim by itself; a claim a
+blocking line of the round's mediation named that the revision neither writes
+again, withdraws nor refers to in its disputes in any way is withdrawn by rule, the line being its reason (only the mediation right before
 the round is read) (`debate_facts.read_claim_references` reads the claim numbers
 each line names per analyst, a list, a "claim" written again and a range of up
 to 20 claims, "claims 32-34" or "17 to 19", naming the analyst its first number names, and every claim a single "claim N" names is still named; the rest of a
@@ -2581,13 +2599,34 @@ the owner's merge (`debate_facts.OwnedClaim`); on a line whose field names one
 analyst, "its claim N" with no other participant named before it is that
 analyst's claim, read as the newer reading reads one, and a bare "claim N"
 written again for a number the line already names for that analyst is the same
-claim and no unplaced reference; a claim a blocking line reaches only by
-the newer reading is withdrawn by rule only when its reference's clause shares a
-ledger id or an address with it, and is otherwise carried with the line and
-stated); and any other claim it neither writes again nor
+claim and no unplaced reference; a name or short form before "claim N" names
+the analyst whose name it is ("STATIC" the `static` analyst beside
+`static_deep`), except that on a line whose field leaves that analyst
+out, while its answer in force holds no claim of that number, it names the one
+analyst of the field the form fits whose answer holds the claim, and a form
+that fits several analysts and is none of their names names no one; a blocking
+line withdraws by rule only a claim it speaks to: where a claim the line names,
+of any analyst, shares a ledger id or a value (an address, a number, as the
+restatement test counts values) with the whole line, its field left out, or
+has four consecutive words of its sentence written on the line
+(`revision_merge.SPEAKING_RUN_WORDS`), the line speaks only to those claims,
+and to each of them itself; where none does, it speaks to no claim itself and
+its rule reaches every claim it names, a claim it reaches only through a range
+keeping the test of the range's clause; other content words take no part
+(`revision_merge.claims_named_in_force`); a claim a line names without
+speaking to it is never withdrawn by rule by that line and keeps the line's
+mark, the reference stated; a claim a block of the revision restates is never
+withdrawn by rule, carried beside that block or not; a revision whose
+reading left a claim it began unread withdraws nothing by rule: a claim the
+line rule would withdraw is carried with its line, its mark kept, and the merge
+says why, since the claim left unread may be that claim restated; the count is
+the one the analyst's answer holds after its validation turn (a reason that
+claims it began were not read, a note that parts of the input were not
+analysed among them, and each block that stated no confidence), and the merge
+reads no text again for it); and any other claim it neither writes again nor
 withdraws stands unchanged, marked carried forward from that round
 (`ClaimEvidence.carried_since_round`, with `carried_contested_by` when a line
-that does not block named it, and `carried_beside` when a block of the revision
+named it and did not withdraw it, and `carried_beside` when a block of the revision
 states it again without an address of it), shown beside the claim in every summary, the
 transcript event, the upstream findings, the evidence bundle and the ATT&CK
 table's note, and counted per analyst in the report's list of claims the body
@@ -2609,15 +2648,90 @@ correction that changes or leaves out an address)
 stays in force beside that block, and the merge says so: the claim's note reads
 "carried forward beside claim K of the answer the round-N revision left in
 force, which states it again without 0x…", and
-`revision_replacements` states the pair with the same addresses (a blocking
-line that named the claim still withdraws it by rule). A claim that names no
+`revision_replacements` states the pair with the same addresses. A claim a
+blocking line of the round's mediation speaks to itself is asked no address:
+the revision answers the line, so the block that restates it best replaces it
+(the largest share of the claim's content words or values, the first block on
+a tie), its values no block states recorded as dropped, and the merge names
+that block for the claim (`RevisionMerge.restated_by`) also where it stands at
+another claim's place; with no block restating it, the line rule withdraws it
+unless the revision's disputes refer to it. A range the disputes write
+backwards ("my claims 9-2 hold", "6 to 4") refers to both its ends for the line
+rule and names no claim for any other purpose. A claim the revision's disputes
+speak for by a reference of its own ("My claim 1 stands: …") is not answered
+so, and neither is a claim a line names without speaking to it itself: each
+keeps the address test, and with no block passing it stays in force with the
+line, beside the block that restates it without one of its addresses.
+A claim that names no
 address is restated by one block on its words or values. A revision that
 restates or withdraws every claim in force stands as written.
 `run_summary.negotiation.revision_replacements` states each merge that carried
 claims, with their numbers, and each withdrawal with its reason (a withdrawal by
-rule also among `dropped_claims`, with the claim's values); a revision with
+rule also among `dropped_claims`, with the claim's values), and a claim kept
+from the line rule by a revision not read whole is stated with the revision's
+record in the platform's words: that it began claim blocks the platform did
+not read (a block begun and not read, or one that stated no confidence), that
+it states that parts of the input were not analysed, both joined, or otherwise
+that it records a reason its answer is not read whole
+(`revision_merge.claims_unread_why_of`), the answer's own words never quoted; a revision with
 fewer claims that carried nothing is still stated ("The X analyst's round-N
-revision replaced N claim(s) with M."). The DISPUTES section opens at its label,
+revision replaced N claim(s) with M."). What a prose withdrawal does: a
+dispute item read as the author's withdrawal of a claim of its own answer in
+force ("My claim 4 is withdrawn", "My claim 2 (…). Withdrawn as stated", "I
+retract my earlier claim 2") has one effect: where a blocking line speaks to
+that claim itself and a block of the same revision restates it, that block
+replaces it without the address test. What it does not do: it never withdraws
+the claim. With no block restating it, the claim stays in force, carried, with
+the line's mark where a line named it, and the line rule never withdraws a
+claim the disputes refer to, however the item reads. Only a `WITHDRAW` line,
+or a block under the claim's number that declares the withdrawal, withdraws a
+claim. The item names the claim as its own ("my own earlier claim 17", "my
+claims 3 and 4", with a round only where that round is the answer in force's;
+"to" between two numbers is a range only when the second is not below the first
+and is no decimal, so "my claim 1 to 0.6" names claim 1) and either a
+first-person withdrawing verb ("withdraw", "retract", "reject") stands right
+before the reference, or the reference opens the item or a sentence, or closes
+a list of claims, and later, with no other claim named in between, such a verb
+takes a pronoun ("I reject this.") or the reference is said "withdrawn",
+"retracted", "rejected", "superseded" or "replaced" with nothing but words of
+the passive between them ("is", "has been", …; in "My claim 4 refined: the
+earlier path is superseded." the word is said of the path) and with the item's
+end, a mark that ends a sentence or a clause, "as", "and", or "by" with the
+author or a claim after it ("superseded by claim 7", "rejected by me"); a place
+or a part ("in L2", "in part"), a colon ("Rejected: …"), another agent ("by
+CloseHandle") or a noun ("Rejected readings") after it reads as nothing
+(`retry_merge.read_own_withdrawals`, the wordings declared there). The
+reference is read under the numbering of the answer in force, the numbering
+the analyst was shown; one that states another round names no claim of it.
+Where the reading is unsure it reads nothing: an item reads as nothing where a
+word that affirms the claim stands right after the reference with only a
+copula between ("my claim 4 is correct"; a reference right after one,
+"ev_0012 supports my claim 4", is no subject of a withdrawal; the same word
+said of something else blocks nothing); a negation governs the withdrawing
+word (within three words before it, in its clause, a comma, semicolon or colon
+ending its reach, outside brackets and quotations: "My claim 4 is not
+withdrawn"); a word of another's act has an agent other than the author after
+it ("rejected by the mediator"); a word of reported speech stands between the
+reference and a withdrawn word ("TRIAGE says it is superseded"; a reporting
+word whose subject is the reference itself, "my claim 16 says …", describes
+the claim and blocks nothing); a keeping or contrasting word ("I keep it",
+"but", "I disagree"; never a word of evidence or judgement such as "right" or
+"confirms") stands anywhere after the reference, except before the author's
+own verb on a pronoun in a later sentence; for that verb on a pronoun, another
+subject (a reporting word, a word of another's act, a line of the mediation
+such as "L2", a role such as "mediator" or "peer", or a participant's name)
+stands between the reference and the end of the verb's sentence ("My claim 4.
+L2 says it is unsupported. I reject this."), a keeping word stands between the
+reference and the verb ("My claim 4 stands. I reject it."), or a plural pronoun
+stands for one claim ("My claim 4. I reject them."); a conditional or a
+question mark stands in the sentences of the reference and the word, or, for
+that verb on a pronoun, in its own sentence; the reference or the word stands
+inside a quotation or a code span; or the reference is a possessive ("my
+claim 4's critics") or followed by a part of the claim ("my claim 3
+confidence"). A rejection of another analyst's claim reads as nothing, and
+every other item read is a doubt; a reference read so speaks for the claim and
+keeps its address test. A dispute line is counted as a withdrawal not read
+exactly as any other line is. The DISPUTES section opens at its label,
 case-sensitive, with its colon (`DISPUTES:`) or as a Markdown heading; a label
 that says there is none on its own line (`DISPUTES: NONE`, `N/A`, a dash)
 opens no section, and prose beginning "Disputes …" is prose. Claims under the
