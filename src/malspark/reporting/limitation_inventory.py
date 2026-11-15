@@ -52,6 +52,7 @@ from __future__ import annotations
 import logging
 from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass
+from decimal import Decimal
 from typing import Any
 
 from malspark.reporting.models import (
@@ -569,20 +570,28 @@ def _short_clauses(inv: LimitationInventory, name: Callable[[str], str]) -> list
 
 def _two_times(first: int | float, second: int | float) -> tuple[str, str]:
     """Two times as a clause prints them, never alike where they differ: each as stated, a
-    whole number whole, else to at most three decimals with trailing zeros dropped; both in
-    full where that would print two different numbers the same."""
-    said = (_time_said(first, 3), _time_said(second, 3))
-    if said[0] == said[1] and first != second:
-        return _time_said(first, None), _time_said(second, None)
-    return said
+    whole number whole, else to three decimals with trailing zeros dropped, and to as many
+    more as it takes where three would print two different numbers the same. Plain
+    decimals, never scientific notation; a time is at least a thousandth of a second
+    (``core.report_formats.seconds_stated``), so none prints as 0."""
+    for decimals in range(3, _FULL_DECIMALS):
+        said = (_time_said(first, decimals), _time_said(second, decimals))
+        if said[0] != said[1] or first == second:
+            return said
+    return _time_said(first, None), _time_said(second, None)
+
+
+# Past this many decimals two different times are printed as stated in full.
+_FULL_DECIMALS = 18
 
 
 def _time_said(value: int | float, decimals: int | None) -> str:
-    """``value`` whole where it is whole, else to ``decimals`` places (``None``: in full),
-    trailing zeros dropped."""
+    """``value`` whole where it is whole, else to ``decimals`` places (``None``: in full, as
+    the shortest text that reads back as the same number), trailing zeros dropped."""
     if float(value).is_integer():
         return _number(int(value))
-    text = f"{value:,}" if decimals is None else f"{value:,.{decimals}f}"
+    exact = Decimal(repr(value))
+    text = f"{exact:,f}" if decimals is None else f"{exact:,.{decimals}f}"
     return text.rstrip("0").rstrip(".") if "." in text else text
 
 

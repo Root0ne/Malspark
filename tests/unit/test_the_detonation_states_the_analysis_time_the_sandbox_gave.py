@@ -31,6 +31,7 @@ import pytest
 from malspark.analysis.run_environment import STATED_ENTRIES, detonations_record
 from malspark.core.report_formats import (
     MAX_STATED_SECONDS,
+    MIN_STATED_SECONDS,
     ReportFormat,
     format_named,
     seconds_stated,
@@ -102,7 +103,9 @@ def _sandbox_texts(report: MalwareReport, entries: list[Any] | None = None, **kw
 
 
 class TestWhatATimeIs:
-    @pytest.mark.parametrize("value", [1, 75, 0.5, 149.9, 150.0, MAX_STATED_SECONDS])
+    @pytest.mark.parametrize(
+        "value", [1, 75, 0.5, 149.9, 150.0, MIN_STATED_SECONDS, 0.0012345, MAX_STATED_SECONDS]
+    )
     def test_a_number_above_zero_within_the_bound_is_kept_as_stated(self, value: Any) -> None:
         kept = seconds_stated(value)
         assert kept == value and type(kept) is type(value)
@@ -115,6 +118,10 @@ class TestWhatATimeIs:
             -0.0,
             -1,
             -0.5,
+            1e-9,
+            0.0004,
+            0.0005,
+            0.000999,
             True,
             False,
             "150",
@@ -133,7 +140,8 @@ class TestWhatATimeIs:
     def test_anything_else_is_no_time_and_never_raises(self, value: Any) -> None:
         assert seconds_stated(value) is None
 
-    def test_the_bound_is_declared(self) -> None:
+    def test_the_bounds_are_declared(self) -> None:
+        assert MIN_STATED_SECONDS == 0.001
         assert MAX_STATED_SECONDS == 10**7
 
 
@@ -431,11 +439,25 @@ class TestTheLimitationsSayAShorterGrant:
             [_time_row("run_a", 300, NR), _time_row("run_b", NR, 75)],
             [_time_row("run_a", 300, 0), _time_row("run_b", 300, True), _time_row("run_c", 0, 0)],
             [_time_row("run_a", 300, math.inf), _time_row("run_b", math.nan, 75)],
+            # Below a thousandth of a second a number is no time.
+            [_time_row("run_a", 600, 1e-9), _time_row("run_b", 0.0005, 0.0004)],
         ):
             report = _report({"detonation": "d1", "analysis_time": rows})
             assert build_inventory(report, []).short_analyses == []
         report = _report({"detonation": "d1", "analysis_time": NR})
         assert build_inventory(report, []).short_analyses == []
+
+    @pytest.mark.parametrize(("asked", "granted"), [(600, 1e-9), (0.0005, 0.0004)])
+    def test_below_a_thousandth_of_a_second_no_time_and_no_clause(
+        self, asked: Any, granted: Any
+    ) -> None:
+        row = _row({"granted_seconds": {"run_a": granted}, "requested_seconds": asked})
+        kept = asked if seconds_stated(asked) is not None else NR
+        assert row["analysis_time"] == [_time_row("run_a", kept, NR)]
+        report = _report(
+            {"detonation": "d1", "analysis_time": [_time_row("run_a", asked, granted)]}
+        )
+        assert _sandbox_texts(report) == []
 
     @pytest.mark.parametrize(
         ("asked", "granted", "said"),
@@ -448,6 +470,14 @@ class TestTheLimitationsSayAShorterGrant:
             (600.0, 150.0, "was given 150 s, not the 600 s asked"),
             (1500, 120, "was given 120 s, not the 1,500 s asked"),
             (300.25, 75.5, "was given 75.5 s, not the 300.25 s asked"),
+            # Three decimals keep what two would lose.
+            (150, 149.125, "was given 149.125 s, not the 150 s asked"),
+            # Plain decimals, never a 0 and never scientific notation.
+            (0.002, 0.0012345, "was given 0.001 s, not the 0.002 s asked"),
+            (0.0012, 0.0011, "was given 0.0011 s, not the 0.0012 s asked"),
+            (150, 149.99961234, "was given 149.9996 s, not the 150 s asked"),
+            (10**7, 9999999.9999999, "was given 9,999,999.9999999 s, not the 10,000,000 s asked"),
+            (0.0010000001, 0.001, "was given 0.001 s, not the 0.0010000001 s asked"),
         ],
     )
     def test_a_time_is_compared_and_printed_as_stated_never_two_alike(

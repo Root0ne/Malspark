@@ -261,21 +261,23 @@ class ReportFormat(BaseModel):
         return ""
 
 
-# The longest analysis time, in seconds, a report or a provider is taken to
-# state: past it a number is no time (about 116 days).
+# The shortest and the longest analysis time, in seconds, a report or a provider
+# is taken to state: below one thousandth of a second or past about 116 days a
+# number is no time.
+MIN_STATED_SECONDS = 0.001
 MAX_STATED_SECONDS = 10**7
 
 
 def seconds_stated(value: Any) -> int | float | None:
     """``value`` where it is a time in seconds, as stated; else ``None``. Never raises.
 
-    A time is an int or a float above zero and at most
-    :data:`MAX_STATED_SECONDS` (so finite); a boolean, a text, any container,
-    zero and anything past the bound state no time.
+    A time is an int or a float of at least :data:`MIN_STATED_SECONDS` and at
+    most :data:`MAX_STATED_SECONDS` (so finite); a boolean, a text, any
+    container, zero and anything outside the bounds state no time.
     """
     if isinstance(value, bool) or not isinstance(value, int | float):
         return None
-    return value if 0 < value <= MAX_STATED_SECONDS else None
+    return value if MIN_STATED_SECONDS <= value <= MAX_STATED_SECONDS else None
 
 
 def _test(path: str, *types: ValueType, non_empty: bool = False, contains: str = "") -> FieldTest:
