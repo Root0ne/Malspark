@@ -55,7 +55,11 @@ for _path in (str(_ROOT / "src"), str(_ROOT)):
 
 from malspark.pipeline import revision_merge  # noqa: E402
 from malspark.pipeline.claim_drops import content_words, dropped_values  # noqa: E402
-from malspark.schemas.isr_models import AgentISR, ClaimEvidence  # noqa: E402
+from malspark.schemas.isr_models import (  # noqa: E402
+    ROUND_NOTE_PATTERN,
+    AgentISR,
+    ClaimEvidence,
+)
 
 _REQUEST = b"Request options: "
 _SECTION = re.compile(r"(?m)^--- (.+?) ANALYST ---\n")
@@ -71,10 +75,10 @@ _ENDS = (
 _BESIDES = "\nWritten in this answer besides its claims:\n"
 _TECHNIQUES = re.compile(r" \(((?:T\d{4}(?:\.\d{3})?(?: — [^,()]*)?(?:, )?)+)\)$")
 _MARKER = re.compile(
-    r" \((?:the claim cites only tool calls that failed"
+    r" (?:\((?:the claim cites only tool calls that failed"
     r"|added by a tool-less retry, round \d+"
-    r"|written in round \d+|unchanged since round \d+"
-    r"|carried forward[: ][^\n]*?)\)$"
+    r"|carried forward[: ][^\n]*?)\)"
+    rf"|{ROUND_NOTE_PATTERN})$"
 )
 _STANDING = re.compile(r"(?m)^- \(standing: [^)]*\) (.+)$")
 _MERGE_SAID = re.compile(
