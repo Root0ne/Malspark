@@ -5,8 +5,10 @@ description, a command line, the sample's own strings the sandbox re-serves —
 was made a sandbox row, so a listed domain published as though the sample had
 resolved it and a listed address read a flow reason with no flow behind it.
 Only a structured sandbox network record (a flow, a DNS query, an HTTP request,
-a capture conversation) makes a sandbox row; a text sighting gives the string
-standing and names the entry. A name only the capture's TLS list recorded says
+a capture conversation) makes a sandbox row. Text a sandbox answer holds keeps
+the analyst's standing, as the record it is (no tool printed it), and the
+reason names the entry; text a text-printing tool printed gives the string
+standing. A name only the capture's TLS list recorded says
 nothing about which process made the connection, and waits for the judge. A
 lookup's answer that repeats the value it was asked about is no sighting of it.
 Values are keyed one way on both sides, so an address written with brackets or
@@ -118,12 +120,12 @@ _TEXT_SIGHTINGS = {
 
 
 class TestATextSightingInASandboxAnswer:
-    def test_it_gives_string_standing_and_names_the_entry(self) -> None:
+    def test_it_keeps_the_analyst_s_standing_and_names_the_entry(self) -> None:
         for what, entry in _TEXT_SIGHTINGS.items():
             report = _build([entry], _listed(["domain", NAME], ["ip", ADDRESS]))
             assert report.network is not None
             for row in [*report.network.domains, *report.network.ips]:
-                assert row.source == "strings", what
+                assert row.source == "analyst", what
             tool = entry.tool
             for value in (NAME, ADDRESS):
                 answer = _row(report, value).published
