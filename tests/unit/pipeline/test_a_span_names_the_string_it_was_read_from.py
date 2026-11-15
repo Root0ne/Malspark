@@ -186,6 +186,16 @@ class TestASpanResolvesToTheSentencesItCovers:
 
         assert self._at(text, 4, 9) == ("body#0",)
 
+    def test_a_span_ending_where_the_next_sentence_begins_does_not_name_it(self) -> None:
+        text = "One here. Two here. Three here."
+
+        assert self._at(text, 4, 10) == ("body#0",)
+
+    def test_a_span_in_the_white_space_between_sentences_names_the_one_that_follows(self) -> None:
+        text = "One here. Two here. Three here."
+
+        assert self._at(text, 9, 10) == ("body#1",)
+
     def test_a_span_across_two_sentences_names_both(self) -> None:
         text = "One here. Two here. Three here."
 
@@ -260,3 +270,27 @@ def test_a_place_is_written_from_declared_names_positions_and_marks_only() -> No
     (found,) = technique_name_violations(payload)
 
     assert all(re.fullmatch(r"\?\.\d+|\?", place) for place in found.statements)
+
+
+class TestAPlacedAnswer:
+    def test_it_keeps_the_kind_of_each_container(self) -> None:
+        payload = placed({"a": ("x", "y"), "b": ["z"], "c": 3})
+
+        assert isinstance(payload["a"], tuple) and isinstance(payload["b"], list)
+        assert payload["c"] == 3
+        assert payload["a"][1].parts == ("a", 1)
+
+    def test_a_span_of_a_string_that_is_not_a_placed_one_has_no_place_and_costs_nothing(
+        self,
+    ) -> None:
+        violation = Violation(code="c", message="m", about=(("a plain string", 0, 5),))
+
+        assert locate_statements([violation]) == [violation]
+        assert locate_statements([violation])[0].statements == ()
+
+
+def test_a_sentence_s_span_is_moved_in_over_its_white_space() -> None:
+    from malspark.pipeline.validation import _stripped
+
+    assert _stripped("  ab  ", 0, 6) == (2, 4)
+    assert _stripped("ab", 0, 2) == (0, 2)
