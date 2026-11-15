@@ -543,13 +543,11 @@ class TestWhichFindingOpensNoTurnIsDeclared:
         assert OPENS_NO_TURN_OF_ITS_OWN == frozenset({CLAIM_DOES_NOT_DESCRIBE_CODE})
 
     def test_every_other_code_opens_its_turn(self, every_code: list[str]) -> None:
-        from malspark.pipeline.validation import OPENS_NO_TURN_OF_ITS_OWN
-
         assert CLAIM_DOES_NOT_DESCRIBE_CODE in every_code and len(every_code) > 50
         alone = [
             code
             for code in every_code
-            if code not in OPENS_NO_TURN_OF_ITS_OWN
+            if code != CLAIM_DOES_NOT_DESCRIBE_CODE
             and (
                 describe_stands_alone([_v(code)])
                 or describe_stands_alone([_v(CLAIM_DOES_NOT_DESCRIBE_CODE), _v(code)])
@@ -559,7 +557,7 @@ class TestWhichFindingOpensNoTurnIsDeclared:
         assert alone == [CHECK_FAILED_CODE]
 
     def test_a_declared_code_stands_alone_by_its_declaration(
-        self, monkeypatch: pytest.MonkeyPatch
+        self, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
     ) -> None:
         monkeypatch.setattr(
             "malspark.pipeline.validation.OPENS_NO_TURN_OF_ITS_OWN",
@@ -567,9 +565,14 @@ class TestWhichFindingOpensNoTurnIsDeclared:
         )
         analyst = _Analyst([])
 
-        _result, published = _check(analyst, ANOTHER_ONLY)
+        with caplog.at_level("INFO"):
+            _result, published = _check(analyst, ANOTHER_ONLY)
 
         assert analyst.seen_turns == []
+        # The log counts the declared code, not the describe code written in.
+        assert any(
+            "Validation: 1 describe finding(s) for" in r.getMessage() for r in caplog.records
+        )
         (found,) = _recorded(analyst, CLAIM_WITHOUT_CONFIDENCE_CODE)
         assert found.asked is False
         assert published == [("survived", CLAIM_WITHOUT_CONFIDENCE_CODE)]

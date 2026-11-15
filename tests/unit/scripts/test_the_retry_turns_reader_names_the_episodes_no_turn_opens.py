@@ -105,6 +105,26 @@ def test_a_built_run_names_the_episode_the_rule_does_not_open(tmp_path: Path, ca
     assert f" - analyst_a at seq 2: {DESCRIBE} x2; follow-ons isr.retry_dropped" in out
 
 
+def test_the_reader_follows_the_declaration_of_the_codes_that_open_no_turn(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from malspark.pipeline.validation import CLAIM_WITHOUT_CONFIDENCE_CODE
+
+    run = _run(tmp_path)
+    # analyst_b's episode joins the describe check to a finding with no path.
+    assert reader.read_run(run)["episodes"][1]["describe_beside_another"] is True
+
+    monkeypatch.setattr(
+        "malspark.pipeline.validation.OPENS_NO_TURN_OF_ITS_OWN",
+        frozenset({CLAIM_WITHOUT_CONFIDENCE_CODE}),
+    )
+
+    rows = reader.read_run(run)["episodes"]
+    # No code of the built run is the declared one: none is named beside another.
+    assert [r["describe_beside_another"] for r in rows] == [False, False, False]
+    assert [r["opens_a_turn"] for r in rows] == [True, True, True]
+
+
 def test_a_run_with_no_events_says_so(tmp_path: Path, capsys: Any) -> None:
     empty = tmp_path / "empty"
     empty.mkdir()

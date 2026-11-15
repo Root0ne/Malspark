@@ -164,7 +164,6 @@ from malspark.pipeline.validation import (
     DECOMPILED_NOT_DESCRIBED_CODE,
     DESCRIBE_NOT_ASKED,
     LIBRARY_ONLY_CLAIMS_CODE,
-    OPENS_NO_TURN_OF_ITS_OWN,
     RETRY_DROP_KEPT,
     RETRY_DROP_NOT_ANSWERED,
     RETRY_DROP_WITHDRAWN,
@@ -10718,7 +10717,9 @@ class BaseAnalyst(BudgetMeter, ABC):
             )
             # The rows are the validator's own, marked not asked; why is said in
             # the log beside them, never written into a row.
-            alone_count = sum(1 for v in recorded if v.code in OPENS_NO_TURN_OF_ITS_OWN)
+            from malspark.pipeline import validation
+
+            alone_count = sum(1 for v in recorded if v.code in validation.OPENS_NO_TURN_OF_ITS_OWN)
             self.logger.info(
                 "Validation: %d describe finding(s) for '%s' stood alone; %s.",
                 alone_count,
