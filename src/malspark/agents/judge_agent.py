@@ -709,17 +709,26 @@ _NONE_RE = re.compile(
 )
 # A phrase that opens with "none" but says more than the closed wording does.
 _NONE_OPENING_RE = re.compile(r"^[\s*_`(]*none\b", re.IGNORECASE)
-# A closing remark on a label line that says none stands, as data: it opens
-# with one of these words ("CONTRADICTIONS: nothing stands"), or with one of
-# the words of a whole and holds one of the words of an end ("CONTRADICTIONS:
-# all of the above were resolved"). Such a remark never adopts the block
+# A closing remark on a label line adopts the block above it only where it
+# points at that block with one of the pointing words ("CONTRADICTIONS: the
+# standing lines are listed above") and holds, anywhere, no word of an end
+# ("... is resolved"), no negating word ("do not", "no longer", "none") and no
+# zero ("zero remain", "0 open"). Any other remark never adopts the block
 # above it: a draft the mediator argued away stays argued away.
-REMARK_NONE_OPENERS = ("no", "nothing", "none", "neither")
-REMARK_WHOLE_OPENERS = ("all", "every", "each", "both")
-REMARK_ENDED_WORDS = ("resolved", "settled", "answered", "withdrawn", "addressed", "cleared")
-_REMARK_NONE_RE = re.compile(rf"^[\s*_`(]*(?:{'|'.join(REMARK_NONE_OPENERS)})\b", re.IGNORECASE)
-_REMARK_WHOLE_RE = re.compile(rf"^[\s*_`(]*(?:{'|'.join(REMARK_WHOLE_OPENERS)})\b", re.IGNORECASE)
-_REMARK_ENDED_RE = re.compile(rf"\b(?:{'|'.join(REMARK_ENDED_WORDS)})\b", re.IGNORECASE)
+REMARK_POINTING_WORDS = ("above", "listed", "preceding", "foregoing")
+REMARK_ENDED_WORDS = (
+    "resolved", "settled", "answered", "withdrawn", "withdrew", "addressed", "cleared", "closed",
+    "dropped", "superseded", "moot",
+)  # fmt: skip
+REMARK_NEGATING_WORDS = ("no", "not", "nothing", "none", "neither", "nor", "never", "cannot")
+REMARK_NEGATING_ENDINGS = ("n't", "n’t")
+REMARK_ZERO_WORDS = ("zero", "0")
+_REMARK_POINTS_RE = re.compile(rf"\b(?:{'|'.join(REMARK_POINTING_WORDS)})\b", re.IGNORECASE)
+_REMARK_ENDS_RE = re.compile(
+    rf"\b(?:{'|'.join((*REMARK_ENDED_WORDS, *REMARK_NEGATING_WORDS, *REMARK_ZERO_WORDS))})\b"
+    rf"|(?:{'|'.join(map(re.escape, REMARK_NEGATING_ENDINGS))})",
+    re.IGNORECASE,
+)
 # What a closing remark never writes: a claim reference or a ledger id. A
 # label line that does is a block of its own, with or without a field.
 _REMARK_NAMES_RE = re.compile(r"\bclaims?\s*+#?\s*+\d|\bev_\d", re.IGNORECASE)
@@ -783,11 +792,13 @@ def read_contradictions_block(text: str) -> ContradictionsBlock:
     all of these hold: nothing but blank lines stands between that block's
     last line and the remark's label; a line of that block holds the fields;
     the remark holds no field of the block's lines, no claim reference and no
-    ledger id; and it does not open with a wording of "none"
-    (:data:`REMARK_NONE_OPENERS`, or :data:`REMARK_WHOLE_OPENERS` with a word
-    of :data:`REMARK_ENDED_WORDS`). Otherwise the last block is read as
-    written. A block ends at the next label. The label is matched in capitals, as the prompt spells
-    it, so a prose heading such as "Contradictions:" in the reasoning is not
+    ledger id; it points at the block with a word of
+    :data:`REMARK_POINTING_WORDS`; and it holds, anywhere, no word of
+    :data:`REMARK_ENDED_WORDS`, :data:`REMARK_NEGATING_WORDS` (or one ending
+    in :data:`REMARK_NEGATING_ENDINGS`) or :data:`REMARK_ZERO_WORDS`.
+    Otherwise the last block is read as written. A block ends at the next
+    label. The label is matched in capitals, as the prompt spells it, so a
+    prose heading such as "Contradictions:" in the reasoning is not
     taken for it. The block runs to the agreement line, the end of the answer,
     or a blank line followed by a line that is neither a list line nor one
     holding a field every line is asked for (opening with ``[analysts: ...]``
@@ -836,13 +847,16 @@ def _closing_remark(item: str) -> bool:
     """Whether a label line's one line can be a closing remark on the block above it.
 
     It holds no field of the block's lines (``debate_facts.carries_line_field``),
-    no claim reference and no ledger id, and opens with no wording of "none".
+    no claim reference and no ledger id, points at the block above
+    (:data:`REMARK_POINTING_WORDS`) and holds no word of an end, no negation
+    and no zero anywhere (:data:`REMARK_ENDED_WORDS`,
+    :data:`REMARK_NEGATING_WORDS`, :data:`REMARK_ZERO_WORDS`).
     """
-    return not (
-        carries_line_field(item)
-        or _REMARK_NAMES_RE.search(item)
-        or _REMARK_NONE_RE.match(item)
-        or (_REMARK_WHOLE_RE.match(item) and _REMARK_ENDED_RE.search(item))
+    return (
+        not carries_line_field(item)
+        and not _REMARK_NAMES_RE.search(item)
+        and bool(_REMARK_POINTS_RE.search(item))
+        and not _REMARK_ENDS_RE.search(item)
     )
 
 

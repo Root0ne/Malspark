@@ -3,7 +3,9 @@
 The mediator's final block is the one read: a block drafted above it and then
 argued away is not its word. A last label whose one line is a remark written
 on the label line itself, holding no field of the block's lines, is no block
-of its own: the block above it is read when a line of it holds the fields.
+of its own when it points at the block above with a pointing word ("listed
+above") and holds no word of an end, no negation and no zero anywhere: the
+block above it is read when a line of it holds the fields.
 
 Every name and sentence here is made up for the test.
 """
@@ -20,10 +22,7 @@ LINES = [
     "[analysts: DYNAMIC ANALYST] Claims 23 and 37 hold the launches the sandbox's own; claim 43 "
     "leaves their origin open. [blocking: the analyst contradicts itself]",
 ]
-REMARK = (
-    "CONTRADICTIONS: standing blocking lines are listed above; the other differences do not "
-    "hold up agreement."
-)
+REMARK = "CONTRADICTIONS: standing blocking lines are listed above."
 
 
 def _answer(*parts: str) -> str:
@@ -107,3 +106,33 @@ class TestAFinalOneLineBlockThatNamesAClaimOrAnEntryIsTheBlock:
             answer = _answer("CONTRADICTIONS:", *LINES, "", f"CONTRADICTIONS: {line}")
 
             assert read_contradictions_block(answer).items == [line], line
+
+
+class TestARemarkAdoptsTheBlockOnlyWhereItPointsAtItAndEndsNothing:
+    # Each remark ends the block, negates, counts zero or points nowhere.
+    def test_none_of_these_adopts_the_block(self) -> None:
+        for remark in (
+            "the line above is resolved by the revision.",
+            "The above no longer stand after the revisions.",
+            "resolved, see the revisions.",
+            "after review, zero remain.",
+            "0 open.",
+            "STATIC withdrew it, so the line is settled.",
+            "standing blocking lines are listed above; the other differences do not hold up "
+            "agreement.",
+            "the standing lines are the ones the reasoning gives",
+        ):
+            answer = _answer("CONTRADICTIONS:", *LINES, "", f"CONTRADICTIONS: {remark}")
+
+            assert read_contradictions_block(answer).items == [remark], remark
+
+    def test_each_pointing_word_adopts_it(self) -> None:
+        for remark in (
+            "see above.",
+            "the standing lines are listed above",
+            "as in the preceding block",
+            "the foregoing lines stand",
+        ):
+            answer = _answer("CONTRADICTIONS:", *LINES, "", f"CONTRADICTIONS: {remark}")
+
+            assert read_contradictions_block(answer).items == LINES, remark
