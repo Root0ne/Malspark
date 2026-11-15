@@ -273,6 +273,32 @@ class TestTheOneTurn:
         assert len(llm.seen) == 1
         assert kept == _READ_IN_PART
 
+    def test_a_number_written_only_under_the_reply_s_disputes_is_not_among_its_claims(
+        self,
+    ) -> None:
+        reply = _READ_WHOLE.replace("CLAIM 2 (revised). ", "CLAIM 4 (revised). ") + (
+            "\nDISPUTES:\n- CLAIM 2: the static analyst's reading of the download.\n"
+        )
+        llm, _analyst, kept = self._settle(_READ_IN_PART, [reply])
+
+        assert len(llm.seen) == 1
+        assert kept == _READ_IN_PART
+
+    def test_a_reply_beginning_fewer_claims_leaves_the_report_standing(self) -> None:
+        # Two claims with no number read, a third begun; the reply writes the
+        # third alone.
+        report = (
+            "CLAIM: Routine 0x1400 decodes the string table.\n"
+            "EVIDENCE: [ev_0001]\nCONFIDENCE: 0.9\n\n"
+            "CLAIM: Routine 0x1800 downloads a file.\nEVIDENCE: [ev_0002]\nCONFIDENCE: 0.85\n\n"
+            "CLAIM 3. Routine 0x2000 opens a mutex.\nEVIDENCE: [ev_0003]\nCONFIDENCE: 0.8\n"
+        )
+        reply = "CLAIM 3: Routine 0x2000 opens a mutex.\nEVIDENCE: [ev_0003]\nCONFIDENCE: 0.8\n"
+        llm, _analyst, kept = self._settle(report, [reply])
+
+        assert len(llm.seen) == 1
+        assert kept == report
+
     def test_a_reply_that_keeps_every_number_and_the_disputes_replaces_the_report(self) -> None:
         llm, _analyst, kept = self._settle(_READ_IN_PART_DISPUTING, [_READ_WHOLE_DISPUTING])
 

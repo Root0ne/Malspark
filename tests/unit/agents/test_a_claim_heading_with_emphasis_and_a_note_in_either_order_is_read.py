@@ -33,6 +33,7 @@ import pytest
 from malspark.agents import claim_headings
 from malspark.agents.base_agent import answer_is_isr, claims_unread_sentence, read_claim_blocks
 from malspark.agents.claim_headings import (
+    BEGUN_HEAD_RE,
     CLAIM_HEAD_RE,
     LINE_PREFIX,
     besides_claims,
@@ -245,6 +246,12 @@ class TestALineBegunAsAHeadingAndNotRead:
         assert count_claims_begun(text) == read.begun == 2
         assert count_claims_begun_unread(text) == 1
         assert read.unread == 1
+
+    def test_a_dot_followed_by_a_digit_ends_no_heading(self) -> None:
+        text = "CLAIM 3.5 of the specification applies.\nCONFIDENCE: 0.5\n"
+
+        assert BEGUN_HEAD_RE.match(text) is None
+        assert count_claims_begun(text) == count_claims_begun_unread(text) == 0
 
     def test_a_rule_line_closes_a_read_heading_that_wrote_no_field(self) -> None:
         text = (
