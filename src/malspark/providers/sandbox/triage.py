@@ -667,6 +667,9 @@ class TriageSandboxProvider(SandboxProvider):
         self._sleep = time.sleep
         self._now = time.monotonic
         self._now_utc = lambda: datetime.now(UTC)
+        # The sample ids this provider's own posts were answered with: only
+        # such a submission carried the analysis time this provider asks.
+        self._posted: set[str] = set()
 
     @classmethod
     def from_settings(cls, cfg: Settings) -> TriageSandboxProvider:
@@ -952,6 +955,7 @@ class TriageSandboxProvider(SandboxProvider):
         sample_id = data.get("id")
         if not sample_id:
             raise ProviderError("Unexpected Triage submit response: no sample id returned.")
+        self._posted.add(str(sample_id))
         return str(sample_id)
 
     def wait_for_completion(
@@ -1155,13 +1159,17 @@ class TriageSandboxProvider(SandboxProvider):
 
         Triage ran the sample. The analysis time asked is the one the
         submission carried (``defaults.timeout``, from
-        ``sandbox.triage.analysis_seconds``); none is stated where it carried
-        none and Triage's own default applied.
+        ``sandbox.triage.analysis_seconds``), stated only for a sample this
+        provider posted itself; none is stated where the submission carried
+        none and Triage's own default applied, nor for a sample the account
+        already held (a dropped answer reconciled, or a report fetched by id),
+        whose submission another call made.
         """
         from malspark.providers.detonation import report_facts
 
         facts = report_facts(run, detonated=True)
-        if self._cfg.analysis_seconds is not None:
+        posted = str(getattr(run, "task_id", "")) in self._posted
+        if posted and self._cfg.analysis_seconds is not None:
             facts["requested_seconds"] = int(self._cfg.analysis_seconds)
         return facts
 

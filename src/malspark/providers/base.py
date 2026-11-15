@@ -977,11 +977,11 @@ class SandboxProvider(ServerOfItsOwn, ABC):
           belongs to the whole sample is not this detonation's;
         * ``report_parts``: each raw report part as it was read, its name and
           the SHA-256 and byte length of its bytes (``SandboxRun.report_parts``);
-        * ``analysis_seconds``: how long the sandbox ran the analysis, in whole
-          seconds, as its report states it, one number or one per task by the
-          task's name;
+        * ``granted_seconds``: the analysis time the sandbox granted, in
+          seconds, as its report states it (not how long the analysis
+          happened to run), one number or one per task by the task's name;
         * ``requested_seconds``: the analysis time the submission asked, in
-          whole seconds, where the provider sent one.
+          seconds, where the provider itself posted that submission with one.
 
         A key outside these is not recorded. ``None``, the default, states
         nothing: every fact is recorded as not reported, never guessed.

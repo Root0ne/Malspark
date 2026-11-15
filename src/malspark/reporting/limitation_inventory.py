@@ -26,9 +26,9 @@ before the report's prose is written, and stored on the report
 * **Sandbox**: whether a sandbox recorded the sample, and the sections of the
   sandbox report's index (the entry of the declared kind ``sandbox_sections``):
   each one's item count, or whether the report lists it as unavailable from its
-  sandbox or does not carry it; and each sandbox task the sandbox ran for less
-  time than its submission asked, as the run's detonation record states both
-  times (``run_summary.environment.detonations``, ``analysis_time``).
+  sandbox or does not carry it; and each sandbox task the sandbox granted less
+  analysis time than its submission asked, as the run's detonation record
+  states both times (``run_summary.environment.detonations``, ``analysis_time``).
 * **Capture**: the window and packet count of the capture an entry of the
   declared kind ``pcap`` read.
 * **Open questions**: each one filed, with the listings of the routines it
@@ -266,30 +266,42 @@ def _sandbox_index(entries: Sequence[Any]) -> dict[str, Any]:
 
 
 def _short_analyses(report: MalwareReport) -> list[InventoryShortAnalysis]:
-    """Each sandbox task the detonation record states ran for less time than was asked;
-    none where a time is not stated, and none for a record stored before it stated them."""
+    """Each sandbox task the detonation record states was granted less time than was asked;
+    none where a time is not stated (``core.report_formats.seconds_stated``), where the row
+    names no detonation or the task no name, and none for a record stored before it stated
+    them."""
+    from malspark.core.report_formats import seconds_stated
+
     summary = getattr(report, "run_summary", None) or {}
     environment = summary.get("environment") if isinstance(summary, Mapping) else None
     rows = environment.get("detonations") if isinstance(environment, Mapping) else None
     out: list[InventoryShortAnalysis] = []
     for row in rows if isinstance(rows, list) else ():
         times = row.get("analysis_time") if isinstance(row, Mapping) else None
-        for task in times if isinstance(times, list) else ():
-            if not isinstance(task, Mapping):
+        detonation = _stated_name(row.get("detonation")) if isinstance(row, Mapping) else ""
+        for task in times if isinstance(times, list) and detonation else ():
+            if not isinstance(task, Mapping) or not _stated_name(task.get("task")):
                 continue
-            asked = _count(task.get("requested_seconds"))
-            given = _count(task.get("effective_seconds"))
+            asked = seconds_stated(task.get("requested_seconds"))
+            given = seconds_stated(task.get("granted_seconds"))
             if asked is None or given is None or given >= asked:
                 continue
             out.append(
                 InventoryShortAnalysis(
-                    detonation=str(row.get("detonation") or ""),
-                    task=str(task.get("task") or ""),
+                    detonation=detonation,
+                    task=_stated_name(task.get("task")),
                     requested_seconds=asked,
-                    effective_seconds=given,
+                    granted_seconds=given,
                 )
             )
     return out
+
+
+def _stated_name(value: Any) -> str:
+    """A name a stored record states: a text that is neither empty nor ``"not reported"``."""
+    from malspark.tools.capabilities import NOT_REPORTED
+
+    return value if isinstance(value, str) and value and value != NOT_REPORTED else ""
 
 
 def _count(value: Any) -> int | None:
@@ -531,17 +543,34 @@ def _sandbox_rows(inv: LimitationInventory, name: Callable[[str], str]) -> list[
 
 
 def _short_clauses(inv: LimitationInventory, name: Callable[[str], str]) -> list[str]:
-    """The sandbox tasks given less time than asked, folded per detonation and pair of times:
-    ``d1's tasks a and b ran for 150 s, not the 600 s asked``."""
-    folded: dict[tuple[str, int, int], dict[str, None]] = {}
+    """The sandbox tasks granted less time than asked, folded per detonation and pair of
+    times, at most ``STATED_ENTRIES`` named in each:
+    ``d1's tasks a and b were given 150 s, not the 600 s asked``."""
+    from malspark.analysis.run_environment import STATED_ENTRIES
+
+    folded: dict[tuple[str, int | float, int | float], dict[str, None]] = {}
     for short in inv.short_analyses:
-        key = (short.detonation, short.effective_seconds, short.requested_seconds)
+        key = (short.detonation, short.granted_seconds, short.requested_seconds)
         folded.setdefault(key, {})[name(short.task)] = None
-    return [
-        f"{name(detonation)}'s {_plural(len(tasks), 'task', 'tasks')} {_joined(list(tasks))} "
-        f"ran for {_number(given)} s, not the {_number(asked)} s asked"
-        for (detonation, given, asked), tasks in folded.items()
-    ]
+    out: list[str] = []
+    for (detonation, given, asked), named in folded.items():
+        tasks = list(named)
+        listed = tasks[:STATED_ENTRIES]
+        if len(tasks) > len(listed):
+            listed.append(f"{_number(len(tasks) - len(listed))} more")
+        out.append(
+            f"{name(detonation)}'s {_plural(len(tasks), 'task', 'tasks')} {_joined(listed)} "
+            f"{_plural(len(tasks), 'was', 'were')} given {_seconds(given, asked)} s, "
+            f"not the {_seconds(asked, given)} s asked"
+        )
+    return out
+
+
+def _seconds(value: int | float, beside: int | float) -> str:
+    """``value`` in whole seconds where it and ``beside`` are whole, else to one decimal."""
+    if float(value).is_integer() and float(beside).is_integer():
+        return _number(int(value))
+    return f"{value:,.1f}"
 
 
 def _capture_row(inv: LimitationInventory) -> list[InventoryRow]:

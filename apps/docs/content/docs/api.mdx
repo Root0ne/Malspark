@@ -434,18 +434,23 @@ a run in mock mode). Each row gives:
   says how many more were left out.
 
 `analysis_time` gives, per sandbox task, `requested_seconds`, the analysis time
-the submission asked, and `effective_seconds`, the time the sandbox's own
-report states it gave the task, whatever was asked. A Triage overview states
-it per behavioural task (the task's `timeout`, keyed by the task's name); a
-CAPE or Cuckoo report states one time, `info.duration`, kept under the task id
-its submission answered; an operator's declared format states it where its
-`analysis_seconds_paths` place it. The time asked is the one the provider
-sent, Triage's `defaults.timeout` from `sandbox.triage.analysis_seconds`; a
-provider that sends none states none. A time nobody stated reads
-`not reported`, and `analysis_time` is `not reported` where neither is. Where
-the sandbox gave a task less time than was asked, the run's limitations name
-the detonation, the task and both times. A summary stored without
-`analysis_time` reads as before.
+the submission asked, and `granted_seconds`, the time the sandbox's own report
+states it granted the task, whatever was asked. A Triage overview states it per
+behavioural task (the task's `timeout`, keyed by the task's name), and every
+behavioural task it names is listed; an operator's declared format states it
+where its `granted_seconds_paths` place it, kept under the task id its
+submission answered. A CAPE or Cuckoo report states no time granted (its
+`info.duration` is how long the analysis ran, not the time it was granted).
+The time asked is the one the provider sent with a submission it posted
+itself, Triage's `defaults.timeout` from `sandbox.triage.analysis_seconds`; a
+provider that sends none states none, and neither does a sample the account
+already held. A time is a number above zero and at most 10,000,000, kept as
+stated; anything else, zero included, reads `not reported`, as does a time
+nobody stated, and `analysis_time` is `not reported` where no task is named and
+neither time is stated. A row lists at most 32 tasks. Where the sandbox granted
+a task less time than was asked, the run's limitations name the detonation, the
+task and both times, in whole seconds where both are whole and to one decimal
+otherwise. A summary stored without `analysis_time` reads as before.
 
 A detonation that read no report has no parts, an empty `report_parts`, and
 every fact its provider would have stated reads `not reported`. One whose

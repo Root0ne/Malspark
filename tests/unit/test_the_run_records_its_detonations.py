@@ -841,7 +841,6 @@ class TestEachBuiltInStatesItsRun:
             "sandbox_commit": CAPE_COMMIT,
             "started": "2026-08-13 13:06:05",
             "ended": "2026-08-13 13:09:06",
-            "analysis_seconds": 181,
             "detonated": True,
             "report_parts": [{"name": "report", "sha256": _sha(body), "bytes": len(body)}],
         }
@@ -865,6 +864,8 @@ class TestEachBuiltInStatesItsRun:
             # ``backend`` are no guest fact, and the sample's completion is not
             # this detonation's end.
             "guest": {"behavioral1": {"platform": "windows"}},
+            # The overview row states no time granted, and the task is named.
+            "granted_seconds": {"behavioral1": NR},
             "detonated": True,
             "report_parts": [
                 {"name": "overview", "sha256": _sha(overview), "bytes": len(overview)},
@@ -1196,8 +1197,8 @@ class TestThroughTheRun:
                 "sandbox_commit": CAPE_COMMIT,
                 "started": "2026-08-13 13:06:05",
                 "ended": "2026-08-13 13:09:06",
-                # The fixture's own duration; the mock asks for no time.
-                "analysis_time": [{"task": "1", "requested_seconds": NR, "effective_seconds": 181}],
+                # The report states no time granted, and the mock asks for none.
+                "analysis_time": NR,
                 "report_parts": [{"name": "s.json", "sha256": _sha(body), "bytes": len(body)}],
             }
         ]

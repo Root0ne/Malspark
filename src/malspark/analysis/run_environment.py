@@ -50,7 +50,7 @@ should happen:
   the guest, the sandbox's version and commit, start and end, whether the
   sample was run, the SHA-256 and length of each raw report part as it
   was read, and per task the analysis time asked and the time the sandbox's
-  report states it gave (``analysis_time``). An empty
+  report states it granted (``analysis_time``). An empty
   list is a job that made no sandbox submission and read no sandbox report.
 
 Written when the judge builds the summary and again once the run's last
@@ -855,24 +855,25 @@ def _launch(row: dict[str, Any], record: Any) -> None:
 
 
 def _analysis_time(stated: Mapping[str, Any], task: Any) -> list[dict[str, Any]] | str:
-    """Per task, the analysis time asked and the time the report states the sandbox gave.
+    """Per task, the analysis time asked and the time the report states the sandbox granted.
 
     A report's one time is the task's the submission answered (``task``); a
-    time per task is kept under each task's name. The time asked is the
-    submission's, the same for every task. A task whose report states no time
-    has it ``"not reported"``; ``"not reported"`` alone where neither is stated.
+    time per task is kept under each task's name, every task named stated, at
+    most ``STATED_ENTRIES``. The time asked is the submission's, the same for
+    every task. A time is kept as stated (``core.report_formats.seconds_stated``);
+    a value that is none reads ``"not reported"``, and ``"not reported"`` stands
+    alone where no task is named and neither time is stated.
     """
     from malspark.core.report_formats import seconds_stated
 
     asked = seconds_stated(stated.get("requested_seconds"))
-    given = stated.get("analysis_seconds")
-    per_task: dict[str, int | None] = {}
+    given = stated.get("granted_seconds")
+    per_task: dict[str, int | float | None] = {}
     if isinstance(given, Mapping):
         for name, value in list(given.items())[:STATED_ENTRIES]:
-            seconds = seconds_stated(value)
             said = _said(name, name=True)
-            if said and seconds is not None:
-                per_task[said] = seconds
+            if said:
+                per_task[said] = seconds_stated(value)
     elif seconds_stated(given) is not None:
         per_task[task] = seconds_stated(given)
     if not per_task:
@@ -883,7 +884,7 @@ def _analysis_time(stated: Mapping[str, Any], task: Any) -> list[dict[str, Any]]
         {
             "task": name,
             "requested_seconds": NOT_REPORTED if asked is None else asked,
-            "effective_seconds": NOT_REPORTED if seconds is None else seconds,
+            "granted_seconds": NOT_REPORTED if seconds is None else seconds,
         }
         for name, seconds in per_task.items()
     ]
@@ -966,8 +967,8 @@ def detonations_record(container: Any) -> list[dict[str, Any]] | None:
       ``started``, ``ended`` (each one text, in the sandbox's own clock),
       ``report_parts`` (each part's name, SHA-256 and byte length as read) and
       ``analysis_time`` (per task, ``requested_seconds``, the analysis time the
-      submission asked, and ``effective_seconds``, the time the report states
-      the sandbox gave; :func:`_analysis_time`).
+      submission asked, and ``granted_seconds``, the time the report states
+      the sandbox granted; :func:`_analysis_time`).
 
     A fact the provider did not state is ``"not reported"``, never a guess
     and never a value taken from another fact. A detonation that read no
