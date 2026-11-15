@@ -421,3 +421,78 @@ class TestAValueEndingInADot:
         assert rows
         for row in rows:
             assert not publishes(str(row.published)), row.value
+
+
+def _described_entry(entry_id: str = "ev_0007") -> LedgerEntry:
+    """The indicator answer, its signature's description naming both values too."""
+    entry = _indicator_entry(entry_id)
+    assert isinstance(entry.structured, dict)
+    entry.structured["signatures"][0]["description"] = f"Contacts {NAME} at {ADDRESS}"
+    return entry
+
+
+def _failed(entry: LedgerEntry) -> LedgerEntry:
+    return LedgerEntry(**{**entry.model_dump(), "ok": False, "error": "the call failed"})
+
+
+class TestEachEntryIsReadForItself:
+    """Two entries never share a text: each is read for itself, whatever id they share.
+
+    An agent run without a container numbers its own entries, so two entries
+    may carry one id. A failed entry is no sighting and is never read.
+    """
+
+    @pytest.mark.parametrize("failed_first", [False, True], ids=["ok first", "failed first"])
+    def test_a_failed_entry_of_the_id_does_not_hide_the_ok_one_s_text(
+        self, failed_first: bool
+    ) -> None:
+        ledger = [_described_entry(), _failed(_indicator_entry())]
+        report = _build(ledger[::-1] if failed_first else ledger)
+
+        assert _sources(report) == {NAME: "strings", ADDRESS: "strings"}
+        for value in (NAME, ADDRESS):
+            assert not publishes(_published(report, value)), value
+
+    @pytest.mark.parametrize("failed_first", [False, True], ids=["ok first", "failed first"])
+    def test_a_failed_entry_s_text_is_no_sighting(self, failed_first: bool) -> None:
+        ledger = [_indicator_entry(), _failed(_described_entry())]
+        report = _build(ledger[::-1] if failed_first else ledger)
+
+        assert _sources(report) == {NAME: "analyst", ADDRESS: "analyst"}
+        for value in (NAME, ADDRESS):
+            assert publishes(_published(report, value)), value
+
+    @pytest.mark.parametrize("described_first", [False, True], ids=["record first", "text first"])
+    def test_two_answers_of_one_id_one_holding_it_as_text_is_a_string_sighting(
+        self, described_first: bool
+    ) -> None:
+        ledger = [_indicator_entry(), _described_entry()]
+        report = _build(ledger[::-1] if described_first else ledger)
+
+        assert _sources(report) == {NAME: "strings", ADDRESS: "strings"}
+        for value in (NAME, ADDRESS):
+            assert not publishes(_published(report, value)), value
+
+    @pytest.mark.parametrize("strings_first", [False, True], ids=["record first", "strings first"])
+    def test_another_tool_s_answer_of_the_id_holding_it_is_a_string_sighting(
+        self, strings_first: bool
+    ) -> None:
+        strings = _entry("ev_0007", "strings", {"strings": [{"offset": "0x40", "string": NAME}]})
+        ledger = [_indicator_entry(), strings]
+        report = _build(ledger[::-1] if strings_first else ledger)
+
+        assert _sources(report) == {NAME: "strings", ADDRESS: "analyst"}
+        assert not publishes(_published(report, NAME))
+        assert publishes(_published(report, ADDRESS))
+
+    def test_two_answers_of_one_id_holding_it_only_in_records_keep_its_standing(self) -> None:
+        report = _build([_indicator_entry(), _indicator_entry()])
+
+        assert _sources(report) == {NAME: "analyst", ADDRESS: "analyst"}
+
+    def test_a_second_record_answer_holding_it_as_text_too_is_read_for_itself(self) -> None:
+        report = _build([_indicator_entry("ev_0007"), _described_entry("ev_0008")])
+
+        assert _sources(report) == {NAME: "strings", ADDRESS: "strings"}
+        for value in (NAME, ADDRESS):
+            assert not publishes(_published(report, value)), value
