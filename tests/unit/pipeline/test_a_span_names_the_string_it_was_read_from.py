@@ -9,12 +9,14 @@ texts. A field name is written only where the schema declares it at that place.
 
 from __future__ import annotations
 
+import json
 import re
 from typing import Any
 
 from pydantic import BaseModel
 
 from malspark.pipeline.validation import (
+    _LOCATOR_DEPTH,
     EntryTexts,
     Violation,
     answer_of,
@@ -24,11 +26,12 @@ from malspark.pipeline.validation import (
     placed,
     stated_value_violations,
     technique_name_violations,
+    unpublished_value_violations,
     wrong_entry_citations,
 )
 from malspark.schemas.evidence import LedgerEntry
 from tests.linear_cost import assert_scales
-from tests.unit.pipeline.test_a_finding_names_its_statement import MARKER, _Body, _texts
+from tests.unit.pipeline.test_a_finding_names_its_statement import MARKER, _Body, _entry, _texts
 
 
 class _Row(BaseModel):
@@ -210,8 +213,25 @@ class TestACodeSpanIsMaskedAtItsOwnWidth:
 
         assert found.statements == ("body#30",)
 
+    def test_a_repeated_citation_after_a_code_span_names_every_sentence_it_spans(self) -> None:
+        body = "`" + "a" * 30 + "` One [Qx. Yq] two. Three [Qx. Yq] four."
+
+        (found,) = citation_violations({"body": body}, ["ev_0011"], prose=("body",))
+
+        assert found.statements == ("body#0", "body#1", "body#2", "body#3")
+
 
 class TestAFieldNameIsWrittenWhereTheSchemaDeclaresIt:
+    def test_a_declared_name_under_an_undeclared_key_is_a_question_mark(self) -> None:
+        from malspark.reporting.narrative_agent import NarrativeOutput
+
+        payload = {"evil": {"key_findings": [{"text": "It pads, T1027 (Binary Padding)."}]}}
+
+        with answer_of(NarrativeOutput):
+            (found,) = technique_name_violations(payload)
+
+        assert found.statements == ("?.?.0.?",)
+
     def test_a_top_level_field_nested_where_it_is_not_declared_is_a_question_mark(self) -> None:
         payload = {"key_findings": [{"executive_summary": "Bad [Foo]."}]}
 
@@ -236,6 +256,76 @@ class TestAFieldNameIsWrittenWhereTheSchemaDeclaresIt:
             (found,) = technique_name_violations(payload)
 
         assert found.statements == ("key_findings.0.?",)
+
+    def test_the_fields_a_check_names_are_written_with_no_schema(self) -> None:
+        payload = {
+            "body": "Intro. It contacts evil.example.net now.",
+            "steps": [{"action": "Then it contacts evil.example.net."}],
+        }
+
+        (found,) = unpublished_value_violations(payload, lambda _kind, _value: "")
+
+        assert found.statements == ("body#1", "steps.0.action")
+
+
+class TestTheDepthOfAPlace:
+    """A string is placed down to a declared depth, the answer itself counted.
+
+    The wrong-entry check reads a row's verbatim list in a prose field deeper than
+    that depth: a finding there is the check's own and carries no place.
+    """
+
+    OTHER = "zzzq-other-9"
+
+    def _entries(self) -> EntryTexts:
+        return EntryTexts.from_ledger(
+            [
+                _entry("ev_0011", "get_file_report", json.dumps({"engines": 70})),
+                _entry("ev_0012", "floss", json.dumps({"strings": [{"string": MARKER}]})),
+                _entry("ev_0013", "floss", json.dumps({"strings": [{"string": self.OTHER}]})),
+            ]
+        )
+
+    def _answer(self, levels: int) -> dict[str, Any]:
+        """A row citing the wrong entry for ``MARKER``, ``levels`` dicts into ``body``, then a row.
+
+        ``MARKER`` stands ``levels + 3`` containers deep: ``body``, the dicts, the
+        row and its list.
+        """
+        node: Any = {"endpoints": [MARKER], "evidence_refs": ["ev_0011"]}
+        for _ in range(levels):
+            node = {"x": node}
+        return {"body": node, "last": {"value": self.OTHER, "evidence_refs": ["ev_0011"]}}
+
+    def test_a_string_four_dicts_deep_keeps_its_place(self) -> None:
+        payload = {"a": {"b": {"c": {"d": "It pads, T1027 (Binary Padding)."}}}}
+
+        (found,) = technique_name_violations(payload)
+
+        assert found.statements == ("?.?.?.?",)
+
+    def test_a_string_at_the_declared_depth_keeps_its_place(self) -> None:
+        payload = self._answer(_LOCATOR_DEPTH - 3)
+
+        found = wrong_entry_citations(payload, self._entries(), prose=("body",))
+
+        assert [v.statements for v in found] == [
+            ("?.?",),
+            ("body." + "?." * (_LOCATOR_DEPTH - 2) + "0",),
+        ]
+
+    def test_a_finding_below_the_depth_is_the_check_s_own_and_carries_no_place(self) -> None:
+        payload = self._answer(_LOCATOR_DEPTH - 2)
+        check = wrong_entry_citations.__wrapped__  # type: ignore[attr-defined]
+        expected = check(payload, self._entries(), prose=("body",))
+
+        found = wrong_entry_citations(payload, self._entries(), prose=("body",))
+
+        assert len(found) == 2
+        assert [(v.code, v.message, v.path, v.quoted) for v in found] == [
+            (v.code, v.message, v.path, v.quoted) for v in expected
+        ]
+        assert [v.statements for v in found] == [("?.?",), ()]
 
 
 class TestIdenticalStringsCostNoMoreThanDistinctOnes:

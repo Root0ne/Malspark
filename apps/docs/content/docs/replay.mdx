@@ -87,8 +87,9 @@ row's value, `sentences.1.rewrite#0` the first sentence of the second row's
 rewrite, `?.0` an entry of a list the schema does not declare, and `*` the whole
 answer. A finding names every sentence its match stands in, in the answer's
 order, at most 64 places with the rest counted (`+12`), and only in the fields
-its check reads. The places hold no sentence and no value, with the text or
-without it. A finding whose check does not locate it carries no `statements`: the
+its check reads, in strings at most six containers deep, the answer itself
+counted: a string nested deeper is checked as before and carries no place. The
+places hold no sentence and no value, with the text or without it. A finding whose check does not locate it carries no `statements`: the
 analysts' and the judge's findings (the analysts' claims are located by `claims[N]`
 in the path), the tool calls' and the report linter's, and the composer's shape,
 style, channel, procedure and flow checks. A record or a run summary row stored
