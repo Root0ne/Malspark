@@ -449,8 +449,9 @@ stated; anything else, zero included, reads `not reported`, as does a time
 nobody stated, and `analysis_time` is `not reported` where no task is named and
 neither time is stated. A row lists at most 32 tasks. Where the sandbox granted
 a task less time than was asked, the run's limitations name the detonation, the
-task and both times, in whole seconds where both are whole and to one decimal
-otherwise. A summary stored without `analysis_time` reads as before.
+task and both times, each as stated: a whole number whole, any other to at
+most three decimals, and both in full where two different times would
+otherwise read the same. A summary stored without `analysis_time` reads as before.
 
 A detonation that read no report has no parts, an empty `report_parts`, and
 every fact its provider would have stated reads `not reported`. One whose

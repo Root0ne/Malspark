@@ -558,19 +558,32 @@ def _short_clauses(inv: LimitationInventory, name: Callable[[str], str]) -> list
         listed = tasks[:STATED_ENTRIES]
         if len(tasks) > len(listed):
             listed.append(f"{_number(len(tasks) - len(listed))} more")
+        given_said, asked_said = _two_times(given, asked)
         out.append(
             f"{name(detonation)}'s {_plural(len(tasks), 'task', 'tasks')} {_joined(listed)} "
-            f"{_plural(len(tasks), 'was', 'were')} given {_seconds(given, asked)} s, "
-            f"not the {_seconds(asked, given)} s asked"
+            f"{_plural(len(tasks), 'was', 'were')} given {given_said} s, "
+            f"not the {asked_said} s asked"
         )
     return out
 
 
-def _seconds(value: int | float, beside: int | float) -> str:
-    """``value`` in whole seconds where it and ``beside`` are whole, else to one decimal."""
-    if float(value).is_integer() and float(beside).is_integer():
+def _two_times(first: int | float, second: int | float) -> tuple[str, str]:
+    """Two times as a clause prints them, never alike where they differ: each as stated, a
+    whole number whole, else to at most three decimals with trailing zeros dropped; both in
+    full where that would print two different numbers the same."""
+    said = (_time_said(first, 3), _time_said(second, 3))
+    if said[0] == said[1] and first != second:
+        return _time_said(first, None), _time_said(second, None)
+    return said
+
+
+def _time_said(value: int | float, decimals: int | None) -> str:
+    """``value`` whole where it is whole, else to ``decimals`` places (``None``: in full),
+    trailing zeros dropped."""
+    if float(value).is_integer():
         return _number(int(value))
-    return f"{value:,.1f}"
+    text = f"{value:,}" if decimals is None else f"{value:,.{decimals}f}"
+    return text.rstrip("0").rstrip(".") if "." in text else text
 
 
 def _capture_row(inv: LimitationInventory) -> list[InventoryRow]:

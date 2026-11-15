@@ -437,15 +437,26 @@ class TestTheLimitationsSayAShorterGrant:
         report = _report({"detonation": "d1", "analysis_time": NR})
         assert build_inventory(report, []).short_analyses == []
 
-    def test_a_fraction_is_compared_as_stated_and_printed_to_one_decimal(self) -> None:
+    @pytest.mark.parametrize(
+        ("asked", "granted", "said"),
+        [
+            (150, 149.9, "was given 149.9 s, not the 150 s asked"),
+            (150, 149.96, "was given 149.96 s, not the 150 s asked"),
+            # Three decimals would print both as 150: both are printed in full.
+            (150, 149.9996, "was given 149.9996 s, not the 150 s asked"),
+            (150.0004, 150, "was given 150 s, not the 150.0004 s asked"),
+            (600.0, 150.0, "was given 150 s, not the 600 s asked"),
+            (1500, 120, "was given 120 s, not the 1,500 s asked"),
+            (300.25, 75.5, "was given 75.5 s, not the 300.25 s asked"),
+        ],
+    )
+    def test_a_time_is_compared_and_printed_as_stated_never_two_alike(
+        self, asked: Any, granted: Any, said: str
+    ) -> None:
         report = _report(
-            {"detonation": "d1", "analysis_time": [_time_row("run_a", 150, 149.9)]},
-            {"detonation": "d2", "analysis_time": [_time_row("run_b", 600.0, 150.0)]},
+            {"detonation": "d1", "analysis_time": [_time_row("run_a", asked, granted)]}
         )
-        assert _sandbox_texts(report) == [
-            "Sandbox: d1's task run_a was given 149.9 s, not the 150.0 s asked; "
-            "d2's task run_b was given 150 s, not the 600 s asked."
-        ]
+        assert _sandbox_texts(report) == [f"Sandbox: d1's task run_a {said}."]
 
     def test_a_row_or_task_without_a_name_gives_no_clause(self) -> None:
         short = [_time_row("run_a", 300, 75)]
