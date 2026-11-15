@@ -46,6 +46,7 @@ about neither written nor withdrawn.
 
 from __future__ import annotations
 
+import bisect
 import re
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass, field
@@ -54,16 +55,21 @@ from typing import Any
 
 from malspark.agents.claim_headings import CLAIM_HEAD_RE, LINE_PREFIX, heading_sentence
 from malspark.pipeline.claim_drops import claim_values, dropped_claims
+from malspark.schemas.isr_models import ROUND_NOTE_PATTERN
 
 _MARKS = r"[ \t*_`]"
 # One claim number or a range of them: ``7``, ``#7``, ``3-5``, ``3 to 5``.
 _NUMBER_OR_RANGE = rf"#?\d++(?:{_MARKS}*+(?:-|–|—|\bto\b){_MARKS}*+#?\d++)?+"
 # ``WITHDRAW CLAIM 7: reason``, ``WITHDRAW CLAIMS 3, 5 and 9 - reason``,
-# ``withdraw claims 1-3``: any case, marks and a list marker before it, its
-# reason after a mark or ``because``, or nothing after it.
+# ``withdraw claims 1-3``: any case, marks and a list marker before it, the
+# round note the claim list writes beside a claim after its numbers (``WITHDRAW
+# CLAIM 2 (unchanged since round 1): ...``, ``isr_models.ROUND_NOTE_PATTERN``),
+# its reason after a mark or ``because``, or nothing after it. Any other
+# bracket after the numbers is no part of the form: the line is a doubt.
 _WITHDRAW_CLAIM_RE = re.compile(
     r"^" + LINE_PREFIX + rf"withdraw{_MARKS}++claims?+{_MARKS}*+"
     rf"(?P<numbers>{_NUMBER_OR_RANGE}(?:{_MARKS}*+(?:,|&|\band\b){_MARKS}*+{_NUMBER_OR_RANGE})*+)"
+    rf"(?:{_MARKS}*+{ROUND_NOTE_PATTERN})?+"
     rf"{_MARKS}*+(?:$|(?:[:.\-–—)]|\bbecause\b){_MARKS}*+(?P<reason>.*)$)",
     re.IGNORECASE,
 )
@@ -103,6 +109,603 @@ _WITHDRAWING_OPENER_RE = re.compile(
 )
 _NUMBER_RE = re.compile(r"\d++")
 _RANGE_SPLIT_RE = re.compile(r"(?:,|&|\band\b)", re.IGNORECASE)
+
+# A debate revision's dispute that rejects a claim of the analyst's own answer
+# in force is read as the author's withdrawal of it (``read_own_withdrawals``).
+# The reading withdraws nothing: it only leaves the claim open to the block of
+# the same revision that restates it (``revision_merge``). The wordings, as
+# data:
+#
+# - the reference to its own claim: a first-person word, any of the words of
+#   an earlier answer, an optional "round-<n>" (read only for the round of the
+#   answer in force: another round's numbers index another answer), then
+#   "claim(s)" and its numbers ("my own earlier claim 17", "my claims 3 and 4");
+OWN_CLAIM_OPENERS = ("my", "our")
+OWN_CLAIM_EARLIER_WORDS = ("own", "earlier", "previous", "prior", "original", "former")
+# - the first-person verbs that withdraw it, followed by the reference ("I
+#   retract my earlier claim 2: ...") or, after it, by one of the pronouns
+#   ("... my own earlier claim 17). I reject this.");
+OWN_WITHDRAWING_VERBS = ("withdraw", "retract", "reject")
+OWN_WITHDRAWN_PRONOUNS = ("it", "this", "that", "them", "these", "those", "both")
+# - the words that say it withdrawn, after the reference ("My claims 1 and 2
+#   are superseded by ...", "My claim 2 (...). Withdrawn as stated.");
+OWN_WITHDRAWN_WORDS = ("withdrawn", "retracted", "rejected", "superseded", "replaced")
+# - the words that keep it, and the words that contrast with a withdrawal:
+#   one anywhere in the item after the reference makes a withdrawal by a
+#   withdrawn word, or by a verb before the reference, a doubt, and a doubt
+#   withdraws nothing ("I withdraw my claim 4 — no, I keep it", "My claims
+#   3-5: TRIAGE says they are superseded; I disagree"). A word of evidence or
+#   of judgement on the claim ("right", "confirms") is neither;
+OWN_KEEPING_WORDS = (
+    "stand", "stands", "keep", "kept", "hold", "holds", "maintain", "maintained", "remains",
+    "uphold", "upholds", "defend", "defends", "retain", "retains",
+)  # fmt: skip
+OWN_CONTRASTING_WORDS = (
+    "but", "however", "though", "although", "yet", "nevertheless", "disagree", "disagrees",
+    "contrary",
+)  # fmt: skip
+# - the words of reported speech: one between the reference and a withdrawn
+#   word makes the word another's report ("TRIAGE says they are superseded").
+#   A word that also names a thing of the code ("call", "state", "write",
+#   "report") is not one;
+OWN_REPORTING_WORDS = (
+    "say", "says", "said", "argue", "argues", "argued", "wrote", "stated", "assert", "asserts",
+    "asserted", "according",
+)  # fmt: skip
+# - the words that negate: one among the few words right before the
+#   withdrawing word, in its sentence and outside brackets and quotations,
+#   governs it and makes the item a doubt ("My claim 4 is not withdrawn",
+#   "No, I reject this"), and so does a word ending in one of the endings
+#   ("isn't"); a negation inside a bracketed description of the claim
+#   ("My claim 2 (the name is not recovered). Withdrawn as stated.") governs
+#   nothing;
+OWN_NEGATING_WORDS = ("not", "never", "no", "nothing", "none", "neither", "nor", "cannot")
+OWN_NEGATING_ENDINGS = ("n't", "n’t")
+OWN_NEGATION_REACH = 3
+# - the marks that end a clause: a negation before one governs nothing after
+#   it ("... was not shown, and I withdraw it");
+OWN_CLAUSE_MARKS = (",", ";", ":")
+OWN_BRACKETS = (("(", ")"), ("[", "]"))
+# - the words of another's act, which give a sentence another subject (below),
+#   and the words that name the author as an agent ("rejected by me");
+OWN_OTHERS_ACT_WORDS = ("rejected", "disputed", "contested", "challenged", "questioned")
+OWN_AUTHOR_AGENTS = ("me", "us", "myself", "ourselves")
+# - what may stand right before a word that says it withdrawn: a word of the
+#   passive or an adverb, a mark or the item's start ("is withdrawn", "...).
+#   Withdrawn as stated"). After any other word ("Peers rejected it") the
+#   word is another's act, and the item a doubt;
+OWN_PASSIVE_WORDS = (
+    "is", "are", "was", "be", "been", "being", "now", "hereby", "both", "all", "also", "thus",
+    "therefore", "fully", "entirely",
+)  # fmt: skip
+# - the words that make a sentence conditional: one in the sentences that hold
+#   the reference and the withdrawing word makes the item a doubt ("If
+#   ev_0012 is wrong, I withdraw my claim 4"), and so does a question mark
+#   there; for a first-person verb on a pronoun in a later sentence than the
+#   reference ("... my claim 17). I reject this."), only that verb's own
+#   sentence is read;
+OWN_CONDITIONAL_WORDS = ("if", "unless", "would", "should", "were", "whether", "could", "might")
+OWN_QUESTION_MARKS = ("?",)
+# - the quotation marks, opening and closing: a reference or a withdrawing
+#   word inside a quotation is another's text ("STATIC wrote: \"my claim 3 is
+#   wrong. I reject this.\""). A mark between two letters is an apostrophe,
+#   an opening mark never follows a letter and a closing mark never precedes
+#   one; a quotation left open runs to the item's end;
+OWN_QUOTE_MARKS = (
+    ('"', '"'), ("“", "”"), ("‘", "’"), ("«", "»"), ("`", "`"), ("'", "'"),
+)  # fmt: skip
+# - the endings that make the reference a possessive: what follows is about
+#   something of the claim, not the claim ("I reject my claim 4's critics");
+OWN_POSSESSIVE_ENDINGS = ("'s", "’s")
+# - what may follow the reference right after a verb that names it, or a
+#   pronoun: a mark, or one of these words. Anything else ("I reject that
+#   wording") withdraws a part of the claim, not the claim;
+OWN_CLAIM_ENDS = ("as", "because", "since", "outright", "entirely", "in", "too", "also")
+# - what may follow a word that says it withdrawn: the item's end, a mark
+#   that ends a sentence or a clause, one of these words ("withdrawn as
+#   stated", "withdrawn and replaced"), or "by" with the author
+#   (:data:`OWN_AUTHOR_AGENTS`) or a claim ("superseded by claim 7", "by my
+#   claim 6"). Anything else makes the item a doubt: a place or a part
+#   ("rejected in L2", "superseded in part"), a colon ("Rejected: STATIC's
+#   idea"), another agent ("withdrawn by CloseHandle") or a noun the word
+#   stands before ("Rejected readings");
+OWN_WITHDRAWN_ENDS = ("as", "and")
+OWN_WITHDRAWN_END_MARKS = (".", "!", "?", ";")
+# - the words that may stand between the reference and a word that says it
+#   withdrawn, brackets and quotations aside: any other word gives the word
+#   another subject ("My claim 4 refined: the earlier path is superseded");
+OWN_SUBJECT_GAP_WORDS = (*OWN_PASSIVE_WORDS, "were", "has", "have", "had")
+# - for a verb on a pronoun in a later sentence than the reference, what gives
+#   a sentence between them another subject, whose act the pronoun may stand
+#   for ("My claim 4. L2 says it is unsupported. I reject this."): a word of
+#   :data:`OWN_REPORTING_WORDS` or :data:`OWN_OTHERS_ACT_WORDS`, one of these
+#   words of another's act or of a role, a line of the mediation ("L2"), or a
+#   word of a participant's name (the participants the caller gives). One of
+#   them between the reference and the verb makes the item a doubt, and so
+#   does a word of :data:`OWN_KEEPING_WORDS` ("My claim 4 stands. I reject
+#   it.") and one of these plural pronouns for a single claim ("My claim 4. I
+#   reject them.");
+OWN_OTHERS_ACT_VERBS = (
+    "disputes", "contradicts", "contradicted", "calls", "called", "rejects", "challenges",
+    "questions", "contests", "doubts", "doubted", "objects", "objected",
+)  # fmt: skip
+OWN_ROLE_WORDS = ("mediator", "mediators", "peer", "peers", "reviewer", "reviewers")
+OWN_LINE_REFERENCE = r"\bL\d++\b"
+OWN_PLURAL_PRONOUNS = ("them", "these", "those", "both")
+# - the words that affirm the claim, and the copulas that may stand between
+#   one and the reference: one right after the reference, with nothing else
+#   between, makes the item a defence, and a defence withdraws nothing ("my
+#   claim 4 is correct"). A reference right after one ("ev_0012 supports my
+#   claim 4") is no subject of a withdrawal and reads as nothing already.
+#   The same word said of something else ("TRIAGE is right") blocks
+#   nothing;
+OWN_AFFIRMING_WORDS = (
+    "correct", "right", "valid", "accurate", "sound", "true", "confirmed", "supported", "upheld",
+    "confirms", "supports", "upholds", "confirm", "support", "uphold",
+)  # fmt: skip
+OWN_COPULAS = ("is", "are", "was", "were", "be", "been", "remains", "stays", "still")
+# - the words that, right after the reference, name a part of the claim ("my
+#   earlier claim 3 confidence of 0.60", "my claim 6 detail that ..."): a
+#   doubt.
+OWN_CLAIM_PARTS = (
+    "attribution", "characterisation", "characterization", "confidence", "detail", "details",
+    "figure", "framing", "label", "part", "parts", "score", "tag", "tags", "technique",
+    "techniques", "wording",
+)  # fmt: skip
+
+# How far before a reference the words that withdraw it or make it a subject
+# are read, in characters: a first-person verb with an adverb ("I hereby
+# withdraw ") or the marks after a sentence's end stand within a few words of
+# it. A bound, so an item of many references costs its length.
+OWN_CLAIM_BEFORE_WINDOW = 80
+# How far after a reference the other claims of its list are read: a list
+# longer than this is no list of the reference's, and the item a doubt.
+OWN_LIST_WINDOW = 400
+
+_OWN_WORDS = "|".join(OWN_CLAIM_EARLIER_WORDS)
+_OWN_CLAIM_RE = re.compile(
+    rf"\b(?:{'|'.join(OWN_CLAIM_OPENERS)})(?:\s++(?:{_OWN_WORDS}))*+"
+    r"(?:\s++round[-\s]*+(?P<round>\d++))?+\s++claims?+\s*+"
+    rf"(?P<numbers>{_NUMBER_OR_RANGE}(?:\s*+(?:,|&|\band\b)\s*+{_NUMBER_OR_RANGE})*+)",
+    re.IGNORECASE,
+)
+_OWN_VERB = rf"\b(?:I|we)\s++(?:now\s++|also\s++|hereby\s++)?(?:{'|'.join(OWN_WITHDRAWING_VERBS)})"
+# A verb right before the reference.
+_OWN_VERB_BEFORE_RE = re.compile(rf"{_OWN_VERB}\s*+$", re.IGNORECASE)
+_OWN_END = rf"[\s*_`]*+(?:$|[.,;:()\[\]\"'“”—–-]|(?:{'|'.join(OWN_CLAIM_ENDS)})\b)"
+_OWN_CLAIM_END_RE = re.compile(_OWN_END, re.IGNORECASE)
+_OWN_BY_AUTHOR_OR_CLAIM = (
+    rf"by\s++(?:(?:{'|'.join(OWN_AUTHOR_AGENTS)})\b"
+    rf"|(?:(?:{'|'.join(OWN_CLAIM_OPENERS)})\s++(?:(?:{'|'.join(OWN_CLAIM_EARLIER_WORDS)})\s++)*+)?"
+    r"claims?+\s*+#?\d)"
+)
+_OWN_WITHDRAWN_END_RE = re.compile(
+    rf"[\s*_`]*+(?:$|[{re.escape(''.join(OWN_WITHDRAWN_END_MARKS))}]"
+    rf"|(?:{'|'.join(OWN_WITHDRAWN_ENDS)})\b|{_OWN_BY_AUTHOR_OR_CLAIM})",
+    re.IGNORECASE,
+)
+_OWN_GAP_WORDS = frozenset(w.lower() for w in OWN_SUBJECT_GAP_WORDS)
+_OWN_ANOTHER_SUBJECT_RE = re.compile(
+    rf"\b(?:{'|'.join((*OWN_REPORTING_WORDS, *OWN_OTHERS_ACT_WORDS, *OWN_OTHERS_ACT_VERBS))})\b"
+    rf"|\b(?:{'|'.join(OWN_ROLE_WORDS)})\b|{OWN_LINE_REFERENCE}",
+    re.IGNORECASE,
+)
+_OWN_KEEPING_ONLY_RE = re.compile(rf"\b(?:{'|'.join(OWN_KEEPING_WORDS)})\b", re.IGNORECASE)
+_OWN_COPULA = rf"(?:(?:{'|'.join(OWN_COPULAS)})[\s*_`]++)*+"
+_OWN_AFFIRMING = rf"(?:{'|'.join(OWN_AFFIRMING_WORDS)})\b"
+# An affirming word right after the reference, a bracket and copulas between.
+_OWN_AFFIRMED_AFTER_RE = re.compile(
+    rf"[\s*_`]*+(?:\([^()]{{0,{OWN_LIST_WINDOW}}}+\)[\s*_`]*+)?{_OWN_COPULA}{_OWN_AFFIRMING}",
+    re.IGNORECASE,
+)
+_OWN_CLAIM_PART_RE = re.compile(rf"[\s*_`]*+(?:{'|'.join(OWN_CLAIM_PARTS)})\b", re.IGNORECASE)
+# A verb with a pronoun after the reference, or a word that says it withdrawn.
+_OWN_WITHDRAWN_AFTER_RE = re.compile(
+    rf"{_OWN_VERB}\s++(?P<pronoun>{'|'.join(OWN_WITHDRAWN_PRONOUNS)})(?={_OWN_END})"
+    rf"|(?P<word>\b(?:{'|'.join(OWN_WITHDRAWN_WORDS)})\b)",
+    re.IGNORECASE,
+)
+# Other claims of the list the reference stands in, right after it ("my claim
+# 20, PEER claim 36 and DYNAMIC claim 42"): one list, not another claim.
+_OWN_LIST_GOES_ON_RE = re.compile(
+    r"(?:\s*+(?:\([^()]*+\))?[\s*_`]*+(?:,|;|&|\band\b)\s*+(?:and\s++)?"
+    r"(?:[A-Za-z0-9_'’-]++\s++){0,4}claims?+\s*+#?\d++"
+    r"(?:\s*+(?:,|&|\band\b|/|-|–|\bto\b)\s*+#?\d++)*+)*+",
+    re.IGNORECASE,
+)
+_OWN_KEEPING_RE = re.compile(
+    rf"\b(?:{'|'.join((*OWN_KEEPING_WORDS, *OWN_CONTRASTING_WORDS))})\b", re.IGNORECASE
+)
+_OWN_REPORTING_RE = re.compile(rf"\b(?:{'|'.join(OWN_REPORTING_WORDS)})\b", re.IGNORECASE)
+_OWN_NEGATING_WORD_RE = re.compile(
+    rf"(?:{'|'.join(OWN_NEGATING_WORDS)})"
+    rf"|[\w'’]*(?:{'|'.join(map(re.escape, OWN_NEGATING_ENDINGS))})",
+    re.IGNORECASE,
+)
+# A reporting word right after the reference or its list: its subject is the claim.
+_OWN_SELF_REPORT_RE = re.compile(
+    rf"[\s*_`]*+(?:\([^()]{{0,{OWN_LIST_WINDOW}}}+\)[\s*_`]*+)?"
+    rf"(?:{'|'.join(OWN_REPORTING_WORDS)})\b",
+    re.IGNORECASE,
+)
+# A word, for the few words before the withdrawing word a negation is read in.
+_WORD_RE = re.compile(r"[\w'’]++")
+# How far before the withdrawing word those words are read, in characters.
+_OWN_NEGATION_WINDOW = 80
+_OWN_PASSIVE_BEFORE_RE = re.compile(
+    rf"(?:^|[.!?:;,()\[\]\"'“”—–-]|\b(?:{'|'.join(OWN_PASSIVE_WORDS)})\b)[\s*_`]*+$",
+    re.IGNORECASE,
+)
+_OWN_CONDITIONAL_RE = re.compile(
+    rf"\b(?:{'|'.join(OWN_CONDITIONAL_WORDS)})\b"
+    rf"|(?:{'|'.join(map(re.escape, OWN_QUESTION_MARKS))})",
+    re.IGNORECASE,
+)
+_OWN_POSSESSIVE_RE = re.compile(
+    rf"(?:{'|'.join(map(re.escape, OWN_POSSESSIVE_ENDINGS))})\b", re.IGNORECASE
+)
+_QUOTE_MARK_RE = re.compile(
+    "[" + re.escape("".join(dict.fromkeys(c for pair in OWN_QUOTE_MARKS for c in pair))) + "]"
+)
+_BRACKET_MARK_RE = re.compile(
+    "[" + re.escape("".join(c for pair in OWN_BRACKETS for c in pair)) + "]"
+)
+# Where a sentence ends: a mark of its end before a space or the item's end.
+_SENTENCE_END_RE = re.compile(r"[.!?](?=\s|$)")
+# What the reference may stand after to be the subject of what follows: the
+# item's or a sentence's start, or a list it closes ("(STATIC claim 23, my own
+# earlier claim 17)").
+_OWN_SUBJECT_BEFORE_RE = re.compile(
+    r"(?:^|[.!?:;]|\(|,|&|\band\b)[\s*_`\"'“”(\[]*+$", re.IGNORECASE
+)
+_ANY_CLAIM_RE = re.compile(r"\bclaims?+\s*+#?\d", re.IGNORECASE)
+
+
+def _inside(spans: Sequence[tuple[int, int]], at: int) -> bool:
+    """Whether ``at`` lies inside one of ``spans`` (sorted, apart)."""
+    index = bisect.bisect_left(spans, (at + 1,)) - 1
+    return index >= 0 and spans[index][0] <= at < spans[index][1]
+
+
+def _any_between(positions: Sequence[int], low: int, high: int) -> bool:
+    """Whether a position of ``positions`` (sorted) lies in ``[low, high)``."""
+    at = bisect.bisect_left(positions, low)
+    return at < len(positions) and positions[at] < high
+
+
+def _quoted_spans(item: str) -> list[tuple[int, int]]:
+    """The quotations of ``item`` (:data:`OWN_QUOTE_MARKS`), sorted and apart, in one pass.
+
+    A mark between two word characters is an apostrophe; an opening mark
+    never follows a word character, a closing one never precedes one; a
+    quotation left open runs to the item's end.
+    """
+    closing_of = dict(OWN_QUOTE_MARKS)
+    found: list[tuple[int, int]] = []
+    opened: str | None = None
+    start = 0
+    for match in _QUOTE_MARK_RE.finditer(item):
+        at = match.start()
+        mark = item[at]
+        before = item[at - 1] if at else " "
+        after = item[at + 1] if at + 1 < len(item) else " "
+        word_before = before.isalnum() or before == "_"
+        word_after = after.isalnum() or after == "_"
+        if opened is not None:
+            if mark == closing_of[opened] and not word_after:
+                found.append((start, at + 1))
+                opened = None
+            continue
+        if mark in closing_of and not word_before:
+            opened, start = mark, at
+    if opened is not None:
+        found.append((start, len(item)))
+    return found
+
+
+def _bracketed_spans(item: str) -> list[tuple[int, int]]:
+    """The bracketed spans of ``item`` (:data:`OWN_BRACKETS`), outermost, sorted, in one pass.
+
+    A bracket left open runs to the item's end.
+    """
+    closing_of = dict(OWN_BRACKETS)
+    found: list[tuple[int, int]] = []
+    opened: list[str] = []
+    start = 0
+    for match in _BRACKET_MARK_RE.finditer(item):
+        at, mark = match.start(), match.group()
+        if mark in closing_of:
+            if not opened:
+                start = at
+            opened.append(closing_of[mark])
+        elif opened and mark == opened[-1]:
+            opened.pop()
+            if not opened:
+                found.append((start, at + 1))
+    if opened:
+        found.append((start, len(item)))
+    return found
+
+
+def _merged(spans: Sequence[tuple[int, int]]) -> list[tuple[int, int]]:
+    """``spans`` sorted, overlapping ones joined."""
+    out: list[tuple[int, int]] = []
+    for start, end in sorted(spans):
+        if out and start < out[-1][1]:
+            out[-1] = (out[-1][0], max(out[-1][1], end))
+        else:
+            out.append((start, end))
+    return out
+
+
+def _negation_governs(
+    item: str, at: int, sentence_start: int, aside: Sequence[tuple[int, int]]
+) -> bool:
+    """Whether a negation stands among the few words right before ``at``.
+
+    Within :data:`OWN_NEGATION_REACH` words, in the clause that holds ``at``
+    (the sentence that starts at ``sentence_start``, cut at the last mark of
+    :data:`OWN_CLAUSE_MARKS` before ``at``), and outside ``aside`` (brackets
+    and quotations).
+    """
+    low = max(sentence_start, at - _OWN_NEGATION_WINDOW)
+    low = max(low, *(item.rfind(mark, low, at) + 1 for mark in OWN_CLAUSE_MARKS))
+    words = list(_WORD_RE.finditer(item, low, at))[-OWN_NEGATION_REACH:]
+    return any(
+        _OWN_NEGATING_WORD_RE.fullmatch(word.group()) and not _inside(aside, word.start())
+        for word in words
+    )
+
+
+def _sentence_of(ends: Sequence[int], low: int, high: int, size: int) -> tuple[int, int]:
+    """``[start, end]`` of the sentences that hold ``low`` to ``high``, its end mark included."""
+    before = bisect.bisect_left(ends, low)
+    start = ends[before - 1] + 1 if before else 0
+    after = bisect.bisect_left(ends, high)
+    return start, ends[after] + 1 if after < len(ends) else size
+
+
+@dataclass(frozen=True)
+class OwnWithdrawals:
+    """How a revision's disputes read of its own claims.
+
+    ``claims`` is ``(first, last, item)`` per number or range read as the
+    author's withdrawal, as digits, with the dispute item; ``spoken``
+    ``(first, last)`` per number or range of every other reference of its
+    own an item writes: the item speaks for that claim.
+    """
+
+    claims: tuple[tuple[str, str, str], ...] = ()
+    spoken: tuple[tuple[str, str], ...] = ()
+
+
+# "to" between two numbers of a reference.
+_TO_RE = re.compile(r"\bto\b", re.IGNORECASE)
+# A decimal's mark and fraction, right after a number.
+_DECIMAL_AFTER_RE = re.compile(r"\.\d")
+
+
+def _ranges(numbers: str, decimal_after: bool = False) -> list[tuple[str, str]]:
+    """``(first, last)`` per number or range of a reference's numbers, as digits.
+
+    "to" makes a range only when its second end is not below its first and
+    is no decimal (``decimal_after``: a fraction follows the numbers): "my
+    claim 1 to 0.6" names claim 1.
+    """
+    out: list[tuple[str, str]] = []
+    parts = _RANGE_SPLIT_RE.split(numbers)
+    for index, part in enumerate(parts):
+        ends = _NUMBER_RE.findall(part)
+        if not ends:
+            continue
+        first, last = _number(ends[0]), _number(ends[-1])
+        if _TO_RE.search(part) and (
+            (len(last), last) < (len(first), first) or (decimal_after and index == len(parts) - 1)
+        ):
+            last = first
+        out.append((first, last))
+    return out
+
+
+def _participant_words(participants: Sequence[str]) -> re.Pattern[str] | None:
+    """The words of the participants' names, as one pattern, or ``None`` for none.
+
+    Each part of a name (split at ``_``, ``-`` and spaces) of at least three
+    letters that is no filler word of a short form (``debate_facts``).
+    """
+    from malspark.pipeline.debate_facts import _FILLER_WORDS, _SHORT_WORD_LENGTH
+
+    words = {
+        part
+        for name in participants
+        for part in re.split(r"[_\-\s]+", str(name or "").lower())
+        if len(part) >= _SHORT_WORD_LENGTH and part not in _FILLER_WORDS
+    }
+    if not words:
+        return None
+    return re.compile(rf"\b(?:{'|'.join(map(re.escape, sorted(words)))})\b", re.IGNORECASE)
+
+
+def read_own_withdrawals(
+    items: Sequence[str], round_in_force: int | None, participants: Sequence[str] = ()
+) -> OwnWithdrawals:
+    """The claims of its own answer in force the dispute ``items`` read as rejected, in order.
+
+    What is read here withdraws no claim: the merge only lets a block of the
+    same revision that restates such a claim replace it
+    (``revision_merge``), so where the item is unsure it reads nothing. An
+    item reads as a withdrawal of a claim where it names it as its own
+    (:data:`OWN_CLAIM_OPENERS`, :data:`OWN_CLAIM_EARLIER_WORDS`) and either a
+    first-person verb of :data:`OWN_WITHDRAWING_VERBS` stands right before
+    that reference, nothing but a mark or one of :data:`OWN_CLAIM_ENDS` after
+    it; or the reference opens the item or a sentence, or closes a list of
+    claims, and later in the item, with no other claim named in between,
+    such a verb takes one of :data:`OWN_WITHDRAWN_PRONOUNS`, or a word of
+    :data:`OWN_WITHDRAWN_WORDS` follows it with nothing but words of
+    :data:`OWN_SUBJECT_GAP_WORDS` between them (brackets and quotations
+    aside), after a word of :data:`OWN_PASSIVE_WORDS`, a mark or the item's
+    start, and with the item's end, a mark of :data:`OWN_WITHDRAWN_END_MARKS`,
+    a word of :data:`OWN_WITHDRAWN_ENDS`, or "by" with the author or a claim
+    after it. A "round-<n>" reference is read only where ``n`` is
+    ``round_in_force``; any other names no claim of the answer in force,
+    neither withdrawn nor ``spoken``. "to" between two numbers makes a range
+    only when the second is not below the first and is no decimal.
+
+    Read whole, the item must say nothing against the withdrawal, so it reads
+    as nothing where a word of :data:`OWN_NEGATING_WORDS` governs the
+    withdrawing word (within :data:`OWN_NEGATION_REACH` words before it, in its
+    sentence, outside brackets and quotations); another agent than the
+    author follows a withdrawn word ("rejected by the mediator", above); a
+    word of :data:`OWN_REPORTING_WORDS` stands between the reference and a withdrawn
+    word; a word of :data:`OWN_KEEPING_WORDS` or :data:`OWN_CONTRASTING_WORDS`
+    stands anywhere after the reference, unless the withdrawal is the
+    author's verb on a pronoun in a later sentence; for a verb on a pronoun,
+    another subject (a reporting word, a word of another's act or of a role,
+    :data:`OWN_OTHERS_ACT_VERBS`, :data:`OWN_ROLE_WORDS`, a line of the
+    mediation, or a word of the name of one of ``participants``) stands
+    between the reference and the end of the verb's sentence, a word of
+    :data:`OWN_KEEPING_WORDS` stands between the reference and the verb, or
+    a pronoun of :data:`OWN_PLURAL_PRONOUNS` stands for one claim; a word of
+    :data:`OWN_CONDITIONAL_WORDS` or a question mark stands in the sentences
+    that hold the reference and the withdrawing word (for that verb on a
+    pronoun, in its own sentence only); the reference or the withdrawing word
+    stands inside a quotation (:data:`OWN_QUOTE_MARKS`); the reference is a
+    possessive (:data:`OWN_POSSESSIVE_ENDINGS`) or is followed by a part of
+    the claim (:data:`OWN_CLAIM_PARTS`). A rejection of another analyst's
+    claim names no claim of its own, and is a dispute; anything else is a
+    doubt and withdraws nothing, and every reference of its own read so is
+    ``spoken``.
+    What stands before a reference is read within
+    :data:`OWN_CLAIM_BEFORE_WINDOW` characters and its list within
+    :data:`OWN_LIST_WINDOW`; every other word is found in one pass over the
+    item, so an item costs its length whatever the number of its references.
+    """
+    claims: list[tuple[str, str, str]] = []
+    spoken: list[tuple[str, str]] = []
+    in_force = None if round_in_force is None else str(int(round_in_force))
+    named_re = _participant_words(participants)
+    for raw in items:
+        item = " ".join(str(raw or "").split())
+        size = len(item)
+        # Read once per item: every reference of its own, every other claim
+        # named, every word that withdraws, keeps, reports, makes a condition
+        # or names another's act, every quotation, bracket and sentence's end.
+        own = list(_OWN_CLAIM_RE.finditer(item))
+        spans = [(m.start(), m.end()) for m in own]
+        others = [m.start() for m in _ANY_CLAIM_RE.finditer(item) if not _inside(spans, m.start())]
+        said = [
+            (m.start(), m.end(), m.group("word") is not None, (m.group("pronoun") or "").lower())
+            for m in _OWN_WITHDRAWN_AFTER_RE.finditer(item)
+        ]
+        said_at = [at for at, *_rest in said]
+        kept_at = [m.start() for m in _OWN_KEEPING_RE.finditer(item)]
+        keeping_at = [m.start() for m in _OWN_KEEPING_ONLY_RE.finditer(item)]
+        subject_at = sorted(
+            [m.start() for m in _OWN_ANOTHER_SUBJECT_RE.finditer(item)]
+            + ([m.start() for m in named_re.finditer(item)] if named_re is not None else [])
+        )
+        reported_at = [m.start() for m in _OWN_REPORTING_RE.finditer(item)]
+        conditional_at = [m.start() for m in _OWN_CONDITIONAL_RE.finditer(item)]
+        quoted = _quoted_spans(item)
+        aside = _merged([*quoted, *_bracketed_spans(item)])
+        ends = [m.start() for m in _SENTENCE_END_RE.finditer(item)]
+        # Every word, brackets and quotations aside, that may not stand
+        # between the reference and a word that says it withdrawn.
+        foreign_at = [
+            m.start()
+            for m in _WORD_RE.finditer(item)
+            if m.group().lower() not in _OWN_GAP_WORDS and not _inside(aside, m.start())
+        ]
+        for match in own:
+            ranges = _ranges(
+                match.group("numbers"), bool(_DECIMAL_AFTER_RE.match(item, match.end()))
+            )
+            written_round = match.group("round")
+            if written_round is not None and (written_round.lstrip("0") or "0") != in_force:
+                # Another answer's numbers: no claim of the answer in force.
+                continue
+            start, end = match.span()
+            window = max(0, start - OWN_CLAIM_BEFORE_WINDOW)
+            # Where the withdrawing word stands, where it ends, and its form:
+            # a verb before the reference, a withdrawn word, or a verb on a
+            # pronoun.
+            word: tuple[int, int] | None = None
+            form = ""
+            if (
+                _OWN_POSSESSIVE_RE.match(item, end)
+                or _OWN_CLAIM_PART_RE.match(item, end)
+                or _inside(quoted, start)
+                or _OWN_AFFIRMED_AFTER_RE.match(item, end)
+            ):
+                word = None
+            elif verb := _OWN_VERB_BEFORE_RE.search(item, window, start):
+                if _OWN_CLAIM_END_RE.match(item, end):
+                    word, form = (verb.start(), verb.end()), "verb"
+            elif _OWN_SUBJECT_BEFORE_RE.search(item, window, start):
+                at = bisect.bisect_left(said_at, end)
+                listed = _OWN_LIST_GOES_ON_RE.match(item, end, min(size, end + OWN_LIST_WINDOW))
+                list_end = listed.end() if listed is not None else end
+                # A reporting word whose subject is the reference itself, or
+                # the list it ends ("my claim 16 say ..."), describes the
+                # claim: reported speech is read after it.
+                described = _OWN_SELF_REPORT_RE.match(item, list_end)
+                reported_from = described.end() if described is not None else end
+                if at < len(said):
+                    word_at, word_end, passive, pronoun = said[at]
+                    one_claim = (
+                        list_end == end and len(ranges) == 1 and ranges[0][0] == ranges[0][1]
+                    )
+                    if not _any_between(others, list_end, word_at) and not (
+                        (
+                            passive
+                            and (
+                                _any_between(reported_at, reported_from, word_at)
+                                or _any_between(foreign_at, list_end, word_at)
+                                or not _OWN_WITHDRAWN_END_RE.match(item, word_end)
+                                or not _OWN_PASSIVE_BEFORE_RE.search(
+                                    item, max(0, word_at - OWN_CLAIM_BEFORE_WINDOW), word_at
+                                )
+                            )
+                        )
+                        or (
+                            not passive
+                            and (
+                                _any_between(
+                                    subject_at,
+                                    reported_from,
+                                    _sentence_of(ends, word_at, word_at, size)[1],
+                                )
+                                or _any_between(keeping_at, end, word_at)
+                                or (one_claim and pronoun in OWN_PLURAL_PRONOUNS)
+                            )
+                        )
+                    ):
+                        word, form = (word_at, word_end), "passive" if passive else "pronoun"
+            if word is not None:
+                # A verb on a pronoun in a later sentence than the reference
+                # is the author's own act: only its own sentence is read for
+                # a condition, and no keeping or contrasting word blocks it.
+                later = form == "pronoun" and bisect.bisect_left(ends, end) < bisect.bisect_left(
+                    ends, word[0]
+                )
+                low, high = _sentence_of(
+                    ends, word[0] if later else min(start, word[0]), max(end, word[1]), size
+                )
+                sentence_start, _high = _sentence_of(ends, word[0], word[0], size)
+                if (
+                    _inside(quoted, word[0])
+                    or _negation_governs(item, word[0], sentence_start, aside)
+                    or (not later and _any_between(kept_at, end, size + 1))
+                    or _any_between(conditional_at, low, high)
+                ):
+                    word = None
+            if word is None:
+                spoken.extend(ranges)
+                continue
+            claims.extend((first, last, item) for first, last in ranges)
+    return OwnWithdrawals(claims=tuple(claims), spoken=tuple(spoken))
+
+
 # Where a flag names the claim block it is about: ``static.claims[5].T1041``.
 _CLAIM_PATH_RE = re.compile(r"claims\[(\d++)\]")
 

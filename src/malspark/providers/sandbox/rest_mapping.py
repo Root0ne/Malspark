@@ -53,6 +53,7 @@ from malspark.core.logger import logger
 from malspark.providers.errors import ProviderConfigurationError
 from malspark.schemas.sandbox_document import pid_of, signature_pids
 from malspark.schemas.sandbox_report import TRAFFIC_PROCESS_KEY, section_id
+from malspark.schemas.signature_indicators import SIGNATURE_INDICATORS_KEY
 
 if TYPE_CHECKING:
     from malspark.core.config import RestMappingConfig
@@ -240,6 +241,10 @@ def _coerce(channel: str, names: dict[str, str], raw: Any) -> Any | None:
     declared = names.get(f"{channel}.{TRAFFIC_PROCESS_KEY}")
     if declared and channel in _TRAFFIC_CHANNELS and (procid := pid_of(raw.get(declared))):
         row[TRAFFIC_PROCESS_KEY] = procid
+    if channel == "signatures":
+        indicators = _signature_indicators(names, raw)
+        if indicators:
+            row[SIGNATURE_INDICATORS_KEY] = indicators
     if channel == "http":
         # Passthrough first (every field the sandbox's own payload carries
         # survives, whatever it calls them), then a configured rename
@@ -253,6 +258,41 @@ def _coerce(channel: str, names: dict[str, str], raw: Any) -> Any | None:
         if row.get(required) in (None, ""):
             return None
     return row
+
+
+def _signature_indicators(names: dict[str, str], raw: dict[str, Any]) -> list[dict[str, Any]]:
+    """A signature's indicators in the neutral form, where the mapping declares where they are.
+
+    ``signatures.platform_indicators`` names the field of the sandbox's
+    signature holding its indicators, and
+    ``signatures.platform_indicators.<process|target|event|description>`` the
+    field of each indicator holding that part (an event's a dotted path).
+    """
+    from malspark.schemas.signature_indicators import (
+        DESCRIPTION,
+        EVENT,
+        PROCESS,
+        TARGET,
+        IndicatorFields,
+        neutral_indicator,
+    )
+
+    prefix = f"signatures.{SIGNATURE_INDICATORS_KEY}"
+    listed = raw.get(names.get(prefix, ""))
+    if not names.get(prefix) or not isinstance(listed, list):
+        return []
+
+    def named(part: str) -> tuple[str, ...]:
+        name = names.get(f"{prefix}.{part}")
+        return (name,) if name else ()
+
+    fields = IndicatorFields(
+        process=named(PROCESS),
+        target=named(TARGET),
+        event=named(EVENT),
+        description=named(DESCRIPTION),
+    )
+    return [neutral_indicator(one, fields) for one in listed]
 
 
 def whole_number(value: Any) -> int | None:
@@ -332,6 +372,7 @@ def _signature_row(row: dict[str, Any], scale: SignatureScale | None) -> Sandbox
         pids=signature_pids(
             {"pids": pids if isinstance(pids := row.get("pids"), list) else [pids]}
         ),
+        indicators=list(row.get(SIGNATURE_INDICATORS_KEY) or []),
         extra=extra,
     )
 

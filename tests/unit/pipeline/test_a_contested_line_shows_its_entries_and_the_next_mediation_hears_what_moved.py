@@ -709,6 +709,19 @@ class TestTheNextMediationHearsTheRound:
         assert "round_facts" not in kwargs and "cited_entries" not in kwargs
         assert state["discussion_history"][-1].carried == {}
 
+    def test_a_later_mediation_is_named_by_the_revision_round_before_it(self) -> None:
+        _state, judge = _negotiate(self._state(), _mediator([CARRIED]))
+
+        assert judge.mediate.call_args.kwargs["last_revision_round"] == 1
+
+    def test_a_first_mediation_is_named_by_no_revision_round(self) -> None:
+        state = {**self._state(), "iteration_count": 0, "discussion_history": []}
+        state.pop("revision_rounds")
+
+        _state, judge = _negotiate(state, _mediator([LINE_KEY]))
+
+        assert "last_revision_round" not in judge.mediate.call_args.kwargs
+
 
 # ---------------------------------------------------------------------------
 # Guards: a shown entry is one source, and citing it is no citation of one's own

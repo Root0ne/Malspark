@@ -194,7 +194,11 @@ def test_a_part_the_reader_fills_and_found_empty_stays_empty() -> None:
 
 
 def test_the_cape_reader_is_unaffected_by_its_declaration() -> None:
-    """CAPE's reader fills every list field: naming it changes no answer."""
+    """CAPE's reader fills every list field: naming it changes no answer.
+
+    Beside what its declaration of a signature's indicators reads, which only
+    a named reader's answer carries.
+    """
     from malspark.providers.sandbox.readers import required_reader
     from malspark.schemas.sandbox_document import sandbox_document
     from malspark.schemas.sandbox_report import reader_of
@@ -212,4 +216,13 @@ def test_the_cape_reader_is_unaffected_by_its_declaration() -> None:
         sandbox_mutexes,
         sandbox_services_and_tasks,
     ):
-        assert view(document, normalised_by=by) == view(document)
+        named = view(document, normalised_by=by)
+        if view is sandbox_signatures:
+            named = {
+                **{k: v for k, v in named.items() if not k.startswith("indicators")},
+                "signatures": [
+                    {k: v for k, v in row.items() if not k.startswith("indicators")}
+                    for row in named["signatures"]
+                ],
+            }
+        assert named == view(document)

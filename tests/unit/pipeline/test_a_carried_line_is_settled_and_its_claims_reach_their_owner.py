@@ -615,7 +615,9 @@ class TestTheNumberingKey:
             "CLAIM 5: ...\nI withdraw claim 2: the RC4 reading was wrong.\nClaim 4 still holds."
         )
 
-        merge = merge_revision(in_force, revision, answer, 2, {2: [(1, True)]})
+        # The answer is a fragment of the revision's text: every claim the
+        # revision began was read.
+        merge = merge_revision(in_force, revision, answer, 2, {2: [(1, True)]}, claims_unread=0)
 
         assert merge.placed_by == "number"
         assert [n for n, _s, _r in merge.withdrawn_by_rule] == [2]

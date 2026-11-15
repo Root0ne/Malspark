@@ -33,6 +33,7 @@ from malspark.schemas.sandbox_report import (
     SAMPLE_TREE_KEY,
     TRAFFIC_PROCESS_KEY,
     SandboxReport,
+    _request_process,
     attribute_the_launcher,
 )
 from tests.linear_cost import assert_scales
@@ -210,6 +211,30 @@ class TestAnIdManyFlowsShare:
         url = _url_of(report)
         assert url.sample_process_tree is False and url.made_by is not None
         assert url.made_by.more
+
+
+class TestTheSampleSFlowAmongManyUnstatedOnes:
+    """The sample's flow among more unstated flows of one id than a request carries of one answer.
+
+    A task's lineage either names no process (every flow unstated) or names
+    the sample's (every listed flow the sample's or outside it), so the two
+    answers meet on one id only in the facts the reader gives a request
+    (``_request_process``): each answer is carried up to its bound, the
+    sample's own among them.
+    """
+
+    @pytest.mark.parametrize("first", [True, False])
+    def test_the_name_stays_the_sample_s(self, first: bool) -> None:
+        unstated = [{TRAFFIC_PROCESS_KEY: str(1000 + i)} for i in range(40)]
+        sample = {TRAFFIC_PROCESS_KEY: "86", SAMPLE_TREE_KEY: True}
+        made = _request_process([sample, *unstated] if first else [*unstated, sample], "t1")
+        assert sum(1 for facts in made["platform_flows"] if facts.get(SAMPLE_TREE_KEY)) == 1
+        report = SandboxReport(provider="triage", source_format="triage")
+        report.network.http.append({"host": "a0.example", "uri": "/", "method": "GET", **made})
+        network = _network(report)
+        (name,) = [d for d in network.domains if d.fqdn == "a0.example"]
+        assert name.sample_process_tree is True and name.made_by is None
+        assert _url_of(report).sample_process_tree is True
 
 
 class TestTheCostOfAnIdManyFlowsShareIsLinear:

@@ -55,6 +55,7 @@ from malspark.schemas.sandbox_document import (
 from malspark.schemas.sandbox_document import (
     SUMMARY_KEYS as _DOCUMENT_SUMMARY_KEYS,
 )
+from malspark.schemas.signature_indicators import IndicatorFields
 
 
 def _int(value: Any) -> int:
@@ -173,12 +174,16 @@ class SandboxSignatureRow(BaseModel):
     # (``schemas.sandbox_document.signature_pids`` reads those). Empty where
     # it names none, and then left out of the dump.
     pids: list[str] = Field(default_factory=list)
+    # The hit's indicators in the neutral form
+    # (``schemas.signature_indicators``), where a reader that reads a mapping
+    # read them; empty for every other reader, and then left out of the dump.
+    indicators: list[dict[str, Any]] = Field(default_factory=list)
     # The signature's other fields, under the sandbox's own names.
     extra: dict[str, Any] = Field(default_factory=dict)
 
     @model_serializer(mode="wrap")
     def _dump(self, handler: SerializerFunctionWrapHandler) -> Any:
-        return _without_empty(self, handler, ("pids", "extra"))
+        return _without_empty(self, handler, ("pids", "indicators", "extra"))
 
 
 class SandboxDnsRequest(BaseModel):
@@ -578,6 +583,10 @@ class Reading:
     # names no such field (a field of the same name may hold a path on the
     # sandbox's own host, which is never shown).
     guest_path_fields: tuple[str, ...] = ()
+    # Where a signature row states its indicators, as the reader's source
+    # declares them (``schemas.signature_indicators``); ``None`` where the
+    # source states none.
+    signature_indicators: IndicatorFields | None = None
 
 
 # What a report read by a reader that keeps its source's arrangement reached
@@ -1892,9 +1901,13 @@ def attribute_the_launcher(report: SandboxReport, launcher: Any) -> None:
             continue
         if node in unconfirmed:
             # A host naming the launcher above no process of the sample's
-            # tree: whose its traffic is, the report does not settle.
+            # tree: whose its traffic is, the report does not settle. The
+            # host is named, as the report names it.
             row[LINEAGE_KEY] = LINEAGE_LAUNCHER_UNSETTLED
-            row.pop(FLOW_PROCESS_KEY, None)
+            if images.get(node):
+                row[FLOW_PROCESS_KEY] = images[node]
+            else:
+                row.pop(FLOW_PROCESS_KEY, None)
             continue
         if node[0] not in rooted and node not in launcher_nodes:
             # Started by the launcher where the sample's tree is not found:

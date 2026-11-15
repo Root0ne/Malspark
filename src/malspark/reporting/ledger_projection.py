@@ -74,6 +74,7 @@ from malspark.schemas.sandbox_report import (
     LINEAGE_DISPUTED_KEY,
     LINEAGE_FILE,
     LINEAGE_LAUNCHER,
+    LINEAGE_LAUNCHER_UNSETTLED,
     LINEAGE_MARKED,
     LINEAGE_MARKED_BY_KEY,
     LINEAGE_MARKED_STORED,
@@ -1311,9 +1312,14 @@ def network_from_ledger(
     created and some answer's text holds takes the string sweep's standing
     (``strings``), whichever tool printed the text: text inside an answer — a
     signature's description, a command line, the sample's strings a sandbox
-    re-serves — is no observation of the sample. Only a structured network
-    record (a flow, a DNS query, an HTTP request, a capture conversation)
-    makes a sandbox row. A row no answer holds stays ``analyst``.
+    re-serves — is no observation of the sample. The one exception is a part
+    of an answer its kind declares a structured record
+    (``core.builtin_declarations.RECORD_PARTS_OF_KIND``, a sandbox
+    signature's indicators): a value an answer holds only there keeps the
+    standing it has where no answer holds it, and the reason that refuses it
+    still names the entry. Only a structured network record (a flow, a DNS
+    query, an HTTP request, a capture conversation) makes a sandbox row. A
+    row no answer holds stays ``analyst``.
 
     The capture (``pcap_summary``) is a sandbox view like the flow table: its
     conversations' addresses and its TLS names are sandbox rows. It says
@@ -1450,6 +1456,10 @@ def network_from_ledger(
     attributed: dict[str, list[bool | None]] = {}
     # Which processes outside the tree the report says made flows to each address.
     outside: dict[str, list[str]] = {}
+    # The hosts naming the launcher whose attribution is not established, per
+    # address, and whether each flow to it is one of theirs.
+    unsettled: dict[str, list[str]] = {}
+    only_unsettled: dict[str, list[bool]] = {}
     # And the processes the two lineage facts disagree about, by which fact names them.
     disputed: dict[str, dict[str, list[str]]] = {}
     host_facts: dict[str, dict[str, Any]] = {}
@@ -1577,6 +1587,13 @@ def network_from_ledger(
                         named = _flow_process_named(row, image)
                         if named not in outside.setdefault(address, []):
                             outside[address].append(named)
+                    host = row.get(LINEAGE_KEY) == LINEAGE_LAUNCHER_UNSETTLED and bool(image)
+                    # A page of a view cannot say no flow to the address is another's.
+                    only_unsettled.setdefault(address, []).append(host and whole)
+                    if host:
+                        named = _flow_process_named(row, image)
+                        if named not in unsettled.setdefault(address, []):
+                            unsettled[address].append(named)
                     which = str(row.get(LINEAGE_DISPUTED_KEY) or "")
                     if which == LINEAGE_MARKED_STORED:
                         which = LINEAGE_MARKED
@@ -1660,8 +1677,22 @@ def network_from_ledger(
         *network.domains,
         *network.urls,
     ]
+    # The successful entries (the ones a sighting reads) by the id and tool a
+    # sighting names, and each one's text outside its record parts, read once
+    # per entry: two entries may share an id (a run without a container
+    # numbers its own), and each is read for itself.
+    of_sighting: dict[tuple[str, str], list[LedgerEntry]] = {}
+    for entry in ledger or []:
+        if entry.ok:
+            of_sighting.setdefault((entry.id, entry.tool), []).append(entry)
+    texts_outside: dict[int, str] = {}
     for row in rows:
-        if row.source == "analyst" and (sightings or {}).get(_listed_key(row)):
+        sighted = (sightings or {}).get(_listed_key(row)) or []
+        if row.source == "analyst" and any(
+            (eid, tool) not in of_sighting
+            or any(_held_outside_records(e, row, texts_outside) for e in of_sighting[(eid, tool)])
+            for eid, tool in sighted
+        ):
             # Text inside a tool's answer — any tool's, a sandbox's included —
             # is a string the tool printed, not an observation of the sample:
             # only a structured network record (above) makes a sandbox row.
@@ -1702,6 +1733,14 @@ def network_from_ledger(
             ip.unlisted_processes = list(
                 dict.fromkeys(a[1] for a in answers if isinstance(a, tuple))
             )
+        if (
+            ip.sample_process_tree is None
+            and unsettled.get(ip.address)
+            and all(only_unsettled.get(ip.address) or [False])
+        ):
+            # Only where every flow to it names such a host, as for the
+            # processes the task does not list.
+            ip.launcher_unsettled_processes = list(unsettled[ip.address])
     _state_who_kept(network, kept, isrs)
     for ip in network.ips:
         ip.observed_in = stated_marks(observed.get(("ip", ip.address), ()))
@@ -1710,6 +1749,68 @@ def network_from_ledger(
     for request in network.urls:
         request.observed_in = stated_marks(observed.get(("url", request.url), ()))
     return network if (network.domains or network.ips or network.urls) else None
+
+
+def _record_parts(entry: LedgerEntry) -> tuple[str, ...]:
+    """The paths of an entry's answer its kind declares a record (dotted, ``*`` a list)."""
+    from malspark.core.builtin_declarations import RECORD_PARTS_OF_KIND
+
+    if not entry.ok or not isinstance(entry.structured, dict):
+        return ()
+    return RECORD_PARTS_OF_KIND.get(tool_kinds.kind_of(entry), ())
+
+
+def without_record_parts(value: Any, paths: Iterable[str]) -> Any:
+    """``value`` without what the dotted ``paths`` name: ``*`` is each element of a list.
+
+    A copy of the containers on a path, never of what they hold beside it;
+    linear in the parts the paths walk through.
+    """
+    split = [path.split(".") for path in paths if path]
+
+    def strip(node: Any, rests: list[list[str]]) -> Any:
+        if not rests:
+            return node
+        if isinstance(node, list):
+            inner = [rest[1:] for rest in rests if rest[0] == "*"]
+            return [strip(item, inner) for item in node] if inner else node
+        if not isinstance(node, dict):
+            return node
+        out: dict[str, Any] = {}
+        for key, held in node.items():
+            # ``*`` names a list's elements, never a key of that name.
+            here = [rest for rest in rests if rest[0] == key and key != "*"]
+            if any(len(rest) == 1 for rest in here):
+                continue
+            out[key] = strip(held, [rest[1:] for rest in here])
+        return out
+
+    return strip(value, split)
+
+
+def _held_outside_records(
+    entry: LedgerEntry, row: NetworkIP | NetworkDomain | NetworkURL, outside: dict[int, str]
+) -> bool:
+    """Whether ``entry``'s answer holds the row's value outside the parts that are its record.
+
+    An answer with no record part is text throughout. ``outside`` holds each
+    entry's text outside its record parts, keyed by the entry itself.
+    """
+    from malspark.agents._indicator_denylists import whole_value_in
+
+    parts = _record_parts(entry)
+    if not parts:
+        return True
+    if id(entry) not in outside:
+        rest = without_record_parts(entry.structured, parts)
+        outside[id(entry)] = " ".join(_strings_in(rest)).lower()
+    if isinstance(row, NetworkIP):
+        kind, value = "ip", row.address
+    elif isinstance(row, NetworkDomain):
+        kind, value = "domain", row.fqdn
+    else:
+        kind, value = "url", row.url
+    return whole_value_in(searched_spelling(kind, value).lower(), outside[id(entry)])
 
 
 def _listed_key(row: NetworkIP | NetworkDomain | NetworkURL) -> str:

@@ -101,7 +101,6 @@ from malspark.pipeline.debate_facts import (
     BLOCK_NOT_READ_NOTE,
     analysts_to_revise,
     carried_marks,
-    claims_named_by_lines,
     contested_input,
     facts_naming,
     ledger_count_facts,
@@ -163,7 +162,8 @@ from malspark.pipeline.outcome import (
 )
 from malspark.pipeline.revision_merge import (
     RevisionMerge,
-    claim_tokens_by_number,
+    claims_left_unread_of,
+    claims_named_in_force,
     merge_revision,
     rule_sentence,
     with_numbering_key,
@@ -5407,6 +5407,12 @@ def make_negotiation_node(
         # and the mediator asked to mark each blocking line it lists carried
         # or new.
         said_of_round = round_facts_text(round_before)
+        # The revision round held right before this mediation, when this
+        # debate held one before it: a debate's first mediation is named by
+        # none, and its question asks for every contradiction now.
+        last_revision_round = (
+            int(iteration) if rounds_held_before(state, getattr(stage, "key", None)) >= 1 else None
+        )
 
         def _judge_evidence() -> list[dict[str, Any]]:
             """The judges' tool calls, drained from every cached role.
@@ -5519,6 +5525,11 @@ def make_negotiation_node(
                     run_state=render_run_state(state),
                     **({"round_facts": said_of_round} if said_of_round else {}),
                     **({"cited_entries": mediation_entries} if mediation_entries else {}),
+                    **(
+                        {"last_revision_round": last_revision_round}
+                        if last_revision_round is not None
+                        else {}
+                    ),
                     # The run's ledger, which the round's read_evidence reads
                     # by id (``agents.ledger_reads``).
                     ledger=state.get("evidence_ledger") or None,
@@ -6354,10 +6365,10 @@ def make_revision_node(container: ServiceContainer, *, stage: Any = None) -> Any
         # written for no analyst is read for the one whose claim in force
         # shares an id or an address with it (``debate_facts.OwnedClaim``).
         try:
-            named_by_lines = claims_named_by_lines(
+            named_by_lines = claims_named_in_force(
                 contested,
                 list(agent_names),
-                {name: claim_tokens_by_number(kept_isrs.get(name)) for name in agent_names},
+                {name: kept_isrs.get(name) for name in agent_names},
             )
         except Exception as exc:  # noqa: BLE001 — no lines read is no claim named
             logger.debug("revision: the lines' claim numbers were not read (%s).", exc)
@@ -6503,6 +6514,9 @@ def make_revision_node(container: ServiceContainer, *, stage: Any = None) -> Any
                         revised_text,
                         iteration,
                         named_by_lines.get(name),
+                        # The analyst's own reading of the revision after its
+                        # validation turn: the merge reads no text again.
+                        claims_unread=claims_left_unread_of(isr),
                     )
                     if noted is not None and name not in not_asked
                     else RevisionMerge()

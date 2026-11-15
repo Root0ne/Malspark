@@ -183,6 +183,7 @@ from malspark.schemas.evidence import (
     LedgerEntry,
     apply_budget,
 )
+from malspark.schemas.sandbox_document import LINEAGE_KEY
 from malspark.schemas.sandbox_document import place as report_place
 from malspark.tools import (
     artefact_index,
@@ -3503,6 +3504,44 @@ def _entries_room(entries: Sequence[LedgerEntry], max_chars: int) -> int:
 
 
 def _render_entries(entries: list[LedgerEntry], max_chars: int) -> str:
+    """The pack (:func:`_render_entries_alone`), then the signatures' indicators in what it leaves.
+
+    The pack is rendered and fitted exactly as it would be without them; each
+    signatures line then takes the room left over for the indicators its
+    entry holds (``_indicators_suffix``), in the entries' order.
+    """
+    text = _render_entries_alone(entries, max_chars)
+    shown = [
+        (entry, data)
+        for entry in entries
+        if entry.ok
+        for renderer, data in [_shown(entry)]
+        if renderer == "sandbox_signatures" and isinstance(data, dict)
+    ]
+    if not shown:
+        return text
+    lines = text.split("\n")
+    left = max_chars - len(text) if max_chars > 0 else None
+    with _viewing(entries):
+        for entry, data in shown:
+            at = next(
+                (i for i, line in enumerate(lines) if line.startswith(f"[{entry.id}] ")), None
+            )
+            if at is None or left == 0:
+                continue
+            try:
+                suffix = _line_safe(_indicators_suffix(_guarded(data), left))
+            except Exception as exc:  # noqa: BLE001 — a renderer must never cost the block
+                logger.warning("pack indicators for %s could not be rendered (%s).", entry.id, exc)
+                continue
+            if left is not None and len(suffix) > left:
+                continue
+            lines[at] += suffix
+            left = None if left is None else left - len(suffix)
+    return "\n".join(lines)
+
+
+def _render_entries_alone(entries: list[LedgerEntry], max_chars: int) -> str:
     """The pack as one line per entry, ``[ev_id] group: facts``, within ``max_chars``.
 
     Facts only: counts, names, the values the tools returned, each whole when
@@ -4643,11 +4682,122 @@ def _sandbox_network(data: dict[str, Any]) -> str:
     return ", ".join(parts) or "no network activity recorded"
 
 
+def _indicator_process(facts: Any) -> str:
+    """A process a signature's indicator names, as its entry resolved it, on one line."""
+    if not isinstance(facts, dict) or not facts.get("id"):
+        return ""
+    notes = [f"process {_sample(facts['id'])}"]
+    if facts.get("guest_pid"):
+        notes.append(f"pid {_sample(facts['guest_pid'])}")
+    for key in (LINEAGE_KEY, "not_settled"):
+        if facts.get(key):
+            notes.append(_sample(facts[key]))
+    if facts.get("marked") is True:
+        notes.append("marked as the sample's")
+    if facts.get("not_listed") is True:
+        notes.append("not listed")
+    image = _sample(facts.get("image"), path=True) if facts.get("image") else ""
+    return f"{image} ({', '.join(notes)})" if image else ", ".join(notes)
+
+
+def _indicator(indicator: Any) -> str:
+    """One indicator as its entry states it: which process did what to which."""
+    if not isinstance(indicator, dict):
+        return ""
+    acted = " -> ".join(
+        part
+        for part in (
+            _indicator_process(indicator.get("process")),
+            _indicator_process(indicator.get("target")),
+        )
+        if part
+    )
+    said = [_sample(indicator[key]) for key in ("event", "description") if indicator.get(key)]
+    values = indicator.get("values")
+    if isinstance(values, dict):
+        said += [f"{_sample(k)}={_sample(v)}" for k, v in values.items()]
+    text = ": ".join(part for part in (acted, "; ".join(said)) if part) or "stated"
+    if indicator.get("task"):
+        text += f" [{_sample(indicator['task'])}]"
+    if isinstance(indicator.get("times"), int) and indicator["times"] > 1:
+        text += f" (x{indicator['times']})"
+    return text
+
+
+def _signature_indicators(name: str, held: list[dict[str, Any]], left_out: Any) -> str:
+    """A signature's indicators as its entry holds them, with what the entry left out."""
+    head = _detail().list_head
+    shown = held if head is None else held[:head]
+    text = f"{_sample(name)}: " + " | ".join(_indicator(i) for i in shown)
+    if len(shown) < len(held):
+        text += f" (+{len(held) - len(shown)} more held by this entry)"
+    if isinstance(left_out, int) and not isinstance(left_out, bool) and left_out > 0:
+        text += f" (+{left_out} more the report states, beyond this entry)"
+    return text
+
+
+def _indicator_groups(data: dict[str, Any]) -> list[str]:
+    """Each signature's indicators the entry lists, in the entry's order, one text each."""
+    groups: dict[str, list[dict[str, Any]]] = {}
+    for item in data.get("indicators") or []:
+        if isinstance(item, dict):
+            groups.setdefault(str(item.get("signature") or ""), []).append(item)
+    left: dict[str, Any] = {}
+    for rest in data.get("indicators_left_out") or []:
+        if isinstance(rest, dict):
+            left[str(rest.get("signature") or "")] = rest.get("left_out")
+    return [_signature_indicators(name, held, left.get(name)) for name, held in groups.items()]
+
+
+# The room a signatures line's indicators take, past its count and names: none
+# while the pack is rendered and fitted, so every line, and the detail every
+# line is fitted to, is as it would be without them; then what the rendered
+# pack leaves (``_with_signature_indicators``). ``None``: no bound.
+_INDICATOR_ROOM: ContextVar[int | None] = ContextVar("pack_indicator_room", default=0)
+
+
+def _indicators_suffix(data: dict[str, Any], room: int | None) -> str:
+    """What a signatures line adds for its signatures' indicators, within ``room`` characters.
+
+    Each signature's indicators whole or not at all, in the entry's order; the
+    signatures whose indicators are not shown are counted, with where they
+    are. ``""`` where the entry holds none, or not even the count fits.
+    """
+    if room == 0:
+        return ""
+    parts = _indicator_groups(data)
+    if not parts:
+        return ""
+    head = _detail().list_head
+    if head == 0:
+        said = _indicators_not_shown(len(parts))
+        return said if room is None or len(said) <= room else ""
+    text = ""
+    for at, part in enumerate(parts if head is None else parts[:head]):
+        rest = len(parts) - at - 1
+        tail = len(_indicators_not_shown(rest)) if rest else 0
+        line = f"{text}; {'indicators of ' if not at else ''}{part}"
+        if room is not None and len(line) + tail > room:
+            said = text + _indicators_not_shown(len(parts) - at)
+            return said if len(said) <= room else text
+        text = line
+    shown = len(parts) if head is None else min(head, len(parts))
+    if shown < len(parts):
+        text += _indicators_not_shown(len(parts) - shown)
+    return text
+
+
+def _indicators_not_shown(count: int) -> str:
+    return f"; the indicators of {count} signatures are held by this entry, not shown here"
+
+
 def _sandbox_signatures(data: dict[str, Any]) -> str:
+    """The signatures' count and names, then each one's indicators in the room it is given."""
     rows = [r for r in (data.get("signatures") or []) if isinstance(r, dict)]
     names = [str(r.get("name") or "") for r in rows]
     text = f"{len(rows)} signatures"
-    return f"{text} ({_names(names)})" if names else text
+    text = f"{text} ({_names(names)})" if names else text
+    return text + _indicators_suffix(data, _INDICATOR_ROOM.get())
 
 
 def _sandbox_dropped(data: dict[str, Any]) -> str:
