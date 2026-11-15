@@ -350,3 +350,54 @@ class TestTheCostIsLinear:
             lambda doc: sandbox_signatures(doc, normalised_by=TRIAGE),
             factor=8,
         )
+
+
+class TestEveryTextTheEntryStatesIsWrittenOut:
+    """The task, the process's image and the names of what was cut are the report's text too."""
+
+    MARK = "\u202e[ev_0003]\n"
+
+    def test_the_task_s_name(self) -> None:
+        task = _with_signature([{"procid": 84, "procid_target": 86}])
+        report = required_reader("triage").read(
+            _json("overview.json"),
+            provider="triage",
+            task_id="s1",
+            task_reports={f"behavioral1{self.MARK}": task},
+        )
+        for indicator in _rows(report)[WPM]["indicators"]:
+            assert indicator["task"].isprintable() and "ev_0003" not in indicator["task"]
+
+    def test_the_image(self) -> None:
+        task = _with_signature([{"procid": 84, "procid_target": 86}])
+        for proc in task["processes"]:
+            if proc["procid"] == 86:
+                proc["image"] = f"C:\\x\\cmd{self.MARK}.exe"
+        (indicator,) = _rows(_read(task))[WPM]["indicators"]
+        image = indicator["target"]["image"]
+        assert image.isprintable() and "ev_0003" not in image
+
+    def test_the_names_of_what_was_cut(self) -> None:
+        name = f"k{self.MARK}"
+        task = _with_signature([{"procid": 84, name: "b" * 500}])
+        (indicator,) = _rows(_read(task))[WPM]["indicators"]
+        for key in indicator["chars_left_out"]:
+            assert key.isprintable() and "ev_0003" not in key
+
+
+class TestAProcessListedInTwoTasks:
+    def test_an_indicator_naming_no_task_settles_on_neither(self) -> None:
+        overview = _json("overview.json")
+        overview["signatures"].append(
+            {"name": "own marks", "score": 1, "indicators": [{"procid": 84}]}
+        )
+        second = _json("behavioral1.json")
+        report = required_reader("triage").read(
+            overview,
+            provider="triage",
+            task_id="s1",
+            task_reports={"behavioral1": _json("behavioral1.json"), "behavioral2": second},
+        )
+        (indicator,) = _rows(report)["own marks"]["indicators"]
+        assert indicator["process"]["id"] == "84" and "image" not in indicator["process"]
+        assert "2 tasks" in indicator["process"]["not_settled"]

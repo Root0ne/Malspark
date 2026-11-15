@@ -272,3 +272,23 @@ class TestTheCostIsLinear:
             return sandbox_signatures(sandbox_document(report), normalised_by=("u", "generic"))
 
         assert_scales(make, 200, read_and_view, factor=8)
+
+
+class TestARowHeldInTheNeutralForm:
+    """A mapped or stored row's indicators are read in the form they take, and in their bounds."""
+
+    def test_a_long_text_is_held_to_its_bound(self) -> None:
+        held = signature_indicators.held_neutral(
+            {"description": "a" * 10_000, "values": {"k" * 500: "v" * 10_000}}
+        )
+        bound = signature_indicators.INDICATOR_TEXT_CHARS + 2
+        assert len(held["description"]) <= bound
+        ((name, text),) = held["values"].items()
+        assert len(name) <= signature_indicators.INDICATOR_NAME_CHARS + 2 and len(text) <= bound
+
+    @pytest.mark.parametrize("count", [True, -1, 1.5, "3"], ids=repr)
+    def test_a_count_that_is_no_count_is_read_as_none(self, count: Any) -> None:
+        held = signature_indicators.held_neutral(
+            {"values_left_out": count, "chars_left_out": {"description": count}}
+        )
+        assert held == {}
