@@ -125,3 +125,11 @@ def test_a_nested_path_strips_each_element_s_part_and_nothing_beside_it() -> Non
         "items": [{"fields": {"name": "a"}}, {"fields": {"name": "b"}}],
         "indicators": "kept",
     }
+
+
+def test_a_key_named_star_is_a_key_and_not_each_element() -> None:
+    answer = {"items": {"*": {"indicators": [{"x": 1}]}}, "rows": [{"indicators": [1]}]}
+    assert without_record_parts(answer, ("items.*.indicators", "rows.*.indicators")) == {
+        "items": {"*": {"indicators": [{"x": 1}]}},
+        "rows": [{}],
+    }

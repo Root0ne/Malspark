@@ -1778,7 +1778,8 @@ def without_record_parts(value: Any, paths: Iterable[str]) -> Any:
             return node
         out: dict[str, Any] = {}
         for key, held in node.items():
-            here = [rest for rest in rests if rest[0] == key]
+            # ``*`` names a list's elements, never a key of that name.
+            here = [rest for rest in rests if rest[0] == key and key != "*"]
             if any(len(rest) == 1 for rest in here):
                 continue
             out[key] = strip(held, [rest[1:] for rest in here])
