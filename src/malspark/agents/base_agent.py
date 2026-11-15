@@ -47,10 +47,17 @@ from malspark.agents.callees_question import (
     states_why,
 )
 from malspark.agents.claim_headings import (
+    CLAIM_HEADING_EXAMPLE,
+    CLAIM_HEADING_FORM,
     LINE_PREFIX,
+    claim_numbers_written,
     claims_headed_with_notes,
     count_claims_after_disputes,
     count_claims_begun,
+    count_claims_begun_unread,
+    count_claims_headed,
+    disputes_section,
+    writes_claim_fields,
 )
 from malspark.agents.prompt_fragments import (
     CLAIM_FORMAT_FRAGMENT,
@@ -1492,6 +1499,42 @@ FINAL_ANSWER_NUDGE = (
     "Return your final ISR now."
 )
 
+# The same one turn, for a last message that writes claim field lines
+# (EVIDENCE:, CONFIDENCE: ...) under headings the claim reader does not read,
+# beside headings it reads or with none: its claims are there and their
+# headings are not, so the turn states the heading the platform reads
+# (``claim_headings.CLAIM_HEADING_FORM``).
+FINAL_ANSWER_HEADING_NUDGE = (
+    "Your last message was not a final report the platform can read: its claims open with "
+    "headings the platform does not read. No tool can be called in this turn. Return your "
+    f"final ISR now, each claim opening with a line {CLAIM_HEADING_FORM} (for example "
+    f"{CLAIM_HEADING_EXAMPLE}) and keeping its field lines under it."
+)
+
+
+def final_answer_nudge(content: str) -> str:
+    """The nudge a loop whose last message is ``content`` is sent: the heading one when it wrote fields."""
+    return FINAL_ANSWER_HEADING_NUDGE if writes_claim_fields(content) else FINAL_ANSWER_NUDGE
+
+
+def _replaces_read_in_part(report: str, reply: str) -> bool:
+    """Whether ``reply`` to the nudge replaces ``report``, a report read in part.
+
+    Only a report read whole that loses nothing the report wrote: it begins
+    at least as many claims, leaves none begun and unread, writes every
+    claim number the report wrote, read or begun
+    (``claim_headings.claim_numbers_written``), and keeps a DISPUTES section
+    where the report wrote one.
+    """
+    return (
+        answer_is_isr(reply)
+        and not count_claims_begun_unread(reply)
+        and count_claims_begun(reply) >= count_claims_begun(report)
+        and claim_numbers_written(report) <= claim_numbers_written(reply)
+        and (disputes_section(report) is None or disputes_section(reply) is not None)
+    )
+
+
 # What the analyst reports for itself when even the nudge produced no report.
 # Not ``no_data``: the analyst had data, read it, and stopped mid-thought.
 NO_STRUCTURED_REPORT_STATUS = "no_claims"
@@ -1541,13 +1584,15 @@ def answer_is_isr(text: str) -> bool:
     The two shapes an analyst may answer in: the ``CLAIM:`` block every ISR
     prompt asks for, and the optional fenced ``malspark-findings`` channel. Prose
     that is neither is not a report — it may be a fine paragraph, but nothing
-    downstream can read a finding out of it without inventing one.
+    downstream can read a finding out of it without inventing one. A claim
+    begun under a heading the reader does not read heads no block, so it makes
+    no report (``claim_headings.count_claims_headed``).
     """
     from malspark.agents.findings_block import has_findings_block
 
     if not text or not text.strip():
         return False
-    return "CLAIM:" in text or count_claims_begun(text) > 0 or has_findings_block(text)
+    return "CLAIM:" in text or count_claims_headed(text) > 0 or has_findings_block(text)
 
 
 def nudge_turns(msgs: list) -> tuple[list, bool]:
@@ -8239,11 +8284,27 @@ class BaseAnalyst(BudgetMeter, ABC):
         Sets ``_answer_unstructured``, which is what makes the analyst report
         ``no_claims`` rather than an empty ISR that reads like an analyst with
         nothing to say.
+
+        A report read in part, a claim of it begun under a heading the reader
+        does not read (``claim_headings.count_claims_begun_unread``), is asked
+        the same one turn. Its reply replaces it only when it is a report that
+        begins at least as many claims, leaves none of them unread, writes
+        every claim number the report wrote, read or begun, and keeps a
+        DISPUTES section where the report wrote one (:func:`_replaces_read_in_part`);
+        otherwise the report stands as written, its shortfall recorded where
+        it is read.
         """
         self._answer_unstructured = False
-        if answer_is_isr(content):
+        read_in_part = answer_is_isr(content)
+        if read_in_part and not count_claims_begun_unread(content):
             return content
-        nudged = self._nudge_for_final_answer(msgs, timeout, elapsed, max_steps)
+        nudged = self._nudge_for_final_answer(
+            msgs, timeout, elapsed, max_steps, question=final_answer_nudge(content)
+        )
+        if read_in_part:
+            if nudged is not None and _replaces_read_in_part(content, nudged):
+                return nudged
+            return content
         # Only when the nudge answered the question. Taking any non-empty text
         # would let a second non-report — often shorter than the first —
         # replace what the loop actually produced.
@@ -8258,9 +8319,18 @@ class BaseAnalyst(BudgetMeter, ABC):
         return content
 
     def _nudge_for_final_answer(
-        self, msgs: list, timeout: float | None, elapsed: float, max_steps: int | None
+        self,
+        msgs: list,
+        timeout: float | None,
+        elapsed: float,
+        max_steps: int | None,
+        *,
+        question: str = FINAL_ANSWER_NUDGE,
     ) -> str | None:
         """Ask once for the report the loop did not produce; ``None`` on failure.
+
+        ``question`` is the turn's words (:func:`final_answer_nudge`), and the
+        log line that says the nudge is sent says which one.
 
         Bounded in both dimensions, like ``_force_final_synthesis``: the extra
         turn counts against ``max_steps`` (the conversation already spent
@@ -8284,8 +8354,11 @@ class BaseAnalyst(BudgetMeter, ABC):
         stated_time = NO_LIMIT if remaining_time is None else remaining_time
 
         self.logger.warning(
-            "%s: the loop's last message was not a final report; asking once for one.",
+            "%s: the loop's last message was not a final report; asking once for one%s.",
             self.name,
+            ", stating the claim heading the platform reads"
+            if question == FINAL_ANSWER_HEADING_NUDGE
+            else "",
         )
         # Kept whole where the model binds its thinking to the turns before it
         # (``anthropic_history``): the unparsed call is answered as not run by
@@ -8300,12 +8373,12 @@ class BaseAnalyst(BudgetMeter, ABC):
         # The run state as of now, at the end of the nudge's own question, the
         # place the loop's turns carried it.
         turns = self._with_current_run_state(
-            with_question(tool_free_turns(sendable), FINAL_ANSWER_NUDGE),
+            with_question(tool_free_turns(sendable), question),
             stated_steps,
             stated_time,
         )
         loop_turns = self._with_current_run_state(
-            with_question(sendable, FINAL_ANSWER_NUDGE), stated_steps, stated_time
+            with_question(sendable, question), stated_steps, stated_time
         )
         budget = remaining_time
         if self._spend_refuses("final-answer nudge", list(turns)):
@@ -12750,13 +12823,16 @@ class BaseAnalyst(BudgetMeter, ABC):
             # itself wrote none and so decided nothing about the claims in force.
             # A claim block the parser could not read (no confidence, or one
             # it cannot read) is a claim the revision wrote: only a revision
-            # that began none is one that decided nothing.
+            # that heads none is one that decided nothing. A claim begun under
+            # a heading the reader does not read heads no block, so a revision
+            # of only such claims decided nothing the platform reads, and the
+            # claims in force stand.
             wrote_no_claim = (
                 not isr.claims
                 and str(isr.status or "") == NO_STRUCTURED_REPORT_STATUS
                 and not isr.blocks_without_confidence
                 and not isr.confidence_unreadable
-                and count_claims_begun(str(text or "")) == 0
+                and count_claims_headed(str(text or "")) == 0
             )
             gated = self._apply_consistency_gate(isr, grounds)
             # The revision's own answer as the validation turn is given it,

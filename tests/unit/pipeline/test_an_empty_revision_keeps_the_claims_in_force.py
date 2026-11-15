@@ -343,6 +343,34 @@ class TestTheRevisionPathRecordsIt:
             )
             assert "retry_added" not in update["revision_rounds"][0]
 
+    def test_a_revision_of_claims_begun_under_headings_not_read_leaves_the_claims_in_force(
+        self,
+    ) -> None:
+        # Each claim written whole under a numbered heading ended by a dot,
+        # which the reader counts as begun and does not read.
+        revision = (
+            "CLAIM 1. The loop at 0x5750 sleeps 450 to 599 seconds.\n"
+            "EVIDENCE: [ev_0063]\nCONFIDENCE: 0.8\n\n"
+            "CLAIM 2. The install routine 0x33ac copies the file under the user's profile.\n"
+            "EVIDENCE: [ev_0068]\nCONFIDENCE: 0.8\n"
+        )
+        retried = (
+            "CLAIM: A second user agent string is decoded at 0xff40.\n"
+            "EVIDENCE: [ev_0020]\nCONFIDENCE: 0.7\n"
+        )
+        isr = self._revise(revision, [retried, retried])
+
+        assert [c.claim for c in isr.claims] == [RETRY_NEW.claim]
+        assert isr.revision_wrote_no_claim is True
+
+        update = _revise({"reverser": (revision, isr)}, {"reverser": _in_force("reverser")})
+
+        after = update["isr_reports"]["reverser"]
+        assert after.claims[:3] == [DISPATCH, TIMING, INSTALL]
+        assert [c.claim for c in after.claims[3:]] == [RETRY_NEW.claim]
+        assert after.claims[3].added_by_retry_in_round == 2
+        assert "revision_replacements" not in update
+
     def test_a_revision_with_claims_is_not_recorded(self) -> None:
         isr = self._revise(
             "CLAIM: A second user agent string is decoded at 0xff40.\n"

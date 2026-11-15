@@ -18,7 +18,9 @@ consumer can iterate a fresh ``SandboxReport()`` without a null check.
 
 from __future__ import annotations
 
+import json
 import re
+from collections import deque
 from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any, cast
@@ -39,9 +41,13 @@ from malspark.core.report_formats import SignatureScale, reader_display_name
 from malspark.schemas.sandbox_document import (
     GROUP_ROWS_KEY,
     LAUNCHER_ATTRIBUTION_KEY,
+    LAUNCHER_FILES_KEY,
     LAUNCHER_SIGNATURES_CHANNEL,
     LINEAGE_KEY,
+    MEMBER_FACT_KEY,
     UNATTRIBUTED_SIGNATURES_KEY,
+    UNPLACED_MEMBER_FILES_KEY,
+    UNSETTLED_LAUNCHER_FILES_KEY,
     kept_source,
     pid_of,
     signature_pids,
@@ -567,6 +573,11 @@ class Reading:
     # a pid or parent of 0 is the form's "not stated", rather than as the
     # source published its rows.
     rendered: bool = True
+    # The fields of a dropped file's row that hold the file's path in the
+    # guest, as the reader's source declares them; empty where the source
+    # names no such field (a field of the same name may hold a path on the
+    # sandbox's own host, which is never shown).
+    guest_path_fields: tuple[str, ...] = ()
 
 
 # What a report read by a reader that keeps its source's arrangement reached
@@ -679,6 +690,22 @@ def _extracted(value: Any) -> list[Any] | dict[str, Any]:
     return list(value) if isinstance(value, list) else []
 
 
+def _traffic_process_stated(
+    rows: list[dict[str, Any]], fields: tuple[str, ...]
+) -> list[dict[str, Any]]:
+    """``rows``, each naming its process under one of ``fields`` given :data:`TRAFFIC_PROCESS_KEY`.
+
+    In place: the rows are the report's own, which the document holds by
+    reference. A row naming none, or under a value that cannot be an id, is
+    left as it is.
+    """
+    for row in rows if fields else []:
+        procid = next((pid for field in fields if (pid := pid_of(row.get(field)))), "")
+        if procid:
+            row[TRAFFIC_PROCESS_KEY] = procid
+    return rows
+
+
 def cape_report_to_sandbox_report(
     raw: dict[str, Any],
     *,
@@ -687,8 +714,14 @@ def cape_report_to_sandbox_report(
     task_id: str = "",
     keep_arrangement: bool = True,
     renames: Mapping[str, str] | None = None,
+    traffic_process_fields: tuple[str, ...] = (),
 ) -> SandboxReport:
     """Read a CAPE/Cuckoo-shaped report into the neutral form.
+
+    ``traffic_process_fields`` are the fields a flow's or an HTTP request's
+    row names its process under, as the reader declares them: the first one
+    holding an id is written beside them under :data:`TRAFFIC_PROCESS_KEY`,
+    on the row itself, which the document keeps by reference.
 
     ``source_format`` is the id of the registered reader that read it, which
     the report records (``SandboxReport.source_format``); never assumed.
@@ -773,9 +806,9 @@ def cape_report_to_sandbox_report(
         signatures=signatures,
         network=SandboxNetwork(
             dns=_rows(net.get("dns")),
-            http=_rows(net.get("http")),
-            tcp=_rows(net.get("tcp")),
-            udp=_rows(net.get("udp")),
+            http=_traffic_process_stated(_rows(net.get("http")), traffic_process_fields),
+            tcp=_traffic_process_stated(_rows(net.get("tcp")), traffic_process_fields),
+            udp=_traffic_process_stated(_rows(net.get("udp")), traffic_process_fields),
             hosts=_rows(net.get("hosts")),
             domains=[d for d in _list(net.get("domains")) if isinstance(d, str | dict)],
             tls=_rows(net.get("tls")),
@@ -841,6 +874,39 @@ SAMPLE_TREE_KEY = "sample_process_tree"
 # The image of the process outside the sample's tree that made a flow, on
 # the flow's row: which process reached the address, as the report names it.
 FLOW_PROCESS_KEY = "process"
+# Beside a flow's ``procid``: the report names the process that made the flow
+# and does not list it among the task's processes (a guest service the
+# sandbox does not follow), so the traffic is not the sample's. Set only where
+# the task lists processes at all.
+PROCESS_UNLISTED_KEY = "process_not_listed"
+# On a flow's or a request's row: the id the report's process list gives the
+# process that made it, in one text form (``pid_of``), as the row's reader
+# read it under the field its format states it under
+# (``ReportReader.traffic_process_fields``). The one key the launcher's
+# reading and the publish rule read a row's process by; a row naming no
+# process, or one under a value that cannot be an id, carries none.
+TRAFFIC_PROCESS_KEY = "platform_process"
+# The field a flow's row stored before rows carried that key named its process
+# by: a stored row holding only this field is named by it in published text.
+STORED_TRAFFIC_PROCESS_FIELD = "procid"
+# On a request riding on a flow id several flows of its task share: each
+# flow's process facts, the request being the sample's when any of them is
+# (``ledger_projection.traffic_makers``). Where they all agree, the request
+# carries their facts on itself instead.
+TRAFFIC_FLOWS_KEY = "platform_flows"
+# How many of those flows of each answer a request carries (the sample's, one
+# naming no process or no lineage, and each other lineage's), in the manner of
+# the names an address lends a name (``ledger_projection``): a hostile report's
+# many flows and requests on one id cost their sum, never their product. Every
+# answer the id's flows give is carried, so the request is decided as with all
+# of them; beside the flows, how many of each answer were left out.
+TRAFFIC_FLOWS_NAMED = 16
+TRAFFIC_FLOWS_LEFT_OUT_KEY = "platform_flows_left_out"
+# Beside those: the launcher's reading met flows left out, which it cannot
+# read again, of an answer it may change (:data:`TRAFFIC_FLOWS_SETTLED_ANSWERS`
+# names the ones it never does); the request then also answers as one naming
+# no process.
+TRAFFIC_FLOWS_UNSETTLED_KEY = "platform_flows_unsettled"
 
 
 def _basename(path: str) -> str:
@@ -1129,10 +1195,37 @@ LINEAGE_FILE = "file"
 # it is, the display name its report format declares
 # (``core.report_formats.reader_display_name``).
 LINEAGE_MARKED_BY_KEY = "lineage_marked_by"
+# The keys a flow's row states the process that made it under, which an HTTP
+# request riding on that flow takes from it (``triage_overview_to_sandbox_report``).
+TRAFFIC_PROCESS_KEYS: tuple[str, ...] = (
+    "procid",
+    "pid",
+    TRAFFIC_PROCESS_KEY,
+    SAMPLE_TREE_KEY,
+    LINEAGE_DISPUTED_KEY,
+    LINEAGE_MARKED_BY_KEY,
+    FLOW_PROCESS_KEY,
+    PROCESS_UNLISTED_KEY,
+)
 # The value a row stored before the normalisation gives a marked process, and
 # the sandbox such a row, which names no marker, was marked by: the one
 # reader that wrote one (the triage format's declared name).
 LINEAGE_MARKED_STORED = "orig"
+
+
+def _ancestors(parent: Mapping[Any, Any], nodes: set[Any]) -> set[Any]:
+    """Every listed process up the parent chains of ``nodes``, ``nodes`` left out.
+
+    Each chain is walked only up to a process already reached, so the walk
+    costs time linear in the list.
+    """
+    out: set[Any] = set()
+    for node in nodes:
+        current = parent.get(node)
+        while current is not None and current in parent and current not in out:
+            out.add(current)
+            current = parent.get(current)
+    return out - nodes
 
 
 def _reach(parent: dict[Any, Any], roots: set[Any]) -> set[Any]:
@@ -1197,16 +1290,20 @@ def _sample_process_tree(task: dict[str, Any], sample: dict[str, Any]) -> _Linea
     reached published as the sample's. Where only one fact names any process,
     its tree is the answer; where neither does, nothing is stated.
     """
-    processes = [p for p in task.get("processes") or [] if isinstance(p, dict)]
-    parent = {p.get("procid"): p.get("procid_parent") for p in processes if p.get("procid")}
+    # Each process by its id in one text form (``pid_of``): an id of a type
+    # that cannot be one is not stated, and the process is not keyed.
+    processes = [
+        (pid_of(p.get("procid")), p) for p in task.get("processes") or [] if isinstance(p, dict)
+    ]
+    listed = [(procid, p) for procid, p in processes if procid]
+    parent = {procid: pid_of(p.get("procid_parent")) for procid, p in listed}
     # As the report writes them, for a reader: the case is the file's own.
     images = {
-        p.get("procid"): re.split(r"[\\/]", str(p.get("image") or p.get("name") or "").strip())[-1]
-        for p in processes
-        if p.get("procid")
+        procid: re.split(r"[\\/]", str(p.get("image") or p.get("name") or "").strip())[-1]
+        for procid, p in listed
     }
-    marked = {p.get("procid") for p in processes if p.get("procid") and p.get("orig") is True}
-    named = {p.get("procid") for p in processes if p.get("procid") and _is_the_sample(p, sample)}
+    marked = {procid for procid, p in listed if p.get("orig") is True}
+    named = {procid for procid, p in listed if _is_the_sample(p, sample)}
     by_mark, by_file = _reach(parent, marked), _reach(parent, named)
     if marked and named:
         disputed = {procid: LINEAGE_MARKED for procid in by_mark - by_file}
@@ -1234,9 +1331,13 @@ def _flow_attribution(
     number, AS organisation and country where Triage recorded them.
     """
     out: dict[str, Any] = {}
-    procid = flow.get("procid")
-    if procid not in (None, ""):
-        out["procid"] = procid
+    stated = flow.get(_TRIAGE_TRAFFIC_PROCESS_FIELD)
+    procid = pid_of(stated)
+    if stated not in (None, ""):
+        out["procid"] = stated
+    if procid:
+        # The id in the text form the process list is keyed by, on both sides.
+        out[TRAFFIC_PROCESS_KEY] = procid
         if procid in lineage.tree:
             out[SAMPLE_TREE_KEY] = True
         elif procid in lineage.disputed:
@@ -1249,6 +1350,8 @@ def _flow_attribution(
             out[SAMPLE_TREE_KEY] = False
             if lineage.images.get(procid):
                 out[FLOW_PROCESS_KEY] = lineage.images[procid]
+        elif lineage.images and procid not in lineage.images:
+            out[PROCESS_UNLISTED_KEY] = True
     if flow.get("pid") not in (None, ""):
         out["pid"] = flow.get("pid")
     for key in ("as_num", "as_org", "country"):
@@ -1277,6 +1380,27 @@ PROCESS_TASK_KEY = "platform_task"
 LINEAGE_REASON_KEY = "platform_lineage_reason"
 DROPPED_LAUNCHER = "the generated launcher"
 DROPPED_SAMPLE = "the submitted sample, unpacked"
+# A file the launcher's own process wrote or dumped (its memory regions, a
+# file its script host writes on start): the launcher's, by the writer's
+# lineage in the row's own task, where the started program did not reach the
+# launcher's process in that task. Where it did, the row stays among the
+# sample's files, marked with the launcher's lineage as not established.
+DROPPED_BY_LAUNCHER = "written by the generated launcher's process"
+DROPPED_BY_LAUNCHER_REACHED = (
+    "written by the generated launcher's process, which the started program reached "
+    "in that task: the launcher's attribution is not established"
+)
+LINEAGE_LAUNCHER_UNSETTLED = "launcher, not established"
+# A file a script host naming the launcher wrote in a task that states the
+# parent of the process running the sample, where no such host is an ancestor
+# of the sample's tree: it stays among the sample's files, marked with the
+# launcher's lineage as not established.
+DROPPED_BY_UNCONFIRMED_HOST = (
+    "written by a script host naming the generated launcher that is an ancestor of no "
+    "process of the sample's tree: the launcher's attribution is not established"
+)
+# The platform's keys on a dropped file's row, set again on each reading.
+_DROPPED_PLATFORM_KEYS = frozenset({LINEAGE_KEY, LINEAGE_REASON_KEY, MEMBER_FACT_KEY})
 # The values of the report's ``LAUNCHER_ATTRIBUTION_KEY`` mark: the sample's
 # own processes were told apart from the launcher's in every task that lists
 # a process, or they were not, and why (:func:`attribution_not_established`).
@@ -1309,31 +1433,42 @@ def attribution_not_established(reason: str) -> str:
 class _LauncherNames:
     """What a launch record's launcher block names: the generated members, hosts and digests."""
 
+    # Each member's file name, and its path inside the archive (lower case,
+    # forward slashes): the two are one for a member at the archive's root.
     sample: str
     script: str
     hosts: frozenset[str]
     script_sha256: str
     sample_sha256: str
+    sample_path: str = ""
+    script_path: str = ""
+
+
+def _member_path(value: Any) -> str:
+    """An archive member's path inside the archive, lower case with forward slashes."""
+    return "/".join(p for p in str(value or "").strip().lower().replace("\\", "/").split("/") if p)
 
 
 def _launcher_names(launcher: Any) -> _LauncherNames | None:
     """The generated names a launch record's launcher block holds; ``None`` without all three."""
     if not isinstance(launcher, Mapping):
         return None
-    sample = str(launcher.get("sample_member") or "").strip().lower()
-    script = str(launcher.get("launcher_member") or "").strip().lower()
+    sample_path = _member_path(launcher.get("sample_member"))
+    script_path = _member_path(launcher.get("launcher_member"))
     hosts = launcher.get("script_host_images")
     images = frozenset(
         str(h).strip().lower() for h in (hosts if isinstance(hosts, list | tuple) else []) if h
     )
-    if not (sample and script and images):
+    if not (sample_path and script_path and images):
         return None
     return _LauncherNames(
-        sample,
-        script,
+        sample_path.rsplit("/", 1)[-1],
+        script_path.rsplit("/", 1)[-1],
         images,
         str(launcher.get("launcher_sha256") or "").strip().lower(),
         str(launcher.get("sample_sha256") or "").strip().lower(),
+        sample_path,
+        script_path,
     )
 
 
@@ -1344,6 +1479,30 @@ def _folder(path: str) -> str:
     """The folder of a guest path, lower case with forward slashes; ``""`` for a bare name."""
     text = path.strip().strip('"').strip("'").replace("\\", "/")
     return text.rsplit("/", 1)[0].rstrip("/").lower() if "/" in text else ""
+
+
+def _archive_root(folder: str, member_path: str) -> str:
+    """The folder the archive was unpacked into, from the folder its member ``member_path`` is in.
+
+    ``""`` where the folder does not end in the member's own folder inside the archive.
+    """
+    inner = member_path.rsplit("/", 1)[0] if "/" in member_path else ""
+    if not inner:
+        return folder
+    return folder[: -len(inner) - 1] if folder.endswith("/" + inner) else ""
+
+
+# A guest path that names its place whole: a drive's, a share's or a root's.
+_PLACED_PATH = re.compile(r"^(?:[a-z]:/|/)")
+
+
+def _guest_place(path: str) -> str:
+    """A written file's guest path, lower case with forward slashes; ``""`` for one not whole.
+
+    The guest a launcher runs in is Windows, whose paths are read without case.
+    """
+    text = path.strip().strip('"').strip("'").replace("\\", "/").lower()
+    return text if _PLACED_PATH.match(text) else ""
 
 
 def _dropped_paths(row: Mapping[str, Any]) -> list[str]:
@@ -1372,6 +1531,173 @@ def _signature_nodes(
             return None
         nodes |= found
     return nodes
+
+
+# The fields a written file names the processes that wrote it under, the
+# process list's own id first: a sandbox that lists its processes by an id of
+# its own names the writer by that id too, beside the guest's pid.
+_WRITER_KEYS: tuple[str, ...] = ("procid", "pids", "pid", "process_id")
+
+
+def _writer_pids(row: Mapping[str, Any]) -> list[str]:
+    """The processes a written file's row names as its writer, by the first field naming one."""
+    for key in _WRITER_KEYS:
+        value = row.get(key)
+        pids = [
+            pid
+            for one in (value if isinstance(value, list) else [value])
+            if isinstance(one, int | str) and not isinstance(one, bool)
+            for text in str(one).split(",")
+            if (pid := pid_of(text))
+        ]
+        if pids:
+            return pids
+    return []
+
+
+# What becomes of a written file the sample wrote that a member's facts touch
+# (:data:`MEMBER_FACT_KEY`): it holds the member's digest away from the
+# member's place, or it sits at the member's place with another digest.
+MEMBER_COPIED = "a copy of the archive member, away from the member's place"
+MEMBER_CHANGED = "at the archive member's place, with another digest"
+# A file a process of the sample's tree wrote at a member's place, or under a
+# member's name, whose digest does not show it changed: the sample's, never
+# the member's copy.
+MEMBER_WRITTEN = "at the archive member's place or under its name, written by the sample's process"
+
+
+# The fields a signature's indicator names its source process and the process
+# it acted on under: the process list's own id first, then the guest's pid.
+_INDICATOR_SOURCE_KEYS: tuple[str, ...] = ("procid", "pid", "process_id")
+_INDICATOR_TARGET_KEYS: tuple[str, ...] = ("procid_target", "pid_target", "target_pid")
+
+
+def _indicator_pid(indicator: Mapping[str, Any], keys: tuple[str, ...]) -> str:
+    for key in keys:
+        pid = pid_of(indicator.get(key))
+        if pid:
+            return pid
+    return ""
+
+
+def _reached_launcher_tasks(
+    report: SandboxReport, by_pid: Mapping[str, set[_Node]], launcher_nodes: set[_Node]
+) -> set[str]:
+    """The tasks in which a process not of the launcher's acted on a launcher process.
+
+    Read from the signatures' indicators that name the process acted on (a
+    write into its memory, a thread created in it, a handle opened on it):
+    one whose target is a launcher process and whose source is not, or names
+    none, reaches the launcher in that task. The per-task signatures
+    (:data:`TASK_SIGNATURES_CHANNEL`) are read in their own task; a
+    signature's marks naming no task are read in each task that lists the
+    target's id. Linear in the indicators.
+    """
+    out: set[str] = set()
+    sources: list[tuple[str | None, Any]] = [
+        (None, signature.marks) for signature in report.signatures
+    ]
+    for row in report.channels.get(TASK_SIGNATURES_CHANNEL) or []:
+        if isinstance(row, dict) and isinstance(row.get(TASK_ROWS_KEY), list):
+            listed_in = str(row.get(TASK_KEY) or "")
+            sources.extend(
+                (listed_in, signature.get("indicators"))
+                for signature in row[TASK_ROWS_KEY]
+                if isinstance(signature, dict)
+            )
+    for task, indicators in sources:
+        for indicator in indicators if isinstance(indicators, list) else []:
+            if not isinstance(indicator, Mapping):
+                continue
+            target = _indicator_pid(indicator, _INDICATOR_TARGET_KEYS)
+            if not target:
+                continue
+            source = _indicator_pid(indicator, _INDICATOR_SOURCE_KEYS)
+            for node in by_pid.get(target, ()):
+                if task is not None and node[0] != task:
+                    continue
+                from_launcher = bool(source) and (node[0], source) in launcher_nodes
+                if node in launcher_nodes and not from_launcher:
+                    out.add(node[0])
+    return out
+
+
+def _members(names: _LauncherNames) -> tuple[tuple[str, str, str, str], ...]:
+    """Each archive member: its path inside the archive, its file name, its digest, its reason."""
+    return (
+        (names.script_path, names.script, names.script_sha256, DROPPED_LAUNCHER),
+        (names.sample_path, names.sample, names.sample_sha256, DROPPED_SAMPLE),
+    )
+
+
+def _member_places(names: _LauncherNames, roots: set[str]) -> list[set[str]]:
+    """Each member's places in the guest, one per folder the archive was unpacked into.
+
+    Built once per report: a hostile report's many folders and many rows
+    cost their sum, never their product.
+    """
+    return [{f"{root}/{path}" for root in roots} for path, _n, _s, _r in _members(names)]
+
+
+def _member_reading(
+    row: Mapping[str, Any],
+    names: _LauncherNames,
+    roots: set[str],
+    places: list[set[str]],
+    by_sample: bool = False,
+) -> tuple[str, dict[str, Any] | None, bool]:
+    """Whether a written file is the platform's copy of an archive member, and what it says else.
+
+    ``(reason, fact, unplaced)``. A file is a member's copy only at the
+    member's place (``places``, :func:`_member_places`), the folder the
+    archive was unpacked into joined with the member's path inside it,
+    holding the member's digest where the row states one. Elsewhere, a file
+    with a member's digest is the sample's, stated as a copy of the member,
+    and one at the member's place with another digest is the sample's,
+    stated as changed (``fact``). A row that states no whole guest path, or
+    a report whose launcher folder is not known, is read by its names and
+    digest (:func:`_the_member`), and a member found so is ``unplaced``. A
+    row one of whose writers is a process of the sample's tree
+    (``by_sample``) is never a member's copy: where it would be one, it is
+    the sample's, stated as written there (:data:`MEMBER_WRITTEN`).
+    """
+    paths = _dropped_paths(row)
+    digest = str(row.get("sha256") or "").strip().lower()
+    members = _members(names)
+    placed = {_guest_place(path) for path in paths} - {""}
+
+    def written(path: str, sha256: str, at: set[str]) -> dict[str, Any]:
+        fact = MEMBER_COPIED if digest and digest == sha256 and not placed & at else MEMBER_WRITTEN
+        return {"fact": fact, "member": path, "member_at": sorted(at), "at": paths}
+
+    if not roots or not placed:
+        files = {_basename(path) for path in paths}
+        where = {_folder(path) for path in paths} - {""}
+        # A copy elsewhere in the guest, where the report shows the launcher's
+        # folder, is the sample's own doing (a copy of itself it wrote).
+        if not (roots and where and not where & roots):
+            for (path, name, sha256, reason), at in zip(members, places, strict=True):
+                if _the_member(name, sha256, files, digest, bool(roots)):
+                    if by_sample:
+                        return "", written(path, sha256, at), False
+                    return reason, None, True
+        return "", None, False
+    for (path, _name, sha256, reason), at in zip(members, places, strict=True):
+        if placed & at and (not digest or not sha256 or digest == sha256):
+            if by_sample:
+                return "", written(path, sha256, at), False
+            return reason, None, False
+    for (path, _name, sha256, _reason), at in zip(members, places, strict=True):
+        if not sha256 or not digest:
+            continue
+        fact = ""
+        if placed & at and digest != sha256:
+            fact = MEMBER_CHANGED
+        elif digest == sha256 and not placed & at:
+            fact = MEMBER_COPIED
+        if fact:
+            return "", {"fact": fact, "member": path, "member_at": sorted(at), "at": paths}, False
+    return "", None, False
 
 
 def _the_member(name: str, sha256: str, files: set[str], digest: str, folder_known: bool) -> bool:
@@ -1404,14 +1730,22 @@ def attribute_the_launcher(report: SandboxReport, launcher: Any) -> None:
       included;
     * a process whose image is one of the record's script host images and
       whose command line names the launcher member, and that the sample did
-      not start, is the launcher's (``lineage: "launcher"``); in a task where
-      the sample's tree is rooted, so is every process it started outside
-      that tree, and in a task where it is not, the host alone: what it
-      started is attributed to no one, since the sample may be among it
+      not start, is the launcher's (``lineage: "launcher"``), where the task
+      states the parent of a process running the sample as a process it
+      lists, only as an ancestor of a process of the sample's tree; where no
+      such host is one there, no host is the launcher's: the hosts outside the
+      sample's tree, their flows and the files they alone wrote are marked
+      :data:`LINEAGE_LAUNCHER_UNSETTLED` and stay in the sample's view, and
+      the report says the attribution was not established; in a
+      task where the sample's tree is rooted, so is every process it started
+      outside that tree, and in a task where it is not, the host alone: what
+      it started is attributed to no one, since the sample may be among it
       under another name;
     * a flow's attribution (``SAMPLE_TREE_KEY``) is read from that tree, a
       flow of the launcher's process says so, and a flow of a process
-      attributed to no one states nothing;
+      attributed to no one states nothing; a request that carries part of
+      its shared flow id's flows, the rest of an answer this reading may
+      change, is marked as such (:data:`TRAFFIC_FLOWS_UNSETTLED_KEY`);
     * a signature every process of which is the launcher's, in every task
       that lists it, is moved to the :data:`LAUNCHER_SIGNATURES_CHANNEL`
       channel, marked, so its techniques and indicators are never read as
@@ -1419,10 +1753,30 @@ def attribute_the_launcher(report: SandboxReport, launcher: Any) -> None:
       per-task signatures of the same name (:data:`TASK_SIGNATURES_CHANNEL`),
       whose launcher rows are marked the same way, and one that still names
       none stays, counted (``UNATTRIBUTED_SIGNATURES_KEY``);
-    * a dropped file that is the launcher script or the unpacked sample, by
-      member name or digest, in the launcher's folder where the report shows
-      it, is marked as the platform's with its reason
-      (:data:`LINEAGE_REASON_KEY`), never a file the sample wrote;
+    * a dropped file that is the launcher script or the unpacked sample at
+      the member's own place (the folder the archive was unpacked into,
+      joined with the member's path inside it, compared without case) and
+      holding the member's digest where the row states one, is marked as the
+      platform's with its reason (:data:`LINEAGE_REASON_KEY`), never a file
+      the sample wrote; a file with a member's digest elsewhere, or at the
+      member's place with another digest, is the sample's, with that stated
+      (:data:`MEMBER_FACT_KEY`); a row that states no whole guest path, or a
+      report whose launcher folder is not known, is read by member name or
+      digest and each member found so is counted
+      (``UNPLACED_MEMBER_FILES_KEY``); a row one of whose writers is a
+      process of the sample's tree in its task is never a member's copy: it
+      is the sample's, with the member stated (:data:`MEMBER_WRITTEN`,
+      :data:`MEMBER_CHANGED` or :data:`MEMBER_COPIED`);
+    * a dropped file every writing process of which is the launcher's, read
+      in the row's own task (the process list's own id first), is marked as
+      the platform's, :data:`DROPPED_BY_LAUNCHER`, where no signature of that
+      task shows another process acting on the launcher's process
+      (:func:`_reached_launcher_tasks`); where one does, it stays the
+      sample's, marked :data:`LINEAGE_LAUNCHER_UNSETTLED`; a row naming no
+      task in a report listing processes by task is credited to no one by its
+      writer; both are counted (``UNSETTLED_LAUNCHER_FILES_KEY``), the rows
+      credited too (``LAUNCHER_FILES_KEY``); a row that names no writer keeps
+      the reading above, and no row is taken out;
     * the report says whether the sample's processes were told apart
       (``LAUNCHER_ATTRIBUTION_KEY``), and the sandbox's score and family are
       stated to be its analysis of the archive run from the launcher
@@ -1439,6 +1793,8 @@ def attribute_the_launcher(report: SandboxReport, launcher: Any) -> None:
     by_pid: dict[str, set[_Node]] = {}
     roots: set[_Node] = set()
     hosts: set[_Node] = set()
+    # The folders the archive was unpacked into, as the launcher's and the
+    # sample's processes show them (:func:`_archive_root`).
     folders: set[str] = set()
     for proc in report.processes:
         proc.extra.pop(LINEAGE_KEY, None)
@@ -1457,7 +1813,8 @@ def attribute_the_launcher(report: SandboxReport, launcher: Any) -> None:
         if image == names.sample:
             roots.add(node)
             quoted = _QUOTED.search(proc.name)
-            folders.add(_folder(quoted.group(1) if quoted else proc.name.split("(", 1)[0]))
+            folder = _folder(quoted.group(1) if quoted else proc.name.split("(", 1)[0])
+            folders.add(_archive_root(folder, names.sample_path))
         elif image in names.hosts:
             # A quoted path keeps its spaces; an unquoted one is a word.
             scripts = [
@@ -1471,10 +1828,26 @@ def attribute_the_launcher(report: SandboxReport, launcher: Any) -> None:
             ]
             if scripts:
                 hosts.add(node)
-                folders.update(_folder(token) for token in scripts)
+                folders.update(_archive_root(_folder(t), names.script_path) for t in scripts)
     folders.discard("")
     rooted = {node[0] for node in roots}
     sample_tree = _reach(parent, roots)
+    # Where a task states the parent of a process running the sample as a
+    # process it lists, the launcher's process is also an ancestor of a
+    # process of the sample's tree: a script host the sample started outside
+    # its own tree is not the launcher's. A task that states no such parent,
+    # or in which no process runs the sample, keeps the rule above alone. In
+    # a task where no host is such an ancestor, no host is the launcher's:
+    # the hosts outside the sample's tree are marked with the launcher's
+    # lineage as not established, nothing of theirs leaves the sample's
+    # view, and the report says the attribution was not established there.
+    parented = {root[0] for root in roots if parent.get(root) in parent}
+    ancestors = _ancestors(parent, sample_tree)
+    chained = {h[0] for h in hosts if h in ancestors}
+    unconfirmed = {
+        h for h in hosts - sample_tree if h[0] in rooted & parented and h[0] not in chained
+    }
+    hosts = {h for h in hosts if h[0] not in rooted & parented or h in ancestors}
     reached = _reach(parent, hosts - sample_tree) - sample_tree
     launcher_nodes = {n for n in reached if n[0] in rooted} | {
         n for n in hosts if n[0] not in rooted
@@ -1485,8 +1858,29 @@ def attribute_the_launcher(report: SandboxReport, launcher: Any) -> None:
             proc.extra[LINEAGE_KEY] = LINEAGE_SAMPLE
         elif node in launcher_nodes:
             proc.extra[LINEAGE_KEY] = LINEAGE_LAUNCHER
-    for row in (*report.network.tcp, *report.network.udp):
-        procid = pid_text(row.get("procid")) or pid_text(row.get("pid"))
+        elif node in unconfirmed:
+            proc.extra[LINEAGE_KEY] = LINEAGE_LAUNCHER_UNSETTLED
+    # A flow's row, and a request's that names its process (its own, or its
+    # flow's), each flow's facts of a request on a shared flow id included.
+    traffic: list[dict[str, Any]] = [
+        row for row in (*report.network.tcp, *report.network.udp) if isinstance(row, dict)
+    ]
+    traffic += [row for row in (*report.network.http, *report.network.dns) if isinstance(row, dict)]
+    traffic += [r.extra for r in report.network.dns_requests]
+    traffic += [
+        facts
+        for row in list(traffic)
+        if isinstance(row.get(TRAFFIC_FLOWS_KEY), list)
+        for facts in row[TRAFFIC_FLOWS_KEY]
+        if isinstance(facts, dict)
+    ]
+    for row in traffic:
+        # Flows of a shared id left out of a request, of an answer this
+        # reading may change: it cannot read them again (``TRAFFIC_FLOWS_NAMED``).
+        left_out = row.get(TRAFFIC_FLOWS_LEFT_OUT_KEY)
+        if isinstance(left_out, dict) and set(left_out) - TRAFFIC_FLOWS_SETTLED_ANSWERS:
+            row[TRAFFIC_FLOWS_UNSETTLED_KEY] = True
+        procid = pid_of(row.get(TRAFFIC_PROCESS_KEY))
         for key in (SAMPLE_TREE_KEY, LINEAGE_DISPUTED_KEY, LINEAGE_MARKED_BY_KEY, LINEAGE_KEY):
             row.pop(key, None)
         node = (str(row.get(PROCESS_TASK_KEY) or ""), procid)
@@ -1494,6 +1888,12 @@ def attribute_the_launcher(report: SandboxReport, launcher: Any) -> None:
             continue
         if node in sample_tree:
             row[SAMPLE_TREE_KEY] = True
+            row.pop(FLOW_PROCESS_KEY, None)
+            continue
+        if node in unconfirmed:
+            # A host naming the launcher above no process of the sample's
+            # tree: whose its traffic is, the report does not settle.
+            row[LINEAGE_KEY] = LINEAGE_LAUNCHER_UNSETTLED
             row.pop(FLOW_PROCESS_KEY, None)
             continue
         if node[0] not in rooted and node not in launcher_nodes:
@@ -1547,28 +1947,53 @@ def attribute_the_launcher(report: SandboxReport, launcher: Any) -> None:
             unattributed += 1
         kept.append(signature)
     report.signatures = kept
+    reached = _reached_launcher_tasks(report, by_pid, launcher_nodes)
+    tasked = any(node[0] for node in parent)
+    places = _member_places(names, folders)
+    unplaced = credited = unsettled = 0
     for index, dropped in enumerate(report.dropped_files):
         if not isinstance(dropped, dict):
             continue
-        plain = {k: v for k, v in dropped.items() if k not in (LINEAGE_KEY, LINEAGE_REASON_KEY)}
-        paths = _dropped_paths(plain)
-        files = {_basename(path) for path in paths}
-        digest = str(plain.get("sha256") or "").strip().lower()
-        where = {_folder(path) for path in paths} - {""}
-        reason = ""
-        # A copy elsewhere in the guest, where the report shows the launcher's
-        # folder, is the sample's own doing (a copy of itself it wrote).
-        if not (folders and where and not where & folders):
-            if _the_member(names.script, names.script_sha256, files, digest, bool(folders)):
-                reason = DROPPED_LAUNCHER
-            elif _the_member(names.sample, names.sample_sha256, files, digest, bool(folders)):
-                reason = DROPPED_SAMPLE
+        plain = {k: v for k, v in dropped.items() if k not in _DROPPED_PLATFORM_KEYS}
+        # The row's writers, read within its own task, as a process is the
+        # pair of its task and its id.
+        writers = _writer_pids(plain)
+        task = str(plain.get(PROCESS_TASK_KEY) or "")
+        nodes = {(task, pid) for pid in writers} if task or not tasked else set()
+        reason, fact, at_no_place = _member_reading(
+            plain, names, folders, places, by_sample=bool(nodes & sample_tree)
+        )
+        unplaced += at_no_place
+        lineage = LINEAGE_LAUNCHER
+        if writers and not reason:
+            # Written by the launcher's own process.
+            if task or not tasked:
+                if nodes <= unconfirmed:
+                    lineage, reason = LINEAGE_LAUNCHER_UNSETTLED, DROPPED_BY_UNCONFIRMED_HOST
+                    unsettled += 1
+                elif nodes <= launcher_nodes:
+                    if task in reached:
+                        # The started program reached the launcher's process:
+                        # what it wrote may be the sample's doing, so it stays
+                        # among the sample's files, marked.
+                        lineage, reason = LINEAGE_LAUNCHER_UNSETTLED, DROPPED_BY_LAUNCHER_REACHED
+                        unsettled += 1
+                    else:
+                        reason = DROPPED_BY_LAUNCHER
+                        credited += 1
+            elif any(n in launcher_nodes for pid in writers for n in by_pid.get(pid, ())):
+                # A row whose task is not known is credited to no one by its
+                # writer, and counted.
+                unsettled += 1
         if reason:
             report.dropped_files[index] = {
                 **plain,
-                LINEAGE_KEY: LINEAGE_LAUNCHER,
+                LINEAGE_KEY: lineage,
                 LINEAGE_REASON_KEY: reason,
+                **({MEMBER_FACT_KEY: fact} if fact else {}),
             }
+        elif fact:
+            report.dropped_files[index] = {**plain, MEMBER_FACT_KEY: fact}
         elif len(plain) != len(dropped):
             report.dropped_files[index] = plain
     tasks = {node[0] for node in parent}
@@ -1580,10 +2005,20 @@ def attribute_the_launcher(report: SandboxReport, launcher: Any) -> None:
         said = attribution_not_established(
             f"no listed process runs {names.sample} in task " + ", ".join(sorted(tasks - rooted))
         )
+    elif unconfirmed:
+        said = attribution_not_established(
+            f"parents are stated, and no host naming {names.script} is an ancestor of the "
+            "process running "
+            + f"{names.sample} in task "
+            + ", ".join(sorted({node[0] for node in unconfirmed}))
+        )
     else:
         said = ATTRIBUTION_ESTABLISHED
     report.extras[LAUNCHER_ATTRIBUTION_KEY] = said
     report.extras[UNATTRIBUTED_SIGNATURES_KEY] = unattributed
+    report.extras[UNPLACED_MEMBER_FILES_KEY] = unplaced
+    report.extras[LAUNCHER_FILES_KEY] = credited
+    report.extras[UNSETTLED_LAUNCHER_FILES_KEY] = unsettled
     report.cti[CTI_ANALYSED_KEY] = (
         CTI_ANALYSED_LAUNCHER if said == ATTRIBUTION_ESTABLISHED else CTI_ANALYSED_LAUNCHER_UNSEEN
     )
@@ -1604,28 +2039,266 @@ _TRIAGE_SIGNATURE_READ: frozenset[str] = frozenset({"name", "desc", "score", "in
 # A task report's blocks the reader reads into places of their own, and the
 # fields of a flow and of a request it reads; every other one is kept.
 _TRIAGE_TASK_READ: frozenset[str] = frozenset({"processes", "dumped", "network"})
+# The field a task report's flow names its process under, by the process
+# list's own id (``ReportReader.traffic_process_fields``).
+TRIAGE_TRAFFIC_PROCESS_FIELDS: tuple[str, ...] = ("procid",)
+_TRIAGE_TRAFFIC_PROCESS_FIELD = TRIAGE_TRAFFIC_PROCESS_FIELDS[0]
 _TRIAGE_FLOW_READ: frozenset[str] = frozenset(
     {"proto", "dst", "procid", "pid", "as_num", "as_org", "country"}
 )
-_TRIAGE_REQUEST_READ: frozenset[str] = frozenset(
-    {"domain_req", "domain_resp", "web_req", "web_resp"}
-)
+# A request row's parts, by every name the task report writes each under: the
+# DNS question and its answer, the HTTP request and its answer. One generation
+# writes a question and its answer on one row (``domain_req``/``domain_resp``,
+# ``web_req``/``web_resp``), another writes each on a row of its own
+# (``dns_request``/``dns_response``, ``http_request``/``http_response``),
+# naming the flow and the exchange's index on that flow; the parts' own fields
+# are the same in both, apart from an HTTP message's headers (a mapping, or
+# ``Name: value`` lines) and its status (a number, or its digits).
+_DNS_QUESTION, _DNS_ANSWER, _HTTP_REQUEST, _HTTP_RESPONSE = "dnsq", "dnsa", "httpq", "httpa"
+_TRIAGE_REQUEST_PARTS: Mapping[str, str] = {
+    "domain_req": _DNS_QUESTION,
+    "dns_request": _DNS_QUESTION,
+    "domain_resp": _DNS_ANSWER,
+    "dns_response": _DNS_ANSWER,
+    "web_req": _HTTP_REQUEST,
+    "http_request": _HTTP_REQUEST,
+    "web_resp": _HTTP_RESPONSE,
+    "http_response": _HTTP_RESPONSE,
+}
+_TRIAGE_REQUEST_READ: frozenset[str] = frozenset(_TRIAGE_REQUEST_PARTS)
+# A request row with no part the reader reads is kept whole, per task, in the
+# channel of its kind (the name of its first field that holds an object, or
+# none): ``task.network.requests.<kind>``, so each such kind is counted by
+# its channel's rows.
+TRIAGE_UNREAD_REQUESTS_CHANNEL = "task.network.requests"
+# How many kinds of unread request rows a task keeps a channel each, and the
+# longest name such a kind's channel takes: the rows of every further kind,
+# or of a kind with a longer name, join the channel of rows of no kind, each
+# labelled with how many kinds the task folded into it. No row is cut, and a
+# kind the reader reads is never among them.
+TRIAGE_UNREAD_KINDS = 16
+TRIAGE_UNREAD_KIND_NAME = 64
+TRIAGE_UNREAD_KINDS_FOLDED_KEY = "request_kinds_folded"
 # The key a kept task block's row names its task by; the block itself is held
 # under the document's grouped-rows key (``schemas.sandbox_document``).
 TASK_KEY = "task_report"
 TASK_ROWS_KEY = GROUP_ROWS_KEY
 
 
-def _keep_task_block(channels: dict[str, Any], name: str, task: str, value: Any) -> None:
+def _triage_exchanges(
+    rows: list[dict[str, Any]],
+) -> tuple[list[tuple[dict[str, dict[str, Any]], dict[str, Any]]], list[dict[str, Any]]]:
+    """A task's request rows as exchanges, each its parts and its own fields; and the rows unread.
+
+    A row's parts are read under every name :data:`_TRIAGE_REQUEST_PARTS`
+    gives them, each part once (a second part of one kind on a row stays among
+    the row's own fields). Rows naming the same flow and index are one
+    exchange, a question and its answer written on rows of their own: a part
+    joins the first exchange of its flow and index still waiting for it (an
+    answer the first open question, a question the first answer written
+    before it), in the order the rows come; a row naming no flow or no index
+    is an exchange by itself. A row with no part read, and the rows of an
+    exchange that holds an answer with no question or request, are returned
+    apart, whole. Linear in the rows.
+    """
+    held: list[tuple[dict[str, dict[str, Any]], dict[str, Any], list[dict[str, Any]]]] = []
+    unread: list[dict[str, Any]] = []
+    # The exchanges of each flow and index waiting for a part, by that part,
+    # in the order they were opened.
+    waiting: dict[tuple[str, str, str], deque[int]] = {}
+    for req in rows:
+        parts: dict[str, dict[str, Any]] = {}
+        own: dict[str, Any] = {}
+        for key, value in req.items():
+            kind = _TRIAGE_REQUEST_PARTS.get(key)
+            if kind and isinstance(value, dict) and kind not in parts:
+                parts[kind] = value
+            else:
+                own[key] = value
+        if not parts:
+            unread.append(req)
+            continue
+        flow, index = req.get("flow"), req.get("index")
+        where = (str(flow), str(index)) if _scalar_id(flow) and _scalar_id(index) else None
+        at = _waiting_for(waiting, where, parts, held) if where is not None else None
+        if at is not None:
+            held[at][0].update(parts)
+            for key, value in own.items():
+                held[at][1].setdefault(key, value)
+            held[at][2].append(req)
+        else:
+            held.append((parts, own, [req]))
+            at = len(held) - 1
+        if where is not None:
+            # What the exchange still waits for: each part's partner it lacks.
+            for kind in held[at][0]:
+                partner = _PART_PARTNER[kind]
+                if partner not in held[at][0]:
+                    waiting.setdefault((*where, partner), deque()).append(at)
+    exchanges: list[tuple[dict[str, dict[str, Any]], dict[str, Any]]] = []
+    for parts, own, kept in held:
+        if _DNS_QUESTION in parts or _HTTP_REQUEST in parts:
+            exchanges.append((parts, own))
+        else:
+            # An answer with nothing it answers: kept whole, never read as a request.
+            unread.extend(kept)
+    return exchanges, unread
+
+
+def _flow_id(value: Any) -> str:
+    """A flow's id as a request names it and as the flow lists it: one text form."""
+    return str(value).strip()
+
+
+def _flow_answer(facts: Mapping[str, Any]) -> str:
+    """What one flow's process facts answer, as the reader states them: one word."""
+    if facts.get(SAMPLE_TREE_KEY) is True:
+        return "sample"
+    if TRAFFIC_PROCESS_KEY not in facts:
+        return "none"
+    if facts.get(LINEAGE_DISPUTED_KEY):
+        return "disputed"
+    if facts.get(SAMPLE_TREE_KEY) is False:
+        return "outside"
+    if facts.get(PROCESS_UNLISTED_KEY) is True:
+        return "unlisted"
+    return "unstated"
+
+
+# The answers of flows left out of a request that the launcher's reading never
+# changes: a flow naming no process, and one naming a process its task does not
+# list (``attribute_the_launcher`` reads a listed process only).
+TRAFFIC_FLOWS_SETTLED_ANSWERS: frozenset[str] = frozenset({"none", "unlisted"})
+
+
+def _request_process(flows: list[dict[str, Any]] | None, task: str) -> dict[str, Any]:
+    """The process facts an HTTP request takes from the flows of the id it rode on.
+
+    One flow, or several stating the same facts: those facts, flat on the
+    request. Several stating different ones: each flow's facts under
+    :data:`TRAFFIC_FLOWS_KEY`, so the request is the sample's when any of them
+    is and another lineage's only when all name one, whatever their order; up
+    to :data:`TRAFFIC_FLOWS_NAMED` flows of each answer, and how many of each
+    were left out (:data:`TRAFFIC_FLOWS_LEFT_OUT_KEY`). Worked out once per
+    flow id; linear in its flows.
+    """
+    if not flows:
+        return {}
+    by_facts: dict[str, dict[str, Any]] = {}
+    for facts in flows:
+        by_facts.setdefault(json.dumps(facts, sort_keys=True, default=str), facts)
+    distinct = [by_facts[key] for key in sorted(by_facts)]
+    if len(distinct) == 1:
+        return {**distinct[0], PROCESS_TASK_KEY: task}
+    carried: list[dict[str, Any]] = []
+    seen: dict[str, int] = {}
+    left_out: dict[str, int] = {}
+    for facts in distinct:
+        answer = _flow_answer(facts)
+        seen[answer] = seen.get(answer, 0) + 1
+        if seen[answer] <= TRAFFIC_FLOWS_NAMED:
+            carried.append({**facts, PROCESS_TASK_KEY: task})
+        else:
+            left_out[answer] = left_out.get(answer, 0) + 1
+    made: dict[str, Any] = {TRAFFIC_FLOWS_KEY: carried}
+    if left_out:
+        made[TRAFFIC_FLOWS_LEFT_OUT_KEY] = dict(sorted(left_out.items()))
+    return made
+
+
+def _copied(made: Mapping[str, Any]) -> dict[str, Any]:
+    """A request's own copy of its flow id's facts (:func:`_request_process`), which are bounded."""
+    out = dict(made)
+    if isinstance(out.get(TRAFFIC_FLOWS_KEY), list):
+        out[TRAFFIC_FLOWS_KEY] = [dict(facts) for facts in out[TRAFFIC_FLOWS_KEY]]
+    if isinstance(out.get(TRAFFIC_FLOWS_LEFT_OUT_KEY), dict):
+        out[TRAFFIC_FLOWS_LEFT_OUT_KEY] = dict(out[TRAFFIC_FLOWS_LEFT_OUT_KEY])
+    return out
+
+
+# Each part and the part that completes its exchange: a question and its answer.
+_PART_PARTNER: Mapping[str, str] = {
+    _DNS_QUESTION: _DNS_ANSWER,
+    _DNS_ANSWER: _DNS_QUESTION,
+    _HTTP_REQUEST: _HTTP_RESPONSE,
+    _HTTP_RESPONSE: _HTTP_REQUEST,
+}
+
+
+def _waiting_for(
+    waiting: dict[tuple[str, str, str], deque[int]],
+    where: tuple[str, str],
+    parts: Mapping[str, Any],
+    held: list[tuple[dict[str, dict[str, Any]], dict[str, Any], list[dict[str, Any]]]],
+) -> int | None:
+    """The first exchange of ``where`` waiting for the row's parts and holding none of them.
+
+    Exchanges that took the part since are dropped from the front as they are
+    met, so each is passed over once: linear in the rows.
+    """
+    first = next(iter(parts))
+    queue = waiting.get((*where, first))
+    while queue:
+        at = queue[0]
+        if first in held[at][0]:
+            queue.popleft()
+            continue
+        if parts.keys() & held[at][0].keys():
+            return None
+        queue.popleft()
+        return at
+    return None
+
+
+def _scalar_id(value: Any) -> bool:
+    """Whether ``value`` names a flow or an index: a number or non-empty text, never a bool."""
+    if isinstance(value, bool):
+        return False
+    return isinstance(value, int) or (isinstance(value, str) and bool(value.strip()))
+
+
+def _header(headers: Any, name: str) -> str:
+    """The value of the header ``name`` (any case), held as a mapping or ``Name: value`` lines."""
+    wanted = name.lower()
+    if isinstance(headers, dict):
+        if headers.get(name) not in (None, ""):
+            return str(headers[name])
+        for key, value in headers.items():
+            if str(key).lower() == wanted and value not in (None, ""):
+                return str(value)
+        return ""
+    for line in headers if isinstance(headers, list) else []:
+        if isinstance(line, str) and ":" in line:
+            key, _, value = line.partition(":")
+            if key.strip().lower() == wanted and value.strip():
+                return value.strip()
+    return ""
+
+
+def _status(value: Any) -> Any:
+    """An HTTP status as the answer gives it, a status written as its digits read as its number."""
+    if isinstance(value, str) and value.strip().isascii() and value.strip().isdigit():
+        return int(value.strip())
+    return value
+
+
+def _keep_task_block(
+    channels: dict[str, Any],
+    name: str,
+    task: str,
+    value: Any,
+    labels: Mapping[str, Any] | None = None,
+) -> None:
     """One task report's block, kept whole in the channel ``name`` as one row naming its task.
 
     The block is held by reference, as the task report holds it (``rows``):
     nothing of it is copied or wrapped, so a block costs one small row
-    whatever its size. Nothing with no value is kept.
+    whatever its size. ``labels`` join the task on the row, each item of the
+    block read with them. Nothing with no value is kept.
     """
     if value in (None, "", [], {}):
         return
-    channels.setdefault(name, []).append({TASK_KEY: task, TASK_ROWS_KEY: value})
+    channels.setdefault(name, []).append({TASK_KEY: task, **(labels or {}), TASK_ROWS_KEY: value})
 
 
 TRIAGE_NORMALISER_FILLS: frozenset[str] = frozenset(
@@ -1674,9 +2347,11 @@ def triage_overview_to_sandbox_report(
     fixture shape confirmed against Triage's "Dynamic Report" docs page on
     2026-09-04: each task's ``network.flows`` (tcp/udp, split by ``proto``,
     plus a synthesised ``network.hosts`` row per destination carrying that
-    flow's ASN/country) and ``network.requests`` (``domain_req``/
-    ``domain_resp`` pairs for DNS, ``web_req``/``web_resp`` pairs for HTTP),
-    and each task's ``dumped`` files for ``dropped_files``. Every one of these
+    flow's ASN/country) and ``network.requests`` (DNS and HTTP exchanges,
+    each part read under every name the task report writes it under,
+    :data:`_TRIAGE_REQUEST_PARTS`; a row with no part read is kept whole in a
+    channel of its kind, :data:`TRIAGE_UNREAD_REQUESTS_CHANNEL`), and each
+    task's ``dumped`` files for ``dropped_files``. Every one of these
     is mapped into the *consumer* shape (``network.dns`` rows as
     ``{request, type, answers: [{data}]}``, ``network.tcp``/``udp`` rows as
     ``{dst, dport}``) rather than passed through in Triage's own shape, so
@@ -1748,7 +2423,10 @@ def triage_overview_to_sandbox_report(
                 )
             )
         dumped_field = task.get("dumped")
-        dropped_files.extend(_rows(dumped_field))
+        # Each row names its task, whose process ids its writer is read by.
+        dropped_files.extend(
+            {**row, PROCESS_TASK_KEY: str(task_name)} for row in _rows(dumped_field)
+        )
 
         net_field = task.get("network")
         net = net_field if isinstance(net_field, dict) else {}
@@ -1756,6 +2434,18 @@ def triage_overview_to_sandbox_report(
             if block not in ("flows", "requests"):
                 _keep_task_block(channels, f"task.network.{block}", str(task_name), value)
 
+        # Each flow's process facts by its id, which an HTTP request riding on
+        # it takes; every flow of an id the task lists twice is kept. What an
+        # id's flows give a request is worked out once per id (``id_made``),
+        # each request taking a copy of that bounded result.
+        flow_process: dict[str, list[dict[str, Any]]] = {}
+        id_made: dict[str, dict[str, Any]] = {}
+        for flow in _rows(net.get("flows")):
+            if _scalar_id(flow.get("id")):
+                attribution = _flow_attribution(flow, lineage, marker)
+                flow_process.setdefault(_flow_id(flow["id"]), []).append(
+                    {k: attribution[k] for k in TRAFFIC_PROCESS_KEYS if k in attribution}
+                )
         for flow in _rows(net.get("flows")):
             proto = str(flow.get("proto") or "").lower()
             dst_host, dst_port = _split_host_port(str(flow.get("dst") or ""))
@@ -1780,18 +2470,44 @@ def triage_overview_to_sandbox_report(
             if flow.get("country"):
                 host_row["country_name"] = str(flow["country"])
 
-        for req in _rows(net.get("requests")):
-            domain_req_field = req.get("domain_req")
-            domain_req = domain_req_field if isinstance(domain_req_field, dict) else None
-            domain_resp_field = req.get("domain_resp")
-            domain_resp = domain_resp_field if isinstance(domain_resp_field, dict) else None
-            web_req_field = req.get("web_req")
-            web_req = web_req_field if isinstance(web_req_field, dict) else None
-            web_resp_field = req.get("web_resp")
-            web_resp = web_resp_field if isinstance(web_resp_field, dict) else None
-            # The request's own fields beside the four it is read from (the flow
-            # it rode on, its time), kept on each row it gives.
-            req_extra = {k: v for k, v in req.items() if k not in _TRIAGE_REQUEST_READ}
+        exchanges, unread = _triage_exchanges(_rows(net.get("requests")))
+        unread_kinds: dict[str, list[dict[str, Any]]] = {}
+        folded: set[str] = set()
+        for req in unread:
+            kind = next((str(k) for k, v in req.items() if isinstance(v, dict)), "")
+            if kind and kind not in unread_kinds:
+                named = len(unread_kinds) - ("" in unread_kinds)
+                if (
+                    kind in folded
+                    or named >= TRIAGE_UNREAD_KINDS
+                    or len(kind) > TRIAGE_UNREAD_KIND_NAME
+                ):
+                    folded.add(kind)
+                    kind = ""
+            unread_kinds.setdefault(kind, []).append(req)
+        for kind, kept in unread_kinds.items():
+            channel = TRIAGE_UNREAD_REQUESTS_CHANNEL + (f".{kind}" if kind else "")
+            labels = {TRIAGE_UNREAD_KINDS_FOLDED_KEY: len(folded)} if folded and not kind else {}
+            _keep_task_block(channels, channel, str(task_name), kept, labels)
+
+        for parts, req_extra in exchanges:
+            domain_req = parts.get(_DNS_QUESTION)
+            domain_resp = parts.get(_DNS_ANSWER)
+            web_req = parts.get(_HTTP_REQUEST)
+            web_resp = parts.get(_HTTP_RESPONSE)
+            # ``req_extra``: the exchange's own fields beside its parts (the flow
+            # it rode on, its index, its time), kept on each row it gives. The
+            # request names no process: an HTTP request takes the process facts
+            # of the flow it rode on, in its own task (``made``). A DNS request
+            # takes none: its flow is the guest's resolver, never the program
+            # that asked.
+            ridden = req_extra.get("flow")
+            made: dict[str, Any] = {}
+            if web_req is not None and _scalar_id(ridden):
+                flow_key = _flow_id(ridden)
+                if flow_key not in id_made:
+                    id_made[flow_key] = _request_process(flow_process.get(flow_key), str(task_name))
+                made = _copied(id_made[flow_key])
 
             if domain_req is not None:
                 answers = [
@@ -1829,23 +2545,22 @@ def triage_overview_to_sandbox_report(
                                 for q in questions
                             ],
                             answers=answers,
-                            extra=req_extra,
+                            extra=dict(req_extra),
                         )
                     )
                 network.domains.extend(str(q.get("name") or "") for q in questions)
 
             if web_req is not None:
                 parsed_url = urlsplit(str(web_req.get("url") or ""))
-                headers_field = web_req.get("headers")
-                headers = headers_field if isinstance(headers_field, dict) else {}
                 http_row: dict[str, Any] = {
                     "host": parsed_url.hostname or "",
                     "uri": parsed_url.path or "/",
                     "method": str(web_req.get("method") or ""),
-                    "status": (web_resp or {}).get("status"),
+                    "status": _status((web_resp or {}).get("status")),
                     "port": parsed_url.port,
                     "encrypted": parsed_url.scheme == "https",
-                    "user_agent": str(headers.get("User-Agent") or ""),
+                    "user_agent": _header(web_req.get("headers"), "User-Agent"),
+                    **made,
                 }
                 # The whole request and answer beyond those fields (the URL with
                 # its query, every header, the answer's own fields).

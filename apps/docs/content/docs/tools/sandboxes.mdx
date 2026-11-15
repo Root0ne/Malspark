@@ -57,7 +57,57 @@ the overview's analysis, task and target blocks, each flow's and request's
 other fields under `extra` (source, times, bytes, the name and TLS facts, every
 header), and each task report's blocks with no part of their own (its
 signatures with their per-process indicators, the task, its other network
-logs) as `task.<block>` channels. The document holds each such block once per
+logs) as `task.<block>` channels. A Triage task report's DNS and HTTP requests
+are read under each name the report writes them under: a question and its
+answer on one row (`domain_req` and `domain_resp`, `web_req` and `web_resp`),
+or each on a row of its own naming the flow and the exchange's index
+(`dns_request` and `dns_response`, `http_request` and `http_response`), paired
+by that flow and index. Both fill the same DNS, HTTP and domain rows; an HTTP
+message's headers are read as a mapping or as `Name: value` lines, and a
+status written as digits is its number. A request row with no part the reader
+reads is kept whole in the `task.network.requests.<kind>` channel, `<kind>`
+being its first field that holds an object, so each such kind is counted by its
+channel's rows, and so is an answer with no question or request it answers.
+Rows naming the same flow and index are paired in order: an answer joins the
+first question of its flow and index still open, and a question the first
+answer written before it. Each task keeps a channel for at most 16 kinds of
+such unread rows, of names up to 64 characters; the rows of every further
+kind, or of a longer name, join the `task.network.requests` channel of rows
+of no kind, each labelled with how many kinds the task folded into it
+(`request_kinds_folded`), so no row is cut and a kind the reader reads is
+never among them. Each reader writes the process a flow or a request names,
+by the id the report's process list gives it, under one key
+(`platform_process`) in one text form, read from the field its format states
+it under (`ReportReader.traffic_process_fields`: a Triage task report's
+`procid`, CAPE's and Cuckoo's `procid` or `pid`; a mapped format names its own
+through `field_names`, as `<channel>.platform_process`): the launcher's
+reading and the publish rule read that key alone, and an id of a type that
+cannot be one is not stated. A request row names no process: an HTTP row
+takes the process facts of the flow it rode on (joined by the flow's id
+within its task; where the task lists several flows under that id, each
+flow's facts, `platform_flows`, and the request is the sample's when any of
+them is; worked out once per id, a request carries up to 16 flows of each
+answer, with how many of each were left out, `platform_flows_left_out`, so
+many flows and requests on one id cost their sum, and where the launcher's
+reading meets flows left out of an answer it may change, the request also
+answers as naming no process, `platform_flows_unsettled`), and a flow whose
+process the task does not list says so
+(`process_not_listed`). A DNS row takes none: its flow is the guest's
+resolver, never the program that asked. A name is decided from its HTTP
+requests, the DNS requests that name their own process and the flows to the
+addresses it resolved to: the sample's when a flow of its tree reached one of
+them, another lineage's only when every such record and flow names a process
+of another lineage (a record naming none leaves the name as decided without
+one), and with none of either as without a process. A view read in pages, or
+shortened, can only show that a record is the sample's: there a record naming
+another lineage counts as naming none, for an address, a name and a URL
+alike, and `unlisted_processes` is set from whole views only; a name the
+report gives part of its resolved addresses (`resolved_ips_partial`) reads the
+flows to those addresses the same way. A flow to an address several names
+resolved to counts for each of them, which errs toward hiding nothing. A dropped file's guest path is shown where the reader declares the field its
+source writes it under (`Reading.guest_path_fields`: a Triage task report's
+`path`); a field of that name a reader does not declare, such as CAPE's host
+storage path, is not shown. The document holds each such block once per
 task, by reference (`{"task_report": ..., "block_rows": <block>}`), and every
 reader reads it as the block's items: each signature, flow or other item is its
 own row naming its task, built when it is read, so `offset` and `limit` page
@@ -584,8 +634,20 @@ the pair of its task and its id (a sandbox that runs several tasks numbers each
 task's processes on its own). The sample's tree is rooted at the process running
 `sample.exe` and holds everything it started, a PowerShell the sample itself
 starts included. A process whose image is the script host and whose command
-line names `launch.ps1`, and that the sample did not start, is the launcher's;
-where the task holds the sample's tree, so is what the host started outside it.
+line names `launch.ps1`, and that the sample did not start, is the launcher's.
+Where the task states the parent of the process running `sample.exe` as a
+process it lists, the host must also be an ancestor of a process of the
+sample's tree, so a script host the sample started outside its own tree is
+not the launcher's; where it states no such parent, the identification rests
+on those three facts alone (the host's image, its command line naming the
+generated launcher member, its not being in the sample's tree). Where it
+states such a parent and no such host is an ancestor of the sample's tree, no
+host is the launcher's: the hosts, their flows and the files they alone wrote
+stay in the sample's view marked `launcher, not established`, nothing is moved
+to the launcher's, and the report says the attribution was not established in
+that task. Where the
+task holds the sample's tree, what the launcher's host started outside it is
+the launcher's too.
 Where no listed process runs `sample.exe` (the sandbox renamed or copied the
 member), only the host is the launcher's: what it started, and the flows those
 processes made, are attributed to no one, as the sample may be among them under
@@ -599,10 +661,38 @@ read as the sample's; one that names no process takes its processes from the
 task's own signature of that name, whose launcher rows are marked the same way,
 and one that still names none is left where it is, attributed to no one, and
 counted (`launcher_unattributed_signatures`): it may be the launcher's. A file
-the sandbox lists as written that is the launcher or the unpacked sample (by
-member name or SHA-256, in the launcher's folder where the report shows it) is
-marked as the platform's, with which of the two it is, and is not a file the
-sample wrote. The lineage of every row is held under one key of the platform's
+the sandbox lists as written or dumped that is the launcher or the unpacked
+sample at the member's own place (the folder the archive was unpacked into,
+as the script host's command line and the sample's image show it, joined with
+the member's path inside the archive, compared without case) and holds the
+member's SHA-256 where the row states one, is marked as the platform's, with
+which of the two it is, and is not a file the sample wrote. A file with a
+member's SHA-256 at any other path or under any other name is the sample's,
+stated as a copy of that member with the member's place and the file's paths
+(`platform_member_fact`); a file at the member's place with another SHA-256 is
+the sample's too, stated as the member changed. A row one of whose writers is
+a process of the sample's tree in its task is never a member's copy: it is the
+sample's, stated as written at the member's place or under its name, as the
+member changed, or as a copy. A row that states no whole
+guest path, or a report that shows no launcher folder, is read by member name
+or SHA-256, and each member found so is counted
+(`launcher_unplaced_member_files`). A written file or a memory region dumped
+names its task, and its writer is read among that task's processes. One every
+writing process of which is the launcher's (the script host running the
+generated launcher member, not the program it started nor what that started) is listed with
+the launcher's facts, with its path, digest and writer, as written by the
+launcher's process, and not among the sample's files, where no signature of
+that task shows a process other than the launcher's acting on the launcher's
+process (an indicator naming it as the process acted on, with another source
+or none). Where one does, the started program may have acted through the
+launcher's process: the row stays among the sample's files, marked with the
+launcher's lineage as not established. A row that names no task in a report
+whose processes are listed by task is credited to no one by its writer. Both
+are counted (`launcher_unsettled_written_files`, beside
+`launcher_written_files`), and the launch statement says how many of each
+there are. A row that names no writer keeps the reading by the members. No row
+is taken out of the report: each is in the sample's files or the launcher's.
+The lineage of every row is held under one key of the platform's
 own (`platform_lineage`), taken out of a report at intake wherever a sandbox's
 own field carries it. The sandbox's own score and family are stated to be its
 analysis of the archive run from the launcher, and the family it names carries

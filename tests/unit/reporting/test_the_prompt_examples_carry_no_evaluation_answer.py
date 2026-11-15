@@ -53,6 +53,7 @@ from malspark.agents.base_agent import (
     EARLIER_CALLS_BY_TOOL,
     EARLIER_CALLS_NOT_LISTED,
     EARLIER_CHUNKS_COMPACT_HEAD,
+    FINAL_ANSWER_HEADING_NUDGE,
     FINAL_ANSWER_NUDGE,
     INPUT_SHORTENED_NOTICE,
     SPEND_CEILING_QUESTION,
@@ -2585,6 +2586,7 @@ PROMPTS: dict[str, str] = {
         "list_functions", "No file is currently open. Call open_file first."
     )["error"]["remediation"],
     "final-answer nudge": FINAL_ANSWER_NUDGE,
+    "final-answer nudge stating the claim heading": FINAL_ANSWER_HEADING_NUDGE,
     "analyst repeated-claims question with the cut folded in": analyst_repeated_violation(
         ClaimsRepeated(begun=15, distinct=3, margin=3, chars=900, first_repeat=4), cut=4096
     ).message,

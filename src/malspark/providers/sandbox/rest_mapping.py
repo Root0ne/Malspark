@@ -51,8 +51,8 @@ from typing import TYPE_CHECKING, Any
 
 from malspark.core.logger import logger
 from malspark.providers.errors import ProviderConfigurationError
-from malspark.schemas.sandbox_document import signature_pids
-from malspark.schemas.sandbox_report import section_id
+from malspark.schemas.sandbox_document import pid_of, signature_pids
+from malspark.schemas.sandbox_report import TRAFFIC_PROCESS_KEY, section_id
 
 if TYPE_CHECKING:
     from malspark.core.config import RestMappingConfig
@@ -217,6 +217,10 @@ def compile_mapping(cfg: RestMappingConfig) -> CompiledMapping:
     )
 
 
+# The channels whose rows are traffic a process made.
+_TRAFFIC_CHANNELS = frozenset({"dns", "http", "tcp", "udp"})
+
+
 def _rename(channel: str, names: dict[str, str], row: dict[str, Any], want: str) -> Any:
     """One consumer field out of ``row``, under this sandbox's own name for it."""
     return row.get(names.get(f"{channel}.{want}", want))
@@ -230,6 +234,12 @@ def _coerce(channel: str, names: dict[str, str], raw: Any) -> Any | None:
     if not isinstance(raw, dict):
         return None
     row = {want: _rename(channel, names, raw, want) for want in _FIELDS.get(channel, ())}
+    # The process that made a flow or a request, where the mapping declares the
+    # field the sandbox names it under (``<channel>.platform_process``), in the
+    # one text form the platform reads it by.
+    declared = names.get(f"{channel}.{TRAFFIC_PROCESS_KEY}")
+    if declared and channel in _TRAFFIC_CHANNELS and (procid := pid_of(raw.get(declared))):
+        row[TRAFFIC_PROCESS_KEY] = procid
     if channel == "http":
         # Passthrough first (every field the sandbox's own payload carries
         # survives, whatever it calls them), then a configured rename

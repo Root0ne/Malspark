@@ -1,0 +1,429 @@
+{
+  "version": "0.3.1",
+  "build": "d0cc0f9b0",
+  "sample": {
+    "id": "261114-x2ds4scy5t",
+    "score": 3,
+    "submitted": "2026-11-14T19:20:37Z",
+    "target": "submission.zip",
+    "size": 519,
+    "md5": "7353b2c3f1ad368f18a10e1f7c62779d",
+    "sha1": "38363c2865c8c79bef1cb180d7d75f842731183a",
+    "sha256": "aba6bd87cb5e4c8d594551ce5194d6a120ca721d85d766c0317598e0b5754a6e",
+    "sha512": "183587544edb955e941677b59400891662b499f7718e27b94b7f02e341094087e36817a06b2dd629c97776bd15d044b38af0785092565c8bfc6913326e8ded6f",
+    "tlsh": "T1BEF0202B010CE903464E1520FE6A8C51B8EA914A2053F8061389E3C12C51A5887AE2F3",
+    "static_tags": [
+      "polyglot"
+    ]
+  },
+  "task": {
+    "target": "launch.ps1",
+    "pick": "static1/unpack001/launch.ps1",
+    "size": 519,
+    "md5": "7353b2c3f1ad368f18a10e1f7c62779d",
+    "sha1": "38363c2865c8c79bef1cb180d7d75f842731183a",
+    "sha256": "aba6bd87cb5e4c8d594551ce5194d6a120ca721d85d766c0317598e0b5754a6e",
+    "sha512": "183587544edb955e941677b59400891662b499f7718e27b94b7f02e341094087e36817a06b2dd629c97776bd15d044b38af0785092565c8bfc6913326e8ded6f",
+    "tlsh": "T1BEF0202B010CE903464E1520FE6A8C51B8EA914A2053F8061389E3C12C51A5887AE2F3"
+  },
+  "analysis": {
+    "score": 3,
+    "tags": [
+      "execution"
+    ],
+    "ttp": [
+      "T1059.003",
+      "T1059.001"
+    ],
+    "features": [
+      "analog",
+      "overview"
+    ],
+    "submitted": "2026-11-14T19:20:37Z",
+    "reported": "2026-11-14T19:23:10Z",
+    "max_time_network": 146987,
+    "max_time_kernel": 149188,
+    "backend": "sbx4m63",
+    "resource": "win10v2004-20260911-en",
+    "resource_tags": [
+      "arch:x64",
+      "arch:x86",
+      "image:win10v2004-20260911-en",
+      "locale:en-us",
+      "os:windows10-2004-x64",
+      "system",
+      "windows"
+    ],
+    "platform": "windows10-2004_x64"
+  },
+  "processes": [
+    {
+      "procid": 84,
+      "procid_parent": 56,
+      "pid": 1756,
+      "ppid": 3276,
+      "cmd": "powershell.exe -ExecutionPolicy bypass -File C:\\Users\\Admin\\AppData\\Local\\Temp\\launch.ps1",
+      "image": "C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe",
+      "orig": true,
+      "started": 141,
+      "terminated": 829
+    },
+    {
+      "procid": 86,
+      "procid_parent": 84,
+      "pid": 3444,
+      "ppid": 1756,
+      "cmd": "\"C:\\Windows\\System32\\cmd.exe\" /c echo ARGTEST \"a b\" 100% ^ & ; | $x `n it's > \"%TEMP%\\argtest.txt\" & cd > \"%TEMP%\\cwd.txt\" & dir > \"%TEMP%\\layout.txt\" & echo %CD% > \"%TEMP%\\scriptdir.txt\"",
+      "image": "C:\\Windows\\System32\\cmd.exe",
+      "orig": true,
+      "started": 813,
+      "terminated": 829
+    }
+  ],
+  "signatures": [
+    {
+      "label": "powershell",
+      "name": "Command and Scripting Interpreter: PowerShell",
+      "score": 3,
+      "ttp": [
+        "T1059.001"
+      ],
+      "tags": [
+        "execution"
+      ],
+      "indicators": [
+        {
+          "pid": 1756,
+          "procid": 84
+        }
+      ],
+      "desc": "Using powershell.exe command."
+    },
+    {
+      "label": "cmd_shell_generic",
+      "name": "Executes a command shell one-liner",
+      "score": 3,
+      "ttp": [
+        "T1059.003"
+      ],
+      "tags": [
+        "execution"
+      ],
+      "indicators": [
+        {
+          "pid": 3444,
+          "procid": 86
+        }
+      ],
+      "desc": "Execution of a cmd.exe one-liner (/c \"close\" or /k \"keep\") is a common script/loader stage."
+    },
+    {
+      "name": "Suspicious behavior: EnumeratesProcesses",
+      "indicators": [
+        {
+          "pid": 1756,
+          "procid": 84
+        },
+        {
+          "pid": 1756,
+          "procid": 84
+        }
+      ]
+    },
+    {
+      "name": "Suspicious use of AdjustPrivilegeToken",
+      "indicators": [
+        {
+          "description": "Token: SeDebugPrivilege",
+          "pid": 1756,
+          "procid": 84
+        }
+      ]
+    },
+    {
+      "name": "Suspicious use of WriteProcessMemory",
+      "indicators": [
+        {
+          "description": "PID 1756 wrote to memory of 3444",
+          "pid": 1756,
+          "procid": 84,
+          "procid_target": 86
+        }
+      ]
+    }
+  ],
+  "tags": null,
+  "network": {
+    "flows": [
+      {
+        "id": 31,
+        "src": "10.127.0.155:53515",
+        "dst": "8.8.8.8:53",
+        "proto": "udp",
+        "pid": 1120,
+        "procid": 36,
+        "first_seen": 93046,
+        "last_seen": 93087,
+        "rx_bytes": 107,
+        "rx_packets": 1,
+        "tx_bytes": 56,
+        "tx_packets": 1,
+        "protocols": [
+          "dns"
+        ],
+        "domain": "c.pki.goog"
+      },
+      {
+        "id": 32,
+        "src": "10.127.0.155:49958",
+        "dst": "172.217.76.94:80",
+        "proto": "tcp",
+        "pid": 2572,
+        "procid": 46,
+        "first_seen": 93088,
+        "last_seen": 93332,
+        "rx_bytes": 113358,
+        "rx_packets": 87,
+        "tx_bytes": 2729,
+        "tx_packets": 50,
+        "protocols": [
+          "http"
+        ],
+        "domain": "c.pki.goog"
+      }
+    ],
+    "requests": [
+      {
+        "flow": 31,
+        "index": 1,
+        "dns_request": {
+          "domains": [
+            "c.pki.goog"
+          ],
+          "questions": [
+            {
+              "name": "c.pki.goog",
+              "type": "IN A"
+            }
+          ]
+        }
+      },
+      {
+        "flow": 31,
+        "index": 1,
+        "dns_response": {
+          "domains": [
+            "c.pki.goog",
+            "pki-goog.l.google.com"
+          ],
+          "ip": [
+            "172.217.76.94"
+          ],
+          "answers": [
+            {
+              "name": "c.pki.goog",
+              "type": "IN CNAME",
+              "value": "pki-goog.l.google.com"
+            },
+            {
+              "name": "pki-goog.l.google.com",
+              "type": "IN A",
+              "value": "172.217.76.94"
+            }
+          ]
+        }
+      },
+      {
+        "flow": 32,
+        "index": 1,
+        "http_request": {
+          "method": "GET",
+          "url": "http://c.pki.goog/r/r1.crl",
+          "request": "GET /r/r1.crl HTTP/1.1",
+          "headers": [
+            "Cache-Control: max-age = 3000",
+            "Connection: Keep-Alive",
+            "Accept: */*",
+            "If-Modified-Since: Wed, 11 Feb 2026 14:38:00 GMT",
+            "User-Agent: Microsoft-CryptoAPI/10.0",
+            "Host: c.pki.goog"
+          ]
+        }
+      },
+      {
+        "flow": 32,
+        "index": 1,
+        "http_response": {
+          "status": "200",
+          "response": "HTTP/1.1 200 OK",
+          "headers": [
+            "Accept-Ranges: bytes",
+            "Content-Security-Policy: require-trusted-types-for 'script'; report-uri https://csp.withgoogle.com/csp/cacerts",
+            "Cross-Origin-Resource-Policy: cross-origin",
+            "Cross-Origin-Opener-Policy: same-origin; report-to=\"cacerts\"",
+            "Report-To: {\"group\":\"cacerts\",\"max_age\":2592000,\"endpoints\":[{\"url\":\"https://csp.withgoogle.com/csp/report-to/cacerts\"}]}",
+            "Content-Length: 993",
+            "X-Content-Type-Options: nosniff",
+            "Server: sffe",
+            "X-XSS-Protection: 0",
+            "Date: Sat, 14 Nov 2026 19:01:00 GMT",
+            "Expires: Sat, 14 Nov 2026 19:51:00 GMT",
+            "Cache-Control: public, max-age=3000",
+            "Age: 1271",
+            "Last-Modified: Thu, 01 Oct 2026 14:08:00 GMT",
+            "Content-Type: application/pkix-crl",
+            "Vary: Accept-Encoding"
+          ]
+        }
+      },
+      {
+        "flow": 32,
+        "index": 2,
+        "http_request": {
+          "method": "GET",
+          "url": "http://c.pki.goog/wr2/oBFYYahzgVI.crl",
+          "request": "GET /wr2/oBFYYahzgVI.crl HTTP/1.1",
+          "headers": [
+            "Cache-Control: max-age = 3000",
+            "Connection: Keep-Alive",
+            "Accept: */*",
+            "If-Modified-Since: Fri, 11 Sep 2026 12:40:42 GMT",
+            "User-Agent: Microsoft-CryptoAPI/10.0",
+            "Host: c.pki.goog"
+          ]
+        }
+      },
+      {
+        "flow": 32,
+        "index": 2,
+        "http_response": {
+          "status": "200",
+          "response": "HTTP/1.1 200 OK",
+          "headers": [
+            "Accept-Ranges: bytes",
+            "Content-Security-Policy: require-trusted-types-for 'script'; report-uri https://csp.withgoogle.com/csp/cacerts",
+            "Cross-Origin-Resource-Policy: cross-origin",
+            "Cross-Origin-Opener-Policy: same-origin; report-to=\"cacerts\"",
+            "Report-To: {\"group\":\"cacerts\",\"max_age\":2592000,\"endpoints\":[{\"url\":\"https://csp.withgoogle.com/csp/report-to/cacerts\"}]}",
+            "Content-Length: 107468",
+            "X-Content-Type-Options: nosniff",
+            "Server: sffe",
+            "X-XSS-Protection: 0",
+            "Date: Sat, 14 Nov 2026 18:58:03 GMT",
+            "Expires: Sat, 14 Nov 2026 19:48:03 GMT",
+            "Cache-Control: public, max-age=3000",
+            "Age: 1448",
+            "Last-Modified: Sat, 14 Nov 2026 15:22:43 GMT",
+            "Content-Type: application/pkix-crl",
+            "Vary: Accept-Encoding"
+          ]
+        }
+      }
+    ],
+    "ips": {
+      "135.232.92.97": {
+        "cc": "US",
+        "asn": "AS8075"
+      },
+      "150.171.110.212": {
+        "cc": "US",
+        "asn": "AS8075"
+      },
+      "172.217.76.94": {
+        "cc": "US",
+        "asn": "AS15169"
+      },
+      "199.232.214.172": {
+        "cc": "US",
+        "asn": "AS54113"
+      },
+      "2.21.64.133": {
+        "cc": "GB",
+        "asn": "AS20940"
+      },
+      "2.21.64.146": {
+        "cc": "GB",
+        "asn": "AS20940"
+      },
+      "2.21.64.187": {
+        "cc": "GB",
+        "asn": "AS20940"
+      },
+      "20.190.159.130": {
+        "cc": "IE",
+        "asn": "AS8075"
+      },
+      "204.79.197.203": {
+        "cc": "US",
+        "asn": "AS8068"
+      },
+      "23.11.40.157": {
+        "cc": "DE",
+        "asn": "AS33905"
+      },
+      "4.247.188.233": {
+        "cc": "IN",
+        "asn": "AS8075"
+      },
+      "48.211.4.16": {
+        "cc": "US",
+        "asn": "AS8075"
+      },
+      "74.178.240.61": {
+        "cc": "NL",
+        "asn": "AS8075"
+      },
+      "8.8.8.8": {
+        "cc": "US",
+        "asn": "AS15169"
+      }
+    }
+  },
+  "dumped": [
+    {
+      "at": 360,
+      "pid": 1756,
+      "procid": 84,
+      "name": "memory/1756-0-0x00007FF991FC0000-0x00007FF9920CB000-memory.dmp",
+      "kind": "region",
+      "origin": "exception",
+      "addr": 140709872795648,
+      "length": 1093632
+    },
+    {
+      "at": 469,
+      "pid": 1756,
+      "procid": 84,
+      "name": "memory/1756-6-0x000001A571370000-0x000001A571392000-memory.dmp",
+      "kind": "region",
+      "origin": "dotnet64",
+      "addr": 1810080661504,
+      "length": 139264
+    },
+    {
+      "at": 469,
+      "pid": 1756,
+      "procid": 84,
+      "path": "C:\\Users\\Admin\\AppData\\Local\\Temp\\__PSScriptPolicyTest_j03iwqiu.gcj.ps1",
+      "name": "files/0x0013000000024250-4.dat",
+      "kind": "martian",
+      "origin": "ransom",
+      "md5": "d17fe0a3f47be24a6453e9ef58c94641",
+      "sha1": "6ab83620379fc69f80c0242105ddffd7d98d5d9d",
+      "sha256": "96ad1146eb96877eab5942ae0736b82d8b5e2039a80d3d6932665c1a4c87dcf7",
+      "sha512": "5b592e58f26c264604f98f6aa12860758ce606d1c63220736cf0c779e4e18e3cec8706930a16c38b20161754d1017d1657d35258e58ca22b18f5b232880dec82",
+      "tlsh": "T177A02228CC303B200020C0080A000002C00B800C080C8C0220000A00B20B820002F080",
+      "size": 60
+    },
+    {
+      "at": 844,
+      "pid": 1756,
+      "procid": 84,
+      "name": "memory/1756-11-0x00007FF991FC0000-0x00007FF9920CB000-memory.dmp",
+      "kind": "region",
+      "origin": "exception",
+      "addr": 140709872795648,
+      "length": 1093632
+    }
+  ]
+}

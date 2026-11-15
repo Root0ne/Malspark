@@ -36,9 +36,11 @@ from malspark.schemas.sandbox_document import (
     FIXTURE_KEY,
     LAUNCH_KEY,
     LAUNCHER_ATTRIBUTION_KEY,
+    LAUNCHER_FILES_KEY,
     SYNTHETIC_KEY,
     TARGET_KEY,
     UNATTRIBUTED_SIGNATURES_KEY,
+    UNSETTLED_LAUNCHER_FILES_KEY,
 )
 
 __all__ = ["FIXTURE_KEY", "LAUNCH_KEY", "SYNTHETIC_KEY", "TARGET_KEY"]
@@ -93,7 +95,10 @@ def sandbox_status(report: Any) -> SandboxStatus:
     if not isinstance(report, dict) or not report:
         return SandboxStatus(NOT_RUN, _NO_REPORT)
     launch = launch_statement(
-        report.get(LAUNCH_KEY), launcher_attribution(report), unattributed_signatures(report)
+        report.get(LAUNCH_KEY),
+        launcher_attribution(report),
+        unattributed_signatures(report),
+        files=(_count(report, LAUNCHER_FILES_KEY), _count(report, UNSETTLED_LAUNCHER_FILES_KEY)),
     )
     if report.get(SYNTHETIC_KEY):
         return SandboxStatus(NOT_RUN, _joined(_STAND_IN, launch))
@@ -121,7 +126,12 @@ def launcher_attribution(report: Any) -> str:
 
 def unattributed_signatures(report: Any) -> int:
     """How many signatures naming no process the launcher run's reading could not attribute."""
-    value = report.get(UNATTRIBUTED_SIGNATURES_KEY) if isinstance(report, Mapping) else None
+    return _count(report, UNATTRIBUTED_SIGNATURES_KEY)
+
+
+def _count(report: Any, key: str) -> int:
+    """A count mark of the report's top level, ``0`` where it holds none above 0."""
+    value = report.get(key) if isinstance(report, Mapping) else None
     return value if isinstance(value, int) and not isinstance(value, bool) and value > 0 else 0
 
 
@@ -151,7 +161,9 @@ def launcher_attribution_reason(report: Any) -> str | None:
     )
 
 
-def launch_statement(record: Any, attribution: str = "", unattributed: int = 0) -> str:
+def launch_statement(
+    record: Any, attribution: str = "", unattributed: int = 0, files: tuple[int, int] = (0, 0)
+) -> str:
     """What a report's launch mark says: the job's launch arguments, verbatim, and their fate.
 
     ``""`` with no mark, so a job that asked for none reads as it always did.
@@ -174,7 +186,7 @@ def launch_statement(record: Any, attribution: str = "", unattributed: int = 0) 
             f"{_asked(record)} to launch the sample with the arguments {arguments}; "
             f"the {provider} provider sent them in its submission{through}{tail}. Whether the "
             "started program read them is the sandbox's, and is not established here."
-            + _launcher_statement(record.get("launcher"), attribution, unattributed)
+            + _launcher_statement(record.get("launcher"), attribution, unattributed, files)
         )
     tail = f": {note}" if note else ""
     return (
@@ -194,7 +206,9 @@ def _asked(record: Mapping[str, Any]) -> str:
     return f"For detonation {number}, {askers} asked the sandbox"
 
 
-def _launcher_statement(launcher: Any, attribution: str = "", unattributed: int = 0) -> str:
+def _launcher_statement(
+    launcher: Any, attribution: str = "", unattributed: int = 0, files: tuple[int, int] = (0, 0)
+) -> str:
     """The sentences of a launch mark whose arguments were carried by a generated launcher.
 
     ``""`` for a mark with none. They state what the reader must know: the
@@ -218,6 +232,7 @@ def _launcher_statement(launcher: Any, attribution: str = "", unattributed: int 
         f"by {launcher.get('picked_by') or 'the submission'}. "
         + _lineage_statement(launcher, host, attribution)
         + _unattributed_statement(unattributed)
+        + _launcher_files_statement(*files)
         + " A target the sandbox names by "
         "the archive's SHA-256 is the submitted archive holding the sample, not another "
         "target, and its file facts are the archive's. The sandbox's own score and family are "
@@ -261,6 +276,26 @@ def _unattributed_statement(count: int) -> str:
         f" {count} sandbox {noun} that {verb} no process could not be attributed, and may "
         "be the launcher's as well as the sample's."
     )
+
+
+def _launcher_files_statement(credited: int, unsettled: int) -> str:
+    """How many written or dumped files the launcher's process left, and where each is listed."""
+    out = ""
+    if credited > 0:
+        noun = "file" if credited == 1 else "files"
+        out += (
+            f" {credited} {noun} the sandbox lists as written or dumped by the launcher's own "
+            "process are listed with the launcher's facts, each with its path, digest and "
+            "writer, and not among the sample's files."
+        )
+    if unsettled > 0:
+        noun = "file" if unsettled == 1 else "files"
+        out += (
+            f" {unsettled} {noun} a launcher process wrote or dumped stay among the sample's "
+            "files: the started program reached that process, or the row names no task, so "
+            "the launcher's attribution of them is not established."
+        )
+    return out
 
 
 def target_mark(record: Mapping[str, Any]) -> dict[str, Any]:
