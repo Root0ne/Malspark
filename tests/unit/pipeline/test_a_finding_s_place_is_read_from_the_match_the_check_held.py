@@ -30,6 +30,7 @@ from malspark.pipeline.validation import (
     key_finding_citation_violations,
     ledger_absence_contradictions,
     locate_statements,
+    locator_path,
     misstated_entry_contents,
     narrative_capability_violations,
     recommendation_indicator_violations,
@@ -249,6 +250,40 @@ class TestEverySentenceTheItemStandsIn:
         assert found.statements == ("executive_summary#0", "executive_summary#2")
 
 
+class TestThePlaceIsReadInTheTextAsWritten:
+    def test_a_code_span_with_sentences_inside_it_does_not_move_the_place(self) -> None:
+        body = "Start `One. Two. Three. Four.` cites [Foo]. End."
+
+        (found,) = citation_violations({"body": body}, ["ev_0011"], prose=("body",))
+
+        assert found.statements == ("body#3",)
+
+    def test_a_later_sentence_after_a_code_span_is_placed_by_its_own_offset(self) -> None:
+        body = "It cites [Foo]. Start `One. Two. Three. Four.` cites [Foo]. End."
+
+        (found,) = citation_violations({"body": body}, ["ev_0011"], prose=("body",))
+
+        assert found.statements == ("body#0", "body#4")
+
+    def test_an_id_seen_bracketed_and_written_bare_names_both_places(self) -> None:
+        payload = {"body": "It cites [ev_0099].", "rows": [{"text": "See ev_0099 here."}]}
+
+        found = citation_violations(payload, ["ev_0011"], prose=("body",), records=True)
+
+        assert [v.statements for v in found] == [("body", "?.0.?")]
+
+    def test_a_field_spelled_by_its_alias_is_declared(self) -> None:
+        from pydantic import Field
+
+        class Aliased(BaseModel):
+            model_config = ConfigDict(populate_by_name=True)
+            note_text: str = Field(alias="noteText")
+
+        assert locator_path(["noteText"], Aliased) == "noteText"
+        assert locator_path(["note_text"], Aliased) == "note_text"
+        assert locator_path(["other"], Aliased) == "?"
+
+
 class TestOnlyWhatTheCheckRead:
     def test_a_field_the_check_did_not_read_is_not_named(self) -> None:
         payload = {"executive_summary": "It cites [Foo].", "notes": "It cites [Foo]."}
@@ -362,7 +397,7 @@ class TestACostNobodyNotices:
             (found,) = technique_name_violations(payload)
             assert found.statements
 
-        assert_scales(build, 250, call, factor=8)
+        assert_scales(build, 500, call, factor=8)
 
     def test_a_finding_names_at_most_a_declared_number_of_places_and_counts_the_rest(self) -> None:
         body = " ".join("It cites [Foo]." for _ in range(PLACES_AT_MOST + 5))

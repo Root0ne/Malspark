@@ -93,6 +93,27 @@ def _printed(record: dict[str, Any]) -> str:
     return render_record(record).replace(rules, "rules from: <tree>") + "\n"
 
 
+class TestTheNarrativeIsReplayedInsideItsSchema:
+    def test_a_field_only_the_schema_declares_is_written_in_the_place(self, tmp_path: Any) -> None:
+        import shutil
+
+        run = tmp_path / "tiny"
+        shutil.copytree(FIXTURE, run)
+        path = run / "report.json"
+        report = json.loads(path.read_text(encoding="utf-8"))
+        report["key_findings"][0]["text"] = "Its strings are XOR-encoded [Foo]."
+        path.write_text(json.dumps(report), encoding="utf-8")
+
+        record = replay_cli.replay_run(run)
+
+        places = [
+            f["statements"]
+            for f in record["narrative"]["flags"]
+            if f["code"] == "report.citation_not_evidence"
+        ]
+        assert places == [["key_findings.0.text"]]
+
+
 class TestThePrintedRecord:
     def test_without_the_text_the_output_is_what_it_was_with_no_places(
         self, record: dict[str, Any]

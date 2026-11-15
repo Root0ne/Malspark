@@ -2343,6 +2343,44 @@ class ReportComposer:
             return None, why
         return bound, why
 
+    def _section_findings(
+        self,
+        payload: Any,
+        schema: Any,
+        prose: Sequence[str],
+        entries: Any,
+        citable: Sequence[str],
+        answers: Any,
+        validators: Any,
+        answer_read: str | None = None,
+    ) -> list[Violation]:
+        """What a section's checks find in an answer, each inside the section's schema.
+
+        ``answer_read`` is the text the answer was read from: given, the answer's
+        shape is checked too (a structured answer has been through its schema).
+        """
+        with answer_of(schema):
+            found = [
+                *(
+                    schema_violations(schema, payload, code="composer.schema", answer=answer_read)
+                    if answer_read is not None
+                    else []
+                ),
+                *section_capability_violations(payload, self._grounding),
+                *citation_violations(
+                    payload, citable, prose=prose, items=self._items, records=True
+                ),
+                *wrong_entry_citations(payload, entries, prose=prose),
+                *misstated_entry_contents(payload, entries, prose=prose),
+                *ledger_absence_contradictions(payload, entries),
+                *technique_name_violations(payload),
+                *repeated_item_violations(payload, _ITEM_IDENTITY.get(schema, {})),
+                *(unpublished_value_violations(payload, answers) if answers else []),
+            ]
+            for extra in validators or []:
+                found.extend(extra(payload))
+        return found
+
     def _start_the_section_clock(self, seconds: float) -> None:
         """Measure the model list's turn deadline against this section's clock.
 
@@ -2530,21 +2568,9 @@ class ReportComposer:
                 # only checked: a section that over-claims is no better for
                 # having come from the path that usually works.
                 answer = result.model_dump()
-                with answer_of(schema):
-                    found = [
-                        *section_capability_violations(answer, self._grounding),
-                        *citation_violations(
-                            answer, citable, prose=prose, items=self._items, records=True
-                        ),
-                        *wrong_entry_citations(answer, entries, prose=prose),
-                        *misstated_entry_contents(answer, entries, prose=prose),
-                        *ledger_absence_contradictions(answer, entries),
-                        *technique_name_violations(answer),
-                        *repeated_item_violations(answer, _ITEM_IDENTITY.get(schema, {})),
-                        *(unpublished_value_violations(answer, answers) if answers else []),
-                    ]
-                    for extra in validators or []:
-                        found.extend(extra(answer))
+                found = self._section_findings(
+                    answer, schema, prose, entries, citable, answers, validators
+                )
                 held = _raw_with_object(read.raw)
                 # In ``record_only`` (``validation.feedback``) that question is
                 # not asked either: the answer is recorded here as it stands.
@@ -2720,22 +2746,9 @@ class ReportComposer:
                         cut_at, chars=chars, begun=begun, head=cut_text.strip(), distinct=distinct
                     )
                 ]
-            with answer_of(schema):
-                found = [
-                    *schema_violations(schema, payload, code="composer.schema", answer=answer_read),
-                    *section_capability_violations(payload, self._grounding),
-                    *citation_violations(
-                        payload, citable, prose=prose, items=self._items, records=True
-                    ),
-                    *wrong_entry_citations(payload, entries, prose=prose),
-                    *misstated_entry_contents(payload, entries, prose=prose),
-                    *ledger_absence_contradictions(payload, entries),
-                    *technique_name_violations(payload),
-                    *repeated_item_violations(payload, _ITEM_IDENTITY.get(schema, {})),
-                    *(unpublished_value_violations(payload, answers) if answers else []),
-                ]
-                for extra in validators or []:
-                    found.extend(extra(payload))
+            found = self._section_findings(
+                payload, schema, prose, entries, citable, answers, validators, answer_read
+            )
             return found
 
         def _fits(turns: list[BaseMessage]) -> bool:
