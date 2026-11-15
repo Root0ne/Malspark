@@ -6909,6 +6909,14 @@ def _rewrite_violations(
     ]
 
 
+def _in_row(statements: Sequence[str], index: int) -> tuple[str, ...]:
+    """A rewrite finding's places, which name the rewrite alone, in the answer's row ``index``."""
+    return tuple(
+        f"sentences.{index}.{place}" if place.startswith("rewrite") else place
+        for place in statements
+    )
+
+
 def rewrites_violations(
     payload: Any,
     citable: Sequence[str],
@@ -6941,6 +6949,7 @@ def rewrites_violations(
                 ),
                 sentence="",
                 path=f"sentences.{index}.rewrite",
+                statements=_in_row(violation.statements, index),
             )
             for violation in rewritten
         ]
