@@ -591,6 +591,34 @@ class TestNoHostAboveTheSampleSProcess:
         assert row.launcher_unsettled_processes == []
         assert "script host naming the launcher" not in _answer(report, "ip", ADDRESS)
 
+    def test_a_page_of_the_view_names_no_host(self) -> None:
+        import json
+
+        from malspark.providers.sandbox_tools import sandbox_network
+        from malspark.reporting.ledger_projection import network_from_ledger
+        from malspark.schemas.evidence import build_entry
+
+        # Only the host's flow reaches the address, but a page of the view
+        # cannot say no flow on another page is another process's.
+        task = self._reversed()
+        (flow,) = [f for f in task["network"]["flows"] if f["id"] == 60]
+        flow["dst"] = f"{ADDRESS}:443"
+        document = sandbox_document(_one_task(task))
+        args = {"offset": 0, "limit": 500}
+        entry = build_entry(
+            entry_id="ev_0001",
+            seq=1,
+            agent="dynamic",
+            tool="sandbox_network",
+            args=args,
+            server=None,
+            output=json.dumps(sandbox_network(document, **args)),
+        )
+        network = network_from_ledger([entry])
+        assert network is not None
+        (row,) = [ip for ip in network.ips if ip.address == ADDRESS]
+        assert row.launcher_unsettled_processes == []
+
     def test_read_again_the_report_is_the_same(self) -> None:
         report = _one_task(self._reversed())
         before = report.model_dump()

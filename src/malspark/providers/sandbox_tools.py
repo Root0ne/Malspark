@@ -867,7 +867,8 @@ def _with_indicators(
     left = room - _size(answer) - counts - _size({"indicators": [], "indicators_left_out": []})
     listed: list[dict[str, Any]] = []
     head = dict.fromkeys(names, 0)
-    full = left <= 0
+    # Set at the first indicator that does not fit: none after it is listed.
+    full = False
     for rank in range(3):
         for name in names:
             if full:

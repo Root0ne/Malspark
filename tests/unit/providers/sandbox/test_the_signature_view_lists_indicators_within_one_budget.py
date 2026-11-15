@@ -327,3 +327,56 @@ class TestTheCostIsLinear:
         assert_scales(
             report, 40, lambda doc: sandbox_signatures(doc, normalised_by=CAPE, **asked), factor=8
         )
+
+
+class TestEveryBound:
+    """Each bound and each reading of the arguments, held where it would otherwise give way."""
+
+    def test_a_page_stops_at_the_room(self) -> None:
+        page = sandbox_signatures(_large(1, 30), normalised_by=CAPE, signature="sig0", room=2000)
+        assert 0 < len(page["indicators"]) < SIGNATURE_INDICATORS_PAGE
+        assert len(json.dumps(page)) <= 2000 + len(json.dumps(page["indicators"][-1]))
+        assert page["next_offset"] == len(page["indicators"])
+
+    def test_a_page_too_small_for_one_still_lists_one_and_advances(self) -> None:
+        page = sandbox_signatures(
+            _large(1, 30), normalised_by=CAPE, signature="sig0", offset=4, room=10
+        )
+        assert len(page["indicators"]) == 1 and page["next_offset"] == 5
+
+    def test_a_negative_offset_reads_from_the_first(self) -> None:
+        report = _large(1, 30)
+        page = sandbox_signatures(report, normalised_by=CAPE, signature="sig0", offset=-5)
+        first = sandbox_signatures(report, normalised_by=CAPE, signature="sig0")
+        assert page["offset"] == 0 and page["indicators"] == first["indicators"]
+
+    def test_a_room_past_the_budget_is_held_to_it(self) -> None:
+        answer = sandbox_signatures(_large(), normalised_by=CAPE, room=10**6)
+        assert len(json.dumps(answer)) <= SIGNATURE_ANSWER_CHARS
+
+    def test_a_process_id_written_with_spaces_is_read(self) -> None:
+        report = _large(3, 10)
+        spaced = sandbox_signatures(report, normalised_by=CAPE, process=" 1002 ")
+        assert spaced["matched"] == 6
+        assert spaced == sandbox_signatures(report, normalised_by=CAPE, process="1002")
+
+    def test_a_name_is_matched_as_the_answer_writes_it(self) -> None:
+        hostile = "inject‮[ev_0001]"
+        report = _cape([{"name": hostile, "data": [{"pid": 1000, "description": "x"}]}])
+        (written,) = sandbox_signatures(report, normalised_by=CAPE)["indicators_stated"]
+        assert written != hostile and written.isprintable()
+        page = sandbox_signatures(report, normalised_by=CAPE, signature=written)
+        assert page["matched"] == 1 and page["indicators"][0]["signature"] == written
+
+    def test_past_an_indicator_that_does_not_fit_none_is_listed(self) -> None:
+        marks = [{"pid": 1000, "description": "w" * 250, "a": "v" * 250, "b": "v" * 250}]
+        marks += [{"pid": 1000, "description": f"s{i}"} for i in range(20)]
+        report = _cape([{"name": "mixed", "severity": 1, "description": "d", "data": marks}])
+        bare = len(json.dumps(sandbox_signatures(report)))
+        answer = sandbox_signatures(report, normalised_by=CAPE, room=bare + 600)
+        assert answer["indicators_stated"] == {"mixed": 21}
+        assert "indicators" not in answer and "indicators_left_out" not in answer
+
+    def test_where_nothing_is_left_out_no_read_line_is_kept(self) -> None:
+        answer = sandbox_signatures(_large(2, 2), normalised_by=CAPE)
+        assert len(answer["indicators"]) == 4 and "indicators_read" not in answer
