@@ -430,6 +430,26 @@ class TestThePagedCallOnTheLiveReport:
         page = sandbox_signatures(sandbox_document(_read()), normalised_by=TRIAGE, process="9999")
         assert page["no"] == INDICATORS_NO_PROCESS.format(asked="9999")
 
+    def test_an_offset_past_the_matches_gives_no_reason(self) -> None:
+        page = sandbox_signatures(
+            sandbox_document(_read()), normalised_by=TRIAGE, process="86", offset=999
+        )
+        assert page["matched"] == 2 and page["indicators"] == [] and "no" not in page
+
+    def test_a_guest_pid_of_processes_in_two_tasks_names_the_first_in_the_report(self) -> None:
+        second = _json("behavioral1.json")
+        for proc in second["processes"]:
+            if proc["procid"] == 86:
+                proc["procid"] = 186
+        report = required_reader("triage").read(
+            _json("overview.json"),
+            provider="triage",
+            task_id="s1",
+            task_reports={"behavioral1": _json("behavioral1.json"), "behavioral2": second},
+        )
+        page = sandbox_signatures(sandbox_document(report), normalised_by=TRIAGE, process="3444")
+        assert page["no"] == INDICATORS_GUEST_PID.format(asked="3444", ids="86, 186", first="86")
+
     def test_the_description_and_the_read_line_ask_for_the_report_s_process_id(self) -> None:
         assert "the report's process id" in " ".join(INDICATORS_READ.split())
 
