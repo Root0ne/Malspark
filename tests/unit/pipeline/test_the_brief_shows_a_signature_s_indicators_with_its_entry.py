@@ -79,8 +79,8 @@ class TestThePackLine:
         line = _signatures_line(pack_block(pack_entries(_rows(_document())), 0))
         assert line.startswith("[ev_0002] sandbox signatures: 5 signatures (")
         assert (
-            f"{WPM}: powershell.exe (process 84, marked as the sample's) -> cmd.exe "
-            "(process 86, marked as the sample's): PID 1756 wrote to memory of 3444; "
+            f"{WPM}: powershell.exe (process 84, pid 1756, marked as the sample's) -> cmd.exe "
+            "(process 86, pid 3444, marked as the sample's): PID 1756 wrote to memory of 3444; "
             "pid=1756 [behavioral1]"
         ) in line
         assert "(x2)" in line

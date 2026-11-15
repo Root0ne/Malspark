@@ -92,8 +92,13 @@ class TestTheLiveReport:
         (indicator,) = _rows(_read())[WPM]["indicators"]
         assert indicator == {
             "task": "behavioral1",
-            "process": {"id": "84", "image": "powershell.exe", "marked": True},
-            "target": {"id": "86", "image": "cmd.exe", "marked": True},
+            "process": {
+                "id": "84",
+                "guest_pid": "1756",
+                "image": "powershell.exe",
+                "marked": True,
+            },
+            "target": {"id": "86", "guest_pid": "3444", "image": "cmd.exe", "marked": True},
             "description": "PID 1756 wrote to memory of 3444",
             "values": {"pid": "1756"},
         }
@@ -142,6 +147,10 @@ class TestTheReportsProcessId:
         assert indicator["process"]["id"] == "84" and "target" not in indicator
         assert indicator["values"] == {"pid_target": "3444"}
 
+    def test_a_resolved_process_states_its_guest_pid_beside_the_report_s_id(self) -> None:
+        (indicator,) = _rows(_read())[WPM]["indicators"]
+        assert (indicator["target"]["id"], indicator["target"]["guest_pid"]) == ("86", "3444")
+
 
 class TestTheLaunchLineage:
     def test_a_launcher_run_states_each_process_s_lineage_as_the_process_view_does(self) -> None:
@@ -150,6 +159,7 @@ class TestTheLaunchLineage:
         (indicator,) = _rows(report)["Executes a command shell one-liner"]["indicators"]
         assert indicator["process"] == {
             "id": "86",
+            "guest_pid": "3444",
             "image": "cmd.exe",
             LINEAGE_KEY: LINEAGE_SAMPLE,
             "marked": True,
@@ -200,7 +210,12 @@ class TestEveryIdIsStated:
         )
         (indicator,) = _rows(_read(overview=overview))["own marks"]["indicators"]
         assert "task" not in indicator
-        assert indicator["process"] == {"id": "86", "image": "cmd.exe", "marked": True}
+        assert indicator["process"] == {
+            "id": "86",
+            "guest_pid": "3444",
+            "image": "cmd.exe",
+            "marked": True,
+        }
         assert indicator["values"] == {"ioc": "a"}
 
 
@@ -217,7 +232,12 @@ class TestTheBounds:
         assert row["indicators"] == [
             {
                 "task": "behavioral1",
-                "process": {"id": "84", "image": "powershell.exe", "marked": True},
+                "process": {
+                    "id": "84",
+                    "guest_pid": "1756",
+                    "image": "powershell.exe",
+                    "marked": True,
+                },
                 "times": 40,
             }
         ]

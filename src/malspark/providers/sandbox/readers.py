@@ -589,6 +589,9 @@ class TriageReportReader(ReportReader):
         task_channel=TASK_SIGNATURES_CHANNEL,
         task_name="name",
         task_lists=("indicators",),
+        # A process row of a task report holds the guest's pid under its
+        # ``extra``, beside the report's own process id.
+        guest_pid=("extra.pid",),
     )
 
     def read(
