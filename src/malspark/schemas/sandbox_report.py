@@ -55,6 +55,7 @@ from malspark.schemas.sandbox_document import (
 from malspark.schemas.sandbox_document import (
     SUMMARY_KEYS as _DOCUMENT_SUMMARY_KEYS,
 )
+from malspark.schemas.signature_indicators import IndicatorFields
 
 
 def _int(value: Any) -> int:
@@ -578,6 +579,10 @@ class Reading:
     # names no such field (a field of the same name may hold a path on the
     # sandbox's own host, which is never shown).
     guest_path_fields: tuple[str, ...] = ()
+    # Where a signature row states its indicators, as the reader's source
+    # declares them (``schemas.signature_indicators``); ``None`` where the
+    # source states none.
+    signature_indicators: IndicatorFields | None = None
 
 
 # What a report read by a reader that keeps its source's arrangement reached

@@ -33,7 +33,12 @@ from malspark.core.report_formats import (
     format_named,
 )
 from malspark.schemas.sandbox_document import FIXTURE_KEY, SYNTHETIC_KEY
-from malspark.schemas.sandbox_report import CAPE_RENAMES, TRIAGE_TRAFFIC_PROCESS_FIELDS
+from malspark.schemas.sandbox_report import (
+    CAPE_RENAMES,
+    TASK_SIGNATURES_CHANNEL,
+    TRIAGE_TRAFFIC_PROCESS_FIELDS,
+)
+from malspark.schemas.signature_indicators import IndicatorFields
 
 if TYPE_CHECKING:
     from malspark.schemas.sandbox_report import Reading, SandboxReport
@@ -85,6 +90,10 @@ class ReportReader(ABC):
     # names no such field; a mapped format declares its own through the
     # mapping's ``field_names`` (``<channel>.platform_process``).
     traffic_process_fields: ClassVar[tuple[str, ...]] = ()
+    # Where a signature row of the reader's source states its indicators
+    # (``schemas.signature_indicators.IndicatorFields``), which the signature's
+    # ledger entry carries; ``None`` where the source states none.
+    signature_indicators: ClassVar[IndicatorFields | None] = None
 
     def builtin_format(self) -> ReportFormat | None:
         """The shipped format declaration under this reader's id, if any."""
@@ -120,7 +129,9 @@ class ReportReader(ABC):
         """What a report this reader read can fill, by what it read (``read_from``)."""
         from malspark.schemas.sandbox_report import REPORT_LIST_FIELDS, Reading
 
-        return Reading(frozenset(REPORT_LIST_FIELDS))
+        return Reading(
+            frozenset(REPORT_LIST_FIELDS), signature_indicators=self.signature_indicators
+        )
 
     def task_id(self, payload: Any) -> str | None:
         """The source sandbox's own task id in ``payload``, where the reader knows where it sits."""
@@ -551,6 +562,19 @@ class TriageReportReader(ReportReader):
     id = "triage"
     PARTIAL = "read from its overview alone"
     traffic_process_fields = TRIAGE_TRAFFIC_PROCESS_FIELDS
+    # An overview signature's indicators are its marks; a task report lists
+    # each signature again with the indicators seen in that task, each naming
+    # the process that acted (and the one acted on) by the task's process ids,
+    # and the guest's pid beside it.
+    signature_indicators = IndicatorFields(
+        lists=("marks",),
+        process=("procid", "pid"),
+        target=("procid_target", "pid_target"),
+        description=("description",),
+        task_channel=TASK_SIGNATURES_CHANNEL,
+        task_name="name",
+        task_lists=("indicators",),
+    )
 
     def read(
         self,
@@ -588,9 +612,17 @@ class TriageReportReader(ReportReader):
             # (``SandboxProvider.FETCHES_TASK_REPORTS``) is taken to have.
             read_from = READ_FROM_TASKS if fetches_task_reports(provider) else READ_FROM_OVERVIEW
         if read_from == READ_FROM_OVERVIEW:
-            return Reading(TRIAGE_OVERVIEW_FILLS, partial=self.PARTIAL)
+            return Reading(
+                TRIAGE_OVERVIEW_FILLS,
+                partial=self.PARTIAL,
+                signature_indicators=self.signature_indicators,
+            )
         # A task report's dumped file names its guest path under ``path``.
-        return Reading(TRIAGE_NORMALISER_FILLS, guest_path_fields=("path",))
+        return Reading(
+            TRIAGE_NORMALISER_FILLS,
+            guest_path_fields=("path",),
+            signature_indicators=self.signature_indicators,
+        )
 
     # What a behavioural task's row in the overview, and its task report's
     # ``task`` block, say of the machine the task ran in: ``resource`` is the

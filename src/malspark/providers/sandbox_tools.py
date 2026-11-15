@@ -38,7 +38,7 @@ from malspark.core.logger import logger
 from malspark.pipeline.sandbox_status import NOT_RUN, sandbox_status
 from malspark.providers.call_arguments import pick_argument
 from malspark.providers.detonation import selected
-from malspark.schemas.sandbox_document import MEMBER_FACT_KEY, place, signature_pids
+from malspark.schemas.sandbox_document import MEMBER_FACT_KEY, pid_of, place, signature_pids
 from malspark.schemas.sandbox_report import (
     LINEAGE_KEY,
     LINEAGE_LAUNCHER,
@@ -475,6 +475,213 @@ def _signature_techniques(sig: Mapping[str, Any]) -> list[str]:
 # way (``SandboxSignature.pids_total``).
 SIGNATURE_PIDS_SHOWN = 10
 
+# Where an indicator's process is listed more than once: no row is chosen.
+INDICATOR_PROCESS_IN_TASKS = "listed in {count} tasks; the indicator names none of them"
+INDICATOR_PROCESS_TWICE = "the task lists {count} processes under this id"
+
+
+def _reading(normalised_by: Sequence[str] | None) -> Any:
+    """What the job's reader declares its reports hold (``Reading``), or ``None`` when unknown."""
+    if not normalised_by or len(normalised_by) not in (2, 3):
+        return None
+    from malspark.schemas.sandbox_report import normaliser_reading
+
+    provider, source_format, *rest = (str(part or "").strip() for part in normalised_by)
+    return normaliser_reading(source_format, provider, rest[0] if rest else "")
+
+
+class SignatureIndicators:
+    """Each signature's indicators as its ledger entry states them, the report read once.
+
+    Read where the job's reader declares its source states them
+    (``Reading.signature_indicators``), never by a format's own field name:
+    a signature row's own, then, where the source lists its signatures again
+    per task, those of every task row of the same name, each in its task.
+    Every process an indicator names is resolved to the process row of the
+    same report and task, with the facts the process view states for it (its
+    image, its launch lineage or the sandbox's mark); an id the task does not
+    list is stated as not listed, and one listed more than once is stated as
+    such, never dropped. Equal indicators of one task are listed once with
+    their count; past ``SIGNATURE_INDICATORS_SHOWN`` distinct ones the rest
+    are counted. Every text is the report's and is written out
+    (``sample_written_out``). Linear in the report: the task rows of one name
+    are read once, however many signatures share it.
+    """
+
+    def __init__(self, report: dict[str, Any] | None, normalised_by: Sequence[str] | None) -> None:
+        reading = _reading(normalised_by)
+        self.fields = getattr(reading, "signature_indicators", None)
+        self._rows: dict[tuple[str, str], list[dict[str, Any]]] = {}
+        self._tasks_of: dict[str, set[str]] = {}
+        self._task_rows: dict[str, list[tuple[str, list[Any]]]] = {}
+        self._task_parts: dict[str, tuple[list[list[Any]], int]] = {}
+        self._launched = False
+        if self.fields is None or not isinstance(report, dict):
+            self.fields = None
+            return
+        from malspark.schemas.sandbox_document import PROCESS_ID_KEYS, channel_rows
+
+        processes = _list_at(report, "processes") or []
+        for proc in processes:
+            if not isinstance(proc, dict):
+                continue
+            procid = next((p for key in PROCESS_ID_KEYS if (p := pid_of(proc.get(key)))), "")
+            if procid:
+                task = _task_of(proc)
+                self._rows.setdefault((task, procid), []).append(proc)
+                self._tasks_of.setdefault(procid, set()).add(task)
+        self._listing = {task for task, _procid in self._rows}
+        self._launched = _launcher_attributed(report, processes)
+        fields = self.fields
+        channels = place(report, "channels")
+        held = channels.get(fields.task_channel) if isinstance(channels, dict) else None
+        if fields.task_channel and held is not None:
+            from malspark.schemas.sandbox_report import TASK_KEY
+            from malspark.schemas.signature_indicators import indicators_of
+
+            for row in channel_rows(held) or []:
+                if not isinstance(row, dict):
+                    continue
+                listed = indicators_of(row, fields.task_lists)
+                if listed:
+                    name = str(row.get(fields.task_name) or "")
+                    task = str(row.get(TASK_KEY) or "")
+                    self._task_rows.setdefault(name, []).append((task, listed))
+
+    def _gathered(self, sources: Any) -> tuple[list[list[Any]], int]:
+        """``([task, indicator, times] for the distinct ones shown, how many are stated)``."""
+        from malspark.schemas.signature_indicators import (
+            SIGNATURE_INDICATORS_SHOWN,
+            held_neutral,
+            indicator_key,
+            neutral_indicator,
+        )
+
+        fields = self.fields
+        assert fields is not None
+        shown: dict[str, list[Any]] = {}
+        stated = 0
+        for task, listed in sources:
+            for raw in listed:
+                stated += 1
+                indicator = held_neutral(raw) if fields.neutral else neutral_indicator(raw, fields)
+                key = indicator_key(indicator, task)
+                found = shown.get(key)
+                if found is not None:
+                    found[2] += 1
+                elif len(shown) < SIGNATURE_INDICATORS_SHOWN:
+                    shown[key] = [task, indicator, 1]
+        return list(shown.values()), stated
+
+    def _process(self, procid: str, task: str) -> dict[str, Any]:
+        """The process ``procid`` names in ``task`` (any task where none is stated), as listed."""
+        out: dict[str, Any] = {"id": procid}
+        if not task:
+            tasks = self._tasks_of.get(procid) or set()
+            if len(tasks) > 1:
+                out["not_settled"] = INDICATOR_PROCESS_IN_TASKS.format(count=len(tasks))
+                return out
+            task = next(iter(tasks), "")
+        listed = self._rows.get((task, procid)) or []
+        if not listed:
+            # Said only where the task lists processes at all.
+            if (task in self._listing) if task else bool(self._rows):
+                out["not_listed"] = True
+            return out
+        if len(listed) > 1:
+            out["not_settled"] = INDICATOR_PROCESS_TWICE.format(count=len(listed))
+            return out
+        from malspark.schemas.sandbox_document import (
+            PROCESS_IMAGE_PATH_KEYS,
+            PROCESS_NAME_KEYS,
+        )
+        from malspark.schemas.signature_indicators import INDICATOR_TEXT_CHARS
+        from malspark.utils.written_forms import sample_written_out
+
+        (proc,) = listed
+        name = next(
+            (
+                str(proc[key])
+                for key in (*PROCESS_NAME_KEYS, *PROCESS_IMAGE_PATH_KEYS)
+                if isinstance(proc.get(key), str) and proc[key].strip()
+            ),
+            "",
+        )
+        image = re.split(r"[\\/]", name.strip().strip('"'))[-1]
+        if image:
+            cut = image[:INDICATOR_TEXT_CHARS] + ("…" if len(image) > INDICATOR_TEXT_CHARS else "")
+            out["image"] = sample_written_out(cut)
+        lineage = _launch_lineage(proc)
+        if lineage:
+            out[LINEAGE_KEY] = lineage
+        if lineage == LINEAGE_SAMPLE or (
+            not self._launched and not lineage and _marked_as_the_sample(proc)
+        ):
+            out["marked"] = True
+        return out
+
+    def _stated(self, task: str, indicator: dict[str, Any], times: int) -> dict[str, Any]:
+        """One indicator as the entry states it: its processes resolved, its texts written out."""
+        from malspark.schemas.signature_indicators import (
+            CHARS_LEFT_OUT,
+            DESCRIPTION,
+            EVENT,
+            PROCESS,
+            TARGET,
+            VALUES,
+            VALUES_LEFT_OUT,
+        )
+        from malspark.utils.written_forms import sample_written_out
+
+        out: dict[str, Any] = {}
+        if task:
+            out["task"] = sample_written_out(task)
+        for key in (PROCESS, TARGET):
+            if indicator.get(key):
+                out[key] = self._process(indicator[key], task)
+        for key in (EVENT, DESCRIPTION):
+            if indicator.get(key):
+                out[key] = sample_written_out(indicator[key])
+        values = indicator.get(VALUES)
+        if isinstance(values, dict) and values:
+            out[VALUES] = {sample_written_out(k): sample_written_out(v) for k, v in values.items()}
+        if indicator.get(VALUES_LEFT_OUT):
+            out[VALUES_LEFT_OUT] = indicator[VALUES_LEFT_OUT]
+        cut = indicator.get(CHARS_LEFT_OUT)
+        if isinstance(cut, dict) and cut:
+            out[CHARS_LEFT_OUT] = {sample_written_out(k): n for k, n in cut.items()}
+        if times > 1:
+            out["times"] = times
+        return out
+
+    def of(self, signature: Any) -> dict[str, Any]:
+        """The fields ``signature``'s row of an answer gains; ``{}`` where it states none."""
+        fields = self.fields
+        if fields is None or not isinstance(signature, dict):
+            return {}
+        from malspark.schemas.signature_indicators import (
+            SIGNATURE_INDICATORS_SHOWN,
+            indicators_of,
+        )
+
+        own_shown, own_stated = self._gathered([("", indicators_of(signature, fields.lists))])
+        name = str(signature.get("name") or "")
+        if name not in self._task_parts:
+            self._task_parts[name] = self._gathered(self._task_rows.get(name, ()))
+        task_shown, task_stated = self._task_parts[name]
+        shown = [*own_shown, *task_shown][:SIGNATURE_INDICATORS_SHOWN]
+        stated = own_stated + task_stated
+        if not stated:
+            return {}
+        out: dict[str, Any] = {
+            "indicators": [self._stated(task, ind, times) for task, ind, times in shown]
+        }
+        left_out = stated - sum(times for _task, _ind, times in shown)
+        if left_out:
+            out["indicators_total"] = stated
+            out["indicators_left_out"] = left_out
+        return out
+
 
 def sandbox_signatures(
     report: dict[str, Any] | None,
@@ -488,7 +695,9 @@ def sandbox_signatures(
     Reported as what they are — one detection engine's opinion — not folded
     into the verdict. A sandbox signature firing is evidence the agent weighs
     alongside everything else it found. Each row lists at most
-    :data:`SIGNATURE_PIDS_SHOWN` of the processes the hit was seen in.
+    :data:`SIGNATURE_PIDS_SHOWN` of the processes the hit was seen in, and at
+    most ``SIGNATURE_INDICATORS_SHOWN`` of its indicators, each process
+    they name resolved to the report's own row (:class:`SignatureIndicators`).
     """
     if report is None or _no_sandbox_ran(report):
         return _no_report(report)
@@ -499,6 +708,7 @@ def sandbox_signatures(
         return _absent("signatures")
     rows: list[dict[str, Any]] = []
     page, meta = _page(signatures, offset, limit)
+    indicators = SignatureIndicators(report, normalised_by) if page else None
     if page:
         for sig in page:
             if not isinstance(sig, dict):
@@ -528,6 +738,12 @@ def sandbox_signatures(
                     row["pids_total"] = len(pids)
                     pids = pids[:SIGNATURE_PIDS_SHOWN]
                 row["pids"] = pids
+            # What the hit's indicators say, which process did what to which,
+            # where the reader declares its source states them
+            # (:class:`SignatureIndicators`). Left out where none is stated, so
+            # such an answer is as it was.
+            if indicators is not None:
+                row.update(indicators.of(sig))
             rows.append(row)
     return {"signatures": rows, "total": len(signatures), **meta}
 
