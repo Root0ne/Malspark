@@ -355,14 +355,16 @@ def _begun_unread(lines: list[str]) -> list[re.Match[str]]:
     read; with prose under it, it is prose. Inside a claim the rule reads,
     between its heading and its first field line, it is that claim's text (a
     sentence line, a peer's claim quoted, a list item) and counts nothing: a
-    read heading opens its block, and its first field line or a ``---`` line
-    closes it. Each line is read once.
+    read heading opens its block, and its first field line, a ``---`` line or
+    a blank line closes it, as :func:`besides_claims` reads a heading's
+    sentence. Each line is read once.
     """
     found: list[re.Match[str]] = []
     begun: re.Match[str] | None = None
     open_block = False
     for line in lines:
         if not line.strip():
+            open_block = False
             continue
         if begun is not None and _CLAIM_FIELD_RE.match(line):
             found.append(begun)

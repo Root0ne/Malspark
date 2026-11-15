@@ -2531,8 +2531,9 @@ unsourced. Each read counts the claims the answer began before its DISPUTES
 section — its claim headings, and each line begun as a numbered heading and
 ended by a dot with no note (`CLAIM 7. …`, `**CLAIM 7.** …`) whose next
 written line is a claim field line (`claim_headings.BEGUN_HEAD_RE`; with prose
-beneath it, it is prose, and inside a claim that is read, before that claim's
-first field line, it is that claim's text) — against the claims it read and the blocks that
+beneath it, it is prose, and inside a claim that is read, in the block its
+heading opens until its first field line, a rule line or a blank line closes
+it, it is that claim's text) — against the claims it read and the blocks that
 stated no confidence; what is left is claims begun and not read, which is logged and
 kept on the answer it was read from (`AgentISR.claims_unread_reason`),
 naming the analyst, the round and both numbers. The judge node carries it as a

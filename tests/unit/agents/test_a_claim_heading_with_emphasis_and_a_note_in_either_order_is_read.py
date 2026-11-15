@@ -253,6 +253,25 @@ class TestALineBegunAsAHeadingAndNotRead:
         assert BEGUN_HEAD_RE.match(text) is None
         assert count_claims_begun(text) == count_claims_begun_unread(text) == 0
 
+    @pytest.mark.parametrize(
+        "between",
+        ["\n\n", "\n\n### B1. Dispatch\n"],
+        ids=["a-blank-line", "a-markdown-heading"],
+    )
+    def test_a_blank_line_closes_a_read_heading_that_wrote_no_field(self, between: str) -> None:
+        text = (
+            "CLAIM 11 (upstream). Outcome: confirmed, see claim 3."
+            + between
+            + "CLAIM 13. Routine 0x3cf4 dispatches.\nEVIDENCE: [ev_0001]\nCONFIDENCE: 0.8\n"
+        )
+        read = read_claim_blocks(text)
+
+        assert count_claims_begun_unread(text) == 1
+        assert count_claims_begun(text) == read.begun == 2
+        assert (read.read, read.unread) == (1, 1)
+        sentence = claims_unread_sentence("reverser", read)
+        assert "began 2 claim(s), and 1 were read; 1 could not be read as a claim" in sentence
+
     def test_a_rule_line_closes_a_read_heading_that_wrote_no_field(self) -> None:
         text = (
             "CLAIM 2: The loader decodes strings.\n---\n"
