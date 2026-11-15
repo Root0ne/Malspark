@@ -63,6 +63,16 @@ class TestAClaimBegunAndNotRead:
             for s in merge.sentences("static", 2)
         )
 
+    def test_a_block_that_states_no_confidence_counts(self) -> None:
+        answer = (
+            READ
+            + "CLAIM: The mutex name at 0x403962 is read from ev_0109.\nEVIDENCE: [ev_0109]\n---\n"
+        )
+
+        merge = _merge(answer)
+
+        assert merge.withdrawn_by_rule == () and [n for n, *_r in merge.held_unread] == [3]
+
     def test_a_count_the_caller_holds_is_taken_as_given(self) -> None:
         merge = _merge(READ, claims_unread=1)
 
