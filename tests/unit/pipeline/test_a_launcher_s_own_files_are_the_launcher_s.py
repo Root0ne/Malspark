@@ -476,6 +476,10 @@ class TestTheLauncherIsAnAncestorOfTheSampleSProcess:
         assert _reasons(report)[f"{TEMP}\\dropped.ps1"] == DROPPED_BY_LAUNCHER
 
 
+# An address a run may publish, which only the host naming the launcher reached.
+ADDRESS = "172.217.76.120"
+
+
 def _one_task(task: dict[str, Any]) -> SandboxReport:
     report = _read("overview.json", {"behavioral1": task})
     attribute_the_launcher(report, FIRST)
@@ -539,6 +543,35 @@ class TestNoHostAboveTheSampleSProcess:
         rows = sandbox_processes(sandbox_document(report))["processes"]
         (host,) = [row for row in rows if row["pid"] == 84]
         assert host[LINEAGE_KEY] == LINEAGE_LAUNCHER_UNSETTLED
+
+    def test_the_host_s_address_names_the_host_whose_attribution_is_not_established(
+        self,
+    ) -> None:
+        from malspark.reporting.renderers.stix_renderer import publishes
+        from tests.unit.reporting.test_traffic_another_process_made_is_not_the_sample_s import (
+            _answer,
+            _report,
+        )
+
+        # The host's own flow, to an address a run may publish.
+        task = self._reversed()
+        (flow,) = [f for f in task["network"]["flows"] if f["id"] == 60]
+        flow["dst"] = f"{ADDRESS}:443"
+        report = _report(_one_task(task))
+        answer = _answer(report, "ip", ADDRESS)
+        assert answer.startswith(
+            "no: the sandbox report says it was made by a script host naming the launcher, "
+            "whose attribution is not established (powershell.exe (procid 84))"
+        )
+        # The decision is the one the address had without the host named: no
+        # flow of the tree reached it, so it is published only where the judge
+        # keeps it.
+        (row,) = [ip for ip in report.network.ips if ip.address == ADDRESS]
+        assert row.launcher_unsettled_processes == ["powershell.exe (procid 84)"]
+        row.launcher_unsettled_processes = []
+        unnamed = _answer(report, "ip", ADDRESS)
+        assert unnamed.startswith("no: the sandbox report does not say which process made")
+        assert not publishes(answer) and not publishes(unnamed)
 
     def test_read_again_the_report_is_the_same(self) -> None:
         report = _one_task(self._reversed())

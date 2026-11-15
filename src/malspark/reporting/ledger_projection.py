@@ -74,6 +74,7 @@ from malspark.schemas.sandbox_report import (
     LINEAGE_DISPUTED_KEY,
     LINEAGE_FILE,
     LINEAGE_LAUNCHER,
+    LINEAGE_LAUNCHER_UNSETTLED,
     LINEAGE_MARKED,
     LINEAGE_MARKED_BY_KEY,
     LINEAGE_MARKED_STORED,
@@ -1450,6 +1451,8 @@ def network_from_ledger(
     attributed: dict[str, list[bool | None]] = {}
     # Which processes outside the tree the report says made flows to each address.
     outside: dict[str, list[str]] = {}
+    # The hosts naming the launcher whose attribution is not established, per address.
+    unsettled: dict[str, list[str]] = {}
     # And the processes the two lineage facts disagree about, by which fact names them.
     disputed: dict[str, dict[str, list[str]]] = {}
     host_facts: dict[str, dict[str, Any]] = {}
@@ -1577,6 +1580,10 @@ def network_from_ledger(
                         named = _flow_process_named(row, image)
                         if named not in outside.setdefault(address, []):
                             outside[address].append(named)
+                    if row.get(LINEAGE_KEY) == LINEAGE_LAUNCHER_UNSETTLED and image:
+                        named = _flow_process_named(row, image)
+                        if named not in unsettled.setdefault(address, []):
+                            unsettled[address].append(named)
                     which = str(row.get(LINEAGE_DISPUTED_KEY) or "")
                     if which == LINEAGE_MARKED_STORED:
                         which = LINEAGE_MARKED
@@ -1702,6 +1709,8 @@ def network_from_ledger(
             ip.unlisted_processes = list(
                 dict.fromkeys(a[1] for a in answers if isinstance(a, tuple))
             )
+        if ip.sample_process_tree is None and unsettled.get(ip.address):
+            ip.launcher_unsettled_processes = list(unsettled[ip.address])
     _state_who_kept(network, kept, isrs)
     for ip in network.ips:
         ip.observed_in = stated_marks(observed.get(("ip", ip.address), ()))

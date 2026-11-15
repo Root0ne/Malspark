@@ -1901,9 +1901,13 @@ def attribute_the_launcher(report: SandboxReport, launcher: Any) -> None:
             continue
         if node in unconfirmed:
             # A host naming the launcher above no process of the sample's
-            # tree: whose its traffic is, the report does not settle.
+            # tree: whose its traffic is, the report does not settle. The
+            # host is named, as the report names it.
             row[LINEAGE_KEY] = LINEAGE_LAUNCHER_UNSETTLED
-            row.pop(FLOW_PROCESS_KEY, None)
+            if images.get(node):
+                row[FLOW_PROCESS_KEY] = images[node]
+            else:
+                row.pop(FLOW_PROCESS_KEY, None)
             continue
         if node[0] not in rooted and node not in launcher_nodes:
             # Started by the launcher where the sample's tree is not found:
