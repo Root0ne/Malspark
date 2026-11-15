@@ -162,3 +162,69 @@ class TestAClaimBegunUnderAHeadingTheReaderDoesNotRead:
         stands = _run(self.ANSWER, revision, in_force=in_force, line=self.LINE_3)
 
         assert self.MUTEX in stands
+
+
+class TestTheRecordSurvivesTheValidationTurn:
+    """The analyst's real revision path, its validation turn included, into the revision node."""
+
+    MUTEX = TestAClaimBegunUnderAHeadingTheReaderDoesNotRead.MUTEX
+    LINE_3 = TestAClaimBegunUnderAHeadingTheReaderDoesNotRead.LINE_3
+    ANSWER = TestAClaimBegunUnderAHeadingTheReaderDoesNotRead.ANSWER
+
+    def _revised(self, first: str) -> tuple[str, Any, int]:
+        from unittest.mock import patch
+
+        from langchain_core.messages import AIMessage
+
+        from malspark.agents.base_agent import BaseAnalyst
+
+        retry = self.ANSWER
+        asked: list[int] = []
+
+        class _Model:
+            def invoke(self, messages: Any, *args: Any, **kwargs: Any) -> AIMessage:
+                asked.append(1)
+                return AIMessage(content=retry)
+
+            async def ainvoke(self, messages: Any, *args: Any, **kwargs: Any) -> AIMessage:
+                return self.invoke(messages)
+
+        class _Reviser(BaseAnalyst):
+            def analyze(self, data: str) -> str:  # pragma: no cover - unused
+                return ""
+
+            def revise(self, *args: Any, **kwargs: Any) -> str:
+                return first
+
+        analyst = _Reviser(llm=_Model(), name="static")  # type: ignore[arg-type]
+        with patch("malspark.agents.base_agent.validity_check_available", return_value=True):
+            text, revision = analyst.safe_revise_isr("data", "own", {}, "feedback", 1)
+        return text, revision, len(asked)
+
+    def _stands(self, text: str, revision: Any) -> list[str]:
+        return _run(text, revision, in_force=IN_FORCE + _block(self.MUTEX), line=self.LINE_3)
+
+    def test_with_no_question_asked_the_record_reaches_the_node(self) -> None:
+        from malspark.pipeline.revision_merge import claims_left_unread_of
+
+        text, revision, asked = self._revised(self.ANSWER)
+
+        assert asked == 0 and claims_left_unread_of(revision) == 1
+        assert self.MUTEX in self._stands(text, revision)
+
+    def test_a_retry_the_validation_turn_keeps_carries_its_own_record(self) -> None:
+        from malspark.pipeline.revision_merge import claims_left_unread_of
+
+        # Claim 2's confidence cannot be read: the turn asks, and the retry it
+        # keeps reads it but still begins claim 3 under the plain-dot heading.
+        first = self.ANSWER.replace(
+            "resolves.\nEVIDENCE: [ev_0001]\nCONFIDENCE: 0.8",
+            "resolves.\nEVIDENCE: [ev_0001]\nCONFIDENCE: high",
+        )
+        assert first != self.ANSWER
+
+        text, revision, asked = self._revised(first)
+
+        assert asked >= 1 and len(revision.claims) == 2
+        assert claims_left_unread_of(revision) >= 1
+        assert self.MUTEX in self._stands(text, revision)
