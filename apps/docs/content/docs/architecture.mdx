@@ -2106,7 +2106,11 @@ decide.
    or adds, `WITHDRAW FINDING "<title>": <reason>` taking one out
    (`ANALYST_FEEDBACK_CLOSING_BY_NUMBER`). WITHDRAW lines are read in any case,
    with lists and ranges (`WITHDRAW CLAIMS 3, 5 and 7-9`), each block taking
-   the reason of the first line that names it with one and no other; any
+   the reason of the first line that names it with one and no other. The
+   round note the claim list writes beside a claim, copied after the number
+   (`WITHDRAW CLAIM 2 (unchanged since round 1): …`), is read through by the
+   one shape that writes it (`isr_models.ROUND_NOTE_PATTERN`), whatever round
+   it states; any other bracket after the number makes the line a doubt. Any
    other line that holds both a claim number and a withdrawing word (withdraw,
    retract, remove, drop, delete), in either order ("I withdraw claim 2",
    "Claim 5 is withdrawn", "CLAIM 2 is withdrawn", "Drop claim 2"), is a
@@ -2651,7 +2655,9 @@ the revision answers the line, so the block that restates it best replaces it
 a tie), its values no block states recorded as dropped, and the merge names
 that block for the claim (`RevisionMerge.restated_by`) also where it stands at
 another claim's place; with no block restating it, the line rule withdraws it
-unless the revision's disputes refer to it. A claim the revision's disputes
+unless the revision's disputes refer to it. A range the disputes write
+backwards ("my claims 9-2 hold", "6 to 4") refers to both its ends for the line
+rule and names no claim for any other purpose. A claim the revision's disputes
 speak for by a reference of its own ("My claim 1 stands: …") is not answered
 so, and neither is a claim a line names without speaking to it itself: each
 keeps the address test, and with no block passing it stays in force with the
@@ -2661,7 +2667,13 @@ address is restated by one block on its words or values. A revision that
 restates or withdraws every claim in force stands as written.
 `run_summary.negotiation.revision_replacements` states each merge that carried
 claims, with their numbers, and each withdrawal with its reason (a withdrawal by
-rule also among `dropped_claims`, with the claim's values); a revision with
+rule also among `dropped_claims`, with the claim's values), and a claim kept
+from the line rule by a revision not read whole is stated with the revision's
+record in the platform's words: that it began claim blocks the platform did
+not read (a block begun and not read, or one that stated no confidence), that
+it states that parts of the input were not analysed, both joined, or otherwise
+that it records a reason its answer is not read whole
+(`revision_merge.claims_unread_why_of`), the answer's own words never quoted; a revision with
 fewer claims that carried nothing is still stated ("The X analyst's round-N
 revision replaced N claim(s) with M."). What a prose withdrawal does: a
 dispute item read as the author's withdrawal of a claim of its own answer in
