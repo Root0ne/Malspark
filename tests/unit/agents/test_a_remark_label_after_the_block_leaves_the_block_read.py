@@ -15,9 +15,9 @@ from __future__ import annotations
 from malspark.agents.judge_agent import read_contradictions_block
 
 LINES = [
-    "[analysts: ALL_TOOLS_STATIC_R2 ANALYST] Claim 17 says the mutex name is not recovered; "
+    "[analysts: STATIC_DEEP ANALYST] Claim 17 says the mutex name is not recovered; "
     "ev_0109 gives the third argument. [blocking: ev_0109 shows the argument]",
-    "[analysts: ALL_TOOLS_STATIC_R2 ANALYST] Claim 24 says no data-flow hop reaches the key "
+    "[analysts: STATIC_DEEP ANALYST] Claim 24 says no data-flow hop reaches the key "
     "routine; ev_0057 shows it. [blocking: the hop is in ev_0057]",
     "[analysts: DYNAMIC ANALYST] Claims 23 and 37 hold the launches the sandbox's own; claim 43 "
     "leaves their origin open. [blocking: the analyst contradicts itself]",

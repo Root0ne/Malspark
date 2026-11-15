@@ -1175,9 +1175,10 @@ def merge_revision(
     names, except one it reaches only by the newer reading, a range or a
     list going on (``expanded``, ``ClaimReferences.expanded_for``), that
     shares no ledger id or address with the reference's clause. A blocking
-    line that does not speak to a claim withdraws nothing of it, leaves no
-    mark on it, and that is stated. ``owned`` is each claim number written for no
-    analyst that the lines' reading read as this analyst's: it is stated.
+    line that does not speak to a claim withdraws nothing of it by rule,
+    keeps the line's mark on it, and that is stated. ``owned`` is each claim
+    number written for no analyst that the lines' reading read as this
+    analyst's: it is stated.
     Where ``unplaced``, ``expanded`` or ``owned`` is not given, it is read
     from ``named`` (``debate_facts.NamedClaims``). ``claims_unread`` is how
     many claims the revision began and its reading did not read, as the

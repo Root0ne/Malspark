@@ -2512,7 +2512,7 @@ def _held_in_the_field(
     the reference's claims, and the words before "claim(s)" fit exactly one
     analyst the line's field names, whose answer holds every one of them,
     the reference is that analyst's: "STATIC claim 17" on a line whose field
-    names the analyst ``all_tools_static_r2`` alone, while the ``static``
+    names the analyst ``static_deep`` alone, while the ``static``
     analyst holds 16 claims. Otherwise ``name``.
     """
     counted = [n for n in map(_as_claim_number, numbers.numbers) if n is not None]
