@@ -169,10 +169,15 @@ class _StubServer(ThreadingHTTPServer):
         """Return once every connection accepted so far is closed on this side.
 
         Bounded only so that a connection the client never closes fails the
-        socket count after it rather than hanging the test.
+        count after it rather than hanging the test.
         """
         with self._changed:
             self._changed.wait_for(lambda: self.closed >= self.opened, 60)
+
+    def still_open(self) -> int:
+        """The connections this side accepted and has not closed."""
+        with self._changed:
+            return self.opened - self.closed
 
 
 @pytest.fixture
@@ -252,8 +257,14 @@ def _on_both(agent_loop: _LoopThread, call: Callable[[], Coroutine[Any, Any, Any
     return results
 
 
-def _socket_count() -> int:
-    """The sockets among this process's open descriptors (``/dev/fd`` lists them)."""
+def _socket_count() -> int | None:
+    """The sockets among this process's open descriptors, where ``/dev/fd`` lists them.
+
+    ``None`` where there is no ``/dev/fd`` (Windows): there the stub's own
+    record of the connections it accepted and closed is the whole count.
+    """
+    if not os.path.isdir("/dev/fd"):
+        return None
     count = 0
     for name in os.listdir("/dev/fd"):
         try:
@@ -264,16 +275,27 @@ def _socket_count() -> int:
     return count
 
 
-def _settled_socket_count(httpd: ThreadingHTTPServer) -> int:
-    """The process's sockets once the stub has closed every connection the client closed.
+def _settled_counts(httpd: ThreadingHTTPServer) -> tuple[int, int | None]:
+    """The connections the stub holds open and the process's sockets, once every close is read.
 
     Counted any earlier, a server-side socket whose handler thread has not yet
-    read the client's close is counted as one the client left open.
+    read the client's close is counted as one the client left open. A
+    connection the client keeps is one the stub has not closed, on every
+    platform; the sockets are counted too where ``/dev/fd`` lists them.
     """
     assert isinstance(httpd, _StubServer)
     gc.collect()
     httpd.wait_for_closes()
-    return _socket_count()
+    return httpd.still_open(), _socket_count()
+
+
+def _assert_no_more_open(
+    before: tuple[int, int | None], after: tuple[int, int | None], allowed: int = 0
+) -> None:
+    """No more connections, nor sockets where they are counted, than ``before`` and ``allowed``."""
+    assert after[0] <= before[0] + allowed, f"the stub holds {after[0]}, {before[0]} before"
+    if before[1] is not None and after[1] is not None:
+        assert after[1] <= before[1] + allowed, (before[1], after[1])
 
 
 # ---------------------------------------------------------------------------
@@ -351,10 +373,10 @@ class TestTheAnthropicModel:
             return str((await model.ainvoke("hello")).content)
 
         asyncio.run(call())
-        before = _settled_socket_count(server)
+        before = _settled_counts(server)
         for _ in range(25):
             assert asyncio.run(call()) == "answered"
-        assert _settled_socket_count(server) <= before
+        _assert_no_more_open(before, _settled_counts(server))
         assert server.requests == 26  # type: ignore[attr-defined]
         # Each loop's client was closed with its loop, and none is held for it.
         assert len(model._async_client._client._loop_bound_clients) == 0
@@ -368,14 +390,14 @@ class TestTheAnthropicModel:
             return str((await model.ainvoke("hello")).content)
 
         asyncio.run(call())
-        before = _settled_socket_count(server)
+        before = _settled_counts(server)
         for _ in range(10):
             # A retired agent loop: stopped and closed, its generators never shut down.
             retired = _LoopThread()
             assert retired.run(call()) == "answered"
             retired.close()
             assert asyncio.run(call()) == "answered"
-        assert _settled_socket_count(server) <= before + 1
+        _assert_no_more_open(before, _settled_counts(server), allowed=1)
         # Only the last retired loop can still be held: the next send forgets it.
         assert len(model._async_client._client._loop_bound_clients) <= 1
 
@@ -473,10 +495,10 @@ class TestTheOpenAIModel:
             return str((await model.ainvoke("hello")).content)
 
         asyncio.run(call())
-        before = _settled_socket_count(server)
+        before = _settled_counts(server)
         for _ in range(25):
             assert asyncio.run(call()) == "answered"
-        assert _settled_socket_count(server) <= before
+        _assert_no_more_open(before, _settled_counts(server))
 
 
 def _ollama(base_url: str) -> Any:

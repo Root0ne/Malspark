@@ -38,10 +38,11 @@ from malspark.core.logger import logger
 from malspark.pipeline.sandbox_status import NOT_RUN, sandbox_status
 from malspark.providers.call_arguments import pick_argument
 from malspark.providers.detonation import selected
-from malspark.schemas.sandbox_document import place, signature_pids
+from malspark.schemas.sandbox_document import MEMBER_FACT_KEY, place, signature_pids
 from malspark.schemas.sandbox_report import (
     LINEAGE_KEY,
     LINEAGE_LAUNCHER,
+    LINEAGE_LAUNCHER_UNSETTLED,
     LINEAGE_MARKED_STORED,
     LINEAGE_REASON_KEY,
     LINEAGE_SAMPLE,
@@ -174,6 +175,17 @@ def _fills(normalised_by: Sequence[str] | None) -> frozenset[str] | None:
     provider, source_format, *rest = (str(part or "").strip() for part in normalised_by)
     reading = normaliser_reading(source_format, provider, rest[0] if rest else "")
     return reading.fills if reading is not None else None
+
+
+def _guest_path_fields(normalised_by: Sequence[str] | None) -> tuple[str, ...]:
+    """The dropped-file fields the job's reader declares hold a guest path (``Reading``)."""
+    if not normalised_by or len(normalised_by) not in (2, 3):
+        return ()
+    from malspark.schemas.sandbox_report import normaliser_reading
+
+    provider, source_format, *rest = (str(part or "").strip() for part in normalised_by)
+    reading = normaliser_reading(source_format, provider, rest[0] if rest else "")
+    return reading.guest_path_fields if reading is not None else ()
 
 
 # A view's source under the reader's word for it, where the two differ
@@ -351,10 +363,15 @@ def _launcher_attributed(report: dict[str, Any], processes: list[Any]) -> bool:
 
 
 def _launch_lineage(proc: dict[str, Any]) -> str:
-    """The lineage a launch record gave a process (the launcher's or the sample's); ``""`` else."""
+    """The lineage a launch record gave a process (the launcher's, not established, or the
+    sample's); ``""`` else."""
     extra = proc.get("extra")
     value = extra.get(LINEAGE_KEY) if isinstance(extra, dict) else None
-    return str(value) if value in (LINEAGE_LAUNCHER, LINEAGE_SAMPLE) else ""
+    return (
+        str(value)
+        if value in (LINEAGE_LAUNCHER, LINEAGE_LAUNCHER_UNSETTLED, LINEAGE_SAMPLE)
+        else ""
+    )
 
 
 def _marked_as_the_sample(proc: dict[str, Any]) -> bool:
@@ -535,9 +552,11 @@ def sandbox_dropped_files(
         or "dropped_files" not in (_fills(normalised_by) or {"dropped_files"})
     ):
         return _absent("dropped_files")
-    # The archive's members a generated launcher's run unpacked in the guest
+    # The archive's members a generated launcher's run unpacked in the guest,
+    # and the files the launcher's own process wrote or dumped
     # (``sandbox_report.attribute_the_launcher``): the platform's files, never
-    # files the sample wrote, listed apart with which file each is.
+    # files the sample wrote, listed apart with which file each is. Every row
+    # is in one of the two lists.
     platform: list[dict[str, Any]] = []
     written: list[Any] = []
     for entry in dropped:
@@ -547,6 +566,13 @@ def sandbox_dropped_files(
             written.append(entry)
     dropped = written
     rows: list[dict[str, Any]] = []
+    guest = _guest_path_fields(normalised_by)
+
+    def _path(entry: dict[str, Any]) -> Any:
+        # A path field the reader declares the guest's; never one it does not.
+        declared = next((entry[f] for f in guest if entry.get(f)), "")
+        return entry.get("filepath") or entry.get("guest_paths") or declared
+
     page, meta = _page(dropped, offset, limit)
     if page:
         for entry in page:
@@ -554,7 +580,7 @@ def sandbox_dropped_files(
                 continue
             row = {
                 "name": entry.get("name") or entry.get("filepath") or "",
-                "path": entry.get("filepath") or entry.get("guest_paths") or "",
+                "path": _path(entry),
                 "size": entry.get("size"),
                 "sha256": entry.get("sha256"),
                 "type": entry.get("type"),
@@ -566,16 +592,25 @@ def sandbox_dropped_files(
                 row["pids"] = pids
             if entry.get(LINEAGE_KEY):
                 row[LINEAGE_KEY] = entry[LINEAGE_KEY]
+                if entry.get(LINEAGE_REASON_KEY):
+                    row[LINEAGE_REASON_KEY] = entry[LINEAGE_REASON_KEY]
+            # A file the sample wrote that holds an archive member's digest
+            # away from its place, or sits at its place changed: said so.
+            if isinstance(entry.get(MEMBER_FACT_KEY), dict):
+                row[MEMBER_FACT_KEY] = entry[MEMBER_FACT_KEY]
             rows.append(row)
     answer: dict[str, Any] = {"dropped": rows, "total": len(dropped), **meta}
     if platform:
         answer["platform_files"] = [
             {
                 "name": entry.get("name") or entry.get("filepath") or "",
-                "path": entry.get("filepath") or entry.get("guest_paths") or "",
+                "path": _path(entry),
                 "sha256": entry.get("sha256"),
                 LINEAGE_KEY: entry.get(LINEAGE_KEY),
                 LINEAGE_REASON_KEY: entry.get(LINEAGE_REASON_KEY) or "",
+                # The process that wrote it, where the sandbox names one: a
+                # file the launcher's process wrote is listed with its writer.
+                **({"pids": pids} if (pids := _writer_pids(entry)) else {}),
             }
             for entry in platform
         ]

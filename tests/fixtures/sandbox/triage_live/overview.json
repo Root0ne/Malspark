@@ -1,0 +1,166 @@
+{
+  "analysis": {
+    "score": 3,
+    "tags": [
+      "execution"
+    ]
+  },
+  "build": "d0cc0f9b0",
+  "sample": {
+    "completed": "2026-11-14T19:23:11Z",
+    "created": "2026-11-14T19:20:37Z",
+    "id": "261114-x2ds4scy5t",
+    "md5": "9467b09bce7b5c3d92409b5f3b4a69c1",
+    "score": 3,
+    "sha1": "01ec132d423144f4dbb2c7ab61b06b7125eb9a2f",
+    "sha256": "af3971d0895795de470b404a410e9df676ec16247499ff72689586fdb16d19a6",
+    "sha512": "3848eb69a7f677ca75c06740bc43997ea27691f7a2e88fb1769891a890441ee30404316facbad98a48d5e961d6fadf9e58cd75b4a94fe525164fc48f94ee49b3",
+    "size": 739,
+    "target": "submission.zip",
+    "tlsh": "T14401102A402C9A03C65E0639FD268DE135A913861107B41B12D5B2E02C237A89F9B2F2"
+  },
+  "signatures": [
+    {
+      "desc": "Using powershell.exe command.",
+      "label": "powershell",
+      "name": "Command and Scripting Interpreter: PowerShell",
+      "score": 3,
+      "tags": [
+        "execution"
+      ],
+      "ttp": [
+        "T1059.001"
+      ]
+    },
+    {
+      "desc": "Execution of a cmd.exe one-liner (/c \"close\" or /k \"keep\") is a common script/loader stage.",
+      "label": "cmd_shell_generic",
+      "name": "Executes a command shell one-liner",
+      "score": 3,
+      "tags": [
+        "execution"
+      ],
+      "ttp": [
+        "T1059.003"
+      ]
+    },
+    {
+      "name": "Suspicious behavior: EnumeratesProcesses"
+    },
+    {
+      "name": "Suspicious use of AdjustPrivilegeToken"
+    },
+    {
+      "name": "Suspicious use of WriteProcessMemory"
+    }
+  ],
+  "targets": [
+    {
+      "iocs": {
+        "domains": [
+          "c.pki.goog"
+        ],
+        "ips": [
+          "8.8.8.8",
+          "172.217.76.94"
+        ],
+        "urls": [
+          "http://c.pki.goog/r/r1.crl",
+          "http://c.pki.goog/wr2/oBFYYahzgVI.crl"
+        ]
+      },
+      "md5": "7353b2c3f1ad368f18a10e1f7c62779d",
+      "pick": "unpack001/launch.ps1",
+      "score": 3,
+      "sha1": "38363c2865c8c79bef1cb180d7d75f842731183a",
+      "sha256": "aba6bd87cb5e4c8d594551ce5194d6a120ca721d85d766c0317598e0b5754a6e",
+      "sha512": "183587544edb955e941677b59400891662b499f7718e27b94b7f02e341094087e36817a06b2dd629c97776bd15d044b38af0785092565c8bfc6913326e8ded6f",
+      "signatures": [
+        {
+          "desc": "Using powershell.exe command.",
+          "label": "powershell",
+          "name": "Command and Scripting Interpreter: PowerShell",
+          "score": 3,
+          "tags": [
+            "execution"
+          ],
+          "ttp": [
+            "T1059.001"
+          ]
+        },
+        {
+          "desc": "Execution of a cmd.exe one-liner (/c \"close\" or /k \"keep\") is a common script/loader stage.",
+          "label": "cmd_shell_generic",
+          "name": "Executes a command shell one-liner",
+          "score": 3,
+          "tags": [
+            "execution"
+          ],
+          "ttp": [
+            "T1059.003"
+          ]
+        },
+        {
+          "name": "Suspicious behavior: EnumeratesProcesses"
+        },
+        {
+          "name": "Suspicious use of AdjustPrivilegeToken"
+        },
+        {
+          "name": "Suspicious use of WriteProcessMemory"
+        }
+      ],
+      "size": 519,
+      "tags": [
+        "execution"
+      ],
+      "target": "launch.ps1",
+      "tasks": [
+        "behavioral1",
+        "behavioral2"
+      ],
+      "tlsh": "T1BEF0202B010CE903464E1520FE6A8C51B8EA914A2053F8061389E3C12C51A5887AE2F3"
+    }
+  ],
+  "tasks": {
+    "261114-x2ds4scy5t-behavioral1": {
+      "backend": "sbx4m63",
+      "kind": "behavioral",
+      "name": "behavioral1",
+      "os": "windows10-2004-x64",
+      "pick": "static1/unpack001/launch.ps1",
+      "resource": "win10v2004-20260911-en",
+      "score": 3,
+      "sigs": 5,
+      "status": "reported",
+      "tags": [
+        "execution"
+      ],
+      "target": "launch.ps1",
+      "timeout": 150
+    },
+    "261114-x2ds4scy5t-behavioral2": {
+      "backend": "sbx4m183",
+      "kind": "behavioral",
+      "name": "behavioral2",
+      "os": "windows11-ltsc_2024-x64",
+      "pick": "static1/unpack001/launch.ps1",
+      "resource": "win11ltsc2024-20260911-en",
+      "score": 3,
+      "sigs": 5,
+      "status": "reported",
+      "tags": [
+        "execution"
+      ],
+      "target": "launch.ps1",
+      "timeout": 150
+    },
+    "261114-x2ds4scy5t-static1": {
+      "kind": "static",
+      "name": "static1",
+      "score": 1,
+      "status": "reported"
+    }
+  },
+  "version": "0.3.1"
+}

@@ -3051,6 +3051,22 @@ def _judge_answered_the_fact(report: Any, subject: str) -> str:
     return FACT_NOT_RECORDED
 
 
+def question_subject(kind: str, key: str) -> str:
+    """The subject validation asks the judge about a value under, the keep read the same way.
+
+    A URL is asked under its host, an address or a name
+    (``validation.unattributed_indicator_violations``); every other value
+    under itself.
+    """
+    if kind != "url":
+        return f"{kind}:{key}"
+    host = url_host(key).strip("[]")
+    if not host:
+        return f"{kind}:{key}"
+    host_kind = "ip" if _parses_as_an_address(host) else "domain"
+    return f"{host_kind}:{_value_key(host_kind, host)}"
+
+
 def _the_judge_s_keep(
     report: Any, kind: str, key: str, said: dict[str, str], *, what: str = "it"
 ) -> dict[str, str]:
@@ -3060,7 +3076,9 @@ def _the_judge_s_keep(
     it only when the judge was asked with that fact and kept the indicator; the
     keep is then named as such. A keep it was never asked about is taken out of
     ``kept_by`` and stated (``untold``), naming ``what`` the judge's indicator
-    names. Every other keep passes through.
+    names. Every other keep passes through. The answer is read under the
+    subject the question named (:func:`question_subject`): a URL's is its
+    host's, and a URL kept so is named as kept with its host's fact.
     """
     if not said.get("unattributed") or said.get("untold"):
         # No fact to ask about, or the row already carries the answer (a URL
@@ -3074,9 +3092,12 @@ def _the_judge_s_keep(
         return said
     others = [by for by in kept if not by.startswith("the judge")]
     out = dict(said)
-    state = _judge_answered_the_fact(report, f"{kind}:{key}")
+    subject = question_subject(kind, key)
+    state = _judge_answered_the_fact(report, subject)
     if state == FACT_ANSWERED:
-        out["kept_by"] = ", ".join([JUDGE_KEPT_WHEN_TOLD, *others])
+        own = subject == f"{kind}:{key}"
+        told = JUDGE_KEPT_WHEN_TOLD if own else JUDGE_KEPT_WHEN_TOLD_OF_ITS_HOST
+        out["kept_by"] = ", ".join([told, *others])
     else:
         out["kept_by"] = ", ".join(others)
         why = {
@@ -3584,6 +3605,34 @@ def sandbox_host_kwargs(report: Any, kind: str, value: str) -> dict[str, str]:
 FLOW_OUTSIDE_THE_TREE = (
     "the sandbox report attributes its flows to a process outside the sample's process tree"
 )
+# Whose traffic a name, a URL or an address is where the sandbox names the
+# process that made it and that process is of another lineage than the
+# sample's (``reporting.models.TrafficMakers``): one rule for the three kinds.
+MADE_BY = "the sandbox report says it was made by {whose}"
+MADE_BY_WHOM: dict[str, str] = {
+    "outside": "a process outside the sample's process tree",
+    "launcher": "the launcher's process",
+    "unlisted": "a process the report does not list",
+    "disputed": "a process whose lineage the report's two facts dispute",
+}
+# Beside a name whose addresses more processes reached than it names
+# (``TrafficMakers.more``).
+MADE_BY_MORE = "; and by further processes each address it resolved to names"
+
+
+def made_by_reason(makers: Any) -> str:
+    """Why traffic is not the sample's, by whose it is (``TrafficMakers``); ``""`` for none."""
+    parts = []
+    for kind, whose in MADE_BY_WHOM.items():
+        named = [str(p) for p in (_field(makers, kind) or []) if str(p)]
+        if named:
+            parts.append(f"{whose} ({', '.join(named)})")
+    if not parts:
+        return ""
+    more = MADE_BY_MORE if _field(makers, "more") else ""
+    return MADE_BY.format(whose="; and by ".join(parts)) + more
+
+
 BENIGN_NAME_RESOLVED = "a well-known benign name the sandbox's guest resolved"
 TENANT_NAME_RESOLVED = (
     "a tenant's name on shared hosting the sandbox's guest resolved, which no flow of the "
@@ -3689,8 +3738,12 @@ def sandbox_row_kwargs(report: Any, kind: str, value: str, *, what: str = "it") 
                 else:
                     said["kept_address"] = host
             return said
-        return {}
-    if kind == "ip":
+        if row is None or _field(row, "source") != "sandbox":
+            return {}
+        why = made_by_reason(_field(row, "made_by"))
+        if not why or _field(row, "sample_process_tree") is True:
+            return {}
+    elif kind == "ip":
         if row is None or _field(row, "source") != "sandbox":
             return {}
         if _field(row, "sample_process_tree") is True:
@@ -3711,12 +3764,22 @@ def sandbox_row_kwargs(report: Any, kind: str, value: str, *, what: str = "it") 
         file_only = [str(p) for p in (_field(row, "file_only_processes") or []) if str(p)]
         if _field(row, "sample_process_tree") is None and (marked_only or file_only):
             why = disputed_flow_reason(marked_only, file_only, _field(row, "marked_by"))
+        unlisted = [str(p) for p in (_field(row, "unlisted_processes") or []) if str(p)]
+        if (
+            _field(row, "sample_process_tree") is None
+            and unlisted
+            and not (marked_only or file_only)
+        ):
+            why = made_by_reason({"unlisted": unlisted})
         if _field(row, "asn"):
             why += f"; AS {_field(row, 'asn')}"
     else:
         if row is None or _field(row, "source") != "sandbox":
             return {}
-        if _field(row, "capture_only"):
+        made = made_by_reason(_field(row, "made_by"))
+        if made and _field(row, "sample_process_tree") is not True:
+            why = made
+        elif _field(row, "capture_only"):
             why = CAPTURE_TLS_NAME
         elif is_well_known_benign_host(key):
             why = BENIGN_NAME_RESOLVED
