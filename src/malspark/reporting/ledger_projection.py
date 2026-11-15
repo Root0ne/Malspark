@@ -1749,7 +1749,8 @@ def _record_parts(entry: LedgerEntry) -> tuple[str, ...]:
     """The paths of an entry's answer its kind declares a record (dotted, ``*`` a list)."""
     from malspark.core.builtin_declarations import RECORD_PARTS_OF_KIND
 
-    if not entry.ok or not isinstance(entry.structured, dict):
+    # A failed entry is never sighted (``tool_sightings`` reads successful ones).
+    if not isinstance(entry.structured, dict):
         return ()
     return RECORD_PARTS_OF_KIND.get(tool_kinds.kind_of(entry), ())
 

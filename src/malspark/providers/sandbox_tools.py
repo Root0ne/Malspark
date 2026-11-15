@@ -764,7 +764,8 @@ class SignatureIndicators:
     @property
     def task_only(self) -> list[str]:
         """The names only a task report's signatures state, which no signature row has."""
-        return [name for name in self._task_only if self.stated(name)]
+        # A task row is held only where it lists indicators, so each states some.
+        return list(self._task_only)
 
     def process_ids(self, name: str) -> set[str]:
         """The report's ids of the processes ``name``'s indicators name, acting or acted on."""

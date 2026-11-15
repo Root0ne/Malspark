@@ -430,6 +430,14 @@ class TestThePagedCallOnTheLiveReport:
         page = sandbox_signatures(sandbox_document(_read()), normalised_by=TRIAGE, process="9999")
         assert page["no"] == INDICATORS_NO_PROCESS.format(asked="9999")
 
+    def test_a_process_whose_guest_pid_is_its_own_id_is_asked_by_that_id(self) -> None:
+        task = _json("behavioral1.json")
+        task["processes"].append({"procid": 300, "procid_parent": 84, "pid": 300, "image": "a.exe"})
+        page = sandbox_signatures(
+            sandbox_document(_read(task)), normalised_by=TRIAGE, process="300"
+        )
+        assert page["no"] == INDICATORS_NO_PROCESS.format(asked="300")
+
     def test_an_offset_past_the_matches_gives_no_reason(self) -> None:
         page = sandbox_signatures(
             sandbox_document(_read()), normalised_by=TRIAGE, process="86", offset=999

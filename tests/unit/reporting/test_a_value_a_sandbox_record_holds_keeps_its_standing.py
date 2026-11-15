@@ -304,3 +304,32 @@ class TestAnotherSpellingOutsideTheIndicators:
 
         assert _sources(report)[value] == "strings"
         assert not publishes(_published(report, value))
+
+
+class TestAUrlOutsideTheIndicators:
+    def test_a_url_a_description_holds_with_its_path_s_case_is_a_string_sighting(self) -> None:
+        url = f"http://{NAME}/Gate.php"
+        entry = _indicator_entry()
+        assert isinstance(entry.structured, dict)
+        entry.structured["signatures"][0]["description"] = f"Posts to {url}"
+        listed = _listed()
+        listed["static"].artifacts[0].rows.append(["url", url])
+        report = MalwareReportBuilder(
+            file_hash="a" * 64,
+            file_name="fixture.bin",
+            sample_path=None,
+            sandbox_report={},
+            reports={},
+            isr_reports=listed,
+            stix_output=_kept(),
+            run_summary={},
+            discussion_history=[],
+            final_decision="Malware",
+            overall_confidence=0.8,
+            sample_platform="windows",
+            sample_file_type="PE",
+            evidence_ledger=[entry],
+        ).build_deterministic()
+        assert report.network is not None
+        (row,) = [u for u in report.network.urls if u.url == url]
+        assert row.source == "strings"
