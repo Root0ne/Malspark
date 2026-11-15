@@ -253,17 +253,21 @@ def _earlier_rule() -> Iterator[None]:
             return True, None
         return False, None
 
-    def by_statement(first: Any, readings: Any, _stated: Any = None, _answered: Any = None) -> Any:
+    def by_statement(
+        first: Any, readings: Any, _stated: Any = None, _answered: Any = None
+    ) -> revision_merge.StatementPlacement:
         found: set[int] = set()
         target: dict[int, int] = {}
+        by: dict[int, int] = {}
         for earlier in first:
             ok, index = restated(earlier, readings)
             if not ok:
                 continue
             found.add(earlier.number)
-            if index is not None and index not in target:
-                target[index] = earlier.number
-        return found, target, {}
+            if index is not None:
+                by[earlier.number] = index
+                target.setdefault(index, earlier.number)
+        return rm.StatementPlacement(found, target, {}, by)
 
     with patch.object(rm, "_by_statement", by_statement):
         yield

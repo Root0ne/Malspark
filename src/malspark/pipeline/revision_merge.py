@@ -99,7 +99,7 @@ import functools
 import re
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, NamedTuple
 
 from malspark.analysis.technique_ids import is_technique_id
 from malspark.pipeline.claim_drops import (
@@ -862,13 +862,32 @@ def _by_number(
     return placed
 
 
+class StatementPlacement(NamedTuple):
+    """What a revision placed by what it states does to the claims in force.
+
+    The four values every statement reader (:func:`_by_statement`, and any
+    rule put in its place, such as the earlier rule a stored-run replay
+    merges under) gives :func:`merge_revision`: ``restated``, the numbers of
+    the claims in force a block restates; ``target``, ``{revision block
+    index: the claim in force number it stands at}``; ``beside``, ``{claim
+    in force number: (the block that restates it, the addresses no block
+    states)}``; ``by``, ``{claim in force number restated: the index of the
+    block that replaces it}``.
+    """
+
+    restated: set[int]
+    target: dict[int, int]
+    beside: dict[int, tuple[int, tuple[int, ...]]]
+    by: dict[int, int]
+
+
 def _by_statement(
     first: list[_Block],
     readings: list[_Reading],
     stated: frozenset[int],
     answered: frozenset[int] = frozenset(),
-) -> tuple[set[int], dict[int, int], dict[int, tuple[int, tuple[int, ...]]], dict[int, int]]:
-    """``(numbers restated, {revision block index: claim in force number}, beside, by)``.
+) -> StatementPlacement:
+    """The claims in force the revision's blocks restate (:class:`StatementPlacement`).
 
     Each revision block stands at the first claim in force it restates by
     itself (:func:`_restated`) with every address of the claim stated by
@@ -902,7 +921,7 @@ def _by_statement(
         restated.add(earlier.number)
         by[earlier.number] = index
         target.setdefault(index, earlier.number)
-    return restated, target, beside, by
+    return StatementPlacement(restated, target, beside, by)
 
 
 # Digits past this many name no claim of any answer: the number is read as
