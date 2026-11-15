@@ -91,15 +91,19 @@ def _listed() -> dict[str, Any]:
     }
 
 
-def _build(ledger: list[LedgerEntry]) -> Any:
+def _build(
+    ledger: list[LedgerEntry],
+    listed: dict[str, Any] | None = None,
+    kept: dict[str, Any] | None = None,
+) -> Any:
     return MalwareReportBuilder(
         file_hash="a" * 64,
         file_name="fixture.bin",
         sample_path=None,
         sandbox_report={},
         reports={},
-        isr_reports=_listed(),
-        stix_output=_kept(),
+        isr_reports=_listed() if listed is None else listed,
+        stix_output=_kept() if kept is None else kept,
         run_summary={},
         discussion_history=[],
         final_decision="Malware",
@@ -333,3 +337,87 @@ class TestAUrlOutsideTheIndicators:
         assert report.network is not None
         (row,) = [u for u in report.network.urls if u.url == url]
         assert row.source == "strings"
+
+
+def _listing(kind: str, value: str, pattern: str) -> tuple[dict[str, Any], dict[str, Any]]:
+    """An analyst listing ``value`` alone and the judge keeping it by ``pattern``."""
+    listed = {
+        "static": AgentISR(
+            agent_id="static",
+            domain="static",
+            artifacts=[
+                Artifact(kind="endpoints", rows=[[kind, value]], evidence_ids=[], source="static")
+            ],
+        )
+    }
+    kept = {
+        "objects": [
+            {
+                "type": "indicator",
+                "id": "indicator--0f1e2d3c-4b5a-4968-8776-655443332210",
+                "pattern": pattern,
+                "pattern_type": "stix",
+                "indicator_types": ["malicious-activity"],
+                "valid_from": "2026-01-01T00:00:00Z",
+            }
+        ]
+    }
+    return listed, kept
+
+
+def _one_indicator(values: dict[str, str], description: str) -> LedgerEntry:
+    """A signatures answer: one indicator stating ``values``, its signature described."""
+    return _entry(
+        "ev_0007",
+        "sandbox_signatures",
+        {
+            "signatures": [
+                {"name": "Contacts a host", "description": description, "indicators": 1}
+            ],
+            "total": 1,
+            "indicators": [
+                {
+                    "signature": "Contacts a host",
+                    "process": {"id": "84", "image": "powershell.exe"},
+                    "values": values,
+                }
+            ],
+        },
+    )
+
+
+class TestAValueEndingInADot:
+    """Searched outside the record as the string sighting is searched: its trailing dot off."""
+
+    URL = f"http://{NAME}/a"
+
+    def test_a_url_whose_undotted_form_a_description_holds_is_a_string_sighting(self) -> None:
+        listed, kept = _listing("url", f"{self.URL}.", f"[url:value = '{self.URL}.']")
+        entry = _one_indicator({"url": f"{self.URL}."}, f"Contacted {self.URL} now")
+        report = _build([entry], listed, kept)
+
+        assert report.network is not None
+        assert {u.url: u.source for u in report.network.urls} == {f"{self.URL}.": "strings"}
+        assert not publishes(_published(report, f"{self.URL}."))
+        # Nor is its host published on its strength.
+        assert not publishes(_published(report, NAME))
+
+    def test_a_url_ending_in_a_dot_only_the_indicators_hold_keeps_its_standing(self) -> None:
+        listed, kept = _listing("url", f"{self.URL}.", f"[url:value = '{self.URL}.']")
+        entry = _one_indicator({"url": f"{self.URL}."}, "Contacted a host")
+        report = _build([entry], listed, kept)
+
+        assert report.network is not None
+        assert {u.url: u.source for u in report.network.urls} == {f"{self.URL}.": "analyst"}
+        assert publishes(_published(report, f"{self.URL}."))
+
+    def test_a_name_with_a_trailing_dot_a_description_holds_undotted_is_one(self) -> None:
+        listed, kept = _listing("domain", f"{NAME}.", f"[domain-name:value = '{NAME}.']")
+        entry = _one_indicator({"domain": f"{NAME}."}, f"Contacted {NAME} now")
+        report = _build([entry], listed, kept)
+
+        assert _sources(report) == {NAME: "strings"}
+        rows = [r for r in report.consolidated_iocs if r.value.rstrip(".") == NAME]
+        assert rows
+        for row in rows:
+            assert not publishes(str(row.published)), row.value
