@@ -62,7 +62,7 @@ class TestAClaimBegunAndNotRead:
         assert any(
             s.startswith("Claim 3 of the static analyst's answer in force (\"")
             and "is carried with blocking line L1" in s
-            and "began a claim the platform did not read" in s
+            and "began 1 claim block(s) the platform did not read" in s
             for s in merge.sentences("static", 2)
         )
 
@@ -115,3 +115,51 @@ class TestTheCountCostsTheAnswersLength:
             return lambda: claims_left_unread(answer)
 
         assert_scales(build, 400)
+
+
+class TestTheSentenceStatesWhatTheRecordStates:
+    def _held(self, revision: AgentISR, answer: str) -> str:
+        from malspark.pipeline.revision_merge import claims_left_unread_of
+
+        merge = merge_revision(
+            _isr(IN_FORCE),
+            revision,
+            answer,
+            2,
+            {3: [(1, True)]},
+            claims_unread=claims_left_unread_of(revision),
+        )
+        said = [s for s in merge.sentences("static", 2) if "is carried with blocking line" in s]
+        assert len(said) == 1
+        return said[0]
+
+    def test_parts_not_analysed(self) -> None:
+        from malspark.agents.base_agent import parts_not_analysed_reason
+
+        revision = _isr(READ, parts_not_analysed_reason("static", ["chunk 3 of 4 never started"]))
+
+        said = self._held(revision, READ)
+
+        assert "parts of the input were not analysed" in said
+        assert "claim block" not in said and "chunk 3" not in said
+
+    def test_a_claim_block_begun_and_not_read(self) -> None:
+        from malspark.agents.base_agent import claims_unread_sentence
+
+        note = claims_unread_sentence("static", read_claim_blocks(UNREADABLE), 2)
+        revision = _isr(UNREADABLE, note)
+
+        said = self._held(revision, UNREADABLE)
+
+        assert "began claim blocks the platform did not read" in said
+        assert "parts of the input" not in said and "high-ish" not in said
+
+    def test_both_in_their_own_words(self) -> None:
+        from malspark.agents.base_agent import claims_unread_sentence, parts_not_analysed_reason
+
+        note = claims_unread_sentence("static", read_claim_blocks(UNREADABLE), 2)
+        note += " " + parts_not_analysed_reason("static", ["chunk 3 of 4 never started"])
+        said = self._held(_isr(UNREADABLE, note), UNREADABLE)
+
+        assert "began claim blocks the platform did not read" in said
+        assert "parts of the input were not analysed" in said

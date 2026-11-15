@@ -624,11 +624,15 @@ class RevisionMerge:
 def held_unread_sentence(
     name: str, revision_round: int, number: int, sentence: str, lines: Sequence[int], why: str
 ) -> str:
-    """The sentence for a claim kept from the line rule by a claim the revision left unread."""
+    """The sentence for a claim kept from the line rule by a revision not read whole.
+
+    ``why`` says what the revision's own record holds, in the platform's
+    words (:func:`claims_unread_why_of`).
+    """
     return defanged(
         f'Claim {int(number)} of the {name} analyst\'s answer in force ("{sentence}") is carried '
-        f"with blocking line {_lines(lines)}: the round-{int(revision_round)} revision began a "
-        f"claim the platform did not read ({why}), so nothing is withdrawn by rule."
+        f"with blocking line {_lines(lines)}: the round-{int(revision_round)} revision {why}, "
+        "so nothing is withdrawn by rule."
     )
 
 
@@ -1114,6 +1118,39 @@ def claims_left_unread_of(isr: Any) -> int:
     return reason + max(0, int(getattr(isr, "blocks_without_confidence", 0) or 0))
 
 
+# How the run summary says why a revision's claims were not all read, per
+# what its own record holds (:func:`claims_unread_why_of`): its words, never
+# the record's, which may quote what the model wrote.
+UNREAD_BLOCKS_WHY = "began claim blocks the platform did not read"
+PARTS_NOT_ANALYSED_WHY = "states that parts of the input were not analysed"
+OTHER_UNREAD_WHY = "records a reason its answer is not read whole"
+
+
+def claims_unread_why_of(isr: Any) -> str:
+    """Why the revision's own record says its claims were not all read, in the platform's words.
+
+    A block that stated no confidence, or the sentence the reader records
+    for claim blocks begun and not read (``base_agent.CLAIMS_UNREAD_CLOSING``),
+    is :data:`UNREAD_BLOCKS_WHY`; the sentence for parts of the input an
+    answer merged from parts does not cover
+    (``base_agent.PARTS_NOT_ANALYSED_CLOSING``) is
+    :data:`PARTS_NOT_ANALYSED_WHY`; both are joined. Any other reason is
+    :data:`OTHER_UNREAD_WHY`, and none is ``""``.
+    """
+    from malspark.agents.base_agent import CLAIMS_UNREAD_CLOSING, PARTS_NOT_ANALYSED_CLOSING
+
+    reason = str(getattr(isr, "claims_unread_reason", "") or "")
+    blocks = int(getattr(isr, "blocks_without_confidence", 0) or 0) > 0
+    found: list[str] = []
+    if blocks or CLAIMS_UNREAD_CLOSING in reason:
+        found.append(UNREAD_BLOCKS_WHY)
+    if PARTS_NOT_ANALYSED_CLOSING in reason:
+        found.append(PARTS_NOT_ANALYSED_WHY)
+    if reason.strip() and not found:
+        found.append(OTHER_UNREAD_WHY)
+    return " and ".join(found)
+
+
 def merge_revision(
     in_force: Any,
     revision: Any,
@@ -1241,7 +1278,12 @@ def merge_revision(
     # Why the revision's reading left a claim it began unread, or "": then
     # nothing is withdrawn by rule (``held_unread``).
     left = claims_left_unread(answer) if claims_unread is None else int(claims_unread)
-    begun_unread = f"{left} claim block(s) it began were not read" if left > 0 else ""
+    # Given, the count is the revision's own record, and so is why
+    # (:func:`claims_unread_why_of`); read from the text, it counts blocks.
+    why = claims_unread_why_of(revision) if claims_unread is not None else ""
+    begun_unread = (
+        (why or f"began {left} claim block(s) the platform did not read") if left > 0 else ""
+    )
     held_unread: list[tuple[int, str, tuple[int, ...], str]] = []
     for block in first:
         if block.number in written_again or block.number in withdrawn:
