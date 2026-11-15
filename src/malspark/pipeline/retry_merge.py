@@ -53,18 +53,26 @@ from dataclasses import dataclass, field
 from types import SimpleNamespace
 from typing import Any
 
-from malspark.agents.claim_headings import CLAIM_HEAD_RE, LINE_PREFIX, heading_sentence
+from malspark.agents.claim_headings import (
+    CLAIM_HEAD_RE,
+    HEADING_NOTE,
+    LINE_PREFIX,
+    heading_sentence,
+)
 from malspark.pipeline.claim_drops import claim_values, dropped_claims
 
 _MARKS = r"[ \t*_`]"
 # One claim number or a range of them: ``7``, ``#7``, ``3-5``, ``3 to 5``.
 _NUMBER_OR_RANGE = rf"#?\d++(?:{_MARKS}*+(?:-|–|—|\bto\b){_MARKS}*+#?\d++)?+"
 # ``WITHDRAW CLAIM 7: reason``, ``WITHDRAW CLAIMS 3, 5 and 9 - reason``,
-# ``withdraw claims 1-3``: any case, marks and a list marker before it, its
+# ``withdraw claims 1-3``: any case, marks and a list marker before it, a
+# note after its numbers in the claim heading's own shape (``WITHDRAW CLAIM 2
+# (unchanged since round 1): ...``, ``claim_headings.HEADING_NOTE``), its
 # reason after a mark or ``because``, or nothing after it.
 _WITHDRAW_CLAIM_RE = re.compile(
     r"^" + LINE_PREFIX + rf"withdraw{_MARKS}++claims?+{_MARKS}*+"
     rf"(?P<numbers>{_NUMBER_OR_RANGE}(?:{_MARKS}*+(?:,|&|\band\b){_MARKS}*+{_NUMBER_OR_RANGE})*+)"
+    rf"(?:{_MARKS}*+(?:{HEADING_NOTE}))?+"
     rf"{_MARKS}*+(?:$|(?:[:.\-–—)]|\bbecause\b){_MARKS}*+(?P<reason>.*)$)",
     re.IGNORECASE,
 )

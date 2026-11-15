@@ -39,9 +39,11 @@ LINE_PREFIX = r"[ \t>*_#]*+(?:(?:[-+]|\d++[.)])[ \t]++)?[ \t>*_#]*+"
 # bracket is closed on its own line or the line is no heading, and a bracket
 # that never closes is given up once, and every run of spaces and marks is read
 # possessively, so a line costs time linear in its length.
+# A heading's note: one round or square bracket, never past the line's end.
+HEADING_NOTE = r"\([^)\n]*+\)|\[[^\]\n]*+\]"
 CLAIM_HEAD_RE = re.compile(
     r"^" + LINE_PREFIX + r"CLAIM(?:(?:[ \t]++#?(?P<label>[A-Za-z]++)|[ \t]*+#?)(?P<number>\d++))?"
-    r"(?:[ \t]*+(?(number)(?:\*\*[ \t]*+)?)(?P<note>\([^)\n]*+\)|\[[^\]\n]*+\]))?"
+    rf"(?:[ \t]*+(?(number)(?:\*\*[ \t]*+)?)(?P<note>{HEADING_NOTE}))?"
     r"[ \t]*+(?:\*\*)?[ \t]*+"
     r"(?:(?P<delim>:|—|–|-(?=\s)|(?(number)(?(note)\.|(?!))|(?!)))[ \t]*+(?:\*\*)?[ \t]*+"
     r"|(?(note)$|(?!)))"

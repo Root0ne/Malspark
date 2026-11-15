@@ -242,3 +242,29 @@ class TestNoClaimLeavesTheAnswerWithoutABlockALineOrTheLineRule:
                 else:
                     assert number in ruled, where
                     assert number not in referenced, where
+
+
+class TestAWithdrawLineWithANoteAfterTheNumber:
+    def test_the_note_is_read_as_the_heading_grammar_reads_it(self) -> None:
+        for line in (
+            "WITHDRAW CLAIM 1 (unchanged since round 1): the key is read elsewhere.",
+            "WITHDRAW CLAIM 1 [written in round 2] - the key is read elsewhere.",
+            "WITHDRAW CLAIM 1 (unchanged since round 1)",
+        ):
+            answer = _block(SLEEP) + line + "\n"
+
+            merge = merge_revision(_isr(IN_FORCE), _isr(answer), answer, 2)
+
+            assert [n for n, _s, _r in merge.withdrawn] == [1], line
+            assert merge.unread == 0, line
+
+    def test_a_note_costs_its_length(self) -> None:
+        from malspark.pipeline.retry_merge import read_withdrawals
+        from tests.linear_cost import assert_scales
+
+        def build(size: int) -> Any:
+            text = "WITHDRAW CLAIM 1 " + "(x " * size + "\n"
+            text += "WITHDRAW CLAIM 1 (note) x\n" * size
+            return lambda: read_withdrawals(text)
+
+        assert_scales(build, 20_000)
