@@ -14901,8 +14901,11 @@ def folded_rows(rows: Sequence[Mapping[str, Any]]) -> list[dict[str, str]]:
     order: list[tuple[tuple[str, str], ...]] = []
     counts: dict[tuple[tuple[str, str], ...], int] = {}
     kept: dict[tuple[tuple[str, str], ...], dict[str, str]] = {}
+    # The places of each folded row's members, in order: where a finding stands is
+    # no part of what makes two findings identical.
+    stood: dict[tuple[tuple[str, str], ...], list[str]] = {}
     for row in rows:
-        fields = {str(k): str(v) for k, v in dict(row).items() if k != "count"}
+        fields = {str(k): str(v) for k, v in dict(row).items() if k not in ("count", "statements")}
         key = tuple(sorted(fields.items()))
         try:
             times = max(1, int(str(dict(row).get("count") or 1)))
@@ -14912,9 +14915,18 @@ def folded_rows(rows: Sequence[Mapping[str, Any]]) -> list[dict[str, str]]:
             order.append(key)
             counts[key] = 0
             kept[key] = fields
+            stood[key] = []
         counts[key] += times
+        for place in str(dict(row).get("statements") or "").split(STATEMENT_SEPARATOR):
+            if place and place not in stood[key]:
+                stood[key].append(place)
     return [
-        {**kept[key], **({"count": str(counts[key])} if counts[key] > 1 else {})} for key in order
+        {
+            **kept[key],
+            **({"statements": STATEMENT_SEPARATOR.join(stood[key])} if stood[key] else {}),
+            **({"count": str(counts[key])} if counts[key] > 1 else {}),
+        }
+        for key in order
     ]
 
 
