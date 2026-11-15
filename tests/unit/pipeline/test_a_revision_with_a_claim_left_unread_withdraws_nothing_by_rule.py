@@ -154,6 +154,34 @@ class TestTheSentenceStatesWhatTheRecordStates:
         assert "began claim blocks the platform did not read" in said
         assert "parts of the input" not in said and "high-ish" not in said
 
+    def test_a_reason_in_other_words(self) -> None:
+        from malspark.pipeline.revision_merge import OTHER_UNREAD_WHY
+
+        revision = _isr(READ, "The answer stopped at the output limit before its last section.")
+
+        said = self._held(revision, READ)
+
+        assert f"the round-2 revision {OTHER_UNREAD_WHY}, so nothing" in said
+        assert "claim block" not in said and "output limit" not in said
+
+    def test_a_block_without_a_confidence_alone(self) -> None:
+        from malspark.pipeline.revision_merge import UNREAD_BLOCKS_WHY
+
+        answer = (
+            READ
+            + "CLAIM: The mutex name at 0x403962 is read from ev_0109.\nEVIDENCE: [ev_0109]\n---\n"
+        )
+        read = read_claim_blocks(answer)
+        assert read.without_confidence == 1
+        revision = _isr(answer)
+        revision.note_parse(blocks_without_confidence=read.without_confidence)
+        assert revision.claims_unread_reason == ""
+
+        said = self._held(revision, answer)
+
+        assert f"the round-2 revision {UNREAD_BLOCKS_WHY}, so nothing" in said
+        assert "claim block(s)" not in said
+
     def test_both_in_their_own_words(self) -> None:
         from malspark.agents.base_agent import claims_unread_sentence, parts_not_analysed_reason
 
