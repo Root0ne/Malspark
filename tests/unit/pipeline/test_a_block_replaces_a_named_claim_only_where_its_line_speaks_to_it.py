@@ -110,3 +110,14 @@ class TestALineThatQuotesOneClaimAndNamesAnother:
 
         assert [n for n, _s, _r in merge.withdrawn_by_rule] == [1]
         assert [n for n, *_r in merge.not_spoken_to] == [2]
+
+
+class TestTwoBlocksThatRestateTheClaimAlike:
+    def test_the_first_replaces_it(self) -> None:
+        line = f"{STATIC} STATIC claim 1 puts the gate at 0x406328; nothing shows it. {BLOCKS}"
+        first = "0x40abd4 schedules the beacon after the table at 0x4084e4 resolves first."
+        second = "0x40abd4 schedules the beacon after the table at 0x4084e4 resolves later."
+
+        merge = _merge(line, _block(first, "ev_0020") + _block(second, "ev_0021"))
+
+        assert merge.restated_by[0] == (1, 1)

@@ -2528,6 +2528,25 @@ def _held_in_the_field(
     return fits
 
 
+def _has_row_of(rows: Sequence[tuple[int, bool]], line: int) -> bool:
+    """Whether ``rows`` hold a row of ``line``.
+
+    Rows are added line by line, in order, so a line's rows are the last
+    ones: only those are looked at, whatever the rows of earlier lines.
+    """
+    return bool(rows) and rows[-1][0] == line
+
+
+def _add_row(rows: list[tuple[int, bool]], row: tuple[int, bool]) -> None:
+    """``row`` added to ``rows`` unless its line already holds it (:func:`_has_row_of`)."""
+    for held in reversed(rows):
+        if held[0] != row[0]:
+            break
+        if held == row:
+            return
+    rows.append(row)
+
+
 def read_claim_references(
     lines: Sequence[str],
     participants: Sequence[str],
@@ -2624,9 +2643,7 @@ def read_claim_references(
                 # A line whose mark is not read blocks only with what the
                 # earlier reading read on it.
                 row = (number, mark.blocking and not (newly and mark.unread))
-                rows = claims.setdefault(claim, [])
-                if row not in rows:
-                    rows.append(row)
+                _add_row(claims.setdefault(claim, []), row)
                 spoken = clauses.setdefault(name, {}).setdefault(claim, [])
                 if not spoken or spoken[-1].line != number:
                     spoken.append(NamingClause(number, rendering))
@@ -2651,9 +2668,7 @@ def read_claim_references(
                 # A number the line already names for its one analyst is that
                 # claim written again ("... lower claim 27"), no other one.
                 again = out.get(candidates[0], {})
-                counted = [
-                    n for n in counted if not any(row[0] == number for row in again.get(n, []))
-                ]
+                counted = [n for n in counted if not _has_row_of(again.get(n, []), number)]
             if owners and counted:
                 tokens = clause_tokens(text, masked, start, numbers.end, clause_starts)
                 left: list[int] = []
@@ -2664,9 +2679,7 @@ def read_claim_references(
                         continue
                     # Read, never withdrawn by rule: the claim is carried
                     # with the line as one a line contests without blocking.
-                    rows = out.setdefault(owner[0], {}).setdefault(claim, [])
-                    if (number, False) not in rows:
-                        rows.append((number, False))
+                    _add_row(out.setdefault(owner[0], {}).setdefault(claim, []), (number, False))
                     owned.setdefault(
                         OwnedClaim(number, mark.marked, owner[0], claim, owner[1]), None
                     )

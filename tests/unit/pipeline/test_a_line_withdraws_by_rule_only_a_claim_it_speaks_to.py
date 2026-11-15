@@ -226,3 +226,23 @@ class TestTheAnchorsCostTheLinesLength:
             return lambda: anchored_lines([line], named, in_force)
 
         assert_scales(build, 800)
+
+
+class TestTheAnalystsFieldAnchorsNothing:
+    def test_a_name_in_the_field_shared_with_a_claims_value_does_not_speak_to_it(self) -> None:
+        in_force = {
+            "static_r2": _isr(
+                _block(LOADER, "ev_0011") + _block('The mutex "STATIC_R2" is set.', "ev_0012"),
+                "static_r2",
+            )
+        }
+        line = f"[analysts: STATIC_R2 ANALYST] Claims 1 and 2 say 0x40cf14 loads the list. {BLOCKS}"
+        named = claims_named_in_force([line], ["static_r2"], in_force)
+        answer = _block(ADDED, "ev_0020")
+
+        merge = merge_revision(
+            in_force["static_r2"], _isr(answer, "static_r2"), answer, 2, named.get("static_r2")
+        )
+
+        assert [n for n, _s, _r in merge.withdrawn_by_rule] == [1]
+        assert [n for n, *_r in merge.not_spoken_to] == [2]
