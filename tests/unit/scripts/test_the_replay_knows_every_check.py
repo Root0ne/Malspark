@@ -43,12 +43,16 @@ CHECK_CALL = re.compile(
 
 SITES: dict[str, tuple[Sequence[Callable[..., Any]], Sequence[str], Mapping[str, str]]] = {
     "narrative": (
-        (NarrativeAgent.generate, NarrativeAgent._kept_with_ungrounded_recorded),
+        (
+            NarrativeAgent.generate,
+            NarrativeAgent._validators,
+            NarrativeAgent._kept_with_ungrounded_recorded,
+        ),
         rules.NARRATIVE_CHECKS,
         {},
     ),
     "composer": (
-        (ReportComposer.compose, ReportComposer._invoke),
+        (ReportComposer.compose, ReportComposer._invoke, ReportComposer._section_findings),
         rules.COMPOSER_CHECKS,
         rules.COMPOSER_NOT_REPLAYED,
     ),
