@@ -3,9 +3,10 @@
 The count is what the revision's answer holds after its validation turn: a
 reason that claims it began were not read (a note that parts of the input
 were not analysed among them) and the blocks that stated no confidence. With
-one or more, the line rule withdraws nothing for that revision; with none,
-the merge does not read the text again, so a claim heading quoted in prose
-or a code fence switches nothing off.
+one or more, the line rule withdraws nothing for that revision, and the merge
+does not read the text again: the analyst's own reading is the one that
+counts, a claim heading quoted in a code fence among what it began and did
+not read.
 
 Every address, name and sentence here is made up for the test.
 """
@@ -71,6 +72,17 @@ def _run(answer: str, revision: AgentISR, in_force: str = IN_FORCE, line: str = 
     return [c.claim for c in out["isr_reports"]["static"].claims]
 
 
+def _analyst() -> Any:
+    import logging
+
+    from malspark.agents.static_analyst import StaticAnalyst
+
+    analyst = StaticAnalyst.__new__(StaticAnalyst)
+    analyst.name = "static"
+    analyst.logger = logging.getLogger("test")
+    return analyst
+
+
 class TestTheCountComesFromTheAnswer:
     def test_a_reason_the_answer_holds_keeps_the_named_claim(self) -> None:
         answer = _block(LOADER)
@@ -86,10 +98,23 @@ class TestTheCountComesFromTheAnswer:
 
         assert GATE in stands
 
-    def test_with_none_a_heading_quoted_in_a_code_fence_switches_nothing_off(self) -> None:
+    def test_a_heading_quoted_in_a_code_fence_is_begun_and_not_read(self) -> None:
+        # The analyst's own reading counts the fenced example as a claim
+        # begun and not read: the line rule withdraws nothing (the safe side).
         answer = _block(LOADER) + "```\nCLAIM: example\nEVIDENCE: [ev_x]\n```\n"
+        from malspark.pipeline.revision_merge import claims_left_unread_of
 
-        stands = _run(answer, _isr(answer))
+        revision = _analyst()._text_to_isr(answer, revision_round=1)
+        assert claims_left_unread_of(revision) == 1
+
+        stands = _run(answer, revision)
+
+        assert GATE in stands
+
+    def test_with_every_claim_read_the_line_rule_withdraws(self) -> None:
+        answer = _block(LOADER)
+
+        stands = _run(answer, _analyst()._text_to_isr(answer, revision_round=1))
 
         assert GATE not in stands
 
