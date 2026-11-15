@@ -585,7 +585,8 @@
         "listed": [],
         "listed_after": false
       }
-    ]
+    ],
+    "short_analyses": []
   },
   "printed": [
     "Tool calls: 2 of 214 failed and were not redone: capa (ev_0008); emulate_hash_batch (ev_0122). 3 other failed calls were redone by a later call asking the same question.",

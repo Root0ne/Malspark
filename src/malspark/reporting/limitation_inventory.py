@@ -26,7 +26,9 @@ before the report's prose is written, and stored on the report
 * **Sandbox**: whether a sandbox recorded the sample, and the sections of the
   sandbox report's index (the entry of the declared kind ``sandbox_sections``):
   each one's item count, or whether the report lists it as unavailable from its
-  sandbox or does not carry it.
+  sandbox or does not carry it; and each sandbox task the sandbox ran for less
+  time than its submission asked, as the run's detonation record states both
+  times (``run_summary.environment.detonations``, ``analysis_time``).
 * **Capture**: the window and packet count of the capture an entry of the
   declared kind ``pcap`` read.
 * **Open questions**: each one filed, with the listings of the routines it
@@ -57,6 +59,7 @@ from malspark.reporting.models import (
     InventoryCapture,
     InventoryQuestion,
     InventorySection,
+    InventoryShortAnalysis,
     InventoryTool,
     LimitationInventory,
     MalwareReport,
@@ -187,6 +190,7 @@ def build_inventory(report: MalwareReport, entries: Iterable[Any]) -> Limitation
         **_sandbox_index(entries),
         capture=_capture(entries),
         questions=_questions(read.questions, listed, entries),
+        short_analyses=_short_analyses(report),
     )
 
 
@@ -259,6 +263,33 @@ def _sandbox_index(entries: Sequence[Any]) -> dict[str, Any]:
         elif isinstance(row.get("items"), int):
             out.append(InventorySection(name=str(name), items=int(row["items"])))
     return {"sandbox_entry": str(getattr(entry, "id", "") or ""), "sandbox_sections": out}
+
+
+def _short_analyses(report: MalwareReport) -> list[InventoryShortAnalysis]:
+    """Each sandbox task the detonation record states ran for less time than was asked;
+    none where a time is not stated, and none for a record stored before it stated them."""
+    summary = getattr(report, "run_summary", None) or {}
+    environment = summary.get("environment") if isinstance(summary, Mapping) else None
+    rows = environment.get("detonations") if isinstance(environment, Mapping) else None
+    out: list[InventoryShortAnalysis] = []
+    for row in rows if isinstance(rows, list) else ():
+        times = row.get("analysis_time") if isinstance(row, Mapping) else None
+        for task in times if isinstance(times, list) else ():
+            if not isinstance(task, Mapping):
+                continue
+            asked = _count(task.get("requested_seconds"))
+            given = _count(task.get("effective_seconds"))
+            if asked is None or given is None or given >= asked:
+                continue
+            out.append(
+                InventoryShortAnalysis(
+                    detonation=str(row.get("detonation") or ""),
+                    task=str(task.get("task") or ""),
+                    requested_seconds=asked,
+                    effective_seconds=given,
+                )
+            )
+    return out
 
 
 def _count(value: Any) -> int | None:
@@ -490,12 +521,27 @@ def _sandbox_rows(inv: LimitationInventory, name: Callable[[str], str]) -> list[
             f"{_joined(absent)} {_plural(len(absent), 'is', 'are')} not in the sandbox report "
             "as read"
         )
+    said.extend(_short_clauses(inv, name))
     if said:
         head = f"Sandbox report [{entry}]" if entry and (unavailable or absent) else "Sandbox"
         out.append(
             InventoryRow(SANDBOX, f"{head}: {'; '.join(said)}.", (entry,) if entry else (), True)
         )
     return out
+
+
+def _short_clauses(inv: LimitationInventory, name: Callable[[str], str]) -> list[str]:
+    """The sandbox tasks given less time than asked, folded per detonation and pair of times:
+    ``d1's tasks a and b ran for 150 s, not the 600 s asked``."""
+    folded: dict[tuple[str, int, int], dict[str, None]] = {}
+    for short in inv.short_analyses:
+        key = (short.detonation, short.effective_seconds, short.requested_seconds)
+        folded.setdefault(key, {})[name(short.task)] = None
+    return [
+        f"{name(detonation)}'s {_plural(len(tasks), 'task', 'tasks')} {_joined(list(tasks))} "
+        f"ran for {_number(given)} s, not the {_number(asked)} s asked"
+        for (detonation, given, asked), tasks in folded.items()
+    ]
 
 
 def _capture_row(inv: LimitationInventory) -> list[InventoryRow]:

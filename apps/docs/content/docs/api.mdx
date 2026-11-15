@@ -433,6 +433,20 @@ a run in mock mode). Each row gives:
   the same sandbox report. A row lists at most 64 parts; `report_parts_cut`
   says how many more were left out.
 
+`analysis_time` gives, per sandbox task, `requested_seconds`, the analysis time
+the submission asked, and `effective_seconds`, the time the sandbox's own
+report states it gave the task, whatever was asked. A Triage overview states
+it per behavioural task (the task's `timeout`, keyed by the task's name); a
+CAPE or Cuckoo report states one time, `info.duration`, kept under the task id
+its submission answered; an operator's declared format states it where its
+`analysis_seconds_paths` place it. The time asked is the one the provider
+sent, Triage's `defaults.timeout` from `sandbox.triage.analysis_seconds`; a
+provider that sends none states none. A time nobody stated reads
+`not reported`, and `analysis_time` is `not reported` where neither is. Where
+the sandbox gave a task less time than was asked, the run's limitations name
+the detonation, the task and both times. A summary stored without
+`analysis_time` reads as before.
+
 A detonation that read no report has no parts, an empty `report_parts`, and
 every fact its provider would have stated reads `not reported`. One whose
 report was read keeps the parts it read, also where a later step failed. The provider is asked
@@ -471,7 +485,7 @@ code or its sandbox echoes into a fact whole, in a value or a key; it does not
 defend against code that splits a secret across several places on purpose, as
 such code holds the secret and has other ways to leak it. Task URLs are not recorded.
 
-The block carries `v`, its shape version (4). Throughout it, a fact nobody read
+The block carries `v`, its shape version (5). Throughout it, a fact nobody read
 is `not reported`, followed after a colon by the reason where one is known.
 
 ### The analysis WebSocket

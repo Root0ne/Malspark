@@ -60,6 +60,7 @@ FACT_KEYS = (
     "sandbox_commit",
     "started",
     "ended",
+    "analysis_time",
 )
 # The analysis machine the CAPE fixture names.
 CAPE_GUEST = {"name": "win10", "label": "win10", "platform": "windows", "manager": "KVM"}
@@ -122,6 +123,7 @@ class TestTheRecord:
                 "sandbox_commit": CAPE_COMMIT,
                 "started": "2026-08-13 13:06:05",
                 "ended": "2026-08-13 13:09:06",
+                "analysis_time": NR,
                 "report_parts": [{"name": "report", "sha256": _sha(b"{}"), "bytes": 2}],
             }
         ]
@@ -184,6 +186,7 @@ class TestTheRecord:
             "sandbox_commit": NR,
             "started": NR,
             "ended": NR,
+            "analysis_time": NR,
             "report_parts": [],
         }
 
@@ -213,9 +216,9 @@ class TestTheRecord:
     ) -> None:
         monkeypatch.setattr(run_environment, "host_facts", lambda: {})
         record = environment_record(_held(_record()))
-        assert ENVIRONMENT_VERSION == 4
-        assert record == {"v": 4, "detonations": detonations_record(_held(_record()))}
-        assert environment_record(_held()) == {"v": 4, "detonations": []}
+        assert ENVIRONMENT_VERSION == 5
+        assert record == {"v": 5, "detonations": detonations_record(_held(_record()))}
+        assert environment_record(_held()) == {"v": 5, "detonations": []}
 
     def test_a_field_that_cannot_be_read_is_not_reported_and_the_row_stays(self) -> None:
         class _Broken:
@@ -838,6 +841,7 @@ class TestEachBuiltInStatesItsRun:
             "sandbox_commit": CAPE_COMMIT,
             "started": "2026-08-13 13:06:05",
             "ended": "2026-08-13 13:09:06",
+            "analysis_seconds": 181,
             "detonated": True,
             "report_parts": [{"name": "report", "sha256": _sha(body), "bytes": len(body)}],
         }
@@ -1192,6 +1196,8 @@ class TestThroughTheRun:
                 "sandbox_commit": CAPE_COMMIT,
                 "started": "2026-08-13 13:06:05",
                 "ended": "2026-08-13 13:09:06",
+                # The fixture's own duration; the mock asks for no time.
+                "analysis_time": [{"task": "1", "requested_seconds": NR, "effective_seconds": 181}],
                 "report_parts": [{"name": "s.json", "sha256": _sha(body), "bytes": len(body)}],
             }
         ]

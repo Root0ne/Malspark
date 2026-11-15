@@ -13,6 +13,9 @@ through code written against its name. A declaration says:
   string or number (not empty text) a path names wins, anything else is absent;
 * ``target_sha256_paths``: where the report's claimed target sha256 sits; the
   first non-empty string or number a path names wins;
+* ``analysis_seconds_paths``: where the report states how long the sandbox
+  ran the analysis, in seconds; the first number not below zero a path names
+  wins, anything else is absent;
 * ``reader``: the id of the registered report reader
   (``providers.sandbox.readers``) that reads a report of this format into the
   neutral sandbox report (``cape2``, ``cuckoo``, ``triage`` and the JSONPath
@@ -51,6 +54,7 @@ each upload cost a multiple of the report's size.
 
 from __future__ import annotations
 
+import math
 from collections.abc import Iterable, Mapping, Sequence
 from typing import Any, Literal
 
@@ -192,6 +196,7 @@ class ReportFormat(BaseModel):
     detect: list[list[FieldTest]] = Field(default_factory=list)
     task_id_paths: list[str] = Field(default_factory=list)
     target_sha256_paths: list[str] = Field(default_factory=list)
+    analysis_seconds_paths: list[str] = Field(default_factory=list)
     reader: str = Field(default="", pattern=READER_ID_PATTERN)
     signature_scale: SignatureScale | None = None
     display_name: str = Field(default="", max_length=64)
@@ -228,7 +233,7 @@ class ReportFormat(BaseModel):
             check_mapping_paths(value)
         return value
 
-    @field_validator("task_id_paths", "target_sha256_paths")
+    @field_validator("task_id_paths", "target_sha256_paths", "analysis_seconds_paths")
     @classmethod
     def _paths_parse(cls, value: list[str]) -> list[str]:
         for path in value:
@@ -255,6 +260,27 @@ class ReportFormat(BaseModel):
                     return str(value)
         return ""
 
+    def analysis_seconds(self, payload: Any) -> int | None:
+        """The first number not below zero an analysis-time path names, in whole seconds."""
+        for path in self.analysis_seconds_paths:
+            for value in select(payload, path):
+                seconds = seconds_stated(value)
+                if seconds is not None:
+                    return seconds
+        return None
+
+
+def seconds_stated(value: Any) -> int | None:
+    """``value`` as whole seconds where it is a number not below zero, else ``None``.
+
+    A boolean, a text or any container states no time.
+    """
+    if isinstance(value, bool) or not isinstance(value, int | float):
+        return None
+    if not math.isfinite(value) or value < 0:
+        return None
+    return int(value)
+
 
 def _test(path: str, *types: ValueType, non_empty: bool = False, contains: str = "") -> FieldTest:
     return FieldTest(path=path, types=list(types), non_empty=non_empty, contains=contains)
@@ -265,6 +291,8 @@ def _test(path: str, *types: ValueType, non_empty: bool = False, contains: str =
 # carries it flat.
 _CAPE_TASK_ID = ["/info/id"]
 _CAPE_TARGET = ["/target/file/sha256", "/target/sha256"]
+# How long the analysis ran, in seconds, as the sandbox host counted it.
+_CAPE_ANALYSIS_SECONDS = ["/info/duration"]
 _LOW_TO_HIGH: list[SeverityRung] = ["Low", "Medium", "High"]
 
 # Most specific first: the first format that matches names the payload.
@@ -306,6 +334,7 @@ BUILTIN_REPORT_FORMATS: tuple[ReportFormat, ...] = (
         ],
         task_id_paths=_CAPE_TASK_ID,
         target_sha256_paths=_CAPE_TARGET,
+        analysis_seconds_paths=_CAPE_ANALYSIS_SECONDS,
         reader="cape2",
         display_name="CAPE",
         signature_scale=SignatureScale(name="CAPE 1–3", rungs=_LOW_TO_HIGH),
@@ -317,6 +346,7 @@ BUILTIN_REPORT_FORMATS: tuple[ReportFormat, ...] = (
         detect=[[_test("/behavior", "object"), _test("/info", "object", non_empty=True)]],
         task_id_paths=_CAPE_TASK_ID,
         target_sha256_paths=_CAPE_TARGET,
+        analysis_seconds_paths=_CAPE_ANALYSIS_SECONDS,
         reader="cuckoo",
         display_name="Cuckoo",
         signature_scale=SignatureScale(name="Cuckoo 1–3", rungs=_LOW_TO_HIGH),

@@ -142,23 +142,34 @@ class ReportReader(ABC):
 
         The keys of ``SandboxProvider.detonation_facts`` a report can give:
         ``task_ids`` (each identifier under the place it sits), ``guest``,
-        ``sandbox_version``, ``sandbox_commit``, ``started`` and ``ended``.
-        Each only where the report states it; a reader that knows none of
-        them gives nothing. ``fmt`` is the format declaration the provider
-        read the report as for this job, shipped or the operator's;
-        ``context`` carries the other parts the provider read beside it (as
-        :meth:`read` takes them). This one gives the task id where ``fmt``
-        says it sits, else where the shipped declaration of the reader's id
-        does, named by that place.
+        ``sandbox_version``, ``sandbox_commit``, ``started``, ``ended`` and
+        ``analysis_seconds``. Each only where the report states it; a reader
+        that knows none of them gives nothing. ``fmt`` is the format
+        declaration the provider read the report as for this job, shipped or
+        the operator's; ``context`` carries the other parts the provider read
+        beside it (as :meth:`read` takes them). This one gives the task id
+        where ``fmt`` says it sits, else where the shipped declaration of the
+        reader's id does, named by that place; and the analysis time where
+        that declaration places it (``analysis_seconds_paths``).
         """
+        from malspark.core.report_formats import seconds_stated
         from malspark.core.tool_declarations import select
 
         fmt = fmt if fmt is not None else self.builtin_format()
+        facts: dict[str, Any] = {}
         for path in getattr(fmt, "task_id_paths", None) or ():
-            for value in select(payload, path):
-                if _stated(value):
-                    return {"task_ids": {path: str(value)}}
-        return {}
+            stated = next((value for value in select(payload, path) if _stated(value)), None)
+            if stated is not None:
+                facts["task_ids"] = {path: str(stated)}
+                break
+        for path in getattr(fmt, "analysis_seconds_paths", None) or ():
+            seconds = next(
+                (s for s in map(seconds_stated, select(payload, path)) if s is not None), None
+            )
+            if seconds is not None:
+                facts["analysis_seconds"] = seconds
+                break
+        return facts
 
     def name_for_text(self, fmt: Any = None) -> str:
         """The name published text gives the sandbox: the format's, else the reader's own."""
@@ -597,17 +608,24 @@ class TriageReportReader(ReportReader):
     # machine image, ``os`` its operating system, ``platform`` its family.
     # ``target`` is the analysed file and ``backend`` the sandbox's own worker.
     GUEST_KEYS = ("resource", "os", "platform")
+    # What a behavioural task's row in the overview says of the time the
+    # sandbox gave the task to run, in seconds.
+    ANALYSIS_SECONDS_KEY = "timeout"
 
     def run_facts(self, payload: Any, fmt: Any = None, **context: Any) -> dict[str, Any]:
-        """The sample id, and per behavioural task its guest.
+        """The sample id, and per behavioural task its guest and its analysis time.
 
         Each behavioural task is keyed by its name. Its guest is the
         ``resource`` (the machine image), ``os`` and ``platform`` its overview
         row names, and those its task report's ``task`` block names over them
-        (``task_reports`` in ``context``, by task name). No part states one
-        detonation's start or end, nor the sandbox's version: the sample's own
-        times (``created``, ``completed``) are not a detonation's.
+        (``task_reports`` in ``context``, by task name). Its analysis time is
+        the ``timeout`` its overview row gives, the time the sandbox gave the
+        task, whatever the submission asked. No part states one detonation's
+        start or end, nor the sandbox's version: the sample's own times
+        (``created``, ``completed``) are not a detonation's.
         """
+        from malspark.core.report_formats import seconds_stated
+
         facts = super().run_facts(payload, fmt)
         if not isinstance(payload, Mapping):
             return facts
@@ -616,6 +634,7 @@ class TriageReportReader(ReportReader):
         reports = context.get("task_reports")
         reports = reports if isinstance(reports, Mapping) else {}
         guest: dict[str, dict[str, str]] = {}
+        seconds: dict[str, int] = {}
         for task in listed if isinstance(listed, list) else ():
             if not isinstance(task, Mapping) or task.get("kind") != "behavioral":
                 continue
@@ -629,8 +648,13 @@ class TriageReportReader(ReportReader):
             held.update({key: str(own[key]) for key in self.GUEST_KEYS if _stated(own.get(key))})
             if held:
                 guest[name] = held
+            given = seconds_stated(task.get(self.ANALYSIS_SECONDS_KEY))
+            if given is not None:
+                seconds[name] = given
         if guest:
             facts["guest"] = guest
+        if seconds:
+            facts["analysis_seconds"] = seconds
         return facts
 
 

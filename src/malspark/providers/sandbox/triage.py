@@ -1153,11 +1153,17 @@ class TriageSandboxProvider(SandboxProvider):
     def detonation_facts(self, run: SandboxRun) -> dict[str, Any] | None:
         """The overview's and the task reports' facts, and each of them as fetched.
 
-        Triage ran the sample.
+        Triage ran the sample. The analysis time asked is the one the
+        submission carried (``defaults.timeout``, from
+        ``sandbox.triage.analysis_seconds``); none is stated where it carried
+        none and Triage's own default applied.
         """
         from malspark.providers.detonation import report_facts
 
-        return report_facts(run, detonated=True)
+        facts = report_facts(run, detonated=True)
+        if self._cfg.analysis_seconds is not None:
+            facts["requested_seconds"] = int(self._cfg.analysis_seconds)
+        return facts
 
     def fetch_pcap(self, task_id: str, dest_dir: str | Path) -> str | None:
         if not self._cfg.fetch_pcap:
