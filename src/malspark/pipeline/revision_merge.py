@@ -86,7 +86,7 @@ claim a line of an earlier mediation contested, and that the mediator no
 longer listed, is carried with its mark like any other. A claim a blocking
 line named that the revision's disputes refer to in any way (its number, as
 an own reference however the item reads, or a statement restating it,
-:func:`_referenced`) is never withdrawn by rule: it is carried with that line.
+:func:`_disputes_read`) is never withdrawn by rule: it is carried with that line.
 
 Nothing here edits a claim's words; the merge only chooses which claims
 stand, and :class:`RevisionMerge` records every choice.
@@ -407,38 +407,59 @@ def _numbers_written(item: str) -> set[int]:
     return out
 
 
-def _disputed(earlier: _Block, disputes: Sequence[str]) -> bool:
-    """Whether one of the revision's dispute items argues ``earlier``: by number or by statement.
+# A range written backwards in a dispute ("my claims 9-2", "claims 6 to 4"):
+# it names no claim, but both its ends are referred to.
+_REVERSED_RANGE_RE = re.compile(
+    r"\bclaims?\s*+#?\s*+(\d{1,6})\s*+(?:-|–|—|\bto\b)\s*+#?(\d{1,6})\b", re.IGNORECASE
+)
 
-    An item that writes "claim N" for the claim's number, a range bounding
-    it among them ("claims 3-5", ``debate_facts.read_claim_numbers``), or
-    that restates it (:func:`_block_restates`), answers the line that named it.
+
+@dataclass(frozen=True)
+class _DisputesRead:
+    """The revision's dispute items, each read once per merge.
+
+    ``numbers`` are the claims in force they refer to by number: every
+    "claim N" an item writes, each claim of a bounded range
+    (``debate_facts.read_claim_numbers``), both ends of a range written
+    backwards, and every own reference however it reads (``own``); and
+    ``readings`` each item as a block's statement is read
+    (:func:`_block_restates`).
     """
+
+    numbers: frozenset[int]
+    readings: tuple[_Reading, ...]
+
+    def refer_to(self, block: _Block) -> bool:
+        """Whether an item writes the claim's number or restates it."""
+        return block.number in self.numbers or any(
+            _block_restates(block, reading) for reading in self.readings
+        )
+
+
+def _disputes_read(
+    disputes: Sequence[str], own: OwnWithdrawals, ordered: Sequence[int]
+) -> _DisputesRead:
+    """The disputes read once (:class:`_DisputesRead`), each item in one pass of its own.
+
+    The line rule never withdraws a claim they refer to: a misread item can
+    keep a claim, never remove one. Only a claim a blocking line names is
+    asked, so a merge no line names anything in costs the items' length.
+    """
+    numbers: set[int] = set()
     for item in disputes:
-        if earlier.number in _numbers_written(item):
-            return True
-        reading = _reading(_searched(item), content_words(item), frozenset())
-        if _block_restates(earlier, reading):
-            return True
-    return False
-
-
-def _referenced(
-    first: Sequence[_Block], own: OwnWithdrawals, disputes: Sequence[str], ordered: Sequence[int]
-) -> frozenset[int]:
-    """Every claim in force the revision's disputes refer to, however the item reads.
-
-    An own reference (``own``, a withdrawal read or not) or an item that
-    argues the claim (:func:`_disputed`). The line rule never withdraws such
-    a claim: a misread item can keep a claim, never remove one.
-    """
-    found: set[int] = set()
+        numbers |= _numbers_written(item)
+        for match in _REVERSED_RANGE_RE.finditer(item):
+            start, end = int(match.group(1)), int(match.group(2))
+            if end < start:
+                numbers.update((start, end))
     for low, high, _item in own.claims:
-        found.update(_known_in(low, high, ordered))
+        numbers.update(_known_in(low, high, ordered))
     for low, high in own.spoken:
-        found.update(_known_in(low, high, ordered))
-    found.update(block.number for block in first if _disputed(block, disputes))
-    return frozenset(found)
+        numbers.update(_known_in(low, high, ordered))
+    readings = tuple(
+        _reading(_searched(item), content_words(item), frozenset()) for item in disputes
+    )
+    return _DisputesRead(frozenset(numbers), readings)
 
 
 def _answered_by_a_block(
@@ -1171,9 +1192,9 @@ def merge_revision(
     answered = _answered_by_a_block(
         {number: lines.itself for number, lines in speaking.items()}, own, ordered
     )
-    # Every claim the disputes refer to, however the item reads
-    # (:func:`_referenced`): the line rule never withdraws it.
-    referenced = _referenced(first, own, disputes, ordered)
+    # The disputes, read once: the line rule never withdraws a claim they
+    # refer to, however the item reads (:func:`_disputes_read`).
+    referred = _disputes_read(disputes, own, ordered)
 
     readings = [_read(block) for block in revised]
     numbered = _by_number(first, revised, readings)
@@ -1235,7 +1256,7 @@ def merge_revision(
             # wrote it again, so the line rule withdraws nothing; it is
             # carried beside that block, with the line that contested it.
             contested[block.number] = sorted({line for line, _b in lines})
-        elif spoken and block.number in referenced:
+        elif spoken and referred.refer_to(block):
             # The revision did not restate it but its disputes refer to it:
             # an answer, carried with the line that contested it.
             contested[block.number] = sorted({line for line, _b in lines})
