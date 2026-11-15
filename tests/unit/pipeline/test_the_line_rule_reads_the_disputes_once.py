@@ -54,7 +54,25 @@ class TestAMergeWithNoLineNamingAnything:
             in_force, revision = _isr(text, revision_round=1), _isr(ADDED, disputes, 2)
             return lambda: merge_revision(in_force, revision, ADDED, 2, {}, claims_unread=0)
 
-        assert_scales(build, 40)
+        assert_scales(build, 400)
+
+    def test_with_one_claim_named_the_disputes_are_read_in_their_length(self) -> None:
+        def build(size: int) -> Any:
+            text = "".join(
+                _block(
+                    f"Routine 0x{0x400000 + i * 16:x} does thing {i} via 0x{0x600000 + i * 16:x}."
+                )
+                for i in range(size)
+            )
+            disputes = tuple(
+                f"Peer point {i}: ev_0001 shows 0x{0x700000 + i * 16:x} with words {'x ' * 20}"
+                for i in range(size)
+            )
+            in_force, revision = _isr(text, revision_round=1), _isr(ADDED, disputes, 2)
+            named = {1: [(1, True)]}
+            return lambda: merge_revision(in_force, revision, ADDED, 2, named, claims_unread=0)
+
+        assert_scales(build, 100)
 
 
 class TestAReversedRangeRefersToBothEnds:

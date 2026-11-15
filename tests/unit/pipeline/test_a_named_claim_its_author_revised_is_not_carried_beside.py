@@ -727,7 +727,7 @@ class TestAHostileDisputeCostsItsLength:
                 _isr(self.IN_FORCE, revision_round=1),
                 _isr(answer, items, revision_round=2),
             )
-            return lambda: merge_revision(in_force, revision, answer, 2)
+            return lambda: merge_revision(in_force, revision, answer, 2, NAMED_2)
 
         assert_scales(build, 200)
 
