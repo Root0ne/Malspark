@@ -573,6 +573,24 @@ class TestNoHostAboveTheSampleSProcess:
         assert unnamed.startswith("no: the sandbox report does not say which process made")
         assert not publishes(answer) and not publishes(unnamed)
 
+    def test_an_address_another_process_also_reached_names_no_host(self) -> None:
+        from tests.unit.reporting.test_traffic_another_process_made_is_not_the_sample_s import (
+            _answer,
+            _report,
+        )
+
+        # The host's flow and a flow of a process of no stated lineage, to one address.
+        task = self._reversed()
+        (flow,) = [f for f in task["network"]["flows"] if f["id"] == 60]
+        flow["dst"] = f"{ADDRESS}:443"
+        task["network"]["flows"].append(
+            {"id": 61, "proto": "tcp", "dst": f"{ADDRESS}:443", "procid": 36}
+        )
+        report = _report(_one_task(task))
+        (row,) = [ip for ip in report.network.ips if ip.address == ADDRESS]
+        assert row.launcher_unsettled_processes == []
+        assert "script host naming the launcher" not in _answer(report, "ip", ADDRESS)
+
     def test_read_again_the_report_is_the_same(self) -> None:
         report = _one_task(self._reversed())
         before = report.model_dump()

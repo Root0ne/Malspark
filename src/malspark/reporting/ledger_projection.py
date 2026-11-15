@@ -1453,8 +1453,10 @@ def network_from_ledger(
     attributed: dict[str, list[bool | None]] = {}
     # Which processes outside the tree the report says made flows to each address.
     outside: dict[str, list[str]] = {}
-    # The hosts naming the launcher whose attribution is not established, per address.
+    # The hosts naming the launcher whose attribution is not established, per
+    # address, and whether each flow to it is one of theirs.
     unsettled: dict[str, list[str]] = {}
+    only_unsettled: dict[str, list[bool]] = {}
     # And the processes the two lineage facts disagree about, by which fact names them.
     disputed: dict[str, dict[str, list[str]]] = {}
     host_facts: dict[str, dict[str, Any]] = {}
@@ -1582,7 +1584,10 @@ def network_from_ledger(
                         named = _flow_process_named(row, image)
                         if named not in outside.setdefault(address, []):
                             outside[address].append(named)
-                    if row.get(LINEAGE_KEY) == LINEAGE_LAUNCHER_UNSETTLED and image:
+                    host = row.get(LINEAGE_KEY) == LINEAGE_LAUNCHER_UNSETTLED and bool(image)
+                    # A page of a view cannot say no flow to the address is another's.
+                    only_unsettled.setdefault(address, []).append(host and whole)
+                    if host:
                         named = _flow_process_named(row, image)
                         if named not in unsettled.setdefault(address, []):
                             unsettled[address].append(named)
@@ -1719,7 +1724,13 @@ def network_from_ledger(
             ip.unlisted_processes = list(
                 dict.fromkeys(a[1] for a in answers if isinstance(a, tuple))
             )
-        if ip.sample_process_tree is None and unsettled.get(ip.address):
+        if (
+            ip.sample_process_tree is None
+            and unsettled.get(ip.address)
+            and all(only_unsettled.get(ip.address) or [False])
+        ):
+            # Only where every flow to it names such a host, as for the
+            # processes the task does not list.
             ip.launcher_unsettled_processes = list(unsettled[ip.address])
     _state_who_kept(network, kept, isrs)
     for ip in network.ips:
