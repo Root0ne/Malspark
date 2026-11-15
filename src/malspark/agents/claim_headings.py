@@ -11,6 +11,7 @@ rule. A leaf module, so both sides can import it.
 from __future__ import annotations
 
 import re
+from collections.abc import Callable
 
 # What may stand before a label at the start of a line: quote and emphasis
 # marks, and one list marker (``-``, ``+``, ``1.``, ``2)``; ``*`` is an
@@ -22,7 +23,14 @@ LINE_PREFIX = r"[ \t>*_#]*+(?:(?:[-+]|\d++[.)])[ \t]++)?[ \t>*_#]*+"
 # number, after a space or ``#``), ``CLAIM 3 —``, ``**CLAIM 4 (REVISED):**``,
 # ``CLAIM 2 [REVISED — retracts claim 5]:``, ``- CLAIM:``, ``1. CLAIM:``, and a
 # heading whose note is all its line holds (``CLAIM 1 (REVISED — not
-# observed)``, fields on the lines after it). Each one opens a block of its
+# observed)``, fields on the lines after it). A numbered heading's note may
+# also stand after the emphasis that closes the label (``**CLAIM 1**
+# (revises claim 2): …``), and a dot ends a numbered heading that writes a
+# note, the note before or after the emphasis (``**CLAIM 1 (revised).** …``,
+# ``**CLAIM 1** (revised). …``, ``CLAIM 1 (revised). …``); a heading with no
+# number, or with no note, is never ended by a dot (``CLAIM 1. …`` is prose),
+# and a label other than ``CLAIM`` is never a heading (``**C1 …**``,
+# ``**R1. …**``). Each one opens a block of its
 # own, so claims written one after another with no ``---`` between them are
 # read as the claims they are, not as the first one. The note, in round or
 # square brackets, is the model's own words: before a delimiter it is kept
@@ -33,9 +41,32 @@ LINE_PREFIX = r"[ \t>*_#]*+(?:(?:[-+]|\d++[.)])[ \t]++)?[ \t>*_#]*+"
 # possessively, so a line costs time linear in its length.
 CLAIM_HEAD_RE = re.compile(
     r"^" + LINE_PREFIX + r"CLAIM(?:(?:[ \t]++#?(?P<label>[A-Za-z]++)|[ \t]*+#?)(?P<number>\d++))?"
-    r"(?:[ \t]*+(?P<note>\([^)\n]*+\)|\[[^\]\n]*+\]))?[ \t]*+(?:\*\*)?[ \t]*+"
-    r"(?:(?P<delim>:|—|–|-(?=\s))[ \t]*+(?:\*\*)?[ \t]*+|(?(note)$|(?!)))"
+    r"(?:[ \t]*+(?(number)(?:\*\*[ \t]*+)?)(?P<note>\([^)\n]*+\)|\[[^\]\n]*+\]))?"
+    r"[ \t]*+(?:\*\*)?[ \t]*+"
+    r"(?:(?P<delim>:|—|–|-(?=\s)|(?(number)(?(note)\.|(?!))|(?!)))[ \t]*+(?:\*\*)?[ \t]*+"
+    r"|(?(note)$|(?!)))"
 )
+
+
+# A line begun as a numbered claim heading and ended by a dot with no note
+# before it, after the emphasis that closes the label or not (``CLAIM 3. …``,
+# ``**CLAIM 3.** …``, ``**CLAIM 3**. …``): ``CLAIM_HEAD_RE`` never reads such
+# a line, a dot after a number with no note being no delimiter of its own.
+# A dot followed by a digit ends no heading (``CLAIM 3.5 …``). Each part is
+# read possessively, so a line costs time linear in its length.
+BEGUN_HEAD_RE = re.compile(
+    r"^" + LINE_PREFIX + r"CLAIM(?:[ \t]++#?(?P<label>[A-Za-z]++)|[ \t]*+#?)(?P<number>\d++)"
+    r"[ \t]*+(?:\*\*)?[ \t]*+\.(?!\d)"
+)
+
+
+# The heading a model is told to write when its claims open with headings the
+# rule above does not read: the form, and one heading of that form whose
+# sentence is a placeholder, so the turn hands the model no claim to copy.
+# Both are read by ``CLAIM_HEAD_RE`` (the form once its ``<n>`` is a number),
+# so what a model is asked to write is what is read.
+CLAIM_HEADING_FORM = "CLAIM <n>: <sentence>"
+CLAIM_HEADING_EXAMPLE = "CLAIM 1: <the claim's sentence>"
 
 
 def heading_sentence(line: str, heading: re.Match[str]) -> str:
@@ -164,14 +195,25 @@ _BULLETED_RE = re.compile(r"[ \t>*_#]*+(?:[-+•]|\d++[.)])[ \t]")
 _CLAIM_FIELD_RE = re.compile(r"^" + LINE_PREFIX + r"(?:EVIDENCE|CONFIDENCE)\b", re.IGNORECASE)
 
 
+def _ends_in_a_dot(heading: re.Match[str]) -> bool:
+    """Whether ``heading`` is ended by a dot (``CLAIM 4 (STATIC's). …``).
+
+    Under a DISPUTES section such a heading is a peer's claim named in a
+    dispute's prose: it opens no claim block there and is not counted as one.
+    """
+    return heading.group("delim") == "."
+
+
 def _opens_a_claim_block(lines: list[str], index: int) -> bool:
     """Whether ``lines[index]`` is an unbulleted claim heading whose next written line is a field.
 
-    The blank lines between are read once more at most, so a section costs
-    time linear in its length.
+    A heading ended by a dot opens none (:func:`_ends_in_a_dot`). The blank
+    lines between are read once more at most, so a section costs time linear
+    in its length.
     """
     line = lines[index]
-    if _BULLETED_RE.match(line) or not CLAIM_HEAD_RE.match(line):
+    heading = None if _BULLETED_RE.match(line) else CLAIM_HEAD_RE.match(line)
+    if heading is None or _ends_in_a_dot(heading):
         return False
     for after in lines[index + 1 :]:
         if after.strip():
@@ -195,9 +237,16 @@ def count_claims_after_disputes(text: str) -> int:
 
     Not the analyst's own claims, so neither read nor counted as begun; the
     reader says when there are some and none of the analyst's own was read,
-    which is the one case they could be the answer's only claims.
+    which is the one case they could be the answer's only claims. A heading
+    ended by a dot is not one of them (:func:`_ends_in_a_dot`).
     """
-    return _headings_in(_split_at_disputes(text)[1])
+    return _headings_in(_split_at_disputes(text)[1], _heading_not_ended_by_a_dot)
+
+
+def _heading_not_ended_by_a_dot(line: str) -> re.Match[str] | None:
+    """``CLAIM_HEAD_RE``'s match of ``line``, or ``None`` when it is ended by a dot."""
+    heading = CLAIM_HEAD_RE.match(line)
+    return None if heading is None or _ends_in_a_dot(heading) else heading
 
 
 def claims_headed(text: str) -> str:
@@ -218,7 +267,9 @@ def _is_bare_heading(line: str, heading: re.Match[str]) -> bool:
     ).strip(" \t*_`")
 
 
-def _sentence_lines(lines: list[str]) -> dict[int, int]:
+def _sentence_lines(
+    lines: list[str], head: Callable[[str], re.Match[str] | None] | None = None
+) -> dict[int, int]:
     """``{bare heading's index: index of the CLAIM: line that writes its sentence}``.
 
     A heading that writes only its number (``CLAIM 7:``), with a plain
@@ -226,14 +277,16 @@ def _sentence_lines(lines: list[str]) -> dict[int, int]:
     sentence on the line after. The retry that fixes claims by number asks for
     each one "under its number (CLAIM 7:) as its own block of CLAIM, EVIDENCE:
     ..." lines, and read as two headings it was an empty claim begun and not
-    read, and a claim with no number. Each line is read once.
+    read, and a claim with no number. ``head`` is the heading rule the lines
+    are read by, ``CLAIM_HEAD_RE`` when none is given. Each line is read once.
     """
+    head = head or CLAIM_HEAD_RE.match
     pairs: dict[int, int] = {}
     bare: int | None = None
     for index, line in enumerate(lines):
         if not line.strip():
             continue
-        heading = CLAIM_HEAD_RE.match(line)
+        heading = head(line)
         groups = heading.groupdict() if heading is not None else {}
         if (
             bare is not None
@@ -287,14 +340,83 @@ def claims_headed_with_notes(
     return "\n".join(out), notes
 
 
-def _headings_in(lines: list[str]) -> int:
+def _headings_in(
+    lines: list[str], head: Callable[[str], re.Match[str] | None] | None = None
+) -> int:
     """How many claim headings ``lines`` write, a bare heading and its ``CLAIM:`` line once."""
-    return sum(1 for line in lines if CLAIM_HEAD_RE.match(line)) - len(_sentence_lines(lines))
+    head = head or CLAIM_HEAD_RE.match
+    return sum(1 for line in lines if head(line)) - len(_sentence_lines(lines, head))
+
+
+def _begun_unread(lines: list[str]) -> list[re.Match[str]]:
+    """Each of ``lines`` that is a ``BEGUN_HEAD_RE`` line whose next written line is a field.
+
+    Such a line is a claim written whole under a heading the rule does not
+    read; with prose under it, it is prose. Inside a claim the rule reads,
+    between its heading and its first field line, it is that claim's text (a
+    sentence line, a peer's claim quoted, a list item) and counts nothing: a
+    read heading opens its block, and its first field line, a ``---`` line or
+    a blank line closes it, as :func:`besides_claims` reads a heading's
+    sentence. Each line is read once.
+    """
+    found: list[re.Match[str]] = []
+    begun: re.Match[str] | None = None
+    open_block = False
+    for line in lines:
+        if not line.strip():
+            open_block = False
+            continue
+        if begun is not None and _CLAIM_FIELD_RE.match(line):
+            found.append(begun)
+        if CLAIM_HEAD_RE.match(line):
+            open_block = True
+        elif _FIELD_LABEL_RE.match(line) or _SEPARATOR_RE.match(line):
+            open_block = False
+        begun = None if open_block else BEGUN_HEAD_RE.match(line)
+    return found
+
+
+def count_claims_headed(text: str) -> int:
+    """How many claim headings ``text`` writes before its DISPUTES section: the claims it heads."""
+    return _headings_in(before_disputes(text).splitlines())
+
+
+def count_claims_begun_unread(text: str) -> int:
+    """How many claims ``text`` begins before its DISPUTES section under a heading not read.
+
+    Each is a ``BEGUN_HEAD_RE`` line whose next written line is a claim field
+    line (:func:`_begun_unread`). It is no claim block: the claim is begun,
+    and not read.
+    """
+    return len(_begun_unread(before_disputes(text).splitlines()))
+
+
+def claim_numbers_written(text: str) -> set[str]:
+    """The numbers ``text`` writes on its claims before its DISPUTES section, read or begun.
+
+    Each claim heading's number (:func:`heading_number`) and each number of a
+    claim begun under a heading the rule does not read
+    (:func:`count_claims_begun_unread`); a heading with no number adds none.
+    """
+    lines = before_disputes(text).splitlines()
+    heads = [CLAIM_HEAD_RE.match(line) for line in lines]
+    return {
+        number
+        for heading in [*(h for h in heads if h is not None), *_begun_unread(lines)]
+        if (number := heading_number(heading)) is not None
+    }
 
 
 def count_claims_begun(text: str) -> int:
-    """How many claims ``text`` begins: every claim heading before its DISPUTES section."""
-    return _headings_in(before_disputes(text).splitlines())
+    """How many claims ``text`` begins before its DISPUTES section.
+
+    Every claim heading (:func:`count_claims_headed`) and every claim written
+    whole under a heading the rule does not read
+    (:func:`count_claims_begun_unread`), so a claim the reader cannot read is
+    counted against what it read, never dropped in silence.
+    """
+    lines = before_disputes(text).splitlines()
+    return _headings_in(lines) + len(_begun_unread(lines))
 
 
 # A line that ends a claim's block: a ``---`` separator.
@@ -303,6 +425,20 @@ _SEPARATOR_RE = re.compile(r"^[ \t]*-{3,}[ \t]*$")
 _FIELD_LABEL_RE = re.compile(
     r"^" + LINE_PREFIX + r"(?:EVIDENCE|CONFIDENCE|TECHNIQUE|DISSENT)\b", re.IGNORECASE
 )
+
+
+# A claim's field line as a model writes it: its label (``_FIELD_LABEL_RE``)
+# and its colon, emphasis marks between them aside.
+_FIELD_LINE_RE = re.compile(_FIELD_LABEL_RE.pattern + r"[ \t*_]*+:", re.IGNORECASE)
+
+
+def writes_claim_fields(text: str) -> bool:
+    """Whether ``text`` holds a claim's field line (``EVIDENCE:``, ``CONFIDENCE:`` …) anywhere.
+
+    An answer that writes them wrote claims, whatever its headings; one that
+    writes none wrote no claim block at all. Each line is read once.
+    """
+    return any(_FIELD_LINE_RE.match(line) for line in (text or "").splitlines())
 
 
 def _block_key(lines: list[str]) -> str:

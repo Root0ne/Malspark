@@ -2450,7 +2450,20 @@ open — and sets its own confidence; the report header states the same reasons.
 
 One more repair belongs here because it decides whether an analyst's answer
 exists at all. A tool loop that ends on a turn that is not a report is asked
-once more for one (the final-answer nudge). A loop can end on an assistant
+once more for one (the final-answer nudge). When that turn writes claim field
+lines (`EVIDENCE:`, `CONFIDENCE:`, `TECHNIQUE:`) under headings the claim
+reader does not read, the nudge's words say so and state the heading it reads,
+`CLAIM <n>: <sentence>`, with an example whose sentence is a placeholder
+(`base_agent.FINAL_ANSWER_HEADING_NUDGE`, built from
+`claim_headings.CLAIM_HEADING_FORM`); otherwise they only ask for the final
+report. A report read in part — a claim of it begun under a numbered heading
+ended by a dot with no note, its field line beneath — is asked the same turn
+in the heading words; the reply replaces it only when it is a report that
+begins at least as many claims, leaves none unread, writes every claim number
+the report wrote, read or begun, and keeps a DISPUTES section where the report
+wrote one; otherwise the report stands with its shortfall recorded. Either way it is the same one
+turn, and the log line that says the nudge is sent names which words it
+carries. A loop can end on an assistant
 turn whose tool call carries arguments that never parsed; no tool ran, and
 sending that turn back makes a server fail rendering it ("Failed to parse
 tool call arguments as JSON", HTTP 500). The nudge and the forced synthesis
@@ -2498,9 +2511,14 @@ Every path that reads claims reads them through one reader,
 `base_agent.read_claim_blocks`: it splits an answer at every claim heading
 (`CLAIM:`, `CLAIM 3:`, `CLAIM R3:` with a label of letters before its number,
 `**CLAIM 4 (REVISED):**`, `CLAIM 2 [REVISED — retracts
-claim 5]:`, `CLAIM 5 -`, and a heading whose round- or square-bracketed note is
-its whole line, its fields on the lines after it; the rule is
-`agents/claim_headings.py`) where a block can begin, and at the model's own
+claim 5]:`, `CLAIM 5 -`, a numbered heading's note after the emphasis that
+closes its label (`**CLAIM 6** (revises claim 2): …`), a dot as the delimiter
+after a numbered heading's note, the note before or after the emphasis
+(`**CLAIM 7 (revised).** …`, `**CLAIM 7** (revised). …`, `CLAIM 7 (revised).
+…`), and a heading whose round- or square-bracketed note is its whole line, its
+fields on the lines after it; a dot after a heading with no note or no number
+(`CLAIM 7. …`) and a label other than `CLAIM` (`C1`, `R1`) open no claim; the
+rule is `agents/claim_headings.py`) where a block can begin, and at the model's own
 `---` lines, so claims written one after another with blank lines between them
 are each read. A note written before a heading's delimiter is the model's own
 words on what the claim is to the debate (a revision, a retraction): it is kept
@@ -2512,9 +2530,14 @@ starts with it. The heading's number is never part of the claim, and no number
 is given to a heading without one; a label written before the number stays in
 the claim's name (`R3`, never claim 3), so a retry is never merged into it by place. The static, dynamic and network analysts read it with an
 EVIDENCE line required; the base analyst's path records a block without one as
-unsourced. Each read counts the claim headings the answer began before its
-DISPUTES section against the claims it read and the blocks that stated no
-confidence; what is left is claims begun and not read, which is logged and
+unsourced. Each read counts the claims the answer began before its DISPUTES
+section — its claim headings, and each line begun as a numbered heading and
+ended by a dot with no note (`CLAIM 7. …`, `**CLAIM 7.** …`) whose next
+written line is a claim field line (`claim_headings.BEGUN_HEAD_RE`; with prose
+beneath it, it is prose, and inside a claim that is read, in the block its
+heading opens until its first field line, a rule line or a blank line closes
+it, it is that claim's text) — against the claims it read and the blocks that
+stated no confidence; what is left is claims begun and not read, which is logged and
 kept on the answer it was read from (`AgentISR.claims_unread_reason`),
 naming the analyst, the round and both numbers. The judge node carries it as a
 degradation reason only from the answers in force, so an answer a retry or a
@@ -2601,7 +2624,10 @@ revision replaced N claim(s) with M."). The DISPUTES section opens at its label,
 case-sensitive, with its colon (`DISPUTES:`) or as a Markdown heading; a label
 that says there is none on its own line (`DISPUTES: NONE`, `N/A`, a dash)
 opens no section, and prose beginning "Disputes …" is prose. Claims under the
-section are not read as the analyst's own; they are counted apart. When none
+section are not read as the analyst's own; they are counted apart. A heading
+ended by a dot under the section (`CLAIM 4 (static). I reject …`) names a
+peer's claim in a dispute's prose: it is not counted, and it does not end the
+section even with a field line beneath it. When none
 of the answer's own claims was read they are recorded as unread. When some
 were, the analyst is asked once in its validation turn
 (`isr.claims_under_disputes`) to write its own claims above DISPUTES and
