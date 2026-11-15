@@ -401,3 +401,12 @@ class TestAProcessListedInTwoTasks:
         (indicator,) = _rows(report)["own marks"]["indicators"]
         assert indicator["process"]["id"] == "84" and "image" not in indicator["process"]
         assert "2 tasks" in indicator["process"]["not_settled"]
+
+
+class TestThePagedCallOnTheLiveReport:
+    def test_a_process_id_lists_the_indicators_acting_on_it_too(self) -> None:
+        page = sandbox_signatures(sandbox_document(_read()), normalised_by=TRIAGE, process="86")
+        names = [one["signature"] for one in page["indicators"]]
+        assert WPM in names and "Executes a command shell one-liner" in names
+        (written,) = [one for one in page["indicators"] if one["signature"] == WPM]
+        assert written["target"]["id"] == "86" and written["process"]["id"] == "84"
