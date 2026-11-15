@@ -1309,14 +1309,17 @@ def network_from_ledger(
 
     ``sightings`` is, for each value an analyst listed, the tool answers of
     the run that hold it (:func:`tool_sightings`). A row only an artifact
-    created and a text-printing tool's answer holds — the file's strings, a
-    decoder's output, a decompilation — takes the string sweep's standing
-    (``strings``): a string a tool printed is no observation of the sample.
-    An entry of a sandbox kind (:data:`_SANDBOX_RECORDS`) is a record of the
-    detonation, not such a holder: a row only such entries hold stays
-    ``analyst``, as a row no answer holds does, and the reason that refuses it
-    still names where it was seen. Only a structured network record (a flow,
-    a DNS query, an HTTP request, a capture conversation) makes a sandbox row.
+    created and some answer's text holds takes the string sweep's standing
+    (``strings``), whichever tool printed the text: text inside an answer — a
+    signature's description, a command line, the sample's strings a sandbox
+    re-serves — is no observation of the sample. The one exception is a part
+    of an answer its kind declares a structured record
+    (``core.builtin_declarations.RECORD_PARTS_OF_KIND``, a sandbox
+    signature's indicators): a value an answer holds only there keeps the
+    standing it has where no answer holds it, and the reason that refuses it
+    still names the entry. Only a structured network record (a flow, a DNS
+    query, an HTTP request, a capture conversation) makes a sandbox row. A
+    row no answer holds stays ``analyst``.
 
     The capture (``pcap_summary``) is a sandbox view like the flow table: its
     conversations' addresses and its TLS names are sandbox rows. It says
@@ -1674,19 +1677,16 @@ def network_from_ledger(
         *network.domains,
         *network.urls,
     ]
-    # The entries that are records of the detonation, by their kind: what
-    # they hold the report recorded, which no tool printed as a string.
-    records = {entry.id for entry in ledger or [] if tool_kinds.is_of(entry, _SANDBOX_RECORDS)}
+    # The entries with a part their kind declares a structured record, by id.
+    by_id = {entry.id: entry for entry in ledger or [] if _record_parts(entry)}
     for row in rows:
-        printed = [
-            eid
-            for eid, _tool in (sightings or {}).get(_listed_key(row)) or []
-            if eid not in records
-        ]
-        if row.source == "analyst" and printed:
-            # Text a text-printing tool's answer holds is a string that tool
-            # printed, not an observation of the sample: only a structured
-            # network record (above) makes a sandbox row.
+        sighted = (sightings or {}).get(_listed_key(row)) or []
+        if row.source == "analyst" and any(
+            eid not in by_id or _held_outside_records(by_id[eid], row) for eid, _tool in sighted
+        ):
+            # Text inside a tool's answer — any tool's, a sandbox's included —
+            # is a string the tool printed, not an observation of the sample:
+            # only a structured network record (above) makes a sandbox row.
             row.source = "strings"
     for domain in network.domains:
         key = value_key("domain", domain.fqdn)
@@ -1742,9 +1742,30 @@ def network_from_ledger(
     return network if (network.domains or network.ips or network.urls) else None
 
 
-# The kinds whose entries are records of a detonation (a sandbox's views, the
-# capture): not text-printing tools, whatever text a record holds.
-_SANDBOX_RECORDS = "evidence_bundles.SANDBOX_TOOL_PREFIXES"
+def _record_parts(entry: LedgerEntry) -> tuple[str, ...]:
+    """The top-level parts of an entry's answer its kind declares a structured record."""
+    from malspark.core.builtin_declarations import RECORD_PARTS_OF_KIND
+
+    if not entry.ok or not isinstance(entry.structured, dict):
+        return ()
+    return RECORD_PARTS_OF_KIND.get(tool_kinds.kind_of(entry), ())
+
+
+def _held_outside_records(entry: LedgerEntry, row: NetworkIP | NetworkDomain | NetworkURL) -> bool:
+    """Whether ``entry``'s answer holds the row's value outside the parts that are its record."""
+    from malspark.agents._indicator_denylists import whole_value_in
+
+    parts = set(_record_parts(entry))
+    assert isinstance(entry.structured, dict)
+    rest = {key: value for key, value in entry.structured.items() if key not in parts}
+    if isinstance(row, NetworkIP):
+        kind, value = "ip", row.address
+    elif isinstance(row, NetworkDomain):
+        kind, value = "domain", row.fqdn
+    else:
+        kind, value = "url", row.url
+    text = " ".join(_strings_in(rest)).lower()
+    return whole_value_in(searched_spelling(kind, value).lower(), text)
 
 
 def _listed_key(row: NetworkIP | NetworkDomain | NetworkURL) -> str:

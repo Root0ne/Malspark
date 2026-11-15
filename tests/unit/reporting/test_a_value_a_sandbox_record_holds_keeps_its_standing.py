@@ -1,13 +1,14 @@
-"""A value only sandbox records hold keeps an analyst's standing; a printed string does not.
+"""A value only a sandbox signature's indicators hold keeps its standing; any other text does not.
 
-A sighting gives a listed value the string sweep's standing (``strings``) only
-where a text-printing tool's answer holds it: the file's strings, a decoder's
-output, a decompilation. An entry of a sandbox kind is a record of the
-detonation (``evidence_bundles.SANDBOX_TOOL_PREFIXES``), not such a holder: a
-value an analyst listed that only such entries hold keeps the analyst's
-standing, and with it the decision it has where no answer holds it (the
-judge's keep), and the reason still names where it was seen. The entry's kind
-decides, never its tool's name.
+A sighting gives a listed value the string sweep's standing (``strings``)
+wherever an answer's text holds it, a sandbox's answer included: a
+signature's description, a command line, the sample's strings a sandbox
+re-serves, the file's own strings. The one exception is the part of an answer
+its kind declares a structured record (``RECORD_PARTS_OF_KIND``: a signature
+view's indicators): a value an analyst listed that an answer holds only there
+keeps the analyst's standing and the decision it has where no answer holds it
+(the judge's keep), and the reason still names the entry. The kind decides,
+never the tool's name.
 
 Every value here is synthetic: routable addresses the reference run never
 reached, and example names.
@@ -16,6 +17,8 @@ reached, and example names.
 from __future__ import annotations
 
 from typing import Any
+
+import pytest
 
 from malspark.reporting.builder import MalwareReportBuilder
 from malspark.reporting.renderers.stix_renderer import publishes
@@ -160,7 +163,7 @@ class TestTheSignatureView:
             assert publishes(_published(report, value)), value
 
 
-class TestAValueOnlyASandboxRecordHolds:
+class TestAValueOnlyTheIndicatorsHold:
     def test_it_keeps_the_analyst_s_standing_and_the_judge_s_keep_publishes_it(self) -> None:
         report = _build([_indicator_entry()])
 
@@ -181,14 +184,48 @@ class TestAValueOnlyASandboxRecordHolds:
         assert report.tool_sightings[NAME] == [("ev_0007", "sandbox_signatures")]
 
 
-class TestAValueATextPrintingToolPrinted:
-    def test_it_is_a_string_sighting(self) -> None:
-        report = _build([_strings_entry()])
+def _text_sightings() -> dict[str, LedgerEntry]:
+    from tests.unit.reporting.test_a_text_sighting_is_no_sandbox_observation import (
+        _TEXT_SIGHTINGS,
+    )
 
-        assert _sources(report)[NAME] == "strings"
+    return {**_TEXT_SIGHTINGS, "the file's strings": _strings_entry()}
+
+
+class TestEveryOtherText:
+    """Kept by the judge, a value any other text holds is a string sighting, as it always was."""
+
+    @pytest.mark.parametrize(
+        "what",
+        [
+            "a signature's description",
+            "a command line",
+            "the sample's strings the sandbox re-serves",
+            "the file's strings",
+        ],
+    )
+    def test_it_is_a_string_sighting_and_not_published(self, what: str) -> None:
+        entry = _text_sightings()[what]
+        report = _build([entry])
+
+        held = {NAME} if what == "the file's strings" else {NAME, ADDRESS}
+        for value in held:
+            assert _sources(report)[value] == "strings", value
+            answer = _published(report, value)
+            assert not publishes(answer), value
+            assert answer.startswith(f"no: seen only in the text of {entry.id} ({entry.tool})")
+
+    def test_a_signature_answer_holding_it_in_its_description_too_is_one(self) -> None:
+        entry = _indicator_entry()
+        assert isinstance(entry.structured, dict)
+        entry.structured["signatures"][0]["description"] = f"Contacts {NAME}"
+        report = _build([entry])
+
+        assert _sources(report) == {NAME: "strings", ADDRESS: "analyst"}
         assert not publishes(_published(report, NAME))
+        assert publishes(_published(report, ADDRESS))
 
-    def test_it_is_one_beside_a_sandbox_record_too(self) -> None:
+    def test_beside_the_indicators_it_is_one(self) -> None:
         report = _build([_strings_entry(), _indicator_entry()])
 
         assert _sources(report) == {NAME: "strings", ADDRESS: "analyst"}
