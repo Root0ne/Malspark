@@ -1077,6 +1077,20 @@ def claims_left_unread(answer: str) -> int:
     return int(reading.unread) + int(reading.without_confidence)
 
 
+def claims_left_unread_of(isr: Any) -> int:
+    """How many claims a revision began that its own reading left unread, as its answer holds it.
+
+    What the answer holds after its validation turn: one where it carries a
+    reason that claims it began were not read (``AgentISR.claims_unread_reason``,
+    a note that parts of the input were not analysed among them), and each
+    block that stated no confidence (``AgentISR.blocks_without_confidence``).
+    The text is not read again: this is the count the revision node gives
+    :func:`merge_revision`.
+    """
+    reason = 1 if str(getattr(isr, "claims_unread_reason", "") or "").strip() else 0
+    return reason + max(0, int(getattr(isr, "blocks_without_confidence", 0) or 0))
+
+
 def merge_revision(
     in_force: Any,
     revision: Any,
@@ -1106,10 +1120,11 @@ def merge_revision(
     analyst that the lines' reading read as this analyst's: it is stated.
     Where ``unplaced``, ``expanded`` or ``owned`` is not given, it is read
     from ``named`` (``debate_facts.NamedClaims``). ``claims_unread`` is how
-    many claims the revision began and its reading did not read
-    (:func:`claims_left_unread`); not given, it is read once from
-    ``answer``. With one or more, nothing is withdrawn by rule. ``in_force``
-    is not changed.
+    many claims the revision began and its reading did not read, as the
+    caller holds it (:func:`claims_left_unread_of`); given, the text is not
+    read again. Not given, by a caller that holds no reading of its own, it
+    is read once from ``answer`` (:func:`claims_left_unread`). With one or
+    more, nothing is withdrawn by rule. ``in_force`` is not changed.
     """
     if unplaced is None:
         unplaced = tuple(getattr(named, "unplaced", ()) or ())

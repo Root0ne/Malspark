@@ -2,9 +2,12 @@
 
 The claim left unread may be the named claim restated: a claim a blocking
 line named is then carried with its line, its mark kept, and the merge says
-why. The signal is the revision's own reading of its claim blocks: a block
-whose confidence cannot be read, or that states none, is a claim begun and not
-read; a note that parts of the input were not analysed is not. With every
+why. The signal is the revision's own reading of its claim blocks, as its
+answer holds it (``revision_merge.claims_left_unread_of``): a reason that
+claims it began were not read, a note that parts of the input were not
+analysed among them, and each block that states no confidence. A caller that
+holds no such reading has the text read once: a block whose confidence cannot
+be read, or that states none, counts, a note in the text does not. With every
 claim it began read, the line rule withdraws as before.
 
 Every address, name and sentence here is made up for the test.
@@ -86,11 +89,20 @@ class TestEveryClaimBegunWasRead:
         assert [n for n, _s, _r in merge.withdrawn_by_rule] == [3]
         assert merge.held_unread == ()
 
-    def test_a_note_of_parts_not_analysed_alone_changes_nothing(self) -> None:
+    def test_a_note_of_parts_not_analysed_in_the_text_alone_changes_nothing(self) -> None:
         merge = _merge(READ, NOT_ANALYSED)
 
         assert [n for n, _s, _r in merge.withdrawn_by_rule] == [3]
         assert merge.held_unread == ()
+
+
+class TestTheCountTheAnswerHolds:
+    def test_a_note_of_parts_not_analysed_keeps_the_named_claim(self) -> None:
+        from malspark.pipeline.revision_merge import claims_left_unread_of
+
+        merge = _merge(READ, claims_unread=claims_left_unread_of(_isr(READ, NOT_ANALYSED)))
+
+        assert merge.withdrawn_by_rule == () and [n for n, *_r in merge.held_unread] == [3]
 
 
 class TestTheCountCostsTheAnswersLength:

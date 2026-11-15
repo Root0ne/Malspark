@@ -162,6 +162,7 @@ from malspark.pipeline.outcome import (
 )
 from malspark.pipeline.revision_merge import (
     RevisionMerge,
+    claims_left_unread_of,
     claims_named_in_force,
     merge_revision,
     rule_sentence,
@@ -6513,6 +6514,9 @@ def make_revision_node(container: ServiceContainer, *, stage: Any = None) -> Any
                         revised_text,
                         iteration,
                         named_by_lines.get(name),
+                        # The analyst's own reading of the revision after its
+                        # validation turn: the merge reads no text again.
+                        claims_unread=claims_left_unread_of(isr),
                     )
                     if noted is not None and name not in not_asked
                     else RevisionMerge()
