@@ -12,6 +12,7 @@ Literature basis:
 
 from __future__ import annotations
 
+import re
 from collections.abc import Sequence
 from typing import Any, Literal, get_args
 
@@ -106,6 +107,29 @@ def carried_note(claim: Any) -> str:
     return "; ".join([said, *ruled] if said else ruled)
 
 
+# The round note on a claim's line in a later mediation's claim list: what it
+# says, a space, the round, in round brackets (``(written in round 2)``,
+# ``(unchanged since round 1)``). One declaration: the claim list
+# writes the note by it, and a WITHDRAW line that copies the note after the
+# claim number is read through it by the same shape (``retry_merge``), the
+# round's value never asked.
+WRITTEN_IN_ROUND = "written in round"
+UNCHANGED_SINCE_ROUND = "unchanged since round"
+ROUND_NOTE_BRACKETS = ("(", ")")
+ROUND_NOTE_PATTERN = (
+    re.escape(ROUND_NOTE_BRACKETS[0])
+    + "(?:"
+    + "|".join(re.escape(said) for said in (WRITTEN_IN_ROUND, UNCHANGED_SINCE_ROUND))
+    + r") \d++"
+    + re.escape(ROUND_NOTE_BRACKETS[1])
+)
+
+
+def round_note_on_line(note: str) -> str:
+    """``note`` (:func:`written_round_note`) as the claim's line carries it."""
+    return f"{ROUND_NOTE_BRACKETS[0]}{note}{ROUND_NOTE_BRACKETS[1]}"
+
+
 def written_round_note(
     claim: Any, answer_round: int, last_round: int, retried: bool = False
 ) -> str:
@@ -123,11 +147,11 @@ def written_round_note(
     """
     since = getattr(claim, "carried_since_round", None)
     if isinstance(since, int) and not isinstance(since, bool):
-        written, said = max(since - 1, 0), "unchanged since round"
+        written, said = max(since - 1, 0), UNCHANGED_SINCE_ROUND
     elif retried and getattr(claim, "added_by_retry_in_round", None) != answer_round:
-        written, said = max(int(answer_round) - 1, 0), "unchanged since round"
+        written, said = max(int(answer_round) - 1, 0), UNCHANGED_SINCE_ROUND
     else:
-        written, said = int(answer_round), "written in round"
+        written, said = int(answer_round), WRITTEN_IN_ROUND
     return f"{said} {written}" if written < int(last_round) else ""
 
 
@@ -573,7 +597,7 @@ def claim_summary_line(
     note = carried_note(claim)
     carried = f" ({note})" if note else ""
     if written:
-        carried += f" ({written})"
+        carried += f" {round_note_on_line(written)}"
     return (
         f"Claim {number}{noted}: {claim.claim}{tech}"
         f" | Evidence: {claim.evidence_ref}{failed}{retried}{carried}"

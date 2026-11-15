@@ -245,26 +245,82 @@ class TestNoClaimLeavesTheAnswerWithoutABlockALineOrTheLineRule:
 
 
 class TestAWithdrawLineWithANoteAfterTheNumber:
-    def test_the_note_is_read_as_the_heading_grammar_reads_it(self) -> None:
-        for line in (
-            "WITHDRAW CLAIM 1 (unchanged since round 1): the key is read elsewhere.",
-            "WITHDRAW CLAIM 1 [written in round 2] - the key is read elsewhere.",
-            "WITHDRAW CLAIM 1 (unchanged since round 1)",
-        ):
-            answer = _block(SLEEP) + line + "\n"
+    @staticmethod
+    def _round_notes() -> list[str]:
+        """Each round note the claim list writes, as the claim list writes it."""
+        from malspark.schemas.isr_models import (
+            ClaimEvidence,
+            round_note_on_line,
+            written_round_note,
+        )
 
+        written = ClaimEvidence(claim="c", evidence_ref="e", confidence=0.5)
+        unchanged = ClaimEvidence(claim="c", evidence_ref="e", confidence=0.5)
+        unchanged.carried_since_round = 2
+        notes = [
+            round_note_on_line(written_round_note(written, 1, 2)),
+            round_note_on_line(written_round_note(unchanged, 2, 2)),
+        ]
+        assert notes == ["(written in round 1)", "(unchanged since round 1)"]
+        return notes
+
+    def test_each_round_note_the_claim_list_writes_is_read_through(self) -> None:
+        for note in self._round_notes():
+            for line in (
+                f"WITHDRAW CLAIM 1 {note}: the key is read elsewhere.",
+                f"WITHDRAW CLAIM 1 {note} - the key is read elsewhere.",
+                f"WITHDRAW CLAIM 1 {note}",
+            ):
+                answer = _block(SLEEP) + line + "\n"
+
+                merge = merge_revision(_isr(IN_FORCE), _isr(answer), answer, 2)
+
+                assert [n for n, _s, _r in merge.withdrawn] == [1], line
+                assert merge.unread == 0, line
+
+    def test_the_shape_decides_not_the_rounds_value(self) -> None:
+        for line in (
+            "WITHDRAW CLAIM 1 (written in round 97): the key is read elsewhere.",
+            "WITHDRAW CLAIM 1 (unchanged since round 0): the key is read elsewhere.",
+        ):
+            assert read_withdrawals(line + "\n").claims == (
+                ("1", "1", "the key is read elsewhere."),
+            ), line
+
+    def test_any_other_bracket_leaves_the_line_read_as_before(self) -> None:
+        # Each line withdraws nothing on the platform's earlier reading and is
+        # one doubt: a bracket that qualifies, conditions, negates, points or
+        # widens the line is no note of the platform's own.
+        for line in (
+            "WITHDRAW CLAIM 1 (withdrawn in part): only the port.",
+            "WITHDRAW CLAIM 1 (if L4 holds): the key is read elsewhere.",
+            "WITHDRAW CLAIM 1 (no, keep it)",
+            "WITHDRAW CLAIM 1 (see L4)",
+            "WITHDRAW CLAIM 1 (and 2): the key is read elsewhere.",
+            "WITHDRAW CLAIMS 1-2 (both): the key is read elsewhere.",
+            "WITHDRAW CLAIM 1 [written in round 1]: the key is read elsewhere.",
+            "WITHDRAW CLAIM 1 (written in round 1)(see L4): the key is read elsewhere.",
+            "WITHDRAW CLAIM 1 (written in round one): the key is read elsewhere.",
+        ):
+            read = read_withdrawals(line + "\n")
+            assert read.claims == (), line
+            assert read.unread == 1, line
+
+            answer = _block(SLEEP) + line + "\n"
             merge = merge_revision(_isr(IN_FORCE), _isr(answer), answer, 2)
 
-            assert [n for n, _s, _r in merge.withdrawn] == [1], line
-            assert merge.unread == 0, line
+            assert merge.withdrawn == (), line
+            assert merge.unread == 1, line
 
     def test_a_note_costs_its_length(self) -> None:
-        from malspark.pipeline.retry_merge import read_withdrawals
         from tests.linear_cost import assert_scales
 
         def build(size: int) -> Any:
             text = "WITHDRAW CLAIM 1 " + "(x " * size + "\n"
+            text += "WITHDRAW CLAIM 1 (written in round " + "1" * size + "\n"
+            text += "WITHDRAW CLAIM 1 " + "(written in round 1)" * size + ": x\n"
             text += "WITHDRAW CLAIM 1 (note) x\n" * size
+            text += "WITHDRAW CLAIM 1 (unchanged since round 1): x\n" * size
             return lambda: read_withdrawals(text)
 
         assert_scales(build, 20_000)
