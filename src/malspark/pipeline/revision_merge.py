@@ -120,7 +120,6 @@ from malspark.pipeline.retry_merge import (
     _WITHDRAW_OR_RETRACT_RE,
     _WITHDRAW_WORD_RE,
     _WITHDRAWING_OPENER_RE,
-    _parse_left_unread,
     line_key,
     read_own_withdrawals,
     read_withdrawals,
@@ -485,8 +484,7 @@ class RevisionMerge:
     block stands at another claim's place (:func:`_restated_best`);
     ``held_unread`` ``(number, sentence, blocking lines, why)`` per claim the
     line rule would have withdrawn, carried with its lines because the
-    revision began a claim the platform did not read
-    (``retry_merge._parse_left_unread``).
+    revision began a claim the platform did not read (:func:`claims_left_unread`).
     """
 
     merged: Any | None = None
@@ -1000,6 +998,21 @@ def claims_named_in_force(
     return named
 
 
+def claims_left_unread(answer: str) -> int:
+    """How many claims ``answer`` began that its reading did not read.
+
+    The revision's own reading of its claim blocks
+    (``base_agent.read_claim_blocks``): the claims begun and not read
+    (``ClaimRead.unread``, a block whose confidence cannot be read among
+    them) and the blocks that state no confidence. A note that parts of the
+    input were not analysed is no claim begun, and counts nothing.
+    """
+    from malspark.agents.base_agent import read_claim_blocks
+
+    reading = read_claim_blocks(str(answer or ""))
+    return int(reading.unread) + int(reading.without_confidence)
+
+
 def merge_revision(
     in_force: Any,
     revision: Any,
@@ -1009,6 +1022,7 @@ def merge_revision(
     unplaced: Sequence[UnplacedClaims] | None = None,
     expanded: Mapping[int, Sequence[ExpandedNaming]] | None = None,
     owned: Sequence[OwnedClaim] | None = None,
+    claims_unread: int | None = None,
 ) -> RevisionMerge:
     """``revision`` merged into ``in_force`` by claim (:class:`RevisionMerge`).
 
@@ -1027,8 +1041,11 @@ def merge_revision(
     mark on it, and that is stated. ``owned`` is each claim number written for no
     analyst that the lines' reading read as this analyst's: it is stated.
     Where ``unplaced``, ``expanded`` or ``owned`` is not given, it is read
-    from ``named`` (``debate_facts.NamedClaims``). ``in_force`` is not
-    changed.
+    from ``named`` (``debate_facts.NamedClaims``). ``claims_unread`` is how
+    many claims the revision began and its reading did not read
+    (:func:`claims_left_unread`); not given, it is read once from
+    ``answer``. With one or more, nothing is withdrawn by rule. ``in_force``
+    is not changed.
     """
     if unplaced is None:
         unplaced = tuple(getattr(named, "unplaced", ()) or ())
@@ -1135,7 +1152,8 @@ def merge_revision(
     not_spoken_to: list[tuple[int, str, int, str]] = []
     # Why the revision's reading left a claim it began unread, or "": then
     # nothing is withdrawn by rule (``held_unread``).
-    begun_unread = _parse_left_unread(revision)
+    left = claims_left_unread(answer) if claims_unread is None else int(claims_unread)
+    begun_unread = f"{left} claim block(s) it began were not read" if left > 0 else ""
     held_unread: list[tuple[int, str, tuple[int, ...], str]] = []
     for block in first:
         if block.number in written_again or block.number in withdrawn:
