@@ -560,6 +560,7 @@ class SignatureIndicators:
         self._own: dict[str, list[list[Any]]] = {}
         self._task_rows: dict[str, list[tuple[str, list[Any]]]] = {}
         self._names: list[str] = []
+        self._task_only: list[str] = []
         self._resolved: dict[str, tuple[list[dict[str, Any]], list[int]]] = {}
         # The report's process ids of each guest's pid a process row states.
         self._ids_of_guest: dict[str, dict[str, None]] = {}
@@ -610,6 +611,7 @@ class SignatureIndicators:
                     self._task_rows.setdefault(name, []).append((task, listed))
         # The names in the report's order: a task row of a name no signature
         # row has is the report's too, listed after them.
+        self._task_only = [name for name in self._task_rows if name not in named]
         named.update(dict.fromkeys(self._task_rows))
         self._names = list(named)
 
@@ -758,6 +760,11 @@ class SignatureIndicators:
     def names(self) -> list[str]:
         """Every signature name the report states indicators under, in the report's order."""
         return self._names
+
+    @property
+    def task_only(self) -> list[str]:
+        """The names only a task report's signatures state, which no signature row has."""
+        return [name for name in self._task_only if self.stated(name)]
 
     def process_ids(self, name: str) -> set[str]:
         """The report's ids of the processes ``name``'s indicators name, acting or acted on."""
@@ -1043,6 +1050,10 @@ def sandbox_signatures(
                 named[_signature_name(sig)] = None
             rows.append(row)
     answer: dict[str, Any] = {"signatures": rows, "total": len(signatures), **meta}
+    if indicators is not None and "next_offset" not in meta:
+        # A signature only a task report lists has no row: on the page that
+        # ends the rows it is announced after them, as the room allows.
+        named.update(dict.fromkeys(indicators.task_only))
     if indicators is None or not named:
         return answer
     return _with_indicators(answer, list(named), indicators, room)

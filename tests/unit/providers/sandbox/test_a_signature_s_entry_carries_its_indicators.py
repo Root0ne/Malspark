@@ -79,10 +79,13 @@ def _rows(report: SandboxReport, normalised_by: Any = TRIAGE) -> dict[str, dict[
     answer = sandbox_signatures(sandbox_document(report), normalised_by=normalised_by)
     rows = {row["name"]: dict(row) for row in answer["signatures"]}
     for name, count in (answer.get("indicators_stated") or {}).items():
-        rows[name]["indicators_stated"] = count
+        if name in rows:
+            rows[name]["indicators_stated"] = count
     for listed in answer.get("indicators") or []:
         one = dict(listed)
-        rows[one.pop("signature")].setdefault("indicators", []).append(one)
+        name = one.pop("signature")
+        if name in rows:
+            rows[name].setdefault("indicators", []).append(one)
     return rows
 
 
@@ -429,3 +432,45 @@ class TestThePagedCallOnTheLiveReport:
 
     def test_the_description_and_the_read_line_ask_for_the_report_s_process_id(self) -> None:
         assert "the report's process id" in " ".join(INDICATORS_READ.split())
+
+
+class TestASignatureOnlyATaskReportLists:
+    """Announced after the overview's own signatures, in the room left; no row is added."""
+
+    @staticmethod
+    def _document() -> dict[str, Any]:
+        task = _json("behavioral1.json")
+        task["signatures"] += [
+            {
+                "name": f"task only {k}",
+                "indicators": [{"procid": 84, "procid_target": 86, "description": f"t{k}"}],
+            }
+            for k in range(40)
+        ]
+        return sandbox_document(_read(task))
+
+    def test_it_is_counted_after_the_overview_s_own_and_the_rows_are_the_base_rows(self) -> None:
+        document = self._document()
+        answer = sandbox_signatures(document, normalised_by=TRIAGE)
+        assert json.dumps(answer["signatures"]) == json.dumps(
+            sandbox_signatures(document)["signatures"]
+        )
+        names = list(answer["indicators_stated"])
+        own = [row["name"] for row in answer["signatures"]]
+        assert names[: len(own)] == own
+        assert names[len(own) :] == [f"task only {k}" for k in range(40)]
+        listed = {one["signature"] for one in answer["indicators"]}
+        assert {f"task only {k}" for k in range(40)} <= listed
+
+    def test_what_the_room_leaves_out_of_it_is_counted_after_the_overview_s_own(self) -> None:
+        document = self._document()
+        bare = len(json.dumps(sandbox_signatures(document)))
+        answer = sandbox_signatures(document, normalised_by=TRIAGE, room=bare + 6000)
+        rest = [one["signature"] for one in answer["indicators_left_out"]]
+        assert rest and rest[-1] == "task only 39"
+        tasks = [i for i, name in enumerate(rest) if name.startswith("task only")]
+        assert tasks == list(range(len(rest) - len(tasks), len(rest)))
+
+    def test_a_paged_call_lists_it(self) -> None:
+        page = sandbox_signatures(self._document(), normalised_by=TRIAGE, signature="task only 7")
+        assert page["matched"] == 1 and page["indicators"][0]["description"] == "t7"
