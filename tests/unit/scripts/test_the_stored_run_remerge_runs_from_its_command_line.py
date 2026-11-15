@@ -65,7 +65,9 @@ def _stored_run(root: Path) -> Path:
     )
     run = root / "run"
     run.mkdir()
-    (run / "worker.log").write_text(_request(first) + "noise\n" + _request(second))
+    (run / "worker.log").write_text(
+        _request(first) + "noise\n" + _request(second), encoding="utf-8"
+    )
     return run
 
 
@@ -76,7 +78,7 @@ class TestTheScriptRunsEndToEnd:
 
         assert remerge_revisions.main([str(run), "--json", str(out)]) == 0
 
-        records = json.loads(out.read_text())
+        records = json.loads(out.read_text(encoding="utf-8"))
         assert [r["run"] for r in records] == ["run"]
         rows = records[0]["revisions"]
         assert [(r["round"], r["analyst"]) for r in rows] == [(1, "static")]
