@@ -1082,7 +1082,9 @@ def claims_left_unread_of(isr: Any) -> int:
 
     What the answer holds after its validation turn: one where it carries a
     reason that claims it began were not read (``AgentISR.claims_unread_reason``,
-    a note that parts of the input were not analysed among them), and each
+    set from the reader's own count, ``ClaimRead.unread``, which counts a claim
+    begun under a heading the reader does not read; a note that parts of the
+    input were not analysed among them), and each
     block that stated no confidence (``AgentISR.blocks_without_confidence``).
     The text is not read again: this is the count the revision node gives
     :func:`merge_revision`.

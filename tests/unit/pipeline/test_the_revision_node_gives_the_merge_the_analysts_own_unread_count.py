@@ -41,7 +41,7 @@ LINE = (
 )
 
 
-def _run(answer: str, revision: AgentISR) -> Any:
+def _run(answer: str, revision: AgentISR, in_force: str = IN_FORCE, line: str = LINE) -> Any:
     from malspark.core.config import MEDIATOR_AGENT_NAME
     from malspark.pipeline.nodes import make_revision_node
     from malspark.pipeline.state import AgentArgument
@@ -58,14 +58,14 @@ def _run(answer: str, revision: AgentISR) -> Any:
     container.load_chunked.return_value = [MagicMock(content="data")]
     container.load_data.return_value = "data"
     mediation = AgentArgument(
-        agent_name=MEDIATOR_AGENT_NAME, finding="revise", contradictions=[LINE], revise=["static"]
+        agent_name=MEDIATOR_AGENT_NAME, finding="revise", contradictions=[line], revise=["static"]
     )
     state = {
         "file_hash": "abc",
         "iteration_count": 1,
         "discussion_history": [mediation],
-        "reports": {"static": IN_FORCE},
-        "isr_reports": {"static": _isr(IN_FORCE)},
+        "reports": {"static": in_force},
+        "isr_reports": {"static": _isr(in_force)},
     }
     out = asyncio.run(make_revision_node(container)(state))
     return [c.claim for c in out["isr_reports"]["static"].claims]
@@ -102,3 +102,38 @@ class TestTheCountComesFromTheAnswer:
 
         assert claims_left_unread_of(isr) == 3
         assert claims_left_unread_of(_isr(_block(LOADER))) == 0
+
+
+class TestAClaimBegunUnderAHeadingTheReaderDoesNotRead:
+    # Claims in force 1-3; the blocking line names claim 3. The revision keeps
+    # claim 1, revises claim 2 and writes claim 3 again under a plain-dot
+    # heading with every field beneath: begun, and not read.
+    MUTEX = "The mutex name at 0x403962 is not recovered."
+    LINE_3 = (
+        "[analysts: STATIC ANALYST] STATIC claim 3 says the mutex name at 0x403962 is not "
+        "recovered; ev_0109 gives it. [blocking: ev_0109 shows the name argument.]"
+    )
+    ANSWER = (
+        f"CLAIM 1 (kept). {LOADER}\nEVIDENCE: [ev_0001]\nCONFIDENCE: 0.8\nTECHNIQUE: NONE\n---\n"
+        "CLAIM 2 (revised). 0x406328 returns 1 when the table at 0x4084e4 resolves.\n"
+        "EVIDENCE: [ev_0001]\nCONFIDENCE: 0.8\nTECHNIQUE: NONE\n---\n"
+        "CLAIM 3. The mutex name at 0x403962 is not recovered; ev_0109 holds only (0,0).\n"
+        "EVIDENCE: [ev_0109]\nCONFIDENCE: 0.6\nTECHNIQUE: NONE\n---\n"
+    )
+
+    def test_the_named_claim_stays_in_force(self) -> None:
+        import logging
+
+        from malspark.agents.static_analyst import StaticAnalyst
+
+        analyst = StaticAnalyst.__new__(StaticAnalyst)
+        analyst.name = "static"
+        analyst.logger = logging.getLogger("test")
+        # The analyst's own reading of its revision, as the revision node gets it.
+        revision = analyst._text_to_isr(self.ANSWER, revision_round=1)
+        assert len(revision.claims) == 2 and revision.claims_unread_reason
+
+        in_force = IN_FORCE + _block(self.MUTEX)
+        stands = _run(self.ANSWER, revision, in_force=in_force, line=self.LINE_3)
+
+        assert self.MUTEX in stands
