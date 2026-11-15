@@ -164,6 +164,7 @@ from malspark.pipeline.validation import (
     DECOMPILED_NOT_DESCRIBED_CODE,
     DESCRIBE_NOT_ASKED,
     LIBRARY_ONLY_CLAIMS_CODE,
+    OPENS_NO_TURN_OF_ITS_OWN,
     RETRY_DROP_KEPT,
     RETRY_DROP_NOT_ANSWERED,
     RETRY_DROP_WITHDRAWN,
@@ -10693,7 +10694,9 @@ class BaseAnalyst(BudgetMeter, ABC):
             return _settled(isr)
 
         # A claim whose sentence does not describe its technique opens no turn
-        # of its own (``validation.describe_stands_alone``). Standing alone, its
+        # of its own, as every code declared in
+        # ``validation.OPENS_NO_TURN_OF_ITS_OWN`` does
+        # (``validation.describe_stands_alone``). Standing alone, its
         # findings are recorded as not asked and published as findings nobody
         # was shown, the claims stand as written, and the judge's technique
         # question asks about each technique no claim naming it describes.
@@ -10715,7 +10718,7 @@ class BaseAnalyst(BudgetMeter, ABC):
             )
             # The rows are the validator's own, marked not asked; why is said in
             # the log beside them, never written into a row.
-            alone_count = sum(1 for v in recorded if v.code == CLAIM_DOES_NOT_DESCRIBE_CODE)
+            alone_count = sum(1 for v in recorded if v.code in OPENS_NO_TURN_OF_ITS_OWN)
             self.logger.info(
                 "Validation: %d describe finding(s) for '%s' stood alone; %s.",
                 alone_count,

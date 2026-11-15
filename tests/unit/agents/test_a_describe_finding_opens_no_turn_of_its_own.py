@@ -505,3 +505,163 @@ class TestTheJudgeQuestionBound:
             assert tid in published
             assert JUDGE_UNCONFIRMED_TECHNIQUE_MARKER in by_id[tid].note
             assert "no claim naming it uses the catalogue's terms for it" in by_id[tid].note
+
+
+@pytest.fixture(scope="module")
+def every_code() -> list[str]:
+    """Every code the source raises, by the validation-code register."""
+    from pathlib import Path
+
+    from scripts.validation_codes.register import build
+
+    return sorted(code.code for code in build(Path(__file__).resolve().parents[3]).codes)
+
+
+def undeclare(monkeypatch: pytest.MonkeyPatch) -> None:
+    """No code declared as opening no turn of its own: the turn as before the rule."""
+    monkeypatch.setattr("malspark.pipeline.validation.OPENS_NO_TURN_OF_ITS_OWN", frozenset[str]())
+
+
+@pytest.fixture
+def undeclared(monkeypatch: pytest.MonkeyPatch) -> None:
+    undeclare(monkeypatch)
+
+
+class TestWhichFindingOpensNoTurnIsDeclared:
+    """Whether a finding opens a turn of its own is read from the codes' declaration.
+
+    ``validation.OPENS_NO_TURN_OF_ITS_OWN`` is the one place that says it; the
+    turn rule, what is recorded and the log read it, never a code written into
+    the loop. With the declaration emptied the turn runs as it ran before the
+    rule, and the question, the card, the retry count and the judge's question
+    are byte-equal to the ones the declared rule gives wherever it asks.
+    """
+
+    def test_only_the_describe_check_is_declared(self) -> None:
+        from malspark.pipeline.validation import OPENS_NO_TURN_OF_ITS_OWN
+
+        assert OPENS_NO_TURN_OF_ITS_OWN == frozenset({CLAIM_DOES_NOT_DESCRIBE_CODE})
+
+    def test_every_other_code_opens_its_turn(self, every_code: list[str]) -> None:
+        from malspark.pipeline.validation import OPENS_NO_TURN_OF_ITS_OWN
+
+        assert CLAIM_DOES_NOT_DESCRIBE_CODE in every_code and len(every_code) > 50
+        alone = [
+            code
+            for code in every_code
+            if code not in OPENS_NO_TURN_OF_ITS_OWN
+            and (
+                describe_stands_alone([_v(code)])
+                or describe_stands_alone([_v(CLAIM_DOES_NOT_DESCRIBE_CODE), _v(code)])
+            )
+        ]
+        # A finding that could not run is never asked about (``_askable``).
+        assert alone == [CHECK_FAILED_CODE]
+
+    def test_a_declared_code_stands_alone_by_its_declaration(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setattr(
+            "malspark.pipeline.validation.OPENS_NO_TURN_OF_ITS_OWN",
+            frozenset({CLAIM_WITHOUT_CONFIDENCE_CODE}),
+        )
+        analyst = _Analyst([])
+
+        _result, published = _check(analyst, ANOTHER_ONLY)
+
+        assert analyst.seen_turns == []
+        (found,) = _recorded(analyst, CLAIM_WITHOUT_CONFIDENCE_CODE)
+        assert found.asked is False
+        assert published == [("survived", CLAIM_WITHOUT_CONFIDENCE_CODE)]
+        assert not describe_stands_alone([_v(CLAIM_DOES_NOT_DESCRIBE_CODE)])
+
+    def test_undeclared_the_describe_finding_opens_its_turn(self, undeclared: None) -> None:
+        analyst = _Analyst([DESCRIBE_ONLY])
+
+        _check(analyst, DESCRIBE_ONLY)
+
+        assert len(analyst.seen_turns) == 1
+        assert analyst.validation_fed_back == {CLAIM_DOES_NOT_DESCRIBE_CODE: 1}
+
+    def _joined(self) -> tuple[_Analyst, list[tuple[str, str]], AgentISR]:
+        analyst = _Analyst([RETRIED_BOTH])
+        result, published = _check(analyst, WITH_ANOTHER)
+        return analyst, published, result
+
+    def test_joined_the_turn_is_byte_equal_to_the_turn_without_the_rule(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        declared, declared_published, declared_result = self._joined()
+        undeclare(monkeypatch)
+        before, before_published, before_result = self._joined()
+
+        # The question and the card, as sent.
+        assert [[str(m.content) for m in turn] for turn in declared.seen_turns] == [
+            [str(m.content) for m in turn] for turn in before.seen_turns
+        ]
+        # The budget and what is counted and published.
+        assert declared.validation_retries == before.validation_retries == 1
+        assert declared.validation_fed_back == before.validation_fed_back
+        assert declared_published == before_published
+        assert [v.to_dict() for v in declared.validation_findings] == [
+            v.to_dict() for v in before.validation_findings
+        ]
+        assert declared_result.model_dump() == before_result.model_dump()
+
+    def test_the_judge_s_question_is_byte_equal_alone_and_joined(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # The technique stands in the judge's bundle: the question about it is
+        # the undescribed one, with the check's finding.
+        bundle = {
+            "objects": [
+                {
+                    "type": "attack-pattern",
+                    "id": "attack-pattern--0f1e2d3c-4b5a-4968-8776-655443332211",
+                    "name": "OS Credential Dumping",
+                    "external_references": [
+                        {"source_name": "mitre-attack", "external_id": UNDESCRIBED}
+                    ],
+                }
+            ]
+        }
+
+        def asked(first: str, replies: list[str]) -> list[Any]:
+            analyst = _Analyst(replies)
+            result, _published = _check(analyst, first)
+            questions, _not_asked = judge_questions(bundle, {"reverser": result}, attck=knowledge)
+            return [(q.technique_id, q.kind, q.check) for q in questions]
+
+        alone = asked(DESCRIBE_ONLY, [])
+        joined = asked(WITH_ANOTHER, [RETRIED_BOTH])
+        undeclare(monkeypatch)
+        # Without the rule the analyst is asked and keeps the claim as written.
+        before_alone = asked(DESCRIBE_ONLY, [DESCRIBE_ONLY])
+        before_joined = asked(WITH_ANOTHER, [RETRIED_BOTH])
+
+        expected = [
+            (UNDESCRIBED, "undescribed", undescribed_technique_finding(UNDESCRIBED, knowledge, 1))
+        ]
+        assert alone == before_alone == expected
+        assert joined == before_joined == expected
+
+    def test_with_feedback_off_the_turn_is_as_without_the_rule(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from malspark.core.settings_overrides import build_settings
+
+        built = build_settings({"validation": {"feedback": "record_only"}})
+        monkeypatch.setattr("malspark.core.config.get_settings", lambda: built)
+
+        def run(first: str) -> tuple[list[Any], list[dict[str, str]], list[tuple[str, str]]]:
+            analyst = _Analyst([])
+            _result, published = _check(analyst, first)
+            return analyst.seen_turns, [v.to_dict() for v in analyst.validation_findings], published
+
+        declared = [run(DESCRIBE_ONLY), run(WITH_ANOTHER)]
+        undeclare(monkeypatch)
+        assert declared == [run(DESCRIBE_ONLY), run(WITH_ANOTHER)]
+        # Alone no turn is opened; beside a claim with no confidence line, a
+        # finding asked in every mode, the turn is the same one.
+        assert declared[0][0] == []
+        assert len(declared[1][0]) == 1
