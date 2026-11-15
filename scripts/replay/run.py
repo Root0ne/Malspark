@@ -31,6 +31,10 @@ same layout (``--job-dir``, a temporary one by default) and replays that.
 A ``--job-dir/<job id>`` that already holds a stored run is refused, before
 the database is read, unless ``--overwrite`` is given.
 
+``replay_run(run, show_text=False)`` is the same replay of one run directory as
+a function: it returns the run's record (what ``--json`` writes for it), and
+the command line goes through it.
+
 The stored runs are read and never written: every file of each run's
 directory is digested before and after, and the replay fails when a digest
 changed. No network is reached and nothing is written outside the output
@@ -135,25 +139,37 @@ def _write(path: Path | None, value: Any) -> None:
         write_json(path, value, indent=1, sort_keys=True)
 
 
-def _replay(runs: list[Path], show_text: bool) -> list[dict[str, Any]]:
-    """Each run replayed with the rules this process imports."""
+def replay_run(run: Path, *, show_text: bool = False) -> dict[str, Any]:
+    """One stored run directory replayed with the rules this process imports, as its record.
+
+    The record is what ``--json`` writes for the run: every part's codes, entry
+    ids, counts and each finding's ``statements``, and with ``show_text`` the
+    words beside them. Every file of ``run`` is digested before and after
+    (``record["stored"]["files"]``) and the replay raises
+    :class:`scripts.replay.stored.StoredRunChanged` when a digest changed.
+    Nothing is written but a temporary directory of the replay's own, removed
+    on return; no network is reached. A part that raised is named in the record
+    (``scripts.replay.record.errors``), not raised here.
+    """
     cache = Path(tempfile.mkdtemp(prefix="malspark-replay-"))
     previous = prepare_process(cache)
     try:
-        from scripts.replay.rules import replay_run
+        from scripts.replay import rules
         from scripts.replay.stored import read_run
 
-        records: list[dict[str, Any]] = []
-        for run in runs:
-            before = digests(run)
-            record = replay_run(read_run(run), show_text=show_text)
-            check_unchanged(before, digests(run))
-            record["stored"] = {"files": before}
-            records.append(record)
-        return records
+        before = digests(run)
+        record = rules.replay_run(read_run(run), show_text=show_text)
+        check_unchanged(before, digests(run))
+        record["stored"] = {"files": before}
+        return record
     finally:
         restore_process(previous)
         shutil.rmtree(cache, ignore_errors=True)
+
+
+def _replay(runs: list[Path], show_text: bool) -> list[dict[str, Any]]:
+    """Each run replayed with the rules this process imports (:func:`replay_run`)."""
+    return [replay_run(run, show_text=show_text) for run in runs]
 
 
 def _compare(
