@@ -1283,9 +1283,7 @@ def merge_revision(
             not_spoken_to=tuple(not_spoken_to),
             held_unread=tuple(held_unread),
             owned=owned,
-            restated_by=tuple(
-                sorted((n, revised[i].number) for n, i in replaced_by.items() if n in replaced)
-            ),
+            restated_by=tuple(sorted((n, revised[i].number) for n, i in replaced_by.items())),
         )
 
     # In the order of the answer in force: each claim carried where it stood,
@@ -1343,7 +1341,7 @@ def merge_revision(
             sorted(
                 (n, now[id(revised[i].claims[0])])
                 for n, i in replaced_by.items()
-                if n in replaced and id(revised[i].claims[0]) in now
+                if id(revised[i].claims[0]) in now
             )
         ),
         beside=tuple(beside_rows),

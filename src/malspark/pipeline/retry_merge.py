@@ -161,16 +161,10 @@ OWN_NEGATION_REACH = 3
 #   it ("... was not shown, and I withdraw it");
 OWN_CLAUSE_MARKS = (",", ";", ":")
 OWN_BRACKETS = (("(", ")"), ("[", "]"))
-# - the words of another's act, and the word that names its agent within a
-#   few words after one: someone else's act on the claim is not the
-#   analyst's ("My claim 4 was rejected by the mediator"). An agent that is
-#   the author is the author's act ("rejected by me"), and an agent after a
-#   word that names what took the claim's place ("superseded by claim 7")
-#   blocks nothing;
+# - the words of another's act, which give a sentence another subject (below),
+#   and the words that name the author as an agent ("rejected by me");
 OWN_OTHERS_ACT_WORDS = ("rejected", "disputed", "contested", "challenged", "questioned")
-OWN_AGENT_WORDS = ("by",)
 OWN_AUTHOR_AGENTS = ("me", "us", "myself", "ourselves")
-OWN_AGENT_REACH = 4
 # - what may stand right before a word that says it withdrawn: a word of the
 #   passive or an adverb, a mark or the item's start ("is withdrawn", "...).
 #   Withdrawn as stated"). After any other word ("Peers rejected it") the
@@ -333,15 +327,6 @@ _OWN_SELF_REPORT_RE = re.compile(
 _WORD_RE = re.compile(r"[\w'’]++")
 # How far before the withdrawing word those words are read, in characters.
 _OWN_NEGATION_WINDOW = 80
-_OWN_AGENT = "|".join(OWN_AGENT_WORDS)
-# A word of another's act with an agent within a few words after it, in its
-# sentence; the agent is not the author.
-_OWN_OTHERS_ACT_RE = re.compile(
-    rf"\b(?:{'|'.join(OWN_OTHERS_ACT_WORDS)})\b"
-    rf"(?=(?:[\s,*_`]++(?!(?:{_OWN_AGENT})\b)[^\s.!?;:]++){{0,{OWN_AGENT_REACH}}}+"
-    rf"[\s,*_`]++(?:{_OWN_AGENT})\s++(?!(?:{'|'.join(OWN_AUTHOR_AGENTS)})\b))",
-    re.IGNORECASE,
-)
 _OWN_PASSIVE_BEFORE_RE = re.compile(
     rf"(?:^|[.!?:;,()\[\]\"'“”—–-]|\b(?:{'|'.join(OWN_PASSIVE_WORDS)})\b)[\s*_`]*+$",
     re.IGNORECASE,
@@ -401,8 +386,6 @@ def _quoted_spans(item: str) -> list[tuple[int, int]]:
         after = item[at + 1] if at + 1 < len(item) else " "
         word_before = before.isalnum() or before == "_"
         word_after = after.isalnum() or after == "_"
-        if word_before and word_after:
-            continue
         if opened is not None:
             if mark == closing_of[opened] and not word_after:
                 found.append((start, at + 1))
@@ -566,10 +549,9 @@ def read_own_withdrawals(
     Read whole, the item must say nothing against the withdrawal, so it reads
     as nothing where a word of :data:`OWN_NEGATING_WORDS` governs the
     withdrawing word (within :data:`OWN_NEGATION_REACH` words before it, in its
-    sentence, outside brackets and quotations); a word of
-    :data:`OWN_OTHERS_ACT_WORDS` with an agent after it that is not the author
-    (:data:`OWN_AGENT_WORDS`, :data:`OWN_AUTHOR_AGENTS`) or a word of
-    :data:`OWN_REPORTING_WORDS` stands between the reference and a withdrawn
+    sentence, outside brackets and quotations); another agent than the
+    author follows a withdrawn word ("rejected by the mediator", above); a
+    word of :data:`OWN_REPORTING_WORDS` stands between the reference and a withdrawn
     word; a word of :data:`OWN_KEEPING_WORDS` or :data:`OWN_CONTRASTING_WORDS`
     stands anywhere after the reference, unless the withdrawal is the
     author's verb on a pronoun in a later sentence; for a verb on a pronoun,
@@ -618,7 +600,6 @@ def read_own_withdrawals(
             + ([m.start() for m in named_re.finditer(item)] if named_re is not None else [])
         )
         reported_at = [m.start() for m in _OWN_REPORTING_RE.finditer(item)]
-        acted_at = [m.start() for m in _OWN_OTHERS_ACT_RE.finditer(item)]
         conditional_at = [m.start() for m in _OWN_CONDITIONAL_RE.finditer(item)]
         quoted = _quoted_spans(item)
         aside = _merged([*quoted, *_bracketed_spans(item)])
@@ -673,8 +654,7 @@ def read_own_withdrawals(
                         (
                             passive
                             and (
-                                _any_between(acted_at, end, word_end)
-                                or _any_between(reported_at, reported_from, word_at)
+                                _any_between(reported_at, reported_from, word_at)
                                 or _any_between(foreign_at, list_end, word_at)
                                 or not _OWN_WITHDRAWN_END_RE.match(item, word_end)
                                 or not _OWN_PASSIVE_BEFORE_RE.search(
