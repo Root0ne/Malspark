@@ -46,6 +46,7 @@ from malspark.pipeline.validation import (
     ValidationTally,
     Violation,
     citation_violations,
+    declaring,
     misstated_entry_contents,
     retry_with_feedback,
     schema_violations,
@@ -433,6 +434,8 @@ def _answer_prose(payload: Any) -> dict[str, Any]:
     out: list[dict[str, Any]] = []
     for row in rows if isinstance(rows, list) else []:
         if not isinstance(row, dict):
+            # An empty reply keeps the row's position, which a finding's place names.
+            out.append({"answer": "", "evidence_ids": []})
             continue
         text = row.get("answer")
         ids = row.get("evidence_ids")
@@ -714,12 +717,21 @@ async def answer_questions(
                 # The answers' prose is read as the narrative's is: its
                 # bracketed citations, a value quoted beside an entry that
                 # does not hold it, an entry said to hold nothing.
-                lambda p: citation_violations(
-                    _answer_prose(p), citable, prose=("answers",), items=items
+                declaring(
+                    QuestionRoundOutput,
+                    lambda p: citation_violations(
+                        _answer_prose(p), citable, prose=("answers",), items=items
+                    ),
                 ),
-                lambda p: wrong_entry_citations(_answer_prose(p), evidence_texts),
-                lambda p: misstated_entry_contents(
-                    _answer_prose(p), evidence_texts, prose=("answers",)
+                declaring(
+                    QuestionRoundOutput,
+                    lambda p: wrong_entry_citations(_answer_prose(p), evidence_texts),
+                ),
+                declaring(
+                    QuestionRoundOutput,
+                    lambda p: misstated_entry_contents(
+                        _answer_prose(p), evidence_texts, prose=("answers",)
+                    ),
                 ),
             ],
             parse=_parse,

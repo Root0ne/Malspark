@@ -75,3 +75,39 @@ def test_the_run_summary_counts_every_finding_left() -> None:
 
     assert "| Unresolved findings | 8 |" in text
     assert "(left 7 times)" in text
+
+
+def test_two_rows_equal_but_for_their_place_are_one_row_listing_both_places() -> None:
+    row = {"agent": "narrative", "code": CODE, "message": "m"}
+    placed = [
+        {**row, "statements": "body#1"},
+        {**row, "statements": "body#3,items.0"},
+        {**row, "statements": "body#1"},
+    ]
+
+    (folded,) = folded_rows(placed)
+
+    assert folded == {**row, "statements": "body#1,body#3,items.0", "count": "3"}
+    assert folded_rows([folded]) == [folded]
+    assert folded_rows([{**row, "statements": "a"}, row]) == [
+        {**row, "statements": "a", "count": "2"}
+    ]
+
+
+def test_section_13_prints_two_rows_equal_but_for_their_place_as_one_line() -> None:
+    row = {"agent": "network", "code": CODE, "message": "CLAIM 'x' carries TECHNIQUE T1001."}
+    report = MalwareReport(
+        identity=SampleIdentity(hashes=FileHashes(sha256="a" * 64)),
+        verdict="Malware",
+        run_summary={
+            "validation": {
+                "retries": 1,
+                "unresolved": [{**row, "statements": "body#0"}, {**row, "statements": "body#2"}],
+            }
+        },
+    )
+
+    markdown = MarkdownRenderer().render(report)
+
+    assert markdown.count("CLAIM 'x' carries TECHNIQUE T1001.") == 1
+    assert f"`{CODE}` (network) (left 2 times): " in markdown

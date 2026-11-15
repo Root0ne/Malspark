@@ -21,7 +21,7 @@ from unittest.mock import MagicMock
 from malspark.agents.base_agent import read_claim_blocks
 from malspark.pipeline.claim_drops import dropped_values
 from malspark.pipeline.nodes import make_revision_node
-from malspark.pipeline.revision_merge import merge_revision
+from malspark.pipeline.revision_merge import claims_named_in_force, merge_revision
 from malspark.schemas.isr_models import AgentISR, ClaimEvidence, carried_note
 
 
@@ -243,9 +243,30 @@ class TestAWithdrawalStaysExplicit:
         # again without its subject.
         assert merge.beside == ((1, LOADER, 3, ("0x40cf14",)),)
 
-    def test_a_blocking_line_withdraws_the_claim_a_correction_omitted_the_subject_of(
+    def test_a_blocking_line_on_the_claim_lets_the_correction_omitting_the_subject_replace_it(
         self,
     ) -> None:
+        # The block answers the line that speaks to the claim: no address is asked.
+        corrected = (
+            "0x40cea4 reads the URL list from the file at 0x4103b8 and 0x40c964 decrypts it."
+        )
+        answer = _block(corrected) + _block(GATE_AGAIN)
+        in_force = _isr(IN_FORCE)
+        line = (
+            "[analysts: STATIC ANALYST] STATIC claim 1 says 0x40cf14 loads the URL list. "
+            "[blocking: the listing shows another call.]"
+        )
+        named = claims_named_in_force(["", "", line], ["static"], {"static": in_force})
+
+        merge = merge_revision(in_force, _isr(answer), answer, 2, named.get("static"))
+
+        assert merge.replaced == (1, 2) and merge.withdrawn_by_rule == ()
+        assert merge.beside == () and merge.merged is None
+
+    def test_a_blocking_line_that_speaks_to_no_claim_itself_leaves_it_carried_beside(
+        self,
+    ) -> None:
+        # The block restates the claim, so the line rule withdraws nothing.
         corrected = (
             "0x40cea4 reads the URL list from the file at 0x4103b8 and 0x40c964 decrypts it."
         )
@@ -253,15 +274,8 @@ class TestAWithdrawalStaysExplicit:
 
         merge = merge_revision(_isr(IN_FORCE), _isr(answer), answer, 2, {1: [(3, True)]})
 
-        assert merge.withdrawn_by_rule == (
-            (
-                1,
-                LOADER,
-                "named by blocking line L3 of the round-2 mediation; the revision did not "
-                "restate it",
-            ),
-        )
-        assert merge.merged is None
+        assert merge.replaced == (2,) and merge.withdrawn_by_rule == ()
+        assert merge.beside == ((1, LOADER, 3, ("0x40cf14",)),)
 
 
 class TestAClaimCarriedBesideItsRestatementIsMarked:

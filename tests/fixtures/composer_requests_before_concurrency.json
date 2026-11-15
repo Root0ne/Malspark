@@ -46,87 +46,104 @@
    {
     "agent": "composer:packing_obfuscation",
     "code": "narrative.ungrounded_capability",
-    "message": "the text claims downloader or dropper, which nothing in this run establishes \u2014 no T1105, T1204 and 2 more technique, no matching evidence section, and no analyst said it (in: 'The packing_obfuscation evidence shows a packed loader.'). This run established T1486, and has no evidence sections. Describe what was found, or drop the claim."
+    "message": "the text claims downloader or dropper, which nothing in this run establishes \u2014 no T1105, T1204 and 2 more technique, no matching evidence section, and no analyst said it (in: 'The packing_obfuscation evidence shows a packed loader.'). This run established T1486, and has no evidence sections. Describe what was found, or drop the claim.",
+    "statements": "body"
    },
    {
     "agent": "composer:packing_obfuscation",
     "code": "narrative.ungrounded_capability",
-    "message": "the text claims anti-analysis, which nothing in this run establishes \u2014 no T1562, T1564 and 5 more technique, no matching evidence section, and no analyst said it (in: 'The packing_obfuscation evidence shows a packed loader.'). This run established T1486, and has no evidence sections. Describe what was found, or drop the claim."
+    "message": "the text claims anti-analysis, which nothing in this run establishes \u2014 no T1562, T1564 and 5 more technique, no matching evidence section, and no analyst said it (in: 'The packing_obfuscation evidence shows a packed loader.'). This run established T1486, and has no evidence sections. Describe what was found, or drop the claim.",
+    "statements": "body"
    },
    {
     "agent": "composer:string_resolution",
     "code": "narrative.ungrounded_capability",
-    "message": "the text claims downloader or dropper, which nothing in this run establishes \u2014 no T1105, T1204 and 2 more technique, no matching evidence section, and no analyst said it (in: 'The string_resolution evidence shows a packed loader.'). This run established T1486, and has no evidence sections. Describe what was found, or drop the claim."
+    "message": "the text claims downloader or dropper, which nothing in this run establishes \u2014 no T1105, T1204 and 2 more technique, no matching evidence section, and no analyst said it (in: 'The string_resolution evidence shows a packed loader.'). This run established T1486, and has no evidence sections. Describe what was found, or drop the claim.",
+    "statements": "body"
    },
    {
     "agent": "composer:string_resolution",
     "code": "narrative.ungrounded_capability",
-    "message": "the text claims anti-analysis, which nothing in this run establishes \u2014 no T1562, T1564 and 5 more technique, no matching evidence section, and no analyst said it (in: 'The string_resolution evidence shows a packed loader.'). This run established T1486, and has no evidence sections. Describe what was found, or drop the claim."
+    "message": "the text claims anti-analysis, which nothing in this run establishes \u2014 no T1562, T1564 and 5 more technique, no matching evidence section, and no analyst said it (in: 'The string_resolution evidence shows a packed loader.'). This run established T1486, and has no evidence sections. Describe what was found, or drop the claim.",
+    "statements": "body"
    },
    {
     "agent": "composer:discovery",
     "code": "narrative.ungrounded_capability",
-    "message": "the text claims downloader or dropper, which nothing in this run establishes \u2014 no T1105, T1204 and 2 more technique, no matching evidence section, and no analyst said it (in: 'The discovery evidence shows a packed loader.'). This run established T1486, and has no evidence sections. Describe what was found, or drop the claim."
+    "message": "the text claims downloader or dropper, which nothing in this run establishes \u2014 no T1105, T1204 and 2 more technique, no matching evidence section, and no analyst said it (in: 'The discovery evidence shows a packed loader.'). This run established T1486, and has no evidence sections. Describe what was found, or drop the claim.",
+    "statements": "body"
    },
    {
     "agent": "composer:discovery",
     "code": "narrative.ungrounded_capability",
-    "message": "the text claims anti-analysis, which nothing in this run establishes \u2014 no T1562, T1564 and 5 more technique, no matching evidence section, and no analyst said it (in: 'The discovery evidence shows a packed loader.'). This run established T1486, and has no evidence sections. Describe what was found, or drop the claim."
+    "message": "the text claims anti-analysis, which nothing in this run establishes \u2014 no T1562, T1564 and 5 more technique, no matching evidence section, and no analyst said it (in: 'The discovery evidence shows a packed loader.'). This run established T1486, and has no evidence sections. Describe what was found, or drop the claim.",
+    "statements": "body"
    },
    {
     "agent": "composer:persistence_detail",
     "code": "narrative.ungrounded_capability",
-    "message": "the text claims persistence, which nothing in this run establishes \u2014 no T1053, T1136 and 6 more technique, no matching evidence section, and no analyst said it (in: 'The persistence_detail evidence shows a packed loader.'). This run established T1486, and has no evidence sections. Describe what was found, or drop the claim."
+    "message": "the text claims persistence, which nothing in this run establishes \u2014 no T1053, T1136 and 6 more technique, no matching evidence section, and no analyst said it (in: 'The persistence_detail evidence shows a packed loader.'). This run established T1486, and has no evidence sections. Describe what was found, or drop the claim.",
+    "statements": "body"
    },
    {
     "agent": "composer:persistence_detail",
     "code": "narrative.ungrounded_capability",
-    "message": "the text claims downloader or dropper, which nothing in this run establishes \u2014 no T1105, T1204 and 2 more technique, no matching evidence section, and no analyst said it (in: 'The persistence_detail evidence shows a packed loader.'). This run established T1486, and has no evidence sections. Describe what was found, or drop the claim."
+    "message": "the text claims downloader or dropper, which nothing in this run establishes \u2014 no T1105, T1204 and 2 more technique, no matching evidence section, and no analyst said it (in: 'The persistence_detail evidence shows a packed loader.'). This run established T1486, and has no evidence sections. Describe what was found, or drop the claim.",
+    "statements": "body"
    },
    {
     "agent": "composer:persistence_detail",
     "code": "narrative.ungrounded_capability",
-    "message": "the text claims anti-analysis, which nothing in this run establishes \u2014 no T1562, T1564 and 5 more technique, no matching evidence section, and no analyst said it (in: 'The persistence_detail evidence shows a packed loader.'). This run established T1486, and has no evidence sections. Describe what was found, or drop the claim."
+    "message": "the text claims anti-analysis, which nothing in this run establishes \u2014 no T1562, T1564 and 5 more technique, no matching evidence section, and no analyst said it (in: 'The persistence_detail evidence shows a packed loader.'). This run established T1486, and has no evidence sections. Describe what was found, or drop the claim.",
+    "statements": "body"
    },
    {
     "agent": "composer:evasion_antiforensics",
     "code": "narrative.ungrounded_capability",
-    "message": "the text claims downloader or dropper, which nothing in this run establishes \u2014 no T1105, T1204 and 2 more technique, no matching evidence section, and no analyst said it (in: 'The evasion_antiforensics evidence shows a packed loader.'). This run established T1486, and has no evidence sections. Describe what was found, or drop the claim."
+    "message": "the text claims downloader or dropper, which nothing in this run establishes \u2014 no T1105, T1204 and 2 more technique, no matching evidence section, and no analyst said it (in: 'The evasion_antiforensics evidence shows a packed loader.'). This run established T1486, and has no evidence sections. Describe what was found, or drop the claim.",
+    "statements": "body"
    },
    {
     "agent": "composer:evasion_antiforensics",
     "code": "narrative.ungrounded_capability",
-    "message": "the text claims anti-analysis, which nothing in this run establishes \u2014 no T1562, T1564 and 5 more technique, no matching evidence section, and no analyst said it (in: 'The evasion_antiforensics evidence shows a packed loader.'). This run established T1486, and has no evidence sections. Describe what was found, or drop the claim."
+    "message": "the text claims anti-analysis, which nothing in this run establishes \u2014 no T1562, T1564 and 5 more technique, no matching evidence section, and no analyst said it (in: 'The evasion_antiforensics evidence shows a packed loader.'). This run established T1486, and has no evidence sections. Describe what was found, or drop the claim.",
+    "statements": "body"
    },
    {
     "agent": "composer:evasion_antiforensics",
     "code": "narrative.ungrounded_capability",
-    "message": "the text claims anti-forensics, which nothing in this run establishes \u2014 no T1070 technique, no matching evidence section, and no analyst said it (in: 'The evasion_antiforensics evidence shows a packed loader.'). This run established T1486, and has no evidence sections. Describe what was found, or drop the claim."
+    "message": "the text claims anti-forensics, which nothing in this run establishes \u2014 no T1070 technique, no matching evidence section, and no analyst said it (in: 'The evasion_antiforensics evidence shows a packed loader.'). This run established T1486, and has no evidence sections. Describe what was found, or drop the claim.",
+    "statements": "body"
    },
    {
     "agent": "composer:command_and_control",
     "code": "narrative.ungrounded_capability",
-    "message": "the text claims downloader or dropper, which nothing in this run establishes \u2014 no T1105, T1204 and 2 more technique, no matching evidence section, and no analyst said it (in: 'The command_and_control evidence shows a packed loader.'). This run established T1486, and has no evidence sections. Describe what was found, or drop the claim."
+    "message": "the text claims downloader or dropper, which nothing in this run establishes \u2014 no T1105, T1204 and 2 more technique, no matching evidence section, and no analyst said it (in: 'The command_and_control evidence shows a packed loader.'). This run established T1486, and has no evidence sections. Describe what was found, or drop the claim.",
+    "statements": "body"
    },
    {
     "agent": "composer:command_and_control",
     "code": "narrative.ungrounded_capability",
-    "message": "the text claims anti-analysis, which nothing in this run establishes \u2014 no T1562, T1564 and 5 more technique, no matching evidence section, and no analyst said it (in: 'The command_and_control evidence shows a packed loader.'). This run established T1486, and has no evidence sections. Describe what was found, or drop the claim."
+    "message": "the text claims anti-analysis, which nothing in this run establishes \u2014 no T1562, T1564 and 5 more technique, no matching evidence section, and no analyst said it (in: 'The command_and_control evidence shows a packed loader.'). This run established T1486, and has no evidence sections. Describe what was found, or drop the claim.",
+    "statements": "body"
    },
    {
     "agent": "composer:payloads",
     "code": "narrative.ungrounded_capability",
-    "message": "the text claims downloader or dropper, which nothing in this run establishes \u2014 no T1105, T1204 and 2 more technique, no matching evidence section, and no analyst said it (in: 'The payloads evidence shows a packed loader.'). This run established T1486, and has no evidence sections. Describe what was found, or drop the claim."
+    "message": "the text claims downloader or dropper, which nothing in this run establishes \u2014 no T1105, T1204 and 2 more technique, no matching evidence section, and no analyst said it (in: 'The payloads evidence shows a packed loader.'). This run established T1486, and has no evidence sections. Describe what was found, or drop the claim.",
+    "statements": "body"
    },
    {
     "agent": "composer:payloads",
     "code": "narrative.ungrounded_capability",
-    "message": "the text claims anti-analysis, which nothing in this run establishes \u2014 no T1562, T1564 and 5 more technique, no matching evidence section, and no analyst said it (in: 'The payloads evidence shows a packed loader.'). This run established T1486, and has no evidence sections. Describe what was found, or drop the claim."
+    "message": "the text claims anti-analysis, which nothing in this run establishes \u2014 no T1562, T1564 and 5 more technique, no matching evidence section, and no analyst said it (in: 'The payloads evidence shows a packed loader.'). This run established T1486, and has no evidence sections. Describe what was found, or drop the claim.",
+    "statements": "body"
    },
    {
     "agent": "composer:host_identifiers",
     "code": "report.identifier_uncited",
-    "message": "identifier 1 (RESTORE_FILES.example.txt) cites no entry in this run's evidence. Cite the ev_ id of the entry the value was read in, or leave the identifier out."
+    "message": "identifier 1 (RESTORE_FILES.example.txt) cites no entry in this run's evidence. Cite the ev_ id of the entry the value was read in, or leave the identifier out.",
+    "statements": "identifiers.0"
    }
   ]
  }

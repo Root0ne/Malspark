@@ -553,7 +553,9 @@ class TestAgainstTheSequentialBase:
     the publish rule's answer for each row: those are the only changes. The
     host identifier request was re-pinned again when its contract came to leave
     out the field code writes (``held_in``) and to list the kind and use words
-    of the declared vocabularies: those are the only changes.
+    of the declared vocabularies: those are the only changes. The tally's
+    unresolved rows were re-pinned when a finding came to carry the places of
+    its statements (``statements``): that key is the only change.
     """
 
     def test_the_requests_and_the_report_are_those_of_the_base(self) -> None:

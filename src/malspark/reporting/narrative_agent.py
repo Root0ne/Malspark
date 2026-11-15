@@ -58,7 +58,9 @@ from malspark.pipeline.validation import (
     ValidationTally,
     Violation,
     absence_holders_note,
+    answer_of,
     citation_violations,
+    declaring,
     key_finding_citation_violations,
     ledger_absence_contradictions,
     misstated_entry_contents,
@@ -1100,20 +1102,23 @@ class NarrativeAgent:
                 _run,
                 list(messages),
                 [
-                    lambda p: schema_violations(
-                        NarrativeOutput, p, code="narrative.schema", answer=answer_read[0]
-                    ),
-                    lambda p: narrative_capability_violations(p, grounding),
-                    lambda p: key_finding_citation_violations(p, known_ids, self._items),
-                    lambda p: citation_violations(
-                        p, citable, prose=NARRATIVE_PROSE, items=self._items
-                    ),
-                    lambda p: wrong_entry_citations(p, evidence, prose=NARRATIVE_PROSE),
-                    lambda p: misstated_entry_contents(p, evidence, prose=NARRATIVE_PROSE),
-                    lambda p: ledger_absence_contradictions(p, evidence),
-                    technique_name_violations,
-                    lambda p: recommendation_indicator_violations(p, answers),
-                    lambda p: recommendation_technique_violations(p, published),
+                    declaring(NarrativeOutput, check)
+                    for check in [
+                        lambda p: schema_violations(
+                            NarrativeOutput, p, code="narrative.schema", answer=answer_read[0]
+                        ),
+                        lambda p: narrative_capability_violations(p, grounding),
+                        lambda p: key_finding_citation_violations(p, known_ids, self._items),
+                        lambda p: citation_violations(
+                            p, citable, prose=NARRATIVE_PROSE, items=self._items
+                        ),
+                        lambda p: wrong_entry_citations(p, evidence, prose=NARRATIVE_PROSE),
+                        lambda p: misstated_entry_contents(p, evidence, prose=NARRATIVE_PROSE),
+                        lambda p: ledger_absence_contradictions(p, evidence),
+                        technique_name_violations,
+                        lambda p: recommendation_indicator_violations(p, answers),
+                        lambda p: recommendation_technique_violations(p, published),
+                    ]
                 ],
                 parse=_parse,
                 on_feedback=_on_feedback,
@@ -1335,17 +1340,18 @@ class NarrativeAgent:
         path that usually works.
         """
         answer = output.model_dump()
-        found = [
-            *narrative_capability_violations(answer, grounding),
-            *key_finding_citation_violations(answer, known_ids or [], self._items),
-            *citation_violations(answer, citable, prose=NARRATIVE_PROSE, items=self._items),
-            *wrong_entry_citations(answer, evidence, prose=NARRATIVE_PROSE),
-            *misstated_entry_contents(answer, evidence, prose=NARRATIVE_PROSE),
-            *ledger_absence_contradictions(answer, evidence),
-            *technique_name_violations(answer),
-            *(recommendation_indicator_violations(answer, answers) if answers else []),
-            *recommendation_technique_violations(answer, published),
-        ]
+        with answer_of(NarrativeOutput):
+            found = [
+                *narrative_capability_violations(answer, grounding),
+                *key_finding_citation_violations(answer, known_ids or [], self._items),
+                *citation_violations(answer, citable, prose=NARRATIVE_PROSE, items=self._items),
+                *wrong_entry_citations(answer, evidence, prose=NARRATIVE_PROSE),
+                *misstated_entry_contents(answer, evidence, prose=NARRATIVE_PROSE),
+                *ledger_absence_contradictions(answer, evidence),
+                *technique_name_violations(answer),
+                *(recommendation_indicator_violations(answer, answers) if answers else []),
+                *recommendation_technique_violations(answer, published),
+            ]
         self.validation_tally.count(found)
         self._record_ungrounded(found, asked=False)
         return output

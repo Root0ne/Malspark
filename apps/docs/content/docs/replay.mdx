@@ -28,6 +28,11 @@ written), `events.json` and `job.json`. Several runs may be named at once.
 `--work` or `--job-dir`) is refused. The exit status is 0 when every part
 replayed or was named as not replayable, and 2 when a part raised: a crash is
 not a decision, and the part that raised is printed first, marked `[raised]`.
+From Python, `scripts.replay.run.replay_run(run, show_text=False)` replays one run
+directory and returns its record, the same one `--json` writes for it. Every
+file of the run is digested before and after and the call raises
+`StoredRunChanged` when one changed; nothing is written but a temporary
+directory of the replay's own. The command line goes through it.
 A replay over many runs can be held to a memory cap with
 `python scripts/dev/run_capped.py -- python scripts/replay/run.py …` (see
 [Development](/docs/development/#heavy-local-runs-in-a-capped-scope)).
@@ -69,6 +74,31 @@ digests. `--show-text` adds the words beside them, in fields of their own
 compared on the value-free ones. The judge's own labels for its objects are
 digested in a finding's path too (`malware--<digest>`), unless the id is a
 number or a UUID, and a subject is never passed for its shape alone.
+
+A finding of a report round names the statement it is about in `statements`, a
+list of places in the answer that was checked. The report rounds are the
+narrative, each composer section, the question round's replies and the agreement
+round's rewrites. A place is built from the field names the answer's schema
+declares, list positions, `#n` and `*`, and `?` for every other key, whatever it
+looks like: `key_findings.1` is the second key finding as the answer wrote the
+list, `channels.0.note` the note of the first channel, `body#2` the third
+sentence of the string `body` where it holds several, `items.3.value` a table
+row's value, `sentences.1.rewrite#0` the first sentence of the second row's
+rewrite, `?.0` an entry of a list the schema does not declare, and `*` the whole
+answer. A finding names every sentence its match stands in, in the answer's
+order, at most 64 places with the rest counted (`+12`), and only in the fields
+its check reads, in strings at most six containers deep, the answer itself
+counted: a string nested deeper is checked as before and carries no place. The
+places hold no sentence and no value, with the text or without it. A finding whose check does not locate it carries no `statements`: the
+analysts' and the judge's findings (the analysts' claims are located by `claims[N]`
+in the path), the tool calls' and the report linter's, and the composer's shape,
+style, channel, procedure and flow checks. A record or a run summary row stored
+without the field is read as before. Without `--show-text` the printed record is
+what it was with no places; with it each finding line ends with `at` and its
+places, and the record written by `--json` always carries them. A comparison of
+two records reads decisions (codes, entries, counts), so a place only one record
+carries is no difference, and two summary rows that differ only in their places
+are one row with a count.
 
 A digest identifies a value; it does not protect it. Anyone holding a list of
 candidates can confirm one: a family name, a host from a feed, and every IPv4

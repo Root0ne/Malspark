@@ -2886,6 +2886,14 @@ def ledger_ids_cited(text: str) -> str:
     return ", ".join(f"[{found}]" for found in cited)
 
 
+# The closing words of the sentence an answer records for claims it began and
+# the reader did not read, and of the one for parts of the input it does not
+# cover: the merge reads which the record holds by them
+# (``revision_merge.claims_unread_why_of``).
+CLAIMS_UNREAD_CLOSING = "could not be read as a claim and are not in its findings."
+PARTS_NOT_ANALYSED_CLOSING = "what those parts held is not in it."
+
+
 def claims_unread_sentence(agent: str, read: ClaimRead, revision_round: int = 0) -> str:
     """The sentence a run records for an answer whose claims were not all read."""
     stage = f" (round {int(revision_round)})" if int(revision_round) else ""
@@ -2907,8 +2915,8 @@ def claims_unread_sentence(agent: str, read: ClaimRead, revision_round: int = 0)
     )
     return (
         f"The {agent} analyst's answer{stage} began {read.begun} claim(s){quoted}, and "
-        f"{read.read} were read{declined}; {read.unread} could not be read as a "
-        f"claim and are not in its findings.{uncited}{unreadable}"
+        f"{read.read} were read{declined}; {read.unread} {CLAIMS_UNREAD_CLOSING}"
+        f"{uncited}{unreadable}"
     )
 
 
@@ -4262,7 +4270,7 @@ def parts_not_analysed_reason(agent: str, missed: Sequence[str]) -> str:
         return ""
     return (
         f"{agent}'s answer is merged from the parts that answered: {'; '.join(said)}; "
-        "what those parts held is not in it."
+        f"{PARTS_NOT_ANALYSED_CLOSING}"
     )
 
 

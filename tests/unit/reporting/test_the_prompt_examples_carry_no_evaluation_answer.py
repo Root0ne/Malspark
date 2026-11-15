@@ -80,6 +80,7 @@ from malspark.agents.judge_agent import (
     CONTRADICTIONS_BLOCK_QUESTION,
     CONTRADICTIONS_BLOCK_RULE,
     EVIDENCE_SHORTENED_NOTICE,
+    FIRST_MEDIATION_QUESTION,
     LIMIT_RULING_QUESTION,
     LIMIT_RULING_QUESTION_WITHOUT_TOOLS,
     LOWERED_ENTRY_MARK,
@@ -167,6 +168,7 @@ from malspark.pipeline import function_claims, nodes, triage_pack
 from malspark.pipeline.debate_facts import (
     ANALYSTS_FIELD_MISSING_NOTE,
     BLOCK_NOT_READ_NOTE,
+    LINE_MARK_RULE,
     analysts_field_unknown_note,
     ledger_count_facts,
     ledger_stated_sentence,
@@ -354,6 +356,7 @@ from malspark.schemas.isr_models import (
     judge_dropped_reason,
     judge_kept_note,
     retry_added_marker,
+    written_round_note,
 )
 from malspark.schemas.sandbox_report import SECTION_IDS
 from malspark.schemas.stix_models import Bundle
@@ -1541,6 +1544,17 @@ PROMPTS: dict[str, str] = {
     "absence marker": ABSENCE_TECHNIQUE_MARKER,
     "failed-calls marker": FAILED_CALLS_MARKER,
     "retry-added marker": retry_added_marker(2),
+    "a later mediation's round notes on the claims": " ".join(
+        [
+            written_round_note(ClaimEvidence(claim="c", evidence_ref="e", confidence=0.5), 0, 1),
+            written_round_note(
+                ClaimEvidence(claim="c", evidence_ref="e", confidence=0.5, carried_since_round=2),
+                2,
+                2,
+            ),
+        ]
+    ),
+    "the carried-or-new question and the unchanged claim's question": LINE_MARK_RULE,
     "retry additions after the answer in force": retry_additions_text(
         AgentISR(
             agent_id="a",
@@ -1774,6 +1788,7 @@ PROMPTS: dict[str, str] = {
     "mediator entry check and the round limit's ruling question": " ".join(
         [MEDIATION_ENTRY_CHECK, LIMIT_RULING_QUESTION, LIMIT_RULING_QUESTION_WITHOUT_TOOLS]
     ),
+    "a debate's first mediation's question": FIRST_MEDIATION_QUESTION,
     "mediator system turn, its closing line and the missing-block note": " ".join(
         [
             MEDIATOR_SYSTEM_HEAD,
