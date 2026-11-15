@@ -4,8 +4,8 @@
 of the analyst the first number is written for. A claim a blocking line
 reaches only so is withdrawn by rule when its reference's clause shares a
 ledger id or an address with it, exactly as a single cited claim is
-(``revision_merge``), and otherwise stands as a claim no line named, the
-reference stated as not placed on it. Every number the
+(``revision_merge``), and is carried with the line's mark and stated
+otherwise. Every number the
 earlier reading read is named as it was. The rest of a range longer than the
 cap and a claim number no analyst is read for are never guessed onto a claim:
 they withdraw nothing, and one merge says so, once per reference, where the
@@ -399,7 +399,7 @@ class TestTheMergeReadsARangeAsItReadsASingleClaim:
 
         assert [n for n, _s, _r in merge.withdrawn_by_rule] == [2, 3, 4]
 
-    def test_a_claim_inside_a_range_sharing_nothing_with_the_line_is_unnamed_and_stated(
+    def test_a_claim_inside_a_range_sharing_nothing_with_the_line_is_carried_and_stated(
         self,
     ) -> None:
         merge = _merge(f"{STATIC} Claims 2-4 say X of 0x402000. {BLOCKS}", _block(MUTEX))
@@ -410,7 +410,7 @@ class TestTheMergeReadsARangeAsItReadsASingleClaim:
         assert merge.merged is not None
         assert [c.claim for c in merge.merged.claims] == [MUTEX, CRYPTO, PERSIST]
         crypto = merge.merged.claims[1]
-        assert not crypto.carried_contested_by
+        assert crypto.carried_contested_by == ["L1 (round 3)"]
         assert [(n, line, ref) for n, _s, line, ref in merge.not_spoken_to] == [
             (3, 1, "claims 2-4"),
             (4, 1, "claims 2-4"),
@@ -421,8 +421,8 @@ class TestTheMergeReadsARangeAsItReadsASingleClaim:
             "claim 3 of its answer in force (" in said[-2]
         )
         assert said[-2].endswith(
-            "shares no ledger id or address with it, so the reference is not placed on it and "
-            "withdraws nothing of it."
+            "shares no ledger id or address with it, so the line withdraws nothing of it by rule, "
+            "and the claim is carried with the line's mark."
         )
 
     def test_a_list_going_on_is_guarded_as_a_range_is(self) -> None:

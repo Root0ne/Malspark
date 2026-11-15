@@ -33,14 +33,14 @@ before and after. Here a revision changes only what it states:
   it names, except one it reaches only through a range or a list that
   shares no ledger id or address with the reference's clause. A claim a
   block restates is never withdrawn by rule, carried beside that block or
-  not. A claim it names without speaking to it stands, for that line,
-  as a claim no line named, and the reference is stated as not placed on
-  it (``not_spoken_sentence``);
+  not. A claim a line names without speaking to it is never withdrawn by
+  rule by that line, keeps the address test and the line's mark, and the
+  reference is stated (``not_spoken_sentence``);
 - a claim it writes under a new number, or one that writes again no claim in
   force, is added;
 - every other claim in force stays as the answer in force wrote it, marked
   as carried forward from that round (``ClaimEvidence.carried_since_round``),
-  and, where a line that does not block named it, with that line
+  and, where a line named it and did not withdraw it, with that line
   (``ClaimEvidence.carried_contested_by``).
 
 The identity is the claim block's place in the answer in force, counted from
@@ -515,9 +515,9 @@ class RevisionMerge:
     claim references that name no claim and may mean this analyst's
     (``debate_facts.UnplacedClaims``): no claim is withdrawn by rule on them;
     ``not_spoken_to`` ``(number, sentence, line, reference)`` per claim
-    the merge neither replaced nor withdrew that a blocking line named in
-    a reference whose clause shares no ledger id or address with it: the
-    line counts for nothing on that claim; ``owned`` the round's claim
+    the merge neither replaced nor withdrew that a blocking line named
+    without speaking to it: the line withdraws nothing of it by rule, and
+    its mark stays on it; ``owned`` the round's claim
     numbers written for no analyst that are read as this analyst's
     (``debate_facts.OwnedClaim``); ``numbering`` ``(a number the revision's
     text may name a claim by, its number in the merged answer)``
@@ -618,8 +618,8 @@ def not_spoken_sentence(
     return defanged(
         f"Blocking line L{int(line)} of the round-{int(revision_round)} mediation names "
         f"{reference} of the {name} analyst; claim {number} of its answer in force "
-        f'("{sentence}") shares no ledger id or address with it, so the reference is not '
-        "placed on it and withdraws nothing of it."
+        f'("{sentence}") shares no ledger id or address with it, so the line withdraws '
+        "nothing of it by rule, and the claim is carried with the line's mark."
     )
 
 
@@ -903,8 +903,9 @@ def _known_in(low: str, high: str, ordered: Sequence[int]) -> Sequence[int]:
 class _Speaking:
     """What the blocking lines of the round's mediation that name one claim say to it.
 
-    ``rows`` are the lines that name the claim and count, ``unspoken`` ``(line,
-    reference)`` per blocking line that names it without speaking to it,
+    ``rows`` are the lines that name the claim, its contest mark,
+    ``unspoken`` ``(line, reference)`` per blocking line that names it
+    without speaking to it,
     ``ruling`` the blocking lines whose rule reaches it, and ``itself`` those
     of them that speak to the claim itself (:func:`_speaking_lines`).
     """
@@ -931,9 +932,8 @@ def _speaking_lines(
     speaks to no claim itself; its rule reaches every claim it names, except
     one it reaches only through a range or a list (``expanded``) that shares
     no ledger id or address with the reference's clause. A line whose rule
-    does not reach the claim never withdraws it by rule, asks no block to
-    answer it and leaves no mark on it: the claim stands, for that line, as
-    one no line named.
+    does not reach the claim never withdraws it by rule and asks no block to
+    answer it; the claim keeps the line's mark.
     """
     rows = list(named.get(block.number, ()))
     blocking = sorted({line for line, blocks in rows if blocks})
@@ -949,7 +949,7 @@ def _speaking_lines(
     silent = {n for n, _r in unspoken}
     ruling = [n for n in blocking if n not in silent]
     return _Speaking(
-        rows=[row for row in rows if row[0] not in silent],
+        rows=rows,
         unspoken=unspoken,
         ruling=ruling,
         itself=[n for n in ruling if n in anchored],
@@ -1206,8 +1206,8 @@ def merge_revision(
             continue
         on = speaking[block.number]
         lines, spoken = on.rows, on.ruling
-        # A blocking line that does not speak to the claim is no line of it:
-        # it withdraws nothing, leaves no mark, and the reference is stated.
+        # A blocking line that does not speak to the claim withdraws nothing
+        # of it and keeps its mark on it; the reference is stated.
         not_spoken_to.extend((block.number, block.sentence, n, ref) for n, ref in on.unspoken)
         if spoken and block.number in beside:
             # A block restates it without an address of it: the revision

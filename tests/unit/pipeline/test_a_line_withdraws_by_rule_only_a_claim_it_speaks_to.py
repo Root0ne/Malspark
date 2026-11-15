@@ -2,11 +2,12 @@
 
 The test is relative, within one line. Where a claim the line names, of any
 analyst, shares a ledger id or a value with the whole line, the line speaks
-only to the claims that share one; a named claim that shares neither is left,
-for that line, as a claim no line named: never withdrawn by rule, no mark from
-that line, and the reference is stated as not placed on it. Where no named
-claim shares one, the line speaks to every claim it names. Content words take
-no part.
+only to the claims that share one, or whose sentence it quotes in four
+consecutive words; a named claim it does not speak to is never withdrawn by
+rule by that line and gets no replacement without the address test from it,
+keeps the line's mark, and the reference is stated. Where no named claim
+shares one or is quoted, the line's rule reaches every claim it names.
+Content words take no part otherwise.
 
 Every address, name and sentence here is made up for the test.
 """
@@ -64,12 +65,15 @@ class TestALineAnchoredByTheClaimItIsAbout:
         assert [n for n, _s in merge.carried] == [2, 3]
         assert merge.merged is not None
         gate = next(c for c in merge.merged.claims if c.claim == GATE)
-        assert not gate.carried_contested_by
+        assert gate.carried_contested_by == ["L1 (round 2)"]
         assert [(n, line_number) for n, _s, line_number, _ref in merge.not_spoken_to] == [(2, 1)]
         said = merge.sentences("static", 2)
         assert any(
             s.startswith("Blocking line L1 of the round-2 mediation names claims 1-2 of the static")
-            and s.endswith("so the reference is not placed on it and withdraws nothing of it.")
+            and s.endswith(
+                "so the line withdraws nothing of it by rule, and the claim is carried with the "
+                "line's mark."
+            )
             for s in said
         )
 
@@ -103,6 +107,33 @@ class TestALineAnchoredByTheClaimItIsAbout:
         # The dynamic analyst's claim shares 2240 and 3704; the static claim shares nothing.
         assert merge.withdrawn_by_rule == ()
         assert [n for n, *_rest in merge.not_spoken_to] == [2]
+
+
+class TestTheClaimAPeersValuesAnchorTheLineAwayFrom:
+    # The line contests the static loader claim; the dynamic claim on the same
+    # line shares the pids by accident, and the static claim shares nothing.
+    LINE = (
+        f"{BOTH} STATIC claim 1 says the saved list is loaded, versus DYNAMIC claim 1, which "
+        f"saw process 2240 write into 3704 only. {BLOCKS}"
+    )
+
+    def test_the_contested_claim_keeps_the_lines_mark(self) -> None:
+        merge = _merge(self.LINE, _block(ADDED, "ev_0020"))
+
+        assert merge.withdrawn_by_rule == () and [n for n, *_r in merge.not_spoken_to] == [1]
+        assert merge.merged is not None
+        loader = next(c for c in merge.merged.claims if c.claim == LOADER)
+        assert loader.carried_contested_by == ["L1 (round 2)"]
+
+    def test_a_block_restating_it_without_its_address_leaves_it_beside(self) -> None:
+        again = "The saved URL list is loaded from the file at 0x4103b8."
+
+        merge = _merge(self.LINE, _block(again, "ev_0011"))
+
+        assert 1 not in merge.replaced and [n for n, *_r in merge.beside] == [1]
+        assert merge.merged is not None
+        loader = next(c for c in merge.merged.claims if c.claim == LOADER)
+        assert loader.carried_contested_by == ["L1 (round 2)"]
 
 
 class TestALineThatQuotesAClaimSpeaksToIt:
