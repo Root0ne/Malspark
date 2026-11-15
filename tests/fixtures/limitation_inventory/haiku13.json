@@ -885,7 +885,8 @@
         ],
         "listed_after": false
       }
-    ]
+    ],
+    "short_analyses": []
   },
   "printed": [
     "Tool calls: 1 of 149 failed and was not redone: decompile_function for offset 0x3728 (ev_0139; a later call for the same address: ev_0142).",

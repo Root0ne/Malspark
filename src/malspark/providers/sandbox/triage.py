@@ -667,6 +667,9 @@ class TriageSandboxProvider(SandboxProvider):
         self._sleep = time.sleep
         self._now = time.monotonic
         self._now_utc = lambda: datetime.now(UTC)
+        # The sample ids this provider's own posts were answered with: only
+        # such a submission carried the analysis time this provider asks.
+        self._posted: set[str] = set()
 
     @classmethod
     def from_settings(cls, cfg: Settings) -> TriageSandboxProvider:
@@ -741,12 +744,18 @@ class TriageSandboxProvider(SandboxProvider):
             + (f" (sent {sent})" if sent else "")
         )
 
-    def _submit_settings_said(self) -> str:
-        """The operator's settings the submission carries, for a refusal to name."""
+    def _submit_settings_said(self, payload: dict[str, Any]) -> str:
+        """The operator's settings the submission carries, for a refusal to name: the
+        analysis time under each field the path taken sends it in."""
         seconds = self._cfg.analysis_seconds
         if seconds is None:
             return ""
-        return f"defaults.timeout={seconds} from sandbox.triage.analysis_seconds"
+        fields = ["defaults.timeout"]
+        entry = (payload.get("profiles") or [{}])[0]
+        if isinstance(entry.get("profile"), dict):
+            fields.insert(0, "profiles[0].profile.timeout")
+        said = " and ".join(f"{field}={seconds}" for field in fields)
+        return f"{said} from sandbox.triage.analysis_seconds"
 
     def _profile_for(self, path: Path) -> str:
         """The VM profile this sample's format asks for, else the plain default.
@@ -766,25 +775,42 @@ class TriageSandboxProvider(SandboxProvider):
 
         return requested_host(self._cfg.base_url, SUBMIT_PATH)
 
-    def _post_sample(
-        self, path: Path, headers: dict[str, str], built: BuiltLauncher | None = None
-    ) -> httpx.Response:
-        """The submission: the sample, or the archive of a launcher built for it.
+    def _submission_json(self, path: Path, built: BuiltLauncher | None) -> dict[str, Any]:
+        """The submission's JSON part: the sample's own profile, the launcher's pick and
+        the analysis time where the path taken reads it.
 
         An archive is picked by the launcher's member name (``profiles[].pick``,
-        relative to the archive root); the profile is the sample's own.
+        relative to the archive root). How long the VM runs the sample is the
+        operator's, or nothing is sent and Triage's own default applies. A
+        submission that names a ``profiles`` entry is not run for
+        ``defaults.timeout`` but for a ``timeout`` in a profile object embedded
+        in that entry (checked live on the launcher path, 2026-11-15), so with
+        no profile configured the launcher's entry embeds the time, and
+        ``defaults`` is kept beside it. An entry that names a configured profile
+        cannot also embed one: the stored profile's own time applies there and
+        the request is sent as before (not checked live).
         """
         payload: dict[str, Any] = {"kind": "file", "interactive": False}
         profile = self._profile_for(path)
+        seconds = self._cfg.analysis_seconds
         if built is not None:
-            pick: dict[str, str] = {"pick": str(built.record["launcher_member"])}
-            payload["profiles"] = [{"profile": profile, **pick} if profile else pick]
+            pick: dict[str, Any] = {"pick": str(built.record["launcher_member"])}
+            if profile:
+                pick = {"profile": profile, **pick}
+            elif seconds is not None:
+                pick["profile"] = {"timeout": int(seconds)}
+            payload["profiles"] = [pick]
         elif profile:
             payload["profiles"] = [{"profile": profile, "pick": "default"}]
-        # How long the VM runs the sample: the operator's, or nothing sent and
-        # Triage's own default.
-        if self._cfg.analysis_seconds is not None:
-            payload["defaults"] = {"timeout": int(self._cfg.analysis_seconds)}
+        if seconds is not None:
+            payload["defaults"] = {"timeout": int(seconds)}
+        return payload
+
+    def _post_sample(
+        self, path: Path, headers: dict[str, str], built: BuiltLauncher | None = None
+    ) -> httpx.Response:
+        """The submission: the sample, or the archive of a launcher built for it."""
+        payload = self._submission_json(path, built)
         if built is not None:
             return self._get_http().post(
                 SUBMIT_PATH,
@@ -946,12 +972,16 @@ class TriageSandboxProvider(SandboxProvider):
             # dropped transport is this path's business, and rewriting an
             # unrelated failure into "Triage submit failed" would hide it.
         self._raise_for_status(
-            response, "submit", self._submit_settings_said(), mask=self._masking(options, built)
+            response,
+            "submit",
+            self._submit_settings_said(self._submission_json(path, built)),
+            mask=self._masking(options, built),
         )
         data = response.json()
         sample_id = data.get("id")
         if not sample_id:
             raise ProviderError("Unexpected Triage submit response: no sample id returned.")
+        self._posted.add(str(sample_id))
         return str(sample_id)
 
     def wait_for_completion(
@@ -1153,11 +1183,21 @@ class TriageSandboxProvider(SandboxProvider):
     def detonation_facts(self, run: SandboxRun) -> dict[str, Any] | None:
         """The overview's and the task reports' facts, and each of them as fetched.
 
-        Triage ran the sample.
+        Triage ran the sample. The analysis time asked is the one the
+        submission carried (``sandbox.triage.analysis_seconds``, sent where the
+        path taken reads it: ``_submission_json``), stated only for a sample this
+        provider posted itself; none is stated where the submission carried
+        none and Triage's own default applied, nor for a sample the account
+        already held (a dropped answer reconciled, or a report fetched by id),
+        whose submission another call made.
         """
         from malspark.providers.detonation import report_facts
 
-        return report_facts(run, detonated=True)
+        facts = report_facts(run, detonated=True)
+        posted = str(getattr(run, "task_id", "")) in self._posted
+        if posted and self._cfg.analysis_seconds is not None:
+            facts["requested_seconds"] = int(self._cfg.analysis_seconds)
+        return facts
 
     def fetch_pcap(self, task_id: str, dest_dir: str | Path) -> str | None:
         if not self._cfg.fetch_pcap:

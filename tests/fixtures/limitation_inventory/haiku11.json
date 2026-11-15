@@ -669,7 +669,8 @@
         ],
         "listed_after": false
       }
-    ]
+    ],
+    "short_analyses": []
   },
   "printed": [
     "Code read: 71 routines have listed code; 56 routines they call have none, first on the start path: offsets 0x904c, 0x14d8.",

@@ -28,6 +28,7 @@ ACME = {
     ],
     "task_id_paths": ["/run/ticket"],
     "target_sha256_paths": ["/subject/digests/sha256"],
+    "granted_seconds_paths": ["/run/granted_seconds"],
     "reader": "cape2",
     "signature_scale": {"name": "Acme 1–4", "rungs": ["Low", "Medium", "High", "Critical"]},
 }
@@ -138,6 +139,8 @@ def test_the_declared_formats_are_served_in_the_order_they_are_tried(monkeypatch
     assert items["cape2"]["signature_scale"]["name"] == "CAPE 1–3"
     assert items["triage"]["signature_scale"]["max"] == 10
     assert items["cape2"]["target_sha256_paths"] == ["/target/file/sha256", "/target/sha256"]
+    assert items["acme"]["granted_seconds_paths"] == ["/run/granted_seconds"]
+    assert items["cape2"]["granted_seconds_paths"] == []
 
 
 def test_a_declared_format_without_a_reader_is_refused_at_upload_in_words(monkeypatch):

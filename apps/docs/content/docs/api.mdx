@@ -433,6 +433,27 @@ a run in mock mode). Each row gives:
   the same sandbox report. A row lists at most 64 parts; `report_parts_cut`
   says how many more were left out.
 
+`analysis_time` gives, per sandbox task, `requested_seconds`, the analysis time
+the submission asked, and `granted_seconds`, the time the sandbox's own report
+states it granted the task, whatever was asked. A Triage overview states it per
+behavioural task (the task's `timeout`, keyed by the task's name), and every
+behavioural task it names is listed; an operator's declared format states it
+where its `granted_seconds_paths` place it, kept under the task id its
+submission answered. A CAPE or Cuckoo report states no time granted (its
+`info.duration` is how long the analysis ran, not the time it was granted).
+The time asked is the one the provider sent with a submission it posted
+itself, Triage's `sandbox.triage.analysis_seconds` wherever the path taken
+sends it (see the sandbox page); a provider that sends none states none, and neither does a sample the account
+already held. A time is a number of at least 0.001 and at most 10,000,000, kept
+as stated; anything else, zero included, reads `not reported`, as does a time
+nobody stated, and `analysis_time` is `not reported` where no task is named and
+neither time is stated. A row lists at most 32 tasks. Where the sandbox granted
+a task less time than was asked, the run's limitations name the detonation, the
+task and both times, each as stated in plain decimals: a whole number whole,
+any other to three decimals, rounded as written with a half up and trailing
+zeros dropped, and both to as many more decimals as it takes where two
+different times would otherwise read the same. A summary stored without `analysis_time` reads as before.
+
 A detonation that read no report has no parts, an empty `report_parts`, and
 every fact its provider would have stated reads `not reported`. One whose
 report was read keeps the parts it read, also where a later step failed. The provider is asked
@@ -471,7 +492,7 @@ code or its sandbox echoes into a fact whole, in a value or a key; it does not
 defend against code that splits a secret across several places on purpose, as
 such code holds the secret and has other ways to leak it. Task URLs are not recorded.
 
-The block carries `v`, its shape version (4). Throughout it, a fact nobody read
+The block carries `v`, its shape version (5). Throughout it, a fact nobody read
 is `not reported`, followed after a colon by the reason where one is known.
 
 ### The analysis WebSocket

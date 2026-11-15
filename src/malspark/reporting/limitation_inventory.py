@@ -26,7 +26,9 @@ before the report's prose is written, and stored on the report
 * **Sandbox**: whether a sandbox recorded the sample, and the sections of the
   sandbox report's index (the entry of the declared kind ``sandbox_sections``):
   each one's item count, or whether the report lists it as unavailable from its
-  sandbox or does not carry it.
+  sandbox or does not carry it; and each sandbox task the sandbox granted less
+  analysis time than its submission asked, as the run's detonation record
+  states both times (``run_summary.environment.detonations``, ``analysis_time``).
 * **Capture**: the window and packet count of the capture an entry of the
   declared kind ``pcap`` read.
 * **Open questions**: each one filed, with the listings of the routines it
@@ -50,6 +52,7 @@ from __future__ import annotations
 import logging
 from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass
+from decimal import ROUND_HALF_UP, Decimal
 from typing import Any
 
 from malspark.reporting.models import (
@@ -57,6 +60,7 @@ from malspark.reporting.models import (
     InventoryCapture,
     InventoryQuestion,
     InventorySection,
+    InventoryShortAnalysis,
     InventoryTool,
     LimitationInventory,
     MalwareReport,
@@ -187,6 +191,7 @@ def build_inventory(report: MalwareReport, entries: Iterable[Any]) -> Limitation
         **_sandbox_index(entries),
         capture=_capture(entries),
         questions=_questions(read.questions, listed, entries),
+        short_analyses=_short_analyses(report),
     )
 
 
@@ -259,6 +264,45 @@ def _sandbox_index(entries: Sequence[Any]) -> dict[str, Any]:
         elif isinstance(row.get("items"), int):
             out.append(InventorySection(name=str(name), items=int(row["items"])))
     return {"sandbox_entry": str(getattr(entry, "id", "") or ""), "sandbox_sections": out}
+
+
+def _short_analyses(report: MalwareReport) -> list[InventoryShortAnalysis]:
+    """Each sandbox task the detonation record states was granted less time than was asked;
+    none where a time is not stated (``core.report_formats.seconds_stated``), where the row
+    names no detonation or the task no name, and none for a record stored before it stated
+    them."""
+    from malspark.core.report_formats import seconds_stated
+
+    summary = getattr(report, "run_summary", None) or {}
+    environment = summary.get("environment") if isinstance(summary, Mapping) else None
+    rows = environment.get("detonations") if isinstance(environment, Mapping) else None
+    out: list[InventoryShortAnalysis] = []
+    for row in rows if isinstance(rows, list) else ():
+        times = row.get("analysis_time") if isinstance(row, Mapping) else None
+        detonation = _stated_name(row.get("detonation")) if isinstance(row, Mapping) else ""
+        for task in times if isinstance(times, list) and detonation else ():
+            if not isinstance(task, Mapping) or not _stated_name(task.get("task")):
+                continue
+            asked = seconds_stated(task.get("requested_seconds"))
+            given = seconds_stated(task.get("granted_seconds"))
+            if asked is None or given is None or given >= asked:
+                continue
+            out.append(
+                InventoryShortAnalysis(
+                    detonation=detonation,
+                    task=_stated_name(task.get("task")),
+                    requested_seconds=asked,
+                    granted_seconds=given,
+                )
+            )
+    return out
+
+
+def _stated_name(value: Any) -> str:
+    """A name a stored record states: a text that is neither empty nor ``"not reported"``."""
+    from malspark.tools.capabilities import NOT_REPORTED
+
+    return value if isinstance(value, str) and value and value != NOT_REPORTED else ""
 
 
 def _count(value: Any) -> int | None:
@@ -490,12 +534,68 @@ def _sandbox_rows(inv: LimitationInventory, name: Callable[[str], str]) -> list[
             f"{_joined(absent)} {_plural(len(absent), 'is', 'are')} not in the sandbox report "
             "as read"
         )
+    said.extend(_short_clauses(inv, name))
     if said:
         head = f"Sandbox report [{entry}]" if entry and (unavailable or absent) else "Sandbox"
         out.append(
             InventoryRow(SANDBOX, f"{head}: {'; '.join(said)}.", (entry,) if entry else (), True)
         )
     return out
+
+
+def _short_clauses(inv: LimitationInventory, name: Callable[[str], str]) -> list[str]:
+    """The sandbox tasks granted less time than asked, folded per detonation and pair of
+    times, at most ``STATED_ENTRIES`` named in each:
+    ``d1's tasks a and b were given 150 s, not the 600 s asked``."""
+    from malspark.analysis.run_environment import STATED_ENTRIES
+
+    folded: dict[tuple[str, int | float, int | float], dict[str, None]] = {}
+    for short in inv.short_analyses:
+        key = (short.detonation, short.granted_seconds, short.requested_seconds)
+        folded.setdefault(key, {})[name(short.task)] = None
+    out: list[str] = []
+    for (detonation, given, asked), named in folded.items():
+        tasks = list(named)
+        listed = tasks[:STATED_ENTRIES]
+        if len(tasks) > len(listed):
+            listed.append(f"{_number(len(tasks) - len(listed))} more")
+        given_said, asked_said = _two_times(given, asked)
+        out.append(
+            f"{name(detonation)}'s {_plural(len(tasks), 'task', 'tasks')} {_joined(listed)} "
+            f"{_plural(len(tasks), 'was', 'were')} given {given_said} s, "
+            f"not the {asked_said} s asked"
+        )
+    return out
+
+
+def _two_times(first: int | float, second: int | float) -> tuple[str, str]:
+    """Two times as a clause prints them, never alike where they differ: each as stated, a
+    whole number whole, else to three decimals with trailing zeros dropped, and to as many
+    more as it takes where three would print two different numbers the same. Plain
+    decimals, never scientific notation; a time is at least a thousandth of a second
+    (``core.report_formats.seconds_stated``), so none prints as 0."""
+    for decimals in range(3, _FULL_DECIMALS):
+        said = (_time_said(first, decimals), _time_said(second, decimals))
+        if said[0] != said[1] or first == second:
+            return said
+    return _time_said(first, None), _time_said(second, None)
+
+
+# Past this many decimals two different times are printed as stated in full.
+_FULL_DECIMALS = 18
+
+
+def _time_said(value: int | float, decimals: int | None) -> str:
+    """``value`` whole where it is whole, else to ``decimals`` places (``None``: in full, as
+    the shortest text that reads back as the same number), trailing zeros dropped. Rounded
+    as written, a half up (149.0005 to three places is 149.001)."""
+    if float(value).is_integer():
+        return _number(int(value))
+    exact = Decimal(repr(value))
+    if decimals is not None:
+        exact = exact.quantize(Decimal(1).scaleb(-decimals), rounding=ROUND_HALF_UP)
+    text = f"{exact:,f}"
+    return text.rstrip("0").rstrip(".") if "." in text else text
 
 
 def _capture_row(inv: LimitationInventory) -> list[InventoryRow]:

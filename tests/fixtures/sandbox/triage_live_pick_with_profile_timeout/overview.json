@@ -1,0 +1,404 @@
+{
+  "analysis": {
+    "score": 8,
+    "tags": [
+      "adware",
+      "discovery",
+      "execution",
+      "persistence",
+      "ransomware",
+      "spyware"
+    ]
+  },
+  "build": "d0cc0f9b0",
+  "sample": {
+    "completed": "2026-11-15T20:04:57Z",
+    "created": "2026-11-15T19:54:52Z",
+    "id": "261115-ymzygaat61",
+    "md5": "89df50baed182c18d2cf8307dbc0d56b",
+    "score": 8,
+    "sha1": "dac62f3c4698209450cb546cb306f21dc94fd5a4",
+    "sha256": "f7e2f01f33b124088fe13dc1abef3e8f4d42dd9dab70cd74f41c4390f286698e",
+    "sha512": "5c2c3025826a086f638cb160f645eabfcc91a0cd84b1d1b95c84b55f8c84277ede37c139252d96b507568fec5042e1a0abb7fcd33e98938489860b9ec3760499",
+    "size": 1111,
+    "target": "submission.zip",
+    "tlsh": "T15D21123501BE2C03C5DA633DE876CFD3E4D913C6604EB82615A4A1E9546B84787534B5"
+  },
+  "signatures": [
+    {
+      "desc": "Adversaries may achieve persistence by adding a Registry key to the Active Setup of the local machine.",
+      "label": "modifies_installed_components_registry",
+      "name": "Boot or Logon Autostart Execution: Active Setup",
+      "score": 8,
+      "tags": [
+        "persistence"
+      ],
+      "ttp": [
+        "T1547.014",
+        "T1112"
+      ]
+    },
+    {
+      "desc": "Attempts to read the root path of hard drives other than the default C: drive.",
+      "label": "file_drive_discovery",
+      "name": "Enumerates connected drives",
+      "score": 6,
+      "ttp": [
+        "T1012",
+        "T1120",
+        "T1082"
+      ]
+    },
+    {
+      "desc": "Using powershell.exe command.",
+      "label": "powershell",
+      "name": "Command and Scripting Interpreter: PowerShell",
+      "score": 3,
+      "tags": [
+        "execution"
+      ],
+      "ttp": [
+        "T1059.001"
+      ]
+    },
+    {
+      "desc": "Execution of a cmd.exe one-liner (/c \"close\" or /k \"keep\") is a common script/loader stage.",
+      "label": "cmd_shell_generic",
+      "name": "Executes a command shell one-liner",
+      "score": 3,
+      "tags": [
+        "execution"
+      ],
+      "ttp": [
+        "T1059.003"
+      ]
+    },
+    {
+      "desc": "Adversaries may check for Internet connectivity on compromised systems.",
+      "label": "internet_connection_discovery",
+      "name": "System Network Configuration Discovery: Internet Connection Discovery",
+      "score": 3,
+      "tags": [
+        "discovery"
+      ],
+      "ttp": [
+        "T1016.001"
+      ]
+    },
+    {
+      "desc": "Adversary may gather the system time and/or time zone settings from a local or remote system.",
+      "label": "system_time_discovery",
+      "name": "System Time Discovery",
+      "score": 3,
+      "tags": [
+        "discovery"
+      ],
+      "ttp": [
+        "T1124"
+      ]
+    },
+    {
+      "desc": "SCSI information is often read in order to detect sandboxing environments.",
+      "label": "reg_system_enum",
+      "name": "Checks SCSI registry key(s)",
+      "ttp": [
+        "T1012",
+        "T1120",
+        "T1082"
+      ]
+    },
+    {
+      "label": "modifies_iexplore_settings",
+      "name": "Modifies Internet Explorer settings",
+      "tags": [
+        "adware",
+        "spyware"
+      ],
+      "ttp": [
+        "T1112"
+      ]
+    },
+    {
+      "label": "reg_software_classes",
+      "name": "Modifies registry class"
+    },
+    {
+      "name": "Suspicious behavior: EnumeratesProcesses"
+    },
+    {
+      "name": "Suspicious use of AdjustPrivilegeToken"
+    },
+    {
+      "name": "Suspicious use of FindShellTrayWindow"
+    },
+    {
+      "name": "Suspicious use of SendNotifyMessage"
+    },
+    {
+      "name": "Suspicious use of SetWindowsHookEx"
+    },
+    {
+      "name": "Suspicious use of WriteProcessMemory"
+    },
+    {
+      "desc": "The Task Scheduler COM API can be used to schedule applications to run on boot or at set times.",
+      "label": "win_tasksched_com_clsid",
+      "name": "Uses Task Scheduler COM API",
+      "tags": [
+        "persistence"
+      ],
+      "ttp": [
+        "T1012"
+      ]
+    },
+    {
+      "desc": "The Volume Shadow Copy service is used to manage backups/snapshots.",
+      "label": "win_volshadow_wmi_clsid",
+      "name": "Uses Volume Shadow Copy WMI provider",
+      "tags": [
+        "ransomware"
+      ]
+    },
+    {
+      "desc": "The Volume Shadow Copy service is used to manage backups/snapshots.",
+      "label": "win_volshadow_com_clsid",
+      "name": "Uses Volume Shadow Copy service COM API",
+      "tags": [
+        "ransomware"
+      ]
+    }
+  ],
+  "targets": [
+    {
+      "iocs": {
+        "domains": [
+          "c.pki.goog",
+          "www.microsoft.com"
+        ],
+        "ips": [
+          "8.8.8.8",
+          "172.217.76.94",
+          "23.37.198.101",
+          "20.23.115.113"
+        ],
+        "urls": [
+          "http://c.pki.goog/r/r1.crl",
+          "http://c.pki.goog/wr2/oBFYYahzgVI.crl",
+          "http://www.microsoft.com/pkiops/crl/Microsoft%20TLS%20RSA%20Root%20G2.crl",
+          "https://fd.api.iris.microsoft.com/v4/api/selection?&asid=B6596B2C64874305B48215CF3440BA98&nct=1&placement=88000838&bcnt=10&country=US&locale=en-US&poptin=0&fmt=json&clr=cdmlite&MX_FlightIds=MD%3A283BAEF%2CME%3A2E30985%2CME%3A2E30A2A%2CME%3A3036FD6%2CMD%3A3037091&arch=AMD64&chassis=1&concp=0&d3dfl=D3D_FEATURE_LEVEL_12_1&devfam=Windows.Desktop&devosver=10.0.26100.1742&dinst=1789140865&dmret=0&drgng=244&flightbranch=&flightring=Retail&icluc=0&iepe=1&iste=1&localid=w%3A5457F888-5334-EDD9-0B17-9468D59D3E28&oem=Dady%20super%20powerful%20PC&oemn=DADY&osbranch=ge_release&oslocale=en-US&osret=1&ossku=IoTEnterpriseS&osskuid=191&prccn=2&prccs=4192&prcmf=AuthenticAMD&procm=Intel%20Core%20Processor%20%28Broadwell%29&ram=4096&tinst=Client&tl=1&usri=-2&pat=0&smc=0&disphorzres=1920&dispsize=14.7&dispvertres=1080&ldisphorzres=1920&ldispvertres=1080&moncnt=1&cpdsk=1856085&frdsk=20353&lo=93867&tsu=93867"
+        ]
+      },
+      "md5": "698ab73b941e99b26ba2b557db6e9330",
+      "pick": "unpack001/launch.ps1",
+      "score": 8,
+      "sha1": "bd2e2d40ba7e4e6d8c11cd65805439e5f92715bb",
+      "sha256": "0e60aa6a890ae2419eae133ba99e941fb80bca4fac6bf721c68f8362b3c3f82f",
+      "sha512": "012a268b80071da61fe1ee63b4a7cc2184e14da458be59c9155d27106029e982bd09a32fe5243e6a3f847f4e7d2239e51dbd2e62590b53a72dcc01eea6d34e37",
+      "signatures": [
+        {
+          "desc": "Adversaries may achieve persistence by adding a Registry key to the Active Setup of the local machine.",
+          "label": "modifies_installed_components_registry",
+          "name": "Boot or Logon Autostart Execution: Active Setup",
+          "score": 8,
+          "tags": [
+            "persistence"
+          ],
+          "ttp": [
+            "T1547.014",
+            "T1112"
+          ]
+        },
+        {
+          "desc": "Attempts to read the root path of hard drives other than the default C: drive.",
+          "label": "file_drive_discovery",
+          "name": "Enumerates connected drives",
+          "score": 6,
+          "ttp": [
+            "T1012",
+            "T1120",
+            "T1082"
+          ]
+        },
+        {
+          "desc": "Using powershell.exe command.",
+          "label": "powershell",
+          "name": "Command and Scripting Interpreter: PowerShell",
+          "score": 3,
+          "tags": [
+            "execution"
+          ],
+          "ttp": [
+            "T1059.001"
+          ]
+        },
+        {
+          "desc": "Execution of a cmd.exe one-liner (/c \"close\" or /k \"keep\") is a common script/loader stage.",
+          "label": "cmd_shell_generic",
+          "name": "Executes a command shell one-liner",
+          "score": 3,
+          "tags": [
+            "execution"
+          ],
+          "ttp": [
+            "T1059.003"
+          ]
+        },
+        {
+          "desc": "Adversaries may check for Internet connectivity on compromised systems.",
+          "label": "internet_connection_discovery",
+          "name": "System Network Configuration Discovery: Internet Connection Discovery",
+          "score": 3,
+          "tags": [
+            "discovery"
+          ],
+          "ttp": [
+            "T1016.001"
+          ]
+        },
+        {
+          "desc": "Adversary may gather the system time and/or time zone settings from a local or remote system.",
+          "label": "system_time_discovery",
+          "name": "System Time Discovery",
+          "score": 3,
+          "tags": [
+            "discovery"
+          ],
+          "ttp": [
+            "T1124"
+          ]
+        },
+        {
+          "desc": "SCSI information is often read in order to detect sandboxing environments.",
+          "label": "reg_system_enum",
+          "name": "Checks SCSI registry key(s)",
+          "ttp": [
+            "T1012",
+            "T1120",
+            "T1082"
+          ]
+        },
+        {
+          "label": "modifies_iexplore_settings",
+          "name": "Modifies Internet Explorer settings",
+          "tags": [
+            "adware",
+            "spyware"
+          ],
+          "ttp": [
+            "T1112"
+          ]
+        },
+        {
+          "label": "reg_software_classes",
+          "name": "Modifies registry class"
+        },
+        {
+          "name": "Suspicious behavior: EnumeratesProcesses"
+        },
+        {
+          "name": "Suspicious use of AdjustPrivilegeToken"
+        },
+        {
+          "name": "Suspicious use of FindShellTrayWindow"
+        },
+        {
+          "name": "Suspicious use of SendNotifyMessage"
+        },
+        {
+          "name": "Suspicious use of SetWindowsHookEx"
+        },
+        {
+          "name": "Suspicious use of WriteProcessMemory"
+        },
+        {
+          "desc": "The Task Scheduler COM API can be used to schedule applications to run on boot or at set times.",
+          "label": "win_tasksched_com_clsid",
+          "name": "Uses Task Scheduler COM API",
+          "tags": [
+            "persistence"
+          ],
+          "ttp": [
+            "T1012"
+          ]
+        },
+        {
+          "desc": "The Volume Shadow Copy service is used to manage backups/snapshots.",
+          "label": "win_volshadow_wmi_clsid",
+          "name": "Uses Volume Shadow Copy WMI provider",
+          "tags": [
+            "ransomware"
+          ]
+        },
+        {
+          "desc": "The Volume Shadow Copy service is used to manage backups/snapshots.",
+          "label": "win_volshadow_com_clsid",
+          "name": "Uses Volume Shadow Copy service COM API",
+          "tags": [
+            "ransomware"
+          ]
+        }
+      ],
+      "size": 778,
+      "tags": [
+        "execution",
+        "adware",
+        "discovery",
+        "persistence",
+        "ransomware",
+        "spyware"
+      ],
+      "target": "launch.ps1",
+      "tasks": [
+        "behavioral1",
+        "behavioral2"
+      ],
+      "tlsh": "T1FD012076029E381352DF7745BDA4CEC3F8D602DAA0AFAC205559E7C9A09EC0643974F7"
+    }
+  ],
+  "tasks": {
+    "261115-ymzygaat61-behavioral1": {
+      "backend": "sbx4m65",
+      "kind": "behavioral",
+      "name": "behavioral1",
+      "os": "windows10-2004-x64",
+      "pick": "static1/unpack001/launch.ps1",
+      "resource": "win10v2004-20260911-en",
+      "score": 3,
+      "sigs": 5,
+      "status": "reported",
+      "tags": [
+        "execution"
+      ],
+      "target": "launch.ps1",
+      "timeout": 600
+    },
+    "261115-ymzygaat61-behavioral2": {
+      "backend": "sbx4m182",
+      "kind": "behavioral",
+      "name": "behavioral2",
+      "os": "windows11-ltsc_2024-x64",
+      "pick": "static1/unpack001/launch.ps1",
+      "resource": "win11ltsc2024-20260911-en",
+      "score": 8,
+      "sigs": 18,
+      "status": "reported",
+      "tags": [
+        "adware",
+        "discovery",
+        "execution",
+        "persistence",
+        "ransomware",
+        "spyware"
+      ],
+      "target": "launch.ps1",
+      "timeout": 600
+    },
+    "261115-ymzygaat61-static1": {
+      "kind": "static",
+      "name": "static1",
+      "score": 1,
+      "status": "reported"
+    }
+  },
+  "version": "0.3.1"
+}

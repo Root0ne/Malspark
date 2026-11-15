@@ -1391,6 +1391,18 @@ class InventoryCapture(BaseModel):
     packets_read: int | None = None
 
 
+class InventoryShortAnalysis(BaseModel):
+    """A sandbox task the sandbox granted less analysis time than its detonation's submission
+    asked, as the run's detonation record states both times (``environment.detonations``)."""
+
+    model_config = _STRICT_CONFIG
+
+    detonation: str
+    task: str
+    requested_seconds: int | float
+    granted_seconds: int | float
+
+
 class InventoryQuestion(BaseModel):
     """A question an analyst left open, and the listings of the routines it names: where
     ``listed`` holds every address it names, every routine it names has listed code;
@@ -1443,6 +1455,8 @@ class LimitationInventory(BaseModel):
     sandbox_sections: list[InventorySection] = Field(default_factory=list)
     capture: InventoryCapture | None = None
     questions: list[InventoryQuestion] = Field(default_factory=list)
+    # Each sandbox task granted less analysis time than was asked.
+    short_analyses: list[InventoryShortAnalysis] = Field(default_factory=list)
 
 
 class C2Channel(BaseModel):
