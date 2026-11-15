@@ -7,8 +7,8 @@ signatures again per task, those of every task row of the same name, each read
 in its task. Every process an indicator names is resolved to the process row
 of the same report and task (its image, its launch lineage or the sandbox's
 mark); an id the task does not list is stated as not listed, never dropped.
-Equal indicators are listed once with their count, and each row states how
-many the report states (``indicators_stated``); every text is cut to its bound
+Equal indicators are listed once with their count, and the answer states how
+many the report states for each signature (``indicators_stated``); every text is cut to its bound
 with what was cut counted, and written out. A report read
 with no declaration, and a stored document read without its reader, answer as
 before.
@@ -70,9 +70,11 @@ def _read(task: dict[str, Any] | None = None, overview: dict[str, Any] | None = 
 
 
 def _rows(report: SandboxReport, normalised_by: Any = TRIAGE) -> dict[str, dict[str, Any]]:
-    """Each row of the view by name, with the indicators listed after the rows under its name."""
+    """Each row of the view by name, with its count and the indicators listed after the rows."""
     answer = sandbox_signatures(sandbox_document(report), normalised_by=normalised_by)
-    rows = {row["name"]: row for row in answer["signatures"]}
+    rows = {row["name"]: dict(row) for row in answer["signatures"]}
+    for name, count in (answer.get("indicators_stated") or {}).items():
+        rows[name]["indicators_stated"] = count
     for listed in answer.get("indicators") or []:
         one = dict(listed)
         rows[one.pop("signature")].setdefault("indicators", []).append(one)

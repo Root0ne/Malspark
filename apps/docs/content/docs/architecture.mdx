@@ -5539,12 +5539,12 @@ is assembled from what the run gathered rather than recomputed beside it:
   gives it (the report's process id, and the guest's pid where the reader
   declares where a process row holds it), an id the task does not list
   stated as not listed, equal indicators listed once with their count, every
-  text cut to its bound with what was cut counted and written out. The view
-  keeps its rows, each gaining the count the report states
-  (`indicators_stated`), and lists the indicators after them within one
-  budget for the whole answer (`SIGNATURE_ANSWER_CHARS`, never more than the
-  model's copy of the answer holds whole): process pairings first, then one
-  process, then the rest; `indicators_left_out` counts per signature what the
+  text cut to its bound with what was cut counted and written out. The view's
+  rows are the rows an answer without indicators gives, byte for byte; only
+  in the room every row leaves within one budget for the whole answer
+  (`SIGNATURE_ANSWER_CHARS`, never more than the model's copy of the answer
+  holds whole) follow the counts per signature (`indicators_stated`), then
+  the indicators: process pairings first, then one process, then the rest; `indicators_left_out` counts per signature what the
   budget leaves out with the offset from which the view, called with
   `signature`, `process` or `contains`, lists the rest, a page
   (`SIGNATURE_INDICATORS_PAGE`) at a time. A generic module reads no format's

@@ -1,14 +1,15 @@
-"""The signature view keeps its rows, lists indicators after them within one budget, and pages them.
+"""The signature view keeps its rows, adds indicators only in the room they leave, and pages them.
 
-Each row of the view (``sandbox_signatures``) is the row it always was and
-gains one field, ``indicators_stated``: how many indicators the report states
-for the signature. After the rows, ``indicators`` lists them, each with its
-signature's name, within one budget for the whole answer
+Each row of the view (``sandbox_signatures``) is the row an answer without
+indicators gives, byte for byte, so the model never sees fewer signatures for
+them. Only where every row fits within one budget for the whole answer
 (``SIGNATURE_ANSWER_CHARS``, and never more than the model's copy of the
-answer holds): those naming a process pairing first, then those naming one
-process, then the rest. ``indicators_left_out`` counts, per signature, what
-the budget leaves out, with the offset from which a call naming the signature
-lists the rest. A call that names a signature, a process id or a text answers
+answer holds whole) does anything follow: ``indicators_stated`` maps each
+signature to how many indicators the report states, then ``indicators`` lists
+them, each with its signature's name, those naming a process pairing first,
+then those naming one process, then the rest. ``indicators_left_out`` counts,
+per signature, what the budget leaves out, with the offset from which a call
+naming the signature lists the rest. A call that names a signature, a process id or a text answers
 the matching indicators, a page (``SIGNATURE_INDICATORS_PAGE``) from an
 offset, so every indicator the report states is reachable resolved.
 
@@ -120,12 +121,13 @@ def _model_copy(report: dict[str, Any], normalised: Any, cap: int = DEFAULT_CAP)
 
 
 class TestTheRows:
-    def test_each_row_is_the_row_without_indicators_with_its_count(self) -> None:
+    def test_each_row_is_the_row_without_indicators_and_the_counts_follow(self) -> None:
         report = _large(5, 3)
-        bare = sandbox_signatures(report)["signatures"]
-        rows = sandbox_signatures(report, normalised_by=CAPE)["signatures"]
-        assert [row.pop("indicators_stated") for row in rows] == [3] * 5
-        assert rows == bare
+        answer = sandbox_signatures(report, normalised_by=CAPE)
+        assert json.dumps(answer["signatures"]) == json.dumps(
+            sandbox_signatures(report)["signatures"]
+        )
+        assert answer["indicators_stated"] == {f"sig{i}": 3 for i in range(5)}
 
     def test_a_signature_with_no_indicator_gains_no_field(self) -> None:
         report = _cape([{"name": "quiet", "severity": 1, "description": "d"}])
@@ -170,33 +172,81 @@ class TestOneBudget:
         for one in answer["indicators"]:
             listed[one["signature"]] = listed.get(one["signature"], 0) + one.get("times", 1)
         left = {rest["signature"]: rest["left_out"] for rest in answer["indicators_left_out"]}
-        for row in answer["signatures"]:
-            name = row["name"]
-            assert listed.get(name, 0) + left.get(name, 0) == row["indicators_stated"]
+        for name, stated in answer["indicators_stated"].items():
+            assert listed.get(name, 0) + left.get(name, 0) == stated
         assert "offset=" in answer["indicators_read"]
 
-    def test_where_the_rows_fill_the_budget_none_is_listed_and_each_count_stands(self) -> None:
-        answer = sandbox_signatures(_large(), normalised_by=CAPE, room=1000)
+    def test_where_the_rows_fill_the_budget_the_answer_is_the_one_without_indicators(
+        self,
+    ) -> None:
+        report = _large()
+        assert sandbox_signatures(report, normalised_by=CAPE, room=1000) == sandbox_signatures(
+            report
+        )
+
+    def test_where_the_counts_fit_and_no_indicator_does_each_count_is_what_is_left_out(
+        self,
+    ) -> None:
+        report = _large()
+        bare = len(json.dumps(sandbox_signatures(report)))
+        answer = sandbox_signatures(report, normalised_by=CAPE, room=bare + 1500)
         assert "indicators" not in answer and "indicators_left_out" not in answer
-        assert all(row["indicators_stated"] == 30 for row in answer["signatures"])
+        assert set(answer["indicators_stated"].values()) == {30}
         assert "offset=" in answer["indicators_read"]
 
 
 class TestTheModelsCopy:
-    """Under the cap on the model's copy, the indicators cost no row a model would see."""
+    """The model's copy shows the signatures the answer without indicators shows, at every limit."""
 
-    @pytest.mark.parametrize("cap", [DEFAULT_CAP, 12_000, 20_000, 40_000])
-    def test_no_row_is_left_out_for_an_indicator(self, cap: int) -> None:
+    @pytest.mark.parametrize("cap", [DEFAULT_CAP, 12_000, 24_000, 50_000])
+    def test_the_rows_are_the_base_rows_and_no_name_is_lost(self, cap: int) -> None:
         report = _large()
-        copy = _model_copy(report, CAPE, cap)
-        counts_only = sandbox_signatures(report, normalised_by=CAPE, room=0)
-        assert len(copy["signatures"]) >= len(_sized(counts_only, cap)["signatures"])
+        base = _model_copy(report, None, cap)["signatures"]
+        rows = _model_copy(report, CAPE, cap)["signatures"]
+        assert [row["name"] for row in rows] == [row["name"] for row in base]
+        assert json.dumps(rows) == json.dumps(sandbox_signatures(report)["signatures"][: len(rows)])
 
-    def test_the_model_sees_the_rows_where_they_fit_whole(self) -> None:
-        report = _large(20, 30)
-        copy = _model_copy(report, CAPE)
-        assert len(copy["signatures"]) == 20
-        assert len(json.dumps(copy)) <= DEFAULT_CAP
+    @pytest.mark.parametrize("cap", [DEFAULT_CAP, 12_000])
+    def test_where_the_rows_do_not_fit_nothing_is_added(self, cap: int) -> None:
+        copy = _model_copy(_large(), CAPE, cap)
+        assert not any(key.startswith("indicators") for key in copy)
+
+    @pytest.mark.parametrize("cap", [24_000, None])
+    def test_where_they_fit_every_name_stands_with_the_counts(self, cap: int | None) -> None:
+        report = _large()
+        answer = (
+            sandbox_signatures(report, normalised_by=CAPE)
+            if cap is None
+            else _model_copy(report, CAPE, cap)
+        )
+        assert len(answer["signatures"]) == 100
+        assert answer["indicators_stated"] == {f"sig{i}": 30 for i in range(100)}
+
+    def test_the_tool_s_description_says_how_the_indicators_are_read(self) -> None:
+        container = _Container(_large(1, 1), CAPE, DEFAULT_CAP)
+        (tool,) = [
+            t for t in sandbox_tools.sandbox_tools(container) if t.name == "sandbox_signatures"
+        ]
+        for said in ("indicators_stated", "signature", "process", "contains", "offset"):
+            assert said in tool.description
+        assert f"{SIGNATURE_INDICATORS_PAGE} per call" in " ".join(tool.description.split())
+
+
+class TestTheLiveReport:
+    def test_the_rows_are_the_base_rows_with_the_counts_and_every_indicator(self) -> None:
+        from tests.unit.providers.sandbox.test_a_signature_s_entry_carries_its_indicators import (
+            TRIAGE,
+            _read,
+        )
+
+        document = sandbox_document(_read())
+        answer = sandbox_signatures(document, normalised_by=TRIAGE)
+        assert json.dumps(answer["signatures"]) == json.dumps(
+            sandbox_signatures(document)["signatures"]
+        )
+        assert sum(answer["indicators_stated"].values()) == 6
+        assert len(answer["indicators"]) == 5
+        assert "indicators_left_out" not in answer
 
 
 class TestThePagedCall:

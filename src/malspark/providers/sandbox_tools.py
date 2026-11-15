@@ -799,25 +799,33 @@ def _written_name(name: str) -> str:
 def _with_indicators(
     answer: dict[str, Any], names: list[str], indicators: SignatureIndicators, room: int
 ) -> dict[str, Any]:
-    """The rows' answer, then the indicators ``room`` holds, then the rest counted per signature.
+    """The rows' answer, then in the room the rows leave: the counts, the indicators, the rest.
 
-    After the rows, ``indicators`` lists the page's signatures' indicators,
-    each with its signature's name, in one order across them — every
-    process pairing first, then those naming one process, then the rest, each
-    group by signature and then in the signature's own order — while the
-    whole answer stays within ``room`` characters, stopping at the first that
-    does not fit: what a signature has listed is the head of its own order.
+    Nothing is added unless every row fits within ``room`` characters with
+    the counts beside them: then the answer is the one without indicators.
+    Otherwise ``indicators_stated`` maps each signature that states
+    indicators to their count, and ``indicators`` lists them, each with its
+    signature's name, in one order across the signatures — every process
+    pairing first, then those naming one process, then the rest, each group
+    by signature and then in the signature's own order — while the whole
+    answer stays within ``room``, stopping at the first that does not fit:
+    what a signature has listed is the head of its own order.
     ``indicators_left_out`` counts, per signature, the indicators past that
     head, with the offset the paged call (``indicators_read``) lists them
-    from. Where not even the counts fit beside the rows, no indicator is
-    listed, and each row's ``indicators_stated`` is what is left out. Linear
-    in the page's indicators.
+    from; where none is listed, each signature's count is what is left out.
+    Linear in the page's indicators.
     """
     from malspark.schemas.signature_indicators import SIGNATURE_INDICATORS_PAGE, indicator_rank
 
-    answer["indicators_read"] = INDICATORS_READ.format(page=SIGNATURE_INDICATORS_PAGE)
-    # Every signature's count at its largest, so the counts are known to fit
-    # before any indicator is placed.
+    extras: dict[str, Any] = {
+        "indicators_stated": {_written_name(name): indicators.stated(name) for name in names},
+        "indicators_read": INDICATORS_READ.format(page=SIGNATURE_INDICATORS_PAGE),
+    }
+    if _size({**answer, **extras}) > room:
+        return answer
+    answer.update(extras)
+    # Every signature's left-out count at its largest, so the counts are
+    # known to fit before any indicator is placed.
     counts = sum(
         _size(
             {
@@ -940,15 +948,17 @@ def sandbox_signatures(
     Reported as what they are — one detection engine's opinion — not folded
     into the verdict. A sandbox signature firing is evidence the agent weighs
     alongside everything else it found. Each row lists at most
-    :data:`SIGNATURE_PIDS_SHOWN` of the processes the hit was seen in, and,
-    where the reader declares its source states indicators, how many the
-    report states for it (``indicators_stated``); the indicators themselves
-    follow the rows, each process they name resolved to the report's own row
-    (:class:`SignatureIndicators`, :func:`_with_indicators`), within ``room``
-    characters for the whole answer (``SIGNATURE_ANSWER_CHARS`` unless the
-    caller holds a smaller one). A call naming a ``signature``, a ``process``
-    id or a text it ``contains`` answers the matching indicators instead, one
-    page from ``offset`` (:func:`_indicator_page`).
+    :data:`SIGNATURE_PIDS_SHOWN` of the processes the hit was seen in. Where the
+    reader declares its source states indicators, each signature's count and
+    the indicators themselves, each process they name resolved to the
+    report's own row (:class:`SignatureIndicators`), follow every row in the
+    room the rows leave within ``room`` characters for the whole answer
+    (``SIGNATURE_ANSWER_CHARS`` unless the caller holds a smaller one), and
+    only there (:func:`_with_indicators`): the rows are the rows an answer
+    without indicators gives, so no row is left out for them. A call naming a
+    ``signature``, a ``process`` id or a text it ``contains`` answers the
+    matching indicators instead, one page from ``offset``
+    (:func:`_indicator_page`).
     """
     from malspark.schemas.signature_indicators import SIGNATURE_ANSWER_CHARS
 
@@ -997,15 +1007,10 @@ def sandbox_signatures(
                     row["pids_total"] = len(pids)
                     pids = pids[:SIGNATURE_PIDS_SHOWN]
                 row["pids"] = pids
-            # How many indicators the report states for the hit, where the
-            # reader declares its source states them; the indicators follow
-            # the rows. Left out where none is stated, so such an answer is as
-            # it was.
-            if indicators is not None:
-                stated = indicators.stated(_signature_name(sig))
-                if stated:
-                    row["indicators_stated"] = stated
-                    named[_signature_name(sig)] = None
+            # The row is the row it always was: what the hit's indicators say
+            # follows every row, where the room allows (:func:`_with_indicators`).
+            if indicators is not None and indicators.stated(_signature_name(sig)):
+                named[_signature_name(sig)] = None
             rows.append(row)
     answer: dict[str, Any] = {"signatures": rows, "total": len(signatures), **meta}
     if indicators is None or not named:
@@ -1779,12 +1784,15 @@ def sandbox_tools(container: Any, agent: str | None = None) -> list[BaseTool]:
         """List the sandbox's own signature hits and their severity, then their indicators.
 
         ``offset`` and ``limit`` ask for one page (0 = every row); a page that
-        stops short names the next offset. Each row says how many indicators
-        (which process did what to which) the report states for it; as many
-        as the answer holds follow the rows, and ``indicators_left_out`` says
-        how many of each signature's are not listed and from which offset.
-        ``signature`` (a name), ``process`` (a process id) or ``contains`` (a
-        text) lists the matching indicators instead, a page from ``offset``.
+        stops short names the next offset. A signature's indicators say which
+        process did what to which. Where the answer has room after every row,
+        ``indicators_stated`` maps each signature to how many the report
+        states, as many indicators as fit follow in ``indicators``, and
+        ``indicators_left_out`` says how many of each signature's are not
+        listed and from which offset; otherwise the answer is the rows alone.
+        ``signature`` (a name), ``process`` (a process id, acting or acted on)
+        or ``contains`` (a text) lists the matching indicators instead, {page}
+        per call from ``offset``, ``next_offset`` naming the next page.
         """
         return _views(
             sandbox_signatures,
@@ -1861,7 +1869,7 @@ def sandbox_tools(container: Any, agent: str | None = None) -> list[BaseTool]:
             StructuredTool.from_function(
                 func=_sized(func, sizer),
                 name=name,
-                description=f"{_described(func)}\n\n{_DETONATION_ARG}",
+                description=f"{_paged(_described(func))}\n\n{_DETONATION_ARG}",
             )
             for func, name in zip(
                 (
@@ -1890,6 +1898,13 @@ def _request_tools(container: Any, agent: str | None = None) -> list[BaseTool]:
     from malspark.providers.detonation_requests import offered, request_tool
 
     return [request_tool(container)] if offered(container, agent) else []
+
+
+def _paged(description: str) -> str:
+    """``description`` with the declared page of the indicator call in place of ``{page}``."""
+    from malspark.schemas.signature_indicators import SIGNATURE_INDICATORS_PAGE
+
+    return description.replace("{page}", str(SIGNATURE_INDICATORS_PAGE))
 
 
 def _described(func: Any) -> str:

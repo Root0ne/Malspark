@@ -36,9 +36,11 @@ FIXTURES = Path(__file__).resolve().parents[3] / "fixtures" / "sandbox"
 
 
 def _view(report: SandboxReport, normalised_by: tuple[str, ...]) -> dict[str, dict[str, Any]]:
-    """Each row of the view by name, with the indicators listed after the rows under its name."""
+    """Each row of the view by name, with its count and the indicators listed after the rows."""
     answer = sandbox_signatures(sandbox_document(report), normalised_by=normalised_by)
-    rows = {row["name"]: row for row in answer["signatures"]}
+    rows = {row["name"]: dict(row) for row in answer["signatures"]}
+    for name, count in (answer.get("indicators_stated") or {}).items():
+        rows[name]["indicators_stated"] = count
     for listed in answer.get("indicators") or []:
         one = dict(listed)
         rows[one.pop("signature")].setdefault("indicators", []).append(one)
