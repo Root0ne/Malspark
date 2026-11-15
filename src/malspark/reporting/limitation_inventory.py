@@ -52,7 +52,7 @@ from __future__ import annotations
 import logging
 from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass
-from decimal import Decimal
+from decimal import ROUND_HALF_UP, Decimal
 from typing import Any
 
 from malspark.reporting.models import (
@@ -587,11 +587,14 @@ _FULL_DECIMALS = 18
 
 def _time_said(value: int | float, decimals: int | None) -> str:
     """``value`` whole where it is whole, else to ``decimals`` places (``None``: in full, as
-    the shortest text that reads back as the same number), trailing zeros dropped."""
+    the shortest text that reads back as the same number), trailing zeros dropped. Rounded
+    as written, a half up (149.0005 to three places is 149.001)."""
     if float(value).is_integer():
         return _number(int(value))
     exact = Decimal(repr(value))
-    text = f"{exact:,f}" if decimals is None else f"{exact:,.{decimals}f}"
+    if decimals is not None:
+        exact = exact.quantize(Decimal(1).scaleb(-decimals), rounding=ROUND_HALF_UP)
+    text = f"{exact:,f}"
     return text.rstrip("0").rstrip(".") if "." in text else text
 
 

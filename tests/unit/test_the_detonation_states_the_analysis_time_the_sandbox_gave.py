@@ -478,6 +478,15 @@ class TestTheLimitationsSayAShorterGrant:
             (150, 149.99961234, "was given 149.9996 s, not the 150 s asked"),
             (10**7, 9999999.9999999, "was given 9,999,999.9999999 s, not the 10,000,000 s asked"),
             (0.0010000001, 0.001, "was given 0.001 s, not the 0.0010000001 s asked"),
+            # Rounded as written, a half up, not as the nearest binary number would.
+            (150, 149.0005, "was given 149.001 s, not the 150 s asked"),
+            (150, 149.1005, "was given 149.101 s, not the 150 s asked"),
+            # Two times apart only past seventeen decimals are printed in full.
+            (
+                0.001234567890123457,
+                0.0012345678901234567,
+                "was given 0.0012345678901234567 s, not the 0.001234567890123457 s asked",
+            ),
         ],
     )
     def test_a_time_is_compared_and_printed_as_stated_never_two_alike(
