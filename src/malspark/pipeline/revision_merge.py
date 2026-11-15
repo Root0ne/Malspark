@@ -8,10 +8,10 @@ before and after. Here a revision changes only what it states:
 - a claim it withdraws is removed, with the reason it gives: a
   ``WITHDRAW CLAIM <n>: <reason>`` line (``retry_merge.read_withdrawals``),
   or a claim block under the number of a claim in force whose heading or
-  sentence declares the withdrawal ("CLAIM 5 (withdrawn): ..."), or a
-  dispute in which the analyst rejects a claim of its own answer in force
-  ("my own earlier claim 17 ... I reject this",
-  ``retry_merge.read_own_withdrawals``), the item as its reason;
+  sentence declares the withdrawal ("CLAIM 5 (withdrawn): ..."). No reading
+  of free prose withdraws a claim: a dispute in which the analyst rejects a
+  claim of its own answer in force ("my own earlier claim 17 ... I reject
+  this", ``retry_merge.read_own_withdrawals``) withdraws nothing (below);
 - a claim in force that a blocking line of the round's mediation named, and
   that the revision neither wrote again nor withdrew, is withdrawn by rule,
   with the line as its reason: a challenged claim left unanswered never
@@ -66,19 +66,23 @@ restates a claim, or none does: values and words are never pooled over
 blocks, since a claim's helpers recurring across other claims of the
 revision say nothing of the claim itself. A claim that names no address is
 restated by one block on its words or values alone. A claim a blocking line
-of the round's mediation named is asked no address either: the revision
-answers the line, so the one block that restates it replaces it, and with
-no block restating it the line rule below withdraws it unless the
-revision's disputes defend it; it is never carried beside a block. A revision placed by
-its numbers asks no block for the subject: the number names the claim.
+of the round's mediation speaks to is asked no address either, unless an own
+reference of the revision's disputes speaks for it: the revision answers
+the line, so the block that restates it best replaces it
+(:func:`_answered_by_a_block`). A dispute item read as the author's
+withdrawal of that claim leaves it so answered; it has no other effect, and
+with no block restating the claim the claim stays in force. A revision
+placed by its numbers asks no block for the subject: the number names the
+claim.
 A revision that writes again or withdraws every claim in force merges
 nothing: it stands as written, as it always did.
 
 The rule reads only the lines of the mediation right before the round: a
 claim a line of an earlier mediation contested, and that the mediator no
 longer listed, is carried with its mark like any other. A claim a blocking
-line named that the revision argues in its disputes (by its number, or by
-restating it there) is answered, and carried with that line.
+line named that the revision's disputes refer to in any way (its number, as
+an own reference however the item reads, or a statement restating it,
+:func:`_referenced`) is never withdrawn by rule: it is carried with that line.
 
 Nothing here edits a claim's words; the merge only chooses which claims
 stand, and :class:`RevisionMerge` records every choice.
@@ -87,7 +91,6 @@ stand, and :class:`RevisionMerge` records every choice.
 from __future__ import annotations
 
 import bisect
-import collections
 import re
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
@@ -120,7 +123,7 @@ from malspark.pipeline.retry_merge import (
     _WITHDRAW_OR_RETRACT_RE,
     _WITHDRAW_WORD_RE,
     _WITHDRAWING_OPENER_RE,
-    line_key,
+    OwnWithdrawals,
     read_own_withdrawals,
     read_withdrawals,
 )
@@ -414,6 +417,44 @@ def _disputed(earlier: _Block, disputes: Sequence[str]) -> bool:
         if _block_restates(earlier, reading):
             return True
     return False
+
+
+def _referenced(
+    first: Sequence[_Block], own: OwnWithdrawals, disputes: Sequence[str], ordered: Sequence[int]
+) -> frozenset[int]:
+    """Every claim in force the revision's disputes refer to, however the item reads.
+
+    An own reference (``own``, a withdrawal read or not) or an item that
+    argues the claim (:func:`_disputed`). The line rule never withdraws such
+    a claim: a misread item can keep a claim, never remove one.
+    """
+    found: set[int] = set()
+    for low, high, _item in own.claims:
+        found.update(_known_in(low, high, ordered))
+    for low, high in own.spoken:
+        found.update(_known_in(low, high, ordered))
+    found.update(block.number for block in first if _disputed(block, disputes))
+    return frozenset(found)
+
+
+def _answered_by_a_block(
+    itself: Mapping[int, Sequence[int]], own: OwnWithdrawals, ordered: Sequence[int]
+) -> frozenset[int]:
+    """The claims in force a block of the revision may replace without the address test.
+
+    ``itself`` is, per claim in force, the blocking lines that speak to it.
+    Such a claim is answered by the block that restates it best, unless an
+    own reference of the disputes speaks for it (``own.spoken``): then it
+    keeps the address test. This is the one use of the own-withdrawal
+    reading (``retry_merge.read_own_withdrawals``): an item read as the
+    author's withdrawal of its claim only leaves the claim open to that
+    block. It never withdraws the claim, which with no block restating it
+    stays in force.
+    """
+    spoken_for: set[int] = set()
+    for low, high in own.spoken:
+        spoken_for.update(_known_in(low, high, ordered))
+    return frozenset(number for number, lines in itself.items() if lines) - spoken_for
 
 
 def _declares_withdrawal(claim: Any) -> bool:
@@ -1074,39 +1115,21 @@ def merge_revision(
             withdrawn.setdefault(number, reason)
     unread = read.unread
     disputes = [str(item) for item in getattr(revision, "dissent_items", None) or [] if item]
-    # A dispute that rejects a claim of the analyst's own answer in force
-    # withdraws it, the item as its reason, read under the numbering of the
-    # answer in force. Every other reference of its own speaks for the claim
-    # (``defended``).
+    # The analyst's own references in its disputes, read under the numbering
+    # of the answer in force (``retry_merge.read_own_withdrawals``).
     own = read_own_withdrawals(disputes, getattr(in_force, "revision_round", None))
-    defended: set[int] = set()
-    withdrew: set[str] = set()
-    for low, high, reason in own.claims:
-        for number in _known_in(low, high, ordered):
-            withdrawn.setdefault(number, reason)
-            withdrew.add(reason)
-    for low, high in own.spoken:
-        defended.update(_known_in(low, high, ordered))
-    # A line the reader above counted as a withdrawal not read exactly, that
-    # is an item read here as one, is not counted.
-    left_unread = collections.Counter(line_key(line) for line in read.unread_lines)
-    for item in own.items:
-        if " ".join(item.split()) not in withdrew:
-            continue
-        for part in item.splitlines():
-            key = line_key(part)
-            if left_unread[key] > 0:
-                left_unread[key] -= 1
-                unread -= 1
     # Per claim in force, the lines of the round's mediation that named it and
-    # the blocking ones that speak to it (:func:`_speaking_lines`). A claim a
-    # dispute of its own speaks for is answered there, not by a block.
+    # the blocking ones that speak to it (:func:`_speaking_lines`).
     speaking = {
         block.number: _speaking_lines(block, named, expanded, clauses, anchored) for block in first
     }
-    answered = frozenset(
-        number for number, (_l, _u, spoken) in speaking.items() if spoken and number not in defended
+    # The one place the own-withdrawal reading counts (:func:`_answered_by_a_block`).
+    answered = _answered_by_a_block(
+        {number: spoken for number, (_l, _u, spoken) in speaking.items()}, own, ordered
     )
+    # Every claim the disputes refer to, however the item reads
+    # (:func:`_referenced`): the line rule never withdraws it.
+    referenced = _referenced(first, own, disputes, ordered)
 
     readings = [_read(block) for block in revised]
     numbered = _by_number(first, revised, readings)
@@ -1162,9 +1185,9 @@ def merge_revision(
         # A blocking line that does not speak to the claim is no line of it:
         # it withdraws nothing, leaves no mark, and the reference is stated.
         not_spoken_to.extend((block.number, block.sentence, n, ref) for n, ref in unspoken)
-        if spoken and (block.number in defended or _disputed(block, disputes)):
-            # The revision did not restate it but argued for it in its
-            # disputes: an answer, carried with the line that contested it.
+        if spoken and block.number in referenced:
+            # The revision did not restate it but its disputes refer to it:
+            # an answer, carried with the line that contested it.
             contested[block.number] = sorted({line for line, _b in lines})
         elif spoken and begun_unread:
             # The revision began a claim the platform did not read: it may be

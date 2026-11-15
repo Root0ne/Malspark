@@ -106,7 +106,10 @@ _NUMBER_RE = re.compile(r"\d++")
 _RANGE_SPLIT_RE = re.compile(r"(?:,|&|\band\b)", re.IGNORECASE)
 
 # A debate revision's dispute that rejects a claim of the analyst's own answer
-# in force withdraws it (``read_own_withdrawals``). The wordings, as data:
+# in force is read as the author's withdrawal of it (``read_own_withdrawals``).
+# The reading withdraws nothing: it only leaves the claim open to the block of
+# the same revision that restates it (``revision_merge``). The wordings, as
+# data:
 #
 # - the reference to its own claim: a first-person word, any of the words of
 #   an earlier answer, an optional "round-<n>" (read only for the round of the
@@ -438,17 +441,15 @@ def _sentence_of(ends: Sequence[int], low: int, high: int, size: int) -> tuple[i
 
 @dataclass(frozen=True)
 class OwnWithdrawals:
-    """What a revision's disputes withdraw of its own claims.
+    """How a revision's disputes read of its own claims.
 
-    ``claims`` is ``(first, last, item)`` per number or range read as a
-    withdrawal, as digits, the dispute item as the reason; ``items``
-    the items read so; ``spoken`` ``(first, last)`` per number or range of
-    every other reference of its own an item writes: the item speaks for
-    that claim, and withdraws nothing of it.
+    ``claims`` is ``(first, last, item)`` per number or range read as the
+    author's withdrawal, as digits, with the dispute item; ``spoken``
+    ``(first, last)`` per number or range of every other reference of its
+    own an item writes: the item speaks for that claim.
     """
 
     claims: tuple[tuple[str, str, str], ...] = ()
-    items: tuple[str, ...] = ()
     spoken: tuple[tuple[str, str], ...] = ()
 
 
@@ -463,9 +464,12 @@ def _ranges(numbers: str) -> list[tuple[str, str]]:
 
 
 def read_own_withdrawals(items: Sequence[str], round_in_force: int | None) -> OwnWithdrawals:
-    """The claims of its own answer in force the dispute ``items`` reject, in order.
+    """The claims of its own answer in force the dispute ``items`` read as rejected, in order.
 
-    An item withdraws a claim where it names it as its own
+    What is read here withdraws no claim: the merge only lets a block of the
+    same revision that restates such a claim replace it
+    (``revision_merge``). An item reads as a withdrawal of a claim where it
+    names it as its own
     (:data:`OWN_CLAIM_OPENERS`, :data:`OWN_CLAIM_EARLIER_WORDS`) and either a
     first-person verb of :data:`OWN_WITHDRAWING_VERBS` stands right before
     that reference, nothing but a mark or one of :data:`OWN_CLAIM_ENDS` after
@@ -502,7 +506,6 @@ def read_own_withdrawals(items: Sequence[str], round_in_force: int | None) -> Ow
     item, so an item costs its length whatever the number of its references.
     """
     claims: list[tuple[str, str, str]] = []
-    read: list[str] = []
     spoken: list[tuple[str, str]] = []
     in_force = None if round_in_force is None else str(int(round_in_force))
     for raw in items:
@@ -526,7 +529,6 @@ def read_own_withdrawals(items: Sequence[str], round_in_force: int | None) -> Ow
         quoted = _quoted_spans(item)
         aside = _merged([*quoted, *_bracketed_spans(item)])
         ends = [m.start() for m in _SENTENCE_END_RE.finditer(item)]
-        found = False
         for match in own:
             ranges = _ranges(match.group("numbers"))
             written_round = match.group("round")
@@ -594,11 +596,8 @@ def read_own_withdrawals(items: Sequence[str], round_in_force: int | None) -> Ow
             if word is None:
                 spoken.extend(ranges)
                 continue
-            found = True
             claims.extend((first, last, item) for first, last in ranges)
-        if found:
-            read.append(str(raw))
-    return OwnWithdrawals(claims=tuple(claims), items=tuple(read), spoken=tuple(spoken))
+    return OwnWithdrawals(claims=tuple(claims), spoken=tuple(spoken))
 
 
 # Where a flag names the claim block it is about: ``static.claims[5].T1041``.
@@ -634,15 +633,12 @@ class Withdrawals:
 
     ``claims`` is ``(first, last, reason)`` per number or range, as digits;
     ``findings`` is ``(folded title, title as written, reason)``; ``unread``
-    counts the lines that begin with the word and were not read exactly, or
-    that hold a withdrawing word and a claim number in other words, and
-    ``unread_lines`` holds each of them as written.
+    counts the lines that begin with the word and were not read exactly.
     """
 
     claims: tuple[tuple[str, str, str], ...] = ()
     findings: tuple[tuple[str, str, str], ...] = ()
     unread: int = 0
-    unread_lines: tuple[str, ...] = ()
 
     def __bool__(self) -> bool:
         return bool(self.claims or self.findings)
@@ -652,7 +648,7 @@ def read_withdrawals(text: str) -> Withdrawals:
     """The ``WITHDRAW`` lines of ``text``, in order, each read once from its start."""
     claims: list[tuple[str, str, str]] = []
     findings: list[tuple[str, str, str]] = []
-    unread: list[str] = []
+    unread = 0
     for line in str(text or "").splitlines():
         if _WITHDRAW_LINE_RE.match(line) is None:
             heading = CLAIM_HEAD_RE.match(line)
@@ -665,10 +661,10 @@ def read_withdrawals(text: str) -> Withdrawals:
                     or _WITHDRAW_OR_RETRACT_RE.search(sentence)
                     or _WITHDRAWING_OPENER_RE.match(sentence)
                 ):
-                    unread.append(line)
+                    unread += 1
                     continue
             if _WITHDRAW_WORD_RE.search(rest) and _CLAIM_NUMBER_RE.search(rest):
-                unread.append(line)
+                unread += 1
             continue
         found = _WITHDRAW_CLAIM_RE.match(line)
         if found is not None:
@@ -683,25 +679,10 @@ def read_withdrawals(text: str) -> Withdrawals:
         if titled is not None:
             written = _said(titled.group("quoted") or titled.group("title"))
         if titled is None or not folded_title(written):
-            unread.append(line)
+            unread += 1
             continue
         findings.append((folded_title(written), written, _said(titled.group("reason"))))
-    return Withdrawals(
-        claims=tuple(claims),
-        findings=tuple(findings),
-        unread=len(unread),
-        unread_lines=tuple(unread),
-    )
-
-
-_LINE_PREFIX_RE = re.compile(LINE_PREFIX)
-
-
-def line_key(text: str) -> str:
-    """A line as a dispute item holds it: no list marker or marks before it, spaces folded."""
-    written = str(text or "")
-    prefix = _LINE_PREFIX_RE.match(written)
-    return " ".join(written[prefix.end() if prefix else 0 :].split())
+    return Withdrawals(claims=tuple(claims), findings=tuple(findings), unread=unread)
 
 
 @dataclass

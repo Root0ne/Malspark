@@ -5,8 +5,9 @@ it, its addresses stated or not; with no block restating it, the line rule
 withdraws it, unless the revision's disputes defend it. A claim no blocking
 line named keeps the subject test: a block that restates it without one of
 its addresses leaves it carried beside that block. A dispute in which the
-analyst rejects its own earlier claim withdraws that claim; one that rejects
-another analyst's claim is a dispute.
+analyst rejects its own earlier claim is read as its withdrawal and
+withdraws nothing: the claim stays in force; one that rejects another
+analyst's claim is a dispute.
 
 Every address, name and sentence here is made up for the test.
 """
@@ -150,10 +151,10 @@ class TestTheAnalystRejectsItsOwnClaim:
             named,
         )
 
-    def _withdrawn(self, merge: Any) -> list[int]:
-        return [n for n, _s, _r in merge.withdrawn]
+    def _read(self, dispute: str) -> list[tuple[str, str]]:
+        return [c[:2] for c in read_own_withdrawals([dispute], 2).claims]
 
-    def test_its_claim_listed_among_the_rejected_ones_is_withdrawn(self) -> None:
+    def test_its_claim_listed_among_the_rejected_ones_is_read_and_stays(self) -> None:
         dispute = (
             "Peer claims that the mutex name at 0x403962 is not recovered (STATIC ANALYST claim "
             "23, my own earlier claim 2). I reject this. [ev_0109] passes the buffer as the third "
@@ -162,9 +163,11 @@ class TestTheAnalystRejectsItsOwnClaim:
 
         merge = self._merge(dispute, named={2: [(1, True)]})
 
-        assert self._withdrawn(merge) == [2]
-        assert merge.withdrawn_by_rule == () and 2 not in _carried(merge)
-        assert merge.withdrawn[0][2].startswith("Peer claims that the mutex name")
+        assert self._read(dispute) == [("2", "2")]
+        assert merge.withdrawn == () and merge.withdrawn_by_rule == ()
+        assert merge.merged is not None
+        kept = next(c for c in merge.merged.claims if c.claim == MUTEX)
+        assert kept.carried_contested_by == ["L1 (round 3)"]
 
     def test_the_forms_the_revisions_write(self) -> None:
         for dispute in (
@@ -179,8 +182,9 @@ class TestTheAnalystRejectsItsOwnClaim:
             "I retract my earlier claim 2: ev_0109 shows the third argument at 0x403962.",
             "I reject my own claim 2 (0x403962); ev_0109 shows the buffer passed as R8.",
         ):
+            assert ("2", "2") in self._read(dispute) or ("1", "2") in self._read(dispute), dispute
             merge = self._merge(dispute)
-            assert 2 in self._withdrawn(merge), dispute
+            assert merge.withdrawn == () and 2 in _carried(merge), dispute
 
     def test_another_analysts_claim_rejected_is_a_dispute(self) -> None:
         for dispute in (
@@ -188,8 +192,7 @@ class TestTheAnalystRejectsItsOwnClaim:
             "Triage claim 2 and dynamic claim 1 hold the name unread; I reject both.",
             "Peer claim 2 contradicts my claim 1. I reject this.",
         ):
-            merge = self._merge(dispute)
-            assert self._withdrawn(merge) == [], dispute
+            assert self._read(dispute) == [], dispute
 
     def test_a_doubt_withdraws_nothing(self) -> None:
         for dispute in (
@@ -205,18 +208,18 @@ class TestTheAnalystRejectsItsOwnClaim:
             # Another's act on it.
             "My claim 2 (0x403962) was rejected by the mediator.",
         ):
-            merge = self._merge(dispute)
-            assert self._withdrawn(merge) == [], dispute
+            assert self._read(dispute) == [], dispute
 
     def test_a_round_named_for_the_answer_in_force_is_read(self) -> None:
-        merge = self._merge("My round-2 claim 2 (name unread). Withdrawn as stated.")
+        assert self._read("My round-2 claim 2 (name unread). Withdrawn as stated.") == [("2", "2")]
 
-        assert self._withdrawn(merge) == [2]
+    def test_a_claim_it_rejects_and_no_line_named_stays_too(self) -> None:
+        dispute = "My own earlier claim 2 on 0x403962 goes, and I withdraw it."
 
-    def test_a_claim_it_rejects_and_no_line_named_is_withdrawn_too(self) -> None:
-        merge = self._merge("My own earlier claim 2 on 0x403962 goes, and I withdraw it.")
+        merge = self._merge(dispute)
 
-        assert self._withdrawn(merge) == [2] and 2 not in _carried(merge)
+        assert self._read(dispute) == [("2", "2")]
+        assert merge.withdrawn == () and 2 in _carried(merge)
 
 
 class TestAnItemThatSaysAnythingAgainstTheWithdrawalReadsAsNothing:
@@ -384,36 +387,24 @@ class TestAWithdrawalTheReaderMustRead:
 
 
 class TestAnOwnReferenceIsReadUnderTheNumberingInForce:
-    IN_FORCE = _block(LOADER) + _block(MUTEX) + _block(GATE)
+    def _read(self, dispute: str) -> list[tuple[str, str]]:
+        return [c[:2] for c in read_own_withdrawals([dispute], 2).claims]
 
-    def _merge(self, dispute: str) -> Any:
-        answer = _block(GATE_AGAIN) + _block(ADDED)
-        return merge_revision(
-            _isr(self.IN_FORCE, revision_round=2),
-            _isr(answer, (dispute,), revision_round=3),
-            answer,
-            3,
-        )
+    def test_one_that_names_only_its_number_is_read(self) -> None:
+        assert self._read("My claim 2 is withdrawn; ev_0109 shows the buffer.") == [("2", "2")]
 
-    def test_one_that_names_only_its_number_withdraws_it(self) -> None:
-        merge = self._merge("My claim 2 is withdrawn; ev_0109 shows the buffer.")
+    def test_of_a_range_every_claim_in_it_is_read(self) -> None:
+        dispute = "My claims 1-2 are withdrawn: the buffer is read in ev_0109."
 
-        assert [n for n, _s, _r in merge.withdrawn] == [2] and 2 not in _carried(merge)
-
-    def test_of_a_range_every_claim_in_it_goes(self) -> None:
-        merge = self._merge("My claims 1-2 are withdrawn: the buffer is read in ev_0109.")
-
-        assert [n for n, _s, _r in merge.withdrawn] == [1, 2]
+        assert self._read(dispute) == [("1", "2")]
 
     def test_the_round_of_the_answer_in_force_written_is_read(self) -> None:
-        merge = self._merge("My round-2 claim 2 is withdrawn.")
-
-        assert [n for n, _s, _r in merge.withdrawn] == [2]
+        assert self._read("My round-2 claim 2 is withdrawn.") == [("2", "2")]
 
     def test_another_round_written_reads_as_nothing(self) -> None:
-        merge = self._merge("My round-1 claim 2 is withdrawn.")
+        read = read_own_withdrawals(["My round-1 claim 2 is withdrawn."], 2)
 
-        assert merge.withdrawn == () and 2 in _carried(merge)
+        assert read.claims == () and read.spoken == ()
 
 
 class TestAListOfClaimsTheReferenceStandsIn:
@@ -426,7 +417,7 @@ class TestAListOfClaimsTheReferenceStandsIn:
         assert [c[:2] for c in read_own_withdrawals([dispute], 2).claims] == [("2", "2")]
 
 
-class TestALineReadHereIsNoLongerUnread:
+class TestADisputeLineStaysALineNotReadExactly:
     IN_FORCE = _block(LOADER) + _block(MUTEX) + _block(GATE)
 
     def _merge(self, answer: str, dispute: str) -> Any:
@@ -437,13 +428,13 @@ class TestALineReadHereIsNoLongerUnread:
             3,
         )
 
-    def test_the_dispute_line_read_as_a_withdrawal_is_not_counted(self) -> None:
+    def test_the_dispute_line_read_as_a_withdrawal_is_counted(self) -> None:
         dispute = "My claim 2 (0x403962) is withdrawn as stated."
         answer = _block(GATE_AGAIN) + _block(ADDED) + f"DISPUTES:\n- {dispute}\n"
 
         merge = self._merge(answer, dispute)
 
-        assert [n for n, _s, _r in merge.withdrawn] == [2] and merge.unread == 0
+        assert merge.withdrawn == () and merge.unread == 1
 
     def test_another_line_left_unread_is_still_counted(self) -> None:
         dispute = "My claim 2 (0x403962) is withdrawn too."
@@ -455,7 +446,7 @@ class TestALineReadHereIsNoLongerUnread:
 
         merge = self._merge(answer, dispute)
 
-        assert [n for n, _s, _r in merge.withdrawn] == [2] and merge.unread == 1
+        assert merge.withdrawn == () and 2 in _carried(merge) and merge.unread == 1
 
     def test_a_line_whose_item_withdraws_nothing_stays_unread(self) -> None:
         dispute = "My round-1 claim 2 is withdrawn as stated."
@@ -591,35 +582,42 @@ class TestNoClaimStandsBesideTheBlockThatReplacedIt:
                 assert not any(blocks for _line, blocks in named.get(number, ()))
 
 
+# A blocking line that names claim 2.
+NAMED_2 = {2: [(1, True)]}
+
+
 class TestAHostileDisputeCostsItsLength:
     # A dispute is model text and can carry what a sample planted in a tool's
     # answer: a range is read against the claims that exist, and the reader
     # reads each item in one pass.
     IN_FORCE = _block(LOADER) + _block(MUTEX) + _block(GATE)
 
-    def _merge(self, dispute: str) -> Any:
+    def _merge(self, dispute: str, named: Any = None) -> Any:
         answer = _block(GATE_AGAIN) + _block(ADDED)
         return merge_revision(
             _isr(self.IN_FORCE, revision_round=1),
             _isr(answer, (dispute,), revision_round=2),
             answer,
             2,
+            named,
         )
 
-    def test_a_range_with_a_nine_digit_end_withdraws_only_the_claims_there_are(self) -> None:
+    def test_a_range_with_a_nine_digit_end_refers_only_to_the_claims_there_are(self) -> None:
         dispute = "My claims 2-999999999 are withdrawn (0x403962)."
 
-        merge = assert_under(lambda: self._merge(dispute), 0.5, what="the merge")
-        merge = self._merge(dispute)
+        merge = assert_under(lambda: self._merge(dispute, NAMED_2), 0.5, what="the merge")
+        merge = self._merge(dispute, NAMED_2)
 
-        # Claim 3 is written again by a block, and stands as written.
-        assert [n for n, _s, _r in merge.withdrawn] == [2] and 3 in merge.replaced
+        # Claim 2 is referred to, so the line rule leaves it; claim 3 is
+        # written again by a block, and stands as written.
+        assert merge.withdrawn == () and merge.withdrawn_by_rule == ()
+        assert _carried(merge) == [1, 2] and 3 in merge.replaced
 
     def test_a_range_with_an_end_too_long_to_convert_is_read(self) -> None:
-        merge = self._merge(f"My claims 2-{'9' * 5000} are withdrawn (0x403962).")
+        merge = self._merge(f"My claims 2-{'9' * 5000} are withdrawn (0x403962).", NAMED_2)
 
-        # Claim 3 is written again by a block, and stands as written.
-        assert [n for n, _s, _r in merge.withdrawn] == [2] and 3 in merge.replaced
+        assert merge.withdrawn == () and merge.withdrawn_by_rule == ()
+        assert _carried(merge) == [1, 2] and 3 in merge.replaced
 
     def test_a_withdraw_line_with_a_nine_digit_range_is_read_the_same(self) -> None:
         answer = _block(GATE_AGAIN) + _block(ADDED) + "WITHDRAW CLAIMS 2-999999999: gone.\n"
