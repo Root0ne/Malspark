@@ -112,16 +112,19 @@ def carried_note(claim: Any) -> str:
 # ``(unchanged since round 1)``). One declaration: the claim list
 # writes the note by it, and a WITHDRAW line that copies the note after the
 # claim number is read through it by the same shape (``retry_merge``), the
-# round's value never asked.
+# round's value never asked. The shape is the writer's exactly: its case and
+# ASCII digits, whatever flag the pattern it stands in carries.
 WRITTEN_IN_ROUND = "written in round"
 UNCHANGED_SINCE_ROUND = "unchanged since round"
 ROUND_NOTE_BRACKETS = ("(", ")")
 ROUND_NOTE_PATTERN = (
-    re.escape(ROUND_NOTE_BRACKETS[0])
+    "(?-i:"
+    + re.escape(ROUND_NOTE_BRACKETS[0])
     + "(?:"
     + "|".join(re.escape(said) for said in (WRITTEN_IN_ROUND, UNCHANGED_SINCE_ROUND))
-    + r") \d++"
+    + r") [0-9]++"
     + re.escape(ROUND_NOTE_BRACKETS[1])
+    + ")"
 )
 
 

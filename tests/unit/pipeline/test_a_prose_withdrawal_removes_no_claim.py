@@ -282,6 +282,7 @@ class TestAWithdrawLineWithANoteAfterTheNumber:
         for line in (
             "WITHDRAW CLAIM 1 (written in round 97): the key is read elsewhere.",
             "WITHDRAW CLAIM 1 (unchanged since round 0): the key is read elsewhere.",
+            "withdraw claim 1 (unchanged since round 0): the key is read elsewhere.",
         ):
             assert read_withdrawals(line + "\n").claims == (
                 ("1", "1", "the key is read elsewhere."),
@@ -301,6 +302,16 @@ class TestAWithdrawLineWithANoteAfterTheNumber:
             "WITHDRAW CLAIM 1 [written in round 1]: the key is read elsewhere.",
             "WITHDRAW CLAIM 1 (written in round 1)(see L4): the key is read elsewhere.",
             "WITHDRAW CLAIM 1 (written in round one): the key is read elsewhere.",
+            # The note's shape is the writer's exactly: its case, a space and
+            # ASCII digits, one note.
+            "WITHDRAW CLAIM 1 (written in round): the key is read elsewhere.",
+            "WITHDRAW CLAIM 1 (written in round1): the key is read elsewhere.",
+            "WITHDRAW CLAIM 1 (written in round 1)(written in round 2): the key is read elsewhere.",
+            "WITHDRAW CLAIM 1 (UNCHANGED SINCE ROUND 2): the key is read elsewhere.",
+            "WITHDRAW CLAIM 1 (Unchanged Since Round 2): the key is read elsewhere.",
+            "WITHDRAW CLAIM 1 (written in Round 1): the key is read elsewhere.",
+            "WITHDRAW CLAIM 1 (written in round \u0661): the key is read elsewhere.",
+            "WITHDRAW CLAIM 1 (written in round \uff11): the key is read elsewhere.",
         ):
             read = read_withdrawals(line + "\n")
             assert read.claims == (), line
