@@ -186,7 +186,7 @@ def _codes(codes: Mapping[str, int] | None) -> str:
     )
 
 
-def _flag_line(flag: Mapping[str, Any]) -> str:
+def _flag_line(flag: Mapping[str, Any], *, show_text: bool = False) -> str:
     parts = [_s(flag.get("code") or "")]
     for key in ("path", "subject"):
         said = flag.get(f"{key}_text") or flag.get(key)
@@ -201,7 +201,7 @@ def _flag_line(flag: Mapping[str, Any]) -> str:
             parts.append(said)
     if flag.get("asked") is False:
         parts.append("not shown to its producer")
-    if flag.get("statements"):
+    if show_text and flag.get("statements"):
         parts.append("at " + _join(", ", flag["statements"]))
     if flag.get("entries"):
         parts.append(_join(", ", flag["entries"]))
@@ -389,7 +389,9 @@ def render_record(record: Mapping[str, Any]) -> str:
         lines.append("Findings")
         for where, flags in flagged:
             lines.append(f"  {where}")
-            lines.extend(f"    {_flag_line(flag)}" for flag in flags)
+            lines.extend(
+                f"    {_flag_line(flag, show_text=bool(record.get('show_text')))}" for flag in flags
+            )
 
     not_replayed = record.get("not_replayed") or []
     if not_replayed:

@@ -67,14 +67,15 @@ class TestTheStatementOfAFinding:
     def test_the_place_holds_no_word_of_the_run_without_the_text(
         self, record: dict[str, Any]
     ) -> None:
-        text = json.dumps(
-            [f["statements"] for f in record["narrative"]["flags"] if "statements" in f]
-        )
+        places = [f["statements"] for f in record["narrative"]["flags"] if "statements" in f]
+        assert len(places) == 3
+        text = json.dumps(places)
 
         for word in ("XOR", "configuration", "server", "blocklist", "Updater"):
             assert word not in text
 
-    def test_the_totals_are_those_of_a_run_without_places(self, record: dict[str, Any]) -> None:
+    def test_the_decisions_are_those_of_a_run_without_places(self, record: dict[str, Any]) -> None:
+        assert any("statements" in f for f in record["narrative"]["flags"])
         assert record["totals"] == EXPECTED_TOTALS
 
     def test_the_text_is_added_beside_the_place_and_not_instead_of_it(self) -> None:
@@ -86,8 +87,30 @@ class TestTheStatementOfAFinding:
         assert flag["statements"] == ["key_findings.1"]
         assert flag["message"]
 
-    def test_the_record_prints_the_place(self, record: dict[str, Any]) -> None:
-        assert "key_findings.1" in render_record(record)
+
+def _printed(record: dict[str, Any]) -> str:
+    rules = f"rules from: {record['rules']['tree']}"
+    return render_record(record).replace(rules, "rules from: <tree>") + "\n"
+
+
+class TestThePrintedRecord:
+    def test_without_the_text_the_output_is_what_it_was_with_no_places(
+        self, record: dict[str, Any]
+    ) -> None:
+        expected = (FIXTURE.parent / "tiny_output.txt").read_text(encoding="utf-8")
+
+        assert _printed(record) == expected
+        assert " | at " not in _printed(record)
+
+    def test_with_the_text_each_finding_line_ends_with_its_places(self) -> None:
+        shown = replay_cli._replay([FIXTURE], True)[0]
+        expected = (FIXTURE.parent / "tiny_output_show_text.txt").read_text(encoding="utf-8")
+
+        assert _printed(shown) == expected
+        assert (
+            "narrative.ungrounded_finding | key_findings.1.evidence_ids | at key_findings.1"
+            in expected
+        )
 
 
 class TestTheComparisonReadsDecisions:
