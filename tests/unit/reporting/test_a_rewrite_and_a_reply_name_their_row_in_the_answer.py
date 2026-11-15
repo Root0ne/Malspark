@@ -9,6 +9,8 @@ rows before it are replies.
 
 from __future__ import annotations
 
+import pytest
+
 from malspark.pipeline.validation import answer_of, citation_violations
 from malspark.reporting.question_round import QuestionRoundOutput, _answer_prose
 from malspark.reporting.section_agreement import rewrites_violations
@@ -52,28 +54,51 @@ def test_a_reply_keeps_its_position_after_a_row_that_is_no_reply() -> None:
 class TestEachRoundRunsItsChecksInsideItsSchema:
     """A place spells a field name the round's schema declares, on every path a round checks."""
 
-    def test_the_narrative_loop_s_checks(self) -> None:
+    @pytest.mark.asyncio
+    async def test_the_narrative_loop_s_checks(self) -> None:
+        import json
+        from unittest.mock import AsyncMock, MagicMock
+
+        from malspark.reporting.models import FileHashes, MalwareReport, SampleIdentity
         from malspark.reporting.narrative_agent import NarrativeAgent
-        from tests.unit.pipeline.test_a_finding_names_its_statement import _grounding
 
-        agent = object.__new__(NarrativeAgent)
-        agent._items = None
-        payload = {
-            "executive_summary": "Plain.",
-            "key_findings": [{"text": "It cites [Foo].", "evidence_ids": []}],
+        recommendation = {
+            "category": "firewall",
+            "action": "Block it.",
+            "rationale": "Seen.",
+            "priority": "P0",
+            "technique_id": "",
+            "detection": "Alert.",
         }
+        answer = json.dumps(
+            {
+                "executive_summary": "The sample is a loader that reaches its server over HTTPS "
+                "and should be contained on every host it reached, with its domain blocked.",
+                "key_findings": [
+                    {"text": "It resolves its imports [Foo].", "evidence_ids": []},
+                    {"text": "It reaches its server over HTTPS.", "evidence_ids": []},
+                ],
+                "defensive_recommendations": [recommendation] * 3,
+            }
+        )
+        llm = MagicMock()
+        structured = MagicMock()
+        structured.ainvoke = AsyncMock(side_effect=Exception("no schema"))
+        llm.with_structured_output.return_value = structured
+        llm.ainvoke = AsyncMock(side_effect=[MagicMock(content=answer), MagicMock(content=answer)])
+        agent = NarrativeAgent(llm=llm)
+        report = MalwareReport(
+            identity=SampleIdentity(hashes=FileHashes(sha256="a" * 64), file_type="pe")
+        )
 
-        found = [
-            violation
-            for check in agent._validators(
-                _grounding(), ["ev_0011"], ["ev_0011"], None, None, None, [""]
-            )  # type: ignore[arg-type]
-            for violation in check(payload)
-        ]
+        await agent.generate(report, citable_ids=["ev_0011"])
 
-        assert [v.statements for v in found if v.code == "report.citation_not_evidence"] == [
-            ("key_findings.0.text",)
+        rows = [
+            r
+            for r in agent.validation_tally.unresolved
+            if r["code"] == "report.citation_not_evidence"
         ]
+        assert [r["statements"] for r in rows] == ["key_findings.0.text"]
 
     def test_the_narrative_s_structured_answer(self) -> None:
         from malspark.pipeline.validation import ValidationTally

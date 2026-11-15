@@ -45,7 +45,6 @@ SITES: dict[str, tuple[Sequence[Callable[..., Any]], Sequence[str], Mapping[str,
     "narrative": (
         (
             NarrativeAgent.generate,
-            NarrativeAgent._validators,
             NarrativeAgent._kept_with_ungrounded_recorded,
         ),
         rules.NARRATIVE_CHECKS,

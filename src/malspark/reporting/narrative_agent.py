@@ -1101,9 +1101,25 @@ class NarrativeAgent:
             payload, violations, retries = await retry_with_feedback(
                 _run,
                 list(messages),
-                self._validators(
-                    grounding, known_ids, citable, evidence, answers, published, answer_read
-                ),
+                [
+                    declaring(NarrativeOutput, check)
+                    for check in [
+                        lambda p: schema_violations(
+                            NarrativeOutput, p, code="narrative.schema", answer=answer_read[0]
+                        ),
+                        lambda p: narrative_capability_violations(p, grounding),
+                        lambda p: key_finding_citation_violations(p, known_ids, self._items),
+                        lambda p: citation_violations(
+                            p, citable, prose=NARRATIVE_PROSE, items=self._items
+                        ),
+                        lambda p: wrong_entry_citations(p, evidence, prose=NARRATIVE_PROSE),
+                        lambda p: misstated_entry_contents(p, evidence, prose=NARRATIVE_PROSE),
+                        lambda p: ledger_absence_contradictions(p, evidence),
+                        technique_name_violations,
+                        lambda p: recommendation_indicator_violations(p, answers),
+                        lambda p: recommendation_technique_violations(p, published),
+                    ]
+                ],
                 parse=_parse,
                 on_feedback=_on_feedback,
                 # Only a kept structured answer's retry offers the schema's tool again.
@@ -1305,35 +1321,6 @@ class NarrativeAgent:
         )
         self.validation_tally.record_unresolved("narrative", violations, asked=asked)
         record_flagged_statements(getattr(self, "_report", None), violations, asked=asked)
-
-    def _validators(
-        self,
-        grounding: CapabilityGrounding,
-        known_ids: list[str],
-        citable: Sequence[str],
-        evidence: EntryTexts | None,
-        answers: Any,
-        published: list[str] | None,
-        answer_read: list[Any],
-    ) -> list[Any]:
-        """The checks the narrative's validation loop runs, each inside the narrative's schema."""
-        return [
-            declaring(NarrativeOutput, check)
-            for check in [
-                lambda p: schema_violations(
-                    NarrativeOutput, p, code="narrative.schema", answer=answer_read[0]
-                ),
-                lambda p: narrative_capability_violations(p, grounding),
-                lambda p: key_finding_citation_violations(p, known_ids, self._items),
-                lambda p: citation_violations(p, citable, prose=NARRATIVE_PROSE, items=self._items),
-                lambda p: wrong_entry_citations(p, evidence, prose=NARRATIVE_PROSE),
-                lambda p: misstated_entry_contents(p, evidence, prose=NARRATIVE_PROSE),
-                lambda p: ledger_absence_contradictions(p, evidence),
-                technique_name_violations,
-                lambda p: recommendation_indicator_violations(p, answers),
-                lambda p: recommendation_technique_violations(p, published),
-            ]
-        ]
 
     def _kept_with_ungrounded_recorded(
         self,
