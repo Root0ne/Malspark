@@ -206,10 +206,11 @@ OWN_CLAIM_ENDS = ("as", "because", "since", "outright", "entirely", "in", "too",
 #   nothing;
 OWN_WITHDRAWN_ENDS = ("by", "and", "for")
 # - the words that affirm the claim, and the copulas that may stand between
-#   one and the reference: one right before or right after the reference,
-#   with nothing else between, makes the item a defence, and a defence
-#   withdraws nothing ("my claim 4 is correct", "ev_0012 supports my claim
-#   4"). The same word said of something else ("TRIAGE is right") blocks
+#   one and the reference: one right after the reference, with nothing else
+#   between, makes the item a defence, and a defence withdraws nothing ("my
+#   claim 4 is correct"). A reference right after one ("ev_0012 supports my
+#   claim 4") is no subject of a withdrawal and reads as nothing already.
+#   The same word said of something else ("TRIAGE is right") blocks
 #   nothing;
 OWN_AFFIRMING_WORDS = (
     "correct", "right", "valid", "accurate", "sound", "true", "confirmed", "supported", "upheld",
@@ -257,8 +258,6 @@ _OWN_AFFIRMED_AFTER_RE = re.compile(
     rf"[\s*_`]*+(?:\([^()]{{0,{OWN_LIST_WINDOW}}}+\)[\s*_`]*+)?{_OWN_COPULA}{_OWN_AFFIRMING}",
     re.IGNORECASE,
 )
-# An affirming word right before the reference, copulas between.
-_OWN_AFFIRMED_BEFORE_RE = re.compile(rf"\b{_OWN_AFFIRMING}[\s*_`]++{_OWN_COPULA}$", re.IGNORECASE)
 _OWN_CLAIM_PART_RE = re.compile(rf"[\s*_`]*+(?:{'|'.join(OWN_CLAIM_PARTS)})\b", re.IGNORECASE)
 # A verb with a pronoun after the reference, or a word that says it withdrawn.
 _OWN_WITHDRAWN_AFTER_RE = re.compile(
@@ -546,7 +545,6 @@ def read_own_withdrawals(items: Sequence[str], round_in_force: int | None) -> Ow
                 or _OWN_CLAIM_PART_RE.match(item, end)
                 or _inside(quoted, start)
                 or _OWN_AFFIRMED_AFTER_RE.match(item, end)
-                or _OWN_AFFIRMED_BEFORE_RE.search(item, window, start)
             ):
                 word = None
             elif verb := _OWN_VERB_BEFORE_RE.search(item, window, start):

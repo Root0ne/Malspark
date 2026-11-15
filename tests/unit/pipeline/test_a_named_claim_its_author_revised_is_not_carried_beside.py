@@ -256,7 +256,7 @@ class TestAnItemThatSaysAnythingAgainstTheWithdrawalReadsAsNothing:
         ("a quoted reference", '"My claim 2" (0x403962) is withdrawn.'),
         ("a quoted verb", 'My claim 2 (0x403962): STATIC wrote "I reject this".'),
         ("a possessive", "I reject my claim 2's address 0x403962."),
-        ("another's act", "My claim 2 (0x403962): peers rejected it."),
+        ("another's act", "My claim 2 (0x403962), which the peers rejected."),
         ("another claim between", "My claim 2 (0x403962) names X. Static claim 9 is withdrawn."),
         ("a part of the claim", "My claim 2 detail (0x403962) is withdrawn."),
         (
@@ -313,6 +313,7 @@ class TestTheAuthorsOwnWithdrawalIsRead:
         "My claim 2 (0x403962) does not read the call; it is withdrawn.",
         "My claim 2 (the name at 0x403962 is not recovered). Withdrawn as stated.",
         "My claim 2 (name at 0x403962 not read) is withdrawn.",
+        "My claim 2 (0x403962) does not read the buffer at that address and is withdrawn.",
         # What took the claim's place, and the author as the agent.
         "My claim 2 (0x403962) is superseded by claim 3 above.",
         "My claim 2 (0x403962) is replaced by claim 3 above.",
