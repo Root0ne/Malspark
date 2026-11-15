@@ -1,0 +1,131 @@
+Replay of tiny
+  rules from: <tree>
+  stored run: 6 file(s), unchanged (each digested before and after the replay)
+  network refused; ATT&CK from the vendored tables of the rules' tree; 3 setting(s) from the run's snapshot
+
+Analysts
+  static: 1 of 2 stored answer(s) replayed
+    round 1 (agent_reports): 6 claim(s); attck.absence_claim 1, attck.unknown_id 1, isr.claim_without_confidence 1, isr.technique_line_unread 1, isr.ungrounded_technique 1
+    claims in force: 4 claim(s); attck.absence_claim 1, attck.claim_does_not_describe 1
+      kept after the absence question: T1055
+  network: 1 of 3 stored answer(s) replayed
+    round 2 (agent_reports): 1 claim(s); none
+    claims in force: 1 claim(s); none
+
+Judge: 9 object(s), 1 indicator(s) it would drop; stix.credit_without_claim 1, stix.ungrounded_indicator 1, stix.unknown_technique 1
+Narrative: narrative.schema 1, narrative.ungrounded_finding 1, narrative.unpublished_technique 1
+Composer: 2 section(s) replayed, not written in the stored report: execution_flow, string_resolution, discovery, persistence_detail, evasion_antiforensics, command_and_control, payloads, configuration, host_identifiers, commands, encryption_scheme, cli_flags, ransom_note, communications, summary, conclusion, limitations, attack_procedures; report.citation_not_evidence 1
+Tool calls: 4 call(s); tool.argument_names_its_parameter 1
+Report linter: C7 1
+Report: Malware, severity Medium, category loader, confidence 0.8; 7 section(s); 3 of 4 technique(s) published; 3 of 3 indicator(s) published
+  degraded: True (0 reason(s) decided again, 0 stored one(s) of that kind replaced, 2 kept as stored)
+  exported techniques: T1027, T1055, T1105
+  not published: T9998 (the ATT&CK catalogue has no entry for this id in any domain)
+  detection rules drafted: suricata 1, yara 1; 0 not compiled
+  claims in force the body does not discuss: 5 (network 1; static 1, 2, 3, 4)
+Corroboration: 3 technique(s), 0 corroborated
+
+Against the stored report
+  section only replayed: identity (no named cause)
+  section only replayed: tool_pe_info (no named cause)
+  section only replayed: tool_strings (no named cause)
+  section only replayed: tool_pcap_summary (no named cause)
+  section only replayed: tool_decode_string_blobs (no named cause)
+  section only replayed: tool_decode_string_blobs_results (no named cause)
+  findings rows row 1 differs: stored 63e12e967250 ['static', 'Process injection is not established', 'T1055 (claimed, not published)', 'not given', 'ev_0002'], replayed absent (no named cause)
+  findings rows row 1 differs: stored absent, replayed c9660fd2cf9d ['static', 'Process injection is not established', 'T1055', 'not given', 'ev_0002'] (no named cause)
+  not compared (the stored report holds none): severity, confidence, category, techniques, indicators, export
+
+Codes, by producer
+  C7: fp linter 1
+  attck.absence_claim: answers 1, claims in force 1
+  attck.claim_does_not_describe: claims in force 1
+  attck.unknown_id: answers 1
+  isr.claim_without_confidence: answers 1
+  isr.technique_line_unread: answers 1
+  isr.ungrounded_technique: answers 1
+  narrative.schema: narrative 1
+  narrative.ungrounded_finding: narrative 1
+  narrative.unpublished_technique: narrative 1
+  report.citation_not_evidence: composer 1
+  stix.credit_without_claim: judge 1
+  stix.ungrounded_indicator: judge 1
+  stix.unknown_technique: judge 1
+  tool.argument_names_its_parameter: tool 1
+
+Findings
+  analyst static, round 1
+    isr.technique_line_unread
+        said: 1 claim(s) have a TECHNIQUE line that is not technique ids or NONE, so no technique is read from them: "T1055 not supported". Write each claim's technique ids alone, several separated by commas, or NONE when it claims none. An id the claim does not assert (negated, absent, not supported) is left off the line, and the claim sentence says so; a doubt about an id the claim does assert is said in the claim and in its CONFIDENCE.
+    isr.claim_without_confidence
+        said: 1 CLAIM block(s) state no CONFIDENCE, so they are not claims. Give each the confidence you hold it at, as a number from 0.0 to 1.0, or leave it out.
+    attck.unknown_id | static.claims[2] | T9999 | ev_0002
+        claim: It registers a scheduled task named Updater.
+        said: TECHNIQUE T9999 is not in the MITRE ATT&CK catalogue. Use one of them, or omit the technique id.
+    attck.absence_claim | static.claims[3] | T1055 | ev_0002
+        claim: Process injection is not present: no write into another process is recorded.
+        said: CLAIM 'Process injection is not present: no write into another process is recorded.' reads as saying the behaviour is absent, and carries TECHNIQUE T1055. A technique on a claim is read as something the sample does, so T1055 is published as a finding of this run. If the behaviour is absent, write TECHNIQUE: NONE on this claim; if the sample does do it, keep the technique and say what the sample does.
+    isr.ungrounded_technique | static.claims[5] | T1140 | ev_0004
+        claim: It decodes a second stage at run time.
+        said: TECHNIQUE T1140 cites no evidence id from this run. Name the ledger entry it was read from, for example ev_0002, ev_0001, or drop the technique: a technique nothing in the run establishes is read downstream as a finding.
+  analyst static, claims in force
+    attck.claim_does_not_describe | static.claims[2] | T1105 | ev_0001
+        claim: The file has four sections.
+        said: CLAIM 'The file has four sections.' carries TECHNIQUE T1105 Ingress Tool Transfer, and its sentence shares no term with that technique: not its name, its tactic or the words that describe it. A technique on a claim is published as something the sample does. Keep T1105 only if the sample does it, and then say in the claim what it does that is T1105; if the claim describes another behaviour, give that behaviour's technique or write TECHNIQUE: NONE.
+    attck.absence_claim | static.claims[3] | T1055 | ev_0002
+        claim: Process injection is not present: no write into another process is recorded.
+        said: CLAIM 'Process injection is not present: no write into another process is recorded.' reads as saying the behaviour is absent, and carries TECHNIQUE T1055. A technique on a claim is read as something the sample does, so T1055 is published as a finding of this run. If the behaviour is absent, write TECHNIQUE: NONE on this claim; if the sample does do it, keep the technique and say what the sample does.
+  judge
+    stix.unknown_technique | objects[2] 'attack-pattern--fake' | T9998
+        said: the attack-pattern names T9998, which the MITRE ATT&CK catalogue has no entry for in any domain. Use a real technique id or drop the attack-pattern.
+    stix.ungrounded_indicator | objects[3] 'indicator--1'
+        said: the indicator pattern names cdn.unseen-host.net, which appears nowhere in the evidence this run collected. Emit indicators only for values a tool in this run actually saw, and prefer zero indicators to an invented one.
+    stix.credit_without_claim | objects[5] 'relationship--2' | T9998
+        said: the relationship at objects[5] 'relationship--2' credits 'network' with T9998, and no source in this run named T9998 — the evidence summary lists who named each technique. Credit only sources that named it, by the names the summary gives them, or leave x_malspark_contributing_agents empty. A credit you keep that names no source is not published.
+  narrative
+    narrative.schema | defensive_recommendations.2.priority | at defensive_recommendations.2.priority
+        said: Input should be 'P0', 'P1' or 'P2'
+    narrative.ungrounded_finding | key_findings.1.evidence_ids | at key_findings.1
+        said: key finding 2 cites ev_0099, which no entry in this run's evidence carries. Cite the ev_ ids of the entries the finding stands on, or leave evidence_ids empty.
+    narrative.unpublished_technique | defensive_recommendations.2 | T1053.005 | at defensive_recommendations.2
+        said: recommendation 3 names a technique this run does not publish: T1053.005. The report's ATT&CK table does not carry it. A recommendation acts on the techniques this run publishes. Write it with a published technique, or without the id.
+  tool
+    tool.argument_names_its_parameter | ev_0002 | argument pattern
+        values: {'pattern': 'pattern'}
+  fp_linter
+    C7 | capability_matrix
+        said: 1 technique id(s) are not in the ATT&CK catalogue: T9998.
+  composer introduction
+    report.citation_not_evidence | citation | at text
+        said: [ev_0042] is not an entry this answer was shown. Cite an entry by its evidence id in brackets — this answer may cite ev_0001, ev_0002, ev_0003, ev_0004 — or write the sentence without a bracketed citation.
+
+Not replayed
+  ledger: the entries are read as the run saved them, after the byte budget, where the analysts' and the judge's checks read them before it: an output the budget blanked (0 here) and a structure its last pass dropped, which leaves no mark, are read as saved
+  ledger: the ledger's structured answers are read as the database returned them, and it keeps no key order: a table rendered from them may list its rows, columns and the parts of a cell in another order than the run's report did, and a cell cut to its length then shows other parts
+  identity: the routed file type and platform are read back from the stored report's identity block: routing reads the sample, which the record does not hold
+  analysts: analyst_cut_violation is not replayed: whether the answer ended at the output cap is not in the stored record
+  judge: verdict_cut_violation is not replayed: whether the answer ended at the output cap is not in the stored record
+  composer: section_cut_violation is not replayed: whether the answer ended at the output cap is not in the stored record
+  composer: command_value_violations is not replayed: the values the command table is checked against are read from the code its section was shown, and which code that was, within the share of the window each output had, is not in the stored record
+  agreement: schema_violations is not replayed: the agreement question's answer is not in the stored record: the stored report holds the passages as its rewrites left them, and each rewritten or listed sentence only as a finding row
+  agreement: agreement_violations is not replayed: the agreement question's answer is not in the stored record: the stored report holds the passages as its rewrites left them, and each rewritten or listed sentence only as a finding row
+  agreement: rewrites_violations is not replayed: the agreement question's answer is not in the stored record: the stored report holds the passages as its rewrites left them, and each rewritten or listed sentence only as a finding row
+  agreement: citation_violations is not replayed: the agreement question's answer is not in the stored record: the stored report holds the passages as its rewrites left them, and each rewritten or listed sentence only as a finding row
+  agreement: wrong_entry_citations is not replayed: the agreement question's answer is not in the stored record: the stored report holds the passages as its rewrites left them, and each rewritten or listed sentence only as a finding row
+  agreement: misstated_entry_contents is not replayed: the agreement question's answer is not in the stored record: the stored report holds the passages as its rewrites left them, and each rewritten or listed sentence only as a finding row
+  agreement: ledger_absence_contradictions is not replayed: the agreement question's answer is not in the stored record: the stored report holds the passages as its rewrites left them, and each rewritten or listed sentence only as a finding row
+  analysts: isr.retry_dropped is not replayed: it reads a validation retry's answer against the answer it fixes, and the record keeps no retry answer
+  analysts: whether an answer followed the loop's nudge is recorded per analyst, not per answer: each answer's parse findings are counted as questions put to it (a nudged answer's are recorded unasked)
+  analysts: findings and artifacts are not stored with the claims in force; they are read back from the stored report's Findings and Appendix A tables (a finding's detail is not in them)
+  analysts: the claims in force are stored with the run's own validity and absence notes; they are reset and decided again from the replayed findings. Whether the analyst was shown each finding is read from the stored summary's rows (asked: false), and a finding without a subject is matched on its words
+  analysts: the order the run's state held the analysts in is not stored (run_summary.agent_stats): they are taken in the order they first answered
+  analyst static round 0: stored as the platform's summary of its claims, not as the analyst wrote it
+  analyst network round 0: stored as the platform's summary of its claims, not as the analyst wrote it
+  analyst network round 1: stored truncated at 111 characters
+  judge evidence: the sandbox report is not in the stored record: the judge's corpus is the stored tool answers alone
+  judge: whether the judge was shown each finding is read from the stored summary's rows (asked: false), and a finding without a subject is matched on its words; one it holds no such row for is counted as shown
+  report: 2 stored degradation reason(s) are kept as stored: the judge node decides them from inputs the record does not hold (the sandbox report, model failures, prompt notices, the pack), so a rule change that would no longer give one cannot remove it here. The verdict's own reasons are decided again, and whether the run is degraded is decided again over the reasons
+  run summary: run_summary.validation is rebuilt from the replayed findings (the claims in force and the judge's round): retries, what each producer was told and fixed, and the unparsed and retry answers are model turns the replay does not make
+  report: the sandbox report is not in the stored record: what the build reads from it alone is not rebuilt
+  narrative: a recommendation's technique id is read as stored: one the platform read out of the recommendation's own sentence is not told apart
+  composer style_violations: the tool outputs and code each section was shown are not in the stored record: a phrasing they held, which the round reads as the evidence's own term, is asked about here
