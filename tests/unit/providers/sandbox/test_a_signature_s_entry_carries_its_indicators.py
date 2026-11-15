@@ -28,7 +28,12 @@ from typing import Any
 import pytest
 
 from malspark.providers.sandbox.readers import required_reader
-from malspark.providers.sandbox_tools import sandbox_signatures
+from malspark.providers.sandbox_tools import (
+    INDICATORS_GUEST_PID,
+    INDICATORS_NO_PROCESS,
+    INDICATORS_READ,
+    sandbox_signatures,
+)
 from malspark.schemas.sandbox_document import sandbox_document
 from malspark.schemas.sandbox_report import (
     LINEAGE_KEY,
@@ -412,3 +417,15 @@ class TestThePagedCallOnTheLiveReport:
         assert WPM in names and "Executes a command shell one-liner" in names
         (written,) = [one for one in page["indicators"] if one["signature"] == WPM]
         assert written["target"]["id"] == "86" and written["process"]["id"] == "84"
+
+    def test_a_guest_pid_names_the_report_s_process_id_to_ask_with(self) -> None:
+        page = sandbox_signatures(sandbox_document(_read()), normalised_by=TRIAGE, process="3444")
+        assert page["matched"] == 0 and page["indicators"] == []
+        assert page["no"] == INDICATORS_GUEST_PID.format(asked="3444", ids="86", first="86")
+
+    def test_a_process_id_no_indicator_names_says_so(self) -> None:
+        page = sandbox_signatures(sandbox_document(_read()), normalised_by=TRIAGE, process="9999")
+        assert page["no"] == INDICATORS_NO_PROCESS.format(asked="9999")
+
+    def test_the_description_and_the_read_line_ask_for_the_report_s_process_id(self) -> None:
+        assert "the report's process id" in " ".join(INDICATORS_READ.split())

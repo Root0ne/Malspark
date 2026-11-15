@@ -482,13 +482,21 @@ INDICATOR_PROCESS_TWICE = "the task lists {count} processes under this id"
 # How an answer that leaves indicators out says the rest are read: this view
 # called again, by a signature's name from an offset, or by a process or a text.
 INDICATORS_READ = (
-    "this view with signature=<name> and offset=<offset>, process=<id> or "
-    "contains=<text> lists them, {page} per call"
+    "this view with signature=<name> and offset=<offset>, process=<the report's process "
+    "id> or contains=<text> lists them, {page} per call"
 )
 # What the paged call answers for an argument it cannot read, or a report
 # whose format states no indicators.
 INDICATORS_BAD_PROCESS = "process is not a process id in digits"
 INDICATORS_NONE_DECLARED = "the report's format states no indicators for its signatures"
+# Why a call naming a process lists no indicator: no indicator names that
+# report's process id, or the number is the guest's pid of a listed process,
+# whose report's process id is the one to ask with.
+INDICATORS_NO_PROCESS = "no indicator names the report's process id {asked}"
+INDICATORS_GUEST_PID = (
+    "{asked} is the guest's pid of the process the report lists as process id {ids}; "
+    "ask with process={first}"
+)
 
 
 def _reading(normalised_by: Sequence[str] | None) -> Any:
@@ -553,6 +561,8 @@ class SignatureIndicators:
         self._task_rows: dict[str, list[tuple[str, list[Any]]]] = {}
         self._names: list[str] = []
         self._resolved: dict[str, tuple[list[dict[str, Any]], list[int]]] = {}
+        # The report's process ids of each guest's pid a process row states.
+        self._ids_of_guest: dict[str, dict[str, None]] = {}
         self._launched = False
         if self.fields is None or not isinstance(report, dict):
             self.fields = None
@@ -568,6 +578,9 @@ class SignatureIndicators:
             if procid:
                 task = _task_of(proc)
                 self._rows.setdefault((task, procid), []).append(proc)
+                guest = self._guest_pid(proc)
+                if guest and guest != procid:
+                    self._ids_of_guest.setdefault(guest, {})[procid] = None
                 self._tasks_of.setdefault(procid, set()).add(task)
         self._listing = {task for task, _procid in self._rows}
         self._launched = _launcher_attributed(report, processes)
@@ -622,16 +635,13 @@ class SignatureIndicators:
             PROCESS_IMAGE_PATH_KEYS,
             PROCESS_NAME_KEYS,
         )
-        from malspark.schemas.signature_indicators import INDICATOR_TEXT_CHARS, held_at
+        from malspark.schemas.signature_indicators import INDICATOR_TEXT_CHARS
         from malspark.utils.written_forms import sample_written_out
 
         (proc,) = listed
         # The guest's pid, where the reader declares where a process row holds
         # it: ``id`` is the report's own id for the process.
-        assert self.fields is not None
-        guest = next(
-            (pid for path in self.fields.guest_pid if (pid := pid_of(held_at(proc, path)))), None
-        )
+        guest = self._guest_pid(proc)
         if guest:
             out["guest_pid"] = guest
         name = next(
@@ -654,6 +664,17 @@ class SignatureIndicators:
         ):
             out["marked"] = True
         return out
+
+    def _guest_pid(self, proc: dict[str, Any]) -> str | None:
+        """The guest's pid a process row states, where the reader declares where; else ``None``."""
+        from malspark.schemas.signature_indicators import held_at
+
+        paths = self.fields.guest_pid if self.fields is not None else ()
+        return next((pid for path in paths if (pid := pid_of(held_at(proc, path)))), None)
+
+    def process_ids_of_guest(self, pid: str) -> list[str]:
+        """The report's process ids of the processes whose guest's pid is ``pid``."""
+        return list(self._ids_of_guest.get(pid, {}))
 
     def _stated(self, task: str, indicator: dict[str, Any], times: int) -> dict[str, Any]:
         """One indicator as the entry states it: its processes resolved, its texts written out."""
@@ -929,6 +950,15 @@ def _indicator_page(
     stop = start + len(page)
     if stop < len(matched):
         answer["next_offset"] = stop
+    if wanted is not None and not matched:
+        # An empty answer says why: no indicator names that process id, or
+        # the number is a guest's pid, with the process id to ask with.
+        ids = indicators.process_ids_of_guest(wanted)
+        answer["no"] = (
+            INDICATORS_GUEST_PID.format(asked=wanted, ids=", ".join(ids), first=ids[0])
+            if ids
+            else INDICATORS_NO_PROCESS.format(asked=wanted)
+        )
     return answer
 
 
@@ -1790,7 +1820,7 @@ def sandbox_tools(container: Any, agent: str | None = None) -> list[BaseTool]:
         states, as many indicators as fit follow in ``indicators``, and
         ``indicators_left_out`` says how many of each signature's are not
         listed and from which offset; otherwise the answer is the rows alone.
-        ``signature`` (a name), ``process`` (a process id, acting or acted on)
+        ``signature`` (a name), ``process`` (the report's process id, acting or acted on)
         or ``contains`` (a text) lists the matching indicators instead, {page}
         per call from ``offset``, ``next_offset`` naming the next page.
         """
