@@ -48,6 +48,15 @@ from malspark.schemas.sandbox_report import (
     LINEAGE_SAMPLE,
     PROCESS_TASK_KEY,
 )
+from malspark.schemas.signature_indicators import (
+    CHARS_LEFT_OUT,
+    DESCRIPTION,
+    EVENT,
+    PROCESS,
+    TARGET,
+    VALUES,
+    VALUES_LEFT_OUT,
+)
 from malspark.utils.marked_cut import marked_cut
 
 if TYPE_CHECKING:
@@ -475,6 +484,26 @@ def _signature_techniques(sig: Mapping[str, Any]) -> list[str]:
 # way (``SandboxSignature.pids_total``).
 SIGNATURE_PIDS_SHOWN = 10
 
+# The keys of one indicator as an entry states it (``SignatureIndicators._stated``
+# writes them): the neutral form's, the task it was read in and how many times
+# that task states it; the signature view lists each under the signature that
+# names it. Nothing else in an answer is written with these keys alone.
+INDICATOR_SIGNATURE = "signature"
+INDICATOR_TASK = "task"
+INDICATOR_TIMES = "times"
+INDICATOR_KEYS: tuple[str, ...] = (
+    INDICATOR_SIGNATURE,
+    INDICATOR_TASK,
+    PROCESS,
+    TARGET,
+    EVENT,
+    DESCRIPTION,
+    VALUES,
+    VALUES_LEFT_OUT,
+    CHARS_LEFT_OUT,
+    INDICATOR_TIMES,
+)
+
 # Where an indicator's process is listed more than once: no row is chosen.
 INDICATOR_PROCESS_IN_TASKS = "listed in {count} tasks; the indicator names none of them"
 INDICATOR_PROCESS_TWICE = "the task lists {count} processes under this id"
@@ -679,21 +708,12 @@ class SignatureIndicators:
         return list(self._ids_of_guest.get(pid, {}))
 
     def _stated(self, task: str, indicator: dict[str, Any], times: int) -> dict[str, Any]:
-        """One indicator as the entry states it: its processes resolved, its texts written out."""
-        from malspark.schemas.signature_indicators import (
-            CHARS_LEFT_OUT,
-            DESCRIPTION,
-            EVENT,
-            PROCESS,
-            TARGET,
-            VALUES,
-            VALUES_LEFT_OUT,
-        )
+        """One indicator as the entry states it (:data:`INDICATOR_KEYS`): its processes resolved."""
         from malspark.utils.written_forms import sample_written_out
 
         out: dict[str, Any] = {}
         if task:
-            out["task"] = sample_written_out(task)
+            out[INDICATOR_TASK] = sample_written_out(task)
         for key in (PROCESS, TARGET):
             if indicator.get(key):
                 out[key] = self._process(indicator[key], task)
@@ -709,7 +729,7 @@ class SignatureIndicators:
         if isinstance(cut, dict) and cut:
             out[CHARS_LEFT_OUT] = {sample_written_out(k): n for k, n in cut.items()}
         if times > 1:
-            out["times"] = times
+            out[INDICATOR_TIMES] = times
         return out
 
     def resolved(self, name: str) -> tuple[list[dict[str, Any]], list[int]]:
@@ -877,7 +897,7 @@ def _with_indicators(
             stated = indicators.resolved(name)[0]
             at = head[name]
             while at < len(stated) and indicator_rank(stated[at]) == rank:
-                item = {"signature": _written_name(name), **stated[at]}
+                item = {INDICATOR_SIGNATURE: _written_name(name), **stated[at]}
                 cost = _size(item)
                 if cost > left:
                     full = True
@@ -943,7 +963,7 @@ def _indicator_page(
                 if isinstance(one.get(key), dict)
             }:
                 continue
-            item = {"signature": written, **one}
+            item = {INDICATOR_SIGNATURE: written, **one}
             if needle and not _held_text(item, needle):
                 continue
             matched.append(item)
