@@ -191,7 +191,7 @@ class TestTheAnalystRejectsItsOwnClaim:
             "My claim 2 (the mutex name at 0x403962 unread). Withdrawn as stated; see the new "
             "claim.",
             "My claims 1 and 2 (0x40cf14, 0x403962) are superseded; the claims above replace them.",
-            "My claims 1 and 2 (0x40cf14, 0x403962) are superseded by the claims above.",
+            "My claims 1 and 2 (0x40cf14, 0x403962) are superseded by claims 3 and 4 above.",
             "My claim 2 (the mutex name is not recovered). Withdrawn as stated.",
             "My claim 2 is replaced by claim 3 above.",
             "I retract my earlier claim 2: ev_0109 shows the third argument at 0x403962.",
@@ -327,21 +327,27 @@ class TestTheAuthorsOwnWithdrawalIsRead:
     """What reads as a withdrawal though it holds a word that stops another form."""
 
     WITHDRAWALS = (
-        # A negation far from the word, or inside the claim's description.
-        "My claim 2 (0x403962) does not read the call; it is withdrawn.",
+        # A negation inside the claim's description.
         "My claim 2 (the name at 0x403962 is not recovered). Withdrawn as stated.",
         "My claim 2 (name at 0x403962 not read) is withdrawn.",
-        "My claim 2 (0x403962) does not read the buffer at that address and is withdrawn.",
         # What took the claim's place, and the author as the agent.
         "My claim 2 (0x403962) is superseded by claim 3 above.",
         "My claim 2 (0x403962) is replaced by claim 3 above.",
         "My claim 2 (0x403962) is rejected by me.",
         # A word of evidence or judgement on the claim.
         "My claim 2 (0x403962) is withdrawn; ev_0109 confirms the third argument.",
-        "My claim 2 (0x403962) is withdrawn: the peers are right about the buffer.",
+        "My claim 2 (0x403962) is withdrawn; the peers are right about the buffer.",
         # The author's own act on a pronoun, in a later sentence.
         "My claim 2 (0x403962) says the name is unread, but ev_0109 shows it. I reject this.",
         "If asked, my claim 2 (0x403962) put the name aside. I withdraw it.",
+    )
+    # What is not said of the claim itself reads as nothing: another clause
+    # between the reference and the word, a colon after the word, another
+    # subject between the reference and the verb.
+    NOT_SAID_OF_IT = (
+        "My claim 2 (0x403962) does not read the call; it is withdrawn.",
+        "My claim 2 (0x403962) does not read the buffer at that address and is withdrawn.",
+        "My claim 2 (0x403962) is withdrawn: the peers are right about the buffer.",
         "My claim 2 (0x403962), STATIC says, holds no buffer. I reject this.",
     )
 
@@ -350,6 +356,10 @@ class TestTheAuthorsOwnWithdrawalIsRead:
             assert [c[:2] for c in read_own_withdrawals([dispute], 2).claims] == [("2", "2")], (
                 dispute
             )
+
+    def test_one_not_said_of_the_claim_itself_reads_as_nothing(self) -> None:
+        for dispute in self.NOT_SAID_OF_IT:
+            assert read_own_withdrawals([dispute], 2).claims == (), dispute
 
 
 class TestADefenceNeverReadsAsAWithdrawal:
@@ -370,7 +380,7 @@ class TestADefenceNeverReadsAsAWithdrawal:
     def test_an_affirming_word_on_something_else_blocks_nothing(self) -> None:
         for dispute in (
             "TRIAGE is right; my claim 2 (0x403962) is withdrawn.",
-            "My claim 2 (0x403962) is withdrawn: the peers' reading is correct.",
+            "My claim 2 (0x403962) is withdrawn; the peers' reading is correct.",
             "My claims 1 and 2 are withdrawn and replaced by claims 3 and 4 above.",
         ):
             assert read_own_withdrawals([dispute], 2).claims != (), dispute
@@ -389,8 +399,8 @@ class TestAWithdrawalTheReaderMustRead:
 
     def test_a_reporting_word_whose_subject_is_the_reference_blocks_nothing(self) -> None:
         dispute = (
-            "TRIAGE claim 12 and my own claim 2 say the sample launches its own DLL. Rejected. "
-            "The only callers pass AppData paths."
+            "TRIAGE claim 12 and my own claim 2 say the sample launches its own DLL. I reject "
+            "this. The only callers pass AppData paths."
         )
 
         assert [c[:2] for c in read_own_withdrawals([dispute], 2).claims] == [("2", "2")]
@@ -409,7 +419,7 @@ class TestAnOwnReferenceIsReadUnderTheNumberingInForce:
         assert self._read("My claim 2 is withdrawn; ev_0109 shows the buffer.") == [("2", "2")]
 
     def test_of_a_range_every_claim_in_it_is_read(self) -> None:
-        dispute = "My claims 1-2 are withdrawn: the buffer is read in ev_0109."
+        dispute = "My claims 1-2 are withdrawn; the buffer is read in ev_0109."
 
         assert self._read(dispute) == [("1", "2")]
 

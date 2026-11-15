@@ -1140,7 +1140,11 @@ def merge_revision(
     disputes = [str(item) for item in getattr(revision, "dissent_items", None) or [] if item]
     # The analyst's own references in its disputes, read under the numbering
     # of the answer in force (``retry_merge.read_own_withdrawals``).
-    own = read_own_withdrawals(disputes, getattr(in_force, "revision_round", None))
+    own = read_own_withdrawals(
+        disputes,
+        getattr(in_force, "revision_round", None),
+        tuple(getattr(named, "participants", ()) or ()),
+    )
     # Per claim in force, the lines of the round's mediation that named it and
     # the blocking ones that speak to it (:func:`_speaking_lines`).
     speaking = {

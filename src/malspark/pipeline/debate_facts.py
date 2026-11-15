@@ -2163,9 +2163,10 @@ class NamedClaims(dict[int, list[tuple[int, bool]]]):
     references its merge states (``unplaced``) and the claims the lines
     reach only by the newer reading (``expanded``), the claim numbers read
     for it as their owner (``owned``), every line that names a claim of it
-    (``clauses``) and, where the answers in force were read for it
+    (``clauses``), where the answers in force were read for it
     (``revision_merge.anchored_lines``), per line anchored by a claim of
-    any analyst, the claims of this analyst that anchor it (``anchored``).
+    any analyst, the claims of this analyst that anchor it (``anchored``),
+    and the participants the lines were read for (``participants``).
     """
 
     def __init__(
@@ -2183,6 +2184,7 @@ class NamedClaims(dict[int, list[tuple[int, bool]]]):
         self.owned: tuple[OwnedClaim, ...] = tuple(owned)
         self.clauses: dict[int, tuple[NamingClause, ...]] = dict(clauses or {})
         self.anchored: dict[int, frozenset[int]] = {}
+        self.participants: tuple[str, ...] = ()
 
 
 class NamedByLines(dict[str, dict[int, list[tuple[int, bool]]]]):
@@ -2193,7 +2195,7 @@ class NamedByLines(dict[str, dict[int, list[tuple[int, bool]]]]):
     its merge states, as an empty :class:`NamedClaims`, where there are any.
     """
 
-    def __init__(self, references: ClaimReferences) -> None:
+    def __init__(self, references: ClaimReferences, participants: Sequence[str] = ()) -> None:
         super().__init__(
             {
                 name: NamedClaims(
@@ -2207,13 +2209,21 @@ class NamedByLines(dict[str, dict[int, list[tuple[int, bool]]]]):
             }
         )
         self.references = references
+        self.participants = tuple(str(p) for p in participants)
+        for rows in self.values():
+            if isinstance(rows, NamedClaims):
+                rows.participants = self.participants
 
     def get(self, key: str, default: Any = None) -> Any:  # type: ignore[override]
         found = super().get(key)
         if found is not None:
             return found
         stated = self.references.unplaced_for(key)
-        return NamedClaims(unplaced=stated) if stated else default
+        if not stated:
+            return default
+        rows = NamedClaims(unplaced=stated)
+        rows.participants = self.participants
+        return rows
 
 
 def _range_rendering(first: str, last: str) -> str:
@@ -2698,7 +2708,7 @@ def claims_named_by_lines(
     given), each analyst's carrying what its merge reads besides
     (:class:`NamedClaims`). Linear in the lines.
     """
-    return NamedByLines(read_claim_references(lines, participants, owners))
+    return NamedByLines(read_claim_references(lines, participants, owners), participants)
 
 
 @dataclass(frozen=True)
