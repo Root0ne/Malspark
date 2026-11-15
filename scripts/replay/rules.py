@@ -413,7 +413,7 @@ def _flag(
     show_text: bool,
     ids: Iterable[str] | None = None,
 ) -> dict[str, Any]:
-    """One finding as the replay records it: code, path, subject and entry ids.
+    """One finding as the replay records it: code, path, subject, statements and entry ids.
 
     The entry ids are the ones the claim it is about cites (``ids``), or the
     ones the sentences it quotes from the checked text cite. Never ids read out
@@ -441,6 +441,10 @@ def _flag(
         row["path_text"] = path
     if getattr(violation, "advisory", False):
         row["advisory"] = True
+    # Where the finding's statements stand in the checked answer: places only
+    # (``key_findings.1``, ``body#2``, ``*``), never a sentence or a value.
+    if getattr(violation, "statements", ()):
+        row["statements"] = list(violation.statements)
     if ids is None:
         quoted = " ".join(str(q) for q in (getattr(violation, "quoted", None) or ()))
         ids = sorted(entry_ids_in(quoted))

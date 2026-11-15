@@ -201,6 +201,8 @@ def _flag_line(flag: Mapping[str, Any]) -> str:
             parts.append(said)
     if flag.get("asked") is False:
         parts.append("not shown to its producer")
+    if flag.get("statements"):
+        parts.append("at " + _join(", ", flag["statements"]))
     if flag.get("entries"):
         parts.append(_join(", ", flag["entries"]))
     if flag.get("arguments"):

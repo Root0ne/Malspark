@@ -29,7 +29,7 @@ import types
 from collections.abc import Awaitable, Callable, Collection, Iterable, Iterator, Mapping, Sequence
 from dataclasses import dataclass, field, replace
 from fractions import Fraction
-from functools import cache, cached_property, lru_cache
+from functools import cache, cached_property, lru_cache, wraps
 from typing import Annotated, Any, Union, get_args, get_origin
 
 from pydantic import ValidationError
@@ -160,6 +160,9 @@ ANALYST_FEEDBACK_CLOSING_BY_NUMBER = (
 # rather than a comma: an agent key is an operator's word and a comma in one
 # would split a name in half on the way back.
 ROUTE_SEPARATOR = "\x1f"
+# What joins the places of one finding's statements inside a serialised row. A
+# place is written from field names, numbers, ``#``, ``*`` and ``?`` alone.
+STATEMENT_SEPARATOR = ","
 
 
 @dataclass(frozen=True)
@@ -233,6 +236,19 @@ class Violation:
     # its own (``with_exit_branches``): asked, and never counted, published or
     # recorded. Never stored on the channel.
     question_only: bool = False
+    # Where in the checked answer the statements this finding is about stand,
+    # as :func:`locate_statements` writes them: the walk ``path`` already uses
+    # (``key_findings.1``, ``channels.0.note``) with the sentence's number
+    # after ``#`` where a string holds several; ``*`` is the whole answer.
+    # Only places, never a sentence or a value. Empty where a check does not
+    # locate its finding. Carried by the run summary's rows, stored and
+    # printed; a row stored without it loads as before.
+    statements: tuple[str, ...] = ()
+    # The sentences or strings of the checked text this finding is about, as
+    # written, for :func:`locate_statements` to find the places of where the
+    # check does not quote them in ``quoted``. Never shown to the producer,
+    # marked in no report and never stored on the channel.
+    about: tuple[str, ...] = ()
 
     def __post_init__(self) -> None:
         # A row written by a validator has no route, and its message is its
@@ -253,6 +269,9 @@ class Violation:
             **({} if self.asked else {"asked": "false"}),
             **({"answered": "true"} if self.answered else {}),
             **({"subject": self.subject} if self.subject else {}),
+            **(
+                {"statements": STATEMENT_SEPARATOR.join(self.statements)} if self.statements else {}
+            ),
         }
 
 
@@ -305,6 +324,7 @@ class ValidationTally:
                 **({} if asked and v.asked else {"asked": "false"}),
                 **({"answered": "true"} if v.answered else {}),
                 **({"subject": v.subject} if v.subject else {}),
+                **({"statements": STATEMENT_SEPARATOR.join(v.statements)} if v.statements else {}),
             }
             for v in violations
         )
@@ -4032,8 +4052,18 @@ def schema_violations(
         # ``answer``, the text the payload was read from, lets the model be
         # told why nothing was read (``unreadable_answer_reason``).
         if answer is not None:
-            return [Violation(code=code, message=unreadable_answer_reason(answer))]
-        return [Violation(code=code, message="the answer was not JSON at all.")]
+            return [
+                Violation(
+                    code=code,
+                    message=unreadable_answer_reason(answer),
+                    statements=(WHOLE_ANSWER,),
+                )
+            ]
+        return [
+            Violation(
+                code=code, message="the answer was not JSON at all.", statements=(WHOLE_ANSWER,)
+            )
+        ]
     try:
         model.model_validate(payload)
     except ValidationError as exc:
@@ -4042,13 +4072,14 @@ def schema_violations(
                 code=code,
                 message=_schema_message(model, error),
                 path=".".join(str(part) for part in error.get("loc") or ()),
+                statements=(locator_path(error.get("loc") or ()) or WHOLE_ANSWER,),
             )
             # Every complaint: a count cap here hid the seventh broken field,
             # and the retry then came back with it still broken.
             for error in exc.errors()
         ]
     except Exception as exc:  # noqa: BLE001 — a coercion failure is still a finding
-        return [Violation(code=code, message=safe_finding_value(exc))]
+        return [Violation(code=code, message=safe_finding_value(exc), statements=(WHOLE_ANSWER,))]
     return []
 
 
@@ -5907,6 +5938,172 @@ def prose_of(payload: Any) -> str:
     return "\n".join(parts)
 
 
+# ---------------------------------------------------------------------------
+# Where a finding's statements stand
+# ---------------------------------------------------------------------------
+
+# A finding about the whole answer, and a key of the answer that is not a field
+# name (the answer is the producer's own, so a key can be any string): neither
+# writes a word of the answer.
+WHOLE_ANSWER = "*"
+UNNAMED_KEY = "?"
+_LOCATOR_SEGMENT_RE = re.compile(r"[A-Za-z_][A-Za-z0-9_]{0,63}|[0-9]{1,6}")
+_LOCATOR_DEPTH = 6
+# How many places one quoted text is looked for in when no sentence of the
+# answer is it whole (a sentence another reader cut differently).
+_LOCATOR_FOUND_AT_MOST = 64
+_TRAILING_CITATION_RE = re.compile(r"^(.*) \[[^\[\]]*\]$", re.DOTALL)
+
+
+def locator_segment(part: Any) -> str:
+    """One step of a place: a field name or a number as written, any other key as ``?``."""
+    text = str(part)
+    return text if _LOCATOR_SEGMENT_RE.fullmatch(text) else UNNAMED_KEY
+
+
+def locator_path(parts: Iterable[Any]) -> str:
+    """A place in an answer from its steps, as ``path`` writes one (``key_findings.1.text``)."""
+    return ".".join(locator_segment(part) for part in parts)
+
+
+def _sentence_spans(text: str) -> list[tuple[int, int]]:
+    """Where each non-empty sentence of ``text`` begins and ends, in the reading the checks use."""
+    spans: list[tuple[int, int]] = []
+    begin = 0
+    for found in [*_SENTENCE_END_RE.finditer(text), None]:
+        end = len(text) if found is None else found.start()
+        if text[begin:end].strip():
+            spans.append((begin, end))
+        if found is not None:
+            begin = found.end()
+    return spans
+
+
+def _sentence_with(text: str, needle: str) -> str:
+    """The sentence of ``text`` that holds ``needle``, or ``text`` where none is found whole."""
+    at = text.find(needle) if needle else -1
+    if at >= 0:
+        for begin, end in _sentence_spans(text):
+            if begin <= at < end:
+                return text[begin:end].strip()
+    return text
+
+
+class _StatementIndex:
+    """The strings of an answer with their places, read once: linear in the answer."""
+
+    def __init__(self, payload: Any) -> None:
+        self.paths: list[str] = []
+        self.texts: list[str] = []
+        self._spans: dict[int, list[tuple[int, int]]] = {}
+        self._by_sentence: dict[str, list[tuple[int, int]]] = {}
+        self._by_text: dict[str, list[int]] = {}
+        data = payload if isinstance(payload, dict) else getattr(payload, "__dict__", {}) or {}
+        self._walk(data, [], 0)
+        for at, text in enumerate(self.texts):
+            self._by_text.setdefault(text.strip(), []).append(at)
+            spans = self._spans_of(at)
+            for number, (begin, end) in enumerate(spans):
+                self._by_sentence.setdefault(text[begin:end].strip(), []).append((at, number))
+
+    def _walk(self, node: Any, path: list[str], depth: int) -> None:
+        if depth > _LOCATOR_DEPTH:
+            return
+        if hasattr(node, "model_dump") and not isinstance(node, type):
+            node = node.model_dump()
+        if isinstance(node, str):
+            self.paths.append(locator_path(path))
+            self.texts.append(node)
+        elif isinstance(node, dict):
+            for key, value in node.items():
+                self._walk(value, [*path, str(key)], depth + 1)
+        elif isinstance(node, list | tuple):
+            for number, value in enumerate(node):
+                self._walk(value, [*path, str(number)], depth + 1)
+
+    def _spans_of(self, at: int) -> list[tuple[int, int]]:
+        if at not in self._spans:
+            self._spans[at] = _sentence_spans(self.texts[at])
+        return self._spans[at]
+
+    def _place(self, at: int, number: int | None) -> str:
+        path = self.paths[at]
+        if number is None or len(self._spans_of(at)) < 2:
+            return path
+        return f"{path}#{number}"
+
+    def places(self, needle: str) -> list[tuple[int, int, str]]:
+        """Where a quoted text stands: ``(string, sentence, place)``, in the answer's order."""
+        needle = needle.strip()
+        if not needle:
+            return []
+        found = [(at, number) for at, number in self._by_sentence.get(needle, [])]
+        if found:
+            return [(at, number, self._place(at, number)) for at, number in found]
+        whole = self._by_text.get(needle, [])
+        if whole:
+            return [(at, 0, self._place(at, None)) for at in whole]
+        out: list[tuple[int, int, str]] = []
+        for at, text in enumerate(self.texts):
+            begin = text.find(needle)
+            while begin >= 0 and len(out) < _LOCATOR_FOUND_AT_MOST:
+                end = begin + len(needle)
+                for number, (start, stop) in enumerate(self._spans_of(at)):
+                    if start < end and begin < stop:
+                        out.append((at, number, self._place(at, number)))
+                begin = text.find(needle, end)
+        if out:
+            return out
+        # A table row's text under its citations (``cited_row_text``): the row's
+        # own string stands before the brackets that were added to it.
+        base = _TRAILING_CITATION_RE.match(needle)
+        return self.places(base.group(1)) if base and base.group(1).strip() != needle else []
+
+
+def locate_statements(payload: Any, violations: Sequence[Violation]) -> list[Violation]:
+    """``violations`` with the places of the statements each is about, found in ``payload``.
+
+    A finding is about the sentences it quotes (``quoted``) or names
+    (``about``), and each is looked up among the strings of the answer: a
+    sentence by its own text, a table row's text under its citations by the
+    row's string, and a text another reader cut differently by where it is
+    written. A finding that already has its places, or that holds no text to
+    look up, is returned as it is. The decision of no check is read from the
+    places, and no check's finding is gained or lost by them.
+    """
+    wanting = [v for v in violations if not v.statements and (v.quoted or v.about)]
+    if not wanting:
+        return list(violations)
+    index = _StatementIndex(payload)
+    located: dict[int, tuple[str, ...]] = {}
+    for violation in wanting:
+        found: dict[tuple[int, int], str] = {}
+        for text in violation.quoted or violation.about:
+            for at, number, place in index.places(text):
+                found.setdefault((at, number), place)
+        if found:
+            located[id(violation)] = tuple(dict.fromkeys(found[key] for key in sorted(found)))
+    return [replace(v, statements=located[id(v)]) if id(v) in located else v for v in violations]
+
+
+def _locating[**P](check: Callable[P, list[Violation]]) -> Callable[P, list[Violation]]:
+    """A check whose findings carry the places of their statements (:func:`locate_statements`).
+
+    The answer the check reads is its first argument; the findings, their
+    codes, their words and their number are the check's own.
+    """
+
+    @wraps(check)
+    def checked(*args: P.args, **kwargs: P.kwargs) -> list[Violation]:
+        found = check(*args, **kwargs)
+        if not found:
+            return found
+        return locate_statements(args[0] if args else kwargs.get("payload"), found)
+
+    return checked
+
+
+@_locating
 def narrative_capability_violations(
     payload: Any, grounding: CapabilityGrounding
 ) -> list[Violation]:
@@ -5974,6 +6171,7 @@ def _prose_and_masked(payload: Any) -> tuple[str, str]:
     return "\n".join(texts), "\n".join(masked)
 
 
+@_locating
 def section_capability_violations(payload: Any, grounding: CapabilityGrounding) -> list[Violation]:
     """:func:`ungrounded_capabilities` and the rule-match check over a section answer's strings."""
     if payload is None:
@@ -6114,6 +6312,7 @@ def _item_read(items: Any, item_id: str) -> bool:
     return items is not None and callable(read) and read(item_id) is not None
 
 
+@_locating
 def citation_violations(
     payload: Any,
     citable: Sequence[str],
@@ -6211,6 +6410,7 @@ def citation_violations(
                         code=CITATION_NOT_EVIDENCE_CODE,
                         message=f"{why} {remedy}",
                         path="citation",
+                        about=(_sentence_with(text, item),),
                     )
                 )
     if not records or not known:
@@ -6234,6 +6434,7 @@ def citation_violations(
                         f"{in_its_place}"
                     ),
                     path="citation",
+                    about=(_sentence_with(text, found),),
                 )
             )
     return violations
@@ -7217,13 +7418,16 @@ def repeated_item_violations(
         if not isinstance(rows, list) or len(rows) < 2:
             continue
         counts: dict[str, int] = {}
-        for row in rows:
+        again: list[int] = []
+        for at, row in enumerate(rows):
             if isinstance(row, dict) and fields:
                 key = " | ".join(
                     json.dumps(row.get(name), sort_keys=True, default=str) for name in fields
                 )
             else:
                 key = json.dumps(row, sort_keys=True, default=str)
+            if key in counts:
+                again.append(at)
             counts[key] = counts.get(key, 0) + 1
         repeats = len(rows) - len(counts)
         if not repeats:
@@ -7246,6 +7450,7 @@ def repeated_item_violations(
                     "apart."
                 ),
                 path=list_key,
+                statements=tuple(f"{locator_segment(list_key)}.{at}" for at in again),
             )
         )
     return found
@@ -7884,6 +8089,7 @@ def key_finding_citation_violations(
                         "finding stands on, or leave evidence_ids empty."
                     ),
                     path=f"key_findings.{index}.evidence_ids",
+                    statements=(f"key_findings.{index}",),
                 )
             )
     return out
@@ -8165,6 +8371,7 @@ def recommendation_indicator_violations(
                     "publishes. Write it over the published indicators, or without the value."
                 ),
                 path=f"defensive_recommendations.{index}",
+                statements=(f"defensive_recommendations.{index}",),
             )
         )
     return out
@@ -8208,6 +8415,7 @@ def recommendation_technique_violations(
                 ),
                 path=f"defensive_recommendations.{index}",
                 subject=unpublished[0],
+                statements=(f"defensive_recommendations.{index}",),
             )
         )
     return out
@@ -8594,6 +8802,7 @@ def _unstated_values(
     return out
 
 
+@_locating
 def unpublished_value_violations(
     payload: Any, answers: Callable[[str, str], str]
 ) -> list[Violation]:
@@ -8922,6 +9131,7 @@ def configuration_citation_violations(
                     "the value was read from, or mark how it was obtained as inferred."
                 ),
                 path=f"items.{index}.evidence_refs",
+                statements=(f"items.{index}",),
             )
         )
     return out
@@ -8954,6 +9164,7 @@ def identifier_citation_violations(
                     "the identifier out."
                 ),
                 path=f"identifiers.{index}.evidence_refs",
+                statements=(f"identifiers.{index}",),
             )
         )
     return out
@@ -8965,6 +9176,7 @@ def identifier_citation_violations(
 _ID_THEN_NAME_RE = re.compile(rf"\b({ID_BODY})\s*\(([A-Za-z][A-Za-z0-9 ,:/&'\-]{{2,80}})\)")
 
 
+@_locating
 def technique_name_violations(payload: Any) -> list[Violation]:
     """Technique ids written with a name the ATT&CK catalogue gives another technique.
 
@@ -9016,6 +9228,7 @@ def technique_name_violations(payload: Any) -> list[Violation]:
                         "the catalogue's name beside the id, or the id the name belongs to."
                     ),
                     path="technique_name",
+                    about=(_sentence_with(text, match.group(0)),),
                 )
             )
     return out
@@ -9719,6 +9932,7 @@ def _sentences_with_citations(text: str) -> list[tuple[str, list[str]]]:
     return out
 
 
+@_locating
 def wrong_entry_citations(
     payload: Any, entries: EntryTexts | None, *, prose: Sequence[str] = ()
 ) -> list[Violation]:
@@ -10188,6 +10402,7 @@ def _numbered_ids(rows: Sequence[Any]) -> dict[int, int]:
     return {index: number for index, label, number in ending if not label or len(labels) == 1}
 
 
+@_locating
 def cited_id_violations(payload: Any, entries: EntryTexts | None) -> list[Violation]:
     """Table rows whose ``id`` none of the entries they cite holds, while another entry does.
 
@@ -10495,6 +10710,7 @@ def stated_value_violations(payload: Any, entries: EntryTexts | None) -> list[Vi
                         "entry records it, or leave the row out."
                     ),
                     path=f"{list_key}.value:{','.join(refs)}",
+                    statements=tuple(f"{list_key}.{number - 1}.value" for number, _l, _v in rows),
                 )
             )
     return out
@@ -10638,6 +10854,7 @@ def _statement_subject(
 _ENTRY_NOUNS = frozenset({"entry", "output", "result", "summary", "view", "answer", "capture"})
 
 
+@_locating
 def misstated_entry_contents(
     payload: Any, entries: EntryTexts | None, *, prose: Sequence[str] = ()
 ) -> list[Violation]:
@@ -10707,6 +10924,7 @@ def misstated_entry_contents(
                     "about."
                 ),
                 path="citation",
+                about=(sentence,),
             )
         )
     return violations
@@ -11432,6 +11650,7 @@ def _ledger_holds(entries: EntryTexts) -> _LedgerHolds:
     return entries._holds[0]
 
 
+@_locating
 def ledger_absence_contradictions(payload: Any, entries: EntryTexts | None) -> list[Violation]:
     """Sentences that say the ledger lacks what an answered entry of this run holds.
 
@@ -11468,6 +11687,7 @@ def ledger_absence_contradictions(payload: Any, entries: EntryTexts | None) -> l
                 ),
                 path="prose",
                 shown=" ".join(f"{text}." for text in _held_texts(found, entries)),
+                about=(found.sentence,),
             )
         )
     return out
