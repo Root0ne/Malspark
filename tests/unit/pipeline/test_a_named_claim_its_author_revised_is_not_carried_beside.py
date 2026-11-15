@@ -256,6 +256,10 @@ class TestAnItemThatSaysAnythingAgainstTheWithdrawalReadsAsNothing:
     ONE_REASON = (
         ("a negation right before the word", "My claim 2 (0x403962) is not now withdrawn."),
         ("a negation before the verb", "My claim 2 (0x403962) holds X. Not that I reject this."),
+        (
+            "a negation three words before the verb",
+            "My claim 2 (0x403962). Nothing here means I reject it.",
+        ),
         ("a reported word", "My claim 2 (0x403962): TRIAGE says it is superseded."),
         (
             "another's act by an agent",
@@ -276,6 +280,10 @@ class TestAnItemThatSaysAnythingAgainstTheWithdrawalReadsAsNothing:
         ("a possessive", "I reject my claim 2's address 0x403962."),
         ("another's act", "My claim 2 (0x403962), which the peers rejected."),
         ("another claim between", "My claim 2 (0x403962) names X. Static claim 9 is withdrawn."),
+        (
+            "another claim before the pronoun",
+            "My claim 2 (0x403962). Static claim 9 is wrong. I reject this.",
+        ),
         ("a part of the claim", "My claim 2 detail (0x403962) is withdrawn."),
         (
             "an object, not a subject",

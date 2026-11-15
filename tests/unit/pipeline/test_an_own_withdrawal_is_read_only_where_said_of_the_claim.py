@@ -47,6 +47,8 @@ class TestADefenceReadsAsNoWithdrawalOfItsClaim:
             "My claim 4 is supported by ev_0012. The mediator calls it stale. I reject this.",
             "My claim 4 stands. I reject it: the L2 ruling.",
             "My claim 4. I reject them: the peers' objections cite no ledger id.",
+            "My claim 4 stands. I reject it.",
+            "My claim 4. I reject them.",
             # A passive word with another agent, a place or a part after it.
             "My claim 4 was rejected in L2.",
             "My claim 4: the handle is withdrawn by CloseHandle at 0x7a54.",
@@ -85,6 +87,7 @@ class TestAWithdrawalSaidOfTheClaimIsRead:
             "My claim 4 is rejected by me on re-reading ev_0012.",
             "My claims 4 and 5 are withdrawn.",
             "My claim 4 was wrong. I withdraw it.",
+            "My claims 4 and 5. I reject them.",
             "My claims 4 and 5 are withdrawn and replaced by claims 1 and 2 above.",
         ):
             assert 4 in _claims_read(item), item

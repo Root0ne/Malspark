@@ -102,6 +102,7 @@ class TestAFinalOneLineBlockThatNamesAClaimOrAnEntryIsTheBlock:
         for line in (
             "DYNAMIC claim 2 contradicts the sandbox's process list.",
             "The process list in ev_0005 contradicts the dynamic analyst.",
+            "ev_0005 contradicts the lines listed above.",
         ):
             answer = _answer("CONTRADICTIONS:", *LINES, "", f"CONTRADICTIONS: {line}")
 

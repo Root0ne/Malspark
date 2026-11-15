@@ -121,3 +121,5 @@ class TestTwoBlocksThatRestateTheClaimAlike:
         merge = _merge(line, _block(first, "ev_0020") + _block(second, "ev_0021"))
 
         assert merge.restated_by[0] == (1, 1)
+        assert merge.merged is not None
+        assert [c.claim for c in merge.merged.claims][:1] == [first]
