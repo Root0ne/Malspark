@@ -442,8 +442,8 @@ where its `granted_seconds_paths` place it, kept under the task id its
 submission answered. A CAPE or Cuckoo report states no time granted (its
 `info.duration` is how long the analysis ran, not the time it was granted).
 The time asked is the one the provider sent with a submission it posted
-itself, Triage's `defaults.timeout` from `sandbox.triage.analysis_seconds`; a
-provider that sends none states none, and neither does a sample the account
+itself, Triage's `sandbox.triage.analysis_seconds` wherever the path taken
+sends it (see the sandbox page); a provider that sends none states none, and neither does a sample the account
 already held. A time is a number of at least 0.001 and at most 10,000,000, kept
 as stated; anything else, zero included, reads `not reported`, as does a time
 nobody stated, and `analysis_time` is `not reported` where no task is named and

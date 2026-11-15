@@ -198,6 +198,18 @@ produces nothing, which is what `package_by_format` is for.
 | `sandbox.triage.fetch_pcap` | `true` | Fetches the capture for the network analyst. |
 | `sandbox.triage.launcher_for_arguments` | `true` | Carries a job's launch arguments through a generated launcher; see [launch arguments](#launch-arguments). Off, the arguments are not passed and the request is recorded as not honoured. |
 
+The analysis time is sent where the path taken reads it. A submission of the
+sample itself carries it as `defaults.timeout`. A submission that picks a
+generated launcher in its archive, with no profile configured, carries it as
+the `timeout` of a profile embedded in the pick entry
+(`profiles[0].profile.timeout`), because Triage does not apply
+`defaults.timeout` to a submission that names a `profiles` entry, and keeps
+`defaults.timeout` beside it. With a profile configured (`profile` or
+`profile_by_format`), the entry names that stored profile and the profile's own
+time applies; the platform's time cannot be carried there, and this path is not
+checked against the live service. Where a task is granted less time than was
+asked, the run's limitations say so.
+
 A value the account does not allow is refused by Triage, and the submission
 error quotes Triage's own words and names the setting. The run summary states
 the run-time limit Triage set for the task: a limit, not a measured duration.
