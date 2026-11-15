@@ -5406,6 +5406,12 @@ def make_negotiation_node(
         # and the mediator asked to mark each blocking line it lists carried
         # or new.
         said_of_round = round_facts_text(round_before)
+        # The revision round held right before this mediation, when this
+        # debate held one before it: a debate's first mediation is named by
+        # none, and its question asks for every contradiction now.
+        last_revision_round = (
+            int(iteration) if rounds_held_before(state, getattr(stage, "key", None)) >= 1 else None
+        )
 
         def _judge_evidence() -> list[dict[str, Any]]:
             """The judges' tool calls, drained from every cached role.
@@ -5518,6 +5524,11 @@ def make_negotiation_node(
                     run_state=render_run_state(state),
                     **({"round_facts": said_of_round} if said_of_round else {}),
                     **({"cited_entries": mediation_entries} if mediation_entries else {}),
+                    **(
+                        {"last_revision_round": last_revision_round}
+                        if last_revision_round is not None
+                        else {}
+                    ),
                     # The run's ledger, which the round's read_evidence reads
                     # by id (``agents.ledger_reads``).
                     ledger=state.get("evidence_ledger") or None,

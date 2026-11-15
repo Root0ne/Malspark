@@ -661,6 +661,13 @@ MEDIATION_ENTRY_CHECK = (
     "entry's text is in this conversation already; rule on what the entries show, not on "
     "what a report says they show."
 )
+# Said before the closing line of a debate's first mediation only: a point
+# first raised in a later mediation costs the debate a revision round. It asks;
+# what the mediator lists and how it marks each line stay its own decision.
+FIRST_MEDIATION_QUESTION = (
+    "List every contradiction the answers and the ledger establish now: a point first raised "
+    "in a later mediation costs the debate a revision round."
+)
 
 # The question asked once, in the mediation's own conversation, when the round
 # limit ends the debate on blocking lines no revision will answer
@@ -3837,6 +3844,7 @@ class JudgeAgent(BudgetMeter):
         round_facts: str = "",
         cited_entries: Mapping[str, str] | None = None,
         ledger: Sequence[Any] | None = None,
+        last_revision_round: int | None = None,
     ) -> tuple[AgentArgument, bool | None]:
         """One mediation round (:meth:`_mediate_round`), or the round the mediator's ceiling ends.
 
@@ -3848,6 +3856,9 @@ class JudgeAgent(BudgetMeter):
         ``ledger`` is the run's ledger: the round's ``read_evidence`` (in its
         loop and in the block question) reads every entry of it by id, not
         only the loop's own (``agents.ledger_reads``).
+
+        ``last_revision_round`` is the revision round held right before this
+        mediation in its debate, ``None`` for the debate's first mediation.
         """
         self._mediation_ledger = list(ledger) if ledger else None
         self._mediation_turns = None
@@ -3863,6 +3874,7 @@ class JudgeAgent(BudgetMeter):
                 run_state=run_state,
                 round_facts=round_facts,
                 cited_entries=cited_entries,
+                last_revision_round=last_revision_round,
             )
         except AgentCeilingStop as stop:
             self.logger.warning("Mediator: %s; the round is not mediated.", stop)
@@ -3891,6 +3903,7 @@ class JudgeAgent(BudgetMeter):
         run_state: str = "",
         round_facts: str = "",
         cited_entries: Mapping[str, str] | None = None,
+        last_revision_round: int | None = None,
     ) -> tuple[AgentArgument, bool | None]:
         """Find contradictions between expert reports and determine consensus.
 
@@ -3916,6 +3929,10 @@ class JudgeAgent(BudgetMeter):
             cited_entries: The stored texts of the entries those lines cite,
                 by id, shown after them whole, as many as the room the
                 reports and the history leave (``debate_facts.fit_entries``).
+            last_revision_round: The revision round held right before this
+                mediation in its debate, or ``None`` for the debate's first
+                mediation, whose question asks for every contradiction now
+                (``FIRST_MEDIATION_QUESTION``).
 
         Returns:
             Tuple of (AgentArgument with mediator findings, bool indicating
@@ -3985,6 +4002,10 @@ class JudgeAgent(BudgetMeter):
             if self._mediation_ledger
             else MEDIATOR_HUMAN_CLOSING
         )
+        # A debate's first mediation is told that a point it leaves for a
+        # later one costs a round; a later mediation is asked as before.
+        if last_revision_round is None:
+            closing = f"{FIRST_MEDIATION_QUESTION} {closing}"
 
         def _mediation_human(
             reports_shown: str, history_shown: str, notice: str, entries_shown: str = ""

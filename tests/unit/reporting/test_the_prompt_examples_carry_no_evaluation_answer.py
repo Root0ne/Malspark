@@ -79,6 +79,7 @@ from malspark.agents.judge_agent import (
     CONTRADICTIONS_BLOCK_QUESTION,
     CONTRADICTIONS_BLOCK_RULE,
     EVIDENCE_SHORTENED_NOTICE,
+    FIRST_MEDIATION_QUESTION,
     LIMIT_RULING_QUESTION,
     LIMIT_RULING_QUESTION_WITHOUT_TOOLS,
     LOWERED_ENTRY_MARK,
@@ -1773,6 +1774,7 @@ PROMPTS: dict[str, str] = {
     "mediator entry check and the round limit's ruling question": " ".join(
         [MEDIATION_ENTRY_CHECK, LIMIT_RULING_QUESTION, LIMIT_RULING_QUESTION_WITHOUT_TOOLS]
     ),
+    "a debate's first mediation's question": FIRST_MEDIATION_QUESTION,
     "mediator system turn, its closing line and the missing-block note": " ".join(
         [
             MEDIATOR_SYSTEM_HEAD,
