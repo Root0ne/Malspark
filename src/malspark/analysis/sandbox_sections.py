@@ -672,14 +672,33 @@ class Sections:
             item.update(self._indicators_of(row))
         return item
 
-    def _indicators_of(self, row: Any) -> dict[str, Any]:
-        """A signature row's indicators as its entry states them (``SignatureIndicators``)."""
+    def _signature_indicators(self) -> Any:
+        """The report's signature indicators (``SignatureIndicators``), read on first use."""
         if self._indicators is None:
             from malspark.providers.sandbox_tools import SignatureIndicators
 
             self._indicators = SignatureIndicators(dict(self.report), self._normalised_by)
-        held: dict[str, Any] = self._indicators.of(row)
+        return self._indicators
+
+    def _indicators_of(self, row: Any) -> dict[str, Any]:
+        """A signature item's indicators: the head of its order and where the rest are read."""
+        held: dict[str, Any] = self._signature_indicators().of_item(row)
         return held
+
+    def _indicators_hold(self, row: Any, needle: str) -> bool:
+        """Whether any indicator the report states for a signature row holds ``needle``."""
+        from malspark.providers.sandbox_tools import _signature_name
+
+        if not isinstance(row, Mapping):
+            return False
+        held: bool = self._signature_indicators().holds_text(_signature_name(row), needle)
+        return held
+
+    def names_processes(self, name: str) -> bool:
+        """Whether the pid filter reads ``name``: its rows name a process, or its indicators do."""
+        if names_processes(name):
+            return True
+        return name == "signatures" and self._signature_indicators().fields is not None
 
     def _own(self, item_id: str) -> str | None:
         """``item_id`` without this report's qualifier; ``None`` where another detonation's."""
@@ -725,6 +744,11 @@ class Sections:
                             found = self._stated(one)
                             if found is not None:
                                 pids.add(found)
+                if name == "signatures" and isinstance(row, Mapping):
+                    # And by the processes its indicators name, acting or acted on.
+                    from malspark.providers.sandbox_tools import _signature_name
+
+                    pids |= self._signature_indicators().process_ids(_signature_name(row))
                 for pid in pids:
                     index.setdefault(pid, []).append(number)
         self._pid_index[name] = index
@@ -840,10 +864,8 @@ class Sections:
             part, index = placed
             row = section.parts[part].rows[index]
             if needle and not _holds_text(_searched(section.name, row), needle):
-                # A signature is also found by what its indicators say.
-                if section.name != "signatures" or not _holds_text(
-                    self._indicators_of(row), needle
-                ):
+                # A signature is also found by what any of its indicators says.
+                if section.name != "signatures" or not self._indicators_hold(row, needle):
                     continue
             found.items.append(self._item(section, section.parts[part], index, number))
         return found

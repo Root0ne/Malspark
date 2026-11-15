@@ -219,7 +219,7 @@ def test_the_cape_reader_is_unaffected_by_its_declaration() -> None:
         named = view(document, normalised_by=by)
         if view is sandbox_signatures:
             named = {
-                **named,
+                **{k: v for k, v in named.items() if not k.startswith("indicators")},
                 "signatures": [
                     {k: v for k, v in row.items() if not k.startswith("indicators")}
                     for row in named["signatures"]

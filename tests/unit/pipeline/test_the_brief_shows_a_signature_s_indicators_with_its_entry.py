@@ -55,9 +55,8 @@ def _rows(document: dict[str, Any], *, bare: bool = False) -> list[dict[str, Any
     signatures = sandbox_tools.sandbox_signatures(document, normalised_by=TRIAGE)
     if bare:
         signatures = copy.deepcopy(signatures)
-        for row in signatures["signatures"]:
-            for key in ("indicators", "indicators_total", "indicators_left_out"):
-                row.pop(key, None)
+        for key in ("indicators", "indicators_left_out", "indicators_read"):
+            signatures.pop(key, None)
     views = [
         ("sandbox_processes", sandbox_tools.sandbox_processes(document, normalised_by=TRIAGE)),
         ("sandbox_signatures", signatures),
@@ -89,11 +88,10 @@ class TestThePackLine:
     def test_every_indicator_the_entry_holds_is_on_the_line(self) -> None:
         rows = _rows(_document())
         line = _signatures_line(pack_block(pack_entries(rows), 0))
-        for signature in rows[1]["structured"]["signatures"]:
-            for indicator in signature.get("indicators") or []:
-                assert f"process {indicator['process']['id']}" in line
-                if "description" in indicator:
-                    assert indicator["description"] in line
+        for indicator in rows[1]["structured"]["indicators"]:
+            assert f"process {indicator['process']['id']}" in line
+            if "description" in indicator:
+                assert indicator["description"] in line
 
     def test_in_a_tight_room_every_other_line_is_as_without_indicators(self) -> None:
         document = _document()
@@ -109,15 +107,16 @@ class TestThePackLine:
 
     def test_a_signature_whose_indicators_do_not_fit_is_counted_with_its_entry(self) -> None:
         line = _signatures_line(pack_block(pack_entries(_rows(_document())), 600))
-        assert "; the indicators of 4 signatures are held by this entry, not shown here" in line
+        assert "; the indicators of 5 signatures are held by this entry, not shown here" in line
 
     def test_what_the_entry_left_out_the_line_counts(self) -> None:
-        count = SIGNATURE_INDICATORS_SHOWN + 5
         task = _json("behavioral1.json")
         (row,) = [s for s in task["signatures"] if s["name"] == WPM]
-        row["indicators"] = [{"procid": 84, "description": f"d{i}"} for i in range(count)]
-        line = _signatures_line(pack_block(pack_entries(_rows(_document(task))), 0))
-        assert "(+5 more the report states, beyond this entry)" in line
+        row["indicators"] = [{"procid": 84, "description": "d" * 200 + f"{i}"} for i in range(300)]
+        rows = _rows(_document(task))
+        (rest,) = rows[1]["structured"]["indicators_left_out"]
+        line = _signatures_line(pack_block(pack_entries(rows), 0))
+        assert f"(+{rest['left_out']} more the report states, beyond this entry)" in line
 
     def test_a_row_s_head_shows_no_indicator(self) -> None:
         heads = pack_row_heads(_rows(_document()))
@@ -134,8 +133,12 @@ class TestThePackLine:
 class TestTheItemReader:
     def test_a_signature_item_carries_the_entry_s_indicators(self) -> None:
         document = _document()
-        rows = sandbox_tools.sandbox_signatures(document, normalised_by=TRIAGE)["signatures"]
-        (expected,) = [row["indicators"] for row in rows if row["name"] == WPM]
+        listed = sandbox_tools.sandbox_signatures(document, normalised_by=TRIAGE)["indicators"]
+        expected = [
+            {k: v for k, v in one.items() if k != "signature"}
+            for one in listed
+            if one["signature"] == WPM
+        ]
         answer = sandbox_tools.sandbox_items(
             document, "signatures", signature=WPM, normalised_by=TRIAGE
         )
@@ -156,6 +159,48 @@ class TestTheItemReader:
         (item,) = sections.query("signatures", signature=WPM).items
         text = ItemCitations(index, sections).text(item["id"])
         assert text is not None and "pid 1756 wrote to memory of 3444" in text
+
+    @staticmethod
+    def _noisy() -> dict[str, Any]:
+        """The live task with 59 address indicators stated before the write into cmd.exe."""
+        task = _json("behavioral1.json")
+        (row,) = [s for s in task["signatures"] if s["name"] == WPM]
+        row["indicators"] = [{"procid": 84, "dst": f"10.0.0.{i}"} for i in range(59)] + row[
+            "indicators"
+        ]
+        return _document(task)
+
+    def test_an_item_lists_the_head_of_its_order_and_says_where_the_rest_are(self) -> None:
+        answer = sandbox_tools.sandbox_items(
+            self._noisy(), "signatures", signature=WPM, normalised_by=TRIAGE
+        )
+        (item,) = answer["items"]
+        assert item["indicators"][0]["target"]["id"] == "86"
+        assert len(item["indicators"]) == SIGNATURE_INDICATORS_SHOWN
+        assert item["indicators_stated"] == 60
+        assert item["indicators_left_out"] == {
+            "signature": WPM,
+            "left_out": 60 - SIGNATURE_INDICATORS_SHOWN,
+            "offset": SIGNATURE_INDICATORS_SHOWN,
+        }
+        assert "offset=" in item["indicators_read"]
+
+    def test_the_text_filter_reads_every_indicator_the_report_states(self) -> None:
+        answer = sandbox_tools.sandbox_items(
+            self._noisy(), "signatures", contains="10.0.0.58", normalised_by=TRIAGE
+        )
+        assert [item["fields"]["name"] for item in answer["items"]] == [WPM]
+
+    def test_the_process_filter_reads_every_indicator_the_report_states(self) -> None:
+        answer = sandbox_tools.sandbox_items(
+            self._noisy(), "signatures", pid=86, normalised_by=TRIAGE
+        )
+        names = {item["fields"]["name"] for item in answer["items"]}
+        assert names == {WPM, "Executes a command shell one-liner"}
+
+    def test_without_the_reader_the_process_filter_reads_no_signature(self) -> None:
+        answer = sandbox_tools.sandbox_items(_document(), "signatures", pid=86)
+        assert "no" in answer
 
     def test_without_the_reader_an_item_is_as_before(self) -> None:
         (item,) = Sections(_document()).query("signatures", signature=WPM).items
@@ -182,4 +227,4 @@ class TestTheCostIsLinear:
         assert_scales(self._rows, 150, lambda entries: pack_block(entries, 800), factor=8)
 
     def test_the_whole_pack(self) -> None:
-        assert_scales(self._rows, 150, lambda entries: pack_block(entries, 0), factor=8)
+        assert_scales(self._rows, 300, lambda entries: pack_block(entries, 0), factor=8)

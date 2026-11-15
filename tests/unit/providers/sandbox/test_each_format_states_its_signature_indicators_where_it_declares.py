@@ -22,6 +22,7 @@ from typing import Any
 import pytest
 
 from malspark.core.report_mapping import RestMappingConfig
+from malspark.providers import sandbox_tools
 from malspark.providers.sandbox import readers
 from malspark.providers.sandbox.readers import required_reader
 from malspark.providers.sandbox_tools import SignatureIndicators, sandbox_signatures
@@ -35,8 +36,13 @@ FIXTURES = Path(__file__).resolve().parents[3] / "fixtures" / "sandbox"
 
 
 def _view(report: SandboxReport, normalised_by: tuple[str, ...]) -> dict[str, dict[str, Any]]:
+    """Each row of the view by name, with the indicators listed after the rows under its name."""
     answer = sandbox_signatures(sandbox_document(report), normalised_by=normalised_by)
-    return {row["name"]: row for row in answer["signatures"]}
+    rows = {row["name"]: row for row in answer["signatures"]}
+    for listed in answer.get("indicators") or []:
+        one = dict(listed)
+        rows[one.pop("signature")].setdefault("indicators", []).append(one)
+    return rows
 
 
 def _cape_payload() -> dict[str, Any]:
@@ -71,7 +77,8 @@ class TestCape:
     @pytest.mark.parametrize("reader", ["cape2", "cuckoo"])
     def test_a_call_mark_names_its_process_and_its_api(self, reader: str) -> None:
         report = required_reader(reader).read(_cape_payload(), provider="cape")
-        call, ioc, unlisted = _view(report, ("cape", reader))["injection_rwx"]["indicators"]
+        # Those naming a process first, then the rest, each in the report's order.
+        call, unlisted, ioc = _view(report, ("cape", reader))["injection_rwx"]["indicators"]
         assert call["process"] == {"id": "10", "image": "a.exe"}
         assert call["event"] == "WriteProcessMemory"
         assert call["values"]["type"] == "call" and "ProcessId" in call["values"]["call"]
@@ -102,8 +109,8 @@ class TestCape:
         stated = len(payload["signatures"][0]["data"])
         network = rows["stealth_network"]
         assert network["indicators"][0] == {"values": {"ip": "119.29.29.29"}}
-        assert network["indicators_total"] == stated
-        assert network["indicators_left_out"] == stated - len(network["indicators"])
+        assert network["indicators_stated"] == stated
+        assert sum(one.get("times", 1) for one in network["indicators"]) == stated
 
 
 MAPPED = RestMappingConfig(
@@ -219,6 +226,8 @@ def test_the_generic_reading_reads_no_format_s_own_field() -> None:
     assert {"procid", "marks", "data", "call", "indicators"} <= declared
     read = _keys_read(inspect.getsource(signature_indicators))
     read |= _keys_read(textwrap.dedent(inspect.getsource(SignatureIndicators)))
+    for listing in (sandbox_tools._with_indicators, sandbox_tools._indicator_page):
+        read |= _keys_read(textwrap.dedent(inspect.getsource(listing)))
     assert read & declared <= {"name"}
 
 

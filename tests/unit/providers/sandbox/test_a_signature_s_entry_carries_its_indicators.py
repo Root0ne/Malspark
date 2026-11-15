@@ -7,9 +7,9 @@ signatures again per task, those of every task row of the same name, each read
 in its task. Every process an indicator names is resolved to the process row
 of the same report and task (its image, its launch lineage or the sandbox's
 mark); an id the task does not list is stated as not listed, never dropped.
-Equal indicators are listed once with their count, at most
-``SIGNATURE_INDICATORS_SHOWN`` distinct ones, the rest counted; every text is
-cut to its bound with what was cut counted, and written out. A report read
+Equal indicators are listed once with their count, and each row states how
+many the report states (``indicators_stated``); every text is cut to its bound
+with what was cut counted, and written out. A report read
 with no declaration, and a stored document read without its reader, answer as
 before.
 
@@ -70,8 +70,13 @@ def _read(task: dict[str, Any] | None = None, overview: dict[str, Any] | None = 
 
 
 def _rows(report: SandboxReport, normalised_by: Any = TRIAGE) -> dict[str, dict[str, Any]]:
+    """Each row of the view by name, with the indicators listed after the rows under its name."""
     answer = sandbox_signatures(sandbox_document(report), normalised_by=normalised_by)
-    return {row["name"]: row for row in answer["signatures"]}
+    rows = {row["name"]: row for row in answer["signatures"]}
+    for listed in answer.get("indicators") or []:
+        one = dict(listed)
+        rows[one.pop("signature")].setdefault("indicators", []).append(one)
+    return rows
 
 
 def _with_signature(indicators: list[Any], name: str = WPM) -> dict[str, Any]:
@@ -183,12 +188,11 @@ class TestEveryIdIsStated:
 
 
 class TestTheBounds:
-    def test_past_the_bound_the_rest_are_counted(self) -> None:
+    def test_every_one_the_answer_holds_is_listed_and_the_count_stated(self) -> None:
         count = SIGNATURE_INDICATORS_SHOWN + 24
         task = _with_signature([{"procid": 84, "description": f"d{i}"} for i in range(count)])
         row = _rows(_read(task))[WPM]
-        assert len(row["indicators"]) == SIGNATURE_INDICATORS_SHOWN
-        assert row["indicators_total"] == count and row["indicators_left_out"] == 24
+        assert len(row["indicators"]) == count and row["indicators_stated"] == count
 
     def test_repeats_of_a_shown_indicator_are_counted_on_it(self) -> None:
         task = _with_signature([{"procid": 84}] * 40)

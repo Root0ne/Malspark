@@ -48,10 +48,16 @@ VALUES = "values"
 CHARS_LEFT_OUT = "chars_left_out"
 VALUES_LEFT_OUT = "values_left_out"
 
-# The most indicators one signature's entry lists: each distinct indicator
-# once, with how many times the report states it (``times``), and
-# ``indicators_left_out`` counting the stated ones past them, beside
-# ``indicators_total``.
+# The whole signature view's answer, its rows and the indicators listed after
+# them (``providers.sandbox_tools.sandbox_signatures``): indicators are listed
+# only while the answer stays within it, and never past what the model's copy
+# of the answer holds. The rows are the view's whatever their size.
+SIGNATURE_ANSWER_CHARS = 24_000
+# How many indicators one call naming a signature, a process or a text lists,
+# from its offset (within the same whole-answer bound).
+SIGNATURE_INDICATORS_PAGE = 20
+# The most indicators the item reader's signature item lists, the head of the
+# signature's order, with where the rest are read.
 SIGNATURE_INDICATORS_SHOWN = 16
 # How long a text and a value's name an indicator keeps, and how many values:
 # a hostile report's long strings and wide indicators cost their bound, and
@@ -78,6 +84,9 @@ class IndicatorFields:
     indicators then also take those of every task row of its name, each read
     in its row's task. ``neutral`` says the rows hold their indicators in the
     neutral form under :data:`SIGNATURE_INDICATORS_KEY` (a mapped format).
+    ``guest_pid`` names the dotted paths of a process row (as the document
+    holds it) that hold the guest's pid, where the report's own process id is
+    another number: a resolved process then states both.
     """
 
     lists: tuple[str, ...] = ()
@@ -89,6 +98,7 @@ class IndicatorFields:
     task_name: str = ""
     task_lists: tuple[str, ...] = ()
     neutral: bool = False
+    guest_pid: tuple[str, ...] = ()
 
 
 # A mapped format's rows: the neutral form, under the platform's own key.
@@ -111,8 +121,9 @@ def _cut(text: str, limit: int) -> tuple[str, int]:
     return text[:limit] + "…", len(text) - limit
 
 
-def _at(indicator: Mapping[str, Any], path: str) -> Any:
-    node: Any = indicator
+def held_at(row: Any, path: str) -> Any:
+    """What ``row`` holds at the dotted ``path``, or ``None``."""
+    node: Any = row
     for key in path.split("."):
         if not isinstance(node, Mapping):
             return None
@@ -144,7 +155,7 @@ def neutral_indicator(indicator: Any, fields: IndicatorFields) -> dict[str, Any]
                 break
     for key, paths in ((EVENT, fields.event), (DESCRIPTION, fields.description)):
         for path in paths:
-            value = _at(indicator, path)
+            value = held_at(indicator, path)
             if _stated(value):
                 out[key], left = _cut(_text(value), INDICATOR_TEXT_CHARS)
                 if left:
@@ -224,6 +235,15 @@ def indicators_of(row: Any, lists: tuple[str, ...]) -> list[Any]:
         if isinstance(held, list) and held:
             return held
     return []
+
+
+def indicator_rank(indicator: Mapping[str, Any]) -> int:
+    """Where an indicator stands in its signature's order: a process pairing, one process, none.
+
+    ``0`` where it names the process that acted and the one acted on, ``1``
+    where it names one of them, ``2`` where it names none.
+    """
+    return 2 - bool(indicator.get(PROCESS)) - bool(indicator.get(TARGET))
 
 
 def indicator_key(indicator: Mapping[str, Any], task: str) -> str:

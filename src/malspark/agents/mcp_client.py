@@ -1206,6 +1206,12 @@ class MCPLangChainToolkit:
         clean = " ".join(description.split())
         return f"[{category_tag(name, self._categories.get(name, ''))}] {clean}"
 
+    def answer_limit(self) -> int:
+        """How many characters of one answer may reach the model now (``output_limit``)."""
+        from malspark.llm.context_window import output_limit
+
+        return output_limit(self._max_output_chars, self._context_budget)
+
     def _apply_output_guardrail(
         self, output: str, narrowing: Sequence[str] = (), limit: int | None = None
     ) -> str:

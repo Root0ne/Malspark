@@ -479,6 +479,17 @@ SIGNATURE_PIDS_SHOWN = 10
 INDICATOR_PROCESS_IN_TASKS = "listed in {count} tasks; the indicator names none of them"
 INDICATOR_PROCESS_TWICE = "the task lists {count} processes under this id"
 
+# How an answer that leaves indicators out says the rest are read: this view
+# called again, by a signature's name from an offset, or by a process or a text.
+INDICATORS_READ = (
+    "this view with signature=<name> and offset=<offset>, process=<id> or "
+    "contains=<text> lists them, {page} per call"
+)
+# What the paged call answers for an argument it cannot read, or a report
+# whose format states no indicators.
+INDICATORS_BAD_PROCESS = "process is not a process id in digits"
+INDICATORS_NONE_DECLARED = "the report's format states no indicators for its signatures"
+
 
 def _reading(normalised_by: Sequence[str] | None) -> Any:
     """What the job's reader declares its reports hold (``Reading``), or ``None`` when unknown."""
@@ -490,22 +501,47 @@ def _reading(normalised_by: Sequence[str] | None) -> Any:
     return normaliser_reading(source_format, provider, rest[0] if rest else "")
 
 
+def _size(value: Any) -> int:
+    """What ``value`` adds to an answer written as the guardrail writes it, with its separator."""
+    from malspark.core.safe_json import dumps
+
+    return len(dumps(value, default=str)) + 2
+
+
+def _held_text(value: Any, needle: str) -> bool:
+    """Whether a string anywhere in ``value`` contains ``needle``, case not counted; one walk."""
+    stack = [value]
+    while stack:
+        current = stack.pop()
+        if isinstance(current, str):
+            if needle in current.lower():
+                return True
+        elif isinstance(current, Mapping):
+            stack.extend(current.values())
+        elif isinstance(current, list | tuple):
+            stack.extend(current)
+    return False
+
+
 class SignatureIndicators:
     """Each signature's indicators as its ledger entry states them, the report read once.
 
     Read where the job's reader declares its source states them
     (``Reading.signature_indicators``), never by a format's own field name:
-    a signature row's own, then, where the source lists its signatures again
-    per task, those of every task row of the same name, each in its task.
-    Every process an indicator names is resolved to the process row of the
-    same report and task, with the facts the process view states for it (its
-    image, its launch lineage or the sandbox's mark); an id the task does not
-    list is stated as not listed, and one listed more than once is stated as
-    such, never dropped. Equal indicators of one task are listed once with
-    their count; past ``SIGNATURE_INDICATORS_SHOWN`` distinct ones the rest
-    are counted. Every text is the report's and is written out
-    (``sample_written_out``). Linear in the report: the task rows of one name
-    are read once, however many signatures share it.
+    the rows of a signature's name own, then, where the source lists its
+    signatures again per task, those of every task row of the same name, each
+    in its task. Every process an indicator names is resolved to the process
+    row of the same report and task, with the facts the process view states
+    for it (its image, the guest's pid where the reader declares where a row
+    holds it, its launch lineage or the sandbox's mark); an id the task does
+    not list is stated as not listed, and one listed more than once is stated
+    as such, never dropped. Equal indicators of one task are listed once with
+    their count (``times``). A name's indicators are in one order: those
+    naming a process pairing (the acting and the target process) first, then
+    those naming one process, then the rest, each group in the report's
+    order. Every text is the report's and is written out
+    (``sample_written_out``). Linear in the report: each name's indicators
+    are gathered and resolved once, however many rows and calls read them.
     """
 
     def __init__(self, report: dict[str, Any] | None, normalised_by: Sequence[str] | None) -> None:
@@ -513,13 +549,16 @@ class SignatureIndicators:
         self.fields = getattr(reading, "signature_indicators", None)
         self._rows: dict[tuple[str, str], list[dict[str, Any]]] = {}
         self._tasks_of: dict[str, set[str]] = {}
+        self._own: dict[str, list[list[Any]]] = {}
         self._task_rows: dict[str, list[tuple[str, list[Any]]]] = {}
-        self._task_parts: dict[str, tuple[list[list[Any]], int]] = {}
+        self._names: list[str] = []
+        self._resolved: dict[str, tuple[list[dict[str, Any]], list[int]]] = {}
         self._launched = False
         if self.fields is None or not isinstance(report, dict):
             self.fields = None
             return
         from malspark.schemas.sandbox_document import PROCESS_ID_KEYS, channel_rows
+        from malspark.schemas.signature_indicators import indicators_of
 
         processes = _list_at(report, "processes") or []
         for proc in processes:
@@ -533,11 +572,20 @@ class SignatureIndicators:
         self._listing = {task for task, _procid in self._rows}
         self._launched = _launcher_attributed(report, processes)
         fields = self.fields
+        named: dict[str, None] = {}
+        signatures = place(report, "signatures")
+        for row in signatures if isinstance(signatures, list) else []:
+            if not isinstance(row, dict):
+                continue
+            name = _signature_name(row)
+            named[name] = None
+            listed = indicators_of(row, fields.lists)
+            if listed:
+                self._own.setdefault(name, []).append(listed)
         channels = place(report, "channels")
         held = channels.get(fields.task_channel) if isinstance(channels, dict) else None
         if fields.task_channel and held is not None:
             from malspark.schemas.sandbox_report import TASK_KEY
-            from malspark.schemas.signature_indicators import indicators_of
 
             for row in channel_rows(held) or []:
                 if not isinstance(row, dict):
@@ -547,31 +595,10 @@ class SignatureIndicators:
                     name = str(row.get(fields.task_name) or "")
                     task = str(row.get(TASK_KEY) or "")
                     self._task_rows.setdefault(name, []).append((task, listed))
-
-    def _gathered(self, sources: Any) -> tuple[list[list[Any]], int]:
-        """``([task, indicator, times] for the distinct ones shown, how many are stated)``."""
-        from malspark.schemas.signature_indicators import (
-            SIGNATURE_INDICATORS_SHOWN,
-            held_neutral,
-            indicator_key,
-            neutral_indicator,
-        )
-
-        fields = self.fields
-        assert fields is not None
-        shown: dict[str, list[Any]] = {}
-        stated = 0
-        for task, listed in sources:
-            for raw in listed:
-                stated += 1
-                indicator = held_neutral(raw) if fields.neutral else neutral_indicator(raw, fields)
-                key = indicator_key(indicator, task)
-                found = shown.get(key)
-                if found is not None:
-                    found[2] += 1
-                elif len(shown) < SIGNATURE_INDICATORS_SHOWN:
-                    shown[key] = [task, indicator, 1]
-        return list(shown.values()), stated
+        # The names in the report's order: a task row of a name no signature
+        # row has is the report's too, listed after them.
+        named.update(dict.fromkeys(self._task_rows))
+        self._names = list(named)
 
     def _process(self, procid: str, task: str) -> dict[str, Any]:
         """The process ``procid`` names in ``task`` (any task where none is stated), as listed."""
@@ -595,10 +622,18 @@ class SignatureIndicators:
             PROCESS_IMAGE_PATH_KEYS,
             PROCESS_NAME_KEYS,
         )
-        from malspark.schemas.signature_indicators import INDICATOR_TEXT_CHARS
+        from malspark.schemas.signature_indicators import INDICATOR_TEXT_CHARS, held_at
         from malspark.utils.written_forms import sample_written_out
 
         (proc,) = listed
+        # The guest's pid, where the reader declares where a process row holds
+        # it: ``id`` is the report's own id for the process.
+        assert self.fields is not None
+        guest = next(
+            (pid for path in self.fields.guest_pid if (pid := pid_of(held_at(proc, path)))), None
+        )
+        if guest:
+            out["guest_pid"] = guest
         name = next(
             (
                 str(proc[key])
@@ -654,33 +689,239 @@ class SignatureIndicators:
             out["times"] = times
         return out
 
-    def of(self, signature: Any) -> dict[str, Any]:
-        """The fields ``signature``'s row of an answer gains; ``{}`` where it states none."""
-        fields = self.fields
-        if fields is None or not isinstance(signature, dict):
-            return {}
+    def resolved(self, name: str) -> tuple[list[dict[str, Any]], list[int]]:
+        """``name``'s indicators as the entry states them, in their order, and each one's ``times``.
+
+        Each distinct indicator of a task once, the first time the report
+        states it; then in the one order (:func:`indicator_rank`). Read once
+        per name.
+        """
+        held = self._resolved.get(name)
+        if held is not None:
+            return held
         from malspark.schemas.signature_indicators import (
-            SIGNATURE_INDICATORS_SHOWN,
-            indicators_of,
+            held_neutral,
+            indicator_key,
+            indicator_rank,
+            neutral_indicator,
         )
 
-        own_shown, own_stated = self._gathered([("", indicators_of(signature, fields.lists))])
-        name = str(signature.get("name") or "")
-        if name not in self._task_parts:
-            self._task_parts[name] = self._gathered(self._task_rows.get(name, ()))
-        task_shown, task_stated = self._task_parts[name]
-        shown = [*own_shown, *task_shown][:SIGNATURE_INDICATORS_SHOWN]
-        stated = own_stated + task_stated
+        fields = self.fields
+        if fields is None:
+            return [], []
+        distinct: dict[str, list[Any]] = {}
+        sources = [
+            *(("", listed) for listed in self._own.get(name, ())),
+            *self._task_rows.get(name, ()),
+        ]
+        for task, listed in sources:
+            for raw in listed:
+                indicator = held_neutral(raw) if fields.neutral else neutral_indicator(raw, fields)
+                key = indicator_key(indicator, task)
+                found = distinct.get(key)
+                if found is not None:
+                    found[2] += 1
+                else:
+                    distinct[key] = [task, indicator, 1]
+        ordered = sorted(distinct.values(), key=lambda held: indicator_rank(held[1]))
+        stated = [self._stated(task, indicator, times) for task, indicator, times in ordered]
+        held = (stated, [times for _task, _indicator, times in ordered])
+        self._resolved[name] = held
+        return held
+
+    def stated(self, name: str) -> int:
+        """How many indicators the report states for ``name``, each repeat counted."""
+        return sum(self.resolved(name)[1])
+
+    @property
+    def names(self) -> list[str]:
+        """Every signature name the report states indicators under, in the report's order."""
+        return self._names
+
+    def process_ids(self, name: str) -> set[str]:
+        """The report's ids of the processes ``name``'s indicators name, acting or acted on."""
+        from malspark.schemas.signature_indicators import PROCESS, TARGET
+
+        return {
+            str(one[key]["id"])
+            for one in self.resolved(name)[0]
+            for key in (PROCESS, TARGET)
+            if isinstance(one.get(key), dict)
+        }
+
+    def holds_text(self, name: str, needle: str) -> bool:
+        """Whether one of ``name``'s indicators, as the entry states it, holds ``needle``."""
+        return bool(needle) and any(_held_text(one, needle) for one in self.resolved(name)[0])
+
+    def of_item(self, signature: Any) -> dict[str, Any]:
+        """What the item reader's signature item gains: its first indicators and where the rest are.
+
+        At most ``SIGNATURE_INDICATORS_SHOWN`` in the one order; the rest are
+        counted, with the call and the offset that list them
+        (``indicators_left_out``, ``indicators_read``). ``{}`` where none is stated.
+        """
+        if self.fields is None or not isinstance(signature, dict):
+            return {}
+        from malspark.schemas.signature_indicators import (
+            SIGNATURE_INDICATORS_PAGE,
+            SIGNATURE_INDICATORS_SHOWN,
+        )
+
+        name = _signature_name(signature)
+        stated, times = self.resolved(name)
         if not stated:
             return {}
-        out: dict[str, Any] = {
-            "indicators": [self._stated(task, ind, times) for task, ind, times in shown]
-        }
-        left_out = stated - sum(times for _task, _ind, times in shown)
-        if left_out:
-            out["indicators_total"] = stated
-            out["indicators_left_out"] = left_out
+        shown = stated[:SIGNATURE_INDICATORS_SHOWN]
+        out: dict[str, Any] = {"indicators_stated": sum(times), "indicators": shown}
+        left = sum(times) - sum(times[: len(shown)])
+        if left:
+            out["indicators_left_out"] = {
+                "signature": _written_name(name),
+                "left_out": left,
+                "offset": len(shown),
+            }
+            out["indicators_read"] = INDICATORS_READ.format(page=SIGNATURE_INDICATORS_PAGE)
         return out
+
+
+def _signature_name(row: Mapping[str, Any]) -> str:
+    """A signature row's name, as the view's row states it."""
+    return str(row.get("name") or row.get("signature") or "")
+
+
+def _written_name(name: str) -> str:
+    """A signature's name as an indicator's entry states it: the report's text, written out."""
+    from malspark.utils.written_forms import sample_written_out
+
+    return sample_written_out(name)
+
+
+def _with_indicators(
+    answer: dict[str, Any], names: list[str], indicators: SignatureIndicators, room: int
+) -> dict[str, Any]:
+    """The rows' answer, then the indicators ``room`` holds, then the rest counted per signature.
+
+    After the rows, ``indicators`` lists the page's signatures' indicators,
+    each with its signature's name, in one order across them — every
+    process pairing first, then those naming one process, then the rest, each
+    group by signature and then in the signature's own order — while the
+    whole answer stays within ``room`` characters, stopping at the first that
+    does not fit: what a signature has listed is the head of its own order.
+    ``indicators_left_out`` counts, per signature, the indicators past that
+    head, with the offset the paged call (``indicators_read``) lists them
+    from. Where not even the counts fit beside the rows, no indicator is
+    listed, and each row's ``indicators_stated`` is what is left out. Linear
+    in the page's indicators.
+    """
+    from malspark.schemas.signature_indicators import SIGNATURE_INDICATORS_PAGE, indicator_rank
+
+    answer["indicators_read"] = INDICATORS_READ.format(page=SIGNATURE_INDICATORS_PAGE)
+    # Every signature's count at its largest, so the counts are known to fit
+    # before any indicator is placed.
+    counts = sum(
+        _size(
+            {
+                "signature": _written_name(name),
+                "left_out": indicators.stated(name),
+                "offset": len(indicators.resolved(name)[0]),
+            }
+        )
+        for name in names
+    )
+    left = room - _size(answer) - counts - _size({"indicators": [], "indicators_left_out": []})
+    listed: list[dict[str, Any]] = []
+    head = dict.fromkeys(names, 0)
+    full = left <= 0
+    for rank in range(3):
+        for name in names:
+            if full:
+                break
+            stated = indicators.resolved(name)[0]
+            at = head[name]
+            while at < len(stated) and indicator_rank(stated[at]) == rank:
+                item = {"signature": _written_name(name), **stated[at]}
+                cost = _size(item)
+                if cost > left:
+                    full = True
+                    break
+                listed.append(item)
+                left -= cost
+                at += 1
+            head[name] = at
+    if not listed:
+        return answer
+    # The platform's own keys of the answer, after its rows.
+    answer.update(indicators=listed)
+    rest = []
+    for name in names:
+        times = indicators.resolved(name)[1]
+        past = sum(times[head[name] :])
+        if past:
+            rest.append({"signature": _written_name(name), "left_out": past, "offset": head[name]})
+    if rest:
+        answer["indicators_left_out"] = rest
+    else:
+        del answer["indicators_read"]
+    return answer
+
+
+def _indicator_page(
+    indicators: SignatureIndicators,
+    signature: Any,
+    process: Any,
+    contains: Any,
+    offset: Any,
+    room: int,
+) -> dict[str, Any]:
+    """The indicators a signature's name, a process id and a text keep, one page from ``offset``.
+
+    In the report's order of signatures and each one's own order, every
+    indicator the report states, each with its signature's name; a page is
+    at most ``SIGNATURE_INDICATORS_PAGE`` of them and stays within ``room``
+    characters (one at least), ``next_offset`` naming where the next starts.
+    Linear in the report's indicators.
+    """
+    from malspark.schemas.signature_indicators import PROCESS, SIGNATURE_INDICATORS_PAGE, TARGET
+
+    if indicators.fields is None:
+        return {"indicators": [], "matched": 0, "no": INDICATORS_NONE_DECLARED}
+    wanted = None
+    if process not in (None, ""):
+        wanted = pid_of(process.strip() if isinstance(process, str) else process) or None
+        if wanted is None:
+            return {"error": INDICATORS_BAD_PROCESS}
+    asked = str(signature or "").strip().casefold()
+    needle = str(contains or "").lower()
+    matched: list[dict[str, Any]] = []
+    for name in indicators.names:
+        written = _written_name(name)
+        if asked and asked not in (name.strip().casefold(), written.strip().casefold()):
+            continue
+        for one in indicators.resolved(name)[0]:
+            if wanted is not None and wanted not in {
+                str(one[key].get("id"))
+                for key in (PROCESS, TARGET)
+                if isinstance(one.get(key), dict)
+            }:
+                continue
+            item = {"signature": written, **one}
+            if needle and not _held_text(item, needle):
+                continue
+            matched.append(item)
+    start = max(0, _count(offset))
+    page: list[dict[str, Any]] = []
+    answer: dict[str, Any] = {"indicators": page, "matched": len(matched), "offset": start}
+    left = room - _size({**answer, "next_offset": len(matched)})
+    for item in matched[start : start + SIGNATURE_INDICATORS_PAGE]:
+        cost = _size(item)
+        if page and cost > left:
+            break
+        page.append(item)
+        left -= cost
+    stop = start + len(page)
+    if stop < len(matched):
+        answer["next_offset"] = stop
+    return answer
 
 
 def sandbox_signatures(
@@ -689,16 +930,29 @@ def sandbox_signatures(
     limit: int = 0,
     *,
     normalised_by: Sequence[str] | None = None,
+    signature: Any = "",
+    process: Any = None,
+    contains: Any = "",
+    room: int | None = None,
 ) -> dict[str, Any]:
-    """The sandbox's own signature hits, with their severity.
+    """The sandbox's own signature hits, with their severity, and their indicators.
 
     Reported as what they are — one detection engine's opinion — not folded
     into the verdict. A sandbox signature firing is evidence the agent weighs
     alongside everything else it found. Each row lists at most
-    :data:`SIGNATURE_PIDS_SHOWN` of the processes the hit was seen in, and at
-    most ``SIGNATURE_INDICATORS_SHOWN`` of its indicators, each process
-    they name resolved to the report's own row (:class:`SignatureIndicators`).
+    :data:`SIGNATURE_PIDS_SHOWN` of the processes the hit was seen in, and,
+    where the reader declares its source states indicators, how many the
+    report states for it (``indicators_stated``); the indicators themselves
+    follow the rows, each process they name resolved to the report's own row
+    (:class:`SignatureIndicators`, :func:`_with_indicators`), within ``room``
+    characters for the whole answer (``SIGNATURE_ANSWER_CHARS`` unless the
+    caller holds a smaller one). A call naming a ``signature``, a ``process``
+    id or a text it ``contains`` answers the matching indicators instead, one
+    page from ``offset`` (:func:`_indicator_page`).
     """
+    from malspark.schemas.signature_indicators import SIGNATURE_ANSWER_CHARS
+
+    room = SIGNATURE_ANSWER_CHARS if room is None else max(0, min(room, SIGNATURE_ANSWER_CHARS))
     if report is None or _no_sandbox_ran(report):
         return _no_report(report)
     signatures = place(report, "signatures")
@@ -706,9 +960,14 @@ def sandbox_signatures(
         report, "signatures", normalised_by=normalised_by
     ):
         return _absent("signatures")
+    if str(signature or "").strip() or process not in (None, "") or str(contains or ""):
+        return _indicator_page(
+            SignatureIndicators(report, normalised_by), signature, process, contains, offset, room
+        )
     rows: list[dict[str, Any]] = []
     page, meta = _page(signatures, offset, limit)
     indicators = SignatureIndicators(report, normalised_by) if page else None
+    named: dict[str, None] = {}
     if page:
         for sig in page:
             if not isinstance(sig, dict):
@@ -738,14 +997,20 @@ def sandbox_signatures(
                     row["pids_total"] = len(pids)
                     pids = pids[:SIGNATURE_PIDS_SHOWN]
                 row["pids"] = pids
-            # What the hit's indicators say, which process did what to which,
-            # where the reader declares its source states them
-            # (:class:`SignatureIndicators`). Left out where none is stated, so
-            # such an answer is as it was.
+            # How many indicators the report states for the hit, where the
+            # reader declares its source states them; the indicators follow
+            # the rows. Left out where none is stated, so such an answer is as
+            # it was.
             if indicators is not None:
-                row.update(indicators.of(sig))
+                stated = indicators.stated(_signature_name(sig))
+                if stated:
+                    row["indicators_stated"] = stated
+                    named[_signature_name(sig)] = None
             rows.append(row)
-    return {"signatures": rows, "total": len(signatures), **meta}
+    answer: dict[str, Any] = {"signatures": rows, "total": len(signatures), **meta}
+    if indicators is None or not named:
+        return answer
+    return _with_indicators(answer, list(named), indicators, room)
 
 
 def sandbox_dropped_files(
@@ -1365,7 +1630,6 @@ def sandbox_items(
         NO_PID_ROWS,
         SECTION_PREFIXES,
         Sections,
-        names_processes,
         pid_of,
     )
 
@@ -1378,7 +1642,7 @@ def sandbox_items(
         return {"section": name, "no": held.no}
     wanted_pid = None
     if pid not in (None, ""):
-        if not names_processes(name):
+        if not found.names_processes(name):
             return {"section": name, "no": NO_PID_ROWS.format(section=name)}
         wanted_pid = pid_of(pid.strip() if isinstance(pid, str) else pid)
         if wanted_pid is None:
@@ -1504,13 +1768,34 @@ def sandbox_tools(container: Any, agent: str | None = None) -> list[BaseTool]:
         """
         return _views(sandbox_network, detonation, offset, limit)
 
-    def _signatures(offset: int = 0, limit: int = 0, detonation: str = "") -> dict[str, Any]:
-        """List the sandbox's own signature hits and their severity.
+    def _signatures(
+        offset: int = 0,
+        limit: int = 0,
+        signature: str = "",
+        process: str = "",
+        contains: str = "",
+        detonation: str = "",
+    ) -> dict[str, Any]:
+        """List the sandbox's own signature hits and their severity, then their indicators.
 
         ``offset`` and ``limit`` ask for one page (0 = every row); a page that
-        stops short names the next offset.
+        stops short names the next offset. Each row says how many indicators
+        (which process did what to which) the report states for it; as many
+        as the answer holds follow the rows, and ``indicators_left_out`` says
+        how many of each signature's are not listed and from which offset.
+        ``signature`` (a name), ``process`` (a process id) or ``contains`` (a
+        text) lists the matching indicators instead, a page from ``offset``.
         """
-        return _views(sandbox_signatures, detonation, offset, limit)
+        return _views(
+            sandbox_signatures,
+            detonation,
+            offset,
+            limit,
+            signature=signature,
+            process=process,
+            contains=contains,
+            room=_answer_room(sizer),
+        )
 
     def _dropped_files(offset: int = 0, limit: int = 0, detonation: str = "") -> dict[str, Any]:
         """List the files the sample wrote, with their hashes.
@@ -1708,6 +1993,21 @@ def items_tool(
     return StructuredTool.from_function(
         func=_sized(_items, sizer, _ITEM_FILTERS), name=ITEMS_TOOL, description=description
     )
+
+
+def _answer_room(sizer: Any) -> int | None:
+    """How large an answer the model's copy holds whole now, or ``None`` with no guardrail.
+
+    The size an answer is shortened to under the job's limit for this call
+    (``output_shortening.shorten_target``): a view that keeps what it lists
+    within it is never cut by the guardrail for what it lists beside its rows.
+    """
+    limit = getattr(sizer, "answer_limit", None)
+    if not callable(limit):
+        return None
+    from malspark.agents.output_shortening import shorten_target
+
+    return shorten_target(int(limit()), _PAGING)
 
 
 def _answer_sizer(container: Any) -> Any:

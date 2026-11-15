@@ -4687,6 +4687,8 @@ def _indicator_process(facts: Any) -> str:
     if not isinstance(facts, dict) or not facts.get("id"):
         return ""
     notes = [f"process {_sample(facts['id'])}"]
+    if facts.get("guest_pid"):
+        notes.append(f"pid {_sample(facts['guest_pid'])}")
     for key in (LINEAGE_KEY, "not_settled"):
         if facts.get(key):
             notes.append(_sample(facts[key]))
@@ -4722,20 +4724,29 @@ def _indicator(indicator: Any) -> str:
     return text
 
 
-def _signature_indicators(row: dict[str, Any]) -> str:
+def _signature_indicators(name: str, held: list[dict[str, Any]], left_out: Any) -> str:
     """A signature's indicators as its entry holds them, with what the entry left out."""
-    held = [i for i in (row.get("indicators") or []) if isinstance(i, dict)]
-    if not held:
-        return ""
     head = _detail().list_head
     shown = held if head is None else held[:head]
-    text = f"{_sample(row.get('name'))}: " + " | ".join(_indicator(i) for i in shown)
+    text = f"{_sample(name)}: " + " | ".join(_indicator(i) for i in shown)
     if len(shown) < len(held):
         text += f" (+{len(held) - len(shown)} more held by this entry)"
-    left_out = row.get("indicators_left_out")
-    if isinstance(left_out, int) and left_out > 0:
+    if isinstance(left_out, int) and not isinstance(left_out, bool) and left_out > 0:
         text += f" (+{left_out} more the report states, beyond this entry)"
     return text
+
+
+def _indicator_groups(data: dict[str, Any]) -> list[str]:
+    """Each signature's indicators the entry lists, in the entry's order, one text each."""
+    groups: dict[str, list[dict[str, Any]]] = {}
+    for item in data.get("indicators") or []:
+        if isinstance(item, dict):
+            groups.setdefault(str(item.get("signature") or ""), []).append(item)
+    left: dict[str, Any] = {}
+    for rest in data.get("indicators_left_out") or []:
+        if isinstance(rest, dict):
+            left[str(rest.get("signature") or "")] = rest.get("left_out")
+    return [_signature_indicators(name, held, left.get(name)) for name, held in groups.items()]
 
 
 # The room a signatures line's indicators take, past its count and names: none
@@ -4754,8 +4765,7 @@ def _indicators_suffix(data: dict[str, Any], room: int | None) -> str:
     """
     if room == 0:
         return ""
-    rows = [r for r in (data.get("signatures") or []) if isinstance(r, dict)]
-    parts = [part for part in (_signature_indicators(r) for r in rows) if part]
+    parts = _indicator_groups(data)
     if not parts:
         return ""
     head = _detail().list_head
