@@ -143,6 +143,47 @@ nothing is concluded from them for the analyst. A kept block is held once, by
 reference to the parsed report, never copied or wrapped row by row, and the
 document writes each value out once.
 
+A signature's ledger entry (the `sandbox_signatures` answer, the pack's entry
+among them) carries its indicators: which process did what to which. Each
+reader declares where its format states them
+(`ReportReader.signature_indicators`, given on the reader's `Reading`): a
+CAPE, Cuckoo or mock signature's marks (`marks`, or `data` in the report's own
+arrangement), each naming its process by `pid` or `process_id`, an API call's
+API under `call.api` and an indicator's `category`; a Triage overview
+signature's marks and the indicators of every task report's signature of the
+same name, each read in its task, naming the process that acted by `procid`
+and the one acted on by `procid_target`. A mapped format declares its own
+through `field_names`: `signatures.platform_indicators` names the field of a
+signature holding its indicators, and
+`signatures.platform_indicators.process`, `.target`, `.event` and
+`.description` the fields of each; the reader writes them on the row in the
+neutral form under `platform_indicators`. A format that states none, the
+unread format among them, answers as before. Each indicator states the process
+that acted and the one acted on, each resolved to the process row of the same
+report and task with the facts the process view gives it (its `id`, `image`,
+its `platform_lineage` in a launcher run, or `marked` where the sandbox marks
+it as the sample's); an id the task does not list is stated `not_listed`, one
+listed more than once `not_settled`, and a field holding a value that cannot be
+an id states no process and is kept among the values. Beside them, the event
+or API, the sandbox's description, and every other field the indicator states,
+under its own name, a nested value as its compact JSON (`values`). Equal
+indicators of one task are listed once with how many times the report states
+them (`times`); at most 16 distinct ones per signature are listed, with
+`indicators_total` and `indicators_left_out` where more are stated; a text is
+cut at 256 characters and a name at 64, at most 8 values are kept, and what was
+cut is counted on the indicator (`chars_left_out`, `values_left_out`). Every
+text is the report's and is written out: control and direction characters as
+escapes, a ledger id so that it cites nothing. The item reader's signature
+items carry the same indicators, a substring filter finds a signature by what
+they say, and a claim citing such an item is checked against them. The pack's
+signatures line, which begins with its entry's id, lists each signature's
+indicators as the entry holds them, after the pack is rendered and fitted as
+it would be without them: they take only the room it leaves, each signature's
+whole or not at all, and the line counts the signatures whose indicators it
+does not show, held by that entry, and how many more indicators the report
+states than the entry lists. The reading is linear in the report: the task
+rows of one name are read once, however many signatures share it.
+
 | Provider | Detonates | Reached at |
 | :-- | :-- | :-- |
 | `mock` (default) | nothing | — |
@@ -645,7 +686,10 @@ states such a parent and no such host is an ancestor of the sample's tree, no
 host is the launcher's: the hosts, their flows and the files they alone wrote
 stay in the sample's view marked `launcher, not established`, nothing is moved
 to the launcher's, and the report says the attribution was not established in
-that task. Where the
+that task. A host's flow keeps the host's image, and an address only such hosts
+reached says it was made by a script host naming the launcher, whose
+attribution is not established, naming each (`<image> (procid N)`); it is
+decided as an address no flow of the sample's tree reached. Where the
 task holds the sample's tree, what the launcher's host started outside it is
 the launcher's too.
 Where no listed process runs `sample.exe` (the sandbox renamed or copied the

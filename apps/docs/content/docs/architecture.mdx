@@ -935,7 +935,9 @@ call; a pid and a signature name are looked up in indexes built once per
 section, an id is found by its position, a list of asked ids is read only up
 to the section's own size and the rest counted, and only the substring filter
 reads rows, once each. A pid filter on a section whose rows name no process
-answers a `no:` saying so. The `dynamic` analyst has the tool in its sandbox
+answers a `no:` saying so. A signature item carries the indicators its
+ledger entry states (the signature view's, below), and the substring filter
+finds a signature by them. The `dynamic` analyst has the tool in its sandbox
 set. The `network` analyst has it alone wherever a sandbox produced a report,
 and the whole sandbox set where its definition asks for
 `ToolRef(kind="sandbox")`; no prompt text changed, and the sentence about
@@ -5527,7 +5529,22 @@ is assembled from what the run gathered rather than recomputed beside it:
   answers as naming no process, `platform_flows_unsettled`). A DNS request
   takes none: its flow is the guest's resolver, never the program that
   asked, and only a process a DNS row itself
-  names is its maker. One rule decides an address, a name and a URL from
+  names is its maker. A signature's ledger entry carries its indicators,
+  read where each reader declares its format states them
+  (`ReportReader.signature_indicators`; a mapped format through
+  `field_names`, written on the row in the neutral form,
+  `platform_indicators`): each process an indicator names resolved to the
+  process row of the same report and task with the facts the process view
+  gives it, an id the task does not list stated as not listed, equal
+  indicators listed once with their count, at most 16 distinct ones per
+  signature with the rest counted, every text cut to its bound with what was
+  cut counted and written out. A generic module reads no format's own field:
+  the declarations are the readers' data. The pack's signatures line shows
+  them after its entry's id in the room the fitted pack leaves. In a task
+  whose launcher chain is not established, a flow of a script host naming the
+  launcher keeps the host's image, and an address only such hosts reached
+  names them (`launcher_unsettled_processes`) in its `no:`, the decision being
+  the unattributed one. One rule decides an address, a name and a URL from
   their records: a URL's are its HTTP requests; a name's are its HTTP
   requests, the DNS requests that name their own process and the flows to
   the addresses it resolved to (at most 16 processes of a kind from each
