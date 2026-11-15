@@ -21,7 +21,8 @@ What a log holds, and what is read from it:
 
 - the answer in force of each analyst, as the round's mediation was shown it:
   the summary of its claims (``AgentISR.to_text_summary``), its disputes and
-  what it wrote besides its claims;
+  what it wrote besides its claims; the round a later mediation is told each
+  claim was last written is a note, not part of the claim's evidence;
 - the revision's own blocks: the claims of the next answer in force that no
   carried-forward note marks; a revision placed by its written numbers is
   replayed by what it states, since a summary shows the merged numbers only;
@@ -72,6 +73,7 @@ _TECHNIQUES = re.compile(r" \(((?:T\d{4}(?:\.\d{3})?(?: — [^,()]*)?(?:, )?)+)\
 _MARKER = re.compile(
     r" \((?:the claim cites only tool calls that failed"
     r"|added by a tool-less retry, round \d+"
+    r"|written in round \d+|unchanged since round \d+"
     r"|carried forward[: ][^\n]*?)\)$"
 )
 _STANDING = re.compile(r"(?m)^- \(standing: [^)]*\) (.+)$")

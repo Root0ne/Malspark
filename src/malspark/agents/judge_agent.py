@@ -2196,7 +2196,9 @@ def _standing_blocks(run_state: str, facts_block: str) -> str:
 
 
 def mediation_reports_text(
-    reports: dict[str, str], isr_reports: dict[str, AgentISR] | None = None
+    reports: dict[str, str],
+    isr_reports: dict[str, AgentISR] | None = None,
+    last_round: int | None = None,
 ) -> str:
     """The analysts' reports as the mediator reads them, each analyst's claims once.
 
@@ -2206,6 +2208,12 @@ def mediation_reports_text(
     mediation every report was sent a second time; a revised report is the
     analyst's own words and its ISR the claims in force, which differ and are
     both kept. Empty ISRs are left out, as before.
+
+    ``last_round`` is the revision round held right before a debate's later
+    mediation: each claim summary, at a report's head or in the ISR block,
+    states for each claim an earlier mediation read the round its text was
+    last written (``AgentISR.to_text_summary``). ``None``, a first
+    mediation, shows the reports as they are.
     """
     from malspark.agents.base_agent import report_rendered_again
     from malspark.utils.written_forms import markers_written_out
@@ -2213,9 +2221,19 @@ def mediation_reports_text(
     # A report that is an answer's claims summary is rendered again from its
     # ISR, so a mark set since cannot make the two differ and show it twice.
     isrs = isr_reports or {}
-    reports = {
-        name: report_rendered_again(report, isrs.get(name)) for name, report in reports.items()
-    }
+
+    def _noted(report: str, isr: AgentISR | None) -> str:
+        # The summary at the report's head, rendered again, with each claim's
+        # round where a later mediation is told it.
+        report = report_rendered_again(report, isr)
+        if last_round is None or isr is None or not isr.claims:
+            return report
+        plain = isr.to_text_summary()
+        if not report.startswith(plain):
+            return report
+        return isr.to_text_summary(last_round) + report[len(plain) :]
+
+    reports = {name: _noted(report, isrs.get(name)) for name, report in reports.items()}
     # A report and a claim's words are what a model wrote: a run-state marker
     # in them is written out, so the mediator never reads one as the
     # platform's block.
@@ -2236,7 +2254,9 @@ def mediation_reports_text(
     isr_block = "\n\n".join(
         f"[ISR] {markers_written_out(summary)}"
         for name, summary in (
-            (name, isr.to_text_summary()) for name, isr in isr_reports.items() if isr.claims
+            (name, isr.to_text_summary(last_round))
+            for name, isr in isr_reports.items()
+            if isr.claims
         )
         if not _shown(name, summary)
     )
@@ -3961,7 +3981,7 @@ class JudgeAgent(BudgetMeter):
 
         # The reports, then the ISR summaries that are not one of them word
         # for word: per-claim confidence and dissent, each analyst's once.
-        reports_text = mediation_reports_text(reports, isr_reports)
+        reports_text = mediation_reports_text(reports, isr_reports, last_revision_round)
 
         # The mediator is NOT allowed to state a
         # verdict or describe the sample as "clean". Its only job is to

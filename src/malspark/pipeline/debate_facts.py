@@ -1658,10 +1658,21 @@ ROUND_FACTS_HEAD = (
     "The run's record of the last revision round, for each blocking line of the last mediation "
     "(numbered as below):"
 )
+# What the round note on a claim's line says (``isr_models.written_round_note``),
+# and the question asked of a [new] line on a claim whose text an earlier
+# mediation read. A question only: no line is dropped, downgraded or re-marked
+# on it, and the block is read as before.
+UNCHANGED_CLAIM_QUESTION = (
+    "A claim whose text an earlier mediation already read states on its line the round that "
+    "text was last written ('written in round N', 'unchanged since round N'); a claim with no "
+    "such note was written in the last revision round. For a line you mark [new] on a claim "
+    "with such a note: what do you read on it that is new (an entry, an answer of another "
+    "analyst)? Name it on the line."
+)
 LINE_MARK_RULE = (
     "On each blocking line you list, write [carried: L<number>] right after its "
     "[analysts: ...] field when it raises again the point of that line of the last mediation, "
-    "or [new] when it raises a point none of those lines raised."
+    "or [new] when it raises a point none of those lines raised. " + UNCHANGED_CLAIM_QUESTION
 )
 
 
