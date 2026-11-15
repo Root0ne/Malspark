@@ -377,6 +377,9 @@ class Sections:
         self.report = report
         self.detonation = str(detonation or "").lower()
         self._reading = _reader(normalised_by)
+        self._normalised_by = normalised_by
+        # A signature's indicators as its entry states them, read on first use.
+        self._indicators: Any = None
         unavailable = place(report, "unavailable")
         # By the platform's section ids; a report stored before they were
         # normalised is read through the legacy words (``section_id``).
@@ -664,7 +667,19 @@ class Sections:
             item["process"] = qualified(self.detonation, part.process)
         if section.name == "processes" and index in self._parent:
             item["parent"] = qualified(self.detonation, self._parent[index])
+        if section.name == "signatures":
+            # Which process did what to which, as the signature view states it.
+            item.update(self._indicators_of(row))
         return item
+
+    def _indicators_of(self, row: Any) -> dict[str, Any]:
+        """A signature row's indicators as its entry states them (``SignatureIndicators``)."""
+        if self._indicators is None:
+            from malspark.providers.sandbox_tools import SignatureIndicators
+
+            self._indicators = SignatureIndicators(dict(self.report), self._normalised_by)
+        held: dict[str, Any] = self._indicators.of(row)
+        return held
 
     def _own(self, item_id: str) -> str | None:
         """``item_id`` without this report's qualifier; ``None`` where another detonation's."""
@@ -825,7 +840,11 @@ class Sections:
             part, index = placed
             row = section.parts[part].rows[index]
             if needle and not _holds_text(_searched(section.name, row), needle):
-                continue
+                # A signature is also found by what its indicators say.
+                if section.name != "signatures" or not _holds_text(
+                    self._indicators_of(row), needle
+                ):
+                    continue
             found.items.append(self._item(section, section.parts[part], index, number))
         return found
 
@@ -1200,10 +1219,11 @@ class ItemCitations:
             from malspark.core.safe_json import dumps
 
             found = self.item(key)
-            # The row's own fields and the process and parent it names; not the
-            # platform's id, kind and source, which no value is read from.
+            # The row's own fields, the process and parent it names and a
+            # signature's indicators; not the platform's id, kind and source,
+            # which no value is read from.
             said = (
-                {k: found[k] for k in ("fields", "process", "parent") if k in found}
+                {k: found[k] for k in ("fields", "process", "parent", "indicators") if k in found}
                 if found
                 else None
             )
