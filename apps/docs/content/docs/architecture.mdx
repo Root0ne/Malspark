@@ -5700,18 +5700,18 @@ is assembled from what the run gathered rather than recomputed beside it:
   analyst (<artifact>); only the answer to a query for it holds it (ev_NNNN
   <tool>), ...`, so "no tool in this run saw it" is said only when no answer
   holds the value at all. A row only an
-  artifact created and a text-printing tool's answer holds (the file's
-  strings, a decoder's output, a decompilation) takes the string sweep's
-  standing (`strings`): a printed string is no observation. An entry of a
-  sandbox kind (`evidence_bundles.SANDBOX_TOOL_PREFIXES`: a sandbox view, the
-  capture) is a record of the detonation, not such a holder, whatever text it
-  holds — a signature's description or indicators, a command line, the
-  sample's strings a sandbox re-serves: a row only such entries hold keeps the
-  analyst's standing and the decision a row no answer holds has (published
-  where the judge keeps it), and a refusal still names the entry that holds
-  it. The entry's kind decides, never its tool's name. Only a structured
-  network record (a flow, a DNS query, an HTTP request, a capture
-  conversation) makes a sandbox row. A URL's HTTP method is the one its request record states and is absent
+  artifact created and some answer's text holds takes the string sweep's
+  standing (`strings`), whichever tool printed the text — a sandbox
+  signature's description, a command line and the sample's strings a sandbox
+  re-serves are text, not observations. The one exception is a part of an
+  answer its kind declares a structured record
+  (`core.builtin_declarations.RECORD_PARTS_OF_KIND`: a signature view's
+  `indicators`): a row an answer holds only there keeps the analyst's
+  standing and the decision a row no answer holds has (published where the
+  judge keeps it), and a refusal still names the entry that holds it. The
+  declaration names the part by the entry's kind, never by its tool's name.
+  Only a structured network record (a flow, a DNS query, an HTTP request, a
+  capture conversation) makes a sandbox row. A URL's HTTP method is the one its request record states and is absent
   on a URL no request carries (`NetworkURL.method`, `null`): no URL defaults to
   `GET`, which could contradict a POST beacon decoded from the file.
   A name's DNS answers are its `resolved_ips`. Such a value, with no second source, reads `no: seen only in the text

@@ -197,12 +197,18 @@ signature, what the budget leaves out and the offset from which the rest are
 listed; where no indicator is listed, each signature's count is what is left
 out. The tool's description, which the model reads at every call limit, says
 how the indicators are read, and `indicators_read` repeats it where some are
-left out: the same view called with `signature` (a name), `process` (a
-process id, acting or acted on) or `contains` (a text, case not counted)
-answers the matching indicators in the same resolved form, at most
+left out: the same view called with `signature` (a name, as the answer
+writes it or as the report does), `process` (the report's process id, acting
+or acted on) or `contains` (a text, case not counted) answers the matching
+indicators in the same resolved form, at most
 `SIGNATURE_INDICATORS_PAGE` (20) from `offset` within the same budget, with
 `matched` and `next_offset`, so every indicator the report states is reachable
-resolved; that answer is its own ledger entry. The item reader's signature items carry the head of the same order
+resolved; that answer is its own ledger entry. A call naming a process that
+lists none says why: no indicator names that report's process id, or the
+number is the guest's pid of a listed process, with the report's process id
+to ask with. A signature only a task report lists has no row: on the page that
+ends the rows it is announced after the overview's own, in the counts and, as
+the room allows, the indicators and `indicators_left_out`. The item reader's signature items carry the head of the same order
 (at most 16) with `indicators_stated`, `indicators_left_out` (the count and
 the offset) and `indicators_read`; its substring and pid filters read every
 indicator the report states, and a claim citing such an item is checked
@@ -213,11 +219,13 @@ the room it leaves, each signature's whole or not at all, and the line counts
 the signatures whose indicators it does not show, held by that entry, and how
 many more indicators the report states than the entry lists. The reading is
 linear in the report: each name's indicators are gathered and resolved once,
-however many rows and calls read them. A value an analyst lists that only
-such an entry holds, or any other entry of a sandbox kind, keeps the analyst's
-standing: a sandbox entry is a record of the detonation, not a tool printing
-a string, so the value is decided as one no answer holds (published where the
-judge keeps it), and a refusal names the entry that holds it.
+however many rows and calls read them. A value an analyst lists that a
+signature answer holds only in its `indicators` keeps the analyst's standing:
+that part is a structured record (its kind declares it so), so the value is
+decided as one no answer holds (published where the judge keeps it), and a
+refusal names the entry that holds it. Any other text of a sandbox answer — a
+signature's description, a command line, the sample's strings a section
+re-serves — gives a value the string sweep's standing.
 
 | Provider | Detonates | Reached at |
 | :-- | :-- | :-- |
