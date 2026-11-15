@@ -369,13 +369,19 @@ class TestEveryBound:
         assert page["matched"] == 1 and page["indicators"][0]["signature"] == written
 
     def test_past_an_indicator_that_does_not_fit_none_is_listed(self) -> None:
-        marks = [{"pid": 1000, "description": "w" * 250, "a": "v" * 250, "b": "v" * 250}]
-        marks += [{"pid": 1000, "description": f"s{i}"} for i in range(20)]
-        report = _cape([{"name": "mixed", "severity": 1, "description": "d", "data": marks}])
+        # The first signature's one indicator is long; the next signature's are short.
+        long = [{"pid": 1000, "description": "w" * 250, "a": "v" * 250, "b": "v" * 250}]
+        short = [{"pid": 1000, "description": f"s{i}"} for i in range(20)]
+        report = _cape(
+            [
+                {"name": "long", "severity": 1, "description": "d", "data": long},
+                {"name": "short", "severity": 1, "description": "d", "data": short},
+            ]
+        )
         bare = len(json.dumps(sandbox_signatures(report)))
-        # Room for the short ones after the long first one, not for the long one.
-        answer = sandbox_signatures(report, normalised_by=CAPE, room=bare + 1000)
-        assert answer["indicators_stated"] == {"mixed": 21}
+        # Room for some of the short ones, not for the long one before them.
+        answer = sandbox_signatures(report, normalised_by=CAPE, room=bare + 1200)
+        assert answer["indicators_stated"] == {"long": 1, "short": 20}
         assert "indicators" not in answer and "indicators_left_out" not in answer
 
     def test_where_nothing_is_left_out_no_read_line_is_kept(self) -> None:
