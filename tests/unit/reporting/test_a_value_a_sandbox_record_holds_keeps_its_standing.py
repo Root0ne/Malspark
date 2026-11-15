@@ -230,3 +230,77 @@ class TestEveryOtherText:
 
         assert _sources(report) == {NAME: "strings", ADDRESS: "analyst"}
         assert _published(report, NAME).startswith("no: seen only in the text of ev_0002 (strings)")
+
+
+def _live_document(indicator: dict[str, Any]) -> dict[str, Any]:
+    """The live Triage report, its write-into-memory signature holding ``indicator``."""
+    import json
+    from pathlib import Path
+
+    from malspark.providers.sandbox.readers import required_reader
+    from malspark.schemas.sandbox_document import sandbox_document
+
+    live = Path(__file__).resolve().parents[2] / "fixtures" / "sandbox" / "triage_live"
+    task = json.loads((live / "behavioral1.json").read_text(encoding="utf-8"))
+    overview = json.loads((live / "overview.json").read_text(encoding="utf-8"))
+    (row,) = [s for s in task["signatures"] if s["name"] == "Suspicious use of WriteProcessMemory"]
+    row["indicators"] = [indicator]
+    report = required_reader("triage").read(
+        overview, provider="triage", task_id="s1", task_reports={"behavioral1": task}
+    )
+    return sandbox_document(report)
+
+
+class TestEveryViewOfTheIndicators:
+    """The item reader and the paged call answer the same records, decided as none holds them."""
+
+    INDICATOR = {"procid": 84, "procid_target": 86, "dst": ADDRESS, "domain": NAME}
+
+    def test_the_item_reader_s_answer(self) -> None:
+        from malspark.providers.sandbox_tools import sandbox_items
+
+        answer = sandbox_items(
+            _live_document(self.INDICATOR),
+            "signatures",
+            normalised_by=("triage", "triage", "tasks"),
+        )
+        report = _build([_entry("ev_0005", "sandbox_items", answer)])
+
+        assert _sources(report) == {NAME: "analyst", ADDRESS: "analyst"}
+        for value in (NAME, ADDRESS):
+            assert publishes(_published(report, value)), value
+
+    def test_the_paged_call_s_answer(self) -> None:
+        from malspark.providers.sandbox_tools import sandbox_signatures
+
+        answer = sandbox_signatures(
+            _live_document(self.INDICATOR),
+            normalised_by=("triage", "triage", "tasks"),
+            signature="Suspicious use of WriteProcessMemory",
+        )
+        report = _build([_entry("ev_0006", "sandbox_signatures", answer)])
+
+        for value in (NAME, ADDRESS):
+            assert publishes(_published(report, value)), value
+
+
+class TestAnotherSpellingOutsideTheIndicators:
+    """Held outside the record in another spelling, a value is still a string sighting."""
+
+    @pytest.mark.parametrize(
+        ("value", "spelled"),
+        [
+            (ADDRESS, f"[{ADDRESS}]"),
+            (NAME, NAME.upper()),
+            (NAME, f"{NAME}."),
+        ],
+        ids=["bracketed address", "upper-case name", "name with a trailing dot"],
+    )
+    def test_it_is_a_string_sighting(self, value: str, spelled: str) -> None:
+        entry = _indicator_entry()
+        assert isinstance(entry.structured, dict)
+        entry.structured["signatures"][0]["description"] = f"Contacts {spelled} now"
+        report = _build([entry])
+
+        assert _sources(report)[value] == "strings"
+        assert not publishes(_published(report, value))

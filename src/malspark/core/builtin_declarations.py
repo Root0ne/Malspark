@@ -659,11 +659,16 @@ CONSUMER_KINDS: dict[str, dict[str, Any]] = {
     "evidence_summary.catalogue_associations": {"kinds": ["api_catalogue"]},
 }
 
-# The top-level parts of a kind's answer that are a structured record of what
-# a sandbox observed, not text a tool printed (``reporting.ledger_projection``):
-# a value an answer holds only there is no string sighting. A signature view's
-# indicators, which state which process did what to which.
-RECORD_PARTS_OF_KIND: dict[str, tuple[str, ...]] = {"sandbox_signatures": ("indicators",)}
+# The parts of a kind's answer that are a structured record of what a sandbox
+# observed, not text a tool printed (``reporting.ledger_projection``): a value
+# an answer holds only there is no string sighting. Dotted paths, ``*`` for
+# each element of a list. The resolved indicators of a signature, which state
+# which process did what to which, wherever a view answers them: the signature
+# view's (its paged call's too) and the item reader's signature items.
+RECORD_PARTS_OF_KIND: dict[str, tuple[str, ...]] = {
+    "sandbox_signatures": ("indicators",),
+    "sandbox_items": ("items.*.indicators",),
+}
 
 # Which section builder of ``reporting.ledger_report._BUILDERS`` each kind is
 # drawn with. A kind not named here gets the generic block.

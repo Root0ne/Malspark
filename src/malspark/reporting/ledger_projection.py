@@ -1677,12 +1677,15 @@ def network_from_ledger(
         *network.domains,
         *network.urls,
     ]
-    # The entries with a part their kind declares a structured record, by id.
+    # The entries with a part their kind declares a structured record, by id,
+    # and each one's text outside those parts, read once per entry.
     by_id = {entry.id: entry for entry in ledger or [] if _record_parts(entry)}
+    texts_outside: dict[str, str] = {}
     for row in rows:
         sighted = (sightings or {}).get(_listed_key(row)) or []
         if row.source == "analyst" and any(
-            eid not in by_id or _held_outside_records(by_id[eid], row) for eid, _tool in sighted
+            eid not in by_id or _held_outside_records(by_id[eid], row, texts_outside)
+            for eid, _tool in sighted
         ):
             # Text inside a tool's answer — any tool's, a sandbox's included —
             # is a string the tool printed, not an observation of the sample:
@@ -1743,7 +1746,7 @@ def network_from_ledger(
 
 
 def _record_parts(entry: LedgerEntry) -> tuple[str, ...]:
-    """The top-level parts of an entry's answer its kind declares a structured record."""
+    """The paths of an entry's answer its kind declares a record (dotted, ``*`` a list)."""
     from malspark.core.builtin_declarations import RECORD_PARTS_OF_KIND
 
     if not entry.ok or not isinstance(entry.structured, dict):
@@ -1751,21 +1754,49 @@ def _record_parts(entry: LedgerEntry) -> tuple[str, ...]:
     return RECORD_PARTS_OF_KIND.get(tool_kinds.kind_of(entry), ())
 
 
-def _held_outside_records(entry: LedgerEntry, row: NetworkIP | NetworkDomain | NetworkURL) -> bool:
+def without_record_parts(value: Any, paths: Iterable[str]) -> Any:
+    """``value`` without what the dotted ``paths`` name: ``*`` is each element of a list.
+
+    A copy of the containers on a path, never of what they hold beside it;
+    linear in the parts the paths walk through.
+    """
+    split = [path.split(".") for path in paths if path]
+
+    def strip(node: Any, rests: list[list[str]]) -> Any:
+        if not rests:
+            return node
+        if isinstance(node, list):
+            inner = [rest[1:] for rest in rests if rest[0] == "*"]
+            return [strip(item, inner) for item in node] if inner else node
+        if not isinstance(node, dict):
+            return node
+        out: dict[str, Any] = {}
+        for key, held in node.items():
+            here = [rest for rest in rests if rest[0] == key]
+            if any(len(rest) == 1 for rest in here):
+                continue
+            out[key] = strip(held, [rest[1:] for rest in here])
+        return out
+
+    return strip(value, split)
+
+
+def _held_outside_records(
+    entry: LedgerEntry, row: NetworkIP | NetworkDomain | NetworkURL, outside: dict[str, str]
+) -> bool:
     """Whether ``entry``'s answer holds the row's value outside the parts that are its record."""
     from malspark.agents._indicator_denylists import whole_value_in
 
-    parts = set(_record_parts(entry))
-    assert isinstance(entry.structured, dict)
-    rest = {key: value for key, value in entry.structured.items() if key not in parts}
+    if entry.id not in outside:
+        rest = without_record_parts(entry.structured, _record_parts(entry))
+        outside[entry.id] = " ".join(_strings_in(rest)).lower()
     if isinstance(row, NetworkIP):
         kind, value = "ip", row.address
     elif isinstance(row, NetworkDomain):
         kind, value = "domain", row.fqdn
     else:
         kind, value = "url", row.url
-    text = " ".join(_strings_in(rest)).lower()
-    return whole_value_in(searched_spelling(kind, value).lower(), text)
+    return whole_value_in(searched_spelling(kind, value).lower(), outside[entry.id])
 
 
 def _listed_key(row: NetworkIP | NetworkDomain | NetworkURL) -> str:
