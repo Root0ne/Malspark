@@ -123,3 +123,20 @@ class TestTwoBlocksThatRestateTheClaimAlike:
         assert merge.restated_by[0] == (1, 1)
         assert merge.merged is not None
         assert [c.claim for c in merge.merged.claims][:1] == [first]
+
+
+class TestTheBestBlockIsTheLargerOfItsTwoShares:
+    def test_all_the_values_outweigh_most_of_the_words(self) -> None:
+        claim = "0x401000 decodes the config table at 0x402000 with key k3yk3y."
+        worded = "0x401000 decodes the config table with the key k3yk3y."
+        valued = "Routines 0x401000 and 0x402000 run."
+        in_force = _isr(_block(claim, "ev_0012") + _block(SLEEP, "ev_0014"))
+        answer = _block(worded, "ev_0020") + _block(valued, "ev_0021")
+        line = f"{STATIC} STATIC claim 1 says 0x401000 decodes it; nothing shows it. {BLOCKS}"
+        named = claims_named_in_force([line], ["static"], {"static": in_force})
+
+        merge = merge_revision(in_force, _isr(answer), answer, 2, named.get("static"))
+
+        assert 1 in merge.replaced
+        assert merge.merged is not None
+        assert [c.claim for c in merge.merged.claims][:1] == [valued]

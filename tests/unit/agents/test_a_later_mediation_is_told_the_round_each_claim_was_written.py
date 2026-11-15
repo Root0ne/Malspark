@@ -206,3 +206,24 @@ class TestTheReplayReader:
 
         assert [c.evidence_ref for c in claims] == ["[ev_0011]", "[ev_0012]"]
         assert carried == [True, False]
+
+
+def test_a_report_that_does_not_begin_with_the_summary_is_shown_as_written() -> None:
+    from malspark.agents.judge_agent import mediation_reports_text
+    from malspark.schemas.isr_models import AgentISR, ClaimEvidence
+
+    isr = AgentISR(
+        agent_id="static",
+        domain="static",
+        claims=[
+            ClaimEvidence(
+                claim="0x401000 decodes the config.", evidence_ref="[ev_0001]", confidence=0.8
+            )
+        ],
+        revision_round=1,
+    )
+    report = "The analyst's own words: 0x401000 decodes the config with RC4."
+
+    text = mediation_reports_text({"static": report}, {"static": isr}, last_round=1)
+
+    assert f"--- STATIC ANALYST ---\n{report}" in text

@@ -202,3 +202,11 @@ class TestTheNewReadingsCostTheItemsLength:
                 return lambda: read_own_withdrawals([item], 1, participants)
 
             assert_scales(build, 2_000)
+
+
+class TestEachRoleWordIsAnotherSubject:
+    def test_each_role_word_between_the_reference_and_the_verb(self) -> None:
+        for role in ("mediator", "peer", "reviewer"):
+            item = f"My claim 4 sets the key. The {role} sees it as a decoy. I reject it."
+
+            assert _read(item) == [], role
