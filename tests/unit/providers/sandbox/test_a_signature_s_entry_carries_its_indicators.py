@@ -471,6 +471,14 @@ class TestASignatureOnlyATaskReportLists:
         tasks = [i for i, name in enumerate(rest) if name.startswith("task only")]
         assert tasks == list(range(len(rest) - len(tasks), len(rest)))
 
+    def test_it_is_announced_on_the_page_that_ends_the_rows_alone(self) -> None:
+        document = self._document()
+        first = sandbox_signatures(document, normalised_by=TRIAGE, offset=0, limit=2)
+        last = sandbox_signatures(document, normalised_by=TRIAGE, offset=2, limit=10)
+        assert "next_offset" in first and "next_offset" not in last
+        assert not any(name.startswith("task only") for name in first["indicators_stated"])
+        assert "task only 0" in last["indicators_stated"]
+
     def test_a_paged_call_lists_it(self) -> None:
         page = sandbox_signatures(self._document(), normalised_by=TRIAGE, signature="task only 7")
         assert page["matched"] == 1 and page["indicators"][0]["description"] == "t7"

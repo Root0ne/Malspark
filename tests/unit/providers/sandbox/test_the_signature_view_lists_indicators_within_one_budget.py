@@ -373,7 +373,8 @@ class TestEveryBound:
         marks += [{"pid": 1000, "description": f"s{i}"} for i in range(20)]
         report = _cape([{"name": "mixed", "severity": 1, "description": "d", "data": marks}])
         bare = len(json.dumps(sandbox_signatures(report)))
-        answer = sandbox_signatures(report, normalised_by=CAPE, room=bare + 600)
+        # Room for the short ones after the long first one, not for the long one.
+        answer = sandbox_signatures(report, normalised_by=CAPE, room=bare + 1000)
         assert answer["indicators_stated"] == {"mixed": 21}
         assert "indicators" not in answer and "indicators_left_out" not in answer
 

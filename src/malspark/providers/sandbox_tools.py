@@ -924,7 +924,8 @@ def _indicator_page(
         return {"indicators": [], "matched": 0, "no": INDICATORS_NONE_DECLARED}
     wanted = None
     if process not in (None, ""):
-        wanted = pid_of(process.strip() if isinstance(process, str) else process) or None
+        # ``pid_of`` reads digits written with spaces around them.
+        wanted = pid_of(process) or None
         if wanted is None:
             return {"error": INDICATORS_BAD_PROCESS}
     asked = str(signature or "").strip().casefold()
