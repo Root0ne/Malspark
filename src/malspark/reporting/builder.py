@@ -296,7 +296,12 @@ class MalwareReportBuilder:
             negotiation_summary=negotiation_summary,
             stix_bundle_extended=self.stix_output,
             judge_indicators=[
-                JudgeIndicator(kind=value.kind, value=value.value, algorithm=value.algorithm)
+                JudgeIndicator(
+                    kind=value.kind,
+                    value=value.value,
+                    algorithm=value.algorithm,
+                    indicator_types=list(value.indicator_types),
+                )
                 for value in exported_indicator_values(self.stix_output)
             ],
             rule_match_strings=yara_rule_strings(ledger),
@@ -760,7 +765,10 @@ def ioc_table(report: MalwareReport, *, raise_unread: bool = False) -> list[Cons
         if raise_unread and not stored:
             raise
         logger.exception("builder: the IOC table could not be rebuilt; the stored rows are read.")
-        return stored
+        try:
+            return with_record(stored, report)
+        except Exception:  # noqa: BLE001 — the rows as stored, record and all
+            return stored
 
 
 def _build_consolidated_iocs(report: MalwareReport) -> list[ConsolidatedIOC]:
@@ -785,9 +793,11 @@ def _build_consolidated_iocs(report: MalwareReport) -> list[ConsolidatedIOC]:
         recovered_by_words,
         recovered_entries,
         sandbox_host_kwargs,
-        yes_because,
+        stated_verdict,
     )
     from malspark.reporting.stated_host_values import ANALYSIS_SOURCE, identifier_answers
+
+    verdict = stated_verdict(report)
 
     rows: list[ConsolidatedIOC] = []
     seen: set[tuple[str, str]] = set()
@@ -859,20 +869,16 @@ def _build_consolidated_iocs(report: MalwareReport) -> list[ConsolidatedIOC]:
             **emulation_kwargs(report, kind, value, emulated),
         )
 
-    h = report.identity.hashes
-    # The sample's own identity, established by the router: `/iocs` serves
-    # every one of these as published, and so does this table.
-    for label, digest in (
-        ("SHA-256", h.sha256),
-        ("SHA-1", h.sha1),
-        ("MD5", h.md5),
-        ("SHA-512", h.sha512),
-        ("imphash", h.imphash),
-        ("ssdeep", h.ssdeep),
-        ("TLSH", h.tlsh),
-    ):
+    # The sample's own identity, established by the router, each digest asked
+    # the rule by its class (``identity_rows``).
+    for identity in identity_rows(report.identity.hashes, verdict):
         _add(
-            label, "hash", digest or "", "identity", "the sample", published=yes_because("identity")
+            identity.type,
+            "hash",
+            identity.value,
+            "identity",
+            "the sample",
+            published=identity.published,
         )
 
     static = report.static
@@ -1255,7 +1261,56 @@ def _build_consolidated_iocs(report: MalwareReport) -> list[ConsolidatedIOC]:
     # every detonation that observed it (``detonation_marks``).
     from malspark.reporting.detonation_marks import with_value_marks
 
-    return with_value_marks(out, report)
+    return with_record(with_value_marks(out, report), report)
+
+
+def with_record(rows: Iterable[ConsolidatedIOC], report: Any) -> list[ConsolidatedIOC]:
+    """``rows`` each with its role and indicator type, read off its publish answer.
+
+    The one place a row gains them (``stix_renderer.table_row_record``), so the
+    export, ``/iocs``, MISP and §9 read the same record.
+    """
+    from malspark.reporting.renderers.stix_renderer import table_row_record
+
+    out: list[ConsolidatedIOC] = []
+    for row in rows:
+        role, indicator_type = table_row_record(row, report)
+        out.append(row.model_copy(update={"role": role, "indicator_type": indicator_type}))
+    return out
+
+
+def identity_rows(hashes: Any, verdict: Any) -> list[ConsolidatedIOC]:
+    """The sample's own digests as the IOC table lists them, each with the rule's answer.
+
+    In the table's order (``stix_renderer.SAMPLE_DIGESTS``); a digest the
+    identity does not hold is no row. ``verdict`` is the one the rule is asked
+    under (``stix_renderer.stated_verdict``).
+    """
+    from malspark.reporting.renderers.stix_renderer import (
+        SAMPLE_DIGESTS,
+        publish_answer,
+        sample_digest_role,
+    )
+
+    out: list[ConsolidatedIOC] = []
+    for label, field in SAMPLE_DIGESTS:
+        value = str(getattr(hashes, field, None) or "").strip()
+        if not value:
+            continue
+        out.append(
+            ConsolidatedIOC(
+                type=label,
+                kind="hash",
+                value=value,
+                source="identity",
+                context="the sample",
+                description="the sample",
+                published=publish_answer(
+                    "hash", value, "identity", verdict=verdict, digest=sample_digest_role(label)
+                ),
+            )
+        )
+    return out
 
 
 def evidence_index_row(entry: Any) -> EvidenceIndexRow:
@@ -1409,7 +1464,10 @@ def _with_the_hosts_of_published_urls(
                 context=f"the host of {url}",
                 description=f"the host of {url}",
                 published=publish_answer(
-                    "domain", host, source, **emulation_kwargs(report, "domain", host)
+                    "domain",
+                    host,
+                    source,
+                    **emulation_kwargs(report, "domain", host),
                 ),
                 is_network=True,
             )

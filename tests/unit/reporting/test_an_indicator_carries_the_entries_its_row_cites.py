@@ -86,6 +86,8 @@ def test_an_analyst_row_carries_the_entries_its_listing_cites_that_the_index_hol
             "no: named only by an analyst (an artifact of the dynamic analyst); no tool answer "
             "this report keeps holds it, and the judge did not keep it as an indicator"
         ),
+        "role": "listed",
+        "indicator_type": None,
         "recovered_by": "",
         "evidence_ids": ["ev_a", "ev_b"],
     }
@@ -112,6 +114,8 @@ def test_a_recovered_row_carries_the_entry_of_the_tool_that_recovered_it() -> No
         "source": "sandbox",
         "context": "reached by the sample's process tree",
         "published": "yes: the sandbox recorded it",
+        "role": "indicator",
+        "indicator_type": "anomalous-activity",
         "recovered_by": "floss, ev_b (decoded string)",
         "evidence_ids": ["ev_b"],
     }

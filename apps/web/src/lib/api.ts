@@ -397,6 +397,12 @@ export interface IOCRow {
   /** The publish rule's answer as the report's IOC table prints it: `yes:` and
    *  why the row is published, or `no:` and why not. */
   publish_answer?: string | null;
+  /** What the row is, as the report's IOC table records it:
+   *  `sample_identity`, `similarity`, `indicator` or `listed`; and the STIX
+   *  `indicator-type-ov` word the export carries it under, absent where no
+   *  export carries it. */
+  role?: string | null;
+  indicator_type?: string | null;
   recovered_by?: string | null;
   /** Every detonation that observed the value, where a further detonation an
    *  agent asked for did, each launch text whole; absent otherwise. */
@@ -416,6 +422,8 @@ const _IOC_ROW_SCHEMA: Record<string, ExpectedShape> = {
   source: "string?",
   published: "boolean?",
   publish_answer: "string?",
+  role: "string?",
+  indicator_type: "string?",
   recovered_by: "string?",
   observed_in: "array?",
 };

@@ -291,3 +291,119 @@ class TestEveryOperatorIsAskedTheRule:
 
         assert pattern in str(exported)
         assert publishes(_row(report, OBSERVED).published)
+
+
+class TestAStringPathIsAskedItsShapeByTheOneRule:
+    """A path the string sweep read that a second source holds whole, without a listed extension.
+
+    The export used to ask its shape and the table did not: the table published
+    a source file's path a decompiler quoted back, and the export refused it.
+    The shape is the one rule's question now, so both refuse it, with the reason.
+    """
+
+    PATH = "/opt/kit/notes.cfg"
+
+    def _report(self, path: str) -> MalwareReport:
+        from malspark.reporting.models import StaticAnalysis, StringIOC
+
+        return _report(
+            _judge(),
+            static=StaticAnalysis(interesting_strings=[StringIOC(kind="path", value=path)]),
+            dynamic=DynamicBehavior(
+                process_tree=[{"pid": 1, "name": "sample.exe", "command_line": path}]
+            ),
+        )
+
+    def test_the_table_the_feed_and_the_export_refuse_it_alike(self) -> None:
+        report = self._report(self.PATH)
+        exported, _renderer = _export(report, _judge())
+
+        assert _row(report, self.PATH).published == (
+            "no: neither a listed file extension nor a system location, so not the shape of a "
+            "file the sample uses"
+        )
+        assert [
+            r["published"] for r in ioc_feed_rows(report.model_dump()) if r["value"] == self.PATH
+        ] == [False]
+        assert "notes.cfg" not in str(
+            [obj for obj in exported["objects"] if obj.get("type") == "indicator"]
+        )
+
+    def test_a_path_of_a_listed_shape_is_published_by_all_three(self) -> None:
+        path = "/opt/kit/stage.dat"
+        report = self._report(path)
+        exported, _renderer = _export(report, _judge())
+
+        assert publishes(_row(report, path).published)
+        assert [
+            r["published"] for r in ioc_feed_rows(report.model_dump()) if r["value"] == path
+        ] == [True]
+        assert "stage.dat" in str(exported)
+
+
+class TestNoSurfaceReadsTheCorpus:
+    """A value held only in an entry's answer no section of the report keeps (T-713).
+
+    The export used to read the run's in-memory corpus and the table did not,
+    so a certificate subject's address in such an answer was in the bundle and
+    refused by the feed. Neither reads it: both refuse it.
+    """
+
+    ADDRESS = "cert@issuer-example.com"
+
+    def test_the_table_and_the_export_agree_with_the_corpus_given(self) -> None:
+        from malspark.agents.run_evidence_corpus import RunEvidenceCorpus
+        from malspark.reporting.models import StaticAnalysis, StringIOC
+
+        report = _report(
+            _judge(),
+            static=StaticAnalysis(
+                interesting_strings=[StringIOC(kind="email", value=self.ADDRESS)]
+            ),
+        )
+        corpus = RunEvidenceCorpus(1 << 20)
+        corpus.remember("ev_0007", "signing_info", f'{{"subject": "E={self.ADDRESS}"}}')
+
+        exported = ExtendedSTIXRenderer().render(report, corpus=corpus).model_dump(mode="json")
+
+        assert not publishes(_row(report, self.ADDRESS).published)
+        assert self.ADDRESS not in str(exported)
+
+
+class TestTheExportReadsTheRowAndAsksNothing:
+    """A surface asking the rule itself would carry what the row withholds, or drop the rest."""
+
+    def test_the_bundle_follows_the_row_not_the_rule(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        from malspark.reporting import builder
+
+        report = _report(_judge())
+        table = builder.build_consolidated_iocs(report)
+        # The row says no for a value the rule publishes, and yes for one it refuses.
+        doctored = []
+        for row in table:
+            if row.value == OBSERVED:
+                row = row.model_copy(
+                    update={
+                        "published": "no: withheld by the row",
+                        "role": "listed",
+                        "indicator_type": None,
+                    }
+                )
+            elif row.value == SWEPT:
+                row = row.model_copy(
+                    update={
+                        "published": "yes: published by the row",
+                        "role": "indicator",
+                        "indicator_type": "anomalous-activity",
+                    }
+                )
+            doctored.append(row)
+        monkeypatch.setattr(builder, "ioc_table", lambda *_a, **_k: doctored)
+
+        exported, _renderer = _export(report, _judge())
+        patterns = str(
+            [o.get("pattern") for o in exported["objects"] if o.get("type") == "indicator"]
+        )
+
+        assert OBSERVED not in patterns
+        assert SWEPT in patterns
