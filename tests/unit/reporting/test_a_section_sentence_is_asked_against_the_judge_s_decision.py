@@ -287,9 +287,10 @@ def test_a_section_5_source_refusal_names_the_judge_only_where_it_is_shown() -> 
     on_a_claim = _row(ASSESS, "drop", sources=[DROPPED, "nowhere.1"], reason="No.")
     found = _refusals(report_of(), on_a_claim)
     assert [v.code for v in found] == [UNKNOWN_SOURCE_CODE]
-    assert "; a sentence of it is left out on a passage of the judge's decision" in (
-        found[0].message
-    )
+    assert (
+        "; or left out on a passage of the judge's decision (judge.verdict, judge.family, "
+        "judge.technique.ID), the one answer that decision supports."
+    ) in found[0].message
 
     bare = report_of()
     bare.capability_matrix = []
@@ -339,7 +340,7 @@ def _summary_row(sentence: str, sources: list[str], decision: str, **more: str) 
         ),
     ],
 )
-def test_a_rewrite_or_a_keep_on_a_judge_passage_is_refused_and_the_summary_stands(
+def test_no_answer_on_a_judge_passage_is_taken_for_the_summary(
     summary: str, row: dict[str, Any]
 ) -> None:
     report = report_of(OTHER)
@@ -352,8 +353,10 @@ def test_a_rewrite_or_a_keep_on_a_judge_passage_is_refused_and_the_summary_stand
         )
         if v.path.startswith("sentences.")
     ]
-    assert [v.code for v in found] == [UNKNOWN_PASSAGE_CODE]
-    assert "of the judge's decision, which supports a drop alone" in found[0].message
+    # The summary is no passage a drop on a source leaves a sentence out of: the decision
+    # supports no answer for it.
+    assert [v.code for v in found] == [UNKNOWN_SOURCE_CODE]
+    assert "which supports no answer for a sentence of executive_summary" in found[0].message
     counts, records = apply_rows(
         {"sentences": [row]}, passages_of(report, narrative_written=True), citable=CITABLE
     )
@@ -406,14 +409,19 @@ def test_no_sentence_is_read_for_what_it_asserts() -> None:
 def test_the_round_s_texts_say_what_its_code_takes() -> None:
     text = prompt_text(passages_of(report_of()))
 
-    assert 'a sentence so listed is only dropped, with "reason"' in text
-    assert "It is a source of a drop alone, never of a keep or a rewrite" in text
-    assert "rewritten in your own words" not in text
-    assert "is dropped, naming the judge passage" in SYSTEM_PROMPT
-    assert "left out on the judge's decision" in SYSTEM_PROMPT
-    assert "or by the judge's decision, alone" not in SYSTEM_PROMPT
+    # The one answer the decision supports, where it supports one, and when to list.
+    assert agreement._JUDGE_TASK in text
+    assert 'It supports one answer only, leaving a sentence out: "decision": "drop"' in text
+    assert "A row naming a judge passage is a drop whatever else it names" in text
+    assert (
+        "It leaves a sentence out only of a section 5 passage you may rewrite or of a passage "
+        "whose EVERY sentence the TASK asks you to answer"
+    ) in text
+    assert "as the report's own finding, what the record decided otherwise" in text
+    assert "an analyst's view as such is not one" in text
+    assert "each sentence the TASK says to list on it" in SYSTEM_PROMPT
+    assert "the one answer a passage of the judge's decision supports" in SYSTEM_PROMPT
     assert "Leave out every sentence no source states otherwise than" not in SYSTEM_PROMPT
-    assert "calls absent or not observed one it published" in SYSTEM_PROMPT
 
 
 def test_a_matrix_row_the_judge_dropped_is_read_with_or_without_its_reason() -> None:
@@ -605,3 +613,89 @@ def test_a_closing_row_naming_a_fact_and_a_judge_passage_is_a_judge_row(
         assert [v.code for v in found] == [UNKNOWN_PASSAGE_CODE]
         assert counts["dropped"] == 0 and counts["rewritten"] == 0
         assert conclusion.body == CLOSING
+
+
+def _config_row(report: MalwareReport) -> str:
+    """A configuration table row section 5 shows for reading, and its text."""
+    from malspark.reporting.models import ConfigItem
+
+    assert report.technical_analysis is not None
+    report.technical_analysis.configuration = [
+        ConfigItem(key="mode", value="quiet", evidence_refs=["ev_0302"])
+    ]
+    return next(p.text for p in passages_of(report) if p.id == "configuration.1")
+
+
+@pytest.mark.parametrize("where", ["executive_summary", "configuration.1", "conclusion"])
+def test_a_drop_on_the_judge_s_decision_passes_only_where_a_drop_leaves_a_sentence_out(
+    where: str,
+) -> None:
+    report = report_of(OTHER)
+    report.executive_summary = _SUMMARY_VERDICT
+    conclusion = _closing(report)
+    conclusion.body = _CONCLUSION_VERDICT
+    sentence = {
+        "executive_summary": _SUMMARY_VERDICT,
+        "configuration.1": _config_row(report),
+        "conclusion": _CONCLUSION_VERDICT,
+    }[where]
+    row = {
+        **_row(sentence, "drop", reason="The judge decided otherwise."),
+        "passage": where,
+        "sources": ["judge.verdict"],
+    }
+    shown = passages_of(report, narrative_written=True)
+
+    found = [
+        v
+        for v in agreement_violations({"sentences": [row]}, shown, CITABLE)
+        if v.path.startswith("sentences.")
+    ]
+    counts, records = apply_rows(
+        {"sentences": [row]}, passages_of(report, narrative_written=True), citable=CITABLE
+    )
+    if where == "conclusion":
+        assert found == [] and counts["dropped"] == 1 and conclusion.body == ""
+        assert [v.code for v in records] == [agreement.JUDGE_LEFT_OUT_CODE]
+        return
+    # A passage no drop on a source leaves a sentence out of takes no answer on the decision.
+    assert [v.code for v in found] == [UNKNOWN_SOURCE_CODE]
+    assert f"which supports no answer for a sentence of {where}: it leaves a sentence out " in (
+        found[0].message
+    )
+    assert agreement._JUDGE_DROPS in found[0].message
+    assert f"Name no judge passage for a sentence of {where}." in found[0].message
+    assert counts["dropped"] == 0
+    assert report.executive_summary == _SUMMARY_VERDICT
+    assert not [v for v in records if v.code in agreement.LEFT_OUT_CODES]
+
+
+def test_every_judge_refusal_offers_the_drop_only_where_it_passes() -> None:
+    report = report_of()
+    keep = _row(ASSESS, "keep", quote="Benign")
+    (refused,) = _refusals(report, keep)
+    assert 'answer the sentence "decision": "drop", naming the judge passage' in refused.message
+    # Given back as the refusal says, the drop passes.
+    drop = {**keep, "decision": "drop", "quote": "", "reason": "The judge decided otherwise."}
+    assert _refusals(report, drop) == []
+    # Where no drop on it passes, none is offered.
+    report.executive_summary = _SUMMARY_VERDICT
+    summary = _summary_row(_SUMMARY_VERDICT, ["judge.verdict"], "keep", quote="Benign")
+    found = [
+        v
+        for v in agreement_violations(
+            {"sentences": [summary]}, passages_of(report, narrative_written=True), CITABLE
+        )
+        if v.path.startswith("sentences.")
+    ]
+    assert found and all('"decision": "drop"' not in v.message for v in found)
+    # A refusal of another source names the decision only where a drop on it passes.
+    other = {**summary, "sources": ["nowhere.1"], "decision": "rewrite", "rewrite": OTHER}
+    found = [
+        v
+        for v in agreement_violations(
+            {"sentences": [other]}, passages_of(report, narrative_written=True), CITABLE
+        )
+        if v.code == UNKNOWN_SOURCE_CODE
+    ]
+    assert found and all("judge" not in v.message for v in found)

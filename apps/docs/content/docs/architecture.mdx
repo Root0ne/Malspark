@@ -1605,11 +1605,14 @@ Two producers use it:
   THE JUDGE'S DECISION (`judge.verdict`, `judge.family`,
   `judge.technique.<ID>`) and is the source of a drop and of nothing else: a
   row naming a judge passage is a drop, whatever else it names, and a row of
-  any other form naming one is refused. Which sentence states otherwise than
-  the decision is the model's answer; no code reads a sentence for what it
-  asserts. A section 5 sentence left out on the decision is counted where it
-  is left out and recorded with the judge passage, the reason and the sentence
-  whole (`agreement.judge_left_out`). The decision starts no question of its
+  any other form naming one is refused. It leaves a sentence out only of a
+  section 5 passage the round may rewrite, the conclusion, the limitations, a
+  value cell or a capability bullet, and supports no answer for a sentence of
+  any other passage, a text printed in its writer's own words included. Which
+  sentence states otherwise than the decision is the model's answer; no code
+  reads a sentence for what it asserts. A sentence left out on the decision is
+  counted where it is left out and recorded with the row's sources, the reason
+  and the sentence whole (`agreement.judge_left_out`). The decision starts no question of its
   own, and nothing here changes the verdict, the mappings or the matrix. A
   refusal of the round's last answer is recorded with the passage and the
   sentence its row was about, and says that no turn was left to answer it.

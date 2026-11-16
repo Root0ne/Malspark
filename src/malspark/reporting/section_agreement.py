@@ -196,13 +196,15 @@ The judge's decision as the run records it (``reporting.judge_decision``: the ve
 confidence band where the judge assessed one, its family or none, each technique published by
 id and name and each it dropped with its reason) is shown after the facts, one passage each
 (``judge.verdict``, ``judge.family``, ``judge.technique.<ID>``). It is the source of a drop
-and of nothing else: a row naming it in another form is refused, whatever else it names, and
-no sentence is read for what it asserts (T-717). Which sentence states otherwise than it is
-the model's to say: code picks none. A section 5 sentence answered on it is only left out, the
-row naming the judge passage and giving its reason; it is counted where it is left out and
-recorded with the sentence whole (``JUDGE_LEFT_OUT_CODE``). The decision starts no question of
-its own, and nothing changes it. A refusal of the round's last answer is recorded with the
-sentence its row was about, saying no turn was left (:func:`_no_turn_left`).
+and of nothing else, and only of a sentence of a section 5 passage the round may rewrite, the
+conclusion, the limitations, a value cell or a capability bullet (:func:`_judge_drops`): a row
+naming it is a drop whatever else it names, one of another form or for another passage is
+refused, and no sentence is read for what it asserts (T-717). Which sentence states otherwise
+than it is the model's to say: code picks none. A sentence left out on it is counted where it
+is left out and recorded with the row's sources, its reason and the sentence whole
+(``JUDGE_LEFT_OUT_CODE``). The decision starts no question of its own, and nothing changes it.
+A refusal of the round's last answer is recorded with the sentence its row was about, saying
+no turn was left (:func:`_no_turn_left`).
 
 Every step is one pass over the passages and the answer's rows.
 """
@@ -4477,17 +4479,24 @@ def _row_violations(
         )
     sources = [by_id.get(_form(source)) for source in row.sources]
     judged = _judge_named(sources)
-    if judged and passage.verbatim:
-        # A passage printed in its writer's own words takes no answer on the judge's decision:
-        # not a drop, not a keep (T-717).
+    if judged and not _judge_drops(passage):
+        # The judge's decision leaves a sentence out of the passages :func:`_judge_drops` names
+        # and supports no answer for any other: a passage printed in its writer's own words
+        # takes none on it, not a drop, not a keep (T-717).
         out.append(
             Violation(
                 code=UNKNOWN_SOURCE_CODE,
                 message=(
                     f"row {safe_finding_value(index + 1)} names "
-                    f"{safe_finding_value(', '.join(judged))}, of the judge's decision, which is "
-                    "no source of a passage marked (verbatim): name no judge passage for a "
-                    f"sentence of {safe_finding_value(passage.id)}."
+                    f"{safe_finding_value(', '.join(judged))}, of the judge's decision, which "
+                    + (
+                        "is no source of a passage marked (verbatim)"
+                        if passage.verbatim
+                        else "supports no answer for a sentence of "
+                        f"{safe_finding_value(passage.id)}: it leaves a sentence out only of "
+                        f"{_JUDGE_DROPS}"
+                    )
+                    + f". Name no judge passage for a sentence of {safe_finding_value(passage.id)}."
                 ),
                 path=f"{path}.sources",
             )
@@ -4565,7 +4574,7 @@ def _row_violations(
         and not passage.verbatim
         and span is not None
         and not _held_by_the_ledger(passage, span[2])
-        and not _on_the_judge(passage, sources)
+        and not judged
     )
     wrong = [
         _form(name)
@@ -4586,8 +4595,11 @@ def _row_violations(
     ]
     if unheld_drop:
         wrong = []
-    # The refusal names the judge's decision where the round shows it (T-717).
-    judge_shown = any(p.kind == JUDGE for p in by_id.values()) if wrong else False
+    # The refusal names the judge's decision where the round shows it and a sentence of the
+    # passage may be left out on it (T-717).
+    judge_shown = (
+        _judge_drops(passage) and any(p.kind == JUDGE for p in by_id.values()) if wrong else False
+    )
     if wrong:
         out.append(
             Violation(
@@ -4603,9 +4615,10 @@ def _row_violations(
                         + (_JUDGE_SOURCE_SAID if judge_shown else "")
                         + "."
                         if passage.kind == SECTION_5
-                        else "only the facts, "
-                        + ("the judge's decision, " if judge_shown else "")
-                        + "the section 5 passages and the debate rounds listed are sources."
+                        else "only the facts, the section 5 passages and the debate rounds listed "
+                        "are sources"
+                        + (", and the judge's decision of a drop alone" if judge_shown else "")
+                        + "."
                     )
                     + f" {_NAME_THE_SOURCES}"
                 ),
@@ -4800,17 +4813,30 @@ def _judge_named(sources: Sequence[Passage | None]) -> list[str]:
     return list(dict.fromkeys(s.id for s in sources if s is not None and s.kind == JUDGE))
 
 
-def _on_the_judge(passage: Passage, sources: Sequence[Passage | None]) -> bool:
-    """Whether a row answers a sentence of a section 5 passage on a passage of the judge's
-    decision: one it may only leave out (T-717)."""
-    return passage.kind == SECTION_5 and bool(_judge_named(sources))
+def _judge_drops(passage: Passage) -> bool:
+    """Whether a sentence of ``passage`` may be left out on the judge's decision, the one answer
+    that decision supports: a sentence of a section 5 passage the round may rewrite, or of the
+    conclusion, the limitations, a value cell or a capability bullet, each of which a drop
+    leaves a sentence out of; never one of a passage printed in its writer's own words, nor of
+    any other passage, whose sentences no drop on a source leaves out (T-717)."""
+    return (
+        _writable(passage)
+        and not passage.verbatim
+        and (passage.kind == SECTION_5 or passage.closing)
+    )
 
 
+# The passages a sentence may be left out of on the judge's decision (:func:`_judge_drops`), as
+# the question and the refusals name them (T-717).
+_JUDGE_DROPS = (
+    "a section 5 passage you may rewrite, the conclusion, the limitations, a value cell or a "
+    "capability bullet"
+)
 # What the refusal of a source a section 5 passage may not rest on says of the judge's
 # decision, where the round shows it (T-717).
 _JUDGE_SOURCE_SAID = (
-    "; a sentence of it is left out on a passage of the judge's decision (judge.verdict, "
-    "judge.family, judge.technique.ID)"
+    "; or left out on a passage of the judge's decision (judge.verdict, judge.family, "
+    "judge.technique.ID), the one answer that decision supports"
 )
 # What the refusal of a row naming the judge's decision in another form than a drop says
 # (T-717).
@@ -5331,8 +5357,8 @@ def _answer_violations(
     # A passage printed in its writer's own words: a sentence of it is kept on a source's words
     # or dropped on its reason, never rewritten (T-613).
     verbatim = bool(passage.verbatim)
-    # A section 5 sentence left out on the judge's decision (T-717); a drop gives its reason.
-    judge_drop = row.decision == "drop" and _on_the_judge(passage, sources)
+    # A sentence left out on the judge's decision, of a passage it may leave one out of (T-717).
+    judge_drop = row.decision == "drop" and bool(_judge_named(sources))
     # A row whose sentence does not stand in its passage is refused for that alone: which
     # sentence it drops is not known.
     unheld_drop = (
@@ -7207,9 +7233,7 @@ SYSTEM_PROMPT = (
     "open, unresolved, not shown or not established what a section 5 passage, a fact or a "
     "closed debate line states, or that states the opposite of what one of them states; and "
     "each sentence of a section 5 passage that a fact contradicts; and, where THE JUDGE'S "
-    "DECISION is shown, each sentence of a passage you may rewrite, section 5 included, that "
-    "states as present or as serving its purpose a technique the judge dropped, calls absent "
-    "or not observed one it published, or states another verdict, family or confidence band. "
+    "DECISION is shown, each sentence the TASK says to list on it. "
     "For each, give the passage's id, the whole sentence copied exactly as it stands, the ids "
     "of the sources that state otherwise (a section 5 passage is answered by a fact alone, or "
     "left out on the judge's decision), and one decision:\n"
@@ -7230,9 +7254,8 @@ SYSTEM_PROMPT = (
     "reading (the ledger, its entries, the listings or the function index) does not "
     "establish, show, settle, trace or list something, names no address and its passage "
     "names what the fact is about.\n"
-    "  - drop: a section 5 sentence the judge's decision states otherwise than is dropped, "
-    'naming the judge passage, with "reason", and never rewritten or kept on it; a sentence '
-    "of another passage is dropped only where the TASK says so.\n"
+    '  - drop: the sentence is left out, with "reason"; only where the TASK says so, and the '
+    "one answer a passage of the judge's decision supports.\n"
     "List no sentence that no source states otherwise than, unless the TASK asks for every "
     "sentence of a passage. List each sentence once. "
     "Answer with exactly this JSON object, with an empty list when no sentence disagrees:\n"
@@ -7466,13 +7489,17 @@ _VERBATIM_TASK = (
 # What the TASK says of the judge's decision once, where the round shows it (T-717).
 _JUDGE_TASK = (
     "THE JUDGE'S DECISION is the run's record of what the judge decided: its verdict and "
-    "confidence band, its family or none, each technique it published and each it dropped "
-    "with its reason. It is a source of a drop alone, never of a keep or a rewrite, and of no "
-    "passage marked (verbatim). List each sentence of a passage you may rewrite, section 5 "
-    "included, that states as present, or as serving its purpose, a technique the judge "
-    "dropped, calls absent or not observed one it published, or states another verdict, family "
-    "or confidence band, naming the judge passage: a sentence so listed is only dropped, with "
-    '"reason".'
+    "confidence band, its family or none, each technique it published and each it dropped, "
+    "with the record's words. It supports one answer only, leaving a sentence out: "
+    '"decision": "drop", naming the judge passage in "sources", with "reason". A row naming '
+    "a judge passage is a drop whatever else it names; a keep or a rewrite names other "
+    "sources only. It leaves a sentence out only of a section 5 passage you may rewrite or of "
+    "a passage whose EVERY sentence the TASK asks you to answer, and supports no answer for a "
+    "sentence of any other passage. List a sentence of those passages on it "
+    "only where the sentence states, as the report's own finding, what the record decided "
+    "otherwise: a technique the judge dropped as the sample's behaviour, another verdict, or "
+    "another family. A sentence that reports a capability, a tool's or a rule's label, or an "
+    "analyst's view as such is not one, and is not listed on the judge's decision."
 )
 
 
