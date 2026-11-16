@@ -31,12 +31,16 @@ from malspark.reporting.models import (
     RegistryMod,
     SampleIdentity,
 )
-from malspark.reporting.stated_host_values import benign_catalogue
+from malspark.reporting.stated_host_values import (
+    CONTAINS,
+    ENDSWITH,
+    WHOLE,
+    benign_catalogue,
+    shipped_match,
+)
 from tests.unit.reporting.test_a_sigma_selection_that_stands_alone_holds_a_specific_value import (
     _report,
 )
-
-pytestmark = pytest.mark.slow
 
 RUN = "Software\\Microsoft\\Windows\\CurrentVersion\\Run"
 CATALOGUE = benign_catalogue()
@@ -191,6 +195,7 @@ def _bare_report(**kwargs: Any) -> MalwareReport:
     return report
 
 
+@pytest.mark.slow
 @pytest.mark.parametrize("form", FORMS)
 def test_no_stated_path_prints_a_selection_a_shipped_path_matches(form: str) -> None:
     write = FORMS[form]
@@ -200,6 +205,7 @@ def test_no_stated_path_prints_a_selection_a_shipped_path_matches(form: str) -> 
         assert _matched(report) == [], form
 
 
+@pytest.mark.slow
 @pytest.mark.parametrize("form", FOLDER_FORMS)
 def test_no_stated_folder_prints_a_selection_a_shipped_path_matches(form: str) -> None:
     write = FOLDER_FORMS[form]
@@ -208,6 +214,7 @@ def test_no_stated_folder_prints_a_selection_a_shipped_path_matches(form: str) -
     assert _matched(report) == [], form
 
 
+@pytest.mark.slow
 @pytest.mark.parametrize("form", FORMS)
 def test_no_persistence_payload_prints_a_selection_a_shipped_path_matches(form: str) -> None:
     report = _payload_report([FORMS[form](name) for name in NAMES])
@@ -215,6 +222,7 @@ def test_no_persistence_payload_prints_a_selection_a_shipped_path_matches(form: 
     assert _matched(report) == [], form
 
 
+@pytest.mark.slow
 @pytest.mark.parametrize("form", FORMS)
 def test_no_written_autorun_prints_a_selection_a_shipped_path_matches(form: str) -> None:
     report = _written_report([FORMS[form](name) for name in NAMES])
@@ -286,3 +294,73 @@ class TestTheInputsTheReviewFound:
         assert ("\\rundll32.exe", "a file Windows ships, in the folder Windows keeps it in") in [
             (v.value, v.why) for v in rule.values_left_out
         ]
+
+    @pytest.mark.parametrize(
+        "stated", ["Microsoft\\Windows\\CurrentVersion\\Run", "CurrentVersion\\Run"]
+    )
+    def test_a_stated_key_a_key_windows_has_holds_is_left_out_and_says_so(
+        self, stated: str
+    ) -> None:
+        report = _report([("registry key", stated)])
+
+        assert _matched(report) == []
+        assert not [r for r in report.detection_signatures if r.kind == "sigma"]
+        (item,) = report.drafts_not_built
+        assert "a registry key every Windows installation has holds it" in item.why
+
+
+class TestTheShippedPaths:
+    """What :func:`shipped_match` derives from the catalogue, asked the way a rule matches."""
+
+    @pytest.mark.parametrize(
+        ("shape", "operator", "value"),
+        [
+            ("path", ENDSWITH, "\\Windows\\notepad.exe"),
+            ("path", ENDSWITH, "\\System32\\WindowsPowerShell\\v1.0\\powershell.exe"),
+            ("path", ENDSWITH, "\\Microsoft.NET\\Framework64\\v4.0.30319\\csc.exe"),
+            ("path", ENDSWITH, "%WINDIR%/System32/cmd.exe"),
+            ("path", CONTAINS, "host.exe"),
+            ("path", CONTAINS, "\\SysWOW64\\"),
+            ("path", CONTAINS, "dows\\Sys"),
+            ("folder", CONTAINS, "\\wbem\\"),
+            ("path", WHOLE, "C:\\Windows\\System32\\cmd.exe"),
+            ("key", CONTAINS, "\\CurrentVersion\\Run"),
+            ("key", CONTAINS, "\\Services\\BITS"),
+            ("key", ENDSWITH, "\\Winlogon\\Shell"),
+            ("key", WHOLE, "\\software\\microsoft"),
+        ],
+    )
+    def test_a_value_a_shipped_path_matches_is_answered_with_that_path(
+        self, shape: str, operator: str, value: str
+    ) -> None:
+        path = shipped_match(shape, operator, value)
+
+        assert path
+        folded = value.lower().replace("/", "\\")
+        assert (
+            folded in path
+            if operator == CONTAINS
+            else path.endswith(folded)
+            if operator == ENDSWITH
+            else path == folded
+        )
+
+    @pytest.mark.parametrize(
+        ("shape", "operator", "value"),
+        [
+            ("path", ENDSWITH, "\\Users\\Public\\svchost.exe"),
+            ("path", ENDSWITH, "\\System32\\x7731.exe"),
+            ("path", ENDSWITH, "\\cmd.exe\\x"),
+            ("path", ENDSWITH, "\\System32\\"),
+            ("path", CONTAINS, "\\x7731.dll"),
+            ("path", WHOLE, "\\System32\\cmd.exe"),
+            ("path", WHOLE, "C:\\Windows\\System32\\cmd"),
+            ("key", CONTAINS, "\\Software\\Microsoft\\Windows\\CurrentVersion\\Run\\v7731"),
+            ("key", ENDSWITH, "\\CurrentVersion\\Run\\"),
+            ("name", CONTAINS, "cmd.exe"),
+        ],
+    )
+    def test_a_value_no_shipped_path_matches_is_not(
+        self, shape: str, operator: str, value: str
+    ) -> None:
+        assert shipped_match(shape, operator, value) == ""

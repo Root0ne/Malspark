@@ -122,6 +122,8 @@ class TestTheReaderOfACommandLine:
             ("run me.exe", ["run", "me.exe"]),
             # No word names a file.
             ("C:\\Vendor7731\\run -k", ["C:\\Vendor7731\\run", "-k"]),
+            # A quote before a file name: the quoted span is a word of its own.
+            ('C:\\a "b c" d7731.exe', ["C:\\a", "b c", "d7731.exe"]),
         ],
     )
     def test_reads_word_by_word_otherwise(self, line: str, read: list[str]) -> None:
