@@ -5943,11 +5943,18 @@ is assembled from what the run gathered rather than recomputed beside it:
   It is read from the report's own lineage, in each task on its own
   (`sandbox_report.started_by_the_sandbox`): a process that runs the submitted
   file by its submitted name or its digest, whose image is that file, and that
-  no process running the file started. The process view marks that row
-  `staged_by_sandbox: true` (left out on every other row) and its answer
-  carries one sentence, once: the sandbox started the submitted file from that
-  path, and where the file was placed is the sandbox's doing, not the
-  sample's. A copy the sample makes of itself and runs is started by a process
+  no process running the file started. The mark is given only where the
+  record does not contradict it: a path the report shows written during the
+  run (the dropped-files view, read through `read_view` with the run's
+  reader, once per answer and only where a process qualifies) is never
+  marked, and the marked rows of one task share one path, that of the process
+  the record states started first (`first_seen`), none where it states no
+  order. The process view marks that row `staged_by_sandbox: true` (left out
+  on every other row) and its answer carries one sentence, once: the marked
+  row is the first process that runs the submitted file, started by no
+  process that runs it, at a path the report does not show written during the
+  run, and the sandbox started the file from there. Where nothing is marked
+  the answer is as it was. A copy the sample makes of itself and runs is started by a process
   that runs the file and is never marked; a process that names the file only
   on its command line has another image and is not it; a sandbox that starts
   the file under a name neither reading knows marks nothing. No product, path

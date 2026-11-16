@@ -3,8 +3,8 @@
 A process that runs the submitted file (by the name it was submitted under or
 by its digest, the lineage reading every surface places a process by), whose
 image is that file, and that starts the sample's tree (no process its parent
-chain reaches runs the file) has the sandbox's path as its image: where the
-file was placed is the sandbox's doing. A copy the sample makes of itself and
+chain reaches runs the file) has the sandbox's path as its image: the sandbox
+started the file from there. A copy the sample makes of itself and
 runs is a child inside the tree and is behaviour. No product, path or folder
 names the place; a sandbox that starts the file under a name the reading does
 not know marks nothing.
