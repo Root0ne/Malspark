@@ -146,6 +146,14 @@ class TestTheTreeTheReportIsBuiltFromKeepsTheIdentity:
         assert (first.guest_pid, first.children[0].guest_pid) == ("1496", "1924")
         assert dynamic.process_tree[1].guest_pid == ""
 
+    def test_a_process_listing_s_own_guest_pid_is_kept(self) -> None:
+        ledger = self._ledger()
+        ledger[0].structured["processes"][2]["guest_pid"] = "3756"
+
+        dynamic = dynamic_from_ledger(ledger)
+        assert dynamic is not None
+        assert dynamic.process_tree[1].guest_pid == "3756"
+
     def test_a_stored_row_named_by_the_guest_pid_is_the_sample_s_tree_s(self) -> None:
         dynamic = dynamic_from_ledger(self._ledger())
         ask = sandbox_facts_for_the_judge(None, dynamic, sample={"file_name": SAMPLE})
