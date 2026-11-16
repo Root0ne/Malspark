@@ -85,6 +85,13 @@ class TestOneTaskMarksOnePath:
     def test_an_order_stated_for_one_only_marks_none(self) -> None:
         assert _marked(sandbox_processes(self._two_places("125", ""))) == []
 
+    def test_a_page_is_read_against_the_whole_listing(self) -> None:
+        # The page holds only the copy started later: it is not the place.
+        answer = sandbox_processes(self._two_places("125", "90412"), offset=2, limit=1)
+        assert [row["pid"] for row in answer["processes"]] == [31]
+        assert _marked(answer) == []
+        assert STAGED_NOTE_KEY not in answer
+
     def test_one_path_run_twice_is_marked_on_both_rows(self) -> None:
         report = _report([_process(10, 4, STAGED), _process(12, 4, STAGED)])
         assert _marked(sandbox_processes(report)) == [10, 12]
@@ -140,3 +147,39 @@ class TestABareImage:
             "dropped": [{"name": f"{DIGEST}.exe"}],
         }
         assert _marked(sandbox_processes(report)) == [10]
+
+
+class TestEveryWrittenRowIsRead:
+    """Each way the dropped-files view states a written file: a copy of the
+    root's name at a written place leaves only the root, with no order stated."""
+
+    def _marked_with(self, *rows: dict[str, Any]) -> list[Any]:
+        report = {
+            **_report(
+                [_process(10, 4, STAGED), _process(30, 2, SVCHOST), _process(31, 30, INSTALLED)]
+            ),
+            "dropped": list(rows),
+        }
+        return _marked(sandbox_processes(report))
+
+    def test_a_row_that_states_only_a_path(self) -> None:
+        assert self._marked_with({"filepath": INSTALLED}) == [10]
+
+    def test_a_row_that_states_several_guest_paths(self) -> None:
+        assert self._marked_with({"name": "x.bin", "guest_paths": ["C:\\x.bin", INSTALLED]}) == [10]
+
+    def test_a_file_the_platform_s_launcher_wrote(self) -> None:
+        from malspark.schemas.sandbox_document import LINEAGE_KEY
+        from malspark.schemas.sandbox_report import LINEAGE_LAUNCHER
+
+        assert self._marked_with({"filepath": INSTALLED, LINEAGE_KEY: LINEAGE_LAUNCHER}) == [10]
+
+    def test_a_bare_image_read_against_a_row_that_states_only_its_name(self) -> None:
+        report = _report([_process(10, 4, "invoice.exe")])
+        report["dropped"] = [{"name": "invoice.exe"}]
+        assert _marked(sandbox_processes(report)) == []
+
+    def test_a_bare_image_read_against_a_row_that_states_only_a_path(self) -> None:
+        report = _report([_process(10, 4, "invoice.exe")])
+        report["dropped"] = [{"filepath": INSTALLED}]
+        assert _marked(sandbox_processes(report)) == []

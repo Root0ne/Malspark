@@ -14,7 +14,12 @@ from __future__ import annotations
 
 from typing import Any
 
-from malspark.schemas.sandbox_report import started_by_the_sandbox
+from malspark.schemas.sandbox_report import (
+    STAGED_KEY,
+    STAGED_WORDS,
+    staged_words,
+    started_by_the_sandbox,
+)
 
 DIGEST = "9" * 64
 STAGED = f"C:\\Users\\u\\AppData\\Local\\Temp\\{DIGEST}.exe"
@@ -57,6 +62,12 @@ class TestTheRootThatRunsTheFileIsTheSandboxS:
         ]
         assert _pids(rows, "", DIGEST) == [83, 88]
 
+    def test_a_process_of_another_task_is_never_a_parent(self) -> None:
+        # Task t2 lists a process with the id task t1's root names as its
+        # parent: read on its own, each task's root is its own.
+        rows = [_row(83, 56, STAGED, task="t1"), _row(56, 4, STAGED, task="t2")]
+        assert _pids(rows, "", DIGEST) == [83, 56]
+
     def test_a_process_that_names_the_file_on_its_command_line_is_not_the_place(self) -> None:
         # rundll32 runs the file, but its image is rundll32's: not where the
         # sandbox placed the file.
@@ -92,3 +103,10 @@ class TestNothingIsGuessed:
             _row(2, 1, "C:\\Temp\\unpack001\\sample.exe", lineage="sample", marked=True),
         ]
         assert _pids(rows, "submission.zip", "a" * 64) == []
+
+
+class TestTheWordsReadTheMarkAlone:
+    def test_only_a_true_mark_gives_the_words(self) -> None:
+        assert staged_words({STAGED_KEY: True}) == STAGED_WORDS
+        for value in ("true", 1, "yes", None, False):
+            assert staged_words({STAGED_KEY: value}) == ""
