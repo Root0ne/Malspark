@@ -239,3 +239,20 @@ def test_an_allowance_no_surface_uses_fails_the_guard() -> None:
     unused = {**ALLOWED, "misp.py": {"ioc_table": _THE_TABLE}}
 
     assert _stale(unused) == [("misp.py", "ioc_table")]
+
+
+def test_a_helper_anywhere_in_the_reporting_package_or_the_api_app_is_read() -> None:
+    every = {*REPORTING.rglob("*.py"), *(ROOT / "apps" / "api" / "app").rglob("*.py")}
+
+    assert set(RULE_MODULES) == every
+
+
+def test_a_helper_of_another_module_that_asks_the_rule_is_the_rule(tmp_path: Path) -> None:
+    helper = tmp_path / "helper.py"
+    helper.write_text(
+        "from malspark.reporting.renderers.stix_renderer import publish_answer\n\n"
+        "def answer_for(kind, value):\n    return publish_answer(kind, value, 'strings')\n",
+        encoding="utf-8",
+    )
+
+    assert "answer_for" in _asking((*RULE_MODULES, helper))
