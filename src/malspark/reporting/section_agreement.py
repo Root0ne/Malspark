@@ -286,6 +286,7 @@ from malspark.reporting.models import (
     MalwareReport,
     TechnicalSubsection,
 )
+from malspark.reporting.sentence_ends import SENTENCE_CLOSE, ends_sentence, pieces
 from malspark.schemas.evidence import entry_ids_in
 from malspark.utils.sentence_cut import left_out_span
 from malspark.utils.written_forms import pack_escaped, pack_reads
@@ -4241,9 +4242,10 @@ def _rows(payload: Any) -> list[tuple[int, AgreementRow]]:
 def _sentence_units(text: str) -> tuple[dict[str, list[int]], set[int]]:
     """Where each sentence of ``text`` starts, by its words, and where each one ends.
 
-    A sentence ends after a ``.``, ``!`` or ``?`` (and any closing quote or
-    bracket after it) that a space or the end follows, or at a line break,
-    or at the end of the text. One pass. A sentence is keyed by its text from
+    A sentence ends after a mark the one sentence-end rule reads as its end
+    (``sentence_ends.ends_sentence``, with any closing quote, bracket or emphasis
+    after it), or at a line break, or at the end of the text: the analyst report
+    reads the same rule (T-719). One pass. A sentence is keyed by its text from
     its first character to its end, so a copied sentence is found whole by its
     words.
     """
@@ -4259,13 +4261,12 @@ def _sentence_units(text: str) -> tuple[dict[str, list[int]], set[int]]:
         stop = None
         if char in "\n\r":
             stop = at
-        elif char in ".!?":
+        elif char in ".!?" and ends_sentence(text, at):
             after = at + 1
-            while after < length and text[after] in "\"')]":
+            while after < length and text[after] in SENTENCE_CLOSE:
                 after += 1
-            if after == length or text[after].isspace():
-                stop = after
-                at = after - 1
+            stop = after
+            at = after - 1
         if stop is not None:
             end = stop
             while end > begin and text[end - 1].isspace():
@@ -4326,18 +4327,46 @@ class _Sentences:
         The last item says which: ``-1`` as copied, else the reading's place in
         ``pack_reads``, so a rewrite is read back the same way. It has to be
         exactly one sentence of the passage; cut otherwise than ``by_words``, one
-        standing there exactly once: a fragment, a word, a run of sentences or a
-        sentence the passage writes twice is not one.
+        standing there exactly once: a fragment, a word, a run of sentences short of
+        the whole text or a sentence the passage writes twice is not one. A copy of
+        the whole text, by its words, is found as one span however many sentences it
+        holds (:meth:`whole`, T-719).
         """
         if self.by_words:
             places = self.every(sentence)
-            return places[0] if places else None
+            return places[0] if places else self.whole(sentence)
         for reading, form in enumerate((sentence, *pack_reads(sentence)), -1):
             copied = form.strip()
             found = self.starts.get(copied, []) if copied else []
             if len(found) == 1:
                 return found[0], found[0] + len(copied), copied, reading
+        return self.whole(sentence)
+
+    def whole(self, sentence: str) -> tuple[int, int, str, int] | None:
+        """The whole text as one span, where the sentence copied is all of it by its words
+        (as copied, or with the escapes read back, as :meth:`span` reads it), else ``None``:
+        an answer copying the whole field answers each sentence of it (T-719)."""
+        text = " ".join(self.text.split())
+        if not text:
+            return None
+        for reading, form in enumerate((sentence, *pack_reads(sentence)), -1):
+            if " ".join(form.split()) == text:
+                start = len(self.text) - len(self.text.lstrip())
+                end = len(self.text.rstrip())
+                return start, end, self.text[start:end], reading
         return None
+
+    def units(self, span: tuple[int, int, str, int]) -> list[tuple[int, int, str, int]]:
+        """Each sentence ``span`` holds, as :meth:`span` gives one: the span itself where it is
+        one sentence, each sentence of the text where it is the whole text (:meth:`whole`), so
+        every check a sentence is asked by reads each of them (T-719)."""
+        inside = sorted(
+            (start, start + len(said), said, span[3])
+            for said, starts in self.starts.items()
+            for start in starts
+            if span[0] <= start < span[1]
+        )
+        return inside if len(inside) > 1 else [span]
 
 
 def _cut(passage: Passage) -> _Sentences:
@@ -4409,7 +4438,32 @@ def _row_violations(
     by_id: dict[str, Passage],
     sentences_of: Callable[[Passage], _Sentences],
 ) -> list[Violation]:
-    """What is structurally wrong with one row, against the passages shown."""
+    """What is structurally wrong with one row, against the passages shown. A row copying the
+    whole of a passage of more than one sentence (``_Sentences.whole``) answers each of them:
+    it is refused for what a row answering any one of them the same way is refused for, so no
+    sentence escapes a check by standing in a longer copy (T-719)."""
+    passage = by_id.get(_form(row.passage))
+    span = sentences_of(passage).span(row.sentence) if passage is not None else None
+    units = sentences_of(passage).units(span) if passage is not None and span else []
+    if len(units) < 2:
+        return _one_row_violations(row, index, by_id, sentences_of)
+    out: list[Violation] = []
+    for unit in units:
+        for violation in _one_row_violations(
+            row.model_copy(update={"sentence": unit[2]}), index, by_id, sentences_of
+        ):
+            if violation not in out:
+                out.append(violation)
+    return out
+
+
+def _one_row_violations(
+    row: AgreementRow,
+    index: int,
+    by_id: dict[str, Passage],
+    sentences_of: Callable[[Passage], _Sentences],
+) -> list[Violation]:
+    """What is structurally wrong with one row answering one sentence (:func:`_row_violations`)."""
     path = f"sentences.{index}"
     passage = by_id.get(_form(row.passage))
     if passage is None or passage.kind not in (CLAIM_LED, SECTION_5):
@@ -6692,24 +6746,31 @@ def whole_code_absences(
     run saw, so there a sentence naming an address is read whole, as before."""
     out: list[str] = []
     for sentence in _sentences_of(text):
-        named = bool(_addresses_named(sentence))
-        if not named and (
-            _WHOLE_CODE_ABSENCE.search(sentence)
-            or (unsettled and _UNSETTLED_ABSENCE.search(sentence))
-        ):
-            # Read whole, as before: naming no address, the sentence is held.
-            out.append(sentence)
-            continue
-        if (
-            by_clause
-            and named
-            and any(
-                not back and not _addresses_named(clause)
-                for clause, back in _absence_clauses(sentence, unsettled=unsettled)
-            )
+        # A sentence the one rule joined is held where any part of it would be (T-719).
+        if any(
+            _states_whole_code_absence(part, unsettled=unsettled, by_clause=by_clause)
+            for part in dict.fromkeys([sentence, *pieces(sentence)])
         ):
             out.append(sentence)
     return tuple(out)
+
+
+def _states_whole_code_absence(sentence: str, *, unsettled: bool, by_clause: bool) -> bool:
+    """Whether ``sentence`` is one :func:`whole_code_absences` holds."""
+    named = bool(_addresses_named(sentence))
+    if not named and (
+        _WHOLE_CODE_ABSENCE.search(sentence) or (unsettled and _UNSETTLED_ABSENCE.search(sentence))
+    ):
+        # Read whole, as before: naming no address, the sentence is held.
+        return True
+    return (
+        by_clause
+        and named
+        and any(
+            not back and not _addresses_named(clause)
+            for clause, back in _absence_clauses(sentence, unsettled=unsettled)
+        )
+    )
 
 
 def _absence_clauses(sentence: str, *, unsettled: bool) -> list[tuple[str, bool]]:
@@ -7012,15 +7073,17 @@ def agreement_violations(
             # Its twin passed: the refusal of the judge passages it names is told alone.
             out.extend(told)
         if passage is not None and span is not None:
-            listed.add((passage.id, span[0]))
-            answering[(passage.id, span[0])] = row
+            # A copy of the whole field lists each of its sentences (T-719).
+            places = [(passage.id, unit[0]) for unit in _sentences(passage).units(span)]
+            listed.update(places)
+            answering.update((place, row) for place in places)
             if any(v.code == UNREAD_STANDING_CODE for v in found):
-                unread_told.add((passage.id, span[0]))
+                unread_told.update(places)
             # A rewrite whose own finding names the listing is asked about once.
             if row.decision in ("rewrite", "drop") and (
                 not found or any(v.code == UNREAD_STANDING_CODE for v in found)
             ):
-                rewritten.add((passage.id, span[0]))
+                rewritten.update(places)
     if isinstance(payload, dict):
         out.extend(
             _held_unlisted(
@@ -7662,7 +7725,7 @@ def _checked_rows(
         )
         span = sentences_of(passage).span(row.sentence) if passage is not None else None
         if passage is not None and span is not None and not own and not rewritten:
-            passed.add((passage.id, span[0]))
+            passed.update((passage.id, unit[0]) for unit in sentences_of(passage).units(span))
         checked.append((index, row, passage, own, rewritten, span, told))
     return checked, passed
 
@@ -7758,14 +7821,22 @@ def apply_rows(
     checked, passed = _checked_rows(rows, by_id, _sentences, citable, items, entries)
     for index, row, passage, own, rewritten, span, _told in checked:
         found = [*own, *rewritten]
+        # Each sentence the row answers: its own, or each of a field it copied whole (T-719).
+        units = _sentences(passage).units(span) if passage is not None and span else []
         if passage is not None and span is not None:
-            answered.add((passage.id, span[0]))
+            answered.update((passage.id, unit[0]) for unit in units)
         counts["sentences"] += 1
         if found and passage is not None and span is not None and (passage.id, span[0]) in passed:
             # Another row's answer passed: this refused one is not applied.
             counts["not_applied"] += 1
             continue
-        held = _ends_on_answer(passage, span[2]) if passage and span else ""
+        held = (
+            next(
+                (said for said in (_ends_on_answer(passage, unit[2]) for unit in units) if said), ""
+            )
+            if passage
+            else ""
+        )
         # Why such a sentence is left out where its answer is refused.
         refused = (
             ("the ledger says otherwise; " if _ledger_says_otherwise(found) else "")
@@ -7793,7 +7864,7 @@ def apply_rows(
             ):
                 # A refused drop, or a refused keep this function would let stand: left out
                 # below, unless the platform's qualification takes the sentence first.
-                unpassed.append((passage, span, refused, found, f"sentences.{index}"))
+                unpassed.extend(_refused_units(passage, span, units, (refused, held), found, index))
                 continue
         if row.decision == "keep":
             standing = span
@@ -7803,7 +7874,7 @@ def apply_rows(
                 passage is not None
                 and not passage.closing
                 and standing is not None
-                and standing[2] in passage.absences
+                and any(unit[2] in passage.absences for unit in units)
             )
             # A section 5 sentence a fact was listed against is recorded as
             # listed, as it was before it could be rewritten.
@@ -7868,7 +7939,7 @@ def apply_rows(
                     passage is not None
                     and (passage.closing or absent)
                     and standing is not None
-                    and standing[2] in passage.held
+                    and any(unit[2] in passage.held for unit in units)
                 ):
                     counts["held_kept"] += 1
                     # A closing sentence kept on a source whose quote passed every
@@ -8018,7 +8089,7 @@ def apply_rows(
             elif refused:
                 # A refused rewrite of a sentence the ledger's lines hold, which would print
                 # as written: left out below, unless the platform's qualification takes it.
-                unpassed.append((passage, span, refused, found, f"sentences.{index}"))
+                unpassed.extend(_refused_units(passage, span, units, (refused, held), found, index))
             else:
                 counts["not_applied"] += 1
             continue
@@ -8115,6 +8186,31 @@ def apply_rows(
         if passage.write is not None:
             passage.write(text)
     return counts, [*listed, *written]
+
+
+def _refused_units(
+    passage: Passage,
+    span: tuple[int, int, str, int],
+    units: Sequence[tuple[int, int, str, int]],
+    why: tuple[str, str],
+    found: Sequence[Violation],
+    index: int,
+) -> list[tuple[Passage, tuple[int, int, str, int], str, Sequence[Violation], str]]:
+    """What a refused answer leaves out (:func:`apply_rows`): its sentence; of a field it copied
+    whole, each sentence of it that ends on the answer (:func:`_ends_on_answer`), each with the
+    refusal and its own end (``why``: the refusal, ending on the end it names), the others
+    standing as a sentence whose refused answer ends on nothing does (T-719)."""
+    refused, held = why
+    path = f"sentences.{index}"
+    if len(units) < 2:
+        return [(passage, span, refused, found, path)]
+    head = refused[: len(refused) - len(held)]
+    out: list[tuple[Passage, tuple[int, int, str, int], str, Sequence[Violation], str]] = []
+    for unit in units:
+        own = _ends_on_answer(passage, unit[2])
+        if own:
+            out.append((passage, unit, head + own, found, path))
+    return out
 
 
 def _moved(

@@ -395,9 +395,6 @@ def test_a_quote_running_across_two_sentences_leaves_the_sentence_out(
         # A line opening a list, which ends on no sentence's mark.
         "The import table names 46 functions [ev_0004]. A further 968 decodings are "
         "referenced by no code and were not reviewed, among them:\n- the wide ones.",
-        # Words after an abbreviation, which open no sentence.
-        "The import table names 46 functions, e.g. the 968 decodings are referenced by no "
-        "code and were not reviewed [ev_0021].",
     ],
 )
 def test_a_source_sentence_that_is_no_prose_is_not_moved(body: str) -> None:
@@ -412,6 +409,25 @@ def test_a_source_sentence_that_is_no_prose_is_not_moved(body: str) -> None:
     found = _applied(report, row)
     assert [v.code for v in found] == [DROPPED_CODE]
     assert _limitations(report) == GATED
+
+
+def test_a_source_sentence_holding_an_abbreviation_is_moved_whole() -> None:
+    # Words after an abbreviation open no sentence (T-719): the sentence holding them, from
+    # its first word, is the source's sentence, and it reads as prose.
+    said = (
+        "The import table names 46 functions, e.g. the 968 decodings are referenced by no "
+        "code and were not reviewed [ev_0021]."
+    )
+    report = _resolution(_report(), said)
+    row = _keep(
+        "limitations",
+        UNEXAMINED,
+        "string_resolution",
+        "referenced by no code and were not reviewed",
+    )
+    found = _applied(report, row)
+    assert [v.code for v in found] == [KEPT_IN_SOURCE_WORDS_CODE]
+    assert said in _limitations(report)
 
 
 @pytest.mark.parametrize(

@@ -95,6 +95,7 @@ from malspark.reporting.renderers.markdown import (
     report_title,
     started_by_the_sample,
 )
+from malspark.reporting.sentence_ends import SENTENCE_CLOSE, ends_sentence
 from malspark.reporting.technique_evidence import (
     evidence_words,
     technique_evidence_ids,
@@ -811,24 +812,9 @@ _CITED_AFTER = re.compile(r"(?:[ \t]*\[[^\]\n]*\])*")
 # block's marker, or nothing. A marker is one sign or a number with its mark, never both: the
 # number is read only where no sign stands right before it.
 _LINE_OPEN = re.compile(r"[ \t]*[-*+>]?(?:(?<![-*+>])\d+[.)])?[ \t]*")
-# A word of single letters each followed by a period ("e.g.", "i.e."): its last period ends
-# no sentence.
-_ABBREVIATION = re.compile(r"[\"'(\[]*(?:[A-Za-z]\.){2,}")
-
-
-def _ends_sentence(text: str, at: int) -> bool:
-    """Whether the mark at ``text[at]`` ends a sentence: a ``.``, ``!`` or ``?`` that white
-    space or the end follows, any closing quote, bracket or emphasis read past, and no
-    abbreviation's own (never "1.2", never "e.g.")."""
-    if text[at : at + 1] not in (".", "!", "?"):
-        return False
-    after = at + 1
-    while after < len(text) and text[after] in _SENTENCE_CLOSE:
-        after += 1
-    if after < len(text) and not text[after].isspace():
-        return False
-    word = text[: at + 1].split()[-1:] or [""]
-    return not _ABBREVIATION.fullmatch(word[0])
+# Whether the mark at ``text[at]`` ends a sentence: the one rule the agreement round's cut
+# reads too (``sentence_ends``, T-719), so a text it answers as one sentence is one here.
+_ends_sentence = ends_sentence
 
 
 def _stands_whole(text: str, start: int, end: int) -> bool:
@@ -842,10 +828,10 @@ def _stands_whole(text: str, start: int, end: int) -> bool:
         return False
     head = text[:start].rstrip(" \t*_")
     if not _LINE_OPEN.fullmatch(head[head.rfind("\n") + 1 :]):
-        mark = len(head.rstrip(_SENTENCE_CLOSE)) - 1
+        mark = len(head.rstrip(SENTENCE_CLOSE)) - 1
         if mark < 0 or not _ends_sentence(text, mark):
             return False
-    core = said.rstrip().rstrip(_SENTENCE_CLOSE)
+    core = said.rstrip().rstrip(SENTENCE_CLOSE)
     if core[-1:] in (".", "!", "?"):
         return _ends_sentence(text, start + len(core) - 1)
     cited = _CITED_AFTER.match(text, end)
