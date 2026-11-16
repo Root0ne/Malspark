@@ -5795,13 +5795,20 @@ is assembled from what the run gathered rather than recomputed beside it:
   comes from where the platform saw it.** The capture (`pcap_summary`) is a
   sandbox view like the flow table: its conversations' addresses and its TLS
   names are sandbox rows, with no attribution. Each conversation names its two
-  ends and what each sent, one direction after the other
-  (`<internal> → <peer> K pkts, B bytes`, a direction that carried nothing
-  written `none`): the peer is the public address, the internal end the
-  address the capture gives that is not public by the same rule, never a
-  product's field. A conversation with no internal end says so and names the
-  public sender, and a record stored before the ends were named prints the
-  peer's share as the peer's. A name only the capture's TLS
+  ends and what each sent (`<internal> sent K pkts, B bytes; <peer> sent K
+  pkts, B bytes`, an end that sent nothing written `none`): the peer is the
+  public address, the internal end an address the capture gives that is not
+  public by the same rule, never a product's field. Each direction names only
+  the addresses that sent in it: the internal direction names the internal
+  ends that sent to the peer, the peer's direction names the peer and, wherever
+  they are not exactly those, the internal ends it sent to (`to <internal>`),
+  and a public address that sent to the peer is named with what it sent. A
+  conversation with no internal end says so, and a record stored before the
+  ends were named prints the peer's share as the peer's and keeps every other
+  line its writer stored. The report's "Capture summary" keeps its overview,
+  TLS names and beacons whole; past the section's room it lists the heaviest
+  conversations and says how many it leaves out and where they all are. A
+  name only the capture's TLS
   list recorded, which no DNS or HTTP view names, is `capture_only` and reads
   `no: a TLS name only the capture recorded, which does not say which process
   made the connection, and no model kept it as an indicator` until the judge
