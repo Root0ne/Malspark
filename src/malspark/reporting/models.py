@@ -212,10 +212,13 @@ class StringIOC(BaseModel):
         "other",
     ]
     notes: str | None = None
-    # The longer token the string sweep cut this value out of
-    # (``tools.strings.cut_from``): the value is no whole value of the file,
-    # and the publish rule refuses it. ``None`` for a value that stands whole,
-    # and then left out of the dump, so a stored report reads and dumps as it did.
+    # The longer token the string sweep cut this value out of, as much of it
+    # as a refusal quotes (``tools.strings.token_cuts``): the value is no whole
+    # value of the file, and only an observation that holds it as a whole
+    # token confirms it. Recorded by the build from the sample's own text (no
+    # tool answer carries it); ``None`` for a value that stands whole or a
+    # build without the sample, and then left out of the dump, so a stored
+    # report reads and dumps as it did.
     cut_from: str | None = Field(default=None, exclude_if=lambda value: value is None)
 
 

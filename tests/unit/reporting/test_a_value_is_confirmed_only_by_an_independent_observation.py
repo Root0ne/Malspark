@@ -1,23 +1,18 @@
 """A value taken from the file's text is confirmed only by an observation independent of that text.
 
 A string row (a path, a registry key, a mutex) is published when a second
-source holds it whole. Every reading of the same bytes used to count as one —
-a decompile, a string search, a byte read, an extractor, a strings tool that
-declares no kind — and so did an entry nobody cited when another entry of its
-section was cited. Five path fragments of a language runtime and of a
-deletion command were published that way, entered the STIX bundle and the
-drafted rules.
+source holds it whole. What confirms it: a record of the sandbox or of
+persistence, or an entry an analyst claim cites whose declaration says it
+observes the sample or recovers the value (emulation, decoding, a transform
+that ran a step, a kind that states ``observes``), or of a tool that declares
+no kind, which is used at full strength and named in the reason. Another
+declared kind — a decompile, a string search, a byte read, an extractor —
+reads the file's text again and confirms nothing.
 
-What confirms such a value: a record of the sandbox or of persistence, or an
-entry an analyst claim cites whose declared kind observes the sample or
-recovers the value (emulation, decoding). Another declared kind reads the
-file's text again and confirms nothing. A tool that declares no kind is used
-at full strength, except for a value that stands as plain text in the string
-sweep's record: its entry then reads the file's own text, and the refusal
-says so, so an operator can declare the tool. The decision is per entry: a
-section that stands on an entry nobody cited confirms nothing by its text,
-and the run's corpus is read entry by entry where it has one. A value the
-sweep cut out of a longer token is no whole value, whatever holds it.
+The decision is per entry and is recorded once at build time, so the IOC
+table, the feed and the export read one record. A value the sweep cut out of
+a longer token is confirmed only where an observation holds it as a whole
+token of its own. Each refusal states its reason in its first clause.
 """
 
 from __future__ import annotations
@@ -27,6 +22,7 @@ from typing import Any
 import pytest
 
 from malspark.agents.run_evidence_corpus import RunEvidenceCorpus
+from malspark.core.builtin_declarations import OBSERVING_KINDS
 from malspark.reporting.builder import MalwareReportBuilder, build_consolidated_iocs
 from malspark.reporting.models import (
     DynamicBehavior,
@@ -379,7 +375,7 @@ class TestACutIsNoWholeValue:
         command = "del /f /q C:\\ProgramData\\Vendor\\Support\\*.*"
         rows = [
             StringIOC(**{key: row[key] for key in row if key in StringIOC.model_fields})
-            for row in iter_string_iocs(b"\x00" + command.encode() + b"\x00")
+            for row in iter_string_iocs(b"\x00" + command.encode() + b"\x00", cuts=True)
             if row["kind"] == "path" and row["value"] == "/f /q C"
         ]
         assert rows
@@ -632,3 +628,48 @@ class TestObservingIsDeclared:
 
         assert ToolFacts(kind="kernel_trace", observes=True).observes
         assert not ToolFacts(kind="kernel_trace").observes
+
+
+class TestEachReasonStatesItselfFirst:
+    """The composer is quoted a refusal's first clause: each new reason says itself there."""
+
+    def test_a_cut_s_first_clause(self) -> None:
+        token = "/opt/relay/bin/agent:" + "x" * 500
+        report = _report(StringIOC(kind="path", value="/opt/relay/bin/agent", cut_from=token))
+
+        answer = _answer(report, "/opt/relay/bin/agent")
+        first, _, rest = answer.partition(";")
+        assert first == "no: cut out of a longer string in the file, so not a whole value"
+        # The token is quoted after it, bounded.
+        assert rest.strip().startswith('the string reads "/opt/relay/bin/agent:xx')
+        assert len(answer) < 200
+
+    def test_a_reading_again_keeps_the_reason_the_composer_was_given(self) -> None:
+        answer = _answer(_held_by("listing", RUNTIME_PATH), RUNTIME_PATH)
+
+        assert answer.split(";", 1)[0] == "no: seen only in the file's strings"
+
+    def test_an_undeclared_confirmation_keeps_the_published_reason_first(self) -> None:
+        answer = _answer(_held_by(None, RUNTIME_PATH), RUNTIME_PATH)
+
+        assert answer.split(";", 1)[0] == "yes: a second source in this run records it"
+
+
+class TestTheRecordIsAskedForWholeValues:
+    def test_an_observation_holding_only_a_longer_value_confirms_nothing(self) -> None:
+        report = _report(
+            StringIOC(kind="mutex", value="Global\\RelayLock7"),
+            dynamic=DynamicBehavior(
+                process_tree=[
+                    ProcessNode(pid=4, name="a.exe", command_line="a.exe Global\\RelayLock77")
+                ]
+            ),
+        )
+
+        assert not publishes(_answer(report, "Global\\RelayLock7"))
+
+    @pytest.mark.parametrize("kind", sorted(OBSERVING_KINDS))
+    def test_every_observing_kind_of_the_platform_confirms(self, kind: str) -> None:
+        report = _held_by(kind, REGISTRY_KEY, "registry")
+
+        assert publishes(_answer(report, REGISTRY_KEY)), kind

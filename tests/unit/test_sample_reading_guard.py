@@ -101,9 +101,6 @@ ALLOWED = {
     ("src/malspark/providers/static/capa_yara.py", "CapaYaraStaticProvider._run_yara"): LEFT,
     # The report's YARA draft checked against the sample.
     ("src/malspark/reporting/detection_signatures.py", "_run_on_sample"): LEFT,
-    # The recovered-value holdout's read of the sample's plain-string runs,
-    # where no strings entry listed every one.
-    ("src/malspark/reporting/renderers/stix_renderer.py", "_plain_in_the_file"): LEFT,
     # A static provider's anti-analysis pass reads the image's sections in
     # the worker to place what the provider's scan found.
     ("src/malspark/analysis/anti_analysis.py", "image_of"): LEFT,

@@ -1241,5 +1241,5 @@ def _extract_string_iocs(blob: bytes) -> list[StringIOC]:
         StringIOC(  # type: ignore[arg-type]
             value=row["value"], kind=row["kind"], notes=row["notes"], cut_from=row.get("cut_from")
         )
-        for row in iter_string_iocs(blob)
+        for row in iter_string_iocs(blob, cuts=True)
     ]

@@ -182,6 +182,7 @@ class MalwareReportBuilder:
             exported_indicator_values,
             recovered_network_values,
             second_source_reads,
+            with_cuts_from_the_file,
         )
 
         # What the calls answered. A repeat the guard answered from an earlier
@@ -200,6 +201,10 @@ class MalwareReportBuilder:
         # empty otherwise. The network block also reads which values the
         # analysts listed, which it states and never publishes on alone.
         static = static_from_ledger(ledger)
+        if static is not None:
+            # A path or a registry key the sweep cut out of a longer token of
+            # the sample, recorded as such from the sample's own text.
+            with_cuts_from_the_file(static.interesting_strings, self.sample_path)
         directed = directed_text_from_ledger(ledger)
         dynamic = dynamic_from_ledger(ledger)
         # What only a recovering tool read. Each domain, address and URL in it
@@ -343,7 +348,9 @@ class MalwareReportBuilder:
         # How each entry stands to the values asked as the file's text, read
         # entry by entry: the one record the IOC table, the feed and the
         # export decide a string row's second source from.
-        report.second_source_reads = second_source_reads(report, ledger, self.evidence_corpus)
+        report.second_source_reads = second_source_reads(
+            report, self.evidence_ledger, self.evidence_corpus
+        )
 
         # Deterministic front-matter, version history,
         # and consolidated IOC table (the professional-report scaffolding the

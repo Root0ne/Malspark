@@ -845,8 +845,7 @@ class TestTheSpanPath:
 
         for blob in self._corpus():
             rows = string_iocs_with_spans(blob)
-            keys = ("kind", "value", "notes", "source", "cut_from")
-            plain = [{k: r[k] for k in keys if k in r} for r in rows]
+            plain = [{k: r[k] for k in ("kind", "value", "notes", "source")} for r in rows]
             assert plain == iter_string_iocs(blob)
             for row in rows:
                 held = blob[row["start"] : row["end"]][:: row["width"]]

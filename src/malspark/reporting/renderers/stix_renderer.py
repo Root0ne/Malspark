@@ -33,7 +33,6 @@ from contextlib import contextmanager
 from contextvars import ContextVar
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from pathlib import Path
 from typing import Any
 
 from malspark.agents._indicator_denylists import (
@@ -146,6 +145,7 @@ from malspark.schemas.stix_pattern import (
     unknown_object_types,
 )
 from malspark.tools.call_sites import passed_to_words
+from malspark.tools.strings import CUT_QUOTED
 
 _SHA256_RE = re.compile(r"^[0-9a-fA-F]{64}$")
 
@@ -2791,9 +2791,9 @@ def indicator_publish_reason(
     well-known benign host or a denied URL host. It admits nothing under a
     Benign ``verdict``, nor under one the judge did not state with a confidence:
     a Benign run publishes no malicious indicator, and the refusal says so.
-    Nor a name its recovering tool spelled as code (``spelled``, the tool's
-    spelling of the name, asked :func:`reads_as_a_host_in_the_bytes` as a
-    mailbox the sweep read is): a runtime's ``time.Date`` is no hidden host.
+    Nor a name its recovering tool spelled in the shape of a code identifier
+    (``spelled``, the tool's spelling of the name, :func:`_spelled_as_code`):
+    a runtime's ``time.Date`` is no hidden host.
     A value only the string sweep read stays unpublished.
     """
     if kind == "ip" and is_public_resolver(value):
@@ -4028,28 +4028,48 @@ def _emulation_admits(host: str, recovered: str, verdict: Any, spelled: str = ""
     return recovered
 
 
-def _spelled_as_code(spelled: str) -> bool:
-    """Whether a recovering tool's spelling of a name reads as code rather than as a host.
+def _spelled_reason(spelled: str) -> str:
+    """Why a name its tool spelled as code is refused, in one bounded clause."""
+    shown = spelled if len(spelled) <= _CUT_QUOTED else spelled[:_CUT_QUOTED] + "…"
+    return f"its tool spells it {shown}, which reads as code, not as a host"
 
-    The question the e-mail path asks of a mailbox's domain part
-    (:func:`reads_as_a_host_in_the_bytes`), asked of the name as the tool
-    wrote it: an identifier capitalises what it reaches into, and a host name
-    never does. ``""`` (no spelling recorded) asks nothing.
+
+def _spelled_as_code(spelled: str) -> bool:
+    """Whether a recovering tool's spelling of a name has the shape of a code identifier.
+
+    A lower-case label followed by a member that begins with a capital, as
+    the tool wrote it (``time.Date``, ``cfg.Online``): a package or an object
+    reaching into what it holds. Capitals as such say nothing — a host is
+    written ``Evil-C2.com`` or ``EVIL.COM`` as readily — and a member is an
+    identifier's characters only, so a label with a hyphen is no member.
+    ``""`` (no spelling recorded) asks nothing.
     """
-    return bool(spelled) and not reads_as_a_host_in_the_bytes(spelled)
+    return bool(spelled) and _MEMBER_ACCESS.search(spelled) is not None
+
+
+# A lower-case label, then a label that begins with a capital and holds only an
+# identifier's characters, each standing between dots or the name's ends.
+_MEMBER_ACCESS = re.compile(r"(?:^|\.)[a-z][a-z0-9_]*\.[A-Z][A-Za-z0-9_]*(?=\.|$)")
 
 
 def _spelled_name(kind: str, written: str) -> str:
-    """The name a recovered value spells: a domain's whole, a URL's host as written; else ``""``."""
+    """The name a recovered value spells: a domain's whole, a URL's host as written; else ``""``.
+
+    A URL's host is read past its scheme, its user part and its port; a host
+    in brackets, or one that reads as an address, is an address and spells
+    no name.
+    """
     if kind == "domain":
         return written
     if kind != "url":
         return ""
     rest = written.split("://", 1)[-1]
-    host = re.split(r"[/?#]", rest, maxsplit=1)[0].rsplit("@", 1)[-1]
-    host = host.rsplit(":", 1)[0] if host.count(":") == 1 else host
+    authority = re.split(r"[/?#]", rest, maxsplit=1)[0].rsplit("@", 1)[-1]
+    if authority.startswith("["):
+        return ""
+    host = authority.rsplit(":", 1)[0] if authority.count(":") == 1 else authority
     try:
-        ipaddress.ip_address(host.strip("[]"))
+        ipaddress.ip_address(host)
     except ValueError:
         return host
     return ""
@@ -4253,9 +4273,11 @@ def emulation_from_ledger(ledger: Iterable[Any] | None, sample: Any = None) -> E
     recovered, no decoder entry listed every result, or no ``strings`` entry
     listed every plain string, so a value past a page could be missing from
     either side. Where no strings entry listed every plain string and the
-    build has the sample (``sample``, its path), the holdout reads the
-    sample's own plain-string runs instead (:func:`_plain_in_the_file`), and
-    the record is then whole on that side. Built at build time and stored on
+    build has the sample (``sample``, its path), the holdout asks the sample's
+    own plain-string runs instead, through the readers' boundary and bounded
+    in what it reads (:func:`read_the_file_text`), and the record is then
+    whole on that side; a sample the reading did not read leaves the record
+    partial, and its partial reason says why. Built at build time and stored on
     the report, so no kept-row cap of a section decides a publish answer.
     """
     values: dict[str, str] = {}
@@ -4321,18 +4343,26 @@ def emulation_from_ledger(ledger: Iterable[Any] | None, sample: Any = None) -> E
                 if isinstance(row, dict) and _first_in_row(row, text_path)
             )
     kept, plain = _hold_out_plain(values, plain_texts)
-    read = _plain_in_the_file(sample) if kept and not (sweeps and strings_whole) else None
-    if read is not None:
-        kept, in_the_file = _hold_out_plain(kept, [(PLAIN_IN_THE_FILE, text) for text in read])
-        plain.update(in_the_file)
+    answer = (
+        read_the_file_text(sample, plain=kept) if kept and not (sweeps and strings_whole) else None
+    )
+    read = isinstance(answer, Mapping) and bool(answer.get("read"))
+    if read:
+        held = {str(value) for value in answer.get("plain") or ()}  # type: ignore[union-attr]
+        plain.update({value: PLAIN_IN_THE_FILE for value in kept if value.lower() in held})
+        kept = {value: entry for value, entry in kept.items() if value.lower() not in held}
     why: list[str] = []
     if emulators and not emulated_whole:
         why.append(EMULATOR_PARTIAL.format(tools=" or ".join(emulators)))
     if decoders and not decoder_whole:
         why.append(DECODER_PARTIAL.format(tools=" or ".join(decoders)))
-    if kept and not (sweeps and strings_whole) and read is None:
+    if kept and not (sweeps and strings_whole) and not read:
         said = " or ".join(sweeps) or tool_kinds.stored_word_of_kind(_PLAIN)
-        why.append(SWEEP_PARTIAL.format(tools=said))
+        unread = answer.get("why") if isinstance(answer, Mapping) else ""
+        why.append(
+            SWEEP_PARTIAL.format(tools=said)
+            + (f", and the sample's own text was not read ({unread})" if unread else "")
+        )
     # Every string FLOSS recovered is a value of the record, and most are not
     # network values: the stored provenance is kept for the values the decoder
     # read and for the FLOSS values that are a domain, an address or a URL.
@@ -4354,26 +4384,54 @@ def emulation_from_ledger(ledger: Iterable[Any] | None, sample: Any = None) -> E
     )
 
 
-# What the plain-copy holdout names as the holder when it read the sample's bytes.
-PLAIN_IN_THE_FILE = "the sample's own bytes"
+def read_the_file_text(sample: Any, plain: Iterable[str] = (), cut: Iterable[str] = ()) -> Any:
+    """What the sample's own text says of asked values, through the readers' boundary.
 
-
-def _plain_in_the_file(sample: Any) -> list[str] | None:
-    """Every plain-string run of the sample's bytes, lowercased, or ``None`` when it cannot be read.
-
-    The runs the string sweep reads (``tools.strings._iter_strings``: ASCII,
-    then UTF-16LE), all of them, so the "also a plain string" holdout asks the
-    file rather than a paged listing of it.
+    The platform's reading of the file's text (``tools.readers`` ``file_text``:
+    ``tools.strings.file_text_reading``), run where that reading runs and
+    bounded in what it reads; ``None`` with no sample, and the reading's
+    ``read`` false and ``why`` when it did not read it.
     """
-    from malspark.tools.strings import _iter_strings
-
     if not sample:
         return None
+    from malspark.tools.readers import SampleReaders
+
+    path = str(sample)
     try:
-        blob = Path(str(sample)).read_bytes()
-    except OSError:
-        return None
-    return [text.lower() for text in _iter_strings(blob)]
+        answer = SampleReaders(sample_path=path).read(
+            "file_text", path=path, plain=sorted(set(plain)), cut=sorted(set(cut))
+        )
+    except Exception as exc:  # noqa: BLE001 — a reading that failed reads nothing
+        return {"read": False, "why": f"the reading failed ({type(exc).__name__})"}
+    return answer if isinstance(answer, Mapping) else None
+
+
+def with_cuts_from_the_file(rows: Iterable[Any], sample: Any) -> None:
+    """Mark each path or registry key row the sweep cut out of a longer token of the sample.
+
+    The run's record of the cut (``StringIOC.cut_from``), read from the
+    sample's own text as the sweep reads it (:func:`read_the_file_text`): no
+    tool answer carries it. A row the reading cannot place keeps its standing.
+    """
+    asked = [row for row in rows if getattr(row, "kind", "") in _CUT_KINDS]
+    if not asked:
+        return
+    answer = read_the_file_text(sample, cut=(str(row.value).lower() for row in asked))
+    tokens = answer.get("cut") if isinstance(answer, Mapping) and answer.get("read") else None
+    if not isinstance(tokens, Mapping):
+        return
+    for row in asked:
+        token = tokens.get(str(row.value).lower())
+        if token:
+            row.cut_from = str(token)
+
+
+# The kinds the sweep's pattern can cut out of a longer token.
+_CUT_KINDS = frozenset({"path", "registry"})
+
+
+# What the plain-copy holdout names as the holder when it read the sample's bytes.
+PLAIN_IN_THE_FILE = "the sample's own bytes"
 
 
 def recovered_network_values(record: EmulatedStrings) -> list[str]:
@@ -4817,9 +4875,8 @@ def publish_answer(
     if recovered and verdict == UNSTATED_VERDICT:
         return f"no: {recovered}, but the judge stated no verdict with a confidence"
     if recovered and _spelled_as_code(spelled):
-        return (
-            f"no: {recovered}, but its tool spells it {spelled}, which reads as code, not as a host"
-        )
+        # The reason in the first clause, the recovery it refuses after it.
+        return f"no: {_spelled_reason(spelled)}; {recovered}"
     if also_plain:
         return (
             f"no: seen only in the file's strings — also a plain string in the file "
@@ -4848,6 +4905,8 @@ def publish_answer(
         if from_strings and kind not in ("domain", "ip", "url")
         else ""
     )
+    if refused.startswith(CUT_REASON):
+        return f"no: {refused}"
     if refused:
         return f"no: seen only in the file's strings; {refused}"
     return "no: seen only in the file's strings"
@@ -5302,8 +5361,18 @@ _STRING_SWEEP_TOOLS = "stix_renderer._STRING_SWEEP_TOOLS"
 
 # The reason a string row is published on a second source, on every surface.
 SECOND_SOURCE = "a second source in this run records it"
-# How much of the token a value was cut out of a refusal quotes.
-_CUT_QUOTED = 80
+# How much of the token a value was cut out of a refusal quotes: what the
+# record keeps of it (``tools.strings.CUT_QUOTED``).
+_CUT_QUOTED = CUT_QUOTED
+# Why a value the sweep cut out of a longer token is refused, as a refusal's
+# first clause says it.
+CUT_REASON = "cut out of a longer string in the file, so not a whole value"
+
+
+def _quoted_token(token: str) -> str:
+    """The token a value was cut out of, as a refusal quotes it, bounded."""
+    held = token.removesuffix("…")
+    return held if len(held) <= _CUT_QUOTED and held == token else held[:_CUT_QUOTED] + "…"
 
 
 def _sweeps_the_strings(row: Any, named: str) -> bool:
@@ -5462,8 +5531,9 @@ def second_source_refusal(value: Any, corroborating: Any) -> str:
     low = text.lower()
     token = record.cut.get(low, "")
     if token:
-        quoted = token if len(token) <= _CUT_QUOTED else token[:_CUT_QUOTED] + "…"
-        return f'cut out of the longer string "{quoted}" in the file, so not a whole value'
+        # The reason in its first clause, which is the clause a model is
+        # quoted; the token, as the record keeps it, after it.
+        return f'{CUT_REASON}; the string reads "{_quoted_token(token)}"'
 
     def holders(held: tuple[tuple[str, str], ...]) -> list[str]:
         return list(dict.fromkeys(tool for tool, part in held if whole_value_in(text, part)))
@@ -5611,7 +5681,15 @@ def second_source_reads(
     asked = _asked_values(report)
     if not asked:
         return []
+    entries = list(ledger or ())
     cited = _cited_entries(report)
+    # A claim citing a repeat the guard answered from an earlier entry stands
+    # on that entry's answer.
+    cited |= {
+        str(entry.repeated_of)
+        for entry in entries
+        if getattr(entry, "repeated_of", None) and str(getattr(entry, "id", "")) in cited
+    }
     static = getattr(report, "static", None)
     cut = {
         str(row.value or "").strip().lower()
@@ -5620,11 +5698,11 @@ def second_source_reads(
     }
     index = tool_kinds.index_by_id(getattr(report, "evidence_index", None) or [])
     reads: list[SecondSourceRead] = []
-    for entry in ledger or ():
+    for entry in entries:
         entry_id = str(getattr(entry, "id", "") or "")
         named = str(getattr(entry, "tool", "") or "")
         row = index.get(entry_id)
-        if not entry_id or _sweeps_the_strings(row, named):
+        if not entry_id or getattr(entry, "repeated_of", None) or _sweeps_the_strings(row, named):
             continue
         text = _entry_text(entry, corpus).lower()
         if not text:

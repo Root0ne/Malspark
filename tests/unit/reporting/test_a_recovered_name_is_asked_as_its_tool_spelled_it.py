@@ -1,16 +1,16 @@
-"""A recovered name is asked the capitalisation question in its tool's own spelling.
+"""A recovered name its tool spelled in the shape of a code identifier is no hidden host.
 
-An emulator's stack string ``time.Date(`` — a language runtime's identifier —
-was read as the domain ``time.date`` (``.date`` is a top-level domain) and
-published as a value the sample hid. The string sweep's e-mail path already
-asks whether a name reads as a host in the bytes: an identifier capitalises
-what it reaches into, and a host name never does. A recovered name is asked
-the same question of the spelling its recovering tool wrote.
+An emulator's stack string ``time.Date(`` is a language runtime's identifier,
+not the domain ``time.date``: a lower-case label followed by a member that
+begins with a capital, as the recovering tool wrote it, reads as code.
+Capitals as such say nothing — a host written ``Evil-C2.com`` or ``EVIL.COM``,
+or a URL's host past its user part and its port, keeps its standing, and a
+bracketed host is an address.
 
-And a value only a recovering tool read is held out when it is also a plain
-string in the file. Where no strings entry listed every plain string, that
-holdout read a partial record and kept the value; it reads the sample's own
-bytes instead, when the build has them.
+A value only a recovering tool read is held out when it is also a plain
+string in the file. Where no strings entry listed every plain string, the
+holdout reads the sample's text through the readers' boundary, bounded: a
+file over the bound is not read, and the record says so.
 """
 
 from __future__ import annotations
@@ -18,8 +18,12 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
+import pytest
+
 from malspark.reporting.models import FileHashes, MalwareReport, SampleIdentity
 from malspark.reporting.renderers.stix_renderer import (
+    _spelled_as_code,
+    _spelled_name,
     emulation_from_ledger,
     emulation_kwargs,
     publish_answer,
@@ -71,7 +75,10 @@ class TestTheSpellingIsAsked:
 
         answer = _answer(report, "time.date")
         assert not publishes(answer), answer
-        assert "time.Date" in answer
+        # The reason first, the clause the composer is quoted; the recovery after it.
+        assert answer.split(";", 1)[0] == (
+            "no: its tool spells it time.Date, which reads as code, not as a host"
+        )
 
     def test_a_made_up_member_access_of_another_shape(self) -> None:
         report = _report([_floss("cfg.Online")])
@@ -84,15 +91,69 @@ class TestTheSpellingIsAsked:
         assert publishes(_answer(report, HIDDEN))
 
     def test_a_url_s_host_is_asked_the_same(self) -> None:
-        report = _report([_floss("https://Cfg.Online/gate")])
+        report = _report([_floss("https://cfg.Online:8443/gate")])
 
         answer = publish_answer(
             "url",
-            "https://cfg.online/gate",
+            "https://cfg.online:8443/gate",
             "strings",
-            **emulation_kwargs(report, "url", "https://cfg.online/gate"),
+            **emulation_kwargs(report, "url", "https://cfg.online:8443/gate"),
         )
         assert not publishes(answer), answer
+
+    def test_a_host_written_with_capitals_keeps_its_standing(self) -> None:
+        report = _report([_floss("https://Relay7.BadHost.top/gate")])
+
+        answer = publish_answer(
+            "url",
+            "https://relay7.badhost.top/gate",
+            "strings",
+            **emulation_kwargs(report, "url", "https://relay7.badhost.top/gate"),
+        )
+        assert publishes(answer), answer
+
+
+class TestOnlyAnIdentifierShapeIsCode:
+    """A lower-case label followed by a member that begins with a capital; not capitals as such."""
+
+    @pytest.mark.parametrize(
+        ("kind", "written"),
+        [
+            ("domain", "Evil-C2.com"),
+            ("domain", "EVIL.COM"),
+            ("domain", "update.MicrosoftOnline-cdn.net"),
+            ("domain", "xn--80ak6aa92e.com"),
+            ("domain", "XN--80AK6AA92E.COM"),
+            ("domain", "\u043f\u0440\u0438\u043c\u0435\u0440.\u0440\u0444"),
+            ("domain", "My-Host.example.org."),
+            ("domain", "evil.com:443"),
+            ("url", "http://Evil.com:8080/a/B?x=1"),
+            ("url", "https://user@EVIL.com/x"),
+            ("url", "HTTP://evil.com/A"),
+            ("url", "http://evil.com:/x"),
+            ("url", "http://[::1]:80/x"),
+            ("url", "http://[2001:db8::7]/gate"),
+            ("url", "http://10.0.0.1:8080/"),
+        ],
+    )
+    def test_a_host_keeps_its_standing(self, kind: str, written: str) -> None:
+        assert not _spelled_as_code(_spelled_name(kind, written))
+
+    @pytest.mark.parametrize(
+        ("kind", "written"),
+        [
+            ("domain", "time.Date"),
+            ("domain", "cfg.Online"),
+            ("domain", "os.Getenv"),
+            ("url", "http://cfg.Online:8080/gate"),
+            ("url", "https://user@runtime.GOROOT/x"),
+        ],
+    )
+    def test_an_identifier_reads_as_code(self, kind: str, written: str) -> None:
+        assert _spelled_as_code(_spelled_name(kind, written))
+
+    def test_a_bracketed_address_is_read_as_an_address(self) -> None:
+        assert _spelled_name("url", "http://[2001:db8::7]:443/gate") == ""
 
 
 class TestThePlainHoldoutReadsTheFile:
@@ -123,3 +184,41 @@ class TestThePlainHoldoutReadsTheFile:
 
         assert HIDDEN in record.values
         assert "plain string" in record.partial
+
+
+class TestTheHoldoutReadsThroughTheReaders:
+    """The holdout's read of the sample is a reading of the readers' boundary, bounded."""
+
+    def test_it_is_a_reading_of_the_boundary(self) -> None:
+        from malspark.tools.readers import READERS
+
+        assert READERS["file_text"].stands_for == "strings"
+
+    def test_a_file_over_the_bound_is_not_read_and_the_record_says_so(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from malspark.tools import strings
+
+        monkeypatch.setattr(strings, "FILE_TEXT_MAX_BYTES", 64)
+        sample = tmp_path / "sample.bin"
+        sample.write_bytes(b"\x00" * 64 + b"call relay7.badhost.top now\x00")
+
+        record = emulation_from_ledger(
+            [_paged_strings("GetProcAddress"), _floss(HIDDEN)], sample=str(sample)
+        )
+
+        # The value keeps the standing it has without the read.
+        assert HIDDEN in record.values
+        assert "the sample's own text was not read" in record.partial
+        assert "over the 64" in record.partial
+
+    def test_what_the_reading_holds_is_bounded_by_the_file(self, tmp_path: Path) -> None:
+        from malspark.tools.strings import file_text_reading
+        from tests.linear_cost import peak_bytes
+
+        sample = tmp_path / "sample.bin"
+        sample.write_bytes(b"GetProcAddress\x00relay7.badhost.top\x00" * 120_000)
+        size = sample.stat().st_size
+
+        held = peak_bytes(lambda: file_text_reading(str(sample), [HIDDEN, "other.example"]))
+        assert held < 4 * size, (held, size)
