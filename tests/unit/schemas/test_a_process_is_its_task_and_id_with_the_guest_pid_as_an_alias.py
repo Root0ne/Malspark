@@ -194,6 +194,13 @@ class TestWhetherEveryProcessARecordCouldNameStatesItsGuestPid:
 
         assert found.states_every_guest_pid() is False
 
+    def test_a_task_less_row_of_a_listed_process_is_no_process_of_its_own(self) -> None:
+        found = ProcessIdentities()
+        found.add("84", task="b1", guest_pid="1756")
+        found.add("84")
+
+        assert found.states_every_guest_pid() is True
+
     def test_a_task_the_listing_does_not_hold_and_an_empty_listing_state_none(self) -> None:
         assert _two_tasks().states_every_guest_pid("t9") is False
         assert ProcessIdentities().states_every_guest_pid() is False

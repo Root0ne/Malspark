@@ -166,7 +166,12 @@ class ProcessIdentities:
         return list(dict.fromkeys(ids))
 
     def guest_of(self, key: ProcessKey) -> str:
-        """The guest's pid an answer states for ``key``, ``""`` where none does or two differ."""
+        """The guest's pid an answer states for ``key``.
+
+        Its own task's statement is read first, else that of a row stating no
+        task that names only it; ``""`` where none does or the statements read
+        for one of the two differ among themselves.
+        """
         held = [key, ProcessKey("", key.id)] if key.task else [key]
         for one in held:
             if one in self._guest_of and self._as_listed(one) == [key]:
