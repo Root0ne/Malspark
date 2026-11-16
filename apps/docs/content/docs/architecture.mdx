@@ -1598,26 +1598,28 @@ Two producers use it:
   The section agreement round (`reporting.section_agreement`) reads every
   passage the report models wrote against the platform's facts, section 5, the
   debate's mediations and the judge's decision as the run records it
-  (`reporting.judge_decision`): the verdict and its confidence where the judge
-  assessed one, the family the judge named or none, each published technique,
-  and each technique the judge dropped with the judge's reason as the
-  capability matrix keeps it. The decision is shown under THE JUDGE'S DECISION
-  (`judge.verdict`, `judge.family`, `judge.technique.<ID>`) and is a source of
-  every passage the round may rewrite, section 5 included; another analyst's
-  words, a debate round and the judge's own notes are no source of a section 5
-  sentence. Code holds each sentence that writes, outside a quoted label or an
-  identifier and in a clause with no negation, the id or the catalogue name of a technique the
-  judge dropped, a verdict word other than the judge's, or a family name the
-  run's records hold that the judge did not name, and every other sentence of
-  its paragraph. The model answers each: a rewrite keeps every id the sentence
-  cites and cites an entry its judge passage cites; a keep quotes a source's
-  words holding two of the sentence's own; a drop gives its reason. A held
-  sentence no answer passes for after the retry is left out and recorded with
-  the judge's passages that hold it; one kept on a quote that passed stands and
-  is recorded (`agreement.judge_held_kept`). Nothing here changes the verdict,
-  the mappings or the matrix. A refusal of the round's last answer is recorded
-  with the passage and the sentence its row was about, and says that no turn
-  was left to answer it.
+  (`reporting.judge_decision`): the verdict and its confidence band where the
+  judge assessed one, the family the judge named or none, each published
+  technique by id and name, and each technique the judge dropped with the
+  judge's reason as the capability matrix keeps it. The decision is shown under
+  THE JUDGE'S DECISION (`judge.verdict`, `judge.family`,
+  `judge.technique.<ID>`) and is a source of every passage the round may
+  rewrite, section 5 included; another analyst's words, a debate round and the
+  judge's own notes are no source of a section 5 sentence. Which sentence states
+  otherwise than the decision is the model's answer; code picks no sentence by a
+  name. A section 5 sentence answered on the decision is only left out, the row
+  naming the judge passage with a reason: it is counted where it is left out and
+  recorded with the sentence whole (`agreement.judge_left_out`); a row of any
+  other form on it is refused and the sentence stands as written. A rewrite of
+  any other passage resting on the decision is refused where its own words
+  write, in a clause with no denial, the id or the catalogue name of a technique
+  the judge dropped (a sub-technique of a dropped parent included), a verdict
+  word other than the judge's, or a family name the run's records hold that the
+  judge did not name (`agreement.judge_denied`); a quoted label, a heading and a
+  tag list write none. The decision starts no question of its own, and nothing
+  here changes the verdict, the mappings or the matrix. A refusal of the round's
+  last answer is recorded with the passage and the sentence its row was about,
+  and says that no turn was left to answer it.
 
   A function name the run resolved at runtime from a stored value is not an
   import. `api_capability` takes such names as `resolved_names` and marks them
