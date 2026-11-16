@@ -1,0 +1,3 @@
+### Fixed
+
+- **A signature's indicator states a process's guest pid once (T-711).** An indicator field that a sandbox reader declares as stating the guest pid of the process that acted or of the one acted on (`IndicatorFields.process_guest_pid`, `.target_guest_pid`; a Triage indicator's `pid` and `pid_target`) is left out of the indicator's values where it is the guest pid of the process the indicator resolves to, which that process states beside its id; any other number, and one of a process the report does not settle, stays among the values. A reader that declares no such field keeps every value.

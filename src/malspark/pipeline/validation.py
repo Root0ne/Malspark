@@ -228,6 +228,11 @@ class Violation:
     # run record keeps it (``unparsed_answer_rows``); the event that asks says
     # only where. Never shown to the producer and never stored on the channel.
     answer: str = ""
+    # What the finding left out of a checked text or put another text in place of, whole,
+    # as it stood (a sentence the section agreement round left out or replaced): the run
+    # record keeps it on the row (``"stood"``), where the message holds a bounded copy.
+    # Never shown to the producer and never stored on the channel.
+    stood: str = ""
     # What the question shows after the finding's words: the ledger's own text
     # the finding is about (a routine's code, the object that names an
     # address), so the producer can state what the entry shows. Only the
@@ -329,6 +334,7 @@ class ValidationTally:
                 **({"answered": "true"} if v.answered else {}),
                 **({"subject": v.subject} if v.subject else {}),
                 **({"statements": STATEMENT_SEPARATOR.join(v.statements)} if v.statements else {}),
+                **({"stood": v.stood} if v.stood else {}),
             }
             for v in violations
         )

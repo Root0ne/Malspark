@@ -5069,10 +5069,26 @@ is assembled from what the run gathered rather than recomputed beside it:
   restate it. Each source is read for what it is (`evidence_roots.reading_of`):
   a listing of code (`schemas.evidence.lists_code`, the platform's one rule
   for a tool name that decompiles or disassembles); a run observation (its
-  roots are sandbox processes, flows or DNS queries); a rule match (an
+  roots are sandbox processes, flows or DNS queries; each indicator row of a
+  sandbox signature, wherever the answer's kind declares it holds them
+  (`RECORD_PARTS_OF_KIND`: a signature view's `indicators`, an item's
+  `items.*.indicators`), gives the root of the process that acted and of the
+  one acted on, and a row naming no process the report settles gives none and
+  says so); a rule match (an
   asserting tool's entry whose own rows name the technique, or one the
   statement places a row of: a capa match by its address, a sandbox signature
-  by its name, `sandbox signature <name>` being a signature row's own root; a
+  by its name, `sandbox signature <name>` being a signature row's own root, or
+  a sandbox process by the number a statement writes after `pid` or a field
+  a sandbox reader declares names a process by its list's id
+  (`traffic_process_fields`, `IndicatorFields.process`), the report's id or
+  the guest's pid, where that number names one process of the run
+  (`schemas.process_identity`: a process is its task and the report's own id,
+  the guest's pid an alias, and is written with its task where another task
+  lists the same id, `sandbox process 87 in task behavioral1`; a number more
+  than one process answers to names none, and so does an id one listing holds
+  twice in a task, by any number; a row that states no task is the process of
+  its id in the one task that lists it, and names none where several do; a
+  process item's place `proc:87.0` names none); a
   sandbox's own technique tags on a signature, as its report declares them,
   ride on `sandbox_signatures` rows as `technique_ids` and make the citation a
   rule match for those techniques, and a signature's name is never read as a
@@ -5706,7 +5722,20 @@ is assembled from what the run gathered rather than recomputed beside it:
   answers as naming no process, `platform_flows_unsettled`). A DNS request
   takes none: its flow is the guest's resolver, never the program that
   asked, and only a process a DNS row itself
-  names is its maker. A signature's ledger entry carries its indicators,
+  names is its maker. A file, a digest, a key or a mutex the sandbox
+  recorded is the sample's tree's when the record's writer is a process of
+  the sample's tree in the writer's own task: the writer is read as one
+  process (`schemas.process_identity`), by the task the record states and the
+  report's id, or by a number that is the guest's pid any answer of the run
+  states for a listed process (the process tree keeps each process's `task`
+  and `guest_pid`, a child nested under the parent of its own task), and the
+  tree is read per task (`sample_process_trees`). A writer outside its task's
+  tree is outside it, one the listing does not settle (a disputed lineage, or
+  a number two listed processes answer to) is unattributed, and one named by
+  a number no listed process answers to is refused as so named where every
+  listed process it could name (those of its task, where it states one) states
+  its guest pid, never as outside a tree, and is unattributed where one of them
+  states none. A signature's ledger entry carries its indicators,
   read where each reader declares its format states them
   (`ReportReader.signature_indicators`; a mapped format through
   `field_names`, written on the row in the neutral form,
@@ -5830,7 +5859,26 @@ is assembled from what the run gathered rather than recomputed beside it:
   unattributed, and a resolver's URL is never published. **A value's standing
   comes from where the platform saw it.** The capture (`pcap_summary`) is a
   sandbox view like the flow table: its conversations' addresses and its TLS
-  names are sandbox rows, with no attribution. A name only the capture's TLS
+  names are sandbox rows, with no attribution. Each conversation names its two
+  ends and what each sent (`<internal> sent K pkts, B bytes; <peer> sent K
+  pkts, B bytes`, an end that sent nothing written `none`): the peer is the
+  public address, the internal end an address the capture gives that is not
+  public by the same rule, never a product's field. Each direction names only
+  the addresses that sent in it: the internal direction names the internal
+  ends that sent to the peer, the peer's direction names the peer and, wherever
+  they are not exactly those, the internal ends it sent to (`to <internal>`),
+  and a public address that sent to the peer is named with what it sent. A
+  conversation with no internal end says so, and a record stored before the
+  ends were named prints the peer's share as the peer's and keeps every other
+  line its writer stored. The report's "Capture summary" is printed whole
+  when it fits its room (3.3 times a text section's), or when the same rows
+  written with the line that gave the peer's share alone would have fitted a
+  text section and the whole stays within 10 times one (40,000 characters).
+  Otherwise it leaves out conversations first, the heaviest kept, then TLS
+  names, then beacons, those of the heaviest conversations kept, each with how
+  many it leaves out and where they all are, until it fits its room; the
+  overview is never cut, and no capture summary is longer than 40,000
+  characters. A name only the capture's TLS
   list recorded, which no DNS or HTTP view names, is `capture_only` and reads
   `no: a TLS name only the capture recorded, which does not say which process
   made the connection, and no model kept it as an indicator` until the judge
@@ -6023,8 +6071,18 @@ is assembled from what the run gathered rather than recomputed beside it:
   stays unpublished — and so does a value a tool recovered that the sweep
   also read as a whole value in the file's plain strings (a `strings` or
   `iocs_from_file` entry): text the sample did not hide is not recovered, and
-  the refusal names the sweep's entry. Under a Benign verdict it publishes
-  nothing, nor under a verdict the judge did not state with a confidence (a
+  the refusal names the sweep's entry. Where no `strings` entry listed every
+  plain string, that holdout asks the sample's own plain-string runs, when
+  the build has the sample, through the readers' boundary (`tools.readers`
+  `file_text`, bounded at the sample upload cap; a file it does not read
+  leaves the record partial, and the partial reason says why), and names "the
+  sample's own bytes". A recovered name whose tool spelled it in the shape of
+  a code identifier — a lower-case label followed by a last label that begins
+  with a capital — is no hidden host: a runtime's `time.Date` is refused, and
+  the refusal's first clause quotes the spelling; capitals as such say
+  nothing, and `Evil-C2.com`, `cdn.Microsoft.com` or a URL's host past its
+  port keeps its standing. Under a Benign verdict it publishes nothing, nor
+  under a verdict the judge did not state with a confidence (a
   fallback's default word), and the table's refusal says so. A well-known
   benign host is read by its registered name (`*.co.uk` included), and a
   public resolver's address is one too. The record (`emulated_strings` on the
@@ -6512,13 +6570,43 @@ Two halves, in this order:
   `crypto_wallet` have no STIX object and so no pattern; they stay in the
   consolidated IOC table.
 * **Does anything but the sample's own byte image know it.** A `domain` asks the
-  network block's own answer; every other kind asks the run's corroborating
-  record — what a sandbox watched (the process tree, the registry
-  modifications, the file operations, the notable APIs), what a persistence
-  mechanism names, and what an analyst established in an artefact or a finding
-  section. The report's own tool sections are deliberately not in it: they are
-  the string sweep arriving under another heading, and a haystack holding them
-  would answer yes to everything.
+  network block's own answer; every other kind asks the run's second-source
+  record (`stix_renderer.SecondSources`, asked by `second_source` alone) for
+  an observation independent of the file's text, holding the value whole:
+  what a sandbox watched (the process tree, the registry modifications, the
+  file operations, the notable APIs), what a persistence mechanism names, and
+  the answer of an entry an analyst cites in an artefact or a finding whose
+  declaration says it watched the sample or recovered the value — a tool
+  whose declaration states `observes`, the platform's own sandbox and
+  capture kinds, a rule over their events, an emulator, a decoder, a hash
+  resolver (`core.builtin_declarations.OBSERVING_KINDS`), and a transform
+  whose entry ran at least one step (`STEPPED_KINDS`), all read by
+  `tool_kinds.second_source_standing`. Every other declared kind — the string
+  sweep, a listing, a string search, a decompile, a disassembly, a byte read
+  without a step, an extractor — reads the same bytes again and confirms
+  nothing. A tool that declares no kind is used at full strength: its cited
+  entry confirms as an observing tool's does, the reason says the tool
+  declares no kind, and the run summary counts such values
+  (`undeclared_confirmations`), so an operator sees what an undeclared tool
+  confirmed and can declare it. An entry of one of the platform's own servers
+  stored with no kind is read by the kind that server's shipped declaration
+  (`data/own_server_tool_facts_v1.json`) gives its tool, a tool it does not
+  know reads as undeclared, and no other server's entry is read this way. The
+  decision is per entry and is made once,
+  at build time (`stix_renderer.second_source_reads`, stored as
+  `MalwareReport.second_source_reads`): each entry's answer, read from the
+  run's corpus where the byte budget blanked the stored one, is asked for
+  each value, and the IOC table, the feed and the export read that one
+  record; a report stored before it reads its sections, where a section that
+  prints a cited entry beside an uncited one confirms nothing. A path or a
+  registry key the sweep cut out of a longer token of the sample
+  (`StringIOC.cut_from`, recorded by the build from the sample's own text,
+  never in a tool's answer) is confirmed only where an observation holds it
+  as a whole token of its own, by the sweep's token test; a fragment the
+  observation also holds only inside a longer token stays refused. A refusal
+  names what held the value and confirms nothing — a re-reading, an entry no
+  claim cites — and a cut's refusal says so in its first clause and quotes
+  the token after it.
 
 **Validity removes what cannot be the thing; corroboration decides the rest.**
 For a string-derived value the second question is the one that carries the

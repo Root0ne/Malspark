@@ -53,7 +53,7 @@ from malspark.providers import served_listing
 from malspark.providers.served_listing import unlisted as _unlisted
 
 ROOT = Path(__file__).resolve().parents[3]
-CAPTURED = json.loads((ROOT / "tests" / "fixtures" / "own_server_tool_facts.json").read_text())
+CAPTURED = json.loads((ROOT / "data" / "own_server_tool_facts_v1.json").read_text())
 
 
 def _fields(facts: Any) -> dict[str, Any]:

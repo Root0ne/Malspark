@@ -583,6 +583,15 @@ class Reading:
     # names no such field (a field of the same name may hold a path on the
     # sandbox's own host, which is never shown).
     guest_path_fields: tuple[str, ...] = ()
+    # The fields of a dropped file's row that hold the guest's pid of the
+    # process that wrote it, where the source names the writer by an id of its
+    # process list beside it; empty where the source names no such field.
+    dropped_guest_pid_fields: tuple[str, ...] = ()
+    # The fields of a dropped file's row that hold the id the report's process
+    # list gives the process that wrote it; empty where the source names no
+    # such field of its own, and the generic fields are read
+    # (:data:`DROPPED_WRITER_FIELDS`).
+    dropped_writer_fields: tuple[str, ...] = ()
     # Where a signature row states its indicators, as the reader's source
     # declares them (``schemas.signature_indicators``); ``None`` where the
     # source states none.
@@ -639,6 +648,24 @@ def normaliser_reading(
     if reader is None:
         return None
     return reader.reading(str(read_from or "").strip().lower(), str(provider or "").strip().lower())
+
+
+def declared_process_id_fields() -> tuple[str, ...]:
+    """The fields registered readers declare their sources name a process under by its list's id.
+
+    A flow's or a request's process (``traffic_process_fields``) and a
+    signature indicator's (``IndicatorFields.process``), each once, in the
+    readers' order: the words a statement may write before a process's number.
+    """
+    from malspark.providers.sandbox.readers import report_reader, report_reader_ids
+
+    out: dict[str, None] = {}
+    for reader_id in report_reader_ids():
+        reader = report_reader(reader_id)
+        indicators = getattr(reader, "signature_indicators", None)
+        out.update(dict.fromkeys(getattr(reader, "traffic_process_fields", ()) or ()))
+        out.update(dict.fromkeys(getattr(indicators, "process", ()) or ()))
+    return tuple(name for name in out if name)
 
 
 # The words a CAPE report gives four of its blocks, and the document's word
@@ -1121,6 +1148,79 @@ def sample_process_tree(roots: list[Any], file_name: str = "", sha256: str = "")
     )
 
 
+# Where a record's writer is, against the sample's trees (:meth:`ProcessTrees.place`).
+WRITER_IN_TREE = "tree"
+WRITER_OUTSIDE = "outside"
+WRITER_UNSETTLED = "unsettled"
+WRITER_UNLISTED = "unlisted"
+
+
+@dataclass(frozen=True)
+class ProcessTrees:
+    """The sample's process tree in each task a listing holds (:func:`sample_process_trees`).
+
+    ``by_task`` maps each task (``""`` for a listing that states none) to its
+    tree; ``identities`` names every listed process by its task and id, the
+    guest's pid an alias (``schemas.process_identity``); ``names`` are the
+    images of every task's tree.
+    """
+
+    by_task: Mapping[str, SampleTree]
+    identities: Any
+    names: frozenset[str]
+
+    def place(self, pid: Any, task: str | None = None) -> str:
+        """Where the process a record names by ``pid`` (in ``task`` where stated) is.
+
+        ``WRITER_IN_TREE`` for a process of its task's tree,
+        ``WRITER_OUTSIDE`` for a listed process outside it,
+        ``WRITER_UNSETTLED`` for one the listing does not settle (a pid the
+        lineage facts dispute, or a number more than one listed process
+        answers to), ``WRITER_UNLISTED`` for a number no listed process
+        answers to.
+        """
+        keys = self.identities.keys(pid, task)
+        if not keys:
+            return WRITER_UNLISTED
+        if len(keys) > 1:
+            return WRITER_UNSETTLED
+        (key,) = keys
+        tree = self.by_task.get(key.task)
+        if tree is None or key.id in tree.unsettled:
+            return WRITER_UNSETTLED
+        return WRITER_IN_TREE if key.id in tree.pids else WRITER_OUTSIDE
+
+
+def sample_process_trees(roots: list[Any], file_name: str = "", sha256: str = "") -> ProcessTrees:
+    """The sample's process tree per task, by :func:`sample_process_tree`'s rule.
+
+    A report of several tasks gives each task's processes ids of the task's
+    own, so each task's listed processes (each root with what is listed under
+    it, the root's ``task``) are read on their own; a listing that states no
+    task is one tree, as it always was. Every listed process is named by its
+    task and id, the guest's pid it states an alias.
+    """
+    from malspark.schemas.process_identity import ProcessIdentities
+
+    grouped: dict[str, list[Any]] = {}
+    listed: list[tuple[Any, str, Any]] = []
+    # (a node, the task of the root it is listed under, ``None`` for a root)
+    stack: list[tuple[Any, str | None]] = [(node, None) for node in reversed(roots)]
+    while stack:
+        node, above = stack.pop()
+        task = above if above is not None else str(_node_field(node, "task") or "")
+        if above is None:
+            grouped.setdefault(task, []).append(node)
+        listed.append((_node_field(node, "pid"), task, _node_field(node, "guest_pid")))
+        stack.extend((child, task) for child in reversed(list(_node_field(node, "children") or [])))
+    # One listing: an id it holds twice in a task names neither process.
+    identities = ProcessIdentities()
+    identities.add_listing(listed)
+    by_task = {task: sample_process_tree(held, file_name, sha256) for task, held in grouped.items()}
+    names = frozenset(name for tree in by_task.values() for name in tree.names)
+    return ProcessTrees(by_task=by_task, identities=identities, names=names)
+
+
 # Where :func:`process_placement` places a listed process: in the sample's
 # tree, outside it, or disputed (``LINEAGE_MARKED`` or ``LINEAGE_FILE``, the
 # fact that alone names it); ``PLACED_UNSTATED`` for every process of a
@@ -1542,26 +1642,38 @@ def _signature_nodes(
     return nodes
 
 
-# The fields a written file names the processes that wrote it under, the
-# process list's own id first: a sandbox that lists its processes by an id of
-# its own names the writer by that id too, beside the guest's pid.
-_WRITER_KEYS: tuple[str, ...] = ("procid", "pids", "pid", "process_id")
+# The fields a written file names the processes that wrote it under where its
+# reader declares none of its own (``Reading.dropped_writer_fields``).
+DROPPED_WRITER_FIELDS: tuple[str, ...] = ("pids", "pid", "process_id")
 
 
-def _writer_pids(row: Mapping[str, Any]) -> list[str]:
-    """The processes a written file's row names as its writer, by the first field naming one."""
-    for key in _WRITER_KEYS:
+def dropped_writer(row: Mapping[str, Any], reading: Reading | None) -> tuple[list[str], str]:
+    """The ids a written file's row names its writer by, and the guest's pid beside them.
+
+    The ids are read from every field the row's reader declares holds one
+    (``Reading.dropped_writer_fields``, else :data:`DROPPED_WRITER_FIELDS`),
+    each once in the order read, a field joining several with commas
+    (``"1536,908"``); the guest's pid from the first field the reader
+    declares holds it, where it is another number. A row whose id fields
+    name none is named by the guest's pid alone, an alias the process
+    identity reads (``schemas.process_identity``).
+    """
+    declared = reading.dropped_writer_fields if reading is not None else ()
+    pids: list[str] = []
+    for key in declared or DROPPED_WRITER_FIELDS:
         value = row.get(key)
-        pids = [
-            pid
-            for one in (value if isinstance(value, list) else [value])
-            if isinstance(one, int | str) and not isinstance(one, bool)
-            for text in str(one).split(",")
-            if (pid := pid_of(text))
-        ]
-        if pids:
-            return pids
-    return []
+        for one in value if isinstance(value, list) else [value]:
+            if not isinstance(one, int | str) or isinstance(one, bool):
+                continue
+            for text in str(one).split(","):
+                pid = pid_of(text)
+                if pid and pid not in pids:
+                    pids.append(pid)
+    guest_fields = reading.dropped_guest_pid_fields if reading is not None else ()
+    guest = next((pid for key in guest_fields if (pid := pid_of(row.get(key)))), "")
+    if not pids:
+        return ([guest] if guest else []), ""
+    return pids, (guest if guest not in pids else "")
 
 
 # What becomes of a written file the sample wrote that a member's facts touch
@@ -1963,6 +2075,9 @@ def attribute_the_launcher(report: SandboxReport, launcher: Any) -> None:
     reached = _reached_launcher_tasks(report, by_pid, launcher_nodes)
     tasked = any(node[0] for node in parent)
     places = _member_places(names, folders)
+    # Which fields name a written file's writer, as the report's reader declares.
+    provider, source_format, read_from = reader_of(report)
+    reading = normaliser_reading(source_format, provider, read_from)
     unplaced = credited = unsettled = 0
     for index, dropped in enumerate(report.dropped_files):
         if not isinstance(dropped, dict):
@@ -1970,7 +2085,7 @@ def attribute_the_launcher(report: SandboxReport, launcher: Any) -> None:
         plain = {k: v for k, v in dropped.items() if k not in _DROPPED_PLATFORM_KEYS}
         # The row's writers, read within its own task, as a process is the
         # pair of its task and its id.
-        writers = _writer_pids(plain)
+        writers, _guest = dropped_writer(plain, reading)
         task = str(plain.get(PROCESS_TASK_KEY) or "")
         nodes = {(task, pid) for pid in writers} if task or not tasked else set()
         reason, fact, at_no_place = _member_reading(

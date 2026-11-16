@@ -513,6 +513,7 @@ KIND_DEPENDENT_FIELDS: tuple[str, ...] = (
     "asserts_techniques",
     "source",
     "holds_strings",
+    "observes",
     "reads_delay_imports",
     "rows",
     "places",
@@ -1156,6 +1157,12 @@ class ToolFacts(BaseModel):
     round's entry. ``holds_strings`` marks a tool whose answer holds the
     sample's strings as data though its kind is not a strings kind (a report
     that anchors strings to the functions referring to them).
+    ``observes`` marks a tool of its kind whose answer is an observation
+    independent of the file's text: it watched the sample run, or recovered a
+    value the file's bytes do not spell. A cited entry of it confirms a value
+    the string sweep read (``reporting.tool_kinds.second_source_standing``),
+    as a sandbox's or a decoder's does; a kind that does not say so reads the
+    file's text again, and confirms nothing.
     ``reads_delay_imports`` marks a format tool whose import rows cover the
     imports the format binds late: the PE delay-load table, or, for a format
     that keeps its late-bound imports in the one table the tool reads (ELF),
@@ -1225,6 +1232,7 @@ class ToolFacts(BaseModel):
     discloses_sample: bool = False
     read_only: bool = False
     holds_strings: bool = False
+    observes: bool = False
     reads_delay_imports: bool = False
     rows: str = ""
     places: dict[str, str] = Field(default_factory=dict)
@@ -2252,6 +2260,7 @@ DIGEST_OMITS_AT_DEFAULT: tuple[str, ...] = (
     "does_not_show",
     "runtimes",
     "outputs",
+    "observes",
 )
 
 

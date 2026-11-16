@@ -110,7 +110,6 @@ class TestTheLiveReport:
             },
             "target": {"id": "86", "guest_pid": "3444", "image": "cmd.exe", "marked": True},
             "description": "PID 1756 wrote to memory of 3444",
-            "values": {"pid": "1756"},
         }
 
     def test_equal_indicators_are_listed_once_with_their_count(self) -> None:
@@ -160,6 +159,64 @@ class TestTheReportsProcessId:
     def test_a_resolved_process_states_its_guest_pid_beside_the_report_s_id(self) -> None:
         (indicator,) = _rows(_read())[WPM]["indicators"]
         assert (indicator["target"]["id"], indicator["target"]["guest_pid"]) == ("86", "3444")
+
+
+class TestAGuestPidTheProcessStatesIsNotEchoed:
+    """A field the reader declares states a process's guest pid is printed with that process."""
+
+    def test_a_value_equal_to_the_resolved_process_s_guest_pid_is_left_out(self) -> None:
+        task = _with_signature(
+            [{"procid": 84, "pid": 1756, "procid_target": 86, "pid_target": 3444}]
+        )
+        (indicator,) = _rows(_read(task))[WPM]["indicators"]
+        assert indicator["process"]["guest_pid"] == "1756"
+        assert indicator["target"]["guest_pid"] == "3444"
+        assert "values" not in indicator
+
+    def test_a_value_another_number_than_the_process_s_guest_pid_is_kept(self) -> None:
+        task = _with_signature(
+            [{"procid": 84, "pid": 9999, "procid_target": 86, "pid_target": 3444}]
+        )
+        (indicator,) = _rows(_read(task))[WPM]["indicators"]
+        assert indicator["values"] == {"pid": "9999"}
+
+    def test_a_value_of_a_process_not_resolved_stays_as_stated(self) -> None:
+        task = _with_signature(
+            [{"procid": 84, "pid": 1756, "procid_target": 999, "pid_target": 5555}]
+        )
+        (indicator,) = _rows(_read(task))[WPM]["indicators"]
+        assert indicator["target"] == {"id": "999", "not_listed": True}
+        assert indicator["values"] == {"pid_target": "5555"}
+
+    def test_a_value_that_is_no_pid_beside_a_process_stating_none_stays(self) -> None:
+        task = _with_signature([{"procid": 84, "procid_target": 999, "pid_target": "n/a"}])
+        (indicator,) = _rows(_read(task))[WPM]["indicators"]
+        assert indicator["values"] == {"pid_target": "n/a"}
+
+    def test_a_reader_declaring_no_such_field_keeps_every_value(self) -> None:
+        from dataclasses import replace
+
+        from malspark.providers.sandbox.readers import (
+            TriageReportReader,
+            register_report_reader,
+            unregister_report_reader,
+        )
+
+        class _Silent(TriageReportReader):
+            id = "silent-box"
+            signature_indicators = replace(
+                TriageReportReader.signature_indicators,
+                process_guest_pid=(),
+                target_guest_pid=(),
+            )
+
+        register_report_reader(_Silent)
+        try:
+            (indicator,) = _rows(_read(), ("silent-box", "silent-box", "tasks"))[WPM]["indicators"]
+        finally:
+            unregister_report_reader(_Silent.id)
+        assert indicator["process"]["guest_pid"] == "1756"
+        assert indicator["values"] == {"pid": "1756"}
 
 
 class TestTheLaunchLineage:
@@ -412,6 +469,24 @@ class TestAProcessListedInTwoTasks:
         assert indicator["process"]["id"] == "84" and "image" not in indicator["process"]
         assert "2 tasks" in indicator["process"]["not_settled"]
 
+    def test_an_id_another_task_s_process_has_as_its_guest_pid_names_its_own(self) -> None:
+        overview = _json("overview.json")
+        overview["signatures"].append(
+            {"name": "own marks", "score": 1, "indicators": [{"procid": 86}]}
+        )
+        second = _json("behavioral2.json")
+        second["processes"].append(
+            {"procid": 400, "procid_parent": 87, "pid": 86, "image": "b.exe"}
+        )
+        report = required_reader("triage").read(
+            overview,
+            provider="triage",
+            task_id="s1",
+            task_reports={"behavioral1": _json("behavioral1.json"), "behavioral2": second},
+        )
+        (indicator,) = _rows(report)["own marks"]["indicators"]
+        assert indicator["process"]["id"] == "86" and "not_settled" not in indicator["process"]
+
 
 class TestThePagedCallOnTheLiveReport:
     def test_a_process_id_lists_the_indicators_acting_on_it_too(self) -> None:
@@ -437,6 +512,13 @@ class TestThePagedCallOnTheLiveReport:
             sandbox_document(_read(task)), normalised_by=TRIAGE, process="300"
         )
         assert page["no"] == INDICATORS_NO_PROCESS.format(asked="300")
+
+    def test_an_id_equal_to_another_process_s_guest_pid_names_its_own_process(self) -> None:
+        task = _json("behavioral1.json")
+        task["processes"].append({"procid": 400, "procid_parent": 84, "pid": 86, "image": "b.exe"})
+        page = sandbox_signatures(sandbox_document(_read(task)), normalised_by=TRIAGE, process="86")
+        (written,) = [one for one in page["indicators"] if one["signature"] == WPM]
+        assert written["target"]["id"] == "86" and "not_settled" not in written["target"]
 
     def test_an_offset_past_the_matches_gives_no_reason(self) -> None:
         page = sandbox_signatures(

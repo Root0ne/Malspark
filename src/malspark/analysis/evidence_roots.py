@@ -30,7 +30,12 @@ A root is derived from what the entry already holds, never guessed:
   table, the resource table, the debug directory, the overlay, a section by
   name (``pe_info``, and a disassembler's import or export listing);
 * **a sandbox process** (``sandbox process 84``), the one process a Sigma
-  match's command line or a LOLBin hit's command line belongs to;
+  match's command line or a LOLBin hit's command line belongs to, and the
+  process that acted and the one acted on of each indicator row of a sandbox
+  signature, wherever the entry's kind declares its answer holds them
+  (``RECORD_PARTS_OF_KIND``): a process is its task and the report's own id
+  (``schemas.process_identity``), written with its task where another task
+  lists the same id (``sandbox process 87 in task behavioral1``);
 * **a network flow** (``network flow tcp to 192.0.2.1:443``), the same label
   whether the sandbox or the capture states it and for both directions of
   one connection, and a DNS query by name;
@@ -66,8 +71,10 @@ A statement's roots are those of the entries it cites. An entry holding one
 root gives it. An entry holding several gives the ones the statement picks
 out: by a number it writes, read in the coordinate the entry's rows state,
 or by a quoted value or a name written as one that only one of the entry's
-roots holds. A name or value several of them hold, or a prose word, picks out
-none.
+roots holds, or a sandbox process by the number written after ``pid`` or a
+field a sandbox reader declares names a process (the report's id or the
+guest's pid) that names one process of the run. A name, value or number
+several of them hold, or a prose word, picks out none.
 A statement that picks out none of them gives no root for that entry and
 says so: which row it read is not a fact.
 
@@ -103,7 +110,13 @@ from malspark.core.undeclared_tools import (
     entry_lists_any_code,
 )
 from malspark.schemas.evidence import repeat_holders
-from malspark.schemas.sandbox_document import dns_row_name
+from malspark.schemas.process_identity import (
+    ProcessIdentities,
+    ProcessKey,
+    held_at_path,
+    indicator_processes,
+)
+from malspark.schemas.sandbox_document import dns_row_name, pid_of
 
 WHOLE_FILE = "the whole file"
 EXTERNAL_ASSESSMENT = "an external assessment of the whole file"
@@ -136,6 +149,12 @@ NOTHING_TO_PLACE = "no: {tool}'s answer carries no offset, address, section, eve
 BY_NAME_ONLY = "no: the call names its function by name, not by address"
 REPEAT_LOOP = "no: {entry} repeats an entry that holds no answer"
 SIGNATURE_UNPLACED = "no: a sandbox signature names no process or event"
+# An indicator row whose processes the report's process list does not settle:
+# an id the task does not list, or lists more than once.
+INDICATOR_UNSETTLED = (
+    "no: the process a sandbox signature's indicator names is not one the report's process "
+    "list settles"
+)
 # A sandbox signature or rule row placed by its own name: a statement that
 # names the signature places it.
 SIGNATURE_ROOT = "sandbox signature {name}"
@@ -157,6 +176,10 @@ NO_ITEM = "no: {item} is not an item of this run's sandbox report"
 ITEM_ROW_UNREAD = "no: no answer in this run's ledger holds the row of {item}"
 ITEM_UNPLACED = "no: a sandbox `{section}` item names no process, flow or query to place"
 ITEM_NO_PID = "no: the report states no pid for this process"
+# A process item whose id the report's process list holds, but not as one
+# process at the item's place: an id a task lists twice, or a place the
+# listing does not hold (``proc:87.0``).
+ITEM_UNSETTLED = "no: {item} names no one process of the report's process list"
 BLOB_UNMATCHED = (
     "no: the call site holds blobs the blob decoder read, and none of them decodes to this text"
 )
@@ -199,6 +222,21 @@ _HEX_TEXT = re.compile(r"\s*(?:0x)?([0-9a-fA-F]{1,16})\s*")
 # then the names it holds, each quoted with the pack's escaping.
 _SERVED_ROW = re.compile(r"^- (0x[0-9a-fA-F]{1,16})\b(.*)$")
 _SERVED_NAME = re.compile(r"\"((?:[^\"\\]|\\.)*)\"")
+# A process a statement names by its number: written right after ``pid`` or a
+# field a registered reader declares its source names a process under
+# (``PID 1496``, ``<field>: 87``), the report's id or the guest's pid.
+_PID_WORD = "pid"
+_PID_NUMBER = r"\s*[:#=]?\s*(\d{1,10})\b"
+
+
+def _pid_written() -> re.Pattern[str]:
+    """``pid`` or a declared process-id field, then the number (:data:`_PID_WORD`)."""
+    from malspark.schemas.sandbox_report import declared_process_id_fields
+
+    words = sorted({_PID_WORD, *declared_process_id_fields()}, key=len, reverse=True)
+    return re.compile(r"\b(?:" + "|".join(map(re.escape, words)) + ")" + _PID_NUMBER, re.IGNORECASE)
+
+
 # An image base sits on a 64 KiB boundary.
 _BASE_ALIGNMENT = 0x10000
 
@@ -822,6 +860,14 @@ class _Joins:
     )
     # A sandbox network item's id to its kind and row, as an answer in the ledger holds it.
     network_items: dict[str, tuple[str, Any]] = field(default_factory=dict)
+    # Every process the run's answers name, by its task and id and by the
+    # guest's pid (``schemas.process_identity``).
+    identities: ProcessIdentities = field(default_factory=ProcessIdentities)
+    # Each id a process listing states, with the processes of that id in the
+    # listing's order: a process item's repeat (``proc:87.2``) is the second.
+    listed: dict[str, list[ProcessKey]] = field(default_factory=dict)
+    # A sandbox signature item's id to its indicator rows, as an answer holds them.
+    signature_items: dict[str, list[Any]] = field(default_factory=dict)
 
 
 def _flow_key(
@@ -886,10 +932,32 @@ def _joins(entries: Iterable[Any], files: _Files) -> _Joins:
                     found.blob_calls.add((file, call))
                     found.blob_of.setdefault((file, call, _fold(row.get("text"))), blob)
         elif kind == "sandbox_processes":
-            for row in _rows(data, "processes"):
+            rows = _rows(data, "processes")
+            for row in rows:
                 command = str(row.get("command_line") or "").strip()
                 if command and isinstance(row.get("pid"), int):
                     found.processes_of_command.setdefault(command, {})[int(row["pid"])] = None
+            # One listing's processes of each id in its order, a pair it holds
+            # twice at both places; a process an earlier answer listed is kept
+            # where it was.
+            here: dict[str, list[ProcessKey]] = {}
+            for listed in found.identities.add_listing(
+                (row.get("pid"), row.get("task"), row.get("guest_pid")) for row in rows
+            ):
+                if listed is not None:
+                    here.setdefault(listed.id, []).append(listed)
+            for held_id, keys in here.items():
+                order = found.listed.setdefault(held_id, [])
+                order.extend([key for key in keys if key not in order] if order else keys)
+        found.identities.read_answer(data, _indicator_paths(entry))
+        if (
+            _reader(entry) == "report_items"
+            and isinstance(data, Mapping)
+            and data.get("section") == "signatures"
+        ):
+            for row in _rows(data, "items"):
+                if isinstance(row.get("id"), str) and isinstance(row.get("indicators"), list):
+                    found.signature_items.setdefault(row["id"].lower(), row["indicators"])
         if (
             _reader(entry) == "report_items"
             and isinstance(data, Mapping)
@@ -916,6 +984,63 @@ def _joins(entries: Iterable[Any], files: _Files) -> _Joins:
     return found
 
 
+def _indicator_paths(entry: Any) -> tuple[str, ...]:
+    """Where the entry's kind declares its answer holds a signature's indicator rows."""
+    from malspark.core.builtin_declarations import RECORD_PARTS_OF_KIND
+
+    if not _usable(entry):
+        return ()
+    return RECORD_PARTS_OF_KIND.get(_kind(entry), ())
+
+
+def _process_root(joins: _Joins, pid: Any, task: Any = "") -> str:
+    """The root of the process ``pid`` names in ``task``, as the run's identities write it.
+
+    A row that states no task names the process of its id in the one task
+    that lists it; ``""`` where several tasks do, and where a listing holds
+    the id twice in its task, with the task stated or without.
+    """
+    number = pid_of(pid)
+    if not number:
+        return _process(pid)
+    if task:
+        key = ProcessKey(str(task), number)
+    else:
+        held = joins.identities.keys(number, alias=False)
+        if len(set(held)) > 1:
+            return ""
+        key = held[0] if held else ProcessKey("", number)
+    if joins.identities.twice(key):
+        return ""
+    return _process(joins.identities.written(key))
+
+
+def _indicator_roots(
+    found: EntryRoots, indicators: Iterable[Any], joins: _Joins, values: Iterable[Any] = ()
+) -> None:
+    """Each indicator row's roots: the process that acted and the one acted on.
+
+    A row naming processes the report does not settle gives none and says so;
+    a row naming no process gives none either (``SIGNATURE_UNPLACED``).
+    """
+    shared = list(values)
+    for row in indicators:
+        if not isinstance(row, Mapping):
+            continue
+        said = [row.get("description"), row.get("signature"), *shared]
+        roots = [
+            (root, process)
+            for process, task in indicator_processes(row)
+            if (root := _process_root(joins, process.get("id"), task))
+        ]
+        for root, process in roots:
+            found.add(root, values=[*said, process.get("image")])
+        if roots:
+            continue
+        named = any(isinstance(row.get(key), Mapping) for key in ("process", "target"))
+        found.unplace(INDICATOR_UNSETTLED if named else SIGNATURE_UNPLACED, values=said)
+
+
 def _whole_network_answer(entry: Any) -> bool:
     """Whether a ``sandbox_network`` answer lists every row: asked for no page, and cut nowhere."""
     data = _structured(entry)
@@ -930,10 +1055,28 @@ def _item_root(item: str, joins: _Joins) -> tuple[str, str]:
     prefix, _, rest = item.partition(":")
     section = SECTION_OF_PREFIX.get(prefix, "")
     if section == "processes":
-        pid = rest.split(".", 1)[0]
-        return (_process(pid), "") if pid.isdigit() else ("", ITEM_NO_PID)
+        pid, dot, repeat = rest.partition(".")
+        if not pid.isdigit():
+            return "", ITEM_NO_PID
+        if dot and not (repeat.isdigit() and int(repeat) >= 1):
+            # A repeat is counted from 2 (``proc:87.2``); ``.0`` is no place.
+            return "", ITEM_UNSETTLED.format(item=item)
+        order = joins.listed.get(pid_of(pid)) or []
+        if not order:
+            # No listing in the ledger holds the id: the item's own number.
+            return _process(pid), ""
+        at = int(repeat) - 1 if dot else 0
+        if at < len(order) and not joins.identities.twice(order[at]):
+            return _process(joins.identities.written(order[at])), ""
+        return "", ITEM_UNSETTLED.format(item=item)
     if section == "signatures":
-        return "", SIGNATURE_UNPLACED
+        roots = _signature_item_roots(item, joins)
+        if roots is not None and len(roots.roots) > 1:
+            # Which of its processes a statement read is the statement's to say.
+            return "", NAMES_NO_ROW.format(entry=item)
+        if roots is None or not roots.roots or roots.unplaced_values:
+            return "", (roots.first_reason if roots is not None else "") or SIGNATURE_UNPLACED
+        return roots.roots[0], ""
     if section != "network":
         return "", ITEM_UNPLACED.format(section=section)
     held = joins.network_items.get(item)
@@ -956,6 +1099,16 @@ def _item_root(item: str, joins: _Joins) -> tuple[str, str]:
             )
         )
     return "", ITEM_UNPLACED.format(section=section)
+
+
+def _signature_item_roots(item: str, joins: _Joins) -> EntryRoots | None:
+    """The roots a signature item's indicator rows give, ``None`` where no answer holds them."""
+    indicators = joins.signature_items.get(item)
+    if not indicators:
+        return None
+    found = EntryRoots()
+    _indicator_roots(found, indicators, joins, values=(item,))
+    return found
 
 
 def _process(pid: Any) -> str:
@@ -1382,8 +1535,13 @@ def _read_entry(entry: Any, found: EntryRoots, joins: _Joins) -> EntryRoots:
             _address_root(found, row.get("address"), values=(row.get("value"),))
     elif branch == "sandbox_processes":
         for row in _rows(data, "processes"):
-            if row.get("pid") is not None:
-                found.add(_process(row["pid"]), values=(row.get("command_line"), row.get("name")))
+            if row.get("pid") is None:
+                continue
+            # A row naming no one process (an id two tasks or one task twice
+            # list) gives no root.
+            root = _process_root(joins, row["pid"], row.get("task"))
+            if root:
+                found.add(root, values=(row.get("command_line"), row.get("name")))
     elif branch == "flows":
         for row in _flow_rows(entry):
             label = _flow_of(row, joins)
@@ -1419,8 +1577,10 @@ def _read_entry(entry: Any, found: EntryRoots, joins: _Joins) -> EntryRoots:
                     values=(name,),
                     techniques=_row_techniques(row),
                 )
+        for path in _indicator_paths(entry):
+            _indicator_roots(found, held_at_path(data, path), joins)
         if not found.roots:
-            found.reason = SIGNATURE_UNPLACED
+            found.reason = found.first_reason or SIGNATURE_UNPLACED
     elif branch == "report_items":
         for row in _rows(data, "items"):
             item = str(row.get("id") or "").lower()
@@ -1430,6 +1590,10 @@ def _read_entry(entry: Any, found: EntryRoots, joins: _Joins) -> EntryRoots:
                 if isinstance(fields, Mapping)
                 else []
             )
+            indicators = row.get("indicators")
+            if row.get("kind") == "signatures" and isinstance(indicators, list) and indicators:
+                _indicator_roots(found, indicators, joins, values=[item, *values])
+                continue
             label, reason = _item_root(item, joins)
             if label:
                 found.add(label, values=[item, *values])
@@ -1510,6 +1674,7 @@ class RunRoots:
         self.layout = self.layouts.get("") or Layout()
         joins = _joins(entries, files)
         self._joins = joins
+        self._pid_written = _pid_written()
         # The run's sandbox section index: an item id is read only against it.
         self.items: ItemIndex | None = item_index_of(entries)
         self.entries: dict[str, EntryRoots] = {}
@@ -1608,6 +1773,14 @@ class RunRoots:
                 held = found.by_name.get(word, set())
                 if len(held) == 1:
                     hits |= held
+        # A process named by its number: the one process of the run it names,
+        # where the entry holds that process's root.
+        for match in self._pid_written.finditer(text):
+            key = self._joins.identities.resolve(match.group(1))
+            if key is not None:
+                label = found.named(_process(self._joins.identities.written(key)))
+                if label in found.order:
+                    hits.add(label)
         return hits, list(reasons)
 
     def of_item(self, item: str) -> tuple[str, str]:
@@ -1616,6 +1789,17 @@ class RunRoots:
         if self.items is None or not self.items.known(found):
             return "", NO_ITEM.format(item=found)
         return _item_root(found, self._joins)
+
+    def _item_rows(self, item: str) -> EntryRoots | None:
+        """The roots of a signature item whose indicator rows give more than one, else ``None``."""
+        if self.items is None or not self.items.known(item):
+            return None
+        if SECTION_OF_PREFIX.get(item.partition(":")[0], "") != "signatures":
+            return None
+        found = _signature_item_roots(item, self._joins)
+        if found is None or (len(found.roots) <= 1 and not found.unplaced_values):
+            return None
+        return found if found.roots else None
 
     def _citations(
         self, text: str, entry_ids: Iterable[str]
@@ -1634,6 +1818,15 @@ class RunRoots:
         )
         out: list[tuple[str, list[str], list[str]]] = []
         for item in items:
+            rows = self._item_rows(item)
+            if rows is not None:
+                # A signature item of several processes: the statement picks.
+                named, unplaced = self._named(text, rows)
+                reasons = [f"{item}: {reason}" for reason in unplaced]
+                if not named and not unplaced:
+                    reasons.append(f"{item}: {NAMES_NO_ROW.format(entry=item)}")
+                out.append((item, rows.ordered(named), reasons))
+                continue
             label, reason = self.of_item(item)
             out.append((item, [label] if label else [], [] if label else [f"{item}: {reason}"]))
         for eid in ids:

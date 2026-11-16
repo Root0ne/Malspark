@@ -1,10 +1,10 @@
 """A conversation counts both directions, and a TCP beacon is seen by its connections.
 
-A conversation with an external host is the packets to it and the packets from
-it. Counting only the packets toward the host left a download's bytes, and any
-flow the external host opened, out of the summary; the replies are now counted
-in the same conversation, and the part from the host is stated beside the total
-whenever there is one.
+A conversation with an external peer is the packets to it and the packets from
+it. Counting only the packets toward the peer left a download's bytes, and any
+flow the external peer opened, out of the summary; the replies are now counted
+in the same conversation, and the packets and bytes each end sent are stated
+beside the total.
 
 A TCP callback is a connection: a handshake, a request, a reply and a close,
 packets milliseconds apart. Measured over every packet, the interval between
@@ -21,7 +21,7 @@ from pathlib import Path
 
 from malspark.analysis.pcap_summary import capture_facts, conversation_line, summary_text
 
-HOST = b"\x0a\x00\x00\x02"  # the sandbox
+HOST = b"\x0a\x00\x00\x02"  # the sandbox's guest, 10.0.0.2
 C2 = b"\x08\x08\x08\x08"
 SYN, ACK, PSH, FIN = 0x02, 0x10, 0x08, 0x01
 
@@ -122,7 +122,7 @@ def test_a_regular_packet_beacon_answers_as_before(tmp_path: Path) -> None:
 # ------------------------------------------------- B-M8 both directions
 
 
-def test_a_conversation_counts_the_packets_from_the_host(tmp_path: Path) -> None:
+def test_a_conversation_counts_the_packets_from_the_peer(tmp_path: Path) -> None:
     reply = b"x" * 1000
     records = _connection(0.0, 50000, reply)
     facts = _facts(tmp_path, records)
@@ -135,14 +135,18 @@ def test_a_conversation_counts_the_packets_from_the_host(tmp_path: Path) -> None
             "proto": "tcp",
             "packets": len(records),
             "bytes": sum(sent) + sum(got),
-            "packets_from_host": len(got),
-            "bytes_from_host": sum(got),
+            "internal": ["10.0.0.2"],
+            "packets_to_peer": len(sent),
+            "bytes_to_peer": sum(sent),
+            "packets_from_peer": len(got),
+            "bytes_from_peer": sum(got),
         }
     ]
     line = conversation_line(facts["conversations"][0])
     assert line == (
-        f"8.8.8.8:443/tcp — {len(records)} pkts, {sum(sent) + sum(got)} bytes "
-        f"({len(got)} pkts, {sum(got)} bytes from the host)"
+        f"8.8.8.8:443/tcp — {len(records)} pkts, {sum(sent) + sum(got)} bytes: "
+        f"10.0.0.2 sent {len(sent)} pkts, {sum(sent)} bytes; "
+        f"8.8.8.8 sent {len(got)} pkts, {sum(got)} bytes"
     )
 
 
@@ -150,12 +154,25 @@ def test_a_one_way_conversation_answers_as_before(tmp_path: Path) -> None:
     records = [(float(i), _udp(HOST, C2, 40000, 9, b"abc")) for i in range(2)]
     facts = _facts(tmp_path, records)
     assert facts["conversations"] == [
-        {"dst": "8.8.8.8", "dport": 9, "proto": "udp", "packets": 2, "bytes": 62}
+        {
+            "dst": "8.8.8.8",
+            "dport": 9,
+            "proto": "udp",
+            "packets": 2,
+            "bytes": 62,
+            "internal": ["10.0.0.2"],
+            "packets_to_peer": 2,
+            "bytes_to_peer": 62,
+            "packets_from_peer": 0,
+            "bytes_from_peer": 0,
+        }
     ]
-    assert conversation_line(facts["conversations"][0]) == "8.8.8.8:9/udp — 2 pkts, 62 bytes"
+    assert conversation_line(facts["conversations"][0]) == (
+        "8.8.8.8:9/udp — 2 pkts, 62 bytes: 10.0.0.2 sent 2 pkts, 62 bytes; 8.8.8.8 sent none"
+    )
 
 
-def test_a_flow_the_external_host_opened_is_a_conversation(tmp_path: Path) -> None:
+def test_a_flow_the_external_peer_opened_is_a_conversation(tmp_path: Path) -> None:
     records = [(float(i), _udp(C2, HOST, 6000, 40000, b"push")) for i in range(3)]
     facts = _facts(tmp_path, records)
     assert facts["conversations"] == [
@@ -165,25 +182,30 @@ def test_a_flow_the_external_host_opened_is_a_conversation(tmp_path: Path) -> No
             "proto": "udp",
             "packets": 3,
             "bytes": 96,
-            "packets_from_host": 3,
-            "bytes_from_host": 96,
+            "internal": ["10.0.0.2"],
+            "packets_to_peer": 0,
+            "bytes_to_peer": 0,
+            "packets_from_peer": 3,
+            "bytes_from_peer": 96,
             "inbound_only": True,
         }
     ]
     assert conversation_line(facts["conversations"][0]).endswith(
-        "(3 pkts, 96 bytes from the host; inbound only)"
+        ": 8.8.8.8 sent 3 pkts, 96 bytes to 10.0.0.2 (inbound only)"
     )
 
 
-def test_an_inbound_only_host_is_no_sandbox_contact_in_the_ledger() -> None:
+def test_an_inbound_only_peer_is_no_sandbox_contact_in_the_ledger() -> None:
     from malspark.reporting.ledger_projection import network_from_ledger
     from malspark.schemas.evidence import LedgerEntry
 
     rows = [
         {"dst": "8.8.4.4", "dport": 6000, "proto": "udp", "packets": 3, "bytes": 96,
-         "packets_from_host": 3, "bytes_from_host": 96, "inbound_only": True},
+         "internal": ["10.0.0.2"], "packets_to_peer": 0, "bytes_to_peer": 0,
+         "packets_from_peer": 3, "bytes_from_peer": 96, "inbound_only": True},
         {"dst": "185.220.101.5", "dport": 443, "proto": "tcp", "packets": 7, "bytes": 900,
-         "packets_from_host": 3, "bytes_from_host": 500},
+         "internal": ["10.0.0.2"], "packets_to_peer": 4, "bytes_to_peer": 400,
+         "packets_from_peer": 3, "bytes_from_peer": 500},
     ]  # fmt: skip
     entry = LedgerEntry(
         id="ev_0001", agent="pipeline", tool="pcap_summary", structured={"conversations": rows}
