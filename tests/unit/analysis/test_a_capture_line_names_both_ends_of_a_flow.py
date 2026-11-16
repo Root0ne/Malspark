@@ -452,6 +452,50 @@ def test_the_triage_pack_parts_its_conversations_by_a_mark_no_line_holds(tmp_pat
     assert rows.split(" | ") == lines
 
 
+# ----------------------------------- a section over its cap leaves out flows
+
+
+def _busy_record(conversations: int) -> dict[str, Any]:
+    record = _old_record()
+    record["conversations"] = [
+        {"dst": f"198.51.{i // 250}.{i % 250 + 1}", "dport": 443, "proto": "tcp",
+         "packets": 1000 - i, "bytes": 100_000 - i, "internal": ["10.0.0.2"],
+         "packets_to_peer": 400, "bytes_to_peer": 40_000 - i,
+         "packets_from_peer": 600 - i, "bytes_from_peer": 60_000}
+        for i in range(conversations)
+    ]  # fmt: skip
+    return record
+
+
+def test_a_section_over_its_cap_leaves_out_flows_and_says_how_many() -> None:
+    from malspark.reporting.ledger_report import MAX_TEXT_CHARS
+
+    record = _busy_record(120)
+    assert len(summary_text(record)) > MAX_TEXT_CHARS
+    text = _section(record)
+    assert len(text) <= MAX_TEXT_CHARS
+    assert "Cut here" not in text
+    shown = [line for line in text.split("\n") if line.startswith("- 198.51.")]
+    lines = [f"- {conversation_line(row)}" for row in record["conversations"]]
+    assert shown == lines[: len(shown)]
+    assert 0 < len(shown) < 120
+    assert f"External conversations ({len(shown)} of 120, by volume;" in text
+    assert (
+        f"{120 - len(shown)} more conversations not shown here; the evidence endpoint "
+        "carries every one under ev_0001."
+    ) in text
+    # The overview, the TLS names and the beacons are never what is cut.
+    kept = [line for line in beside_the_flows(text) if "more conversations not shown" not in line]
+    assert kept == beside_the_flows(_OLD_SUMMARY)
+
+
+def test_a_section_within_its_cap_lists_every_flow() -> None:
+    record = _busy_record(10)
+    text = _section(record)
+    assert text == summary_text(record)
+    assert "External conversations (all 10, by volume;" in text
+
+
 # ----------------------------------------------- one writer, every surface
 
 

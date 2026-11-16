@@ -92,6 +92,12 @@ TEXT_CUT = (
     "Cut here at {shown:,} of {total:,} characters; the evidence endpoint carries it "
     "whole under {ids}."
 )
+# A capture summary over ``MAX_TEXT_CHARS`` lists its heaviest conversations
+# and says how many it left out: its overview, TLS names and beacons stay whole.
+CONVERSATIONS_LEFT_OUT = (
+    "{rest:,} more conversations not shown here; the evidence endpoint carries every one "
+    "under {ids}."
+)
 
 
 def _cut_text(text: str, ids: str) -> str:
@@ -1237,16 +1243,42 @@ def _behaviour_code(acc: _Sections, entry: LedgerEntry, data: dict[str, Any]) ->
     acc.credit(table, entry)
 
 
+def _capture_text(data: dict[str, Any], ids: str) -> str:
+    """The capture's facts by the summary's own writer, its conversations cut to the cap."""
+    whole = summary_text(data)
+    if len(whole) <= MAX_TEXT_CHARS:
+        return whole
+    total = len(data["conversations"])
+
+    def _listing(shown: int) -> str:
+        left_out = CONVERSATIONS_LEFT_OUT.format(rest=total - shown, ids=ids)
+        return summary_text(data, shown, left_out)
+
+    # The most conversations that fit, found by halving: a capture can hold
+    # thousands of them.
+    low, high = 0, total - 1
+    while low < high:
+        middle = (low + high + 1) // 2
+        if len(_listing(middle)) <= MAX_TEXT_CHARS:
+            low = middle
+        else:
+            high = middle - 1
+    text = _listing(low)
+    # Only TLS names past the cap on their own leave the text to be cut.
+    return text if len(text) <= MAX_TEXT_CHARS else _cut_text(whole, ids)
+
+
 def _pcap(acc: _Sections, entry: LedgerEntry, data: dict[str, Any]) -> None:
     summary = data.get("summary")
     if not summary:
         return
+    section = acc.get("pcap_summary", "Capture summary", "text")
     if "packets_read" in data and isinstance(data.get("conversations"), list):
         # The facts are written by the summary's own writer, so a record stored
         # before the lines named both ends prints each direction truthfully.
-        summary = summary_text(data)
-    section = acc.get("pcap_summary", "Capture summary", "text")
-    section.text = _cut_text(str(summary), entry.id)
+        section.text = _capture_text(data, entry.id)
+    else:
+        section.text = _cut_text(str(summary), entry.id)
     acc.credit(section, entry)
 
 
