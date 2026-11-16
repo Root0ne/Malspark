@@ -110,7 +110,6 @@ class TestTheLiveReport:
             },
             "target": {"id": "86", "guest_pid": "3444", "image": "cmd.exe", "marked": True},
             "description": "PID 1756 wrote to memory of 3444",
-            "values": {"pid": "1756"},
         }
 
     def test_equal_indicators_are_listed_once_with_their_count(self) -> None:
@@ -160,6 +159,59 @@ class TestTheReportsProcessId:
     def test_a_resolved_process_states_its_guest_pid_beside_the_report_s_id(self) -> None:
         (indicator,) = _rows(_read())[WPM]["indicators"]
         assert (indicator["target"]["id"], indicator["target"]["guest_pid"]) == ("86", "3444")
+
+
+class TestAGuestPidTheProcessStatesIsNotEchoed:
+    """A field the reader declares states a process's guest pid is printed with that process."""
+
+    def test_a_value_equal_to_the_resolved_process_s_guest_pid_is_left_out(self) -> None:
+        task = _with_signature(
+            [{"procid": 84, "pid": 1756, "procid_target": 86, "pid_target": 3444}]
+        )
+        (indicator,) = _rows(_read(task))[WPM]["indicators"]
+        assert indicator["process"]["guest_pid"] == "1756"
+        assert indicator["target"]["guest_pid"] == "3444"
+        assert "values" not in indicator
+
+    def test_a_value_another_number_than_the_process_s_guest_pid_is_kept(self) -> None:
+        task = _with_signature(
+            [{"procid": 84, "pid": 9999, "procid_target": 86, "pid_target": 3444}]
+        )
+        (indicator,) = _rows(_read(task))[WPM]["indicators"]
+        assert indicator["values"] == {"pid": "9999"}
+
+    def test_a_value_of_a_process_not_resolved_stays_as_stated(self) -> None:
+        task = _with_signature(
+            [{"procid": 84, "pid": 1756, "procid_target": 999, "pid_target": 5555}]
+        )
+        (indicator,) = _rows(_read(task))[WPM]["indicators"]
+        assert indicator["target"] == {"id": "999", "not_listed": True}
+        assert indicator["values"] == {"pid_target": "5555"}
+
+    def test_a_reader_declaring_no_such_field_keeps_every_value(self) -> None:
+        from dataclasses import replace
+
+        from malspark.providers.sandbox.readers import (
+            TriageReportReader,
+            register_report_reader,
+            unregister_report_reader,
+        )
+
+        class _Silent(TriageReportReader):
+            id = "silent-box"
+            signature_indicators = replace(
+                TriageReportReader.signature_indicators,
+                process_guest_pid=(),
+                target_guest_pid=(),
+            )
+
+        register_report_reader(_Silent)
+        try:
+            (indicator,) = _rows(_read(), ("silent-box", "silent-box", "tasks"))[WPM]["indicators"]
+        finally:
+            unregister_report_reader(_Silent.id)
+        assert indicator["process"]["guest_pid"] == "1756"
+        assert indicator["values"] == {"pid": "1756"}
 
 
 class TestTheLaunchLineage:

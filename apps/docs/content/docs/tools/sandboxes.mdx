@@ -165,8 +165,11 @@ API under `call.api` and an indicator's `category`; a Triage overview
 signature's marks and the indicators of every task report's signature of the
 same name, each read in its task, naming the process that acted by `procid`
 and the one acted on by `procid_target`. A Triage indicator's `pid` and
-`pid_target` are the guest's pids, never the report's process id: they stay
-among its values and name no process. A mapped format declares its own
+`pid_target` are the guest's pids, never the report's process id: they name
+no process, and stay among its values except where one is the guest pid of the
+process the indicator resolves to, which that process states once
+(`IndicatorFields.process_guest_pid` and `.target_guest_pid`, the reader's
+declaration). A mapped format declares its own
 through `field_names`: `signatures.platform_indicators` names the field of a
 signature holding its indicators, and
 `signatures.platform_indicators.process`, `.target`, `.event` and

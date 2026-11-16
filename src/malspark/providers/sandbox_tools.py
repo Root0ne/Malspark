@@ -725,7 +725,26 @@ class SignatureIndicators:
                 out[key] = sample_written_out(indicator[key])
         values = indicator.get(VALUES)
         if isinstance(values, dict) and values:
-            out[VALUES] = {sample_written_out(k): sample_written_out(v) for k, v in values.items()}
+            # A field the reader declares states a process's guest pid is
+            # printed with the process it resolved to where it is that
+            # process's; any other number stays as stated.
+            fields = self.fields
+            printed = {
+                name: str(out[key].get("guest_pid") or "")
+                for key, names in (
+                    (PROCESS, fields.process_guest_pid if fields is not None else ()),
+                    (TARGET, fields.target_guest_pid if fields is not None else ()),
+                )
+                if isinstance(out.get(key), dict)
+                for name in names
+            }
+            kept = {
+                k: sample_written_out(v)
+                for k, v in values.items()
+                if not (printed.get(k) and pid_of(v) == printed[k])
+            }
+            if kept:
+                out[VALUES] = {sample_written_out(k): v for k, v in kept.items()}
         if indicator.get(VALUES_LEFT_OUT):
             out[VALUES_LEFT_OUT] = indicator[VALUES_LEFT_OUT]
         cut = indicator.get(CHARS_LEFT_OUT)

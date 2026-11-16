@@ -593,7 +593,9 @@ class TriageReportReader(ReportReader):
     # each signature again with the indicators seen in that task, each naming
     # the process that acted (and the one acted on) by the task's process ids.
     # The guest's pid beside them (``pid``, ``pid_target``) is another number,
-    # never the report's process id: it stays among the indicator's values.
+    # never the report's process id: it stays among the indicator's values,
+    # but where it is the guest's pid of the process the indicator resolves
+    # to, which that process states.
     signature_indicators = IndicatorFields(
         lists=("marks",),
         process=("procid",),
@@ -605,6 +607,8 @@ class TriageReportReader(ReportReader):
         # A process row of a task report holds the guest's pid under its
         # ``extra``, beside the report's own process id.
         guest_pid=("extra.pid",),
+        process_guest_pid=("pid",),
+        target_guest_pid=("pid_target",),
     )
 
     def read(
