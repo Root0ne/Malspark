@@ -97,7 +97,11 @@ The reporter writes; the code checks. Before the report is stored:
 A failed check goes back to the reporter with a [validation
 code](/docs/concepts/validation/) and one turn to fix it. A problem it does not
 fix stays visible in the run summary, with each sentence left out or replaced
-recorded whole.
+recorded whole. The analyst report leaves a sentence a check flagged out only
+where it stands whole (a sentence, or the whole of a table cell), never out of
+another sentence that names the same value, and each section ends with a line
+counting the sentences, bullets and cell sentences left out of it, if any; the
+evidence bundle lists each with the reason.
 
 ## The evidence bundle
 
