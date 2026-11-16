@@ -231,9 +231,20 @@ Every Sigma selection can match alone (the condition is the one selection, or
 catalogue calls every Windows host's (an autorun key, a file Windows ships) is
 never selected, whatever recorded it, a sandbox included. A write a sandbox
 recorded under such a key is selected by what makes it the sample's: the key
-with the value's name, and the program its data names. A path the IOC table
-publishes whose file name alone is one Windows ships keeps its folders past the
-drive and the user's profile. A folder or key selected with `contains` that
+with the value's name, and what its data names. Every program and file path the
+data of a persistence payload or a written value names is read: a program of the
+sample's own is the process's image; a program Windows ships is never selected
+alone, and a further path the data names after it (a library, a script, a
+second program) is selected in the field that records the data, a registry
+event's `Details` or a process's `CommandLine`; data naming nothing specific
+selects no image. Only a write names a program, never a read. Each value
+written to one key keeps its own name and data. A value is asked about in the
+form the draft prints: a path keeps what a log writes the same on every host
+past the drive and the user's own name (a profile's sub-folders,
+`Users\Public`), a long-path prefix (`\\?\`) is read off, and a path whose
+printed form is a file name Windows ships alone (a file directly under a
+user's profile, or under an environment name such as `%APPDATA%`) is never
+selected, its reason saying so. A folder or key selected with `contains` that
 another selected value lies under (the folder a selected file lies in, the key
 a selected subkey lies under) is left out for the narrower value, case and
 separators folded; of two spellings of one key, the shorter, which matches
