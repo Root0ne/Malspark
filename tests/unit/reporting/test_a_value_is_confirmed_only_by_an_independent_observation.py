@@ -207,6 +207,29 @@ class TestTheDecisionIsPerEntry:
         assert not publishes(answer(uncited))
         assert publishes(answer(cited))
 
+    def test_a_cited_reading_the_corpus_holds_confirms_nothing(self) -> None:
+        report = _report(
+            StringIOC(kind="registry", value=REGISTRY_KEY),
+            _finding("ev_0070"),
+            index=[_row("ev_0070", "reader", "listing")],
+        )
+        corpus = RunEvidenceCorpus(1 << 20)
+        corpus.remember("ev_0070", "reader", f"bytes: {REGISTRY_KEY}")
+
+        answer = publish_answer(
+            "registry", REGISTRY_KEY, "strings", corroborating=corroborating_values(report, corpus)
+        )
+        assert not publishes(answer), answer
+
+    def test_a_section_citing_no_entry_confirms_nothing(self) -> None:
+        report = _report(
+            StringIOC(kind="registry", value=REGISTRY_KEY),
+            _tool("sandbox_network", [], f"key {REGISTRY_KEY}"),
+            _finding("ev_0090"),
+        )
+
+        assert not publishes(_answer(report, REGISTRY_KEY))
+
     def test_the_recovery_record_names_the_entry_value_by_value(self) -> None:
         """A section prints both entries as one; the recovery record says which recovered it."""
 
@@ -256,6 +279,20 @@ class TestAToolThatDeclaresNoKind:
             corroborating=corroborating_values(report),
         )
         assert publishes(answer), answer
+
+    def test_one_named_as_a_code_listing_reads_the_file_again(self) -> None:
+        """A tool its source declares nothing for is read as a decompiler where its name says so."""
+        report = _report(
+            StringIOC(kind="path", value="C:\\Users\\Public\\other.dll"),
+            _tool("decompile_function", ["ev_0061"], "created Global\\RelayLock7"),
+            _finding("ev_0061"),
+            index=[_row("ev_0061", "decompile_function", None)],
+        )
+
+        answer = publish_answer(
+            "mutex", "Global\\RelayLock7", "strings", corroborating=corroborating_values(report)
+        )
+        assert not publishes(answer), answer
 
 
 class TestACutIsNoWholeValue:

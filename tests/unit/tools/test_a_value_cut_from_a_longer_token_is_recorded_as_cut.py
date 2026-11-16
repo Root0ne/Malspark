@@ -70,3 +70,25 @@ def test_the_span_path_records_the_same_cuts() -> None:
         spans = string_iocs_with_spans(blob)
         keys = ("kind", "value", "notes", "source", "cut_from")
         assert [{k: r[k] for k in keys if k in r} for r in spans] == iter_string_iocs(blob)
+
+
+def test_a_path_glued_to_the_text_before_it_is_a_cut() -> None:
+    """This run's glued value: ``C:\\Temp`` + ``is a directory`` + ``ComputerNameEx``."""
+    blob = b"\x00SAPHostControlshare$=C:\\Tempis a directoryComputerNameEx\x00"
+
+    assert _rows(blob, "path")["C:\\Tempis a directoryComputerNameEx"]["cut_from"] == (
+        "SAPHostControlshare$=C:\\Tempis a directoryComputerNameEx"
+    )
+
+
+def test_a_digit_continues_a_value_too() -> None:
+    blob = b"\x00/opt/relay/bin/agent:9000\x00"
+
+    assert _rows(blob, "path")["/opt/relay/bin/agent"]["cut_from"] == "/opt/relay/bin/agent:9000"
+
+
+def test_the_span_path_clears_a_cut_the_value_also_stands_whole_for() -> None:
+    blob = b"\x00/opt/relay/bin/agent:x\x00\x00\x00/opt/relay/bin/agent\x00"
+
+    spans = [r for r in string_iocs_with_spans(blob) if r["kind"] == "path"]
+    assert spans and all("cut_from" not in r for r in spans)
