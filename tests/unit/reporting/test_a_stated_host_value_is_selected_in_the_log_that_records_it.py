@@ -110,15 +110,17 @@ class TestTheRunsValues:
             "condition": "selection_folder",
         }
 
-    def test_a_file_windows_ships_is_never_selected_alone_and_says_why(self) -> None:
+    def test_a_published_file_named_as_windows_names_one_keeps_its_folder(self) -> None:
+        # The table publishes the path; its file name alone is a program Windows
+        # ships, so the selection keeps the path past the drive and the profile.
         report = _report([("file path", "C:\\Users\\Admin\\Desktop\\cmd.exe")])
 
-        assert _sigma(report) == {}
-        (item,) = report.drafts_not_built
-        assert item.why.endswith(
-            "; the value a sandbox watched or the run publishes is every Windows host's own, "
-            "never selected on: a file Windows ships, in the folder Windows keeps it in"
-        )
+        drafts = _by_source(report)
+        assert drafts["file_event"]["detection"] == {
+            "selection_file": {"TargetFilename|endswith": ["\\Desktop\\cmd.exe"]},
+            "condition": "selection_file",
+        }
+        assert report.drafts_not_built == []
 
     def test_a_key_a_selected_subkey_lies_under_is_left_out_for_the_subkey(self) -> None:
         drafts = _by_source(
@@ -135,6 +137,38 @@ class TestTheRunsValues:
                 "TargetObject|contains": ["\\Software\\ExampleVendor7731\\Settings"]
             },
             "condition": "selection_registry",
+        }
+
+    def test_a_folder_and_its_file_in_another_case_select_on_the_file(self) -> None:
+        drafts = _by_source(
+            _report(
+                [
+                    ("folder", "C:\\ProgramData\\Custom_Update"),
+                    ("file path", "C:\\ProgramData\\custom_update\\a7731.dat"),
+                ]
+            )
+        )
+
+        assert drafts["file_event"]["detection"] == {
+            "selection_file": {"TargetFilename|endswith": ["\\custom_update\\a7731.dat"]},
+            "condition": "selection_file",
+        }
+
+    def test_sibling_keys_are_each_selected(self) -> None:
+        drafts = _by_source(
+            _report(
+                [
+                    ("registry key", "HKCU\\Software\\ExampleVendor7731\\Setting1"),
+                    ("registry key", "HKCU\\Software\\ExampleVendor7731\\Setting10"),
+                ]
+            )
+        )
+
+        assert drafts["registry_event"]["detection"]["selection_registry"] == {
+            "TargetObject|contains": [
+                "\\Software\\ExampleVendor7731\\Setting1",
+                "\\Software\\ExampleVendor7731\\Setting10",
+            ]
         }
 
     def test_a_generic_task_name_alone_makes_no_selection_and_says_why(self) -> None:

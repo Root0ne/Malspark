@@ -180,6 +180,28 @@ class TestRegistryOps:
                 }
             ]
 
+    def test_a_value_write_names_the_value_it_wrote(self) -> None:
+        for name in ("ValueName", "lpValueName"):
+            report = self._one_call(
+                "RegSetValueExW",
+                [
+                    {"name": "FullName", "value": "HKEY_CURRENT_USER\\Software\\Example"},
+                    {"name": name, "value": "Updater7731"},
+                    {"name": "Buffer", "value": "C:\\Users\\Public\\u.exe"},
+                ],
+            )
+
+            rows = sandbox_tools.sandbox_registry_ops(report)["registry"]
+
+            assert rows == [
+                {
+                    "key": "HKEY_CURRENT_USER\\Software\\Example",
+                    "operation": "modify",
+                    "value": "C:\\Users\\Public\\u.exe",
+                    "value_name": "Updater7731",
+                }
+            ]
+
     def test_without_a_full_path_the_subkey_is_the_key_not_the_handle(self) -> None:
         report = self._one_call(
             "RegCreateKeyExW",

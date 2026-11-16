@@ -326,9 +326,7 @@ class TestTheSuricataSyntaxCheck:
 class TestSigma:
     """A Sigma selection is held to the same rule: published, or watched by a sandbox."""
 
-    # An autorun value a sample writes, as a log records it: the Run key and the value's name
-    # (the Run key alone is every installation's, never selected on).
-    RUN_KEY = "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Run\\example"
+    RUN_KEY = "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Run"
 
     def _sigma(self, **over: Any) -> Any:
         return _rule(_report(**over), "sigma")
@@ -350,7 +348,12 @@ class TestSigma:
 
         assert row.published == "yes: a persistence mechanism this run recorded"
         rule = self._sigma(persistence=[mech])
-        assert rule is not None and "CurrentVersion" in rule.body
+        # The Run key alone is every installation's; the payload it runs is the sample's.
+        assert rule is not None
+        assert yaml.safe_load(rule.body)["detection"] == {
+            "selection_persistence": {"Image|endswith": ["\\example.exe"]},
+            "condition": "selection_persistence",
+        }
 
     def test_an_analyst_listed_key_the_table_does_not_publish_makes_no_draft(self) -> None:
         from malspark.reporting.models import ConsolidatedIOC
@@ -393,7 +396,7 @@ class TestSigma:
             registry_mods=[
                 RegistryMod(
                     hive="HKCU",
-                    key="Software\\Microsoft\\Windows\\CurrentVersion\\Run\\example",
+                    key="Software\\Microsoft\\Windows\\CurrentVersion\\Run",
                     value_name="example",
                     operation="create",
                 )
@@ -403,6 +406,7 @@ class TestSigma:
         rule = self._sigma(dynamic=dynamic)
 
         assert rule is not None
+        # The value the sample wrote under the Run key, which only the value's name makes its own.
         assert (
             "\\Software\\Microsoft\\Windows\\CurrentVersion\\Run\\example"
             in yaml.safe_load(rule.body)["detection"]["selection_registry"]["TargetObject|contains"]

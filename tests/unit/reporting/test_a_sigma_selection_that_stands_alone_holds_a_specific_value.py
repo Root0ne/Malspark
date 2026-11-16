@@ -198,6 +198,59 @@ class TestTheStoredValues:
         assert body["detection"] == detection
         _stands_alone(body)
 
+    def test_the_folder_left_out_is_recorded_with_the_draft_and_not_printed(self) -> None:
+        from malspark.reporting.renderers.layout import ANALYST
+        from malspark.reporting.renderers.markdown import MarkdownRenderer
+
+        report = _report([("file path", NOTE), ("folder", STARTUP)])
+
+        (rule,) = [r for r in report.detection_signatures if r.kind == "sigma"]
+        assert [(item.value, item.why) for item in rule.values_left_out] == [
+            ("\\Word\\STARTUP\\", ds.CONTAINMENT_REASONS[0])
+        ]
+        assert rule.model_dump()["values_left_out"] == [
+            {"value": "\\Word\\STARTUP\\", "why": ds.CONTAINMENT_REASONS[0]}
+        ]
+        text = MarkdownRenderer(layout=ANALYST).render(report)
+        assert ds.CONTAINMENT_REASONS[0] not in text
+
+    def test_a_draft_that_left_nothing_out_records_nothing(self) -> None:
+        (rule,) = [
+            r
+            for r in _report([("folder", "Custom_update")]).detection_signatures
+            if r.kind == "sigma"
+        ]
+
+        assert "values_left_out" not in rule.model_dump()
+
+    @pytest.mark.parametrize(
+        "quote",
+        [
+            "It writes the `Custom_update` folder.",
+            "It writes C:\\ProgramData\\Custom_update\\update_data.dat.",
+            'It creates "\\Custom_update\\".',
+        ],
+    )
+    def test_a_statement_names_a_folder_in_any_form_it_writes_one(self, quote: str) -> None:
+        mapping = TTPMapping(technique_id="T1105", technique_name="n", evidence_quotes=[quote])
+        (body,) = _sigma(_report([("folder", "Custom_update")], mappings=[mapping]))
+
+        assert body["tags"] == ["attack.t1105"]
+
+    def test_a_statement_quoting_a_key_as_json_names_it(self) -> None:
+        mapping = TTPMapping(
+            technique_id="T1112",
+            technique_name="n",
+            evidence_roots=['{"key": "HKCU\\\\Software\\\\ExampleVendor7731\\\\Cfg"}'],
+        )
+        (body,) = _sigma(
+            _report(
+                [("registry key", "HKCU\\Software\\ExampleVendor7731\\Cfg")], mappings=[mapping]
+            )
+        )
+
+        assert body["tags"] == ["attack.t1112"]
+
     def test_a_technique_naming_the_selected_folder_tags_the_rule(self) -> None:
         mapping = TTPMapping(
             technique_id="T1105",
@@ -352,20 +405,54 @@ class TestWhatTheRuleSays:
         assert "Vendor7731: observed" not in body["description"]
 
 
-@pytest.mark.parametrize(
-    ("value", "part", "held"),
-    [
-        ("\\a\\b\\c.txt", "\\a\\b\\", True),
-        ("\\a\\b\\c", "\\a\\b", True),
-        ("\\software\\vendor7731", "\\vendor7731", True),
-        ("\\a\\b10", "\\a\\b1", False),
-        ("\\a\\b1\\a\\b\\c", "\\a\\b", True),
-        ("x\\a\\b", "a\\b", True),
-        ("xa\\b", "a\\b", False),
-        ("a\\b", "a\\b", True),
-    ],
-)
-def test_a_value_holds_a_part_only_as_whole_path_components(
-    value: str, part: str, held: bool
-) -> None:
-    assert ds._holds_components(value, part) is held
+class TestAncestry:
+    @pytest.mark.parametrize(
+        ("values", "kept"),
+        [
+            # A parent key beside its subkey, in another case and separator form.
+            (["\\Software\\Vendor7731", "/SOFTWARE/VENDOR7731/Cfg"], ["/SOFTWARE/VENDOR7731/Cfg"]),
+            # The trailing part of a longer spelling of the same key stays.
+            (
+                ["\\CLSID\\{1111}", "\\Software\\Classes\\CLSID\\{1111}"],
+                ["\\CLSID\\{1111}"],
+            ),
+            (
+                ["\\Software\\Classes\\CLSID\\{1111}", "\\clsid\\{1111}"],
+                ["\\clsid\\{1111}"],
+            ),
+            # The same key said twice is selected once.
+            (["\\Software\\Vendor7731", "\\software\\vendor7731\\"], ["\\Software\\Vendor7731"]),
+            # Sibling keys, a name inside another name, and a key under another's middle.
+            (
+                ["\\Software\\V\\Setting1", "\\Software\\V\\Setting10"],
+                ["\\Software\\V\\Setting1", "\\Software\\V\\Setting10"],
+            ),
+            (["\\a\\b", "\\xa\\b"], ["\\a\\b", "\\xa\\b"]),
+            (
+                ["\\Vendor7731\\Cfg", "\\Vendor7731\\Cfg2"],
+                ["\\Vendor7731\\Cfg", "\\Vendor7731\\Cfg2"],
+            ),
+            (["\\b\\c", "\\a\\b\\c\\d"], ["\\a\\b\\c\\d"]),
+        ],
+    )
+    def test_a_key_is_left_out_only_for_a_key_under_it_or_a_shorter_spelling(
+        self, values: list[str], kept: list[str]
+    ) -> None:
+        narrowed, left_out = ds.selection_specific(
+            {"selection_registry": {"TargetObject|contains": values}}
+        )
+
+        assert narrowed == {"selection_registry": {"TargetObject|contains": kept}}
+        assert [value for value, _ in left_out] == [v for v in values if v not in kept]
+        assert all(why in ds.CONTAINMENT_REASONS for _, why in left_out)
+
+    def test_a_folder_a_file_lies_under_is_left_out_but_a_file_name_keeps_it(self) -> None:
+        narrowed, left_out = ds.selection_specific(
+            {
+                "selection_file": {"TargetFilename|endswith": ["\\a7731.dat"]},
+                "selection_folder": {"TargetFilename|contains": ["\\Custom_update\\"]},
+            }
+        )
+
+        assert set(narrowed) == {"selection_file", "selection_folder"}
+        assert left_out == []

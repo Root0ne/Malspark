@@ -123,17 +123,7 @@ def ransomware_report() -> MalwareReport:
                             "Buffer": "C:\\Users\\Public\\lockbit.exe",
                         }
                     ],
-                },
-                {
-                    "api": "RegSetValueExA",
-                    "arguments": [
-                        {
-                            "FullName": "HKLM\\Software\\ExampleLocker7731\\Config",
-                            "ValueName": "key",
-                            "Buffer": "x",
-                        }
-                    ],
-                },
+                }
             ],
         },
         "network": {
@@ -240,13 +230,36 @@ class TestRansomwareSigma:
         rule = next(r for r in rules if r.kind == "sigma")
         assert rule.compile_error is None
 
+    def test_the_autorun_is_selected_by_its_value_and_the_payload_it_runs(
+        self, ransomware_report: MalwareReport
+    ) -> None:
+        # The sandbox recorded the write's value name and data; the Run key
+        # alone is every installation's and is never selected.
+        (mod,) = ransomware_report.dynamic.registry_mods
+        assert mod.value_name == "lockbit"
+        rule = next(r for r in build_detection_rules(ransomware_report) if r.kind == "sigma")
+        assert yaml.safe_load(rule.body)["detection"] == {
+            "selection_registry": {
+                "TargetObject|contains": [
+                    "\\Software\\Microsoft\\Windows\\CurrentVersion\\Run\\lockbit"
+                ]
+            },
+            "selection_persistence": {"Image|endswith": ["\\lockbit.exe"]},
+            "condition": "1 of selection_*",
+        }
+        assert rule.printed is True
+        assert [item.value for item in rule.values_left_out] == [
+            "\\Software\\Microsoft\\Windows\\CurrentVersion\\Run"
+        ]
+
     def test_sigma_includes_registry_target(self, ransomware_report: MalwareReport) -> None:
         rules = build_detection_rules(ransomware_report)
         rule = next(r for r in rules if r.kind == "sigma")
         parsed = yaml.safe_load(rule.body)
         registry = parsed["detection"].get("selection_registry") or {}
-        # The sample's own key; the Run key alone is every installation's.
-        assert registry.get("TargetObject|contains") == ["\\Software\\ExampleLocker7731\\Config"]
+        contains = registry.get("TargetObject|contains") or []
+        joined = " ".join(contains)
+        assert "CurrentVersion\\Run" in joined or "currentversion\\run" in joined.lower()
 
 
 class TestRansomwareSuricata:
