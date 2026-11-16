@@ -787,7 +787,6 @@ def _build_consolidated_iocs(report: MalwareReport) -> list[ConsolidatedIOC]:
         listed_value_sightings,
         path_names_a_file,
         persistence_run_keys,
-        publish_answer,
         publishes,
         query_answers,
         recovered_by_words,
@@ -795,9 +794,15 @@ def _build_consolidated_iocs(report: MalwareReport) -> list[ConsolidatedIOC]:
         sandbox_host_kwargs,
         stated_verdict,
     )
+    from malspark.reporting.renderers.stix_renderer import publish_answer as _publish_answer
     from malspark.reporting.stated_host_values import ANALYSIS_SOURCE, identifier_answers
 
+    # Every row is asked the one rule under the verdict the judge stated, so the
+    # verdict's table reads every row alike, whoever recorded it.
     verdict = stated_verdict(report)
+
+    def publish_answer(kind: str, value: str, source: Any, *args: Any, **kwargs: Any) -> str:
+        return _publish_answer(kind, value, source, *args, **{**kwargs, "verdict": verdict})
 
     rows: list[ConsolidatedIOC] = []
     seen: set[tuple[str, str]] = set()
@@ -870,7 +875,9 @@ def _build_consolidated_iocs(report: MalwareReport) -> list[ConsolidatedIOC]:
         )
 
     # The sample's own identity, established by the router, each digest asked
-    # the rule by its class (``identity_rows``).
+    # the rule by its class (``identity_rows``): its own bytes' digests are
+    # published under every verdict, its similarity digests as the verdict's
+    # table says.
     for identity in identity_rows(report.identity.hashes, verdict):
         _add(
             identity.type,
@@ -1445,11 +1452,13 @@ def _with_the_hosts_of_published_urls(
         emulation_kwargs,
         publish_answer,
         published_url_hosts,
+        stated_verdict,
     )
 
     hosts = published_url_hosts(report)
     if not hosts:
         return rows
+    verdict = stated_verdict(report)
     out = list(rows)
     listed = {row.value.strip().lower().rstrip(".") for row in out if row.kind == "domain"}
     for host, (url, source) in hosts.items():
@@ -1467,7 +1476,7 @@ def _with_the_hosts_of_published_urls(
                     "domain",
                     host,
                     source,
-                    **emulation_kwargs(report, "domain", host),
+                    **{**emulation_kwargs(report, "domain", host), "verdict": verdict},
                 ),
                 is_network=True,
             )

@@ -507,7 +507,8 @@ class TestTheExport:
             sha256=SHA256, sha1=SHA1, md5=MD5, sha512="ab" * 64, imphash=IMPHASH,
             ssdeep=SSDEEP, tlsh=TLSH,
         )  # fmt: skip
-        bundle = _export(_report(identity=SampleIdentity(hashes=hashes)))
+        # A Malware verdict the judge stated with a confidence: the table's Malware row.
+        bundle = _export(_report(identity=SampleIdentity(hashes=hashes), overall_confidence=0.9))
         sample = _sample(bundle)
         (similar,) = [o for o in bundle["objects"] if o.get("name", "").startswith("Files like")]
 

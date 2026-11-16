@@ -9,7 +9,9 @@ standard type and category for its kind, ``to_ids`` set from the publish
 decision, and a comment naming why the row is published and the ledger
 entries the table ties to it. An imphash, an ssdeep or a TLSH also matches
 files that are not the sample, so it is
-published unflagged for IDS. A technique is a ``text`` attribute, tagged with
+published unflagged for IDS, and so is a row the table types ``benign``: the
+sample's own digest under a Benign verdict names a file nobody is to detect. A
+technique is a ``text`` attribute, tagged with
 its ATT&CK galaxy cluster when the vendored ATT&CK table names it, and its
 comment names the technique's evidence as every surface prints it
 (``technique_evidence``); it describes the sample rather than matching
@@ -29,6 +31,7 @@ from typing import Any
 from malspark.core.previous_name import PREVIOUS_NAME
 from malspark.reporting.renderers.stix_renderer import digest_label, publishes
 from malspark.reporting.stated_host_values import listed_only
+from malspark.schemas.judgement import BENIGN_INDICATOR_TYPE
 from malspark.schemas.stix_models import tlp_name
 
 # The namespace each attribute's uuid is derived in, with the report's own id
@@ -247,12 +250,15 @@ def build_misp_attributes(
             )
             if part
         )
-        # A generic name is listed, never matched on alone (``listed_only``).
+        # A generic name is listed, never matched on alone (``listed_only``),
+        # and a row the table types ``benign`` (the sample's identity under a
+        # Benign verdict) names a file nobody is to detect.
         to_ids = (
             publishes(answer)
             and kind not in _SIMILARITY_TYPES
             and kind != _UNTYPED
             and not listed_only(answer)
+            and getattr(row, "indicator_type", None) != BENIGN_INDICATOR_TYPE
         )
         out.append(_attribute(kind, category, value, to_ids, comment))
 

@@ -92,7 +92,7 @@ from malspark.reporting.technique_evidence import (
     technique_evidence_ids,
     technique_sandbox_items,
 )
-from malspark.schemas.judgement import indicator_type_for
+from malspark.schemas.judgement import indicator_type_for, publication_for
 from malspark.schemas.sandbox_report import (
     LINEAGE_FILE,
     LINEAGE_MARKED,
@@ -2545,6 +2545,22 @@ def stated_verdict(report: Any) -> Any:
     return _field(report, "verdict") if stated else UNSTATED_VERDICT
 
 
+def withheld_by_the_verdict(verdict: Any, digest: str = "") -> str:
+    """Why ``verdict`` withholds a value as an indicator, or ``""`` when it does not.
+
+    Read off the one declared table (``schemas.judgement.PUBLICATION_BY_VERDICT``),
+    whoever recorded the value: the sample's own digests (``digest``
+    ``sample_identity``) are published under every verdict, its similarity
+    digests (``similarity``) and every other value as the table says.
+    """
+    publication = publication_for(verdict)
+    if digest == SAMPLE_IDENTITY_ROLE:
+        return ""
+    if digest == SIMILARITY_ROLE:
+        return "" if publication.similarity_digests else publication.similarity_withheld
+    return publication.others_withheld
+
+
 def indicator_publish_reason(
     kind: str,
     value: str,
@@ -2573,10 +2589,14 @@ def indicator_publish_reason(
 ) -> str | None:
     """Why this run may publish one indicator of ``kind``, or ``None``.
 
-    ``digest`` names one of the sample's own digests (``sample_identity`` or
-    ``similarity``), which the router established: its identity. Every other
-    question is the evidence's (:func:`_evidence_reason`).
+    The verdict's table first (:func:`withheld_by_the_verdict`): a value it
+    withholds is not published, whoever recorded it. ``digest`` names one of
+    the sample's own digests (``sample_identity`` or ``similarity``), which
+    the table answers by its class. Every other question is the evidence's
+    (:func:`_evidence_reason`).
     """
+    if withheld_by_the_verdict(verdict, digest):
+        return None
     if digest:
         # The sample's own digest, which the router established: its identity.
         return "identity"
@@ -2869,7 +2889,7 @@ def _published_url_hosts(report: Any) -> dict[str, tuple[str, str]]:
                 url,
                 source,
                 _host_reputation(report, url_host(url)),
-                **emulation_kwargs(report, "url", url),
+                **{**emulation_kwargs(report, "url", url), "verdict": stated_verdict(report)},
             )
             is not None
         ):
@@ -4699,6 +4719,11 @@ def publish_answer(
     same order. ``corroborating`` is the run's second-source record
     (:func:`corroborating_values`), asked whole-value for a string row the way
     the export asks it.
+
+    A value the evidence would publish and the verdict's table withholds
+    (:func:`withheld_by_the_verdict`) is ``no: <the verdict's reason>; <what it
+    stands on>``: the verdict first, and what the evidence said of it kept
+    after it, the judge's keep among it.
     """
     text = str(value or "").strip()
     from_strings = str(source or "").strip().lower() in ("", "strings")
@@ -4724,6 +4749,9 @@ def publish_answer(
             spelled=spelled,
         )
     )
+    withheld = withheld_by_the_verdict(verdict, digest)
+    if admitted and withheld:
+        return f"no: {withheld}; {published_because(admitted)}"
     if admitted:
         return yes_because(admitted)
     if stated is not None:
@@ -4868,18 +4896,21 @@ def judge_value_answer(
     """
     text = str(value or "").strip()
     network = getattr(report, "network", None)
+    # The verdict every row is asked under, so the judge's value reads the
+    # verdict's table as the row of the same value does.
+    verdict = stated_verdict(report)
     said = bound_kwargs(report, kind, text)
     if said:
         # A value the code passes whole to an API argument of its role is
         # asked as that binding's row is: the chain is its source.
-        return publish_answer(kind, text, BOUND_SOURCE, **said)
+        return publish_answer(kind, text, BOUND_SOURCE, **{**said, "verdict": verdict})
     host = sandbox_host_kwargs(report, kind, text)
     if host:
         # A file, digest, key or mutex the sandbox recorded and attributes to
         # no process of the sample's tree: the judge's indicator for it is
         # asked as the sandbox's row is, never corroborated by that row.
-        return publish_answer(kind, text, "sandbox", **host)
-    emulated = emulation_kwargs(report, kind, text)
+        return publish_answer(kind, text, "sandbox", **{**host, "verdict": verdict})
+    emulated = {**emulation_kwargs(report, kind, text), "verdict": verdict}
     if emulated.get("unattributed"):
         # A value the sandbox attributes no flow of the sample to is the
         # judge's only by its answer to the question that told it so.
@@ -4939,7 +4970,9 @@ def judge_value_answer(
         own[str(getattr(hashes, "imphash", "") or "").strip().lower()] = SIMILARITY_ROLE
         own.pop("", None)
         if text.lower() in own:
-            return publish_answer("hash", text, "identity", digest=own[text.lower()])
+            return publish_answer(
+                "hash", text, "identity", verdict=verdict, digest=own[text.lower()]
+            )
     reputation = _host_reputation(report, url_host(text)) if kind == "url" else None
     # Asked as the string sweep's, and refused naming the source that holds
     # it: the file's strings when a strings row does, else the tool answers
@@ -5034,25 +5067,25 @@ def _row_is_suspicious(row: Any, report: Any) -> bool:
 def table_row_record(row: Any, report: Any) -> tuple[str, str | None]:
     """``(role, indicator_type)`` of one row of the IOC table, from its publish answer.
 
-    The sample's own digests are ``sample_identity`` (typed by the verdict,
-    :func:`indicator_type_for`) or ``similarity`` (which also match other
-    files, :func:`minted_indicator_type`), when published. Any other published
-    row an export has an object for, and that is not listed only (a generic
-    name), is an ``indicator``: typed as the platform types an indicator it
-    mints (:func:`minted_indicator_type`), or, for a value the judge's own
-    indicator exports (the judge's row, and a host row the judge's indicator
-    names), as the judge typed it (``None`` where a report stored no type).
-    Every other row is ``listed``. Every surface reads these two from the row
-    and asks the rule nothing of its own.
+    The sample's own digests are ``sample_identity`` or ``similarity``, typed
+    by the verdict's table (``schemas.judgement.PUBLICATION_BY_VERDICT``) when
+    published. Any other published row an export has an object for, and that
+    is not listed only (a generic name), is an ``indicator``: typed as the
+    platform types an indicator it mints (:func:`minted_indicator_type`), or,
+    for a value the judge's own indicator exports (the judge's row, and a host
+    row the judge's indicator names), as the judge typed it (``None`` where a
+    report stored no type). Every other row is ``listed``. Every surface reads
+    these two from the row and asks the rule nothing of its own.
     """
     published = publishes(_field(row, "published"))
     if str(_field(row, "source") or "") == "identity":
         role = sample_digest_role(str(_field(row, "type") or ""))
         if not published:
             return role, None
+        publication = publication_for(stated_verdict(report))
         if role == SAMPLE_IDENTITY_ROLE:
-            return role, indicator_type_for(_field(report, "verdict"))
-        return role, minted_indicator_type(_field(report, "verdict"))
+            return role, publication.sample_digests
+        return role, publication.similarity_digests
     if not published or listed_only(_field(row, "published")) or row_pattern(row) is None:
         return LISTED_ROLE, None
     kind = str(_field(row, "kind") or "")

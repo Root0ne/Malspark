@@ -224,8 +224,8 @@ class TestWhatTheSampleOwnIndicatorClaims:
         assert note.abstract.startswith("Benign")
         assert target.indicator_types == ["benign"]
 
-    def test_an_endpoint_indicator_keeps_its_own_type_under_a_benign_verdict(self) -> None:
-        """A benign sample still talks to hosts, and those rows are not about it."""
+    def test_an_endpoint_indicator_is_withheld_under_a_benign_verdict(self) -> None:
+        """A Benign verdict publishes the sample's identity and nothing else as an indicator."""
         report = _report("Benign", summary="A signed utility.")
         report.network = NetworkIOCs(
             domains=[NetworkDomain(fqdn="update.example.org", source="sandbox")]
@@ -235,12 +235,11 @@ class TestWhatTheSampleOwnIndicatorClaims:
             report, base_bundle=Bundle.model_validate(_judge_bundle("Benign"))
         )
 
-        domain = next(
+        assert not [
             obj
             for obj in bundle.objects
             if str(getattr(obj, "type", "")) == "indicator" and "domain-name" in obj.pattern
-        )
-        assert domain.indicator_types == ["anomalous-activity"]
+        ]
         assert_conforms(bundle)
 
 
