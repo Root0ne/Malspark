@@ -1341,11 +1341,16 @@ def _printed_path(text: str, shortened: str) -> str:
     profile folder the catalogue knows, ``Users\\Public``, is no user's
     name), and past an environment name, a folder the catalogue does not say
     which of a host's it stands for. What is left may still be the name
-    alone, which :func:`selection_specific` then takes out.
+    alone, which :func:`selection_specific` then takes out. A path the
+    catalogue calls Windows' own as it is stated (``%SystemRoot%\\System32\\
+    cmd.exe``) has nothing stripped: it is ``shortened``, which
+    :func:`selection_specific` takes out with the catalogue's reason.
     """
     from malspark.reporting.stated_host_values import benign_catalogue
 
-    if not _not_specific("selection_file", shortened):
+    if _not_specific("selection_file", text) or not _why_not_specific(
+        "selection_file", "|contains", shortened, text
+    ):
         return shortened
     catalogue = benign_catalogue()
     parts = [part for part in text.strip().strip("\"'").replace("/", "\\").split("\\") if part]
@@ -1697,7 +1702,7 @@ def _collect_persistence_images(
         if files and words[0] == files[0] and _IMAGE_RE.fullmatch(re.split(r"[\\/]", files[0])[-1]):
             image = _file_value(files[0], rooted=True)
             out.put("selection_persistence", image, files[0])
-            if not _not_specific("selection_persistence", image):
+            if not _why_not_specific("selection_persistence", "Image|endswith", image, files[0]):
                 continue
             files = files[1:]
         for word in files:
@@ -1755,13 +1760,14 @@ def selection_specific(
 
     Each selection of a draft can match alone (its condition is the one
     selection, or ``1 of`` them), so each selected value is held to two tests,
-    whatever recorded it, a sandbox included. A value the platform's catalogue
-    calls every Windows host's (``stated_host_values.benign_reason``), asked
-    of the value as it is printed, is taken out. The reason given is true of
-    the value as it was stated, which ``asked`` names (by selection and folded
-    value): the catalogue's, where the stated value is every host's too, else,
-    for a path printed as a name Windows ships alone, :data:`NAME_ALONE_REASON`.
-    Then containment, read with case and separators folded
+    whatever recorded it, a sandbox included (:func:`_why_not_specific`). A
+    value the platform's catalogue calls every Windows host's
+    (``stated_host_values.benign_reason``), asked of the value as it is
+    printed, is taken out; the reason given is true of the value as it was
+    stated, which ``asked`` names (by selection and folded value). Last, a
+    value some path or key Windows ships matches under the field's own
+    operator (``stated_host_values.shipped_match``) is taken out: it fires on
+    every host. Then containment, read with case and separators folded
     (:func:`_contained`): a value matched by ``contains`` that another
     selected value lies under (a folder and a file in it, a key and its
     subkey) matches everything that value matches and more; a ``contains``
@@ -1770,22 +1776,17 @@ def selection_specific(
     object spelled longer, which the shorter matches in every spelling; and a
     value selected already is said twice. Each is taken out for the other. A
     selection left with no value is taken out. Second, each value taken out
-    with why, in the order met: the catalogue's reason, the name's, or one of
+    with why, in the order met: the catalogue's reason, the name's, the shipped path's, or one of
     :data:`CONTAINMENT_REASONS`. The builder and the sentence saying why no
     draft was built read this one decision.
     """
-    from malspark.reporting.stated_host_values import benign_reason
-
     left_out: list[tuple[str, str]] = []
     placed: list[tuple[str, str, str]] = []
     for name, selection in selections.items():
-        kind = _selection_kind(name)
         for field_name, values in selection.items():
             for value in values if isinstance(values, list) else []:
-                why = _not_specific(name, value)
                 stated = str((asked or {}).get((name, value.lower()), value))
-                if why and kind.shape == "path":
-                    why = benign_reason(kind, stated) or NAME_ALONE_REASON
+                why = _why_not_specific(name, field_name, value, stated)
                 if why:
                     left_out.append((value, why))
                 else:
@@ -1809,6 +1810,53 @@ def _not_specific(selection: str, value: str) -> str:
 
     kind = _selection_kind(selection)
     return benign_reason(kind, value) if kind is not None else ""
+
+
+def _why_not_specific(selection: str, field_name: str, value: str, stated: str) -> str:
+    """Why a value printed in ``field_name`` of ``selection`` does not stand alone, or ``""``.
+
+    First the catalogue, asked of the printed value; its reason is true of
+    the value as it was stated (``stated``): the catalogue's own where the
+    stated value is every host's, else, for a path printed as a name Windows
+    ships alone, :data:`NAME_ALONE_REASON`. Then the last check, asked of the
+    value as it is printed and the way the rule matches it
+    (``stated_host_values.shipped_match``): a value some path or key Windows
+    ships matches under the field's operator fires on every host, and its
+    reason says that (:data:`_SHIPPED_REASON`).
+    """
+    from malspark.reporting.stated_host_values import benign_reason, shipped_match
+
+    kind = _selection_kind(selection)
+    if kind is None:
+        return ""
+    why = benign_reason(kind, value)
+    if why and kind.shape == "path":
+        why = benign_reason(kind, stated) or NAME_ALONE_REASON
+    if why:
+        # The catalogue names the printed value itself: the same fact, said
+        # in its own words.
+        return why
+    operator = field_name.partition("|")[2]
+    if shipped_match(kind.shape, operator, value):
+        return _SHIPPED_REASON[kind.shape == "key"][operator]
+    return ""
+
+
+# Why a value is left out that a path Windows ships (a key every installation
+# has) matches under the selection's operator, by whether it is a key and by
+# the operator.
+_SHIPPED_REASON = {
+    False: {
+        "endswith": "a path Windows ships on every host ends with it",
+        "contains": "a path Windows ships on every host holds it",
+        "": "it is a path Windows ships on every host",
+    },
+    True: {
+        "endswith": "a registry key every Windows installation has ends with it",
+        "contains": "a registry key every Windows installation has holds it",
+        "": "it is a registry key every Windows installation has",
+    },
+}
 
 
 # Why a path is taken out whose printed form is a name Windows ships alone,
