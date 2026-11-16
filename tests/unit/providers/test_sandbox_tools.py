@@ -239,6 +239,50 @@ class TestRegistryOps:
         ]
         assert result["total"] == 2
 
+    def test_each_value_names_the_processes_that_wrote_it(self) -> None:
+        report = {
+            "behavior": {
+                "calls": [
+                    {"api": api, "pid": pid, "arguments": arguments}
+                    for pid, (api, arguments) in (
+                        ("11", self._set("alpha", "C:\\a.exe")),
+                        ("22", self._set("beta", "C:\\b.exe")),
+                    )
+                ]
+            }
+        }
+
+        rows = sandbox_tools.sandbox_registry_ops(report)["registry"]
+
+        assert [(row["value_name"], row["pids"]) for row in rows] == [
+            ("alpha", ["11"]),
+            ("beta", ["22"]),
+        ]
+
+    def test_one_value_written_after_an_unnamed_write_names_both_processes(self) -> None:
+        unnamed = (
+            "RegSetValueExW",
+            [
+                {"name": "FullName", "value": "HKEY_CURRENT_USER\\Software\\Example"},
+                {"name": "Buffer", "value": "C:\\x.exe"},
+            ],
+        )
+        report = {
+            "behavior": {
+                "calls": [
+                    {"api": api, "pid": pid, "arguments": arguments}
+                    for pid, (api, arguments) in (
+                        ("11", unnamed),
+                        ("22", self._set("alpha", "C:\\a.exe")),
+                    )
+                ]
+            }
+        }
+
+        (row,) = sandbox_tools.sandbox_registry_ops(report)["registry"]
+
+        assert (row["value_name"], row["pids"]) == ("alpha", ["11", "22"])
+
     def test_one_value_written_twice_or_read_after_is_one_row_with_the_last_write(self) -> None:
         read = (
             "RegQueryValueExW",

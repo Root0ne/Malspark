@@ -21,7 +21,8 @@ from typing import Any
 
 import pytest
 
-from malspark.reporting.builder import MalwareReportBuilder
+from malspark.reporting import detection_signatures as ds
+from malspark.reporting.builder import MalwareReportBuilder, build_consolidated_iocs
 from malspark.reporting.models import (
     ConsolidatedIOC,
     DynamicBehavior,
@@ -198,51 +199,52 @@ class TestAnAnalystsPayload:
         }
 
 
+def _recorded(
+    mods: list[RegistryMod],
+    persistence: list[PersistenceMechanism],
+    table: list[ConsolidatedIOC] | None = None,
+) -> MalwareReport:
+    """A report holding a sandbox's registry records, its IOC table built, or as stored."""
+    report = MalwareReport(
+        identity=SampleIdentity(hashes=FileHashes(sha256="7" * 64)),
+        verdict="Malware",
+        overall_confidence=0.9,
+        malware_category="ransomware",
+        dynamic=DynamicBehavior(registry_mods=mods),
+        persistence=persistence,
+    )
+    report.consolidated_iocs = build_consolidated_iocs(report) if table is None else table
+    return MalwareReportBuilder.attach_detection_signatures(report)
+
+
+EVIL = "C:\\Users\\a\\AppData\\Roaming\\evil7731.exe"
+
+
 class TestOnlyAWriteNamesAProgram:
-    def test_data_a_sample_read_from_a_common_key_names_none(self) -> None:
-        report = _sandboxed(
-            [
-                (
-                    "RegQueryValueExW",
-                    {
-                        "FullName": RUN,
-                        "ValueName": "q",
-                        "Data": "C:\\Users\\a\\AppData\\Roaming\\evil7731.exe",
-                    },
-                )
-            ]
+    def test_data_a_sample_read_from_a_key_a_persistence_record_names_names_none(self) -> None:
+        # The key is admitted on the analyst's record of it; the sandbox only read it.
+        report = _recorded(
+            [RegistryMod(hive="HKCU", key=RUN, operation="query", new_value=EVIL)],
+            [PersistenceMechanism(kind="registry_run", target=RUN, payload="")],
         )
 
         assert _sigma(report) == []
+        assert report.drafts_not_built
 
     def test_data_under_a_common_key_no_row_admits_names_none(self) -> None:
         # The IOC table as a stored report holds it, read back by the replay:
         # no row of it names the key the value was written under.
-        report = MalwareReport(
-            identity=SampleIdentity(hashes=FileHashes(sha256="7" * 64)),
-            verdict="Malware",
-            dynamic=DynamicBehavior(
-                registry_mods=[
-                    RegistryMod(
-                        hive="HKCU",
-                        key=RUN,
-                        operation="modify",
-                        value_name="w",
-                        new_value="C:\\Users\\a\\AppData\\Roaming\\evil7731.exe",
-                    )
-                ]
-            ),
-            consolidated_iocs=[
-                ConsolidatedIOC(
-                    type="File path",
-                    kind="path",
-                    value="C:\\Users\\a\\other7731.txt",
-                    source="sandbox",
-                )
-            ],
+        written = RegistryMod(
+            hive="HKCU", key=RUN, operation="modify", value_name="w", new_value=EVIL
+        )
+        other = ConsolidatedIOC(
+            type="File path", kind="path", value="C:\\Users\\a\\other7731.txt", source="sandbox"
         )
 
-        assert _sigma(MalwareReportBuilder.attach_detection_signatures(report)) == []
+        report = _recorded([written], [], [other])
+
+        assert _sigma(report) == []
+        assert report.drafts_not_built
 
     def test_a_payload_under_a_common_key_no_row_admits_names_none(self) -> None:
         # A mechanism whose key has no row of its own: the table carries a
@@ -253,12 +255,94 @@ class TestOnlyAWriteNamesAProgram:
                 PersistenceMechanism(
                     kind="winlogon_helper",
                     target="HKLM\\Software\\Microsoft\\Windows NT\\CurrentVersion\\Winlogon",
-                    payload="C:\\Users\\a\\AppData\\Roaming\\evil7731.exe",
+                    payload=EVIL,
                 )
             ],
         )
 
         assert _sigma(report) == []
+
+
+class TestWhatTheDataNames:
+    @pytest.mark.parametrize(
+        ("data", "selected"),
+        [
+            # A switch and an address are no files.
+            ("cmd.exe /c C:\\ProgramData\\evil7731.exe -config7731.ini 10.0.0.7", "\\evil7731.exe"),
+            # A file named bare is written bare on the command line.
+            ("rundll32.exe evil7731.dll,Start", "evil7731.dll"),
+            # A file no process runs as its image is read where the data is.
+            ("C:\\Users\\a\\AppData\\Roaming\\page7731.hta", "\\page7731.hta"),
+        ],
+    )
+    def test_each_file_it_names_is_selected_where_the_data_is(
+        self, data: str, selected: str
+    ) -> None:
+        detection = _detection(_sandboxed([_written("r", data)]))
+
+        assert detection["selection_payload"] == {"Details|contains": [selected]}
+        assert "selection_persistence" not in detection
+
+    @pytest.mark.parametrize(
+        ("data", "image"),
+        [
+            (f"{EVIL} C:\\x\\cfg7731.dat", "\\evil7731.exe"),
+            ("evil7731.exe /x", "\\evil7731.exe"),
+            (
+                "\\\\?\\C:\\Users\\a\\AppData\\Roaming\\svchost.exe",
+                "\\AppData\\Roaming\\svchost.exe",
+            ),
+        ],
+    )
+    def test_a_program_of_the_sample_s_own_is_the_image_and_all_it_says(
+        self, data: str, image: str
+    ) -> None:
+        detection = _detection(_sandboxed([_written("r", data)]))
+
+        assert detection["selection_persistence"] == {"Image|endswith": [image]}
+        assert "selection_payload" not in detection
+
+    def test_a_system_program_left_out_is_recorded_once_with_the_catalogue_s_reason(self) -> None:
+        report = _sandboxed([_written("r", "rundll32.exe C:\\Users\\a\\evil7731.dll,Start")])
+
+        (rule,) = [r for r in report.detection_signatures if r.kind == "sigma"]
+        assert [(v.value, v.why) for v in rule.values_left_out] == [
+            (RUN_TARGET, "a registry key or value every Windows installation has"),
+            ("\\rundll32.exe", "a file Windows ships, in the folder Windows keeps it in"),
+        ]
+        assert "persistence:\\evil7731.dll" in rule.source_evidence
+
+    def test_a_payload_printed_as_a_name_windows_ships_alone_says_so(self) -> None:
+        report = _report(
+            [],
+            persistence=[
+                PersistenceMechanism(
+                    kind="registry_run",
+                    target="HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Run",
+                    payload="%APPDATA%\\cmd.exe",
+                )
+            ],
+        )
+
+        assert _sigma(report) == []
+        (item,) = report.drafts_not_built
+        assert ds.NAME_ALONE_REASON in item.why
+        assert "in the folder Windows keeps it in" not in item.why
+
+    def test_a_task_s_program_with_a_space_in_its_folder_is_its_image(self) -> None:
+        # A target that is a file, which the sandbox recorded: read as a path,
+        # not as words of a command line.
+        program = "C:\\Program Files\\Vendor7731\\up7731.exe"
+        report = _report(
+            [],
+            persistence=[PersistenceMechanism(kind="scheduled_task", target=program, payload="")],
+            sandbox_rows=[
+                ConsolidatedIOC(type="File path", kind="path", value=program, source="sandbox")
+            ],
+        )
+
+        (body,) = _sigma(report)
+        assert body["detection"]["selection_persistence"] == {"Image|endswith": ["\\up7731.exe"]}
 
 
 @pytest.mark.parametrize("form", ["{}", "%APPDATA%\\{}", "C:\\Users\\a\\{}", "{} /c x7731"])
