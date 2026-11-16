@@ -5054,10 +5054,21 @@ is assembled from what the run gathered rather than recomputed beside it:
   restate it. Each source is read for what it is (`evidence_roots.reading_of`):
   a listing of code (`schemas.evidence.lists_code`, the platform's one rule
   for a tool name that decompiles or disassembles); a run observation (its
-  roots are sandbox processes, flows or DNS queries); a rule match (an
+  roots are sandbox processes, flows or DNS queries; each indicator row of a
+  sandbox signature, wherever the answer's kind declares it holds them
+  (`RECORD_PARTS_OF_KIND`: a signature view's `indicators`, an item's
+  `items.*.indicators`), gives the root of the process that acted and of the
+  one acted on, and a row naming no process the report settles gives none and
+  says so); a rule match (an
   asserting tool's entry whose own rows name the technique, or one the
   statement places a row of: a capa match by its address, a sandbox signature
-  by its name, `sandbox signature <name>` being a signature row's own root; a
+  by its name, `sandbox signature <name>` being a signature row's own root, or
+  a sandbox process by the number a statement writes after `pid` or `procid`,
+  the report's id or the guest's pid, where that number names one process of
+  the run (`schemas.process_identity`: a process is its task and the report's
+  own id, the guest's pid an alias, and is written with its task where
+  another task lists the same id, `sandbox process 87 in task behavioral1`;
+  a number more than one process answers to names none); a
   sandbox's own technique tags on a signature, as its report declares them,
   ride on `sandbox_signatures` rows as `technique_ids` and make the citation a
   rule match for those techniques, and a signature's name is never read as a
@@ -5673,7 +5684,18 @@ is assembled from what the run gathered rather than recomputed beside it:
   answers as naming no process, `platform_flows_unsettled`). A DNS request
   takes none: its flow is the guest's resolver, never the program that
   asked, and only a process a DNS row itself
-  names is its maker. A signature's ledger entry carries its indicators,
+  names is its maker. A file, a digest, a key or a mutex the sandbox
+  recorded is the sample's tree's when the record's writer is a process of
+  the sample's tree in the writer's own task: the writer is read as one
+  process (`schemas.process_identity`), by the task the record states and the
+  report's id, or by a number that is the guest's pid any answer of the run
+  states for a listed process (the process tree keeps each process's `task`
+  and `guest_pid`, a child nested under the parent of its own task), and the
+  tree is read per task (`sample_process_trees`). A writer outside its task's
+  tree is outside it, one the listing does not settle (a disputed lineage, or
+  a number two listed processes answer to) is unattributed, and one named by
+  a number no listed process answers to is refused as so named, never as
+  outside a tree. A signature's ledger entry carries its indicators,
   read where each reader declares its format states them
   (`ReportReader.signature_indicators`; a mapped format through
   `field_names`, written on the row in the neutral form,
