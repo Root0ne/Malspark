@@ -29,7 +29,12 @@ from typing import Any
 
 from malspark.analysis.technique_ids import TECHNIQUE_WORD_RE
 from malspark.core import declared_reading
-from malspark.core.builtin_declarations import BUILDER_OF_KIND, CONSUMER_KINDS, OBSERVING_KINDS
+from malspark.core.builtin_declarations import (
+    BUILDER_OF_KIND,
+    CONSUMER_KINDS,
+    OBSERVING_KINDS,
+    STEPPED_KINDS,
+)
 from malspark.core.tool_declarations import SourceRef, ToolDeclarations, ToolFacts
 from malspark.reporting import legacy_tool_names as legacy
 
@@ -501,28 +506,36 @@ REREADS = "rereads"
 UNDECLARED = "undeclared"
 
 
-def second_source_standing(row: Any, named: str) -> str:
+def second_source_standing(row: Any, named: str, steps: int | None = None) -> str:
     """How an entry stands to a value taken from the file's text: the one place it is decided.
 
-    :data:`OBSERVES` for an entry whose kind watched the sample or recovered
-    the value (``core.builtin_declarations.OBSERVING_KINDS``): its answer is an
+    :data:`OBSERVES` for an entry whose declaration says its kind watched the
+    sample or recovered the value — ``observes`` in its stored facts, or one of
+    the platform's own such kinds (``core.builtin_declarations.OBSERVING_KINDS``)
+    — and for an entry of a kind that recovers by steps
+    (``STEPPED_KINDS``: a transform) whose answer records at least one step
+    run (``steps``; ``None``: not known, read as none): its answer is an
     observation independent of the file's text. :data:`REREADS` for every
     other kind, the string sweep's among them, and for a tool its source
     declares nothing for whose name says it lists code
     (:func:`undeclared_code_kind`): a listing, a string search, a decompile, a
-    byte read or an extractor reads the same bytes again. :data:`UNDECLARED`
-    for a tool that declares no kind, which is used at full strength: it
-    confirms a value unless the value stands as plain text in the string
-    sweep's record, where its entry reads the file's own text and adds nothing
-    (``renderers.stix_renderer.SecondSources``). By the index row's declared
-    kind when the entry recorded a source; else by its tool's name
-    (``named``: a section's or the corpus's tool), as before.
+    byte read without a step or an extractor reads the same bytes again.
+    :data:`UNDECLARED` for a tool that declares no kind, which is used at full
+    strength: its cited entry confirms as an observing one does, and is named
+    as a tool that declares no kind (``renderers.stix_renderer.second_source``).
+    By the index row's declared kind when the entry recorded a source; else by
+    its tool's name (``named``: a section's or the corpus's tool), as before.
     """
     entry = row if row is not None and not read_by_name(row) else {"tool": named}
     kind = kind_of(entry) or undeclared_code_kind(entry)
-    if kind in OBSERVING_KINDS:
+    if not kind:
+        return UNDECLARED
+    facts = facts_of(entry)
+    if (facts is not None and facts.observes) or kind in OBSERVING_KINDS:
         return OBSERVES
-    return REREADS if kind else UNDECLARED
+    if kind in STEPPED_KINDS and steps:
+        return OBSERVES
+    return REREADS
 
 
 def display_name(entry: Any, tool: str | None = None) -> str:

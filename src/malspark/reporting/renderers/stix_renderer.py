@@ -5531,19 +5531,66 @@ def _asked_values(report: Any) -> list[str]:
 
 
 def _entry_text(entry: Any, corpus: Any) -> str:
-    """What the run saw of one entry: the corpus's read of it, else its stored answer."""
+    """What the run saw of one entry, as text a value is found whole in.
+
+    The corpus's read of it, which the evidence byte budget never blanks,
+    else its stored answer; and its structured answer. An answer written as
+    JSON is read for its strings (:func:`_written_strings`), so a path the
+    answer escaped (``C:\\\\Temp``) is read as the path it is.
+    """
+    read = ""
     if corpus is not None:
         try:
             read = _read_of_entry(corpus, str(entry.id))
         except Exception:  # noqa: BLE001 — the stored answer is read instead
             read = ""
-        if read:
-            return read
-    text = str(getattr(entry, "output", "") or "")
+    said = read or str(getattr(entry, "output", "") or "")
+    parts = [_written_strings(said)]
     structured = getattr(entry, "structured", None)
-    if not text and structured is not None:
-        text = json.dumps(structured, default=str)
-    return text
+    if structured is not None:
+        parts.append("\n".join(_leaves(structured)))
+    return "\n".join(part for part in parts if part)
+
+
+def _written_strings(text: str) -> str:
+    """A tool's answer as the strings it states: a JSON answer's leaves, else its text unescaped."""
+    try:
+        return "\n".join(_leaves(json.loads(text)))
+    except (ValueError, RecursionError):
+        # Not whole JSON (a trimmed answer, or prose): its escapes are read as
+        # the characters they stand for, beside the text as written.
+        unescaped = text.replace("\\\\", "\\").replace('\\"', '"')
+        return text if unescaped == text else f"{text}\n{unescaped}"
+
+
+def _leaves(value: Any) -> Iterator[str]:
+    """Every string and number a JSON value holds, its keys included, in order."""
+    stack = [value]
+    while stack:
+        held = stack.pop()
+        if isinstance(held, Mapping):
+            for key, item in reversed(list(held.items())):
+                stack.append(item)
+                stack.append(str(key))
+        elif isinstance(held, list | tuple):
+            stack.extend(reversed(held))
+        elif held is not None and not isinstance(held, bool):
+            yield str(held)
+
+
+def _steps_run(entry: Any) -> int:
+    """How many steps an entry's answer records it ran over the bytes it read, ``0`` for none.
+
+    The steps its answer states (``steps``), else the steps its call named:
+    a transform that ran one recovered what it answers, a read of a range
+    without one is a reading of the file's bytes.
+    """
+    structured = getattr(entry, "structured", None)
+    done = structured.get("steps") if isinstance(structured, Mapping) else None
+    if not isinstance(done, list):
+        args = getattr(entry, "args", None)
+        done = args.get("steps") if isinstance(args, Mapping) else None
+    return len(done) if isinstance(done, list) else 0
 
 
 def second_source_reads(
@@ -5593,7 +5640,7 @@ def second_source_reads(
             SecondSourceRead(
                 entry=entry_id,
                 tool=tool_kinds.display_name(row, named) if row is not None else named,
-                standing=tool_kinds.second_source_standing(row, named),
+                standing=tool_kinds.second_source_standing(row, named, _steps_run(entry)),
                 cited=entry_id in cited,
                 holds=holds,
             )

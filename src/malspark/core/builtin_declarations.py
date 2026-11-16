@@ -659,13 +659,16 @@ CONSUMER_KINDS: dict[str, dict[str, Any]] = {
     "evidence_summary.catalogue_associations": {"kinds": ["api_catalogue"]},
 }
 
-# The kinds whose answer is an observation independent of the file's text: what
-# a sandbox or a capture watched the sample do, a rule matched on those events,
-# and what an emulator, a decoder or a hash resolver recovered from bytes that
-# do not spell it. A value taken from the file's text is confirmed only by an
-# entry of one of these an analyst cites, or by a tool that declares no kind
-# (``reporting.tool_kinds.second_source_standing``); every other declared kind
-# reads the file's text again, and one source said twice is one source.
+# The platform's own kinds whose answer is an observation independent of the
+# file's text: what a sandbox or a capture watched the sample do, a rule matched
+# on those events, and what an emulator, a decoder or a hash resolver recovered
+# from bytes that do not spell it. Their declaration states it here, for every
+# entry stored before a declaration could say ``observes``; a tool of any other
+# kind states it in its own declaration (``ToolFacts.observes``). A value taken
+# from the file's text is confirmed by a cited entry of such a kind, or of a
+# tool that declares no kind (``reporting.tool_kinds.second_source_standing``);
+# every other declared kind reads the file's text again, and one source said
+# twice is one source.
 OBSERVING_KINDS: frozenset[str] = frozenset(
     {
         *CONSUMER_KINDS["evidence_bundles.SANDBOX_TOOL_PREFIXES"]["kinds"],
@@ -677,6 +680,11 @@ OBSERVING_KINDS: frozenset[str] = frozenset(
         "api_hash_resolution",
     }
 )
+# The platform's own kinds that recover a value by the steps a call names (a
+# transform: a cipher, a decoding, a decompression over a byte range): an
+# entry that ran at least one step recovered what it answers, one that ran
+# none read the file's bytes as they are.
+STEPPED_KINDS: frozenset[str] = frozenset({"transform"})
 
 # The parts of a kind's answer that are a structured record of what a sandbox
 # observed, not text a tool printed (``reporting.ledger_projection``): a value

@@ -93,6 +93,9 @@ STORED_FACT_FIELDS: tuple[str, ...] = (
     "report_sections",
     "arguments",
     "holds_strings",
+    # Whether the tool's kind observes the sample or recovers a value, read by
+    # the publish rule's second source (``reporting.tool_kinds``).
+    "observes",
     # Whether the tool's import rows cover the late-bound imports, read by the
     # report's binary facts before it calls an import list complete.
     "reads_delay_imports",

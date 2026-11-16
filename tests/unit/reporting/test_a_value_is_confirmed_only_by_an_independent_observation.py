@@ -553,3 +553,82 @@ class TestAnObservationOutranksACut:
 
         assert not publishes(answer(inside))
         assert publishes(answer(whole))
+
+
+def _recorded_by(
+    kind_of_row: str, value: str, entry: LedgerEntry, facts: dict[str, Any]
+) -> MalwareReport:
+    """A report whose claim cites ``entry``, recorded by the build entry by entry."""
+    report = _report(
+        StringIOC(kind=kind_of_row, value=value),  # type: ignore[arg-type]
+        _finding(entry.id),
+        index=[
+            EvidenceIndexRow(
+                id=entry.id, agent="static", tool=entry.tool, source="mcp:example", facts=facts
+            )
+        ],
+    )
+    report.second_source_reads = second_source_reads(report, [entry])
+    return report
+
+
+class TestATransformWithStepsRecovers:
+    """A transform that ran a step recovered the value; a byte read without one read it again."""
+
+    def _entry(self, value: str, steps: list[dict[str, Any]]) -> LedgerEntry:
+        return LedgerEntry(
+            id="ev_0120",
+            agent="static",
+            tool="transform_bytes",
+            args={"offset": 4096, "length": 64, "steps": steps},
+            output=f'{{"output": {{"ascii": "{value}"}}}}'.replace("\\", "\\\\"),
+            structured={"steps": [{"step": n + 1, **step} for n, step in enumerate(steps)]},
+        )
+
+    @pytest.mark.parametrize(
+        ("kind", "value"),
+        [("path", "C:\\ProgramData\\Relay\\relay.exe"), ("registry", REGISTRY_KEY)],
+    )
+    def test_a_cited_transform_with_a_step_confirms(self, kind: str, value: str) -> None:
+        entry = self._entry(value, [{"op": "xor", "key": "5a"}])
+        report = _recorded_by(kind, value, entry, {"v": 1, "kind": "transform"})
+
+        answer = _answer(report, value)
+        assert publishes(answer), answer
+
+    def test_a_byte_read_without_a_step_confirms_nothing(self) -> None:
+        value = "C:\\ProgramData\\Relay\\relay.exe"
+        entry = self._entry(value, [])
+        report = _recorded_by("path", value, entry, {"v": 1, "kind": "transform"})
+
+        answer = _answer(report, value)
+        assert not publishes(answer), answer
+        assert "reads the file's text again" in answer
+
+
+class TestObservingIsDeclared:
+    """Whether a kind observes is a fact its declaration states, read where standing is decided."""
+
+    def _entry(self, value: str) -> LedgerEntry:
+        return LedgerEntry(id="ev_0130", agent="dynamic", tool="trace_it", output=f"saw {value}")
+
+    @pytest.mark.parametrize(
+        ("kind", "value"), [("mutex", "Global\\RelayLock7"), ("registry", REGISTRY_KEY)]
+    )
+    def test_a_made_up_kind_that_states_it_observes_confirms(self, kind: str, value: str) -> None:
+        facts = {"v": 1, "kind": "kernel_trace", "observes": True}
+        report = _recorded_by(kind, value, self._entry(value), facts)
+
+        assert publishes(_answer(report, value))
+
+    def test_the_same_kind_stating_nothing_reads_again(self) -> None:
+        value = "Global\\RelayLock7"
+        report = _recorded_by("mutex", value, self._entry(value), {"v": 1, "kind": "kernel_trace"})
+
+        assert not publishes(_answer(report, value))
+
+    def test_a_declaration_states_it(self) -> None:
+        from malspark.core.tool_declarations import ToolFacts
+
+        assert ToolFacts(kind="kernel_trace", observes=True).observes
+        assert not ToolFacts(kind="kernel_trace").observes
