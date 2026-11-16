@@ -11005,9 +11005,12 @@ _LISTED_PART_FLOOR = 3
 
 # A quoted span of a configuration cell: one literal, whatever it holds.
 _CELL_QUOTED_RE = re.compile(r'"([^"\n]+)"')
-# Where a configuration cell's parts end: a clause or a list goes on, or a
-# parenthesis opens or closes. A run of spaces is read from its first, once.
-_CELL_PART_RE = re.compile(r";\s+|,\s+|(?<!\s)\s+(?:and|then)\s+|[()]")
+# Where a configuration cell's parts end: a clause or a list goes on, with
+# the word that goes on with it, or a parenthesis opens or closes. A run of
+# spaces is read from its first, once.
+_CELL_PART_RE = re.compile(
+    r"[;,]\s+(?:(?:and|then)\s+)?|(?<!\s)\s+(?:and|then)\s+|[()]\s*(?:(?:and|then)\s+)?"
+)
 # One unquoted span of a part: what no space ends. A comma ends a part only
 # where a space follows it (``/GRANT:Everyone,FULL`` is one span), and a
 # backslash or a slash never ends a span: a path is one literal.

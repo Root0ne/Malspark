@@ -217,6 +217,15 @@ class TestTheQuestion:
         assert "write the value as that entry records it" not in found.message
         assert "Cite an entry that holds each value the row states" in found.message
 
+    def test_a_list_word_is_no_part_of_a_literal(self) -> None:
+        cell = "LoadLibraryExW, then 2, then 0x101"
+
+        (found,) = stated_value_violations(_items(cell, "ev_0010"), _texts())
+
+        assert "'then 2'" not in found.message
+        assert "'then 0x101'" not in found.message
+        assert "'LoadLibraryExW'" in found.message
+
 
 class TestInsideALongerToken:
     def test_a_value_read_out_of_a_longer_run_is_recorded_and_never_asked(self) -> None:
