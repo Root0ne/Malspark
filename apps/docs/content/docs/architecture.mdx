@@ -5081,17 +5081,19 @@ is assembled from what the run gathered rather than recomputed beside it:
   `evidence_roots.FILE_ASSESSMENT_TOOLS`); or a citation placed nowhere. A run
   observation or a rule cited by a sentence or evidence item of the statement
   that says it was not seen or holds no record (`_NOT_SEEN_RE`, `_HOLDS_NO_RE`:
-  "capa has no injection rule", "no write is recorded", "(no match)", "does not
-  appear"; a negating word that
+  "capa has no injection rule", "no write is recorded"; a negating word that
   says nothing of the source, "resolved, not imported", is not one) is cited
   for its absence and placed nowhere; a citation written only in the evidence
-  line is read against the claim's sentences too. A source every statement
-  naming the technique cites in a clause that says so — the part of the
-  sentence or evidence item that writes the citation, between commas, colons
-  and dashes ("[ev_0203] DNS names (no match)") — is cited to state an absence
-  and listed in `absence_sources` (`validation.technique_absence_sources`); a
-  source one statement cites for the behaviour, or an asserting tool's own row
-  names, is evidence. A range of items is read by its two ends.
+  line is read against the claim's sentences too. The clause that writes a
+  citation — the part of the sentence or evidence item between commas, colons
+  and dashes, its quoted text left out — also denies for that citation alone
+  with "no match", "do not appear" or "never occurs" where no word completes
+  the form ("[ev_0203] DNS names (no match)", "do not appear in the capture";
+  "no match limit" and "does not appear packed" deny nothing). A source every
+  statement naming the technique cites in a clause that negates or denies so
+  is cited to state an absence and listed in `absence_sources`
+  (`validation.technique_absence_sources`); a source one statement cites for
+  the behaviour, or an asserting tool's own row names, is evidence.
   `independent_sources` counts the sources that stand behind a
   fact about the technique, joining citations of one reading kind whose roots
   overlap (two tools reading one string are one source; a rule match and an
