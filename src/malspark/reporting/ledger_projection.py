@@ -1660,12 +1660,16 @@ def network_from_ledger(
                 for part in (("domain", value_key("domain", host)), ("url", _fold_url_host(url))):
                     if part[1]:
                         tallies.setdefault(part, _MakerTally()).more = True
-            # The method the request record states, and none where it states
-            # none: the first record of the URL that names one.
+            # The method and the user agent the request record states, and
+            # none where it states none: the first record of the URL that
+            # names one.
             method = _first_str(row, "method").upper() if isinstance(row, dict) else ""
+            agent = _first_str(row, "user_agent") if isinstance(row, dict) else ""
             known_url = urls.get(_fold_url_host(url)) if url else None
             if method and known_url is not None and not known_url.method:
                 known_url.method = method
+            if agent and known_url is not None and not known_url.user_agent:
+                known_url.user_agent = agent
 
     # The job's own capture is of its own detonation.
     marking[0] = ObservedIn(detonation=FIRST_DETONATION)
