@@ -158,7 +158,7 @@ A rewrite that leaves out an id the sentence it replaces cites.
 
 A rewrite that cites none of the ids its sources cite, or rests only on sources that cite none; for a section 5 sentence, one resting only on facts about nothing the sentence names (the routine or its caller, the address, the value or the call), or, for a routine or bound-value fact on a sentence stating that the run's own reading (the ledger, its entries, the listings or the function index) does not establish, show, settle, trace or list something and naming no address, nothing its passage names, or with no clause of their own; for a sentence the ledger's own lines hold, one with a clause denying something that no entry shown for that sentence follows at once.
 
-- **Raised at** `malspark.reporting.section_agreement:_answer_violations`, `malspark.reporting.section_agreement:_grounding_violations`, `malspark.reporting.section_agreement:_row_violations`
+- **Raised at** `malspark.reporting.section_agreement:_answer_violations`, `malspark.reporting.section_agreement:_grounding_violations`, `malspark.reporting.section_agreement:_one_row_violations`
 - **Constant** `malspark.reporting.section_agreement:REWRITE_UNGROUNDED_CODE`
 - **Docs** none
 
@@ -182,7 +182,7 @@ No comment names its meaning, and `malspark.pipeline.validation:schema_violation
 
 A row's sentence does not stand in its passage as copied.
 
-- **Raised at** `malspark.reporting.section_agreement:_row_violations`
+- **Raised at** `malspark.reporting.section_agreement:_one_row_violations`
 - **Constant** `malspark.reporting.section_agreement:SENTENCE_NOT_FOUND_CODE`
 - **Docs** none
 
@@ -190,7 +190,7 @@ A row's sentence does not stand in its passage as copied.
 
 A row names a passage the round was not shown as one it may answer for.
 
-- **Raised at** `malspark.reporting.section_agreement:_answer_violations`, `malspark.reporting.section_agreement:_judge_refusal`, `malspark.reporting.section_agreement:_row_violations`
+- **Raised at** `malspark.reporting.section_agreement:_answer_violations`, `malspark.reporting.section_agreement:_judge_refusal`, `malspark.reporting.section_agreement:_one_row_violations`
 - **Constant** `malspark.reporting.section_agreement:UNKNOWN_PASSAGE_CODE`
 - **Docs** none
 
@@ -198,7 +198,7 @@ A row names a passage the round was not shown as one it may answer for.
 
 A row names a source the round was not shown, or answers a section 5 passage with a source that is not a platform fact (a held absence of section 5 rests a rewrite on any source that speaks of it too, a passage written without the code where it names an address the sentence's passage names and a fact holds).
 
-- **Raised at** `malspark.reporting.section_agreement:_answer_violations`, `malspark.reporting.section_agreement:_judge_refusal`, `malspark.reporting.section_agreement:_row_violations`
+- **Raised at** `malspark.reporting.section_agreement:_answer_violations`, `malspark.reporting.section_agreement:_judge_refusal`, `malspark.reporting.section_agreement:_one_row_violations`
 - **Constant** `malspark.reporting.section_agreement:UNKNOWN_SOURCE_CODE`
 - **Docs** none
 
