@@ -278,11 +278,23 @@ produces nothing, which is what `package_by_format` is for.
 | `sandbox.triage.api_token` | empty | Stored encrypted. |
 | `sandbox.triage.profile` | empty | The VM profile; empty means the account default. |
 | `sandbox.triage.profile_by_format` | `{}` | A file type to a VM profile, with `*` as its fallback and `profile` behind that, so an APK reaches an Android profile. |
-| `sandbox.triage.analysis_seconds` | unset | How long the VM runs the sample, sent as `defaults.timeout`; unset leaves Triage's own default. |
+| `sandbox.triage.analysis_seconds` | unset | How long the VM runs the sample, sent where the path taken reads it (see below); with a profile configured, that stored profile's own time applies; unset leaves Triage's own default. |
 | `sandbox.triage.timeout_seconds` | `900` | How long the platform waits for the report. Must be longer than `analysis_seconds`, and validation refuses one that is not. |
 | `sandbox.triage.poll_interval_seconds` | `15` | |
 | `sandbox.triage.fetch_pcap` | `true` | Fetches the capture for the network analyst. |
 | `sandbox.triage.launcher_for_arguments` | `true` | Carries a job's launch arguments through a generated launcher; see [launch arguments](#launch-arguments). Off, the arguments are not passed and the request is recorded as not honoured. |
+
+The analysis time is sent where the path taken reads it. A submission of the
+sample itself carries it as `defaults.timeout`. A submission that picks a
+generated launcher in its archive, with no profile configured, carries it as
+the `timeout` of a profile embedded in the pick entry
+(`profiles[0].profile.timeout`), because Triage does not apply
+`defaults.timeout` to a submission that names a `profiles` entry, and keeps
+`defaults.timeout` beside it. With a profile configured (`profile` or
+`profile_by_format`), the entry names that stored profile and the profile's own
+time applies; the platform's time cannot be carried there, and this path is not
+checked against the live service. Where a task is granted less time than was
+asked, the run's limitations say so.
 
 A value the account does not allow is refused by Triage, and the submission
 error quotes Triage's own words and names the setting. The run summary states
@@ -429,6 +441,7 @@ route read the declaration, never a format's name:
 | `detect` | How a payload is recognised: a list of groups of field tests, and the format matches when every test of any one group holds. A test is `{path, types, non_empty, contains}`: the value at `path` must be one of `types` (`object`, `array`, `string`, `number`, `boolean`, `null`), non-empty, or hold `contains` in its text (a string, number or boolean, compared without regard to case). |
 | `task_id_paths` | Where the source sandbox's task id sits; the first string or number (not empty text) a path names wins. Any other value (an object, a list, a boolean, null) counts as absent. |
 | `target_sha256_paths` | Where the report's claimed target sha256 sits; the first non-empty string or number wins. It is compared with the sample's hash, and a mismatch is a warning, not a refusal. |
+| `granted_seconds_paths` | Where the report states the analysis time the sandbox granted the task, in seconds; the first number of at least 0.001 and at most 10,000,000 a path names wins, anything else counts as absent. Declared only where the report states the time granted, not how long the analysis happened to run; the run's record compares it with the time the submission asked. |
 | `reader` | The id of the registered report reader that reads the format into the neutral report: `cape2`, `cuckoo`, `triage`, `generic` or one an operator registers ([report readers](#report-readers-are-registered)), or empty for a format no reader reads yet. An upload of a format whose reader is not registered is refused (422) with a message saying so. |
 | `mapping` | For a format read by the JSONPath mapping reader (`generic`): where each part of its reports sits, in the shape of `sandbox.rest.mapping` (channels, `field_names`, `channels`, `places`). Each path is checked when the setting is saved. Absent, the format reads through `sandbox.rest.mapping`. A format that declares a mapping must name a reader that reads one; otherwise its upload is refused in words. |
 | `signature_scale` | What a signature's severity number means: `{name, rungs}`, the rung of the severity ladder (Informational, Low, Medium, High, Critical) each score from 1 up names. Absent where the format documents no scale. |

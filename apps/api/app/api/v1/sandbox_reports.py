@@ -541,6 +541,7 @@ def _format_response(
         detect=[[test.model_dump(mode="json") for test in group] for group in fmt.detect],
         task_id_paths=list(fmt.task_id_paths),
         target_sha256_paths=list(fmt.target_sha256_paths),
+        granted_seconds_paths=list(fmt.granted_seconds_paths),
         signature_scale=SignatureScaleResponse(**scale.record()) if scale is not None else None,
         # Only the fields the operator wrote: the value to copy back into
         # sandbox.report_formats without pinning the built-in's other fields.

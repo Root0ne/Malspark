@@ -731,9 +731,12 @@ Each sandbox is asked for the options its format needs:
   VM profile, with `*` as its fallback and `sandbox.triage.profile` behind
   that, so an operator who never touches the map keeps the profile they had.
   `sandbox.triage.analysis_seconds` is how long the VM runs the sample, sent
-  as the submission's `defaults.timeout`; empty, the default, sends nothing
-  and Triage's own default applies. `sandbox.triage.timeout_seconds`, how long
-  the platform waits for the report, must be longer: the wait covers the run
+  as the submission's `defaults.timeout` and, on a launcher's submission with
+  no profile configured, also in the pick entry's embedded profile; with a
+  profile configured, the stored profile's own time applies. Empty, the
+  default, sends nothing and Triage's own default applies.
+  `sandbox.triage.timeout_seconds`, how long the platform waits for the
+  report, must be longer: the wait covers the run
   and Triage's processing of it, and settings validation refuses one that is
   not; no margin for the processing is guessed, so leave room for it. A value
   the account does not allow is refused by Triage, and the submission error

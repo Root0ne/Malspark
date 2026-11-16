@@ -48,8 +48,9 @@ should happen:
   how it ended, and what the provider stated of the sandbox run while the
   report was in hand (``SandboxProvider.detonation_facts``) — its identifiers,
   the guest, the sandbox's version and commit, start and end, whether the
-  sample was run, and the SHA-256 and length of each raw report part as it
-  was read. An empty
+  sample was run, the SHA-256 and length of each raw report part as it
+  was read, and per task the analysis time asked and the time the sandbox's
+  report states it granted (``analysis_time``). An empty
   list is a job that made no sandbox submission and read no sandbox report.
 
 Written when the judge builds the summary and again once the run's last
@@ -78,8 +79,9 @@ from malspark.tools.capabilities import NOT_REPORTED
 # ``thinking`` and ``answered``, and ``tools`` is recorded. 3: ``detonations``
 # is recorded. 4: an agent holding several static providers records them as
 # ``static_providers``, and a call whose entry names no server is credited to
-# the server of its ``provider:<id>`` source, for every agent.
-ENVIRONMENT_VERSION = 4
+# the server of its ``provider:<id>`` source, for every agent. 5: a detonation's
+# row carries ``analysis_time``.
+ENVIRONMENT_VERSION = 5
 
 # The server every entry of a step the pipeline runs in its own process is
 # recorded under (``pipeline.triage_pack.PIPELINE``), and the agent its server
@@ -852,6 +854,42 @@ def _launch(row: dict[str, Any], record: Any) -> None:
         row["arguments_via"] = _said(launch["via"])
 
 
+def _analysis_time(stated: Mapping[str, Any], task: Any) -> list[dict[str, Any]] | str:
+    """Per task, the analysis time asked and the time the report states the sandbox granted.
+
+    A report's one time is the task's the submission answered (``task``); a
+    time per task is kept under each task's name, every task named stated, at
+    most ``STATED_ENTRIES``. The time asked is the submission's, the same for
+    every task. A time is kept as stated (``core.report_formats.seconds_stated``);
+    a value that is none reads ``"not reported"``, and ``"not reported"`` stands
+    alone where no task is named and neither time is stated.
+    """
+    from malspark.core.report_formats import seconds_stated
+
+    asked = seconds_stated(stated.get("requested_seconds"))
+    given = stated.get("granted_seconds")
+    per_task: dict[str, int | float | None] = {}
+    if isinstance(given, Mapping):
+        for name, value in list(given.items())[:STATED_ENTRIES]:
+            said = _said(name, name=True)
+            if said:
+                per_task[said] = seconds_stated(value)
+    elif seconds_stated(given) is not None:
+        per_task[task] = seconds_stated(given)
+    if not per_task:
+        if asked is None:
+            return NOT_REPORTED
+        per_task[task] = None
+    return [
+        {
+            "task": name,
+            "requested_seconds": NOT_REPORTED if asked is None else asked,
+            "granted_seconds": NOT_REPORTED if seconds is None else seconds,
+        }
+        for name, seconds in per_task.items()
+    ]
+
+
 def _detonation_row(record: Any) -> dict[str, Any]:
     """One detonation as the environment records it (:func:`detonations_record`).
 
@@ -894,6 +932,7 @@ def _detonation_row(record: Any) -> dict[str, Any]:
     _read(row, "guest", lambda: _named_texts(stated.get("guest"), nested=True))
     for key in ("sandbox_version", "sandbox_commit", "started", "ended"):
         _read(row, key, functools.partial(_stated_text_of, stated, key))
+    _read(row, "analysis_time", lambda: _analysis_time(stated, row.get("task_id", NOT_REPORTED)))
     if facts is None and reported is False:
         # No report was read, so no part of one was.
         row["report_parts"] = []
@@ -925,8 +964,11 @@ def detonations_record(container: Any) -> list[dict[str, Any]] | None:
     * what the provider stated of the run (``SandboxProvider.detonation_facts``,
       kept on the record by ``providers.detonation.stated_by``): ``detonated``,
       ``task_ids``, ``guest``, ``sandbox_version``, ``sandbox_commit``,
-      ``started``, ``ended`` (each one text, in the sandbox's own clock) and
-      ``report_parts`` (each part's name, SHA-256 and byte length as read).
+      ``started``, ``ended`` (each one text, in the sandbox's own clock),
+      ``report_parts`` (each part's name, SHA-256 and byte length as read) and
+      ``analysis_time`` (per task, ``requested_seconds``, the analysis time the
+      submission asked, and ``granted_seconds``, the time the report states
+      the sandbox granted; :func:`_analysis_time`).
 
     A fact the provider did not state is ``"not reported"``, never a guess
     and never a value taken from another fact. A detonation that read no

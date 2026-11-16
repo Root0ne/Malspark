@@ -13,6 +13,10 @@ through code written against its name. A declaration says:
   string or number (not empty text) a path names wins, anything else is absent;
 * ``target_sha256_paths``: where the report's claimed target sha256 sits; the
   first non-empty string or number a path names wins;
+* ``granted_seconds_paths``: where the report states the analysis time the
+  sandbox granted the task, in seconds; the first time a path names wins
+  (:func:`seconds_stated`), anything else is absent. Declared only where the
+  report states the time granted, not how long the analysis happened to run;
 * ``reader``: the id of the registered report reader
   (``providers.sandbox.readers``) that reads a report of this format into the
   neutral sandbox report (``cape2``, ``cuckoo``, ``triage`` and the JSONPath
@@ -192,6 +196,7 @@ class ReportFormat(BaseModel):
     detect: list[list[FieldTest]] = Field(default_factory=list)
     task_id_paths: list[str] = Field(default_factory=list)
     target_sha256_paths: list[str] = Field(default_factory=list)
+    granted_seconds_paths: list[str] = Field(default_factory=list)
     reader: str = Field(default="", pattern=READER_ID_PATTERN)
     signature_scale: SignatureScale | None = None
     display_name: str = Field(default="", max_length=64)
@@ -228,7 +233,7 @@ class ReportFormat(BaseModel):
             check_mapping_paths(value)
         return value
 
-    @field_validator("task_id_paths", "target_sha256_paths")
+    @field_validator("task_id_paths", "target_sha256_paths", "granted_seconds_paths")
     @classmethod
     def _paths_parse(cls, value: list[str]) -> list[str]:
         for path in value:
@@ -254,6 +259,25 @@ class ReportFormat(BaseModel):
                 if _scalar(value) and value:
                     return str(value)
         return ""
+
+
+# The shortest and the longest analysis time, in seconds, a report or a provider
+# is taken to state: below one thousandth of a second or past about 116 days a
+# number is no time.
+MIN_STATED_SECONDS = 0.001
+MAX_STATED_SECONDS = 10**7
+
+
+def seconds_stated(value: Any) -> int | float | None:
+    """``value`` where it is a time in seconds, as stated; else ``None``. Never raises.
+
+    A time is an int or a float of at least :data:`MIN_STATED_SECONDS` and at
+    most :data:`MAX_STATED_SECONDS` (so finite); a boolean, a text, any
+    container, zero and anything outside the bounds state no time.
+    """
+    if isinstance(value, bool) or not isinstance(value, int | float):
+        return None
+    return value if MIN_STATED_SECONDS <= value <= MAX_STATED_SECONDS else None
 
 
 def _test(path: str, *types: ValueType, non_empty: bool = False, contains: str = "") -> FieldTest:

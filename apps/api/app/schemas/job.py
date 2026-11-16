@@ -390,6 +390,7 @@ class SandboxReportFormatResponse(BaseModel):
     detect: list[list[dict[str, Any]]]
     task_id_paths: list[str]
     target_sha256_paths: list[str]
+    granted_seconds_paths: list[str]
     signature_scale: SignatureScaleResponse | None = None
     # The operator's declaration as written (only the fields it sets), or null
     # for a built-in served as shipped. The fields above are what is in effect.

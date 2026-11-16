@@ -448,6 +448,7 @@
     },
     "detonations": [
       {
+        "analysis_time": null,
         "arguments_honoured": null,
         "arguments_via": null,
         "detonated": null,
