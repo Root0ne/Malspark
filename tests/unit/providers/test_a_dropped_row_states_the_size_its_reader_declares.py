@@ -58,6 +58,11 @@ class TestTheReadersDeclaredFieldStatesTheSize:
 
         assert _rows(TASKS, both)["memory/both.dmp"]["size"] == 4096
 
+    def test_a_size_of_zero_is_stated_and_wins(self) -> None:
+        empty = {**REGION, "name": "memory/empty.dmp", "size": 0}
+
+        assert _rows(TASKS, empty)["memory/empty.dmp"]["size"] == 0
+
     def test_each_reading_of_the_reader_declares_the_same_fields(self) -> None:
         reader = required_reader("triage")
 
