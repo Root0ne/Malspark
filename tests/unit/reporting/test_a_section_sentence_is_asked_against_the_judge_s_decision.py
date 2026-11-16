@@ -769,3 +769,75 @@ def test_the_refusal_on_a_judge_passage_tells_the_end_the_round_gives(decision: 
         citable=CITABLE,
     )
     assert _body(plain) == BODY
+
+
+def test_a_sentence_left_out_on_the_judge_s_decision_is_recorded_whole() -> None:
+    long = (
+        "We assess this as hiding its imports, serving evasion, "
+        + "and the loader walks one more table of plain names before it runs, " * 4
+        + "which ends the stage."
+    )
+    report = report_of(f"{NAMING} {long}")
+    row = _row(long, "drop", reason="The judge reads the resolution as ordinary linking.")
+
+    _counts, records = apply_rows({"sentences": [row]}, passages_of(report), citable=CITABLE)
+    (left,) = [v for v in records if v.code == agreement.JUDGE_LEFT_OUT_CODE]
+    assert len(long) > 200
+    assert left.stood == long and f"{long!r}" in left.message
+
+
+def test_a_verdict_the_record_says_was_not_assessed_is_no_passage() -> None:
+    report = report_of()
+    report.verdict_not_assessed = "the judge gave no verdict"
+
+    shown = {p.id for p in passages_of(report)}
+    assert "judge.verdict" not in shown and "judge.family" not in shown
+    assert DROPPED in shown
+
+
+def test_the_judge_s_task_is_asked_only_where_the_decision_is_shown() -> None:
+    bare = report_of()
+    bare.capability_matrix = []
+    bare.ttp_mappings = []
+    bare.overall_confidence = None
+
+    assert not [p for p in passages_of(bare) if p.kind == agreement.JUDGE]
+    text = prompt_text(passages_of(bare))
+    assert agreement._JUDGE_TASK not in text and "THE JUDGE'S DECISION" not in text
+    assert prompt_text(passages_of(report_of())).count(agreement._JUDGE_TASK) == 1
+
+
+def test_a_matrix_row_not_published_for_another_reason_is_no_judge_s_drop() -> None:
+    from malspark.extractors.capability_matrix import FINDING_ONLY_REASON
+
+    report = report_of()
+    report.capability_matrix.append(
+        CapabilityCell(
+            tactic="TA0007",
+            tactic_name="Discovery",
+            technique_id="T1057",
+            technique_name="Process Discovery",
+            not_published=FINDING_ONLY_REASON,
+            evidence_ids=["ev_0302"],
+        )
+    )
+
+    shown = {p.id for p in passages_of(report)}
+    assert "judge.technique.T1057" not in shown and DROPPED in shown
+
+
+def test_an_empty_field_left_out_on_the_judge_s_decision_prints_as_written_empty() -> None:
+    from malspark.reporting.models import EncryptionScheme
+
+    report = report_of(OTHER)
+    assert report.technical_analysis is not None
+    report.technical_analysis.encryption_scheme = EncryptionScheme(
+        mode="CBC", evidence_ref="ev_0302"
+    )
+    rows = {"code": "agreement.judge_left_out", "message": "left out"}
+    analyst = MarkdownRenderer(layout=ANALYST)
+    assert "| Cipher | - |" not in analyst.render(report)
+    report.run_summary = {
+        "validation": {"unresolved": [{**rows, "subject": "encryption_scheme.cipher"}]}
+    }
+    assert "| Cipher | - |" in analyst.render(report)
