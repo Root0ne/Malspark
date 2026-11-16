@@ -40,7 +40,7 @@ import pytest
 
 from malspark.agents._indicator_denylists import inside_a_longer_token
 from malspark.pipeline import validation
-from malspark.pipeline.events import safe_finding_value
+from malspark.pipeline.events import FINDING_VALUE_LIMIT, safe_finding_value
 from malspark.pipeline.validation import (
     KEPT_WITH_A_FINDING,
     STATED_VALUE_INSIDE_A_TOKEN_CODE,
@@ -201,6 +201,27 @@ class TestACompositeCell:
 
         assert stated_value_violations(_items('FindWindowA, "Pageant"', "ev_0024"), texts) == []
 
+    def test_a_comma_inside_a_span_is_no_list_punctuation(self) -> None:
+        texts = EntryTexts.from_ledger([_strings("ev_0025", "LoadLibraryA", "alpha", "beta")])
+
+        found = _one(_items("LoadLibraryA; alpha,beta", "ev_0025"), texts)
+
+        assert "holds 'alpha,beta'." in found.message
+
+    def test_a_quoted_span_with_a_space_is_one_span_without_its_quotes(self) -> None:
+        texts = EntryTexts.from_ledger(
+            [_entry("ev_0026", "decompile", "FindWindowA(title);\ntitle = Example Window;\n")]
+        )
+
+        assert (
+            stated_value_violations(_items('FindWindowA, "Example Window"', "ev_0026"), texts) == []
+        )
+
+    def test_a_quoted_cell_of_one_span_is_read_as_written(self) -> None:
+        texts = EntryTexts.from_ledger([_entry("ev_0027", "decompile", "title = Pageant;\n")])
+
+        assert _one(_items('"Pageant"', "ev_0027"), texts).code == STATED_VALUE_UNHELD_CODE
+
     def test_a_number_is_held_only_with_the_span_before_it(self) -> None:
         texts = EntryTexts.from_ledger(
             [_entry("ev_0050", "decoder", json.dumps({"seed": "0x5a17c0de", "first_key": "0x2b"}))]
@@ -260,6 +281,20 @@ class TestTheSpellings:
             == []
         )
 
+    def test_the_hive_spelt_last_before_the_path_is_the_one_read(self) -> None:
+        texts = EntryTexts.from_ledger(
+            [
+                _code(
+                    "ev_0032",
+                    'x = 0x80000002; k = fun(0xffffffff80000001, "Software\\\\Vendor");\n',
+                )
+            ]
+        )
+
+        assert (
+            stated_value_violations(_identifiers("HKCU\\Software\\Vendor", "ev_0032"), texts) == []
+        )
+
     @pytest.mark.parametrize(
         "entry",
         [
@@ -305,6 +340,13 @@ class TestThePathNote:
         texts = EntryTexts.from_ledger([_strings("ev_0041", "C:\\Other")])
 
         found = _one(_identifiers("C:\\Users\\evil.exe", "ev_0041"), texts)
+
+        assert " holds '" not in found.message
+
+    def test_a_part_of_one_component_held_on_its_own_is_not_said(self) -> None:
+        texts = EntryTexts.from_ledger([_strings("ev_0045", "Software", "Other")])
+
+        found = _one(_identifiers("Software\\Vendor\\Run", "ev_0045"), texts)
 
         assert " holds '" not in found.message
 
@@ -392,6 +434,17 @@ class TestInsideALongerToken:
         found = _one(_identifiers("HKCU\\Software\\Vendor\\Run", "ev_0062"), texts)
 
         assert f"only inside a longer run of text: {pool!r}." in found.message
+
+    def test_the_run_shown_is_bounded_around_the_value(self) -> None:
+        pool = "a" * 400 + "ExampleNoteFile-READ.txt" + "b" * 400
+        texts = EntryTexts.from_ledger([_strings("ev_0063", pool)])
+
+        found = _one(_identifiers("ExampleNoteFile-READ.txt", "ev_0063"), texts)
+
+        shown = found.message.split("only inside a longer run of text: '")[1].split("'.")[0]
+        assert "ExampleNoteFile-READ.txt" in shown
+        assert shown.startswith("…") and shown.endswith("…")
+        assert len(shown) <= FINDING_VALUE_LIMIT + 2
 
     def test_a_short_value_inside_a_longer_run_is_asked_as_not_held(self) -> None:
         found = _one(_identifiers("NameAlpha", "ev_0012"))
