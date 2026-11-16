@@ -583,6 +583,10 @@ class Reading:
     # names no such field (a field of the same name may hold a path on the
     # sandbox's own host, which is never shown).
     guest_path_fields: tuple[str, ...] = ()
+    # The fields of a dropped file's row that hold the guest's pid of the
+    # process that wrote it, where the source names the writer by an id of its
+    # process list beside it; empty where the source names no such field.
+    dropped_guest_pid_fields: tuple[str, ...] = ()
     # Where a signature row states its indicators, as the reader's source
     # declares them (``schemas.signature_indicators``); ``None`` where the
     # source states none.

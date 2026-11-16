@@ -130,8 +130,12 @@ class TestTheLauncherSOwnProcess:
         answer = sandbox_dropped_files(sandbox_document(report))
         assert answer["dropped"] == [] and answer["total"] == 0
         assert len(answer["platform_files"]) == 7
-        # Each listed with its writer, the script host (guest pids 1756 and 4316).
-        assert {tuple(row["pids"]) for row in answer["platform_files"]} == {("1756",), ("4316",)}
+        # Each listed with its writer, the script host, by the process list's
+        # own id in its task (guest pids 1756 and 4316).
+        assert {(tuple(row["pids"]), row["task"]) for row in answer["platform_files"]} == {
+            (("84",), "behavioral1"),
+            (("87",), "behavioral2"),
+        }
         assert {row[LINEAGE_REASON_KEY] for row in answer["platform_files"]} == {
             DROPPED_BY_LAUNCHER
         }

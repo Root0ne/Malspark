@@ -648,10 +648,12 @@ class TriageReportReader(ReportReader):
                 partial=self.PARTIAL,
                 signature_indicators=self.signature_indicators,
             )
-        # A task report's dumped file names its guest path under ``path``.
+        # A task report's dumped file names its guest path under ``path``, and
+        # the guest's pid of its writer under ``pid``, beside ``procid``.
         return Reading(
             TRIAGE_NORMALISER_FILLS,
             guest_path_fields=("path",),
+            dropped_guest_pid_fields=("pid",),
             signature_indicators=self.signature_indicators,
         )
 
