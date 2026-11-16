@@ -186,3 +186,23 @@ def test_a_row_stored_before_the_set_leaves_the_absence_cited_entries_out() -> N
     row = {"sources": ["ev_0006", "ev_0203"], "absence_sources": ["ev_0203"]}
     assert technique_evidence_ids(row) == ["ev_0006"]
     assert technique_evidence_ids({"sources": ["ev_0203"], "absence_sources": ["ev_0203"]}) is None
+
+
+def test_an_asserting_entry_whose_rows_name_the_technique_is_evidence() -> None:
+    from malspark.core.declared_reading import shipped_by_name, stored_record
+    from malspark.pipeline.validation import technique_absence_sources
+
+    answer = {"matches": [{"rule": "example_rule", "meta": {"technique_id": "T1486"}}]}
+    rules = LedgerEntry(
+        id="ev_0300",
+        tool="yara_scan",
+        args={},
+        output=json.dumps(answer),
+        structured=answer,
+        facts=stored_record(shipped_by_name()["yara_scan"]),
+    )
+    claim = _claim(
+        "Nothing is encrypted.", "[ev_0300] rules (no match); [ev_0204] hosts (no match)"
+    )
+    isrs = {"network": AgentISR(agent_id="network", domain="network", claims=[claim])}
+    assert technique_absence_sources(isrs, [*LEDGER, rules]) == {"T1486": ["ev_0204"]}
