@@ -476,3 +476,33 @@ def test_the_developer_host_question_decides_a_recovered_url() -> None:
 
     assert answer("https://stage-host.example.net/simple/pkg/stage.bin") == (True, True)
     assert answer("https://pypi.org/simple/pkg/stage.bin") == (False, False)
+
+
+def test_misp_drops_the_detection_flag_only_for_the_benign_identity() -> None:
+    from malspark.reporting.models import ConsolidatedIOC
+
+    report = _report("Malware")
+    rows = [
+        ConsolidatedIOC(
+            type="Mutex",
+            kind="mutex",
+            value="relaymark",
+            source="sandbox",
+            published="yes: x",
+            role="indicator",
+            indicator_type="benign",
+        ),
+        ConsolidatedIOC(
+            type="SHA-256",
+            kind="hash",
+            value=SHA256,
+            source="identity",
+            published="yes: the sample's own digest",
+            role="sample_identity",
+            indicator_type="benign",
+        ),
+    ]
+
+    flags = {a["value"]: a["to_ids"] for a in build_misp_attributes(report, rows, owner="r")}
+
+    assert flags == {"relaymark": True, SHA256: False}
