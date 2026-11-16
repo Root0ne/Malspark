@@ -4037,19 +4037,21 @@ def _spelled_reason(spelled: str) -> str:
 def _spelled_as_code(spelled: str) -> bool:
     """Whether a recovering tool's spelling of a name has the shape of a code identifier.
 
-    A lower-case label followed by a member that begins with a capital, as
-    the tool wrote it (``time.Date``, ``cfg.Online``): a package or an object
-    reaching into what it holds. Capitals as such say nothing — a host is
-    written ``Evil-C2.com`` or ``EVIL.COM`` as readily — and a member is an
-    identifier's characters only, so a label with a hyphen is no member.
-    ``""`` (no spelling recorded) asks nothing.
+    A lower-case label followed by a member that begins with a capital and
+    ends the name, as the tool wrote it (``time.Date``, ``cfg.Online``): a
+    package or an object reaching into what it holds. A capitalised label
+    that a further label follows is a host's (``cdn.Microsoft.com``).
+    Capitals as such say nothing — a host is written ``Evil-C2.com`` or
+    ``EVIL.COM`` as readily — and a member is an identifier's characters
+    only, so a label with a hyphen is no member. ``""`` (no spelling
+    recorded) asks nothing.
     """
     return bool(spelled) and _MEMBER_ACCESS.search(spelled) is not None
 
 
-# A lower-case label, then a label that begins with a capital and holds only an
-# identifier's characters, each standing between dots or the name's ends.
-_MEMBER_ACCESS = re.compile(r"(?:^|\.)[a-z][a-z0-9_]*\.[A-Z][A-Za-z0-9_]*(?=\.|$)")
+# A lower-case label, then a last label that begins with a capital and holds
+# only an identifier's characters.
+_MEMBER_ACCESS = re.compile(r"(?:^|\.)[a-z][a-z0-9_]*\.[A-Z][A-Za-z0-9_]*$")
 
 
 def _spelled_name(kind: str, written: str) -> str:

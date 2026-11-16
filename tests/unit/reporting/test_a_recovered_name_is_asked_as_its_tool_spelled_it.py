@@ -134,6 +134,10 @@ class TestOnlyAnIdentifierShapeIsCode:
             ("url", "http://[::1]:80/x"),
             ("url", "http://[2001:db8::7]/gate"),
             ("url", "http://10.0.0.1:8080/"),
+            # A capitalised label a further label follows is a host's label.
+            ("domain", "cdn.Microsoft.com"),
+            ("domain", "login.Live.com"),
+            ("url", "https://api.Telegram.org/bot/x"),
         ],
     )
     def test_a_host_keeps_its_standing(self, kind: str, written: str) -> None:
@@ -147,6 +151,9 @@ class TestOnlyAnIdentifierShapeIsCode:
             ("domain", "os.Getenv"),
             ("url", "http://cfg.Online:8080/gate"),
             ("url", "https://user@runtime.GOROOT/x"),
+            # The shape of ``time.Date``: a name whose last label opens with a
+            # capital reads as code, whatever its last label is.
+            ("domain", "evil.Com"),
         ],
     )
     def test_an_identifier_reads_as_code(self, kind: str, written: str) -> None:
