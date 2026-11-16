@@ -182,6 +182,7 @@ class MalwareReportBuilder:
             exported_indicator_values,
             recovered_network_values,
             second_source_reads,
+            stated_verdict,
             with_cuts_from_the_file,
         )
 
@@ -256,8 +257,15 @@ class MalwareReportBuilder:
             # Every call, repeats included: a statement citing a repeat cites
             # the entry that holds its answer, and its roots are that entry's.
             ledger=self.evidence_ledger,
-            # The run's verdict: under Benign no technique is published.
-            verdict=self._verdict_literal(self.final_decision),
+            # The verdict as every surface of the report reads it: the judge's,
+            # stated with a confidence, else not stated. Under Benign no
+            # technique is published.
+            verdict=stated_verdict(
+                {
+                    "verdict": self._verdict_literal(self.final_decision),
+                    "overall_confidence": self.overall_confidence,
+                }
+            ),
         )
         severity = self._severity_from_judge(static, dynamic, identity)
         verdict = self._verdict_literal(self.final_decision)

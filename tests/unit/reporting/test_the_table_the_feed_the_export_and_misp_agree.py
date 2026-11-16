@@ -507,13 +507,14 @@ class TestTheExport:
             sha256=SHA256, sha1=SHA1, md5=MD5, sha512="ab" * 64, imphash=IMPHASH,
             ssdeep=SSDEEP, tlsh=TLSH,
         )  # fmt: skip
-        # A Malware verdict the judge stated with a confidence: the table's Malware row.
-        bundle = _export(_report(identity=SampleIdentity(hashes=hashes), overall_confidence=0.9))
+        # The report states its verdict with no confidence: the table's "not
+        # stated" row types the sample's own digests ``unknown``.
+        bundle = _export(_report(identity=SampleIdentity(hashes=hashes)))
         sample = _sample(bundle)
         (similar,) = [o for o in bundle["objects"] if o.get("name", "").startswith("Files like")]
 
         assert "file:hashes.'SHA-512' = '" in sample["pattern"]
-        assert sample["indicator_types"] == ["malicious-activity"]
+        assert sample["indicator_types"] == ["unknown"]
         for absent in ("imphash", "SSDEEP", "TLSH"):
             assert absent not in sample["pattern"]
         assert similar["pattern"] == (

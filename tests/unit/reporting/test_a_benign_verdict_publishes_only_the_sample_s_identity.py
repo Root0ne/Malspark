@@ -352,3 +352,64 @@ class TestADeveloperHostIsAskedOfTheStringSweepsValuesOnly:
         answer, *carried = self._surfaces(report)
         assert not publishes(answer), answer
         assert carried == [False, False, False]
+
+
+class TestAVerdictStatedWithoutAConfidenceIsNotStatedEverywhere:
+    """One reading of the verdict per report: no confidence is the table's "not stated" row."""
+
+    @pytest.mark.parametrize("verdict", ["Benign", "Malware"])
+    def test_every_surface_reads_the_not_stated_row(self, verdict: str) -> None:
+        report = _report(verdict, confidence=None)
+        rows = _rows(report)
+        feed = {_value(row): row for row in _feed(report)}
+        misp = {
+            a["value"]: a["to_ids"]
+            for a in build_misp_attributes(report, build_consolidated_iocs(report), owner="r")
+        }
+        bundle, _renderer = _export(report)
+        by_name = {obj["name"]: obj for obj in _indicators(bundle)}
+        (own,) = [obj for name, obj in by_name.items() if name.startswith("Sample hash")]
+
+        # The table and the feed: the identity ``unknown``, the similarity
+        # digest and every other value published by the evidence.
+        assert {rows[v].indicator_type for v in IDENTITY} == {"unknown"}
+        assert rows[IMPHASH].indicator_type == "anomalous-activity"
+        assert all(feed[v]["published"] for v in (*IDENTITY, IMPHASH, OBSERVED, WRITTEN))
+        assert {feed[v]["indicator_type"] for v in IDENTITY} == {"unknown"}
+        # MISP marks the identity for detection, as it does any published digest.
+        assert all(misp[v] for v in IDENTITY)
+        # The bundle carries the identity typed ``unknown``, the similarity and the rest.
+        assert own["indicator_types"] == ["unknown"]
+        assert any(name.startswith("Files like") for name in by_name)
+        assert OBSERVED in str(_indicators(bundle))
+
+    @pytest.mark.parametrize("verdict", ["Benign", "Malware"])
+    def test_the_matrix_publishes_techniques_as_the_not_stated_row_does(self, verdict: str) -> None:
+        from malspark.reporting.builder import MalwareReportBuilder
+        from malspark.schemas.isr_models import AgentISR, ClaimEvidence
+
+        claim = ClaimEvidence(
+            claim="FindFirstFileW enumerates the files it archives",
+            evidence_ref="ev_0001",
+            confidence=0.8,
+            technique_id="T1083",
+        )
+        report = MalwareReportBuilder(
+            file_hash=SHA256,
+            file_name="sample.exe",
+            sample_path=None,
+            sandbox_report={},
+            reports={},
+            isr_reports={"static": AgentISR(agent_id="static", domain="static", claims=[claim])},
+            stix_output={"type": "bundle", "objects": []},
+            run_summary={},
+            discussion_history=[],
+            final_decision=verdict,
+            overall_confidence=None,
+            judge_assessment=None,
+            malware_category="loader",
+            evidence_ledger=[],
+        ).build_deterministic()
+
+        assert [m.technique_id for m in report.ttp_mappings] == ["T1083"]
+        assert [c.not_published for c in report.capability_matrix] == [""]
