@@ -1158,3 +1158,32 @@ def test_a_judge_refusal_is_told_in_a_retry_another_refusal_opens() -> None:
     )
     assert "judge.verdict" in str(reporter.asked[1][-1].content)
     assert not [code for code in by_code if code == UNKNOWN_SOURCE_CODE and by_code[code] > 1]
+
+
+def test_a_platform_rewrite_reads_a_judge_row_without_its_judge_source() -> None:
+    from tests.unit.reporting.test_a_denial_of_a_name_the_run_holds_is_read_against_the_ledger import (  # noqa: E501
+        CALLED,
+        _ledger,
+        _report,
+    )
+
+    whole = f"No other call to `{CALLED}` appears in the analysed code [ev_0107]."
+
+    def make() -> MalwareReport:
+        report = _report("The run ends.")
+        assert report.technical_analysis is not None
+        report.technical_analysis.string_resolution.body = (  # type: ignore[union-attr]
+            f"Routine 0x5a10 reads a host mode through a slot [ev_0107]. {whole}"
+        )
+        report.overall_confidence = 0.8
+        return report
+
+    ledger = _ledger()
+    row = {
+        **_row(whole, "rewrite", rewrite="Some words of the model [ev_0107]."),
+        "sources": ["ledger.1", "judge.verdict"],
+    }
+    end = _end_of(make, row, ledger)
+    assert end == _end_of(make, _twin(row), ledger)
+    # The fact grounds the whole-code absence: the platform qualifies it, as for its twin.
+    assert end[0]["rewritten"] == 1 and end[0]["dropped"] == 0
