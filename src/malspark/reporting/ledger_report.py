@@ -36,6 +36,7 @@ from typing import TYPE_CHECKING, Any
 
 from malspark.agents.output_shortening import BOOKKEEPING_KEY, our_key_in
 from malspark.analysis import behaviour_code
+from malspark.analysis.pcap_summary import conversation_line, summary_text
 from malspark.analysis.technique_ids import (
     says_no_technique,
     sigma_technique_ids,
@@ -91,6 +92,36 @@ TEXT_CUT = (
     "Cut here at {shown:,} of {total:,} characters; the evidence endpoint carries it "
     "whole under {ids}."
 )
+# The capture summary's room. Each conversation line names both ends and what
+# each sent, so it is longer than the line that gave the peer's share alone. A
+# capture is printed whole when it fits ``CAPTURE_TEXT_CHARS``, or when the
+# same rows written with the old line (the totals and the peer's share) would
+# have fitted ``MAX_TEXT_CHARS`` and the whole text fits
+# ``CAPTURE_TEXT_MOST``. Past that, conversations are left out first, the
+# heaviest kept, then TLS names, then beacons, those of the heaviest
+# conversations kept, each with how many are left out, until the text fits
+# ``CAPTURE_TEXT_CHARS``. The overview is never cut: its reasons are the
+# reader's own, a few hundred characters, so no capture summary is longer than
+# ``CAPTURE_TEXT_MOST``. ``CAPTURE_TEXT_RATIO`` is the longest new line over its
+# old one, measured over the 562 conversations of the capture corpus and the
+# 574 of the stored runs (3.29; 2.42 on average). The section is printed (the
+# report and the console); no model is sent its text.
+CAPTURE_TEXT_RATIO = 3.3
+CAPTURE_TEXT_CHARS = round(MAX_TEXT_CHARS * CAPTURE_TEXT_RATIO)
+CAPTURE_TEXT_MOST = 10 * MAX_TEXT_CHARS
+CONVERSATIONS_LEFT_OUT = (
+    "{rest:,} more conversations not shown here; the evidence endpoint carries every one "
+    "under {ids}."
+)
+NAMES_LEFT_OUT = (
+    "{rest:,} more TLS names not shown here; the evidence endpoint carries every one under {ids}."
+)
+BEACONS_LEFT_OUT = (
+    "{rest:,} more beacons not shown here; the evidence endpoint carries every one under {ids}."
+)
+# The part of a conversation line that gave the peer's share before the line
+# named both ends: measured, never printed.
+_OLD_SHARE = " ({packets} pkts, {size} bytes from the host{inbound})"
 
 
 def _cut_text(text: str, ids: str) -> str:
@@ -1236,12 +1267,106 @@ def _behaviour_code(acc: _Sections, entry: LedgerEntry, data: dict[str, Any]) ->
     acc.credit(table, entry)
 
 
+def _most_that_fit(total: int, text: Callable[[int], str]) -> int:
+    """The most of ``total`` items whose ``text`` fits the capture's room, found by halving."""
+    low, high = 0, total
+    while low < high:
+        middle = (low + high + 1) // 2
+        if len(text(middle)) <= CAPTURE_TEXT_CHARS:
+            low = middle
+        else:
+            high = middle - 1
+    return low
+
+
+def _old_form_chars(data: dict[str, Any], whole: str) -> int:
+    """How long ``whole`` was with each conversation written as before both ends were named."""
+    conversations = data["conversations"]
+    size = len(whole)
+    for line in whole.split("\n"):
+        if line.startswith("External conversations ("):
+            size -= len(line) - len(
+                f"External conversations (all {len(conversations)}, by volume):"
+            )
+    for row in conversations:
+        head = (
+            f"{row.get('dst')}:{row.get('dport')}/{row.get('proto')} — "
+            f"{row.get('packets')} pkts, {row.get('bytes')} bytes"
+        )
+        packets = row.get("packets_from_host", row.get("packets_from_peer"))
+        share = ""
+        if packets:
+            share = _OLD_SHARE.format(
+                packets=packets,
+                size=row.get("bytes_from_host", row.get("bytes_from_peer")),
+                inbound="; inbound only" if row.get("inbound_only") else "",
+            )
+        size += len(head) + len(share) - len(conversation_line(row))
+    return size
+
+
+def _capture_text(data: dict[str, Any], ids: str) -> str:
+    """The capture's facts by the summary's own writer, fitted to its room.
+
+    Whole when it fits the room, or when the old line would have fitted the
+    old cap (``CAPTURE_TEXT_MOST`` at most). Else conversations are left out
+    first, the heaviest kept; then TLS names; then beacons, those of the
+    heaviest conversations kept. The overview is never cut.
+    """
+    whole = summary_text(data)
+    if len(whole) <= CAPTURE_TEXT_CHARS or (
+        len(whole) <= CAPTURE_TEXT_MOST and _old_form_chars(data, whole) <= MAX_TEXT_CHARS
+    ):
+        return whole
+    total = len(data["conversations"])
+    names = len(data.get("sni") or {})
+    beacons = list(data.get("beacons") or [])
+    weight = {
+        (row.get("dst"), row.get("dport"), row.get("proto")): at
+        for at, row in reversed(list(enumerate(data["conversations"])))
+    }
+    heaviest = sorted(
+        range(len(beacons)),
+        key=lambda at: weight.get(
+            (beacons[at].get("dst"), beacons[at].get("dport"), beacons[at].get("proto")), total
+        ),
+    )
+
+    def _listing(shown: int, names_shown: int | None = None, kept: int | None = None) -> str:
+        facts, left_out = data, ""
+        if kept is not None:
+            chosen = set(heaviest[:kept])
+            facts = {**data, "beacons": [b for at, b in enumerate(beacons) if at in chosen]}
+            left_out = BEACONS_LEFT_OUT.format(rest=len(beacons) - kept, ids=ids)
+        return summary_text(
+            facts,
+            shown,
+            CONVERSATIONS_LEFT_OUT.format(rest=total - shown, ids=ids),
+            names_shown,
+            NAMES_LEFT_OUT.format(rest=names - (names_shown or 0), ids=ids),
+            left_out,
+        )
+
+    shown = _most_that_fit(total, _listing)
+    if shown or len(_listing(0)) <= CAPTURE_TEXT_CHARS:
+        return _listing(shown)
+    named = _most_that_fit(names, lambda kept: _listing(0, kept))
+    if named or len(_listing(0, 0)) <= CAPTURE_TEXT_CHARS:
+        return _listing(0, named)
+    return _listing(0, 0, _most_that_fit(len(beacons), lambda kept: _listing(0, 0, kept)))
+
+
 def _pcap(acc: _Sections, entry: LedgerEntry, data: dict[str, Any]) -> None:
     summary = data.get("summary")
     if not summary:
         return
     section = acc.get("pcap_summary", "Capture summary", "text")
-    section.text = _cut_text(str(summary), entry.id)
+    if "packets_read" in data and isinstance(data.get("conversations"), list):
+        # The facts are written by the summary's own writer, so a record stored
+        # before the lines named both ends prints each direction truthfully.
+        section.text = _capture_text(data, entry.id)
+    else:
+        section.text = _cut_text(str(summary), entry.id)
     acc.credit(section, entry)
 
 
