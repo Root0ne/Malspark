@@ -5389,7 +5389,11 @@ is assembled from what the run gathered rather than recomputed beside it:
   surfaces are built from one source, so a report, its bundle and its
   `ttp_mappings` never disagree about which techniques the run published.
 * **Under a Benign verdict no technique is published.** The capability matrix
-  is given the run's verdict (`build_capability_matrix(verdict=)`). Under Benign
+  is given the run's verdict as every surface of the report reads it
+  (`build_capability_matrix(verdict=)`, `stix_renderer.stated_verdict`): the
+  judge's, stated with a confidence, and otherwise not stated, so a Benign
+  verdict stated with no confidence publishes techniques as an unstated one
+  does, and its indicators are those of the table's "not stated" row. Under Benign
   every cell stays in the matrix, unpublished, with the reason "the verdict is
   Benign: a capability is listed in the matrix, not published as the sample's
   behaviour" first, the reason the cell already had after it, then the judge's
@@ -5398,9 +5402,11 @@ is assembled from what the run gathered rather than recomputed beside it:
   notes, the judge's bundle and the analysts' claims are kept as they are, and
   the judge is still asked its technique question. `mitre.json`, the STIX
   attack-patterns, the report's ATT&CK table, its references and the navigator
-  layer read the empty published list; a report the builder wrote is never
-  read back from the judge's bundle for `mitre.json`. Malware, Suspicious and
-  an unstated verdict publish by the rules above.
+  layer read the empty published list. `mitre.json` lists the published
+  techniques under every verdict: a report's stored list is the published list,
+  an empty one included, and only a report stored before the list existed is
+  read from its bundle's attack-patterns. Malware, Suspicious and an unstated
+  verdict publish by the rules above.
 * **Every surface that prints a technique id says whether the run published
   it.** The markdown's ATT&CK section names the unpublished ones under *Claims
   that were not published as techniques*; the Findings table writes
@@ -5921,9 +5927,10 @@ is assembled from what the run gathered rather than recomputed beside it:
   is asked are the rule's: a toolchain's own path, a bundled runtime's class
   reference, and a path with neither a listed file extension
   (`IOC_FILE_EXTENSIONS`) nor a system location (`IOC_OS_RESOURCE_PREFIXES`)
-  are not the shape of a file the sample uses, and a URL the strings hold on a
-  developer's or a package registry's host is no indicator. The reason states
-  the shape where it is what refused a value a second source holds.
+  are not the shape of a file the sample uses. The question binds a value the
+  string sweep holds; a path a sandbox, a binding or the analysis recorded is
+  not asked it. The reason states the shape where it is what refused a value a
+  second source holds.
 * **A host value the analysis states is exported when code finds it whole.**
   The report model's host-identifier call types each row with a closed
   vocabulary (`data/host_identifier_kinds_v1.json`: mutex, file path, file
