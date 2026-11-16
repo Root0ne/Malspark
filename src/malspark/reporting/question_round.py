@@ -31,7 +31,7 @@ from __future__ import annotations
 
 import re
 from collections.abc import Iterable, Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import Any
 
 from langchain_core.messages import BaseMessage, HumanMessage, SystemMessage
@@ -41,6 +41,7 @@ from malspark.agents.tool_fence import QUOTED_VALUE_STATEMENT, quoted_value
 from malspark.core.logger import logger
 from malspark.core.spend import SpendCeilingStop
 from malspark.pipeline.events import safe_finding_value
+from malspark.pipeline.feedback_mode import feeds_back
 from malspark.pipeline.validation import (
     EntryTexts,
     ValidationTally,
@@ -48,6 +49,7 @@ from malspark.pipeline.validation import (
     citation_violations,
     declaring,
     misstated_entry_contents,
+    raised_only_in_retry,
     retry_with_feedback,
     schema_violations,
     wrong_entry_citations,
@@ -66,6 +68,14 @@ from malspark.schemas.isr_models import OpenQuestion, open_question_line
 QUESTION_PRODUCER = "questions"
 # The token ledger's name for the round's calls.
 QUESTION_CALL = "questions"
+
+# What a finding first raised by the answer to the round's one retry says of itself: the
+# retry was spent on the first answer's findings, all asked together, and none was left for
+# this one (T-719).
+ONLY_IN_THE_RETRY = (
+    "Not asked: it first appeared in the answer to the question round's one retry, which had "
+    "asked about the first answer's findings, and no retry was left."
+)
 
 # The round's answer, or one reply of it, does not fit the object asked for.
 SCHEMA_CODE = "question.schema"
@@ -705,6 +715,14 @@ async def answer_questions(
     def _said() -> list[str]:
         return [str(r) for r in list(getattr(reporter, "degradations", None) or [])[mark:]]
 
+    # Every finding the round was asked about, so one its retry's answer first raised is
+    # recorded as not asked, as the composer records one (T-719).
+    shown: list[Violation] = []
+
+    def _on_feedback(found: Sequence[Violation]) -> None:
+        shown.extend(found)
+        tally.count(found)
+
     try:
         payload, violations, retries = await retry_with_feedback(
             lambda turns: reporter.ask(turns, call=call, what=what),
@@ -735,7 +753,7 @@ async def answer_questions(
                 ),
             ],
             parse=_parse,
-            on_feedback=tally.count,
+            on_feedback=_on_feedback,
         )
     except SpendCeilingStop as stop:
         said = f"The question round was not written: {stop}."
@@ -754,8 +772,19 @@ async def answer_questions(
         )
     tally.retries += retries
     tally.count(violations)
-    if violations:
-        tally.record_unresolved(QUESTION_PRODUCER, violations)
+    # Only where every finding is asked: in ``record_only`` a finding is already marked not
+    # asked by the loop (``validation.recorded_not_asked``).
+    late = (
+        [v for v in violations if retries and raised_only_in_retry(v, shown)]
+        if feeds_back()
+        else []
+    )
+    tally.record_unresolved(QUESTION_PRODUCER, [v for v in violations if v not in late])
+    tally.record_unresolved(
+        QUESTION_PRODUCER,
+        [replace(v, message=f"{v.message} {ONLY_IN_THE_RETRY}") for v in late],
+        asked=False,
+    )
     answers = settle(payload, questions, evidence)
     logger.info(
         "question round: %d question(s) answered: %s.",

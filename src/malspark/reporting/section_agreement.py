@@ -234,6 +234,7 @@ from malspark.agents.tool_fence import (
 from malspark.core.logger import logger
 from malspark.core.spend import SpendCeilingStop
 from malspark.pipeline.events import safe_finding_value
+from malspark.pipeline.feedback_mode import feeds_back
 from malspark.pipeline.validation import (
     _BARE_ADDRESS,
     _HEX_ADDRESS,
@@ -249,6 +250,7 @@ from malspark.pipeline.validation import (
     generic_function_name,
     ledger_absence_contradictions,
     misstated_entry_contents,
+    raised_only_in_retry,
     retry_with_feedback,
     schema_violations,
     wrong_entry_citations,
@@ -8723,6 +8725,12 @@ async def _ask(
     answer_read = [""]
 
     answered: list[Any] = [None]
+    # The answer the checks last read, whose rows the findings shown name by their place.
+    checked: list[Any] = [None]
+    # Every finding the round was asked about, each row's named by the sentence the row
+    # answers, as a retry's rows stand in another order (``_merged_rows``), so one the retry's
+    # answer first raised is recorded as not asked, as the composer records one (T-719).
+    shown: list[Violation] = []
 
     def _parse(answer: Any) -> Any:
         answer_read[0] = structured_answer_text(answer, _message_text)
@@ -8738,7 +8746,8 @@ async def _ask(
         # answer: no answer for it passed, and it is left out as refused (T-600).
         parsed = _merged_rows(answered[0], parsed, lambda row: _sound(row) or _held(row), _where)
         answered[0] = parsed
-        return _platform_rewrites(parsed, by_id)
+        checked[0] = _platform_rewrites(parsed, by_id)
+        return checked[0]
 
     located_in: dict[str, _Sentences] = {}
 
@@ -8788,6 +8797,10 @@ async def _ask(
             shown.rewrite, citable, items, evidence_texts
         )
 
+    def _on_feedback(asked: Sequence[Violation]) -> None:
+        shown.extend(_by_place(v, checked[0], _where) for v in asked)
+        tally.count([v for v in asked if not v.question_only])
+
     # The call failing, wherever it fails, is no answer at all: each sentence the ledger's
     # lines hold is left out for that reason, every other stands as written (T-600).
     failed = ""
@@ -8803,7 +8816,7 @@ async def _ask(
                 lambda p: rewrites_violations(p, citable, items, evidence_texts, passages),
             ],
             parse=_parse,
-            on_feedback=lambda shown: tally.count([v for v in shown if not v.question_only]),
+            on_feedback=_on_feedback,
         )
     except SpendCeilingStop as stop:
         failed = f"The section agreement question was not asked: {stop}."
@@ -8821,8 +8834,23 @@ async def _ask(
     # sentence the row was about and says so (T-717).
     violations = _no_turn_left(violations, payload)
     tally.count(violations)
-    if violations:
-        tally.record_unresolved(AGREEMENT_PRODUCER, violations)
+    # Only where every finding is asked: in ``record_only`` a finding is already marked not
+    # asked by the loop (``validation.recorded_not_asked``).
+    late = (
+        [
+            v
+            for v in violations
+            if retries and raised_only_in_retry(_by_place(v, payload, _where), shown)
+        ]
+        if feeds_back()
+        else []
+    )
+    tally.record_unresolved(AGREEMENT_PRODUCER, [v for v in violations if v not in late])
+    tally.record_unresolved(
+        AGREEMENT_PRODUCER,
+        [replace(v, message=f"{v.message} {ONLY_IN_THE_RETRY}") for v in late],
+        asked=False,
+    )
     counts, listed = apply_rows(
         payload,
         passages,
@@ -8864,7 +8892,30 @@ async def _ask(
 
 # What the record of a refusal of the round's last answer adds: no turn was left (T-717).
 _NO_TURN_LEFT = "No turn was left to answer this refusal"
+# What a finding first raised by the answer to the round's one retry says of itself: the
+# retry was spent on the first answer's findings, all asked together, and none was left for
+# this one (T-719).
+ONLY_IN_THE_RETRY = (
+    "Not asked: it first appeared in the answer to the agreement question's one retry, which "
+    "had asked about the first answer's findings, and no retry was left."
+)
 _ROW_PATH = re.compile(r"sentences\.(\d+)(?:\.|$)")
+
+
+def _by_place(
+    violation: Violation, payload: Any, where: Callable[[Any], tuple[str, str]]
+) -> Violation:
+    """``violation`` with the row its path names (``sentences.N``) named by the passage and
+    the sentence the row answers (``where``), the place a row keeps whatever its number in an
+    answer, so a finding is the same finding before a retry and after it (T-719); any other
+    finding as it is."""
+    found = _ROW_PATH.match(violation.path)
+    raw = payload.get("sentences") if isinstance(payload, dict) else None
+    rows = raw if isinstance(raw, list) else []
+    if found is None or int(found.group(1)) >= len(rows):
+        return violation
+    passage, place = where(rows[int(found.group(1))])
+    return replace(violation, path=f"sentences[{passage}@{place}]{violation.path[found.end(1) :]}")
 
 
 def _no_turn_left(violations: Sequence[Violation], payload: Any) -> list[Violation]:
