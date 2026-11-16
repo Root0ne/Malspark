@@ -5794,7 +5794,14 @@ is assembled from what the run gathered rather than recomputed beside it:
   unattributed, and a resolver's URL is never published. **A value's standing
   comes from where the platform saw it.** The capture (`pcap_summary`) is a
   sandbox view like the flow table: its conversations' addresses and its TLS
-  names are sandbox rows, with no attribution. A name only the capture's TLS
+  names are sandbox rows, with no attribution. Each conversation names its two
+  ends and what each sent, one direction after the other
+  (`<internal> → <peer> K pkts, B bytes`, a direction that carried nothing
+  written `none`): the peer is the public address, the internal end the
+  address the capture gives that is not public by the same rule, never a
+  product's field. A conversation with no internal end says so and names the
+  public sender, and a record stored before the ends were named prints the
+  peer's share as the peer's. A name only the capture's TLS
   list recorded, which no DNS or HTTP view names, is `capture_only` and reads
   `no: a TLS name only the capture recorded, which does not say which process
   made the connection, and no model kept it as an indicator` until the judge
