@@ -273,3 +273,18 @@ def test_a_reason_without_counts_is_a_row_with_empty_counts() -> None:
     row = claims_unread_replaced_row("reverser", odd, None, "retry")
     assert row is not None
     assert (row["round"], row["begun"], row["read"], row["unread"]) == ("0", "", "", "1")
+
+
+def test_a_why_that_cannot_be_read_leaves_the_row_standing(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from malspark.pipeline import revision_merge
+
+    def _fails(_isr: Any) -> str:
+        raise ValueError("unreadable")
+
+    monkeypatch.setattr(revision_merge, "claims_unread_why_of", _fails)
+    first = _analyst()._text_to_isr(SHORT, revision_round=0)
+    row = claims_unread_replaced_row("reverser", first, None, "retry")
+    assert row is not None
+    assert (row["why"], row["unread"], row["replaced_by"]) == ("", "1", "retry")
