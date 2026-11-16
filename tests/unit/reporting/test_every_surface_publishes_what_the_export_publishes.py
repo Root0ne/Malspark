@@ -29,6 +29,7 @@ from malspark.reporting.models import (
     NetworkIOCs,
     SampleIdentity,
     StaticAnalysis,
+    StringIOC,
 )
 from malspark.reporting.renderers.stix_renderer import (
     UNPUBLISHED_VALUE_CODE,
@@ -781,18 +782,9 @@ def test_a_sweep_path_of_the_toolchain_s_shape_stays_refused_everywhere() -> Non
     assert "librelay" not in str(_indicators_of(exported))
 
 
-def test_a_declined_judge_indicator_keeps_no_host_row() -> None:
-    """Its value is not recorded (Ruling 22): no keep stands on it, and no type is read from it."""
-    judge = _judge(f"[file:name = '{_RELAY}']")  # single backslashes: the grammar refuses it
-    report = _report(
-        judge,
-        overall_confidence=0.9,
-        dynamic=DynamicBehavior(
-            process_tree=[{"pid": 1, "name": f"{SHA256}.exe"}],
-            file_operations=[{"operation": "write", "path": _RELAY, "pid": 1}],
-        ),
-    )
-    report.judge_indicators = [
+def _recorded(judge: dict[str, Any]) -> list[JudgeIndicator]:
+    """The judge's values as the builder records them (``exported_indicator_values``)."""
+    return [
         JudgeIndicator(
             kind=v.kind,
             value=v.value,
@@ -802,31 +794,86 @@ def test_a_declined_judge_indicator_keeps_no_host_row() -> None:
         )
         for v in exported_indicator_values(judge)
     ]
+
+
+def test_a_declined_judge_indicator_still_names_a_host_row() -> None:
+    """Naming keeps the sandbox row, as before; the declined indicator lends it no type."""
+    judge = _judge(f"[file:name = '{_RELAY}']")  # single backslashes: the grammar refuses it
+    report = _report(
+        judge,
+        overall_confidence=0.9,
+        dynamic=DynamicBehavior(
+            process_tree=[{"pid": 1, "name": f"{SHA256}.exe"}],
+            file_operations=[{"operation": "write", "path": _RELAY, "pid": 1}],
+        ),
+    )
+    report.judge_indicators = _recorded(judge)
+    exported, _renderer = _export(report, judge)
+    from malspark.reporting.misp import build_misp_attributes
+
+    row = _row(report, _RELAY)
+    assert (row.source, publishes(row.published)) == ("sandbox", True), row.published
+    assert row.indicator_type == "anomalous-activity"
+    feed = [r["published"] for r in ioc_feed_rows(report.model_dump()) if r["value"] == _RELAY]
+    assert feed == [True]
+    misp = build_misp_attributes(report, build_consolidated_iocs(report), owner="r")
+    assert any(a["value"] == _RELAY for a in misp)
+    assert _indicators_of(exported) == [
+        ("File path C:\\ProgramData\\relay.dat", _RELAY_PLATFORM[1], ["anomalous-activity"])
+    ]
+
+
+def test_a_sweep_path_a_declined_judge_indicator_names_is_as_before() -> None:
+    """X5, as dev answered it: published on the judge's naming, and no object carries it."""
+    from malspark.reporting.misp import build_misp_attributes
+
+    value = "E:\\x\\agentd"
+    judge = _judge(f"[file:name = '{value}']")  # single backslashes: the grammar refuses it
+    report = _report(
+        judge,
+        overall_confidence=0.9,
+        static=StaticAnalysis(interesting_strings=[StringIOC(kind="path", value=value)]),
+        dynamic=DynamicBehavior(
+            process_tree=[{"pid": 1, "name": "s.exe", "command_line": f"s.exe {value}"}]
+        ),
+    )
+    report.judge_indicators = _recorded(judge)
     exported, _renderer = _export(report, judge)
 
-    assert report.judge_indicators == []
-    row = _row(report, _RELAY)
-    assert (row.source, publishes(row.published), row.indicator_type) == ("sandbox", False, None)
-    assert _indicators_of(exported) == []
+    assert _row(report, value).published == "yes: a second source in this run records it"
+    feed = [r["published"] for r in ioc_feed_rows(report.model_dump()) if r["value"] == value]
+    assert feed == [True]
+    misp = build_misp_attributes(report, build_consolidated_iocs(report), owner="r")
+    assert any(a["value"] == value for a in misp)
+    assert "agentd" not in str(
+        [o.get("pattern") for o in exported["objects"] if o.get("type") == "indicator"]
+    )
 
 
-class TestADeclinedJudgeIndicatorTakesNoPlace:
-    """A value of an indicator the export declines is not recorded, in either order."""
+class TestADeclinedJudgeIndicatorLendsNoType:
+    """It names its value, and lends no type, in either order."""
 
     DECLINED = f"[file:name = '{_RELAY}']"  # single backslashes: the grammar refuses it
     CARRIED = f"[file:name = '{_RELAY.replace(chr(92), chr(92) * 2)}']"
 
     @pytest.mark.parametrize("order", ["declined-first", "declined-second"])
-    def test_the_record_holds_the_carried_one_alone(self, order: str) -> None:
-        patterns = [self.DECLINED, self.CARRIED]
-        if order == "declined-second":
-            patterns.reverse()
-        judge = {"type": "bundle", "objects": [_indicator(i, p) for i, p in enumerate(patterns)]}
+    def test_the_type_is_the_carried_one_s(self, order: str) -> None:
+        from malspark.reporting.models import ConsolidatedIOC
+        from malspark.reporting.renderers.stix_renderer import carried_judge_type
 
-        (recorded,) = exported_indicator_values(judge)
+        declined = {**_indicator(0, self.DECLINED), "indicator_types": ["compromised"]}
+        carried = _indicator(1, self.CARRIED)
+        objects = [declined, carried] if order == "declined-first" else [carried, declined]
+        judge = {"type": "bundle", "objects": objects}
+        report = _report(judge, overall_confidence=0.9)
+        report.judge_indicators = _recorded(judge)
+        row = ConsolidatedIOC(type="File path", kind="path", value=_RELAY, published="yes: x")
 
-        assert recorded.indicator_patterns == (self.CARRIED,)
-        assert recorded.indicator_types == ("malicious-activity",)
+        (recorded,) = report.judge_indicators
+        assert set(recorded.indicator_patterns) == {self.DECLINED, self.CARRIED}
+        from malspark.reporting.renderers.stix_renderer import published_keys
+
+        assert carried_judge_type(row, report, published_keys([row])) == "malicious-activity"
 
 
 def test_a_host_row_is_written_after_the_judge_s_own_indicator() -> None:

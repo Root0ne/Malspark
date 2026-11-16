@@ -24,9 +24,13 @@ It asserts the properties the rules state, not a list of answers:
 (d) a published row's type is the type of an object the bundle carries for its
     value, and no row reads a type from an indicator the export declines;
 (e) the feed's published set equals the bundle's indicator values, with one
-    stated exception: a string-sweep path whose shape the judge's naming lifted
-    while the export declines the judge's indicator is a published row the
-    bundle writes no object for (as before this rule, a follow-up of its own).
+    stated exception in its two forms: a string-sweep path whose shape the
+    judge's naming lifted while the export carries no judge indicator naming it
+    (declined by its pattern, or by the lookup) is a published row the bundle
+    writes no object for (as before this rule, a follow-up of its own);
+(f) naming through an indicator the export declines keeps a sandbox row and
+    lifts the shape question exactly as naming through one it carries does,
+    and changes nothing else of the row.
 """
 
 from __future__ import annotations
@@ -124,6 +128,7 @@ def _shapes(kind: str, value: str) -> dict[str, list[str]]:
         "cased": [f"[{_comparison(kind, value.upper())}]"],
         "declined-first": [declined, f"[{one}]"],
         "declined-second": [f"[{one}]", declined],
+        "declined-only": [declined],
     }
 
 
@@ -294,8 +299,18 @@ def test_the_judges_values_hold_every_property(
         else set()
     )
     assert feed - exported <= exception, f"(e) feed only: {feed - exported}"
+
+    # (f) naming through a declined indicator answers the row as naming through a carried one.
+    if shape == "declined-only" and place in ("sweep", "sweep-second-source", "host-row"):
+        carried_judge = {
+            "type": "bundle",
+            "objects": [_indicator(0, f"[{_comparison(kind, value)}]")],
+        }
+        through_carried = ioc_table(_report(kind, value, place, verdict, confidence, carried_judge))
+        expected = {_key(str(r.kind or ""), r.value): r.published for r in through_carried}
+        assert by_key[_key(kind, value)].published == expected[_key(kind, value)], "(f)"
     assert {k for k in exported - feed if k[0] != "hash"} == set(), f"(e) {exported - feed}"
 
 
 def test_the_net_is_as_wide_as_it_says() -> None:
-    assert len(CASES) == sum(len(PLACES[k]) for k, _v in VALUES.values()) * 8 * len(VERDICTS)
+    assert len(CASES) == sum(len(PLACES[k]) for k, _v in VALUES.values()) * 9 * len(VERDICTS)
