@@ -219,7 +219,9 @@ only what the run publishes: a YARA string or a Suricata alert matches the IOC
 table's rows published `yes`, and a value taken from the file's text is
 published only when an observation independent of that text confirms it (a
 sandbox's record, or a cited entry that watched the sample or recovered the
-value), never a value cut out of a longer string, and a Sigma selection names a registry key or an
+value, or of a tool that declares no kind, which the row's reason names), a
+value cut out of a longer string only where that observation holds it whole,
+and a Sigma selection names a registry key or an
 image path only when the table publishes it or a sandbox recorded it. A Sigma
 selection is a whole value a log records, never a cut one and never a sandbox
 signature's name or description, which the rule's description names instead. A
