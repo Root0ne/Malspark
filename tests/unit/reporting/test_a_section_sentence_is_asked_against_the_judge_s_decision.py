@@ -1222,3 +1222,16 @@ def test_the_judge_refusal_names_every_judge_passage_the_row_names(
         f"row 1 names {', '.join(sources)}, of the judge's decision, which supports no answer"
     )
     assert told.path == "sentences.0.sources"
+
+
+def test_a_drop_on_the_judge_s_decision_where_none_passes_opens_a_turn_and_is_recorded() -> None:
+    row = {
+        **_row("The routine at 0x4b20 formats a host name [ev_0302].", "drop", reason="The judge."),
+        "passage": "executive_summary",
+        "sources": ["judge.verdict"],
+    }
+
+    calls, _counts, by_code, unresolved, _report = _asked_of(_host_summary, [row], [row])
+    # A refusal of the drop itself, not a question beside one: asked again, counted, recorded.
+    assert calls == 2 and by_code.get(UNKNOWN_SOURCE_CODE)
+    assert [code for code, _message in unresolved] == [UNKNOWN_SOURCE_CODE]
