@@ -1299,7 +1299,7 @@ def _stated_value(kind: str, value: str) -> str:
         return _past_profile(text, kind, "\\" + tail) if tail else ""
     if kind == "folder":
         tail = past_known_folders(text).strip("\\")
-        return _past_profile(text, kind, f"\\{tail}\\") if tail else ""
+        return f"\\{tail}\\" if tail else ""
     if kind == "ads":
         name = text.lstrip(":")
         return f":{name}" if name else ""
@@ -1313,16 +1313,16 @@ def _stated_value(kind: str, value: str) -> str:
 
 
 def _past_profile(text: str, kind: str, shortened: str) -> str:
-    """``shortened``, or the stated value past its drive and profile where only the shortened
+    """``shortened``, or the stated path past its drive and profile where only the shortened
     form is one the catalogue calls every host's.
 
-    The table publishes the stated value; its part past the known folders may
+    The table publishes the stated path; its part past the known folders may
     be a name Windows ships (``cmd.exe`` in a user's folder), which selected
-    alone matches Windows' own file. The folders the value states then stay,
-    past the drive and the user's profile (``Users\\<name>``), which a log
-    writes differently on each host.
+    alone matches Windows' own file. The folders the path states then stay,
+    past the drive, the user's profile (``Users\\<name>``) and an environment
+    folder, which a log writes differently on each host or never.
     """
-    from malspark.reporting.stated_host_values import benign_reason
+    from malspark.reporting.stated_host_values import benign_catalogue, benign_reason
 
     held = _selection_kind(_STATED_FIELDS[kind][1])
     if held is None or not benign_reason(held, shortened):
@@ -1332,8 +1332,9 @@ def _past_profile(text: str, kind: str, shortened: str) -> str:
         parts = parts[1:]
     if len(parts) > 2 and parts[0].lower() == "users":
         parts = parts[2:]
-    whole = "\\" + "\\".join(parts)
-    return whole + "\\" if kind == "folder" else whole
+    while parts and parts[0].lower() in benign_catalogue().environment_folders:
+        parts = parts[1:]
+    return "\\" + "\\".join(parts)
 
 
 def _stated_drafts(report: MalwareReport) -> tuple[list[_SigmaDraft], int]:
@@ -1552,8 +1553,7 @@ def _persistence_image_source(mech: PersistenceMechanism, admitted: frozenset[st
     if mech.payload and (
         _admitted_value(mech.payload, admitted)
         or (
-            mech.kind in _REGISTRY_PERSISTENCE_KINDS
-            and _IMAGE_RE.search(mech.payload) is not None
+            _IMAGE_RE.search(mech.payload) is not None
             and _admitted_value(mech.target, admitted)
             and _common_key(mech.target)
         )
@@ -1714,8 +1714,9 @@ CONTAINMENT_REASONS = (
 
 
 def _folded(value: str) -> str:
-    """A selected value as containment reads it: lower case, ``\\`` for ``/``, no trailing one."""
-    return value.lower().replace("/", "\\").rstrip("\\")
+    """A selected value as containment reads it: lower case, ``\\`` for ``/``, one leading
+    ``\\`` and no trailing one, so a value holds another only as whole components."""
+    return "\\" + value.lower().replace("/", "\\").strip("\\")
 
 
 def _contained(placed: list[tuple[str, str, str]], at: int) -> str:
@@ -1732,32 +1733,11 @@ def _contained(placed: list[tuple[str, str, str]], at: int) -> str:
             continue
         if not contains:
             continue
-        if _under(text, folded):
+        if folded + "\\" in text:
             return CONTAINMENT_REASONS[0]
-        if field_name.endswith("|contains") and _trailing(folded, text):
+        if field_name.endswith("|contains") and folded.endswith(text):
             return CONTAINMENT_REASONS[1]
     return ""
-
-
-def _starts_a_component(text: str, start: int, part: str) -> bool:
-    return part.startswith("\\") or start == 0 or text[start - 1] == "\\"
-
-
-def _under(text: str, part: str) -> bool:
-    """Whether ``text`` holds ``part`` as whole components with further components after it."""
-    start = text.find(part)
-    while start != -1:
-        end = start + len(part)
-        if _starts_a_component(text, start, part) and text[end : end + 1] == "\\":
-            return True
-        start = text.find(part, start + 1)
-    return False
-
-
-def _trailing(text: str, part: str) -> bool:
-    """Whether ``part`` is ``text``'s trailing whole components."""
-    start = len(text) - len(part)
-    return start > 0 and text.endswith(part) and _starts_a_component(text, start, part)
 
 
 # How many values of each selection the first draft names as its sources.
@@ -1786,8 +1766,9 @@ def _sigma_drafts(report: MalwareReport) -> tuple[list[_SigmaDraft], int, list[s
     stated values (:func:`_stated_drafts`); a draft left with no selection is
     not one; a draft built keeps each value left out of it, with why
     (``left_out``). Second, how many generic names were left out; third, why
-    each value of a draft not built was left out: every one of them is
-    every host's, since containment always keeps the narrower value.
+    each value was left out, which is read only when no draft is built: every
+    value left out then is every host's, since containment always keeps the
+    narrower value.
     """
     registry_targets, persistence_images, held = _sigma_values(report)
     selections: dict[str, dict[str, Any]] = {}
@@ -1815,8 +1796,8 @@ def _sigma_drafts(report: MalwareReport) -> tuple[list[_SigmaDraft], int, list[s
         selections, left_out = selection_specific(
             draft.selections, {key: shown for key, (shown, _) in draft.held.items()}
         )
+        reasons.extend(why for _, why in left_out)
         if not selections:
-            reasons.extend(why for _, why in left_out)
             continue
         kept = {
             (name, value.lower())
@@ -2004,8 +1985,7 @@ def _sigma_tags(report: MalwareReport, selected: list[str]) -> list[str]:
             (form, value.startswith(":"))
             for value in selected
             if (bare := value.strip().lower().strip("\\").lstrip(":"))
-            for written in (bare, value.strip().lower().rstrip("\\"))
-            for form in encodings(written)
+            for form in encodings(bare)
         )
     )
 

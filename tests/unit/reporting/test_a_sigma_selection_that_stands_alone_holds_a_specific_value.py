@@ -300,6 +300,24 @@ class TestWhatASandboxRecorded:
         assert body["logsource"]["category"] == "process_creation"
         assert not any(source.startswith("registry:") for source in _sources(report))
 
+    def test_the_payload_of_an_autorun_on_the_run_key_is_selected(self) -> None:
+        report = _report(
+            [],
+            persistence=[
+                PersistenceMechanism(
+                    kind="registry_run",
+                    target="HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Run",
+                    payload="C:\\Users\\a\\AppData\\Roaming\\ExampleVendor7731\\evil7731.exe",
+                )
+            ],
+        )
+
+        (body,) = _sigma(report)
+        assert body["detection"] == {
+            "selection_persistence": {"Image|endswith": ["\\evil7731.exe"]},
+            "condition": "selection_persistence",
+        }
+
 
 def _sources(report: MalwareReport) -> list[str]:
     return [s for r in report.detection_signatures if r.kind == "sigma" for s in r.source_evidence]
@@ -457,3 +475,38 @@ class TestAncestry:
 
         assert set(narrowed) == {"selection_file", "selection_folder"}
         assert left_out == []
+
+    def test_a_program_name_or_a_contains_value_s_tail_never_takes_a_value_out(self) -> None:
+        selections = {
+            "selection_registry": {
+                "TargetObject|contains": ["\\Software\\Vendor7731\\evil7731.exe"]
+            },
+            "selection_persistence": {"Image|endswith": ["\\Vendor7731", "\\evil7731.exe"]},
+        }
+
+        narrowed, left_out = ds.selection_specific(selections)
+
+        assert narrowed == selections
+        assert left_out == []
+
+
+class TestAPublishedPath:
+    @pytest.mark.parametrize(
+        ("stated", "selected"),
+        [
+            ("C:\\Users\\Admin\\Desktop\\cmd.exe", "\\Desktop\\cmd.exe"),
+            ("%APPDATA%\\cmd.exe", "\\cmd.exe"),
+            ("C:\\Users\\Admin\\Tools7731\\x7731.exe", "\\Tools7731\\x7731.exe"),
+        ],
+    )
+    def test_keeps_its_folders_where_its_name_alone_is_windows_own(
+        self, stated: str, selected: str
+    ) -> None:
+        assert ds._stated_value("path", stated) == selected
+
+    def test_is_never_refused_as_every_host_s_own(self) -> None:
+        report = _report([("file path", "%APPDATA%\\cmd.exe")])
+
+        (body,) = _sigma(report)
+        assert body["detection"]["selection_file"] == {"TargetFilename|endswith": ["\\cmd.exe"]}
+        assert report.drafts_not_built == []

@@ -252,6 +252,75 @@ class TestRansomwareSigma:
             "\\Software\\Microsoft\\Windows\\CurrentVersion\\Run"
         ]
 
+    @staticmethod
+    def _one_write(api: str, key: str, data: str) -> MalwareReport:
+        sandbox = {
+            "target": {"file": {"sha256": "c" * 64, "name": "lockbit.exe"}},
+            "behavior": {
+                "calls": [
+                    {
+                        "api": api,
+                        "arguments": [{"FullName": key, "ValueName": "lockbit", "Buffer": data}],
+                    }
+                ],
+            },
+            "signatures": [
+                {"name": "RansomwareEncryptsFiles", "description": "Ransomware", "severity": 9}
+            ],
+        }
+        return _build(file_hash="c" * 64, sandbox_report=sandbox, overall_confidence=0.92)
+
+    def _detection(self, report: MalwareReport) -> Any:
+        rule = next((r for r in build_detection_rules(report) if r.kind == "sigma"), None)
+        return None if rule is None else yaml.safe_load(rule.body)["detection"]
+
+    def test_a_program_written_under_a_common_key_is_selected_with_the_value(self) -> None:
+        # A write under a key every installation has that no autostart rule
+        # reads: the program its data names is still the sample's.
+        report = self._one_write(
+            "RegSetValueExA", "HKLM\\Software\\Classes", "C:\\Users\\Public\\lockbit.exe"
+        )
+
+        assert report.persistence == []
+        assert self._detection(report) == {
+            "selection_registry": {"TargetObject|contains": ["\\Software\\Classes\\lockbit"]},
+            "selection_persistence": {"Image|endswith": ["\\lockbit.exe"]},
+            "condition": "1 of selection_*",
+        }
+
+    def test_data_naming_no_program_selects_only_the_value(self) -> None:
+        for key in (
+            "HKLM\\Software\\Classes",
+            "HKLM\\Software\\Microsoft\\Windows\\CurrentVersion\\Run",
+        ):
+            report = self._one_write("RegSetValueExA", key, "1")
+
+            assert self._detection(report) == {
+                "selection_registry": {
+                    "TargetObject|contains": ["\\" + key.split("\\", 1)[1] + "\\lockbit"]
+                },
+                "condition": "selection_registry",
+            }
+
+    def test_a_write_under_the_sample_s_own_key_selects_the_key(self) -> None:
+        report = self._one_write(
+            "RegSetValueExA",
+            "HKLM\\Software\\ExampleVendor7731",
+            "C:\\Users\\Public\\lockbit.exe",
+        )
+
+        assert self._detection(report) == {
+            "selection_registry": {"TargetObject|contains": ["\\Software\\ExampleVendor7731"]},
+            "condition": "selection_registry",
+        }
+
+    def test_a_read_under_a_common_key_selects_nothing(self) -> None:
+        report = self._one_write(
+            "RegQueryValueExA", "HKLM\\Software\\Classes", "C:\\Users\\Public\\lockbit.exe"
+        )
+
+        assert self._detection(report) is None
+
     def test_sigma_includes_registry_target(self, ransomware_report: MalwareReport) -> None:
         rules = build_detection_rules(ransomware_report)
         rule = next(r for r in rules if r.kind == "sigma")
