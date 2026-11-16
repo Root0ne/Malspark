@@ -142,3 +142,14 @@ def test_a_key_the_call_never_asked_for_is_no_batch_member() -> None:
     )
     assert _batch_listings(entry.output) == (False, {})
     assert _entry_functions(entry) == [(None, ["parse_config"])]
+
+
+def test_a_batch_keyed_by_addresses_reads_as_it_did() -> None:
+    answer = {hex(FIRST): _listing(FIRST), f"{SECOND:x}": _listing(SECOND)}
+    shown, listings = _batch_listings(json.dumps(answer))
+    assert (shown, sorted(listings)) == (True, [FIRST, SECOND])
+
+
+def test_a_key_that_is_no_routine_beside_an_address_key_is_no_batch() -> None:
+    answer = {hex(FIRST): _listing(FIRST), "note": "the second function was skipped"}
+    assert _batch_listings(json.dumps(answer)) == (False, {})
