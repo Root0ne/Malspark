@@ -6098,11 +6098,23 @@ def make_revision_node(container: ServiceContainer, *, stage: Any = None) -> Any
             mock_isrs: dict[str, AgentISR] = {
                 name: _empty_isr(name, revision_round=iteration) for name in agent_names
             }
+            # The answers in force it replaced with claims unread, as a round does.
+            mock_replaced = [
+                row
+                for name in agent_names
+                if (
+                    row := claims_unread_replaced_row(
+                        name, kept_isrs.get(name), mock_isrs[name], f"round {int(iteration)}"
+                    )
+                )
+                is not None
+            ]
             return {
                 "revised_reports": {
                     name: f"MOCK REVISED: {name} analysis updated." for name in agent_names
                 },
                 "isr_reports": mock_isrs,
+                **({"validation_unparsed_answers": mock_replaced} if mock_replaced else {}),
                 **_debate_record(stage, started),
             }
 

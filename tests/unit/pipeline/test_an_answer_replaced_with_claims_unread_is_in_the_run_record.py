@@ -184,3 +184,73 @@ def test_a_later_round_that_replaces_the_answer_in_force_is_recorded() -> None:
         ("reverser", "0", "1", "round 1")
     ]
     assert claims_unread_in_force(out["isr_reports"]) == []
+
+
+def test_a_further_turn_that_replaces_the_answer_in_force_is_recorded(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import asyncio
+    from types import SimpleNamespace
+    from unittest.mock import MagicMock
+
+    from malspark.pipeline import detonations as dt
+    from malspark.pipeline import nodes
+
+    analyst = _analyst()
+    in_force = analyst._text_to_isr(SHORT, revision_round=0)
+    further = analyst._text_to_isr(WHOLE, revision_round=0)
+    agent = MagicMock()
+    agent.safe_revise_isr.return_value = (WHOLE, further)
+    agent.drain_evidence_entries.return_value = []
+    container = MagicMock()
+    container.get_agent.return_value = agent
+    container.detonations_seen = {}
+    container.further_turns = []
+    record = SimpleNamespace(name="d2", arguments="-p x", requested_by=[])
+    monkeypatch.setattr(dt, "_readers_owed", lambda _c, _s: {"reverser": [record]})
+    monkeypatch.setattr(nodes, "_revision_input", lambda *_a: nodes.RevisionInput(text="raw"))
+    monkeypatch.setattr(nodes, "brief_agent", lambda *_a: None)
+    monkeypatch.setattr(nodes, "_budget_update", lambda *_a: {})
+    monkeypatch.setattr(nodes, "_validation_update", lambda *_a: {})
+    monkeypatch.setattr(nodes, "_nudge_mode", lambda *_a: "")
+    state = {"reports": {"reverser": SHORT}, "isr_reports": {"reverser": in_force}}
+
+    update = asyncio.run(dt.further_turns(container, state, "negotiation"))
+
+    assert update["isr_reports"]["reverser"] is further
+    rows = [
+        row
+        for row in update.get("validation_unparsed_answers") or []
+        if row.get("record") == CLAIMS_UNREAD_REPLACED_RECORD
+    ]
+    assert [(r["agent"], r["round"], r["unread"], r["replaced_by"]) for r in rows] == [
+        ("reverser", "0", "1", "further turn")
+    ]
+
+
+def test_a_mock_round_that_replaces_the_answers_in_force_records_them() -> None:
+    import asyncio
+    from unittest.mock import MagicMock
+
+    from malspark.pipeline.nodes import make_revision_node
+
+    in_force = _analyst()._text_to_isr(SHORT, revision_round=0)
+    container = MagicMock()
+    container.is_mock = True
+    container.agent_registry.list_agents.return_value = ["reverser"]
+    container.analyst_keys.return_value = ["reverser"]
+    container.agent_role.side_effect = lambda n: n
+    state = {
+        "file_hash": "abc",
+        "iteration_count": 1,
+        "discussion_history": [],
+        "reports": {"reverser": SHORT},
+        "isr_reports": {"reverser": in_force},
+    }
+    out = asyncio.run(make_revision_node(container)(state))
+    rows = [
+        row
+        for row in out.get("validation_unparsed_answers") or []
+        if row.get("record") == CLAIMS_UNREAD_REPLACED_RECORD
+    ]
+    assert [(r["agent"], r["replaced_by"]) for r in rows] == [("reverser", "round 1")]

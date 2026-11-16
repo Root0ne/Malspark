@@ -634,6 +634,8 @@ def _directive(records: list[DetonationRecord]) -> str:
 
 # What marks a validation row a further turn made (:func:`mark_further_turn`).
 FURTHER_TURN_KEY = "further_turn"
+# What replaced an answer a further turn replaced, as the run record names it.
+FURTHER_TURN_REPLACED = "further turn"
 
 
 def mark_further_turn(update: dict[str, Any]) -> dict[str, Any]:
@@ -681,8 +683,9 @@ async def further_turns(container: Any, state: Any, step: str) -> dict[str, Any]
     answer that decided something replaces the one in force
     (``revised_reports``, ``isr_reports``); one that decided nothing leaves it
     standing. The ledger entries, spend and validation rows the turn made are
-    carried as a revision round carries them. Each turn is recorded on
-    ``container.further_turns``.
+    carried as a revision round carries them, and so is the row of an answer
+    it replaced with claims unread (``validation.claims_unread_replaced_row``).
+    Each turn is recorded on ``container.further_turns``.
     """
     from malspark.pipeline.nodes import (
         _budget_update,
@@ -693,6 +696,7 @@ async def further_turns(container: Any, state: Any, step: str) -> dict[str, Any]
         brief_agent,
         revision_decided_nothing,
     )
+    from malspark.pipeline.validation import claims_unread_replaced_row
 
     owed = _readers_owed(container, state)
     if not owed:
@@ -746,6 +750,16 @@ async def further_turns(container: Any, state: Any, step: str) -> dict[str, Any]
                 else:
                     own["revised_reports"] = {agent_name: text}
                     own["isr_reports"] = {agent_name: isr}
+                    # The answer this turn replaced, when claims it began were
+                    # not all read: the run record says so.
+                    replaced = claims_unread_replaced_row(
+                        agent_name,
+                        ((state or {}).get("isr_reports") or {}).get(agent_name),
+                        isr,
+                        FURTHER_TURN_REPLACED,
+                    )
+                    if replaced is not None:
+                        own.setdefault("validation_unparsed_answers", []).append(replaced)
                 update = _merge(update, own)
         except Exception as exc:  # noqa: BLE001 — a failed turn leaves the answer in force
             logger.error("Further turn of %s failed: %s", agent_name, type(exc).__name__)

@@ -2561,11 +2561,12 @@ it, it is that claim's text) — against the claims it read and the blocks that
 stated no confidence; what is left is claims begun and not read, which is logged and
 kept on the answer it was read from (`AgentISR.claims_unread_reason`),
 naming the analyst, the round and both numbers. The judge node carries it as a
-degradation reason only from the answers in force. An answer a retry or a
-later round replaced is a row of `run_summary.validation.claims_unread_replaced`
+degradation reason only from the answers in force. An answer a retry, a
+later round or a further turn replaced is a row of
+`run_summary.validation.claims_unread_replaced`
 (`validation.claims_unread_replaced_row`): the analyst, its round, the claims
 begun, read and unread, why in the platform's words, and what replaced it
-(`retry`, `round N`); the row is a fact of the record, no degradation reason
+(`retry`, `round N`, `further turn`); the row is a fact of the record, no degradation reason
 and no sentence of the report. Every heading opens a block, so no
 claim is read with another's CONFIDENCE, TECHNIQUE or EVIDENCE, and a heading
 behind a list marker (`- CLAIM:`, `1. CLAIM:`) counts. A block's fields are
