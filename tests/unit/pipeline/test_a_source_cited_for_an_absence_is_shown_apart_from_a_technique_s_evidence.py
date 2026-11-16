@@ -250,3 +250,24 @@ def test_an_asserting_entry_whose_rows_name_the_technique_is_evidence() -> None:
     )
     isrs = {"network": AgentISR(agent_id="network", domain="network", claims=[claim])}
     assert technique_absence_sources(isrs, [*LEDGER, rules]) == {"T1486": ["ev_0204"]}
+
+
+def test_the_judge_s_summary_names_the_absence_cited_sources_apart() -> None:
+    from malspark.pipeline.evidence_summary import _source_facts
+
+    row = {
+        "sources": ["ev_0006", "ev_0007", "ev_0203", "net:1"],
+        "absence_sources": ["ev_0203", "net:1"],
+        "independent_sources": 1,
+    }
+    assert _source_facts(row) == (
+        " [traced to 2 cited source(s), each counted once: ev_0006, ev_0007; 1 of them "
+        f"independent, sources reading one place counted once; {ABSENCE_LABEL}: ev_0203, net:1]"
+    )
+    only = {"sources": ["ev_0203"], "absence_sources": ["ev_0203"], "independent_sources": 0}
+    assert _source_facts(only) == f" [{ABSENCE_LABEL}: ev_0203]"
+    # A row without the list reads as it did.
+    plain = {"sources": ["ev_0006", "ev_0007"], "independent_sources": 2}
+    assert _source_facts(plain) == (
+        " [traced to 2 cited source(s), each counted once: ev_0006, ev_0007]"
+    )

@@ -9,8 +9,9 @@ technique attribute, the ATT&CK Navigator layer, the ATT&CK defence rows and
 the API's technique list, each with the sandbox items among the technique's
 sources beside the set, named apart (:data:`SANDBOX_ITEMS_LABEL`). The sources
 every statement naming it cites to state an absence (``absence_sources``) are
-neither: each surface that prints its evidence as words names them after it,
-under their own label (:data:`ABSENCE_LABEL`). A technique
+neither: every surface names them after its evidence, under their own label
+(:data:`ABSENCE_LABEL`, :func:`absence_words`) — in its words, its note, or a
+list of their own — and so does the judge's evidence summary. A technique
 whose statements cite no entry and that has no sandbox item says so in each
 surface's own form, worded here once (:data:`NO_LEDGER_ENTRY`); a row stored
 before the set was recorded, whose sources and statements name no entry,
@@ -95,6 +96,21 @@ def technique_evidence_ids(row: Any) -> list[str] | None:
     ] or None
 
 
+def technique_absence_ids(row: Any) -> list[str]:
+    """The sources one technique row's statements cite only to state an absence, once each."""
+    return list(
+        dict.fromkeys(
+            str(raw).strip() for raw in _field(row, "absence_sources") or () if str(raw).strip()
+        )
+    )
+
+
+def absence_words(sources: Iterable[Any]) -> str:
+    """The sources cited only to state an absence, as every surface names them; ``""`` for none."""
+    shown = ", ".join(str(i) for i in sources if str(i).strip())
+    return f"{ABSENCE_LABEL}: {shown}" if shown else ""
+
+
 def technique_sandbox_items(row: Any) -> list[str]:
     """The sources of one technique row that are sandbox items, not ledger entries.
 
@@ -111,23 +127,21 @@ def technique_sandbox_items(row: Any) -> list[str]:
             and str(raw).strip().lower() not in absent
         )
     )
-    items.absence = tuple(
-        dict.fromkeys(
-            str(raw).strip() for raw in _field(row, "absence_sources") or () if str(raw).strip()
-        )
-    )
+    items.absence = tuple(technique_absence_ids(row))
     return items
 
 
-def evidence_words(ids: Iterable[Any] | None, items: Iterable[Any] = ()) -> str:
+def evidence_words(
+    ids: Iterable[Any] | None, items: Iterable[Any] = (), absence: Iterable[Any] | None = None
+) -> str:
     """A technique's evidence as a text surface prints it.
 
     The entries comma-separated, then the sandbox items among its sources,
     named apart. With no entry, the items alone; with neither,
     :data:`NO_LEDGER_ENTRY`, or :data:`NOT_RECORDED` for ``None`` (a stored
     row that records no set). The sources cited only to state an absence
-    (``items.absence``, :func:`technique_sandbox_items`) follow under
-    :data:`ABSENCE_LABEL`.
+    (``absence``, or ``items.absence`` from :func:`technique_sandbox_items`)
+    follow (:func:`absence_words`).
     """
     listed = ", ".join(str(i) for i in ids or () if str(i).strip())
     shown = ", ".join(str(i) for i in items if str(i).strip())
@@ -138,8 +152,26 @@ def evidence_words(ids: Iterable[Any] | None, items: Iterable[Any] = ()) -> str:
         words = listed
     else:
         words = NOT_RECORDED if ids is None else NO_LEDGER_ENTRY
-    absent = ", ".join(str(i) for i in getattr(items, "absence", ()) if str(i).strip())
-    return f"{words}; {ABSENCE_LABEL}: {absent}" if absent else words
+    apart = absence_words(getattr(items, "absence", ()) if absence is None else absence)
+    return f"{words}; {apart}" if apart else words
+
+
+def evidence_note(ids: Iterable[Any] | None, items: Iterable[Any] = ()) -> str:
+    """What a surface that carries a technique's entries in a field of their own notes beside them.
+
+    The sandbox items among its sources, named apart, or, with neither entry
+    nor item, :data:`NO_LEDGER_ENTRY`; then the sources cited only to state an
+    absence (``items.absence``, :func:`absence_words`). ``""`` when there is
+    nothing to note.
+    """
+    shown = ", ".join(str(i) for i in items if str(i).strip())
+    parts = [f"{SANDBOX_ITEMS_LABEL}: {shown}"] if shown else []
+    if not shown and not any(str(i).strip() for i in ids or ()):
+        parts.append(NO_LEDGER_ENTRY)
+    apart = absence_words(getattr(items, "absence", ()))
+    if apart:
+        parts.append(apart)
+    return "; ".join(parts)
 
 
 def technique_evidence_words(row: Any) -> str:

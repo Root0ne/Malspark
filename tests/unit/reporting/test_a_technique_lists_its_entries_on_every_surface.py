@@ -411,3 +411,70 @@ class TestEverySurfacePrintsTheSandboxItemsBesideTheSet:
             for row in _extract_mitre({"malware_report": _report().model_dump(mode="json")}) or []
             for k in row
         }
+
+
+def _with_absence() -> MalwareReport:
+    """The report with the claimed technique citing an entry and an item only to state an
+    absence, and no sandbox item cited for the behaviour."""
+    report = _report()
+    absent = ["ev_0005", "net:9"]
+    _mapping(report, CLAIMED).sources.extend(absent)
+    _mapping(report, CLAIMED).absence_sources = list(absent)
+    for cell in report.capability_matrix:
+        if cell.technique_id == CLAIMED:
+            cell.sources.extend(absent)
+            cell.absence_sources = list(absent)
+    return report
+
+
+class TestEverySurfaceShowsTheAbsenceCitedSourcesApart:
+    APART = "cited for an absence: ev_0005, net:9"
+
+    def test_the_markdown_attack_table(self) -> None:
+        rows = _attack_rows(MarkdownRenderer().render(_with_absence()))
+
+        assert rows[CLAIMED][-1] == f"{', '.join(EXPECTED)}; {self.APART}"
+
+    def test_the_defence_rows(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setattr(
+            builder_module,
+            "defense_for",
+            lambda tids: {
+                tid: TechniqueDefense(mitigations=[AttckObject("M1040", "Behavior Prevention")])
+                for tid in tids
+            },
+        )
+        report = _with_absence()
+        rows = attck_defense_rows(report.ttp_mappings)
+        (row,) = [r for r in rows if r.technique_id == CLAIMED]
+        assert row.evidence_ids == EXPECTED
+        assert row.absence_sources == ["ev_0005", "net:9"]
+        report.attck_defense = rows
+        text = MarkdownRenderer().render(report)
+        lines = [line for line in text.splitlines() if "M1040" in line and CLAIMED in line]
+        assert lines
+        assert all(line.rstrip(" |").endswith(self.APART) for line in lines)
+
+    def test_the_stix_uses_edge_with_no_sandbox_item(self) -> None:
+        objects = (
+            ExtendedSTIXRenderer()
+            .render(_with_absence(), _judge(), ledger_ids=LEDGER)
+            .model_dump(mode="json")["objects"]
+        )
+        edges = {
+            o["target_ref"]: o
+            for o in objects
+            if o["type"] == "relationship" and o["relationship_type"] == "uses"
+        }
+        claimed = edges[attack_pattern_id(CLAIMED)]
+        assert claimed[EVIDENCE_REFS_PROPERTY] == EXPECTED
+        assert claimed[EVIDENCE_NOTE_PROPERTY] == self.APART
+
+    def test_the_api_technique_list(self) -> None:
+        mitre = _extract_mitre({"malware_report": _with_absence().model_dump(mode="json")}) or []
+        by_id = {row["technique_id"]: row for row in mitre}
+
+        assert by_id[CLAIMED]["evidence_ids"] == EXPECTED
+        assert "sandbox_items" not in by_id[CLAIMED]
+        assert by_id[CLAIMED]["absence_sources"] == ["ev_0005", "net:9"]
+        assert "absence_sources" not in by_id[JUDGE_ONLY]

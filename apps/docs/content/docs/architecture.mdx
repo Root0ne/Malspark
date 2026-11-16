@@ -5250,10 +5250,13 @@ is assembled from what the run gathered rather than recomputed beside it:
   the technique's sources beside the set, named apart: "sandbox items: …" in a
   text cell or comment and in `x_malspark_evidence_note` on the STIX edge,
   `sandbox_items` in the API. A source in the technique's `absence_sources` is
-  neither in the set nor among the items: the ATT&CK table's Evidence cell, the
-  analyst report's note and the MISP and Navigator comments name those sources
-  after them, "cited for an absence: …", and the defence rows, the STIX edge and
-  the API row leave them out; the row keeps every source. A technique whose statements cite no ledger
+  neither in the set nor among the items, and every surface names it after
+  them, worded once (`technique_evidence.absence_words`): "cited for an
+  absence: …" in the ATT&CK table's Evidence cell, the analyst report's note,
+  the defence rows, the MISP and Navigator comments and
+  `x_malspark_evidence_note` on the STIX edge, `absence_sources` in the API.
+  The judge's evidence summary traces the technique to its other sources and
+  names these apart in the same words; the row keeps every source. A technique whose statements cite no ledger
   entry and that has no item — one the judge alone names, for one — says so on
   each: "no ledger entry" in a text cell or comment, `x_malspark_evidence_note`
   on the STIX edge, `[]` in the API. The entries of the rules that matched the

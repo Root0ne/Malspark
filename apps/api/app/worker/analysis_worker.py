@@ -4262,6 +4262,7 @@ def _extract_mitre(result: dict) -> list | None:
     mappings = mr.get("ttp_mappings") or []
     if mappings:
         from malspark.reporting.technique_evidence import (
+            technique_absence_ids,
             technique_evidence_ids,
             technique_sandbox_items,
         )
@@ -4271,7 +4272,9 @@ def _extract_mitre(result: dict) -> list | None:
         # name it; ``[]`` where they cite no ledger entry. A mapping stored
         # before the set was recorded, naming no entry, carries no such key.
         # ``sandbox_items`` names the sandbox items among its sources, apart
-        # from the entries; absent where it has none.
+        # from the entries; absent where it has none. ``absence_sources``
+        # names the sources its statements cite only to state an absence, in
+        # neither list; absent where it has none.
         rows: list[dict[str, Any]] = []
         for m in mappings:
             if not m.get("technique_id"):
@@ -4286,7 +4289,10 @@ def _extract_mitre(result: dict) -> list | None:
                 row["evidence_ids"] = evidence
             items = technique_sandbox_items(m)
             if items:
-                row["sandbox_items"] = items
+                row["sandbox_items"] = list(items)
+            absent = technique_absence_ids(m)
+            if absent:
+                row["absence_sources"] = absent
             rows.append(row)
         return rows or None
 

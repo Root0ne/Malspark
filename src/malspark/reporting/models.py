@@ -886,7 +886,9 @@ class AttckDefenseRow(BaseModel):
     Read from the cached ATT&CK bundles with no model call
     (``memory.attck_defense``); ``evidence_ids`` are the technique's evidence
     (``reporting.technique_evidence``), so the row cites what the technique
-    rests on, and ``sandbox_items`` the sandbox items among its sources.
+    rests on, ``sandbox_items`` the sandbox items among its sources, and
+    ``absence_sources`` the sources its statements cite only to state an
+    absence, printed apart.
     """
 
     model_config = _STRICT_CONFIG
@@ -898,6 +900,7 @@ class AttckDefenseRow(BaseModel):
     data_components: list[AttckLink] = Field(default_factory=list)
     evidence_ids: list[str] = Field(default_factory=list)
     sandbox_items: list[str] = Field(default_factory=list, exclude_if=lambda value: not value)
+    absence_sources: list[str] = Field(default_factory=list, exclude_if=lambda value: not value)
 
 
 # ---------------------------------------------------------------------------

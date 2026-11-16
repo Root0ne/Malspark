@@ -86,24 +86,39 @@ def _source_facts(row: Any) -> str:
 
     Each source is one ledger entry or sandbox item however many sources
     above name the technique from it (``validation.technique_sources``), and
-    a row whose sources are all artefacts of the file says so. ``""`` for a
-    row that names no source.
+    a row whose sources are all artefacts of the file says so. The sources
+    its statements cite only to state an absence (``absence_sources``) are
+    named apart from the traced ones, in the words every surface uses
+    (``reporting.technique_evidence.absence_words``). ``""`` for a row that
+    names no source.
     """
     from malspark.analysis.corroboration import support_sentence
+    from malspark.reporting.technique_evidence import absence_words, technique_absence_ids
 
     if not isinstance(row, dict) or not isinstance(row.get("sources"), list):
         return ""
     held = [str(x) for x in row["sources"]]
     if not held:
         return " [its statements cite no ledger entry or sandbox item]"
-    said = f" [traced to {len(held)} cited source(s), each counted once: {', '.join(held)}"
-    independent = row.get("independent_sources")
-    if isinstance(independent, int) and independent != len(held):
-        said += f"; {independent} of them independent, sources reading one place counted once"
+    absent = technique_absence_ids(row)
+    apart = {source.lower() for source in absent}
+    traced = [source for source in held if source.lower() not in apart]
+    said: list[str] = []
+    if traced:
+        said.append(
+            f"traced to {len(traced)} cited source(s), each counted once: {', '.join(traced)}"
+        )
+        independent = row.get("independent_sources")
+        if isinstance(independent, int) and independent != len(traced):
+            said.append(
+                f"{independent} of them independent, sources reading one place counted once"
+            )
     sentence = support_sentence(str(row.get("support") or ""), row.get("source_kinds"), len(held))
     if sentence:
-        said += f"; {sentence}"
-    return said + "]"
+        said.append(sentence)
+    if absent:
+        said.append(absence_words(absent))
+    return " [" + "; ".join(said) + "]"
 
 
 def summarise(
