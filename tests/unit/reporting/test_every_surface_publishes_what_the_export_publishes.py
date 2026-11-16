@@ -550,7 +550,7 @@ class TestAValueTheSweepAndTheJudgeBothHoldIsTheJudges:
     the judge's own indicator, as on a run where the sweep never read it.
     """
 
-    @pytest.mark.parametrize("value", ["/opt/relay/bin/agentd", "relay_agent"])
+    @pytest.mark.parametrize("value", ["/opt/relay/bin/agentd", "relay_agent", "Relay_Agent"])
     def test_it_is_published_everywhere_as_the_judge_s_indicator(self, value: str) -> None:
         from malspark.reporting.misp import build_misp_attributes
         from malspark.reporting.models import StaticAnalysis, StringIOC
@@ -575,7 +575,10 @@ class TestAValueTheSweepAndTheJudgeBothHoldIsTheJudges:
         ]
         exported, _renderer = _export(report, judge)
 
-        assert _row(report, value).published == "yes: a second source in this run records it"
+        row = _row(report, value)
+        assert row.published == "yes: a second source in this run records it"
+        # Exported as the judge's indicator, so typed as the judge typed it.
+        assert row.indicator_type == "malicious-activity"
         feed = [r["published"] for r in ioc_feed_rows(report.model_dump()) if r["value"] == value]
         assert feed == [True]
         misp = build_misp_attributes(report, build_consolidated_iocs(report), owner="r")
@@ -603,3 +606,28 @@ class TestAValueTheSweepAndTheJudgeBothHoldIsTheJudges:
         assert value.rsplit("/", 1)[-1] not in str(
             [o.get("pattern") for o in exported["objects"] if o.get("type") == "indicator"]
         )
+
+
+def test_a_network_value_the_judge_also_names_is_the_platform_s_indicator() -> None:
+    """A name the network block records is written before the judge's indicator, as before."""
+    from malspark.reporting.models import NetworkDomain
+
+    judge = _judge("[domain-name:value = 'relay-c2.example.net']")
+    report = _report(judge, overall_confidence=0.9)
+    report.network = NetworkIOCs(
+        domains=[
+            NetworkDomain(
+                fqdn="relay-c2.example.net",
+                source="strings",
+                reputation={"source": "virustotal", "malicious": 9},
+            )
+        ]
+    )
+    exported, _renderer = _export(report, judge)
+
+    (named,) = [
+        o["name"]
+        for o in exported["objects"]
+        if o.get("type") == "indicator" and "relay-c2" in str(o.get("pattern"))
+    ]
+    assert named == "Domain relay-c2.example.net"
