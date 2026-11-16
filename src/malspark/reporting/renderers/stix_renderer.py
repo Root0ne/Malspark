@@ -5103,8 +5103,8 @@ def table_row_record(
         return LISTED_ROLE, None
     # The table's published values, which decide which judge indicators the
     # export carries: given by the caller that holds the whole table.
-    judged = carried_judge_type(row, report, table_published or frozenset())
-    if str(_field(row, "source") or "") == "judge" and judged:
+    carried, judged = _carried_judge_record(row, report, table_published or frozenset())
+    if str(_field(row, "source") or "") == "judge" and carried:
         # The judge's own indicator carries it, under the judge's type; one the
         # export declines leaves it to the platform, like any published row.
         return INDICATOR_ROLE, judged
@@ -5136,13 +5136,16 @@ def published_keys(rows: Iterable[Any]) -> frozenset[tuple[str, str]]:
     )
 
 
-def carried_judge_type(row: Any, report: Any, published: frozenset[tuple[str, str]]) -> str | None:
-    """The type of the first judge indicator naming the row's value the export carries, or None.
+def _carried_judge_record(
+    row: Any, report: Any, published: frozenset[tuple[str, str]]
+) -> tuple[bool, str | None]:
+    """Whether the export carries a judge indicator naming the row's value, and its type.
 
     The export carries a judge indicator only when every value it names has a
     published row (:func:`_judge_indicator_unpublished`); one it declines lends
-    its type to nothing. A report stored before the patterns were recorded
-    reads the first type recorded.
+    its type to nothing. A report stored before the patterns were recorded holds
+    no pattern to ask: its judge's indicators are read as carried, with the
+    first type recorded, as such a report was exported.
     """
     kind = str(_field(row, "kind") or "")
     key = _value_key(kind, _field(row, "value"))
@@ -5155,13 +5158,23 @@ def carried_judge_type(row: Any, report: Any, published: frozenset[tuple[str, st
         patterns = list(_field(item, "indicator_patterns") or [])
         types = [str(t) for t in _field(item, "indicator_types") or []]
         if not patterns:
-            return types[0] if types else None
+            return True, (types[0] if types else None)
         for pattern, claimed in zip(patterns, types, strict=False):
-            if claimed and all(
+            if all(
                 (v.kind, _value_key(v.kind, v.value)) in published for v in rule_values(pattern)
             ):
-                return claimed
-    return None
+                return True, (claimed or None)
+    return False, None
+
+
+def carried_judge_type(row: Any, report: Any, published: frozenset[tuple[str, str]]) -> str | None:
+    """The type of the first judge indicator naming the row's value the export carries, or None."""
+    return _carried_judge_record(row, report, published)[1]
+
+
+def judge_carries(row: Any, report: Any, published: frozenset[tuple[str, str]]) -> bool:
+    """Whether the export carries a judge indicator naming the row's value."""
+    return _carried_judge_record(row, report, published)[0]
 
 
 # What one comparison of an exported pattern names, as the IOC table's kind.
@@ -5545,7 +5558,7 @@ def _row_indicators(
     rows first in the network block's order; the second, each with its row,
     after them (:func:`_host_row`). A row only the judge's indicator records
     (source ``judge``) is the judge's to write where the export carries one of
-    its indicators naming it (:func:`carried_judge_type`); one whose every such
+    its indicators naming it (:func:`judge_carries`); one whose every such
     indicator the export declines is minted like any published row.
     """
     early: list[tuple[int, int, Indicator]] = []
@@ -5556,7 +5569,7 @@ def _row_indicators(
             row.role != INDICATOR_ROLE
             or not row.indicator_type
             or not publishes(row.published)
-            or (row.source == "judge" and carried_judge_type(row, report, published))
+            or (row.source == "judge" and judge_carries(row, report, published))
             or _lifted_by_the_judge(row, report)
         ):
             continue
