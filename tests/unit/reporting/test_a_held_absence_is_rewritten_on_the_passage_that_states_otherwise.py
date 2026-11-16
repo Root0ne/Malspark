@@ -331,8 +331,9 @@ def test_a_closing_absence_is_answered_as_before() -> None:
         (
             KEEP_UNQUOTED_CODE,
             "row 1: limitations keeps 'The sample is not shown to use anti-debug or environment "
-            "checks.' on execution_flow.3, but its quote does not stand in a source it names: "
-            "quote the words of a source that state the same thing, or rewrite the sentence on "
+            "checks.' on execution_flow.3, but its quote stands only in execution_flow.3, a "
+            "passage written without the code, which backs no keep of this sentence: quote the "
+            "words of a source that state the same thing, or rewrite the sentence on "
             "the source that states otherwise.",
         ),
     ]

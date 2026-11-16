@@ -103,7 +103,7 @@ def _own_servers_kept() -> tuple[tuple[str, str, dict], ...]:
     from malspark.core.tool_declarations import launch_identity
 
     captured = json.loads(
-        (Path(__file__).parent / "fixtures" / "own_server_tool_facts.json").read_text()
+        (Path(__file__).parents[1] / "data" / "own_server_tool_facts_v1.json").read_text()
     )
     blocks = _builtin_servers()
     own = tuple(

@@ -1887,7 +1887,7 @@ def _scrub_once(line: str) -> str:
 FINDING_VALUE_LIMIT = 200
 
 
-def safe_finding_value(value: Any) -> str:
+def safe_finding_value(value: Any, *, whole: bool = False) -> str:
     """One model-written value, made fit to store in a finding row and to print.
 
     A finding row is report text, printed in the report's notes, stored with
@@ -1902,14 +1902,16 @@ def safe_finding_value(value: Any) -> str:
     (``secret_registration_failed``), the row is held to the whole event
     scrub, as before: the shape rules are then what keeps a credential out.
 
-    Bounded either way, and never cut inside a value the scrub would mask.
+    Bounded either way, and never cut inside a value the scrub would mask; ``whole`` keeps
+    it unbounded, for a field of the row that holds a text whole beside the message's copy.
     """
     one_line = " ".join(str(value or "").split())
     if not _rows_kept_as_written():
-        return _cut_whole(scrub(one_line), FINDING_VALUE_LIMIT)
+        said = scrub(one_line)
+        return said if whole else _cut_whole(said, FINDING_VALUE_LIMIT)
     kept = _mask_short_secrets(_mask_configured_values(one_line))
     kept = _URL_RUN.sub(_without_credentials, kept)
-    return _bound_whole(kept, FINDING_VALUE_LIMIT)
+    return kept if whole else _bound_whole(kept, FINDING_VALUE_LIMIT)
 
 
 def _mask_short_secrets(text: str) -> str:

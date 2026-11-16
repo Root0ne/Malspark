@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 from datetime import UTC, datetime
 from typing import Any
 
@@ -54,6 +55,7 @@ from malspark.reporting.section_agreement import (
     FAILURE_REDONE_CODE,
     HELD_KEPT_CODE,
     KEEP_UNQUOTED_CODE,
+    KEPT_IN_SOURCE_WORDS_CODE,
     QUALIFIED_CODE,
     REWRITTEN_CODE,
     UNKNOWN_PASSAGE_CODE,
@@ -972,6 +974,59 @@ def test_a_closing_keep_on_a_refused_quote_is_left_out_with_its_quote() -> None:
     answer = {"sentences": _settled(report, [gamed, scope])}
     done, reporter = _ask(report, answer, answer)
     assert len(reporter.asked) == 2
+    # Its quote stands in one section 5 sentence and is refused only on the words of what
+    # the sentence denies: that sentence stands in its place, never the model's (T-705).
+    assert _limitations(report) == f"{HASHED} {SCOPE}"
+    assert not [r for r in done.tally.unresolved if r["code"] == DROPPED_CODE]
+    (record,) = [r for r in done.tally.unresolved if r["code"] == KEPT_IN_SOURCE_WORDS_CODE]
+    assert "persistence_detail, quoting 'is not established'" in record["message"]
+    assert record["stood"] == STILL_OPEN
+
+
+def test_a_replacement_is_counted_and_logged(caplog: pytest.LogCaptureFixture) -> None:
+    report = _report(limitations=f"{STILL_OPEN} {SCOPE}")
+    gamed = _row(
+        "limitations", STILL_OPEN, "keep", ["persistence_detail"], quote="is not established"
+    )
+    scope = _row("limitations", SCOPE, "keep", [], reason="no passage speaks of an operator")
+    answer = {"sentences": _settled(report, [gamed, scope])}
+    with caplog.at_level(logging.INFO, logger="malspark"):
+        done, _reporter = _ask(report, answer, answer)
+    # Counted as one replaced, never as left out (T-705).
+    assert done.summary["replaced"] == 1 and done.summary["dropped"] == 0
+    assert "0 left out, 0 qualified on the ledger, 1 replaced by their source's sentence." in (
+        caplog.text
+    )
+
+
+def test_a_closing_keep_another_check_refuses_too_is_left_out_with_its_quote() -> None:
+    # Refused on its words and on the ledger's count of failed calls: no source's sentence
+    # stands in its place (T-705).
+    counted = "Two tool calls failed, and what the hashing routine hashes is still not established."
+    report = _report(limitations=f"{counted} {SCOPE}")
+    gamed = _row("limitations", counted, "keep", ["persistence_detail"], quote="is not established")
+    scope = _row("limitations", SCOPE, "keep", [], reason="no passage speaks of an operator")
+    answer = {"sentences": _settled(report, [gamed, scope])}
+    done, _reporter = _ask(report, answer, answer)
+    assert _limitations(report) == SCOPE
+    assert not [r for r in done.tally.unresolved if r["code"] == KEPT_IN_SOURCE_WORDS_CODE]
+    (record,) = [r for r in done.tally.unresolved if r["code"] == DROPPED_CODE]
+    assert "persistence_detail, quoting 'is not established'" in record["message"]
+    assert FAILURE_COUNT_CODE in [r["code"] for r in done.tally.unresolved]
+
+
+def test_a_closing_keep_on_a_quote_no_one_sentence_holds_is_left_out_with_its_quote() -> None:
+    report = _report(limitations=f"{STILL_OPEN} {SCOPE}")
+    ta = report.technical_analysis
+    assert ta is not None and ta.persistence_detail is not None
+    # The quote stands in two sentences of the passage: neither is printed in its place.
+    ta.persistence_detail.body += " What the second routine reads is not established."
+    gamed = _row(
+        "limitations", STILL_OPEN, "keep", ["persistence_detail"], quote="is not established"
+    )
+    scope = _row("limitations", SCOPE, "keep", [], reason="no passage speaks of an operator")
+    answer = {"sentences": _settled(report, [gamed, scope])}
+    done, _reporter = _ask(report, answer, answer)
     assert _limitations(report) == SCOPE
     (record,) = [r for r in done.tally.unresolved if r["code"] == DROPPED_CODE]
     assert "persistence_detail, quoting 'is not established'" in record["message"]

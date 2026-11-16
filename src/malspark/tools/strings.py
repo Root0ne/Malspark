@@ -15,11 +15,14 @@ same scan, plain dicts.
 
 from __future__ import annotations
 
+import io
 import re
-from collections.abc import Callable, Iterator
+from collections.abc import Callable, Iterable, Iterator
 from functools import lru_cache
 from pathlib import Path
 from typing import Any
+
+from malspark.core.delivery_limits import SAMPLE_UPLOAD_MAX_BYTES
 
 # The shortest run worth calling a string. Six characters is long enough to
 # clear the accidental ASCII inside compiled code and short enough to keep a
@@ -192,7 +195,7 @@ def _iter_strings(blob: bytes) -> Iterator[str]:
         yield match.group()[::2].decode("ascii", errors="ignore")
 
 
-def iter_string_iocs(blob: bytes) -> list[dict[str, Any]]:
+def iter_string_iocs(blob: bytes, *, cuts: bool = False) -> list[dict[str, Any]]:
     """Scan binary strings for typed indicators of compromise.
 
     Rows are ``{"kind": ..., "value": ..., "notes": ..., "source": ...}``;
@@ -200,20 +203,31 @@ def iter_string_iocs(blob: bytes) -> list[dict[str, Any]]:
     otherwise. ``source`` is always ``"strings"`` and is there so a consumer
     can tell a name a sandbox watched the sample resolve from a name that was
     lying in its byte image, which are not the same claim and were being
-    published as though they were.
+    published as though they were. With ``cuts``, a path or a registry key
+    the pattern cut out of a longer token also carries ``cut_from``, that
+    token as :func:`token_cuts` keeps it, unless the value stands whole
+    somewhere in the blob: for the run's record (the extractor's, the build's
+    reading of the sample), never for a tool's answer, which reads as it did.
     """
     iocs: list[dict[str, Any]] = []
-    seen: set[tuple[str, str]] = set()
+    rows: dict[tuple[str, str], dict[str, Any]] = {}
 
-    def _add(kind: str, decoded: str, notes: str | None = None, *, floor: int = 0) -> None:
+    def _add(
+        kind: str, decoded: str, notes: str | None = None, *, floor: int = 0, cut: str = ""
+    ) -> None:
         decoded = decoded.strip("\x00").strip()
         if len(decoded) < (floor or _MIN_STRING_LENGTH):
             return
         key = (kind, decoded.lower())
-        if key in seen:
+        if key in rows:
+            if not cut:
+                rows[key].pop("cut_from", None)
             return
-        seen.add(key)
-        iocs.append({"kind": kind, "value": decoded, "notes": notes, "source": _IOC_SOURCE})
+        row = {"kind": kind, "value": decoded, "notes": notes, "source": _IOC_SOURCE}
+        if cut:
+            row["cut_from"] = cut
+        rows[key] = row
+        iocs.append(row)
 
     for text in _iter_strings(blob):
         for match in _URL_RE.findall(text.encode("ascii", errors="ignore")):
@@ -225,12 +239,13 @@ def iter_string_iocs(blob: bytes) -> list[dict[str, Any]]:
             # number is not an address whatever its shape.
             if _is_meaningful_ip(ip) and not _written_as_a_version(encoded, found.start()):
                 _add("ip", ip)
-        for match in _REG_RE.findall(text.encode("ascii", errors="ignore")):
-            _add("registry", match.decode("ascii", errors="ignore"))
-        for match in _PATH_RE.findall(text.encode("ascii", errors="ignore")):
-            candidate = match.decode("ascii", errors="ignore")
-            if _looks_like_path(candidate):
-                _add("path", candidate)
+        for kind, shape in (("registry", _REG_RE), ("path", _PATH_RE)):
+            spans = list(shape.finditer(encoded))
+            tokens = token_cuts(text, (span.span() for span in spans)) if cuts else []
+            for at, span in enumerate(spans):
+                value = span.group().decode("ascii", errors="ignore")
+                if kind == "registry" or _looks_like_path(value):
+                    _add(kind, value, cut=tokens[at] if cuts else "")
         for match in emails_in(text.encode("ascii", errors="ignore")):
             _add("email", match.decode("ascii", errors="ignore"))
         for match in _MUTEX_RE.findall(text.encode("ascii", errors="ignore")):
@@ -254,6 +269,76 @@ def iter_string_iocs(blob: bytes) -> list[dict[str, Any]]:
         _add("domain", host, floor=_SHORT_RUN_LENGTH)
 
     return iocs
+
+
+# How much of the token a cut value was cut out of is kept: the record and a
+# refusal quote this many characters of it, and an ellipsis for the rest.
+CUT_QUOTED = 80
+
+
+def _continues(char: str) -> bool:
+    """Whether a character is a word's, and so continues a value it stands beside."""
+    return char.isalnum() or char == "_"
+
+
+def token_cuts(text: str, spans: Iterable[tuple[int, int]]) -> list[str]:
+    """For each span of ``text``, the token it was cut out of (:data:`CUT_QUOTED` of it), or ``""``.
+
+    A pattern of a value's characters stops at the first one it does not
+    take, and that is no end of the value: ``/cpu/classes/total`` stops at the
+    ``:`` of ``…/cpu/classes/total:cpu-seconds``, ``/f /q C`` at the ``:`` of
+    ``del /f /q C:\\…``. What ends a value is the token it stands in, the
+    text between two whitespace characters (or the text's ends): a span a
+    word character continues on either side within its token is a cut, and
+    that token is answered, its first :data:`CUT_QUOTED` characters and an
+    ellipsis for a longer one. A quote, a bracket or a comma around a value
+    holds no word character, and the value it encloses stands whole.
+
+    One pass over the text, whatever the spans: they are read in the order a
+    pattern's matches or one value's occurrences come (each starting and
+    ending no earlier than the one before), and the last whitespace and the
+    last word character before a span's start, and the first of each from its
+    end, are carried forward from span to span rather than walked to again.
+    """
+    out: list[str] = []
+    size = len(text)
+    # Left of a span: how far the text was read, and the last whitespace and
+    # the last word character met before that point (-1: none).
+    read = 0
+    space_before = word_before = -1
+    # Right of a span: the first whitespace and the first word character at or
+    # after the last span's end (``size``: none), and the end they were read from.
+    space_after = word_after = size
+    after_from = -1
+    for start, end in spans:
+        while read < start:
+            if text[read].isspace():
+                space_before = read
+            elif _continues(text[read]):
+                word_before = read
+            read += 1
+        if after_from < 0 or space_after < end:
+            space_after = end
+            while space_after < size and not text[space_after].isspace():
+                space_after += 1
+        if after_from < 0 or word_after < end:
+            word_after = end
+            while word_after < space_after and not _continues(text[word_after]):
+                word_after += 1
+        after_from = end
+        if word_before > space_before or word_after < space_after:
+            first = space_before + 1
+            token = text[first : min(space_after, first + CUT_QUOTED)]
+            out.append(token + "…" if space_after - first > CUT_QUOTED else token)
+        else:
+            out.append("")
+    return out
+
+
+def stands_as_a_token(value: str, text: str, starts: Iterable[int]) -> bool:
+    """Whether ``value`` stands whole by the token test at one of ``starts`` in ``text``."""
+    spans = [(start, start + len(value)) for start in starts]
+    return any(not cut for cut in token_cuts(text, spans))
 
 
 def _short_hosts(blob: bytes) -> Iterator[str]:
@@ -964,3 +1049,68 @@ def iocs_from_file(path: str, kinds: list[str] | None = None) -> dict[str, Any]:
         keep = {str(k).strip().lower() for k in kinds}
         rows = [row for row in rows if row["kind"] in keep]
     return {"iocs": rows, "kinds": sorted({row["kind"] for row in rows})}
+
+
+# The most of a file the platform's own reading of its text reads in the
+# worker or on the reading's server: the sample upload cap. A larger file is
+# not read, and the reading says so.
+FILE_TEXT_MAX_BYTES = SAMPLE_UPLOAD_MAX_BYTES
+
+
+def file_text_reading(
+    path: str,
+    plain: Iterable[str] = (),
+    cut: Iterable[str] = (),
+    max_bytes: int = FILE_TEXT_MAX_BYTES,
+) -> dict[str, Any]:
+    """What the file's own text says of the values asked, bounded in what it reads and holds.
+
+    ``plain``: each value (lower case) a plain-string run of the file holds as
+    a whole value (``_indicator_denylists.first_holders``), read over every
+    run, ASCII then UTF-16LE, as the string sweep reads them. ``cut``: each
+    path or registry key value the sweep's pattern cuts out of a longer token
+    of the file and never reads whole (:func:`iter_string_iocs` with
+    ``cuts``), with the token as kept. Answers ``read`` and both, or ``read``
+    false and ``why`` for a file it cannot open or one over ``max_bytes``,
+    which it does not read: what it holds at once is the file, one joined copy
+    of its runs and the rows the sweep reads in it. The answer names asked
+    values only.
+    """
+    from malspark.agents._indicator_denylists import first_holders
+
+    asked_plain = {str(value).lower() for value in plain if value}
+    asked_cut = {str(value).lower() for value in cut if value}
+    target = Path(path)
+    try:
+        size = target.stat().st_size
+        if size > max_bytes:
+            return {
+                "read": False,
+                "why": f"the file is {size} bytes, over the {max_bytes} this reading reads",
+            }
+        blob = target.read_bytes()[: max_bytes + 1]
+    except OSError as exc:
+        return {"read": False, "why": f"the file could not be read ({type(exc).__name__})"}
+    if len(blob) > max_bytes:
+        return {
+            "read": False,
+            "why": f"the file grew past the {max_bytes} bytes this reading reads",
+        }
+    held: list[str] = []
+    if asked_plain:
+        # One copy of the runs, written run by run: no list of them is held.
+        joined = io.StringIO()
+        for text in _iter_strings(blob):
+            joined.write(text.lower())
+            joined.write("\n")
+        runs = joined.getvalue()
+        joined.close()
+        held = sorted(first_holders(asked_plain, [runs]))
+        del runs
+    tokens: dict[str, str] = {}
+    if asked_cut:
+        for row in iter_string_iocs(blob, cuts=True):
+            value = str(row["value"]).lower()
+            if row.get("cut_from") and value in asked_cut:
+                tokens.setdefault(value, str(row["cut_from"]))
+    return {"read": True, "plain": held, "cut": tokens}

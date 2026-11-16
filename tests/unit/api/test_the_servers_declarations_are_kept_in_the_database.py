@@ -336,9 +336,7 @@ def test_a_job_lists_its_servers_through_their_attach_and_keeps_what_they_serve(
     from malspark.tools.declared_facts import FACTS_META_KEY
 
     captured = json.loads(
-        (
-            Path(__file__).resolve().parents[2] / "fixtures" / "own_server_tool_facts.json"
-        ).read_text()
+        (Path(__file__).resolve().parents[3] / "data" / "own_server_tool_facts_v1.json").read_text()
     )
 
     class _Serving(ServerHandle):
