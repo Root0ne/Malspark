@@ -90,3 +90,11 @@ def test_a_technique_the_judge_dropped_keeps_its_reason_after_the_verdict() -> N
     assert cells[0].not_published == (
         f"{BENIGN_TECHNIQUE_REASON}; the judge dropped it (Not shown.)"
     )
+
+
+def test_mitre_json_reads_the_empty_published_list_not_the_judge_s_bundle() -> None:
+    from app.worker.analysis_worker import _extract_mitre
+
+    result = {"malware_report": {"ttp_mappings": []}, "stix_output": _bundle()}
+
+    assert _extract_mitre(result) is None

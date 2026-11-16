@@ -231,3 +231,96 @@ class TestEveryRowStatesWhatEveryExportCarries:
                 assert exported.get(row.value.lower()) == [row.indicator_type], row.value
             elif row.role == "listed":
                 assert row.value.lower() not in exported, row.value
+
+
+class TestTheRowRecordsWhatTheExportCarries:
+    def test_the_feed_carries_each_row_s_role(self) -> None:
+        roles = {_value(row): row["role"] for row in _feed(_report("Benign"))}
+
+        assert {roles[value] for value in IDENTITY} == {"sample_identity"}
+        assert roles[IMPHASH] == "similarity"
+        assert roles[OBSERVED] == "listed"
+
+    def test_a_url_is_typed_as_flagged_activity_under_malware(self) -> None:
+        from malspark.reporting.models import NetworkURL
+
+        report = _report("Malware")
+        report.network = NetworkIOCs(
+            urls=[NetworkURL(url="https://gate9.example.org/p", source="sandbox")]
+        )
+
+        row = _rows(report)["https://gate9.example.org/p"]
+
+        assert (row.role, row.indicator_type) == ("indicator", "malicious-activity")
+
+    def test_a_host_row_the_judge_names_carries_the_judge_s_type(self) -> None:
+        from malspark.reporting.models import ConsolidatedIOC
+        from malspark.reporting.renderers.stix_renderer import table_row_record
+
+        report = _report("Malware")
+        report.judge_indicators = [
+            JudgeIndicator(kind="mutex", value="runmark", indicator_types=["compromised"])
+        ]
+        row = ConsolidatedIOC(
+            type="Mutex", kind="mutex", value="runmark", source="sandbox", published="yes: x"
+        )
+
+        assert table_row_record(row, report) == ("indicator", "compromised")
+
+    def test_a_value_only_the_judge_names_is_withheld_under_benign(self) -> None:
+        # The judge names a file the sample's own process line holds whole: a
+        # second source publishes it under Malware, and the verdict withholds it.
+        path = "C:\\Tools\\kit\\loader.exe"
+
+        def report_for(verdict: str) -> MalwareReport:
+            report = _report(verdict)
+            report.dynamic = DynamicBehavior(
+                process_tree=[{"pid": 1, "name": "sample.exe", "command_line": path}]
+            )
+            report.judge_indicators = [JudgeIndicator(kind="path", value=path)]
+            return report
+
+        malware = _rows(report_for("Malware"))[path]
+        benign = _rows(report_for("Benign"))[path]
+
+        assert (malware.source, publishes(malware.published)) == ("judge", True)
+        assert benign.published.startswith(f"no: {BENIGN_WITHHOLDS}")
+
+    def test_the_export_types_an_indicator_as_its_row_does(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from malspark.reporting import builder
+
+        report = _report("Malware")
+        table = [
+            row.model_copy(update={"indicator_type": "compromised"})
+            if row.value == OBSERVED
+            else row
+            for row in builder.build_consolidated_iocs(report)
+        ]
+        monkeypatch.setattr(builder, "ioc_table", lambda *_a, **_k: table)
+
+        bundle, _renderer = _export(report)
+
+        (domain,) = [o for o in _indicators(bundle) if OBSERVED in o["pattern"]]
+        assert domain["indicator_types"] == ["compromised"]
+
+
+def test_a_url_the_strings_hold_on_a_developer_host_is_withheld_whoever_vouches() -> None:
+    from malspark.reporting.models import NetworkURL
+
+    url = "https://android.googlesource.com/platform/stage.bin"
+    report = _report("Malware")
+    report.network = NetworkIOCs(
+        urls=[NetworkURL(url=url, source="strings")],
+        domains=[
+            NetworkDomain(
+                fqdn="android.googlesource.com",
+                source="strings",
+                reputation={"source": "virustotal", "malicious": 9},
+            )
+        ],
+    )
+
+    assert _rows(report)[url].published == "no: it is on a developer or package-registry host"
+    assert url not in str(_indicators(_export(report)[0]))
