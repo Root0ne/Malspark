@@ -20,6 +20,7 @@ quote one stored run's sentences as examples; the second shape is made up.
 
 from __future__ import annotations
 
+import dataclasses
 from datetime import UTC, datetime
 from typing import Any
 
@@ -37,8 +38,11 @@ from malspark.reporting.models import (
 from malspark.reporting.section_agreement import (
     AGREEMENT_PRODUCER,
     DROPPED_CODE,
+    FACT,
     KEEP_UNQUOTED_CODE,
     KEPT_IN_SOURCE_WORDS_CODE,
+    QUALIFIED_CODE,
+    Passage,
     agreement_violations,
     apply_rows,
     passages_of,
@@ -337,3 +341,301 @@ def test_a_quote_also_refused_on_an_item_a_source_speaks_of_leaves_the_sentence_
     found = _applied(report, row)
     assert [v.code for v in found] == [DROPPED_CODE]
     assert _limitations(report) == ""
+
+
+# -- one sentence, and prose (Ruling 8) ---------------------------------------------------
+
+
+def _resolution(report: MalwareReport, body: str) -> MalwareReport:
+    ta = report.technical_analysis
+    assert ta is not None and ta.string_resolution is not None
+    ta.string_resolution.body = body
+    return report
+
+
+@pytest.mark.parametrize(
+    ("body", "quote"),
+    [
+        # A review's case: the quote runs from one sentence of the source into the next.
+        (RESOLUTION, "no code and were not reviewed [ev_0021]. The settings record"),
+        # A made-up shape: the same, with no citation between the two.
+        (
+            "The import table names 46 functions. A further 968 decodings are referenced by "
+            "no code and were not reviewed. The settings record is clear.",
+            "were not reviewed. The settings record",
+        ),
+    ],
+)
+def test_a_quote_running_across_two_sentences_leaves_the_sentence_out(
+    body: str, quote: str
+) -> None:
+    report = _resolution(_report(), body)
+    row = _keep("limitations", UNEXAMINED, "string_resolution", quote)
+    assert "shares too few of the words" in _refusal(report, row)
+    found = _applied(report, row)
+    assert [v.code for v in found] == [DROPPED_CODE]
+    assert _limitations(report) == GATED
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        # A list item, its marker and its emphasis with it.
+        f"The import table names 46 functions [ev_0004].\n- **Decodings**: {DECODINGS}\n- Next.",
+        # A made-up shape: a numbered list item, whose marker stands apart from its words.
+        f"The import table names 46 functions [ev_0004].\n1. {DECODINGS}\n2. {STORED}",
+        # A table row.
+        f"| What | Seen |\n|---|---|\n| decodings | {DECODINGS} |",
+        # A review's case: a table's column bar inside the sentence.
+        "The import table names 46 functions [ev_0004]. A further 968 decodings are "
+        "referenced by no code and were not reviewed | as listed [ev_0021].",
+        # A sentence broken over two lines.
+        "The import table names 46 functions [ev_0004]. A further 968 decodings are "
+        "referenced by no\ncode and were not reviewed [ev_0021].",
+        # A line opening a list, which ends on no sentence's mark.
+        "The import table names 46 functions [ev_0004]. A further 968 decodings are "
+        "referenced by no code and were not reviewed, among them:\n- the wide ones.",
+        # Words after an abbreviation, which open no sentence.
+        "The import table names 46 functions, e.g. the 968 decodings are referenced by no "
+        "code and were not reviewed [ev_0021].",
+    ],
+)
+def test_a_source_sentence_that_is_no_prose_is_not_moved(body: str) -> None:
+    report = _resolution(_report(), body)
+    row = _keep(
+        "limitations",
+        UNEXAMINED,
+        "string_resolution",
+        "referenced by no code and were not reviewed",
+    )
+    assert "shares too few of the words" in _refusal(report, row)
+    found = _applied(report, row)
+    assert [v.code for v in found] == [DROPPED_CODE]
+    assert _limitations(report) == GATED
+
+
+@pytest.mark.parametrize(
+    "quote",
+    [
+        # A review's case: it starts and ends inside a word.
+        "eferenced by no code and were not revie",
+        "eferenced by no code and were not reviewed",
+        # A made-up shape: it ends inside a citation's id.
+        "referenced by no code and were not reviewed [ev_00",
+    ],
+)
+def test_a_quote_cut_inside_a_word_leaves_the_sentence_out(quote: str) -> None:
+    report = _report()
+    row = _keep("limitations", UNEXAMINED, "string_resolution", quote)
+    assert "shares too few of the words" in _refusal(report, row)
+    found = _applied(report, row)
+    assert [v.code for v in found] == [DROPPED_CODE]
+    assert _limitations(report) == GATED
+
+
+# -- a sentence that points outside itself is not moved (Ruling 9) ------------------------
+
+
+@pytest.mark.parametrize(
+    "said",
+    [
+        "It lists 968 decodings that are referenced by no code and were not reviewed [ev_0021].",
+        "Its 968 decodings are referenced by no code and were not reviewed [ev_0021].",
+        "They hold 968 decodings that are referenced by no code and were not reviewed [ev_0021].",
+        "Their 968 decodings are referenced by no code and were not reviewed [ev_0021].",
+        "These 968 decodings are referenced by no code and were not reviewed [ev_0021].",
+        "This leaves 968 decodings that are referenced by no code and were not reviewed [ev_0021].",
+        "Those 968 decodings are referenced by no code and were not reviewed [ev_0021].",
+        "Such decodings are referenced by no code and were not reviewed [ev_0021].",
+        "Which of them matter is open: 968 are referenced by no code and were not reviewed "
+        "[ev_0021].",
+    ],
+)
+def test_a_source_sentence_opening_on_a_word_that_points_back_is_not_moved(said: str) -> None:
+    report = _resolution(_report(), f"The import table names 46 functions [ev_0004]. {said}")
+    row = _keep(
+        "limitations",
+        UNEXAMINED,
+        "string_resolution",
+        "referenced by no code and were not reviewed",
+    )
+    assert "shares too few of the words" in _refusal(report, row)
+    found = _applied(report, row)
+    assert [v.code for v in found] == [DROPPED_CODE]
+    assert _limitations(report) == GATED
+
+
+def test_a_source_sentence_opening_on_both_is_moved() -> None:
+    # "Both" names its two items itself ("Both sandbox detonations ran…").
+    said = "Both decoding tables are referenced by no code and were not reviewed [ev_0021]."
+    report = _resolution(_report(), f"The import table names 46 functions [ev_0004]. {said}")
+    row = _keep(
+        "limitations",
+        UNEXAMINED,
+        "string_resolution",
+        "referenced by no code and were not reviewed",
+    )
+    found = _applied(report, row)
+    assert [v.code for v in found] == [KEPT_IN_SOURCE_WORDS_CODE]
+    assert _limitations(report) == f"{GATED} {said}"
+
+
+# -- what the round removed is not reprinted (Ruling 10) ----------------------------------
+
+
+def _with(report: MalwareReport, pid: str, **changed: Any) -> list[Passage]:
+    return [dataclasses.replace(p, **changed) if p.id == pid else p for p in passages_of(report)]
+
+
+def test_a_source_sentence_the_round_leaves_out_is_not_printed_in_its_place() -> None:
+    # The decodings' sentence is held by the ledger's lines and no row answers it: the round
+    # leaves it out of section 5, after the row keeping the limitations' sentence is read.
+    report = _report()
+    passages = _with(report, "string_resolution", ledger_named=((DECODINGS, ("ev_0021",)),))
+    row = _keep(
+        "limitations",
+        UNEXAMINED,
+        "string_resolution",
+        "referenced by no code and were not reviewed",
+    )
+    counts, found = apply_rows({"sentences": [row]}, passages)
+    ta = report.technical_analysis
+    assert ta is not None and ta.string_resolution is not None
+    assert DECODINGS not in ta.string_resolution.body
+    assert _limitations(report) == GATED
+    assert [v.code for v in found] == [DROPPED_CODE, DROPPED_CODE]
+    assert counts["dropped"] == 2 and counts["replaced"] == 0
+
+
+def test_a_source_sentence_the_round_qualifies_is_not_printed_in_its_place() -> None:
+    # A made-up shape: the decodings' sentence calls code not read that an entry lists, so
+    # the platform adds the ledger's fact to it once every row is in.
+    report = _report()
+    fact = Passage(
+        id="listed.1",
+        label="fact",
+        text="The ledger lists the code of the routine at 0x2800 [ev_0003].",
+        kind=FACT,
+        qualifier="the ledger lists the code of the routine at 0x2800 [ev_0003]",
+    )
+    unread = ((DECODINGS, ("listed.1",), ("listed.1",)),)
+    passages = [*_with(report, "string_resolution", unread_listed=unread), fact]
+    row = _keep(
+        "limitations",
+        UNEXAMINED,
+        "string_resolution",
+        "referenced by no code and were not reviewed",
+    )
+    counts, found = apply_rows({"sentences": [row]}, passages)
+    ta = report.technical_analysis
+    assert ta is not None and ta.string_resolution is not None
+    assert "the ledger lists the code" in ta.string_resolution.body
+    assert _limitations(report) == GATED
+    assert [v.code for v in found] == [QUALIFIED_CODE, DROPPED_CODE]
+    assert counts["qualified"] == 1 and counts["dropped"] == 1 and counts["replaced"] == 0
+    assert "left out or changed by this round" in found[1].message
+
+
+# -- counted and logged (Ruling 11) -------------------------------------------------------
+
+
+def test_a_replacement_is_counted_as_one_and_not_as_a_drop() -> None:
+    report = _report()
+    row = _keep(
+        "limitations",
+        UNEXAMINED,
+        "string_resolution",
+        "referenced by no code and were not reviewed",
+    )
+    counts, _found = apply_rows({"sentences": [row]}, passages_of(report))
+    assert counts["replaced"] == 1 and counts["dropped"] == 0 and counts["kept"] == 0
+
+
+# -- each test of the rule holds (Ruling 13) ----------------------------------------------
+
+
+def test_a_closing_text_printed_in_its_writer_s_own_words_is_never_reworded() -> None:
+    report = _report()
+    passages = _with(report, "limitations", verbatim="analyst")
+    row = _keep(
+        "limitations",
+        UNEXAMINED,
+        "string_resolution",
+        "referenced by no code and were not reviewed",
+    )
+    _counts, found = apply_rows({"sentences": [row]}, passages)
+    assert KEPT_IN_SOURCE_WORDS_CODE not in [v.code for v in found]
+    assert DECODINGS not in _limitations(report)
+
+
+def test_a_quote_naming_none_of_what_is_denied_prints_the_source_s_sentence() -> None:
+    # A made-up shape: the quote shares two words of the sentence, but not what the denied
+    # item is ("routine"), the second word test.
+    key = "No cipher key for the 968 decodings was found in the file [ev_0021]."
+    denied = "The decodings' cipher routine was not found."
+    report = _resolution(
+        _report(limitations=denied), f"The import table names 46 functions [ev_0004]. {key}"
+    )
+    row = _keep("limitations", denied, "string_resolution", key.split(" in the file")[0])
+    assert "names none of what the sentence denies something of" in _refusal(report, row)
+    found = _applied(report, row)
+    assert [v.code for v in found] == [KEPT_IN_SOURCE_WORDS_CODE]
+    assert _limitations(report) == key
+
+
+def test_a_source_sentence_already_standing_with_other_spacing_is_printed_once() -> None:
+    report = _report(limitations=f"{GATED} {UNEXAMINED}\n\n{DECODINGS.replace(' are ', '  are ')}")
+    row = _keep(
+        "limitations",
+        UNEXAMINED,
+        "string_resolution",
+        "referenced by no code and were not reviewed",
+    )
+    found = _applied(report, row)
+    assert [v.code for v in found] == [DROPPED_CODE]
+    assert _limitations(report).count("were not reviewed") == 1
+
+
+def test_a_quote_standing_in_a_passage_shown_as_a_source_only_is_not_called_unchecked() -> None:
+    report = _report()
+    passages = _with(report, "string_resolution", source_only=True)
+    row = _keep(
+        "limitations",
+        UNEXAMINED,
+        "string_resolution",
+        "referenced by no code and were not reviewed",
+    )
+    (refused,) = [
+        v.message
+        for v in agreement_violations({"sentences": [row]}, passages)
+        if v.code == KEEP_UNQUOTED_CODE
+    ]
+    assert "does not stand in a source it names" in refused
+    assert "written without the code" not in refused
+
+
+def test_a_quote_also_standing_in_another_named_passage_is_not_said_to_stand_only_there() -> None:
+    report = _report()
+    ta = report.technical_analysis
+    assert ta is not None and ta.packing_obfuscation is not None
+    ta.packing_obfuscation.body = f"{CLAIMED} {DECODINGS}"
+    passages = _with(report, "string_resolution", source_only=True)
+    row = {
+        **_keep(
+            "limitations",
+            UNEXAMINED,
+            "string_resolution",
+            "referenced by no code and were not reviewed",
+        ),
+        "sources": ["packing_obfuscation", "string_resolution"],
+    }
+    (refused,) = [
+        v.message
+        for v in agreement_violations({"sentences": [row]}, passages)
+        if v.code == KEEP_UNQUOTED_CODE
+    ]
+    assert (
+        "but its quote stands in packing_obfuscation, a passage written without the code, "
+        "which backs no keep of this sentence:"
+    ) in refused
+    assert "stands only in" not in refused

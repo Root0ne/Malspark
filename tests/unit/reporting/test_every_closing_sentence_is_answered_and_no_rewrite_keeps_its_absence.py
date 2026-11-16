@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 from datetime import UTC, datetime
 from typing import Any
 
@@ -980,6 +981,22 @@ def test_a_closing_keep_on_a_refused_quote_is_left_out_with_its_quote() -> None:
     (record,) = [r for r in done.tally.unresolved if r["code"] == KEPT_IN_SOURCE_WORDS_CODE]
     assert "persistence_detail, quoting 'is not established'" in record["message"]
     assert record["stood"] == STILL_OPEN
+
+
+def test_a_replacement_is_counted_and_logged(caplog: pytest.LogCaptureFixture) -> None:
+    report = _report(limitations=f"{STILL_OPEN} {SCOPE}")
+    gamed = _row(
+        "limitations", STILL_OPEN, "keep", ["persistence_detail"], quote="is not established"
+    )
+    scope = _row("limitations", SCOPE, "keep", [], reason="no passage speaks of an operator")
+    answer = {"sentences": _settled(report, [gamed, scope])}
+    with caplog.at_level(logging.INFO, logger="malspark"):
+        done, _reporter = _ask(report, answer, answer)
+    # Counted as one replaced, never as left out (T-705).
+    assert done.summary["replaced"] == 1 and done.summary["dropped"] == 0
+    assert "0 left out, 0 qualified on the ledger, 1 replaced by their source's sentence." in (
+        caplog.text
+    )
 
 
 def test_a_closing_keep_another_check_refuses_too_is_left_out_with_its_quote() -> None:
