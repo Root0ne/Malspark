@@ -2586,6 +2586,7 @@ def indicator_publish_reason(
     stated: Any = None,
     spelled: str = "",
     digest: str = "",
+    judge_s_value: bool = False,
 ) -> str | None:
     """Why this run may publish one indicator of ``kind``, or ``None``.
 
@@ -2616,6 +2617,7 @@ def indicator_publish_reason(
         bound=bound,
         stated=stated,
         spelled=spelled,
+        judge_s_value=judge_s_value,
     )
 
 
@@ -2636,8 +2638,14 @@ def _evidence_reason(
     bound: str = "",
     stated: Any = None,
     spelled: str = "",
+    judge_s_value: bool = False,
 ) -> str | None:
     """Why the evidence lets this run publish one indicator of ``kind``, or ``None``.
+
+    ``judge_s_value`` is set when the value asked is one the judge's indicator
+    names and no tool's row holds (``judge_value_answer``): it is asked as the
+    string sweep's for its sources, and is not the sweep's, so the questions
+    about the shape of a value the sweep read are not asked of it.
 
     ``stated`` is a host value the analysis states (source ``analysis``: a row
     of the report model's identifier table, read by
@@ -2826,7 +2834,12 @@ def _evidence_reason(
             return None
     if kind == "path" and not path_names_a_file(value):
         return None
-    if kind == "path" and _from_the_strings(source) and _string_path_shape(value):
+    if (
+        kind == "path"
+        and _from_the_strings(source)
+        and not judge_s_value
+        and _string_path_shape(value)
+    ):
         # A path read out of the file's text is asked its shape before who
         # else saw it: the answer is about the value, not about its sources.
         return None
@@ -4705,6 +4718,7 @@ def publish_answer(
     stated: Any = None,
     spelled: str = "",
     digest: str = "",
+    judge_s_value: bool = False,
 ) -> str:
     """The publish rule's answer for one row, as the report prints it.
 
@@ -4743,6 +4757,7 @@ def publish_answer(
             bound=bound,
             stated=stated,
             spelled=spelled,
+            judge_s_value=judge_s_value,
         )
     )
     withheld = withheld_by_the_verdict(verdict, digest)
@@ -4811,7 +4826,7 @@ def publish_answer(
     # The shape of a value the string sweep read is its reason where it is
     # what refused a value a second source holds; one nothing else holds is
     # refused for that first, as before the shape was asked.
-    if kind == "path" and corroborated and _string_path_shape(text):
+    if kind == "path" and corroborated and not judge_s_value and _string_path_shape(text):
         return f"no: {_string_path_shape(text)}"
     if kind == "hash" and not _is_a_whole_digest(text):
         return "no: not a whole digest"
@@ -4987,6 +5002,9 @@ def judge_value_answer(
         "strings",
         reputation,
         corroborating=corroborating,
+        # Asked as the string sweep's for its sources, and not the sweep's own
+        # value: its shape is not asked.
+        judge_s_value=True,
         # The search's own facts win over the emulation record's on a shared key.
         **{**emulated, **sourced},
     )

@@ -690,7 +690,7 @@ def identifier_answers(report: Any) -> list[tuple[StatedHostValue, str]]:
         for sandbox_kind in stated.kind.sandbox_kinds if stated.kind is not None else ():
             if not publishes(answer):
                 break
-            placed = sandbox_host_kwargs(report, sandbox_kind, stated.value)
+            placed: dict[str, Any] = dict(sandbox_host_kwargs(report, sandbox_kind, stated.value))
             if placed.get("unattributed"):
                 refused = publish_answer(sandbox_kind, stated.value, "sandbox", **placed)
                 if not publishes(refused):

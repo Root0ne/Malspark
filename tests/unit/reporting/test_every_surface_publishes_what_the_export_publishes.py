@@ -486,3 +486,57 @@ class TestAValueOnlyTheJudgeRecordsIsTheJudgesIndicator:
             if o.get("type") == "indicator" and "runmark" in str(o.get("pattern"))
         ]
         assert naming == ["[mutex:name='runmark']"]
+
+
+class TestTheShapeQuestionIsNotAskedOfAJudgesValue:
+    """A value the judge names is not the string sweep's: its shape is not asked.
+
+    The judge's file name, a second source holding it whole, is published on
+    every surface as the judge's indicator; the same value held only in the
+    file's text is the string sweep's, and its shape refuses it everywhere.
+    """
+
+    @pytest.mark.parametrize("value", ["/opt/relay/bin/agentd", "relay_agent"])
+    def test_the_judge_s_value_is_published_everywhere(self, value: str) -> None:
+        judge = _judge(f"[file:name = '{value}']")
+        report = _report(
+            judge,
+            overall_confidence=0.9,
+            dynamic=DynamicBehavior(
+                process_tree=[{"pid": 1, "name": "s", "command_line": f"s {value}"}]
+            ),
+        )
+        exported, _renderer = _export(report, judge)
+        from malspark.reporting.misp import build_misp_attributes
+
+        assert _row(report, value).published == "yes: a second source in this run records it"
+        feed = [r["published"] for r in ioc_feed_rows(report.model_dump()) if r["value"] == value]
+        assert feed == [True]
+        misp = build_misp_attributes(report, build_consolidated_iocs(report), owner="r")
+        assert any(a["value"] == value for a in misp)
+        assert f"[file:name = '{value}']" in [
+            o.get("pattern") for o in exported["objects"] if o.get("type") == "indicator"
+        ]
+
+    @pytest.mark.parametrize("value", ["/opt/relay/bin/agentd", "relay_agent"])
+    def test_the_same_value_only_the_file_s_text_holds_is_refused_everywhere(
+        self, value: str
+    ) -> None:
+        from malspark.reporting.models import StaticAnalysis, StringIOC
+
+        report = _report(
+            _judge(),
+            overall_confidence=0.9,
+            static=StaticAnalysis(interesting_strings=[StringIOC(kind="path", value=value)]),
+            dynamic=DynamicBehavior(
+                process_tree=[{"pid": 1, "name": "s", "command_line": f"s {value}"}]
+            ),
+        )
+        exported, _renderer = _export(report, _judge())
+
+        assert not publishes(_row(report, value).published)
+        feed = [r["published"] for r in ioc_feed_rows(report.model_dump()) if r["value"] == value]
+        assert feed == [False]
+        assert value not in str(
+            [o.get("pattern") for o in exported["objects"] if o.get("type") == "indicator"]
+        )
