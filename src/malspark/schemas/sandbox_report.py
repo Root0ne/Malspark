@@ -645,6 +645,24 @@ def normaliser_reading(
     return reader.reading(str(read_from or "").strip().lower(), str(provider or "").strip().lower())
 
 
+def declared_process_id_fields() -> tuple[str, ...]:
+    """The fields registered readers declare their sources name a process under by its list's id.
+
+    A flow's or a request's process (``traffic_process_fields``) and a
+    signature indicator's (``IndicatorFields.process``), each once, in the
+    readers' order: the words a statement may write before a process's number.
+    """
+    from malspark.providers.sandbox.readers import report_reader, report_reader_ids
+
+    out: dict[str, None] = {}
+    for reader_id in report_reader_ids():
+        reader = report_reader(reader_id)
+        indicators = getattr(reader, "signature_indicators", None)
+        out.update(dict.fromkeys(getattr(reader, "traffic_process_fields", ()) or ()))
+        out.update(dict.fromkeys(getattr(indicators, "process", ()) or ()))
+    return tuple(name for name in out if name)
+
+
 # The words a CAPE report gives four of its blocks, and the document's word
 # for each (``schemas.sandbox_document.PLACES``): the CAPE reader's
 # declaration, read by its reader and nowhere else.

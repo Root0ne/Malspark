@@ -71,10 +71,10 @@ A statement's roots are those of the entries it cites. An entry holding one
 root gives it. An entry holding several gives the ones the statement picks
 out: by a number it writes, read in the coordinate the entry's rows state,
 or by a quoted value or a name written as one that only one of the entry's
-roots holds, or a sandbox process by the number written after ``pid`` or
-``procid`` (the report's id or the guest's pid) that names one process of the
-run. A name, value or number several of them hold, or a prose word, picks
-out none.
+roots holds, or a sandbox process by the number written after ``pid`` or a
+field a sandbox reader declares names a process (the report's id or the
+guest's pid) that names one process of the run. A name, value or number
+several of them hold, or a prose word, picks out none.
 A statement that picks out none of them gives no root for that entry and
 says so: which row it read is not a fact.
 
@@ -218,9 +218,21 @@ _HEX_TEXT = re.compile(r"\s*(?:0x)?([0-9a-fA-F]{1,16})\s*")
 # then the names it holds, each quoted with the pack's escaping.
 _SERVED_ROW = re.compile(r"^- (0x[0-9a-fA-F]{1,16})\b(.*)$")
 _SERVED_NAME = re.compile(r"\"((?:[^\"\\]|\\.)*)\"")
-# A process a statement names by its number: written right after ``pid`` or
-# ``procid`` (``PID 1496``, ``procid: 87``), the report's id or the guest's pid.
-_PID_WRITTEN = re.compile(r"\b(?:pid|procid)\s*[:#=]?\s*(\d{1,10})\b", re.IGNORECASE)
+# A process a statement names by its number: written right after ``pid`` or a
+# field a registered reader declares its source names a process under
+# (``PID 1496``, ``<field>: 87``), the report's id or the guest's pid.
+_PID_WORD = "pid"
+_PID_NUMBER = r"\s*[:#=]?\s*(\d{1,10})\b"
+
+
+def _pid_written() -> re.Pattern[str]:
+    """``pid`` or a declared process-id field, then the number (:data:`_PID_WORD`)."""
+    from malspark.schemas.sandbox_report import declared_process_id_fields
+
+    words = sorted({_PID_WORD, *declared_process_id_fields()}, key=len, reverse=True)
+    return re.compile(r"\b(?:" + "|".join(map(re.escape, words)) + ")" + _PID_NUMBER, re.IGNORECASE)
+
+
 # An image base sits on a 64 KiB boundary.
 _BASE_ALIGNMENT = 0x10000
 
@@ -1629,6 +1641,7 @@ class RunRoots:
         self.layout = self.layouts.get("") or Layout()
         joins = _joins(entries, files)
         self._joins = joins
+        self._pid_written = _pid_written()
         # The run's sandbox section index: an item id is read only against it.
         self.items: ItemIndex | None = item_index_of(entries)
         self.entries: dict[str, EntryRoots] = {}
@@ -1729,7 +1742,7 @@ class RunRoots:
                     hits |= held
         # A process named by its number: the one process of the run it names,
         # where the entry holds that process's root.
-        for match in _PID_WRITTEN.finditer(text):
+        for match in self._pid_written.finditer(text):
             key = self._joins.identities.resolve(match.group(1))
             if key is not None:
                 label = found.named(_process(self._joins.identities.written(key)))
