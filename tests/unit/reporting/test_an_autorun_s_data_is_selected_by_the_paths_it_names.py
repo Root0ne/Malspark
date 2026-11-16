@@ -487,3 +487,52 @@ class TestARegistryEventDraft:
         assert ("\\evil7731.exe", ds.NO_FIELD_REASON) in [
             (v.value, v.why) for v in rule.values_left_out
         ]
+
+
+def _run_payload(payload: str) -> MalwareReport:
+    """A report whose analyst lists ``payload`` under the Run key with no value's name: no key
+    is left to select on, so its draft is a process creation."""
+    return _report(
+        [], persistence=[PersistenceMechanism(kind="registry_run", target=RUN, payload=payload)]
+    )
+
+
+class TestEachFormIsReadWhole:
+    @pytest.mark.parametrize("name", ["page7731.html", "book7731.xlsm", "note7731.docx"])
+    def test_a_file_s_extension_of_up_to_four_characters_names_a_file(self, name: str) -> None:
+        (body,) = _sigma(_run_payload(f"C:\\Users\\a\\AppData\\Roaming\\{name}"))
+
+        assert body["detection"]["selection_payload"] == {"CommandLine|contains": [f"\\{name}"]}
+
+    @pytest.mark.parametrize("name", ["cfg7731.json", "x7731.exe.txt"])
+    def test_a_file_whose_name_only_holds_a_program_s_extension_is_no_program(
+        self, name: str
+    ) -> None:
+        (body,) = _sigma(_run_payload(f"C:\\Users\\a\\AppData\\Roaming\\{name}"))
+
+        assert body["detection"] == {
+            "selection_payload": {"CommandLine|contains": [f"\\{name}"]},
+            "condition": "selection_payload",
+        }
+
+    @pytest.mark.parametrize(
+        "stated",
+        ['"%APPDATA%\\cmd.exe"', "'%APPDATA%\\cmd.exe'", "%HOMEDRIVE%\\%HOMEPATH%\\cmd.exe"],
+    )
+    def test_a_quoted_path_or_one_under_two_environment_names_is_its_name_alone(
+        self, stated: str
+    ) -> None:
+        report = _report([("file path", stated)])
+
+        assert _sigma(report) == []
+        (item,) = report.drafts_not_built
+        assert ds.NAME_ALONE_REASON in item.why
+
+    def test_a_stated_folder_s_long_path_prefix_is_read_off(self) -> None:
+        (body,) = _sigma(
+            _report([("folder", "\\\\?\\C:\\Users\\a\\AppData\\Roaming\\Vendor7731\\")])
+        )
+
+        assert body["detection"]["selection_folder"] == {
+            "TargetFilename|contains": ["\\Vendor7731\\"]
+        }
