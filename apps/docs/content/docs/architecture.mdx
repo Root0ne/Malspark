@@ -2878,7 +2878,10 @@ turn, each once, and what the analyst answers stands.
     keyed by plain names alone takes the addresses the call was given; a
     name joins its address only when the call gave one address and the
     answer lists one function, and given no address, each function keeps its
-    name and is given none. A key whose listing begins with
+    name and is given none. Beside a key that carries an address, a key that
+    carries none takes the one address of the call no key took when there is
+    one such of each; otherwise each address of the call no key took is a
+    function with no name. A key whose listing begins with
     `Error` is left out. A cut answer is read member by member from its opening
     brace, and keeps the functions its text still shows. Any other answer is no
     batch, so a plain listing is one function at the address the call was
@@ -5091,11 +5094,12 @@ is assembled from what the run gathered rather than recomputed beside it:
   line is read against the claim's sentences too. The clause that writes a
   citation — the part of the sentence or evidence item between commas, colons
   and dashes, its quoted text left out — also denies for that citation alone
-  with "no match", "do not appear" or "never occurs" where no word completes
-  the form ("[ev_0203] DNS names (no match)", "do not appear in the capture";
-  "no match limit" and "does not appear packed" deny nothing). A source every
-  statement naming the technique cites in a clause that negates or denies so
-  is cited to state an absence and listed in `absence_sources`
+  with "no match", "do not appear" or "never occurs", and only where the cited
+  entry's own stored answer found nothing: its tool declares where the
+  answer's rows sit (`ToolFacts.rows`), the answer holds that place, and no row
+  stands there (`validation.answer_found_nothing`). Elsewhere those words deny
+  nothing. A source every statement naming the technique cites in a clause
+  that negates or denies so is cited to state an absence and listed in `absence_sources`
   (`validation.technique_absence_sources`); a source one statement cites for
   the behaviour, or an asserting tool's own row names, is evidence.
   `independent_sources` counts the sources that stand behind a
