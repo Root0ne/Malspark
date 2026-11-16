@@ -766,6 +766,15 @@ def test_beacons_past_the_room_keep_those_of_the_heaviest_conversations() -> Non
     assert len(longer) > _capture_cap()
 
 
+def test_beacons_all_left_out_are_not_said_to_be_none() -> None:
+    facts = {**_short_facts(_outbound_only(2, 1)["conversations"]), "beacons": []}
+    text = summary_text(facts, None, "", None, "", _left_out("beacons", 4))
+    assert "No regular beaconing" not in text
+    assert text.endswith(
+        "Beaconing detected (periodic callbacks — strong C2 signal):\n" + _left_out("beacons", 4)
+    )
+
+
 def test_no_capture_summary_is_longer_than_its_bound() -> None:
     assert _most() == 40_000
     for facts in (
