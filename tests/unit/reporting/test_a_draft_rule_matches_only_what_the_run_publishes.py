@@ -326,7 +326,9 @@ class TestTheSuricataSyntaxCheck:
 class TestSigma:
     """A Sigma selection is held to the same rule: published, or watched by a sandbox."""
 
-    RUN_KEY = "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Run"
+    # An autorun value a sample writes, as a log records it: the Run key and the value's name
+    # (the Run key alone is every installation's, never selected on).
+    RUN_KEY = "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Run\\example"
 
     def _sigma(self, **over: Any) -> Any:
         return _rule(_report(**over), "sigma")
@@ -391,7 +393,7 @@ class TestSigma:
             registry_mods=[
                 RegistryMod(
                     hive="HKCU",
-                    key="Software\\Microsoft\\Windows\\CurrentVersion\\Run",
+                    key="Software\\Microsoft\\Windows\\CurrentVersion\\Run\\example",
                     value_name="example",
                     operation="create",
                 )
@@ -402,7 +404,7 @@ class TestSigma:
 
         assert rule is not None
         assert (
-            "\\Software\\Microsoft\\Windows\\CurrentVersion\\Run"
+            "\\Software\\Microsoft\\Windows\\CurrentVersion\\Run\\example"
             in yaml.safe_load(rule.body)["detection"]["selection_registry"]["TargetObject|contains"]
         )
 

@@ -123,7 +123,17 @@ def ransomware_report() -> MalwareReport:
                             "Buffer": "C:\\Users\\Public\\lockbit.exe",
                         }
                     ],
-                }
+                },
+                {
+                    "api": "RegSetValueExA",
+                    "arguments": [
+                        {
+                            "FullName": "HKLM\\Software\\ExampleLocker7731\\Config",
+                            "ValueName": "key",
+                            "Buffer": "x",
+                        }
+                    ],
+                },
             ],
         },
         "network": {
@@ -235,9 +245,8 @@ class TestRansomwareSigma:
         rule = next(r for r in rules if r.kind == "sigma")
         parsed = yaml.safe_load(rule.body)
         registry = parsed["detection"].get("selection_registry") or {}
-        contains = registry.get("TargetObject|contains") or []
-        joined = " ".join(contains)
-        assert "CurrentVersion\\Run" in joined or "currentversion\\run" in joined.lower()
+        # The sample's own key; the Run key alone is every installation's.
+        assert registry.get("TargetObject|contains") == ["\\Software\\ExampleLocker7731\\Config"]
 
 
 class TestRansomwareSuricata:
