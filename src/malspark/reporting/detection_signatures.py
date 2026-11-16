@@ -1606,7 +1606,6 @@ def selection_specific(
     for at, (name, field_name, value) in enumerate(placed):
         if field_name.endswith("|contains") and any(
             _holds_components(folded[other], folded[at])
-            and (folded[at] != folded[other] or not placed[other][1].endswith("|contains"))
             for other in range(len(placed))
             if other != at
         ):
@@ -1615,13 +1614,7 @@ def selection_specific(
             name, {k: v for k, v in selections[name].items() if not isinstance(v, list)}
         )
         selection.setdefault(field_name, []).append(value)
-    # A selection keeps its fields in the order written (an event id first).
-    narrowed = {
-        name: {k: kept[name][k] for k in selections[name] if k in kept[name]}
-        for name in selections
-        if name in kept
-    }
-    return narrowed, reasons
+    return kept, reasons
 
 
 def _holds_components(value: str, part: str) -> bool:

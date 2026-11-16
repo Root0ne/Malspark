@@ -27,12 +27,15 @@ from malspark.reporting.builder import MalwareReportBuilder, build_consolidated_
 from malspark.reporting.models import (
     ConsolidatedIOC,
     DynamicBehavior,
+    FamilyAttribution,
     FileHashes,
     HostIdentifier,
     MalwareReport,
+    ObservedIn,
     PersistenceMechanism,
     RegistryMod,
     SampleIdentity,
+    SandboxSignature,
     TechnicalAnalysis,
     TTPMapping,
 )
@@ -276,3 +279,93 @@ class TestOneDecision:
         assert item.why == ds._SIGMA_NOTHING_TO_SELECT
         # Once for the build, once for the sentence.
         assert len(calls) == 2
+
+
+class TestWhatTheRuleSays:
+    def test_two_values_every_host_has_are_counted_and_each_reason_said_once(self) -> None:
+        report = _report(
+            [],
+            keys=[
+                "Software\\Microsoft\\Windows\\CurrentVersion\\Run",
+                "Software\\Microsoft\\Windows\\CurrentVersion\\RunOnce",
+            ],
+        )
+
+        (item,) = report.drafts_not_built
+        assert item.why.endswith(
+            "; the 2 values a sandbox watched or the run publishes are each every Windows "
+            "host's own, never selected on: a registry key or value every Windows installation has"
+        )
+
+    def test_a_draft_that_raised_says_so(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        def _raising(*args: Any, **kwargs: Any) -> Any:
+            raise ValueError("x")
+
+        monkeypatch.setattr(ds, "_sigma_rule", _raising)
+        (item,) = _report([("folder", "Custom_update")]).drafts_not_built
+
+        assert item.why == ds._SIGMA_DRAFT_RAISED
+
+    def test_a_stated_draft_names_no_sandbox_signature(self) -> None:
+        report = _report([("folder", "Custom_update")])
+        report.dynamic = DynamicBehavior(
+            sandbox_signatures=[SandboxSignature(name="Drops a file", severity=5)]
+        )
+        report = MalwareReportBuilder.attach_detection_signatures(report)
+
+        (body,) = _sigma(report)
+        assert "Drops a file" not in body["description"]
+
+    def test_the_first_draft_names_five_values_of_each_selection(self) -> None:
+        keys = [f"Software\\ExampleVendor7731\\Setting{i}" for i in range(7)]
+
+        report = _report([], keys=keys)
+
+        (rule,) = [r for r in report.detection_signatures if r.kind == "sigma"]
+        assert rule.source_evidence == [f"registry:\\{key}" for key in keys[:5]]
+
+    def test_a_value_left_out_is_not_named_as_a_later_detonation_s(self) -> None:
+        later = [ObservedIn(detonation="d2")]
+        report = MalwareReport(
+            identity=SampleIdentity(hashes=FileHashes(sha256="7" * 64)),
+            verdict="Malware",
+            attribution=FamilyAttribution(family="Fixturelock", family_grounded=True),
+            consolidated_iocs=[
+                ConsolidatedIOC(
+                    type="Path",
+                    kind=kind,
+                    value=value,
+                    source="analysis",
+                    published="yes: the analysis stated it",
+                    observed_in=later,
+                )
+                for kind, value in (
+                    ("path", "C:\\Users\\Public\\Vendor7731\\drop.exe"),
+                    ("folder", "C:\\Users\\Public\\Vendor7731"),
+                )
+            ],
+        )
+
+        (body,) = _sigma(MalwareReportBuilder.attach_detection_signatures(report))
+        assert body["detection"]["condition"] == "selection_file"
+        assert "drop.exe: observed in detonation 2" in body["description"]
+        assert "Vendor7731: observed" not in body["description"]
+
+
+@pytest.mark.parametrize(
+    ("value", "part", "held"),
+    [
+        ("\\a\\b\\c.txt", "\\a\\b\\", True),
+        ("\\a\\b\\c", "\\a\\b", True),
+        ("\\software\\vendor7731", "\\vendor7731", True),
+        ("\\a\\b10", "\\a\\b1", False),
+        ("\\a\\b1\\a\\b\\c", "\\a\\b", True),
+        ("x\\a\\b", "a\\b", True),
+        ("xa\\b", "a\\b", False),
+        ("a\\b", "a\\b", True),
+    ],
+)
+def test_a_value_holds_a_part_only_as_whole_path_components(
+    value: str, part: str, held: bool
+) -> None:
+    assert ds._holds_components(value, part) is held

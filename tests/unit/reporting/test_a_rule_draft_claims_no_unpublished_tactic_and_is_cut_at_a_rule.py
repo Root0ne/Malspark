@@ -87,8 +87,9 @@ def test_a_value_in_running_text_or_inside_another_name_names_nothing() -> None:
         [
             _mapping("T1105", ["It writes the Custom_update folder."]),
             _mapping("T1140", ["It decodes C:\\ProgramData\\Custom_update2\\x.dat."]),
+            _mapping("T1083", ["key:Custom_update"]),
         ],
-        [_cell("Command and Control", "T1105")],
+        [_cell("Command and Control", "T1105"), _cell("Discovery", "T1083")],
     )
     assert ds._sigma_tags(report, SELECTED) == []
 
