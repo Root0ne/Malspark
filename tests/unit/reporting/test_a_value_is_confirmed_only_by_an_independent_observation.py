@@ -730,3 +730,55 @@ class TestTheRecordIsAskedForWholeValues:
         report = _held_by(kind, REGISTRY_KEY, "registry")
 
         assert publishes(_answer(report, REGISTRY_KEY)), kind
+
+
+class TestThePlatformsOwnToolsAreReadByTheirShippedKind:
+    """An entry of the platform's own server that stored no kind is read by the kind it ships."""
+
+    def _report(
+        self, tool: str, value: str, steps: list[dict[str, Any]] | None = None
+    ) -> MalwareReport:
+        entry = LedgerEntry(
+            id="ev_0140",
+            agent="static",
+            tool=tool,
+            source="mcp:analysis",
+            facts={"v": 1, "kind": ""},
+            args={"steps": steps} if steps is not None else {},
+            output=f"text: {value}",
+        )
+        report = _report(
+            StringIOC(kind="path", value=value),
+            _finding("ev_0140"),
+            index=[
+                EvidenceIndexRow(
+                    id="ev_0140",
+                    agent="static",
+                    tool=tool,
+                    source="mcp:analysis",
+                    facts={"v": 1, "kind": ""},
+                )
+            ],
+        )
+        report.second_source_reads = second_source_reads(report, [entry])
+        return report
+
+    def test_its_string_listing_reads_the_file_again(self) -> None:
+        answer = _answer(self._report("strings", "C:\\Temp"), "C:\\Temp")
+
+        assert not publishes(answer), answer
+
+    def test_its_byte_read_without_a_step_reads_the_file_again(self) -> None:
+        value = "/f /q C"
+        assert not publishes(_answer(self._report("transform_bytes", value, []), value))
+
+    def test_its_transform_with_a_step_recovers(self) -> None:
+        value = "C:\\ProgramData\\Relay\\relay.exe"
+        report = self._report("transform_bytes", value, [{"op": "xor", "key": "5a"}])
+
+        assert publishes(_answer(report, value))
+
+    def test_an_operator_s_server_that_declares_nothing_keeps_full_strength(self) -> None:
+        report = _held_by(None, RUNTIME_PATH)
+
+        assert publishes(_answer(report, RUNTIME_PATH))
