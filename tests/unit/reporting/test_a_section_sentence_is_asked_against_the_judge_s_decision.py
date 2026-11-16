@@ -699,3 +699,67 @@ def test_every_judge_refusal_offers_the_drop_only_where_it_passes() -> None:
         if v.code == UNKNOWN_SOURCE_CODE
     ]
     assert found and all("judge" not in v.message for v in found)
+
+
+@pytest.mark.parametrize("decision", ["keep", "rewrite"])
+def test_the_refusal_on_a_judge_passage_tells_the_end_the_round_gives(decision: str) -> None:
+    from tests.unit.reporting.test_a_denial_of_a_name_the_run_holds_is_read_against_the_ledger import (  # noqa: E501
+        CALLED,
+        _ledger,
+        _report,
+    )
+
+    held = f"The runtime result of `{CALLED}` is not known."
+    body = f"Routine 0x5a10 reads a host mode through a slot [ev_0107]. {held}"
+    report = _report("The run ends.")
+    assert report.technical_analysis is not None
+    report.technical_analysis.string_resolution.body = body  # type: ignore[union-attr]
+    report.overall_confidence = 0.8
+    report.ttp_mappings = [
+        TTPMapping(
+            technique_id="T1082",
+            technique_name="System Information Discovery",
+            evidence_ids=["ev_0107"],
+        )
+    ]
+    ledger = _ledger()
+    citable = [str(e.id) for e in ledger]
+    row = {
+        "passage": "string_resolution",
+        "sentence": held,
+        "sources": ["judge.technique.T1082"],
+        "decision": decision,
+        "quote": "published",
+        "rewrite": f"{held[:-1]} [ev_0107].",
+    }
+    passages = passages_of(report, entries=ledger)
+    assert agreement._held_by_the_ledger(
+        next(p for p in passages if p.id == "string_resolution"), held
+    )
+
+    (refused,) = [
+        v
+        for v in agreement_violations({"sentences": [row]}, passages, citable)
+        if v.path.startswith("sentences.")
+    ]
+    # No fixed clause says the sentence stands: the end the round gives it is told, once.
+    assert "stands as written" not in refused.message
+    assert refused.message.count("If no answer for it passes the checks, it is left out") == 1
+    counts, records = apply_rows(
+        {"sentences": [row]}, passages_of(report, entries=ledger), citable=citable
+    )
+    assert counts["dropped"] == 1 and held not in report.technical_analysis.string_resolution.body  # type: ignore[union-attr]
+    assert agreement.JUDGE_LEFT_OUT_CODE not in [v.code for v in records]
+
+    # A sentence nothing holds is told no end, and stands as written.
+    plain = report_of()
+    (refused,) = _refusals(plain, _row(ASSESS, decision, quote="Benign", rewrite=ASSESS))
+    assert "stands as written" not in refused.message and "left out of the report" not in (
+        refused.message
+    )
+    apply_rows(
+        {"sentences": [_row(ASSESS, decision, quote="Benign", rewrite=ASSESS)]},
+        passages_of(plain),
+        citable=CITABLE,
+    )
+    assert _body(plain) == BODY

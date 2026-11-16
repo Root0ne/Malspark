@@ -199,7 +199,8 @@ id and name and each it dropped with its reason) is shown after the facts, one p
 and of nothing else, and only of a sentence of a section 5 passage the round may rewrite, the
 conclusion, the limitations, a value cell or a capability bullet (:func:`_judge_drops`): a row
 naming it is a drop whatever else it names, one of another form or for another passage is
-refused, and no sentence is read for what it asserts (T-717). Which sentence states otherwise
+refused, its sentence ending as any whose answer is refused (:func:`_told_the_end` tells it),
+and no sentence is read for what it asserts (T-717). Which sentence states otherwise
 than it is the model's to say: code picks none. A sentence left out on it is counted where it
 is left out and recorded with the row's sources, its reason and the sentence whole
 (``JUDGE_LEFT_OUT_CODE``). The decision starts no question of its own, and nothing changes it.
