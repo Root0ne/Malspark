@@ -73,6 +73,26 @@ def test_a_denial_in_another_sentence_of_the_claim_negates_no_evidence_line_cita
     assert not _negated_for_its_technique(said, "ev_0010", claim)
 
 
+def test_a_denial_form_is_the_clause_s_own_statement_about_what_it_cites() -> None:
+    # "no match" qualifying a noun, a quoted text, "not appear" with a complement.
+    for said in (
+        "The rule fired [ev_0050] with no match limit set.",
+        "The config holds the string 'no match found' [ev_0050].",
+        'The config holds the string "no match found" [ev_0050].',
+        "The encryption routine [ev_0050] does not appear packed; it calls CryptEncrypt.",
+        "The routine [ev_0050] does not appear to be packed.",
+    ):
+        assert not _cited_for_an_absence(said, "ev_0050"), said
+        assert not _negated_for_its_technique(said, "ev_0050"), said
+    for said in (
+        "The YARA scan [ev_0050] gave no match.",
+        "[ev_0050] no match found",
+        "The names [ev_0050] do not appear in the capture.",
+        "The capture's hosts [ev_0050] (no match)",
+    ):
+        assert _cited_for_an_absence(said, "ev_0050"), said
+
+
 def test_each_citation_is_read_by_the_clause_that_writes_it() -> None:
     for citation in ("ev_0201", "ev_0202", "ev_0203", "ev_0204", "net:1", "net:8"):
         assert _cited_for_an_absence(SAID, citation), citation

@@ -16122,17 +16122,36 @@ _HOLDS_NO_RE = re.compile(
 )
 
 # Forms of denial read only in the clause that writes a citation
-# (:func:`_denies`): "(no match)", "do not appear", "never occurs".
+# (:func:`_denies`): "(no match)", "do not appear", "never occurs". Each counts
+# where what follows it ends the statement or is a word that does not complete
+# it: a noun after "no match" is qualified by it ("no match limit"), and a word
+# after "not appear" that is no preposition, conjunction or adverb of place is
+# its complement ("does not appear packed", "does not appear to be").
 _DENIAL_FORM_RE = re.compile(
     r"\bno\s+match(?:es)?\b|\b(?:do|does|did)\s+not\s+(?:appear|occur)\b"
     r"|\bnever\s+(?:appears?|occurs?)\b",
     re.IGNORECASE,
 )
+_DENIAL_FOLLOWERS = frozenset(
+    {
+        "in", "on", "at", "for", "from", "with", "within", "among", "amongst", "against",
+        "of", "across", "between", "by", "under", "over", "inside", "during", "throughout",
+        "anywhere", "there", "here", "again", "either", "and", "or", "but", "nor",
+        "is", "are", "was", "were", "found", "returned", "reported", "recorded", "seen",
+        "observed", "listed", "shown",
+    }
+)  # fmt: skip
+_NEXT_WORD = re.compile(r"[ \t]*([A-Za-z][\w'-]*)?")
 
 
 def _denies(clause: str) -> bool:
     """Whether ``clause`` states a denial in one of the clause reader's own forms."""
-    return _DENIAL_FORM_RE.search(clause) is not None
+    for found in _DENIAL_FORM_RE.finditer(clause):
+        following = _NEXT_WORD.match(clause, found.end())
+        word = following.group(1) if following is not None else None
+        if word is None or word.lower() in _DENIAL_FOLLOWERS:
+            return True
+    return False
 
 
 # Where a statement's sentences and its evidence line's items break.
@@ -16168,15 +16187,16 @@ _CITING_CLAUSE_BREAK = re.compile(r"[,:]\s+|\s+-\s+")
 
 
 def _citing_clauses(said: str, citation: str) -> list[str]:
-    """The clauses of ``said`` that write ``citation``.
+    """The clauses of ``said`` that write ``citation``, their quoted text left out.
 
     A clause is a part of a sentence or an evidence-line item
-    (``_CITING_PIECE_BREAK``) between commas, colons and dashes.
+    (``_CITING_PIECE_BREAK``) between commas, colons and dashes; what it
+    quotes (``_QUOTED_SPAN_RE``) is a quotation, not its own statement.
     """
     text = _read_dashes(said)
     written = re.compile(r"(?<![\w:])" + re.escape(citation) + r"(?![\w])", re.IGNORECASE)
     return [
-        clause
+        _QUOTED_SPAN_RE.sub(" ", clause)
         for piece in _CITING_PIECE_BREAK.split(text)
         if written.search(piece)
         for clause in _CITING_CLAUSE_BREAK.split(piece)
@@ -16190,8 +16210,8 @@ def _cited_for_an_absence(said: str, citation: str) -> bool:
     Read in the clauses that write the citation (:func:`_citing_clauses`): one
     of them negates what was recorded, matched or found (:func:`_negates`), or
     denies in the clause reader's own forms (:func:`_denies`), as
-    "[ev_0203] DNS names (no match)" does. A negation in another clause, or a
-    citation the statement does not write, is no absence.
+    "[ev_0203] DNS names (no match)" does. A negation in another clause, in
+    quoted text, or a citation the statement does not write, is no absence.
     """
     return any(_negates(clause) or _denies(clause) for clause in _citing_clauses(said, citation))
 
