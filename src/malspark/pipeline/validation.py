@@ -7273,12 +7273,37 @@ def _batch_listings(output: str) -> tuple[bool, dict[int, str]]:
 
 
 def _entry_functions(entry: Any) -> list[tuple[int | None, list[str]]]:
-    """The ``(address, names)`` of each function one decompile entry holds."""
+    """The ``(address, names)`` of each function one decompile entry holds.
+
+    A batch whose members carry addresses is one function per member. A batch
+    keyed by plain names alone takes the addresses the call was given; a
+    member's name joins its address only when the call gave one address and
+    the answer lists one member. Given no address, its members keep their
+    names.
+    """
     args = getattr(entry, "args", None) or {}
     output = str(getattr(entry, "output", "") or "")
     members = _batch_members(output)
-    if members is not None:
+    if members is not None and (
+        not members or any(address is not None for address, _key, _text in members)
+    ):
         return [(address, _named(None, text, args={})) for address, _key, text in members]
+    asked = _argument_functions(entry, args, output)
+    if members is None:
+        return asked
+    given = [address for address, _names in asked if address is not None]
+    if not given:
+        return [(None, _named(None, text, args={})) for _address, _key, text in members]
+    if len(given) == 1 and len(members) == 1:
+        named = _named(None, members[0][2], args={})
+        return [(given[0], list(dict.fromkeys([*asked[0][1], *named])))]
+    return asked
+
+
+def _argument_functions(
+    entry: Any, args: Mapping[str, Any], output: str
+) -> list[tuple[int | None, list[str]]]:
+    """The ``(address, names)`` of the functions a decompile call was given."""
     for argument in _ADDRESS_LIST_ARGUMENTS:
         if argument in args:
             addresses = _address_list(args[argument])

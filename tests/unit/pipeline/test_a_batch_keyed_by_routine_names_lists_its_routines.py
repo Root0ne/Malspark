@@ -153,3 +153,26 @@ def test_a_batch_keyed_by_addresses_reads_as_it_did() -> None:
 def test_a_key_that_is_no_routine_beside_an_address_key_is_no_batch() -> None:
     answer = {hex(FIRST): _listing(FIRST), "note": "the second function was skipped"}
     assert _batch_listings(json.dumps(answer)) == (False, {})
+
+
+def _asked(args: dict[str, Any], answer: dict[str, str]) -> LedgerEntry:
+    return LedgerEntry(
+        id="ev_0160", tool="lift_many", args=args, output=json.dumps(answer), facts=_BATCH
+    )
+
+
+def test_a_name_keyed_answer_to_one_address_names_the_routine_at_that_address() -> None:
+    entry = _asked({"address": hex(FIRST)}, {"main": "int main(void)\n{ }"})
+    assert _entry_functions(entry) == [(FIRST, ["main"])]
+
+
+def test_a_name_keyed_answer_to_several_addresses_keeps_the_call_s_addresses() -> None:
+    answer = {"main": "int main(void)\n{ helper(); }", "helper": "void helper(void)\n{}"}
+    entry = _asked({"addresses": [hex(FIRST), hex(SECOND)]}, answer)
+    assert _entry_functions(entry) == [(FIRST, []), (SECOND, [])]
+
+
+def test_a_name_keyed_answer_to_a_call_that_gave_no_address_keeps_its_names() -> None:
+    answer = {"main": "int main(void)\n{ }", "helper": "void helper(void)\n{}"}
+    entry = _asked({"functions": "main,helper"}, answer)
+    assert _entry_functions(entry) == [(None, ["main"]), (None, ["helper"])]
