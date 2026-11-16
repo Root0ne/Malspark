@@ -189,8 +189,8 @@ class TestAKeyEveryInstallationHas:
         assert item.why == (
             "no registry key, image path, file, folder, stream, scheduled task, service or named "
             "pipe that this run publishes or a sandbox watched is left to select on; the value a "
-            "sandbox watched or the run publishes is every Windows host's own, never selected on: "
-            "a registry key or value every Windows installation has"
+            "sandbox watched or the run publishes is never selected on: a registry key or value "
+            "every Windows installation has"
         )
 
     def test_a_vendor_key_beside_it_is_selected_alone(self) -> None:

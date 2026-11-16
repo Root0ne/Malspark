@@ -365,8 +365,8 @@ class TestWhatTheRuleSays:
 
         (item,) = report.drafts_not_built
         assert item.why.endswith(
-            "; the 2 values a sandbox watched or the run publishes are each every Windows "
-            "host's own, never selected on: a registry key or value every Windows installation has"
+            "; the 2 values a sandbox watched or the run publishes are never selected on: "
+            "a registry key or value every Windows installation has"
         )
 
     def test_a_draft_that_raised_says_so(self, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -495,7 +495,7 @@ class TestAPublishedPath:
         ("stated", "selected"),
         [
             ("C:\\Users\\Admin\\Desktop\\cmd.exe", "\\Desktop\\cmd.exe"),
-            ("%APPDATA%\\cmd.exe", "\\cmd.exe"),
+            ("C:\\Users\\Admin\\AppData\\Roaming\\cmd.exe", "\\AppData\\Roaming\\cmd.exe"),
             ("C:\\Users\\Admin\\Tools7731\\x7731.exe", "\\Tools7731\\x7731.exe"),
         ],
     )
@@ -505,8 +505,10 @@ class TestAPublishedPath:
         assert ds._stated_value("path", stated) == selected
 
     def test_is_never_refused_as_every_host_s_own(self) -> None:
-        report = _report([("file path", "%APPDATA%\\cmd.exe")])
+        report = _report([("file path", "C:\\Users\\Admin\\AppData\\Roaming\\cmd.exe")])
 
         (body,) = _sigma(report)
-        assert body["detection"]["selection_file"] == {"TargetFilename|endswith": ["\\cmd.exe"]}
+        assert body["detection"]["selection_file"] == {
+            "TargetFilename|endswith": ["\\AppData\\Roaming\\cmd.exe"]
+        }
         assert report.drafts_not_built == []
