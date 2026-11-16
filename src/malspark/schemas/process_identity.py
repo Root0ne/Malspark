@@ -92,11 +92,17 @@ class ProcessIdentities:
         tasks = {held.task for held in self._by_id.get(key.id, {})}
         return IN_TASK.format(id=key.id, task=key.task) if len(tasks) > 1 else key.id
 
-    def read_answer(self, data: Any, indicator_paths: Iterable[str]) -> None:
-        """The processes an answer names: its process rows and its indicators at dotted paths."""
+    def read_answer(
+        self, data: Any, indicator_paths: Iterable[str], *, listing: bool = False
+    ) -> None:
+        """The processes an answer names: its indicators at dotted paths, its rows if a listing.
+
+        ``listing``: the answer is a process listing (``processes`` rows), as
+        its tool's kind declares; no other answer's rows are read as one.
+        """
         if not isinstance(data, Mapping):
             return
-        for row in data.get("processes") or []:
+        for row in data.get("processes") or [] if listing else ():
             if isinstance(row, Mapping):
                 self.add(_id_of(row), task=row.get(TASK_KEY), guest_pid=row.get(GUEST_PID_KEY))
         for path in indicator_paths:

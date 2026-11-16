@@ -211,13 +211,14 @@ class TestEveryRowHasAPublishAnswer:
         assert _rows(_report())[value].published == answer
 
     def test_a_record_s_pid_decides_over_an_image_name_the_tree_also_runs(self) -> None:
-        # pid 999 is no process of the tree; cmd.exe is one of its images.
+        # pid 999 is a listed process outside the tree; cmd.exe is one of its images.
         report = _report(
             dynamic=DynamicBehavior(
                 process_tree=[
                     ProcessNode(
                         pid=100, name="sample.exe", children=[ProcessNode(pid=200, name="cmd.exe")]
-                    )
+                    ),
+                    ProcessNode(pid=999, name="other.exe"),
                 ],
                 file_operations=[
                     {"operation": "write", "path": OUTSIDE, "pid": 999, "process": "cmd.exe"},

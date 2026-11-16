@@ -1125,6 +1125,78 @@ def sample_process_tree(roots: list[Any], file_name: str = "", sha256: str = "")
     )
 
 
+# Where a record's writer is, against the sample's trees (:meth:`ProcessTrees.place`).
+WRITER_IN_TREE = "tree"
+WRITER_OUTSIDE = "outside"
+WRITER_UNSETTLED = "unsettled"
+WRITER_UNLISTED = "unlisted"
+
+
+@dataclass(frozen=True)
+class ProcessTrees:
+    """The sample's process tree in each task a listing holds (:func:`sample_process_trees`).
+
+    ``by_task`` maps each task (``""`` for a listing that states none) to its
+    tree; ``identities`` names every listed process by its task and id, the
+    guest's pid an alias (``schemas.process_identity``); ``names`` are the
+    images of every task's tree.
+    """
+
+    by_task: Mapping[str, SampleTree]
+    identities: Any
+    names: frozenset[str]
+
+    def place(self, pid: Any, task: str | None = None) -> str:
+        """Where the process a record names by ``pid`` (in ``task`` where stated) is.
+
+        ``WRITER_IN_TREE`` for a process of its task's tree,
+        ``WRITER_OUTSIDE`` for a listed process outside it,
+        ``WRITER_UNSETTLED`` for one the listing does not settle (a pid the
+        lineage facts dispute, or a number more than one listed process
+        answers to), ``WRITER_UNLISTED`` for a number no listed process
+        answers to.
+        """
+        keys = self.identities.keys(pid, task)
+        if not keys:
+            return WRITER_UNLISTED
+        if len(keys) > 1:
+            return WRITER_UNSETTLED
+        (key,) = keys
+        tree = self.by_task.get(key.task)
+        if tree is None or key.id in tree.unsettled:
+            return WRITER_UNSETTLED
+        return WRITER_IN_TREE if key.id in tree.pids else WRITER_OUTSIDE
+
+
+def sample_process_trees(roots: list[Any], file_name: str = "", sha256: str = "") -> ProcessTrees:
+    """The sample's process tree per task, by :func:`sample_process_tree`'s rule.
+
+    A report of several tasks gives each task's processes ids of the task's
+    own, so each task's listed processes (each root with what is listed under
+    it, the root's ``task``) are read on their own; a listing that states no
+    task is one tree, as it always was. Every listed process is named by its
+    task and id, the guest's pid it states an alias.
+    """
+    from malspark.schemas.process_identity import ProcessIdentities
+
+    grouped: dict[str, list[Any]] = {}
+    identities = ProcessIdentities()
+    # (a node, the task of the root it is listed under, ``None`` for a root)
+    stack: list[tuple[Any, str | None]] = [(node, None) for node in reversed(roots)]
+    while stack:
+        node, above = stack.pop()
+        task = above if above is not None else str(_node_field(node, "task") or "")
+        if above is None:
+            grouped.setdefault(task, []).append(node)
+        identities.add(
+            _node_field(node, "pid"), task=task, guest_pid=_node_field(node, "guest_pid")
+        )
+        stack.extend((child, task) for child in reversed(list(_node_field(node, "children") or [])))
+    by_task = {task: sample_process_tree(held, file_name, sha256) for task, held in grouped.items()}
+    names = frozenset(name for tree in by_task.values() for name in tree.names)
+    return ProcessTrees(by_task=by_task, identities=identities, names=names)
+
+
 # Where :func:`process_placement` places a listed process: in the sample's
 # tree, outside it, or disputed (``LINEAGE_MARKED`` or ``LINEAGE_FILE``, the
 # fact that alone names it); ``PLACED_UNSTATED`` for every process of a

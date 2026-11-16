@@ -372,6 +372,12 @@ class ProcessNode(BaseModel):
     marked: bool = Field(default=False, exclude_if=lambda value: not value)
     children: list[ProcessNode] = Field(default_factory=list)
     injected_into: list[int] = Field(default_factory=list)
+    # The task the report lists the process in, where it holds several whose
+    # ids are each the task's own, and the guest's pid an answer of the run
+    # states for it (``schemas.process_identity``). Left out of the dump when
+    # not stated, as on a report stored before the fields existed.
+    task: str = Field(default="", exclude_if=lambda value: not value)
+    guest_pid: str = Field(default="", exclude_if=lambda value: not value)
 
 
 class RegistryMod(BaseModel):

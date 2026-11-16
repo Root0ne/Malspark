@@ -80,6 +80,7 @@ class TestEveryAnswerThatNamesAProcessIsRead:
         found.read_answer(
             {"processes": [{"pid": 85, "task": "t1"}, {"pid": 87, "task": "t1"}]},
             ("indicators",),
+            listing=True,
         )
         found.read_answer(
             {
@@ -109,13 +110,19 @@ class TestEveryAnswerThatNamesAProcessIsRead:
         assert found.resolve("91") is None
         assert found.resolve("77") == ProcessKey("", "89")
 
+    def test_rows_of_an_answer_that_is_no_listing_are_not_read(self) -> None:
+        found = ProcessIdentities()
+        found.read_answer({"processes": [{"pid": 85}]}, ())
+
+        assert found.resolve("85") is None
+
     def test_reading_is_linear_in_the_rows(self) -> None:
         def read(n: int):  # type: ignore[no-untyped-def]
             rows = [{"pid": i, "task": f"t{i % 3}"} for i in range(1, n + 1)]
 
             def run() -> None:
                 found = ProcessIdentities()
-                found.read_answer({"processes": rows}, ())
+                found.read_answer({"processes": rows}, (), listing=True)
                 for i in range(1, n + 1):
                     found.resolve(str(i))
 
