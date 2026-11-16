@@ -244,7 +244,7 @@ class TestRansomwareSigma:
                     "\\Software\\Microsoft\\Windows\\CurrentVersion\\Run\\lockbit"
                 ]
             },
-            "selection_persistence": {"Image|endswith": ["\\lockbit.exe"]},
+            "selection_payload": {"Details|contains": ["\\lockbit.exe"]},
             "condition": "1 of selection_*",
         }
         assert rule.printed is True
@@ -284,7 +284,7 @@ class TestRansomwareSigma:
         assert report.persistence == []
         assert self._detection(report) == {
             "selection_registry": {"TargetObject|contains": ["\\Software\\Classes\\lockbit"]},
-            "selection_persistence": {"Image|endswith": ["\\lockbit.exe"]},
+            "selection_payload": {"Details|contains": ["\\lockbit.exe"]},
             "condition": "1 of selection_*",
         }
 

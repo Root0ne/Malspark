@@ -1643,19 +1643,66 @@ def _written_data(report: MalwareReport, admitted: frozenset[str]) -> list[str]:
 
 @dataclass
 class _Registered:
-    """What persistence registers, as a draft selects it: the images, the further paths, and
-    the form each value was named in, by its selection and folded value."""
+    """What persistence registers, as each log source's draft selects it.
 
-    images: list[str] = field(default_factory=list)
-    paths: list[str] = field(default_factory=list)
-    named: dict[tuple[str, str], str] = field(default_factory=dict)
+    Each program, as the process's image ends with it and as the data holds
+    it (``""`` for a target that is a file, which no data holds), and each
+    further path, as the data holds it; with the form each was named in.
+    """
 
-    def put(self, selection: str, value: str, word: str) -> None:
-        into = self.images if selection == "selection_persistence" else self.paths
-        if (selection, value.lower()) in self.named:
-            return
-        self.named[(selection, value.lower())] = word
-        into.append(value)
+    images: list[tuple[str, str, str]] = field(default_factory=list)
+    paths: list[tuple[str, str]] = field(default_factory=list)
+
+    def image(self, image: str, held: str, word: str) -> None:
+        self.images.append((image, held, word))
+
+    def path(self, held: str, word: str) -> None:
+        self.paths.append((held, word))
+
+    def selections(
+        self, category: str
+    ) -> tuple[dict[str, dict[str, Any]], dict[tuple[str, str], str], list[tuple[str, str]]]:
+        """The selections of the first draft over ``category``, the form each value was named
+        in (by its selection and folded value), and each value no field of it holds.
+
+        A process creation records the program as its ``Image`` and the data
+        it runs as its ``CommandLine``. A registry event's ``Image`` is the
+        process that wrote the value, never the program the value names: a
+        program read from the data is selected where the event records the
+        data (``Details``), and a program no data holds is in no field of it.
+        """
+        named: dict[tuple[str, str], str] = {}
+        images: list[str] = []
+        held: list[str] = []
+        unheld: list[tuple[str, str]] = []
+
+        def _put(selection: str, into: list[str], value: str, word: str) -> None:
+            if (selection, value.lower()) not in named:
+                named[(selection, value.lower())] = word
+                into.append(value)
+
+        for image, data, word in self.images:
+            if category == "process_creation":
+                _put("selection_persistence", images, image, word)
+            elif data:
+                _put("selection_payload", held, data, word)
+            else:
+                unheld.append((image, NO_FIELD_REASON))
+        for data, word in self.paths:
+            _put("selection_payload", held, data, word)
+        selections: dict[str, dict[str, Any]] = {}
+        if images:
+            selections["selection_persistence"] = {"Image|endswith": images}
+        if held:
+            selections["selection_payload"] = {_PAYLOAD_FIELDS[category]: held}
+        return selections, named, unheld
+
+
+# Why a program is left out of a registry event's draft that no data holds.
+NO_FIELD_REASON = (
+    "no field of a registry event holds it: the event's Image is the process that wrote "
+    "the value, not the program it registers"
+)
 
 
 def _collect_persistence_images(
@@ -1693,18 +1740,18 @@ def _collect_persistence_images(
                 if text.startswith("\\")
                 else "\\" + text.lstrip("/").split("/")[-1]
             )
-            out.put("selection_persistence", image, text)
+            out.image(image, "", text)
             continue
         words = command_line_paths(text)
         files = _named_paths(text)
         if files and words[0] == files[0] and _IMAGE_RE.fullmatch(re.split(r"[\\/]", files[0])[-1]):
             image = _file_value(files[0], rooted=True)
-            out.put("selection_persistence", image, files[0])
+            out.image(image, _file_value(files[0], rooted=False), files[0])
             if not _why_not_specific("selection_persistence", "Image|endswith", image, files[0]):
                 continue
             files = files[1:]
         for word in files:
-            out.put("selection_payload", _file_value(word, rooted=False), word)
+            out.path(_file_value(word, rooted=False), word)
     return out
 
 
@@ -1948,8 +1995,9 @@ def _sigma_drafts(report: MalwareReport) -> tuple[list[_SigmaDraft], int, list[s
 
     First the draft over registry keys, images and the paths persistence's
     data names (``registry_event``, else ``process_creation`` when no key is
-    left; a path is selected in the field that log source records the data
-    in, :data:`_PAYLOAD_FIELDS`), then one per log source of the stated
+    left), each value in a field its log source has for it
+    (:meth:`_Registered.selections`), and a value no field of it holds left
+    out with why; then one per log source of the stated
     values (:func:`_stated_drafts`); a draft left with no selection is not
     one; a draft built keeps each value left out of it, with why
     (``left_out``). Second, how many generic names were left out; third, why
@@ -1958,36 +2006,33 @@ def _sigma_drafts(report: MalwareReport) -> tuple[list[_SigmaDraft], int, list[s
     containment always keeps the narrower value.
     """
     registry_targets, registered, held = _sigma_values(report)
-    selections: dict[str, dict[str, Any]] = {}
-    if registry_targets:
-        selections["selection_registry"] = {"TargetObject|contains": registry_targets}
-    if registered.images:
-        selections["selection_persistence"] = {"Image|endswith": registered.images}
-    if registered.paths:
-        selections["selection_payload"] = {_PAYLOAD_FIELDS["process_creation"]: registered.paths}
-    picked = {("selection_registry", p.lower()): f"registry:{p}" for p in registry_targets}
-    for selection, values in (
-        ("selection_persistence", registered.images),
-        ("selection_payload", registered.paths),
-    ):
-        picked.update({(selection, p.lower()): f"persistence:{p}" for p in values})
-    first = _SigmaDraft(
-        "",
-        {"product": "windows", "category": "registry_event"},
-        selections,
-        [],
-        picked=picked,
-        held=held,
-        stated=registered.named,
-    )
+
+    def _first(category: str) -> tuple[_SigmaDraft, list[tuple[str, str]]]:
+        selections: dict[str, dict[str, Any]] = {}
+        if registry_targets:
+            selections["selection_registry"] = {"TargetObject|contains": registry_targets}
+        persistence, named, unheld = registered.selections(category)
+        selections.update(persistence)
+        picked = {("selection_registry", p.lower()): f"registry:{p}" for p in registry_targets}
+        for name, selection in persistence.items():
+            for values in selection.values():
+                picked.update({(name, p.lower()): f"persistence:{p}" for p in values})
+        logsource = {"product": "windows", "category": category}
+        draft = _SigmaDraft("", logsource, selections, [], picked=picked, held=held, stated=named)
+        return draft, unheld
+
+    # A registry event while a key is left to select on, else a process
+    # creation (:meth:`_Registered.selections`).
+    first, unheld = _first("registry_event")
+    if not registry_targets or "selection_registry" not in _narrowed(first)[0]:
+        first, unheld = _first("process_creation")
     stated, generic = _stated_drafts(report)
     drafts: list[_SigmaDraft] = []
     reasons: list[str] = []
-    for draft in [first, *stated] if selections else stated:
-        selections, left_out = selection_specific(
-            draft.selections,
-            {**{key: shown for key, (shown, _) in draft.held.items()}, **draft.stated},
-        )
+    for draft in [first, *stated] if first.selections else stated:
+        selections, left_out = _narrowed(draft)
+        if not draft.suffix:
+            left_out = [*left_out, *unheld]
         reasons.extend(why for _, why in left_out)
         if not selections:
             continue
@@ -1999,11 +2044,6 @@ def _sigma_drafts(report: MalwareReport) -> tuple[list[_SigmaDraft], int, list[s
             for value in values
         }
         logsource = draft.logsource
-        if not draft.suffix and "selection_registry" not in selections:
-            logsource = {**logsource, "category": "process_creation"}
-        if "selection_payload" in selections:
-            (paths,) = selections["selection_payload"].values()
-            selections["selection_payload"] = {_PAYLOAD_FIELDS[logsource["category"]]: paths}
         # The first draft names its first five values of each selection.
         most = _MAX_STATED_VALUES if draft.suffix else _FIRST_DRAFT_SOURCES
         named: dict[str, int] = {}
@@ -2023,6 +2063,15 @@ def _sigma_drafts(report: MalwareReport) -> tuple[list[_SigmaDraft], int, list[s
             )
         )
     return drafts, generic, reasons
+
+
+def _narrowed(draft: _SigmaDraft) -> tuple[dict[str, dict[str, Any]], list[tuple[str, str]]]:
+    """A draft's selections narrowed (:func:`selection_specific`), each value asked as it was
+    named."""
+    return selection_specific(
+        draft.selections,
+        {**{key: shown for key, (shown, _) in draft.held.items()}, **draft.stated},
+    )
 
 
 # The field each log source of the first draft records persistence's data

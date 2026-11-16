@@ -20,6 +20,7 @@ from __future__ import annotations
 from typing import Any
 
 import pytest
+import yaml
 
 from malspark.reporting import detection_signatures as ds
 from malspark.reporting.builder import MalwareReportBuilder, build_consolidated_iocs
@@ -133,8 +134,8 @@ class TestAWrittenValue:
     def test_whose_program_is_its_own_in_a_user_folder_selects_it_with_its_folder(self) -> None:
         report = _sandboxed([_written("m", "C:\\Users\\a\\AppData\\Roaming\\svchost.exe")])
 
-        assert _detection(report)["selection_persistence"] == {
-            "Image|endswith": ["\\AppData\\Roaming\\svchost.exe"]
+        assert _detection(report)["selection_payload"] == {
+            "Details|contains": ["\\AppData\\Roaming\\svchost.exe"]
         }
         (rule,) = [r for r in report.detection_signatures if r.kind == "sigma"]
         assert all("in the folder Windows keeps it in" not in v.why for v in rule.values_left_out)
@@ -168,12 +169,13 @@ class TestAWrittenValue:
             "condition": "selection_registry",
         }
 
-    def test_a_quoted_program_under_a_folder_with_a_space_is_its_image(self) -> None:
+    def test_a_quoted_program_under_a_folder_with_a_space_is_selected_in_the_data(self) -> None:
         detection = _detection(
             _sandboxed([_written("u", '"C:\\Program Files\\Vendor7731\\up7731.exe" /s')])
         )
 
-        assert detection["selection_persistence"] == {"Image|endswith": ["\\up7731.exe"]}
+        assert detection["selection_payload"] == {"Details|contains": ["\\up7731.exe"]}
+        assert "selection_persistence" not in detection
 
 
 class TestTwoValuesWrittenToOneKey:
@@ -194,8 +196,8 @@ class TestTwoValuesWrittenToOneKey:
         assert detection["selection_registry"] == {
             "TargetObject|contains": [f"{RUN_TARGET}\\alpha", f"{RUN_TARGET}\\beta"]
         }
-        assert detection["selection_persistence"] == {
-            "Image|endswith": ["\\alpha7731.exe", "\\beta7731.exe"]
+        assert detection["selection_payload"] == {
+            "Details|contains": ["\\alpha7731.exe", "\\beta7731.exe"]
         }
 
 
@@ -335,10 +337,16 @@ class TestWhatTheDataNames:
     def test_a_program_of_the_sample_s_own_is_the_image_and_all_it_says(
         self, data: str, image: str
     ) -> None:
-        detection = _detection(_sandboxed([_written("r", data)]))
+        # Under the Run key with no value's name, no key is left to select
+        # on: a process creation, whose Image is the program.
+        report = _report(
+            [], persistence=[PersistenceMechanism(kind="registry_run", target=RUN, payload=data)]
+        )
 
-        assert detection["selection_persistence"] == {"Image|endswith": [image]}
-        assert "selection_payload" not in detection
+        (body,) = _sigma(report)
+        assert body["logsource"]["category"] == "process_creation"
+        assert body["detection"]["selection_persistence"] == {"Image|endswith": [image]}
+        assert "selection_payload" not in body["detection"]
 
     def test_a_further_name_with_no_folder_is_left_out_and_says_so(self) -> None:
         report = _sandboxed([_written("r", "rundll32.exe evil7731.dll,Start")])
@@ -374,7 +382,8 @@ class TestWhatTheDataNames:
         (rule,) = [r for r in report.detection_signatures if r.kind == "sigma"]
         assert [(v.value, v.why) for v in rule.values_left_out] == [
             (RUN_TARGET, "a registry key or value every Windows installation has"),
-            ("\\rundll32.exe", "a file Windows ships, in the folder Windows keeps it in"),
+            # The data holds the program as written, which the event records.
+            ("rundll32.exe", "a file Windows ships, in the folder Windows keeps it in"),
         ]
         assert "persistence:\\evil7731.dll" in rule.source_evidence
 
@@ -427,3 +436,54 @@ def test_no_written_value_selects_a_name_windows_ships_alone(form: str) -> None:
             for value in values
         }
         assert not printed & set(names)
+
+
+class TestARegistryEventDraft:
+    """A registry event's Image is the process that wrote the value: a program is selected
+    there only as the data holds it, and one no data holds is left out with why."""
+
+    def test_selects_a_payload_s_program_in_the_data_never_as_the_image(self) -> None:
+        report = _report(
+            [],
+            persistence=[
+                PersistenceMechanism(
+                    kind="registry_run",
+                    target=RUN,
+                    payload="C:\\Users\\a\\AppData\\Roaming\\x7731.exe",
+                ),
+                PersistenceMechanism(kind="registry_run", target="HKCU\\Software\\Vendor7731\\Cfg"),
+            ],
+        )
+
+        (body,) = _sigma(report)
+        assert body["logsource"]["category"] == "registry_event"
+        assert body["detection"]["selection_payload"] == {"Details|contains": ["\\x7731.exe"]}
+        assert "selection_persistence" not in body["detection"]
+
+    def test_leaves_out_a_program_no_data_holds_and_says_why(self) -> None:
+        startup = (
+            "C:\\Users\\a\\AppData\\Roaming\\Microsoft\\Windows\\Start Menu\\Programs"
+            "\\Startup\\evil7731.exe"
+        )
+        report = _report(
+            [],
+            persistence=[
+                PersistenceMechanism(kind="startup_folder", target=startup),
+                PersistenceMechanism(
+                    kind="registry_run",
+                    target="HKCU\\Software\\Vendor7731\\Run",
+                    payload="C:\\Users\\a\\x7731.exe",
+                ),
+            ],
+            sandbox_rows=[
+                ConsolidatedIOC(type="File path", kind="path", value=startup, source="sandbox")
+            ],
+        )
+
+        (rule,) = [r for r in report.detection_signatures if r.kind == "sigma"]
+        body = yaml.safe_load(rule.body)
+        assert body["logsource"]["category"] == "registry_event"
+        assert "Image|endswith" not in rule.body
+        assert ("\\evil7731.exe", ds.NO_FIELD_REASON) in [
+            (v.value, v.why) for v in rule.values_left_out
+        ]
