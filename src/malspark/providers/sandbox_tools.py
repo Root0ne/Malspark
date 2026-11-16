@@ -1356,7 +1356,9 @@ def sandbox_registry_ops(
     write: a key created, modified or deleted and then read stays the write,
     with what was written, and a read that saw no value leaves an earlier
     read's value standing. Between writes the later one in the report's order
-    stands; that order is the report's process by process, not time.
+    stands; that order is the report's process by process, not time. Two
+    values written to one key, each under its own name, are a row each, with
+    the value's name, its last write and the pids of the calls that wrote it.
 
     A call's own outcome refines what its API may do (``_REGISTRY_OUTCOMES``):
     a create that opened an existing key is a read. A write the call reports as
@@ -1371,6 +1373,10 @@ def sandbox_registry_ops(
     # The pids of the calls behind each key's operation: a row names the
     # processes that did what it says, where the report kept the pid.
     pids: dict[tuple[str, str], set[str]] = {}
+    # Each value a key's standing writes named, by the key and the value's
+    # name, and the pids of the calls behind each.
+    named: dict[str, dict[str, dict[str, Any]]] = {}
+    value_pids: dict[tuple[str, str, str], set[str]] = {}
     for key in _summary_list(report, "registry"):
         rows.setdefault(key, {"key": key, "operation": "access", "value": None})
     for pid, call in _calls_by_process(report):
@@ -1398,14 +1404,26 @@ def sandbox_registry_ops(
             if operation == before["operation"] == "query" and value is None:
                 continue
         rows[key] = {"key": key, "operation": operation, "value": value}
-        # A write names the value it wrote, where the call carries the name.
+        # A write names the value it wrote, where the call carries the name;
+        # each value written since the key's last other operation keeps a row.
         written = (
             _argument(call, _REGISTRY_VALUE_NAME_ARGS) if operation in ("create", "modify") else ""
         )
         if written:
             rows[key]["value_name"] = written
+            named.setdefault(key, {})[written] = rows[key]
+            if pid:
+                value_pids.setdefault((key, operation, written), set()).add(pid)
+        else:
+            named.pop(key, None)
     ordered = []
     for key, row in rows.items():
+        values = named.get(key, {})
+        if len(values) > 1:
+            for name, each in values.items():
+                made_by = value_pids.get((key, each["operation"], name))
+                ordered.append({**each, "pids": sorted(made_by)} if made_by else each)
+            continue
         made_by = pids.get((key, row["operation"]))
         ordered.append({**row, "pids": sorted(made_by)} if made_by else row)
     page, meta = _page(ordered, offset, limit)
