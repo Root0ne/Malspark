@@ -1751,8 +1751,10 @@ def outcome_words(outcome: Any) -> str:
 class JudgeIndicator(BaseModel):
     """One value a judge indicator names: its IOC kind, the value, a hash's algorithm.
 
-    ``indicator_types`` is what the judge's indicator claims of it, as written;
-    empty on a value stored before it was recorded.
+    ``indicator_patterns`` is the pattern of each judge indicator naming it
+    that the export accepts, in the bundle's order, and ``indicator_types``
+    the first type each claims, index for index; empty on a value stored
+    before they were recorded.
     """
 
     model_config = _STRICT_CONFIG
@@ -1760,6 +1762,7 @@ class JudgeIndicator(BaseModel):
     kind: str
     value: str
     algorithm: str = ""
+    indicator_patterns: list[str] = Field(default_factory=list, exclude_if=lambda value: not value)
     indicator_types: list[str] = Field(default_factory=list, exclude_if=lambda value: not value)
 
 

@@ -310,6 +310,7 @@ class MalwareReportBuilder:
                     kind=value.kind,
                     value=value.value,
                     algorithm=value.algorithm,
+                    indicator_patterns=list(value.indicator_patterns),
                     indicator_types=list(value.indicator_types),
                 )
                 for value in exported_indicator_values(self.stix_output)
@@ -1290,11 +1291,13 @@ def with_record(rows: Iterable[ConsolidatedIOC], report: Any) -> list[Consolidat
     The one place a row gains them (``stix_renderer.table_row_record``), so the
     export, ``/iocs``, MISP and §9 read the same record.
     """
-    from malspark.reporting.renderers.stix_renderer import table_row_record
+    from malspark.reporting.renderers.stix_renderer import published_keys, table_row_record
 
+    rows = list(rows)
+    published = published_keys(rows)
     out: list[ConsolidatedIOC] = []
     for row in rows:
-        role, indicator_type = table_row_record(row, report)
+        role, indicator_type = table_row_record(row, report, published)
         out.append(row.model_copy(update={"role": role, "indicator_type": indicator_type}))
     return out
 

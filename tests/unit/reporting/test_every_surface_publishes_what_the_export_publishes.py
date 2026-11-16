@@ -28,6 +28,7 @@ from malspark.reporting.models import (
     NetworkDomain,
     NetworkIOCs,
     SampleIdentity,
+    StaticAnalysis,
 )
 from malspark.reporting.renderers.stix_renderer import (
     UNPUBLISHED_VALUE_CODE,
@@ -780,8 +781,8 @@ def test_a_sweep_path_of_the_toolchain_s_shape_stays_refused_everywhere() -> Non
     assert "librelay" not in str(_indicators_of(exported))
 
 
-def test_a_host_row_a_declined_judge_indicator_names_keeps_the_platform_s_type() -> None:
-    """The judge's keep publishes the row; its declined indicator lends no type."""
+def test_a_declined_judge_indicator_keeps_no_host_row() -> None:
+    """Its value is not recorded (Ruling 22): no keep stands on it, and no type is read from it."""
     judge = _judge(f"[file:name = '{_RELAY}']")  # single backslashes: the grammar refuses it
     report = _report(
         judge,
@@ -796,15 +797,55 @@ def test_a_host_row_a_declined_judge_indicator_names_keeps_the_platform_s_type()
             kind=v.kind,
             value=v.value,
             algorithm=v.algorithm,
+            indicator_patterns=list(v.indicator_patterns),
             indicator_types=list(v.indicator_types),
         )
         for v in exported_indicator_values(judge)
     ]
     exported, _renderer = _export(report, judge)
 
+    assert report.judge_indicators == []
     row = _row(report, _RELAY)
-    assert (row.source, publishes(row.published)) == ("sandbox", True), row.published
-    assert row.indicator_type == "anomalous-activity"
-    assert _indicators_of(exported) == [
-        ("File path C:\\ProgramData\\relay.dat", _RELAY_PLATFORM[1], ["anomalous-activity"])
-    ]
+    assert (row.source, publishes(row.published), row.indicator_type) == ("sandbox", False, None)
+    assert _indicators_of(exported) == []
+
+
+class TestADeclinedJudgeIndicatorTakesNoPlace:
+    """A value of an indicator the export declines is not recorded, in either order."""
+
+    DECLINED = f"[file:name = '{_RELAY}']"  # single backslashes: the grammar refuses it
+    CARRIED = f"[file:name = '{_RELAY.replace(chr(92), chr(92) * 2)}']"
+
+    @pytest.mark.parametrize("order", ["declined-first", "declined-second"])
+    def test_the_record_holds_the_carried_one_alone(self, order: str) -> None:
+        patterns = [self.DECLINED, self.CARRIED]
+        if order == "declined-second":
+            patterns.reverse()
+        judge = {"type": "bundle", "objects": [_indicator(i, p) for i, p in enumerate(patterns)]}
+
+        (recorded,) = exported_indicator_values(judge)
+
+        assert recorded.indicator_patterns == (self.CARRIED,)
+        assert recorded.indicator_types == ("malicious-activity",)
+
+
+def test_a_host_row_is_written_after_the_judge_s_own_indicator() -> None:
+    carved = "e" * 64
+    # A file only the judge names, a second source holding it whole.
+    judge = _judge(f"[file:name = '{_RELAY.replace(chr(92), chr(92) * 2)}']")
+    report = _report(
+        judge,
+        overall_confidence=0.9,
+        dynamic=DynamicBehavior(
+            process_tree=[{"pid": 1, "name": "s.exe", "command_line": f"s.exe {_RELAY}"}]
+        ),
+    )
+    report.static = StaticAnalysis(
+        embedded_resources=[{"id": "RCDATA/101", "carved": True, "sha256": carved}]
+    )
+    exported, _renderer = _export(report, judge)
+
+    names = [o["name"] for o in exported["objects"] if o.get("type") == "indicator"]
+    assert names.index("judge indicator 0") < next(
+        i for i, n in enumerate(names) if carved[:12] in n
+    )

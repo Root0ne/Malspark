@@ -5075,7 +5075,9 @@ def _row_is_suspicious(row: Any, report: Any) -> bool:
     return kind == "domain" and key in published_url_hosts(report)
 
 
-def table_row_record(row: Any, report: Any) -> tuple[str, str | None]:
+def table_row_record(
+    row: Any, report: Any, table_published: frozenset[tuple[str, str]] | None = None
+) -> tuple[str, str | None]:
     """``(role, indicator_type)`` of one row of the IOC table, from its publish answer.
 
     The sample's own digests are ``sample_identity`` or ``similarity``, typed
@@ -5099,10 +5101,12 @@ def table_row_record(row: Any, report: Any) -> tuple[str, str | None]:
         return role, publication.similarity_digests
     if not published or listed_only(_field(row, "published")) or row_pattern(row) is None:
         return LISTED_ROLE, None
-    kind = str(_field(row, "kind") or "")
-    judged = _judge_types(report).get((kind, _value_key(kind, _field(row, "value"))))
-    if str(_field(row, "source") or "") == "judge":
-        # The judge's own indicator carries it, under the judge's type.
+    # The table's published values, which decide which judge indicators the
+    # export carries: given by the caller that holds the whole table.
+    judged = carried_judge_type(row, report, table_published or frozenset())
+    if str(_field(row, "source") or "") == "judge" and judged:
+        # The judge's own indicator carries it, under the judge's type; one the
+        # export declines leaves it to the platform, like any published row.
         return INDICATOR_ROLE, judged
     if _host_row(row) and judged:
         # A host value the judge's own indicator names, where the export carries
@@ -5120,15 +5124,44 @@ def table_row_record(row: Any, report: Any) -> tuple[str, str | None]:
     )
 
 
-def _judge_types(report: Any) -> dict[tuple[str, str], str]:
-    """``{(kind, key): type}`` the judge's indicators claim of each value they name, first each."""
-    out: dict[tuple[str, str], str] = {}
+def published_keys(rows: Iterable[Any]) -> frozenset[tuple[str, str]]:
+    """The ``(kind, key)`` of every row of the IOC table that publishes."""
+    return frozenset(
+        (
+            str(_field(row, "kind") or ""),
+            _value_key(str(_field(row, "kind") or ""), _field(row, "value")),
+        )
+        for row in rows
+        if publishes(_field(row, "published"))
+    )
+
+
+def carried_judge_type(row: Any, report: Any, published: frozenset[tuple[str, str]]) -> str | None:
+    """The type of the first judge indicator naming the row's value the export carries, or None.
+
+    The export carries a judge indicator only when every value it names has a
+    published row (:func:`_judge_indicator_unpublished`); one it declines lends
+    its type to nothing. A report stored before the patterns were recorded
+    reads the first type recorded.
+    """
+    kind = str(_field(row, "kind") or "")
+    key = _value_key(kind, _field(row, "value"))
     for item in _field(report, "judge_indicators") or []:
-        kind = str(_field(item, "kind") or "")
-        types = list(_field(item, "indicator_types") or [])
-        if types:
-            out.setdefault((kind, _value_key(kind, _field(item, "value"))), str(types[0]))
-    return out
+        if (
+            str(_field(item, "kind") or "") != kind
+            or _value_key(kind, _field(item, "value")) != key
+        ):
+            continue
+        patterns = list(_field(item, "indicator_patterns") or [])
+        types = [str(t) for t in _field(item, "indicator_types") or []]
+        if not patterns:
+            return types[0] if types else None
+        for pattern, claimed in zip(patterns, types, strict=False):
+            if claimed and all(
+                (v.kind, _value_key(v.kind, v.value)) in published for v in rule_values(pattern)
+            ):
+                return claimed
+    return None
 
 
 # What one comparison of an exported pattern names, as the IOC table's kind.
@@ -5163,7 +5196,9 @@ class ExportedValue:
     kind: str
     value: str
     algorithm: str = ""
-    # What the indicator naming it claims, where a bundle's indicator was read.
+    # Where a bundle's indicators were read: the pattern of each indicator naming
+    # it, in the bundle's order, and the first type each claims, index for index.
+    indicator_patterns: tuple[str, ...] = ()
     indicator_types: tuple[str, ...] = ()
 
 
@@ -5297,39 +5332,41 @@ def _exported_kind(comparison: Any) -> tuple[str, str]:
 
 
 def exported_indicator_values(bundle: Any) -> list[ExportedValue]:
-    """Every value a bundle's single-comparison indicators name, once each.
+    """Every value of every indicator of a bundle the export would carry, once each.
 
-    Read of the judge's own bundle by the report builder, which stores the
-    values for the IOC table and ``/iocs`` to ask the one publish rule of
-    (:func:`judge_indicator_rows`), and of the export by the consistency test
-    that holds the three surfaces to one decision. It decides nothing. A
-    compound pattern (``[a] AND [b]``) names no single value and is left to
-    the bundle, where the export asks each of its values the rule.
+    The one reader of the judge's values: the report builder stores what it
+    reads of the judge's own bundle (``MalwareReport.judge_indicators``), and
+    the IOC table's judge rows (:func:`judge_indicator_rows`), the lifting of
+    the shape question (``judge_s_value``), the keep of a sandbox row, the
+    type a row takes from the judge and the export's lookup of a judge
+    indicator all read that record. Each value the pattern reader reads
+    (:func:`pattern_values`), whatever the pattern's shape: one comparison,
+    several joined, a value beside a digest. An indicator whose pattern the
+    export declines (:func:`pattern_problem`) is not read at all: its values
+    take no place, whichever order it comes in. Each value carries the pattern
+    of every indicator naming it and the first type each claims. It decides
+    nothing.
     """
     objects = (bundle or {}).get("objects") if isinstance(bundle, dict) else None
-    found: list[ExportedValue] = []
-    seen: set[tuple[str, str]] = set()
+    found: dict[tuple[str, str], ExportedValue] = {}
     for obj in objects or []:
         if not isinstance(obj, dict) or obj.get("type") != "indicator":
             continue
         pattern = str(obj.get("pattern") or "")
-        comparisons = read_comparisons(pattern)
-        # A file named with its directory is one value (:func:`_compared_values`).
-        if len(comparisons) - (_paired_directory(pattern, comparisons) is not None) != 1:
+        if pattern_problem(pattern) is not None:
             continue
-        # What the indicator claims, only where the export would carry it: an
-        # indicator it declines lends its type to nothing.
-        types = (
-            ()
-            if pattern_problem(pattern) is not None
-            else tuple(str(t) for t in obj.get("indicator_types") or [] if t)
-        )
+        claimed = next((str(t) for t in obj.get("indicator_types") or [] if t), "")
         for value in pattern_values(pattern):
-            if (value.kind, value.value.lower()) in seen:
+            key = (value.kind, value.value.lower())
+            held = found.get(key, value)
+            if pattern in held.indicator_patterns:
                 continue
-            seen.add((value.kind, value.value.lower()))
-            found.append(dataclasses.replace(value, indicator_types=types))
-    return found
+            found[key] = dataclasses.replace(
+                held,
+                indicator_patterns=(*held.indicator_patterns, pattern),
+                indicator_types=(*held.indicator_types, claimed),
+            )
+    return list(found.values())
 
 
 # Who records a host row the export carries from the IOC table (step 6.7), and
@@ -5507,16 +5544,19 @@ def _row_indicators(
     The first list is written before the judge's own indicators, the network
     rows first in the network block's order; the second, each with its row,
     after them (:func:`_host_row`). A row only the judge's indicator records
-    (source ``judge``) is the judge's to write: its own indicator carries it.
+    (source ``judge``) is the judge's to write where the export carries one of
+    its indicators naming it (:func:`carried_judge_type`); one whose every such
+    indicator the export declines is minted like any published row.
     """
     early: list[tuple[int, int, Indicator]] = []
     late: list[tuple[Any, Indicator]] = []
+    published = published_keys(rows)
     for position, row in enumerate(rows):
         if (
             row.role != INDICATOR_ROLE
             or not row.indicator_type
             or not publishes(row.published)
-            or row.source == "judge"
+            or (row.source == "judge" and carried_judge_type(row, report, published))
             or _lifted_by_the_judge(row, report)
         ):
             continue
