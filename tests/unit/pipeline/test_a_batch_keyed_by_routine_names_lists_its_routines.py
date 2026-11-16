@@ -176,3 +176,11 @@ def test_a_name_keyed_answer_to_a_call_that_gave_no_address_keeps_its_names() ->
     answer = {"main": "int main(void)\n{ }", "helper": "void helper(void)\n{}"}
     entry = _asked({"functions": "main,helper"}, answer)
     assert _entry_functions(entry) == [(None, ["main"]), (None, ["helper"])]
+
+
+def test_one_address_written_twice_is_one_routine_with_both_names() -> None:
+    answer = {hex(FIRST): _listing(FIRST), f"FUN_{FIRST:08x}": "int start(void)\n{ }"}
+    entry = _batch("ev_0161", answer)
+    assert _entry_functions(entry) == [(FIRST, [f"FUN_{FIRST:08x}", "start"])]
+    (only,) = decompiled_functions([entry])
+    assert (only.address, only.names) == (FIRST, (f"FUN_{FIRST:08x}", "start"))

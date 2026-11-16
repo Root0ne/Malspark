@@ -7275,7 +7275,8 @@ def _batch_listings(output: str) -> tuple[bool, dict[int, str]]:
 def _entry_functions(entry: Any) -> list[tuple[int | None, list[str]]]:
     """The ``(address, names)`` of each function one decompile entry holds.
 
-    A batch whose members carry addresses is one function per member. A batch
+    A batch whose members carry addresses is one function per address, a key
+    written again adding its listing's name. A batch
     keyed by plain names alone takes the addresses the call was given; a
     member's name joins its address only when the call gave one address and
     the answer lists one member. Given no address, its members keep their
@@ -7287,7 +7288,19 @@ def _entry_functions(entry: Any) -> list[tuple[int | None, list[str]]]:
     if members is not None and (
         not members or any(address is not None for address, _key, _text in members)
     ):
-        return [(address, _named(None, text, args={})) for address, _key, text in members]
+        # One function per address: a key written again adds its name.
+        functions: list[tuple[int | None, list[str]]] = []
+        at: dict[int, list[str]] = {}
+        for address, _key, text in members:
+            names = _named(None, text, args={})
+            if address is None:
+                functions.append((None, names))
+            elif address in at:
+                at[address].extend(n for n in names if n not in at[address])
+            else:
+                at[address] = list(names)
+                functions.append((address, at[address]))
+        return functions
     asked = _argument_functions(entry, args, output)
     if members is None:
         return asked
