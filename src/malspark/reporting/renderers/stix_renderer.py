@@ -23,7 +23,9 @@ bundle is side-effect free; callers serialise it via ``model_dump(mode="json")``
 
 from __future__ import annotations
 
+import dataclasses
 import ipaddress
+import json
 import re
 import uuid
 from collections.abc import Iterable, Iterator, Mapping, Sequence
@@ -43,6 +45,7 @@ from malspark.agents._indicator_denylists import (
     malformed_hash_in,
     on_a_denied_url_host,
     whole_value_in,
+    whole_value_starts,
 )
 from malspark.agents.run_evidence_corpus import read_of_entry as _read_of_entry
 from malspark.analysis.corroboration import support_sentence
@@ -81,6 +84,7 @@ from malspark.reporting.models import (
     NetworkURL,
     ProcessNode,
     RecoveredValue,
+    SecondSourceRead,
     StringIOC,
     stated_family,
 )
@@ -141,6 +145,7 @@ from malspark.schemas.stix_pattern import (
     unknown_object_types,
 )
 from malspark.tools.call_sites import passed_to_words
+from malspark.tools.strings import CUT_QUOTED
 
 _SHA256_RE = re.compile(r"^[0-9a-fA-F]{64}$")
 
@@ -796,7 +801,7 @@ def _judge_indicator_problem(indicator: Indicator) -> tuple[str, str] | None:
 
 
 def _judge_indicator_unpublished(
-    report: Any, indicator: Indicator, corroborating: str
+    report: Any, indicator: Indicator, corroborating: SecondSources | str
 ) -> tuple[str, str] | None:
     """Why the one publish rule declines this judge indicator, or ``None``.
 
@@ -2702,6 +2707,7 @@ def indicator_publish_reason(
     url_only: str = "",
     bound: str = "",
     stated: Any = None,
+    spelled: str = "",
 ) -> str | None:
     """Why this run may publish one indicator of ``kind``, or ``None``.
 
@@ -2785,6 +2791,9 @@ def indicator_publish_reason(
     well-known benign host or a denied URL host. It admits nothing under a
     Benign ``verdict``, nor under one the judge did not state with a confidence:
     a Benign run publishes no malicious indicator, and the refusal says so.
+    Nor a name its recovering tool spelled in the shape of a code identifier
+    (``spelled``, the tool's spelling of the name, :func:`_spelled_as_code`):
+    a runtime's ``time.Date`` is no hidden host.
     A value only the string sweep read stays unpublished.
     """
     if kind == "ip" and is_public_resolver(value):
@@ -2840,14 +2849,14 @@ def indicator_publish_reason(
             return (
                 _kept_with_the_fact(kept_by, unattributed, kept_address)
                 or (None if url_only else corroboration_reason(source, reputation, value))
-                or _emulation_admits(value, recovered, verdict)
+                or _emulation_admits(value, recovered, verdict, spelled)
             )
         if in_published_url or unattributed:
             return _kept_with_the_fact(kept_by, unattributed, kept_address) or _recovered_and_held(
                 value, recovered, verdict, unattributed
             )
         return corroboration_reason(source, reputation, value) or _emulation_admits(
-            value, recovered, verdict
+            value, recovered, verdict, spelled
         )
     if kind == "ip":
         if unattributed and address_is_publishable(value, source):
@@ -2874,7 +2883,7 @@ def indicator_publish_reason(
             return admitted
         if on_a_denied_url_host(value):
             return None
-        return _emulation_admits(host, recovered, verdict)
+        return _emulation_admits(host, recovered, verdict, spelled)
     if kind == "email":
         if not email_is_publishable(value):
             return None
@@ -4004,18 +4013,68 @@ def _named(how: RecoveredValue) -> str:
     return tool_kinds.recovery_name(how)
 
 
-def _emulation_admits(host: str, recovered: str, verdict: Any) -> str | None:
+def _emulation_admits(host: str, recovered: str, verdict: Any, spelled: str = "") -> str | None:
     """``recovered`` when a recovering tool (FLOSS or the static decoder) may stand as
     this value's source, else ``None``.
 
     Never under a Benign verdict, nor under one the judge did not state with a
-    confidence (a fallback's default word), nor for a well-known benign host.
+    confidence (a fallback's default word), nor for a well-known benign host,
+    nor for a name its tool spelled as code (:func:`_spelled_as_code`).
     """
     if not recovered or _is_benign_verdict(verdict) or verdict == UNSTATED_VERDICT:
         return None
-    if is_well_known_benign_host(host):
+    if is_well_known_benign_host(host) or _spelled_as_code(spelled):
         return None
     return recovered
+
+
+def _spelled_reason(spelled: str) -> str:
+    """Why a name its tool spelled as code is refused, in one bounded clause."""
+    shown = spelled if len(spelled) <= _CUT_QUOTED else spelled[:_CUT_QUOTED] + "…"
+    return f"its tool spells it {shown}, which reads as code, not as a host"
+
+
+def _spelled_as_code(spelled: str) -> bool:
+    """Whether a recovering tool's spelling of a name has the shape of a code identifier.
+
+    A lower-case label followed by a member that begins with a capital and
+    ends the name, as the tool wrote it (``time.Date``, ``cfg.Online``): a
+    package or an object reaching into what it holds. A capitalised label
+    that a further label follows is a host's (``cdn.Microsoft.com``).
+    Capitals as such say nothing — a host is written ``Evil-C2.com`` or
+    ``EVIL.COM`` as readily — and a member is an identifier's characters
+    only, so a label with a hyphen is no member. ``""`` (no spelling
+    recorded) asks nothing.
+    """
+    return bool(spelled) and _MEMBER_ACCESS.search(spelled) is not None
+
+
+# A lower-case label, then a last label that begins with a capital and holds
+# only an identifier's characters.
+_MEMBER_ACCESS = re.compile(r"(?:^|\.)[a-z][a-z0-9_]*\.[A-Z][A-Za-z0-9_]*$")
+
+
+def _spelled_name(kind: str, written: str) -> str:
+    """The name a recovered value spells: a domain's whole, a URL's host as written; else ``""``.
+
+    A URL's host is read past its scheme, its user part and its port; a host
+    in brackets, or one that reads as an address, is an address and spells
+    no name.
+    """
+    if kind == "domain":
+        return written
+    if kind != "url":
+        return ""
+    rest = written.split("://", 1)[-1]
+    authority = re.split(r"[/?#]", rest, maxsplit=1)[0].rsplit("@", 1)[-1]
+    if authority.startswith("["):
+        return ""
+    host = authority.rsplit(":", 1)[0] if authority.count(":") == 1 else authority
+    try:
+        ipaddress.ip_address(host)
+    except ValueError:
+        return host
+    return ""
 
 
 def _is_benign_verdict(verdict: Any) -> bool:
@@ -4195,7 +4254,7 @@ def decoded_indicators(text: Any) -> list[str]:
     return [value for value in dict.fromkeys(found) if value]
 
 
-def emulation_from_ledger(ledger: Iterable[Any] | None) -> EmulatedStrings:
+def emulation_from_ledger(ledger: Iterable[Any] | None, sample: Any = None) -> EmulatedStrings:
     """What only a recovering tool read in this run: every FLOSS and static decoder entry.
 
     A decoded, stack or tight string FLOSS returned, folded to lower case (a
@@ -4215,8 +4274,13 @@ def emulation_from_ledger(ledger: Iterable[Any] | None) -> EmulatedStrings:
     may not be the run's whole: no FLOSS entry listed every string it
     recovered, no decoder entry listed every result, or no ``strings`` entry
     listed every plain string, so a value past a page could be missing from
-    either side. Built at build time and stored on the report, so no kept-row
-    cap of a section decides a publish answer.
+    either side. Where no strings entry listed every plain string and the
+    build has the sample (``sample``, its path), the holdout asks the sample's
+    own plain-string runs instead, through the readers' boundary and bounded
+    in what it reads (:func:`read_the_file_text`), and the record is then
+    whole on that side; a sample the reading did not read leaves the record
+    partial, and its partial reason says why. Built at build time and stored on
+    the report, so no kept-row cap of a section decides a publish answer.
     """
     values: dict[str, str] = {}
     provenance: dict[str, list[RecoveredValue]] = {}
@@ -4281,14 +4345,26 @@ def emulation_from_ledger(ledger: Iterable[Any] | None) -> EmulatedStrings:
                 if isinstance(row, dict) and _first_in_row(row, text_path)
             )
     kept, plain = _hold_out_plain(values, plain_texts)
+    answer = (
+        read_the_file_text(sample, plain=kept) if kept and not (sweeps and strings_whole) else None
+    )
+    read = isinstance(answer, Mapping) and bool(answer.get("read"))
+    if read:
+        held = {str(value) for value in answer.get("plain") or ()}  # type: ignore[union-attr]
+        plain.update({value: PLAIN_IN_THE_FILE for value in kept if value.lower() in held})
+        kept = {value: entry for value, entry in kept.items() if value.lower() not in held}
     why: list[str] = []
     if emulators and not emulated_whole:
         why.append(EMULATOR_PARTIAL.format(tools=" or ".join(emulators)))
     if decoders and not decoder_whole:
         why.append(DECODER_PARTIAL.format(tools=" or ".join(decoders)))
-    if kept and not (sweeps and strings_whole):
+    if kept and not (sweeps and strings_whole) and not read:
         said = " or ".join(sweeps) or tool_kinds.stored_word_of_kind(_PLAIN)
-        why.append(SWEEP_PARTIAL.format(tools=said))
+        unread = answer.get("why") if isinstance(answer, Mapping) else ""
+        why.append(
+            SWEEP_PARTIAL.format(tools=said)
+            + (f", and the sample's own text was not read ({unread})" if unread else "")
+        )
     # Every string FLOSS recovered is a value of the record, and most are not
     # network values: the stored provenance is kept for the values the decoder
     # read and for the FLOSS values that are a domain, an address or a URL.
@@ -4308,6 +4384,56 @@ def emulation_from_ledger(ledger: Iterable[Any] | None) -> EmulatedStrings:
         },
         spelled={key: spelled[key] for key in kept if key in spelled},
     )
+
+
+def read_the_file_text(sample: Any, plain: Iterable[str] = (), cut: Iterable[str] = ()) -> Any:
+    """What the sample's own text says of asked values, through the readers' boundary.
+
+    The platform's reading of the file's text (``tools.readers`` ``file_text``:
+    ``tools.strings.file_text_reading``), run where that reading runs and
+    bounded in what it reads; ``None`` with no sample, and the reading's
+    ``read`` false and ``why`` when it did not read it.
+    """
+    if not sample:
+        return None
+    from malspark.tools.readers import SampleReaders
+
+    path = str(sample)
+    try:
+        answer = SampleReaders(sample_path=path).read(
+            "file_text", path=path, plain=sorted(set(plain)), cut=sorted(set(cut))
+        )
+    except Exception as exc:  # noqa: BLE001 — a reading that failed reads nothing
+        return {"read": False, "why": f"the reading failed ({type(exc).__name__})"}
+    return answer if isinstance(answer, Mapping) else None
+
+
+def with_cuts_from_the_file(rows: Iterable[Any], sample: Any) -> None:
+    """Mark each path or registry key row the sweep cut out of a longer token of the sample.
+
+    The run's record of the cut (``StringIOC.cut_from``), read from the
+    sample's own text as the sweep reads it (:func:`read_the_file_text`): no
+    tool answer carries it. A row the reading cannot place keeps its standing.
+    """
+    asked = [row for row in rows if getattr(row, "kind", "") in _CUT_KINDS]
+    if not asked:
+        return
+    answer = read_the_file_text(sample, cut=(str(row.value).lower() for row in asked))
+    tokens = answer.get("cut") if isinstance(answer, Mapping) and answer.get("read") else None
+    if not isinstance(tokens, Mapping):
+        return
+    for row in asked:
+        token = tokens.get(str(row.value).lower())
+        if token:
+            row.cut_from = str(token)
+
+
+# The kinds the sweep's pattern can cut out of a longer token.
+_CUT_KINDS = frozenset({"path", "registry"})
+
+
+# What the plain-copy holdout names as the holder when it read the sample's bytes.
+PLAIN_IN_THE_FILE = "the sample's own bytes"
 
 
 def recovered_network_values(record: EmulatedStrings) -> list[str]:
@@ -4443,7 +4569,9 @@ def emulation_kwargs(
     """The rule's emulation arguments for one value of one report.
 
     ``recovered`` (the reason, with the record's partiality where it has
-    any) and ``verdict`` for a value only emulation recovered; ``also_plain``
+    any), ``verdict`` and the name as the recovering tool spelled it
+    (``spelled``, where the record holds one) for a value only emulation
+    recovered; ``also_plain``
     (the sweep's entry) for one the static sweep read too; nothing otherwise.
     The verdict is read as stated only when the judge gave it a confidence.
     A sandbox row's ``unattributed``, ``kept_by`` and ``mentioned_by`` (:func:`sandbox_row_kwargs`)
@@ -4490,9 +4618,11 @@ def emulation_kwargs(
     if found.partial:
         reason += f" (the record is partial: {found.partial})"
     stated = _field(report, "overall_confidence") is not None
+    spelled = _spelled_name(kind, found.spelled.get(key, ""))
     return {
         "recovered": reason,
         "verdict": _field(report, "verdict") if stated else UNSTATED_VERDICT,
+        **({"spelled": spelled} if spelled else {}),
         **observed,
     }
 
@@ -4623,7 +4753,7 @@ def publish_answer(
     source: Any,
     reputation: Any = None,
     *,
-    corroborating: str = "",
+    corroborating: SecondSources | str = "",
     recovered: str = "",
     verdict: Any = None,
     also_plain: str = "",
@@ -4641,6 +4771,7 @@ def publish_answer(
     url_only: str = "",
     bound: str = "",
     stated: Any = None,
+    spelled: str = "",
 ) -> str:
     """The publish rule's answer for one row, as the report prints it.
 
@@ -4654,11 +4785,7 @@ def publish_answer(
     """
     text = str(value or "").strip()
     from_strings = str(source or "").strip().lower() in ("", "strings")
-    corroborated = (
-        "a second source in this run records it"
-        if from_strings and text and corroborating and whole_value_in(text, corroborating)
-        else ""
-    )
+    corroborated = second_source(text, corroborating) if from_strings else ""
     admitted = indicator_publish_reason(
         kind,
         text,
@@ -4675,6 +4802,7 @@ def publish_answer(
         url_only=url_only,
         bound=bound,
         stated=stated,
+        spelled=spelled,
     )
     if admitted:
         return yes_because(admitted)
@@ -4748,6 +4876,9 @@ def publish_answer(
         return f"no: {recovered}, but the verdict is Benign, which publishes no malicious indicator"
     if recovered and verdict == UNSTATED_VERDICT:
         return f"no: {recovered}, but the judge stated no verdict with a confidence"
+    if recovered and _spelled_as_code(spelled):
+        # The reason in the first clause, the recovery it refuses after it.
+        return f"no: {_spelled_reason(spelled)}; {recovered}"
     if also_plain:
         return (
             f"no: seen only in the file's strings — also a plain string in the file "
@@ -4771,15 +4902,26 @@ def publish_answer(
         return seen_in_reason(seen_in, listed_by)
     if judge_only:
         return judge_only
+    refused = (
+        second_source_refusal(text, corroborating)
+        if from_strings and kind not in ("domain", "ip", "url")
+        else ""
+    )
+    if refused.startswith(CUT_REASON):
+        return f"no: {refused}"
+    if refused:
+        return f"no: seen only in the file's strings; {refused}"
     return "no: seen only in the file's strings"
 
 
-def corroborating_values(report: Any, corpus: Any = None) -> str:
+def corroborating_values(report: Any, corpus: Any = None) -> SecondSources:
     """The run's second-source record, as :func:`publish_answer` asks it."""
     return _corroborating_values(report, corpus)
 
 
-def judge_value_answer(report: Any, kind: str, value: str, corroborating: str) -> str:
+def judge_value_answer(
+    report: Any, kind: str, value: str, corroborating: SecondSources | str
+) -> str:
     """The one publish rule's answer for a value the judge's indicator names.
 
     The judge asserting a value is not a second source for it — the export
@@ -5209,14 +5351,30 @@ def _publishable_domains(report: Any) -> frozenset[str]:
 # Where a second source for a string row is looked for. A section built from
 # an analyst's own artefact or finding (``ledger_report.ANALYST_SECTION_SOURCES``)
 # is a claim; the ledger entries it cites are what the claim stands on, and only
-# the entries of a tool that is not the string sweep can hold a value up. A
-# section built from the sweep's own output is the thing being corroborated,
+# an entry that observed the sample or recovered the value can hold a value up
+# (``tool_kinds.second_source_standing``). The string sweep's own output, and
+# every other reading of the file's bytes, is the thing being corroborated,
 # and reading it would let every string corroborate itself.
 
 # The tools whose output *is* the string sweep, by their declared kinds
 # (``CONSUMER_KINDS``). An analyst quoting one of these in a finding has quoted
 # the sweep's own table back, which is one source said twice.
 _STRING_SWEEP_TOOLS = "stix_renderer._STRING_SWEEP_TOOLS"
+
+# The reason a string row is published on a second source, on every surface.
+SECOND_SOURCE = "a second source in this run records it"
+# How much of the token a value was cut out of a refusal quotes: what the
+# record keeps of it (``tools.strings.CUT_QUOTED``).
+_CUT_QUOTED = CUT_QUOTED
+# Why a value the sweep cut out of a longer token is refused, as a refusal's
+# first clause says it.
+CUT_REASON = "cut out of a longer string in the file, so not a whole value"
+
+
+def _quoted_token(token: str) -> str:
+    """The token a value was cut out of, as a refusal quotes it, bounded."""
+    held = token.removesuffix("…")
+    return held if len(held) <= _CUT_QUOTED and held == token else held[:_CUT_QUOTED] + "…"
 
 
 def _sweeps_the_strings(row: Any, named: str) -> bool:
@@ -5233,25 +5391,367 @@ def _section_text(section: Any) -> list[str]:
     return parts
 
 
-def _corroborating_values(report: Any, corpus: Any = None) -> str:
-    """Everything a second source in this run recorded, lowercased, built once.
+@dataclass(frozen=True)
+class SecondSources:
+    """What this run recorded that could confirm a value taken from the file's text.
 
-    One haystack per render, searched for whole values rather than by
-    containment, and deliberately narrow about what goes into it:
+    Built once per render (:func:`corroborating_values`) from the report
+    alone, lowercased, and asked by :func:`second_source` and nothing else, so
+    the IOC table, the feed and the export decide from one record.
+    ``observed`` is the text of an observation independent of the file's
+    text: what a sandbox watched, what a persistence mechanism names, and, on
+    a report stored before the build recorded its entries, every section of
+    an entry an analyst cites whose kind observes or recovers. ``reads`` is
+    the build's record, entry by entry (``MalwareReport.second_source_reads``):
+    each entry's tool, standing, whether a claim cites it, and the asked
+    values it holds whole. ``undeclared`` holds each cited section of a tool
+    that declares no kind, by tool, which confirms as an observation does and
+    is named. ``rereads`` and ``uncited`` hold, by tool, the text of the sections that
+    confirm nothing — a cited reading of the file's bytes, and a section that
+    prints a cited entry's answer beside one no claim cites — so a refusal can
+    name them. ``cut`` maps each value the sweep cut out of a longer token to
+    that token. ``recovered`` holds each value the run's recovery record
+    (:func:`emulation_from_ledger`) says a cited entry recovered: the record
+    names the entry value by value, where a section prints several as one.
+    """
+
+    observed: str = ""
+    reads: tuple[tuple[str, str, bool, frozenset[str]], ...] = ()
+    undeclared: tuple[tuple[str, str], ...] = ()
+    rereads: tuple[tuple[str, str], ...] = ()
+    uncited: tuple[tuple[str, str], ...] = ()
+    cut: Mapping[str, str] = dataclasses.field(default_factory=dict)
+    recovered: frozenset[str] = frozenset()
+
+    def __contains__(self, text: object) -> bool:
+        """Whether any text that can confirm a value holds ``text``, as a plain search."""
+        needle = str(text).lower()
+        return (
+            needle in self.observed
+            or any(needle in held for _t, held in self.undeclared)
+            or any(
+                needle in value
+                for _t, standing, cited, holds in self.reads
+                if cited and standing != tool_kinds.REREADS
+                for value in holds
+            )
+        )
+
+
+def _as_record(corroborating: Any) -> SecondSources:
+    """A caller's second-source record; a plain text is an observation's, as it always was."""
+    if isinstance(corroborating, SecondSources):
+        return corroborating
+    return SecondSources(observed=str(corroborating or "").lower())
+
+
+def second_source(value: Any, corroborating: Any) -> str:
+    """:data:`SECOND_SOURCE` when an independent observation holds this value whole, else ``""``.
+
+    The one test of a value taken from the file's text (a string row, a value
+    asked as the sweep's) against the run's record (:class:`SecondSources`):
+
+    * an observation — the sandbox's or persistence's record, a cited entry
+      whose kind watched the sample or recovered the value — holding it whole
+      confirms it, a value the sweep cut out of a longer token too where the
+      observation holds it as a whole token of its own (:func:`whole_as_held`):
+      what the sample did outranks how its file spells the value;
+    * a cited entry of a tool that declares no kind confirms it as an
+      observing tool's does: a tool never declared is used at full strength,
+      and the reason names it, so an operator sees what it confirmed and can
+      declare it;
+    * nothing else does — another reading of the same bytes, or an entry no
+      claim cites.
+    """
+    record = _as_record(corroborating)
+    text = str(value or "").strip()
+    low = text.lower()
+    if not text:
+        return ""
+    cut = low in record.cut
+    if whole_as_held(text, record.observed, cut) or low.rstrip(".") in record.recovered:
+        return SECOND_SOURCE
+    held = [
+        (tool, standing) for tool, standing, cited, holds in record.reads if cited and low in holds
+    ]
+    if any(standing == tool_kinds.OBSERVES for _tool, standing in held):
+        return SECOND_SOURCE
+    undeclared = list(
+        dict.fromkeys(
+            [
+                *(tool for tool, standing in held if standing == tool_kinds.UNDECLARED),
+                *(tool for tool, part in record.undeclared if whole_as_held(text, part, cut)),
+            ]
+        )
+    )
+    if undeclared:
+        records = "records" if len(undeclared) == 1 else "record"
+        return (
+            f"{SECOND_SOURCE}; {_tools_said(undeclared)} {records} it and "
+            f"{_declares(undeclared)} {_NO_KIND}"
+        )
+    return ""
+
+
+# How a reason says a value is confirmed only by tools that declare no kind.
+_NO_KIND = "no kind"
+
+
+def confirmed_only_by_undeclared(answer: Any) -> bool:
+    """Whether a publish answer stands only on cited entries of tools that declare no kind.
+
+    The one place such an answer is recognised: the run's record counts these
+    values (``builder``), so an operator sees what an undeclared tool confirmed.
+    """
+    said = str(answer or "")
+    return said.startswith(f"yes: {SECOND_SOURCE}; ") and said.endswith(f" {_NO_KIND}")
+
+
+def whole_as_held(value: str, text: str, cut: bool) -> bool:
+    """Whether ``text`` holds ``value`` whole: as :func:`whole_value_in` finds a value.
+
+    A value the string sweep cut out of a longer token (``cut``) is held
+    whole only where one of its places in ``text`` is also a whole token by
+    the sweep's own token test (``tools.strings.token_cuts``): a fragment an
+    observation also holds only inside a longer token stays a fragment.
+    """
+    if not cut:
+        return whole_value_in(value, text)
+    from malspark.tools.strings import stands_as_a_token
+
+    return stands_as_a_token(value, text, whole_value_starts(value.lower(), text))
+
+
+def second_source_refusal(value: Any, corroborating: Any) -> str:
+    """Why nothing confirms a value :func:`second_source` refused, in words; ``""`` for no holder.
+
+    Names the tools that hold the value whole and confirm nothing, so an
+    operator can see what read it.
+    """
+    record = _as_record(corroborating)
+    text = str(value or "").strip()
+    low = text.lower()
+    token = record.cut.get(low, "")
+    if token:
+        # The reason in its first clause, which is the clause a model is
+        # quoted; the token, as the record keeps it, after it.
+        return f'{CUT_REASON}; the string reads "{_quoted_token(token)}"'
+
+    def holders(held: tuple[tuple[str, str], ...]) -> list[str]:
+        return list(dict.fromkeys(tool for tool, part in held if whole_value_in(text, part)))
+
+    def read_by(standings: tuple[str, ...], cited: bool) -> list[str]:
+        return [
+            tool
+            for tool, standing, by_a_claim, holds in record.reads
+            if standing in standings and by_a_claim is cited and low in holds
+        ]
+
+    said: list[str] = []
+    rereads = list(dict.fromkeys([*read_by((tool_kinds.REREADS,), True), *holders(record.rereads)]))
+    if rereads:
+        verb = "reads" if len(rereads) == 1 else "read"
+        said.append(f"{_tools_said(rereads)} {verb} the file's text again, which confirms nothing")
+    uncited = list(dict.fromkeys(read_by((tool_kinds.OBSERVES, tool_kinds.UNDECLARED), False)))
+    if uncited:
+        verb = "holds" if len(uncited) == 1 else "hold"
+        said.append(f"{_tools_said(uncited)} {verb} it only in entries no analyst claim cites")
+    beside = holders(record.uncited)
+    if beside:
+        verb = "prints" if len(beside) == 1 else "print"
+        said.append(
+            f"{_tools_said(beside)} {verb} it only in a section that holds a cited entry "
+            "beside an entry no analyst claim cites"
+        )
+    return "; ".join(said)
+
+
+def _tools_said(tools: list[str]) -> str:
+    return tools[0] if len(tools) == 1 else ", ".join(tools[:-1]) + " and " + tools[-1]
+
+
+def _declares(tools: list[str]) -> str:
+    return "declares" if len(tools) == 1 else "declare"
+
+
+def _cited_entries(report: Any) -> set[str]:
+    """The entries an analyst's artefact or finding cites: what a claim stands on."""
+    cited: set[str] = set()
+    for section in list(getattr(report, "sections", None) or []):
+        origin = str(getattr(section, "source", "") or "").strip().lower()
+        if origin.startswith(ANALYST_SECTION_SOURCES):
+            cited.update(str(eid) for eid in (getattr(section, "evidence_ids", None) or []))
+    return cited
+
+
+def _asked_values(report: Any) -> list[str]:
+    """Every value the publish rule may ask as the file's text, lower case.
+
+    The string sweep's rows, the network block's values and the judge's
+    indicator values: what :func:`publish_answer` asks of the record.
+    """
+    asked: list[str] = []
+    static = getattr(report, "static", None)
+    asked.extend(str(row.value or "") for row in getattr(static, "interesting_strings", None) or [])
+    network = getattr(report, "network", None)
+    if network is not None:
+        asked.extend(str(row.fqdn or "") for row in network.domains)
+        asked.extend(str(row.address or "") for row in network.ips)
+        asked.extend(str(row.url or "") for row in network.urls)
+    asked.extend(str(row.value or "") for row in getattr(report, "judge_indicators", None) or [])
+    return list(dict.fromkeys(value.strip().lower() for value in asked if value.strip()))
+
+
+def _entry_text(entry: Any, corpus: Any) -> str:
+    """What the run saw of one entry, as text a value is found whole in.
+
+    The corpus's read of it, which the evidence byte budget never blanks,
+    else its stored answer; and its structured answer. An answer written as
+    JSON is read for its strings (:func:`_written_strings`), so a path the
+    answer escaped (``C:\\\\Temp``) is read as the path it is.
+    """
+    read = ""
+    if corpus is not None:
+        try:
+            read = _read_of_entry(corpus, str(entry.id))
+        except Exception:  # noqa: BLE001 — the stored answer is read instead
+            read = ""
+    said = read or str(getattr(entry, "output", "") or "")
+    parts = [_written_strings(said)]
+    structured = getattr(entry, "structured", None)
+    if structured is not None:
+        parts.append("\n".join(_leaves(structured)))
+    return "\n".join(part for part in parts if part)
+
+
+def _written_strings(text: str) -> str:
+    """A tool's answer as the strings it states: a JSON answer's leaves, else its text unescaped."""
+    try:
+        return "\n".join(_leaves(json.loads(text)))
+    except (ValueError, RecursionError):
+        # Not whole JSON (a trimmed answer, or prose): its escapes are read as
+        # the characters they stand for, beside the text as written.
+        unescaped = text.replace("\\\\", "\\").replace('\\"', '"')
+        return text if unescaped == text else f"{text}\n{unescaped}"
+
+
+def _leaves(value: Any) -> Iterator[str]:
+    """Every string and number a JSON value holds, its keys included, in order."""
+    stack = [value]
+    while stack:
+        held = stack.pop()
+        if isinstance(held, Mapping):
+            for key, item in reversed(list(held.items())):
+                stack.append(item)
+                stack.append(str(key))
+        elif isinstance(held, list | tuple):
+            stack.extend(reversed(held))
+        elif held is not None and not isinstance(held, bool):
+            yield str(held)
+
+
+def _steps_run(entry: Any) -> int:
+    """How many steps an entry's answer records it ran over the bytes it read, ``0`` for none.
+
+    The steps its answer states (``steps``), else the steps its call named:
+    a transform that ran one recovered what it answers, a read of a range
+    without one is a reading of the file's bytes.
+    """
+    structured = getattr(entry, "structured", None)
+    done = structured.get("steps") if isinstance(structured, Mapping) else None
+    if not isinstance(done, list):
+        args = getattr(entry, "args", None)
+        done = args.get("steps") if isinstance(args, Mapping) else None
+    return len(done) if isinstance(done, list) else 0
+
+
+def second_source_reads(
+    report: Any, ledger: Iterable[Any], corpus: Any = None
+) -> list[SecondSourceRead]:
+    """How each entry of the run stands to the values asked as the file's text: the build's record.
+
+    For every entry that is not the string sweep's and holds an asked value
+    (:func:`_asked_values`) whole: its tool, its standing
+    (``tool_kinds.second_source_standing``), whether a claim cites it, and the
+    values. The entry's text is what the run saw of it — the corpus's read,
+    which the evidence byte budget never blanks, else its stored answer — read
+    entry by entry, so a section printing several entries as one decides
+    nothing. Built once at build time and stored on the report
+    (``MalwareReport.second_source_reads``): the IOC table, the feed and the
+    export read this one record.
+    """
+    asked = _asked_values(report)
+    if not asked:
+        return []
+    entries = list(ledger or ())
+    cited = _cited_entries(report)
+    # A claim citing a repeat the guard answered from an earlier entry stands
+    # on that entry's answer.
+    cited |= {
+        str(entry.repeated_of)
+        for entry in entries
+        if getattr(entry, "repeated_of", None) and str(getattr(entry, "id", "")) in cited
+    }
+    static = getattr(report, "static", None)
+    cut = {
+        str(row.value or "").strip().lower()
+        for row in getattr(static, "interesting_strings", None) or []
+        if getattr(row, "cut_from", None)
+    }
+    index = tool_kinds.index_by_id(getattr(report, "evidence_index", None) or [])
+    reads: list[SecondSourceRead] = []
+    for entry in entries:
+        entry_id = str(getattr(entry, "id", "") or "")
+        named = str(getattr(entry, "tool", "") or "")
+        row = index.get(entry_id)
+        if not entry_id or getattr(entry, "repeated_of", None) or _sweeps_the_strings(row, named):
+            continue
+        text = _entry_text(entry, corpus).lower()
+        if not text:
+            continue
+        holds = sorted(
+            value
+            for value in first_holders(asked, [text])
+            if value not in cut or whole_as_held(value, text, True)
+        )
+        if not holds:
+            continue
+        reads.append(
+            SecondSourceRead(
+                entry=entry_id,
+                tool=tool_kinds.display_name(row, named) if row is not None else named,
+                standing=tool_kinds.second_source_standing(row, named, _steps_run(entry)),
+                cited=entry_id in cited,
+                holds=holds,
+            )
+        )
+    return reads
+
+
+def _corroborating_values(report: Any, corpus: Any = None) -> SecondSources:
+    """Everything that could confirm a value taken from the file's text, built once.
+
+    One record per render (:class:`SecondSources`), from the report alone —
+    ``corpus`` is not read, so no surface decides with more than another —
+    searched for whole values rather than by containment, and deliberately
+    narrow about what confirms:
 
     * what a sandbox watched — the process tree, the registry modifications,
       the file operations, the notable API rows;
     * what a persistence mechanism names;
-    * the output of a ledger entry that is **not** the string sweep's and that
-      an analyst cited in an artefact or a finding.
+    * an entry an analyst cited in an artefact or a finding whose kind
+      observes the sample or recovers the value, or whose tool declares no
+      kind (``tool_kinds.second_source_standing``): read from the build's
+      record of each entry (:func:`second_source_reads`), and on a report
+      stored before that record from the entry's section, which counts only
+      when every entry it stands on is cited.
 
-    The third is the one that had to be narrowed. Reading the analyst's own
-    prose corroborated anything an analyst quoted, and analysts quote the
-    strings table — one sentence carrying a parse artefact out of embedded
-    source published it as an indicator. A claim is a second source only when
-    it points at an entry that saw the value, and the sweep's own entries are
-    not that.
+    Reading the analyst's own prose corroborated anything an analyst quoted,
+    and analysts quote the strings table; a claim is a second source only
+    when it points at an entry that saw the value, and an entry that read the
+    file's bytes again did not.
     """
+    del corpus
     parts: list[str] = []
     dynamic = getattr(report, "dynamic", None)
     if dynamic is not None:
@@ -5269,43 +5769,65 @@ def _corroborating_values(report: Any, corpus: Any = None) -> str:
         parts.append(str(getattr(mechanism, "target", "") or ""))
         parts.append(str(getattr(mechanism, "payload", "") or ""))
 
-    sections = list(getattr(report, "sections", None) or [])
+    static = getattr(report, "static", None)
+    sweep_rows = list(getattr(static, "interesting_strings", None) or [])
+    undeclared: list[tuple[str, str]] = []
+    rereads: list[tuple[str, str]] = []
+    uncited: list[tuple[str, str]] = []
+    cited = _cited_entries(report)
+    recorded = getattr(report, "second_source_reads", None)
+    reads = tuple(
+        (read.tool, read.standing, read.cited, frozenset(read.holds)) for read in recorded or ()
+    )
+    sections = list(getattr(report, "sections", None) or []) if recorded is None else []
     index = tool_kinds.index_by_id(getattr(report, "evidence_index", None) or [])
-    cited: set[str] = set()
-    # The cited entries a section already contributed text for, so the corpus
-    # is read only where the stored record has nothing left.
-    drawn: set[str] = set()
-    for section in sections:
-        origin = str(getattr(section, "source", "") or "").strip().lower()
-        if origin.startswith(ANALYST_SECTION_SOURCES):
-            cited.update(str(eid) for eid in (getattr(section, "evidence_ids", None) or []))
     for section in sections:
         origin = str(getattr(section, "source", "") or "").strip().lower()
         if not origin.startswith("tool:"):
             continue
-        if _sweeps_the_strings(tool_kinds.section_entry(section, index), origin):
+        row = tool_kinds.section_entry(section, index)
+        entries = {str(eid) for eid in (section.evidence_ids or [])}
+        text = " ".join(_section_text(section))
+        if _sweeps_the_strings(row, origin):
             continue
-        if not cited.intersection(str(eid) for eid in (section.evidence_ids or [])):
+        if not cited & entries:
             continue
-        drawn.update(str(eid) for eid in (section.evidence_ids or []))
-        parts.extend(_section_text(section))
-
-    # What the run saw, for the cited entries whose stored output is gone. The
-    # evidence byte budget blanks an entry after the model has read it, so an
-    # answer an analyst cited can leave no section at all and a value a tool
-    # really returned stops corroborating anything. The narrowing is unchanged
-    # — an analyst has to have cited it, and the string sweep's own entries are
-    # still not a second source — only the place the text is read from.
-    if corpus is not None:
-        for entry_id in sorted(cited - drawn):
-            try:
-                named = str(corpus.tool_of(entry_id) or "")
-                if _sweeps_the_strings(index.get(str(entry_id)), named):
-                    continue
-                parts.append(_read_of_entry(corpus, entry_id))
-            except Exception:  # noqa: BLE001 — a weaker haystack, never a failed render
-                continue
-    return " ".join(part for part in parts if part).lower()
+        tool = tool_kinds.display_name(row, tool_kinds.section_tool(section))
+        standing = tool_kinds.second_source_standing(row, origin.removeprefix("tool:"))
+        if standing != tool_kinds.REREADS and not entries <= cited:
+            # A section prints its entries' answers as one: it confirms only
+            # when no claim-less entry is among them, and the record of a
+            # report built since reads each entry on its own.
+            uncited.append((tool, text.lower()))
+        elif standing == tool_kinds.OBSERVES:
+            parts.append(text)
+        elif standing == tool_kinds.UNDECLARED:
+            undeclared.append((tool, text.lower()))
+        else:
+            rereads.append((tool, text.lower()))
+    emulated = getattr(report, "emulated_strings", None)
+    recovered = frozenset(
+        value
+        for value, entry in (getattr(emulated, "values", None) or {}).items()
+        if str(entry) in cited
+        or any(
+            str(how.entry) in cited
+            for how in (getattr(emulated, "recovered_by", None) or {}).get(value, ())
+        )
+    )
+    return SecondSources(
+        recovered=recovered,
+        observed=" ".join(part for part in parts if part).lower(),
+        reads=reads,
+        undeclared=tuple(undeclared),
+        rereads=tuple(rereads),
+        uncited=tuple(uncited),
+        cut={
+            str(row.value or "").strip().lower(): str(row.cut_from)
+            for row in sweep_rows
+            if getattr(row, "cut_from", None)
+        },
+    )
 
 
 def _process_text(node: Any) -> list[str]:
@@ -5321,7 +5843,7 @@ def _accept_string_ioc(
     pattern: str,
     file_name_kept: int,
     publishable_domains: frozenset[str] = frozenset(),
-    corroborating: str = "",
+    corroborating: SecondSources | str = "",
     report: Any = None,
 ) -> bool:
     """Gate StringIOC → Indicator emission.
@@ -5369,11 +5891,7 @@ def _accept_string_ioc(
     # Whole value, never a slice of a longer one: a short mutex name or a bare
     # file name is otherwise "corroborated" by any token that happens to spell
     # it, which is the mistake the digest rule already fixed one kind at a time.
-    corroborated = (
-        "a second source in this run records it"
-        if value and whole_value_in(value, corroborating)
-        else ""
-    )
+    corroborated = second_source(value, corroborating)
     return (
         indicator_publish_reason(
             ioc.kind,

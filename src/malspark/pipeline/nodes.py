@@ -8327,6 +8327,10 @@ def make_report_node(
                 sample_platform=state.get("platform"),
                 sample_file_type=state.get("file_type"),
                 evidence_ledger=_ledger,
+                # What the run saw of each answer, for the entries the byte
+                # budget blanked: the record every surface reads a string
+                # row's second source from is read entry by entry from it.
+                evidence_corpus=container.get_evidence_corpus(),
             )
             # Deterministic and self-contained — every input is already in the
             # builder — so a thread changes when it runs, never what it

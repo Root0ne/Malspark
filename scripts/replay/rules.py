@@ -1600,6 +1600,8 @@ def _build(run: _Run, judged: _Judged, built: _Built) -> dict[str, Any]:
         sample_platform=run.identity.get("platform"),
         sample_file_type=run.identity.get("file_type"),
         evidence_ledger=run.ledger,
+        # The corpus rebuilt from the stored answers, as the report node hands its own.
+        evidence_corpus=_run_corpus(run),
     )
     report = builder.build_deterministic()
     # What the report node adds to the summary once the report is built.
