@@ -62,6 +62,7 @@ from malspark.reporting.renderers.markdown import (
     _NETWORK_KINDS,
     _PIPE,
     ANALYST_LIMITATIONS_TITLE,
+    INSIDE_A_TOKEN_KEPT,
     SUMMARY_SUBJECTS,
     _code_span,
     _degraded_sentence,
@@ -1894,12 +1895,14 @@ class _Analyst:
             for index, item in enumerate(ta.configuration, start=1):
                 # A row that cites nothing, or whose value none of its cited
                 # entries holds whole, is the bundle's, which prints it with the
-                # finding (T-555), and so is one read out of a longer run, which
-                # the bundle marks; the IOC table's state of each value stays.
+                # finding (T-555), and so is one inside a longer run never asked;
+                # one kept after the run was shown is printed with its mark. The
+                # IOC table's state of each value stays.
+                inside = ctx.config_inside.get(index)
                 if (
                     index in ctx.config_findings
                     or index in ctx.config_unheld
-                    or index in ctx.config_inside
+                    or inside is False
                     or self._flagged_whole(item.key)
                     or self._flagged_whole(item.value)
                 ):
@@ -1908,7 +1911,9 @@ class _Analyst:
                 body.append(
                     _row(
                         self._cell(item.key),
-                        self._line(item.value, item.evidence_refs) + ctx.publish_state(item.value),
+                        self._line(item.value, item.evidence_refs)
+                        + ctx.publish_state(item.value)
+                        + (f" _({INSIDE_A_TOKEN_KEPT})_" if inside else ""),
                         item.how_obtained,
                     )
                 )
@@ -2264,11 +2269,13 @@ class _Analyst:
                 continue
             # A row that cites nothing, or whose value none of its cited entries
             # holds whole, is the bundle's, which prints it with the finding (T-555),
-            # and so is one read out of a longer run, which the bundle marks.
+            # and so is one inside a longer run never asked; one kept after the run
+            # was shown is printed with its mark.
+            inside = ctx.identifier_inside.get(index)
             if (
                 index in ctx.identifier_findings
                 or index in ctx.identifier_unheld
-                or index in ctx.identifier_inside
+                or inside is False
                 or self._flagged_whole(item.value)
             ):
                 left += 1
@@ -2280,6 +2287,7 @@ class _Analyst:
             role += (
                 f" _({_inline_safe(said, pipes=False, plain=ctx.plain)}"
                 + (f"; {state[1:-1]}" if state else "")
+                + (f"; {INSIDE_A_TOKEN_KEPT}" if inside else "")
                 + ")_"
             )
             rows.append((self._cell(item.kind), ctx.plain(_one_line(item.value)), role))

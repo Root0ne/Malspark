@@ -3381,22 +3381,28 @@ def _was_asked(row: dict[str, Any]) -> bool:
 
 
 # A table row whose value a cited entry holds only inside a longer run of text
-# (``validation.STATED_VALUE_INSIDE_A_TOKEN_CODE``), and what its mark says first.
+# (``validation.STATED_VALUE_INSIDE_A_TOKEN_CODE``), what its mark says first,
+# and what it says of a row kept after the run was shown, in either report.
 _INSIDE_A_TOKEN_CODE = "report.value_inside_a_longer_token"
-_INSIDE_A_TOKEN_WORDS = "read out of a longer run of text in the cited entry"
+_INSIDE_A_TOKEN_WORDS = "the cited entry holds this text inside a longer run"
+INSIDE_A_TOKEN_KEPT = f"{_INSIDE_A_TOKEN_WORDS}; kept after the run was shown"
 
 
 def _row_mark(code: str, asked: bool | None) -> str:
     """The mark a table row carries beside its evidence for one finding naming it, or ``""``.
 
     ``asked`` is ``None`` where no finding of ``code`` names the row. A finding
-    never put to the model says so; a value read out of a longer run states
-    that fact first, and is never asked.
+    never put to the model says so. A value inside a longer run states that
+    fact first, then that it was kept after the run was shown, or not asked.
     """
     if asked is None:
         return ""
     if code == _INSIDE_A_TOKEN_CODE:
-        return f" ({_INSIDE_A_TOKEN_WORDS}; not asked: {code})"
+        return (
+            f" ({INSIDE_A_TOKEN_KEPT}: {code})"
+            if asked
+            else f" ({_INSIDE_A_TOKEN_WORDS}; not asked: {code})"
+        )
     return f" (unresolved: {code})" if asked else f" (unresolved, not asked: {code})"
 
 

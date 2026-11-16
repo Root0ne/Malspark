@@ -4,8 +4,10 @@ A finding first raised by the answer to a section's only retry is recorded as
 not asked (``"asked": "false"``), but the table rows it names printed the same
 "(unresolved: …)" as a row the model was asked about and kept. The mark now
 reads the row's record: a finding never asked says so. A row whose value a
-cited entry holds only inside a longer run of text is marked with that fact
-first, and as not asked, which it never is.
+cited entry holds only inside a longer run of text, kept after the run was
+shown, is printed where its table prints, the analyst report too, with a mark
+saying so; one first raised with no turn left is marked as not asked and left
+to the bundle.
 """
 
 from __future__ import annotations
@@ -117,26 +119,39 @@ def test_one_asked_finding_naming_the_row_makes_its_mark_asked() -> None:
     assert "not asked" not in host
 
 
-def test_a_row_read_out_of_a_longer_run_states_the_fact_first() -> None:
+def test_a_row_kept_after_the_run_was_shown_says_so() -> None:
     config, host = _rendered(
         {
             "code": STATED_VALUE_INSIDE_A_TOKEN_CODE,
-            "message": "identifier 1 (file name: 'ExampleNote.txt') is read out of a longer run …",
+            "message": "identifier 1 (file name: 'ExampleNote.txt') stands in ev_0005 …",
+        },
+    )
+
+    assert (
+        "ev_0005 (the cited entry holds this text inside a longer run; kept after the run was "
+        f"shown: {STATED_VALUE_INSIDE_A_TOKEN_CODE})"
+    ) in host
+    assert STATED_VALUE_INSIDE_A_TOKEN_CODE not in config
+
+
+def test_a_row_inside_a_run_never_asked_says_so() -> None:
+    _config, host = _rendered(
+        {
+            "code": STATED_VALUE_INSIDE_A_TOKEN_CODE,
+            "message": "identifier 1 (file name: 'ExampleNote.txt') stands in ev_0005 …",
             "asked": "false",
         },
     )
 
     assert (
-        "ev_0005 (read out of a longer run of text in the cited entry; not asked: "
+        "ev_0005 (the cited entry holds this text inside a longer run; not asked: "
         f"{STATED_VALUE_INSIDE_A_TOKEN_CODE})"
     ) in host
-    assert STATED_VALUE_INSIDE_A_TOKEN_CODE not in config
 
 
-def test_the_analyst_report_leaves_a_row_read_out_of_a_longer_run_to_the_bundle() -> None:
-    from malspark.reporting.renderers.layout import ANALYST
-
-    report = MalwareReport(
+def _two_tables(asked: bool) -> MalwareReport:
+    flag = {} if asked else {"asked": "false"}
+    return MalwareReport(
         identity=SampleIdentity(hashes=FileHashes(sha256="a" * 64)),
         verdict="Malware",
         technical_analysis=TechnicalAnalysis(
@@ -175,21 +190,41 @@ def test_the_analyst_report_leaves_a_row_read_out_of_a_longer_run_to_the_bundle(
                     {
                         "agent": "composer:host_identifiers",
                         "code": STATED_VALUE_INSIDE_A_TOKEN_CODE,
-                        "message": "identifier 2 (file name: 'ExampleRunOn.txt') is read out …",
-                        "asked": "false",
+                        "message": "identifier 2 (file name: 'ExampleRunOn.txt') stands in …",
+                        **flag,
                     },
                     {
                         "agent": "composer:configuration",
                         "code": STATED_VALUE_INSIDE_A_TOKEN_CODE,
-                        "message": "configuration item 2 (Note: 'ExampleNote.txt') is read out …",
-                        "asked": "false",
+                        "message": "configuration item 2 (Note: 'ExampleNote.txt') stands in …",
+                        **flag,
                     },
                 ]
             }
         },
     )
 
-    analyst = MarkdownRenderer(layout=ANALYST).render(report)
+
+_KEPT_MARK = "the cited entry holds this text inside a longer run; kept after the run was shown"
+
+
+def test_the_analyst_report_prints_a_row_kept_after_the_run_was_shown() -> None:
+    from malspark.reporting.renderers.layout import ANALYST
+
+    analyst = MarkdownRenderer(layout=ANALYST).render(_two_tables(asked=True))
+
+    note = next(line for line in analyst.splitlines() if "ExampleNote.txt" in line)
+    run_on = next(line for line in analyst.splitlines() if "ExampleRunOn.txt" in line)
+    assert _KEPT_MARK in note
+    assert _KEPT_MARK in run_on
+    kept = next(line for line in analyst.splitlines() if "ExampleKept.txt" in line)
+    assert _KEPT_MARK not in kept
+
+
+def test_the_analyst_report_leaves_a_row_never_asked_to_the_bundle() -> None:
+    from malspark.reporting.renderers.layout import ANALYST
+
+    analyst = MarkdownRenderer(layout=ANALYST).render(_two_tables(asked=False))
 
     assert "7000" in analyst
     assert "ExampleNote.txt" not in analyst
