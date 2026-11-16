@@ -54,6 +54,7 @@ from malspark.reporting.section_agreement import (
     FAILURE_REDONE_CODE,
     HELD_KEPT_CODE,
     KEEP_UNQUOTED_CODE,
+    KEPT_IN_SOURCE_WORDS_CODE,
     QUALIFIED_CODE,
     REWRITTEN_CODE,
     UNKNOWN_PASSAGE_CODE,
@@ -972,6 +973,27 @@ def test_a_closing_keep_on_a_refused_quote_is_left_out_with_its_quote() -> None:
     answer = {"sentences": _settled(report, [gamed, scope])}
     done, reporter = _ask(report, answer, answer)
     assert len(reporter.asked) == 2
+    # Its quote stands in one section 5 sentence and is refused only on the words of what
+    # the sentence denies: that sentence stands in its place, never the model's (T-705).
+    assert _limitations(report) == f"{HASHED} {SCOPE}"
+    assert not [r for r in done.tally.unresolved if r["code"] == DROPPED_CODE]
+    (record,) = [r for r in done.tally.unresolved if r["code"] == KEPT_IN_SOURCE_WORDS_CODE]
+    assert "persistence_detail, quoting 'is not established'" in record["message"]
+    assert record["stood"] == STILL_OPEN
+
+
+def test_a_closing_keep_on_a_quote_no_one_sentence_holds_is_left_out_with_its_quote() -> None:
+    report = _report(limitations=f"{STILL_OPEN} {SCOPE}")
+    ta = report.technical_analysis
+    assert ta is not None and ta.persistence_detail is not None
+    # The quote stands in two sentences of the passage: neither is printed in its place.
+    ta.persistence_detail.body += " What the second routine reads is not established."
+    gamed = _row(
+        "limitations", STILL_OPEN, "keep", ["persistence_detail"], quote="is not established"
+    )
+    scope = _row("limitations", SCOPE, "keep", [], reason="no passage speaks of an operator")
+    answer = {"sentences": _settled(report, [gamed, scope])}
+    done, _reporter = _ask(report, answer, answer)
     assert _limitations(report) == SCOPE
     (record,) = [r for r in done.tally.unresolved if r["code"] == DROPPED_CODE]
     assert "persistence_detail, quoting 'is not established'" in record["message"]

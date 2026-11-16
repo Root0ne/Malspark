@@ -341,7 +341,9 @@ FAILURE_REDONE_CODE = "agreement.failure_redone"
 # source only), whether or not another check refused that drop, or listed and no keep passing
 # the checks answers: left out of the analyst report at every place the sentence prints,
 # whichever text it stands in there, and counted there, its passage's text and the bundle
-# keeping it whole, and recorded naming the passage, as left out (T-613).
+# keeping it whole, and recorded naming the passage, as left out (T-613). A record of the
+# round's own keeps its sentence whole on its row (``stood``), its message a bounded copy
+# (T-705).
 DROPPED_CODE = "agreement.dropped"
 # A held sentence (any sentence of the conclusion or the limitations, of a
 # record's value cell or of a capability bullet; one calling open an address or a
@@ -374,17 +376,31 @@ UNREAD_STANDING_CODE = "agreement.unread_standing"
 # fact contradicts, the same words on the same addresses.
 ABSENCE_KEPT_CODE = "agreement.absence_kept"
 # A kept closing sentence, or a kept held absence of the body, whose row quotes no
-# words of a source it names that state the same (two or more of its own words, an
+# words of a source it names that state the same (two, or all where fewer, of the words of
+# what it denies something of, read before its negation, and what a denied item is; an
 # absence on words stating one, of the body as of a closing section, a body absence's on
 # a negated clause holding what it denies something of, so a quote of the passage stating
 # what an absence denies backs no keep of it; never one shorter than
-# ``absence_answers.QUOTE_FLOOR``, refused as such), or that names no source while a
-# shown one speaks of it (the rows of an entry it cites among them). The refusal of a
+# ``absence_answers.QUOTE_FLOOR``, refused as such; one standing only in a named passage
+# written without the code is told so), or that names no source while a shown one speaks of
+# it (the rows of an entry it cites among them). The refusal of a
 # body absence names the sources that speak of it, which a rewrite of a section 5 one may
 # rest on, and offers a keep on the words of each that state the same absence. Still so
-# after the retry, a closing sentence is left out and recorded (``DROPPED_CODE``); a
-# body absence stands, recorded (``HELD_KEPT_CODE``).
+# after the retry, a closing sentence is left out and recorded (``DROPPED_CODE``), but where
+# only those words refuse a quote of a section 5 passage, whose sentence then stands in its
+# place (``KEPT_IN_SOURCE_WORDS_CODE``, T-705); a body absence stands, recorded
+# (``HELD_KEPT_CODE``).
 KEEP_UNQUOTED_CODE = "agreement.keep_unquoted"
+# A sentence of the conclusion or the limitations, of a record's value cell or of a
+# capability bullet, kept on a quote that stands word for word in a section 5 passage it
+# names, the body the code's reading backs, and that the checks refused only on the words of
+# what the sentence denies something of (the words before its negation, what a denied item
+# is), still so after the retry: the sentence of that passage holding the quote stands in its
+# place, whole with its own citations, recorded with what stood, whole (T-705). A quote no
+# one sentence of a section 5 passage it names holds (one standing only in a fact or a debate
+# round, which the report does not print), or whose sentence the passage already prints,
+# leaves the sentence out as before (``DROPPED_CODE``).
+KEPT_IN_SOURCE_WORDS_CODE = "agreement.kept_in_source_words"
 # A sentence, or a rewrite, giving failed calls a number the ledger's count
 # does not.
 FAILURE_COUNT_CODE = "agreement.failure_count"
@@ -5285,14 +5301,7 @@ def _answer_violations(
             )
     if (keeping or kept_as_written) and row.sources:
         body = absent or kept_as_written
-        named_sources = [
-            s
-            for s in sources
-            if s is not None
-            # A passage shown as a source only supplies no keep's quote (T-613).
-            and (s.kind in (FACT, SECTION_5, DEBATE) or (body and s.kind == CLAIM_LED))
-            and not s.source_only
-        ]
+        named_sources = _keep_sources(sources, body=body)
         problem = _quote_problem(
             sentence,
             row.quote,
@@ -5301,6 +5310,10 @@ def _answer_violations(
             by_id or {},
             body=body,
             place=passage.place_label,
+            # A closing keep's quote of a passage written without the code is told so.
+            uncounted=(
+                [] if body else [s for s in sources if s is not None and s.kind == CLAIM_LED]
+            ),
         )
         if problem:
             out.append(
@@ -5542,6 +5555,13 @@ def quote_overlap(sentence: str, quote: str, generic: frozenset[str] = frozenset
     return said_of(quote).count(kept_subject(sentence, generic))
 
 
+# The refusals of a quote that read what the sentence denies something of off its words: the
+# words before its negation (:func:`kept_subject`) and what a denied item is
+# (``denied_heads``). A quote standing in a passage the code wrote or checked that fails these
+# alone keeps no closing sentence, but its source's sentence stands in place of it (T-705).
+_QUOTE_TOO_FEW = "shares too few of the words the sentence denies something of"
+_QUOTE_NAMES_NONE = "names none of what the sentence denies something of"
+_SUBJECT_REFUSALS = frozenset({_QUOTE_TOO_FEW, _QUOTE_NAMES_NONE})
 # What a quote shorter than :data:`absence_answers.QUOTE_FLOOR` is refused for, and what the
 # TASK says of every quote once (T-600).
 _QUOTE_SHORT = f"is shorter than {QUOTE_FLOOR} characters, so it quotes nothing"
@@ -5573,6 +5593,8 @@ def _quote_problem(
     body: bool = False,
     speaking: bool = False,
     place: tuple[tuple[str, ...], ...] | None = None,
+    subject: bool = True,
+    uncounted: Sequence[Passage] = (),
 ) -> str:
     """What is wrong with a kept closing sentence's quote, or ``""``.
 
@@ -5604,12 +5626,25 @@ def _quote_problem(
     routine at 0xc42c never contacts the C2 host". A quote leaving out an item of a
     coordinated list that a shown source could say otherwise of is refused; one leaving
     out an item no source speaks of is recorded (:func:`_unbacked_items`).
+
+    ``subject`` false reads the quote without the two tests of what the sentence denies
+    something of (:data:`_SUBJECT_REFUSALS`, :func:`_in_source_words`). ``uncounted``: the
+    named passages written without the code, which back no keep here; a quote standing only
+    in one of them is told so (T-705).
     """
     if quote_too_short(quote):
         # Shorter than the floor it quotes nothing, wherever it stands: said so, as the
         # TASK states the floor; an empty one is said to give none (T-600).
         return _QUOTE_SHORT if quote.strip() else _QUOTE_NONE
     if not quote_stands(quote, [s.text for s in sources]):
+        written = [s.id for s in uncounted if quote_stands(quote, [s.text])]
+        if written:
+            one = len(written) == 1
+            return (
+                f"stands only in {', '.join(written)}, {'a passage' if one else 'passages'} "
+                f"written without the code, which {'backs' if one else 'back'} no keep of "
+                "this sentence"
+            )
         return "does not stand in a source it names"
     rows = [s for s in sources if sentence in s.speaks_to and quote_stands(quote, [s.text])]
     if rows:
@@ -5640,7 +5675,7 @@ def _quote_problem(
         and denies_reading(quote)
     ):
         return ""
-    subject = kept_subject(sentence, generic)
+    denied = kept_subject(sentence, generic)
     # A sentence with no subject of its own: no word but what an absence denies, or words
     # generic to the run.
     if place is not None and not (
@@ -5651,14 +5686,14 @@ def _quote_problem(
         if not _names_place(quote, place):
             said = "; ".join(" or ".join(choices) for choices in place)
             return f"does not name the place the sentence stands in ({said})"
-    elif quote_overlap(sentence, quote, generic) < min(_QUOTE_SHARED, len(subject)):
-        return "shares too few of the words the sentence denies something of"
+    elif subject and quote_overlap(sentence, quote, generic) < min(_QUOTE_SHARED, len(denied)):
+        return _QUOTE_TOO_FEW
     # What an item denied is ("protocol" of "The C2 protocol beyond the request keys in
     # the decoded strings"): a quote holding only its modifiers ("decoded strings") is
     # about something else.
     heads = frozenset(h for h in denied_heads(sentence) if h not in _ABSENCE_PREDICATES)
-    if heads and not said_of(quote).count(heads):
-        return "names none of what the sentence denies something of"
+    if subject and heads and not said_of(quote).count(heads):
+        return _QUOTE_NAMES_NONE
     if absent and body and not speaking and not _states_the_denial(sentence, quote, generic):
         # A negation of something else ("it does not sleep") beside the words stating
         # what the sentence denies is no statement of its absence (T-652).
@@ -7497,11 +7532,25 @@ def apply_rows(
                 ):
                     counts["not_applied"] += 1
                     continue
+                in_words = _in_source_words(passage, span[2], row, found, by_id)
+                if in_words is not None and not _printed_in(in_words[1], passage, taken):
+                    # Refused only on the words of what it denies something of: its source's
+                    # own sentence stands in its place, and what stood is recorded (T-705).
+                    taken.append((span[0], span[1], in_words[1]))
+                    written.append(
+                        _kept_in_source_words(
+                            passage, f"sentences.{index}", span[2], row, *in_words
+                        )
+                    )
+                    continue
                 taken.append((*left_out_span(passage.text, span[0], span[1]), ""))
                 counts["dropped"] += 1
                 why = (
                     "the ledger says otherwise"
                     if _ledger_says_otherwise(found)
+                    # Its source's sentence already stands in the passage: printed once (T-705).
+                    else f"the sentence of {in_words[0].id} holding its quote already stands here"
+                    if in_words is not None
                     else "kept on no source a check accepts: "
                     + (
                         f"{', '.join(_form(s) for s in row.sources)}, quoting "
@@ -7617,6 +7666,7 @@ def apply_rows(
                         path=f"sentences.{index}",
                         # The section it was left out of, which the analyst report counts.
                         subject=passage.id,
+                        stood=safe_finding_value(span[2], whole=True),
                     )
                 )
             elif (fallback := _fact_fallback(passage, span[2], row, by_id)) is not None:
@@ -7740,6 +7790,14 @@ def apply_rows(
     return counts, [*listed, *written]
 
 
+def _printed_in(said: str, passage: Passage, taken: Sequence[tuple[int, int, str]]) -> bool:
+    """Whether ``said`` already stands in the passage, as written or put in by another row."""
+    words = " ".join(said.split())
+    return any(
+        words in " ".join(text.split()) for text in (passage.text, *(t for _a, _b, t in taken))
+    )
+
+
 def _codes_of(found: Sequence[Violation]) -> str:
     """The codes of the findings, each once, in order."""
     return ", ".join(dict.fromkeys(violation.code for violation in found))
@@ -7779,6 +7837,105 @@ def _unbacked(found: Sequence[Violation]) -> bool:
     return any(violation.code == KEEP_UNQUOTED_CODE for violation in found)
 
 
+def _keep_sources(sources: Sequence[Passage | None], *, body: bool) -> list[Passage]:
+    """The named sources a keep's quote may stand in: a fact, a section 5 passage or a debate
+    round, and for a body absence a passage written without the code too; never a passage
+    shown as a source only (T-613)."""
+    return [
+        s
+        for s in sources
+        if s is not None
+        and (s.kind in (FACT, SECTION_5, DEBATE) or (body and s.kind == CLAIM_LED))
+        and not s.source_only
+    ]
+
+
+def _in_source_words(
+    passage: Passage,
+    sentence: str,
+    row: AgreementRow,
+    found: Sequence[Violation],
+    by_id: dict[str, Passage],
+) -> tuple[Passage, str] | None:
+    """The source and its own words printed in place of a closing sentence the row keeps, or
+    ``None`` (T-705).
+
+    Only for a keep of a sentence of the conclusion, the limitations, a value cell or a
+    capability bullet whose every finding is the quote's refusal (``KEEP_UNQUOTED_CODE``),
+    where the checks refuse the quote on the words of what the sentence denies something of
+    alone (:data:`_SUBJECT_REFUSALS`): read without those two tests, the quote passes every
+    other. The words are the one sentence holding the quote (more than one where the quote
+    runs across them) of a section 5 passage the row names, the body the code's reading backs,
+    as it writes them, citations included; a quote no one such sentence holds gives none (a
+    fact or a debate round is no text the report prints). A text printed in its writer's own
+    words is never reworded, so gives none either.
+    """
+    if (
+        row.decision != "keep"
+        or not passage.closing
+        or passage.verbatim
+        or not found
+        or any(violation.code != KEEP_UNQUOTED_CODE for violation in found)
+    ):
+        return None
+    named = _keep_sources([by_id.get(_form(name)) for name in row.sources], body=False)
+    asked = partial(
+        _quote_problem,
+        sentence,
+        row.quote,
+        named,
+        generic_words(by_id),
+        by_id,
+        place=passage.place_label,
+    )
+    if asked() not in _SUBJECT_REFUSALS or asked(subject=False):
+        return None
+    held = [
+        (source, said)
+        for source in named
+        if source.kind == SECTION_5
+        for said in _holding(source.text, row.quote)
+    ]
+    return held[0] if len(held) == 1 else None
+
+
+def _holding(text: str, quote: str) -> list[str]:
+    """Each shortest run of whole sentences of ``text`` that the quote stands in
+    (:func:`absence_answers.quote_stands`), as written, in order."""
+    units = _sentences_of(text)
+    runs: list[tuple[int, int]] = []
+    for first in range(len(units)):
+        for last in range(first, len(units)):
+            if quote_stands(quote, [" ".join(units[first : last + 1])]):
+                runs.append((first, last))
+                break
+    # A run holding a shorter one is not the shortest.
+    shortest = [
+        (first, last)
+        for first, last in runs
+        if not any((a, b) != (first, last) and first <= a and b <= last for a, b in runs)
+    ]
+    return [" ".join(units[first : last + 1]) for first, last in shortest]
+
+
+def _kept_in_source_words(
+    passage: Passage, path: str, sentence: str, row: AgreementRow, source: Passage, said: str
+) -> Violation:
+    """The record of a closing sentence its source's own words stand in place of (T-705)."""
+    return Violation(
+        code=KEPT_IN_SOURCE_WORDS_CODE,
+        message=(
+            f"The agreement question keeps a sentence of {safe_finding_value(passage.label)} on "
+            f"{safe_finding_value(source.id)}, quoting {safe_finding_value(row.quote)!r}, which "
+            "stands there but was refused on the words of what the sentence denies something "
+            f"of ({KEEP_UNQUOTED_CODE}): the source's own sentence stands in its place: "
+            f"{safe_finding_value(sentence)!r} now reads {safe_finding_value(said)!r}."
+        ),
+        path=path,
+        stood=safe_finding_value(sentence, whole=True),
+    )
+
+
 def _left_out(
     passage: Passage,
     path: str,
@@ -7814,6 +7971,7 @@ def _left_out(
         ),
         path=path,
         subject=passage.id,
+        stood=safe_finding_value(sentence, whole=True),
     )
 
 
