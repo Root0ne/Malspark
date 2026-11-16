@@ -412,3 +412,78 @@ class TestEverySurfaceReadsOneRecord:
         assert not publishes(_answer(unread, REGISTRY_KEY))
         # The export decides from the report's record, not from a corpus it is handed.
         assert not _exported_with(unread, REGISTRY_KEY, corpus)
+
+
+class TestAnObservationOutranksACut:
+    """A value the sandbox recorded whole is confirmed, though the file's copy is a cut."""
+
+    INSTALLED = "C:\\ProgramData\\Relay\\relay.exe"
+
+    @pytest.mark.parametrize(
+        "token",
+        [
+            f"InstallPath={INSTALLED}",
+            f"{INSTALLED},1",
+            f'"{INSTALLED}">nul',
+            f"{INSTALLED};C:\\Windows\\system32",
+        ],
+    )
+    def test_a_path_the_sandbox_wrote(self, token: str) -> None:
+        report = _report(
+            StringIOC(kind="path", value=self.INSTALLED, cut_from=token),
+            dynamic=DynamicBehavior(
+                file_operations=[{"operation": "create", "path": self.INSTALLED}]
+            ),
+        )
+
+        answer = _answer(report, self.INSTALLED)
+        assert publishes(answer), answer
+
+    def test_a_key_of_another_shape_a_process_set(self) -> None:
+        key = "HKCU\\Software\\Vendor\\Relay\\Updater"
+        report = _report(
+            StringIOC(kind="registry", value=key, cut_from=f"{key}=1"),
+            dynamic=DynamicBehavior(
+                process_tree=[
+                    ProcessNode(pid=7, name="reg.exe", command_line=f'reg add "{key}" /f')
+                ]
+            ),
+        )
+
+        assert publishes(_answer(report, key))
+
+    def test_a_fragment_the_observation_holds_only_inside_a_longer_token(self) -> None:
+        report = _report(
+            StringIOC(kind="path", value="C:\\Relay\\run", cut_from="C:\\Relay\\run_old"),
+            dynamic=DynamicBehavior(
+                file_operations=[{"operation": "create", "path": "C:\\Relay\\run_old"}]
+            ),
+        )
+
+        answer = _answer(report, "C:\\Relay\\run")
+        assert not publishes(answer), answer
+        assert "cut out of" in answer
+
+    def test_the_build_s_record_asks_a_cited_entry_the_same(self) -> None:
+        value = "C:\\Relay\\run"
+        report = _report(
+            StringIOC(kind="path", value=value, cut_from="C:\\Relay\\run_old"),
+            _finding("ev_0110", "ev_0111"),
+            index=[
+                _row("ev_0110", "sbx", "sandbox_dropped_files"),
+                _row("ev_0111", "sbx2", "sandbox_dropped_files"),
+            ],
+        )
+        inside = [
+            LedgerEntry(id="ev_0110", agent="dynamic", tool="sbx", output="C:\\Relay\\run_old")
+        ]
+        whole = [LedgerEntry(id="ev_0111", agent="dynamic", tool="sbx2", output=f"wrote {value}")]
+
+        def answer(ledger: list[LedgerEntry]) -> str:
+            recorded = report.model_copy(
+                update={"second_source_reads": second_source_reads(report, ledger)}
+            )
+            return _answer(recorded, value)
+
+        assert not publishes(answer(inside))
+        assert publishes(answer(whole))

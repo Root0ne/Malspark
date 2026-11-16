@@ -16,7 +16,7 @@ same scan, plain dicts.
 from __future__ import annotations
 
 import re
-from collections.abc import Callable, Iterator
+from collections.abc import Callable, Iterable, Iterator
 from functools import lru_cache
 from pathlib import Path
 from typing import Any
@@ -290,6 +290,76 @@ def cut_from(text: str, start: int, end: int) -> str:
     if _WORD_RE.search(text, edge, start) or _WORD_RE.search(text, end, close):
         return text[edge:close]
     return ""
+
+
+# How much of the token a cut value was cut out of is kept: the record and a
+# refusal quote this many characters of it, and an ellipsis for the rest.
+CUT_QUOTED = 80
+
+
+def _continues(char: str) -> bool:
+    """Whether a character is a word's, and so continues a value it stands beside."""
+    return char.isalnum() or char == "_"
+
+
+def token_cuts(text: str, spans: Iterable[tuple[int, int]]) -> list[str]:
+    """For each span of ``text``, the token it was cut out of (:data:`CUT_QUOTED` of it), or ``""``.
+
+    A pattern of a value's characters stops at the first one it does not
+    take, and that is no end of the value: ``/cpu/classes/total`` stops at the
+    ``:`` of ``…/cpu/classes/total:cpu-seconds``, ``/f /q C`` at the ``:`` of
+    ``del /f /q C:\\…``. What ends a value is the token it stands in, the
+    text between two whitespace characters (or the text's ends): a span a
+    word character continues on either side within its token is a cut, and
+    that token is answered, its first :data:`CUT_QUOTED` characters and an
+    ellipsis for a longer one. A quote, a bracket or a comma around a value
+    holds no word character, and the value it encloses stands whole.
+
+    One pass over the text, whatever the spans: they are read in the order a
+    pattern's matches or one value's occurrences come (each starting and
+    ending no earlier than the one before), and the last whitespace and the
+    last word character before a span's start, and the first of each from its
+    end, are carried forward from span to span rather than walked to again.
+    """
+    out: list[str] = []
+    size = len(text)
+    # Left of a span: how far the text was read, and the last whitespace and
+    # the last word character met before that point (-1: none).
+    read = 0
+    space_before = word_before = -1
+    # Right of a span: the first whitespace and the first word character at or
+    # after the last span's end (``size``: none), and the end they were read from.
+    space_after = word_after = size
+    after_from = -1
+    for start, end in spans:
+        while read < start:
+            if text[read].isspace():
+                space_before = read
+            elif _continues(text[read]):
+                word_before = read
+            read += 1
+        if after_from < 0 or space_after < end:
+            space_after = end
+            while space_after < size and not text[space_after].isspace():
+                space_after += 1
+        if after_from < 0 or word_after < end:
+            word_after = end
+            while word_after < space_after and not _continues(text[word_after]):
+                word_after += 1
+        after_from = end
+        if word_before > space_before or word_after < space_after:
+            first = space_before + 1
+            token = text[first : min(space_after, first + CUT_QUOTED)]
+            out.append(token + "…" if space_after - first > CUT_QUOTED else token)
+        else:
+            out.append("")
+    return out
+
+
+def stands_as_a_token(value: str, text: str, starts: Iterable[int]) -> bool:
+    """Whether ``value`` stands whole by the token test at one of ``starts`` in ``text``."""
+    spans = [(start, start + len(value)) for start in starts]
+    return any(not cut for cut in token_cuts(text, spans))
 
 
 def _short_hosts(blob: bytes) -> Iterator[str]:

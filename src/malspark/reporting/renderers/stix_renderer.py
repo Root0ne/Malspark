@@ -46,6 +46,7 @@ from malspark.agents._indicator_denylists import (
     malformed_hash_in,
     on_a_denied_url_host,
     whole_value_in,
+    whole_value_starts,
 )
 from malspark.agents.run_evidence_corpus import read_of_entry as _read_of_entry
 from malspark.analysis.corroboration import support_sentence
@@ -5381,11 +5382,11 @@ def second_source(value: Any, corroborating: Any) -> str:
     The one test of a value taken from the file's text (a string row, a value
     asked as the sweep's) against the run's record (:class:`SecondSources`):
 
-    * a value the sweep cut out of a longer token is no whole value, and
-      nothing confirms it;
     * an observation — the sandbox's or persistence's record, a cited entry
       whose kind watched the sample or recovered the value — holding it whole
-      confirms it;
+      confirms it, a value the sweep cut out of a longer token too where the
+      observation holds it as a whole token of its own (:func:`whole_as_held`):
+      what the sample did outranks how its file spells the value;
     * a cited entry of a tool that declares no kind confirms it unless the
       value stands as plain text in the string sweep's record: the entry then
       read the file's own text and adds nothing to it;
@@ -5395,19 +5396,35 @@ def second_source(value: Any, corroborating: Any) -> str:
     record = _as_record(corroborating)
     text = str(value or "").strip()
     low = text.lower()
-    if not text or low in record.cut:
+    if not text:
         return ""
-    if whole_value_in(text, record.observed) or low.rstrip(".") in record.recovered:
+    cut = low in record.cut
+    if whole_as_held(text, record.observed, cut) or low.rstrip(".") in record.recovered:
         return SECOND_SOURCE
     held = [standing for _t, standing, cited, holds in record.reads if cited and low in holds]
     if tool_kinds.OBSERVES in held:
         return SECOND_SOURCE
     undeclared = tool_kinds.UNDECLARED in held or any(
-        whole_value_in(text, part) for _tool, part in record.undeclared
+        whole_as_held(text, part, cut) for _tool, part in record.undeclared
     )
     if undeclared and not whole_value_in(text, record.plain):
         return SECOND_SOURCE
     return ""
+
+
+def whole_as_held(value: str, text: str, cut: bool) -> bool:
+    """Whether ``text`` holds ``value`` whole: as :func:`whole_value_in` finds a value.
+
+    A value the string sweep cut out of a longer token (``cut``) is held
+    whole only where one of its places in ``text`` is also a whole token by
+    the sweep's own token test (``tools.strings.token_cuts``): a fragment an
+    observation also holds only inside a longer token stays a fragment.
+    """
+    if not cut:
+        return whole_value_in(value, text)
+    from malspark.tools.strings import stands_as_a_token
+
+    return stands_as_a_token(value, text, whole_value_starts(value.lower(), text))
 
 
 def second_source_refusal(value: Any, corroborating: Any) -> str:
@@ -5533,6 +5550,12 @@ def second_source_reads(
     if not asked:
         return []
     cited = _cited_entries(report)
+    static = getattr(report, "static", None)
+    cut = {
+        str(row.value or "").strip().lower()
+        for row in getattr(static, "interesting_strings", None) or []
+        if getattr(row, "cut_from", None)
+    }
     index = tool_kinds.index_by_id(getattr(report, "evidence_index", None) or [])
     reads: list[SecondSourceRead] = []
     for entry in ledger or ():
@@ -5544,7 +5567,11 @@ def second_source_reads(
         text = _entry_text(entry, corpus).lower()
         if not text:
             continue
-        holds = sorted(first_holders(asked, [text]))
+        holds = sorted(
+            value
+            for value in first_holders(asked, [text])
+            if value not in cut or whole_as_held(value, text, True)
+        )
         if not holds:
             continue
         reads.append(
