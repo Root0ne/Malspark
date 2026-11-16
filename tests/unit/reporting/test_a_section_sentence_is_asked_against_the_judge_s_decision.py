@@ -1047,3 +1047,114 @@ def test_a_judge_row_whose_sentence_does_not_stand_is_told_both() -> None:
     assert [v.code for v in found][:1] == [UNKNOWN_PASSAGE_CODE]
     assert "of the judge's decision" in found[0].message
     assert agreement.SENTENCE_NOT_FOUND_CODE in [v.code for v in found[1:]]
+
+
+# What the round asks and records of a judge row that is no drop: its twin's (T-717).
+_HOST = "The routine at 0x4b20 formats a host name."
+
+
+def _asked_of(make: Any, *answers: list[dict[str, Any]]) -> tuple[Any, ...]:
+    """The round asked with ``answers`` in turn: its calls, counts, unresolved records and
+    the report it leaves."""
+    import asyncio
+
+    from tests.unit.reporting.test_a_denial_of_a_name_the_run_holds_is_read_against_the_ledger import (  # noqa: E501
+        _Reporter,
+    )
+
+    report = make()
+    reporter = _Reporter(*({"sentences": rows} for rows in answers))
+    done = asyncio.run(agreement.ask_section_agreement(reporter, report, citable_ids=CITABLE))
+    return (
+        len(reporter.asked),
+        {k: v for k, v in done.summary.items() if isinstance(v, int)},
+        dict(done.tally.by_code),
+        [(u["code"], u["message"]) for u in done.tally.unresolved],
+        report.model_dump(mode="json", exclude={"generated_at"}),
+    )
+
+
+def _host_conclusion() -> MalwareReport:
+    report = report_of(OTHER)
+    _closing(report).body = _HOST
+    return report
+
+
+def _host_summary() -> MalwareReport:
+    report = report_of(OTHER)
+    report.executive_summary = "The routine at 0x4b20 formats a host name [ev_0302]."
+    return report
+
+
+@pytest.mark.parametrize(
+    ("make", "row"),
+    [
+        (
+            _host_conclusion,
+            {
+                **_row(_HOST, "keep", quote="The routine at 0x4b20 formats a host name"),
+                "passage": "conclusion",
+                "sources": [SECTION, "judge.verdict"],
+            },
+        ),
+        (
+            _host_summary,
+            {
+                **_row("The routine at 0x4b20 formats a host name [ev_0302].", "keep"),
+                "passage": "executive_summary",
+                "sources": [SECTION, "judge.verdict"],
+            },
+        ),
+    ],
+)
+def test_a_judge_refusal_opens_no_turn_and_is_counted_and_recorded_nowhere(
+    make: Any, row: dict[str, Any]
+) -> None:
+    calls, counts, by_code, unresolved, report = _asked_of(make, [row], [row])
+    assert (calls, counts, by_code, unresolved, report) == _asked_of(
+        make, [_twin(row)], [_twin(row)]
+    )
+    assert calls == 1 and not [u for u in unresolved if "judge" in u[1]]
+
+
+def test_a_judge_refusal_is_told_in_a_retry_another_refusal_opens() -> None:
+    import asyncio
+
+    from tests.unit.reporting.test_a_denial_of_a_name_the_run_holds_is_read_against_the_ledger import (  # noqa: E501
+        _Reporter,
+    )
+
+    first = "The routine at 0x4b20 formats a host name [ev_0302]."
+    second = "The routine at 0x4b20 is not observed [ev_0302]."
+
+    def make() -> MalwareReport:
+        report = report_of(OTHER)
+        report.executive_summary = f"{first} {second}"
+        return report
+
+    kept = {
+        **_row(first, "keep"),
+        "passage": "executive_summary",
+        "sources": [SECTION, "judge.verdict"],
+    }
+    refused = {
+        **_row(second, "rewrite", rewrite="The routine at 0x4b20 formats a host name [ev_0302]."),
+        "passage": "executive_summary",
+        "sources": ["nowhere.1"],
+    }
+    mended = {**refused, "sources": [SECTION]}
+    # The retry answers the refused row alone: the judge row's twin passed, and stands.
+    calls, counts, by_code, unresolved, report = _asked_of(make, [kept, refused], [mended])
+    assert (calls, counts, by_code, unresolved, report) == _asked_of(
+        make, [_twin(kept), refused], [mended]
+    )
+    assert calls == 2 and counts["sentences"] == 2
+    assert counts["kept"] == 1 and counts["rewritten"] == 1
+    # The judge refusal is in that retry's text, and counted nowhere.
+    reporter = _Reporter({"sentences": [kept, refused]}, {"sentences": [mended]})
+    asyncio.run(agreement.ask_section_agreement(reporter, make(), citable_ids=CITABLE))
+    assert "judge.verdict is a passage of the judge's decision" not in str(
+        reporter.asked[0][-1].content
+    )
+    assert "judge.verdict" in str(reporter.asked[1][-1].content)
+    assert not [code for code in by_code if code == UNKNOWN_SOURCE_CODE and by_code[code] > 1]

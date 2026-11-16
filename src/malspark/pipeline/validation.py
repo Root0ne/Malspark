@@ -240,8 +240,9 @@ class Violation:
     # stored and printed is the message alone.
     shown: str = ""
     # A question put to the producer beside the findings that is no finding of
-    # its own (``with_exit_branches``): asked, and never counted, published or
-    # recorded. Never stored on the channel.
+    # its own (``with_exit_branches``, the agreement round's judge refusal):
+    # asked only beside a finding that opens a turn, never alone (``_askable``),
+    # and never counted, published or recorded. Never stored on the channel.
     question_only: bool = False
     # Where in the checked answer the statements this finding is about stand,
     # as :func:`locate_statements` writes them: the walk ``path`` uses
@@ -14397,13 +14398,16 @@ def _askable(violations: Sequence[Violation], *, every: bool = True) -> list[Vio
 
     ``every=False`` is ``validation.feedback`` set to ``record_only``: only a
     finding that says the answer could not be read is asked
-    (:data:`REASKED_IN_EVERY_MODE_CODES`).
+    (:data:`REASKED_IN_EVERY_MODE_CODES`). A question that is no finding
+    (``Violation.question_only``) opens no turn of its own: asked only beside a
+    finding that does, none where it stands alone.
     """
-    return [
+    found = [
         v
         for v in violations
         if v.code != CHECK_FAILED_CODE and (every or v.code in REASKED_IN_EVERY_MODE_CODES)
     ]
+    return found if any(not v.question_only for v in found) else []
 
 
 def asked_in_this_mode(violations: Sequence[Violation]) -> list[Violation]:

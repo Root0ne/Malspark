@@ -200,8 +200,9 @@ and of nothing else, and only of a sentence of a section 5 passage the round may
 conclusion, the limitations, a value cell or a capability bullet (:func:`_judge_drops`): a drop
 naming it for another passage is refused, and a row of another form naming it is checked and
 ended as the same row without it (:func:`_without_the_judge`), naming it neither removing a
-sentence nor sparing it a check, its refusal only told; no sentence is read for what it
-asserts (T-717). Which sentence states otherwise
+sentence nor sparing it a check; its refusal is a question that is no finding, told only in a
+retry another refusal opens, opening no turn and counted and recorded nowhere. No sentence is
+read for what it asserts (T-717). Which sentence states otherwise
 than it is the model's to say: code picks none. A sentence left out on it is counted where it
 is left out and recorded with the row's sources, its reason and the sentence whole
 (``JUDGE_LEFT_OUT_CODE``). The decision starts no question of its own, and nothing changes it.
@@ -4807,9 +4808,12 @@ def _judge_refusal(
 ) -> Violation:
     """The refusal of a row naming the passages ``judged`` of the judge's decision where it
     supports no such answer: a drop for a passage :func:`_judge_drops` does not name, or any
-    row of another form; the latter is told only, its row ending as it would without them
-    (:func:`_without_the_judge`, T-717)."""
+    row of another form; the latter is a question that is no finding
+    (``Violation.question_only``): told only beside a refusal that opens a turn, counted and
+    recorded nowhere, its row ending as it would without them (:func:`_without_the_judge`,
+    T-717)."""
     number = safe_finding_value(index + 1)
+    told = row.decision != "drop"
     if not _judge_drops(passage):
         return Violation(
             code=UNKNOWN_SOURCE_CODE,
@@ -4826,6 +4830,7 @@ def _judge_refusal(
                 + f". Name no judge passage for a sentence of {safe_finding_value(passage.id)}."
             ),
             path=f"sentences.{index}.sources",
+            question_only=told,
         )
     return Violation(
         code=UNKNOWN_PASSAGE_CODE,
@@ -4835,6 +4840,7 @@ def _judge_refusal(
             + f" of the judge's decision, {_ON_THE_JUDGE}."
         ),
         path=f"sentences.{index}.decision",
+        question_only=told,
     )
 
 
@@ -8701,7 +8707,7 @@ async def _ask(
                 lambda p: rewrites_violations(p, citable, items, evidence_texts, passages),
             ],
             parse=_parse,
-            on_feedback=tally.count,
+            on_feedback=lambda shown: tally.count([v for v in shown if not v.question_only]),
         )
     except SpendCeilingStop as stop:
         failed = f"The section agreement question was not asked: {stop}."
@@ -8712,6 +8718,9 @@ async def _ask(
         failed = f"The section agreement question was not answered ({type(exc).__name__})."
         payload, violations, retries = None, [], 0
     tally.retries += retries
+    # A question that is no finding (a judge refusal told beside a row's own, T-717) is
+    # counted and recorded nowhere.
+    violations = [v for v in violations if not v.question_only]
     # A refusal of the last answer had no turn left to answer it: its record names the
     # sentence the row was about and says so (T-717).
     violations = _no_turn_left(violations, payload)
