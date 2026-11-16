@@ -16134,36 +16134,64 @@ _HOLDS_NO_RE = re.compile(
 )
 
 # Forms of denial read only in the clause that writes a citation
-# (:func:`_denies`): "(no match)", "do not appear", "never occurs". Each counts
-# where what follows it ends the statement or is a word that does not complete
-# it: a noun after "no match" is qualified by it ("no match limit"), and a word
-# after "not appear" that is no preposition, conjunction or adverb of place is
-# its complement ("does not appear packed", "does not appear to be").
+# (:func:`_denies`): "(no match)", "do not appear", "never occurs". The words
+# alone decide nothing: a clause in one of these forms denies only for an entry
+# whose own stored answer found nothing (:func:`answer_found_nothing`).
 _DENIAL_FORM_RE = re.compile(
     r"\bno\s+match(?:es)?\b|\b(?:do|does|did)\s+not\s+(?:appear|occur)\b"
     r"|\bnever\s+(?:appears?|occurs?)\b",
     re.IGNORECASE,
 )
-_DENIAL_FOLLOWERS = frozenset(
-    {
-        "in", "on", "at", "for", "from", "with", "within", "among", "amongst", "against",
-        "of", "across", "between", "by", "under", "over", "inside", "during", "throughout",
-        "anywhere", "there", "here", "again", "either", "and", "or", "but", "nor",
-        "is", "are", "was", "were", "found", "returned", "reported", "recorded", "seen",
-        "observed", "listed", "shown",
-    }
-)  # fmt: skip
-_NEXT_WORD = re.compile(r"[ \t]*([A-Za-z][\w'-]*)?")
 
 
 def _denies(clause: str) -> bool:
-    """Whether ``clause`` states a denial in one of the clause reader's own forms."""
-    for found in _DENIAL_FORM_RE.finditer(clause):
-        following = _NEXT_WORD.match(clause, found.end())
-        word = following.group(1) if following is not None else None
-        if word is None or word.lower() in _DENIAL_FOLLOWERS:
-            return True
-    return False
+    """Whether ``clause`` is in one of the clause reader's own forms of denial."""
+    return _DENIAL_FORM_RE.search(clause) is not None
+
+
+def answer_found_nothing(entry: Any) -> bool:
+    """Whether a ledger entry's own stored answer states that it found nothing.
+
+    Read through the declaration the entry stored (``facts``), never a tool's
+    name: its tool declares where the answer's rows sit (``ToolFacts.rows``),
+    the stored answer holds that place, and no row stands there. An answer
+    that failed, was cut, was not shown or repeats another states nothing.
+    """
+    from malspark.core.declared_reading import facts_of
+    from malspark.core.tool_declarations import parse_path, select
+
+    if not isinstance(getattr(entry, "facts", None), Mapping):
+        return False
+    if (
+        not getattr(entry, "ok", True)
+        or getattr(entry, "truncated", False)
+        or getattr(entry, "repeated_of", None)
+        or answer_not_shown(entry)
+    ):
+        return False
+    answer = getattr(entry, "structured", None)
+    facts = facts_of(entry)
+    if answer is None or facts is None or not facts.rows:
+        return False
+    try:
+        segments = parse_path(facts.rows)
+    except ValueError:
+        return False
+    if not segments:
+        return False
+    places = select(answer, segments[:-1]) if len(segments) > 1 else [answer]
+    if not places or not all(isinstance(place, list | dict) for place in places):
+        return False
+    return not select(answer, segments)
+
+
+def _entries_that_found_nothing(entries: Sequence[Any]) -> set[str]:
+    """The ids of the entries whose own answer found nothing (:func:`answer_found_nothing`)."""
+    return {
+        str(getattr(entry, "id", "") or "").lower()
+        for entry in entries
+        if answer_found_nothing(entry)
+    }
 
 
 # Where a statement's sentences and its evidence line's items break.
@@ -16216,26 +16244,34 @@ def _citing_clauses(said: str, citation: str) -> list[str]:
     ]
 
 
-def _cited_for_an_absence(said: str, citation: str) -> bool:
+def _cited_for_an_absence(said: str, citation: str, found_nothing: bool = False) -> bool:
     """Whether ``said`` cites ``citation`` to state an absence.
 
     Read in the clauses that write the citation (:func:`_citing_clauses`): one
-    of them negates what was recorded, matched or found (:func:`_negates`), or
-    denies in the clause reader's own forms (:func:`_denies`), as
-    "[ev_0203] DNS names (no match)" does. A negation in another clause, in
-    quoted text, or a citation the statement does not write, is no absence.
+    of them negates what was recorded, matched or found (:func:`_negates`), or,
+    for an entry whose own answer found nothing (``found_nothing``,
+    :func:`answer_found_nothing`), is in one of the clause reader's forms of
+    denial (:func:`_denies`), as "[ev_0203] DNS names (no match)" is. A
+    negation in another clause, in quoted text, or a citation the statement
+    does not write, is no absence.
     """
-    return any(_negates(clause) or _denies(clause) for clause in _citing_clauses(said, citation))
+    return any(
+        _negates(clause) or (found_nothing and _denies(clause))
+        for clause in _citing_clauses(said, citation)
+    )
 
 
-def _negated_for_its_technique(said: str, citation: str, claim: str | None = None) -> bool:
+def _negated_for_its_technique(
+    said: str, citation: str, claim: str | None = None, *, found_nothing: bool = False
+) -> bool:
     """Whether a statement cites ``citation`` for an absence, as a technique's sources read it.
 
-    The pieces that cite it negate (:func:`_cites_to_negate`), or a clause that
-    writes it denies in the clause reader's own forms (:func:`_denies`).
+    The pieces that cite it negate (:func:`_cites_to_negate`), or, for an entry
+    whose own answer found nothing (``found_nothing``), a clause that writes it
+    is in one of the clause reader's forms of denial (:func:`_denies`).
     """
-    return _cites_to_negate(said, citation, claim) or any(
-        _denies(clause) for clause in _citing_clauses(said, citation)
+    return _cites_to_negate(said, citation, claim) or (
+        found_nothing and any(_denies(clause) for clause in _citing_clauses(said, citation))
     )
 
 
@@ -16261,12 +16297,14 @@ def technique_absence_sources(
     if not entries:
         return {}
     roots = found if found is not None else run_roots(entries)
+    empty = _entries_that_found_nothing(entries)
     absent: dict[str, set[str]] = {}
     present: dict[str, set[str]] = {}
 
     def read(tid: str, said: str, cited: list[str]) -> None:
         for source in roots.sources_of_statement(said, cited):
-            into = absent if _cited_for_an_absence(said, source) else present
+            denied = _cited_for_an_absence(said, source, source.lower() in empty)
+            into = absent if denied else present
             into.setdefault(tid, set()).add(source)
 
     for isr in (isrs or {}).values():
@@ -16317,9 +16355,9 @@ def technique_sources(
     asserting tool's entry a statement cites is a rule match for the technique
     only when its own rows name the technique or the statement places one of
     its rows; otherwise it is placed nowhere. A run observation or a rule cited
-    by a piece of the statement that negates, or by a clause that denies
-    (``_negated_for_its_technique``), is cited for its absence: a source,
-    placed nowhere. Empty
+    by a piece of the statement that negates, or by a clause that denies it
+    where its own answer found nothing (``_negated_for_its_technique``), is
+    cited for its absence: a source, placed nowhere. Empty
     without a ledger. ``found`` is the run's ``RunRoots`` where the caller
     already read it.
     """
@@ -16340,6 +16378,7 @@ def technique_sources(
     if not entries:
         return {}
     roots = found if found is not None else run_roots(entries)
+    empty = _entries_that_found_nothing(entries)
     out: dict[str, dict[str, tuple[str, tuple[str, ...]]]] = {}
 
     def add(tid: str, held: Mapping[str, tuple[str, tuple[str, ...]]]) -> None:
@@ -16369,7 +16408,9 @@ def technique_sources(
         held = roots.sources_of_statement(said, cited)
         found_here: dict[str, tuple[str, tuple[str, ...]]] = {}
         for source, (reading, placed) in held.items():
-            negates = _negated_for_its_technique(said, source, claim)
+            negates = _negated_for_its_technique(
+                said, source, claim, found_nothing=source.lower() in empty
+            )
             rows = [root for root in placed if not root.startswith(_WHOLE_ANSWER_OPENING)]
             if source in asserts:
                 # An asserting entry is a rule match for this technique when

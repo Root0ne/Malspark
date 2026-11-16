@@ -6,10 +6,11 @@ behaviour's traces are not there: "the endpoints do not appear in the capture
 evidence of the behaviour. The corroboration row carries, per source, whether
 every statement that cites it for the technique cites it for an absence: the
 clause of a sentence or evidence-line item that writes the citation reads as a
-denial. A technique's evidence prints the other sources, and the absence-cited
-ones apart under their own label. A source cited both ways is evidence. A range
-of items is read by its ends, as the item reader reads it. Every id, name and
-sentence here is made up for the test.
+denial. "No match" and "does not appear" deny only for an entry whose own
+stored answer found nothing, read through its declaration; no word decides it.
+A technique's evidence prints the other sources, and the absence-cited ones
+apart under their own label. A source cited both ways is evidence. Every id,
+name and sentence here is made up for the test.
 """
 
 from __future__ import annotations
@@ -23,6 +24,7 @@ from malspark.pipeline.validation import (
     _denies,
     _negated_for_its_technique,
     _negates,
+    answer_found_nothing,
     corroboration,
 )
 from malspark.reporting.models import TTPMapping
@@ -48,6 +50,54 @@ REF = (
 SAID = f"{CLAIM} {REF}"
 
 
+def _searched(entry_id: str, tool: str, rows: list[dict[str, str]]) -> LedgerEntry:
+    """An entry whose tool declares where its answer's rows sit, holding ``rows`` there."""
+    answer = {"matches": rows}
+    return LedgerEntry(
+        id=entry_id,
+        tool=tool,
+        args={},
+        output=json.dumps(answer),
+        structured=answer,
+        facts={"v": 1, "kind": "search_matches", "rows": "/matches/*"},
+    )
+
+
+# The searches the claim cites found nothing: their answers hold no row.
+LEDGER = [
+    LedgerEntry(
+        id="ev_0006",
+        tool="iocs_from_file",
+        args={},
+        output=json.dumps({"iocs": [{"value": "chat.example"}]}),
+    ),
+    _searched("ev_0202", "list_sni", []),
+    _searched("ev_0203", "list_dns", []),
+    _searched("ev_0204", "list_hosts", []),
+]
+# The same searches, each answering with rows: what they found is not what the
+# claim names, and the record states no absence.
+HELD = [
+    LEDGER[0],
+    _searched("ev_0202", "list_sni", [{"name": "login.example"}]),
+    _searched("ev_0203", "list_dns", [{"name": "update.example"}]),
+    _searched("ev_0204", "list_hosts", [{"name": "a.example"}]),
+]
+
+
+def test_an_answer_whose_declared_rows_are_empty_found_nothing() -> None:
+    assert answer_found_nothing(LEDGER[2])
+    assert not answer_found_nothing(HELD[2])
+    # No declaration of its rows, or no answer stored: nothing is stated.
+    assert not answer_found_nothing(LEDGER[0])
+    assert not answer_found_nothing(
+        LedgerEntry(id="ev_0207", tool="list_dns", args={}, output="", facts=LEDGER[2].facts)
+    )
+    # The declared place itself missing from the answer states nothing either.
+    missing = LEDGER[2].model_copy(update={"structured": {"other": []}})
+    assert not answer_found_nothing(missing)
+
+
 def test_no_match_and_does_not_appear_are_forms_of_denial_read_by_the_clause() -> None:
     assert _denies("[ev_0203] DNS names (no match)")
     assert _denies("no matches in the hosts")
@@ -62,59 +112,90 @@ def test_no_match_and_does_not_appear_are_forms_of_denial_read_by_the_clause() -
 def test_a_denial_form_reaches_only_the_source_its_clause_cites() -> None:
     said = "ev_0050 encrypts files - ev_0051 (no match)"
     assert not _cites_to_negate(said, "ev_0050")
-    assert not _negated_for_its_technique(said, "ev_0050")
-    assert _negated_for_its_technique(said, "ev_0051")
+    assert not _negated_for_its_technique(said, "ev_0050", found_nothing=True)
+    assert _negated_for_its_technique(said, "ev_0051", found_nothing=True)
+
+
+def test_a_denial_form_denies_nothing_for_an_entry_whose_answer_holds_rows() -> None:
+    said = "ev_0050 encrypts files - ev_0051 (no match)"
+    assert not _negated_for_its_technique(said, "ev_0051")
+    assert not _cited_for_an_absence(said, "ev_0051")
 
 
 def test_a_denial_in_another_sentence_of_the_claim_negates_no_evidence_line_citation() -> None:
     claim = "The sample encrypts files with AES. The note does not appear in the sandbox capture."
     said = f"{claim} ev_0010 AES S-box constants"
     assert not _cites_to_negate(said, "ev_0010", claim)
-    assert not _negated_for_its_technique(said, "ev_0010", claim)
+    assert not _negated_for_its_technique(said, "ev_0010", claim, found_nothing=True)
 
 
-def test_a_denial_form_is_the_clause_s_own_statement_about_what_it_cites() -> None:
-    # "no match" qualifying a noun, a quoted text, "not appear" with a complement.
+# Statements that assert what a routine does, in the words of a denial. ("The
+# resolver returns NULL when the hash has no match" is not here: "has no" is the
+# base reader's own form, which reads it as it always did.)
+ASSERTIONS = (
+    "The encryptor [ev_0050] encrypts every file with no match in its exclusion list.",
+    "If the mutex does not appear in the registry the payload runs [ev_0050].",
+    "The loop [ev_0050] repeats until no match is left.",
+    "[ev_0050] skips a file whose extension does not appear in the target list.",
+    "The dropper [ev_0050] only proceeds if the sandbox artefact does not appear on disk.",
+)
+# Statements that a searched place holds nothing.
+ABSENCES = (
+    "The domain [ev_0203] does not appear as a DNS name.",
+    "The domain [ev_0203] does not appear elsewhere in the capture.",
+    "The domain [ev_0203] does not appear despite the 300 s run.",
+    "The domain [ev_0203] never appears before the reboot.",
+)
+ROUTINES = [
+    _searched("ev_0050", "list_routines", [{"name": "encrypt_files"}]),
+    _searched("ev_0060", "list_routines", [{"name": "resolve_by_hash"}]),
+]
+
+
+def test_an_assertion_never_moves_its_source_apart() -> None:
+    from malspark.pipeline.validation import technique_absence_sources, technique_sources
+
+    for said in ASSERTIONS:
+        isrs = {"static": AgentISR(agent_id="static", domain="static", claims=[_claim(said, "")])}
+        assert technique_absence_sources(isrs, [*HELD, *ROUTINES]) == {}, said
+        plain = said.replace("no match", "a match").replace("does not appear", "appears")
+        plain_isrs = {
+            "static": AgentISR(agent_id="static", domain="static", claims=[_claim(plain, "")])
+        }
+        assert technique_sources(isrs, [*HELD, *ROUTINES]) == technique_sources(
+            plain_isrs, [*HELD, *ROUTINES]
+        ), said
+
+
+def test_an_absence_is_read_where_the_cited_answer_found_nothing() -> None:
+    from malspark.pipeline.validation import technique_absence_sources
+
+    for said in ABSENCES:
+        isrs = {
+            "network": AgentISR(agent_id="network", domain="network", claims=[_claim(said, "")])
+        }
+        assert technique_absence_sources(isrs, LEDGER) == {"T1486": ["ev_0203"]}, said
+        assert technique_absence_sources(isrs, HELD) == {}, said
+
+
+def test_a_quoted_denial_is_no_statement_of_the_clause() -> None:
     for said in (
-        "The rule fired [ev_0050] with no match limit set.",
-        "The config holds the string 'no match found' [ev_0050].",
-        'The config holds the string "no match found" [ev_0050].',
-        "The encryption routine [ev_0050] does not appear packed; it calls CryptEncrypt.",
-        "The routine [ev_0050] does not appear to be packed.",
+        "The config holds the string 'no match found' [ev_0203].",
+        'The config holds the string "no match found" [ev_0203].',
     ):
-        assert not _cited_for_an_absence(said, "ev_0050"), said
-        assert not _negated_for_its_technique(said, "ev_0050"), said
-    for said in (
-        "The YARA scan [ev_0050] gave no match.",
-        "[ev_0050] no match found",
-        "The names [ev_0050] do not appear in the capture.",
-        "The capture's hosts [ev_0050] (no match)",
-    ):
-        assert _cited_for_an_absence(said, "ev_0050"), said
+        assert not _cited_for_an_absence(said, "ev_0203", found_nothing=True), said
 
 
 def test_each_citation_is_read_by_the_clause_that_writes_it() -> None:
-    for citation in ("ev_0201", "ev_0202", "ev_0203", "ev_0204", "net:1", "net:8"):
-        assert _cited_for_an_absence(SAID, citation), citation
+    for citation in ("ev_0202", "ev_0203", "ev_0204"):
+        assert _cited_for_an_absence(SAID, citation, found_nothing=True), citation
     # Cited for the strings it holds, in a sentence of its own.
-    assert not _cited_for_an_absence(SAID, "ev_0006")
+    assert not _cited_for_an_absence(SAID, "ev_0006", found_nothing=True)
     # A negation in another clause of the same sentence governs nothing here.
     said = "Each is built by the constructor [ev_0177], and run by a routine which was not read."
     assert not _cited_for_an_absence(said, "ev_0177")
     # One id written inside a longer one is not that id.
-    assert not _cited_for_an_absence("[ev_0201] net:10 (no match)", "net:1")
-
-
-def _entry(entry_id: str, tool: str, output: str) -> LedgerEntry:
-    return LedgerEntry(id=entry_id, tool=tool, args={}, output=output)
-
-
-LEDGER = [
-    _entry("ev_0006", "iocs_from_file", json.dumps({"iocs": [{"value": "chat.example"}]})),
-    _entry("ev_0202", "pcap_summary", "1419 packets read."),
-    _entry("ev_0203", "extract_dns", "1419 packets read.\nupdate.example.\n"),
-    _entry("ev_0204", "extract_http", "1419 packets read.\nGET / HTTP/1.1 | Host: a.example\n"),
-]
+    assert not _cited_for_an_absence("[ev_0201] net:10 (no match)", "net:1", found_nothing=True)
 
 
 def _claim(text: str, ref: str, tid: str = "T1486") -> ClaimEvidence:
@@ -137,6 +218,11 @@ def test_a_source_cited_both_ways_is_evidence() -> None:
     }
     row = corroboration(isrs, LEDGER)["T1486"]
     assert row["absence_sources"] == ["ev_0202", "ev_0204"]
+
+
+def test_the_claim_cites_nothing_apart_where_its_searches_answered_with_rows() -> None:
+    isrs = {"network": AgentISR(agent_id="network", domain="network", claims=[_claim(CLAIM, REF)])}
+    assert "absence_sources" not in corroboration(isrs, HELD)["T1486"]
 
 
 def test_a_technique_with_no_absence_cited_source_carries_no_list() -> None:
